@@ -41,6 +41,7 @@ import { permissionWaitKind } from '@gugu/session-core/acp/models/permissions';
 import type { AgentState, LiveSettingResult, PermissionWaitKind } from '@gugu/session-core/acp';
 import { errorDetail, isDeepEqual } from '@gugu/session-shared';
 import { action, computed, makeObservable, observable, reaction, runInAction, when } from 'mobx';
+import { HistoryWindow } from './history-window';
 import { flushSync } from 'react-dom';
 import { discardSessionLifeRow, endSessionLife, forkSessionLife, readSessionLife, retryUnknownSessionInput, sessionLifeView, startSessionLife, stopSessionLife } from '../stores/session-life-views';
 import { ACP_START_FAILED, lifeHoldIsFailure, lifeIsStarting, type LifeView } from '@shared/core/sessions/session-life';
@@ -211,6 +212,12 @@ export class AcpChatStore {
   private _runtimeLiveSubagentIds: readonly string[] = [];
 
   private _view: ChatView | null = null;
+  /**
+   * A stretch of stored history shown in place of the live transcript (`HistoryWindow`), while the reader is at a
+   * turn too far up to reach by loading everything between. `chatState` goes on receiving the conversation underneath.
+   */
+  historyWindow: HistoryWindow | null = null;
+  private _historyWindowRequest = 0;
   private _bootstrapped = false;
   private _incomingHistoryResolved = new Set<string>();
   private _incomingHistoryReading = false;
@@ -367,6 +374,9 @@ export class AcpChatStore {
       starting: computed,
       startupChoice: observable.ref,
       messageCount: observable,
+      historyWindow: observable.ref,
+      shownChatState: computed,
+      closeHistoryWindow: action,
       transcriptRevision: observable,
       draftText: observable,
       queuedEditDraft: observable.ref,
@@ -1335,7 +1345,8 @@ export class AcpChatStore {
   async resolveToolImage(itemId: string, index: number): Promise<string | null> {
     const generation = this._historyGeneration;
     const stored = findToolItem(this._storedHistoryTurns, itemId)
-      ?? (this._olderSource === 'stored' ? findToolItem(this._olderHistoryTurns, itemId) : null);
+      ?? (this._olderSource === 'stored' ? findToolItem(this._olderHistoryTurns, itemId) : null)
+      ?? (this.historyWindow ? findToolItem([...this.historyWindow.turns], itemId) : null);
     const runtime = !stored ? findToolItem(this._runtimeTurns, itemId)
       ?? (this._olderSource === 'runtime' ? findToolItem(this._olderHistoryTurns, itemId) : null) : null;
     try {
@@ -1368,8 +1379,15 @@ export class AcpChatStore {
    */
   scrollToItem(itemId: string): void {
     const pinMode = pinTopMode(itemId);
+    const holds = (state: ChatState) => state.transcript.history.get().some(turn => turn.items.some(item => item.id === itemId));
+    // A row of the live transcript, asked for while a history window is shown: the live transcript comes back, at it.
+    if (this.historyWindow && !holds(this.historyWindow.state)) {
+      this.chatState.scroll.set(pinMode);
+      this.closeHistoryWindow({ keepPosition: true });
+      return;
+    }
     this._view?.setScrollMode(pinMode);
-    this.chatState.scroll.set(pinMode);
+    this.shownChatState.scroll.set(pinMode);
   }
 
   /**
@@ -1807,6 +1825,7 @@ export class AcpChatStore {
     if (this._disposed) return;
     this._disposed = true;
     this._attachmentAbort?.abort();
+    this.historyWindow?.dispose();
     unregisterSessionCommands(this.runtimeSessionId);
     if (this._draftTimer !== null) {
       window.clearTimeout(this._draftTimer);
@@ -2836,6 +2855,50 @@ export class AcpChatStore {
     });
     this._ownerNotificationRead = read.catch(() => undefined);
     return read;
+  }
+
+  /** What the transcript shows: the history window while one is open, the live conversation otherwise. */
+  get shownChatState(): ChatState {
+    return this.historyWindow?.state ?? this.chatState;
+  }
+
+  /** The oldest stored turn the live transcript holds: what lies before it is reached by paging, or by a window. */
+  get oldestLoadedSeq(): number | undefined {
+    return this._olderSource === 'stored' ? this.chatState.transcript.state.committedTurns[0]?.seq : undefined;
+  }
+
+  /**
+   * Show the stored history around the turn at `seq` in place of the live transcript (@@@history-window). False when
+   * it cannot be (history that is not read from the store, a turn that is gone): the caller pages to it instead.
+   */
+  async openHistoryWindow(seq: number, anchor?: (turns: readonly TranscriptTurn[]) => string | null): Promise<boolean> {
+    if (this._disposed || this._olderSource !== 'stored') return false;
+    const request = ++this._historyWindowRequest;
+    const opened = await HistoryWindow.open({
+      context: this.chatContext, uri: this.runtimeSessionId, seq,
+      read: before => rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before, limit: 100 }).catch(() => null),
+      newestStored: () => this._storedHistoryTurns.at(-1)?.seq ?? -1,
+    }).catch(() => null);
+    if (!opened) return false;
+    if (this._disposed || request !== this._historyWindowRequest) { opened.dispose(); return false; }
+    // The window opens at the message asked for: the list reads this when it is handed the state.
+    const itemId = anchor?.(opened.turns) ?? opened.turns.find(turn => turn.seq === seq)?.items[0]?.id;
+    if (itemId) opened.state.scroll.set(pinTopMode(itemId));
+    const previous = this.historyWindow;
+    runInAction(() => { this.historyWindow = opened; });
+    // The list lets go of the outgoing state when it is handed the new one, a render later.
+    if (previous) setTimeout(() => previous.dispose(), 0);
+    return true;
+  }
+
+  /** Back to the live transcript, at its newest turn unless `keepPosition` (the caller is about to scroll it). */
+  closeHistoryWindow(opts: { keepPosition?: boolean } = {}): void {
+    this._historyWindowRequest += 1;
+    const open = this.historyWindow;
+    if (!open) return;
+    if (!opts.keepPosition) this.chatState.scroll.set({ kind: 'tail' });
+    this.historyWindow = null;
+    setTimeout(() => open.dispose(), 0);
   }
 
   /** 还能不能往上翻。到头(游标为 null)或还没定下来来源时都是 false。 */

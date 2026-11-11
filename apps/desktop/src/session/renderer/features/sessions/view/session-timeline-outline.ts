@@ -53,6 +53,14 @@ export function useStoredOutline(sessionId: string | undefined, oldestLoaded: nu
   return useSyncExternalStore(subscribe, () => (sessionId ? entries.get(sessionId)?.turns : undefined) ?? NONE);
 }
 
+/** The stored sequence of the turn that holds the message `reference` names, when the outline lists it. */
+export function storedOutlineSeq(sessionId: string, reference: string): number | undefined {
+  for (const turn of entries.get(sessionId)?.turns ?? []) {
+    if (turn.inputs.some(input => input.reference === reference || input.itemId === reference)) return turn.seq;
+  }
+  return undefined;
+}
+
 /** For tests. */
 export function resetStoredOutlines(): void {
   entries.clear();

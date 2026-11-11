@@ -5,6 +5,12 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { ChatView, TranscriptTurn } from '@gugu/session-chat-ui'
 import { useSessionSourceMessage } from '../../../../apps/desktop/src/session/renderer/features/sessions/acp/use-session-source-message'
 
+// Which stored turn a reference names is the outline's knowledge; here it is whatever the test says.
+const outline = vi.hoisted(() => ({ seq: undefined as number | undefined }))
+vi.mock('../../../../apps/desktop/src/session/renderer/features/sessions/view/session-timeline-outline', () => ({
+  storedOutlineSeq: () => outline.seq,
+}))
+
 /**
  * The list asks for the page above as soon as a page lands: its rows changed and the reader is still at the top.
  * That ask arrives while the hook is still finishing the request that brought the page (it waits one frame for the
@@ -174,4 +180,90 @@ it('drops the pages it holds when the conversation draws its history anew', asyn
   expect(landed).toEqual([])
   expect(result).toEqual([])
   expect(store.loadOlderHistory).toHaveBeenCalledTimes(2)
+})
+
+/**
+ * A message thousands of turns above the loaded history is not paged to: the store shows the stretch around it in a
+ * history window, and the list's top edge then pages that window.
+ */
+function windowHarness(oldestLoadedSeq: number) {
+  const live = { committedTurns: [turn(oldestLoadedSeq)] as readonly TranscriptTurn[], activeTurnSnapshot: null }
+  const held = { committedTurns: [] as readonly TranscriptTurn[], activeTurnSnapshot: null }
+  const above = [page(880, 20), page(860, 20)]
+  const shownWindow = { loadOlder: vi.fn(async () => above.shift() ?? []) }
+  const store = {
+    sessionId: 'task-a',
+    chatState: { transcript: { state: live } },
+    get shownChatState() { return { transcript: { state: store.historyWindow ? held : live } } },
+    historyWindow: null as typeof shownWindow | null,
+    oldestLoadedSeq,
+    canLoadOlderHistory: true,
+    loadOlderHistory: vi.fn(async () => page(oldestLoadedSeq - 100, 100)),
+    historyEpoch: 0,
+    openHistoryWindow: vi.fn(async (seq: number) => {
+      held.committedTurns = page(seq - 5, 10)
+      store.historyWindow = shownWindow
+      return true
+    }),
+    closeHistoryWindow: vi.fn(() => { store.historyWindow = null }),
+  }
+  const landed: TranscriptTurn[][] = []
+  // What the list does with a page: prepends it to the state it is showing.
+  const view = { scrollToItem: vi.fn(), loadOlder: (older: TranscriptTurn[]) => {
+    landed.push(older)
+    const shown = store.historyWindow ? held : live
+    shown.committedTurns = [...older, ...shown.committedTurns]
+  } }
+  let actions!: ReturnType<typeof useSessionSourceMessage>
+  const missing = vi.fn()
+  function Harness() {
+    const viewRef = useRef(view as unknown as ChatView)
+    actions = useSessionSourceMessage(store, viewRef, missing)
+    return null
+  }
+  act(() => root.render(<Harness />))
+  return { store, shownWindow, landed, view, missing, actions: () => actions }
+}
+const settled = () => act(async () => { for (let i = 0; i < 6; i += 1) await new Promise(resolve => requestAnimationFrame(() => resolve(null))) })
+
+it('shows a far message in a history window instead of paging everything on the way', async () => {
+  const harness = windowHarness(3000)
+  outline.seq = 905
+  act(() => harness.actions().reveal('message-905'))
+  await settled()
+  expect(harness.store.openHistoryWindow).toHaveBeenCalledOnce()
+  expect(harness.store.openHistoryWindow.mock.calls[0]![0]).toBe(905)
+  expect(harness.store.loadOlderHistory).not.toHaveBeenCalled()
+  expect(harness.view.scrollToItem).toHaveBeenLastCalledWith('message-905', { align: 'center' })
+  expect(harness.actions().flashMessageId).toBe('message-905')
+  expect(harness.missing).not.toHaveBeenCalled()
+
+  // The list's top edge now pages the window, and the live transcript underneath is left alone.
+  await act(async () => { await harness.actions().loadOlder() })
+  expect(harness.shownWindow.loadOlder).toHaveBeenCalledOnce()
+  expect(harness.landed.map(batch => [batch[0]!.seq, batch.at(-1)!.seq])).toEqual([[880, 899]])
+  expect(harness.store.loadOlderHistory).not.toHaveBeenCalled()
+})
+
+it('still pages to a message a few pages up', async () => {
+  const harness = windowHarness(1000)
+  outline.seq = 905
+  act(() => harness.actions().reveal('message-905'))
+  await settled()
+  expect(harness.store.openHistoryWindow).not.toHaveBeenCalled()
+  expect(harness.store.loadOlderHistory).toHaveBeenCalledOnce()
+  expect(harness.landed).toHaveLength(1)
+})
+
+it('leaves a history window for a message the live transcript holds', async () => {
+  const harness = windowHarness(3000)
+  outline.seq = 905
+  act(() => harness.actions().reveal('message-905'))
+  await settled()
+  outline.seq = undefined
+  act(() => harness.actions().reveal('message-3000'))
+  await settled()
+  expect(harness.store.closeHistoryWindow).toHaveBeenCalledExactlyOnceWith({ keepPosition: true })
+  expect(harness.view.scrollToItem).toHaveBeenLastCalledWith('message-3000', { align: 'center' })
+  expect(harness.store.loadOlderHistory).not.toHaveBeenCalled()
 })

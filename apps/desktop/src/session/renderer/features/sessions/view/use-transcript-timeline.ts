@@ -22,10 +22,19 @@ export function useTranscriptTimeline<T>(
   session?: Pick<ChatSessionState, 'state'>,
   /** The turns older than the loaded ones, in outline: the rail then covers the whole conversation, not its loaded end. */
   outline?: readonly TimelineOutlineTurn[],
+  /**
+   * A stretch of older history the reader has open in place of the live transcript (@@@history-window). Its turns are
+   * loaded too, so they are drawn from themselves like the live ones: every row of them answers to its entry, not only
+   * the message an outline knows.
+   */
+  windowed?: TranscriptApi,
 ): T {
   const setOutline = useRef<((turns: readonly TimelineOutlineTurn[]) => void) | null>(null);
   const latestOutline = useRef(outline);
   latestOutline.current = outline;
+  const setWindowed = useRef<((transcript: TranscriptApi | undefined) => void) | null>(null);
+  const latestWindowed = useRef(windowed);
+  latestWindowed.current = windowed;
   const [snapshot, setSnapshot] = useState<{
     transcript: TranscriptApi | undefined;
     value: T;
@@ -101,18 +110,28 @@ export function useTranscriptTimeline<T>(
       const [older, setOlder] = createSignal<readonly TimelineOutlineTurn[]>(latestOutline.current ?? []);
       setOutline.current = setOlder;
       const oldestLoaded = createMemo(() => transcript.state.committedTurns[0]?.seq);
+      const [shownWindow, setShownWindow] = createSignal<TranscriptApi | undefined>(latestWindowed.current);
+      setWindowed.current = (next) => setShownWindow(() => next);
       const unloaded = createMemo(() => {
         identityRevision();
-        const from = oldestLoaded(), turns = older();
-        if (!turns.length) return [];
-        return timelineTurnsFromOutline(from === undefined ? turns : turns.filter((turn) => turn.seq < from), selfIdentity(), options);
+        const from = oldestLoaded(), turns = older(), held = shownWindow()?.state.committedTurns ?? [];
+        const outlined = from === undefined ? turns : turns.filter((turn) => turn.seq < from);
+        if (!held.length) return outlined.length ? timelineTurnsFromOutline(outlined, selfIdentity(), options) : [];
+        // The window's own turns stand in for their outline; the outline still speaks for what lies on either side.
+        const first = held[0]!.seq, last = held.at(-1)!.seq;
+        return [
+          ...timelineTurnsFromOutline(outlined.filter((turn) => turn.seq < first), selfIdentity(), options),
+          ...timelineTurnsFromTranscript(from === undefined ? held : held.filter((turn) => turn.seq < from), selfIdentity(), options, activityContext),
+          ...timelineTurnsFromOutline(outlined.filter((turn) => turn.seq > last), selfIdentity(), options),
+        ];
       });
       const selected = createMemo(() => select([...unloaded(), ...committed(), ...active()]));
       createComputed(() => setSnapshot({ transcript, value: selected() }));
-      return () => { setOutline.current = null; offDirectory?.(); offChatNames(); offSelf?.(); clearTimeout(identityRefresh); dispose(); };
+      return () => { setOutline.current = null; setWindowed.current = null; offDirectory?.(); offChatNames(); offSelf?.(); clearTimeout(identityRefresh); dispose(); };
     });
   }, [transcript, selfIdentity, select, session]);
   useLayoutEffect(() => { setOutline.current?.(outline ?? []); }, [outline]);
+  useLayoutEffect(() => { setWindowed.current?.(windowed); }, [windowed]);
 
   return snapshot.transcript === transcript ? snapshot.value : select([]);
 }
