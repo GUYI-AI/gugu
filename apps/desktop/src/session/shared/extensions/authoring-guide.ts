@@ -984,6 +984,8 @@ API 46: \`contributes.conversationSurface.header: "assistant"\`: the host draws 
 the conversation — its face and name, search, settings gear, expand — from its own data. A click on the face and name:
 \`intent: { kind: "profile" }\`; show its profile. The gear opens the host's settings page over your page. \`panel.hostPage\`
 is true while a host page (that, or a task) is over your page. Another conversation: no row.
+Only the product's own assistant App, when it replaces the built-in assistant page: \`intent: { kind: "resume", tab }\`
+(tasks | memory | profile), once, in the first bound \`surface\` answer or \`onSurface\` event after the hand-over; open that tab.
 
 API 47: \`"voice-notes:record"\` (\`chat:voice-notes:record\`) drives the host's voice-note recorder. The host
 records from the microphone, uploads, transcribes and hands the note to the assistant; your page never gets the audio.

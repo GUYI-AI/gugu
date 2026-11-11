@@ -1536,7 +1536,9 @@ export async function pushBindingSurfaces(extensionId: string, intent?: AppSurfa
     if (binding.extensionId !== extensionId || binding.operator.kind !== 'person') continue;
     const surface = await appBindingSurface(extensionId, binding, { name }).catch(() => ({ name, state: 'unbound' as const }));
     const contents = webContents.fromId(webContentsId);
-    if (bindings.get(webContentsId) === binding && contents && !contents.isDestroyed()) sendEvent(contents, { type: 'bindingSurface', surface: withIntent(surface, told) });
+    if (bindings.get(webContentsId) !== binding || !contents || contents.isDestroyed()) continue;
+    const { withAssistantPageResume } = await import('./assistant-app-entry');
+    sendEvent(contents, { type: 'bindingSurface', surface: told ? withIntent(surface, told) : await withAssistantPageResume(extensionId, surface) });
   }
 }
 
@@ -2128,7 +2130,10 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       const page = thePage(caller);
       if (page.operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works hears none of it'), { code: 'denied' });
       const { appBindingSurface, setBindingSurfacePanel } = await import('./app-unread-bindings');
-      if (method === 'bindingsSurface') return await appBindingSurface(caller.extensionId, page, args);
+      if (method === 'bindingsSurface') {
+        const { withAssistantPageResume } = await import('./assistant-app-entry');
+        return await withAssistantPageResume(caller.extensionId, await appBindingSurface(caller.extensionId, page, args));
+      }
       return await setBindingSurfacePanel(caller.extensionId, page, args, async (collapsed) => {
         await deliver(page, { kind: 'conversationPanel', collapsed });
       });

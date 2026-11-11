@@ -21,13 +21,14 @@ const state = vi.hoisted(() => ({
   answer: (args: { ownerId: string; chatId: string | null }) => ({ success: true, data: { ownerId: args.ownerId, extensionId: 'gugu-assistant', trusted: true, outcome: 'bound', changed: true } }) as unknown,
 }));
 const sync = vi.hoisted(() => vi.fn());
+const handOver = vi.hoisted(() => vi.fn());
 const refresh = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock('@/store/auth', () => ({ useAuth: () => ({ user: state.owner ? { id: state.owner } : null }) }));
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: vi.fn(), info: vi.fn() }) }));
 vi.mock('@/lib/assistantSetup', () => ({ refreshLocalAssistantHome: refresh }));
 vi.mock('@/session/renderer/lib/stores/snapshot-registry', () => ({ snapshotRegistry: { register: vi.fn(() => () => undefined) } }));
 vi.mock('@/session/renderer/lib/ipc', () => ({
-  rpc: { extensions: { syncAssistantAppEntry: sync } },
+  rpc: { extensions: { syncAssistantAppEntry: sync, handOverAssistantPage: handOver } },
   // Main's `extensionsInventoryChangedChannel` only: other modules listen to other channels through the same mock.
   events: { on: (channel: { name?: string }, listener: (note: { extensionId?: string }) => void) => {
     if (channel?.name !== 'extensions.inventory.changed') return () => undefined;
@@ -75,6 +76,7 @@ beforeEach(() => {
   state.manifest = { id: ASSISTANT_APP_ID, version: '0.1.0' };
   sync.mockReset().mockImplementation(async (args: { ownerId: string; chatId: string | null }) => state.answer(args));
   refresh.mockClear();
+  handOver.mockReset().mockResolvedValue({ success: true, data: { held: true } });
   publishAssistantShell(shell());
   publishAppConversationSurfaces({});
   localStorage.clear();
@@ -175,6 +177,41 @@ describe('what opening the built-in page did', () => {
     await act(async () => publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: DM }));
     await flush();
     expect(localStorage.getItem(`gugu.app.${ASSISTANT_APP_ID}.panel`)).toBe('open');
+  });
+
+  it('hands the built-in page\'s last tab to the App once for this account, when the App becomes where the entry goes', async () => {
+    appState.navigation.navigate('assistant', { tab: 'memory' });
+    appState.navigation.navigate('home');
+    await mount();
+    expect(handOver).not.toHaveBeenCalled();
+    await act(async () => publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: DM }));
+    await flush();
+    expect(handOver).toHaveBeenCalledExactlyOnceWith({ ownerId: OWNER, tab: 'memory' });
+    expect(localStorage.getItem(`gugu.assistant.handedOver:${OWNER}`)).toBe('1');
+    // Never again for this account.
+    await act(async () => publishAppConversationSurfaces({}));
+    await act(async () => publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: DM }));
+    await flush();
+    expect(handOver).toHaveBeenCalledOnce();
+  });
+
+  it('asks again later when main did not hold it, and hands nothing for 动态 (the default)', async () => {
+    handOver.mockResolvedValue({ success: true, data: { held: false } });
+    appState.navigation.navigate('assistant', { tab: 'tasks' });
+    appState.navigation.navigate('home');
+    await mount();
+    await act(async () => publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: DM }));
+    await flush();
+    expect(handOver).toHaveBeenCalledOnce();
+    expect(localStorage.getItem(`gugu.assistant.handedOver:${OWNER}`)).toBeNull();
+    handOver.mockClear();
+    appState.navigation.navigate('assistant', { tab: 'today' });
+    appState.navigation.navigate('home');
+    await act(async () => publishAppConversationSurfaces({}));
+    await act(async () => publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: DM }));
+    await flush();
+    expect(handOver).not.toHaveBeenCalled();
+    expect(localStorage.getItem(`gugu.assistant.handedOver:${OWNER}`)).toBe('1');
   });
 
   it('refreshes the assistant\'s home on this computer when the App\'s page is up, as the built-in page did on opening', async () => {

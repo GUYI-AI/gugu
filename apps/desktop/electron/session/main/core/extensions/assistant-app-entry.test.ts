@@ -63,7 +63,7 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: ({ schem
   };
   return query;
 } }) }));
-const { syncAssistantAppEntry } = await import('./assistant-app-entry');
+const { syncAssistantAppEntry, handOverAssistantPage, withAssistantPageResume, forgetAssistantPageResumeForTest } = await import('./assistant-app-entry');
 const { assistantRulesDistrust, assistantRulesTrust, installedAssistantRulesProvider } = await import('../../../../assistant-rules-trust');
 const KEY = testKey('gugu-assistant-entry-test');
 const TRUST = assistantRulesTrust(testTrust(KEY, [ID]));
@@ -320,5 +320,37 @@ describe('the person\'s own choice stands', () => {
     install();
     expect(await sync(DM)).toMatchObject({ outcome: 'bound' });
     expect(bound()).toBe(DM);
+  });
+});
+
+describe('the built-in page\'s last tab, handed to the trusted App once (G6)', () => {
+  const bound = { name: 'main', state: 'bound' as const, panel: { collapsed: false, inset: { top: 0, right: 0 }, hostPage: false } };
+  const push = vi.fn(async () => undefined);
+  const handOver = (tab: string, ownerId = OWNER) => handOverAssistantPage({ ownerId, tab }, { trust: TRUST, push });
+  afterEach(() => { forgetAssistantPageResumeForTest(); push.mockClear(); });
+
+  it('is held for the trusted App and told once, in the first bound surface of that account, then gone', async () => {
+    host().install();
+    expect(await handOver('memory')).toBe(true);
+    expect(push).toHaveBeenCalledOnce();
+    // Not to another App, not while unbound, not for another account signed in.
+    expect(await withAssistantPageResume('other-app', bound)).toEqual(bound);
+    expect(await withAssistantPageResume(ID, { name: 'main', state: 'unbound' })).toEqual({ name: 'main', state: 'unbound' });
+    db.signedIn = OTHER_OWNER;
+    expect(await withAssistantPageResume(ID, bound)).toEqual(bound);
+    db.signedIn = OWNER;
+    expect(await withAssistantPageResume(ID, bound)).toEqual({ ...bound, intent: { kind: 'resume', tab: 'memory' } });
+    expect(await withAssistantPageResume(ID, bound)).toEqual(bound);
+  });
+
+  it('is not held for an App that is not the trusted one, nor for another account, nor for a tab that is not one', async () => {
+    const h = host();
+    expect(await handOver('tasks')).toBe(false);
+    h.install(manifest(), 'folder', null, { id: STRANGER });
+    expect(await handOver('tasks')).toBe(false);
+    await expect(handOver('tasks', OTHER_OWNER)).rejects.toMatchObject({ code: 'denied' });
+    await expect(handOver('today')).rejects.toThrow();
+    expect(push).not.toHaveBeenCalled();
+    expect(await withAssistantPageResume(ID, bound)).toEqual(bound);
   });
 });
