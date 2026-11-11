@@ -598,7 +598,7 @@ export function ChatRoot(props: ChatRootProps) {
   const committedBuild = createMemo<CommittedBuild | undefined>((previous) => {
     const s = state();
     const next = projectedCommitted();
-    const ctx = segmentCtx(false);
+    const ctx = { ...segmentCtx(false), settled: true };
     const folds = committedFolds();
     const sourceWindow = commands().sourceWindow;
     // A model swap (view.setModel) starts from an empty incremental cache.

@@ -19,6 +19,20 @@ function sentFileMessages(items: readonly TranscriptItem[], messageIds: readonly
   return messages.every(Boolean) ? { sentMessages: messages as MessageItem[] } : {};
 }
 
+const settledReplies = [new WeakMap<TranscriptTurn, TranscriptTurn>(), new WeakMap<TranscriptTurn, TranscriptTurn>()] as const;
+
+/**
+ * `withSentReplies` for a turn that will not change again. A committed turn is replaced, never edited, so its
+ * projection is worked out once per turn object: a rebuild of a long transcript reads every send receipt of every
+ * loaded turn otherwise, each time a page lands.
+ */
+export function withSettledSentReplies(turn: TranscriptTurn, options: { allDestinations?: boolean } = {}): TranscriptTurn {
+  const cache = settledReplies[options.allDestinations ? 1 : 0];
+  let projected = cache.get(turn);
+  if (!projected) cache.set(turn, projected = withSentReplies(turn, options));
+  return projected;
+}
+
 /** Keep successfully delivered replies readable when their tool process is folded. */
 export function withSentReplies(turn: TranscriptTurn, options: { allDestinations?: boolean } = {}): TranscriptTurn {
   const source = replySource(turn, undefined, { includeThreads: true });

@@ -7,8 +7,11 @@ import { createComputed, createMemo, createRoot, createSignal } from 'solid-js';
 import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge';
 import { readSelfIdentityBridge } from '@/lib/selfIdentityBridge';
 import type { TimelineRailOptions } from '@gugu/core/shared/timelineRail';
-import { pendingPromptTurn, type ChatSessionState, type SelfIdentity, type TranscriptApi } from '@gugu/session-chat-ui';
+import { pendingPromptTurn, type ChatSessionState, type SelfIdentity, type TranscriptApi, type TranscriptTurn } from '@gugu/session-chat-ui';
 import { timelineTurnsFromTranscript, type TimelineTurn } from './session-timeline-turns';
+
+/** How long name updates are gathered before the rail is reprojected once for all of them. */
+const IDENTITY_REFRESH_MS = 50;
 
 /** Bridge the existing Solid transcript into React, including text-only updates. */
 export function useTranscriptTimeline<T>(
@@ -28,7 +31,12 @@ export function useTranscriptTimeline<T>(
     return createRoot((dispose) => {
       const directory = readIdentityDirectoryBridge();
       const [identityRevision, setIdentityRevision] = createSignal(0);
-      const refreshIdentity = () => setIdentityRevision((revision) => revision + 1);
+      // Names arrive in bursts while older pages load (each page asks for the identities it meets). One reprojection
+      // answers all of a burst.
+      let identityRefresh: ReturnType<typeof setTimeout> | undefined;
+      const refreshIdentity = () => {
+        identityRefresh ??= setTimeout(() => { identityRefresh = undefined; setIdentityRevision((revision) => revision + 1); }, IDENTITY_REFRESH_MS);
+      };
       const offDirectory = directory?.subscribe(refreshIdentity);
       const offChatNames = subscribeChatNames(refreshIdentity);
       const offSelf = readSelfIdentityBridge()?.subscribe(refreshIdentity);
@@ -44,9 +52,18 @@ export function useTranscriptTimeline<T>(
       const activityContext = { get viewerId() { return selfIdentity()?.userId; }, actor: chatActor, chatName: chatDisplayName, translate: translateSessionMessage,
         chatKind: (id: string) => readChatSummary(resolveChatId(id) ?? id)?.kind ?? null };
       // Streaming only reprojects the active turn, not the entire history.
+      // A committed turn is replaced, never edited, and the projection reads one turn at a time: keep each turn's
+      // result until the names it was drawn with change. A landed page then costs its own turns, not every loaded one.
+      let projected = new WeakMap<TranscriptTurn, TimelineTurn[]>();
+      let projectedFor: readonly unknown[] = [];
       const committed = createMemo(() => {
-        identityRevision();
-        return timelineTurnsFromTranscript(transcript.state.committedTurns, selfIdentity(), options, activityContext);
+        const revision = identityRevision(), self = selfIdentity();
+        if (projectedFor[0] !== revision || projectedFor[1] !== self) { projected = new WeakMap(); projectedFor = [revision, self]; }
+        return transcript.state.committedTurns.flatMap((turn) => {
+          let turns = projected.get(turn);
+          if (!turns) projected.set(turn, turns = timelineTurnsFromTranscript([turn], self, options, activityContext));
+          return turns;
+        });
       });
       const active = createMemo(() => {
         identityRevision();
@@ -56,7 +73,7 @@ export function useTranscriptTimeline<T>(
       });
       const selected = createMemo(() => select([...committed(), ...active()]));
       createComputed(() => setSnapshot({ transcript, value: selected() }));
-      return () => { offDirectory?.(); offChatNames(); offSelf?.(); dispose(); };
+      return () => { offDirectory?.(); offChatNames(); offSelf?.(); clearTimeout(identityRefresh); dispose(); };
     });
   }, [transcript, selfIdentity, select, session]);
 
