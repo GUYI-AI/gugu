@@ -972,9 +972,10 @@ API 44, only when that conversation is the person's private chat with their own 
   \`connectors\` value: the connect step's rows \`{ id, name, icon: { light, dark, invertInDark } | null (data: images), connected }\`.
 - With no assistant yet (\`none\`, \`loading\`, \`unreadable\`): \`ready\` with any or no conversation, \`name\`, \`avatar\`, \`tint\`, \`home\`,
   \`counts\`, \`connectors\` null, and \`gugu.assistant.open("main", "setup")\` works. Once one appears, unchosen: \`onChanged\` hears \`{ state: "unbound" }\` once.
-- In a click: \`gugu.assistant.open("main", screen)\` — gugu's screens \`setup\`, \`move\`, \`close\`, \`look\`, \`model\`, \`devices\`,
-  \`connected-apps\`, or \`settings\`, \`projects\`, \`capabilities\` drawn over your page with gugu's back control (\`hostPage\` true until
-  closed: hide yours). \`gugu.assistant.advanceSetup("main", "ready" | "done")\`: from \`connect\`, or \`ready\` to done; else \`invalid\`.
+- In a click: \`gugu.assistant.open("main", screen)\` — gugu's screens \`close\`, \`look\`, \`model\`, \`devices\`, or the assistant's
+  own pages \`setup\`, \`move\`, \`settings\`, \`connected-apps\`, \`projects\`, \`capabilities\` drawn over your page with gugu's back control
+  (\`hostPage\` true until closed: hide yours; \`setup\` starts at the name, your intro being its first screen, and closes once the
+  assistant is there). None of these is in gugu's Settings. \`gugu.assistant.advanceSetup("main", "ready" | "done")\`: from \`connect\`, or \`ready\` to done; else \`invalid\`.
   \`gugu.assistant.rename("main", text)\` → \`"renamed"|"unchanged"|"empty"|"too-long"|"failed"\` (trimmed, ≤ \`nameMax\`).
   \`gugu.assistant.connect("main", id)\`: that row's connect dialog, as gugu's connect step (\`id\` from \`connectors\`, else \`not-found\`).
 - \`gugu.assistant.figure("main", { x, y, size } | null)\`: gugu draws the assistant moving (none yet: the setup bird) over your

@@ -514,7 +514,6 @@ export default {
       "open": "打开"
     },
     "group": {
-      "assistant": "咕咕",
       "account": "我的",
       "preferences": "偏好",
       "work": "工作",
@@ -523,8 +522,6 @@ export default {
     },
     "nav": {
       "about": "关于",
-      "assistant": "资料",
-      "connectors": "连接应用",
       "account": "账户",
       "apps": "App",
       "browser": "浏览器",

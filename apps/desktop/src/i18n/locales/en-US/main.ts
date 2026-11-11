@@ -520,7 +520,6 @@ export default {
       "open": "Open"
     },
     "group": {
-      "assistant": "Gugu",
       "account": "Me",
       "preferences": "Preferences",
       "work": "Work",
@@ -528,8 +527,6 @@ export default {
       "about": "About"
     },
     "nav": {
-      "assistant": "Profile",
-      "connectors": "Connected apps",
       "about": "About",
       "account": "Account",
       "apps": "Apps",

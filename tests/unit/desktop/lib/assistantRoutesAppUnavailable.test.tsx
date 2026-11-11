@@ -71,11 +71,12 @@ describe.each(UNAVAILABLE_APP_STATES)('the assistant App %s', (state) => {
     expect(settings).toEqual([])
   })
 
-  it('with no assistant yet, the same entry opens Settings\' 咕咕 (setup), not a chat', () => {
+  // Owner 11-12: nothing of the assistant is in Settings, so there is no setup page to fall back on there (D9/D10: plain chat).
+  it('with no assistant yet, the same entry opens nothing: neither a chat nor a Settings page', () => {
     publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null }))
     openAssistantEntry()
     expect(opened).toEqual([])
-    expect(settings).toEqual([{ section: 'assistant' }])
+    expect(settings).toEqual([])
   })
 
   it('restoring the window to the assistant\'s own session view: its chat opens as any chat; the person is not left on a blank page', async () => {

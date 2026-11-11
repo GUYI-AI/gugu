@@ -21,7 +21,6 @@ import { scheduleComposerFocus } from '@/lib/focusComposer'
 import { ArrowUpToLine, ChevronLeft, Mic, Paperclip, Search, Sparkles } from '@/lib/icons'
 import { useReportChatOnScreen } from '@/lib/onScreenChat'
 import { UI_EVENTS } from '@/lib/uiEvents'
-import { connectionBridge } from '@/lib/connectionBridge'
 import { searchInChat } from '@renderer/features/global-search/search-session'
 import { showAssistantTaskChat, useOpenedAssistantTaskChat } from '@/lib/assistantTaskChat'
 import { ShellSlot } from '@/session/renderer/features/assistant/assistant-shell'
@@ -132,10 +131,12 @@ function MobileAssistantAppContent({
 } & AssistantChatHandlers) {
   const { t } = useTranslation('assistant')
   const [route, setRoute] = useState<PhoneRoute>({ tab: 'chat' })
+  // Its 连接应用 (or its settings, `detail.sub`), asked from elsewhere: a page of its profile here, never Settings (owner 11-12).
   useEffect(() => {
-    const open = () => { void Promise.resolve().then(() => connectionBridge().routing.read()).then(authority => {
-      if (authority.mode === 'legacy') setRoute({ tab: 'profile',sub: 'connectors' })
-    }).catch(() => {}) }
+    const open = (event: Event) => {
+      const sub = (event as CustomEvent<{ sub?: 'settings' | 'connectors' } | null>).detail?.sub === 'settings' ? 'settings' : 'connectors'
+      setRoute({ tab: 'profile', sub })
+    }
     window.addEventListener(UI_EVENTS.openAssistantConnectors,open)
     return () => window.removeEventListener(UI_EVENTS.openAssistantConnectors,open)
   },[])

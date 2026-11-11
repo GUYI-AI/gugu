@@ -89,7 +89,7 @@ async function render(node: ReactNode, cloud: typeof awake | typeof asleep, upda
 }
 const q = (testId: string) => harness.container.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
 
-describe('咕咕组 · 资料', () => {
+describe('咕咕的设置页(资料,画在它 App 的面板上)', () => {
   it('名字原位编辑:点笔后才出现输入,保存通讯录里它那一位', async () => {
     mine.value = { contact: CONTACT, agentId: 'a1', loading: false, error: null }
     const update = await render(createNode(AssistantSection, { available: ['connectors', 'devices', 'channels'], onOpenSection: vi.fn() }), awake)
@@ -181,7 +181,7 @@ describe('咕咕组 · 资料', () => {
   })
 })
 
-describe('咕咕组 · 连接应用', () => {
+describe('咕咕的连接应用(画在它 App 的面板上)', () => {
   it('应用列表委托给会话页，不再混入设备授权或三格页签', async () => {
     mine.value = { contact: CONTACT, agentId: 'a1', loading: false, error: null }
     await render(createNode(ConnectorsSection, {}), awake)
@@ -221,13 +221,19 @@ describe('咕咕组 · 连接应用', () => {
 })
 
 
-describe('retired chat channel settings links', () => {
-  it.each([false, true])('opens Connect apps for a legacy channels link (mobile=%s)', async (mobile) => {
+// Owner 11-12「设置里面不应该有咕咕设置吧?」: Settings never draws the assistant's pages, whatever names them (an old link,
+// a route that slipped past MainLayout): it shows the account instead. Its pages are in its App (assistantSettingsInApp.test.tsx).
+describe('Settings has nothing of the assistant', () => {
+  it.each([
+    ['assistant', false], ['connectors', false], ['channels', false],
+    ['assistant', true], ['connectors', true], ['channels', true],
+  ] as const)('a %s route draws the account, not the assistant (mobile=%s)', async (section, mobile) => {
     mine.value = { contact: CONTACT, agentId: 'a1', loading: false, error: null }
-    await render(createNode(SettingsPanel, { initialSection: 'channels', inline: true, mobile, pane: 'detail' }), awake)
-    expect(harness.container.querySelector('[data-settings-section="connectors"]')).not.toBeNull()
-    expect(q('settings-connectors')).not.toBeNull()
-    expect(q('settings-nav-channels')).toBeNull()
-    expect(harness.container.querySelector('.gg-settings-detail .gg-pane-title')?.textContent).toBe('连接应用')
+    await render(createNode(SettingsPanel, { initialSection: section, inline: true, mobile, pane: 'detail' }), awake)
+    expect(harness.container.querySelector('[data-settings-section="account"]')).not.toBeNull()
+    expect(q('settings-assistant')).toBeNull()
+    expect(q('settings-connectors')).toBeNull()
+    expect(q('settings-nav-assistant')).toBeNull()
+    expect(q('settings-nav-connectors')).toBeNull()
   })
 })

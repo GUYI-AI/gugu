@@ -182,3 +182,71 @@ describe('a task of the assistant in an App\'s panel', () => {
     expect(find('app-page')).not.toBeNull();
   });
 });
+
+/**
+ * Owner 11-12「设置里面不应该有咕咕设置吧?」: the assistant's setup, its settings (资料) and its connected apps open over its
+ * App's panel when the App asks (`gugu.assistant.open`, the host action main sends after its checks), never in Settings.
+ */
+describe('the assistant\'s own pages over the App\'s panel, asked by the App', () => {
+  const shown = (over: Record<string, unknown>) => publishAssistantShell({ cloudAvailable: true, canHostHere: true, cloud: null, loadError: null, ownerName: 'Me',
+    ownerId: OWNER, chatId: null, chatReadFailed: false, assistant: null, assistantState: 'none', home: null, setup: 'shell', member: true, preparing: false,
+    deviceCount: 1, ownerAvatar: null, ...over } as never);
+  const ask = (screen: string, ownerId = OWNER) => act(async () => {
+    await applyExtensionHostAction({ origin: { extensionId: 'today', sessionId: null, tabId: 'dock' }, action: { kind: 'openAssistantScreen', screen, ownerId } as never });
+  });
+  const opened = () => readAppHostLayerBridge()!.getSnapshot().today?.kind ?? null;
+
+  it('开通 with no assistant yet: the setup guide over the App\'s intro; back gives the intro again', async () => {
+    shown({});
+    await act(async () => root.render(<AppDockPage extensionId="today" tabKind="today.main" />));
+    await ask('setup');
+    expect(opened()).toBe('assistant-setup');
+    const page = find('app-host-layer')!;
+    expect(page.getAttribute('data-layer')).toBe('assistant-setup');
+    // The guide's own card heads it: no panel title, the shell's cell centred where the intro was.
+    expect(find('app-host-layer-assistant-setup')).not.toBeNull();
+    expect(page.querySelector('.ta-page-title')).toBeNull();
+    expect(readShellSlots()!.getSlots().get('app-host-layer:today')).toBe(find('app-host-layer-cell'));
+    expect(find('app-page')).toBeNull();
+    await act(async () => (find('app-host-layer-back') as HTMLButtonElement).click());
+    expect(opened()).toBeNull();
+    expect(find('app-page')).not.toBeNull();
+  });
+
+  it('the setup guide closes once the assistant is there: the App draws the steps after it', async () => {
+    shown({});
+    await act(async () => root.render(<AppDockPage extensionId="today" tabKind="today.main" />));
+    await ask('setup');
+    expect(opened()).toBe('assistant-setup');
+    await act(async () => shown({ assistant: { id: 'assistant-1', display_name: 'Dot', avatar: null, created_at: null }, assistantState: 'found', chatId: CHAT, setup: 'connect' }));
+    expect(opened()).toBeNull();
+    expect(find('app-page')).not.toBeNull();
+  });
+
+  it('while it is still being read the guide waits (the page says so), it is not closed as gone', async () => {
+    shown({ assistantState: 'loading', setup: null });
+    await act(async () => root.render(<AppDockPage extensionId="today" tabKind="today.main" />));
+    await ask('setup');
+    expect(opened()).toBe('assistant-setup');
+  });
+
+  it('with the assistant there: setup and move are its settings page, connected apps its own titled page', async () => {
+    await act(async () => root.render(<AppDockPage extensionId="today" tabKind="today.main" />));
+    for (const [screen, kind] of [['setup', 'assistant-settings'], ['move', 'assistant-settings'], ['settings', 'assistant-settings'], ['connected-apps', 'assistant-connected-apps']] as const) {
+      await ask(screen);
+      expect(opened()).toBe(kind);
+      expect(find(`app-host-layer-${kind}`)?.querySelector('.ta-page-title')?.textContent).toBeTruthy();
+      expect(readShellSlots()!.getSlots().get('app-host-layer:today')).toBe(find('app-host-layer-cell'));
+    }
+  });
+
+  it('a page of the assistant needs it there; another account, or the App\'s page not on screen, opens nothing', async () => {
+    shown({});
+    await act(async () => root.render(<AppDockPage extensionId="today" tabKind="today.main" />));
+    for (const screen of ['settings', 'move', 'connected-apps', 'projects']) await expect(ask(screen)).rejects.toThrow(/assistant/);
+    await expect(ask('setup', OTHER)).rejects.toThrow(/account/);
+    await act(async () => root.render(<div />));
+    await expect(ask('setup')).rejects.toThrow(/not on screen/);
+    expect(readAppHostLayerBridge()!.getSnapshot()).toEqual({});
+  });
+});

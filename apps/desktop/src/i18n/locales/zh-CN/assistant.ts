@@ -51,7 +51,7 @@ export default {
       "partnersBody": "在这里找项目和朋友。一个项目就是一个群。"
     },
     "desktop": {
-      "guguBody": "你的个人助理，帮你记安排、办事情。在左栏最上面。",
+      "guguBody": "你的个人助理，帮你记安排、办事情。",
       "projectsBody": "和 Agent 一起推进工作，一个项目就是一个群。在「消息」里的「项目」。",
       "chatsBody": "和朋友及彼此的 Agent 沟通、协作。在「消息」里的「对话」。"
     }
@@ -843,7 +843,7 @@ export default {
       "home": "它已经删掉了，但它的家没清干净；开通新的一位时会再清一次。"
     },
     "elsewhereTitle": "要在它住的电脑上关闭",
-    "elsewhereBody": "{{name}} 住在「{{device}}」上，它的家和定时任务都在那台电脑上。请在那台电脑的设置 → 咕咕里关闭。",
+    "elsewhereBody": "{{name}} 住在「{{device}}」上，它的家和定时任务都在那台电脑上。请在那台电脑上它的设置里关闭。",
     "elsewhereOk": "知道了"
   },
   "ideas": {

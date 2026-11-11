@@ -1,7 +1,8 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { observer } from 'mobx-react-lite'
-import { AssistantSettingsPage } from '../assistant/AssistantSettingsPage'
+import { AssistantSettingsPage, AssistantSetupPage } from '../assistant/AssistantSettingsPage'
+import { ConnectorsSection } from '../settings/ConnectorsSection'
 import { AssistantWorkTaskWindow } from '../assistant/AssistantWorkTaskWindow'
 import { appHostLayerSlotKey, installAppHostLayerBridge, readAppHostLayerBridge, retainAppHostLayers, setAppHostLayerAccount, type AppHostLayer, type AppHostLayers } from '../../lib/appHostLayerBridge'
 import { installShellSlots, readShellSlots } from '../../lib/shellSlots'
@@ -21,8 +22,9 @@ const noop = () => () => undefined
 
 /**
  * #1925 (API 46) The host pages over Apps' panels, one per App (app-host-layer.ts): the shell's half. Each is the built-in
- * page itself — a task's conversation (AssistantWorkTaskWindow), the assistant's settings (AssistantSettingsPage) — drawn in
- * the cell the App's panel leaves for it, for the account it was opened for and no other.
+ * page itself — a task's conversation (AssistantWorkTaskWindow), the assistant's setup guide (AssistantSetupPage), its
+ * settings (AssistantSettingsPage), the apps connected to it (ConnectorsSection) — drawn in the cell the App's panel leaves
+ * for it, for the account it was opened for and no other.
  *
  * Taken away at once when that changes: another account; the App switched off or removed, or main naming its grant or choice
  * as changed; for a task, also leaving the session page or the App no longer reading work (the session page closes a panel
@@ -79,10 +81,13 @@ function AppHostLayerPortals({ ownerId, layers }: { ownerId: string | null; laye
             `${extensionId}#work#${layer.request.workId}#${layer.request.task.sessionId}`,
           )]
         }
-        // The panel's settings page as the built-in panel draws it (AssistantShellHost's `settings` cell). The panel's other
-        // pages need nothing of this tree: the session page draws them (app-host-layer.tsx).
-        if (layer.kind !== 'assistant-settings') return []
-        return [createPortal(<AssistantSettingsPage panelNavigation />, element, `${extensionId}#${layer.kind}`)]
+        // The assistant's own pages this tree draws. The panel's other pages need nothing of this tree: the session page draws
+        // them (app-host-layer.tsx).
+        const page = layer.kind === 'assistant-setup' ? <AssistantSetupPage />
+          : layer.kind === 'assistant-settings' ? <AssistantSettingsPage panelNavigation />
+          : layer.kind === 'assistant-connected-apps' ? <ConnectorsSection panelNavigation />
+          : null
+        return page ? [createPortal(page, element, `${extensionId}#${layer.kind}`)] : []
       })}
     </>
   )

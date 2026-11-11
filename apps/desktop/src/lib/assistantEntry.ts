@@ -4,7 +4,8 @@
 //
 // 判据:登录的这个账号,主进程认过它装的是那个受信的官方 App(gugu-assistant:从市场装、签名的发行版、在 gugu 的市场仓、没用分叉;
 // electron/.../assistant-app-entry.ts),并且开着 = 去 App。还用不了(正在装 = 栏顶那一格画「准备中」;装不上 = 统一报错出口说过一次;
-// 人自己关掉了它):有助理 = 打开和它的私聊(同任何一条对话);还没有助理 = 设置里「咕咕」那一页(开通)。
+// 人自己关掉了它):有助理 = 打开和它的私聊(同任何一条对话);还没有助理 = 不动(设置里没有咕咕那一组,owner 11-12)。
+// 它自己的几页(开通、资料、连接应用)也只在 App 里:画在 App 面板上的宿主层(openAssistantPageInApp)。
 //
 // 主进程那一句话(受不受信)由壳的 AssistantAppEntryHost 问来,挂在 window 上(形制同 assistantShellBridge:两棵树一份)。
 import { useSyncExternalStore } from 'react'
@@ -12,6 +13,8 @@ import { appState } from '../session/renderer/lib/stores/app-state'
 import { readAssistantShellBridge, type AssistantShellSnapshot } from './assistantShellBridge'
 import { appConversationSlotKey, readAppConversationSurfaceBridge, type AppConversationSurfaces } from './appConversationSurfaceBridge'
 import { appHostLayerSlotKey, readAppHostLayerBridge } from './appHostLayerBridge'
+import { assistantLayerPage } from '../session/shared/extensions/app-host-layer'
+import { setAppConversationPanelCollapsed } from '../session/renderer/features/apps/app-conversation-panel'
 import type { AssistantTaskChat } from './assistantTaskChat'
 import { openLinkTarget } from './guguLinks'
 import { UI_EVENTS } from './uiEvents'
@@ -68,7 +71,7 @@ export type AssistantEntryPurpose = 'open' | 'task-chat'
 /**
  * - `app`:去 App 自己那一页;`chatId` = 旁边此刻画着的就是和自己助理的那条私聊(null:没画,比如人在 App 的权限里选了别的)。
  * - `chat`:App 此刻用不了,和自己助理的那条私聊照任何一条对话打开。
- * - `setup`:还没有助理、也没有 App:设置里「咕咕」那一页(开通)。
+ * - `setup`:还没有助理、也没有 App:没有地方可去(设置里没有咕咕那一组;开通在 App 里)。
  * - `wait`:还在读它是谁 / 读不到:不动。
  */
 export type AssistantEntryTarget =
@@ -159,7 +162,7 @@ export function openAssistantApp(target: Extract<AssistantEntryTarget, { kind: '
 
 /**
  * 每个入口都走这一下。去 App:答那条会话(或任务的对话)画在哪一格。App 此刻用不了:`fallback` 时打开和自己助理的私聊
- * (照任何一条对话,经链接那条路)或设置里「咕咕」那一页(开通);答 null。`fallback: false` = 调用处自己打开那条对话(链接、通知)。
+ * (照任何一条对话,经链接那条路);还没有助理就不动;答 null。`fallback: false` = 调用处自己打开那条对话(链接、通知)。
  */
 export function openAssistantEntry(purpose: AssistantEntryPurpose = 'open', fallback = true): string | null {
   const target = readAssistantEntryTarget()
@@ -169,8 +172,45 @@ export function openAssistantEntry(purpose: AssistantEntryPurpose = 'open', fall
   }
   if (!fallback) return null
   if (target.kind === 'chat') void openLinkTarget({ kind: 'chat', chatId: target.chatId }).catch(() => undefined)
-  else if (target.kind === 'setup') window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'assistant' } }))
   return null
+}
+
+/** The assistant's own pages a route of the shell's names (what Settings' 咕咕 group held): its setup or settings, its connected apps. */
+export type AssistantInAppPage = 'settings' | 'connected-apps'
+
+/**
+ * Every route of the shell's own that used to open Settings' 咕咕 group (its 资料, its 连接应用: a notification, a connection
+ * prompt, an old section link) lands here: the App's page, with that page of the assistant drawn over its panel (the host
+ * layer, as the App's own `gugu.assistant.open` draws it). With no assistant yet, 资料 is setting it up (from the name: the
+ * App's intro is its first screen); its connected apps wait for it (the App's page alone). App not usable now: its chat as
+ * any chat (D9/D10), and with no assistant nothing (no Settings group to fall back on). Answers whether it went anywhere.
+ */
+export function openAssistantPageInApp(page: AssistantInAppPage): boolean {
+  const target = readAssistantEntryTarget()
+  if (target.kind === 'chat') {
+    void openLinkTarget({ kind: 'chat', chatId: target.chatId }).catch(() => undefined)
+    return true
+  }
+  if (target.kind !== 'app') return false
+  const shell = readAssistantShellBridge()?.getSnapshot()
+  const ownerId = shell?.ownerId
+  if (!ownerId) return false
+  const found = shell.assistantState === 'found' && !!shell.assistant
+  window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
+  openAssistantApp(target)
+  // Still finding it (being read, unreadable): the App's page says so; nothing over it.
+  if (!found && shell.assistantState !== 'none') return true
+  if (!found && page === 'connected-apps') return true
+  const kind = assistantLayerPage(page === 'settings' ? 'setup' : page, found)
+  // Beside its conversation the panel may be folded away: the page is drawn there, so it opens.
+  setAppConversationPanelCollapsed(target.extensionId, false)
+  // The bridge refuses an account this window no longer shows: then the App's page alone, as for any other entry.
+  try {
+    readAppHostLayerBridge()?.open(target.extensionId, { kind, ownerId })
+  } catch {
+    // The App's page is on screen; nothing over it.
+  }
+  return true
 }
 
 /**

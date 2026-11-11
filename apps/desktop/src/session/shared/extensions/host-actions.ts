@@ -81,9 +81,10 @@ export type ExtensionHostAction =
   /** A banner's click naming a chat's file: opened in its chat, as a link to it is. */
   | { kind: 'openChatFile'; chatId: string; itemId: string; onlyIfOpen?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown> }
   /**
-   * #1925 One of the host's own screens for the person's assistant (`gugu.assistant.open`), by its existing entry
-   * (lib/assistantAppHost.ts), and the setup steps an App draws moved on (`advanceSetup`). `ownerId` is main's: the
-   * account it checked, which the window must still show.
+   * #1925 One of the host's own screens for the person's assistant (`gugu.assistant.open`): its own pages over the App's
+   * panel (`ASSISTANT_LAYER_SCREENS`, app-host-layer.tsx), the rest by their existing entry (lib/assistantAppHost.ts); and
+   * the setup steps an App draws moved on (`advanceSetup`). `ownerId` is main's: the account it checked, which the window
+   * must still show.
    */
   | { kind: 'openAssistantScreen'; screen: AssistantScreen; ownerId: string }
   | { kind: 'advanceAssistantSetup'; next: AssistantSetupAdvance; ownerId: string }
