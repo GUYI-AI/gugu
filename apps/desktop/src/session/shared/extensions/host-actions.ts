@@ -54,6 +54,12 @@ export type ExtensionHostAction =
   | { kind: 'compose'; sessionId: string; text: string }
   /** #1925 `gugu.bindings.setPanel`: the page's own panel beside its bound conversation, collapsed or expanded. */
   | { kind: 'conversationPanel'; collapsed: boolean }
+  /**
+   * #1925 (46) `gugu.bindings.openWork` / `closeWork`: that task's own conversation drawn in the App's panel over its page,
+   * or taken away. `ownerId` is the account main checked, which the window must still show; the ids are host data.
+   */
+  | { kind: 'openWork'; ownerId: string; workId: string; sessionId: string }
+  | { kind: 'closeWork' }
   /** `gugu.showMessage` / `files.openWith`: the window that shows chats does it, bringing the chat up. */
   | { kind: 'showMessage'; detail: AppShowMessageDetail }
   | { kind: 'openWith'; detail: AppOpenWithDetail }
@@ -125,6 +131,12 @@ export type VoiceNoteTranscribeAsk = { ownerId: string; assistantId: string; not
 export type VoiceNoteTranscribeOutcome = 'started' | 'busy' | 'not-ready' | 'denied';
 export type VoiceNoteExportAsk = { ownerId: string; title: string | null; summary: string | null; transcript: string | null };
 export type VoiceNoteExportOutcome = 'saved' | 'cancelled' | 'denied' | 'failed';
+/**
+ * #1927 (47) Main asks the window that holds the voice-note recorder (`gugu.voiceNote`): `VoiceNoteWindowRequest` →
+ * `VoiceNoteWindowAnswer` (voice-note-session.ts). Main has checked the App's grant and found the assistant; the window
+ * checks it is that account's and that assistant's recorder before it does anything.
+ */
+export const EXTENSION_VOICE_NOTE_METHOD = 'extensions.voiceNote';
 
 /**
  * 留给**人**读完权限再决定的时间,谁发起的安装都是这一个。

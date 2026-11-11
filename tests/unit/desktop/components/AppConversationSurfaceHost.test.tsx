@@ -29,11 +29,12 @@ const state = vi.hoisted(() => ({
 }));
 const query = vi.hoisted(() => vi.fn());
 vi.mock('@/store/auth', () => ({ useAuth: () => ({ user: state.owner ? { id: state.owner } : null }) }));
-vi.mock('@/store/chatContext', () => ({ useStoreValueBy: (read: (store: { chats: { id: string }[] }) => unknown) => read({ chats: state.chats }) }));
+vi.mock('@/store/chatContext', () => ({ useStoreValueBy: (read: (store: { chats: { id: string }[] }) => unknown) => read({ chats: state.chats }), useChatStore: () => ({ writeDraft: vi.fn() }) }));
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: vi.fn() }) }));
 vi.mock('@/lib/onScreenChat', () => ({ useReportChatOnScreen: (shown: string | null) => { state.shown.push(shown); return shown; } }));
 vi.mock('@/session/renderer/lib/ipc', () => ({
-  rpc: { extensions: { conversationSurfaceBindings: query } },
+  // The column's composer entries (API 48) are appComposerActions.test.tsx's: none here.
+  rpc: { extensions: { conversationSurfaceBindings: query, conversationComposerActions: async () => ({ success: true, data: { actions: [] } }) } },
   // Main's `extensionsInventoryChangedChannel`: it names the App whose grant, choice, switch or installation it changed.
   events: { on: (_channel: unknown, listener: (note: { extensionId?: string }) => void) => {
     state.inventoryNotes.add(listener);

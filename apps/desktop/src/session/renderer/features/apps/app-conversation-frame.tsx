@@ -1,6 +1,6 @@
 import '@/i18n/registerAssistantCatalog';
 import '../assistant/assistant-today.css';
-import { useCallback, useEffect, useSyncExternalStore, type CSSProperties } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PanelRight, Search } from '@/lib/icons';
 import { readShellSlots } from '@/lib/shellSlots';
@@ -11,6 +11,7 @@ import { rpc } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
 import { CONVERSATION_SURFACE_PANEL_INSET } from '@shared/extensions/unread-binding';
 import { setAppConversationPanelCollapsed, useAppConversationPanelCollapsed } from './app-conversation-panel';
+import { AppDockPage, AppWorkChatSlot, useAppWorkChatOpen } from './app-work-slot';
 
 /** The App's main page has this tab id here, as on its page of its own (`AppMainPanel`). */
 const DOCK = 'dock';
@@ -23,6 +24,9 @@ const CORNER: CSSProperties = {
   position: 'absolute', top: 0, right: 0, width: CONVERSATION_SURFACE_PANEL_INSET.right, height: CONVERSATION_SURFACE_PANEL_INSET.top,
   display: 'flex', alignItems: 'center', justifyContent: 'flex-start', zIndex: 'var(--z-pane-resident-chrome)', pointerEvents: 'none',
 };
+
+/** #1927 (48) The host's recording bar, loaded only when an App's column is drawn (the assistant chat's, it then decides). */
+const AppConversationVoiceBar = lazy(() => import('./app-conversation-voice-bar'));
 
 function report(extensionId: string, tabKind: string, shown: { chatId: string; collapsed: boolean } | null): void {
   void rpc.extensions.reportConversationSurface({ extensionId, tabKind, tabId: DOCK, shown }).then((result) => {
@@ -50,6 +54,8 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
     () => bridge?.getSnapshot()[extensionId] ?? null,
   );
   const collapsed = useAppConversationPanelCollapsed(extensionId);
+  // #1925 (46) One of the assistant's tasks open in this panel: the built-in panel's task view, the page set aside.
+  const workOpen = useAppWorkChatOpen(extensionId);
   // What main tells the App's pages (`gugu.bindings.onSurface`): drawn beside this conversation, the panel as it is; or not.
   useEffect(() => report(extensionId, tabKind, chatId ? { chatId, collapsed } : null), [extensionId, tabKind, chatId, collapsed]);
   useEffect(() => () => report(extensionId, tabKind, null), [extensionId, tabKind]);
@@ -57,12 +63,14 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
     (element: HTMLDivElement | null) => readShellSlots()?.setSlot(appConversationSlotKey(extensionId), element),
     [extensionId],
   );
+  // The column the recording bar sits in, above its composer (as the built-in's `chatColumn`).
+  const [chatColumn, setChatColumn] = useState<HTMLDivElement | null>(null);
 
-  if (!chatId) return <ExtensionSharedSlot tabKind={tabKind} tabId={DOCK} />;
+  if (!chatId) return <AppDockPage extensionId={extensionId} tabKind={tabKind} />;
   const setCollapsed = (next: boolean) => setAppConversationPanelCollapsed(extensionId, next);
   return (
     <div className="ta-app" data-panel={collapsed ? 'closed' : 'open'} data-testid="app-conversation-surface">
-      <div className="ta-chat-col" data-testid="app-conversation-column">
+      <div ref={setChatColumn} className="ta-chat-col" data-testid="app-conversation-column">
         <div className="ta-chat-top">
           <div className="ta-chat-actions">
             <button type="button" className="ta-circle" aria-label={t('top.search')} title={t('top.search')} onClick={() => searchInChat(chatId)} data-testid="app-conversation-search">
@@ -76,17 +84,29 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
           </div>
         </div>
         <div ref={column} className="ta-chat" data-app-conversation-slot={extensionId} />
+        <Suspense fallback={null}><AppConversationVoiceBar extensionId={extensionId} chatId={chatId} column={chatColumn} /></Suspense>
       </div>
       {collapsed ? null : (
         <section className="ta-panel" data-testid="app-conversation-panel">
-          <div className="flex min-h-0 flex-1 flex-col">
-            <ExtensionSharedSlot tabKind={tabKind} tabId={DOCK} />
-          </div>
-          <div style={CORNER} data-testid="app-conversation-panel-corner">
-            <button type="button" className="ta-circle ta-panel-collapse" style={{ pointerEvents: 'auto' }} aria-label={t('panel.collapse')} title={t('panel.collapse')} onClick={() => setCollapsed(true)} data-testid="app-conversation-panel-collapse">
-              <PanelRight />
-            </button>
-          </div>
+          {workOpen ? (
+            <>
+              <AppWorkChatSlot extensionId={extensionId} />
+              <button type="button" className="ta-circle ta-task-panel-collapse" aria-label={t('panel.collapse')} title={t('panel.collapse')} onClick={() => setCollapsed(true)} data-testid="app-work-panel-collapse">
+                <PanelRight />
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="flex min-h-0 flex-1 flex-col">
+                <ExtensionSharedSlot tabKind={tabKind} tabId={DOCK} />
+              </div>
+              <div style={CORNER} data-testid="app-conversation-panel-corner">
+                <button type="button" className="ta-circle ta-panel-collapse" style={{ pointerEvents: 'auto' }} aria-label={t('panel.collapse')} title={t('panel.collapse')} onClick={() => setCollapsed(true)} data-testid="app-conversation-panel-collapse">
+                  <PanelRight />
+                </button>
+              </div>
+            </>
+          )}
         </section>
       )}
     </div>

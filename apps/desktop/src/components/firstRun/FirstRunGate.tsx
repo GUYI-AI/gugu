@@ -7,7 +7,9 @@ import { OCCUPATION_KEYS, OCCUPATION_OTHER_MAX, occupationComplete, type Occupat
 import { Avatar } from '../Avatar'
 import { Button } from '../ui/Button'
 import { FullScreenLoader } from '../FullScreenLoader'
-import { AssistantIntro } from '../assistant/AssistantIntro'
+import { FirstRunWelcome } from './FirstRunWelcome'
+import type { AssistantProductRules } from '@gugu/core/shared/assistantRulesFormat'
+import { assistantIntroCopy } from '../../lib/assistantSetupRules'
 import { Pencil } from '@/lib/icons'
 import { authService } from '../../lib/auth'
 import { finishFirstRun, firstRunDoneHere, readFirstRunProgress, readOccupation, rememberFirstRunDone, requestAssistantSetupHandoff, writeOccupation } from '../../lib/firstRun'
@@ -74,6 +76,17 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
   const done = useCallback(() => { rememberFirstRunDone(user.id); setState({ kind: 'done' }) }, [user.id])
   // 退回上一页时「已填的内容还在」(规范 7-2):选过的 Agent 记在这里,称呼和身份由 FirstRunProfile 从账号读回。
   const harnessPicked = useRef<readonly string[] | null>(null)
+  // #1931 The introduction's words about the assistant are the product's (its rules): asked for once, as the gate opens.
+  const [introCopy, setIntroCopy] = useState<AssistantProductRules['intro'] | null>(null)
+  useEffect(() => {
+    if (firstRunDoneHere(user.id)) return
+    let live = true
+    assistantIntroCopy().then(
+      (copy) => { if (live) setIntroCopy(copy) },
+      (error: unknown) => log.warn({ error: String(error) }, 'first-run introduction words not read; the neutral heading stays'),
+    )
+    return () => { live = false }
+  }, [user.id])
   const backToProfile = useCallback(() => {
     setState({ kind: 'loading' })
     readOccupation(user.id)
@@ -158,7 +171,7 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
         ) : (
           <>
             <StepCount step="intro" />
-            <FirstRunIntro userId={user.id} onDone={done} onBack={backToProfile} />
+            <FirstRunIntro userId={user.id} intro={introCopy} onDone={done} onBack={backToProfile} />
           </>
         )}
       </div>
@@ -171,7 +184,7 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
       <div className="contents" inert={!productVisible || overlay} style={productVisible ? undefined : { display: 'none' }}>{children}</div>
       {!productVisible && wizard}
       {state.kind === 'done' && <FirstRunHints key={user.id} userId={user.id} />}
-      {state.kind === 'intro' && <div className="ta-first-run ta-first-run-overlay" data-ta-scope data-testid="first-run-intro"><div className="ta-onb"><StepCount step="intro" /><FirstRunIntro userId={user.id} onDone={done} onBack={() => setState({ kind: 'terminal' })} onNext={(openAssistant) => setState({ kind: 'tourChoice', openAssistant })} /></div></div>}
+      {state.kind === 'intro' && <div className="ta-first-run ta-first-run-overlay" data-ta-scope data-testid="first-run-intro"><div className="ta-onb"><StepCount step="intro" /><FirstRunIntro userId={user.id} intro={introCopy} onDone={done} onBack={() => setState({ kind: 'terminal' })} onNext={(openAssistant) => setState({ kind: 'tourChoice', openAssistant })} /></div></div>}
       {state.kind === 'tourChoice' && <div className="ta-first-run ta-first-run-overlay" data-ta-scope data-testid="first-run-tour-choice"><div className="ta-onb"><StepCount step="tourChoice" />
         <FirstRunTourChoice userId={user.id} openAssistant={state.openAssistant} onBack={() => setState({ kind: 'intro' })}
           onDone={(tour) => { rememberFirstRunDone(user.id); if (tour) startTour(null); else setState({ kind: 'done' }) }} /></div></div>}
@@ -365,8 +378,8 @@ function FirstRunTourChoice({ userId, openAssistant, onBack, onDone }: { userId:
   )
 }
 
-function FirstRunIntro({ userId, onDone, onBack, onNext }: { userId: string; onDone: () => void; onBack: () => void; onNext?: (openAssistant: boolean) => void }) {
-  const { t } = useTranslation('main')
+function FirstRunIntro({ userId, intro, onDone, onBack, onNext }: { userId: string; intro: AssistantProductRules['intro'] | null; onDone: () => void; onBack: () => void; onNext?: (openAssistant: boolean) => void }) {
+  const { t, i18n } = useTranslation('main')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -389,8 +402,9 @@ function FirstRunIntro({ userId, onDone, onBack, onNext }: { userId: string; onD
   }
 
   return (
-    <AssistantIntro
-      summary={platform.kind === 'electron' ? t('firstRun.introSubDesktop') : undefined}
+    <FirstRunWelcome
+      copy={intro?.[i18n.resolvedLanguage ?? i18n.language] ?? null}
+      summaryOnly={platform.kind === 'electron'}
       primaryLabel={t('firstRun.introStart')}
       onPrimary={() => void leave(true)}
       laterLabel={t('firstRun.introLater')}

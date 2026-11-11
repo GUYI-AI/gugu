@@ -108,12 +108,27 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 42 (#1927): when that conversation is the person's private one with an agent of theirs, `resources` (`chat:resources`:
 // `gugu.bindings.resources` / `resource` / `onResourcesChanged`) and `resources:write` (`chat:resources:write`:
 // `gugu.bindings.save` / `remove`) reach that agent's panel resources, in the domains the binding lists (agent-resources.ts).
-// 43: reserved (#1928 the bound agent's schedules), merged in as it lands.
+// 43 (#1928): when that conversation is the person's private one with an agent of theirs, `schedules` (`chat:schedules`:
+// `gugu.bindings.schedules` / `onSchedulesChanged`, that agent's schedules here) and `schedules:control`
+// (`chat:schedules:control`: `gugu.bindings.controlSchedule`, idempotent by the caller's operation id, through the host's
+// own schedule store). Never the agent's id, its session or the chat.
 // 44 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
 // `assistant-status` (`assistant:status`: `gugu.assistant.status` / `onChanged`) and `assistant-open` (`assistant:open`:
 // `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`).
-// 45–47: reserved (work ledger, …, the voice-note recorder), merged in as they land.
-// 48: what the assistant's own 记忆 pages do that 42 could not (resources-management.ts): a closed `reason` on every
+// 45 (#1931): `contributes.assistantRules`, the personal assistant's product rules as text/data files the host reads at its
+// own read points (assistantRulesFormat.ts); never run, and honoured only for the App the host trusts as their provider.
+export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
+// 46 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
+// `work` (`chat:work`): `gugu.bindings.work` / `onWorkChanged` read the work the assistant handed out, each row as the
+// built-in list draws it with an opaque handle; `openWork(name, handle)` (in a click) / `closeWork` have the host draw that
+// task's own conversation in the App's panel. No work, session, chat or device id, path, URL or message reaches the App.
+// 47 (#1927): `voice-notes:record` (`chat:voice-notes:record`): `gugu.voiceNote.*` drives the host's voice-note recorder for
+// that personal assistant — the host records, uploads and transcribes; the App hears phases and opaque job handles only
+// (voice-note-session.ts).
+// 48 (#1927): `contributes.conversationSurface.composerActions`: entries in that assistant chat's composer 「+」 the host draws
+// and runs on the person's click — a voice note, a draft, or a `page-intent` the page hears once on `bindings.onSurface`
+// (composer-actions.ts). No App code runs on that click.
+// 48 (#1927, also): what the assistant's own 记忆 pages do that 42 could not (resources-management.ts): a closed `reason` on every
 // `unavailable`; 给助理的资料 `upload` (the host's picker) / `createFolder` / `rename` / `removeFolder` (asked first) under
 // `resources:write` listing `files`; `voice-notes:manage` (`chat:voice-notes:manage`): `transcribeVoiceNote`,
 // `removeVoiceNote` (asked first), `exportVoiceNote` (the host's save dialog); a binding draft's `attach` (files of its
@@ -577,6 +592,11 @@ export type ExtensionHostEvent =
   | { type: 'context'; context: ExtensionHostContext }
   /** #1925 What `gugu.bindings.surface(name)` would answer now, after the conversation beside the page came or went. */
   | { type: 'bindingSurface'; surface: import('./unread-binding').AppBindingSurface }
+  /**
+   * #1925 (46) What `gugu.bindings.work(name)` would answer now, after the work, its rows or the task drawn in the App's panel
+   * changed (`onWorkChanged`). Only to the pages the person works; a call that would be refused is heard as `unavailable`.
+   */
+  | { type: 'bindingWork'; work: import('./work-binding').AppBindingWork }
   | { type: 'modalFocus'; edge: 'first' | 'last' }
   /**
    * The user picked something the extension declared in its manifest.
@@ -666,10 +686,18 @@ export type ExtensionHostEvent =
    */
   | { type: 'assistantChanged'; name: string; state: 'ready'; status: import('./assistant-binding').AppAssistantStatus }
   | { type: 'assistantChanged'; name: string; state: 'unbound' }
+  /**
+   * #1928 The schedules of the agent a page's binding is with changed (`gugu.bindings.onSchedulesChanged(name, fn)`): the
+   * binding's name only, as `filesChanged` says files moved — the page lists them again. Rides on `chat:schedules`, checked
+   * again before each; once it is gone the host stops listening and says nothing more.
+   */
+  | { type: 'schedulesChanged'; binding: string }
   /** What this page hears of its own topic (`gugu.cloud.on`): a broadcast's payload, or that it is (re)subscribed: read again then. */
   | { type: 'cloudHeard'; topic: string; event: string; heard: { subscribed: true } | { payload: Record<string, unknown> } }
   /** #1927 (42) What a page hears of its binding's agent resources (`gugu.bindings.onResourcesChanged`): read again, or ended. */
   | { type: 'bindingResources'; watchId: string; event: import('./agent-resources').AppResourceEvent }
+  /** #1927 (47) What a page hears of the voice-note recorder (`gugu.voiceNote.onChanged`): its state whole, or ended. */
+  | { type: 'voiceNote'; watchId: string; event: import('./voice-note-session').AppVoiceNoteEvent }
   /**
    * The person clicked a banner this extension posted. Delivered to the background
    * page and to this extension's tabs in the session the banner opened; `tag` and
@@ -892,6 +920,13 @@ export const BRIDGE_VERBS = {
   bindingsRemoveVoiceNote: { needs: 'chat:voice-notes:manage', only: 'page', gesture: true, toAgent: { answer: { state: 'cancelled' } } },
   bindingsExportVoiceNote: { needs: 'chat:voice-notes:manage', only: 'page', gesture: true, toAgent: { answer: { state: 'cancelled' } } },
   /**
+   * #1928 (43): the schedules of the agent the bound conversation is with — listed, heard changing (`schedulesChanged`),
+   * and changed through the host's schedule store by the caller's operation id. The host finds the agent from the binding.
+   */
+  bindingsSchedules: { needs: 'chat:schedules', only: 'page' },
+  bindingsSchedulesWatch: { needs: 'chat:schedules', only: 'page' },
+  bindingsScheduleControl: { needs: 'chat:schedules:control', only: 'page' },
+  /**
    * #1925 (44): the bound conversation's assistant, when it is the person's own — its snapshot, read; one of the host's
    * screens for it opened, and the setup steps the App draws moved on, both in the person's click. The page names the
    * binding and a value from a closed list; the host finds the chat and the assistant, and answers done or refused.
@@ -899,6 +934,27 @@ export const BRIDGE_VERBS = {
   assistantStatus: { needs: 'assistant:status', only: 'page' },
   assistantOpen: { needs: 'assistant:open', only: 'page', gesture: true },
   assistantAdvanceSetup: { needs: 'assistant:open', only: 'page', gesture: true },
+  /**
+   * #1925 (46): the work the person's own assistant handed out, each row as the built-in list draws it, when the bound
+   * conversation is the person's chat with that assistant — and, in a click, one row's task conversation drawn by the host
+   * in the App's panel, or taken away. The page names the binding and a handle the host gave it; never the task.
+   */
+  bindingsWork: { needs: 'chat:work', only: 'page' },
+  bindingsOpenWork: { needs: 'chat:work', only: 'page', gesture: true },
+  bindingsCloseWork: { needs: 'chat:work', only: 'page' },
+  /**
+   * #1927 (47): the host's voice-note recorder, for the personal assistant the bound conversation is with. Starting,
+   * resuming and retrying (which records, or spends on transcription) and opening the system's microphone settings take
+   * the person's click; pausing, stopping and hearing it do not. The host records; the page never gets the audio.
+   */
+  voiceNoteStart: { needs: 'chat:voice-notes:record', only: 'page', gesture: true },
+  voiceNotePause: { needs: 'chat:voice-notes:record', only: 'page' },
+  voiceNoteResume: { needs: 'chat:voice-notes:record', only: 'page', gesture: true },
+  voiceNoteStop: { needs: 'chat:voice-notes:record', only: 'page' },
+  voiceNoteRetry: { needs: 'chat:voice-notes:record', only: 'page', gesture: true },
+  voiceNoteOpenMicSettings: { needs: 'chat:voice-notes:record', only: 'page', gesture: true },
+  voiceNoteStatus: { needs: 'chat:voice-notes:record', only: 'page' },
+  voiceNoteWatch: { needs: 'chat:voice-notes:record', only: 'page' },
   messagesHistory: { needs: 'chat:read' },
   messagesSearch: { needs: 'chat:read' },
   /**

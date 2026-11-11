@@ -321,6 +321,29 @@ export async function setBindingSurfacePanel(
   return { name, state: 'bound', panel: { collapsed, inset: { ...CONVERSATION_SURFACE_PANEL_INSET } } };
 }
 
+/**
+ * #1927 (48) `intent` told once to the page drawn beside the bound conversation (`onSurface`), its panel expanded first if
+ * it was collapsed: only a page the person works that `appBindingSurface` answers `bound` now — every other page, and every
+ * page while the window draws nothing there, hears nothing. True: a page was told.
+ */
+export async function tellSurfaceIntent(
+  extensionId: string,
+  intent: string,
+  pages: readonly { tabName: string; tabId: string; person: boolean; expand(): Promise<unknown>; tell(surface: AppBindingSurface): boolean }[],
+): Promise<boolean> {
+  const name = conversationSurfaceBinding(extensionsService().get(extensionId).manifest);
+  if (!name) return false;
+  let told = false;
+  for (const page of pages) {
+    if (!page.person) continue;
+    const surface = await appBindingSurface(extensionId, page, { name }).catch(() => null);
+    if (surface?.state !== 'bound') continue;
+    if (surface.panel.collapsed) await page.expand();
+    if (page.tell({ ...surface, panel: { ...surface.panel, collapsed: false }, intent })) told = true;
+  }
+  return told;
+}
+
 /** Trusted App permissions UI only. This is not an App bridge verb. */
 export async function unreadBindingChoices(extensionId: string, name: string) {
   const { ownerId } = await account();

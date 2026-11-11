@@ -91,8 +91,9 @@ beforeEach(() => {
   document.body.appendChild(frame)
   posted = vi.fn()
   Object.defineProperty(frame.contentWindow!, 'postMessage', { value: posted, configurable: true })
-  // `assistant:open` (#1925) and the 48 managing words are the desktop's alone: held here only so their verbs reach the gesture door, which refuses them in the same sentence.
-  start(['files:read', 'files:write', 'agents:tools', 'assistant:open', 'chat:resources:write', 'chat:voice-notes:manage'])
+  // `assistant:open` (#1925, 44), `chat:work` (#1925, 46) and the 48 managing words are the desktop's alone: held here only
+  // so their verbs reach the gesture door, which refuses them in the same sentence.
+  start(['files:read', 'files:write', 'agents:tools', 'assistant:open', 'chat:work', 'chat:resources:write', 'chat:voice-notes:manage'])
 })
 afterEach(() => {
   host?.dispose()
@@ -132,6 +133,7 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   bindingsTranscribeVoiceNote: { name: 'main', key: 'n1' },
   bindingsRemoveVoiceNote: { name: 'main', key: 'n1' },
   bindingsExportVoiceNote: { name: 'main', key: 'n1' },
+  bindingsOpenWork: { name: 'main', handle: 'wAAAAAAAAAAAAAAAAAAAAAA' },
 }
 
 describe('the phone refuses a verb outside the gesture it needs, in the same sentence as the desktop (L11 B4)', () => {

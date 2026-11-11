@@ -26,6 +26,8 @@ import {
   unbindExtensionSurfaces,
   updateExtensionSurfaceLayout,
   pushBindingSurfaces,
+  deliverSurfaceIntent,
+  pushBindingWork,
 } from '@main/core/extensions/extension-bridge';
 import {
   extensionDataRoot,
@@ -396,6 +398,16 @@ export const extensionsController = createRPCController({
     const agentIds = (Array.isArray(args?.agentIds) ? args.agentIds : []).filter((id): id is string => typeof id === 'string');
     const { notifyAgentResourcesChanged } = await import('@main/core/extensions/app-resource-watches');
     void notifyAgentResourcesChanged(args?.resync === true ? 'all' : agentIds);
+    return { success: true };
+  },
+
+  /**
+   * #1927 (47) The main window's voice-note recorder moved (app-voice-note-host.ts, at most about ten times a second): pages
+   * hearing it (`gugu.voiceNote.onChanged`) hear it whole, as its allow-list lets them, or end.
+   */
+  voiceNoteChanged: async (change: unknown) => {
+    const { voiceNoteChanged } = await import('@main/core/extensions/app-voice-note-watches');
+    void voiceNoteChanged(change);
     return { success: true };
   },
 
@@ -835,6 +847,57 @@ export const extensionsController = createRPCController({
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
 
+  /**
+   * #1927 (48) The composer 「+」 entries of an App placed beside the person's own assistant chat, for the column the shell
+   * drew under `authority`; and one the person clicked, run by the host (app-composer-actions.ts). Trusted window only.
+   */
+  conversationComposerActions: async (args: { ownerId: string; extensionId: string; authority: string }) => {
+    try {
+      const { composerActionsFor } = await import('./app-composer-actions');
+      return { success: true as const, data: await composerActionsFor(args) };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+  runConversationComposerAction: async (args: { ownerId: string; extensionId: string; authority: string; actionId: string }) => {
+    try {
+      const { runComposerAction } = await import('./app-composer-actions');
+      return { success: true as const, data: await runComposerAction(args, deliverSurfaceIntent) };
+    } catch (error) {
+      return { success: false as const, error: error instanceof Error ? error.message : String(error), code: String((error as { code?: unknown } | null)?.code ?? 'failed') };
+    }
+  },
+  /** #1927 (48) The host's recording bar beside that conversation: the person opened the note it shows. */
+  conversationVoiceNoteOpened: async (args: { ownerId: string; extensionId: string }) => {
+    try {
+      const { voiceNoteOpenedBeside } = await import('./app-composer-actions');
+      return { success: true as const, data: { told: await voiceNoteOpenedBeside(args, deliverSurfaceIntent) } };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  /**
+   * #1925 (46) The window's reading of the account's work ledger, as the built-in list reads it (AppWorkLedgerHost): kept
+   * for `gugu.bindings.work`, and told to the pages of each App reading it (app-work-binding.ts).
+   */
+  workLedgerChanged: async (args: { ownerId: string | null; assistantId: string | null; state: string; rows: unknown[] }) => {
+    try {
+      const { workLedgerChanged } = await import('./app-work-binding');
+      for (const extensionId of await workLedgerChanged(args)) {
+        void pushBindingWork(extensionId).catch((error: unknown) => log.warn('The work list could not be told to an App\'s pages:', error));
+      }
+      return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  /** #1925 (46) Which task's conversation the window draws in an App's panel now (null: none): its pages hear `open`. */
+  reportWorkChat: async (args: { extensionId: string; ownerId: string | null; open: { workId: string; sessionId: string } | null }) => {
+    try {
+      const { reportWorkChat } = await import('./app-work-binding');
+      if (reportWorkChat(args)) {
+        void pushBindingWork(args.extensionId).catch((error: unknown) => log.warn('The open task could not be told to an App\'s pages:', error));
+      }
+      return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
   unreadBindingChoices: async (args: { extensionId: string; name: string }) => {
     try {
       const { unreadBindingChoices } = await import('./app-unread-bindings');
@@ -938,8 +1001,9 @@ export const extensionsController = createRPCController({
       // Capabilities need no reload: the bridge asks for the granted set on every
       // call, so a withdrawn capability stops working on the next call either way.
       reloadExtensionSurfaces(installed.manifest.id);
-      // The window's projections of the binding (rail unread, #1925 the conversation beside the page) read it again.
-      if (args.permission === 'chat:unread' || args.permission === 'chat:surface') events.emit(extensionsInventoryChangedChannel, { extensionId: args.extensionId });
+      // The window's projections of the binding (rail unread, #1925 the conversation beside the page, a task's conversation
+      // in its panel) read it again.
+      if (args.permission === 'chat:unread' || args.permission === 'chat:surface' || args.permission === 'chat:work') events.emit(extensionsInventoryChangedChannel, { extensionId: args.extensionId });
       void notifyInstalledAppsChanged();
       return { success: true, data: { revoked: service.revokedPermissions(args.extensionId) } };
     } catch (error) {

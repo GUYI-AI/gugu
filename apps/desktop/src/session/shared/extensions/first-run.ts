@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ExtensionManifest } from './manifest';
-import type { MarketCodeSource } from './market';
+import { isOfficialMarketSource, type MarketCodeSource } from './market';
 
 /**
  * 首启默认组:新 profile 一启动,市场索引里标了 `firstRun` 的那几个 **gugu 自己的** App 在后台装上 —— 不出任何页面
@@ -8,24 +8,13 @@ import type { MarketCodeSource } from './market';
  * 装好了」:包里已经不带它们了,要从下载站拿,而市场索引和包都是公开文件、不要登录 ⇒ 一启动就开始,和登录并行)。
  * 桌面在 main 里跑(first-run-apps.ts),手机在它自己的页里跑(firstRunApps.ts);规矩只有这里这一份。
  *
- * - 只装 gugu 自己的(`isGuguOwnApp`):代码就在市场索引仓里的 App。别人的 App 就算在索引里标了 `firstRun` 也不装 ——
+ * - 只装 gugu 自己的(market.ts `isOfficialMarketSource`):代码就在市场索引仓里的 App。别人的 App 就算在索引里标了 `firstRun` 也不装 ——
  *   这一条在客户端里判,❌ 只靠索引仓那边审 PR。
  * - 同意照预装的记:按 gugu 自己审过的(安装里 `consent: gugu`),能力照 manifest 记下,App 页照常看得到它要了什么、能停用、
  *   能卸载;给哪些 agent 是「本机所有 agent」,同没人选过的 App。都只写这台设备自己的东西,❌ 要登录。
  * - 离线、下载断了、只装上一部分:不说什么,下次启动安静地补装,直到每个都装上过一次。装上过一次就不再碰:后来卸了,不会装回来。
  */
 
-/** The market's own repository (shuxueshuxue/gugu-apps): an App whose code is in it is gugu's own — reviewed and published by gugu. */
-export const GUGU_APPS_REPO = 'shuxueshuxue/gugu-apps';
-
-/**
- * Whether a market App is gugu's own: its code is in the market's own repository. The index's CI rebuilt the very bytes from
- * that repository's commit (and only from its default branch), so this is a fact about the code, not something the index
- * entry merely says — an App of someone else's lives in their repository.
- */
-export function isGuguOwnApp(source: Pick<MarketCodeSource, 'repo'>): boolean {
-  return source.repo === GUGU_APPS_REPO;
-}
 
 /**
  * This profile's record (desktop: a file in main's userData, first-run-record.ts; phone: its App store index):
@@ -78,6 +67,11 @@ export interface FirstRunDeps {
   here(): Promise<string[]>;
   /** Whether the App does anything on this device at all. */
   usable(manifest: ExtensionManifest): boolean;
+  /**
+   * #1931 Apps of gugu's own this device puts in with the set whether or not the index marks them `firstRun`: the host's
+   * own dependencies (the desktop's: the product's assistant App, whose rules the host reads). None on the phone.
+   */
+  required?: readonly string[];
   /** Puts one in, asking nobody (gugu's own, as gugu reviewed it); throws what failed. */
   install(id: string, version: string): Promise<void>;
   /** What is on its way, and whether the set is still to be done, each time that changes. */
@@ -104,7 +98,8 @@ export async function runFirstRun(deps: FirstRunDeps): Promise<void> {
     deps.arriving({ apps: [], pending: true });
     return;
   }
-  const own = (offer: FirstRunOffer) => offer.firstRun && isGuguOwnApp(offer.source) && deps.usable(offer.manifest);
+  const own = (offer: FirstRunOffer) =>
+    (offer.firstRun || (deps.required ?? []).includes(offer.manifest.id)) && isOfficialMarketSource(offer.source) && deps.usable(offer.manifest);
   // The set is the one the market named the first time it was read: a list changed later is for new profiles from then on.
   const apps = record.apps ?? offers.filter(own).map((offer) => offer.manifest.id);
   const here = await deps.here();
