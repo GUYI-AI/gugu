@@ -82,7 +82,7 @@ export class BetaPasswordLogin {
     return use.result
   }
   async request(context: GuguMcpContext, grant: AbortSignal, item: PasswordItem, input: {
-    browserId: string; loginUrl: string; selection: VaultLoginSelection
+    browserId?: string; loginUrl: string; selection: VaultLoginSelection
   }): Promise<{ requestId: string; status: string }> {
     if (!this.vault || this.preparing || this.host.denied()
       || [...this.attempts.values()].some(use => ['pending', 'running'].includes(use.result))) throw unavailable()
@@ -95,9 +95,13 @@ export class BetaPasswordLogin {
       const signal = anySignal([grant, this.host.signal])
       const assertCurrent = () => { signal.throwIfAborted(); this.host.assertCurrent(); if (this.host.denied()) throw unavailable() }
       assertCurrent()
-      const source = browsers.browsersOfSession(identity.sessionId).find(page => page.browserId === input.browserId)?.webContents
-      const partition = [...browsers.registeredPartitions].find(value => browsers.isRegisteredForSession(input.browserId, identity.sessionId, value))
-      if (!source || !partition || new URL(input.loginUrl).origin !== item.origin) throw unavailable()
+      // The Agent's browser tools do not name their tabs, so without an id this is the task's tab showing the login
+      // site (most recently viewed first).
+      const pages = browsers.browsersOfSession(identity.sessionId), origin = new URL(input.loginUrl).origin
+      const browserId = input.browserId ?? pages.find(page => { try { return new URL(page.webContents.getURL()).origin === origin } catch { return false } })?.browserId
+      const source = pages.find(page => page.browserId === browserId)?.webContents
+      const partition = browserId ? [...browsers.registeredPartitions].find(value => browsers.isRegisteredForSession(browserId, identity.sessionId, value)) : undefined
+      if (!browserId || !source || !partition || origin !== item.origin) throw unavailable()
       const installation = await this.vault.prepareInstallationIdentity()
       assertCurrent(); installation.assertCurrent()
       if (installation.value.status !== 'persisted') throw unavailable()
@@ -121,7 +125,7 @@ export class BetaPasswordLogin {
         },
         useCredential: this.vault.useCredential.bind(this.vault),
       }, port, signal)
-      surface = new VaultBrowserLoginSurface({ browserId: input.browserId, partition, agentContents: source,
+      surface = new VaultBrowserLoginSurface({ browserId, partition, agentContents: source,
         permission: execution.permission, registerPrivateSurface: registerPrivateCredentialSurface,
         isolationReady: () => { try { if (!binding || !attempt?.partition) return false; attempt.partition.isolation.assertCurrent(binding); return true } catch { return false } },
         assertCurrent: () => { assertCurrent(); if (binding && attempt?.partition) attempt.partition.isolation.assertLifecycleCurrent(binding) },
@@ -130,7 +134,7 @@ export class BetaPasswordLogin {
       const reviewed = await surface.review(input.selection)
       assertCurrent()
       target = { ...reviewed, accountId: identity.ownerId, installationId: installation.value.installationId,
-        agentId: identity.subjectId, sessionId: identity.sessionId, browserId: input.browserId,
+        agentId: identity.subjectId, sessionId: identity.sessionId, browserId,
         credentialId: item.reference.id, credentialVersion: String(item.reference.version), lockEpoch: item.reference.epoch,
         operation: 'login-submit' }
       const presentation = this.host.describe(identity.subjectId, identity.sessionId)

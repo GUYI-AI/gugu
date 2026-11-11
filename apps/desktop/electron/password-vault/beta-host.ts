@@ -219,7 +219,7 @@ export const passwordBetaAgent = Object.freeze({
     return (await value.vault.list(person)).map(item => agentView(item, subjects))
   },
   async request(context: GuguMcpContext, signal: AbortSignal, input: {
-    credentialId: string; browserId: string; loginUrl: string; selection: { form: string; account: string; password: string; submitter?: string }
+    credentialId: string; browserId?: string; loginUrl: string; selection: { form: string; account: string; password: string; submitter?: string }
   }) {
     const { value } = await caller(context)
     const item = (await value.vault.list(person)).find(item => item.reference.id === input.credentialId)

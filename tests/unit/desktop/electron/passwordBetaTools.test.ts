@@ -63,6 +63,21 @@ describe('Beta password MCP boundary', () => {
     await handlers.get('password_save')!({ action: 'status', requestId }, new AbortController().signal)
     expect(ports.saveStatus).toHaveBeenCalledWith(context(), requestId)
   })
+  it('posts the request card with the call signal; browserId may be left out', async () => {
+    vi.stubGlobal('__GUGU_TIER__', 'beta')
+    const { registerPasswordBetaTools } = await import('../../../../apps/desktop/electron/mcp/password-beta-tools')
+    const runHostAction = vi.fn(async (_action: unknown, signal?: AbortSignal) => signal)
+    const social = { kind: 'social', runHostAction } as unknown as GuguMcpContext
+    registerPasswordBetaTools({} as McpServer, () => social, work => work, new AbortController().signal)
+    const seen: unknown[] = []
+    ports.request.mockImplementation(async (bound: { runHostAction: (action: unknown) => Promise<unknown> }) => { seen.push(await bound.runHostAction('card')); return { status: 'pending', requestId } })
+    ports.save.mockImplementation(async (bound: { runHostAction: (action: unknown) => Promise<unknown> }) => { seen.push(await bound.runHostAction('card')); return { status: 'pending', requestId } })
+    const login = new AbortController(), save = new AbortController()
+    const input = { action: 'request', credentialId, loginUrl: 'https://example.com/login', selection: { form: 'form', account: '#account', password: '#password' } }
+    expect(JSON.stringify(await handlers.get('password_login')!(input, login.signal))).toContain('pending')
+    await handlers.get('password_save')!({ action: 'request', origin: 'https://example.com', password: 'p' }, save.signal)
+    expect(seen).toEqual([login.signal, save.signal])
+  })
   it('rejects mixed password_save arguments before reaching the vault', async () => {
     await register('beta')
     const reply = await handlers.get('password_save')!({ action: 'status', requestId, origin: 'https://github.com' }, new AbortController().signal) as { isError?: boolean }
