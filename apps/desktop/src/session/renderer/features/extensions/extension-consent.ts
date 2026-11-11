@@ -2,6 +2,7 @@ import type { useSessionMessages } from '@renderer/localization/use-session-mess
 import { compareExtensionVersions, isConfinedToolProgram, programLine, type ExtensionCapability, type ExtensionManifest } from '@shared/extensions/manifest';
 import { localizedManifestText } from '@shared/extensions/catalog';
 import { addedPermissions } from '@shared/extensions/upgrade';
+import { READABLE_RESOURCE_DOMAINS } from '@shared/extensions/agent-resources';
 import type { ExtensionConsentDetails } from '@shared/extensions/host-actions';
 
 /**
@@ -64,7 +65,19 @@ export function describeCapability(
   machine?: string
 ): string {
   if (capability === 'agents:tools') return describeAgentTools(manifest, translate, machine);
+  if (capability === 'chat:resources' || capability === 'chat:resources:write') return describeAgentResources(capability, manifest, translate);
   return translate(CAPABILITY_MESSAGE[capability], { computer: computerNamed(translate, machine) });
+}
+
+/**
+ * #1927 (42) The agent's resources a binding reaches, named as this App lists them for that action — those kinds and no
+ * others, in one order whatever the manifest's, called as the assistant's own pages call them.
+ */
+function describeAgentResources(capability: 'chat:resources' | 'chat:resources:write', manifest: ExtensionManifest, translate: SessionTranslate): string {
+  const listed: readonly string[] = manifest.permissions?.bindings?.[0]?.domains?.[capability === 'chat:resources' ? 'resources' : 'resources:write'] ?? [];
+  const kinds = READABLE_RESOURCE_DOMAINS.filter((domain) => listed.includes(domain))
+    .map((domain) => translate(`extensions.resourceKind.${domain}`)).join(translate('extensions.resourceKindSeparator'));
+  return translate(CAPABILITY_MESSAGE[capability], { kinds });
 }
 
 /**

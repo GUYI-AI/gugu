@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '@shared/extensions/manifest';
 import { callRefusal } from '@shared/extensions/bridge-protocol';
 import { ExtensionsService } from './extensions-service';
+import { installPlan } from './install-plan';
 
 /**
  * #1927 (API 42) The grant behind an App's reach into its bound conversation's agent resources: what a manifest may declare
@@ -113,20 +114,48 @@ describe('the installed App\'s resource grant', () => {
     expect(service.conversationResourceBinding(OWNER, ID, 'main', 'resources', 'memory')).toBeNull();
   });
 
-  it('fails closed disabled, uninstalled or for another publisher; another domain list is another declaration, another order is not', () => {
+  it('fails closed disabled, uninstalled or for another publisher; the chosen conversation outlives another domain list', () => {
     const { service, install } = fixture();
     service.setEnabled(ID, false);
     expect(() => service.conversationResourceBinding(OWNER, ID, 'main', 'resources', 'memory')).toThrow(expect.objectContaining(refused));
     service.setEnabled(ID, true);
     install(manifest({ domains: { 'resources:write': ['personality', 'memory'], resources: [...READS].reverse() } }));
     expect(service.conversationResourceBinding(OWNER, ID, 'main', 'resources', 'memory')?.chatId).toBe(CHAT);
+    // More domains are asked as a permission when the update lands (below); the list itself answers at once, either way.
     install(manifest({ domains: { resources: READS, 'resources:write': ['memory', 'personality', 'skills'] } }));
-    expect(service.conversationResourceBinding(OWNER, ID, 'main', 'resources', 'memory')).toBeNull();
-    service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
+    expect(service.conversationResourceBinding(OWNER, ID, 'main', 'resources:write', 'skills')?.chatId).toBe(CHAT);
+    install(manifest({ domains: { resources: ['memory'], 'resources:write': ['memory'] } }));
+    expect(service.conversationResourceBinding(OWNER, ID, 'main', 'resources', 'memory')?.chatId).toBe(CHAT);
+    expect(() => service.conversationResourceBinding(OWNER, ID, 'main', 'resources', 'files')).toThrow(expect.objectContaining(refused));
+    expect(() => service.conversationResourceBinding(OWNER, ID, 'main', 'resources:write', 'skills')).toThrow(expect.objectContaining(refused));
     install(manifest(), OTHER);
     expect(service.conversationResourceBinding(OWNER, ID, 'main', 'resources', 'memory')).toBeNull();
     service.uninstall(ID);
     expect(() => service.conversationResourceBinding(OWNER, ID, 'main', 'resources', 'memory')).toThrow(expect.objectContaining(refused));
+  });
+
+  it('an update listing more domains, or adding the write action, asks for it as a new permission; fewer or the same asks nothing', () => {
+    const reader = (resources: string[]) => manifest({ actions: ['unread', 'resources'], domains: { resources } });
+    const { service, install } = fixture(reader(['memory']));
+    const plan = (next: object) => {
+      const { asks, newlyAsked } = installPlan(service, parseExtensionManifest(next), 'folder');
+      return { asks, newlyAsked };
+    };
+    const quiet = { asks: false, newlyAsked: [] };
+    expect(plan(reader(['memory']))).toEqual(quiet);
+    expect(plan(reader(['memory', 'files']))).toEqual({ asks: true, newlyAsked: ['chat:resources'] });
+    expect(plan(manifest({ domains: { resources: ['memory'], 'resources:write': ['memory'] } }))).toEqual({ asks: true, newlyAsked: ['chat:resources:write'] });
+    // Measured against what landed: the wider one, once installed, is the baseline.
+    install(manifest({ domains: { resources: READS, 'resources:write': ['memory', 'personality'] } }));
+    expect(plan(manifest({ domains: { resources: [...READS].reverse(), 'resources:write': ['personality', 'memory'] } }))).toEqual(quiet);
+    expect(plan(manifest({ domains: { resources: ['memory'], 'resources:write': ['memory'] } }))).toEqual(quiet);
+    expect(plan(manifest({ domains: { resources: READS, 'resources:write': ['memory', 'personality', 'skills'] } })))
+      .toEqual({ asks: true, newlyAsked: ['chat:resources:write'] });
+    // A word the person withdrew stays withdrawn: listing more under it asks nothing (and reaches nothing).
+    install(manifest({ domains: { resources: ['memory'], 'resources:write': ['memory'] } }));
+    service.setPermissionGranted(ID, 'chat:resources:write', false);
+    expect(plan(manifest({ domains: { resources: ['memory', 'skills'], 'resources:write': ['memory', 'skills'] } })))
+      .toEqual({ asks: true, newlyAsked: ['chat:resources'] });
   });
 
   it('tells whoever holds the authority, after each change is written: a grant, enablement, choice, upgrade, uninstall', async () => {

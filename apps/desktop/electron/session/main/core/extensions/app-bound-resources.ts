@@ -3,10 +3,12 @@ import { z } from 'zod';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
 import {
   AssistantPanelError, assistantPanelCollection, createAssistantPanelClient, type AssistantPanelDomain, type AssistantPanelItem,
+  type AssistantPanelSnapshot,
 } from '@gugu/core/cloud/assistantPanel';
 import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies';
 import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead';
 import { parseMemoryNote } from '@gugu/core/shared/assistantMemory';
+import { pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision';
 import { splitInstructions } from '@gugu/core/shared/assistantInstructions';
 import { DEFAULT_TEXT_MAX_BYTES } from '@shared/extensions/app-runtime-protocol';
 import {
@@ -18,10 +20,10 @@ import { extensionsService } from './extensions-root';
 import { addResourceWatch, stopResourceWatch } from './app-resource-watches';
 
 /**
- * #1927 (API 42): an App's window onto the panel resources of one agent — the one whose private conversation with the
- * signed-in person is the conversation the person chose for the App's binding. The App names the binding, a domain and a
- * key; the owner comes from the account's token, the conversation from the person's own selection for this installed App,
- * and the agent from the account's own provision of it. Reads and changes go through the existing resource store (the
+ * #1927 (API 42): an App's window onto the panel resources of the signed-in person's personal assistant, when its private
+ * conversation with them is the conversation the person chose for the App's binding. The App names the binding, a domain
+ * and a key; the owner comes from the account's token, the conversation from the person's own selection for this installed
+ * App, and the agent from the account's own assistant provision. Reads and changes go through the existing resource store (the
  * `assistant_panel_*` calls and its private-folder bodies) as the person, so its revision checks, tombstones, operation ids
  * and apply receipts hold as they do for the assistant's own pages. Everything is checked again after every wait.
  */
@@ -37,25 +39,38 @@ function argsOf<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
   return parsed.data;
 }
 
+// What `pickAssistant` reads (ASSISTANT_PROVISION_SELECT), plus the private conversation and the identity's owner.
+const PERSONAL_ASSISTANT_SELECT = 'agent_user_id,device_id,member_key,phase,created_at,dm_chat_id,agent:users!agent_provisions_agent_user_id_fkey(owner_user_id,removed_at)';
+
 /**
- * The agent the bound conversation is with: one of the signed-in person's own (their provision of it names this very
- * conversation as its private one), and not removed. Anything else — a group, someone else's agent, a person — is refused.
+ * The agent the bound conversation is with, which must be the signed-in person's personal assistant — the one the
+ * assistant's own pages show (`pickAssistant`, as `personalAssistant` picks it), in a phase the store serves (ready or
+ * completed, as `assistant_panel_is_owner` asks), owned and not removed, whose provision names this very conversation as
+ * its private one. Only it has panel resources: anything else — another of the person's agents, someone else's, a group,
+ * a person — is refused here, before the store is asked.
  */
-async function ownAgentOf(token: string, ownerId: string, chatId: string): Promise<string> {
+async function personalAssistantOf(token: string, ownerId: string, chatId: string): Promise<string> {
   const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
-  const { data, error } = await client.from('agent_provisions')
-    .select('agent_user_id,phase,agent:users!agent_provisions_agent_user_id_fkey(owner_user_id,removed_at)')
-    .eq('owner_user_id', ownerId).eq('dm_chat_id', chatId).limit(8).abortSignal(AbortSignal.timeout(5000));
+  const { data, error } = await client.from('agent_provisions').select(PERSONAL_ASSISTANT_SELECT)
+    .eq('owner_user_id', ownerId).eq('member_key', 'assistant').limit(32).abortSignal(AbortSignal.timeout(5000));
   if (error) throw failed('Could not verify the agent of the chosen conversation');
-  type Row = { agent_user_id?: unknown; phase?: unknown; agent?: { owner_user_id?: unknown; removed_at?: unknown } | { owner_user_id?: unknown; removed_at?: unknown }[] | null };
-  const agents = new Set(((data ?? []) as Row[]).flatMap((row) => {
+  type Identity = { owner_user_id?: unknown; removed_at?: unknown };
+  type Row = Omit<AssistantProvisionRow, 'agent'> & { dm_chat_id?: unknown; agent: Identity | Identity[] | null };
+  const rows = (data ?? []) as Row[];
+  let pick: ReturnType<typeof pickAssistant>;
+  try {
+    // Its own check of each identity: exactly one, its removal said (null or a time), else it throws.
+    pick = pickAssistant(rows as AssistantProvisionRow[]);
+  } catch {
+    throw failed('Could not verify the agent of the chosen conversation');
+  }
+  const served = pick && rows.some((row) => {
     const agent = Array.isArray(row.agent) ? row.agent.length === 1 ? row.agent[0] : null : row.agent;
-    const live = typeof row.agent_user_id === 'string' && !['failed', 'cancelling', 'cancelled'].includes(String(row.phase))
-      && agent?.owner_user_id === ownerId && agent.removed_at === null;
-    return live ? [row.agent_user_id as string] : [];
-  }));
-  if (agents.size !== 1) throw denied('The chosen conversation is not your private conversation with one of your agents');
-  return [...agents][0]!;
+    return row.agent_user_id === pick.agentId && row.member_key === 'assistant' && row.dm_chat_id === chatId
+      && ['ready', 'completed'].includes(String(row.phase)) && agent?.owner_user_id === ownerId && agent.removed_at === null;
+  });
+  if (!pick || !served) throw denied('The chosen conversation is not your private conversation with your personal assistant');
+  return pick.agentId;
 }
 
 type Bound = { ownerId: string; token: string; chatId: string; handle: string; agentId: string; recheck(): Promise<void> };
@@ -63,7 +78,7 @@ type Bound = { ownerId: string; token: string; chatId: string; handle: string; a
 /**
  * The authority one call works under: the current account's own selection for this installed App, with the action granted
  * (and, for a domain, that domain listed for it), of a conversation the account is still in, which is its private one with
- * an agent of its own (asked beside membership). `recheck`: account, installed App, grant and the same selection, still —
+ * its personal assistant (asked beside membership). `recheck`: account, installed App, grant and the same selection, still —
  * called after every wait. Null: nobody has chosen the conversation yet.
  */
 async function boundAgent(extensionId: string, name: string, needs: readonly ResourceBindingAction[], domain: string | null): Promise<Bound | null> {
@@ -79,7 +94,7 @@ async function boundAgent(extensionId: string, name: string, needs: readonly Res
     await current(ownerId);
     if (grant()?.handle !== before.handle) throw denied('Conversation binding changed');
   };
-  const [membership, agent] = await Promise.allSettled([member(token, ownerId, before.chatId), ownAgentOf(token, ownerId, before.chatId)]);
+  const [membership, agent] = await Promise.allSettled([member(token, ownerId, before.chatId), personalAssistantOf(token, ownerId, before.chatId)]);
   // A refusal outweighs a check that could not be made: the call is refused, not to be tried again.
   const rejected = [membership, agent].filter((check): check is PromiseRejectedResult => check.status === 'rejected');
   const refusal = rejected.find((check) => codeOf(check.reason) === 'denied') ?? rejected[0];
@@ -134,6 +149,20 @@ function readableDomainOf(value: unknown): ReadableResourceDomain {
   return domain as ReadableResourceDomain;
 }
 
+/**
+ * Whether `domain` can be read now, exactly as the assistant's own pages decide it (assistantPanelFiles `collection`, which
+ * their lists and reads go through, and whose error the page shows instead of the domain): a change in it that failed to
+ * apply, or an out-of-date observation, makes the whole domain unreadable — not just that one resource; so does a failed
+ * publication. No marker is not yet published, never an empty domain (a voice-note list published in part excepted).
+ */
+function domainState(snapshot: AssistantPanelSnapshot, domain: ReadableResourceDomain): { state: 'unavailable' | 'unprepared' } | { state: 'ready'; items: AssistantPanelItem[] } {
+  const collection = assistantPanelCollection(snapshot, domain as AssistantPanelDomain);
+  if (snapshot.application.some((row) => row.domain === domain && row.status === 'failed')) return { state: 'unavailable' };
+  if (collection.state === 'error' || collection.items.some((item) => item.stale_at)) return { state: 'unavailable' };
+  if (collection.state === 'unprepared' && !(domain === 'voice-notes' && collection.items.length > 0)) return { state: 'unprepared' };
+  return { state: 'ready', items: collection.items };
+}
+
 /** `gugu.bindings.resources(name, domain)` (42, `chat:resources`): one domain of the agent's resources, whole. */
 export async function appResourceList(extensionId: string, input: unknown): Promise<AppResourceList> {
   const args = argsOf(z.strictObject({ name: z.string(), domain: z.unknown() }), input);
@@ -141,13 +170,9 @@ export async function appResourceList(extensionId: string, input: unknown): Prom
   const named = { name: args.name, domain };
   const answer = await withBound(extensionId, args.name, domain, async (bound): Promise<AppResourceList> => {
     const snapshot = await withAssistantPanelReadDeadline(() => storeOf(bound.ownerId).snapshot(bound.agentId));
-    // As the assistant's own pages read a collection (assistantPanelFiles `collection`): no marker is not yet published,
-    // never an empty domain; a failed or out-of-date publication, or a change that failed to apply, cannot be read now.
-    const collection = assistantPanelCollection(snapshot, domain as AssistantPanelDomain);
-    if (collection.state === 'error' || collection.items.some((item) => item.stale_at)
-      || snapshot.application.some((row) => row.domain === domain && row.status === 'failed')) return { ...named, state: 'unavailable' };
-    if (collection.state === 'unprepared' && !(domain === 'voice-notes' && collection.items.length > 0)) return { ...named, state: 'unprepared' };
-    return { ...named, state: 'ready', revision: snapshot.revision, resources: collection.items.map((item) => appResourceOf(domain, item)) };
+    const readable = domainState(snapshot, domain);
+    if (readable.state !== 'ready') return { ...named, state: readable.state };
+    return { ...named, state: 'ready', revision: snapshot.revision, resources: readable.items.map((item) => appResourceOf(domain, item)) };
   });
   return typeof answer === 'string' ? { ...named, state: answer } : answer;
 }
@@ -159,8 +184,16 @@ export async function appResourceRead(extensionId: string, input: unknown): Prom
   const key = resourceKeyOf(domain, args.key);
   const named = { name: args.name, domain, key };
   const answer = await withBound(extensionId, args.name, domain, async (bound): Promise<AppResourceRead> => {
-    const item = await withAssistantPanelReadDeadline(() => storeOf(bound.ownerId).resource(bound.agentId, domain as AssistantPanelDomain, key));
+    const store = storeOf(bound.ownerId);
+    // One resource is read only from a domain that can be read (as the assistant's pages read one: `bytes` → `find` →
+    // `collection`), voice notes excepted as there.
+    const [snapshot, item] = await Promise.all([
+      domain === 'voice-notes' ? null : withAssistantPanelReadDeadline(() => store.snapshot(bound.agentId)),
+      withAssistantPanelReadDeadline(() => store.resource(bound.agentId, domain as AssistantPanelDomain, key)),
+    ]);
     await bound.recheck();
+    const readable = snapshot ? domainState(snapshot, domain) : null;
+    if (readable && readable.state !== 'ready') return { ...named, state: readable.state };
     if (!item) return { ...named, state: 'missing', revision: '0' };
     // A deleted resource stays deleted: its tombstone's revision is what bringing it back (where the domain allows) expects.
     if (item.deleted_at) return { ...named, state: 'missing', revision: item.revision, deleted: true };

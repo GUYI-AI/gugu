@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 /**
  * #1927 (API 42): what an App may reach of an agent's durable panel resources through its one conversation binding — the
- * person's private conversation with one of their own agents. The resource store is the assistant panel's (domains with
+ * person's private conversation with their personal assistant. The resource store is the assistant panel's (domains with
  * revisions, tombstones, operation ids and apply receipts); this is only the App's window onto it: which domains a
  * manifest may name, the arguments a call may carry, and the shapes it hears back. Who the owner, agent and chat are is
  * the host's, from the signed-in account and the binding — never an argument.

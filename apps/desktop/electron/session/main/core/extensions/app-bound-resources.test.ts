@@ -15,6 +15,8 @@ const CHAT = '33000000-0000-4000-8000-000000000003';
 const AGENT = '44000000-0000-4000-8000-000000000004';
 const OP = '55000000-0000-4000-8000-000000000005';
 const OP2 = '66000000-0000-4000-8000-000000000006';
+const ASSISTANT = { agent_user_id: AGENT, member_key: 'assistant', device_id: 'home-device', phase: 'completed', created_at: '2026-11-01T00:00:00Z',
+  dm_chat_id: CHAT, agent: { owner_user_id: OWNER, removed_at: null } };
 const sha = (text: string) => createHash('sha256').update(new TextEncoder().encode(text)).digest('hex');
 
 type Item = {
@@ -25,7 +27,7 @@ type Item = {
 const state = vi.hoisted(() => ({
   owner: '', selectedBy: '', handle: 'h1', installed: true, enabled: true, member: true,
   grants: {} as Record<string, boolean>, domains: {} as Record<string, string[]>,
-  provisions: [] as Record<string, unknown>[], provisionsError: false,
+  provisions: [] as Record<string, unknown>[], provisionsError: false, provisionFilters: [] as [string, unknown][],
   hooks: {} as Partial<Record<'afterMember' | 'afterSnapshot' | 'afterResource' | 'afterUpload' | 'beforeCommit' | 'afterBody', () => void>>,
   listeners: new Set<(extensionId: string) => void>(),
 }));
@@ -33,7 +35,7 @@ const store = vi.hoisted(() => ({
   items: new Map<string, Item>(), changes: new Map<string, { hash: string; receipt: Record<string, unknown> }>(), head: 10,
   prepared: new Set<string>(), errored: new Set<string>(), failedApplication: new Set<string>(), down: false, refuse: false,
   commits: [] as Record<string, unknown>[], bodies: new Map<string, Uint8Array>(), uploads: [] as string[], discarded: [] as string[],
-  bodyReads: [] as Record<string, unknown>[], commitFails: null as null | { code: string; status: number },
+  bodyReads: [] as Record<string, unknown>[], commitFails: null as null | { code: string; status: number }, calls: 0,
 }));
 const denied = (message: string) => Object.assign(new Error(message), { code: 'denied' });
 vi.mock('@gugu/core', () => ({ userIdFromSupabaseAccessToken: (token: string) => token || null }));
@@ -74,6 +76,7 @@ vi.mock('@gugu/core/cloud/assistantPanelBodies', () => ({
 
 /** The identity store's panel calls, as the migration answers them; the chat schema's delete; the two reads of the binding. */
 function identityRpc(name: string, args: Record<string, unknown>) {
+  store.calls += 1;
   if (store.down) return { data: null, error: { message: 'upstream', code: 'PGRST003' }, status: 503 };
   if (store.refuse || args.p_assistant !== AGENT) return { data: null, error: { message: 'Personal assistant is not available to this account', code: '42501' }, status: 403 };
   if (name === 'assistant_panel_snapshot') {
@@ -127,7 +130,11 @@ vi.mock('@gugu/core/cloud/supabase', () => ({
     },
     from: (table: string) => {
       const query = {
-        select: () => query, eq: () => query, limit: () => query,
+        select: () => query, limit: () => query,
+        eq: (column: string, value: unknown) => {
+          if (table === 'agent_provisions') state.provisionFilters.push([column, value]);
+          return query;
+        },
         maybeSingle: async () => {
           state.hooks.afterMember?.();
           return { data: state.member ? { chat_id: CHAT } : null, error: null };
@@ -163,9 +170,9 @@ beforeEach(() => {
   Object.assign(state, { owner: OWNER, selectedBy: OWNER, handle: 'h1', installed: true, enabled: true, member: true, provisionsError: false, hooks: {},
     grants: { unread: true, resources: true, 'resources:write': true },
     domains: { resources: ['memory', 'files', 'personality', 'skills', 'voice-notes'], 'resources:write': ['memory', 'files', 'personality', 'skills'] },
-    provisions: [{ agent_user_id: AGENT, phase: 'completed', agent: { owner_user_id: OWNER, removed_at: null } }] });
+    provisions: [ASSISTANT], provisionFilters: [] });
   state.listeners.clear();
-  Object.assign(store, { head: 10, down: false, refuse: false, commitFails: null });
+  Object.assign(store, { head: 10, down: false, refuse: false, commitFails: null, calls: 0 });
   for (const collection of [store.items, store.changes, store.bodies, store.prepared, store.errored, store.failedApplication]) collection.clear();
   for (const recorded of [store.commits, store.uploads, store.discarded, store.bodyReads]) recorded.length = 0;
   for (const domain of ['memory', 'files', 'personality', 'skills']) store.prepared.add(domain);
@@ -207,7 +214,15 @@ describe('reading the agent\'s resources', () => {
     expect(await list('files')).toMatchObject({ state: 'unavailable' });
     store.failedApplication.add('memory');
     expect(await list('memory')).toMatchObject({ state: 'unavailable' });
+    // As on the assistant's own pages (assistantPanelFiles `collection`): one failed change makes every resource of the
+    // domain unreadable, not just that one; other domains read on.
+    expect(await read('memory', 'owner-profile.md')).toEqual({ name: 'main', domain: 'memory', key: 'owner-profile.md', state: 'unavailable' });
+    expect(await read('personality', 'instructions')).toMatchObject({ state: 'ready' });
     store.failedApplication.clear();
+    // A resource of a domain not yet published is not read either.
+    store.prepared.delete('skills');
+    expect(await read('skills', 'writing')).toMatchObject({ state: 'unprepared' });
+    store.prepared.add('skills');
     store.items.set('memory\0old.md', row('memory', 'old.md', { stale_at: '2026-11-11T00:00:00Z' }));
     expect(await list('memory')).toMatchObject({ state: 'unavailable' });
     expect(await read('memory', 'old.md')).toMatchObject({ state: 'unavailable' });
@@ -229,6 +244,10 @@ describe('reading the agent\'s resources', () => {
     expect(await read('files', 'photo.png')).toMatchObject({ state: 'ready', content: '', binary: true, totalSize: 3 });
     put('voice-notes', 'n1/transcript.md', 'hello', { noteId: 'n1', kind: 'transcript.md' });
     expect(await list('voice-notes')).toMatchObject({ state: 'ready', resources: [{ key: 'n1/transcript.md', data: { noteId: 'n1', kind: 'transcript.md' } }] });
+    // A voice note is read on its own whatever its list says, as the assistant's pages read one (`find(path, false)`).
+    store.failedApplication.add('voice-notes');
+    expect(await list('voice-notes')).toMatchObject({ state: 'unavailable' });
+    expect(await read('voice-notes', 'n1/transcript.md')).toMatchObject({ state: 'ready', content: 'hello' });
   });
 
   it('no conversation chosen: unbound, and nothing is read', async () => {
@@ -265,20 +284,50 @@ describe('reading the agent\'s resources', () => {
     }
     await expect(save('k', 'x', '0', OP, 'integrations')).rejects.toMatchObject({ code: 'denied' });
     state.domains.resources = ['memory', 'files'];
-    // Someone else's agent, a group or a person (no provision of the account names this conversation), a removed agent.
-    for (const provisions of [[], [{ agent_user_id: AGENT, phase: 'completed', agent: { owner_user_id: OTHER, removed_at: null } }],
-      [{ agent_user_id: AGENT, phase: 'completed', agent: { owner_user_id: OWNER, removed_at: '2026-11-01T00:00:00Z' } }],
-      [{ agent_user_id: AGENT, phase: 'cancelled', agent: { owner_user_id: OWNER, removed_at: null } }]]) {
+    // Someone else's agent, a group or a person (no personal assistant of the account names this conversation), a removed
+    // or cancelled one.
+    for (const provisions of [[], [{ ...ASSISTANT, agent: { owner_user_id: OTHER, removed_at: null } }],
+      [{ ...ASSISTANT, agent: { owner_user_id: OWNER, removed_at: '2026-11-01T00:00:00Z' } }], [{ ...ASSISTANT, phase: 'cancelled' }],
+      [{ ...ASSISTANT, dm_chat_id: OTHER }]]) {
       state.provisions = provisions;
       await expect(list('memory')).rejects.toMatchObject({ code: 'denied' });
       await expect(read('memory', 'owner-profile.md')).rejects.toMatchObject({ code: 'denied' });
       await expect(save('a.md', 'x', '0')).rejects.toMatchObject({ code: 'denied' });
     }
-    // The store refusing this account for that agent (not its personal assistant) is a refusal, not unavailable.
-    state.provisions = [{ agent_user_id: AGENT, phase: 'completed', agent: { owner_user_id: OWNER, removed_at: null } }];
+    expect(store.commits).toEqual([]);
+    // The store refusing this account for that agent anyway is a refusal, not unavailable.
+    state.provisions = [ASSISTANT];
     store.refuse = true;
     await expect(list('memory')).rejects.toMatchObject({ code: 'denied' });
     expect(store.commits).toEqual([]);
+  });
+
+  it('only the person\'s personal assistant: another of their own agents is refused here, before the store is asked', async () => {
+    const asked = () => store.calls + store.bodyReads.length + store.uploads.length;
+    // Another agent of the same person, its own private conversation chosen (not the assistant: the store has no panel for it).
+    const researcher = { ...ASSISTANT, member_key: 'researcher' };
+    // An older assistant superseded by a newer one (the one the assistant's pages show); one still being set up (the store
+    // serves ready or completed only).
+    const superseded = [{ ...ASSISTANT, created_at: '2026-10-01T00:00:00Z' },
+      { ...ASSISTANT, agent_user_id: OTHER, dm_chat_id: OTHER, created_at: '2026-11-05T00:00:00Z' }];
+    const settingUp = [{ ...ASSISTANT, phase: 'provisioning' }];
+    for (const provisions of [[researcher], superseded, settingUp]) {
+      state.provisions = provisions;
+      await expect(list('memory')).rejects.toMatchObject({ code: 'denied' });
+      await expect(read('memory', 'owner-profile.md')).rejects.toMatchObject({ code: 'denied' });
+      await expect(save('a.md', 'x', '0')).rejects.toMatchObject({ code: 'denied' });
+      await expect(appResourceWatch('assistant', 51, { watchId: '1', name: 'main', on: true }, () => undefined)).rejects.toMatchObject({ code: 'denied' });
+    }
+    expect(asked()).toBe(0);
+    // Asked for the account's own assistant provisions, never for an id the App supplied.
+    expect(state.provisionFilters).toContainEqual(['owner_user_id', OWNER]);
+    expect(state.provisionFilters).toContainEqual(['member_key', 'assistant']);
+    // The same assistant, completed once and being set up again, is still served.
+    state.provisions = [ASSISTANT, { ...ASSISTANT, phase: 'provisioning', created_at: '2026-11-09T00:00:00Z' }];
+    expect(await list('memory')).toMatchObject({ state: 'ready' });
+    // An identity that cannot be verified is not a refusal: unavailable, not denied.
+    state.provisions = [{ ...ASSISTANT, agent: [] }];
+    expect(await list('memory')).toMatchObject({ state: 'unavailable' });
   });
 
   it('a forged or replaced selection mid-request is refused and the content withheld', async () => {
@@ -475,6 +524,8 @@ describe('hearing that the agent\'s resources changed', () => {
     await expect(watch('6')).rejects.toMatchObject({ code: 'denied' });
     state.grants.resources = true; state.provisions = [];
     await expect(watch('7')).rejects.toMatchObject({ code: 'denied' });
+    state.provisions = [{ ...ASSISTANT, member_key: 'researcher' }];
+    await expect(watch('8')).rejects.toMatchObject({ code: 'denied' });
     expect(heldResourceWatches()).toBe(0);
   });
 

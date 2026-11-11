@@ -165,8 +165,9 @@ export interface InvalidExtensionDir {
 function bindingDeclaration(bindings: NonNullable<ExtensionManifest['permissions']>['bindings']): string {
   return JSON.stringify(bindings?.map((binding) => ({
     ...binding, actions: [...binding.actions].sort(),
-    // #1927 (42): so are its resource domains; a domain more or less is another declaration.
-    ...(binding.domains ? { domains: Object.fromEntries(Object.entries(binding.domains).sort(([a], [b]) => a.localeCompare(b)).map(([action, domains]) => [action, [...(domains ?? [])].sort()])) } : {}),
+    // #1927 (42): its resource domains are not what the person chose the conversation for; more of them is asked as a
+    // permission when the update lands (upgrade.ts `addedPermissions`), fewer asks nothing, and the choice stays.
+    domains: undefined,
   })) ?? null);
 }
 
@@ -521,7 +522,10 @@ export class ExtensionsService {
     const manifest = this.get(id).manifest;
     const identity = this.identityOf(id);
     const permissions = identity ? this.grantsFile.read()[appKey(identity)] : undefined;
-    return permissions ? { ...manifest, permissions } : manifest;
+    // #1927 (42): the installed version's binding, its resource domains included, was approved when it landed (an update
+    // listing more is asked: upgrade.ts `addedPermissions`), so what is new is measured against it.
+    const bindings = manifest.permissions?.bindings;
+    return permissions ? { ...manifest, permissions: { ...permissions, ...(bindings ? { bindings } : {}) } } : manifest;
   }
 
   variants(id: string): AppVariants {

@@ -887,10 +887,10 @@ API 40, the same conversation only: add \`"files"\` (with \`chat:files\`) and/or
   write, rename or delete, no other chat; a topic is refused. Paths are names from the top; \`..\`, absolute paths, ids: \`invalid\`.
 - \`gugu.dispatch(text, { draft: true, to: { binding: "main" } })\` in a click: the text into that conversation's composer. Nothing is sent.
 
-API 42, when that conversation is the person's private one with an agent of theirs: \`"resources"\` (\`chat:resources\`) and
-\`"resources:write"\` (\`chat:resources:write\`) reach that agent's resources, each with its domains:
+API 42, when that conversation is the person's private one with their personal assistant: \`"resources"\` (\`chat:resources\`)
+and \`"resources:write"\` (\`chat:resources:write\`) reach its resources, each with its domains:
 \`domains: { "resources": ["memory", "files", "personality", "skills", "voice-notes"], "resources:write": ["memory"] }\`
-(write: only domains also read, never voice-notes). Any other conversation is \`denied\`.
+(write: only domains also read, never voice-notes). Any other conversation is \`denied\`. An update listing more domains asks again.
 - \`gugu.bindings.resources("main", "memory")\` → \`{ state: "ready", revision, resources: [{ key, revision, updatedAt, data }] }\`.
   \`gugu.bindings.resource("main", "memory", key)\` → \`{ state: "ready", resource, content, truncated, totalSize, binary? }\`.
   Otherwise \`unbound\`, \`unprepared\` (not published yet), \`unavailable\` (try later), or \`missing\` with the \`revision\` a
