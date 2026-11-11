@@ -277,6 +277,29 @@ describe('approved A2A activity', () => {
     expect(conclusion.top).toBeGreaterThanOrEqual(t.scroll().getBoundingClientRect().top - 1);
     expect(conclusion.top).toBeLessThan(t.scroll().getBoundingClientRect().bottom);
   });
+  it.each([390, 1280])('keeps the clicked line where it is when the following message is off screen (%i)', async width => {
+    // Owner 2026-11-12: opened an exchange in the text, closed it again, and the view went from the 11:51 message to
+    // the 11:53 one. With the conclusion below the screen, the line the reader clicked is what stays put.
+    const t = await mount(width, [...Array.from({ length: 6 }, (_, i) => turn(`before${i}`, [ordinary(`Before ${i}. `.repeat(20))])),
+      ...Array.from({ length: 24 }, (_, i) => turn(`a${i}`, [delivery(`a${i}`, `Update ${i}. `.repeat(45))])),
+      turn('panel', [ordinary('Following conclusion')]), ...Array.from({ length: 6 }, (_, i) => turn(`tail${i}`, [ordinary(`Tail ${i}. `.repeat(20))]))]);
+    const top = () => t.head()!.getBoundingClientRect().top - t.scroll().getBoundingClientRect().top;
+    t.scroll().scrollTop += top() - 200;
+    await untilStable('header placed in the text', () => top());
+    t.button().click();
+    await untilStable('open exchange settled', () => [t.scroll().scrollTop, t.scroll().scrollHeight]);
+    const clicked = top();
+    expect(Math.abs(clicked - 200), 'opening keeps the header where it was').toBeLessThan(2);
+    expect(t.host.querySelector('[data-user-card="Following conclusion"]'), 'the conclusion is below the screen').toBeNull();
+    t.button().click();
+    await until('following conclusion mounted', () => !!t.host.querySelector('[data-user-card="Following conclusion"]'));
+    await untilStable('collapse settled', () => [t.scroll().scrollTop, t.scroll().scrollHeight]);
+    expect(t.button().getAttribute('aria-expanded')).toBe('false');
+    expect(Math.abs(top() - clicked), 'the clicked line stays where it was').toBeLessThan(2);
+    const conclusion = t.host.querySelector('[data-user-card="Following conclusion"]')!.getBoundingClientRect();
+    expect(conclusion.top, 'the conclusion follows it').toBeGreaterThan(t.head()!.getBoundingClientRect().bottom - 1);
+    expect(conclusion.top).toBeLessThan(t.scroll().getBoundingClientRect().bottom);
+  });
   it('returns offscreen rows to zero after collapse and a mid-animation history prepend', async () => {
     const records = Array.from({ length: 30 }, (_, i) => turn(`history${i}`, [delivery(`history${i}`, `Long update ${i}. `.repeat(90))]));
     const ending = turn('ending', [ordinary('Visible conclusion')]);

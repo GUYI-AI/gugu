@@ -35,7 +35,11 @@ import { toolStepDetail } from './tool-step-detail';
  * 没发生的结局是编。人可以按悬浮面板里那颗 × 手动收起(owner 2026-09-06 定)。
  */
 export type SubagentRosterEntry = {
-  /** 转录条目 id —— 面板里做 key 用,同一次派发跨轮也不会变。 */
+  /**
+   * One run of this subagent: its transcript card, and when this run started. The panel keys rows by it and the ×
+   * removes it. A subagent resumed later (Claude's SendMessage) keeps its card but starts a new run, so it is a new
+   * entry and shows again even if an earlier run was removed from the list.
+   */
   id: string;
   /** 派它出去的那次调用的 tool_use id —— 停它时报给供应商的就是这个(#5117)。 */
   launchToolCallId: string;
@@ -249,7 +253,7 @@ export function collectSubagentRoster(
     const elapsedMs = startedAt !== undefined ? Math.max(0, now - startedAt) : 0;
     // 同一次派发会来好几条事件 ⇒ 按 toolCallId 去重,后到的覆盖先到的(名字是后面才补齐的)。
     byCallId.set(item.toolCallId, {
-      id: item.id,
+      id: startedAt !== undefined ? `${item.id}@${startedAt}` : item.id,
       launchToolCallId: item.toolCallId,
       name: item.inputSummary || item.name || item.title || fallbackName,
       ...(item.model ? { model: item.model } : {}),

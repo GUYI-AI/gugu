@@ -157,6 +157,13 @@ export type UnitRowProps = {
   background?: MeasureCtx['background'];
 };
 
+/** Whether this row is on screen from behind a fold, or is drawn from an item its page held back (`onHeldShown`). */
+function shownFromFold(unit: RenderUnit, viewState: ViewState): boolean {
+  // A row of an exchange is mounted while the exchange is folded, at no height: it counts once the exchange is open.
+  if (unit.activityFold && unit.kind !== 'agent-activity') return viewState.isCollapsed(unit.activityFold);
+  return unit.kind === 'conversation-process-steps' || (unit.data as { held?: true } | null | undefined)?.held === true;
+}
+
 // ── UnitRow ───────────────────────────────────────────────────────────────────
 
 export function UnitRow(props: UnitRowProps) {
@@ -181,6 +188,11 @@ export function UnitRow(props: UnitRowProps) {
   const renderDef = createMemo(() => {
     const unit = renderUnit();
     return unit ? UNIT_REGISTRY[unit.kind] : undefined;
+  });
+
+  createEffect(() => {
+    const unit = renderUnit();
+    if (unit && shownFromFold(unit, props.viewState)) commands().onHeldShown?.(unit.itemId);
   });
 
   const chrome = createMemo(() => props.unit.chrome);

@@ -145,6 +145,8 @@ export type SegmentCtx = {
   caches: ChatCaches;
   expanded: (id: string) => boolean;
   active: boolean;
+  /** These turns will not change again (the committed tier): work that depends on one turn alone is kept by turn object. */
+  settled?: boolean;
   /** Latest logical turn across committed and active tiers; its empty acknowledgement remains visible. */
   latestTurnId?: string;
   plan: () => SessionPlans | null;

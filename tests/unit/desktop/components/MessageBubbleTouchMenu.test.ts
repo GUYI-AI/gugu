@@ -43,7 +43,7 @@ describe('MessageBubble touch menu', () => {
       await clickElement(document.querySelector('[data-testid="message-action-copy"]')!)
     } else {
       await contextMenu()
-      await clickElement(menuItem('复制文本'))
+      await clickElement(menuItem('复制'))
     }
     expect(nativeWrite).toHaveBeenCalledExactlyOnceWith('Counter result')
   })
@@ -86,7 +86,7 @@ describe('MessageBubble touch menu', () => {
     const toast = vi.fn()
     await renderMessage(toast, false)
     await contextMenu()
-    await clickElement(menuItem('复制文本'))
+    await clickElement(menuItem('复制'))
     expect(nativeWrite).toHaveBeenCalledExactlyOnceWith('hello from mobile')
     expect(browserWrite).not.toHaveBeenCalled()
     expect(notifyCopied).toHaveBeenCalledExactlyOnceWith('已复制')
@@ -222,7 +222,7 @@ describe('MessageBubble touch menu', () => {
     await contextMenu()
     expect(actionKeys()).toEqual(['reply', 'copy'])
     window.getSelection()!.removeAllRanges()
-    await clickElement(menuItem('复制文本'))
+    await clickElement(menuItem('复制'))
     expect(writeText).toHaveBeenCalledWith('hello')
   })
   it('keeps only selection and existing link actions when the selected text is a link', async () => {
@@ -260,7 +260,7 @@ describe('MessageBubble touch menu', () => {
     window.getSelection()!.addRange(range)
     await contextMenu()
     expect([...document.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent === '引用选中文字')).toBe(false)
-    await clickElement(menuItem('复制文本'))
+    await clickElement(menuItem('复制'))
     expect(writeText).toHaveBeenCalledWith('hello from mobile')
     outside.remove()
   })
@@ -485,7 +485,7 @@ describe('MessageBubble touch menu', () => {
     expect(document.querySelectorAll('[role="menu"]')).toHaveLength(1)
     expect(document.querySelector('[aria-label="快速回应"]')).toBeNull()
     expect(document.querySelector('[aria-label="更多表情"]')).toBeNull()
-    expect([...document.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent?.trim())).toEqual(['回复', '复制文本', '转发', '删除'])
+    expect([...document.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent?.trim())).toEqual(['回复', '复制', '转发', '删除'])
     await clickElement(menuItem('回复'))
     expect(onQuote).toHaveBeenCalledWith(expect.objectContaining({ id: 'msg-1' }))
     expect(document.querySelector('[role="menu"]')).toBeNull()
@@ -503,7 +503,7 @@ describe('MessageBubble touch menu', () => {
   async function openMenuAndCopy() {
     await longPress()
     const copyItem = [...document.body.querySelectorAll('*')]
-      .find((el) => el.textContent?.trim() === '复制文本') as HTMLElement | undefined
+      .find((el) => el.textContent?.trim() === '复制') as HTMLElement | undefined
     expect(copyItem, 'copy-text menu item should be present').toBeTruthy()
     await act(async () => {
       copyItem!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))

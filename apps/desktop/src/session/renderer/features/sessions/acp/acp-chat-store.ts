@@ -35,12 +35,14 @@ import type {
   ComposerQueuedPrompt,
 } from '@gugu/session-ui/react/components';
 import { findToolItem } from '@gugu/session-core/session-record/tool-image';
+import { turnHeld } from '@gugu/session-core/session-record/held-turn';
 import { toolImageUrl } from '@gugu/session-core/acp/client';
 import { commandToken } from '@gugu/session-core/acp/commands';
 import { permissionWaitKind } from '@gugu/session-core/acp/models/permissions';
 import type { AgentState, LiveSettingResult, PermissionWaitKind } from '@gugu/session-core/acp';
 import { errorDetail, isDeepEqual } from '@gugu/session-shared';
 import { action, computed, makeObservable, observable, reaction, runInAction, when } from 'mobx';
+import { HistoryWindow } from './history-window';
 import { flushSync } from 'react-dom';
 import { discardSessionLifeRow, endSessionLife, forkSessionLife, readSessionLife, retryUnknownSessionInput, sessionLifeView, startSessionLife, stopSessionLife } from '../stores/session-life-views';
 import { ACP_START_FAILED, lifeHoldIsFailure, lifeIsStarting, type LifeView } from '@shared/core/sessions/session-life';
@@ -213,6 +215,12 @@ export class AcpChatStore {
   private _runtimeLiveSubagents: readonly AgentState[] = [];
 
   private _view: ChatView | null = null;
+  /**
+   * A stretch of stored history shown in place of the live transcript (`HistoryWindow`), while the reader is at a
+   * turn too far up to reach by loading everything between. `chatState` goes on receiving the conversation underneath.
+   */
+  historyWindow: HistoryWindow | null = null;
+  private _historyWindowRequest = 0;
   private _bootstrapped = false;
   private _incomingHistoryResolved = new Set<string>();
   private _incomingHistoryReading = false;
@@ -316,6 +324,10 @@ export class AcpChatStore {
    * 发一句话就被打回原点。
    */
   private _olderHistoryTurns: TranscriptTurn[] = [];
+  /** Held turns waiting to be read whole (`fillHeldTurn`), by sequence; and those being read. */
+  private readonly _heldWanted = new Set<number>();
+  private readonly _heldReading = new Set<number>();
+  private _heldTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * 下一页更早历史的游标。`undefined` = 还没定下来从哪儿翻;`null` = 已经到头了。
    *
@@ -371,6 +383,9 @@ export class AcpChatStore {
       starting: computed,
       startupChoice: observable.ref,
       messageCount: observable,
+      historyWindow: observable.ref,
+      shownChatState: computed,
+      closeHistoryWindow: action,
       transcriptRevision: observable,
       draftText: observable,
       queuedEditDraft: observable.ref,
@@ -789,7 +804,7 @@ export class AcpChatStore {
 
   /** A confirmed revert invalidates both the loaded window and every cursor that used its old sequences. */
   private async _readRevertedHistory(generation: number, session: AcpLiveSession | null, current: () => boolean = () => true): Promise<boolean> {
-    const stored = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, limit: 100 });
+    const stored = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, limit: 100, lean: true });
     const history = session ? await session.getHistory(undefined, stored.turns.length ? 1 : 100) : null;
     if (history && !history.success) throw history.error;
     if (this._disposed || this.session !== session || generation !== this._historyGeneration || !current()) return false;
@@ -1345,10 +1360,48 @@ export class AcpChatStore {
     this.messageCount = turns.reduce((count, turn) => count + turn.items.length, 0);
   }
 
+  /**
+   * A row has come on screen from behind a fold. An older page read over a device link carries a turn as its folded
+   * form (`lean: 'folded'`): read that turn again and put it in its place. Only pages gone back for are sent that
+   * way and they are not read again behind the reader, so a turn stays whole once it is.
+   * Opening an exchange brings many rows on screen at once: their turns are read together and land as one change.
+   */
+  fillHeldTurn(itemId: string): void {
+    const held = (turn: TranscriptTurn) => itemId.startsWith(`${turn.id}:`) && turnHeld(turn);
+    const turn = (this._olderSource === 'stored' ? this._olderHistoryTurns.find(held) : undefined) ?? this.historyWindow?.turns.find(held);
+    if (!turn || this._heldReading.has(turn.seq)) return;
+    this._heldWanted.add(turn.seq);
+    this._heldTimer ??= setTimeout(() => { this._heldTimer = null; void this._readHeldTurns(); }, 30);
+  }
+
+  private async _readHeldTurns(): Promise<void> {
+    const wanted = [...this._heldWanted];
+    this._heldWanted.clear();
+    for (const seq of wanted) this._heldReading.add(seq);
+    const generation = this._historyGeneration;
+    try {
+      const pages = await Promise.all(wanted.map(seq =>
+        rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before: seq + 1, limit: 1, lean: true }).catch(() => null)));
+      const whole = new Map<number, TranscriptTurn>();
+      pages.forEach((page, index) => { const turn = page?.turns[0]; if (turn?.seq === wanted[index]) whole.set(turn.seq, turn); });
+      if (!whole.size || this._disposed || generation !== this._historyGeneration) return;
+      runInAction(() => {
+        if (this._olderSource === 'stored' && this._olderHistoryTurns.some(one => whole.has(one.seq) && turnHeld(one))) {
+          this._olderHistoryTurns = this._olderHistoryTurns.map(one => turnHeld(one) ? whole.get(one.seq) ?? one : one);
+          this.chatState.transcript.history.seed(this._composedHistory());
+        }
+        this.historyWindow?.fill(whole);
+      });
+    } finally {
+      for (const seq of wanted) this._heldReading.delete(seq);
+    }
+  }
+
   async resolveToolImage(itemId: string, index: number): Promise<string | null> {
     const generation = this._historyGeneration;
     const stored = findToolItem(this._storedHistoryTurns, itemId)
-      ?? (this._olderSource === 'stored' ? findToolItem(this._olderHistoryTurns, itemId) : null);
+      ?? (this._olderSource === 'stored' ? findToolItem(this._olderHistoryTurns, itemId) : null)
+      ?? (this.historyWindow ? findToolItem([...this.historyWindow.turns], itemId) : null);
     const runtime = !stored ? findToolItem(this._runtimeTurns, itemId)
       ?? (this._olderSource === 'runtime' ? findToolItem(this._olderHistoryTurns, itemId) : null) : null;
     try {
@@ -1381,8 +1434,15 @@ export class AcpChatStore {
    */
   scrollToItem(itemId: string): void {
     const pinMode = pinTopMode(itemId);
+    const holds = (state: ChatState) => state.transcript.history.get().some(turn => turn.items.some(item => item.id === itemId));
+    // A row of the live transcript, asked for while a history window is shown: the live transcript comes back, at it.
+    if (this.historyWindow && !holds(this.historyWindow.state)) {
+      this.chatState.scroll.set(pinMode);
+      this.closeHistoryWindow({ keepPosition: true });
+      return;
+    }
     this._view?.setScrollMode(pinMode);
-    this.chatState.scroll.set(pinMode);
+    this.shownChatState.scroll.set(pinMode);
   }
 
   /**
@@ -1820,6 +1880,7 @@ export class AcpChatStore {
     if (this._disposed) return;
     this._disposed = true;
     this._attachmentAbort?.abort();
+    this.historyWindow?.dispose();
     unregisterSessionCommands(this.runtimeSessionId);
     if (this._draftTimer !== null) {
       window.clearTimeout(this._draftTimer);
@@ -2154,7 +2215,7 @@ export class AcpChatStore {
   private async _reloadStoredInPlace(generation: number, inserted: number): Promise<void> {
     const shown = this._storedHistoryTurns.length + (this._olderSource === 'stored' ? this._olderHistoryTurns.length : 0);
     try {
-      const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, limit: Math.max(100, shown + inserted) });
+      const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, limit: Math.max(100, shown + inserted), lean: true });
       if (!this._stillParkedIn(generation)) return;
       runInAction(() => {
         this._storedHistoryTurns = page.turns;
@@ -2742,7 +2803,7 @@ export class AcpChatStore {
   /** Read the newest stored page. Only a live bootstrap can replace a failed read with replay; idle opens must report it. */
   private _loadStoredFirstPage(generation: number, failOnError = false): Promise<void> {
     return rpc.sessions
-      .getStoredHistory({ sessionId: this.sessionId, limit: 100 })
+      .getStoredHistory({ sessionId: this.sessionId, limit: 100, lean: true })
       .then(async (stored) => {
         if (stored.turns.length === 0 || this._disposed) return;
         if (generation !== this._historyGeneration) return;
@@ -2787,7 +2848,7 @@ export class AcpChatStore {
         this.chatState.scroll.set({ kind: 'tail' });
         break;
       }
-      const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before: cursor, limit: 100 }).catch(() => null);
+      const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before: cursor, limit: 100, lean: 'folded' }).catch(() => null);
       if (!page || this._disposed) break;
       turns = [...page.turns, ...turns];
       cursor = page.nextCursor;
@@ -2858,9 +2919,58 @@ export class AcpChatStore {
     return read;
   }
 
+  /** What the transcript shows: the history window while one is open, the live conversation otherwise. */
+  get shownChatState(): ChatState {
+    return this.historyWindow?.state ?? this.chatState;
+  }
+
+  /** The oldest stored turn the live transcript holds: what lies before it is reached by paging, or by a window. */
+  get oldestLoadedSeq(): number | undefined {
+    return this._olderSource === 'stored' ? this.chatState.transcript.state.committedTurns[0]?.seq : undefined;
+  }
+
+  /**
+   * Show the stored history around the turn at `seq` in place of the live transcript (@@@history-window). False when
+   * it cannot be (history that is not read from the store, a turn that is gone): the caller pages to it instead.
+   */
+  async openHistoryWindow(seq: number, anchor?: (turns: readonly TranscriptTurn[]) => string | null): Promise<boolean> {
+    if (this._disposed || this._olderSource !== 'stored') return false;
+    const request = ++this._historyWindowRequest;
+    const opened = await HistoryWindow.open({
+      context: this.chatContext, uri: this.runtimeSessionId, seq,
+      read: before => rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before, limit: 100, lean: 'folded' }).catch(() => null),
+      newestStored: () => this._storedHistoryTurns.at(-1)?.seq ?? -1,
+    }).catch(() => null);
+    if (!opened) return false;
+    if (this._disposed || request !== this._historyWindowRequest) { opened.dispose(); return false; }
+    // The window opens at the message asked for: the list reads this when it is handed the state.
+    const itemId = anchor?.(opened.turns) ?? opened.turns.find(turn => turn.seq === seq)?.items[0]?.id;
+    if (itemId) opened.state.scroll.set(pinTopMode(itemId));
+    const previous = this.historyWindow;
+    runInAction(() => { this.historyWindow = opened; });
+    // The list lets go of the outgoing state when it is handed the new one, a render later.
+    if (previous) setTimeout(() => previous.dispose(), 0);
+    return true;
+  }
+
+  /** Back to the live transcript, at its newest turn unless `keepPosition` (the caller is about to scroll it). */
+  closeHistoryWindow(opts: { keepPosition?: boolean } = {}): void {
+    this._historyWindowRequest += 1;
+    const open = this.historyWindow;
+    if (!open) return;
+    if (!opts.keepPosition) this.chatState.scroll.set({ kind: 'tail' });
+    this.historyWindow = null;
+    setTimeout(() => open.dispose(), 0);
+  }
+
   /** 还能不能往上翻。到头(游标为 null)或还没定下来来源时都是 false。 */
   get canLoadOlderHistory(): boolean {
     return typeof this._olderCursor === 'number';
+  }
+
+  /** Changes each time this store starts its history over; a reader holding pages across awaits compares it. */
+  get historyEpoch(): number {
+    return this._historyGeneration;
   }
 
   /**
@@ -2884,6 +2994,7 @@ export class AcpChatStore {
               sessionId: this.sessionId,
               before,
               limit: 100,
+              lean: 'folded',
             })
           : await this._runtimeOlderPage(before);
       if (!page || this._disposed || generation !== this._historyGeneration) return [];
