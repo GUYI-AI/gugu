@@ -46,9 +46,12 @@ NO_DOWNLOAD_ENV=(-e npm_config_cache=/npm-cache -e npm_config_nodedir=/usr/local
 # 打包日志走 stderr,stdout 只留回程的 tar 流。
 # 唯一的例外是 mise 归档缓存(seed-mise-cache.sh 预取,含 tmux):只读挂载、只被校验与 tar 读取,不经 cpSync;
 # 只读 ⇒ 未命中时当场报错,❌ 在容器里直连 GitHub 涓流。npm 缓存是 docker 命名卷(在 VM 里),不是宿主目录。
+# 助理 App 的规则(#1931):主构建按钉的版本取好的那一份,与 dist-electron 一样送过去(打包脚本只装、不再取);
+# 没钉版本时主构建不写这个目录,也就不送。
+RULES_SEED=$("$DOCKER" exec "$GUGU_LINUX_CONTAINER" sh -c '[ -d /work/assistant-rules-seed ] && echo assistant-rules-seed || true')
 "$DOCKER" exec "$GUGU_LINUX_CONTAINER" tar -C /work -cf - \
   package.json .node-version pnpm-workspace.yaml scripts apps/desktop/dist-electron apps/desktop/preinstalled-apps \
-  apps/desktop/src/session/shared/core/agents/mise-release.json release/server/externals.json \
+  apps/desktop/src/session/shared/core/agents/mise-release.json release/server/externals.json $RULES_SEED \
   | "$DOCKER" run -i --rm --platform linux/arm64 -w /work \
       -v "$GUGU_MISE_CACHE_DIR:/mise-cache:ro" -e GUGU_MISE_CACHE_DIR=/mise-cache \
       -v "$NPM_CACHE_VOLUME:/npm-cache" "${NO_DOWNLOAD_ENV[@]}" \
