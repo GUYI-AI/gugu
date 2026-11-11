@@ -2,12 +2,12 @@ import { useEffect, useRef } from 'react';
 import { useConversationSessionSummary } from '@/hooks/useConversationSessionSummary';
 import { rendererLogger } from '@/lib/log';
 import { machineRpc } from '@/mobile/agent-watch/sessionpage-rpc';
-import { writeCachedNativeRecord } from '@/mobile/agent-watch/timeline-cache';
+import { rememberNativeTailPage } from '@/mobile/agent-watch/timeline-cache';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { machineUnavailableLabel } from '../machine-unavailable-label';
 
 const log = rendererLogger('session/native-tail');
-// Match the existing native cache's JSON size limit; its writer owns storage and eviction.
+// A newest page this large is not kept: it would be most of a conversation's store on its own.
 const MAX_ENTRY_BYTES = 4 * 1024 * 1024;
 type Flight = { pending?: () => boolean; done: Promise<void> };
 // Only unfinished requests live here, including across a page unmount/remount.
@@ -35,7 +35,8 @@ export function rememberNativeTail(deviceId: string, sessionId: string, availabl
             log.warn({ deviceId, sessionId }, 'Native tail exceeds the cache limit');
             break;
           }
-          writeCachedNativeRecord({ deviceId, sessionId }, result.value);
+          // Merged into what is kept: the earlier turns this machine's readers stored stay stored.
+          await rememberNativeTailPage({ deviceId, sessionId }, result.value);
         } catch (error) {
           log.warn({ deviceId, sessionId, error: String(error) }, 'Native tail could not be remembered');
           break; // A failed read is not retried, including a queued request.
