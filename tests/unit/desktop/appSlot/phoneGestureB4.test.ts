@@ -91,9 +91,10 @@ beforeEach(() => {
   document.body.appendChild(frame)
   posted = vi.fn()
   Object.defineProperty(frame.contentWindow!, 'postMessage', { value: posted, configurable: true })
-  // `assistant:open`, `assistant:rename` (#1925, 44), `chat:work` (#1925, 46) and `chat:voice-notes:record` (#1927, 47) are
-  // the desktop's alone: held here only so their verbs reach the gesture door, which refuses them in the same sentence.
-  start(['files:read', 'files:write', 'agents:tools', 'assistant:open', 'assistant:rename', 'chat:work', 'chat:voice-notes:record'])
+  // `assistant:open`, `assistant:rename` (#1925, 44), `chat:work` (#1925, 46), `chat:voice-notes:record` (#1927, 47) and the
+  // 50 managing words are the desktop's alone: held here only so their verbs reach the gesture door, which refuses them
+  // in the same sentence.
+  start(['files:read', 'files:write', 'agents:tools', 'assistant:open', 'assistant:rename', 'chat:work', 'chat:voice-notes:record', 'chat:resources:write', 'chat:voice-notes:manage'])
 })
 afterEach(() => {
   host?.dispose()
@@ -128,7 +129,13 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   taskMessage: { intent: 'pause' },
   assistantOpen: { name: 'main', screen: 'move' },
   assistantAdvanceSetup: { name: 'main', next: 'ready' },
+  bindingsUpload: { name: 'main' },
+  bindingsRemoveFolder: { name: 'main', key: 'docs' },
+  bindingsTranscribeVoiceNote: { name: 'main', key: 'n1' },
+  bindingsRemoveVoiceNote: { name: 'main', key: 'n1' },
+  bindingsExportVoiceNote: { name: 'main', key: 'n1' },
   assistantRename: { name: 'main', text: 'Pip' },
+  assistantConnect: { name: 'main', id: 'feishu' },
   bindingsOpenWork: { name: 'main', handle: 'wAAAAAAAAAAAAAAAAAAAAAA' },
   voiceNoteStart: { name: 'main' },
   voiceNoteResume: { name: 'main' },

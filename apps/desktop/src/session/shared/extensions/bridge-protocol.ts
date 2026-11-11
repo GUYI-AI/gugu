@@ -134,7 +134,13 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 48 (#1927): `contributes.conversationSurface.composerActions`: entries in that assistant chat's composer 「+」 the host draws
 // and runs on the person's click — a voice note, a draft, or a `page-intent` the page hears once on `bindings.onSurface`
 // (composer-actions.ts). No App code runs on that click.
-export const EXTENSION_API_VERSION = 48;
+// 49: the phone gate (reserved here).
+// 50 (#1927): what the assistant's own 记忆 pages do that 42 could not (resources-management.ts): a closed `reason` on every
+// `unavailable`; 给助理的资料 `upload` (the host's picker) / `createFolder` / `rename` / `removeFolder` (asked first) under
+// `resources:write` listing `files`; `voice-notes:manage` (`chat:voice-notes:manage`): `transcribeVoiceNote`,
+// `removeVoiceNote` (asked first), `exportVoiceNote` (the host's save dialog); a binding draft's `attach` (files of its
+// folder or the agent's resources, by the path or key the App holds).
+export const EXTENSION_API_VERSION = 50;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
@@ -913,6 +919,22 @@ export const BRIDGE_VERBS = {
   bindingsSave: { needs: 'chat:resources:write', only: 'page' },
   bindingsRemove: { needs: 'chat:resources:write', only: 'page' },
   /**
+   * 50 (resources-management.ts): 给助理的资料 as the assistant's own page manages it — what the person picks in the host's
+   * picker uploaded, a folder made, renamed, removed with all in it once the person said yes in the host's own question.
+   * The bytes go host → store; the App names a folder, a key and a name, and hears back the entries made.
+   */
+  bindingsUpload: { needs: 'chat:resources:write', only: 'page', gesture: true, toAgent: { answer: { state: 'cancelled' } } },
+  bindingsCreateFolder: { needs: 'chat:resources:write', only: 'page' },
+  bindingsRename: { needs: 'chat:resources:write', only: 'page' },
+  bindingsRemoveFolder: { needs: 'chat:resources:write', only: 'page', gesture: true, toAgent: { answer: { state: 'cancelled' } } },
+  /**
+   * 50: the agent's voice notes as the assistant's own page works them — a note waiting transcribed by this computer, one
+   * removed once the person said yes, one exported where the person saves it.
+   */
+  bindingsTranscribeVoiceNote: { needs: 'chat:voice-notes:manage', only: 'page', gesture: true },
+  bindingsRemoveVoiceNote: { needs: 'chat:voice-notes:manage', only: 'page', gesture: true, toAgent: { answer: { state: 'cancelled' } } },
+  bindingsExportVoiceNote: { needs: 'chat:voice-notes:manage', only: 'page', gesture: true, toAgent: { answer: { state: 'cancelled' } } },
+  /**
    * #1928 (43): the schedules of the agent the bound conversation is with — listed, heard changing (`schedulesChanged`),
    * and changed through the host's schedule store by the caller's operation id. The host finds the agent from the binding.
    */
@@ -930,6 +952,8 @@ export const BRIDGE_VERBS = {
   assistantRename: { needs: 'assistant:rename', only: 'page', gesture: true },
   /** #1925 (44) The assistant's moving figure drawn by the host over the page (`gugu.assistant.figure`): what status shows, moving. */
   assistantFigure: { needs: 'assistant:status', only: 'page' },
+  /** #1925 (44) The connect step's click (`gugu.assistant.connect`): that service's connect dialog, for the assistant's home. */
+  assistantConnect: { needs: 'assistant:open', only: 'page', gesture: true },
   /**
    * #1925 (44) A short line in the host's own toast, as the host says 「更改已保存」 after a save: only from a page the person
    * works, while it is on screen and has the focus; text only (no action, link or icon), at most `APP_TOAST_MAX` characters,

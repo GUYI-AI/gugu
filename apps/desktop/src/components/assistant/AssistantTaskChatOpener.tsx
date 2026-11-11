@@ -13,6 +13,8 @@ import { AssistantTaskChatWindow } from './AssistantTaskChatWindow'
 import {AssistantWorkTaskWindow} from './AssistantWorkTaskWindow'
 import { readRequiredDisplayIdentities } from '../../lib/identityReadAdapter'
 import { rendererLogger } from '../../lib/log'
+import { openAssistantTaskInApp, readAssistantEntryTarget } from '../../lib/assistantEntry'
+import { resolveAssistantWorkTarget } from '../../lib/assistantWorkTarget'
 
 const log = rendererLogger('assistant/task-chat-open')
 
@@ -39,6 +41,23 @@ export function AssistantTaskChatOpener({ visible }: { visible: boolean }) {
       const request = (event as CustomEvent<AssistantTaskChat>).detail
       if (!user || pending === `${request.taskAgentId}:${request.workId ?? "legacy"}`) return
       const current = ++generation
+      // Entry switch: the assistant's page is its App. The task's conversation opens over the App's panel (its host layer),
+      // the same window the built-in panel drew; a task named without its work id is found in the assistant's work first.
+      if (readAssistantEntryTarget('task-chat').kind === 'app') {
+        const ownerId = user.id
+        const work = request.workId ? Promise.resolve(request as AssistantTaskChat & { workId: string })
+          : resolveAssistantWorkTarget(request.assistantId, { ...(request.taskAgentId ? { agentId: request.taskAgentId } : { sessionId: request.task.sessionId }) })
+            .then((found) => (found?.workId ? found as AssistantTaskChat & { workId: string } : null))
+        void work.then((found) => {
+          if (!alive || current !== generation) return
+          if (!found) throw new Error('That task is not in the assistant\'s work')
+          openAssistantTaskInApp(ownerId, found)
+        }).catch((error: unknown) => {
+          log.error({ error, taskAgentId: request.taskAgentId }, 'task chat not opened in the assistant App')
+          if (alive && current === generation) toast(t('tasks.chatUnavailable'), 'error', messageForUser(error))
+        })
+        return
+      }
       if(request.workId){
         showAssistantTaskChat({ownerId:user.id,request,name:request.title??t('tasks.title')})
         return

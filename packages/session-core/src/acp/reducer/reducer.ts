@@ -17,6 +17,7 @@ import { deriveConfigGroups } from './config-derive';
 import { makeMessageId, messageEntityId, makeThinkingId, makeTurnId } from './ids';
 import { foldItem, finalizeItems, type FoldEvent } from './item-fold';
 import { projectSubagentProgress } from './subagent-progress';
+import { findSubagentStep, foldSubagentStep, patchSubagentStep } from './subagent-steps';
 import type { NormalizedEvent } from './normalized-event';
 import { findEntityOwner } from './entity-owner';
 import { withReferencedTerminals } from '../models/terminals';
@@ -371,7 +372,7 @@ function toAgentStatus(
  * ❌ 别为了「先显示出来」造一条顶层行,那正是 #5117 里那条凭空多出来的卡。
  */
 /** 哪张卡挂着这个后台任务 id —— 纯从转录派生,❌ 不另记一份状态。 */
-function findBackgroundTaskOwner(t: TranscriptSlice, asyncTaskId: string): string | null {
+function findBackgroundTaskOwner(t: TranscriptSlice, asyncTaskId: string, agents: readonly AgentState[]): string | null {
   const walk = (items: readonly unknown[]): string | null => {
     for (const raw of items) {
       const item = raw as ToolCallNodeLike & { backgroundTaskId?: string };
@@ -391,12 +392,14 @@ function findBackgroundTaskOwner(t: TranscriptSlice, asyncTaskId: string): strin
     const hit = walk(t.committed[i].items);
     if (hit !== null) return hit;
   }
-  return null;
+  // A command a subagent started in the background hangs on that subagent's step (#2500).
+  return findSubagentStep(agents, (step) => step.backgroundTaskId === asyncTaskId)?.step.toolCallId ?? null;
 }
 
 function resolveAsyncTask(
   event: Extract<NormalizedEvent, { kind: 'async_task' | 'async_task_progress' | 'async_task_state' }>,
-  t: TranscriptSlice
+  t: TranscriptSlice,
+  agents: readonly AgentState[]
 ): Extract<NormalizedEvent, { kind: 'tool_update' }> | null {
   // 归属:事件自带的优先;没带就看哪张卡已经挂着这个任务 id。
   //
@@ -404,7 +407,7 @@ function resolveAsyncTask(
   // 1ms 后的 `async_task_progress` 才带(协议注释「Originating tool call, when correlation
   // becomes known after spawn」说的就是这个);终态那条也带。只在 spawned 上取归属 ⇒ 卡永远
   // 挂不上任务 id ⇒ 摘要栏没有后台命令(owner 截图)。
-  const toolCallId = event.toolCallId ?? findBackgroundTaskOwner(t, event.asyncTaskId);
+  const toolCallId = event.toolCallId ?? findBackgroundTaskOwner(t, event.asyncTaskId, agents);
   // 归属仍未知 = 还不知道;❌ 不造顶层行(这就是泄露)。
   if (!toolCallId) return null;
 
@@ -508,21 +511,18 @@ function reduceSubagentStream(
     case 'search':
     case 'mcp_tool':
     case 'web_fetch': {
-      if (!launch) return s;
-      // 父节点**一律**是派它那张卡,❌ 不看事件自带的 `parentToolCallId`:它带的是 Agent 那次调用的
-      // tool_use id,而那个别名要等 Agent 的 tool_call_update 到了才登记 —— 同步派发时那条更新
-      // 在子智能体**跑完**才来,中途的子调用父节点查不到,就掉成顶层(owner 2026-09-07 截图:
-      // 子智能体的 7 次读文件成了主对话里的一组「7 file reads」)。事件既然是按子会话号认出来的,
-      // 它属于谁已经知道了,没有第二种答案。
+      // The call goes onto this subagent's own step list in the registry, not into the turn that launched it
+      // (#2500): that turn was rewritten whole on every step and grew to megabytes. Which subagent it belongs to
+      // is already known from the stream it came on; the event's own `parentToolCallId` is not consulted (it names
+      // the Agent call, an alias that is registered only when that call's update arrives).
+      const scope = launch?.id ?? owner.launchTurnId ?? owner.toolCallId;
+      const steps = foldSubagentStep(owner.steps ?? [], inner, scope, at, s.replaying ? undefined : at);
       const nested = { ...inner, parentToolCallId: owner.toolCallId };
-      const items = foldItem(launch.items, nested, launch.id, at, s.replaying ? undefined : at);
-      const updated = { ...launch, items };
-      const agents = updateAgentSlice(s.agents, nested, launch.id, at).map((agent) => agent.agentId === owner.agentId
-        ? { ...agent, activityVersion: (agent.activityVersion ?? 0) + 1 } : agent);
-      return { ...s, agents, transcript: {
-        active: launch === active ? updated : active,
-        committed: launch === active ? s.transcript.committed : s.transcript.committed.map((turn) => turn === launch ? updated : turn),
-      } };
+      const registered = updateAgentSlice(s.agents, nested, launch?.id ?? owner.launchTurnId, at);
+      if (steps === owner.steps && registered === s.agents) return s;
+      const agents = registered.map((agent) => agent.agentId === owner.agentId
+        ? { ...agent, steps: [...steps], activityVersion: (agent.activityVersion ?? 0) + 1 } : agent);
+      return { ...s, agents };
     }
     case 'subagent_stream': return reduce(s, { kind: 'event', event: inner, at }, deps);
     default:
@@ -543,7 +543,8 @@ function resolveTaskNotification(
   if (known) return { ...event, toolCallId: known.toolCallId, agentId: known.agentId };
   const call =
     findToolCallNode(t.active?.items ?? [], event.toolCallId) ??
-    findToolCallNodeInTurns(t.committed, event.toolCallId);
+    findToolCallNodeInTurns(t.committed, event.toolCallId) ??
+    (findSubagentStep(agents, (step) => step.toolCallId === event.toolCallId)?.step as ToolCallNodeLike | undefined) ?? null;
   if (call === null) return null;
   if (call.kind === 'spawn-subagent-tool-call') return event;
   return {
@@ -1109,7 +1110,7 @@ function reduceState(s: ParserState, input: ReducerInput, deps: ReducerDeps): Pa
     event.kind === 'async_task_progress' ||
     event.kind === 'async_task_state'
   ) {
-    const target = resolveAsyncTask(event, t);
+    const target = resolveAsyncTask(event, t, agents);
     if (target === null) return s;
     resolvedEvent = target;
   }
@@ -1130,10 +1131,21 @@ function reduceState(s: ParserState, input: ReducerInput, deps: ReducerDeps): Pa
     (resolvedEvent.backgroundTaskDone !== undefined || resolvedEvent.backgroundTaskId !== undefined) &&
     findToolCallNode(t.active?.items ?? [], resolvedEvent.toolCallId) === null
   ) {
+    // The card is a subagent's own call: it is settled on that subagent's step list (#2500).
+    const stepPatch = patchSubagentStep(agents, resolvedEvent.toolCallId, {
+      ...(resolvedEvent.status === 'completed' ? { status: 'done' as const } : resolvedEvent.status === 'failed' ? { status: 'error' as const } : {}),
+      ...(resolvedEvent.backgroundTaskId !== undefined ? { backgroundTaskId: resolvedEvent.backgroundTaskId } : {}),
+      ...(resolvedEvent.backgroundTaskDone !== undefined ? { backgroundTaskDone: resolvedEvent.backgroundTaskDone } : {}),
+    });
+    if (stepPatch !== null) {
+      const patched: ParserState = { ...s, transcript: t, segment, agents: stepPatch, plan };
+      const done = backgroundCommandDone(resolvedEvent, t, agents);
+      return done ? reduce(patched, { kind: 'event', event: done, at: input.at }, deps) : patched;
+    }
     const committed = patchToolCallInTurns(t.committed, resolvedEvent);
     if (committed !== null) {
       const patched: ParserState = { ...s, transcript: { ...t, committed }, segment, agents, plan };
-      const done = backgroundCommandDone(resolvedEvent, t);
+      const done = backgroundCommandDone(resolvedEvent, t, agents);
       return done ? reduce(patched, { kind: 'event', event: done, at: input.at }, deps) : patched;
     }
   }
@@ -1141,7 +1153,7 @@ function reduceState(s: ParserState, input: ReducerInput, deps: ReducerDeps): Pa
   // 命令卡就在当前轮:照常 fold 到卡上,再补一行「跑完了」(见 backgroundCommandDone)。
   const commandDoneAfterFold =
     resolvedEvent.kind === 'tool_update' && resolvedEvent.backgroundTaskDone === true
-      ? backgroundCommandDone(resolvedEvent, t)
+      ? backgroundCommandDone(resolvedEvent, t, agents)
       : null;
 
   // Lazy open: agent-initiated content with no active turn.
@@ -1196,12 +1208,14 @@ function reduceState(s: ParserState, input: ReducerInput, deps: ReducerDeps): Pa
  */
 function backgroundCommandDone(
   event: Extract<NormalizedEvent, { kind: 'tool_update' }>,
-  t: TranscriptSlice
+  t: TranscriptSlice,
+  agents: readonly AgentState[]
 ): Extract<NormalizedEvent, { kind: 'background_command_done' }> | null {
   if (event.backgroundTaskDone !== true) return null;
   const card =
     findToolCallNode(t.active?.items ?? [], event.toolCallId) ??
-    findToolCallNodeInTurns(t.committed, event.toolCallId);
+    findToolCallNodeInTurns(t.committed, event.toolCallId) ??
+    (findSubagentStep(agents, (step) => step.toolCallId === event.toolCallId)?.step as ToolCallNodeLike | undefined) ?? null;
   if (card === null || card.kind === 'spawn-subagent-tool-call') return null;
   const title = (card as { title?: unknown }).title;
   return {

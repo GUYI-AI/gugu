@@ -43,6 +43,7 @@ export const CAPABILITY_RISK = {
   // reading is what the person told it; changing them changes what it knows of them.
   'chat:resources': 'medium',
   'chat:resources:write': 'high',
+  'chat:voice-notes:manage': 'high',
   // #1928 That conversation's agent, only when it is the person's own: its schedules seen, and changed — what a schedule
   // says reaches the agent when due, as a word to it would, so changing them reads as high.
   'chat:schedules': 'medium',

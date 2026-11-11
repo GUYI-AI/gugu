@@ -22,8 +22,14 @@ import {
   EXTENSION_LISTED_SESSION_METHOD,
   EXTENSION_MEMBER_FACES_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
+  EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD,
+  EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD,
+  EXTENSION_EXPORT_VOICE_NOTE_METHOD,
   EXTENSION_VOICE_NOTE_METHOD,
   INSTALL_CONSENT_HUMAN_WINDOW_MS,
+  type ResourceRemovalAsk,
+  type VoiceNoteExportAsk,
+  type VoiceNoteTranscribeAsk,
   type ExtensionHostAction,
   type ExtensionHostActionResult,
   type ExtensionHostActionCommand,
@@ -254,6 +260,8 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
     // #1925 main checked the page is drawn beside its bound conversation: its own panel there, collapsed or expanded.
     case 'conversationPanel':
       return import('@renderer/features/apps/app-conversation-panel').then(({ setAppConversationPanelCollapsed }) => {
+        // #1927 (48) An intent is about to be told to the App's page: nothing of the host's stays over it (as the row's profile).
+        if (action.uncover) readAppHostLayerBridge()?.close(extensionId);
         setAppConversationPanelCollapsed(extensionId, action.collapsed);
       });
     // #1925 (46) Main checked the account, the grant, the assistant's chat and the row: the shell draws that task in the App's
@@ -336,6 +344,8 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       const { figure, ownerId, who } = action;
       return import('../apps/app-host-layer').then(({ setAssistantFigure, pageKey }) => setAssistantFigure(extensionId, figure && ownerId ? { figure, ownerId, who, from: pageKey(sessionId, tabId) } : null));
     }
+    case 'openAssistantConnector':
+      return import('../apps/assistant-app-counts').then(({ openAssistantConnector }) => openAssistantConnector(action.id, action.ownerId));
     case 'toast':
       // The host's own toast, as the built-in 「更改已保存」: the text alone.
       toast({ title: action.text });
@@ -395,6 +405,19 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
   [EXTENSION_PICK_DISPATCH_TARGET_METHOD]: async (params: unknown) => {
     const { pickDispatchTarget } = await import('@/components/chat/dispatchAsk');
     return pickDispatchTarget(params as DispatchAsk);
+  },
+  /** #50 An App's managing calls: the assistant page's own question, 开始转写 and 导出 Markdown, in this window. */
+  [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD]: async (params: unknown) => {
+    const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
+    return resourceWindow().confirmRemoval(params as ResourceRemovalAsk);
+  },
+  [EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD]: async (params: unknown) => {
+    const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
+    return resourceWindow().transcribe(params as VoiceNoteTranscribeAsk);
+  },
+  [EXTENSION_EXPORT_VOICE_NOTE_METHOD]: async (params: unknown) => {
+    const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
+    return resourceWindow().exportNote(params as VoiceNoteExportAsk);
   },
   [EXTENSION_INSTALL_CONSENT_METHOD]: (params: unknown): Promise<ExtensionInstallConsentResult> => {
     if (!params || typeof params !== 'object') throw new Error('Invalid extension consent request');

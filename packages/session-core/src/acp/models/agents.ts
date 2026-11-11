@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { toolNodeSchema } from './turns/tool-calls';
 
 /**
  * `lost`:重开会话(replay)时还挂着「在跑」的后台子智能体。
@@ -73,6 +74,13 @@ export const agentStateSchema = z.object({
   canCancel: z.boolean().optional(),
   model: z.string().optional(),
   activityVersion: z.number().optional(),
+  /**
+   * The calls this subagent made on its own stream, oldest first, as headers: what it called and how that ended,
+   * without the output (#2500). They live here and not in the turn that launched it, so that turn stops growing
+   * once the launch returns and one step costs one small patch on the live state. The full record stays in the
+   * provider's own subagent record.
+   */
+  steps: z.array(toolNodeSchema).optional(),
 });
 
 export type AgentState = z.infer<typeof agentStateSchema>;

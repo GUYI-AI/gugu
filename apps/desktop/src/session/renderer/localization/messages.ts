@@ -285,11 +285,12 @@ const enUSCoreMessages = {
   // lists (`extensions.resourceKind.*`).
   'extensions.permissionsChatResources': 'Read only what your agent keeps in the conversation you select: {kinds}',
   'extensions.permissionsChatResourcesWrite': 'Change what your agent keeps in the conversation you select: {kinds}; your agent applies the changes',
+  'extensions.permissionsChatVoiceNotesManage': 'Transcribe, export or delete the voice notes your agent keeps in the conversation you select; you confirm each delete',
   // #1928: only when that conversation is your private one with an agent of yours.
   'extensions.permissionsChatSchedules': 'See only the schedules of your agent in the conversation you select, without changing them',
   'extensions.permissionsChatSchedulesControl': 'Add, change, pause or remove the schedules of your agent in the conversation you select',
   // #1925: that conversation's assistant, only when it is the person's own.
-  'extensions.permissionsAssistantStatus': 'See your setup progress while you have no assistant, and the name, look, home, setup progress and how many devices, connected apps, projects and capabilities your assistant in the conversation you select has',
+  'extensions.permissionsAssistantStatus': 'See your name and setup progress while you have no assistant; then, for your assistant in the conversation you select: its name, look and colour, its home and that computer\'s name, setup progress, which apps it can connect and whether each is connected, and how many devices, connected apps, projects and capabilities it has; and have its moving figure drawn on the App\'s page',
   'extensions.permissionsAssistantOpen': 'When you click, open setup while you have no assistant, and the setup, move, close, settings, projects and capabilities pages of your assistant in the conversation you select, or move its setup on',
   'extensions.permissionsAssistantRename': 'Rename your assistant in the conversation you select',
   // #1925 (46): only when that conversation is the person's chat with their own assistant; a task's conversation is drawn by gugu.
@@ -1477,9 +1478,10 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.permissionsChatSurface': '把它的页面摆在你选定的那条会话旁边，它看不到这条会话',
   'extensions.permissionsChatResources': '只读取你选定的那条会话里 agent 记着的{kinds}',
   'extensions.permissionsChatResourcesWrite': '改动你选定的那条会话里 agent 记着的{kinds}，由 agent 照改',
+  'extensions.permissionsChatVoiceNotesManage': '转写、导出或删除你选定的那条会话里 agent 记着的语音笔记，每次删除都由你确认',
   'extensions.permissionsChatSchedules': '只查看你选定的那条会话里你的 agent 的已安排，不改动',
   'extensions.permissionsChatSchedulesControl': '添加、修改、暂停或删除你选定的那条会话里你的 agent 的已安排',
-  'extensions.permissionsAssistantStatus': '还没有助理时获知开通进度；有了之后只获知你选定的那条会话里你的助理的名字、形象、住处、开通进度，以及设备、连接应用、项目和能力的数目',
+  'extensions.permissionsAssistantStatus': '还没有助理时获知你的称呼和开通进度；有了之后只获知你选定的那条会话里你的助理的名字、形象与主题色、住处与那台电脑的名字、开通进度、能连哪些应用及各自连没连，以及设备、连接应用、项目和能力的数目；并把它会动的形象画在 App 的页面上',
   'extensions.permissionsAssistantOpen': '你点按时，还没有助理就打开开通页；有了之后为你选定会话里的助理打开开通、搬家、关闭、设置、项目和能力页面，或推进开通步骤',
   'extensions.permissionsAssistantRename': '给你选定会话里的助理改名',
   'extensions.permissionsChatWork': '查看你的助理派出的任务（标题和进度），并在它的面板里显示某个任务的对话，它看不到这段对话',

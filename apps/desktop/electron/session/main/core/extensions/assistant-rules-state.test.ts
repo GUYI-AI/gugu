@@ -11,9 +11,18 @@ import { signTestRelease } from './test-support/signed-release';
 // #1931 R7 With no rules here, what the windows are told: the assistant waits for its rules (its entry shows it preparing)
 // while this machine needs it and has none; that is stuck once getting them truly failed. And the copy a release carries
 // starts the last good copy, so an upgrade made offline still has rules.
-const state = vi.hoisted(() => ({ service: null as unknown, userData: '', appPath: '' }));
+const state = vi.hoisted(() => ({ service: null as unknown, userData: '', appPath: '', signedIn: null as string | null, assistants: {} as Record<string, string | null> }));
 vi.mock('electron', () => ({ app: { getPath: () => state.userData, isPackaged: false, getAppPath: () => state.appPath } }));
 vi.mock('./extensions-root', () => ({ extensionsService: () => state.service }));
+// The account signed in and its assistant's provision (wherever the assistant lives); no one signed in: denied.
+const signedIn = () => {
+  if (!state.signedIn) throw Object.assign(new Error('Not signed in'), { code: 'denied' });
+  return state.signedIn;
+};
+vi.mock('./app-assistant-binding', () => ({ signedInAccountAssistant: async () => ({ ownerId: signedIn(), assistantId: state.assistants[signedIn()] ?? null }) }));
+vi.mock('./app-unread-bindings', () => ({ account: async () => ({ token: 't', ownerId: signedIn() }) }));
+// A market install never finishes here (no network in tests): the App stays not in while it goes.
+vi.mock('./extension-market-install', () => ({ installExtensionFromMarket: () => new Promise(() => undefined) }));
 vi.mock('../../../../lib/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) }));
 // The process resolver trusts the release keys the build ships (#1931); here the build ships a key made in this test.
 const releaseKey = vi.hoisted(() => {
@@ -39,6 +48,8 @@ beforeEach(() => {
   process.env.GUGU_HOME = path.join(work, 'gugu-home');
   delete process.env.GUGU_CLOUD_COMPUTER;
   delete process.env.GUGU_ASSISTANT_RULES_SEED_DIR;
+  state.signedIn = null;
+  state.assistants = {};
 });
 afterEach(() => {
   process.env = { ...env };
@@ -73,6 +84,29 @@ describe('whether the assistant here waits for its rules', () => {
   it('never waits on a machine the assistant does not live on (and whose setup did not start)', async () => {
     const { assistantRulesState } = await root();
     expect(await assistantRulesState()).toEqual({ pending: false, stuck: false });
+  });
+
+  it('waits, and puts the App in, while the account signed in has an assistant elsewhere: the App is its page here', async () => {
+    state.signedIn = 'owner-1';
+    state.assistants = { 'owner-1': 'assistant-1' };
+    const { assistantRulesState, ensureAssistantApp, told } = await root();
+    // Not known before main asked: a window found the assistant, the App is not in.
+    const going = ensureAssistantApp('assistant');
+    await settle();
+    expect(await assistantRulesState()).toEqual({ pending: true, stuck: false });
+    expect(told.at(-1)).toEqual({ pending: true, stuck: false });
+    // Another account signed in now: what was read about the first one is not about it.
+    state.signedIn = 'owner-2';
+    expect(await assistantRulesState()).toEqual({ pending: false, stuck: false });
+    void going.catch(() => undefined);
+  });
+
+  it('leaves a person with no assistant anywhere alone: nothing to wait for, nothing put in', async () => {
+    state.signedIn = 'owner-1';
+    const { assistantRulesState, ensureAssistantApp } = await root();
+    expect(await ensureAssistantApp('assistant')).toBe('not-needed');
+    expect(await assistantRulesState()).toEqual({ pending: false, stuck: false });
+    expect(service.isInstalled('gugu-assistant')).toBe(false);
   });
 
   it('is stuck at once when an App gugu does not put over holds the id and gives no rules', async () => {

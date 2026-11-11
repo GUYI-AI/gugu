@@ -22,9 +22,9 @@ const ENTRY_SYNC_RETRY_MS: readonly number[] = [5_000, 30_000, 120_000]
 /**
  * Entry switch, the shell's half (lib/assistantEntry.ts holds the one decision). Whenever the window's assistant changes —
  * the account, found / none, its private chat — or the assistant App does (installed, updated, switched, its grant or
- * choice, main's ensure step), main is asked to bring the trusted App's binding to that chat (`syncAssistantAppEntry`,
- * electron/.../assistant-app-entry.ts) and answers whether that App is the trusted one and whether it is being put in; that
- * answer is published for the entries. Background only: a failure is logged and tried again, never shown — the built-in page
+ * choice), main is asked to bring the trusted App's binding to that chat (`syncAssistantAppEntry`,
+ * electron/.../assistant-app-entry.ts) and answers whether that App is the trusted one; that answer is
+ * published for the entries. Background only: a failure is logged and tried again, never shown — the built-in page
  * stays the entry meanwhile.
  *
  * Also what the built-in page did by being opened, now that the App's page is opened instead: its panel state carried over
@@ -58,7 +58,7 @@ export const AssistantAppEntryHost = observer(function AssistantAppEntryHost() {
         if (disposed) return
         if (!result.success) throw new Error(result.error)
         if (result.data.ownerId !== ownerId) return
-        publishAssistantAppWord({ ownerId, trusted: result.data.trusted, ensuring: result.data.ensuring })
+        publishAssistantAppWord({ ownerId, trusted: result.data.trusted })
         if (result.data.outcome === 'unverified' && attempt < ENTRY_SYNC_RETRY_MS.length) {
           timer = setTimeout(() => ask(attempt + 1), ENTRY_SYNC_RETRY_MS[attempt])
         }

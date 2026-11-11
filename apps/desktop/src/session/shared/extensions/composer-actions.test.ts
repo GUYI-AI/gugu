@@ -9,7 +9,7 @@ import { COMPOSER_ACTIONS_API_VERSION } from './composer-actions';
  */
 const ACTIONS = ['unread', 'draft', 'surface', 'voice-notes:record'];
 const CAPABILITY = { unread: 'chat:unread', draft: 'chat:draft', surface: 'chat:surface', 'voice-notes:record': 'chat:voice-notes:record' } as Record<string, string>;
-const ideas = { id: 'ideas', label: { zh: '获取灵感', en: 'Get ideas' }, icon: 'sparkles', run: { kind: 'page-intent', intent: 'ideas' } };
+const ideas = { id: 'ideas', label: { zh: '获取灵感', en: 'Get ideas' }, icon: 'sparkles', run: { kind: 'page-intent' } };
 const voice = { id: 'voice-note', label: { zh: '录制语音笔记', en: 'Record a voice note' }, icon: 'mic', run: { kind: 'voice-note' } };
 const draft = { id: 'ask', label: { zh: '问问它', en: 'Ask it' }, icon: 'message', run: { kind: 'draft', text: { zh: '帮我看看今天的安排。', en: 'Look at my day with me.' } } };
 
@@ -33,8 +33,10 @@ describe('composer actions in the manifest', () => {
     expect(() => parseExtensionManifest(manifest(undefined))).not.toThrow();
   });
 
-  it('below API 48: refused', () => {
-    for (const apiVersion of [44, 47]) refused(manifest([ideas], { apiVersion }), /composerActions requires apiVersion 48/);
+  it('below its API version: refused', () => {
+    for (const apiVersion of [44, COMPOSER_ACTIONS_API_VERSION - 1]) {
+      refused(manifest([ideas], { apiVersion }), new RegExp(`composerActions requires apiVersion ${COMPOSER_ACTIONS_API_VERSION}`));
+    }
   });
 
   it('each run needs its binding action: a voice note the recorder, a draft the draft', () => {
@@ -56,9 +58,8 @@ describe('composer actions in the manifest', () => {
       { ...ideas, id: 'Ideas!' },
       { ...ideas, onClick: 'alert(1)' },
       { ...ideas, run: { kind: 'script', code: 'alert(1)' } },
-      { ...ideas, run: { kind: 'page-intent', intent: 'ideas', data: { chat: 'x' } } },
-      { ...ideas, run: { kind: 'page-intent', intent: 'open ideas' } },
-      { ...ideas, run: { kind: 'page-intent', intent: 'voice-note' } },
+      { ...ideas, run: { kind: 'page-intent', data: { chat: 'x' } } },
+      { ...ideas, run: { kind: 'page-intent', intent: 'ideas' } },
       { ...draft, run: { kind: 'draft', text: { zh: 'x'.repeat(2001), en: 'x' } } },
       { ...draft, run: { kind: 'draft', text: '帮我看看' } },
       { ...draft, run: { kind: 'draft', text: { zh: '帮我看看' } } },

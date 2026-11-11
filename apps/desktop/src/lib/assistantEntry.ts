@@ -13,12 +13,16 @@ import { useSyncExternalStore } from 'react'
 import { appState } from '../session/renderer/lib/stores/app-state'
 import { readAssistantShellBridge, type AssistantShellSnapshot } from './assistantShellBridge'
 import { appConversationSlotKey, readAppConversationSurfaceBridge, type AppConversationSurfaces } from './appConversationSurfaceBridge'
+import { appHostLayerSlotKey, readAppHostLayerBridge } from './appHostLayerBridge'
+import type { AssistantTaskChat } from './assistantTaskChat'
+import { installedExtensionsStore } from '../session/renderer/features/extensions/installed-extensions-store'
+import { readsWork } from '../components/appSlot/appWorkLedger'
 
 /** 产品自己的助理 App(GUYI-AI/gugu-assistant;主进程同名常量 ASSISTANT_APP_ID)。 */
 export const ASSISTANT_APP_ID = 'gugu-assistant'
 
-/** 主进程对这个账号说的:装着的是不是受信的那个 App;#1931 的补装那一步是不是正在把它装上。 */
-export type AssistantAppWord = { ownerId: string; trusted: boolean; ensuring: boolean }
+/** 主进程对这个账号说的:装着的是不是受信的那个 App(补装那一步还没装好时,栏顶那一格的「准备中」由壳的 rulesPending 画)。 */
+export type AssistantAppWord = { ownerId: string; trusted: boolean }
 
 export interface AssistantAppEntryBridge {
   getSnapshot(): AssistantAppWord | null
@@ -48,7 +52,7 @@ export function installAssistantAppEntryBridge(w: Window = window): void {
 
 /** 壳:发布主进程那一句(没变不通知;null = 没登录 / 还没问到)。 */
 export function publishAssistantAppWord(next: AssistantAppWord | null): void {
-  if (word === next || (word && next && word.ownerId === next.ownerId && word.trusted === next.trusted && word.ensuring === next.ensuring)) return
+  if (word === next || (word && next && word.ownerId === next.ownerId && word.trusted === next.trusted)) return
   word = next
   for (const listener of listeners) listener()
 }
@@ -58,9 +62,9 @@ export function readAssistantAppEntryBridge(w: Window | undefined = typeof windo
 }
 
 /**
- * 为什么要去它:`open` 打开它(栏顶那一格、通知、链接、设置、快速聊天、引导)。另两种此刻还只有内置页做得到,照旧去内置页:
- * `task-chat` 打开它派出的某个任务的对话(内置面板的「任务」;App 里打开要 App 自己按 API 46 的 openWork 拿句柄);
- * `record-meeting` 会议提醒里「开始录音」(录音机由内置页挂上,API 47 的 App 录音宿主合进来之前,别处起不来)。
+ * 为什么要去它:`open` 打开它(栏顶那一格、通知、链接、设置、快速聊天、引导)。`task-chat` 打开它派出的某个任务的对话
+ * (任务的链接、来源角标、通知):App 读得到它的活(API 46 `chat:work`)就去 App,壳自己把那个任务的对话开在 App 面板上的
+ * 宿主层里(与内置任务窗同一个窗);读不到 = 内置页。`record-meeting` 会议提醒里「开始录音」:录音机由内置页挂上,照旧去内置页。
  */
 export type AssistantEntryPurpose = 'open' | 'task-chat' | 'record-meeting'
 
@@ -73,9 +77,11 @@ export function decideAssistantEntry(input: {
   word: AssistantAppWord | null
   surfaces: AppConversationSurfaces
   purpose?: AssistantEntryPurpose
+  /** 装着的那个 App 读不读得到它的活(API 46 的 `work`):任务的对话只开在读得到的 App 上。 */
+  appReadsWork?: boolean
 }): AssistantEntryTarget {
   const { shell, word, surfaces, purpose = 'open' } = input
-  if (purpose !== 'open') return BUILT_IN
+  if (purpose === 'record-meeting' || (purpose === 'task-chat' && !input.appReadsWork)) return BUILT_IN
   const ownerId = shell?.ownerId ?? null
   if (!ownerId || !word || word.ownerId !== ownerId || !word.trusted) return BUILT_IN
   if (shell?.assistantState !== 'found' || !shell.chatId) return BUILT_IN
@@ -84,6 +90,11 @@ export function decideAssistantEntry(input: {
 
 const NO_SURFACES: AppConversationSurfaces = Object.freeze({})
 
+function appReadsWork(): boolean {
+  const manifest = installedExtensionsStore.manifestFor(ASSISTANT_APP_ID)
+  return !!manifest && readsWork(manifest)
+}
+
 /** 此刻的判断(读三座桥:壳的助理快照、旁边画着哪条会话、主进程那一句)。 */
 export function readAssistantEntryTarget(purpose: AssistantEntryPurpose = 'open'): AssistantEntryTarget {
   return decideAssistantEntry({
@@ -91,6 +102,7 @@ export function readAssistantEntryTarget(purpose: AssistantEntryPurpose = 'open'
     word: readAssistantAppEntryBridge()?.getSnapshot() ?? null,
     surfaces: readAppConversationSurfaceBridge()?.getSnapshot() ?? NO_SURFACES,
     purpose,
+    appReadsWork: purpose === 'task-chat' && appReadsWork(),
   })
 }
 
@@ -107,17 +119,6 @@ export function useAssistantEntryTarget(): AssistantEntryTarget {
     return target.kind === 'app' ? target.chatId : ''
   })
   return key ? { kind: 'app', extensionId: ASSISTANT_APP_ID, chatId: key } : BUILT_IN
-}
-
-/** 主进程说受信的那个 App 正被补装上(还没装好):入口那一格画「准备中」。 */
-export function useAssistantAppEnsuring(ownerId: string | null): boolean {
-  return useSyncExternalStore(
-    (listener) => readAssistantAppEntryBridge()?.subscribe(listener) ?? (() => undefined),
-    () => {
-      const current = readAssistantAppEntryBridge()?.getSnapshot()
-      return !!ownerId && current?.ownerId === ownerId && current.ensuring
-    },
-  )
 }
 
 /**
@@ -143,9 +144,26 @@ export function openAssistantApp(target: Extract<AssistantEntryTarget, { kind: '
 }
 
 /**
- * 每个入口都走这一下:判断去 App,就去 App;否则照它原来那样去内置页(`builtIn`,每处原样不动)。
+ * 每个入口都走这一下:判断去 App,就去 App;否则照它原来那样去内置页(`builtIn`,每处原样不动)。去 App 打开任务的对话 =
+ * 答它画在哪一格(App 面板上的宿主层);那个任务由壳认出后开进去(`openAssistantTaskInApp`)。
  */
 export function openAssistantEntry<T>(builtIn: () => T, purpose: AssistantEntryPurpose = 'open'): T | string {
   const target = readAssistantEntryTarget(purpose)
-  return target.kind === 'app' ? openAssistantApp(target) : builtIn()
+  if (target.kind !== 'app') return builtIn()
+  const conversation = openAssistantApp(target)
+  return purpose === 'task-chat' ? appHostLayerSlotKey(target.extensionId) : conversation
+}
+
+/**
+ * 壳认出的一个任务(带它在活里的 id),去 App:App 自己那一页,任务的对话开在它面板上的宿主层(同内置任务窗)。不去 App = null
+ * (调用处照内置的走)。壳此刻显示的不是这个账号 = 抛(调用处走统一的报错出口)。
+ */
+export function openAssistantTaskInApp(ownerId: string, request: AssistantTaskChat & { workId: string }): string | null {
+  const target = readAssistantEntryTarget('task-chat')
+  if (target.kind !== 'app') return null
+  const bridge = readAppHostLayerBridge()
+  if (!bridge) return null
+  openAssistantApp(target)
+  bridge.openTask(target.extensionId, ownerId, request)
+  return appHostLayerSlotKey(target.extensionId)
 }

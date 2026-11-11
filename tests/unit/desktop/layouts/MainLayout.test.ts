@@ -1208,7 +1208,7 @@ describe('MainLayout: personal assistant destinations', () => {
       await act(async () => {
         installAssistantAppEntryBridge()
         publishAssistantShell({ ...shell, ownerId: 'user-1', chatId: PERSONAL_DM })
-        publishAssistantAppWord({ ownerId: 'user-1', trusted: true, ensuring: false })
+        publishAssistantAppWord({ ownerId: 'user-1', trusted: true })
         publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: PERSONAL_DM })
       })
       await act(async () => {

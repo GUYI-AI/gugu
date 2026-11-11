@@ -9,15 +9,11 @@ import { AssistantPanelError } from '@gugu/core/cloud/assistantPanel'
 import type { AssistantPanelHome } from './assistant-panel-application'
 import type { AssistantPanelBodyFailures } from './assistant-panel-body-failures'
 import { assistantPanelPath } from './assistant-panel-paths'
+import { sameStoredJson } from './stored-json'
 
 export type PanelObservation = { key: string; data: Record<string, unknown>; bytes?: Uint8Array }
 const deviceDomains: readonly AssistantPanelDomain[] = ['tasks','capabilities','device-notes','integrations']
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
-function stable(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
-  if (value && typeof value === 'object') return `{${Object.entries(value).sort(([a],[b]) => a.localeCompare(b)).map(([key,value]) => `${JSON.stringify(key)}:${stable(value)}`).join(',')}}`
-  return JSON.stringify(value)
-}
 
 /** Only natural host activity calls this publisher. A complete collection is
  * marked ready after all rows converge; failures retain the prior rows and
@@ -67,7 +63,7 @@ export async function publishAssistantPanelCollection(input: {
       // An unchanged observation needs no write and cannot overwrite a newer
       // owner revision. Changed observations still read authority before CAS.
       if (observed && !observed.deleted_at && !observed.stale_at && !pending.has(row.key)
-        && stable(observed.data) === stable(row.data)
+        && sameStoredJson(observed.data,row.data)
         && (digest ? observed.body_item_id && observed.body_sha256 === digest : observed.body_item_id === null)) {
         await input.bodyFailures.clear(input.domain,row.key)
         continue
@@ -78,7 +74,7 @@ export async function publishAssistantPanelCollection(input: {
       const reused = digest && current?.body_item_id && current.body_sha256 === digest
         ? { itemId: current.body_item_id,sha256: digest } : undefined
       if (!digest || reused) await input.bodyFailures.clear(input.domain,row.key)
-      if (current && !current.stale_at && stable(current.data) === stable(row.data)
+      if (current && !current.stale_at && sameStoredJson(current.data,row.data)
         && (row.bytes ? reused : current.body_item_id === null)) continue
       let body = reused, uploaded = false
       try {
@@ -119,13 +115,13 @@ export async function publishAssistantPanelCollection(input: {
     const ready = () => ({ state: 'ready',schemaVersion: 1,itemCount: latest.items.filter(row => row.domain === input.domain
       && !row.deleted_at && !row.resource_key.startsWith('__collection__') && (!scoped || row.device_id === input.deviceId)).length })
     let marker = latest.items.find(row => row.domain === input.domain && row.resource_key === markerKey && !row.deleted_at)
-    if (marker?.stale_at || stable(marker?.data) !== stable(ready())) {
+    if (marker?.stale_at || !sameStoredJson(marker?.data,ready())) {
       // A transition to ready needs a current count. A ready unchanged marker
       // can use the round's shared baseline without another authority read.
       if (latest === baseline) latest = await input.cloud.snapshot(input.assistantId)
       marker = await input.cloud.resource(input.assistantId,input.domain,markerKey) ?? undefined
       const data = ready()
-      if (marker && !marker.stale_at && stable(marker.data) === stable(data)) return
+      if (marker && !marker.stale_at && sameStoredJson(marker.data,data)) return
       try { await commit(markerKey,marker?.revision ?? '0','prepared',data) }
       catch (error) { if (!['PT409','55000'].includes(String((error as { code?: string }).code))) throw error }
     }
@@ -134,7 +130,7 @@ export async function publishAssistantPanelCollection(input: {
       try {
         const marker = await input.cloud.resource(input.assistantId,input.domain,markerKey)
         const data = { state: 'error',schemaVersion: 1,errorCode: 'RESOURCE_PUBLICATION_FAILED' }
-        if (marker && !marker.stale_at && stable(marker.data) === stable(data)) break
+        if (marker && !marker.stale_at && sameStoredJson(marker.data,data)) break
         await commit(markerKey,marker?.revision ?? '0','error',data)
         break
       } catch (failure) {

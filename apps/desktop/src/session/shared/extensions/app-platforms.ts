@@ -22,6 +22,7 @@ export const PHONE_CAPABILITY_SUPPORT = {
   'chat:surface': 'desktop-only',
   'chat:resources': 'desktop-only',
   'chat:resources:write': 'desktop-only',
+  'chat:voice-notes:manage': 'desktop-only',
   'chat:schedules': 'desktop-only',
   'chat:schedules:control': 'desktop-only',
   'assistant:status': 'desktop-only',

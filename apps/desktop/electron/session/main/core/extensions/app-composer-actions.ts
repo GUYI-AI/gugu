@@ -2,12 +2,11 @@ import {
   COMPOSER_RUN_ACTION,
   composerActionRunSchema,
   composerActionsAskSchema,
-  VOICE_NOTE_PAGE_INTENT,
   type ComposerAction,
   type ComposerActionResult,
   type ComposerActionView,
 } from '@shared/extensions/composer-actions';
-import { BINDING_ACTION_CAPABILITY } from '@shared/extensions/unread-binding';
+import { BINDING_ACTION_CAPABILITY, type AppSurfaceIntent } from '@shared/extensions/unread-binding';
 import { boundAgent } from './app-bound-resources';
 import { account } from './app-unread-bindings';
 import { appVoiceNoteStart } from './app-voice-notes';
@@ -69,7 +68,7 @@ export async function composerActionsFor(input: unknown): Promise<{ actions: Com
 /** The person clicked entry `actionId` in that column: the host runs it. A draft is the window's to put in its composer. */
 export async function runComposerAction(
   input: unknown,
-  tellPage: (extensionId: string, intent: string) => Promise<boolean>,
+  tellPage: (extensionId: string, intent: AppSurfaceIntent) => Promise<boolean>,
 ): Promise<ComposerActionResult> {
   const { ownerId, extensionId, authority, actionId } = composerActionRunSchema.parse(input);
   await signedIn(ownerId);
@@ -88,7 +87,7 @@ export async function runComposerAction(
   await bound.recheck();
   still();
   if (action.run.kind === 'draft') return { kind: 'draft', text: { ...action.run.text } };
-  return { kind: 'page-intent', delivered: await tellPage(extensionId, action.run.intent) };
+  return { kind: 'page-intent', delivered: await tellPage(extensionId, { kind: 'composer-action', id: action.id }) };
 }
 
 /**
@@ -97,10 +96,10 @@ export async function runComposerAction(
  */
 export async function voiceNoteOpenedBeside(
   input: unknown,
-  tellPage: (extensionId: string, intent: string) => Promise<boolean>,
+  tellPage: (extensionId: string, intent: AppSurfaceIntent) => Promise<boolean>,
 ): Promise<boolean> {
   const { ownerId, extensionId } = composerActionsAskSchema.pick({ ownerId: true, extensionId: true }).strict().parse(input);
   await signedIn(ownerId);
   if (!extensionsService().isInstalled(extensionId) || !extensionsService().isEnabled(extensionId)) return false;
-  return tellPage(extensionId, VOICE_NOTE_PAGE_INTENT);
+  return tellPage(extensionId, { kind: 'voice-note' });
 }

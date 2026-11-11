@@ -136,15 +136,25 @@ describe('advanceSetup: the built-in view\'s own action, with the same rule', ()
 describe('the snapshot an App may see', () => {
   const said = (value: unknown) => JSON.stringify(value)
 
-  it('holds no chat, device or account id, no path or storage address, and nothing of the owner', () => {
+  it('holds no chat, device or account id, no path or storage address — the names the built-in steps show, and those alone', () => {
     for (const shell of [snapshot(), snapshot({ home: { kind: 'cloud', deviceId: CLOUD }, cloud: { state: 'awake', deviceId: CLOUD, error: null, since: null, adoptingFrom: DEVICE } })]) {
       const status = appAssistantStatusOf(shell, FACE)
       expect(shownAssistantSchema.parse(status)).toEqual(status)
-      for (const secret of [OWNER, CHAT, ASSISTANT, DEVICE, CLOUD, 'storage.example', 'https:', 'MacBook', 'Ann']) expect(said(status)).not.toContain(secret)
+      for (const secret of [OWNER, CHAT, ASSISTANT, DEVICE, CLOUD, 'storage.example', 'https:']) expect(said(status)).not.toContain(secret)
     }
+    // The home computer's name as the person named it, and what the ready step calls the person; nothing on the cloud.
+    expect(appAssistantStatusOf(snapshot(), FACE)).toMatchObject({ home: { label: 'Ann’s MacBook' }, ownerName: 'Ann' })
+    expect(appAssistantStatusOf(snapshot({ home: { kind: 'cloud', deviceId: CLOUD }, cloud: null }), FACE).home).toMatchObject({ label: null })
+    expect(appAssistantStatusOf(snapshot({ ownerName: '   ' }), FACE).ownerName).toBeNull()
     // A face that is not the host's own small image is not passed on.
     expect(appAssistantStatusOf(snapshot(), `https://storage.example/avatars/${ASSISTANT}.png`).avatar).toBeNull()
     expect(appAssistantStatusOf(snapshot(), FACE).avatar).toBe(FACE)
+  })
+
+  it('says the theme hue of its bird, none for a photo face or before it is found', () => {
+    expect(appAssistantStatusOf(snapshot({ assistant: { ...snapshot().assistant!, avatar: null } }), null).tint).toEqual(expect.any(Number))
+    expect(appAssistantStatusOf(snapshot({ assistant: { ...snapshot().assistant!, avatar: 'https://storage.example/a.png' } }), null).tint).toBeNull()
+    expect(appAssistantStatusOf(snapshot({ assistantState: 'loading' }), null).tint).toBeNull()
   })
 
   it('says unreadable apart from none and loading, with no name or face until found', () => {
@@ -162,13 +172,13 @@ describe('the snapshot an App may see', () => {
   it('says where it lives as a kind, and whether it answers there', () => {
     const home = (shell: Partial<AssistantShellSnapshot>) => appAssistantStatusOf(snapshot(shell), null).home
     const computer = (over: object) => ({ kind: 'computer' as const, deviceId: DEVICE, thisDevice: false, label: 'x', online: false, known: true, ...over })
-    expect(home({ home: computer({ thisDevice: true, online: true }) })).toEqual({ kind: 'this-computer', online: true })
-    expect(home({ home: computer({ online: false }) })).toEqual({ kind: 'other-computer', online: false })
-    expect(home({ home: computer({ hostKind: 'server', online: true }) })).toEqual({ kind: 'server', online: true })
+    expect(home({ home: computer({ thisDevice: true, online: true }) })).toEqual({ kind: 'this-computer', online: true, label: 'x' })
+    expect(home({ home: computer({ online: false, label: null }) })).toEqual({ kind: 'other-computer', online: false, label: null })
+    expect(home({ home: computer({ hostKind: 'server', online: true, label: '  ' }) })).toEqual({ kind: 'server', online: true, label: null })
     for (const [state, online] of [['awake', true], ['asleep', true], ['waking', true], ['provisioning', false], ['error', false]] as const) {
-      expect(home({ home: { kind: 'cloud', deviceId: CLOUD }, cloud: { state, deviceId: CLOUD, error: null, since: null } })).toEqual({ kind: 'cloud', online })
+      expect(home({ home: { kind: 'cloud', deviceId: CLOUD }, cloud: { state, deviceId: CLOUD, error: null, since: null } })).toEqual({ kind: 'cloud', online, label: null })
     }
-    expect(home({ home: { kind: 'cloud', deviceId: CLOUD }, cloud: null })).toEqual({ kind: 'cloud', online: false })
+    expect(home({ home: { kind: 'cloud', deviceId: CLOUD }, cloud: null })).toEqual({ kind: 'cloud', online: false, label: null })
     expect(home({ home: null })).toBeNull()
   })
 
@@ -188,10 +198,10 @@ describe('passing it on', () => {
     const stop = startAssistantAppStatus({ shell: bridge, face: async () => FACE, push, warn: vi.fn() })
     await flush()
     expect(push).toHaveBeenCalledExactlyOnceWith({ ownerId: OWNER, status: appAssistantStatusOf(snapshot(), FACE) })
-    publishAssistantShell(snapshot({ deviceCount: 9, ownerName: 'Someone' }))
+    publishAssistantShell(snapshot({ deviceCount: 9 }))
     await flush()
     expect(push).toHaveBeenCalledOnce()
-    publishAssistantShell(snapshot({ deviceCount: 9, ownerName: 'Someone', member: true }))
+    publishAssistantShell(snapshot({ deviceCount: 9, member: true }))
     await flush()
     expect(push).toHaveBeenCalledTimes(2)
     expect(push).toHaveBeenLastCalledWith(expect.objectContaining({ status: expect.objectContaining({ member: true }) }))
