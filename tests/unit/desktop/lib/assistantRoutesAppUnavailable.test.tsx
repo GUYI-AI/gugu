@@ -124,7 +124,14 @@ describe.each(UNAVAILABLE_APP_STATES)('the assistant App %s', (state) => {
 describe.each(UNAVAILABLE_APP_STATES)('quick chat\'s "open in the main window", the assistant App %s', (state) => {
   let harness: ReturnType<typeof createReactHarness>
   let frame: HTMLIFrameElement
-  afterEach(() => { harness.cleanup(); frame.remove() })
+  // QuickChatHost keeps the window it opened while that window is open (D7: never re-opened, never navigated again). Each case
+  // has its own window: the last one is really closed here (its `close` is stubbed), so the next case is handed its own.
+  afterEach(() => {
+    harness.cleanup()
+    const child = frame.contentWindow
+    if (child) Object.defineProperty(child, 'closed', { configurable: true, get: () => true })
+    frame.remove()
+  })
   it('reveals the main window and opens the assistant\'s chat as any chat', async () => {
     setAssistantAppState(state, OWNER)
     harness = createReactHarness()
