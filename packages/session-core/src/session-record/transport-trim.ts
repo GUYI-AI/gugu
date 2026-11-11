@@ -1,4 +1,5 @@
 import type { TerminalState, ToolImage, ToolImageRef, ToolNode, TranscriptItem, TranscriptTurn } from '../acp/client';
+import { messageContentText } from '../acp/models/entity-content';
 import { isGuguServer } from '../acp/models/turns/opened-outputs';
 import { catalogCall } from '../acp/models/turns/tool-calls';
 import type {
@@ -115,6 +116,43 @@ export function trimItemsForTransport(
   return changed ? next : (items as TranscriptItem[]);
 }
 
+/**
+ * @@@text-sent-once — a message's canonical blocks, when they are nothing but its text. `text` is their projection
+ * (message-fold), and a message without `content` already reads as one text block of its `text`, so a page that
+ * carries both carries every message twice (a real 3055-turn conversation: 12.7MB of a 62.8MB history). Blocks that
+ * hold anything else — a picture, a resource, a field beside `type` and `text` — travel as they are.
+ * Pages only: a patch of the running turn keeps its objects (see the note on references above).
+ */
+function withoutEchoedContent(item: TranscriptItem): TranscriptItem {
+  if (item.kind !== 'message' && item.kind !== 'thinking') return item;
+  const content = item.content;
+  if (!content) return item;
+  for (const block of content) {
+    if (block.type !== 'text' || typeof block.text !== 'string' || Object.keys(block).length !== 2) return item;
+  }
+  if (messageContentText(content) !== item.text) return item;
+  const { content: _echo, ...rest } = item;
+  return rest as TranscriptItem;
+}
+
+/** What a page of turns sends: the field trim, and each message's text once. */
+function projectTurnsForPage(turns: readonly TranscriptTurn[], limit: number): TranscriptTurn[] {
+  const trimmed = trimTurnsForTransport(turns, limit);
+  let changed = false;
+  const next = trimmed.map((turn) => {
+    let slimmed = false;
+    const items = turn.items.map((item) => {
+      const slim = withoutEchoedContent(item);
+      if (slim !== item) slimmed = true;
+      return slim;
+    });
+    if (!slimmed) return turn;
+    changed = true;
+    return { ...turn, items };
+  });
+  return changed ? next : trimmed;
+}
+
 export function trimTurnsForTransport(
   turns: readonly TranscriptTurn[],
   limit = TRANSPORT_TEXT_LIMIT,
@@ -164,9 +202,16 @@ export const TRANSPORT_PAYLOAD_BUDGET = 128 * 1024;
  */
 export const LOCAL_PAYLOAD_BUDGET = 2 * 1024 * 1024;
 
+/**
+ * 同一道总量闸，给**隔着设备连接往前翻**的那一页用（另一台电脑上的窗口、手机）。首屏仍是 128K：打开要快，
+ * 人还没说要看更早的。往前翻是人（或「上方预留几屏」）开口要的：128K 一页只有几轮，翻一屏要来回好几趟；
+ * 512K 一页几十轮，仍只是设备通道单包上限 3000K 的六分之一。
+ */
+export const REMOTE_OLDER_PAGE_BUDGET = 512 * 1024;
+
 /** 一轮裁完以后在这一包里占多少字节 —— 读库的一侧据此在装满时停手，❌ 先读满 100 行再丢。 */
 export function transportSizeOf(turn: TranscriptTurn, limit = TRANSPORT_TEXT_LIMIT): number {
-  return new TextEncoder().encode(JSON.stringify(trimTurnsForTransport([turn], limit)[0])).byteLength;
+  return new TextEncoder().encode(JSON.stringify(projectTurnsForPage([turn], limit)[0])).byteLength;
 }
 
 /**
@@ -207,7 +252,7 @@ function trimTurnPageForTransport<T extends { turns: TranscriptTurn[]; hasOlder:
   limit: number,
   budget: number,
 ): T {
-  const trimmed = trimTurnsForTransport(page.turns, limit);
+  const trimmed = projectTurnsForPage(page.turns, limit);
   const fitted = fitTurnsToBudget(trimmed, budget);
   if (trimmed === page.turns && !fitted.dropped) return page;
   return { ...page, turns: fitted.turns as TranscriptTurn[], hasOlder: page.hasOlder || fitted.dropped };
@@ -258,7 +303,7 @@ export function trimBatchForTransport(
 export function trimOlderForTransport(
   older: TimelineOlderResult,
   limit = TRANSPORT_TEXT_LIMIT,
-  budget = TRANSPORT_PAYLOAD_BUDGET,
+  budget = REMOTE_OLDER_PAGE_BUDGET,
 ): TimelineOlderResult {
   return trimTurnPageForTransport(older, limit, budget);
 }

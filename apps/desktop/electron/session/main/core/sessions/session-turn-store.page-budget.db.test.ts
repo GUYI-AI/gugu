@@ -2,7 +2,7 @@ import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
-import { LOCAL_PAYLOAD_BUDGET, TRANSPORT_PAYLOAD_BUDGET } from '@gugu/session-core/session-record';
+import { LOCAL_PAYLOAD_BUDGET, REMOTE_OLDER_PAGE_BUDGET, TRANSPORT_PAYLOAD_BUDGET } from '@gugu/session-core/session-record';
 
 // One older page is cut to a byte budget before it leaves the main process. Two things are held here:
 //  ① a window on this machine gets a much larger page than a device link does, over the same paging;
@@ -63,11 +63,21 @@ describe('stored history page budget', () => {
   };
 
   it('pages a device link at the transport budget, every turn once and in order', async () => {
-    await store(60);
+    await store(160);
     const pages = await walk({});
+    // The first screen opens the conversation and stays small; a page asked for by going back is larger.
     expect(pages[0]).toHaveLength(Math.floor(TRANSPORT_PAYLOAD_BUDGET / turnWeight()));
-    expect(pages[0]!.at(-1)).toBe(59);
-    expect(pages.toReversed().flat()).toEqual(Array.from({ length: 60 }, (_, i) => i));
+    expect(pages[0]!.at(-1)).toBe(159);
+    expect(pages[1]).toHaveLength(Math.floor(REMOTE_OLDER_PAGE_BUDGET / turnWeight()));
+    expect(pages[2]).toHaveLength(Math.floor(REMOTE_OLDER_PAGE_BUDGET / turnWeight()));
+    expect(pages.toReversed().flat()).toEqual(Array.from({ length: 160 }, (_, i) => i));
+  });
+
+  it('keeps a first read that names a place (a phone opening at its unread line) at the first-screen size', async () => {
+    await store(160);
+    const page = await getStoredHistory({ sessionId: 'c1', before: 120, limit: 100 }, { older: false });
+    expect(page.turns).toHaveLength(Math.floor(TRANSPORT_PAYLOAD_BUDGET / turnWeight()));
+    expect(page.turns.at(-1)!.seq).toBe(119);
   });
 
   it('gives a window on this machine the larger page', async () => {
@@ -96,7 +106,8 @@ describe('stored history page budget', () => {
   });
 
   it('still sends a turn that is larger than the whole budget', async () => {
-    await store(3, 200_000);
+    await store(3, 600_000);
+    expect(600_000).toBeGreaterThan(REMOTE_OLDER_PAGE_BUDGET);
     const pages = await walk({});
     expect(pages).toEqual([[2], [1], [0]]);
   });

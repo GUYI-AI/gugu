@@ -23,7 +23,8 @@ async function nativeRecord(input: { conversationId: string; before?: number; af
       const first = nativeConversationUnread(input.conversationId)[0];
       const firstSeq = first?.startsWith(prefix) ? Number(/^(\d+):/.exec(first.slice(prefix.length))?.[1]) : NaN;
       const before = input.before ?? (input.after !== undefined ? input.after + limit + 1 : !input.tail && Number.isSafeInteger(firstSeq) ? firstSeq + limit : undefined);
-      const page = await getStoredHistory({ sessionId: input.conversationId, before, limit });
+      // Only a read the phone asked for by going back is an older page; opening at the unread line also names a `before`.
+      const page = await getStoredHistory({ sessionId: input.conversationId, before, limit }, { older: input.before !== undefined });
       const latest = await getStoredHistory({ sessionId: input.conversationId, limit: 1 });
       const selected = page.turns.map((turn, index) => ({ turn, origin: page.originTurnIds[index]! })).filter(({ turn }) => input.after === undefined || turn.seq > input.after);
       const turns = selected.map(one => one.turn);

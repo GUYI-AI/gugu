@@ -1,7 +1,7 @@
 import { beginCanonicalQueueTask } from './canonical-queue-state';
 import { renumberStoredTurn, rewriteTurnId } from './session-turn-identity';
 export { renumberStoredTurn } from './session-turn-identity';
-import { findToolImage, findToolItem, LOCAL_PAYLOAD_BUDGET, TRANSPORT_PAYLOAD_BUDGET, TRANSPORT_TEXT_LIMIT, transportSizeOf, trimCursorPageForTransport, trimTurnsForTransport } from '@gugu/session-core/session-record';
+import { findToolImage, findToolItem, LOCAL_PAYLOAD_BUDGET, REMOTE_OLDER_PAGE_BUDGET, TRANSPORT_PAYLOAD_BUDGET, TRANSPORT_TEXT_LIMIT, transportSizeOf, trimCursorPageForTransport, trimTurnsForTransport } from '@gugu/session-core/session-record';
 import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { hermesNativeDigest } from '@gugu/session-core/acp/hermes-prompt';
@@ -330,10 +330,13 @@ export async function getStoredHistory(params: {
   /** 给了就改成「seq ≥ fromSeq 的全部行」,供界面开场补读用;与 before/limit 互斥。 */
   fromSeq?: number;
   ownerNotificationsOnly?: boolean;
-}, reader: { local?: boolean } = {}): Promise<StoredTurnPage> {
+}, reader: { local?: boolean; older?: boolean } = {}): Promise<StoredTurnPage> {
   // @@@page-budget-by-reader — a window on this machine reads its own database over the process channel; every
-  // other reader (another machine, a phone) is paying for a shared device link. Same paging, two page sizes.
-  const budget = reader.local ? LOCAL_PAYLOAD_BUDGET : TRANSPORT_PAYLOAD_BUDGET;
+  // other reader (another machine, a phone) is paying for a shared device link. Same paging, three page sizes:
+  // over the link the first screen stays small (it opens the conversation), and a page the reader asked for by
+  // going back is larger. `older` says which it is when `before` alone does not (a phone opens at its unread line).
+  const older = reader.older ?? params.before !== undefined;
+  const budget = reader.local ? LOCAL_PAYLOAD_BUDGET : older ? REMOTE_OLDER_PAGE_BUDGET : TRANSPORT_PAYLOAD_BUDGET;
   for (;;) {
     const epoch = ownerNotificationEpoch(params.sessionId);
     const page = await readStoredTurns(params.sessionId, {
