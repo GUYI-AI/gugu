@@ -62,9 +62,9 @@
     "how": "subject-scoped",
     "why": "selection 同存 chatId/messageId,渲染时先与当前 chatId 比对,不符立即返回 null;消息和读位只从当前会话派生。effect 负责清理选择,防串台不依赖 effect 的执行时机。"
   },
-  "apps/desktop/src/hooks/useAgentHeaderStatusText.ts::useAgentHeaderStatusText": {
+  "apps/desktop/src/hooks/useAgentHeaderStatusText.ts::useAgentHeaderStatus": {
     "how": "derived",
-    "why": "没有自有 state:状态、所在设备、引擎全部由 useAgentDisplayStatus(agentUserId) 与设备 store 当场派生,主体一换即换。"
+    "why": "没有自有 state:状态、所在设备、引擎和那一格色调全部由 useAgentDisplayStatus(agentUserId) 与设备 store 当场派生,主体一换即换。"
   },
   "apps/desktop/src/hooks/useTopicScopedMemberProfile.ts::useTopicScopedMemberProfile": {
     "how": "subject-scoped",
