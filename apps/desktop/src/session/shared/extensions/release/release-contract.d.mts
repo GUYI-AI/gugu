@@ -43,12 +43,17 @@ export interface ReleaseTrustKey {
 export function digest(bytes: Uint8Array): string;
 export const RELEASE_LIMIT: number;
 export function releasePath(path: string): string;
-export function compiledFile(path: string, bytes: Buffer): void;
+/**
+ * Bytes as the contract reads them: it calls `raw.toString('utf8')` for the text, as a Node Buffer answers. A plain
+ * Uint8Array answers "1,2,3" instead — pass a Buffer, or release-trust.ts's bytes, which answer with the text everywhere.
+ */
+export type ContractBytes = Uint8Array & { toString(encoding?: 'utf8'): string };
+export function compiledFile(path: string, bytes: ContractBytes): void;
 export function validateRelease(release: unknown, options?: { reviewed?: boolean }): SignedRelease;
 /** Throws `Release: …` unless `raw` is a valid reviewed release of `expected`, signed with the trusted, unrevoked key `keyId`. */
 export function verifyReleaseSignature(
-  raw: Buffer,
-  signature: Buffer,
+  raw: ContractBytes,
+  signature: ContractBytes,
   keyId: string,
   trustedKeys: readonly ReleaseTrustKey[],
   expected: { appId: string; version: string },

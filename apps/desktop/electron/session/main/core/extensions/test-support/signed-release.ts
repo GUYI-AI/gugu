@@ -5,8 +5,7 @@ import { createHash, generateKeyPairSync, sign, type KeyObject } from 'node:cryp
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { MarketReleaseProof } from '@shared/extensions/market';
-import type { ReleaseTrustTable } from '../release/market-release';
-import type { SignedRelease } from '../release/release-contract.mjs';
+import type { ReleaseTrustTable, SignedRelease } from '../release/market-release';
 
 export const TEST_SOURCE_REPO = 'GUYI-AI/gugu-assistant';
 export const TEST_KEY_ID = 'test-release-key';

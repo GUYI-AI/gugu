@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import pin from './release-contract.pin.json';
+import pin from '@shared/extensions/release/release-contract.pin.json';
 import {
   marketInstallRecord,
   releaseFileProblems,
@@ -43,7 +43,7 @@ describe('the mirrored market contract and the shipped trust table', () => {
     // mirror, or a pin moved without the mirror, fails here.
     expect(pin).toMatchObject({ repo: 'GUYI-AI/gugu-apps', path: 'scripts/release-contract.mjs' });
     expect(pin.commit).toMatch(/^[0-9a-f]{40}$/);
-    const bytes = readFileSync(new URL('./release-contract.mjs', import.meta.url));
+    const bytes = readFileSync(new URL('../../../../../../src/session/shared/extensions/release/release-contract.mjs', import.meta.url));
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(pin.sha256);
   });
 

@@ -1,5 +1,5 @@
 // #1931 A release build ships the client's trust table for compiled market releases
-// (apps/desktop/electron/session/main/core/extensions/release/release-keys.json). An App it names installs only as a release
+// (apps/desktop/src/session/shared/extensions/release/release-keys.json). An App it names installs only as a release
 // signed with one of its keys, so a slot left empty (`publicKey: null`) means that App never installs and the assistant has
 // no trusted rules. This gate stops a production build in that state: build-env-preflight.mts runs it whenever the build
 // targets the production database, and `pnpm release:trust-keys` runs it on its own.
@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export const RELEASE_TRUST_TABLE = 'apps/desktop/electron/session/main/core/extensions/release/release-keys.json'
+export const RELEASE_TRUST_TABLE = 'apps/desktop/src/session/shared/extensions/release/release-keys.json'
 /** Apps a release must be able to install whatever the table says: the assistant's rules come from this one. */
 export const RELEASE_REQUIRED_APPS: readonly string[] = Object.freeze(['gugu-assistant'])
 

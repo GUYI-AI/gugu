@@ -70,6 +70,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
+      '@noble/curves':
+        specifier: 2.4.0
+        version: 2.4.0
       '@parcel/watcher':
         specifier: ^2.5.6
         version: 2.5.6
@@ -478,7 +481,7 @@ importers:
         version: 5.9.0
       jsdom:
         specifier: ^29.0.2
-        version: 29.0.2(@noble/hashes@2.2.0)
+        version: 29.0.2(@noble/hashes@2.4.0)
       jsonc-parser:
         specifier: ^3.3.1
         version: 3.3.1
@@ -619,7 +622,7 @@ importers:
         version: 2.11.12(@testing-library/jest-dom@6.9.1)(solid-js@1.9.14)(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1))
       vitest:
         specifier: ^4.1.10
-        version: 4.1.10(@types/node@24.13.3)(@vitest/browser-playwright@4.1.10)(@vitest/browser-preview@4.1.10)(jsdom@29.0.2(@noble/hashes@2.2.0))(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1))
+        version: 4.1.10(@types/node@24.13.3)(@vitest/browser-playwright@4.1.10)(@vitest/browser-preview@4.1.10)(jsdom@29.0.2(@noble/hashes@2.4.0))(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1))
       y-codemirror.next:
         specifier: 0.3.6
         version: 0.3.6(@codemirror/state@6.7.6)(@codemirror/view@6.43.13(patch_hash=dd3bfd9ff09b760f91afc5dcbaf687a698969fce559e284e8c4eddd68df6d2e3))(yjs@13.6.33)
@@ -3456,12 +3459,20 @@ packages:
   '@nicolo-ribaudo/chokidar-2@2.1.8-no-fsevents.3':
     resolution: {integrity: sha512-s88O1aVtXftvp5bCPB7WnmXc5IwOZZ7YPuwNPt+GtOOXpPvad1LfbmjYv+qII7zP6RU2QGnqve27dnLycEnyEQ==}
 
+  '@noble/curves@2.4.0':
+    resolution: {integrity: sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==}
+    engines: {node: '>= 20.19.0'}
+
   '@noble/hashes@1.4.0':
     resolution: {integrity: sha512-V1JJ1WTRUqHHrOSh597hURcMqVKVGL/ea3kv0gSnEdsEZ0/+VyPghM1lMNGc00z7CIQorSvbKpuJkxvuHbvdbg==}
     engines: {node: '>= 16'}
 
   '@noble/hashes@2.2.0':
     resolution: {integrity: sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==}
+    engines: {node: '>= 20.19.0'}
+
+  '@noble/hashes@2.4.0':
+    resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
     engines: {node: '>= 20.19.0'}
 
   '@nodelib/fs.scandir@2.1.5':
@@ -11541,7 +11552,6 @@ packages:
   tar@6.2.1:
     resolution: {integrity: sha512-DZ4yORTwrbTj/7MZYq2w+/ZFdI6OZ/f9SFHR+71gIVUZhOQPHzVCLpvRnPgyaMpfWxxk/4ONva3GQSyNIKRv6A==}
     engines: {node: '>=10'}
-    deprecated: Old versions of tar are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
   tar@7.5.15:
     resolution: {integrity: sha512-dzGK0boVlC4W5QFuQN1EFSl3bIDYsk7Tj40U6eIBnK2k/8ml7TZ5agbI5j5+qnoVcAA+rNtBml8SEiLxZpNqRQ==}
@@ -14220,9 +14230,9 @@ snapshots:
 
   '@eslint/js@8.57.1': {}
 
-  '@exodus/bytes@1.15.0(@noble/hashes@2.2.0)':
+  '@exodus/bytes@1.15.0(@noble/hashes@2.4.0)':
     optionalDependencies:
-      '@noble/hashes': 2.2.0
+      '@noble/hashes': 2.4.0
 
   '@floating-ui/core@1.7.5':
     dependencies:
@@ -15068,9 +15078,15 @@ snapshots:
   '@nicolo-ribaudo/chokidar-2@2.1.8-no-fsevents.3':
     optional: true
 
+  '@noble/curves@2.4.0':
+    dependencies:
+      '@noble/hashes': 2.4.0
+
   '@noble/hashes@1.4.0': {}
 
   '@noble/hashes@2.2.0': {}
+
+  '@noble/hashes@2.4.0': {}
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
@@ -17892,7 +17908,7 @@ snapshots:
       '@vitest/mocker': 4.1.10(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1))
       playwright: 1.59.1
       tinyrainbow: 3.1.0
-      vitest: 4.1.10(@types/node@24.13.3)(@vitest/browser-playwright@4.1.10)(@vitest/browser-preview@4.1.10)(jsdom@29.0.2(@noble/hashes@2.2.0))(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1))
+      vitest: 4.1.10(@types/node@24.13.3)(@vitest/browser-playwright@4.1.10)(@vitest/browser-preview@4.1.10)(jsdom@29.0.2(@noble/hashes@2.4.0))(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1))
     transitivePeerDependencies:
       - bufferutil
       - msw
@@ -17904,7 +17920,7 @@ snapshots:
       '@testing-library/dom': 10.4.1
       '@testing-library/user-event': 14.6.1(@testing-library/dom@10.4.1)
       '@vitest/browser': 4.1.10(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1))(vitest@4.1.10)
-      vitest: 4.1.10(@types/node@24.13.3)(@vitest/browser-playwright@4.1.10)(@vitest/browser-preview@4.1.10)(jsdom@29.0.2(@noble/hashes@2.2.0))(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1))
+      vitest: 4.1.10(@types/node@24.13.3)(@vitest/browser-playwright@4.1.10)(@vitest/browser-preview@4.1.10)(jsdom@29.0.2(@noble/hashes@2.4.0))(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1))
     transitivePeerDependencies:
       - bufferutil
       - msw
@@ -17921,7 +17937,7 @@ snapshots:
       pngjs: 7.0.0
       sirv: 3.0.2
       tinyrainbow: 3.1.0
-      vitest: 4.1.10(@types/node@24.13.3)(@vitest/browser-playwright@4.1.10)(@vitest/browser-preview@4.1.10)(jsdom@29.0.2(@noble/hashes@2.2.0))(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1))
+      vitest: 4.1.10(@types/node@24.13.3)(@vitest/browser-playwright@4.1.10)(@vitest/browser-preview@4.1.10)(jsdom@29.0.2(@noble/hashes@2.4.0))(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1))
       ws: 8.21.1
     transitivePeerDependencies:
       - bufferutil
@@ -19170,10 +19186,10 @@ snapshots:
 
   data-uri-to-buffer@4.0.1: {}
 
-  data-urls@7.0.0(@noble/hashes@2.2.0):
+  data-urls@7.0.0(@noble/hashes@2.4.0):
     dependencies:
       whatwg-mimetype: 5.0.0
-      whatwg-url: 16.0.1(@noble/hashes@2.2.0)
+      whatwg-url: 16.0.1(@noble/hashes@2.4.0)
     transitivePeerDependencies:
       - '@noble/hashes'
 
@@ -20515,9 +20531,9 @@ snapshots:
     dependencies:
       lru-cache: 11.3.5
 
-  html-encoding-sniffer@6.0.0(@noble/hashes@2.2.0):
+  html-encoding-sniffer@6.0.0(@noble/hashes@2.4.0):
     dependencies:
-      '@exodus/bytes': 1.15.0(@noble/hashes@2.2.0)
+      '@exodus/bytes': 1.15.0(@noble/hashes@2.4.0)
     transitivePeerDependencies:
       - '@noble/hashes'
 
@@ -21308,17 +21324,17 @@ snapshots:
     dependencies:
       argparse: 2.0.1
 
-  jsdom@29.0.2(@noble/hashes@2.2.0):
+  jsdom@29.0.2(@noble/hashes@2.4.0):
     dependencies:
       '@asamuzakjp/css-color': 5.1.10
       '@asamuzakjp/dom-selector': 7.0.9
       '@bramus/specificity': 2.4.2
       '@csstools/css-syntax-patches-for-csstree': 1.1.3(css-tree@3.2.1)
-      '@exodus/bytes': 1.15.0(@noble/hashes@2.2.0)
+      '@exodus/bytes': 1.15.0(@noble/hashes@2.4.0)
       css-tree: 3.2.1
-      data-urls: 7.0.0(@noble/hashes@2.2.0)
+      data-urls: 7.0.0(@noble/hashes@2.4.0)
       decimal.js: 10.6.0
-      html-encoding-sniffer: 6.0.0(@noble/hashes@2.2.0)
+      html-encoding-sniffer: 6.0.0(@noble/hashes@2.4.0)
       is-potential-custom-element-name: 1.0.1
       lru-cache: 11.3.5
       parse5: 8.0.0
@@ -21329,7 +21345,7 @@ snapshots:
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
-      whatwg-url: 16.0.1(@noble/hashes@2.2.0)
+      whatwg-url: 16.0.1(@noble/hashes@2.4.0)
       xml-name-validator: 5.0.0
     transitivePeerDependencies:
       - '@noble/hashes'
@@ -24754,7 +24770,7 @@ snapshots:
     optionalDependencies:
       vite: 6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1)
 
-  vitest@4.1.10(@types/node@24.13.3)(@vitest/browser-playwright@4.1.10)(@vitest/browser-preview@4.1.10)(jsdom@29.0.2(@noble/hashes@2.2.0))(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1)):
+  vitest@4.1.10(@types/node@24.13.3)(@vitest/browser-playwright@4.1.10)(@vitest/browser-preview@4.1.10)(jsdom@29.0.2(@noble/hashes@2.4.0))(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1)):
     dependencies:
       '@vitest/expect': 4.1.10
       '@vitest/mocker': 4.1.10(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1))
@@ -24780,7 +24796,7 @@ snapshots:
       '@types/node': 24.13.3
       '@vitest/browser-playwright': 4.1.10(playwright@1.59.1)(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1))(vitest@4.1.10)
       '@vitest/browser-preview': 4.1.10(vite@6.4.1(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.8.1))(vitest@4.1.10)
-      jsdom: 29.0.2(@noble/hashes@2.2.0)
+      jsdom: 29.0.2(@noble/hashes@2.4.0)
     transitivePeerDependencies:
       - msw
 
@@ -24816,9 +24832,9 @@ snapshots:
 
   whatwg-mimetype@5.0.0: {}
 
-  whatwg-url@16.0.1(@noble/hashes@2.2.0):
+  whatwg-url@16.0.1(@noble/hashes@2.4.0):
     dependencies:
-      '@exodus/bytes': 1.15.0(@noble/hashes@2.2.0)
+      '@exodus/bytes': 1.15.0(@noble/hashes@2.4.0)
       tr46: 6.0.0
       webidl-conversions: 8.0.1
     transitivePeerDependencies:
