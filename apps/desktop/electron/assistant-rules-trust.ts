@@ -1,10 +1,11 @@
 // #1931 Whom the host believes about the personal assistant's product rules: the product's own assistant App, installed
-// from the official market source. Each condition names why an installed App is not believed. A release signature check
-// is one more entry in ASSISTANT_RULES_TRUST; nothing that asks changes.
+// from the official market source as the release signed with a key this build trusts, its rules still the signed bytes.
+// Each condition names why an installed App is not believed; nothing that asks changes.
 import type { ExtensionManifest } from '@shared/extensions/manifest'
-import { isOfficialMarketSource, type MarketCodeSource } from '@shared/extensions/market'
+import { isOfficialMarketSource, type MarketInstallRecord } from '@shared/extensions/market'
 import type { ExtensionOrigin } from '@shared/extensions/upgrade'
 import type { InstalledExtension } from './session/main/core/extensions/extensions-service'
+import { firstProblem, releaseFileProblems, SHIPPED_RELEASE_TRUST, verifyReleaseProof, type ReleaseTrustTable } from './session/main/core/extensions/release/market-release'
 
 /** The product's assistant App (GUYI-AI/gugu-assistant), published to the market as a compiled release. */
 export const ASSISTANT_RULES_PROVIDER_ID = 'gugu-assistant'
@@ -15,8 +16,8 @@ export interface AssistantRulesProvider {
   rootDir: string
   manifestDigest: string
   origin: ExtensionOrigin | undefined
-  /** Where in the market its code was, as recorded when it was installed from there. */
-  marketSource: MarketCodeSource | null
+  /** Where in the market its code was, and its verified release proof, as recorded when it was installed from there. */
+  marketSource: MarketInstallRecord | null
   /** The variant in use: `upstream` unless a fork of it is switched on. */
   activeVariant: string
   enabled: boolean
@@ -25,13 +26,38 @@ export interface AssistantRulesProvider {
 /** One reason not to believe a provider, or null. It may look at the bundle (a signature), so it may be async. */
 export type AssistantRulesTrustCondition = (provider: AssistantRulesProvider) => string | null | Promise<string | null>
 
-export const ASSISTANT_RULES_TRUST: readonly AssistantRulesTrustCondition[] = Object.freeze([
-  provider => provider.manifest.id === ASSISTANT_RULES_PROVIDER_ID ? null : `it is ${provider.manifest.id}, not ${ASSISTANT_RULES_PROVIDER_ID}`,
-  provider => provider.origin === 'market' ? null : `it was installed from ${provider.origin ?? 'an unrecorded place'}, not the market`,
-  provider => !provider.marketSource ? 'there is no record of where in the market its code was'
-    : isOfficialMarketSource(provider.marketSource) ? null : `its code is at ${provider.marketSource.repo}, not in gugu's market repository`,
-  provider => provider.activeVariant === 'upstream' ? null : `its fork "${provider.activeVariant}" is in use`,
-])
+/**
+ * The conditions, with the release keys of `table` (the shipped one; tests pass their own). The last two are the signed
+ * release (market-release.ts): its folder in the market repository, its proof verifying again, and the manifest and rules
+ * folder on disk still being the signed bytes — edited there, the App is not believed and the last good copy stays in use.
+ */
+export function assistantRulesTrust(table: ReleaseTrustTable = SHIPPED_RELEASE_TRUST): readonly AssistantRulesTrustCondition[] {
+  return Object.freeze([
+    provider => provider.manifest.id === ASSISTANT_RULES_PROVIDER_ID ? null : `it is ${provider.manifest.id}, not ${ASSISTANT_RULES_PROVIDER_ID}`,
+    provider => provider.origin === 'market' ? null : `it was installed from ${provider.origin ?? 'an unrecorded place'}, not the market`,
+    provider => !provider.marketSource ? 'there is no record of where in the market its code was'
+      : isOfficialMarketSource(provider.marketSource) ? null : `its code is at ${provider.marketSource.repo}, not in gugu's market repository`,
+    provider => provider.activeVariant === 'upstream' ? null : `its fork "${provider.activeVariant}" is in use`,
+    provider => {
+      const folder = `releases/${ASSISTANT_RULES_PROVIDER_ID}/${provider.manifest.version}`
+      return provider.marketSource?.path === folder ? null : `its code is at ${provider.marketSource?.path}, not in its signed release folder ${folder}`
+    },
+    provider => signedReleaseDistrust(provider, table),
+  ])
+}
+
+function signedReleaseDistrust(provider: AssistantRulesProvider, table: ReleaseTrustTable): string | null {
+  const proof = provider.marketSource?.release
+  if (!proof) return 'no signed release was recorded when it was installed'
+  let release
+  try { release = verifyReleaseProof(proof, { appId: provider.manifest.id, version: provider.manifest.version }, table) }
+  catch (error) { return error instanceof Error ? error.message : String(error) }
+  const folder = provider.manifest.contributes.assistantRules
+  const problems = releaseFileProblems(provider.rootDir, release, ['manifest.json', ...(folder === undefined ? [] : [`${folder}/`])])
+  return problems.length ? `its files are not the signed ones (${firstProblem(problems)})` : null
+}
+
+export const ASSISTANT_RULES_TRUST: readonly AssistantRulesTrustCondition[] = assistantRulesTrust()
 
 /** Why the provider is not believed — the first condition that fails — or null when every one holds. */
 export async function assistantRulesDistrust(
@@ -49,7 +75,7 @@ export interface AssistantRulesInstallRecord {
   isInstalled(extensionId: string): boolean
   get(extensionId: string): InstalledExtension
   origins(): Record<string, ExtensionOrigin>
-  marketSource(extensionId: string): MarketCodeSource | null
+  marketSource(extensionId: string): MarketInstallRecord | null
   variants(extensionId: string): { active: string }
   isEnabled(extensionId: string): boolean
 }

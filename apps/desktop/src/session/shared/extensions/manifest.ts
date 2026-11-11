@@ -5,7 +5,7 @@ import { networkHostAllowed } from './network-host';
 import { APP_PLATFORMS } from './app-platforms';
 import { claimTakes } from './file-openers';
 import { INSTRUCTIONS_MAX_CHARS, SUBTITLE_MAX_CHARS } from './app-listing';
-import { BINDING_ACTION_API_VERSION, BINDING_ACTION_CAPABILITY, BINDING_NAME, CONVERSATION_BINDING_ACTIONS, CONVERSATION_SURFACE_PLACEMENTS } from './unread-binding';
+import { BINDING_ACTION_API_VERSION, BINDING_ACTION_CAPABILITY, BINDING_NAME, CONVERSATION_BINDING_ACTIONS, CONVERSATION_SURFACE_HEADER_API_VERSION, CONVERSATION_SURFACE_HEADERS, CONVERSATION_SURFACE_PLACEMENTS } from './unread-binding';
 import { RESOURCE_BINDING_ACTIONS, resourceDomainProblem } from './agent-resources';
 import { COMPOSER_ACTION_MAX, COMPOSER_ACTIONS_API_VERSION, COMPOSER_RUN_ACTION, composerActionSchema } from './composer-actions';
 
@@ -364,9 +364,11 @@ export const EXTENSION_CAPABILITIES = [
   'chat:schedules:control',
   // #1925 (API 44) That same selected conversation's assistant, when it is the person's own: a snapshot of it and its
   // changes (`gugu.assistant.status` / `onChanged`) — and, in the person's click, one of the host's own screens for it
-  // opened, or its setup moved on a step (`gugu.assistant.open` / `advanceSetup`). Each with its binding action.
+  // opened, or its setup moved on a step (`gugu.assistant.open` / `advanceSetup`) — or it renamed (`gugu.assistant.rename`).
+  // Each with its binding action.
   'assistant:status',
   'assistant:open',
+  'assistant:rename',
   // #1925 (API 46) When that same conversation is the person's private chat with their own assistant: the work it handed out
   // (`gugu.bindings.work` / `onWorkChanged`, each row as the built-in list draws it) and, in a click, one task's conversation
   // drawn by the host in the App's panel (`openWork` / `closeWork`): the App sees none of that conversation.
@@ -655,6 +657,7 @@ export const extensionManifestSchema = z
       conversationSurface: z.strictObject({
         binding: z.string().regex(BINDING_NAME),
         placement: z.enum(CONVERSATION_SURFACE_PLACEMENTS),
+        header: z.enum(CONVERSATION_SURFACE_HEADERS).optional(),
         composerActions: z.array(composerActionSchema).min(1).max(COMPOSER_ACTION_MAX).optional(),
       }).optional(),
       mcpServers: z.array(mcpServerContributionSchema).min(1).max(4).optional(),
@@ -806,6 +809,10 @@ export const extensionManifestSchema = z
     }
     if (Boolean(surface) !== (unreadBinding?.actions.includes('surface') ?? false)) {
       ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface'], message: 'contributes.conversationSurface requires the conversation binding\'s "surface" action, and the action requires conversationSurface' });
+    }
+    // #1925 (46) The host's own row above the conversation: an App of 46 or later.
+    if (surface?.header && manifest.apiVersion < CONVERSATION_SURFACE_HEADER_API_VERSION) {
+      ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface', 'header'], message: `contributes.conversationSurface.header requires apiVersion ${CONVERSATION_SURFACE_HEADER_API_VERSION}` });
     }
     // #1927 (48): composer entries, each run needing its binding action (whose capability the loop above pairs with it).
     const entries = surface?.composerActions ?? [];

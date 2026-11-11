@@ -1,5 +1,6 @@
 import type { ExtensionFileChangeBatch } from '@shared/extensions/bridge-protocol';
 import { chatForCapabilities } from '@shared/extensions/bridge-protocol';
+import type { AppSurfaceIntent } from '@shared/extensions/unread-binding';
 import { appStateOf } from '@shared/extensions/app-state';
 import { sameWidgetIdentity, widgetContext } from '@shared/extensions/widget-context';
 import { groupFileLink } from '@gugu/core/shared/ui/guguLink';
@@ -1520,33 +1521,36 @@ export function pushContext(webContentsId: number): void {
 
 /**
  * #1925 Each page of this App the person works is told what `gugu.bindings.surface` answers it now — after the window's
- * report of what it draws beside the App's main page changed. A page elsewhere hears `unbound`.
+ * report of what it draws beside the App's main page, or over its panel (46), changed. A page elsewhere hears `unbound`.
+ * 46: with `intent`, the person's click in the host's row is told once, with that answer, to the page drawn beside the
+ * conversation — only while the row may be drawn (`surfaceIntentHolds`); otherwise the pages hear the answer alone.
  */
-export async function pushBindingSurfaces(extensionId: string): Promise<void> {
-  const { appBindingSurface, conversationSurfaceBinding } = await import('./app-unread-bindings');
+export async function pushBindingSurfaces(extensionId: string, intent?: AppSurfaceIntent): Promise<void> {
+  const { appBindingSurface, conversationSurfaceBinding, surfaceIntentHolds, withIntent } = await import('./app-unread-bindings');
   // Uninstalled meanwhile: its pages are gone with it.
   if (!extensionsService().isInstalled(extensionId)) return;
   const name = conversationSurfaceBinding(extensionsService().get(extensionId).manifest);
   if (!name) return;
+  const told = intent && await surfaceIntentHolds(extensionId) ? intent : undefined;
   for (const [webContentsId, binding] of [...bindings]) {
     if (binding.extensionId !== extensionId || binding.operator.kind !== 'person') continue;
     const surface = await appBindingSurface(extensionId, binding, { name }).catch(() => ({ name, state: 'unbound' as const }));
     const contents = webContents.fromId(webContentsId);
-    if (bindings.get(webContentsId) === binding && contents && !contents.isDestroyed()) sendEvent(contents, { type: 'bindingSurface', surface });
+    if (bindings.get(webContentsId) === binding && contents && !contents.isDestroyed()) sendEvent(contents, { type: 'bindingSurface', surface: withIntent(surface, told) });
   }
 }
 
 /**
  * #1927 (48) The page drawn beside the bound conversation is told `intent` once (`gugu.bindings.onSurface`), its panel
- * expanded first if it was collapsed — the host's run of a `page-intent` composer entry, or of its recording bar's open.
+ * expanded and uncovered first — the host's run of a `page-intent` composer entry, or of its recording bar's open.
  * Only that page, only while it is drawn there for the person (`appBindingSurface` answers `bound`). False: no page heard it.
  */
-export async function deliverSurfaceIntent(extensionId: string, intent: string): Promise<boolean> {
+export async function deliverSurfaceIntent(extensionId: string, intent: AppSurfaceIntent): Promise<boolean> {
   const { tellSurfaceIntent } = await import('./app-unread-bindings');
   if (!extensionsService().isInstalled(extensionId)) return false;
   const pages = [...bindings].filter(([, binding]) => binding.extensionId === extensionId).map(([webContentsId, binding]) => ({
     tabName: binding.tabName, tabId: binding.tabId, person: binding.operator.kind === 'person',
-    expand: () => deliver(binding, { kind: 'conversationPanel', collapsed: false }),
+    uncover: () => deliver(binding, { kind: 'conversationPanel', collapsed: false, uncover: true }),
     tell: (surface: import('@shared/extensions/unread-binding').AppBindingSurface) => {
       const contents = webContents.fromId(webContentsId);
       if (bindings.get(webContentsId) !== binding || !contents || contents.isDestroyed()) return false;
@@ -2131,7 +2135,9 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
     }
     case 'assistantStatus':
     case 'assistantOpen':
-    case 'assistantAdvanceSetup': {
+    case 'assistantAdvanceSetup':
+    case 'assistantRename':
+    case 'assistantFigure': {
       // #1925 The person's own assistant, through their grant: an agent working the page is not that account.
       const page = thePage(caller);
       if (page.operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reaches none of its assistant'), { code: 'denied' });
@@ -2139,6 +2145,8 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       if (method === 'assistantStatus') return await assistant.appAssistantStatus(caller.extensionId, args);
       const act = (action: ExtensionHostAction) => deliver(page, action);
       if (method === 'assistantOpen') return await assistant.appAssistantOpen(caller.extensionId, args, act);
+      if (method === 'assistantRename') return await assistant.appAssistantRename(caller.extensionId, args, act);
+      if (method === 'assistantFigure') return await assistant.appAssistantFigure(caller.extensionId, args, act);
       return await assistant.appAssistantAdvanceSetup(caller.extensionId, args, act);
     }
     case 'bindingsResources':
@@ -2194,6 +2202,18 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       const act = (action: ExtensionHostAction) => deliver(page, action);
       if (method === 'bindingsOpenWork') return await work.appOpenWork(caller.extensionId, page, args, act);
       return await work.appCloseWork(caller.extensionId, args, act);
+    }
+    case 'toast': {
+      // #1925 (44) The host's own toast: the person's page, on screen and focused now, at its rate (app-toast.ts).
+      const page = thePage(caller);
+      const { appToast } = await import('./app-toast');
+      await appToast({
+        extensionId: caller.extensionId,
+        person: page.operator.kind === 'person',
+        onScreen: page.metrics.visible && page.metrics.width > 0,
+        focused: () => webContents.fromId(caller.pageId)?.isFocused() === true,
+      }, args, (action) => deliver(page, action));
+      return undefined;
     }
     case 'messagesHistory':
     case 'messagesSearch': {

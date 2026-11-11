@@ -20,6 +20,11 @@ const io = vi.hoisted(() => ({
 vi.mock('../../../../apps/desktop/src/lib/firstRun', () => io)
 vi.mock('../../../../apps/desktop/src/lib/firstRunHints', () => ({ startFirstRunHints: io.startFirstRunHints, readFirstRunHints: vi.fn(async () => null), dismissFirstRunHints: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/sampleProject', () => ({ enrollSampleProject: io.enrollSampleProject }))
+// #1931 The introduction's words are the assistant App's: here, the neutral test rules'.
+vi.mock('../../../../apps/desktop/src/lib/assistantSetupRules', async () => {
+  const { NEUTRAL_ASSISTANT_RULES } = await import('../assistantRules/neutralRules')
+  return { assistantSetupRules: async () => NEUTRAL_ASSISTANT_RULES, assistantIntroCopy: async () => NEUTRAL_ASSISTANT_RULES.intro ?? null }
+})
 const auth = vi.hoisted(() => ({ updateNickname: vi.fn(async () => ({ success: true })), updateAvatar: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/auth', () => ({ authService: auth }))
 const installer = vi.hoisted(() => ({ mounted: vi.fn() }))

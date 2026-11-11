@@ -114,7 +114,9 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // own schedule store). Never the agent's id, its session or the chat.
 // 44 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
 // `assistant-status` (`assistant:status`: `gugu.assistant.status` / `onChanged`) and `assistant-open` (`assistant:open`:
-// `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`).
+// `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`), and
+// `assistant-rename` (`assistant:rename`: `gugu.assistant.rename`). The panel's own pages (settings, projects, capabilities)
+// open as one host layer over the App's panel (`app-host-layer.ts`). Any page: `gugu.toast(text)`, the host's toast.
 // 45 (#1931): `contributes.assistantRules`, the personal assistant's product rules as text/data files the host reads at its
 // own read points (assistantRulesFormat.ts); never run, and honoured only for the App the host trusts as their provider.
 export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
@@ -122,6 +124,10 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // `work` (`chat:work`): `gugu.bindings.work` / `onWorkChanged` read the work the assistant handed out, each row as the
 // built-in list draws it with an opaque handle; `openWork(name, handle)` (in a click) / `closeWork` have the host draw that
 // task's own conversation in the App's panel. No work, session, chat or device id, path, URL or message reaches the App.
+// Also 46: `contributes.conversationSurface.header: "assistant"` — over that same assistant chat, the host draws the built-in
+// assistant page's top row above the conversation (face and name, search, settings gear, expand) from its own data. A click
+// on the face and name is told once as `onSurface` → `intent: { kind: "profile" }`; the gear opens the assistant's settings
+// as a host page over the App's panel. One host page at a time there (`app-host-layer.ts`): `panel.hostPage` says one is open.
 // 47 (#1927): `voice-notes:record` (`chat:voice-notes:record`): `gugu.voiceNote.*` drives the host's voice-note recorder for
 // that personal assistant — the host records, uploads and transcribes; the App hears phases and opaque job handles only
 // (voice-note-session.ts).
@@ -129,6 +135,10 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // and runs on the person's click — a voice note, a draft, or a `page-intent` the page hears once on `bindings.onSurface`
 // (composer-actions.ts). No App code runs on that click.
 export const EXTENSION_API_VERSION = 48;
+
+/** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
+export const APP_TOAST_MAX = 80;
+export const APP_TOAST_INTERVAL_MS = 2000;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -585,7 +595,11 @@ export type ExtensionHostEvent =
   | { type: 'projection'; watchId: string; packet: import('./projection-protocol').ProjectionHostPacket }
   | { type: 'projectionSource'; event: import('./projection-protocol').ProjectionSourceEvent }
   | { type: 'context'; context: ExtensionHostContext }
-  /** #1925 What `gugu.bindings.surface(name)` would answer now, after the conversation beside the page came or went. */
+  /**
+   * #1925 What `gugu.bindings.surface(name)` would answer now, after the conversation beside the page came or went, its panel
+   * was collapsed or expanded, or a host page opened or closed over it (46). 46: once, with `intent`, after the person clicked
+   * the assistant's face and name in the host's row.
+   */
   | { type: 'bindingSurface'; surface: import('./unread-binding').AppBindingSurface }
   /**
    * #1925 (46) What `gugu.bindings.work(name)` would answer now, after the work, its rows or the task drawn in the App's panel
@@ -679,7 +693,7 @@ export type ExtensionHostEvent =
    * once, `unbound` when an assistant appears for an App that heard the snapshot without one. Only to the pages the person
    * works of an App with `assistant:status`, each time checked as a read is.
    */
-  | { type: 'assistantChanged'; name: string; state: 'ready'; status: import('./assistant-binding').AppAssistantStatus }
+  | { type: 'assistantChanged'; name: string; state: 'ready'; status: import('./assistant-binding').AppAssistantStatus; hostPage: boolean }
   | { type: 'assistantChanged'; name: string; state: 'unbound' }
   /**
    * #1928 The schedules of the agent a page's binding is with changed (`gugu.bindings.onSchedulesChanged(name, fn)`): the
@@ -913,6 +927,16 @@ export const BRIDGE_VERBS = {
   assistantStatus: { needs: 'assistant:status', only: 'page' },
   assistantOpen: { needs: 'assistant:open', only: 'page', gesture: true },
   assistantAdvanceSetup: { needs: 'assistant:open', only: 'page', gesture: true },
+  assistantRename: { needs: 'assistant:rename', only: 'page', gesture: true },
+  /** #1925 (44) The assistant's moving figure drawn by the host over the page (`gugu.assistant.figure`): what status shows, moving. */
+  assistantFigure: { needs: 'assistant:status', only: 'page' },
+  /**
+   * #1925 (44) A short line in the host's own toast, as the host says 「更改已保存」 after a save: only from a page the person
+   * works, while it is on screen and has the focus; text only (no action, link or icon), at most `APP_TOAST_MAX` characters,
+   * one every `APP_TOAST_INTERVAL_MS` (else `rate-limited`). No capability: it says nothing outside what the page could
+   * show itself, and only while the person is looking at it.
+   */
+  toast: { needs: null, only: 'page' },
   /**
    * #1925 (46): the work the person's own assistant handed out, each row as the built-in list draws it, when the bound
    * conversation is the person's chat with that assistant — and, in a click, one row's task conversation drawn by the host

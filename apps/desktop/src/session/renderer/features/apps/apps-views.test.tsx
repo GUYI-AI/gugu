@@ -32,6 +32,13 @@ vi.mock('@renderer/features/extensions/extension-shared-slot', () => ({
     return null;
   },
 }));
+// #1925 (44) The App's main page stands in its host layer frame: with no layer open, that is the same shared slot.
+vi.mock('./app-host-layer', () => ({
+  AppHostLayerFrame: ({ tabKind }: { tabKind: string }) => {
+    mocks.claims.push({ tabKind, tabId: 'dock' });
+    return null;
+  },
+}));
 vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
   installedExtensionsStore: { mainTabOf: () => mocks.main, manifestFor: () => mocks.manifest, get allTabContributions() { return mocks.tabs; } },
 }));

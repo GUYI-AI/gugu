@@ -2,7 +2,7 @@
 import { mkdir, mkdtemp, lstat, readFile, readlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../../apps/desktop/electron/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -11,6 +11,13 @@ vi.mock('../../../../apps/desktop/electron/lib/logger', () => ({
 import { prepareLocalAssistantHome, wipeLocalAssistantHome } from '../../../../apps/desktop/electron/assistant-home-prepare'
 import { assistantGuide, assistantHomePaths } from '../../../../packages/core/src/shared/assistantPolicy'
 import { refreshAssistantContext } from '../../../../apps/desktop/electron/sessionpage/assistant-instructions'
+import { installAssistantRulesResolver } from '../../../../apps/desktop/electron/assistant-rules-resolver'
+import { fixedAssistantRules } from '../assistantRules/fixtureApp'
+import { NEUTRAL_ASSISTANT_RULES } from '../assistantRules/neutralRules'
+
+// #1931 The words are the assistant App's: the host's preparing of the home runs here on the neutral test rules.
+const rules = NEUTRAL_ASSISTANT_RULES
+beforeAll(() => installAssistantRulesResolver(fixedAssistantRules(rules)))
 
 async function scratch() {
   const root = await mkdtemp(join(tmpdir(), 'gugu-assistant-home-'))
@@ -44,10 +51,10 @@ describe('prepareLocalAssistantHome', () => {
     const p = paths(result.workdir)
     expect(result.workdir).toBe(join(guguHome, 'assistant'))
     const brief = await readFile(p.instructions, 'utf8')
-    expect(brief).toContain('暂不可用时消息保留')
+    expect(brief).toContain('# Brief (computer)')
     expect(brief.length).toBeLessThan(2400)
     expect(brief).not.toContain('"batches"')
-    expect(await readFile(join(result.workdir, '.gugu-assistant-reference.md'), 'utf8')).toBe(assistantGuide('computer'))
+    expect(await readFile(join(result.workdir, '.gugu-assistant-reference.md'), 'utf8')).toBe(assistantGuide('computer', rules))
     expect(JSON.parse(await readFile(p.settings, 'utf8')).permissions.deny).toContain('CronCreate')
     expect(await readFile(join(p.memoryDir, 'owner-profile.md'), 'utf8')).toContain('- 称呼：小明')
     expect(await readFile(p.memoryIndex, 'utf8')).toContain('(owner-profile.md)')

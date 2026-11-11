@@ -25,7 +25,7 @@ export const BINDING_ACTION_CAPABILITY = {
   unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft', surface: 'chat:surface',
   resources: 'chat:resources', 'resources:write': 'chat:resources:write',
   schedules: 'chat:schedules', 'schedules:control': 'chat:schedules:control',
-  'assistant-status': 'assistant:status', 'assistant-open': 'assistant:open',
+  'assistant-status': 'assistant:status', 'assistant-open': 'assistant:open', 'assistant-rename': 'assistant:rename',
   work: 'chat:work',
   [VOICE_NOTE_RECORD_ACTION]: 'chat:voice-notes:record',
 } as const;
@@ -38,7 +38,7 @@ export const BINDING_ACTION_API_VERSION = {
   resources: RESOURCE_ACTIONS_API_VERSION, 'resources:write': RESOURCE_ACTIONS_API_VERSION,
   // bound-schedules.ts's BOUND_SCHEDULES_API_VERSION (it imports BINDING_NAME from here, so not imported back).
   schedules: 43, 'schedules:control': 43,
-  'assistant-status': ASSISTANT_BINDING_API_VERSION, 'assistant-open': ASSISTANT_BINDING_API_VERSION,
+  'assistant-status': ASSISTANT_BINDING_API_VERSION, 'assistant-open': ASSISTANT_BINDING_API_VERSION, 'assistant-rename': ASSISTANT_BINDING_API_VERSION,
   work: 46,
   [VOICE_NOTE_RECORD_ACTION]: VOICE_NOTE_API_VERSION,
 } as const satisfies Record<Exclude<ConversationBindingAction, 'unread'>, number>;
@@ -51,6 +51,16 @@ export const BINDING_NAME = /^[a-z][a-z0-9-]{0,47}$/;
 export const CONVERSATION_SURFACE_PLACEMENTS = ['side-panel'] as const;
 
 /**
+ * #1925 (API 46) The top row the host draws above the conversation column (`contributes.conversationSurface.header`).
+ * `assistant`: the built-in assistant page's own row — the assistant's face and name (a click: the App hears
+ * `intent: { kind: "profile" }`), search, its settings gear (the host's settings page over the App's panel), expand. Drawn
+ * only while the bound conversation is the person's private chat with their own assistant, from the host's own data.
+ */
+export const CONVERSATION_SURFACE_HEADERS = ['assistant'] as const;
+export type ConversationSurfaceHeader = (typeof CONVERSATION_SURFACE_HEADERS)[number];
+export const CONVERSATION_SURFACE_HEADER_API_VERSION = 46;
+
+/**
  * The top-right corner of the App's page that the host's 收起面板 control covers while the panel is open (#1925): `right`
  * px in from the page's right edge, `top` px down from its top, the control centred in that band — the built-in assistant
  * panel's top row (52px high, its control 16px in from the edge). The same at every panel width. A page drawing its own top
@@ -59,20 +69,26 @@ export const CONVERSATION_SURFACE_PLACEMENTS = ['side-panel'] as const;
 export const CONVERSATION_SURFACE_PANEL_INSET: Readonly<{ top: number; right: number }> = Object.freeze({ top: 52, right: 48 });
 
 /**
+ * What the person asked of the App's page through the host, told once in the `onSurface` event that follows the click and
+ * never in an answer. From the host's own row (46, `contributes.conversationSurface.header`): `profile` = the assistant's
+ * face and name were clicked, show its profile. #1927 (48): `page-intent` = the person clicked the App's composer entry that
+ * declares it (`run: { kind: "page-intent", intent }`, composer-actions.ts); `voice-note` = the person opened the note the
+ * host's recording bar shows. The panel is expanded (and any host page over it closed) before it is told. Nothing else
+ * comes with it. `APP_SURFACE_INTENTS`: the ones the window may report from its own row.
+ */
+export type AppSurfaceIntent = { kind: 'profile' } | { kind: 'voice-note' } | { kind: 'page-intent'; intent: string };
+export const APP_SURFACE_INTENTS = ['profile'] as const;
+
+/**
  * `gugu.bindings.surface(name)` (41, `chat:surface`): whether the bound conversation is drawn beside this page now, whether
  * this page's panel is collapsed, and the corner of the page the host's control covers (`panel.inset`). `unbound` says only
  * that it is not: no chosen conversation, the grant withdrawn, the account switched or out of it, or the page shown
- * elsewhere. Never the chat, its messages or its people.
+ * elsewhere. Never the chat, its messages or its people. 46: `panel.hostPage` — a page of the host's own is drawn over the
+ * App's page in its panel now (a task's conversation, the assistant's settings: `app-host-layer.ts`), never which or what it
+ * shows; `intent`, in an `onSurface` event only (`AppSurfaceIntent`).
  */
 export type AppBindingSurface = { name: string; state: 'unbound' }
-  | {
-    name: string; state: 'bound'; panel: { collapsed: boolean; inset: { top: number; right: number } };
-    /**
-     * #1927 (48) Only on the one `onSurface` event that carries it: the person clicked a composer entry whose run is this
-     * `page-intent` (composer-actions.ts), or opened the note the host's recording bar shows (`voice-note`). No data.
-     */
-    intent?: string;
-  };
+  | { name: string; state: 'bound'; panel: { collapsed: boolean; inset: { top: number; right: number }; hostPage: boolean }; intent?: AppSurfaceIntent };
 
 /** A stored target is host data and never part of the App's answer. */
 export const storedUnreadBindingSchema = z.strictObject({
@@ -86,7 +102,11 @@ export type StoredUnreadBinding = z.infer<typeof storedUnreadBindingSchema>;
  * #1925 A binding the trusted window may draw beside the App's page, with `authority`: host data that stays the same while
  * this App's installation, switch, grants, selection and the account do, and is new once any of them changed.
  */
-export type GrantedSurfaceBinding = StoredUnreadBinding & { authority: string };
+export type GrantedSurfaceBinding = StoredUnreadBinding & {
+  authority: string;
+  /** 46: the row to draw above the conversation; null unless declared and the conversation is the account's own assistant chat. */
+  header: ConversationSurfaceHeader | null;
+};
 export type AppUnreadBinding = { name: string; state: 'unbound'; actions: readonly ConversationBindingAction[] }
   | { name: string; state: 'bound'; handle: string; actions: readonly ConversationBindingAction[] };
 

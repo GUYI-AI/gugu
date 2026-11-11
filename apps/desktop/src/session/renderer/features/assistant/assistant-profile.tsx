@@ -12,12 +12,11 @@ import { useTodayFeedView } from './assistant-today';
 import { ResourceFiles } from './assistant-memory-page';
 import { CustomizeDialog, usePersona } from './assistant-personality';
 import { ShellSlot, useAssistantShell } from './assistant-shell';
-import { useAssistantPanelPage } from '@/lib/assistantPanelPage';
 import { usePhoneRead } from '@/mobile/assistant/usePhoneRead';
 import { peekAssistantPanelIntegrations,readAssistantPanelIntegrations } from '@/components/assistant/assistant-panel-integrations';
 import { useChatChannels } from '@/components/settings/channels/useChatChannels';
 import { assistantApplicationCounts } from '@/components/assistant/assistant-app-connections';
-import { AssistantRow, AssistantSection, PageHead } from './assistant-ui';
+import { AssistantRow, AssistantSection, AssistantShellPageFrame } from './assistant-ui';
 import { AssistantLibraryCard, AssistantLibraryVolume } from '@/components/assistant/AssistantLibraryVolume';
 
 /**
@@ -57,15 +56,12 @@ function DiaryPage({ context, sub }: AssistantPageProps & { sub: string }) {
 }
 
 /** 设备:壳那棵树里的组件(设置里同一份逻辑与数据),画进格子、在这里换助理 App 的样子(.ta-skin)。 */
-function ShellPage({ slot, title }: { slot: 'devices' | 'connectors' | 'settings'; title: string }) {
+export function ShellPage({ slot, title }: { slot: 'devices' | 'connectors' | 'settings'; title: string }) {
   const { t } = useTranslation('assistant');
-  const innerPage = useAssistantPanelPage();
   return (
-    <div className="ta-page" data-testid={`assistant-slot-${slot}`}>
-      {/* 页头(大标题);头一句说明由壳那一侧的组件带(让 X 帮你操作以下设备)。 */}
-      {!innerPage && <PageHead title={t(title)} />}
+    <AssistantShellPageFrame title={t(title)} testId={`assistant-slot-${slot}`}>
       <ShellSlot name={slot} className="ta-skin" />
-    </div>
+    </AssistantShellPageFrame>
   );
 }
 

@@ -5,13 +5,20 @@ import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow }
 import {
   ASSISTANT_SCREENS,
   ASSISTANT_SETUP_ADVANCES,
+  assistantFigureSchema,
+  pushedAssistantCountsSchema,
   pushedAssistantStatusSchema,
+  renameCheck,
   setupAdvanceAllowed,
   withoutAssistant,
   type AppAssistantRead,
   type AssistantBindingAction,
+  type AssistantRenameResult,
+  type PushedAssistantCounts,
   type PushedAssistantStatus,
 } from '@shared/extensions/assistant-binding';
+import { appHostLayerReportSchema } from '@shared/extensions/app-host-layer';
+import { forgetHostLayersForTest, hostLayerOf, reportHostLayer } from './app-host-layers';
 import type { ExtensionHostEvent } from '@shared/extensions/bridge-protocol';
 import type { ExtensionHostAction } from '@shared/extensions/host-actions';
 import { currentAccountAccessToken } from './account-token';
@@ -98,6 +105,12 @@ async function boundAssistant(extensionId: string, name: string, action: Assista
  */
 let shown: PushedAssistantStatus | null = null;
 const statusFor = (ownerId: string) => (shown?.ownerId === ownerId ? shown.status : null);
+/** The panel's numbers as the session page last read them (`useAssistantAppCounts`), whose they are kept here too. */
+let counted: PushedAssistantCounts | null = null;
+const countsFor = (ownerId: string) => (counted?.ownerId === ownerId ? counted.counts : null);
+/** The host layer over each App's panel (`app-host-layer.ts`), as the window reported it, for which account: one record for
+ * every host page (app-host-layers.ts) — the work binding's task conversations (46) as these panel pages. */
+const hostPageFor = (extensionId: string, ownerId: string) => hostLayerOf(extensionId, ownerId) !== null;
 
 /**
  * While this window shows the account no assistant (`none`, `loading`, `unreadable`), an App granted the action may start
@@ -115,7 +128,7 @@ async function noAssistantShown(extensionId: string, name: string, action: Assis
 /** The answer of `status`. */
 async function readStatus(extensionId: string, name: string): Promise<AppAssistantRead> {
   const none = await noAssistantShown(extensionId, name, 'assistant-status');
-  if (none) return { name, state: 'ready', status: none.status };
+  if (none) return { name, state: 'ready', status: none.status, hostPage: hostPageFor(extensionId, none.ownerId) };
   const bound = await boundAssistant(extensionId, name, 'assistant-status').catch((error: unknown) => {
     if (codeOf(error) === 'failed') return 'unavailable' as const;
     throw error;
@@ -124,7 +137,11 @@ async function readStatus(extensionId: string, name: string): Promise<AppAssista
   if (!bound) return { name, state: 'unbound' };
   const status = statusFor(bound.ownerId);
   if (!status) return { name, state: 'unavailable' };
-  return { name, state: 'ready', status: status.assistant === 'found' ? status : withoutAssistant(status) };
+  return {
+    name, state: 'ready',
+    status: status.assistant === 'found' ? { ...status, counts: countsFor(bound.ownerId) } : withoutAssistant(status),
+    hostPage: hostPageFor(extensionId, bound.ownerId),
+  };
 }
 
 /** `gugu.assistant.status(name)` (44, `assistant:status`): the snapshot, or why there is none. */
@@ -169,8 +186,80 @@ export async function appAssistantAdvanceSetup(extensionId: string, input: unkno
   await act({ kind: 'advanceAssistantSetup', next, ownerId: bound.ownerId });
 }
 
+/**
+ * `gugu.assistant.rename(name, text)` (44, `assistant:rename`, in a click): the bound assistant renamed through the shell's
+ * own `renameAssistant` (`act`), by the built-in field's rule (`renameCheck`, checked again there). A closed answer; a
+ * refusal of the binding is thrown, as for every call.
+ */
+export async function appAssistantRename(extensionId: string, input: unknown, act: (action: ExtensionHostAction) => Promise<unknown>): Promise<AssistantRenameResult> {
+  const { name, text } = argsOf(z.strictObject({ name: z.string(), text: z.string().max(1000) }), input,
+    'gugu.assistant.rename takes the binding\'s name and the new name');
+  const bound = await boundAssistant(extensionId, name, 'assistant-rename');
+  if (!bound) throw coded('not-found', `No conversation is chosen for "${name}" yet: the person chooses it in the App's permissions`);
+  const status = statusFor(bound.ownerId);
+  if (status?.assistant !== 'found') throw coded('failed', 'This window has not shown the assistant yet: try again in a moment');
+  const check = renameCheck(text, status.name);
+  if ('result' in check) return check.result;
+  try {
+    await act({ kind: 'renameAssistant', text: check.name, ownerId: bound.ownerId });
+  } catch {
+    return 'failed';
+  }
+  return 'renamed';
+}
+
+/**
+ * `gugu.assistant.figure(name, figure)` (44, `assistant:status`): the host draws the assistant's moving figure over the
+ * page (`act`) — what `status` shows of it, moving: the bound assistant's, or, while the account shows none, the setup
+ * guide's bird (`draft`), as `status` answers then. null takes it away, whatever the binding is now.
+ */
+export async function appAssistantFigure(extensionId: string, input: unknown, act: (action: ExtensionHostAction) => Promise<unknown>): Promise<void> {
+  const { name, figure } = argsOf(z.strictObject({ name: z.string(), figure: assistantFigureSchema.nullable() }), input,
+    'gugu.assistant.figure takes the binding\'s name and { x, y, size } (CSS pixels of the page), or null');
+  if (!figure) {
+    await act({ kind: 'assistantFigure', figure: null, ownerId: null, who: 'assistant' });
+    return;
+  }
+  const none = await noAssistantShown(extensionId, name, 'assistant-status');
+  if (none) {
+    await act({ kind: 'assistantFigure', figure, ownerId: none.ownerId, who: 'draft' });
+    return;
+  }
+  const bound = await boundAssistant(extensionId, name, 'assistant-status');
+  if (!bound) throw coded('not-found', `No conversation is chosen for "${name}" yet: the person chooses it in the App's permissions`);
+  // As `status` would answer now: the window may not have shown it yet, or no longer shows one.
+  const status = statusFor(bound.ownerId);
+  if (!status) throw coded('failed', 'This window has not shown the assistant yet: try again in a moment');
+  await act({ kind: 'assistantFigure', figure, ownerId: bound.ownerId, who: status.assistant === 'found' ? 'assistant' : 'draft' });
+}
+
 /** The Apps whose last word was this account's snapshot without an assistant: each hears `unbound` once when one appears. */
 const heardWithout = new Set<string>();
+
+/**
+ * Each App granted `assistant:status` (or that one alone) hears what `status` would answer it now (`hear`: its pages the
+ * person works) — read after the waits, so the newest snapshot, never an older one over it.
+ */
+async function tell(hear: (extensionId: string, event: ExtensionHostEvent) => void, only?: string): Promise<void> {
+  const service = extensionsService();
+  await Promise.all(service.list().extensions.map(async ({ manifest }) => {
+    const name = manifest.permissions?.bindings?.[0]?.name;
+    if (only !== undefined && manifest.id !== only) return;
+    if (!name || !manifest.permissions?.bindings?.[0]?.actions.includes('assistant-status')) return;
+    if (!service.isEnabled(manifest.id) || !service.hasCapability(manifest.id, 'assistant:status')) {
+      heardWithout.delete(manifest.id);
+      return;
+    }
+    const read = await readStatus(manifest.id, name).catch(() => null);
+    if (read?.state === 'ready') {
+      if (read.status.assistant === 'found') heardWithout.delete(manifest.id);
+      else heardWithout.add(manifest.id);
+      hear(manifest.id, { type: 'assistantChanged', name, state: 'ready', status: read.status, hostPage: read.hostPage });
+    } else if (read?.state === 'unbound' && heardWithout.delete(manifest.id)) {
+      hear(manifest.id, { type: 'assistantChanged', name, state: 'unbound' });
+    }
+  }));
+}
 
 /**
  * The window's assistant changed (controller `assistantStatusChanged`): kept, and each App granted `assistant:status`
@@ -186,28 +275,40 @@ export async function assistantStatusChanged(input: unknown, hear: (extensionId:
   if (shown?.ownerId !== parsed.data.ownerId) heardWithout.clear();
   shown = parsed.data;
   if (same) return;
-  const service = extensionsService();
-  await Promise.all(service.list().extensions.map(async ({ manifest }) => {
-    const name = manifest.permissions?.bindings?.[0]?.name;
-    if (!name || !manifest.permissions?.bindings?.[0]?.actions.includes('assistant-status')) return;
-    if (!service.isEnabled(manifest.id) || !service.hasCapability(manifest.id, 'assistant:status')) {
-      heardWithout.delete(manifest.id);
-      return;
-    }
-    // Read after the waits: the newest snapshot, an older one never lands over it.
-    const read = await readStatus(manifest.id, name).catch(() => null);
-    if (read?.state === 'ready') {
-      if (read.status.assistant === 'found') heardWithout.delete(manifest.id);
-      else heardWithout.add(manifest.id);
-      hear(manifest.id, { type: 'assistantChanged', name, state: 'ready', status: read.status });
-    } else if (read?.state === 'unbound' && heardWithout.delete(manifest.id)) {
-      hear(manifest.id, { type: 'assistantChanged', name, state: 'unbound' });
-    }
-  }));
+  await tell(hear);
+}
+
+/**
+ * The panel's numbers changed (controller `assistantCountsChanged`): kept for that account, and told as a new snapshot to
+ * each App that would read them now (the bound assistant's: `counts` is null in any other answer).
+ */
+export async function assistantCountsChanged(input: unknown, hear: (extensionId: string, event: ExtensionHostEvent) => void): Promise<void> {
+  const parsed = pushedAssistantCountsSchema.safeParse(input);
+  if (!parsed.success) throw coded('invalid', 'Not assistant counts an App may see');
+  const same = counted?.ownerId === parsed.data.ownerId && JSON.stringify(counted.counts) === JSON.stringify(parsed.data.counts);
+  counted = parsed.data;
+  if (!same) await tell(hear);
+}
+
+/**
+ * The window opened or closed the host layer over an App's panel (controller `reportHostLayer`): kept, and that App
+ * told (`hostPage`) if it may read the assistant now. Only an installed App's; the layer is for the account it names.
+ */
+export async function appHostLayerChanged(input: unknown, hear: (extensionId: string, event: ExtensionHostEvent) => void): Promise<boolean> {
+  const parsed = appHostLayerReportSchema.safeParse(input);
+  if (!parsed.success) throw coded('invalid', 'Not a host layer report');
+  const { extensionId } = parsed.data;
+  if (!extensionsService().isInstalled(extensionId)) throw coded('denied', 'This App is not installed');
+  // True: what the App's pages hear may have changed — its assistant status here; its surface and work (controller).
+  const changed = reportHostLayer(parsed.data);
+  if (changed) await tell(hear, extensionId);
+  return changed;
 }
 
 /** Tests only: a window that has shown nothing. */
 export function forgetShownAssistantForTest(): void {
   shown = null;
+  counted = null;
+  forgetHostLayersForTest();
   heardWithout.clear();
 }

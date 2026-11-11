@@ -17,6 +17,11 @@ vi.mock('../../../../apps/desktop/src/lib/firstRunHints', () => ({
   startFirstRunHints: vi.fn(async () => undefined), readFirstRunHints: vi.fn(async () => null), dismissFirstRunHints: vi.fn(),
 }))
 vi.mock('../../../../apps/desktop/src/lib/sampleProject', () => ({ enrollSampleProject: vi.fn(async () => undefined) }))
+// #1931 The introduction's words are the assistant App's: here, the neutral test rules'.
+vi.mock('../../../../apps/desktop/src/lib/assistantSetupRules', async () => {
+  const { NEUTRAL_ASSISTANT_RULES } = await import('../assistantRules/neutralRules')
+  return { assistantSetupRules: async () => NEUTRAL_ASSISTANT_RULES, assistantIntroCopy: async () => NEUTRAL_ASSISTANT_RULES.intro ?? null }
+})
 vi.mock('../../../../apps/desktop/src/lib/auth', () => ({ authService: {} }))
 vi.mock('../../../../apps/desktop/src/lib/productTour', async (original) => ({
   ...await original<Record<string, unknown>>(), saveProductTourState: vi.fn(async () => undefined),
@@ -143,8 +148,8 @@ describe('installation notices appear only after full-screen first-run pages', (
   })
 
   it.each([
-    ['zh-CN', '咕咕和你的 agent 会用这些称呼你。', '咕咕是你的个人助理，帮你记安排、办事情。', '开通我的咕咕', '上一步', '先逛逛'],
-    ['en-US', 'Gugu and your agents will use these details to address you.', 'Gugu is your personal assistant for plans and everyday tasks.', 'Set up my Gugu', 'Back', 'Look around first'],
+    ['zh-CN', '咕咕和你的 agent 会用这些称呼你。', '中性一句话。', '开通我的咕咕', '上一步', '先逛逛'],
+    ['en-US', 'Gugu and your agents will use these details to address you.', 'Neutral summary.', 'Set up my Gugu', 'Back', 'Look around first'],
   ])('%s keeps desktop setup descriptions to one sentence and preserves all intro actions', async (locale, profileCopy, introCopy, primary, back, later) => {
     await i18n.changeLanguage(locale)
     native.install.mockImplementation(() => new Promise(() => {}))
