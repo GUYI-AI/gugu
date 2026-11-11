@@ -10,7 +10,7 @@ import type { PhoneRoute } from '../../../apps/desktop/src/mobile/assistant/Mobi
  * with the layer's own question.
  */
 
-const state = vi.hoisted(() => ({ stuck: false, entry: { entry: 'app', extensionId: 'gugu-assistant', tabKind: 'gugu-assistant.panel', binding: 'main' } as Record<string, unknown> }))
+const state = vi.hoisted(() => ({ held: null as Record<string, unknown> | null, stuck: false, entry: { entry: 'app', extensionId: 'gugu-assistant', tabKind: 'gugu-assistant.panel', binding: 'main' } as Record<string, unknown> }))
 vi.mock('react-i18next', async original => ({ ...await original<object>(), useTranslation: () => ({ t: (key: string, values?: Record<string, unknown>) => values?.name ? `${key}:${String(values.name)}` : key }) }))
 vi.mock('../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'owner', nickname: 'Ann' } }) }))
 vi.mock('../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => ({ writeDraft: vi.fn(), draftAttachments: {}, setDraftAttachments: vi.fn() }) }))
@@ -49,6 +49,8 @@ vi.mock('../../../apps/desktop/src/mobile/assistant/phoneAssistantEntry', () => 
 vi.mock('../../../apps/desktop/src/session/renderer/features/assistant/assistant-shell', () => ({ ShellSlot: () => null }))
 vi.mock('../../../apps/desktop/src/session/renderer/features/global-search/search-session', () => ({ searchInChat: vi.fn() }))
 vi.mock('../../../apps/desktop/src/components/appSlot/phoneAssistantAppEnsure', () => ({ usePhoneAssistantAppStuck: () => state.stuck }))
+// The App with the assistant App's id on this phone, as the layer reads it (D2: whose copy it is decides "stuck").
+vi.mock('../../../apps/desktop/src/components/appSlot/phoneBindingPorts', () => ({ phoneInstalledApp: () => state.held }))
 
 import { MobileAssistantApp } from '../../../apps/desktop/src/mobile/assistant/MobileAssistantApp'
 import { phoneAssistantLayer, resetPhoneAssistantLayerForTest } from '../../../apps/desktop/src/components/appSlot/phoneAssistantLayer'
@@ -125,6 +127,34 @@ it('before the App is in: 聊天 as ever, the sections say it is being prepared;
     expect(find('mobile-assistant-app-preparing')!.textContent).toContain('assistantRules.stuckBody')
   } finally {
     state.stuck = false
+    state.entry = { entry: 'app', extensionId: 'gugu-assistant', tabKind: 'gugu-assistant.panel', binding: 'main' }
+  }
+})
+
+// D2 (fix/assistant-app-untrusted-install): gugu's own market copy the phone does not trust gets the signed release put
+// over it by the ensure step, so the sections say it is being prepared, not stuck. Only the person's own copy (from a chat,
+// switched off) is left as it is, and said stuck. Control (the parent commit): any App holding the id was said stuck.
+it('an untrusted copy holding the id: gugu\'s market copy is being replaced (preparing); the person\'s own is stuck', async () => {
+  const { installedExtensionsStore } = await import('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')
+  const loaded = installedExtensionsStore.isLoaded
+  state.entry = { entry: 'built-in', reason: 'not the trusted App' }
+  const copy = { manifest: { id: 'gugu-assistant', version: '0.9.0' }, origin: 'market', marketSource: null, manifestDigest: 'd', activeVariant: 'upstream', enabled: true, mainTabKind: null }
+  const stuckShown = async () => {
+    await h.render(<MobileAssistantApp {...props} />)
+    await clickElement(find('mobile-assistant-tab-today')!)
+    return find('mobile-assistant-app-preparing')!.dataset.stuck
+  }
+  try {
+    installedExtensionsStore.isLoaded = true
+    state.held = copy
+    expect(await stuckShown()).not.toBe('true')
+    state.held = { ...copy, origin: 'attachment' }
+    expect(await stuckShown()).toBe('true')
+    state.held = { ...copy, enabled: false }
+    expect(await stuckShown()).toBe('true')
+  } finally {
+    installedExtensionsStore.isLoaded = loaded
+    state.held = null
     state.entry = { entry: 'app', extensionId: 'gugu-assistant', tabKind: 'gugu-assistant.panel', binding: 'main' }
   }
 })

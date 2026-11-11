@@ -38,6 +38,7 @@ import type { AppSurfaceIntent } from '@/session/shared/extensions/unread-bindin
 import { PhoneConfirmDialog } from './PhoneConfirmDialog'
 import { usePhoneAssistantAppStuck } from '@/components/appSlot/phoneAssistantAppEnsure'
 import { phoneInstalledApp } from '@/components/appSlot/phoneBindingPorts'
+import { personsOwnAssistantApp } from '../../../electron/assistant-app-ensure'
 import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { PHONE_ASSISTANT_LAYER_TAB, usePhoneAssistantEntry } from './phoneAssistantEntry'
@@ -151,8 +152,10 @@ function MobileAssistantAppContent({
   // #1931 Until the App is in (phoneAssistantAppEnsure.ts puts it in by itself), 动态 / 任务 / 记忆 / 资料 say it is being
   // prepared — 聊天 works meanwhile; said stuck only once every try of the backoff window failed.
   const ensureStuck = usePhoneAssistantAppStuck()
-  // An App with its id that is not the trusted one in use (switched off, from elsewhere): gugu does not put over it — stuck.
-  const appHeldElsewise = !app && installedExtensionsStore.isLoaded && phoneInstalledApp(ASSISTANT_APP_ID) !== null
+  // An App with its id that is the person's own (from a chat, switched off): gugu does not put over it — stuck. gugu's own
+  // market copy the phone does not trust is not: the ensure step puts the signed release over it (preparing meanwhile).
+  const held = !app && installedExtensionsStore.isLoaded ? phoneInstalledApp(ASSISTANT_APP_ID) : null
+  const appHeldElsewise = held !== null && personsOwnAssistantApp(held) !== null
   const opened = useOpenedAssistantTaskChat()
   useEffect(() => {
     if (opened?.request.assistantId === assistant.id) setRoute({ tab: 'tasks' })
