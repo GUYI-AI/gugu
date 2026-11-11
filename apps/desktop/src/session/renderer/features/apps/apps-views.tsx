@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
+import { useAssistantEntryTarget } from '@/lib/assistantEntry';
 import { openAppInWindow } from '@renderer/features/extensions/app-dock';
 import { AppConversationFrame } from './app-conversation-frame';
 import { AppHostLayerFrame } from './app-host-layer';
@@ -77,6 +78,18 @@ const toggleErrorDetails = action((kind: string) => {
 const pageError = () => extensionSurfaceStore.said(null, 'dock').error;
 
 /**
+ * The App's main page is the assistant's page now (entry switch, lib/assistantEntry.ts): the trusted assistant App, its main
+ * page beside the person's own assistant chat, where the rail's top cell goes. Drawn as the built-in assistant page was: no
+ * title of its own (name, settings, open in window) and no band kept for one; the conversation and the panel start at the
+ * top of the main area. Opened any other way in this window it is the same place (the rail lights its top cell), so the
+ * same; its other tabs, and the App when the entry does not go to it, keep the App page's title bar.
+ */
+function useShownAsAssistant(appId: string | undefined, tab: string | undefined): boolean {
+  const target = useAssistantEntryTarget();
+  return target.kind === 'app' && !!appId && target.extensionId === appId && !tab;
+}
+
+/**
  * 整页的顶栏:左边它的名字,右上角 ⧉ = 在新窗口打开(原型「它整页右上角 ⧉ = 窗口」)。⧉ 作用于这一页的内容,
  * 跟着内容走、贴窗口右缘(这页没有工作区面板那一簇),几何交给 <TabBarActionRow>,❌ 自己写 right-*。
  */
@@ -87,6 +100,11 @@ const AppTitlebar = observer(function AppTitlebar() {
   const error = main ? pageError() : null;
   const heading = main ? extensionTabTitle(extensionSurfaceStore.said(null, 'dock'), main.extensionName) : null;
   const openInWindowLabel = translate('tabs.openInWindow');
+  const assistantPage = useShownAsAssistant(params.appId, params.tab);
+  // The assistant's page: the band stays the window's handle, with nothing of the App's on it but a reported error's mark.
+  if (assistantPage) {
+    return <ShellTitlebar leftSlot={main && error ? <AppErrorMark error={error} onToggle={() => toggleErrorDetails(main.kind)} testId="app-page-error" /> : null} />;
+  }
   return (
     <ShellTitlebar
       leftSlot={
@@ -141,9 +159,10 @@ const AppMainPanel = observer(function AppMainPanel() {
   // The title bar is a zero-height band over the top of the main area (the App's name, the window's handle): the page
   // starts under it, as a session's tabs do (tab-bar.tsx) — an App drawing from its top edge sat beneath its own name
   // (125 10-06), and so did the line a switched-off App gets. Inline: tokens.css's `*{padding:0}` wipes utilities
-  // outside the skinned shell.
+  // outside the skinned shell. The assistant's page has no title there: it starts at the top, as the built-in page did.
+  const assistantPage = useShownAsAssistant(params.appId, params.tab);
   return (
-    <div className="flex h-full min-h-0 w-full flex-col" style={{ paddingTop: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-testid="app-page">
+    <div className="flex h-full min-h-0 w-full flex-col" style={assistantPage ? undefined : { paddingTop: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-testid="app-page" data-assistant-page={assistantPage ? '' : undefined}>
       {!main?.enabled ? (
         <p className="text-sm text-foreground-muted" style={{ padding: 24 }}>{translate('extensions.turnOnInSettings')}</p>
       ) : (

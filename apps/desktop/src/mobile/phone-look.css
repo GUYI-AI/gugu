@@ -234,7 +234,6 @@
   font-size: var(--font-prose);
   line-height: var(--lh-prose);
 }
-[data-phone-shell] .ta-seg { padding: var(--spacing-xs); gap: var(--spacing-xs); }
 [data-phone-shell] .gg-chip { padding: 0 var(--spacing-sm); }
 [data-phone-shell] .gg-chip[data-shape='count'] { padding: 0 var(--spacing-xs); }
 [data-phone-shell] .gap-1\.5 { gap: var(--spacing-sm); }

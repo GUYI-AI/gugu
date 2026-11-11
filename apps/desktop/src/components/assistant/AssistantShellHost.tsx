@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import type { CloudComputerSnapshot } from '@gugu/core/cloud/cloudComputer'
 import type { Device } from '@gugu/core/shared/types/chat'
-import { AssistantChatSlot, type AssistantChatHandlers } from './AssistantChatSlot'
 import { useAssistantDm } from './useAssistantDm'
 import { MeetingReminder } from './MeetingReminder'
 import { QuickChatHost } from './QuickChatHost'
@@ -38,8 +37,6 @@ import { QuickChatSettingsGroup } from './ComputerHomeSettings'
 import { AssistantMoveGroup, type AssistantMoveGroupProps } from './AssistantMoveGroup'
 import { AssistantMoveDialog } from './AssistantMoveDialog'
 import { AssistantDevicesPage } from '../devices/AssistantDevicesPage'
-import { ConnectorsSection } from '../settings/ConnectorsSection'
-import { AssistantSettingsPage } from './AssistantSettingsPage'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { useAuth } from '../../store/auth'
 import { useContactsStore } from '../../store/contactsContext'
@@ -137,7 +134,7 @@ const ASSISTANT_SLOT_PREFIX = 'assistant:'
  * #7199 「助理」App 在壳这一侧的那一半(见 lib/assistantShellBridge.ts):把云电脑、个人助理是谁发布给会话页,
  * 并把壳自己的组件画进 App 留的格子。挂在 MainLayout 里(通讯录、设备、登录态都在它外面)。
  */
-export function AssistantShellHost({ visible, ...chatHandlers }: { /** 会话页那一屏此刻摆在眼前(MainLayout 的 tab 在「任务」)。 */ visible: boolean } & AssistantChatHandlers) {
+export function AssistantShellHost() {
   const { user } = useAuth()
   const { contacts, contactsStatus, updateAgentProfile } = useContactsStore()
   const { cloudComputer, devices, phones } = useDevicesStore()
@@ -270,12 +267,10 @@ export function AssistantShellHost({ visible, ...chatHandlers }: { /** 会话页
 
   const content = (slot: AssistantShellSlot): ReactNode => {
     switch (slot) {
-      case 'onboarding': return <OnboardingSlot />
-      // 格子挂着 = 「助理」App 开在「聊天」那一页;再加上会话页那一屏摆在眼前,才算人在看。
-      case 'chat': return contact ? <AssistantChatSlot dm={dm} assistantId={contact.id} assistantName={contact.display_name} visible={visible} {...chatHandlers} /> : null
+      // The devices page of the assistant's panel (AssistantLibraryVolume, drawn over the App's panel). Setup is Settings'
+      // 「咕咕」 page (OnboardingSlot there); the conversation, the App's.
       case 'devices': return <AssistantDevicesPage cloudDeviceId={cloudDeviceId} panelNavigation />
-      case 'connectors': return <ConnectorsSection panelNavigation />
-      case 'settings': return <AssistantSettingsPage panelNavigation />
+      default: return null
     }
   }
   return (

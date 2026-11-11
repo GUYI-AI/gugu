@@ -3,10 +3,6 @@
  * 字号一律走 --ta-* 变量;能点的至少 44 高(咕咕手机触控规范)。
  */
 
-/* 分段(云端 / 本机 / 其他设备)是会话页那份手写钮,桌面上 32 高,手机上补到 44。 */
-.ta-phone-profile .ta-seg-wide button { min-height: 44px; }
-
-
 .ta-phone-error { margin: 0; font-size: var(--ta-fs-note); line-height: var(--ta-lh-note); color: var(--danger-fg); overflow-wrap: anywhere; }
 
 /* 无法在当前端连接时显示说明，与可点击按钮区分。 */

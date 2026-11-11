@@ -7,7 +7,6 @@ import { UI_EVENTS } from '../../lib/uiEvents'
 import { openAssistantEntry } from '../../lib/assistantEntry'
 import { desktopIpc } from '../../platform/desktopIpc'
 import { mirrorDocument } from '../../session/renderer/lib/aux-document'
-import { appState } from '../../session/renderer/lib/stores/app-state'
 import { QuickChat, type QuickChatAssistant } from './QuickChat'
 import { quickChatShortcutLabel, useQuickChatState } from './useQuickChatState'
 
@@ -109,7 +108,7 @@ export function QuickChatHost({
       onOpenMain={() => {
         // 去主窗里的「助理」:有它 = 和它的聊天;还没有 = 开通那一页(同一个视图)。装好、绑好了助理 App = 去 App(lib/assistantEntry)。
         window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
-        openAssistantEntry(() => appState.navigation.navigate('assistant'))
+        openAssistantEntry()
         void ipc.invoke(QUICK_CHAT_CHANNELS.openMain)
       }}
     />,

@@ -1,6 +1,7 @@
 import { sessionLeaveDestination } from '@renderer/features/sessions/leave-session-view';
 import { getSessionManagerStore } from '@renderer/features/sessions/stores/session-selectors';
 import { projectPresence } from '@renderer/features/projects/project-presence';
+import { ASSISTANT_APP_ID, readAssistantEntryTarget } from '@/lib/assistantEntry';
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge';
 import { isAssistantAgent } from '@renderer/features/assistant/assistant-lineage';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
@@ -40,9 +41,12 @@ export function sessionViewCanActivate(params: unknown): GuardResult {
       return { ok: false, redirect: destination.viewId, params: destination.params };
     }
   }
-  // Old task links and saved layouts must return the assistant to its own surface, without mounting its host.
+  // Old task links and saved layouts must return the assistant to its own surface (its App's page), without mounting its host;
+  // the App not usable here: home (the assistant's chat is opened from the rail as any chat).
   if (isAssistantAgent(sessionAgentBindings.bindingFor(sessionId)?.agentUserId, readAssistantShellBridge()?.getSnapshot()?.assistant?.id)) {
-    return { ok: false, redirect: 'assistant' };
+    return readAssistantEntryTarget().kind === 'app'
+      ? { ok: false, redirect: 'app', params: { appId: ASSISTANT_APP_ID } }
+      : { ok: false, redirect: 'home' };
   }
   return { ok: true };
 }

@@ -1,16 +1,8 @@
-import { AssistantMemoryContent } from '@/components/assistant/AssistantMemoryContent'
-import { assistantPanelFailure } from '@/components/assistant/assistant-panel-errors'
-import { useRef, type ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
-import { ArrowUpToLine, FileText, Heart, Moon, Sparkles, Zap } from '@/lib/icons';
-import { useToast } from '@renderer/lib/hooks/use-toast';
+import type { ReactNode } from 'react';
+import type { TFunction } from 'i18next';
+import { Heart, Moon, Zap } from '@/lib/icons';
 import type { BaselineStatus, HealthNight, HealthSignal, HealthSummary, HealthWorkout } from '@gugu/core/shared/healthSummary';
-import type { AssistantContext, AssistantPageProps } from './assistant-context';
-import { useMemoryNotes } from './assistant-data';
-import { memoryContentPreview } from './memory-content-preview';
-import { AssistantEmpty, AssistantRow, AssistantSection, PageHead, Tile } from './assistant-ui';
-
-type T = ReturnType<typeof useTranslation<'assistant'>>['t'];
+import { AssistantEmpty, AssistantRow, AssistantSection } from './assistant-ui';
 
 /** 「分析健康报告」收的文件:报告多是 PDF 或拍照 / 截图。 */
 export const HEALTH_REPORT_ACCEPT = 'application/pdf,image/*';
@@ -18,27 +10,8 @@ export const HEALTH_REPORT_ACCEPT = 'application/pdf,image/*';
 /** 它记的健康记录:记忆里文件名以 health 开头的那几条(解读里请它这么起名)。 */
 export const isHealthNote = (file: string) => /^health[_-]/i.test(file);
 
-/**
- * Desktop health data must come from this computer or a cloud data source. Neither source currently
- * provides a health summary. Keep the empty state explicit; do not query another device or invent zeros.
- * HealthBody below remains shared with the phone, which reads its own local health provider.
- */
-export function AssistantHealthPage({ context }: AssistantPageProps) {
-  const { t } = useTranslation('assistant');
-  return (
-    <div className="ta-page" data-testid="assistant-health" data-state="empty">
-      <PageHead title={t('health.title')} />
-      <div className="ta-card" data-testid="assistant-health-empty">
-        <AssistantEmpty>{t('health.desktopEmpty')}</AssistantEmpty>
-      </div>
-      <Analysis context={context} t={t} />
-      <ReportUpload context={context} t={t} />
-    </div>
-  );
-}
-
 /** 读到了的那一大块(手机「健康」页同一份:数据在手机本机读,画法照这里)。 */
-export function HealthBody({ summary, t }: { summary: HealthSummary; t: T }) {
+export function HealthBody({ summary, t }: { summary: HealthSummary; t: TFunction<'assistant'> }) {
   const missing = summary.missing_types.map((type) => t(`health.type.${type}`, { defaultValue: type }));
   const unreadable = summary.unreadable.map((u) => t(`health.type.${u.type}`, { defaultValue: u.type }));
   const notes = [
@@ -108,7 +81,7 @@ const SIGNAL_ICON: Record<HealthSignal['key'], ReactNode> = {
 };
 
 /** 一张关键指标:值 + 单位、基线状态、最近 7 天的小柱(最新那根高亮)。 */
-function SignalCard({ signal, t }: { signal: HealthSignal; t: T }) {
+function SignalCard({ signal, t }: { signal: HealthSignal; t: TFunction<'assistant'> }) {
   const max = Math.max(1, ...signal.series.map((p) => p.value ?? 0));
   const cumulative = signal.key === 'steps' || signal.key === 'active_kcal';
   return (
@@ -146,7 +119,7 @@ function SignalCard({ signal, t }: { signal: HealthSignal; t: T }) {
 const STAGES = ['deep', 'light', 'rem', 'awake', 'asleep_unstaged'] as const;
 
 /** 昨晚(睡眠卡):入睡 / 醒来、睡了多久、卧床多久、分期条。 */
-function NightCard({ night, t }: { night: HealthNight; t: T }) {
+function NightCard({ night, t }: { night: HealthNight; t: TFunction<'assistant'> }) {
   const stages = night.stages;
   const total = stages ? STAGES.reduce((sum, key) => sum + stages[key], 0) : 0;
   return (
@@ -179,7 +152,7 @@ function NightCard({ night, t }: { night: HealthNight; t: T }) {
   );
 }
 
-function WorkoutRow({ workout, t }: { workout: HealthWorkout; t: T }) {
+function WorkoutRow({ workout, t }: { workout: HealthWorkout; t: TFunction<'assistant'> }) {
   const facts = [
     duration(workout.minutes, t),
     workout.active_kcal !== null ? `${workout.active_kcal} ${t('health.unit.kcal')}` : null,
@@ -199,88 +172,15 @@ function WorkoutRow({ workout, t }: { workout: HealthWorkout; t: T }) {
   );
 }
 
-/** 你的健康分析:让它解读(往聊天里填一句,人看过再发);它记进记忆的 health_* 几条列在这里,点进去是那条记忆。 */
-function Analysis({ context, t }: { context: AssistantContext; t: T }) {
-  const name = context.assistant.display_name;
-  const notes = useMemoryNotes(context.readiness === 'ready' ? context.machine : undefined);
-  const healthNotes = (notes.data?.notes ?? []).filter((note) => isHealthNote(note.file));
-  return (
-    <AssistantSection
-      title={t('health.analysisTitle')}
-      action={
-        <button type="button" className="ta-pill-btn" onClick={() => context.askInChat(t('health.analyzePrompt'))} data-testid="assistant-health-analyze">
-          <Sparkles />
-          {t('health.analyze', { name })}
-        </button>
-      }
-      testId="assistant-health-analysis"
-    >
-      {healthNotes.length === 0 ? (
-        <AssistantRow title={t('health.analysisEmpty', { name })} />
-      ) : (
-        healthNotes.map((entry) => (
-          <AssistantMemoryContent key={entry.file} machine={context.machine} entry={entry}>{(note,error) => (
-          <AssistantRow
-            key={note.file}
-            leading={
-              <span className="ta-tile-icon">
-                <FileText />
-              </span>
-            }
-            title={note.title}
-            detail={error ? assistantPanelFailure(error,t) : memoryContentPreview(note.body, 140)}
-            detailLines={4}
-            onClick={() => context.go({ tab: 'memory', sub: `note:${note.file}` })}
-            testId={`assistant-health-note-${note.file}`}
-          />)}</AssistantMemoryContent>
-        ))
-      )}
-    </AssistantSection>
-  );
-}
-
-/** 分析健康报告(聊天「+」里那一项):选一份 PDF / 图片,连同一句交代放进和它的聊天,人看过再发。 */
-function ReportUpload({ context, t }: { context: AssistantContext; t: T }) {
-  const input = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
-  return (
-    <AssistantSection title={t('health.addData')} bare testId="assistant-health-add">
-      <div className="ta-grid">
-        <Tile
-          icon={<ArrowUpToLine />}
-          title={t('health.analyzeReport')}
-          sub={t('health.analyzeReportDescription')}
-          onClick={() => input.current?.click()}
-          testId="assistant-health-report"
-        />
-      </div>
-      <input
-        ref={input}
-        type="file"
-        accept={HEALTH_REPORT_ACCEPT}
-        className="hidden"
-        data-testid="assistant-health-report-input"
-        onChange={(event) => {
-          const files = [...(event.target.files ?? [])];
-          event.target.value = '';
-          if (files.length === 0) return;
-          context.askInChat(t('health.healthReportMessage'), files);
-          toast({ title: t('health.reportPicked', { name: context.assistant.display_name }) });
-        }}
-      />
-    </AssistantSection>
-  );
-}
-
 // ── 写法 ─────────────────────────────────────────────────────────────────────
 
-function duration(totalMinutes: number, t: T): string {
+function duration(totalMinutes: number, t: TFunction<'assistant'>): string {
   const h = Math.floor(totalMinutes / 60);
   const m = Math.round(totalMinutes % 60);
   return h > 0 ? `${h} ${t('health.unit.hour')} ${m} ${t('health.unit.minute')}` : `${m} ${t('health.unit.minute')}`;
 }
 
-function signalValue(key: HealthSignal['key'], value: number, t: T): string {
+function signalValue(key: HealthSignal['key'], value: number, t: TFunction<'assistant'>): string {
   switch (key) {
     case 'sleep':
       return duration(value, t);
@@ -295,7 +195,7 @@ function signalValue(key: HealthSignal['key'], value: number, t: T): string {
   }
 }
 
-function bodyValue(key: keyof HealthSummary['body'], value: number, t: T): string {
+function bodyValue(key: keyof HealthSummary['body'], value: number, t: TFunction<'assistant'>): string {
   if (key === 'weight_kg') return `${value} ${t('health.unit.kg')}`;
   if (key === 'respiratory_rate') return `${value} ${t('health.unit.perMinute')}`;
   return `${value}${t('health.unit.percent')}`;

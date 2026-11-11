@@ -198,18 +198,17 @@ function HelpOnRail() {
 // shows the session page there. Desktop only — Apps run in the desktop app.
 
 /** Where the session page is, as the rail lights it: its App page, one App from the dock, the library, or the tasks. */
-function sessionPagePlace(): 'tasks' | 'apps' | 'library' | 'assistant' | { app: string } {
+function sessionPagePlace(): 'tasks' | 'apps' | 'library' | { app: string } {
   const view = appState.navigation.currentViewId
   if (view === 'apps') return 'apps'
   if (view === 'library') return 'library'
-  if (view === 'assistant') return 'assistant'
   if (view === 'app') return { app: appState.navigation.viewParamsStore.app?.appId ?? '' }
   return 'tasks'
 }
 
 /** The assistant's place on the session page: the built-in page, or the assistant App's page while the entry goes there. */
 function assistantPlace(place: ReturnType<typeof sessionPagePlace>, onApp: boolean): boolean {
-  return place === 'assistant' || (onApp && typeof place === 'object' && place.app === ASSISTANT_APP_ID)
+  return onApp && typeof place === 'object' && place.app === ASSISTANT_APP_ID
 }
 
 const DockItem = observer(function DockItem({ app, active, onOpen, onOpenInWindow, onUnpin, onQuit }: { app: RailApp; active: boolean; onOpen: () => void; onOpenInWindow: () => void; onUnpin: () => void; onQuit: () => void }) {
@@ -366,7 +365,8 @@ function AssistantRailTop({ active, onOpen }: { active: boolean; onOpen: () => v
   // read from the chat itself as the dock reads an App's (#1930); opening the App reads nothing by itself.
   const target = useAssistantEntryTarget()
   const { chats } = useChatStore('chats')
-  const unread = target.kind === 'app' && assistantEntryUnread(chats, target.chatId) === true
+  const unreadChat = target.kind === 'app' || target.kind === 'chat' ? target.chatId : null
+  const unread = !!unreadChat && assistantEntryUnread(chats, unreadChat) === true
   const { contacts } = useContactsStore()
   const mine = useMyAssistantContact(contacts)
   const assistant = mine.contact
@@ -435,7 +435,7 @@ export const Sidebar = observer(function Sidebar({ activeTab, onTabChange, setti
         <div className="gg-sidebar-profile-slot">
           <AssistantRailTop active={activeTab === 'tasks' && assistantPlace(sessionPagePlace(), entryOnApp)} onOpen={() => {
             onTabChange('tasks')
-            openAssistantEntry(() => appState.navigation.navigate('assistant'))
+            openAssistantEntry()
           }} />
         </div>
 

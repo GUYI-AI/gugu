@@ -76,25 +76,29 @@ describe('the top cell opens the assistant App once the host bound it', () => {
       expect(appState.navigation.currentViewId).toBe('app')
       expect(appState.navigation.viewParamsStore.app?.appId).toBe(ASSISTANT_APP_ID)
       expect(top(harness.container).getAttribute('aria-current')).toBe('page')
-      // Not bound any more (the person picked another chat, or withdrew a grant): the built-in page, the dock as pinned.
+      // Not bound any more (the person picked another chat, or withdrew a grant): still its page, still the top cell.
       await act(async () => publishAppConversationSurfaces({}))
-      expect(dock()).toEqual([ASSISTANT_APP_ID, 'notes'])
-      expect(top(harness.container).getAttribute('aria-current')).toBeNull()
-      await clickElement(top(harness.container))
-      expect(appState.navigation.currentViewId).toBe('assistant')
+      expect(dock()).toEqual(['notes'])
+      expect(top(harness.container).getAttribute('aria-current')).toBe('page')
     } finally { harness.cleanup() }
   })
 
-  it('opens the built-in page for an App main does not trust (same id from elsewhere, a fork), whatever is drawn', async () => {
+  it('opens the assistant\'s chat as any chat when the App is not usable here (main does not trust it, or it is off), the dock as pinned', async () => {
+    const opened: unknown[] = []
+    const onLink = (event: Event) => { event.preventDefault(); opened.push((event as CustomEvent<{ target: unknown }>).detail.target) }
+    window.addEventListener('gugu:open-link-target', onLink)
     publishAssistantAppWord({ ownerId: OWNER, trusted: false })
     const harness = await renderRail()
     try {
+      const dock = () => Array.from(harness.container.querySelectorAll('[data-dock-app]')).map((node) => node.getAttribute('data-dock-app'))
+      expect(dock()).toEqual([ASSISTANT_APP_ID, 'notes'])
       await clickElement(top(harness.container))
-      expect(appState.navigation.currentViewId).toBe('assistant')
-    } finally { harness.cleanup() }
+      expect(opened).toEqual([{ kind: 'chat', chatId: DM }])
+      expect(appState.navigation.currentViewId).toBe('home')
+    } finally { harness.cleanup(); window.removeEventListener('gugu:open-link-target', onLink) }
   })
 
-  it('shows the assistant chat\'s unread as its dot, from the chat itself; none while the decision is the built-in page', async () => {
+  it('shows the assistant chat\'s unread as its dot, from the chat itself; none while no conversation is drawn beside the App', async () => {
     const harness = await renderRail([{ id: DM, unread_count: 3 }])
     try {
       expect(badge(harness.container)).not.toBeNull()
@@ -122,7 +126,10 @@ describe('the top cell opens the assistant App once the host bound it', () => {
     } finally { harness.cleanup() }
   })
 
-  it('keeps the states of a person without an assistant: faded with a plus, and the built-in page', async () => {
+  it('keeps the states of a person without an assistant: faded with a plus; the App\'s own page, or setup when there is no App', async () => {
+    const settings: unknown[] = []
+    const onSettings = (event: Event) => settings.push((event as CustomEvent).detail)
+    window.addEventListener('__open_settings', onSettings)
     mine.value = { contact: null, agentId: null, loading: false, error: null }
     publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null }))
     const harness = await renderRail()
@@ -130,7 +137,12 @@ describe('the top cell opens the assistant App once the host bound it', () => {
       expect(top(harness.container).getAttribute('data-entry')).toBe('none')
       expect(top(harness.container).querySelector('.gg-sidebar-assistant-mark')).not.toBeNull()
       await clickElement(top(harness.container))
-      expect(appState.navigation.currentViewId).toBe('assistant')
-    } finally { harness.cleanup() }
+      expect(appState.navigation.viewParamsStore.app?.appId).toBe(ASSISTANT_APP_ID)
+      await act(async () => appState.navigation.navigate('home'))
+      await act(async () => publishAssistantAppWord(null))
+      await clickElement(top(harness.container))
+      expect(settings).toEqual([{ section: 'assistant' }])
+      expect(appState.navigation.currentViewId).toBe('home')
+    } finally { harness.cleanup(); window.removeEventListener('__open_settings', onSettings) }
   })
 })

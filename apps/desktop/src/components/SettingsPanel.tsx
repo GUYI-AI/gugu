@@ -8,7 +8,7 @@ import { useMyAssistantContact } from '../lib/myAssistant'
 import { membershipSettingsSection } from '../lib/billing/settingsDestination'
 import { AboutSection } from './settings/AboutSection'
 import { AccountSection } from './settings/AccountSection'
-import { AssistantSection, type AssistantPageTab } from './settings/AssistantSection'
+import { AssistantSection } from './settings/AssistantSection'
 import { ConnectorsSection } from './settings/ConnectorsSection'
 import { DevicesSection } from './settings/DevicesSection'
 import { FileStorageSection } from './settings/FileStorageSection'
@@ -149,11 +149,11 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
   // 咕咕那一页里指向助理 App 数据页(记忆、定时任务)的入口:先收起设置弹窗再去那一页。
   // 手机上助理是底部 tab(手机端那一套),设置「我的」里不给。
   const openAssistantPage = !mobile && onClose
-    ? (tab: AssistantPageTab) => {
+    ? () => {
         onClose()
         window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
-        // The assistant App, when the entry goes there (its own page: the App keeps its tabs to itself).
-        openAssistantEntry(() => appState.navigation.navigate('assistant', { tab }))
+        // The assistant's page is its App (its own page: the App keeps its tabs to itself).
+        openAssistantEntry()
       }
     : undefined
 

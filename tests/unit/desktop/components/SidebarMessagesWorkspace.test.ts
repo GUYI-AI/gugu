@@ -43,7 +43,8 @@ describe('Messages returns to the shared screen', () => {
     { kind: 'sample-project' },
   ]
   for (const content of contents) {
-    for (const away of ['assistant', 'library', 'app'] as const) {
+    // Away on the library or an App's page (the assistant's page is its App: the built-in assistant view is gone).
+    for (const away of ['library', 'app'] as const) {
       it(`returns from ${away} to the focused ${content.kind} without replacing its group`, async () => {
         appState.navigation.navigate('session', { projectId: 'old-project', sessionId: 'old-session' })
         screenLayout.show({ kind: 'chat', chatId: 'beside' })
@@ -64,7 +65,7 @@ describe('Messages returns to the shared screen', () => {
 
   it('an empty screen opens home instead of reopening stale session parameters', async () => {
     appState.navigation.navigate('session', { projectId: 'old-project', sessionId: 'old-session' })
-    appState.navigation.navigate('assistant')
+    appState.navigation.navigate('library')
     await clickMessages()
     expect(appState.navigation.currentViewId).toBe('home')
     expect(screenLayout.snapshot).toBeNull()
@@ -73,7 +74,7 @@ describe('Messages returns to the shared screen', () => {
   it('a screen containing only an App remains a screen', async () => {
     screenLayout.show({ kind: 'app', tabKind: 'notes.main' })
     const saved = screenLayout.snapshot
-    appState.navigation.navigate('assistant')
+    appState.navigation.navigate('library')
     await clickMessages()
     expect(appState.navigation.currentViewId).toBe('screen')
     expect(screenLayout.snapshot).toEqual(saved)

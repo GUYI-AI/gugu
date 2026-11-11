@@ -31,6 +31,19 @@ vi.mock('../../../../apps/desktop/src/lib/assistantShellBridge', async (importOr
 })
 
 const { Sidebar } = await import('../../../../apps/desktop/src/components/Sidebar')
+const { installAssistantAppEntryBridge, publishAssistantAppWord } = await import('../../../../apps/desktop/src/lib/assistantEntry')
+const { installAppConversationSurfaceBridge, publishAppConversationSurfaces } = await import('../../../../apps/desktop/src/lib/appConversationSurfaceBridge')
+const { installedExtensionsStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')
+const { EXTENSION_API_VERSION } = await import('../../../../apps/desktop/src/session/shared/extensions/manifest')
+const ASSISTANT_PAGE = { appId: 'gugu-assistant' }
+const DM = '33000000-0000-4000-8000-000000000003'
+/** The assistant's page is its App: installed, trusted by main for this account, drawn beside the assistant's chat. */
+function assistantAppIn() {
+  installAssistantAppEntryBridge(); installAppConversationSurfaceBridge()
+  installedExtensionsStore.applyList({ extensions: [{ id: 'gugu-assistant', name: 'A', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'today', title: 'A' }] } }], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
+  publishAssistantAppWord({ ownerId: 'u1', trusted: true })
+  publishAppConversationSurfaces({ 'gugu-assistant': DM })
+}
 const { DevicesContext } = await import('../../../../apps/desktop/src/store/devicesContext')
 const { appState } = await import('../../../../apps/desktop/src/session/renderer/lib/stores/app-state')
 
@@ -54,12 +67,16 @@ afterEach(() => {
   mine.value = { contact: null, agentId: null, loading: false, error: null }
   bridge.snapshot = null
   appState.navigation.navigate('home')
+  publishAssistantAppWord(null)
+  publishAppConversationSurfaces({})
+  installedExtensionsStore.applyList({ extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
 })
 
 describe('最左栏顶格 = 咕咕', () => {
-  it('pauses outside the assistant view while its outer entry remains clickable, and reuses the same canvas on return', async () => {
+  it('pauses outside the assistant\'s page while its outer entry remains clickable, and reuses the same canvas on return', async () => {
     mine.value = { contact: { id: 'a1', display_name: '小咕', avatar: null }, agentId: 'a1', loading: false, error: null }
-    bridge.snapshot = { assistant: mine.value.contact }
+    bridge.snapshot = { assistant: mine.value.contact, assistantState: 'found', ownerId: 'u1', chatId: DM }
+    assistantAppIn()
     appState.navigation.navigate('home')
     const onTabChange = vi.fn()
     const harness = await renderRail({ available: true, snapshot: { state: 'awake', deviceId: 'd1', error: null, since: null }, loadError: null }, onTabChange, 'tasks')
@@ -72,21 +89,24 @@ describe('最左栏顶格 = 咕咕', () => {
       expect(entry.hasAttribute('inert')).toBe(false)
       await clickElement(entry)
       expect(onTabChange).toHaveBeenCalledWith('tasks')
-      expect(appState.navigation.currentViewId).toBe('assistant')
+      expect(appState.navigation.currentViewId).toBe('app')
+      expect(appState.navigation.viewParamsStore.app).toEqual(ASSISTANT_PAGE)
       expect(face.hasAttribute('inert')).toBe(false)
       for (const view of ['library', 'home'] as const) {
         await act(async () => appState.navigation.navigate(view))
         expect(face.hasAttribute('inert')).toBe(true)
         expect(face.querySelector('canvas')).toBe(canvas)
       }
-      await act(async () => appState.navigation.navigate('assistant'))
+      await act(async () => appState.navigation.navigate('app', ASSISTANT_PAGE))
       expect(face.hasAttribute('inert')).toBe(false)
       expect(face.querySelector('canvas')).toBe(canvas)
     } finally { harness.cleanup() }
   })
 
-  it('stays paused on a non-task tab even when the retained task route is assistant', async () => {
-    appState.navigation.navigate('assistant')
+  it('stays paused on a non-task tab even when the retained task route is the assistant\'s page', async () => {
+    bridge.snapshot = { assistantState: 'found', ownerId: 'u1', chatId: DM }
+    assistantAppIn()
+    appState.navigation.navigate('app', ASSISTANT_PAGE)
     const harness = await renderRail({ available: false, snapshot: null, loadError: null }, vi.fn(), 'contacts')
     try { expect(harness.container.querySelector('.gg-sidebar-assistant-face')?.hasAttribute('inert')).toBe(true) }
     finally { harness.cleanup() }

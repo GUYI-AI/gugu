@@ -8,12 +8,9 @@ import { clickElement, createReactHarness, renderWithAppProviders, device } from
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
 
 const mocks = vi.hoisted(() => ({ devices: [] as Device[], phones: [] as Device[], rows: [] as { deviceId: string; summary: SessionpageSessionSummary; live: boolean }[], localWorker: false, listed: true, identities: vi.fn(),work:vi.fn(),wake:vi.fn(),refresh:null as null|(()=>void) }))
-// Entry switch: whether the assistant's page is its App (lib/assistantEntry.ts), and the task opened there.
+// Entry switch: on the desktop the task opens over the assistant App's panel (lib/assistantEntry.ts).
 const entry = vi.hoisted(() => ({ app: false, opened: vi.fn(), resolve: vi.fn() }))
-vi.mock('../../../../apps/desktop/src/lib/assistantEntry', () => ({
-  readAssistantEntryTarget: () => (entry.app ? { kind: 'app', extensionId: 'gugu-assistant', chatId: 'dm' } : { kind: 'built-in' }),
-  openAssistantTaskInApp: entry.opened,
-}))
+vi.mock('../../../../apps/desktop/src/lib/assistantEntry', () => ({ openAssistantTaskInApp: entry.opened }))
 vi.mock('../../../../apps/desktop/src/lib/assistantWorkTarget', async (original) => ({ ...await original<object>(), resolveAssistantWorkTarget: entry.resolve }))
 vi.mock('../../../../apps/desktop/src/hooks/useWakeCloudComputer',()=>({useCloudComputerWake:(target:unknown)=>{mocks.wake(target);return {issue:null,dropped:false,retry:vi.fn()}}}))
 vi.mock('../../../../apps/desktop/src/lib/assistantWork',()=>({assistantWorkCloud:{get:mocks.work},watchAssistantWork:(_o:string,_a:string,refresh:()=>void)=>{mocks.refresh=refresh;return ()=>{}}}))
@@ -51,7 +48,7 @@ beforeEach(() => {
   mocks.rows = [{ deviceId: 'home', summary: summary('assistant-session', 'assistant'), live: true }, { deviceId: 'worker', summary: summary('task-session', 'task-agent', 'assistant-session'), live: false }]
   mocks.devices = [device('worker', [], { label: 'Worker', is_online: false, session_digest: [{ conversationId: 'task-session', projectId: 'p', projectName: 'Project', title: 'task-session', agentUserId: 'task-agent', parentConversationId: 'assistant-session', agentStatus: 'idle', lastInteractedAt: '2026-10-16T12:00:00Z', harness: 'codex', supported: false }] }), device('home', [], { label: 'Home' })]
   mocks.phones = []
-  entry.app = false; entry.opened.mockReset(); entry.resolve.mockReset()
+  entry.opened.mockReset().mockReturnValue('app-host-layer:gugu-assistant'); entry.resolve.mockReset()
   retainDeviceSessions([])
   publishDirectoryDevices(mocks.devices)
   for (const row of mocks.rows) updateDeviceSessions(row.deviceId, { sessions: [row.summary], cached: false, connected: true, loading: false, error: null })
@@ -61,17 +58,15 @@ afterEach(() => { harness.cleanup(); showAssistantTaskChat(null); retainDeviceSe
 describe('on the assistant App (entry switch), a task opens over the App\'s panel', () => {
   const task = { workId: 'w1', title: 'T', assistantId: 'assistant', taskAgentId: 'task-agent', task: { sessionId: 'task-session', deviceId: 'worker' }, assistants: [] }
   it('hands the task the shell found to the App\'s host layer, not the built-in pane', async () => {
-    entry.app = true
-    await renderWithAppProviders(harness, <AssistantTaskChatOpener visible />)
+    await renderWithAppProviders(harness, <AssistantTaskChatOpener visible desktop />)
     await act(async () => { window.dispatchEvent(new CustomEvent(OPEN_ASSISTANT_TASK_CHAT, { detail: task })) })
     expect(entry.opened).toHaveBeenCalledWith('user-1', task)
     expect(entry.resolve).not.toHaveBeenCalled()
   })
 
   it('finds a task named without its work id in the assistant\'s work first; one it cannot find is said once, nothing opened', async () => {
-    entry.app = true
     entry.resolve.mockResolvedValueOnce(task).mockResolvedValueOnce(null)
-    await renderWithAppProviders(harness, <AssistantTaskChatOpener visible />)
+    await renderWithAppProviders(harness, <AssistantTaskChatOpener visible desktop />)
     const { workId: _none, ...legacy } = task
     await act(async () => { window.dispatchEvent(new CustomEvent(OPEN_ASSISTANT_TASK_CHAT, { detail: legacy })) })
     expect(entry.resolve).toHaveBeenLastCalledWith('assistant', { agentId: 'task-agent' })

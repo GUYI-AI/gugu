@@ -1,22 +1,17 @@
-# 「助理」App(#7199)
+# 「助理」(#7199)
 
-个人助理(人级别的 agent,不住项目区)单独一个功能:最左栏顶格(它的头像)→ 会话页视图 `assistant`(`withoutSessionSidebar`,与资源库同形)。
-产品预期见 product spec。整页结构:左边是和它的私聊,右边一块能收起的面板。
-
-| 面板分段 `tab` | 页组件 | 往下钻的 `sub` |
-|---|---|---|
-| `today`(显示为「动态」) | `AssistantTodayPage`(assistant-today.tsx) | —— |
-| `tasks` | `AssistantTasksPage`(assistant-tasks.tsx) | `routine:<id>` |
-| `memory` | `AssistantMemoryPage`(assistant-memory-page.tsx) | `note:<file>` / `voice[:<id>]` / `files[:<path>]` / `health`(assistant-health.tsx) |
-| `profile`(显示为「资料」) | `AssistantProfilePage`(assistant-profile.tsx) | `diaries` / `diary:<id>` / `devices` |
+个人助理(人级别的 agent,不住项目区)。**桌面上它的页就是装好的受信助理 App `gugu-assistant`**(API 41 的 App 页 + 旁边那条会话):
+最左栏顶格、通知、链接、任务卡、快速聊天的「打开」都经同一个决定 `decideAssistantEntry`(`lib/assistantEntry.ts`)——
+App 可用 → 它的页(没有助理时是 App 自己的开通页);App 不可用(还在装 / 被关掉)→ 和它的私聊当普通聊天开,没有助理就去设置「咕咕」开通。内置的会话页视图 `assistant` 已删。
+产品预期见 product spec。这个目录剩下的是壳仍在画的(设置页、开通流程、设备页、语音笔记录音与转写、给 App 的宿主接口要读的数据)和手机仍共用的几块。
 
 **设置不在 App 里**(owner 10-16「只有一个设置,咕咕的设置是全局设置里的一组;齿轮直接开到那一组,❌ 再有第二个设置页」):
 齿轮 = `UI_EVENTS.openSettings {section:'assistant'}`;「资料」页的「连接应用」「聊天工具」行同样直接打开全局设置的 `connectors` / `channels`。
 那一组住在 `components/settings/AssistantSection.tsx`(资料:名字、形象与性格、状态、快速聊天、关闭、会议提醒)与 `ConnectorsSection.tsx`(连接应用:云端 / 本机 / 其他设备);
 云端那一段由会话页画(`assistant-connectors-settings.tsx`,资源库「集成」的同一份数据),经 `SessionSettingsContent` 渲染进设置弹窗。
-设备仍有 App 里这一页(`devices`):它是「咕咕能操作哪些」的视图,点进去的详情与全局设置「设备」同一个组件。
+设备页(`devices`)是「咕咕能操作哪些」的视图,点进去的详情与全局设置「设备」同一个组件。
 
-路由在视图参数 `{ tab?, sub? }` 里;返回箭头的去处是 `parentRoute()`(assistant-context.ts)。样子全在 `assistant-today.css`(`.ta-*`,亮暗两套 token)。
+样子全在 `assistant-today.css`(`.ta-*`,亮暗两套 token)。
 
 **视觉 token(玻璃 + 字阶,别逐页自己写)**:变量挂在 `.ta-app, .ta-dialog, .ta-phone, [data-ta-menu]` 上。
 玻璃 = `background: var(--ta-glass)` + `backdrop-filter: blur(var(--ta-glass-blur))` + `box-shadow: var(--ta-glass-fx)`(白描边 + 顶沿高光);
@@ -29,32 +24,17 @@ portal 到 body 的菜单加 `data-ta-menu=""` 即得玻璃。
 新用户引导里选了小鸟颜色 → 在 `.ta-app` / `.ta-phone` **根上 inline 覆盖 `--ta-tint-h`**(一个数,0–360)。页里 ❌ 自己写十六进制色;状态语义色(健康 `--ta-health-*`、成功 / 失败)除外。
 派生量(`--ta-tint*`)是在声明它的那个元素上算好再往下继承的 —— 子元素上改 `--ta-tint-h` 不会重算;要在子树里换色(引导页实时预览),在那个子树根上加 `data-ta-scope`(变量整组在它身上重新声明,色相读它自己的 inline 值)。
 
-## 挂载接口(别的会话照这个交页面)
-
-1. 页组件签名 `ComponentType<AssistantPageProps>`(assistant-context.ts),`context` 里有:
-   - `assistant` —— `{ id, display_name, avatar, created_at }`;认它靠开通时打的标记(壳侧 `lib/myAssistant.ts`,`identity.agent_provisions.member_key='assistant'`),❌ 按名字
-   - `home`(`AssistantHomePlace`:`{kind:'cloud', deviceId}` | `{kind:'computer', deviceId, thisDevice, …}`)/ `homeDeviceId` / `snapshot` / `readiness`(`ready | asleep | waiting | unreachable`;`asleep` 时要读的那一块由系统叫起来、只说「正在连接」(owner 10-17 ❌「在休息 / 叫醒它」),住自己电脑时那台没开就如实说)
-   - `machine` —— 它家那台上的工作区(云上 = 主目录项目;住电脑 = 它自己的工作目录项目;`assistant-machine.ts` 的读写都要它,路径按住哪里不同,见 `@gugu/core/shared/assistantPolicy` 的 `assistantHomePaths`)
-   - `go(route)` 往下钻 / 换格;`askInChat(text)` 把一句话填进左边输入框(只填不发)
-2. 在 `assistant-pages.tsx` 的 `ASSISTANT_PAGES` 里配组件;新增一格 = `PANEL_TABS` 加键 + 这里配组件 + `assistant` 命名空间加 `nav.<键>`。
-3. 现成的积木:`PageHead` / `WideSegments` / `AssistantSection` / `AssistantRow` / `Tile` / `AssistantEmpty` / `MachineGate`(assistant-ui.tsx);
-   机器上的已安排 `RoutinesHost`(assistant-tasks.tsx);子 agent 的判定 `assistant-lineage.ts`。
-
 ## 壳那棵树里的东西
 
 会话页与咕咕壳是同一个 document 里两个 React 根,壳的 context(通讯录、设备、聊天、登录态)到不了这里。所以:
 
 - 壳 → 这里:`lib/assistantShellBridge.ts` 发布云电脑状态、个人助理是谁(`assistantState` 分清在读 / 没有 / 读不到)、主人叫什么、和它那条私聊(`chatId`,`useAssistantDm`);这里用 `useAssistantShell()` 读。
-- 这里 → 壳:`<ShellSlot name="…" />` 留格子,`components/assistant/AssistantShellHost.tsx` 把壳的组件 portal 进来:
-  `chat`(`AssistantChatSlot` → 带 `chrome` 的 `ChatAreaPanel`,借走那条活的聊天线,离开就还)、`onboarding`(开通流程)、
-  `devices`(`AssistantDevicesPage`)。格子外层加 `.ta-skin`,在这里换成助理 App 的样子。(云电脑开关 / 连接应用 / 聊天工具已搬进全局设置的「咕咕」组。)
+- 这里 → 壳:`<ShellSlot name="…" />` 留格子,`components/assistant/AssistantShellHost.tsx` 把壳的组件 portal 进来(`devices` → `AssistantDevicesPage`)。格子外层加 `.ta-skin`。(云电脑开关 / 连接应用 / 聊天工具在全局设置的「咕咕」组。)
 - 快速聊天(全局快捷键叫出的小窗)整个在壳那一侧:`components/assistant/QuickChatHost.tsx` 预开一扇同源子窗、把 `QuickChat` 画进去;快捷键 / 显隐 / 位置归主进程 `electron/quick-chat-window.ts`,契约 `lib/quickChatIpc.ts`。
-- 引导入口:没有它时会话页画 `onboarding` 格子(壳的 `AssistantOnboarding`:认识咕咕(`AssistantIntro`,与新账号首次引导同一屏)→ 住哪 → 连应用 → 进 App 它先开口;前半在壳,连应用在这里 `assistant-setup-finish.tsx`)。名字与形象不在开口前问:开通成功后聊天里递一张「自定义」卡(`AssistantCustomizeCard`),点它进资料页 `sub: 'customize'` 打开自定义弹窗。称呼与身份读账号上的(`lib/firstRun.ts`)。壳 snapshot 的 `member` / `preparing` / `assistantState` 给最左栏那一格写提示与转圈。
+- 开通:设置「咕咕」里壳的 `AssistantOnboarding`(认识咕咕 → 住哪 → 开通);开通后它的页是助理 App。称呼与身份读账号上的(`lib/firstRun.ts`)。壳 snapshot 的 `member` / `preparing` / `assistantState` 给最左栏那一格写提示与转圈;App 还在装时那一格转圈读主进程的规则状态(`rulesPending`)。
 - 要壳替这里做的事走 `getActions()`:`renameAssistant` / `openLook`(形象工坊)/ `refreshCloud`;填输入框走 `fillChatDraft`。
-- 「健康」页只显示本机或云端的数据。目前桌面没有健康 provider，云端也没有健康数据源，因此明确显示「暂无健康数据」，不发设备动作请求、不绘制零值指标。手机页仍从本机 Health Connect 读取，复用 `HealthBody`。已有健康分析记录和「分析健康报告」入口保留，后者只把文件放进聊天输入框，不自动发送。
-- 「今天」页:`useTodayFile` 每分钟经 `rpc.extensions.readChatFolderText` 读私聊文件夹里的 today.json —— 主进程读(`electron/.../extensions/chat-folder-text.ts`:列表问库,此刻的文本问文件服务;文件服务不答窗口的跨域预检,❌ 窗口里直接 fetch);格式在 `assistant-today-file.ts`(纯函数 + 单测)。读它 ❌ 叫醒云电脑。
-  同一份里还有它写的三块:`dayInProgress`(日程进展,`assistant-day.ts` 按此刻钟点排 + `assistant-day-card.tsx`)、`widgets[].state / schedule`(小组件正在写 / 没写成 / 节奏)、`ideas`(灵感,`assistant-ideas.tsx`)。前两块之外的各读各的:写坏了只记在那一块上。
-  「添加组件」=「发现组件」(`assistant-widget-discover.tsx`,桌面对话框 / 手机推一页),只往聊天里填一句,由它问清再加、排定时任务。灵感胶囊的隐藏记在这台设备上(`lib/assistantIdeas.ts`),「+」里的「获取灵感」一直在。
+- 「健康」:`HealthBody`(assistant-health.tsx)留给手机,数据从手机本机 Health Connect 读。
+- today.json(私聊文件夹里它写的那份)的格式在 `assistant-today-file.ts`(纯函数 + 单测);读它走主进程 `rpc.extensions.readChatFolderText`(`electron/.../extensions/chat-folder-text.ts`),❌ 叫醒云电脑。灵感面板 `assistant-ideas.tsx`、胶囊隐藏 `lib/assistantIdeas.ts`。
 
 ## 住哪、安家与搬家(owner 10-16)
 
@@ -73,6 +53,6 @@ portal 到 body 的菜单加 `data-ta-menu=""` 即得玻璃。
 ## 语音笔记(`voice-notes/`)
 
 录音笔记:聊天框「+」→ 录(`voice-recorder.ts`,5 分钟一段)→ 传到云电脑记忆夹 `voice-notes/<id>/` → 主进程以助理名义签票转写(`electron/voice-notes.ts`)→ 投给助理自己那条会话写 `summary.md`(`voice-note-jobs.ts`)。
-文件格式在 `@gugu/core/shared/voiceNotes`(手机照它写);录音条 `voice-recording-bar.tsx`;会议提醒在壳那棵树(`components/assistant/MeetingReminder.tsx`,经桥 `setVoiceNoteHandler` 叫这里开录)。
+文件格式在 `@gugu/core/shared/voiceNotes`(手机照它写);录音条 `voice-recording-bar.tsx`;App 经 #1927 (47) `gugu.voiceNote` 要录、会议提醒(`components/assistant/MeetingReminder.tsx`)开录都走 `app-voice-note-host.ts`,录着时它在桥上登记(`setVoiceNoteHandler`),栏上红点据此知道在录。
 
-手机(`mobile/assistant/phoneVoice*.ts` + `PhoneVoiceBar.tsx`)只做前半:录音在 WebView 里收 PCM 直接写 16k 单声道 `.wav`(`phoneVoicePcm.ts` / `phoneVoiceRecorder.ts`;❌ MediaRecorder,安卓 WebView 里它只吐 webm),分段传到同一个 `voice-notes/<id>/audio/`,全传上去后 `note.json` 标 `uploaded`(视图 queued,列表「等转写」)就停 —— 手机 ❌ 转写、❌ 签票、❌ 交总结。桌面详情里的「开始转写」就是 `retryVoiceNote(id)`:从 note.json 重建任务、读回云上的音频、转写、交给助理写总结。它在休息 / 连不上时手机 ❌ 替人叫醒:录音先留在手机 IndexedDB(`phoneVoiceBacklog.ts`),录音条说清并给「叫醒它」,醒了自己接着传;进程被杀后 `restore` 按记录接着传。只在咕咕前台时录(清单里「后台守着」的前台服务不带 microphone 类型)。
+手机(`mobile/assistant/phoneVoice*.ts` + `PhoneVoiceBar.tsx`)只做前半:录音在 WebView 里收 PCM 直接写 16k 单声道 `.wav`(`phoneVoicePcm.ts` / `phoneVoiceRecorder.ts`;❌ MediaRecorder,安卓 WebView 里它只吐 webm),分段传到同一个 `voice-notes/<id>/audio/`,全传上去后 `note.json` 标 `uploaded`(视图 queued,列表「等转写」)就停 —— 手机 ❌ 转写、❌ 签票、❌ 交总结。桌面的「开始转写」(App 经 47 的重试)就是 `retryVoiceNote(id)`:从 note.json 重建任务、读回云上的音频、转写、交给助理写总结。它在休息 / 连不上时手机 ❌ 替人叫醒:录音先留在手机 IndexedDB(`phoneVoiceBacklog.ts`),录音条说清并给「叫醒它」,醒了自己接着传;进程被杀后 `restore` 按记录接着传。只在咕咕前台时录(清单里「后台守着」的前台服务不带 microphone 类型)。
