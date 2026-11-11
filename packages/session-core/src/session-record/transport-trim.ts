@@ -41,9 +41,9 @@ function imageRefsOf(images: readonly ToolImage[]): ToolImageRef[] {
 const TRANSPORTED_BLOCKS = new Set(['diff', 'terminal']);
 
 /**
- * @@@unshown-output — what a reader whose view shows no tool output gets of it: the opening. The conversation view
- * (the session page on a desktop and on a phone) draws a call as one line, what was done and with what; its output
- * and the terminal capture beside it appear nowhere. On a real 3055-turn conversation they are 14MB of the 50MB a
+ * @@@unshown-output — what a reader whose view shows no tool output gets of it: the opening, and no terminal capture
+ * at all. The conversation view (the session page on a desktop and on a phone) draws a call as one line, what was
+ * done and with what; its output and the terminal capture beside it appear nowhere. On a real 3055-turn conversation they are 14MB of the 50MB a
  * remote reader pages through. Such a reader asks for `lean` pages. A view that does show output (the full tool
  * rows) must not ask: it would show the opening with its "N characters omitted" note and have no way to the rest.
  */
@@ -164,14 +164,20 @@ function withoutEchoedContent(item: TranscriptItem): TranscriptItem {
   return rest as TranscriptItem;
 }
 
-/** A turn as a lean page carries it, or the turn itself when it holds nothing the view does without. */
+/**
+ * A turn as a lean page carries it, or the turn itself when it holds nothing the view does without. Besides the
+ * outputs: the turn's terminal captures (only the full command row reads them, by `terminalId`), and the provider's
+ * own metadata on how the turn ended (`foreground._meta`; nothing on the reading side reads it). On the measured
+ * conversation these two are 3.9MB and 1.0MB.
+ */
 function leanTurn(turn: TranscriptTurn, limit: number): TranscriptTurn {
-  const preview = Math.min(limit, HELD_PREVIEW_CHARS);
   const items = trimItemsForTransport(turn.items, limit, true);
-  const long = turn.terminals?.some(terminal => terminal.output.length > preview) === true;
-  if (!long) return items === turn.items ? turn : { ...turn, items };
-  return { ...turn, items, terminals: turn.terminals!.map(terminal => terminal.output.length > preview
-    ? { ...terminal, output: terminal.output.slice(0, preview), truncated: true } : terminal) };
+  const meta = turn.foreground !== undefined && '_meta' in turn.foreground;
+  if (!turn.terminals && !meta) return items === turn.items ? turn : { ...turn, items };
+  const { terminals: _captures, ...rest } = turn;
+  if (!meta) return { ...rest, items };
+  const { _meta: _provider, ...foreground } = turn.foreground as typeof turn.foreground & { _meta?: unknown };
+  return { ...rest, items, foreground: foreground as NonNullable<TranscriptTurn['foreground']> };
 }
 
 /** What a page of turns sends: the field trim, each message's text once, and for a lean reader only the opening of output its view does not show. */

@@ -403,11 +403,21 @@ describe('a lean page leaves out output the conversation view does not show', ()
     expect(call.trimmedChars).toBe(2 * (long.length - HELD_PREVIEW_CHARS));
   });
 
-  it('does the same for a call inside a group, and for a terminal capture', () => {
+  it('does the same for a call inside a group', () => {
     const group = { kind: 'tool-group', id: 'g', seq: 1, status: 'done', children: [execTool('c', { outputText: long })] } as unknown as ToolNode;
-    const sent = lean([group], { terminals: [{ terminalId: 'term', output: long, truncated: false }, { terminalId: 'short', output: 'ok', truncated: false }] });
-    expect(((sent.items[0] as ToolNode).children![0] as unknown as Record<string, unknown>).outputText).toHaveLength(HELD_PREVIEW_CHARS);
-    expect(sent.terminals).toEqual([{ terminalId: 'term', output: long.slice(0, HELD_PREVIEW_CHARS), truncated: true }, { terminalId: 'short', output: 'ok', truncated: false }]);
+    expect(((lean([group]).items[0] as ToolNode).children![0] as unknown as Record<string, unknown>).outputText).toHaveLength(HELD_PREVIEW_CHARS);
+  });
+
+  it('carries no terminal capture and no provider metadata of how the turn ended; what the turn says of itself stays', () => {
+    const sent = lean([execTool('e', { terminalId: 'term', outputText: 'ok' })], {
+      terminals: [{ terminalId: 'term', output: 'ok', truncated: false }],
+      foreground: { source: 'agent', state: 'idle', stopReason: 'end_turn', _meta: { vendor: long } }, outcome: { kind: 'done' },
+    }) as unknown as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('terminals');
+    expect(sent.foreground).toEqual({ source: 'agent', state: 'idle', stopReason: 'end_turn' });
+    expect(sent.outcome).toEqual({ kind: 'done' });
+    // The call still names its terminal: a view that reads captures would ask for the whole turn.
+    expect((sent.items as Array<Record<string, unknown>>)[0]!.terminalId).toBe('term');
   });
 
   it('sends whole what the view reads or shows: a failure\'s reason, a patch, a sub-agent, a question\'s answer, a send\'s receipt, what a tab opened', () => {
