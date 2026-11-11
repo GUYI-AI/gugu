@@ -116,7 +116,10 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 47 (#1927): `voice-notes:record` (`chat:voice-notes:record`): `gugu.voiceNote.*` drives the host's voice-note recorder for
 // that personal assistant — the host records, uploads and transcribes; the App hears phases and opaque job handles only
 // (voice-note-session.ts).
-export const EXTENSION_API_VERSION = 47;
+// 48 (#1927): `contributes.conversationSurface.composerActions`: entries in that assistant chat's composer 「+」 the host draws
+// and runs on the person's click — a voice note, a draft, or a `page-intent` the page hears once on `bindings.onSurface`
+// (composer-actions.ts). No App code runs on that click.
+export const EXTENSION_API_VERSION = 48;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -883,6 +886,7 @@ export const BRIDGE_VERBS = {
   assistantStatus: { needs: 'assistant:status', only: 'page' },
   assistantOpen: { needs: 'assistant:open', only: 'page', gesture: true },
   assistantAdvanceSetup: { needs: 'assistant:open', only: 'page', gesture: true },
+  /**
    * #1927 (47): the host's voice-note recorder, for the personal assistant the bound conversation is with. Starting,
    * resuming and retrying (which records, or spends on transcription) and opening the system's microphone settings take
    * the person's click; pausing, stopping and hearing it do not. The host records; the page never gets the audio.

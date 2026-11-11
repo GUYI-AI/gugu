@@ -57,7 +57,14 @@ export const CONVERSATION_SURFACE_PANEL_INSET: Readonly<{ top: number; right: nu
  * elsewhere. Never the chat, its messages or its people.
  */
 export type AppBindingSurface = { name: string; state: 'unbound' }
-  | { name: string; state: 'bound'; panel: { collapsed: boolean; inset: { top: number; right: number } } };
+  | {
+    name: string; state: 'bound'; panel: { collapsed: boolean; inset: { top: number; right: number } };
+    /**
+     * #1927 (48) Only on the one `onSurface` event that carries it: the person clicked a composer entry whose run is this
+     * `page-intent` (composer-actions.ts), or opened the note the host's recording bar shows (`voice-note`). No data.
+     */
+    intent?: string;
+  };
 
 /** A stored target is host data and never part of the App's answer. */
 export const storedUnreadBindingSchema = z.strictObject({

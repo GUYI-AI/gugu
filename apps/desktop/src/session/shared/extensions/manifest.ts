@@ -7,6 +7,7 @@ import { claimTakes } from './file-openers';
 import { INSTRUCTIONS_MAX_CHARS, SUBTITLE_MAX_CHARS } from './app-listing';
 import { BINDING_ACTION_API_VERSION, BINDING_ACTION_CAPABILITY, BINDING_NAME, CONVERSATION_BINDING_ACTIONS, CONVERSATION_SURFACE_PLACEMENTS } from './unread-binding';
 import { RESOURCE_BINDING_ACTIONS, resourceDomainProblem } from './agent-resources';
+import { COMPOSER_ACTION_MAX, COMPOSER_ACTIONS_API_VERSION, COMPOSER_RUN_ACTION, composerActionSchema } from './composer-actions';
 
 /**
  * Extension (App) manifest — the `manifest.json` at the root of an
@@ -640,8 +641,14 @@ export const extensionManifestSchema = z
        * API 41 (#1925): the main page is presented beside the binding's conversation, which the host draws (its composer,
        * streaming, voice, attachments, read state): the conversation is the main column, the page the collapsible panel on
        * its right. Needs the binding's `surface` action and `chat:surface`; unbound or not granted, the page opens alone.
+       * API 48 (#1927): `composerActions`, entries in that conversation's composer 「+」 the host draws and runs on the
+       * person's click (composer-actions.ts), for the person's own assistant chat only.
        */
-      conversationSurface: z.strictObject({ binding: z.string().regex(BINDING_NAME), placement: z.enum(CONVERSATION_SURFACE_PLACEMENTS) }).optional(),
+      conversationSurface: z.strictObject({
+        binding: z.string().regex(BINDING_NAME),
+        placement: z.enum(CONVERSATION_SURFACE_PLACEMENTS),
+        composerActions: z.array(composerActionSchema).min(1).max(COMPOSER_ACTION_MAX).optional(),
+      }).optional(),
       mcpServers: z.array(mcpServerContributionSchema).min(1).max(4).optional(),
       /**
        * Bundle-relative folder of Agent Skills (`<skill>/SKILL.md`), handed to every agent
@@ -783,6 +790,20 @@ export const extensionManifestSchema = z
     if (Boolean(surface) !== (unreadBinding?.actions.includes('surface') ?? false)) {
       ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface'], message: 'contributes.conversationSurface requires the conversation binding\'s "surface" action, and the action requires conversationSurface' });
     }
+    // #1927 (48): composer entries, each run needing its binding action (whose capability the loop above pairs with it).
+    const entries = surface?.composerActions ?? [];
+    if (entries.length > 0 && manifest.apiVersion < COMPOSER_ACTIONS_API_VERSION) {
+      ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: `contributes.conversationSurface.composerActions requires apiVersion ${COMPOSER_ACTIONS_API_VERSION}` });
+    }
+    if (new Set(entries.map((entry) => entry.id)).size !== entries.length) {
+      ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface', 'composerActions'], message: 'each composer action id once' });
+    }
+    entries.forEach((entry, at) => {
+      const needs = COMPOSER_RUN_ACTION[entry.run.kind];
+      if (!unreadBinding?.actions.includes(needs)) {
+        ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface', 'composerActions', at, 'run'], message: `a "${entry.run.kind}" composer action requires the conversation binding's "${needs}" action` });
+      }
+    });
     // #1927 (42): an agent's resources, as `files` is (the action and its capability, and the API, are the loop above's):
     // each action names the domains it wants from the closed list; a writer writes only domains it also reads.
     for (const action of RESOURCE_BINDING_ACTIONS) {
