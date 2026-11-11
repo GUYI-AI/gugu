@@ -3,9 +3,11 @@
 // puts it in at start — in the background, silently (the log only), retried with backoff until it is in. Never a toast,
 // a question or a button.
 //
-// Whether it is needed here is one fact, not a record of intent: the assistant lives on this machine (its home is here,
-// or this is a cloud machine hosting it), or its setup started in this run. An App the person uninstalled stays out while
-// their assistant does not live here; while it does, the assistant needs the App, so it goes back in.
+// Whether it is needed here is one fact, not a record of intent: the account signed in here has an assistant, wherever it
+// lives (the App is the assistant's page on every machine the person opens it from: this computer, another one, the
+// cloud, a server), the assistant lives on this machine (its home is here, or this is a cloud machine hosting it), or its
+// setup started in this run. An App the person uninstalled stays out while they have no assistant here or anywhere; while
+// they have one, it needs its page, so the App goes back in.
 // An App installed here in any other way (a folder, a fork, switched off) is the person's: it is left as it is.
 
 export interface AssistantAppEnsureDeps {
@@ -29,10 +31,14 @@ export interface AssistantAppEnsureDeps {
 export const ASSISTANT_APP_ENSURE_BACKOFF_MS: readonly number[] = [15_000, 30_000, 60_000, 120_000, 300_000, 600_000, 600_000]
 
 export type AssistantAppEnsureOutcome = 'present' | 'not-needed' | 'installed'
+export type AssistantAppEnsureReason = 'start' | 'setup' | 'assistant'
 
 export interface AssistantAppEnsurer {
-  /** One go, joined by any call while it runs. `setup`: the assistant's setup started, so it is needed from now on. */
-  ensure(reason: 'start' | 'setup'): Promise<AssistantAppEnsureOutcome>
+  /**
+   * One go, joined by any call while it runs. `setup`: the assistant's setup started, so it is needed from now on.
+   * `assistant`: a window found the account's assistant (anywhere) while the App is not in: is it needed now?
+   */
+  ensure(reason: AssistantAppEnsureReason): Promise<AssistantAppEnsureOutcome>
   /** Whether a setup asked for it in this run. */
   setupStarted(): boolean
 }

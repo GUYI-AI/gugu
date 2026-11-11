@@ -61,6 +61,15 @@ async function personalAssistant(token: string, ownerId: string): Promise<string
   }
 }
 
+/**
+ * The signed-in account and its own assistant (by its provision marker), wherever that assistant lives — this computer,
+ * another one, the cloud or a server. `denied`: no one is signed in; `failed`: the marker could not be read (never "none").
+ */
+export async function signedInAccountAssistant(): Promise<{ ownerId: string; assistantId: string | null }> {
+  const { token, ownerId } = await account();
+  return { ownerId, assistantId: await personalAssistant(token, ownerId) };
+}
+
 /** What the chosen conversation is, and who is in it now. */
 async function conversationOf(token: string, chatId: string): Promise<{ kind: string | null; members: string[] }> {
   const client = createGuguSupabaseClient({ schema: 'chat', headers: { Authorization: `Bearer ${token}` } });

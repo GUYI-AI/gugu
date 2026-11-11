@@ -33,6 +33,25 @@ describe('decideAssistantEntry', () => {
     expect(decideAssistantEntry({ shell: shell(), word, surfaces: bound })).toEqual(APP)
   })
 
+  // The App is the assistant's page on every machine the person opens it from, wherever the assistant lives.
+  it.each([
+    ['on this computer', { kind: 'computer', deviceId: 'this', thisDevice: true, label: null, online: true, known: true, hostKind: 'desktop' }],
+    ['on another computer', { kind: 'computer', deviceId: 'mac-2', thisDevice: false, label: 'Mac', online: true, known: true, hostKind: 'desktop' }],
+    ['on another computer that is offline', { kind: 'computer', deviceId: 'mac-2', thisDevice: false, label: 'Mac', online: false, known: true, hostKind: 'desktop' }],
+    ['on a server', { kind: 'computer', deviceId: 'srv', thisDevice: false, label: 'srv', online: true, known: true, hostKind: 'server' }],
+    ['in the cloud', { kind: 'cloud', deviceId: 'cloud-1' }],
+    ['somewhere not read yet', null],
+  ] as const)('goes to the App with the assistant living %s', (_where, home) => {
+    expect(decideAssistantEntry({ shell: shell({ home: home as AssistantShellSnapshot['home'] }), word, surfaces: bound })).toEqual(APP)
+    installAssistantShellBridge(); installAppConversationSurfaceBridge(); installAssistantAppEntryBridge()
+    publishAssistantShell(shell({ home: home as AssistantShellSnapshot['home'] }))
+    publishAssistantAppWord(word)
+    publishAppConversationSurfaces(bound)
+    expect(readAssistantEntryTarget()).toEqual(APP)
+    publishAssistantAppWord(null)
+    publishAppConversationSurfaces({})
+  })
+
   it.each([
     ['main does not trust it (a spoofed id, a fork, another market source)', { word: { ...word, trusted: false } }],
     ['main\'s word is about another account', { word: { ...word, ownerId: OTHER } }],

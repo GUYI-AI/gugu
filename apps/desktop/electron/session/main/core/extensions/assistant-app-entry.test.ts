@@ -99,7 +99,8 @@ function host() {
   const bound = (owner = OWNER, id = ID) => service.conversationUnreadBinding(owner, id, 'main')?.chatId ?? null;
   return { service, install, bound };
 }
-const sync = (chatId: string | null, ownerId = OWNER) => syncAssistantAppEntry({ ownerId, chatId }, { trust: TRUST });
+const ensureApp = vi.fn();
+const sync = (chatId: string | null, ownerId = OWNER) => syncAssistantAppEntry({ ownerId, chatId }, { trust: TRUST, ensureApp });
 
 beforeEach(() => {
   db.signedIn = OWNER;
@@ -156,9 +157,14 @@ describe('the trusted App: granted and bound by the host, nothing asked', () => 
     expect(h.bound(OWNER, 'other-app')).toBeNull();
   });
 
-  it('answers absent while the App is not in', async () => {
+  it('answers absent while the App is not in, and asks the ensure step to put it in while the window shows the assistant', async () => {
     host();
+    ensureApp.mockClear();
+    expect(await sync(null)).toMatchObject({ trusted: false, outcome: 'absent', changed: false });
+    expect(ensureApp).not.toHaveBeenCalled();
+    // Wherever the assistant lives (its provision is on another device here): its page is needed on this machine.
     expect(await sync(DM)).toMatchObject({ trusted: false, outcome: 'absent', changed: false });
+    expect(ensureApp).toHaveBeenCalledOnce();
   });
 
   it.each([

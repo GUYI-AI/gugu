@@ -32,6 +32,12 @@ export const ASSISTANT_APP_ID = ASSISTANT_RULES_PROVIDER_ID;
 // ── Trust ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // No definition here: #1931's own check (assistant-rules-trust.ts), on the App installed now — the App whose product rules the
 // host believes is the App this entry trusts.
+const ensureAssistantAppHere = (): void => {
+  void import('../../../../assistant-rules-root')
+    .then(({ ensureAssistantApp }) => ensureAssistantApp('assistant'))
+    .catch((error: unknown) => log.warn('assistant App entry: the ensure step did not run', { error: String(error) }));
+};
+
 const notTrusted = (service: AssistantRulesInstallRecord, trust?: readonly AssistantRulesTrustCondition[]): Promise<string | null> => {
   const provider = installedAssistantRulesProvider(service);
   return provider ? assistantRulesDistrust(provider, trust) : Promise.resolve('it is not installed');
@@ -64,6 +70,8 @@ export interface AssistantAppEntryDeps {
   /** Tests only: #1931's conditions with release keys made in the test (default: the shipped ones). */
   trust?: readonly AssistantRulesTrustCondition[];
   ownAssistantChat?: (token: string, ownerId: string, chatId: string) => Promise<boolean>;
+  /** Asks the ensure step to put the App in (assistant-rules-root.ts `ensureAssistantApp('assistant')`); it decides if needed. */
+  ensureApp?: () => void;
 }
 
 /**
@@ -77,7 +85,12 @@ export async function syncAssistantAppEntry(input: unknown, deps: AssistantAppEn
   const service = extensionsService();
   const state = (trusted: boolean, outcome: AssistantAppEntryOutcome, changed = false): AssistantAppEntryState =>
     ({ ownerId, extensionId: ASSISTANT_APP_ID, trusted, outcome, changed });
-  if (!service.isInstalled(ASSISTANT_APP_ID)) return state(false, 'absent');
+  if (!service.isInstalled(ASSISTANT_APP_ID)) {
+    // The window shows the account's assistant (anywhere: here, another computer, the cloud, a server) and its page is not
+    // here: the ensure step puts it in when main finds the account has one (it reads the provision itself).
+    if (chatId) (deps.ensureApp ?? ensureAssistantAppHere)();
+    return state(false, 'absent');
+  }
   const distrust = await notTrusted(service, deps.trust);
   if (distrust) {
     log.info('assistant App entry: not the trusted App', { reason: distrust });
