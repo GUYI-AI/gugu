@@ -65,10 +65,16 @@ it('shows three dots above the first row while an older page is on its way, with
   expect(view.dots()!.getAttribute('role')).toBe('status');
   expect(view.dots()!.getAttribute('aria-label')).toBe('Loading earlier messages');
   expect(view.dots()!.children.length).toBe(3);
-  // The lit dot lengthens only as far as the one before it shortens: the group keeps one width.
-  const widths = new Set<number>();
-  for (let i = 0; i < 12; i++) { widths.add(Math.round([...view.dots()!.children].reduce((sum, dot) => sum + dot.getBoundingClientRect().width, 0))); await frame(); }
-  expect([...widths]).toEqual([23]);
+  // The lit dot lengthens only as far as the one before it shortens: the group keeps one width. Under reduced motion
+  // the dots stand still at their resting width. Both are read each frame: another test file emulates reduced motion
+  // on the page this one shares (agent-activity.contract), and it may be on for some of these frames.
+  const widths = new Set<string>();
+  for (let i = 0; i < 12; i++) {
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    widths.add(`${still ? 'still' : 'flowing'}:${Math.round([...view.dots()!.children].reduce((sum, dot) => sum + dot.getBoundingClientRect().width, 0))}`);
+    await frame();
+  }
+  expect([...widths].filter(one => one !== 'flowing:23' && one !== 'still:15')).toEqual([]);
   expect(view.firstRowTop()).toBe(before);
   page.resolve(range(1000, 1020));
   await until('the page is in history', () => view.turns() === 40);
