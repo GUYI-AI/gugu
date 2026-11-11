@@ -1,9 +1,9 @@
 import { app, safeStorage } from 'electron'
+import { timingSafeEqual } from 'node:crypto'
 import { VaultError, type VaultKeyProtector } from './contracts'
-import { unwrapWithSafeStorage, wrapWithSafeStorage } from './key-wrap'
+import { decode } from './crypto'
 
-/** The desktop Mac's keys. A gugu server uses serverVaultKeyProtector (electron/server/password-vault-keys.ts) instead:
- * since owner decision 2B (11-11) a server holds keys, but only for the passwords authorized to Agents on it.
+/** Import only in the real desktop main. Headless/server shims must never supply vault keys.
  * `verifyOwner` is the system owner check (Touch ID, or this Mac's login password when Touch ID is unavailable),
  * used only before revealing plaintext; opening the vault itself needs no person step. */
 export function macVaultKeyProtector(verifyOwner: (reason: string) => Promise<void>): VaultKeyProtector {
@@ -16,7 +16,21 @@ export function macVaultKeyProtector(verifyOwner: (reason: string) => Promise<vo
       try { await verifyOwner('查看已保存的密码') }
       catch { throw new VaultError('CANNOT_UNLOCK') }
     },
-    async wrap(key, binding) { available(); return wrapWithSafeStorage(key, binding) },
-    async unwrap(wrapped, binding) { available(); return unwrapWithSafeStorage(wrapped, binding) },
+    async wrap(key, binding) {
+      available()
+      try { return safeStorage.encryptString(JSON.stringify({ binding, key: key.toString('base64') })).toString('base64') }
+      catch { throw new VaultError('CANNOT_UNLOCK') }
+    },
+    async unwrap(wrapped, binding) {
+      available()
+      try {
+        const value = JSON.parse(safeStorage.decryptString(decode(wrapped))) as { binding: string; key: string }
+        const expected = Buffer.from(binding), actual = Buffer.from(value.binding)
+        if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) throw new Error()
+        const key = decode(value.key)
+        if (key.length !== 32) { key.fill(0); throw new Error() }
+        return key
+      } catch { throw new VaultError('CANNOT_UNLOCK') }
+    },
   }
 }

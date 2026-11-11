@@ -10,7 +10,8 @@ import type { PermissionPolicy } from '../permissions/rules'
 import { guguMcpToolScope, passwordNativeMcpIdentity } from '../mcp/password-native-identity'
 import type { GuguMcpContext } from '../acp-engine-utils'
 import { createVaultStorage } from './host'
-import { VaultError, type CredentialGrant, type VaultKeyProtector } from './contracts'
+import { macVaultKeyProtector } from './mac'
+import { VaultError, type CredentialGrant } from './contracts'
 import { httpsOrigin } from './schema'
 import { passwordGrantCandidates, passwordGrantSubjects, passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
 import { BetaPasswordLogin } from './beta-login'
@@ -23,8 +24,8 @@ interface NativeHost { window(): BrowserWindow | null; account(): Promise<string
   deliver(sessionId: string, requestId: string, status: string): Promise<void>;
   deliverSave(sessionId: string, requestId: string, status: SaveResult, credentialId?: string): Promise<void>;
   readPolicy(ownerId: string, signal: AbortSignal): Promise<PermissionPolicy>
-  /** This device's key protector: the Mac Keychain with Touch ID on the desktop, the server's key file on a server. */
-  keys(): VaultKeyProtector
+  /** System owner verification (Touch ID or login password) through the native helper. */
+  verifyOwner(reason: string): Promise<void>
   /** Signed-in identity-schema RPC for vault sync; throws the backend error (with its SQLSTATE `code`). */
   rpc(name: string, args: Record<string, unknown>): Promise<unknown>
   /** Is the person at this machine: used in the last half minute, idle but unlocked, or locked. */
@@ -58,7 +59,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
   const login = new BetaPasswordLogin({ ownerId, deviceId, signal: controller.signal, access, assertCurrent, changed, describe,
     subjects: (agentId, sessionId) => passwordGrantSubjects(ownerId, agentId, sessionId), denied: () => false, deliver: host.deliver })
   const saves = new BetaPasswordSaves({ deviceId, changed, describe, deliver: host.deliverSave })
-  const keys = host.keys()
+  const keys = macVaultKeyProtector(reason => host.verifyOwner(reason))
   // The vault publishes through this port before each local commit; the engine exists once the vault does.
   const port: { sync?: VaultSync } = {}
   const { vault } = createVaultStorage({ root, accountId: ownerId, installationBinding: app.getPath('userData'),

@@ -1,7 +1,5 @@
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
 import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
-import { macVaultKeyProtector } from './password-vault/mac'
-import { serverVaultKeyProtector } from './server/password-vault-keys'
 import './browser-user-agent-bootstrap'
 import './page-navigation-bootstrap'
 import { attachTabHistorySwipe } from './tab-history-swipe'
@@ -5020,12 +5018,11 @@ app.whenReady().then(async () => {
       deliver: (sessionId, requestId, status) => emdash.deliverPasswordBetaDecision(sessionId, requestId, status),
       deliverSave: (sessionId, requestId, status, credentialId) => emdash.deliverPasswordBetaSaveResult(sessionId, requestId, status, credentialId),
       readPolicy: createPasswordBetaPolicyReader(getSessionpageAuth),
-      // #2481 2B: a server holds keys for the passwords authorized to its Agents, under its own key file.
-      keys: () => SERVER_MODE ? serverVaultKeyProtector() : macVaultKeyProtector(async (reason) => {
+      verifyOwner: async (reason) => {
         const helper = deviceActionsRuntime().macHelper()
         if (!helper) throw new Error('mac helper unavailable')
         await helper.call('owner.verify', { reason }, { timeoutMs: 120_000 })
-      }),
+      },
       // #2481 vault sync: ciphertext and device keys only; the backend checks the signed-in owner of the device.
       rpc: async (name, args) => {
         const auth = await getSessionpageAuth()
