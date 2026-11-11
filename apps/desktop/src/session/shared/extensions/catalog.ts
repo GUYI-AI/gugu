@@ -39,6 +39,9 @@ export const CAPABILITY_RISK = {
   'chat:draft': 'medium',
   // #1925 That conversation drawn by the host beside the App's page: the App sees none of it, only whether it is shown.
   'chat:surface': 'medium',
+  // That conversation's assistant, when it is the person's own (#1925): a snapshot of it; its host screens opened in a click.
+  'assistant:status': 'medium',
+  'assistant:open': 'medium',
   'agents:read': 'medium',
   // Every `:all` widens past the agents the App started — that widening is the whole point of
   // reading it as high, even for the ability that is medium in its narrow form.
@@ -89,7 +92,7 @@ export function declaredPermissions(manifest: ExtensionManifest): DeclaredPermis
  */
 export function permissionSide(permission: DeclaredPermission): 'see' | 'do' {
   if (permission.kind === 'network') return 'do';
-  return permission.key.startsWith('files:read') || permission.key.startsWith('agents:read') || permission.key.startsWith('agents:history') || (permission.key === 'chat:read' || permission.key === 'chat:unread' || permission.key === 'chat:files')
+  return permission.key.startsWith('files:read') || permission.key.startsWith('agents:read') || permission.key.startsWith('agents:history') || (permission.key === 'chat:read' || permission.key === 'chat:unread' || permission.key === 'chat:files' || permission.key === 'assistant:status')
     ? 'see'
     : 'do';
 }

@@ -304,6 +304,11 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
     case 'openChatFile':
     case 'openLinkTarget':
       return openForClick(action, tabId);
+    // #1925 The assistant's own screens, each by its existing entry; and the setup steps an App draws, moved on.
+    case 'openAssistantScreen':
+      return import('@/lib/assistantAppHost').then(({ openAssistantScreen }) => openAssistantScreen(action.screen, action.ownerId));
+    case 'advanceAssistantSetup':
+      return import('@/lib/assistantAppHost').then(({ advanceAssistantSetup }) => advanceAssistantSetup(action.next, action.ownerId));
   }
 }
 

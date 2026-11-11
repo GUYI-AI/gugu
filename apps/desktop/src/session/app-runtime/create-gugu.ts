@@ -209,7 +209,7 @@ export function createGugu(
   // `files.onChanged`) are host halves.
   const api: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
-    if (['navigationGo', 'navigationClaimBack', 'onBack', 'appFiles', 'chats', 'checkPage', 'clipboard', 'bindings', 'messages', 'prompts', 'cloud', 'framed', 'program', 'projects', 'sessions', 'theme', 'onFilesChanged', 'onDownloadProgress', 'onCloudHeard', 'modal', 'onModalFocus', 'projection', 'onProjection', 'onProjectionSource', 'pages', 'onTaskPage', 'surfaces', 'onSurface', 'projectionMedia'].includes(key)) continue;
+    if (['navigationGo', 'navigationClaimBack', 'onBack', 'appFiles', 'chats', 'checkPage', 'clipboard', 'bindings', 'assistant', 'onAssistantChanged', 'messages', 'prompts', 'cloud', 'framed', 'program', 'projects', 'sessions', 'theme', 'onFilesChanged', 'onDownloadProgress', 'onCloudHeard', 'modal', 'onModalFocus', 'projection', 'onProjection', 'onProjectionSource', 'pages', 'onTaskPage', 'surfaces', 'onSurface', 'projectionMedia'].includes(key)) continue;
     api[key] = typeof value === 'function' && verbs.has(key) ? coded(value as (...args: never[]) => unknown) : value;
   }
   api.files = files;
@@ -299,6 +299,23 @@ export function createGugu(
         onSurface: (listener: unknown) => {
           if (typeof listener !== 'function') throw guguError('invalid', 'gugu.bindings.onSurface(fn) takes a function');
           return onSurface(listener as Parameters<typeof onSurface>[0]);
+        },
+      } : {}),
+    });
+  }
+  // `gugu.assistant` (44, `assistant:status` / `assistant:open`): the bound conversation's assistant, by the binding's name.
+  // `open` and `advanceSetup` are called straight through: the preload reads the person's gesture on this very call.
+  if (raw.assistant) {
+    const { status, open, advanceSetup } = raw.assistant;
+    const onAssistantChanged = raw.onAssistantChanged;
+    api.assistant = Object.freeze({
+      status: coded(status),
+      open: coded(open),
+      advanceSetup: coded(advanceSetup),
+      ...(onAssistantChanged ? {
+        onChanged: (handler: unknown): (() => void) => {
+          if (typeof handler !== 'function') throw guguError('invalid', 'gugu.assistant.onChanged takes a function');
+          return onAssistantChanged((read) => handler(read));
         },
       } : {}),
     });

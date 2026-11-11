@@ -255,7 +255,7 @@ function surfaceManifest({ actions = ['unread', 'surface'], capabilities, apiVer
 
 describe('the bound conversation beside the App\'s page (#1925, API 41)', () => {
   it('needs API 41, the surface action with chat:surface, and conversationSurface naming that binding', () => {
-    expect(EXTENSION_API_VERSION).toBe(41);
+    expect(EXTENSION_API_VERSION).toBeGreaterThanOrEqual(41);
     expect(() => parseExtensionManifest(surfaceManifest())).not.toThrow();
     expect(() => parseExtensionManifest(surfaceManifest({ actions: ['unread', 'files', 'draft', 'surface'] }))).not.toThrow();
     // An App of before parses as it did: no surface, no conversationSurface.

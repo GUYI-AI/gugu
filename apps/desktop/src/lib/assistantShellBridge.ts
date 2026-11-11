@@ -73,6 +73,8 @@ export type AssistantShellActions = {
   renameAssistant(name: string): Promise<void>
   /** 打开它的形象工坊(agent 设置的「形象」那一页)。 */
   openLook(): void
+  /** #1925 打开它用哪个模型(agent 设置的「模型」那一页,与设置里「咕咕 → 模型」那一行同一份)。 */
+  openModel(): void
   /** 再问一次管家云电脑此刻的样子(读不到时页面上的「重试」)。 */
   refreshCloud(): void
   /** 引导往下走一步(连应用 → 一切就绪)/ 走完(null)。 */
@@ -197,6 +199,8 @@ function sameSnapshot(a: AssistantShellSnapshot, b: AssistantShellSnapshot): boo
     a.ownerName === b.ownerName &&
     a.assistantState === b.assistantState &&
     a.chatId === b.chatId && a.chatReadFailed === b.chatReadFailed &&
+    // #1925 只差会员档、正在安家、换了账号的那一份也是新的:从前漏比,读到会员档 / 开始安家 / 换号后桥上一直是旧的。
+    a.member === b.member && a.preparing === b.preparing && a.ownerId === b.ownerId && a.ownerAvatar === b.ownerAvatar &&
     JSON.stringify(a.cloud) === JSON.stringify(b.cloud) &&
     JSON.stringify(a.assistant) === JSON.stringify(b.assistant)
   )

@@ -1699,6 +1699,16 @@ function failure(extensionId: string, method: string, error: unknown): Extension
   return { ok: false, ...failed };
 }
 
+/**
+ * #1925 An event only the person's grant reaches: to this App's pages the person works — no background page, no page an
+ * agent works (`app_check`), as the binding's verbs answer no one else.
+ */
+export function deliverToPersonPages(extensionId: string, event: ExtensionHostEvent): void {
+  for (const [webContentsId, binding] of bindings) {
+    if (binding.extensionId === extensionId && binding.operator.kind === 'person') hearOn(webContentsId)(event);
+  }
+}
+
 /** Send an event to every live page of one extension — its background and all its tabs. */
 function deliverToEveryPage(extensionId: string, event: ExtensionHostEvent, keep: (binding: SurfaceBinding) => boolean = () => true): void {
   const backgroundId = extensionBackgroundWebContentsId(extensionId);
@@ -2018,6 +2028,18 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       return await setBindingSurfacePanel(caller.extensionId, page, args, async (collapsed) => {
         await deliver(page, { kind: 'conversationPanel', collapsed });
       });
+    }
+    case 'assistantStatus':
+    case 'assistantOpen':
+    case 'assistantAdvanceSetup': {
+      // #1925 The person's own assistant, through their grant: an agent working the page is not that account.
+      const page = thePage(caller);
+      if (page.operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reaches none of its assistant'), { code: 'denied' });
+      const assistant = await import('./app-assistant-binding');
+      if (method === 'assistantStatus') return await assistant.appAssistantStatus(caller.extensionId, args);
+      const act = (action: ExtensionHostAction) => deliver(page, action);
+      if (method === 'assistantOpen') return await assistant.appAssistantOpen(caller.extensionId, args, act);
+      return await assistant.appAssistantAdvanceSetup(caller.extensionId, args, act);
     }
     case 'messagesHistory':
     case 'messagesSearch': {

@@ -895,6 +895,18 @@ streaming, voice, attachments, read state) as the main column; your main page is
 - \`panel.inset\` \`{ top, right }\` (px): the host's collapse button covers your page's top-right corner, centred in the top
   \`top\` px, within \`right\` px of the edge. Make your top row (name, tabs) \`top\` px high and keep \`right\` px clear.
 - You get no chat, message, person or DOM of it. Opening your page marks nothing read; a \`{ binding }\` draft lands in that composer.
+API 44, only when that conversation is the person's private chat with their own assistant (else \`denied\`): add
+\`"assistant-status"\` (with \`assistant:status\`) and/or \`"assistant-open"\` (with \`assistant:open\`). Setup, move and close stay gugu's screens.
+- \`gugu.assistant.status("main")\` → \`{ state: "ready", status }\` | \`{ state: "unbound" | "unavailable" }\`; \`gugu.assistant.onChanged(fn)\`
+  hears each new \`{ state: "ready", status }\`. \`status\`: \`{ assistant: "found"|"loading"|"none"|"unreadable", name, avatar (data: image),
+  home: { kind: "cloud"|"this-computer"|"other-computer"|"server", online } | null, setup: "shell"|"connect"|"ready"|null, preparing,
+  cloudAvailable, member: boolean|null, loadError }\` — no chat, device or account id.
+- While the account has no assistant (\`none\`, \`loading\`, \`unreadable\`), \`ready\` comes whatever conversation is chosen, or none,
+  with \`name\`, \`avatar\`, \`home\` null, and \`gugu.assistant.open("main", "setup")\` works: the first setup can start from your page. When one
+  appears and that conversation is not chosen, \`onChanged\` hears \`{ state: "unbound" }\` once: ask the person to choose it.
+- In a click: \`gugu.assistant.open("main", screen)\`, screen one of \`setup\`, \`move\`, \`close\`, \`look\`, \`model\`, \`devices\`,
+  \`connected-apps\`: gugu opens that screen; the person acts there. \`gugu.assistant.advanceSetup("main", "ready" | "done")\`: the
+  steps you draw, from \`connect\` (to ready or done) or \`ready\` (to done); any other is \`invalid\`. Both resolve or are refused, nothing more.
 
 Which chats the reader is in and who is in one — for a page that is in no chat (an App's own tab, full screen) to
 offer one — and what people and agents said in a chat: a stretch of its timeline, one thread, or the messages that

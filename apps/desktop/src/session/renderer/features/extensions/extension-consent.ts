@@ -41,6 +41,8 @@ const CAPABILITY_MESSAGE = {
   'chat:files': 'extensions.permissionsChatFiles',
   'chat:draft': 'extensions.permissionsChatDraft',
   'chat:surface': 'extensions.permissionsChatSurface',
+  'assistant:status': 'extensions.permissionsAssistantStatus',
+  'assistant:open': 'extensions.permissionsAssistantOpen',
   'agents:read': 'extensions.permissionsAgentsRead',
   'agents:read:all': 'extensions.permissionsAgentsReadAll',
   'agents:read:all-machines': 'extensions.permissionsAgentsReadAllMachines',

@@ -831,6 +831,21 @@ export const extensionsController = createRPCController({
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
 
+  /**
+   * #1925 The shell's assistant snapshot, as an App may see it (`useAssistantAppStatus`): kept for `gugu.assistant.status`,
+   * and told to the pages of each App still entitled to hear it (app-assistant-binding.ts).
+   */
+  assistantStatusChanged: async (args: { ownerId: string; status: unknown }) => {
+    try {
+      const [{ assistantStatusChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
+      await assistantStatusChanged(args, deliverToPersonPages);
+      return { success: true as const };
+    } catch (error) {
+      log.warn('Failed to take the assistant snapshot for Apps:', error);
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
   setUnreadBinding: async (args: { extensionId: string; name: string; ownerId: string; authority: string; chatId: string | null }) => {
     try {
       const { setUnreadBinding } = await import('./app-unread-bindings');

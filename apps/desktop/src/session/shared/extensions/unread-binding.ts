@@ -1,21 +1,31 @@
 import { z } from 'zod';
 import type { AppFileEntry } from './app-runtime-protocol';
+import { ASSISTANT_BINDING_ACTIONS, ASSISTANT_BINDING_API_VERSION } from './assistant-binding';
 
 /**
  * What one conversation binding may do (#1927). `unread` is the binding itself: it is what the person chose the
  * conversation for. `files` (API 40): list and read that conversation's chat-folder files, read only. `draft` (API 40):
  * put words into that conversation's composer; the person sends them, or not. Each extra action is its own capability,
- * consented and withdrawn on its own (`BINDING_ACTION_CAPABILITY`). `surface` (API 41, #1925): the App's main page is shown
- * beside that conversation, which the host draws natively (`contributes.conversationSurface`); the App learns only whether
- * it is shown and whether its panel is collapsed.
+ * consented and withdrawn on its own (`BINDING_ACTION_CAPABILITY`), from the API version it came in
+ * (`BINDING_ACTION_API_VERSION`). `surface` (API 41, #1925): the App's main page is shown beside that conversation, which
+ * the host draws natively (`contributes.conversationSurface`); the App learns only whether it is shown and whether its panel
+ * is collapsed. `assistant-status` / `assistant-open` (#1925, API 44): the conversation's assistant, when it is the person's
+ * own (assistant-binding.ts).
  */
-export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'surface'] as const;
+export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'surface', ...ASSISTANT_BINDING_ACTIONS] as const;
 export type ConversationBindingAction = (typeof CONVERSATION_BINDING_ACTIONS)[number];
-export const BINDING_ACTION_CAPABILITY = { unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft', surface: 'chat:surface' } as const;
+export const BINDING_ACTION_CAPABILITY = {
+  unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft', surface: 'chat:surface',
+  'assistant-status': 'assistant:status', 'assistant-open': 'assistant:open',
+} as const;
 /** The first App API that lets a binding declare more than `unread`. */
 export const BINDING_ACTIONS_API_VERSION = 40;
-/** The first App API of each extra action. */
-export const BINDING_ACTION_API_VERSION = { files: BINDING_ACTIONS_API_VERSION, draft: BINDING_ACTIONS_API_VERSION, surface: 41 } as const;
+/** The first App API of each action beyond `unread` (40 files and draft, 41 surface, 44 the assistant's). */
+export const BINDING_ACTION_API_VERSION = {
+  files: BINDING_ACTIONS_API_VERSION, draft: BINDING_ACTIONS_API_VERSION,
+  surface: 41,
+  'assistant-status': ASSISTANT_BINDING_API_VERSION, 'assistant-open': ASSISTANT_BINDING_API_VERSION,
+} as const satisfies Record<Exclude<ConversationBindingAction, 'unread'>, number>;
 export const BINDING_NAME = /^[a-z][a-z0-9-]{0,47}$/;
 
 /**

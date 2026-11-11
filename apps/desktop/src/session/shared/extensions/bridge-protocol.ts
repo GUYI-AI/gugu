@@ -104,8 +104,12 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // Still no chat id, title, member or message reaches the App.
 // 41 (#1925): the binding may also declare `surface` (`chat:surface`) with `contributes.conversationSurface`: the App's main
 // page is drawn as the panel beside that conversation, which the host draws natively. `gugu.bindings.surface` /
-// `setPanel` / `onSurface` say only whether it is shown and whether the panel is collapsed.
-export const EXTENSION_API_VERSION = 41;
+// `setPanel` / `onSurface` say only whether it is shown, whether the panel is collapsed and the corner the host covers.
+// 42, 43: reserved (#1927 the bound agent's resources, #1928 its schedules), merged in as they land.
+// 44 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
+// `assistant-status` (`assistant:status`: `gugu.assistant.status` / `onChanged`) and `assistant-open` (`assistant:open`:
+// `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`).
+export const EXTENSION_API_VERSION = 44;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -646,6 +650,13 @@ export type ExtensionHostEvent =
    * another session.
    */
   | { type: 'agentsChanged'; agentIds: readonly string[] }
+  /**
+   * #1925 (44) The assistant's snapshot changed (`gugu.assistant.onChanged`): the same `ready` answer `status` gives — or,
+   * once, `unbound` when an assistant appears for an App that heard the snapshot without one. Only to the pages the person
+   * works of an App with `assistant:status`, each time checked as a read is.
+   */
+  | { type: 'assistantChanged'; name: string; state: 'ready'; status: import('./assistant-binding').AppAssistantStatus }
+  | { type: 'assistantChanged'; name: string; state: 'unbound' }
   /** What this page hears of its own topic (`gugu.cloud.on`): a broadcast's payload, or that it is (re)subscribed: read again then. */
   | { type: 'cloudHeard'; topic: string; event: string; heard: { subscribed: true } | { payload: Record<string, unknown> } }
   /**
@@ -843,6 +854,14 @@ export const BRIDGE_VERBS = {
    */
   bindingsSurface: { needs: 'chat:surface', only: 'page' },
   bindingsSurfacePanel: { needs: 'chat:surface', only: 'page' },
+  /**
+   * #1925 (44): the bound conversation's assistant, when it is the person's own — its snapshot, read; one of the host's
+   * screens for it opened, and the setup steps the App draws moved on, both in the person's click. The page names the
+   * binding and a value from a closed list; the host finds the chat and the assistant, and answers done or refused.
+   */
+  assistantStatus: { needs: 'assistant:status', only: 'page' },
+  assistantOpen: { needs: 'assistant:open', only: 'page', gesture: true },
+  assistantAdvanceSetup: { needs: 'assistant:open', only: 'page', gesture: true },
   messagesHistory: { needs: 'chat:read' },
   messagesSearch: { needs: 'chat:read' },
   /**

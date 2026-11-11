@@ -147,7 +147,8 @@ export function AssistantShellHost({ visible, ...chatHandlers }: { /** 会话页
   const contact = mine.contact
   // 和它的那条私聊:聊天格子画它,「今天」页读它的文件夹 —— 同一条,在这里认一次。
   const dm = useAssistantDm(contact?.id ?? null)
-  const [lookOpen, setLookOpen] = useState(false)
+  // agent 设置开在哪一页:形象(形象工坊)/ 模型(#1925 App 打开的「模型」);null = 没开。
+  const [settingsTab, setSettingsTab] = useState<'look' | 'aimodel' | null>(null)
   const ownerUserId = user?.id ?? null
   const readyCloudDeviceId = snapshot?.state === 'awake' ? snapshot.deviceId : null
   useEffect(() => {
@@ -163,7 +164,8 @@ export function AssistantShellHost({ visible, ...chatHandlers }: { /** 会话页
         if (!contact) throw new Error('personal assistant is not in contacts')
         await updateAgentProfile(contact.id, { name })
       },
-      openLook: () => setLookOpen(true),
+      openLook: () => setSettingsTab('look'),
+      openModel: () => setSettingsTab('aimodel'),
       refreshCloud: () => void refreshCloudComputer().catch(() => undefined),
       advanceSetup: (next) => {
         if (ownerUserId) writeSetupStep(ownerUserId, next === 'shell' ? null : next)
@@ -277,7 +279,7 @@ export function AssistantShellHost({ visible, ...chatHandlers }: { /** 会话页
       {[...slots].flatMap(([key, element]) => key.startsWith(ASSISTANT_SLOT_PREFIX)
         ? [createPortal(content(key.slice(ASSISTANT_SLOT_PREFIX.length) as AssistantShellSlot), element, key)]
         : [])}
-      {lookOpen && contact ? <AgentSettingsModal agent={contact} initialTab="look" onClose={() => setLookOpen(false)} /> : null}
+      {settingsTab && contact ? <AgentSettingsModal key={settingsTab} agent={contact} initialTab={settingsTab} onClose={() => setSettingsTab(null)} /> : null}
       {/* 搬家的弹窗:搬着时设置页上的搬家那一组会换位置、重挂,弹窗不跟着丢(状态在 assistant-move-controller)。 */}
       <AssistantMoveDialog />
       {/* 会议提醒(语音笔记):有个人助理才看日历 —— 录下的要交给它整理。 */}
