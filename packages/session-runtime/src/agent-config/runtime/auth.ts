@@ -202,7 +202,9 @@ export class AgentAuthManager {
 
   /** 这个连接此刻是不是标着「登录已失效」(凭据还在盘上、真用时被拒)。 */
   async isMarkedExpired(providerId: string, connectionId?: string): Promise<boolean> {
+    // 与读数那条路(`probe`)同一个做法:先读一次盘,别的咕咕账号刚标上的也算。
     await this.expiry.ready;
+    await this.expiry.reload();
     return this.expiry.has(authExpiryKey(providerId, connectionId));
   }
 
