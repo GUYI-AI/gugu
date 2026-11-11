@@ -56,7 +56,7 @@ const PHONE: ReadonlySet<HostMember> = new Set<HostMember>([
   'bindings.resources', 'bindings.resource', 'bindings.watch', 'bindings.save', 'bindings.remove', 'onBindingResources',
   'bindings.schedules', 'bindings.watchSchedules', 'bindings.controlSchedule', 'onSchedulesChanged',
   'bindings.work', 'bindings.openWork', 'bindings.closeWork', 'bindings.onWork',
-  'assistant.status', 'assistant.open', 'assistant.advanceSetup', 'assistant.rename', 'assistant.figure', 'onAssistantChanged', 'toast',
+  'assistant.status', 'assistant.open', 'assistant.advanceSetup', 'assistant.rename', 'assistant.figure', 'assistant.connect', 'onAssistantChanged', 'toast',
   // 47 on a phone: answered `unsupported` (the phone's own 聊天 records), so an App hides its recorder there.
   'voiceNote.start', 'voiceNote.pause', 'voiceNote.resume', 'voiceNote.stop', 'voiceNote.retry', 'voiceNote.openMicSettings',
   'voiceNote.status', 'voiceNote.watch', 'onVoiceNote',

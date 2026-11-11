@@ -663,6 +663,16 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     return unsupportedHere(name)
   }
   /**
+   * `assistant.connect(name, id)` (44, the setup's connect step): a computer's step; on a phone the services are connected
+   * from 资料 (`open(…, "connected-apps")`) — `unsupported`, once the App may ask.
+   */
+  async function assistantConnect(extensionId: string, input: unknown): Promise<AppBindingUnsupported> {
+    const { name } = argsOf(z.strictObject({ name: z.string(), id: z.string().max(100) }), input,
+      'gugu.assistant.connect takes the binding\'s name and a connector id from status.connectors')
+    declared(installed(extensionId), name, 'assistant-open')
+    return unsupportedHere(name)
+  }
+  /**
    * `assistant.rename(name, text)` (44, `assistant:rename`, in a click): the bound assistant renamed by the built-in field's
    * rule (`renameCheck`, against the name the layer shows) the way 自定义 saves a name. A closed answer.
    */
@@ -774,7 +784,7 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
   return {
     get, list, read, draft, surface, setPanel, resources, resource, save, remove, watch, pageGone,
     schedules, controlSchedule, watchSchedules, work, openWork, closeWork,
-    assistantStatus, assistantOpen, assistantAdvanceSetup, assistantRename, assistantFigure, voiceNote, attach,
+    assistantStatus, assistantOpen, assistantAdvanceSetup, assistantRename, assistantFigure, assistantConnect, voiceNote, attach,
   }
 }
 export type PhoneBindings = ReturnType<typeof createPhoneBindings>
@@ -787,7 +797,7 @@ export const PHONE_BINDING_VERBS = [
   'bindingsGet', 'bindingsList', 'bindingsRead', 'bindingsSurface', 'bindingsSurfacePanel',
   'bindingsResources', 'bindingsResource', 'bindingsWatch', 'bindingsSave', 'bindingsRemove',
   'bindingsSchedules', 'bindingsSchedulesWatch', 'bindingsScheduleControl', 'bindingsWork', 'bindingsOpenWork', 'bindingsCloseWork',
-  'assistantStatus', 'assistantOpen', 'assistantAdvanceSetup', 'assistantRename', 'assistantFigure', ...VOICE_NOTE_VERBS,
+  'assistantStatus', 'assistantOpen', 'assistantAdvanceSetup', 'assistantRename', 'assistantFigure', 'assistantConnect', ...VOICE_NOTE_VERBS,
 ] as const
 
 /** One call of those, answered; `hear` carries a resource watch's events to the page. */
@@ -821,6 +831,7 @@ export function answerPhoneBinding(
     case 'assistantAdvanceSetup': return bindings.assistantAdvanceSetup(page.extensionId, args)
     case 'assistantRename': return bindings.assistantRename(page.extensionId, args)
     case 'assistantFigure': return bindings.assistantFigure(page.extensionId, args)
+    case 'assistantConnect': return bindings.assistantConnect(page.extensionId, args)
     case 'voiceNoteStart': case 'voiceNotePause': case 'voiceNoteResume': case 'voiceNoteStop': case 'voiceNoteRetry':
     case 'voiceNoteOpenMicSettings': case 'voiceNoteStatus': case 'voiceNoteWatch':
       return bindings.voiceNote(page.extensionId, method, args)

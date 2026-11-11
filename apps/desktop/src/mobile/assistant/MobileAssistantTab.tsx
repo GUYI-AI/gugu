@@ -54,7 +54,7 @@ function usePhoneAssistantStatusForApps(state: PhoneAssistantState) {
   const assistantId = state.assistant?.id ?? null
   const avatar = state.assistant?.avatar ?? null
   const cloudFacts = { available: !!cloud?.available, state: cloud?.snapshot?.state ?? null, loadError: cloud?.loadError ?? null }
-  const key = JSON.stringify([ownerId, state.stage.stage, (state.stage as { state?: string }).state ?? null, state.assistant, state.home, cloudFacts])
+  const key = JSON.stringify([ownerId, user?.nickname ?? null, state.stage.stage, (state.stage as { state?: string }).state ?? null, state.assistant, state.home, cloudFacts])
   useEffect(() => {
     if (!ownerId) {
       phoneAssistantLayer.publishStatus(null)
@@ -62,7 +62,7 @@ function usePhoneAssistantStatusForApps(state: PhoneAssistantState) {
     }
     let stale = false
     void (assistantId ? memberFace(assistantId, avatar).catch(() => null) : Promise.resolve(null)).then((face) => {
-      if (!stale) phoneAssistantLayer.publishStatus({ ownerId, status: phoneAssistantStatusOf(state, face, cloudFacts) })
+      if (!stale) phoneAssistantLayer.publishStatus({ ownerId, status: phoneAssistantStatusOf(state, face, cloudFacts, user?.nickname ?? null) })
     })
     return () => { stale = true }
     // The key holds everything the status is read from.

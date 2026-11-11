@@ -130,8 +130,8 @@ function ports(): PhoneBindingPorts {
   }
 }
 const FOUND: AppAssistantStatus = {
-  assistant: 'found', name: 'Pip', avatar: null, home: { kind: 'cloud', online: true }, setup: null, preparing: false,
-  cloudAvailable: true, member: null, loadError: null, counts: { devices: null, connectedApps: null, projects: null, capabilities: null },
+  assistant: 'found', name: 'Pip', avatar: null, tint: 40, home: { kind: 'cloud', online: true, label: null }, setup: null, preparing: false,
+  cloudAvailable: true, member: null, loadError: null, ownerName: 'Ann', counts: null, connectors: null, nameMax: 30,
 }
 
 beforeEach(() => {
@@ -342,6 +342,9 @@ describe('the layout signal and the unsupported-here states', () => {
     expect(actions.open).not.toHaveBeenCalled()
     world.app = install()
     expect(await createPhoneBindings(ports()).assistantAdvanceSetup(ASSISTANT_APP_ID, { name: 'main', next: 'done' })).toEqual({ name: 'main', state: 'unsupported' })
+    // The setup's connect step too: services are connected from 资料 on a phone.
+    expect(await createPhoneBindings(ports()).assistantConnect(ASSISTANT_APP_ID, { name: 'main', id: 'gmail' })).toEqual({ name: 'main', state: 'unsupported' })
+    expect(await codeOf(createPhoneBindings(ports()).assistantConnect(ASSISTANT_APP_ID, { name: 'other', id: 'gmail' }))).toBe('denied')
     // Unsupported only to an App that may ask: another binding's name, or no assistant:open grant, is refused.
     expect(await codeOf(createPhoneBindings(ports()).assistantAdvanceSetup(ASSISTANT_APP_ID, { name: 'other', next: 'done' }))).toBe('denied')
     const base = assistantManifest()
