@@ -9,7 +9,9 @@
 // page: apps-views.test.tsx and assistant-page-fallback.test.tsx), the same three states are used there.
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { openAssistantEntry } from '../../../../apps/desktop/src/lib/assistantEntry'
+import { ASSISTANT_APP_ID, openAssistantEntry } from '../../../../apps/desktop/src/lib/assistantEntry'
+import { installedExtensionsStore } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
+import { useAssistantPageNotHere } from '../../../../apps/desktop/src/session/renderer/features/apps/assistant-page-not-here'
 import { installAssistantShellBridge, publishAssistantShell, type AssistantShellSnapshot } from '../../../../apps/desktop/src/lib/assistantShellBridge'
 import { QUICK_CHAT_CHANNELS } from '../../../../apps/desktop/src/lib/quickChatIpc'
 import { QuickChatHost } from '../../../../apps/desktop/src/components/assistant/QuickChatHost'
@@ -118,6 +120,34 @@ describe.each(UNAVAILABLE_APP_STATES)('the assistant App %s', (state) => {
     store.navigate('session', { projectId: 'project', sessionId: 'task' })
     await Promise.resolve()
     expect(opened).toEqual([])
+  })
+})
+
+// Restoring the window to the assistant App's own page (verify-pass1 D9): the page is one more route into the assistant.
+describe.each(UNAVAILABLE_APP_STATES)('the window restored to the assistant App\'s page, the App %s', (state) => {
+  function RestoredPage({ report }: { report: (notHere: boolean) => void }) {
+    report(useAssistantPageNotHere(ASSISTANT_APP_ID, !!installedExtensionsStore.mainTabOf(ASSISTANT_APP_ID)?.enabled))
+    return null
+  }
+  it('says it is getting ready, never "switched off", and opens the assistant\'s chat as any chat', async () => {
+    const harness = createReactHarness()
+    setAssistantAppState(state, OWNER)
+    const seen: boolean[] = []
+    try {
+      await harness.render(<RestoredPage report={(notHere) => seen.push(notHere)} />)
+      expect(seen.at(-1)).toBe(true)
+      expect(opened).toEqual([{ kind: 'chat', chatId: DM }])
+    } finally { harness.cleanup() }
+  })
+  it('is left alone while the App is usable: nothing is sent away', async () => {
+    const harness = createReactHarness()
+    setAssistantAppState('usable', OWNER)
+    const seen: boolean[] = []
+    try {
+      await harness.render(<RestoredPage report={(notHere) => seen.push(notHere)} />)
+      expect(seen.at(-1)).toBe(false)
+      expect(opened).toEqual([])
+    } finally { harness.cleanup() }
   })
 })
 

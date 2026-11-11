@@ -22,15 +22,15 @@ const apply = (installed: boolean, disabled: boolean) => installedExtensionsStor
 /**
  * - usable: installed, on, main trusts it.
  * - switched off: installed, trusted, the person turned it off.
- * - being put in: not installed yet, the ensure step is on its way (main has said nothing about a copy).
- * - failing to go in: the only copy there is is an old untrusted one, and the signed release does not go over it.
+ * - being put in: not installed yet, the ensure step is on its way (main has not answered about a copy yet).
+ * - failing to go in: still not installed, main has answered "none here" and the ensure step keeps failing (the stuck notice).
  */
 export function setAssistantAppState(state: AssistantAppState, ownerId: string): void {
   installAssistantAppEntryBridge()
   if (state === 'usable') { apply(true, false); publishAssistantAppWord({ ownerId, trusted: true }) }
   else if (state === 'switched off') { apply(true, true); publishAssistantAppWord({ ownerId, trusted: true }) }
   else if (state === 'being put in') { apply(false, false); publishAssistantAppWord(null) }
-  else { apply(true, false); publishAssistantAppWord({ ownerId, trusted: false }) }
+  else { apply(false, false); publishAssistantAppWord({ ownerId, trusted: false }) }
 }
 
 export function clearAssistantAppState(): void {

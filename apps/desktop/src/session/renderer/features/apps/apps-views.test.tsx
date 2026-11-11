@@ -15,10 +15,12 @@ const mocks = vi.hoisted(() => ({
   said: { title: null, badge: null, error: null } as { title: string | null; badge: string | number | null; error: string | null },
   saidFor: [] as [string | null, string][],
   toggle: null as null | (() => void),
-  target: { kind: 'built-in' } as { kind: 'built-in' } | { kind: 'app'; extensionId: string; chatId: string },
+  target: { kind: 'built-in' } as { kind: 'built-in' } | { kind: 'app'; extensionId: string; chatId: string } | { kind: 'chat'; chatId: string },
+  loaded: true,
+  opened: 0,
 }));
 // Entry switch: where the assistant's entry goes now (lib/assistantEntry.ts's one decision).
-vi.mock('@/lib/assistantEntry', () => ({ useAssistantEntryTarget: () => mocks.target }));
+vi.mock('@/lib/assistantEntry', () => ({ ASSISTANT_APP_ID: 'gugu-assistant', useAssistantEntryTarget: () => mocks.target, openAssistantEntry: () => { mocks.opened += 1; } }));
 
 vi.mock('@renderer/features/extensions/extension-surface-store', async (original) => ({
   ...await original<typeof import('@renderer/features/extensions/extension-surface-store')>(),
@@ -44,7 +46,7 @@ vi.mock('./app-host-layer', () => ({
   },
 }));
 vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { mainTabOf: () => mocks.main, manifestFor: () => mocks.manifest, get allTabContributions() { return mocks.tabs; } },
+  installedExtensionsStore: { mainTabOf: () => mocks.main, manifestFor: () => mocks.manifest, get isLoaded() { return mocks.loaded; }, get allTabContributions() { return mocks.tabs; } },
 }));
 // #1925 The frame beside a bound conversation is app-conversation-frame.test.tsx's: here, only whether it is chosen.
 vi.mock('./app-conversation-frame', () => ({
@@ -150,6 +152,33 @@ describe('an App opened from the far-left rail', () => {
     expect(renderToStaticMarkup(<appView.MainPanel />)).toMatch(/data-testid="app-page"[^>]*>[^]*extensions\.turnOnInSettings/);
     expect(renderToStaticMarkup(<appView.MainPanel />)).toContain(`padding-top:${WINDOW_CONTROL_BAR_HEIGHT_PX}px`);
     expect(mocks.claims).toEqual([]);
+  });
+
+  // Real window (verify-pass1 D9): the window restored to the assistant App's page while the App was not installed yet (the entry
+  // said 「正在准备你的咕咕…」 at the same time); the page said only 「已停用：到「App」里启用」 — false, nothing was switched off. The
+  // assistant App's page says it is getting ready (and gives way to the assistant's chat: assistant-page-not-here.test.tsx); any other
+  // App, or the assistant App where the entry does go to it, is still told it is switched off.
+  it('the assistant App\'s page restored while the App is not here says it is getting ready, never that it is switched off', () => {
+    mocks.params = { appId: 'gugu-assistant' };
+    mocks.target = { kind: 'chat', chatId: 'dm-1' };
+    for (const main of [null, { kind: 'gugu-assistant.main', enabled: false, extensionName: '咕咕助理', extensionId: 'gugu-assistant' }]) {
+      mocks.main = main;
+      const page = renderToStaticMarkup(<appView.MainPanel />);
+      expect(page).toContain('extensions.assistantPreparing');
+      expect(page).not.toContain('extensions.turnOnInSettings');
+      expect(mocks.claims).toEqual([]);
+    }
+  });
+
+  it('any other App not here, and the assistant App on the entry\'s target, keep the switched-off line', () => {
+    mocks.main = null;
+    mocks.params = { appId: 'clock' };
+    expect(renderToStaticMarkup(<appView.MainPanel />)).toContain('extensions.turnOnInSettings');
+    mocks.params = { appId: 'gugu-assistant' };
+    mocks.target = { kind: 'app', extensionId: 'gugu-assistant', chatId: 'dm-1' };
+    const page = renderToStaticMarkup(<appView.MainPanel />);
+    expect(page).toContain('extensions.turnOnInSettings');
+    expect(page).not.toContain('extensions.assistantPreparing');
   });
 
   // #1925 Only an App placing its main page beside its binding gets the conversation's frame; every other page is as before.
