@@ -12,6 +12,7 @@ import { assistantRulesLastGoodStore } from './assistant-rules-last-good'
 import { assistantRules, createAssistantRulesResolver, installAssistantRulesResolver } from './assistant-rules-resolver'
 import { ASSISTANT_RULES_PROVIDER_ID, installedAssistantRulesProvider } from './assistant-rules-trust'
 import { extensionsService } from './session/main/core/extensions/extensions-root'
+import { noteAssistantAppEnsuring } from './session/main/core/extensions/assistant-app-ensuring'
 
 export const ASSISTANT_RULES_DIR_NAME = 'assistant-rules'
 
@@ -35,6 +36,8 @@ export function assistantLivesHere(env: NodeJS.ProcessEnv = process.env): boolea
 }
 
 let ensurer: AssistantAppEnsurer | null = null
+/** Every attempt of the backoff window failed: from then on the entry is not shown as preparing (it keeps trying, silently). */
+let ensureStuck = false
 
 /** Puts the assistant App in where it is needed (assistant-app-ensure.ts): at start, and when the assistant's setup starts. */
 export function ensureAssistantApp(reason: 'start' | 'setup'): Promise<AssistantAppEnsureOutcome> {
@@ -42,6 +45,8 @@ export function ensureAssistantApp(reason: 'start' | 'setup'): Promise<Assistant
     installed: () => extensionsService().isInstalled(ASSISTANT_RULES_PROVIDER_ID),
     needed: () => assistantLivesHere(),
     install: async () => {
+      // The entry on the rail shows「准备中」while this goes on (assistant-app-ensuring.ts).
+      if (!ensureStuck) noteAssistantAppEnsuring(true)
       const { installExtensionFromMarket } = await import('./session/main/core/extensions/extension-market-install')
       const outcome = await installExtensionFromMarket({ ref: { extensionId: ASSISTANT_RULES_PROVIDER_ID }, consent: { kind: 'gugu' } })
       if (!outcome.installed) throw new Error(`${ASSISTANT_RULES_PROVIDER_ID} did not go in (${outcome.outcome})`)
@@ -50,6 +55,10 @@ export function ensureAssistantApp(reason: 'start' | 'setup'): Promise<Assistant
     sleep: ms => new Promise(resolve => { setTimeout(resolve, ms).unref?.() }),
     warn: (message, detail) => log.warn(detail, message),
     info: (message, detail) => log.info(detail, message),
+    stuck: () => {
+      ensureStuck = true
+      noteAssistantAppEnsuring(false)
+    },
   })
-  return ensurer.ensure(reason)
+  return ensurer.ensure(reason).finally(() => noteAssistantAppEnsuring(false))
 }

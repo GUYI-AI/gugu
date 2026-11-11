@@ -245,7 +245,8 @@ export async function setUnreadBinding(input: unknown): Promise<void> {
   if (args.chatId !== null) await member(token, ownerId, args.chatId);
   await current(ownerId);
   assertAuthority();
-  extensionsService().setConversationUnreadBinding(ownerId, args.extensionId, args.name, args.chatId);
+  // The person's own choice: from now on the host never changes it (assistant-app-entry.ts).
+  extensionsService().setConversationUnreadBinding(ownerId, args.extensionId, args.name, args.chatId, 'person');
 }
 
 /** Host projection reads a validated, current account association, never a page-supplied chat. */
