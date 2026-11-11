@@ -40,7 +40,8 @@ function actionsOf(bridge: AssistantShellBridge): AssistantShellActions {
 }
 
 /**
- * 每一屏现成的入口:关闭 = 那一份唯一的确认(AssistantCloseHost);形象 / 模型 = agent 设置那两页;设备 = 设置里那一格。
+ * 每一屏现成的入口:关闭 = 那一份唯一的确认(AssistantCloseHost);形象 = 它的 agent 设置(只有形象);模型 = App 资料页的模型那一屏;
+ * 设备 = 设置里那一格。
  */
 export function openAssistantScreen(screen: AssistantScreen, ownerId: string): void {
   const bridge = shellOf(ownerId)

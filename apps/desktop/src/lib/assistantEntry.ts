@@ -26,6 +26,7 @@ import { readsWork } from '../components/appSlot/appWorkLedger'
 
 /** 产品自己的助理 App(GUYI-AI/gugu-assistant):两端同一个常量(assistant-entry.ts)。 */
 import { ASSISTANT_APP_ID } from '../session/shared/extensions/assistant-entry'
+import { requestAssistantSettingsSection, type AssistantSettingsSection } from './assistantSettingsSection'
 export { ASSISTANT_APP_ID }
 
 /** 主进程对这个账号说的:装着的是不是受信的那个 App(补装那一步还没装好时,栏顶那一格的「准备中」由壳的 rulesPending 画)。 */
@@ -214,8 +215,9 @@ export type AssistantInAppPage = 'settings' | 'connected-apps'
  * App's intro is its first screen); its connected apps wait for it (the App's page alone). App not usable now: its chat as
  * any chat (D9/D10); with no assistant either, 资料 opens the Apps page on the App (to install or switch it on) and the connected
  * apps the person's own on the Library's 集成 (no Settings group to fall back on). Answers whether it went anywhere.
+ * `section`: a part of the settings page to open at (its model), only when that page is the one drawn.
  */
-export function openAssistantPageInApp(page: AssistantInAppPage): boolean {
+export function openAssistantPageInApp(page: AssistantInAppPage, section?: AssistantSettingsSection): boolean {
   const target = readAssistantEntryTarget()
   if (target.kind === 'chat') {
     void openLinkTarget({ kind: 'chat', chatId: target.chatId }).catch(() => undefined)
@@ -237,10 +239,13 @@ export function openAssistantPageInApp(page: AssistantInAppPage): boolean {
   // Beside its conversation the panel may be folded away: the page is drawn there, so it opens.
   setAppConversationPanelCollapsed(target.extensionId, false)
   // The bridge refuses an account this window no longer shows: then the App's page alone, as for any other entry.
+  const bridge = readAppHostLayerBridge()
+  if (section && kind === 'assistant-settings' && bridge) requestAssistantSettingsSection(section)
   try {
-    readAppHostLayerBridge()?.open(target.extensionId, { kind, ownerId })
+    bridge?.open(target.extensionId, { kind, ownerId })
   } catch {
     // The App's page is on screen; nothing over it.
+    if (section) requestAssistantSettingsSection(null)
   }
   return true
 }

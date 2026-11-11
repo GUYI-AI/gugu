@@ -14,6 +14,7 @@ import {
   readAssistantEntryTarget,
 } from '../../../../apps/desktop/src/lib/assistantEntry'
 import { installAssistantShellBridge, publishAssistantShell, type AssistantShellSnapshot } from '../../../../apps/desktop/src/lib/assistantShellBridge'
+import { requestAssistantSettingsSection, takeAssistantSettingsSection } from '../../../../apps/desktop/src/lib/assistantSettingsSection'
 import { appConversationSlotKey, installAppConversationSurfaceBridge, publishAppConversationSurfaces } from '../../../../apps/desktop/src/lib/appConversationSurfaceBridge'
 import { appState } from '../../../../apps/desktop/src/session/renderer/lib/stores/app-state'
 import { appHostLayerSlotKey, installAppHostLayerBridge, readAppHostLayerBridge, resetAppHostLayersForTest, setAppHostLayerAccount } from '../../../../apps/desktop/src/lib/appHostLayerBridge'
@@ -259,6 +260,27 @@ describe('openAssistantPageInApp', () => {
     expect(appState.navigation.viewParamsStore.app?.appId).toBe(ASSISTANT_APP_ID)
     expect(layer()).toEqual({ kind: 'assistant-settings', ownerId: OWNER })
     expect(appConversationPanelCollapsed(ASSISTANT_APP_ID)).toBe(false)
+  })
+
+  // Its dialog is its figure alone (owner 11-12): 换模型 / the App's open "model" land on the settings page's model screen.
+  it('资料 at its model: the settings page over the panel, asked to open at the model', () => {
+    requestAssistantSettingsSection(null)
+    expect(openAssistantPageInApp('settings', 'aimodel')).toBe(true)
+    expect(layer()).toEqual({ kind: 'assistant-settings', ownerId: OWNER })
+    expect(takeAssistantSettingsSection()).toBe('aimodel')
+  })
+
+  it('at its model with no settings page to draw (no assistant yet, App not usable): nothing is left asked for', () => {
+    requestAssistantSettingsSection(null)
+    publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null, setup: 'shell' }))
+    expect(openAssistantPageInApp('settings', 'aimodel')).toBe(true)
+    expect(layer()).toEqual({ kind: 'assistant-setup', ownerId: OWNER })
+    expect(takeAssistantSettingsSection()).toBeNull()
+    publishAssistantShell(shell())
+    installApp(undefined, [ASSISTANT_APP_ID])
+    expect(openAssistantPageInApp('settings', 'aimodel')).toBe(true)
+    expect(opened).toEqual([{ kind: 'chat', chatId: DM }])
+    expect(takeAssistantSettingsSection()).toBeNull()
   })
 
   it('连接应用 with the assistant there: its connected apps over the panel', () => {

@@ -73,9 +73,9 @@ export type AssistantShellSlot = 'onboarding' | 'chat' | 'file-preview' | 'task-
 export type AssistantShellActions = {
   /** 改它的名字(与 agent 设置里改名同一条路:云端身份 + 本机花名册)。 */
   renameAssistant(name: string): Promise<void>
-  /** 打开它的形象工坊(agent 设置的「形象」那一页)。 */
+  /** 打开它的形象工坊(它的 agent 设置只有这一页)。 */
   openLook(): void
-  /** #1925 打开它用哪个模型(agent 设置的「模型」那一页,与设置里「咕咕 → 模型」那一行同一份)。 */
+  /** #1925 打开它用哪个模型:App 资料页(画在 App 面板上)的模型那一屏,与资料页「模型」那一行同一份。 */
   openModel(): void
   /** 再问一次管家云电脑此刻的样子(读不到时页面上的「重试」)。 */
   refreshCloud(): void

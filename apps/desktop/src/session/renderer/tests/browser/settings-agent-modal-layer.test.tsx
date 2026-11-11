@@ -53,9 +53,10 @@ async function dialog() {
   return document.querySelector<HTMLElement>('[data-testid="agent-settings-modal"]')!;
 }
 
-// The assistant's settings page (drawn over its App's panel; nothing of it is in Settings) opens both dialogs.
-it.each(['look', 'model'])('the real %s settings dialog receives hits above the assistant settings page', async (entry) => {
-  await renderWithAppProviders(harness, <AssistantSection available={[]} onOpenSection={vi.fn()} />, {
+// The assistant's settings page (drawn over its App's panel; nothing of it is in Settings) opens its figure dialog; its model
+// is a screen of that same page (AssistantSettingsPage), not a dialog.
+it.each(['look'])('the real %s settings dialog receives hits above the assistant settings page', async (entry) => {
+  await renderWithAppProviders(harness, <AssistantSection available={[]} onOpenSection={vi.fn()} onOpenModel={vi.fn()} />, {
     auth: { id: 'owner-layer' }, contacts: { contacts: [contact(fixture.assistant)] },
   });
   const trigger = page.getByTestId(`settings-assistant-${entry}`);
