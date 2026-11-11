@@ -11,6 +11,7 @@ import { currentAccountAccessToken } from '../extensions/account-token'
 import { createLogger } from '../../../../lib/logger'
 import { prepareLocalAssistantHome, wipeLocalAssistantHome } from '../../../../assistant-home-prepare'
 import { assistantRules } from '../../../../assistant-rules-resolver'
+import { ensureAssistantApp } from '../../../../assistant-rules-root'
 import { createAssistantServerPreparation, type ServerPreparationRecord } from '../../../../assistant-server-preparation'
 import {
   AssistantServerSetupError, assistantServerFailure,
@@ -127,6 +128,8 @@ export const assistantHomeController = createRPCController({
   preflight: (input: AssistantServerBinding) => reply(async (): Promise<AssistantServerPreflight> => {
     const parsed = binding.parse(input)
     await validate(parsed, true)
+    // A setup of the assistant on this server starts here: from now on it needs the assistant App (#1931).
+    void ensureAssistantApp('setup')
     // The default model is the product's (#1931): setup looks at the assistant App again.
     const defaultModel = platformModelsEnabled() ? (await assistantRules().refresh()).rules.defaults.defaultModel : null
     return { version: 1, deviceId: parsed.deviceId, modelSource: platformModelsEnabled() ? 'platform' : 'target', defaultModel }

@@ -67,6 +67,11 @@ export interface FirstRunDeps {
   here(): Promise<string[]>;
   /** Whether the App does anything on this device at all. */
   usable(manifest: ExtensionManifest): boolean;
+  /**
+   * #1931 Apps of gugu's own this device puts in with the set whether or not the index marks them `firstRun`: the host's
+   * own dependencies (the desktop's: the product's assistant App, whose rules the host reads). None on the phone.
+   */
+  required?: readonly string[];
   /** Puts one in, asking nobody (gugu's own, as gugu reviewed it); throws what failed. */
   install(id: string, version: string): Promise<void>;
   /** What is on its way, and whether the set is still to be done, each time that changes. */
@@ -93,7 +98,8 @@ export async function runFirstRun(deps: FirstRunDeps): Promise<void> {
     deps.arriving({ apps: [], pending: true });
     return;
   }
-  const own = (offer: FirstRunOffer) => offer.firstRun && isOfficialMarketSource(offer.source) && deps.usable(offer.manifest);
+  const own = (offer: FirstRunOffer) =>
+    (offer.firstRun || (deps.required ?? []).includes(offer.manifest.id)) && isOfficialMarketSource(offer.source) && deps.usable(offer.manifest);
   // The set is the one the market named the first time it was read: a list changed later is for new profiles from then on.
   const apps = record.apps ?? offers.filter(own).map((offer) => offer.manifest.id);
   const here = await deps.here();
