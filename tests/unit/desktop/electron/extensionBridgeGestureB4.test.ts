@@ -67,10 +67,19 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   bindingsRemoveVoiceNote: () => bound().removeVoiceNote!('main', 'n1'),
   bindingsExportVoiceNote: () => bound().exportVoiceNote!('main', 'n1'),
   assistantRename: () => host.assistant.rename('main', 'Pip'),
+  // #1927 (47): the host's voice-note recorder, driven from a click.
+  voiceNoteStart: () => voice().start!('main'),
+  voiceNoteResume: () => voice().resume!('main'),
+  voiceNoteRetry: () => voice().retry!('main', 'job-1'),
+  voiceNoteOpenMicSettings: () => voice().openMicSettings!('main'),
   // #1925 (46): one of the assistant's tasks drawn in the App's panel.
   bindingsOpenWork: () => host.bindings.openWork('main', 'wAAAAAAAAAAAAAAAAAAAAAA'),
 }
 
+// The page's `gugu.voiceNote` (47), as the runtime exposes it.
+function voice() {
+  return (host as unknown as { voiceNote: Record<string, ((...args: unknown[]) => Promise<unknown>) | undefined> }).voiceNote;
+}
 // The page's `gugu.bindings` (48): its managing members, as the runtime exposes them.
 function bound() {
   return (host as unknown as { bindings: Record<string, ((...args: unknown[]) => Promise<unknown>) | undefined> }).bindings;

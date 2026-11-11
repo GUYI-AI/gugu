@@ -91,9 +91,9 @@ beforeEach(() => {
   document.body.appendChild(frame)
   posted = vi.fn()
   Object.defineProperty(frame.contentWindow!, 'postMessage', { value: posted, configurable: true })
-  // `assistant:open` / `assistant:rename` (#1925, 44), `chat:work` (#1925, 46) and the 48 managing words are the desktop's
+  // `assistant:open` / `assistant:rename` (#1925, 44), `chat:work` (#1925, 46) the 47 recorder and 48 managing words are the desktop's
   // alone: held here only so their verbs reach the gesture door, which refuses them in the same sentence.
-  start(['files:read', 'files:write', 'agents:tools', 'assistant:open', 'assistant:rename', 'chat:work', 'chat:resources:write', 'chat:voice-notes:manage'])
+  start(['files:read', 'files:write', 'agents:tools', 'assistant:open', 'assistant:rename', 'chat:work', 'chat:resources:write', 'chat:voice-notes:manage', 'chat:voice-notes:record'])
 })
 afterEach(() => {
   host?.dispose()
@@ -134,6 +134,10 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   bindingsRemoveVoiceNote: { name: 'main', key: 'n1' },
   bindingsExportVoiceNote: { name: 'main', key: 'n1' },
   assistantRename: { name: 'main', text: 'Pip' },
+  voiceNoteStart: { name: 'main' },
+  voiceNoteResume: { name: 'main' },
+  voiceNoteRetry: { name: 'main', job: 'job-1' },
+  voiceNoteOpenMicSettings: { name: 'main' },
   bindingsOpenWork: { name: 'main', handle: 'wAAAAAAAAAAAAAAAAAAAAAA' },
 }
 

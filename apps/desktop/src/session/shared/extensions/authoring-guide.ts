@@ -897,6 +897,7 @@ streaming, voice, attachments, read state) as the main column; your main page is
 - You get no chat, message, person or DOM of it. Opening your page marks nothing read; a \`{ binding }\` draft lands in that composer.
 API 42 to 46, when that conversation is the person's private one with their own agent or assistant (its resources,
 schedules, the assistant itself, the work it handed out): \`guide_read apps-bindings-agent\`.
+Managing its files and voice notes, and drafts carrying files (API 48): \`guide_read apps-bindings-manage\`.
 `;
 
 export const EXTENSION_GUIDE_BINDINGS_AGENT = `# gugu.bindings, gugu.assistant — the agent behind the chosen conversation
@@ -986,7 +987,6 @@ heart, checklist, document, book, image, message. \`run\`, each needing that bin
   conversation sends \`intent: "voice-note"\` when the person opens the note it shows (yours may not use that name).
 Free (API 44, desktop page): \`toast(text)\` → one line in gugu's own toast, as its "Changes saved": ≤ 80 characters,
 text only, while your page is on screen and focused (else \`denied\`), one every 2 s (else \`rate-limited\`).
-Managing its files and voice notes, and drafts carrying files (API 48): \`guide_read apps-bindings-manage\`.
 `;
 
 export const EXTENSION_GUIDE_BINDINGS_MANAGE = `# gugu.bindings — managing the agent's files and voice notes, drafts carrying files
