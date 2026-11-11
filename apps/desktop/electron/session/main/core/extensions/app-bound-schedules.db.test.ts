@@ -36,7 +36,9 @@ const state = vi.hoisted(() => ({
   provisions: [] as unknown[],
   panel: undefined as unknown,
   panelWords: new Set<{ assistantId: string; changed(): void }>(),
+  thisDevice: '',
 }));
+vi.mock('@main/core/sessions/session-family', () => ({ otherMachines: () => ({ isThisDevice: async (id: string) => id === state.thisDevice }) }));
 vi.mock('@main/db/client', () => ({ get db() { if (!state.db) throw new Error('Test database not initialized'); return state.db; } }));
 vi.mock('@main/lib/events', () => ({
   events: { emit: (event: { name: string }, data: unknown) => { for (const tap of [...state.taps]) tap(event.name, data); } },
@@ -221,6 +223,7 @@ beforeEach(async () => {
   state.taps.clear();
   state.panelWords.clear();
   state.provisions = [];
+  state.thisDevice = 'this-computer';
   state.panel = new FakePanel();
   installApp();
 });
@@ -570,6 +573,26 @@ describe('the person\'s assistant living on another computer or in the cloud: it
     const calls = panel().calls;
     expect(await list()).toEqual({ name: 'main', state: 'ready', schedules: [] });
     expect(panel().calls).toBe(calls);
+  });
+
+  it('still listed on this computer after a move away: its home\'s panel, never the schedules left here; listed and at home here: the store', async () => {
+    const left = await own('Left behind');
+    assistantElsewhere();
+    state.roster = [{ gugu_user_id: AGENT, status: 'active', cache: { emdash_session_id: SESSION, sessionpage_owner_user_id: OWNER } }];
+    expect(await list()).toMatchObject({ state: 'ready', schedules: [expect.objectContaining({ id: s1 }), expect.objectContaining({ id: s2 })] });
+    expect(await control({ operationId: op(), op: 'pause', scheduleId: s1, revision: '11' })).toMatchObject({ status: 'pending', scheduleId: s1 });
+    expect([...panel().changes.values()]).toEqual([expect.objectContaining({ key: K1, operation: 'disable', status: 'pending' })]);
+    await expect(control({ operationId: op(), op: 'register', prompt: 'x', cron: '0 8 * * *' })).rejects.toMatchObject({ code: 'elsewhere' });
+    expect(rows()).toEqual([{ id: left.slice('schedule:'.length), enabled: 1, deleted_at: null }]);
+    // Its home is this computer: the schedule store here, and the panel is not asked.
+    state.thisDevice = HOME_DEVICE;
+    vi.setSystemTime(NOW + 1000);
+    const calls = panel().calls;
+    expect(await list()).toMatchObject({ state: 'ready', schedules: [expect.objectContaining({ id: left })] });
+    expect(await control({ operationId: op(), op: 'pause', scheduleId: left, revision: (await current(left)).revision })).toMatchObject({ status: 'applied', scheduleId: left });
+    expect(rows()).toEqual([{ id: left.slice('schedule:'.length), enabled: 0, deleted_at: null }]);
+    expect(panel().calls).toBe(calls);
+    expect(panel().changes.size).toBe(1);
   });
 
   it('pauses, resumes and removes by the panel\'s commit at the revision read: pending until its home applies it, the same id telling where it is', async () => {
