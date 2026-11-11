@@ -211,12 +211,13 @@ describe('reading the agent\'s resources', () => {
     expect(await list('skills')).toEqual({ name: 'main', domain: 'skills', state: 'unprepared' });
     // A failed publication, a change that failed to apply, an out-of-date observation, a store that did not answer.
     store.errored.add('files'); store.prepared.delete('files');
-    expect(await list('files')).toMatchObject({ state: 'unavailable' });
+    expect(await list('files')).toEqual({ name: 'main', domain: 'files', state: 'unavailable', reason: 'unreadable' });
     store.failedApplication.add('memory');
-    expect(await list('memory')).toMatchObject({ state: 'unavailable' });
+    expect(await list('memory')).toEqual({ name: 'main', domain: 'memory', state: 'unavailable', reason: 'not-applied' });
     // As on the assistant's own pages (assistantPanelFiles `collection`): one failed change makes every resource of the
     // domain unreadable, not just that one; other domains read on.
-    expect(await read('memory', 'owner-profile.md')).toEqual({ name: 'main', domain: 'memory', key: 'owner-profile.md', state: 'unavailable' });
+    // 50: each with the class the pages tell the person, nothing more.
+    expect(await read('memory', 'owner-profile.md')).toEqual({ name: 'main', domain: 'memory', key: 'owner-profile.md', state: 'unavailable', reason: 'not-applied' });
     expect(await read('personality', 'instructions')).toMatchObject({ state: 'ready' });
     store.failedApplication.clear();
     // A resource of a domain not yet published is not read either.
@@ -224,15 +225,15 @@ describe('reading the agent\'s resources', () => {
     expect(await read('skills', 'writing')).toMatchObject({ state: 'unprepared' });
     store.prepared.add('skills');
     store.items.set('memory\0old.md', row('memory', 'old.md', { stale_at: '2026-11-11T00:00:00Z' }));
-    expect(await list('memory')).toMatchObject({ state: 'unavailable' });
-    expect(await read('memory', 'old.md')).toMatchObject({ state: 'unavailable' });
+    expect(await list('memory')).toMatchObject({ state: 'unavailable', reason: 'stale' });
+    expect(await read('memory', 'old.md')).toMatchObject({ state: 'unavailable', reason: 'stale' });
     store.down = true;
-    expect(await list('personality')).toMatchObject({ state: 'unavailable' });
-    expect(await read('memory', 'owner-profile.md')).toMatchObject({ state: 'unavailable' });
+    expect(await list('personality')).toMatchObject({ state: 'unavailable', reason: 'unreadable' });
+    expect(await read('memory', 'owner-profile.md')).toMatchObject({ state: 'unavailable', reason: 'unreadable' });
     store.down = false;
     // Membership or the agent that could not be verified is not a verified empty domain.
     state.provisionsError = true;
-    expect(await list('memory')).toMatchObject({ state: 'unavailable' });
+    expect(await list('memory')).toEqual({ name: 'main', domain: 'memory', state: 'unavailable', reason: 'owner-unknown' });
   });
 
   it('too large: its size alone; not text: binary; a voice-note list published in part is still read', async () => {
