@@ -62,7 +62,9 @@ export function withSentReplies(turn: TranscriptTurn, options: { allDestinations
     const reply = { kind: 'message' as const, id: `${item.id}:sent:${id}`, seq: item.seq, role: 'assistant' as const, text: send.text, ...(attachment ? { sentAttachment: attachment, sentAttachments: fileGroup!.attachments } : {}),
       ...(fileGroup ? sentFileMessages(items, fileGroup.attachments.map(file => file.messageId)) : sentMessagesOf(item)),
       ...(item.completedAt !== undefined ? { at: item.completedAt } : {}),
-      ...(replyTo ? { sentReplyTo: replyTo } : {}), ...(chat ? { sentChat: chat } : {}) };
+      ...(replyTo ? { sentReplyTo: replyTo } : {}), ...(chat ? { sentChat: chat } : {}),
+      // A send its page held back (transport-trim `folded-form`): the bubble says so too, so that showing it reads the turn again.
+      ...(item.held ? { held: true as const } : {}) };
     // 对话布局:气泡下面常驻一小段「发到 群名」(管家 10-28),去向与会话页那一行同一个读法。
     const to = fileGroup?.to ?? (options.allDestinations ? agentSendOf(item, turn)?.to : undefined);
     if (to) Object.assign(reply, { sentTo: to });

@@ -110,6 +110,22 @@ describe('stored history page budget', () => {
     }
   });
 
+  it('carries a turn as its folded form only on a page a device-link reader went back for, and whole when read again', async () => {
+    for (let i = 0; i < 3; i += 1) {
+      await persistCommittedTurn({ sessionId: 'c1', source: 'live', turn: { ...turn(i, 10),
+        items: [{ kind: 'execute-tool-call', id: `c1:turn:${i}:e`, seq: 0, toolCallId: `e${i}`, title: 'run', status: 'done', command: 'make' }] } as TranscriptTurn });
+    }
+    const held = (page: { turns: TranscriptTurn[] }) => page.turns.map(one => (one.items[0] as { held?: true; command?: string }).held === true);
+    // Gone back for: folded.
+    expect(held(await getStoredHistory({ sessionId: 'c1', before: 3, limit: 100, lean: 'folded' }))).toEqual([true, true, true]);
+    // The newest page is read again whenever the conversation moves: it stays as a lean page.
+    expect(held(await getStoredHistory({ sessionId: 'c1', limit: 100, lean: 'folded' }))).toEqual([false, false, false]);
+    // The read that puts one turn back, and a window on this machine: whole.
+    const again = await getStoredHistory({ sessionId: 'c1', before: 2, limit: 1, lean: true });
+    expect(again.turns.map(one => [one.seq, (one.items[0] as { command?: string }).command, (one.items[0] as { held?: true }).held])).toEqual([[1, 'make', undefined]]);
+    expect(held(await getStoredHistory({ sessionId: 'c1', before: 3, limit: 100, lean: 'folded' }, { local: true }))).toEqual([false, false, false]);
+  });
+
   it('gives a window on this machine the larger page', async () => {
     await store(60);
     expect(60 * TURN_BYTES).toBeLessThan(LOCAL_PAYLOAD_BUDGET);

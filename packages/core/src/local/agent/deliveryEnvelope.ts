@@ -404,6 +404,40 @@ export function recoverDeliveryEnvelopes(
 }
 
 /**
+ * A delivery as a folded exchange carries it: every fact of its opening tag and which message it answered
+ * (`reply_to`, without the preview), with the body cut to `bodyChars` and without the contexts beside it (thread,
+ * message, group rules) or the arrival hint. Read back, the facts are the original's except `threadContext`,
+ * `messageContext` and `replyTo.preview`, and the body is the original's opening. For a reader that reads the
+ * message again, whole, when the exchange is opened.
+ * `null` for anything but the current envelope syntax (retired forms, text that only looks like one): those stay whole.
+ */
+export function foldDeliveryEnvelope(text: string, bodyChars: number): string | null {
+  const source = text.trim()
+  if (!DELIVERY_ROOT.test(source)) return null
+  let envelopes: XmlElement[] | null
+  try {
+    envelopes = envelopesOf(parseXml(source))
+  } catch (error) {
+    if (error !== NOT_ENVELOPE) throw error
+    return null
+  }
+  if (!envelopes?.length) return null
+  const folded: string[] = []
+  for (const envelope of envelopes) {
+    const segment = envelope.name === 'gugu_delivery' ? readSegment(envelope) : null
+    if (!segment?.facts) return null
+    const reply = childElement(envelope, 'reply_to')
+    folded.push([
+      envelope.source.slice(0, envelope.openingEnd),
+      ...(reply ? [`  ${reply.children.length ? `${reply.source.slice(0, reply.openingEnd - 1)}/>` : reply.source}`] : []),
+      `<![CDATA[${toCdata(segment.body.slice(0, bodyChars))}]]>`,
+      '</gugu_delivery>',
+    ].join('\n'))
+  }
+  return folded.length === 1 ? folded[0]! : [`<gugu_deliveries count="${folded.length}">`, ...folded, '</gugu_deliveries>'].join('\n')
+}
+
+/**
  * 这段文字是不是一条投递(而不是人打的字、harness 注入的上下文):以信封根标签开头的都算,读不读得出看
  * `readDeliveryEnvelope`;退役写法读得出才算。读方漏认一种形状时,那条照样不冒充人说的话,也不被当注入丢掉。
  */

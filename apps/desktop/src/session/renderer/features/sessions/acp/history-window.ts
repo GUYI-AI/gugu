@@ -1,4 +1,5 @@
 import { createChatState, type ChatContext, type ChatState, type TranscriptTurn } from '@gugu/session-chat-ui';
+import { turnHeld } from '@gugu/session-core/session-record/held-turn';
 
 /**
  * @@@history-window — a stretch of a conversation's stored history, shown in place of the live transcript.
@@ -91,6 +92,13 @@ export class HistoryWindow {
       if (found.length) this.state.transcript.history.append(found);
       return found;
     }, []);
+  }
+
+  /** Put turns read whole (by sequence) in the place of the ones a page sent as their folded form. */
+  fill(whole: ReadonlyMap<number, TranscriptTurn>): void {
+    const turns = this.turns;
+    if (this.closed || !turns.some(one => whole.has(one.seq) && turnHeld(one))) return;
+    this.state.transcript.history.seed(turns.map(one => turnHeld(one) ? whole.get(one.seq) ?? one : one));
   }
 
   dispose(): void {

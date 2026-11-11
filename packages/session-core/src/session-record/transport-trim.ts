@@ -2,7 +2,9 @@ import type { TerminalState, ToolImage, ToolImageRef, ToolNode, TranscriptItem, 
 import { messageContentText } from '../acp/models/entity-content';
 import { isGuguServer } from '../acp/models/turns/opened-outputs';
 import { catalogCall, toolCallName } from '../acp/models/turns/tool-calls';
+import { foldDeliveryEnvelope, readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { isQuestionOrPlanToolName } from './sources/question-tools';
+import { sendAddressesOf } from './send-addresses';
 import { deriveToolInputSummary } from './tool-input-summary';
 import type {
   TimelineAfterResult,
@@ -58,12 +60,20 @@ const READ_WHEN_FOLDED = /(?:^|__)(?:message_send|message_send_file|message_send
  * succeed (the output is its reason), a patch, a plan, a sub-agent's dispatch and its completion (the roster reads
  * them), a question put to the reader or a plan to approve (a card with its answer), and the Gugu calls above.
  */
-function outputUnshown(node: ToolNode): boolean {
-  if (node.kind === 'tool-group' || node.status !== 'done') return false;
+function outputUnshown(node: ToolNode, unwrap = false): boolean {
+  return node.status === 'done' && plainCall(node, unwrap);
+}
+
+/** The same question without asking how the call ended: is it one of the kinds the view draws as a step and no more. */
+function plainCall(node: ToolNode, unwrap: boolean): boolean {
+  if (node.kind === 'tool-group') return false;
   if (node.kind === 'patch-tool-call' || node.kind === 'create-plan-tool-call'
     || node.kind === 'spawn-subagent-tool-call' || node.kind === 'subagent-done-tool-call') return false;
   if (isQuestionOrPlanToolName(toolCallName(node))) return false;
-  return !(node.kind === 'mcp-tool-call' && isGuguServer(node.server) && READ_WHEN_FOLDED.test(node.tool));
+  if (!(node.kind === 'mcp-tool-call' && isGuguServer(node.server) && READ_WHEN_FOLDED.test(node.tool))) return true;
+  // A wrapped call is what it wraps (a folded page looks; a lean page keeps every wrapped call whole).
+  const inner = unwrap ? catalogCall(node.tool, node.rawInput)?.tool : undefined;
+  return inner !== undefined && !READ_WHEN_FOLDED.test(inner);
 }
 
 /**
@@ -88,6 +98,96 @@ function stepLineOnly(node: ToolNode): boolean {
   return !('backgroundTaskId' in node && node.backgroundTaskId);
 }
 
+/**
+ * @@@folded-form — a page for a reader that asks for `'folded'`: besides what a lean page leaves out, it leaves out
+ * what the conversation view keeps behind a fold until the reader opens it, where this side can tell that it is:
+ *   - a finished call that is only ever a step line (inside a process): everything but what orders, counts and
+ *     times it. The process head reads how many steps and how long; the lines are drawn when the process opens;
+ *   - an agent's thinking: its text;
+ *   - a delivery whose every sender is an agent (inside an exchange, "N messages with X"): the body past its
+ *     opening and the contexts beside it. The exchange's line reads who and how many; a reply that quotes the
+ *     delivery shows the opening. An agent is a sender some envelope of the page says is one (`from_type`);
+ *   - what the agent sent to such agents and nobody else (the same exchange): the text past its opening.
+ * Each is marked `held`. The reader reads the turn again, whole, when a row drawn from it comes on screen from
+ * behind a fold, or a held item is itself on screen (`turnHeld`) — which is also what makes a wrong guess here
+ * (the reader's directory decides what folds, not this side) cost a round trip and not a wrong picture.
+ * Not rows at all: a sub-agent's own calls. The roster of running sub-agents lists them by title and detail, so
+ * they keep those and lose the rest; under a sub-agent the page shows to have ended they are stubs like a step.
+ * A finished patch loses the raw input its diff blocks already carry.
+ * Left whole: what the agent said, what it sent to a person or to someone this page does not prove an agent, and
+ * a delivery whose sender it does not prove one.
+ * Pages the reader went back for only: the newest page is read again whenever the conversation moves.
+ */
+export type LeanPage = boolean | 'folded';
+export const HELD_BODY_CHARS = 120;
+/** What the roster does not read of a sub-agent's own call. */
+const ROSTER_UNREAD_FIELDS = ['rawInput', 'rawOutput', 'outputText', 'content', 'contentBlocks', 'locations', 'terminalId', '_meta'] as const;
+/** The strings a stub keeps: what tells calls apart and where they hang. Numbers and flags are kept as they are. */
+const STUB_STRINGS: ReadonlySet<string> = new Set(['kind', 'id', 'toolCallId', 'status', 'server', 'tool', 'parentToolCallId', 'segmentId']);
+const PLAIN_SEND = /(?:^|__)(?:message_send|session_message)$/;
+
+/** What a folded page knows of itself: who its envelopes prove an agent, which sub-agents it shows ended, and the turn at hand. */
+type PageFacts = { agents: ReadonlySet<string>; ended: ReadonlySet<string>; turn?: TranscriptTurn };
+
+function pageFacts(turns: readonly TranscriptTurn[]): PageFacts {
+  const agents = new Set<string>(), ended = new Set<string>();
+  const visit = (node: ToolNode) => {
+    if (node.kind === 'spawn-subagent-tool-call' && (node.agentStatus !== undefined ? node.agentStatus !== 'running' : node.status !== 'running')) ended.add(node.toolCallId);
+    node.children?.forEach(visit);
+  };
+  for (const turn of turns) for (const item of turn.items) {
+    if (item.kind === 'message') {
+      if (item.role !== 'user') continue;
+      for (const part of readDeliveryEnvelope(item.text)?.segments ?? []) if (part.facts?.fromType === 'agent' && part.facts.fromId) agents.add(part.facts.fromId);
+    } else if (isToolNode(item)) visit(item);
+  }
+  return { agents, ended };
+}
+
+/** A call with nothing but what orders, counts and times it. `row`: it is drawn when its fold opens, so it is marked. */
+function stubOf(node: ToolNode, limit: number, row: boolean, facts?: PageFacts): ToolNode {
+  const stub: Record<string, unknown> = { title: '' };
+  for (const [field, value] of Object.entries(node)) {
+    if (STUB_STRINGS.has(field) || typeof value === 'number' || typeof value === 'boolean') stub[field] = value;
+  }
+  if (row) stub.held = true;
+  const images = node.kind === 'tool-group' ? undefined : node.images;
+  const refs = images ? imageRefsOf(images) : (node as { imageRefs?: unknown }).imageRefs;
+  if (refs) stub.imageRefs = refs;
+  if (node.children) stub.children = trimToolNodes(node.children, limit, 'folded', facts);
+  return stub as unknown as ToolNode;
+}
+
+/** A confirmed send to agents only, with its text cut to the opening; null when it is not one or has nothing to cut. */
+function foldedSend(node: ToolNode, facts: PageFacts): ToolNode | null {
+  if (node.kind !== 'mcp-tool-call' || node.status !== 'done' || node.parentToolCallId || !isGuguServer(node.server) || !PLAIN_SEND.test(node.tool)) return null;
+  const to = sendAddressesOf(node, facts.turn);
+  if (!to?.confirmed || !to.recipients?.length || !to.recipients.every(address => facts.agents.has(address))) return null;
+  try {
+    const args = JSON.parse(node.rawInput ?? '') as Record<string, unknown> | null;
+    if (!args || typeof args.text !== 'string' || args.text.length <= HELD_BODY_CHARS) return null;
+    return { ...node, rawInput: JSON.stringify({ ...args, text: args.text.slice(0, HELD_BODY_CHARS) }), held: true };
+  } catch { return null; }
+}
+
+/** A message or a thought as a folded page carries it; the item itself when it holds nothing a fold hides. */
+function foldedItem(item: TranscriptItem, facts: PageFacts): TranscriptItem {
+  if (item.kind === 'thinking') {
+    if (!item.text) return item;
+    const { content: _blocks, ...rest } = item;
+    return { ...rest, text: '', held: true } as TranscriptItem;
+  }
+  // Blocks that survived `withoutEchoedContent` are more than the text (a picture, a resource): the message stays whole.
+  if (item.kind !== 'message' || item.role !== 'user' || item.content) return item;
+  const reading = readDeliveryEnvelope(item.text);
+  // The view folds a delivery into an exchange only when every sender is an agent: the envelope says so, or, for an
+  // envelope from before it said, the reader's directory does (`incomingActivity`) — here, another envelope of the page.
+  if (!reading?.segments.every(part => /^(?:user|session):./.test(part.facts?.fromId ?? '')
+    && (part.facts!.fromType ? part.facts!.fromType === 'agent' : facts.agents.has(part.facts!.fromId!)))) return item;
+  const folded = foldDeliveryEnvelope(item.text, HELD_BODY_CHARS);
+  return folded !== null && folded.length < item.text.length ? { ...item, text: folded, held: true } : item;
+}
+
 /** Whether the view derives this call's step detail from its raw input: the last resort of `toolStepDetail`. */
 function detailFromRawInput(node: ToolNode, source: Record<string, unknown>): boolean {
   if (node.kind === 'read-tool-call' || node.kind === 'search-tool-call' || node.kind === 'web-fetch-tool-call') return false;
@@ -99,14 +199,33 @@ function isToolNode(item: TranscriptItem): item is ToolNode {
 }
 
 /** @returns 裁过的那一份，或者原对象（一个字都没超时）。 */
-function trimToolNode(node: ToolNode, limit: number, lean = false): ToolNode {
+function trimToolNode(given: ToolNode, limit: number, lean: LeanPage = false, facts?: PageFacts): ToolNode {
+  const folded = lean === 'folded';
+  const node = folded && facts ? foldedSend(given, facts) ?? given : given;
   const source = node as unknown as Record<string, unknown>;
   let dropped = 0;
-  let patch: Record<string, unknown> | null = null;
-  const held = lean && outputUnshown(node);
+  let patch: Record<string, unknown> | null = node === given ? null : {};
+  const held = lean !== false && outputUnshown(node, folded);
   const line = held && stepLineOnly(node);
+  // A sub-agent's own call: never a row, read by the roster of running sub-agents.
+  const rostered = held && !line && node.kind !== 'background-command-done-tool-call'
+    && !('backgroundTaskId' in node && node.backgroundTaskId);
+  // A call that failed is a step line too. Its segment stays out of any exchange (the view reads `status`, which a
+  // stub keeps), and its reason is read when the line is drawn.
+  const failed = folded && node.status === 'error' && plainCall(node, true) && stepLineOnly(node);
+  if (folded && (line || failed || (rostered && facts?.ended.has((node as { parentToolCallId?: string }).parentToolCallId ?? '')))) return stubOf(node, limit, line || failed, facts);
   const withheld: string[] = [];
-  if (line) {
+  if (folded && rostered) {
+    for (const field of ROSTER_UNREAD_FIELDS) if (source[field] !== undefined) withheld.push(field);
+    const summary = typeof source.rawInput === 'string' && detailFromRawInput(node, source) ? deriveToolInputSummary(source.rawInput) : undefined;
+    if (summary !== undefined) patch = { inputSummary: summary };
+    else if (withheld.length) patch = {};
+  } else if (folded && node.kind === 'patch-tool-call' && node.status === 'done' && typeof source.rawInput === 'string' && source.rawInput.length > 0) {
+    // Its diff blocks carry the change; the raw input is the same text again.
+    withheld.push('rawInput');
+    const summary = detailFromRawInput(node, source) ? deriveToolInputSummary(source.rawInput) : undefined;
+    patch = summary === undefined ? {} : { inputSummary: summary };
+  } else if (line) {
     if (typeof source.rawInput === 'string' && source.rawInput.length > 0) {
       withheld.push('rawInput');
       dropped += source.rawInput.length;
@@ -152,7 +271,7 @@ function trimToolNode(node: ToolNode, limit: number, lean = false): ToolNode {
 
   // 工具组与嵌套调用都往下走：大输出常常挂在子调用上（一个 Bash 组里的某一条）。
   const children = node.children;
-  const trimmedChildren = children ? trimToolNodes(children, limit, lean) : children;
+  const trimmedChildren = children ? trimToolNodes(children, limit, lean, facts) : children;
   if (trimmedChildren !== children) {
     patch ??= {};
     patch.children = trimmedChildren;
@@ -166,10 +285,10 @@ function trimToolNode(node: ToolNode, limit: number, lean = false): ToolNode {
   return next as unknown as ToolNode;
 }
 
-function trimToolNodes(nodes: readonly ToolNode[], limit: number, lean = false): ToolNode[] {
+function trimToolNodes(nodes: readonly ToolNode[], limit: number, lean: LeanPage = false, facts?: PageFacts): ToolNode[] {
   let changed = false;
   const next = nodes.map((node) => {
-    const trimmed = trimToolNode(node, limit, lean);
+    const trimmed = trimToolNode(node, limit, lean, facts);
     if (trimmed !== node) changed = true;
     return trimmed;
   });
@@ -179,12 +298,13 @@ function trimToolNodes(nodes: readonly ToolNode[], limit: number, lean = false):
 export function trimItemsForTransport(
   items: readonly TranscriptItem[],
   limit = TRANSPORT_TEXT_LIMIT,
-  lean = false,
+  lean: LeanPage = false,
+  facts?: PageFacts,
 ): TranscriptItem[] {
   let changed = false;
   const next = items.map((item) => {
     if (!isToolNode(item)) return item;
-    const trimmed = trimToolNode(item, limit, lean);
+    const trimmed = trimToolNode(item, limit, lean, facts);
     if (trimmed !== item) changed = true;
     return trimmed as TranscriptItem;
   });
@@ -216,8 +336,8 @@ function withoutEchoedContent(item: TranscriptItem): TranscriptItem {
  * own metadata on how the turn ended (`foreground._meta`; nothing on the reading side reads it). On the measured
  * conversation these two are 3.9MB and 1.0MB.
  */
-function leanTurn(turn: TranscriptTurn, limit: number): TranscriptTurn {
-  const items = trimItemsForTransport(turn.items, limit, true);
+function leanTurn(turn: TranscriptTurn, limit: number, lean: LeanPage, facts?: PageFacts): TranscriptTurn {
+  const items = trimItemsForTransport(turn.items, limit, lean, facts && { ...facts, turn });
   const meta = turn.foreground !== undefined && '_meta' in turn.foreground;
   if (!turn.terminals && !meta) return items === turn.items ? turn : { ...turn, items };
   const { terminals: _captures, ...rest } = turn;
@@ -227,14 +347,15 @@ function leanTurn(turn: TranscriptTurn, limit: number): TranscriptTurn {
 }
 
 /** What a page of turns sends: the field trim, each message's text once, and for a lean reader only the opening of output its view does not show. */
-function projectTurnsForPage(turns: readonly TranscriptTurn[], limit: number, lean = false): TranscriptTurn[] {
-  const held = lean ? turns.map(turn => leanTurn(turn, limit)) : null;
+function projectTurnsForPage(turns: readonly TranscriptTurn[], limit: number, lean: LeanPage = false): TranscriptTurn[] {
+  const facts = lean === 'folded' ? pageFacts(turns) : undefined;
+  const held = lean ? turns.map(turn => leanTurn(turn, limit, lean, facts)) : null;
   const trimmed = !held ? trimTurnsForTransport(turns, limit) : held.some((turn, index) => turn !== turns[index]) ? held : turns;
   let changed = false;
   const next = trimmed.map((turn) => {
     let slimmed = false;
     const items = turn.items.map((item) => {
-      const slim = withoutEchoedContent(item);
+      const slim = facts ? foldedItem(withoutEchoedContent(item), facts) : withoutEchoedContent(item);
       if (slim !== item) slimmed = true;
       return slim;
     });
@@ -302,7 +423,7 @@ export const LOCAL_PAYLOAD_BUDGET = 2 * 1024 * 1024;
 export const REMOTE_OLDER_PAGE_BUDGET = 512 * 1024;
 
 /** 一轮裁完以后在这一包里占多少字节 —— 读库的一侧据此在装满时停手，❌ 先读满 100 行再丢。 */
-export function transportSizeOf(turn: TranscriptTurn, limit = TRANSPORT_TEXT_LIMIT, lean = false): number {
+export function transportSizeOf(turn: TranscriptTurn, limit = TRANSPORT_TEXT_LIMIT, lean: LeanPage = false): number {
   return new TextEncoder().encode(JSON.stringify(projectTurnsForPage([turn], limit, lean)[0])).byteLength;
 }
 
@@ -343,7 +464,7 @@ function trimTurnPageForTransport<T extends { turns: TranscriptTurn[]; hasOlder:
   page: T,
   limit: number,
   budget: number,
-  lean = false,
+  lean: LeanPage = false,
 ): T {
   const trimmed = projectTurnsForPage(page.turns, limit, lean);
   const fitted = fitTurnsToBudget(trimmed, budget);
@@ -360,7 +481,7 @@ export function trimCursorPageForTransport<T extends {
   page: T,
   limit = TRANSPORT_TEXT_LIMIT,
   budget = TRANSPORT_PAYLOAD_BUDGET,
-  lean = false,
+  lean: LeanPage = false,
 ): T {
   const trimmed = trimTurnPageForTransport(
     { turns: page.turns, hasOlder: page.nextCursor !== null }, limit, budget, lean,

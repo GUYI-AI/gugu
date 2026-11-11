@@ -28,7 +28,8 @@ export {
   trimItemsForTransport,
   trimOlderForTransport,
   trimSnapshotForTransport,
-  trimTurnsForTransport
+  trimTurnsForTransport,
+  type LeanPage
 } from './transport-trim';
 
 export { findToolImage, findToolItem, type ToolImageLookup } from './tool-image';

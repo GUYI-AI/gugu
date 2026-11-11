@@ -1,7 +1,7 @@
 import { beginCanonicalQueueTask } from './canonical-queue-state';
 import { renumberStoredTurn, rewriteTurnId } from './session-turn-identity';
 export { renumberStoredTurn } from './session-turn-identity';
-import { findToolImage, findToolItem, LOCAL_PAYLOAD_BUDGET, REMOTE_OLDER_PAGE_BUDGET, TRANSPORT_PAYLOAD_BUDGET, TRANSPORT_TEXT_LIMIT, transportSizeOf, trimCursorPageForTransport, trimTurnsForTransport } from '@gugu/session-core/session-record';
+import { findToolImage, findToolItem, LOCAL_PAYLOAD_BUDGET, REMOTE_OLDER_PAGE_BUDGET, TRANSPORT_PAYLOAD_BUDGET, TRANSPORT_TEXT_LIMIT, transportSizeOf, trimCursorPageForTransport, type LeanPage, trimTurnsForTransport } from '@gugu/session-core/session-record';
 import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { hermesNativeDigest } from '@gugu/session-core/acp/hermes-prompt';
@@ -335,8 +335,11 @@ export async function getStoredHistory(params: {
    * may arrive as its opening only, with no terminal capture, and a call as what its line shows, without its raw
    * input (transport-trim `unshown-output`, `step-line`). Honoured over a device link; a window on this machine pays
    * nothing for the whole turn and gets it.
+   * `'folded'`: the reader also reads a turn again when a row behind one of its folds comes on screen, so a page it
+   * went back for may carry a turn as its folded form (transport-trim `folded-form`). The newest page does not:
+   * it is read again whenever the conversation moves, and would take back what the reader had opened.
    */
-  lean?: boolean;
+  lean?: LeanPage;
 }, reader: { local?: boolean; older?: boolean } = {}): Promise<StoredTurnPage> {
   // @@@page-budget-by-reader — a window on this machine reads its own database over the process channel; every
   // other reader (another machine, a phone) is paying for a shared device link. Same paging, three page sizes:
@@ -344,7 +347,8 @@ export async function getStoredHistory(params: {
   // going back is larger. `older` says which it is when `before` alone does not (a phone opens at its unread line).
   const older = reader.older ?? params.before !== undefined;
   const budget = reader.local ? LOCAL_PAYLOAD_BUDGET : older ? REMOTE_OLDER_PAGE_BUDGET : TRANSPORT_PAYLOAD_BUDGET;
-  const lean = params.lean === true && !reader.local && params.fromSeq === undefined;
+  const lean: LeanPage = !params.lean || reader.local || params.fromSeq !== undefined ? false
+    : params.lean === 'folded' && older ? 'folded' : true;
   for (;;) {
     const epoch = ownerNotificationEpoch(params.sessionId);
     const page = await readStoredTurns(params.sessionId, {
@@ -421,7 +425,7 @@ export interface StoredTurnPage {
  */
 export async function readStoredTurns(
   sessionId: string,
-  options: { before?: number; limit?: number; fromSeq?: number; ownerNotificationsOnly?: boolean; budget?: number; lean?: boolean } = {}
+  options: { before?: number; limit?: number; fromSeq?: number; ownerNotificationsOnly?: boolean; budget?: number; lean?: LeanPage } = {}
 ): Promise<StoredTurnPage> {
   if (options.fromSeq !== undefined) {
     // 「开场那一页之后新落库的行」—— 开场时补读一次用(acp-chat-store `_reloadStoredTail`)。❌ 不分页:这一段只是

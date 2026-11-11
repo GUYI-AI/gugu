@@ -1,5 +1,7 @@
 import type { NativeSessionRecord } from '@gugu/session-core/session-record/contract';
 import { projectOwnerNotifications } from '@gugu/session-core/session-record/owner-notifications';
+import { turnHeld } from '@gugu/session-core/session-record/held-turn';
+import type { TranscriptTurn } from '@gugu/session-core/acp/client';
 
 /**
  * Keep the page cache raw: projecting individual pages would retain a detached notice after its source arrives.
@@ -27,6 +29,26 @@ export function mergeNativeRecordPage(previous: NativeSessionRecord | null, page
   page.turns.forEach((turn, index) => origins.set(turn.id, page.originTurnIds[index] ?? turn.id));
   next.originTurnIds = next.turns.map(turn => origins.get(turn.id)!);
   return next;
+}
+
+/** The turn this row is drawn from, when a page sent it as its folded form: the one to read again. A row's id starts with its turn's. */
+export function heldTurnOf(record: NativeSessionRecord | null, itemId: string): TranscriptTurn | null {
+  return record?.turns.find(turn => itemId.startsWith(`${turn.id}:`) && turnHeld(turn)) ?? null;
+}
+
+/**
+ * Put turns read again (`pages`, each a read of one turn) in the place of the held ones. Nothing else of the record
+ * moves: such a page describes one turn, not where the conversation stands. A page of another history is passed over.
+ */
+export function fillNativeRecordTurns(record: NativeSessionRecord | null, pages: readonly NativeSessionRecord[]): NativeSessionRecord | null {
+  if (!record) return null;
+  const whole = new Map<string, TranscriptTurn>();
+  for (const page of pages) {
+    const turn = page.turns.at(-1);
+    if (turn && (record.nativeOwnerNotificationEpoch ?? 0) === (page.nativeOwnerNotificationEpoch ?? 0)) whole.set(`${turn.seq}/${turn.id}`, turn);
+  }
+  if (!record.turns.some(turn => whole.has(`${turn.seq}/${turn.id}`) && turnHeld(turn))) return record;
+  return { ...record, turns: record.turns.map(turn => turnHeld(turn) ? whole.get(`${turn.seq}/${turn.id}`) ?? turn : turn) };
 }
 
 export function projectNativeRecord(record: NativeSessionRecord | null): NativeSessionRecord | null {

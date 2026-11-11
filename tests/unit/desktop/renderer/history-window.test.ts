@@ -110,6 +110,24 @@ describe('a history window', () => {
     expect(seqs(window)).toEqual(before);
   });
 
+  it('puts turns read again in the place of the ones a page sent folded, and only there', async () => {
+    const source = stored(3000, 100);
+    const stub = { kind: 'execute-tool-call', id: 's:turn:s1200:e', seq: 1, toolCallId: 'e', title: '', status: 'done', held: true };
+    const held = { ...turn(1200), items: [...turn(1200).items, stub] } as TranscriptTurn;
+    source.read.mockResolvedValueOnce({ turns: [...Array.from({ length: 40 }, (_unused, index) => turn(1160 + index)), held, turn(1201)], nextCursor: 1160 });
+    const window = (await open(source, 1200))!;
+    const whole = { ...turn(1200), items: [...turn(1200).items, { ...stub, held: undefined, title: 'run', command: 'make' }] } as TranscriptTurn;
+    const untouched = window.turns[0];
+    const count = window.turns.length;
+    // A turn that was not held, or is not in the window, is left as it is.
+    window.fill(new Map([[1160, { ...turn(1160), items: [] } as TranscriptTurn], [5, turn(5)]]));
+    expect(window.turns[0]).toBe(untouched);
+    window.fill(new Map([[1200, whole]]));
+    expect(window.turns.find(one => one.seq === 1200)).toBe(whole);
+    expect(window.turns[0]).toBe(untouched);
+    expect(window.turns).toHaveLength(count);
+  });
+
   it('reads above and below at the same time', async () => {
     const source = stored(3000, 100);
     const window = (await open(source, 1200))!;

@@ -35,6 +35,7 @@ import type {
   ComposerQueuedPrompt,
 } from '@gugu/session-ui/react/components';
 import { findToolItem } from '@gugu/session-core/session-record/tool-image';
+import { turnHeld } from '@gugu/session-core/session-record/held-turn';
 import { toolImageUrl } from '@gugu/session-core/acp/client';
 import { commandToken } from '@gugu/session-core/acp/commands';
 import { permissionWaitKind } from '@gugu/session-core/acp/models/permissions';
@@ -321,6 +322,10 @@ export class AcpChatStore {
    * 发一句话就被打回原点。
    */
   private _olderHistoryTurns: TranscriptTurn[] = [];
+  /** Held turns waiting to be read whole (`fillHeldTurn`), by sequence; and those being read. */
+  private readonly _heldWanted = new Set<number>();
+  private readonly _heldReading = new Set<number>();
+  private _heldTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * 下一页更早历史的游标。`undefined` = 还没定下来从哪儿翻;`null` = 已经到头了。
    *
@@ -1340,6 +1345,43 @@ export class AcpChatStore {
     this.historyLoading = false;
     this.loadError = null;
     this.messageCount = turns.reduce((count, turn) => count + turn.items.length, 0);
+  }
+
+  /**
+   * A row has come on screen from behind a fold. An older page read over a device link carries a turn as its folded
+   * form (`lean: 'folded'`): read that turn again and put it in its place. Only pages gone back for are sent that
+   * way and they are not read again behind the reader, so a turn stays whole once it is.
+   * Opening an exchange brings many rows on screen at once: their turns are read together and land as one change.
+   */
+  fillHeldTurn(itemId: string): void {
+    const held = (turn: TranscriptTurn) => itemId.startsWith(`${turn.id}:`) && turnHeld(turn);
+    const turn = (this._olderSource === 'stored' ? this._olderHistoryTurns.find(held) : undefined) ?? this.historyWindow?.turns.find(held);
+    if (!turn || this._heldReading.has(turn.seq)) return;
+    this._heldWanted.add(turn.seq);
+    this._heldTimer ??= setTimeout(() => { this._heldTimer = null; void this._readHeldTurns(); }, 30);
+  }
+
+  private async _readHeldTurns(): Promise<void> {
+    const wanted = [...this._heldWanted];
+    this._heldWanted.clear();
+    for (const seq of wanted) this._heldReading.add(seq);
+    const generation = this._historyGeneration;
+    try {
+      const pages = await Promise.all(wanted.map(seq =>
+        rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before: seq + 1, limit: 1, lean: true }).catch(() => null)));
+      const whole = new Map<number, TranscriptTurn>();
+      pages.forEach((page, index) => { const turn = page?.turns[0]; if (turn?.seq === wanted[index]) whole.set(turn.seq, turn); });
+      if (!whole.size || this._disposed || generation !== this._historyGeneration) return;
+      runInAction(() => {
+        if (this._olderSource === 'stored' && this._olderHistoryTurns.some(one => whole.has(one.seq) && turnHeld(one))) {
+          this._olderHistoryTurns = this._olderHistoryTurns.map(one => turnHeld(one) ? whole.get(one.seq) ?? one : one);
+          this.chatState.transcript.history.seed(this._composedHistory());
+        }
+        this.historyWindow?.fill(whole);
+      });
+    } finally {
+      for (const seq of wanted) this._heldReading.delete(seq);
+    }
   }
 
   async resolveToolImage(itemId: string, index: number): Promise<string | null> {
@@ -2786,7 +2828,7 @@ export class AcpChatStore {
         this.chatState.scroll.set({ kind: 'tail' });
         break;
       }
-      const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before: cursor, limit: 100, lean: true }).catch(() => null);
+      const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before: cursor, limit: 100, lean: 'folded' }).catch(() => null);
       if (!page || this._disposed) break;
       turns = [...page.turns, ...turns];
       cursor = page.nextCursor;
@@ -2876,7 +2918,7 @@ export class AcpChatStore {
     const request = ++this._historyWindowRequest;
     const opened = await HistoryWindow.open({
       context: this.chatContext, uri: this.runtimeSessionId, seq,
-      read: before => rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before, limit: 100, lean: true }).catch(() => null),
+      read: before => rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before, limit: 100, lean: 'folded' }).catch(() => null),
       newestStored: () => this._storedHistoryTurns.at(-1)?.seq ?? -1,
     }).catch(() => null);
     if (!opened) return false;
@@ -2932,7 +2974,7 @@ export class AcpChatStore {
               sessionId: this.sessionId,
               before,
               limit: 100,
-              lean: true,
+              lean: 'folded',
             })
           : await this._runtimeOlderPage(before);
       if (!page || this._disposed || generation !== this._historyGeneration) return [];

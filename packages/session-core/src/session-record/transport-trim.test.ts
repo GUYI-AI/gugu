@@ -4,7 +4,10 @@ import { describe, expect, it } from 'vitest';
 import type { ToolNode, TranscriptItem, TranscriptTurn } from '../acp/client';
 import type { TimelineSnapshot, TurnPatch } from './contract';
 import { deriveToolInputSummary } from './tool-input-summary';
+import { turnHeld } from './held-turn';
+import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import {
+  HELD_BODY_CHARS,
   HELD_PREVIEW_CHARS,
   HELD_TITLE_CHARS,
   REMOTE_OLDER_PAGE_BUDGET,
@@ -535,5 +538,123 @@ describe('a lean page carries what a call\'s step line shows, not its raw input'
     const sent = trimCursorPageForTransport({ turns: [turn('t', calls)], nextCursor: null }).turns[0]!.items as unknown as Array<Record<string, unknown>>;
     expect(sent.map(call => call.rawInput)).toEqual((calls as unknown as Array<Record<string, unknown>>).map(call => call.rawInput));
     expect(sent.every(call => call.title === 'run' && Array.isArray(call.locations))).toBe(true);
+  });
+});
+
+// A reader that reads a turn again when one of its folds is opened asks for 'folded'. A page then carries what the
+// folded conversation shows, and what stands behind a fold as a marked stub (`held`).
+describe('a folded page leaves out what stands behind a fold', () => {
+  const AGENT = 'user:11111111-1111-4111-8111-111111111111', HUMAN = 'user:22222222-2222-4222-8222-222222222222';
+  const folded = (turns: TranscriptTurn[]) => trimCursorPageForTransport({ turns, nextCursor: null }, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, 'folded').turns;
+  const one = (items: TranscriptItem[]) => folded([turn('t', items)])[0]!;
+  const delivery = (id: string, from: string, type: string | null, body = 'b'.repeat(600)) => ({ kind: 'message', id, seq: 0, role: 'user', text:
+    `<gugu_delivery route="chat" chat="dm-1" chat_kind="dm" from="d3" from_id="${from}"${type ? ` from_type="${type}"` : ''} msg="msg:${id}">\n  <message_context><![CDATA[${'c'.repeat(300)}]]></message_context>\n<![CDATA[${body}]]>\n  <arrival>reply with message_send</arrival>\n</gugu_delivery>` }) as unknown as TranscriptItem;
+  const step = (fields: Record<string, unknown> = {}) => execTool('e', { title: 'Run', command: 'make test', rawInput: '{"command":"make test"}', outputText: 'ok', completedAt: 5, terminalId: 'term', ...fields });
+
+  it('carries a finished step as what orders, counts and times it, marked', () => {
+    const sent = one([step()]);
+    expect(sent.items[0]).toEqual({ kind: 'execute-tool-call', id: 'e', seq: 1, toolCallId: 'e', title: '', status: 'done', completedAt: 5, held: true });
+    expect(turnHeld(sent)).toBe(true);
+  });
+
+  it('does the same for a step that failed, keeping how it ended', () => {
+    expect(one([step({ status: 'error' })]).items[0]).toMatchObject({ status: 'error', held: true, title: '' });
+    expect(one([step({ status: 'error' })]).items[0]).not.toHaveProperty('outputText');
+  });
+
+  it('keeps a step inside a group, and the group', () => {
+    const group = { kind: 'tool-group', id: 'g', seq: 1, status: 'done', children: [step()] } as unknown as ToolNode;
+    const sent = one([group]);
+    expect((sent.items[0] as ToolNode).children).toEqual([{ kind: 'execute-tool-call', id: 'e', seq: 1, toolCallId: 'e', title: '', status: 'done', completedAt: 5, held: true }]);
+    expect(turnHeld(sent)).toBe(true);
+  });
+
+  it('carries a thought without its text', () => {
+    const thought = { kind: 'thinking', id: 'th', seq: 0, text: 'long thought', status: 'done' } as unknown as TranscriptItem;
+    expect(one([thought]).items[0]).toEqual({ kind: 'thinking', id: 'th', seq: 0, text: '', status: 'done', held: true });
+  });
+
+  it('cuts a delivery from an agent to its opening and drops what stands beside it; one from a person stays whole', () => {
+    const [agent, person] = one([delivery('a', AGENT, 'agent'), delivery('h', HUMAN, 'human')]).items as unknown as Array<{ text: string; held?: true }>;
+    expect(agent!.held).toBe(true);
+    const read = readDeliveryEnvelope(agent!.text)!.segments[0]!;
+    expect(read.body).toBe('b'.repeat(HELD_BODY_CHARS));
+    expect(read.facts).toMatchObject({ fromId: AGENT, fromType: 'agent', messageId: 'msg:a', chat: 'dm-1', messageContext: null });
+    expect(person).toEqual(delivery('h', HUMAN, 'human'));
+  });
+
+  it('takes an envelope from before senders were typed for an agent only when another envelope of the page proves the sender one', () => {
+    const proven = one([delivery('a', AGENT, 'agent'), delivery('old', AGENT, null)]).items as unknown as Array<{ held?: true }>;
+    expect(proven.map(item => item.held)).toEqual([true, true]);
+    expect((one([delivery('old', AGENT, null)]).items[0] as { held?: true }).held).toBeUndefined();
+  });
+
+  it('leaves a delivery with nothing to cut, and what a person typed, as they are', () => {
+    const short = (delivery('s', AGENT, 'agent', 'ok') as unknown as { text: string }).text;
+    const bare = { kind: 'message', id: 's', seq: 0, role: 'user', text: short.replace(/\n {2}<message_context>.*<\/message_context>/s, '').replace(/\n {2}<arrival>.*<\/arrival>/s, '') } as unknown as TranscriptItem;
+    const typed = { kind: 'message', id: 'u', seq: 0, role: 'user', text: 'x'.repeat(2_000) } as unknown as TranscriptItem;
+    const said = { kind: 'message', id: 'r', seq: 2, role: 'assistant', text: 'y'.repeat(2_000) } as unknown as TranscriptItem;
+    const page = { turns: [turn('t', [bare, typed, said])], nextCursor: null };
+    expect(trimCursorPageForTransport(page, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, 'folded')).toBe(page);
+    expect(turnHeld(page.turns[0]!)).toBe(false);
+  });
+
+  it('cuts what the agent sent to agents only, and leaves what it sent to a person', () => {
+    const send = (id: string, to: string) => ({ kind: 'mcp-tool-call', id, seq: 1, toolCallId: id, server: 'gugu', tool: 'message_send', status: 'done', title: 'send',
+      rawInput: JSON.stringify({ chat_id: 'dm-1', to_user_ids: [to], text: 'w'.repeat(900) }),
+      outputText: 'sent (id=msg:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa)' }) as unknown as ToolNode;
+    const [, toAgent, toPerson] = one([delivery('a', AGENT, 'agent'), send('s1', AGENT), send('s2', HUMAN)]).items as unknown as Array<Record<string, unknown>>;
+    expect(toAgent!.held).toBe(true);
+    expect(JSON.parse(toAgent!.rawInput as string)).toEqual({ chat_id: 'dm-1', to_user_ids: [AGENT], text: 'w'.repeat(HELD_BODY_CHARS) });
+    expect(toAgent!.outputText).toBe('sent (id=msg:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa)');
+    expect(toPerson).toEqual(send('s2', HUMAN));
+    // Without an envelope that proves the recipient an agent, the send is whole.
+    expect(one([send('s1', AGENT)]).items[0]).toEqual(send('s1', AGENT));
+  });
+
+  it('keeps what the roster reads of a sub-agent\'s own call, and stubs it under a sub-agent the page shows ended', () => {
+    const child = step({ parentToolCallId: 'agent-1', title: 'Run tests' });
+    const running = one([child]).items[0] as unknown as Record<string, unknown>;
+    expect(running).toMatchObject({ title: 'Run tests', command: 'make test' });
+    expect(running).not.toHaveProperty('rawInput');
+    expect(running).not.toHaveProperty('outputText');
+    expect(running).not.toHaveProperty('held');
+    const spawn = { kind: 'spawn-subagent-tool-call', id: 'sp', seq: 0, toolCallId: 'agent-1', title: 'Explore', status: 'done', agentStatus: 'completed', name: 'Explore' } as unknown as ToolNode;
+    const ended = one([spawn, child]);
+    expect(ended.items[1]).toEqual({ kind: 'execute-tool-call', id: 'e', seq: 1, toolCallId: 'e', title: '', status: 'done', completedAt: 5, parentToolCallId: 'agent-1' });
+    expect(ended.items[0]).toEqual(spawn);
+    expect(turnHeld(ended)).toBe(false);
+  });
+
+  it('sends a finished patch without the raw input its diff blocks repeat', () => {
+    const patch = { kind: 'patch-tool-call', id: 'p', seq: 1, toolCallId: 'p', title: 'Edit', status: 'done', rawInput: '{"file_path":"/a","old_string":"x","new_string":"y"}',
+      contentBlocks: [{ type: 'diff', path: '/a', oldText: 'x', newText: 'y' }] } as unknown as ToolNode;
+    const sent = one([patch]).items[0] as unknown as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('rawInput');
+    expect(sent.contentBlocks).toEqual((patch as unknown as Record<string, unknown>).contentBlocks);
+    expect(sent).not.toHaveProperty('held');
+  });
+
+  it('sends whole what the folded conversation shows: questions, sub-agent dispatch, opened tabs, background tasks', () => {
+    const kept: ToolNode[] = [
+      step({ kind: 'unknown-tool-call', toolName: 'AskUserQuestion' }),
+      step({ kind: 'spawn-subagent-tool-call' }),
+      { kind: 'mcp-tool-call', id: 'o', seq: 1, toolCallId: 'o', server: 'gugu', tool: 'session_open_in_tab', status: 'done', title: 'open', rawInput: '{"path":"/a.html"}', outputText: '{"path":"/a.html"}' } as unknown as ToolNode,
+      step({ backgroundTaskId: 'task-1' }),
+      step({ kind: 'background-command-done-tool-call' }),
+      step({ status: 'running' }),
+    ];
+    const sent = one(kept);
+    expect(turnHeld(sent)).toBe(false);
+    expect(sent.items.map(item => (item as unknown as Record<string, unknown>).rawInput)).toEqual(kept.map(item => (item as unknown as Record<string, unknown>).rawInput));
+  });
+
+  it('leaves a lean page as it was: nothing is marked', () => {
+    const lean = trimCursorPageForTransport({ turns: [turn('t', [delivery('a', AGENT, 'agent'), step(), { kind: 'thinking', id: 'th', seq: 0, text: 'thought' } as unknown as TranscriptItem])], nextCursor: null },
+      TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, true).turns[0]!;
+    expect(turnHeld(lean)).toBe(false);
+    expect(lean.items[0]).toEqual(delivery('a', AGENT, 'agent'));
+    expect(lean.items[1]).toMatchObject({ command: 'make test' });
+    expect(lean.items[2]).toMatchObject({ text: 'thought' });
   });
 });

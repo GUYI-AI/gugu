@@ -6,7 +6,7 @@ import { messageForUser } from '@/lib/userFacingError'
 import { useStructurallyShared } from '@/hooks/useStructurallyShared'
 import { hydrateCachedNativeRecord, readCachedNativeRecord, writeCachedNativeRecord } from './timeline-cache'
 import { recoverTimelineRead } from './timeline-read-recovery'
-import { mergeNativeRecordPage, projectNativeRecord } from './native-record-state'
+import { fillNativeRecordTurns, heldTurnOf, mergeNativeRecordPage, projectNativeRecord } from './native-record-state'
 
 /** ACP records come from the task page archive, not a second parse of the provider's JSONL. */
 export function useNativeSessionRecord(deviceId: string, sessionId: string, enabled: boolean, online: boolean, local = false) {
@@ -65,7 +65,7 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
         : tail ? { tail: true } : (mode === 'newer' || previous?.hasNewer) && last !== undefined ? { after: last }
         : last !== undefined ? { after: Math.max(-1, last - 29) } : {}
       const page = await recoverTimelineRead(async () => {
-        const result = await machineRpc(deviceId, local).sessionTimeline.sessionNativeRecord({ conversationId: sessionId, ...input, lean: true })
+        const result = await machineRpc(deviceId, local).sessionTimeline.sessionNativeRecord({ conversationId: sessionId, ...input, lean: 'folded' })
         if (!result.ok) throw Object.assign(new Error(result.error.message), { code: result.error.code })
         return result.value
       }, signal, () => { if (epoch.current === ownEpoch) setConfirmed(null) })
@@ -110,6 +110,35 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
     void poll()
     return () => { active = false; clearTimeout(timer) }
   }, [enabled, online, read])
+  const heldWanted = useRef(new Set<number>())
+  const heldReading = useRef(new Set<number>())
+  const heldTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /**
+   * A row has come on screen from behind a fold. A page gone back for carries a turn as its folded form: read that
+   * turn again and put it in its place. Those pages are not read again behind the reader, so it stays whole.
+   * Opening an exchange brings many rows on screen at once: their turns are read together and land as one change.
+   */
+  const fillHeldTurn = useCallback((itemId: string) => {
+    const held = heldTurnOf(value.current, itemId)
+    if (!held || heldReading.current.has(held.seq)) return
+    heldWanted.current.add(held.seq)
+    heldTimer.current ??= setTimeout(() => {
+      heldTimer.current = null
+      const wanted = [...heldWanted.current], ownEpoch = epoch.current
+      heldWanted.current.clear()
+      for (const seq of wanted) heldReading.current.add(seq)
+      void Promise.all(wanted.map(seq => machineRpc(deviceId, local).sessionTimeline
+        .sessionNativeRecord({ conversationId: sessionId, before: seq + 1, limit: 1, lean: true }).catch(() => null)))
+        .then(results => {
+          if (epoch.current !== ownEpoch) return
+          const next = fillNativeRecordTurns(value.current, results.flatMap(result => result?.ok ? [result.value] : []))
+          if (!next || next === value.current) return
+          writeCachedNativeRecord({ deviceId, sessionId }, next)
+          value.current = next; setRecord(next)
+        })
+        .finally(() => { for (const seq of wanted) heldReading.current.delete(seq) })
+    }, 30)
+  }, [deviceId, sessionId, local])
   const report = (error: unknown) => setError(messageForUser(error))
   // Wire pages and notification projection recreate unchanged turns; the transcript syncs by identity.
   const shown = useStructurallyShared(useMemo(() => projectNativeRecord(record), [record]))
@@ -118,5 +147,6 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
     loadOlder: async () => { if (value.current?.nextCursor !== null && value.current?.nextCursor !== undefined) await read('older') },
     loadNewer: () => { if (value.current?.hasNewer) void read('newer').catch(report) },
     followTail: () => { tailRequested.current = true; if (online) void read('tail').catch(report) },
+    fillHeldTurn,
   }
 }

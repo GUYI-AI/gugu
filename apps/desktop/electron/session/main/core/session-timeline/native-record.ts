@@ -11,7 +11,7 @@ export function createNativeRecordReader(deps: {
   withTimeline<T>(id: string, read: (timeline: SessionTimeline) => T | Promise<T>): Promise<SessionTimelineResult<T>>;
 }) {
 /** ACP phone views share the desktop's committed archive, including provider-generated identities. */
-async function nativeRecord(input: { conversationId: string; before?: number; after?: number; tail?: boolean; limit?: number; lean?: boolean }): Promise<SessionTimelineResult<import('@gugu/session-core/session-record/contract').NativeSessionRecord>> {
+async function nativeRecord(input: { conversationId: string; before?: number; after?: number; tail?: boolean; limit?: number; lean?: boolean | 'folded' }): Promise<SessionTimelineResult<import('@gugu/session-core/session-record/contract').NativeSessionRecord>> {
   const row = deps.readSession(input.conversationId);
   if (!row || row.runtime !== 'acp') return { ok: false, error: { code: 'unsupported_runtime', message: '这条会话没有原生对话记录' } };
   return deps.withTimeline(input.conversationId, async () => {
