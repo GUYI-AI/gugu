@@ -320,7 +320,7 @@ function InnerLayout({
     openChat: openChatTarget,
     openAssistant: (tasks) => {
       setOpenedPhoneApp(null); setActiveTab(mobile ? 'assistant' : 'tasks')
-      if (mobile) return 'assistant'
+      if (mobile) return tasks ? assistantSlotKey('task-chat') : 'assistant'
       // A task's conversation opens in the built-in panel still (lib/assistantEntry.ts `task-chat`); the assistant itself where the entry goes.
       return openAssistantEntry(() => {
         if (tasks || appState.navigation.currentViewId !== 'assistant') appState.navigation.navigate('assistant', tasks ? { tab: 'tasks' } : {})

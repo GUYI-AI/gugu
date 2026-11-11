@@ -53,7 +53,8 @@ export const AssistantAppEntryHost = observer(function AssistantAppEntryHost() {
     let disposed = false
     let timer: ReturnType<typeof setTimeout> | undefined
     const ask = (attempt: number) => {
-      void rpc.extensions.syncAssistantAppEntry({ ownerId, chatId }).then((result) => {
+      // Started inside the promise: a window without its host bridge refuses here, never in the effect.
+      void Promise.resolve().then(() => rpc.extensions.syncAssistantAppEntry({ ownerId, chatId })).then((result) => {
         if (disposed) return
         if (!result.success) throw new Error(result.error)
         if (result.data.ownerId !== ownerId) return
