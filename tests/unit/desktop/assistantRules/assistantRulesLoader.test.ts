@@ -137,6 +137,22 @@ describe('the rules folder is refused unless it is exactly the format', () => {
   it('refuses a label that is not one line', async () => {
     await refuse({ ...built(), 'rules.json': JSON.stringify({ ...data(), labels: { ...(data().labels as object), ownerProfileMemoryName: 'a\nb' } }) }, 'invalid', /labels\.ownerProfileMemoryName/)
   })
+  it.each([
+    ['a line break', (intro: Record<string, Record<string, string>>) => ({ ...intro, 'zh-CN': { ...intro['zh-CN'], title: 'a\nb' } }), /intro\.zh-CN\.title/],
+    ['a missing field', () => ({ 'en-US': { title: 'Hi' } }), /intro\.en-US/],
+    ['a key that is no locale', (intro: Record<string, Record<string, string>>) => ({ '../x': intro['en-US'] }), /intro/],
+  ])('refuses first-run introduction words with %s', async (_case, edit, message) => {
+    await refuse({ ...built(), 'rules.json': JSON.stringify({ ...data(), intro: edit(data().intro as Record<string, Record<string, string>>) }) }, 'invalid', message)
+  })
+  it('reads a folder without first-run introduction words (written before the host read them) as having none', async () => {
+    const { intro: _intro, ...older } = data()
+    await writeFile(join(root, 'index.html'), '')
+    await mkdir(join(root, 'rules'))
+    for (const [name, content] of Object.entries({ ...built(), 'rules.json': `${JSON.stringify(older, null, 2)}\n` })) await writeFile(join(root, 'rules', name), content)
+    const loaded = await readAssistantProductRules(root, 'rules')
+    expect(loaded.intro).toBeUndefined()
+    expect(assistantRulesFiles(loaded)['rules.json']).toBe(`${JSON.stringify(older, null, 2)}\n`)
+  })
   it('refuses a missing file', async () => {
     const { 'first-task.md': _, ...without } = built()
     await refuse(without, 'invalid', /first-task\.md: is missing/)

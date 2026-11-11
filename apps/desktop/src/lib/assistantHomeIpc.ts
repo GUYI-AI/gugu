@@ -26,6 +26,11 @@ export const ASSISTANT_HOME_CHANNELS = {
    * assistant App's, the last good copy of them, or the built-in copy — whichever the main process resolves now.
    */
   rules: 'assistant-home:rules',
+  /**
+   * #1931 The first-run introduction's words about the assistant (invoke, no arguments → the rules' `intro` by locale, or
+   * null): read from the same rules, without counting as the assistant's setup starting.
+   */
+  intro: 'assistant-home:intro',
 } as const
 
 export type AssistantEngine = 'claude' | 'codex'

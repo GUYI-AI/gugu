@@ -50,6 +50,10 @@ const rulesDataSchema = z.strictObject({
     profileRulesVersion: z.number().int().min(1).max(2 ** 31 - 1),
   }),
   labels: z.strictObject(Object.fromEntries(Object.keys(ASSISTANT_RULES_LABEL_SLOTS).map(key => [key, singleLine])) as Record<AssistantRulesLabelKey, typeof singleLine>),
+  intro: z.record(
+    z.string().regex(/^[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/),
+    z.strictObject({ title: singleLine, summary: singleLine, desktopBody: singleLine, phoneBody: singleLine }),
+  ).refine(intro => Object.keys(intro).length <= 16, 'names at most 16 locales').optional(),
 })
 
 const textKeys = Object.keys(ASSISTANT_RULES_TEXT_SLOTS) as AssistantRulesTextKey[]
@@ -139,12 +143,13 @@ export async function readAssistantProductRules(rootDir: string, folder: string)
     texts[key] = text
   }
 
-  const { defaults, labels } = parsed.data
+  const { defaults, labels, intro } = parsed.data
   return Object.freeze({
     format: ASSISTANT_RULES_FORMAT,
     rulesVersion: parsed.data.rulesVersion,
     defaults: Object.freeze({ ...defaults, deniedTools: Object.freeze([...defaults.deniedTools]) }),
     labels: Object.freeze({ ...labels }),
+    ...(intro ? { intro: Object.freeze(Object.fromEntries(Object.entries(intro).map(([locale, copy]) => [locale, Object.freeze({ ...copy })]))) } : {}),
     texts: Object.freeze(texts),
   })
 }

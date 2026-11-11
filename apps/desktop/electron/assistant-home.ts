@@ -66,5 +66,7 @@ export function installAssistantHome(): void {
     void ensureAssistantApp('setup')
     return (await assistantRules().refresh()).rules
   })
+  // The first run's introduction: the same rules' words, read without the setup's consequences.
+  ipcMain.handle(ASSISTANT_HOME_CHANNELS.intro, async () => (await assistantRules().refresh()).rules.intro ?? null)
   ipcMain.handle(ASSISTANT_HOME_CHANNELS.wipe, () => wipeLocalAssistantHome())
 }

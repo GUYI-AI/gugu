@@ -56,6 +56,22 @@ export const ASSISTANT_RULES_LABEL_SLOTS = {
 export type AssistantRulesTextKey = keyof typeof ASSISTANT_RULES_TEXT_SLOTS
 export type AssistantRulesLabelKey = keyof typeof ASSISTANT_RULES_LABEL_SLOTS
 
+/**
+ * What the first-run introduction says about the assistant, in one interface language. The host draws that page (the
+ * avatar, the buttons, the rows about its own places); these are the product's words on it. Never part of what the
+ * assistant is told.
+ */
+export type AssistantIntroCopy = {
+  /** The page's heading. */
+  title: string
+  /** The one sentence a desktop's first run shows under the heading. */
+  summary: string
+  /** The assistant's row where the page lists rows instead, on a computer-sized screen. */
+  desktopBody: string
+  /** The same row on a phone. */
+  phoneBody: string
+}
+
 export type AssistantProductRules = {
   format: typeof ASSISTANT_RULES_FORMAT
   /** The product's own label for this set of rules (logged and cached by it; never compared for order). */
@@ -71,6 +87,11 @@ export type AssistantProductRules = {
     profileRulesVersion: number
   }
   labels: Readonly<Record<AssistantRulesLabelKey, string>>
+  /**
+   * The first-run introduction's words, by interface locale (`zh-CN`, `en-US`). Optional: without the person's locale the
+   * host shows its own neutral heading and nothing about the assistant.
+   */
+  intro?: Readonly<Record<string, Readonly<AssistantIntroCopy>>>
   texts: Readonly<Record<AssistantRulesTextKey, string>>
 }
 
@@ -100,7 +121,7 @@ export const ASSISTANT_RULES_DATA_FILE = 'rules.json'
 /** The files of a rules folder holding these rules (the inverse of the desktop loader). */
 export function assistantRulesFiles(rules: AssistantProductRules): Record<string, string> {
   const files: Record<string, string> = {
-    [ASSISTANT_RULES_DATA_FILE]: `${JSON.stringify({ format: rules.format, rulesVersion: rules.rulesVersion, defaults: rules.defaults, labels: rules.labels }, null, 2)}\n`,
+    [ASSISTANT_RULES_DATA_FILE]: `${JSON.stringify({ format: rules.format, rulesVersion: rules.rulesVersion, defaults: rules.defaults, labels: rules.labels, ...(rules.intro ? { intro: rules.intro } : {}) }, null, 2)}\n`,
   }
   for (const key of Object.keys(ASSISTANT_RULES_TEXT_SLOTS) as AssistantRulesTextKey[]) files[assistantRuleTextFile(key)] = `${rules.texts[key]}\n`
   return files

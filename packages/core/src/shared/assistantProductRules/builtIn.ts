@@ -4,6 +4,7 @@
 import { ASSISTANT_RULES_FORMAT, type AssistantProductRules } from '../assistantRulesFormat'
 import { ASSISTANT_CHILD_HARNESS, ASSISTANT_DEFAULT_MODEL, ASSISTANT_DENIED_TOOLS, PROFILE_RULES_VERSION } from './defaults'
 import { ASSISTANT_FIRST_TASK } from './firstTask'
+import { ASSISTANT_INTRO } from './intro'
 import {
   ASSISTANT_PROFILE_REVIEW, ASSISTANT_PROFILE_REVIEW_UNVERIFIED, OWNER_PROFILE_INDEX_DESCRIPTION, OWNER_PROFILE_LANGUAGE_LINE,
   OWNER_PROFILE_MEMORY_DESCRIPTION, OWNER_PROFILE_MEMORY_NAME, OWNER_PROFILE_NAME_LINE,
@@ -28,6 +29,7 @@ export const BUILT_IN_ASSISTANT_RULES: AssistantProductRules = Object.freeze({
     ownerProfileLanguageLine: OWNER_PROFILE_LANGUAGE_LINE,
     profileReviewUnverified: ASSISTANT_PROFILE_REVIEW_UNVERIFIED,
   }),
+  intro: ASSISTANT_INTRO,
   texts: Object.freeze({
     'brief-cloud': ASSISTANT_BRIEF.cloud,
     'brief-computer': ASSISTANT_BRIEF.computer,
