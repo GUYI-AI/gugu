@@ -9,13 +9,11 @@
 
 图形是「网点鸽」(owner 2026-11-11 定):墨底上一只向右飞的鸽子,头、身子、近翅是实心白,
 远翅和尾巴散成 16 颗点(翅膀 6、尾巴 10,点径 55/43/30 三档,往翼尖、尾尖渐小),和登录页鸟群同一种网点画法。
-源图两张,都在 build-resources/icon-sources/:
-  · app-icon-source-1024.png        网点版 —— 边长 ≥ 64 像素的产物用它。
-  · app-icon-small-source-1024.png  实心版 —— 边长 < 64 像素的产物用它:网点缩到这么小会糊成一片灰,
-                                    所以换成同一只鸟填实的剪影:翅膀那串点、尾巴那簇点各取凸包(逐点对齐),
-                                    凸包离实心不到 16 的削掉,和实心之间仍留一条缝。
-两张都由同目录的矢量母版渲染:`rsvg-convert -w 1024 -h 1024 app-icon-dots.svg -o app-icon-source-1024.png`
-(实心版同理用 app-icon-solid.svg)。要改图形就改母版再重渲,❌ 直接改 PNG。
+所有尺寸都用同一张画面(owner 2026-11-11:一只鸟只有一个画法,❌ 为小尺寸另画一版):
+  · build-resources/icon-sources/app-icon-source-1024.png   由同目录矢量母版渲染:
+    `rsvg-convert -w 1024 -h 1024 app-icon-dots.svg -o app-icon-source-1024.png`。要改图形就改母版再重渲,❌ 直接改 PNG。
+  · tray-mark-source.png 是同一张画面换成白底黑形(托盘 / 菜单栏 / 安卓状态栏与主题图标用)。
+小尺寸(16–32 像素)里最小的几颗点会缩成灰点,这是这个画法本身的样子,不另做替身。
 
 产物:
 
@@ -24,18 +22,17 @@
            ⚠ `X-specializations` 数组不能与同名基础键 `X` 并存,并存时 actool **静默忽略**
            覆盖,包照样编得过、三态却没了 —— 所以这里只写 fill-specializations,不写 fill。
            ⚠ 出 mac 包的机器要 Xcode 26+(electron-builder 会先跑 `actool --version` 卡版本)。
-           ⚠ 这个格式只认一张图,系统把它缩到所有尺寸 —— macOS 26 上**换不了实心版**,小尺寸
-           (访达列表里的 16pt)就是网点缩小的样子。实测过(macOS 26.5):包里有 Assets.car 时系统
-           完全不看 icon.icns。想让 macOS 26 也按尺寸换图,只能不用这个格式,同时丢掉玻璃质感和着色态。
+           ⚠ 这个格式只认一张图,系统把它缩到所有尺寸 —— macOS 26 上本来就只能是同一张画面缩小。实测过(macOS 26.5):包里有 Assets.car 时系统
+           完全不看 icon.icns。想让 macOS 26 也按尺寸换图,只能不用这个格式,同时丢掉玻璃质感和着色态(现在不需要换图)。
   · macOS  build-resources/icon.icns          —— 传统格式 10 档。满幅自带圆角,❌ 别用经典的 824/1024
-           安全区:线上那份就是满幅,缩到 80% 会在 Dock 里比邻居小一圈。16、32 像素两档是实心版。
+           安全区:线上那份就是满幅,缩到 80% 会在 Dock 里比邻居小一圈。
            ⚠ 这份必须靠 electron-builder.cjs 的 afterPack 手动盖进包里:`mac.icon` 指向
            `.icon` 之后,electron-builder 改用 actool 现派生一份 icns,而那份**只有 16/128
            两档**,macOS 25 及更早会拿 256px 往上拉。
-  · Windows build-resources/icon.ico          —— 9 档 16/20/24/32/40/48/64/128/256,48 及以下是实心版。
+  · Windows build-resources/icon.ico          —— 9 档 16/20/24/32/40/48/64/128/256。
   · Linux   public/assets/app/gugu-icon-512.png —— AppImage 主图;同一张也是设置页/关于页
            显示的应用图标与默认头像(有 supabase 迁移与 e2e 钉着路径,❌ 别改文件名)。
-  · 界面   public/assets/app/gugu-icon-small.png —— 实心版 128 像素,给界面里显示边长 ≤ 32 的地方
+  · 界面   public/assets/app/gugu-icon-small.png —— 同一张画面 128 像素,给界面里显示边长 ≤ 32 的地方
            (标签页图标、订阅行、出错页)用。
   · Android apps/mobile/android/app/src/main/res/ —— 自适应图标三层 × 五档密度:
            ic_launcher_foreground(彩色)、**ic_launcher_monochrome(Android 13+ 主题图标,
@@ -52,14 +49,12 @@ from PIL import Image, ImageDraw, ImageOps
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / 'build-resources' / 'icon-sources' / 'app-icon-source-1024.png'
-SMALL_SRC = ROOT / 'build-resources' / 'icon-sources' / 'app-icon-small-source-1024.png'
 MONO_SRC = ROOT / 'build-resources' / 'icon-sources' / 'tray-mark-source.png'
 PACKAGING = ROOT / 'build-resources'
 PUBLIC = ROOT / 'public'
 ANDROID_RES = ROOT / 'apps' / 'mobile' / 'android' / 'app' / 'src' / 'main' / 'res'
 
 INK = (26, 28, 31)              # 底色 = 界面品牌色 --primary(tokens.css 浅色主题的墨 #1a1c1f)
-SMALL_BELOW = 64                # 边长小于这个像素数的产物用实心版
 ICNS_SIZES = [16, 32, 128, 256, 512]
 ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
 # mdpi 1× / hdpi 1.5× / xhdpi 2× / xxhdpi 3× / xxxhdpi 4×
@@ -104,8 +99,7 @@ _art: dict[str, Image.Image] = {}
 
 
 def art(size: int) -> Image.Image:
-    """按产物边长挑源图:小的用实心版,其余用网点版。"""
-    return _art['small' if size < SMALL_BELOW else 'full']
+    return _art['full']
 
 
 def rounded(size: int) -> Image.Image:
@@ -144,11 +138,9 @@ def srgb(rgb: tuple[int, int, int]) -> str:
 
 def build() -> None:
     full = Image.open(SRC).convert('RGB')
-    small = Image.open(SMALL_SRC).convert('RGB')
-    for name, im in (('网点版', full), ('实心版', small)):
-        if im.size != (1024, 1024):
-            raise SystemExit(f'{name}源图必须是 1024×1024,实际 {im.size}')
-    _art.update(full=full, small=small)
+    if full.size != (1024, 1024):
+        raise SystemExit(f'源图必须是 1024×1024,实际 {full.size}')
+    _art.update(full=full)
 
     # --- macOS 三态包 ---
     import numpy as np
@@ -186,7 +178,7 @@ def build() -> None:
     # --- Windows ico ---
     with tempfile.TemporaryDirectory() as td:
         p = Path(td) / 'icon.ico'
-        # 每一档自己出图(小档是实心版),不能让 Pillow 拿最大那张往下缩
+        # 每一档自己出图,不能让 Pillow 拿最大那张往下缩
         frames = [rounded(s_) for s_ in ICO_SIZES]
         frames[-1].save(p, format='ICO', sizes=[(s_, s_) for s_ in ICO_SIZES], append_images=frames[:-1])
         ico = Image.open(p)
@@ -204,7 +196,7 @@ def build() -> None:
 
     # --- Linux / 设置页 / 默认头像,以及界面里的小尺寸用图 ---
     emit_image(PUBLIC / 'assets' / 'app' / 'gugu-icon-512.png', rounded(512))
-    small_128 = small.resize((128, 128), Image.LANCZOS).convert('RGBA')
+    small_128 = full.resize((128, 128), Image.LANCZOS).convert('RGBA')
     small_128.putalpha(squircle(128))
     emit_image(PUBLIC / 'assets' / 'app' / 'gugu-icon-small.png', small_128)
 

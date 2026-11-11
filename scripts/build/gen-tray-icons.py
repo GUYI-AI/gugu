@@ -3,8 +3,8 @@
 
     uv run --with pillow python scripts/build/gen-tray-icons.py
 
-源图 build-resources/icon-sources/tray-mark-source.png:白底黑标,应用图标「网点鸽」的实心版剪影
-(同目录 app-icon-solid.svg 换成白底黑形渲染;图形来历见 scripts/build/gen-app-icons.py)。
+源图 build-resources/icon-sources/tray-mark-source.png:白底黑标,就是应用图标「网点鸽」那一张画面
+(同目录 app-icon-dots.svg 换成白底黑形渲染;图形来历见 scripts/build/gen-app-icons.py)。
 产物全部落在 build-resources/,规格按 Electron Tray 文档:
   · macOS  tray-iconTemplate.png 16×16 + tray-iconTemplate@2x.png 32×32 —— 模板图(黑 + 透明),
            文件名以 Template 结尾,系统按亮/暗/毛玻璃自己着色;别让打包把文件名 hash 掉。
