@@ -28,10 +28,10 @@ import { INSTALL_CONSENT_HUMAN_WINDOW_MS } from '../../session/shared/extensions
 import { agreeThenInstall, type InstallConsent } from '../../session/shared/extensions/install-consent-flow'
 import { extensionTabKind, parseExtensionManifest, safeParseExtensionManifest, type ExtensionManifest } from '../../session/shared/extensions/manifest'
 import { PHONE_CAPABILITIES, requireAppPlatform } from '../../session/shared/extensions/app-platforms'
-import { BUNDLE_SKIP_NAMES, currentMarketHost, type MarketCodeSource, type MarketUpdatesSummary } from '../../session/shared/extensions/market'
+import { BUNDLE_SKIP_NAMES, currentMarketHost, isOfficialMarketSource, type MarketCodeSource, type MarketUpdatesSummary } from '../../session/shared/extensions/market'
 import { autoUpdatesFrom, pinsAutoUpdate } from '../../session/shared/extensions/market-entries'
 import { installAsks } from '../../session/shared/extensions/upgrade'
-import { firstRunRecordSchema, isGuguOwnApp, type FirstRunRecord } from '../../session/shared/extensions/first-run'
+import { firstRunRecordSchema, type FirstRunRecord } from '../../session/shared/extensions/first-run'
 import { phoneMarket } from './phoneMarket'
 import feeds from '../../../electron/updateFeeds.json'
 
@@ -661,7 +661,7 @@ async function installFromMarket(args: {
     if (args.consent?.kind === 'gugu') {
       // Nobody asked: so only gugu's own (its code in gugu's repository, the bytes checked against what the market published
       // from there), and never over an App here — its update asks as any update does.
-      if (!isGuguOwnApp(pkg.source)) throw new Error(`${manifest.id} is not gugu's own App (its code is at ${pkg.source.repo}); only gugu's own go in without asking`)
+      if (!isOfficialMarketSource(pkg.source)) throw new Error(`${manifest.id} is not gugu's own App (its code is at ${pkg.source.repo}); only gugu's own go in without asking`)
       if (installed) throw new Error(`${manifest.id} is installed here already; it is not put in again without asking`)
       await store(manifest, pkg.files, { publisher: { id: GUGU_PUBLISHER }, sha256: pkg.sha256, manifestDigest: pkg.manifestDigest, origin: 'market' })
       return { success: true, data: { installed: true, outcome: 'confirmed', ...summary } }
