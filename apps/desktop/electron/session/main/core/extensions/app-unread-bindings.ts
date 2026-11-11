@@ -4,11 +4,14 @@ import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
 import { CONVERSATION_SURFACE_PANEL_INSET, boundEntryOf, boundPathOf, type AppBindingSurface, type AppBoundList, type AppBoundRead, type AppUnreadBinding, type GrantedSurfaceBinding, type StoredUnreadBinding } from '@shared/extensions/unread-binding';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
-import { DEFAULT_TEXT_MAX_BYTES, type AppComposeDetail } from '@shared/extensions/app-runtime-protocol';
+import { DEFAULT_TEXT_MAX_BYTES, type AppComposeDetail, type AppComposeRef } from '@shared/extensions/app-runtime-protocol';
 import { dispatchCallOf } from '@shared/extensions/app-dispatch-core';
+import { resourceKeyOf } from '@shared/extensions/agent-resources';
+import type { DraftAttachment, ReadFailureReason } from '@shared/extensions/resources-management';
+import { groupFileLink } from '@gugu/core/shared/ui/guguLink';
 import { currentAccountAccessToken } from './account-token';
 import { extensionsService } from './extensions-root';
-import { boundConversationFiles, unreadBindingChatChoices } from './app-files';
+import { boundConversationFiles, groupFile, unreadBindingChatChoices } from './app-files';
 
 const denied = (message: string) => Object.assign(new Error(message), { code: 'denied' });
 export async function account() {
@@ -142,8 +145,104 @@ export async function draftIntoBoundConversation(
   const name = call.to.binding;
   const bound = await boundConversation(extensionId, name, 'draft');
   if (!bound) throw Object.assign(new Error(`No conversation is chosen for "${name}" yet: the person chooses it in the App's permissions`), { code: 'not-found' });
-  await draftInChat({ chatId: bound.chatId, text: `${call.text}\n` });
+  const attached = call.attach ? await draftRefsOf(extensionId, name, bound.chatId, call.attach) : null;
+  if (attached) {
+    await bound.recheck();
+    for (const recheck of attached.rechecks) await recheck();
+  }
+  await draftInChat({ chatId: bound.chatId, text: call.text ? `${call.text}\n` : '', ...(attached ? { refs: attached.refs } : {}) });
   return { to: { binding: name } };
+}
+
+const notFound = (message: string) => Object.assign(new Error(message), { code: 'not-found' });
+const unreadable = (reason: ReadFailureReason) => Object.assign(new Error('An attached file could not be read now'), { code: 'failed', reason });
+const lastName = (key: string) => key.split('/').at(-1) ?? key;
+
+/**
+ * 48 `attach`: files the person can already see in the bound conversation, as pills of the draft — one of its folder by
+ * its path (the binding's `files`, as `bindings.list` names it), or one of the agent's resources by domain and key (the
+ * binding's `resources` for that domain; what it links is the resource's stored body, a file of that same private
+ * conversation). Each is found again here, under the selection the draft goes to; never a path or id the App made up.
+ * `rechecks`: every authority asked, said still so after the last wait.
+ */
+async function draftRefsOf(extensionId: string, name: string, chatId: string, attach: readonly DraftAttachment[]): Promise<{ refs: AppComposeRef[]; rechecks: (() => Promise<void>)[] }> {
+  const rechecks: (() => Promise<void>)[] = [];
+  const found = new Map<number, AppComposeRef>();
+  const files = attach.map((item, index) => ({ item, index })).filter((entry): entry is { item: Extract<DraftAttachment, { file: string }>; index: number } => 'file' in entry.item);
+  if (files.length > 0) {
+    const bound = await boundConversation(extensionId, name, 'files');
+    if (!bound) throw notFound(`No conversation is chosen for "${name}" yet`);
+    if (bound.chatId !== chatId) throw denied('Conversation binding changed');
+    rechecks.push(bound.recheck);
+    const folders = new Map<string, number[]>();
+    for (const { item, index } of files) {
+      const path = boundPathOf(item.file, 'path');
+      const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+      folders.set(parent, [...folders.get(parent) ?? [], index]);
+    }
+    for (const [parent, indexes] of folders) {
+      const entries = await boundConversationFiles.list(chatId, parent).catch((error: unknown) => {
+        if (codeOf(error) === 'not-found') throw notFound('An attached file is not in the bound conversation\'s folder');
+        if (codeOf(error) === 'failed') throw unreadable('unreadable');
+        throw error;
+      });
+      await bound.recheck();
+      for (const index of indexes) {
+        const path = (attach[index] as { file: string }).file;
+        // A row of any other chat, whatever answered it, is not this conversation's file; a folder is not a file.
+        const entry = entries.find((candidate) => candidate.chat === chatId && candidate.path === path && candidate.type !== 'folder');
+        if (!entry) throw notFound('An attached file is not in the bound conversation\'s folder');
+        found.set(index, { label: entry.name, link: groupFileLink(entry.id, { version: entry.version }) });
+      }
+    }
+  }
+  const resources = attach.map((item, index) => ({ item, index })).filter((entry): entry is { item: Extract<DraftAttachment, { domain: string }>; index: number } => 'domain' in entry.item);
+  if (resources.length > 0) {
+    const { boundAgent, storeOf, refusedOrUnavailable, domainState, reasonOf } = await import('./app-bound-resources');
+    const { withAssistantPanelReadDeadline } = await import('@gugu/core/cloud/assistantPanelRead');
+    for (const { item, index } of resources) {
+      if (item.domain === 'personality') throw invalid('personality keeps its words in the resource itself: there is no file to attach');
+      const key = resourceKeyOf(item.domain, item.key);
+      const bound = await boundAgent(extensionId, name, ['resources'], item.domain).catch((error: unknown) => {
+        if (codeOf(error) === 'failed') throw unreadable(reasonOf(error));
+        throw error;
+      });
+      if (!bound) throw notFound(`No conversation is chosen for "${name}" yet`);
+      if (bound.chatId !== chatId) throw denied('Conversation binding changed');
+      rechecks.push(bound.recheck);
+      const store = storeOf(bound.ownerId);
+      const body = await (async () => {
+        // Found as `bindings.resource` finds one: the domain readable (voice notes excepted, as there), then the resource.
+        const [snapshot, row] = await Promise.all([
+          item.domain === 'voice-notes' ? null : withAssistantPanelReadDeadline(() => store.snapshot(bound.agentId)),
+          withAssistantPanelReadDeadline(() => store.resource(bound.agentId, item.domain as Exclude<typeof item.domain, 'personality'>, key)),
+        ]);
+        await bound.recheck();
+        const readable = snapshot ? domainState(snapshot, item.domain as Exclude<typeof item.domain, 'personality' | 'voice-notes'>) : null;
+        if (readable && readable.state === 'unavailable') return readable;
+        if (readable && readable.state === 'unprepared') return { state: 'unavailable' as const, reason: 'unreadable' as const };
+        if (!row || row.deleted_at) return null;
+        if (row.stale_at) return { state: 'unavailable' as const, reason: 'stale' as const };
+        if (!row.body_item_id) {
+          if (row.data.kind === 'directory') throw invalid('A folder is not a file: attach the files in it');
+          return { state: 'unavailable' as const, reason: 'unreadable' as const };
+        }
+        const file = await groupFile(chatId, row.body_item_id);
+        await bound.recheck();
+        // Its body is a file of this very private conversation, or it is not attached.
+        if (file.chatId !== chatId) return { state: 'unavailable' as const, reason: 'access-unverified' as const };
+        return { itemId: file.itemId, version: file.file.version };
+      })().catch((error: unknown) => {
+        if (codeOf(error) === 'invalid') throw error;
+        if (codeOf(error) === 'not-found') return null;
+        return refusedOrUnavailable(error);
+      });
+      if (!body) throw notFound('An attached resource is not among the agent\'s');
+      if ('state' in body) throw unreadable(body.reason);
+      found.set(index, { label: lastName(key), link: groupFileLink(body.itemId, { version: body.version }) });
+    }
+  }
+  return { refs: attach.map((_, index) => found.get(index)!), rechecks };
 }
 
 /**

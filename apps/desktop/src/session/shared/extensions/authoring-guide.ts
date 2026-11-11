@@ -921,6 +921,17 @@ API 44, only when that conversation is the person's private chat with their own 
 - In a click: \`gugu.assistant.open("main", screen)\`, screen one of \`setup\`, \`move\`, \`close\`, \`look\`, \`model\`, \`devices\`,
   \`connected-apps\`: gugu opens that screen; the person acts there. \`gugu.assistant.advanceSetup("main", "ready" | "done")\`: the
   steps you draw, from \`connect\` (to ready or done) or \`ready\` (to done); any other is \`invalid\`. Both resolve or are refused, nothing more.
+API 48 (desktop): \`unavailable\` carries \`reason\`: \`stale\`, \`not-applied\`, \`timed-out\`, \`unreadable\`, \`access-unverified\`,
+\`owner-unknown\`, \`too-large\`. Each call below, in a click, your page only; \`key\` as \`resources\` gives it:
+- \`"resources:write"\` with \`"files"\`: \`upload("main", { folder? })\` opens gugu's file picker (50 MB, no video, audio or archive)
+  → \`{ state: "done", uploaded: [{ key, name, receipt }], refused: [{ name, why }] }\` | \`cancelled\`; \`createFolder("main", key)\` →
+  \`committed\` | \`exists\`; \`rename("main", key, to)\` → \`{ renamedTo, receipts }\` | \`missing\` | \`exists\`; \`removeFolder("main", key)\`
+  → gugu asks the person first: \`committed\` | \`cancelled\`.
+- \`"voice-notes:manage"\` (\`chat:voice-notes:manage\`, needs \`"voice-notes"\` read), \`key\` the note's id:
+  \`transcribeVoiceNote\` → \`started\` | \`not-waiting\` | \`busy\` | \`not-ready\` (open the assistant once, try again);
+  \`removeVoiceNote\` (gugu asks) → \`committed\` | \`cancelled\`; \`exportVoiceNote\` (gugu's save dialog) → \`saved\` | \`cancelled\`.
+- A draft carries files: \`gugu.dispatch(text, { draft: true, to: { binding: "main" }, attach: [{ file: path } | { domain, key }] })\`,
+  up to 9, each one you may read (\`"files"\` / that domain). Pills in the composer; nothing is sent.
 `;
 
 export const EXTENSION_GUIDE_MESSAGES = `# gugu.chats, gugu.messages — the chats you are in, and what was said
@@ -1288,7 +1299,7 @@ export const EXTENSION_GUIDE_TOPICS: readonly { topic: string; about: string; te
   },
   {
     topic: 'apps-bindings',
-    about: 'gugu.bindings (chat:unread, API 37+): the one conversation the person chooses for your App — its unread dot, its files (40), a draft into it (40), your main page beside it (41), its agent\'s resources (42), its assistant (44).',
+    about: 'gugu.bindings (chat:unread, API 37+): the one conversation the person chooses for your App — its unread dot, its files (40), a draft into it (40), your main page beside it (41), its agent\'s resources (42), its assistant (44), managing its files and voice notes, drafts with files (48).',
     text: EXTENSION_GUIDE_BINDINGS,
   },
   {
