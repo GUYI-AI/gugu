@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,7 +15,10 @@ const mocks = vi.hoisted(() => ({
   said: { title: null, badge: null, error: null } as { title: string | null; badge: string | number | null; error: string | null },
   saidFor: [] as [string | null, string][],
   toggle: null as null | (() => void),
+  target: { kind: 'built-in' } as { kind: 'built-in' } | { kind: 'app'; extensionId: string; chatId: string },
 }));
+// Entry switch: where the assistant's entry goes now (lib/assistantEntry.ts's one decision).
+vi.mock('@/lib/assistantEntry', () => ({ useAssistantEntryTarget: () => mocks.target }));
 
 vi.mock('@renderer/features/extensions/extension-surface-store', async (original) => ({
   ...await original<typeof import('@renderer/features/extensions/extension-surface-store')>(),
@@ -66,7 +70,7 @@ vi.mock('@renderer/features/library/library-host', () => ({ LibraryHostProvider:
 vi.mock('@renderer/features/remote-hosts/device-scope-picker', () => ({ DeviceScopeProvider: () => null }));
 vi.mock('@renderer/features/remote-hosts/device-scope-store', () => ({ libraryDeviceStore: {} }));
 vi.mock('@renderer/lib/components/page-layout', () => ({ PageContent: () => null, PageLayout: () => null }));
-vi.mock('@renderer/lib/components/titlebar/shell-titlebar', () => ({ ShellTitlebar: ({ leftSlot }: { leftSlot?: unknown }) => leftSlot ?? null }));
+vi.mock('@renderer/lib/components/titlebar/shell-titlebar', () => ({ ShellTitlebar: ({ leftSlot, children }: { leftSlot?: ReactNode; children?: ReactNode }) => <>{leftSlot}{children}</> }));
 // The chat panel's own mark (AppErrorMark): this file judges where it is put and that it opens, not how it looks.
 vi.mock('@/components/appSlot/AppErrorMark', () => ({
   AppErrorMark: (props: { error: string; onToggle: () => void; testId: string }) => {
@@ -90,6 +94,7 @@ describe('an App opened from the far-left rail', () => {
     mocks.params = { appId: 'clock' };
     mocks.main = { kind: 'clock.main', enabled: true, extensionName: 'Clock' };
     mocks.lastSession = { projectId: 'project-1', sessionId: 'task-1' };
+    mocks.target = { kind: 'built-in' };
   });
 
   it('uses the same live page title as its task tab and keeps the App name as the initial title', () => {
@@ -161,6 +166,46 @@ describe('an App opened from the far-left rail', () => {
     renderToStaticMarkup(<appView.MainPanel />);
     expect(mocks.frames).toEqual([]);
     expect(mocks.claims).toEqual([{ tabKind: 'today.notes', tabId: 'dock' }]);
+  });
+
+  // Real window (verify-pass1 11-b, 14-b): the App as the assistant's page had the App page's title over it — 「咕咕助理」, a
+  // gear, open in window — and its frame started under that band. The built-in assistant page had neither. Control (the
+  // parent commit): the name and both buttons drawn, the page padded under the band.
+  it('as the assistant\'s page (the entry goes to it) it has no title of its own and starts at the top, as the built-in page did', () => {
+    mocks.params = { appId: 'gugu-assistant' };
+    mocks.main = { kind: 'gugu-assistant.main', enabled: true, extensionName: '咕咕助理', extensionId: 'gugu-assistant' };
+    mocks.manifest = { contributes: { conversationSurface: { binding: 'main', placement: 'side-panel', header: 'assistant' } } };
+    const before = renderToStaticMarkup(<appView.TitlebarSlot />);
+    expect(before).toContain('>咕咕助理</span>');
+    expect(before).toContain('data-testid="app-page-settings"');
+    expect(before).toContain('data-testid="app-page-open-in-window"');
+    expect(renderToStaticMarkup(<appView.MainPanel />)).toContain(`padding-top:${WINDOW_CONTROL_BAR_HEIGHT_PX}px`);
+
+    mocks.target = { kind: 'app', extensionId: 'gugu-assistant', chatId: 'dm-1' };
+    const title = renderToStaticMarkup(<appView.TitlebarSlot />);
+    expect(title).not.toContain('咕咕助理');
+    expect(title).not.toContain('app-page-settings');
+    expect(title).not.toContain('app-page-open-in-window');
+    const page = renderToStaticMarkup(<appView.MainPanel />);
+    expect(page).not.toContain('padding-top');
+    expect(page).toContain('data-assistant-page=""');
+    expect(mocks.frames.at(-1)).toEqual({ extensionId: 'gugu-assistant', tabKind: 'gugu-assistant.main' });
+    // A reported error still has its mark on the band, and nothing else of the App's.
+    mocks.said = { title: null, badge: null, error: 'Could not read today.json' };
+    expect(renderToStaticMarkup(<appView.TitlebarSlot />)).toMatch(/^<button[^>]*data-testid="app-page-error"[^>]*title="Could not read today.json"[^>]*><\/button>$/);
+  });
+
+  it('the same App keeps its title bar for another of its tabs, and wherever the entry does not go to it', () => {
+    mocks.manifest = { contributes: { conversationSurface: { binding: 'main', placement: 'side-panel', header: 'assistant' } } };
+    mocks.target = { kind: 'app', extensionId: 'gugu-assistant', chatId: 'dm-1' };
+    mocks.params = { appId: 'gugu-assistant', tab: 'notes' };
+    mocks.tabs = [{ kind: 'gugu-assistant.notes', enabled: true, extensionName: '咕咕助理', extensionId: 'gugu-assistant' }];
+    expect(renderToStaticMarkup(<appView.TitlebarSlot />)).toContain('data-testid="app-page-open-in-window"');
+    expect(renderToStaticMarkup(<appView.MainPanel />)).toContain(`padding-top:${WINDOW_CONTROL_BAR_HEIGHT_PX}px`);
+    // Another App while the entry goes to the assistant App: its own page, as before.
+    mocks.params = { appId: 'clock' };
+    expect(renderToStaticMarkup(<appView.TitlebarSlot />)).toContain('>Clock</span>');
+    expect(renderToStaticMarkup(<appView.MainPanel />)).toContain(`padding-top:${WINDOW_CONTROL_BAR_HEIGHT_PX}px`);
   });
 
   it('both places of the rail are drawn without the task list beside them', () => {
