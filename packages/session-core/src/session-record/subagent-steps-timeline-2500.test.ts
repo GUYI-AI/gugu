@@ -18,7 +18,7 @@ describe('subagent steps on the timeline', () => {
       let key = 0;
       const feed = async (...updates: unknown[]) => {
         sink.onEntries(updates.map((update): RecordEntry => ({
-          key: `k${key += 1}`, at: 1_000 + key, event: decodeSessionUpdate(update as Parameters<typeof decodeSessionUpdate>[0]) })));
+          key: `k${key += 1}`, at: Date.now() - 1_000 + key, event: decodeSessionUpdate(update as Parameters<typeof decodeSessionUpdate>[0]) })));
         await timeline.catchUp();
       };
       const child = (update: unknown) => ({ sessionUpdate: 'subagent_stream', subagentSessionId: 'child', update });
