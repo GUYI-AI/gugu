@@ -124,7 +124,6 @@ import { RETAINED_SURFACE_HIDDEN_STYLE } from '../lib/retainedSurface'
 import { createShellTabStore, ShellTabContext, useShellTabOf, useShellTabStore } from '../lib/shellTab'
 import { useStableHandler } from '../hooks/useStableHandler'
 import { rendererLogger } from '../lib/log'
-import { takeAssistantOpenRequest } from '../lib/firstRun'
 import { appState } from '../session/renderer/lib/stores/app-state'
 import { setComposerVerb } from '../lib/composerVerbBridge'
 import { sessionPeek } from '../session/renderer/app/session-peek'
@@ -244,19 +243,6 @@ function InnerLayout({
   }, [setActiveTab, mobile, phoneAssistant.chatId])
   const assistantOnPhone = mobile && !!phoneAssistant.chatId && activeChatId === phoneAssistant.chatId
   const unreadNavigationTarget = assistantOnPhone ? 'assistant' : 'chat'
-  // 首次引导里点了「开通我的咕咕」(product spec,#7348):主界面挂上就打开咕咕那一格(开通流程自己从「住在哪」开始)。
-  // 桌面 = 会话页的「助理」视图(同最左栏顶格那一下);手机 = 底栏咕咕那一格。这一格开不了时不跳,由人自己去看。
-  useEffect(() => {
-    if (!effectsActive) return
-    if (mobile ? !phoneAssistant.available : !(sessionHostAvailable && platform.capabilities.agentRuntime)) return
-    if (!takeAssistantOpenRequest(user.id)) return
-    if (mobile) {
-      setActiveTab('assistant')
-      return
-    }
-    setActiveTab('tasks')
-    openAssistantEntry()
-  }, [setActiveTab, effectsActive, mobile, phoneAssistant.available, sessionHostAvailable, user.id])
   // gugu-dev#181 桌面上没有单独的聊天页:对话是会话页这屏的一块,打开一条对话 = 请会话页把它那块摆出来(项目群摆项目块,
   // 那边判)。返回真实呈现槽标识;没有块宿主时返回 null,照旧落在聊天页。
   const chatsAreBlocks = !mobile && sessionHostAvailable

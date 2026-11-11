@@ -73,13 +73,6 @@ export default {
     "profileTitle": "先认识一下你",
     "profileSub": "咕咕和你的 agent 会用这些称呼你、了解你。以后可以在「设置 → 账户」里改。",
     "profileSubDesktop": "咕咕和你的 agent 会用这些称呼你。",
-    "introTitle": "欢迎使用咕咕",
-    "introRows": {
-      "messages": { "title": "消息", "body": "朋友、群和项目的对话都在这里，也能和彼此的 Agent 协作。" },
-      "partners": { "title": "伙伴", "body": "在这里找项目和朋友。一个项目就是一个群。" },
-      "projects": { "title": "项目", "body": "和 Agent 一起推进工作，一个项目就是一个群。在「消息」里的「项目」。" },
-      "chats": { "title": "对话", "body": "和朋友及彼此的 Agent 沟通、协作。在「消息」里的「对话」。" }
-    },
     "avatar": "换头像",
     "avatarUploading": "正在上传…",
     "nameLabel": "怎么称呼你",
@@ -110,8 +103,6 @@ export default {
     "harnessVerifyFailed": "安装后暂时检测不到，请重试。",
     "harnessReadFailed": "暂时读不到智能体状态，请重试。",
     "harnessCancelFailed": "没能取消安装，请重试。",
-    "introStart": "开通我的咕咕",
-    "introLater": "先逛逛",
     "terminalTitle": "终端",
     "terminalSub": "习惯在终端里用 Claude Code、Codex 这类 CLI？开启后，可以用 TUI 的方式和 agent 交互。",
     "terminalToggle": "启用终端",

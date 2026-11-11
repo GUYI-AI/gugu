@@ -6,7 +6,7 @@ import { createMoveJournalFileStore } from './assistant-move-journal'
 import { stdSerializers } from 'pino'
 import { ASSISTANT_HOME_CHANNELS, type AssistantEngine, type PrepareLocalHomeInput } from '../src/lib/assistantHomeIpc'
 import { prepareLocalAssistantHome, wipeLocalAssistantHome } from './assistant-home-prepare'
-import { assistantRules, refreshedAssistantRules } from './assistant-rules-resolver'
+import { refreshedAssistantRules } from './assistant-rules-resolver'
 import { assistantRulesState, ensureAssistantApp, onAssistantRulesState } from './assistant-rules-root'
 import { createAssistantSetupPreparation } from './assistant-setup-preparation'
 import { createLogger } from './lib/logger'
@@ -67,8 +67,6 @@ export function installAssistantHome(): void {
     // With none here yet the setup waits for them: the ensure step is putting the App in, the entry shows it preparing.
     return (await refreshedAssistantRules()).rules
   })
-  // The first run's introduction: the same rules' words, read without the setup's consequences (and without waiting).
-  ipcMain.handle(ASSISTANT_HOME_CHANNELS.intro, async () => (await assistantRules().refresh()).rules?.intro ?? null)
   ipcMain.handle(ASSISTANT_HOME_CHANNELS.rulesState, () => assistantRulesState())
   onAssistantRulesState((state) => {
     for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(ASSISTANT_HOME_CHANNELS.rulesStateChanged, state)

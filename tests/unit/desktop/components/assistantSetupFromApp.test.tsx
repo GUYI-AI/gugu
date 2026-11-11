@@ -29,7 +29,7 @@ vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }))
 const { AssistantOnboarding } = await import('@/components/assistant/AssistantOnboarding')
 const { clearAssistantOnboardingNavigation } = await import('@/lib/assistantOnboardingNavigation')
 const { openAssistantScreen } = await import('@/lib/assistantAppHost')
-const { requestAssistantSetupHandoff, takeAssistantStartAtHome } = await import('@/lib/firstRun')
+const { requestAssistantSetupAfterIntro, takeAssistantStartAtHome } = await import('@/lib/firstRun')
 const { installAssistantShellBridge, publishAssistantShell } = await import('@/lib/assistantShellBridge')
 const { UI_EVENTS } = await import('@/lib/uiEvents')
 
@@ -104,12 +104,12 @@ describe('开通 inside the assistant App', () => {
     expect(takeAssistantStartAtHome(OWNER)).toBe(false)
   })
 
-  it('the other ways into Settings\' setup are not changed: opened by itself it starts at the intro, the first-run hand-off at the name', async () => {
+  it('the other ways into Settings\' setup are not changed: opened by itself it starts at the intro, the hand-off at the name', async () => {
     shell()
     await settingsSetupPage()
     expect(seen('intro')).toBe(true)
     harness.cleanup(); harness = createReactHarness()
-    requestAssistantSetupHandoff(OWNER)
+    requestAssistantSetupAfterIntro(OWNER)
     await settingsSetupPage()
     expect(seen('name-step')).toBe(true)
   })

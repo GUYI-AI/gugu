@@ -27,11 +27,6 @@ export const ASSISTANT_HOME_CHANNELS = {
    * waits until the assistant App is in (the call itself starts putting it in).
    */
   rules: 'assistant-home:rules',
-  /**
-   * #1931 The first-run introduction's words about the assistant (invoke, no arguments → the rules' `intro` by locale, or
-   * null): read from the same rules, without counting as the assistant's setup starting.
-   */
-  intro: 'assistant-home:intro',
   /** #1931 Whether the assistant here waits for its rules (invoke, no arguments → AssistantRulesState). */
   rulesState: 'assistant-home:rules-state',
   /** #1931 The same, each time it changes (main → every window, AssistantRulesState). */
