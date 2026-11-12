@@ -1,4 +1,5 @@
 import { turnFileText } from '../session-timeline/turn-files';
+import { firstTurnPlacement } from '../sessions/first-turn-placement';
 import { isHumanDmDelivery } from '@gugu/core/local/agent/deliveryEnvelope';
 import { declaredInjectionTiming } from '@gugu/session-core/agents/plugins';
 import { resolveSessionpageSessionIntegration } from '@gugu/session-plugins/agents';
@@ -217,9 +218,17 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
 
   async function admit(have: StageOut, pending: PendingRow, signal: AbortSignal): ReturnType<LegAdapter['dispatch']> {
     const delivery = pending.message.delivery;
+    const stopped = { result: 'rejected-before-admission', cause: { name: 'AdmissionCancelled', message: 'The session stopped before dispatch' } } as const;
+    // A new task's first turn is queued before its files have landed in the agent's folder: preparing them starts by
+    // waiting for the page that is placing them (#2558).
+    const placing = delivery?.files?.length ? firstTurnPlacement(sessionId, signal) : null;
+    if (placing) {
+      await placing;
+      if (signal.aborted) return stopped;
+    }
     const turn = delivery?.files?.length ? await turnFileText(sessionId, delivery.files, true, delivery.attachments) : null;
     // A stop during file preparation still precedes every provider byte. Use Life's existing refusal receipt.
-    if (signal.aborted) return { result: 'rejected-before-admission', cause: { name: 'AdmissionCancelled', message: 'The session stopped before dispatch' } };
+    if (signal.aborted) return stopped;
     const images = [...(delivery?.attachments ?? []), ...(turn?.images ?? [])];
     const attachments = { ...(images.length ? { attachments: images } : {}), ...(turn?.files?.length ? { files: turn.files } : {}) };
     let sent: Awaited<ReturnType<typeof injectEmdashPromptDetached>>;

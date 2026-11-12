@@ -348,7 +348,7 @@ export class ProjectSessionsStore {
     return this._loadPromise;
   }
 
-  async createSession(params: CreateSessionParams, options?: { deferFirstTurn?: boolean; onOptimistic?: () => void }) {
+  async createSession(params: CreateSessionParams, options?: { placingFiles?: boolean; onOptimistic?: () => void }) {
     const ic = params.sessionConfig.initialSession;
     if (!ic) throw new Error('createSession: a session is created together with its initial agent config');
     const id = ic.id;
@@ -402,10 +402,10 @@ export class ProjectSessionsStore {
     }
   }
 
-  private async _completeCreateSession(params: CreateSessionParams, optimistic: Session, options?: { deferFirstTurn?: boolean }) {
+  private async _completeCreateSession(params: CreateSessionParams, optimistic: Session, options?: { placingFiles?: boolean }) {
     const id = optimistic.id;
     const outcome = await rpc.sessionCreate
-      .createAndProvisionSession(JSON.parse(JSON.stringify(toJS(params))) as typeof params, options?.deferFirstTurn ? { deferFirstTurn: true } : undefined)
+      .createAndProvisionSession(JSON.parse(JSON.stringify(toJS(params))) as typeof params, options?.placingFiles ? { placingFiles: true } : undefined)
       .catch((e: unknown) => {
         // 抛出来的是未知错误：原文逐字存进 store，渲染时原样呈现、永不翻译。
         const message = e instanceof Error ? e.message : String(e);
@@ -458,13 +458,13 @@ export class ProjectSessionsStore {
     this._settingsStore.pageData.invalidate();
 
     // The host already prepared the workspace in the same call; its answer goes through the one provision path.
-    await this._doProvision(id, options, async () => {
+    await this._doProvision(id, async () => {
       if (outcome.stage === 'provision-error') throw new Error(outcome.message);
       return outcome.result;
     });
   }
 
-  async provisionSession(sessionId: string, options?: { deferFirstTurn?: boolean }): Promise<void> {
+  async provisionSession(sessionId: string): Promise<void> {
     // An open of a task still being created or prepared joins that one host operation before any device read.
     const inFlight = this._provisionPromises.get(sessionId);
     if (inFlight) return inFlight;
@@ -484,7 +484,7 @@ export class ProjectSessionsStore {
       session.phase = 'provision';
     });
 
-    const promise = this._doProvision(sessionId, options).finally(() => {
+    const promise = this._doProvision(sessionId).finally(() => {
       this._provisionPromises.delete(sessionId);
     });
 
@@ -492,8 +492,8 @@ export class ProjectSessionsStore {
     return promise;
   }
 
-  private async _doProvision(sessionId: string, options?: { deferFirstTurn?: boolean },
-    provision = () => rpc.sessionCreate.provisionWorkspace(sessionId, options)): Promise<void> {
+  private async _doProvision(sessionId: string,
+    provision = () => rpc.sessionCreate.provisionWorkspace(sessionId)): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session || !isUnprovisioned(session)) return;
 

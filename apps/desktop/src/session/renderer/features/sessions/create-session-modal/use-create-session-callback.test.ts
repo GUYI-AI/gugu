@@ -295,7 +295,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     expect(mocks.navigate).toHaveBeenCalled();
   });
 
-  it('still navigates to the created task when the first-turn admission RPC fails', async () => {
+  it('still navigates to the created task when telling the host that placement settled fails', async () => {
     attachFirstFile();
     mocks.admit.mockRejectedValueOnce(new Error('[machine] internal-device runs an older host without sessionCreate.admitFirstMessages'));
     await act(async () => root.render(React.createElement(Probe)));
@@ -303,7 +303,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     expect(mocks.createSession).toHaveBeenCalledOnce();
     expect(mocks.admit).toHaveBeenCalledOnce();
     expect(latest?.deliveryError).toBeNull();
-    expect(mocks.logWarn).toHaveBeenCalledWith('admit the first task turn failed', expect.objectContaining({ error: expect.stringContaining('admitFirstMessages') }));
+    expect(mocks.logWarn).toHaveBeenCalledWith('release the first task turn failed', expect.objectContaining({ error: expect.stringContaining('admitFirstMessages') }));
     expect(mocks.logError).not.toHaveBeenCalled();
     expect(mocks.navigate).toHaveBeenCalledWith('session', expect.objectContaining({ projectId: 'project-1' }));
     expect(mocks.onClose).toHaveBeenCalled();
@@ -530,7 +530,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     // 留在会话页:导航到这条会话,它的 id 就是附件落盘时预留的那个。
     expect(mocks.navigate).toHaveBeenCalledWith('session', { projectId: 'project-1', sessionId: mocks.createSession.mock.calls[0]![0].sessionConfig.initialSession.id });
   });
-  it.each([true, false])('keeps the first turn deferred until attachment placement finishes (placed=%s)', async placed => {
+  it.each([true, false])('#2558 queues the first turn at creation and tells the host when placement settles (placed=%s)', async placed => {
     const ref = { itemId: 'brief', version: 1, name: 'brief.txt', mimeType: 'text/plain', sizeBytes: 3 };
     let finish!: (value: typeof ref[] | null) => void;
     initialSession.promptCapability = { kind: 'none', startupDelivery: 'startup-prompt' };
@@ -541,7 +541,8 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     await act(async () => root.render(React.createElement(Probe)));
     try {
       await act(async () => latest?.handleCreateSession());
-      expect(mocks.createSession.mock.calls.at(-1)?.[1]).toEqual(expect.objectContaining({ deferFirstTurn: true, onOptimistic: expect.any(Function) }));
+      expect(mocks.createSession.mock.calls.at(-1)?.[1]).toEqual(expect.objectContaining({ placingFiles: true, onOptimistic: expect.any(Function) }));
+      expect(mocks.createSession.mock.calls.at(-1)?.[1]).not.toHaveProperty('deferFirstTurn');
       const initial = mocks.createSession.mock.calls.at(-1)?.[0].sessionConfig.initialSession;
       expect(initial.initialQueue[0]).toMatchObject({ text: 'make one task', files: [ref] });
       expect(mocks.admit).not.toHaveBeenCalled();

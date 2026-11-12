@@ -199,6 +199,7 @@ import {
 } from '@main/core/sessions/session-orchestration'
 import { sharedRemotePaneRoute } from '@main/core/session-timeline/remote-pane'
 import { releaseSubscriptionsOf } from '@main/core/session-timeline/controller'
+import { releasePlacementsOf } from '@main/core/sessions/first-turn-placement'
 import { setSessionAcpSessionStopper, sessionWorkspaceManager } from '@main/core/sessions/session-workspace-manager'
 import { prSyncScheduler } from '@main/core/pull-requests/pr-sync-scheduler'
 import { disposeLocalPtySessions } from '@main/core/pty/local-pty'
@@ -487,6 +488,8 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   setHostIpc(options.hostIpc)
   // 经网络连进来的线(别的电脑、手机)开的时间线 / 会话列表订阅,线断了一并拆:寿命跟着连接走,❌ 另设保活。
   options.hostIpc.onConnectionClosed?.(releaseSubscriptionsOf)
+  // #2558 一条线断了,它正在放的首轮附件不会再放完:那几句照已放好的发出,❌ 一直等。
+  options.hostIpc.onConnectionClosed?.(releasePlacementsOf)
   const { ipcMain } = options.hostIpc
   const { browserFeatures } = options
   // 首启默认组(161 10-15):这个 profile 是不是第一次启动,只有在任何东西建出 App 的记录目录之前才看得出来 —— 所以最先。

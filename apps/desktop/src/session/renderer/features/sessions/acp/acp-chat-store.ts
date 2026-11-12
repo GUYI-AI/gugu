@@ -2112,16 +2112,18 @@ export class AcpChatStore {
   /**
    * 打开时照旧走原来那条开场(请宿主起它)的几种:
    *  · 侧边聊天:它就是为这一问开出来的运行时分叉;
-   *  · 新建会话带着第一句、还没认领首启:那句话是人已经发出去的,当场起;
    *  · 持久分叉还没分出去:分叉这一步就发生在首启;
    *  · provider 那侧的会话已失效:那条路不起,只画库里那份并说原因。
+   *
+   * ❌ 新建会话带着第一句:那句话在建的那一刻就进了它的待发队列,是**入队**把它起起来的(宿主,同一次建任务调用里);
+   * 页面照常停着、跟着会话表挂上去,队首那句由待发队列画。#2558:页面曾在这里替它起一次 —— 那次起不带那句话,
+   * 附件还没放完时它先拿到引擎会话号,晚到的入队就被读成「跑过了」而丢掉,页面一片空白。
    */
   private _opensThroughStartup(): boolean {
     if (this.isTransient) return true;
     const record = this._sessionRecord();
     if (!record) return false;
     return record.providerSessionState === 'missing'
-      || pendingInitialQueue(record) !== undefined
       || pendingPersistentFork(record) !== undefined;
   }
 
@@ -3454,12 +3456,7 @@ function containsUserPrompt(turn: TranscriptTurn | null, prompt: QueuedPrompt): 
   );
 }
 
-type StartRecord = Pick<Session, 'providerSessionId' | 'initialQueue' | 'forkFromProviderSessionId'>;
-
-/** 新建会话还没认领首启时带着的那几句(第一句在队首):有就打开它就当场请宿主起(#980 照旧)。 */
-function pendingInitialQueue(record: StartRecord): Session['initialQueue'] {
-  return record.providerSessionId === undefined && record.initialQueue?.length ? record.initialQueue : undefined;
-}
+type StartRecord = Pick<Session, 'providerSessionId' | 'forkFromProviderSessionId'>;
 
 /**
  * 持久分叉还没分出去时的来源 provider 会话。⚠️ 只在**还没认领首启**时发起:`providerSessionId` 一旦有值,

@@ -286,11 +286,13 @@ export function useCreateSessionCallback({
       ...(birthChatId ? { birthGroup: { chatId: birthChatId, asTask: Boolean(taskChatId) } } : {}),
     };
 
-    const deferFirstTurn = baseSession.type === 'acp' && files.length > 0;
+    // #2558 The first turn is queued at creation with its files named; while this page places them the host holds its
+    // dispatch (not the turn itself), so the agent starts at once and the page draws the message from the queue.
+    const placingFiles = baseSession.type === 'acp' && files.length > 0;
     // #6264 别的机器上还没装所选的家:先在那台机器上装好再建(装不上就不建,原因说出来)。
     let openedOptimistically = false;
     void (beforeCreate ? beforeCreate() : Promise.resolve()).then(() => sessionManager.createSession(createInput, {
-      ...(deferFirstTurn ? { deferFirstTurn: true } : {}),
+      ...(placingFiles ? { placingFiles: true } : {}),
       onOptimistic: () => {
         if (!openAfterCreate) return;
         openedOptimistically = true;
@@ -307,7 +309,7 @@ export function useCreateSessionCallback({
         log.error('remember the started configuration failed', { error: error instanceof Error ? error.message : String(error) });
         toast({ title: translateSessionMessage('task.newSessionMemoryNotSaved'), description: messageForUser(error), tier: 'warning' });
       });
-      // The first ACP turn stays deferred until DM placement (including SSH upload) has finished.
+      // The first ACP turn is already queued; its dispatch waits until DM placement (including SSH upload) has finished.
       try {
         if (named.length > 0) {
           const placed = await input.placeAttachments(async () => {
@@ -328,10 +330,11 @@ export function useCreateSessionCallback({
         log.warn('new task attachment placement failed', { sessionId, error: String(error) });
         toast({ title: translateSessionMessage('composer.attachmentUploadFailed'), tier: 'warning' });
       } finally {
-        // Placement errors still admit the caption; the host gives the agent a not-saved line for each missing file.
-        if (deferFirstTurn) {
+        // Placement errors still send the caption; the host gives the agent a not-saved line for each missing file. If
+        // this call is lost, the host lets the turn go when this page's window or connection goes away.
+        if (placingFiles) {
           try { await rpcOn(deviceId ?? null).sessionCreate.admitFirstMessages(sessionId); }
-          catch (error) { log.warn('admit the first task turn failed', { sessionId, error: String(error) }); }
+          catch (error) { log.warn('release the first task turn failed', { sessionId, error: String(error) }); }
         }
       }
       if (message) {
