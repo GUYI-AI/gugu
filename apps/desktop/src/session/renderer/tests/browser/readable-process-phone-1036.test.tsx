@@ -41,14 +41,23 @@ it('wraps the real phone process summary, live detail, and background command wi
   const background = h.container.querySelector<HTMLButtonElement>(selector)!
   await act(async () => { background.click() })
   await until('the shared background command is expanded', () => !!h.container.querySelector('[data-slot="background-task"][data-task-kind="command"]'))
-  const row = h.container.querySelector<HTMLElement>('[data-slot="background-task"][data-task-kind="command"]')!
-  const name = Array.from(row.querySelectorAll<HTMLElement>('span')).find(span => span.textContent?.replace(/\n/g, '') === command)!
+  const row = () => h.container.querySelector<HTMLElement>('[data-slot="background-task"][data-task-kind="command"]')!
+  // owner 2026-11-12:收着只一行(「不渐进披露吗,这样也太长了」),悬停给整条;这一行是开关,手机上点一下就地写全。
+  const toggle = row().querySelector<HTMLButtonElement>('[data-slot="background-task-toggle"]')!
+  expect(toggle.textContent).toBe(command)
+  expect(getComputedStyle(toggle).textOverflow).toBe('ellipsis')
+  expect(toggle.getBoundingClientRect().height).toBe(20)
+  expect(row().title).toBe(command)
+  await act(async () => { toggle.click() })
+  await until('the command opens in place', () => !!row().querySelector('[data-slot="background-task-command"]'))
+  const name = row().querySelector<HTMLElement>('[data-slot="background-task-command"]')!
   expect(name.textContent?.replace(/\n/g, '')).toBe(command)
-  expect(row.title).toBe(command)
   expect(getComputedStyle(name).whiteSpace).toBe('pre-wrap')
   expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth + 1)
-  const controls = row.querySelectorAll<HTMLButtonElement>('button')
-  expect(controls).toHaveLength(2)
+  const controls = [
+    row().querySelector<HTMLButtonElement>('button[aria-label="Stop this background command"]')!,
+    row().querySelector<HTMLButtonElement>('button[aria-label="Remove from list (does not stop it)"]')!,
+  ]
   await act(async () => { controls[0]!.click(); controls[1]!.click() })
   expect(stop).toHaveBeenCalledWith({ stopId: 'bg' })
   expect(dismiss).toHaveBeenCalledWith({ entryId: 'c' })

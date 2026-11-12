@@ -52,9 +52,10 @@ export const backgroundTaskName = style({ flex: 1, minWidth: 0, whiteSpace: 'pre
 /** 收着的一条命令:恒一行,放不下省略号收尾(量高按一行算,❌ 让浏览器折到第二行)。 */
 export const backgroundTaskLine = style({ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' });
 
-/** 能点开的那一格:是按钮(键盘也能开合),长得仍是行里那段字。 */
+/** 能点开的那一行:是按钮(键盘也能开合),长得仍是行里那段字;占满整行宽,点字后面的空白也算。 */
 export const backgroundTaskToggle = style({
   display: 'block',
+  width: '100%',
   margin: 0,
   padding: 0,
   border: 0,
@@ -66,7 +67,7 @@ export const backgroundTaskToggle = style({
   cursor: 'pointer',
 });
 
-/** 点开后说明下面那整条命令:代码字体(执行卡片里的命令同一套)、淡一档;换行由量高排好贴上来,行高 inline 给。 */
+/** 点开后开关下面那整条命令:代码字体(执行卡片里的命令同一套)、淡一档、选得中;换行由量高排好贴上来,行高 inline 给。 */
 export const backgroundTaskCommand = style({
   display: 'block',
   fontFamily: vars.typeCodeFontFamily,
@@ -88,16 +89,15 @@ export const backgroundTaskButton = style({
   flexShrink: 0,
   display: 'grid',
   placeItems: 'center',
-  padding: 4,
+  // 上下 3、左右 4:14px 的图标正好 20 高 = 行量的那一行;❌ 上下 4 —— 22 高把每条带停止键的行撑成 30,
+  // 量高不知道这 2px,单子底下就被行根的 overflow 一行裁掉 2px。
+  padding: '3px 4px',
   border: 0,
   borderRadius: vars.radiusSm,
   background: 'none',
   cursor: 'pointer',
   color: `color-mix(in srgb, ${vars.fg} 35%, transparent)`,
   transition: 'color 150ms',
-  // 4 + 14 + 4 = 22 高,而一行量的是 20:上下各让 1px,按钮照样 22 大、点的范围不缩,行不被它撑成 30
-  // (撑高的 2px 量高不知道,每多一行单子底下就被行根的 overflow 多裁掉 2px)。
-  marginBlock: -1,
   selectors: { '&:hover': { color: `color-mix(in srgb, ${vars.fg} 70%, transparent)` } },
 });
 

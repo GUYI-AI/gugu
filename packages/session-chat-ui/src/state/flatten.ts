@@ -683,6 +683,14 @@ export function markOpenCommands<T extends { id: string }>(commands: readonly T[
   return commands.map((entry) => (isOpen(backgroundCommandToggleId(entry.id)) ? { ...entry, open: true } : entry));
 }
 
+/**
+ * 后台单子此刻画成什么样:单子开着没有、哪几条命令点开着。单独成行(segment-ctx)与挂在回复上(ChatRoot)读这同一份,
+ * ❌ 各算各的 —— 两边一旦差一格,同一张单子换个地方挂就量出不同的高。
+ */
+export function backgroundTasksView<T extends { commands: readonly { id: string }[] }>(tasks: T, isOpen: (toggleId: string) => boolean) {
+  return { ...tasks, commands: markOpenCommands(tasks.commands, isOpen), expanded: isOpen(BACKGROUND_TASKS_TOGGLE) };
+}
+
 export function turnDiscardedId(turnId: string): string {
   return `${turnId}:discarded`;
 }

@@ -76,27 +76,26 @@ function wrapByLine(text: string, wrapLine: (line: string) => { text: string; li
  *
  * - 收着:一行。有供应商给的短说明就写说明,没有就写命令的第一行;放不下省略号收尾 —— 高度恒为一行,
  *   ❌ 把整条命令折成七八行铺在单子里。
- * - 有东西藏着(有说明 ⇒ 命令藏着;命令不止一行或一行放不下)才能点开;点开就地写全:
- *   有说明 ⇒ 说明在上、整条命令在下(代码字体,与执行卡片里的命令同一套);没说明 ⇒ 整条命令换行写全。
+ * - 有东西藏着(有说明 ⇒ 命令藏着;命令不止一行或一行放不下)那一行才是开关;点开就地写全:上面一行是开关
+ *   (说明;没说明就是「后台命令」,与执行卡片「执行」+ 命令同一个样子),下面是整条命令(代码字体)。
+ *   整条命令 ❌ 放进开关按钮里:按钮里的字选不中、复制不了,读屏会把整条命令当按钮的名字念出来。
  *
  * 量和画读同一份:Render 直接把这里排好换行的字贴上去,❌ 让浏览器自己再排一遍。
  */
 export function backgroundCommandLayout(entry: BackgroundCommandEntry, ctx: MeasureCtx, controls = 0) {
   const width = nameWidth(ctx, controls);
-  const line = entry.summary ?? entry.name.split('\n')[0];
-  const expandable = entry.summary !== undefined || line !== entry.name || readableLabel(line, ctx, width, 14, 20).width > width;
-  if (!expandable || !entry.open) return { expandable, open: false as const, line, command: null, codeLineHeight: 0, height: 20 };
-  const label = (text: string) => wrapByLine(text, (part) => {
+  // CRLF 的 \r 量的时候不算一个字、画的时候 pre-wrap 下另算 ⇒ 一进来就收成 \n。
+  const name = entry.name.replace(/\r\n?/g, '\n');
+  const summary = entry.summary?.replace(/\r\n?/g, '\n');
+  const first = summary ?? name.split('\n')[0];
+  const expandable = summary !== undefined || first !== name || readableLabel(first, ctx, width, 14, 20).width > width;
+  if (!expandable || !entry.open) return { expandable, open: false as const, line: first, command: null, codeLineHeight: 0, height: 20 };
+  const head = wrapByLine(summary ?? rowTranslator(ctx)('transcript.backgroundCommand'), (part) => {
     const laid = readableLabel(part, ctx, width, 14, 20);
     return { text: laid.text, lines: laid.height / 20 };
   });
-  if (entry.summary === undefined) {
-    const full = label(entry.name);
-    return { expandable, open: true as const, line: full.text, command: null, codeLineHeight: 0, height: full.lines * 20 };
-  }
-  const head = label(entry.summary);
   const code = ctx.theme.fonts.code;
-  const command = wrapByLine(entry.name, (part) => {
+  const command = wrapByLine(name, (part) => {
     const wrap = measureSoftWrap(part, Math.max(1, width), code.font);
     return { text: applySoftWraps(part, wrap.softWrapOffsets), lines: wrap.visualLineCount };
   });
@@ -263,7 +262,7 @@ export function BackgroundTasksList(props: {
     <div class={backgroundTasksList} style={{ 'margin-top': `${LIST_TOP}px` }} data-slot="background-tasks-list">
       <For each={props.commands}>
         {(command) => {
-          const layout = () => backgroundCommandLayout(command, props.measureCtx(), commandControls({ commands: commands() }));
+          const layout = createMemo(() => backgroundCommandLayout(command, props.measureCtx(), commandControls({ commands: commands() })));
           return (
             // 收着时悬停给整条命令(桌面上瞄一眼);点开后整条已经写在行里,不再叠一个系统提示。
             <div class={backgroundTaskRow} data-slot="background-task" data-task-kind="command" data-open={layout().open ? '' : undefined}
@@ -272,25 +271,25 @@ export function BackgroundTasksList(props: {
                 <IconSquareTerminal />
               </span>
               <Show when={layout().expandable} fallback={<span class={`${backgroundTaskName} ${backgroundTaskLine}`}>{layout().line}</span>}>
-                {/* 开关走 ChatRoot 既有的 `data-collapse-id` 点击委派(与「后台 · …」那一句同一条),❌ 自己再挂一套开合状态。
-                    只挂在名字这一格上:停止 / × 在它外面,点它们不会顺带开合。 */}
-                <button
-                  type="button"
-                  class={`${backgroundTaskName} ${backgroundTaskToggle}${layout().open ? '' : ` ${backgroundTaskLine}`}`}
-                  data-slot="background-task-toggle"
-                  data-collapse-id={backgroundCommandToggleId(command.id)}
-                  data-collapse-anchor={props.anchorId}
-                  aria-expanded={layout().open}
-                >
-                  <Show when={layout().open} fallback={layout().line}>
+                <span class={backgroundTaskName}>
+                  {/* 开关走 ChatRoot 既有的 `data-collapse-id` 点击委派(与「后台 · …」那一句同一条),❌ 自己再挂一套开合状态。
+                      只挂在这一行上:停止 / × 与点开后的整条命令都在它外面 —— 点它们不会顺带开合,命令也选得中。 */}
+                  <button
+                    type="button"
+                    class={`${backgroundTaskToggle}${layout().open ? '' : ` ${backgroundTaskLine}`}`}
+                    data-slot="background-task-toggle"
+                    data-collapse-id={backgroundCommandToggleId(command.id)}
+                    data-collapse-anchor={props.anchorId}
+                    aria-expanded={layout().open}
+                  >
                     {layout().line}
-                    <Show when={layout().command}>
-                      {(full) => <span class={backgroundTaskCommand} data-slot="background-task-command" style={{ 'line-height': `${layout().codeLineHeight}px` }}>{full()}</span>}
-                    </Show>
+                  </button>
+                  <Show when={layout().command}>
+                    {(full) => <span class={backgroundTaskCommand} data-slot="background-task-command" style={{ 'line-height': `${layout().codeLineHeight}px` }}>{full()}</span>}
                   </Show>
-                </button>
+                </span>
               </Show>
-              <Show when={commands().onStopBackgroundTask}>
+            <Show when={commands().onStopBackgroundTask}>
                 <button
                   type="button"
                   class={`${backgroundTaskButton} ${backgroundTaskStop}`}
@@ -307,42 +306,46 @@ export function BackgroundTasksList(props: {
         }}
       </For>
       <For each={props.subagents}>
-        {(agent) => (
-          // ❌ 原生 title:悬停已经弹出写全名字的浮层,再叠一个系统提示会盖在它上面(原卡同一条)。
-          <div
-            ref={(el) => anchors.set(agent.id, el)}
-            class={backgroundTaskRow}
-            data-slot="background-task"
-            data-task-kind="subagent"
-            onMouseEnter={() => schedule(agent.id, hoveredId() === null ? OPEN_DELAY_MS : 0)}
-            onMouseLeave={() => schedule(null, CLOSE_DELAY_MS)}
-          >
-            <span class={backgroundTaskIcon}>
-              <IconUser />
-            </span>
-            <span style={{ display: 'flex', 'flex-direction': props.measureCtx().width < 360 ? 'column' : 'row', gap: props.measureCtx().width < 360 ? '0' : '8px', flex: 1, 'min-width': 0 }}>
-            <span class={backgroundTaskName}>{backgroundTaskNameLayout(agent.name, props.measureCtx(), (props.measureCtx().width < 360 ? 0 : AGENT_META_W + 8) + (agent.canCancel && commands().onStopBackgroundTask ? 32 : 0) + (commands().onDismissBackgroundTask ? 32 : 0)).text}</span>
-            {/* 量高按最坏串预留了行数(`backgroundTaskMetaLayout`),画也占满这些行:❌ 只画实时文案那一行,
-                行比量的矮,单子底下空出一截。用 min-height 不用 height:真比预留还宽时照样长高,❌ 裁字。 */}
-            <span class={backgroundTaskMeta} data-slot="background-task-meta" style={{ width: `${AGENT_META_W}px`, 'white-space': 'pre-wrap',
-              'min-height': `${backgroundTaskMetaLayout(agent, props.measureCtx(), elapsed(agent.startedAt)).height}px` }}>
-              {backgroundTaskMetaLayout(agent, props.measureCtx(), elapsed(agent.startedAt)).text}
-            </span>
-            </span>
-            <Show when={agent.canCancel && commands().onStopBackgroundTask}>
-              <button
-                type="button"
-                class={`${backgroundTaskButton} ${backgroundTaskStop}`}
-                title={translate('transcript.backgroundTasks.stopSubagent')}
-                aria-label={translate('transcript.backgroundTasks.stopSubagent')}
-                onClick={(event) => stop(event, agent.launchToolCallId)}
-              >
-                <IconStop />
-              </button>
-            </Show>
-            <DismissButton entryId={agent.id} />
-          </div>
-        )}
+        {(agent) => {
+          // 量出来的字与预留的高读同一份;计时器每秒跳一次,只算一遍。
+          const meta = createMemo(() => backgroundTaskMetaLayout(agent, props.measureCtx(), elapsed(agent.startedAt)));
+          return (
+            // ❌ 原生 title:悬停已经弹出写全名字的浮层,再叠一个系统提示会盖在它上面(原卡同一条)。
+            <div
+              ref={(el) => anchors.set(agent.id, el)}
+              class={backgroundTaskRow}
+              data-slot="background-task"
+              data-task-kind="subagent"
+              onMouseEnter={() => schedule(agent.id, hoveredId() === null ? OPEN_DELAY_MS : 0)}
+              onMouseLeave={() => schedule(null, CLOSE_DELAY_MS)}
+            >
+              <span class={backgroundTaskIcon}>
+                <IconUser />
+              </span>
+              <span style={{ display: 'flex', 'flex-direction': props.measureCtx().width < 360 ? 'column' : 'row', gap: props.measureCtx().width < 360 ? '0' : '8px', flex: 1, 'min-width': 0 }}>
+              <span class={backgroundTaskName}>{backgroundTaskNameLayout(agent.name, props.measureCtx(), (props.measureCtx().width < 360 ? 0 : AGENT_META_W + 8) + (agent.canCancel && commands().onStopBackgroundTask ? 32 : 0) + (commands().onDismissBackgroundTask ? 32 : 0)).text}</span>
+              {/* 量高按最坏串预留了行数(`backgroundTaskMetaLayout`),画也占满这些行:❌ 只画实时文案那一行,
+                  行比量的矮,单子底下空出一截。用 min-height 不用 height:真比预留还宽时照样长高,❌ 裁字。 */}
+              <span class={backgroundTaskMeta} data-slot="background-task-meta" style={{ width: `${AGENT_META_W}px`, 'white-space': 'pre-wrap',
+                'min-height': `${meta().height}px` }}>
+                {meta().text}
+              </span>
+              </span>
+              <Show when={agent.canCancel && commands().onStopBackgroundTask}>
+                <button
+                  type="button"
+                  class={`${backgroundTaskButton} ${backgroundTaskStop}`}
+                  title={translate('transcript.backgroundTasks.stopSubagent')}
+                  aria-label={translate('transcript.backgroundTasks.stopSubagent')}
+                  onClick={(event) => stop(event, agent.launchToolCallId)}
+                >
+                  <IconStop />
+                </button>
+              </Show>
+              <DismissButton entryId={agent.id} />
+            </div>
+          );
+        }}
       </For>
       <Show when={hovered()}>
         {(agent) => (

@@ -113,8 +113,8 @@ describe('a background command in the list discloses progressively', () => {
     const rows = () => [...host.querySelectorAll<HTMLElement>('[data-slot="background-task"]')]
     toggleOf(rows()[0])!.click()
     await until('the described command opens', () => rows()[0].dataset.open !== undefined)
-    // 说明留在上面,整条命令写在下面,一个字不少。
-    expect(rows()[0].textContent).toContain('Relaunch isolated dev app')
+    // 说明留在上面(开关就是它),整条命令写在下面,一个字不少。
+    expect(toggleOf(rows()[0])!.textContent).toBe('Relaunch isolated dev app')
     expect(flat(rows()[0].querySelector('[data-slot="background-task-command"]')?.textContent)).toBe(flat(relaunchCommand))
     expect(toggleOf(rows()[0])!.getAttribute('aria-expanded')).toBe('true')
     expect(rows()[0].offsetHeight).toBeGreaterThan(BACKGROUND_TASK_ROW_H)
@@ -126,9 +126,17 @@ describe('a background command in the list discloses progressively', () => {
 
     toggleOf(rows()[1])!.click()
     await until('the bare command opens', () => rows()[1].dataset.open !== undefined)
-    // 没说明:整条命令换行写全,没有第二份。
-    expect(flat(toggleOf(rows()[1])!.textContent)).toBe(bare.name)
-    expect(rows()[1].querySelector('[data-slot="background-task-command"]')).toBeNull()
+    // 没说明:开关那一行说「后台命令」(执行卡片「执行」+ 命令同一个样子),整条命令写在下面,一个字不少。
+    expect(toggleOf(rows()[1])!.textContent).toBe('Background command')
+    const bareCommand = rows()[1].querySelector<HTMLElement>('[data-slot="background-task-command"]')!
+    expect(flat(bareCommand.textContent)).toBe(bare.name)
+    // 整条命令不在按钮里:选得中、能复制,读屏也不会把它当按钮名念;点它不会顺带收起。
+    expect(bareCommand.closest('button')).toBeNull()
+    expect(getComputedStyle(bareCommand).userSelect).not.toBe('none')
+    expect(toggleOf(rows()[1])!.getAttribute('aria-expanded')).toBe('true')
+    bareCommand.click()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(rows()[1].dataset.open).toBeDefined()
     // 列表与「后台」那一行都长高接住它,❌ 被行根的 overflow 裁掉。
     const list = host.querySelector<HTMLElement>('[data-slot="background-tasks"]')!
     expect(rows()[1].getBoundingClientRect().bottom).toBeLessThanOrEqual(list.getBoundingClientRect().bottom + 0.5)
@@ -143,11 +151,14 @@ describe('background command rows keep measure() === offsetHeight', () => {
   const item = (commands: BackgroundCommandEntry[]): BackgroundTasksItem => ({
     kind: 'background-tasks', id: 'background-tasks', commands, subagents: [], expanded: true,
   })
+  /** Windows 那边来的命令带 CRLF:\r 量与画各算各的会让行高对不上。 */
+  const crlf: BackgroundCommandEntry = { id: 'crlf', launchToolCallId: 'toolu_crlf', taskId: 'task-crlf', name: relaunchCommand.replace(/\n/g, '\r\n'), open: true }
   const variants: Array<[string, BackgroundCommandEntry[]]> = [
     ['all folded', [described, bare, short]],
     ['described open', [{ ...described, open: true }, bare, short]],
     ['bare open', [described, { ...bare, open: true }, short]],
     ['all open', [{ ...described, open: true }, { ...bare, open: true }, { ...short, open: true }]],
+    ['crlf open', [crlf]],
   ]
   const hostCommands: Array<[string, ChatCommands]> = [
     ['no controls', {}],
@@ -161,8 +172,8 @@ describe('background command rows keep measure() === offsetHeight', () => {
         for (const [controls, cmds] of hostCommands) {
           const reading = await renderAndMeasureUnit(backgroundTasksUnitDef, item(commands), makeContractCtx({ width }), (host) => ({
             // 点开的那一格字没长出框:框按量出的行数排,字也正好那么多行。
-            clipped: [...host.querySelectorAll<HTMLElement>('[data-slot="background-task-toggle"]')]
-              .filter((el) => el.getAttribute('aria-expanded') === 'true' && el.scrollHeight > el.clientHeight + 1).length,
+            clipped: [...host.querySelectorAll<HTMLElement>('[data-slot="background-task-toggle"][aria-expanded="true"], [data-slot="background-task-command"]')]
+              .filter((el) => el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1).length,
           }), cmds)
           if (reading.dom !== reading.computed || reading.inspected.clipped) {
             bad.push(`${width}px ${variant} (${controls}): dom ${reading.dom} measured ${reading.computed}, clipped ${reading.inspected.clipped}`)
