@@ -46,7 +46,7 @@ vi.mock('@renderer/features/sidebar/sidebar-one-list-empty', () => ({ SidebarOne
 vi.mock('@renderer/features/sidebar/sidebar-one-list-chrome', () => ({ ONE_LIST_RAIL_PX: 72, SidebarOneListTop: () => null, SidebarOneListFoot: () => null }))
 vi.mock('@renderer/features/sidebar/inner-sidebar', async () => {
   const { observable } = await import('mobx')
-  return { innerSidebarChat: observable.box(null, { deep: false }) }
+  return { innerSidebarChat: observable.box(null, { deep: false }), innerSidebarShownFor: observable.box(null) }
 })
 
 let shell: ReturnType<typeof createReactHarness>
