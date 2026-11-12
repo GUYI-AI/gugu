@@ -3,12 +3,15 @@ import { type ReactNode, useState } from 'react';
 import { ShellSidebarToggle } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import {
+  SIDEBAR_BADGE_OPACITY_VAR,
   SIDEBAR_MIN_WIDTH_PX,
+  SIDEBAR_PROGRESS_VAR,
   SIDEBAR_TEXT_OPACITY_VAR,
   sidebarOccupiedWidth,
+  sidebarRailBadgeOpacity,
   sidebarRailTextOpacity,
 } from '@renderer/lib/layout/layout-provider';
-import { panelContentLayout, usePanelMounted, usePanelProgress } from '@renderer/lib/layout/panel-motion';
+import { clamp01, panelContentLayout, usePanelMounted, usePanelProgress } from '@renderer/lib/layout/panel-motion';
 import { PanelResizeDragGuard, PanelResizeHandle } from '@renderer/lib/layout/panel-resize-handle';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
@@ -71,6 +74,8 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     workspaceRootRef,
     setLeftWidth,
     setCollapsed,
+    dragLeftEdge,
+    releaseLeftEdge,
   } = useWorkspaceLayoutContext();
   const [isResizing, setIsResizing] = useState(false);
 
@@ -103,6 +108,13 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
   );
   const textOpacity = useTransform([leftProgress, leftRailWidth], (latest: number[]) =>
     latest[1] > 0 ? sidebarRailTextOpacity(latest[0]) : 1
+  );
+  // The same progress for the geometry that moves with it (the 「+」, 创建智能体) and the rail's corner badge.
+  const railProgress = useTransform([leftProgress, leftRailWidth], (latest: number[]) =>
+    latest[1] > 0 ? clamp01(latest[0]) : 1
+  );
+  const badgeOpacity = useTransform([leftProgress, leftRailWidth], (latest: number[]) =>
+    latest[1] > 0 ? sidebarRailBadgeOpacity(latest[0]) : 0
   );
   const contentOpacity = useTransform(
     [leftProgress, peekProgress, leftWidth, leftRailWidth],
@@ -163,33 +175,42 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
             x: contentX,
             // A CSS variable bound to a motion value (motion sets it as a var each frame); MotionStyle does not type
             // custom properties.
-            ...({ [SIDEBAR_TEXT_OPACITY_VAR]: textOpacity } as MotionStyle),
+            ...({
+              [SIDEBAR_TEXT_OPACITY_VAR]: textOpacity,
+              [SIDEBAR_PROGRESS_VAR]: railProgress,
+              [SIDEBAR_BADGE_OPACITY_VAR]: badgeOpacity,
+            } as MotionStyle),
             pointerEvents: isLeftOpen || isPeekVisible || leftRail > 0 ? 'auto' : 'none',
           }}
         >
           {leftSidebar}
         </motion.div>
       </motion.aside>
-      {isLeftOpen && !sidebarHidden ? (
+      {/* #2548 a sidebar that collapses to a rail keeps its edge: dragging the rail's edge opens it. */}
+      {(isLeftOpen || leftRail > 0) && !sidebarHidden ? (
         <PanelResizeHandle
           edge="end"
           offset={leftAnimatedWidth}
           ariaLabel={translate('task.resizeSidebar')}
           // #2548 the sidebar as one list draws no line on its edge: hovering it only shows the resize cursor.
           className={leftRail > 0 ? 'hover:bg-transparent' : undefined}
-          getSize={() => leftWidth.get()}
+          // On the rail a drag starts from where the edge is now (the rail, or mid-animation); otherwise from the width.
+          getSize={() => (leftRail > 0 ? leftAnimatedWidth.get() : leftWidth.get())}
           minSize={SIDEBAR_MIN_WIDTH_PX}
           maxSize={maxSidebarWidth}
           onSize={(size) => setLeftWidth(size)}
           onCollapse={() => setCollapsed('left', true, { suppressPeek: false })}
           onSizeCommit={(size) => setLeftWidth(size, { persist: true })}
           onDraggingChange={setIsResizing}
+          // #2548 the whole sidebar follows the pointer (text fading with it) and snaps to the nearer state on release
+          // (mock v18 拖边缘), ❌ the half-the-minimum threshold that collapsed it mid-drag.
+          follow={leftRail > 0 ? { onMove: (raw) => dragLeftEdge(raw, maxSidebarWidth()), onRelease: releaseLeftEdge } : undefined}
         />
       ) : null}
       {/* 固定占这一格(没有内层侧栏时是 null):正文那一格的位置不因它出现 / 收起而变,正文 ❌ 重挂。 */}
       {sidebarHidden ? null : innerSidebar}
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">{mainContent}</div>
-      {isLeftOpen && !sidebarHidden ? <PanelResizeDragGuard edge="end" offset={leftAnimatedWidth} /> : null}
+      {(isLeftOpen || leftRail > 0) && !sidebarHidden ? <PanelResizeDragGuard edge="end" offset={leftAnimatedWidth} /> : null}
       {/* 左侧栏开关:整个会话页**唯一**一枚,永远钉在会话页左缘同一个坐标 ——
           侧栏是从它下面滑过去的,不是把它顶走。❌ 别再在侧栏内部另放一枚。 */}
       {sidebarHidden ? null : <ShellSidebarToggle />}

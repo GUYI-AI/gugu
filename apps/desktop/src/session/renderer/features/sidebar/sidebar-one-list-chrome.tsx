@@ -1,19 +1,30 @@
 import { ChevronsLeft, ChevronsRight, FolderPlus, History, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { DropdownMenu, MenuItem } from '@/components/ui/Menu';
+import { Popover } from '@/components/ui/Popover';
 import { Hint } from '@/components/ui/Tooltip';
-import { requestShellChatAction } from '@/lib/sidebarChatsBridge';
+import { requestShellChatAction, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { commandRegistry } from '@renderer/lib/commands/registry';
+import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { getEffectiveHotkey } from '@renderer/lib/hooks/useKeyboardShortcuts';
-import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { SIDEBAR_PROGRESS_VAR, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { isCurrentView, useNavigate, useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
+import { appState } from '@renderer/lib/stores/app-state';
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
+import {
+  nextSidebarCollapseHint,
+  sidebarCollapseHintShown,
+  sidebarCollapseHintState,
+  type SidebarCollapseHint,
+  type SidebarCollapseHintEvent,
+} from './sidebar-collapse-hint';
 
 /**
  * GUYI-AI/gugu#2548 the top and the foot of the sidebar as one list (internal switch `interface.desktopSidebarV2`).
@@ -47,6 +58,19 @@ export function runOneListCreateAction(action: OneListCreateAction): void {
 const CREATE_MENU_ICON = { 'create-group': Users, 'new-project': FolderPlus, 'add-contact': UserRound } as const;
 const CREATE_MENU_LABEL = { 'create-group': 'sidebar.newGroupChat', 'new-project': 'task.projectNew', 'add-contact': 'sidebar.addContact' } as const;
 
+/** The open/close progress on the content layer (workspace-layout); 1 where there is none (expanded). */
+const PROGRESS = `var(${SIDEBAR_PROGRESS_VAR}, 1)`;
+
+/**
+ * The top row's geometry as a function of the open/close progress p (mock v19: 「创建智能体」收窄淡出,+ 从右边滑到这条竖线上):
+ * side padding 12 → 20 and the gap 4 → 0 as p goes 1 → 0, 创建智能体 takes what is left (0 on the rail), so the 「+」 (32)
+ * slides from the right end onto the avatars' axis (20 + 16 = 36) with the same progress as everything else.
+ */
+const ONE_LIST_TOP_STYLE = {
+  paddingInline: `calc(20px - 8px * ${PROGRESS})`,
+  gap: `calc(4px * ${PROGRESS})`,
+} as const;
+
 /**
  * 创建智能体 (what 新建任务 does) and the 「+」 menu. Collapsed, the 「+」 is all the top keeps, so its menu leads with
  * 创建智能体 (the same action, the same icon).
@@ -56,10 +80,18 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
   const [menuOpen, setMenuOpen] = useState(false);
   const menuLabel = [...(collapsed ? [translate('sidebar.createAgent')] : []), ...ONE_LIST_CREATE_MENU.map((action) => translate(CREATE_MENU_LABEL[action]))].join(' / ');
   return (
-    // Expanded: the list's 12px gutter. Collapsed: the 「+」 (32) centred on the rail's axis (20 + 16 = 36).
-    <div className={cn('flex shrink-0 items-center gap-1 pb-2', collapsed ? 'pl-5' : 'px-3')} data-sidebar-one-list-top="">
-      {/* Fades with the sidebar's text (--gg-sidebar-text, left-sidebar). */}
-      <Button variant="primary" className={cn('min-w-0 flex-1 opacity-(--gg-sidebar-text)', collapsed && 'hidden')} onClick={onCreateAgent} data-testid="sidebar-create-agent">
+    <div className="flex shrink-0 items-center pb-2" style={ONE_LIST_TOP_STYLE} data-sidebar-one-list-top="">
+      {/* Fades with the sidebar's text (--gg-sidebar-text, left-sidebar) and narrows to nothing: no side padding or border
+          of its own (its label is centred, so expanded it looks the same), and its overflow is clipped on the way. Collapsed
+          it is inert: out of the tab order and the pointer's way. */}
+      <Button
+        variant="primary"
+        className="min-w-0 flex-1 overflow-hidden opacity-(--gg-sidebar-text)"
+        style={{ paddingInline: 0, borderInlineWidth: 0 }}
+        inert={collapsed}
+        onClick={onCreateAgent}
+        data-testid="sidebar-create-agent"
+      >
         <SquarePen className="size-4 shrink-0" />
         <span className="truncate">{translate('sidebar.createAgent')}</span>
       </Button>
@@ -98,40 +130,139 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
 }
 
 /**
+ * C9's state (sidebar-collapse-hint): comes up when a group or a project opens while expanded, retires for good on either
+ * button or on any collapse. Retired is stored in the app settings (`interface.sidebarCollapseHintRetired`, the store the
+ * switch itself lives in); the first-run hint system holds one line and one button and cannot say this.
+ */
+function useSidebarCollapseHint(openChatId: string | null, expanded: boolean) {
+  const { value: interfaceSettings, update } = useAppSettingsKey('interface');
+  const stored = interfaceSettings?.sidebarCollapseHintRetired;
+  const [session, setSession] = useState<SidebarCollapseHint>('waiting');
+  const dispatch = (event: SidebarCollapseHintEvent) => setSession((state) => nextSidebarCollapseHint(state, event));
+  // A group or project opened. (This also re-runs when the sidebar expands again; harmless, the collapse retired it.)
+  useEffect(() => {
+    if (openChatId) setSession((state) => nextSidebarCollapseHint(state, { kind: 'opened', expanded }));
+  }, [openChatId, expanded]);
+  // Collapsed by any route: every one of them ends in the layout's open state going false.
+  const wasExpanded = useRef(expanded);
+  useEffect(() => {
+    if (wasExpanded.current && !expanded) setSession((state) => nextSidebarCollapseHint(state, { kind: 'collapsed' }));
+    wasExpanded.current = expanded;
+  }, [expanded]);
+  // Written once, and only over a settings read (the main side parses the whole `interface` group on update).
+  const saved = useRef(false);
+  const retired = session === 'retired';
+  useEffect(() => {
+    if (!retired || stored !== false || saved.current) return;
+    saved.current = true;
+    update({ sidebarCollapseHintRetired: true });
+  }, [retired, stored, update]);
+
+  const state = sidebarCollapseHintState(stored, session);
+  // The foot can be on a hidden retained surface (another place of the shell, a page without the task list): the bubble is
+  // portalled, so it asks whether the foot is on screen (@@@hint-visibility, an IntersectionObserver).
+  const { ref: footRef, shown: onScreen } = useConversationVisibility(state === 'showing');
+  const notificationsOpen = useSidebarNotificationsOpen();
+  const shown = sidebarCollapseHintShown(state, { expanded, onScreen, notificationsOpen });
+  return { footRef, shown, answer: () => dispatch({ kind: 'answered' }) };
+}
+
+/**
  * The foot: the collapse button (chevrons only; its tooltip says what it does and the shortcut, as the old header toggle's
  * did) and 会话历史 next to it. The collapse button sits on the rail's axis and never moves; collapsed, 会话历史 stacks
- * above it (the rail has room for one button per line).
+ * above it (the rail has room for one button per line). Above the collapse button, once: C9 (useSidebarCollapseHint).
+ *
+ * `openChatId`: the group or project the inner sidebar is open on (innerSidebarChat), null when none.
  */
-export const SidebarOneListFoot = observer(function SidebarOneListFoot() {
+export const SidebarOneListFoot = observer(function SidebarOneListFoot({ openChatId = null }: { openChatId?: string | null }) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
-  const { isLeftOpen, toggleLeft } = useWorkspaceLayoutContext();
+  const { isLeftOpen, toggleLeft, setCollapsed } = useWorkspaceLayoutContext();
   const { value: keyboard } = useAppSettingsKey('keyboard');
   const hotkey = getEffectiveHotkey('app.toggleLeftSidebar', keyboard);
-  const foldLabel = translate(isLeftOpen ? 'task.collapseSidebar' : 'task.expandSidebar');
+  const shortcut = hotkey ? formatHotkeyText(hotkey) : null;
+  // #2548: 收起侧栏 / 展开侧栏 and the product's own shortcut (owner: not the mock's ⌘\).
+  const foldLabel = translate(isLeftOpen ? 'sidebar.collapseSidebar' : 'sidebar.expandSidebar');
   const historyLabel = translate('sidebar.sessionHistory');
+  const historyShown = isCurrentView(currentView, 'session-history');
+  const hint = useSidebarCollapseHint(openChatId, isLeftOpen);
   return (
     // 20 + 32 / 2 = 36: the collapse button is centred on the avatars' axis, as the 「+」 is; it is first in both
     // directions, so it holds its place (the bottom-left) and only 会话历史 moves.
-    <div className={cn('flex shrink-0 gap-2 py-2 pl-5', isLeftOpen ? 'flex-row items-center' : 'flex-col-reverse items-start')} data-sidebar-foot="">
-      <Hint label={hotkey ? `${foldLabel} (${formatHotkeyText(hotkey)})` : foldLabel} side="top">
+    <div ref={hint.footRef} className={cn('flex shrink-0 gap-2 py-2 pl-5', isLeftOpen ? 'flex-row items-center' : 'flex-col-reverse items-start')} data-sidebar-foot="">
+      <Hint label={shortcut ? `${foldLabel} (${shortcut})` : foldLabel} side="top">
         <IconButton size="md" tone="strong" aria-label={foldLabel} aria-expanded={isLeftOpen} onClick={toggleLeft} data-testid="sidebar-fold">
           {isLeftOpen ? <ChevronsLeft /> : <ChevronsRight />}
         </IconButton>
       </Hint>
       <Hint label={historyLabel} side="top">
+        {/* A toggle: open, 会话历史 is lit; clicked again it goes back to the view before it, by the task page's own back
+            (navigateBack: the back button, Mod+[ and the window's ← take the same path), ❌ a second history here. */}
         <IconButton
           size="md"
           tone="strong"
           aria-label={historyLabel}
-          on={isCurrentView(currentView, 'session-history')}
-          onClick={() => navigate('session-history')}
+          aria-pressed={historyShown}
+          on={historyShown}
+          onClick={() => (historyShown ? navigateBack(appState.history.canGoBack) : navigate('session-history'))}
           data-testid="sidebar-session-history"
         >
           <History />
         </IconButton>
       </Hint>
+      {/* C9 above the collapse button. It leaves by its buttons or by a collapse only (mock v25): a click elsewhere or an
+          Escape meant for something else neither closes it nor is swallowed by it. */}
+      <Popover.Root
+        open={hint.shown}
+        modal={false}
+        onOpenChange={(open, details) => {
+          if (open) return;
+          details.cancel();
+          details.allowPropagation();
+        }}
+      >
+        <Popover.Portal>
+          <Popover.Positioner
+            anchor={() => hint.footRef.current?.querySelector('[data-testid="sidebar-fold"]') ?? null}
+            side="top"
+            align="start"
+            sideOffset={10}
+            collisionPadding={8}
+          >
+            <Popover.Popup
+              initialFocus={false}
+              finalFocus={false}
+              data-testid="sidebar-collapse-hint"
+              className="w-[248px] rounded-[var(--radius-surface)] bg-[var(--popover)] p-3 text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--text-primary)] shadow-[var(--shadow-lift)]"
+            >
+              <Popover.Arrow className="size-3 rotate-45 bg-[var(--popover)] data-[side=top]:-bottom-1.5" />
+              <Popover.Title className="m-0 text-[length:var(--font-body)] font-[var(--font-weight-semibold)]">
+                {translate('sidebar.collapseHintTitle')}
+              </Popover.Title>
+              <Popover.Description className="mt-1 mb-0 text-[var(--text-secondary)]">
+                {shortcut ? translate('sidebar.collapseHintBody', { shortcut }) : translate('sidebar.collapseHintBodyNoShortcut')}
+              </Popover.Description>
+              <div className="mt-3 flex justify-end gap-2">
+                <Button variant="secondary" size="sm" onClick={hint.answer} data-testid="sidebar-collapse-hint-dismiss">
+                  {translate('sidebar.collapseHintDismiss')}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    hint.answer();
+                    setCollapsed('left', true);
+                  }}
+                  data-testid="sidebar-collapse-hint-try"
+                >
+                  {translate('sidebar.collapseHintTry')}
+                </Button>
+              </div>
+            </Popover.Popup>
+          </Popover.Positioner>
+        </Popover.Portal>
+      </Popover.Root>
     </div>
   );
 });

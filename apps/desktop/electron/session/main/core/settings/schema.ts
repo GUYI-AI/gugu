@@ -192,6 +192,13 @@ export const interfaceSettingsSchema = z.object({
    * off by default, no settings UI. The PR that turns the new sidebar on deletes this switch and the old tabs.
    */
   desktopSidebarV2: z.boolean(),
+
+  /**
+   * GUYI-AI/gugu#2548 C9: the one-time bubble over the one-list sidebar's collapse button (「侧栏可以收起来」) is done with:
+   * one of its buttons was clicked, or the sidebar was collapsed once by any route. Internal, no settings UI; false = it may
+   * still come up (the first time a group or project opens while the sidebar is expanded).
+   */
+  sidebarCollapseHintRetired: z.boolean(),
 });
 
 export const changesViewModeSchema = z.object({
