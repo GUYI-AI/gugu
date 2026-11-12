@@ -20,9 +20,10 @@ type Item = {
   unseen: boolean;
   title: string;
 };
-const item = (id: string, projectId: string, presentation: Item['presentation'] = idle, time = 0): Item => ({
+const item = (id: string, projectId: string, presentation: Item['presentation'] = idle, time = 0, parentSessionId: string | null = null): Item => ({
   id,
   projectId,
+  parentSessionId,
   isPinned: false,
   time,
   presentation,
@@ -31,13 +32,20 @@ const item = (id: string, projectId: string, presentation: Item['presentation'] 
 });
 
 // The column is an observer: what it reads must be observable for a change to redraw it (as in the app).
-type Live = { currentViewId: string; viewParamsStore: Record<string, unknown>; shownMore: Set<string> };
+type Live = {
+  currentViewId: string;
+  viewParamsStore: Record<string, unknown>;
+  shownMore: Set<string>;
+  navigate: (view: string, params: Record<string, unknown>) => void;
+};
 const state = vi.hoisted(() => ({
   live: null as unknown as Live,
   items: [] as Item[],
   agents: new Map<string, string>(),
   projectChats: new Map<string, string>(),
+  placementReads: 0,
   openChatOnScreen: vi.fn(),
+  openSessionWhenReady: vi.fn(),
   prepareProjectTask: vi.fn(),
   toggleIdleExpanded: vi.fn(),
 }));
@@ -58,6 +66,9 @@ vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({
   },
 }));
 vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: (...args: unknown[]) => state.openChatOnScreen(...args) }));
+vi.mock('@renderer/features/sessions/open-session-in-session', () => ({
+  openSessionInSessionWhenReady: (...args: unknown[]) => state.openSessionWhenReady(...args),
+}));
 vi.mock('@renderer/features/chats/chat-tabs/chat-layouts', () => ({ openInfoTab: vi.fn() }));
 vi.mock('@renderer/features/projects/project-task-entry', () => ({ prepareProjectTask: (...args: unknown[]) => state.prepareProjectTask(...args) }));
 vi.mock('@renderer/features/projects/components/project-menu', () => ({ ProjectMenuItems: () => null }));
@@ -68,6 +79,7 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { get navigation() { return state.live; } },
   sidebarStore: {
     get placement() {
+      state.placementReads += 1;
       return { nodeById: new Map(state.items.map((entry) => [entry.id, { item: entry, children: [] }])) };
     },
     get sidebarProjects() {
@@ -88,14 +100,32 @@ vi.mock('./sidebar-session-item', () => ({
   ),
 }));
 
-state.live = observable({ currentViewId: 'chat', viewParamsStore: {}, shownMore: new Set<string>() });
+state.live = observable({
+  currentViewId: 'chat',
+  viewParamsStore: {} as Record<string, unknown>,
+  shownMore: new Set<string>(),
+  navigate(view: string, params: Record<string, unknown>) {
+    this.currentViewId = view;
+    this.viewParamsStore = { [view]: params };
+  },
+});
+// The sessions and their agents are observable too (the sidebar store and the bindings are mobx).
+const sessions = observable({ items: [] as Item[], agents: observable.map<string, string>() }, { items: observable.ref });
+Object.defineProperty(state, 'items', {
+  get: () => sessions.items,
+  set: (items: Item[]) => runInAction(() => { sessions.items = items; }),
+});
+Object.defineProperty(state, 'agents', {
+  get: () => sessions.agents,
+  set: (agents: Map<string, string>) => runInAction(() => { sessions.agents.replace(agents); }),
+});
 state.toggleIdleExpanded.mockImplementation((key: string) => runInAction(() => {
   if (state.live.shownMore.has(key)) state.live.shownMore.delete(key);
   else state.live.shownMore.add(key);
 }));
 const { publishChatSummaries } = await import('@/lib/chatSummariesBridge');
 const { readComposerVerb, setComposerVerb } = await import('@/lib/composerVerbBridge');
-const { setInnerSidebarTopicsAll, publishInnerSidebarTopicsView, useInnerSidebarChat } = await import('@/lib/innerSidebarBridge');
+const { setInnerSidebarTopicsAll, publishInnerSidebarTopicsView, publishOneListAgentRows, useInnerSidebarChat } = await import('@/lib/innerSidebarBridge');
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
 const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
 const { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
@@ -351,5 +381,217 @@ describe('inner sidebar', () => {
     openChat('dm');
     await render();
     expect([...counts()]).toEqual([['shop-chat', { total: 3, running: 2 }]]);
+  });
+});
+
+// #2574 my standalone agent (its own row in the list: a DM, in no group or project) spawned sub-agents: opening it opens
+// the inner column, the head row is the agent, 智能体 lists its sub-agents.
+describe('a standalone agent with sub-agents', () => {
+  const solo = { kind: 'agent', chatId: 'dm-solo', agentUserId: 'agent-solo' };
+  // What the one list draws as my agents' own rows: it alone decides (lib/sidebarOneList oneListAgentRows).
+  const soloRow = { chatId: 'dm-solo', name: 'Solo', avatar: null, createdAt: null };
+  const beeRow = { chatId: 'dm-b', name: 'Bee', avatar: null, createdAt: null };
+  const listRows = (rows: Record<string, typeof soloRow>) => act(() => publishOneListAgentRows(new Map(Object.entries(rows))));
+  afterEach(() => act(() => publishOneListAgentRows(null)));
+  beforeEach(() => {
+    listRows({ 'agent-solo': soloRow, 'agent-b': beeRow });
+    state.items = [
+      ...state.items,
+      item('solo-task', 'p-y', idle, 9),
+      item('sub-quiet', 'p-y', idle, 8, 'solo-task'),
+      item('sub-busy', 'p-y', running, 1, 'solo-task'),
+      item('sub-asks', 'p-y', waiting, 0, 'solo-task'),
+      item('grandchild', 'p-y', waiting, 0, 'sub-quiet'),
+    ];
+    for (const [session, agent] of [['solo-task', 'agent-solo'], ['sub-quiet', 'agent-s1'], ['sub-busy', 'agent-s2'], ['sub-asks', 'agent-s3'], ['grandchild', 'agent-s4']]) {
+      state.agents.set(session!, agent!);
+    }
+    publishChatSummaries([
+      { id: 'group', kind: 'group', name: 'Planning', unread_count: 0, member_user_ids: ['agent-a', 'human'] },
+      { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a'] },
+      { id: 'dm-solo', kind: 'dm', name: 'Solo', peer_user_id: 'agent-solo', unread_count: 0 },
+      // A sub-agent can have a DM with me too (it wrote to me); that does not make it a row of the list.
+      { id: 'dm-s1', kind: 'dm', name: 'Sub one', peer_user_id: 'agent-s1', unread_count: 0 },
+      { id: 'dm-b', kind: 'dm', name: 'Bee', peer_user_id: 'agent-b', unread_count: 0 },
+      { id: 'dm-a', kind: 'ai', name: 'Ace', peer_user_id: 'agent-a', unread_count: 0 },
+    ]);
+  });
+  const head = () => host.querySelector<HTMLElement>('[data-inner-head="dm-solo"] [data-slot="button"]');
+
+  it('opening it shows the column: the agent as its head row (fold only), then just 智能体 with its sub-agents, needs you → running → rest', async () => {
+    const shell = createRoot(document.createElement('div'));
+    await act(async () => shell.render(<ShellProbe />));
+    openSession('solo-task');
+    await render();
+    const column = host.querySelector<HTMLElement>('[data-region="inner-sidebar"]')!;
+    expect(column.dataset.innerSidebarKind).toBe('agent');
+    expect(column.dataset.innerSidebarChat).toBe('dm-solo');
+    expect(host.querySelector('[data-inner-head="dm-solo"]')?.textContent).toContain('Solo');
+    expect(head()!.getAttribute('aria-current'), 'its own conversation is open').toBe('page');
+    // No pen (its sub-agents are its own to spawn) and no 「…」 (its header gives nothing up to the column).
+    expect(host.querySelector('[data-inner-head-new-agent]')).toBeNull();
+    expect(host.querySelector('[data-inner-head-actions]')).toBeNull();
+    const fold = host.querySelector<HTMLElement>('[data-inner-head="dm-solo"] [data-inner-head-fold]')!;
+    expect([...fold.parentElement!.children].at(-1)).toBe(fold);
+    // No 话题: the agent's conversation is its session.
+    expect(sections()).toEqual(['agents']);
+    expect(readShellSlots()!.getSlots().has('inner-topics:dm-solo')).toBe(false);
+    // The grandchild stays folded under its parent; the count is every sub-agent.
+    expect(sessionRows()).toEqual(['sub-asks', 'sub-busy', 'sub-quiet']);
+    expect(agentsCount()).toBe('4');
+    expect(innerSidebarChat.get()).toEqual(solo);
+    expect(shellColumnChat).toBe('dm-solo');
+    act(() => shell.unmount());
+  });
+
+  it('a sub-agent opened from it keeps the column and the agent lit in the list; the head goes back to the agent; anything else closes it', async () => {
+    openSession('solo-task');
+    await render();
+    openSession('sub-busy');
+    await render();
+    expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
+    expect(innerSidebarChat.get()).toEqual(solo);
+    expect(head()!.getAttribute('aria-current')).toBeNull();
+    openSession('grandchild');
+    await render();
+    expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
+    await act(async () => head()!.click());
+    expect(state.openSessionWhenReady).toHaveBeenLastCalledWith({ projectId: 'p-y', sessionId: 'solo-task' });
+    expect(head()!.getAttribute('aria-current')).toBe('page');
+    openSession('mine-elsewhere');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    expect(innerSidebarChat.get()).toBeNull();
+  });
+
+  it('no sub-agents, no column: the conversation opens as today', async () => {
+    openSession('mine-elsewhere');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    expect(innerSidebarChat.get()).toBeNull();
+    // Its sub-agents gone, the agent opens without one too.
+    state.items = state.items.filter((entry) => !entry.parentSessionId);
+    openSession('solo-task');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+  });
+
+  it('a sub-agent opened on its own opens nothing, even one with sub-agents of its own: it has no row of its own', async () => {
+    openSession('sub-busy');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    openSession('sub-quiet');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+  });
+
+  it('opens only on a row the one list draws for the agent: none (its folder still counted as a project, its group not read yet) → no column, whatever the summaries say', async () => {
+    // The summaries say it lives nowhere; the list, which decides, draws no row for it.
+    listRows({ 'agent-b': beeRow });
+    openSession('solo-task');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    // The list has said nothing yet (still reading): unknown, so no column either.
+    act(() => publishOneListAgentRows(null));
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    // Its row drawn: the column opens; the row gone: it closes, a sub-agent open or not.
+    listRows({ 'agent-solo': soloRow });
+    await render();
+    expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
+    openSession('sub-busy');
+    await render();
+    listRows({});
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+  });
+
+  it('the head row is the list row: its name comes from that row, not the chat summary', async () => {
+    listRows({ 'agent-solo': { ...soloRow, name: 'Solo as the list names it' } });
+    publishChatSummaries([{ id: 'dm-solo', kind: 'dm', name: null, peer_user_id: 'agent-solo', unread_count: 0 }]);
+    openSession('solo-task');
+    await render();
+    expect(host.querySelector('[data-inner-head="dm-solo"]')?.textContent).toContain('Solo as the list names it');
+  });
+
+  it("the head goes straight back to the agent's own session: the column stays even where opening its chat lands on a chat view", async () => {
+    // Opening the DM can fall back to the chat view (its conversation not in the directory): that closes the column.
+    state.openChatOnScreen.mockImplementation((chatId: string) => runInAction(() => state.live.navigate('chat', { chatId })));
+    openSession('solo-task');
+    await render();
+    openSession('sub-busy');
+    await render();
+    await act(async () => head()!.click());
+    await render();
+    expect(state.openSessionWhenReady).toHaveBeenCalledWith({ projectId: 'p-y', sessionId: 'solo-task' });
+    expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
+    expect(head()!.getAttribute('aria-current')).toBe('page');
+    state.openChatOnScreen.mockReset();
+  });
+
+  it("a fork of the agent under another agent's tree is not its conversation: it opens nothing, and its children are not the agent's", async () => {
+    state.items = [...state.items, item('solo-fork', 'p-y', running, 0, 'mine-elsewhere'), item('fork-kid', 'p-y', running, 0, 'solo-fork')];
+    state.agents.set('solo-fork', 'agent-solo');
+    state.agents.set('fork-kid', 'agent-fk');
+    openSession('solo-fork');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    openSession('solo-task');
+    await render();
+    expect(sessionRows()).toEqual(['sub-asks', 'sub-busy', 'sub-quiet']);
+    expect(agentsCount()).toBe('4');
+  });
+
+  it('derives the sessions once per change, not once per render', async () => {
+    openSession('solo-task');
+    await render();
+    const reads = state.placementReads;
+    for (const session of ['sub-busy', 'grandchild', 'sub-asks', 'solo-task']) {
+      openSession(session);
+      await render();
+    }
+    expect(state.placementReads).toBe(reads);
+    state.items = state.items.filter((entry) => entry.id !== 'sub-asks');
+    await render();
+    expect(state.placementReads).toBeGreaterThan(reads);
+    expect(sessionRows()).toEqual(['sub-busy', 'sub-quiet']);
+  });
+
+  it('an agent living in a group or a project is no standalone agent: no column of its own, sub-agents or not', async () => {
+    state.items = [...state.items, item('group-sub', 'p-x', running, 0, 'mine-in-group'), item('shop-sub', 'p-z', running, 0, 'shop-idle')];
+    state.agents.set('group-sub', 'agent-gs');
+    state.agents.set('shop-idle', 'agent-shop');
+    state.agents.set('shop-sub', 'agent-ss');
+    publishChatSummaries([
+      { id: 'group', kind: 'group', name: 'Planning', unread_count: 0, member_user_ids: ['agent-a', 'human'] },
+      { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: [] },
+      { id: 'dm-a', kind: 'ai', name: 'Ace', peer_user_id: 'agent-a', unread_count: 0 },
+      { id: 'dm-shop', kind: 'dm', name: 'Shopper', peer_user_id: 'agent-shop', unread_count: 0 },
+    ]);
+    openSession('mine-in-group');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    openSession('shop-idle');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+  });
+
+  it('folds with every other column (one global fold) and comes back from the restore lane', async () => {
+    const restore = document.body.appendChild(document.createElement('div'));
+    const restoreRoot = createRoot(restore);
+    await act(async () => restoreRoot.render(<InnerSidebarRestore />));
+    openChat('group');
+    await render();
+    await act(async () => host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!.click());
+    openSession('solo-task');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    expect(innerSidebarFoldedAway.get()).toBe(true);
+    expect(innerSidebarChat.get(), 'still attached: the list keeps the agent lit').toEqual(solo);
+    await act(async () => restore.querySelector<HTMLElement>('button[aria-label="sidebar.expandInner"]')!.click());
+    expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
+    expect(innerSidebarShownFor.get()).toBe('dm-solo');
+    act(() => restoreRoot.unmount());
+    restore.remove();
   });
 });

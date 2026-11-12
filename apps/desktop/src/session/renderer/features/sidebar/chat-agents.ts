@@ -40,6 +40,54 @@ export function myAgentsInChat<T extends ChatAgentEntry>(entries: readonly T[], 
   );
 }
 
+/**
+ * #2574 侧栏里我的会话按父子编好(一遍):每条会话、每条会话的子会话(次序同 `entries`)、每个 agent 自己的顶层会话
+ * (新的在前)。独立智能体那一列每次渲染都要问「这条会话是谁的」「它下面有谁」,问这一份,❌ 每问一次扫一遍。
+ */
+export type AgentFamilies<T extends ChatAgentEntry = ChatAgentEntry> = {
+  readonly entries: readonly T[];
+  readonly byId: ReadonlyMap<string, T>;
+  readonly childrenOf: ReadonlyMap<string, readonly T[]>;
+  readonly topLevelOf: ReadonlyMap<string, readonly T[]>;
+};
+
+export function agentFamilies<T extends ChatAgentEntry>(entries: readonly T[]): AgentFamilies<T> {
+  const byId = new Map<string, T>();
+  const childrenOf = new Map<string, T[]>();
+  const topLevelOf = new Map<string, T[]>();
+  const add = (into: Map<string, T[]>, key: string, entry: T) => {
+    const list = into.get(key);
+    if (list) list.push(entry);
+    else into.set(key, [entry]);
+  };
+  for (const entry of entries) {
+    byId.set(entry.id, entry);
+    if (entry.parentSessionId) add(childrenOf, entry.parentSessionId, entry);
+    else if (entry.agentUserId) add(topLevelOf, entry.agentUserId, entry);
+  }
+  for (const own of topLevelOf.values()) own.sort((a, b) => b.time - a.time);
+  return { entries, byId, childrenOf, topLevelOf };
+}
+
+/**
+ * #2574 一个独立智能体那一列的「智能体」:它的子智能体 —— 父会话是它自己某一条**顶层**会话的那些,连同它们往下的子会话
+ * (孙辈照旧收在父会话下:chatAgentSection 按父子成家族)。它挂在别人树下的分身不是它的对话,那下面的 ❌ 算它的。
+ */
+export function subAgentsOf<T extends ChatAgentEntry>(families: AgentFamilies<T>, agentUserId: string): T[] {
+  const found: T[] = [];
+  const reached = new Set<string>();
+  const queue = (families.topLevelOf.get(agentUserId) ?? []).map((entry) => entry.id);
+  for (let index = 0; index < queue.length; index += 1) {
+    for (const child of families.childrenOf.get(queue[index]!) ?? []) {
+      if (reached.has(child.id)) continue;
+      reached.add(child.id);
+      found.push(child);
+      queue.push(child.id);
+    }
+  }
+  return found;
+}
+
 /** 分区头上的数与项目行角上的数:总数,与前台在跑的(同 summarizeSessionBranches:后台 / 定时的 parked 不算在跑)。 */
 export function chatAgentCounts(entries: readonly Pick<ChatAgentEntry, 'presentation'>[]): ChatAgentCounts {
   return { total: entries.length, running: entries.filter((entry) => entry.presentation?.tone === 'running').length };
