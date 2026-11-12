@@ -220,11 +220,12 @@ const InnerSidebarColumn = observer(function InnerSidebarColumn({
   const agentsSection = agentsMatch ? <InnerAgentsSection anchor={anchor} agents={agents} query={query} /> : null;
   return (
     // isolate:分区头、行里那几层 z 序关在这一列里,❌ 压过左边列表那根拖动分隔条。
+    // 底色是正文的底色:这一列是叠在列表上那张卡片的左半(desktop-shell.css「叠一层」,#2548),❌ 侧栏那一档。
     <div
       data-region="inner-sidebar"
       data-inner-sidebar-chat={anchor.chatId}
       data-inner-sidebar-kind={anchor.kind}
-      className="relative isolate flex h-full shrink-0 flex-col border-r border-border bg-background-tertiary text-foreground-tertiary-muted"
+      className="relative isolate flex h-full shrink-0 flex-col border-r border-border bg-background text-foreground-tertiary-muted"
       style={{ width: SIDEBAR_DEFAULT_WIDTH_PX }}
     >
       <SidebarSpace />
@@ -401,7 +402,7 @@ const InnerHeadRow = observer(function InnerHeadRow({
 });
 
 /** 分区头:贴在滚动区顶上(往下滚时还看得见是哪一段)。 */
-const stickyHeaderClass = cn(sidebarGroupHeaderClass, 'sticky top-0 z-10 bg-background-tertiary');
+const stickyHeaderClass = cn(sidebarGroupHeaderClass, 'sticky top-0 z-10 bg-background');
 
 function InnerTopicsSection({
   chatId,

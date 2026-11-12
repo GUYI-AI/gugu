@@ -135,6 +135,8 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       ref={workspaceRootRef}
       className="relative flex h-full w-full overflow-hidden"
       data-workspace-shell=""
+      // #2548 the content is a card stacked on the one list only while the list is beside it (desktop-shell.css).
+      data-workspace-sidebar-hidden={sidebarHidden ? '' : undefined}
     >
       <motion.aside
         data-workspace-left-panel=""
@@ -207,7 +209,8 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
           follow={leftRail > 0 ? { onMove: (raw) => dragLeftEdge(raw, maxSidebarWidth()), onRelease: releaseLeftEdge } : undefined}
         />
       ) : null}
-      {/* 固定占这一格(没有内层侧栏时是 null):正文那一格的位置不因它出现 / 收起而变,正文 ❌ 重挂。 */}
+      {/* 固定占这一格(没有内层侧栏时是 null):正文那一格的位置不因它出现 / 收起而变,正文 ❌ 重挂。
+          #2548 有内层栏时它和正文是同一张卡片的左右两半(desktop-shell.css),所以它必须紧挨着正文那一格。 */}
       {sidebarHidden ? null : innerSidebar}
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">{mainContent}</div>
       {(isLeftOpen || leftRail > 0) && !sidebarHidden ? <PanelResizeDragGuard edge="end" offset={leftAnimatedWidth} /> : null}
