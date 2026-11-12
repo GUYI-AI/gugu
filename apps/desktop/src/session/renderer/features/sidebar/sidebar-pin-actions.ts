@@ -29,10 +29,16 @@ export function sessionPinnedToSidebar(projectId: string, sessionId: string): bo
   return sidebarSessionFacts(projectId, sessionId).isPinnedToSidebar;
 }
 
-function sidebarProjectOf(sessionId: string): string {
+/**
+ * The project of the session a pinned row stands for. The rows are published from an effect, so the shell can draw one a
+ * moment after the sidebar let its session go (archived elsewhere, its machine's list gone): null, and that is said.
+ */
+function sidebarProjectOf(sessionId: string): string | null {
   const node = sidebarStore.placement.nodeById.get(sessionId);
-  if (!node) throw new Error(`Session ${sessionId} pinned to the sidebar is not one of the sidebar's sessions`);
-  return node.item.projectId;
+  if (node) return node.item.projectId;
+  log.warn('A pinned row was used after its session left the sidebar', { sessionId });
+  toast({ title: translateSessionMessage('task.pinnedSessionGone'), variant: 'destructive' });
+  return null;
 }
 
 /**
@@ -55,7 +61,8 @@ export function setPinnedToSidebar(projectId: string, sessionId: string, pinned:
 
 /** 取消固定到左侧栏 asked from the one list. */
 export function unpinSessionFromSidebar(sessionId: string): void {
-  setPinnedToSidebar(sidebarProjectOf(sessionId), sessionId, false);
+  const projectId = sidebarProjectOf(sessionId);
+  if (projectId !== null) setPinnedToSidebar(projectId, sessionId, false);
 }
 
 /**
@@ -65,6 +72,7 @@ export function unpinSessionFromSidebar(sessionId: string): void {
  */
 export function openSidebarPin(sessionId: string, homeChatId: string): void {
   const projectId = sidebarProjectOf(sessionId);
+  if (projectId === null) return;
   openChatOnScreen(homeChatId, false);
   void when(() => innerSidebarChat.get()?.chatId === homeChatId, { timeout: COLUMN_SETTLE_MS }).then(
     () => {

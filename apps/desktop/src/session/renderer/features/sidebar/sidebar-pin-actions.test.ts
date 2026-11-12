@@ -17,18 +17,21 @@ vi.mock('./with-mounted-session', () => ({
     run({}, { setSessionPinnedToSidebar: state.setPinned }),
 }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: state.toast }));
+vi.mock('@renderer/utils/logger', () => ({ log: { error: vi.fn(), warn: vi.fn() } }));
 vi.mock('@renderer/localization/locale-store', () => ({ translateSessionMessage: (key: string) => key }));
-vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: vi.fn() }));
+const openChatOnScreen = vi.hoisted(() => vi.fn());
+vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen }));
 vi.mock('@renderer/features/sessions/open-session-in-session', () => ({ openSessionInSessionWhenReady: vi.fn() }));
 vi.mock('@renderer/features/sessions/stores/session-registry', () => ({ sessionRegistry: { get: () => undefined } }));
 vi.mock('./inner-sidebar-anchor', () => ({ innerSidebarChat: observable.box<{ chatId: string } | null>(null) }));
 
-const { setPinnedToSidebar, unpinSessionFromSidebar } = await import('./sidebar-pin-actions');
+const { openSidebarPin, setPinnedToSidebar, unpinSessionFromSidebar } = await import('./sidebar-pin-actions');
 
 beforeEach(() => {
   runInAction(() => state.nodeById.set('s1', { item: { projectId: 'p1' } }));
   state.setPinned.mockReset();
   state.toast.mockReset();
+  openChatOnScreen.mockReset();
 });
 afterEach(() => state.nodeById.clear());
 
@@ -51,5 +54,20 @@ describe('a refused pin or unpin is said, not swallowed', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(state.toast).not.toHaveBeenCalled();
+  });
+});
+
+// The pinned rows are published from an effect, so for a moment the shell can still draw a row whose session the sidebar
+// no longer holds (archived elsewhere, its machine's list gone). Using that row says so; it does not throw from the click.
+describe('a pinned row a moment behind the sidebar', () => {
+  it('clicking it or unpinning it says the task is no longer in the list, and opens or writes nothing', () => {
+    expect(() => openSidebarPin('s-gone', 'room')).not.toThrow();
+    expect(() => unpinSessionFromSidebar('s-gone')).not.toThrow();
+    expect(openChatOnScreen).not.toHaveBeenCalled();
+    expect(state.setPinned).not.toHaveBeenCalled();
+    expect(state.toast.mock.calls.map(([options]) => [options.title, options.variant])).toEqual([
+      ['task.pinnedSessionGone', 'destructive'],
+      ['task.pinnedSessionGone', 'destructive'],
+    ]);
   });
 });
