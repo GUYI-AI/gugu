@@ -526,7 +526,7 @@ it('a failed upload whose bytes this run holds is resent from its own row; after
     activeChatId: () => 'chat-1', activeThreadRootId: () => null, setMessagesAndCache: (updater) => { restored = updater(restored) }, setThreadMessages: () => {},
     patchChat: f.patchChat, toast: f.toast, appendMessage: f.appendMessage })
   g.restoreAndWatch()
-  await vi.waitFor(() => expect(restored.find(m => m.id === 'upload-1')).toMatchObject({ local_send_state: 'failed', local_send_retryable: false }))
+  await vi.waitFor(() => expect(restored.find(m => m.id === 'upload-1')).toMatchObject({ local_send_state: 'failed', local_send_retryable: false, local_send_error: '上传已中断，请重新选择文件。' }))
   g.dispose()
 })
 it('text sent with a file is delivered after that file, never before it', async () => {

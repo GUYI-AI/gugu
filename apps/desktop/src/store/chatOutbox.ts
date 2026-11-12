@@ -413,8 +413,10 @@ export function createChatOutbox(deps: OutboxDeps): ChatOutbox {
         // 死在投递中的 'sending' 行视同 pending 重投(幂等键兜底,双发机制性不可能)
         const interrupted = row.state === 'uploading' && row.operation?.kind !== 'nativeAttachment'
         const state = interrupted ? 'failed' : row.operation?.kind === 'nativeAttachment' && row.state !== 'failed' ? 'uploading' : row.state === 'sending' ? 'pending' : row.state
-        const record: OutboxRecord = { ...row, state, ...(interrupted ? { operation: { kind: 'upload' }, lastError: i18n.t('outbox.selectFileAgain', { ns: 'messaging' }) } : {}) }
-        if (state !== row.state) await deps.save(record)
+        // An upload's bytes lived only in the run that sent it: whatever it failed with then, now the file must be selected again.
+        const selectAgain = interrupted || row.operation?.kind === 'upload' ? i18n.t('outbox.selectFileAgain', { ns: 'messaging' }) : null
+        const record: OutboxRecord = { ...row, state, ...(selectAgain ? { operation: { kind: 'upload' }, lastError: selectAgain } : {}) }
+        if (state !== row.state || record.lastError !== row.lastError) await deps.save(record)
         if (!isActive(operationEpoch)) return []
         records.set(record.clientMessageId, record)
         restored.push(record)

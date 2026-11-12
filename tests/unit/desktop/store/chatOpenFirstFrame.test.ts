@@ -93,7 +93,7 @@ vi.mock('../../../../apps/desktop/src/lib/readWriter', async (original) => ({
 }))
 const uploads = vi.hoisted(() => ({ bytes: vi.fn(), commit: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/attachmentsEndpoint', async original => ({ ...await original<typeof import('../../../../apps/desktop/src/lib/attachmentsEndpoint')>(), attachmentsEndpoint: async () => ({}) }))
-vi.mock('@gugu/core/cloud/attachmentsApi', () => ({ uploadAttachmentBytes: uploads.bytes, commitAttachment: uploads.commit }))
+vi.mock('@gugu/core/cloud/attachmentsApi', async original => ({ ...await original<typeof import('@gugu/core/cloud/attachmentsApi')>(), uploadAttachmentBytes: uploads.bytes, commitAttachment: uploads.commit }))
 const { ChatProvider } = await import('../../../../apps/desktop/src/store/chat')
 const { useChatStore } = await import('../../../../apps/desktop/src/store/chatContext')
 const { useChatConversation } = await import('../../../../apps/desktop/src/store/useChatConversation')
@@ -409,7 +409,7 @@ describe('打开会话的第一帧', () => {
     } finally { harness.cleanup() }
   })
 
-  it('shows a topic attachment placeholder at the latest page and rolls uncommitted bytes back on upload failure', async () => {
+  it('shows a topic attachment placeholder at the latest page and keeps it, failed and resendable, when its upload fails', async () => {
     network.resolve()
     const all = Array.from({ length: 200 }, (_, index) => message({ id: `att-${index + 1}`, chat_id: 'chatA', seq: index + 1 }))
     vi.mocked(chatService.getMessages).mockImplementation(async (_chat, _user, way, limit = 40, before, after) =>
@@ -426,12 +426,14 @@ describe('打开会话的第一帧', () => {
       await vi.waitFor(() => expect(scopedLines.get('chatA')!.messageWindow.messages.at(-1)?.seq).toBe(200), WAIT)
       await act(async () => { await scopedLines.get('chatA')!.loadMessageAnchor('att-20') })
       expect(scopedLines.get('chatA')!.messageWindow.hasNewer).toBe(true)
-      await act(async () => { send = scopedLines.get('chatA')!.sendAttachments([new File(['body'], 'topic.txt')]).catch((error) => error) })
+      await act(async () => { send = scopedLines.get('chatA')!.sendAttachments([new File(['body'], 'topic.txt')]) })
       await vi.waitFor(() => expect(scopedLines.get('chatA')!.messageWindow.messages.some((row) => row.seq < 0 && row.content_type === 'attachment')).toBe(true), WAIT)
       expect(scopedLines.get('chatA')!.messageWindow.hasNewer).toBe(false)
-      await act(async () => { upload.reject(new Error('upload failed')); await send })
-      expect(scopedLines.get('chatA')!.messageWindow.messages.find((row) => row.seq < 0)).toBeUndefined()
-      expect(await send).toBeInstanceOf(Error)
+      // The file is a row once the send returns, before its bytes go up: the composer is free again.
+      const rowId = await send
+      expect(scopedLines.get('chatA')!.messageWindow.messages.find((row) => row.seq < 0)?.id).toBe(rowId)
+      await act(async () => { upload.reject(new Error('upload failed')) })
+      await vi.waitFor(() => expect(scopedLines.get('chatA')!.messageWindow.messages.find((row) => row.id === rowId)).toMatchObject({ local_send_state: 'failed', local_send_retryable: true }), WAIT)
       expect(uploads.commit).not.toHaveBeenCalled()
     } finally { upload.resolve('unused'); harness.cleanup() }
   })

@@ -7,6 +7,7 @@ import { createReactHarness, renderWithAppProviders } from '../../../support/tes
 import { MediaAttachmentBubble } from '../../../../apps/desktop/src/components/chat/MediaAttachmentBubble'
 import { attachmentQueryClient } from '../../../../apps/desktop/src/lib/attachmentQueryClient'
 import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
+import { forgetSentFiles, holdSentFile } from '../../../../apps/desktop/src/lib/sentFileCopies'
 
 const f = vi.hoisted(() => ({ resolve: vi.fn() }))
 vi.mock('@/lib/fileAccess', () => ({ fileMetadata: async () => ({ status: 'gone' }), resolveFile: f.resolve, fileReader: () => ({ accountId: 'user-1', actorId: 'user-1' }), fileReadSignal: () => undefined, attachmentCache: vi.fn(), putAttachment: vi.fn(), attachmentCacheOrigin: 'https://fixture.invalid' }))
@@ -36,11 +37,13 @@ describe('a sent image from sending to committed', () => {
     URL.createObjectURL = vi.fn(() => 'blob:committed-thumb')
     URL.revokeObjectURL = vi.fn()
     HTMLImageElement.prototype.decode = vi.fn(async () => undefined) // jsdom does not decode
+    // A sending row's preview is the file this run sent (sendAttachmentBatch holds it).
+    holdSentFile('m-1', new Blob(['png'], { type: 'image/png' }), 'blob:local-preview')
     f.resolve.mockImplementation(() => new Promise(resolve => {
       deliver = () => resolve({ status: 'ready', purpose: 'preview', revision, dispose: async () => undefined, content: async () => new Blob(['png'], { type: 'image/png' }) })
     }))
   })
-  afterEach(() => { harness.cleanup(); attachmentQueryClient.clear(); notifyManager.setNotifyFunction(callback => callback()); vi.unstubAllGlobals() })
+  afterEach(() => { forgetSentFiles(); harness.cleanup(); attachmentQueryClient.clear(); notifyManager.setNotifyFunction(callback => callback()); vi.unstubAllGlobals() })
   const render = (meta: ParsedAttachment, messageId = 'm-1') => renderWithAppProviders(harness, createElement(MediaAttachmentBubble, { meta, messageId, isMine: true }))
   const img = () => harness.container.querySelector<HTMLImageElement>('img.chat-inline-image')
   const pending = () => harness.container.querySelector('.chat-inline-image--pending')
