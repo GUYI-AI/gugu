@@ -4,7 +4,6 @@
 import { useMemo } from 'react'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { deviceSessionsOf, useDirectoryDevices, useLiveDeviceSessions, type DeviceSessions } from '@/session/shared/remote-sessions/session-directory'
-import { buildSessionTree } from '@/session/renderer/features/sessions/session-tree'
 import type { SidebarPinnedAgent } from './sidebarChatsBridge'
 import type { SampleProjectContent } from '@/session/renderer/features/sample-project/content/types'
 import { markdownPlainText } from './markdownPlainText'

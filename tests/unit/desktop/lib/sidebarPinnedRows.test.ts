@@ -5,7 +5,7 @@ import { agentHasOwnRow, oneListShows, sidebarPinnedRows, type AgentHomes } from
 import { chat } from '../../../support/testHarness'
 
 const homes = (parts: Partial<Record<keyof AgentHomes, string[]>> = {}): AgentHomes => ({
-  inRooms: new Set(parts.inRooms), inProjects: new Set(parts.inProjects), withTopLevelTask: new Set(parts.withTopLevelTask), pinned: new Set(parts.pinned),
+  inRooms: new Set(parts.inRooms), inProjects: new Set(parts.inProjects), withTopLevelTask: new Set(parts.withTopLevelTask), pinned: new Set(parts.pinned), onlyForks: new Set(parts.onlyForks),
 })
 const owns = (id: string) => id.startsWith('a-')
 
