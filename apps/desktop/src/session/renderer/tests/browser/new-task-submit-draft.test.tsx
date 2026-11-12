@@ -16,7 +16,7 @@ import '@renderer/index.css';
 
 const mocks = vi.hoisted(() => ({ create: vi.fn(), assertProtocol: vi.fn(), navigate: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({
-  getSessionManagerStore: () => ({ createSession: mocks.create }), getSessionPageStore: () => ({ workspaceId: 'workspace' }), asProvisioned: (value: unknown) => value,
+  getSessionManagerStore: () => ({ createSession: mocks.create }), getSessionPageStore: () => ({ workspaceId: 'workspace' }), asProvisioned: (value: unknown) => value, sessionViewKind: () => 'ready',
 }));
 vi.mock('@/store/devicesCache', () => ({ readCachedDevices: () => [{ device_id: 'host', capabilities: { remote_protocol: 15 } }] }));
 vi.mock('@/lib/taskAttachmentTarget', async original => ({ ...(await original<object>()), assertTaskAttachmentProtocol: mocks.assertProtocol, taskAttachmentUsesSsh: () => false }));
