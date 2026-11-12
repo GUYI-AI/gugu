@@ -23,6 +23,9 @@ import { topicCallTotal, topicUnreadTotal } from './topicPinsModel'
 import { useStripNarrow } from '../../session/renderer/features/tabs/tab-strip-narrow'
 import type { ChatTopicState } from '../../session/renderer/features/chats/chat-tabs/chat-tab-providers'
 import { useInnerSidebarChat } from '../../lib/innerSidebarBridge'
+import { getAppSettingValueSnapshot } from '@renderer/features/settings/app-settings-client'
+import { getEffectiveHotkey } from '@renderer/lib/hooks/useKeyboardShortcuts'
+import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format'
 
 interface ChatHeaderActionsProps {
   isGroupChat: boolean
@@ -54,6 +57,9 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
   const { t } = useTranslation('messaging')
   const { activeChatId } = useChatStore('activeChatId')
   const folderName = useChatFolderName()
+  // #2609 The search item names the shortcut that runs it (app.find with the user's binding) in this platform's keys:
+  // ⌘F on macOS, Ctrl+F elsewhere. Read when the menu renders; ❌ a literal.
+  const findHotkey = getEffectiveHotkey('app.find', getAppSettingValueSnapshot('keyboard'))
   const narrow = useHeaderNarrow(moreButtonRef, Boolean(mobile))
   const groupId = isGroupChat ? activeChatId : null
   const topics = useChatTopicPins(mobile ? null : groupId)
@@ -99,7 +105,7 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
         render={<IconButton on={showHeaderMenu || undefined} aria-label={t('header.more')}><MoreHorizontal /></IconButton>} />
       {showHeaderMenu && <DropdownMenu.Content data-testid={AUTOMATION_TEST_IDS.groupHeaderMenu} side="bottom" align="end" sideOffset={4} style={{ minWidth: 220 }}>
         {groupId && narrow && <MenuItem onClick={() => openPopup('apps')} icon={<LayoutGrid size={16} />}>{t('header.groupApps')}</MenuItem>}
-        <MenuItem data-testid={AUTOMATION_TEST_IDS.chatHeaderSearchButton} onClick={onSearch} icon={<Search size={16} />} shortcut={isRoomChat ? '⌘F' : undefined}>
+        <MenuItem data-testid={AUTOMATION_TEST_IDS.chatHeaderSearchButton} onClick={onSearch} icon={<Search size={16} />} shortcut={isRoomChat && findHotkey ? formatHotkeyText(findHotkey) : undefined}>
           {t(isRoomChat ? 'header.searchHistory' : 'header.searchChat')}
         </MenuItem>
         <MenuItem onClick={onOpenFolder} icon={<Folder size={16} />}>{folderName}</MenuItem>
