@@ -20,6 +20,9 @@ vi.mock('@renderer/lib/stores/use-agents', async (original) => ({
   ...(await original<object>()),
   useAgentIcon: (id: string) => (id === 'codex' ? codexIcon : null),
 }))
+// The #2548 switch reads the app settings over IPC, which this page has none of; the narrow layout is the same either way.
+const oneList = vi.hoisted(() => ({ on: false }))
+vi.mock('@renderer/features/sidebar/use-desktop-sidebar-v2', () => ({ useDesktopSidebarV2Switch: () => oneList.on }))
 
 const { SessionComposerVerbs } = await import('@renderer/features/sessions/session-verb-dock')
 const { composerVerbLook } = await import('@renderer/features/sessions/composer-verb-tag')
@@ -138,6 +141,19 @@ describe('窄框里宿主塞进来的「新任务」收成标', () => {
     // agent 的标(PluginIcon)是包在一层 span 里的插件 svg;闪电是按钮直接带的那枚 svg。
     expect(verb.querySelectorAll('svg, img')).toHaveLength(1)
     expect(verb.querySelector(':scope > svg')).not.toBeNull()
+  })
+
+  it('#2548 侧栏一张列表时它叫「新智能体」(与群里的框同名),标仍是按钮自己那一枚', async () => {
+    oneList.on = true
+    try {
+      await renderComposer(640, { tag: false })
+      const verb = document.querySelector('[data-testid="session-verb-task"]')!
+      expect(verb.getAttribute('aria-label')).toBe('新智能体')
+      expect(verb.textContent).toBe('新智能体')
+      expect(verb.querySelectorAll('svg, img')).toHaveLength(1)
+    } finally {
+      oneList.on = false
+    }
   })
 
   it('会话底排宽:锁着的 harness 标在模型左边、不灰,模型那格不再画厂商图形', async () => {

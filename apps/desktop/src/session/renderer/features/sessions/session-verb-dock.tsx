@@ -1,10 +1,11 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useState } from 'react';
-import { Zap } from '@/lib/icons';
+import { SquarePen, Zap } from '@/lib/icons';
 import { setComposerVerb, takeComposerCarry, type ComposerVerb } from '@/lib/composerVerbBridge';
 import { showBesideOnScreen } from '@renderer/app/screen-layout-actions';
 import { ProjectTaskComposer } from '@renderer/features/projects/components/main-panel/project-home';
 import { useProjectFolderStage } from '@renderer/features/projects/components/main-panel/project-folder-stage';
+import { useDesktopSidebarV2Switch } from '@renderer/features/sidebar/use-desktop-sidebar-v2';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { composerDrafts, projectDraftKey } from './composer-drafts';
@@ -26,7 +27,9 @@ export function SessionComposerVerbs({ sessionId, draft, onCarried }: {
   onCarried: () => void;
 }) {
   const { translate } = useSessionMessages();
-  const label = translate('taskDispatch.task');
+  // #2548 with the sidebar as one list it is 「新智能体」 with 创建智能体's pen, as in the chat composers (ComposerVerbs).
+  const oneList = useDesktopSidebarV2Switch();
+  const label = translate(oneList ? 'taskDispatch.agent' : 'taskDispatch.task');
   const pick = (verb: ComposerVerb) => {
     setComposerVerb(sessionVerbKey(sessionId), verb, draft);
     if (draft.trim()) onCarried();
@@ -36,7 +39,7 @@ export function SessionComposerVerbs({ sessionId, draft, onCarried }: {
   return (
     <>
       <Button variant="ghost" size="sm" data-testid="session-verb-task" aria-label={label} title={label} onClick={() => pick('task')}>
-        <Zap size={14} /><span data-slot="composer-foldable-label">{label}</span>
+        {oneList ? <SquarePen size={14} /> : <Zap size={14} />}<span data-slot="composer-foldable-label">{label}</span>
       </Button>
     </>
   );
@@ -93,6 +96,7 @@ const SessionTaskDock = observer(function SessionTaskDock({ projectId, verbKey }
   verbKey: string;
 }) {
   const { translate } = useSessionMessages();
+  const oneList = useDesktopSidebarV2Switch();
   const stage = useProjectFolderStage(projectId);
   // 选词那一刻框里写着的话跟过来:要在新建框挂上(读草稿)之前放好。
   useState(() => {
@@ -104,9 +108,9 @@ const SessionTaskDock = observer(function SessionTaskDock({ projectId, verbKey }
     <ProjectTaskComposer
       projectId={projectId}
       stage={stage}
-      verb={composerVerbLook('task', { label: translate('taskDispatch.task'), onCancel: () => cancelComposerVerb(verbKey, projectDraftKey(projectId)), testId: 'task-dispatch' })}
-      // 在一条会话里派:说清是交给一个新的 agent,❌ 眼前这一个。
-      placeholder={(agent) => translate('taskDispatch.placeholderNew', { agent })}
+      verb={composerVerbLook('task', { label: translate(oneList ? 'taskDispatch.agent' : 'taskDispatch.task'), onCancel: () => cancelComposerVerb(verbKey, projectDraftKey(projectId)), testId: 'task-dispatch' })}
+      // 在一条会话里派:说清是交给一个新的 agent,❌ 眼前这一个(#2548 一张列表时与群里的框同一句)。
+      placeholder={(agent) => (oneList ? translate('taskDispatch.placeholderAgent') : translate('taskDispatch.placeholderNew', { agent }))}
       onSessionCreated={(result) => {
         setComposerVerb(verbKey, null);
         showBesideOnScreen({ kind: 'session', projectId: result.projectId, sessionId: result.sessionId });

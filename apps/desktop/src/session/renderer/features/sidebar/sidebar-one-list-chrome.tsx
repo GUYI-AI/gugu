@@ -4,12 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
-import { DropdownMenu, MenuItem } from '@/components/ui/Menu';
+import { DropdownMenu, MenuItem, MenuSubmenu } from '@/components/ui/Menu';
 import { Popover } from '@/components/ui/Popover';
 import { Hint } from '@/components/ui/Tooltip';
 import { requestShellChatAction, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
-import { commandRegistry } from '@renderer/lib/commands/registry';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { getEffectiveHotkey } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { SIDEBAR_PROGRESS_VAR, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
@@ -18,6 +17,7 @@ import { appState } from '@renderer/lib/stores/app-state';
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
+import { AddProjectMenuItems } from './add-project-menu-items';
 import {
   nextSidebarCollapseHint,
   sidebarCollapseHintShown,
@@ -45,13 +45,10 @@ export type OneListCreateAction = (typeof ONE_LIST_CREATE_MENU)[number];
 
 /**
  * 新建群聊 / 添加联系人: the chat list's own dialogs (the same request as the old Chats-tab rows; the one list's chat list
- * is always open, so nothing needs flipping first). 新建项目: the `app.newProject` command (its shortcut, the palette).
+ * is always open, so nothing needs flipping first). 新建项目 is no action of its own but a submenu: the old sidebar's
+ * 「添加项目」 group (新建空白项目 / 使用现有文件夹 / 使用远程文件夹 ›, AddProjectMenuItems), ❌ straight into a blank project.
  */
-export function runOneListCreateAction(action: OneListCreateAction): void {
-  if (action === 'new-project') {
-    if (!commandRegistry.dispatch('app.newProject')) throw new Error('app.newProject is not registered');
-    return;
-  }
+export function runOneListCreateAction(action: Exclude<OneListCreateAction, 'new-project'>): void {
   requestShellChatAction(action);
 }
 
@@ -116,7 +113,11 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
             )}
             {ONE_LIST_CREATE_MENU.map((action) => {
               const Icon = CREATE_MENU_ICON[action];
-              return (
+              return action === 'new-project' ? (
+                <MenuSubmenu key={action} icon={<Icon size={15} />} label={translate(CREATE_MENU_LABEL[action])} data-testid={`sidebar-create-${action}`}>
+                  <AddProjectMenuItems />
+                </MenuSubmenu>
+              ) : (
                 <MenuItem key={action} icon={<Icon size={15} />} data-testid={`sidebar-create-${action}`} onClick={() => runOneListCreateAction(action)}>
                   {translate(CREATE_MENU_LABEL[action])}
                 </MenuItem>

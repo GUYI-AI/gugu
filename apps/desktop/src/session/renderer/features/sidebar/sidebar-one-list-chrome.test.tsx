@@ -50,6 +50,8 @@ vi.mock('@renderer/lib/layout/navigation-provider', () => ({
   isCurrentView: (current: string, target: string) => current === target,
 }));
 vi.mock('@renderer/lib/commands/registry', () => ({ commandRegistry: { dispatch: state.dispatch } }));
+// The group itself (新建空白项目 / 使用现有文件夹 / 使用远程文件夹) is the old sidebar's, tested where it lives.
+vi.mock('./add-project-menu-items', () => ({ AddProjectMenuItems: () => <div data-testid="add-project-menu-items" /> }));
 vi.mock('@/lib/sidebarChatsBridge', () => ({ requestShellChatAction: state.request, useSidebarNotificationsOpen: () => state.notificationsOpen }));
 // The tooltip's text is what matters here; Base UI draws it only on hover.
 vi.mock('@/components/ui/Tooltip', () => ({ Hint: ({ label, children }: { label: string; children: ReactElement }) => <span data-hint={label}>{children}</span> }));
@@ -97,18 +99,21 @@ describe('the top: 创建智能体 and the 「+」 menu', () => {
     await click(q('sidebar-create-create-group')!);
     expect(state.request).toHaveBeenLastCalledWith('create-group');
     await click(q('sidebar-create-menu')!);
-    await click(q('sidebar-create-new-project')!);
-    expect(state.dispatch).toHaveBeenLastCalledWith('app.newProject');
-    await click(q('sidebar-create-menu')!);
     await click(q('sidebar-create-add-contact')!);
     expect(state.request).toHaveBeenLastCalledWith('add-contact');
     expect(state.request).toHaveBeenCalledTimes(2);
   });
 
-  it('fails loud when 新建项目 has no command to run', async () => {
-    state.dispatch.mockReturnValueOnce(false);
-    const { runOneListCreateAction } = await import('./sidebar-one-list-chrome');
-    expect(() => runOneListCreateAction('new-project')).toThrow(/app.newProject/);
+  it('新建项目 opens the old sidebar\'s 「添加项目」 group beside it, ❌ straight into a blank project', async () => {
+    await render(<SidebarOneListTop collapsed={false} onCreateAgent={vi.fn()} />);
+    await click(q('sidebar-create-menu')!);
+    const row = q('sidebar-create-new-project')!;
+    expect(row.getAttribute('aria-haspopup')).toBe('menu');
+    expect(q('add-project-menu-items')).toBeNull();
+    await click(row);
+    expect(q('add-project-menu-items')).not.toBeNull();
+    expect(state.dispatch).not.toHaveBeenCalled();
+    expect(state.request).not.toHaveBeenCalled();
   });
 
   it('collapsing moves the 「+」 and narrows 创建智能体 with the open/close progress, ❌ a jump at the start', async () => {
