@@ -15,7 +15,7 @@ import '@/mobile/phone-look.css';
 
 /*
  * #2594: the phone's task page does not draw or fetch the pictures a tool call's result handed back; the desktop app
- * keeps them however narrow its window. "The phone" is the mobile shell (`useMobileShell`): the native app, or the web
+ * keeps them however narrow its window. "The phone" is the phone shell the transcript view checks: the native app, or the web
  * target at phone width. The transcript is handed its turns on the first render (a cold open), so this also covers the
  * first frame, before any later layout update could land.
  */
