@@ -32,7 +32,7 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
 // The chat list is drawn into this slot by the shell's tree (ChatListPanel, its own tests); here it stands for every
 // activity-sorted conversation row.
 vi.mock('./sidebar-chats-section', () => ({
-  SidebarChatsSection: ({ unread }: { unread: number }) => <div data-region="sidebar-chat-list" data-unread={unread} />,
+  SidebarChatsSection: () => <div data-region="sidebar-chat-list" />,
 }));
 vi.mock('./project-item', () => ({
   SidebarProjectItem: ({ projectId }: { projectId: string }) => <div data-row={`project:${projectId}`} />,
@@ -78,12 +78,6 @@ describe('rows that are not a conversation yet', () => {
     state.sampleShown = false;
     await render();
     expect(order()).toEqual(['conversations']);
-  });
-
-  it('the conversations keep their 「对话」 header, its number the two old tabs\' unread counts added up (the list holds both)', async () => {
-    await render();
-    const list = host.querySelector<HTMLElement>('[data-region="sidebar-chat-list"]')!;
-    expect(list.dataset.unread).toBe('9');
   });
 
   it('the task page\'s keyboard chain holds exactly the project rows drawn here, and nothing once the list is gone', async () => {

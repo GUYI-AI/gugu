@@ -118,12 +118,11 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       className={cn(
         'relative flex h-full flex-col border-r border-border bg-background-tertiary text-foreground-tertiary-muted transition-colors',
         isDragOver && 'bg-background-2 ring-2 ring-inset ring-border-2',
-        // #2548 a row's text (name, preview, time, its unread count) and the 「对话」 header follow the open/close
+        // #2548 a row's text (name, preview, time, its unread count) follows the open/close
         // progress (--gg-sidebar-text, workspace-layout: text only in the second half). On the rail the unread count sits on
         // the avatar's top-right corner instead (the muted bell stays out) and fades in near the end (--gg-sidebar-badge).
         // The count changes place at SIDEBAR_RAIL_LAYOUT_BELOW, where both are invisible, so nothing jumps. The rows narrow
         // with the sidebar, so the selected background ends the size of the avatar's cell.
-        '[&_[data-sidebar-chats-header]]:opacity-(--gg-sidebar-text)',
         !railLayout && '[&_.gg-list-row-line>*]:opacity-(--gg-sidebar-text)',
         railLayout && [
           '[&_.gg-list-row-line>:not(.gg-list-row-trailing)]:opacity-(--gg-sidebar-text)',
