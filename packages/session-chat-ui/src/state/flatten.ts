@@ -278,7 +278,8 @@ export function flattenTier(
    * 对话布局里一轮的回复(owner 0 号图):名字 + 过程行一行,过程展开的步骤在它下面,气泡在最下面 ——
    * ❌ 气泡先画、步骤挂在气泡底下。这一轮每条输出(message_send 发出去的也是)各自一个气泡,同一个名字下面排着。
    */
-  const emitConversationReply = (reply: ChatMessage, sent: readonly ChatMessage[], steps: () => void, bodyActivity = activityEvent): void => {
+  const emitConversationReply = (reply: ChatMessage, sent: readonly ChatMessage[], steps: () => void, bodyActivity = activityEvent,
+    folded?: { output: ChatMessage; activity: AgentActivityEvent | undefined }): void => {
     const processActivity = activityEvent;
     const head = `${reply.conversationProcess?.id ?? reply.id}:head`;
     // 头不带正文:话只在气泡里画一次(找、复制、计数都只见一份)。
@@ -289,6 +290,10 @@ export function flattenTier(
     activityEvent = bodyActivity;
     for (const output of [...sent, reply]) {
       processItem({ ...output, conversationProcess: undefined, conversationPart: 'body', conversationHead: head, ...(tail && output === reply ? { conversationTail: true } : {}) });
+    }
+    if (folded) {
+      activityEvent = folded.activity;
+      processItem({ ...folded.output, conversationProcess: undefined, conversationPart: 'body', conversationHead: head });
     }
     activityEvent = processActivity;
   };
@@ -459,7 +464,7 @@ export function flattenTier(
           resultOwner = undefined; processItem(block.item); activityEvent = undefined; continue;
         }
         const output = conversationOutput(block.items, block.live);
-        const ops = planRows(outsideProcess(output.rest));
+        let ops = planRows(outsideProcess(output.rest));
         activityEvent = output.reply
           ? outgoingActivity(output.reply.id.replace(/:sent:[^:]+$/, ''), output.reply.sentAddresses, ctx,
             output.reply.sentAttachments?.length ? new Set(output.reply.sentAttachments.map(file => file.messageId)).size : 1,
@@ -474,6 +479,10 @@ export function flattenTier(
         // Failure and permission rows must remain discoverable without opening a historical A2A fold.
         if (hasUnconfirmedSend(block.items as TranscriptItem[], turn) || block.items.some(item => 'status' in item && item.status === 'error'
           || 'toolCallId' in item && ctx.pendingToolCallIds().has(item.toolCallId))) activityEvent = undefined;
+        // The line stays outside the fold but its send folds into it: under that line the agent's own last words are
+        // the bubble, ❌ a line with nothing under it (owner 2026-11-13, #2593). The send stays in the A2A row.
+        const standIn = output.said && replyActivity && !activityEvent ? output.said : undefined;
+        if (standIn) ops = planRows(outsideProcess(output.rest.filter(item => item.id !== standIn.id)));
         const silentCopyText = output.silent && block === blocks.at(-1) && completionResult !== null ? completionResult : undefined;
         if (silentCopyText !== undefined) inlineCompletion = true;
         const artifacts = activityEvent && !ctx.active ? activityArtifacts(block.items, turnOutputs, turn.id, block.id) : [];
@@ -509,9 +518,10 @@ export function flattenTier(
         conversationOwner = output.reply ? `${block.id}:head` : block.id;
         resultOwner = conversationOwner;
         if (output.reply) {
-          const reply = { ...output.reply, conversationProcess: process,
+          const reply = { ...(standIn ?? output.reply), conversationProcess: process,
             ...(block.fullReply ? { conversationFull: true } : {}) };
-          emitConversationReply(reply, [], steps, replyActivity);
+          if (standIn) emitConversationReply(reply, [], steps, undefined, { output: output.reply, activity: replyActivity });
+          else emitConversationReply(reply, [], steps, replyActivity);
         } else {
           processItem({ kind: 'turn-process', ...process, turnId: turn.id,
             ...(output.silent ? { silent: true } : {}),
