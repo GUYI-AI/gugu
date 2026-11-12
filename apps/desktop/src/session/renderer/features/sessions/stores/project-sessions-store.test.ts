@@ -278,6 +278,29 @@ describe('ProjectSessionsStore session lifecycle', () => {
     manager.dispose();
   });
 
+  // #2599 the optimistic object stays the session's data (the host's later session:created is ignored), so it must
+  // already say where the agent lives — else an agent just created in a group shows in no group until a restart.
+  it('says where an agent created in a group lives before the host answers, and keeps it', async () => {
+    const manager = makeSessionManager();
+    const create = (id: string, extra: object) =>
+      manager.createSession({
+        projectId: 'project-1',
+        sessionConfig: { version: '1', name: id, initialSession: { id, provider: 'claude', type: 'acp', initialQueue: [{ text: 'hi' }] } },
+        workspaceConfig: { workspace: { kind: 'worktree' } },
+        ...extra,
+      } as never);
+
+    await create('born-in-group', { birthGroup: { chatId: 'group-1', asTask: true } });
+    await create('from-nowhere', {});
+
+    expect(manager.sessions.get('born-in-group')?.data.bornInChatId).toBe('group-1');
+    expect(manager.sessions.get('from-nowhere')?.data.bornInChatId).toBeNull();
+    manager.acceptCreatedSession(makeSession({ id: 'born-in-group', projectId: 'project-1', bornInChatId: 'group-1' }));
+    expect(manager.sessions.get('born-in-group')?.data.bornInChatId).toBe('group-1');
+
+    manager.dispose();
+  });
+
   // 归档 = 这条会话离开列表:收起它在会话页的那一份,❌ 另走一条「软拆」。
   it('drops an archived session from the page when the archive arrives', () => {
     const manager = makeSessionManager();

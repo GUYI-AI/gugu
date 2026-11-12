@@ -104,6 +104,7 @@ export function mySidebarAgents(): ChatAgentEntry[] {
     agentUserId:
       sessionAgentBindings.bindingFor(item.id)?.agentUserId ??
       sidebarStore.remoteSession(item.projectId, item.id)?.summary.agent?.userId,
+    bornInChatId: item.bornInChatId ?? null,
   }));
 }
 
@@ -117,11 +118,26 @@ export function isProjectChat(chatId: string): boolean {
   return sidebarStore.sidebarProjects.some((ref) => ref.chatId === chatId);
 }
 
-export function chatScope(anchor: InnerSidebarRoomAnchor, summaries: ReadonlyMap<string, ChatSummary>): ChatAgentScope {
-  const memberUserIds = summaries.get(anchor.chatId)?.memberUserIds ?? [];
-  return anchor.kind === 'group'
-    ? { kind: 'group', memberUserIds }
-    : { kind: 'project', projectIds: projectIdsOfChat(anchor.chatId), memberUserIds };
+/** 侧栏列着的项目(账号上的项目,归档的不列)在各台机器上的本地项目:住在这些里的 agent 住在那个项目,❌ 算在群里。 */
+export function listedProjectIds(): ReadonlySet<string> {
+  return new Set(sidebarStore.sidebarProjects.flatMap((ref) => projectIdsOfChat(ref.chatId)));
+}
+
+/**
+ * #2599 这个群 / 项目里住着谁:在这个项目里的,或在这里(或它的一个话题里)建、又不在任何项目里的(chat-agents)。
+ * 一次算很多个群 / 项目的(角标、固定的那几行)把 `projects`(listedProjectIds)算一次传进来。
+ */
+export function chatScope(
+  anchor: InnerSidebarRoomAnchor,
+  summaries: ReadonlyMap<string, ChatSummary>,
+  projects: ReadonlySet<string> = listedProjectIds()
+): ChatAgentScope {
+  return {
+    kind: anchor.kind,
+    projectIds: anchor.kind === 'project' ? projectIdsOfChat(anchor.chatId) : [],
+    bornHere: (chatId) => chatId === anchor.chatId || summaries.get(chatId)?.sourceChatId === anchor.chatId,
+    inProject: (projectId) => projects.has(projectId),
+  };
 }
 
 /** 侧栏里我的会话与它们的父子,数据变了才重编一遍(这一列每次渲染都要读;在跑的 agent 每跳一下状态它就重画一次)。 */
@@ -283,7 +299,10 @@ export const InnerSidebarRestore = observer(function InnerSidebarRestore() {
   );
 });
 
-/** 项目行头像角上那个数(#2548):每个项目群里我的智能体,与分区头同一个推导。 */
+/**
+ * 项目行、群行头像角上那个数(#2548;群行 #2599:群也是 agent 住的地方):每个项目群 / 用户群里住着的我的智能体,
+ * 与这一列「智能体」分区头同一个推导(chatScope),❌ 群里所有是成员的 agent。
+ */
 const MyChatAgentCountsPublisher = observer(function MyChatAgentCountsPublisher({
   agents,
   summaries,
@@ -292,10 +311,14 @@ const MyChatAgentCountsPublisher = observer(function MyChatAgentCountsPublisher(
   summaries: ReadonlyMap<string, ChatSummary>;
 }) {
   const counts = new Map<string, ChatAgentCounts>();
+  const projects = listedProjectIds();
+  const count = (anchor: InnerSidebarRoomAnchor) =>
+    counts.set(anchor.chatId, chatAgentCounts(myAgentsInChat(agents, chatScope(anchor, summaries, projects))));
   for (const ref of sidebarStore.sidebarProjects) {
-    const chatId = ref.chatId;
-    if (counts.has(chatId)) continue;
-    counts.set(chatId, chatAgentCounts(myAgentsInChat(agents, chatScope({ kind: 'project', chatId }, summaries))));
+    if (!counts.has(ref.chatId)) count({ kind: 'project', chatId: ref.chatId });
+  }
+  for (const [chatId, summary] of summaries) {
+    if (summary.kind === 'group' && !counts.has(chatId) && !isProjectChat(chatId)) count({ kind: 'group', chatId });
   }
   // 依赖是序列化后的数:每次渲染新建的 Map 不算变化(publish 自己也只在数变了时才通知)。
   const key = JSON.stringify([...counts]);
@@ -444,7 +467,7 @@ const InnerHeadRow = observer(function InnerHeadRow({
   // 同输入框「+」右边那个「新任务」:项目走项目行「+」那一条(prepareProjectTask),群把这个群的框换成新任务。
   const newAgent = () => {
     if (rowProjectId) prepareProjectTask(rowProjectId);
-    else setComposerVerb(chatId, 'task', '', { name, joinable: true });
+    else setComposerVerb(chatId, 'task', '', { name, joinable: true, inGroup: true });
     openChatOnScreen(chatId, false);
   };
   // #2600 项目群和别的群一样戴群自己的头像(没设 = 成员拼图),❌ 文件夹封面。

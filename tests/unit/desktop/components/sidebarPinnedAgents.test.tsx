@@ -41,6 +41,8 @@ beforeEach(() => {
     sessions: [
       { conversationId: 's-project', projectId: 'app', title: 'Fix', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-project' } },
       { conversationId: 's-solo', projectId: 'tasks', title: 'Solo', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-solo' } },
+      // #2599 a-room was created in Room, so it lives there: only a pin gives it a row of its own.
+      { conversationId: 's-room', projectId: 'tasks', title: 'Room task', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-room' }, bornInChatId: 'room' },
     ],
     cached: false, loading: false,
   })

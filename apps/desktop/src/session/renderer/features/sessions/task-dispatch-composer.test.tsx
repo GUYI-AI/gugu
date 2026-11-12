@@ -40,11 +40,12 @@ vi.mock('@renderer/features/remote-hosts/use-new-session-machine', () => ({
 vi.mock('./use-machine-create-target', () => ({ machineComposerProps: () => ({}) }));
 vi.mock('@renderer/features/library/library-host', () => ({ machineLibraryHost: () => ({}) }));
 vi.mock('./implicit-session-home-project', () => ({ ensureImplicitSessionHomeProjectId: () => new Promise(() => {}) }));
-vi.mock('@renderer/lib/sessionpage-message-host', () => ({ sessionpageMessageHost: () => ({}) }));
+const messageHost = vi.hoisted(() => ({ rememberedTaskProject: vi.fn(async () => null) }));
+vi.mock('@renderer/lib/sessionpage-message-host', () => ({ sessionpageMessageHost: () => messageHost }));
 vi.mock('@renderer/lib/components/agent-icon', () => ({ AgentIcon: () => null }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ sidebarStore: { orderedProjects: [] } }));
 vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => null } }));
-vi.mock('@/platform', () => ({ platform: {} }));
+vi.mock('@/platform', () => ({ platform: { getLocalDeviceSelfSnapshot: async () => ({ device_id: 'mac' }) } }));
 
 const { TaskDispatchComposer } = await import('./task-dispatch-composer');
 
@@ -76,5 +77,28 @@ describe('TaskDispatchComposer copy', () => {
     await act(async () => root.render(<TaskDispatchComposer chatId="dm-1" />));
     expect(placeholder()).toBe('想让新智能体做点什么？');
     expect(chip()).toBeNull();
+  });
+});
+
+describe('#2599 the project field in a group', () => {
+  it('starts empty in a group: the project picked for this chat before is not read (a project there is where the agent lives)', async () => {
+    messageHost.rememberedTaskProject.mockClear();
+    await act(async () => root.render(<TaskDispatchComposer chatId="group-1" chatName="产品讨论群" joinChat />));
+    await act(async () => {});
+    expect(messageHost.rememberedTaskProject).not.toHaveBeenCalled();
+  });
+
+  it('starts empty in a topic too: the agent does not join it, but it lives in the topic\'s group', async () => {
+    messageHost.rememberedTaskProject.mockClear();
+    await act(async () => root.render(<TaskDispatchComposer chatId="topic-1" chatName="定价页方案" inGroup />));
+    await act(async () => {});
+    expect(messageHost.rememberedTaskProject).not.toHaveBeenCalled();
+  });
+
+  it('a direct message still starts from the project picked for it before', async () => {
+    messageHost.rememberedTaskProject.mockClear();
+    await act(async () => root.render(<TaskDispatchComposer chatId="dm-1" />));
+    await act(async () => {});
+    expect(messageHost.rememberedTaskProject).toHaveBeenCalledWith('dm-1', 'mac');
   });
 });

@@ -798,6 +798,11 @@ export type SessionpageSessionSummary = {
   /** 起它的 App(`spawnedByExtensionId`);App 列 agent 时由发起方比对成「是不是我起的」。老宿主不带。 */
   spawnedByExtensionId?: string | null;
   /**
+   * #2599 它是从哪个对话里建出来的:建时加入的那个群,否则派它的那张任务卡所在的对话(私聊或群)。桌面左侧栏按它定
+   * agent 住在哪(在群里建的住那个群),之后进群退群都不改。null = 不是从对话里建的;缺席 = 老宿主不报(按不知道读)。
+   */
+  bornInChatId?: string | null;
+  /**
    * 为什么这条会话没有记录可读(`supported: false` 时):`not-started` = agent 还没真正开出会话
    * (建的时候没起来);`harness-unsupported` = 这一家的记录还没有接。老宿主不带这一格。
    * 两种都**照样打得开**:转录里是第一句话和一行说明,❌ 不是一行点不开的灰字。

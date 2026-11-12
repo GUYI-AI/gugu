@@ -676,6 +676,9 @@ describe('session orchestration', () => {
       expect(appRow(row.id)).toMatchObject({ provider: 'codex', runtime: 'pty', project_id: 'project-2' });
       // An App's agent is pulled into its chat on purpose: an ordinary seat, not a task seat.
       expect(takeBirthGroup(row.id)).toEqual({ chatId: 'chat-7', asTask: false });
+      // #2599 and the row keeps it: the left sidebar places the agent in the chat it was born in.
+      const config = fixture.sqlite.prepare('SELECT config FROM sessions WHERE id = ?').get(row.id) as { config: string };
+      expect(JSON.parse(config.config)).toMatchObject({ birthChatId: 'chat-7' });
     });
 
     // owner 10-14: started from a page an agent works — spawned by that agent, by session_spawn's rule (its child, whatever

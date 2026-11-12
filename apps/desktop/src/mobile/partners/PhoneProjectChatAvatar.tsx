@@ -15,13 +15,14 @@ import { PhoneMessageAvatar } from '../chat/PhoneMessageAvatar'
 
 /**
  * 消息中的项目群和别的群一样用群自己的头像(#2600 owner 11-13:没要过文件夹封面,群头像换了就该看得见);
- * 提醒仅占头像一角,不进伙伴通讯录。桌面(#2548 一张表的侧栏):头像右下角挂「我的智能体里有几个在跑」;用户群没有这个数。
+ * 提醒仅占头像一角,不进伙伴通讯录。桌面(#2548 一张表的侧栏):头像右下角挂「我的智能体里有几个在跑」;
+ * 用户群也挂这个数(#2599:住在群里的那些)。
  */
 export function PhoneProjectChatAvatar({ chat, mobile, children }: { chat: ChatItem; mobile: boolean; children: ReactNode }) {
   return mobile ? <ProjectChatAvatar chat={chat}>{children}</ProjectChatAvatar> : <DesktopProjectChatAvatar chat={chat}>{children}</DesktopProjectChatAvatar>
 }
 
-/** 桌面:群头像照旧,项目群在角上挂在跑的数。 */
+/** 桌面:群头像照旧,项目群和用户群在角上挂在跑的数。 */
 function DesktopProjectChatAvatar({ chat, children }: { chat: ChatItem; children: ReactNode }) {
   return <ProjectRunningCount chatId={chat.id}>{children}</ProjectRunningCount>
 }
@@ -31,7 +32,7 @@ const RUNNING_AVATAR_STYLE: CSSProperties = { position: 'relative', display: 'in
 const RUNNING_CORNER_STYLE: CSSProperties = { position: 'absolute', right: -2, bottom: -2, pointerEvents: 'none' }
 
 /**
- * 数由会话页算好发过来(innerSidebarBridge:只有项目群有、开关关着没有),与内层侧栏「智能体」分区头那枚药丸同一个推导;
+ * 数由会话页算好发过来(innerSidebarBridge:项目群和用户群有、开关关着没有),与内层侧栏「智能体」分区头那枚药丸同一个推导;
  * 字形与侧栏会话行在跑的那一枚相同(TaskStatusMark)。一个都没在跑就不挂。
  */
 function ProjectRunningCount({ chatId, children }: { chatId: string; children: ReactNode }) {

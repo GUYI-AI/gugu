@@ -1136,6 +1136,7 @@ async function createChildSession(input: {
     initialPrompt,
     initialQueue,
     ...(initialQueue ? { startupOrigin: 'session-page' as const, initialMessageId: messageId } : {}),
+    ...(input.birthGroup ? { birthChatId: input.birthGroup.chatId } : {}),
     runtime: transport,
     deferStart: true,
   }, db, input.relations);

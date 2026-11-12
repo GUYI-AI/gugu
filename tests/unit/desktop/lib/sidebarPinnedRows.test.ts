@@ -5,20 +5,20 @@ import { agentHasOwnRow, oneListShows, sidebarPinnedRows, type AgentHomes } from
 import { chat } from '../../../support/testHarness'
 
 const homes = (parts: Partial<Record<keyof AgentHomes, string[]>> = {}): AgentHomes => ({
-  inRooms: new Set(parts.inRooms), inProjects: new Set(parts.inProjects), withTopLevelTask: new Set(parts.withTopLevelTask), pinned: new Set(parts.pinned), onlyForks: new Set(parts.onlyForks),
+  inGroups: new Set(parts.inGroups), inProjects: new Set(parts.inProjects), withTopLevelTask: new Set(parts.withTopLevelTask), pinned: new Set(parts.pinned), onlyForks: new Set(parts.onlyForks),
 })
 const owns = (id: string) => id.startsWith('a-')
 
 describe('the pin exception: a pinned agent has its own row wherever it lives', () => {
   it.each([
-    [homes({ inRooms: ['a'], pinned: ['a'] }), true],
+    [homes({ inGroups: ['a'], pinned: ['a'] }), true],
     [homes({ inProjects: ['a'], pinned: ['a'] }), true],
-    [homes({ inRooms: ['a'], pinned: ['b'] }), false],
+    [homes({ inGroups: ['a'], pinned: ['b'] }), false],
     [homes({ pinned: ['a'] }), true],
   ])('%#', (agentHomes, expected) => expect(agentHasOwnRow('a', agentHomes)).toBe(expected))
 
   it('the one list shows a pinned agent\'s DM even before it has a message (its pinned session is the conversation)', () => {
-    const agentHomes = homes({ inRooms: ['a-room'], inProjects: ['a-project'], pinned: ['a-room'] })
+    const agentHomes = homes({ inGroups: ['a-room'], inProjects: ['a-project'], pinned: ['a-room'] })
     expect(oneListShows(chat({ kind: 'dm', peer_user_id: 'a-room' }), false, agentHomes, owns)).toBe(true)
     expect(oneListShows(chat({ kind: 'dm', peer_user_id: 'a-project' }), true, agentHomes, owns)).toBe(false)
   })

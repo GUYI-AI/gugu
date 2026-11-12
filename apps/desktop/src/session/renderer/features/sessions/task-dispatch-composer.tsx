@@ -30,13 +30,15 @@ export function taskDispatchDraftKey(chatId: string): string {
  * 同一个托盘 + NewSessionComposer,❌ 另一条建会话的路。发出去的那句话由宿主落成这个对话里的一张任务卡
  * (taskChatId),结果回这里;建完人留在原处、框还原成发消息。
  * 托盘是 项目 · 机器 · (文件夹)· 群名。选了项目:机器和文件夹与项目块同一套(useProjectFolderStage);没选 = 选哪台机器的任务工作区。
- * 项目按这个对话记(没选过 = 最近一次选的);`joinChat` = 这个 agent 进群
+ * 项目按这个对话记(没选过 = 最近一次选的);群和它的话题里派的(`inGroup`)例外:项目一格每次都空着,只认这一次明确选的 ——
+ * 选了项目它就住那个项目,没选就住这个群(#2599),沿用上回的选择会让它悄悄住进一个这次没选的项目。`joinChat` = 这个 agent 进群
  * (群里派的;私聊里 agent 进不去,卡留在私聊、结果回它自己的会话)。项目块里的新任务是项目首页那个框(ProjectTaskComposer)。
  */
 export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   chatId,
   chatName,
   joinChat = false,
+  inGroup = joinChat,
   verbKey = chatId,
   onSessionCreated,
 }: {
@@ -44,6 +46,8 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   /** 群名(托盘上那一格);`joinChat` 时要。 */
   chatName?: string;
   joinChat?: boolean;
+  /** #2599 这是一个群或它的一个话题(话题里派的 agent 不进群,但同样住在这个群):项目一格每次都空着。缺省 = `joinChat`。 */
+  inGroup?: boolean;
   /** 这个词记在 composerVerbBridge 的哪一格;缺省 = 这个对话(没有项目的会话里选的记在那条会话上,卡落它的私聊)。 */
   verbKey?: string;
   /** 建好之后(框已还原):会话里派的,新会话拼到右边。 */
@@ -61,7 +65,7 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   });
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const localDeviceId = useLocalDeviceId();
-  const remembered = useChatProjectMemory(chatId, localDeviceId);
+  const remembered = useChatProjectMemory(chatId, inGroup ? null : localDeviceId);
   useEffect(() => {
     if (remembered && selectedId === undefined) setSelectedId(remembered);
   }, [remembered, selectedId]);
@@ -69,7 +73,7 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
 
   const pickProject = (projectId: string | undefined) => {
     setSelectedId(projectId);
-    if (localDeviceId) {
+    if (localDeviceId && !inGroup) {
       const choice = taskProjectChoice(projectId, localDeviceId, (id) => machineRegistry.machineOf(id));
       void sessionpageMessageHost().rememberTaskProject(chatId, choice.deviceId, choice.projectId).catch((error: unknown) => {
         log.warn('remember the project picked for a chat failed', { chatId, error: error instanceof Error ? error.message : String(error) });
@@ -174,7 +178,7 @@ export function ComposerVerbDock({ chatId }: { chatId: string }) {
   return (
     <div className={sessionComposerDockBandClassName}>
       <div className={sessionComposerDockedWidthClassName}>
-        <TaskDispatchComposer chatId={chatId} chatName={chat?.name} joinChat={chat?.joinable} />
+        <TaskDispatchComposer chatId={chatId} chatName={chat?.name} joinChat={chat?.joinable} inGroup={chat?.inGroup} />
       </div>
     </div>
   );

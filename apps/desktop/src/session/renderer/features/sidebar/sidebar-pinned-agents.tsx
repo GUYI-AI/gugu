@@ -2,7 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
 import { useChatSummaries } from '@/lib/chatSummariesBridge';
 import { publishSidebarPinnedAgents, type SidebarPinnedAgent } from '@/lib/sidebarChatsBridge';
-import { chatScope, isProjectChat, mySidebarAgents } from './inner-sidebar';
+import { chatScope, isProjectChat, listedProjectIds, mySidebarAgents } from './inner-sidebar';
 import type { InnerSidebarRoomAnchor } from './inner-sidebar-anchor';
 import { sidebarSessionFacts } from './sidebar-pin-actions';
 import { pinnedSidebarAgents, sidebarAgentHome, type SidebarHomeCandidate } from './sidebar-pin';
@@ -15,11 +15,12 @@ import { pinnedSidebarAgents, sidebarAgentHome, type SidebarHomeCandidate } from
 export const PinnedSidebarAgentsPublisher = observer(function PinnedSidebarAgentsPublisher() {
   const summaries = useChatSummaries();
   const homes: (SidebarHomeCandidate & { chatId: string })[] = [];
+  const projects = listedProjectIds();
   for (const [chatId, summary] of summaries) {
     if (summary.kind !== 'group' || !summary.name) continue;
     // Same reading as the inner column's anchor: the group of a project the sidebar lists is that project.
     const anchor: InnerSidebarRoomAnchor = { kind: isProjectChat(chatId) ? 'project' : 'group', chatId };
-    homes.push({ kind: anchor.kind, name: summary.name, chatId, scope: chatScope(anchor, summaries) });
+    homes.push({ kind: anchor.kind, name: summary.name, chatId, scope: chatScope(anchor, summaries, projects) });
   }
   const sessions = mySidebarAgents().map((entry) => ({ ...entry, sessionId: entry.id, ...sidebarSessionFacts(entry.projectId, entry.id) }));
   // A session with no 咕咕 identity yet has no DM to draw: it is not on the list.

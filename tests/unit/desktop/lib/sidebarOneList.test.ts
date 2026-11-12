@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SessionpageProjectSummary, SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import {
   agentHasOwnRow,
-  agentsInRooms,
+  agentsInGroups,
   agentTaskHomes,
   accountProjectReading,
   oneListAgentRows,
@@ -20,22 +20,64 @@ import { chat } from '../../../support/testHarness'
 import { sidebarChatSignals } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
 
 const project = (id: string, kind?: 'workspace'): SessionpageProjectSummary => ({ id, name: id, path: `/${id}`, ...(kind ? { kind } : {}) })
-const session = (conversationId: string, projectId: string, agent: string | null, parent: string | null = null): SessionpageSessionSummary => ({
+const session = (conversationId: string, projectId: string, agent: string | null, parent: string | null = null, bornInChatId: string | null = null): SessionpageSessionSummary => ({
   conversationId, projectId, title: conversationId, harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null,
-  supported: true, parentConversationId: parent, agent: agent ? { userId: agent } : null,
+  supported: true, parentConversationId: parent, agent: agent ? { userId: agent } : null, bornInChatId,
 })
 const homes = (parts: Partial<Record<keyof AgentHomes, string[]>> = {}): AgentHomes => ({
-  inRooms: new Set(parts.inRooms), inProjects: new Set(parts.inProjects), withTopLevelTask: new Set(parts.withTopLevelTask), pinned: new Set(parts.pinned),
+  inGroups: new Set(parts.inGroups), inProjects: new Set(parts.inProjects), withTopLevelTask: new Set(parts.withTopLevelTask), pinned: new Set(parts.pinned),
   onlyForks: new Set(parts.onlyForks),
 })
 const mine = new Set(['a-solo', 'a-room', 'a-project', 'a-idle', 'a-fork'])
 const owns = (id: string) => mine.has(id)
 
-describe('which agents live in a room', () => {
-  it('counts the agent members of every group, project groups included, and nothing else', () => {
-    const members: Record<string, string[]> = { room: ['a-room'], project: ['a-project'], topic: ['a-topic'], dm: ['a-dm'] }
-    const chats = [chat({ id: 'room', kind: 'group' }), chat({ id: 'project', kind: 'group' }), chat({ id: 'topic', kind: 'topic' }), chat({ id: 'dm', kind: 'dm' })]
-    expect([...agentsInRooms(chats, (id) => members[id]!)].sort()).toEqual(['a-project', 'a-room'])
+describe('#2599 which agents live in a group: where they were created, not the groups they are members of', () => {
+  const chats = [
+    chat({ id: 'room', kind: 'group' }),
+    chat({ id: 'shop-group', kind: 'group' }),
+    chat({ id: 'room-topic', kind: 'topic', source_chat_id: 'room' }),
+    chat({ id: 'dm', kind: 'dm' }),
+  ]
+  const bornIn = new Map<string, ReadonlySet<string | null>>([
+    ['a-room', new Set(['room'])],
+    ['a-shop', new Set(['shop-group'])],
+    ['a-topic', new Set(['room-topic'])],
+    ['a-two-groups', new Set(['room', 'shop-group'])],
+    ['a-dm', new Set(['dm'])],
+    ['a-button', new Set([null])],
+    ['a-gone', new Set(['dissolved'])],
+    ['a-left', new Set(['room-i-left'])],
+  ])
+
+  it('counts agents created in a group the list holds, project groups and topics (of their group) included', () => {
+    expect([...agentsInGroups(chats, bornIn, new Set())].sort()).toEqual(['a-room', 'a-shop', 'a-topic', 'a-two-groups'])
+  })
+
+  it('a group that is gone (dissolved, read as archived, or left) is no home: its agents get their own row', () => {
+    expect([...agentsInGroups(chats, bornIn, new Set(['room']))].sort()).toEqual(['a-shop'])
+  })
+
+  it('one top-level task created elsewhere keeps the agent its own row (that task has no other place to show)', () => {
+    const mixed = new Map<string, ReadonlySet<string | null>>([
+      ['a-room-and-button', new Set(['room', null])],
+      ['a-room-and-dm', new Set(['room', 'dm'])],
+    ])
+    expect([...agentsInGroups(chats, mixed, new Set())]).toEqual([])
+  })
+
+  it('agentTaskHomes records where each top-level task outside every project was created; a project task records none', () => {
+    const { bornIn: born, withTopLevelTask } = agentTaskHomes([{
+      deviceId: 'mac',
+      projects: [project('app'), project('tasks', 'workspace')],
+      sessions: [
+        session('s1', 'tasks', 'a-room', null, 'room'),
+        session('s2', 'app', 'a-into-project', null, 'room'),
+        session('s3', 'tasks', 'a-button', null, null),
+        session('s4', 'tasks', 'a-child', 's1', 'room'),
+      ],
+    }], accountProjectReading([{ bindings: [{ deviceId: 'mac', localProjectId: 'app' }] }], false))
+    expect(Object.fromEntries([...born].map(([agent, chats]) => [agent, [...chats]]))).toEqual({ 'a-room': ['room'], 'a-button': [null] })
+    expect([...withTopLevelTask].sort()).toEqual(['a-button', 'a-room'])
   })
 })
 
@@ -113,7 +155,7 @@ describe('which agents live in a project and which have a top-level task', () =>
 describe('an owned agent has its own row only when it lives in no group and no project', () => {
   it.each([
     [homes(), true],
-    [homes({ inRooms: ['a'] }), false],
+    [homes({ inGroups: ['a'] }), false],
     [homes({ inProjects: ['a'] }), false],
     [homes({ withTopLevelTask: ['a'] }), true],
     [homes({ onlyForks: ['a'] }), false],
@@ -121,7 +163,7 @@ describe('an owned agent has its own row only when it lives in no group and no p
 })
 
 describe('what the one list shows', () => {
-  const agentHomes = homes({ inRooms: ['a-room'], inProjects: ['a-project'], withTopLevelTask: ['a-solo', 'a-room'], onlyForks: ['a-fork'] })
+  const agentHomes = homes({ inGroups: ['a-room'], inProjects: ['a-project'], withTopLevelTask: ['a-solo', 'a-room'], onlyForks: ['a-fork'] })
   const show = (overrides: Parameters<typeof chat>[0], listed: boolean) => oneListShows(chat(overrides), listed, agentHomes, owns)
 
   it('never shows a topic as a row, listed or not', () => {
@@ -161,7 +203,7 @@ describe('what the one list shows', () => {
       projects: [project('tasks', 'workspace')],
       sessions: [session('solo', 'tasks', 'a-boss'), session('sub', 'tasks', 'a-sub', 'solo'), session('grandchild', 'tasks', 'a-grandchild', 'sub')],
     }], accountProjectReading([], false))
-    const family = { ...tasks, inRooms: new Set<string>(), pinned: new Set<string>() }
+    const family = { ...tasks, inGroups: new Set<string>(), pinned: new Set<string>() }
     const mineToo = (id: string) => ['a-boss', 'a-sub', 'a-grandchild'].includes(id)
     expect(oneListShows(chat({ kind: 'dm', peer_user_id: 'a-boss' }), false, family, mineToo)).toBe(true)
     expect(oneListShows(chat({ kind: 'dm', peer_user_id: 'a-sub' }), true, family, mineToo)).toBe(false)

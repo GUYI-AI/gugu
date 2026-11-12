@@ -14,10 +14,19 @@ import type { SampleProjectContent } from '@/session/renderer/features/sample-pr
 import { markdownPlainText } from './markdownPlainText'
 import { readArchivedGroups, subscribeArchivedGroups } from './archivedGroupsRead'
 
-/** Where my agents live. */
+/**
+ * Where my agents live (#2599): where each was created, not the groups it is a member of. Membership is one agent to
+ * many groups and changes as it joins and leaves, so it cannot say where one agent is; joining a group only makes it a
+ * member there.
+ */
 export type AgentHomes = {
-  /** Agent members of a group chat in the list (an ordinary group or a project group). */
-  readonly inRooms: ReadonlySet<string>
+  /**
+   * Agents created in a group the list holds (an ordinary group or a project group, or one of its topics) whose top-level
+   * task is outside every project. A group that is gone (dissolved, left) is no home: its agents get their own row.
+   * Every such top-level task must have been created in one: a task created elsewhere is reachable only from the agent's
+   * own row, so that agent keeps it.
+   */
+  readonly inGroups: ReadonlySet<string>
   /** Agents with a session in a project on any machine (a project of the account project list; a task workspace is none). */
   readonly inProjects: ReadonlySet<string>
   /** Agents with a top-level task (no parent session) outside every project. */
@@ -28,10 +37,23 @@ export type AgentHomes = {
   readonly onlyForks: ReadonlySet<string>
 }
 
-/** Agent members of every group chat, project groups included. A topic is not a room of its own here. */
-export function agentsInRooms(chats: readonly Pick<ChatItem, 'id' | 'kind'>[], agentsOf: (chatId: string) => readonly string[]): Set<string> {
+/**
+ * #2599 The agents that live in a group the list holds: each of their top-level tasks outside every project was born
+ * (`AgentTaskHomes.bornIn`) in one of its groups, or in a topic of one (a topic is not a home of its own; it belongs to its
+ * group). One task born nowhere, or in a group the list does not hold, keeps the agent's own row.
+ */
+export function agentsInGroups(
+  chats: readonly Pick<ChatItem, 'id' | 'kind' | 'source_chat_id'>[],
+  bornIn: ReadonlyMap<string, ReadonlySet<string | null>>,
+  gone: ReadonlySet<string>,
+): Set<string> {
+  const groups = new Set(chats.filter((chat) => chat.kind === 'group' && !gone.has(chat.id)).map((chat) => chat.id))
+  const groupOf = new Map<string, string>()
+  for (const chat of chats) if (chat.kind === 'topic' && chat.source_chat_id) groupOf.set(chat.id, chat.source_chat_id)
   const agents = new Set<string>()
-  for (const chat of chats) if (chat.kind === 'group') for (const agentId of agentsOf(chat.id)) agents.add(agentId)
+  for (const [agentId, chatIds] of bornIn) {
+    if ([...chatIds].every((chatId) => chatId !== null && groups.has(groupOf.get(chatId) ?? chatId))) agents.add(agentId)
+  }
   return agents
 }
 
@@ -57,14 +79,23 @@ export function accountProjectReading(list: readonly Pick<AccountProject, 'bindi
  * session. A fork (parent set) is never top-level, also when its parent is not on any machine we can see: forks are not
  * rows of the one list, top-level tasks are (#2548 "one row per top-level task, forks stay under their parent").
  */
+export type AgentTaskHomes = Pick<AgentHomes, 'inProjects' | 'withTopLevelTask' | 'onlyForks'> & {
+  /**
+   * #2599 For each agent with a top-level task outside every project: the conversations those tasks were created from
+   * (null = one was created from no conversation, or by a host that does not say).
+   */
+  readonly bornIn: ReadonlyMap<string, ReadonlySet<string | null>>
+}
+
 export function agentTaskHomes(
   machines: readonly (Pick<DeviceSessions, 'projects' | 'sessions'> & { readonly deviceId: string })[],
   reading: ProjectReading,
-): Pick<AgentHomes, 'inProjects' | 'withTopLevelTask' | 'onlyForks'> {
+): AgentTaskHomes {
   const inProjects = new Set<string>()
   const withTopLevelTask = new Set<string>()
   const topLevel = new Set<string>()
   const forked = new Set<string>()
+  const bornIn = new Map<string, Set<string | null>>()
   for (const { deviceId, projects, sessions } of machines) {
     const ownProjects = reading.firstRead ? new Set(projects.filter((project) => project.kind !== 'workspace').map((project) => project.id)) : null
     for (const session of sessions) {
@@ -77,10 +108,14 @@ export function agentTaskHomes(
         continue
       }
       topLevel.add(agentId)
-      if (!inProject) withTopLevelTask.add(agentId)
+      if (inProject) continue
+      withTopLevelTask.add(agentId)
+      const chats = bornIn.get(agentId) ?? new Set<string | null>()
+      chats.add(session.bornInChatId ?? null)
+      bornIn.set(agentId, chats)
     }
   }
-  return { inProjects, withTopLevelTask, onlyForks: new Set([...forked].filter((agentId) => !topLevel.has(agentId))) }
+  return { inProjects, withTopLevelTask, onlyForks: new Set([...forked].filter((agentId) => !topLevel.has(agentId))), bornIn }
 }
 
 /**
@@ -88,7 +123,7 @@ export function agentTaskHomes(
  * or the user pinned it to the sidebar (固定到左侧栏), which keeps its row although it lives elsewhere.
  */
 export function agentHasOwnRow(agentId: string, homes: AgentHomes): boolean {
-  return homes.pinned.has(agentId) || (!homes.inRooms.has(agentId) && !homes.inProjects.has(agentId) && !homes.onlyForks.has(agentId))
+  return homes.pinned.has(agentId) || (!homes.inGroups.has(agentId) && !homes.inProjects.has(agentId) && !homes.onlyForks.has(agentId))
 }
 
 /**
@@ -158,13 +193,14 @@ const subscribeFirstRead = (listener: () => void) => reaction(readFirstRead, lis
 export function useAgentHomes(
   enabled: boolean,
   chats: readonly ChatItem[],
-  membership: { readonly parts: ReadonlyMap<string, { readonly agents: readonly string[] }> },
   pins: readonly Pick<SidebarPinnedAgent, 'agentUserId'>[],
 ): AgentHomes | null {
   const devices = useDirectoryDevices()
   const directory = useLiveDeviceSessions()
   const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
   const firstRead = useSyncExternalStore(subscribeFirstRead, readFirstRead)
+  // A group read as dissolved is gone before the chat list drops it (archivedGroupsRead): its agents get their own row.
+  const archivedGroups = useSyncExternalStore(subscribeArchivedGroups, readArchivedGroups)
   const tasks = useMemo(
     () => (enabled
       ? agentTaskHomes(
@@ -176,11 +212,13 @@ export function useAgentHomes(
   )
   return useMemo(
     () => tasks && {
-      ...tasks,
-      inRooms: agentsInRooms(chats, (chatId) => membership.parts.get(chatId)!.agents),
+      inProjects: tasks.inProjects,
+      withTopLevelTask: tasks.withTopLevelTask,
+      onlyForks: tasks.onlyForks,
+      inGroups: agentsInGroups(chats, tasks.bornIn, archivedGroups),
       pinned: new Set(pins.map((pin) => pin.agentUserId)),
     },
-    [tasks, chats, membership, pins],
+    [tasks, chats, archivedGroups, pins],
   )
 }
 

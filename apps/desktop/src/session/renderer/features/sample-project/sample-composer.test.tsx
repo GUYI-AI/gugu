@@ -253,7 +253,7 @@ describe('the sample project\'s composer (#2569)', () => {
     await send();
     expect(io.createProject).not.toHaveBeenCalled();
     expect(io.ensureGroup).not.toHaveBeenCalled();
-    expect(io.setComposerVerb).toHaveBeenCalledWith('chat-of-the-laptop-project', 'task', typed, { name: '周末去杭州', joinable: true });
+    expect(io.setComposerVerb).toHaveBeenCalledWith('chat-of-the-laptop-project', 'task', typed, { name: '周末去杭州', joinable: true, inGroup: true });
     expect(io.openChat).toHaveBeenCalledWith('chat-of-the-laptop-project', false);
     expect(io.forget).toHaveBeenCalledOnce();
     expect(io.dismiss).toHaveBeenCalledOnce();

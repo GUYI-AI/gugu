@@ -3,7 +3,7 @@
 // (谁先起来都接得上,形制同 sidebarChatsBridge):
 //   · 「全部话题」:哪个对话的话题此刻全部摊开。会话页的分区头「全部 › / ‹ 返回」写,壳那一格读。
 //   · 话题读数:壳 → 会话页。分区头上的总数,以及第一级收起了几条(决定要不要给「全部 ›」)。
-//   · 我的智能体读数:会话页 → 壳。每个项目群里我的智能体有几个、几个在跑 —— 项目行头像角上那个数。
+//   · 我的智能体读数:会话页 → 壳。每个项目群 / 用户群里住着的我的智能体有几个、几个在跑 —— 项目行、群行头像角上那个数(#2599)。
 //   · 这一列此刻挂在哪个对话上:会话页 → 壳。挂着时那个对话页头上与这一列重复的按钮(成员、话题、邀请)收起来。
 //   · 一个列表画成自己一行的我的智能体(#2574):壳 → 会话页。有子智能体的独立智能体那一列只开在这几行上 —— 「有自己一行」只有列表这一份判法。
 // 两边都只 import 这一个文件,❌ 各写一份键名。
@@ -91,7 +91,7 @@ export function useInnerSidebarTopicsView(chatId: string): InnerSidebarTopicsVie
 
 const NO_COUNTS: ReadonlyMap<string, ChatAgentCounts> = new Map()
 
-/** 会话页:每个项目群里我的智能体(整份替换;没变不通知)。开关关着时发一份空的。 */
+/** 会话页:每个项目群 / 用户群里住着的我的智能体(整份替换;没变不通知)。开关关着时发一份空的。 */
 export function publishMyChatAgentCounts(next: ReadonlyMap<string, ChatAgentCounts>): void {
   const current = read<ReadonlyMap<string, ChatAgentCounts>>(AGENT_COUNTS_KEY)
   if (
@@ -102,7 +102,7 @@ export function publishMyChatAgentCounts(next: ReadonlyMap<string, ChatAgentCoun
   write(AGENT_COUNTS_KEY, AGENT_COUNTS_EVENT, next)
 }
 
-/** 壳:这个对话里我的智能体;不是项目群、会话页还没说过、或开关关着 = null。 */
+/** 壳:这个对话里我的智能体;不是项目群或用户群、会话页还没说过、或开关关着 = null。 */
 export function useMyChatAgentCounts(chatId: string): ChatAgentCounts | null {
   return useSyncExternalStore(
     subscribeAgentCounts,

@@ -53,6 +53,8 @@ type SidebarSessionEntry = {
   /** Raw addressing name; components decide how to display it. */
   title: string;
   createdAt?: string;
+  /** #2599 the conversation its agent was created from: the group or project it lives in (chat-agents). */
+  bornInChatId?: string | null;
 };
 
 /**
@@ -321,6 +323,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
           unseen: !session.seen,
           title: session.data.title,
           createdAt: session.data.createdAt,
+          bornInChatId: session.data.bornInChatId ?? null,
         });
       }
     }
@@ -375,6 +378,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
           unseen: session.unseen === true,
           hostOnline: this.machines?.connected?.(machine) ?? live,
           title: session.title,
+          bornInChatId: session.bornInChatId ?? null,
         };
       });
       const own = derived;

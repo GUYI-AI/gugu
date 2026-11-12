@@ -19,11 +19,14 @@ type Item = {
   presentation: typeof running | null;
   unseen: boolean;
   title: string;
+  /** #2599 the conversation it was created from: where it lives (chat-agents). */
+  bornInChatId?: string | null;
 };
-const item = (id: string, projectId: string, presentation: Item['presentation'] = idle, time = 0, parentSessionId: string | null = null): Item => ({
+const item = (id: string, projectId: string, presentation: Item['presentation'] = idle, time = 0, parentSessionId: string | null = null, bornInChatId: string | null = null): Item => ({
   id,
   projectId,
   parentSessionId,
+  bornInChatId,
   isPinned: false,
   time,
   presentation,
@@ -154,12 +157,21 @@ beforeEach(() => {
   });
   state.openChatOnScreen.mockClear();
   state.prepareProjectTask.mockClear();
-  state.items = [item('mine-in-group', 'p-x', running), item('mine-elsewhere', 'p-y'), item('shop-task', 'p-shop', running), item('shop-idle', 'p-shop')];
-  state.agents = new Map([['mine-in-group', 'agent-a'], ['mine-elsewhere', 'agent-b']]);
+  // #2599 where each lives: `mine-in-group` was created in Planning; `mine-elsewhere` in a DM; `member-only` in a DM too, though
+  // it is a member of both groups; `shop-chat-agent` in the shop project's group with no project chosen (so in the project).
+  state.items = [
+    item('mine-in-group', 'p-x', running, 0, null, 'group'),
+    item('mine-elsewhere', 'p-y', idle, 0, null, 'dm'),
+    item('shop-task', 'p-shop', running),
+    item('shop-idle', 'p-shop'),
+    item('member-only', 'p-y', running, 0, null, 'dm'),
+    item('shop-chat-agent', 'p-y', idle, 0, null, 'shop-chat'),
+  ];
+  state.agents = new Map([['mine-in-group', 'agent-a'], ['mine-elsewhere', 'agent-b'], ['member-only', 'agent-m'], ['shop-chat-agent', 'agent-c']]);
   state.projectChats = new Map([['p-shop', 'shop-chat']]);
   publishChatSummaries([
-    { id: 'group', kind: 'group', name: 'Planning', unread_count: 0, member_user_ids: ['agent-a', 'human', 'someone-elses-agent'] },
-    { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a'] },
+    { id: 'group', kind: 'group', name: 'Planning', unread_count: 0, member_user_ids: ['agent-a', 'agent-m', 'human', 'someone-elses-agent'] },
+    { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a', 'agent-m'] },
     { id: 'dm', kind: 'dm', unread_count: 0 },
   ]);
   topicsView('group', { total: 2, hidden: 0 });
@@ -181,7 +193,7 @@ const openProject = (projectId: string) => go('project', { project: { projectId 
 const openSession = (sessionId: string) => go('session', { session: { sessionId } });
 
 describe('inner sidebar', () => {
-  it('a group: its own head row on top (no spacer above it), then Topics, then Agents with only my agents that are members and a plain count', async () => {
+  it('a group: its own head row on top (no spacer above it), then Topics, then Agents with only my agents that live there (#2599: created there, not members) and a plain count', async () => {
     openChat('group');
     await render();
     const column = host.querySelector<HTMLElement>('[data-region="inner-sidebar"]')!;
@@ -196,12 +208,12 @@ describe('inner sidebar', () => {
     expect(readShellSlots()!.getSlots().has('inner-topics:group')).toBe(true);
   });
 
-  it('a project: Agents above Topics — its own sessions plus my agents among the project group members', async () => {
+  it('a project: Agents above Topics — its own sessions plus agents created in its group with no project; members living elsewhere are not listed (#2599)', async () => {
     openProject('p-shop');
     await render();
     expect(sections()).toEqual(['agents', 'topics']);
     expect(host.textContent).toContain('sidebar.agents');
-    expect(sessionRows()).toEqual(['mine-in-group', 'shop-task', 'shop-idle']);
+    expect(sessionRows()).toEqual(['shop-task', 'shop-idle', 'shop-chat-agent']);
   });
 
   it("agent rows lead with the agent's own avatar: every row asks the session row for it (mock v33)", async () => {
@@ -285,7 +297,7 @@ describe('inner sidebar', () => {
   });
 
   it('a collapsed Agents keeps its count and shows how many need me next to the title', async () => {
-    state.items = [item('mine-in-group', 'p-x', waiting), item('also-mine', 'p-x', running)];
+    state.items = [item('mine-in-group', 'p-x', waiting, 0, null, 'group'), item('also-mine', 'p-x', running, 0, null, 'group')];
     state.agents = new Map([['mine-in-group', 'agent-a'], ['also-mine', 'agent-a']]);
     openChat('group');
     await render();
@@ -377,10 +389,15 @@ describe('inner sidebar', () => {
     act(() => shell.unmount());
   });
 
-  it('publishes my running agents per project group for the project row badge', async () => {
+  it('publishes my agents per project group and per group for the row badge: only those living there', async () => {
     openChat('dm');
     await render();
-    expect([...counts()]).toEqual([['shop-chat', { total: 3, running: 2 }]]);
+    // shop-task (running), shop-idle, shop-chat-agent: agent-a and agent-m are members there but live elsewhere (#2599).
+    // Planning: mine-in-group (running) lives there; member-only is running and a member, but was created in a DM.
+    expect([...counts()]).toEqual([
+      ['shop-chat', { total: 3, running: 1 }],
+      ['group', { total: 1, running: 1 }],
+    ]);
   });
 });
 

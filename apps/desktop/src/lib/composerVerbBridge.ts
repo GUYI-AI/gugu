@@ -24,6 +24,8 @@ function verbs(): Map<string, ComposerVerb> {
 export interface ComposerVerbChat {
   name: string
   joinable: boolean
+  /** #2599 a group or one of its topics: an agent created here lives in that group, so the project field starts empty. */
+  inGroup: boolean
 }
 
 const CHAT_KEY = '__GUGU_COMPOSER_VERB_CHATS__'
