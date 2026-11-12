@@ -36,12 +36,12 @@ export const SampleInnerSidebar = observer(function SampleInnerSidebar({ ownerId
         headKey="sample-project"
         name={translate('projects.sample.name')}
         tag={translate('projects.sample.tag')}
-        avatar={<ProjectFolderAvatar coverId="sample-project" size={20} />}
+        avatar={<ProjectFolderAvatar coverId="sample-project" size={24} />}
         active={!taskOpen}
         onOpen={() => {
           if (taskOpen) openSamplePane(null);
         }}
-        trailingButtons={2}
+        trailingButtons={1}
       >
         <InnerHeadActionsMenu label={translate('projects.sample.actions')}>
           <SampleProjectRemoveItem busy={removal.busy} onRemove={() => void removal.remove()} />
