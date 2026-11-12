@@ -2,8 +2,8 @@
 <a id="readme-top"></a>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-logo-dark-20261108.png">
-  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-logo-light-20261108.png" width="300" alt="咕咕 gugu">
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-logo-dark-20261112.png">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-logo-light-20261112.png" width="300" alt="咕咕 gugu">
 </picture>
 
 # 为 AGI 打造的应用。
