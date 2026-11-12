@@ -130,10 +130,9 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   useLayoutEffect(() => registerDraftEditor(chatId ?? null, () => editorApiRef.current), [chatId, registerDraftEditor])
   useEffect(() => {
     if (!mentionToInsert) return
-    const member = members.find(candidate => candidate.id === mentionToInsert.id)
-    editorApiRef.current?.insertMention({ id: mentionToInsert.id, label: member?.rawName ? `aid:${mentionToInsert.id}` : mentionToInsert.name, name: member?.rawName ?? member?.name ?? mentionToInsert.name, kind: 'custom' })
+    editorApiRef.current?.insertMention({ id: mentionToInsert.id, label: mentionToInsert.name, name: mentionToInsert.name, kind: 'custom' })
     onMentionInserted?.()
-  }, [mentionToInsert, onMentionInserted, members])
+  }, [mentionToInsert, onMentionInserted])
   useEffect(() => {
     if (quoteContent) scheduleComposerFocus('quote-attached', { target: () => inputRef.current })
   }, [quoteContent])
