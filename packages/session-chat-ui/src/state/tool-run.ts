@@ -43,8 +43,10 @@ export type ToolRunCategory =
   | 'subagentLaunch'
   | 'subagentDone'
   | 'subagentStopped'
+  | 'subagentFailed'
   | 'commandDone'
   | 'commandStopped'
+  | 'commandFailed'
   | 'compacting'
   | 'compact'
   | 'plan'
@@ -63,8 +65,10 @@ const CATEGORY_ORDER: readonly ToolRunCategory[] = [
   'subagentLaunch',
   'subagentDone',
   'subagentStopped',
+  'subagentFailed',
   'commandDone',
   'commandStopped',
+  'commandFailed',
   'compacting',
   'compact',
   'plan',
@@ -103,9 +107,10 @@ export function toolRunCategory(item: ChatItem, conversation = false): ToolRunCa
       return 'subagentLaunch';
     case 'subagent-done-tool-call':
       // 被叫停的(卡上的「停止」,#5117)单独成一格 —— 「跑完了」是它没有的结局。
-      return item.outcome === 'stopped' ? 'subagentStopped' : 'subagentDone';
+      // 失败的同理(#2587 起它收进过程行,原来那行单独的「后台命令失败」没了 ⇒ 这一句里 ❌ 写成「跑完了」)。
+      return item.outcome === 'stopped' ? 'subagentStopped' : item.outcome === 'failed' ? 'subagentFailed' : 'subagentDone';
     case 'background-command-done-tool-call':
-      return item.outcome === 'stopped' ? 'commandStopped' : 'commandDone';
+      return item.outcome === 'stopped' ? 'commandStopped' : item.outcome === 'failed' ? 'commandFailed' : 'commandDone';
     case 'compaction':
       // 对话布局里压缩接续当前段(#2587),收进过程这一句;压缩失败照旧单独一行(conversation-segments)。
       if (!conversation || item.status === 'failed') return null;
@@ -164,8 +169,10 @@ const ONE_KEYS: Record<ToolRunCategory, string> = {
   subagentLaunch: 'transcript.toolRun.subagentLaunchOne',
   subagentDone: 'transcript.toolRun.subagentDoneOne',
   subagentStopped: 'transcript.toolRun.subagentStoppedOne',
+  subagentFailed: 'transcript.toolRun.subagentFailedOne',
   commandDone: 'transcript.toolRun.commandDoneOne',
   commandStopped: 'transcript.toolRun.commandStoppedOne',
+  commandFailed: 'transcript.toolRun.commandFailedOne',
   compacting: 'transcript.toolRun.compacting',
   compact: 'transcript.toolRun.compactOne',
   plan: 'transcript.toolRun.planOne',
@@ -184,8 +191,10 @@ const MANY_KEYS: Record<ToolRunCategory, string> = {
   subagentLaunch: 'transcript.toolRun.subagentLaunch',
   subagentDone: 'transcript.toolRun.subagentDone',
   subagentStopped: 'transcript.toolRun.subagentStopped',
+  subagentFailed: 'transcript.toolRun.subagentFailed',
   commandDone: 'transcript.toolRun.commandDone',
   commandStopped: 'transcript.toolRun.commandStopped',
+  commandFailed: 'transcript.toolRun.commandFailed',
   compacting: 'transcript.toolRun.compacting',
   compact: 'transcript.toolRun.compact',
   plan: 'transcript.toolRun.plan',
