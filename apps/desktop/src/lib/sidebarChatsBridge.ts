@@ -148,6 +148,16 @@ export function publishSidebarChatSignals(next: SidebarChatSignals): void {
   write(SIGNALS_KEY, SIGNALS_EVENT, next)
 }
 
+/** 会话页,在 React 之外(#2569 示例让位给它变成的项目那一下):此刻这一份;壳还没告诉过 = null。 */
+export function readSidebarChatSignals(): SidebarChatSignals | null {
+  return read<SidebarChatSignals>(SIGNALS_KEY)
+}
+
+/** 会话页,在 React 之外:壳每换一份就同步叫一次(叫的那一刻,侧栏还没按新的这一份重画)。 */
+export function subscribeSidebarChatSignals(listener: () => void): () => void {
+  return subscribeSignals(listener)
+}
+
 /** 会话页:壳还没告诉过 = null(还不知道,页签上先不挂数)。 */
 export function useSidebarChatSignals(): SidebarChatSignals | null {
   return useSyncExternalStore(subscribeSignals, () => read<SidebarChatSignals>(SIGNALS_KEY), () => null)

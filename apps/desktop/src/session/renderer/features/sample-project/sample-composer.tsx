@@ -1,4 +1,3 @@
-import { when } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useMemo } from 'react';
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge';
@@ -29,13 +28,14 @@ import { log } from '@renderer/utils/logger';
 import { sessionpageLegFor } from '@shared/core/sessions/provider-selection';
 import type { SampleProjectContent } from './content/types';
 import { convertSampleProject, sampleConversionOf, type SampleConversionDeps, type SampleConversionFailure } from './sample-conversion';
+import { whenGroupRowShown } from './sample-group-row';
 
 type Translate = ReturnType<typeof useSessionMessages>['translate'];
 
 /** 示例那一框写了一半的话暂存在这一格;变成项目那一刻整格挪进那个项目的新任务框(prepareProjectTask)。 */
 export const SAMPLE_DRAFT_KEY = 'sample-project';
 
-/** 示例变成项目之后,要等它出现在账号的项目表里多久(建群之后那次发布、项目表重读)。 */
+/** 示例变成项目之后,要等它那一行出现在左侧列表里多久(群进聊天列表、项目表重读)。 */
 const ROW_WAIT_MS = 20_000;
 
 /**
@@ -186,15 +186,10 @@ function sampleConversionHost(userId: string, turn: ComposerHandoff, translate: 
       if (!group.success) throw new Error(group.error.message);
       return group.data.chatId;
     },
-    rowShown: async (chatId, nudge) => {
+    whenRowShown: (chatId, nudge, open) => {
       // 人又按了一次发送(上次停在这一步):这算人按的重试,可以叫项目表再读一次(account-projects-store 抬头)。
       if (nudge) void accountProjectsStore.refresh();
-      try {
-        await when(() => accountProjectsStore.project(chatId) !== undefined, { timeout: ROW_WAIT_MS });
-        return true;
-      } catch {
-        return false;
-      }
+      return whenGroupRowShown(chatId, open, ROW_WAIT_MS);
     },
     handOff: (projectId) => {
       const draft = composerDrafts.forKey(SAMPLE_DRAFT_KEY);

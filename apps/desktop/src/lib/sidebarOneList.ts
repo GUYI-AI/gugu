@@ -198,6 +198,18 @@ export function projectsWithoutGroupRow(
 }
 
 /**
+ * #2569 This group has a row in the one list right now: the chat list draws it, or it is an account project the chat list
+ * does not have yet (projectsWithoutGroupRow). Before the chat list has loaded, neither is drawn.
+ */
+export function groupHasRow(
+  chatId: string,
+  projects: readonly { readonly chatId: string }[],
+  listedGroups: ReadonlySet<string> | null,
+): boolean {
+  return listedGroups !== null && (listedGroups.has(chatId) || projects.some((project) => project.chatId === chatId))
+}
+
+/**
  * Rows of the one list that are not a conversation yet: an account project whose project group is not in the chat list,
  * a top-level task outside every project whose session has no 咕咕 identity (so no agent conversation stands for it), and
  * the sample project. They are drawn as conversation rows but come after every conversation row, in this order,

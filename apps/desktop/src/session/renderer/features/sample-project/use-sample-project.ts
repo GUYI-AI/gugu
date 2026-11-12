@@ -2,10 +2,12 @@ import { comparer, reaction } from 'mobx';
 import { useEffect, useSyncExternalStore } from 'react';
 import type { SupportedLocale } from '@/i18n/locale';
 import { dismissSampleProject, readSampleProject, subscribeSampleProject } from '@/lib/sampleProject';
+import { useSidebarChatSignals } from '@/lib/sidebarChatsBridge';
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { log } from '@renderer/utils/logger';
 import { sampleConversionOf } from './sample-conversion';
+import { groupRowShown } from './sample-group-row';
 import { enUSSampleProject } from './content/en-US';
 import type { SampleProjectContent } from './content/types';
 import { zhCNSampleProject } from './content/zh-CN';
@@ -98,21 +100,23 @@ function subscribe(listener: () => void): () => void {
 export type SampleProjectOwner = { id: string; name: string; avatarUrl: string | null };
 
 /**
- * 示例已经让给了它变成的那个项目:那个项目在项目表里了(侧栏里有它那一行)。这个窗口正在变、或变到一半停下了(框下写着原因,
- * 话还在示例的框里)的时候,只认这里自己交出去的那一刻(打开项目、交出这一句),❌ 先按键上记着的让 —— 那一块会先收掉、
- * 再打开项目,中间闪一下别的;停下了的,话就跟着那一块看不见了。
+ * 示例已经让给了它变成的那个项目:那个项目的群在左侧列表里有一行了 —— 和画那一行用的是同两份数据(聊天列表、账号的项目表),
+ * 所以示例那一行消失和项目那一行出现在同一次绘制里(#2589:❌ 一刻两行都在,❌ 一刻两行都不在)。这个窗口在变的,认它建好的群
+ * (建好就知道,赶在账号上记好之前);它那一行出现的同一次更新里,项目也打开了(sample-conversion)。
+ * 变到一半停下了(框下写着原因,话还在示例的框里):不让 —— 让了,话和原因就跟着那一块看不见了;再按发送就交出去。
  */
-function givenWay(userId: string, keyBecame: string | null): boolean {
+function givenWay(userId: string, keyBecame: string | null, listedGroups: ReadonlySet<string> | null): boolean {
   const run = sampleConversionOf(userId);
-  const mine = run.status === 'working' || run.failure !== null;
-  const became = mine ? run.chatId : run.chatId ?? keyBecame;
-  return became !== null && accountProjectsStore.project(became) !== undefined;
+  if (run.failure !== null) return false;
+  if (run.chatId !== null) return groupRowShown(run.chatId, listedGroups);
+  if (run.status !== 'idle') return false;
+  return keyBecame !== null && groupRowShown(keyBecame, listedGroups);
 }
 
 /**
  * `shown` = 键在、没删,也还没让给它变成的项目(#2569);`settled` = 这个账号的键读完了(读完是 hidden 的,屏上留着的那一块收掉)。
  * 主人(对话里「你」那一方)用他自己的名字和头像,壳经 assistant-shell 那条桥交过来(这棵树里没有登录态)。
- * 调用方是 observer:让没让读的是 mobx 里的项目表。
+ * 调用方是 observer:让没让读的有 mobx 里的项目表(另一份聊天列表经壳的通知读)。
  */
 export function useSampleProject(): { shown: boolean; settled: boolean; owner: SampleProjectOwner | null } {
   const shell = useAssistantShell();
@@ -132,9 +136,10 @@ export function useSampleProject(): { shown: boolean; settled: boolean; owner: S
     };
   }, [userId]);
   const current = useSyncExternalStore(subscribe, () => reading);
+  const listedGroups = useSidebarChatSignals()?.listedGroups ?? null;
   const mine = !!userId && current?.userId === userId;
   return {
-    shown: mine && current.shown === true && !givenWay(userId, current.became),
+    shown: mine && current.shown === true && !givenWay(userId, current.became, listedGroups),
     settled: mine && current.shown !== null,
     owner: userId ? { id: userId, name: shell?.ownerName ?? '', avatarUrl: shell?.ownerAvatar ?? null } : null,
   };

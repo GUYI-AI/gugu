@@ -27,7 +27,10 @@ export type SampleConversionFailure =
 export type SampleConversionProgress = {
   status: 'idle' | 'working' | 'handed-off';
   failure: SampleConversionFailure | null;
-  /** 示例变成的那个项目的群:它一出现在项目表里,示例那一行、那一块就让给它(同一个窗口里,赶在账号上记好之前)。 */
+  /**
+   * 示例变成的那个项目的群,建好那一刻就有:它的那一行一画出来,示例那一行、那一块就让给它(同一次绘制,use-sample-project),
+   * 赶在账号上记好之前。
+   */
   chatId: string | null;
 };
 
@@ -71,8 +74,11 @@ export type SampleConversionDeps = {
   projectFolder: (projectId: string) => Promise<string>;
   writeFile: (projectId: string, workspaceId: string, name: string, text: string) => Promise<void>;
   ensureGroup: (projectId: string) => Promise<string>;
-  /** 等这个项目群出现在账号的项目表里;`nudge` = 这是人按的重试,可以叫项目表再读一次。false = 等不到。 */
-  rowShown: (chatId: string, nudge: boolean) => Promise<boolean>;
+  /**
+   * 这个项目群的那一行一画进左侧列表,就在画它的同一次更新里调 `open`(❌ 晚一步:那一刻示例已经让位了,项目却还没打开)。
+   * `nudge` = 这是人按的重试,可以叫项目表再读一次。false = 等不到;`open` 抛的原样抛出。
+   */
+  whenRowShown: (chatId: string, nudge: boolean, open: () => void) => Promise<boolean>;
   /** 打开这台电脑上的这个项目,把这一句交给它的新任务框。 */
   handOff: (projectId: string) => void;
   /** 项目在别的电脑上:打开它的项目群,这一句带进群里的新任务框。 */
@@ -132,13 +138,24 @@ export async function convertSampleProject(deps: SampleConversionDeps, seed: Sam
     if (run !== runs || !deps.signedIn()) throw new Superseded();
     return value;
   };
-  const handOver = (open: () => void, chatId: string) => {
+  // 那一行画出来的那一刻打开项目、交出这一句(在 whenRowShown 的那次更新里跑);换了账号、登出了就不交。
+  const handOverWhenShown = async (chatId: string, open: () => void): Promise<void> => {
+    let shown: boolean;
     try {
-      open();
+      shown = await deps.whenRowShown(chatId, retry, () => {
+        if (run !== runs || !deps.signedIn()) throw new Superseded();
+        try {
+          open();
+        } catch (error) {
+          throw new StepFailed({ kind: 'open', error });
+        }
+        set({ status: 'handed-off' });
+      });
     } catch (error) {
+      if (error instanceof StepFailed || error instanceof Superseded) throw error;
       throw new StepFailed({ kind: 'open', error });
     }
-    set({ status: 'handed-off', chatId });
+    if (!shown) throw new StepFailed({ kind: 'row' });
   };
   try {
     const key = await step(deps.readKey, (error) => ({ kind: 'record', error }));
@@ -149,11 +166,11 @@ export async function convertSampleProject(deps: SampleConversionDeps, seed: Sam
     }
     const here = key.version === 2 && deps.projectExists(key.projectId) ? key : null;
     if (key.version === 2 && key.chatId && !here) {
-      // 键上记着群、项目却不在这台电脑上:别的电脑已经把示例变成了账号上的项目。这台电脑 ❌ 再建一个:等它出现在项目表里,
+      // 键上记着群、项目却不在这台电脑上:别的电脑已经把示例变成了账号上的项目。这台电脑 ❌ 再建一个:它那一行画出来的那一刻
       // 打开它的群,这一句带进群里的新任务框。
       const chatId = key.chatId;
-      if (!(await step(() => deps.rowShown(chatId, retry), () => ({ kind: 'row' })))) throw new StepFailed({ kind: 'row' });
-      handOver(() => deps.handOffToGroup(chatId), chatId);
+      set({ chatId });
+      await handOverWhenShown(chatId, () => deps.handOffToGroup(chatId));
       await dismissHandedOver(deps);
       return;
     }
@@ -178,10 +195,20 @@ export async function convertSampleProject(deps: SampleConversionDeps, seed: Sam
       }, (error) => ({ kind: 'files', error }));
     }
     const chatId = await step(() => deps.ensureGroup(id), (error) => ({ kind: 'group', error }));
-    if (here?.chatId !== chatId) await step(() => deps.recordGroup(id, chatId), (error) => ({ kind: 'record', error }));
-    if (!(await step(() => deps.rowShown(chatId, retry), () => ({ kind: 'row' })))) throw new StepFailed({ kind: 'row' });
-    // 那一行在了:同一刻打开它、把这一句交过去、示例让给它(❌ 一刻两行都在,❌ 一刻两行都不在)。
-    handOver(() => deps.handOff(id), chatId);
+    // 群有了:从这一刻起,它那一行一画出来,示例就在同一次绘制里让给它、项目同时打开(❌ 一刻两行都在,❌ 一刻两行都不在)。
+    // 那一行什么时候画出来不由这里定(聊天列表、账号的项目表各自到),所以先挂上,再去账号上记群 —— 记的那一下慢,❌ 让两行并存。
+    set({ chatId });
+    const handedOver = handOverWhenShown(chatId, () => deps.handOff(id));
+    const recorded = here?.chatId === chatId
+      ? Promise.resolve(null)
+      : deps.recordGroup(id, chatId).then(() => null, (error: unknown) => error ?? new Error('recording the group failed'));
+    try {
+      await handedOver;
+    } finally {
+      // 交没交出去,记群没成都要留下原因(没交出去时,下次接着做会重写文件、再记一次)。
+      void recorded.then((error) => { if (error) deps.logError('recording the sample\'s project group on the account failed', error); });
+    }
+    await recorded;
     await dismissHandedOver(deps);
   } catch (error) {
     if (error instanceof Superseded) {

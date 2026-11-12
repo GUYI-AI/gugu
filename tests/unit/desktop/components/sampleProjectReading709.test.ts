@@ -28,6 +28,13 @@ const { forgetSampleProjectOnScreen } = await import('../../../../apps/desktop/s
 const { appState } = await import('../../../../apps/desktop/src/session/renderer/lib/stores/app-state')
 const { accountProjectsStore } = await import('../../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store')
 const { resetSampleConversion, sampleConversion } = await import('../../../../apps/desktop/src/session/renderer/features/sample-project/sample-conversion')
+const { publishSidebarChatSignals } = await import('../../../../apps/desktop/src/lib/sidebarChatsBridge')
+
+/** What the shell publishes from its chat list: the group chats it draws as rows (null = not loaded yet). */
+const chatList = (listedGroups: string[] | null) => act(async () => {
+  publishSidebarChatSignals({ chatsUnread: 0, groupUnread: new Map(), groupCallingTopic: new Map(), listedGroups: listedGroups && new Set(listedGroups) })
+  await Promise.resolve()
+})
 
 // Every caller is an observer (useSampleProject reads the account project list from mobx), so the probe is one too.
 const Probe = observer(function Probe() {
@@ -41,6 +48,7 @@ beforeEach(() => {
   key.readSampleProject.mockReset()
   key.dismissSampleProject.mockReset().mockResolvedValue(undefined)
   resetSampleConversion()
+  publishSidebarChatSignals({ chatsUnread: 0, groupUnread: new Map(), groupCallingTopic: new Map(), listedGroups: new Set() })
   owner.ownerId = `account-${++account}`
 })
 
@@ -133,6 +141,35 @@ describe('the sample giving way to the project it became (#2569)', () => {
         await Promise.resolve()
       })
       expect(output().dataset).toMatchObject({ shown: 'false', settled: 'true' })
+    } finally { harness.cleanup() }
+  })
+
+  // #2589 the project's row is drawn from the chat list (its group) or the account list; the sample reads the same two.
+  it('this window\'s conversion gives way in the update that first draws its group in the chat list, still working', async () => {
+    key.readSampleProject.mockResolvedValue(SHOWN)
+    runInAction(() => Object.assign(sampleConversion, { owner: owner.ownerId, status: 'working', failure: null, chatId: 'chat-new' }))
+    const harness = createReactHarness()
+    try {
+      await harness.render(createNode(Probe))
+      const output = () => harness.container.querySelector('output')!
+      expect(output().dataset.shown).toBe('true')
+      await chatList(['chat-other'])
+      expect(output().dataset.shown).toBe('true')
+      await chatList(['chat-other', 'chat-new'])
+      expect(output().dataset.shown, 'gone in the same update as the row arrives').toBe('false')
+    } finally { harness.cleanup() }
+  })
+
+  it('nothing is drawn before the chat list has loaded, so the sample does not give way to a row that is not there', async () => {
+    key.readSampleProject.mockResolvedValue({ version: 2, dismissed: false, projectId: 'p1', chatId: 'chat-became' })
+    await chatList(null)
+    const harness = createReactHarness()
+    try {
+      await harness.render(createNode(Probe))
+      await listed('chat-became')
+      expect(harness.container.querySelector('output')?.dataset.shown).toBe('true')
+      await chatList([])
+      expect(harness.container.querySelector('output')?.dataset.shown).toBe('false')
     } finally { harness.cleanup() }
   })
 

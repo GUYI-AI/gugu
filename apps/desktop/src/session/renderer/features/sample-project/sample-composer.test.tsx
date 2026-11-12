@@ -70,6 +70,8 @@ vi.mock('@/lib/sampleProject', () => ({
 }));
 vi.mock('@/lib/assistantShellBridge', () => ({ readAssistantShellBridge: () => ({ getSnapshot: () => ({ ownerId: io.signedIn }) }) }));
 vi.mock('@/lib/composerVerbBridge', () => ({ setComposerVerb: io.setComposerVerb }));
+// The chat list has loaded (the shell published it); the account projects above are drawn as rows.
+vi.mock('@/lib/sidebarChatsBridge', () => ({ readSidebarChatSignals: () => ({ listedGroups: new Set<string>() }), subscribeSidebarChatSignals: () => () => {} }));
 vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: io.openChat }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: io.toast }));
 vi.mock('@renderer/app/screen-layout-actions', () => ({ forgetSampleProjectOnScreen: io.forget }));
@@ -80,6 +82,7 @@ vi.mock('@renderer/features/projects/project-task-entry', async () => {
 vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({
   accountProjectsStore: {
     project: (chatId: string) => (io.listed.has(chatId) ? { chatId, name: '周末去杭州' } : undefined),
+    get projects() { return [...io.listed].map((chatId) => ({ chatId, name: '周末去杭州', archived: false, bindings: [] })); },
     refresh: vi.fn(),
   },
 }));

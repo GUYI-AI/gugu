@@ -25,6 +25,7 @@ function world(start: SampleProjectState | null = { version: 1, dismissed: false
   const nudges: boolean[] = [];
   const paths: string[] = [];
   const dismissFailures: unknown[] = [];
+  const errors: string[] = [];
   let key = start;
   let created = 0;
   let signedIn = true;
@@ -62,13 +63,15 @@ function world(start: SampleProjectState | null = { version: 1, dismissed: false
       steps.push('group');
       return `chat-of-${projectId}`;
     },
-    rowShown: async (_chatId, nudge) => {
+    // The row is drawn at once here; the hand-off runs inside the call, as it does in the update that draws the row.
+    whenRowShown: async (_chatId, nudge, open) => {
       nudges.push(nudge);
+      open();
       return true;
     },
     handOff: (projectId) => { steps.push(`open ${projectId}`); },
     handOffToGroup: (chatId) => { steps.push(`open group ${chatId}`); },
-    logError: () => {},
+    logError: (message) => { errors.push(message); },
   };
   return {
     deps,
@@ -78,6 +81,7 @@ function world(start: SampleProjectState | null = { version: 1, dismissed: false
     paths,
     projects,
     dismissFailures,
+    errors,
     signOut: () => { signedIn = false; },
     get key() { return key; },
     get created() { return created; },
@@ -102,8 +106,8 @@ describe('turning the sample into the person\'s project (#2569)', () => {
       'record project',
       ...fileNames.map((name) => `file ${name} in user-a:project-1:folder`),
       'group',
-      'record group',
       'open user-a:project-1',
+      'record group',
       'dismiss',
     ]);
     expect(sampleConversion).toMatchObject({ owner: 'user-a', status: 'handed-off', failure: null, chatId: 'chat-of-user-a:project-1' });
@@ -120,6 +124,34 @@ describe('turning the sample into the person\'s project (#2569)', () => {
     expect(w.dismissFailures[0]).toBeInstanceOf(Error);
   });
 
+  // #2589 the sample gives way in the render that first draws its project's row; nothing slow sits between the two.
+  it('knows its group as soon as it is made, and hands over when its row is drawn, without waiting for the account write', async () => {
+    const w = world();
+    let drawRow!: () => void;
+    let saved!: () => void;
+    w.deps.whenRowShown = (_chatId, _nudge, open) => new Promise((resolve) => { drawRow = () => { open(); resolve(true); }; });
+    w.deps.recordGroup = () => new Promise((resolve) => { w.steps.push('record group (slow)'); saved = () => resolve(); });
+    const running = convertSampleProject(w.deps, seed);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(sampleConversion).toMatchObject({ status: 'working', chatId: 'chat-of-user-a:project-1' });
+    expect(w.steps.at(-1)).toBe('record group (slow)');
+    drawRow();
+    expect(sampleConversion.status, 'handed over in the update that drew the row').toBe('handed-off');
+    expect(w.steps.at(-1)).toBe('open user-a:project-1');
+    saved();
+    await running;
+    expect(w.steps.at(-1)).toBe('dismiss');
+  });
+
+  it('recording the group on the account failing after the hand-off is logged; the sample is still dismissed', async () => {
+    const w = world();
+    w.deps.recordGroup = async () => { throw new Error('offline'); };
+    await convertSampleProject(w.deps, seed);
+    expect(sampleConversion).toMatchObject({ status: 'handed-off', failure: null });
+    expect(w.steps.slice(-2)).toEqual(['open user-a:project-1', 'dismiss']);
+    expect(w.errors.some((message) => message.includes('project group'))).toBe(true);
+  });
+
   const failures: [string, string, (deps: SampleConversionDeps) => void][] = [
     ['no default projects directory', 'no-default-directory', (deps) => { deps.defaultDirectory = async () => ''; }],
     ['every folder name taken', 'no-free-folder', (deps) => { deps.pathTaken = async () => true; }],
@@ -127,7 +159,7 @@ describe('turning the sample into the person\'s project (#2569)', () => {
     ['the project cannot be recorded on the account', 'record', (deps) => { deps.recordProject = async () => { throw new Error('offline'); }; }],
     ['a file cannot be written', 'files', (deps) => { deps.writeFile = async () => { throw new Error('disk full'); }; }],
     ['the group cannot be created', 'group', (deps) => { deps.ensureGroup = async () => { throw new Error('cloud-failed'); }; }],
-    ['the project never shows up in the list', 'row', (deps) => { deps.rowShown = async () => false; }],
+    ['the project never shows up in the list', 'row', (deps) => { deps.whenRowShown = async () => false; }],
     ['the project cannot be opened', 'open', (deps) => { deps.handOff = () => { throw new Error('draft taken'); }; }],
   ];
   it.each(failures)('%s: stops there with that reason, keeps the message, dismisses nothing', async (_name, kind, breakIt) => {
@@ -137,7 +169,6 @@ describe('turning the sample into the person\'s project (#2569)', () => {
     expect(sampleConversion.status).toBe('idle');
     expect(sampleConversion.failure?.kind).toBe(kind);
     if (sampleConversion.failure && 'error' in sampleConversion.failure) expect(sampleConversion.failure.error).toBeInstanceOf(Error);
-    expect(sampleConversion.chatId, 'the sample keeps its row').toBeNull();
     expect(draft().prompt).toBe('周六下雨的话改成什么？');
     expect(w.steps).not.toContain('dismiss');
     expect(w.key?.dismissed).toBe(false);
@@ -158,7 +189,7 @@ describe('turning the sample into the person\'s project (#2569)', () => {
     // The group was never made, so the files are written again before it (nothing of the person's to overwrite yet).
     expect(w.steps).toEqual([
       ...fileNames.map((name) => `file ${name} in user-a:project-1:folder`),
-      'group', 'record group', 'open user-a:project-1', 'dismiss',
+      'group', 'open user-a:project-1', 'record group', 'dismiss',
     ]);
     expect(sampleConversion).toMatchObject({ status: 'handed-off', failure: null });
     expect(w.nudges, 'only the retry asks the project list to read again').toEqual([true]);
@@ -175,15 +206,16 @@ describe('turning the sample into the person\'s project (#2569)', () => {
     await convertSampleProject(w.deps, seed);
     expect(w.created).toBe(1);
     expect(w.steps[0]).toBe('record project');
-    expect(w.steps.at(-2)).toBe('open user-a:project-1');
+    expect(w.steps).toContain('open user-a:project-1');
   });
 
   it('a retry once the group is recorded does not write the files again', async () => {
     const w = world();
-    w.deps.rowShown = async () => false;
+    const appears = w.deps.whenRowShown;
+    w.deps.whenRowShown = async () => false;
     await convertSampleProject(w.deps, seed);
     expect(sampleConversion.failure?.kind).toBe('row');
-    w.deps.rowShown = async () => true;
+    w.deps.whenRowShown = appears;
     w.steps.length = 0;
     await convertSampleProject(w.deps, seed);
     expect(w.created).toBe(1);
@@ -217,7 +249,7 @@ describe('turning the sample into the person\'s project (#2569)', () => {
 
   it('on another computer, waits for that project to be listed; not listed yet stops with a reason and makes nothing', async () => {
     const w = world({ version: 2, dismissed: false, projectId: 'project-on-the-laptop', chatId: 'chat-of-the-laptop-project' });
-    w.deps.rowShown = async () => false;
+    w.deps.whenRowShown = async () => false;
     await convertSampleProject(w.deps, seed);
     expect(sampleConversion.failure?.kind).toBe('row');
     expect(w.created).toBe(0);
