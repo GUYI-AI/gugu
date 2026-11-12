@@ -234,25 +234,4 @@ describe('sidebar state groups toggle', () => {
 
     sessionRegistry.release('task-s');
   });
-
-  it('keeps the keyboard chain in step with what is rendered', () => {
-    sessionRegistry.acquire('task-k', 'project-k', [
-      session('k-needs', 'project-k', 'needs_user', '01'),
-      session('k-working', 'project-k', 'working', '05'),
-    ] as never);
-    const store = new SidebarStore(projectManagerWith('project-k', 'task-k'));
-    store.ensureProjectExpanded('project-k');
-    store.setStateGroupsEnabled(true);
-
-    const chain = () =>
-      store.navChain.filter((n) => n.kind === 'conversation').map((n) => n.sessionId);
-
-    expect(chain()).toEqual(['k-needs', 'k-working']);
-
-    // 平铺后 ↑↓ 的次序必须跟着画面走,而不是停在分组次序上。
-    store.setStateGroupsEnabled(false);
-    expect(chain()).toEqual(['k-working', 'k-needs']);
-
-    sessionRegistry.release('task-k');
-  });
 });

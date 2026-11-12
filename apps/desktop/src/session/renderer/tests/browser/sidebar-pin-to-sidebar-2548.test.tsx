@@ -1,6 +1,6 @@
 /**
- * #2548 固定到左侧栏: the existing session row menu offers it right after 置顶 when the desktop sidebar switch is on,
- * for a top-level session only, and clicking it writes through the row's own session store.
+ * #2548 固定到左侧栏: the existing session row menu offers it right after 置顶, for a top-level session only, and
+ * clicking it writes through the row's own session store.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRoot, type Root } from 'react-dom/client'
@@ -9,14 +9,13 @@ import { page, userEvent } from 'vitest/browser'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 
 const state = vi.hoisted(() => ({
-  switchOn: true,
   isPinnedToSidebar: false,
   parentSessionId: null as string | null,
   setSessionPinnedToSidebar: vi.fn((_sessionId: string, _pinned: boolean) => Promise.resolve()),
 }))
 
 vi.mock('@renderer/features/settings/use-app-settings-key', () => ({
-  useAppSettingsKey: () => ({ value: { desktopSidebarV2: state.switchOn } }),
+  useAppSettingsKey: () => ({ value: {} }),
 }))
 vi.mock('@renderer/features/sessions/stores/session-registry', () => ({
   sessionRegistry: {
@@ -79,7 +78,7 @@ let root: Root
 let host: HTMLDivElement
 
 beforeEach(() => {
-  Object.assign(state, { switchOn: true, isPinnedToSidebar: false, parentSessionId: null })
+  Object.assign(state, { isPinnedToSidebar: false, parentSessionId: null })
   state.setSessionPinnedToSidebar.mockClear()
   host = document.createElement('div')
   host.className = 'gugu-skin emlight'
@@ -113,7 +112,7 @@ async function openMenu(): Promise<HTMLElement[]> {
 const labels = (items: HTMLElement[]) => items.map((item) => item.textContent?.trim() ?? '')
 const sidebarItem = (items: HTMLElement[]) => items.find((item) => /左侧栏|sidebar/i.test(item.textContent ?? ''))
 
-it('switch on: 固定到左侧栏 sits right after 置顶, and clicking it pins this session', async () => {
+it('固定到左侧栏 sits right after 置顶, and clicking it pins this session', async () => {
   const items = await openMenu()
   const shown = labels(items)
   const pinAt = shown.findIndex((label) => /取消置顶|^Unpin$/.test(label))
@@ -126,7 +125,7 @@ it('switch on: 固定到左侧栏 sits right after 置顶, and clicking it pins 
   expect(state.setSessionPinnedToSidebar.mock.calls).toEqual([['conv-1', true]])
 })
 
-it('switch on and already pinned: offers 取消固定到左侧栏, which unpins', async () => {
+it('already pinned: offers 取消固定到左侧栏, which unpins', async () => {
   state.isPinnedToSidebar = true
   const items = await openMenu()
   expect(labels(items)).toContainEqual(expect.stringMatching(/^(取消固定到左侧栏|Unpin from sidebar)$/))
@@ -137,13 +136,7 @@ it('switch on and already pinned: offers 取消固定到左侧栏, which unpins'
   expect(state.setSessionPinnedToSidebar.mock.calls).toEqual([['conv-1', false]])
 })
 
-it('switch off: the menu is unchanged, no 固定到左侧栏', async () => {
-  state.switchOn = false
-  const items = await openMenu()
-  expect(sidebarItem(items), `menu: ${labels(items).join(' | ')}`).toBeUndefined()
-})
-
-it('a child session never offers it, even with the switch on', async () => {
+it('a child session never offers it', async () => {
   state.parentSessionId = 'parent-1'
   const items = await openMenu()
   expect(sidebarItem(items), `menu: ${labels(items).join(' | ')}`).toBeUndefined()

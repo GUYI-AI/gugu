@@ -17,7 +17,7 @@ const IMPORT_PART_QUERY = { status: SESSION_HISTORY_IMPORT_PART.status, limit: 1
 const IMPORTABLE_TOOLS = Object.values(LOCAL_SESSION_ENGINE_LABEL).join(' / ');
 
 /**
- * GUYI-AI/gugu#2548 the one list (internal switch `interface.desktopSidebarV2`), under its rows, while the list has no
+ * GUYI-AI/gugu#2548 the one list, under its rows, while the list has no
  * tasks yet (mock v33 新用户): two lines saying what will appear here, in the list's muted note style (as the inner
  * sidebar's empty sections); and when this computer also has sessions from other tools, a dashed box under them that
  * opens 会话历史 at its import part. This computer is asked only while the list has no tasks, with the same reading

@@ -1,14 +1,12 @@
 // @vitest-environment jsdom
-// #2548 the new-agent box opened from a chat's composer (mock v33 派智能体): with the desktop sidebar as one list it asks
-// 「想让新智能体做点什么？」 whoever opened it, and in a group the target chip reads 「进群：<群名>」. Switch off: unchanged.
+// #2548 the new-agent box opened from a chat's composer (mock v33 派智能体): it asks 「想让新智能体做点什么？」 whoever opened
+// it, and in a group the target chip reads 「进群：<群名>」.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const state = vi.hoisted(() => ({ switchOn: true }));
-vi.mock('@renderer/features/sidebar/use-desktop-sidebar-v2', () => ({ useDesktopSidebarV2Switch: () => state.switchOn }));
 // The real zh-CN table, so the test reads the words a person sees.
 vi.mock('@renderer/localization/use-session-messages', async () => {
   const { zhCNMessages } = await import('@renderer/localization/messages');
@@ -53,7 +51,6 @@ const { TaskDispatchComposer } = await import('./task-dispatch-composer');
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
-  state.switchOn = true;
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -68,24 +65,16 @@ const chip = () => host.querySelector<HTMLElement>('[data-testid="composer-birth
 const verbTag = () => host.querySelector<HTMLElement>('[data-composer-placeholder]')!.textContent;
 
 describe('TaskDispatchComposer copy', () => {
-  it('switch on, in a group: asks 想让新智能体做点什么？ and the chip reads 进群：<群名>', async () => {
+  it('in a group: asks 想让新智能体做点什么？ and the chip reads 进群：<群名>', async () => {
     await act(async () => root.render(<TaskDispatchComposer chatId="group-1" chatName="产品讨论群" joinChat />));
     expect(placeholder()).toBe('想让新智能体做点什么？');
     expect(chip()?.textContent).toBe('进群：产品讨论群');
     expect(verbTag()).toContain('新智能体');
   });
 
-  it("switch on: a caller's own wording (a session's 想让一个新的 X…) gives way to the same question", async () => {
-    await act(async () => root.render(<TaskDispatchComposer chatId="dm-1" placeholder={(agent) => `想让一个新的 ${agent} 做点什么？`} />));
+  it('in a chat it cannot join (a DM): the same question, no group chip', async () => {
+    await act(async () => root.render(<TaskDispatchComposer chatId="dm-1" />));
     expect(placeholder()).toBe('想让新智能体做点什么？');
     expect(chip()).toBeNull();
-  });
-
-  it('switch off: today’s words — 想让 {agent} 做点什么？, the bare group name, 新任务', async () => {
-    state.switchOn = false;
-    await act(async () => root.render(<TaskDispatchComposer chatId="group-1" chatName="产品讨论群" joinChat />));
-    expect(placeholder()).toBe('想让 Claude 做点什么？');
-    expect(chip()?.textContent).toBe('产品讨论群');
-    expect(verbTag()).toContain('新任务');
   });
 });

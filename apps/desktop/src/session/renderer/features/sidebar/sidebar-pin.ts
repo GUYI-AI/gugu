@@ -6,16 +6,14 @@ import { myAgentsInChat, type ChatAgentEntry, type ChatAgentScope } from './chat
 export type SidebarPinMenuAction = 'pin' | 'unpin';
 
 /**
- * Which 固定到左侧栏 item the session menu offers, next to 置顶: none unless the desktop sidebar switch is on, none for a
- * child session (a child is never a row of the left list; it stays under its parent). Desktop only by construction: the
- * session menu lives in the task renderer, which never runs in the phone shell (ui-visual-spec §2, lint-enforced).
+ * Which 固定到左侧栏 item the session menu offers, next to 置顶: none for a child session (a child is never a row of the
+ * left list; it stays under its parent). Desktop only by construction: the session menu lives in the task renderer,
+ * which never runs in the phone shell (ui-visual-spec §2, lint-enforced).
  */
 export function sidebarPinMenuAction(input: {
-  switchOn: boolean;
   parentSessionId: string | null | undefined;
   isPinnedToSidebar: boolean | undefined;
 }): SidebarPinMenuAction | null {
-  if (!input.switchOn) return null;
   if (input.parentSessionId !== null && input.parentSessionId !== undefined) return null;
   return input.isPinnedToSidebar === true ? 'unpin' : 'pin';
 }

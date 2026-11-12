@@ -1,4 +1,4 @@
-// GUYI-AI/gugu#2548 — the desktop left sidebar as one list (behind `interface.desktopSidebarV2`). Which conversations
+// GUYI-AI/gugu#2548 — the desktop left sidebar as one list. Which conversations
 // that list holds and where my own agents live, read only from data both trees already have. The shell's chat list
 // (ChatListPanel) and the task page's left sidebar both import this file, so it holds no state.
 import { useMemo } from 'react'

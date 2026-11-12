@@ -30,7 +30,6 @@ import { ProjectMenuItems } from '@renderer/features/projects/components/project
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
-import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { SIDEBAR_DEFAULT_WIDTH_PX } from '@renderer/lib/layout/layout-provider';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { Button } from '@renderer/lib/ui/button';
@@ -49,7 +48,7 @@ import {
 } from './chat-agents';
 import { followInnerSidebar, innerSidebarHasFilter, type InnerSidebarAnchor, type InnerSidebarView } from './inner-sidebar-anchor';
 import { SidebarGroupToggle } from './sidebar-group-toggle';
-import { SidebarUnreadCount } from './sidebar-list-switch';
+import { SidebarUnreadCount } from './sidebar-unread-count';
 import { SidebarMoreRow } from './sidebar-more-row';
 import {
   SidebarContainer,
@@ -67,8 +66,7 @@ import { SidebarSessionItem } from './sidebar-session-item';
 import { SidebarSpace } from './sidebar-space';
 import { SidebarStateHeader } from './sidebar-state-header';
 
-// #2548 内层侧栏:桌面上打开一个用户群或一个项目时,左边列表与对话之间多出来的一列(开关 interface.desktopSidebarV2,
-// 关着 = 什么都不变;手机永不出现)。分区顺序:群里「话题」在上、「我的智能体」在下;项目里「智能体」在上、「话题」在下。
+// #2548 内层侧栏:桌面上打开一个用户群或一个项目时,左边列表与对话之间多出来的一列(手机永不出现)。分区顺序:群里「话题」在上、「我的智能体」在下;项目里「智能体」在上、「话题」在下。
 // 手机永不出现是结构上的:这一列住在会话页的工作区里,手机壳不画工作区(check-ui-visual-spec 守着「任务渲染层只在桌面」)。
 // 这一列只重排现有的组件:头一行是侧栏顶上那几行动作行(SidebarMenuButton)画这个群 / 项目自己,分区头是侧栏分区头,
 // 智能体行是任务区那一行(SidebarSessionItem,行首换成 agent 自己的头像:agentAvatar),话题行由壳画进「话题」那一格(components/ChatListSlotHost.tsx →
@@ -137,15 +135,12 @@ export const innerSidebarChat = observable.box<InnerSidebarAnchor | null>(null, 
 
 /** 挂在工作区里,列表与对话之间(WorkspaceLayout 的 innerSidebar)。不该出现时什么都不画。 */
 export const InnerSidebar = observer(function InnerSidebar() {
-  const { value: interfaceSettings } = useAppSettingsKey('interface');
-  const enabled = interfaceSettings?.desktopSidebarV2 === true;
   const summaries = useChatSummaries();
-  const agents = enabled ? mySidebarAgents() : [];
+  const agents = mySidebarAgents();
   const [anchor, setAnchor] = useState<InnerSidebarAnchor | null>(null);
-  const next = enabled
-    ? followInnerSidebar(anchor, currentView(summaries), (previous, sessionId) =>
-        myAgentsInChat(agents, chatScope(previous, summaries)).some((entry) => entry.id === sessionId))
-    : null;
+  const view = currentView(summaries);
+  const next = followInnerSidebar(anchor, view, (previous, sessionId) =>
+    myAgentsInChat(agents, chatScope(previous, summaries)).some((entry) => entry.id === sessionId));
   // 上一次挂在哪是这一列自己记的(从这一列点开一个智能体,它还留着):换了才记,同一个对话不重设。
   if (next?.chatId !== anchor?.chatId || next?.kind !== anchor?.kind) setAnchor(next);
   // 换了对话就回到第一级(「全部」只对那一个对话)。
@@ -153,12 +148,11 @@ export const InnerSidebar = observer(function InnerSidebar() {
   useEffect(() => runInAction(() => innerSidebarChat.set(next)), [next?.chatId, next?.kind]);
   // 壳据此收起对话页头上与这一列重复的按钮(成员、话题、邀请)。
   useEffect(() => publishInnerSidebarChat(next?.chatId ?? null), [next?.chatId]);
-  const view = enabled ? currentView(summaries) : null;
-  const headActive = (view?.kind === 'chat' || view?.kind === 'project') && view.chatId === next?.chatId;
+  const headActive = (view.kind === 'chat' || view.kind === 'project') && view.chatId === next?.chatId;
 
   return (
     <>
-      <MyChatAgentCountsPublisher enabled={enabled} agents={agents} summaries={summaries} />
+      <MyChatAgentCountsPublisher agents={agents} summaries={summaries} />
       {next ? (
         // 换一个对话 = 新的一列(收起、找的字都是这一个对话的);同一个对话里切「全部 / 返回」不重建,滚动位置留着。
         <InnerSidebarColumn
@@ -173,23 +167,19 @@ export const InnerSidebar = observer(function InnerSidebar() {
   );
 });
 
-/** 项目行头像角上那个数(#2548):每个项目群里我的智能体,与分区头同一个推导。开关关着发一份空的。 */
+/** 项目行头像角上那个数(#2548):每个项目群里我的智能体,与分区头同一个推导。 */
 const MyChatAgentCountsPublisher = observer(function MyChatAgentCountsPublisher({
-  enabled,
   agents,
   summaries,
 }: {
-  enabled: boolean;
   agents: readonly ChatAgentEntry[];
   summaries: ReadonlyMap<string, ChatSummary>;
 }) {
   const counts = new Map<string, ChatAgentCounts>();
-  if (enabled) {
-    for (const ref of sidebarStore.sidebarProjects) {
-      const chatId = projectGroupsStore.chatIdOf(ref.id);
-      if (!chatId || counts.has(chatId)) continue;
-      counts.set(chatId, chatAgentCounts(myAgentsInChat(agents, chatScope({ kind: 'project', chatId }, summaries))));
-    }
+  for (const ref of sidebarStore.sidebarProjects) {
+    const chatId = projectGroupsStore.chatIdOf(ref.id);
+    if (!chatId || counts.has(chatId)) continue;
+    counts.set(chatId, chatAgentCounts(myAgentsInChat(agents, chatScope({ kind: 'project', chatId }, summaries))));
   }
   // 依赖是序列化后的数:每次渲染新建的 Map 不算变化(publish 自己也只在数变了时才通知)。
   const key = JSON.stringify([...counts]);

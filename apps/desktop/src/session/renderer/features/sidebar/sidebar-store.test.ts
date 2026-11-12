@@ -587,8 +587,6 @@ describe('SidebarStore project ordering', () => {
         ['executor', 0], ['grandchild', 1], ['other', 0],
       ]);
       expect(store.rowOfSession(home, 'executor')).toBeNull();
-      expect(store.navChain.some((r) => r.kind === 'conversation' && r.sessionId === 'executor')).toBe(true);
-      expect(store.navChain.some((r) => r.kind === 'conversation' && r.sessionId === 'own')).toBe(false);
       expect(store.pinnedSessionEntries.some((r) => r.sessionId === 'own')).toBe(false);
       // With the project visible again its sessions return to the project, without duplicates.
       (manager.projects.get(home) as unknown as { data: { kind?: string } }).data = {};
@@ -679,40 +677,6 @@ describe('SidebarStore keyboard navigation chain', () => {
     };
   }
 
-  it('runs New task → pinned → project rows and their sessions, and skips collapsed projects', () => {
-    sessionRegistry.acquire('task-nav', 'project-nav', [
-      session('pinned-one', { isPinned: true }),
-      session('plain-one'),
-    ] as never);
-    const store = new SidebarStore(
-      projectManagerWithSessions([
-        { id: 'project-nav', createdAt: '2026-01-01T00:00:00.000Z', sessionIds: ['task-nav'] },
-      ])
-    );
-
-    // Collapsed: the project is still a station, but nothing inside it is — collapsing means
-    // "skip this whole thing", not "auto-expand when the cursor arrives".
-    expect(store.navChain).toEqual([
-      { kind: 'new-session' },
-      {
-        kind: 'conversation',
-        projectId: 'project-nav',
-        sessionId: 'pinned-one',
-      },
-      { kind: 'project', projectId: 'project-nav' },
-    ]);
-
-    store.ensureProjectExpanded('project-nav');
-    expect(store.navChain.map((node) => node.kind)).toEqual([
-      'new-session',
-      'conversation',
-      'project',
-      'conversation',
-    ]);
-
-    sessionRegistry.release('task-nav');
-  });
-
   it('#2548 one list: the chain is New task and the project rows the list draws; the hidden sections are no stations', () => {
     sessionRegistry.acquire('task-nav', 'project-nav', [
       session('pinned-one', { isPinned: true }),
@@ -724,7 +688,8 @@ describe('SidebarStore keyboard navigation chain', () => {
       ])
     );
     store.ensureProjectExpanded('project-nav');
-    const before = store.navChain;
+    // Not mounted yet: nothing but the first station (the pinned and project sessions are not drawn anywhere).
+    expect(store.navChain).toEqual([{ kind: 'new-session' }]);
 
     store.setOneListProjects(['groupless-a', 'groupless-b']);
     expect(store.navChain).toEqual([
@@ -739,53 +704,7 @@ describe('SidebarStore keyboard navigation chain', () => {
     expect(store.navChain).toEqual([{ kind: 'new-session' }]);
 
     store.setOneListProjects(null);
-    expect(store.navChain).toEqual(before);
-
-    sessionRegistry.release('task-nav');
-  });
-
-  it('drops a collapsed Pinned section out of the chain', () => {
-    sessionRegistry.acquire('task-nav', 'project-nav', [
-      session('pinned-one', { isPinned: true }),
-    ] as never);
-    const store = new SidebarStore(
-      projectManagerWithSessions([
-        { id: 'project-nav', createdAt: '2026-01-01T00:00:00.000Z', sessionIds: ['task-nav'] },
-      ])
-    );
-    expect(store.navChain.some((node) => node.kind === 'conversation')).toBe(true);
-
-    store.togglePinnedCollapsed();
-    expect(store.navChain.some((node) => node.kind === 'conversation')).toBe(false);
-
-    sessionRegistry.release('task-nav');
-  });
-
-  it('includes idle overflow in keyboard navigation only after explicitly opening it', () => {
-    const ids = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'];
-    sessionRegistry.acquire(
-      'task-nav',
-      'project-nav',
-      ids.map((id, index) =>
-        session(id, {
-          lastInteractedAt: `2026-01-0${6 - index}T00:00:00.000Z`,
-        })
-      ) as never
-    );
-    const store = new SidebarStore(
-      projectManagerWithSessions([
-        { id: 'project-nav', createdAt: '2026-01-01T00:00:00.000Z', sessionIds: ['task-nav'] },
-      ])
-    );
-    store.ensureProjectExpanded('project-nav');
-    // 「空闲超量收起」只存在于分组开着的时候 —— 默认已关,这里显式打开。
-    store.setStateGroupsEnabled(true);
-
-    const visible = store.navChain.filter((node) => node.kind === 'conversation');
-    expect(visible).toHaveLength(5);
-    expect(store.idleExpandedProjectIds.size).toBe(0);
-    store.toggleIdleExpanded('project-nav');
-    expect(store.navChain.filter((node) => node.kind === 'conversation')).toHaveLength(6);
+    expect(store.navChain).toEqual([{ kind: 'new-session' }]);
 
     sessionRegistry.release('task-nav');
   });
@@ -811,9 +730,6 @@ describe('SidebarStore keyboard navigation chain', () => {
 
     store.toggleIdleExpanded(store.standaloneMore!.foldKey);
     expect(store.standaloneMore?.expanded).toBe(true);
-    expect(store.standaloneRootCount).toBe(7);
-
-    store.toggleSessionsCollapsed();
     expect(store.standaloneRootCount).toBe(7);
 
     sessionRegistry.release('task-home-count');
@@ -956,7 +872,6 @@ describe('SidebarStore: 别的机器上的会话归到那台机器的项目下',
         ['rc-executor', 0], ['rc-grandchild', 1],
       ]);
       expect(store.rowOfSession('d22-home', 'rc-executor')).toBeNull();
-      expect(store.navChain.some((r) => r.kind === 'conversation' && r.sessionId === 'rc-executor')).toBe(true);
       expect(store.standaloneSection.rows.find((e) => e.sessionId === 'rc-executor')?.needsAttention).toBe(true);
       expect(store.sidebarRows.filter((r) => r.kind === 'conversation').map((r) => r.sessionId)).toEqual(['rc-business']);
     } finally {
@@ -1233,46 +1148,26 @@ describe('SidebarStore keeps what the user folded folded', () => {
     } finally { sessionRegistry.release(page); }
   });
 
-  it('persists folded section headers across a restart', () => {
-    const source = twoProjects();
-    source.togglePinnedCollapsed();
-    source.toggleProjectsCollapsed();
-    source.toggleSessionsCollapsed();
-    source.toggleChatsCollapsed();
-
+  it('a blob written by the old desktop sidebar (section folds, 项目 | 对话 layout and page) still restores; those fields are ignored (#2548)', () => {
     const restored = twoProjects();
-    restored.restoreSnapshot(source.snapshot);
-    expect([restored.pinnedCollapsed, restored.projectsCollapsed, restored.sessionsCollapsed, restored.chatsCollapsed]).toEqual([
-      true,
-      true,
-      true,
-      true,
+    restored.restoreSnapshot({
+      expandedProjectIds: ['project-a'],
+      pinnedCollapsed: true,
+      projectsCollapsed: true,
+      sessionsCollapsed: true,
+      chatsCollapsed: true,
+      listLayout: 'merged',
+      listPage: 'chats',
+    } as Parameters<SidebarStore['restoreSnapshot']>[0]);
+    expect([...restored.expandedProjectIds]).toEqual(['project-a']);
+    expect(Object.keys(restored.snapshot).sort()).toEqual([
+      'expandedProjectIds',
+      'expandedSessionIds',
+      'idleExpandedProjectIds',
+      'projectOrder',
+      'sessionOrderByProject',
+      'sessionSortBy',
     ]);
-
-    // A blob written before these fields existed leaves the sections open.
-    const legacy = twoProjects();
-    legacy.restoreSnapshot({ expandedProjectIds: [] });
-    expect([legacy.pinnedCollapsed, legacy.projectsCollapsed, legacy.sessionsCollapsed, legacy.chatsCollapsed]).toEqual([
-      false,
-      false,
-      false,
-      false,
-    ]);
-  });
-
-  it('keeps the sidebar layout and the open tab across a restart (gugu-dev#181)', () => {
-    const source = twoProjects();
-    source.setListLayout('merged');
-    source.setListPage('chats');
-
-    const restored = twoProjects();
-    restored.restoreSnapshot(source.snapshot);
-    expect([restored.listLayout, restored.listPage]).toEqual(['merged', 'chats']);
-
-    // Older blobs (and unknown values) land on the default: Projects and Chats as two tabs, Projects open.
-    const legacy = twoProjects();
-    legacy.restoreSnapshot({ expandedProjectIds: [] });
-    expect([legacy.listLayout, legacy.listPage]).toEqual(['split', 'projects']);
   });
 });
 
@@ -1370,10 +1265,6 @@ describe('拼在一屏的几条:左边合成一个框(spec session-page「拼在
     expect(projectConversations(store)).toEqual(['t3', 'p1', 't1']);
     expect(tasks(store)).toEqual(['t2', 't4']);
     expect(store.sidebarRows.filter((row) => row.kind === 'conversation').find((e) => e.sessionId === 'p1')?.join).toEqual({ pos: 'middle', onScreen: true });
-    // 键盘上下走的次序与画出来的一致
-    expect(
-      store.navChain.flatMap((node) => (node.kind === 'conversation' ? [node.sessionId] : []))
-    ).toEqual(['t3', 'p1', 't1', 't2', 't4']);
     release();
   });
 

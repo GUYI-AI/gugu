@@ -32,12 +32,12 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
 // The chat list is drawn into this slot by the shell's tree (ChatListPanel, its own tests); here it stands for every
 // activity-sorted conversation row.
 vi.mock('./sidebar-chats-section', () => ({
-  SidebarChatsSection: ({ unread, oneList }: { unread: number; oneList?: boolean }) => <div data-region="sidebar-chat-list" data-unread={unread} data-one-list={oneList ? '' : undefined} />,
+  SidebarChatsSection: ({ unread }: { unread: number }) => <div data-region="sidebar-chat-list" data-unread={unread} />,
 }));
 vi.mock('./project-item', () => ({
-  SidebarProjectItem: ({ projectId, oneList }: { projectId: string; oneList?: boolean }) => <div data-row={`project:${projectId}`} data-one-list-row={oneList ? '' : undefined} />,
+  SidebarProjectItem: ({ projectId }: { projectId: string }) => <div data-row={`project:${projectId}`} />,
 }));
-vi.mock('./sample-project-row', () => ({ SampleProjectSidebar: ({ rowOnly }: { rowOnly?: boolean }) => <div data-row="sample" data-one-list-row={rowOnly ? '' : undefined} /> }));
+vi.mock('./sample-project-row', () => ({ SampleProjectSidebar: () => <div data-row="sample" /> }));
 
 const { SidebarOneList } = await import('./sidebar-one-list');
 
@@ -65,7 +65,6 @@ describe('rows that are not a conversation yet', () => {
   it('come after every conversation row: projects without a group chat (sidebar order), then the sample', async () => {
     await render();
     expect(order()).toEqual(['conversations', 'project:no-group-b', 'project:no-group-a', 'sample']);
-    expect(host.querySelectorAll('[data-row]:not([data-one-list-row])')).toHaveLength(0);
   });
 
   it('a project whose group chat is in the list is that conversation row, not one of these', async () => {
@@ -84,7 +83,6 @@ describe('rows that are not a conversation yet', () => {
   it('the conversations keep their 「对话」 header, its number the two old tabs\' unread counts added up (the list holds both)', async () => {
     await render();
     const list = host.querySelector<HTMLElement>('[data-region="sidebar-chat-list"]')!;
-    expect(list.dataset.oneList).toBe('');
     expect(list.dataset.unread).toBe('9');
   });
 

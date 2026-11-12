@@ -15,7 +15,7 @@ import { PhoneMessageAvatar } from '../chat/PhoneMessageAvatar'
 
 /**
  * 消息中的项目群沿用项目封面;提醒仅占头像一角,不进伙伴通讯录。
- * 桌面(#2548,开关 interface.desktopSidebarV2):项目行也是项目封面(同一个 ProjectFolderAvatar,侧栏头像位 32),
+ * 桌面(#2548 一张表的侧栏):项目行也是项目封面(同一个 ProjectFolderAvatar,侧栏头像位 32),
  * 头像右下角挂「我的智能体里有几个在跑」;用户群没有这个数,也不换封面。
  */
 export function PhoneProjectChatAvatar({ chat, mobile, children }: { chat: ChatItem; mobile: boolean; children: ReactNode }) {

@@ -40,25 +40,20 @@ vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
 }));
 vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => 'assistant-device' } }));
 vi.mock('./session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: vi.fn() } }));
-vi.mock('./project-row-parts', () => ({ ProjectNeedsYouDot: () => null, ProjectRowTitle: ({ name }: { name: string }) => <span>{name}</span> }));
-vi.mock('./sidebar-list-switch', () => ({ SidebarUnreadCount: () => null }));
 vi.mock('@/lib/sidebarChatsBridge', () => ({ useSidebarChatSignals: () => state.signals }));
 vi.mock('@/lib/topicSplitRequest', () => ({ requestTopicSplit: state.topicSplit }));
 vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: { chatIdOf: () => state.group } }));
-vi.mock('./use-session-drop-target', () => ({ useSessionDropTarget: () => ({ bind: () => ({}) }) }));
-vi.mock('@renderer/features/sessions/set-session-parent-flow', () => ({ moveSessionUnder: vi.fn() }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
 
 import { SidebarProjectItem } from './project-item';
 
-it('opens an actual project on the assistant device and retains its project controls', async () => {
+it('opens an actual project on the assistant device and keeps its project menu', async () => {
   const host = document.createElement('div');
   document.body.append(host);
   const root = createRoot(host);
   try {
     await act(async () => root.render(<SidebarProjectItem projectId="business" />));
     expect(host.querySelector('[data-context-disabled="false"]')).not.toBeNull();
-    expect(host.querySelector('[aria-label="sidebar.newSessionIn"]')).not.toBeNull();
     await act(async () => (host.querySelector('[data-project-row="business"]') as HTMLElement).click());
     expect(state.show).toHaveBeenCalledWith({ kind: 'project', projectId: 'business' });
     expect(state.expand).not.toHaveBeenCalled();
@@ -67,9 +62,6 @@ it('opens an actual project on the assistant device and retains its project cont
     await act(async () => host.querySelector('[data-project-row="business"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })));
     expect(state.beside).toHaveBeenCalledWith({ kind: 'project', projectId: 'business' });
     expect(state.show).toHaveBeenCalledTimes(1);
-    await act(async () => (host.querySelector('[aria-label="sidebar.newSessionIn"]') as HTMLElement).click());
-    expect(state.expand).not.toHaveBeenCalled();
-    expect(state.toggle).not.toHaveBeenCalled();
   } finally {
     state.screen = false;
     await act(async () => root.unmount());

@@ -27,7 +27,7 @@ import {
 } from './sidebar-collapse-hint';
 
 /**
- * GUYI-AI/gugu#2548 the top and the foot of the sidebar as one list (internal switch `interface.desktopSidebarV2`).
+ * GUYI-AI/gugu#2548 the top and the foot of the sidebar as one list.
  * Composition only: every control is an existing one (Button, IconButton, DropdownMenu + MenuItem, Hint) running an
  * existing action. Collapsed, the sidebar is a rail of the list's avatars (ONE_LIST_RAIL_PX wide, every avatar where it
  * was): what has text fades, the 「+」 and the collapse button sit on the avatars' axis.

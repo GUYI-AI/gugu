@@ -3,16 +3,15 @@ import { db } from '@main/db/client';
 import { appSettings, projects, sessions } from '@main/db/schema';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
-import { appSettingsService } from '@main/core/settings/settings-service';
 import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 import { sessionParentId } from './utils';
 
 const MIGRATION_KEY = 'migration.sidebar-pin-upgrade-v1';
 
 /**
- * #2548「Upgrade」(owner decision): the first time this machine runs with the desktop sidebar switch on, every
- * top-level session that is 置顶 inside a project (the Projects tab's Pinned section) is also 固定到左侧栏, so it stays
- * at the top of the one left list. It stays 置顶 too. Standalone pinned sessions need nothing: they are rows of that
+ * #2548「Upgrade」(owner decision): the first start with the one-list desktop sidebar, every top-level session that is
+ * 置顶 inside a project (the old Projects tab's Pinned section) is also 固定到左侧栏, so it stays at the top of the one
+ * left list. It stays 置顶 too. Standalone pinned sessions need nothing: they are rows of that
  * list already. One-shot like migrate-lifecycle-outbox: the marker is written in the same transaction, so it never
  * runs again and the person's later choices (unpinning one of them) are never undone. Archived ones are included:
  * restored later, they come back where they were.
@@ -43,14 +42,4 @@ export function upgradeProjectPinsToSidebarOnce(): Array<{ sessionId: string; pr
   }
   if (marked.length > 0) log.info('sidebar pin upgrade: project-pinned sessions pinned to the sidebar', { count: marked.length });
   return marked;
-}
-
-/**
- * Runs the upgrade once the switch (`interface.desktopSidebarV2`) is on: at startup after the settings service, and
- * whenever the interface settings change (the switch turned on in a running app). Switch off = nothing, no marker.
- */
-export async function settleSidebarPinUpgrade(): Promise<number> {
-  const { desktopSidebarV2 } = await appSettingsService.get('interface');
-  if (!desktopSidebarV2) return 0;
-  return upgradeProjectPinsToSidebarOnce().length;
 }

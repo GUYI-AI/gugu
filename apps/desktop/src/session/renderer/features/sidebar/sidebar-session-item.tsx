@@ -53,7 +53,6 @@ import { sessionScheduleDigest } from '@shared/core/automations/session-schedule
 import { agentForksOn } from '@shared/core/agents/agent-payload';
 import { useConversationSessionSummary } from '@/hooks/useConversationSessionSummary';
 import { sidebarPinMenuAction } from './sidebar-pin';
-import { useDesktopSidebarV2Switch } from './use-desktop-sidebar-v2';
 
 // @@@sessionpage otty-state — sidebar CONVERSATION row, hanging directly under its project (spec
 // session-page: conversations ARE the sessions; tasks are an invisible workspace container). A
@@ -122,7 +121,6 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const identityCardOpen = identityCardEnabled && sidebarIdentityCard.activeSessionId === sessionId;
   const agentBinding = sessionAgentBindings.bindingFor(sessionId);
   const nestDrop = useSessionDropTarget();
-  const sidebarV2 = useDesktopSidebarV2Switch();
 
   // 挂着的会话读它自己的 store;别的机器上还没挂的读会话目录那一行(列出不挂载,见 sidebar-store)。
   const session = sessionRegistry.get(sessionId)?.sessions.get(sessionId);
@@ -214,9 +212,8 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const setPinned = (pinned: boolean) => {
     withMountedSession(projectId, sessionId, (_session, manager) => void manager.setSessionPinned(sessionId, pinned));
   };
-  // #2548 固定到左侧栏 sits next to 置顶, same shape; offered per sidebarPinMenuAction (switch on, top-level).
+  // #2548 固定到左侧栏 sits next to 置顶, same shape; offered per sidebarPinMenuAction (top-level only).
   const sidebarPin = sidebarPinMenuAction({
-    switchOn: sidebarV2,
     parentSessionId: row.parentSessionId,
     isPinnedToSidebar: row.isPinnedToSidebar,
   });
@@ -356,7 +353,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
       onToggle={onToggle}
       title={title}
       harness={harness ? { id: providerId, name: harness.name } : null}
-      agent={agentAvatar && sidebarV2 && agentUserId ? { userId: agentUserId, name: title, avatarUrl: identity?.avatar ?? null } : null}
+      agent={agentAvatar && agentUserId ? { userId: agentUserId, name: title, avatarUrl: identity?.avatar ?? null } : null}
       badges={badges}
       presentation={presentation}
       statusUnavailable={statusUnavailable}

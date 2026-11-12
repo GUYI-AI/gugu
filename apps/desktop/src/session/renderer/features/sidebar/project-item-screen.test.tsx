@@ -22,9 +22,6 @@ vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
 }));
 vi.mock('@renderer/features/projects/project-presence', () => ({ projectPresence: () => 'present' }));
 vi.mock('@/components/chat/ProjectRowContextMenu', () => ({ ProjectRowContextMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
-vi.mock('./project-row-parts', () => ({ ProjectNeedsYouDot: () => null, ProjectRowTitle: ({ name }: { name: string }) => <span>{name}</span> }));
-vi.mock('./sidebar-list-switch', () => ({ SidebarUnreadCount: () => null }));
-vi.mock('./use-session-drop-target', () => ({ useSessionDropTarget: () => ({ bind: () => ({}) }) }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
 
 import { appState } from '@renderer/lib/stores/app-state';
@@ -48,11 +45,11 @@ it('a project row click puts the project block on screen even when navigation al
     await act(async () => root.render(<SidebarProjectItem projectId="trial" />));
     const row = host.querySelector('[data-project-row="trial"]') as HTMLElement;
     // The row does not claim to be what is on screen.
-    expect(row.hasAttribute('data-active')).toBe(false);
+    expect(row.hasAttribute('data-selected')).toBe(false);
     await act(async () => row.click());
     expect(screenLayout.blocks.get(screenLayout.focusedBlockId!)).toEqual({ kind: 'project', projectId: 'trial' });
     expect(appState.navigation.currentViewId).toBe('project');
-    expect(row.hasAttribute('data-active')).toBe(true);
+    expect(row.dataset.selected).toBe('true');
   } finally {
     await act(async () => root.unmount());
     host.remove();

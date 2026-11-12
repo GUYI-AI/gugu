@@ -32,7 +32,10 @@ export type SidebarChatView = {
   readonly focusedChatId: string | null
   /** 拼在一屏的几组(这屏那一组和收起来的那些):「对话」里同一组的几行并在一处。 */
   readonly groups: readonly JoinedGroup[]
-  /** #2548 the desktop sidebar is one list (internal switch `interface.desktopSidebarV2`); absent = today's tabs. */
+  /**
+   * #2548 the task page's desktop sidebar (one list) is mounted and published this view. The phone never mounts it, so
+   * absent = the phone: shared components (chat list, composer verbs, the rail's 消息) read this to tell, never settings.
+   */
   readonly oneList?: boolean
 }
 
@@ -153,7 +156,7 @@ export function useSidebarChatView(): SidebarChatView {
   return useSyncExternalStore(subscribeView, () => read<SidebarChatView>(VIEW_KEY) ?? NO_VIEW, () => NO_VIEW)
 }
 
-/** 会话页:the agents pinned to the one list, in display order (整份替换;没变不通知). Switch off = an empty list. */
+/** 会话页:the agents pinned to the one list, in display order (整份替换;没变不通知). */
 export function publishSidebarPinnedAgents(next: readonly SidebarPinnedAgent[]): void {
   const current = read<readonly SidebarPinnedAgent[]>(PINNED_AGENTS_KEY)
   if (current && JSON.stringify(current) === JSON.stringify(next)) return

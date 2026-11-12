@@ -14,7 +14,7 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
 }))
 vi.mock('@renderer/app/screen-layout', () => ({ screenLayout: { focusedBlockId: null, blocks: new Map() } }))
 vi.mock('@renderer/app/screen-layout-actions', () => ({ isScreenView: () => false, showOnScreen: vi.fn(), showBesideOnScreen: vi.fn() }))
-vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }))
+vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key, locale: 'en-US' }) }))
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: io.toast }))
 
 const { SampleProjectSidebar } = await import('@/session/renderer/features/sidebar/sample-project-row')
@@ -23,10 +23,13 @@ beforeEach(() => {
   io.rows.set('u/user', { user_id: 'u', scope: 'user', config: { sampleProject: { version: 1, dismissed: false }, keep: 'preference' }, updated_at: '2026-11-07T00:00:00.000Z' })
 })
 
+// #2548 the sample's sidebar row is the one list's conversation row for it (OneListSampleRow).
+const ROW = '[data-sample-project-row]'
+
 async function removeFromRow(harness: ReturnType<typeof createReactHarness>) {
   await harness.render(createNode(SampleProjectSidebar))
-  await waitForCondition(() => !!harness.container.querySelector('[role="treeitem"]'), 'sample row shown')
-  await fireContextMenu(harness.container.querySelector<HTMLElement>('[role="treeitem"]')!)
+  await waitForCondition(() => !!harness.container.querySelector(ROW), 'sample row shown')
+  await fireContextMenu(harness.container.querySelector<HTMLElement>(ROW)!)
   const item = () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((element) => element.textContent === 'projects.sample.remove')
   await waitForCondition(() => !!item(), 'sample removal action shown')
   await clickElement(item()!)
@@ -37,10 +40,11 @@ describe('removing the sample from its actual sidebar row', () => {
     const harness = createReactHarness()
     try {
       await harness.render(createNode(SampleProjectSidebar))
-      await waitForCondition(() => !!harness.container.querySelector('[role="treeitem"]'), 'sample row shown')
-      const row = harness.container.querySelector<HTMLElement>('[role="treeitem"]')!
+      await waitForCondition(() => !!harness.container.querySelector(ROW), 'sample row shown')
+      const row = harness.container.querySelector<HTMLElement>(ROW)!
       const bounds = new DOMRect(100, 120, 240, 36)
-      vi.spyOn(row.parentElement!, 'getBoundingClientRect').mockReturnValue(bounds)
+      // The menu's anchor is the row's wrapper (SampleProjectRowMenu), the outermost element drawn.
+      vi.spyOn(harness.container.firstElementChild!, 'getBoundingClientRect').mockReturnValue(bounds)
       await act(async () => { row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 160, clientY: 130 })) })
       const positioner = () => document.querySelector<HTMLElement>('.gg-menu-positioner')
       await waitForCondition(() => !!positioner(), 'removal menu positioned')
@@ -56,7 +60,7 @@ describe('removing the sample from its actual sidebar row', () => {
     const harness = createReactHarness()
     try {
       await removeFromRow(harness)
-      await waitForCondition(() => !harness.container.querySelector('[role="treeitem"]'), 'sample row removed')
+      await waitForCondition(() => !harness.container.querySelector(ROW), 'sample row removed')
       expect(io.rows.get('u/user')?.config).toEqual({ sampleProject: { version: 1, dismissed: true }, keep: 'preference' })
       expect(io.toast).not.toHaveBeenCalled()
     } finally { harness.cleanup() }
@@ -67,7 +71,7 @@ describe('removing the sample from its actual sidebar row', () => {
     const harness = createReactHarness()
     try {
       await removeFromRow(harness)
-      expect(harness.container.querySelector('[role="treeitem"]')).not.toBeNull()
+      expect(harness.container.querySelector(ROW)).not.toBeNull()
       expect(io.rows.get('u/user')?.config).toMatchObject({ sampleProject: { dismissed: false } })
       expect(io.toast).toHaveBeenCalledWith(expect.objectContaining({ tier: 'error', title: 'projects.sample.removeFailed' }))
     } finally { harness.cleanup() }

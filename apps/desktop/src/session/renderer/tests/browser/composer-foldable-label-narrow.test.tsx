@@ -20,9 +20,6 @@ vi.mock('@renderer/lib/stores/use-agents', async (original) => ({
   ...(await original<object>()),
   useAgentIcon: (id: string) => (id === 'codex' ? codexIcon : null),
 }))
-// The #2548 switch reads the app settings over IPC, which this page has none of; the narrow layout is the same either way.
-const oneList = vi.hoisted(() => ({ on: false }))
-vi.mock('@renderer/features/sidebar/use-desktop-sidebar-v2', () => ({ useDesktopSidebarV2Switch: () => oneList.on }))
 
 const { SessionComposerVerbs } = await import('@renderer/features/sessions/session-verb-dock')
 const { composerVerbLook } = await import('@renderer/features/sessions/composer-verb-tag')
@@ -113,7 +110,7 @@ async function renderComposer(width: number, { tag }: { tag: boolean }) {
 }
 
 describe('窄框里宿主塞进来的「新任务」收成标', () => {
-  it('会话底排 213px:「新任务」只剩那枚闪电,不压模型图形和发送键', async () => {
+  it('会话底排 213px:「新智能体」只剩那枚标,不压模型图形和发送键', async () => {
     await renderComposer(213, { tag: false })
     const verb = document.querySelector('[data-testid="session-verb-task"]')!
     expect(verb.getAttribute('aria-label')).toBe(verb.getAttribute('title'))
@@ -130,30 +127,19 @@ describe('窄框里宿主塞进来的「新任务」收成标', () => {
     expect(visible.at(-1)!.right).toBeLessThanOrEqual(bar.right + 0.5)
   })
 
-  it('会话底排宽:「新任务」照旧写着字', async () => {
+  it('会话底排宽:「新智能体」照旧写着字', async () => {
     await renderComposer(640, { tag: false })
     expect(shown(document.querySelector('[data-testid="session-verb-task"] [data-slot="composer-foldable-label"]'))).toBe(true)
   })
 
-  it('「新任务」上的标是那枚闪电,❌ agent / harness 的标(那枚在模型左边)', async () => {
+  it('#2548 它叫「新智能体」(与群里的框同名),标是按钮自己那一枚(创建智能体那支笔),❌ agent / harness 的标(那枚在模型左边)', async () => {
     await renderComposer(640, { tag: false })
     const verb = document.querySelector('[data-testid="session-verb-task"]')!
-    // agent 的标(PluginIcon)是包在一层 span 里的插件 svg;闪电是按钮直接带的那枚 svg。
+    expect(verb.getAttribute('aria-label')).toBe('新智能体')
+    expect(verb.textContent).toBe('新智能体')
+    // agent 的标(PluginIcon)是包在一层 span 里的插件 svg;笔是按钮直接带的那枚 svg。
     expect(verb.querySelectorAll('svg, img')).toHaveLength(1)
     expect(verb.querySelector(':scope > svg')).not.toBeNull()
-  })
-
-  it('#2548 侧栏一张列表时它叫「新智能体」(与群里的框同名),标仍是按钮自己那一枚', async () => {
-    oneList.on = true
-    try {
-      await renderComposer(640, { tag: false })
-      const verb = document.querySelector('[data-testid="session-verb-task"]')!
-      expect(verb.getAttribute('aria-label')).toBe('新智能体')
-      expect(verb.textContent).toBe('新智能体')
-      expect(verb.querySelectorAll('svg, img')).toHaveLength(1)
-    } finally {
-      oneList.on = false
-    }
   })
 
   it('会话底排宽:锁着的 harness 标在模型左边、不灰,模型那格不再画厂商图形', async () => {

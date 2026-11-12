@@ -20,7 +20,7 @@ import {
   type MachineHomeLayout,
 } from '@renderer/features/remote-hosts/machine-home';
 import type { Snapshottable } from '@renderer/lib/stores/snapshottable';
-import type { SidebarListLayout, SidebarListPage, SidebarSnapshot, SidebarSessionSortBy } from '@shared/view-state';
+import type { SidebarSnapshot, SidebarSessionSortBy } from '@shared/view-state';
 import { blockKey, type JoinedGroup, type SidebarJoin } from '@/lib/sidebarJoinedGroups';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import { isAssistantAgent, isAssistantSession, launchedByAssistant } from '@renderer/features/assistant/assistant-lineage';
@@ -193,17 +193,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
   expandedSessionIds = observable.set<string>();
   /** Browsing a branch changes this project projection, never the open conversation. */
   sessionBranchRootId: string | null = null;
-  /** spec session-page: the Pinned section is collapsible (persisted). */
-  pinnedCollapsed = false;
-  /** spec session-page: Projects and Tasks section headers collapse too, like Pinned (persisted). */
-  projectsCollapsed = false;
-  sessionsCollapsed = false;
-  /** gugu-dev#181「对话」分区头也能收起(persisted)。 */
-  chatsCollapsed = false;
-  /** gugu-dev#181 侧栏「显示方式」:默认分开(顶上「项目 | 对话」两枚页签),也能合在一起(persisted)。 */
-  listLayout: SidebarListLayout = 'split';
-  /** 分开时看的是哪一页(persisted)。合在一起时不读它。 */
-  listPage: SidebarListPage = 'projects';
   /**
    * behavior session-page「会话列表与状态」: 用不用二级分类(agent 状态分组)。设置
    * `interface.showLeftSidebarStateGroups` 的镜像,由 left-sidebar 同步进来 —— 组头渲染在
@@ -232,9 +221,8 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
    */
   assistantAgentId: string | null = null;
   /**
-   * GUYI-AI/gugu#2548 the sidebar as one list (internal switch `interface.desktopSidebarV2`): the project rows it draws
-   * itself, in order (local projects whose project group does not exist yet; mirrored in by SidebarOneList). The
-   * pinned / projects / tasks sections are not drawn then, so they are not stations either. null = the switch is off.
+   * GUYI-AI/gugu#2548 the project rows the one list draws itself, in order (local projects whose project group does not
+   * exist yet; mirrored in by SidebarOneList). null = the list is not mounted.
    */
   oneListProjects: readonly string[] | null = null;
   constructor(private readonly projectManager: ProjectManagerStore) {
@@ -365,39 +353,13 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
   }
 
   /**
-   * behavior session-page「键盘导航」: the keyboard navigation chain, top to bottom —
-   * New task → pinned conversations → each project row and its conversations → Tasks-section
-   * conversations. A collapsed section or project simply contributes nothing: collapsing means
-   * "I don't want to see this", so the keyboard skips it whole instead of auto-expanding it.
-   * "Show more" is also controlled explicitly; moving between sessions never changes disclosure.
+   * behavior session-page「键盘导航」: the task page's keyboard chain, top to bottom — 创建智能体 (the New task station),
+   * then the project rows the one list draws itself (#2548). Only what is drawn: its conversation rows are the chat
+   * list's own, walked there (ChatListPanel); the list not mounted = nothing but the first station.
    */
   get navChain(): SidebarNavNode[] {
     const nodes: SidebarNavNode[] = [{ kind: 'new-session' }];
-    // #2548 one list: only what it draws. Its conversation rows are the chat list's own (walked there, ChatListPanel).
-    if (this.oneListProjects) {
-      for (const projectId of this.oneListProjects) nodes.push({ kind: 'project', projectId });
-      return nodes;
-    }
-    const pushSession = (entry: SessionEntry) =>
-      nodes.push({
-        kind: 'conversation',
-        projectId: entry.projectId,
-        sessionId: entry.sessionId,
-      });
-
-    if (!this.pinnedCollapsed) this.pinnedSessionEntries.forEach(pushSession);
-
-    if (!this.projectsCollapsed) {
-      for (const row of this.sidebarRows) {
-        if (row.kind === 'project') nodes.push({ kind: 'project', projectId: row.projectId });
-        else if (row.kind === 'conversation') pushSession(row);
-      }
-    }
-
-    if (!this.sessionsCollapsed) {
-      for (const group of this.standaloneSessionGroups) group.entries.forEach(pushSession);
-    }
-
+    for (const projectId of this.oneListProjects ?? []) nodes.push({ kind: 'project', projectId });
     return nodes;
   }
 
@@ -560,12 +522,12 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     return [1, project < 0 ? Infinity : project, bucket, -item.time, depth];
   }
 
-  /** anchor 那一行此刻画不画得出来:往上每一级父会话都展开着,所在的分区 / 项目也展开着(置顶的就看置顶区)。 */
+  /** anchor 那一行此刻画不画得出来:往上每一级父会话都展开着,所在的项目也展开着(置顶的总画得出来)。 */
   private anchorVisible(anchorId: string): boolean {
     const { nodeById, rowOfEntry } = this.placement;
     let current = nodeById.get(anchorId)?.item;
     while (current) {
-      if (current.isPinned) return !this.pinnedCollapsed;
+      if (current.isPinned) return true;
       const parent = current.parentSessionId ? nodeById.get(current.parentSessionId)?.item : undefined;
       if (!parent) break;
       if (!this.expandedSessionIds.has(parent.id)) return false;
@@ -574,8 +536,8 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     if (!current) return false;
     const row = rowOfEntry.get(current.id);
     if (row === undefined) return false;
-    if (row === SESSIONS_SECTION) return !this.sessionsCollapsed;
-    return !this.projectsCollapsed && this.expandedProjectIds.has(row);
+    if (row === SESSIONS_SECTION) return true;
+    return this.expandedProjectIds.has(row);
   }
 
   /** 这条会话此刻挂在谁下面(侧栏建树的那条边);根 / 侧栏里没有 = null。 */
@@ -1074,30 +1036,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     return isWorkspaceProject(project);
   }
 
-  togglePinnedCollapsed(): void {
-    this.pinnedCollapsed = !this.pinnedCollapsed;
-  }
-
-  toggleProjectsCollapsed(): void {
-    this.projectsCollapsed = !this.projectsCollapsed;
-  }
-
-  toggleSessionsCollapsed(): void {
-    this.sessionsCollapsed = !this.sessionsCollapsed;
-  }
-
-  toggleChatsCollapsed(): void {
-    this.chatsCollapsed = !this.chatsCollapsed;
-  }
-
-  setListLayout(layout: SidebarListLayout): void {
-    this.listLayout = layout;
-  }
-
-  setListPage(page: SidebarListPage): void {
-    this.listPage = page;
-  }
-
   /** #2548 SidebarOneList mirrors the project rows it draws (null when it is not drawn). Same rows: no change. */
   setOneListProjects(projectIds: readonly string[] | null): void {
     const current = this.oneListProjects;
@@ -1131,12 +1069,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
       projectOrder: [...this.projectOrder],
       sessionOrderByProject: { ...this.sessionOrderByProject },
       sessionSortBy: this.sessionSortBy,
-      pinnedCollapsed: this.pinnedCollapsed,
-      projectsCollapsed: this.projectsCollapsed,
-      sessionsCollapsed: this.sessionsCollapsed,
-      chatsCollapsed: this.chatsCollapsed,
-      listLayout: this.listLayout,
-      listPage: this.listPage,
     };
   }
 
@@ -1160,14 +1092,8 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
       const v = parseSidebarSessionSortBy(snapshot.sessionSortBy);
       if (v !== undefined) this.sessionSortBy = v;
     }
-    if (typeof snapshot.pinnedCollapsed === 'boolean') this.pinnedCollapsed = snapshot.pinnedCollapsed;
-    if (typeof snapshot.projectsCollapsed === 'boolean') {
-      this.projectsCollapsed = snapshot.projectsCollapsed;
-    }
-    if (typeof snapshot.sessionsCollapsed === 'boolean') this.sessionsCollapsed = snapshot.sessionsCollapsed;
-    if (typeof snapshot.chatsCollapsed === 'boolean') this.chatsCollapsed = snapshot.chatsCollapsed;
-    if (snapshot.listLayout === 'split' || snapshot.listLayout === 'merged') this.listLayout = snapshot.listLayout;
-    if (snapshot.listPage === 'projects' || snapshot.listPage === 'chats') this.listPage = snapshot.listPage;
+    // Blobs written by the old desktop sidebar still carry its section folds and 项目 | 对话 layout (pinnedCollapsed,
+    // projectsCollapsed, sessionsCollapsed, chatsCollapsed, listLayout, listPage): nothing reads them any more.
   }
 
   toggleProjectExpanded(projectId: string): void {

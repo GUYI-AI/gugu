@@ -1,7 +1,6 @@
 import { motion, useTransform } from 'framer-motion'
 import { observer } from 'mobx-react-lite'
 import { useEffect, type ReactNode } from 'react'
-import { ListColumnToggle } from '@/components/PanelToggleButtons'
 import { publishListHotkey, publishPanelToggle } from '@/lib/panelToggles'
 import {
   readRendererPlatform,
@@ -23,23 +22,14 @@ const TITLEBAR_ACTION_TOP_PX = (WINDOW_CONTROL_BAR_HEIGHT_PX - TITLEBAR_ACTION_S
 
 
 /**
- * The sidebar's collapse and layout controls, fixed at the workspace root on every platform.
- *
- * 它挂在会话页根部(<WorkspaceLayout>),不在侧栏里、也不在主区里 —— 所以侧栏开合时它一动不动,
- * 侧栏是从它下面滑过去的。改造前是两枚:侧栏展开时那枚长在侧栏顶端靠右,收起时另换一枚浮到
- * 主区左上角 —— 同一个功能的按钮在两种状态下落在两个坐标,点完一下手就得去别处找它。
- * 按钮本身是 PanelToggleButtons 的 <ListColumnToggle>,与对话页挂的是同一个组件;
- * 刚点完 / 预览浮着时不弹提示也在那里。
- *
- * **收起态下悬停它会浮出侧栏预览**(见 sidebar-peek.ts);此时再点 = 把预览钉成常驻,且不放动画(layout-provider 的 setCollapsed)——
- * 它已经画在那儿了,再从零滑一次是重影。
+ * The sidebar's toggle (published for the shortcut and 消息, lib/panelToggles) and the bell, fixed at the workspace root
+ * on every platform: it is not in the sidebar or the main area, so it does not move while the sidebar opens or closes.
+ * The collapse button itself is at the foot of the one list (sidebar-one-list-chrome).
  */
 export const ShellSidebarToggle = observer(function ShellSidebarToggle() {
   const { translate } = useSessionMessages()
   const { value: keyboard } = useAppSettingsKey('keyboard')
-  // GUYI-AI/gugu#2548 the sidebar as one list: its collapse button is at the foot of the list (left-sidebar); only the bell stays here.
-  const { value: interfaceSettings } = useAppSettingsKey('interface')
-  const oneList = interfaceSettings?.desktopSidebarV2 ?? false
+  // GUYI-AI/gugu#2548 the sidebar's collapse button is at the foot of the one list (left-sidebar); only the bell stays here.
   const { isLeftOpen, isLeftPeeking, toggleLeft, setTriggerHovered } = useWorkspaceLayoutContext()
   const hotkey = getEffectiveHotkey('app.toggleLeftSidebar', keyboard)
   const shortcut = hotkey ? formatHotkeyText(hotkey) : undefined
@@ -60,8 +50,7 @@ export const ShellSidebarToggle = observer(function ShellSidebarToggle() {
       style={{ top: TITLEBAR_ACTION_TOP_PX, left: TITLEBAR_LEFT_EDGE_GAP_PX, gap: TITLEBAR_ACTION_SLOT_GAP_PX }}
       data-sidebar-header-controls=""
     >
-      {/* List visibility stays first; the global notification view belongs to the visible list. */}
-      {oneList ? null : <ListColumnToggle slot="list:sessions" />}
+      {/* The global notification view belongs to the visible list. */}
       {isLeftOpen || isLeftPeeking ? <NotificationSlot part="toggle" /> : null}
     </div>
   )

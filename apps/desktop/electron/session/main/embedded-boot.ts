@@ -208,7 +208,7 @@ import { automationsService } from '@main/core/automations/automations-service'
 import { appService } from '@main/core/app/service'
 import { appSettingsService } from '@main/core/settings/settings-service'
 import { settleTerminalEnabled } from '@main/core/settings/terminal-visibility'
-import { settleSidebarPinUpgrade } from '@main/core/sessions/sidebar-pin-upgrade'
+import { upgradeProjectPinsToSidebarOnce } from '@main/core/sessions/sidebar-pin-upgrade'
 import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry'
 import { setBrowserCorsRelaxationSettings } from '@main/core/browser/browser-profile-session'
 import { promptLibraryService } from '@main/core/prompt-library/service'
@@ -728,8 +728,12 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   await appSettingsService.initialize()
   // 「终端」开关还没定值(升级上来的第一次启动)就按老用户迁移规则算一次写回,渲染层与新会话都读这一份。
   await settleTerminalEnabled().catch((e) => log.warn('terminal setting: migration failed; it stays off until set', { error: e }))
-  // #2548 左侧栏开关开着的第一次启动:项目里置顶的会话一并固定到左侧栏(只一次)。失败不拦启动:标记没写,下次启动重来。
-  await settleSidebarPinUpgrade().catch((e) => log.error('sidebar pin upgrade failed; it runs again on the next start', { error: e }))
+  // #2548 一张表侧栏的第一次启动:项目里置顶的会话一并固定到左侧栏(标记守着,只一次)。失败不拦启动:标记没写,下次启动重来。
+  try {
+    upgradeProjectPinsToSidebarOnce()
+  } catch (e) {
+    log.error('sidebar pin upgrade failed; it runs again on the next start', { error: e })
+  }
   if (browserFeatures) {
     browserWebContentsRegistry.setKeyboardSettings(await appSettingsService.get('keyboard'))
   }

@@ -562,7 +562,7 @@ export function ChatListPanel({
   const membershipProjection = useMemo(createChatMembershipProjection, [])
   const membership = membershipProjection(chats, identitiesById)
   const workrooms = useAssistantWorkrooms(assistantShell, membership.key)
-  // #2548 the desktop sidebar as one list (switch published by the task page's left sidebar; never on the phone).
+  // #2548 the desktop sidebar is one list: the task page's left sidebar publishes that it is mounted (never on the phone).
   // Agents pinned to it (固定到左侧栏) are published by the task page, which knows the sessions and where they live.
   const sidebarPins = useSidebarPinnedAgents()
   const oneList = inSidebar && !mobile && sidebarView.oneList === true
@@ -778,7 +778,7 @@ export function ChatListPanel({
   const normalRows = inSidebar ? [] : normalLines.map(({ row, join }) => renderChatRow(row, join))
 
   // @@@sidebar-chat-window - the sidebar's conversation lines mount only around the visible part of the sidebar's one
-  // scroller, the same mechanism as the task list (sidebar-virtual-list.tsx, @@@sidebar-single-scroller). A message moves
+  // scroller (@@@sidebar-single-scroller), virtualised with a scrollMargin for where they start in it. A message moves
   // its line to the top; with every line mounted React re-inserted every line above it, so a message to the k-th
   // conversation restyled k whole lines. Now only the mounted window can move. The phone and the conversation page keep
   // their full lists.
@@ -802,7 +802,7 @@ export function ChatListPanel({
     enabled: inSidebar && sidebarScroller !== null,
   })
   // Where the lines start inside the shared scroller moves with everything above them (sections, the lead row), which
-  // re-render on their own: measure on the scroller's and its content's size changes, as sidebar-virtual-list does.
+  // re-render on their own: measure on the scroller's and its content's size changes.
   useLayoutEffect(() => {
     const lines = windowRef.current
     const content = sidebarScroller?.firstElementChild

@@ -31,7 +31,7 @@ const item = (id: string, projectId: string, presentation: Item['presentation'] 
 });
 
 // The column is an observer: what it reads must be observable for a change to redraw it (as in the app).
-type Live = { on: boolean; currentViewId: string; viewParamsStore: Record<string, unknown>; shownMore: Set<string> };
+type Live = { currentViewId: string; viewParamsStore: Record<string, unknown>; shownMore: Set<string> };
 const state = vi.hoisted(() => ({
   live: null as unknown as Live,
   items: [] as Item[],
@@ -41,7 +41,6 @@ const state = vi.hoisted(() => ({
   prepareProjectTask: vi.fn(),
   toggleIdleExpanded: vi.fn(),
 }));
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: { desktopSidebarV2: state.live.on } }) }));
 vi.mock('@renderer/lib/layout/layout-provider', () => ({ SIDEBAR_DEFAULT_WIDTH_PX: 260 }));
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ translate: (key: string, params?: Record<string, unknown>) => (params ? `${key}:${Object.values(params).join(',')}` : key) }),
@@ -89,7 +88,7 @@ vi.mock('./sidebar-session-branch-view', () => ({
   ),
 }));
 
-state.live = observable({ on: true, currentViewId: 'chat', viewParamsStore: {}, shownMore: new Set<string>() });
+state.live = observable({ currentViewId: 'chat', viewParamsStore: {}, shownMore: new Set<string>() });
 state.toggleIdleExpanded.mockImplementation((key: string) => runInAction(() => {
   if (state.live.shownMore.has(key)) state.live.shownMore.delete(key);
   else state.live.shownMore.add(key);
@@ -119,7 +118,6 @@ function ShellProbe() {
 beforeEach(() => {
   installShellSlots();
   runInAction(() => {
-    state.live.on = true;
     state.live.shownMore.clear();
   });
   state.openChatOnScreen.mockClear();
@@ -311,14 +309,5 @@ describe('inner sidebar', () => {
     openChat('dm');
     await render();
     expect([...counts()]).toEqual([['shop-chat', { total: 3, running: 2 }]]);
-  });
-
-  it('switch off: nothing is drawn and no counts are published', async () => {
-    openChat('group');
-    await render();
-    expect(host.querySelector('[data-region="inner-sidebar"]')).not.toBeNull();
-    await act(async () => runInAction(() => { state.live.on = false; }));
-    expect(host.innerHTML).toBe('');
-    expect(counts().size).toBe(0);
   });
 });

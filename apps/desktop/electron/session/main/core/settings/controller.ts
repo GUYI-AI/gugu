@@ -1,14 +1,11 @@
 import { setBrowserCorsRelaxationSettings } from '@main/core/browser/browser-profile-session';
 import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry';
 import { reconcileResourceSampler } from '@main/core/resource-monitor/resource-sampler';
-import { settleSidebarPinUpgrade } from '@main/core/sessions/sidebar-pin-upgrade';
 import { createRPCController } from '@shared/lib/ipc/rpc';
 import { appSettingsService, type AppSettings, type AppSettingsKey } from './settings-service';
 
 async function reconcileSettingsRuntimeState(key: AppSettingsKey): Promise<void> {
   if (key === 'resourceMonitor') await reconcileResourceSampler();
-  // #2548 the desktop sidebar switch turned on in a running app: the one-time pin upgrade runs now, not at next start.
-  if (key === 'interface') await settleSidebarPinUpgrade();
   if (key === 'keyboard') {
     // Re-read the effective settings so runtime state observes service-side defaults or merges.
     browserWebContentsRegistry.setKeyboardSettings(await appSettingsService.get('keyboard'));

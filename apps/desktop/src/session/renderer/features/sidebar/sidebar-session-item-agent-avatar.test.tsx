@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-// #2548 inner column agent rows: with the switch on and `agentAvatar`, the session row's leading slot draws the agent's own
-// face (the chat list's Avatar, at the slot's 14px) instead of the harness logo; the trailing status mark stays. Without an
-// agent identity, with the switch off, or without the prop, the harness logo stays.
+// #2548 inner column agent rows: with `agentAvatar`, the session row's leading slot draws the agent's own face (the chat
+// list's Avatar, at the slot's 14px) instead of the harness logo; the trailing status mark stays. Without an agent
+// identity, or without the prop, the harness logo stays.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -10,11 +10,9 @@ import { presentAgentStatus, type AgentStatusPresentation } from '@gugu/core/sha
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const state = vi.hoisted(() => ({
-  switchOn: true,
   agentUserId: 'agent-1' as string | null,
   presentation: null as AgentStatusPresentation | null,
 }));
-vi.mock('./use-desktop-sidebar-v2', () => ({ useDesktopSidebarV2Switch: () => state.switchOn }));
 vi.mock('@renderer/features/sessions/stores/session-agent-bindings', () => ({
   sessionAgentBindings: { bindingFor: () => (state.agentUserId ? { agentUserId: state.agentUserId } : undefined) },
 }));
@@ -96,7 +94,7 @@ const { SidebarSessionItem } = await import('./sidebar-session-item');
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
-  Object.assign(state, { switchOn: true, agentUserId: 'agent-1', presentation: null });
+  Object.assign(state, { agentUserId: 'agent-1', presentation: null });
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -112,7 +110,7 @@ const leading = () => host.querySelector('[data-session-id="conv-1"] [aria-label
 const avatar = () => host.querySelector<HTMLElement>('[data-row-agent-avatar]');
 const harnessIcon = () => host.querySelector('[data-harness-icon]');
 
-it('switch on: the leading slot is the agent avatar at 14px, not the harness logo', async () => {
+it('the leading slot is the agent avatar at 14px, not the harness logo', async () => {
   await render(true);
   expect(avatar()?.dataset.rowAgentAvatar).toBe('agent-1');
   expect(leading()).toBe(avatar());
@@ -137,12 +135,7 @@ it('without an agent identity the harness logo stays', async () => {
   expect(harnessIcon()?.getAttribute('data-harness-icon')).toBe('claude');
 });
 
-it('switch off, or a row that does not ask for it (the left list), keeps the harness logo', async () => {
-  state.switchOn = false;
-  await render(true);
-  expect(avatar()).toBeNull();
-  expect(harnessIcon()).not.toBeNull();
-  state.switchOn = true;
+it('a row that does not ask for it keeps the harness logo', async () => {
   await render(false);
   expect(avatar()).toBeNull();
   expect(harnessIcon()).not.toBeNull();

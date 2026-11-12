@@ -11,12 +11,7 @@ import {
 
 // #2548 固定到左侧栏: when the session menu offers it, and which agents the left list puts at the top.
 describe('sidebarPinMenuAction', () => {
-  const topLevel = { switchOn: true, parentSessionId: null, isPinnedToSidebar: false };
-
-  it('offers nothing while the desktop sidebar switch is off, whatever the session', () => {
-    expect(sidebarPinMenuAction({ ...topLevel, switchOn: false })).toBeNull();
-    expect(sidebarPinMenuAction({ ...topLevel, switchOn: false, isPinnedToSidebar: true })).toBeNull();
-  });
+  const topLevel = { parentSessionId: null, isPinnedToSidebar: false };
 
   it('offers nothing for a child session: it is never a row of the left list', () => {
     expect(sidebarPinMenuAction({ ...topLevel, parentSessionId: 'parent-1' })).toBeNull();

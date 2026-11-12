@@ -10,16 +10,15 @@ import { SampleProjectSidebar } from './sample-project-row';
 import { SidebarChatsSection } from './sidebar-chats-section';
 
 /**
- * GUYI-AI/gugu#2548 the left sidebar as one list (internal switch `interface.desktopSidebarV2`): the chat list drawn
- * into its slot holds my standalone agents, groups, project groups and people (lib/sidebarOneList). A local project
- * whose project group chat does not exist yet, and the sample project, have no conversation: they are drawn as the
- * conversation rows they stand for (OneListProjectRow), after every conversation row (oneListTail), so nothing
- * disappears while the old sections are hidden. The task page's keyboard chain holds those project rows and nothing
- * hidden (sidebarStore.oneListProjects); the conversation rows are walked by the chat list itself.
+ * GUYI-AI/gugu#2548 the left sidebar as one list: the chat list drawn into its slot holds my standalone agents, groups,
+ * project groups and people (lib/sidebarOneList). A local project whose project group chat does not exist yet, and the
+ * sample project, have no conversation: they are drawn as the conversation rows they stand for (OneListProjectRow), after
+ * every conversation row (oneListTail), so none of them goes missing. The task page's keyboard chain holds those project
+ * rows (sidebarStore.oneListProjects); the conversation rows are walked by the chat list itself.
  */
 /**
- * The 「对话」 header's number: the unread counts the old two tabs carried (「对话」 and 「项目」, SidebarListSwitch), added up,
- * because the one list holds both. Same counting rules, same red count (SidebarUnreadCount); the notification model is
+ * The 「对话」 header's number: the unread counts of the conversations (chatsUnread) and of the project groups
+ * (groupUnread) added up, because the one list holds both. Same counting rules, same red count (SidebarUnreadCount); the notification model is
  * today's (owner, #2548 A8).
  */
 export function oneListUnread(signals: SidebarChatSignals | null): number {
@@ -47,15 +46,15 @@ export const SidebarOneList = observer(function SidebarOneList() {
   const tail = oneListTail(groupless, sample.shown && sample.owner !== null);
   return (
     <>
-      <SidebarChatsSection merged={false} unread={oneListUnread(signals)} oneList />
+      <SidebarChatsSection unread={oneListUnread(signals)} />
       {tail.length > 0 && (
         // The chat list ends in its 8px bottom padding; these rows continue it (-mt-2), then end the same way.
         <div className="-mt-2 pb-2" data-sidebar-one-list-tail="">
           {tail.map((row) =>
             row.kind === 'sample' ? (
-              <SampleProjectSidebar key="sample" rowOnly />
+              <SampleProjectSidebar key="sample" />
             ) : (
-              <SidebarProjectItem key={row.projectId} projectId={row.projectId} oneList />
+              <SidebarProjectItem key={row.projectId} projectId={row.projectId} />
             )
           )}
         </div>

@@ -8,8 +8,8 @@
  *   by any route (its button, the shortcut, 消息 clicked again, a drag, zen mode): they know. Retired is stored in the
  *   app settings (`interface.sidebarCollapseHintRetired`); coming up is not, so a start that never answered it brings it
  *   up again at the next group or project.
- * - It is the switch's (`interface.desktopSidebarV2`): the foot is only drawn with it on. Never on the phone: the task
- *   renderer is desktop-only (docs/design/ui-visual-spec.md §2, check-ui-visual-spec).
+ * - Never on the phone: the foot is the task page's sidebar, and the task renderer is desktop-only
+ *   (docs/design/ui-visual-spec.md §2, check-ui-visual-spec).
  */
 export type SidebarCollapseHint = 'waiting' | 'showing' | 'retired';
 

@@ -7,28 +7,22 @@ import { chatScope, mySidebarAgents } from './inner-sidebar';
 import type { InnerSidebarAnchor } from './inner-sidebar-anchor';
 import { sidebarSessionFacts } from './sidebar-pin-actions';
 import { pinnedSidebarAgents, sidebarAgentHome, type SidebarHomeCandidate } from './sidebar-pin';
-import { useDesktopSidebarV2Switch } from './use-desktop-sidebar-v2';
 
 /**
  * #2548 固定到左侧栏: my pinned agents that live in a group or a project, for the top of the one list (the shell draws
  * their DM rows, sidebarChatsBridge). Where each lives = the group / project whose inner column lists it (chatScope,
- * the column's own reading), named as the list names that chat. Switch off = an empty list. Draws nothing.
+ * the column's own reading), named as the list names that chat. Draws nothing.
  */
 export const PinnedSidebarAgentsPublisher = observer(function PinnedSidebarAgentsPublisher() {
-  const enabled = useDesktopSidebarV2Switch();
   const summaries = useChatSummaries();
   const homes: (SidebarHomeCandidate & { chatId: string })[] = [];
-  if (enabled) {
-    for (const [chatId, summary] of summaries) {
-      if (summary.kind !== 'group' || !summary.name) continue;
-      // Same reading as the inner column's anchor: a chat bound to a project row is that project.
-      const anchor: InnerSidebarAnchor = { kind: projectGroupsStore.rowProjectOfChat(chatId) !== undefined ? 'project' : 'group', chatId };
-      homes.push({ kind: anchor.kind, name: summary.name, chatId, scope: chatScope(anchor, summaries) });
-    }
+  for (const [chatId, summary] of summaries) {
+    if (summary.kind !== 'group' || !summary.name) continue;
+    // Same reading as the inner column's anchor: a chat bound to a project row is that project.
+    const anchor: InnerSidebarAnchor = { kind: projectGroupsStore.rowProjectOfChat(chatId) !== undefined ? 'project' : 'group', chatId };
+    homes.push({ kind: anchor.kind, name: summary.name, chatId, scope: chatScope(anchor, summaries) });
   }
-  const sessions = enabled
-    ? mySidebarAgents().map((entry) => ({ ...entry, sessionId: entry.id, ...sidebarSessionFacts(entry.projectId, entry.id) }))
-    : [];
+  const sessions = mySidebarAgents().map((entry) => ({ ...entry, sessionId: entry.id, ...sidebarSessionFacts(entry.projectId, entry.id) }));
   // A session with no 咕咕 identity yet has no DM to draw: it is not on the list.
   const rows: SidebarPinnedAgent[] = pinnedSidebarAgents(sessions, (session) => sidebarAgentHome(session, homes)).flatMap(
     ({ session, home }) =>

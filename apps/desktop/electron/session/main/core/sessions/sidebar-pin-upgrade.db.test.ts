@@ -17,11 +17,11 @@ vi.mock('@main/db/client', () => ({
 vi.mock('@main/lib/events', () => ({ events: { emit: mocks.emit } }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
-const { settleSidebarPinUpgrade } = await import('./sidebar-pin-upgrade');
-const { appSettingsService } = await import('@main/core/settings/settings-service');
+const { upgradeProjectPinsToSidebarOnce } = await import('./sidebar-pin-upgrade');
+const upgrade = () => upgradeProjectPinsToSidebarOnce().length;
 
-// #2548「Upgrade」: the first run with the desktop sidebar switch on pins the project-pinned sessions to the sidebar,
-// once; standalone pinned sessions, children and unpinned ones are left alone; afterwards only the person's choices count.
+// #2548「Upgrade」: the first start with the one-list sidebar pins the project-pinned sessions to the sidebar, once;
+// standalone pinned sessions, children and unpinned ones are left alone; afterwards only the person's choices count.
 describe('sidebar pin upgrade', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>;
 
@@ -29,7 +29,6 @@ describe('sidebar pin upgrade', () => {
     fixture = await openFixture('empty');
     mocks.db = fixture.db;
     mocks.emit.mockReset();
-    await appSettingsService.reset('interface');
     fixture.sqlite.exec(`
       INSERT INTO projects (id, name, path, kind) VALUES ('project-1', 'Project', '/repo', 'project');
       INSERT INTO projects (id, name, path, kind) VALUES ('tasks', 'Tasks', '/task-home', 'workspace');
@@ -43,16 +42,11 @@ describe('sidebar pin upgrade', () => {
     `);
   });
 
-  afterEach(async () => {
-    await appSettingsService.reset('interface');
+  afterEach(() => {
     fixture.close();
     mocks.db = undefined;
   });
 
-  const switchOn = async (on: boolean) => {
-    const current = await appSettingsService.get('interface');
-    await appSettingsService.update('interface', { ...current, desktopSidebarV2: on });
-  };
   const pinnedToSidebar = () =>
     (fixture.sqlite.prepare('SELECT id FROM sessions WHERE is_pinned_to_sidebar = 1 ORDER BY id').all() as { id: string }[])
       .map((row) => row.id);
@@ -61,18 +55,9 @@ describe('sidebar pin upgrade', () => {
       .map((row) => row.id);
   const marker = () => fixture.sqlite.prepare("SELECT value FROM app_settings WHERE key = 'migration.sidebar-pin-upgrade-v1'").get();
 
-  it('does nothing while the switch is off (the default), and leaves no marker', async () => {
-    expect((await appSettingsService.get('interface')).desktopSidebarV2).toBe(false);
-    expect(await settleSidebarPinUpgrade()).toBe(0);
-    expect(pinnedToSidebar()).toEqual([]);
-    expect(marker()).toBeUndefined();
-    expect(mocks.emit).not.toHaveBeenCalled();
-  });
-
-  it('with the switch on, pins exactly the top-level project-pinned sessions to the sidebar; they stay 置顶', async () => {
+  it('pins exactly the top-level project-pinned sessions to the sidebar; they stay 置顶', () => {
     const before = pinned();
-    await switchOn(true);
-    expect(await settleSidebarPinUpgrade()).toBe(2);
+    expect(upgrade()).toBe(2);
     expect(pinnedToSidebar()).toEqual(['project-pinned', 'project-pinned-archived']);
     expect(pinned()).toEqual(before);
     expect(marker()).toBeDefined();
@@ -84,28 +69,16 @@ describe('sidebar pin upgrade', () => {
     expect(mocks.emit).toHaveBeenCalledTimes(2);
   });
 
-  it('runs once: the person unpinning one afterwards is never undone, and new project pins are not converted', async () => {
-    await switchOn(true);
-    await settleSidebarPinUpgrade();
+  it('runs once: the person unpinning one afterwards is never undone, and new project pins are not converted', () => {
+    upgrade();
     mocks.emit.mockReset();
     fixture.sqlite.exec(`
       UPDATE sessions SET is_pinned_to_sidebar = 0 WHERE id = 'project-pinned';
       UPDATE sessions SET is_pinned = 1 WHERE id = 'project-unpinned';
     `);
 
-    expect(await settleSidebarPinUpgrade()).toBe(0);
-    await switchOn(false);
-    await switchOn(true);
-    expect(await settleSidebarPinUpgrade()).toBe(0);
+    expect(upgrade()).toBe(0);
     expect(pinnedToSidebar()).toEqual(['project-pinned-archived']);
     expect(mocks.emit).not.toHaveBeenCalled();
-  });
-
-  it('turning the switch on later converts the pins of that moment', async () => {
-    expect(await settleSidebarPinUpgrade()).toBe(0);
-    fixture.sqlite.exec(`UPDATE sessions SET is_pinned = 1 WHERE id = 'project-unpinned'`);
-    await switchOn(true);
-    expect(await settleSidebarPinUpgrade()).toBe(3);
-    expect(pinnedToSidebar()).toEqual(['project-pinned', 'project-pinned-archived', 'project-unpinned']);
   });
 });

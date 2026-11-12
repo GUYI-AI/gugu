@@ -1,14 +1,12 @@
 // @vitest-environment jsdom
-// #2548 the empty session's hero (mock v33 创建智能体): with the desktop sidebar as one list it asks 「想让新智能体做点什么？」
-// with a muted line 「写一句需求就行，名字和头像会自动生成」 under it, keeping the suggestion chips. Switch off: today's hero.
+// #2548 the empty session's hero (mock v33 创建智能体): it asks 「想让新智能体做点什么？」 with a muted line
+// 「写一句需求就行，名字和头像会自动生成」 under it, keeping the suggestion chips.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const state = vi.hoisted(() => ({ switchOn: true }));
-vi.mock('@renderer/features/sidebar/use-desktop-sidebar-v2', () => ({ useDesktopSidebarV2Switch: () => state.switchOn }));
 // The real zh-CN table, so the test reads the words a person sees.
 vi.mock('@renderer/localization/use-session-messages', async () => {
   const { zhCNMessages } = await import('@renderer/localization/messages');
@@ -40,7 +38,6 @@ function Hero() {
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
-  state.switchOn = true;
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -53,19 +50,11 @@ afterEach(async () => {
 const welcome = () => host.querySelector<HTMLElement>('[data-slot="aui-thread-welcome"]')!;
 const chips = () => [...host.querySelectorAll('[data-slot="aui-thread-welcome-suggestions"] button')].map((chip) => chip.textContent);
 
-it('switch on: asks 想让新智能体做点什么？ with the muted hint under the title, chips kept', async () => {
+it('asks 想让新智能体做点什么？ with the muted hint under the title, chips kept', async () => {
   await act(async () => root.render(<Hero />));
   expect(welcome().querySelector('h1')?.textContent).toBe('想让新智能体做点什么？');
   const hint = welcome().querySelector('h1 + p');
   expect(hint?.textContent).toBe('写一句需求就行，名字和头像会自动生成');
   expect(hint?.className).toBe('text-sm text-foreground-muted');
-  expect(chips()).toEqual(suggestions.map((suggestion) => suggestion.title));
-});
-
-it('switch off: today’s hero, no hint line, chips kept', async () => {
-  state.switchOn = false;
-  await act(async () => root.render(<Hero />));
-  expect(welcome().querySelector('h1')?.textContent).toBe('今天我们做点什么？');
-  expect(welcome().querySelector('p')).toBeNull();
   expect(chips()).toEqual(suggestions.map((suggestion) => suggestion.title));
 });
