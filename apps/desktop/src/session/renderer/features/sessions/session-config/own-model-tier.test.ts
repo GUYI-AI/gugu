@@ -9,6 +9,7 @@ import { ownModelTierOptions } from './own-model-tier';
 const LIVE = {
   'opencode/big-pickle': { name: 'OpenCode Zen/Big Pickle' },
   'api-key-connection/user-model': { name: '我的 Key/user-model', description: 'd' },
+  'api-key-connection/second-model': { name: '我的 Key/second-model' },
 };
 
 function catalog(extra: Partial<Extract<HarnessCatalogState, { kind: 'ready' }>> = {}): HarnessCatalogState {
@@ -17,6 +18,7 @@ function catalog(extra: Partial<Extract<HarnessCatalogState, { kind: 'ready' }>>
     models: [
       { id: 'opencode/big-pickle', name: 'OpenCode Zen/Big Pickle' },
       { id: 'api-key-connection/user-model', name: 'user-model' },
+      { id: 'api-key-connection/second-model', name: 'second-model' },
     ],
     selected: 'api-key-connection/user-model',
     efforts: [],
@@ -26,10 +28,13 @@ function catalog(extra: Partial<Extract<HarnessCatalogState, { kind: 'ready' }>>
 }
 
 describe('own tier in a live session on an API key connection', () => {
-  it('the connection model (same id as the catalog recorded) shows its model name; everything else as the live session reported', () => {
-    expect(ownModelTierOptions({ route: 'own', live: LIVE, catalog: catalog({ connectionModel: 'api-key-connection/user-model' }) })).toEqual({
+  it('every connection model (same ids as the catalog recorded) shows its model name; everything else as the live session reported', () => {
+    const connectionModels = ['api-key-connection/user-model', 'api-key-connection/second-model'];
+    expect(ownModelTierOptions({ route: 'own', live: LIVE, catalog: catalog({ connectionModels }) })).toEqual({
       'opencode/big-pickle': { name: 'OpenCode Zen/Big Pickle' },
       'api-key-connection/user-model': { name: 'user-model', description: 'd' },
+      // 第二个也只叫模型名(chip 照这个名字):从前只改了起步那一个,另一个读成「我的 Key/second-model」。
+      'api-key-connection/second-model': { name: 'second-model' },
     });
   });
 
@@ -41,6 +46,6 @@ describe('own tier in a live session on an API key connection', () => {
 
   it('the live session does not list that id (another connection was selected since): untouched', () => {
     const live = { 'Pi 1/user-model': { name: 'Pi 1/user-model' } };
-    expect(ownModelTierOptions({ route: 'own', live, catalog: catalog({ connectionModel: 'api-key-connection/user-model' }) })).toBe(live);
+    expect(ownModelTierOptions({ route: 'own', live, catalog: catalog({ connectionModels: ['api-key-connection/user-model'] }) })).toBe(live);
   });
 });

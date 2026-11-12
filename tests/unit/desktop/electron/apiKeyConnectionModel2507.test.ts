@@ -254,17 +254,27 @@ describe('model catalog probe sees the selected model-injection connection (what
     expect(models).not.toMatch(/gugu-platform|Gugu platform quota/)
     expect(JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf8'))).toMatchObject({ defaultProvider: NAME, defaultModel: 'user-model' })
     // 输入框里只叫模型名。
-    expect(credentials?.modelName).toBe('user-model')
+    expect(credentials?.modelNames).toEqual(['user-model'])
   })
 
   it('opencode: the process config document carries the connection provider and model', async () => {
     const credentials = await createProbeConnectionCredentials(connectionFor('opencode'))('opencode', mkdtempSync(join(tmpdir(), 'gugu-2507-probe-')))
     // 它自己的目录就报得出连接的模型(`api-key-connection/<模型>`) ⇒ 不替它说;只把名字改成模型名。
     expect(credentials?.sessionModel).toBeUndefined()
-    expect(credentials?.modelName).toBe('user-model')
+    expect(credentials?.modelNames).toEqual(['user-model'])
     const document = JSON.parse(credentials!.env.OPENCODE_CONFIG_CONTENT!)
     expect(document.provider['api-key-connection']).toMatchObject({ name: NAME, options: { baseURL: ENDPOINT, apiKey: KEY } })
     expect(document.model).toBe('api-key-connection/user-model')
+  })
+
+  it('a key-through-environment agent (qwen): the run context already carries the key, so only the menu models', async () => {
+    const build = createProbeConnectionCredentials(async () => null, async (id) => (id === 'qwen' ? ['q-1', 'q-2'] : null))
+    expect(await build('qwen', mkdtempSync(join(tmpdir(), 'gugu-2507-probe-')))).toEqual({
+      env: {},
+      sessionModel: { id: 'q-1', only: true, others: ['q-2'] },
+      modelNames: ['q-1', 'q-2'],
+    })
+    expect(await build('copilot', mkdtempSync(join(tmpdir(), 'gugu-2507-probe-')))).toBeNull()
   })
 
   it('codebuddy: the settings env block, in the process env', async () => {
@@ -272,6 +282,6 @@ describe('model catalog probe sees the selected model-injection connection (what
     expect(credentials?.env).toMatchObject({ CODEBUDDY_BASE_URL: ENDPOINT, CODEBUDDY_API_KEY: KEY, CODEBUDDY_MODEL: 'user-model' })
     // 它的目录只报自家模型,而任何模型的请求都去连接地址 ⇒ 会话跑的模型由这里说,清单只留它。
     expect(credentials?.sessionModel).toEqual({ id: 'user-model', only: true, others: [] })
-    expect(credentials?.modelName).toBe('user-model')
+    expect(credentials?.modelNames).toEqual(['user-model'])
   })
 })

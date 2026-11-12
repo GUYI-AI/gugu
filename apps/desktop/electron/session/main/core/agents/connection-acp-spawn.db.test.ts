@@ -135,3 +135,38 @@ it('a selected Claude API key reaches the chat adapter through its environment o
   expect(spawn.env?.ANTHROPIC_API_KEY).toBe('claude-secret');
   expect(JSON.stringify(spawn.args)).not.toContain('claude-secret');
 });
+
+// #2507 第 7 轮:key 走环境变量的家,新建任务菜单列出连接勾选的全部模型(`currentConnectionMenuModels`);会话选了哪个,
+// 主进程给这条会话算的 run context(聊天腿与终端腿同一个)里就是哪个 —— 它们的 launch 一次只吃一个模型。
+it.each(['qwen', 'copilot', 'zcode', 'hermes', 'antigravity'])(
+  '%s: the menu lists every model the key names, and the session runs the one it picked',
+  async (providerId) => {
+    const { currentConnectionMenuModels } = await import('./harness-connections');
+    state.fixture!.sqlite.exec(`INSERT OR IGNORE INTO projects (id, name, path) VALUES ('project', 'Project', '/repo');
+      INSERT INTO sessions (id, project_id, provider, runtime, config)
+      VALUES ('picked-second', 'project', '${providerId}', 'acp', '{"version":"1","type":"acp","model":"model-two"}');`);
+    expect(await currentConnectionMenuModels(providerId)).toBeNull();
+    const key = await createHarnessConnection({
+      providerId,
+      kind: 'api-key',
+      apiKey: `${providerId}-secret`,
+      endpoint: 'https://relay.example/v1',
+      models: ['model-one', 'model-two'],
+    });
+    await selectHarnessConnection(providerId, key.id);
+    expect(await currentConnectionMenuModels(providerId)).toEqual(['model-one', 'model-two']);
+
+    const launched = (context: Awaited<ReturnType<typeof resolveLocalAgentRunContext>>) =>
+      JSON.stringify({ env: context.credentialEnv, args: context.extraArgs });
+    for (const role of ['acp', 'tui'] as const) {
+      const picked = launched(await resolveLocalAgentRunContext(providerId, { role, sessionId: 'picked-second' }));
+      expect(picked, role).toContain('model-two');
+      expect(picked, role).not.toContain('model-one');
+      expect(picked, role).toContain(`${providerId}-secret`);
+    }
+    // 没有会话(模型目录探针、登录态):第一个。
+    const probe = launched(await resolveLocalAgentRunContext(providerId, { role: 'acp' }));
+    expect(probe).toContain('model-one');
+    expect(probe).not.toContain('model-two');
+  }
+);

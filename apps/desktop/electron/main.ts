@@ -4347,10 +4347,17 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
     // 占位凭据由宿主算(要用 engine-injection-contract 与 capability-bundle),注进会话页那侧的探针。
     emdashBridge.setProbePlatformEnvResolver(buildProbePlatformCredentials)
     // #2507 选中走模型注入的 API Key 连接(pi / opencode / CodeBuddy)时,目录照那把连接读:输入框列出并默认选中它的模型。
-    emdashBridge.setProbeConnectionModelResolver(createProbeConnectionCredentials(async (providerId) => {
-      const { resolveConnectionModel } = await import('./session/main/core/agents/harness-connections')
-      return resolveConnectionModel(providerId)
-    }))
+    emdashBridge.setProbeConnectionModelResolver(createProbeConnectionCredentials(
+      async (providerId) => {
+        const { resolveConnectionModel } = await import('./session/main/core/agents/harness-connections')
+        return resolveConnectionModel(providerId)
+      },
+      // key 走环境变量的家(Qwen、Copilot、ZCode、Hermes、Antigravity):菜单列出连接勾选的全部模型。
+      async (providerId) => {
+        const { currentConnectionMenuModels } = await import('./session/main/core/agents/harness-connections')
+        return currentConnectionMenuModels(providerId)
+      },
+    ))
     return emdashBridge
   } catch (err) {
     console.error('[sessionpage] FAILED to load session page module — session page backend disabled:', err)

@@ -519,6 +519,23 @@ async function sessionModelAmong(sessionId: string | undefined, models: readonly
 }
 
 /**
+ * 新建任务的模型菜单(#2507,spec「一家使用中的是 API Key 连接时,新任务里这一家的模型菜单列出这把连接勾选的全部模型,
+ * 默认选中第一个」):key 走环境变量、又要点名模型的家(Qwen、Copilot、ZCode、Hermes、Antigravity),使用中的是一把
+ * API Key 连接 ⇒ 它勾选的模型。走模型注入的家另有一条(`resolveConnectionModel`:这家自己的目录照连接读)。别的情况 null。
+ * 只读:不建「原生」那一行。
+ */
+export async function currentConnectionMenuModels(providerId: string): Promise<string[] | null> {
+  const generic = apiKeyConnectionOf(providerId);
+  if (!generic || generic.injectsModel || generic.fields.model !== 'required') return null;
+  const id = await registry.getDefaultAccountId(namespace(providerId));
+  if (!id || id === 'native') return null;
+  const details = (await registry.getAccount(namespace(providerId), id))?.meta?.harnessConnection;
+  if (details?.kind !== 'api-key' || details.removed) return null;
+  const models = storedModels(details);
+  return models.length > 0 ? models : null;
+}
+
+/**
  * 一把要经模型注入进进程的 API Key 连接:解密后的 key 与它的地址、点名的模型、探出来的接口。只在主进程、起会话那一刻有。
  * `name` = 连接的名字(用户的备注,没写就是建连接时生成的那个):这一家自己的界面里,提供方就叫它。
  * `models` 全部写进这一家的模型声明(新建任务的模型菜单里都在、会话里能切),第一个是起步模型。
