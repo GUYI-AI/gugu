@@ -1,8 +1,8 @@
 import { observer } from 'mobx-react-lite';
 import { isScreenView, showBesideOnScreen, showOnScreen } from '@renderer/app/screen-layout-actions';
-import { screenLayout } from '@renderer/app/screen-layout';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
 import { SampleProjectRowMenu } from '@renderer/features/sample-project/sample-project-row-menu';
+import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
 import { sampleProjectContent } from '@renderer/features/sample-project/use-sample-project';
 import { appState } from '@renderer/lib/stores/app-state';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -19,12 +19,6 @@ export const SampleProjectSidebar = observer(function SampleProjectSidebar() {
     <SampleProjectRowMenu userId={sample.owner.id}><OneListSampleRow ownerName={sample.owner.name} /></SampleProjectRowMenu>
   ) : null;
 });
-
-/** The sample's row is lit while its block is the one being looked at. */
-function sampleRowActive(): boolean {
-  const focused = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
-  return focused?.kind === 'sample-project' && isScreenView(appState.navigation.currentViewId);
-}
 
 /** Open the sample's block; ⌘ 点 = 拼到正看着那块右边,和项目行同一个手势。 */
 function openSampleProject(beside: boolean): void {
@@ -48,7 +42,7 @@ const OneListSampleRow = observer(function OneListSampleRow({ ownerName }: { own
       tag={translate('projects.sample.tag')}
       time={time}
       preview={preview}
-      selected={sampleRowActive()}
+      selected={sampleProjectInView()}
       onOpen={openSampleProject}
       aria-label={translate('sidebar.openProject', { project: name })}
       data-tour="sample-project"

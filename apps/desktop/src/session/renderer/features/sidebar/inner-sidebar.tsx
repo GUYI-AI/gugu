@@ -1,11 +1,11 @@
-import { ChevronLeft, ChevronRight, MoreHorizontal, SquarePen, Users } from '@/lib/icons';
+import { ChevronLeft, ChevronRight, SquarePen, Users } from '@/lib/icons';
 import { observable, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Avatar } from '@/components/Avatar';
 import { ChatDetailsMenuItems } from '@/components/chat/ChatDetailsMenuItems';
-import { DropdownMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu';
+import { MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { SearchField } from '@/components/ui/SearchField';
 import { useChatSummaries, type ChatSummary } from '@/lib/chatSummariesBridge';
 import { setComposerVerb } from '@/lib/composerVerbBridge';
@@ -30,12 +30,13 @@ import { ProjectMenuItems } from '@renderer/features/projects/components/project
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
+import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
+import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
 import { SIDEBAR_DEFAULT_WIDTH_PX } from '@renderer/lib/layout/layout-provider';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { Button } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { cn } from '@renderer/utils/utils';
 import {
   chatAgentCounts,
   chatAgentNeedsYou,
@@ -47,6 +48,7 @@ import {
   type ChatAgentScope,
 } from './chat-agents';
 import { followInnerSidebar, innerSidebarHasFilter, type InnerSidebarAnchor, type InnerSidebarView } from './inner-sidebar-anchor';
+import { InnerHeadActionsMenu, InnerHeadRowLayout, innerSectionEmptyClass, innerSectionHeaderClass } from './inner-sidebar-parts';
 import { SidebarGroupToggle } from './sidebar-group-toggle';
 import { SidebarUnreadCount } from './sidebar-unread-count';
 import { SidebarMoreRow } from './sidebar-more-row';
@@ -55,12 +57,10 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarMenu,
-  SidebarMenuButton,
   sidebarCountClass,
-  sidebarGroupHeaderClass,
   sidebarHeaderIconButtonClass,
-  sidebarRowContentInsetX,
 } from './sidebar-primitives';
+import { SampleInnerSidebar } from './sample-inner-sidebar';
 import { SidebarSessionBranchCount } from './sidebar-session-branch-view';
 import { SidebarSessionItem } from './sidebar-session-item';
 import { SidebarSpace } from './sidebar-space';
@@ -149,6 +149,10 @@ export const InnerSidebar = observer(function InnerSidebar() {
   // 壳据此收起对话页头上与这一列重复的按钮(成员、话题、邀请)。
   useEffect(() => publishInnerSidebarChat(next?.chatId ?? null), [next?.chatId]);
   const headActive = (view.kind === 'chat' || view.kind === 'project') && view.chatId === next?.chatId;
+  // 示例项目(#709)那一块正看着:这一列画示例自己(打包在 app 里的内容,❌ 群、❌ 网络)。它不是哪一个对话,所以 ❌ 进 innerSidebarChat;
+  // 账号上的键说它不在了(刚移除),这一列跟那一行同时收。
+  const sample = useSampleProject();
+  const sampleOwnerId = next === null && sample.shown && sampleProjectInView() ? sample.owner?.id : undefined;
 
   return (
     <>
@@ -162,6 +166,10 @@ export const InnerSidebar = observer(function InnerSidebar() {
           headActive={headActive}
           agents={myAgentsInChat(agents, chatScope(next, summaries))}
         />
+      ) : sampleOwnerId ? (
+        <InnerSidebarFrame kind="sample">
+          <SampleInnerSidebar ownerId={sampleOwnerId} />
+        </InnerSidebarFrame>
       ) : null}
     </>
   );
@@ -219,54 +227,61 @@ const InnerSidebarColumn = observer(function InnerSidebarColumn({
   const topics = topicsMatch ? <InnerTopicsSection chatId={anchor.chatId} levelTwo={levelTwo} query={query} view={topicsView} /> : null;
   const agentsSection = agentsMatch ? <InnerAgentsSection anchor={anchor} agents={agents} query={query} /> : null;
   return (
+    <InnerSidebarFrame kind={anchor.kind} chatId={anchor.chatId}>
+      <InnerHeadRow anchor={anchor} summary={summary} active={headActive} running={chatAgentCounts(agents).running} />
+      {hasFilter ? (
+        <SearchField
+          className="mx-3 mb-2 w-auto shrink-0"
+          data-inner-sidebar-filter=""
+          value={typed}
+          onChange={(event) => setTyped(event.target.value)}
+          placeholder={translate('sidebar.innerFilter')}
+          clearLabel={translate('sidebar.clearInnerFilter')}
+          onClear={() => setTyped('')}
+        />
+      ) : null}
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto" data-region="inner-sidebar-scroll">
+        {/* 第二级(全部话题):「话题」上面的分区原样留着,下面的收走 —— 「全部 › / ‹ 返回」因此永远在同一个位置。 */}
+        {anchor.kind === 'project' ? (
+          <>
+            {agentsSection}
+            {topics}
+          </>
+        ) : (
+          <>
+            {topics}
+            {levelTwo ? null : agentsSection}
+          </>
+        )}
+        {query && !topicsMatch && !agentsMatch ? (
+          <div className="px-5 py-2 text-xs text-foreground-muted" data-inner-sidebar-empty="">
+            {translate('sidebar.innerFilterEmpty', { query })}
+          </div>
+        ) : null}
+      </div>
+    </InnerSidebarFrame>
+  );
+});
+
+/** 这一列本身(群 / 项目 / 示例都是它):列表与正文之间、默认侧栏宽的一列;里面是头一行与分区。 */
+function InnerSidebarFrame({ kind, chatId, children }: { kind: InnerSidebarAnchor['kind'] | 'sample'; chatId?: string; children: ReactNode }) {
+  return (
     // isolate:分区头、行里那几层 z 序关在这一列里,❌ 压过左边列表那根拖动分隔条。
     // 底色是正文的底色:这一列是叠在列表上那张卡片的左半(desktop-shell.css「叠一层」,#2548),❌ 侧栏那一档。
     <div
       data-region="inner-sidebar"
-      data-inner-sidebar-chat={anchor.chatId}
-      data-inner-sidebar-kind={anchor.kind}
+      data-inner-sidebar-chat={chatId}
+      data-inner-sidebar-kind={kind}
       className="relative isolate flex h-full shrink-0 flex-col border-r border-border bg-background text-foreground-tertiary-muted"
       style={{ width: SIDEBAR_DEFAULT_WIDTH_PX }}
     >
       <SidebarSpace />
       <SidebarContainer className="min-h-0 w-full flex-1">
-        <SidebarContent className="flex flex-col">
-          <InnerHeadRow anchor={anchor} summary={summary} active={headActive} running={chatAgentCounts(agents).running} />
-          {hasFilter ? (
-            <SearchField
-              className="mx-3 mb-2 w-auto shrink-0"
-              data-inner-sidebar-filter=""
-              value={typed}
-              onChange={(event) => setTyped(event.target.value)}
-              placeholder={translate('sidebar.innerFilter')}
-              clearLabel={translate('sidebar.clearInnerFilter')}
-              onClear={() => setTyped('')}
-            />
-          ) : null}
-          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto" data-region="inner-sidebar-scroll">
-            {/* 第二级(全部话题):「话题」上面的分区原样留着,下面的收走 —— 「全部 › / ‹ 返回」因此永远在同一个位置。 */}
-            {anchor.kind === 'project' ? (
-              <>
-                {agentsSection}
-                {topics}
-              </>
-            ) : (
-              <>
-                {topics}
-                {levelTwo ? null : agentsSection}
-              </>
-            )}
-            {query && !topicsMatch && !agentsMatch ? (
-              <div className="px-5 py-2 text-xs text-foreground-muted" data-inner-sidebar-empty="">
-                {translate('sidebar.innerFilterEmpty', { query })}
-              </div>
-            ) : null}
-          </div>
-        </SidebarContent>
+        <SidebarContent className="flex flex-col">{children}</SidebarContent>
       </SidebarContainer>
     </div>
   );
-});
+}
 
 const noIdentities = () => () => undefined;
 
@@ -313,7 +328,6 @@ const InnerHeadRow = observer(function InnerHeadRow({
   const { translate } = useSessionMessages();
   const { t } = useTranslation('messaging');
   const signals = useSidebarChatSignals();
-  const [menuOpen, setMenuOpen] = useState(false);
   const { chatId } = anchor;
   const name = summary?.name ?? '';
   const rowProjectId = anchor.kind === 'project' ? projectGroupsStore.rowProjectOfChat(chatId) ?? projectGroupsStore.projectOfChat(chatId) : undefined;
@@ -337,72 +351,33 @@ const InnerHeadRow = observer(function InnerHeadRow({
     <GroupHeadAvatar chatId={chatId} summary={summary} />
   );
   return (
-    <SidebarMenu className="shrink-0 pt-2 pb-1">
-      <div className="group/head relative" data-inner-head={chatId}>
-        <SidebarMenuButton isActive={active} aria-label={name} className="w-full pr-16" onClick={() => openChatOnScreen(chatId, false)}>
-          <span className={cn('flex min-w-0 items-center gap-2', sidebarRowContentInsetX)}>
-            <span className="flex size-5 shrink-0 items-center justify-center">{avatar}</span>
-            <span className="truncate font-semibold text-foreground">{name}</span>
-          </span>
-        </SidebarMenuButton>
-        <span className="absolute inset-y-0 right-2 flex items-center">
-          <SidebarUnreadCount count={unread} />
-          <DropdownMenu.Root open={menuOpen} modal={false} onOpenChange={setMenuOpen}>
-            <Tooltip>
-              <DropdownMenu.Trigger
-                render={
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        aria-label={actionsLabel}
-                        data-inner-head-actions=""
-                        className={cn(
-                          sidebarHeaderIconButtonClass,
-                          'opacity-0 transition-opacity group-hover/head:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100'
-                        )}
-                      >
-                        <MoreHorizontal />
-                      </button>
-                    }
-                  />
-                }
-              />
-              <TooltipContent>{actionsLabel}</TooltipContent>
-            </Tooltip>
-            {menuOpen ? (
-              <DropdownMenu.Content side="bottom" align="end" sideOffset={4} className="min-w-44">
-                <ChatDetailsMenuItems isGroupChat onOpenInfo={() => openInfo()} />
-                <MenuItem icon={<Users size={16} />} onClick={() => openInfo('members')}>
-                  {t('header.memberList')}
-                </MenuItem>
-                {rowProjectId ? (
-                  <>
-                    <MenuSeparator />
-                    <ProjectMenuItems projectId={rowProjectId} chatId={chatId} />
-                  </>
-                ) : null}
-              </DropdownMenu.Content>
-            ) : null}
-          </DropdownMenu.Root>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button type="button" aria-label={newAgentLabel} data-inner-head-new-agent="" className={sidebarHeaderIconButtonClass} onClick={newAgent}>
-                  <SquarePen />
-                </button>
-              }
-            />
-            <TooltipContent>{newAgentLabel}</TooltipContent>
-          </Tooltip>
-        </span>
-      </div>
-    </SidebarMenu>
+    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => openChatOnScreen(chatId, false)}>
+      <SidebarUnreadCount count={unread} />
+      <InnerHeadActionsMenu label={actionsLabel}>
+        <ChatDetailsMenuItems isGroupChat onOpenInfo={() => openInfo()} />
+        <MenuItem icon={<Users size={16} />} onClick={() => openInfo('members')}>
+          {t('header.memberList')}
+        </MenuItem>
+        {rowProjectId ? (
+          <>
+            <MenuSeparator />
+            <ProjectMenuItems projectId={rowProjectId} chatId={chatId} />
+          </>
+        ) : null}
+      </InnerHeadActionsMenu>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button type="button" aria-label={newAgentLabel} data-inner-head-new-agent="" className={sidebarHeaderIconButtonClass} onClick={newAgent}>
+              <SquarePen />
+            </button>
+          }
+        />
+        <TooltipContent>{newAgentLabel}</TooltipContent>
+      </Tooltip>
+    </InnerHeadRowLayout>
   );
 });
-
-/** 分区头:贴在滚动区顶上(往下滚时还看得见是哪一段)。 */
-const stickyHeaderClass = cn(sidebarGroupHeaderClass, 'sticky top-0 z-10 bg-background');
 
 function InnerTopicsSection({
   chatId,
@@ -424,7 +399,7 @@ function InnerTopicsSection({
   const canDrill = !query && (levelTwo || (view?.hidden ?? 0) > 0);
   return (
     <SidebarGroup className="mb-2 flex shrink-0 flex-col" data-inner-sidebar-section="topics">
-      <div className={stickyHeaderClass}>
+      <div className={innerSectionHeaderClass}>
         <span className="flex items-center gap-1">
           <SidebarGroupToggle
             label={translate('sidebar.topics')}
@@ -474,7 +449,7 @@ function InnerTopicsSection({
         </SidebarMenu>
       )}
       {!collapsed && view?.total === 0 ? (
-        <div className="px-5 pb-2 text-xs text-foreground-muted">{translate('sidebar.noTopics')}</div>
+        <div className={innerSectionEmptyClass}>{translate('sidebar.noTopics')}</div>
       ) : null}
     </SidebarGroup>
   );
@@ -507,7 +482,7 @@ const InnerAgentsSection = observer(function InnerAgentsSection({
   ].join(', ');
   return (
     <SidebarGroup className="mb-2 flex shrink-0 flex-col" data-inner-sidebar-section="agents">
-      <div className={stickyHeaderClass}>
+      <div className={innerSectionHeaderClass}>
         <span className="flex items-center gap-1">
           <SidebarGroupToggle
             label={translate(anchor.kind === 'group' ? 'sidebar.myAgents' : 'sidebar.agents')}
@@ -522,7 +497,7 @@ const InnerAgentsSection = observer(function InnerAgentsSection({
         </span>
       </div>
       {collapsed ? null : counts.total === 0 ? (
-        <div className="px-5 pb-2 text-xs text-foreground-muted">{translate('sidebar.noAgents')}</div>
+        <div className={innerSectionEmptyClass}>{translate('sidebar.noAgents')}</div>
       ) : (
         <SidebarMenu className="pb-1">
           {groups.map(({ group, rows, overflow, total }) => (

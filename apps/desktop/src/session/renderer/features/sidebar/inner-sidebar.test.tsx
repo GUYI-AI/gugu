@@ -59,6 +59,9 @@ vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: (...arg
 vi.mock('@renderer/features/chats/chat-tabs/chat-layouts', () => ({ openInfoTab: vi.fn() }));
 vi.mock('@renderer/features/projects/project-task-entry', () => ({ prepareProjectTask: (...args: unknown[]) => state.prepareProjectTask(...args) }));
 vi.mock('@renderer/features/projects/components/project-menu', () => ({ ProjectMenuItems: () => null }));
+// The sample project's column has its own file (sample-inner-sidebar.test.tsx); here no account shows the sample.
+vi.mock('@renderer/features/sample-project/use-sample-project', () => ({ useSampleProject: () => ({ shown: false, settled: true, owner: null }) }));
+vi.mock('./sample-inner-sidebar', () => ({ SampleInnerSidebar: () => null }));
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { get navigation() { return state.live; } },
   sidebarStore: {
