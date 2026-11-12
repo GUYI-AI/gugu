@@ -163,13 +163,14 @@ export const NewSessionComposer = observer(function NewSessionComposer({
     hasTurnContent &&
     !initialSession.issueContextEditorOpen;
   // #2569 交过来的那一句(示例里发的第一句)人已经按过发送了:这一框一能发就替他发一次。只一次 —— 没成就和任何首句一样,
-  // 原因写在框下、话留在框里,等他再按。
+  // 原因写在框下、话留在框里,等他再按。还没有项目的框(示例自己那一框)❌ 替他发:交出去之后它可能还挂着一拍,
+  // 这一格已经挪给项目的框了,在这里发只会没项目可建、把「一能发就发」用掉。
   const handoff = draft?.handoff;
   useEffect(() => {
-    if (!draft || !handoff?.sendWhenReady || !canSend) return;
+    if (sendWithoutProject || !draft || !handoff?.sendWhenReady || !canSend) return;
     draft.setHandoff({ ...handoff, sendWhenReady: false });
     handleCreateSession();
-  }, [draft, handoff, canSend, handleCreateSession]);
+  }, [sendWithoutProject, draft, handoff, canSend, handleCreateSession]);
   const submit = sendWithoutProject ? () => { if (canSend) sendWithoutProject(initialSession); } : handleCreateSession;
 
   // 外层 wrapper 不画描边/圆角/底色(见 session-composer-styles.ts 的 sessionComposerFrameClassName):

@@ -3,6 +3,7 @@
 // 示例是屏上唯一一块、被收掉时回首页,❌ 留一屏空白。
 import { act } from 'react'
 import { runInAction } from 'mobx'
+import { observer } from 'mobx-react-lite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness } from '../../../support/testHarness'
 
@@ -10,6 +11,7 @@ const key = vi.hoisted(() => {
   const listeners = new Set<(userId: string) => void>()
   return {
   readSampleProject: vi.fn<(userId: string) => Promise<Record<string, unknown> | null>>(),
+  dismissSampleProject: vi.fn<(userId: string) => Promise<void>>(),
   listeners,
   subscribeSampleProject: (listener: (userId: string) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
@@ -25,15 +27,22 @@ const { screenLayout } = await import('../../../../apps/desktop/src/session/rend
 const { forgetSampleProjectOnScreen } = await import('../../../../apps/desktop/src/session/renderer/app/screen-layout-actions')
 const { appState } = await import('../../../../apps/desktop/src/session/renderer/lib/stores/app-state')
 const { accountProjectsStore } = await import('../../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store')
+const { resetSampleConversion, sampleConversion } = await import('../../../../apps/desktop/src/session/renderer/features/sample-project/sample-conversion')
 
-function Probe() {
+// Every caller is an observer (useSampleProject reads the account project list from mobx), so the probe is one too.
+const Probe = observer(function Probe() {
   const sample = useSampleProject()
   return createNode('output', { 'data-shown': String(sample.shown), 'data-settled': String(sample.settled) })
-}
+})
 const SHOWN = { version: 1 as const, dismissed: false }
 const GONE = { version: 1 as const, dismissed: true }
 let account = 0
-beforeEach(() => { key.readSampleProject.mockReset(); owner.ownerId = `account-${++account}` })
+beforeEach(() => {
+  key.readSampleProject.mockReset()
+  key.dismissSampleProject.mockReset().mockResolvedValue(undefined)
+  resetSampleConversion()
+  owner.ownerId = `account-${++account}`
+})
 
 afterEach(() => {
   vi.useRealTimers()
@@ -137,6 +146,59 @@ describe('the sample giving way to the project it became (#2569)', () => {
       expect(harness.container.querySelector('output')?.dataset).toMatchObject({ shown: 'true', settled: 'true' })
       await act(async () => { finish(SHOWN) })
       expect(key.readSampleProject).toHaveBeenCalledTimes(2)
+    } finally { harness.cleanup() }
+  })
+
+  const listed = (...chatIds: string[]) => act(async () => {
+    runInAction(() => { accountProjectsStore.list = chatIds.map((chatId) => ({ chatId, name: chatId, archived: false, bindings: [] })) as never })
+    await Promise.resolve()
+  })
+
+  // #2589 review 5: the dismissal must not hang on the hand-off alone.
+  it('a key that became a listed project but was never dismissed (failed dismissal, reload) is dismissed here', async () => {
+    key.readSampleProject.mockResolvedValue({ version: 2, dismissed: false, projectId: 'p1', chatId: 'chat-became' })
+    const harness = createReactHarness()
+    try {
+      await harness.render(createNode(Probe))
+      expect(key.dismissSampleProject).not.toHaveBeenCalled()
+      await listed('chat-became')
+      expect(key.dismissSampleProject).toHaveBeenCalledOnce()
+      expect(key.dismissSampleProject).toHaveBeenCalledWith(owner.ownerId)
+    } finally { harness.cleanup() }
+  })
+
+  it('not while this window is still turning it into a project, or stopped half-way with the message in the box', async () => {
+    key.readSampleProject.mockResolvedValue({ version: 2, dismissed: false, projectId: 'p1', chatId: 'chat-became' })
+    runInAction(() => Object.assign(sampleConversion, { owner: owner.ownerId, status: 'idle', failure: { kind: 'row' }, chatId: null }))
+    const harness = createReactHarness()
+    try {
+      await harness.render(createNode(Probe))
+      await listed('chat-became')
+      expect(key.dismissSampleProject).not.toHaveBeenCalled()
+      expect(harness.container.querySelector('output')?.dataset.shown, 'the box with the message stays').toBe('true')
+    } finally { harness.cleanup() }
+  })
+
+  // #2589 review 6
+  it('re-reads the key only when the project list gains a project and the key has not recorded one yet', async () => {
+    key.readSampleProject.mockResolvedValue(SHOWN)
+    const harness = createReactHarness()
+    try {
+      await harness.render(createNode(Probe))
+      expect(key.readSampleProject).toHaveBeenCalledTimes(1)
+      await listed('chat-a')
+      expect(key.readSampleProject, 'gained a project').toHaveBeenCalledTimes(2)
+      await act(async () => {
+        runInAction(() => { accountProjectsStore.list = [{ chatId: 'chat-a', name: 'renamed', archived: false, bindings: [] }] as never })
+        await Promise.resolve()
+      })
+      await listed()
+      expect(key.readSampleProject, 'a rename or a removal is not a reason to read the account').toHaveBeenCalledTimes(2)
+      key.readSampleProject.mockResolvedValue({ version: 2, dismissed: false, projectId: 'p1', chatId: 'chat-became' })
+      await listed('chat-b')
+      expect(key.readSampleProject).toHaveBeenCalledTimes(3)
+      await listed('chat-b', 'chat-c')
+      expect(key.readSampleProject, 'the key already says what it became').toHaveBeenCalledTimes(3)
     } finally { harness.cleanup() }
   })
 })

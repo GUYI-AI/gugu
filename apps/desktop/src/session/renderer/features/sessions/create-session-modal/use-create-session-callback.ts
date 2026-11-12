@@ -223,18 +223,19 @@ export function useCreateSessionCallback({
     const files = named.map(ref => deviceId && taskAttachmentUsesSsh(deviceId)
       ? { ...ref, path: undefined, workspacePath: taskAttachmentWorkspacePath(ref.itemId, ref.name) } : ref);
     // ACP keeps the person's words: Life prepares file context only after placement. PTY retains its text-only leg.
-    const words = baseSession.type === 'acp' ? input.prompt.trim() : [input.prompt.trim(),
+    const text = baseSession.type === 'acp' ? input.prompt.trim() : [input.prompt.trim(),
       ...named.map(ref => turnAttachmentText(ref, deviceId || !ref.path || taskChatId
         ? { failure: 'kept on the computer it was attached from — open the folder file above' }
         : { localPath: ref.path })),
     ].filter(Boolean).join('\n');
     const transport = firstTurnTransport;
-    // #2569 Context handed over with this draft rides beside the words where the first turn has room for host context
-    // (an ACP startup queue); every other first turn is words only, so there it follows the words.
+    // #2569 Context handed over with this draft rides beside the words where the first turn has room for host context (an
+    // ACP startup queue), as mention context does. Every other first turn carries the person's words only: the context is
+    // left out, ❌ appended to what the person sees as their message (#2589). The sample's files are in the project folder.
     const handedContext = draft?.handoff?.hiddenContext;
     const contextBeside = transport === 'startup' && baseSession.type === 'acp';
+    if (handedContext && !contextBeside) log.warn('a handed-over first turn has no channel for its hidden context; sending the words only', { transport });
     const hiddenContext = [input.mentionContext, contextBeside ? handedContext : undefined].filter(Boolean).join('\n\n');
-    const text = handedContext && !contextBeside ? [words, handedContext].filter(Boolean).join('\n\n') : words;
     const initialMessageId = transport === 'startup' && taskChatId && text ? crypto.randomUUID() : undefined;
     const startupSession = transport === 'startup'
       ? (() => {

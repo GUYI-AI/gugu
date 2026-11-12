@@ -35,6 +35,10 @@ const io = vi.hoisted(() => ({
   navigate: vi.fn(),
   forget: vi.fn(),
   logError: vi.fn(),
+  toast: vi.fn(),
+  setComposerVerb: vi.fn(),
+  openChat: vi.fn(),
+  signedIn: 'u' as string | null,
 }));
 
 vi.mock('@renderer/features/sessions/new-session-page', () => ({
@@ -62,9 +66,12 @@ vi.mock('@/lib/sampleProject', () => ({
     io.record(became);
     io.key = { version: 2, dismissed: false, ...became };
   },
-  dismissSampleProject: async () => { io.dismiss(); },
+  dismissSampleProject: async () => { await io.dismiss(); },
 }));
-vi.mock('@/lib/userFacingError', () => ({ messageForUser: (error: unknown) => (error instanceof Error ? error.message : String(error)) }));
+vi.mock('@/lib/assistantShellBridge', () => ({ readAssistantShellBridge: () => ({ getSnapshot: () => ({ ownerId: io.signedIn }) }) }));
+vi.mock('@/lib/composerVerbBridge', () => ({ setComposerVerb: io.setComposerVerb }));
+vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: io.openChat }));
+vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: io.toast }));
 vi.mock('@renderer/app/screen-layout-actions', () => ({ forgetSampleProjectOnScreen: io.forget }));
 vi.mock('@renderer/features/projects/project-task-entry', async () => {
   const { composerDrafts, projectDraftKey } = await import('@renderer/features/sessions/composer-drafts');
@@ -72,8 +79,7 @@ vi.mock('@renderer/features/projects/project-task-entry', async () => {
 });
 vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({
   accountProjectsStore: {
-    projectOfLocal: (projectId: string) => (io.listed.has(projectId) ? { chatId: `chat-of-${projectId}` } : undefined),
-    project: () => undefined,
+    project: (chatId: string) => (io.listed.has(chatId) ? { chatId, name: '周末去杭州' } : undefined),
     refresh: vi.fn(),
   },
 }));
@@ -107,7 +113,7 @@ vi.mock('@renderer/utils/logger', () => ({ log: { error: io.logError, warn: vi.f
 
 const { SampleComposer, SAMPLE_DRAFT_KEY } = await import('./sample-composer');
 const { composerDrafts, projectDraftKey } = await import('@renderer/features/sessions/composer-drafts');
-const { resetSampleConversion, sampleConversion } = await import('./sample-conversion');
+const { resetSampleConversion, sampleConversion, sampleConversionOf } = await import('./sample-conversion');
 const { zhCNSampleProject } = await import('./content/zh-CN');
 
 const CODEX = { id: 'codex', name: 'Codex', capabilities: { sessionpage: { acp: { identity: 'addressable', messageTransport: 'router' } } } };
@@ -136,11 +142,12 @@ beforeEach(() => {
   io.directory = '/Users/p/projects';
   io.taken = new Set();
   io.listed = new Set();
-  for (const mock of [io.record, io.dismiss, io.createProject, io.ensureMounted, io.inspect, io.writeFile, io.ensureGroup, io.navigate, io.forget, io.logError]) mock.mockReset();
+  io.signedIn = 'u';
+  for (const mock of [io.record, io.dismiss, io.createProject, io.ensureMounted, io.inspect, io.writeFile, io.ensureGroup, io.navigate, io.forget, io.logError, io.toast, io.setComposerVerb, io.openChat]) mock.mockReset();
   let created = 0;
   io.createProject.mockImplementation(async () => {
     const projectId = `project-${++created}`;
-    io.listed.add(projectId);
+    io.listed.add(`chat-of-${projectId}`);
     return projectId;
   });
   io.inspect.mockImplementation(async ({ path }: { path: string }) => ({ isDirectory: io.taken.has(path), isGitRepo: false }));
@@ -209,11 +216,65 @@ describe('the sample project\'s composer (#2569)', () => {
     for (const file of zhCNSampleProject.files) expect(moved.handoff?.hiddenContext).toContain(file.name);
     expect(io.navigate).toHaveBeenCalledWith('project', { projectId: 'project-1' });
     expect(io.forget).toHaveBeenCalledOnce();
-    expect(sampleConversion).toMatchObject({ status: 'handed-off', chatId: 'chat-of-project-1' });
-    expect(io.dismiss, 'dismissed only once the task exists').not.toHaveBeenCalled();
-    act(() => moved.completeHandoff());
-    await flush();
+    expect(sampleConversion).toMatchObject({ owner: 'u', status: 'handed-off', chatId: 'chat-of-project-1' });
+    // #2589 review 5: dismissed on the account at the hand-off, ❌ left to the task's in-memory completion.
     expect(io.dismiss).toHaveBeenCalledOnce();
+  });
+
+  it('a dismissal that fails after the hand-off is said in a notice that says what to do, and logged with its reason', async () => {
+    io.dismiss.mockRejectedValueOnce(new Error('settings row locked'));
+    await render();
+    await send();
+    expect(io.navigate).toHaveBeenCalledWith('project', { projectId: 'project-1' });
+    expect(io.toast).toHaveBeenCalledWith({ tier: 'error', title: 'projects.sample.dismissFailed', description: 'projects.sample.dismissFailedHint' });
+    expect(JSON.stringify(io.logError.mock.calls)).toContain('settings row locked');
+  });
+
+  // #2589 review 8
+  it('a regular file where the folder would go counts as taken: the project goes to the next name', async () => {
+    io.inspect.mockImplementation(async ({ path }: { path: string }) => (path === '/Users/p/projects/周末去杭州'
+      ? { isDirectory: false, isGitRepo: false, isFile: true } : { isDirectory: false, isGitRepo: false }));
+    await render();
+    await send();
+    expect(io.createProject).toHaveBeenCalledWith(
+      { type: 'local' },
+      { mode: 'pick', path: '/Users/p/projects/周末去杭州 2', name: '周末去杭州 2', createDirectory: true, allowNonGit: true },
+    );
+  });
+
+  // #2589 review 2
+  it('on another computer than the one that made it: opens that project\'s group with the message in its new-task box; makes nothing', async () => {
+    io.key = { version: 2, dismissed: false, projectId: 'project-on-the-laptop', chatId: 'chat-of-the-laptop-project' };
+    io.listed.add('chat-of-the-laptop-project');
+    await render();
+    await send();
+    expect(io.createProject).not.toHaveBeenCalled();
+    expect(io.ensureGroup).not.toHaveBeenCalled();
+    expect(io.setComposerVerb).toHaveBeenCalledWith('chat-of-the-laptop-project', 'task', typed, { name: '周末去杭州', joinable: true });
+    expect(io.openChat).toHaveBeenCalledWith('chat-of-the-laptop-project', false);
+    expect(io.forget).toHaveBeenCalledOnce();
+    expect(io.dismiss).toHaveBeenCalledOnce();
+    expect(composerDrafts.get(SAMPLE_DRAFT_KEY)).toBe('');
+  });
+
+  // #2589 review 1
+  it('another account signed in here than the one whose sample it is: nothing is made', async () => {
+    io.signedIn = 'someone-else';
+    await render();
+    await send();
+    expect(io.createProject).not.toHaveBeenCalled();
+    expect(io.navigate).not.toHaveBeenCalled();
+    expect(sampleConversionOf('u')).toMatchObject({ status: 'idle', failure: null });
+  });
+
+  it('another account\'s failed conversion is not shown under this account\'s box', async () => {
+    io.directory = '';
+    await render();
+    await send();
+    expect(host.querySelector('[role="alert"]')).not.toBeNull();
+    await act(async () => root.render(<SampleComposer ownerId="v" content={zhCNSampleProject} />));
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(io.composer?.blocked).toBe(false);
   });
 
   it('no default projects directory: says so under the box, keeps the message, creates nothing; sending again after setting one goes on', async () => {
@@ -222,7 +283,7 @@ describe('the sample project\'s composer (#2569)', () => {
     await send();
     const alert = host.querySelector<HTMLElement>('[role="alert"]');
     expect(alert?.dataset.sampleComposerFailure).toBe('no-default-directory');
-    expect(alert?.textContent).toBe('projects.sample.convert.failed{reason=projects.sample.convert.noDirectory}');
+    expect(alert?.textContent).toBe('projects.sample.convert.noDirectory');
     expect(io.createProject).not.toHaveBeenCalled();
     expect(composerDrafts.get(SAMPLE_DRAFT_KEY)).toBe(typed);
     io.directory = '/Users/p/projects';
@@ -231,13 +292,13 @@ describe('the sample project\'s composer (#2569)', () => {
     expect(io.createProject).toHaveBeenCalledOnce();
   });
 
-  it('the group cannot be made: says why, keeps the message; sending again continues with the same project', async () => {
+  // The line under the box says what the person can do next; the internal reason goes to the log only (user-copy-leak-check).
+  it('the group cannot be made: says what to do next, logs why, keeps the message; sending again continues with the same project', async () => {
     io.ensureGroup.mockResolvedValueOnce({ success: false, error: { type: 'cloud-failed', message: 'the cloud did not answer' } });
     await render();
     await send();
-    expect(host.querySelector('[role="alert"]')?.textContent).toBe(
-      'projects.sample.convert.failed{reason=projects.sample.convert.group{detail=the cloud did not answer}}',
-    );
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('projects.sample.convert.group');
+    expect(JSON.stringify(io.logError.mock.calls)).toContain('the cloud did not answer');
     expect(composerDrafts.get(SAMPLE_DRAFT_KEY)).toBe(typed);
     expect(io.navigate).not.toHaveBeenCalled();
     await send();

@@ -1,26 +1,36 @@
 // #2569 the first message sent in the sample turns it into the person's own project: project → its files → its group →
-// the project's new-task box sends the message → the sample is dismissed last. Every step that fails stops there with a
+// open it and hand the message to its new-task box → the sample is dismissed. Every step that fails stops there with a
 // reason and leaves the typed message where it was; sending again picks up from what the account key recorded.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SampleProjectState } from '@/lib/sampleProject';
 import { composerDrafts } from '../sessions/composer-drafts';
 import { zhCNSampleProject } from './content/zh-CN';
-import { convertSampleProject, resetSampleConversion, sampleConversion, type SampleConversionDeps } from './sample-conversion';
+import {
+  convertSampleProject,
+  resetSampleConversion,
+  sampleConversion,
+  sampleConversionOf,
+  type SampleConversionDeps,
+} from './sample-conversion';
 
 const DRAFT = 'sample-project';
 const seed = { name: '周末去杭州', files: zhCNSampleProject.files };
 const fileNames = zhCNSampleProject.files.map((file) => file.name);
 
 /** The account key, the machine's projects and folders, and the order things happened in. */
-function world(start: SampleProjectState | null = { version: 1, dismissed: false }) {
+function world(start: SampleProjectState | null = { version: 1, dismissed: false }, owner = 'user-a') {
   const steps: string[] = [];
   const projects = new Set<string>();
   const taken = new Set<string>();
   const nudges: boolean[] = [];
+  const paths: string[] = [];
+  const dismissFailures: unknown[] = [];
   let key = start;
   let created = 0;
-  let sessionStarts: (() => void) | null = null;
+  let signedIn = true;
   const deps: SampleConversionDeps = {
+    owner,
+    signedIn: () => signedIn,
     readKey: async () => key,
     recordProject: async (projectId) => {
       steps.push('record project');
@@ -34,13 +44,15 @@ function world(start: SampleProjectState | null = { version: 1, dismissed: false
       steps.push('dismiss');
       if (key) key = { ...key, dismissed: true };
     },
+    dismissFailed: (error) => { dismissFailures.push(error); },
     projectExists: (projectId) => projects.has(projectId),
     defaultDirectory: async () => '/Users/p/projects',
     pathTaken: async (path) => taken.has(path),
     createProject: async (path, name) => {
-      const projectId = `project-${++created}`;
+      const projectId = `${owner}:project-${++created}`;
       projects.add(projectId);
       taken.add(path);
+      paths.push(path);
       steps.push(`project ${name}`);
       return projectId;
     },
@@ -50,14 +62,12 @@ function world(start: SampleProjectState | null = { version: 1, dismissed: false
       steps.push('group');
       return `chat-of-${projectId}`;
     },
-    rowShown: async (_projectId, nudge) => {
+    rowShown: async (_chatId, nudge) => {
       nudges.push(nudge);
       return true;
     },
-    handOff: (projectId, onCreated) => {
-      steps.push(`open ${projectId}`);
-      sessionStarts = onCreated;
-    },
+    handOff: (projectId) => { steps.push(`open ${projectId}`); },
+    handOffToGroup: (chatId) => { steps.push(`open group ${chatId}`); },
     logError: () => {},
   };
   return {
@@ -65,15 +75,12 @@ function world(start: SampleProjectState | null = { version: 1, dismissed: false
     steps,
     taken,
     nudges,
+    paths,
     projects,
+    dismissFailures,
+    signOut: () => { signedIn = false; },
     get key() { return key; },
     get created() { return created; },
-    /** The project's new-task box created the task. */
-    taskCreated: async () => {
-      steps.push('session');
-      sessionStarts?.();
-      await Promise.resolve();
-    },
   };
 }
 
@@ -86,23 +93,31 @@ beforeEach(() => {
 afterEach(() => composerDrafts.discard(DRAFT));
 
 describe('turning the sample into the person\'s project (#2569)', () => {
-  it('goes project → files → group → open the project → task → dismiss, the sample dismissed last', async () => {
+  it('goes project → files → group → open the project → dismiss: the sample is dismissed at the hand-off, not after the task', async () => {
     const w = world();
     w.taken.add('/Users/p/projects/周末去杭州');
     await convertSampleProject(w.deps, seed);
     expect(w.steps).toEqual([
       'project 周末去杭州 2',
       'record project',
-      ...fileNames.map((name) => `file ${name} in project-1:folder`),
+      ...fileNames.map((name) => `file ${name} in user-a:project-1:folder`),
       'group',
       'record group',
-      'open project-1',
+      'open user-a:project-1',
+      'dismiss',
     ]);
-    expect(sampleConversion).toMatchObject({ status: 'handed-off', failure: null, chatId: 'chat-of-project-1' });
-    expect(w.key, 'not dismissed before the task exists').toEqual({ version: 2, dismissed: false, projectId: 'project-1', chatId: 'chat-of-project-1' });
-    await w.taskCreated();
-    expect(w.steps.slice(-2)).toEqual(['session', 'dismiss']);
-    expect(w.key).toMatchObject({ dismissed: true, projectId: 'project-1' });
+    expect(sampleConversion).toMatchObject({ owner: 'user-a', status: 'handed-off', failure: null, chatId: 'chat-of-user-a:project-1' });
+    // #2589 review 5: persisted on the account at the hand-off, so a reload or a task that fails to start cannot bring it back.
+    expect(w.key).toEqual({ version: 2, dismissed: true, projectId: 'user-a:project-1', chatId: 'chat-of-user-a:project-1' });
+  });
+
+  it('a dismissal that fails after the hand-off is said out loud; the project stays handed over', async () => {
+    const w = world();
+    w.deps.dismiss = async () => { throw new Error('offline'); };
+    await convertSampleProject(w.deps, seed);
+    expect(sampleConversion).toMatchObject({ status: 'handed-off', failure: null });
+    expect(w.dismissFailures).toHaveLength(1);
+    expect(w.dismissFailures[0]).toBeInstanceOf(Error);
   });
 
   const failures: [string, string, (deps: SampleConversionDeps) => void][] = [
@@ -134,14 +149,17 @@ describe('turning the sample into the person\'s project (#2569)', () => {
     w.deps.ensureGroup = async () => { throw new Error('cloud-failed'); };
     await convertSampleProject(w.deps, seed);
     expect(sampleConversion.failure?.kind).toBe('group');
-    expect(w.key).toEqual({ version: 2, dismissed: false, projectId: 'project-1' });
+    expect(w.key).toEqual({ version: 2, dismissed: false, projectId: 'user-a:project-1' });
 
     w.deps.ensureGroup = ensure;
     w.steps.length = 0;
     await convertSampleProject(w.deps, seed);
     expect(w.created).toBe(1);
     // The group was never made, so the files are written again before it (nothing of the person's to overwrite yet).
-    expect(w.steps).toEqual([...fileNames.map((name) => `file ${name} in project-1:folder`), 'group', 'record group', 'open project-1']);
+    expect(w.steps).toEqual([
+      ...fileNames.map((name) => `file ${name} in user-a:project-1:folder`),
+      'group', 'record group', 'open user-a:project-1', 'dismiss',
+    ]);
     expect(sampleConversion).toMatchObject({ status: 'handed-off', failure: null });
     expect(w.nudges, 'only the retry asks the project list to read again').toEqual([true]);
   });
@@ -157,7 +175,7 @@ describe('turning the sample into the person\'s project (#2569)', () => {
     await convertSampleProject(w.deps, seed);
     expect(w.created).toBe(1);
     expect(w.steps[0]).toBe('record project');
-    expect(w.steps.at(-1)).toBe('open project-1');
+    expect(w.steps.at(-2)).toBe('open user-a:project-1');
   });
 
   it('a retry once the group is recorded does not write the files again', async () => {
@@ -169,25 +187,44 @@ describe('turning the sample into the person\'s project (#2569)', () => {
     w.steps.length = 0;
     await convertSampleProject(w.deps, seed);
     expect(w.created).toBe(1);
-    expect(w.steps).toEqual(['group', 'open project-1']);
+    expect(w.steps).toEqual(['group', 'open user-a:project-1', 'dismiss']);
   });
 
   it('a second press while it runs does nothing: one project', async () => {
     const w = world();
     await Promise.all([convertSampleProject(w.deps, seed), convertSampleProject(w.deps, seed)]);
     expect(w.created).toBe(1);
-    expect(w.steps.filter((step) => step.startsWith('open'))).toEqual(['open project-1']);
+    expect(w.steps.filter((step) => step.startsWith('open'))).toEqual(['open user-a:project-1']);
   });
 
-  it('another window that finds the conversion recorded continues it: no project, no files, same project opened', async () => {
+  it('another window on this computer that finds the conversion recorded continues it: no project, no files, same project opened', async () => {
     const w = world({ version: 2, dismissed: false, projectId: 'project-7', chatId: 'chat-of-project-7' });
     w.projects.add('project-7');
     await convertSampleProject(w.deps, seed);
     expect(w.created).toBe(0);
-    expect(w.steps).toEqual(['group', 'open project-7']);
+    expect(w.steps).toEqual(['group', 'open project-7', 'dismiss']);
   });
 
-  it('a recorded project that is gone from this computer is made again', async () => {
+  // #2589 review 2: the key's project id is another computer's; its group is what every computer can resolve.
+  it('on another computer, a sample already turned into an account project opens that project instead of making a second one', async () => {
+    const w = world({ version: 2, dismissed: false, projectId: 'project-on-the-laptop', chatId: 'chat-of-the-laptop-project' });
+    await convertSampleProject(w.deps, seed);
+    expect(w.created).toBe(0);
+    expect(w.steps).toEqual(['open group chat-of-the-laptop-project', 'dismiss']);
+    expect(w.key).toEqual({ version: 2, dismissed: true, projectId: 'project-on-the-laptop', chatId: 'chat-of-the-laptop-project' });
+    expect(sampleConversion).toMatchObject({ status: 'handed-off', chatId: 'chat-of-the-laptop-project' });
+  });
+
+  it('on another computer, waits for that project to be listed; not listed yet stops with a reason and makes nothing', async () => {
+    const w = world({ version: 2, dismissed: false, projectId: 'project-on-the-laptop', chatId: 'chat-of-the-laptop-project' });
+    w.deps.rowShown = async () => false;
+    await convertSampleProject(w.deps, seed);
+    expect(sampleConversion.failure?.kind).toBe('row');
+    expect(w.created).toBe(0);
+    expect(w.steps).toEqual([]);
+  });
+
+  it('a recorded project with no group yet that is not on this computer never reached the account: it is made here', async () => {
     const w = world({ version: 2, dismissed: false, projectId: 'project-elsewhere' });
     await convertSampleProject(w.deps, seed);
     expect(w.created).toBe(1);
@@ -199,5 +236,57 @@ describe('turning the sample into the person\'s project (#2569)', () => {
     await convertSampleProject(w.deps, seed);
     expect(w.steps).toEqual([]);
     expect(sampleConversion).toMatchObject({ status: 'idle', failure: null });
+  });
+
+  // #2589 review 7
+  it.each([
+    ['/Users/p/projects/', '/Users/p/projects/周末去杭州'],
+    ['C:\\Users\\p\\projects\\', 'C:\\Users\\p\\projects\\周末去杭州'],
+    ['C:\\Users\\p\\projects', 'C:\\Users\\p\\projects\\周末去杭州'],
+  ])('the folder under the default directory %s is %s', async (directory, path) => {
+    const w = world();
+    w.deps.defaultDirectory = async () => directory;
+    await convertSampleProject(w.deps, seed);
+    expect(w.paths).toEqual([path]);
+  });
+});
+
+// #2589 review 1: one renderer, two accounts one after the other.
+describe('the conversion belongs to the account that sent', () => {
+  it('another account signing in here converts its own sample: A\'s finished hand-off does not hold it back', async () => {
+    const a = world(undefined, 'user-a');
+    await convertSampleProject(a.deps, seed);
+    expect(sampleConversionOf('user-a').status).toBe('handed-off');
+    expect(sampleConversionOf('user-b')).toMatchObject({ status: 'idle', failure: null, chatId: null });
+
+    const b = world(undefined, 'user-b');
+    await convertSampleProject(b.deps, seed);
+    expect(b.created).toBe(1);
+    expect(b.steps).toContain('open user-b:project-1');
+  });
+
+  it('a project A made but could not record is never the one B\'s sample continues with', async () => {
+    const a = world(undefined, 'user-a');
+    a.deps.recordProject = async () => { throw new Error('offline'); };
+    await convertSampleProject(a.deps, seed);
+    expect(sampleConversionOf('user-a').failure?.kind).toBe('record');
+
+    const b = world(undefined, 'user-b');
+    for (const id of a.projects) b.projects.add(id);
+    await convertSampleProject(b.deps, seed);
+    expect(b.created).toBe(1);
+    expect(b.steps).not.toContain('open user-a:project-1');
+    expect(b.key).toMatchObject({ projectId: 'user-b:project-1' });
+    expect(sampleConversionOf('user-b').failure).toBeNull();
+  });
+
+  it('signing out mid-way stops the run before it hands anything over; the next press starts clean', async () => {
+    const w = world();
+    const ensure = w.deps.ensureGroup;
+    w.deps.ensureGroup = async (projectId) => { w.signOut(); return ensure(projectId); };
+    await convertSampleProject(w.deps, seed);
+    expect(w.steps.some((step) => step.startsWith('open'))).toBe(false);
+    expect(w.steps).not.toContain('record group');
+    expect(sampleConversionOf('user-a')).toMatchObject({ status: 'idle', failure: null });
   });
 });

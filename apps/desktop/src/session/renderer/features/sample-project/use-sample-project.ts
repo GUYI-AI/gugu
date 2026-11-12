@@ -1,11 +1,11 @@
-import { reaction } from 'mobx';
+import { comparer, reaction } from 'mobx';
 import { useEffect, useSyncExternalStore } from 'react';
 import type { SupportedLocale } from '@/i18n/locale';
-import { readSampleProject, subscribeSampleProject } from '@/lib/sampleProject';
+import { dismissSampleProject, readSampleProject, subscribeSampleProject } from '@/lib/sampleProject';
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { log } from '@renderer/utils/logger';
-import { sampleConversion } from './sample-conversion';
+import { sampleConversionOf } from './sample-conversion';
 import { enUSSampleProject } from './content/en-US';
 import type { SampleProjectContent } from './content/types';
 import { zhCNSampleProject } from './content/zh-CN';
@@ -33,6 +33,7 @@ const listeners = new Set<() => void>();
 function publish(next: Reading | null): void {
   reading = next;
   for (const listener of listeners) listener();
+  settleBecome();
 }
 
 function load(userId: string, attempt = 0): void {
@@ -54,9 +55,40 @@ function load(userId: string, attempt = 0): void {
   );
 }
 
+/**
+ * #2569 示例变成的那个项目已经在项目表里了,键上却还没删(交出去那一下删失败了、交出去之前窗口重载了、别的窗口交出去的):
+ * 这里补删,❌ 只靠交出去那一下。这个窗口正在变、或变到一半停下了(话还在示例的框里,等他再按):不删,让它自己走完。
+ */
+let settling: string | null = null;
+function settleBecome(): void {
+  const current = reading;
+  if (!current?.shown || !current.became || settling === current.userId) return;
+  if (accountProjectsStore.project(current.became) === undefined) return;
+  const run = sampleConversionOf(current.userId);
+  if (run.status === 'working' || run.failure !== null) return;
+  const { userId } = current;
+  settling = userId;
+  dismissSampleProject(userId).then(
+    () => { if (settling === userId) settling = null; },
+    (error: unknown) => {
+      if (settling === userId) settling = null;
+      log.error('[sample-project] dismissing the sample that already became a project failed', { error: String(error) });
+    },
+  );
+}
+
 subscribeSampleProject((userId) => { if (reading?.userId === userId) load(userId); });
-// 别的窗口、别的电脑上把示例变成了项目:那个项目一进项目表(它那一行出现),这里重读键 —— 键上记着它,示例就让给它,❌ 两行都在。
-reaction(() => accountProjectsStore.projects, () => { if (reading?.shown) load(reading.userId); });
+// 别的窗口、别的电脑上把示例变成了项目:那个项目一进项目表(多出一个群),这里重读键 —— 键上记着它,示例就让给它,❌ 两行都在。
+// 只在项目表多出群、键上还没记着它变成了哪个的时候读;❌ 项目表每变一次(改名、换绑定)都去账号上读一次。
+reaction(
+  () => accountProjectsStore.projects.map((project) => project.chatId),
+  (chatIds, before) => {
+    const known = new Set(before);
+    if (reading?.shown && reading.became === null && chatIds.some((chatId) => !known.has(chatId))) load(reading.userId);
+    settleBecome();
+  },
+  { equals: comparer.structural },
+);
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
@@ -70,9 +102,10 @@ export type SampleProjectOwner = { id: string; name: string; avatarUrl: string |
  * 话还在示例的框里)的时候,只认这里自己交出去的那一刻(打开项目、交出这一句),❌ 先按键上记着的让 —— 那一块会先收掉、
  * 再打开项目,中间闪一下别的;停下了的,话就跟着那一块看不见了。
  */
-function givenWay(keyBecame: string | null): boolean {
-  const mine = sampleConversion.status === 'working' || sampleConversion.failure !== null;
-  const became = mine ? sampleConversion.chatId : sampleConversion.chatId ?? keyBecame;
+function givenWay(userId: string, keyBecame: string | null): boolean {
+  const run = sampleConversionOf(userId);
+  const mine = run.status === 'working' || run.failure !== null;
+  const became = mine ? run.chatId : run.chatId ?? keyBecame;
   return became !== null && accountProjectsStore.project(became) !== undefined;
 }
 
@@ -101,7 +134,7 @@ export function useSampleProject(): { shown: boolean; settled: boolean; owner: S
   const current = useSyncExternalStore(subscribe, () => reading);
   const mine = !!userId && current?.userId === userId;
   return {
-    shown: mine && current.shown === true && !givenWay(current.became),
+    shown: mine && current.shown === true && !givenWay(userId, current.became),
     settled: mine && current.shown !== null,
     owner: userId ? { id: userId, name: shell?.ownerName ?? '', avatarUrl: shell?.ownerAvatar ?? null } : null,
   };

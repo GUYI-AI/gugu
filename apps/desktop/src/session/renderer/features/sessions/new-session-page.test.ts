@@ -547,7 +547,6 @@ describe('NewSessionPage', () => {
       hiddenContext: 'the sample context',
       picked: { provider: 'codex' as const, model: null, platformModel: null, effort: null, permissionMode: 'full-access' as const, sessionView: 'general' as const },
       sendWhenReady: true,
-      onCreated: vi.fn(),
     };
     try {
       draft.setPrompt('周六下雨怎么办');
@@ -562,6 +561,26 @@ describe('NewSessionPage', () => {
       draft.setPrompt('周日下雨怎么办');
       expect(draft.handoff?.sendWhenReady, 'the person took it over').toBe(false);
     } finally { composerDrafts.discard(key); }
+  });
+
+  // #2589 review 3: the sample's box can still be mounted for a render after its draft moved to the project; it must not take
+  // the hand-off (it has no project to create the task in) — the project's box sends it.
+  it('a box with no project never auto-sends a handed-over draft: the project box it was handed to does', async () => {
+    const send = vi.fn();
+    const draft = composerDrafts.forKey('sample-test');
+    try {
+      draft.setPrompt('周六下雨怎么办');
+      draft.setHandoff({
+        hiddenContext: 'the sample context',
+        picked: { provider: 'codex', model: null, platformModel: null, effort: null, permissionMode: 'full-access', sessionView: 'general' },
+        sendWhenReady: true,
+      });
+      await act(async () => root.render(localized(React.createElement(NewSessionComposer, { projectId: undefined, draftKey: 'sample-test', sendWithoutProject: send }))));
+      expect(mocks.sessionFieldProps?.canSubmit).toBe(true);
+      expect(mocks.handleCreateSession).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+      expect(draft.handoff?.sendWhenReady, 'left for the project box').toBe(true);
+    } finally { composerDrafts.discard('sample-test'); }
   });
 
   it('with no project yet, sending goes to sendWithoutProject (an agent picked, words written); blocked holds it', async () => {

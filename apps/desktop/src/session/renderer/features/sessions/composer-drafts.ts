@@ -38,7 +38,6 @@ export type ComposerHandoff = {
   };
   /** Send it as soon as this box can. Cleared on the first attempt and when the person edits the words. */
   sendWhenReady: boolean;
-  onCreated: () => void;
 };
 
 /** The unsubmitted input and the existing creation lifecycle follow the draft, not its page. */
@@ -79,11 +78,7 @@ export class ComposerDraft {
   setDeliveryError(error: SessionFailure | null): void { this.deliveryError = error; }
   setHandoff(handoff: ComposerHandoff | null): void { this.handoff = handoff; }
   /** The task this draft became exists: the handed-over turn is done. */
-  completeHandoff(): void {
-    const done = this.handoff;
-    this.handoff = null;
-    done?.onCreated();
-  }
+  completeHandoff(): void { this.handoff = null; }
 
   private clearEmptyRetry(): void {
     if (!this.creating && !this.prompt && !this.pending.length) this.pendingMessage = null;
