@@ -240,7 +240,7 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
       </Hint>
       {/* The bell (NeedsYouHost draws it into this slot) and the search box, as they are. */}
       <div className={cn('flex shrink-0', HIDDEN_ON_RAIL)} inert={railed}>
-        <NotificationSlot part="toggle" />
+        <NotificationSlot part="toggle" tone="strong" />
       </div>
       <div className={cn('flex min-w-0 flex-1', HIDDEN_ON_RAIL)} inert={railed}>
         <SidebarSearchTrigger />

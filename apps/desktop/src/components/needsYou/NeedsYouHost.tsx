@@ -58,7 +58,7 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
     // the chat list's header beside its 32px 「+」; the phone grows md to the touch size (IconButton).
     if (key.startsWith(NOTIFICATION_TOGGLE_SLOT_PREFIX)) return createPortal(
       <span className="relative inline-flex">
-        <IconButton size="md"aria-label={title} title={title} aria-pressed={open} on={open} data-testid="notification-toggle" onClick={() => setSidebarNotificationsOpen(!open)}>
+        <IconButton size="md" tone={element.dataset.tone === 'strong' ? 'strong' : undefined} aria-label={title} title={title} aria-pressed={open} on={open} data-testid="notification-toggle" onClick={() => setSidebarNotificationsOpen(!open)}>
           <Bell />
         </IconButton>
         {notificationCount > 0 && <Chip tone="danger" shape="count" className="pointer-events-none absolute -right-1 -top-1" data-testid="notification-count">{notificationCount > 99 ? '99+' : notificationCount}</Chip>}

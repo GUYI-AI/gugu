@@ -97,6 +97,8 @@ async function see(id: string, ratio = 1) {
 it.each([false, true])('the actual list header toggles global notifications and back (phone=%s)', async mobile => {
   await mount(mobile)
   expect(document.querySelector('[data-testid="notification-count"]')?.textContent).toBe('2')
+  // #2548: on the desktop head the bell is drawn like the collapse and 会话历史 buttons beside it; the phone's stays as it was.
+  expect(toggle()?.dataset.tone).toBe(mobile ? undefined : 'strong')
   expect(list()).toBeNull()
   await open()
   expect(toggle()?.getAttribute('aria-pressed')).toBe('true')
