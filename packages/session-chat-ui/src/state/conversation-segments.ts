@@ -45,11 +45,20 @@ export type ContinuedTurn = TranscriptTurn & { resumedAfterIdle?: ReadonlyMap<st
  * A turn the agent opened by itself because one of its tasks finished (or its context was compacted) carries on the
  * turn before it (#2587). Turns opened by people — the owner, an A2A or group delivery, a schedule — still split
  * (owner:「A2A 消息或者用户消息造成的分割，还是会分割消息气泡」).
+ *
+ * A task that finishes while the turn before is still going is recorded in that turn; the turn the agent opens
+ * afterwards to answer it starts with its own work, not with the completion (mac1 real window 2026-11-13: a 3 s
+ * command finished inside a 12 s turn and its wake opened a second segment). That turn carries on too.
  */
-export function continuesPreviousTurn(turn: TranscriptTurn): boolean {
+export function continuesPreviousTurn(turn: TranscriptTurn, previous: TranscriptTurn | undefined): boolean {
   if (turn.initiator !== 'agent' || (turn.trigger !== undefined && turn.trigger.kind !== 'agent')) return false;
   const first = (turn.items as readonly ChatItem[])[0];
-  return first !== undefined && continuesConversationSegment(first);
+  if (first === undefined) return false;
+  if (continuesConversationSegment(first)) return true;
+  // An owner notification is a turn of its own the agent's send writes (trigger `agent` too), not a wake.
+  return turn.trigger?.kind === 'agent' && !(first.kind === 'message' && first.ownerNotification)
+    && previous !== undefined && leaves(previous.items as readonly ChatItem[]).some(item =>
+      item.kind === 'subagent-done-tool-call' || item.kind === 'background-command-done-tool-call');
 }
 
 /** Only a cleanly finished turn is continued: a stopped or failed one keeps its own ending. */
@@ -82,9 +91,9 @@ export function joinContinuedTurn(previous: ContinuedTurn, turn: TranscriptTurn)
  */
 export function withContinuedActiveTurn<T extends { committed: readonly TranscriptTurn[]; active: TranscriptTurn | null }>(projected: T): T {
   const { committed, active } = projected;
-  if (!active || committed.length === 0 || !canBeContinued(committed[committed.length - 1]!) || !continuesPreviousTurn(active)) return projected;
+  if (!active || committed.length === 0 || !canBeContinued(committed[committed.length - 1]!) || !continuesPreviousTurn(active, committed[committed.length - 1])) return projected;
   let start = committed.length - 1;
-  while (start > 0 && continuesPreviousTurn(committed[start]!) && canBeContinued(committed[start - 1]!)) start--;
+  while (start > 0 && continuesPreviousTurn(committed[start]!, committed[start - 1]) && canBeContinued(committed[start - 1]!)) start--;
   const run = joinContinuedTurns(committed.slice(start));
   if (run.length !== 1) return projected;
   return { ...projected, committed: committed.slice(0, start), active: joinContinuedTurn(run[0]!, active) };
@@ -95,7 +104,7 @@ export function joinContinuedTurns(turns: readonly TranscriptTurn[]): ContinuedT
   const out: ContinuedTurn[] = [];
   for (const turn of turns) {
     const previous = out.at(-1);
-    if (previous !== undefined && canBeContinued(previous) && continuesPreviousTurn(turn)) out[out.length - 1] = joinContinuedTurn(previous, turn);
+    if (previous !== undefined && canBeContinued(previous) && continuesPreviousTurn(turn, previous)) out[out.length - 1] = joinContinuedTurn(previous, turn);
     else out.push(turn);
   }
   return out;

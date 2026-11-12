@@ -335,6 +335,25 @@ describe('subagent / background command completions and compaction continue the 
     expect(bodies(rows)).toEqual(['answer', 'later']);
   });
 
+  // A task that finished while the answered turn was still going is recorded in that turn; the turn the agent opens
+  // to answer it starts with its own work (mac1 real window 2026-11-13: a 3 s command inside a 12 s turn).
+  it('joins a wake whose completion landed in the turn before; an owner notification or nothing finished still splits', () => {
+    const midRun: TranscriptTurn = { ...answered, items: [message('u', 'user', 1000), call('c1'), notice('n0', 2000),
+      message('answer', 'assistant', 3000)] as TranscriptTurn['items'] };
+    const wake = woken({ items: [call('c2'), message('later', 'assistant', 64000)] as TranscriptTurn['items'] });
+    const rows = flattenTier([midRun, wake], context(false), segmenters);
+    expect(heads(rows).map(row => row.itemId)).toEqual(['p:process:head']);
+    expect(bodies(rows)).toEqual(['later']);
+    const live = { ...wake, endedAt: undefined, outcome: undefined };
+    expect(withContinuedActiveTurn({ committed: [midRun], active: live }).active?.id).toBe('p');
+
+    expect(joinContinuedTurns([answered, wake])).toHaveLength(2);
+    const notification = woken({ items: [{ kind: 'message', id: 'note', seq: 0, role: 'assistant', text: 'Done.', at: 64000,
+      ownerNotification: { requestId: 'r', requestHash: 'h' } }] as TranscriptTurn['items'] });
+    expect(joinContinuedTurns([midRun, notification])).toHaveLength(2);
+    expect(joinContinuedTurns([midRun, woken({ ...wake, trigger: { kind: 'delivery', chatIds: ['206258'] } })])).toHaveLength(2);
+  });
+
   it('still splits on a user message inside the turn', () => {
     const record = turn([message('u', 'user', 1000), call('one'), message('first', 'assistant', 2000), notice('n', 3000),
       message('steer', 'user', 4000), call('two'), message('second', 'assistant', 6000)]);
