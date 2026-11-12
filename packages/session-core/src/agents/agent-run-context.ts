@@ -69,6 +69,7 @@ export const agentRunContextSchema = z.object({
    * 选中连接自己要的启动参数(#2507:Codex API Key 连接的 `-c model_provider=…`)。终端腿已经把它们并在
    * `extraArgs` 尾部;聊天(ACP)腿 ❌ 吃 `extraArgs`(那是用户写给 CLI 的参数,不一定是适配器认的),
    * 只认这一格,由各家 `buildSpawn` 决定放在哪、与平台模型谁先(平台模型的 provider 恒赢)。
+   * 终端腿上同一条规则见 {@link runContextLaunchArgs}。
    */
   connectionArgs: z.array(z.string()).optional(),
   /** 跑这一家需要的运行时(`GUGU_NODE_BIN`);缺省表示用系统的。 */
@@ -126,6 +127,26 @@ function envKey(env: Record<string, string>): string {
     .sort()
     .map((key) => `${key}=${env[key]}`)
     .join(KEY_ITEM_SEP);
+}
+
+/**
+ * 运行上下文交给一条终端腿 argv 的那一段(#2507):用户在 Agents 设置里填的额外参数原位照带;所选连接自己的那几个
+ * (`connectionArgs`)只在这条会话**不跑咕咕平台额度**时跟上 —— 与聊天(ACP)腿同一条规则(codex 插件的 `buildSpawn`)。
+ *
+ * 平台额度的会话,provider 由平台那组声明说了算。两组 `-c model_provider` 同在一条 argv 上,codex 按 argv 顺序
+ * 后者盖前者(openai/codex `codex-rs/config/src/overrides.rs` `build_cli_overrides_layer`),连接那组又排在后面 ——
+ * 平台模型名就带着平台令牌(环境里平台那格叠在连接那格之上)发去了连接的地址。
+ */
+export function runContextLaunchArgs(ctx: AgentRunContext, session: { platformQuota: boolean }): string[] {
+  const connection = ctx.connectionArgs ?? [];
+  if (!session.platformQuota || connection.length === 0) return [...ctx.extraArgs];
+  const userArgs = ctx.extraArgs.slice(0, ctx.extraArgs.length - connection.length);
+  const tail = ctx.extraArgs.slice(userArgs.length);
+  // 宿主拼的是「用户填的 + 连接的」(`resolveLocalAgentRunContext`)。拼法变了就响亮报错,❌ 剪掉别人的参数。
+  if (tail.length !== connection.length || tail.some((arg, index) => arg !== connection[index])) {
+    throw new Error('AgentRunContext.extraArgs no longer ends with connectionArgs; cannot drop the connection provider for a platform session');
+  }
+  return userArgs;
 }
 
 /**
