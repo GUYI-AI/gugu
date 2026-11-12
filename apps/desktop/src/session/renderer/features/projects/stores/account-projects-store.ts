@@ -86,8 +86,13 @@ export class AccountProjectsStore {
           return key.projects || key.removed;
         })) void this.refresh();
       }),
+      // 带 entity_id = 群这一行改了(chats_meta_broadcast:status / name / group_prompt / default_agent_type,载荷分不出是哪列);
+      // 只有 chat_id = 这个账号给群起的私人备注(contact_overrides),list_my_projects 用群自己的名字,与它无关。
       subscribeRevision('chat_meta_changed', (operations) => {
-        if (operations.some((operation) => this.project(readRevisionResourceKey(operation.payload, 'chat_meta_changed').chatId))) void this.refresh();
+        if (operations.some((operation) => {
+          const key = readRevisionResourceKey(operation.payload, 'chat_meta_changed');
+          return key.entityId !== null && this.project(key.chatId);
+        })) void this.refresh();
       }),
       events.on(deviceProjectsPublishedChannel, () => void this.refresh()),
       platform.subscribeLocalDeviceIdentified?.(() => void this.refresh()) ?? (() => {}),

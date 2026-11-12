@@ -217,6 +217,12 @@ describe('accountProjectsStore reading', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(read.list).toHaveBeenCalledTimes(1);
 
+    // This account's private alias for the group (contact_overrides): chat_meta_changed keyed by chat_id alone. The
+    // account list names a project by its group's own name, so the alias changes nothing there.
+    revisions.get('chat_meta_changed')!([{ payload: { chat_id: 'chat-paper' } }]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(read.list).toHaveBeenCalledTimes(1);
+
     const dissolved = { ...paper, archived: true };
     read.list.mockResolvedValueOnce([dissolved, empty]);
     revisions.get('chat_meta_changed')!([{ payload: { chat_id: 'chat-paper', entity_id: 'chat-paper' } }]);
