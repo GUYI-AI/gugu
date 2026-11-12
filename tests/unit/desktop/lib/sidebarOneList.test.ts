@@ -5,6 +5,7 @@ import {
   agentsInRooms,
   agentTaskHomes,
   accountProjectReading,
+  oneListAgentRows,
   oneListShows,
   oneListTail,
   projectsWithoutGroupRow,
@@ -151,6 +152,40 @@ describe('what the one list shows', () => {
   it('never shows my agent that only has forks: a fork stays under its parent, even when its DM has messages', () => {
     expect(show({ kind: 'dm', peer_user_id: 'a-fork' }, true)).toBe(false)
     expect(show({ kind: 'ai', peer_user_id: 'a-fork' }, false)).toBe(false)
+  })
+
+  it('#2574 a standalone agent with sub-agents keeps one row; its sub-agents (and theirs) have none, they are in its inner column', () => {
+    const tasks = agentTaskHomes([{
+      deviceId: 'mac',
+      projects: [project('tasks', 'workspace')],
+      sessions: [session('solo', 'tasks', 'a-boss'), session('sub', 'tasks', 'a-sub', 'solo'), session('grandchild', 'tasks', 'a-grandchild', 'sub')],
+    }], accountProjectReading([], false))
+    const family = { ...tasks, inRooms: new Set<string>(), pinned: new Set<string>() }
+    const mineToo = (id: string) => ['a-boss', 'a-sub', 'a-grandchild'].includes(id)
+    expect(oneListShows(chat({ kind: 'dm', peer_user_id: 'a-boss' }), false, family, mineToo)).toBe(true)
+    expect(oneListShows(chat({ kind: 'dm', peer_user_id: 'a-sub' }), true, family, mineToo)).toBe(false)
+    expect(oneListShows(chat({ kind: 'ai', peer_user_id: 'a-grandchild' }), true, family, mineToo)).toBe(false)
+  })
+})
+
+describe('#2574 the agent rows the list draws are what the task page opens an agent column on', () => {
+  const identities = { 'a-solo': { display_name: 'Solo', avatar: 'https://example.test/solo.png', created_at: '2026-11-01T00:00:00Z' } }
+  const drawn = [
+    chat({ id: 'dm-solo', kind: 'dm', peer_user_id: 'a-solo' }),
+    chat({ id: 'dm-pinned', kind: 'ai', peer_user_id: 'a-room' }),
+    chat({ id: 'dm-person', kind: 'dm', peer_user_id: 'human' }),
+    chat({ id: 'room', kind: 'group' }),
+  ]
+
+  it('names my agents drawn as rows of their own, with the name and face that row shows; a pinned agent\'s row, people and groups are none', () => {
+    const rows = oneListAgentRows(drawn, new Map([['dm-pinned', {}]]), owns, identities)
+    expect([...rows]).toEqual([['a-solo', { chatId: 'dm-solo', name: 'Solo', avatar: 'https://example.test/solo.png', createdAt: '2026-11-01T00:00:00Z' }]])
+  })
+
+  it('an alias on the row wins, as on the row itself; an agent the list does not draw has no row here', () => {
+    const rows = oneListAgentRows([chat({ id: 'dm-solo', kind: 'dm', peer_user_id: 'a-solo', peer_alias: 'My Solo' })], new Map(), owns, identities)
+    expect(rows.get('a-solo')?.name).toBe('My Solo')
+    expect(oneListAgentRows([], new Map(), owns, identities).size).toBe(0)
   })
 })
 

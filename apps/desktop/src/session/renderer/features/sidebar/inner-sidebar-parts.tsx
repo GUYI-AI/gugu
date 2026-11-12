@@ -27,7 +27,7 @@ export const innerSectionEmptyClass = 'px-5 pb-2 text-xs text-foreground-muted';
  * 看着它时 ❌ 选中底色(刘威提议稿 v1 的 .ihead:24px 头像、粗体名字、底下没有底;字号取面板标题那一档 --font-title,稿子的 15px 不在字号阶梯上)。
  * 行尾的东西(「…」、新智能体、收起这一列)由调用方给,摆在行的右端,钮是左边列表顶上那一行(«、会话历史)那一种。
  * 名字只让出看得见的钮那么宽(`trailingButtons` 枚 32px 钮、钮间 4px、右边 8px);「…」静止时不占地方(稿子里这一行只有
- * 笔和收起),指针落到这一行、键盘停在里面或菜单开着时它才展开,名字再让出它那一格。
+ * 笔和收起),指针落到这一行、键盘停在里面或菜单开着时它才展开,名字再让出它那一格。没有「…」的头一行(`hoverMenu` 关)❌ 让那一格。
  * 它就是这一列顶上那条 40px 的带(#2548 提议稿:和左边列表顶上那一行、正文的页签条平齐),❌ 再在上面垫一条空带;
  * 带里空着的地方照样拖得动窗口(同页签条,按钮自己退订,index.css @@@titlebar-no-drag)。
  */
@@ -42,6 +42,7 @@ export function InnerHeadRowLayout({
   active,
   onOpen,
   trailingButtons,
+  hoverMenu = true,
   children,
 }: {
   headKey: string;
@@ -52,14 +53,17 @@ export function InnerHeadRowLayout({
   onOpen: () => void;
   /** 行尾常驻的钮有几枚(不算悬停才出的「…」),名字给它们让出的宽度按它算。 */
   trailingButtons: number;
+  /** 行尾有没有悬停才出的「…」(InnerHeadActionsMenu)。 */
+  hoverMenu?: boolean;
   children: ReactNode;
 }) {
   const reserve = 8 + HEAD_BUTTON_PX * trailingButtons + HEAD_BUTTON_GAP_PX * Math.max(0, trailingButtons - 1);
+  const reserveShown = hoverMenu ? reserve + HEAD_BUTTON_PX + HEAD_BUTTON_GAP_PX : reserve;
   return (
     <SidebarMenu className="flex h-10 shrink-0 items-center [-webkit-app-region:drag]">
       <div
         className="group/head relative w-full [--head-reserve:var(--head-reserve-rest)] focus-within:[--head-reserve:var(--head-reserve-shown)] hover:[--head-reserve:var(--head-reserve-shown)] has-[[aria-expanded=true]]:[--head-reserve:var(--head-reserve-shown)]"
-        style={{ '--head-reserve-rest': `${reserve}px`, '--head-reserve-shown': `${reserve + HEAD_BUTTON_PX + HEAD_BUTTON_GAP_PX}px` } as CSSProperties}
+        style={{ '--head-reserve-rest': `${reserve}px`, '--head-reserve-shown': `${reserveShown}px` } as CSSProperties}
         data-inner-head={headKey}
       >
         <SidebarMenuButton

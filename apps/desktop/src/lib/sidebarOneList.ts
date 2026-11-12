@@ -4,10 +4,12 @@
 import { reaction } from 'mobx'
 import { useMemo, useSyncExternalStore } from 'react'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
+import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 import { deviceSessionsOf, useDirectoryDevices, useLiveDeviceSessions, type DeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import type { SidebarPinnedAgent } from './sidebarChatsBridge'
+import type { OneListAgentRow } from './innerSidebarBridge'
 import type { SampleProjectContent } from '@/session/renderer/features/sample-project/content/types'
 import { markdownPlainText } from './markdownPlainText'
 
@@ -123,6 +125,28 @@ export function sidebarPinnedRows<C extends Pick<ChatItem, 'kind' | 'peer_user_i
     if (chat && !rows.some((row) => row.chat === chat)) rows.push({ chat, pin })
   }
   return rows
+}
+
+/**
+ * #2574 My agents the one list draws as a row of their own, with what that row shows (its name before the 起名中 layer,
+ * its face). `rows` = the rows the list draws (after oneListShows); a pinned agent's row (固定到左侧栏, `pinnedRows`) is
+ * not one: it opens the group or project the agent lives in. The task page opens a standalone agent's inner column only
+ * on these, so "has a row of its own" is decided here alone.
+ */
+export function oneListAgentRows(
+  rows: readonly Pick<ChatItem, 'id' | 'kind' | 'peer_user_id' | 'name' | 'peer_alias' | 'alias'>[],
+  pinnedRows: ReadonlyMap<string, unknown>,
+  ownsAgent: (userId: string) => boolean,
+  identities: Readonly<Record<string, { display_name?: string | null; avatar?: string | null; created_at?: string | null } | undefined>>,
+): Map<string, OneListAgentRow> {
+  const agents = new Map<string, OneListAgentRow>()
+  for (const chat of rows) {
+    const peer = chat.peer_user_id
+    if ((chat.kind !== 'dm' && chat.kind !== 'ai') || !peer || !ownsAgent(peer) || pinnedRows.has(chat.id)) continue
+    const identity = identities[peer]
+    agents.set(peer, { chatId: chat.id, name: chatDisplayName(chat, identity?.display_name), avatar: identity?.avatar ?? null, createdAt: identity?.created_at ?? null })
+  }
+  return agents
 }
 
 /** The account project list is on its first read with nothing in hand (ProjectReading.firstRead). */
