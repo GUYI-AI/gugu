@@ -207,8 +207,8 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
   const topicResults = new Map<string, CreatedTopic | undefined>()
   // Failed uploads whose File this run still holds: retrying sends those bytes again. A reload forgets them (select the file again).
   const uploadRetries = new Map<string, () => void>()
-  const retryable = (record: OutboxRecord) => !record.dependencyDiscarded
-    && (record.operation?.kind === 'upload' ? uploadRetries.has(record.clientMessageId) : record.operation?.kind !== 'nativeAttachment')
+  const retryable = (record: OutboxRecord) => !record.dependencyDiscarded && (uploadRetries.has(record.clientMessageId)
+    || (record.operation?.kind !== 'upload' && record.operation?.kind !== 'nativeAttachment'))
   // clientMessageId → 本次会话里发送方交来的投递前置。送达/丢弃即删;失败保留,手动重试会再跑一次。
   const beforeDeliverHooks = new Map<string, () => Promise<void>>()
   // 状态迁移 → 乐观行 local_send_state(pending/sending 统一显示「发送中」,failed 显示「未送达」)。
@@ -575,9 +575,10 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
       const again = uploadRetries.get(clientMessageId)
       if (again) {
         void outbox.resumeUpload(clientMessageId).then((resumed) => {
-          if (!resumed || uploadRetries.get(clientMessageId) !== again) return
+          if (uploadRetries.get(clientMessageId) !== again) return
           uploadRetries.delete(clientMessageId)
-          again()
+          // Its bytes went up and only the commit failed: the ordinary retry resends that.
+          if (resumed) again(); else return outbox.retry(clientMessageId)
         }).catch((err) => { if (active) console.error('[chatOutbox] upload retry failed', err) })
         return
       }
