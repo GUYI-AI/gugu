@@ -574,7 +574,8 @@ it('Pi detail has the Connections section: with nothing configured it says None 
   expect(document.querySelector('[data-testid="subscription-no-connection-pi"]')?.textContent).toBe('None')
   expect(detail.getByRole('combobox', { name: 'Current connection', exact: true }).query()).toBeNull()
   expect(detail.element().textContent).not.toContain('Existing CLI configuration')
-  expect(document.querySelector('[data-testid="connection-status-pi"]')?.textContent).toBe('Not signed in')
+  // The status line reads its payer after the list (it says "Checking…" until then).
+  await until('the status line reads its payer', () => document.querySelector('[data-testid="connection-status-pi"]')?.textContent, (text) => text === 'Not signed in')
   expect(addRowHint('pi')).toBe('API Key')
   await userEvent.click(detail.getByRole('button', { name: 'Add', exact: true }))
   // 只有一种方式:不画分段,直接是 API Key 表单;展开期间「添加」收起,收回去靠表单里的「取消」。

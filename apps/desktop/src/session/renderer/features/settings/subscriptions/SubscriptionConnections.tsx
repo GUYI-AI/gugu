@@ -438,6 +438,11 @@ export function SubscriptionConnections({
         </ConnectionSettingsRows>
       ) : (
         <DropdownMenu open={open} onOpenChange={changeOpen}>
+          {/* 由别处的按钮打开(`trigger === null`:新建任务、会话、助理设置引导)也挂一个不显示的 Trigger。
+              Base UI 1.6 的根菜单只从挂着的 Trigger 拿到自己在浮层树里的节点号;没有它,连接那一行的 ⋯ 子菜单一打开,
+              根菜单就把它当「兄弟菜单」(`sibling-open`)整个关掉 —— ⋯ 里的登录、管理模型、移除都点不到。
+              位置照旧跟 `anchor`,关掉后焦点照旧回到打开它的那个按钮。 */}
+          {trigger === null && <DropdownMenuTrigger nativeButton={false} render={<span hidden />} />}
           {/* 「重新登录」与「切换连接」并排一行;操作列本身是竖排的,❌ 让它俩上下叠。 */}
           <div className="flex items-center gap-1">
             {trigger === undefined && currentSignIn}

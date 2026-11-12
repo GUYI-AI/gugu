@@ -868,8 +868,8 @@ it('the switch menu shows how much each account has left without switching to it
   };
   host.style.width = '720px';
   root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
-  await until('the Codex switch is ready', () => host.querySelector('[data-testid="subscription-switch-codex"]') !== null);
-  (host.querySelector('[data-testid="subscription-switch-codex"]') as HTMLButtonElement).click();
+  // The switch is there (disabled) while the connections are read; press it once it is usable, as a person would.
+  await openSwitch('codex');
   await until('the other account shows its quota', () => layer.querySelector('[data-testid="connection-quota-second"]') !== null);
   const second = layer.querySelector('[data-testid="connection-quota-second"]') as HTMLElement;
   expect(second.textContent).toBe('5 小时剩余 90% · 每周剩余 65%');
