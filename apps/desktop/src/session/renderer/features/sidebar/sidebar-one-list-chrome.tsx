@@ -1,11 +1,11 @@
 import { ChevronsLeft, ChevronsRight, FolderPlus, History, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { DropdownMenu, MenuItem, MenuSubmenu } from '@/components/ui/Menu';
-import { Popover } from '@/components/ui/Popover';
+import { TourBubble } from '@/components/productTour/TourBubble';
 import { Hint } from '@/components/ui/Tooltip';
 import { requestShellChatAction, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
@@ -17,14 +17,15 @@ import { appState } from '@renderer/lib/stores/app-state';
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
+import { LOCAL_SESSION_ENGINE_LABEL } from '@shared/core/session-import/session-import';
 import { AddProjectMenuItems } from './add-project-menu-items';
 import {
-  nextSidebarCollapseHint,
-  sidebarCollapseHintShown,
-  sidebarCollapseHintState,
-  type SidebarCollapseHint,
-  type SidebarCollapseHintEvent,
-} from './sidebar-collapse-hint';
+  nextSidebarIntro,
+  SIDEBAR_INTRO_STEPS,
+  sidebarIntroCanGoBack,
+  sidebarIntroShown,
+  type SidebarIntroEvent,
+} from './sidebar-intro';
 
 /**
  * GUYI-AI/gugu#2548 the top and the foot of the sidebar as one list.
@@ -131,55 +132,63 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
 }
 
 /**
- * C9's state (sidebar-collapse-hint): comes up when a group or a project opens while expanded, retires for good on either
- * button or on any collapse. Retired is stored in the app settings (`interface.sidebarCollapseHintRetired`, the store the
- * switch itself lives in); the first-run hint system holds one line and one button and cannot say this.
+ * C9, the two-step intro (sidebar-intro). Where it is (`step`) is stored in the app settings (`interface.sidebarIntro`, the
+ * store the switch itself lives in) and read from there, written only over a read (the main side parses the whole
+ * `interface` group on update); coming up (`up`) is this run's. The first-run hint system holds one line and one button
+ * and cannot say this.
  */
-function useSidebarCollapseHint(openChatId: string | null, expanded: boolean) {
+function useSidebarIntro(openChatId: string | null, expanded: boolean) {
   const { value: interfaceSettings, update } = useAppSettingsKey('interface');
-  const stored = interfaceSettings?.sidebarCollapseHintRetired;
-  const [session, setSession] = useState<SidebarCollapseHint>('waiting');
-  const dispatch = (event: SidebarCollapseHintEvent) => setSession((state) => nextSidebarCollapseHint(state, event));
-  // A group or project opened. (This also re-runs when the sidebar expands again; harmless, the collapse retired it.)
+  const stored = interfaceSettings?.sidebarIntro;
+  const [up, setUp] = useState(false);
+  const move = useCallback(
+    (event: SidebarIntroEvent) => {
+      if (stored === undefined) return;
+      const next = nextSidebarIntro({ step: stored, up }, event);
+      if (next.up !== up) setUp(next.up);
+      if (next.step !== stored) update({ sidebarIntro: next.step });
+    },
+    [stored, up, update]
+  );
+  // A group or project opened (re-run when the settings are read, and when the sidebar expands again over it).
   useEffect(() => {
-    if (openChatId) setSession((state) => nextSidebarCollapseHint(state, { kind: 'opened', expanded }));
-  }, [openChatId, expanded]);
-  // Collapsed by any route: every one of them ends in the layout's open state going false.
+    if (openChatId) move({ kind: 'opened', expanded });
+  }, [openChatId, expanded, move]);
+  // Collapsed by any route: every one of them ends in the layout's open state going false. (One before the settings are
+  // read is not counted; nothing can be written over an unread group.)
   const wasExpanded = useRef(expanded);
   useEffect(() => {
-    if (wasExpanded.current && !expanded) setSession((state) => nextSidebarCollapseHint(state, { kind: 'collapsed' }));
+    if (wasExpanded.current && !expanded) move({ kind: 'collapsed' });
     wasExpanded.current = expanded;
-  }, [expanded]);
-  // Written once, and only over a settings read (the main side parses the whole `interface` group on update).
-  const saved = useRef(false);
-  const retired = session === 'retired';
-  useEffect(() => {
-    if (!retired || stored !== false || saved.current) return;
-    saved.current = true;
-    update({ sidebarCollapseHintRetired: true });
-  }, [retired, stored, update]);
+  }, [expanded, move]);
 
-  const state = sidebarCollapseHintState(stored, session);
   // The foot can be on a hidden retained surface (another place of the shell, a page without the task list): the bubble is
   // portalled, so it asks whether the foot is on screen (@@@hint-visibility, an IntersectionObserver).
-  const { ref: footRef, shown: onScreen } = useConversationVisibility(state === 'showing');
+  const live = up && (stored === 'collapse' || stored === 'history');
+  const { ref: footRef, shown: onScreen } = useConversationVisibility(live);
   const notificationsOpen = useSidebarNotificationsOpen();
-  const shown = sidebarCollapseHintShown(state, { expanded, onScreen, notificationsOpen });
-  return { footRef, shown, answer: () => dispatch({ kind: 'answered' }) };
+  const step = sidebarIntroShown(stored, up, { expanded, onScreen, notificationsOpen });
+  return { footRef, step, move };
+}
+
+/** 会话历史's importable tools, named as the import list names them (❌ another copy of the list). */
+function importableTools(locale: string): string {
+  const labels = Object.values(LOCAL_SESSION_ENGINE_LABEL);
+  return locale.startsWith('zh') ? labels.join('、') : new Intl.ListFormat(locale, { type: 'disjunction' }).format(labels);
 }
 
 /**
  * The foot: the collapse button (chevrons only; its tooltip says what it does and the shortcut, as the old header toggle's
  * did) and 会话历史 next to it. The collapse button sits on the rail's axis and never moves; collapsed, 会话历史 stacks
- * above it (the rail has room for one button per line). Above the collapse button, once: C9 (useSidebarCollapseHint).
+ * above it (the rail has room for one button per line). Over them, once: C9 (useSidebarIntro).
  *
  * `openChatId`: the group or project the inner sidebar is open on (innerSidebarChat), null when none.
  */
 export const SidebarOneListFoot = observer(function SidebarOneListFoot({ openChatId = null }: { openChatId?: string | null }) {
-  const { translate } = useSessionMessages();
+  const { translate, locale } = useSessionMessages();
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
-  const { isLeftOpen, toggleLeft, setCollapsed } = useWorkspaceLayoutContext();
+  const { isLeftOpen, toggleLeft } = useWorkspaceLayoutContext();
   const { value: keyboard } = useAppSettingsKey('keyboard');
   const hotkey = getEffectiveHotkey('app.toggleLeftSidebar', keyboard);
   const shortcut = hotkey ? formatHotkeyText(hotkey) : null;
@@ -187,11 +196,39 @@ export const SidebarOneListFoot = observer(function SidebarOneListFoot({ openCha
   const foldLabel = translate(isLeftOpen ? 'sidebar.collapseSidebar' : 'sidebar.expandSidebar');
   const historyLabel = translate('sidebar.sessionHistory');
   const historyShown = isCurrentView(currentView, 'session-history');
-  const hint = useSidebarCollapseHint(openChatId, isLeftOpen);
+  const intro = useSidebarIntro(openChatId, isLeftOpen);
+  const step = intro.step;
+  const end = () => intro.move({ kind: 'end' });
+  // 打开看看: the foot button's navigation, then the intro is over. Already on 会话历史 there is nothing to open (❌ the
+  // button's toggle back).
+  const openHistory = () => {
+    if (!historyShown) navigate('session-history');
+    end();
+  };
+  const card =
+    step === 'collapse'
+      ? {
+          title: translate('sidebar.introCollapseTitle'),
+          body: shortcut ? translate('sidebar.introCollapseBody', { shortcut }) : translate('sidebar.introCollapseBodyNoShortcut'),
+          onNext: () => intro.move({ kind: 'next' }),
+        }
+      : step === 'history'
+        ? {
+            title: translate('sidebar.introHistoryTitle'),
+            body: translate('sidebar.introHistoryBody', { tools: importableTools(locale) }),
+            onPrevious: sidebarIntroCanGoBack(step, isLeftOpen) ? () => intro.move({ kind: 'previous' }) : undefined,
+            onNext: end,
+            extra: (
+              <Button variant="secondary" size="sm" onClick={openHistory} data-testid="sidebar-intro-open-history">
+                {translate('sidebar.introOpenHistory')}
+              </Button>
+            ),
+          }
+        : null;
   return (
     // 20 + 32 / 2 = 36: the collapse button is centred on the avatars' axis, as the 「+」 is; it is first in both
     // directions, so it holds its place (the bottom-left) and only 会话历史 moves.
-    <div ref={hint.footRef} className={cn('flex shrink-0 gap-2 py-2 pl-5', isLeftOpen ? 'flex-row items-center' : 'flex-col-reverse items-start')} data-sidebar-foot="">
+    <div ref={intro.footRef} className={cn('flex shrink-0 gap-2 py-2 pl-5', isLeftOpen ? 'flex-row items-center' : 'flex-col-reverse items-start')} data-sidebar-foot="">
       <Hint label={shortcut ? `${foldLabel} (${shortcut})` : foldLabel} side="top">
         <IconButton size="md" tone="strong" aria-label={foldLabel} aria-expanded={isLeftOpen} onClick={toggleLeft} data-testid="sidebar-fold">
           {isLeftOpen ? <ChevronsLeft /> : <ChevronsRight />}
@@ -212,58 +249,36 @@ export const SidebarOneListFoot = observer(function SidebarOneListFoot({ openCha
           <History />
         </IconButton>
       </Hint>
-      {/* C9 above the collapse button. It leaves by its buttons or by a collapse only (mock v25): a click elsewhere or an
-          Escape meant for something else neither closes it nor is swallowed by it. */}
-      <Popover.Root
-        open={hint.shown}
-        modal={false}
-        onOpenChange={(open, details) => {
-          if (open) return;
-          details.cancel();
-          details.allowPropagation();
-        }}
-      >
-        <Popover.Portal>
-          <Popover.Positioner
-            anchor={() => hint.footRef.current?.querySelector('[data-testid="sidebar-fold"]') ?? null}
-            side="top"
-            align="start"
-            sideOffset={10}
-            collisionPadding={8}
-          >
-            <Popover.Popup
-              initialFocus={false}
-              finalFocus={false}
-              data-testid="sidebar-collapse-hint"
-              className="w-[248px] rounded-[var(--radius-surface)] bg-[var(--popover)] p-3 text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--text-primary)] shadow-[var(--shadow-lift)]"
-            >
-              <Popover.Arrow className="size-3 rotate-45 bg-[var(--popover)] data-[side=top]:-bottom-1.5" />
-              <Popover.Title className="m-0 text-[length:var(--font-body)] font-[var(--font-weight-semibold)]">
-                {translate('sidebar.collapseHintTitle')}
-              </Popover.Title>
-              <Popover.Description className="mt-1 mb-0 text-[var(--text-secondary)]">
-                {shortcut ? translate('sidebar.collapseHintBody', { shortcut }) : translate('sidebar.collapseHintBodyNoShortcut')}
-              </Popover.Description>
-              <div className="mt-3 flex justify-end gap-2">
-                <Button variant="secondary" size="sm" onClick={hint.answer} data-testid="sidebar-collapse-hint-dismiss">
-                  {translate('sidebar.collapseHintDismiss')}
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    hint.answer();
-                    setCollapsed('left', true);
-                  }}
-                  data-testid="sidebar-collapse-hint-try"
-                >
-                  {translate('sidebar.collapseHintTry')}
-                </Button>
-              </div>
-            </Popover.Popup>
-          </Popover.Positioner>
-        </Popover.Portal>
-      </Popover.Root>
+      {/* C9 over the step's button, in the feature tour's card without its shade: it is contextual and blocks nothing,
+          so it takes no focus, and a click elsewhere neither closes it nor is swallowed by it. Escape ends it and still
+          reaches whatever it was meant for. */}
+      {step && card && (
+        <TourBubble
+          key={step}
+          anchor={() => intro.footRef.current?.querySelector(`[data-testid="${SIDEBAR_INTRO_ANCHOR[step]}"]`) ?? null}
+          side="top"
+          align="start"
+          sideOffset={10}
+          collisionPadding={8}
+          initialFocus={false}
+          finalFocus={false}
+          onOpenChange={(open, details) => {
+            if (open) return;
+            if (details.reason === 'escape-key') end();
+            details.cancel();
+            details.allowPropagation();
+          }}
+          testId={`sidebar-intro-${step}`}
+          buttonTestIdPrefix="sidebar-intro"
+          current={SIDEBAR_INTRO_STEPS.indexOf(step) + 1}
+          total={SIDEBAR_INTRO_STEPS.length}
+          onSkip={end}
+          {...card}
+        />
+      )}
     </div>
   );
 });
+
+/** Each step's button in the foot. */
+const SIDEBAR_INTRO_ANCHOR = { collapse: 'sidebar-fold', history: 'sidebar-session-history' } as const;

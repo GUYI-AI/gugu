@@ -68,7 +68,7 @@ export const SETTINGS_DEFAULTS = {
     chatView: 'double' as const,
     confirmBeforeArchive: true,
     confirmBeforeCancelAndSend: true,
-    sidebarCollapseHintRetired: false
+    sidebarIntro: 'collapse' as const
   },
   browserPreview: {
     enabled: true

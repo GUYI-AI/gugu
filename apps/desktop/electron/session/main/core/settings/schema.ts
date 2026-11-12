@@ -190,11 +190,13 @@ export const interfaceSettingsSchema = z.object({
   confirmBeforeCancelAndSend: z.boolean(),
 
   /**
-   * GUYI-AI/gugu#2548 C9: the one-time bubble over the one-list sidebar's collapse button (「侧栏可以收起来」) is done with:
-   * one of its buttons was clicked, or the sidebar was collapsed once by any route. Internal, no settings UI; false = it may
-   * still come up (the first time a group or project opens while the sidebar is expanded).
+   * GUYI-AI/gugu#2548 C9: where the one-list sidebar's two-step intro is (renderer `sidebar-intro.ts`). `collapse` = step 1
+   * (侧栏可以收起来, on the collapse button) is next; `history` = step 1 is done with (下一步, or the sidebar was collapsed
+   * once by any route) and step 2 (会话历史) is next; `ended` = 跳过 / 完成 / 打开看看 / Escape, it never comes up again.
+   * Internal, no settings UI. Coming up is not stored: an unfinished intro comes up again, at this step, the first time a
+   * group or project opens while the sidebar is expanded.
    */
-  sidebarCollapseHintRetired: z.boolean(),
+  sidebarIntro: z.enum(['collapse', 'history', 'ended']),
 });
 
 export const changesViewModeSchema = z.object({
