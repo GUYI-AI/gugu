@@ -8,7 +8,7 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: { subscribeAppActive: (listener: (active: boolean) => void) => { listener(true); return () => undefined } },
 }))
 
-const { isChatOnScreen } = await import('../../../../apps/desktop/src/lib/onScreenChat')
+const { isChatOnScreen, isChatShown } = await import('../../../../apps/desktop/src/lib/onScreenChat')
 const { ChatSlot } = await import('../../../../apps/desktop/src/session/renderer/lib/chat-slot')
 const { RetainedTabContent } = await import('../../../../apps/desktop/src/session/renderer/features/tabs/retained-tab-content')
 const { setEmbedVisible } = await import('../../../../apps/desktop/src/session/renderer/lib/portal-container')
@@ -24,6 +24,13 @@ describe('a chat block on the session page counts as on screen only while it is 
     await harness.render(block(true))
     expect(isChatOnScreen('group')).toBe(true)
     expect(isChatOnScreen('other')).toBe(false)
+  })
+
+  it('counts as shown whether or not it is the selected chat, and is not shown behind another tab', async () => {
+    await harness.render(block(true))
+    expect(isChatShown('group')).toBe(true)
+    await harness.render(block(false))
+    expect(isChatShown('group')).toBe(false)
   })
 
   it('is not on screen behind another tab of its block, nor while the task frame is hidden', async () => {

@@ -87,7 +87,7 @@ function wiringHarness(messageId: string, overrides: Partial<OutboxWiringIo> = {
     user: () => ({ id: 'owner-1', nickname: 'Owner', avatarUrl: null }),
     identity: () => undefined,
     chats: () => [],
-    activeChatId: () => 'chat-1',
+    chatShown: (id) => id === 'chat-1',
     activeThreadRootId: () => null,
     setMessagesAndCache: (updater) => { messages = updater(messages) },
     setThreadMessages: (updater) => {
@@ -146,7 +146,7 @@ describe('message-owned send failure notices', () => {
     vi.useFakeTimers()
     const row = persistedMessage(`retry-${recipient}`)
     const send = vi.spyOn(chatService, 'sendMessage').mockRejectedValue(new Error('offline'))
-    const h = wiringHarness(row.id, { activeChatId: () => 'other-chat' })
+    const h = wiringHarness(row.id, { chatShown: () => false })
     await h.wiring.enqueue({ ...enqueueInput(row.id), toUserIds: [recipient] })
     await vi.advanceTimersByTimeAsync(20_000)
     expect(h.messages()[0]).toMatchObject({ id: row.id, local_send_state: 'failed' })
@@ -159,10 +159,37 @@ describe('message-owned send failure notices', () => {
     h.wiring.dispose()
   })
 
+  // #2565: a chat block on the task page shows its conversation without selecting it; the row is in front of the user.
+  it('a failure in a conversation that is shown stays on its own row, with no notice to go back there', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(chatService, 'sendMessage').mockRejectedValue(new Error('offline'))
+    const h = wiringHarness('shown', { chatShown: (id) => id === 'chat-1' })
+    await h.wiring.enqueue(enqueueInput('shown'))
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(h.messages()[0]).toMatchObject({ id: 'shown', local_send_state: 'failed' })
+    expect(notices.visible.size).toBe(0)
+    h.wiring.dispose()
+  })
+
+  it('a thread reply counts as shown only while its thread is open in the shown conversation', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(chatService, 'sendMessage').mockRejectedValue(new Error('offline'))
+    let openThread: string | null = 'root-other'
+    const h = wiringHarness('reply', { chatShown: () => true, activeThreadRootId: (chatId) => chatId === 'chat-1' ? openThread : null })
+    await h.wiring.enqueue({ ...enqueueInput('reply'), threadRootId: 'root-1' })
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(notices.visible.size, 'another thread is open: the failed reply is out of sight').toBe(1)
+    openThread = 'root-1'
+    await h.wiring.enqueue({ ...enqueueInput('reply-2'), threadRootId: 'root-1' })
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(notices.visible.size, 'its thread is open: the row says it').toBe(1)
+    h.wiring.dispose()
+  })
+
   it('updates a failed retry without duplicating the notice or clearing another message failure', async () => {
     vi.useFakeTimers()
     const send = vi.spyOn(chatService, 'sendMessage').mockRejectedValue(new Error('offline'))
-    const h = wiringHarness('first', { activeChatId: () => 'other-chat' })
+    const h = wiringHarness('first', { chatShown: () => false })
     await h.wiring.enqueue(enqueueInput('first'))
     await h.wiring.enqueue(enqueueInput('second'))
     await vi.advanceTimersByTimeAsync(40_000)
@@ -209,7 +236,7 @@ describe('committed outbound reconciliation', () => {
       getImRepository,
       user: () => ({ id: 'owner-1', nickname: 'Owner', avatarUrl: null }),
       identity: () => undefined,
-      chats: () => [], activeChatId: () => null, activeThreadRootId: () => null,
+      chats: () => [], chatShown: () => false, activeThreadRootId: () => null,
       setMessagesAndCache: () => {}, setThreadMessages: () => {}, patchChat: () => {},
       toast: () => {},
       appendMessage: () => {},
@@ -233,7 +260,7 @@ describe('committed outbound reconciliation', () => {
       getImRepository: () => repositoryReady.promise,
       user: () => ({ id: 'owner-1', nickname: 'Owner', avatarUrl: null }),
       identity: () => undefined,
-      chats: () => [], activeChatId: () => null, activeThreadRootId: () => null,
+      chats: () => [], chatShown: () => false, activeThreadRootId: () => null,
       setMessagesAndCache: () => {}, setThreadMessages: () => {}, patchChat: () => {},
       toast: () => {},
       appendMessage: () => {},
@@ -360,7 +387,7 @@ describe('投递前置:乐观行先上屏,就绪/对端解析在投递阶段 (C1
     setLocalePreference(locale)
     vi.useFakeTimers()
     const harness = wiringHarness('offscreen', {
-      activeChatId: () => 'other-chat',
+      chatShown: () => false,
       chats: () => [chat({ id: 'chat-1', kind: 'group', name: 'Research files', alias: '论文附件' })],
     })
     await harness.wiring.enqueue({ ...enqueueInput('offscreen'), beforeDeliver: async () => { throw new Error('private transport error') } })
@@ -380,7 +407,7 @@ describe('投递前置:乐观行先上屏,就绪/对端解析在投递阶段 (C1
     setLocalePreference('zh-CN')
     vi.useFakeTimers()
     const harness = wiringHarness('target-name', {
-      activeChatId: () => null,
+      chatShown: () => false,
       chats: () => row ? [row] : [],
       identity: () => ({ type: 'human', display_name: 'Lin', avatar: null }),
     })
@@ -523,7 +550,7 @@ it('a failed upload whose bytes this run holds is resent from its own row; after
   f.wiring.dispose()
   let restored: MessageItem[] = []
   const g = createOutboxWiring({ getImRepository: () => f.repository, user: () => ({ id: 'owner-1', nickname: 'Owner', avatarUrl: null }), identity: () => undefined, chats: () => [],
-    activeChatId: () => 'chat-1', activeThreadRootId: () => null, setMessagesAndCache: (updater) => { restored = updater(restored) }, setThreadMessages: () => {},
+    chatShown: (id) => id === 'chat-1', activeThreadRootId: () => null, setMessagesAndCache: (updater) => { restored = updater(restored) }, setThreadMessages: () => {},
     patchChat: f.patchChat, toast: f.toast, appendMessage: f.appendMessage })
   g.restoreAndWatch()
   await vi.waitFor(() => expect(restored.find(m => m.id === 'upload-1')).toMatchObject({ local_send_state: 'failed', local_send_retryable: false, local_send_error: '上传已中断，请重新选择文件。' }))
