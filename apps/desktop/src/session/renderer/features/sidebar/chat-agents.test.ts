@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation';
 import {
   CHAT_AGENT_LIMIT,
+  agentFamilies,
   chatAgentCounts,
   chatAgentNeedsYou,
   chatAgentSection,
-  isStandaloneAgent,
   myAgentsInChat,
   subAgentsOf,
   type ChatAgentEntry,
@@ -183,16 +183,28 @@ describe("#2574 a standalone agent's sub-agents", () => {
     entry('grandchild', { agentUserId: 'sub-4', parentSessionId: 'sub-quiet', presentation: waiting }),
     entry('someone-else', { agentUserId: 'other', time: 5 }),
     entry('their-fork', { agentUserId: 'other-sub', parentSessionId: 'someone-else' }),
+    // solo also forked under someone else's tree: that is not its conversation, and what hangs under it is not solo's.
+    entry('solo-elsewhere', { agentUserId: 'solo', parentSessionId: 'someone-else' }),
+    entry('elsewhere-kid', { agentUserId: 'kid', parentSessionId: 'solo-elsewhere' }),
   ];
+  const families = agentFamilies(sessions);
 
-  it("are the sessions spawned from the agent's own sessions, with theirs under them; never the agent itself or anyone else's", () => {
-    expect(ids(subAgentsOf(sessions, 'solo'))).toEqual(['sub-quiet', 'sub-busy', 'sub-asks', 'grandchild']);
-    expect(subAgentsOf(sessions, 'sub-4')).toEqual([]);
-    expect(subAgentsOf(sessions, 'nobody')).toEqual([]);
+  it("are the sessions spawned from the agent's own top-level sessions, with theirs under them; never the agent itself or anyone else's", () => {
+    expect(ids(subAgentsOf(families, 'solo'))).toEqual(['sub-quiet', 'sub-busy', 'sub-asks', 'grandchild']);
+    expect(subAgentsOf(families, 'sub-4')).toEqual([]);
+    expect(subAgentsOf(families, 'sub-1'), 'a sub-agent has no top-level session to walk from').toEqual([]);
+    expect(subAgentsOf(families, 'nobody')).toEqual([]);
+  });
+
+  it("one pass indexes each session, its children and each agent's top-level sessions (newest first)", () => {
+    const twice = agentFamilies([...sessions, entry('solo-older', { agentUserId: 'solo', time: 1 })]);
+    expect(ids(twice.topLevelOf.get('solo')!)).toEqual(['solo-task', 'solo-older']);
+    expect(ids(twice.childrenOf.get('someone-else')!)).toEqual(['their-fork', 'solo-elsewhere']);
+    expect(twice.byId.get('grandchild')?.parentSessionId).toBe('sub-quiet');
   });
 
   it('list like a group\'s 智能体: needs you, then running, then the rest; a grandchild stays folded under its parent', () => {
-    const subAgents = subAgentsOf(sessions, 'solo');
+    const subAgents = subAgentsOf(families, 'solo');
     const folded = chatAgentSection(subAgents, disclosure);
     expect(rowIds(folded)).toEqual(['sub-asks', 'sub-busy', 'sub-quiet']);
     expect(folded.rows.find((row) => row.sessionId === 'sub-quiet')).toMatchObject({ hasChildren: true, needsAttention: true });
@@ -204,13 +216,5 @@ describe("#2574 a standalone agent's sub-agents", () => {
       ['sub-quiet', 0],
       ['grandchild', 1],
     ]);
-  });
-
-  it('a standalone agent has a top-level session and lives in no group or project', () => {
-    const nowhere = () => false;
-    expect(isStandaloneAgent(sessions, 'solo', nowhere)).toBe(true);
-    expect(isStandaloneAgent(sessions, 'sub-1', nowhere), 'only a sub-agent: no row of its own').toBe(false);
-    expect(isStandaloneAgent(sessions, 'solo', (session) => session.id === 'solo-task'), 'a group or project lists it').toBe(false);
-    expect(isStandaloneAgent(sessions, 'nobody', nowhere)).toBe(false);
   });
 });
