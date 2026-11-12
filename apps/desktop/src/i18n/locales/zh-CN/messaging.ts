@@ -298,7 +298,8 @@ export default {
     "pin": "置顶",
     "scan": "扫一扫",
     "search": "搜索",
-    "unpin": "取消置顶"
+    "unpin": "取消置顶",
+    "unpinFromSidebar": "取消固定到左侧栏"
   },
   "chatService": {
     "errors": {

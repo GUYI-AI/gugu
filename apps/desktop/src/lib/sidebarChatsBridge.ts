@@ -36,12 +36,26 @@ export type SidebarChatView = {
   readonly oneList?: boolean
 }
 
+/**
+ * #2548 固定到左侧栏: an agent of mine that lives in a group or a project, pinned to the top of the one list.
+ * 会话页 → 壳: the task page knows my sessions and where their agents live; the shell draws the agent's DM row.
+ */
+export type SidebarPinnedAgent = {
+  readonly agentUserId: string
+  /** The pinned session: 取消固定到左侧栏 writes it. */
+  readonly sessionId: string
+  /** Where the agent lives (the group, or the project's project group): its row says so, and clicking it opens that. */
+  readonly home: { readonly kind: 'group' | 'project'; readonly name: string; readonly chatId: string }
+}
+
 const SIGNALS_KEY = '__GUGU_SIDEBAR_CHAT_SIGNALS__'
 const SIGNALS_EVENT = 'gugu:sidebar-chat-signals'
 const VIEW_KEY = '__GUGU_SIDEBAR_CHAT_VIEW__'
 const VIEW_EVENT = 'gugu:sidebar-chat-view'
 const NOTIFICATIONS_KEY = '__GUGU_SIDEBAR_NOTIFICATIONS_OPEN__'
 const NOTIFICATIONS_EVENT = 'gugu:sidebar-notifications-open'
+const PINNED_AGENTS_KEY = '__GUGU_SIDEBAR_PINNED_AGENTS__'
+const PINNED_AGENTS_EVENT = 'gugu:sidebar-pinned-agents'
 
 /**
  * 壳:从聊天列表那一份算出两枚页签和项目行上的数。项目群(及从它开出来的话题)的未读记在那个群名下,其余记进「对话」;免打扰的不算(gugu-dev#181:
@@ -84,6 +98,8 @@ const subscribeTo = (event: string) => (listener: () => void) => {
 const subscribeSignals = subscribeTo(SIGNALS_EVENT)
 const subscribeView = subscribeTo(VIEW_EVENT)
 const subscribeNotifications = subscribeTo(NOTIFICATIONS_EVENT)
+const subscribePinnedAgents = subscribeTo(PINNED_AGENTS_EVENT)
+const NO_PINNED_AGENTS: readonly SidebarPinnedAgent[] = []
 
 /** One ephemeral list-view choice across the shell and workspace roots; layout settings stay separate. */
 export function setSidebarNotificationsOpen(open: boolean): void {
@@ -135,6 +151,18 @@ export function publishSidebarChatView(next: SidebarChatView): void {
 /** 壳:会话页还没说过 = 没看着哪条对话。 */
 export function useSidebarChatView(): SidebarChatView {
   return useSyncExternalStore(subscribeView, () => read<SidebarChatView>(VIEW_KEY) ?? NO_VIEW, () => NO_VIEW)
+}
+
+/** 会话页:the agents pinned to the one list, in display order (整份替换;没变不通知). Switch off = an empty list. */
+export function publishSidebarPinnedAgents(next: readonly SidebarPinnedAgent[]): void {
+  const current = read<readonly SidebarPinnedAgent[]>(PINNED_AGENTS_KEY)
+  if (current && JSON.stringify(current) === JSON.stringify(next)) return
+  write(PINNED_AGENTS_KEY, PINNED_AGENTS_EVENT, next)
+}
+
+/** 壳:the agents pinned to the one list, in display order; the task page has not said yet = none. */
+export function useSidebarPinnedAgents(): readonly SidebarPinnedAgent[] {
+  return useSyncExternalStore(subscribePinnedAgents, () => read<readonly SidebarPinnedAgent[]>(PINNED_AGENTS_KEY) ?? NO_PINNED_AGENTS, () => NO_PINNED_AGENTS)
 }
 
 export type ShellChatDialog = 'create-group' | 'add-contact'

@@ -299,7 +299,8 @@ export default {
     "pin": "Pin",
     "scan": "Scan",
     "search": "Search",
-    "unpin": "Unpin"
+    "unpin": "Unpin",
+    "unpinFromSidebar": "Unpin from sidebar"
   },
   "chatService": {
     "errors": {

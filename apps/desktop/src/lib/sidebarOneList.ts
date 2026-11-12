@@ -5,6 +5,7 @@ import { useMemo } from 'react'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { deviceSessionsOf, useDirectoryDevices, useLiveDeviceSessions, type DeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { buildSessionTree } from '@/session/renderer/features/sessions/session-tree'
+import type { SidebarPinnedAgent } from './sidebarChatsBridge'
 
 /** Where my agents live. */
 export type AgentHomes = {
@@ -14,6 +15,8 @@ export type AgentHomes = {
   readonly inProjects: ReadonlySet<string>
   /** Agents with a top-level task outside every project. */
   readonly withTopLevelTask: ReadonlySet<string>
+  /** Agents pinned to the sidebar (固定到左侧栏): a pinned session of theirs lives in a group or a project. */
+  readonly pinned: ReadonlySet<string>
 }
 
 /** Agent members of every group chat, project groups included. A topic is not a room of its own here. */
@@ -45,18 +48,19 @@ export function agentTaskHomes(machines: readonly Pick<DeviceSessions, 'projects
 }
 
 /**
- * The one place an owned agent earns a row of its own: it lives in no group and no project.
- * Seam: the later "Pin to sidebar" slice makes a pinned agent keep its row here although it lives elsewhere.
+ * The one place an owned agent earns a row of its own: it lives in no group and no project, or the user pinned it to
+ * the sidebar (固定到左侧栏), which keeps its row although it lives elsewhere.
  */
 export function agentHasOwnRow(agentId: string, homes: AgentHomes): boolean {
-  return !homes.inRooms.has(agentId) && !homes.inProjects.has(agentId)
+  return homes.pinned.has(agentId) || (!homes.inRooms.has(agentId) && !homes.inProjects.has(agentId))
 }
 
 /**
  * Does the one list show this conversation. It holds four kinds, in the list's own order (pinned first, then recent
  * activity): my standalone agents, groups, project groups, direct messages with people. Topics are never rows here.
  * `listed` = the list's existing rule for this conversation (isChatListed: an empty DM is not a conversation yet).
- * A standalone agent with a top-level task is shown before its DM has a message: that task is the conversation.
+ * A standalone agent with a top-level task is shown before its DM has a message: that task is the conversation. So is
+ * a pinned agent's pinned session (a top-level task too).
  */
 export function oneListShows(
   chat: Pick<ChatItem, 'kind' | 'peer_user_id'>,
@@ -68,7 +72,24 @@ export function oneListShows(
   if (chat.kind === 'group') return listed
   const peer = chat.peer_user_id
   if (!peer || !ownsAgent(peer)) return listed
-  return agentHasOwnRow(peer, homes) && (listed || homes.withTopLevelTask.has(peer))
+  return agentHasOwnRow(peer, homes) && (listed || homes.withTopLevelTask.has(peer) || homes.pinned.has(peer))
+}
+
+/**
+ * The rows at the very top of the one list, above everything else: each pinned agent's DM row, in pin order, with the
+ * pin it stands for. An agent with no DM chat yet has no row; nothing is drawn in its place. `shown` = the list's rule.
+ */
+export function sidebarPinnedRows<C extends Pick<ChatItem, 'kind' | 'peer_user_id'>, P extends Pick<SidebarPinnedAgent, 'agentUserId'>>(
+  chats: readonly C[],
+  pins: readonly P[],
+  shown: (chat: C) => boolean,
+): { chat: C; pin: P }[] {
+  const rows: { chat: C; pin: P }[] = []
+  for (const pin of pins) {
+    const chat = chats.find((candidate) => candidate.kind !== 'group' && candidate.kind !== 'topic' && candidate.peer_user_id === pin.agentUserId && shown(candidate))
+    if (chat && !rows.some((row) => row.chat === chat)) rows.push({ chat, pin })
+  }
+  return rows
 }
 
 /** The list's agent homes while the one list is on; null = the list keeps today's rules. */
@@ -76,6 +97,7 @@ export function useAgentHomes(
   enabled: boolean,
   chats: readonly ChatItem[],
   membership: { readonly parts: ReadonlyMap<string, { readonly agents: readonly string[] }> },
+  pins: readonly Pick<SidebarPinnedAgent, 'agentUserId'>[],
 ): AgentHomes | null {
   const devices = useDirectoryDevices()
   const directory = useLiveDeviceSessions()
@@ -84,8 +106,12 @@ export function useAgentHomes(
     [enabled, devices, directory],
   )
   return useMemo(
-    () => tasks && { ...tasks, inRooms: agentsInRooms(chats, (chatId) => membership.parts.get(chatId)!.agents) },
-    [tasks, chats, membership],
+    () => tasks && {
+      ...tasks,
+      inRooms: agentsInRooms(chats, (chatId) => membership.parts.get(chatId)!.agents),
+      pinned: new Set(pins.map((pin) => pin.agentUserId)),
+    },
+    [tasks, chats, membership, pins],
   )
 }
 

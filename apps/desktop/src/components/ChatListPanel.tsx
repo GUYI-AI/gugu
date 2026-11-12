@@ -6,7 +6,7 @@ import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallbac
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useStableHandler } from '@/hooks/useStableHandler'
 import { useTranslation } from 'react-i18next'
-import { BellOff, ChevronDown, ChevronRight, FolderClosed, MessageCircle, MessageSquare, Plus, SquarePen, UserRound, Users, X, Zap } from '@/lib/icons'
+import { BellOff, ChevronDown, ChevronRight, FolderClosed, MessageCircle, MessageSquare, PanelLeft, Plus, SquarePen, UserRound, Users, X, Zap } from '@/lib/icons'
 import { Sheet } from './ui/Sheet'
 import { DropdownMenu, MenuItem } from './ui/Menu'
 import { PaneEmptyState } from './ui/PaneEmptyState'
@@ -35,9 +35,9 @@ import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
-import { oneListShows, useAgentHomes } from '../lib/sidebarOneList'
+import { oneListShows, sidebarPinnedRows, useAgentHomes } from '../lib/sidebarOneList'
 import { mobileListDiagnostics } from '@/mobile/mobileListDiagnostics'
-import { subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, type ShellChatDialog } from '../lib/sidebarChatsBridge'
+import { subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
 import { NotificationSlot } from './needsYou/NotificationSlot'
 import { RETAINED_SURFACE_HIDDEN_STYLE } from '../lib/retainedSurface'
 import { blockKey, joinRows, type JoinedGroup, type SidebarJoin } from '../lib/sidebarJoinedGroups'
@@ -168,6 +168,8 @@ export interface ChatRowActions {
   openTopic: (topic: ChatItem, beside: boolean) => void
   toggleTopics: (chatId: string) => void
   pin: (chat: ChatItem) => void
+  /** #2548 取消固定到左侧栏: the pinned session of an agent pinned to the one list. */
+  unpinFromSidebar: (sessionId: string) => void
   setNotificationLevel: (chatId: string, level: NotificationLevel) => void
   remove: (chatId: string) => void
   focus: (chatId: string) => void
@@ -189,6 +191,10 @@ interface ChatRowProps {
   /** 侧栏那一份:这一行是拼在一屏的某一组的框的哪一段(只有一行、或没有话题子行时框画在这一行上)。 */
   joinPos?: SidebarJoin['pos']
   joinOnScreen?: boolean
+  /** #2548 this agent is pinned to the one list (固定到左侧栏): where it lives, said before its preview. */
+  pinnedHome?: string
+  /** …and the pinned session, which its menu unpins. */
+  pinnedSessionId?: string
 }
 
 // @@@5856 会话列表里的话题子行。
@@ -282,7 +288,7 @@ export function TopicSubRows({ topics, isSunk, expanded, onExpand, children }: {
 
 // @@@chat-row-memo - 一条消息只重画它那一行:props 只有这一行自己的数据(store 里没变的会话行是同一个对象,
 // 见 applyFetchedChatList 的结构共享) + 一份稳定的动作。❌ 每次渲染新建的闭包 / 对象 props —— 那会让一次更新重画整列。
-const ChatRow = memo(function ChatRow({ chat, unreadCount, agentStatus, isActive, topicsExpanded, draft, mobile = false, tabIndex, actions, joinPos, joinOnScreen }: ChatRowProps) {
+const ChatRow = memo(function ChatRow({ chat, unreadCount, agentStatus, isActive, topicsExpanded, draft, mobile = false, tabIndex, actions, joinPos, joinOnScreen, pinnedHome, pinnedSessionId }: ChatRowProps) {
   const { t } = useTranslation('messaging')
   const { identitiesById } = useChatStore('identitiesById')
   const menu = useRowContextMenu()
@@ -359,14 +365,21 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, agentStatus, isActive
             )}
           </>
         }
-        meta={formatCalendarDay(chatActivityAt(chat))}
+        meta={pinnedSessionId === undefined ? formatCalendarDay(chatActivityAt(chat)) : (
+          // #2548 pinned to the one list: the menu item's sidebar glyph before the time (same size as the muted bell).
+          <span className="inline-flex items-center gap-1">
+            <PanelLeft size={13} strokeWidth={1.8} aria-hidden="true" />
+            {formatCalendarDay(chatActivityAt(chat))}
+          </span>
+        )}
         subtitle={
           draft ? (
             <>
+              {pinnedHome !== undefined && `${pinnedHome} · `}
               <span style={{ color: 'var(--color-draft)' }}>{t('chatList.draft')}</span>
               {' '}{draft}
             </>
-          ) : preview
+          ) : pinnedHome !== undefined ? [pinnedHome, preview].filter(Boolean).join(' · ') : preview
         }
         trailing={(!mobile || chat.is_muted || unreadCount > 0) ? (
           <>
@@ -393,6 +406,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, agentStatus, isActive
           chat={chat}
           onClose={menu.closeMenu}
           onPin={() => actions.pin(chat)}
+          onUnpinFromSidebar={pinnedSessionId === undefined ? undefined : () => actions.unpinFromSidebar(pinnedSessionId)}
           onSetNotificationLevel={(level) => actions.setNotificationLevel(chat.id, level)}
           onDelete={() => actions.remove(chat.id)}
         />
@@ -551,7 +565,9 @@ export function ChatListPanel({
   const membership = membershipProjection(chats, identitiesById)
   const workrooms = useAssistantWorkrooms(assistantShell, membership.key)
   // #2548 the desktop sidebar as one list (switch published by the task page's left sidebar; never on the phone).
-  const agentHomes = useAgentHomes(inSidebar && !mobile && sidebarView.oneList === true, chats, membership)
+  // Agents pinned to it (固定到左侧栏) are published by the task page, which knows the sessions and where they live.
+  const sidebarPins = useSidebarPinnedAgents()
+  const agentHomes = useAgentHomes(inSidebar && !mobile && sidebarView.oneList === true, chats, membership, sidebarPins)
   // @@@chat-list-agent-status (#437/#33) - one batched presence subscription for every agent shown in
   // the list: DM-with-agent peers + all group agent members (so the group dot can aggregate).
   const agentStatuses = useAgentDisplayStatuses(membership.agentIds)
@@ -650,8 +666,11 @@ export function ChatListPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chats, listQuery, selectedChatId, drafts, assistantShell, workrooms, projectGroupChats, shownAsLead, mobile, agentHomes])
   const isTopLevel = (c: ChatItem) => isTopLevelChatRow(c, topicNesting, isListed, matchesSearch)
-  const pinnedChats = chats.filter((c) => c.is_pinned && isTopLevel(c)).sort(byTime)
-  const normalChats = chats.filter((c) => !c.is_pinned && isTopLevel(c)).sort(byTime)
+  // #2548 one list: the pinned agents' DM rows sit at the very top, in pin order, above the pinned conversations.
+  const sidebarPinned = agentHomes ? sidebarPinnedRows(chats, sidebarPins, isTopLevel) : []
+  const pinOf = new Map(sidebarPinned.map(({ chat, pin }) => [chat.id, pin]))
+  const pinnedChats = sidebarPinned.map(({ chat }) => chat).concat(chats.filter((c) => c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime))
+  const normalChats = chats.filter((c) => !c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime)
   // The Chats tab contains conversations; projectless tasks live in the Projects tab.
   const joinedGroups = inSidebar ? sidebarView.groups : NO_JOINED_GROUPS
   const pinnedRows = joinRows(pinnedChats, (chat) => blockKey.chat(chat.id), joinedGroups)
@@ -700,11 +719,17 @@ export function ChatListPanel({
   const openTopic = useStableHandler((topic: ChatItem, beside: boolean) => selectChat(topic, 'composer', beside))
   const toggle = useStableHandler((chatId: string) => toggleTopics(chatId))
   const pin = useStableHandler((chat: ChatItem) => pinChat(chat.id, !chat.is_pinned))
+  // The session is the task page's to write (session-view-requests); a pinned row exists only because that page published it.
+  const unpinFromSidebar = useStableHandler((sessionId: string) => {
+    const sessionPage = readSessionpageViewRequestBridge()
+    if (!sessionPage?.unpinFromSidebar) throw new Error('sessionpage view request bridge cannot unpin from the sidebar')
+    sessionPage.unpinFromSidebar(sessionId)
+  })
   const setLevel = useStableHandler((chatId: string, level: NotificationLevel) => setChatNotificationLevel(chatId, level))
   const remove = useStableHandler((chatId: string) => deleteChat(chatId, true))
   const keyDown = useStableHandler((event: Parameters<KeyboardEventHandler<HTMLDivElement>>[0], chat: ChatItem) => handleChatKeyDown(event, chat))
-  const rowActions = useMemo<ChatRowActions>(() => ({ activate, openTopic, toggleTopics: toggle, pin, setNotificationLevel: setLevel, remove, focus: setFocusedChatId, keyDown }),
-    [activate, openTopic, toggle, pin, setLevel, remove, keyDown])
+  const rowActions = useMemo<ChatRowActions>(() => ({ activate, openTopic, toggleTopics: toggle, pin, unpinFromSidebar, setNotificationLevel: setLevel, remove, focus: setFocusedChatId, keyDown }),
+    [activate, openTopic, toggle, pin, unpinFromSidebar, setLevel, remove, keyDown])
   const renderChatRow =(chat: ChatItem, join?: SidebarJoin) => {
     const topics = topicNesting.bySource.get(chat.id) ?? []
     const hasTopics = !mobile && topics.length > 0
@@ -723,6 +748,8 @@ export function ChatListPanel({
         draft={drafts[chat.id]}
         tabIndex={focusedChatId === chat.id ? 0 : -1}
         actions={rowActions}
+        pinnedHome={pinOf.get(chat.id)?.home.name}
+        pinnedSessionId={pinOf.get(chat.id)?.sessionId}
       />
     )
     if (!hasTopics) return row
@@ -863,6 +890,14 @@ export function ChatListPanel({
 
   // 手机整行只导航;桌面重复激活当前来源行才收起/展开,⌘ 点照常拼到右边。
   const activateChatRow = (chat: ChatItem, beside = false) => {
+    // #2548 a pinned agent's row opens the group / project it lives in, the agent selected in its column (task page).
+    const pin = pinOf.get(chat.id)
+    if (pin) {
+      const sessionPage = readSessionpageViewRequestBridge()
+      if (!sessionPage?.openSidebarPin) throw new Error('sessionpage view request bridge cannot open a pinned agent')
+      sessionPage.openSidebarPin(pin.sessionId, pin.home.chatId)
+      return
+    }
     if (chat.unread_locator || mobile || beside || chat.id !== selectedChatId || !topicNesting.bySource.get(chat.id)?.length) {
       selectChat(chat, 'composer', beside)
       return

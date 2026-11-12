@@ -19,6 +19,10 @@ export interface SessionViewRequestBridge {
   /** Desktop group-name entry: preserve the group and let the session page own the single auxiliary pane. */
   openGroupChat?(sourceChatId: string, chatId: string): void;
   prepareGroupSession?(sourceChatId: string, target: { projectId: string; sessionId: string }): import('@renderer/features/chats/group-participant-requests').GroupParticipantRequest;
+  /** #2548 取消固定到左侧栏 from a pinned agent's row in the one list: the session is this page's to write. */
+  unpinFromSidebar?(sessionId: string): void;
+  /** #2548 a pinned agent's row in the one list: open the group / project it lives in, the agent selected in its column. */
+  openSidebarPin?(sessionId: string, homeChatId: string): void;
 }
 
 /** 装到宿主文档的 window 上,让 gugu 那棵树读得到。幂等。打开对话那一下由入口接到这屏上(这里不认这屏)。 */
