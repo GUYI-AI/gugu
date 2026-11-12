@@ -200,6 +200,21 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
     expect(found('alpha')).toEqual(['newer alpha', 'older alpha']);
   });
 
+  it('ranks every match on the index alone, so a word found in thousands of long turns cannot hold the window', () => {
+    fixture().sqlite.exec(`INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES
+      ('s1:0', 's1', 0, 't', '{"items":[{"kind":"message","id":"a","role":"user","text":"alpha one"},{"kind":"message","id":"b","role":"assistant","text":"alpha two"}]}'),
+      ('s2:0', 's2', 0, 't', '{"items":[{"kind":"message","id":"c","role":"user","text":"alpha three"}]}')`);
+    const prepare = vi.spyOn(fixture().sqlite, 'prepare');
+    const hits = searchService.searchTaskTurns('al');
+    expect(hits.map((hit) => hit.excerpt)).toEqual(['alpha three', 'alpha two', 'alpha one']);
+    expect(hits.map((hit) => [hit.at, hit.activity])).toEqual([[expect.any(String), null], [expect.any(String), { kind: 'sent', id: 'b', addresses: null }], [expect.any(String), null]]);
+    const ranking = String(prepare.mock.calls[0]![0]);
+    prepare.mockRestore();
+    // Reading a turn's created_at or data means walking its whole record; the ranking reaches turns only through their index.
+    const plan = (fixture().sqlite.prepare(`EXPLAIN QUERY PLAN ${ranking}`).all('%al%', 30) as { detail: string }[]).map((row) => row.detail);
+    expect(plan.filter((step) => /\bt\b/.test(step))).toEqual(['SEARCH t USING COVERING INDEX idx_session_turns_session_seq (session_id=? AND seq=?)']);
+  });
+
   it('backfills turns stored before the index existed', async () => {
     fixture().sqlite.exec(`INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES
       ('s1:0', 's1', 0, 't', '{"items":[{"kind":"message","id":"x","role":"user","text":"历史里的数据库迁移"}]}'),
