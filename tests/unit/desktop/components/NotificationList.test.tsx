@@ -35,7 +35,7 @@ vi.mock('@renderer/lib/layout/layout-provider', () => ({ useWorkspaceLayoutConte
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }))
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {} } },
-  sidebarStore: { sidebarProjects: [], joinedGroups: [], setStateGroupsEnabled: () => {}, setAssistantAgentId: () => {}, setAgentNameOnHoverEnabled: () => {} },
+  sidebarStore: { sidebarProjects: [], joinedGroups: [], setAssistantAgentId: () => {}, setAgentNameOnHoverEnabled: () => {} },
 }))
 vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: { chatIdOf: () => undefined } }))
 vi.mock('@renderer/features/sidebar/session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: () => {} } }))

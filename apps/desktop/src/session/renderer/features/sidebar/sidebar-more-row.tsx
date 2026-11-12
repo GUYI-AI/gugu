@@ -12,7 +12,7 @@ export function SidebarMoreRow({
   label: ownLabel,
   onToggle,
 }: {
-  /** 项目 id,或「任务」分区的键(sidebarStore.standaloneMore)。 */
+  /** 「展开显示」那张表(sidebarStore.idleExpandedProjectIds)里的键。 */
   foldKey: string;
   expanded: boolean;
   hiddenCount: number;

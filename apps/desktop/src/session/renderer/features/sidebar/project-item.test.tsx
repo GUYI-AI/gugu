@@ -6,7 +6,7 @@ import { expect, it, vi } from 'vitest';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const state = vi.hoisted(() => ({
-  navigate: vi.fn(), expand: vi.fn(), toggle: vi.fn(), beside: vi.fn(), show: vi.fn(), screen: false, topicSplit: vi.fn(),
+  navigate: vi.fn(), expand: vi.fn(), beside: vi.fn(), show: vi.fn(), screen: false, topicSplit: vi.fn(),
   group: undefined as string | undefined,
   signals: null as null | { groupUnread: Map<string, number>; groupCallingTopic: Map<string, { chatId: string; name: string }> },
 }));
@@ -23,8 +23,8 @@ vi.mock('@renderer/lib/layout/navigation-provider', () => ({
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { navigation: { currentViewId: 'new-session' } },
   sidebarStore: { expandedProjectIds: new Set(), homeLayout: { homeRows: new Set(), standIns: new Map() },
-    needsYouCountForProject: () => 0, projectMembersOf: () => ['business'], hasNameTwin: () => false, rowProjectIdOf: (id: string) => id,
-    ensureProjectExpanded: state.expand, toggleProjectExpanded: state.toggle },
+    projectMembersOf: () => ['business'], rowProjectIdOf: (id: string) => id,
+    ensureProjectExpanded: state.expand },
 }));
 vi.mock('@renderer/app/screen-layout-actions', () => ({ isScreenView: () => state.screen, showBesideOnScreen: state.beside, showOnScreen: state.show }));
 vi.mock('@renderer/app/screen-layout', () => ({ screenLayout: { focusedBlockId: null, blocks: new Map() } }));
@@ -57,7 +57,6 @@ it('opens an actual project on the assistant device and keeps its project menu',
     await act(async () => (host.querySelector('[data-project-row="business"]') as HTMLElement).click());
     expect(state.show).toHaveBeenCalledWith({ kind: 'project', projectId: 'business' });
     expect(state.expand).not.toHaveBeenCalled();
-    expect(state.toggle).not.toHaveBeenCalled();
     state.screen = true;
     await act(async () => host.querySelector('[data-project-row="business"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })));
     expect(state.beside).toHaveBeenCalledWith({ kind: 'project', projectId: 'business' });

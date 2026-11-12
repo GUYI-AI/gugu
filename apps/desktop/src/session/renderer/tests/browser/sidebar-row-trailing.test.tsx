@@ -36,7 +36,7 @@ afterEach(() => { root.unmount(); host.remove(); park.remove(); });
 
 const running = presentAgentStatus({ reading: { status: 'working', detail: null } });
 const tree = (total: number, active: number): SessionBranchSummary => ({
-  total, remainingDepth: 0, active: active > 0 ? [{ count: active, presentation: running }] : [],
+  total, active: active > 0 ? [{ count: active, presentation: running }] : [],
 });
 
 async function mount(rows: { id: string; tree?: SessionBranchSummary; expanded?: boolean; needsAttention?: boolean }[]) {

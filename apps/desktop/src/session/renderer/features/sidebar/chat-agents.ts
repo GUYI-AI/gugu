@@ -57,7 +57,6 @@ export function chatAgentPill(entries: readonly Pick<ChatAgentEntry, 'presentati
   const running = entries.flatMap((entry) => (entry.presentation?.tone === 'running' ? [entry.presentation] : []));
   return {
     total: entries.length,
-    remainingDepth: 0,
     active: running.length > 0 ? [{ count: running.length, presentation: running[0] }] : [],
   };
 }

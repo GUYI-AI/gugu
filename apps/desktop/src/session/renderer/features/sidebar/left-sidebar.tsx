@@ -49,15 +49,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
     remoteHostsStore.start();
   }, []);
 
-  // behavior session-page「会话列表与状态」: 用不用二级分类是一个设置。组头渲染在 React 树里、
-  // 键盘导航链住在 store 里,两处得读同一个真值,所以设置在这里镜像进 store。
   const { value: interfaceSettings } = useAppSettingsKey('interface');
-  const stateGroupsEnabled = interfaceSettings?.showLeftSidebarStateGroups ?? false;
-  React.useEffect(() => {
-    sidebarStore.setStateGroupsEnabled(stateGroupsEnabled);
-  }, [stateGroupsEnabled]);
 
-  // #5818 「悬浮时这一行变成它是谁」的开关,同一条镜像路 —— 读在设置里,用在每一行上。
+  // #5818 「悬浮时这一行变成它是谁」的开关,设置镜像进 store —— 读在设置里,用在每一行上。
   // #7199 个人助理不住在任务区:它是谁(壳按库里的标记认出来,经助理那座桥发过来),交给 store 去藏它自己的会话。
   const assistantShell = useAssistantShell();
   const assistantAgentId = assistantShell?.assistant?.id ?? null;
