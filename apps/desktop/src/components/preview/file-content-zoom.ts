@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useSyncExternalStore, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 import { clampZoom, DOCUMENT_MAX_ZOOM, DOCUMENT_MIN_ZOOM, isPinchWheel, pinchZoom } from '@/session/shared/preview/pinch-zoom';
 import { FILE_ZOOM_ATTRIBUTE, FILE_ZOOM_EVENT, isFileZoomCommand, type FileZoomCommand } from '@/session/shared/preview/file-zoom';
 
@@ -7,13 +7,19 @@ export type FileZoomKind = 'markdown' | 'text-code' | 'html' | 'pdf' | 'image' |
 const CHANGED = 'gugu:file-zoom-preference';
 const keyOf = (kind: FileZoomKind) => `gugu.file-content-zoom.${kind}`;
 
-/** One local reading preference per type, shared by retained tabs and both renderer roots. */
+const normalizeZoom = (kind: FileZoomKind, value: number) => kind === 'image' ? Math.max(1, value) : clampZoom(value, DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM);
+
+/** The ratio a type was last left at: where a view of it opened next starts (both renderer roots read the same one). */
 export function readFileZoom(kind: FileZoomKind): number {
   const value = Number(localStorage.getItem(keyOf(kind)) ?? 1);
   if (!Number.isFinite(value) || value <= 0) return 1;
-  return kind === 'image' ? Math.max(1, value) : clampZoom(value, DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM);
+  return normalizeZoom(kind, value);
 }
-/** `shownOn`: the view the person zoomed — the new ratio floats over it for a moment (zoom B: no lasting control). */
+/**
+ * Changes a type's remembered ratio and tells its subscribers: only for what has one view at a time (the image viewer,
+ * an App's page). A view that can sit beside another of its type keeps its own (`createFileZoomView`).
+ * `shownOn`: the view the person zoomed — the new ratio floats over it for a moment (zoom B: no lasting control).
+ */
 export function writeFileZoom(kind: FileZoomKind, value: number, shownOn?: Element | null): void {
   if (!Number.isFinite(value) || value <= 0 || value === readFileZoom(kind)) return;
   localStorage.setItem(keyOf(kind), String(value));
@@ -51,6 +57,42 @@ export const subscribeFileZoom = (listener: () => void) => {
   window.addEventListener('storage', listener);
   return () => { window.removeEventListener(CHANGED, listener); window.removeEventListener('storage', listener); };
 };
+
+/**
+ * One open view's reading zoom (#2567): it starts from the ratio its type was last left at, and a change zooms this view
+ * only — another view of the type, open beside it, keeps its own ratio. The change is remembered for the next view opened.
+ */
+export interface FileZoomView {
+  get(kind: FileZoomKind): number
+  set(kind: FileZoomKind, value: number, shownOn?: Element | null): void
+  subscribe(listener: () => void): () => void
+}
+export function createFileZoomView(): FileZoomView {
+  const zooms = new Map<FileZoomKind, number>();
+  const listeners = new Set<() => void>();
+  const get = (kind: FileZoomKind) => {
+    if (!zooms.has(kind)) zooms.set(kind, readFileZoom(kind));
+    return zooms.get(kind)!;
+  };
+  return {
+    get,
+    set(kind, value, shownOn) {
+      if (!Number.isFinite(value) || value <= 0) return;
+      const next = normalizeZoom(kind, value);
+      if (next === get(kind)) return;
+      zooms.set(kind, next);
+      localStorage.setItem(keyOf(kind), String(next));
+      listeners.forEach(listener => listener());
+      if (shownOn) showZoomRatio(shownOn, next);
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+  };
+}
+/** A view made of parts (a preview panel's ⋯ menu row and the document under it) shares one zoom through this. */
+export const FileZoomViewContext = createContext<FileZoomView | null>(null);
 
 /** Native menus and page keys share the same viewer command, owned by actual focus. `apply` returning false leaves it to the window. */
 export function bindFileZoom(element: HTMLElement, apply: (command: FileZoomCommand) => boolean | void): () => void {
@@ -124,10 +166,16 @@ export function bindEditorFileZoom(container: HTMLElement, setFontSize: (px: num
   };
 }
 
-export function useFileZoom(kind: FileZoomKind, ref: RefObject<HTMLElement | null>, onCommand?: (command: FileZoomCommand) => boolean | void) {
-  const zoom = useSyncExternalStore(subscribeFileZoom, () => readFileZoom(kind), () => 1);
+/** `view`: the zoom this view keeps; by default the enclosing `FileZoomViewContext`'s, else one of its own. */
+export function useFileZoom(kind: FileZoomKind, ref: RefObject<HTMLElement | null>, onCommand?: (command: FileZoomCommand) => boolean | void, view?: FileZoomView) {
+  const enclosing = useContext(FileZoomViewContext);
+  const [own] = useState(createFileZoomView);
+  const store = view ?? enclosing ?? own;
+  const zoom = useSyncExternalStore(store.subscribe, () => store.get(kind), () => 1);
   const applyRef = useRef(onCommand);
   applyRef.current = onCommand;
+  const storeRef = useRef(store);
+  storeRef.current = store;
   // Bound to the element actually mounted, not to [ref, kind]: a reused panel moves its ref between files of the same kind.
   const bound = useRef<{ element: HTMLElement | null; kind: FileZoomKind; off?: () => void }>(undefined);
   useEffect(() => {
@@ -139,12 +187,13 @@ export function useFileZoom(kind: FileZoomKind, ref: RefObject<HTMLElement | nul
       kind,
       off: element ? bindFileZoom(element, command => {
         if (applyRef.current) return applyRef.current(command);
-        writeFileZoom(kind, clampZoom(zoomForCommand(readFileZoom(kind), command), DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM), element);
+        const store = storeRef.current;
+        store.set(kind, clampZoom(zoomForCommand(store.get(kind), command), DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM), element);
       }) : undefined,
     };
   });
   useEffect(() => () => { bound.current?.off?.(); bound.current = undefined; }, []);
-  const setZoom = useCallback((value: number | ((current: number) => number)) => writeFileZoom(kind, typeof value === 'function' ? value(readFileZoom(kind)) : value, ref.current), [kind, ref]);
+  const setZoom = useCallback((value: number | ((current: number) => number)) => store.set(kind, typeof value === 'function' ? value(store.get(kind)) : value, ref.current), [kind, ref, store]);
   return { zoom, setZoom };
 }
 
