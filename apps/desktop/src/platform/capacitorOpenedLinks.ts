@@ -7,7 +7,7 @@ let source: Promise<void> | null = null
 
 export function nativeOpenedLinksReady(): Promise<void> {
   if (!source) source = Promise.resolve().then(() => App.addListener('appUrlOpen', (event) => {
-    // 邀请返利要在注册前记下:这里是登录前就在听的那一个口(App 启动即订 auth 回调)。
+    // 邀请返利要在注册前记下:这里是登录前就在听的那一个口(App 启动即订 auth 回调)。@@@referral-entry
     rememberReferrerFromLink(event.url)
     inbox.push(event.url)
   })).then(() => undefined, (error: unknown) => {

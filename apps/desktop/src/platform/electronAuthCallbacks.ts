@@ -19,8 +19,8 @@ function startSource(): Promise<void> {
   const take = async () => {
     const urls = await api.invoke('auth:take-callbacks')
     if (!Array.isArray(urls) || !urls.every((url) => typeof url === 'string')) throw new Error('Invalid OAuth callback delivery')
-    // Main shows this window every link the OS opened (Android: capacitorOpenedLinks). Login takes the OAuth
-    // callbacks; an invite's referrer is remembered before sign-up; the rest is main's to open.
+    // Main shows this window every link the OS opened (@@@referral-entry). Login takes the OAuth callbacks; an
+    // invite's referrer is remembered before sign-up; everything else stays main's to open (handleGuguLink).
     for (const url of urls as string[]) {
       rememberReferrerFromLink(url)
       if (isOAuthCallback(url)) inbox.push(url)

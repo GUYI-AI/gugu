@@ -2,6 +2,8 @@
 // @@@short-qr,与加好友同一个码):系统把它交给 App 时(官网 /j/ 页「打开咕咕」,登录前也会到)记下 referrer,
 // 邮箱注册时塞进 signup metadata 的 referrer_gugu_number;库里 billing.claim_device_free_credits 认领注册礼包时
 // 读它并调 grant_referral_reward。前端只搬运,不判防刷(自邀/重复/数额全在库里)。
+// 只有这一个记录函数,各端只负责把「打开的链接」交进来(@@@referral-entry):安卓 appUrlOpen(capacitorOpenedLinks)、
+// 桌面系统打开的 gugu:// 链接(main 全量转给渲染层,electronAuthCallbacks)、网页版页面自己的地址(main.tsx)。
 import { parseGuguQrPayload } from '@gugu/core/shared/qrPayload'
 
 const PENDING_REFERRER_KEY = 'pending_referrer_gugu_number'

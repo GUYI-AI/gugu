@@ -13,6 +13,7 @@ import { notifyHostTheme } from '@renderer/lib/theme/host-theme'
 import { renderEntryRoot } from './lib/renderer-entry-root'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { installScrollbarAutoHide } from './lib/scrollbarAutoHide'
+import { rememberReferrerFromLink } from './lib/referral'
 import { installWindowMaterialAttribute } from './lib/windowMaterial'
 import {
   hasWindowTitlebarRow,
@@ -55,6 +56,9 @@ installPlatformLocaleSync(platform, {
 // 首启默认组(owner 10-16「为什么会有安装这一步,而不是一启动就装好了」):一启动就开始,和登录并行 —— 桌面听 main 装到哪了,
 // 手机在这一页里自己装(firstRunApps.ts)。
 startFirstRunApps()
+
+// @@@referral-entry 网页版:页面自己的地址就是访客打开的那条链接(…/j/?<咕咕号>)。桌面、安卓由各自的系统链接入口调同一个函数。
+rememberReferrerFromLink(window.location.href)
 
 // @@@scrollbar-autohide (#7641) 滚动条平时透明、滚动时浮出 —— 这里只负责在滚动的元素上打
 // `data-scrolling`,显隐规则在 styles/tokens.css。装在这里而不是某个组件的 effect 里:
