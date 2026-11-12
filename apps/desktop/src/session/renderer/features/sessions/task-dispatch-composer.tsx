@@ -7,6 +7,7 @@ import { useNewSessionMachine } from '@renderer/features/remote-hosts/use-new-se
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { sessionpageMessageHost } from '@renderer/lib/sessionpage-message-host';
 import { log } from '@renderer/utils/logger';
+import { useDesktopSidebarV2Switch } from '@renderer/features/sidebar/use-desktop-sidebar-v2';
 import { ComposerBirthGroupChip, ComposerProjectPicker, mountedProjects } from './composer-context-tray';
 import { composerDrafts } from './composer-drafts';
 import { ComposerTray } from './composer-tray';
@@ -47,6 +48,8 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   placeholder?: (agentName: string) => string;
 }) {
   const { translate } = useSessionMessages();
+  // #2548 with the sidebar as one list the chip reads 「新智能体」, as the composer button that opened this box (mock v33 派智能体).
+  const oneList = useDesktopSidebarV2Switch();
   const draftKey = taskDispatchDraftKey(verbKey);
   // 选词那一刻框里写着的话跟过来:要在 NewSessionComposer 挂上(读草稿)之前放好。
   useState(() => {
@@ -88,7 +91,7 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
           key={remote?.deviceId ?? 'local'}
           draftKey={draftKey}
           placeholder={placeholder ?? ((agent) => translate('taskDispatch.placeholder', { agent }))}
-          verb={composerVerbLook('task', { label: translate('taskDispatch.task'), onCancel: () => cancelComposerVerb(verbKey, draftKey), testId: 'task-dispatch' })}
+          verb={composerVerbLook('task', { label: translate(oneList ? 'taskDispatch.agent' : 'taskDispatch.task'), onCancel: () => cancelComposerVerb(verbKey, draftKey), testId: 'task-dispatch' })}
           taskChatId={chatId}
           openAfterCreate={false}
           birthChatId={joinChat ? chatId : undefined}

@@ -462,7 +462,8 @@ export default {
       "unavailable": "发送未完成，请稍后重新发送"
     },
     "verb": {
-      "task": "新任务"
+      "task": "新任务",
+      "agent": "新智能体"
     },
     "whisperBanner": "悄悄话给 {{name}} · 仅你与对方可见",
     "whisperPlaceholder": "悄悄话给 {{name}}…"
