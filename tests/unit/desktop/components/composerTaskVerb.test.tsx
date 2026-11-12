@@ -54,6 +54,6 @@ describe('ComposerVerbs task button', () => {
     expect(glyph(renderToStaticMarkup(<SquarePen size={14} />))).not.toBe(glyph(renderToStaticMarkup(<Zap size={14} />)))
     await clickElement(button())
     expect(verb).toBe('task')
-    expect(readComposerVerbChat('chat')).toEqual({ name: '', joinable: false })
+    expect(readComposerVerbChat('chat')).toEqual({ name: '', joinable: false, inGroup: false })
   })
 })

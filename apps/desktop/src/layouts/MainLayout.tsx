@@ -652,7 +652,7 @@ function InnerLayout({
         return
       }
       // 桌面上:那个群的输入框换成「新任务」,把那个群摆出来 —— 建好的 agent 进这个群,结果回到这里。
-      setComposerVerb(chatId, 'task', undefined, { name, joinable: true })
+      setComposerVerb(chatId, 'task', undefined, { name, joinable: true, inGroup: true })
       openChatBlock(chatId)
     }
     window.addEventListener(UI_EVENTS.createAgentInGroup, onCreateInGroup)

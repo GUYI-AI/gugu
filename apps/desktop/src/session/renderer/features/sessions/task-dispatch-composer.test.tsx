@@ -88,6 +88,13 @@ describe('#2599 the project field in a group', () => {
     expect(messageHost.rememberedTaskProject).not.toHaveBeenCalled();
   });
 
+  it('starts empty in a topic too: the agent does not join it, but it lives in the topic\'s group', async () => {
+    messageHost.rememberedTaskProject.mockClear();
+    await act(async () => root.render(<TaskDispatchComposer chatId="topic-1" chatName="定价页方案" inGroup />));
+    await act(async () => {});
+    expect(messageHost.rememberedTaskProject).not.toHaveBeenCalled();
+  });
+
   it('a direct message still starts from the project picked for it before', async () => {
     messageHost.rememberedTaskProject.mockClear();
     await act(async () => root.render(<TaskDispatchComposer chatId="dm-1" />));

@@ -120,13 +120,19 @@ export function isProjectChat(chatId: string): boolean {
 }
 
 /** 侧栏列着的项目(账号上的项目,归档的不列)在各台机器上的本地项目:住在这些里的 agent 住在那个项目,❌ 算在群里。 */
-function listedProjectIds(): ReadonlySet<string> {
+export function listedProjectIds(): ReadonlySet<string> {
   return new Set(sidebarStore.sidebarProjects.flatMap((ref) => projectIdsOfChat(ref.chatId)));
 }
 
-/** #2599 这个群 / 项目里住着谁:在这个项目里的,或在这里(或它的一个话题里)建、又不在任何项目里的(chat-agents)。 */
-export function chatScope(anchor: InnerSidebarRoomAnchor, summaries: ReadonlyMap<string, ChatSummary>): ChatAgentScope {
-  const projects = listedProjectIds();
+/**
+ * #2599 这个群 / 项目里住着谁:在这个项目里的,或在这里(或它的一个话题里)建、又不在任何项目里的(chat-agents)。
+ * 一次算很多个群 / 项目的(角标、固定的那几行)把 `projects`(listedProjectIds)算一次传进来。
+ */
+export function chatScope(
+  anchor: InnerSidebarRoomAnchor,
+  summaries: ReadonlyMap<string, ChatSummary>,
+  projects: ReadonlySet<string> = listedProjectIds()
+): ChatAgentScope {
   return {
     kind: anchor.kind,
     projectIds: anchor.kind === 'project' ? projectIdsOfChat(anchor.chatId) : [],
@@ -303,10 +309,11 @@ const MyChatAgentCountsPublisher = observer(function MyChatAgentCountsPublisher(
   summaries: ReadonlyMap<string, ChatSummary>;
 }) {
   const counts = new Map<string, ChatAgentCounts>();
+  const projects = listedProjectIds();
   for (const ref of sidebarStore.sidebarProjects) {
     const chatId = ref.chatId;
     if (counts.has(chatId)) continue;
-    counts.set(chatId, chatAgentCounts(myAgentsInChat(agents, chatScope({ kind: 'project', chatId }, summaries))));
+    counts.set(chatId, chatAgentCounts(myAgentsInChat(agents, chatScope({ kind: 'project', chatId }, summaries, projects))));
   }
   // 依赖是序列化后的数:每次渲染新建的 Map 不算变化(publish 自己也只在数变了时才通知)。
   const key = JSON.stringify([...counts]);
@@ -457,7 +464,7 @@ const InnerHeadRow = observer(function InnerHeadRow({
   // 同输入框「+」右边那个「新任务」:项目走项目行「+」那一条(prepareProjectTask),群把这个群的框换成新任务。
   const newAgent = () => {
     if (rowProjectId) prepareProjectTask(rowProjectId);
-    else setComposerVerb(chatId, 'task', '', { name, joinable: true });
+    else setComposerVerb(chatId, 'task', '', { name, joinable: true, inGroup: true });
     openChatOnScreen(chatId, false);
   };
   const avatar: ReactNode = anchor.kind === 'project' ? (

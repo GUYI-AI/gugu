@@ -38,21 +38,31 @@ describe('#2599 which agents live in a group: where they were created, not the g
     chat({ id: 'room-topic', kind: 'topic', source_chat_id: 'room' }),
     chat({ id: 'dm', kind: 'dm' }),
   ]
-  const bornIn = new Map<string, ReadonlySet<string>>([
+  const bornIn = new Map<string, ReadonlySet<string | null>>([
     ['a-room', new Set(['room'])],
     ['a-shop', new Set(['shop-group'])],
     ['a-topic', new Set(['room-topic'])],
+    ['a-two-groups', new Set(['room', 'shop-group'])],
     ['a-dm', new Set(['dm'])],
+    ['a-button', new Set([null])],
     ['a-gone', new Set(['dissolved'])],
     ['a-left', new Set(['room-i-left'])],
   ])
 
   it('counts agents created in a group the list holds, project groups and topics (of their group) included', () => {
-    expect([...agentsInGroups(chats, bornIn, new Set())].sort()).toEqual(['a-room', 'a-shop', 'a-topic'])
+    expect([...agentsInGroups(chats, bornIn, new Set())].sort()).toEqual(['a-room', 'a-shop', 'a-topic', 'a-two-groups'])
   })
 
   it('a group that is gone (dissolved, read as archived, or left) is no home: its agents get their own row', () => {
     expect([...agentsInGroups(chats, bornIn, new Set(['room']))].sort()).toEqual(['a-shop'])
+  })
+
+  it('one top-level task created elsewhere keeps the agent its own row (that task has no other place to show)', () => {
+    const mixed = new Map<string, ReadonlySet<string | null>>([
+      ['a-room-and-button', new Set(['room', null])],
+      ['a-room-and-dm', new Set(['room', 'dm'])],
+    ])
+    expect([...agentsInGroups(chats, mixed, new Set())]).toEqual([])
   })
 
   it('agentTaskHomes records where each top-level task outside every project was created; a project task records none', () => {
@@ -66,7 +76,7 @@ describe('#2599 which agents live in a group: where they were created, not the g
         session('s4', 'tasks', 'a-child', 's1', 'room'),
       ],
     }], accountProjectReading([{ bindings: [{ deviceId: 'mac', localProjectId: 'app' }] }], false))
-    expect([...born.keys()]).toEqual(['a-room'])
+    expect(Object.fromEntries([...born].map(([agent, chats]) => [agent, [...chats]]))).toEqual({ 'a-room': ['room'], 'a-button': [null] })
     expect([...withTopLevelTask].sort()).toEqual(['a-button', 'a-room'])
   })
 })

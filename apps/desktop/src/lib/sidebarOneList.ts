@@ -23,6 +23,8 @@ export type AgentHomes = {
   /**
    * Agents created in a group the list holds (an ordinary group or a project group, or one of its topics) whose top-level
    * task is outside every project. A group that is gone (dissolved, left) is no home: its agents get their own row.
+   * Every such top-level task must have been created in one: a task created elsewhere is reachable only from the agent's
+   * own row, so that agent keeps it.
    */
   readonly inGroups: ReadonlySet<string>
   /** Agents with a session in a project on any machine (a project of the account project list; a task workspace is none). */
@@ -36,12 +38,13 @@ export type AgentHomes = {
 }
 
 /**
- * #2599 The agents that live in a group the list holds: born (`AgentTaskHomes.bornIn`) in one of its groups, or in a topic
- * of one (a topic is not a home of its own; it belongs to its group).
+ * #2599 The agents that live in a group the list holds: each of their top-level tasks outside every project was born
+ * (`AgentTaskHomes.bornIn`) in one of its groups, or in a topic of one (a topic is not a home of its own; it belongs to its
+ * group). One task born nowhere, or in a group the list does not hold, keeps the agent's own row.
  */
 export function agentsInGroups(
   chats: readonly Pick<ChatItem, 'id' | 'kind' | 'source_chat_id'>[],
-  bornIn: ReadonlyMap<string, ReadonlySet<string>>,
+  bornIn: ReadonlyMap<string, ReadonlySet<string | null>>,
   gone: ReadonlySet<string>,
 ): Set<string> {
   const groups = new Set(chats.filter((chat) => chat.kind === 'group' && !gone.has(chat.id)).map((chat) => chat.id))
@@ -49,7 +52,7 @@ export function agentsInGroups(
   for (const chat of chats) if (chat.kind === 'topic' && chat.source_chat_id) groupOf.set(chat.id, chat.source_chat_id)
   const agents = new Set<string>()
   for (const [agentId, chatIds] of bornIn) {
-    if ([...chatIds].some((chatId) => groups.has(groupOf.get(chatId) ?? chatId))) agents.add(agentId)
+    if ([...chatIds].every((chatId) => chatId !== null && groups.has(groupOf.get(chatId) ?? chatId))) agents.add(agentId)
   }
   return agents
 }
@@ -77,8 +80,11 @@ export function accountProjectReading(list: readonly Pick<AccountProject, 'bindi
  * rows of the one list, top-level tasks are (#2548 "one row per top-level task, forks stay under their parent").
  */
 export type AgentTaskHomes = Pick<AgentHomes, 'inProjects' | 'withTopLevelTask' | 'onlyForks'> & {
-  /** #2599 For each agent with a top-level task outside every project: the conversations those tasks were created from. */
-  readonly bornIn: ReadonlyMap<string, ReadonlySet<string>>
+  /**
+   * #2599 For each agent with a top-level task outside every project: the conversations those tasks were created from
+   * (null = one was created from no conversation, or by a host that does not say).
+   */
+  readonly bornIn: ReadonlyMap<string, ReadonlySet<string | null>>
 }
 
 export function agentTaskHomes(
@@ -89,7 +95,7 @@ export function agentTaskHomes(
   const withTopLevelTask = new Set<string>()
   const topLevel = new Set<string>()
   const forked = new Set<string>()
-  const bornIn = new Map<string, Set<string>>()
+  const bornIn = new Map<string, Set<string | null>>()
   for (const { deviceId, projects, sessions } of machines) {
     const ownProjects = reading.firstRead ? new Set(projects.filter((project) => project.kind !== 'workspace').map((project) => project.id)) : null
     for (const session of sessions) {
@@ -104,11 +110,9 @@ export function agentTaskHomes(
       topLevel.add(agentId)
       if (inProject) continue
       withTopLevelTask.add(agentId)
-      if (session.bornInChatId) {
-        const chats = bornIn.get(agentId) ?? new Set<string>()
-        chats.add(session.bornInChatId)
-        bornIn.set(agentId, chats)
-      }
+      const chats = bornIn.get(agentId) ?? new Set<string | null>()
+      chats.add(session.bornInChatId ?? null)
+      bornIn.set(agentId, chats)
     }
   }
   return { inProjects, withTopLevelTask, onlyForks: new Set([...forked].filter((agentId) => !topLevel.has(agentId))), bornIn }

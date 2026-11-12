@@ -206,7 +206,7 @@ function sampleConversionHost(userId: string, turn: ComposerHandoff, translate: 
     // 交过去的只有这一句话:示例的说明进不了那一框,示例的文件在那台电脑的项目文件夹里。
     handOffToGroup: (chatId) => {
       const words = composerDrafts.get(SAMPLE_DRAFT_KEY);
-      setComposerVerb(chatId, 'task', words, { name: accountProjectsStore.project(chatId)?.name ?? '', joinable: true });
+      setComposerVerb(chatId, 'task', words, { name: accountProjectsStore.project(chatId)?.name ?? '', joinable: true, inGroup: true });
       openChatOnScreen(chatId, false);
       forgetSampleProjectOnScreen();
       composerDrafts.discard(SAMPLE_DRAFT_KEY);
