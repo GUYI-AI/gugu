@@ -24,6 +24,8 @@ import { useAuth } from '../store/auth'
 import '../components/productTour/catalog'
 import { ASSISTANT_APP_ID, assistantEntryUnread, openAssistantEntry, useAssistantEntryTarget } from '../lib/assistantEntry'
 import { useChatStore } from '../store/chatContext'
+import { readPanelToggle } from '../lib/panelToggles'
+import { useSidebarChatView } from '../lib/sidebarChatsBridge'
 import { cn } from '@/lib/cn'
 import { DropdownMenu, Menu, MenuItem as DropdownMenuItem, MenuSeparator } from './ui/Menu'
 import { OpenableAppRows } from './chat/OpenAppMenuItems'
@@ -332,6 +334,9 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
 export const Sidebar = observer(function Sidebar({ activeTab, onTabChange, settingsOpen = false, pendingContactsCount = 0, sessionAttention = null }: SidebarProps) {
   const { t } = useTranslation('main')
   const messagesActive = activeTab === 'chats' || (activeTab === 'tasks' && sessionPagePlace() === 'tasks')
+  // #2548 the sidebar as one list: 「消息」 is that list, so clicking it again while it is the one shown folds / unfolds it
+  // (the same toggle as the list's own collapse button and its shortcut, lib/panelToggles).
+  const oneList = useSidebarChatView().oneList === true
   // 手机版 — 移动端交接后端(#1534)就绪后再提供入口
 
   return (
@@ -346,6 +351,12 @@ export const Sidebar = observer(function Sidebar({ activeTab, onTabChange, setti
             icon={<ChatIcon />}
             active={messagesActive}
             onClick={() => {
+              if (oneList && activeTab === 'tasks' && sessionPagePlace() === 'tasks') {
+                const sidebar = readPanelToggle('list:sessions')
+                if (!sidebar) throw new Error('the task page is shown but has not registered its sidebar toggle')
+                sidebar.toggle()
+                return
+              }
               onTabChange('tasks')
               if (sessionPagePlace() === 'tasks') return
               returnToScreen()

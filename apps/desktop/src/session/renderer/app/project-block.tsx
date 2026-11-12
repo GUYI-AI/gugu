@@ -40,7 +40,7 @@ export const ProjectBlock = observer(function ProjectBlock({
   blockActions?: ReactNode;
 }) {
   const { translate } = useSessionMessages();
-  const { isLeftOpen } = useWorkspaceLayoutContext();
+  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const corners = screenLayout.corners(blockId);
   const focused = screenLayout.focusedBlockId === blockId;
   const label = projectDisplayName(getProjectStore(projectId)) ?? translate('projects.fallbackName');
@@ -65,7 +65,7 @@ export const ProjectBlock = observer(function ProjectBlock({
     return (
       <>
         <TabStripShell
-          reserveShellRestoreLane={corners.topLeft && !isLeftOpen}
+          reserveShellRestoreLane={corners.topLeft && !isLeftOpen && leftRail === 0}
           actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{blockActions}</TabBarActionRow>}
         >
           {projectChip}
@@ -80,7 +80,7 @@ export const ProjectBlock = observer(function ProjectBlock({
     <ChatPanes
       chatId={chatId}
       blockId={blockId}
-      reserveShellRestoreLane={corners.topLeft && !isLeftOpen}
+      reserveShellRestoreLane={corners.topLeft && !isLeftOpen && leftRail === 0}
       actionsSlot={
         <TabBarActionRow atWindowEdge={corners.topRight}>
           <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />

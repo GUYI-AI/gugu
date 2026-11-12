@@ -1,4 +1,4 @@
-import { animate, useMotionValue, useReducedMotion, type MotionValue } from 'framer-motion';
+import { animate, useMotionValue, useReducedMotion, useTransform, type MotionValue } from 'framer-motion';
 import {
   createContext,
   useCallback,
@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { useState } from 'react';
 import { NAV_COLUMN_WIDTH } from '@/lib/uiRuler';
-import { PANEL_SPRING, usePanelAnimatedSize } from './panel-motion';
+import { clamp01, PANEL_SPRING } from './panel-motion';
 import { useSidebarPeek } from './sidebar-peek';
 
 /** 侧栏宽度的边界与默认值。min 沿用改造前的 200px;max 取 Codex 同款 520。 */
@@ -42,6 +42,25 @@ function writeStoredSidebarWidth(width: number): void {
   }
 }
 
+/**
+ * 侧栏占位宽:收起宽 + 进度 × (宽 − 收起宽)。收起宽 0 = 今天的 进度 × 宽(usePanelAnimatedSize);#2548 一个列表时收起成
+ * 一列头像,收起宽就是那一列。
+ */
+export function sidebarOccupiedWidth(progress: number, width: number, rail: number): number {
+  return rail + clamp01(progress) * (width - rail);
+}
+
+/**
+ * #2548 收起成一列头像时,侧栏里文字(名字、预览、时间、搜索、分区头)的不透明度,由开合的同一条进度推出:
+ * 只在进度的后一半里有字 —— 收起时字在前一半淡出,展开时在后一半淡入(一个式子两个方向都对)。
+ */
+export function sidebarRailTextOpacity(progress: number): number {
+  return clamp01(2 * progress - 1);
+}
+
+/** 侧栏里文字跟着它淡入淡出的那个 CSS 变量(内容层上设,left-sidebar 里各段文字读)。 */
+export const SIDEBAR_TEXT_OPACITY_VAR = '--gg-sidebar-text';
+
 export interface WorkspaceLayoutContextValue {
   isLeftOpen: boolean;
   /** 侧栏收起后指针停在左缘/开关钮上,浮出的那一份预览。 */
@@ -50,8 +69,16 @@ export interface WorkspaceLayoutContextValue {
   leftWidth: MotionValue<number>;
   /** 开合进度 0→1,由弹簧驱动。 */
   leftProgress: MotionValue<number>;
-  /** 侧栏实际占位宽 = 进度 × 宽。主区宽是"剩下的",所以两者永远同步。 */
+  /** 侧栏实际占位宽 = 收起宽 + 进度 × (宽 − 收起宽)。主区宽是"剩下的",所以两者永远同步。 */
   leftAnimatedWidth: MotionValue<number>;
+  /**
+   * GUYI-AI/gugu#2548 收起时留下的那一列宽(px):0 = 收起就整列让开(今天);>0 = 侧栏是一个列表时,收起成这么宽的一列头像
+   * (内容不动,文字藏起来,见 left-sidebar)。这一列一直在,所以没有浮出预览。
+   */
+  leftRail: number;
+  /** 同一个数,给动画里的变换读(useTransform 的输入得是 motion value)。 */
+  leftRailWidth: MotionValue<number>;
+  setLeftRail: (px: number) => void;
   /** 会话页根元素 —— 浮出预览要按它的左缘算,不是窗口。 */
   workspaceRootRef: RefObject<HTMLDivElement | null>;
   setLeftWidth: (width: number, options?: { persist?: boolean }) => void;
@@ -92,13 +119,23 @@ const WorkspaceLayoutContext = createContext<WorkspaceLayoutContextValue | undef
  * 新的宽度键有自己的默认值,再也不会有"折了回不来"。
  */
 export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
+  // Starts expanded (#2548 「默认展开」). Open / collapsed is not stored, only the width is (SIDEBAR_WIDTH_STORAGE_KEY):
+  // every start is expanded, and a stored width still wins over the default width.
   const [isLeftOpen, setIsLeftOpen] = useState(true);
   const prefersReducedMotion = useReducedMotion();
   const workspaceRootRef = useRef<HTMLDivElement | null>(null);
 
   const leftWidth = useMotionValue(readStoredSidebarWidth());
   const leftProgress = useMotionValue(1);
-  const leftAnimatedWidth = usePanelAnimatedSize(leftProgress, leftWidth);
+  const [leftRail, setLeftRailState] = useState(0);
+  const leftRailWidth = useMotionValue(0);
+  const setLeftRail = useCallback((px: number) => {
+    leftRailWidth.set(px);
+    setLeftRailState(px);
+  }, [leftRailWidth]);
+  const leftAnimatedWidth = useTransform([leftProgress, leftWidth, leftRailWidth], ([progress, width, rail]: number[]) =>
+    sidebarOccupiedWidth(progress, width, rail)
+  );
   const runningAnimationRef = useRef<{ stop: () => void } | null>(null);
 
   const zenModeSnapshotRef = useRef<{
@@ -108,7 +145,8 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   } | null>(null);
 
   const peek = useSidebarPeek({
-    isLeftOpen,
+    // A rail never goes away, so there is nothing to peek at.
+    isLeftOpen: isLeftOpen || leftRail > 0,
     rootRef: workspaceRootRef,
     getProgress: () => leftProgress.get(),
     getWidth: () => leftWidth.get(),
@@ -184,6 +222,9 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     leftWidth,
     leftProgress,
     leftAnimatedWidth,
+    leftRail,
+    leftRailWidth,
+    setLeftRail,
     workspaceRootRef,
     setLeftWidth,
     setCollapsed,

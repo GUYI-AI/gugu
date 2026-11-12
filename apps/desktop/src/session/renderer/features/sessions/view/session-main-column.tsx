@@ -173,7 +173,7 @@ const PaneCell = observer(function PaneCell({
   draggingTabId: string | null;
 }) {
   const sessionView = useWorkspaceViewModel();
-  const { isLeftOpen } = useWorkspaceLayoutContext();
+  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const block = useScreenBlock();
   const { paneLayout } = sessionView;
   const group = paneLayout.groups.find((g) => g.paneId === paneId);
@@ -185,7 +185,7 @@ const PaneCell = observer(function PaneCell({
     tabLeadingSlot: atLeftEdge ? <SessionGrip /> : undefined,
     tabTrailingSlot: <TabBarAddMenu />,
     actionsSlot: atWindowEdge ? <SessionBlockActions atScreenEdge={block.topRight} /> : undefined,
-    reserveShellRestoreLane: atLeftEdge && block.topLeft && !block.windowId && !isLeftOpen,
+    reserveShellRestoreLane: atLeftEdge && block.topLeft && !block.windowId && !isLeftOpen && leftRail === 0,
     leadingReservePx: atLeftEdge && block.windowId ? auxLeadingReserve() : undefined,
   };
   if (part === 'bar') return <PaneProvider group={group} isFocusedPane={focused} passive><PaneContent part="bar" {...strip} /></PaneProvider>;

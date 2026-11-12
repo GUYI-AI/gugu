@@ -6,6 +6,8 @@ import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { deviceSessionsOf, useDirectoryDevices, useLiveDeviceSessions, type DeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { buildSessionTree } from '@/session/renderer/features/sessions/session-tree'
 import type { SidebarPinnedAgent } from './sidebarChatsBridge'
+import type { SampleProjectContent } from '@/session/renderer/features/sample-project/content/types'
+import { markdownPlainText } from './markdownPlainText'
 
 /** Where my agents live. */
 export type AgentHomes = {
@@ -13,10 +15,12 @@ export type AgentHomes = {
   readonly inRooms: ReadonlySet<string>
   /** Agents with a session in a project on any machine (a task workspace is not a project). */
   readonly inProjects: ReadonlySet<string>
-  /** Agents with a top-level task outside every project. */
+  /** Agents with a top-level task (no parent session) outside every project. */
   readonly withTopLevelTask: ReadonlySet<string>
   /** Agents pinned to the sidebar (固定到左侧栏): a pinned session of theirs lives in a group or a project. */
   readonly pinned: ReadonlySet<string>
+  /** Agents whose every known session is a fork (has a parent session): a fork lives under its parent, never in the list. */
+  readonly onlyForks: ReadonlySet<string>
 }
 
 /** Agent members of every group chat, project groups included. A topic is not a room of its own here. */
@@ -28,31 +32,39 @@ export function agentsInRooms(chats: readonly Pick<ChatItem, 'id' | 'kind'>[], a
 
 /**
  * A session is in a project when its machine lists that project as a project (`kind: 'workspace'` is the task
- * workspace; same reading as the phone's task sections). Top-level = a root of the tree built from every machine's
- * sessions (buildSessionTree, as the sidebar builds it: a fork hangs under its parent, an orphan becomes a root).
+ * workspace; same reading as the phone's task sections). Top-level = no parent session. A fork (parent set) is never
+ * top-level, also when its parent is not on any machine we can see: forks are not rows of the one list, top-level
+ * tasks are (#2548 "one row per top-level task, forks stay under their parent").
  */
-export function agentTaskHomes(machines: readonly Pick<DeviceSessions, 'projects' | 'sessions'>[]): Pick<AgentHomes, 'inProjects' | 'withTopLevelTask'> {
+export function agentTaskHomes(machines: readonly Pick<DeviceSessions, 'projects' | 'sessions'>[]): Pick<AgentHomes, 'inProjects' | 'withTopLevelTask' | 'onlyForks'> {
   const inProjects = new Set<string>()
-  const items = machines.flatMap(({ projects, sessions }) => {
-    const realProjects = new Set(projects.filter((project) => project.kind !== 'workspace').map((project) => project.id))
-    return sessions.map((session) => {
-      const agentId = session.agent?.userId ?? null
-      const inProject = realProjects.has(session.projectId)
-      if (agentId && inProject) inProjects.add(agentId)
-      return { id: session.conversationId, parentSessionId: session.parentConversationId, agentId, inProject }
-    })
-  })
   const withTopLevelTask = new Set<string>()
-  for (const { item } of buildSessionTree(items)) if (item.agentId && !item.inProject) withTopLevelTask.add(item.agentId)
-  return { inProjects, withTopLevelTask }
+  const topLevel = new Set<string>()
+  const forked = new Set<string>()
+  for (const { projects, sessions } of machines) {
+    const realProjects = new Set(projects.filter((project) => project.kind !== 'workspace').map((project) => project.id))
+    for (const session of sessions) {
+      const agentId = session.agent?.userId
+      if (!agentId) continue
+      const inProject = realProjects.has(session.projectId)
+      if (inProject) inProjects.add(agentId)
+      if (session.parentConversationId) {
+        forked.add(agentId)
+        continue
+      }
+      topLevel.add(agentId)
+      if (!inProject) withTopLevelTask.add(agentId)
+    }
+  }
+  return { inProjects, withTopLevelTask, onlyForks: new Set([...forked].filter((agentId) => !topLevel.has(agentId))) }
 }
 
 /**
- * The one place an owned agent earns a row of its own: it lives in no group and no project, or the user pinned it to
- * the sidebar (固定到左侧栏), which keeps its row although it lives elsewhere.
+ * The one place an owned agent earns a row of its own: it lives in no group and no project and it is not only a fork,
+ * or the user pinned it to the sidebar (固定到左侧栏), which keeps its row although it lives elsewhere.
  */
 export function agentHasOwnRow(agentId: string, homes: AgentHomes): boolean {
-  return homes.pinned.has(agentId) || (!homes.inRooms.has(agentId) && !homes.inProjects.has(agentId))
+  return homes.pinned.has(agentId) || (!homes.inRooms.has(agentId) && !homes.inProjects.has(agentId) && !homes.onlyForks.has(agentId))
 }
 
 /**
@@ -133,4 +145,32 @@ export function projectsWithoutGroupRow(
     const chatId = groupOf(projectId)
     return chatId === undefined || !listedGroups.has(chatId)
   })
+}
+
+/**
+ * Rows of the one list that are not a conversation yet: a local project whose project group does not exist yet, and the
+ * sample project. They are drawn as conversation rows but come after every conversation row, in this order, whatever
+ * their times say: the sample's times are written into it, so sorting by them would pin it to the top for everyone.
+ */
+export type OneListTailRow = { readonly kind: 'project'; readonly projectId: string } | { readonly kind: 'sample' }
+
+export function oneListTail(grouplessProjects: readonly string[], sampleShown: boolean): OneListTailRow[] {
+  return [
+    ...grouplessProjects.map((projectId) => ({ kind: 'project' as const, projectId })),
+    ...(sampleShown ? [{ kind: 'sample' as const }] : []),
+  ]
+}
+
+/**
+ * The sample project's row: its transcript's last message as a group row shows one, `<sender>: <text>`. The sender is
+ * the sample's agent or the person looking at it (`ownerName`, the sample's other member); a task card is always theirs.
+ */
+export function sampleProjectLastLine(content: SampleProjectContent, ownerName: string): { readonly preview: string; readonly time: string } {
+  const last = content.messages.at(-1)
+  if (!last) throw new Error('the sample project has no messages')
+  const sender = last.kind !== 'task' && last.from === 'agent' ? content.agent.name : ownerName
+  if (last.kind !== 'file') return { preview: `${sender}: ${markdownPlainText(last.text)}`, time: last.time }
+  const file = content.files.find((entry) => entry.id === last.file)
+  if (!file) throw new Error(`the sample project's last message names a file it does not carry: ${last.file}`)
+  return { preview: `${sender}: ${file.name}`, time: last.time }
 }

@@ -5,9 +5,14 @@ import {
   agentsInRooms,
   agentTaskHomes,
   oneListShows,
+  oneListTail,
   projectsWithoutGroupRow,
+  sampleProjectLastLine,
   type AgentHomes,
 } from '../../../../apps/desktop/src/lib/sidebarOneList'
+import { zhCNSampleProject } from '../../../../apps/desktop/src/session/renderer/features/sample-project/content/zh-CN'
+import { enUSSampleProject } from '../../../../apps/desktop/src/session/renderer/features/sample-project/content/en-US'
+import type { SampleProjectContent } from '../../../../apps/desktop/src/session/renderer/features/sample-project/content/types'
 import { sidebarChatSignals } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
 import { chat } from '../../../support/testHarness'
 
@@ -18,8 +23,9 @@ const session = (conversationId: string, projectId: string, agent: string | null
 })
 const homes = (parts: Partial<Record<keyof AgentHomes, string[]>> = {}): AgentHomes => ({
   inRooms: new Set(parts.inRooms), inProjects: new Set(parts.inProjects), withTopLevelTask: new Set(parts.withTopLevelTask), pinned: new Set(parts.pinned),
+  onlyForks: new Set(parts.onlyForks),
 })
-const mine = new Set(['a-solo', 'a-room', 'a-project', 'a-idle'])
+const mine = new Set(['a-solo', 'a-room', 'a-project', 'a-idle', 'a-fork'])
 const owns = (id: string) => mine.has(id)
 
 describe('which agents live in a room', () => {
@@ -40,12 +46,21 @@ describe('which agents live in a project and which have a top-level task', () =>
     expect([...withTopLevelTask]).toEqual(['a-solo'])
   })
 
-  it('a fork hangs under its parent and is not a top-level task; an orphaned fork is', () => {
-    const { withTopLevelTask } = agentTaskHomes([{
+  it('a fork is never a top-level task, also when its parent is on no machine we see', () => {
+    const { withTopLevelTask, onlyForks } = agentTaskHomes([{
       projects: [project('tasks', 'workspace')],
       sessions: [session('root', 'tasks', 'a-root'), session('fork', 'tasks', 'a-fork', 'root'), session('orphan', 'tasks', 'a-orphan', 'archived')],
     }])
-    expect([...withTopLevelTask].sort()).toEqual(['a-orphan', 'a-root'])
+    expect([...withTopLevelTask]).toEqual(['a-root'])
+    expect([...onlyForks].sort()).toEqual(['a-fork', 'a-orphan'])
+  })
+
+  it('an agent with a top-level task and a fork is not only a fork; one without any session is neither', () => {
+    const { onlyForks } = agentTaskHomes([{
+      projects: [project('tasks', 'workspace')],
+      sessions: [session('root', 'tasks', 'a-both'), session('fork', 'tasks', 'a-both', 'root'), session('loose', 'tasks', null, 'root')],
+    }])
+    expect([...onlyForks]).toEqual([])
   })
 
   it('reads each machine against its own projects; a session whose project the machine did not report is a task', () => {
@@ -72,11 +87,12 @@ describe('an owned agent has its own row only when it lives in no group and no p
     [homes({ inRooms: ['a'] }), false],
     [homes({ inProjects: ['a'] }), false],
     [homes({ withTopLevelTask: ['a'] }), true],
+    [homes({ onlyForks: ['a'] }), false],
   ])('%#', (agentHomes, expected) => expect(agentHasOwnRow('a', agentHomes)).toBe(expected))
 })
 
 describe('what the one list shows', () => {
-  const agentHomes = homes({ inRooms: ['a-room'], inProjects: ['a-project'], withTopLevelTask: ['a-solo', 'a-room'] })
+  const agentHomes = homes({ inRooms: ['a-room'], inProjects: ['a-project'], withTopLevelTask: ['a-solo', 'a-room'], onlyForks: ['a-fork'] })
   const show = (overrides: Parameters<typeof chat>[0], listed: boolean) => oneListShows(chat(overrides), listed, agentHomes, owns)
 
   it('never shows a topic as a row, listed or not', () => {
@@ -104,6 +120,11 @@ describe('what the one list shows', () => {
     expect(show({ kind: 'dm', peer_user_id: 'a-idle' }, false)).toBe(false)
     expect(show({ kind: 'dm', peer_user_id: 'a-idle' }, true)).toBe(true)
   })
+
+  it('never shows my agent that only has forks: a fork stays under its parent, even when its DM has messages', () => {
+    expect(show({ kind: 'dm', peer_user_id: 'a-fork' }, true)).toBe(false)
+    expect(show({ kind: 'ai', peer_user_id: 'a-fork' }, false)).toBe(false)
+  })
 })
 
 describe('projects without a conversation row keep their project row', () => {
@@ -130,5 +151,50 @@ describe('the chat list tells the sidebar which groups it has', () => {
 
   it('names none (null) while it is loading', () => {
     expect(sidebarChatSignals(chats, new Set(['project']), null, false).listedGroups).toBeNull()
+  })
+})
+
+describe('rows that are not a conversation yet come after every conversation row', () => {
+  it('projects without a group chat first (in the sidebar\'s project order), the sample last', () => {
+    expect(oneListTail(['p2', 'p1'], true)).toEqual([{ kind: 'project', projectId: 'p2' }, { kind: 'project', projectId: 'p1' }, { kind: 'sample' }])
+  })
+
+  it('has no time to sort by: whatever the sample says, it is not placed among the conversations', () => {
+    expect(oneListTail([], true)).toEqual([{ kind: 'sample' }])
+    expect(oneListTail([], false)).toEqual([])
+    expect(oneListTail(['p'], false)).toEqual([{ kind: 'project', projectId: 'p' }])
+  })
+})
+
+describe('the sample project row shows its transcript\'s last message', () => {
+  it.each([['zh-CN', zhCNSampleProject], ['en-US', enUSSampleProject]] as const)('%s: "<sender>: <plain text>" and the time it shows', (_locale, content) => {
+    const last = content.messages.at(-1)!
+    const line = sampleProjectLastLine(content, 'Me')
+    expect(line.time).toBe(last.time)
+    // The bundled run ends on the agent's reply (as a group row's preview in the mock: 「Codex 6: 三份…」).
+    expect(line.preview.startsWith(`${content.agent.name}: `)).toBe(true)
+    expect(line.preview).not.toMatch(/\]\(https?:/)
+    expect(line.preview.length).toBeGreaterThan(`${content.agent.name}: `.length)
+  })
+
+  const content = (messages: SampleProjectContent['messages']): SampleProjectContent => ({
+    agent: { name: 'Codex', engine: 'codex' },
+    messages,
+    files: [{ id: 'f1', name: 'plan.md', mimeType: 'text/markdown', text: '', sha256: '' }],
+    task: { startedAt: '09:00', endedAt: '09:00', steps: [] },
+  })
+
+  it('a last file message shows the file name after its sender', () => {
+    expect(sampleProjectLastLine(content([{ id: 'm1', kind: 'file', from: 'agent', time: '09:00', file: 'f1' }]), 'Me')).toEqual({ preview: 'Codex: plan.md', time: '09:00' })
+  })
+
+  it('the person looking at it is the sender of their own lines and of the task card', () => {
+    expect(sampleProjectLastLine(content([{ id: 'm1', kind: 'text', from: 'owner', time: '09:01', text: '**ok**' }]), 'Me').preview).toBe('Me: ok')
+    expect(sampleProjectLastLine(content([{ id: 'm1', kind: 'task', time: '09:02', text: 'Plan a trip' }]), 'Me').preview).toBe('Me: Plan a trip')
+  })
+
+  it('fails loud on a transcript without messages, or on a file it does not carry', () => {
+    expect(() => sampleProjectLastLine(content([]), 'Me')).toThrow()
+    expect(() => sampleProjectLastLine(content([{ id: 'm1', kind: 'file', from: 'agent', time: '09:00', file: 'missing' }]), 'Me')).toThrow(/missing/)
   })
 })
