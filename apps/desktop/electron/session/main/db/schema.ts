@@ -471,6 +471,9 @@ export const sessions = sqliteTable(
     // spec session-page: any conversation can be pinned; pinned rows leave their state group
     // and gather in the sidebar's Pinned section.
     isPinned: integer('is_pinned').notNull().default(0),
+    // #2548 固定到左侧栏: a top-level session whose agent lives in a group or project also gets its own row
+    // in the desktop left list. Independent of isPinned, which only orders a session within its own list.
+    isPinnedToSidebar: integer('is_pinned_to_sidebar').notNull().default(0),
     parentSessionId: text('parent_session_id').references(
       (): AnySQLiteColumn => sessions.id,
       { onDelete: 'set null' }

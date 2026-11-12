@@ -4,7 +4,7 @@ import { platform } from '@/platform';
 import { safeFailureLine } from '../sessions/gugu-reason';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { dissolveScreenGroup, isScreenView, showSessionBeside, takeSessionOutOfGroup } from '@renderer/app/screen-layout-actions';
-import { AlertTriangle, Archive, Copy, LayoutGrid, MoreHorizontal, Pencil, Pin, PinOff, Scissors, Sparkles, SquareMinus } from '@/lib/icons'
+import { AlertTriangle, Archive, Copy, LayoutGrid, MoreHorizontal, PanelLeft, PanelLeftClose, Pencil, Pin, PinOff, Scissors, Sparkles, SquareMinus } from '@/lib/icons'
 import { GitFork } from '@/lib/icons'
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { spawnedByExtensionLabel as spawnedByExtensionLabelFor } from '@renderer/features/extensions/spawned-by-extension-label';
@@ -52,6 +52,8 @@ import type { SessionpageScheduleDigest } from '@gugu/session-core/session-recor
 import { sessionScheduleDigest } from '@shared/core/automations/session-schedule';
 import { agentForksOn } from '@shared/core/agents/agent-payload';
 import { useConversationSessionSummary } from '@/hooks/useConversationSessionSummary';
+import { sidebarPinMenuAction } from './sidebar-pin';
+import { useDesktopSidebarV2Switch } from './use-desktop-sidebar-v2';
 
 // @@@sessionpage otty-state — sidebar CONVERSATION row, hanging directly under its project (spec
 // session-page: conversations ARE the sessions; tasks are an invisible workspace container). A
@@ -111,6 +113,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const identityCardOpen = identityCardEnabled && sidebarIdentityCard.activeSessionId === sessionId;
   const agentBinding = sessionAgentBindings.bindingFor(sessionId);
   const nestDrop = useSessionDropTarget();
+  const sidebarV2 = useDesktopSidebarV2Switch();
 
   // 挂着的会话读它自己的 store;别的机器上还没挂的读会话目录那一行(列出不挂载,见 sidebar-store)。
   const session = sessionRegistry.get(sessionId)?.sessions.get(sessionId);
@@ -201,6 +204,15 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const grouped = join !== undefined;
   const setPinned = (pinned: boolean) => {
     withMountedSession(projectId, sessionId, (_session, manager) => void manager.setSessionPinned(sessionId, pinned));
+  };
+  // #2548 固定到左侧栏 sits next to 置顶, same shape; offered per sidebarPinMenuAction (switch on, top-level).
+  const sidebarPin = sidebarPinMenuAction({
+    switchOn: sidebarV2,
+    parentSessionId: row.parentSessionId,
+    isPinnedToSidebar: row.isPinnedToSidebar,
+  });
+  const setPinnedToSidebar = (pinned: boolean) => {
+    withMountedSession(projectId, sessionId, (_session, manager) => void manager.setSessionPinnedToSidebar(sessionId, pinned));
   };
 
   // spec session-fork-share:「任意会话可 fork」—— pty 与 ACP 两种 runtime 都摆这个入口,
@@ -386,6 +398,15 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
         {translate('task.pin')}
       </MenuItem>
     )}
+    {sidebarPin === 'unpin' ? (
+      <MenuItem onClick={() => setPinnedToSidebar(false)} icon={<PanelLeftClose />}>
+        {translate('task.unpinFromSidebar')}
+      </MenuItem>
+    ) : sidebarPin === 'pin' ? (
+      <MenuItem onClick={() => setPinnedToSidebar(true)} icon={<PanelLeft />}>
+        {translate('task.pinToSidebar')}
+      </MenuItem>
+    ) : null}
     {/* behavior session-page「键盘导航」: 键盘能做的、菜单也要能做 —— 只给快捷键等于让用鼠标的人
         看不见重命名。删除是这条规则的例外(owner 2026-09-05 把它从这份菜单里拿掉了):它在
         会话页 ⋯ 菜单里仍然可见可点,不是只剩快捷键。 */}
@@ -436,6 +457,9 @@ type SidebarRowData = {
   seen: boolean;
   runtime: 'acp' | 'pty';
   isPinned: boolean;
+  isPinnedToSidebar: boolean;
+  /** 父会话;有 = 子会话,不进左侧栏(#2548)。 */
+  parentSessionId: string | null;
   lastInteractedAt: string | null | undefined;
   /** fork 来源会话:目录里没有,点开(挂上)之后才显示。 */
   forkedFromSessionId: string | undefined;
@@ -456,6 +480,8 @@ function rowOfStore(session: SessionInRegistry, schedule: SessionpageScheduleDig
     seen: session.seen,
     runtime: session.data.runtime ?? 'pty',
     isPinned: session.data.isPinned === true,
+    isPinnedToSidebar: session.data.isPinnedToSidebar === true,
+    parentSessionId: session.data.parentSessionId ?? null,
     lastInteractedAt: session.data.lastInteractedAt,
     forkedFromSessionId: session.data.forkedFrom?.sessionId,
     spawnedByExtensionId: session.data.spawnedByExtensionId,
@@ -475,6 +501,8 @@ function rowOfListing({ summary }: RemoteSidebarSession): SidebarRowData {
     seen: summary.unseen !== true,
     runtime: summary.runtime === 'acp' ? 'acp' : 'pty',
     isPinned: summary.isPinned === true,
+    isPinnedToSidebar: summary.isPinnedToSidebar === true,
+    parentSessionId: summary.parentConversationId ?? null,
     lastInteractedAt: summary.lastInteractedAt,
     forkedFromSessionId: undefined,
     spawnedByExtensionId: summary.spawnedByExtensionId,

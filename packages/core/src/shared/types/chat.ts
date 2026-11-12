@@ -358,6 +358,8 @@ export interface DeviceSessionSummary {
    * 手机端见到 undefined 画中性态，❌ 不补默认值冒充事实。
    */
   isPinned?: boolean
+  /** #2548 固定到左侧栏(桌面左侧栏另有一行);同上,缺席 = 老宿主不报。 */
+  isPinnedToSidebar?: boolean
   unseen?: boolean
   parentConversationId?: string | null
   /**

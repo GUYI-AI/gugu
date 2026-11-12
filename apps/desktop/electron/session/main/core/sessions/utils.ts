@@ -133,6 +133,7 @@ export function mapSessionRowToSession(
     ...(row.agentStatus === 'idle' || row.agentStatus === 'error' ? interruptedBy(row.id) : {}),
     runtime: (row.runtime as SessionRuntime | null) ?? 'pty',
     isPinned: row.isPinned === 1,
+    isPinnedToSidebar: row.isPinnedToSidebar === 1,
     archivedAt: row.archivedAt ?? null,
     parentSessionId: sessionParentId(row),
     spawnedBySessionId: sessionSpawnerId(row),
