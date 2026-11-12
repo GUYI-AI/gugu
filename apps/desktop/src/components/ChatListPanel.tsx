@@ -38,7 +38,8 @@ import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
-import { isOneListProjectLine, oneListShows, placeProjectLines, sidebarPinnedRows, useAgentHomes, useOneListProjectLines, type OneListProjectLine } from '../lib/sidebarOneList'
+import { isOneListProjectLine, oneListAgentRows, oneListShows, placeProjectLines, sidebarPinnedRows, useAgentHomes, useOneListProjectLines, type OneListProjectLine } from '../lib/sidebarOneList'
+import { usePublishOneListAgentRows } from '../lib/innerSidebarBridge'
 import { mobileListDiagnostics } from '@/mobile/mobileListDiagnostics'
 import { readShellSlots } from '../lib/shellSlots'
 import { installOneListNeighbour, oneListProjectSlotKey, subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
@@ -736,6 +737,8 @@ export function ChatListPanel({
   // 没摊开的那些❌ 不在里面:它们不在这条侧边栏上,键盘也不该能走到看不见的行。
   // 键盘上下走的次序与画出来的一致:并过组之后的次序。
   const shownChats = pinnedRows.map(({ row }) => row).concat(normalLines.map(({ row }) => row))
+  // #2574 my agents drawn as rows of their own: a standalone agent's inner column opens only on these (one rule, the list's).
+  usePublishOneListAgentRows(agentHomes ? oneListAgentRows(shownChats, pinOf, isOwnedAgentPeer, identitiesById) : null)
   const visibleChats = useMemo(
     () => shownChats.flatMap((chat) => {
       if (mobile || collapsedTopicSources.has(chat.id)) return [chat]
