@@ -190,6 +190,7 @@ export function useCreateSessionCallback({
         () => {
           setPendingMessage(null);
           input.setPrompt((current) => retainNewerInput(retry.prompt, current));
+          draft?.completeHandoff();
           onCreated?.({ projectId: retry.projectId, sessionId: retry.sessionId });
           navigate('session', { projectId: retry.projectId, sessionId: retry.sessionId });
           onClose();
@@ -222,12 +223,18 @@ export function useCreateSessionCallback({
     const files = named.map(ref => deviceId && taskAttachmentUsesSsh(deviceId)
       ? { ...ref, path: undefined, workspacePath: taskAttachmentWorkspacePath(ref.itemId, ref.name) } : ref);
     // ACP keeps the person's words: Life prepares file context only after placement. PTY retains its text-only leg.
-    const text = baseSession.type === 'acp' ? input.prompt.trim() : [input.prompt.trim(),
+    const words = baseSession.type === 'acp' ? input.prompt.trim() : [input.prompt.trim(),
       ...named.map(ref => turnAttachmentText(ref, deviceId || !ref.path || taskChatId
         ? { failure: 'kept on the computer it was attached from — open the folder file above' }
         : { localPath: ref.path })),
     ].filter(Boolean).join('\n');
     const transport = firstTurnTransport;
+    // #2569 Context handed over with this draft rides beside the words where the first turn has room for host context
+    // (an ACP startup queue); every other first turn is words only, so there it follows the words.
+    const handedContext = draft?.handoff?.hiddenContext;
+    const contextBeside = transport === 'startup' && baseSession.type === 'acp';
+    const hiddenContext = [input.mentionContext, contextBeside ? handedContext : undefined].filter(Boolean).join('\n\n');
+    const text = handedContext && !contextBeside ? [words, handedContext].filter(Boolean).join('\n\n') : words;
     const initialMessageId = transport === 'startup' && taskChatId && text ? crypto.randomUUID() : undefined;
     const startupSession = transport === 'startup'
       ? (() => {
@@ -242,9 +249,7 @@ export function useCreateSessionCallback({
                   ? [{
                       text,
                       ...(files.length ? { files } : {}),
-                      ...(input.mentionContext
-                        ? { hiddenContext: input.mentionContext }
-                        : {}),
+                      ...(hiddenContext ? { hiddenContext } : {}),
                       origin: 'manual' as const,
                     }]
                   : undefined,
@@ -346,6 +351,7 @@ export function useCreateSessionCallback({
       if (!submission) input.setPrompt((current) => retainNewerInput(submittedPrompt, current));
       finishSubmission(submission);
       setDeliveryError(null);
+      draft?.completeHandoff();
       onCreated?.({ projectId: selectedProjectId, sessionId });
       // @@@start-failure-exit - A task dispatched from a chat stays in the chat because its card lands there; a task
       // whose workspace could not be prepared never lands one. Staying would leave the person with no card, no task and

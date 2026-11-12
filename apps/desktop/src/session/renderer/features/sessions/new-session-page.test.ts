@@ -46,12 +46,13 @@ const mocks = vi.hoisted(() => ({
   setProjectView: vi.fn(),
   navigate: vi.fn(),
   currentView: 'project' as 'project' | 'task',
-  sessionFieldProps: null as null | { showAutoApproveToggle?: boolean; canSubmit?: boolean },
+  sessionFieldProps: null as null | { showAutoApproveToggle?: boolean; canSubmit?: boolean; onSubmit?: () => void },
   deliveryError: null as SessionFailure | null,
   // null = 输入框里就是挂上时读到的那份(真 hook 的 useState(initialPrompt));字符串 = 用户打进去的。
   prompt: null as string | null,
   initialPrompt: undefined as string | undefined,
-  onCreated: undefined as undefined | ((result: { projectId: string; sessionId: string }) => void)
+  onCreated: undefined as undefined | ((result: { projectId: string; sessionId: string }) => void),
+  handleCreateSession: vi.fn()
 }));
 
 vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
@@ -96,7 +97,7 @@ vi.mock('@renderer/features/sessions/create-session-modal/use-create-session-cal
   }) => {
     mocks.createSessionCallbackProjectId = selectedProjectId;
     mocks.onCreated = onCreated;
-    return { handleCreateSession: vi.fn(), canCreate: true, deliveryError: mocks.deliveryError };
+    return { handleCreateSession: mocks.handleCreateSession, canCreate: true, deliveryError: mocks.deliveryError };
   }
 }));
 
@@ -134,7 +135,7 @@ vi.mock('@renderer/features/sessions/hooks/useSessionSettings', () => ({
 }));
 
 vi.mock('@renderer/features/sessions/session-config/session-field', () => ({
-  SessionField: (props: { showAutoApproveToggle?: boolean; canSubmit?: boolean }) => {
+  SessionField: (props: { showAutoApproveToggle?: boolean; canSubmit?: boolean; onSubmit?: () => void }) => {
     mocks.sessionFieldProps = props;
     return React.createElement('div', { 'data-testid': 'active-task-composer' });
   }
@@ -150,6 +151,7 @@ vi.mock('@renderer/features/sessions/session-config/initial-session-section', ()
     if (options?.draft && mocks.prompt !== null) options.draft.setPrompt(mocks.prompt);
     mocks.initialPrompt = options?.draft?.prompt ?? options?.initialPrompt;
     return {
+      provider: 'codex',
       prompt: mocks.prompt ?? mocks.initialPrompt ?? '',
       issueContextEditorOpen: false,
       // 「这一轮带了内容」把待发附件一并算上,所以这份替身也必须有附件。
@@ -292,6 +294,7 @@ describe('NewSessionPage', () => {
     mocks.prompt = null;
     mocks.initialPrompt = undefined;
     mocks.onCreated = undefined;
+    mocks.handleCreateSession.mockReset();
     composerDrafts.set(NEW_SESSION_DRAFT_KEY, '');
     composerDrafts.set(projectDraftKey('project-1'), '');
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
@@ -534,6 +537,45 @@ describe('NewSessionPage', () => {
     } finally {
       off();
     }
+  });
+
+  // #2569 the sample's first message, handed to the project it became: the person already pressed send in the sample.
+  it('sends a handed-over draft once, as soon as the box can; not again, and not after the person edits it', async () => {
+    const key = projectDraftKey('project-1');
+    const draft = composerDrafts.forKey(key);
+    const handoff = {
+      hiddenContext: 'the sample context',
+      picked: { provider: 'codex' as const, model: null, platformModel: null, effort: null, permissionMode: 'full-access' as const, sessionView: 'general' as const },
+      sendWhenReady: true,
+      onCreated: vi.fn(),
+    };
+    try {
+      draft.setPrompt('周六下雨怎么办');
+      draft.setHandoff(handoff);
+      await act(async () => root.render(localized(React.createElement(NewSessionComposer, { projectId: 'project-1', draftKey: key }))));
+      expect(mocks.handleCreateSession).toHaveBeenCalledOnce();
+      expect(draft.handoff).toMatchObject({ hiddenContext: 'the sample context', sendWhenReady: false });
+      await act(async () => root.render(localized(React.createElement(NewSessionComposer, { projectId: 'project-1', draftKey: key, placeholder: 'again' }))));
+      expect(mocks.handleCreateSession).toHaveBeenCalledOnce();
+
+      draft.setHandoff({ ...handoff, sendWhenReady: true });
+      draft.setPrompt('周日下雨怎么办');
+      expect(draft.handoff?.sendWhenReady, 'the person took it over').toBe(false);
+    } finally { composerDrafts.discard(key); }
+  });
+
+  it('with no project yet, sending goes to sendWithoutProject (an agent picked, words written); blocked holds it', async () => {
+    const send = vi.fn();
+    mocks.prompt = '周六下雨怎么办';
+    try {
+      await act(async () => root.render(localized(React.createElement(NewSessionComposer, { projectId: undefined, draftKey: 'sample-test', sendWithoutProject: send }))));
+      expect(mocks.sessionFieldProps?.canSubmit).toBe(true);
+      act(() => mocks.sessionFieldProps?.onSubmit?.());
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ provider: 'codex', prompt: '周六下雨怎么办' }));
+      expect(mocks.handleCreateSession).not.toHaveBeenCalled();
+      await act(async () => root.render(localized(React.createElement(NewSessionComposer, { projectId: undefined, draftKey: 'sample-test', sendWithoutProject: send, blocked: true }))));
+      expect(mocks.sessionFieldProps?.canSubmit).toBe(false);
+    } finally { composerDrafts.discard('sample-test'); }
   });
 
   it('keeps an editable, projectless composer when no project exists', async () => {

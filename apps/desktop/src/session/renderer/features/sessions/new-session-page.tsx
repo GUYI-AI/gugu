@@ -6,7 +6,7 @@ import { useCreateSessionState } from '@renderer/features/sessions/create-sessio
 import { useProjectGitContext } from '@renderer/features/sessions/create-session-modal/use-project-git-context';
 import { useSessionSettings } from '@renderer/features/sessions/hooks/useSessionSettings';
 import { SessionField } from '@renderer/features/sessions/session-config/session-field';
-import type { ComposerVerbLook } from '@renderer/features/sessions/session-config/initial-session-section';
+import type { ComposerVerbLook, InitialSessionState } from '@renderer/features/sessions/session-config/initial-session-section';
 import { useInitialSessionState } from '@renderer/features/sessions/session-config/initial-session-section';
 import { SessionStateProvider } from '@renderer/features/sessions/session-config/session-state-context';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
@@ -55,6 +55,7 @@ export const NewSessionComposer = observer(function NewSessionComposer({
   placeholder,
   verb,
   workspaceId,
+  sendWithoutProject,
 }: {
   projectId: string | undefined;
   // gugu #2525: 非空 = 当前创建上下文不可提交（所选设备离线 / 非本机 / 默认值读写失败）。
@@ -93,6 +94,11 @@ export const NewSessionComposer = observer(function NewSessionComposer({
    * 缺省 = 项目根目录。只能是这个项目的文件夹 —— 不是的,主进程建会话时拒掉(fail loud)。
    */
   workspaceId?: string | null;
+  /**
+   * #2569 这一框发的时候还没有项目(示例项目):按发送交给它 —— 它先把项目建出来,再把这一句交给那个项目的新任务框,
+   * 任务在那边按同一条路建。能按 = 有内容、选中了智能体;`blocked` / `blockReason` 照旧挡。
+   */
+  sendWithoutProject?: (input: InitialSessionState) => void;
 }) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
@@ -122,7 +128,8 @@ export const NewSessionComposer = observer(function NewSessionComposer({
     {
       // Selecting or clearing an optional project must not erase text the user has already written.
       resetPromptOnProjectChange: false,
-      dispatchesToChat: Boolean(taskChatId),
+      // 还没有项目的这一句也是要派进项目群的任务(示例变成的那个项目):照派进群的规矩判。
+      dispatchesToChat: Boolean(taskChatId || sendWithoutProject),
       draft,
     }
   );
@@ -148,13 +155,22 @@ export const NewSessionComposer = observer(function NewSessionComposer({
   const hasTurnContent =
     initialSession.prompt.trim().length > 0 || initialSession.attachments.length > 0;
   const canSend =
-    canCreate &&
+    (sendWithoutProject ? Boolean(initialSession.provider) : canCreate) &&
     !blocked &&
     !blockReason &&
     !isContextPending &&
     !initialSession.providerError &&
     hasTurnContent &&
     !initialSession.issueContextEditorOpen;
+  // #2569 交过来的那一句(示例里发的第一句)人已经按过发送了:这一框一能发就替他发一次。只一次 —— 没成就和任何首句一样,
+  // 原因写在框下、话留在框里,等他再按。
+  const handoff = draft?.handoff;
+  useEffect(() => {
+    if (!draft || !handoff?.sendWhenReady || !canSend) return;
+    draft.setHandoff({ ...handoff, sendWhenReady: false });
+    handleCreateSession();
+  }, [draft, handoff, canSend, handleCreateSession]);
+  const submit = sendWithoutProject ? () => { if (canSend) sendWithoutProject(initialSession); } : handleCreateSession;
 
   // 外层 wrapper 不画描边/圆角/底色(见 session-composer-styles.ts 的 sessionComposerFrameClassName):
   //    卡的形状归 session-ui 的 composerShell 一处管,这里再画一层就会在四角露出第二条线。
@@ -175,7 +191,7 @@ export const NewSessionComposer = observer(function NewSessionComposer({
             // creation. The surface only changes where the created session lands; it must not
             // hide the user's pre-dispatch permission choice.
             showAutoApproveToggle
-            onSubmit={handleCreateSession}
+            onSubmit={submit}
             canSubmit={canSend}
           />
       </SessionStateProvider>
