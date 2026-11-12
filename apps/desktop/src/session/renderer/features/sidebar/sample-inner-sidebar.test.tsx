@@ -167,13 +167,20 @@ describe('the inner column for the sample project', () => {
   it('clicking the agent opens the task pane the task card opens; the head row goes back to the conversation', async () => {
     await render();
     expect(taskPane()).toBeNull();
+    const conversation = host.querySelector<HTMLElement>('[data-sample-conversation]')!;
+    expect(conversation.style.contentVisibility).toBe('');
     await act(async () => agentRows()[0].click());
     expect(taskPane()).not.toBeNull();
+    // The task takes the whole block, as an agent opened from a project's column takes the main area (mock v33), ❌ a side
+    // pane that leaves the conversation a sliver beside the inner column. The conversation is kept, only hidden.
+    expect(conversation.style.contentVisibility).toBe('hidden');
     expect(agentRows()[0].dataset.active).toBe('true');
     expect(head().dataset.active).toBeUndefined();
 
     await act(async () => head().click());
     expect(taskPane()).toBeNull();
+    expect(host.querySelector('[data-sample-conversation]'), 'the same conversation, not a rebuilt one').toBe(conversation);
+    expect(conversation.style.contentVisibility).toBe('');
     expect(head().dataset.active).toBe('true');
     expect(agentRows()[0].dataset.active).toBeUndefined();
 
