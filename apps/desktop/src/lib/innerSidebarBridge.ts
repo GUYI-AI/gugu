@@ -1,10 +1,9 @@
 // #2548 桌面内层侧栏(打开一个群 / 项目时列表右边那一列)要两棵树一起画:话题行是壳的(聊天列表那一行),
 // 智能体行是会话页的(任务区那一行)。两棵树之间剩下的几样东西各一个 window 对象 + 一个 window 事件
 // (谁先起来都接得上,形制同 sidebarChatsBridge):
-//   · 「全部话题」:哪个对话的话题此刻全部摊开。两边都写 —— 会话页的分区头「全部 › / ‹ 返回」,壳那一格底下的「更多」。
+//   · 「全部话题」:哪个对话的话题此刻全部摊开。会话页的分区头「全部 › / ‹ 返回」写,壳那一格读。
 //   · 话题读数:壳 → 会话页。分区头上的总数,以及第一级收起了几条(决定要不要给「全部 ›」)。
 //   · 我的智能体读数:会话页 → 壳。每个项目群里我的智能体有几个、几个在跑 —— 项目行头像角上那个数。
-//   · 找:会话页 → 壳。头行下面那个框里打的字,话题和智能体一起筛。
 //   · 这一列此刻挂在哪个对话上:会话页 → 壳。挂着时那个对话页头上与这一列重复的按钮(成员、话题、邀请)收起来。
 // 两边都只 import 这一个文件,❌ 各写一份键名。
 import { useSyncExternalStore } from 'react'
@@ -21,8 +20,6 @@ export type InnerSidebarTopicsView = {
   readonly hidden: number
   /** 叫到我的(@ 我)合计:分区收起时标题旁那个红数。 */
   readonly calling: number
-  /** 正在找时命中的条数(没在找 = total)。 */
-  readonly matched: number
 }
 
 /** 一个对话里我的智能体:总数与此刻在跑的(前台运行,同分支计数那枚药丸)。 */
@@ -34,8 +31,6 @@ const TOPICS_VIEW_KEY = '__GUGU_INNER_SIDEBAR_TOPICS_VIEW__'
 const TOPICS_VIEW_EVENT = 'gugu:inner-sidebar-topics-view'
 const AGENT_COUNTS_KEY = '__GUGU_MY_CHAT_AGENT_COUNTS__'
 const AGENT_COUNTS_EVENT = 'gugu:my-chat-agent-counts'
-const FILTER_KEY = '__GUGU_INNER_SIDEBAR_FILTER__'
-const FILTER_EVENT = 'gugu:inner-sidebar-filter'
 const COLUMN_KEY = '__GUGU_INNER_SIDEBAR_CHAT__'
 const COLUMN_EVENT = 'gugu:inner-sidebar-chat'
 
@@ -56,7 +51,6 @@ const subscribeTo = (event: string) => (listener: () => void) => {
 const subscribeTopicsAll = subscribeTo(TOPICS_ALL_EVENT)
 const subscribeTopicsView = subscribeTo(TOPICS_VIEW_EVENT)
 const subscribeAgentCounts = subscribeTo(AGENT_COUNTS_EVENT)
-const subscribeFilter = subscribeTo(FILTER_EVENT)
 const subscribeColumn = subscribeTo(COLUMN_EVENT)
 
 /** 摊开这个对话的全部话题;null = 回到第一级。没变不通知。 */
@@ -78,8 +72,7 @@ export function publishInnerSidebarTopicsView(next: InnerSidebarTopicsView): voi
     current.chatId === next.chatId &&
     current.total === next.total &&
     current.hidden === next.hidden &&
-    current.calling === next.calling &&
-    current.matched === next.matched
+    current.calling === next.calling
   ) return
   write(TOPICS_VIEW_KEY, TOPICS_VIEW_EVENT, next)
 }
@@ -112,23 +105,6 @@ export function useMyChatAgentCounts(chatId: string): ChatAgentCounts | null {
     () => (read<ReadonlyMap<string, ChatAgentCounts>>(AGENT_COUNTS_KEY) ?? NO_COUNTS).get(chatId) ?? null,
     () => null,
   )
-}
-
-type InnerSidebarFilter = { readonly chatId: string; readonly query: string }
-
-/** 会话页:这个对话里正在找什么(空 = 没在找)。换了对话 / 清空就写空的。没变不通知。 */
-export function setInnerSidebarFilter(chatId: string, query: string): void {
-  const current = read<InnerSidebarFilter>(FILTER_KEY)
-  if (current?.chatId === chatId && current.query === query) return
-  write(FILTER_KEY, FILTER_EVENT, { chatId, query })
-}
-
-/** 壳:这个对话里正在找的字(去掉首尾空白;没在找 = '')。 */
-export function useInnerSidebarFilter(chatId: string): string {
-  return useSyncExternalStore(subscribeFilter, () => {
-    const filter = read<InnerSidebarFilter>(FILTER_KEY)
-    return filter?.chatId === chatId ? filter.query.trim() : ''
-  }, () => '')
 }
 
 /** 会话页:这一列此刻挂在哪个对话上(不画 = null)。没变不通知。 */

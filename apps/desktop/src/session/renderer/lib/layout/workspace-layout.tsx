@@ -36,6 +36,8 @@ interface WorkspaceLayoutProps {
   mainContent: ReactNode;
   /** #2548 内层侧栏:列表与正文之间的那一列(打开一个群 / 项目时才有,不该出现时它自己什么都不画)。 */
   innerSidebar?: ReactNode;
+  /** #2548 ⑤ 内层栏收起时正文左上角那枚展开钮(ShellRestoreLane);不在时它自己什么都不画。 */
+  innerSidebarRestore?: ReactNode;
   /** A place of its own on the far-left rail (App, Library): no task list beside it. The sidebar stays
    *  mounted, only not shown — swapping the layout out rebuilt the whole task tree on every way back. */
   sidebarHidden?: boolean;
@@ -61,7 +63,7 @@ interface WorkspaceLayoutProps {
  * 摊平成"内容跟着容器缩"。它同时**跟着窗口整块左移**(见下面 contentX),否则固定宽会变成
  * 「原地被右边削平」—— 那是遮罩不是收起。
  */
-export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null, sidebarHidden = false }: WorkspaceLayoutProps) {
+export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null, innerSidebarRestore = null, sidebarHidden = false }: WorkspaceLayoutProps) {
   const { translate } = useSessionMessages();
   const {
     isLeftOpen,
@@ -212,7 +214,10 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       {/* 固定占这一格(没有内层侧栏时是 null):正文那一格的位置不因它出现 / 收起而变,正文 ❌ 重挂。
           #2548 有内层栏时它和正文是同一张卡片的左右两半(desktop-shell.css),所以它必须紧挨着正文那一格。 */}
       {sidebarHidden ? null : innerSidebar}
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">{mainContent}</div>
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">
+        {mainContent}
+        {sidebarHidden ? null : innerSidebarRestore}
+      </div>
       {(isLeftOpen || leftRail > 0) && !sidebarHidden ? <PanelResizeDragGuard edge="end" offset={leftAnimatedWidth} /> : null}
       {/* 左侧栏开关的控制器(快捷键、「消息」再点一下都走它);按钮本身 #2548 起在一张表侧栏的头一行。 */}
       {sidebarHidden ? null : <ShellSidebarToggle />}

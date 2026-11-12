@@ -85,11 +85,6 @@ vi.mock('./sidebar-session-item', () => ({
     <div data-session-row={sessionId} data-agent-avatar={agentAvatar === true || undefined} />
   ),
 }));
-vi.mock('./sidebar-session-branch-view', () => ({
-  SidebarSessionBranchCount: ({ summary, label }: { summary: { total: number; active: { count: number }[] }; label: string }) => (
-    <span data-agents-pill={`${summary.total}|${summary.active[0]?.count ?? 0}`} aria-label={label} />
-  ),
-}));
 
 state.live = observable({ currentViewId: 'chat', viewParamsStore: {}, shownMore: new Set<string>() });
 state.toggleIdleExpanded.mockImplementation((key: string) => runInAction(() => {
@@ -100,18 +95,20 @@ const { publishChatSummaries } = await import('@/lib/chatSummariesBridge');
 const { readComposerVerb, setComposerVerb } = await import('@/lib/composerVerbBridge');
 const { setInnerSidebarTopicsAll, publishInnerSidebarTopicsView, useInnerSidebarChat } = await import('@/lib/innerSidebarBridge');
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
-const { InnerSidebar, innerSidebarChat } = await import('./inner-sidebar');
+const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
+const { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
+const { readPanelToggle } = await import('@/lib/panelToggles');
 
 let host: HTMLDivElement;
 let root: Root;
 const counts = () => (window as unknown as Record<string, unknown>).__GUGU_MY_CHAT_AGENT_COUNTS__ as ReadonlyMap<string, unknown>;
-const filterQuery = () => (window as unknown as Record<string, { query: string } | undefined>).__GUGU_INNER_SIDEBAR_FILTER__?.query;
 const sections = () => [...host.querySelectorAll<HTMLElement>('[data-inner-sidebar-section]')].map((section) => section.dataset.innerSidebarSection);
 const sessionRows = () => [...host.querySelectorAll<HTMLElement>('[data-session-row]')].map((row) => row.dataset.sessionRow);
 const moreRows = () => [...host.querySelectorAll<HTMLElement>('[data-more-row]')].map((row) => row.textContent);
 const render = () => act(async () => root.render(<InnerSidebar />));
-const topicsView = (chatId: string, fields: { total: number; hidden: number; matched?: number; calling?: number }) =>
-  act(() => publishInnerSidebarTopicsView({ chatId, matched: fields.total, calling: 0, ...fields }));
+const agentsCount = () => host.querySelector('[data-inner-sidebar-section="agents"] [data-inner-agents-count]')?.textContent;
+const topicsView = (chatId: string, fields: { total: number; hidden: number; calling?: number }) =>
+  act(() => publishInnerSidebarTopicsView({ chatId, calling: 0, ...fields }));
 let shellColumnChat: string | null = null;
 function ShellProbe() {
   shellColumnChat = useInnerSidebarChat();
@@ -142,6 +139,7 @@ afterEach(() => {
   host.remove();
   act(() => setInnerSidebarTopicsAll(null));
   setComposerVerb('group', null);
+  setInnerSidebarFolded(false);
 });
 
 const go = (currentViewId: string, viewParamsStore: Record<string, unknown>) =>
@@ -149,25 +147,20 @@ const go = (currentViewId: string, viewParamsStore: Record<string, unknown>) =>
 const openChat = (chatId: string) => go('chat', { chat: { chatId } });
 const openProject = (projectId: string) => go('project', { project: { projectId } });
 const openSession = (sessionId: string) => go('session', { session: { sessionId } });
-const typeFilter = async (text: string) => {
-  const input = host.querySelector<HTMLInputElement>('[data-inner-sidebar-filter] input, input[data-inner-sidebar-filter]')!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, text);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-};
 
 describe('inner sidebar', () => {
-  it('a group: its own head row, then Topics, then My agents with only my agents that are members, and the total | running pill', async () => {
+  it('a group: its own head row on top (no spacer above it), then Topics, then Agents with only my agents that are members and a plain count', async () => {
     openChat('group');
     await render();
     const column = host.querySelector<HTMLElement>('[data-region="inner-sidebar"]')!;
     expect(column.dataset.innerSidebarKind).toBe('group');
     expect(host.querySelector('[data-inner-head="group"]')?.textContent).toContain('Planning');
+    expect(column.querySelector('[data-sidebar-space]'), 'the head row is the column’s top band (proposal v1)').toBeNull();
     expect(sections()).toEqual(['topics', 'agents']);
-    expect(host.textContent).toContain('sidebar.myAgents');
+    // Only my agents are listed in a group too, but the title reads 「智能体」 (owner 11-12).
+    expect(host.querySelector('[data-inner-sidebar-section="agents"]')?.textContent).toContain('sidebar.agents');
     expect(sessionRows()).toEqual(['mine-in-group']);
-    expect(host.querySelector('[data-agents-pill]')?.getAttribute('data-agents-pill')).toBe('1|1');
+    expect(agentsCount()).toBe('1');
     expect(readShellSlots()!.getSlots().has('inner-topics:group')).toBe(true);
   });
 
@@ -188,10 +181,13 @@ describe('inner sidebar', () => {
   });
 
   it('the head row is the chat itself: selected while its chat is open, a click goes back to it, the pen starts a new agent there', async () => {
+    publishChatSummaries([{ id: 'group', kind: 'group', name: 'Planning', unread_count: 5, member_user_ids: ['agent-a'] }, { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a'] }]);
     openChat('group');
     await render();
     const head = () => host.querySelector<HTMLElement>('[data-inner-head="group"] [data-slot="button"]')!;
     expect(head().dataset.active).toBe('true');
+    // No unread number on the head row: the group's row in the list carries it (proposal v1 state0).
+    expect(host.querySelector('[data-inner-head="group"] [aria-label^="sidebar.unreadCount"]')).toBeNull();
     openSession('mine-in-group');
     await render();
     expect(head().dataset.active).toBeUndefined();
@@ -209,22 +205,18 @@ describe('inner sidebar', () => {
     expect(state.openChatOnScreen).toHaveBeenLastCalledWith('shop-chat', false);
   });
 
-  it('All › keeps what sits above Topics and hides what sits below; ‹ Back brings it back; 「All N topics」 under the rows does the same', async () => {
+  it('All › (the only way to every topic: no 「All N topics」 row under them) keeps what sits above Topics and hides what sits below; ‹ Back brings it back', async () => {
     topicsView('group', { total: 9, hidden: 6 });
     openChat('group');
     await render();
     const drill = () => host.querySelector<HTMLElement>('[data-inner-topics-drill]')!;
     expect(drill().dataset.innerTopicsDrill).toBe('all');
-    expect(moreRows()).toEqual(['sidebar.allTopicsCount:9']);
+    expect(moreRows()).toEqual([]);
     await act(async () => drill().click());
     expect(sections()).toEqual(['topics']);
     expect(drill().dataset.innerTopicsDrill).toBe('back');
-    expect(moreRows()).toEqual([]);
     await act(async () => drill().click());
     expect(sections()).toEqual(['topics', 'agents']);
-    await act(async () => host.querySelector<HTMLElement>('[data-more-row="chat:group:topics"]')!.click());
-    expect(drill().dataset.innerTopicsDrill).toBe('back');
-    await act(async () => drill().click());
 
     topicsView('shop-chat', { total: 9, hidden: 6 });
     openProject('p-shop');
@@ -240,21 +232,25 @@ describe('inner sidebar', () => {
     expect(host.querySelector('[data-inner-topics-drill]')).toBeNull();
   });
 
-  it('running shows 5 then 「N more running」, the rest 3 then 「Show more」; each opens to Collapse', async () => {
+  it('one flat list, no 「needs you」 / 「running」 headers: needs you, then running, then the rest; past 10 one 「Show more」 opens to Collapse', async () => {
     state.items = [
       ...Array.from({ length: 7 }, (_, index) => item(`run-${index}`, 'p-shop', running, 100 - index)),
       ...Array.from({ length: 5 }, (_, index) => item(`idle-${index}`, 'p-shop', idle, 100 - index)),
+      item('asks', 'p-shop', waiting, 0),
     ];
     openProject('p-shop');
     await render();
-    expect(sessionRows()).toEqual(['run-0', 'run-1', 'run-2', 'run-3', 'run-4', 'idle-0', 'idle-1', 'idle-2']);
-    expect(moreRows()).toEqual(['sidebar.moreRunning:2', 'sidebar.showMore:2']);
-    await act(async () => host.querySelector<HTMLElement>('[data-more-row="chat:shop-chat:running"]')!.click());
-    expect(sessionRows()).toHaveLength(10);
-    expect(moreRows()).toEqual(['sidebar.showLess', 'sidebar.showMore:2']);
+    expect(host.querySelector('[data-agent-group]'), 'no group headers').toBeNull();
+    expect(host.querySelector('[data-inner-sidebar-section="agents"]')?.textContent).not.toContain('sidebar.needsYou');
+    expect(agentsCount()).toBe('13');
+    expect(sessionRows()).toEqual(['asks', ...Array.from({ length: 7 }, (_, index) => `run-${index}`), 'idle-0', 'idle-1']);
+    expect(moreRows()).toEqual(['sidebar.showMore:3']);
+    await act(async () => host.querySelector<HTMLElement>('[data-more-row="chat:shop-chat"]')!.click());
+    expect(sessionRows()).toHaveLength(13);
+    expect(moreRows()).toEqual(['sidebar.showLess']);
   });
 
-  it('a collapsed My agents keeps its pill and shows how many need me next to the title', async () => {
+  it('a collapsed Agents keeps its count and shows how many need me next to the title', async () => {
     state.items = [item('mine-in-group', 'p-x', waiting), item('also-mine', 'p-x', running)];
     state.agents = new Map([['mine-in-group', 'agent-a'], ['also-mine', 'agent-a']]);
     openChat('group');
@@ -262,28 +258,67 @@ describe('inner sidebar', () => {
     const agents = () => host.querySelector<HTMLElement>('[data-inner-sidebar-section="agents"]')!;
     await act(async () => agents().querySelector<HTMLElement>('button[aria-label="sidebar.collapseAgents"]')!.click());
     expect(sessionRows()).toEqual([]);
-    expect(agents().querySelector('[data-agents-pill]')?.getAttribute('data-agents-pill')).toBe('2|1');
+    expect(agentsCount()).toBe('2');
     expect(agents().querySelector('[aria-label="sidebar.unreadCount:1"]')?.textContent).toBe('1');
   });
 
-  it('the filter appears past 12 items and narrows topics and agents together; nothing matching says so', async () => {
+  it('no find box in the column, however much is in it (the top search takes over)', async () => {
+    topicsView('group', { total: 40, hidden: 35 });
     openChat('group');
     await render();
-    expect(host.querySelector('[data-inner-sidebar-filter]')).toBeNull();
-    topicsView('group', { total: 12, hidden: 7 });
+    expect(host.querySelector('[data-region="inner-sidebar"] input')).toBeNull();
+  });
+
+  it('folds from its head row, for every group alike, until expanded from the restore lane', async () => {
+    const restore = document.body.appendChild(document.createElement('div'));
+    const restoreRoot = createRoot(restore);
+    await act(async () => restoreRoot.render(<InnerSidebarRestore />));
+    openChat('group');
     await render();
-    expect(host.querySelector('[data-inner-sidebar-filter]')).not.toBeNull();
+    expect(shellRestoreLaneTaken(true, 72)).toBe(false);
+    expect(restore.querySelector('button')).toBeNull();
+    const fold = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!;
+    expect(fold.getAttribute('aria-label')).toBe('sidebar.collapseInner');
+    // The fold button sits at the row's far end, right of the new-agent pen (proposal v1).
+    const ends = [...fold.parentElement!.children];
+    expect(ends.at(-1)).toBe(fold);
+    expect(ends.at(-2)?.matches('[data-inner-head-new-agent]')).toBe(true);
 
-    await typeFilter('mine');
-    expect(filterQuery()).toBe('mine');
-    expect(host.querySelector('[data-inner-topics-drill]')).toBeNull();
-    expect(moreRows()).toEqual([]);
-    expect(sessionRows()).toEqual(['mine-in-group']);
+    await act(async () => fold.click());
+    expect(host.querySelector('[data-region="inner-sidebar"]'), 'folded: the column is gone, the content is the card alone').toBeNull();
+    expect(innerSidebarFolded.get()).toBe(true);
+    expect(innerSidebarFoldedAway.get()).toBe(true);
+    expect(innerSidebarShownFor.get()).toBeNull();
+    // Still attached: the list keeps the group lit.
+    expect(innerSidebarChat.get()).toEqual({ kind: 'group', chatId: 'group' });
+    // The leftmost strip leaves the expand button its lane even with the list open beside it.
+    expect(shellRestoreLaneTaken(true, 72)).toBe(true);
+    const expand = restore.querySelector<HTMLElement>('button[aria-label="sidebar.expandInner"]')!;
+    expect(expand, 'the list column toggle, in the restore lane').not.toBeNull();
+    expect(expand.closest('[data-shell-restore-lane]')).not.toBeNull();
+    expect(expand.textContent, 'no number on it').toBe('');
 
-    topicsView('group', { total: 12, hidden: 7, matched: 0 });
-    await typeFilter('zzz');
-    expect(sections()).toEqual([]);
-    expect(host.querySelector('[data-inner-sidebar-empty]')?.textContent).toBe('sidebar.innerFilterEmpty:zzz');
+    // Remembered globally: another group (and a project) opens folded too.
+    openProject('p-shop');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    expect(restore.querySelector('button')).not.toBeNull();
+    // Nothing to fold over (a direct message): no expand button, no lane.
+    openChat('dm');
+    await render();
+    expect(innerSidebarFoldedAway.get()).toBe(false);
+    expect(restore.querySelector('button')).toBeNull();
+    expect(shellRestoreLaneTaken(true, 72)).toBe(false);
+
+    openChat('group');
+    await render();
+    expect(readPanelToggle('column:inner')).toMatchObject({ open: false, label: 'sidebar.expandInner' });
+    await act(async () => restore.querySelector<HTMLElement>('button')!.click());
+    expect(host.querySelector('[data-inner-sidebar-chat="group"]')).not.toBeNull();
+    expect(restore.querySelector('button')).toBeNull();
+    expect(innerSidebarShownFor.get()).toBe('group');
+    act(() => restoreRoot.unmount());
+    restore.remove();
   });
 
   it('opening one of its agents keeps the column; a direct message or another session closes it', async () => {

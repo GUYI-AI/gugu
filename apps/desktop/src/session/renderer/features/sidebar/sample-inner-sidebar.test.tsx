@@ -86,7 +86,8 @@ state.live = observable(
   { deep: true }
 );
 const { publishChatSummaries } = await import('@/lib/chatSummariesBridge');
-const { InnerSidebar, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
+const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
+const { innerSidebarFoldedAway, setInnerSidebarFolded } = await import('./inner-sidebar-fold');
 const { SampleProjectBlock } = await import('@renderer/features/sample-project/sample-project-block');
 const { openSamplePane } = await import('@renderer/features/sample-project/sample-project-view');
 const { SAMPLE_AGENT_SEED } = await import('@renderer/features/sample-project/sample-project-transcript');
@@ -132,6 +133,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   openSamplePane(null);
+  setInnerSidebarFolded(false);
 });
 
 describe('the inner column for the sample project', () => {
@@ -155,9 +157,9 @@ describe('the inner column for the sample project', () => {
     expect(rows[0].querySelector('[data-row-title]')?.textContent).toBe(zhCNSampleProject.agent.name);
     expect(rows[0].querySelector(`[data-row-agent-avatar="${SAMPLE_AGENT_SEED}"]`), 'the face it has in the conversation').not.toBeNull();
     expect(rows[0].dataset.agentTone, 'nothing runs in a frozen sample').toBeUndefined();
-    const pill = host.querySelector<HTMLElement>('[data-inner-sidebar-section="agents"] [data-session-branch-count]')!;
-    expect(pill.dataset.sessionBranchCount).toBe('1');
-    expect(pill.querySelector('[data-branch-running]')).toBeNull();
+    // A plain count beside the title, as the group / project column (#2548 ⑥): no pill, nothing running.
+    expect(host.querySelector('[data-inner-sidebar-section="agents"] [data-session-branch-count]')).toBeNull();
+    expect(host.querySelector('[data-inner-sidebar-section="agents"] [data-inner-agents-count]')?.textContent).toBe('1');
 
     const topics = host.querySelector<HTMLElement>('[data-inner-sidebar-section="topics"]')!;
     expect(topics.textContent).toContain('sidebar.topics');
@@ -224,6 +226,21 @@ describe('the inner column for the sample project', () => {
 
     await look([], null, 'home');
     expect(column()).toBeNull();
+  });
+
+  it('folds like the group column: the head row’s far-end button, then the expand button in the restore lane brings it back', async () => {
+    await act(async () => root.render(<><InnerSidebar /><SampleProjectBlock blockId="sample-block" /><InnerSidebarRestore /></>));
+    await until(() => column() !== null, 'the sample column drawn');
+    const fold = host.querySelector<HTMLElement>('[data-inner-head="sample-project"] [data-inner-head-fold]')!;
+    expect([...fold.parentElement!.children].at(-1)).toBe(fold);
+    await act(async () => fold.click());
+    expect(column()).toBeNull();
+    expect(innerSidebarFoldedAway.get()).toBe(true);
+    expect(innerSidebarShownFor.get()).toBeNull();
+    const expand = host.querySelector<HTMLElement>('[data-shell-restore-lane] button[aria-label="sidebar.expandInner"]')!;
+    await act(async () => expand.click());
+    expect(column()!.dataset.innerSidebarKind).toBe('sample');
+    expect(host.querySelector('[data-shell-restore-lane]')).toBeNull();
   });
 
   it('draws nothing while the account has no sample', async () => {
