@@ -89,6 +89,16 @@ describe('the sidebar chat list as one list', () => {
     expect(harness.container.querySelector('[data-topic-subrow]')).toBeNull()
   })
 
+  it('switch on: a row is a place to open, ❌ dragged beside to split (switch off it still drags, as today)', async () => {
+    const draggable = () => [...harness.container.querySelectorAll<HTMLElement>('[data-chat-row]')].map((row) => row.getAttribute('draggable'))
+    publishSidebarChatView({ focusedChatId: null, groups: [] })
+    await render()
+    expect(new Set(draggable())).toEqual(new Set(['true']))
+    publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
+    await render()
+    expect(new Set(draggable())).toEqual(new Set(['false']))
+  })
+
   it('switch on: a project row opens through the existing chat route (the task page turns a project group into its project block); an agent row opens its session', async () => {
     publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
     await render()
