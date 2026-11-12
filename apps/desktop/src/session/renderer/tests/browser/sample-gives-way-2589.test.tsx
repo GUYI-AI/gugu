@@ -24,17 +24,36 @@ const OWNER = vi.hoisted(() => ({ ownerId: 'u1', ownerName: 'Ana', ownerAvatar: 
 const NO_GROUPS = vi.hoisted(() => new Set<string>());
 
 // 壳那棵树:真的 ChatListSlotHost(它把聊天列表画进侧栏那一格、把 listedGroups 发给会话页);聊天列表的行用一个替身,
-// 和真的一样从同一份聊天 store 读、在同一次渲染里画。
+// 和真的一样从同一份聊天 store 读、在同一次渲染里画。账号上还没进聊天列表的项目,也和真的一样(#2548 ChatListPanel 的
+// OneListProjectSlot)在列表里留一格,会话页(真的 SidebarOneList)把项目那一行画进去。
 vi.mock('@/store/chatContext', async () => {
   const { useSyncExternalStore } = await import('react');
   return { useChatStore: () => useSyncExternalStore(chatStore.subscribe, chatStore.get) };
 });
 vi.mock('@/components/ChatListPanel', async () => {
-  const { useSyncExternalStore } = await import('react');
+  const { useCallback, useSyncExternalStore } = await import('react');
+  const { useOneListProjectLines } = await import('@/lib/sidebarOneList');
+  const { readShellSlots } = await import('@/lib/shellSlots');
+  const { oneListProjectSlotKey } = await import('@/lib/sidebarChatsBridge');
+  // The place registers once per element, as the real one's callback ref does: a new ref each render would re-register it.
+  const Place = ({ chatId }: { chatId: string }) => {
+    const place = useCallback((element: HTMLDivElement) => {
+      const key = oneListProjectSlotKey(chatId);
+      readShellSlots()!.setSlot(key, element);
+      return () => readShellSlots()!.setSlot(key, null);
+    }, [chatId]);
+    return <div ref={place} />;
+  };
   return {
     ChatListPanel: () => {
       const { chats } = useSyncExternalStore(chatStore.subscribe, chatStore.get);
-      return <>{chats.map((chat) => <div key={chat.id} data-row={`chat:${chat.id}`} />)}</>;
+      const lines = useOneListProjectLines(true, chats as never);
+      return (
+        <>
+          {lines.map((line) => <Place key={`line:${line.projectChatId}`} chatId={line.projectChatId} />)}
+          {chats.map((chat) => <div key={chat.id} data-row={`chat:${chat.id}`} />)}
+        </>
+      );
     },
   };
 });

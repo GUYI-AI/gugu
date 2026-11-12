@@ -578,7 +578,7 @@ describe('SidebarStore: 别的机器上的会话归到那台机器的项目下',
           { id: 'local-paper', path: '/me/paper', sessionIds: ['at-local'], name: 'paper-local-folder' },
           { id: 'd22-paper', path: '/root/paper', sessionIds: ['at-remote'], name: 'paper-d22-folder' },
         ]), [{
-          chatId: 'chat-paper', name: 'Paper', archived: false,
+          chatId: 'chat-paper', name: 'Paper', archived: false, activeAt: '2026-01-01T00:00:00.000Z',
           bindings: [{ deviceId: 'd22', localProjectId: 'd22-paper' }, { deviceId: THIS_COMPUTER, localProjectId: 'local-paper' }],
         }]);
         expect(store.sidebarProjects.map((ref) => [ref.kind, ref.id, ref.chatId, ref.name])).toEqual([['local', 'local-paper', 'chat-paper', 'Paper']]);
@@ -597,9 +597,9 @@ describe('SidebarStore: 别的机器上的会话归到那台机器的项目下',
 
     it('a project without any local project still gets a row keyed by its group; archived ones do not', () => {
       const { store } = accountSidebar(managerWithPaths([]), [
-        { chatId: 'chat-empty', name: 'Empty', archived: false, bindings: [] },
-        { chatId: 'chat-elsewhere', name: 'Elsewhere', archived: false, bindings: [{ deviceId: 'not-loaded', localProjectId: 'p9' }] },
-        { chatId: 'chat-old', name: 'Old', archived: true, bindings: [] },
+        { chatId: 'chat-empty', name: 'Empty', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] },
+        { chatId: 'chat-elsewhere', name: 'Elsewhere', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'not-loaded', localProjectId: 'p9' }] },
+        { chatId: 'chat-old', name: 'Old', archived: true, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] },
       ]);
       expect(store.sidebarProjects.map((ref) => [ref.kind, ref.id, ref.name])).toEqual([
         ['group', 'chat-elsewhere', 'Elsewhere'],

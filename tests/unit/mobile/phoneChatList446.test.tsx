@@ -87,7 +87,7 @@ function desktopDot(sessions: readonly SessionpageSessionSummary[]): number {
   // The project row comes from the account project list: this project is bound on mac.
   const accounts = new AccountProjectsStore()
   accounts.attach({ projects, machineOf: () => 'mac', connected: () => true })
-  runInAction(() => { accounts.list = [{ chatId: 'chat-local', name: 'local', archived: false, bindings: [{ deviceId: 'mac', localProjectId: 'local' }] }] })
+  runInAction(() => { accounts.list = [{ chatId: 'chat-local', name: 'local', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'mac', localProjectId: 'local' }] }] })
   const store = new SidebarStore({ projects } as unknown as ConstructorParameters<typeof SidebarStore>[0], accounts)
   store.machines = { machineOf: () => 'mac', label: () => 'mac', homeDir: () => '/work', connected: () => true, sessionsOf: () => ({ live: true, sessions }), session: (_deviceId, id) => sessions.find(session => session.conversationId === id) ?? null }
   return needsYouCount(store.placement.entries.get('local') ?? [])

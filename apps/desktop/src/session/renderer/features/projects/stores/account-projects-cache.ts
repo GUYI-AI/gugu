@@ -16,9 +16,13 @@ export function readCachedAccountProjects(accountId: string): AccountProject[] {
     const parsed = raw ? (JSON.parse(raw) as Partial<Cached>) : null;
     if (parsed && parsed.accountId !== accountId) localStorage.removeItem(CACHE_KEY);
     if (!parsed || parsed.accountId !== accountId || !Array.isArray(parsed.list)) return [];
-    return parsed.list.filter(
-      (project): project is AccountProject => !!project && typeof project.chatId === 'string' && Array.isArray(project.bindings)
-    );
+    return (parsed.list as readonly unknown[]).flatMap((entry): AccountProject[] => {
+      const project = entry as Partial<AccountProject> | null;
+      if (!project || typeof project.chatId !== 'string' || !Array.isArray(project.bindings)) return [];
+      // 上一版客户端存的那份没有 activeAt(它那时不读):照样铺上,时间是「还不知道」(null),下次读到即换成此刻的。
+      if (project.activeAt === undefined) return [{ ...(project as AccountProject), activeAt: null }];
+      return typeof project.activeAt === 'string' ? [project as AccountProject] : [];
+    });
   } catch {
     return [];
   }

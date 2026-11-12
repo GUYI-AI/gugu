@@ -31,7 +31,7 @@ class MirrorAccounts extends AccountProjectsStore {
     for (const project of this.manager.projects.values()) {
       const chatId = this.groupOf(project.id) ?? (isWorkspaceProject(project) ? undefined : `chat:${project.id}`);
       if (!chatId) continue;
-      const account = byChat.get(chatId) ?? { chatId, name: project.name ?? '', archived: false, bindings: [] };
+      const account = byChat.get(chatId) ?? { chatId, name: project.name ?? '', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] };
       account.bindings.push({ deviceId: this.local?.machineOf(project.id) ?? THIS_COMPUTER, localProjectId: project.id });
       byChat.set(chatId, account);
     }

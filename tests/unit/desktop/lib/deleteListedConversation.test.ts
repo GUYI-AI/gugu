@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({ kind: 'dm', readError: null as {message:string
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: { from: state.from, rpc: state.rpc } }));
 vi.mock('../../../../apps/desktop/src/lib/groupAdmin', () => ({ currentGroupAdmin: async () => ({archive:state.archive}) }));
 import { deleteListedConversation } from '../../../../apps/desktop/src/lib/deleteListedConversation';
+import { forgetArchivedGroups, readArchivedGroups } from '../../../../apps/desktop/src/lib/archivedGroupsRead';
 beforeEach(() => {
   vi.clearAllMocks(); state.kind='dm'; state.readError=null; state.reply={data:{chat_id:'dm',deleted_at:'2026-11-03T03:48:01Z'},error:null};
   state.from.mockReturnValue({select:state.select}); state.select.mockReturnValue({eq:state.eq}); state.eq.mockReturnValue({single:state.single});
@@ -27,6 +28,16 @@ it('preserves active-agent denial so the row stays and the UI explains why', asy
 it('keeps group deletion on its existing management RPC', async () => {
   state.kind='group'; await deleteListedConversation('group');
   expect(state.archive).toHaveBeenCalledExactlyOnceWith('group'); expect(state.rpc).not.toHaveBeenCalled();
+});
+// #2548 the caller drops the conversation right after: the group admin's answer is said first (lib/archivedGroupsRead).
+it('says the group is archived once the group admin confirmed it, and not when it refused', async () => {
+  forgetArchivedGroups(); state.kind='group';
+  state.archive.mockRejectedValueOnce(new Error('human_group_owner_required'));
+  await expect(deleteListedConversation('group')).rejects.toThrow('human_group_owner_required');
+  expect(readArchivedGroups().has('group')).toBe(false);
+  await deleteListedConversation('group');
+  expect(readArchivedGroups().has('group')).toBe(true);
+  forgetArchivedGroups();
 });
 it('does not mutate after a failed kind read or for an unsupported conversation kind', async () => {
   state.readError={message:'permission denied'}; await expect(deleteListedConversation('dm')).rejects.toThrow('permission denied');

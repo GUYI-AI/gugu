@@ -167,3 +167,30 @@ describe('chat projection read scope', () => {
     expect(unreadArgs()).toEqual([])
   })
 })
+
+describe('#2548 groups the chat list read as archived', () => {
+  it('a group read archived is said before its conversation leaves the list; read active again, or another account, no longer', async () => {
+    const { forgetArchivedGroups, readArchivedGroups } = await import('../../../../apps/desktop/src/lib/archivedGroupsRead')
+    forgetArchivedGroups()
+    const setStatus = (status: string) => rowsByKey.set('chats', (rowsByKey.get('chats') as Record<string, unknown>[]).map((row) => (row.id === 'c-2' ? { ...row, status } : row)))
+    const projection = createChatProjection(VIEWER)
+    const signal = new AbortController().signal
+    await projection.hydrate('0', signal)
+    expect([...readArchivedGroups()]).toEqual([])
+
+    setStatus('archived')
+    const dissolved = await projection.advance(toProjectionOperations([{ revision: '1', event: 'chat_meta_changed', payload: { chat_id: 'c-2', entity_id: 'c-2' } }]), '1', signal)
+    expect(dissolved?.map((row) => row.id)).toEqual(['c-1', 'c-3'])
+    expect([...readArchivedGroups()]).toEqual(['c-2'])
+
+    setStatus('active')
+    const restored = await projection.advance(toProjectionOperations([{ revision: '2', event: 'chat_meta_changed', payload: { chat_id: 'c-2', entity_id: 'c-2' } }]), '2', signal)
+    expect(restored?.map((row) => row.id).sort()).toEqual(['c-1', 'c-2', 'c-3'])
+    expect([...readArchivedGroups()]).toEqual([])
+
+    setStatus('archived')
+    await projection.advance(toProjectionOperations([{ revision: '3', event: 'chat_meta_changed', payload: { chat_id: 'c-2', entity_id: 'c-2' } }]), '3', signal)
+    projection.reset()
+    expect([...readArchivedGroups()]).toEqual([])
+  })
+})

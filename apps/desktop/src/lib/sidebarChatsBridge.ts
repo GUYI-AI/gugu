@@ -22,7 +22,7 @@ export type SidebarChatSignals = {
   readonly groupUnread: ReadonlyMap<string, number>
   /** 项目群从哪个话题叫到了你:点项目行直接开它,读了 groupUnread 就减。没有叫到你的话题的群不在里面。 */
   readonly groupCallingTopic: ReadonlyMap<string, SidebarCallingTopic>
-  /** #2548 the group chats the chat list has (project groups included); null = the list has not loaded yet. */
+  /** #2569 the group chats the chat list has (project groups included); null = the list has not loaded yet. */
   readonly listedGroups: ReadonlySet<string> | null
 }
 
@@ -191,6 +191,15 @@ export function publishSidebarPinnedAgents(next: readonly SidebarPinnedAgent[]):
 export function useSidebarPinnedAgents(): readonly SidebarPinnedAgent[] {
   return useSyncExternalStore(subscribePinnedAgents, () => read<readonly SidebarPinnedAgent[]>(PINNED_AGENTS_KEY) ?? NO_PINNED_AGENTS, () => NO_PINNED_AGENTS)
 }
+
+/**
+ * #2548 壳 → 会话页: an account project with no conversation row yet stands among the conversation rows at its time
+ * (lib/sidebarOneList, OneListProjectLine). Where is the chat list's to say, the row is the task page's to draw (it needs
+ * the task page's own context): the chat list leaves an empty element there, a shell slot (lib/shellSlots) under this key
+ * with the project's group chat id, and the task page draws the project's row into it.
+ */
+export const ONE_LIST_PROJECT_SLOT_PREFIX = 'one-list-project:'
+export const oneListProjectSlotKey = (chatId: string) => `${ONE_LIST_PROJECT_SLOT_PREFIX}${chatId}`
 
 const ONE_LIST_NEIGHBOUR_KEY = '__GUGU_SIDEBAR_ONE_LIST_NEIGHBOUR__'
 

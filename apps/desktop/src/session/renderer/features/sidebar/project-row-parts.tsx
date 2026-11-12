@@ -15,27 +15,26 @@ type OneListRowProps = {
 
 /**
  * GUYI-AI/gugu#2548 a row of the one list that is not a conversation yet is drawn as a conversation row: the chat list's
- * own row (ListRow inside the list's 12px gutter, as ChatRow in components/ChatListPanel.tsx composes it) with its
- * 32px avatar. Two lines like every conversation row; `preview` '' = nothing said yet (the second line stays, empty).
+ * own row (ListRow, as ChatRow in components/ChatListPanel.tsx composes it) with its 32px avatar, in the list's 12px
+ * gutter (the chat list's own padding, or the tail's after it). Two lines like every conversation row; `preview` '' =
+ * nothing said yet (the second line stays, empty).
  */
 export function OneListRow({ leading, name, tag, time, preview, selected, onOpen, ...data }: OneListRowProps & { leading: ReactNode }) {
   return (
-    <div className="px-3">
-      <ListRow
-        {...data}
-        role="button"
-        tabIndex={0}
-        selected={selected}
-        onClick={(event) => onOpen(event.metaKey || event.ctrlKey)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') onOpen(false);
-        }}
-        leading={leading}
-        title={name}
-        meta={time}
-        subtitle={tag ? <><Chip>{tag}</Chip>{' '}{preview}</> : preview}
-      />
-    </div>
+    <ListRow
+      {...data}
+      role="button"
+      tabIndex={0}
+      selected={selected}
+      onClick={(event) => onOpen(event.metaKey || event.ctrlKey)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') onOpen(false);
+      }}
+      leading={leading}
+      title={name}
+      meta={time}
+      subtitle={tag ? <><Chip>{tag}</Chip>{' '}{preview}</> : preview}
+    />
   );
 }
 

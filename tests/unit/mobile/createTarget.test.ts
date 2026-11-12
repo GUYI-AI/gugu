@@ -26,7 +26,7 @@ describe('手机新建页的「项目 · 机器」(DESIGN 点击路径 4a)', () 
   const machines = [mac, wen, juma, gpu, phone]
   // 项目只来自 accountProjectsStore(桌面同一份);文件夹路径照各台机器发布的 device_projects。
   const store: AccountProject[] = [
-    { chatId: 'chat-work', name: 'work', archived: false, bindings: [
+    { chatId: 'chat-work', name: 'work', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [
       { deviceId: 'gpu', localProjectId: 'gpu-work' }, { deviceId: 'juma', localProjectId: 'juma-work' }, { deviceId: 'wen', localProjectId: 'wen-work' },
     ] },
   ]
@@ -71,9 +71,9 @@ describe('手机新建页的「项目 · 机器」(DESIGN 点击路径 4a)', () 
     const cloud = machine('cloud', true)
     const list = accountProjects([
       ...store,
-      { chatId: 'chat-empty', name: 'paper', archived: false, bindings: [] },
-      { chatId: 'chat-old', name: 'old', archived: true, bindings: [] },
-      { chatId: 'chat-home', name: '助理', archived: false, bindings: [{ deviceId: 'cloud', localProjectId: 'home' }] },
+      { chatId: 'chat-empty', name: 'paper', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] },
+      { chatId: 'chat-old', name: 'old', archived: true, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] },
+      { chatId: 'chat-home', name: '助理', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'cloud', localProjectId: 'home' }] },
     ], [...machines, cloud], 'cloud')
     expect(list.map((one) => one.chatId)).toEqual(['chat-work', 'chat-empty'])
     const empty = list[1]!

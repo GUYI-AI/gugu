@@ -3,6 +3,7 @@ import { useNativeAgentChats } from '@/hooks/useNativeAgentChats'
 import { createChatMembershipProjection } from '@/lib/chatRowDerivations'
 import { memoizeByReference } from '@/lib/memoizeByReference'
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type KeyboardEventHandler, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useStableHandler } from '@/hooks/useStableHandler'
 import { useTranslation } from 'react-i18next'
@@ -37,10 +38,11 @@ import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
-import { oneListAgentRows, oneListShows, sidebarPinnedRows, useAgentHomes } from '../lib/sidebarOneList'
+import { isOneListProjectLine, oneListAgentRows, oneListShows, placeProjectLines, sidebarPinnedRows, useAgentHomes, useOneListProjectLines, type OneListProjectLine } from '../lib/sidebarOneList'
 import { usePublishOneListAgentRows } from '../lib/innerSidebarBridge'
 import { mobileListDiagnostics } from '@/mobile/mobileListDiagnostics'
-import { installOneListNeighbour, subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
+import { readShellSlots } from '../lib/shellSlots'
+import { installOneListNeighbour, oneListProjectSlotKey, subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
 import { NotificationSlot } from './needsYou/NotificationSlot'
 import { RETAINED_SURFACE_HIDDEN_STYLE } from '../lib/retainedSurface'
 import { blockKey, joinRows, type JoinedGroup, type SidebarJoin } from '../lib/sidebarJoinedGroups'
@@ -129,6 +131,41 @@ const SIDEBAR_ENTRY_ESTIMATE = 58
 
 /** A mounted sidebar line, placed by the line window. */
 const lineStyle = (top: number): React.CSSProperties => ({ position: 'absolute', top, left: 0, width: '100%' })
+/** The chat a sidebar line stands for: a conversation's own, a project line's group chat (#2548). */
+const lineChatId = (row: ChatItem | OneListProjectLine) => (isOneListProjectLine(row) ? row.projectChatId : row.id)
+
+/**
+ * #2548 where an account project with no conversation row yet stands in the one list: the task page draws the project's
+ * row into this element (shell slot oneListProjectSlotKey), as it needs the task page's context. Nothing of the shell's
+ * goes in it. Its line is measured once that row is in it (`onDrawn`): measured empty, the rows below would cover it
+ * until the next measurement.
+ */
+const OneListProjectSlot = memo(function OneListProjectSlot({ chatId, joinPos, joinOnScreen, onDrawn }: {
+  chatId: string
+  /** The joined box's segment it draws, as a conversation row does (ChatRow). */
+  joinPos?: SidebarJoin['pos']
+  joinOnScreen?: boolean
+  onDrawn: (slot: HTMLElement) => void
+}) {
+  const place = useCallback((element: HTMLDivElement) => {
+    const slots = readShellSlots()
+    if (!slots) throw new Error('shell slots are not installed: the one list cannot place a project row')
+    const key = oneListProjectSlotKey(chatId)
+    // The task page draws in its own commit, right after this one and before the frame is painted.
+    const drawn = new MutationObserver(() => {
+      if (!element.firstElementChild) return
+      drawn.disconnect()
+      onDrawn(element)
+    })
+    drawn.observe(element, { childList: true })
+    slots.setSlot(key, element)
+    return () => {
+      drawn.disconnect()
+      slots.setSlot(key, null)
+    }
+  }, [chatId, onDrawn])
+  return <div ref={place} data-one-list-project={chatId} data-join={joinPos} data-join-on={joinOnScreen || undefined} />
+})
 
 /** The element whose scrolling moves this node: in the shell that is the sidebar's one scroller (@@@sidebar-single-scroller). */
 function scrollingAncestor(node: HTMLElement): HTMLElement {
@@ -578,6 +615,8 @@ export function ChatListPanel({
   // An agent's home is a room the list shows: the assistant's hidden workrooms are no home (an agent only there keeps its own row).
   const homeChats = useMemo(() => chats.filter((chat) => !isDuplicateAssistantChat(chat, assistantShell, workrooms)), [chats, assistantShell, workrooms])
   const agentHomes = useAgentHomes(oneList, homeChats, membership, sidebarPins)
+  // An account project whose project group is not in this list yet stands among the conversations at its time (#2548).
+  const projectLines = useOneListProjectLines(oneList, chats)
   // @@@chat-list-agent-status (#437/#33) - one batched presence subscription for every agent shown in
   // the list: DM-with-agent peers + all group agent members (so the group dot can aggregate).
   const agentStatuses = useAgentDisplayStatuses(membership.agentIds)
@@ -685,6 +724,13 @@ export function ChatListPanel({
   const joinedGroups = inSidebar ? sidebarView.groups : NO_JOINED_GROUPS
   const pinnedRows = joinRows(pinnedChats, (chat) => blockKey.chat(chat.id), joinedGroups)
   const normalLines = joinRows(normalChats, (chat) => blockKey.chat(chat.id), joinedGroups)
+  // #2548 the sidebar draws the project lines among them too; the keyboard walks the conversations (normalLines).
+  // A project line is its group's conversation row-to-be: same key, so a joined box holds it as it will hold that row.
+  const oneListLines = projectLines.length === 0 ? normalLines : joinRows(
+    placeProjectLines(normalChats, activityOf, projectLines),
+    (row) => blockKey.chat(lineChatId(row)),
+    joinedGroups,
+  )
   // @@@5856 顶层不再有「沉降」这一段:isSunkTopic 只对话题为真,而话题现在永不占顶层 ⇒ 那一段恒空。
   // 沉降下沉到**子行**这一层(每条来源线自己一行「更多」),见 renderChatRow。
   // 键盘上下走的是「看得见的那些行」,所以子行也要在里面 —— ❌ 不能让话题只能用鼠标点。
@@ -795,7 +841,7 @@ export function ChatListPanel({
   // its line to the top; with every line mounted React re-inserted every line above it, so a message to the k-th
   // conversation restyled k whole lines. Now only the mounted window can move. The phone and the conversation page keep
   // their full lists.
-  const sidebarLines = inSidebar && !loadingChats ? [...pinnedRows, ...normalLines] : []
+  const sidebarLines: { row: ChatItem | OneListProjectLine; join?: SidebarJoin }[] = inSidebar && !loadingChats ? [...pinnedRows, ...oneListLines] : []
   const hasSidebarLines = sidebarLines.length > 0
   const [sidebarScroller, setSidebarScroller] = useState<HTMLElement | null>(null)
   const windowRef = useRef<HTMLDivElement>(null)
@@ -805,7 +851,8 @@ export function ChatListPanel({
   }, [inSidebar])
   const lineWindow = useVirtualizer({
     count: sidebarLines.length,
-    getItemKey: (index) => sidebarLines[index]!.row.id,
+    // A project line is keyed by its group chat: when that conversation arrives, its row takes the same line.
+    getItemKey: (index) => lineChatId(sidebarLines[index]!.row),
     getScrollElement: () => sidebarScroller,
     estimateSize: () => SIDEBAR_ENTRY_ESTIMATE,
     // The first frame already shows the lines that fit, before the scroller's size is observed.
@@ -831,6 +878,10 @@ export function ChatListPanel({
     return () => observer.disconnect()
   }, [sidebarScroller, hasSidebarLines])
   const windowStyle: React.CSSProperties = { height: lineWindow.getTotalSize(), position: 'relative' }
+  // A project line (OneListProjectSlot) is measured once the task page has drawn its row, before that frame is painted.
+  const measureDrawnLine = useStableHandler((slot: HTMLElement) => {
+    flushSync(() => lineWindow.measureElement(slot.parentElement))
+  })
   // Stable: the global shortcut effect calls it and must not re-subscribe on every render.
   const focusChatRow = useStableHandler((chatId: string | null) => {
     if (!chatId) return
@@ -838,7 +889,7 @@ export function ChatListPanel({
     // An off-screen line has no node in the sidebar window: bring its line in by index first (a topic rides its source line).
     if (inSidebar) {
       const target = visibleChats.find((chat) => chat.id === chatId)
-      const line = sidebarLines.findIndex(({ row }) => row.id === (target?.kind === 'topic' ? target.source_chat_id : chatId))
+      const line = sidebarLines.findIndex(({ row }) => lineChatId(row) === (target?.kind === 'topic' ? target.source_chat_id : chatId))
       if (line >= 0) lineWindow.scrollToIndex(line, { align: 'auto' })
     }
     requestAnimationFrame(() => {
@@ -1059,8 +1110,8 @@ export function ChatListPanel({
           {lineWindow.getVirtualItems().map((item) => {
             const { row, join } = sidebarLines[item.index]!
             return (
-              <div key={item.key} data-index={item.index} ref={lineWindow.measureElement} style={lineStyle(item.start - windowMargin)}>
-                {renderChatRow(row, join)}
+              <div key={item.key} data-index={item.index} ref={isOneListProjectLine(row) ? undefined : lineWindow.measureElement} style={lineStyle(item.start - windowMargin)}>
+                {isOneListProjectLine(row) ? <OneListProjectSlot chatId={row.projectChatId} joinPos={join?.pos} joinOnScreen={join?.onScreen} onDrawn={measureDrawnLine} /> : renderChatRow(row, join)}
               </div>
             )
           })}

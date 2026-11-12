@@ -30,7 +30,7 @@ function accountOf(devices: readonly Device[]): AccountProject[] {
   const byChat = new Map<string, AccountProject>()
   for (const row of devices) for (const record of row.projects ?? []) {
     if (!record.chatId) continue
-    const entry = byChat.get(record.chatId) ?? { chatId: record.chatId, name: `group ${record.chatId}`, archived: false, bindings: [] }
+    const entry = byChat.get(record.chatId) ?? { chatId: record.chatId, name: `group ${record.chatId}`, archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] }
     entry.bindings.push({ deviceId: row.device_id, localProjectId: record.localProjectId })
     byChat.set(record.chatId, entry)
   }
@@ -74,7 +74,7 @@ describe('partnerProjects', () => {
       ]),
       device('server', [project('mid', 'mid', '2026-10-05T00:00:00.000Z', null)]),
     ]
-    const list = [...accountOf(devices), { chatId: 'c-empty', name: 'empty', archived: false, bindings: [] }]
+    const list = [...accountOf(devices), { chatId: 'c-empty', name: 'empty', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] }]
     expect(partners(devices, list).map((row) => row.key)).toEqual(['c-early', 'server:mid', 'c-late', 'c-empty'])
   })
 
@@ -91,7 +91,7 @@ describe('partnerProjects', () => {
       device('mac', [project('p-mac', 'gugu', '2026-10-02T00:00:00.000Z', 'chat-gugu')], true),
       device('cloud', [project('p-cloud', 'gugu', '2026-10-01T00:00:00.000Z', 'chat-gugu'), project('home', 'home', '2026-10-01T00:00:00.000Z', 'chat-home'), project('loose', 'loose', '2026-10-01T00:00:00.000Z', null)], true, { capabilities: { assistant_home: true } as Device['capabilities'] }),
     ]
-    const list = [...accountOf(devices), { chatId: 'chat-old', name: 'old', archived: true, bindings: [{ deviceId: 'mac', localProjectId: 'gone' }] }]
+    const list = [...accountOf(devices), { chatId: 'chat-old', name: 'old', archived: true, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'mac', localProjectId: 'gone' }] }]
     const rows = partnerProjects(list, devices, (row) => row.device_id === 'cloud')
     expect(rows.map((row) => [row.key, row.members.map((member) => member.deviceId)])).toEqual([['chat-gugu', ['mac']]])
   })

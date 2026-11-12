@@ -63,6 +63,7 @@ import { chatDb, identityDb } from './supabase'
 import { composerCardLine } from './composerCardCopy'
 import { ingestMessages } from './messageIngest'
 import { messageAccessWrites } from './messageRevisionWrites'
+import { forgetArchivedGroups, noteGroupArchived } from './archivedGroupsRead'
 import { messagePreviewLines } from './messagePreviews'
 
 const log = rendererLogger('chat/projection')
@@ -578,6 +579,12 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
         return null
       }
       const { keys } = await runWaves(batch.head, batchSignal, { trigger, from: batch.from, requests: keysetRequests })
+      // #2548 a group read as archived leaves the list below; say so first, for whoever lists it from another source.
+      for (const key of keys) {
+        if (!key.startsWith('chat:')) continue
+        const chat = cache.get(key)?.value as { kind?: unknown; status?: unknown } | null | undefined
+        if (chat?.kind === 'group') noteGroupArchived(key.slice('chat:'.length), chat.status === 'archived')
+      }
       await ingestMessages(viewerId, { writes: messageAccessWrites(cache, viewerId, keys), revisions: [] })
       // A newer queued batch owns these unread keys. Publishing this older snapshot
       // would mistake an unobserved conversation for a removed one.
@@ -656,6 +663,7 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       })
     },
     reset() {
+      forgetArchivedGroups()
       confirmedDeletions.clear()
       cache = new Map()
       membersByChat.clear()
