@@ -56,7 +56,6 @@ vi.mock('@renderer/features/sessions/stores/session-registry', () => ({
 }))
 /**
  * 键盘光标那套是**真的**(session-keyboard-nav 没被替),它只从这一格取世界:
- *  · `navChain` 要包含这一行 —— 显式光标只在它还在链上时才作数(见 `get cursor`);
  *  · `navigation` 要说得出「主区在哪」,否则 `viewNode` 取不到值;点一行走的 `navigate` 把它挪到那一行,
  *    与真的一样 —— 光标就是主区所在(❌ 不摆一个假的光标)。
  * 项目树给空的:行按「项目没挂载」渲,与真实的早期状态同形。
@@ -74,7 +73,6 @@ vi.mock('@renderer/lib/stores/app-state', async () => {
   },
   sidebarStore: {
     remoteSession: () => undefined,
-    navChain: [{ kind: 'conversation', projectId: 'proj-1', sessionId: 'conv-1' }],
     // 设置 `interface.showLeftSidebarAgentNameOnHover` 的镜像(现在开的是身份卡,#6092)。这里是**开**的那一档;
     // 关掉那一档由下面单独一条用例把它翻过去判。
     agentNameOnHoverEnabled: true,

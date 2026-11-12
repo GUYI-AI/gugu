@@ -182,6 +182,26 @@ export function useSidebarPinnedAgents(): readonly SidebarPinnedAgent[] {
   return useSyncExternalStore(subscribePinnedAgents, () => read<readonly SidebarPinnedAgent[]>(PINNED_AGENTS_KEY) ?? NO_PINNED_AGENTS, () => NO_PINNED_AGENTS)
 }
 
+const ONE_LIST_NEIGHBOUR_KEY = '__GUGU_SIDEBAR_ONE_LIST_NEIGHBOUR__'
+
+/**
+ * #2548 壳 → 会话页: the one list's rows are the chat list's, and so is their keyboard order (⌘↑/⌘↓). ⌃X⌃X on the task page
+ * archives the open task, then moves on as the old sidebar did: to the row after the lit one (the one before it at the
+ * end), opened as ⌘↓ opens it. The chat list installs this while it is the one list. Returns the uninstall.
+ */
+export function installOneListNeighbour(open: () => boolean): () => void {
+  const target = window as unknown as Record<string, unknown>
+  target[ONE_LIST_NEIGHBOUR_KEY] = open
+  return () => {
+    if (target[ONE_LIST_NEIGHBOUR_KEY] === open) delete target[ONE_LIST_NEIGHBOUR_KEY]
+  }
+}
+
+/** 会话页: open the one list's row next to the lit one; false = there is none (no other row, no lit row, no one list). */
+export function openOneListNeighbour(): boolean {
+  return read<() => boolean>(ONE_LIST_NEIGHBOUR_KEY)?.() ?? false
+}
+
 export type ShellChatDialog = 'create-group' | 'add-contact'
 export type ShellChatAction = ShellChatDialog | { kind: 'mark-read'; chatId: string }
 

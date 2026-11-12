@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 // GUYI-AI/gugu#2548 rows of the one list that are not a conversation yet (an account project whose group chat is not in
-// the chat list, the sample): drawn as conversation rows, always after every conversation row, and the keyboard chain
-// holds exactly those projects.
+// the chat list, the sample): drawn as conversation rows, always after every conversation row.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,7 +14,6 @@ const state = vi.hoisted(() => ({
   sampleShown: false,
   accountStatus: 'ready' as 'loading' | 'ready' | 'error',
   leftOpen: true,
-  setOneListProjects: vi.fn(),
 }));
 vi.mock('@/lib/sidebarChatsBridge', () => ({
   useSidebarChatSignals: () => ({ listedGroups: state.listedGroups, chatsUnread: 3, groupUnread: new Map([['chat-1', 2], ['chat-2', 4]]), groupCallingTopic: new Map() }),
@@ -33,7 +31,6 @@ vi.mock('@renderer/features/sample-project/use-sample-project', () => ({
 vi.mock('@renderer/lib/stores/app-state', () => ({
   sidebarStore: {
     get sidebarProjects() { return state.projects; },
-    setOneListProjects: state.setOneListProjects,
   },
 }));
 // The chat list is drawn into this slot by the shell's tree (ChatListPanel, its own tests); here it stands for every
@@ -56,7 +53,6 @@ beforeEach(() => {
   state.sampleShown = true;
   state.accountStatus = 'ready';
   state.leftOpen = true;
-  state.setOneListProjects.mockClear();
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -100,14 +96,6 @@ describe('rows that are not a conversation yet', () => {
     state.sampleShown = false;
     await render();
     expect(order()).toEqual(['conversations']);
-  });
-
-  it('the task page\'s keyboard chain holds exactly the project rows drawn here, and nothing once the list is gone', async () => {
-    await render();
-    expect(state.setOneListProjects).toHaveBeenLastCalledWith(['no-group-b', 'no-group-a']);
-    act(() => root.unmount());
-    expect(state.setOneListProjects).toHaveBeenLastCalledWith(null);
-    root = createRoot(host);
   });
 });
 

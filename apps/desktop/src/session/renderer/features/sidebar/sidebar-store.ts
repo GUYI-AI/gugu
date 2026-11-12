@@ -26,31 +26,14 @@ function parseSidebarSessionSortBy(value: unknown): SidebarSessionSortBy | undef
 }
 
 /**
- * behavior session-page「键盘导航」: a station on the keyboard navigation chain. Only three kinds are
- * destinations — the New task entry, a project row (= that project's home, where a new session is
- * started) and a conversation row. Section titles and state-group titles are not stations.
+ * behavior session-page「键盘导航」: a station of the keyboard navigation — the New task entry, a project row (= that
+ * project's home, where a new session is started) or a conversation. Section titles and state-group titles are not
+ * stations.
  */
 export type SidebarNavNode =
   | { kind: 'new-session' }
   | { kind: 'project'; projectId: string }
   | { kind: 'conversation'; projectId: string; sessionId: string };
-
-/** Stable identity of a station, so the cursor survives re-ordering and re-grouping. */
-export function navNodeKey(node: SidebarNavNode): string {
-  switch (node.kind) {
-    case 'new-session':
-      return 'new-session';
-    case 'project':
-      return `project:${node.projectId}`;
-    case 'conversation':
-      return `session:${node.sessionId}`;
-  }
-}
-
-export function navNodesEqual(a: SidebarNavNode | null, b: SidebarNavNode | null): boolean {
-  if (!a || !b) return a === b;
-  return navNodeKey(a) === navNodeKey(b);
-}
 
 /** 「任务」分区在 placement 里的键(项目行用项目 id)。 */
 const SESSIONS_SECTION = '\u0000sessions';
@@ -137,11 +120,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
    * owner:「它不应该生活在任务区」—— 它自己的会话不进这里的任何列表;它派出来的照常在,行上标「助理发起」。
    */
   assistantAgentId: string | null = null;
-  /**
-   * GUYI-AI/gugu#2548 the project rows the one list draws itself, in order (account projects whose project group is not a
-   * conversation of the chat list; mirrored in by SidebarOneList). null = the list is not mounted.
-   */
-  oneListProjects: readonly string[] | null = null;
   constructor(
     private readonly projectManager: ProjectManagerStore,
     /** 账号上的项目:「项目」分区只列它们(❌ 再按项目群拼本地项目)。 */
@@ -153,11 +131,9 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
       accountProjects: false,
       machines: observable.ref,
       joinedGroups: observable.ref,
-      oneListProjects: observable.ref,
       expandedProjectIds: false,
       idleExpandedProjectIds: false,
       expandedSessionIds: false,
-      navChain: computed,
     });
 
   }
@@ -192,17 +168,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
       .map((ref, index) => ({ ref, rank: rank(ref, index) }))
       .sort((a, b) => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1])
       .map(({ ref }) => ref);
-  }
-
-  /**
-   * behavior session-page「键盘导航」: the task page's keyboard chain, top to bottom — 创建智能体 (the New task station),
-   * then the project rows the one list draws itself (#2548). Only what is drawn: its conversation rows are the chat
-   * list's own, walked there (ChatListPanel); the list not mounted = nothing but the first station.
-   */
-  get navChain(): SidebarNavNode[] {
-    const nodes: SidebarNavNode[] = [{ kind: 'new-session' }];
-    for (const projectId of this.oneListProjects ?? []) nodes.push({ kind: 'project', projectId });
-    return nodes;
   }
 
   /** 这一行代表的项目在各台机器上的本地项目(代表行在最前);不属于账号上任何项目 = 只有它自己。 */
@@ -468,14 +433,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     if (this.accountProjects.projectOfLocal(project.id)) return false;
     const { status, list } = this.accountProjects;
     return isWorkspaceProject(project) || status !== 'loading' || list.length > 0;
-  }
-
-  /** #2548 SidebarOneList mirrors the project rows it draws (null when it is not drawn). Same rows: no change. */
-  setOneListProjects(projectIds: readonly string[] | null): void {
-    const current = this.oneListProjects;
-    if (current === projectIds) return;
-    if (current && projectIds && current.length === projectIds.length && current.every((id, index) => id === projectIds[index])) return;
-    this.oneListProjects = projectIds;
   }
 
   setAgentNameOnHoverEnabled(enabled: boolean): void {

@@ -39,7 +39,7 @@ import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestB
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
 import { oneListShows, sidebarPinnedRows, useAgentHomes } from '../lib/sidebarOneList'
 import { mobileListDiagnostics } from '@/mobile/mobileListDiagnostics'
-import { subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
+import { installOneListNeighbour, subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
 import { NotificationSlot } from './needsYou/NotificationSlot'
 import { RETAINED_SURFACE_HIDDEN_STYLE } from '../lib/retainedSurface'
 import { blockKey, joinRows, type JoinedGroup, type SidebarJoin } from '../lib/sidebarJoinedGroups'
@@ -973,6 +973,18 @@ export function ChatListPanel({
     window.addEventListener('keydown', handleGlobalShortcut)
     return () => window.removeEventListener('keydown', handleGlobalShortcut)
   }, [selectedChatId, activeTopicChatId, walksListKeys, inSidebar, chats, selectChat, visibleChatIds, notificationsOpen, focusChatRow])
+
+  // #2548 ⌃X⌃X on the task page archives the open task, then opens the row after the lit one as ⌘↓ does (the one before it
+  // at the end); false = no other row, and the task page goes to New task (sidebarChatsBridge.installOneListNeighbour).
+  const openNeighbour = useStableHandler((): boolean => {
+    const index = selectedChatId ? visibleChatIds.indexOf(selectedChatId) : -1
+    const targetId = index === -1 ? undefined : visibleChatIds[index + 1] ?? visibleChatIds[index - 1]
+    const target = targetId ? chats.find((chat) => chat.id === targetId) : undefined
+    if (!target) return false
+    selectChat(target, 'sidebar')
+    return true
+  })
+  useEffect(() => (oneList ? installOneListNeighbour(openNeighbour) : undefined), [oneList, openNeighbour])
 
   const handleChatKeyDown = (event: Parameters<KeyboardEventHandler<HTMLDivElement>>[0], chat: ChatItem) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {

@@ -45,7 +45,6 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
   },
   sidebarStore: {
     remoteSession: () => undefined,
-    navChain: [],
     agentNameOnHoverEnabled: false,
     expandedProjectIds: new Set<string>(),
     launchedByAssistant: () => false,

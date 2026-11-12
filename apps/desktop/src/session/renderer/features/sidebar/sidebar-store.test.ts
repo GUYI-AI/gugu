@@ -360,52 +360,6 @@ describe('SidebarStore project ordering', () => {
 
 });
 
-describe('SidebarStore keyboard navigation chain', () => {
-  function session(id: string, extra: Record<string, unknown> = {}) {
-    return {
-      id,
-      projectId: 'project-nav',
-      providerId: 'codex',
-      title: id,
-      lastInteractedAt: '2026-01-01T00:00:00.000Z',
-      type: 'acp',
-      ...extra,
-    };
-  }
-
-  it('#2548 one list: the chain is New task and the project rows the list draws; the hidden sections are no stations', () => {
-    sessionRegistry.acquire('task-nav', 'project-nav', [
-      session('pinned-one', { isPinned: true }),
-      session('plain-one'),
-    ] as never);
-    const store = sidebarOf(
-      projectManagerWithSessions([
-        { id: 'project-nav', createdAt: '2026-01-01T00:00:00.000Z', sessionIds: ['task-nav'] },
-      ])
-    );
-    store.ensureProjectExpanded('project-nav');
-    // Not mounted yet: nothing but the first station (the pinned and project sessions are not drawn anywhere).
-    expect(store.navChain).toEqual([{ kind: 'new-session' }]);
-
-    store.setOneListProjects(['groupless-a', 'groupless-b']);
-    expect(store.navChain).toEqual([
-      { kind: 'new-session' },
-      { kind: 'project', projectId: 'groupless-a' },
-      { kind: 'project', projectId: 'groupless-b' },
-    ]);
-    // ⌘↓ walks conversation stations only: none here, so the key is left to the one list's own rows (ChatListPanel).
-    expect(store.navChain.some((node) => node.kind === 'conversation')).toBe(false);
-
-    store.setOneListProjects([]);
-    expect(store.navChain).toEqual([{ kind: 'new-session' }]);
-
-    store.setOneListProjects(null);
-    expect(store.navChain).toEqual([{ kind: 'new-session' }]);
-
-    sessionRegistry.release('task-nav');
-  });
-});
-
 // #6264 behavior gugu-server「会话页里的别的机器」(owner 2026-09-25 选 A):别的机器上的会话一律属于那台机器上的
 // 某个项目;没选项目的挂在那台机器的主目录项目「~」下(读取时归属);「任务」列表只放本机没有项目的会话。
 describe('SidebarStore: 别的机器上的会话归到那台机器的项目下', () => {
