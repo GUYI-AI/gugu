@@ -26,6 +26,8 @@ const SIDEBAR_CONTENT_MIN_PX = 120;
 interface WorkspaceLayoutProps {
   leftSidebar: ReactNode;
   mainContent: ReactNode;
+  /** #2548 内层侧栏:列表与正文之间的那一列(打开一个群 / 项目时才有,不该出现时它自己什么都不画)。 */
+  innerSidebar?: ReactNode;
   /** A place of its own on the far-left rail (App, Library): no task list beside it. The sidebar stays
    *  mounted, only not shown — swapping the layout out rebuilt the whole task tree on every way back. */
   sidebarHidden?: boolean;
@@ -51,7 +53,7 @@ interface WorkspaceLayoutProps {
  * 摊平成"内容跟着容器缩"。它同时**跟着窗口整块左移**(见下面 contentX),否则固定宽会变成
  * 「原地被右边削平」—— 那是遮罩不是收起。
  */
-export function WorkspaceLayout({ leftSidebar, mainContent, sidebarHidden = false }: WorkspaceLayoutProps) {
+export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null, sidebarHidden = false }: WorkspaceLayoutProps) {
   const { translate } = useSessionMessages();
   const {
     isLeftOpen,
@@ -162,6 +164,8 @@ export function WorkspaceLayout({ leftSidebar, mainContent, sidebarHidden = fals
           onDraggingChange={setIsResizing}
         />
       ) : null}
+      {/* 固定占这一格(没有内层侧栏时是 null):正文那一格的位置不因它出现 / 收起而变,正文 ❌ 重挂。 */}
+      {sidebarHidden ? null : innerSidebar}
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">{mainContent}</div>
       {isLeftOpen && !sidebarHidden ? <PanelResizeDragGuard edge="end" offset={leftAnimatedWidth} /> : null}
       {/* 左侧栏开关:整个会话页**唯一**一枚,永远钉在会话页左缘同一个坐标 ——

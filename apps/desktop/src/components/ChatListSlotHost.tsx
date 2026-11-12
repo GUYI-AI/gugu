@@ -6,6 +6,8 @@ import { useProjectGroupChats } from '../lib/projectGroupChatsBridge'
 import { subscribeShellChatActions, takeShellChatAction, type ShellChatAction, CHAT_LIST_SLOT_KEY, publishSidebarChatSignals, sidebarChatSignals } from '../lib/sidebarChatsBridge'
 import { useChatStore } from '../store/chatContext'
 import { ChatListPanel } from './ChatListPanel'
+import { InnerSidebarTopics } from './chat/InnerSidebarTopics'
+import { INNER_SIDEBAR_TOPICS_SLOT_PREFIX } from '../lib/innerSidebarBridge'
 import { useMarkChatsRead } from '../hooks/useMarkChatsRead'
 import { useAssistantShell } from '../session/renderer/features/assistant/assistant-shell'
 
@@ -41,6 +43,8 @@ export function ChatListSlotHost() {
   )
   return [...targets].map(([key, element]) => {
     if (key === CHAT_LIST_SLOT_KEY) return createPortal(<ChatListPanel placement="sidebar" />, element, key)
+    // #2548 内层侧栏「话题」那一格:聊天列表嵌在群下面的那几行,挂到内层侧栏里。
+    if (key.startsWith(INNER_SIDEBAR_TOPICS_SLOT_PREFIX)) return createPortal(<InnerSidebarTopics chatId={key.slice(INNER_SIDEBAR_TOPICS_SLOT_PREFIX.length)} />, element, key)
     return null
   })
 }
