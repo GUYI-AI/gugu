@@ -23,7 +23,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { useNativeConversationChat } from '@/hooks/useNativeConversationChat';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { SidebarOneList } from './sidebar-one-list';
-import { innerSidebarChat } from './inner-sidebar';
+import { innerSidebarChat, innerSidebarShownFor } from './inner-sidebar';
 import { ONE_LIST_RAIL_PX, SidebarOneListFoot, SidebarOneListTop } from './sidebar-one-list-chrome';
 
 // #2548 the desktop left sidebar, one list: bell + search, 创建智能体 + 「+」, then ONE list (SidebarOneList); at the foot
@@ -184,8 +184,8 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
           </SidebarMenu>
         )}
       </SidebarContainer>
-      {/* The foot's one-time bubble (C9) comes up when a group or project opens: the inner sidebar's chat says which. */}
-      <SidebarOneListFoot openChatId={innerChatId} />
+      {/* The foot's one-time bubble (C9) comes up when the inner sidebar appears: a group, a project or the sample. */}
+      <SidebarOneListFoot innerShownFor={innerSidebarShownFor.get()} />
     </div>
   );
 });

@@ -133,6 +133,12 @@ function currentView(summaries: ReadonlyMap<string, ChatSummary>): InnerSidebarV
  */
 export const innerSidebarChat = observable.box<InnerSidebarAnchor | null>(null, { deep: false });
 
+/**
+ * What the inner sidebar is drawn for: a chat's id, `'sample'` for the sample project, null while it is not drawn. The foot's
+ * one-time intro (C9) comes up the first time it appears: the page gets crowded either way, the sample included.
+ */
+export const innerSidebarShownFor = observable.box<string | null>(null);
+
 /** 挂在工作区里,列表与对话之间(WorkspaceLayout 的 innerSidebar)。不该出现时什么都不画。 */
 export const InnerSidebar = observer(function InnerSidebar() {
   const summaries = useChatSummaries();
@@ -153,6 +159,11 @@ export const InnerSidebar = observer(function InnerSidebar() {
   // 账号上的键说它不在了(刚移除),这一列跟那一行同时收。
   const sample = useSampleProject();
   const sampleOwnerId = next === null && sample.shown && sampleProjectInView() ? sample.owner?.id : undefined;
+  const shownFor = next?.chatId ?? (sampleOwnerId ? 'sample' : null);
+  useEffect(() => {
+    runInAction(() => innerSidebarShownFor.set(shownFor));
+    return () => runInAction(() => innerSidebarShownFor.set(null));
+  }, [shownFor]);
 
   return (
     <>

@@ -5,10 +5,10 @@
  * 1. `collapse` — 侧栏可以收起来, on the collapse button.
  * 2. `history` — 会话历史, on the 会话历史 button.
  *
- * - It comes up the first time a group or a project is opened while the sidebar is expanded: the inner sidebar appears
- *   and the page gets crowded, which is when collapsing helps. Coming up belongs to this run; the step it is on is stored
- *   in the app settings (`interface.sidebarIntro`), so an intro left unfinished comes up again at the next group or
- *   project, on the step it was left at.
+ * - It comes up the first time the inner sidebar appears (a group, a project, the sample project) while the sidebar is
+ *   expanded: the page gets crowded, which is when collapsing helps. Coming up belongs to this run; the step it is on is
+ *   stored in the app settings (`interface.sidebarIntro`), so an intro left unfinished comes up again the next time the
+ *   inner sidebar appears, on the step it was left at.
  * - Collapsing the sidebar by any route (its button, the shortcut, 消息 clicked again, a drag, zen mode) is step 1
  *   learned: up or not yet, the intro moves on to step 2. On the rail the 会话历史 button stacks above », and the bubble
  *   follows it.
@@ -23,7 +23,7 @@ export type SidebarIntroStored = SidebarIntroStep | 'ended';
 export type SidebarIntro = { step: SidebarIntroStored; up: boolean };
 
 export type SidebarIntroEvent =
-  /** A group or a project was opened (the inner sidebar came up for it). */
+  /** The inner sidebar came up (a group, a project or the sample project opened). */
   | { kind: 'opened'; expanded: boolean }
   /** The sidebar went from expanded to collapsed, by whatever route. */
   | { kind: 'collapsed' }

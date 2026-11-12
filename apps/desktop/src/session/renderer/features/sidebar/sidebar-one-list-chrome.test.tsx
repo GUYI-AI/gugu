@@ -292,7 +292,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   });
 
   it('opening one while expanded brings up step 1 on the collapse button: 1 / 2, the shortcut, 跳过 and 下一步, no 上一步', async () => {
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     const card = bubble()!;
     expect(card.dataset.testid).toBe('sidebar-intro-collapse');
     expect(anchorOf(card)).toBe('sidebar-fold');
@@ -307,7 +307,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   });
 
   it('下一步 moves to step 2 on the 会话历史 button and stores it: 2 / 2, the tools named, 上一步 · 打开看看 · 完成', async () => {
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     await click(q('sidebar-intro-next')!);
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'history' });
     const card = bubble()!;
@@ -325,32 +325,32 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   it('the tools are the import list\'s engines, as an English list in English', async () => {
     state.locale = 'en-US';
     state.intro = 'history';
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     expect(bubble()!.querySelector('p')!.textContent).toBe(`sidebar.introHistoryBody ${JSON.stringify({ tools: tools('en-US') })}`);
     expect(bubble()!.querySelector('p')!.textContent).not.toContain('、');
   });
 
   it('上一步 goes back to step 1 and stores that', async () => {
     state.intro = 'history';
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     await click(q('sidebar-intro-previous')!);
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'collapse' });
     expect(anchorOf(bubble()!)).toBe('sidebar-fold');
   });
 
   it('跳过 ends it for good and stores that; it does not come up again', async () => {
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     await click(q('sidebar-intro-skip')!);
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'ended' });
     expect(bubble()).toBeNull();
-    await render(<SidebarOneListFoot openChatId="g2" />);
+    await render(<SidebarOneListFoot innerShownFor="g2" />);
     expect(bubble()).toBeNull();
     expect(state.toggleLeft).not.toHaveBeenCalled();
   });
 
   it('完成 ends it', async () => {
     state.intro = 'history';
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     await click(q('sidebar-intro-next')!);
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'ended' });
     expect(bubble()).toBeNull();
@@ -359,7 +359,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
 
   it('打开看看 opens 会话历史 the way the foot button does, then ends it', async () => {
     state.intro = 'history';
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     await click(q('sidebar-intro-open-history')!);
     expect(state.navigate).toHaveBeenCalledWith('session-history');
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'ended' });
@@ -369,7 +369,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   it('打开看看 on 会话历史 already: nothing to open (❌ the button\'s toggle back), it ends', async () => {
     state.intro = 'history';
     state.view = 'session-history';
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     await click(q('sidebar-intro-open-history')!);
     expect(state.navigate).not.toHaveBeenCalled();
     expect(state.back).not.toHaveBeenCalled();
@@ -377,7 +377,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   });
 
   it('Escape ends it, and still reaches what it was meant for', async () => {
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     const escape = details('escape-key');
     await act(async () => state.onOpenChange!(false, escape));
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'ended' });
@@ -386,7 +386,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   });
 
   it('a click elsewhere neither closes it nor is swallowed by it', async () => {
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     for (const reason of ['outside-press', 'focus-out']) {
       const dismissal = details(reason);
       await act(async () => state.onOpenChange!(false, dismissal));
@@ -398,7 +398,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   });
 
   it('collapsing while step 1 shows is step 1 learned: step 2 comes up on the 会话历史 button on the rail, no 上一步', async () => {
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     await change(() => (state.open = false));
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'history' });
     const card = bubble()!;
@@ -417,13 +417,13 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'history' });
     expect(bubble()).toBeNull();
     await change(() => (state.open = true));
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     expect(bubble()!.dataset.testid).toBe('sidebar-intro-history');
   });
 
   it('opened while collapsed it waits; at step 2 it may show on the rail once it has come up', async () => {
     state.open = false;
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     expect(bubble()).toBeNull();
     await change(() => (state.open = true));
     expect(bubble()!.dataset.testid).toBe('sidebar-intro-collapse');
@@ -431,17 +431,17 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
 
   it('never shows once stored as ended, nor before the settings are read (and writes nothing then)', async () => {
     state.intro = 'ended';
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     expect(bubble()).toBeNull();
     state.intro = undefined;
-    await render(<SidebarOneListFoot key="unread" openChatId="g1" />);
+    await render(<SidebarOneListFoot key="unread" innerShownFor="g1" />);
     expect(bubble()).toBeNull();
     await change(() => (state.open = false));
     expect(state.update).not.toHaveBeenCalled();
   });
 
   it('steps aside while the bell\'s panel replaces the list, and comes back where it was (hidden, not ended)', async () => {
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     await change(() => (state.notificationsOpen = true));
     expect(bubble()).toBeNull();
     await change(() => (state.notificationsOpen = false));
@@ -451,7 +451,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
 
   it('steps aside while the feature tour is on screen (❌ two bubbles at once), and comes back where it was', async () => {
     state.touring = true;
-    await render(<SidebarOneListFoot openChatId="g1" />);
+    await render(<SidebarOneListFoot innerShownFor="g1" />);
     expect(bubble()).toBeNull();
     await change(() => (state.touring = false));
     expect(bubble()!.dataset.testid).toBe('sidebar-intro-collapse');

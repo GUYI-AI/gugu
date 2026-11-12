@@ -86,7 +86,7 @@ state.live = observable(
   { deep: true }
 );
 const { publishChatSummaries } = await import('@/lib/chatSummariesBridge');
-const { InnerSidebar, innerSidebarChat } = await import('./inner-sidebar');
+const { InnerSidebar, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
 const { SampleProjectBlock } = await import('@renderer/features/sample-project/sample-project-block');
 const { openSamplePane } = await import('@renderer/features/sample-project/sample-project-view');
 const { SAMPLE_AGENT_SEED } = await import('@renderer/features/sample-project/sample-project-transcript');
@@ -204,12 +204,16 @@ describe('the inner column for the sample project', () => {
     await look([['sample-block', { kind: 'sample-project' }], ['chat-block', { kind: 'chat', chatId: 'group' }]], 'chat-block', 'chat', { chat: { chatId: 'group' } });
     expect(column()!.dataset.innerSidebarKind).toBe('group');
     expect(column()!.dataset.innerSidebarChat).toBe('group');
+    expect(innerSidebarShownFor.get()).toBe('group');
 
     await lookAtSample();
     expect(column()!.dataset.innerSidebarKind).toBe('sample');
+    // The foot's intro comes up on the sample's column too (it crowds the page all the same).
+    expect(innerSidebarShownFor.get()).toBe('sample');
 
     await look([['sample-block', { kind: 'sample-project' }]], 'sample-block', 'library');
     expect(column()).toBeNull();
+    expect(innerSidebarShownFor.get()).toBeNull();
 
     await look([], null, 'home');
     expect(column()).toBeNull();

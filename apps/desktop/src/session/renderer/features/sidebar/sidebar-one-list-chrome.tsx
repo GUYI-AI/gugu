@@ -137,7 +137,7 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
  * `interface` group on update); coming up (`up`) is this run's. The first-run hint system holds one line and one button
  * and cannot say this.
  */
-function useSidebarIntro(openChatId: string | null, expanded: boolean) {
+function useSidebarIntro(innerShownFor: string | null, expanded: boolean) {
   const { value: interfaceSettings, update } = useAppSettingsKey('interface');
   const stored = interfaceSettings?.sidebarIntro;
   const [up, setUp] = useState(false);
@@ -150,10 +150,10 @@ function useSidebarIntro(openChatId: string | null, expanded: boolean) {
     },
     [stored, up, update]
   );
-  // A group or project opened (re-run when the settings are read, and when the sidebar expands again over it).
+  // The inner sidebar came up (re-run when the settings are read, and when the sidebar expands again over it).
   useEffect(() => {
-    if (openChatId) move({ kind: 'opened', expanded });
-  }, [openChatId, expanded, move]);
+    if (innerShownFor) move({ kind: 'opened', expanded });
+  }, [innerShownFor, expanded, move]);
   // Collapsed by any route: every one of them ends in the layout's open state going false. (One before the settings are
   // read is not counted; nothing can be written over an unread group.)
   const wasExpanded = useRef(expanded);
@@ -183,9 +183,9 @@ function importableTools(locale: string): string {
  * did) and 会话历史 next to it. The collapse button sits on the rail's axis and never moves; collapsed, 会话历史 stacks
  * above it (the rail has room for one button per line). Over them, once: C9 (useSidebarIntro).
  *
- * `openChatId`: the group or project the inner sidebar is open on (innerSidebarChat), null when none.
+ * `innerShownFor`: what the inner sidebar is drawn for (innerSidebarShownFor: a chat, or the sample), null when none.
  */
-export const SidebarOneListFoot = observer(function SidebarOneListFoot({ openChatId = null }: { openChatId?: string | null }) {
+export const SidebarOneListFoot = observer(function SidebarOneListFoot({ innerShownFor = null }: { innerShownFor?: string | null }) {
   const { translate, locale } = useSessionMessages();
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
@@ -197,7 +197,7 @@ export const SidebarOneListFoot = observer(function SidebarOneListFoot({ openCha
   const foldLabel = translate(isLeftOpen ? 'sidebar.collapseSidebar' : 'sidebar.expandSidebar');
   const historyLabel = translate('sidebar.sessionHistory');
   const historyShown = isCurrentView(currentView, 'session-history');
-  const intro = useSidebarIntro(openChatId, isLeftOpen);
+  const intro = useSidebarIntro(innerShownFor, isLeftOpen);
   const step = intro.step;
   const end = () => intro.move({ kind: 'end' });
   // 打开看看: the foot button's navigation, then the intro is over. Already on 会话历史 there is nothing to open (❌ the
