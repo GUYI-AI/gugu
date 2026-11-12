@@ -40,6 +40,42 @@ export function myAgentsInChat<T extends ChatAgentEntry>(entries: readonly T[], 
   );
 }
 
+/**
+ * #2574 一个独立智能体那一列的「智能体」:它的子智能体 —— 父会话是它自己某一条会话的那些,连同它们往下的子会话
+ * (孙辈照旧收在父会话下:chatAgentSection 按父子成家族)。次序同 `entries`。
+ */
+export function subAgentsOf<T extends ChatAgentEntry>(entries: readonly T[], agentUserId: string): T[] {
+  const childrenOf = new Map<string, string[]>();
+  for (const entry of entries) {
+    if (!entry.parentSessionId) continue;
+    const siblings = childrenOf.get(entry.parentSessionId);
+    if (siblings) siblings.push(entry.id);
+    else childrenOf.set(entry.parentSessionId, [entry.id]);
+  }
+  const own = entries.filter((entry) => entry.agentUserId === agentUserId).map((entry) => entry.id);
+  const reached = new Set(own);
+  const descendants = new Set<string>();
+  const queue = [...own];
+  for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+    for (const child of childrenOf.get(id) ?? []) {
+      if (reached.has(child)) continue;
+      reached.add(child);
+      descendants.add(child);
+      queue.push(child);
+    }
+  }
+  return entries.filter((entry) => descendants.has(entry.id));
+}
+
+/**
+ * #2574 独立智能体:左边列表里有它自己那一行的智能体(lib/sidebarOneList agentHasOwnRow) —— 它有一条顶层会话(❌ 只是谁的子会话),
+ * 且哪个群 / 项目那一列都不列它的任何一条会话(`livesInChat`)。固定到左侧栏的那些 ❌:它们住在群 / 项目里,开它就开那一列。
+ */
+export function isStandaloneAgent(entries: readonly ChatAgentEntry[], agentUserId: string, livesInChat: (entry: ChatAgentEntry) => boolean): boolean {
+  const own = entries.filter((entry) => entry.agentUserId === agentUserId);
+  return own.some((entry) => !entry.parentSessionId) && !own.some(livesInChat);
+}
+
 /** 分区头上的数与项目行角上的数:总数,与前台在跑的(同 summarizeSessionBranches:后台 / 定时的 parked 不算在跑)。 */
 export function chatAgentCounts(entries: readonly Pick<ChatAgentEntry, 'presentation'>[]): ChatAgentCounts {
   return { total: entries.length, running: entries.filter((entry) => entry.presentation?.tone === 'running').length };

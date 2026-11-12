@@ -113,7 +113,7 @@ export function publishInnerSidebarChat(chatId: string | null): void {
   write(COLUMN_KEY, COLUMN_EVENT, chatId)
 }
 
-/** 壳:这一列此刻挂在哪个对话上;没有(开关关着、不是群 / 项目、手机)= null。 */
+/** 壳:这一列此刻挂在哪个对话上(群 / 项目,或有子智能体的独立智能体那条私聊,#2574);没有(开关关着、别的对话、手机)= null。 */
 export function useInnerSidebarChat(): string | null {
   return useSyncExternalStore(subscribeColumn, () => read<string>(COLUMN_KEY), () => null)
 }

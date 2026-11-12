@@ -152,6 +152,19 @@ describe('what the one list shows', () => {
     expect(show({ kind: 'dm', peer_user_id: 'a-fork' }, true)).toBe(false)
     expect(show({ kind: 'ai', peer_user_id: 'a-fork' }, false)).toBe(false)
   })
+
+  it('#2574 a standalone agent with sub-agents keeps one row; its sub-agents (and theirs) have none, they are in its inner column', () => {
+    const tasks = agentTaskHomes([{
+      deviceId: 'mac',
+      projects: [project('tasks', 'workspace')],
+      sessions: [session('solo', 'tasks', 'a-boss'), session('sub', 'tasks', 'a-sub', 'solo'), session('grandchild', 'tasks', 'a-grandchild', 'sub')],
+    }], accountProjectReading([], false))
+    const family = { ...tasks, inRooms: new Set<string>(), pinned: new Set<string>() }
+    const mineToo = (id: string) => ['a-boss', 'a-sub', 'a-grandchild'].includes(id)
+    expect(oneListShows(chat({ kind: 'dm', peer_user_id: 'a-boss' }), false, family, mineToo)).toBe(true)
+    expect(oneListShows(chat({ kind: 'dm', peer_user_id: 'a-sub' }), true, family, mineToo)).toBe(false)
+    expect(oneListShows(chat({ kind: 'ai', peer_user_id: 'a-grandchild' }), true, family, mineToo)).toBe(false)
+  })
 })
 
 describe('account projects without a conversation row keep their project row', () => {

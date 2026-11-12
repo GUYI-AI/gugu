@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useChatSummaries } from '@/lib/chatSummariesBridge';
 import { publishSidebarPinnedAgents, type SidebarPinnedAgent } from '@/lib/sidebarChatsBridge';
 import { chatScope, isProjectChat, mySidebarAgents } from './inner-sidebar';
-import type { InnerSidebarAnchor } from './inner-sidebar-anchor';
+import type { InnerSidebarRoomAnchor } from './inner-sidebar-anchor';
 import { sidebarSessionFacts } from './sidebar-pin-actions';
 import { pinnedSidebarAgents, sidebarAgentHome, type SidebarHomeCandidate } from './sidebar-pin';
 
@@ -18,7 +18,7 @@ export const PinnedSidebarAgentsPublisher = observer(function PinnedSidebarAgent
   for (const [chatId, summary] of summaries) {
     if (summary.kind !== 'group' || !summary.name) continue;
     // Same reading as the inner column's anchor: the group of a project the sidebar lists is that project.
-    const anchor: InnerSidebarAnchor = { kind: isProjectChat(chatId) ? 'project' : 'group', chatId };
+    const anchor: InnerSidebarRoomAnchor = { kind: isProjectChat(chatId) ? 'project' : 'group', chatId };
     homes.push({ kind: anchor.kind, name: summary.name, chatId, scope: chatScope(anchor, summaries) });
   }
   const sessions = mySidebarAgents().map((entry) => ({ ...entry, sessionId: entry.id, ...sidebarSessionFacts(entry.projectId, entry.id) }));

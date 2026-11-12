@@ -20,9 +20,10 @@ type Item = {
   unseen: boolean;
   title: string;
 };
-const item = (id: string, projectId: string, presentation: Item['presentation'] = idle, time = 0): Item => ({
+const item = (id: string, projectId: string, presentation: Item['presentation'] = idle, time = 0, parentSessionId: string | null = null): Item => ({
   id,
   projectId,
+  parentSessionId,
   isPinned: false,
   time,
   presentation,
@@ -351,5 +352,138 @@ describe('inner sidebar', () => {
     openChat('dm');
     await render();
     expect([...counts()]).toEqual([['shop-chat', { total: 3, running: 2 }]]);
+  });
+});
+
+// #2574 my standalone agent (its own row in the list: a DM, in no group or project) spawned sub-agents: opening it opens
+// the inner column, the head row is the agent, 智能体 lists its sub-agents.
+describe('a standalone agent with sub-agents', () => {
+  const solo = { kind: 'agent', chatId: 'dm-solo', agentUserId: 'agent-solo' };
+  beforeEach(() => {
+    state.items = [
+      ...state.items,
+      item('solo-task', 'p-y', idle, 9),
+      item('sub-quiet', 'p-y', idle, 8, 'solo-task'),
+      item('sub-busy', 'p-y', running, 1, 'solo-task'),
+      item('sub-asks', 'p-y', waiting, 0, 'solo-task'),
+      item('grandchild', 'p-y', waiting, 0, 'sub-quiet'),
+    ];
+    for (const [session, agent] of [['solo-task', 'agent-solo'], ['sub-quiet', 'agent-s1'], ['sub-busy', 'agent-s2'], ['sub-asks', 'agent-s3'], ['grandchild', 'agent-s4']]) {
+      state.agents.set(session!, agent!);
+    }
+    publishChatSummaries([
+      { id: 'group', kind: 'group', name: 'Planning', unread_count: 0, member_user_ids: ['agent-a', 'human'] },
+      { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a'] },
+      { id: 'dm-solo', kind: 'dm', name: 'Solo', peer_user_id: 'agent-solo', unread_count: 0 },
+      // A sub-agent can have a DM with me too (it wrote to me); that does not make it a row of the list.
+      { id: 'dm-s1', kind: 'dm', name: 'Sub one', peer_user_id: 'agent-s1', unread_count: 0 },
+      { id: 'dm-b', kind: 'dm', name: 'Bee', peer_user_id: 'agent-b', unread_count: 0 },
+      { id: 'dm-a', kind: 'ai', name: 'Ace', peer_user_id: 'agent-a', unread_count: 0 },
+    ]);
+  });
+  const head = () => host.querySelector<HTMLElement>('[data-inner-head="dm-solo"] [data-slot="button"]');
+
+  it('opening it shows the column: the agent as its head row (fold only), then just 智能体 with its sub-agents, needs you → running → rest', async () => {
+    const shell = createRoot(document.createElement('div'));
+    await act(async () => shell.render(<ShellProbe />));
+    openSession('solo-task');
+    await render();
+    const column = host.querySelector<HTMLElement>('[data-region="inner-sidebar"]')!;
+    expect(column.dataset.innerSidebarKind).toBe('agent');
+    expect(column.dataset.innerSidebarChat).toBe('dm-solo');
+    expect(host.querySelector('[data-inner-head="dm-solo"]')?.textContent).toContain('Solo');
+    expect(head()!.getAttribute('aria-current'), 'its own conversation is open').toBe('page');
+    // No pen (its sub-agents are its own to spawn) and no 「…」 (its header gives nothing up to the column).
+    expect(host.querySelector('[data-inner-head-new-agent]')).toBeNull();
+    expect(host.querySelector('[data-inner-head-actions]')).toBeNull();
+    const fold = host.querySelector<HTMLElement>('[data-inner-head="dm-solo"] [data-inner-head-fold]')!;
+    expect([...fold.parentElement!.children].at(-1)).toBe(fold);
+    // No 话题: the agent's conversation is its session.
+    expect(sections()).toEqual(['agents']);
+    expect(readShellSlots()!.getSlots().has('inner-topics:dm-solo')).toBe(false);
+    // The grandchild stays folded under its parent; the count is every sub-agent.
+    expect(sessionRows()).toEqual(['sub-asks', 'sub-busy', 'sub-quiet']);
+    expect(agentsCount()).toBe('4');
+    expect(innerSidebarChat.get()).toEqual(solo);
+    expect(shellColumnChat).toBe('dm-solo');
+    act(() => shell.unmount());
+  });
+
+  it('a sub-agent opened from it keeps the column and the agent lit in the list; the head goes back to the agent; anything else closes it', async () => {
+    openSession('solo-task');
+    await render();
+    openSession('sub-busy');
+    await render();
+    expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
+    expect(innerSidebarChat.get()).toEqual(solo);
+    expect(head()!.getAttribute('aria-current')).toBeNull();
+    openSession('grandchild');
+    await render();
+    expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
+    await act(async () => head()!.click());
+    expect(state.openChatOnScreen).toHaveBeenCalledWith('dm-solo', false);
+    openSession('mine-elsewhere');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    expect(innerSidebarChat.get()).toBeNull();
+  });
+
+  it('no sub-agents, no column: the conversation opens as today', async () => {
+    openSession('mine-elsewhere');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    expect(innerSidebarChat.get()).toBeNull();
+    // Its sub-agents gone, the agent opens without one too.
+    state.items = state.items.filter((entry) => !entry.parentSessionId);
+    openSession('solo-task');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+  });
+
+  it('a sub-agent opened on its own opens nothing, even one with sub-agents of its own: it has no row of its own', async () => {
+    openSession('sub-busy');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    openSession('sub-quiet');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+  });
+
+  it('an agent living in a group or a project is no standalone agent: no column of its own, sub-agents or not', async () => {
+    state.items = [...state.items, item('group-sub', 'p-x', running, 0, 'mine-in-group'), item('shop-sub', 'p-z', running, 0, 'shop-idle')];
+    state.agents.set('group-sub', 'agent-gs');
+    state.agents.set('shop-idle', 'agent-shop');
+    state.agents.set('shop-sub', 'agent-ss');
+    publishChatSummaries([
+      { id: 'group', kind: 'group', name: 'Planning', unread_count: 0, member_user_ids: ['agent-a', 'human'] },
+      { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: [] },
+      { id: 'dm-a', kind: 'ai', name: 'Ace', peer_user_id: 'agent-a', unread_count: 0 },
+      { id: 'dm-shop', kind: 'dm', name: 'Shopper', peer_user_id: 'agent-shop', unread_count: 0 },
+    ]);
+    openSession('mine-in-group');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    openSession('shop-idle');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+  });
+
+  it('folds with every other column (one global fold) and comes back from the restore lane', async () => {
+    const restore = document.body.appendChild(document.createElement('div'));
+    const restoreRoot = createRoot(restore);
+    await act(async () => restoreRoot.render(<InnerSidebarRestore />));
+    openChat('group');
+    await render();
+    await act(async () => host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!.click());
+    openSession('solo-task');
+    await render();
+    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
+    expect(innerSidebarFoldedAway.get()).toBe(true);
+    expect(innerSidebarChat.get(), 'still attached: the list keeps the agent lit').toEqual(solo);
+    await act(async () => restore.querySelector<HTMLElement>('button[aria-label="sidebar.expandInner"]')!.click());
+    expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
+    expect(innerSidebarShownFor.get()).toBe('dm-solo');
+    act(() => restoreRoot.unmount());
+    restore.remove();
   });
 });

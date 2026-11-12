@@ -5,7 +5,9 @@ import {
   chatAgentCounts,
   chatAgentNeedsYou,
   chatAgentSection,
+  isStandaloneAgent,
   myAgentsInChat,
+  subAgentsOf,
   type ChatAgentEntry,
 } from './chat-agents';
 
@@ -168,5 +170,47 @@ describe('the agents section', () => {
 
   it('no agents: no rows', () => {
     expect(chatAgentSection([], disclosure)).toEqual({ rows: [], total: 0, overflow: 0 });
+  });
+});
+
+describe("#2574 a standalone agent's sub-agents", () => {
+  // solo's own conversation spawned three sub-agents; one of them spawned its own (a grandchild).
+  const sessions = [
+    entry('solo-task', { agentUserId: 'solo', time: 9 }),
+    entry('sub-quiet', { agentUserId: 'sub-1', parentSessionId: 'solo-task', time: 8 }),
+    entry('sub-busy', { agentUserId: 'sub-2', parentSessionId: 'solo-task', presentation: running, time: 1 }),
+    entry('sub-asks', { agentUserId: 'sub-3', parentSessionId: 'solo-task', presentation: waiting, time: 0 }),
+    entry('grandchild', { agentUserId: 'sub-4', parentSessionId: 'sub-quiet', presentation: waiting }),
+    entry('someone-else', { agentUserId: 'other', time: 5 }),
+    entry('their-fork', { agentUserId: 'other-sub', parentSessionId: 'someone-else' }),
+  ];
+
+  it("are the sessions spawned from the agent's own sessions, with theirs under them; never the agent itself or anyone else's", () => {
+    expect(ids(subAgentsOf(sessions, 'solo'))).toEqual(['sub-quiet', 'sub-busy', 'sub-asks', 'grandchild']);
+    expect(subAgentsOf(sessions, 'sub-4')).toEqual([]);
+    expect(subAgentsOf(sessions, 'nobody')).toEqual([]);
+  });
+
+  it('list like a group\'s 智能体: needs you, then running, then the rest; a grandchild stays folded under its parent', () => {
+    const subAgents = subAgentsOf(sessions, 'solo');
+    const folded = chatAgentSection(subAgents, disclosure);
+    expect(rowIds(folded)).toEqual(['sub-asks', 'sub-busy', 'sub-quiet']);
+    expect(folded.rows.find((row) => row.sessionId === 'sub-quiet')).toMatchObject({ hasChildren: true, needsAttention: true });
+    expect(chatAgentCounts(subAgents)).toEqual({ total: 4, running: 1 });
+    const open = chatAgentSection(subAgents, { ...disclosure, expanded: new Set(['sub-quiet']) });
+    expect(open.rows.map(({ sessionId, depth }) => [sessionId, depth])).toEqual([
+      ['sub-asks', 0],
+      ['sub-busy', 0],
+      ['sub-quiet', 0],
+      ['grandchild', 1],
+    ]);
+  });
+
+  it('a standalone agent has a top-level session and lives in no group or project', () => {
+    const nowhere = () => false;
+    expect(isStandaloneAgent(sessions, 'solo', nowhere)).toBe(true);
+    expect(isStandaloneAgent(sessions, 'sub-1', nowhere), 'only a sub-agent: no row of its own').toBe(false);
+    expect(isStandaloneAgent(sessions, 'solo', (session) => session.id === 'solo-task'), 'a group or project lists it').toBe(false);
+    expect(isStandaloneAgent(sessions, 'nobody', nowhere)).toBe(false);
   });
 });
