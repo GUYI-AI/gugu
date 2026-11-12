@@ -55,6 +55,11 @@ export type AgentSignInStep = {
 };
 
 export type AgentSignInModalArgs = {
+  /**
+   * 登进哪个连接、读哪个连接的登录态:Claude / Codex 的账号连接;其余有连接的家登它 CLI 自己那一份时是
+   * `native`(#2507,选着 API Key 时主读数是那把 key,❌ 拿它判这一趟登没登上)。只管主程序那一步 ——
+   * 伴随程序有自己的读数,不分连接。
+   */
   connectionId?: string;
   providerId: string;
   providerName: string;
@@ -155,7 +160,7 @@ export function AgentSignInModal({ providerId, providerName, steps, remote, conn
     : listed;
   const last = index >= steps.length - 1;
   const props: StepProps = {
-    connectionId,
+    ...(step.program === undefined && connectionId ? { connectionId } : {}),
     providerId,
     providerName,
     methodId: step.methodId,

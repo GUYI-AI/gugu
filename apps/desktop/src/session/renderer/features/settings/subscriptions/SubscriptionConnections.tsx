@@ -139,15 +139,14 @@ export function SubscriptionConnections({
       }
     : null
   const cli = useAgentSignIn(agent, { probe: settingsRows && cliSignIn, remote })
-  const rawCurrent = connections.data?.find((c) => c.current)
   /**
-   * CLI 自己的账号:现有 CLI 配置还没登上(或几个程序还差一步)才给,❌ 对登好的再登一遍。
-   * 正在用 API Key 连接时不给:那一趟登录会带着这把 key 的环境跑。
+   * CLI 自己的账号:现有 CLI 配置还没登上(或几个程序还差一步)就给,❌ 对登好的再登一遍。
+   * 正在用的是不是 API Key 不相干(owner 2026-11-12「要一直都在」):那一趟登录恒在原生环境里跑
+   * (主进程 `harnessLoginConnectionId`),登的是 CLI 自己那份,选中的 key 不进去。
    */
   const cliAccount =
     cliSignIn &&
     !!cli.row?.canSignIn &&
-    rawCurrent?.kind !== 'api-key' &&
     (native.data?.status.kind !== 'authenticated' || cli.row.status === 'partial')
   const accountMethod: AccountMethod = canSignIn ? 'connection' : cliAccount ? 'cli' : null
   const apiKeyMethod = form !== null
@@ -175,12 +174,12 @@ export function SubscriptionConnections({
           providerId: agent.id,
           connectionId: id
         }
+        // 删当前连接也是一次切换(落回原生):被「有会话在忙」拒过后同样能「关掉并切换」。
+        const command = stopBusySessions ? { ...input, stopBusySessions } : input
         const result =
           kind === 'select'
-            ? await client.selectConnection(
-                stopBusySessions ? { ...input, stopBusySessions } : input
-              )
-            : await client.removeConnection(input)
+            ? await client.selectConnection(command)
+            : await client.removeConnection(command)
         if (!result.success) throw new ConnectionActionError(result.error)
       }
       // Commit the connection first. Model refresh failure must not disguise a successful switch.
@@ -218,15 +217,19 @@ export function SubscriptionConnections({
       if (event.providerId === agent.id) setProgress({ closed: event.closed, total: event.total })
     })
   }, [closing, machine, agent.id])
-  // 被拒的那次切的是哪个连接:「关掉并切换」原样再切一次。
-  const refusedId =
-    busy && !closeUnsupported && action.variables?.kind === 'select' ? action.variables.id : null
+  // 被拒的那次是切到哪个连接、还是删掉当前那个:「关掉并切换」原样再做一次。
+  const refused =
+    busy && !closeUnsupported && action.variables && action.variables.kind !== 'refresh'
+      ? action.variables
+      : null
+  const refusedId = refused?.id ?? null
+  const refusedKind = refused?.kind ?? null
   const { mutate } = action
   const closeAndSwitch = useCallback(() => {
-    if (!refusedId) return
+    if (!refusedId || !refusedKind) return
     setProgress(null)
-    mutate({ kind: 'select', id: refusedId, stopBusySessions: true })
-  }, [refusedId, mutate])
+    mutate({ kind: refusedKind, id: refusedId, stopBusySessions: true })
+  }, [refusedId, refusedKind, mutate])
   useEffect(() => {
     onError?.(
       failure === null
@@ -563,11 +566,9 @@ function ConnectionOption({
           {translate('subscriptions.connections.signIn')}
         </DropdownMenuItem>
       )}
-      {!connection.current && (
-        <DropdownMenuItem disabled={busy} variant="destructive" onClick={onRemove}>
-          {translate('subscriptions.connections.remove')}
-        </DropdownMenuItem>
-      )}
+      <DropdownMenuItem disabled={busy} variant="destructive" onClick={onRemove}>
+        {translate('subscriptions.connections.remove')}
+      </DropdownMenuItem>
     </>
   )
   return (
@@ -606,8 +607,8 @@ function ConnectionOption({
           )}
         </span>
       </Choice>
+      {/* 当前连接也能删(落回原生);「现有 CLI 配置」是 CLI 自己那一份，删不掉。 */}
       {connection.kind !== 'native' &&
-        (!connection.current || canSignIn) &&
         (selectItem ? (
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -638,11 +639,9 @@ function ConnectionOption({
                   {translate('subscriptions.connections.signIn')}
                 </DropdownMenuItem>
               )}
-              {!connection.current && (
-                <DropdownMenuItem disabled={busy} variant="destructive" onClick={onRemove}>
-                  {translate('subscriptions.connections.remove')}
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem disabled={busy} variant="destructive" onClick={onRemove}>
+                {translate('subscriptions.connections.remove')}
+              </DropdownMenuItem>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
         ))}

@@ -4,7 +4,6 @@ import {
   createHarnessConnectionSchema,
   harnessConnectionSchema,
   harnessConnectionSelectSchema,
-  harnessConnectionTargetSchema,
 } from './connections';
 import { agentRunContextSchema } from '../../agents/agent-run-context';
 import { agentAuthStatusSchema } from '../../agents/plugins/capabilities/auth';
@@ -43,7 +42,7 @@ export const agentConfigContract = defineContract({
   listConnections: fallible({ input: provider, data: z.array(harnessConnectionSchema), error: agentConfigAuthErrorSchema }),
   createConnection: fallible({ input: createHarnessConnectionSchema, data: harnessConnectionSchema, error: agentConfigAuthErrorSchema }),
   selectConnection: fallible({ input: harnessConnectionSelectSchema, data: z.void(), error: agentConfigAuthErrorSchema }),
-  removeConnection: fallible({ input: harnessConnectionTargetSchema, data: z.void(), error: agentConfigAuthErrorSchema }),
+  removeConnection: fallible({ input: harnessConnectionSelectSchema, data: z.void(), error: agentConfigAuthErrorSchema }),
   agents: liveModel({
     key: z.void().optional(),
     states: {

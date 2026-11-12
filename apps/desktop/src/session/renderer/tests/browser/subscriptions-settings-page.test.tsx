@@ -446,7 +446,7 @@ it('a Qwen row adds an API key connection with address and model and switches to
 });
 
 // #2507:选中 API Key 连接后这一行就是这把 key ——❌「未登录」;没登上的「现有 CLI 配置」不列(owner 2026-11-12)。
-// 「账号」(登它 CLI 自己那一份)只在没用着 API Key 时给:那一趟登录会带着这把 key 的环境跑。
+// 「账号」(登它 CLI 自己那一份)用着 API Key 时也在(owner 2026-11-12「要一直都在」):登录恒按原生起(主进程那一层)。
 it('selecting an API key connection takes Not signed in off the row; the unsigned CLI configuration is never listed', async () => {
   control.keyed = true;
   control.signedOut = true;
@@ -475,7 +475,12 @@ it('selecting an API key connection takes Not signed in off the row; the unsigne
   expect(row().textContent).not.toContain('Not signed in');
   addButton('mimocode')!.click();
   await until('the form opens again', () => !!row().querySelector('.subscription-connection-form'));
-  expect(methodButtons()).toEqual(['API Key']);
+  expect(methodButtons()).toEqual(['Account sign-in', 'API Key']);
+  // 选着 key 登的仍是 CLI 自己那一份:登录窗口读「现有 CLI 配置」那一格,选择不动。
+  ([...row().querySelectorAll<HTMLButtonElement>('.subscription-connection-form button')].find(b => b.textContent === 'Sign in'))!.click();
+  await until('the sign-in window opens', () => modalStore.activeModalId === 'agentSignInModal');
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: 'mimocode', connectionId: 'native', steps: [{ methodId: 'mimo-login', transport: 'terminal' }] });
+  expect(control.selected).toBe('mimo-key');
   expect(thrown).toEqual([]);
 });
 
@@ -868,7 +873,15 @@ it.each([
   await openSwitch(provider);
   await until('the account has been read', () => layer.querySelector('[data-testid="connection-existing"]')?.textContent?.includes('me@example.test') === true);
   const existing = layer.querySelector('[data-testid="connection-existing"]')!;
-  expect(existing.querySelector('[aria-haspopup="menu"]')).toBeNull();
+  if (kind === 'native') {
+    // 「现有 CLI 配置」是 CLI 自己那一份:没有「⋯」。
+    expect(existing.querySelector('[aria-haspopup="menu"]')).toBeNull();
+  } else {
+    // 账号连接的「⋯」里只有「移除」(#2507:正在用的也能删,落回原生),没有登录 / 重新授权。
+    await userEvent.click(page.getByRole('button', { name: 'Options for Existing account', exact: true }));
+    await until('its options open', () => layer.querySelectorAll('[role="menuitem"]').length > 0);
+    expect([...layer.querySelectorAll('[role="menuitem"]')].map(item => item.textContent)).toEqual(['Remove']);
+  }
   expect(host.querySelector(`[data-testid="subscription-sign-in-${provider}"]`)).toBeNull();
   expect(addButton(provider)).not.toBeNull();
   expect(thrown).toEqual([]);

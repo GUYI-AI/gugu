@@ -22,7 +22,10 @@ export const harnessConnectionTargetSchema = z.object({
   connectionId: z.string().min(1),
 });
 
-/** `stopBusySessions`:被「有会话正在工作」拒过之后，用户点了「关掉并切换」—— 正在工作的也关掉，照切。 */
+/**
+ * `stopBusySessions`:被「有会话正在工作」拒过之后，用户点了「关掉并切换」—— 正在工作的也关掉，照切。
+ * 删除也用它(#2507):删当前连接 = 一次切换(落回原生),同一道护栏、同一个出路。
+ */
 export const harnessConnectionSelectSchema = harnessConnectionTargetSchema.extend({
   stopBusySessions: z.boolean().optional(),
 });

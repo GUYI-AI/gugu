@@ -111,11 +111,11 @@ it('keeps the key out of the metadata, starts sessions on the selected key, and 
   expect(await sessionHarnessConnectionId('qwen-session')).toBe(connection.id);
   expect(await sessionHarnessConnectionId('kiro-session')).toBe('native');
 
-  await expect(removeHarnessConnection('qwen', connection.id)).rejects.toThrow('Select another');
-  await selectHarnessConnection('qwen', 'native');
-  expect(await resolveHarnessConnection('qwen', { sessionId: 'qwen-session' })).toEqual({});
+  // #2507 只剩这一把 key 也删得掉:删当前连接落回原生,会话照原生起(一个字都不加)。
   await removeHarnessConnection('qwen', connection.id);
-  expect((await listHarnessConnections('qwen')).map((row) => row.id)).toEqual(['native']);
+  expect(await listHarnessConnections('qwen')).toEqual([{ id: 'native', kind: 'native', name: '', current: true, endpoint: undefined }]);
+  expect(await resolveHarnessConnection('qwen', { sessionId: 'qwen-session' })).toEqual({});
+  expect(await sessionHarnessConnectionId('qwen-session')).toBe('native');
 });
 
 it('an official key connection needs no address and still reads as the selected API key', async () => {

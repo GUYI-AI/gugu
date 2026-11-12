@@ -195,18 +195,39 @@ export async function assertHarnessConnectionSelectable(
   }
 }
 
-export async function removeHarnessConnection(providerId: string, connectionId: string): Promise<void> {
+/**
+ * 任何连接都能删(#2507,owner 2026-11-12「删掉最后一个连接要能回到『没有』」)。删的是当前连接 ⇒ 先落回原生
+ * (CLI 自己那一份;界面上它真有东西才列,没有就是「没有」),再拿掉它 —— ❌ 要人先切走:只剩它一个、
+ * 原生又不列的时候根本没处可切。有别的连接也一样落回原生,❌ 替人挑下一个。
+ *
+ * 落回原生是一次切换:在跑的会话、「有会话在忙就不切」那道护栏归调用方(宿主先走 `switchSubscription`),
+ * 这里只保证删完之后默认连接不会是一条已删的。
+ */
+export async function removeHarnessConnection(
+  providerId: string,
+  connectionId: string,
+  options: { nativeEnv?: Record<string, string | undefined> } = {}
+): Promise<void> {
   supported(providerId);
   if (connectionId === 'native') throw new Error('The existing CLI configuration cannot be removed');
   const target = await registry.getAccount(namespace(providerId), connectionId);
   if (!target || target.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
-  if (target.isDefault) throw new Error('Select another connection before removing this one');
+  if (target.isDefault) await selectHarnessConnection(providerId, 'native', options);
   // 只从列表里拿掉:保管目录里的登录仍归它,用户根里要是正好是它的账号,换走时还得写回去。
   await registry.upsertAccount({
     providerId: namespace(providerId),
     accountId: connectionId,
     meta: { ...target.meta, harnessConnection: { ...target.meta!.harnessConnection!, removed: true } },
   });
+}
+
+/**
+ * 登录进程跑在哪个连接上(#2507)。Claude / Codex 登的是指名的那个账号连接(原样)。
+ * 其余家的账号只有它 CLI 自己那一份 ⇒ 恒是原生:CLI 自己的目录,❌ 默认连接 —— 选着一把 API Key 时,
+ * 那把 key(环境变量 / 参数 / 「这是 API Key」的标记)也不进登录进程。没有连接的家原样(它的 run context 不看这一格)。
+ */
+export function harnessLoginConnectionId(providerId: string, connectionId: string | undefined): string | undefined {
+  return isAccountProvider(providerId) || !apiKeyConnectionOf(providerId) ? connectionId : 'native';
 }
 
 function connectionHome(providerId: Provider, id: string): string {

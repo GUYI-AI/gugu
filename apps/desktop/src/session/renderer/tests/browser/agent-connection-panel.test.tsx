@@ -29,7 +29,8 @@ const control = vi.hoisted(() => ({
   created: null as Record<string, unknown> | null,
   selected: '',
   rejectSelect: false,
-  busy: false
+  busy: false,
+  removed: [] as Array<{ connectionId: string; stopBusySessions?: boolean }>
 }))
 
 const NAMES: Record<string, string> = { codex: 'Codex', claude: 'Claude', pi: 'Pi', opencode: 'OpenCode', amp: 'Amp' }
@@ -113,6 +114,21 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
       control.connections.push(created)
       return { success: true, data: created }
     },
+    // 宿主那一层的规矩(host.connections.db.test.ts 实跑):删当前连接 = 切回原生,有会话在忙先拒,带「关掉」才删。
+    removeConnection: async (input: { providerId: string; connectionId: string; stopBusySessions?: boolean }) => {
+      control.removed.push({ connectionId: input.connectionId, ...(input.stopBusySessions ? { stopBusySessions: true } : {}) })
+      const target = control.connections.find((c) => c.id === input.connectionId)
+      if (target?.current && control.busy && !input.stopBusySessions) {
+        return {
+          success: false,
+          error: { type: 'invalid-state', message: 'busy', sessionsBusy: { providerId: input.providerId, count: 1 } }
+        }
+      }
+      control.connections = control.connections
+        .filter((c) => c.id !== input.connectionId)
+        .map((c) => (target?.current ? { ...c, current: c.id === 'native' } : c))
+      return { success: true }
+    },
     selectConnection: async ({ connectionId }: { connectionId: string }) => {
       if (control.rejectSelect) {
         control.selected = 'rejected'
@@ -168,6 +184,7 @@ beforeEach(() => {
   control.selected = ''
   control.rejectSelect = false
   control.busy = false
+  control.removed = []
   control.connections = [{ id: 'native', kind: 'native', name: 'CLI', current: true }]
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   host = document.createElement('div')
@@ -553,8 +570,8 @@ it('OpenCode detail is that same section: no separate Account row, and Account s
   expect(document.querySelector('.subscription-connection-form input[name="name"]')).toBeNull()
   await userEvent.click(page.getByRole('button', { name: 'Sign in', exact: true }))
   expect(modalStore.activeModalId).toBe('agentSignInModal')
-  expect(modalStore.activeModalArgs).toMatchObject({ providerId: 'opencode', steps: [{ methodId: 'opencode-login', transport: 'terminal' }] })
-  expect(modalStore.activeModalArgs).not.toHaveProperty('connectionId')
+  // 登的、读的是「现有 CLI 配置」那一格(选着 API Key 时主读数是那把 key,❌ 拿它判登没登上)。
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: 'opencode', connectionId: 'native', steps: [{ methodId: 'opencode-login', transport: 'terminal' }] })
   expect(control.created).toBeNull()
 })
 
@@ -569,6 +586,56 @@ it('OpenCode signed in on its own lists that CLI configuration and offers no sec
   await until('the add hint follows what is left', () => addRowHint('opencode') === 'API Key')
   await userEvent.click(detail.getByRole('button', { name: 'Add', exact: true }))
   expect(methodButtons()).toEqual(['API Key'])
+})
+
+// #2507 owner 2026-11-12「删掉最后一个连接要能回到『没有』」:正在用的那把 key 也能删 —— 删了就是切回原生
+// (没配过不列),选择框那一格写「没有」。有会话在忙时同一道护栏:先说清楚,点「关掉并切换」才删。
+it('the current, only key can be removed: a busy session asks first, then the detail says None', async () => {
+  control.connections = [
+    { id: 'native', kind: 'native', name: '', current: false },
+    { id: 'key', kind: 'api-key', name: 'Saved key', current: true }
+  ]
+  control.busy = true
+  render(<AgentDetailModal agentId="pi" onClose={vi.fn()} />)
+  const detail = page.getByRole('dialog', { name: 'Pi', exact: true })
+  const connection = detail.getByRole('combobox', { name: 'Current connection', exact: true })
+  await expect.element(connection).toBeEnabled()
+  expect(connection.element().textContent).toContain('Saved key')
+  await userEvent.click(connection)
+  await userEvent.click(page.getByRole('button', { name: 'Options for Saved key', exact: true }))
+  await userEvent.click(page.getByRole('menuitem', { name: 'Remove', exact: true }))
+  await until('the removal is refused while a session works', () => !!document.querySelector('[data-testid="subscription-close-and-switch"]'))
+  expect(control.removed).toEqual([{ connectionId: 'key' }])
+  expect(control.connections.map((c) => c.id)).toEqual(['native', 'key'])
+
+  await userEvent.click(page.getByTestId('subscription-close-and-switch'))
+  await until('the detail says None', () => !!document.querySelector('[data-testid="subscription-no-connection-pi"]'))
+  expect(control.removed).toEqual([{ connectionId: 'key' }, { connectionId: 'key', stopBusySessions: true }])
+  expect(document.querySelector('[data-testid="subscription-no-connection-pi"]')?.textContent).toBe('None')
+  expect(detail.getByRole('combobox', { name: 'Current connection', exact: true }).query()).toBeNull()
+  expect(detail.element().textContent).not.toContain('Existing CLI configuration')
+  expect(document.querySelector('[data-testid="subscription-close-and-switch"]')).toBeNull()
+})
+
+// 还有别的连接时删当前那个也一样落回原生(❌ 替人挑下一个):选择框写「没有」,剩下那条照旧能选。
+it('removing the current key while another stays leaves None selected and the other one to pick', async () => {
+  control.connections = [
+    { id: 'native', kind: 'native', name: '', current: false },
+    { id: 'key', kind: 'api-key', name: 'Saved key', current: true },
+    { id: 'spare', kind: 'api-key', name: 'Spare key', current: false }
+  ]
+  render(<AgentDetailModal agentId="pi" onClose={vi.fn()} />)
+  const detail = page.getByRole('dialog', { name: 'Pi', exact: true })
+  const connection = detail.getByRole('combobox', { name: 'Current connection', exact: true })
+  await expect.element(connection).toBeEnabled()
+  await userEvent.click(connection)
+  await userEvent.click(page.getByRole('button', { name: 'Options for Saved key', exact: true }))
+  await userEvent.click(page.getByRole('menuitem', { name: 'Remove', exact: true }))
+  await until('the select says None', () => detail.getByRole('combobox', { name: 'Current connection', exact: true }).query()?.textContent === 'None')
+  expect(control.removed).toEqual([{ connectionId: 'key' }])
+  await userEvent.click(detail.getByRole('combobox', { name: 'Current connection', exact: true }))
+  await until('the spare key is offered', () => !!document.querySelector('[data-testid="connection-use-spare"]'))
+  expect(document.querySelector('[data-testid="connection-key"]')).toBeNull()
 })
 
 it('an agent that can neither sign in in Gugu nor take a key has no Connections section', async () => {
@@ -607,6 +674,7 @@ it('a task on another machine signs in that machine\'s own CLI from Add connecti
     expect(modalStore.activeModalId).toBe('agentSignInModal')
     expect(modalStore.activeModalArgs).toMatchObject({
       providerId: 'opencode',
+      connectionId: 'native',
       remote: { deviceId: 'dev-walk', deviceLabel: '走查机', command: 'opencode login' }
     })
     expect(control.created).toBeNull()
