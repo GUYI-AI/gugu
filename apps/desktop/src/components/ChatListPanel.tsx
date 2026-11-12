@@ -35,6 +35,7 @@ import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
+import { oneListShows, useAgentHomes } from '../lib/sidebarOneList'
 import { mobileListDiagnostics } from '@/mobile/mobileListDiagnostics'
 import { subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, type ShellChatDialog } from '../lib/sidebarChatsBridge'
 import { NotificationSlot } from './needsYou/NotificationSlot'
@@ -549,6 +550,8 @@ export function ChatListPanel({
   const membershipProjection = useMemo(createChatMembershipProjection, [])
   const membership = membershipProjection(chats, identitiesById)
   const workrooms = useAssistantWorkrooms(assistantShell, membership.key)
+  // #2548 the desktop sidebar as one list (switch published by the task page's left sidebar; never on the phone).
+  const agentHomes = useAgentHomes(inSidebar && !mobile && sidebarView.oneList === true, chats, membership)
   // @@@chat-list-agent-status (#437/#33) - one batched presence subscription for every agent shown in
   // the list: DM-with-agent peers + all group agent members (so the group dot can aggregate).
   const agentStatuses = useAgentDisplayStatuses(membership.agentIds)
@@ -617,12 +620,12 @@ export function ChatListPanel({
   // 桌面项目群归项目块；手机消息列表一段对话一行，话题只从对话页签进入(#446)。
   const isProjectGroupLine = (chat: ChatItem) => projectGroupChats.has(chat.kind === 'topic' ? (chat.source_chat_id ?? '') : chat.id)
   const shownAsLead = lead ? leadChatId : null
+  const listedByActivity = (chat: ChatItem) => hasSearchQuery || isChatListed(chat, { activeChatId: selectedChatId, hasDraft: Boolean(drafts[chat.id]?.trim()) })
   const isListed = (chat: ChatItem) =>
     !isDuplicateAssistantChat(chat, assistantShell, workrooms)
       && chat.id !== shownAsLead
-      && (!mobile || chat.kind !== 'topic')
-      && (mobile || !isProjectGroupLine(chat))
-      && (hasSearchQuery || isChatListed(chat, { activeChatId: selectedChatId, hasDraft: Boolean(drafts[chat.id]?.trim()) }))
+      && (agentHomes ? oneListShows(chat, listedByActivity(chat), agentHomes, isOwnedAgentPeer)
+        : (!mobile || chat.kind !== 'topic') && (mobile || !isProjectGroupLine(chat)) && listedByActivity(chat))
   // @@@5856 沉降:长期无活动的话题落到底部的「更早」。它**只是列表位置**,不是话题的一种状态 ——
   // 话题没有开关(product spec)。任何人发一句,last_message_at 前移,这一条自己就浮回来了。
   // 搜索时不分段:搜索是一次指名道姓,沉下去的照样要搜得到。
@@ -645,7 +648,7 @@ export function ChatListPanel({
     // isListed / matchesSearch 都是每次渲染新建的闭包,进依赖数组等于不缓存;
     // 它们的输入(chats / 搜索词 / 草稿 / 当前会话)已经在下面列全了。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chats, listQuery, selectedChatId, drafts, assistantShell, workrooms, projectGroupChats, shownAsLead, mobile])
+  }, [chats, listQuery, selectedChatId, drafts, assistantShell, workrooms, projectGroupChats, shownAsLead, mobile, agentHomes])
   const isTopLevel = (c: ChatItem) => isTopLevelChatRow(c, topicNesting, isListed, matchesSearch)
   const pinnedChats = chats.filter((c) => c.is_pinned && isTopLevel(c)).sort(byTime)
   const normalChats = chats.filter((c) => !c.is_pinned && isTopLevel(c)).sort(byTime)

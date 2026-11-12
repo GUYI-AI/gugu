@@ -18,7 +18,7 @@ const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
  * (`placement="sidebar"`),❌ 在会话页里另写一份行。侧栏两枚页签上的未读数也从这里发过去 —— 不管「对话」那一格挂没挂着。
  */
 export function ChatListSlotHost() {
-  const { chats: imChats } = useChatStore('chats')
+  const { chats: imChats, loadingChats } = useChatStore('chats', 'loadingChats')
   const chats = useNativeAgentChats(imChats)
   const markRead = useMarkChatsRead()
   useEffect(() => {
@@ -32,8 +32,8 @@ export function ChatListSlotHost() {
   const projectGroupChats = useProjectGroupChats()
   const assistant = useAssistantShell()
   useEffect(() => {
-    publishSidebarChatSignals(sidebarChatSignals(chats, projectGroupChats, assistant))
-  }, [chats, projectGroupChats, assistant])
+    publishSidebarChatSignals(sidebarChatSignals(chats, projectGroupChats, assistant, !loadingChats))
+  }, [chats, projectGroupChats, assistant, loadingChats])
   const slots = readShellSlots()
   const targets = useSyncExternalStore(
     (listener) => slots?.subscribeSlots(listener) ?? (() => undefined),

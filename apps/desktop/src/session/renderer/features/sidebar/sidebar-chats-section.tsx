@@ -40,9 +40,12 @@ export const shellChatActions = [
 export const SidebarChatsSection = observer(function SidebarChatsSection({
   merged,
   unread,
+  headerless = false,
 }: {
   merged: boolean;
   unread: number;
+  /** #2548 the sidebar as one list: just the list, always open, no 「对话」 header. */
+  headerless?: boolean;
 }) {
   const { translate } = useSessionMessages();
   const { scroller } = useSidebarScrollTargets();
@@ -57,55 +60,57 @@ export const SidebarChatsSection = observer(function SidebarChatsSection({
     if (sidebarStore.chatsCollapsed) sidebarStore.toggleChatsCollapsed();
     scroller.scrollBy({ top: natural - scroller.getBoundingClientRect().top, behavior: 'smooth' });
   };
-  const collapsed = sidebarStore.chatsCollapsed;
+  const collapsed = !headerless && sidebarStore.chatsCollapsed;
   const listSlot = useCallback((element: HTMLDivElement | null) => readShellSlots()?.setSlot(CHAT_LIST_SLOT_KEY, element), []);
 
   return (
     <SidebarGroup className="mb-0 flex flex-col" data-sidebar-chats="">
       <div ref={sentinel} aria-hidden="true" />
-      <div
-        ref={header}
-        onClickCapture={jumpWhenStuck}
-        className={cn(sidebarGroupHeaderClass, merged && 'sticky bottom-0 z-10 bg-background-tertiary')}
-      >
-        <span className="flex items-center gap-1">
-          <SidebarGroupToggle
-            label={translate('sidebar.chats')}
-            count={0}
-            collapsed={collapsed}
-            onToggle={() => sidebarStore.toggleChatsCollapsed()}
-            ariaLabel={translate(collapsed ? 'sidebar.expandChats' : 'sidebar.collapseChats')}
-          />
-          {merged && <SidebarUnreadCount count={unread} />}
-        </span>
-        {/* 合在一起时没有对话页那两行入口,挪到这颗「+」里,与「项目」头上的「添加项目」对称。 */}
-        {merged && (
-          <DropdownMenu>
-            <Tooltip>
-              <DropdownMenuTrigger
-                render={
-                  <TooltipTrigger
-                    render={
-                      <button type="button" aria-label={translate('sidebar.newGroupChat')} className={sidebarHeaderIconButtonClass}>
-                        <Plus />
-                      </button>
-                    }
-                  />
-                }
-              />
-              <TooltipContent>{`${translate('sidebar.newGroupChat')} / ${translate('sidebar.addContact')}`}</TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent align="end" className="min-w-44">
-              {shellChatActions.map(({ action, icon: Icon, label }) => (
-                <DropdownMenuItem key={action} onClick={() => openShellChatAction(action)}>
-                  <Icon />
-                  {translate(label)}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      </div>
+      {!headerless && (
+        <div
+          ref={header}
+          onClickCapture={jumpWhenStuck}
+          className={cn(sidebarGroupHeaderClass, merged && 'sticky bottom-0 z-10 bg-background-tertiary')}
+        >
+          <span className="flex items-center gap-1">
+            <SidebarGroupToggle
+              label={translate('sidebar.chats')}
+              count={0}
+              collapsed={collapsed}
+              onToggle={() => sidebarStore.toggleChatsCollapsed()}
+              ariaLabel={translate(collapsed ? 'sidebar.expandChats' : 'sidebar.collapseChats')}
+            />
+            {merged && <SidebarUnreadCount count={unread} />}
+          </span>
+          {/* 合在一起时没有对话页那两行入口,挪到这颗「+」里,与「项目」头上的「添加项目」对称。 */}
+          {merged && (
+            <DropdownMenu>
+              <Tooltip>
+                <DropdownMenuTrigger
+                  render={
+                    <TooltipTrigger
+                      render={
+                        <button type="button" aria-label={translate('sidebar.newGroupChat')} className={sidebarHeaderIconButtonClass}>
+                          <Plus />
+                        </button>
+                      }
+                    />
+                  }
+                />
+                <TooltipContent>{`${translate('sidebar.newGroupChat')} / ${translate('sidebar.addContact')}`}</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end" className="min-w-44">
+                {shellChatActions.map(({ action, icon: Icon, label }) => (
+                  <DropdownMenuItem key={action} onClick={() => openShellChatAction(action)}>
+                    <Icon />
+                    {translate(label)}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      )}
       {/* 聊天列表画进这一格(壳那棵树的 components/ChatListSlotHost.tsx);格子里的东西归壳管,这一侧 ❌ 往里放子元素。 */}
       {!collapsed && <div ref={listSlot} data-region="sidebar-chat-list" className="min-h-0" />}
     </SidebarGroup>

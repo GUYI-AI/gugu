@@ -62,8 +62,11 @@ const UNREGISTERED_PHASE_KEY: Record<UnregisteredProject['phase'], SessionMessag
  */
 export const SidebarProjectItem = observer(function SidebarProjectItem({
   projectId,
+  expandable = true,
 }: {
   projectId: string;
+  /** #2548 the sidebar as one list has no session rows under a project: the row keeps its lane but no arrow. */
+  expandable?: boolean;
 }) {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
@@ -89,7 +92,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
     if (isProjectActive) prefetchRepository();
   }, [isProjectActive, prefetchRepository]);
 
-  const isExpanded = sidebarStore.expandedProjectIds.has(projectId);
+  const isExpanded = expandable && sidebarStore.expandedProjectIds.has(projectId);
   // spec session-page 链6: a collapsed project whose conversations are waiting on the human shows an
   // amber dot on its row — raw status, so viewing a conversation never clears it; it fades only
   // when the "needs you" count returns to zero. When expanded, the per-section header carries it.
@@ -215,7 +218,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
             expanded={isExpanded}
             label={translate(isExpanded ? 'sidebar.collapseProject' : 'sidebar.expandProject', { project: projectLabel })}
             onToggle={
-              project.state === 'unregistered'
+              project.state === 'unregistered' || !expandable
                 ? undefined
                 : () => sidebarStore.toggleProjectExpanded(projectId)
             }

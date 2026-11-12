@@ -17,10 +17,13 @@ import { SidebarTwistyLane } from './sidebar-twisty';
  * 项目列表最后:示例项目那一行(#709,账号上的键说它在才有),和用户自己一个项目都没有时那一句空状态。
  * 那一行和项目行同一套列(车道、文件夹、名字),名字后面一枚「示例」;点它马上打开那一块 —— 内容在包里,❌ 读网络。
  */
-export const SampleProjectSidebar = observer(function SampleProjectSidebar() {
+export const SampleProjectSidebar = observer(function SampleProjectSidebar({ rowOnly = false }: {
+  /** #2548 the sidebar as one list: only the sample row; the no-projects line belongs to the old 「项目」 section. */
+  rowOnly?: boolean;
+}) {
   const { translate } = useSessionMessages();
   const sample = useSampleProject();
-  const empty = sidebarStore.sidebarProjects.length === 0;
+  const empty = !rowOnly && sidebarStore.sidebarProjects.length === 0;
   return (
     <>
       {/* 和项目行同一层列表留白(虚拟列表里那一层),选中底色才和项目行一样收在两边。 */}

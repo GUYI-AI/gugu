@@ -186,6 +186,12 @@ export const interfaceSettingsSchema = z.object({
    * 设置页这一行是反悔的地方(owner 2026-09-23)。
    */
   confirmBeforeCancelAndSend: z.boolean(),
+
+  /**
+   * GUYI-AI/gugu#2548 rollout switch: the desktop left sidebar as one list (no Projects/Chats tabs). Internal:
+   * off by default, no settings UI. The PR that turns the new sidebar on deletes this switch and the old tabs.
+   */
+  desktopSidebarV2: z.boolean(),
 });
 
 export const changesViewModeSchema = z.object({
