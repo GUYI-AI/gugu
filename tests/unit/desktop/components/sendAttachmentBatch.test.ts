@@ -116,7 +116,8 @@ describe('attachment ownership transfers to the durable chat outbox', () => {
       [expect.anything(), { staging_key: 'staging/photo.png' }, expect.not.objectContaining({ caption: expect.anything() }), expect.anything()],
       [expect.anything(), { staging_key: 'staging/spec.pdf' }, expect.objectContaining({ caption: 'look' }), expect.anything()],
     ])
-    const [first, second] = f.commitAttachment.mock.calls.map(([row, , commit]) => ({ row, commit }))
+    type Group = { send_group_id?: string; send_group_size?: number }
+    const [first, second] = (f.commitAttachment.mock.calls as unknown as Array<[Group, unknown, Group]>).map(([row, , commit]) => ({ row, commit }))
     expect(first!.commit.send_group_id).toEqual(expect.any(String))
     expect([first!.commit.send_group_id, first!.commit.send_group_size]).toEqual([second!.commit.send_group_id, 2])
     expect([first!.row.send_group_id, second!.row.send_group_id]).toEqual([first!.commit.send_group_id, first!.commit.send_group_id])
@@ -125,8 +126,9 @@ describe('attachment ownership transfers to the durable chat outbox', () => {
     const f = fixture()
     await sendAttachmentBatch({ ...f.args, caption: 'one' })
     await vi.waitFor(() => expect(f.commitAttachment).toHaveBeenCalledTimes(1))
-    expect(f.commitAttachment.mock.calls[0]![2]).not.toHaveProperty('send_group_id')
-    expect(f.commitAttachment.mock.calls[0]![0].send_group_id).toBeUndefined()
+    const [row, , commit] = f.commitAttachment.mock.calls[0] as unknown as [{ send_group_id?: string }, unknown, object]
+    expect(commit).not.toHaveProperty('send_group_id')
+    expect(row.send_group_id).toBeUndefined()
   })
 })
 it('a later file never commits before an earlier one that is still uploading', async () => {

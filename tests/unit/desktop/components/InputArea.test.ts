@@ -231,7 +231,7 @@ describe('ChatMessageComposer', () => {
   it('#2188 files that did not become rows all return to the draft with the unsent text', async () => {
     const first = new File(['a'], 'first.txt', { type: 'text/plain' })
     const second = new File(['b'], 'second.txt', { type: 'text/plain' })
-    const onSendAttachments = vi.fn<(files: File[]) => Promise<string | undefined>>(async () => { throw new Error('staging refused') })
+    const onSendAttachments = vi.fn<(files: File[], opts?: unknown) => Promise<string | undefined>>(async () => { throw new Error('staging refused') })
     const onSend = vi.fn(async () => {})
     await harness.render(createElement(ChatMessageComposer, { onSend, onSendAttachments }))
     const input = container.querySelector('input[type="file"]') as HTMLInputElement
