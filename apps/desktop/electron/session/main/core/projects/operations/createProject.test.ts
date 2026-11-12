@@ -447,6 +447,14 @@ describe('createLocalProject', () => {
     );
   });
 
+  // #2589 review 8: a file where the new project's folder would go is not a free path (creating there always fails).
+  it('says a regular file sits at the path, unlike a path where nothing is', async () => {
+    mocks.statMock.mockResolvedValueOnce(ok({ path: '/p/周末去杭州', type: 'file' }));
+    await expect(getLocalProjectPathStatus('/p/周末去杭州')).resolves.toEqual({ isDirectory: false, isGitRepo: false, isFile: true });
+    mocks.statMock.mockResolvedValueOnce({ success: false, error: { type: 'not-found', path: '/p/周末去杭州 2', message: 'missing', code: 'ENOENT' } });
+    await expect(getLocalProjectPathStatus('/p/周末去杭州 2')).resolves.toEqual({ isDirectory: false, isGitRepo: false });
+  });
+
   it('keeps other Git spawn failures as project inspection errors', async () => {
     const projectPath = tempProjectPath();
     const git = new GitRuntime({ executable: projectPath });

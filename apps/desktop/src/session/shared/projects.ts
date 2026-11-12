@@ -3,6 +3,8 @@ import type { Result } from '@gugu/session-shared';
 export type ProjectPathStatus = {
   isDirectory: boolean;
   isGitRepo: boolean;
+  /** Something that is not a folder (a file) is already at the path: no folder can be made there. Absent = nothing, or a folder. */
+  isFile?: true;
   error?: { type: 'inspect-failed'; path: string; message: string };
 };
 

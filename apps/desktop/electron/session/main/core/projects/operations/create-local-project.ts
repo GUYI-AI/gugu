@@ -209,7 +209,7 @@ export async function getLocalProjectPathStatus(path: string): Promise<ProjectPa
       };
     }
     if (pathEntry.data.type !== 'directory') {
-      return { isDirectory: false, isGitRepo: false };
+      return { isDirectory: false, isGitRepo: false, isFile: true };
     }
 
     const inspection = await runtimeLease.value.git.inspectPath(path);
