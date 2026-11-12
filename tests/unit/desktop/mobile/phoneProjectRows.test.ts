@@ -31,7 +31,7 @@ const record = (localProjectId: string): DeviceProject => ({
 })
 
 const project = (chatId: string, name: string, bindings: Array<[string, string]>, archived = false): AccountProject => ({
-  chatId, name, archived, bindings: bindings.map(([deviceId, localProjectId]) => ({ deviceId, localProjectId })),
+  chatId, name, archived, activeAt: '2026-01-01T00:00:00.000Z', bindings: bindings.map(([deviceId, localProjectId]) => ({ deviceId, localProjectId })),
 })
 
 describe('phone projects list = account projects', () => {

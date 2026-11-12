@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 // GUYI-AI/gugu#2548 the desktop sidebar as one list: the sidebar's chat list with the internal switch on and off.
+import { runInAction } from 'mobx'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatListPanel } from '../../../../apps/desktop/src/components/ChatListPanel'
@@ -9,6 +10,7 @@ import { publishProjectGroupChats } from '../../../../apps/desktop/src/session/r
 import { publishDirectoryDevices, removeDeviceSessions, updateDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 import { installSessionViewRequestBridge } from '../../../../apps/desktop/src/session/renderer/features/sessions/stores/session-view-requests'
 import { publishMyChatAgentCounts } from '../../../../apps/desktop/src/lib/innerSidebarBridge'
+import { accountProjectsStore } from '../../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store'
 import { chat, clickElement, createNode, createReactHarness, device, displayIdentity, renderWithAppProviders } from '../../../support/testHarness'
 
 vi.mock('../../../../apps/desktop/src/platform', () => import('../../../support/capacitorPlatformTestDouble'))
@@ -122,6 +124,54 @@ describe('the sidebar chat list as one list', () => {
     } finally {
       await act(async () => publishMyChatAgentCounts(new Map()))
     }
+  })
+})
+
+describe('#2548 an account project whose group is not in the chat list yet stands among the conversation rows at its time', () => {
+  const newProject = (activeAt: string) => ({ chatId: 'new-project', name: 'Blink', archived: false, activeAt, bindings: [] })
+  // The project whose group is listed ('project', mac's 'app'): its agent lives there, as on the first read above.
+  const app = { chatId: 'project', name: 'App', archived: false, activeAt: at(4), bindings: [{ deviceId: 'mac', localProjectId: 'app' }] }
+  /** The lines of the list, top to bottom: a conversation row, or the place left for a project row. */
+  const lines = () => [...harness.container.querySelectorAll<HTMLElement>('[data-chat-row], [data-one-list-project]')]
+    .map((line) => line.dataset.oneListProject ? `place:${line.dataset.oneListProject}` : line.dataset.chatRow)
+  const slots = () => (window as unknown as Record<string, ReadonlyMap<string, HTMLElement> | undefined>).__GUGU_SIDEBAR_ONE_LIST_PROJECT_SLOTS__
+  afterEach(() => accountProjectsStore.clear())
+
+  // The owner's recording (11-13): 新建空白项目 drew the new project after every conversation, and ~200 ms later, when its
+  // group reached the chat list, the row jumped to the top. The account project list says when its group was last active
+  // (list_my_projects: last message, else creation), the time its conversation row sorts by.
+  it('a new project stands where its group\'s conversation row then lands, and that row takes the same place', async () => {
+    publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
+    const created = '2099-01-04T12:00:00Z'
+    runInAction(() => {
+      accountProjectsStore.list = [app, newProject(created)]
+      accountProjectsStore.status = 'ready'
+    })
+    await render()
+    expect(lines()).toEqual(['room', 'place:new-project', 'project', 'dm-human', 'dm-solo'])
+    // The task page draws the project's row into that place (sidebar-one-list).
+    expect(slots()?.get('new-project')).toBe(harness.container.querySelector('[data-one-list-project="new-project"]'))
+
+    // Its group reaches the chat list: the conversation row is in the same place, and the place for the project row is gone.
+    await renderWithAppProviders(harness, createNode(ChatListPanel, { placement: 'sidebar' }), {
+      chat: { chats: [...chats, chat({ id: 'new-project', kind: 'group', name: 'Blink', member_user_ids: ['me'], created_at: created })], identitiesById },
+      contacts: {},
+    })
+    expect(lines()).toEqual(['room', 'new-project', 'project', 'dm-human', 'dm-solo'])
+    expect(slots()?.has('new-project')).toBe(false)
+  })
+
+  it('a project created a moment ago stands at the top; a dissolved one stands nowhere; switch off: no project places', async () => {
+    publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
+    runInAction(() => {
+      accountProjectsStore.list = [app, newProject('2099-02-01T00:00:00Z'), { ...newProject('2099-01-06T00:00:00Z'), chatId: 'dissolved', archived: true }]
+      accountProjectsStore.status = 'ready'
+    })
+    await render()
+    expect(lines()).toEqual(['place:new-project', 'room', 'project', 'dm-human', 'dm-solo'])
+    publishSidebarChatView({ focusedChatId: null, groups: [] })
+    await render()
+    expect(lines().filter((line) => line?.startsWith('place:'))).toEqual([])
   })
 })
 

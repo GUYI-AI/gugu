@@ -22,8 +22,6 @@ export type SidebarChatSignals = {
   readonly groupUnread: ReadonlyMap<string, number>
   /** 项目群从哪个话题叫到了你:点项目行直接开它,读了 groupUnread 就减。没有叫到你的话题的群不在里面。 */
   readonly groupCallingTopic: ReadonlyMap<string, SidebarCallingTopic>
-  /** #2548 the group chats the chat list has (project groups included); null = the list has not loaded yet. */
-  readonly listedGroups: ReadonlySet<string> | null
 }
 
 export type SidebarCallingTopic = { readonly chatId: string; readonly name: string }
@@ -66,8 +64,7 @@ const TOUR_EVENT = 'gugu:product-tour-on-screen'
  * 壳:从聊天列表那一份算出两枚页签和项目行上的数。项目群(及从它开出来的话题)的未读记在那个群名下,其余记进「对话」;免打扰的不算(gugu-dev#181:
  * 「对话」页签挂对话那边的未读总数,项目行与「项目」页签挂项目群的未读;owner 10-28:话题只算叫到你的)。只读未读数,真读了它自己会减。
  */
-export function sidebarChatSignals(chats: readonly ChatItem[], projectGroupChats: ReadonlySet<string>, assistant: AssistantShellSnapshot | null = null, loaded = true): SidebarChatSignals {
-  const listedGroups = loaded ? new Set(chats.flatMap((chat) => (chat.kind === 'group' ? [chat.id] : []))) : null
+export function sidebarChatSignals(chats: readonly ChatItem[], projectGroupChats: ReadonlySet<string>, assistant: AssistantShellSnapshot | null = null): SidebarChatSignals {
   let chatsUnread = 0
   const groupUnread = new Map<string, number>()
   const groupCallingTopic = new Map<string, SidebarCallingTopic>()
@@ -81,7 +78,7 @@ export function sidebarChatSignals(chats: readonly ChatItem[], projectGroupChats
       if (count > 0 && chat.kind === 'topic' && !groupCallingTopic.has(line)) groupCallingTopic.set(line, { chatId: chat.id, name: chat.name ?? '' })
     } else chatsUnread += count
   }
-  return { chatsUnread, groupUnread, groupCallingTopic, listedGroups }
+  return { chatsUnread, groupUnread, groupCallingTopic }
 }
 
 const NO_VIEW: SidebarChatView = { focusedChatId: null, groups: [] }
@@ -128,11 +125,6 @@ export function useProductTourOnScreen(): boolean {
   return useSyncExternalStore(subscribeTour, () => read<boolean>(TOUR_KEY) ?? false, () => false)
 }
 
-function sameIds(current: ReadonlySet<string> | null, next: ReadonlySet<string> | null): boolean {
-  if (current === null || next === null) return current === next
-  return current.size === next.size && [...next].every((id) => current.has(id))
-}
-
 /** 壳:整份替换;没变不通知。 */
 export function publishSidebarChatSignals(next: SidebarChatSignals): void {
   const current = read<SidebarChatSignals>(SIGNALS_KEY)
@@ -142,8 +134,7 @@ export function publishSidebarChatSignals(next: SidebarChatSignals): void {
     current.groupUnread.size === next.groupUnread.size &&
     [...next.groupUnread].every(([chatId, count]) => current.groupUnread.get(chatId) === count) &&
     current.groupCallingTopic.size === next.groupCallingTopic.size &&
-    [...next.groupCallingTopic].every(([chatId, topic]) => current.groupCallingTopic.get(chatId)?.chatId === topic.chatId && current.groupCallingTopic.get(chatId)?.name === topic.name) &&
-    sameIds(current.listedGroups, next.listedGroups)
+    [...next.groupCallingTopic].every(([chatId, topic]) => current.groupCallingTopic.get(chatId)?.chatId === topic.chatId && current.groupCallingTopic.get(chatId)?.name === topic.name)
   ) return
   write(SIGNALS_KEY, SIGNALS_EVENT, next)
 }
@@ -180,6 +171,31 @@ export function publishSidebarPinnedAgents(next: readonly SidebarPinnedAgent[]):
 /** 壳:the agents pinned to the one list, in display order; the task page has not said yet = none. */
 export function useSidebarPinnedAgents(): readonly SidebarPinnedAgent[] {
   return useSyncExternalStore(subscribePinnedAgents, () => read<readonly SidebarPinnedAgent[]>(PINNED_AGENTS_KEY) ?? NO_PINNED_AGENTS, () => NO_PINNED_AGENTS)
+}
+
+const PROJECT_SLOTS_KEY = '__GUGU_SIDEBAR_ONE_LIST_PROJECT_SLOTS__'
+const PROJECT_SLOTS_EVENT = 'gugu:sidebar-one-list-project-slots'
+const subscribeProjectSlots = subscribeTo(PROJECT_SLOTS_EVENT)
+const NO_PROJECT_SLOTS: ReadonlyMap<string, HTMLElement> = new Map()
+
+/**
+ * #2548 壳 → 会话页: an account project with no conversation row yet stands among the conversation rows at its time
+ * (lib/sidebarOneList, OneListProjectLine). Where is the chat list's to say, the row is the task page's to draw (it needs
+ * the task page's own context): the chat list leaves an empty element at that place, keyed by the project's group chat
+ * id, and the task page draws the project's row into it. null = the element went (the line left the list or the window).
+ */
+export function setOneListProjectSlot(chatId: string, element: HTMLElement | null): void {
+  const current = read<ReadonlyMap<string, HTMLElement>>(PROJECT_SLOTS_KEY) ?? NO_PROJECT_SLOTS
+  if ((current.get(chatId) ?? null) === element) return
+  const next = new Map(current)
+  if (element) next.set(chatId, element)
+  else next.delete(chatId)
+  write(PROJECT_SLOTS_KEY, PROJECT_SLOTS_EVENT, next)
+}
+
+/** 会话页: the places the chat list left for project rows, by the project's group chat id. */
+export function useOneListProjectSlots(): ReadonlyMap<string, HTMLElement> {
+  return useSyncExternalStore(subscribeProjectSlots, () => read<ReadonlyMap<string, HTMLElement>>(PROJECT_SLOTS_KEY) ?? NO_PROJECT_SLOTS, () => NO_PROJECT_SLOTS)
 }
 
 const ONE_LIST_NEIGHBOUR_KEY = '__GUGU_SIDEBAR_ONE_LIST_NEIGHBOUR__'

@@ -22,6 +22,7 @@ const paper: AccountProject = {
   chatId: 'chat-paper',
   name: 'Paper',
   archived: false,
+  activeAt: '2026-01-01T00:00:00.000Z',
   bindings: [
     { deviceId: 'gpu', localProjectId: 'gpu-paper' },
     { deviceId: 'this-computer', localProjectId: 'local-paper' },
@@ -29,7 +30,7 @@ const paper: AccountProject = {
     { deviceId: 'not-loaded', localProjectId: 'nl-paper' },
   ],
 };
-const empty: AccountProject = { chatId: 'chat-empty', name: 'Empty', archived: false, bindings: [] };
+const empty: AccountProject = { chatId: 'chat-empty', name: 'Empty', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] };
 
 /** 项目表:本机一个、gpu(连着)一个、juma(离线,建得最早)一个;not-loaded 那台的项目不在表里。 */
 function storeWith(projects: AccountProject[], local: { here?: boolean } = {}) {

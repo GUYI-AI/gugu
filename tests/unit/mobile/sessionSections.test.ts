@@ -338,7 +338,7 @@ describe('sessionSections — 项目来自账号上的项目', () => {
   it('两台机器上的本地项目属于同一个账号项目:一格,键是项目群,格名是项目名;不属于任何项目的照旧是那台的一格', () => {
     const accounts = new AccountProjectsStore()
     runInAction(() => {
-      accounts.list = [{ chatId: 'chat-paper', name: 'Paper', archived: false, bindings: [
+      accounts.list = [{ chatId: 'chat-paper', name: 'Paper', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [
         { deviceId: 'gpu', localProjectId: 'gpu-paper' }, { deviceId: 'juma', localProjectId: 'juma-paper' },
       ] }]
       accounts.status = 'ready'

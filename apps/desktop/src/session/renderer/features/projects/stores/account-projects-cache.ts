@@ -17,7 +17,8 @@ export function readCachedAccountProjects(accountId: string): AccountProject[] {
     if (parsed && parsed.accountId !== accountId) localStorage.removeItem(CACHE_KEY);
     if (!parsed || parsed.accountId !== accountId || !Array.isArray(parsed.list)) return [];
     return parsed.list.filter(
-      (project): project is AccountProject => !!project && typeof project.chatId === 'string' && Array.isArray(project.bindings)
+      (project): project is AccountProject =>
+        !!project && typeof project.chatId === 'string' && typeof project.activeAt === 'string' && Array.isArray(project.bindings)
     );
   } catch {
     return [];
