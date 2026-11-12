@@ -7,6 +7,7 @@ import { ChatListPanel } from '../../../../apps/desktop/src/components/ChatListP
 import { oneListProjectSlotKey, publishSidebarChatView } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
 import { installShellSlots, readShellSlots } from '../../../../apps/desktop/src/lib/shellSlots'
 import { blockKey } from '../../../../apps/desktop/src/lib/sidebarJoinedGroups'
+import { forgetArchivedGroups, noteGroupArchived } from '../../../../apps/desktop/src/lib/archivedGroupsRead'
 import { installOwnedAgentEntry } from '../../../../apps/desktop/src/lib/ownedAgentConversation'
 import { publishProjectGroupChats } from '../../../../apps/desktop/src/session/renderer/features/projects/stores/project-group-chats-bridge'
 import { publishDirectoryDevices, removeDeviceSessions, updateDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
@@ -184,6 +185,24 @@ describe('#2548 an account project whose group is not in the chat list yet stand
     })
     expect(lines()).toEqual(['room', 'new-project', 'project', 'dm-human', 'dm-solo'])
     expect(harness.container.querySelector<HTMLElement>('[data-chat-row="new-project"]')!.dataset.join).toBe('last')
+  })
+
+  // The owner's recording of a dissolve (11-13): the chat list dropped the group, and the project's row stayed until the
+  // account list was read again. The chat list read the group archived (or this account archived it): no row at once.
+  it('a project group the chat list has read as archived leaves no project place behind, before the account list knows', async () => {
+    publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
+    runInAction(() => {
+      accountProjectsStore.list = [app]
+      accountProjectsStore.status = 'ready'
+    })
+    const dissolved = chats.filter((row) => row.id !== 'project')
+    try {
+      noteGroupArchived('project', true)
+      await renderWithAppProviders(harness, createNode(ChatListPanel, { placement: 'sidebar' }), { chat: { chats: dissolved, identitiesById }, contacts: {} })
+      expect(lines()).toEqual(['room', 'dm-human', 'dm-solo'])
+    } finally {
+      forgetArchivedGroups()
+    }
   })
 
   it('a project created a moment ago stands at the top; a dissolved one stands nowhere; switch off: no project places', async () => {

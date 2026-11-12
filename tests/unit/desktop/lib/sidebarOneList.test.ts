@@ -165,10 +165,15 @@ describe('an account project without a conversation row stands among the convers
   const chats = [chat({ id: 'chat-listed', kind: 'group' }), chat({ id: 'chat-reserved', kind: 'dm' }), chat({ id: 'room', kind: 'group' })]
 
   it('the account projects (not archived) whose group is not a group of the chat list, with the time its row will have', () => {
-    expect(oneListProjectLines(projects, chats)).toEqual([
+    expect(oneListProjectLines(projects, chats, new Set())).toEqual([
       { projectChatId: 'chat-reserved', activeAt: at(3) },
       { projectChatId: 'chat-new', activeAt: at(8) },
     ])
+  })
+
+  // Dissolving: the chat list reads the group archived and drops it before the account list reads the dissolve.
+  it('a project whose group the chat list has read as archived is no row, whatever the account list still says', () => {
+    expect(oneListProjectLines(projects, chats, new Set(['chat-new']))).toEqual([{ projectChatId: 'chat-reserved', activeAt: at(3) }])
   })
 
   const rows = [{ id: 'dm', at: 9 }, { id: 'room', at: 5 }, { id: 'old', at: 1 }]

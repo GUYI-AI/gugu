@@ -10,6 +10,7 @@ import { deviceSessionsOf, useDirectoryDevices, useLiveDeviceSessions, type Devi
 import type { SidebarPinnedAgent } from './sidebarChatsBridge'
 import type { SampleProjectContent } from '@/session/renderer/features/sample-project/content/types'
 import { markdownPlainText } from './markdownPlainText'
+import { readArchivedGroups, subscribeArchivedGroups } from './archivedGroupsRead'
 
 /** Where my agents live. */
 export type AgentHomes = {
@@ -175,14 +176,17 @@ export const isOneListProjectLine = (row: object): row is OneListProjectLine => 
  * The account projects (archived ones are not rows) whose group is not in the chat list (`chats`, the list's whole
  * chat list: a project group the list holds but does not show is that conversation's business, as before). A local
  * project the account list does not hold is no project here (its sessions are tasks until the list holds it).
+ * `archivedGroups` = the groups the chat list has read as archived (lib/archivedGroupsRead): a dissolved project leaves
+ * the chat list before the account list reads the dissolve, and is no row in between (nor if that read fails).
  */
 export function oneListProjectLines(
   projects: readonly Pick<AccountProject, 'chatId' | 'archived' | 'activeAt'>[],
   chats: readonly Pick<ChatItem, 'id' | 'kind'>[],
+  archivedGroups: ReadonlySet<string>,
 ): OneListProjectLine[] {
   const groups = new Set(chats.flatMap((chat) => (chat.kind === 'group' ? [chat.id] : [])))
   return projects
-    .filter((project) => !project.archived && !groups.has(project.chatId))
+    .filter((project) => !project.archived && !archivedGroups.has(project.chatId) && !groups.has(project.chatId))
     .map((project) => ({ projectChatId: project.chatId, activeAt: project.activeAt }))
 }
 
@@ -212,7 +216,11 @@ const NO_PROJECT_LINES: readonly OneListProjectLine[] = []
 /** The one list's project lines for the chat list (none while the one list is off). */
 export function useOneListProjectLines(enabled: boolean, chats: readonly ChatItem[]): readonly OneListProjectLine[] {
   const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
-  return useMemo(() => (enabled ? oneListProjectLines(accountList, chats) : NO_PROJECT_LINES), [enabled, accountList, chats])
+  const archivedGroups = useSyncExternalStore(subscribeArchivedGroups, readArchivedGroups)
+  return useMemo(
+    () => (enabled ? oneListProjectLines(accountList, chats, archivedGroups) : NO_PROJECT_LINES),
+    [enabled, accountList, chats, archivedGroups],
+  )
 }
 
 /**
