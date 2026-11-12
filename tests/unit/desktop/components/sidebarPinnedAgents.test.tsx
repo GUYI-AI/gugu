@@ -70,7 +70,7 @@ const identitiesById = {
   human: displayIdentity('human'),
   ...Object.fromEntries([...mine].map((id) => [id, displayIdentity(id, { type: 'agent', owner_user_id: 'me' })])),
 }
-// Pin order (the task page's: newest interaction first), not the DMs' activity; a-nodm has no DM chat.
+// Newest interaction first (the task page's order), not the DMs' activity; a-nodm has no DM chat.
 const pins: SidebarPinnedAgent[] = [
   { agentUserId: 'a-project', sessionId: 's-project', home: { kind: 'project', name: 'App', chatId: 'project' } },
   { agentUserId: 'a-nodm', sessionId: 's-nodm', home: { kind: 'group', name: 'Room', chatId: 'room' } },
@@ -85,7 +85,7 @@ const unpinItem = async (id: string) => {
 }
 
 describe('agents pinned to the one list', () => {
-  it('switch on: their DM rows come first in pin order, above everything else, and say where each lives', async () => {
+  it('switch on: their DM rows come first in the published order, above everything else, and say where each lives', async () => {
     publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
     publishSidebarPinnedAgents(pins)
     await render()

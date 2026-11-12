@@ -1,5 +1,5 @@
 // GUYI-AI/gugu#2548 固定到左侧栏 in the one list: a pinned agent keeps its own row although it lives elsewhere, and the
-// pinned agents' rows sit at the very top in pin order.
+// pinned agents' rows sit at the very top in the order the task page publishes them (newest interaction first).
 import { describe, expect, it } from 'vitest'
 import { agentHasOwnRow, oneListShows, sidebarPinnedRows, type AgentHomes } from '../../../../apps/desktop/src/lib/sidebarOneList'
 import { chat } from '../../../support/testHarness'
@@ -33,7 +33,7 @@ describe('the pinned rows at the top of the one list', () => {
   ]
   const pin = (agentUserId: string) => ({ agentUserId, sessionId: `s-${agentUserId}`, home: { kind: 'group' as const, name: 'Room' } })
 
-  it('are each pinned agent\'s DM row, in pin order, with the pin it stands for', () => {
+  it('are each pinned agent\'s DM row, in the order of the pins, with the pin it stands for', () => {
     const rows = sidebarPinnedRows(chats, [pin('a-project'), pin('a-room')], () => true)
     expect(rows.map(({ chat, pin }) => [chat.id, pin.sessionId])).toEqual([['dm-project', 's-a-project'], ['dm-room', 's-a-room']])
   })

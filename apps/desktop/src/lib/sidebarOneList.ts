@@ -109,8 +109,8 @@ export function oneListShows(
 }
 
 /**
- * The rows at the very top of the one list, above everything else: each pinned agent's DM row, in pin order, with the
- * pin it stands for. An agent with no DM chat yet has no row; nothing is drawn in its place. `shown` = the list's rule.
+ * The rows at the very top of the one list, above everything else: each pinned agent's DM row, in the order of `pins`
+ * (the task page's: newest interaction first, pinnedSidebarAgents), with the pin it stands for. An agent with no DM chat yet has no row; nothing is drawn in its place. `shown` = the list's rule.
  */
 export function sidebarPinnedRows<C extends Pick<ChatItem, 'kind' | 'peer_user_id'>, P extends Pick<SidebarPinnedAgent, 'agentUserId'>>(
   chats: readonly C[],

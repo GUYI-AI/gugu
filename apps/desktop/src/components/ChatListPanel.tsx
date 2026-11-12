@@ -675,7 +675,7 @@ export function ChatListPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chats, listQuery, selectedChatId, drafts, assistantShell, workrooms, projectGroupChats, shownAsLead, mobile, agentHomes])
   const isTopLevel = (c: ChatItem) => isTopLevelChatRow(c, topicNesting, isListed, matchesSearch)
-  // #2548 one list: the pinned agents' DM rows sit at the very top, in pin order, above the pinned conversations.
+  // #2548 one list: the pinned agents' DM rows sit at the very top, newest interaction first, above the pinned conversations.
   const sidebarPinned = agentHomes ? sidebarPinnedRows(chats, sidebarPins, isTopLevel) : []
   const pinOf = new Map(sidebarPinned.map(({ chat, pin }) => [chat.id, pin]))
   const pinnedChats = sidebarPinned.map(({ chat }) => chat).concat(chats.filter((c) => c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime))
