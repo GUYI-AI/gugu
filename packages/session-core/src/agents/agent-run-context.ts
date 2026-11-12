@@ -38,8 +38,10 @@ export const agentRunContextSchema = z.object({
    * 选中的是一把「API Key 连接」(#2507,Claude / Codex 以外、声明了 `apiKeyConnection` 的家)。
    * 有它时这一家的登录态 = 已登录(API Key)、付费方 = 这把 key / 它的地址,由宿主照它答,
    * ❌ 再去读 CLI 自己的文件 —— 那里没有这把 key,只会答「未登录」。`endpoint` 缺席 = 官方地址。
+   * `model` = 这次启动经进程环境点名的那个模型(key 走环境变量的家):这条进程起来就跑它,
+   * 启动时不必、也没法再用会话记录里的名字去设(这一家的 id 是自己的写法,qwen 是 `$runtime|openai|<名>(openai)`)。
    */
-  apiKeyConnection: z.object({ endpoint: z.string().optional() }).optional(),
+  apiKeyConnection: z.object({ endpoint: z.string().optional(), model: z.string().optional() }).optional(),
   /**
    * 底座 env:白名单透传 + 平台补偿(Windows 八个必备变量 / `SSH_AUTH_SOCK` 探测)
    * + **用户在 Agents 设置里填的 env**。

@@ -152,8 +152,8 @@ it('an unchanged official address is stored as no address and reads as official;
   expect(official.name).not.toContain('api.openai.com');
   await selectHarnessConnection('qwen', official.id);
   const run = await resolveHarnessConnection('qwen', { sessionId: 'qwen-session' });
-  // 付款方 / 用量照「没有地址」读:官方 API Key,❌「自定义服务」。
-  expect(run.apiKeyConnection).toEqual({});
+  // 付款方 / 用量照「没有地址」读:官方 API Key,❌「自定义服务」。标记里带着环境点名的那个模型(运行时据此不再设模型)。
+  expect(run.apiKeyConnection).toEqual({ model: 'q-2' });
   expect(apiKeyConnectionPlan(run.apiKeyConnection?.endpoint)).toEqual({ payer: 'api-key' });
   // 进程照样拿到官方地址(qwen 离了地址起不来),跑会话选的那个模型。
   expect(run.credentialEnv).toMatchObject({ OPENAI_API_KEY: KEY, OPENAI_BASE_URL: 'https://api.openai.com/v1', OPENAI_MODEL: 'q-2' });
@@ -163,7 +163,7 @@ it('an unchanged official address is stored as no address and reads as official;
   const relay = await createHarnessConnection({ providerId: 'qwen', kind: 'api-key', apiKey: KEY, endpoint: chatUrl, models: ['q-1'] });
   expect(relay.endpoint).toBe(chatUrl);
   await selectHarnessConnection('qwen', relay.id);
-  expect((await resolveHarnessConnection('qwen', { sessionId: 'qwen-session' })).apiKeyConnection).toEqual({ endpoint: chatUrl });
+  expect((await resolveHarnessConnection('qwen', { sessionId: 'qwen-session' })).apiKeyConnection).toEqual({ endpoint: chatUrl, model: 'q-1' });
 
   // Claude 同一条:官方地址不记,不给 ANTHROPIC_BASE_URL。
   const claude = await createHarnessConnection({ providerId: 'claude', kind: 'api-key', apiKey: 'sk-ant', endpoint: 'https://api.anthropic.com' });

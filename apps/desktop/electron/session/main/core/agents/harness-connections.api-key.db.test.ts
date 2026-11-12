@@ -109,7 +109,7 @@ it('keeps the key out of the metadata, starts sessions on the selected key, and 
       connectionId: connection.id,
       credentialEnv: { OPENAI_API_KEY: 'test-secret', OPENAI_BASE_URL: 'https://gateway.example/v1', OPENAI_MODEL: 'qwen3-coder-plus' },
       unsetEnv: ['QWEN_OAUTH', 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL', 'QWEN_MODEL'],
-      apiKeyConnection: { endpoint: 'https://gateway.example/v1' },
+      apiKeyConnection: { endpoint: 'https://gateway.example/v1', model: 'qwen3-coder-plus' },
     });
   }
   expect(await sessionHarnessConnectionId('qwen-session')).toBe(connection.id);

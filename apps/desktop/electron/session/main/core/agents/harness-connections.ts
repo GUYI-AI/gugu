@@ -500,7 +500,8 @@ async function resolveApiKeyConnection(
     credentialEnv: { ...launch.env },
     unsetEnv: [...launch.unsetEnv],
     ...(launch.args?.length ? { extraArgs: [...launch.args] } : {}),
-    apiKeyConnection: marker,
+    // 点名的模型随标记走:会话按它启动,运行时据此不再拿记录里的模型名去设(见 session-manager `recordedModelTarget`)。
+    apiKeyConnection: model ? { ...marker, model } : marker,
   };
 }
 
