@@ -154,7 +154,7 @@ function SingleConversationMessage(props: { data: ChatMessage; ctx: RenderCtx; v
       </Show>
       <Show when={subject() && props.data.conversationProcess}>{process =>
         <div class={conversationTime} style={{ width: `${head().processWidth}px`, height: `${processRowHeight(props.data.id, process(), head().processCtx)}px` }}>
-          <ConversationProcess measureCtx={() => head().processCtx} process={process()} anchorId={props.data.id} expanded={turnProcessExpanded(process().live, props.ctx.viewState.isCollapsed(process().id))} />
+          <ConversationProcess measureCtx={() => head().processCtx} process={process()} anchorId={props.data.id} expanded={turnProcessExpanded(process().live, props.ctx.viewState.isCollapsed(process().toggleId ?? process().id))} />
           <ProcessBackgroundPill ownerId={props.data.id} ctx={{ ...props.ctx, measureCtx: () => head().processCtx }} />
         </div>
       }</Show>

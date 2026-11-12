@@ -16,6 +16,12 @@ export type ConversationSegment = {
   idleMs: number;
   /** The idle stretch before a continued turn (#2587). Final as soon as the turn resumes, so it counts while live too. */
   resumedIdleMs: number;
+  /**
+   * A finished line a woken run turned live again opens and closes under its own key while that run goes (#2587):
+   * its own key reads inverted while live (`turnProcessExpanded`), so the line would flip at the wake and again at the
+   * end. Once the run is over the line is back under its id, open or closed as the reader left it.
+   */
+  toggleId?: string;
   fullReply?: true;
 };
 export type ConversationBlock = { kind: 'input'; item: ChatItem } | ConversationSegment;
@@ -31,7 +37,7 @@ export function continuesConversationSegment(item: ChatItem): boolean {
     || (item.kind === 'compaction' && item.status !== 'failed');
 }
 
-/** A turn joined onto the one before it; `resumedAfterIdle` holds the idle stretch keyed by the first joined item. */
+/** A turn joined onto the one before it; `resumedAfterIdle` holds the idle stretch (maybe 0) keyed by the first joined item. */
 export type ContinuedTurn = TranscriptTurn & { resumedAfterIdle?: ReadonlyMap<string, number> };
 
 /**
@@ -55,7 +61,7 @@ export function joinContinuedTurn(previous: ContinuedTurn, turn: TranscriptTurn)
   const first = turn.items[0];
   const idle = previous.endedAt !== undefined && turn.startedAt !== undefined ? Math.max(0, turn.startedAt - previous.endedAt) : 0;
   const resumedAfterIdle = new Map(previous.resumedAfterIdle);
-  if (first !== undefined && idle > 0) resumedAfterIdle.set(first.id, idle);
+  if (first !== undefined) resumedAfterIdle.set(first.id, idle);
   const terminals = previous.terminals || turn.terminals ? [...(previous.terminals ?? []), ...(turn.terminals ?? [])] : undefined;
   const { endedAt: _endedAt, outcome: _outcome, ...rest } = previous;
   return {
@@ -125,6 +131,8 @@ export function planConversationSegments(turn: TranscriptTurn, active: boolean):
   let previousAt: number | undefined;
   let pendingStop: { owner: ConversationSegment; items: ChatItem[] } | undefined;
   let resumedIdle = 0;
+  let resumedAt: string | undefined;
+  let resumed: { segment: ConversationSegment; at: string } | undefined;
   const open = (): ConversationSegment => {
     if (!segment) {
       segment = { kind: 'segment', id: boundary ? `${turnProcessId(turn.id)}@${boundary}` : turnProcessId(turn.id),
@@ -176,7 +184,8 @@ export function planConversationSegments(turn: TranscriptTurn, active: boolean):
       else pendingStop = { owner, items: [item] };
       continue;
     }
-    resumedIdle += (turn as ContinuedTurn).resumedAfterIdle?.get(item.id) ?? 0;
+    const resume = (turn as ContinuedTurn).resumedAfterIdle?.get(item.id);
+    if (resume !== undefined) { resumedIdle += resume; resumedAt = item.id; }
     const activity = item.kind === 'thinking' || conversationSpoken(item) || ('toolCallId' in item
       && item.kind !== 'subagent-done-tool-call' && item.kind !== 'background-command-done-tool-call');
     const boundaryItem = (item.kind === 'message' && item.role === 'user') || item.kind === 'context-reset'
@@ -204,6 +213,7 @@ export function planConversationSegments(turn: TranscriptTurn, active: boolean):
     const current = open();
     current.resumedIdleMs += resumedIdle;
     resumedIdle = 0;
+    if (resumedAt !== undefined) { resumed = { segment: current, at: resumedAt }; resumedAt = undefined; }
     if (item.kind === 'session-notice' && at !== undefined && previousAt !== undefined) current.idleMs += Math.max(0, at - previousAt);
     current.items.push(item);
     current.endedAt = 'completedAt' in item ? item.completedAt ?? at : at;
@@ -214,6 +224,9 @@ export function planConversationSegments(turn: TranscriptTurn, active: boolean):
   finishStop();
   if (segment) {
     segment.live = active;
+    // A wake held after a Stop hook so far rests in the line that hook belongs to.
+    if (resumedAt !== undefined) resumed = { segment, at: resumedAt };
+    if (active && resumed?.segment === segment) segment.toggleId = `${segment.id}~${resumed.at}`;
     // Message.at is the first streamed chunk; the turn's completion is the authentic final clock.
     if (!active && turn.endedAt !== undefined) segment.endedAt = turn.endedAt;
   } else if (active && pendingInput && blocks.at(-1)?.kind === 'input') {

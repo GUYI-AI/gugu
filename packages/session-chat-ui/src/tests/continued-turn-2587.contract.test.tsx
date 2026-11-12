@@ -73,6 +73,32 @@ describe('a turn woken by its own finished task continues the answered segment (
     expect(v.host.querySelector('[data-conversation-step="finished"]')).toBeNull();
   });
 
+  // The line's own key reads inverted while live (`turnProcessExpanded`): reused as is, an opened line would close at
+  // the wake and open again at the end (mac1 real window, 2026-11-13). While the woken run goes the line is open (the
+  // live default) and the reader can still close it; afterwards it is open or closed as the reader left it.
+  for (const opened of [false, true]) it(`an ${opened ? 'opened' : 'unopened'} line is open while the woken run goes, then ${opened ? 'open' : 'closed'} again`, async () => {
+    const v = mount();
+    const expanded = () => v.host.querySelector('[data-conversation-process]')?.getAttribute('aria-expanded');
+    await until('the answer is on screen', () => bodies(v.host).some(text => text.includes('Started it')));
+    if (opened) v.state.viewState.setCollapsed('answered:process', true);
+    await until('the line shows as the reader left it', () => expanded() === String(opened));
+    v.state.transcript.activeTurn.set(woken({ kind: 'agent' }, false));
+    await until('the woken words replace the earlier answer as the bubble', () => bodies(v.host).some(text => text.includes('The background run passed.')));
+    expect(expanded()).toBe('true');
+    v.host.querySelector<HTMLElement>('[data-conversation-process]')!.click();
+    await until('the reader closes the running line', () => expanded() === 'false');
+    v.host.querySelector<HTMLElement>('[data-conversation-process]')!.click();
+    await until('and opens it again', () => expanded() === 'true');
+
+    batch(() => {
+      v.state.transcript.history.append([woken({ kind: 'agent' }, true)]);
+      v.state.transcript.activeTurn.set(null);
+    });
+    await v.settle();
+    expect(heads(v.host)).toHaveLength(1);
+    expect(expanded()).toBe(String(opened));
+  });
+
   it('still opens a new segment for a turn a delivery started', async () => {
     const v = mount();
     await until('the answer is on screen', () => bodies(v.host).some(text => text.includes('Started it')));

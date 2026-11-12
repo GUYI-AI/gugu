@@ -47,7 +47,7 @@ export function ConversationProcess(props: {
   const collapsible = () => props.collapsible !== false && !props.process.empty;
   const layout = () => processButtonLayout(props.process, props.measureCtx());
   return <button type="button" class={conversationProcessButton} style={{ width: `${layout().width}px`, height: `${layout().height}px` }} data-conversation-process={props.process.id}
-    disabled={!collapsible()} data-collapse-id={collapsible() ? props.process.id : undefined} data-collapse-anchor={props.anchorId}
+    disabled={!collapsible()} data-collapse-id={collapsible() ? props.process.toggleId ?? props.process.id : undefined} data-collapse-anchor={props.anchorId}
     aria-expanded={collapsible() ? props.expanded : undefined} aria-label={label()} title={label()}>
     <Show when={!props.process.live} fallback={<><GridLoader /><ShimmerText active multiline style={{ display: 'inline-flex', 'flex-wrap': 'wrap', 'min-width': 0, 'line-height': '22px' }}>
       <span style={{ 'white-space': 'pre-wrap', 'overflow-wrap': 'anywhere', 'max-width': '100%' }}>{translate(props.process.starting ? `transcript.${props.process.starting}` : 'transcript.thinkingLive')}{summary() ? ' · ' : ''}</span>

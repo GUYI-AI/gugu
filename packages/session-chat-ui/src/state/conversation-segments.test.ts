@@ -308,8 +308,11 @@ describe('subagent / background command completions and compaction continue the 
     expect(projected.active?.id).toBe('p');
     const rows = flattenTier([projected.active!], context(true), segmenters);
     expect(heads(rows).map(row => row.itemId)).toEqual(['p:process:head']);
-    expect((heads(rows)[0]!.data as ChatMessage).conversationProcess).toMatchObject({ live: true, startedAt: 1000, idleMs: 56000 });
+    // Opened and closed under a key of its own while it runs again; back under its id once the run is over.
+    expect((heads(rows)[0]!.data as ChatMessage).conversationProcess).toMatchObject({ live: true, startedAt: 1000, idleMs: 56000, toggleId: 'p:process~n1' });
     expect(bodies(rows)).toEqual(['later']);
+    const settled = flattenTier([answered, woken()], context(false), segmenters);
+    expect((heads(settled)[0]!.data as ChatMessage).conversationProcess?.toggleId).toBeUndefined();
   });
 
   it('gives a whole run of continued turns back to the live tier, and nothing when the last turn did not end cleanly', () => {

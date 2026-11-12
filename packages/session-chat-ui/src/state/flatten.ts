@@ -483,13 +483,14 @@ export function flattenTier(
         };
         if (!output.reply && activityEvent && ops.length === 0) { emitArtifacts(); activityEvent = undefined; inlineCompletion = true; continue; }
         const idleMs = (block.live ? 0 : block.idleMs) + block.resumedIdleMs;
-        const process = { id: block.id, ...(block.live ? { live: true } : {}),
+        const process = { id: block.id, ...(block.live ? { live: true } : {}), ...(block.toggleId ? { toggleId: block.toggleId } : {}),
           startedAt: block.startedAt, endedAt: block.endedAt, ...(idleMs ? { idleMs } : {}), ...(block.live && ctx.pendingStarting?.() ? { starting: ctx.pendingStarting?.() } : {}), steps: output.steps.length,
           ...(ops.length ? {} : { empty: true }) };
-        const expanded = ctx.revealAllFolds || turnProcessExpanded(block.live, ctx.isTurnProcessExpanded?.(block.id) ?? false);
+        const toggle = block.toggleId ?? block.id;
+        const expanded = ctx.revealAllFolds || turnProcessExpanded(block.live, ctx.isTurnProcessExpanded?.(toggle) ?? false);
         const steps = () => {
           if (!expanded) return;
-          const folds = [{ id: block.id, stored: !block.live }];
+          const folds = [{ id: toggle, stored: !block.live }];
           const start = out.length;
           emitOps(ops, turn.id, folds);
           if (!ctx.revealAllFolds && out.length > start) {
