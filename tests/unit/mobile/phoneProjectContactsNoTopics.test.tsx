@@ -15,7 +15,12 @@ vi.mock('@/components/Avatar', () => ({ Avatar: () => null }))
 const followLink = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/guguLinks', () => ({ followLink }))
 vi.mock('@/store/auth', () => ({ useAuth: () => ({ user: { id: 'me' } }) }))
-vi.mock('@/store/chatContext', () => ({ useChatStore: () => ({ chats: [topic('t1'), topic('t2')] }) }))
+const chatStore = { chats: [topic('t1'), topic('t2')], identitiesById: {} }
+vi.mock('@/store/chatContext', () => ({
+  useChatStore: () => chatStore,
+  // The project's group avatar (#2600) reads its chat through a selector.
+  useChatStoreSelect: <T,>(select: (store: typeof chatStore) => T) => select(chatStore),
+}))
 vi.mock('@/store/contactsContext', () => ({
   useContactsStore: () => ({
     contacts: [{ id: 'agent-a', display_name: 'Coder', avatar: null, bio: null, type: 'agent', owner_user_id: 'me' }],
