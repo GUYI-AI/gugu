@@ -6,7 +6,7 @@ import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-s
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
 import { isAssistantAgent } from '@renderer/features/assistant/assistant-lineage';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
-import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { useLeftRailLayout, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import {
   isCurrentView,
   useNavigate,
@@ -105,6 +105,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   React.useEffect(() => {
     if (railed && notificationsOpen) setSidebarNotificationsOpen(false);
   }, [railed, notificationsOpen]);
+  // What the rows look like follows the open/close progress, not the open state: the state flips the moment collapsing
+  // starts (or only on release, for a drag), the progress is what is on screen.
+  const railLayout = useLeftRailLayout() && oneList;
 
   // 新建任务 always lands on the dedicated compose view (owner: 点「新建任务」直接进该界面;
   // 命名统一为「新建任务」, 不再出现「新建会话」).
@@ -152,7 +155,8 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       : currentView === 'screen' ? screenLayout.recentSession?.sessionId : undefined) ?? (currentView === 'chat'
       ? ((appState.navigation.viewParamsStore.chat as { chatId?: string } | undefined)?.chatId ?? null)
       : null);
-  const focusedChatId = innerSidebarChat.get()?.chatId ?? viewedChatId;
+  const innerChatId = innerSidebarChat.get()?.chatId ?? null;
+  const focusedChatId = innerChatId ?? viewedChatId;
   // 拼在一屏的几组:壳画的「对话」也把同一组的几行并在一处(同「项目」这边)。
   const joinedGroups = sidebarStore.joinedGroups;
   React.useEffect(
@@ -172,21 +176,22 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         'relative flex h-full flex-col bg-background-tertiary text-foreground-tertiary-muted transition-colors',
         (isLeftOpen || oneList) && 'border-r border-border',
         isDragOver && 'bg-background-2 ring-2 ring-inset ring-border-2',
-        // #2548 one list: a row's text (name, preview, time) and the 「对话」 header follow the open/close progress
-        // (--gg-sidebar-text, workspace-layout: text only in the second half). Its unread count does not fade: on the rail
-        // it sits on the avatar's top-right corner instead (the muted bell stays in the row). The rows narrow with the
-        // sidebar, so the selected background ends the size of the avatar's cell.
-        oneList && [
+        // #2548 one list: a row's text (name, preview, time, its unread count) and the 「对话」 header follow the open/close
+        // progress (--gg-sidebar-text, workspace-layout: text only in the second half). On the rail the unread count sits on
+        // the avatar's top-right corner instead (the muted bell stays out) and fades in near the end (--gg-sidebar-badge).
+        // The count changes place at SIDEBAR_RAIL_LAYOUT_BELOW, where both are invisible, so nothing jumps. The rows narrow
+        // with the sidebar, so the selected background ends the size of the avatar's cell.
+        oneList && '[&_[data-sidebar-chats-header]]:opacity-(--gg-sidebar-text)',
+        oneList && !railLayout && '[&_.gg-list-row-line>*]:opacity-(--gg-sidebar-text)',
+        railLayout && [
           '[&_.gg-list-row-line>:not(.gg-list-row-trailing)]:opacity-(--gg-sidebar-text)',
-          '[&_[data-sidebar-chats-header]]:opacity-(--gg-sidebar-text)',
-        ],
-        railed && [
           '[&_.gg-list-row-body]:pointer-events-none',
           '[&_.gg-list-row-trailing]:absolute [&_.gg-list-row-trailing]:top-1 [&_.gg-list-row-trailing]:left-7',
+          '[&_.gg-list-row-trailing]:opacity-(--gg-sidebar-badge)',
           '[&_.gg-list-row-trailing>:not(.gg-chip)]:hidden',
         ]
       )}
-      data-sidebar-rail={railed || undefined}
+      data-sidebar-rail={railLayout || undefined}
       onDragOver={onDragOver}
       onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}
@@ -202,7 +207,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
           </span>
         </div>
       )}
-      <SidebarSpace controls={oneList ? 1 : 2} className={oneList ? cn('opacity-(--gg-sidebar-text)', railed && 'pointer-events-none') : undefined}><SidebarSearchTrigger /></SidebarSpace>
+      <SidebarSpace controls={oneList ? 1 : 2} className={oneList ? cn('opacity-(--gg-sidebar-text)', railLayout && 'pointer-events-none') : undefined}><SidebarSearchTrigger /></SidebarSpace>
       <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col" data-notification-original-list="" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
           {oneList && <SidebarOneListTop collapsed={railed} onCreateAgent={handleNewSession} />}
@@ -337,7 +342,8 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
           </SidebarMenu>
         )}
       </SidebarContainer>
-      {oneList && <SidebarOneListFoot />}
+      {/* The foot's one-time bubble (C9) comes up when a group or project opens: the inner sidebar's chat says which. */}
+      {oneList && <SidebarOneListFoot openChatId={innerChatId} />}
     </div>
   );
 });

@@ -34,6 +34,12 @@ interface PanelResizeHandleProps {
   /** 松手。落在阈值以上时给出最终宽度,调用方负责持久化。 */
   onSizeCommit: (size: number) => void;
   onDraggingChange?: (dragging: boolean) => void;
+  /**
+   * #2548 a panel that collapses to a rail instead of away: no collapse threshold mid-drag. Every move hands over the raw
+   * size the pointer asks for (unclamped) and the caller makes the panel follow it; letting go hands over to the caller,
+   * which snaps. The keyboard steps go the same way. Given, onSize / onCollapse / onSizeCommit are not called.
+   */
+  follow?: { onMove: (rawSize: number) => void; onRelease: () => void };
   ariaLabel: string;
   className?: string;
 }
@@ -52,6 +58,7 @@ interface PanelResizeHandleProps {
  * 写法是 `group absolute … cursor-col-resize`,可见的线只在 hover 时才出现。
  *
  * 收起判据用 `PANEL_SNAP_RATIO`:拖到目标宽一半以下就收起,不必拖到 0。
+ * 收起成一列(#2548,`follow`)的面板不用这条:拖的时候整块跟手,松手才由调用方吸到近的那一态。
  */
 export function PanelResizeHandle({
   edge,
@@ -63,6 +70,7 @@ export function PanelResizeHandle({
   onCollapse,
   onSizeCommit,
   onDraggingChange,
+  follow,
   ariaLabel,
   className,
 }: PanelResizeHandleProps) {
@@ -92,6 +100,10 @@ export function PanelResizeHandle({
     dragRef.current = null;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     onDraggingChange?.(false);
+    if (follow) {
+      follow.onRelease();
+      return;
+    }
     const raw = drag.startSize + (event.clientX - drag.startX) * direction;
     if (raw >= minSize * PANEL_SNAP_RATIO) onSizeCommit(clampSize(raw));
   };
@@ -124,6 +136,10 @@ export function PanelResizeHandle({
       onPointerMove={(event) => {
         const drag = dragRef.current;
         if (!drag || drag.pointerId !== event.pointerId) return;
+        if (follow) {
+          follow.onMove(drag.startSize + (event.clientX - drag.startX) * direction);
+          return;
+        }
         applyDelta(event.clientX - drag.startX, drag.startSize);
       }}
       onPointerUp={endDrag}
@@ -132,6 +148,11 @@ export function PanelResizeHandle({
         if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
         event.preventDefault();
         const delta = event.key === 'ArrowRight' ? KEYBOARD_STEP_PX : -KEYBOARD_STEP_PX;
+        if (follow) {
+          follow.onMove(getSize() + delta * direction);
+          follow.onRelease();
+          return;
+        }
         const next = applyDelta(delta, getSize());
         if (next != null) onSizeCommit(next);
       }}
