@@ -119,7 +119,7 @@ describe('creation keeps its navigation and draft ownership', () => {
     const onCreated = vi.fn()
     store.devices = [mac, gpu]
     // The project list is the account project list (accountProjectsStore); its folder path is gpu's published record.
-    runInAction(() => { accountProjectsStore.list = [{ chatId: 'chat-work', name: 'work', archived: false, bindings: [{ deviceId: 'gpu', localProjectId: 'gpu-work' }] }] })
+    runInAction(() => { accountProjectsStore.list = [{ chatId: 'chat-work', name: 'work', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'gpu', localProjectId: 'gpu-work' }] }] })
     await harness.render(createNode(CreateSessionPage, { onBack: vi.fn(), onCreated }))
     const row = (dimension: string) => harness.container.querySelector<HTMLButtonElement>(`[data-testid="agent-watch-create-target-row"][data-dimension="${dimension}"]`)!
     expect(row('project').textContent).toContain('不选项目')

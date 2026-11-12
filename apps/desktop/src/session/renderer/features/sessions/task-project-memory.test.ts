@@ -14,8 +14,8 @@ vi.mock('@/platform', () => ({ platform: {} }));
 
 // Audit C1: picking a project that lives on another machine in a chat's task composer was remembered as
 // "this computer + that machine's local id": it never read back, and it overwrote this computer's recent project.
-const paper: AccountProject = { chatId: 'chat-paper', name: 'Paper', archived: false, bindings: [{ deviceId: 'gpu', localProjectId: 'gpu-paper' }] };
-const notes: AccountProject = { chatId: 'chat-notes', name: 'Notes', archived: false, bindings: [{ deviceId: 'this-computer', localProjectId: 'local-notes' }] };
+const paper: AccountProject = { chatId: 'chat-paper', name: 'Paper', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'gpu', localProjectId: 'gpu-paper' }] };
+const notes: AccountProject = { chatId: 'chat-notes', name: 'Notes', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'this-computer', localProjectId: 'local-notes' }] };
 
 function store(): AccountProjectsStore {
   const accounts = new AccountProjectsStore();

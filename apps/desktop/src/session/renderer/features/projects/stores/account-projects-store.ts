@@ -1,7 +1,7 @@
 import { computed, makeObservable, observable, reaction, runInAction } from 'mobx';
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects';
 import { platform } from '@/platform';
-import { readDeviceRevision, type AccountRevisionEvent, type AccountRevisionListener } from '@/lib/accountRevisionCoordinator';
+import { readDeviceRevision, readRevisionResourceKey, type AccountRevisionEvent, type AccountRevisionListener } from '@/lib/accountRevisionCoordinator';
 import { deviceProjectsPublishedChannel } from '@shared/core/projects/projectEvents';
 import { events } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
@@ -72,7 +72,7 @@ export class AccountProjectsStore {
    * 认出登录的是谁:换了账号先清掉上一个的,铺上这个账号上次那份,读一次;之后这几样变了再读 ——
    * 某台机器的项目记上账号 / 某台被移除(device_changed,别的电脑、手机记的经这里到);这台电脑的项目记上账号
    * (建了项目、绑了群之后那次发布,断网时是重连后那次:它们在那一刻才进 list_my_projects);这台电脑在账号里认出了自己
-   * (之前那次读分不出哪些绑定是这台的)。
+   * (之前那次读分不出哪些绑定是这台的);一个项目的群改了名或状态(chat_meta_changed:解散 = 归档、改名,项目的名字与状态就是群的)。
    * 返回的 stop 只退订、不清:界面不活跃、令牌刷新时登录的人会短暂读成空,❌ 当成登出;登出走 {@link clear}。
    */
   start(accountId: string, subscribeRevision: SubscribeAccountRevision): () => void {
@@ -84,6 +84,14 @@ export class AccountProjectsStore {
         if (operations.some((operation) => {
           const key = readDeviceRevision(operation.payload);
           return key.projects || key.removed;
+        })) void this.refresh();
+      }),
+      // 带 entity_id = 群这一行改了(chats_meta_broadcast:status / name / group_prompt / default_agent_type,载荷分不出是哪列);
+      // 只有 chat_id = 这个账号给群起的私人备注(contact_overrides),list_my_projects 用群自己的名字,与它无关。
+      subscribeRevision('chat_meta_changed', (operations) => {
+        if (operations.some((operation) => {
+          const key = readRevisionResourceKey(operation.payload, 'chat_meta_changed');
+          return key.entityId !== null && this.project(key.chatId);
         })) void this.refresh();
       }),
       events.on(deviceProjectsPublishedChannel, () => void this.refresh()),

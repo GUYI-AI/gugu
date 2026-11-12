@@ -45,8 +45,8 @@ describe('project group visibility across Projects and Chats', () => {
     ]);
     const groups = new ProjectGroupsStore();
     const sidebar = sidebarWith(projects as never, [
-      { chatId: 'visible-group', name: 'visible', archived: false, bindings: [local('visible-project')] },
-      { chatId: 'hidden-group', name: 'hidden', archived: false, bindings: [local('hidden-project')] },
+      { chatId: 'visible-group', name: 'visible', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [local('visible-project')] },
+      { chatId: 'hidden-group', name: 'hidden', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [local('hidden-project')] },
     ]);
     sidebar.machines = { machineOf: () => null, label: () => null, homeDir: () => null };
     groups.start(() => [], () => [], () => sidebar.sidebarProjects.map(({ id }) => id));
@@ -80,7 +80,7 @@ describe('project group visibility across Projects and Chats', () => {
     ]);
     const groups = new ProjectGroupsStore();
     const sidebar = sidebarWith(projects as never, [{
-      chatId: 'shared-group', name: 'shared', archived: false,
+      chatId: 'shared-group', name: 'shared', archived: false, activeAt: '2026-01-01T00:00:00.000Z',
       bindings: [local('local-project'), { deviceId: 'other-device', localProjectId: 'remote-project' }, local('hidden-project')],
     }]);
     sidebar.machines = {

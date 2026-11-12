@@ -346,6 +346,17 @@ export function forgetProjectOnScreen(projectId: string): void {
   followFocus();
 }
 
+/**
+ * #2548 这个项目的群解散了(读成归档):项目不在了,它那块收掉(同上);屏上没有别的可跟、还正看着它,就回首页(同项目行菜单「移除项目」),
+ * ❌ 留在一块空白上 —— 这一块的第一枚页签就是那个群,群已删掉。本地项目照旧在项目表里(解散只动账号上的项目群),项目页的守卫拦不到。
+ */
+export function leaveDissolvedProject(projectId: string): void {
+  forgetProjectOnScreen(projectId);
+  const navigation = appState.navigation;
+  const current = navigation.viewParamsStore.project as { projectId?: string } | undefined;
+  if (navigation.currentViewId === 'project' && !!current?.projectId && sidebarStore.rowProjectIdOf(current.projectId) === projectId) navigation.navigate('home');
+}
+
 /** 这个账号没有(或删了)示例项目:屏上那块收掉;屏上空了就摆回最近看过的会话。 */
 export function forgetSampleProjectOnScreen(): void {
   screenLayout.forgetContent({ kind: 'sample-project' });

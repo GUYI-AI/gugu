@@ -6,16 +6,16 @@ import {
   agentTaskHomes,
   accountProjectReading,
   oneListAgentRows,
+  oneListProjectLines,
   oneListShows,
   oneListTail,
-  projectsWithoutGroupRow,
+  placeProjectLines,
   sampleProjectLastLine,
   type AgentHomes,
 } from '../../../../apps/desktop/src/lib/sidebarOneList'
 import { zhCNSampleProject } from '../../../../apps/desktop/src/session/renderer/features/sample-project/content/zh-CN'
 import { enUSSampleProject } from '../../../../apps/desktop/src/session/renderer/features/sample-project/content/en-US'
 import type { SampleProjectContent } from '../../../../apps/desktop/src/session/renderer/features/sample-project/content/types'
-import { sidebarChatSignals } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
 import { chat } from '../../../support/testHarness'
 
 const project = (id: string, kind?: 'workspace'): SessionpageProjectSummary => ({ id, name: id, path: `/${id}`, ...(kind ? { kind } : {}) })
@@ -189,41 +189,65 @@ describe('#2574 the agent rows the list draws are what the task page opens an ag
   })
 })
 
-describe('account projects without a conversation row keep their project row', () => {
-  const projects = [{ id: 'listed', chatId: 'chat-listed' }, { id: 'reserved', chatId: 'chat-reserved' }, { id: 'chat-folderless', chatId: 'chat-folderless' }]
+describe('an account project without a conversation row stands among the conversations at its time', () => {
+  const at = (minute: number) => `2026-11-13T00:${String(minute).padStart(2, '0')}:00.000Z`
+  const projects = [
+    { chatId: 'chat-listed', archived: false, activeAt: at(9) },
+    { chatId: 'chat-reserved', archived: false, activeAt: at(3) },
+    { chatId: 'chat-new', archived: false, activeAt: at(8) },
+    { chatId: 'chat-dissolved', archived: true, activeAt: at(7) },
+  ]
+  const chats = [chat({ id: 'chat-listed', kind: 'group' }), chat({ id: 'chat-reserved', kind: 'dm' }), chat({ id: 'room', kind: 'group' })]
 
-  it('lists the account projects whose group is not in the chat list, in the given order', () => {
-    expect(projectsWithoutGroupRow(projects, new Set(['chat-listed']))).toEqual(['reserved', 'chat-folderless'])
-  })
-
-  it('says nothing while the chat list has not loaded', () => {
-    expect(projectsWithoutGroupRow(projects, null)).toEqual([])
-  })
-})
-
-describe('the chat list tells the sidebar which groups it has', () => {
-  const chats = [chat({ id: 'room', kind: 'group' }), chat({ id: 'project', kind: 'group' }), chat({ id: 'topic', kind: 'topic', source_chat_id: 'room' }), chat({ id: 'dm' })]
-
-  it('names every group once the list has loaded', () => {
-    expect([...(sidebarChatSignals(chats, new Set(['project'])).listedGroups ?? [])].sort()).toEqual(['project', 'room'])
-  })
-
-  it('names none (null) while it is loading', () => {
-    expect(sidebarChatSignals(chats, new Set(['project']), null, false).listedGroups).toBeNull()
-  })
-})
-
-describe('rows that are not a conversation yet come after every conversation row', () => {
-  it('projects without a group chat first (in the sidebar\'s project order), then tasks with no agent identity, the sample last', () => {
-    expect(oneListTail(['p2', 'p1'], [{ projectId: 'w', sessionId: 's' }], true)).toEqual([
-      { kind: 'project', projectId: 'p2' }, { kind: 'project', projectId: 'p1' }, { kind: 'task', projectId: 'w', sessionId: 's' }, { kind: 'sample' },
+  it('the account projects (not archived) whose group is not a group of the chat list, with the time its row will have', () => {
+    expect(oneListProjectLines(projects, chats, new Set())).toEqual([
+      { projectChatId: 'chat-reserved', activeAt: at(3) },
+      { projectChatId: 'chat-new', activeAt: at(8) },
     ])
   })
 
-  it('has no time to sort by: whatever the sample says, it is not placed among the conversations', () => {
-    expect(oneListTail([], [], true)).toEqual([{ kind: 'sample' }])
-    expect(oneListTail([], [], false)).toEqual([])
-    expect(oneListTail(['p'], [], false)).toEqual([{ kind: 'project', projectId: 'p' }])
+  // Dissolving: the chat list reads the group archived and drops it before the account list reads the dissolve.
+  it('a project whose group the chat list has read as archived is no row, whatever the account list still says', () => {
+    expect(oneListProjectLines(projects, chats, new Set(['chat-new']))).toEqual([{ projectChatId: 'chat-reserved', activeAt: at(3) }])
+  })
+
+  const rows = [{ id: 'dm', at: 9 }, { id: 'room', at: 5 }, { id: 'old', at: 1 }]
+  const activityOf = (row: { at: number }) => Date.parse(at(row.at))
+  const order = (placed: readonly object[]) => placed.map((row) => ('projectChatId' in row ? row.projectChatId : (row as { id: string }).id))
+
+  it('goes before the first conversation that is older, newest first; on an equal time after the conversation', () => {
+    expect(order(placeProjectLines(rows, activityOf, [{ projectChatId: 'p3', activeAt: at(3) }, { projectChatId: 'p8', activeAt: at(8) }])))
+      .toEqual(['dm', 'p8', 'room', 'p3', 'old'])
+    expect(order(placeProjectLines(rows, activityOf, [{ projectChatId: 'p5', activeAt: at(5) }]))).toEqual(['dm', 'room', 'p5', 'old'])
+    expect(order(placeProjectLines(rows, activityOf, [{ projectChatId: 'p0', activeAt: at(0) }]))).toEqual(['dm', 'room', 'old', 'p0'])
+    expect(order(placeProjectLines([], activityOf, [{ projectChatId: 'p0', activeAt: at(0) }]))).toEqual(['p0'])
+  })
+
+  // A list the previous client cached has no time for its projects: none is made up, they wait after every row.
+  it('a project whose time is not known yet goes after every row and every timed project, in the account list\'s order', () => {
+    const lines = [{ projectChatId: 'unknown-b', activeAt: null }, { projectChatId: 'p8', activeAt: at(8) }, { projectChatId: 'unknown-a', activeAt: null }, { projectChatId: 'p0', activeAt: at(0) }]
+    expect(order(placeProjectLines(rows, activityOf, lines))).toEqual(['dm', 'p8', 'room', 'old', 'p0', 'unknown-b', 'unknown-a'])
+  })
+
+  // The bug (owner's recording, 11-13): a new project's row was drawn after every conversation, then jumped to the top
+  // when its group reached the chat list. Its group's row sorts by the same time, so it takes the same place.
+  it('a new project stands where its group\'s conversation row lands when the chat list gets it', () => {
+    const created = { id: 'chat-new', at: 10 }
+    const before = order(placeProjectLines(rows, activityOf, [{ projectChatId: 'chat-new', activeAt: at(created.at) }]))
+    const after = order([created, ...rows].sort((a, b) => activityOf(b) - activityOf(a)))
+    expect(before).toEqual(['chat-new', 'dm', 'room', 'old'])
+    expect(after).toEqual(before)
+  })
+})
+
+describe('rows that never stand among the conversations come after every conversation row', () => {
+  it('tasks with no agent identity first, the sample last', () => {
+    expect(oneListTail([{ projectId: 'w', sessionId: 's' }], true)).toEqual([{ kind: 'task', projectId: 'w', sessionId: 's' }, { kind: 'sample' }])
+  })
+
+  it('whatever the sample says, it is not placed among the conversations', () => {
+    expect(oneListTail([], true)).toEqual([{ kind: 'sample' }])
+    expect(oneListTail([], false)).toEqual([])
   })
 })
 

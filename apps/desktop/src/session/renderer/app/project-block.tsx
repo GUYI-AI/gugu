@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { ProjectMainPanel } from '@renderer/features/projects/components/main-panel/main-panel';
 import { ProjectMenuItems, ProjectTabMenu, projectHasMenu } from '@renderer/features/projects/components/project-menu';
 import { getProjectStore, projectDisplayName } from '@renderer/features/projects/stores/project-selectors';
@@ -22,7 +22,9 @@ import { ChatPanes, ChatTabChip } from '@renderer/features/chats/chat-tabs/chat-
 import { rpcOn } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { log } from '@renderer/utils/logger';
+import { readArchivedGroups, subscribeArchivedGroups } from '@/lib/archivedGroupsRead';
 import { screenLayout } from './screen-layout';
+import { leaveDissolvedProject } from './screen-layout-actions';
 
 /**
  * 一个项目占一块(gugu-dev#181「块与页签」):顶上一条页签条(和会话块同一套),第一枚是项目群,不能关;
@@ -45,8 +47,15 @@ export const ProjectBlock = observer(function ProjectBlock({
   const corners = screenLayout.corners(blockId);
   const focused = screenLayout.focusedBlockId === blockId;
   const label = projectDisplayName(getProjectStore(projectId)) ?? translate('projects.fallbackName');
-  const chatId = accountProjectsStore.projectOfLocal(projectId)?.chatId;
+  const account = accountProjectsStore.projectOfLocal(projectId);
+  const chatId = account?.chatId;
   const verb = useComposerVerb(chatId);
+  // #2548 这个项目的群解散了(这台解散它那一下答了、聊天列表读到它归档,或账号上那份读成归档):项目不在了,这一块收掉、正看着就回首页。
+  const archivedGroups = useSyncExternalStore(subscribeArchivedGroups, readArchivedGroups);
+  const dissolved = !!account && (account.archived || archivedGroups.has(account.chatId));
+  useEffect(() => {
+    if (dissolved) leaveDissolvedProject(projectId);
+  }, [dissolved, projectId]);
   // 项目就是群(gugu-dev#181):项目一摆上屏,它的群就该在 —— 新建的项目一进来就建好(只有自己一个人),
   // 老项目没有群的也在这时补上。幂等;建好了由绑定变更事件刷新各处。
   useEffect(() => {

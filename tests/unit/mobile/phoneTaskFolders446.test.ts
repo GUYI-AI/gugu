@@ -17,7 +17,7 @@ const device = (id: string, online: boolean, projects: DeviceProject[], hostKind
   capabilities: { host_kind: hostKind } as Device['capabilities'], projects, ...extra,
 })
 const g1 = (bindings: Array<[string, string]>): AccountProject => ({
-  chatId: 'g1', name: '登录改版', archived: false, bindings: bindings.map(([deviceId, localProjectId]) => ({ deviceId, localProjectId })),
+  chatId: 'g1', name: '登录改版', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: bindings.map(([deviceId, localProjectId]) => ({ deviceId, localProjectId })),
 })
 // The shared naming function (useMachineLabel): the assistant host says the assistant's name, others their label.
 const machines = (homeId: string | null = null) => ({

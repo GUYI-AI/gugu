@@ -22,7 +22,7 @@ beforeEach(() => {
   runInAction(() => {
     accountProjectsStore.localDeviceId = 'this-computer';
     accountProjectsStore.list = [{
-      chatId: 'shared-project-group', name: 'shared', archived: false,
+      chatId: 'shared-project-group', name: 'shared', archived: false, activeAt: '2026-01-01T00:00:00.000Z',
       bindings: [first.projectId, visible.projectId].map((localProjectId) => ({ deviceId: 'this-computer', localProjectId })),
     }];
   });
