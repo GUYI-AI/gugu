@@ -49,7 +49,7 @@ function canExpand(item: ConversationStepData, ctx: MeasureCtx): boolean {
   return conversationTextOverflow(text, ctx, width, 12);
 }
 function pictureStrip(item: ConversationStepData, ctx: MeasureCtx) {
-  return toolThumbsFor(item.pictures, ctx.width - STEP_STRIP_INSET);
+  return toolThumbsFor(item.pictures, ctx, ctx.width - STEP_STRIP_INSET);
 }
 
 /** Prototype toolRow(): an action stays whole; only clipped details have a disclosure. */

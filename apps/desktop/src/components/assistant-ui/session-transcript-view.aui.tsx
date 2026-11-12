@@ -78,6 +78,10 @@ function SessionTranscriptContent({
 }): ReactElement | null {
   const defaultLayout = useSessionChatLayout()
   const mobileShell = useMobileShell()
+  // On the phone a tool call's pictures are not drawn or fetched (#2594); the desktop keeps them, however narrow.
+  // Gated on the shell, not on `mobile`: desktop windows (the assistant's task window, a peek) draw this same page.
+  const baseLayout = layout ?? defaultLayout
+  const shownLayout = useMemo(() => mobileShell ? { ...baseLayout, hideToolPictures: true } : baseLayout, [baseLayout, mobileShell])
   const [model, setModel] = useState<Model | null>(null)
   const written = useRef<readonly TranscriptTurn[]>([])
   const viewCommands = useMemo(() => ({ ...commands, sourceWindow }), [commands, sourceWindow])
@@ -142,7 +146,7 @@ function SessionTranscriptContent({
       onReady={onReady}
       composer="none"
       stickToBottom
-      layout={layout ?? defaultLayout}
+      layout={shownLayout}
       onReachStart={onReachStart}
       contentOverlay={contentOverlay}
       className={[mobile ? 'gg-session-transcript gg-session-transcript--mobile' : 'gg-session-transcript', className].filter(Boolean).join(' ')}

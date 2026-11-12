@@ -36,7 +36,7 @@ function pictureStrip(data: ToolRunItem, ctx: import('@session-chat/core/define'
   if (!data.pictureStep) return null;
   const inset = ctx.theme.layout.agentConversation ? STEP_STRIP_INSET - ROW_INSET_X : 0;
   const pictures = toolPictures(data.pictureStep);
-  const strip = toolThumbsFor(pictures, ctx.width - inset);
+  const strip = toolThumbsFor(pictures, ctx, ctx.width - inset);
   return strip && { strip, inset, item: { id: data.pictureStep.id, ...pictures } };
 }
 
