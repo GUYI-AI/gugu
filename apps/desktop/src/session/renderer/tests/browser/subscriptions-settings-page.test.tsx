@@ -560,9 +560,13 @@ it('adds a third-party API and explicitly switches the connection without openin
   (host.querySelector('input[name="apiKey"]') as HTMLInputElement).value = 'test-api-key';
   (host.querySelector('input[name="endpoint"]') as HTMLInputElement).value = 'https://gateway.example/v1';
   (host.querySelector('.subscription-connection-form') as HTMLFormElement).requestSubmit();
-  await until('saved connection appears', () => layer.querySelector('[data-testid="connection-api-1"]') !== null);
+  await until('the form folds back', () => host.querySelector('.subscription-connection-form') === null);
   expect(control.created).toMatchObject({ providerId: 'claude', kind: 'api-key', apiKey: 'test-api-key', endpoint: 'https://gateway.example/v1' });
   expect(control.selected).toBe('');
+  // 已有当前连接:❌ 自己把列表弹开;新的一条在列表里,点开才看得到,切换要人自己选。
+  expect(layer.querySelector('[data-testid="connection-api-1"]')).toBeNull();
+  await openSwitch('claude');
+  await until('saved connection appears', () => layer.querySelector('[data-testid="connection-api-1"]') !== null);
   await until('connection can be selected', () => layer.querySelector('[data-testid="connection-use-api-1"]')?.hasAttribute('data-disabled'), disabled => disabled === false);
   await userEvent.click(page.getByTestId('connection-use-api-1'));
   await until('the selected connection is acknowledged', () => control.selected === 'api-1');

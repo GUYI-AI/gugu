@@ -586,6 +586,13 @@ it('adding a key while another key is current keeps the current one', async () =
   expect(control.selected).toBe('')
   expect(control.connections.find((c) => c.current)?.id).toBe('key')
   expect(detail.getByRole('combobox', { name: 'Current connection', exact: true }).element().textContent).toContain('Saved key')
+  // 就地表单收起就完:❌ 自己把「当前连接」的列表弹开(mac1:加第二、三把时它弹出来、伸出弹窗右边)。
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  expect(detail.getByRole('combobox', { name: 'Current connection', exact: true }).element().getAttribute('aria-expanded')).toBe('false')
+  expect(document.querySelector('[data-testid="connection-api"]')).toBeNull()
+  // 新的那一条在列表里,点开才看得到。
+  await userEvent.click(detail.getByRole('combobox', { name: 'Current connection', exact: true }))
+  await until('the new key is listed', () => !!document.querySelector('[data-testid="connection-api"]'))
 })
 
 // 从「没有」加第一把时有会话在忙:同一道护栏 —— 连接加上了、没切,给「关掉并切换」;点了才成为当前连接。

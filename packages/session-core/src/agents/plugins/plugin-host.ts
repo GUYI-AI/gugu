@@ -731,6 +731,9 @@ export class AgentPluginHost {
       // 仍然叠在最上面,顺序没变。
       ...(ctx.capabilitySpawnEnv ? { capabilityEnv: ctx.capabilitySpawnEnv } : {}),
       ...(ctx.capabilitySpawnArgs ? { capabilityArgs: ctx.capabilitySpawnArgs } : {}),
+      // #2507 选中连接的启动参数:终端腿并在 extraArgs 里,这条腿从前一个都没递 —— Codex 的 API Key 连接
+      // 于是只剩 OPENAI_API_KEY,codex 内置的 openai provider 不读它,每一轮都是「Missing bearer」。
+      ...(ctx.runContext.connectionArgs?.length ? { connectionArgs: ctx.runContext.connectionArgs } : {}),
       ...(ctx.runContext.acpAdapterEntry ? { adapterEntry: ctx.runContext.acpAdapterEntry } : {}),
     });
     return ok({

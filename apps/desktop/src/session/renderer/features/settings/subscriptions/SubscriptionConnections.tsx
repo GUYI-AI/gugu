@@ -327,7 +327,9 @@ export function SubscriptionConnections({
     // 账号连接要登上才能用:登上那一刻再切;API Key 存好就能用,当场切。
     if (connection.kind === 'account') signIn(connection.id, true, nothingCurrent)
     else if (nothingCurrent) adopt(connection.id)
-    else {
+    // 已有当前连接:就地表单(订阅页那一行、资源库详情)收起就完,新的一条躺在列表里,❌ 自己把选择框弹开。
+    // 面板(新建任务、会话里打开)的表单是从菜单里点出来的弹窗:存好回到那份菜单,新的一条在里面可选。
+    else if (!settingsRows) {
       reopenedAfterSave.current = true
       setOpen(true)
     }

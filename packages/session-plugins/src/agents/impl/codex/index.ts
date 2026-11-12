@@ -372,7 +372,9 @@ export const provider = registerPluginBehavior(plugin, {
           // #6264 工作目录的信任按次给(见 codexProjectTrustArgs):聊天会话与模型目录探针都走这里,
           // ❌ 让 codex 把「信任这个目录」写进用户自己的 config.toml。
           ...codexProjectTrustArgs(ctx.cwd),
-          ...(platform ? codexAppServerPlatformArgs(platform) : []),
+          // 平台模型:咕咕的 provider。否则选中的连接要的 provider(#2507 API Key 连接:`gugu_connection`,
+          // key 由 env_key 指的 OPENAI_API_KEY 带)—— 平台恒赢,两份 ❌ 同时上(后一份 `-c` 会盖掉前一份)。
+          ...(platform ? codexAppServerPlatformArgs(platform) : (ctx.connectionArgs ?? [])),
           ...(ctx.capabilityArgs ?? []),
         ],
         env: {

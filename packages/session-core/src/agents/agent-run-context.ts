@@ -65,6 +65,12 @@ export const agentRunContextSchema = z.object({
   pinnedEnv: z.record(z.string(), z.string()),
   /** 用户在 Agents 设置里填的额外参数。此前只有终端腿吃得到。 */
   extraArgs: z.array(z.string()),
+  /**
+   * 选中连接自己要的启动参数(#2507:Codex API Key 连接的 `-c model_provider=…`)。终端腿已经把它们并在
+   * `extraArgs` 尾部;聊天(ACP)腿 ❌ 吃 `extraArgs`(那是用户写给 CLI 的参数,不一定是适配器认的),
+   * 只认这一格,由各家 `buildSpawn` 决定放在哪、与平台模型谁先(平台模型的 provider 恒赢)。
+   */
+  connectionArgs: z.array(z.string()).optional(),
   /** 跑这一家需要的运行时(`GUGU_NODE_BIN`);缺省表示用系统的。 */
   runtimeExecutable: z.string().optional(),
   /**

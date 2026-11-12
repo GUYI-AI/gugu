@@ -95,6 +95,8 @@ export async function resolveLocalAgentRunContext(
     // 同一格的另一半:用户填的额外参数,后面接所选连接要的参数(Codex API 连接的 `-c` provider)。
     // 判据见 `composeAgentSpawnEnv` 的叠放顺序说明。
     extraArgs: [...parseExtraArgs(settings?.extraArgs), ...(connection.extraArgs ?? [])],
+    // 聊天(ACP)腿不吃上面那一格,连接的那几个参数单独递过去(见 `AgentRunContext.connectionArgs`)。
+    ...(connection.extraArgs?.length ? { connectionArgs: [...connection.extraArgs] } : {}),
     configRootEnv: { ...configRootEnv, ...connection.configRootEnv },
   };
 }
