@@ -64,7 +64,7 @@ export interface OutboxWiring {
   commitAttachment(message: MessageItem, prepared: PreparedChatAttachment, commit: Omit<CommitArgs, 'staging_key'>, timing?: AttachmentSendTiming, dependsOn?: string): Promise<void>
   /** The row's bytes did not go up; this run still holds them, so its failed row offers `retry`. */
   failAttachmentUpload(messageId: string, error: unknown, reason: string, retry: () => void): Promise<void>
-  forward(source: MessageItem | Extract<AppForwardFilesDetail, { files: unknown }>['files'][number], targetChatId: string, senderUserId: string, opts?: { toUserIds?: string[] }): Promise<void>
+  forward(source: MessageItem | Extract<AppForwardFilesDetail, { files: unknown }>['files'][number], targetChatId: string, senderUserId: string, opts?: { toUserIds?: string[]; sendGroup?: { id: string; size: number } }): Promise<void>
   createTopic(input: CreateTopicInput, senderUserId: string): Promise<CreatedTopic | null>
   dispose(): void
   /** sendMessage 入队入口:建持久化记录并入队(乐观行由 chat.tsx 先行插入,二者同 id)。 */
@@ -167,7 +167,8 @@ export function outboxRecordForMessage(message: MessageItem, operation: OutboxOp
   return {
     clientMessageId: message.id, chatId: message.chat_id, senderUserId: message.sender_user_id,
     preview: { file_item_id: message.file_item_id, file_version: message.file_version, file_blob_id: message.file_blob_id,
-      file_metadata: message.file_metadata, image_dimensions: message.image_dimensions },
+      file_metadata: message.file_metadata, image_dimensions: message.image_dimensions,
+      send_group_id: message.send_group_id, send_group_size: message.send_group_size },
     operation, dependsOn: dependsOn ?? (operation.kind === 'forward' && operation.source.kind === 'message' ? operation.source.id : message.reply_to_message_id ?? undefined),
     payload: { content: message.content ?? '', contentType: message.content_type, toUserIds: message.to_user_ids ?? null,
       replyToMessageId: message.reply_to_message_id ?? null, threadRootId: message.thread_root_id ?? null,
@@ -358,6 +359,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
         raw = await forwardAttachment(await attachmentsEndpoint(), {
           source_message_id: operation.source.id, message_id: record.clientMessageId,
           chat_id: record.chatId, sender_user_id: record.senderUserId, to_user_ids: record.payload.toUserIds ?? [],
+          ...(record.preview?.send_group_id && record.preview.send_group_size ? { send_group_id: record.preview.send_group_id, send_group_size: record.preview.send_group_size } : {}),
         })
       }
       if (raw) {
@@ -432,7 +434,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
         id: crypto.randomUUID(), chat_id: targetChatId, sender_user_id: senderUserId,
         to_user_ids: opts?.toUserIds?.length ? opts.toUserIds : null, is_whisper: false, thread_root_id: null, reply_to_message_id: null, is_thread_root: false,
         seq: -1, created_at: new Date().toISOString(), reactions: [], is_mine: true, local_send_state: 'sending',
-        retracted_at: null, delivered: false, delivery_status: null }
+        retracted_at: null, delivered: false, delivery_status: null, send_group_id: opts?.sendGroup?.id ?? null, send_group_size: opts?.sendGroup?.size ?? null }
       const record = outboxRecordForMessage(message, { kind: 'forward', source: file
         ? { kind: 'file', id: source.itemId, version: source.document ? null : source.version }
         : { kind: 'message', id: source.id } })

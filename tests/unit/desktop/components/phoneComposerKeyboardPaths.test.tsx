@@ -98,8 +98,13 @@ describe('phone keyboard across the real composer hosts', () => {
         expect(document.activeElement).toBe(input())
         return
       }
-      expect(kind === 'task' ? created : delivered).toHaveBeenCalledTimes(1)
-      if (method === 'attachment' && kind !== 'agent' && kind !== 'task') expect(attached).toHaveBeenCalledTimes(1)
+      // #2581 Text sent with files rides on them: one send, no text message of its own.
+      const filesCarryText = method === 'attachment' && kind !== 'agent' && kind !== 'task'
+      expect(kind === 'task' ? created : filesCarryText ? attached : delivered).toHaveBeenCalledTimes(1)
+      if (filesCarryText) {
+        expect(delivered).not.toHaveBeenCalled()
+        expect(attached).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({ caption: 'keyboard check' }))
+      }
       expect(blurred).toHaveBeenCalledTimes(1)
       expect(document.activeElement).toBe(document.body)
       await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })

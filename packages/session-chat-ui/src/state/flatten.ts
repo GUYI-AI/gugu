@@ -3,7 +3,7 @@ import { conversationOutput } from './conversation-process';
 import { conversationMessages } from './conversation-messages';
 import { sentMessagesOf, withSentReplies, withSettledSentReplies } from './sent-replies';
 import { activityArtifacts } from './activity-artifacts';
-import { planConversationSegments } from './conversation-segments';
+import { joinContinuedTurns, planConversationSegments } from './conversation-segments';
 import { continuedActivityHeader, foldActivityUnits, hasUnconfirmedSend, incomingActivity, outgoingActivity, pendingActivity,
   type AgentActivityEvent, type AgentActivityGroup } from './agent-activity';
 /**
@@ -197,7 +197,8 @@ export function flattenTier(
 ): RenderUnit[] {
   const sentReplies = ctx.settled ? withSettledSentReplies : withSentReplies;
   turns = turns.map(turn => sentReplies(turn, { allDestinations: ctx.agentConversation }));
-  if (ctx.agentConversation) turns = conversationMessages(turns);
+  // A turn the agent opened because one of its own tasks finished continues the turn before it (#2587).
+  if (ctx.agentConversation) turns = joinContinuedTurns(conversationMessages(turns));
   // One send, drawn once. On the session page the call itself is drawn as the agent's words (agent-send, below), so the
   // reply copied out of it goes. In the agent conversation the copy is the reply bubble that carries the turn's process
   // footer and the quote anchor, so there the call stays an ordinary tool call (`sentReplyCalls`).
@@ -481,13 +482,15 @@ export function flattenTier(
           for (const artifact of artifacts) processItem(artifact, undefined, output.reply ? `${block.id}:head` : block.id);
         };
         if (!output.reply && activityEvent && ops.length === 0) { emitArtifacts(); activityEvent = undefined; inlineCompletion = true; continue; }
-        const process = { id: block.id, ...(block.live ? { live: true } : {}),
-          startedAt: block.startedAt, endedAt: block.endedAt, ...(block.idleMs && !block.live ? { idleMs: block.idleMs } : {}), ...(block.live && ctx.pendingStarting?.() ? { starting: ctx.pendingStarting?.() } : {}), steps: output.steps.length,
+        const idleMs = (block.live ? 0 : block.idleMs) + block.resumedIdleMs;
+        const process = { id: block.id, ...(block.live ? { live: true } : {}), ...(block.toggleId ? { toggleId: block.toggleId } : {}),
+          startedAt: block.startedAt, endedAt: block.endedAt, ...(idleMs ? { idleMs } : {}), ...(block.live && ctx.pendingStarting?.() ? { starting: ctx.pendingStarting?.() } : {}), steps: output.steps.length,
           ...(ops.length ? {} : { empty: true }) };
-        const expanded = ctx.revealAllFolds || turnProcessExpanded(block.live, ctx.isTurnProcessExpanded?.(block.id) ?? false);
+        const toggle = block.toggleId ?? block.id;
+        const expanded = ctx.revealAllFolds || turnProcessExpanded(block.live, ctx.isTurnProcessExpanded?.(toggle) ?? false);
         const steps = () => {
           if (!expanded) return;
-          const folds = [{ id: block.id, stored: !block.live }];
+          const folds = [{ id: toggle, stored: !block.live }];
           const start = out.length;
           emitOps(ops, turn.id, folds);
           if (!ctx.revealAllFolds && out.length > start) {

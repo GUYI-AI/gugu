@@ -66,7 +66,7 @@ export type OutboxOperation =
 export interface OutboxRecord {
   /** Missing on older durable text records. */
   operation?: OutboxOperation
-  preview?: Pick<MessageItem, 'file_item_id' | 'file_version' | 'file_blob_id' | 'file_metadata' | 'image_dimensions'>
+  preview?: Pick<MessageItem, 'file_item_id' | 'file_version' | 'file_blob_id' | 'file_metadata' | 'image_dimensions' | 'send_group_id' | 'send_group_size'>
   clientMessageId: string
   chatId: string
   senderUserId: string

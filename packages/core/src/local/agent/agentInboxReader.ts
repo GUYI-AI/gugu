@@ -86,6 +86,9 @@ export interface AgentInboxUnreadRow {
   fileVersion?: number | null
   /** 悄悄话的附件:消息直接指字节(不进群文件夹)。 */
   fileBlobId?: string | null
+  /** #2581 Files sent at once share a send: each of its rows carries it and how many files it holds. */
+  sendGroupId?: string | null
+  sendGroupSize?: number | null
   /**
    * The rules in force on a group or topic line ('' when none; a topic without its own takes its source group's), read
    * with the message by pull_agent_inbox_v2. null off rooms.
@@ -242,6 +245,8 @@ export function resetAgentInboxReaderStateForTests(): void {
   resetInboxRetries()
   inFlightByAgent.clear()
   threadBootstrapped.clear()
+  for (const wait of sendWaits.values()) if (wait.timer) clearTimeout(wait.timer)
+  sendWaits.clear()
   batchAudit.length = 0
 }
 
@@ -324,6 +329,8 @@ export function unreadRowFromRpc(raw: Record<string, unknown>): AgentInboxUnread
     isWhisper: raw.is_whisper === true,
     viaApp: text(raw.via_app) || null,
     ...fileRefOf(raw),
+    sendGroupId: text(raw.send_group_id),
+    sendGroupSize: num(raw.send_group_size),
     replyToMessageId: text(raw.reply_to_message_id),
     replyToSenderUserId: text(raw.reply_to_sender_user_id),
     replyToContent: text(raw.reply_to_content),
@@ -741,7 +748,7 @@ async function injectBatch(
     catch (discloseError) { log.error({ agentUserId, err: errorText(discloseError) }, 'rejected inbox item disclosure or acknowledgement failed') }
     failures.push(new DisclosedFailure(error, disclosure))
   }
-  const rows = pulledRows
+  const rows = holdIncompleteSends(agentUserId, pulledRows, deps)
   if (rows.length === 0) {
     return { injected: 0, verdict: 'accepted' }
   }
@@ -773,12 +780,24 @@ async function injectBatch(
   // next-tool-call transport has no queue boundary: the admission itself is the delivery boundary,
   // so merge the rows there with the same core producer. Attachments remain one admission each.
   const timing = await deps.deliveryTiming?.(agentUserId)
-  const framed = prepared.filter((entry) => !entry.attachments && !('preparationError' in entry))
+  // #2581 The files of one send are one message: one admission, one turn, all their images on it.
+  const sends = new Map<string, PreparedMessage[]>()
+  for (const entry of prepared) {
+    const key = sendKeyOf(entry.row)
+    if (key) sends.set(key, [...(sends.get(key) ?? []), entry])
+  }
+  const sendOf = (entry: PreparedMessage) => {
+    const members = sends.get(sendKeyOf(entry.row) ?? '')
+    return members && members.length > 1 ? members : null
+  }
+  const framed = prepared.filter((entry) => !entry.attachments && !('preparationError' in entry) && !sendOf(entry))
   const mergedText = !queueBacked && timing === 'next-tool-call' && framed.length > 0
     ? mergeDeliveryEnvelopes(framed.map((entry) => entry.envelope))
     : null
   let merged = false
   const units: PreparedUnit[] = prepared.flatMap((entry): PreparedUnit[] => {
+    const send = sendOf(entry)
+    if (send) return send[0] === entry ? [sendUnit(send)] : []
     if ('preparationError' in entry) return [{ text: entry.envelope, members: [entry], preparationError: entry.preparationError }]
     if (entry.attachments) {
       return [{ text: entry.envelope, attachments: entry.attachments, members: [entry] }]
@@ -801,9 +820,9 @@ async function injectBatch(
   for (let unitIndex = 0; unitIndex < units.length; unitIndex += 1) {
     let unit = units[unitIndex]!
     if (queueBacked) {
-      const entry = await prepare(unit.members[0]!.row)
-      unit = { text: entry.envelope, members: [entry], ...(entry.attachments ? { attachments: entry.attachments } : {}),
-        ...('preparationError' in entry ? { preparationError: entry.preparationError } : {}) }
+      const entries: PreparedMessage[] = []
+      for (const member of unit.members) entries.push(await prepare(member.row))
+      unit = sendUnit(entries)
     }
     const archival = await deps.sessionArchival?.(agentUserId) ?? null
     if (archival?.archivedAt || (await Promise.all(unit.members.map(({ row }) => refusesArchivedRow(agentUserId, row, archival, deps)))).some(Boolean)) {
@@ -864,6 +883,56 @@ async function injectBatch(
     verdict: enqueued ? 'enqueued' : 'accepted',
     ...(completions.length > 0 ? { completion: Promise.all(completions).then(() => undefined) } : {}),
   }
+}
+
+/** #2581 Which send a chat row belongs to; none for a row sent on its own. */
+function sendKeyOf(row: AgentInboxUnreadRow): string | null {
+  return row.sendGroupId && row.sendGroupSize && row.sendGroupSize > 1 && !row.localSessionDirect && !row.app ? `${row.chatId}\u0000${row.sendGroupId}` : null
+}
+
+/** Prepared rows handed over as one: one row as itself, a send's rows as one delivery carrying every image. */
+function sendUnit(entries: PreparedMessage[]): PreparedUnit {
+  const failed = entries.find((entry) => 'preparationError' in entry)
+  if (failed) return { text: failed.envelope, members: entries, preparationError: failed.preparationError }
+  const attachments = entries.flatMap((entry) => entry.attachments ?? [])
+  return { text: mergeDeliveryEnvelopes(entries.map((entry) => entry.envelope)), members: entries, ...(attachments.length ? { attachments } : {}) }
+}
+
+/** How long a send whose other files have not reached the conversation is held back, counted from its last arrival. */
+export const SEND_GROUP_WAIT_MS = 60_000
+const sendWaits = new Map<string, { seen: number; changedAt: number; timer?: ReturnType<typeof setTimeout> }>()
+
+/**
+ * #2581 The files of a send commit one after another. Until all of them are here (or none has arrived for SEND_GROUP_WAIT_MS),
+ * the send and what came after it in its conversation wait; a later pull hands them over together. What waited longest
+ * goes as it is: a file that never arrives does not hold the conversation.
+ */
+function holdIncompleteSends(agentUserId: string, rows: AgentInboxUnreadRow[], deps: AgentInboxReaderDeps): AgentInboxUnreadRow[] {
+  const sends = new Map<string, AgentInboxUnreadRow[]>()
+  for (const row of rows) {
+    const key = sendKeyOf(row)
+    if (key) sends.set(key, [...(sends.get(key) ?? []), row])
+  }
+  const heldFrom = new Map<string, number>()
+  const now = Date.now()
+  for (const [key, members] of sends) {
+    const waitKey = `${agentUserId}\u0000${key}`
+    const wait = sendWaits.get(waitKey)
+    if (members.length >= members[0]!.sendGroupSize!) { if (wait?.timer) clearTimeout(wait.timer); sendWaits.delete(waitKey); continue }
+    const changedAt = wait && wait.seen === members.length ? wait.changedAt : now
+    if (now - changedAt >= SEND_GROUP_WAIT_MS) { sendWaits.delete(waitKey); continue }
+    if (wait?.timer) clearTimeout(wait.timer)
+    const timer = setTimeout(() => {
+      sendWaits.get(waitKey)?.timer === timer && kickAgentInboxPull(agentUserId, deps, 'send-group-wait')
+    }, changedAt + SEND_GROUP_WAIT_MS - now + 50)
+    timer.unref?.()
+    sendWaits.set(waitKey, { seen: members.length, changedAt, timer })
+    const first = Math.min(...members.map((row) => row.seq))
+    heldFrom.set(members[0]!.chatId, Math.min(heldFrom.get(members[0]!.chatId) ?? Number.POSITIVE_INFINITY, first))
+  }
+  if (heldFrom.size === 0) return rows
+  log.info({ agentUserId, chats: heldFrom.size }, 'agent inbox waits for the rest of a send')
+  return rows.filter((row) => row.localSessionDirect || row.app || !(row.seq >= (heldFrom.get(row.chatId) ?? Number.POSITIVE_INFINITY)))
 }
 
 async function prepareMessage(

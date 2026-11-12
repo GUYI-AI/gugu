@@ -108,14 +108,27 @@ describe('attachment ownership transfers to the durable chat outbox', () => {
     expect(upload).not.toHaveBeenCalled()
     expect(f.stageAttachment).not.toHaveBeenCalled()
   })
-  it('puts the caption on the last image, preserving file order at commit readiness', async () => {
+  it('#2581 sends the files as one send with the text on the last file, whatever its kind, in file order', async () => {
     const f = fixture()
     await sendAttachmentBatch({ ...f.args, files: [...f.args.files, pdf('spec.pdf')], caption: 'look' })
     await vi.waitFor(() => expect(f.commitAttachment).toHaveBeenCalledTimes(2))
     expect(f.commitAttachment.mock.calls).toEqual([
-      [expect.anything(), { staging_key: 'staging/photo.png' }, expect.objectContaining({ caption: 'look', content_type: 'image/png' }), expect.anything()],
-      [expect.anything(), { staging_key: 'staging/spec.pdf' }, expect.not.objectContaining({ caption: expect.anything() }), expect.anything()],
+      [expect.anything(), { staging_key: 'staging/photo.png' }, expect.not.objectContaining({ caption: expect.anything() }), expect.anything()],
+      [expect.anything(), { staging_key: 'staging/spec.pdf' }, expect.objectContaining({ caption: 'look' }), expect.anything()],
     ])
+    type Group = { send_group_id?: string; send_group_size?: number }
+    const [first, second] = (f.commitAttachment.mock.calls as unknown as Array<[Group, unknown, Group]>).map(([row, , commit]) => ({ row, commit }))
+    expect(first!.commit.send_group_id).toEqual(expect.any(String))
+    expect([first!.commit.send_group_id, first!.commit.send_group_size]).toEqual([second!.commit.send_group_id, 2])
+    expect([first!.row.send_group_id, second!.row.send_group_id]).toEqual([first!.commit.send_group_id, first!.commit.send_group_id])
+  })
+  it('#2581 a file sent alone is not a send of several', async () => {
+    const f = fixture()
+    await sendAttachmentBatch({ ...f.args, caption: 'one' })
+    await vi.waitFor(() => expect(f.commitAttachment).toHaveBeenCalledTimes(1))
+    const [row, , commit] = f.commitAttachment.mock.calls[0] as unknown as [{ send_group_id?: string }, unknown, object]
+    expect(commit).not.toHaveProperty('send_group_id')
+    expect(row.send_group_id).toBeUndefined()
   })
 })
 it('a later file never commits before an earlier one that is still uploading', async () => {

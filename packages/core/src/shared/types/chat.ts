@@ -134,6 +134,10 @@ export interface MessageItem {
   file_metadata?: FileMetadata | null
   /** Local sending preview only; committed dimensions come from the verified file metadata. */
   image_dimensions?: { width: number; height: number }
+  /** #2581 Files sent at once: the rows of one send share this id and are one message on screen. */
+  send_group_id?: string | null
+  /** #2581 How many files that send holds (2–10), so a reader knows when it has them all. */
+  send_group_size?: number | null
   seq: number
   content: string | null
   content_type: MessageContentType

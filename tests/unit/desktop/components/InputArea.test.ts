@@ -213,31 +213,25 @@ describe('ChatMessageComposer', () => {
     expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '图片 avatar.png 没发出去：发送未完成，请稍后重新发送', tier: 'error', key: expect.any(String) }))
     expect(sendErrorLog).toHaveBeenCalledWith(expect.objectContaining({ error: 'upload denied /Users/test/private sk-synthetic-secret\nstack detail' }), 'message send failed')
   })
-  it('#2188 restores only the text when its files are already rows and the text fails', async () => {
+  it('#2581 files and text sent at once are one send: the text rides on the last file, never a message of its own', async () => {
     const file = new File(['report'], 'report.txt', { type: 'text/plain' })
-    const onSendAttachments = vi.fn(async (_files: File[]) => 'file-row')
-    const onSend = vi.fn()
-      .mockRejectedValueOnce(new Error('text denied'))
-      .mockResolvedValueOnce(undefined)
+    const onSendAttachments = vi.fn(async (_files: File[], _opts?: unknown) => 'file-row')
+    const onSend = vi.fn(async () => {})
     await harness.render(createElement(ChatMessageComposer, { onSend, onSendAttachments }))
     const input = container.querySelector('input[type="file"]') as HTMLInputElement
     Object.defineProperty(input, 'files', { configurable: true, value: [file] })
     await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
-    await typeInComposer('send this text after the file')
+    await typeInComposer('send this text with the file')
     await clickSend()
-    expect(onSendAttachments).toHaveBeenCalledTimes(1)
-    expect(onSend, 'the text waits for the file it was sent with').toHaveBeenCalledExactlyOnceWith('send this text after the file', expect.objectContaining({ dependsOn: 'file-row' }))
-    expect(readComposer(container.querySelector('[contenteditable]'))).toBe('send this text after the file')
-    expect(container.querySelectorAll('[data-slot="composer-attachment"]'), 'a file already in the conversation must not return to the draft').toHaveLength(0)
-    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '消息没发出去：发送未完成，请稍后重新发送', tier: 'error', key: expect.any(String) }))
-    await clickSend()
-    expect(onSendAttachments, 'retry must not resend the attachment').toHaveBeenCalledTimes(1)
-    expect(onSend).toHaveBeenCalledTimes(2)
+    expect(onSendAttachments).toHaveBeenCalledExactlyOnceWith([file], expect.objectContaining({ caption: 'send this text with the file' }))
+    expect(onSend, 'no separate text message').not.toHaveBeenCalled()
+    expect(readComposer(container.querySelector('[contenteditable]'))).toBe('')
+    expect(container.querySelectorAll('[data-slot="composer-attachment"]')).toHaveLength(0)
   })
   it('#2188 files that did not become rows all return to the draft with the unsent text', async () => {
     const first = new File(['a'], 'first.txt', { type: 'text/plain' })
     const second = new File(['b'], 'second.txt', { type: 'text/plain' })
-    const onSendAttachments = vi.fn<(files: File[]) => Promise<string | undefined>>(async () => { throw new Error('staging refused') })
+    const onSendAttachments = vi.fn<(files: File[], opts?: unknown) => Promise<string | undefined>>(async () => { throw new Error('staging refused') })
     const onSend = vi.fn(async () => {})
     await harness.render(createElement(ChatMessageComposer, { onSend, onSendAttachments }))
     const input = container.querySelector('input[type="file"]') as HTMLInputElement
@@ -258,7 +252,8 @@ describe('ChatMessageComposer', () => {
     onSendAttachments.mockResolvedValueOnce('second-row')
     await clickSend()
     expect(onSendAttachments.mock.calls[1]?.[0], 'retry sends the same files, in order').toEqual([first, second])
-    expect(onSend).toHaveBeenCalledExactlyOnceWith('text never attempted', expect.objectContaining({ dependsOn: 'second-row' }))
+    expect(onSendAttachments.mock.calls[1]?.[1], 'and the text with them (#2581)').toEqual(expect.objectContaining({ caption: 'text never attempted' }))
+    expect(onSend).not.toHaveBeenCalled()
   })
   it('uses disabled placeholder and hover hint independently', async () => {
     await harness.render(createElement(ChatMessageComposer, {
@@ -431,12 +426,10 @@ describe('ChatMessageComposer', () => {
     ])
     expect(readComposer(container.querySelector('[contenteditable]'))).toBe('first words\nsecond words')
   })
-  it('#2188 after attachment success, a late text failure restores only text into the ORIGINAL chat', async () => {
-    let rejectText: (e: Error) => void = () => {}
-    const onSendAttachments = vi.fn(async (files: File[], opts?: unknown) => {
-      files.forEach((f, index) => (opts as { onSent?: (f: File, index: number) => void } | undefined)?.onSent?.(f, index))
-    })
-    const onSend = vi.fn(() => new Promise<void>((_, reject) => { rejectText = reject }))
+  it('#2581 a send of files and text that fails before its files are rows returns both to the ORIGINAL chat', async () => {
+    let rejectSend: (e: Error) => void = () => {}
+    const onSendAttachments = vi.fn((_files: File[], _opts?: unknown) => new Promise<void>((_, reject) => { rejectSend = reject }))
+    const onSend = vi.fn(async () => {})
     const chips = () => container.querySelectorAll('[data-slot="composer-attachment"]')
     await harness.render(createElement(StatefulHost, { chatId: 'chat-a', onSend, onSendAttachments }))
     await flush()
@@ -445,19 +438,19 @@ describe('ChatMessageComposer', () => {
     await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
     await typeInComposer('unsent text')
     await clickSend()
-    expect(onSendAttachments).toHaveBeenCalledTimes(1)
-    expect(onSend).toHaveBeenCalledTimes(1)
-    expect(chips(), 'optimistic clear emptied chat-a while text is in flight').toHaveLength(0)
+    expect(onSendAttachments).toHaveBeenCalledExactlyOnceWith([expect.any(File)], expect.objectContaining({ caption: 'unsent text' }))
+    expect(onSend).not.toHaveBeenCalled()
+    expect(chips(), 'optimistic clear emptied chat-a while the send is in flight').toHaveLength(0)
     await harness.render(createElement(StatefulHost, { chatId: 'chat-b', onSend, onSendAttachments }))
     await flush()
-    await act(async () => { rejectText(new Error('text denied')); await Promise.resolve() })
+    await act(async () => { rejectSend(new Error('staging refused')); await Promise.resolve() })
     await flush()
     expect(readComposer(container.querySelector('[contenteditable]'))).toBe('')
-    expect(chips(), 'the committed attachment must not leak into chat-b').toHaveLength(0)
+    expect(chips(), 'nothing leaks into chat-b').toHaveLength(0)
     await harness.render(createElement(StatefulHost, { chatId: 'chat-a', onSend, onSendAttachments }))
     await flush()
     expect(readComposer(container.querySelector('[contenteditable]'))).toBe('unsent text')
-    expect(chips(), 'the committed attachment must not be restored into chat-a either').toHaveLength(0)
+    expect(chips(), 'the file that never became a row comes back with its text').toHaveLength(1)
   })
   it('#951 token-boundary: typing @Bobby routes to Bobby, never Bob (no substring misroute)', async () => {
     const groupMembers = [rosterMember('u-bob', 'Bob'), rosterMember('u-bobby', 'Bobby')]

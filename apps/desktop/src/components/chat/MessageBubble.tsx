@@ -20,7 +20,7 @@ import { MemberProfileAvatarButton } from '../MemberProfileAvatarButton'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
 import type { MemberProfileOpener } from '../memberProfileModels'
 import { COLOR_MUTED, readReceiptLabel } from './chatPresentation'
-import { MessageSendStatus } from './MessageSendStatus'; import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'; import { keepAction } from './messageKeep'
+import { MessageSendStatus } from './MessageSendStatus'; import { useMessageAlbum } from './MessageAlbumContext'; import { downloadSendFiles } from './messageAlbumDownload'; import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'; import { keepAction } from './messageKeep'
 import { buildBubbleStyle } from './messageBubbleStyle'
 import { MessageBody } from './MessageBody'
 import { parseQuotedContent, type QuoteSelection } from './messageQuoteContent'
@@ -102,7 +102,7 @@ export const MessageBubble = memo(function MessageBubble({
   showReadReceipt = true,
 }: BubbleProps) {
   const { t } = useTranslation('messaging')
-  const { toast } = useToast()
+  const { toast } = useToast(); const album = useMessageAlbum(msg.id) // #2581 a send of several files is one message
   const copyText = msg.content_type === 'widget' ? parseWidgetMessage(msg.content)?.text ?? '[Widget]' : msg.content ?? ''
   const handleCopyText = async (content = copyText) => {
     try {
@@ -149,7 +149,7 @@ export const MessageBubble = memo(function MessageBubble({
     onSelectText: compactMobile && msg.content_type === 'text' ? () => { phone.setSelecting(true); close() } : undefined,
     onCopyLink: menuLink ? () => { void handleCopyText(menuLink.href); close() } : undefined, onOpenLink: menuLink ? () => { menuLink.click(); close() } : undefined,
     onForward: () => { onForward(msg); close() }, onKeep: keepAction({ id: msg.id, mine: msg.is_mine, live: !!mediaAttachment && mediaAttachment.source.kind !== 'gone' }, close, toast, t),
-    onDownload: mediaAttachment && mediaAttachment.source.kind !== 'gone' ? () => { void downloadAttachment(mediaAttachment.source, mediaAttachment.fileName).catch((error) => toast(t('chatArea.downloadFailed'), 'error', safeFailureLine(String((error as Error)?.message ?? error)))); close() } : undefined,
+    onDownload: mediaAttachment && mediaAttachment.source.kind !== 'gone' ? () => { void (album ? downloadSendFiles(album) : downloadAttachment(mediaAttachment.source, mediaAttachment.fileName)).catch((error) => toast(t('chatArea.downloadFailed'), 'error', safeFailureLine(String((error as Error)?.message ?? error)))); close() } : undefined,
     onDelete: () => { onDelete(msg.id); close() },
     onSelect: onEnterSelectMode ? () => { onEnterSelectMode(msg); close() } : undefined,
     onOpenTopic: onOpenTopic && canSourceTopic(msg) ? () => { onOpenTopic(msg.id); close() } : undefined,
