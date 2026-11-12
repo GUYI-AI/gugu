@@ -65,20 +65,33 @@ export function unpinSessionFromSidebar(sessionId: string): void {
   if (projectId !== null) setPinnedToSidebar(projectId, sessionId, false);
 }
 
+/** Where the main area is: the navigation's view and that view's parameters. */
+function mainArea(): string {
+  const { currentViewId, viewParamsStore } = appState.navigation;
+  return JSON.stringify([currentViewId, (viewParamsStore as Record<string, unknown>)[currentViewId] ?? null]);
+}
+
 /**
  * A pinned agent's row clicked in the one list: open the group / project it lives in, then select the agent in that
  * group's inner column the way clicking its row there does (open its session; the column stays, the session being one
- * of its agents). The column settles on the group only after the group is shown, so the agent is opened then.
+ * of its agents). The column settles on the group only after the group is shown, so the agent is opened then — unless
+ * the main area has moved on meanwhile: what the user opened since wins, also when it is that same group again.
  */
 export function openSidebarPin(sessionId: string, homeChatId: string): void {
   const projectId = sidebarProjectOf(sessionId);
   if (projectId === null) return;
   openChatOnScreen(homeChatId, false);
-  void when(() => innerSidebarChat.get()?.chatId === homeChatId, { timeout: COLUMN_SETTLE_MS }).then(
+  const home = mainArea();
+  when(
+    () => mainArea() !== home || innerSidebarChat.get()?.chatId === homeChatId,
     () => {
+      if (mainArea() !== home) return;
       appState.navigation.navigate('session', { projectId, sessionId });
       openSessionInSessionWhenReady({ projectId, sessionId });
     },
-    (error: unknown) => log.error('The inner column did not open on a pinned agent\'s home', { sessionId, homeChatId, error })
+    {
+      timeout: COLUMN_SETTLE_MS,
+      onError: (error: unknown) => log.error('The inner column did not open on a pinned agent\'s home', { sessionId, homeChatId, error }),
+    }
   );
 }
