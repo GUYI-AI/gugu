@@ -822,9 +822,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
             await sendMessage(content, opts)
           }}
           placeholder={chrome?.placeholder} attachGlyph={chrome?.attachGlyph} attachMenu={chrome?.attachMenu}
-          onSendAttachments={async (files, opts) => {
-            await sendAttachments(files, opts)
-          }}
+          onSendAttachments={sendAttachments}
           quoteContent={quoteText}
           onQuoteConsumed={() => setQuoteText(null)}
           mentionToInsert={mentionToInsert}

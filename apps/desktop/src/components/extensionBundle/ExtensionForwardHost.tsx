@@ -74,8 +74,9 @@ export function ExtensionForwardHost() {
     }
     const file = new File([packed.data.bytes], packed.data.fileName, { type: packed.data.mimeType })
     for (const chatId of targetChatIds) {
-      await sendAttachmentsToChat(chatId, [file])
-      if (note.text.trim()) await sendMessageToChat(chatId, note.text.trim(), { toUserIds: note.toUserIds })
+      // The package is a row once this returns; its note is delivered after it.
+      const bundle = await sendAttachmentsToChat(chatId, [file])
+      if (note.text.trim()) await sendMessageToChat(chatId, note.text.trim(), { toUserIds: note.toUserIds, ...(bundle ? { dependsOn: bundle } : {}) })
       sent(chatId)
     }
   }

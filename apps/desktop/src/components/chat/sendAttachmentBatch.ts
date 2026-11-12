@@ -9,12 +9,16 @@ import { requireThreadCapableChat } from '../../lib/chatThreadGate'
 import { attachmentSendTiming, attachmentUploadTimeoutMs, type AttachmentSendTiming } from '../../lib/attachmentSendTiming'
 import { attachmentAttemptEndpoint, retryAttachmentUpload } from '../../lib/attachmentSendRecovery'
 import { setAttachmentUploadProgress } from '../../lib/attachmentUploadProgress'
+import { holdSentFile, dropSentFile } from '../../lib/sentFileCopies'
+import { chatSendFailureReason } from './chatSendFailureNotice'
+import { i18n } from '@/i18n'
 
 // Bytes upload concurrently outside the lane. The existing outbox owns each source id
 // from selection through commit, including failure and restart visibility.
+// The composer lets go as soon as the rows are on screen: uploading belongs to the rows, never to the composer.
 const UPLOAD_CONCURRENCY = 3
 
-function startBoundedUploads(files: File[], endpoint: AttachmentsEndpoint, scope: { chat_id: string; as: string; is_whisper?: boolean }, timings: AttachmentSendTiming[]): Promise<PreparedChatAttachment>[] {
+function startBoundedUploads(files: File[], endpoint: Promise<AttachmentsEndpoint>, scope: { chat_id: string; as: string; is_whisper?: boolean }, timings: AttachmentSendTiming[]): Promise<PreparedChatAttachment>[] {
   const settle: Array<{ resolve: (value: PreparedChatAttachment) => void; reject: (error: unknown) => void }> = []
   const results = files.map(() => new Promise<PreparedChatAttachment>((resolve, reject) => { settle.push({ resolve, reject }) }))
   // 未被 await 到的失败(中止点之后的件)不应成为 unhandledrejection。
@@ -29,9 +33,9 @@ function startBoundedUploads(files: File[], endpoint: AttachmentsEndpoint, scope
         const prepared = await retryAttachmentUpload(attempt => timings[index].stage('upload', attempt,
           (signal, capDeadline, progress) => {
             setAttachmentUploadProgress(timings[index].clientId)
-            return prepareChatAttachment(attachmentAttemptEndpoint(endpoint, signal), file,
+            return endpoint.then(endpoint => prepareChatAttachment(attachmentAttemptEndpoint(endpoint, signal), file,
             { ...scope, request_id: timings[index].clientId }, plan => { capDeadline(plan.expires_at); progress() }, attempt > 1,
-            transfer => { progress(transfer.loaded, transfer.total); setAttachmentUploadProgress(timings[index].clientId, { ...transfer, attempt }) })
+            transfer => { progress(transfer.loaded, transfer.total); setAttachmentUploadProgress(timings[index].clientId, { ...transfer, attempt }) }))
           },
           undefined, { timeoutMs: attachmentUploadTimeoutMs(file.size) }))
         settle[index].resolve(prepared)
@@ -84,12 +88,13 @@ export async function placeholderRow(file: File, caption: string | undefined, ar
     local_send_state: 'sending',
     ...(dimensions ? { image_dimensions: dimensions } : {}),
   }
-  // 预览 URL 等确认行换上真地址之后再释放(下一帧,避免那一帧的 <img> 指向已撤销的 blob)。
-  const release = () => { setTimeout(() => URL.revokeObjectURL(previewUrl), 1000) }
+  // The row reads its file from this device until it is delivered (then under its committed address) or discarded.
+  holdSentFile(message.id, file, previewUrl)
+  const release = () => { dropSentFile(message.id) }
   return { message, release }
 }
 
-export async function sendAttachmentBatch(args: {
+type BatchArgs = {
   files: File[]
   chatId: string
   senderId: string
@@ -98,54 +103,72 @@ export async function sendAttachmentBatch(args: {
   replyToMessageId?: string | null
   threadRootId?: string | null
   isThreadRoot?: boolean
-  onSent?: (file: File, index: number) => void
   caption?: string
-  outbox: Pick<OutboxWiring, 'stageAttachment' | 'commitAttachment'> & { outbox: Pick<OutboxWiring['outbox'], 'delivered' | 'failUpload' | 'discard'> }
+  outbox: Pick<OutboxWiring, 'stageAttachment' | 'commitAttachment' | 'failAttachmentUpload'> & { outbox: Pick<OutboxWiring['outbox'], 'discard'> }
   appendMessage: (message: MessageItem) => void
-}): Promise<string | undefined> {
+}
+type StagedRow = Awaited<ReturnType<typeof placeholderRow>>
+
+/**
+ * Puts one row per file on screen, owned by the outbox, and returns the last row's id once they are there (a text sent
+ * with the files waits for it). Their bytes upload afterwards; a file that does not go up fails on its own row.
+ * Throws only when no row was kept: the files then still belong to whoever passed them.
+ */
+export async function sendAttachmentBatch(args: BatchArgs): Promise<string | undefined> {
   if (!args.files.length) return undefined
   if (args.threadRootId != null || args.isThreadRoot === true) await requireThreadCapableChat(args.chatId, 'sendAttachmentBatch')
   await Promise.all(args.files.map(sniffFileMimeType))
   const captionIndex = args.files.findLastIndex(file => inferAttachmentKind(file) === 'image')
-  const placeholders: Awaited<ReturnType<typeof placeholderRow>>[] = []
-  let index = 0
+  const rows: StagedRow[] = []
   try {
     for (const [fileIndex, file] of args.files.entries()) {
       const row = await placeholderRow(file, fileIndex === captionIndex ? args.caption : undefined, args)
-      placeholders.push(row)
+      rows.push(row)
       // Durable ownership precedes visibility; uploading does not block the lane.
       await args.outbox.stageAttachment(row.message)
       args.appendMessage(row.message)
-      void args.outbox.outbox.delivered(row.message.id).then(row.release, () => {})
-    }
-    const timings = placeholders.map(row => attachmentSendTiming(row.message.id, args.chatId))
-    const uploads = startBoundedUploads(args.files, await attachmentsEndpoint(), {
-      chat_id: args.chatId, as: args.senderId, is_whisper: args.isWhisper,
-    }, timings)
-    for (; index < args.files.length; index++) {
-      const file = args.files[index], row = placeholders[index]
-      const prepared = await uploads[index]
-      // Uploaded bytes are kept by content before the commit, so the committed row draws them instead of downloading them again.
-      if (inferAttachmentKind(file) === 'image') void keepSentAttachment(file).catch((error) => rendererLogger('chat/send').error({ error: String(error) }, 'sent image local copy not kept'))
-      await args.outbox.commitAttachment(row.message, prepared, {
-        message_id: row.message.id, chat_id: args.chatId, sender_user_id: args.senderId,
-        file_name: file.name || 'file', content_type: resolveFileMimeType(file), to_user_ids: args.toUserIds ?? [],
-        reply_to_message_id: args.replyToMessageId ?? null, thread_root_id: args.threadRootId ?? null,
-        is_thread_root: !!args.isThreadRoot, is_whisper: !!args.isWhisper,
-        ...(index === captionIndex && args.caption ? { caption: args.caption } : {}),
-      }, timings[index])
-      // Only ready commits belong to outbox retry now. Uncommitted File objects
-      // still belong to the composer and return there on this round's failure.
-      args.onSent?.(file, index)
     }
   } catch (error) {
-    // Also handles a partially staged batch: never leave an upload marker with
-    // no upload task. Source-dependent forwards fail through ordinary discard.
-    for (const row of placeholders.slice(index)) {
+    // A partially staged batch never leaves an upload marker with no upload task behind.
+    for (const row of rows) {
       await args.outbox.outbox.discard(row.message.id)
       row.release()
     }
     throw error
   }
-  return placeholders[0]?.message.id
+  const endpoint = attachmentsEndpoint()
+  endpoint.catch(() => undefined) // each row reports it through its own upload
+  const timings = rows.map(row => attachmentSendTiming(row.message.id, args.chatId))
+  const uploads = startBoundedUploads(args.files, endpoint, { chat_id: args.chatId, as: args.senderId, is_whisper: args.isWhisper }, timings)
+  void (async () => {
+    // Commits keep the files' order: a later file never reaches the conversation before an earlier one that is ready.
+    for (const [index, row] of rows.entries()) {
+      await commitWhenUploaded(args, args.files[index], row, uploads[index], timings[index], index === captionIndex ? args.caption : undefined)
+    }
+  })().catch((error) => rendererLogger('chat/send').error({ chatId: args.chatId, error: String(error) }, 'attachment failure not recorded'))
+  return rows.at(-1)?.message.id
+}
+
+async function commitWhenUploaded(args: BatchArgs, file: File, row: StagedRow, upload: Promise<PreparedChatAttachment>, timing: AttachmentSendTiming, caption: string | undefined): Promise<void> {
+  try {
+    const prepared = await upload
+    // Uploaded bytes are kept by content before the commit, so the committed row draws them instead of downloading them again.
+    if (inferAttachmentKind(file) === 'image') void keepSentAttachment(file).catch((error) => rendererLogger('chat/send').error({ error: String(error) }, 'sent image local copy not kept'))
+    await args.outbox.commitAttachment(row.message, prepared, {
+      message_id: row.message.id, chat_id: args.chatId, sender_user_id: args.senderId,
+      file_name: file.name || 'file', content_type: resolveFileMimeType(file), to_user_ids: args.toUserIds ?? [],
+      reply_to_message_id: args.replyToMessageId ?? null, thread_root_id: args.threadRootId ?? null,
+      is_thread_root: !!args.isThreadRoot, is_whisper: !!args.isWhisper,
+      ...(caption ? { caption } : {}),
+    }, timing)
+  } catch (error) {
+    rendererLogger('chat/send').error({ chatId: args.chatId, messageId: row.message.id, error: String(error) }, 'attachment upload failed')
+    // Resending uploads the same bytes again under the same row, signed in afresh (it may be much later).
+    await args.outbox.failAttachmentUpload(row.message.id, error, chatSendFailureReason(error, i18n.getFixedT(null, 'messaging')), () => {
+      const again = attachmentSendTiming(row.message.id, args.chatId)
+      const [retried] = startBoundedUploads([file], attachmentsEndpoint(), { chat_id: args.chatId, as: args.senderId, is_whisper: args.isWhisper }, [again])
+      void commitWhenUploaded(args, file, row, retried, again, caption)
+        .catch((failure) => rendererLogger('chat/send').error({ chatId: args.chatId, error: String(failure) }, 'attachment failure not recorded'))
+    })
+  }
 }
