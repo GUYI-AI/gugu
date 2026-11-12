@@ -29,7 +29,7 @@ function fixture(adapter = createMemoryLocalSyncDb()) {
   const repository = openImRepository('me', { adapter, storage: window.localStorage })
   let rows: MessageItem[] = []
   const io: OutboxWiringIo = { getImRepository: () => repository, user: () => ({ id: 'me', nickname: 'Me', avatarUrl: null }),
-    chats: () => [], identity: () => undefined, activeChatId: () => 'destination', activeThreadRootId: () => null,
+    chats: () => [], identity: () => undefined, chatShown: (id) => id === 'destination', activeThreadRootId: () => null,
     setMessagesAndCache: update => { rows = update(rows) }, setThreadMessages: () => {}, patchChat: vi.fn(), toast: vi.fn(),
     appendMessage: row => { rows = [...rows.filter(r => r.id !== row.id), row] },
   }

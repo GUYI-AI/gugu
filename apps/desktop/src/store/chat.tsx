@@ -34,7 +34,7 @@ import { bindOutboxActions, createOutboxWiring, forwardingDeviceFiles, type Outb
 import { markLatestThreadRead, markManualUnreadAndRefresh } from '../lib/chatUnreadLocator'
 import { useChatUnreadStreamNavigation } from '../lib/chatUnreadStreamNavigation'
 import { ChatStoreProvider, type SendMessageOptions, type SendAttachmentOptions, useDraftAttachmentsStore, useDraftMentionsStore, useTextDraftStore, useDraftQuotesStore, useDraftWhispersStore } from './chatContext'
-import { advanceReadWatermark, advanceSeenReadWatermark, chatReadsWhole, wholeReadSeq, applyThreadSnapshot, fetchOpenThreadSnapshot, patchChatRows, reconcileMemberReadSeqs, type PatchChat } from './chatRealtimeMutations'; import { subscribeChatLineRevisions } from '../lib/accountRevisionListeners'; import { chatOnScreen, isChatOnScreen, isAppActive, useAppActive } from '../lib/onScreenChat'
+import { advanceReadWatermark, advanceSeenReadWatermark, chatReadsWhole, wholeReadSeq, applyThreadSnapshot, fetchOpenThreadSnapshot, patchChatRows, reconcileMemberReadSeqs, type PatchChat } from './chatRealtimeMutations'; import { subscribeChatLineRevisions } from '../lib/accountRevisionListeners'; import { chatOnScreen, isChatOnScreen, isChatShown, isAppActive, useAppActive } from '../lib/onScreenChat'
 import { useMessageReadFailures, useMessageSnapshotEpochs } from './chatMessageReads'
 import { useChatConversation, type ChatConversationAccess } from './useChatConversation'
 import { useActiveChatTransitionState } from './activeChatTransition'; import { fetchChatHistoryPage, restoreChatHistoryAnchor, fetchThreadMessages, openCachedChatWindow, useChatWindowCache, type WindowObserver } from './chatWindowPublication'
@@ -251,7 +251,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       user: () => userRef.current ? { id: userRef.current.id, nickname: userRef.current.nickname, avatarUrl: userRef.current.avatarUrl ?? null } : null,
       chats: () => chatsRef.current,
       identity: (id) => imRepositoryRef.current?.snapshot().identity.find((row) => row.id === id)?.value,
-      activeChatId: () => activeChatIdRef.current,
+      chatShown: isChatShown,
       activeThreadRootId: (chatId) => chatId ? cache.view(chatId).activeThreadRootId : activeThreadRootIdRef.current,
       setMessagesAndCache: (updater, chatId) => outboxDepsRef.current?.setMessagesAndCache(updater, chatId),
       setThreadMessages: (updater, chatId) => outboxDepsRef.current?.setThreadMessages(updater, chatId),

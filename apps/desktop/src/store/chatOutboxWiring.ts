@@ -46,7 +46,8 @@ export interface OutboxWiringIo {
   user(): { id: string; nickname: string; avatarUrl: string | null } | null
   chats(): ChatItem[]
   identity(id: string): { type: 'human' | 'agent'; display_name: string; avatar: string | null } | undefined
-  activeChatId(): string | null
+  /** Whether the conversation is shown anywhere (chats page, a chat block on the task page, the assistant), app in front or not. */
+  chatShown(chatId: string): boolean
   activeThreadRootId(chatId?: string): string | null
   setMessagesAndCache(updater: (prev: MessageItem[]) => MessageItem[], chatId: string): void
   setThreadMessages: (updater: SetStateAction<MessageItem[]>, chatId: string) => void
@@ -229,9 +230,9 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
       finishChatSendTiming(record.clientMessageId)
       rendererLogger('chat/outbox').error({ chatId: record.chatId, messageId: record.clientMessageId, error: record.lastError }, 'message send failed')
       noteBackendRequestFailed() // if the backend is down, the beat's next success retries this row
-      const onScreen = record.payload.threadRootId
-        ? io.activeChatId() === record.chatId && io.activeThreadRootId() === record.payload.threadRootId
-        : io.activeChatId() === record.chatId
+      // Shown = what the screen holds, not the selected chat: a chat block on the task page is shown without being selected.
+      const onScreen = io.chatShown(record.chatId) &&
+        (!record.payload.threadRootId || io.activeThreadRootId(record.chatId) === record.payload.threadRootId)
       if (!onScreen) {
         const chat = io.chats().find((item) => item.id === record.chatId)
         const name = chat && chatDisplayName(chat, chat.peer_user_id ? io.identity(chat.peer_user_id)?.display_name : null)

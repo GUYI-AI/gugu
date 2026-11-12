@@ -49,7 +49,7 @@ it.each(['send', 'restore-native'] as const)('%s read failure keeps the local re
   vi.spyOn(chatService, 'getMessageById').mockResolvedValue(delivered)
   const wiring = createOutboxWiring({ getImRepository: async () => repository,
     user: () => ({ id: 'outbox-owner', nickname: 'Owner', avatarUrl: null }), identity: () => undefined,
-    chats: () => rows.current, activeChatId: () => basis.id, activeThreadRootId: () => null,
+    chats: () => rows.current, chatShown: (id) => id === basis.id, activeThreadRootId: () => null,
     setMessagesAndCache: () => undefined, setThreadMessages: () => undefined,
     patchChat: (...args) => patch(...args), toast: () => undefined, appendMessage: () => undefined })
   let stop: (() => void) | undefined
