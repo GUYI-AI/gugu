@@ -44,11 +44,12 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   verbKey?: string;
   /** 建好之后(框已还原):会话里派的,新会话拼到右边。 */
   onSessionCreated?: (result: { projectId: string; sessionId: string }) => void;
-  /** 缺省「想让 X 做点什么？」;会话里派的说清是一个新的 agent。 */
+  /** 缺省「想让 X 做点什么？」;会话里派的说清是一个新的 agent。一张表的侧栏下不用它(见下)。 */
   placeholder?: (agentName: string) => string;
 }) {
   const { translate } = useSessionMessages();
-  // #2548 with the sidebar as one list the chip reads 「新智能体」, as the composer button that opened this box (mock v33 派智能体).
+  // #2548 with the sidebar as one list the chip reads 「新智能体」, as the composer button that opened this box (mock v33 派智能体);
+  // the box asks 「想让新智能体做点什么？」 (already says it is a new one, so no per-caller wording) and the group chip reads 「进群：群名」.
   const oneList = useDesktopSidebarV2Switch();
   const draftKey = taskDispatchDraftKey(verbKey);
   // 选词那一刻框里写着的话跟过来:要在 NewSessionComposer 挂上(读草稿)之前放好。
@@ -84,13 +85,13 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
       <ComposerTray
         projectPicker={projectPicker}
         devicePicker={devicePicker}
-        folderPicker={joinChat && chatName ? <ComposerBirthGroupChip name={chatName} /> : null}
+        folderPicker={joinChat && chatName ? <ComposerBirthGroupChip name={chatName} joinPrefix={oneList} /> : null}
         host={machineContext?.host ?? machineLibraryHost(null)}
       >
         <NewSessionComposer
           key={remote?.deviceId ?? 'local'}
           draftKey={draftKey}
-          placeholder={placeholder ?? ((agent) => translate('taskDispatch.placeholder', { agent }))}
+          placeholder={oneList ? translate('taskDispatch.placeholderAgent') : placeholder ?? ((agent) => translate('taskDispatch.placeholder', { agent }))}
           verb={composerVerbLook('task', { label: translate(oneList ? 'taskDispatch.agent' : 'taskDispatch.task'), onCancel: () => cancelComposerVerb(verbKey, draftKey), testId: 'task-dispatch' })}
           taskChatId={chatId}
           openAfterCreate={false}

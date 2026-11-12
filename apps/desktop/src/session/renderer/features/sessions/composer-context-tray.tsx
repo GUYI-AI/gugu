@@ -49,13 +49,14 @@ export function mountedProjects(includeRemote = false) {
 /**
  * 这次建的 agent 进哪个群(在群里派任务 / 群成员里点的「新建 Agent」):建好就进群,结果回这个群。
  * gugu-dev#181:❌「不加入」—— 不进群,结果就回不来。只是一枚说明,不是选择。
+ * `joinPrefix`(#2548 一张表的侧栏):读成「进群：群名」(mock v33 派智能体)。
  */
-export function ComposerBirthGroupChip({ name }: { name: string }) {
+export function ComposerBirthGroupChip({ name, joinPrefix = false }: { name: string; joinPrefix?: boolean }) {
   const { translate } = useSessionMessages();
   return (
     <span className={sessionComposerTrayTriggerClassName} title={translate('newAgent.birthGroupHint')} data-testid="composer-birth-group">
       <Users className="size-3 shrink-0" />
-      <span className="max-w-[200px] truncate">{name}</span>
+      <span className="max-w-[200px] truncate">{joinPrefix ? translate('newAgent.birthGroup', { name }) : name}</span>
     </span>
   );
 }

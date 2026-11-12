@@ -222,15 +222,17 @@ const sidebarMenuItemClass =
 
 interface SidebarMenuButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   isActive?: boolean;
+  /** 所在的行可以被拖走时打开,同下面 SidebarMenuAction 的 allowNativeDrag(#2548 内层侧栏的话题行)。 */
+  allowNativeDrag?: boolean;
 }
 export const SidebarMenuButton = React.forwardRef<HTMLButtonElement, SidebarMenuButtonProps>(
-  ({ className, isActive, ...props }, ref) => (
+  ({ className, isActive, allowNativeDrag, ...props }, ref) => (
     <button
       ref={ref}
       data-slot="button"
       data-active={isActive || undefined}
       className={cn(sidebarMenuItemClass, className)}
-      onMouseDown={(e) => e.preventDefault()}
+      onMouseDown={allowNativeDrag ? undefined : (e) => e.preventDefault()}
       {...props}
     />
   )

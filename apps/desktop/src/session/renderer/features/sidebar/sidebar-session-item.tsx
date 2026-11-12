@@ -82,6 +82,11 @@ export type SidebarSessionItemProps = {
   join?: SidebarJoin;
   /** #2548 内层侧栏:这条也固定在左侧栏时,标题前挂那枚小侧栏图标(左侧栏里它自己就是一行,不挂)。 */
   sidebarPinMark?: boolean;
+  /**
+   * #2548 内层侧栏(开关开着):行首画这个 agent 自己的头像,顶替 harness 标;认不出 agent 身份的会话照旧画 harness 标。
+   * 行尾的状态标不动。
+   */
+  agentAvatar?: boolean;
 };
 
 /** 侧栏里的一条会话(#6264 别的机器上的会话也是这一行:同一张会话表、点开同一个任务视图)。 */
@@ -98,6 +103,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   onToggle,
   join,
   sidebarPinMark = false,
+  agentAvatar = false,
 }: SidebarSessionItemProps) {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
@@ -350,6 +356,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
       onToggle={onToggle}
       title={title}
       harness={harness ? { id: providerId, name: harness.name } : null}
+      agent={agentAvatar && sidebarV2 && agentUserId ? { userId: agentUserId, name: title, avatarUrl: identity?.avatar ?? null } : null}
       badges={badges}
       presentation={presentation}
       statusUnavailable={statusUnavailable}

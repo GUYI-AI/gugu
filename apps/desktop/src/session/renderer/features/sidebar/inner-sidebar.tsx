@@ -71,7 +71,7 @@ import { SidebarStateHeader } from './sidebar-state-header';
 // 关着 = 什么都不变;手机永不出现)。分区顺序:群里「话题」在上、「我的智能体」在下;项目里「智能体」在上、「话题」在下。
 // 手机永不出现是结构上的:这一列住在会话页的工作区里,手机壳不画工作区(check-ui-visual-spec 守着「任务渲染层只在桌面」)。
 // 这一列只重排现有的组件:头一行是侧栏顶上那几行动作行(SidebarMenuButton)画这个群 / 项目自己,分区头是侧栏分区头,
-// 智能体行是任务区那一行(SidebarSessionItem),话题行由壳画进「话题」那一格(components/ChatListSlotHost.tsx →
+// 智能体行是任务区那一行(SidebarSessionItem,行首换成 agent 自己的头像:agentAvatar),话题行由壳画进「话题」那一格(components/ChatListSlotHost.tsx →
 // InnerSidebarTopics,同一个动作行的样子)。东西多时头行下面一个「找」的框,话题与智能体一起筛。
 
 /** 侧栏里我的每一条会话,带上它背后的 agent(同 SidebarSessionItem 认身份的两条腿)。 */
@@ -555,6 +555,7 @@ const InnerAgentsSection = observer(function InnerAgentsSection({
                   treeSummary={row.summary}
                   onToggle={() => sidebarStore.toggleSessionExpanded(row.sessionId)}
                   sidebarPinMark
+                  agentAvatar
                 />
               ))}
               {overflow > 0 ? (
