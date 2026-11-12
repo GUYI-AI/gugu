@@ -225,7 +225,7 @@ export async function setSessionParent(
 ): Promise<{ parent_session_id: string | null; not_reached: string[] }> {
   const { parent, not_reached } = await resolveSessionParent(childId, parentId);
   const [row] = await db
-    .select({ projectId: sessions.projectId, config: sessions.config })
+    .select({ projectId: sessions.projectId, config: sessions.config, isPinnedToSidebar: sessions.isPinnedToSidebar })
     .from(sessions)
     .where(eq(sessions.id, childId))
     .limit(1);
@@ -234,10 +234,13 @@ export async function setSessionParent(
   // 旧写法 `spawnedByRemote.nested` 也是一个父会话事实,改了父会话就不能让它再被读出来。
   const { parentRemote: _previous, ...config } = row.config ?? ({} as NonNullable<typeof row.config>);
   const spawnedByRemote = config.spawnedByRemote ? { ...config.spawnedByRemote, nested: undefined } : undefined;
+  // #2548 only a top-level session is pinned to the sidebar (setSessionPinnedToSidebar): becoming a child unpins it.
+  const unpin = parentId !== null && row.isPinnedToSidebar === 1;
   await db
     .update(sessions)
     .set({
       parentSessionId,
+      ...(unpin ? { isPinnedToSidebar: 0 } : {}),
       config: {
         ...config,
         ...(spawnedByRemote ? { spawnedByRemote } : {}),
@@ -249,7 +252,7 @@ export async function setSessionParent(
   events.emit(sessionChangedChannel, {
     sessionId: childId,
     projectId: row.projectId,
-    changes: { parentSessionId: parentId },
+    changes: { parentSessionId: parentId, ...(unpin ? { isPinnedToSidebar: false } : {}) },
   });
   return { parent_session_id: parentId, not_reached };
 }
