@@ -35,6 +35,8 @@ const mocks = vi.hoisted(() => ({
   syncProjects: vi.fn(),
   openLink: vi.fn(async () => true),
 }));
+/** 这次进会话历史带的那一部分(useParams('session-history'));默认什么都不带。 */
+const entry = vi.hoisted(() => ({ params: {} as Record<string, unknown> }));
 // #6956 推到渲染层的事件:按机器分(与真 onMachineEvent 同一个判据,null = 本机),用例自己当主进程往里发。
 const bus = vi.hoisted(() => ({
   listeners: new Set<{ machine: string | null; event: string; cb: (data: unknown) => void }>(),
@@ -120,6 +122,7 @@ vi.mock('@renderer/features/remote-hosts/machine-picker', () => ({
 vi.mock('@/lib/guguLinks', () => ({ openLink: mocks.openLink }));
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({
   useNavigate: () => ({ navigate: mocks.navigate }),
+  useParams: () => ({ params: entry.params, setParams: () => {} }),
 }));
 vi.mock('@renderer/features/sessions/open-session-in-session', () => ({
   openSessionInSessionWhenReady: mocks.openSession,
@@ -139,6 +142,7 @@ import { setLocalePreference } from '@/i18n';
 import { setPortalContainer } from '@renderer/lib/portal-container';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { SessionHistoryMainPanel } from '@renderer/features/session-history/session-history-view';
+import { SESSION_HISTORY_IMPORT_PART } from '@renderer/features/session-history/session-history-import-part';
 
 const NOW = Date.now();
 const WEBAPP = '/Users/me/work/webapp';
@@ -321,6 +325,7 @@ describe('会话历史(按目录分节)核心合同', () => {
   beforeEach(async () => {
     await page.viewport(1280, 860);
     setLocalePreference('zh-CN');
+    entry.params = {};
     for (const fn of Object.values(mocks)) fn.mockReset();
     mocks.list.mockResolvedValue(pageOf(ROWS));
     mocks.listDirectories.mockResolvedValue(directoryPageOf(DIRS));
@@ -611,6 +616,14 @@ describe('会话历史(按目录分节)核心合同', () => {
     await vi.waitFor(() => expect(directoryParams().some((p) => p.query === '幂等')).toBe(true));
     // 排序键换了,DOM 顺序仍是主进程返回的顺序(mock 一直返回同一页)——渲染层没有自己排。
     expect(rowKeys()).toEqual(ROWS.map((row) => row.key));
+  });
+
+  it('#2548 带着导入那一部分进来(侧栏「导入以前的会话」):第一次就问全部来源里未导入的,触发钮照实写着', async () => {
+    entry.params = { ...SESSION_HISTORY_IMPORT_PART };
+    render();
+    await vi.waitFor(() => expect(directoryParams().length).toBeGreaterThan(0));
+    expect(directoryParams().every((p) => p.source === undefined && p.status === 'not-imported')).toBe(true);
+    await expect.element(screen.getByTestId('session-history-filter')).toHaveTextContent('全部来源 · 未导入');
   });
 
   it('滚动加载:目录多于已带回的,滚到底把 limit 放大交给主进程(❌ 翻页、❌ offset)', async () => {
