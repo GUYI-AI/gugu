@@ -566,7 +566,9 @@ export function ChatListPanel({
   // Agents pinned to it (固定到左侧栏) are published by the task page, which knows the sessions and where they live.
   const sidebarPins = useSidebarPinnedAgents()
   const oneList = inSidebar && !mobile && sidebarView.oneList === true
-  const agentHomes = useAgentHomes(oneList, chats, membership, sidebarPins)
+  // An agent's home is a room the list shows: the assistant's hidden workrooms are no home (an agent only there keeps its own row).
+  const homeChats = useMemo(() => chats.filter((chat) => !isDuplicateAssistantChat(chat, assistantShell, workrooms)), [chats, assistantShell, workrooms])
+  const agentHomes = useAgentHomes(oneList, homeChats, membership, sidebarPins)
   // @@@chat-list-agent-status (#437/#33) - one batched presence subscription for every agent shown in
   // the list: DM-with-agent peers + all group agent members (so the group dot can aggregate).
   const agentStatuses = useAgentDisplayStatuses(membership.agentIds)
