@@ -80,6 +80,8 @@ export type SidebarSessionItemProps = {
   onToggle?: () => void;
   /** 拼在一屏的一组里:这一行是框的哪一段。 */
   join?: SidebarJoin;
+  /** #2548 内层侧栏:这条也固定在左侧栏时,标题前挂那枚小侧栏图标(左侧栏里它自己就是一行,不挂)。 */
+  sidebarPinMark?: boolean;
 };
 
 /** 侧栏里的一条会话(#6264 别的机器上的会话也是这一行:同一张会话表、点开同一个任务视图)。 */
@@ -95,6 +97,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   treeSummary,
   onToggle,
   join,
+  sidebarPinMark = false,
 }: SidebarSessionItemProps) {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
@@ -286,6 +289,19 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
           <TooltipContent className="whitespace-nowrap">
             {translate('sidebar.forkedFrom', { source: forkedFromLabel ?? '' })}
           </TooltipContent>
+        </Tooltip>
+      ) : null}
+      {sidebarPinMark && row.isPinnedToSidebar ? (
+        // 与上面几枚同一个形状:前缀小图标,hover 出「也固定在左侧栏」。
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span className="flex shrink-0 items-center text-foreground-tertiary-passive" data-testid="sidebar-pinned-to-sidebar">
+                <PanelLeft className="size-3" />
+              </span>
+            }
+          />
+          <TooltipContent className="whitespace-nowrap">{translate('sidebar.alsoPinnedToSidebar')}</TooltipContent>
         </Tooltip>
       ) : null}
       {launchedByAssistant ? (
