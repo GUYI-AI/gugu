@@ -1,19 +1,25 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
-import { TopicSubRow, TopicSubRows, type ChatRowActions } from '../ChatListPanel'
+import { MessageSquare } from '@/lib/icons'
+import { cn } from '@/session/renderer/utils/utils'
+import { SidebarMenuButton, sidebarRowContentInsetX } from '@/session/renderer/features/sidebar/sidebar-primitives'
 import { useChatStore, useStoreValueBy } from '../../store/chatContext'
+import { useRowContextMenu } from '../../hooks/useRowContextMenu'
 import { useStableHandler } from '../../hooks/useStableHandler'
-import { publishInnerSidebarTopicsView, setInnerSidebarTopicsAll, useInnerSidebarTopicsAll } from '../../lib/innerSidebarBridge'
+import { publishInnerSidebarTopicsView, useInnerSidebarFilter, useInnerSidebarTopicsAll } from '../../lib/innerSidebarBridge'
 import { readSessionpageViewRequestBridge } from '../../lib/sessionpageViewRequestBridge'
 import { requestTopicSplit } from '../../lib/topicSplitRequest'
 import { UI_EVENTS } from '../../lib/uiEvents'
-import { innerSidebarTopicLevels, topicIsSunkAt, topicsOfChat } from './innerSidebarTopicsModel'
+import { Chip } from '../ui/Chip'
+import { ChatRowContextMenu } from './ChatRowContextMenu'
+import { innerSidebarTopicRows, topicsOfChat } from './innerSidebarTopicsModel'
 
 /**
- * #2548 内层侧栏「话题」那一格里的行(会话页留格子,ChatListSlotHost 画进来):就是聊天列表里嵌在群下面的那几行
- * (TopicSubRow / TopicSubRows,同一份右键菜单、同一个「更多」),只是挂在内层侧栏里。点一行 = 聊天列表里点话题那一下
- * (开它的源对话,话题开成分栏);「更多」= 分区头的「全部 ›」,摊开这个对话的全部话题。
+ * #2548 内层侧栏「话题」那一格里的行(会话页留格子,ChatListSlotHost 画进来)。行是侧栏顶上那几行动作行的样子
+ * (SidebarMenuButton,对齐分区的内容列,❌ 竖轨与缩进):话题图标 + 名字 + 行尾今天话题子行那个未读数;
+ * 右键是聊天列表话题子行那一份菜单(置顶 / 免打扰 / 删除)。点一行 = 聊天列表里点话题那一下(开源对话,话题开成分栏)。
+ * 露哪几条、什么次序见 innerSidebarTopicsModel;「全部 N 个话题」那一行与分区头的「全部 ›」在会话页那一侧。
  */
 export function InnerSidebarTopics({ chatId }: { chatId: string }) {
   const { t } = useTranslation('messaging')
@@ -24,10 +30,13 @@ export function InnerSidebarTopics({ chatId }: { chatId: string }) {
     (store) => [chatId, store.chats.filter((chat) => chat.source_chat_id === chatId)],
   )
   const all = useInnerSidebarTopicsAll() === chatId
-  // 沉降要一个「当下」:逐渲染取(同聊天列表),❌ memo 到话题上。
-  const now = Date.now()
-  const hidden = innerSidebarTopicLevels(topics, now, false).hidden.length
-  useEffect(() => publishInnerSidebarTopicsView({ chatId, total: topics.length, hidden }), [chatId, topics.length, hidden])
+  const query = useInnerSidebarFilter(chatId)
+  const rows = innerSidebarTopicRows(topics, { all, query })
+  const level = innerSidebarTopicRows(topics, { all: false, query: '' })
+  useEffect(
+    () => publishInnerSidebarTopicsView({ chatId, total: topics.length, hidden: level.hidden, calling: level.calling, matched: rows.matched }),
+    [chatId, topics.length, level.hidden, level.calling, rows.matched],
+  )
 
   // 分栏此刻开着哪条话题(行高亮):真值由聊天区广播,同聊天列表(UI_EVENTS.topicSplitChanged)。
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null)
@@ -45,31 +54,55 @@ export function InnerSidebarTopics({ chatId }: { chatId: string }) {
     requestTopicSplit({ chatId: topic.id, name: topic.name ?? '', sourceChatId: chatId, focusComposer: true })
   })
   const pin = useStableHandler((topic: ChatItem) => pinChat(topic.id, !topic.is_pinned))
-  const setLevel = useStableHandler((topicId: string, level: NotificationLevel) => setChatNotificationLevel(topicId, level))
+  const setLevel = useStableHandler((topicId: string, notificationLevel: NotificationLevel) => setChatNotificationLevel(topicId, notificationLevel))
   const remove = useStableHandler((topicId: string) => deleteChat(topicId, true))
-  const actions = useMemo<ChatRowActions>(() => ({
-    activate: open,
-    openTopic: open,
-    toggleTopics: () => {
-      throw new Error('inner sidebar topic rows have no topics of their own to toggle')
-    },
-    pin,
-    setNotificationLevel: setLevel,
-    remove,
-    // 这一格没有键盘游标(每一行都在 Tab 序里):获得焦点不用记。
-    focus: () => undefined,
-    keyDown: (event, topic) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return
-      event.preventDefault()
-      open(topic, false)
-    },
-  }), [open, pin, setLevel, remove])
 
   return (
-    <div role="listbox" aria-label={t('history.tabs.topics')} data-inner-sidebar-topics={chatId}>
-      <TopicSubRows topics={topics} isSunk={topicIsSunkAt(now)} expanded={all} onExpand={() => setInnerSidebarTopicsAll(chatId)}>
-        {(topic) => <TopicSubRow key={topic.id} topic={topic} mobile={false} isActive={topic.id === activeTopicId} tabIndex={0} actions={actions} />}
-      </TopicSubRows>
+    <div role="list" aria-label={t('history.tabs.topics')} data-inner-sidebar-topics={chatId}>
+      {rows.shown.map((topic) => (
+        <InnerTopicRow key={topic.id} topic={topic} active={topic.id === activeTopicId} onOpen={open} onPin={pin} onSetLevel={setLevel} onRemove={remove} />
+      ))}
     </div>
   )
 }
+
+const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin, onSetLevel, onRemove }: {
+  topic: ChatItem
+  active: boolean
+  onOpen: (topic: ChatItem, beside: boolean) => void
+  onPin: (topic: ChatItem) => void
+  onSetLevel: (topicId: string, level: NotificationLevel) => void
+  onRemove: (topicId: string) => void
+}) {
+  const menu = useRowContextMenu()
+  return (
+    <div role="listitem">
+      <SidebarMenuButton
+        isActive={active}
+        data-topic-row={topic.id}
+        aria-label={topic.name ?? ''}
+        className="w-full justify-between pr-2"
+        onClick={(event) => onOpen(topic, event.metaKey || event.ctrlKey)}
+        onContextMenu={menu.onContextMenu}
+      >
+        <span className={cn('flex min-w-0 items-center gap-2', sidebarRowContentInsetX)}>
+          <MessageSquare className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
+          <span className="truncate">{topic.name}</span>
+        </span>
+        {/* 今天话题子行(TopicSubRow)行尾那个数,原样。 */}
+        {topic.unread_count > 0 ? <Chip tone="danger" shape="count">{topic.unread_count > 99 ? '99+' : topic.unread_count}</Chip> : null}
+      </SidebarMenuButton>
+      {menu.menuPos && (
+        <ChatRowContextMenu
+          x={menu.menuPos.x}
+          y={menu.menuPos.y}
+          chat={topic}
+          onClose={menu.closeMenu}
+          onPin={() => onPin(topic)}
+          onSetNotificationLevel={(level) => onSetLevel(topic.id, level)}
+          onDelete={() => onRemove(topic.id)}
+        />
+      )}
+    </div>
+  )
+})

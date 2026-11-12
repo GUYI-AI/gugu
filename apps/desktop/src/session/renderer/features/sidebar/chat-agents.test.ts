@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation';
-import { IDLE_VISIBLE_CAP } from '../sessions/session-tree';
 import {
+  CHAT_AGENT_REST_LIMIT,
+  CHAT_AGENT_RUNNING_LIMIT,
   chatAgentCounts,
+  chatAgentNeedsYou,
   chatAgentPill,
   chatAgentSection,
+  chatAgentsMatch,
   myAgentsInChat,
   type ChatAgentEntry,
 } from './chat-agents';
@@ -24,8 +27,8 @@ const entry = (id: string, fields: Partial<ChatAgentEntry> = {}): ChatAgentEntry
 });
 const ids = (entries: readonly { id: string }[]) => entries.map((e) => e.id);
 const rowIds = (section: ReturnType<typeof chatAgentSection>) =>
-  section.groups.map(({ group, rows }) => [group, rows.map((row) => row.sessionId)]);
-const disclosure = { expanded: new Set<string>(), idleExpanded: false };
+  section.map(({ group, rows }) => [group, rows.map((row) => row.sessionId)]);
+const disclosure = { expanded: new Set<string>(), showAllRunning: false, showAllRest: false };
 
 describe('my agents in a chat', () => {
   const mine = [
@@ -113,13 +116,13 @@ describe('the agents section', () => {
     ];
     const collapsed = chatAgentSection(agents, disclosure);
     expect(rowIds(collapsed)).toEqual([['working', ['parent']]]);
-    expect(collapsed.groups[0].rows[0]).toMatchObject({
+    expect(collapsed[0].rows[0]).toMatchObject({
       hasChildren: true,
       needsAttention: true,
       summary: { total: 2, active: [{ count: 1 }] },
     });
-    const open = chatAgentSection(agents, { expanded: new Set(['parent', 'fork']), idleExpanded: false });
-    expect(open.groups[0].rows.map(({ sessionId, depth, parentProjectId }) => [sessionId, depth, parentProjectId])).toEqual([
+    const open = chatAgentSection(agents, { ...disclosure, expanded: new Set(['parent', 'fork']) });
+    expect(open[0].rows.map(({ sessionId, depth, parentProjectId }) => [sessionId, depth, parentProjectId])).toEqual([
       ['parent', 0, undefined],
       ['fork', 1, 'p-other'],
       ['grandchild', 2, 'p-elsewhere'],
@@ -131,22 +134,68 @@ describe('the agents section', () => {
     expect(rowIds(section)).toEqual([[null, ['fork']]]);
   });
 
-  it('idle families beyond the cap fold behind Show more; needs-you and running never fold', () => {
-    const quiet = Array.from({ length: IDLE_VISIBLE_CAP + 2 }, (_, index) => entry(`quiet-${index}`, { time: 100 - index }));
-    const agents = [...quiet, entry('busy', { presentation: running }), entry('blocked', { presentation: waiting })];
+  it('needs you is always shown in full; running shows 5 then folds, the rest shows 3 then folds', () => {
+    const blocked = Array.from({ length: 7 }, (_, index) => entry(`blocked-${index}`, { presentation: waiting, time: 100 - index }));
+    const busy = Array.from({ length: CHAT_AGENT_RUNNING_LIMIT + 2 }, (_, index) => entry(`busy-${index}`, { presentation: running, time: 100 - index }));
+    const quiet = Array.from({ length: CHAT_AGENT_REST_LIMIT + 12 }, (_, index) => entry(`quiet-${index}`, { time: 100 - index }));
+    const agents = [...quiet, ...busy, ...blocked];
     const folded = chatAgentSection(agents, disclosure);
-    expect(folded.folded).toBe(2);
     expect(rowIds(folded)).toEqual([
-      ['needs-you', ['blocked']],
-      ['working', ['busy']],
-      [null, quiet.slice(0, IDLE_VISIBLE_CAP).map((e) => e.id)],
+      ['needs-you', ids(blocked)],
+      ['working', ids(busy.slice(0, CHAT_AGENT_RUNNING_LIMIT))],
+      [null, ids(quiet.slice(0, CHAT_AGENT_REST_LIMIT))],
     ]);
-    const shown = chatAgentSection(agents, { expanded: new Set(), idleExpanded: true });
-    expect(shown.folded).toBe(2);
-    expect(shown.groups.at(-1)?.rows).toHaveLength(IDLE_VISIBLE_CAP + 2);
+    expect(folded.map(({ overflow, total }) => [overflow, total])).toEqual([[0, 7], [2, 7], [12, 15]]);
+
+    // 「还有 2 个在运行」opened: running shows all; its row stays (it now reads Collapse). The rest is untouched.
+    const running5 = chatAgentSection(agents, { ...disclosure, showAllRunning: true });
+    expect(running5[1]).toMatchObject({ overflow: 2 });
+    expect(running5[1].rows).toHaveLength(busy.length);
+    expect(running5[2].rows).toHaveLength(CHAT_AGENT_REST_LIMIT);
+    const rest = chatAgentSection(agents, { ...disclosure, showAllRest: true });
+    expect(rest[2].rows).toHaveLength(quiet.length);
+    expect(rest[1].rows).toHaveLength(CHAT_AGENT_RUNNING_LIMIT);
+  });
+
+  it('a folded family keeps its forks with it: the cap counts families, not rows', () => {
+    const agents = [
+      ...Array.from({ length: CHAT_AGENT_REST_LIMIT }, (_, index) => entry(`quiet-${index}`, { time: 50 - index })),
+      entry('parent', { time: 100 }),
+      entry('fork', { parentSessionId: 'parent' }),
+    ];
+    const section = chatAgentSection(agents, { ...disclosure, expanded: new Set(['parent']) });
+    expect(rowIds(section)).toEqual([[null, ['parent', 'fork', 'quiet-0', 'quiet-1']]]);
+    expect(section[0].overflow).toBe(1);
+  });
+
+  it('while filtering nothing folds: every family whose own or a fork’s name matches is listed', () => {
+    const agents = [
+      ...Array.from({ length: CHAT_AGENT_REST_LIMIT + 3 }, (_, index) => entry(`price-${index}`, { title: `Pricing ${index}`, time: 50 - index })),
+      entry('other', { title: 'Weekly report' }),
+      entry('parent', { title: 'Landing page', presentation: running }),
+      entry('fork', { parentSessionId: 'parent', title: 'pricing table' }),
+    ];
+    const section = chatAgentSection(agents, { ...disclosure, query: 'PRICING' });
+    expect(rowIds(section)).toEqual([
+      ['working', ['parent']],
+      [null, ids(agents.slice(0, CHAT_AGENT_REST_LIMIT + 3))],
+    ]);
+    expect(section.every(({ overflow }) => overflow === 0)).toBe(true);
+    expect(chatAgentsMatch(agents, 'pricing')).toBe(true);
+    expect(chatAgentsMatch(agents, 'nothing like it')).toBe(false);
+  });
+
+  it('a collapsed section counts what needs you there (waiting, or failed and unseen) on reachable hosts', () => {
+    const failed = presentAgentStatus({ reading: { status: 'error', detail: null }, unseen: true });
+    expect(chatAgentNeedsYou([
+      entry('waiting', { presentation: waiting }),
+      entry('failed-unseen', { presentation: failed, unseen: true }),
+      entry('offline', { presentation: waiting, hostOnline: false }),
+      entry('busy', { presentation: running }),
+    ])).toBe(2);
   });
 
   it('no agents: no groups', () => {
-    expect(chatAgentSection([], disclosure)).toEqual({ groups: [], folded: 0 });
+    expect(chatAgentSection([], disclosure)).toEqual([]);
   });
 });

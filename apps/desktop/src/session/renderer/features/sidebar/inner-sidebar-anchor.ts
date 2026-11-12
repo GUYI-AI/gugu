@@ -37,3 +37,10 @@ export function followInnerSidebar(
   if (view.kind === 'session' && previous && listedIn(previous, view.sessionId)) return previous;
   return null;
 }
+
+/** 一个对话里东西(话题 + 成员 + 我的智能体)多过这个数,头行下面才给那个「找」的框。 */
+export const INNER_SIDEBAR_FILTER_THRESHOLD = 12;
+
+export function innerSidebarHasFilter(counts: { topics: number; members: number; agents: number }): boolean {
+  return counts.topics + counts.members + counts.agents > INNER_SIDEBAR_FILTER_THRESHOLD;
+}
