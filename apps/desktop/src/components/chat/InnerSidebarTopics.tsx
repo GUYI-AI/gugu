@@ -8,7 +8,7 @@ import { clearDraggedScreenContent, startChatDrag } from '@/session/renderer/lib
 import { useChatStore, useStoreValueBy } from '../../store/chatContext'
 import { useRowContextMenu } from '../../hooks/useRowContextMenu'
 import { useStableHandler } from '../../hooks/useStableHandler'
-import { publishInnerSidebarTopicsView, useInnerSidebarFilter, useInnerSidebarTopicsAll } from '../../lib/innerSidebarBridge'
+import { publishInnerSidebarTopicsView, useInnerSidebarTopicsAll } from '../../lib/innerSidebarBridge'
 import { readSessionpageViewRequestBridge } from '../../lib/sessionpageViewRequestBridge'
 import { requestTopicSplit } from '../../lib/topicSplitRequest'
 import { UI_EVENTS } from '../../lib/uiEvents'
@@ -20,7 +20,7 @@ import { innerSidebarTopicRows, topicsOfChat } from './innerSidebarTopicsModel'
  * #2548 内层侧栏「话题」那一格里的行(会话页留格子,ChatListSlotHost 画进来)。行是侧栏顶上那几行动作行的样子
  * (SidebarMenuButton,对齐分区的内容列,❌ 竖轨与缩进):话题图标 + 名字 + 行尾今天话题子行那个未读数;
  * 右键是聊天列表话题子行那一份菜单(置顶 / 免打扰 / 删除)。点一行 = 聊天列表里点话题那一下(开源对话,话题开成分栏)。
- * 露哪几条、什么次序见 innerSidebarTopicsModel;「全部 N 个话题」那一行与分区头的「全部 ›」在会话页那一侧。
+ * 露哪几条、什么次序见 innerSidebarTopicsModel;分区头的「全部 ›」在会话页那一侧。
  */
 export function InnerSidebarTopics({ chatId }: { chatId: string }) {
   const { t } = useTranslation('messaging')
@@ -31,12 +31,11 @@ export function InnerSidebarTopics({ chatId }: { chatId: string }) {
     (store) => [chatId, store.chats.filter((chat) => chat.source_chat_id === chatId)],
   )
   const all = useInnerSidebarTopicsAll() === chatId
-  const query = useInnerSidebarFilter(chatId)
-  const rows = innerSidebarTopicRows(topics, { all, query })
-  const level = innerSidebarTopicRows(topics, { all: false, query: '' })
+  const rows = innerSidebarTopicRows(topics, { all })
+  const level = innerSidebarTopicRows(topics, { all: false })
   useEffect(
-    () => publishInnerSidebarTopicsView({ chatId, total: topics.length, hidden: level.hidden, calling: level.calling, matched: rows.matched }),
-    [chatId, topics.length, level.hidden, level.calling, rows.matched],
+    () => publishInnerSidebarTopicsView({ chatId, total: topics.length, hidden: level.hidden, calling: level.calling }),
+    [chatId, topics.length, level.hidden, level.calling],
   )
 
   // 分栏此刻开着哪条话题(行高亮):真值由聊天区广播,同聊天列表(UI_EVENTS.topicSplitChanged)。

@@ -14,6 +14,7 @@ import type { PaneLayoutNode } from '@renderer/features/tabs/pane-layout-tree';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
 import { ContextMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@renderer/lib/ui/resizable';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -204,7 +205,7 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
     <ChatPanes
       chatId={chatId}
       blockId={blockId}
-      reserveShellRestoreLane={corners.topLeft && !isLeftOpen && leftRail === 0}
+      reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
       actionsSlot={
         <TabBarActionRow atWindowEdge={corners.topRight}>
           <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />
@@ -249,7 +250,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
   return (
     <>
       <TabStripShell
-        reserveShellRestoreLane={corners.topLeft && !isLeftOpen && leftRail === 0}
+        reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
         leadingSlot={
           <ContextMenu.Root>
             <ContextMenu.Trigger className="flex h-full items-center">
@@ -325,7 +326,7 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
   return (
     <>
       <TabStripShell
-        reserveShellRestoreLane={corners.topLeft && !isLeftOpen && leftRail === 0}
+        reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
         leadingSlot={
           <BlockGrip
             label={translate('screen.gripApp')}

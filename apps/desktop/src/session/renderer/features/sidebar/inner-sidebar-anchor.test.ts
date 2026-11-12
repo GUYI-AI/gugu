@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { followInnerSidebar, innerSidebarHasFilter, viewAnchor, type InnerSidebarAnchor } from './inner-sidebar-anchor';
+import { followInnerSidebar, viewAnchor, type InnerSidebarAnchor } from './inner-sidebar-anchor';
 
 const group: InnerSidebarAnchor = { kind: 'group', chatId: 'g' };
 const project: InnerSidebarAnchor = { kind: 'project', chatId: 'pg' };
@@ -36,12 +36,5 @@ describe('which chat the inner sidebar shows', () => {
     const members = listedIn({});
     expect(followInnerSidebar(group, { kind: 'project', chatId: 'pg' }, members)).toEqual(project);
     expect(followInnerSidebar(project, { kind: 'chat', chatId: 'g', chatKind: 'group', projectGroup: false }, members)).toEqual(group);
-  });
-});
-
-describe('the in-chat filter', () => {
-  it('appears only when topics, members and my agents together exceed 12', () => {
-    expect(innerSidebarHasFilter({ topics: 6, members: 4, agents: 2 })).toBe(false);
-    expect(innerSidebarHasFilter({ topics: 6, members: 4, agents: 3 })).toBe(true);
   });
 });

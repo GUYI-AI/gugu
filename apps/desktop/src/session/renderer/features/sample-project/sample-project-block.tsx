@@ -8,6 +8,7 @@ import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { SampleNewProjectButton } from './sample-new-project-button';
 import { SampleProjectTranscript, sampleFileBytes } from './sample-project-transcript';
@@ -39,7 +40,7 @@ export const SampleProjectBlock = observer(function SampleProjectBlock({ blockId
   return (
     <>
       <TabStripShell
-        reserveShellRestoreLane={corners.topLeft && !isLeftOpen && leftRail === 0}
+        reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
         actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{blockActions}</TabBarActionRow>}
       >
         <TabSlot data-sample-project-tab="">

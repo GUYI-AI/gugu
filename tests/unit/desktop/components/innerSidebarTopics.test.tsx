@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { ChatListSlotHost } from '../../../../apps/desktop/src/components/ChatListSlotHost'
 import { INNER_SIDEBAR_TOPIC_LIMIT, innerSidebarTopicRows, topicsOfChat } from '../../../../apps/desktop/src/components/chat/innerSidebarTopicsModel'
-import { innerSidebarTopicsSlotKey, setInnerSidebarFilter, setInnerSidebarTopicsAll } from '../../../../apps/desktop/src/lib/innerSidebarBridge'
+import { innerSidebarTopicsSlotKey, setInnerSidebarTopicsAll } from '../../../../apps/desktop/src/lib/innerSidebarBridge'
 import { readShellSlots } from '../../../../apps/desktop/src/lib/shellSlots'
 import { drainTopicSplitRequest } from '../../../../apps/desktop/src/lib/topicSplitRequest'
 import { installSessionViewRequestBridge } from '../../../../apps/desktop/src/session/renderer/features/sessions/stores/session-view-requests'
@@ -43,27 +43,23 @@ describe('which topics the inner sidebar shows', () => {
   })
 
   it('level one: what calls me always, then new messages, then recent activity, up to 5', () => {
-    const level = innerSidebarTopicRows(topicsOfChat(topics, 'group'), { all: false, query: '' })
+    const level = innerSidebarTopicRows(topicsOfChat(topics, 'group'), { all: false })
     expect(INNER_SIDEBAR_TOPIC_LIMIT).toBe(5)
     expect(ids(level.shown)).toEqual(['calls-me', 'news', 't0', 't1', 't2'])
-    expect(level).toMatchObject({ hidden: 4, calling: 1, matched: 9 })
+    expect(level).toMatchObject({ hidden: 4, calling: 1 })
   })
 
   it('what calls me is shown even past the limit', () => {
     const many = Array.from({ length: 7 }, (_, index) => topic(`call-${index}`, index, unread(1, 1)))
-    const level = innerSidebarTopicRows([...many, topic('quiet', 0)], { all: false, query: '' })
+    const level = innerSidebarTopicRows([...many, topic('quiet', 0)], { all: false })
     expect(ids(level.shown)).toEqual(ids(many))
     expect(level).toMatchObject({ hidden: 1, calling: 7 })
   })
 
-  it('All = every topic in the same order; filtering shows every match and truncates nothing', () => {
-    const ordered = topicsOfChat(topics, 'group')
-    const all = innerSidebarTopicRows(ordered, { all: true, query: '' })
+  it('All = every topic in the same order', () => {
+    const all = innerSidebarTopicRows(topicsOfChat(topics, 'group'), { all: true })
     expect(ids(all.shown)).toEqual(['calls-me', 'news', 't0', 't1', 't2', 't3', 't4', 't5', 't6'])
     expect(all.hidden).toBe(0)
-    const found = innerSidebarTopicRows(ordered, { all: false, query: 'T' })
-    expect(ids(found.shown)).toEqual(['t0', 't1', 't2', 't3', 't4', 't5', 't6'])
-    expect(found).toMatchObject({ hidden: 0, matched: 7 })
   })
 })
 
@@ -75,7 +71,6 @@ describe('the inner sidebar topics slot', () => {
     openChat.mockReset()
     installSessionViewRequestBridge(window, { openChat })
     setInnerSidebarTopicsAll(null)
-    setInnerSidebarFilter('group', '')
   })
   afterEach(() => {
     act(() => readShellSlots()?.setSlot(innerSidebarTopicsSlotKey('group'), null))
@@ -83,7 +78,7 @@ describe('the inner sidebar topics slot', () => {
   })
   const rows = () => Array.from(document.querySelectorAll<HTMLElement>('[data-inner-sidebar-topics] [data-topic-row]')).map((row) => row.dataset.topicRow)
 
-  it('draws level one into the slot, follows All and the filter, and opens a topic the existing way', async () => {
+  it('draws level one into the slot, follows All, and opens a topic the existing way', async () => {
     await renderWithAppProviders(harness, createNode(ChatListSlotHost, {}), { chat: { chats: [source, ...topics] }, contacts: {} })
     const slot = document.body.appendChild(document.createElement('div'))
     await act(async () => readShellSlots()!.setSlot(innerSidebarTopicsSlotKey('group'), slot))
@@ -95,9 +90,6 @@ describe('the inner sidebar topics slot', () => {
     await act(async () => setInnerSidebarTopicsAll('group'))
     expect(rows()).toHaveLength(9)
     await act(async () => setInnerSidebarTopicsAll(null))
-    await act(async () => setInnerSidebarFilter('group', ' t1 '))
-    expect(rows()).toEqual(['t1'])
-    await act(async () => setInnerSidebarFilter('group', ''))
 
     await clickElement(slot.querySelector('[data-topic-row="t1"]') as HTMLElement)
     expect(openChat).toHaveBeenCalledWith('group', false)

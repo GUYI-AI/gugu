@@ -5,10 +5,9 @@ import { publishListHotkey, publishPanelToggle } from '@/lib/panelToggles'
 import {
   readRendererPlatform,
   shellRestoreLane,
-  TITLEBAR_ACTION_SLOT_WIDTH_PX,
   TITLEBAR_ACTION_SLOT_GAP_PX,
+  TITLEBAR_ACTION_TOP_PX,
   TITLEBAR_LEFT_EDGE_GAP_PX,
-  WINDOW_CONTROL_BAR_HEIGHT_PX,
 } from '@/lib/window-chrome'
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
 import { getEffectiveHotkey } from '@renderer/lib/hooks/useKeyboardShortcuts'
@@ -16,9 +15,6 @@ import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider'
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { NotificationSlot } from '@/components/needsYou/NotificationSlot'
-
-/** 28px 按钮在这条 40px 带里居中 —— 左右两端同一个式子,❌ 别在调用点另写 top-*。 */
-const TITLEBAR_ACTION_TOP_PX = (WINDOW_CONTROL_BAR_HEIGHT_PX - TITLEBAR_ACTION_SLOT_WIDTH_PX) / 2
 
 
 /**

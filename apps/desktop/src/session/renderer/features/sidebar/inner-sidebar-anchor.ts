@@ -1,8 +1,16 @@
+import { observable } from 'mobx';
+
 // #2548 内层侧栏挂在哪个对话上。打开一个用户群或一个项目(它的项目群)就出现;从这一列里点开一个智能体,
 // 正看着的是那条会话,这一列照旧留着(点别的、开私聊、开不在这个群里的会话就收起)。
 
 /** 内层侧栏正对着的对话:群,或项目(项目群的 chat id)。 */
 export type InnerSidebarAnchor = { kind: 'group' | 'project'; chatId: string };
+
+/**
+ * 内层侧栏此刻挂在哪个对话上(没有 = null;收起着也照旧挂着)。左边列表据此让那个群 / 项目那一行保持高亮 —— 从这一列点开一个智能体时,
+ * 正看着的是那条会话,列表里却没有它自己的一行;列表顶上的搜索据此先搜这个群。InnerSidebar 写。
+ */
+export const innerSidebarChat = observable.box<InnerSidebarAnchor | null>(null, { deep: false });
 
 /** 此刻正看着什么(导航的当前视图,读成内层侧栏需要的样子)。 */
 export type InnerSidebarView =
@@ -36,11 +44,4 @@ export function followInnerSidebar(
   if (own) return own;
   if (view.kind === 'session' && previous && listedIn(previous, view.sessionId)) return previous;
   return null;
-}
-
-/** 一个对话里东西(话题 + 成员 + 我的智能体)多过这个数,头行下面才给那个「找」的框。 */
-export const INNER_SIDEBAR_FILTER_THRESHOLD = 12;
-
-export function innerSidebarHasFilter(counts: { topics: number; members: number; agents: number }): boolean {
-  return counts.topics + counts.members + counts.agents > INNER_SIDEBAR_FILTER_THRESHOLD;
 }
