@@ -76,7 +76,8 @@ describe('observable conversation process', () => {
     const v = mount([{ kind: 'background-command-done-tool-call', id: 'completed-command', seq: 1,
       toolCallId: 'done', launchToolCallId: 'launch', title: command, name: command, status: 'done', outcome, summary: 'Original completion details' }]);
     const row = () => v.host.querySelector<HTMLElement>('[data-conversation-step="completed-command"]');
-    const phrase = `1 background command ${outcome === 'stopped' ? 'stopped' : 'finished'}`;
+    // A failed one says so in the summary too: inside the process line it has no row of its own to say it (#2587).
+    const phrase = `1 background command ${outcome === 'completed' ? 'finished' : outcome}`;
     await until('the live process says the completion', () => v.host.querySelector('[data-slot="conversation-process-steps"]')?.textContent?.includes(phrase) === true);
     expect(row()).toBeNull();
     expect(v.host.textContent).not.toContain(command);
