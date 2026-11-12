@@ -1,11 +1,14 @@
 // #2548 固定到左侧栏, the task page's side: what the one list (drawn by the shell) asks of a pinned agent's session.
 import { when } from 'mobx';
+import { messageForUser } from '@/lib/userFacingError';
 import { openChatOnScreen } from '@renderer/features/chats/open-chat';
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
+import { toast } from '@renderer/lib/hooks/use-toast';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
+import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { log } from '@renderer/utils/logger';
-import { innerSidebarChat } from './inner-sidebar';
+import { innerSidebarChat } from './inner-sidebar-anchor';
 import { withMountedSession } from './with-mounted-session';
 
 /** How long the inner column may take to settle on the opened group / project before the agent is selected in it. */
@@ -32,9 +35,27 @@ function sidebarProjectOf(sessionId: string): string {
   return node.item.projectId;
 }
 
-/** 取消固定到左侧栏 asked from the one list: the same write as the session menu's, on whichever machine the session lives. */
+/**
+ * 固定到左侧栏 / 取消固定到左侧栏 (the session menu, the one list's pinned row): one write, on whichever machine the session
+ * lives. A refused write (an older host, a child session, a database error) is said, as a failed nest is
+ * (set-session-parent-flow): the row only flips back, which by itself says nothing.
+ */
+export function setPinnedToSidebar(projectId: string, sessionId: string, pinned: boolean): void {
+  withMountedSession(projectId, sessionId, (_session, manager) => {
+    manager.setSessionPinnedToSidebar(sessionId, pinned).catch((error: unknown) => {
+      log.error('Pin to sidebar failed', { sessionId, pinned, error: String(error) });
+      toast({
+        title: translateSessionMessage(pinned ? 'task.pinToSidebarFailed' : 'task.unpinFromSidebarFailed'),
+        description: messageForUser(error),
+        variant: 'destructive',
+      });
+    });
+  });
+}
+
+/** 取消固定到左侧栏 asked from the one list. */
 export function unpinSessionFromSidebar(sessionId: string): void {
-  withMountedSession(sidebarProjectOf(sessionId), sessionId, (_session, manager) => void manager.setSessionPinnedToSidebar(sessionId, false));
+  setPinnedToSidebar(sidebarProjectOf(sessionId), sessionId, false);
 }
 
 /**

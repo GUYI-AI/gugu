@@ -53,6 +53,7 @@ import { sessionScheduleDigest } from '@shared/core/automations/session-schedule
 import { agentForksOn } from '@shared/core/agents/agent-payload';
 import { useConversationSessionSummary } from '@/hooks/useConversationSessionSummary';
 import { sidebarPinMenuAction } from './sidebar-pin';
+import { setPinnedToSidebar } from './sidebar-pin-actions';
 
 // @@@sessionpage otty-state — sidebar CONVERSATION row, hanging directly under its project (spec
 // session-page: conversations ARE the sessions; tasks are an invisible workspace container). A
@@ -217,9 +218,6 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
     parentSessionId: row.parentSessionId,
     isPinnedToSidebar: row.isPinnedToSidebar,
   });
-  const setPinnedToSidebar = (pinned: boolean) => {
-    withMountedSession(projectId, sessionId, (_session, manager) => void manager.setSessionPinnedToSidebar(sessionId, pinned));
-  };
 
   // spec session-fork-share:「任意会话可 fork」—— pty 与 ACP 两种 runtime 都摆这个入口,
   // 各走各的分叉动作,分叉与来源同 runtime ⇒ 问的是**来源那条腿**能不能分叉。
@@ -419,11 +417,11 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
       </MenuItem>
     )}
     {sidebarPin === 'unpin' ? (
-      <MenuItem onClick={() => setPinnedToSidebar(false)} icon={<PanelLeftClose />}>
+      <MenuItem onClick={() => setPinnedToSidebar(projectId, sessionId, false)} icon={<PanelLeftClose />}>
         {translate('task.unpinFromSidebar')}
       </MenuItem>
     ) : sidebarPin === 'pin' ? (
-      <MenuItem onClick={() => setPinnedToSidebar(true)} icon={<PanelLeft />}>
+      <MenuItem onClick={() => setPinnedToSidebar(projectId, sessionId, true)} icon={<PanelLeft />}>
         {translate('task.pinToSidebar')}
       </MenuItem>
     ) : null}
