@@ -24,7 +24,7 @@ export const innerSectionEmptyClass = 'px-5 pb-2 text-xs text-foreground-muted';
 
 /**
  * 头一行:这个群 / 项目自己 —— 头像 + 名字(+ 标签,示例的「示例」),点它回到它的对话。它是这一列的标题,不是列表里的一行:
- * 看着它时 ❌ 选中底色(刘威提议稿 v1 的 .ihead:24px 头像、15px 粗体名字、底下没有底)。
+ * 看着它时 ❌ 选中底色(刘威提议稿 v1 的 .ihead:24px 头像、粗体名字、底下没有底;字号取面板标题那一档 --font-title,稿子的 15px 不在字号阶梯上)。
  * 行尾的东西(「…」、新智能体、收起这一列)由调用方给,摆在行的右端,钮是左边列表顶上那一行(«、会话历史)那一种。
  * 名字只让出看得见的钮那么宽(`trailingButtons` 枚 32px 钮、钮间 4px、右边 8px);「…」静止时不占地方(稿子里这一行只有
  * 笔和收起),指针落到这一行、键盘停在里面或菜单开着时它才展开,名字再让出它那一格。
@@ -71,7 +71,7 @@ export function InnerHeadRowLayout({
         >
           <span className={cn('flex min-w-0 items-center gap-2', sidebarRowContentInsetX)}>
             <span className="flex size-6 shrink-0 items-center justify-center">{avatar}</span>
-            <span className="truncate text-[15px] font-bold text-foreground">{name}</span>
+            <span className="truncate text-[length:var(--font-title)] font-bold text-foreground">{name}</span>
             {tag ? <Chip>{tag}</Chip> : null}
           </span>
         </SidebarMenuButton>
