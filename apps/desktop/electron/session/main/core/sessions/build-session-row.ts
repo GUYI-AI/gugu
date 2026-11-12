@@ -54,6 +54,8 @@ export type BuildSessionRowInput = {
   startupOrigin?: 'chat-page' | 'session-page';
   initialMessageId?: string;
   taskChatId?: string;
+  /** #2599 the group it was created in and joined at birth (BirthGroup.chatId): where it lives. */
+  birthChatId?: string;
   /** Required: the task's one name until it is bound to an identity (task-name.ts). ❌ Never derived from the first prompt. */
   agentDisplayName: string;
   parentSessionId?: string | null;
@@ -138,6 +140,7 @@ export function buildSessionRow(input: BuildSessionRowInput): SessionInsert {
           ...(input.startupOrigin && { startupOrigin: input.startupOrigin }),
           ...(input.initialMessageId && { initialMessageId: input.initialMessageId }),
           ...(input.taskChatId && { taskChatId: input.taskChatId }),
+          ...(input.birthChatId && { birthChatId: input.birthChatId }),
           agentDisplayName,
           ...(input.spawnedByRemote && { spawnedByRemote: input.spawnedByRemote }),
           ...(input.parentRemote && { parentRemote: input.parentRemote }),
@@ -162,6 +165,7 @@ export function buildSessionRow(input: BuildSessionRowInput): SessionInsert {
           ...(input.startupOrigin && { startupOrigin: input.startupOrigin }),
           ...(input.initialMessageId && { initialMessageId: input.initialMessageId }),
           ...(input.taskChatId && { taskChatId: input.taskChatId }),
+          ...(input.birthChatId && { birthChatId: input.birthChatId }),
           agentDisplayName,
           ...(input.spawnedByRemote && { spawnedByRemote: input.spawnedByRemote }),
           ...(input.parentRemote && { parentRemote: input.parentRemote }),

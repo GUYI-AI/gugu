@@ -47,6 +47,9 @@ beforeEach(() => {
       { conversationId: 's-project', projectId: 'app', title: 'Fix', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-project' } },
       { conversationId: 's-solo', projectId: 'tasks', title: 'Solo', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-solo' } },
       { conversationId: 's-fork', projectId: 'tasks', title: 'Fork', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, parentConversationId: 's-solo', agent: { userId: 'a-fork' } },
+      // #2599 a-room was created in Room: it lives there (no row of its own). a-solo is a member of Room too, but was
+      // created with Create agent: membership does not move it, it keeps its own row.
+      { conversationId: 's-room', projectId: 'tasks', title: 'Room task', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-room' }, bornInChatId: 'room' },
     ],
     cached: false, loading: false,
   })
@@ -62,7 +65,7 @@ afterEach(() => {
 
 const at = (day: number) => `2099-01-0${day}T00:00:00Z`
 const chats = [
-  chat({ id: 'room', kind: 'group', name: 'Room', member_user_ids: ['me', 'a-room'], last_message_at: at(5) }),
+  chat({ id: 'room', kind: 'group', name: 'Room', member_user_ids: ['me', 'a-room', 'a-solo'], last_message_at: at(5) }),
   chat({ id: 'room-topic', kind: 'topic', name: 'Review', source_chat_id: 'room', last_message_at: at(6) }),
   chat({ id: 'project', kind: 'group', name: 'App', member_user_ids: ['me'], last_message_at: at(4) }),
   chat({ id: 'dm-human', peer_user_id: 'human', last_message_at: at(3) }),

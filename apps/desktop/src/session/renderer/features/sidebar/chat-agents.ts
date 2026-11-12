@@ -4,8 +4,9 @@ import { buildSessionTree, type SessionTreeNode } from '@renderer/features/sessi
 import { needsYouCount, SIDEBAR_STATE_GROUP_ORDER, sidebarStateGroup } from './session-groups';
 import { summarizeSessionBranches, type SessionBranchSummary } from './sidebar-session-branch';
 
-// #2548 内层侧栏的「智能体」(群里也这么写,owner 11-12):一个群或项目里**我的**会话(这台电脑与连着的机器上的,即侧栏里那些),
+// #2548 内层侧栏的「智能体」(群里也这么写,owner 11-12):**住在**这个群或项目里的我的会话(这台电脑与连着的机器上的,即侧栏里那些),
 // 别人的智能体 ❌ 列在这里(它们在聊天和成员面板里)。项目行头像角上那个数读的是同一个推导(myAgentsInChat → chatAgentCounts)。
+// #2599 住在哪按「在哪建的」定,❌ 按它此刻是哪些群的成员:成员关系一对多、随时在变,只在那个群里多一个成员。
 
 /** 侧栏里我的一条会话,外加它背后的那个咕咕身份(会话 → agent 的绑定,sessionAgentBindings)。 */
 export type ChatAgentEntry = {
@@ -18,26 +19,50 @@ export type ChatAgentEntry = {
   presentation?: AgentStatusPresentation | null;
   /** 没有 = 这条会话还没有咕咕身份,不在任何对话的成员名单里。 */
   agentUserId?: string;
+  /** #2599 从哪个对话里建出来的(SessionpageSessionSummary.bornInChatId);null / 缺席 = 不是或不知道。 */
+  bornInChatId?: string | null;
   /** 做完了还没看(宿主的已读位);「需要你」的计数也读它(needsYouCount)。 */
   unseen?: boolean;
   hostOnline?: boolean;
 };
 
 /**
- * 一个对话里哪些会话算「我的智能体」:
- *  · 群:agent 是这个群成员的那些会话;
- *  · 项目:这个项目(绑在这个项目群上的各台机器上的本地项目)的会话,加上 agent 是项目群成员的那些。
+ * 一个对话里哪些会话算「我的智能体」(#2599 住在这里的),按顶层会话定:
+ *  · 它在这个项目(绑在这个项目群上的各台机器上的本地项目)里;
+ *  · 或者它不在任何项目里,是在这里建的(`bornInChatId` 是这个群 / 项目群,或它们的一个话题)。
+ * 只是这个群成员的 ❌ 算(它住在别处,在这里只是成员)。子会话跟着父会话走(#2548「forks stay under their parent」),
+ * ❌ 按它自己的项目或来源另算一处。
  */
-export type ChatAgentScope =
-  | { kind: 'group'; memberUserIds: readonly string[] }
-  | { kind: 'project'; projectIds: readonly string[]; memberUserIds: readonly string[] };
+export type ChatAgentScope = {
+  kind: 'group' | 'project';
+  /** 项目:它在各台机器上的本地项目;群:[]。 */
+  projectIds: readonly string[];
+  /** 这个对话或它的一个话题(建在这里的 agent 住这里)。 */
+  bornHere: (chatId: string) => boolean;
+  /** 这个本地项目属于侧栏列着的某个项目(住在那个项目里,不在这里)。 */
+  inProject: (projectId: string) => boolean;
+};
+
+function livesIn(entry: ChatAgentEntry, scope: ChatAgentScope, projects: ReadonlySet<string>): boolean {
+  if (projects.has(entry.projectId)) return true;
+  return !!entry.bornInChatId && scope.bornHere(entry.bornInChatId) && !scope.inProject(entry.projectId);
+}
 
 export function myAgentsInChat<T extends ChatAgentEntry>(entries: readonly T[], scope: ChatAgentScope): T[] {
-  const members = new Set(scope.memberUserIds);
-  const projects = new Set(scope.kind === 'project' ? scope.projectIds : []);
-  return entries.filter(
-    (entry) => projects.has(entry.projectId) || (entry.agentUserId !== undefined && members.has(entry.agentUserId))
-  );
+  const projects = new Set(scope.projectIds);
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const decided = new Map<string, boolean>();
+  // 按根定:父会话不在这一份里(另一台没连上的机器上)时,它自己就是根。
+  const lives = (entry: T): boolean => {
+    const known = decided.get(entry.id);
+    if (known !== undefined) return known;
+    decided.set(entry.id, false); // 父子成环(坏数据)时停下,❌ 无限递归
+    const parent = entry.parentSessionId ? byId.get(entry.parentSessionId) : undefined;
+    const answer = parent ? lives(parent) : livesIn(entry, scope, projects);
+    decided.set(entry.id, answer);
+    return answer;
+  };
+  return entries.filter(lives);
 }
 
 /**

@@ -614,7 +614,7 @@ export function ChatListPanel({
   const oneList = inSidebar && !mobile && sidebarView.oneList === true
   // An agent's home is a room the list shows: the assistant's hidden workrooms are no home (an agent only there keeps its own row).
   const homeChats = useMemo(() => chats.filter((chat) => !isDuplicateAssistantChat(chat, assistantShell, workrooms)), [chats, assistantShell, workrooms])
-  const agentHomes = useAgentHomes(oneList, homeChats, membership, sidebarPins)
+  const agentHomes = useAgentHomes(oneList, homeChats, sidebarPins)
   // An account project whose project group is not in this list yet stands among the conversations at its time (#2548).
   const projectLines = useOneListProjectLines(oneList, chats)
   // @@@chat-list-agent-status (#437/#33) - one batched presence subscription for every agent shown in

@@ -17,7 +17,7 @@ import {
   sessionChangedChannel,
   sessionCreatedChannel,
 } from '@shared/core/sessions/sessionEvents';
-import type { Session } from '@shared/core/sessions/sessions';
+import { sessionBornInChatId, type Session } from '@shared/core/sessions/sessions';
 import { firstUtteranceOf, initialAgentStatus } from '@shared/core/sessions/initial-agent-status';
 import { gitWorktreeUpdateChannel } from '@shared/core/git/events';
 import { prSyncProgressChannel, prUpdatedChannel } from '@shared/core/pull-requests/prEvents';
@@ -373,6 +373,10 @@ export class ProjectSessionsStore {
       startupOrigin: ic.startupOrigin,
       initialMessageId: ic.initialMessageId,
       taskChatId: ic.taskChatId,
+      // #2599 where this agent lives, by the row's own rule: this object stays the session's data after the host's
+      // `session:created` arrives (acceptCreatedSession keeps the one it holds), so leaving it out would show a just-created
+      // agent nowhere until the next restart.
+      bornInChatId: sessionBornInChatId({ birthChatId: params.birthGroup?.chatId, taskChatId: ic.taskChatId }),
       // spec session-resume：创建 = 带着第一句话开一件活，那句话此刻就在手上。漏掉它，面板会在
       // 首轮落进 transcript 之前把这条会话读成「空白会话」，于是「今天我们做点什么？」这块占位页
       // 闪一下再消失，输入框也跟着从「随心输入」切成「要求后续变更」—— 一次纯粹的假状态。

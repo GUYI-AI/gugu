@@ -61,6 +61,7 @@ import { sessionListDelta } from '@gugu/session-core/session-record/session-list
 import { SessionOptionsError, readSessionOptions, setSessionOption } from './live-options';
 import { getPlugin, isValidProviderId } from '@main/core/agents/plugin-registry';
 import { sessionParentId, sessionSpawnerId, mapSessionRowToSession } from '@main/core/sessions/utils';
+import { sessionBornInChatId } from '@shared/core/sessions/sessions';
 import { taskName } from '@main/core/sessions/task-name';
 import { agentIdsBySession, sessionAgents } from '@main/core/sessionpage/sessionpage-session-agent';
 import { db } from '@main/db/client';
@@ -785,6 +786,7 @@ function summaryOf(
     // 这条会话的对话:主人和它的 agent 的私聊 —— 别的机器、手机都从这一行拿到它(任务页里 App 的 `ctx.chat`)。
     ...(agent?.chatId ? { chatId: agent.chatId } : {}),
     spawnedByExtensionId: session.spawnedByExtensionId ?? null,
+    bornInChatId: sessionBornInChatId(session.config),
     schedule: sessionScheduleDigest(schedules.get(session.id) ?? []),
   };
 }

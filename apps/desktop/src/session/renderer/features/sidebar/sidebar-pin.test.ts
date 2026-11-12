@@ -100,30 +100,33 @@ describe('sidebarAgentHome', () => {
     agentUserId: 'a1',
     ...facts,
   });
-  const group = (name: string, members: string[]): SidebarHomeCandidate => ({
+  // `app` is the App project's folder; `tasks` is the task workspace (no project).
+  const inProject = (projectId: string) => projectId === 'app';
+  const group = (name: string, chatId: string): SidebarHomeCandidate => ({
     kind: 'group',
     name,
-    scope: { kind: 'group', memberUserIds: members },
+    scope: { kind: 'group', projectIds: [], bornHere: (id) => id === chatId, inProject },
   });
-  const project = (name: string, projectIds: string[], members: string[] = []): SidebarHomeCandidate => ({
+  const project = (name: string, projectIds: string[], groupChatId = 'app-group'): SidebarHomeCandidate => ({
     kind: 'project',
     name,
-    scope: { kind: 'project', projectIds, memberUserIds: members },
+    scope: { kind: 'project', projectIds, bornHere: (id) => id === groupChatId, inProject },
   });
 
-  it('is the group or project whose inner-sidebar column lists the agent (its project, or a membership)', () => {
-    expect(sidebarAgentHome(entry(), [group('其他群', ['a2']), group('运营群', ['a1'])])?.name).toBe('运营群');
+  it('is the group or project whose inner-sidebar column lists the agent: where it was created (#2599)', () => {
+    expect(sidebarAgentHome(entry({ bornInChatId: 'ops' }), [group('其他群', 'other'), group('运营群', 'ops')])?.name).toBe('运营群');
     expect(sidebarAgentHome(entry({ projectId: 'app' }), [project('App', ['app'])])?.name).toBe('App');
-    expect(sidebarAgentHome(entry(), [project('App', ['app'], ['a1'])])?.name).toBe('App');
+    expect(sidebarAgentHome(entry({ bornInChatId: 'app-group' }), [project('App', ['app'])])?.name).toBe('App');
   });
 
-  it('prefers a project to a group: the session works in its project', () => {
-    const home = sidebarAgentHome(entry({ projectId: 'app' }), [group('运营群', ['a1']), project('App', ['app'])]);
+  it('a project chosen at creation is its home, not the group it was created in', () => {
+    const home = sidebarAgentHome(entry({ projectId: 'app', bornInChatId: 'ops' }), [group('运营群', 'ops'), project('App', ['app'])]);
     expect(home).toMatchObject({ kind: 'project', name: 'App' });
   });
 
-  it('is null for a standalone agent (in no group, no project), or a session without an agent in no project', () => {
-    expect(sidebarAgentHome(entry(), [group('运营群', ['a2']), project('App', ['app'])])).toBeNull();
-    expect(sidebarAgentHome(entry({ agentUserId: undefined }), [group('运营群', ['a1'])])).toBeNull();
+  it('is null for a standalone agent (created in a DM or with Create agent), or a session without an agent in no project', () => {
+    expect(sidebarAgentHome(entry({ bornInChatId: 'dm' }), [group('运营群', 'ops'), project('App', ['app'])])).toBeNull();
+    expect(sidebarAgentHome(entry(), [group('运营群', 'ops')])).toBeNull();
+    expect(sidebarAgentHome(entry({ agentUserId: undefined }), [group('运营群', 'ops')])).toBeNull();
   });
 });

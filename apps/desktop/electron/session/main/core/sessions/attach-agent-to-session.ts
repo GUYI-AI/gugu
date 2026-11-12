@@ -91,6 +91,8 @@ export type AttachAgentToSessionParams = {
   initialQueue?: InitialQueuePrompt[];
   startupOrigin?: 'chat-page' | 'session-page';
   initialMessageId?: string;
+  /** #2599 the group it is born in (BirthGroup.chatId), recorded on the row: where it lives. */
+  birthChatId?: string;
   /** Session-graph spawn uses this to persist (and mount) the child before starting its provider asynchronously. */
   deferStart?: boolean;
   runtime?: SessionRuntime;
@@ -165,6 +167,7 @@ export async function attachAgentToSession(
         initialQueue: params.initialQueue,
         startupOrigin: params.startupOrigin,
         initialMessageId: params.initialMessageId,
+        ...(params.birthChatId ? { birthChatId: params.birthChatId } : {}),
         agentDisplayName,
         forkFromProviderSessionId: params.forkFromProviderSessionId,
         parentSessionId: relations?.parentSessionId ?? null,

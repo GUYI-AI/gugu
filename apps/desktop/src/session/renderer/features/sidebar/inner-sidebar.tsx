@@ -105,6 +105,7 @@ export function mySidebarAgents(): ChatAgentEntry[] {
     agentUserId:
       sessionAgentBindings.bindingFor(item.id)?.agentUserId ??
       sidebarStore.remoteSession(item.projectId, item.id)?.summary.agent?.userId,
+    bornInChatId: item.bornInChatId ?? null,
   }));
 }
 
@@ -118,11 +119,20 @@ export function isProjectChat(chatId: string): boolean {
   return sidebarStore.sidebarProjects.some((ref) => ref.chatId === chatId);
 }
 
+/** 侧栏列着的项目(账号上的项目,归档的不列)在各台机器上的本地项目:住在这些里的 agent 住在那个项目,❌ 算在群里。 */
+function listedProjectIds(): ReadonlySet<string> {
+  return new Set(sidebarStore.sidebarProjects.flatMap((ref) => projectIdsOfChat(ref.chatId)));
+}
+
+/** #2599 这个群 / 项目里住着谁:在这个项目里的,或在这里(或它的一个话题里)建、又不在任何项目里的(chat-agents)。 */
 export function chatScope(anchor: InnerSidebarRoomAnchor, summaries: ReadonlyMap<string, ChatSummary>): ChatAgentScope {
-  const memberUserIds = summaries.get(anchor.chatId)?.memberUserIds ?? [];
-  return anchor.kind === 'group'
-    ? { kind: 'group', memberUserIds }
-    : { kind: 'project', projectIds: projectIdsOfChat(anchor.chatId), memberUserIds };
+  const projects = listedProjectIds();
+  return {
+    kind: anchor.kind,
+    projectIds: anchor.kind === 'project' ? projectIdsOfChat(anchor.chatId) : [],
+    bornHere: (chatId) => chatId === anchor.chatId || summaries.get(chatId)?.sourceChatId === anchor.chatId,
+    inProject: (projectId) => projects.has(projectId),
+  };
 }
 
 /** 侧栏里我的会话与它们的父子,数据变了才重编一遍(这一列每次渲染都要读;在跑的 agent 每跳一下状态它就重画一次)。 */

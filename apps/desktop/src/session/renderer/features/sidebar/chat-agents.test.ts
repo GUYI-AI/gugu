@@ -28,33 +28,74 @@ const ids = (entries: readonly { id: string }[]) => entries.map((e) => e.id);
 const rowIds = (list: ReturnType<typeof chatAgentSection>) => list.rows.map((row) => row.sessionId);
 const disclosure = { expanded: new Set<string>(), showAll: false };
 
-describe('my agents in a chat', () => {
+describe('my agents in a chat (#2599: where each was created, not the groups it is a member of)', () => {
+  // `p-shop` / `p-shop-remote` are the shop project's folders; `p-ads` belongs to another listed project; `p-other` is the
+  // task workspace (no project). `group-1` is a group with a topic `topic-1`; `shop-group` is the shop project's group.
+  const listed = new Set(['p-shop', 'p-shop-remote', 'p-ads']);
+  const inProject = (projectId: string) => listed.has(projectId);
+  const group = (chatId: string, topics: Record<string, string> = {}) => ({
+    kind: 'group' as const,
+    projectIds: [],
+    bornHere: (id: string) => id === chatId || topics[id] === chatId,
+    inProject,
+  });
+  const shop = {
+    kind: 'project' as const,
+    projectIds: ['p-shop', 'p-shop-remote'],
+    bornHere: (id: string) => id === 'shop-group',
+    inProject,
+  };
   const mine = [
-    entry('in-group', { agentUserId: 'agent-a' }),
-    entry('elsewhere', { agentUserId: 'agent-b' }),
-    entry('no-identity'),
-    entry('project-session', { projectId: 'p-shop', agentUserId: 'agent-c' }),
+    entry('born-in-group', { agentUserId: 'agent-a', bornInChatId: 'group-1' }),
+    entry('born-in-topic', { agentUserId: 'agent-t', bornInChatId: 'topic-1' }),
+    entry('born-in-dm', { agentUserId: 'agent-b', bornInChatId: 'dm-1' }),
+    entry('created-with-button', { agentUserId: 'agent-c', bornInChatId: null }),
+    entry('born-in-group-into-ads', { projectId: 'p-ads', agentUserId: 'agent-d', bornInChatId: 'group-1' }),
+    entry('project-session', { projectId: 'p-shop', agentUserId: 'agent-e', bornInChatId: 'group-1' }),
     entry('project-folder-on-other-machine', { projectId: 'p-shop-remote' }),
+    entry('born-in-shop-group-no-project', { agentUserId: 'agent-f', bornInChatId: 'shop-group' }),
   ];
 
-  it('in a group: only my sessions whose agent is a member of the group', () => {
-    expect(ids(myAgentsInChat(mine, { kind: 'group', memberUserIds: ['agent-a', 'human-1', 'someone-elses-agent'] }))).toEqual(['in-group']);
+  it('in a group: my agents created there or in one of its topics, outside every project', () => {
+    expect(ids(myAgentsInChat(mine, group('group-1', { 'topic-1': 'group-1' })))).toEqual(['born-in-group', 'born-in-topic']);
   });
 
-  it('a session without a gugu identity is in no group', () => {
-    expect(myAgentsInChat(mine, { kind: 'group', memberUserIds: [] })).toEqual([]);
+  it('a project chosen at creation wins over the group it was created in', () => {
+    expect(ids(myAgentsInChat(mine, group('group-1')))).not.toContain('born-in-group-into-ads');
+    expect(ids(myAgentsInChat(mine, group('group-1')))).not.toContain('project-session');
   });
 
-  it("in a project: the project's sessions on every machine, plus my agents among the project group's members", () => {
-    expect(ids(myAgentsInChat(mine, {
-      kind: 'project',
-      projectIds: ['p-shop', 'p-shop-remote'],
-      memberUserIds: ['agent-a'],
-    }))).toEqual(['in-group', 'project-session', 'project-folder-on-other-machine']);
+  it('created from a direct message or with Create agent: in no group (a row of its own)', () => {
+    for (const chatId of ['group-1', 'dm-1']) {
+      expect(ids(myAgentsInChat(mine, group(chatId)))).not.toContain('created-with-button');
+    }
+    expect(ids(myAgentsInChat(mine, group('group-1')))).not.toContain('born-in-dm');
   });
 
-  it('other people’s agents never appear: membership only filters my own sessions', () => {
-    expect(myAgentsInChat([], { kind: 'group', memberUserIds: ['someone-elses-agent'] })).toEqual([]);
+  it("in a project: the project's sessions on every machine, and agents created in its group with no project", () => {
+    expect(ids(myAgentsInChat(mine, shop))).toEqual(['project-session', 'project-folder-on-other-machine', 'born-in-shop-group-no-project']);
+  });
+
+  it('being a member is not living there: no membership is read at all', () => {
+    // agent-b (born in a DM) may be a member of group-1; it still lives in its own row, not in this column.
+    expect(ids(myAgentsInChat([entry('member-only', { agentUserId: 'agent-b', bornInChatId: 'dm-1' })], group('group-1')))).toEqual([]);
+  });
+
+  it('a sub-agent goes where the agent that spawned it lives, whatever its own project or origin', () => {
+    const family = [
+      entry('parent', { agentUserId: 'agent-a', bornInChatId: 'group-1' }),
+      entry('child-in-shop', { projectId: 'p-shop', parentSessionId: 'parent', agentUserId: 'agent-g' }),
+      entry('grandchild', { parentSessionId: 'child-in-shop', bornInChatId: 'dm-1' }),
+    ];
+    expect(ids(myAgentsInChat(family, group('group-1')))).toEqual(['parent', 'child-in-shop', 'grandchild']);
+    expect(myAgentsInChat(family, shop)).toEqual([]);
+  });
+
+  it('a child whose parent is not in hand is judged by its own fields; a parent cycle ends', () => {
+    const orphan = entry('orphan', { parentSessionId: 'on-another-machine', bornInChatId: 'group-1' });
+    expect(ids(myAgentsInChat([orphan], group('group-1')))).toEqual(['orphan']);
+    const cycle = [entry('x', { parentSessionId: 'y', bornInChatId: 'group-1' }), entry('y', { parentSessionId: 'x', bornInChatId: 'group-1' })];
+    expect(myAgentsInChat(cycle, group('group-1'))).toEqual([]);
   });
 });
 

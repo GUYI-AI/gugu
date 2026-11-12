@@ -125,6 +125,8 @@ const ptyConfigV1 = z.object({
   initialMessageId: z.string().optional(),
   /** gugu-dev#181: the chat whose composer dispatched this task — its first turn lands there as a task card. */
   taskChatId: z.string().optional(),
+  /** #2599 the group this agent was created in (it joined it at birth): where it lives, whatever groups it joins later. */
+  birthChatId: z.string().optional(),
   /** Typed session messages queued through sessions.sendMessage before the process is ready. */
   messageOutbox: z.array(sessionMessageSchema).optional(),
   /** Provider-neutral spawn lifecycle. Present only while a gugu_session spawn is starting. */
@@ -192,6 +194,8 @@ const acpConfigV1 = z.object({
   initialMessageId: z.string().optional(),
   /** gugu-dev#181: the chat whose composer dispatched this task — its first turn lands there as a task card. */
   taskChatId: z.string().optional(),
+  /** #2599 the group this agent was created in (it joined it at birth): where it lives, whatever groups it joins later. */
+  birthChatId: z.string().optional(),
   /** Typed session messages queued through sessions.sendMessage before the runtime is ready. */
   messageOutbox: z.array(sessionMessageSchema).optional(),
   /** Provider-neutral spawn lifecycle. Present only while a gugu_session spawn is starting. */
