@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // #2548 the sample project (#709) open: the inner column draws the sample itself from its bundled content. Head row =
-// cover, name, 「示例」, no new-agent pen (read-only), 「…」 holding only the row menu's remove; 智能体 lists exactly the
+// cover, name, 「示例」, no new-agent pen (no project to send one to until the first message turns it into one, #2569), 「…」 holding only the row menu's remove; 智能体 lists exactly the
 // content's agent (clicking it = clicking the task card); 话题 is empty. Removing the sample takes the column with it.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -68,7 +68,10 @@ vi.mock('@renderer/features/tabs/tab-bar', () => ({ TabStripShell: () => null })
 vi.mock('@renderer/features/tabs/tab-bar/tab-chip', () => ({ TabChip: () => null, TabSlot: () => null }));
 vi.mock('@renderer/features/sessions/titlebar-actions', () => ({ TabBarActionRow: () => null }));
 vi.mock('@/components/chat/MessageFilePreviewPanel', () => ({ MessageFilePreviewPanel: () => <aside data-file-pane="" /> }));
-vi.mock('@renderer/features/sample-project/sample-new-project-button', () => ({ SampleNewProjectButton: () => null }));
+// #2569 the block's footer is the new-task composer (its own tests: sample-composer.test.tsx).
+vi.mock('@renderer/features/sample-project/sample-composer', () => ({
+  SampleComposer: ({ ownerId }: { ownerId: string }) => <div data-sample-composer={ownerId} />,
+}));
 vi.mock('@renderer/features/sample-project/sample-project-transcript', async (original) => ({
   ...(await original<object>()),
   SampleProjectTranscript: ({ onOpenTask }: { onOpenTask: () => void }) => <button type="button" data-task-card="" onClick={onOpenTask} />,
@@ -148,7 +151,7 @@ describe('the inner column for the sample project', () => {
     expect(headRow.textContent).toContain('projects.sample.name');
     expect(headRow.querySelector('[data-slot="chip"]')?.textContent).toBe('projects.sample.tag');
     expect(headRow.querySelector('[data-inner-head-actions]')?.getAttribute('aria-label')).toBe('projects.sample.actions');
-    expect(host.querySelector('[data-inner-head-new-agent]'), 'read-only: nobody to send a new agent to').toBeNull();
+    expect(host.querySelector('[data-inner-head-new-agent]'), 'no project yet: nobody to send a new agent to').toBeNull();
     expect(head().getAttribute('aria-current')).toBe('page');
     expect(head().dataset.active, 'the head row is a title, never a selected row').toBeUndefined();
 
@@ -165,6 +168,13 @@ describe('the inner column for the sample project', () => {
     const topics = host.querySelector<HTMLElement>('[data-inner-sidebar-section="topics"]')!;
     expect(topics.textContent).toContain('sidebar.topics');
     expect(topics.textContent).toContain('sidebar.noTopics');
+  });
+
+  it('#2569 the conversation ends in the new-task composer, not the read-only note and its 新建项目 button', async () => {
+    await render();
+    expect(host.querySelector('[data-sample-conversation] [data-sample-composer="u"]')).not.toBeNull();
+    expect(host.textContent).not.toContain('projects.sample.note');
+    expect(host.querySelector('[data-sample-new-project]')).toBeNull();
   });
 
   it('clicking the agent opens the task pane the task card opens; the head row goes back to the conversation', async () => {

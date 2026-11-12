@@ -10,7 +10,7 @@ import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { SampleNewProjectButton } from './sample-new-project-button';
+import { SampleComposer } from './sample-composer';
 import { SampleProjectTranscript, sampleFileBytes } from './sample-project-transcript';
 import { RETAINED_SURFACE_HIDDEN_STYLE } from '@/lib/retainedSurface';
 import { SampleTaskPane } from './sample-task-pane';
@@ -19,8 +19,9 @@ import { sampleProjectContent, useSampleProject } from './use-sample-project';
 
 /**
  * 示例项目「周末去杭州」那一块(#709):和项目那一块同一条页签条(项目名 + 「示例」),下面是项目群里那段真跑过、固化下来的对话。
- * 点文件卡 = 右边看这份文件(群聊同一块预览);点任务卡(或内层侧栏里那个智能体)= 整块换成这一趟它做了什么(#2548)。没有输入框:底下一行说明这是示例,
- * 旁边「新建项目」和侧栏「添加项目」同一组。全在包里,❌ 读网络、❌ 调模型。账号上的键读到「不在了」,这一块自己收掉。
+ * 点文件卡 = 右边看这份文件(群聊同一块预览);点任务卡(或内层侧栏里那个智能体)= 整块换成这一趟它做了什么(#2548)。
+ * 底下是和项目里一样的新任务框(#2569):发出第一句,示例就变成这个人自己的项目(SampleComposer)。示例本身全在包里,❌ 读网络、
+ * ❌ 调模型。账号上的键读到「不在了」(删了,或已经让给它变成的那个项目),这一块自己收掉。
  */
 export const SampleProjectBlock = observer(function SampleProjectBlock({ blockId, blockActions }: { blockId: string; blockActions?: ReactNode }) {
   const { translate, locale } = useSessionMessages();
@@ -64,10 +65,7 @@ export const SampleProjectBlock = observer(function SampleProjectBlock({ blockId
               onOpenTask={() => openSamplePane({ kind: 'task' })}
             />
           ) : <div className="min-h-0 flex-1" />}
-          <footer className="flex shrink-0 items-center gap-3 border-t border-border-subtle px-4 py-3">
-            <span className="min-w-0 flex-1 text-sm text-foreground-muted">{translate('projects.sample.note')}</span>
-            <SampleNewProjectButton />
-          </footer>
+          {sample.owner ? <SampleComposer ownerId={sample.owner.id} content={content} /> : null}
         </div>
         {file ? (
           <MessageFilePreviewPanel
