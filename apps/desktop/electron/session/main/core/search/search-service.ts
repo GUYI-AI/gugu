@@ -126,7 +126,7 @@ class SearchService {
    * Newest is the turn's row order: a turn's created_at is only ever the insert-time default, so the two orders are one.
    * Sorting by created_at would read every matching turn's whole record (the column sits after `data`), and carrying
    * `data` through the sort copies it for every match — a short or common word in a long history matches tens of
-   * thousands of rows, and this runs on the main thread (an 8.6 GB history: "li" froze the window for 50 s). So the
+   * thousands of rows, and this runs on the main thread (a 30k-turn history: "li" froze the window for 50 s). So the
    * ranking reads only the index, and only the turns of the hits returned are read, once each.
    */
   searchTaskTurns(query: string, limit = 30): TaskTurnHit[] {
