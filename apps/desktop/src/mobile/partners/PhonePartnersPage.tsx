@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import { AddFriendSearch } from '@/components/AddFriendSearch'
@@ -28,6 +28,7 @@ import { deviceSessionsOf, useLiveDeviceSessions } from '@/session/shared/remote
 import type { AuthUser } from '@/store/auth'
 import { useContactsStore } from '@/store/contactsContext'
 import { useDevicesStore } from '@/store/devicesContext'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 import { useToast } from '@/components/toastContext'
 import { messageForUser } from '@/lib/userFacingError'
 import { projectRpcOn } from './projectRpc'
@@ -128,7 +129,8 @@ export function PhonePartnersPage({
   }, [newProjectRequest])
 
   const machines = useMemo(() => directoryMachines(devices, isHome), [devices, isHome])
-  const projects = useMemo(() => partnerProjects(machines), [machines])
+  const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
+  const projects = useMemo(() => partnerProjects(accountList, machines, isHome), [accountList, machines, isHome])
   const sessionsOf = useCallback((deviceId: string) => {
     const device = machines.find((row) => row.device_id === deviceId)
     return device ? deviceSessionsOf(device, liveSessions) : { sessions: [], hostOnline: false }

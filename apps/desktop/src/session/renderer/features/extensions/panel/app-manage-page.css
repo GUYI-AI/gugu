@@ -266,11 +266,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 作者声明的字段和这一页别的行一样分开。 */
+/* 作者声明的字段和这一页别的行一样分开。
+   ❌ `> * + *`:兄弟组合子左边是 `*`,Blink 对整个文档里每一次插入节点都要重查后面的兄弟,右边又不带类名,
+   于是后面兄弟的整棵子树全部重算样式 —— 进过一次 App 页,此后每次切群都把整页重算一遍(scripts/checks/check-css-parses.mjs)。 */
 .mg .tool-app-fields {
   gap: 14px;
 }
-.mg .tool-app-fields > * + *:not(.tool-app-saved) {
+.mg .tool-app-fields > :not(:first-child, .tool-app-saved) {
   padding-top: 14px;
   border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
 }

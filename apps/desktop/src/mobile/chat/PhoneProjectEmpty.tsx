@@ -1,7 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { useDevicesStore } from '@/store/devicesContext'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import { useMachineLabel } from '../agent-watch/useMachineLabel'
 import { ProjectFolderAvatar } from '../partners/ProjectFolderAvatar'
 import { startPhoneNewTask } from './PhoneNewTask'
 import { taskFoldersOfChat } from './phoneTaskFolders'
@@ -10,7 +12,9 @@ import { taskFoldersOfChat } from './phoneTaskFolders'
 export function PhoneProjectEmpty({ chatId }: { chatId: string }) {
   const { t } = useTranslation('messaging')
   const { devices } = useDevicesStore()
-  const project = useMemo(() => taskFoldersOfChat(devices, chatId), [devices, chatId])
+  const { label, isHome } = useMachineLabel()
+  const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
+  const project = useMemo(() => taskFoldersOfChat(accountList.find((one) => one.chatId === chatId), devices, { label, isHome }), [accountList, devices, chatId, label, isHome])
   if (!project) return t('chatArea.noMessages')
   return <div className="gg-phone-project-empty" data-testid="phone-project-empty">
     <ProjectFolderAvatar coverId={project.rowId} size={64} />

@@ -209,12 +209,12 @@ afterEach(async () => {
 })
 
 describe('读绑定', () => {
-  it('对照里记着的 + 老数据只记在名册上的;只答问到的项目,隐式项目不算', async () => {
+  it('对照里记着的(老数据只记在名册上的,第一次读对照时迁进来);只答问到的项目,隐式项目不算', async () => {
+    seedAgent('agent-legacy', 's-9', { emdash_project_id: 'proj-legacy', sessionpage_group_chat_id: 'chat-legacy' })
     const { rememberProjectGroupId } = await import(MAPPING)
     await rememberProjectGroupId('proj-a', 'chat-a', OWNER, env)
     await rememberProjectGroupId('proj-gone', 'chat-gone', OWNER, env)
     await rememberProjectGroupId('proj-other-account', 'chat-x', 'owner-2', env)
-    seedAgent('agent-legacy', 's-9', { emdash_project_id: 'proj-legacy', sessionpage_group_chat_id: 'chat-legacy' })
     const host = await makeHost()
     const result = await host.listBindings(['proj-a', 'proj-legacy', 'proj-other-account', 'proj-none', IMPLICIT_PROJECT])
     expect(result).toEqual({
@@ -224,6 +224,41 @@ describe('读绑定', () => {
         { projectId: 'proj-legacy', chatId: 'chat-legacy' },
       ],
     })
+  })
+
+  it('the roster is migrated into the mapping once; after that a roster pin binds nothing (no fallback)', async () => {
+    const { readProjectGroupId } = await import(MAPPING)
+    seedAgent('agent-1', 's-1', { sessionpage_group_chat_id: 'chat-roster' })
+    // An entry already in the mapping wins over the roster; an agent with no recorded owner goes to the unowned entries.
+    const { writeFile } = await import('node:fs/promises')
+    await writeFile(join(home, 'taskpage-project-groups.json'), JSON.stringify({ owners: { [OWNER]: { 'proj-b': 'chat-mapped' } }, unowned: {} }))
+    seedAgent('agent-2', 's-2', { emdash_project_id: 'proj-b', sessionpage_group_chat_id: 'chat-stale' })
+    seedAgent('agent-3', 's-3', { emdash_project_id: 'proj-c', sessionpage_owner_user_id: undefined, sessionpage_group_chat_id: 'chat-unowned' })
+    const host = await makeHost()
+    expect(await host.listBindings(['proj-a', 'proj-b'])).toEqual({ success: true, data: [
+      { projectId: 'proj-a', chatId: 'chat-roster' }, { projectId: 'proj-b', chatId: 'chat-mapped' },
+    ] })
+    expect(await readProjectGroupId('proj-c', 'owner-2', env), 'ownerless roster pin → unowned (claimable)').toBe('chat-unowned')
+    expect(JSON.parse(await (await import('node:fs/promises')).readFile(join(home, 'taskpage-project-groups.json'), 'utf8')).rosterMigrated).toBe(true)
+    // Once migrated: a pin written only to the roster later binds nothing, and a forgotten binding stays forgotten.
+    seedAgent('agent-4', 's-4', { emdash_project_id: 'proj-d', sessionpage_group_chat_id: 'chat-roster-only' })
+    const { forgetProjectGroupId } = await import(MAPPING)
+    await forgetProjectGroupId('proj-a', OWNER, env)
+    expect(await host.listBindings(['proj-a', 'proj-d'])).toEqual({ success: true, data: [] })
+  })
+
+  it('an unreadable mapping is an error, ❌ read as "no bindings" (it would merge or duplicate project groups)', async () => {
+    const { writeFile } = await import('node:fs/promises')
+    const { readProjectGroupId, rememberProjectGroupId } = await import(MAPPING)
+    await writeFile(join(home, 'taskpage-project-groups.json'), '{ "owners": ')
+    await expect(readProjectGroupId('proj-a', OWNER, env)).rejects.toThrow(/project group mapping .* is unreadable/)
+    await expect(rememberProjectGroupId('proj-a', 'chat-a', OWNER, env)).rejects.toThrow(/unreadable/)
+    await expect((await makeHost()).listBindings(['proj-a'])).rejects.toThrow(/unreadable/)
+    await writeFile(join(home, 'taskpage-project-groups.json'), '[]')
+    await expect(readProjectGroupId('proj-a', OWNER, env)).rejects.toThrow(/unreadable/)
+    // Mended: read again (the failed migration is retried, never skipped).
+    await writeFile(join(home, 'taskpage-project-groups.json'), JSON.stringify({ owners: { [OWNER]: { 'proj-a': 'chat-a' } }, unowned: {} }))
+    expect(await readProjectGroupId('proj-a', OWNER, env)).toBe('chat-a')
   })
 
   it('云电脑上没有项目群 ⇒ 空;没登录 ⇒ not-signed-in(❌ 冒充空)', async () => {
@@ -439,7 +474,7 @@ describe('并进来(owner 2026-10-17 选 A)', () => {
 })
 
 describe('撤销', () => {
-  it('解除最初建群的设备也清除名册兜底,原群成员与历史仍保留', async () => {
+  it('解除最初建群的设备:没有原来的群 ⇒ 不再绑定,名册的钉也清掉;原群成员与历史仍保留', async () => {
     const { rememberProjectGroupId } = await import(MAPPING)
     const group = seedGroup('chat-shared', { members: [OWNER, 'agent-1'] })
     await rememberProjectGroupId('proj-a', 'chat-shared', OWNER, env)
@@ -471,12 +506,11 @@ describe('撤销', () => {
     rpcCalls.length = 0
 
     expect(await host.unbind(subjectA)).toEqual({ success: true, data: { changed: true, expectedChatId: 'chat-old' } })
-    expect(await readProjectGroupId('proj-a', OWNER, env)).toBeNull()
-    expect(pinOf('agent-1'), '钉回原来的群:下一条会话照名册找群就回到那里').toBe('chat-old')
+    expect(await readProjectGroupId('proj-a', OWNER, env), '对照改指并进来之前的群').toBe('chat-old')
+    expect(pinOf('agent-1'), '钉回原来的群').toBe('chat-old')
     expect(roster[0]!.cache).not.toHaveProperty('sessionpage_group_chat_before_bind')
     expect(target.members.has('agent-1'), '已经加进去的 agent 留在那个群里').toBe(true)
     expect(rpcCalls).toEqual([])
-    // 名册回到原来的群之后,读绑定退回名册 —— 正是撤销想要的那个群。
     expect(await host.listBindings(['proj-a'])).toEqual({ success: true, data: [{ projectId: 'proj-a', chatId: 'chat-old' }] })
   })
 

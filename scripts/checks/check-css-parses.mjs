@@ -12,6 +12,12 @@
 //
 // 这道闸只做一件事:把每个 .css 交给 postcss 真解析一遍,语法错就红。
 // ❌ 它不判样式对不对(那是 check-ui-visual-spec 的活),只判「这个文件还能不能被编译器读懂」。
+//
+// @@@universal-sibling — 解析出来的规则顺带查一种「写得对、却让整页变慢」的选择器:兄弟组合子(+ / ~)左边的那一段
+// 什么特征都没有(`*`、`:not(…)`、伪类)。Blink 认不出该盯哪个元素,只好对文档里每一次插入节点都重查插入点后面的兄弟,
+// 右边也没类名时就把那些兄弟的整棵子树作废。实撞:`.mg .tool-app-fields > * + *` 随 App 页的样式表载入后常驻,
+// 此后每次切项目群(弹层挂到 body 下)都把整页重算一遍,页面越大越慢(5.4 万节点的页面,单次 600–1000 ms)。
+// 改法:左边给一个类 / 属性 / 标签,或者不用兄弟组合子(`> :not(:first-child)`)。
 
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -43,13 +49,43 @@ function collect(dir, found = []) {
   return found
 }
 
+// 按顶层组合子切开(括号里的不切),返回 [段, 组合子, 段, …]。
+function compounds(selector) {
+  const out = []
+  let current = '', depth = 0
+  for (const ch of selector) {
+    if (ch === '(' || ch === '[') depth++
+    if (ch === ')' || ch === ']') depth--
+    if (depth === 0 && (ch === '>' || ch === '+' || ch === '~' || ch === ' ')) {
+      if (current.trim()) out.push(current.trim())
+      if (ch !== ' ') out.push(ch)
+      current = ''
+    } else current += ch
+  }
+  if (current.trim()) out.push(current.trim())
+  return out
+}
+// 没有类 / id / 属性 / 标签。`:is()` / `:where()` 的参数算这一段的特征(Blink 也这么取);`:not()` / `:has()` 和别的伪类不算。
+const featureless = (compound) => !/[\w.#[]/.test(compound
+  .replace(/:(?:is|where)\(((?:[^()]|\([^()]*\))*)\)/g, ' $1 ')
+  .replace(/::?[\w-]+(\((?:[^()]|\([^()]*\))*\))?/g, '')
+  .replace(/\*/g, ''))
+
 const files = collect(repoRoot).sort()
 const failures = []
 for (const file of files) {
   const source = readFileSync(file, 'utf8')
   try {
     // `from` 让报错带上真实路径;不做任何插件,只要解析器点头。
-    postcss.parse(source, { from: file })
+    postcss.parse(source, { from: file }).walkRules((rule) => {
+      if (rule.parent?.type === 'atrule' && /keyframes$/.test(rule.parent.name)) return
+      for (const selector of rule.selectors) {
+        const parts = compounds(selector)
+        if (parts.some((part, index) => (part === '+' || part === '~') && index > 0 && featureless(parts[index - 1]))) {
+          failures.push(`${path.relative(repoRoot, file)}:${rule.source?.start?.line ?? 0} — \`${selector}\`: 兄弟组合子左边没有类 / 属性 / 标签,每次插入节点都会作废后面兄弟的样式(@@@universal-sibling)`)
+        }
+      }
+    })
   } catch (error) {
     const rel = path.relative(repoRoot, file)
     const where = error.line ? `:${error.line}:${error.column ?? 0}` : ''
@@ -58,7 +94,7 @@ for (const file of files) {
 }
 
 if (failures.length > 0) {
-  console.error('css parse guard FAILED — 这些文件 PostCSS 读不懂,构建时会整份丢掉:')
+  console.error('css parse guard FAILED — 这些文件 PostCSS 读不懂(构建时会整份丢掉),或写了整页重算的兄弟选择器:')
   for (const line of failures) console.error(`  ${line}`)
   console.error('\n⚠️ 最常见的一种:注释里写了 `*/`(比如 `text-*/font-*`),把注释提前闭合。')
   process.exit(1)

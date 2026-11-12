@@ -197,6 +197,7 @@ import { getPlugin } from '../agents/plugin-registry';
 import { appSettingsService } from '@main/core/settings/settings-service';
 import {
   messageSessionFrom,
+  assertOutboundProjectIds,
   runRemoteSessionAction,
   runSessionAction,
   sessionCallerFacts,
@@ -248,6 +249,11 @@ describe('session orchestration', () => {
     fixture = await openFixture('empty');
     // These sessions have no social identity: the host reports none to remove.
     setSessionIdentityHost({ archive: async () => null, release: async () => {}, restore: async () => {} });
+    // Projects answer outward with their project group id (project-public-id.ts): project-N is in group-N here.
+    setProjectGroupHost({
+      listBindings: async (ids) => ok(ids.flatMap((projectId) => /^project-\d$/.test(projectId) ? [{ projectId, chatId: projectId.replace('project', 'group') }] : [])),
+      ensureGroup: vi.fn(), bindToGroup: vi.fn(), unbind: vi.fn(),
+    });
     mocks.db = fixture.db;
     mocks.startSession.mockReset();
     mocks.stopSession.mockReset();
@@ -807,7 +813,7 @@ describe('session orchestration', () => {
       bindings('project-2');
       const result = await runRemoteSessionAction({ ...remoteCaller, groupChatId: 'shared-project-group' }, { action: 'spawn', prompt: 'inspect' }) as { session_id: string; project_id: string; project_note: string };
       expect(mocks.resolveProjectWorkspace).toHaveBeenCalledWith({ projectId: 'project-2', projectPath: '' });
-      expect(result).toMatchObject({ project_id: 'project-2', project_note: expect.stringContaining('Project 2') });
+      expect(result).toMatchObject({ project_id: 'shared-project-group', project_note: expect.stringContaining('Project 2') });
       expect(result.project_note).toContain('matched');
       expect(workspaceOf(result.session_id)).toBe('workspace-p2');
     });
@@ -816,7 +822,7 @@ describe('session orchestration', () => {
       taskWorkspace();
       bindings();
       const result = await runRemoteSessionAction({ ...remoteCaller, groupChatId: 'shared-project-group' }, { action: 'spawn', prompt: 'inspect' }) as { session_id: string; project_note: string };
-      expect(result).toMatchObject({ project_id: IMPLICIT_SESSION_HOME_PROJECT_ID });
+      expect(result).toMatchObject({ project_id: null });
       expect(result.project_note).toContain('Task workspace');
       expect(result.project_note).toContain('no local project associated');
       expect(result.project_note).toContain('project_add_device');
@@ -827,16 +833,43 @@ describe('session orchestration', () => {
     it('keeps task-workspace placement for older callers or callers outside projects', async () => {
       taskWorkspace();
       const result = await runRemoteSessionAction(remoteCaller, { action: 'spawn', prompt: 'inspect' }) as { session_id: string };
-      expect(result).toMatchObject({ project_id: IMPLICIT_SESSION_HOME_PROJECT_ID, project_note: expect.stringContaining('no caller project group supplied') });
+      expect(result).toMatchObject({ project_id: null, project_note: expect.stringContaining('no caller project group supplied') });
       expect(workspaceOf(result.session_id)).toBe('workspace-home');
     });
 
-    it.each([{ project_id: 'project-2' }, { project_path: '/other' }])('keeps explicit project placement ahead of the caller group: %j', async (named) => {
+    // A project id is its project group on every device: it crosses machines as it is; a local id is refused at the exit, naming the right one.
+    it('lets a project id leave this machine as it is, and refuses this machine’s local project id naming the project id', async () => {
+      bindings('project-2');
+      await expect(assertOutboundProjectIds({ project_id: 'shared-project-group' })).resolves.toBeUndefined();
+      // A project with no folder here is still a project: the other device resolves it.
+      await expect(assertOutboundProjectIds({ project_id: 'their-group' })).resolves.toBeUndefined();
+      for (const action of [{ project_id: 'project-2' }, { source_project_id: 'project-2' }]) {
+        await expect(assertOutboundProjectIds(action)).rejects.toThrow('use project:shared-project-group');
+      }
+      bindings();
+      await expect(assertOutboundProjectIds({ project_id: 'project-2' })).rejects.toThrow('which is in no project');
+    });
+
+    it('refuses this machine’s local project id from a remote caller and in a local spawn, naming the project id', async () => {
       project2Root();
-      // No group host: querying the implicit default would fail this explicit request.
+      await expect(runRemoteSessionAction(remoteCaller, { action: 'spawn', prompt: 'x', project_id: 'project-2' })).rejects.toThrow('use project:group-2');
+      await expect(runSessionAction(context, { action: 'spawn', prompt: 'x', project_id: 'project-2' })).rejects.toThrow('use project:group-2');
+      expect(childRows()).toHaveLength(0);
+    });
+
+    it('refuses a named project group this device has no folder for, instead of the task workspace', async () => {
+      taskWorkspace();
+      bindings('project-2');
+      await expect(runRemoteSessionAction({ ...remoteCaller, groupChatId: 'shared-project-group' }, { action: 'spawn', prompt: 'inspect', project_id: 'unknown-group' }))
+        .rejects.toThrow('project_add_device');
+    });
+
+    it.each([{ project_id: 'group-2' }, { project_path: '/other' }])('keeps explicit project placement ahead of the caller group: %j', async (named) => {
+      project2Root();
+      // Named explicitly: the caller's group is never consulted.
       const result = await runRemoteSessionAction({ ...remoteCaller, groupChatId: 'shared-project-group' }, { action: 'spawn', prompt: 'inspect', ...named }) as { session_id: string };
-      expect(mocks.resolveProjectWorkspace).toHaveBeenCalledWith({ projectId: named.project_id, projectPath: named.project_path ?? '' });
-      expect(result).toMatchObject({ project_id: 'project-2' });
+      expect(mocks.resolveProjectWorkspace).toHaveBeenCalledWith({ projectId: named.project_id && 'project-2', projectPath: named.project_path ?? '' });
+      expect(result).toMatchObject({ project_id: 'group-2' });
       expect(result).not.toHaveProperty('project_note');
       expect(workspaceOf(result.session_id)).toBe('workspace-p2');
     });
@@ -862,7 +895,7 @@ describe('session orchestration', () => {
       project2Root();
       mocks.resolveCreateEffort.mockResolvedValueOnce({ ok: true, value: 'native-level' });
       const result = await runRemoteSessionAction({ ...remoteCaller, model: 'native-model' }, {
-        action: 'spawn', prompt: 'inspect', project_id: 'project-2', thinking: 'native-level',
+        action: 'spawn', prompt: 'inspect', project_id: 'group-2', thinking: 'native-level',
       }) as { session_id: string };
       expect(mocks.resolveCreateEffort).toHaveBeenCalledWith({ harness: 'codex', sessionView: 'general', model: 'native-model', effort: 'native-level' });
       expect(configOf(result.session_id)).toMatchObject({ effort: 'native-level' });
@@ -874,7 +907,7 @@ describe('session orchestration', () => {
       const stop=installAssistantWorkLedgerHost({context:async()=>({ownerId:'owner',runtimeInstanceId:'runtime',deviceId:'device-b',client:{rpc:async()=>({data:null,error:null})}}),kick:()=>{}});
       const intent={version:1 as const,assistant_id:'10000000-0000-4000-8000-000000000001',work_id:'10000000-0000-4000-8000-000000000002',operation_id:'10000000-0000-4000-8000-000000000003',message_id:'10000000-0000-4000-8000-000000000004',child_session_id:'10000000-0000-4000-8000-000000000005',coordinator:{session_id:'remote-caller',device_id:'device-a'},title:'Task',continuation:false};
       try {
-        const action={action:'spawn' as const,prompt:'Run after account acceptance',project_id:'project-2',assistant_work:intent};
+        const action={action:'spawn' as const,prompt:'Run after account acceptance',project_id:'group-2',assistant_work:intent};
         const first=await runRemoteSessionAction(remoteCaller,action) as {session_id:string;assistant_work_target:unknown};
         expect(first.session_id).toBe(intent.child_session_id);
         expect(first.assistant_work_target).toMatchObject({session_id:intent.child_session_id,device_id:'device-b'});
@@ -892,7 +925,7 @@ describe('session orchestration', () => {
       const result = (await runRemoteSessionAction(remoteCaller, {
         action: 'spawn',
         prompt: 'Train the model on this box.',
-        project_id: 'project-2',
+        project_id: 'group-2',
       })) as {
         session_id: string;
         parent_session_id: string | null;
@@ -945,7 +978,7 @@ describe('session orchestration', () => {
     it('lets a remote spawner choose a parent on the receiving machine without changing provenance', async () => {
       project2Root();
       const child = await runRemoteSessionAction(remoteCaller, {
-        action: 'spawn', prompt: 'x', project_id: 'project-2', parent_session_id: 'caller',
+        action: 'spawn', prompt: 'x', project_id: 'group-2', parent_session_id: 'caller',
       }) as { session_id: string; parent_session_id: string | null; spawned_by_session_id: string };
       expect(child).toMatchObject({ parent_session_id: 'caller', spawned_by_session_id: 'remote-caller' });
       expect(fixture.sqlite.prepare('SELECT parent_session_id, spawned_by_session_id, project_id FROM sessions WHERE id = ?').get(child.session_id))
@@ -970,7 +1003,7 @@ describe('session orchestration', () => {
     // owner 2026-10-30: project and parent are orthogonal — naming a project does not unhook the child from its spawner.
     it('spawns into a named project on this machine at its root — still under the caller unless the parent is null', async () => {
       project2Root();
-      const result = (await runRemoteSessionAction(remoteCaller, { action: 'spawn', prompt: 'x', project_id: 'project-2' })) as {
+      const result = (await runRemoteSessionAction(remoteCaller, { action: 'spawn', prompt: 'x', project_id: 'group-2' })) as {
         session_id: string;
         parent_session_id: string | null;
       };
@@ -978,14 +1011,14 @@ describe('session orchestration', () => {
       expect(result.parent_session_id).toBe('remote-caller');
       expect(configOf(result.session_id).parentRemote).toEqual({ deviceId: 'device-a', sessionId: 'remote-caller' });
       expect(childRows()[0]!.workspace_id).toBe('workspace-p2');
-      const flat = (await runRemoteSessionAction(remoteCaller, { action: 'spawn', prompt: 'x', project_id: 'project-2', parent_session_id: null })) as { session_id: string; parent_session_id: string | null };
+      const flat = (await runRemoteSessionAction(remoteCaller, { action: 'spawn', prompt: 'x', project_id: 'group-2', parent_session_id: null })) as { session_id: string; parent_session_id: string | null };
       expect(flat.parent_session_id).toBeNull();
       expect(configOf(flat.session_id)).not.toHaveProperty('parentRemote');
       expect(configOf(flat.session_id).spawnedByRemote).toEqual(configOf(result.session_id).spawnedByRemote);
       expect(fixture.sqlite.prepare('SELECT project_id, workspace_id FROM sessions WHERE id = ?').get(flat.session_id))
         .toEqual({ project_id: 'project-2', workspace_id: 'workspace-p2' });
       expect(await runRemoteSessionAction(remoteCaller, { action: 'children' })).toEqual([
-        expect.objectContaining({ session_id: result.session_id, parent_session_id: 'remote-caller', project_id: 'project-2' }),
+        expect.objectContaining({ session_id: result.session_id, parent_session_id: 'remote-caller', project_id: 'group-2' }),
       ]);
     });
 
@@ -2049,7 +2082,7 @@ describe('session orchestration', () => {
     expect(fixture.sqlite.prepare('SELECT project_id, parent_session_id, spawned_by_session_id FROM sessions WHERE id = ?').get(flat.session_id))
       .toEqual({ project_id: 'project-2', parent_session_id: null, spawned_by_session_id: 'caller' });
     expect(await runSessionAction(context, { action: 'children' })).toEqual([
-      expect.objectContaining({ session_id: otherProject.session_id, parent_session_id: 'caller', project_id: 'project-2' }),
+      expect.objectContaining({ session_id: otherProject.session_id, parent_session_id: 'caller', project_id: 'group-2' }),
     ]);
   });
 
@@ -2061,7 +2094,7 @@ describe('session orchestration', () => {
     project2Root();
     fixture.sqlite.prepare("INSERT INTO sessions (id, project_id, runtime, config) VALUES ('chosen-parent', 'project-1', 'acp', json_object('version', '1', 'type', 'acp', 'agentDisplayName', 'Parent'))").run();
     const child = await runSessionAction(context, {
-      action: 'spawn', prompt: 'Work elsewhere.', project_id: 'project-2', parent_session_id: 'chosen-parent',
+      action: 'spawn', prompt: 'Work elsewhere.', project_id: 'group-2', parent_session_id: 'chosen-parent',
     }) as { session_id: string; parent_session_id: string | null };
     expect(child.parent_session_id).toBe('chosen-parent');
     expect(fixture.sqlite.prepare('SELECT project_id, parent_session_id, spawned_by_session_id FROM sessions WHERE id = ?').get(child.session_id))
@@ -2089,7 +2122,7 @@ describe('session orchestration', () => {
       }),
       archive: vi.fn(), appMessage: vi.fn(), appCall: vi.fn(), sessionHome: vi.fn(),
     });
-    const action = { action: 'spawn' as const, prompt: 'x', project_id: 'project-2', parent_session_id: 'chosen-remote' };
+    const action = { action: 'spawn' as const, prompt: 'x', project_id: 'group-2', parent_session_id: 'chosen-remote' };
     const child = await (remoteCaller
       ? runRemoteSessionAction({ deviceId: 'device-a', deviceLabel: null, sessionId: 'remote-spawner', agentUserId: null, name: null, harness: 'codex', transport: 'acp', model: null, platformModel: null }, action)
       : runSessionAction(context, action)) as { session_id: string; parent_session_id: string; not_reached: string[]; spawned_by_session_id: string };
@@ -2360,7 +2393,7 @@ describe('session orchestration', () => {
     const child = (await runSessionAction(context, {
       action: 'spawn',
       prompt: 'Work in the other repo.',
-      project_id: 'project-2',
+      project_id: 'group-2',
     })) as { session_id: string };
     fixture.sqlite
       .prepare(
@@ -2372,7 +2405,7 @@ describe('session orchestration', () => {
     await expect(
       runSessionAction(context, { action: 'get', session_id: child.session_id })
     ).resolves.toEqual(
-      expect.objectContaining({ session_id: child.session_id, project_id: 'project-2' })
+      expect.objectContaining({ session_id: child.session_id, project_id: 'group-2' })
     );
     await expect(
       runSessionAction(context, { action: 'stop', session_id: child.session_id })

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { IMPLICIT_SESSION_HOME_PROJECT_ID } from '@renderer/features/sessions/session-home-project-constants';
 import { SidebarStore } from './sidebar-store';
+import { sidebarOf } from './mirror-account-projects.testing';
 
 type SidebarProjectManager = ConstructorParameters<typeof SidebarStore>[0];
 
@@ -41,7 +42,7 @@ function session(id: string, minute: number, extra: Record<string, unknown> = {}
 
 function storeWith(projectId: string, sessions: ReturnType<typeof session>[]): SidebarStore {
   sessionRegistry.acquire(TASK, projectId, sessions.map((s) => ({ ...s, projectId })) as never);
-  return new SidebarStore({
+  return sidebarOf({
     projects: new Map([
       [
         projectId,

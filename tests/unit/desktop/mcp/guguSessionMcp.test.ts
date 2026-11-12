@@ -828,28 +828,29 @@ describe('project_* tools', () => {
     const seen: unknown[] = []
     const client = await connectTo(socialContext(async (action) => {
       seen.push(action)
-      return { project_id: 'p1', linked_project_id: 'p2', undo: { tool: 'project_remove_folder', project_id: 'p2', folder_id: 'folder1', device_id: 'target' } }
+      return { project_id: 'g1', undo: { tool: 'project_remove_device', project_id: 'g1', path: '/work/app', device_id: 'target' } }
     }))
     expect((await reachableTools(client)).map((tool) => tool.name)).toEqual(expect.arrayContaining(PROJECT_TOOL_NAMES))
-    const result = await client.callTool({ name: 'catalog_call', arguments: { tool: 'project_add_device', args: { project_id: 'project:p1', device_id: 'device:source', target_device_id: 'device:target', path: '/work/app' } } })
+    const result = await client.callTool({ name: 'catalog_call', arguments: { tool: 'project_add_device', args: { project_id: 'project:g1', device_id: 'device:source', target_device_id: 'device:target', path: '/work/app' } } })
     expect(result.isError ?? false).toBe(false)
-    expect(seen).toEqual([{ action: 'project_add_device', project_id: 'p1', device: 'source', target_device: 'target', path: '/work/app' }])
+    expect(seen).toEqual([{ action: 'project_add_device', project_id: 'g1', device: 'source', target_device: 'target', path: '/work/app' }])
     // The host supplies the target device for composite operations; direct remote operations inherit their device.
-    expect(JSON.parse(responseText(result))).toMatchObject({ project_id: 'project:p1', linked_project_id: 'project:p2', undo: { device_id: 'device:target', project_id: 'project:p2' } })
+    // One project id on both devices (its project group); the undo names the target device's folder by path.
+    expect(JSON.parse(responseText(result))).toEqual({ project_id: 'project:g1', undo: { tool: 'project_remove_device', device_id: 'device:target', project_id: 'project:g1', path: '/work/app' } })
   })
 
   it('routes a confirmed existing project root through project_add_folder with typed source identity', async () => {
     const seen: unknown[] = []
     const client = await connectTo(socialContext(async (action) => {
       seen.push(action)
-      return { project_id: 'target', source_project_id: 'source', linked_project_id: 'source' }
+      return { project_id: 'target', source_project_id: 'source' }
     }))
     const result = await client.callTool({ name: 'project_add_folder', arguments: {
       project_id: 'project:target', path: '/work/legacy', merge_existing: true, source_project_id: 'project:source',
     } })
     expect(result.isError ?? false).toBe(false)
     expect(seen).toEqual([{ action: 'project_add_folder', project_id: 'target', path: '/work/legacy', merge_existing: true, source_project_id: 'source' }])
-    expect(JSON.parse(responseText(result))).toEqual({ project_id: 'project:target', source_project_id: 'project:source', linked_project_id: 'project:source' })
+    expect(JSON.parse(responseText(result))).toEqual({ project_id: 'project:target', source_project_id: 'project:source' })
   })
 
   it('rejects bare or mismatched project/device IDs before dispatch', async () => {
@@ -874,13 +875,13 @@ describe('project_* tools', () => {
     const client = await connectTo(socialContext(async (action) => {
       seen.push(action)
       return (action as { action: string }).action === 'project_remove_device'
-        ? { undo: { tool: 'project_restore_device', project_id: 'p2', chat_id, expected_chat_id: null } }
+        ? { undo: { tool: 'project_restore_device', project_id: chat_id, path: '/work/app', expected_chat_id: null } }
         : { restored: true }
     }))
-    const result = await client.callTool({ name: 'project_remove_device', arguments: { project_id: 'project:p2', device_id: 'device:b' } })
+    const result = await client.callTool({ name: 'project_remove_device', arguments: { project_id: `project:${chat_id}`, device_id: 'device:b' } })
     const { tool, ...args } = JSON.parse(responseText(result)).undo
     expect((await client.callTool({ name: tool, arguments: args })).isError ?? false).toBe(false)
-    expect(seen[1]).toEqual({ action: 'project_restore_device', project_id: 'p2', device: 'b', chat_id, expected_chat_id: null })
+    expect(seen[1]).toEqual({ action: 'project_restore_device', project_id: chat_id, device: 'b', path: '/work/app', expected_chat_id: null })
   })
 })
 

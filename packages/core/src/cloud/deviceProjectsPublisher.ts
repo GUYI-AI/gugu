@@ -9,6 +9,8 @@
  *    ❌ 只喊一声就算了;❌ 自己再起一个重试定时器。
  *  · 记上之后每 {@link REFRESH_MS} 再记一次:账号上那份也会在这台机器不知道的时候没了(设备行被收掉又登记回来,
  *    它的项目跟着删了),这台机器自己没有变化可报。记的是整份,库里没变就什么都不动(不推进账号 revision),多记一次无害。
+ *  · 账号不认的群绑定(别人的群,rejected):这台机器上那几个项目的群绑定当场丢掉({@link DeviceProjectsPublisherDeps.dropBindings}),
+ *    界面不再显示一个账号没记下的绑定;丢掉之后绑定变了,会再记一次(那几行不带群)。丢不掉 = 这一次没记上,照常重试。
  */
 import { withBoundedOperation } from './boundedOperation'
 import { noteBackendRequestFailed, subscribeBackendRecovered } from './backendReachability'
@@ -26,6 +28,8 @@ export type DeviceProjectsPublisherDeps = {
   /** 这台机器此刻的项目(会话页后端读本地库)。 */
   records: () => Promise<DeviceProject[]>
   warn: (message: string, fields: Record<string, unknown>) => void
+  /** The account refused these local projects' group bindings: this machine drops them (they show as not bound). */
+  dropBindings: (ownerUserId: string, localProjectIds: readonly string[]) => Promise<void>
   /** The account has this machine's record as it is now: whoever reads it may read it again. */
   onPublished?: () => void
   setTimeout?: (run: () => void, ms: number) => unknown
@@ -95,7 +99,11 @@ export function createDeviceProjectsPublisher(deps: DeviceProjectsPublisherDeps)
           if (!deviceId) throw new Error('this machine has no device id under the signed-in account yet')
           const records = await deps.records()
           signal.throwIfAborted()
-          await publishDeviceProjects(deps.client(auth.accessToken), deviceId, records, signal)
+          const { rejected } = await publishDeviceProjects(deps.client(auth.accessToken), deviceId, records, signal)
+          if (rejected.length) {
+            deps.warn('device projects: the account refused these project group bindings; dropping them on this machine', { rejected })
+            await deps.dropBindings(auth.userId, rejected)
+          }
           return 'published' as const
         },
       )

@@ -90,11 +90,13 @@ describe('linkFolderOnMachine', () => {
   });
 
   it('undo keeps a project that already existed there (merged in, or the folder was already one)', async () => {
-    const merged = deps();
-    const fromMerge = await linkFolderOnMachine(merged, { rowId: 'local-gugu', machine: 'd22', path: '/srv/memor', existingProjectId: 'd22-memor' });
+    // Merged in, or detached from this project earlier: the host answers that project (and re-attaches its root).
+    const merged = deps({ createProjectOn: vi.fn(async () => ({ projectId: 'd22-memor', created: false })) });
+    const fromMerge = await linkFolderOnMachine(merged, { rowId: 'local-gugu', machine: 'd22', path: '/srv/memor' });
     if (!fromMerge.ok) throw new Error('expected a link');
+    expect(fromMerge.projectId).toBe('d22-memor');
+    expect(merged.createProjectOn).toHaveBeenCalledWith('d22', '/srv/memor');
     await fromMerge.undo();
-    expect(merged.createProjectOn).not.toHaveBeenCalled();
     expect(merged.deleteProject).not.toHaveBeenCalled();
 
     const already = deps({ createProjectOn: vi.fn(async () => ({ projectId: 'd22-old', created: false })) });

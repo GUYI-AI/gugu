@@ -28,7 +28,7 @@ import { ProjectNeedsYouDot, ProjectRowTitle } from './project-row-parts';
 import { SidebarUnreadCount } from './sidebar-list-switch';
 import { requestTopicSplit } from '@/lib/topicSplitRequest';
 import { useSidebarChatSignals } from '@/lib/sidebarChatsBridge';
-import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
+import { openChatOnScreen } from '@renderer/features/chats/open-chat';
 import {
   SidebarItemMiniButton,
   SidebarMenuAction,
@@ -40,6 +40,7 @@ import {
   sidebarRowRestActionsClass,
 } from './sidebar-primitives';
 import { useSessionDropTarget } from './use-session-drop-target';
+import { clearDraggedScreenContent, setDraggedScreenContent } from '@renderer/lib/drag-screen-content';
 import { moveSessionUnder } from '@renderer/features/sessions/set-session-parent-flow';
 import { sidebarRowInsetPx } from './sidebar-row-metrics';
 import { SidebarTwistyLane } from './sidebar-twisty';
@@ -71,6 +72,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
   const { translate } = useSessionMessages();
 
   const project = getProjectStore(projectId);
+  const ref = sidebarStore.sidebarProjects.find((row) => row.id === projectId);
 
   const prefetchRepository = useCallback(() => {
     const repo = getGitRepositoryStore(projectId);
@@ -95,7 +97,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
   // when the "needs you" count returns to zero. When expanded, the per-section header carries it.
   const needsYouCount = sidebarStore.needsYouCountForProject(projectId);
   // gugu-dev#181 项目就是群:行尾挂项目群的未读(含它的话题),壳发过来的那一份;真读了才减。
-  const groupChatId = projectGroupsStore.chatIdOf(projectId);
+  const groupChatId = ref?.chatId;
   const chatSignals = useSidebarChatSignals();
   const groupUnread = chatSignals?.groupUnread.get(groupChatId ?? '') ?? 0;
   const callingTopic = chatSignals?.groupCallingTopic.get(groupChatId ?? '');
@@ -107,12 +109,14 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
     (child) => moveSessionUnder(child, null, sidebarStore.parentOf(child.sessionId))
   );
 
+  if (ref?.kind === 'group') return <SidebarGroupProjectItem projectId={projectId} chatId={ref.chatId} name={ref.name} unread={groupUnread} />;
   if (!project) return null;
   const ProjectIcon = FolderClosed;
   const deviceIds = [...new Set(sidebarStore.projectMembersOf(projectId).map((id) => machineRegistry.machineOf(id) ?? null))];
   const machineDown = deviceIds.every((id) => id !== null && remoteHostsStore.connectionState(id) !== 'connected');
   const deviceLabels = deviceIds.map((id) => id ? remoteHostsStore.device(id)?.label ?? id : translate('task.deviceLocal'));
-  const projectLabel = project.name ?? 'project';
+  const projectName = ref?.name || project.name;
+  const projectLabel = projectName ?? 'project';
   const hasNameTwin = sidebarStore.hasNameTwin(projectId);
   const disambiguationPath = hasNameTwin ? project.data?.path : undefined;
   // Opening a project never changes disclosure; only its arrow or the explicit keyboard action does.
@@ -129,8 +133,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
     }
     if (isProjectActive) {
       // gugu-dev#181 正在开新任务时点这一行 = 回到群聊:还没打字,「新任务」一起撤掉;打了字就留着。
-      const chatId = projectGroupsStore.chatIdOf(rowId);
-      if (chatId && readComposerVerb(chatId) === 'task' && !composerDrafts.get(projectDraftKey(projectId)).trim()) setComposerVerb(chatId, null);
+      if (groupChatId && readComposerVerb(groupChatId) === 'task' && !composerDrafts.get(projectDraftKey(projectId)).trim()) setComposerVerb(groupChatId, null);
       return;
     }
     // The project's block (its group) goes on screen; navigation follows it.
@@ -198,7 +201,12 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
           data-offline={machineDown || undefined}
           tabIndex={0}
           role="treeitem"
-          onMouseDown={(e) => e.preventDefault()}
+          // 项目行就是项目群那一行:和会话行、对话行同一份拖拽内容 —— 落在一块的边上分出这个项目块
+          // (与 ⌘ 点同一块),落在项目列表里换次序(见 sidebar-virtual-list)。
+          // ❌ 这里不能 `onMouseDown preventDefault`:那会连 dragstart 都拦掉(见 allowNativeDrag)。
+          draggable
+          onDragStart={(event) => setDraggedScreenContent(event.dataTransfer, { kind: 'project', projectId: rowId, title: projectLabel }, event.currentTarget)}
+          onDragEnd={clearDraggedScreenContent}
           onClick={(event) => openProject(event.metaKey || event.ctrlKey)}
           onKeyDown={(e) => {
             // Arrows belong to the session navigation listener (see sidebar-session-item for
@@ -227,6 +235,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
               <ProjectIcon className={cn('size-4 shrink-0', machineDown && 'opacity-60')} />
             )}
             <SidebarMenuAction
+              allowNativeDrag
               aria-label={translate('sidebar.openProject', { project: projectLabel })}
               className={cn(
                 'truncate font-medium transition-colors select-none',
@@ -234,7 +243,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
                   'text-foreground-muted'
               )}
             >
-              <ProjectRowTitle name={project.name}>
+              <ProjectRowTitle name={projectName}>
                 {disambiguationPath ? (
                   <span title={disambiguationPath} className="text-foreground-muted min-w-0 max-w-[40%] shrink-[3] truncate text-xs">
                     {disambiguationPath}
@@ -293,6 +302,53 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
           </span>
         </SidebarMenuRow>
     </ProjectRowContextMenu>
+  );
+});
+
+/**
+ * 账号上一个项目、这一端项目表里没有它的本地项目(哪台机器上都没有文件夹,或文件夹只在还没载入的机器上):
+ * 行照样在,点开是它的项目群(与侧栏「对话」里点开一个群同一条 openChatOnScreen)。下面没有会话可展开。
+ */
+const SidebarGroupProjectItem = observer(function SidebarGroupProjectItem({ projectId, chatId, name, unread }: { projectId: string; chatId: string; name: string; unread: number }) {
+  const { translate } = useSessionMessages();
+  const isCursor = sessionKeyboardNav.cursor?.kind === 'project' && sessionKeyboardNav.cursor.projectId === projectId;
+  const isActive = screenLayout.focusedBlockId ? (() => {
+    const block = screenLayout.blocks.get(screenLayout.focusedBlockId);
+    return block?.kind === 'chat' && block.chatId === chatId;
+  })() : false;
+  const open = (beside: boolean) => {
+    sessionKeyboardNav.syncCursorFromPointer({ kind: 'project', projectId });
+    openChatOnScreen(chatId, beside);
+  };
+  return (
+    <SidebarMenuRow
+      className="group/row flex h-9 items-center justify-between gap-1 pr-1"
+      style={{ paddingInlineStart: `${sidebarRowInsetPx('project')}px` }}
+      data-active={isActive || undefined}
+      isActive={isActive}
+      isCursor={isCursor}
+      data-project-row={projectId}
+      data-project-chat={chatId}
+      tabIndex={0}
+      role="treeitem"
+      // 拖起来的就是它点开的那块(项目群);落在项目列表里 = 换次序(sidebar-virtual-list)。❌ `onMouseDown preventDefault`:会拦掉 dragstart。
+      draggable
+      onDragStart={(event) => setDraggedScreenContent(event.dataTransfer, { kind: 'chat', chatId, title: name }, event.currentTarget)}
+      onDragEnd={clearDraggedScreenContent}
+      onClick={(event) => open(event.metaKey || event.ctrlKey)}
+      onKeyDown={(e) => { if (e.key === 'Enter') open(false); }}
+    >
+      <SidebarTwistyLane alwaysVisible expanded={false} label={translate('sidebar.expandProject', { project: name })} />
+      <div className="flex min-w-0 flex-1 items-center gap-1">
+        <FolderClosed className="size-4 shrink-0" />
+        <SidebarMenuAction allowNativeDrag aria-label={translate('sidebar.openProject', { project: name })} className="truncate font-medium transition-colors select-none">
+          <ProjectRowTitle name={name} />
+        </SidebarMenuAction>
+      </div>
+      <span className={sidebarRowActionsSlotClass}>
+        <span className={sidebarRowRestActionsClass}><SidebarUnreadCount count={unread} /></span>
+      </span>
+    </SidebarMenuRow>
   );
 });
 

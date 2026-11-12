@@ -70,13 +70,7 @@ import {
   type RemoteHostDevice,
   type RemoteHostsBridge,
 } from '@/session/shared/remote-hosts';
-import {
-  browserStorage,
-  loadRecentFolders,
-  pushRecentFolder,
-  saveRecentFolders,
-  type RecentFolders,
-} from './remote-recent-folders';
+import { browserStorage } from './browser-storage';
 import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
 
 const REMOTE_PREFIX = 'remote:';
@@ -154,9 +148,7 @@ export class RemoteHostsStore {
    * 「在这台机器的这个项目里新开一条会话」的一次性意图(侧栏项目行上的「+」→ 新建页)。
    * 新建页挂上时取走;取走即清,❌ 下次进新建页还停在那台机器上。
    */
-  newSessionTarget: { deviceId: string; projectPath: string | null } | null = null;
-  /** 每台机器最近在上面开过会话的文件夹(这台桌面上记的,重启后还在;见 remote-recent-folders.ts)。 */
-  recentFoldersByDevice: RecentFolders = loadRecentFolders(browserStorage());
+  newSessionTarget: { deviceId: string } | null = null;
   /** 连着时问到的每台机器的主目录(那台机器报的 $HOME);心跳报了的以心跳为准(见 homeDir)。 */
   homeDirs: Record<string, string> = {};
   /** 会话目录(与手机同一份,见 session-directory.ts):每台别的机器上有哪些会话。侧栏的远程行读它,❌ 读挂载的项目。 */
@@ -201,10 +193,9 @@ export class RemoteHostsStore {
       sessionsOf: (deviceId) => this.sessionsOf(deviceId),
       session: (deviceId, conversationId) => this.session(deviceId, conversationId),
       isAssistantHome: (deviceId) => this.device(deviceId)?.assistantHome === true,
-      projectGroupOf: (projectId) => projectGroupsStore.chatIdOf(projectId),
       connected: (deviceId) => this.connectionState(deviceId) === 'connected',
     };
-    // #7341 第二步:各台机器上的本地项目绑的项目群(同群 = 同一个项目,侧栏合成一行)。
+    // 各台机器上的本地项目绑的项目群(群操作、任务卡用;❌ 用它定侧栏有哪些项目)。
     projectGroupsStore.start(
       () => [...this.hosts.entries()].filter(([, state]) => state.synced).map(([deviceId]) => deviceId),
       () => [
@@ -456,15 +447,6 @@ export class RemoteHostsStore {
     this.homeDirs = { ...this.homeDirs, [deviceId]: home };
   }
 
-  recentFolders(deviceId: string): readonly string[] {
-    return this.recentFoldersByDevice[deviceId] ?? [];
-  }
-
-  rememberRecentFolder(deviceId: string, path: string): void {
-    this.recentFoldersByDevice = pushRecentFolder(this.recentFoldersByDevice, deviceId, path);
-    saveRecentFolders(browserStorage(), this.recentFoldersByDevice);
-  }
-
   /** 宿主给不给「添加一台机器」的入口(老宿主没有)。 */
   get canAddMachine(): boolean {
     return typeof this.bridge?.openAddMachine === 'function';
@@ -474,11 +456,11 @@ export class RemoteHostsStore {
     this.bridge?.openAddMachine?.();
   }
 
-  requestNewSession(deviceId: string, projectPath: string | null): void {
-    this.newSessionTarget = { deviceId, projectPath };
+  requestNewSession(deviceId: string): void {
+    this.newSessionTarget = { deviceId };
   }
 
-  takeNewSessionTarget(): { deviceId: string; projectPath: string | null } | null {
+  takeNewSessionTarget(): { deviceId: string } | null {
     const target = this.newSessionTarget;
     this.newSessionTarget = null;
     return target;
@@ -788,6 +770,11 @@ export class RemoteHostsStore {
       seenWhileLive: this.accountSeenLive.get(deviceId),
       current: accountCopyKey(records),
     });
+  }
+
+  /** 这一端上一次读账号上那台机器的项目没读到:accountFolders 给的是更早读到的那份。 */
+  accountUnread(deviceId: string): boolean {
+    return !!this.device(deviceId)?.projectsError;
   }
 
   /** #113 账号上记着的那台机器上这个项目的文件夹;没读到过账号上的那份 / 那里没有这个项目 = null。 */

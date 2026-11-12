@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { remoteFailureKind, type SessionpageSessionCreateModels, type SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
 import { EngineIcon } from '@/components/AgentHarnessIdentity'
@@ -10,6 +10,8 @@ import { DropdownMenu, MenuItem } from '@/components/ui/Menu'
 import { Check, ChevronDown, Folder, X, Zap } from '@/lib/icons'
 import { rendererLogger } from '@/lib/log'
 import { useDevicesStore } from '@/store/devicesContext'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import { useMachineLabel } from '../agent-watch/useMachineLabel'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { ProjectFolderCard } from '@renderer/features/projects/components/main-panel/project-folder-card'
 import type { ProjectFoldersState, ShownFolder } from '@renderer/features/projects/components/main-panel/project-folders'
@@ -56,7 +58,12 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
   const { t } = useTranslation('messaging')
   const { toast } = useToast()
   const { devices, refresh } = useDevicesStore()
-  const accountProject = useMemo(() => (enabled && chatId ? taskFoldersOfChat(devices, chatId) : null), [enabled, chatId, devices])
+  const { label: machineLabel, isHome } = useMachineLabel()
+  const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
+  const accountProject = useMemo(
+    () => (enabled && chatId ? taskFoldersOfChat(accountList.find((one) => one.chatId === chatId), devices, { label: machineLabel, isHome }) : null),
+    [enabled, chatId, accountList, devices, machineLabel, isHome],
+  )
   const attach = usePhoneFolderAttach(accountProject, devices, refresh)
   const project = useMemo(() => accountProject ? {
     ...accountProject,

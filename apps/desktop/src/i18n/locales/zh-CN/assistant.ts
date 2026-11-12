@@ -19,7 +19,7 @@ export default {
     "deviceAccess": "设备连接与授权",
     "onThisComputer": "资料保存在这台电脑上", "onAssistantDevice": "资料保存在助理所在的设备上",
     "ungrouped": "其他", "hasIndex": "查看说明与索引", "missingIndex": "还没有条目说明", "longTerm": "长期了解与约定",
-    "guguProjects": "与咕咕项目页使用同一份项目。", "noGuguProjects": "还没有咕咕项目。",
+    "guguProjects": "与咕咕项目页使用同一份项目。", "noGuguProjects": "还没有咕咕项目。", "stale": "上次的",
     "projectOrganizePrompt": "请先读取咕咕已有项目，帮我整理项目资料与索引。不要创建第二套项目；需要接入已有文件夹时，沿用咕咕的项目和挂载文件夹操作，先核对归属。",
     "projectFolderSessions_one": "{{count}} 个会话",
     "projectFolderSessions_other": "{{count}} 个会话"

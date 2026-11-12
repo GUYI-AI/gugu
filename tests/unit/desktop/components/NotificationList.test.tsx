@@ -42,7 +42,7 @@ vi.mock('@renderer/lib/stores/app-state', async () => {
     setListLayout(value: string) { this.listLayout = value }, setListPage(value: string) { this.listPage = value } })
   return { appState: { projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {} } }, sidebarStore: state.sidebar }
 })
-vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: { chatIdOf: () => undefined } }))
+vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: {} }))
 vi.mock('@renderer/features/sidebar/session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: () => {} } }))
 vi.mock('@renderer/features/sidebar/use-sidebar-drop', () => ({ useSidebarDrop: () => ({ isDragOver: false }) }))
 vi.mock('@renderer/features/sidebar/pinned-session-list', () => ({ SidebarPinnedSessionList: () => null }))

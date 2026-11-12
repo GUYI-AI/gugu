@@ -28,7 +28,7 @@ vi.mock('@renderer/lib/layout/navigation-provider', () => ({
 }));
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { navigation: { currentViewId: 'new-session' } },
-  sidebarStore: { expandedProjectIds: new Set(), homeLayout: { homeRows: new Set(), standIns: new Map() },
+  sidebarStore: { sidebarProjects: [{ kind: 'local', id: 'proj', chatId: 'proj-group', name: '' }], expandedProjectIds: new Set(),
     needsYouCountForProject: () => 0, projectMembersOf: () => ['proj'], hasNameTwin: () => false, rowProjectIdOf: (id: string) => id,
     ensureProjectExpanded: vi.fn(), toggleProjectExpanded: vi.fn() },
 }));
@@ -42,7 +42,7 @@ vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
 }));
 vi.mock('@renderer/features/sidebar/session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: vi.fn() } }));
 vi.mock('@/lib/sidebarChatsBridge', () => ({ useSidebarChatSignals: () => ({ groupUnread: new Map([['proj-group', unread.count]]), groupCallingTopic: new Map() }) }));
-vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: { chatIdOf: () => 'proj-group' } }));
+vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: {} }));
 vi.mock('@renderer/features/sidebar/use-session-drop-target', () => ({ useSessionDropTarget: () => ({ bind: () => ({}) }) }));
 vi.mock('@renderer/features/sessions/set-session-parent-flow', () => ({ moveSessionUnder: vi.fn() }));
 

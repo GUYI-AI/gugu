@@ -160,6 +160,40 @@ describe('project groups (会话页一侧)', () => {
     expect(mocks.emitted, '什么都没变 ⇒ 不叫').toEqual([]);
   });
 
+  // Offline: the group could not be created. It asks this process's beat to pull now, and is created again on the
+  // backend-recovered edge (backendReachability); a failure that is not the cloud's, or a later success, is not retried.
+  it('a group the cloud did not create is created again when the backend answers again, once', async () => {
+    const reach = await import('@gugu/core/cloud/backendReachability');
+    let probes = 0;
+    const unbind = reach.bindBackendProbe(() => { probes += 1; });
+    let answer: 'offline' | 'online' = 'offline';
+    const { host, calls } = fakeHost({
+      ensureGroup: async (subject) => {
+        calls.push({ op: 'ensure', subject });
+        return answer === 'offline' ? err({ type: 'cloud-failed', message: 'fetch failed' }) : ok({ chatId: 'chat-reserved', changed: false });
+      },
+    });
+    const ensures = () => calls.filter((call) => call.op === 'ensure').length;
+    try {
+      setProjectGroupHost(host);
+      expect(await ensureProjectGroup('project-a')).toMatchObject({ success: false, error: { type: 'cloud-failed' } });
+      expect(probes, 'the failed write asks the beat to pull now').toBe(1);
+      reach.noteBackendAnswer(false);
+      reach.noteBackendAnswer(true);
+      await vi.waitFor(() => expect(ensures()).toBe(2));
+      answer = 'online';
+      reach.noteBackendAnswer(false);
+      reach.noteBackendAnswer(true);
+      await vi.waitFor(() => expect(ensures()).toBe(3));
+      reach.noteBackendAnswer(false);
+      reach.noteBackendAnswer(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(ensures(), 'created ⇒ nothing left to retry').toBe(3);
+    } finally {
+      unbind();
+    }
+  });
+
   it('没有这个项目 ⇒ not-found,宿主一下都不问', async () => {
     const { host, calls } = fakeHost();
     setProjectGroupHost(host);

@@ -76,9 +76,9 @@ async function asUser<Row>(user: string, sql: string, values: unknown[]): Promis
 function clientAs(user: string): DeviceProjectsRpcClient & DeviceProjectsTableClient {
   return {
     async rpc(fn, args) {
-      if (fn !== 'publish_device_projects') throw new Error(`unexpected rpc ${fn}`)
+      if (fn !== 'publish_device_projects_v2') throw new Error(`unexpected rpc ${fn}`)
       const result = await asUser<{ result: unknown }>(user,
-        'SELECT identity.publish_device_projects(p_device_id => $1, p_projects => $2::jsonb) AS result',
+        'SELECT identity.publish_device_projects_v2(p_device_id => $1, p_projects => $2::jsonb) AS result',
         [args.p_device_id, JSON.stringify(args.p_projects)])
       return 'error' in result ? { data: null, error: { message: result.error } } : { data: result.rows[0]?.result, error: null }
     },
@@ -152,12 +152,12 @@ describe('#113 项目记在账号上:客户端写的那份,库收得下、读回
         'SELECT revision::text FROM chat.account_revision_heads WHERE user_id = $1', [owner])).rows[0]?.revision ?? '0'
       const before = await head()
       const written = projects(randomUUID())
-      await expect(publishDeviceProjects(clientAs(owner), device, written)).resolves.toBe(true)
+      await expect(publishDeviceProjects(clientAs(owner), device, written)).resolves.toEqual({ changed: true, rejected: [] })
       await expect(listDeviceProjects(clientAs(owner), owner)).resolves.toEqual({ [device]: written })
 
       const after = await head()
       expect(BigInt(after)).toBe(BigInt(before) + 1n)
-      await expect(publishDeviceProjects(clientAs(owner), device, written)).resolves.toBe(false)
+      await expect(publishDeviceProjects(clientAs(owner), device, written)).resolves.toEqual({ changed: false, rejected: [] })
       expect(await head()).toBe(after)
 
       const { rows } = await db.query<{ event: string; resource_key: unknown }>(
@@ -166,6 +166,19 @@ describe('#113 项目记在账号上:客户端写的那份,库收得下、读回
       expect(ACCOUNT_REVISION_EVENTS).toContain(rows[0]?.event)
       // 客户端读得懂:只读这一台的项目,不读设备行。
       expect(readDeviceRevision({ ...(rows[0]?.resource_key as object), tombstone: false })).toEqual({ deviceId: device, row: false, projects: true, removed: false })
+    })
+  })
+
+  it('a binding to someone else\'s group is reported as refused and kept without the group; one\'s own group is accepted', async () => {
+    await rollback(async ({ owner, other, device }) => {
+      const foreign = randomUUID(), mine = randomUUID()
+      await db.query(`INSERT INTO chat.chats (id,kind,name,creator_user_id) VALUES ($1,'group','113 foreign',$2),($3,'group','113 mine',$4)`, [foreign, other, mine, owner])
+      const [first, second] = projects(randomUUID())
+      const written = [{ ...first!, chatId: foreign }, { ...second!, chatId: mine }]
+      await expect(publishDeviceProjects(clientAs(owner), device, written)).resolves.toEqual({ changed: true, rejected: [first!.localProjectId] })
+      const listed = (await listDeviceProjects(clientAs(owner), owner))[device]!
+      expect(listed.find((project) => project.localProjectId === first!.localProjectId)?.chatId).toBeNull()
+      expect(listed.find((project) => project.localProjectId === second!.localProjectId)?.chatId).toBe(mine)
     })
   })
 

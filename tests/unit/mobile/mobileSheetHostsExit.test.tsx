@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { CreateOptionsPill } from '../../../apps/desktop/src/mobile/agent-watch/CreateOptionsPill'
+import { CreateTarget } from '../../../apps/desktop/src/mobile/agent-watch/CreateTarget'
 import { FILE_VIEWER_ATTRIBUTE, FILE_VIEWER_MENU_EVENT, type FileViewerMenuRequest } from '../../../apps/desktop/src/session/shared/preview/file-viewer-menu'
 import { workspaceFileQuote } from '../../../apps/desktop/src/components/preview/quote-preview-file'
 import { useOpenedOutputOpener } from '../../../apps/desktop/src/mobile/agent-watch/opened-output-opener'
@@ -39,13 +39,13 @@ afterEach(() => { h.cleanup(); delete (HTMLElement.prototype as Partial<HTMLElem
 const q = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
 async function back() { await act(async () => { window.dispatchEvent(new CustomEvent('gugu:native-back')) }) }
 
-it('create options: clearing the view keeps the selected project until exit completes', async () => {
-  await h.render(createNode(CreateOptionsPill, {
-    options: { projects: [{ id: 'p1', name: 'Repo', path: '/repo' }], harnesses: [], lastUsed: null },
-    selection: { projectId: 'p1', harness: null, model: null, permissionMode: null, effort: null }, onChange: vi.fn(), busy: false, models: null, modelsState: 'idle',
+it('new task project picker: clearing the view keeps the project list until exit completes', async () => {
+  await h.render(createNode(CreateTarget, {
+    projects: [{ key: 'chat-1', name: 'Repo', homes: new Map() }], project: null, onProject: vi.fn(),
+    machines: [], machine: undefined, onMachine: vi.fn(), machineLabel: () => '', busy: false,
   }))
-  await clickElement(q('agent-watch-create-options-open')); await frame()
-  const popup = q('agent-watch-create-options')
+  await clickElement(q('agent-watch-create-target-row')); await frame()
+  const popup = q('agent-watch-create-target-sheet')
   await back()
   expect(popup.textContent).toContain('Repo')
   await expectExit(popup, exit)

@@ -279,7 +279,6 @@ export default {
       "title": "New task",
       "pickMachine": "On which machine",
       "welcome": "Start a new task on {{machine}}",
-      "welcomeHint": "Choose how to run, then send the first message to begin.",
       "placeholder": "First message…",
       "project": "Project",
       "harness": "Harness",
@@ -318,9 +317,7 @@ export default {
       },
       "blocked": {
         "loading": "Still reading the projects on this machine…",
-        "no_projects": "No projects on this machine yet. Open one on the computer and it will show up here.",
         "no_usable_harness": "No usable harness on this machine.",
-        "pick_project": "Pick a project first.",
         "pick_harness": "Pick a usable harness first."
       },
       "creating": "Starting the task on that machine",

@@ -1,34 +1,10 @@
-import {
-  closestCenter,
-  DndContext,
-  DragOverlay,
-  MeasuringStrategy,
-  PointerSensor,
-  pointerWithin,
-  useDndContext,
-  useSensor,
-  useSensors,
-  type ClientRect,
-  type CollisionDetection,
-  type DragEndEvent,
-  type DragMoveEvent,
-  type DragStartEvent,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react';
 import { type SidebarRow } from '@renderer/features/sidebar/sidebar-store';
 import { getSessionPageStore } from '@renderer/features/sessions/stores/session-selectors';
 import { useParams, useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
-import { getPortalContainerOrBody } from '@renderer/lib/portal-container';
+import { getDraggedScreenContent } from '@renderer/lib/drag-screen-content';
 import { sidebarStore } from '@renderer/lib/stores/app-state';
 import { cn } from '@renderer/utils/utils';
 import { lastRowScrollTarget } from './last-row-scroll-target';
@@ -67,27 +43,15 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
   const { scroller, content: scrollContent } = useSidebarScrollTargets();
   const listRef = useRef<HTMLDivElement>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
-  const initialPointerYRef = useRef<number | null>(null);
-  const dragPointerYRef = useRef<number | null>(null);
-  const [activeDragId, setActiveDragId] = useState<string | null>(null);
-  const [dragPointerY, setDragPointerY] = useState<number | null>(null);
-
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const [insertion, setInsertion] = useState<ProjectInsertion | null>(null);
 
   const activeSessionProjectExpanded =
     currentView === 'session' && sessionParams.projectId && sessionParams.sessionId
       ? sidebarStore.expandedProjectIds.has(sidebarStore.rowOfSession(sessionParams.projectId, sessionParams.sessionId) ?? '')
       : null;
-  // Only project rows are draggable; status grouping owns task order, so tasks and group headers are not
-  // sortable. SortableContext therefore holds project ids only.
-  const projectDndIds = useMemo(
-    () => rows.filter((r) => r.kind === 'project').map(rowToDndId),
-    [rows]
-  );
-
   const virtualizer = useVirtualizer({
     count: rows.length,
-    getItemKey: (index) => rowToDndId(rows[index]),
+    getItemKey: (index) => rowKey(rows[index]),
     getScrollElement: () => scroller,
     estimateSize: (index) => projectRowHeight(rows[index]),
     overscan: 8,
@@ -209,268 +173,156 @@ export const SidebarVirtualList = observer(function SidebarVirtualList() {
     if (index >= 0) scrollRowIntoView(index);
   }, [cursorKey, scrollRowIntoView]);
 
-  function setCurrentDragPointerY(pointerY: number | null) {
-    dragPointerYRef.current = pointerY;
-    setDragPointerY(pointerY);
+  // 拖的是一个项目行(项目群):落在列表里 = 换次序。只有项目行能换 —— 会话的次序归状态分组。
+  // 拖起、落到分屏都是同一份原生拖拽内容(drag-screen-content),这里只收落在列表里的那一下。
+  function projectInsertionAt(event: DragEvent<HTMLElement>): ProjectInsertion | null {
+    const dragged = getDraggedScreenContent(event.dataTransfer);
+    // 还没有本地项目的账号项目,行 id 就是它的群,拖起来的是那个群(project-item);别的群不是项目行,nextProjectOrder 认不出就不动。
+    const projectId = dragged?.kind === 'project' ? dragged.projectId : dragged?.kind === 'chat' && !dragged.topic ? dragged.chatId : null;
+    if (!projectId) return null;
+    const rowElement = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-index]') : null;
+    const overIndex = Number(rowElement?.dataset.index);
+    if (!rowElement || !listRef.current?.contains(rowElement) || !Number.isInteger(overIndex)) return null;
+    const rect = rowElement.getBoundingClientRect();
+    return { projectId, rowIndex: event.clientY < rect.top + rect.height / 2 ? overIndex : overIndex + 1 };
   }
 
-  function handleDragStart(event: DragStartEvent) {
-    const pointerY = getEventClientY(event.activatorEvent);
-    initialPointerYRef.current = pointerY;
-    setActiveDragId(String(event.active.id));
-    setCurrentDragPointerY(pointerY);
-  }
-
-  function handleDragMove(event: DragMoveEvent) {
-    const initialPointerY = initialPointerYRef.current;
-    if (initialPointerY === null) return;
-    setCurrentDragPointerY(initialPointerY + event.delta.y);
-  }
-
-  function clearDragPointerY() {
-    initialPointerYRef.current = null;
-    setActiveDragId(null);
-    setCurrentDragPointerY(null);
-  }
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    const pointerY = dragPointerYRef.current;
-    clearDragPointerY();
-    if (!over || active.id === over.id) return;
-    const aParsed = parseDndId(String(active.id));
-    // `over` may be any row (conversation/header/more sentinels included) — it only needs to
-    // resolve to a list position below, not to a draggable entity.
-    if (!aParsed) return;
-
-    const isAbove = isCursorAbove(pointerY, active.rect.current.translated, over.rect);
-
-    const overRowIdx = rows.findIndex((r) => rowToDndId(r) === String(over.id));
-    if (overRowIdx === -1) return;
-    const insertionRowIdx = isAbove ? overRowIdx : overRowIdx + 1;
-    // 本机项目与别的机器上的项目(#6264)是同一张项目表,拖拽写回的是整份 id。
-    const ids = sidebarStore.sidebarProjects
-      .map((ref) => (ref.project.state === 'unregistered' ? ref.project.id : (ref.project.data?.id ?? '')))
-      .filter(Boolean);
-    const oldIdx = ids.indexOf(aParsed.projectId);
-    if (oldIdx === -1) return;
-    const projectsAbove = rows.slice(0, insertionRowIdx).filter((r) => r.kind === 'project').length;
-    let newIdx = projectsAbove;
+  function nextProjectOrder({ projectId, rowIndex }: ProjectInsertion): string[] | null {
+    // 一个账号项目一行(行 id 见 SidebarProjectRef),拖拽写回的是整份行 id。
+    const ids = sidebarStore.sidebarProjects.map((ref) => ref.id);
+    const oldIdx = ids.indexOf(projectId);
+    if (oldIdx === -1) return null;
+    let newIdx = rows.slice(0, rowIndex).filter((r) => r.kind === 'project').length;
     if (newIdx > oldIdx) newIdx -= 1;
-    if (newIdx === oldIdx) return;
-    sidebarStore.setProjectOrder(arrayMove(ids, oldIdx, newIdx));
+    if (newIdx === oldIdx) return null;
+    const order = [...ids];
+    order.splice(newIdx, 0, ...order.splice(oldIdx, 1));
+    return order;
   }
 
-  return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={sidebarCollision}
-      measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-      autoScroll={{ threshold: { x: 0, y: 0.18 }, acceleration: 8, interval: 5 }}
-      onDragStart={handleDragStart}
-      onDragMove={handleDragMove}
-      onDragEnd={handleDragEnd}
-      onDragCancel={clearDragPointerY}
-    >
-      <SortableContext items={projectDndIds} strategy={verticalListSortingStrategy}>
-        <div className={cn('pt-1 pb-1', sidebarGroupInsetX)}>
-          <SidebarSessionBranchNavigation />
-          <div
-            ref={listRef}
-            style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
-          >
-            {virtualizer.getVirtualItems().map((vItem) => {
-              const row = rows[vItem.index];
-              if (!row) return null;
-              const vStyle: React.CSSProperties = {
-                position: 'absolute',
-                // vItem.start 是相对共用滚动容器的绝对位置,这里的定位原点却是本列表自己,
-                // 所以要把 scrollMargin 减回去(TanStack Virtual 的 scrollMargin 用法)。
-                top: vItem.start - scrollMargin,
-                left: 0,
-                width: '100%',
-                height: row.kind === 'project' ? undefined : `${vItem.size}px`,
-              };
-              if (row.kind === 'project') {
-                return (
-                  <SortableRow key={row.projectId} dndId={rowToDndId(row)} style={vStyle} index={vItem.index} measure={virtualizer.measureElement}>
-                    <SidebarProjectItem projectId={row.projectId} />
-                  </SortableRow>
-                );
-              }
-              if (row.kind === 'state-header') {
-                return (
-                  <div key={`${row.projectId}:state:${row.group}`} style={vStyle}>
-                    <SidebarStateHeader group={row.group} count={row.count} variant="tree" />
-                  </div>
-                );
-              }
-              if (row.kind === 'conversation') {
-                const gatewayDepth = sessionBranchGatewayDepth(row, sidebarStore.expandedSessionIds.has(row.sessionId));
-                return (
-                  <div key={`${row.projectId}:${row.sessionId}`} style={vStyle}>
-                    <SidebarSessionItem
-                      projectId={row.projectId}
-                      sessionId={row.sessionId}
-                      depth={row.depth}
-                      parentProjectId={row.parentProjectId}
-                      hasChildren={row.hasChildren}
-                      expanded={sidebarStore.expandedSessionIds.has(row.sessionId)}
-                      needsAttention={row.needsAttention}
-                      treeSummary={row.tree?.summary}
-                      onToggle={() => sidebarStore.toggleSessionExpanded(row.sessionId)}
-                      join={row.join}
-                    />
-                    {row.tree ? <SidebarSessionTreeGuides depth={row.depth} tree={row.tree} /> : null}
-                    {gatewayDepth ? <SidebarSessionBranchGateway sessionId={row.sessionId} depth={row.depth} remainingDepth={gatewayDepth} /> : null}
-                  </div>
-                );
-              }
-              return (
-                <div key={`${row.projectId}:more`} style={vStyle}>
-                  <SidebarMoreRow
-                    foldKey={row.projectId}
-                    expanded={row.expanded}
-                    hiddenCount={row.hiddenCount}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </SortableContext>
-      <DragOverlay dropAnimation={null}>
-        {activeDragId ? <DragOverlayContent dndId={activeDragId} /> : null}
-      </DragOverlay>
-      <InsertionIndicator pointerY={dragPointerY} />
-    </DndContext>
-  );
-});
+  // The line's place from the virtualizer's row offsets (list coordinates), not from the row's screen rect.
+  const insertionTop = (rowIndex: number) => {
+    const measured = virtualizer.measurementsCache;
+    const at = rowIndex < measured.length ? measured[rowIndex]?.start : measured[measured.length - 1]?.end;
+    return (at ?? scrollMargin) - scrollMargin;
+  };
 
-const toProjectDndId = (id: string) => `proj::${id}`;
-
-type SidebarDndId = { kind: 'project'; projectId: string };
-
-function rowToDndId(row: SidebarRow): string {
-  if (row.kind === 'project') return toProjectDndId(row.projectId);
-  // State headers / conversation / more rows are not draggable/droppable; these ids only ever
-  // serve as non-matching sentinels.
-  if (row.kind === 'state-header') {
-    return `state::${row.projectId}::${row.group}`;
-  }
-  if (row.kind === 'conversation') {
-    return `conv::${row.projectId}::${row.sessionId}::${row.sessionId}`;
-  }
-  return `more::${row.projectId}`;
-}
-
-function parseDndId(id: string): SidebarDndId | null {
-  if (id.startsWith('proj::')) return { kind: 'project', projectId: id.slice(6) };
-  return null;
-}
-
-// Only projects drag; drags consider every visible row so dropping over a nested row maps to its
-// owning project in onDragEnd without changing the virtualized list mid-drag.
-const sidebarCollision: CollisionDetection = (args) => {
-  const activeId = String(args.active.id);
-  const parsed = parseDndId(activeId);
-  if (!parsed) return [];
-  const containers = args.droppableContainers.filter((c) => String(c.id) !== activeId);
-  const filteredArgs = { ...args, droppableContainers: containers };
-  const pointerCollisions = pointerWithin(filteredArgs);
-  return pointerCollisions.length > 0 ? pointerCollisions : closestCenter(filteredArgs);
-};
-
-function getEventClientY(event: Event): number | null {
-  if ('clientY' in event && typeof event.clientY === 'number') return event.clientY;
-  if (typeof TouchEvent !== 'undefined' && event instanceof TouchEvent) {
-    const touch = event.touches[0] ?? event.changedTouches[0];
-    return touch?.clientY ?? null;
-  }
-  return null;
-}
-
-function isCursorAbove(
-  pointerY: number | null,
-  translated: ClientRect | null,
-  overRect: ClientRect
-): boolean {
-  if (pointerY !== null) return pointerY < overRect.top + overRect.height / 2;
-  if (!translated) return true;
-  const cursorY = translated.top + translated.height / 2;
-  const overCenterY = overRect.top + overRect.height / 2;
-  return cursorY < overCenterY;
-}
-
-function DragOverlayContent({ dndId }: { dndId: string }) {
-  const parsed = parseDndId(dndId);
-  if (!parsed) return null;
-  return (
-    // 拖拽预览要和列表里那一行对齐,所以吃同一个留白出处。
-    <div className={sidebarGroupInsetX}>
-      <div className="rounded-lg bg-background-tertiary-2 shadow-lift">
-        <SidebarProjectItem projectId={parsed.projectId} />
-      </div>
-    </div>
-  );
-}
-
-function InsertionIndicator({ pointerY }: { pointerY: number | null }) {
-  const { active, over } = useDndContext();
-  if (!active || !over || active.id === over.id) return null;
-  const activeParsed = parseDndId(String(active.id));
-  if (!activeParsed) return null;
-  const overRect = over.rect;
-  if (!overRect) return null;
-  const isAbove = isCursorAbove(pointerY, active.rect.current.translated, overRect);
-  const top = isAbove ? overRect.top : overRect.top + overRect.height;
-  return createPortal(
-    <div
-      className="bg-foreground"
-      style={{
-        position: 'fixed',
-        left: overRect.left + 8,
-        top: top - 1.5,
-        width: Math.max(0, overRect.width - 16),
-        height: 3,
-        borderRadius: 2,
-        pointerEvents: 'none',
-        zIndex: 9999,
-      }}
-    />,
-    getPortalContainerOrBody()
-  );
-}
-
-interface SortableRowProps {
-  dndId: string;
-  style: React.CSSProperties;
-  children: React.ReactNode;
-  index: number;
-  measure: (element: HTMLDivElement | null) => void;
-}
-
-function SortableRow({ dndId, style, children, index, measure }: SortableRowProps) {
-  const { setNodeRef, transform, transition, isDragging, listeners } = useSortable({
-    id: dndId,
-  });
-
-  const ref = useCallback((element: HTMLDivElement | null) => {
-    setNodeRef(element);
-    measure(element);
-  }, [setNodeRef, measure]);
-
-  const combinedStyle: React.CSSProperties = {
-    ...style,
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
-    zIndex: isDragging ? 1 : 'auto',
+  const dropHandlers = {
+    onDragOver: (event: DragEvent<HTMLElement>) => {
+      const next = projectInsertionAt(event);
+      const changes = next && nextProjectOrder(next) ? next : null;
+      // dragover 每几十毫秒一发:落点没换行就不重画。
+      setInsertion((prev) => (prev?.rowIndex === changes?.rowIndex ? prev : changes));
+      if (!changes) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+    },
+    onDragLeave: (event: DragEvent<HTMLElement>) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setInsertion(null);
+    },
+    onDrop: (event: DragEvent<HTMLElement>) => {
+      setInsertion(null);
+      const next = projectInsertionAt(event);
+      const order = next && nextProjectOrder(next);
+      if (!order) return;
+      event.preventDefault();
+      sidebarStore.setProjectOrder(order);
+    },
+    // 源行在列表里,它的 dragend 冒上来:Esc 取消、落到别处,线都要收掉。
+    onDragEnd: () => setInsertion(null),
   };
 
   return (
-    <div ref={ref} data-index={index} style={combinedStyle} {...listeners}>
-      {children}
-    </div>
+    <>
+      <div className={cn('pt-1 pb-1', sidebarGroupInsetX)}>
+        <SidebarSessionBranchNavigation />
+        <div
+          ref={listRef}
+          {...dropHandlers}
+          style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
+        >
+          {virtualizer.getVirtualItems().map((vItem) => {
+            const row = rows[vItem.index];
+            if (!row) return null;
+            const vStyle: React.CSSProperties = {
+              position: 'absolute',
+              // vItem.start 是相对共用滚动容器的绝对位置,这里的定位原点却是本列表自己,
+              // 所以要把 scrollMargin 减回去(TanStack Virtual 的 scrollMargin 用法)。
+              top: vItem.start - scrollMargin,
+              left: 0,
+              width: '100%',
+              height: row.kind === 'project' ? undefined : `${vItem.size}px`,
+            };
+            if (row.kind === 'project') {
+              return (
+                <div key={row.projectId} ref={virtualizer.measureElement} data-index={vItem.index} style={vStyle}>
+                  <SidebarProjectItem projectId={row.projectId} />
+                </div>
+              );
+            }
+            if (row.kind === 'state-header') {
+              return (
+                <div key={`${row.projectId}:state:${row.group}`} data-index={vItem.index} style={vStyle}>
+                  <SidebarStateHeader group={row.group} count={row.count} variant="tree" />
+                </div>
+              );
+            }
+            if (row.kind === 'conversation') {
+              const gatewayDepth = sessionBranchGatewayDepth(row, sidebarStore.expandedSessionIds.has(row.sessionId));
+              return (
+                <div key={`${row.projectId}:${row.sessionId}`} data-index={vItem.index} style={vStyle}>
+                  <SidebarSessionItem
+                    projectId={row.projectId}
+                    sessionId={row.sessionId}
+                    depth={row.depth}
+                    parentProjectId={row.parentProjectId}
+                    hasChildren={row.hasChildren}
+                    expanded={sidebarStore.expandedSessionIds.has(row.sessionId)}
+                    needsAttention={row.needsAttention}
+                    treeSummary={row.tree?.summary}
+                    onToggle={() => sidebarStore.toggleSessionExpanded(row.sessionId)}
+                    join={row.join}
+                  />
+                  {row.tree ? <SidebarSessionTreeGuides depth={row.depth} tree={row.tree} /> : null}
+                  {gatewayDepth ? <SidebarSessionBranchGateway sessionId={row.sessionId} depth={row.depth} remainingDepth={gatewayDepth} /> : null}
+                </div>
+              );
+            }
+            return (
+              <div key={`${row.projectId}:more`} data-index={vItem.index} style={vStyle}>
+                <SidebarMoreRow
+                  foldKey={row.projectId}
+                  expanded={row.expanded}
+                  hiddenCount={row.hiddenCount}
+                />
+              </div>
+            );
+          })}
+          {insertion ? <InsertionLine top={insertionTop(insertion.rowIndex)} /> : null}
+        </div>
+      </div>
+    </>
+  );
+});
+
+/** Where a dropped project row would land: before row `rowIndex` (rows.length = after the last). Kept as a row, not a screen
+ * position, so the line follows the list when it scrolls during the drag. */
+type ProjectInsertion = { projectId: string; rowIndex: number };
+
+function rowKey(row: SidebarRow): string {
+  if (row.kind === 'project') return `proj::${row.projectId}`;
+  if (row.kind === 'state-header') return `state::${row.projectId}::${row.group}`;
+  if (row.kind === 'conversation') return `conv::${row.projectId}::${row.sessionId}`;
+  return `more::${row.projectId}`;
+}
+
+/** 松手会落在哪:那一行的上沿一根线(在列表里定位,随列表滚动)。 */
+function InsertionLine({ top }: { top: number }) {
+  return (
+    <div
+      className="bg-foreground"
+      style={{ position: 'absolute', left: 8, right: 8, top: top - 1.5, height: 3, borderRadius: 2, pointerEvents: 'none', zIndex: 10 }}
+    />
   );
 }
+

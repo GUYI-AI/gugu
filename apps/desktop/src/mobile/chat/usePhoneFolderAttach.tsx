@@ -16,7 +16,7 @@ import { navigateMobile } from '@/mobile/navigateMobile'
 import { visibleMachines, workspaceDevices } from '../agent-watch/machine-list'
 import { useMachineLabel } from '../agent-watch/useMachineLabel'
 import { attachPhoneProjectFolder } from './attachPhoneProjectFolder'
-import type { ChatTaskFolders, TaskFolderHome } from './phoneTaskFolders'
+import { folderCardMachine, type ChatTaskFolders, type TaskFolderHome } from './phoneTaskFolders'
 import { MAX_PROJECT_FOLDERS, type ShownFolder } from '@/session/renderer/features/projects/components/main-panel/project-folders'
 
 const log = rendererLogger('phone-folder-attach')
@@ -26,7 +26,7 @@ type Added = { folder: ShownFolder; home: TaskFolderHome }
 export function usePhoneFolderAttach(project: ChatTaskFolders | null, devices: Device[], refresh: () => Promise<void>) {
   const { t } = useTranslation('messaging')
   const { translate: st } = useSessionMessages()
-  const { isHome } = useMachineLabel()
+  const { isHome, label } = useMachineLabel()
   const machines = visibleMachines(workspaceDevices(devices), isHome)
   const [deviceId, setDeviceId] = useState<string | null>(null)
   const [added, setAdded] = useState<Added[]>([])
@@ -52,9 +52,9 @@ export function usePhoneFolderAttach(project: ChatTaskFolders | null, devices: D
       if (result) {
         setAdded((current) => [...current.filter((item) => item.folder.workspaceId !== result.folder.workspaceId), {
           folder: { ...result.folder, attachedAt: result.folder.attachedAt ?? new Date().toISOString(), offline: false, deviceId: device.device_id },
-          home: { deviceId: device.device_id, localProjectId: result.folder.projectId, machine: { id: device.device_id, label: device.label || device.hostname, online: true, kind: device.capabilities.host_kind === 'desktop' ? 'computer' : 'server' } },
+          home: { deviceId: device.device_id, localProjectId: result.folder.projectId, machine: { ...folderCardMachine(device, label), online: true } },
         }])
-        notify({ title: st('projects.folders.attachedOn', { machine: device.label || device.hostname, path: shortHome(result.folder.path), projectName: project.name }), duration: 8000,
+        notify({ title: st('projects.folders.attachedOn', { machine: label(device), path: shortHome(result.folder.path), projectName: project.name }), duration: 8000,
           action: { label: st('projects.folders.undo'), onClick: () => {
             void result.undo().then(async (ok) => {
               if (!ok) { notify({ tier: 'error', title: t('composer.phoneTask.attachFailed') }); return }
@@ -83,7 +83,7 @@ export function usePhoneFolderAttach(project: ChatTaskFolders | null, devices: D
       <Dialog.Root open={!!merge} onOpenChange={(open) => { if (!open) merge?.answer(false) }}>
         <Dialog.Portal><Dialog.Backdrop /><Dialog.Viewport><Dialog.Popup>
           <Dialog.Title>{st('projects.folders.mergeTitle', { name: merge?.name ?? '', projectName: project?.name ?? '' })}</Dialog.Title>
-          <Dialog.Description>{st('projects.folders.mergeDescription', { machine: device.label || device.hostname, name: merge?.name ?? '', count: merge?.count ?? 0, projectName: project?.name ?? '' })}</Dialog.Description>
+          <Dialog.Description>{st('projects.folders.mergeDescription', { machine: label(device), name: merge?.name ?? '', count: merge?.count ?? 0, projectName: project?.name ?? '' })}</Dialog.Description>
           <Button variant="ghost" onClick={() => merge?.answer(false)}>{t('common.cancel')}</Button>
           <Button onClick={() => merge?.answer(true)}>{st('projects.folders.mergeConfirm')}</Button>
         </Dialog.Popup></Dialog.Viewport></Dialog.Portal>
@@ -94,7 +94,7 @@ export function usePhoneFolderAttach(project: ChatTaskFolders | null, devices: D
     added, picker,
     remove: (workspaceId: string) => setAdded((current) => current.filter((item) => item.folder.workspaceId !== workspaceId)),
     fresh: added.at(-1)?.folder.workspaceId,
-    attachMachines: machines.map((row) => ({ id: row.device_id, label: row.label || row.hostname, online: row.is_online, kind: row.capabilities.host_kind === 'desktop' ? 'computer' as const : 'server' as const })),
+    attachMachines: machines.map((row) => folderCardMachine(row, label)),
     onAttach: (id: string | null) => {
       // 挂满了就当场说,❌ 先推目录页、挑完才拒(同电脑 #629;各台机器合计,含这一页刚挂上的)。
       const count = new Set([...(project?.folders ?? []), ...added.map((item) => item.folder)].map((folder) => folder.workspaceId)).size

@@ -6,46 +6,54 @@ import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation'
 import { displayName, groupContacts } from '@/lib/contactsListSort'
 import { contactAgents, peopleContacts } from '@/components/contacts/contactSelectors'
 import { safePathSegment } from '@/session/shared/path-name'
-import { groupRowOrder, type GroupLayoutProject } from '@/session/renderer/features/projects/stores/project-group-layout'
+import type { AccountProject } from '@gugu/core/cloud/deviceProjects'
+import type { AssistantHomeRow } from '@/lib/assistantHome'
+import { phoneAccountProjects } from '../phoneAccountProjects'
 
 /**
- * 「伙伴」里的一个项目(OpenDCAI/gugu#446):项目记在账号上、不归哪台机器(spec「项目」)。各台机器上绑着同一个群的
- * 本地项目是同一个项目,合成一行;还没绑群的各自一行。
+ * 「伙伴」里的一个项目(OpenDCAI/gugu#446):项目记在账号上、不归哪台机器(spec「项目」)。账号上的项目与各台机器上的那一份
+ * 只走 phoneAccountProjects(accountProjectsStore,桌面侧栏同一份);不属于账号上任何项目的本地项目各自一行。
  */
 export type PartnerProject = {
-  /** 群 id;还没绑群 = `机器:本地项目`。 */
+  /** 群 id;不属于账号上的项目 = `机器:本地项目`。 */
   key: string
   chatId: string | null
   name: string
-  /** 最早那台建它的时间(ISO):列表按它排,位置固定。 */
+  /** 最早那台建它的时间(ISO;一个文件夹都没有 = 空串,排最后):列表按它排,位置固定。 */
   createdAt: string
-  /** 封面按它取色:同电脑侧栏合并那一行代表的那个本地项目。 */
+  /** 封面按它取色:代表的那个本地项目(同电脑侧栏那一行);一台都没有 = 群 id。 */
   coverId: string
   members: { deviceId: string; localProjectId: string }[]
 }
 
-export function partnerProjects(devices: readonly (Pick<Device, 'device_id' | 'projects'> & Partial<Pick<Device, 'is_online' | 'is_current_device'>>)[]): PartnerProject[] {
-  const byKey = new Map<string, { key: string; chatId: string | null; rows: (GroupLayoutProject & { name: string; createdAt: string })[]; members: PartnerProject['members'] }>()
+export function partnerProjects(
+  accountList: readonly AccountProject[],
+  devices: readonly Device[],
+  isHome: (device: AssistantHomeRow) => boolean,
+): PartnerProject[] {
+  const accounts = phoneAccountProjects(accountList, devices, isHome)
+  const bound = new Set(accountList.flatMap((project) => project.bindings.map((binding) => `${binding.deviceId}:${binding.localProjectId}`)))
+  const rows: PartnerProject[] = accounts.map(({ project, members }) => ({
+    key: project.chatId,
+    chatId: project.chatId,
+    name: project.name,
+    createdAt: members.reduce((earliest, member) => {
+      const created = member.record?.createdAt ?? ''
+      return created && (!earliest || created < earliest) ? created : earliest
+    }, ''),
+    coverId: members[0]?.localProjectId ?? project.chatId,
+    members: members.map((member) => ({ deviceId: member.device.device_id, localProjectId: member.localProjectId })),
+  }))
   for (const device of devices) {
-    for (const project of device.projects ?? []) {
-      const key = project.chatId ?? `${device.device_id}:${project.localProjectId}`
-      const entry = byKey.get(key) ?? { key, chatId: project.chatId, rows: [], members: [] }
-      entry.members.push({ deviceId: device.device_id, localProjectId: project.localProjectId })
-      entry.rows.push({
-        id: project.localProjectId, name: project.name, createdAt: project.createdAt,
-        machine: device.is_current_device ? null : device.device_id, online: device.is_online === true,
-      })
-      byKey.set(key, entry)
+    if (isHome(device)) continue
+    for (const record of device.projects ?? []) {
+      const key = `${device.device_id}:${record.localProjectId}`
+      if (bound.has(key)) continue
+      rows.push({ key, chatId: record.chatId, name: record.name, createdAt: record.createdAt, coverId: record.localProjectId, members: [{ deviceId: device.device_id, localProjectId: record.localProjectId }] })
     }
   }
-  return [...byKey.values()]
-    .map(({ key, chatId, rows, members }) => {
-      // 名字与封面跟桌面侧栏合并那一行的同一个(groupRowOrder);排序按最早那台建它的时间,位置固定。
-      const [row] = [...rows].sort(groupRowOrder)
-      const createdAt = rows.reduce((earliest, r) => (r.createdAt < earliest ? r.createdAt : earliest), row!.createdAt)
-      return { key, chatId, name: row!.name, createdAt, coverId: row!.id, members }
-    })
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.key.localeCompare(b.key))
+  const order = (createdAt: string) => createdAt || '\uffff'
+  return rows.sort((a, b) => order(a.createdAt).localeCompare(order(b.createdAt)) || a.key.localeCompare(b.key))
 }
 
 /** 朋友只列加过的人,与桌面通讯录同一个 people-only selector;群里的 Agent 另列。按读音排。 */

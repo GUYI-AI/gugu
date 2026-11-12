@@ -31,11 +31,19 @@ const mocks = vi.hoisted(() => ({
   ensureProjectLoaded: vi.fn(),
   restore: vi.fn(),
   remoteListDirectories: vi.fn(),
+  remoteList: vi.fn(),
   remoteImport: vi.fn(),
   syncProjects: vi.fn(),
   openLink: vi.fn(async () => true),
 }));
 // #6956 推到渲染层的事件:按机器分(与真 onMachineEvent 同一个判据,null = 本机),用例自己当主进程往里发。
+// 离线机器的心跳摘要(remoteHostsStore.sessionsOf)、账号上的项目(accountProjectsStore,`bound` = 各台上绑着 webapp 的本地项目)与本地项目表:用例自己摆。
+const world = vi.hoisted(() => ({
+  digests: {} as Record<string, unknown[]>,
+  bound: [] as Array<{ deviceId: string; localProjectId: string }>,
+  projects: new Map<string, { id: string; name: string; data: { path: string } }>(),
+  projectMachine: {} as Record<string, string>,
+}));
 const bus = vi.hoisted(() => ({
   listeners: new Set<{ machine: string | null; event: string; cb: (data: unknown) => void }>(),
 }));
@@ -58,7 +66,7 @@ vi.mock('@renderer/lib/ipc', () => {
       machine
         ? {
             sessionHistory: {
-              list: mocks.list,
+              list: (params: unknown) => mocks.remoteList(machine, params),
               listDirectories: (params: unknown) => mocks.remoteListDirectories(machine, params),
             },
             sessionImport: {
@@ -93,6 +101,7 @@ vi.mock('@renderer/features/remote-hosts/remote-hosts-store', async () => {
         return (this.hosts.get(id) as { device: { directTerminal: boolean } } | undefined)?.device ?? null;
       },
       syncProjects: mocks.syncProjects,
+      sessionsOf: (id: string) => ({ sessions: world.digests[id] ?? [], live: false }),
       connectionState: () => 'connected',
       // #7199 选了睡着的云电脑才会叫醒 / 读叫醒没成的原因;这几台都不是云电脑。
       wakeCloudComputer: async () => false,
@@ -100,22 +109,6 @@ vi.mock('@renderer/features/remote-hosts/remote-hosts-store', async () => {
     },
   };
 });
-// 真选择器(下拉菜单)的判据在它自己的用例里;这里只看页面把机器表交对了、选中后问的是谁。
-vi.mock('@renderer/features/remote-hosts/machine-picker', () => ({
-  MachinePicker: (props: {
-    machines: Array<{ id: string; label: string; isOnline: boolean }>;
-    selectedId: string;
-    onSelect: (id: string) => void;
-  }) => (
-    <div data-testid="fake-device-picker" data-selected={props.selectedId}>
-      {props.machines.map((d) => (
-        <button key={d.id} type="button" data-testid={`pick-${d.id}`} onClick={() => props.onSelect(d.id)}>
-          {d.label}
-        </button>
-      ))}
-    </div>
-  ),
-}));
 // A session opens the one way every session is opened (openLink); what it hands over is read here.
 vi.mock('@/lib/guguLinks', () => ({ openLink: mocks.openLink }));
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({
@@ -128,7 +121,14 @@ vi.mock('@renderer/features/sessions/restore-session-flow', () => ({
   restoreArchivedSession: mocks.restore,
 }));
 vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
-  getProjectManagerStore: () => ({ ensureProjectLoaded: mocks.ensureProjectLoaded }),
+  getProjectManagerStore: () => ({ ensureProjectLoaded: mocks.ensureProjectLoaded, projects: world.projects }),
+  projectDisplayName: (store: { name: string } | undefined) => store?.name,
+}));
+vi.mock('@renderer/lib/stores/app-state', () => ({
+  sidebarStore: {},
+}));
+vi.mock('@renderer/lib/machine-routing', () => ({
+  machineRegistry: { machineOf: (id: string) => world.projectMachine[id] ?? null },
 }));
 // 节头的 agent 图标:真 AgentIcon 会把 agent store / 导航那整张图拉进来,这里只判「画了几个、id 对不对」。
 vi.mock('@renderer/lib/components/agent-icon', () => ({
@@ -139,10 +139,23 @@ import { setLocalePreference } from '@/i18n';
 import { setPortalContainer } from '@renderer/lib/portal-container';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { SessionHistoryMainPanel } from '@renderer/features/session-history/session-history-view';
+import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
+import { runInAction } from 'mobx';
+
+/** 账号上的项目:webapp(这台电脑上的 p1,加上用例绑在别的机器上的)。 */
+function seedAccounts(): void {
+  runInAction(() => {
+    accountProjectsStore.list = [{ chatId: 'chat-webapp', name: 'webapp', archived: false, bindings: [{ deviceId: 'this-computer', localProjectId: 'p1' }, ...world.bound] }];
+    accountProjectsStore.localDeviceId = 'this-computer';
+    accountProjectsStore.status = 'ready';
+  });
+}
 
 const NOW = Date.now();
 const WEBAPP = '/Users/me/work/webapp';
 const BILLING = '/Users/me/work/billing-service';
+/** 主进程给的节 key:webapp 在项目群 chat-webapp 里。 */
+const WEBAPP_SECTION = 'project:chat-webapp';
 
 function gugu(overrides: Partial<SessionHistoryRow> & { key: string }): SessionHistoryRow {
   const sessionId = overrides.key.replace('gugu:', '');
@@ -222,7 +235,7 @@ function dir(overrides: Partial<SessionHistoryDirectoryRow> & { key: string }): 
 
 const DIRS: SessionHistoryDirectoryRow[] = [
   dir({
-    key: WEBAPP,
+    key: WEBAPP_SECTION,
     projectName: 'webapp',
     countsBySource: { gugu: 2, 'claude-code': 0, codex: 0 },
     countsByStatus: { active: 1, archived: 1, 'not-imported': 0 },
@@ -235,7 +248,7 @@ const DIRS: SessionHistoryDirectoryRow[] = [
 ];
 
 const DIRECTORIES = [
-  { directory: WEBAPP, projectName: 'webapp', count: 2 },
+  { directory: WEBAPP_SECTION, projectName: 'webapp', count: 2 },
   { directory: BILLING, projectName: null, count: 2 },
 ];
 
@@ -327,7 +340,13 @@ describe('会话历史(按目录分节)核心合同', () => {
     mocks.ensureProjectLoaded.mockResolvedValue(undefined);
     mocks.restore.mockResolvedValue(undefined);
     mocks.syncProjects.mockResolvedValue(undefined);
-    mocks.remoteListDirectories.mockResolvedValue(directoryPageOf([dir({ key: '/home/alice/api', sessions: [local({ key: 'local:remote-1', title: 'd22 上聊过的一条' })] })]));
+    // 别的机器默认什么都没有(它们一直和本机一起被问);要它们有行的用例自己摆。
+    mocks.remoteListDirectories.mockResolvedValue(directoryPageOf([], { directories: [] }));
+    world.digests = {};
+    world.bound = [];
+    seedAccounts();
+    world.projects = new Map();
+    world.projectMachine = {};
     mocks.remoteImport.mockImplementation((_machine: string, _params: { providerSessionId: string }) =>
       Promise.resolve({ projectId: 'rp', sessionId: 'rc', workingDirectory: '/home/alice/api', alreadyImported: false })
     );
@@ -366,13 +385,16 @@ describe('会话历史(按目录分节)核心合同', () => {
     const list = screen.getByTestId('session-history-list');
     await vi.waitFor(() => expect(list.getByTestId('session-history-section').all()).toHaveLength(2));
     const sections = list.getByTestId('session-history-section').all();
-    expect(sections.map((s) => s.element().getAttribute('data-directory-key'))).toEqual([WEBAPP, BILLING]);
+    // 咕咕行的一节 = 它的项目(侧栏那一行);对不上项目的原件按「机器 · 目录」一节。
+    expect(sections.map((s) => s.element().getAttribute('data-section-key'))).toEqual(['project:chat-webapp', `dir:local:${BILLING}`]);
     await expect.element(list.getByText('webapp', { exact: true })).toBeVisible();
-    // 节名 = 目录末级名(参照页就是一个词);完整路径在 title 上。
+    // 目录一节的名字 = 目录末级名(参照页就是一个词);完整路径在 title 上。项目一节不挂路径(几台机器上路径各不同)。
     await expect.element(list.getByText('billing-service', { exact: true })).toBeVisible();
     expect(
       list.getByTestId('session-history-section-name').all().map((el) => el.element().getAttribute('title'))
-    ).toEqual([WEBAPP, BILLING]);
+    ).toEqual([null, BILLING]);
+    // 只有一台机器的行:行上不标机器。
+    expect(list.getByTestId('session-history-row-machine').all()).toHaveLength(0);
     // 节头的 agent 图标:webapp 那节两个 provider。
     expect(sections[0].getByTestId('session-history-section-agents').getByTestId('agent-icon').all().map((el) => el.element().getAttribute('data-agent-id'))).toEqual(['claude', 'codex']);
     await expect.element(sections[0].getByText('2 个会话', { exact: true })).toBeVisible();
@@ -397,26 +419,6 @@ describe('会话历史(按目录分节)核心合同', () => {
     const actions = list.getByTestId('session-history-action').all();
     expect(actions.map((action) => action.element().textContent)).toEqual(['恢复', '打开', '导入', '导入']);
     await expect.element(screen.getByTestId('session-history-total')).toHaveTextContent('共 2 个目录');
-  });
-
-  it('节头没有 ···;只看一节 = 顶上的项目下拉选中这个目录(同一份数据,按会话分页)', async () => {
-    mocks.listDirectories.mockResolvedValue(directoryPageOf([{ ...DIRS[0], sessionCount: 30 }, DIRS[1]]));
-    render();
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-section').all()).toHaveLength(2));
-    // 一节被截断(webapp 30 条只带回 2 条)、一节全是未导入的(billing)—— 从前这两种节头都会长出 ···,现在都没有(owner 2026-09-26)。
-    expect(screen.getByTestId('session-history-section-menu').all()).toHaveLength(0);
-    await expect.element(screen.getByTestId('session-history-section-show-more')).toBeVisible();
-    await pick('session-history-directory', `session-history-directory-${WEBAPP}`);
-    await vi.waitFor(() => expect(listParams().some((p) => p.directory === WEBAPP && p.limit === 50)).toBe(true));
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-section').all()).toHaveLength(1));
-    await expect.element(screen.getByTestId('session-history-total')).toHaveTextContent('共 4 条');
-    await expect.element(screen.getByTestId('session-history-directory')).toHaveTextContent('webapp');
-
-    // 目录下拉回到「所有目录」= 回到分节视图;「未关联目录」那一档给主进程的是 null。
-    await pick('session-history-directory', 'session-history-directory-all');
-    await vi.waitFor(() => expect(mocks.listDirectories.mock.calls.length).toBeGreaterThan(1));
-    await pick('session-history-directory', 'session-history-directory-none');
-    await vi.waitFor(() => expect(listParams().some((p) => p.directory === null)).toBe(true));
   });
 
   it('每节默认平铺露头几条、没有滚动条;点「显示更多」才变成限高小窗并当场要下一批,「收起」回去并扔掉多要来的', async () => {
@@ -456,7 +458,7 @@ describe('会话历史(按目录分节)核心合同', () => {
     // 显示更多:当场按这一节要下一批(同一套筛选 + 这一节,limit 放大,走本机索引缓存),这一节变成限高、能滚的小窗。
     (sectionAt(0).getByTestId('session-history-section-show-more').element() as HTMLElement).click();
     await vi.waitFor(() => expect(firstRows()).toHaveLength(8));
-    expect(listParams().map((p) => [p.directory, p.limit, p.mode, p.source])).toEqual([[WEBAPP, 55, 'cached', 'gugu']]);
+    expect(listParams().map((p) => [p.directory, p.limit, p.mode, p.source])).toEqual([[WEBAPP_SECTION, 55, 'cached', 'gugu']]);
     expect(getComputedStyle(boxOf(0)).maxHeight).toBe('320px');
     expect(getComputedStyle(boxOf(0)).overflowY).toBe('auto');
     expect(getComputedStyle(boxOf(0)).getPropertyValue('scrollbar-width')).toBe('thin');
@@ -477,14 +479,6 @@ describe('会话历史(按目录分节)核心合同', () => {
     await vi.waitFor(() => expect(firstRows()).toHaveLength(8));
     expect(mocks.list).toHaveBeenCalledTimes(2);
 
-    // 只看某一节:整页就是这一节,不限高,也没有「显示更多」。
-    mocks.list.mockResolvedValue(pageOf(eight, { matched: 8 }));
-    await pick('session-history-directory', `session-history-directory-${WEBAPP}`);
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-section').all()).toHaveLength(1));
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(8));
-    expect(getComputedStyle(boxOf(0)).maxHeight).toBe('none');
-    expect(screen.getByTestId('session-history-section-show-more').all()).toHaveLength(0);
-    expect(screen.getByTestId('session-history-section-show-less').all()).toHaveLength(0);
   });
 
   it('要更多的那批还在路上就收起了:回来的那批不要,这一节停在头几条', async () => {
@@ -539,15 +533,15 @@ describe('会话历史(按目录分节)核心合同', () => {
     await vi.waitFor(() => expect(webappRows()).toHaveLength(120));
     // 每批 = 同一套筛选 + 这一节,limit 放大,走本机索引缓存。
     expect(listParams().map((p) => [p.directory, p.limit, p.mode, p.source])).toEqual([
-      [WEBAPP, 55, 'cached', 'gugu'],
-      [WEBAPP, 105, 'cached', 'gugu'],
-      [WEBAPP, 155, 'cached', 'gugu'],
+      [WEBAPP_SECTION, 55, 'cached', 'gugu'],
+      [WEBAPP_SECTION, 105, 'cached', 'gugu'],
+      [WEBAPP_SECTION, 155, 'cached', 'gugu'],
     ]);
     // 全部带回:哨兵收起,不再要。
     await vi.waitFor(() => expect(screen.getByTestId('session-history-section-loading').all()).toHaveLength(0));
   });
 
-  it('「咕咕独立会话」那一节:节名与下拉档名都是「咕咕独立会话」,不把内部 key 当路径露出来', async () => {
+  it('「咕咕独立会话」那一节:节名是「咕咕独立会话」,不把内部 key 当路径露出来', async () => {
     const home = dir({ key: SESSION_HOME_SECTION_KEY, sessionCount: 1, sessions: [local({ key: 'local:th-1', title: '独立任务里跑的', directory: '/Users/me/gugu-a-profile/task-home' })] });
     mocks.listDirectories.mockResolvedValue(
       directoryPageOf([home, DIRS[1]], { directories: [...DIRECTORIES, { directory: SESSION_HOME_SECTION_KEY, projectName: null, count: 1 }] })
@@ -557,41 +551,6 @@ describe('会话历史(按目录分节)核心合同', () => {
     const name = screen.getByTestId('session-history-section-name').first();
     await expect.element(name).toHaveTextContent('咕咕独立会话');
     expect(name.element().getAttribute('title')).toBeNull();
-    click('session-history-directory');
-    const option = screen.getByTestId(`session-history-directory-${SESSION_HOME_SECTION_KEY}`);
-    await expect.element(option).toHaveTextContent('咕咕独立会话');
-    expect(option.element().textContent).not.toContain(SESSION_HOME_SECTION_KEY);
-    (option.element() as HTMLElement).click();
-    await vi.waitFor(() => expect(listParams().some((p) => p.directory === SESSION_HOME_SECTION_KEY)).toBe(true));
-  });
-
-  it('项目下拉列出全部目录,能按项目名或路径搜;选中 = 只看那一节', async () => {
-    const facet = [
-      ...DIRECTORIES,
-      ...Array.from({ length: 40 }, (_, i) => ({ directory: `/tmp/scratch-${i}`, projectName: null, count: 1 })),
-    ];
-    mocks.listDirectories.mockResolvedValue(directoryPageOf(DIRS, { directories: facet }));
-    render();
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-section').all()).toHaveLength(2));
-    click('session-history-directory');
-    const search = screen.getByTestId('session-history-directory-search');
-    await expect.element(search).toBeVisible();
-    // 全部列出:40 个 /tmp 目录 + 2 个项目 + 「所有项目」+「未关联目录」,❌ 截成前 24 个。
-    await vi.waitFor(() =>
-      expect(document.querySelectorAll('[data-testid^="session-history-directory-/"]')).toHaveLength(42)
-    );
-    // 按路径搜(项目名里没有 work/):命中 webapp 与 billing-service 两档。
-    await search.fill('work/');
-    await vi.waitFor(() =>
-      expect(document.querySelectorAll('[data-testid^="session-history-directory-/"]')).toHaveLength(2)
-    );
-    await search.fill('billing');
-    await vi.waitFor(() =>
-      expect(document.querySelectorAll('[data-testid^="session-history-directory-/"]')).toHaveLength(1)
-    );
-    click(`session-history-directory-${BILLING}`);
-    await vi.waitFor(() => expect(listParams().some((p) => p.directory === BILLING)).toBe(true));
-    await expect.element(screen.getByTestId('session-history-directory')).toHaveTextContent('billing-service');
   });
 
   it('筛选菜单(来源 / 状态 / 排序)与搜索都传给主进程,渲染层自己不排;触发钮写着生效的筛选', async () => {
@@ -614,7 +573,7 @@ describe('会话历史(按目录分节)核心合同', () => {
   });
 
   it('滚动加载:目录多于已带回的,滚到底把 limit 放大交给主进程(❌ 翻页、❌ offset)', async () => {
-    const many = Array.from({ length: 50 }, (_, i) => dir({ key: `/d/${i}`, sessionCount: 1, sessions: [gugu({ key: `gugu:c${i}`, title: `c${i}`, directory: `/d/${i}` })] }));
+    const many = Array.from({ length: 50 }, (_, i) => dir({ key: `/d/${i}`, sessionCount: 1, sessions: [gugu({ key: `gugu:c${i}`, title: `c${i}`, directory: `/d/${i}`, gugu: { projectId: `p-${i}`, sessionId: `c${i}`, runtime: 'acp' } })] }));
     mocks.listDirectories.mockResolvedValue(directoryPageOf(many, { matched: 250 }));
     render();
     await vi.waitFor(() => expect(screen.getByTestId('session-history-section').all()).toHaveLength(50));
@@ -622,6 +581,17 @@ describe('会话历史(按目录分节)核心合同', () => {
     (screen.getByTestId('session-history-total').element().parentElement as HTMLElement).scrollIntoView();
     await vi.waitFor(() => expect(directoryParams().some((p) => p.limit === 100 && p.offset === undefined)).toBe(true));
     expect(screen.getByTestId('session-history-page').all()).toHaveLength(0);
+  });
+
+  // A slow machine must not hold back scrolling through what the others brought back (it gated on "any machine reading").
+  it('滚动加载:另一台机器的第一页还没回来(800 ms),滚到底照样把 limit 放大', async () => {
+    const many = Array.from({ length: 50 }, (_, i) => dir({ key: `/d/${i}`, sessionCount: 1, sessions: [gugu({ key: `gugu:c${i}`, title: `c${i}`, directory: `/d/${i}`, gugu: { projectId: `p-${i}`, sessionId: `c${i}`, runtime: 'acp' } })] }));
+    mocks.listDirectories.mockResolvedValue(directoryPageOf(many, { matched: 250 }));
+    mocks.remoteListDirectories.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(directoryPageOf([], { directories: [] })), 800)));
+    render();
+    await vi.waitFor(() => expect(screen.getByTestId('session-history-section').all()).toHaveLength(50));
+    (screen.getByTestId('session-history-total').element().parentElement as HTMLElement).scrollIntoView();
+    await vi.waitFor(() => expect(directoryParams().some((p) => p.limit === 100)).toBe(true), { timeout: 600 });
   });
 
   it('点一行展开详情(咕咕行含 session id),再点收起;已归档的行:恢复走唯一路径并刷新', async () => {
@@ -649,14 +619,14 @@ describe('会话历史(按目录分节)核心合同', () => {
     await vi.waitFor(() => expect(mocks.listDirectories.mock.calls.length).toBeGreaterThan(callsBefore));
   });
 
-  it('#6956 面板开着时在别处归档(手机、侧栏、agent):跟着所看那台机器的 session:changed 重拉;别的字段、别的机器不重拉', async () => {
+  it('#6956 面板开着时在别处归档(手机、侧栏、agent):跟着问得到的每台机器的 session:changed 重拉;别的字段、离线的机器不重拉', async () => {
     render();
     await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
     const calls = () => mocks.listDirectories.mock.calls.length;
     const before = calls();
-    // 只改了标题;归档发生在别的机器上(这里看的是本机):都不重拉。
+    // 只改了标题;离线的那台(没有订它):都不重拉。
     emitFrom(null, 'session:changed', { sessionId: 'alpha', projectId: 'p1', changes: { title: '改了个名' } });
-    emitFrom('dev-d22', 'session:changed', { sessionId: 'r1', projectId: 'rp', changes: { archivedAt: '2026-10-06 15:10:05' } });
+    emitFrom('dev-off', 'session:changed', { sessionId: 'r1', projectId: 'rp', changes: { archivedAt: '2026-10-06 15:10:05' } });
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(calls()).toBe(before);
 
@@ -674,6 +644,11 @@ describe('会话历史(按目录分节)核心合同', () => {
         '恢复', '恢复', '导入', '导入',
       ])
     );
+    // 别的机器上归档的:那台问得到,它的那一路也重拉。
+    const d22Calls = () => mocks.remoteListDirectories.mock.calls.filter(([machine]) => machine === 'dev-d22').length;
+    const d22Before = d22Calls();
+    emitFrom('dev-d22', 'session:changed', { sessionId: 'r1', projectId: 'rp', changes: { archivedAt: '2026-10-06 15:10:05' } });
+    await vi.waitFor(() => expect(d22Calls()).toBeGreaterThan(d22Before));
   });
 
   it('活跃的行:打开 = 进这条会话并打开它', async () => {
@@ -724,17 +699,123 @@ describe('会话历史(按目录分节)核心合同', () => {
     await vi.waitFor(() => expect(searchEl.getAttribute('aria-activedescendant')).toContain('gugu:zebra'));
   });
 
-  it('#6264 标题右边选机器:选了 d22,目录页问的是 d22;导入建在 d22 上,进任务前先挂上 d22 的项目', async () => {
+  it('全部机器一起读:同一个项目在本机与 d22 上的任务进同一节,行上标机器;离线那台不去问', async () => {
+    // d22 上的 webapp 是另一台上的本地项目 rp1,与本机 p1 绑在同一个项目群上 ⇒ d22 的主进程也给 project:chat-webapp 这一节。
+    world.bound = [{ deviceId: 'dev-d22', localProjectId: 'rp1' }];
+    seedAccounts();
+    const remoteRow = gugu({ key: 'gugu:remote-w', title: 'd22 上的 webapp 任务', directory: '/home/alice/webapp', updatedAt: NOW - 5 * 60 * 60 * 1000, gugu: { projectId: 'rp1', sessionId: 'remote-w', runtime: 'acp' } });
+    mocks.remoteListDirectories.mockImplementation((machine: string) =>
+      Promise.resolve(
+        machine === 'dev-d22'
+          ? directoryPageOf([dir({ key: WEBAPP_SECTION, projectName: 'webapp', sessionCount: 1, providers: ['claude'], updatedAt: remoteRow.updatedAt, sessions: [remoteRow] })])
+          : directoryPageOf([], { directories: [] })
+      )
+    );
     render();
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
+    const list = screen.getByTestId('session-history-list');
+    await vi.waitFor(() => expect(rowKeys()).toContain('dev-d22/gugu:remote-w'));
+    const sections = list.getByTestId('session-history-section').all();
+    expect(sections.map((s) => s.element().getAttribute('data-section-key'))).toEqual(['project:chat-webapp', `dir:local:${BILLING}`]);
+    // 一节三条:按更新时间跨机器归并(zebra 3h 前 → d22 那条 5h 前 → alpha 10h 前)。
+    expect(sections[0].getByTestId('session-history-row').all().map((row) => row.element().getAttribute('data-row-key'))).toEqual([
+      'gugu:zebra', 'dev-d22/gugu:remote-w', 'gugu:alpha',
+    ]);
+    await expect.element(sections[0].getByText('3 个会话', { exact: true })).toBeVisible();
+    expect(sections[0].getByTestId('session-history-row-machine').all().map((el) => el.element().textContent)).toEqual(['这台电脑', 'd22', '这台电脑']);
+    // 每台问得到的都问了;离线的 off ❌ 去问(只会挂满超时)。
+    expect(mocks.remoteListDirectories).toHaveBeenCalledWith('dev-d22', expect.objectContaining({ sessionsPerDirectory: 5, source: 'gugu' }));
+    expect(mocks.remoteListDirectories).toHaveBeenCalledWith('dev-tunnel', expect.anything());
+    expect(mocks.remoteListDirectories.mock.calls.some(([machine]) => machine === 'dev-off')).toBe(false);
+
+    // 打开 d22 那条:带着它的机器。
+    (sections[0].getByTestId('session-history-action').nth(1).element() as HTMLElement).click();
+    await vi.waitFor(() =>
+      expect(mocks.openLink).toHaveBeenCalledWith({ kind: 'session', sessionId: 'remote-w', projectId: 'rp1', deviceId: 'dev-d22' })
+    );
+
+    // 机器筛选:只看 d22 ⇒ 只剩它的行,本机不再问。
     const localCalls = mocks.listDirectories.mock.calls.length;
-    click('pick-dev-d22');
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(1));
-    expect(mocks.remoteListDirectories).toHaveBeenCalledWith('dev-d22', expect.objectContaining({ sessionsPerDirectory: 5 }));
-    // 换过去之后本机那一路不再问;上一台的行 ❌ 留着冒充这一台的。
+    await pick('session-history-machine', 'session-history-machine-dev-d22');
+    await vi.waitFor(() => expect(rowKeys()).toEqual(['dev-d22/gugu:remote-w']));
+    await expect.element(screen.getByTestId('session-history-machine')).toHaveTextContent('d22');
     expect(mocks.listDirectories.mock.calls.length).toBe(localCalls);
-    expect(rowKeys()).toEqual(['local:remote-1']);
-    click('session-history-action');
+    // 一台机器的行:不再标机器。
+    expect(screen.getByTestId('session-history-row-machine').all()).toHaveLength(0);
+    await pick('session-history-machine', 'session-history-machine-all');
+    await vi.waitFor(() => expect(rowKeys()).toHaveLength(5));
+  });
+
+  it('离线的机器:心跳摘要里的任务按项目归节、行标离线,节尾写哪台离线;点得开的照侧栏的判据打开', async () => {
+    world.bound = [{ deviceId: 'dev-off', localProjectId: 'offp' }];
+    seedAccounts();
+    const summary = (conversationId: string, title: string, at: string, supported: boolean) => ({
+      conversationId, projectId: 'offp', title, harness: 'codex', runtime: 'acp', agentStatus: null,
+      lastInteractedAt: at, supported,
+    });
+    world.digests = {
+      'dev-off': [
+        summary('off-1', 'off 上能打开的', new Date(NOW - 2 * 60 * 60 * 1000).toISOString(), true),
+        summary('off-2', 'off 上打不开的', new Date(NOW - 20 * 60 * 60 * 1000).toISOString(), false),
+      ],
+    };
+    render();
+    // 离线那台的行当场就有(心跳摘要),本机的行要等主进程回来:等整节到齐再比次序。
+    const webapp = screen.getByTestId('session-history-section').first();
+    await vi.waitFor(() =>
+      expect(webapp.getByTestId('session-history-row').all().map((row) => row.element().getAttribute('data-row-key'))).toEqual([
+        'dev-off/gugu:off-1', 'gugu:zebra', 'gugu:alpha', 'dev-off/gugu:off-2',
+      ])
+    );
+    expect(webapp.element().getAttribute('data-section-key')).toBe('project:chat-webapp');
+    expect(webapp.getByTestId('session-history-row-offline').all()).toHaveLength(2);
+    await expect.element(webapp.getByTestId('session-history-section-offline')).toHaveTextContent('off 离线');
+    // 别的节里没有离线的行:没有这一句。
+    expect(screen.getByTestId('session-history-section').nth(1).getByTestId('session-history-section-offline').all()).toHaveLength(0);
+    expect(mocks.remoteListDirectories.mock.calls.some(([machine]) => machine === 'dev-off')).toBe(false);
+
+    const actions = webapp.getByTestId('session-history-action').all();
+    expect((actions[3].element() as HTMLButtonElement).disabled).toBe(true);
+    (actions[0].element() as HTMLElement).click();
+    await vi.waitFor(() =>
+      expect(mocks.openLink).toHaveBeenCalledWith({ kind: 'session', sessionId: 'off-1', projectId: 'offp', deviceId: 'dev-off' })
+    );
+
+    // 摘要行也过同一套筛选:只看已归档 ⇒ 它们(都是活跃的)不在了。
+    await pick('session-history-filter', 'session-history-filter-status-archived');
+    await vi.waitFor(() => expect(rowKeys().some((key) => key?.startsWith('dev-off/'))).toBe(false));
+  });
+
+  it('恢复 / 导入作用在行所在的机器上:d22 的已归档行先挂上 d22 再恢复,本机的不挂;d22 的原件导入建在 d22', async () => {
+    const archived = gugu({ key: 'gugu:remote-z', title: 'd22 上归档的', status: 'archived', archivedAt: NOW, directory: '/home/alice/api', projectName: 'api', updatedAt: NOW - 60 * 1000, gugu: { projectId: 'rp2', sessionId: 'remote-z', runtime: 'acp' } });
+    const original = local({ key: 'local:remote-1', title: 'd22 上聊过的一条', directory: '/home/alice/scratch' });
+    mocks.remoteListDirectories.mockImplementation((machine: string) =>
+      Promise.resolve(
+        machine === 'dev-d22'
+          ? directoryPageOf([
+              dir({ key: '/home/alice/api', projectName: 'api', sessionCount: 1, updatedAt: archived.updatedAt, sessions: [archived] }),
+              dir({ key: '/home/alice/scratch', sessionCount: 1, sessions: [original] }),
+            ])
+          : directoryPageOf([], { directories: [] })
+      )
+    );
+    render();
+    await vi.waitFor(() => expect(rowKeys()).toContain('dev-d22/gugu:remote-z'));
+    const rowAction = (key: string) =>
+      screen.getByTestId('session-history-row').all().find((row) => row.element().getAttribute('data-row-key') === key)!
+        .getByTestId('session-history-action').element() as HTMLElement;
+    // 对不上项目的原件一节:节头标着它的机器。
+    await expect.element(screen.getByTestId('session-history-section-machine').first()).toHaveTextContent('d22');
+
+    rowAction('dev-d22/gugu:remote-z').click();
+    await vi.waitFor(() => expect(mocks.restore).toHaveBeenCalledWith({ projectId: 'rp2', sessionId: 'remote-z' }));
+    expect(mocks.syncProjects).toHaveBeenCalledWith('dev-d22');
+
+    mocks.syncProjects.mockClear();
+    rowAction('gugu:zebra').click();
+    await vi.waitFor(() => expect(mocks.restore).toHaveBeenCalledWith({ projectId: 'p1', sessionId: 'zebra' }));
+    expect(mocks.syncProjects).not.toHaveBeenCalled();
+
+    rowAction('dev-d22/local:remote-1').click();
     await vi.waitFor(() =>
       expect(mocks.remoteImport).toHaveBeenCalledWith('dev-d22', expect.objectContaining({ providerSessionId: 'remote-1' }))
     );
@@ -744,22 +825,20 @@ describe('会话历史(按目录分节)核心合同', () => {
   });
 
   it('#6264 只经远程隧道连着的机器:导入的会话进「通用」(那种机器没有终端)', async () => {
+    mocks.remoteListDirectories.mockImplementation((machine: string) =>
+      Promise.resolve(
+        machine === 'dev-tunnel'
+          ? directoryPageOf([dir({ key: '/home/alice/api', sessions: [local({ key: 'local:remote-1', title: 'tunnel 上聊过的一条' })] })])
+          : directoryPageOf([], { directories: [] })
+      )
+    );
     render();
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
-    click('pick-dev-tunnel');
-    await vi.waitFor(() => expect(rowKeys()).toEqual(['local:remote-1']));
+    await vi.waitFor(() => expect(rowKeys()).toContain('dev-tunnel/local:remote-1'));
+    await pick('session-history-machine', 'session-history-machine-dev-tunnel');
+    await vi.waitFor(() => expect(rowKeys()).toEqual(['dev-tunnel/local:remote-1']));
     click('session-history-action');
     await vi.waitFor(() =>
       expect(mocks.remoteImport).toHaveBeenCalledWith('dev-tunnel', expect.objectContaining({ sessionView: 'general' }))
     );
-  });
-
-  it('#6264 选了离线的机器:只说它离线、上线后显示,不去问它', async () => {
-    render();
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
-    click('pick-dev-off');
-    await expect.element(screen.getByTestId('session-history-device-blocked')).toHaveTextContent('off 离线');
-    expect(mocks.remoteListDirectories).not.toHaveBeenCalled();
-    expect(screen.getByTestId('session-history-row').all()).toHaveLength(0);
   });
 });

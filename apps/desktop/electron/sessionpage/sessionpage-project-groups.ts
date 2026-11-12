@@ -5,13 +5,16 @@
 // (实机上确实攒出了两个同名的 `new project` 群)。群的寿命属于**项目**,不属于某个 agent 实例,所以它
 // 得存在与 agent 生命周期无关的地方。
 //
-// 只在本机存:群本身在云端,这份文件只是「项目 id → 群 id」的索引。丢了不致命(退化成 roster 兜底、
-// 最坏是新建一个群),所以读取路径对坏文件宽容;写入路径原子落盘,避免半截 JSON。
+// 只在本机存:群本身在云端,这份文件是这台机器上「项目 id → 群 id」的唯一来源。读不动(坏 JSON / 权限)就抛:
+// 当成空会把项目合到别的群或重复建群。写入路径原子落盘,避免半截 JSON。
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { listAgents } from '@gugu/core'
+import { agentOwnerUserId } from '@gugu/core/local/state/agentOwner'
 import { atomicWriteText, resolveGuguHome } from '@gugu/core/local/state/paths'
 import { DEVICE_STORE, fileRefKey, requireFileRevision, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { createLogger } from '../lib/logger'
+import { SESSIONPAGE_GROUP_CHAT_CACHE_KEY, SESSIONPAGE_PROJECT_CACHE_KEY } from '../session/main/core/sessionpage/sessionpage-session-agent'
 
 const FILE_NAME = 'taskpage-project-groups.json'
 
@@ -27,7 +30,14 @@ type ProjectMap = Record<string, string>
 interface Mapping {
   owners: Record<string, ProjectMap>
   unowned: ProjectMap
+  /**
+   * This device's own file versions, by item: a cache of the database's version records (immutable per version), filled
+   * when this device publishes a version or the database answers for one, at most FILE_CACHE_MAX items per account.
+   * Whether this device still holds a version is decided at read time from the binding, never by dropping entries.
+   */
   files?: Record<string, Record<string, FileRevision>>
+  /** The roster's project groups were copied in (migrateRosterGroups); the roster is never read for them again. */
+  rosterMigrated?: true
 }
 
 function readProjectMap(source: unknown): ProjectMap {
@@ -40,8 +50,7 @@ function readProjectMap(source: unknown): ProjectMap {
 }
 
 function parseMapping(parsed: unknown): Mapping {
-  const empty: Mapping = { owners: {}, unowned: {} }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return empty
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('project group mapping is not an object')
   const raw = parsed as Record<string, unknown>
   if (raw.owners && typeof raw.owners === 'object' && !Array.isArray(raw.owners)) {
     const owners: Record<string, ProjectMap> = {}
@@ -49,25 +58,25 @@ function parseMapping(parsed: unknown): Mapping {
       if (ownerId) owners[ownerId] = readProjectMap(map)
     }
     // 从前另记过 `representatives`(同群几个本地项目里谁画那一行);改由读方按 groupRowOrder 算,旧文件里的这个键读时不认、下次写时去掉。
-    return { owners, unowned: readProjectMap(raw.unowned), files: raw.files as Mapping['files'] }
+    return { owners, unowned: readProjectMap(raw.unowned), files: raw.files as Mapping['files'], ...(raw.rosterMigrated === true ? { rosterMigrated: true } : {}) }
   }
   // v1:整份文件就是一张 { projectId: chatId },归属未知。
   return { owners: {}, unowned: readProjectMap(raw) }
 }
 
-async function readMapping(env: NodeJS.ProcessEnv): Promise<Mapping> {
+/** The file as it is. Only a first run (no file) reads as empty; any other failure throws (❌ an empty mapping). */
+async function loadMapping(env: NodeJS.ProcessEnv): Promise<Mapping> {
+  let text: string
   try {
-    return parseMapping(JSON.parse(await readFile(filePath(env), 'utf8')) as unknown)
+    text = await readFile(filePath(env), 'utf8')
   } catch (error) {
-    // 首次运行没有这个文件 = 正常,静默。
     if ((error as { code?: string } | null)?.code === 'ENOENT') return { owners: {}, unowned: {} }
-    // 其它读失败(坏 JSON / 权限 / IO)绝不能静默当空:那样恰好复现这份文件要防的 bug —— 同项目
-    // 再开会话时查不到群 → 又建一个同名群。降级仍然继续(群在云端,不至于卡死),但必须喊出来。
-    console.error(
-      `[sessionpage] SESSIONPAGE-FUSION: 读不动「项目→群」映射 ${filePath(env)} —— 本次按「无映射」处理,同一项目可能被重复建群`,
-      error,
-    )
-    return { owners: {}, unowned: {} }
+    throw new Error(`project group mapping ${filePath(env)} is unreadable`, { cause: error })
+  }
+  try {
+    return parseMapping(JSON.parse(text) as unknown)
+  } catch (error) {
+    throw new Error(`project group mapping ${filePath(env)} is unreadable`, { cause: error })
   }
 }
 
@@ -76,7 +85,8 @@ async function writeMapping(mapping: Mapping, env: NodeJS.ProcessEnv): Promise<v
   for (const [ownerId, map] of Object.entries(mapping.owners)) {
     if (Object.keys(map).length) owners[ownerId] = map
   }
-  await atomicWriteText(filePath(env), `${JSON.stringify({ owners, unowned: mapping.unowned, files: mapping.files }, null, 2)}\n`)
+  const { unowned, files, rosterMigrated } = mapping
+  await atomicWriteText(filePath(env), `${JSON.stringify({ owners, unowned, files, rosterMigrated }, null, 2)}\n`)
 }
 
 // 同一个 main 进程里可能有多个会话同时 provision(实机:一个项目里连开两个任务)。read-modify-write
@@ -90,6 +100,54 @@ function enqueue(mutate: () => Promise<void>): Promise<void> {
   const next = writeQueue.then(mutate, mutate)
   writeQueue = next.catch(() => {})
   return next
+}
+
+/**
+ * @@@roster-migration - older versions kept a project's group only on its agents' roster rows (the cache pins
+ * provisioning writes). They are copied into this mapping once per file — an entry already here wins, an agent with no
+ * recorded owner goes to `unowned` — and the file says so; from then on the roster is never read for a project's group.
+ */
+async function migrateRosterGroups(mapping: Mapping, env: NodeJS.ProcessEnv): Promise<void> {
+  for (const agent of await listAgents(env, { includeGuests: true })) {
+    if (agent.status === 'archived') continue
+    const projectId = agent.cache?.[SESSIONPAGE_PROJECT_CACHE_KEY]
+    const chatId = agent.cache?.[SESSIONPAGE_GROUP_CHAT_CACHE_KEY]
+    if (typeof projectId !== 'string' || !projectId || typeof chatId !== 'string' || !chatId) continue
+    const owner = agentOwnerUserId(agent)
+    const map = owner ? (mapping.owners[owner] ??= {}) : mapping.unowned
+    map[projectId] ??= chatId
+  }
+  mapping.rosterMigrated = true
+}
+
+const migrated = new Map<string, Promise<void>>()
+/** Every reader and writer waits for the one-shot roster migration of its file (it runs first in the write queue). */
+function migratedMapping(env: NodeJS.ProcessEnv): Promise<void> {
+  const path = filePath(env)
+  let done = migrated.get(path)
+  if (!done) {
+    done = enqueue(async () => {
+      const mapping = await loadMapping(env)
+      if (mapping.rosterMigrated) return
+      await migrateRosterGroups(mapping, env)
+      await writeMapping(mapping, env)
+    })
+    // A failed migration (unreadable file or roster) is tried again by the next caller, never skipped.
+    done.catch(() => migrated.delete(path))
+    migrated.set(path, done)
+  }
+  return done
+}
+
+async function readMapping(env: NodeJS.ProcessEnv): Promise<Mapping> {
+  await migratedMapping(env)
+  return loadMapping(env)
+}
+
+/** The sole write path: read, change and write the file in the queue, after its migration. */
+async function mutateMapping(env: NodeJS.ProcessEnv, mutate: (mapping: Mapping) => Promise<void>): Promise<void> {
+  await migratedMapping(env)
+  await enqueue(async () => mutate(await loadMapping(env)))
 }
 
 // #7341 第二步:绑定(项目 → 群)是跨设备的项目身份,渲染层按它把各台机器的项目合成一行 —— 变了得让它重读。
@@ -142,13 +200,10 @@ export async function rememberProjectGroupId(
   const id = projectId.trim()
   const chat = chatId.trim()
   if (!id || !chat || !ownerUserId) return
-  await enqueue(async () => {
-    const mapping = await readMapping(env)
+  await mutateMapping(env, async (mapping) => {
     const mine = mapping.owners[ownerUserId] ?? {}
     const adopted = mapping.unowned[id] === chat
     if (mine[id] === chat && !adopted) return
-    const oldChat = mine[id]
-    if (oldChat && oldChat !== chat) invalidateProjectFiles(mapping, ownerUserId, id)
     mine[id] = chat
     mapping.owners[ownerUserId] = mine
     if (adopted) delete mapping.unowned[id]
@@ -165,24 +220,18 @@ export async function forgetProjectGroupId(
 ): Promise<void> {
   const id = projectId.trim()
   if (!id) return
-  await enqueue(async () => {
-    const mapping = await readMapping(env)
+  await mutateMapping(env, async (mapping) => {
     const mine = mapping.owners[ownerUserId]
     const hadMine = Boolean(mine && id in mine)
     const hadUnowned = id in mapping.unowned
     if (!hadMine && !hadUnowned) return
+    // This device's file versions under the project stay cached: they are unreadable while it is unbound (keptFor) and
+    // readable again once it is bound to the same chat (project_restore_device keeps files).
     if (mine) delete mine[id]
-    invalidateProjectFiles(mapping, ownerUserId, id)
     delete mapping.unowned[id]
     await writeMapping(mapping, env)
     announceChange(id, ownerUserId)
   })
-}
-
-function invalidateProjectFiles(mapping: Mapping, ownerId: string, projectId: string): void {
-  for (const [id, revision] of Object.entries(mapping.files?.[ownerId] ?? {})) {
-    if (revision.host_project_id === projectId) delete mapping.files![ownerId]![id]
-  }
 }
 
 /** A revision this device keeps for its chat: under a project still bound to that chat, or in its device store (no binding). */
@@ -190,73 +239,87 @@ function keptFor(mapping: Mapping, ownerId: string, revision: FileRevision): boo
   return revision.host_project_id === DEVICE_STORE || mapping.owners[ownerId]?.[revision.host_project_id!] === revision.chat_id
 }
 
-/** Published local revisions share the account/project mapping and its sole atomic write queue. */
+/** The fields of a version record this device keeps and answers with (roots are resolved from the project registry at read time). */
+function revisionRecord(revision: FileRevision): FileRevision {
+  const { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, host_device_id, host_project_id, host_account_id, relative_path, workspace } = revision
+  return { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, host_device_id, host_project_id, host_account_id, relative_path, ...(workspace ? { workspace } : {}) }
+}
+
+/** This device's version record, while this device holds it for its chat; null otherwise. */
+function held(mapping: Mapping, ownerId: string, deviceId: string, revision: FileRevision): FileRevision | null {
+  requireFileRevision(revision)
+  return revision.source === 'local' && !!revision.chat_id && revision.host_account_id === ownerId && revision.host_device_id === deviceId &&
+    keptFor(mapping, ownerId, revision) ? revisionRecord(revision) : null
+}
+
+/** Items whose version records this device caches per account; past it the least recently written go (a miss asks the database). */
+const FILE_CACHE_MAX = 2000
+
+/** Put a version record into the account's cache, as its most recent entry, and drop the oldest past FILE_CACHE_MAX. */
+function putRevision(mapping: Mapping, ownerId: string, revision: FileRevision): void {
+  const mine = (mapping.files ??= {})[ownerId] ??= {}
+  delete mine[revision.item_id!]
+  mine[revision.item_id!] = revisionRecord(revision)
+  const items = Object.keys(mine)
+  for (const item of items.slice(0, Math.max(0, items.length - FILE_CACHE_MAX))) delete mine[item]
+}
+
+/** Keep a version record of this device's in the cache (the newest one per item). */
+function cacheRevision(revision: FileRevision, ownerId: string, env: NodeJS.ProcessEnv): Promise<void> {
+  return mutateMapping(env, async (mapping) => {
+    const mine = mapping.files?.[ownerId]
+    const cached = mine && Object.hasOwn(mine, revision.item_id!) ? mine[revision.item_id!] : undefined
+    if (cached && cached.version! >= revision.version!) return
+    putRevision(mapping, ownerId, revision)
+    await writeMapping(mapping, env)
+  })
+}
+
+/** A version this device just published: its record goes into the cache, under a binding still current. */
 export async function rememberProjectFile(revision: FileRevision, ownerId: string, env: NodeJS.ProcessEnv = process.env): Promise<void> {
   requireFileRevision(revision)
   if (revision.source !== 'local' || revision.host_account_id !== ownerId || !revision.chat_id) throw new Error('File owner or group mismatch')
-  await enqueue(async () => {
-    const mapping = await readMapping(env)
+  await mutateMapping(env, async (mapping) => {
     if (!keptFor(mapping, ownerId, revision)) throw new Error('Project binding changed')
-    // Roots are resolved from the project registry at read time, never copied into this index.
-    const { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, host_device_id, host_project_id, host_account_id, relative_path, workspace } = revision
-    mapping.files ??= {}
-    mapping.files[ownerId] ??= {}
-    mapping.files[ownerId]![item_id!] = { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, host_device_id, host_project_id, host_account_id, relative_path, ...(workspace ? { workspace } : {}) }
+    putRevision(mapping, ownerId, revision)
     await writeMapping(mapping, env)
   })
 }
 
 export async function findProjectFileByName(chat: string, name: string, ownerId: string, deviceId: string, env: NodeJS.ProcessEnv = process.env) {
-  const files = Object.values((await readMapping(env)).files?.[ownerId] ?? {})
-  const found = files.find(row => row.chat_id === chat && row.workspace?.path === name)
-  return found ? readProjectFile({ item_id: found.item_id!, version: found.version! }, ownerId, deviceId, env) : null
+  const mapping = await readMapping(env)
+  const found = Object.values(mapping.files?.[ownerId] ?? {}).find(row => row.chat_id === chat && row.workspace?.path === name)
+  return found ? held(mapping, ownerId, deviceId, found) : null
 }
 
 export async function findProjectFileCopy(projectId: string, sha: string, ownerId: string, deviceId: string, env: NodeJS.ProcessEnv = process.env) {
-  const files = Object.values((await readMapping(env)).files?.[ownerId] ?? {})
-  const found = files.findLast(row => row.host_project_id === projectId && row.sha256 === sha && row.relative_path?.startsWith('.gugu/attachments/'))
-  return found ? readProjectFile({ item_id: found.item_id!, version: found.version! }, ownerId, deviceId, env) : null
+  const mapping = await readMapping(env)
+  const found = Object.values(mapping.files?.[ownerId] ?? {}).findLast(row => row.host_project_id === projectId && row.sha256 === sha && row.relative_path?.startsWith('.gugu/attachments/'))
+  return found ? held(mapping, ownerId, deviceId, found) : null
 }
 
 /** The database's record of one version of a file (its current one when no version is named). */
 export type ProjectFileVersionLookup = (ref: { item_id: string; version?: number }) => Promise<FileRevision | null>
 
 /**
- * The index keeps the version this computer last published. A later version the database made without new bytes — a
- * rename or move elsewhere carries the local revision forward — is read here when the database's record of it names the
- * same bytes in the same place: chat, host, project, path, sha and size. Any difference is refused as before.
+ * Does this device hold this version of a file: the database's version record says so (this account, this device, a
+ * project of this device's that is still bound to the file's chat, or its device store). A named version the cache has is
+ * answered from it (a version record never changes); anything else is asked of the database, and its answer is cached.
  */
-export async function readProjectFile(ref: FileRef, ownerId: string, deviceId: string, env: NodeJS.ProcessEnv = process.env, later?: ProjectFileVersionLookup): Promise<FileRevision | null> {
+export async function readProjectFile(ref: FileRef, ownerId: string, deviceId: string, env: NodeJS.ProcessEnv = process.env, lookup: ProjectFileVersionLookup): Promise<FileRevision | null> {
   fileRefKey(ref)
   if (!('item_id' in ref) || !ownerId || !deviceId) return null
   const mapping = await readMapping(env)
   const mine = mapping.files?.[ownerId]
-  const revision = mine && Object.hasOwn(mine, ref.item_id) ? mine[ref.item_id] : undefined
-  if (!revision) return null
-  requireFileRevision(revision)
-  if (!revision.chat_id || revision.host_account_id !== ownerId || revision.host_device_id !== deviceId || revision.item_id !== ref.item_id ||
-    !keptFor(mapping, ownerId, revision)) return null
-  if (ref.version === revision.version) return revision
-  if (!later || ref.version !== undefined && ref.version < revision.version!) return null
-  // No version named means the file's current one: another member's device may have sent a newer version since.
-  const found = await later(ref.version === undefined ? { item_id: ref.item_id } : { item_id: ref.item_id, version: ref.version })
-  if (!found || found.source !== 'local' || found.item_id !== revision.item_id || ref.version !== undefined && found.version !== ref.version ||
-    found.version! < revision.version! || found.chat_id !== revision.chat_id ||
-    found.host_account_id !== revision.host_account_id || found.host_device_id !== revision.host_device_id || found.host_project_id !== revision.host_project_id ||
-    found.relative_path !== revision.relative_path || found.sha256 !== revision.sha256 || found.size_bytes !== revision.size_bytes) return null
-  if (found.version === revision.version) return revision
-  // Where the file sits in the folder is the database's now, not the index's from its publication.
-  const { workspace: _published, ...same } = revision
-  return { ...same, version: found.version, file_name: found.file_name }
-}
-
-export async function forgetProjectFile(itemId: string, ownerId: string, env: NodeJS.ProcessEnv = process.env): Promise<void> {
-  await enqueue(async () => {
-    const mapping = await readMapping(env)
-    if (!Object.hasOwn(mapping.files?.[ownerId] ?? {}, itemId)) return
-    delete mapping.files![ownerId]![itemId]
-    await writeMapping(mapping, env)
-  })
+  const cached = mine && Object.hasOwn(mine, ref.item_id) ? mine[ref.item_id] : undefined
+  const answer = ref.version !== undefined && cached?.version === ref.version ? cached
+    : await lookup(ref.version === undefined ? { item_id: ref.item_id } : { item_id: ref.item_id, version: ref.version })
+  if (!answer || answer.item_id !== ref.item_id || ref.version !== undefined && answer.version !== ref.version) return null
+  // The cached record of the same version is the same record, with where publication put it in the folder (`workspace`).
+  const record = cached && cached.version === answer.version ? cached : answer
+  const revision = held(mapping, ownerId, deviceId, record)
+  if (revision && record !== cached) await cacheRevision(revision, ownerId, env)
+  return revision
 }
 
 /**

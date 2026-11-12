@@ -78,6 +78,7 @@ function makeCrossMachine(reply: Call = async () => ({ result: { ok: true } }), 
     ],
     lookupAgents: async () => [],
     requester: { call: wire as unknown as CrossMachineDeps['requester']['call'] },
+    outbound: async () => {},
     now: () => NOW,
     ...overrides,
   }
@@ -112,6 +113,17 @@ describe('reaching another machine', () => {
       expect(call).toHaveBeenCalledOnce()
     }
   })
+  // The one exit: every action leaving this machine passes the outbound check (a local project id never leaves it).
+  it('refuses an action the outbound check refuses, before anything is sent', async () => {
+    const outbound = vi.fn(async (action: object) => { if ((action as { project_id?: unknown }).project_id === 'local-1') throw new Error('use project:group-1') })
+    const { xm, call } = makeCrossMachine(undefined, { outbound })
+    await expect(xm.runOnDevice('dev-b', CALLER, { action: 'spawn', prompt: 'x', project_id: 'local-1' })).rejects.toThrow('use project:group-1')
+    expect(call).not.toHaveBeenCalled()
+    await xm.runOnDevice('dev-b', CALLER, { action: 'spawn', prompt: 'x', project_id: 'group-1' })
+    expect(call).toHaveBeenCalledTimes(1)
+    expect(outbound).toHaveBeenCalledTimes(2)
+  })
+
   it('lists this machine first, then online machines', async () => {
     const { xm } = makeCrossMachine()
     expect((await xm.listDeviceRows()).map((row) => [row.device_id, row.this_machine, row.online])).toEqual([

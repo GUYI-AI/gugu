@@ -8,7 +8,7 @@ import type { ProjectFolder } from '@shared/core/projects/project-folders';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { ProjectFolderCard, shortHome, FAN_MAX_ROWS, FAN_ROW_MAX, fanPlace } from './project-folder-card';
 import { UNANSWERED_AFTER_MS, useProjectFolders, type ProjectFoldersState } from './project-folders';
-import { foldersInScope } from './project-device-scope';
+import { foldersInScope } from './project-run-machine';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 
 const mocks = vi.hoisted(() => ({
@@ -23,12 +23,15 @@ const mocks = vi.hoisted(() => ({
   // 账号上那份在那台机器经连接答过之后没再变的机器(其余 = 账号上那份更新)。
   accountNotNewer: new Set<string>(),
   connections: new Map<string, string>(),
+  // 这一端上一次没读到账号上那份的机器(设备 store 的 projects_error)。
+  unread: new Set<string>(),
 }));
 
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
   remoteHostsStore: {
     accountFolders: (machine: string, projectId: string) => mocks.account.get(`${machine}:${projectId}`) ?? null,
     accountIsNewer: (machine: string) => !mocks.accountNotNewer.has(machine),
+    accountUnread: (machine: string) => mocks.unread.has(machine),
     connectionState: (machine: string) => mocks.connections.get(machine) ?? null,
   },
 }));
@@ -231,6 +234,19 @@ describe('ProjectFolderCard', () => {
     const foot = container.querySelector('.gg-folder-card__machines')?.textContent ?? '';
     expect(foot).toContain('这台电脑');
     expect(foot).toContain('d15');
+    expect(container.querySelector('[data-testid="project-folder-stale"]'), 'read this time: no stale mark').toBeNull();
+  });
+
+  it('labels a folder whose machine’s project list could not be read this time', async () => {
+    const remote = { ...folder('ws-d15', 'attached', '/srv/gugu', [], 'proj-on-d15'), offline: true, deviceId: 'd15', stale: true };
+    await renderCard(stateOf({ folders: [...shown(ROOT), remote] }), {
+      memberIds: ['p1', 'proj-on-d15'],
+      machines: [null, 'd15'],
+      machineOf: (deviceId) => (deviceId === 'd15' ? { label: 'd15', online: true, kind: 'server' } : { label: '这台电脑', online: true, kind: 'computer' }),
+    });
+    const stale = [...container.querySelectorAll('[data-testid="project-folder-stale"]')];
+    expect(stale).toHaveLength(1);
+    expect(papers().find((p) => p.getAttribute('title') === '/srv/gugu')?.contains(stale[0]!)).toBe(true);
   });
 
   it('spreads every folder on click, picks one, and closes again', async () => {
@@ -570,6 +586,19 @@ describe('useProjectFolders', () => {
     machineRegistry.register('d15-new', ['proj-on-d15']);
     expect(latest?.folders?.find((f) => f.workspaceId === 'ws-d15')?.deviceId).toBe('d15');
     machineRegistry.forgetMachine('d15-new');
+  });
+
+  it('marks the account’s folders of a machine whose project list this end could not read as stale', async () => {
+    onD15();
+    mocks.unread.add('d15');
+    mocks.account.set('d15:proj-on-d15', [D15_ROOT]);
+    mocks.list.mockImplementation(listByProject({ 'p-off': { success: true, data: [{ ...ROOT, projectId: 'p-off' }] } }));
+    await mount('p-off', ['p-off', 'proj-on-d15']);
+    expect(latest?.folders?.map((f) => [f.workspaceId, f.offline, f.stale ?? false])).toEqual([
+      ['ws-root', false, false],
+      ['ws-d15', true, true],
+    ]);
+    mocks.unread.delete('d15');
   });
 
   it('a machine that stops answering shows what the account records, not the last read', async () => {

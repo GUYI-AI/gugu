@@ -18,6 +18,15 @@ import { DevicesContext, useDevicesStore } from '../../../../apps/desktop/src/st
 import { startPhoneNewTask } from '../../../../apps/desktop/src/mobile/chat/PhoneNewTask'
 import * as taskDispatch from '../../../../apps/desktop/src/mobile/agent-watch/createTaskInGroup'
 import * as sessionRpc from '../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc'
+import { runInAction } from 'mobx'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+
+// The task folder card's project is the account project of this group (accountProjectsStore); 'machine' has its folder.
+beforeEach(() => runInAction(() => {
+  accountProjectsStore.list = [{ chatId: 'chat', name: 'Project', archived: false, bindings: [{ deviceId: 'machine', localProjectId: 'project' }] }]
+  accountProjectsStore.status = 'ready'
+}))
+afterEach(() => accountProjectsStore.clear())
 
 let harness: ReturnType<typeof createReactHarness>
 const input = () => harness.container.querySelector<HTMLElement>('[data-testid="chat-composer"]')!

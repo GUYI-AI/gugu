@@ -9,7 +9,8 @@ export async function prepareProjectAgentNotice(result: unknown, deps: ProjectNo
   if (!result || typeof result !== 'object' || Array.isArray(result)) return result
   const row = result as Record<string, unknown>
   const notice = row.group_notice && typeof row.group_notice === 'object' ? row.group_notice as Record<string, unknown> : null
-  const chatId = notice?.chat_id ?? row.chat_id
+  // A project's id is its project group (project-public-id.ts).
+  const chatId = notice?.chat_id ?? row.project_id
   if (typeof chatId !== 'string') return result
   try {
     const agent = await deps.agentUserId()

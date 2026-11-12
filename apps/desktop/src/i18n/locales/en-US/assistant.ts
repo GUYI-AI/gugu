@@ -19,7 +19,7 @@ export default {
     "deviceAccess": "Device connections and permissions",
     "onThisComputer": "Stored on this computer", "onAssistantDevice": "Stored on the assistant’s device",
     "ungrouped": "Other", "hasIndex": "View instructions and index", "missingIndex": "No entry instructions yet", "longTerm": "Long-term knowledge and preferences",
-    "guguProjects": "The same projects as the Gugu projects page.", "noGuguProjects": "No Gugu projects yet.",
+    "guguProjects": "The same projects as the Gugu projects page.", "noGuguProjects": "No Gugu projects yet.", "stale": "Stale",
     "projectOrganizePrompt": "Read existing Gugu projects and help organize their documents and indexes. Do not create a separate project registry. Reuse Gugu project and folder attachment operations and check ownership before linking an existing folder.",
     "projectFolderSessions_one": "{{count}} conversation",
     "projectFolderSessions_other": "{{count}} conversations"

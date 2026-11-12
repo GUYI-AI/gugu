@@ -8,7 +8,7 @@ import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
+import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { ChatEmptyContent, ChatPartSlot, ChatSlot } from '@renderer/lib/chat-slot';
 import { cancelComposerVerb, composerVerbLook } from '@renderer/features/sessions/composer-verb-tag';
 import { composerDrafts, projectDraftKey } from '@renderer/features/sessions/composer-drafts';
@@ -44,7 +44,7 @@ export const ProjectBlock = observer(function ProjectBlock({
   const corners = screenLayout.corners(blockId);
   const focused = screenLayout.focusedBlockId === blockId;
   const label = projectDisplayName(getProjectStore(projectId)) ?? translate('projects.fallbackName');
-  const chatId = projectGroupsStore.chatIdOf(projectId);
+  const chatId = accountProjectsStore.projectOfLocal(projectId)?.chatId;
   const verb = useComposerVerb(chatId);
   // 项目就是群(gugu-dev#181):项目一摆上屏,它的群就该在 —— 新建的项目一进来就建好(只有自己一个人),
   // 老项目没有群的也在这时补上。幂等;建好了由绑定变更事件刷新各处。
@@ -60,7 +60,7 @@ export const ProjectBlock = observer(function ProjectBlock({
       </ProjectTabMenu>
     </TabSlot>
   );
-  // 项目群还没绑上(刚建、还在读):只有项目那一枚,正中是项目首页。
+  // 项目群还没绑上(刚建、账号上还没记上):只有项目那一枚,正中是项目首页;账号上的项目还在头一次读 = 先空着(gugu-dev#181)。
   if (!chatId) {
     return (
       <>
@@ -71,7 +71,7 @@ export const ProjectBlock = observer(function ProjectBlock({
           {projectChip}
         </TabStripShell>
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-project-block={projectId}>
-          {projectGroupsStore.bindingKnown(projectId) ? <ProjectMainPanel projectId={projectId} /> : null}
+          {accountProjectsStore.status !== 'loading' ? <ProjectMainPanel projectId={projectId} /> : null}
         </div>
       </>
     );

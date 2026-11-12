@@ -314,7 +314,7 @@ import { MAIN_UI_EVENTS } from '../src/lib/mainUiEvents'
 import { createSessionpageIdentityHost } from './sessionpage/sessionpage-identity-host'
 import { createSessionpageProjectGroupHost, ensureProjectNoticeAccess } from './sessionpage/sessionpage-project-group-binding'
 import { prepareProjectAgentNotice } from './sessionpage/project-agent-notice'
-import { onProjectGroupMappingChanged } from './sessionpage/sessionpage-project-groups'
+import { forgetProjectGroupId, onProjectGroupMappingChanged } from './sessionpage/sessionpage-project-groups'
 import { readSessionpageOpenTarget } from './sessionpage/sessionpage-agent-mapping'
 import {
   clearLocalSessionDeliveryFailuresForTest,
@@ -2423,6 +2423,7 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
   rpc: signedInFileRpc(() => desktopAuthProvider().getAuth(), makeChatClient),
   downloads: fileStoreDirectory(resolveGuguHome(process.env)), fetch: electronFetch, links: () => sshLinks,
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
+  project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
 })
 function drainProjectFiles() { void desktopFiles.drain().catch(error => createLogger('files').warn({ error: String(error) }, 'Project transfer reconciliation failed')) }
@@ -3660,6 +3661,11 @@ function crossMachine(): CrossMachineSessions {
       })
     },
     requester,
+    outbound: async (action) => {
+      const bridge = loadEmdashBridge()
+      if (!bridge) throw new Error('Project registry is unavailable')
+      await bridge.assertOutboundProjectIds(action)
+    },
     // #7199 云电脑管家:地址同渲染层(开发实例的 GUGU_CLOUD_COMPUTER_URL,否则这套库的云端函数),带这台桌面登着的用户 JWT。
     cloudComputerState: async () => {
       try {
@@ -6472,8 +6478,14 @@ app.whenReady().then(async () => {
           deviceId: () => localDeviceId(),
           client: (accessToken) => makeIdentityClient(accessToken) as unknown as DeviceProjectsRpcClient,
           records: () => emdash.listDeviceProjectRecords(),
+          dropBindings: async (ownerUserId, localProjectIds) => {
+            for (const projectId of localProjectIds) await forgetProjectGroupId(projectId, ownerUserId)
+          },
           warn: (message, fields) => createLogger('device-projects').warn(fields, message),
-          onPublished: () => emdash.projectFoldersPublished(),
+          onPublished: () => {
+            emdash.projectFoldersPublished()
+            emdash.deviceProjectsPublished()
+          },
         })
         try {
           emdash.onDeviceProjectsMaybeChanged(() => deviceProjectsPublisher?.notify())

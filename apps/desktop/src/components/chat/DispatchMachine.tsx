@@ -20,7 +20,7 @@ export function DispatchMachine({ deviceId, onPick }: { deviceId: string | null;
       </Button>
       {choosing && (
         <Sheet onClose={() => setChoosing(false)} fullScreenMobile testId="dispatch-machine-picker" ariaLabel={t('agentWatch.create.pickMachine')}>
-          <MachinesPage computersOnly onBack={() => setChoosing(false)} onOpenDevice={(picked) => { onPick(picked.device_id); setChoosing(false) }} />
+          <MachinesPage onBack={() => setChoosing(false)} onOpenDevice={(picked) => { onPick(picked.device_id); setChoosing(false) }} />
         </Sheet>
       )}
     </>

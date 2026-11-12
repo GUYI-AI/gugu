@@ -10,12 +10,13 @@ import { createNode, createReactHarness } from '../../../support/testHarness'
 
 const mocks = vi.hoisted(() => ({
   listDevices: vi.fn(),
-  identified: null as null | (() => void),
+  // The account project list also re-reads on identification (it subscribes itself): every subscriber is kept.
+  identified: new Set<() => void>(),
 }))
 
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'account-a' } }) }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { listDevices: mocks.listDevices } }))
-vi.mock('../../../../apps/desktop/src/lib/deviceProjects', () => ({ listMyDeviceProjects: async () => [] }))
+vi.mock('../../../../apps/desktop/src/lib/deviceProjects', () => ({ listMyDeviceProjects: async () => [], listMyAccountProjects: async () => [] }))
 vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
   useChatStore: () => ({ subscribeAccountRevision: () => () => undefined }),
 }))
@@ -26,7 +27,7 @@ vi.mock('../../../../apps/desktop/src/platform', async (importOriginal) => {
     platform: new Proxy(original.platform, {
       get(target, key, receiver) {
         if (key === 'subscribeLocalDeviceIdentified') {
-          return (listener: () => void) => { mocks.identified = listener; return () => { mocks.identified = null } }
+          return (listener: () => void) => { mocks.identified.add(listener); return () => { mocks.identified.delete(listener) } }
         }
         return Reflect.get(target, key, receiver)
       },
@@ -60,7 +61,7 @@ describe('DevicesProvider before this computer is identified', () => {
   beforeEach(() => {
     localStorage.clear()
     seen = []
-    mocks.identified = null
+    mocks.identified.clear()
     harness = createReactHarness()
     consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
   })
@@ -80,13 +81,13 @@ describe('DevicesProvider before this computer is identified', () => {
     expect(mocks.listDevices).toHaveBeenCalledTimes(1)
     expect(seen.find((row) => row.device_id === 'this-mac')?.is_current_device).toBe(true)
     expect(consoleError).not.toHaveBeenCalled()
-    if (!mocks.identified) throw new Error('the provider does not listen for the identification')
+    if (mocks.identified.size === 0) throw new Error('the provider does not listen for the identification')
 
     mocks.listDevices.mockResolvedValueOnce([
       device('this-mac', { is_current_device: true, label: 'renamed-mac' }),
       device('d22', { is_current_device: false }),
     ])
-    await act(async () => { mocks.identified?.(); await Promise.resolve() })
+    await act(async () => { mocks.identified.forEach((listener) => listener()); await Promise.resolve() })
     await act(async () => { await Promise.resolve() })
 
     expect(mocks.listDevices).toHaveBeenCalledTimes(2)

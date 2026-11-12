@@ -118,3 +118,12 @@
 .gg-aw .gg-aw-bg-name { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 .gg-aw .gg-aw-bg-row { flex-wrap: wrap; }
 .gg-aw .gg-aw-bg-head { white-space: normal; height: auto; }
+
+/* 新建页的选项胶囊(harness · 模型)在手机输入框的网格里:它是 composer-actions-start 里的按钮,通用那条规则
+   把它摆进第 1 列 —— 那是附件「+」的 44px 格,胶囊只剩「C…」。它站元信息那一行(与会话页的权限钮同一行),整行可用。 */
+.gg-aw .gg-aw-create-host [data-slot='composer'][data-mobile] [data-slot='composer-actions-start'] > button.gg-aw-pill {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  justify-self: start;
+  max-width: 100%;
+}

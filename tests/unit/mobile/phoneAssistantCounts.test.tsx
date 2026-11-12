@@ -12,14 +12,15 @@ const world = vi.hoisted(() => ({
   devices: { devices: [{ device_id: 'mac', label: 'Mac' }, { device_id: 'cloud', label: 'Cloud', cloud_computer: true }], phones: [{ device_id: 'phone', label: 'Phone' }], loading: false, error: null as unknown },
   integrations: { data: null as unknown, error: null as unknown },
   chats: { status: 'ready', list: [] as unknown[] },
-  projects: { state: 'loading' } as Record<string, unknown>,
+  projects: { status: 'loading', projects: [] as unknown[] } as Record<string, unknown>,
   capabilities: 'loading' as number | 'loading' | 'failed',
 }))
 vi.mock('../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => world.devices }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/usePhoneProfileData', () => ({ usePhoneIntegrations: () => ({ ...world.integrations, loading: false, retry: vi.fn() }) }))
 vi.mock('../../../apps/desktop/src/components/settings/channels/useChatChannels', () => ({ useChatChannels: () => world.chats }))
-vi.mock('../../../apps/desktop/src/mobile/assistant/usePhoneRead', () => ({ usePhoneRead: () => world.projects }))
-vi.mock('../../../apps/desktop/src/mobile/assistant/phoneProjectRows', () => ({ phoneProjectRows: (rows: Record<string, unknown[]>) => Object.values(rows).flat() }))
+vi.mock('../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store', () => ({ get accountProjectsStore() { return world.projects } }))
+vi.mock('../../../apps/desktop/src/mobile/agent-watch/useMachineLabel', () => ({ useMachineLabel: () => ({ isHome: () => false }) }))
+vi.mock('../../../apps/desktop/src/mobile/assistant/phoneProjectRows', () => ({ phoneProjectRows: (rows: unknown[]) => rows }))
 vi.mock('../../../apps/desktop/src/components/assistant/assistant-app-connections', () => ({ assistantApplicationCounts: () => ({ saved: 3, connected: 2 }) }))
 vi.mock('../../../apps/desktop/src/components/assistant/AssistantLibraryVolume', async () => {
   const { useEffect } = await import('react')
@@ -46,14 +47,14 @@ it('hands the App the 资料 numbers as read states: never 0 for what is not rea
     devices: { state: 'ready', value: 2 }, connectedApps: { state: 'loading' }, projects: { state: 'loading' }, capabilities: { state: 'loading' },
   })
   world.integrations = { data: { items: [], configured: {}, statuses: {} }, error: null }
-  world.projects = { state: 'ok', data: { mac: [{ id: 'p1' }, { id: 'p2' }] } }
+  world.projects = { status: 'ready', projects: [{ chatId: 'p1' }, { chatId: 'p2' }] }
   world.capabilities = 4
   await render()
   expect(phoneAssistantLayer.status()?.status.counts).toEqual({
     devices: { state: 'ready', value: 2 }, connectedApps: { state: 'ready', value: { saved: 3, connected: 2 } }, projects: { state: 'ready', value: 2 }, capabilities: { state: 'ready', value: 4 },
   })
   world.devices = { ...world.devices, error: new Error('down') }
-  world.projects = { state: 'error', error: new Error('down') }
+  world.projects = { status: 'error', projects: [] }
   await render()
   expect(phoneAssistantLayer.status()?.status.counts).toMatchObject({ devices: { state: 'unreadable' }, projects: { state: 'unreadable' } })
 })

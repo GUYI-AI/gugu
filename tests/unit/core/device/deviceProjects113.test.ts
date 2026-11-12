@@ -46,9 +46,9 @@ const row = (overrides: Record<string, unknown> = {}) => ({
 
 describe('publishDeviceProjects', () => {
   it('sends the whole set in the shape the database checks and reports whether it changed', async () => {
-    const rpc = vi.fn(async () => ({ data: true, error: null }))
-    await expect(publishDeviceProjects({ rpc }, 'dev-1', [project()])).resolves.toBe(true)
-    expect(rpc).toHaveBeenCalledWith('publish_device_projects', {
+    const rpc = vi.fn(async () => ({ data: { changed: true, rejected: [] } as unknown, error: null }))
+    await expect(publishDeviceProjects({ rpc }, 'dev-1', [project()])).resolves.toEqual({ changed: true, rejected: [] })
+    expect(rpc).toHaveBeenCalledWith('publish_device_projects_v2', {
       p_device_id: 'dev-1',
       p_projects: [{
         local_project_id: 'p1',
@@ -63,8 +63,13 @@ describe('publishDeviceProjects', () => {
         ],
       }],
     })
-    rpc.mockResolvedValueOnce({ data: false, error: null })
-    await expect(publishDeviceProjects({ rpc }, 'dev-1', [project()])).resolves.toBe(false)
+    rpc.mockResolvedValueOnce({ data: { changed: false, rejected: ['p1'] }, error: null })
+    await expect(publishDeviceProjects({ rpc }, 'dev-1', [project()])).resolves.toEqual({ changed: false, rejected: ['p1'] })
+  })
+
+  it('an answer in another shape (the old boolean) is an error, ❌ read as "nothing refused"', async () => {
+    const rpc = async () => ({ data: true, error: null })
+    await expect(publishDeviceProjects({ rpc }, 'dev-1', [project()])).rejects.toThrow(/\{changed, rejected\}/)
   })
 
   it('throws what the database refused', async () => {
@@ -191,7 +196,7 @@ describe('createDeviceProjectsPublisher', () => {
   function harness(overrides: { auth?: () => Promise<{ accessToken: string; userId: string } | null> } = {}) {
     const timers: { run: () => void; ms: number }[] = []
     const signals: AbortSignal[] = []
-    const reply = vi.fn(async () => ({ data: true as unknown, error: null as { message: string } | null }))
+    const reply = vi.fn(async () => ({ data: { changed: true, rejected: [] } as unknown, error: null as { message: string } | null }))
     // 与 supabase 的 rpc 同形:返回的请求可以挂上 AbortSignal。
     const rpc = vi.fn((_fn: string, _args: unknown) => {
       const request = { then: (ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => reply().then(ok, bad) }
@@ -199,6 +204,7 @@ describe('createDeviceProjectsPublisher', () => {
     })
     const records = vi.fn(async () => [project()])
     const warn = vi.fn()
+    const dropBindings = vi.fn(async (_owner: string, _ids: readonly string[]) => {})
     const backend = { probes: 0, recovered: new Set<() => void>() }
     const publisher = createDeviceProjectsPublisher({
       getAuth: overrides.auth ?? (async () => ({ accessToken: 'token', userId: 'u1' })),
@@ -206,6 +212,7 @@ describe('createDeviceProjectsPublisher', () => {
       client: () => ({ rpc }) as never,
       records,
       warn,
+      dropBindings,
       setTimeout: (run, ms) => {
         const timer = { run, ms }
         timers.push(timer)
@@ -229,7 +236,7 @@ describe('createDeviceProjectsPublisher', () => {
       await vi.waitFor(() => expect(rpc.mock.calls.length + warn.mock.calls.length).toBeGreaterThan(before))
       await settled()
     }
-    return { publisher, timers, rpc, reply, signals, records, warn, fire, settled, backend }
+    return { publisher, timers, rpc, reply, signals, records, warn, dropBindings, fire, settled, backend }
   }
 
   it('settles a burst of changes into one publish, then keeps the account’s copy refreshed', async () => {
@@ -337,6 +344,24 @@ describe('createDeviceProjectsPublisher', () => {
     expect(records).not.toHaveBeenCalled()
     expect(rpc).not.toHaveBeenCalled()
     expect(timers).toEqual([])
+  })
+
+  it('bindings the account refused are dropped on this machine and said out loud; a failed drop is retried', async () => {
+    const { publisher, timers, reply, warn, dropBindings, fire, backend } = harness()
+    reply.mockResolvedValueOnce({ data: { changed: true, rejected: ['p1'] }, error: null })
+    publisher.notify()
+    await fire()
+    expect(dropBindings).toHaveBeenCalledWith('u1', ['p1'])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('refused'), { rejected: ['p1'] })
+    expect(timers.map((timer) => timer.ms)).toEqual([REFRESH_MS])
+
+    reply.mockResolvedValueOnce({ data: { changed: false, rejected: ['p1'] }, error: null })
+    dropBindings.mockRejectedValueOnce(new Error('mapping unreadable'))
+    await fire()
+    expect(warn).toHaveBeenLastCalledWith(expect.stringContaining('publish failed'), expect.objectContaining({ error: 'mapping unreadable' }))
+    // A failed drop is a failed publish: retried on the backend-recovered edge, at the latest on the refresh.
+    expect(timers.map((timer) => timer.ms)).toEqual([REFRESH_MS])
+    expect(backend.recovered.size).toBe(1)
   })
 
   it('a machine whose projects cannot be read is retried, ❌ published as an empty list', async () => {

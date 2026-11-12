@@ -4,6 +4,10 @@ const mocks = vi.hoisted(() => ({ journal: { list: vi.fn(), get: vi.fn(), turnRe
 vi.mock('./collector', () => ({ activityJournal: () => mocks.journal }));
 vi.mock('@main/core/session-timeline/service', () => ({ recordHistoryPage: mocks.recordHistoryPage }));
 vi.mock('@main/core/sessions/session-turn-store', () => mocks.store);
+vi.mock('../projects/project-public-id', () => ({
+  machineLocalProjectsOf: async (id: string) => (id === 'chat1' ? ['p1', 'p1-joined'] : []),
+  machineOutwardProjectIds: async () => (local: string) => (local.startsWith('p1') ? 'chat1' : null),
+}));
 import { runActivityAction } from './actions';
 beforeEach(() => vi.clearAllMocks());
 
@@ -13,6 +17,12 @@ describe('activity metadata and on-demand context have separate read paths', () 
     await runActivityAction({ action: 'activity_list', since: '2026-10-20T00:00:00Z', until: '2026-10-21T00:00:00Z' });
     expect(mocks.journal.list).toHaveBeenCalledOnce();
     expect(mocks.recordHistoryPage).not.toHaveBeenCalled();
+  });
+  it('filters by a project id as this machine’s folders of it and answers with the project id', async () => {
+    mocks.journal.list.mockReturnValue({ events: [{ event_id: 'e1', project_id: 'p1-joined' }, { event_id: 'e2', project_id: 'loose' }, { event_id: 'e3' }] });
+    const query = { since: '2026-10-20T00:00:00Z', until: '2026-10-21T00:00:00Z', project_id: 'chat1' };
+    expect(await runActivityAction({ action: 'activity_list', ...query })).toEqual({ events: [{ event_id: 'e1', project_id: 'chat1' }, { event_id: 'e2' }, { event_id: 'e3' }] });
+    expect(mocks.journal.list).toHaveBeenCalledWith(query, ['p1', 'p1-joined']);
   });
   it('on demand returns original input and latest reply, without tools or thinking', async () => {
     mocks.journal.get.mockReturnValue({ event_id: 'e1', session_id: 's1' });

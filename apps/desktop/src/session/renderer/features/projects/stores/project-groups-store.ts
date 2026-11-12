@@ -9,15 +9,14 @@ import { publishProjectGroupChats } from './project-group-chats-bridge';
 
 /**
  * 每个本地项目绑的项目群(这台电脑 + 每台连着的机器各自回答),#7341 第二步。
- * 绑在同一个群上的本地项目 = 同一个项目:侧栏合成一行、项目首页汇总各台机器的文件夹(project-group-layout.ts)。
+ * 群操作(绑定 / 解绑 / 建群)和聊天页上哪些群是项目群读它;有哪些项目、一个本地项目归哪个项目群一律读 accountProjectsStore,
+ * ❌ 在这里再答一遍(两份答案在发布落到账号之前会不一样)。
  *
  * 没连着的机器(离线、太旧):那台的绑定照账号上记着的那份(#113,由远程主机那边交进来,见 applyBindings)——
  * 离线机器上的项目照样并在原来那一行里(product spec:机器离线时文件夹照样列在项目里),❌ 一掉线就拆成单独一行。
  */
 export class ProjectGroupsStore {
   private readonly byProject = observable.map<string, string>();
-  /** 这次打开以来答过一次的机器(读到了或读失败了都算;这台电脑记作 'local')。 */
-  private readonly answeredMachines = observable.set<string>();
   private stop: (() => void) | null = null;
   /** 此刻连着、项目清单同步过的机器(由远程主机那边给;❌ 在这里 import 它 —— 那边反过来要用这里)。 */
   private syncedMachines: () => readonly string[] = () => [];
@@ -31,22 +30,6 @@ export class ProjectGroupsStore {
       if (chatId) rows.set(chatId, projectId);
     }
     return rows;
-  }
-
-  /** 这个本地项目绑的群;没绑(或还没读到)= undefined。 */
-  chatIdOf(projectId: string): string | undefined {
-    return this.byProject.get(projectId);
-  }
-
-  /**
-   * 这个本地项目绑没绑群,此刻是不是已经知道:绑着(这次读到的或上次记下的)、它那台机器这次已经答过(读失败也算答过,
-   * 失败进日志;下一次读成了绑定照常补上)、或者那台机器此刻连不上(不会有回音,按「没有」画能画的那部分)。
-   * false = 正在读,❌ 当成「没有群」(项目块据此不先画首页,gugu-dev#181)。
-   */
-  bindingKnown(projectId: string): boolean {
-    const machine = machineRegistry.machineOf(projectId) ?? null;
-    return this.byProject.has(projectId) || this.answeredMachines.has(machine ?? 'local')
-      || (machine !== null && !this.syncedMachines().includes(machine));
   }
 
   /** 这个群绑定的一个项目,不受项目行显隐影响(成员权限等按绑定判断)。 */
@@ -75,6 +58,7 @@ export class ProjectGroupsStore {
         { fireImmediately: true }
       );
       // 哪台机器上的绑定变了(并进来、撤销、agent 挂的):在那台机器上订,就重读那一台。
+      // 账号上的项目不在这里重读:绑定要等那台机器发布到账号才进 list_my_projects,它自己订着那一下(accountProjectsStore.start)。
       const offLocal = events.on(projectGroupBindingChangedChannel, () => void this.refresh(null));
       const offMachines = onEachMachine((deviceId) =>
         onMachineEvent(deviceId, projectGroupBindingChangedChannel, () => void this.refresh(deviceId))
@@ -133,8 +117,6 @@ export class ProjectGroupsStore {
       this.applyBindings(machine, result.data);
     } catch (error) {
       log.warn('[project-groups] 读项目群绑定失败', { machine, error: String(error) });
-    } finally {
-      runInAction(() => this.answeredMachines.add(machine ?? 'local'));
     }
   }
 }

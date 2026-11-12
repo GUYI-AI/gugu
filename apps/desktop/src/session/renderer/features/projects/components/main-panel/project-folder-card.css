@@ -190,6 +190,10 @@
   line-height: 16px;
   font-weight: 600;
 }
+/* 那台机器的项目这一端没读到:列的是上次的。 */
+.gg-folder-paper__stale {
+  color: var(--danger-fg);
+}
 .gg-folder-paper__check {
   display: inline-flex;
   visibility: hidden;

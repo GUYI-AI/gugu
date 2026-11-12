@@ -1,7 +1,9 @@
-import { useMemo, type ReactNode } from 'react'
+import { useCallback, useMemo, useSyncExternalStore, type ReactNode } from 'react'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { useAgentDisplayStatuses } from '@/hooks/useAgentDisplayStatus'
 import { useDevicesStore } from '@/store/devicesContext'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import { isAssistantHome, type AssistantHomeRow } from '@/lib/assistantHome'
 import { deviceSessionsOf, useLiveDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { needsYouCount } from '@/session/renderer/features/sidebar/session-groups'
 import { sessionPresentation } from '@/mobile/agent-watch/watch-status'
@@ -14,9 +16,13 @@ export function PhoneProjectChatAvatar({ chat, mobile, children }: { chat: ChatI
   return mobile ? <ProjectChatAvatar chat={chat}>{children}</ProjectChatAvatar> : children
 }
 function ProjectChatAvatar({ chat, children }: { chat: ChatItem; children: ReactNode }) {
-  const { devices } = useDevicesStore()
+  const { devices, cloudComputer } = useDevicesStore()
   const directory = useLiveDeviceSessions()
-  const project = useMemo(() => partnerProjects(devices).find((row) => row.chatId === chat.id), [devices, chat.id])
+  // 个人助理宿主:与 useMachineLabel 同一个判据(只读设备 store,头像不依赖登录态)。
+  const homeId = cloudComputer?.snapshot?.deviceId ?? null
+  const isHome = useCallback((row: AssistantHomeRow) => isAssistantHome(row, homeId), [homeId])
+  const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
+  const project = useMemo(() => partnerProjects(accountList, devices, isHome).find((row) => row.chatId === chat.id), [accountList, devices, isHome, chat.id])
   const statuses = useAgentDisplayStatuses(chat.member_user_ids ?? [])
   if (!project) return <PhoneMessageAvatar>{children}</PhoneMessageAvatar>
   const running = Object.values(statuses).filter((status) => status === 'working').length

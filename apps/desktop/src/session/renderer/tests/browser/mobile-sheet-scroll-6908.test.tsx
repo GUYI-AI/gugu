@@ -6,7 +6,7 @@
  * 10-07(owner「手机端创建新 agent……那些设置经常超出竖直长度,又没有滚动条」):放不下的部分改由 Sheet 自己滚
  * (sheetMotion.ts @@@sheet-scroll),❌ 再由调用方各自指定滚动区。新增两格:
  *   · 任意一张手机抽屉,内容里没有任何滚动区,也能滚到最后一行;
- *   · 新建会话的选项抽屉,12 个项目:项目列表不被压扁,在设置行上滚得动,滚到最后一项设置,头部一直在顶上。
+ *   · 新建任务的项目抽屉,12 个项目:项目列表不被压扁,头部一直在顶上,最后一个项目够得着。
  * 判滚动只用真滚轮(userEvent.wheel → page.mouse.wheel)。❌ 改 scrollTop:脚本连 overflow:hidden 的盒子也滚得动,人滚不动。
  */
 import { createRoot, type Root } from 'react-dom/client';
@@ -14,7 +14,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { until } from '../../../../../../../tests/support/awaitCondition';
-import { CreateOptionsPill } from '@/mobile/agent-watch/CreateOptionsPill';
+import { CreateTarget } from '@/mobile/agent-watch/CreateTarget';
 import { Sheet } from '@/components/ui/Sheet';
 import { MemberProfilePopover } from '@/components/MemberProfilePopover';
 import { RequestDetailSheet } from '@/components/requests/RequestDetailSheet';
@@ -66,43 +66,24 @@ it('any sheet: content with no scroll area of its own still scrolls to its last 
 });
 
 // owner 10-07「手机端创建新 agent……那些设置经常超出竖直长度,又没有滚动条」。实测(14b6012e3e):12 个项目在 360×640 上
-// 被压成两行半的小窗,在下面的设置行上划不动;360×400 时项目列表压成 0 行。
+// 被压成两行半的小窗;360×400 时项目列表压成 0 行。项目现在在新建页「项目 · 机器」那一行的抽屉里(CreateTarget)。
 for (const [w, h] of [[360, 640], [360, 400]] as const) {
-  it(`create options, 12 projects at ${w}×${h}: the project list keeps its rows, the settings rows scroll the sheet to the last setting, the head stays on top`, async () => {
+  it(`new task project picker, 12 projects at ${w}×${h}: the list keeps its rows, the head stays on top, the last project is reachable`, async () => {
     await page.viewport(w, h);
-    const projects = Array.from({ length: 12 }, (_, i) => ({ id: `p${i + 1}`, name: `project-${i + 1}`, path: `/Users/owner/Codebase/project-${i + 1}` }));
-    const options = {
-      projects,
-      harnesses: [{ id: 'codex', name: 'Codex', status: 'available', sessionViews: ['general', 'code'], permissionModes: ['plan', 'read-only', 'edit', 'full-access'], watchable: true }],
-      lastUsed: null,
-    } as unknown as Parameters<typeof CreateOptionsPill>[0]['options'];
-    const models = {
-      harness: 'codex', transport: 'acp', selected: null, selectedEffort: null, harnessState: 'ready', harnessReason: null, guguReason: null,
-      models: [{ id: 'm1', name: 'Model 1', source: 'harness' }],
-      efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }],
-    } as unknown as Parameters<typeof CreateOptionsPill>[0]['models'];
-    const selection = { projectId: 'p1', harness: 'codex', model: null, permissionMode: null, effort: null };
-    mount(<CreateOptionsPill options={options} selection={selection} onChange={() => {}} busy={false} models={models} modelsState="ready" />);
-    await userEvent.click(page.getByTestId('agent-watch-create-options-open'));
-    await until('12 projects in the sheet', () => document.querySelectorAll('[data-testid="agent-watch-create-options"] [data-dimension="project"] [role="radio"]').length === 12);
-    const box = sheet('agent-watch-create-options')!;
+    const projects = Array.from({ length: 12 }, (_, i) => ({ chatId: `p${i + 1}`, name: `project-${i + 1}`, homes: new Map<string, string>() }));
+    mount(<CreateTarget projects={projects} project={null} onProject={() => {}} machines={[]} machine={undefined} onMachine={() => {}} machineLabel={() => ''} busy={false} />);
+    await userEvent.click(page.getByTestId('agent-watch-create-target-row').first());
+    // 「不选项目」在最前,然后 12 个项目。
+    await until('13 choices in the sheet', () => document.querySelectorAll('[data-testid="agent-watch-create-target-sheet"] [role="radio"]').length === 13);
+    const box = sheet('agent-watch-create-target-sheet')!;
     const group = box.querySelector<HTMLElement>('.gg-aw-choice-group[data-dimension="project"]')!;
     const rows = [...group.querySelectorAll<HTMLElement>('[role="radio"]')];
     const rowsHeight = rows.reduce((sum, row) => sum + row.getBoundingClientRect().height, 0);
     expect.soft(group.getBoundingClientRect().height, 'the project list is not squashed into a small window').toBeGreaterThanOrEqual(rowsHeight - 1);
-    const summary = box.querySelector<HTMLElement>('.gg-aw-summary-group')!;
-    const lastSetting = [...summary.querySelectorAll('[data-testid="agent-watch-create-options-drill"]')].at(-1)!;
-    expect(lastSetting.getAttribute('data-dimension'), 'the last setting is the reasoning effort').toBe('effort');
-    // 手指落在设置行上滑:原来那一块不是滚动区,划不动。
-    await userEvent.wheel(summary, { delta: { y: 400 }, times: 10 });
-    await until('the last setting is inside the sheet', () => inside(lastSetting, box));
+    const lastProject = rows.at(-1)!;
+    await userEvent.wheel(group, { delta: { y: 400 }, times: 10 });
     const head = box.querySelector<HTMLElement>('.gg-aw-sheet-head')!;
     expect.soft(Math.abs(head.getBoundingClientRect().top - box.getBoundingClientRect().top), 'the head stays at the top of the sheet').toBeLessThanOrEqual(1);
-    const nav = page.getByTestId('agent-watch-create-options-nav').element() as HTMLElement;
-    const navBox = nav.getBoundingClientRect();
-    expect.soft(nav.contains(document.elementFromPoint(navBox.left + navBox.width / 2, navBox.top + navBox.height / 2)), 'the close button is on top, not covered by scrolled rows').toBe(true);
-    // 往回滚,最后一个项目也够得着:落点打得中它(❌ 被吸顶的头盖住)。
-    const lastProject = rows.at(-1)!;
     const hit = (el: HTMLElement) => {
       const r = el.getBoundingClientRect();
       return inside(el, box) && el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));

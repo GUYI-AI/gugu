@@ -26,7 +26,7 @@ import { takeComposerCarry, useComposerVerb } from '@/lib/composerVerbBridge';
 import { useSessionMessageQuotes } from './use-session-message-quotes';
 import { useSessionPromptEditor } from './use-session-prompt-editor';
 import { continueSessionTurn } from './continue-session-turn';
-import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
+import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { SessionComposerVerbs, SessionVerbDock, sessionVerbKey } from '../session-verb-dock';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import { followConversationLink } from '@/lib/followConversationLink';
@@ -322,7 +322,7 @@ const ComposerForStore = observer(function ComposerForStore({
   const scheduleMachine = machineRegistry.machineOf(store.projectId);
   const schedules = useSessionSchedules(scheduleMachine, store.sessionId);
   // gugu-dev#181 ⑫ 在会话里也能派:项目里的会话,卡落项目群;没有项目的会话(就是和这个 agent 的私聊),卡落那个私聊。
-  const groupChatId = projectGroupsStore.chatIdOf(store.projectId);
+  const groupChatId = accountProjectsStore.projectOfLocal(store.projectId)?.chatId;
   const verb = useComposerVerb(sessionVerbKey(store.sessionId));
   // 点了新任务框标签上的 ×:那一框写的话交回这里(composerVerbBridge 的 carry)。
   useEffect(() => {
