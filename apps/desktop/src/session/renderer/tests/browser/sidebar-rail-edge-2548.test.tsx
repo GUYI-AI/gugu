@@ -26,7 +26,7 @@ vi.mock('@renderer/features/sidebar/sidebar-one-list', () => ({ SidebarOneList: 
 vi.mock('@renderer/features/sidebar/sidebar-one-list-empty', () => ({ SidebarOneListEmpty: () => null }));
 vi.mock('@renderer/features/sidebar/inner-sidebar', async () => {
   const { observable } = await import('mobx');
-  return { innerSidebarChat: observable.box(null, { deep: false }) };
+  return { innerSidebarChat: observable.box(null, { deep: false }), innerSidebarShownFor: observable.box(null) };
 });
 vi.mock('@renderer/features/sidebar/sidebar-search-trigger', () => ({ SidebarSearchTrigger: () => null }));
 vi.mock('@renderer/lib/components/titlebar/shell-titlebar', () => ({ ShellSidebarToggle: () => null }));
