@@ -79,6 +79,7 @@ export const sessionChangedChannel = defineEvent<{
       // spec session-graph:归档/恢复只改这一行的这一个字段,渲染端据此收起或放回这一行。
       | 'archivedAt'
       | 'isPinned'
+      | 'isPinnedToSidebar'
     >
   >;
 }>('session:changed');

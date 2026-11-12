@@ -1,4 +1,5 @@
 import { LeftSidebar } from '@renderer/features/sidebar/left-sidebar';
+import { InnerSidebar } from '@renderer/features/sidebar/inner-sidebar';
 import { SessionKeyboardNavListener } from '@renderer/features/sidebar/session-keyboard-nav-listener';
 import { SESSION_NAV_FOCUS_REGION } from '@renderer/features/sidebar/session-keyboard-nav';
 import { CommandShortcutBinder } from '@renderer/lib/commands/command-shortcut-binder';
@@ -68,6 +69,7 @@ export function Workspace() {
       <WorkspaceLayout
         sidebarHidden={withoutSessionSidebar}
         leftSidebar={<LeftSidebar />}
+        innerSidebar={<InnerSidebar />}
         mainContent={
           <ScreenArea
             onScreenView={isScreenView(currentView)}
