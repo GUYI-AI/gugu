@@ -15,14 +15,18 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, 
 import { Portal } from 'solid-js/web';
 import type { MeasureCtx } from '@session-chat/core/define';
 import { applySoftWraps, measureSoftWrap } from '@session-chat/core/measure/soft-wrap';
+import { backgroundCommandToggleId } from '@session-chat/state/flatten';
 import { readableLabel, rowTranslator } from '../readable-label';
 import { SubagentProgress } from './SubagentProgress';
 import {
   backgroundTaskButton,
+  backgroundTaskCommand,
   backgroundTaskDismiss,
   backgroundTaskIcon,
+  backgroundTaskLine,
   backgroundTaskMeta,
   backgroundTaskName,
+  backgroundTaskToggle,
   backgroundTaskRow,
   backgroundTasksList,
   backgroundTaskStop,
@@ -48,10 +52,66 @@ export function backgroundTasksListHeight(count: number): number {
   return LIST_TOP + LIST_PAD * 2 + count * BACKGROUND_TASK_ROW_H + (count - 1) * ROW_GAP;
 }
 
-export function backgroundTaskNameLayout(name: string, ctx: MeasureCtx, controls = 0) {
-  // List padding 8, row padding 16, icon 20, and an 8px gap before each remaining item.
-  return readableLabel(name, ctx, Math.min(600, ctx.width) - 52 - controls, 14, 20);
+/** 名字那一格的宽:list padding 8、row padding 16、icon 20,其余每一项前面一个 8px 的空。 */
+function nameWidth(ctx: MeasureCtx, controls: number): number {
+  return Math.min(600, ctx.width) - 52 - controls;
 }
+
+export function backgroundTaskNameLayout(name: string, ctx: MeasureCtx, controls = 0) {
+  return readableLabel(name, ctx, nameWidth(ctx, controls), 14, 20);
+}
+
+/**
+ * 一段多行字按行各自排换行再拼回去(执行卡片 `layoutExecuteLines` 同一个做法)。
+ * ❌ 整段交给 `measureSoftWrap`:它把原有的硬换行也报成一个换行点,`applySoftWraps` 再插一个 ⇒ 每个硬换行
+ * 画成一行空行,行数比量出来的多 —— 原来整条命令铺开时就是这么多出来的。
+ */
+function wrapByLine(text: string, wrapLine: (line: string) => { text: string; lines: number }) {
+  const lines = text.split('\n').map(wrapLine);
+  return { text: lines.map((line) => line.text).join('\n'), lines: lines.reduce((sum, line) => sum + line.lines, 0) };
+}
+
+/**
+ * 一条后台命令在单子里怎么写(owner 2026-11-12:「命令行怎么是全部内容展示,不渐进披露吗」)。
+ *
+ * - 收着:一行。有供应商给的短说明就写说明,没有就写命令的第一行;放不下省略号收尾 —— 高度恒为一行,
+ *   ❌ 把整条命令折成七八行铺在单子里。
+ * - 有东西藏着(有说明 ⇒ 命令藏着;命令不止一行或一行放不下)才能点开;点开就地写全:
+ *   有说明 ⇒ 说明在上、整条命令在下(代码字体,与执行卡片里的命令同一套);没说明 ⇒ 整条命令换行写全。
+ *
+ * 量和画读同一份:Render 直接把这里排好换行的字贴上去,❌ 让浏览器自己再排一遍。
+ */
+export function backgroundCommandLayout(entry: BackgroundCommandEntry, ctx: MeasureCtx, controls = 0) {
+  const width = nameWidth(ctx, controls);
+  const line = entry.summary ?? entry.name.split('\n')[0];
+  const expandable = entry.summary !== undefined || line !== entry.name || readableLabel(line, ctx, width, 14, 20).width > width;
+  if (!expandable || !entry.open) return { expandable, open: false as const, line, command: null, codeLineHeight: 0, height: 20 };
+  const label = (text: string) => wrapByLine(text, (part) => {
+    const laid = readableLabel(part, ctx, width, 14, 20);
+    return { text: laid.text, lines: laid.height / 20 };
+  });
+  if (entry.summary === undefined) {
+    const full = label(entry.name);
+    return { expandable, open: true as const, line: full.text, command: null, codeLineHeight: 0, height: full.lines * 20 };
+  }
+  const head = label(entry.summary);
+  const code = ctx.theme.fonts.code;
+  const command = wrapByLine(entry.name, (part) => {
+    const wrap = measureSoftWrap(part, Math.max(1, width), code.font);
+    return { text: applySoftWraps(part, wrap.softWrapOffsets), lines: wrap.visualLineCount };
+  });
+  return {
+    expandable,
+    open: true as const,
+    line: head.text,
+    command: command.text,
+    codeLineHeight: code.lineHeight,
+    height: head.lines * 20 + command.lines * code.lineHeight,
+  };
+}
+
+const commandControls = (ctx: { commands?: MeasureCtx['commands'] }): number =>
+  (ctx.commands?.onStopBackgroundTask ? 32 : 0) + (ctx.commands?.onDismissBackgroundTask ? 32 : 0);
 
 function backgroundTaskMetaText(agent: SubagentRosterEntry, translate: ChatTranslator, elapsed: string): string {
   return [
@@ -83,8 +143,7 @@ export function backgroundTaskMetaLayout(agent: SubagentRosterEntry, ctx: Measur
 
 export function measuredBackgroundListHeight(commands: readonly BackgroundCommandEntry[], agents: readonly SubagentRosterEntry[], ctx: MeasureCtx): number {
   const rows = [
-    ...commands.map(entry => backgroundTaskNameLayout(entry.name, ctx,
-      (ctx.commands?.onStopBackgroundTask ? 32 : 0) + (ctx.commands?.onDismissBackgroundTask ? 32 : 0)).height + 8),
+    ...commands.map(entry => backgroundCommandLayout(entry, ctx, commandControls(ctx)).height + 8),
     ...agents.map(entry => {
       const nameH = backgroundTaskNameLayout(entry.name, ctx,
         (ctx.width < 360 ? 0 : AGENT_META_W + 8) + (entry.canCancel && ctx.commands?.onStopBackgroundTask ? 32 : 0) + (ctx.commands?.onDismissBackgroundTask ? 32 : 0)).height;
@@ -146,6 +205,8 @@ export function BackgroundTasksList(props: {
   commands: readonly BackgroundCommandEntry[];
   subagents: readonly SubagentRosterEntry[];
   measureCtx: () => MeasureCtx;
+  /** 单子住在哪一行(那一行的 unit id):点开一条命令时 ChatRoot 把这一行钉在原处,❌ 在读者眼皮底下跳。 */
+  anchorId?: string;
 }) {
   const translate = useChatTranslator();
   const commands = useCommands();
@@ -201,26 +262,49 @@ export function BackgroundTasksList(props: {
   return (
     <div class={backgroundTasksList} style={{ 'margin-top': `${LIST_TOP}px` }} data-slot="background-tasks-list">
       <For each={props.commands}>
-        {(command) => (
-          <div class={backgroundTaskRow} data-slot="background-task" data-task-kind="command" title={command.name}>
-            <span class={backgroundTaskIcon}>
-              <IconSquareTerminal />
-            </span>
-            <span class={backgroundTaskName}>{backgroundTaskNameLayout(command.name, props.measureCtx(), (commands().onStopBackgroundTask ? 32 : 0) + (commands().onDismissBackgroundTask ? 32 : 0)).text}</span>
-            <Show when={commands().onStopBackgroundTask}>
-              <button
-                type="button"
-                class={`${backgroundTaskButton} ${backgroundTaskStop}`}
-                title={translate('transcript.backgroundTasks.stopCommand')}
-                aria-label={translate('transcript.backgroundTasks.stopCommand')}
-                onClick={(event) => stop(event, command.taskId)}
-              >
-                <IconStop />
-              </button>
-            </Show>
-            <DismissButton entryId={command.id} />
-          </div>
-        )}
+        {(command) => {
+          const layout = () => backgroundCommandLayout(command, props.measureCtx(), commandControls({ commands: commands() }));
+          return (
+            // 收着时悬停给整条命令(桌面上瞄一眼);点开后整条已经写在行里,不再叠一个系统提示。
+            <div class={backgroundTaskRow} data-slot="background-task" data-task-kind="command" data-open={layout().open ? '' : undefined}
+              title={layout().open ? undefined : command.name}>
+              <span class={backgroundTaskIcon}>
+                <IconSquareTerminal />
+              </span>
+              <Show when={layout().expandable} fallback={<span class={`${backgroundTaskName} ${backgroundTaskLine}`}>{layout().line}</span>}>
+                {/* 开关走 ChatRoot 既有的 `data-collapse-id` 点击委派(与「后台 · …」那一句同一条),❌ 自己再挂一套开合状态。
+                    只挂在名字这一格上:停止 / × 在它外面,点它们不会顺带开合。 */}
+                <button
+                  type="button"
+                  class={`${backgroundTaskName} ${backgroundTaskToggle}${layout().open ? '' : ` ${backgroundTaskLine}`}`}
+                  data-slot="background-task-toggle"
+                  data-collapse-id={backgroundCommandToggleId(command.id)}
+                  data-collapse-anchor={props.anchorId}
+                  aria-expanded={layout().open}
+                >
+                  <Show when={layout().open} fallback={layout().line}>
+                    {layout().line}
+                    <Show when={layout().command}>
+                      {(full) => <span class={backgroundTaskCommand} data-slot="background-task-command" style={{ 'line-height': `${layout().codeLineHeight}px` }}>{full()}</span>}
+                    </Show>
+                  </Show>
+                </button>
+              </Show>
+              <Show when={commands().onStopBackgroundTask}>
+                <button
+                  type="button"
+                  class={`${backgroundTaskButton} ${backgroundTaskStop}`}
+                  title={translate('transcript.backgroundTasks.stopCommand')}
+                  aria-label={translate('transcript.backgroundTasks.stopCommand')}
+                  onClick={(event) => stop(event, command.taskId)}
+                >
+                  <IconStop />
+                </button>
+              </Show>
+              <DismissButton entryId={command.id} />
+            </div>
+          );
+        }}
       </For>
       <For each={props.subagents}>
         {(agent) => (
@@ -238,7 +322,10 @@ export function BackgroundTasksList(props: {
             </span>
             <span style={{ display: 'flex', 'flex-direction': props.measureCtx().width < 360 ? 'column' : 'row', gap: props.measureCtx().width < 360 ? '0' : '8px', flex: 1, 'min-width': 0 }}>
             <span class={backgroundTaskName}>{backgroundTaskNameLayout(agent.name, props.measureCtx(), (props.measureCtx().width < 360 ? 0 : AGENT_META_W + 8) + (agent.canCancel && commands().onStopBackgroundTask ? 32 : 0) + (commands().onDismissBackgroundTask ? 32 : 0)).text}</span>
-            <span class={backgroundTaskMeta} data-slot="background-task-meta" style={{ width: `${AGENT_META_W}px`, 'white-space': 'pre-wrap' }}>
+            {/* 量高按最坏串预留了行数(`backgroundTaskMetaLayout`),画也占满这些行:❌ 只画实时文案那一行,
+                行比量的矮,单子底下空出一截。用 min-height 不用 height:真比预留还宽时照样长高,❌ 裁字。 */}
+            <span class={backgroundTaskMeta} data-slot="background-task-meta" style={{ width: `${AGENT_META_W}px`, 'white-space': 'pre-wrap',
+              'min-height': `${backgroundTaskMetaLayout(agent, props.measureCtx(), elapsed(agent.startedAt)).height}px` }}>
               {backgroundTaskMetaLayout(agent, props.measureCtx(), elapsed(agent.startedAt)).text}
             </span>
             </span>

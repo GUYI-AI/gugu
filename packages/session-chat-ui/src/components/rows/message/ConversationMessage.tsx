@@ -196,6 +196,6 @@ export function ProcessBackgroundPill(props: { ownerId: string; ctx: RenderCtx }
 /** 单子就地展开在过程行下面(高度见 `backgroundHeight`)。 */
 export function ProcessBackgroundList(props: { ownerId: string; ctx: RenderCtx }) {
   return <Show when={attachedBackground(props.ownerId, props.ctx)?.expanded ? attachedBackground(props.ownerId, props.ctx) : null}>{tasks =>
-    <BackgroundTasksList commands={tasks().commands} subagents={tasks().subagents} measureCtx={props.ctx.measureCtx!} />
+    <BackgroundTasksList commands={tasks().commands} subagents={tasks().subagents} measureCtx={props.ctx.measureCtx!} anchorId={props.ownerId} />
   }</Show>;
 }

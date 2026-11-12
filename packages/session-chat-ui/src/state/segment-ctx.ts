@@ -3,7 +3,7 @@ import type { ChatCaches } from '@session-chat/core/caches';
 import { isDoubleColumnLayout } from '@session-chat/core/layout/preset';
 import type { SegmentCtx } from '@session-chat/core/units';
 import type { ChatState } from './chat-state';
-import { BACKGROUND_TASKS_TOGGLE, turnDiscardedId } from './flatten';
+import { BACKGROUND_TASKS_TOGGLE, markOpenCommands, turnDiscardedId } from './flatten';
 import { latestVisibleTurnId } from './pending-prompt';
 
 /**
@@ -46,7 +46,11 @@ export function segmentCtxFor(context: ChatContext, state: ChatState, caches: Ch
     backgroundTasks: () => {
       const tasks = state.session.state.backgroundTasks;
       if (tasks.commands.length === 0 && tasks.subagents.length === 0) return null;
-      return { ...tasks, expanded: state.viewState.isCollapsed(BACKGROUND_TASKS_TOGGLE) };
+      return {
+        ...tasks,
+        commands: markOpenCommands(tasks.commands, (id) => state.viewState.isCollapsed(id)),
+        expanded: state.viewState.isCollapsed(BACKGROUND_TASKS_TOGGLE),
+      };
     },
   };
 }

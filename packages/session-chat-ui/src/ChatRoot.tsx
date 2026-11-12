@@ -91,6 +91,7 @@ import {
   trailingDayKey,
   BACKGROUND_TASKS_ID,
   BACKGROUND_TASKS_TOGGLE,
+  markOpenCommands,
 } from './state/flatten';
 import type { UnitsView } from './state/flatten';
 import { segmentCtxFor } from './state/segment-ctx';
@@ -838,7 +839,7 @@ export function ChatRoot(props: ChatRootProps) {
     const tasks = state().session.state.backgroundTasks;
     return {
       ownerId: owner,
-      commands: tasks.commands,
+      commands: markOpenCommands(tasks.commands, (id) => viewState().isCollapsed(id)),
       subagents: tasks.subagents,
       expanded: viewState().isCollapsed(BACKGROUND_TASKS_TOGGLE),
     };

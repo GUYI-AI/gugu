@@ -30,9 +30,33 @@ export type BackgroundCommandEntry = {
    * 去停只会得到 `{stopped:false}`(#5117)。
    */
   taskId: string;
-  /** 它在干什么(那次调用的标题);一个字都没给才退到通用词,❌ 不编。 */
+  /** 它在干什么(那次调用的标题);一个字都没给才退到通用词,❌ 不编。claude 的 Bash 标题就是整条命令。 */
   name: string;
+  /**
+   * 供应商自己给的一句短说明(claude Bash 的 `description`,如「Relaunch isolated dev app」)。单子里一行默认写它,
+   * 整条命令点开才看;没给就没有这一格,❌ 从命令里编一句。与 `name` 一字不差时也不给(展开只会重复一遍)。
+   */
+  summary?: string;
+  /** 视图状态:这一条此刻点开着、写着整条命令。花名册不写它,由视图按开关标上(`markOpenCommands`)。 */
+  open?: boolean;
 };
+
+/**
+ * 那次调用自己带的短说明。先认供应商放在 `inputSummary` 里的(它自己说的话永远优先),再认入参里的
+ * `description`(claude-agent-acp 把 Bash 的 description 只放在 `rawInput` 里,标题是命令本身)。
+ */
+function commandSummary(node: { inputSummary?: string; rawInput?: string }): string | undefined {
+  const given = node.inputSummary?.trim();
+  if (given) return given;
+  if (!node.rawInput) return undefined;
+  try {
+    const input = JSON.parse(node.rawInput) as Record<string, unknown> | null;
+    const text = input && typeof input === 'object' ? input.description ?? input.command_description : undefined;
+    return typeof text === 'string' && text.trim() !== '' ? text.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * 运行时说「本进程里还在跑」的那些任务 id(`sessionState.backgroundCommandTaskIds`),给花名册做筛子(#6582)。
@@ -65,11 +89,15 @@ export function collectBackgroundCommandRoster(
   const live = runningTaskIds === null ? running : running.filter((node) => runningTaskIds.includes(node.backgroundTaskId));
   return live.map((node) => {
     const title = node.title.trim();
+    const summary = commandSummary(node);
+    // 标题空着、说明却给了:名字就用说明(❌ 退到通用词、再把说明藏到点开后面)。
+    const name = title !== '' ? title : summary ?? fallbackName;
     return {
       id: node.id,
       launchToolCallId: node.toolCallId,
       taskId: node.backgroundTaskId,
-      name: title === '' ? fallbackName : title,
+      name,
+      ...(summary !== undefined && summary !== name ? { summary } : {}),
     };
   });
 }
