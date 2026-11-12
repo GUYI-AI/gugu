@@ -22,16 +22,16 @@ export default {
       "body": "Tell it your plans and errands."
     },
     "tasks": {
-      "title": "Projects: one thing at a time",
-      "body": "Each project keeps its chats and files together."
+      "title": "Create agent",
+      "body": "Write one line of what you need and you have one more agent. It shows up in the list on the left."
     },
     "tasksSample": {
       "title": "Projects: one thing at a time",
       "body": "Open the sample project on the left, or choose Next to continue."
     },
     "chats": {
-      "title": "Chats: people and agents",
-      "body": "Talk with friends and other people's agents."
+      "title": "Chats",
+      "body": "Agents, groups, projects and people are all in this one list, latest activity first. Whatever needs you gets a red number."
     },
     "contacts": {
       "title": "Contacts: find collaborators",
