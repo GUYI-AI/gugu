@@ -38,6 +38,7 @@ import { rendererLogger } from '@/lib/log'
 import { chatSendTimings, finishChatSendTiming } from '../lib/chatSendTiming'
 import { messageFailureNotice } from '../lib/messageFailureNotice'
 import { messagePreviewLines } from '../lib/messagePreviews'
+import { adoptSentFile, dropSentFile, forgetSentFiles } from '../lib/sentFileCopies'
 
 export interface OutboxWiringIo {
   observeMessage?: (senderId: string, chatId: string) => ObserveAttachmentMessage
@@ -60,6 +61,8 @@ export interface OutboxWiring {
   outbox: ChatOutbox
   stageAttachment(message: MessageItem, dependsOn?: string): Promise<void>
   commitAttachment(message: MessageItem, prepared: PreparedChatAttachment, commit: Omit<CommitArgs, 'staging_key'>, timing?: AttachmentSendTiming, dependsOn?: string): Promise<void>
+  /** The row's bytes did not go up; this run still holds them, so its failed row offers `retry`. */
+  failAttachmentUpload(messageId: string, error: unknown, reason: string, retry: () => void): Promise<void>
   forward(source: MessageItem | Extract<AppForwardFilesDetail, { files: unknown }>['files'][number], targetChatId: string, senderUserId: string, opts?: { toUserIds?: string[] }): Promise<void>
   createTopic(input: CreateTopicInput, senderUserId: string): Promise<CreatedTopic | null>
   dispose(): void
@@ -79,6 +82,8 @@ export interface OutboxWiring {
     resolveDmPeer?: boolean
     /** 投递前置(如 agent 私聊的会话页会话就绪)。只活在内存:重启恢复的投递没有它(C1)。 */
     beforeDeliver?: () => Promise<void>
+    /** A message that must be delivered first (the files sent with this text); else the replied-to message. */
+    dependsOn?: string
   }): Promise<void>
   /** 启动恢复:重建乐观行注入主线缓存 + 开始投递;并挂后端恢复 kick(backendReachability)。返回清理函数。 */
   restoreAndWatch(): () => void
@@ -200,6 +205,10 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
   const attachmentTimings = new Map<string, AttachmentSendTiming>()
   const nativeCommits = new Map<string, () => Promise<MessageItem | undefined>>()
   const topicResults = new Map<string, CreatedTopic | undefined>()
+  // Failed uploads whose File this run still holds: retrying sends those bytes again. A reload forgets them (select the file again).
+  const uploadRetries = new Map<string, () => void>()
+  const retryable = (record: OutboxRecord) => !record.dependencyDiscarded && (uploadRetries.has(record.clientMessageId)
+    || (record.operation?.kind !== 'upload' && record.operation?.kind !== 'nativeAttachment'))
   // clientMessageId → 本次会话里发送方交来的投递前置。送达/丢弃即删;失败保留,手动重试会再跑一次。
   const beforeDeliverHooks = new Map<string, () => Promise<void>>()
   // 状态迁移 → 乐观行 local_send_state(pending/sending 统一显示「发送中」,failed 显示「未送达」)。
@@ -207,7 +216,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     if (!active) return
     const state = record.state === 'failed' ? 'failed' : 'sending'
     const patchRow = (m: MessageItem) =>
-      m.id === record.clientMessageId ? { ...m, local_send_state: state as MessageItem['local_send_state'], local_send_error: record.lastError, local_send_retryable: !record.dependencyDiscarded && record.operation?.kind !== 'upload' && record.operation?.kind !== 'nativeAttachment' } : m
+      m.id === record.clientMessageId ? { ...m, local_send_state: state as MessageItem['local_send_state'], local_send_error: record.lastError, local_send_retryable: retryable(record) } : m
     if (record.payload.threadRootId) {
       io.setThreadMessages((prev) => prev.map(patchRow), record.chatId)
     } else {
@@ -237,6 +246,8 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     beforeDeliverHooks.delete(record.clientMessageId)
     nativeCommits.delete(record.clientMessageId)
     attachmentTimings.delete(record.clientMessageId)
+    uploadRetries.delete(record.clientMessageId)
+    dropSentFile(record.clientMessageId)
     if (!active) return
     if (record.payload.threadRootId) {
       io.setThreadMessages((prev) => prev.filter((m) => m.id !== record.clientMessageId), record.chatId)
@@ -255,6 +266,8 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     nativeCommits.delete(record.clientMessageId)
     if (record.operation?.kind !== 'nativeAttachment') attachmentTimings.get(record.clientMessageId)?.finish('success', 'outbox')
     attachmentTimings.delete(record.clientMessageId)
+    uploadRetries.delete(record.clientMessageId)
+    adoptSentFile(record.clientMessageId, persisted)
     if (!active) return
     const user = io.user()
     if (!user) return
@@ -405,6 +418,12 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
         if (row && active) await outbox.confirm(message.id, row)
       }
     },
+    async failAttachmentUpload(messageId, error, reason, retry) {
+      // Discarded meanwhile: no row is left to retry from.
+      if (!outbox.has(messageId)) return
+      uploadRetries.set(messageId, retry)
+      await outbox.failUpload(messageId, error, reason)
+    },
     async forward(source, targetChatId, senderUserId, opts) {
       const { stageAttachment, commitAttachment } = wiring
       const file = 'itemId' in source
@@ -439,7 +458,6 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
           // must not rely on an onSent callback from this renderer's lifetime.
           await stageAttachment(row.message, message.id)
           io.appendMessage(row.message)
-          void outbox.delivered(row.message.id).then(row.release, () => {})
           const prepared = await prepareChatAttachment(await attachmentsEndpoint(), attachment, {
             chat_id: targetChatId, as: senderUserId, request_id: row.message.id,
           })
@@ -480,6 +498,8 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
       nativeCommits.clear()
       attachmentTimings.clear()
       topicResults.clear()
+      uploadRetries.clear()
+      forgetSentFiles()
       outbox.dispose()
     },
     async enqueue(input) {
@@ -498,7 +518,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
           isWhisper: input.isWhisper,
           ...(input.resolveDmPeer ? { resolveDmPeer: true } : {}),
         },
-        dependsOn: input.replyToMessageId ?? undefined,
+        dependsOn: input.dependsOn ?? input.replyToMessageId ?? undefined,
         state: 'pending',
         attempts: 0,
         lastError: null,
@@ -546,12 +566,23 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     injectThreadOutboxRows(chatId, rootId) {
       const user = io.user()
       if (!user) return
-      const rows = outbox.pendingFor(chatId, rootId).map((r) => outboxRecordToMessage(r, user))
+      const rows = outbox.pendingFor(chatId, rootId).map((r) => ({ ...outboxRecordToMessage(r, user), local_send_retryable: retryable(r) }))
       if (rows.length === 0) return
       io.setThreadMessages((prev) => rows.reduce((list, row) => upsertMessageById(list, row), prev), chatId)
     },
     retrySend(clientMessageId) {
-      if (active) void outbox.retry(clientMessageId).catch((err) => { if (active) console.error('[chatOutbox] retry failed', err) })
+      if (!active) return
+      const again = uploadRetries.get(clientMessageId)
+      if (again) {
+        void outbox.resumeUpload(clientMessageId).then((resumed) => {
+          if (uploadRetries.get(clientMessageId) !== again) return
+          uploadRetries.delete(clientMessageId)
+          // Its bytes went up and only the commit failed: the ordinary retry resends that.
+          if (resumed) again(); else return outbox.retry(clientMessageId)
+        }).catch((err) => { if (active) rendererLogger('chat/outbox').error({ messageId: clientMessageId, error: err }, 'upload retry failed') })
+        return
+      }
+      void outbox.retry(clientMessageId).catch((err) => { if (active) console.error('[chatOutbox] retry failed', err) })
     },
     discardSend(clientMessageId) {
       if (active) void outbox.discard(clientMessageId).catch((err) => { if (active) console.error('[chatOutbox] discard failed', err) })

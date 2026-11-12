@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { downloadBlob } from '../../lib/download'
 import { attachmentBytes, attachmentPreview, openAttachmentInSystemApp, sourceKeyOf } from '../../lib/attachmentBytes'
+import { sentFileCopy } from '../../lib/sentFileCopies'
 import { FileReadRevokedError } from '@gugu/core/shared/fileResolver'
 import { rendererLogger } from '../../lib/log'
 import { holderOfflineText, offlineHolder, useHolderBack } from '../../lib/fileHost'
@@ -59,6 +60,9 @@ export type HostedPreviewFile = Omit<PreviewFile, 'source' | 'document'> & { sou
  */
 async function previewBytes(file: PreviewFile | HostedPreviewFile, options: { shown?: true; progress?: (done: number, total: number) => void } = {}): Promise<{ blob: Blob; acknowledged?: Promise<void> }> {
   if (file.source.kind === 'hosted') return { blob: await file.source.read() }
+  // A file this device sent this run is read from here: while it uploads, and after, without downloading it back.
+  const sent = file.document ? null : sentFileCopy(file.source)
+  if (sent) return { blob: sent }
   if (file.document && file.source.kind === 'item') {
     const { readChatFolderText } = await import('../../lib/chatFolder')
     const document = await readChatFolderText({ id: file.source.itemId })
@@ -82,8 +86,10 @@ function previewFailure(error: unknown, t: TFunction<'messaging'>): PreviewRead 
   return { content: null, errorStatus, error: t(errorStatus === 'gone' ? 'attachmentView.fileGone' : errorStatus === 'expired' ? 'attachmentView.fileExpired' : errorStatus === 'missing' ? 'attachmentView.fileMissing' : 'attachmentView.fileUnavailable') }
 }
 async function readPreview(file: PreviewFile | HostedPreviewFile, kind: DocumentPreviewKind, progress?: (done: number, total: number) => void): Promise<PreviewRead> {
-  if (file.source.kind === 'hosted' && !documentPreviewNeedsFetch(kind)) {
-    const videoUrl = URL.createObjectURL(await file.source.read())
+  // A video read whole from here (a working copy, or a file this device sent this run) plays from its own bytes.
+  const whole = documentPreviewNeedsFetch(kind) ? null : file.source.kind === 'hosted' ? await file.source.read() : file.document ? null : sentFileCopy(file.source)
+  if (whole) {
+    const videoUrl = URL.createObjectURL(whole)
     return { content: null, videoUrl, expiresAt: Infinity, release: async () => URL.revokeObjectURL(videoUrl) }
   }
   if (file.source.kind !== 'hosted' && !documentPreviewNeedsFetch(kind)) {
@@ -223,5 +229,5 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const connection = besideOffline ? <ConnectionStatus state="device_offline" subject={besideOffline.machine || t('attachmentView.holderMachine')} testId="message-file-preview-connection" /> : undefined
   // `key`: a read again (the machine back) gives the HTML preview a new registration, so its files are asked for again.
   const shown = read?.binary ? 'unsupported' : kind
-  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} connection={connection} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} {...(fraction === undefined ? {} : { loadingFraction: fraction })} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />
+  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} connection={connection} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} {...(fraction === undefined ? {} : { loadingFraction: fraction })} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'url' && file.source.url.startsWith('blob:')) || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />
 }

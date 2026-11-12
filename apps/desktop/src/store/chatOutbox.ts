@@ -67,7 +67,10 @@ export interface ChatOutbox {
   commitUpload(record: OutboxRecord): Promise<boolean>
   has(clientMessageId: string): boolean
   confirm(clientMessageId: string, delivered: unknown): Promise<void>
-  failUpload(clientMessageId: string, error: unknown): Promise<void>
+  /** `reason`: what the failed row says; absent, the bytes are gone and the file must be selected again. */
+  failUpload(clientMessageId: string, error: unknown, reason?: string): Promise<void>
+  /** A failed upload whose bytes this run still holds goes back to uploading; false when it is no longer a failed upload. */
+  resumeUpload(clientMessageId: string): Promise<boolean>
   /** 显式丢弃:删行 + onDiscarded(调用方负责移除乐观行)。 */
   discard(clientMessageId: string): Promise<void>
   /** 后端恢复 kick:全部 failed → pending 自动重投(验收②的自动路径)。 */
@@ -200,7 +203,7 @@ export function createChatOutbox(deps: OutboxDeps): ChatOutbox {
         let delivered = false
         if (record.dependencyDiscarded || source?.state === 'failed') {
           record = await persist(record, 'failed', {
-            lastError: i18n.t(record.dependencyDiscarded ? 'outbox.sourceDiscarded' : 'outbox.sourceNotSent', { ns: 'messaging' }),
+            lastError: i18n.t(record.dependencyDiscarded ? 'outbox.sourceDiscarded' : record.operation?.kind === 'forward' ? 'outbox.sourceNotSent' : 'outbox.followedNotSent', { ns: 'messaging' }),
           }, operationEpoch)
           if (!isActive(operationEpoch)) return
           deps.onState(record)
@@ -325,18 +328,29 @@ export function createChatOutbox(deps: OutboxDeps): ChatOutbox {
       kick()
       return true
     },
-    async failUpload(id, error) {
+    async failUpload(id, error, reason) {
       const record = records.get(id)
       if (!record || disposed) return
       const operationEpoch = epoch
       outboxLog.error({ error, messageId: id }, 'attachment upload failed')
       const failed = await persist(record, 'failed', {
-        lastError: i18n.t('outbox.selectFileAgain', { ns: 'messaging' }),
+        lastError: reason ?? i18n.t('outbox.selectFileAgain', { ns: 'messaging' }),
       }, operationEpoch)
       if (!isActive(operationEpoch)) return
       deps.onState(failed)
       rejectWaiter(id, failed.lastError!)
       kick()
+    },
+    async resumeUpload(id) {
+      const record = records.get(id)
+      const kind = record?.operation?.kind
+      if (!record || disposed || record.state !== 'failed' || record.dependencyDiscarded || (kind !== 'upload' && kind !== 'nativeAttachment')) return false
+      const operationEpoch = epoch
+      // A native publication that failed starts over from its bytes, like an upload.
+      const next = await persist(record, 'uploading', { operation: { kind: 'upload' }, attempts: 0, lastError: null }, operationEpoch)
+      if (!isActive(operationEpoch) || records.get(id) !== next) return false
+      deps.onState(next)
+      return true
     },
     async retry(clientMessageId) {
       if (disposed) return
@@ -399,8 +413,10 @@ export function createChatOutbox(deps: OutboxDeps): ChatOutbox {
         // 死在投递中的 'sending' 行视同 pending 重投(幂等键兜底,双发机制性不可能)
         const interrupted = row.state === 'uploading' && row.operation?.kind !== 'nativeAttachment'
         const state = interrupted ? 'failed' : row.operation?.kind === 'nativeAttachment' && row.state !== 'failed' ? 'uploading' : row.state === 'sending' ? 'pending' : row.state
-        const record: OutboxRecord = { ...row, state, ...(interrupted ? { operation: { kind: 'upload' }, lastError: i18n.t('outbox.selectFileAgain', { ns: 'messaging' }) } : {}) }
-        if (state !== row.state) await deps.save(record)
+        // An upload's bytes lived only in the run that sent it: whatever it failed with then, now the file must be selected again.
+        const selectAgain = interrupted || row.operation?.kind === 'upload' ? i18n.t('outbox.selectFileAgain', { ns: 'messaging' }) : null
+        const record: OutboxRecord = { ...row, state, ...(selectAgain ? { operation: { kind: 'upload' }, lastError: selectAgain } : {}) }
+        if (state !== row.state || record.lastError !== row.lastError) await deps.save(record)
         if (!isActive(operationEpoch)) return []
         records.set(record.clientMessageId, record)
         restored.push(record)

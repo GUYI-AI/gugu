@@ -9,6 +9,7 @@ import { ExpiredAttachmentCard } from '../../../../apps/desktop/src/components/c
 import { MediaAttachmentBubble } from '../../../../apps/desktop/src/components/chat/MediaAttachmentBubble'
 import type { ToastContextValue } from '../../../../apps/desktop/src/components/toastContext'
 import { attachmentQueryClient } from '../../../../apps/desktop/src/lib/attachmentQueryClient'
+import { holdSentFile } from '../../../../apps/desktop/src/lib/sentFileCopies'
 
 const f = vi.hoisted(() => ({ message: vi.fn(), metadata: vi.fn(), cached: vi.fn(), send: vi.fn(), forget: vi.fn(), signed: vi.fn(), view: vi.fn() }))
 vi.mock('@/lib/chat', () => ({ chatService: { getMessageById: f.message } }))
@@ -72,6 +73,7 @@ describe('expired attachment re-upload', () => {
   it.each(['file', 'image'] as const)('keeps an uncommitted %s in its local preview without querying an uncommitted message', async kind => {
     const content = formatAttachmentMetadata({ kind, fileName: kind === 'image' ? 'sending.png' : 'sending.bin', mimeType: kind === 'image' ? 'image/png' : 'application/octet-stream', sizeBytes: 60, url: 'blob:https://fixture.invalid/selected-file' })
     const pending = parseAttachmentContent(content, { id: 'not-yet-committed', local_send_state: 'sending' })!
+    holdSentFile('not-yet-committed', new Blob(['x']), 'blob:https://fixture.invalid/selected-file')
     // The real hook answers a sending row's own preview as ready from its first render (sentImageContinuity.test).
     f.view.mockReturnValue({ status: 'ready', objectUrl: 'blob:https://fixture.invalid/selected-file' })
     await renderWithAppProviders(harness, createElement(MediaAttachmentBubble, { meta: pending, messageId: 'not-yet-committed', isMine: true }), { toast, chat: { sendAttachmentsToChat: f.send } })
@@ -88,6 +90,7 @@ describe('expired attachment re-upload', () => {
     // jsdom checks the three rendering states share one geometry contract; real layout is measured natively.
     const content = formatAttachmentMetadata({ kind: 'image', fileName: 'shot.png', mimeType: 'image/png', sizeBytes: 3, url: 'blob:preview' })
     const local = parseAttachmentContent(content, { id: 'message', local_send_state: 'sending', image_dimensions: { width: 1200, height: 900 } })!
+    holdSentFile('message', new Blob(['png']), 'blob:preview')
     f.view.mockReturnValue({ status: 'ready', objectUrl: 'blob:preview' })
     await renderWithAppProviders(harness, createElement(MediaAttachmentBubble, { meta: local, messageId: 'message', isMine: true }))
     const geometry = (element: HTMLElement) => [element.style.width, element.style.height, element.style.aspectRatio, element.style.maxWidth]

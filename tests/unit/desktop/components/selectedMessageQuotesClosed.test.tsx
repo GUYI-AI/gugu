@@ -74,5 +74,6 @@ it.each([
   const editor = h.container.querySelector<HTMLElement>('[data-topic-split-composer] [contenteditable]')!
   await act(async () => writeComposer(editor, 'Answer'))
   await clickElement(h.container.querySelector('button[aria-label="发送消息"]')!)
-  expect(onSend).toHaveBeenCalledWith('Answer', [], 'source', undefined, expect.any(Number))
+  // The last argument is the files this text follows; a text sent alone follows nothing.
+  expect(onSend).toHaveBeenCalledWith('Answer', [], 'source', undefined, expect.any(Number), undefined)
 })

@@ -29,9 +29,10 @@ export function ChatFileForwardHost() {
   // The note follows the files, as a forward's note follows what has no words to quote.
   const forward = async (targetChatIds: string[], note: ForwardNote, sent: (chatId: string) => void) => {
     for (const chatId of targetChatIds) {
-      if ('copies' in request) await sendAttachmentsToChat(chatId, request.copies)
-      else for (const file of request.files) await forwardMessage(file, chatId)
-      if (note.text.trim()) await sendMessageToChat(chatId, note.text.trim(), { toUserIds: note.toUserIds })
+      // The copies are rows once this returns; their note is delivered after the last of them.
+      const lastCopy = 'copies' in request ? await sendAttachmentsToChat(chatId, request.copies) : undefined
+      if (!('copies' in request)) for (const file of request.files) await forwardMessage(file, chatId)
+      if (note.text.trim()) await sendMessageToChat(chatId, note.text.trim(), { toUserIds: note.toUserIds, ...(lastCopy ? { dependsOn: lastCopy } : {}) })
       sent(chatId)
     }
   }

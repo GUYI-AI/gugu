@@ -82,8 +82,9 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
 
     // Snapshot current attachments so we can roll back on failure
     const snapshotAttachments = attachments
-    // 按批内序号认领已提交件(同一个 File 对象可能被排进队两次,按对象认领会把两件都算成已发)。
-    const committed = new Set<number>()
+    // Once the files are rows in the conversation they belong to those rows (uploading, failing, resending there):
+    // a later failure in this send never puts them back in the composer.
+    let filesOwned = false
     // 带引用回复时文字单独走 onSend(它带 replyToMessageId),不挂成图片说明——否则引用关系丢失。
     const captionOnImage = multimodalImage && !replyToMessageId
     sendingRef.current = true
@@ -98,11 +99,15 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       scheduleComposerFocus('message-sent', { target: () => inputRef.current, mobileShell: mobile })
       if (pendingFiles.length > 0 && onSendAttachments) await beforeSend?.()
 
+      // Resolves once the files are on screen; their bytes upload after the composer is free again.
+      let lastFile: string | undefined
       if (pendingFiles.length > 0 && onSendAttachments) {
-        await onSendAttachments(pendingFiles, { toUserIds: sendOptions.toUserIds, replyToMessageId: !typed && replyToMessageId ? replyToMessageId : undefined, isWhisper: !!whisperTarget, caption: captionOnImage ? content || undefined : undefined, onSent: (_file, index) => { committed.add(index) } })
+        lastFile = (await onSendAttachments(pendingFiles, { toUserIds: sendOptions.toUserIds, replyToMessageId: !typed && replyToMessageId ? replyToMessageId : undefined, isWhisper: !!whisperTarget, caption: captionOnImage ? content || undefined : undefined })) || undefined
+        filesOwned = true
       }
       if (typed && (!captionOnImage || !onSendAttachments)) {
-        await onSend(content, { ...sendOptions, clientMessageId: submission.id, beforeDeliver: beforeSend, submittedAt })
+        // Text sent with files reaches the conversation after them, as it was written.
+        await onSend(content, { ...sendOptions, clientMessageId: submission.id, beforeDeliver: beforeSend, submittedAt, ...(lastFile ? { dependsOn: lastFile } : {}) })
       }
       if (attempt.succeeded() && submissions.current.get(scope) === submission) submissions.current.delete(scope)
       // Successful send → object URLs are no longer needed
@@ -117,10 +122,9 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       const unchanged = draft.revisionOf(chatId ?? null) === clearedRevision
       const reason = String((err as Error)?.message ?? err)
       rendererLogger('chat/send').error({ chatId, error: reason }, 'message send failed')
-      // Rollback restores only UNSENT intent. @@@2188 - the send is phased (attachments commit one by
-      // one, reported via onSent; text last): units already in the conversation must NOT return to the
-      // draft, or a retry re-sends them (duplicate attachment). The uncommitted remainder stays recoverable.
-      const unsentAttachments = snapshotAttachments.filter((_a, index) => !committed.has(index))
+      // Rollback restores only UNSENT intent. @@@2188 - units already in the conversation must NOT return to the
+      // draft, or a retry re-sends them (duplicate attachment). Files become rows all together or not at all.
+      const unsentAttachments = filesOwned ? [] : snapshotAttachments
       // @@@draft-attachment (#1872) - restore WITHOUT contaminating the wrong chat: send is async, so the
       // user may have switched away mid-flight (composer stays mounted, chatId differs). Restore into the
       // LIVE composer only when still on the sending chat; otherwise re-persist into the ORIGINAL chat's

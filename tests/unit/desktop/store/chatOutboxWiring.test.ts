@@ -505,3 +505,65 @@ it('a send that fails asks the beat to pull now, so an outage shorter than one b
   unbind()
   f.wiring.dispose()
 })
+it('a failed upload whose bytes this run holds is resent from its own row; after a reload the file must be selected again', async () => {
+  const f = wiringHarness('upload-1')
+  const row = { ...optimisticMessage('upload-1'), content_type: 'attachment' as const }
+  await f.wiring.stageAttachment(row)
+  const retry = vi.fn()
+  await f.wiring.failAttachmentUpload('upload-1', new Error('network lost'), '发送未完成，请稍后重新发送', retry)
+  expect(f.messages().find(m => m.id === 'upload-1')).toMatchObject({ local_send_state: 'failed', local_send_error: '发送未完成，请稍后重新发送', local_send_retryable: true })
+  f.wiring.retrySend('upload-1')
+  await vi.waitFor(() => expect(retry).toHaveBeenCalledOnce())
+  expect(f.messages().find(m => m.id === 'upload-1')?.local_send_state).toBe('sending')
+  expect((await f.repository).snapshot().outbox.map(r => r.value)).toEqual([expect.objectContaining({ clientMessageId: 'upload-1', state: 'uploading', lastError: null })])
+  f.wiring.retrySend('upload-1')
+  await flushMicrotasks(30)
+  expect(retry, 'an upload already going again is not started twice').toHaveBeenCalledOnce()
+  await f.wiring.failAttachmentUpload('upload-1', new Error('network lost'), '发送未完成，请稍后重新发送', retry)
+  f.wiring.dispose()
+  let restored: MessageItem[] = []
+  const g = createOutboxWiring({ getImRepository: () => f.repository, user: () => ({ id: 'owner-1', nickname: 'Owner', avatarUrl: null }), identity: () => undefined, chats: () => [],
+    activeChatId: () => 'chat-1', activeThreadRootId: () => null, setMessagesAndCache: (updater) => { restored = updater(restored) }, setThreadMessages: () => {},
+    patchChat: f.patchChat, toast: f.toast, appendMessage: f.appendMessage })
+  g.restoreAndWatch()
+  await vi.waitFor(() => expect(restored.find(m => m.id === 'upload-1')).toMatchObject({ local_send_state: 'failed', local_send_retryable: false, local_send_error: '上传已中断，请重新选择文件。' }))
+  g.dispose()
+})
+it('text sent with a file is delivered after that file, never before it', async () => {
+  const f = wiringHarness('file-1')
+  const publication = deferred<MessageItem | null>()
+  vi.spyOn(attachmentRecovery, 'settleAttachmentSend').mockReturnValue(publication.promise)
+  vi.spyOn(attachmentEndpoint, 'attachmentsEndpoint').mockResolvedValue({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token' })
+  const send = vi.spyOn(chatService, 'sendMessage').mockImplementation(async (_chat, _sender, _content, id) => persistedMessage(id!))
+  const file = { ...optimisticMessage('file-1'), content_type: 'attachment' as const }
+  await f.wiring.stageAttachment(file)
+  await f.wiring.enqueue({ ...enqueueInput('caption-text'), dependsOn: 'file-1' })
+  expect((await f.repository).snapshot().outbox.map(r => r.value)).toContainEqual(expect.objectContaining({ clientMessageId: 'caption-text', dependsOn: 'file-1' }))
+  await flushMicrotasks(30)
+  expect(send).not.toHaveBeenCalled()
+  const committing = f.wiring.commitAttachment(file, { local: new File(['bytes'], 'notes.txt') }, {
+    message_id: file.id, chat_id: file.chat_id, sender_user_id: 'owner-1', file_name: 'notes.txt', to_user_ids: [] })
+  await flushMicrotasks(30)
+  expect(send, 'the text waits while its file is still being published').not.toHaveBeenCalled()
+  publication.resolve({ ...persistedMessage(file.id), content_type: 'attachment' })
+  await committing
+  await vi.waitFor(() => expect(send).toHaveBeenCalledOnce())
+  expect(send.mock.calls[0][3]).toBe('caption-text')
+  f.wiring.dispose()
+})
+it('a refused native publication is resent from its row like an upload', async () => {
+  const f = wiringHarness('native-refused')
+  vi.spyOn(attachmentRecovery, 'settleAttachmentSend').mockResolvedValue(null)
+  vi.spyOn(attachmentEndpoint, 'attachmentsEndpoint').mockResolvedValue({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token' })
+  const native = { ...optimisticMessage('native-refused'), content_type: 'attachment' as const }
+  await f.wiring.stageAttachment(native)
+  const failure = await f.wiring.commitAttachment(native, { local: new File(['bytes'], 'plan.txt') }, {
+    message_id: native.id, chat_id: native.chat_id, sender_user_id: 'owner-1', file_name: 'plan.txt', to_user_ids: [] }).catch((error: unknown) => error)
+  const retry = vi.fn()
+  await f.wiring.failAttachmentUpload(native.id, failure, '发送未完成，请稍后重新发送', retry)
+  expect(f.messages().find(m => m.id === native.id)).toMatchObject({ local_send_state: 'failed', local_send_retryable: true })
+  f.wiring.retrySend(native.id)
+  await vi.waitFor(() => expect(retry).toHaveBeenCalledOnce())
+  expect((await f.repository).snapshot().outbox.map(r => r.value)).toEqual([expect.objectContaining({ clientMessageId: native.id, state: 'uploading', operation: { kind: 'upload' } })])
+  f.wiring.dispose()
+})

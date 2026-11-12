@@ -6,6 +6,7 @@ import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { holderOfflineText, useHolderBack } from '../../lib/fileHost'
 import { attachmentBytes, attachmentMetadata, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
+import { sentFileCopy } from '../../lib/sentFileCopies'
 import { useAuth } from '../../store/auth'
 import { attachmentQuery, attachmentQueryClient } from '../../lib/attachmentQueryClient'
 import { ExtensionBundleCard } from '../extensionBundle/ExtensionBundleCard'; import { isExtensionBundle } from '../extensionBundle/summarizeExtensionBundle'
@@ -47,8 +48,12 @@ export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, sen
   if (metadata.data?.status === 'gone' || metadata.isError) return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine}
     details={t(metadata.isError ? 'attachmentView.fileUnavailable' : 'attachmentView.fileGone')} />{caption}</div>
   const renderable = isRenderableImage(meta.fileName, meta.mimeType)
-  // A sending row owns an ephemeral blob preview, not a committed download capability.
-  if (meta.source.kind === 'url' && meta.source.url.startsWith('blob:') && !renderable) return <div ref={box} className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine} onOpen={() => undefined} />{caption}</div>
+  // A row not delivered yet reads the file this device sent, while it uploads and if it failed. A preview this run did not
+  // make (a row restored after a restart) has no bytes behind it any more.
+  if (meta.source.kind === 'url' && meta.source.url.startsWith('blob:')) {
+    if (!sentFileCopy(meta.source)) return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileUnavailable')} />{caption}</div>
+    if (!renderable) return <div ref={box} className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine} onOpen={() => onOpenFile?.(meta)} />{caption}</div>
+  }
   // App 包:按这条消息装(发布者就是发送者,装的时候由宿主读这条消息)。
   if (isExtensionBundle(meta) && meta.source.kind !== 'gone' && meta.source.kind !== 'attachment' && meta.source.kind !== 'session-file') return <div ref={box} className={FIT_BUBBLE}><ExtensionBundleCard meta={meta} card={{ source: meta.source, messageId }} isMine={isMine} senderName={senderName} chatId={chatId} />{caption}</div>
   if (meta.source.kind === 'gone') {
