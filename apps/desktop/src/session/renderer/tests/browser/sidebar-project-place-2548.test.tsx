@@ -34,7 +34,8 @@ const slots = readShellSlots()!;
 function TaskPageRows() {
   const all = useSyncExternalStore(slots.subscribeSlots, slots.getSlots);
   const places = [...all].flatMap(([key, element]) => (key.startsWith(ONE_LIST_PROJECT_SLOT_PREFIX) ? [[key.slice(ONE_LIST_PROJECT_SLOT_PREFIX.length), element] as const] : []));
-  return [...places].map(([chatId, element]) => createPortal(<div data-drawn={chatId} style={{ height: 58 }}>{chatId}</div>, element, chatId));
+  // Not the list's 58px first guess for a line: the line must be measured once the row is drawn, not guessed.
+  return [...places].map(([chatId, element]) => createPortal(<div data-drawn={chatId} style={{ height: 64 }}>{chatId}</div>, element, chatId));
 }
 
 const at = (minute: number) => new Date(Date.UTC(2099, 0, 1, 0, minute)).toISOString();
@@ -61,6 +62,13 @@ const render = (list: typeof chats) =>
 /** The list's lines top to bottom: a conversation row, or the task page's row in the place left for it. */
 const lines = () => [...harness.container.querySelectorAll<HTMLElement>('[data-chat-row], [data-drawn]')].map((line) => line.dataset.chatRow ?? `drawn:${line.dataset.drawn}`);
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+/** Where each mounted line sits: every line starts where the one above it ends (no overlap, no gap). */
+const gaps = () => {
+  const placed = [...harness.container.querySelectorAll<HTMLElement>('[data-index]')]
+    .map((line) => ({ index: Number(line.dataset.index), box: line.getBoundingClientRect() }))
+    .sort((a, b) => a.index - b.index);
+  return placed.slice(1).map((line, i) => Math.round(line.box.top - placed[i]!.box.bottom));
+};
 
 it('the new project\'s row is in its place before the next frame, and its conversation row takes that place', async () => {
   await page.viewport(1000, 800);
@@ -80,18 +88,21 @@ it('the new project\'s row is in its place before the next frame, and its conver
   const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
   environment.IS_REACT_ACT_ENVIRONMENT = false;
   let seenAtFrame: string[] = [];
+  let gapsAtFrame: number[] = [];
   try {
-    const frame = nextFrame().then(() => { seenAtFrame = lines(); });
+    const frame = nextFrame().then(() => { seenAtFrame = lines(); gapsAtFrame = gaps(); });
     runInAction(() => { accountProjectsStore.list = [{ chatId: 'blink', name: 'Blink', archived: false, activeAt: created, bindings: [] }]; });
     await frame;
   } finally {
     environment.IS_REACT_ACT_ENVIRONMENT = true;
   }
   expect(seenAtFrame, 'drawn in its place by the first frame after the list learnt of it').toEqual(['drawn:blink', 'room', 'older']);
+  expect(gapsAtFrame, 'and the rows below it already make room for it in that frame').toEqual([0, 0]);
 
   // Its group reaches the chat list (created when the project was, no message yet).
   await render([...chats, chat({ id: 'blink', kind: 'group', name: 'Blink', avatar: null, member_user_ids: ['me'], created_at: created })]);
   expect(lines()).toEqual(['blink', 'room', 'older']);
+  expect(gaps(), 'the conversation row is measured as it arrives').toEqual([0, 0]);
   expect(document.querySelector('[data-drawn]'), 'the task page\'s row went with its place').toBeNull();
   const row = harness.container.querySelector<HTMLElement>('[data-chat-row="blink"]')!;
   expect(row.getBoundingClientRect().top, 'the conversation row is where the project row was: the top line').toBeLessThan(

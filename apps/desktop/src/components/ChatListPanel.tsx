@@ -3,6 +3,7 @@ import { useNativeAgentChats } from '@/hooks/useNativeAgentChats'
 import { createChatMembershipProjection } from '@/lib/chatRowDerivations'
 import { memoizeByReference } from '@/lib/memoizeByReference'
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type KeyboardEventHandler, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useStableHandler } from '@/hooks/useStableHandler'
 import { useTranslation } from 'react-i18next'
@@ -135,21 +136,33 @@ const lineChatId = (row: ChatItem | OneListProjectLine) => (isOneListProjectLine
 /**
  * #2548 where an account project with no conversation row yet stands in the one list: the task page draws the project's
  * row into this element (shell slot oneListProjectSlotKey), as it needs the task page's context. Nothing of the shell's
- * goes in it.
+ * goes in it. Its line is measured once that row is in it (`onDrawn`): measured empty, the rows below would cover it
+ * until the next measurement.
  */
-const OneListProjectSlot = memo(function OneListProjectSlot({ chatId, joinPos, joinOnScreen }: {
+const OneListProjectSlot = memo(function OneListProjectSlot({ chatId, joinPos, joinOnScreen, onDrawn }: {
   chatId: string
   /** The joined box's segment it draws, as a conversation row does (ChatRow). */
   joinPos?: SidebarJoin['pos']
   joinOnScreen?: boolean
+  onDrawn: (slot: HTMLElement) => void
 }) {
   const place = useCallback((element: HTMLDivElement) => {
     const slots = readShellSlots()
     if (!slots) throw new Error('shell slots are not installed: the one list cannot place a project row')
     const key = oneListProjectSlotKey(chatId)
+    // The task page draws in its own commit, right after this one and before the frame is painted.
+    const drawn = new MutationObserver(() => {
+      if (!element.firstElementChild) return
+      drawn.disconnect()
+      onDrawn(element)
+    })
+    drawn.observe(element, { childList: true })
     slots.setSlot(key, element)
-    return () => slots.setSlot(key, null)
-  }, [chatId])
+    return () => {
+      drawn.disconnect()
+      slots.setSlot(key, null)
+    }
+  }, [chatId, onDrawn])
   return <div ref={place} data-one-list-project={chatId} data-join={joinPos} data-join-on={joinOnScreen || undefined} />
 })
 
@@ -862,6 +875,10 @@ export function ChatListPanel({
     return () => observer.disconnect()
   }, [sidebarScroller, hasSidebarLines])
   const windowStyle: React.CSSProperties = { height: lineWindow.getTotalSize(), position: 'relative' }
+  // A project line (OneListProjectSlot) is measured once the task page has drawn its row, before that frame is painted.
+  const measureDrawnLine = useStableHandler((slot: HTMLElement) => {
+    flushSync(() => lineWindow.measureElement(slot.parentElement))
+  })
   // Stable: the global shortcut effect calls it and must not re-subscribe on every render.
   const focusChatRow = useStableHandler((chatId: string | null) => {
     if (!chatId) return
@@ -1090,8 +1107,8 @@ export function ChatListPanel({
           {lineWindow.getVirtualItems().map((item) => {
             const { row, join } = sidebarLines[item.index]!
             return (
-              <div key={item.key} data-index={item.index} ref={lineWindow.measureElement} style={lineStyle(item.start - windowMargin)}>
-                {isOneListProjectLine(row) ? <OneListProjectSlot chatId={row.projectChatId} joinPos={join?.pos} joinOnScreen={join?.onScreen} /> : renderChatRow(row, join)}
+              <div key={item.key} data-index={item.index} ref={isOneListProjectLine(row) ? undefined : lineWindow.measureElement} style={lineStyle(item.start - windowMargin)}>
+                {isOneListProjectLine(row) ? <OneListProjectSlot chatId={row.projectChatId} joinPos={join?.pos} joinOnScreen={join?.onScreen} onDrawn={measureDrawnLine} /> : renderChatRow(row, join)}
               </div>
             )
           })}
