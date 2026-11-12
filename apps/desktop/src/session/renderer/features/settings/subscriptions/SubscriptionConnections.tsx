@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { ChevronDown, MoreHorizontal, Plus } from '@/lib/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config'
-import { agentConnectionForm, type AgentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload'
+import { type AgentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { onMachineEvent } from '@renderer/lib/ipc'
 import { subscriptionSwitchProgressChannel } from '@shared/core/sessions/subscriptionSwitchEvents'
@@ -32,9 +32,11 @@ import {
 } from '@renderer/lib/ui/dropdown-menu'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { useLibraryHost } from '@renderer/features/library/library-host'
+import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store'
 import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog'
 import { harnessModelCredentialKey } from '@renderer/lib/stores/use-harness-model-credential'
 import { resolveSignInMethod } from '../agents-page/agent-account'
+import { useAgentSignIn } from '../agents-page/use-agent-sign-in'
 import { dropIfNeverSignedIn } from './drop-unsigned-connection'
 import { rendererLogger } from '@/lib/log'
 import type { SubscriptionUsageWindow } from '@gugu/session-core/agents/plugins'
@@ -46,34 +48,10 @@ import {
   SUBSCRIPTION_STALE_MS,
   subscriptionKey
 } from './subscription-queries'
-import { NEARLY_USED_PERCENT, windowLabel } from './subscription-view'
-
-function connectionsKey(machine: string | null, providerId: string) {
-  return ['subscriptions', machine ?? 'local', providerId, 'connections']
-}
-
-/** 有连接的家:Claude / Codex(账号 + API Key),以及声明了 API Key 连接的家(#2507)。 */
-export function useSubscriptionConnections(
-  machine: string | null,
-  agent: Pick<AgentPayload, 'id' | 'capabilities'>,
-  background = false
-) {
-  const providerId = agent.id
-  return useQuery({
-    queryKey: connectionsKey(machine, providerId),
-    queryFn: async () => {
-      const result = await (
-        await getAgentConfigRuntimeClient(machine)
-      ).listConnections({ providerId })
-      if (!result.success) throw new Error(errorText(result.error))
-      return result.data
-    },
-    enabled: agentConnectionForm(agent) !== null,
-    staleTime: 30_000,
-    retry: background,
-    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30_000)
-  })
-}
+import { NEARLY_USED_PERCENT, payerLine, windowLabel } from './subscription-view'
+import { nativeConfigured, useConnectionDetails, useListedConnections } from './listed-connections'
+import { SwitchNoticeLine } from './SwitchNoticeLine'
+import './subscriptions.css'
 
 /**
  * 切换没成时给行摆的一句话。`gentle`=被拒而不是出错(有会话正在工作),不飘红。
@@ -87,7 +65,19 @@ export type SwitchNotice = {
   progress?: { closed: number; total: number } | null
 }
 
-/** `onError` 把切换失败的原因交给行去摆(整行宽度);这里只管菜单与按钮,❌ 在窄的操作列里画长句。 */
+/**
+ * 「添加连接」里的「账号」是哪一种:
+ *  · `connection` —— Claude / Codex:另起一个账号连接、各自登录(多账号);
+ *  · `cli` —— 其余能在咕咕里登录的家:登它 CLI 自己那一份,登上后它就是「现有 CLI 配置」。
+ */
+type AccountMethod = 'connection' | 'cli' | null
+
+/**
+ * `onError` 把切换失败的原因交给行去摆(整行宽度);这里只管菜单与按钮,❌ 在窄的操作列里画长句。
+ *
+ * 只列真有东西的连接(`useListedConnections`)。一个都没有时只有「添加连接」,点了直接是表单,❌「切换连接 ▾」
+ * 下拉里摆一个空的「现有 CLI 配置」(owner 2026-11-12)。表单里的方式照这家支持的给:账号 | API Key。
+ */
 export function SubscriptionConnections({
   agent,
   machine,
@@ -97,13 +87,14 @@ export function SubscriptionConnections({
   open: requestedOpen,
   onOpenChange,
   anchor,
-  addDirectly = false,
   settingsRows = false,
+  embedded = false,
   description
 }: {
   settingsRows?: boolean
+  /** 嵌在订阅页那一行里:只画这几行，不另起「连接」一组(资源库详情里才有组头)。 */
+  embedded?: boolean
   description?: ReactNode
-  addDirectly?: boolean
   trigger?: ReactElement | null
   label?: ReactNode
   open?: boolean
@@ -124,18 +115,43 @@ export function SubscriptionConnections({
     [onOpenChange]
   )
   const [adding, setAdding] = useState(false)
-  const changeOpen = (next: boolean, details?: { reason?: string; event?: Event }) => {
-    if (next && addDirectly) setAdding(true)
-    else setOpen(next, details)
-  }
   const queryClient = useQueryClient()
   const showSignIn = useShowModal('agentSignInModal')
   const host = useLibraryHost()
-  const connections = useSubscriptionConnections(machine, agent, settingsRows)
-  const form = agentConnectionForm(agent)
+  // 资源库详情里后台重读失败就退避重试(读数留着);订阅页那一行读失败当场说出来。
+  const { listed, connections, native, form, cliSignIn } = useListedConnections(machine, agent, settingsRows && !embedded)
+  const empty = listed?.length === 0
+  const changeOpen = (next: boolean, details?: { reason?: string; event?: Event }) => {
+    if (next && empty) setAdding(true)
+    else setOpen(next, details)
+  }
   const method = resolveSignInMethod(agent.capabilities)
-  // 账号连接(多个账号、各自登录)只有 Claude / Codex;其余家的账号就是它 CLI 自己那份登录,❌ 在这里再开一个。
+  // 账号连接(多个账号、各自登录)只有 Claude / Codex;其余家的账号就是它 CLI 自己那份登录(`cliSignIn`)。
   const canSignIn = !!form?.accounts && method?.kind === 'cli-login' && (!machine || !!method.headlessArgs)
+  // 面板也从新建任务、会话里打开:CLI 自己那份登在连接所属的那台机器上,❌ 落到资源库正在看的那台。
+  const remote = machine
+    ? {
+        deviceId: machine,
+        deviceLabel:
+          host.remote?.deviceId === machine
+            ? host.remote.deviceLabel
+            : (remoteHostsStore.device(machine)?.label ?? machine)
+      }
+    : null
+  const cli = useAgentSignIn(agent, { probe: settingsRows && cliSignIn, remote })
+  const rawCurrent = connections.data?.find((c) => c.current)
+  /**
+   * CLI 自己的账号:现有 CLI 配置还没登上(或几个程序还差一步)才给,❌ 对登好的再登一遍。
+   * 正在用 API Key 连接时不给:那一趟登录会带着这把 key 的环境跑。
+   */
+  const cliAccount =
+    cliSignIn &&
+    !!cli.row?.canSignIn &&
+    rawCurrent?.kind !== 'api-key' &&
+    (native.data?.status.kind !== 'authenticated' || cli.row.status === 'partial')
+  const accountMethod: AccountMethod = canSignIn ? 'connection' : cliAccount ? 'cli' : null
+  const apiKeyMethod = form !== null
+  const canAdd = accountMethod !== null || apiKeyMethod
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: subscriptionKey(machine, agent.id) })
     void queryClient.invalidateQueries({ queryKey: harnessModelCredentialKey(agent.id) })
@@ -175,6 +191,10 @@ export function SubscriptionConnections({
       }
     }
   })
+  // 没有连接可管的家只有它 CLI 自己那一份:列着的就是正在用的,选它没有可切的。
+  const select = (id: string) => {
+    if (form) action.mutate({ kind: 'select', id })
+  }
   // 跟最近一次动作走:新动作一开始 `action.error` 就清空,重叠的两次里先失败的那次不会把原因留下。
   const busy = sessionsBusyOf(action.error)
   // 带着「关掉」还被拒 = 那台机器上的咕咕不认这一格(旧版本):说清楚去更新，❌ 再摆一个按了没反应的按钮。
@@ -219,6 +239,28 @@ export function SubscriptionConnections({
           }
     )
   }, [failure, tone, refusedId, closeAndSwitch, closing, progress, onError])
+  /**
+   * 从新建任务、会话里打开(`open` 由外面给):一个连接都没有就直接是「添加连接」表单,❌ 先弹一个只有
+   * 「添加连接」一项的菜单。刚存好一把 API Key 回来重开菜单的那一下除外(列表还没重读完)。
+   */
+  const reopenedAfterSave = useRef(false)
+  const wasRequested = useRef(false)
+  const addWhenRead = useRef(false)
+  const listedRead = listed !== undefined
+  useEffect(() => {
+    const opened = !!requestedOpen && !wasRequested.current
+    wasRequested.current = !!requestedOpen
+    if (opened) {
+      addWhenRead.current = !reopenedAfterSave.current
+      reopenedAfterSave.current = false
+    }
+    if (!requestedOpen) addWhenRead.current = false
+    if (!addWhenRead.current || !listedRead) return
+    addWhenRead.current = false
+    if (!empty || !canAdd) return
+    setAdding(true)
+    setOpen(false)
+  }, [requestedOpen, listedRead, empty, canAdd, setOpen])
   /** 刚加的账号连接窗口关了还没登上:这条没有用处,拿掉(见 `dropIfNeverSignedIn`)。失败只记日志 —— 留下一条就是原来的样子。 */
   const dropIfUnsigned = async (connectionId: string) => {
     try {
@@ -253,8 +295,34 @@ export function SubscriptionConnections({
       onClose: fresh ? () => void dropIfUnsigned(connectionId) : finished
     })
   }
+  /** 「添加连接 → 账号」在只能登 CLI 自己那一份的家:就是从前那颗「登录」做的事,同一个登录窗口。 */
+  const signInCli = () => {
+    setAdding(false)
+    setOpen(false)
+    cli.openSignIn()
+  }
+  const onCreated = (connection: HarnessConnection) => {
+    refresh()
+    setAdding(false)
+    if (connection.kind === 'account') signIn(connection.id, true)
+    else {
+      reopenedAfterSave.current = true
+      setOpen(true)
+    }
+  }
+  const connectionForm = (
+    <ConnectionForm
+      agent={agent}
+      machine={machine}
+      account={accountMethod}
+      apiKey={apiKeyMethod}
+      form={form}
+      onCreated={onCreated}
+      onCliSignIn={signInCli}
+    />
+  )
   // 正在用的连接登不上了(失效 / 没登录):「登录」直接摆在外面,❌ 藏进「切换连接 → ⋯」两层菜单里。
-  const current = connections.data?.find((c) => c.current)
+  const current = listed?.find((c) => c.current)
   const currentStatus = useConnectionDetails(
     machine,
     agent.id,
@@ -275,48 +343,63 @@ export function SubscriptionConnections({
       )}
     </Button>
   )
+  const options = (selectItem: boolean) =>
+    listed?.map((connection) => (
+      <ConnectionOption
+        key={connection.id}
+        connection={connection}
+        agent={agent}
+        machine={machine}
+        busy={action.isPending}
+        selectItem={selectItem}
+        onSignIn={canSignIn ? () => signIn(connection.id) : undefined}
+        onRemove={() => action.mutate({ kind: 'remove', id: connection.id })}
+      />
+    ))
   return (
     <>
       {settingsRows ? (
         <ConnectionSettingsRows
           signIn={currentSignIn || undefined}
-          connections={connections.data}
+          connections={listed}
+          unreadable={!!connections.error && listed === undefined}
           open={open}
           onOpenChange={setOpen}
-          onSelect={(id) => action.mutate({ kind: 'select', id })}
-          onAdd={() => setAdding(true)}
+          onSelect={select}
+          onAdd={canAdd ? () => setAdding(true) : undefined}
+          addHint={translate(
+            accountMethod && apiKeyMethod
+              ? 'agentsPage.connectionAddHint'
+              : apiKeyMethod
+                ? 'agentsPage.connectionAddHintApiKey'
+                : 'agentsPage.connectionAddHintAccount'
+          )}
           busy={action.isPending}
           description={description}
+          agentId={agent.id}
+          embedded={embedded}
           notice={
-            failure && (
-              <p
-                className={tone === 'error' ? 'subscription-error' : 'subscription-note'}
-                role={tone === 'error' ? 'alert' : 'status'}
-              >
-                {failure}
-                {refusedId && (
-                  <Button size="sm" onClick={closeAndSwitch}>
-                    {translate('subscriptions.connections.closeAndSwitch')}
-                  </Button>
-                )}
-              </p>
+            failure ? (
+              <SwitchNoticeLine
+                notice={{
+                  tone,
+                  text: failure,
+                  ...(refusedId ? { closeAndSwitch } : {}),
+                  ...(closing ? { progress } : {})
+                }}
+              />
+            ) : (
+              connections.error && (
+                <p className="subscription-error" role="alert">
+                  {errorText(connections.error)}
+                </p>
+              )
             )
           }
           form={
-            adding && (
+            adding && canAdd && (
               <div className="p-4">
-                <ConnectionForm
-                  agent={agent}
-                  machine={machine}
-                  canSignIn={canSignIn}
-                  form={form}
-                  onCreated={(connection) => {
-                    refresh()
-                    setAdding(false)
-                    if (connection.kind === 'account') signIn(connection.id, true)
-                    else setOpen(true)
-                  }}
-                />
+                {connectionForm}
                 <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>
                   {translate('agentsPage.cancel')}
                 </Button>
@@ -324,26 +407,14 @@ export function SubscriptionConnections({
             )
           }
         >
-          {open &&
-            connections.data?.map((connection) => (
-              <ConnectionOption
-                key={connection.id}
-                connection={connection}
-                agent={agent}
-                machine={machine}
-                busy={action.isPending}
-                selectItem
-                onSignIn={canSignIn ? () => signIn(connection.id) : undefined}
-                onRemove={() => action.mutate({ kind: 'remove', id: connection.id })}
-              />
-            ))}
+          {open && options(true)}
         </ConnectionSettingsRows>
       ) : (
         <DropdownMenu open={open} onOpenChange={changeOpen}>
           {/* 「重新登录」与「切换连接」并排一行;操作列本身是竖排的,❌ 让它俩上下叠。 */}
           <div className="flex items-center gap-1">
             {trigger === undefined && currentSignIn}
-            {trigger !== null && (
+            {trigger !== null && (canAdd || !empty) && (
               <DropdownMenuTrigger
                 render={
                   trigger ?? (
@@ -356,12 +427,15 @@ export function SubscriptionConnections({
                   )
                 }
               >
-                {label ?? (
-                  <>
-                    {translate('subscriptions.connections.switch')}
-                    <ChevronDown className="ml-1 size-3" />
-                  </>
-                )}
+                {label ??
+                  (empty ? (
+                    translate('subscriptions.connections.add')
+                  ) : (
+                    <>
+                      {translate('subscriptions.connections.switch')}
+                      <ChevronDown className="ml-1 size-3" />
+                    </>
+                  ))}
               </DropdownMenuTrigger>
             )}
           </div>
@@ -374,7 +448,7 @@ export function SubscriptionConnections({
                 {failure}
               </p>
             )}
-            {connections.isPending && (
+            {listed === undefined && !connections.error && (
               <p className="p-2 text-xs">{translate('subscriptions.checking')}</p>
             )}
             {connections.error && (
@@ -382,87 +456,41 @@ export function SubscriptionConnections({
                 {errorText(connections.error)}
               </p>
             )}
-            <DropdownMenuRadioGroup
-              value={connections.data?.find((c) => c.current)?.id ?? ''}
-              onValueChange={(id) => action.mutate({ kind: 'select', id })}
-            >
-              {open &&
-                connections.data?.map((connection) => (
-                  <ConnectionOption
-                    key={connection.id}
-                    connection={connection}
-                    agent={agent}
-                    machine={machine}
-                    busy={action.isPending}
-                    onSignIn={canSignIn ? () => signIn(connection.id) : undefined}
-                    onRemove={() => action.mutate({ kind: 'remove', id: connection.id })}
-                  />
-                ))}
+            <DropdownMenuRadioGroup value={current?.id ?? ''} onValueChange={select}>
+              {open && options(false)}
             </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              data-testid="subscription-add-connection"
-              onClick={() => {
-                setOpen(false)
-                setAdding(true)
-              }}
-            >
-              <Plus className="size-4" />
-              {translate('subscriptions.connections.add')}
-            </DropdownMenuItem>
+            {canAdd && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  data-testid="subscription-add-connection"
+                  onClick={() => {
+                    setOpen(false)
+                    setAdding(true)
+                  }}
+                >
+                  <Plus className="size-4" />
+                  {translate('subscriptions.connections.add')}
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-      <Dialog open={adding && !settingsRows} onOpenChange={setAdding}>
+      <Dialog open={adding && canAdd && !settingsRows} onOpenChange={setAdding}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>
               {translate('subscriptions.connections.addTitle', { provider: agent.name })}
             </DialogTitle>
           </DialogHeader>
-          <DialogContentArea>
-            <ConnectionForm
-              agent={agent}
-              machine={machine}
-              canSignIn={canSignIn}
-              form={form}
-              onCreated={(connection) => {
-                refresh()
-                setAdding(false)
-                if (connection.kind === 'account') signIn(connection.id, true)
-                else setOpen(true)
-              }}
-            />
-          </DialogContentArea>
+          <DialogContentArea>{connectionForm}</DialogContentArea>
         </DialogContent>
       </Dialog>
     </>
   )
 }
 
-/** 一个连接的登录读数与套餐。菜单里的行和菜单外的「重新登录」读同一份(同一把键)。 */
-function useConnectionDetails(
-  machine: string | null,
-  providerId: string,
-  connectionId: string | undefined
-) {
-  return useQuery({
-    queryKey: [...connectionsKey(machine, providerId), connectionId],
-    queryFn: async () => {
-      const client = await getAgentConfigRuntimeClient(machine)
-      const input = { providerId, connectionId: connectionId! }
-      const [status, plan] = await Promise.all([
-        client.refreshAuthStatus(input),
-        client.readSubscription(input)
-      ])
-      if (!status.success) throw new Error(errorText(status.error))
-      return { status: status.data, plan: plan.success ? plan.data : null }
-    },
-    enabled: connectionId !== undefined,
-    staleTime: 30_000,
-    retry: false
-  })
-}
 
 function ConnectionOption({
   connection,
@@ -502,10 +530,14 @@ function ConnectionOption({
     !!onSignIn && connection.kind === 'account' && status?.kind === 'unauthenticated'
   const name =
     connection.kind === 'native' ? translate('subscriptions.connections.existing') : connection.name
+  const plan = details.data?.plan
   const description =
     status?.kind === 'authenticated' && status.account
       ? status.account
-      : connection.kind === 'api-key'
+      : // 「现有 CLI 配置」写它登的是谁、谁在付钱(Pi 这类没有账号读数的家靠这一条)。
+        connection.kind === 'native' && plan && nativeConfigured(details.data)
+        ? payerLine(plan, translate, false)
+        : connection.kind === 'api-key'
         ? [
             connection.endpoint
               ? new URL(connection.endpoint).host
@@ -635,18 +667,24 @@ function remainingLine(
 function ConnectionForm({
   agent,
   machine,
-  canSignIn,
+  account,
+  apiKey,
   form,
-  onCreated
+  onCreated,
+  onCliSignIn
 }: {
   agent: AgentPayload
   machine: string | null
-  canSignIn: boolean
+  account: AccountMethod
+  apiKey: boolean
   form: AgentConnectionForm | null
   onCreated: (connection: HarnessConnection) => void
+  onCliSignIn: () => void
 }) {
   const { translate } = useSessionMessages()
-  const [kind, setKind] = useState<'account' | 'api-key'>(canSignIn ? 'account' : 'api-key')
+  const [kind, setKind] = useState<'account' | 'api-key'>(account || !apiKey ? 'account' : 'api-key')
+  // 登它 CLI 自己那一份:不存连接、不起名，直接是那个登录窗口。
+  const cliAccount = kind === 'account' && account === 'cli'
   const [thirdParty, setThirdParty] = useState(false)
   // 地址:可选的家勾「第三方」才出;必填的家直接摆出来(#2507,格子照这家的声明)。
   const endpointField = form?.endpoint ?? 'none'
@@ -680,7 +718,8 @@ function ConnectionForm({
       className="subscription-connection-form"
       onSubmit={(event) => {
         event.preventDefault()
-        create.mutate(event.currentTarget)
+        if (cliAccount) onCliSignIn()
+        else create.mutate(event.currentTarget)
       }}
     >
       <div
@@ -688,7 +727,7 @@ function ConnectionForm({
         role="group"
         aria-label={translate('subscriptions.connections.method')}
       >
-        {canSignIn && (
+        {account && (
           <Button
             type="button"
             variant={kind === 'account' ? 'secondary' : 'ghost'}
@@ -698,14 +737,16 @@ function ConnectionForm({
             {translate('subscriptions.connections.account')}
           </Button>
         )}
-        <Button
-          type="button"
-          variant={kind === 'api-key' ? 'secondary' : 'ghost'}
-          aria-pressed={kind === 'api-key'}
-          onClick={() => setKind('api-key')}
-        >
-          API Key
-        </Button>
+        {apiKey && (
+          <Button
+            type="button"
+            variant={kind === 'api-key' ? 'secondary' : 'ghost'}
+            aria-pressed={kind === 'api-key'}
+            onClick={() => setKind('api-key')}
+          >
+            API Key
+          </Button>
+        )}
       </div>
       {kind === 'api-key' ? (
         <>
@@ -757,20 +798,26 @@ function ConnectionForm({
         </>
       ) : (
         <p className="subscription-connection-description">
-          {translate('subscriptions.connections.accountHint')}
+          {cliAccount
+            ? translate('subscriptions.connections.cliAccountHint', { provider: agent.name })
+            : translate('subscriptions.connections.accountHint')}
         </p>
       )}
-      <label>
-        {translate('subscriptions.connections.remark')}
-        <Input
-          name="name"
-          maxLength={80}
-          placeholder={translate('subscriptions.connections.remarkPlaceholder')}
-        />
-      </label>
-      <p className="subscription-connection-description">
-        {translate('subscriptions.connections.private')}
-      </p>
+      {!cliAccount && (
+        <>
+          <label>
+            {translate('subscriptions.connections.remark')}
+            <Input
+              name="name"
+              maxLength={80}
+              placeholder={translate('subscriptions.connections.remarkPlaceholder')}
+            />
+          </label>
+          <p className="subscription-connection-description">
+            {translate('subscriptions.connections.private')}
+          </p>
+        </>
+      )}
       {create.error && (
         <p className="subscription-error" role="alert">
           {errorText(create.error)}
@@ -779,9 +826,11 @@ function ConnectionForm({
       <Button type="submit" disabled={create.isPending}>
         {create.isPending
           ? translate('subscriptions.connections.saving')
-          : kind === 'account'
-            ? translate('subscriptions.connections.addAndSignIn')
-            : translate('subscriptions.connections.save')}
+          : cliAccount
+            ? translate('subscriptions.connections.signIn')
+            : kind === 'account'
+              ? translate('subscriptions.connections.addAndSignIn')
+              : translate('subscriptions.connections.save')}
       </Button>
     </form>
   )

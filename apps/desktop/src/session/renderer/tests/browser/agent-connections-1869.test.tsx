@@ -17,13 +17,22 @@ const mocks = vi.hoisted(() => ({
   login: vi.fn(),
   catalog: vi.fn()
 }))
-vi.mock('@renderer/lib/ipc', () => ({
+vi.mock('@renderer/lib/ipc', async (original) => ({
+  ...(await original<typeof import('@renderer/lib/ipc')>()),
   rpc: { agents: {} },
   rpcOn: () => ({ agents: {} }),
   events: { on: () => () => {} },
   onMachineEvent: () => () => {}
 }))
-vi.mock('@renderer/lib/modal/modal-provider', () => ({ useShowModal: () => mocks.login }))
+vi.mock('@renderer/lib/modal/modal-provider', async (original) => ({
+  ...(await original<typeof import('@renderer/lib/modal/modal-provider')>()),
+  useShowModal: () => mocks.login
+}))
+vi.mock('@renderer/lib/stores/use-agent-auth-status', () => ({
+  useAgentAuthStatus: () => ({ auth: null, refresh: async () => {} }),
+  useAgentAuthStatuses: (_: string, programs: unknown[]) => ({ auths: programs.map(() => null), refresh: async () => {} }),
+  useExpiredAgentIds: () => new Set()
+}))
 vi.mock('@renderer/features/sessions/session-config/platform-model-catalog', () => ({
   usePlatformModelCatalog: () => ({ models: [{ id: 'test-model' }], settled: true })
 }))
@@ -105,14 +114,18 @@ afterEach(() => {
 async function open() {
   await userEvent.click(page.getByRole('combobox', { name: 'Current connection', exact: true }))
 }
-it('keeps native configuration neutral and switches through the real select', async () => {
+// owner 2026-11-12:没登上的「现有 CLI 配置」不列;状态那一行与订阅页同一种写法(谁在付钱)。
+it('does not list an unsigned native configuration and switches through the real select', async () => {
   await until(
-    'native connection loads',
-    () => host.textContent?.includes('Existing CLI configuration') === true
+    'the status line is read',
+    () => host.querySelector('[data-testid="connection-status-codex"]')?.textContent === 'Not signed in'
   )
-  expect(host.textContent).toContain('Gugu models are available')
-  expect(host.textContent).not.toContain('Not signed in')
+  const select = page.getByRole('combobox', { name: 'Current connection', exact: true })
+  await expect.element(select).toBeEnabled()
+  expect(select.element().textContent).toBe('None')
+  expect(host.textContent).not.toContain('Existing CLI configuration')
   await open()
+  expect(document.querySelector('[data-testid="connection-native"]')).toBeNull()
   await userEvent.click(page.getByRole('option', { name: /Other account/ }))
   await until('switch commits', () => mocks.select.mock.calls.length === 1)
   expect(mocks.select).toHaveBeenCalledWith({ providerId: 'codex', connectionId: 'other' })
@@ -126,10 +139,7 @@ it('keeps native configuration neutral and switches through the real select', as
   )
 })
 it('retains removal of an inactive account inside its existing options menu', async () => {
-  await until(
-    'native connection loads',
-    () => host.textContent?.includes('Existing CLI configuration') === true
-  )
+  await expect.element(page.getByRole('combobox', { name: 'Current connection', exact: true })).toBeEnabled()
   await open()
   await userEvent.click(
     page.getByRole('button', { name: 'Options for Other account', exact: true })

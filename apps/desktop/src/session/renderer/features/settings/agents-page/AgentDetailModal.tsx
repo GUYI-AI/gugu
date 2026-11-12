@@ -1,4 +1,3 @@
-import { agentSupportsConnectionManagement } from '@shared/core/agents/agent-payload';
 import { SettingsGroup, SettingsRow } from '@/components/settings/SettingsPrimitives';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { observer } from 'mobx-react-lite';
@@ -7,6 +6,7 @@ import { useManagementAgent } from '@renderer/lib/stores/use-agents';
 import { Dialog, DialogContent, DialogContentArea, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
 import { ModalLayout } from '@renderer/lib/ui/modal-layout';
 import { cn } from '@renderer/utils/utils';
+import { agentOffersConnections } from './agent-account';
 import { AgentModalHeaderSection } from './AgentModalHeaderSection';
 import { InstallSection } from './InstallSection';
 
@@ -37,7 +37,8 @@ const AgentDetailModalContent = observer(function AgentDetailModalContent({
 }) {
   const { translate } = useSessionMessages();
   const { data: agentPayload } = useManagementAgent(agentId);
-  const compact = agentSupportsConnectionManagement(agentPayload);
+  // 有「连接」一节的家都是同一种样子(#2507):与 Claude / Codex 一样的卡头与固定高度的内容。
+  const compact = agentOffersConnections(agentPayload);
   /**
    * 资源库看的是一台离线的机器(#6264):照旧画它上次的样子,但一个动作都做不了 —— 那台机器此刻收不到。
    * 用一个 disabled 的 fieldset 把整块面板里的按钮、输入框一次关掉,❌ 每个控件各判一遍(总会漏一个)。

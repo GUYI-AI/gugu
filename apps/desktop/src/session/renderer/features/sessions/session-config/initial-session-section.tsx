@@ -1,5 +1,5 @@
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
-import { agentSupportsConnectionManagement } from '@shared/core/agents/agent-payload';
+import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { DEFAULT_FREE_PLATFORM_MODEL, DEFAULT_PLATFORM_MODEL_BY_PROVIDER } from '@shared/core/sessions/new-session-defaults';
 import {
@@ -76,7 +76,7 @@ import {
 } from './harness-model-field';
 import { useHarnessModelOptions } from './use-harness-model-options';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
-import { HARNESS_MODEL_CATALOG_QUERY_KEY, useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
+import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { queryClient } from '@renderer/lib/query-client';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useHarnessModelCredential } from '@renderer/lib/stores/use-harness-model-credential';
@@ -893,61 +893,17 @@ export function useInitialSessionState(
    *    于是解锁组、登录终端、弹窗的「去登录」对它们一概不出现。
    */
   const cliLoginMethod = signInTarget?.method ?? null;
-  /** Claude/Codex 复用连接面板，留在当前草稿；其他家保留资源库/远端登录入口。 */
+  /**
+   * 「去登录」= 打开这一家的连接面板(#2507,与订阅页、资源库详情同一块),留在当前草稿:完成或取消后回到这里,
+   * 输入、附件、任务选择都在。一个连接都没有时面板直接是「添加连接」表单。登哪台机器由面板按 `machine` 定。
+   * 能走到这里的家都有一种能在咕咕里发起的登录(`cliLoginMethod`),所以都有这个面板(`agentOffersConnections`)。
+   */
   const connections = useConnectionPanel();
-  const showAgentSignIn = useShowModal('agentSignInModal');
-  const remoteAgentCommand = agents?.find((agent) => agent.id === providerId)?.command ?? null;
   const openAgentAccount = useCallback((anchor?: HTMLElement) => {
     if (!providerId || !cliLoginMethod) return;
     const selectedAgent = agents?.find(item => item.id === providerId);
-    if (selectedAgent && agentSupportsConnectionManagement(selectedAgent)) {
-      connections.show(selectedAgent, machine, anchor);
-      return;
-    }
-    /**
-     * #6264 所选机器不是本机:在**那台机器上**登录,❌ 跳本机的资源库 —— 那一页画的是这台电脑的安装与登录
-     * (/opt/homebrew/bin/codex、「已登录」),当成那台机器的就是张冠李戴。窗口还是那一个登录窗口,
-     * 命令跑在那台机器上、链接在这台电脑的浏览器里开;登完 / 关窗都让那台机器的目录重问一遍。
-     */
-    const refreshAfterRemoteLogin = () =>
-      void queryClient.invalidateQueries({ queryKey: [...HARNESS_MODEL_CATALOG_QUERY_KEY, providerId] });
-    if (machine) {
-      // 别的机器上只有不靠回跳的登录能在那台机器上跑(浏览器在这台电脑上);协议登录的家说「到那台机器上敲」。
-      const cliLogin = cliLoginMethod.kind === 'cli-login' ? cliLoginMethod : null;
-      showAgentSignIn({
-        providerId,
-        providerName: agentDisplayName,
-        steps: [{ methodId: cliLoginMethod.id }],
-        remote: {
-          deviceId: machine,
-          deviceLabel: machineDevice?.label ?? machine,
-          headless: !!cliLogin?.headlessArgs,
-          command: [remoteAgentCommand?.split(/[\\/]/).filter(Boolean).pop() || providerId, ...(cliLogin?.args ?? [])].join(' '),
-        },
-        // 登没登成只有那台机器知道:登完 / 关窗都让这一家的目录(那台机器那一份在同一前缀下)重问。
-        onSuccess: refreshAfterRemoteLogin,
-        onClose: refreshAfterRemoteLogin,
-      });
-      return;
-    }
-    (
-      window as typeof window & {
-        __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void;
-      }
-    ).__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?.(providerId);
-    navigate('library', { tab: 'agents', agentId: providerId });
-  }, [
-    providerId,
-    cliLoginMethod,
-    connections.show,
-    agents,
-    navigate,
-    machine,
-    machineDevice,
-    showAgentSignIn,
-    agentDisplayName,
-    remoteAgentCommand,
-  ]);
+    if (selectedAgent && agentOffersConnections(selectedAgent)) connections.show(selectedAgent, machine, anchor);
+  }, [providerId, cliLoginMethod, connections.show, agents, machine]);
   // 上一家 —— 取消时回到它。用 ref 而不是 state:它只在切换发生时被读,不该驱动重渲染。
   const previousProviderRef = useRef<AgentProviderId | null>(null);
   // 同一家只提示一次,别在 catalog 每次刷新时重弹。

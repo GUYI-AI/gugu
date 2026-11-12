@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
-import { useLibraryHost } from '@renderer/features/library/library-host';
+import { useLibraryHost, type LibraryRemoteDevice } from '@renderer/features/library/library-host';
 import { subscriptionKey } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { useAgentAuthStatuses } from '@renderer/lib/stores/use-agent-auth-status';
 import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
@@ -18,12 +18,19 @@ import { accountRowOf, mergeAccountRows, resolveAccountTargets, type MergedAccou
  */
 export function useAgentSignIn(
   agent: AgentPayload,
-  options: { probe?: boolean } = {}
+  options: {
+    probe?: boolean;
+    /**
+     * 登哪台机器(缺席 = 资源库正在看的那台)。连接面板也从新建任务、会话里打开,那里没有资源库的机器,
+     * 由调用方按会话所在的机器给(null = 本机)。
+     */
+    remote?: Pick<LibraryRemoteDevice, 'deviceId' | 'deviceLabel'> | null;
+  } = {}
 ): { row: MergedAccountRow | null; openSignIn: () => void; refreshAuth: () => Promise<void> } {
   const targets = resolveAccountTargets(agent);
   // #6264 资源库看的是别的机器:读数与登录都在**那台机器上**(同一组动词,rpc 送到那台机器),行还是这一行。
   const host = useLibraryHost();
-  const remote = host.remote;
+  const remote = options.remote === undefined ? host.remote : options.remote;
   // 没有可登录的方法就一个都不问(空列表会被读成「问主程序」)。
   const local = useAgentAuthStatuses(
     targets.length > 0 ? agent.id : null,

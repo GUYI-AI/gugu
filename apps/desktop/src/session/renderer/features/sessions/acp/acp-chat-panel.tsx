@@ -1,7 +1,7 @@
 import { useSessionInputNotice, type SessionInputNotice } from '../session-input-notice';
 import { sessionStartupFailureCopy } from '../session-input-failure-copy';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
-import { agentSupportsConnectionManagement } from '@shared/core/agents/agent-payload';
+import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { isTranscriptDelivery } from '@/lib/pendingSessionDeliveries';
 import { resolveDeliveredAttachment } from '@renderer/lib/chat/delivered-message-presentation';
@@ -103,10 +103,8 @@ import { nudgeWorkspace } from '@renderer/features/sessions/stores/workspace-nud
 import { machineLabel } from '@renderer/lib/machine-clients';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { isEmbedVisible } from '@renderer/lib/portal-container';
-import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { platformModelIdFromRuntimeOption, platformOptionId } from '@/session/shared/platform-model-id';
 import { openComposerImage, openImageViewer } from '@/lib/imageViewer';
-import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
 import { pushTaskDirectory, taskAttachmentUsesSsh } from '@/lib/taskAttachmentTarget';
 import { droppedDirectoryMention, pathMention } from '@renderer/lib/drag-files';
@@ -189,9 +187,7 @@ import { useBoundChatView } from './use-bound-chat-view';
 import { useLastTurnSignInRequired } from './use-last-turn-sign-in';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { isAuthExpired } from '@renderer/lib/stores/harness-auth-expiry';
-import { forceRefreshHarnessModelCatalog, useHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
-import { harnessModelCredentialKey } from '@renderer/lib/stores/use-harness-model-credential';
-import { useQueryClient } from '@tanstack/react-query';
+import { useHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { filterSlashCommands } from './slash-command-matching';
 import { startupPlaceholderKey } from './startup-placeholder';
 import { canStartFreshSession } from '@shared/core/sessions/session-recovery';
@@ -1746,17 +1742,17 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   // 现在它与其余故障走同一条路:消息列表末尾的一行(spec `session-always-openable`),
   // 所以这里不再需要一个把它从整页覆盖层里摘出来的标志 —— 整页覆盖层本身已经没有了。
 
-  /** Claude/Codex 就地配置连接，不换路由或代发消息；「我已登录」仍只重试原会话。 */
+  /**
+   * 「去登录」「重新登录」= 打开这一家的连接面板(#2507,与订阅页、资源库详情同一块),就地配置:不换路由、不代发消息,
+   * 关掉后回到原会话;「我已登录」仍只重试原会话。一个连接都没有时面板直接是「添加连接」表单。
+   * 能走到这里的家都声明了一种能在咕咕里发起的登录(`cliAuthMethod`),所以都有这个面板(`agentOffersConnections`)。
+   */
   const connections = useConnectionPanel();
   const machine = store ? machineRegistry.machineOf(store.projectId) : null;
   const openAgentAccount = useCallback((anchor?: HTMLElement) => {
     if (!providerId || !cliAuthMethod) return;
-    if (agent && agentSupportsConnectionManagement(agent)) {
-      connections.show(agent, machine, anchor);
-      return;
-    }
-    navigate('library', { tab: 'agents', agentId: providerId });
-  }, [cliAuthMethod, navigate, providerId, agent, machine, connections.show]);
+    if (agent && agentOffersConnections(agent)) connections.show(agent, machine, anchor);
+  }, [cliAuthMethod, providerId, agent, machine, connections.show]);
 
   /**
    * #6264「登录已失效」:最近一轮因这家的登录不能用了而失败,且这台电脑上它此刻仍标着失效。
@@ -1769,45 +1765,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const signInExpired = lastTurnSignIn && isAuthExpired(harnessAuth);
   // 同一个信号(这一轮因凭据不能用而失败),而这家在这台电脑上压根没登录过(MiMo 没 key 时):说「还没登录」。
   const signInMissing = lastTurnSignIn && !signInExpired && harnessAuth?.status?.kind === 'unauthenticated';
-  const showSignIn = useShowModal('agentSignInModal');
-  const queryClient = useQueryClient();
-  /** 声明连接管理能力的适配器进入共享面板；其他适配器沿用既有登录方式与所属机器。 */
-  const signInAgain = useCallback((anchor?: HTMLElement) => {
-    if (!providerId || !cliAuthMethod) return;
-    if (agent && agentSupportsConnectionManagement(agent)) {
-      connections.show(agent, machine, anchor);
-      return;
-    }
-    const refresh = () => {
-      void forceRefreshHarnessModelCatalog(queryClient, providerId, 'acp');
-      void queryClient.invalidateQueries({ queryKey: harnessModelCredentialKey(providerId) });
-    };
-    const cliArgs = cliAuthMethod.kind === 'cli-login' ? cliAuthMethod.args : [];
-    showSignIn({
-      providerId,
-      providerName: agent?.name ?? providerId,
-      steps: machine
-        ? [{ methodId: cliAuthMethod.id }]
-        : [
-            {
-              methodId: cliAuthMethod.id,
-              transport: cliAuthMethod.kind === 'acp-authenticate' ? 'acp-authenticate' : 'terminal',
-            },
-          ],
-      ...(machine
-        ? {
-            remote: {
-              deviceId: machine,
-              deviceLabel: remoteHostsStore.device(machine)?.label ?? machine,
-              headless: cliAuthMethod.kind === 'cli-login' && !!cliAuthMethod.headlessArgs,
-              command: [agent?.command?.split(/[\\/]/).filter(Boolean).pop() || providerId, ...cliArgs].join(' '),
-            },
-          }
-        : {}),
-      onSuccess: refresh,
-      onClose: refresh,
-    });
-  }, [agent?.name, agent?.command, cliAuthMethod, machine, providerId, queryClient, showSignIn, agent, connections.show]);
+  /** 与「去登录」同一个面板(见上):登录失效的那一家在这里重新登,或换一个连接。 */
+  const signInAgain = openAgentAccount;
 
   // #4900 登录 ❌ 不自动发起。owner 2026-09-04:「我不登录也行啊」——自动弹登录终端会
   // 连带跑起厂商的 `<cli> login`,浏览器随即弹出授权页,这就是「强登」本身。
