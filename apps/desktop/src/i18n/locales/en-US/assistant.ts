@@ -52,8 +52,8 @@ export default {
     },
     "desktop": {
       "guguBody": "Your personal assistant for plans and everyday tasks.",
-      "projectsBody": "Work with Agents in a group for each project. Find Projects in Messages.",
-      "chatsBody": "Talk and collaborate with friends and each other’s Agents. Find Chats in Messages."
+      "projectsBody": "Work with Agents in a group for each project. Find them in the Messages list.",
+      "chatsBody": "Talk and collaborate with friends and each other’s Agents. Also in the Messages list."
     }
   },
   "hints": {
@@ -62,8 +62,7 @@ export default {
       "collaboration": "Find projects and friends here. Open one to start collaborating."
     },
     "desktop": {
-      "assistant": "Your personal assistant is here. Tell it your plans and tasks.",
-      "collaboration": "Each project is a group. Work with Agents to move it forward."
+      "assistant": "Your personal assistant is here. Tell it your plans and tasks."
     },
     "dismiss": "Got it"
   },

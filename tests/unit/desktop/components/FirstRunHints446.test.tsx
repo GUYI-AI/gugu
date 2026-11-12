@@ -86,8 +86,9 @@ describe('device-specific one-page introduction', () => {
   })
 })
 
-describe('contextual hints at all four entries', () => {
-  for (const device of ['phone', 'desktop'] as const) for (const id of ['assistant', 'collaboration'] as const) {
+describe('contextual hints at the entries each device draws', () => {
+  // GUYI-AI/gugu#2548 the desktop's one-list sidebar has no place for the collaboration note: three entries draw a hint.
+  for (const [device, id] of [['phone', 'assistant'], ['phone', 'collaboration'], ['desktop', 'assistant']] as const) {
     it(`${device} ${id}: dismisses once and does not reappear after remount`, async () => {
       setDevice(device)
       addEntry(device, id)
@@ -127,10 +128,35 @@ describe('contextual hints at all four entries', () => {
     expect(bubble('assistant')).toBeNull()
   })
 
-  it('shows one hint and does not run through other visible entries after dismissal', async () => {
-    addEntry('desktop', 'assistant')
-    const project = addEntry('desktop', 'collaboration')
+  it('desktop: draws no collaboration hint, and opening a project still retires it for the phone', async () => {
+    const old = addEntry('desktop', 'collaboration')
+    const project = document.createElement('button')
+    project.dataset.projectRow = 'p-1'
+    old.region.append(project)
     await mount('desktop')
+    await waitForCondition(() => io.read.mock.calls.length === 1, 'account read')
+    expect(bubble('collaboration')).toBeNull()
+    await clickElement(project)
+    await waitForCondition(() => account?.dismissed.includes('collaboration') === true, 'opened project saved')
+  })
+
+  // Only the collaboration hint is left: the phone still draws it, so its watcher runs; the desktop's has nothing to wait for.
+  it.each([['phone', true], ['desktop', false]] as const)('%s with only the collaboration hint left: watches the page = %s', async (device, watches) => {
+    account = { version: 1, dismissed: ['assistant'] }
+    const observed = vi.spyOn(MutationObserver.prototype, 'observe')
+    await mount(device)
+    await waitForCondition(() => io.read.mock.calls.length === 1, 'account read')
+    if (watches) await waitForCondition(() => observed.mock.calls.some(([target]) => target === document.body), 'watches for its entry')
+    else {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(observed.mock.calls.some(([target]) => target === document.body)).toBe(false)
+    }
+  })
+
+  it('shows one hint and does not run through other visible entries after dismissal', async () => {
+    addEntry('phone', 'assistant')
+    const project = addEntry('phone', 'collaboration')
+    await mount('phone')
     await waitForCondition(() => !!bubble('assistant'), 'assistant first')
     expect(bubble('collaboration')).toBeNull()
     await clickElement(bubble('assistant')!.querySelector('button')!)
