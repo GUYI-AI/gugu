@@ -17,9 +17,10 @@ export type ConversationSegment = {
   /** The idle stretch before a continued turn (#2587). Final as soon as the turn resumes, so it counts while live too. */
   resumedIdleMs: number;
   /**
-   * A finished line a woken run turned live again opens and closes under its own key while that run goes (#2587):
-   * its own key reads inverted while live (`turnProcessExpanded`), so the line would flip at the wake and again at the
-   * end. Once the run is over the line is back under its id, open or closed as the reader left it.
+   * A line a woken run continued opens and closes under keys of its own (#2587): one while that run goes (its own key
+   * reads inverted while live, `turnProcessExpanded`, so the line would flip at the wake and again at the end), and a
+   * fresh one once it is over, so the finished line is closed whatever the reader did while it was still going (owner
+   * 2026-11-13:「你跑完怎么不合起来」). Opened after it finished, it stays open until another wake continues it.
    */
   toggleId?: string;
   fullReply?: true;
@@ -226,7 +227,7 @@ export function planConversationSegments(turn: TranscriptTurn, active: boolean):
     segment.live = active;
     // A wake held after a Stop hook so far rests in the line that hook belongs to.
     if (resumedAt !== undefined) resumed = { segment, at: resumedAt };
-    if (active && resumed?.segment === segment) segment.toggleId = `${segment.id}~${resumed.at}`;
+    if (resumed?.segment === segment) segment.toggleId = `${segment.id}~${resumed.at}${active ? '' : ':ended'}`;
     // Message.at is the first streamed chunk; the turn's completion is the authentic final clock.
     if (!active && turn.endedAt !== undefined) segment.endedAt = turn.endedAt;
   } else if (active && pendingInput && blocks.at(-1)?.kind === 'input') {

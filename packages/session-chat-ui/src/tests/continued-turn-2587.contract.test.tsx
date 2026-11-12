@@ -24,13 +24,16 @@ const answered: TranscriptTurn = { id: 'answered', seq: 0, initiator: 'user', st
   bash('first-command', 1),
   { kind: 'message', id: 'answer', seq: 2, role: 'assistant', text: 'Started it; waiting for the background run.' },
 ] };
-const woken = (trigger: TranscriptTurn['trigger'], done: boolean): TranscriptTurn => ({ id: 'woken', seq: 1, initiator: 'agent', trigger,
-  startedAt: 60000, ...(done ? { endedAt: 65000, outcome: { kind: 'done' as const } } : {}), items: [
-    { kind: 'background-command-done-tool-call', id: 'finished', seq: 0, toolCallId: 'bg', launchToolCallId: 'first-command',
-      title: 'echo first-command', name: 'echo first-command', status: 'done', outcome: 'completed', at: 60000 },
-    bash('second-command', 1),
-    { kind: 'message', id: 'later', seq: 2, role: 'assistant', text: 'The background run passed.' },
-  ] });
+const woken = (trigger: TranscriptTurn['trigger'], done: boolean, n = 1): TranscriptTurn => {
+  const at = 60000 * n, tag = n === 1 ? '' : `-${n}`;
+  return { id: `woken${tag}`, seq: n, initiator: 'agent', trigger,
+    startedAt: at, ...(done ? { endedAt: at + 5000, outcome: { kind: 'done' as const } } : {}), items: [
+      { kind: 'background-command-done-tool-call', id: `finished${tag}`, seq: 0, toolCallId: `bg${tag}`, launchToolCallId: 'first-command',
+        title: 'echo first-command', name: 'echo first-command', status: 'done', outcome: 'completed', at },
+      bash(`second-command${tag}`, 1),
+      { kind: 'message', id: `later${tag}`, seq: 2, role: 'assistant', text: n === 1 ? 'The background run passed.' : `Wake ${n} is done.` },
+    ] };
+};
 
 function mount() {
   const context = createChatContext({ locale: () => 'en-US' });
@@ -75,8 +78,9 @@ describe('a turn woken by its own finished task continues the answered segment (
 
   // The line's own key reads inverted while live (`turnProcessExpanded`): reused as is, an opened line would close at
   // the wake and open again at the end (mac1 real window, 2026-11-13). While the woken run goes the line is open (the
-  // live default) and the reader can still close it; afterwards it is open or closed as the reader left it.
-  for (const opened of [false, true]) it(`an ${opened ? 'opened' : 'unopened'} line is open while the woken run goes, then ${opened ? 'open' : 'closed'} again`, async () => {
+  // live default) and the reader can still close it; once the run is over it is closed, whatever the reader did before
+  // (owner 2026-11-13:「你跑完怎么不合起来」).
+  for (const opened of [false, true]) it(`an ${opened ? 'opened' : 'unopened'} line is open while the woken run goes, then closed`, async () => {
     const v = mount();
     const expanded = () => v.host.querySelector('[data-conversation-process]')?.getAttribute('aria-expanded');
     await until('the answer is on screen', () => bodies(v.host).some(text => text.includes('Started it')));
@@ -96,7 +100,40 @@ describe('a turn woken by its own finished task continues the answered segment (
     });
     await v.settle();
     expect(heads(v.host)).toHaveLength(1);
-    expect(expanded()).toBe(String(opened));
+    expect(expanded()).toBe('false');
+  });
+
+  // The owner's run (2026-11-13): between two wakes the line rests closed; the reader opened it there, the next wake ran
+  // and finished, and the line stayed open. Opened while the run is still coming back, it closes when the run is over;
+  // opened after that, it stays as the reader left it.
+  it('closes a line the reader opened between two wakes once the later wake is over, and keeps one opened afterwards', async () => {
+    const v = mount();
+    const expanded = () => v.host.querySelector('[data-conversation-process]')?.getAttribute('aria-expanded');
+    await until('the answer is on screen', () => bodies(v.host).some(text => text.includes('Started it')));
+    batch(() => {
+      v.state.transcript.history.append([woken({ kind: 'agent' }, true)]);
+      v.state.transcript.activeTurn.set(null);
+    });
+    await until('the first wake is over and its line rests closed', () => bodies(v.host).some(text => text.includes('The background run passed.')) && expanded() === 'false');
+    v.host.querySelector<HTMLElement>('[data-conversation-process]')!.click();
+    await until('the reader opens it while the second command is still out', () => expanded() === 'true');
+
+    v.state.transcript.activeTurn.set(woken({ kind: 'agent' }, false, 2));
+    await until('the second wake answers on the same line', () => bodies(v.host).some(text => text.includes('Wake 2 is done.')));
+    expect(heads(v.host)).toHaveLength(1);
+    expect(expanded()).toBe('true');
+    batch(() => {
+      v.state.transcript.history.append([woken({ kind: 'agent' }, true, 2)]);
+      v.state.transcript.activeTurn.set(null);
+    });
+    await v.settle();
+    expect(heads(v.host)).toHaveLength(1);
+    expect(expanded()).toBe('false');
+
+    v.host.querySelector<HTMLElement>('[data-conversation-process]')!.click();
+    await until('opened after the run is over', () => expanded() === 'true');
+    await v.settle();
+    expect(expanded()).toBe('true');
   });
 
   it('still opens a new segment for a turn a delivery started', async () => {
