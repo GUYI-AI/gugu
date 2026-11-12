@@ -42,7 +42,7 @@ const renderPage = async () => {
   // The list is the account project list (accountProjectsStore): one account project per published record here.
   runInAction(() => {
     accountProjectsStore.list = Object.entries(state.records as Record<string, DeviceProject[]>).flatMap(([deviceId, list]) => list.map(record => ({
-      chatId: `${deviceId}/${record.localProjectId}`, name: record.name, archived: false, bindings: [{ deviceId, localProjectId: record.localProjectId }],
+      chatId: `${deviceId}/${record.localProjectId}`, name: record.name, archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId, localProjectId: record.localProjectId }],
     })))
     accountProjectsStore.status = 'ready'
   })

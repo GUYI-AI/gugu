@@ -18,7 +18,7 @@ type Records = Record<string, Array<{ localProjectId: string; name: string }>>
 /** The project list is the account project list (accountProjectsStore): here one account project per published record. */
 const seed = (records: Records) => runInAction(() => {
   accountProjectsStore.list = Object.entries(records).flatMap(([deviceId, list]) => list.map(record => ({
-    chatId: `${deviceId}/${record.localProjectId}`, name: record.name, archived: false, bindings: [{ deviceId, localProjectId: record.localProjectId }],
+    chatId: `${deviceId}/${record.localProjectId}`, name: record.name, archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId, localProjectId: record.localProjectId }],
   })))
   accountProjectsStore.status = 'ready'
 })

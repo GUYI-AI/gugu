@@ -61,8 +61,8 @@ type SidebarSessionEntry = {
  * 或文件夹只在还没载入的机器上):行 id = 项目群,点开是项目群。
  */
 export type SidebarProjectRef =
-  | { kind: 'local'; id: string; chatId: string; name: string; project: ProjectStore }
-  | { kind: 'group'; id: string; chatId: string; name: string };
+  | { kind: 'local'; id: string; chatId: string; name: string; activeAt: string | null; project: ProjectStore }
+  | { kind: 'group'; id: string; chatId: string; name: string; activeAt: string | null };
 
 /** #6264 侧栏要知道的机器读数(由 remoteHostsStore 注入;不注入 = 全是本机,单测默认如此)。 */
 export type SidebarMachines = {
@@ -155,8 +155,8 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
         const id = this.accountProjects.representativeOf(account.chatId);
         const project = id ? this.projectManager.projects.get(id) : undefined;
         return project
-          ? { kind: 'local', id: project.id, chatId: account.chatId, name: account.name || (project.name ?? ''), project }
-          : { kind: 'group', id: account.chatId, chatId: account.chatId, name: account.name };
+          ? { kind: 'local', id: project.id, chatId: account.chatId, name: account.name || (project.name ?? ''), activeAt: account.activeAt, project }
+          : { kind: 'group', id: account.chatId, chatId: account.chatId, name: account.name, activeAt: account.activeAt };
       })
       .sort((a, b) => this.compareSidebarProjects(a, b));
     if (this.projectOrder.length === 0) return all;

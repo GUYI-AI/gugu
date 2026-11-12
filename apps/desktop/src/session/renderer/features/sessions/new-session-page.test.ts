@@ -208,7 +208,7 @@ vi.mock('@renderer/features/projects/stores/account-projects-store', async (impo
     override get projects(): readonly AccountProject[] {
       return [
         ...mocks.orderedProjects.map((project) => ({
-          chatId: `chat-${project.id}`, name: project.id, archived: false,
+          chatId: `chat-${project.id}`, name: project.id, archived: false, activeAt: '2026-01-01T00:00:00.000Z',
           bindings: [{ deviceId: machineRegistry.machineOf(project.id) ?? 'this-computer', localProjectId: project.id }],
         })),
         ...this.extra,
@@ -743,9 +743,9 @@ describe('NewSessionPage', () => {
   it('lists an account project that has no folder on any machine, with machines to give it one', async () => {
     const { accountProjectsStore } = await import('@renderer/features/projects/stores/account-projects-store');
     (accountProjectsStore as unknown as { extra: AccountProject[] }).extra = ([
-      { chatId: 'chat-empty', name: 'paper', archived: false, bindings: [] },
-      { chatId: 'chat-old', name: 'retired', archived: true, bindings: [] },
-      { chatId: 'chat-bound', name: 'bound', archived: false, bindings: [{ deviceId: 'd', localProjectId: 'p' }] },
+      { chatId: 'chat-empty', name: 'paper', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] },
+      { chatId: 'chat-old', name: 'retired', archived: true, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] },
+      { chatId: 'chat-bound', name: 'bound', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'd', localProjectId: 'p' }] },
     ]);
     try {
       mocks.orderedProjects = [{ id: 'project-1', state: 'mounted' }];
@@ -854,7 +854,7 @@ describe('NewSessionPage', () => {
     const onSelect = vi.fn();
     machineRegistry.register('device-off', ['project-offline']);
     mocks.orderedProjects = [{ id: 'project-1', state: 'mounted' }, { id: 'project-offline', state: 'mounted' }];
-    (accountProjectsStore as unknown as { extra: AccountProject[] }).extra = [{ chatId: 'chat-empty', name: 'paper', archived: false, bindings: [] }];
+    (accountProjectsStore as unknown as { extra: AccountProject[] }).extra = [{ chatId: 'chat-empty', name: 'paper', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] }];
     try {
       await act(async () => {
         root.render(localized(React.createElement(ComposerProjectPicker, { selectedId: undefined, onSelect })));

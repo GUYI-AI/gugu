@@ -12,6 +12,7 @@ import type { SidebarPinnedAgent } from './sidebarChatsBridge'
 import type { OneListAgentRow } from './innerSidebarBridge'
 import type { SampleProjectContent } from '@/session/renderer/features/sample-project/content/types'
 import { markdownPlainText } from './markdownPlainText'
+import { readArchivedGroups, subscribeArchivedGroups } from './archivedGroupsRead'
 
 /** Where my agents live. */
 export type AgentHomes = {
@@ -184,38 +185,88 @@ export function useAgentHomes(
 }
 
 /**
- * Account projects (the account project list, one row per project) the one list has no conversation row for: their
- * project group is not in the chat list yet. These keep a project row of their own. `listedGroups` null = the chat list
- * has not loaded yet: say nothing rather than flash a row that is about to move. A local project the account list does
- * not hold is no project here (its sessions are tasks until the list holds it).
+ * An account project (the account project list, one row per project) whose project group is not in the chat list yet:
+ * it has no conversation row, so it is a row of its own. That row stands where its group's conversation row will stand:
+ * among the conversation rows by the time that row will have (`activeAt`, the group's last message, else its creation;
+ * chatActivityAt's projection, read from the account list), so when the conversation arrives it takes the same place.
+ * Created a moment ago (a new project, whose group the account list learns of before the chat list does) = at the top.
+ * Time not known yet (`activeAt` null: a list the previous client cached, before the next read) = after every row.
+ * The task page draws it (setOneListProjectSlot): the chat list only says where.
  */
-export function projectsWithoutGroupRow(
-  projects: readonly { readonly id: string; readonly chatId: string }[],
-  listedGroups: ReadonlySet<string> | null,
-): string[] {
-  if (!listedGroups) return []
-  return projects.filter((project) => !listedGroups.has(project.chatId)).map((project) => project.id)
+export type OneListProjectLine = { readonly projectChatId: string; readonly activeAt: string | null }
+
+export const isOneListProjectLine = (row: object): row is OneListProjectLine => 'projectChatId' in row
+
+/**
+ * The account projects (archived ones are not rows) whose group is not in the chat list (`chats`, the list's whole
+ * chat list: a project group the list holds but does not show is that conversation's business, as before). A local
+ * project the account list does not hold is no project here (its sessions are tasks until the list holds it).
+ * `archivedGroups` = the groups the chat list has read as archived (lib/archivedGroupsRead): a dissolved project leaves
+ * the chat list before the account list reads the dissolve, and is no row in between (nor if that read fails).
+ */
+export function oneListProjectLines(
+  projects: readonly Pick<AccountProject, 'chatId' | 'archived' | 'activeAt'>[],
+  chats: readonly Pick<ChatItem, 'id' | 'kind'>[],
+  archivedGroups: ReadonlySet<string>,
+): OneListProjectLine[] {
+  const groups = new Set(chats.flatMap((chat) => (chat.kind === 'group' ? [chat.id] : [])))
+  return projects
+    .filter((project) => !project.archived && !archivedGroups.has(project.chatId) && !groups.has(project.chatId))
+    .map((project) => ({ projectChatId: project.chatId, activeAt: project.activeAt }))
 }
 
 /**
- * Rows of the one list that are not a conversation yet: an account project whose project group is not in the chat list,
- * a top-level task outside every project whose session has no 咕咕 identity (so no agent conversation stands for it), and
- * the sample project. They are drawn as conversation rows but come after every conversation row, in this order,
- * whatever their times say: the sample's times are written into it, so sorting by them would pin it to the top for
- * everyone.
+ * The conversation rows (newest activity first, `activityOf` = the list's own sort key in ms) with the project lines
+ * placed among them by their time. A project line goes before the first row that is older; on an equal time after it.
+ * A line whose time is not known yet goes after them all, in the account list's order.
+ */
+export function placeProjectLines<C>(
+  rows: readonly C[],
+  activityOf: (row: C) => number,
+  lines: readonly OneListProjectLine[],
+): (C | OneListProjectLine)[] {
+  const timed = lines
+    .flatMap((line) => (line.activeAt === null ? [] : [{ line, at: Date.parse(line.activeAt) }]))
+    .sort((a, b) => b.at - a.at)
+  const placed: (C | OneListProjectLine)[] = []
+  let next = 0
+  for (const row of rows) {
+    const activity = activityOf(row)
+    while (next < timed.length && timed[next]!.at > activity) placed.push(timed[next++]!.line)
+    placed.push(row)
+  }
+  for (; next < timed.length; next += 1) placed.push(timed[next]!.line)
+  for (const line of lines) if (line.activeAt === null) placed.push(line)
+  return placed
+}
+
+const NO_PROJECT_LINES: readonly OneListProjectLine[] = []
+
+/** The one list's project lines for the chat list (none while the one list is off). */
+export function useOneListProjectLines(enabled: boolean, chats: readonly ChatItem[]): readonly OneListProjectLine[] {
+  const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
+  const archivedGroups = useSyncExternalStore(subscribeArchivedGroups, readArchivedGroups)
+  return useMemo(
+    () => (enabled ? oneListProjectLines(accountList, chats, archivedGroups) : NO_PROJECT_LINES),
+    [enabled, accountList, chats, archivedGroups],
+  )
+}
+
+/**
+ * Rows of the one list that are not a conversation and never stand among the conversations: a top-level task outside
+ * every project whose session has no 咕咕 identity (so no agent conversation stands for it), then the sample project.
+ * They are drawn as conversation rows but come after every conversation row, in this order, whatever their times say:
+ * the sample's times are written into it, so sorting by them would pin it to the top for everyone.
  */
 export type OneListTailRow =
-  | { readonly kind: 'project'; readonly projectId: string }
   | { readonly kind: 'task'; readonly projectId: string; readonly sessionId: string }
   | { readonly kind: 'sample' }
 
 export function oneListTail(
-  grouplessProjects: readonly string[],
   tasksWithoutAgent: readonly { readonly projectId: string; readonly sessionId: string }[],
   sampleShown: boolean,
 ): OneListTailRow[] {
   return [
-    ...grouplessProjects.map((projectId) => ({ kind: 'project' as const, projectId })),
     ...tasksWithoutAgent.map(({ projectId, sessionId }) => ({ kind: 'task' as const, projectId, sessionId })),
     ...(sampleShown ? [{ kind: 'sample' as const }] : []),
   ]

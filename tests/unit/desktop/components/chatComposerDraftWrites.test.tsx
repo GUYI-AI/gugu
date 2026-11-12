@@ -23,7 +23,7 @@ import { accountProjectsStore } from '@/session/renderer/features/projects/store
 
 // The task folder card's project is the account project of this group (accountProjectsStore); 'machine' has its folder.
 beforeEach(() => runInAction(() => {
-  accountProjectsStore.list = [{ chatId: 'chat', name: 'Project', archived: false, bindings: [{ deviceId: 'machine', localProjectId: 'project' }] }]
+  accountProjectsStore.list = [{ chatId: 'chat', name: 'Project', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'machine', localProjectId: 'project' }] }]
   accountProjectsStore.status = 'ready'
 }))
 afterEach(() => accountProjectsStore.clear())

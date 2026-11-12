@@ -17,11 +17,13 @@ import { requestTopicSplit } from '@/lib/topicSplitRequest';
 import { useSidebarChatSignals } from '@/lib/sidebarChatsBridge';
 import { openChatOnScreen } from '@renderer/features/chats/open-chat';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { formatCalendarDay } from '@/i18n/format';
 
 /**
  * #2548 a project in the one list is its project group's conversation row. `projectId` is a row of the account project
  * list (sidebarStore.sidebarProjects) whose group is not a conversation of the chat list yet, so it is drawn as that row
- * would be (OneListProjectRow: the project cover, name, no preview); same click, same menu. The cover is keyed by the
+ * would be (OneListProjectRow: the project cover, name, the time that row will show, no preview); same click, same menu,
+ * in the place that row will take (the chat list's slot, sidebar-one-list). The cover is keyed by the
  * row's representative local project, as partnerProjects keys every project group's cover. #6264 a project on another
  * machine is this row too; that machine not connected = the row reads offline (data-offline), the project stays listed.
  */
@@ -56,7 +58,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
   const chatSignals = useSidebarChatSignals();
   const callingTopic = chatSignals?.groupCallingTopic.get(groupChatId ?? '');
 
-  if (ref?.kind === 'group') return <OneListGroupProjectRow projectId={projectId} chatId={ref.chatId} name={ref.name} />;
+  if (ref?.kind === 'group') return <OneListGroupProjectRow projectId={projectId} chatId={ref.chatId} name={ref.name} activeAt={ref.activeAt} />;
   if (!project) return null;
   const deviceIds = [...new Set(sidebarStore.projectMembersOf(projectId).map((id) => machineRegistry.machineOf(id) ?? null))];
   const machineDown = deviceIds.every((id) => id !== null && remoteHostsStore.connectionState(id) !== 'connected');
@@ -95,6 +97,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
       <OneListProjectRow
         name={projectLabel}
         coverId={rowId}
+        time={ref?.activeAt ? formatCalendarDay(ref.activeAt) : undefined}
         preview=""
         selected={isProjectActive}
         onOpen={openProject}
@@ -111,7 +114,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
  * not loaded yet): its row is still there and opens its project group (openChatOnScreen, as a group row of the list does).
  * The cover is keyed by the group, as partnerProjects keys a project with no folder.
  */
-const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projectId, chatId, name }: { projectId: string; chatId: string; name: string }) {
+const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projectId, chatId, name, activeAt }: { projectId: string; chatId: string; name: string; activeAt: string | null }) {
   const { translate } = useSessionMessages();
   const focused = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
   const open = (beside: boolean) => {
@@ -122,6 +125,7 @@ const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projec
     <OneListProjectRow
       name={name}
       coverId={chatId}
+      time={activeAt === null ? undefined : formatCalendarDay(activeAt)}
       preview=""
       selected={focused?.kind === 'chat' && focused.chatId === chatId}
       onOpen={open}
