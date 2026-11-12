@@ -97,7 +97,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
       <OneListProjectRow
         name={projectLabel}
         coverId={rowId}
-        time={ref ? formatCalendarDay(ref.activeAt) : undefined}
+        time={ref?.activeAt ? formatCalendarDay(ref.activeAt) : undefined}
         preview=""
         selected={isProjectActive}
         onOpen={openProject}
@@ -114,7 +114,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
  * not loaded yet): its row is still there and opens its project group (openChatOnScreen, as a group row of the list does).
  * The cover is keyed by the group, as partnerProjects keys a project with no folder.
  */
-const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projectId, chatId, name, activeAt }: { projectId: string; chatId: string; name: string; activeAt: string }) {
+const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projectId, chatId, name, activeAt }: { projectId: string; chatId: string; name: string; activeAt: string | null }) {
   const { translate } = useSessionMessages();
   const focused = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
   const open = (beside: boolean) => {
@@ -125,7 +125,7 @@ const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projec
     <OneListProjectRow
       name={name}
       coverId={chatId}
-      time={formatCalendarDay(activeAt)}
+      time={activeAt === null ? undefined : formatCalendarDay(activeAt)}
       preview=""
       selected={focused?.kind === 'chat' && focused.chatId === chatId}
       onOpen={open}

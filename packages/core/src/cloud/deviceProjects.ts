@@ -192,9 +192,9 @@ export type AccountProject = {
   archived: boolean
   /**
    * 它的群最后一次动静的时刻:最后一条消息,没有就是建群那一刻(同会话列表的排序键 chatActivityAt;群还没建出来的预留项目 =
-   * 头一台机器记上它的时刻)。ISO 时间。
+   * 头一台机器记上它的时刻)。ISO 时间。null = 还不知道:只在上一版客户端存下的那份缓存里(它那时不读这一项),下次读到即有。
    */
-  activeAt: string
+  activeAt: string | null
   bindings: Array<{ deviceId: string; localProjectId: string }>
 }
 

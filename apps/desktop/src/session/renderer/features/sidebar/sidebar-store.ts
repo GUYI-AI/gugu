@@ -61,8 +61,8 @@ type SidebarSessionEntry = {
  * 或文件夹只在还没载入的机器上):行 id = 项目群,点开是项目群。
  */
 export type SidebarProjectRef =
-  | { kind: 'local'; id: string; chatId: string; name: string; activeAt: string; project: ProjectStore }
-  | { kind: 'group'; id: string; chatId: string; name: string; activeAt: string };
+  | { kind: 'local'; id: string; chatId: string; name: string; activeAt: string | null; project: ProjectStore }
+  | { kind: 'group'; id: string; chatId: string; name: string; activeAt: string | null };
 
 /** #6264 侧栏要知道的机器读数(由 remoteHostsStore 注入;不注入 = 全是本机,单测默认如此)。 */
 export type SidebarMachines = {

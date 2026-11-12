@@ -188,6 +188,12 @@ describe('an account project without a conversation row stands among the convers
     expect(order(placeProjectLines([], activityOf, [{ projectChatId: 'p0', activeAt: at(0) }]))).toEqual(['p0'])
   })
 
+  // A list the previous client cached has no time for its projects: none is made up, they wait after every row.
+  it('a project whose time is not known yet goes after every row and every timed project, in the account list\'s order', () => {
+    const lines = [{ projectChatId: 'unknown-b', activeAt: null }, { projectChatId: 'p8', activeAt: at(8) }, { projectChatId: 'unknown-a', activeAt: null }, { projectChatId: 'p0', activeAt: at(0) }]
+    expect(order(placeProjectLines(rows, activityOf, lines))).toEqual(['dm', 'p8', 'room', 'old', 'p0', 'unknown-b', 'unknown-a'])
+  })
+
   // The bug (owner's recording, 11-13): a new project's row was drawn after every conversation, then jumped to the top
   // when its group reached the chat list. Its group's row sorts by the same time, so it takes the same place.
   it('a new project stands where its group\'s conversation row lands when the chat list gets it', () => {

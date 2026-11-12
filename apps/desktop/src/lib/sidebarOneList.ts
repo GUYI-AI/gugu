@@ -166,9 +166,10 @@ export function useAgentHomes(
  * among the conversation rows by the time that row will have (`activeAt`, the group's last message, else its creation;
  * chatActivityAt's projection, read from the account list), so when the conversation arrives it takes the same place.
  * Created a moment ago (a new project, whose group the account list learns of before the chat list does) = at the top.
+ * Time not known yet (`activeAt` null: a list the previous client cached, before the next read) = after every row.
  * The task page draws it (setOneListProjectSlot): the chat list only says where.
  */
-export type OneListProjectLine = { readonly projectChatId: string; readonly activeAt: string }
+export type OneListProjectLine = { readonly projectChatId: string; readonly activeAt: string | null }
 
 export const isOneListProjectLine = (row: object): row is OneListProjectLine => 'projectChatId' in row
 
@@ -193,13 +194,16 @@ export function oneListProjectLines(
 /**
  * The conversation rows (newest activity first, `activityOf` = the list's own sort key in ms) with the project lines
  * placed among them by their time. A project line goes before the first row that is older; on an equal time after it.
+ * A line whose time is not known yet goes after them all, in the account list's order.
  */
 export function placeProjectLines<C>(
   rows: readonly C[],
   activityOf: (row: C) => number,
   lines: readonly OneListProjectLine[],
 ): (C | OneListProjectLine)[] {
-  const timed = lines.map((line) => ({ line, at: Date.parse(line.activeAt) })).sort((a, b) => b.at - a.at)
+  const timed = lines
+    .flatMap((line) => (line.activeAt === null ? [] : [{ line, at: Date.parse(line.activeAt) }]))
+    .sort((a, b) => b.at - a.at)
   const placed: (C | OneListProjectLine)[] = []
   let next = 0
   for (const row of rows) {
@@ -208,6 +212,7 @@ export function placeProjectLines<C>(
     placed.push(row)
   }
   for (; next < timed.length; next += 1) placed.push(timed[next]!.line)
+  for (const line of lines) if (line.activeAt === null) placed.push(line)
   return placed
 }
 

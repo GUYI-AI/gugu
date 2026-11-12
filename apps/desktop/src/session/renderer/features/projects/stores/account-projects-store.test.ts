@@ -154,6 +154,30 @@ describe('accountProjectsStore reading', () => {
     }
   });
 
+  // #2548 The client before this one cached the list without activeAt (it did not read it). The first offline launch after
+  // the upgrade still lays that list down: when each project was last active is not known yet (null), not made up.
+  it('a list cached before activeAt existed is still laid down, its time not known yet', async () => {
+    const { activeAt: _paperAt, ...paperBefore } = paper;
+    const { activeAt: _emptyAt, ...emptyBefore } = empty;
+    const storage = new Map([['gugu.account-projects.v1', JSON.stringify({ accountId: 'user-a', list: [paperBefore, emptyBefore] })]]);
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => { storage.set(key, value); },
+      removeItem: (key: string) => { storage.delete(key); },
+    });
+    try {
+      const store = new AccountProjectsStore();
+      store.restore('user-a');
+      expect(store.projects).toEqual([{ ...paper, activeAt: null }, { ...empty, activeAt: null }]);
+      read.list.mockRejectedValueOnce(new Error('fetch failed'));
+      await store.refresh();
+      expect(store.status).toBe('error');
+      expect(store.projects).toEqual([{ ...paper, activeAt: null }, { ...empty, activeAt: null }]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   // Nobody outside tells the store to read again: it subscribes to what changes the account's projects itself.
   it('start reads once, then again on a project revision, a removed device, this computer\'s publish and its identification', async () => {
     const store = new AccountProjectsStore();
