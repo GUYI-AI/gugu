@@ -136,7 +136,7 @@ export type TopicSplitPaneProps = {
   /** 气泡里的文件卡点开 —— 与主线同一个处理器。不接 = 分栏里的文件卡点了什么都不发生(#6375)。 */
   onOpenAttachment?: (meta: ParsedAttachment, message?: MessageItem) => void
   onReaction?: (messageId: string, emoji: string) => void
-  onForward?: (msg: MessageItem) => void
+  onForward?: (msg: MessageItem | readonly MessageItem[]) => void
   onDelete?: (messageId: string) => void
 }
 

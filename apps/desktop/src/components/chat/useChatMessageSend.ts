@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef, useState, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
-import { inferAttachmentKind } from '@gugu/core/shared/ui/attachmentModels'
 import { buildRosterNameIndex, resolveOpeningAgentCall } from '@gugu/core/shared/rosterNameMatching.mjs'
 import { firstMentionedUserId, resolveMentionUserIds, type MentionCandidate } from '@/lib/mention'
 import { rememberGroupMention } from '@/lib/groupMentionRecall'
@@ -33,7 +32,6 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
     const submittedAt = performance.now()
     const typed = (value ?? text).trim()
     const pendingFiles = attachments.map((a) => a.file)
-    const multimodalImage = pendingFiles.some((file) => inferAttachmentKind(file) === 'image')
     if (disabled) {
       toast(disabledReason || t('composer.disabled'), 'info')
       return
@@ -85,8 +83,8 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
     // Once the files are rows in the conversation they belong to those rows (uploading, failing, resending there):
     // a later failure in this send never puts them back in the composer.
     let filesOwned = false
-    // 带引用回复时文字单独走 onSend(它带 replyToMessageId),不挂成图片说明——否则引用关系丢失。
-    const captionOnImage = multimodalImage && !replyToMessageId
+    // #2581 文字和文件是一次发出的一条:文字挂在最后一个文件上(什么类型都一样),带引用回复时引用也跟着文件走。
+    const captionOnFiles = pendingFiles.length > 0 && !!onSendAttachments
     sendingRef.current = true
     setSending(true)
     try {
@@ -99,15 +97,12 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       scheduleComposerFocus('message-sent', { target: () => inputRef.current, mobileShell: mobile })
       if (pendingFiles.length > 0 && onSendAttachments) await beforeSend?.()
 
-      // Resolves once the files are on screen; their bytes upload after the composer is free again.
-      let lastFile: string | undefined
-      if (pendingFiles.length > 0 && onSendAttachments) {
-        lastFile = (await onSendAttachments(pendingFiles, { toUserIds: sendOptions.toUserIds, replyToMessageId: !typed && replyToMessageId ? replyToMessageId : undefined, isWhisper: !!whisperTarget, caption: captionOnImage ? content || undefined : undefined })) || undefined
+      // Resolves once the files are on screen; their bytes upload after the composer is free again. The text goes with them.
+      if (captionOnFiles && onSendAttachments) {
+        await onSendAttachments(pendingFiles, { toUserIds: sendOptions.toUserIds, replyToMessageId: replyToMessageId ?? undefined, isWhisper: !!whisperTarget, caption: content || undefined })
         filesOwned = true
-      }
-      if (typed && (!captionOnImage || !onSendAttachments)) {
-        // Text sent with files reaches the conversation after them, as it was written.
-        await onSend(content, { ...sendOptions, clientMessageId: submission.id, beforeDeliver: beforeSend, submittedAt, ...(lastFile ? { dependsOn: lastFile } : {}) })
+      } else if (typed) {
+        await onSend(content, { ...sendOptions, clientMessageId: submission.id, beforeDeliver: beforeSend, submittedAt })
       }
       if (attempt.succeeded() && submissions.current.get(scope) === submission) submissions.current.delete(scope)
       // Successful send → object URLs are no longer needed

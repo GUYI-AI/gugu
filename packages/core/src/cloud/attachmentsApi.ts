@@ -123,6 +123,9 @@ export interface CommitArgs {
   expected_version?: number
   /** How long this copy stays (temporary | permanent); not given, the chat's rule. Needs a backend with file_storage_mark_as. */
   keep?: FileKeep
+  /** #2581 Files sent at once: one id for the send and how many files it holds (2–10). Not given, a file sent on its own. */
+  send_group_id?: string
+  send_group_size?: number
 }
 
 /** Sends the upload as an attachment message: the message row as `messages_view` has it. */
@@ -169,6 +172,9 @@ export interface ForwardArgs {
   thread_root_id?: string | null
   is_thread_root?: boolean
   is_whisper?: boolean
+  /** #2581 Files forwarded together land as one send: the same group on each copy, and how many copies it holds. */
+  send_group_id?: string
+  send_group_size?: number
 }
 
 /** Forwards an attachment message of the new kind (its own item in the target's folder, the same bytes): the new message row. */

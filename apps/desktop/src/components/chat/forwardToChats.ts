@@ -27,6 +27,16 @@ export function openForward(pieces: ForwardPiece[]): void {
 export type ForwardNote = { text: string; toUserIds: string[] }
 
 type Send = Pick<ChatContextValue, 'forwardMessage' | 'sendMessageToChat'>
+
+/** #2581 Files of one send forwarded together land as one send (a new one in each chat); a file forwarded alone is on its own. */
+function sendsForwardedTogether(own: readonly MessageItem[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const message of own) {
+    if (message.content_type === 'attachment' && message.send_group_id) counts.set(message.send_group_id, (counts.get(message.send_group_id) ?? 0) + 1)
+  }
+  for (const [group, count] of counts) if (count < 2 || count > 10) counts.delete(group)
+  return counts
+}
 type Names = {
   /** A name this account knows for a user (`null` = the forwarder), if any: a big group's profiles load lazily, a member may have left. */
   knownName: (userId: string | null) => string | undefined
@@ -73,12 +83,17 @@ export async function forwardToChats(pieces: readonly ForwardPiece[], targetChat
   const addressed = { toUserIds: note.toUserIds }
   // A chat message among the words keeps the link to where they came from (read rights, the forwarded badge).
   const source = words.find(word => word.message)?.message
+  const together = sendsForwardedTogether(own)
   for (const chatId of targetChatIds) {
+    const landed = new Map([...together].map(([group, size]) => [group, { id: crypto.randomUUID(), size }]))
     if (body !== null) {
       if (source) await io.forwardMessage({ ...source, content: body, reply_to_message_id: null, reply_to_content: null, reply_to_sender_user_id: null }, chatId, addressed)
       else await io.sendMessageToChat(chatId, body, addressed)
     }
-    for (const message of own) await io.forwardMessage(message, chatId)
+    for (const message of own) {
+      const sendGroup = message.send_group_id ? landed.get(message.send_group_id) : undefined
+      await (sendGroup ? io.forwardMessage(message, chatId, { sendGroup }) : io.forwardMessage(message, chatId))
+    }
     if (!quoted && note.text.trim()) await io.sendMessageToChat(chatId, note.text.trim(), addressed)
     sent(chatId)
   }

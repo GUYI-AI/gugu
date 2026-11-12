@@ -14,6 +14,7 @@ import { ingestMessages, prefetchMessages } from './messageIngest'
 import { messageAccessWrites } from './messageRevisionWrites'
 import { createSupabaseAccountRevisionSource } from './supabaseAccountRevisionSource'
 import { noteBackendAnswer } from '@gugu/core/cloud/backendReachability'
+import { sendGroupPreview } from './sendGroupPreview'
 
 const log = rendererLogger('im/snapshot')
 const row = z.record(z.string(), z.unknown())
@@ -43,7 +44,7 @@ export function decodeAccountSnapshot(value: unknown, accountId: string) {
   for (const identity of snapshot.identities) put('identity', identity.id, displayIdentityFromRow(identity))
   for (const preview of snapshot.previews) put('preview', preview.chat_id, {
     chat_id: preview.chat_id, created_at: preview.created_at,
-    preview: typeof preview.preview === 'string' ? composerCardLine(preview.preview) : null,
+    preview: sendGroupPreview(preview.send_group_size) ?? (typeof preview.preview === 'string' ? composerCardLine(preview.preview) : null),
     notice: parseSystemNotice(preview as Parameters<typeof parseSystemNotice>[0]),
   })
   const unread = mergeUnreadRows(snapshot.unread as Array<Record<string, unknown> & { chat_id: string }>)

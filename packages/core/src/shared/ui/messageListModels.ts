@@ -95,6 +95,7 @@ export function shallowEqualMessage(a: MessageItem, b: MessageItem): boolean {
     a.file_item_id === b.file_item_id && a.file_version === b.file_version && a.file_blob_id === b.file_blob_id &&
     sameSessionFile(a.session_file, b.session_file) && sameFileMetadata(a.file_metadata, b.file_metadata)
     && sameImageDimensions(a.image_dimensions, b.image_dimensions) &&
+    a.send_group_id === b.send_group_id && a.send_group_size === b.send_group_size &&
     a.seq === b.seq &&
     a.content === b.content &&
     a.content_type === b.content_type &&

@@ -1,5 +1,5 @@
 {
   "repository": "OpenDCAI/gugu-supabase",
-  "ref": "e21a5440f3be5589c9f0ecdeaa3ddbbe9f669c0c",
-  "status": "gugu-supabase dev e21a5440 (includes #256 project identity readers, #257 folder child counts, #258/#261 managed join requests with group name and avatar, #259, #260 is_my_project)"
+  "ref": "4b12c3c0fa79aaccfddfedd8d68711e0e7e34637",
+  "status": "gugu-supabase dev 4b12c3c0 (includes #262 send groups: files sent at once are one message, gugu#2581)"
 }

@@ -51,7 +51,7 @@ function startBoundedUploads(files: File[], endpoint: Promise<AttachmentsEndpoin
   return results
 }
 
-export async function placeholderRow(file: File, caption: string | undefined, args: { chatId: string; senderId: string; toUserIds: string[] | null; isWhisper?: boolean; replyToMessageId?: string | null; threadRootId?: string | null; isThreadRoot?: boolean }) {
+export async function placeholderRow(file: File, caption: string | undefined, args: { chatId: string; senderId: string; toUserIds: string[] | null; isWhisper?: boolean; replyToMessageId?: string | null; threadRootId?: string | null; isThreadRoot?: boolean }, sendGroup?: SendGroup) {
   let dimensions: MessageItem['image_dimensions']
   if (inferAttachmentKind(file) === 'image') {
     try {
@@ -87,6 +87,7 @@ export async function placeholderRow(file: File, caption: string | undefined, ar
     delivery_status: null,
     local_send_state: 'sending',
     ...(dimensions ? { image_dimensions: dimensions } : {}),
+    ...(sendGroup ? { send_group_id: sendGroup.id, send_group_size: sendGroup.size } : {}),
   }
   // The row reads its file from this device until it is delivered (then under its committed address) or discarded.
   holdSentFile(message.id, file, previewUrl)
@@ -108,21 +109,26 @@ type BatchArgs = {
   appendMessage: (message: MessageItem) => void
 }
 type StagedRow = Awaited<ReturnType<typeof placeholderRow>>
+/** #2581 Files sent at once are one message: their rows share one id and say how many files the send holds. */
+type SendGroup = { id: string; size: number }
 
 /**
- * Puts one row per file on screen, owned by the outbox, and returns the last row's id once they are there (a text sent
- * with the files waits for it). Their bytes upload afterwards; a file that does not go up fails on its own row.
+ * Puts one row per file on screen, owned by the outbox, and returns the last row's id once they are there. Several files
+ * are one send (#2581): their rows share a group and the text rides on the last file, so the conversation shows one
+ * message. Their bytes upload afterwards; a file that does not go up fails on its own row.
  * Throws only when no row was kept: the files then still belong to whoever passed them.
  */
 export async function sendAttachmentBatch(args: BatchArgs): Promise<string | undefined> {
   if (!args.files.length) return undefined
   if (args.threadRootId != null || args.isThreadRoot === true) await requireThreadCapableChat(args.chatId, 'sendAttachmentBatch')
   await Promise.all(args.files.map(sniffFileMimeType))
-  const captionIndex = args.files.findLastIndex(file => inferAttachmentKind(file) === 'image')
+  // The text is the message's, written under all of it: it rides on the last file, whatever kind it is.
+  const captionIndex = args.files.length - 1
+  const sendGroup: SendGroup | undefined = args.files.length > 1 ? { id: crypto.randomUUID(), size: args.files.length } : undefined
   const rows: StagedRow[] = []
   try {
     for (const [fileIndex, file] of args.files.entries()) {
-      const row = await placeholderRow(file, fileIndex === captionIndex ? args.caption : undefined, args)
+      const row = await placeholderRow(file, fileIndex === captionIndex ? args.caption : undefined, args, sendGroup)
       rows.push(row)
       // Durable ownership precedes visibility; uploading does not block the lane.
       await args.outbox.stageAttachment(row.message)
@@ -143,13 +149,13 @@ export async function sendAttachmentBatch(args: BatchArgs): Promise<string | und
   void (async () => {
     // Commits keep the files' order: a later file never reaches the conversation before an earlier one that is ready.
     for (const [index, row] of rows.entries()) {
-      await commitWhenUploaded(args, args.files[index], row, uploads[index], timings[index], index === captionIndex ? args.caption : undefined)
+      await commitWhenUploaded(args, args.files[index], row, uploads[index], timings[index], index === captionIndex ? args.caption : undefined, sendGroup)
     }
   })().catch((error) => rendererLogger('chat/send').error({ chatId: args.chatId, error: String(error) }, 'attachment failure not recorded'))
   return rows.at(-1)?.message.id
 }
 
-async function commitWhenUploaded(args: BatchArgs, file: File, row: StagedRow, upload: Promise<PreparedChatAttachment>, timing: AttachmentSendTiming, caption: string | undefined): Promise<void> {
+async function commitWhenUploaded(args: BatchArgs, file: File, row: StagedRow, upload: Promise<PreparedChatAttachment>, timing: AttachmentSendTiming, caption: string | undefined, sendGroup: SendGroup | undefined): Promise<void> {
   try {
     const prepared = await upload
     // Uploaded bytes are kept by content before the commit, so the committed row draws them instead of downloading them again.
@@ -160,6 +166,7 @@ async function commitWhenUploaded(args: BatchArgs, file: File, row: StagedRow, u
       reply_to_message_id: args.replyToMessageId ?? null, thread_root_id: args.threadRootId ?? null,
       is_thread_root: !!args.isThreadRoot, is_whisper: !!args.isWhisper,
       ...(caption ? { caption } : {}),
+      ...(sendGroup ? { send_group_id: sendGroup.id, send_group_size: sendGroup.size } : {}),
     }, timing)
   } catch (error) {
     rendererLogger('chat/send').error({ chatId: args.chatId, messageId: row.message.id, error: String(error) }, 'attachment upload failed')
@@ -167,7 +174,7 @@ async function commitWhenUploaded(args: BatchArgs, file: File, row: StagedRow, u
     await args.outbox.failAttachmentUpload(row.message.id, error, chatSendFailureReason(error, i18n.getFixedT(null, 'messaging')), () => {
       const again = attachmentSendTiming(row.message.id, args.chatId)
       const [retried] = startBoundedUploads([file], attachmentsEndpoint(), { chat_id: args.chatId, as: args.senderId, is_whisper: args.isWhisper }, [again])
-      void commitWhenUploaded(args, file, row, retried, again, caption)
+      void commitWhenUploaded(args, file, row, retried, again, caption, sendGroup)
         .catch((failure) => rendererLogger('chat/send').error({ chatId: args.chatId, error: String(failure) }, 'attachment failure not recorded'))
     })
   }

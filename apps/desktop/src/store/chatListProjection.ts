@@ -5,6 +5,7 @@ import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
 import { publishChatSnapshot, readDurableList } from '../lib/chatSnapshotPublication'
 import { platform } from '../platform'
 import { i18n } from '@/i18n'
+import { sendGroupPreview } from '@/lib/sendGroupPreview'
 import { isChatOnScreen } from '../lib/onScreenChat'
 import { parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import { chatPreviewText } from '../lib/systemNoticeText'
@@ -87,6 +88,8 @@ export async function applyFetchedChatList(
   return shareRows(currentChats, missing.length > 0 ? [...missing, ...visible] : visible)
 }
 
+const notifiedSends = new Set<string>()
+
 /** Only the winner of the committed account message's IDB claim calls this outlet. */
 export async function notifyForIngestedMessage(
   accountId: string,
@@ -97,8 +100,14 @@ export async function notifyForIngestedMessage(
   if (!platform.capabilities.notifications) return
   if (!shouldNotify({ kind: 'message', accountId, chat, message },
     { enabled: context.notificationsEnabled, onScreen: context.onScreen(chat.id) })) return
+  // #2581 Files sent at once are one message: one notification, for the first of them that arrives.
+  if (message.send_group_id) {
+    if (notifiedSends.has(message.send_group_id)) return
+    notifiedSends.add(message.send_group_id)
+    if (notifiedSends.size > 256) notifiedSends.delete(notifiedSends.values().next().value!)
+  }
   await platform.showNotification({ ...createChatNotificationPayload({ ...chat,
-    last_message_preview: chatPreviewText({ last_message_preview: message.content, last_message_notice: parseSystemNotice(message) })
+    last_message_preview: (sendGroupPreview(message.send_group_size) ?? chatPreviewText({ last_message_preview: message.content, last_message_notice: parseSystemNotice(message) }))
       || i18n.t('chatList.newMessage', { ns: 'messaging' }) }, i18n.t('brand.name', { ns: 'main' })), silent: !context.soundEnabled })
 }
 

@@ -11,6 +11,8 @@ import { Markdown } from '../markdown/Markdown'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
 import { ComposerCardView } from './ComposerCardView'
 import { MediaAttachmentBubble } from './MediaAttachmentBubble'
+import { MessageAlbumBubble } from './MessageAlbumBubble'
+import { useMessageAlbum } from './MessageAlbumContext'
 import { MessageReferenceContent } from './MessageReferenceContent'
 import { parseQuotedContent, partialQuotedContent } from './messageQuoteContent'
 import { QuestionCardView } from './QuestionCardView'
@@ -40,11 +42,13 @@ export function MessageBody({
   onOpenWorkspaceFile?: (link: Extract<ReturnType<typeof classifyFileLink>, { kind: 'workspace-file' }>) => void
 }) {
   const { t } = useTranslation('messaging')
+  const album = useMessageAlbum(msg.id)
   const card = msg.content_type === 'card' ? parseComposerCard(msg.content) : null
   if (card?.type === 'question') return <QuestionCardView card={card} chatId={msg.chat_id} messageId={msg.id} agentUserId={msg.sender_user_id ?? ''} time={time} />
   if (card) return <ComposerCardView card={card} isMine={msg.is_mine} isGroup={isGroup} chatId={msg.chat_id} senderName={senderName} time={time} memberProfiles={memberProfiles} onOpenTopic={compact && onOpenTopic && card.type === 'task' ? () => onOpenTopic(msg.id) : undefined} onOpenFile={onOpenFile} />
   if (msg.content_type === 'widget') return <WidgetBubble message={msg} />
   if (msg.content_type === 'attachment') {
+    if (album) return <MessageAlbumBubble members={album} isMine={msg.is_mine} chatId={msg.chat_id} senderName={senderName} onOpenFile={onOpenFile} />
     const voice = parseVoiceAttachmentContent(msg.content)
     if (voice) return <VoiceAttachmentBubble fileName={voice.fileName} durationMs={voice.durationMs} transcript={voice.transcript} isMine={msg.is_mine} />
     const media = parseAttachmentContent(msg.content, msg)

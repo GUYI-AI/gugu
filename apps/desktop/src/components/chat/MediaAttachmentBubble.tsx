@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState, type RefObject, type CSSProperties } from 'react'
+import { useContext, useEffect, useRef, type RefObject, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
@@ -14,6 +14,7 @@ import { openImageFromThumb, registerFullImage } from '../../lib/imageViewer'
 import { Button } from '../ui/Button'
 import { FileAttachmentCard } from './FileAttachmentCard'
 import { SentMessageSurface } from './sentMessageSurface'
+import { useNearViewport } from './useNearViewport'
 import { ExpiredAttachmentCard } from './ExpiredAttachmentCard'
 import { Markdown } from '../markdown/Markdown'
 import './mediaAttachmentBubble.css'
@@ -146,17 +147,3 @@ function inlineImageStyle(size?: { width: number; height: number }): CSSProperti
   return { width: fitted.width, height: 'auto', aspectRatio: `${fitted.width} / ${fitted.height}`, maxWidth: 'min(100%, calc(100cqw - 24px))' }
 }
 
-/** 滚到眼前(含上下 400px)才去取:一屏一批,往回翻历史时不把整段都下了。 */
-function useNearViewport(ref: RefObject<Element | null>, enabled = true): boolean {
-  const [near, setNear] = useState(false)
-  useEffect(() => {
-    const el = ref.current
-    if (!enabled || near || !el) return
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) setNear(true)
-    }, { rootMargin: '400px 0px' })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [ref, near, enabled])
-  return near
-}

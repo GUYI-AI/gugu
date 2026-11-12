@@ -8,7 +8,10 @@ import { useTranslation } from 'react-i18next'
 import type { MessageSendState, MessageItem } from '@gugu/core/shared/types/chat'
 import { useChatStore } from '../../store/chatContext'
 import { FailedSendStatus } from './FailedSendStatus'
-import { useAttachmentUploadProgress } from '../../lib/attachmentUploadProgress'
+import { useAttachmentUploadProgress, useAttachmentsUploadShare } from '../../lib/attachmentUploadProgress'
+import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
+import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
+import { useMessageAlbum } from './MessageAlbumContext'
 import { MessageSendingIndicator } from './MessageSendingIndicator'
 
 type Props = { state: MessageSendState; messageId: string; reason?: string | null; retryable?: boolean; blocks?: MessageItem['delivery_blocks']; undeliveredTo?: readonly string[] }
@@ -34,13 +37,22 @@ function MessageTransportStatus({ state, messageId, reason, retryable = true }: 
   const { t } = useTranslation('messaging')
   const { retrySend, discardSend } = useChatStore('retrySend', 'discardSend')
   const progress = useAttachmentUploadProgress(messageId)
+  // #2581 A send of several files: how far all of it is up; what failed is the failed files, and only they are resent or dropped.
+  const album = useMessageAlbum(messageId)
+  const uploading = album?.filter(member => member.local_send_state === 'sending') ?? null
+  const uploadShare = useAttachmentsUploadShare(uploading?.map(member => member.id) ?? null)
 
   if (state === 'unknown') return <span data-send-state="unknown" title={t('message.sendStatus.unknownHint')}
     className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">{t('message.sendStatus.unknown')}</span>
 
   if (state === 'sending') {
     const label = t('message.sendStatus.sending')
-    if (progress?.total && progress.loaded > 0) {
+    if (album && uploading && uploadShare) {
+      const percent = Math.floor((album.length - uploading.length + uploadShare) / album.length * 100)
+      return <span role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}
+        data-send-state="sending" className="text-[length:var(--font-caption)] text-[var(--text-secondary)] tabular-nums">{percent}%</span>
+    }
+    if (!album && progress?.total && progress.loaded > 0) {
       const percent = Math.max(0, Math.min(100, Math.floor(progress.loaded / progress.total * 100)))
       return <span role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}
         data-send-state="sending" className="text-[length:var(--font-caption)] text-[var(--text-secondary)] tabular-nums">{percent}%</span>
@@ -48,6 +60,14 @@ function MessageTransportStatus({ state, messageId, reason, retryable = true }: 
     return <MessageSendingIndicator label={label} title={label} />
   }
 
+  const failed = album?.filter(member => member.local_send_state === 'failed')
+  if (state === 'failed' && failed?.length) {
+    const images = failed.every(member => { const file = parseAttachmentContent(member.content, member); return !!file && isRenderableImage(file.fileName, file.mimeType) })
+    const retry = failed.filter(member => member.local_send_retryable !== false)
+    return <FailedSendStatus reason={reason} label={t(images ? 'message.sendStatus.albumImagesFailed' : 'message.sendStatus.albumFilesFailed', { count: failed.length })}
+      onRetry={retry.length ? () => { for (const member of retry) retrySend(member.id) } : undefined}
+      onDiscard={() => { for (const member of failed) discardSend(member.id) }} />
+  }
   if (state === 'failed') return <FailedSendStatus reason={reason} onRetry={retryable ? () => retrySend(messageId) : undefined} onDiscard={() => discardSend(messageId)} />
 
   // sent/delivered/read → 读回执圆环表达(@@@1460),这里不重复指示
