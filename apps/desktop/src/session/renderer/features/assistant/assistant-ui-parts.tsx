@@ -1,7 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { ChevronRight } from '@/lib/icons';
 import { cn } from '@/lib/cn';
-import { Avatar } from '@/components/Avatar';
 
 // #7199 「助理」App 的页面元件(类名见 assistant-today.css):页头、分段、一段标题 + 一张卡、
 // 卡里的行、两列的小卡、空态。各页只拼这些,❌ 各写各的圆角与间距。
@@ -16,28 +15,6 @@ export function PageHead({ title, sub, action }: { title: string; sub?: ReactNod
         {sub ? <p className="ta-page-sub">{sub}</p> : null}
       </div>
       {action}
-    </div>
-  );
-}
-
-/** 页里的一整条分段(任务页的「任务 | 定时任务」)。 */
-export function WideSegments<K extends string>({
-  items,
-  value,
-  onChange,
-}: {
-  items: readonly { id: K; label: string; icon?: ReactNode }[];
-  value: K;
-  onChange: (id: K) => void;
-}) {
-  return (
-    <div className="ta-seg-wide" role="tablist">
-      {items.map((item) => (
-        <button key={item.id} type="button" role="tab" aria-selected={item.id === value} onClick={() => onChange(item.id)} data-testid={`assistant-seg-${item.id}`}>
-          {item.icon}
-          {item.label}
-        </button>
-      ))}
     </div>
   );
 }
@@ -137,14 +114,6 @@ export function AssistantRow({
       {body}
     </div>
   );
-}
-
-/** 主人(登录的那个人)。 */
-export type AssistantOwner = { id: string; name: string; avatarUrl: string | null };
-
-/** 「关于你」那几行的行首:主人自己的头像(照个人介绍的通行做法:本人头像 + 标题 + 一句话)。认不出主人就不放行首,❌ 皇冠之类的装饰图标顶上。 */
-export function ownerLeading(owner: AssistantOwner | null | undefined): ReactNode {
-  return owner ? <Avatar name={owner.name} avatarUrl={owner.avatarUrl} seed={owner.id} size={36} /> : undefined;
 }
 
 /** 两列网格里的一张小卡(记忆「全部」:文件夹、录音笔记、一条记忆)。 */

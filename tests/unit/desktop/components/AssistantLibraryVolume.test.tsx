@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
-import { AssistantLibraryCard, AssistantLibraryVolume } from '../../../../apps/desktop/src/components/assistant/AssistantLibraryVolume'
+import { AssistantLibraryVolume } from '../../../../apps/desktop/src/components/assistant/AssistantLibraryVolume'
 import type { AssistantMachine } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-machine-core'
 import { assistantPaths } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-files'
 import { clickElement, createReactHarness, renderWithAppProviders, typeInto } from '../../../support/testHarness'
@@ -87,12 +87,6 @@ describe('Gugu structured capabilities', () => {
       for (const receive of notifications) receive({ extensionId: 'gugu.assistant',server: 'resources',method: 'notifications/resources/updated',params: { resource: 'capabilities' } })
     })
     await vi.waitFor(() => expect(harness.container.textContent).toContain('查看安排'))
-  })
-  it('counts real entries and does not send the owner to install AutoLibrary', async () => {
-    const { machine } = fixture()
-    await renderWithAppProviders(harness, <AssistantLibraryCard assistantId={"assistant"} machine={machine} kind="capabilities" onOpen={vi.fn()} />)
-    await vi.waitFor(() => expect(harness.container.textContent).toContain('1 条记录'))
-    expect(harness.container.textContent).not.toContain('AutoLibrary')
   })
   it('saves an independent entry and preserves input on failed save', async () => {
     const { machine, write, read, appCall } = fixture()

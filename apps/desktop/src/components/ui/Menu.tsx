@@ -14,7 +14,7 @@ import { Menu as MenuPrimitive } from '@base-ui/react/menu'
 import { ContextMenu as ContextMenuPrimitive } from '@base-ui/react/context-menu'
 import { Children, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { cn } from '@/lib/cn'
-import { ChevronRight } from '@/lib/icons'
+import { Check, ChevronRight, Search } from '@/lib/icons'
 import { popupMotion } from './variants'
 import { useBackLayer } from './sheetStack'
 import { useMobileShell } from '../../hooks/useMobileShell'
@@ -27,7 +27,9 @@ import { Switch } from './Switch'
 const menuPositioner = 'outline-none'
 
 const menuPopup = cn(
-  'gg-menu box-border overflow-hidden outline-none',
+  // @@@menu-height - 菜单最多撑到窗口里放得下的高度(Base UI 在 positioner 上给的 --available-height),多出来的在弹层里滚;
+  // ❌ 一长列拖出窗口底边(owner 11-10:群文件「上传者」几十个成员)。
+  'gg-menu box-border max-h-[var(--available-height)] overflow-x-hidden overflow-y-auto outline-none',
   // @@@float-one-edge (Refs #6104) — 浮层只画**一层抬起**,❌ 不再叠一圈描边。
   // design.md:「Do not stack a border, a ring, and a shadow on one edge.」
   // 原配方是 `border border-[var(--menu-border)]` + `shadow-[var(--shadow-lift)]`,两者共边。
@@ -195,13 +197,19 @@ export interface MenuItemProps {
   shortcut?: string
   /** false = 点了菜单不收(如话题行的置顶开关);默认点了就收。 */
   closeOnClick?: boolean
+  /** One of a choice: the chosen row carries a check at its trailing edge (as the session radio rows), so the labels of
+   * a choice share one left edge with every other row. ❌ A leading tick column. */
+  checked?: boolean
+  /** Opens a nested list in the menu's place (a phone's submenu): the row ends in the same › as a MenuSubmenu row. */
+  submenu?: boolean
   onClick?: () => void
   children: ReactNode
 }
 
-export function MenuItem({ icon, danger, disabled, title, className, style, 'data-testid': testId, render, nativeButton, shortcut, closeOnClick, onClick, children }: MenuItemProps) {
+export function MenuItem({ icon, danger, disabled, title, className, style, 'data-testid': testId, render, nativeButton, shortcut, closeOnClick, checked, submenu, onClick, children }: MenuItemProps) {
   return (
     <MenuPrimitive.Item
+      {...(checked === undefined ? {} : { role: 'menuitemradio', 'aria-checked': checked })}
       className={cn('group/menu-item', menuItem, className)}
       style={{ padding: menuRowPadding, ...style }}
       data-variant={danger ? 'danger' : 'default'}
@@ -223,12 +231,16 @@ export function MenuItem({ icon, danger, disabled, title, className, style, 'dat
           {shortcut}
         </span>
       )}
+      {checked && <Check size={16} aria-hidden className="shrink-0 text-[var(--menu-fg)]" />}
+      {submenu && <ChevronRight size={14} aria-hidden className="shrink-0 text-[var(--menu-icon)]" />}
     </MenuPrimitive.Item>
   )
 }
 
 /** Checkbox menu semantics own input; the inert Switch reuses the existing visual only. */
-export function MenuSwitchItem({ label, checked, onCheckedChange, disabled, 'data-testid': testId }: {
+export function MenuSwitchItem({ icon, label, checked, onCheckedChange, disabled, 'data-testid': testId }: {
+  /** The 20px icon slot, so the label starts where the icon rows' labels do. */
+  icon?: ReactNode
   label: string
   checked: boolean
   onCheckedChange: (checked: boolean) => void
@@ -237,6 +249,7 @@ export function MenuSwitchItem({ label, checked, onCheckedChange, disabled, 'dat
 }) {
   return <MenuPrimitive.CheckboxItem checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} closeOnClick={false}
     className={cn('group/menu-item', menuItem)} style={{ padding: menuRowPadding }} data-testid={testId}>
+    {icon != null && <span className={menuItemIcon}>{icon}</span>}
     <span className={menuItemLabel}>{label}</span>
     <Switch checked={checked} onCheckedChange={() => undefined} disabled={disabled} aria-hidden inert tabIndex={-1} className="pointer-events-none" />
   </MenuPrimitive.CheckboxItem>
@@ -244,20 +257,68 @@ export function MenuSwitchItem({ label, checked, onCheckedChange, disabled, 'dat
 
 const submenuRowStyle: CSSProperties = { padding: menuRowPadding }
 const submenuPositionerStyle: CSSProperties = { zIndex: 'var(--z-menu)' }
-// 子菜单最多撑到窗口里放得下的高度(base-ui 在 positioner 上给的 --available-height,与会话页各弹层同一个上限),
-// 多出来的在弹层里滚:群页头 ⋯ →「话题」话题一多就一直往下撑出窗口(owner 10-28)。父菜单那几行不在这里,不跟着滚。
-const submenuPopupStyle: CSSProperties = { minWidth: 160, maxWidth: 320, padding: menuSurfacePadding, maxHeight: 'var(--available-height)', overflowY: 'auto' }
+// 子菜单与父菜单同一个高度上限(@@@menu-height):群页头 ⋯ →「话题」话题一多就一直往下撑出窗口(owner 10-28)。
+const submenuPopupStyle: CSSProperties = { minWidth: 160, maxWidth: 320, padding: menuSurfacePadding }
+// A searchable list stops at about ten rows even in a tall window: the field finds the rest.
+const searchableSubmenuPopupStyle: CSSProperties = { width: 260, maxHeight: 'min(var(--available-height), 420px)' }
 
-/** A row that opens a nested menu beside it (header ⋯ →「话题」); the nested popup uses the same surface and rows. */
-export function MenuSubmenu({ icon, label, 'data-testid': testId, popupStyle, popupClassName, children }: {
+/**
+ * The search field at the top of a long menu (a list of members, projects…): it stays put while the rows under it scroll.
+ * Typed keys stay in the field (the menu's typeahead would take them). Escape / Tab close / leave the menu, and the arrows and
+ * Enter go on to it: down from the field to the rows, Enter picks the highlighted one.
+ */
+const MENU_KEYS = new Set(['Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'Enter'])
+
+export function MenuSearch({ value, onChange, placeholder, noResults, empty, className }: Partial<Pick<MenuSearchState, 'noResults' | 'empty'>>
+  & Pick<MenuSearchState, 'value' | 'onChange' | 'placeholder'> & {
+  /** Default: across the full width of a menu's 4px-padded surface. A surface without padding passes its own margins. */
+  className?: string
+}) {
+  return (<>
+    <div className={cn('gg-menu-search sticky z-[1] flex items-center gap-2 border-b border-[var(--border)] bg-inherit px-3 py-2', className ?? 'top-[-4px] -mx-1 -mt-1 mb-1')}>
+      <Search size={14} aria-hidden className="shrink-0 text-[var(--menu-icon)]" />
+      <input
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        onKeyDown={event => { if (!MENU_KEYS.has(event.key)) event.stopPropagation() }}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        className="min-w-0 flex-1 bg-transparent text-[length:var(--font-body)] text-inherit outline-none placeholder:text-[var(--menu-icon)]"
+      />
+    </div>
+    {empty && <div className="text-[length:var(--font-body)] text-[var(--menu-icon)]" style={submenuRowStyle}>{noResults}</div>}
+  </>)
+}
+
+/** A list of more choices than this gets a MenuSearch over it. */
+export const MENU_SEARCH_FROM = 10
+
+/**
+ * The rows a MenuSearch leaves, and the search to hand to MenuSubmenu (none while the list is short). Only rows with a label
+ * count and match: `labelOf` gives '' for a separator or a heading, and those go while a search is typed.
+ */
+export function useMenuSearch<T>(rows: readonly T[], labelOf: (row: T) => string, words: { placeholder: string; noResults: string }) {
+  const [value, onChange] = useState('')
+  const needle = value.trim().toLowerCase()
+  const searchable = rows.filter(row => labelOf(row)).length > MENU_SEARCH_FROM
+  const shown = searchable && needle ? rows.filter(row => labelOf(row).toLowerCase().includes(needle)) : rows
+  return { search: searchable ? { value, onChange, ...words, empty: !shown.length } : undefined, shown }
+}
+
+export type MenuSearchState = NonNullable<ReturnType<typeof useMenuSearch>['search']>
+
+/** A row that opens a nested menu beside it (header ⋯ →「话题」); the nested popup uses the same surface and rows.
+ * `search` puts a MenuSearch over the rows (a long list); the caller filters the children by its value. */
+export function MenuSubmenu({ icon, label, 'data-testid': testId, popupStyle, popupClassName, search, children }: {
   icon?: ReactNode
   label: ReactNode
   popupStyle?: CSSProperties
   popupClassName?: string
+  search?: MenuSearchState
   'data-testid'?: string
   children: ReactNode
 }) {
-  const style = { ...submenuPopupStyle, ...popupStyle }
+  const style = { ...submenuPopupStyle, ...(search ? searchableSubmenuPopupStyle : null), ...popupStyle }
   const portalContainer = useUiPortalContainer()
   return (
     <MenuPrimitive.SubmenuRoot>
@@ -268,7 +329,10 @@ export function MenuSubmenu({ icon, label, 'data-testid': testId, popupStyle, po
       </MenuPrimitive.SubmenuTrigger>
       <MenuPrimitive.Portal container={portalContainer}>
         <MenuPrimitive.Positioner className="gg-menu-positioner window-no-drag-region" positionMethod="fixed" collisionPadding={8} style={submenuPositionerStyle}>
-          <MenuPrimitive.Popup className={cn(menuPopup, popupClassName)} data-occludes-browser-page style={style}>{children}</MenuPrimitive.Popup>
+          <MenuPrimitive.Popup className={cn(menuPopup, popupClassName)} data-occludes-browser-page style={style}>
+            {search && <MenuSearch {...search} />}
+            {children}
+          </MenuPrimitive.Popup>
         </MenuPrimitive.Positioner>
       </MenuPrimitive.Portal>
     </MenuPrimitive.SubmenuRoot>
@@ -279,15 +343,17 @@ export function MenuSubmenu({ icon, label, 'data-testid': testId, popupStyle, po
  * 把低频的几行收进一行,悬浮后在旁边展开(owner 11-07)。只剩一行就留在原地:折一行省不了地方,只多一步。
  * 手机没有悬浮,窄屏也放不下第二层:照旧平铺。children 要直接是行 ——Fragment 或组件都只算一行。
  */
-export function MenuFold({ icon, label, 'data-testid': testId, children }: {
+export function MenuFold({ icon, label, search, 'data-testid': testId, children }: {
   icon?: ReactNode
   label: ReactNode
+  /** A long list's search (useMenuSearch): the fold stays one while it narrows the rows. */
+  search?: MenuSearchState
   'data-testid'?: string
   children: ReactNode
 }) {
   const mobile = useMobileShell()
-  if (mobile || Children.toArray(children).length < 2) return <>{children}</>
-  return <MenuSubmenu icon={icon} label={label} data-testid={testId}>{children}</MenuSubmenu>
+  if (mobile || (!search && Children.toArray(children).length < 2)) return <>{children}</>
+  return <MenuSubmenu icon={icon} label={label} search={search} data-testid={testId}>{children}</MenuSubmenu>
 }
 
 /**

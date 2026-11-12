@@ -21,6 +21,7 @@ import type { PermissionSubject } from '../acp/models/permissions';
  */
 import type { NormalizedEvent } from '../acp/reducer/normalized-event';
 import type { TranscriptItem, TranscriptTurn } from '../acp/models/turns/turn';
+import type { ToolNode } from '../acp/models/turns/tool-calls';
 import type { QueuedPrompt } from '../acp/models/prompt';
 import type { ToolImageLookup } from '../acp/models/turns/tool-calls';
 import type { SessionLiveReply } from './live-reply';
@@ -355,6 +356,29 @@ export function remoteSettlementGap(
   return kind === 'question' ? 'no_question_channel' : null;
 }
 
+/**
+ * A running subagent's own calls, as the phone and remote panels show them (#2500). They are kept beside the
+ * turns and not inside the turn that launched the subagent. `toolCallId` is the launch card's.
+ *
+ * In a snapshot `steps` is the newest `TIMELINE_SUBAGENT_STEPS` calls. In a batch it is only the calls that are new
+ * or changed since `from`; the reader replaces those by `toolCallId` and keeps the rest. A subagent that is absent
+ * from the list is no longer running, and the reader drops what it held for it. `completedSteps` counts every
+ * finished call, including the ones not sent.
+ */
+export type TimelineSubagent = {
+  toolCallId: string;
+  completedSteps: number;
+  steps: ToolNode[];
+  /**
+   * What it has written and thought so far, the newest `TIMELINE_SUBAGENT_TEXT` characters. A batch carries them only
+   * when they changed since `from`; absent means unchanged.
+   */
+  output?: string;
+  reasoning?: string;
+};
+export const TIMELINE_SUBAGENT_TEXT = 8192;
+export const TIMELINE_SUBAGENT_STEPS = 200;
+
 /** 整份快照：从最新往回取 `limit` 轮。 */
 export type TimelineSnapshot = TimelineWindowFields & {
   cursor: RecordCursor;
@@ -374,6 +398,8 @@ export type TimelineSnapshot = TimelineWindowFields & {
   liveReply?: SessionLiveReply | null;
   /** Live presentation only; not serialized into the native-record archive. */
   terminals?: readonly TerminalState[];
+  /** Running subagents with their calls; absent on older hosts. See `TimelineSubagent`. */
+  subagents?: TimelineSubagent[];
 };
 
 /**
@@ -418,6 +444,8 @@ export type TimelineBatch = TimelineWindowFields & {
   queuedPrompts?: Pick<QueuedPrompt, 'id' | 'text' | 'queueEdit' | 'clientMessageId'>[];
   /** Actual in-flight reply stage; absent on older hosts, null when no live reply is present. */
   liveReply?: SessionLiveReply | null;
+  /** Running subagents, each with the calls changed since `from`; absent on older hosts. See `TimelineSubagent`. */
+  subagents?: TimelineSubagent[];
   /** Live presentation only; not serialized into the native-record archive. */
   terminals?: readonly TerminalState[];
 };
@@ -1296,6 +1324,13 @@ export type NativeSessionRecord = {
   originTurnIds: string[];
   nextCursor: number | null;
   activeTurn: TranscriptTurn | null;
+  /**
+   * Aligned with `turns`: how many times the host rewrote each one. A reader that keeps turns compares it with what it
+   * holds (`revisions`). Hosts from before it send nothing, and such a reader falls back to reading the pages again.
+   */
+  turnRevisions?: number[];
+  /** Asked for with `revisionsFrom`: every stored row from that sequence on, oldest first, as `[seq, revision]`. */
+  revisions?: Array<[seq: number, revision: number]>;
 };
 
 export * from './attachment-upload-contract';

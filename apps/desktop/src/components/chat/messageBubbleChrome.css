@@ -26,7 +26,7 @@
 .msg-sender > .msg-sender-name { flex-shrink: 0; max-width: 100%; }
 .msg-sender:has(> .gg-chat-reply-quote) > .msg-sender-name { max-width: calc(100% - var(--lh-caption) - 6px); }
 .msg-sender-link { border: 0; border-radius: 0; padding: 0; min-height: 0; height: auto; background: transparent; color: inherit; font: inherit; text-align: inherit; cursor: pointer; }
-.msg-sender-link:hover, .msg-sender-link:focus-visible { text-decoration: underline; }
+.msg-sender-link:hover, .msg-sender-link:focus-visible:not([data-pointer-focus] *) { text-decoration: underline; }
 .msg-sender > .gg-chip { display: block; flex-shrink: 1; font-weight: var(--font-weight-regular); }
 /* Preserve the label’s intrinsic contribution so hiding it cannot shrink the bubble and lock it hidden. */
 .msg-sender[data-owner-hidden] > .gg-chip { visibility: hidden; padding-inline: 0; margin-left: -6px; }

@@ -95,9 +95,16 @@ export function ShellTitlebarDragRegion() {
 export const ShellTitlebar = observer(function ShellTitlebar({
   leftSlot,
   children,
+  dragRegion = true,
 }: {
   leftSlot?: ReactNode
   children?: ReactNode
+  /**
+   * false: this band is not the window's handle — the page puts its own where nothing live is under it. An App's page is
+   * a webview drawn in the resident layer, which comes before this band in the order Electron folds drag / no-drag
+   * rectangles: a band over it wins over the webview's no-drag, and real clicks there move the window (CDP clicks don't).
+   */
+  dragRegion?: boolean
 }) {
   const { leftAnimatedWidth } = useWorkspaceLayoutContext()
 
@@ -123,7 +130,7 @@ export const ShellTitlebar = observer(function ShellTitlebar({
           `pointer-events-none` ❌ 不会让窗口拖不动:拖拽区由 `app-region` 定义,不经 Blink
           的命中测试。真机实测(真鼠标点击,不是 elementFromPoint):只有 no-drag 时三个按钮
           全部点不到,叠加本行后全部点到,还原后又全部点不到。 */}
-      <ShellTitlebarDragRegion />
+      {dragRegion ? <ShellTitlebarDragRegion /> : null}
       {leftSlot ? (
         <motion.div
           className="absolute top-0 flex h-10 items-center [-webkit-app-region:no-drag]"

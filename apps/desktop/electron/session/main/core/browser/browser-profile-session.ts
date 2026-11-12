@@ -9,7 +9,6 @@ import {
 } from './browser-cors-relaxation';
 import { browserWebContentsRegistry } from './browser-webcontents-registry';
 import { installRemoteLoopbackRequests } from './remote-loopback-requests';
-import { finishVaultLoginRequest, markVaultLoginNetworkInstalled, vaultLoginResponseBlocked, vaultLoginResponseHeaders } from './vault-browser-login-network';
 import {
   firefoxUserAgent,
   isGoogleAuthUrl,
@@ -70,11 +69,8 @@ export function configureBrowserProfileSession(partition: string): Session {
   });
 
   ses.webRequest.onHeadersReceived((details, callback) => {
-    if (vaultLoginResponseBlocked(ses, details)) { callback({ cancel: true }); return; }
     const corsRequest = corsRequests.get(details.id);
     corsRequests.delete(details.id);
-    const privateHeaders = vaultLoginResponseHeaders(ses, details);
-    if (privateHeaders) { callback({ responseHeaders: privateHeaders }); return; }
     if (!relaxCorsForLocalDevelopment || !corsRequest || !details.responseHeaders) {
       callback({ responseHeaders: details.responseHeaders });
       return;
@@ -86,14 +82,11 @@ export function configureBrowserProfileSession(partition: string): Session {
   });
 
   ses.webRequest.onCompleted((details) => {
-    finishVaultLoginRequest(ses, details.id);
     corsRequests.delete(details.id);
   });
   ses.webRequest.onErrorOccurred((details) => {
-    finishVaultLoginRequest(ses, details.id);
     corsRequests.delete(details.id);
   });
-  markVaultLoginNetworkInstalled(ses, 'responses');
 
   ses.setPermissionRequestHandler((_webContents, permission, callback) => {
     const granted = ALLOWED_BROWSER_PERMISSIONS.has(permission);

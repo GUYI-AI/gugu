@@ -27,7 +27,7 @@ import { systemProxyFill } from '@main/utils/systemProxyEnv';
 import { loginShellEnv } from '@main/utils/userEnv';
 import { err, ok, type Result } from '@gugu/session-shared';
 import type { AgentConfigAuthError } from '@gugu/session-core/workspace-server';
-import { createHarnessConnection, listHarnessConnections, removeHarnessConnection, selectHarnessConnection, sessionHarnessConnectionId } from '@main/core/agents/harness-connections';
+import { createHarnessConnection, harnessHasConnections, listHarnessConnections, removeHarnessConnection, selectHarnessConnection, sessionHarnessConnectionId } from '@main/core/agents/harness-connections';
 import { connectionFailure } from '@main/core/sessions/subscription-sessions-busy';
 
 const AGENT_CONFIG_WIRE_CHANNEL = 'agent-config-wire';
@@ -223,8 +223,9 @@ function withHostResolvedCli(
       const status = await client.refreshAuthStatus({ ...input, runContext: await runContextFor(input) });
       if (!status.success) throw new Error('Cannot read the connection’s sign-in status');
       if (input.connectionId !== 'native' && status.data.kind !== 'authenticated') throw new Error('Sign in before using this connection');
-      if (input.providerId === 'codex' || input.providerId === 'claude') {
-        // 已有会话跟着默认订阅走:换凭据前要先停掉在跑的会话(#26)。
+      if (harnessHasConnections(input.providerId)) {
+        // 已有会话跟着默认订阅走:换凭据前要先停掉在跑的会话(#26)。API Key 连接的家(#2507)同一条:
+        // 在跑的进程手里是旧的那把 key,停掉后下一条消息用新连接接着跑。
         const { switchSubscription } = await import('@main/core/sessions/subscription-switch');
         await switchSubscription(input.providerId, input.connectionId, (await runContextFor({ providerId: input.providerId })).env, { stopBusySessions });
       } else {

@@ -73,7 +73,6 @@ export default {
     "profileTitle": "Let's get to know you",
     "profileSub": "Gugu and your agents use this to address you and understand you. You can change it later in Settings → Account.",
     "profileSubDesktop": "Gugu and your agents will use these details to address you.",
-    "introSubDesktop": "Gugu is your personal assistant for plans and everyday tasks.",
     "avatar": "Change avatar",
     "avatarUploading": "Uploading…",
     "nameLabel": "What should we call you?",
@@ -104,8 +103,6 @@ export default {
     "harnessVerifyFailed": "Couldn't detect the agent after installation. Please retry.",
     "harnessReadFailed": "Couldn't read agent status. Please try again.",
     "harnessCancelFailed": "Couldn't cancel the installation. Please try again.",
-    "introStart": "Set up my Gugu",
-    "introLater": "Look around first",
     "terminalTitle": "Terminal",
     "terminalSub": "Used to CLIs like Claude Code or Codex in a terminal? Turn it on to work with agents through a TUI.",
     "terminalToggle": "Enable terminal",
@@ -424,6 +421,10 @@ export default {
     "sendFailed": "Could not send the code. Try again.",
     "verifyFailed": "Could not verify the code. Try again."
   },
+  "assistantRules": {
+    "stuckTitle": "Gugu can’t start yet",
+    "stuckBody": "It needs the Gugu Assistant App, which couldn’t be installed or is switched off. It continues on its own once you’re online or the App is on again."
+  },
   "brand": {
     "name": "Gugu"
   },
@@ -519,7 +520,6 @@ export default {
       "open": "Open"
     },
     "group": {
-      "assistant": "Gugu",
       "account": "Me",
       "preferences": "Preferences",
       "work": "Work",
@@ -527,9 +527,8 @@ export default {
       "about": "About"
     },
     "nav": {
-      "assistant": "Profile",
-      "connectors": "Connected apps",
       "about": "About",
+      "connectors": "Connected apps",
       "account": "Account",
       "apps": "Apps",
       "browser": "Browser",

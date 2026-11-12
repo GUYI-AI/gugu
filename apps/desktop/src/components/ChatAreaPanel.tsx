@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import type { FlowListHandle } from '@/lib/flowList'
 import { ChevronLeft, MessageCircle } from '@/lib/icons'
 import { useImPageTab } from '../lib/shellTab'
-import { useActiveChatIdentity, useChatStore, useChatStoreReader, useChatsWhile } from '../store/chatContext'
+import { useActiveChatIdentity, useChatStore, useChatsWhile } from '../store/chatContext'
 import { ChatLineScope } from '../store/chatLineScope'
 import { useAuth } from '../store/auth'
 import type { AgentConversationActivity, GroupCollabSnapshot, MessageItem } from '@gugu/core/shared/types/chat'
@@ -17,6 +17,7 @@ import { useChatHistoryPagination } from './chat/useChatHistoryPagination'
 import { useGroupCollabLoader, EMPTY_GROUP_COLLAB } from '../hooks/useGroupCollabLoader'
 import { useRoomAuthorityRevision } from '../hooks/useRoomAuthorityRevision'
 import { LiveForwardMessageDialog } from './chat/ForwardMessageDialog'
+import { useForwardToChats, type ForwardNote } from './chat/forwardToChats'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { drainTopicSplitRequest, requestTopicSplit } from '../lib/topicSplitRequest'
@@ -94,7 +95,7 @@ interface ChatAreaPanelProps {
   openNonce?: number
   onBack?: () => void
   /** #7199「助理」App 里那块:头栏只在搜索时出现(头像、搜索、设置在 App 自己那一排),输入框「和 X 聊天」+「+」;typing = 接在消息流末尾、取代运行条的「它在处理」。 */
-  chrome?: { placeholder: string; attachGlyph: ReactNode; attachMenu?: readonly ComposerAttachAction[]; typing?: ReactNode; composerHeader?: ReactNode; hideRunningStatus?: boolean;runtimeReady?:boolean }
+  chrome?: { placeholder?: string; attachGlyph: ReactNode; attachMenu?: readonly ComposerAttachAction[]; typing?: ReactNode; composerHeader?: ReactNode; hideRunningStatus?: boolean;runtimeReady?:boolean }
   /** Block tab-strip slots for actions, title, topics and right-panel tabs; absent on standalone/phone headers. */
   blockHost?: { actions: HTMLElement | null; title: HTMLElement | null; tabs: HTMLElement | null }
   onOpenUserChat?: (target: MemberProfileChatTarget) => void; onOpenSessionpageAgentFile?: (agentUserId: string, path: string) => Promise<void>
@@ -116,7 +117,6 @@ export function ChatAreaPanel({ chatId, ...surface }: ChatAreaPanelProps) {
 function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarget = false, hidden = false, mobile = false, openNonce, onBack, chrome, blockHost, onOpenUserChat }: Omit<ChatAreaPanelProps, 'chatId'>) {
   const { toast } = useToast()
   const { t } = useTranslation('messaging')
-  const readChatStore = useChatStoreReader()
   const activeChat = useActiveChatIdentity()
   const { getImRepository, subscribeAccountRevision, identitiesById, activeChatId, messages, loadingMessages, messagesError, refreshMessages, sendMessage, toggleReaction, memberReadSeqs, clearMessages, deleteMessage, sendAttachments, pinChat, deleteChat, leaveGroup, setChatNotificationLevel, loadOlderMessages, messageWindow, unreadEntry, jumpToUnreadEntry, loadNewerMessages, loadMessageAnchor, returnToLatestMessages, markMessageVisible, setFollowingTail, threadScope, setActiveChatId } = useChatStore('getImRepository', 'subscribeAccountRevision', 'identitiesById', 'activeChatId', 'messages', 'loadingMessages', 'messagesError', 'refreshMessages', 'sendMessage', 'toggleReaction', 'memberReadSeqs', 'clearMessages', 'deleteMessage', 'sendAttachments', 'pinChat', 'deleteChat', 'leaveGroup', 'setChatNotificationLevel', 'loadOlderMessages', 'messageWindow', 'unreadEntry', 'jumpToUnreadEntry', 'loadNewerMessages', 'loadMessageAnchor', 'returnToLatestMessages', 'markMessageVisible', 'setFollowingTail', 'threadScope', 'setActiveChatId')
   const { user } = useAuth()
@@ -339,15 +339,14 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
   // @@@message-forward (#899) / @@@multi-select (#988) - fan out every pending message into every
   // selected target chat. On success (and if we were in batch select), leave select mode.
-  const handleForwardTo = useCallback(async (targetChatIds: string[]) => {
-    if (!user || forwardMessages.length === 0) return
-    for (const msg of forwardMessages) {
-      for (const targetChatId of targetChatIds) {
-        await readChatStore().forwardMessage(msg, targetChatId)
-      }
-    }
+  const forwardTo = useForwardToChats()
+  const handleForwardTo = useCallback(async (targetChatIds: string[], note: ForwardNote, sent: (chatId: string) => void) => {
+    if (forwardMessages.length === 0) return
+    // Several picked messages read in the order they were said, however they were ticked.
+    const pieces = [...forwardMessages].sort((a, b) => a.seq - b.seq).map(message => ({ kind: 'message' as const, message }))
+    await forwardTo(pieces, targetChatIds, note, sent)
     if (selectMode) exitSelectMode()
-  }, [forwardMessages, user, selectMode, exitSelectMode, readChatStore])
+  }, [forwardMessages, selectMode, exitSelectMode, forwardTo])
 
   // Listen for RPC-triggered quote
   useEffect(() => {
@@ -377,7 +376,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   useChatHistoryPagination({ resetKey: chatResetKey, messages, enabled: !unreadNavigationPending, scroller: scrollerEl, atBottom: viewportAtBottom, loadOlder: loadOlderMessages, loadNewer: loadNewerMessages, window: messageWindow, onError: onHistoryError })
 
   // #1708 来源消息(群右栏工作区 App 的 gugu.showMessage):不在加载段里的先按锚点载进来,再定位 + 闪烁;载不到 → fail-loud toast。
-  const showMessage = useSourceMessageReveal({ activeChatId, viewportKey, navigationTarget, enabled: surfaceVisible, ready: tabs.chatUp, onNavigate: () => { if (activeChatId && tabs.page) setPanelFull(activeChatId, tabs.page.tabId, false); else if (activeChatId && mobile) showChatOnly(activeChatId) }, rows: chatListRows, listRef, isAtBottomRef, setFollowingTail, setFlashMessageId, flashTimerRef, revealMessage, onMissing: () => toast(t('chatArea.source.notVisible'), 'error') })
+  const showMessage = useSourceMessageReveal({ activeChatId, viewportKey, navigationTarget, enabled: surfaceVisible, ready: tabs.chatUp, onNavigate: () => { if (activeChatId && tabs.page) setPanelFull(activeChatId, tabs.page.tabId, false); else if (activeChatId && mobile) showChatOnly(activeChatId) }, setFlashMessageId, flashTimerRef, revealMessage, onMissing: () => toast(t('chatArea.source.notVisible'), 'error') })
 
   const { pinToBottom, onTotalListHeightChanged } = useTailPinning({ resetKey: chatResetKey, messages: listedMessages,
     enabled: !unreadNavigationPending, messageWindow, scrollerEl, scrollerRef, listRef, isAtBottomRef,

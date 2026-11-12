@@ -2,7 +2,7 @@ import type { useSessionMessages } from '@renderer/localization/use-session-mess
 import { compareExtensionVersions, isConfinedToolProgram, programLine, type ExtensionCapability, type ExtensionManifest } from '@shared/extensions/manifest';
 import { localizedManifestText } from '@shared/extensions/catalog';
 import { addedPermissions } from '@shared/extensions/upgrade';
-import { isComputerUseView } from '@shared/extensions/app-places';
+import { READABLE_RESOURCE_DOMAINS } from '@shared/extensions/agent-resources';
 import type { ExtensionConsentDetails } from '@shared/extensions/host-actions';
 
 /**
@@ -39,6 +39,19 @@ const CAPABILITY_MESSAGE = {
   'chat:relay': 'extensions.permissionsChatRelay',
   'chat:read': 'extensions.permissionsChatRead',
   'chat:unread': 'extensions.permissionsChatUnread',
+  'chat:files': 'extensions.permissionsChatFiles',
+  'chat:draft': 'extensions.permissionsChatDraft',
+  'chat:surface': 'extensions.permissionsChatSurface',
+  'chat:resources': 'extensions.permissionsChatResources',
+  'chat:resources:write': 'extensions.permissionsChatResourcesWrite',
+  'chat:voice-notes:manage': 'extensions.permissionsChatVoiceNotesManage',
+  'chat:schedules': 'extensions.permissionsChatSchedules',
+  'chat:schedules:control': 'extensions.permissionsChatSchedulesControl',
+  'assistant:status': 'extensions.permissionsAssistantStatus',
+  'assistant:open': 'extensions.permissionsAssistantOpen',
+  'assistant:rename': 'extensions.permissionsAssistantRename',
+  'chat:work': 'extensions.permissionsChatWork',
+  'chat:voice-notes:record': 'extensions.permissionsChatVoiceNotesRecord',
   'agents:read': 'extensions.permissionsAgentsRead',
   'agents:read:all': 'extensions.permissionsAgentsReadAll',
   'agents:read:all-machines': 'extensions.permissionsAgentsReadAllMachines',
@@ -61,7 +74,19 @@ export function describeCapability(
   machine?: string
 ): string {
   if (capability === 'agents:tools') return describeAgentTools(manifest, translate, machine);
+  if (capability === 'chat:resources' || capability === 'chat:resources:write') return describeAgentResources(capability, manifest, translate);
   return translate(CAPABILITY_MESSAGE[capability], { computer: computerNamed(translate, machine) });
+}
+
+/**
+ * #1927 (42) The agent's resources a binding reaches, named as this App lists them for that action — those kinds and no
+ * others, in one order whatever the manifest's, called as the assistant's own pages call them.
+ */
+function describeAgentResources(capability: 'chat:resources' | 'chat:resources:write', manifest: ExtensionManifest, translate: SessionTranslate): string {
+  const listed: readonly string[] = manifest.permissions?.bindings?.[0]?.domains?.[capability === 'chat:resources' ? 'resources' : 'resources:write'] ?? [];
+  const kinds = READABLE_RESOURCE_DOMAINS.filter((domain) => listed.includes(domain))
+    .map((domain) => translate(`extensions.resourceKind.${domain}`)).join(translate('extensions.resourceKindSeparator'));
+  return translate(CAPABILITY_MESSAGE[capability], { kinds });
 }
 
 /**
@@ -89,11 +114,6 @@ function describeCapabilities(
  */
 function describeAgentTools(manifest: ExtensionManifest, translate: SessionTranslate, machine?: string): string {
   const servers = manifest.contributes.mcpServers ?? [];
-  // #7317 Computer Use runs no program of its own: it is the switch of gugu's computer control on that computer (agents
-  // operate its apps once it is on), and its page shows that control at work. With skills it gives agents something more.
-  if (isComputerUseView(manifest)) {
-    return translate('extensions.permissionsComputerUseView', { computer: computerNamed(translate, machine) });
-  }
   if (servers.length === 0) {
     return machine ? translate('extensions.permissionsAgentsSkillsOnlyOn', { machine }) : translate('extensions.permissionsAgentsSkillsOnly');
   }

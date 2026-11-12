@@ -26,7 +26,9 @@ export function finishRendererContentMenu(requestId: string, actionId?: string):
 }
 
 /** A message menu asked for by the task timeline, drawn by the app's host with the chat's own MsgMoreMenu. */
-export type RendererMessageMenu = MessageActionTarget & { x: number; y: number; requestId: string }
+export type RendererMessageMenu = MessageActionTarget & { x: number; y: number; requestId: string
+  /** The phone: lift this bubble as the chat's long-press menu does. */
+  lift?: { bubble: HTMLElement; touchY: number; mine: boolean } }
 
 export function showRendererMessageMenu(menu: Omit<RendererMessageMenu, 'requestId'>): void {
   window.dispatchEvent(new CustomEvent<RendererMessageMenu>(RENDERER_MESSAGE_MENU_OPEN, { detail: { ...menu, requestId: crypto.randomUUID() } }))

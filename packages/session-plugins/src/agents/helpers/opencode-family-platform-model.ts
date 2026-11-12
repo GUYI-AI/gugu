@@ -5,7 +5,7 @@ import {
   type PlatformModelLoad,
   type SessionModelCapability,
 } from '@gugu/session-core/agents/plugins';
-import { openCodeFamilyReasoningEntry } from './opencode-family-model-config';
+import { openCodeFamilyProvider, openCodeFamilyReasoningEntry } from './opencode-family-model-config';
 
 /** The id Gugu gives the provider block it injects into an opencode session. */
 export const OPENCODE_PLATFORM_PROVIDER_ID = 'gugu-platform'
@@ -53,11 +53,11 @@ export function openCodeFamilyConfigContent(
   const contextWindow = model.contextWindow
   // 自定义 provider 下的模型在 catalog 里没有条目,不声明窗口它就没有窗口。
   // `limit.context` 就是那个字段,和模型 id 写在同一条上。
+  // ⚠️ 窗口未知(一把 API Key 连接说不出窗口,#2507)就**整个不写 `limit`**:opencode 1.18.28 的 schema 里
+  //    `limit` 一出现就要 `context`(实测「Missing key provider.gugu-platform.models.<m>.limit.context」,
+  //    session/new 起不来);不写 `limit` 它用自己的默认、照常起会话。平台会话的窗口恒已知(平台那条路缺窗口先抛),不受影响。
   const modelEntry = (window: number | null | undefined) => ({
-    limit: {
-      output: OPENCODE_PLATFORM_OUTPUT_LIMIT,
-      ...(positiveWindow(window) ? { context: window } : {}),
-    },
+    ...(positiveWindow(window) ? { limit: { output: OPENCODE_PLATFORM_OUTPUT_LIMIT, context: window } } : {}),
     // 推理档 —— `variants`(整张表)+ `options`(这次会话选中的那一档)。与插件物化那条路
     // **共用同一个函数**,理由同 `npm` / `limit`:两边漂移时,漂了的那家会静默走它自己的默认。
     ...openCodeFamilyReasoningEntry(reasoning, model.reasoningEffort),
@@ -86,11 +86,13 @@ export function openCodeFamilyConfigContent(
   if (!models[selectedModel]) models[selectedModel] = modelEntry(contextWindow)
   // 模型的寻址方式是 `provider/model`,所以平台模型只有在同一份文档里连 provider 一起声明
   // 之后才选得中。两半都是会话级的,随进程消亡。
+  // 一把 API Key 连接:块叫连接的名字(这一家界面上显示的那一格),❌「Gugu 平台额度」;平台会话原样。
+  const provider = openCodeFamilyProvider(model, { id: OPENCODE_PLATFORM_PROVIDER_ID, name: PLATFORM_PROVIDER_NAME })
   return {
     spawnEnv: {
       [envKey]: JSON.stringify({
         provider: {
-          [OPENCODE_PLATFORM_PROVIDER_ID]: {
+          [provider.id]: {
             // ⚠️ 这一个字段就是 opencode 系的**协议旋钮**。它自己的文档原话:
             //   「对其它 OpenAI 兼容供货商用 `@ai-sdk/openai-compatible`(用于 `/v1/chat/completions`);
             //     如果模型走 `/v1/responses`,用 `@ai-sdk/openai`」。
@@ -100,12 +102,12 @@ export function openCodeFamilyConfigContent(
             // 实测同一份配置只换这一个字段:compatible → chat/completions;openai → responses。
             // ⇒ 值由那一家 platform.ts 的 wireProtocol 查出(`OPENCODE_FAMILY_SDK_PACKAGE`),只有一处可改。
             npm: OPENCODE_FAMILY_SDK_PACKAGE[protocol],
-            name: PLATFORM_PROVIDER_NAME,
+            name: provider.name,
             options: { baseURL: platform.baseUrl, apiKey: platform.apiKey },
             models,
           },
         },
-        model: `${OPENCODE_PLATFORM_PROVIDER_ID}/${selectedModel}`,
+        model: `${provider.id}/${selectedModel}`,
       }),
     },
   }

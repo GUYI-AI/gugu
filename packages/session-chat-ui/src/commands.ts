@@ -139,6 +139,13 @@ export type ChatCommands = {
 
   /** Fetch one tool picture from its original history source when its thumbnail is shown. */
   resolveToolImage?: (itemId: string, index: number) => Promise<string | null>;
+  /**
+   * A row has come on screen from behind a fold (an opened process, an opened exchange), or is drawn from an item
+   * its page held back (`held`). A host whose pages carry turns as their folded form reads that row's turn again,
+   * whole, and puts it in place; the row shows what it has until then. `itemId` is the row's; it starts with its
+   * turn's id.
+   */
+  onHeldShown?: (itemId: string) => void;
 
   /**
    * Called when the user clicks the stop button on the current user message

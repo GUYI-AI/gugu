@@ -121,6 +121,7 @@ import {
   scrollContainerEmbedded,
   unitRowWrapper,
   widthProbeClass,
+  olderPageLoading, olderPageLoadingDot,
 } from './chat-root.css';
 import './chat-fonts.css';
 import { vars } from './styles/theme.css';
@@ -150,10 +151,16 @@ const PREFETCH_BEHIND = 20;
 const PREFETCH_MIN_REMAINING_MS = 3;
 
 // onReachStart fires when scrollTop is within this threshold of the canvas top,
-// or within one viewport height when that is larger, so each older page lands a
-// screen ahead of the reader. Debounced: fires once until the reader scrolls away
-// or the rendered history changes (#2403).
+// or within OLDER_PAGE_AHEAD_SCREENS viewport heights when that is larger. Debounced: fires once until the reader
+// scrolls away or the rendered history changes (#2403).
 const REACH_START_THRESHOLD_PX = 200;
+// @@@older-pages-ahead-by-screens — how much loaded history is kept above the reader, in screens. A page is a number
+// of bytes, not of rows: one page of folded exchanges can add less than a screen. Asking again after each landing
+// until this much is above keeps the reader from catching up with the top, whatever a page turns out to hold.
+const OLDER_PAGE_AHEAD_SCREENS = 3;
+
+// How long an older-page request may run before the list shows it as loading.
+const OLDER_PAGE_LOADING_DELAY_MS = 150;
 
 // Maximum absolute scrollTop delta that can originate from a writeScrollTop
 // self-write (sub-pixel / device-pixel rounding). Any delta larger than this
@@ -282,7 +289,8 @@ export type ChatRootProps = {
    */
   commands?: () => ChatCommands;
   /** Fired when the user scrolls near the top and the engine has run out of history. */
-  onReachStart?: () => void;
+  /** Fires near the top of the loaded history. Return the page request to show it as loading until it settles. */
+  onReachStart?: () => void | Promise<unknown>;
   /** Fired when the "at bottom" sticky state changes. */
   onAtBottomChange?: (atBottom: boolean) => void;
   /**
@@ -443,11 +451,11 @@ export function ChatRoot(props: ChatRootProps) {
   const updateContentColumnGeometry = () => syncContentColumnGeometry(widthProbeEl, scrollEl, setColumnWidth, setPinFrame);
 
   const updateSlotPadBottom = () => {
-    if (props.composer !== 'slot' || effectiveComposerPlacement() === 'center') {
-      setSlotPadBottom(0);
-      return;
-    }
-    setSlotPadBottom(composerSlotEl?.getBoundingClientRect().height ?? 0);
+    const height = props.composer !== 'slot' || effectiveComposerPlacement() === 'center' ? 0 : composerSlotEl?.getBoundingClientRect().height ?? 0;
+    setSlotPadBottom(height);
+    // The composer layer's height for a host's CSS: a host whose surface shows through (no painted fades) masks the
+    // scroller off where the layer begins.
+    outerEl?.style.setProperty('--chat-composer-slot-h', `${height}px`);
   };
 
   const setComposerPlacement = (
@@ -593,7 +601,7 @@ export function ChatRoot(props: ChatRootProps) {
   const committedBuild = createMemo<CommittedBuild | undefined>((previous) => {
     const s = state();
     const next = projectedCommitted();
-    const ctx = segmentCtx(false);
+    const ctx = { ...segmentCtx(false), settled: true };
     const folds = committedFolds();
     const sourceWindow = commands().sourceWindow;
     // A model swap (view.setModel) starts from an empty incremental cache.
@@ -667,10 +675,81 @@ export function ChatRoot(props: ChatRootProps) {
     if (!build) return;
     if (previous?.state === build.state && !build.reseed) return;
     if (previous?.state !== build.state) itemScrollGeneration++;
+    else {
+      keepReadingAnchor(previous, build);
+      const m = untrack(anchor);
+      let at = m.kind === 'anchor' && build.indexById.has(m.itemId) ? previous.indexById.get(m.itemId) : undefined;
+      // A reader at the tail, or reading the live turn, is below every committed row: they move with the last one.
+      if (at === undefined) {
+        at = previous.units.length - 1;
+        while (at >= 0 && !build.indexById.has(previous.units[at]!.itemId)) at--;
+      }
+      // A collapse in flight projects its shrinking geometry and the viewport together (see applyAboveCompensation).
+      const collapsing = activityCollapse?.model === build.state && m.kind === 'anchor' && activityCollapse.itemId === m.itemId;
+      rebuiltUnder = at >= 0 && !collapsing ? { itemId: previous.units[at]!.itemId, top: virt.top(at) } : null;
+    }
     if (previous) snapshotInto(previous.state, previous.units);
     virt.setCount(0, () => 0);
     pendingSizeDeltas = [];
   }));
+  // ── Older page in flight ───────────────────────────────────────────────────
+  // The host's page request, as returned by onReachStart. A request that settles within OLDER_PAGE_LOADING_DELAY_MS
+  // (a local read) shows nothing: dots that flash for a frame or two are noise.
+  // Holds the model the request was made for: a view that swaps to another conversation does not show the dots there.
+  const [olderPageLoadingFor, setOlderPageLoadingFor] = createSignal<ChatState | null>(null);
+  let olderPageRequest: Promise<unknown> | null = null;
+  let olderPageTimer: ReturnType<typeof setTimeout> | undefined;
+  const showOlderPageLoading = (request: void | Promise<unknown>) => {
+    if (!(request instanceof Promise)) return;
+    const model = state();
+    olderPageRequest = request;
+    clearTimeout(olderPageTimer);
+    olderPageTimer = setTimeout(() => { if (olderPageRequest === request) setOlderPageLoadingFor(model); }, OLDER_PAGE_LOADING_DELAY_MS);
+    const settle = () => {
+      if (olderPageRequest !== request) return;
+      olderPageRequest = null;
+      clearTimeout(olderPageTimer);
+      setOlderPageLoadingFor(null);
+    };
+    request.then(settle, settle);
+  };
+  onCleanup(() => { olderPageRequest = null; clearTimeout(olderPageTimer); });
+
+  // @@@rebuild-moves-with-reader — where the reader's row sat before a reseeding rebuild. The count-sync effect moves
+  // the scroll offset by as much as that row moved, in the same synchronous update. Leaving it to the next frame's
+  // projection is not enough: a reader still scrolling when the page lands has an unread scroll delta, and the read
+  // phase would take the anchor again from the old offset in the new geometry, a whole page away.
+  let rebuiltUnder: { itemId: string; top: number } | null = null;
+
+  // @@@anchor-outlives-its-row — the reading anchor names the row at the top of the viewport, and a rebuild can take
+  // that row away while everything the reader sees stays: the day line above the first loaded turn moves up to an
+  // older turn of the same day when a page lands above it; a fold run is keyed again. An anchor without its row
+  // projects nothing, so the scroll offset stays where it was and the older page is drawn in place of what was being
+  // read. The outgoing geometry is still in the virtualizer here: hand the anchor to the nearest row that survives,
+  // at the same scroll position.
+  function keepReadingAnchor(previous: CommittedBuild, build: CommittedBuild): void {
+    const m = untrack(anchor);
+    if (m.kind !== 'anchor' || build.indexById.has(m.itemId)) return;
+    const from = previous.indexById.get(m.itemId);
+    if (from === undefined) return;
+    let last = from;
+    while (previous.units[last + 1]?.itemId === m.itemId) last++;
+    const survives = (i: number) => {
+      const id = previous.units[i]?.itemId;
+      return id !== undefined && build.indexById.has(id);
+    };
+    let to = last + 1;
+    while (to < previous.units.length && !survives(to)) to++;
+    if (to >= previous.units.length) {
+      to = from - 1;
+      while (to >= 0 && !survives(to)) to--;
+      if (to < 0) return;
+    }
+    const position = m.edge === 'top'
+      ? virt.top(from) + m.offset
+      : virt.top(last) + virt.size(last) - viewHeight() + padBottom() - padTop() + m.offset;
+    setAnchor({ kind: 'anchor', itemId: previous.units[to]!.itemId, edge: 'top', offset: position - virt.top(to) });
+  }
 
   /**
    * 还在跑的后台任务挂在哪(owner 2026-10-27 原型:后台那一句与「执行中」同一行)。
@@ -853,13 +932,16 @@ export function ChatRoot(props: ChatRootProps) {
   const placeRow = (el: HTMLElement, idx: number, top: number, laneH: number | null) => {
     // Native sticky positioning supplies the reversible push-out. Under reduced motion,
     // hide the complete row as soon as that push starts instead of sliding a partial row.
-    // `stuck` only decides whether a user lane's summary is drawn; where it is drawn is layout (@@@pin-cover),
-    // so a late flag shows the summary late or over its own message's first lines, never next to them.
+    // When a user lane's summary is drawn (owner 2026-11-10, msg:225dbdad): a message that fits unfolded sticks the
+    // moment its top reaches the pin line and is pushed off by the next one, like a physical card. A message the
+    // transcript folds is too tall to push along: its summary appears only once the whole message has scrolled out
+    // above the viewport. Where it is drawn is layout (@@@pin-cover), so a late flag shows it late, or over its
+    // message's top for that frame, never beside it.
     const summary = laneH !== null && pinAnchorSet().has(idx);
     // Where the sticking element's top sits in the lane: the summary's rest position, or the activity row's top.
     const lead = summary ? pinLead(idx) : units().at(idx)?.gapBefore ?? 0;
     const pinLine = laneH === null ? 0 : shadowScrollTop + userTopGap + activityPinOffset(idx) - lead;
-    const stuck = laneH !== null && pinLine > top + 0.5;
+    const stuck = laneH !== null && (summary && pinGeometry().get(idx)?.folds ? shadowScrollTop > top + virt.size(idx) - 0.5 : pinLine > top + 0.5);
     if (el.dataset.pinStuck !== String(stuck)) el.dataset.pinStuck = String(stuck);
     const leaving = laneH !== null && pinLine > top + laneH - (summary ? lead + pinHeight(idx) : virt.size(idx)) + 0.5;
     if (el.dataset.pinLeaving !== String(leaving)) el.dataset.pinLeaving = String(leaving);
@@ -948,6 +1030,12 @@ export function ChatRoot(props: ChatRootProps) {
       sizedActiveIds = [];
       for (let i = committedLength; i < us.length; i++) sizedActiveIds.push(us.at(i)?.id);
       refreshTotal();
+      const moved = rebuiltUnder;
+      rebuiltUnder = null;
+      const now = moved ? committedBuild()!.indexById.get(moved.itemId) : undefined;
+      // A scroller that is not drawn keeps the offset the browser froze (@@@skipped-scroller); its next drawn frame
+      // projects the anchor, which names a surviving row.
+      if (moved && now !== undefined && !skipped) shiftScrollBy(virt.top(now) - moved.top);
       // Defer projection to the write phase: projectAnchor will fire once per
       // frame (not once per row) preventing layout thrashing on streaming updates.
       needsProject = true;
@@ -1029,6 +1117,14 @@ export function ChatRoot(props: ChatRootProps) {
    * Computes the list of unit indices that should be rendered, using the
    * direction-aware asymmetric overscan and the current shadow scroll geometry.
    */
+  /** `next` plus the rows mounted now that still name a sized unit — a set that mounts without unmounting. */
+  function keepMounted(current: readonly number[], next: readonly number[]): number[] {
+    const n = units().length;
+    const all = new Set(next);
+    for (const i of current) if (i < n && virt.size(i) > 0) all.add(i);
+    return [...all].sort((a, b) => a - b);
+  }
+
   function computeVisible(): number[] {
     const st = shadowScrollTop;
     const vh = shadowViewHeight;
@@ -1103,14 +1199,15 @@ export function ChatRoot(props: ChatRootProps) {
   const pinAnchorSet = createMemo(() => new Set(pinAnchors()));
   /**
    * Each anchor's stuck summary (PinnedUserSummary): its height, one or two lines whatever the message's length,
-   * and where it rests, over the message's bubble (the row's top gap plus any attachments above the bubble).
+   * where it rests, over the message's bubble (the row's top gap plus any attachments above the bubble), and whether
+   * the message folds (the transcript's own 展开全文 decision).
    */
   const pinGeometry = createMemo(() => {
     const ctx = estimateContext();
     return new Map(pinAnchors().map(index => {
       const unit = untrack(() => units().at(index)!);
       const s = pinSummary(unit.data as ChatMessage, ctx, UNIT_REGISTRY.message!.vars as MessageVars);
-      return [index, { height: s.height + PIN_SUMMARY_GAP, lead: (unit.gapBefore ?? 0) + s.bubbleTop }];
+      return [index, { height: s.height + PIN_SUMMARY_GAP, lead: (unit.gapBefore ?? 0) + s.bubbleTop, folds: s.folds }];
     }));
   });
   const pinHeight = (idx: number) => pinGeometry().get(idx)?.height ?? 0;
@@ -1395,23 +1492,27 @@ export function ChatRoot(props: ChatRootProps) {
     if (ref < 0) return;
     let aboveDelta = 0;
     for (const [i, d] of deltas) if (i < ref) aboveDelta += d;
-    if (aboveDelta === 0) return;
+    shiftScrollBy(aboveDelta);
+  };
+
+  function shiftScrollBy(delta: number): void {
+    if (delta === 0 || !scrollEl) return;
     // 平移,不是改写:用户还没被 readPhase 读到的那段移动(live − expected)原样保留,仍会被判成用户滚动。
     const live = scrollEl.scrollTop;
     const unread = live - expectedScrollTop;
     const carried = aboveResidue;
-    writeScrollTop(live + aboveDelta + carried);
+    writeScrollTop(live + delta + carried);
     const stored = scrollEl.scrollTop;
     aboveResidue = expectedScrollTop - stored;
     expectedScrollTop = stored - unread;
-    // 平滑滚动的目标是文档坐标:上方长高,目标随之平移,否则落点差一个 aboveDelta(之后再被投影拽一下)。
+    // 平滑滚动的目标是文档坐标:上方长高,目标随之平移,否则落点差一个 delta(之后再被投影拽一下)。
     if (smoothScrolling && smoothScrollTarget !== undefined) {
-      smoothScrollTarget += aboveDelta;
+      smoothScrollTarget += delta;
       scrollEl.scrollTo({ top: smoothScrollTarget, behavior: 'smooth' });
       aboveResidue = 0;
     }
     shadowScrollTop = stored;
-  };
+  }
 
   // ── Frame scheduler — created EAGERLY (before onMount) ───────────────────
   //
@@ -1612,10 +1713,10 @@ export function ChatRoot(props: ChatRootProps) {
     const rendered = units();
     const rows = `${rendered.length}\u0000${rendered.at(0)?.id ?? ''}`;
     if (rows !== reachStartRows) { reachStartRows = rows; reachStartFired = false; }
-    if (st <= Math.max(REACH_START_THRESHOLD_PX, shadowViewHeight)) {
+    if (st <= Math.max(REACH_START_THRESHOLD_PX, OLDER_PAGE_AHEAD_SCREENS * shadowViewHeight)) {
       if (!reachStartFired) {
         reachStartFired = true;
-        props.onReachStart?.();
+        showOlderPageLoading(props.onReachStart?.());
       }
     } else {
       reachStartFired = false;
@@ -1687,11 +1788,32 @@ export function ChatRoot(props: ChatRootProps) {
         scheduler.request();
       }
     }
-    const nextVisible = computeVisible();
+    let nextVisible = computeVisible();
+    // @@@tail-settles-before-paint — a reader following the tail sees the bottom in the frame the rows mount.
+    // Rows mounting below measure themselves (heights kept from a previous visit, or estimates, fall short of what
+    // grew since), but the total and the tail projection above used the old sizes. Left to the next frame, this
+    // one draws the rows at their real offsets inside the old canvas, the view a few hundred px above the latest
+    // reply (reopening a conversation on a phone: one frame 448 px up, then a jump down). So when following the
+    // tail, the rows are mounted first without unmounting any (a row unmounted and mounted again in one flush
+    // loses its node, #2296), the total and the tail are settled, and only then the set is trimmed.
+    // An anchor needs none of this: rows above it are settled by the above-compensation, its own row does not move.
+    const followingTail = anchor().kind === 'tail' && performance.now() - lastUserScrollAt > SCROLL_SETTLE_MS;
     // Rows mounting here measure synchronously; settle their deltas before any
     // row position is computed from the new geometry.
-    setVisible(nextVisible);
+    setVisible(followingTail ? keepMounted(untrack(visible), nextVisible) : nextVisible);
     applyAboveCompensation();
+    if (followingTail) {
+      if (totalDirty && needsProject) {
+        totalDirty = false;
+        setTotalHeight(virt.total());
+        needsProject = false;
+        projectAnchor(anchor());
+        if (scrollEl) shadowScrollTop = scrollEl.scrollTop;
+        nextVisible = computeVisible();
+      }
+      setVisible(nextVisible);
+      applyAboveCompensation();
+    }
     const pt = padTop();
     const next: LayoutSnapshot = {
       start: nextVisible[0] ?? 0,
@@ -1968,66 +2090,10 @@ export function ChatRoot(props: ChatRootProps) {
     }
   };
 
+  // An older page is one more rebuild of the committed tier, like any other prepend or seed: the rebuild reseeds the
+  // virtualizer by row identity and moves the scroll offset with the reader's row (@@@rebuild-moves-with-reader).
   const doLoadOlder = (turns: TranscriptTurn[]) => {
-    const el = scrollEl;
-    if (!el || turns.length === 0) return;
-
-    const t = theme();
-    // No `prevDayKey`: these turns are older than everything on screen, so the
-    // day context genuinely starts fresh here. These units only seed the
-    // virtualizer's height estimates — history.prepend() below triggers the
-    // authoritative full rebuild, which is what settles the final separator set
-    // (the old head's separator may become redundant once an older same-day
-    // turn lands above it).
-    const prependedUnits = flattenTier(turns, segmentCtx(false), SEGMENTERS, UNIT_REGISTRY);
-
-    const anchorUnitIdx = virt.findIndex(Math.max(0, el.scrollTop - padTop()));
-    const anchorId = units().at(anchorUnitIdx)?.itemId;
-    const anchorOffset = el.scrollTop - (virt.top(anchorUnitIdx) + padTop());
-
-    const loadEstimateCtx: MeasureCtx = {
-      theme: t,
-      translate: props.context.translate,
-      commands: commands(),
-      selfIdentity: props.context.selfIdentity(),
-      chatName: props.context.chatName,
-      appName: props.context.appName,
-      width: containerWidth(),
-      isCollapsed: () => false,
-      expanded: () => false,
-      caches: caches(),
-      bodySize: bodySizeOf,
-    };
-    const count = prependedUnits.length;
-    // 前插改变了所有行号;这一批的锚位由下面按 anchorId 重算,旧的逐行增量作废(行号已失效)。
-    pendingSizeDeltas = [];
-    virt.prepend(count, (i) => {
-      const unit = prependedUnits[i];
-      if (!unit) return userTopGap + 60;
-      const unitDef = UNIT_REGISTRY[unit.kind];
-      const contentH =
-        unitDef?.estimate?.(unit.data, loadEstimateCtx, unitDef.vars ?? {}) ??
-        genericEstimate(unit.data as unknown as ChatItem, loadEstimateCtx);
-      return unitReservedHeight(unit, contentH);
-    });
-
-    state().transcript.history.prepend(turns);
-    refreshTotal();
-
-    if (anchorId !== undefined) {
-      const newUs = units();
-      let newUnitIdx = -1;
-      for (let i = 0; i < newUs.length; i++) {
-        if (newUs.at(i)?.itemId === anchorId) {
-          newUnitIdx = i;
-          break;
-        }
-      }
-      if (newUnitIdx >= 0) {
-        const newTop = virt.top(newUnitIdx) + padTop() + anchorOffset;
-        writeScrollTop(newTop);
-      }
-    }
+    if (turns.length > 0) state().transcript.history.prepend(turns);
   };
 
   // ── Snapshot / restore helpers ────────────────────────────────────────────
@@ -2122,9 +2188,18 @@ export function ChatRoot(props: ChatRootProps) {
     // scrollbar drift (e.g. when switching conversation tabs).
     onCleanup(() => snapshotInto(state()));
 
+    // @@@tail-settles-before-paint, resize side — ResizeObserver deliveries land after this frame's write phase
+    // and before its paint. The effect @@@project-on-every-layout-input re-projects on the next frame, so the frame
+    // in between is drawn short of the bottom by the change (the phone composer arriving under a conversation that
+    // is reopened: one frame 90 px short, then a jump). A reader following the tail is settled here, in this frame.
+    const settleTailNow = () => {
+      if (skipped || anchor().kind !== 'tail' || props.stickToBottom === false) return;
+      if (smoothScrolling || performance.now() - lastUserScrollAt <= SCROLL_SETTLE_MS) return;
+      writeScrollTop(maxScrollTop());
+    };
     // @@@view-height-at-mount (#6578) — read now: the RO's first delivery lands after rAF, i.e. after attach() below projected against the 600 seed.
     const syncViewHeight = () => { if (el.clientHeight > 0) setViewHeight(el.clientHeight); };
-    const roHeight = new ResizeObserver(syncViewHeight);
+    const roHeight = new ResizeObserver(() => { syncViewHeight(); settleTailNow(); });
     roHeight.observe(el);
     onCleanup(() => roHeight.disconnect());
     syncViewHeight();
@@ -2148,7 +2223,7 @@ export function ChatRoot(props: ChatRootProps) {
     // amounts for the same strip and the transcript stepped 8px on every
     // placement change.
     if (props.composer === 'slot' && composerSlotEl) {
-      const roSlot = new ResizeObserver(() => updateSlotPadBottom());
+      const roSlot = new ResizeObserver(() => { updateSlotPadBottom(); settleTailNow(); });
       roSlot.observe(composerSlotEl);
       onCleanup(() => roSlot.disconnect());
     }
@@ -2204,13 +2279,18 @@ export function ChatRoot(props: ChatRootProps) {
         if (activity && viewState().isCollapsed(id)) {
           const next = units().at(activity.end);
           if (scrollEl) {
-            const targetIndex = next ? activity.end : activity.index;
-            const itemId = next?.itemId ?? id;
-            const fromOffset = scrollEl.scrollTop - virt.top(targetIndex) - padTop();
             const height = virt.top(activity.end) - virt.top(activity.index + 1);
-            // A conclusion already on screen keeps its reading position. Otherwise it
-            // arrives at the top only as the 200ms height collapse finishes.
-            const offset = next && -fromOffset >= userTopGap && -fromOffset < viewHeight() - padBottom() ? fromOffset : -userTopGap;
+            const following = next ? scrollEl.scrollTop - virt.top(activity.end) - padTop() : null;
+            // A conclusion already on screen keeps its reading position (behavior agent-activity-folding).
+            // Otherwise the line the reader clicked stays where they see it: in the text, or on the pin line it was
+            // stuck to, the content closing up under it. ❌ bringing an off-screen conclusion up to the top: that is
+            // the jump the spec forbids (owner 2026-11-12, opened and closed an exchange: 11:51 -> 11:53).
+            const header = units().at(activity.index);
+            const headerOffset = scrollEl.scrollTop - virt.top(activity.index) - padTop();
+            const pinLine = userTopGap + activityPinOffset(activity.index) - (header?.gapBefore ?? 0);
+            const [itemId, fromOffset, offset] = following !== null && -following >= userTopGap && -following < viewHeight() - padBottom()
+              ? [next!.itemId, following, following]
+              : [header?.itemId ?? id, headerOffset, Math.min(headerOffset, -pinLine)];
             abortSmoothScroll();
             setAnchor({ kind: 'anchor', itemId, edge: 'top', offset });
             if (height > 0 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -2354,6 +2434,17 @@ export function ChatRoot(props: ChatRootProps) {
                     data-chat-canvas
                     class={`${canvas} ${contentClass()}`}
                   >
+                    <Show when={olderPageLoadingFor() === state()}>
+                      <div
+                        data-older-page-loading
+                        role="status"
+                        aria-label={props.context.translate('transcript.loadingOlder')}
+                        class={olderPageLoading}
+                        style={{ top: `${Math.max(0, padTop() - 18)}px` }}
+                      >
+                        <span class={olderPageLoadingDot} /><span class={olderPageLoadingDot} /><span class={olderPageLoadingDot} />
+                      </div>
+                    </Show>
                     <For each={visible()}>
                       {(unitIndex) => {
                         const u = createMemo(() => units().at(unitIndex));
@@ -2386,7 +2477,8 @@ export function ChatRoot(props: ChatRootProps) {
                                   lines it repeats; stuck at the pin line, it still covers wherever those lines are while they are on
                                   screen, since they sit above the pin line then. So the message and its summary never show the same
                                   lines twice, whatever the scroll path or the main thread is doing; `data-pin-stuck` only decides
-                                  whether it is drawn. Opaque and above every row of the turn, the pinned strip shows nothing behind it. */}
+                                  whether it is drawn (see placeRow: at once for a message that fits, after it has gone for one that folds). Opaque and above every row of
+                                  the turn, the pinned strip shows nothing behind it. */}
                               <Show when={pinAnchorSet().has(unitIndex)}>
                                 <div class={`${pinSticky} ${pinSummaryLayer}`} style={{ top: `${userTopGap - pinLead(unitIndex)}px`, 'padding-top': `${pinLead(unitIndex)}px` }}>
                                   <div class={pinBackdrop} style={{ top: `${pinLead(unitIndex) - userTopGap}px` }} data-chat-pin-backdrop="" aria-hidden="true" />

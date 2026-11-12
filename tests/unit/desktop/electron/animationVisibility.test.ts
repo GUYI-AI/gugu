@@ -1,11 +1,9 @@
 import { EventEmitter } from 'node:events'
-import { randomUUID } from 'node:crypto'
 import { JSDOM } from 'jsdom'
 import type { BrowserWindow, WebContents } from 'electron'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { isAnimationWindowVisible } from '@gugu/session-shared/animation-visibility'
 import { forwardWindowSeen } from '../../../../apps/desktop/electron/animation-visibility'
-import { markCredentialHandoffCandidate, registerPrivateCredentialSurface, restrictCredentialPartition } from '../../../../apps/desktop/electron/session/main/core/browser/credential-isolation-registry'
 
 const native = vi.hoisted(() => ({ listeners: new Map<string, (...args: unknown[]) => void>(), contents: [] as WebContents[] }))
 vi.mock('electron', () => ({
@@ -104,48 +102,3 @@ it('reports a failed delivery while the target is still alive', async () => {
   expect(log.error).toHaveBeenCalledOnce()
 })
 
-function privateSurface(target: WebContents) {
-  const release = registerPrivateCredentialSurface({ loginSurfaceId: randomUUID(), loginSurfaceEpoch: randomUUID(),
-    browserId: randomUUID(), partition: randomUUID(), contents: target })
-  cleanup.push(release)
-}
-
-it('does not execute page-world code on a private surface or unpublished candidate', () => {
-  const privatePage = fixture(), candidate = fixture()
-  privateSurface(privatePage.target)
-  markCredentialHandoffCandidate(candidate.target)
-  privatePage.contents.emit('did-finish-load')
-  candidate.contents.emit('did-finish-load')
-  privatePage.host.emit('show')
-  candidate.host.emit('show')
-  expect(privatePage.contents.executeJavaScript.mock.calls.length).toBe(0)
-  expect(candidate.contents.executeJavaScript.mock.calls.length).toBe(0)
-})
-
-it('drops a real pending error when the target becomes private before rejection', async () => {
-  const page = fixture()
-  let reject!: (error: unknown) => void
-  page.contents.executeJavaScript.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail }))
-  page.contents.emit('did-finish-load')
-  expect(page.contents.executeJavaScript.mock.calls.length).toBe(1)
-  privateSurface(page.target)
-  reject(new Error(randomUUID()))
-  await Promise.resolve()
-  await Promise.resolve()
-  expect(log.error.mock.calls.length).toBe(0)
-})
-
-it('blocks new deliveries and late errors while the native partition is isolated', async () => {
-  const page = fixture()
-  let reject!: (error: unknown) => void
-  page.contents.executeJavaScript.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail }))
-  page.contents.emit('did-finish-load')
-  const release = restrictCredentialPartition(randomUUID(), page.contents.session, { allowsPublication: () => false })
-  cleanup.push(release)
-  page.host.emit('show')
-  reject(new Error(randomUUID()))
-  await Promise.resolve()
-  await Promise.resolve()
-  expect(page.contents.executeJavaScript.mock.calls.length).toBe(1)
-  expect(log.error.mock.calls.length).toBe(0)
-})

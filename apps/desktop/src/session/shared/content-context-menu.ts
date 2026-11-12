@@ -5,7 +5,17 @@ export const CONTENT_CONTEXT_MENU_ACTION = 'content-context-menu:action';
 
 export type ContentMenuItem =
   | { type: 'separator' }
-  | { type?: 'item'; id: string; label: string; enabled?: boolean; hotkey?: Hotkey; icon?: 'quote' | 'file'; items?: ContentMenuItem[] };
+  | {
+    type?: 'item'; id: string; label: string; enabled?: boolean; hotkey?: Hotkey; icon?: 'quote' | 'file'; items?: ContentMenuItem[];
+    /** One of a choice; the chosen one is marked. */
+    checked?: boolean;
+    /** Removes or undoes something; drawn in the danger color. */
+    danger?: boolean;
+    /** Why the row is as it is (a disabled one's reason). */
+    title?: string;
+    /** The row is this member (user or agent id): drawn with the member's avatar and shown name, `label` until it is known. */
+    person?: string;
+  };
 
 /** An item with `items` opens them beside it; only leaves are actions. */
 export type ContentMenuEntry =

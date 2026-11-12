@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeAll, describe, expect, test, vi } from 'vitest'
+import { fakeSharedMenu } from './sharedMenu'
 
 const entries = [
   { id: 'photo', name: 'photo.png', displayName: 'photo.png', contentType: 'image/png', type: 'binary', size: 100, updatedAt: new Date().toISOString() },
@@ -20,7 +21,9 @@ const setNarrow = (matches: boolean) => {
   for (const fn of narrow.listeners) fn()
 }
 
+const menu = fakeSharedMenu()
 const gugu = {
+  showContextMenu: menu.showContextMenu,
   linkTo: vi.fn(async ({ file }: { file: { id: string } }) => `gugu-file://${file.id}`),
   getContext: vi.fn(async () => context),
   onContextChanged: vi.fn(() => () => {}),
@@ -110,31 +113,36 @@ describe('workspace App in a narrow pane (F32)', () => {
     expect(gugu.setTabTitle).toHaveBeenLastCalledWith('large.json')
     expect($('more').hidden).toBe(false)
     expect($('more').getAttribute('aria-label')).toBe('More')
-    expect($('menu').hidden).toBe(true)
-    // At every width ⋯ opens them in the page's one menu (style.css folds them; a row's ⋯ opens it too).
+    expect(menu.isOpen()).toBe(false)
+    // At every width ⋯ opens them in the host's shared menu (style.css folds them; a row's ⋯ opens it too).
     $('more').click()
-    expect($('menu').hidden).toBe(false)
+    expect(menu.isOpen()).toBe(true)
     expect($('more').getAttribute('aria-expanded')).toBe('true')
-    await vi.waitFor(() => expect([...$('menu').querySelectorAll('button')].map((item) => item.textContent)).toEqual(['Copy link', 'Open with another App', 'Download', 'Rename', 'Move to…', 'Delete']))
-    ;([...$('menu').querySelectorAll('button')].find((item) => item.textContent === 'Download') as HTMLButtonElement).click()
-    expect($('menu').hidden, 'choosing closes it').toBe(true)
-    expect($('more').getAttribute('aria-expanded')).toBe('false')
+    await vi.waitFor(() => expect(menu.labels()).toEqual(['Copy link', 'Open with another App', 'Download', 'Rename', 'Move to…', 'Delete']))
+    await menu.pick('Download')
+    expect($('more').getAttribute('aria-expanded'), 'choosing closes it').toBe('false')
     await vi.waitFor(() => expect(gugu.files.download).toHaveBeenCalledWith(expect.objectContaining({ id: 'big' })))
 
+    // The host's menu closes itself (Escape, a press elsewhere); the page lets go of it as it does.
     $('more').click()
-    expect(document.activeElement, 'the keyboard is in the menu').toBe($('menu').firstElementChild)
+    await menu.dismiss()
+    expect($('more').getAttribute('aria-expanded')).toBe('false')
+    $('more').click()
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    expect($('menu').hidden).toBe(true)
-    expect(document.activeElement, 'and back on ⋯ when it closes').toBe($('more'))
-    $('more').click()
-    $('mode-preview').focus() // Tab out of the menu
-    expect($('menu').hidden, 'leaving the menu closes it').toBe(true)
+    expect($('more').getAttribute('aria-expanded')).toBe('false')
+    await menu.dismiss()
     $('more').click()
     $('doc-title').dispatchEvent(new Event('pointerdown', { bubbles: true }))
-    expect($('menu').hidden, 'a press outside closes it').toBe(true)
+    expect($('more').getAttribute('aria-expanded'), 'a press outside closes it').toBe('false')
+    await menu.dismiss()
+    // Its ⋯ again closes it: the press lands on ⋯ (the host's menu may have closed itself already) and its click opens nothing.
     $('more').click()
+    $('more').dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await menu.dismiss()
+    const opened = menu.showContextMenu.mock.calls.length
     $('more').click()
-    expect($('menu').hidden, 'its ⋯ again closes it').toBe(true)
+    expect(menu.showContextMenu.mock.calls.length, 'its ⋯ again closes it').toBe(opened)
+    expect($('more').getAttribute('aria-expanded')).toBe('false')
 
     changed({ ...context })
     await vi.waitFor(() => expect(shown()).toBe(null))
@@ -174,15 +182,16 @@ describe('workspace App in a narrow pane (F32)', () => {
     changed({ ...context, file: { chat: 'chat-1', id: 'plan' } })
     await vi.waitFor(() => expect(shown()).toBe('plan.md'))
     const opens = gugu.files.open.mock.calls.length
-    const rename = () => {
+    const rename = async () => {
       $('more').click()
-      ;([...$('menu').children].find((item) => item.textContent === 'Rename') as HTMLButtonElement).click()
+      await vi.waitFor(() => expect(menu.labels()).toContain('Rename'))
+      await menu.pick('Rename')
       return $('doc-title').querySelector<HTMLInputElement>('.rename-input')!
     }
     const style = document.createElement('style')
     style.textContent = readFileSync(resolve(process.cwd(), 'apps/desktop/preinstalled-apps/workspace/style.css'), 'utf8')
     document.head.appendChild(style)
-    const input = rename()
+    const input = await rename()
     expect(getComputedStyle($('doc-title')).display, 'the host-hidden heading reveals its rename field').not.toBe('none')
     expect(document.activeElement).toBe(input)
     input.value = 'renamed.md'
@@ -198,14 +207,14 @@ describe('workspace App in a narrow pane (F32)', () => {
     expect(file.close).not.toHaveBeenCalled()
     expect(getComputedStyle($('doc-title')).display, 'the compact breadcrumb title remains in the one toolbar').not.toBe('none')
 
-    const cancel = rename()
+    const cancel = await rename()
     cancel.value = 'discarded.md'
     cancel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await vi.waitFor(() => expect(shown()).toBe('renamed.md'))
     expect(gugu.files.rename).toHaveBeenCalledTimes(1)
 
     gugu.files.rename.mockRejectedValueOnce(Object.assign(new Error('name already exists'), { code: 'name-taken' }))
-    const collision = rename()
+    const collision = await rename()
     collision.value = 'photo.png'
     collision.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
     await vi.waitFor(() => expect($('banner').hidden).toBe(false))

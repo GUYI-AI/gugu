@@ -36,6 +36,10 @@ describe('message reference paragraphs', () => {
   ])('keeps nested, decorated, partial and other references in the Markdown: %s', source => {
     expect(messageReferenceBlocks(source).blocks).toEqual([]);
   });
+  it('still expands a bare reference alone in its paragraph now that bare gugu links parse as links', () => {
+    const plain = widgetLink('a3a25e61-09b1-4024-a564-fb6216e4367d');
+    expect(messageReferenceBlocks(`quote below\n\n${plain}\n\n${messageHref}`).blocks.map(block => block.href)).toEqual([plain, messageHref]);
+  });
   it('uses one source-ordered limit for message and widget blocks, leaving later links in the content', () => {
     const hrefs = [messageHref, widgetHref, widgetLink('second'), messageHref, widgetLink('fifth')];
     const source = hrefs.join('\n\n');

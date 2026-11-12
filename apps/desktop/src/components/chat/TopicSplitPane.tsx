@@ -302,7 +302,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   const showMessage = useSourceMessageReveal({
     viewportKey, navigationTarget, enabled: visible !== false,
     activeChatId: topic.chatId,
-    rows, listRef, isAtBottomRef, setFollowingTail, setFlashMessageId, flashTimerRef, revealMessage,
+    setFlashMessageId, flashTimerRef, revealMessage,
     onMissing: () => toast(t('chatArea.source.notVisible'), 'error'),
   })
 

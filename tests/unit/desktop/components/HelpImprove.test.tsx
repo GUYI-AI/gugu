@@ -11,7 +11,6 @@ const io = vi.hoisted(() => ({
   readFirstRunProgress: vi.fn(async () => ({ stage: 'profile', occupation: null })),
   writeOccupation: vi.fn(async () => undefined),
   finishFirstRun: vi.fn(async () => '2026-11-09T00:00:00Z'),
-  requestAssistantSetupHandoff: vi.fn(),
   startFirstRunHints: vi.fn(async () => undefined),
   enrollSampleProject: vi.fn(async (_userId: string) => undefined),
 }))

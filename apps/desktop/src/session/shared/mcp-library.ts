@@ -1,4 +1,5 @@
 import z from 'zod';
+import type { GuguToolsOff } from './gugu-tool-groups';
 
 /**
  * 资源库 → MCP:咕咕自己管的那份 MCP 列表(owner 10-18「仿照 aionui 的那种管理机制」)。
@@ -10,6 +11,8 @@ import z from 'zod';
 export const libraryMcpToolSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
+  /** server 报的参数 JSON Schema,展开工具时列参数。 */
+  inputSchema: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**
@@ -65,6 +68,13 @@ export const libraryMcpServerSchema = z
 export const libraryMcpServersSchema = z.array(libraryMcpServerSchema);
 
 export type LibraryMcpTool = z.infer<typeof libraryMcpToolSchema>;
+
+/** server `tools/list` 里的一个工具 → 资源库那一行(检测、内置、集成、App 同一份形状)。 */
+export const libraryMcpToolOf = (tool: { name: string; description?: string; inputSchema?: object }): LibraryMcpTool => ({
+  name: tool.name,
+  ...(tool.description ? { description: tool.description } : {}),
+  ...(tool.inputSchema ? { inputSchema: tool.inputSchema as Record<string, unknown> } : {}),
+});
 export type LibraryMcpCheck = z.infer<typeof libraryMcpCheckSchema>;
 export type LibraryMcpFailure = z.infer<typeof libraryMcpFailureSchema>;
 export type LibraryMcpServer = z.infer<typeof libraryMcpServerSchema>;
@@ -90,7 +100,8 @@ export type LibraryMcpProvidedServer = {
   refusal?: string;
 };
 
-export type LibraryMcpProvided = { builtIn: string[]; servers: LibraryMcpProvidedServer[] };
+/** `guguToolsOff`:内置那台关掉的工具组(gugu-tool-groups)。 */
+export type LibraryMcpProvided = { builtIn: string[]; guguToolsOff: GuguToolsOff; servers: LibraryMcpProvidedServer[] };
 
 /**
  * 咕咕自己每条会话都送的那几台的名字(`gugu`、浏览器那台)—— 资源库里不许叫这几个(单测钉着它们与宿主常量一致)。

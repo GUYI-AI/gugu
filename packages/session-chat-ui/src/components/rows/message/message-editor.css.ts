@@ -25,6 +25,6 @@ export const messageEditorNotice = style({
 export const messageEditorButton = style({
   height: MESSAGE_EDITOR_BUTTON_HEIGHT, padding: '0 14px', border: 'none', borderRadius: vars.radiusFull,
   background: vars.bg, color: vars.fg, fontFamily: vars.fontSans, fontSize: vars.typeChromeFontSize, cursor: 'pointer',
-  selectors: { '&:disabled': { opacity: 0.45, cursor: 'default' }, '&:focus-visible': { outline: `2px solid ${vars.fgMuted}`, outlineOffset: 2 } },
+  selectors: { '&:disabled': { opacity: 0.45, cursor: 'default' }, '&:focus-visible:not([data-pointer-focus] *)': { outline: `2px solid ${vars.fgMuted}`, outlineOffset: 2 } },
 });
 export const messageEditorSend = style({ background: vars.fgBody, color: vars.bg });

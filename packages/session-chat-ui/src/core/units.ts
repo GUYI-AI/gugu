@@ -145,11 +145,15 @@ export type SegmentCtx = {
   caches: ChatCaches;
   expanded: (id: string) => boolean;
   active: boolean;
+  /** These turns will not change again (the committed tier): work that depends on one turn alone is kept by turn object. */
+  settled?: boolean;
   /** Latest logical turn across committed and active tiers; its empty acknowledgement remains visible. */
   latestTurnId?: string;
   plan: () => SessionPlans | null;
   translate: ChatTranslator;
   pendingToolCallIds: () => Set<string>;
+  /** A running subagent's text so far, by its launch call; the card itself gets it only when it settles (#2500). */
+  liveSubagent?: (toolCallId: string) => { output?: string; reasoning?: string } | undefined;
   /** 这次调用正在等的那条审批请求（计划审批卡拿它画选项）；没在等 ⇒ undefined。 */
   permissionFor?: (toolCallId: string) => AcpPermissionRequest | undefined;
   terminalSnapshot: (terminalId: string) => TerminalState | null;
@@ -207,7 +211,7 @@ export type SegmentCtx = {
  *              cur.top) and assigns the result to the lower unit's `gapBefore`.
  *              Falls back to `density.turnGap` when absent. Turn boundaries
  *              resolve to 8px via the user message's margin (top: 8, bottom: 8).
- * `estimate` — O(1) height heuristic for off-screen units at setCount/prepend.
+ * `estimate` — O(1) height heuristic for off-screen units at setCount.
  *              Falls back to `genericEstimate` when omitted.
  * `measure`  — exact height (px); called only for visible units.
  *              Returns a number — no Measured<L> tree.

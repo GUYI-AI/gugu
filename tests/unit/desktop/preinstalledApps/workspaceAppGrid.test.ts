@@ -7,6 +7,7 @@ import { resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { listedIn } from './folderList'
 import { until } from '../../../support/awaitCondition'
+import { fakeSharedMenu } from './sharedMenu'
 
 const now = Date.parse('2026-10-28T12:00:00Z')
 const ago = (seconds: number) => new Date(now - seconds * 1000).toISOString()
@@ -27,7 +28,9 @@ const ENTRIES = [
 ]
 
 const context = { chat: { id: 'chat-1', name: 'G', kind: 'group', groupId: 'chat-1' }, locale: 'zh-CN', capabilities: ['files:read', 'files:write'] }
+const menu = fakeSharedMenu()
 const gugu = {
+  showContextMenu: menu.showContextMenu,
   linkTo: vi.fn(async ({ file }: { file: { id: string } }) => `gugu-file://${file.id}`),
   setTabTitle: vi.fn(async () => {}),
   getContext: vi.fn(async () => context),
@@ -54,11 +57,10 @@ const cells = () => [...$('file-list').querySelectorAll<HTMLElement>('li.file.ce
 const row = (id: string) => document.querySelector(`[data-id="${id}"]`) as HTMLElement
 const kind = (name: string) => $('kinds').querySelector<HTMLButtonElement>(`[data-kind="${name}"]`)!
 const view = (name: string) => $('views').querySelector<HTMLButtonElement>(`[data-view="${name}"]`)!
-// The filters are submenus of the order's menu (owner 11-06: no chips over the list): 「上传者 ›」, set: 「上传者: 小雨 ›」.
-const filters = () => { $('sort').click(); const names = [...$('menu').querySelectorAll<HTMLButtonElement>('[aria-haspopup="menu"]')].map((b) => b.textContent); pressEscape(); return names }
-const filter = (label: string) => { $('sort').click(); [...$('menu').querySelectorAll<HTMLButtonElement>('[aria-haspopup="menu"]')].find((b) => b.textContent!.startsWith(label))!.click() }
-const clearFilters = () => { $('sort').click(); item('清除筛选').click() }
-const item = (text: string) => [...$('menu').querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === text)!
+// The filters are submenus of the order's menu (owner 11-06: no chips over the list): 「上传者」, set: 「上传者: 小雨」.
+const filters = async () => { $('sort').click(); const names = menu.rows().filter((r) => r.items).map((r) => r.label); await menu.dismiss(); return names }
+const filter = async (label: string, value: string) => { $('sort').click(); await menu.pick(label, value) }
+const clearFilters = async () => { $('sort').click(); await menu.pick('清除筛选') }
 const pressEscape = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
 const facts = () => Object.fromEntries([...$('details').querySelectorAll('dt')].map((dt) => [dt.textContent, dt.nextElementSibling!.textContent]))
 const banner = () => [$('banner'), $('list-banner')].filter((node) => !node.hidden).map((node) => node.textContent).join('')
@@ -79,10 +81,11 @@ beforeAll(async () => {
 
 afterAll(() => vi.restoreAllMocks())
 
-beforeEach(() => {
+beforeEach(async () => {
   pressEscape()
   pressEscape()
-  if ($('sort').getAttribute('aria-pressed') === 'true') clearFilters()
+  await menu.dismiss()
+  if ($('sort').getAttribute('aria-pressed') === 'true') await clearFilters()
   kind('all').click()
 })
 
@@ -107,44 +110,41 @@ describe('the grid', () => {
 })
 
 describe('filters', () => {
-  test('in the order\'s menu, a filter only where there is something to pick by; picking narrows the list, filters add up, one press clears them', () => {
-    expect(filters()).toEqual(['上传者 ›', '存放 ›', '保留方式 ›'])
-    filter('上传者')
-    expect([...$('menu').querySelectorAll('.menu-submenu [role="menuitemradio"]')].map((b) => b.textContent)).toEqual(['全部', '张三', '小雨'])
-    item('小雨').click()
+  test('in the order\'s menu, a filter only where there is something to pick by; picking narrows the list, filters add up, one press clears them', async () => {
+    expect(await filters()).toEqual(['上传者', '存放', '保留方式'])
+    $('sort').click()
+    // A person is drawn by the host as that member (avatar, shown name): the row says who by id, its label as written.
+    expect(menu.rows('上传者').map((r) => [r.label, r.person ?? null, r.checked])).toEqual([['全部', null, true], ['张三', 'u1', false], ['小雨', 'u2', false]])
+    await menu.pick('上传者', '小雨')
     expect(ids()).toEqual(['clip'])
-    expect(filters()).toContain('上传者: 小雨 ›')
+    expect(await filters()).toContain('上传者: 小雨')
     expect($('sort').getAttribute('aria-pressed'), 'a set filter shows on the order\'s button').toBe('true')
     expect($('sort-label').textContent).toBe('最近 · 已筛选')
-    filter('上传者')
-    item('全部').click()
-    filter('保留方式')
-    item('临时').click()
+    await filter('上传者', '全部')
+    await filter('保留方式', '临时')
     expect(ids()).toEqual(['spec', 'poster'])
-    filter('存放')
-    item('GF server').click()
+    await filter('存放', 'GF server')
     expect(ids()).toEqual(['poster'])
-    filter('上传者')
-    item('小雨').click()
+    await filter('上传者', '小雨')
     expect(ids()).toEqual([])
     expect($('files-empty-message').textContent).toBe('没有符合条件的文件。')
-    clearFilters()
+    await clearFilters()
     expect(ids()).toEqual(['spec', 'shot', 'clip', 'poster', 'ckpt'])
     expect($('sort').getAttribute('aria-pressed')).toBe('false')
     expect(document.getElementById('chips'), 'no row of chips over the list').toBe(null)
   })
 
-  test('in a kind without the choice, its filter is not there', () => {
+  test('in a kind without the choice, its filter is not there', async () => {
     kind('docs').click()
-    expect(filters().some((name) => name!.startsWith('存放')), 'no document of this list stays on a machine').toBe(false)
-    expect(filters().some((name) => name!.startsWith('上传者')), 'one uploader: nothing to pick between').toBe(false)
+    expect((await filters()).some((name) => name!.startsWith('存放')), 'no document of this list stays on a machine').toBe(false)
+    expect((await filters()).some((name) => name!.startsWith('上传者')), 'one uploader: nothing to pick between').toBe(false)
   })
 })
 
 describe('details', () => {
   test('⋯ › 详情: the file in full, where it is kept and until when, its versions; Escape closes it', async () => {
     row('spec').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-    item('详情').click()
+    await menu.pick('详情')
     expect($('details').hidden).toBe(false)
     expect($('details').querySelector('.details-title')!.textContent).toBe('spec.pdf')
     const said = facts()
@@ -160,9 +160,9 @@ describe('details', () => {
     expect($('details').hidden).toBe(true)
   })
 
-  test('a file kept on a machine says which, and whether it is on', () => {
+  test('a file kept on a machine says which, and whether it is on', async () => {
     row('ckpt').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-    item('详情').click()
+    await menu.pick('详情')
     expect(facts()['存放']).toBe('GF server · 离线')
     expect(facts()['保留']).toBe('没有云端副本')
   })

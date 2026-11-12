@@ -4,6 +4,7 @@ import { Button } from '../ui/Button'
 import { Markdown } from '../markdown/Markdown'
 import { Monitor, Sparkles } from '../../lib/icons'
 import { usePhoneRead, machineKey } from '../../mobile/assistant/usePhoneRead'
+import { assistantReadWaiting } from './useAssistantRead'
 import type { AssistantMachine } from '../../session/renderer/features/assistant/assistant-machine-core'
 import type { UserLibraryKind, UserLibraryEntry, UserLibraryRead } from '../../session/shared/user-library'
 import { AssistantEmpty, AssistantRow, AssistantSection, PageHead } from '../../session/renderer/features/assistant/assistant-ui-parts'
@@ -11,7 +12,7 @@ import { platform } from '../../platform'
 import { libraryHost } from './assistant-library-client'
 import { ShellSlot } from '../../session/renderer/features/assistant/assistant-shell'
 import { AssistantDevicesPage } from '../devices/AssistantDevicesPage'
-import { AssistantProjectsCard, AssistantProjectsLibrary } from './AssistantProjectsLibrary'
+import { AssistantProjectsLibrary } from './AssistantProjectsLibrary'
 import { AssistantLibraryEditor } from './AssistantLibraryEditor'
 import { assistantAppClient } from './assistant-app-client'
 import { ASSISTANT_PANEL_APP } from '../../session/shared/extensions/assistant-app'
@@ -49,19 +50,21 @@ async function readVolume(machine: LibraryProps['machine'], kind: UserLibraryKin
   return result
 }
 
-type CardProps = Omit<LibraryProps, 'askInChat'> & { onOpen: () => void }
-export function AssistantLibraryCard(props: CardProps) {
-  return props.kind === 'workspace' ? <AssistantProjectsCard machine={props.machine} onOpen={props.onOpen} /> : <FileLibraryCard {...props} kind={props.kind} />
-}
-function FileLibraryCard({ machine, assistantId, kind, onOpen }: Omit<CardProps, 'kind'> & { kind: UserLibraryKind }) {
-  const { t } = useTranslation('assistant')
+/** What the card's read is: its number, still loading, or failed (the card says 「暂时读不到资源」). */
+export type LibraryCountRead = number | 'loading' | 'failed'
+/**
+ * #1925 The number the card shows (`FileLibraryCard`), handed to `onCount` and drawn nowhere: the same read, under the same
+ * key, kept fresh the same way; loading or failed said as such (never 0 for that). For an App's `counts`
+ * (assistant-app-counts.tsx).
+ */
+export function AssistantLibraryCount({ machine, kind, assistantId, onCount }: { machine: LibraryProps['machine']; kind: UserLibraryKind; assistantId: string; onCount: (read: LibraryCountRead) => void }) {
   const read = usePhoneRead(sourceKey(machine, kind, assistantId), () => readVolume(machine, kind), 'read Gugu library',undefined,
     () => machine?.panel ? assistantPanelLibrary(machine.panel).peekVolume(kind) : undefined)
   useLibraryNotifications(machine, kind, read.refresh)
-  const detail = kind === 'devices' ? t('library.deviceAccess') : read.state === 'loading' ? undefined
-    : read.state === 'error' ? t('library.failed') : read.data.items.length ? t('library.items', { count: read.data.items.length }) : undefined
-  return <AssistantRow leading={kind === 'devices' ? <Monitor /> : <Sparkles />} title={t(`library.${kind}`)} detail={detail}
-    onClick={onOpen} testId={`assistant-library-${kind}`} />
+  // A collection not prepared yet (a new assistant's setup finishing) is still coming, not unreadable.
+  const count: LibraryCountRead = read.state === 'ok' ? read.data.items.length : read.state === 'error' && !assistantReadWaiting(read.error) ? 'failed' : 'loading'
+  useEffect(() => onCount(count), [count, onCount])
+  return null
 }
 
 export function AssistantLibraryVolume(props: LibraryProps) {

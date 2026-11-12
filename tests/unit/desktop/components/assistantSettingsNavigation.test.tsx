@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
-import { useState } from 'react'
+import { act, useState } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness, clickElement } from '../../../support/testHarness'
 import { AssistantSettingsPage } from '../../../../apps/desktop/src/components/assistant/AssistantSettingsPage'
 import { useAssistantPanelBack, useAssistantPanelPage } from '../../../../apps/desktop/src/lib/assistantPanelPage'
+import { requestAssistantSettingsSection, takeAssistantSettingsSection } from '../../../../apps/desktop/src/lib/assistantSettingsSection'
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
 
-vi.mock('@/lib/useAssistantHome', () => ({ useAssistantHome: () => ({ contact: null, cloudDeviceId: null }) }))
+vi.mock('@/lib/useAssistantHome', () => ({ useAssistantHome: () => ({ contact: { id: 'assistant' }, cloudDeviceId: null }) }))
 vi.mock('@/session/renderer/lib/stores/app-state', () => ({ appState: {} }))
-vi.mock('@/components/agentsettings/AgentAiModelPane', () => ({ AgentAiModelPane: () => null }))
+vi.mock('@/components/agentsettings/AgentAiModelPane', () => ({ AgentAiModelPane: () => <div data-testid="model-pane" /> }))
 vi.mock('@/components/settings/AssistantSection', () => ({ AssistantSection: ({ onOpenSection }: { onOpenSection: (id: string) => void }) =>
   <>{['connectors', 'devices'].map(id => <button key={id} data-testid={`open-${id}`} onClick={() => onOpenSection(id)}>{id}</button>)}</> }))
 function Section({ panelNavigation = false }: { panelNavigation?: boolean }) {
@@ -22,7 +23,7 @@ vi.mock('@/components/devices/AssistantDevicesPage', () => ({ AssistantDevicesPa
 
 let h: ReturnType<typeof createReactHarness>, toolbar: ReturnType<typeof createReactHarness>
 beforeEach(() => { h = createReactHarness(); toolbar = createReactHarness() })
-afterEach(() => { h.cleanup(); toolbar.cleanup() })
+afterEach(() => { h.cleanup(); toolbar.cleanup(); requestAssistantSettingsSection(null) })
 function Toolbar() { const page = useAssistantPanelPage(); return page ? <button onClick={page.back}>{page.key}</button> : null }
 it.each(['connectors', 'devices'])('uses only the toolbar for settings → %s → detail, and returns one level at a time', async section => {
   await toolbar.render(<Toolbar />)
@@ -45,4 +46,30 @@ it('retains the local return control outside the assistant panel', async () => {
   expect(back).toBeDefined()
   await clickElement(back)
   expect(h.container.querySelector('[data-testid="open-connectors"]')).not.toBeNull()
+})
+
+// The assistant's dialog is its figure alone (owner 11-12): an entry asking for its model (换模型, the App's open "model") lands on
+// this page's model screen, whether the page was already up or is drawn after the ask.
+it('opens at the model screen when asked before it is drawn, with the toolbar back to 资料', async () => {
+  await toolbar.render(<Toolbar />)
+  requestAssistantSettingsSection('aimodel')
+  await h.render(<AssistantSettingsPage panelNavigation />)
+  expect(h.container.querySelector('[data-testid="model-pane"]')).not.toBeNull()
+  expect(toolbar.container.textContent).toBe('settings:aimodel')
+  expect(takeAssistantSettingsSection()).toBeNull()
+  await clickElement(toolbar.container.querySelector('button')!)
+  expect(h.container.querySelector('[data-testid="model-pane"]')).toBeNull()
+  expect(h.container.querySelector('[data-testid="open-connectors"]')).not.toBeNull()
+})
+it('moves to the model screen when asked while 资料 is already up', async () => {
+  await h.render(<AssistantSettingsPage panelNavigation />)
+  expect(h.container.querySelector('[data-testid="model-pane"]')).toBeNull()
+  await act(async () => { requestAssistantSettingsSection('aimodel') })
+  expect(h.container.querySelector('[data-testid="model-pane"]')).not.toBeNull()
+})
+it('leaves the ask for the page over the App panel: the phone-less inline page does not take it', async () => {
+  requestAssistantSettingsSection('aimodel')
+  await h.render(<AssistantSettingsPage />)
+  expect(h.container.querySelector('[data-testid="model-pane"]')).toBeNull()
+  expect(takeAssistantSettingsSection()).toBe('aimodel')
 })

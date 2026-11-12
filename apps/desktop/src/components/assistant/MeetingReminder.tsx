@@ -3,13 +3,14 @@ import { useTranslation } from 'react-i18next'
 import { formatClock } from '../../i18n/format'
 import { meetingKey, meetingRemindable, meetingToRemind, type UpcomingMeeting } from '@gugu/core/shared/voiceNotes'
 import { platform } from '../../platform'
-import { readAssistantShellBridge, type AssistantVoiceNoteHandler } from '../../lib/assistantShellBridge'
+import { readAssistantShellBridge } from '../../lib/assistantShellBridge'
+import type { VoiceNoteWindowRequest } from '../../session/shared/extensions/voice-note-session'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { Mic, X } from '../../lib/icons'
 import { UI_EVENTS } from '../../lib/uiEvents'
+import { openAssistantEntry } from '../../lib/assistantEntry'
 import { invokeOnMachine } from '../../session/renderer/lib/ipc'
-import { appState } from '../../session/renderer/lib/stores/app-state'
 import { VOICE_NOTE_MEETINGS_CHANNEL, type VoiceNoteMeetingsResult } from '../../session/shared/core/voice-notes'
 import { meetingReminderEnabled } from '../../lib/meetingReminderPref'
 import '../../i18n/registerVoiceNotesCatalog'
@@ -38,24 +39,16 @@ function writeSeen(seen: Set<string>) {
   }
 }
 
-/** 等助理 App 挂上、把录音机登记到桥上(人从别的页点了「开始录音」,App 刚开始挂)。 */
-function waitForHandler(timeoutMs: number): Promise<AssistantVoiceNoteHandler | null> {
-  const bridge = readAssistantShellBridge()
-  const now = bridge?.getVoiceNoteHandler() ?? null
-  if (now || !bridge) return Promise.resolve(now)
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      unsubscribe()
-      resolve(bridge.getVoiceNoteHandler())
-    }, timeoutMs)
-    const unsubscribe = bridge.subscribeVoiceNoteHandler(() => {
-      const handler = bridge.getVoiceNoteHandler()
-      if (!handler) return
-      clearTimeout(timer)
-      unsubscribe()
-      resolve(handler)
-    })
-  })
+/**
+ * 录这场会是壳自己的事:壳的录音机替这个账号自己的助理录(App 录音宿主那一份,API 47;当成壳自己的点击 —— 起不来由它说一次为什么,
+ * 同输入框「+」里那一项),不等哪一页挂上。答起没起来。
+ */
+async function startMeetingNote(meeting: NonNullable<Extract<VoiceNoteWindowRequest, { op: 'start' }>['meeting']>): Promise<boolean> {
+  const shell = readAssistantShellBridge()?.getSnapshot()
+  if (!shell?.ownerId || shell.assistantState !== 'found' || !shell.assistant) return false
+  const { appVoiceNoteRequest } = await import('../../session/renderer/features/assistant/voice-notes/app-voice-note-host')
+  const answer = await appVoiceNoteRequest({ op: 'start', ownerId: shell.ownerId, assistantId: shell.assistant.id, meeting, present: true })
+  return answer.state === 'ready' && answer.started?.outcome === 'started'
 }
 
 function clock(iso: string | null): string {
@@ -116,9 +109,9 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
     setStarting(true)
     setFailed(false)
     window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
-    appState.navigation.navigate('assistant')
-    const ready = await waitForHandler(15_000)
-    const ok = ready ? await ready.start({ title: meeting.title, start: meeting.start, end: meeting.end }) : false
+    // The assistant's page (its App), where the recording bar shows; the recording itself is the host's.
+    openAssistantEntry()
+    const ok = await startMeetingNote({ title: meeting.title, start: meeting.start, end: meeting.end }).catch(() => false)
     setStarting(false)
     if (ok) setMeeting(null)
     else setFailed(true)

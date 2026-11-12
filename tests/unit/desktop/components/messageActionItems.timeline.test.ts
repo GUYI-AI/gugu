@@ -8,8 +8,9 @@ const timeline: MessageActionTarget = { isRetracted: false, content: 'x', onQuot
 const keys = (input: MessageActionTarget) => messageActionItems(input, t).map(item => item.key)
 const label = (input: MessageActionTarget, key: string) => messageActionItems(input, t).find(item => item.key === key)?.label
 
-it('adds the timeline actions after the copy items, and says when a quote is of a selection', () => {
-  expect(keys({ ...timeline, onCopyLink: fn, onOpenLink: fn, onOpenFile: fn })).toEqual(['quoteToComposer', 'copy', 'copyLink', 'openLink', 'openFile', 'forkTask'])
+it('puts copy first and the comment (quote into the composer) right after it, and says when a quote is of a selection', () => {
+  // owner 2026-11-12: 「复制」放在「评论」前面.
+  expect(keys({ ...timeline, onCopyLink: fn, onOpenLink: fn, onOpenFile: fn })).toEqual(['copy', 'quoteToComposer', 'copyLink', 'openLink', 'openFile', 'forkTask'])
   expect(label({ ...timeline, hasSelection: true }, 'quoteToComposer')).toBe('message.actions.quoteSelectionToComposer')
   expect(label(timeline, 'quoteToComposer')).toBe('message.actions.quoteToComposer')
 })

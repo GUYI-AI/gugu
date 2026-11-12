@@ -134,7 +134,6 @@ export function ThemesLibraryPage() {
   const effective = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, readEffectiveHostTheme);
   const showImport = useShowModal('themeImportModal');
   const resolved = useMemo(() => new Map(packs.map((pack) => [pack.id, resolvedModes(pack)])), [packs]);
-  const nameOf = (id?: string) => packs.find((pack) => pack.id === id)?.name ?? translate('themes.default');
 
   const offerUndo = (title: string, before: ThemePackChoice) =>
     toast({
@@ -166,18 +165,13 @@ export function ThemesLibraryPage() {
         sticky
         scope={null}
         title={translate('themes.title')}
-        description={translate('themes.description')}
         aside={(
           <Button onClick={() => showImport({})}>
             <Plus className="size-4" />
             <span>{translate('themes.import')}</span>
           </Button>
         )}
-      >
-        <span className="text-sm text-foreground-muted">
-          {translate('themes.current', { dark: nameOf(slots.dark), light: nameOf(slots.light) })}
-        </span>
-      </PageHeader>
+      />
       <div className="grid gap-4 py-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
         <ThemeCard
           pack={null}

@@ -1,0 +1,8 @@
+[0m
+[90m┌[39m  Add credential
+[90m│[39m
+[34m●[39m  Create an api key at https://opencode.ai/auth
+[?25l[90m│[39m
+[36m◆[39m  Enter your API key
+[36m│[39m  [7m[8m_[28m[27m
+[36m└[39m

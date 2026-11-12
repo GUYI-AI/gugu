@@ -1,58 +1,21 @@
 export default {
   "title": "语音笔记",
   "untitled": "语音笔记",
-  "preparing": "正在准备语音笔记",
   "record": "录制语音笔记",
-  "emptyTitle": "还没有语音笔记",
-  "empty": "在和{{name}}聊天的「+」里录一段会议或语音，{{name}}会转写好、从你的角度写总结，放在这里。",
   "week": {
     "thisWeek": "本周",
     "lastWeek": "上周"
   },
-  "today": "今天 {{time}}",
-  "status": {
-    "recording": "正在录音",
-    "processing": "处理中…",
-    "failed": "失败",
-    "noSpeech": "未检测到语音",
-    "queued": "等转写"
-  },
-  "queued": {
-    "start": "开始转写",
-    "bodyDesktop": "录音已经传到{{name}}家里了，点「开始转写」就会转写，并整理成语音笔记。",
-    "bodyPhone": "录音已经在{{name}}家里了。回到电脑上的咕咕，打开这条语音笔记，点「开始转写」。"
-  },
-  "recordedAt": "录制于 {{time}}",
-  "minutes": "{{n}} 分钟",
-  "seconds": "{{n}} 秒",
-  "speakers_one": "{{count}} 位说话人",
-  "speakers_other": "{{count}} 位说话人",
-  "summary": "总结",
-  "transcript": "转写",
-  "noTranscript": "暂无转写内容。",
-  "copySummary": "复制总结",
-  "summaryCopied": "总结已复制",
-  "copyFailed": "没能复制，请再试一次。",
-  "export": "导出 Markdown",
-  "exportTitle": "导出语音笔记",
-  "exported": "已导出",
-  "exportFailed": "没能导出，请再试一次。",
-  "ask": "就这次会议提问",
-  "more": "更多操作",
   "delete": "删除",
   "deleteTitle": "删除“{{name}}”？",
   "deleteBody": "此操作无法撤销。",
-  "deleted": "已删除",
   "deleteFailed": "无法删除这条语音笔记，请再试一次。",
-  "gone": "这条语音笔记已不可用。",
   "phase": {
     "recording": "正在录音…录完后{{name}}会整理好。",
     "uploading": "正在上传…{{name}}会在语音笔记准备好后通知你。",
     "transcribing": "正在转写…{{name}}会在语音笔记准备好后通知你。",
     "summarizing": "正在生成语音笔记…准备好后，{{name}}会通知你。"
   },
-  "noSpeechDescription": "这段录音中未检测到可用的语音。",
-  "errorTitle": "出了点问题",
   "failure": {
     "upload": "无法上传音频，请检查网络连接。",
     "transcribe": "音频转写失败，请稍后重试。",
@@ -67,7 +30,6 @@ export default {
     }
   },
   "retry": "重试",
-  "retryFailed": "重新处理失败，请再试一次。",
   "bar": {
     "starting": "正在开始录音…",
     "cancel": "取消",

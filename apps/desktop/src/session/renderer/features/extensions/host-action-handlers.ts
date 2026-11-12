@@ -2,6 +2,7 @@ import { openFolderInTab } from '@renderer/features/sessions/file-view/file-view
 import { findSessionAnywhere } from '@renderer/features/sessions/stores/session-selectors';
 import { composeChatDraft } from '@/lib/composeDraft';
 import { followLink, openLinkTarget } from '@/lib/guguLinks';
+import { readAppHostLayerBridge } from '@/lib/appHostLayerBridge';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { rpc } from '@renderer/lib/ipc';
@@ -21,7 +22,14 @@ import {
   EXTENSION_LISTED_SESSION_METHOD,
   EXTENSION_MEMBER_FACES_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
+  EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD,
+  EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD,
+  EXTENSION_EXPORT_VOICE_NOTE_METHOD,
+  EXTENSION_VOICE_NOTE_METHOD,
   INSTALL_CONSENT_HUMAN_WINDOW_MS,
+  type ResourceRemovalAsk,
+  type VoiceNoteExportAsk,
+  type VoiceNoteTranscribeAsk,
   type ExtensionHostAction,
   type ExtensionHostActionResult,
   type ExtensionHostActionCommand,
@@ -36,6 +44,7 @@ import type { DispatchAsk } from '@shared/extensions/app-dispatch-core';
 import { openApp } from './app-dock';
 import { installedExtensionsStore } from './installed-extensions-store';
 import { safeParseExtensionManifest } from '@shared/extensions/manifest';
+import { isAssistantLayerScreen } from '@shared/extensions/assistant-binding';
 import { extensionSurfaceStore } from './extension-surface-store';
 import { peekStore } from './peek-store';
 import { screenLayout } from '@renderer/app/screen-layout';
@@ -228,6 +237,8 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
     case 'newDocument':
       extensionSurfaceStore.say(sessionId, tabId, { title: null, badge: null, error: null });
       extensionSurfaceStore.clearDirtyOfPage(sessionId);
+      // #1925 A host page or the assistant's figure that page asked for over its panel goes with the old document.
+      void import('../apps/app-host-layer').then(({ appPageNewDocument, pageKey }) => appPageNewDocument(extensionId, pageKey(sessionId, tabId)), () => undefined);
       return;
     case 'openBrowserTab': {
       const view = requireSessionView(sessionId);
@@ -245,6 +256,24 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       // A session's: main brought it on screen; its composer takes the text once its conversation is open there.
       const target = action.sessionId;
       return import('./compose-in-session').then(({ composeWhenOpen }) => composeWhenOpen(() => findSessionView(target), action.text));
+    }
+    // #1925 main checked the page is drawn beside its bound conversation: its own panel there, collapsed or expanded.
+    case 'conversationPanel':
+      return import('@renderer/features/apps/app-conversation-panel').then(({ setAppConversationPanelCollapsed }) => {
+        // #1927 (48) An intent is about to be told to the App's page: nothing of the host's stays over it (as the row's profile).
+        if (action.uncover) readAppHostLayerBridge()?.close(extensionId);
+        setAppConversationPanelCollapsed(extensionId, action.collapsed);
+      });
+    // #1925 (46) Main checked the account, the grant, the assistant's chat and the row: the shell draws that task in the App's
+    // panel, or takes it away. The shell's bridge refuses an account or a row it does not have now.
+    case 'openWork':
+    case 'closeWork': {
+      // #1925 (46) The host page over the App's panel (lib/appHostLayerBridge.ts): opening a task replaces any page there;
+      // closing takes away a task only, never another host page the person opened.
+      const bridge = readAppHostLayerBridge();
+      if (!bridge) throw new Error('This window draws no host pages over an App');
+      if (action.kind === 'closeWork') return bridge.close(extensionId, 'work');
+      return bridge.open(extensionId, { kind: 'work', ownerId: action.ownerId, workId: action.workId, sessionId: action.sessionId });
     }
     // The chat shell takes them (MainLayout: another chat comes up first), as the phone's page gives them.
     case 'showMessage':
@@ -299,6 +328,28 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
     case 'openChatFile':
     case 'openLinkTarget':
       return openForClick(action, tabId);
+    // #1925 The assistant's own screens, each by its existing entry; and the setup steps an App draws, moved on.
+    case 'openAssistantScreen':
+      // The panel's own pages go over this App's panel (its host layer); the rest are the shell's screens.
+      if (isAssistantLayerScreen(action.screen)) {
+        const screen = action.screen;
+        return import('../apps/app-host-layer').then(({ openAssistantLayer, pageKey }) => openAssistantLayer(extensionId, screen, action.ownerId, pageKey(sessionId, tabId)));
+      }
+      return import('@/lib/assistantAppHost').then(({ openAssistantScreen }) => openAssistantScreen(action.screen, action.ownerId));
+    case 'advanceAssistantSetup':
+      return import('@/lib/assistantAppHost').then(({ advanceAssistantSetup }) => advanceAssistantSetup(action.next, action.ownerId));
+    case 'renameAssistant':
+      return import('@/lib/assistantAppHost').then(({ renameAssistantFor }) => renameAssistantFor(action.text, action.ownerId));
+    case 'assistantFigure': {
+      const { figure, ownerId, who } = action;
+      return import('../apps/app-host-layer').then(({ setAssistantFigure, pageKey }) => setAssistantFigure(extensionId, figure && ownerId ? { figure, ownerId, who, from: pageKey(sessionId, tabId) } : null));
+    }
+    case 'openAssistantConnector':
+      return import('../apps/assistant-app-counts').then(({ openAssistantConnector }) => openAssistantConnector(action.id, action.ownerId));
+    case 'toast':
+      // The host's own toast, as the built-in 「更改已保存」: the text alone.
+      toast({ title: action.text });
+      return;
   }
 }
 
@@ -341,9 +392,32 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
     return remoteHostsStore.reachProject(sessionId, deviceId, typeof projectId === 'string' ? projectId : undefined);
   },
   /** `gugu.dispatch` naming no target: the person picks one in the shell's sheet (DispatchSheet). */
+  /**
+   * #1927 (47) `gugu.voiceNote`: main has checked the App's grant; the recorder here checks its own account and assistant
+   * (app-voice-note-host.ts). Imported when asked, as above: until an App asks, the recorder's App half is not loaded.
+   */
+  [EXTENSION_VOICE_NOTE_METHOD]: async (params: unknown) => {
+    const request = params as import('@shared/extensions/voice-note-session').VoiceNoteWindowRequest | null;
+    if (!request || typeof request !== 'object' || typeof request.op !== 'string') throw new Error('Invalid voice note request');
+    const { appVoiceNoteRequest } = await import('@renderer/features/assistant/voice-notes/app-voice-note-host');
+    return appVoiceNoteRequest(request);
+  },
   [EXTENSION_PICK_DISPATCH_TARGET_METHOD]: async (params: unknown) => {
     const { pickDispatchTarget } = await import('@/components/chat/dispatchAsk');
     return pickDispatchTarget(params as DispatchAsk);
+  },
+  /** #50 An App's managing calls: the assistant page's own question, 开始转写 and 导出 Markdown, in this window. */
+  [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD]: async (params: unknown) => {
+    const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
+    return resourceWindow().confirmRemoval(params as ResourceRemovalAsk);
+  },
+  [EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD]: async (params: unknown) => {
+    const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
+    return resourceWindow().transcribe(params as VoiceNoteTranscribeAsk);
+  },
+  [EXTENSION_EXPORT_VOICE_NOTE_METHOD]: async (params: unknown) => {
+    const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
+    return resourceWindow().exportNote(params as VoiceNoteExportAsk);
   },
   [EXTENSION_INSTALL_CONSENT_METHOD]: (params: unknown): Promise<ExtensionInstallConsentResult> => {
     if (!params || typeof params !== 'object') throw new Error('Invalid extension consent request');

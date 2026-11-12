@@ -4,7 +4,6 @@ import { events } from '@main/lib/events';
 import { browserAppShortcutChannel, tabNavigationShortcutChannel } from '@shared/events/appEvents';
 import { browserFocusedChannel } from '@shared/events/browserEvents';
 import { BrowserWebContentsRegistry, isSamePreviewNavigation } from './browser-webcontents-registry';
-import { markCredentialHandoffCandidate, publishCredentialHandoffCandidate, restrictCredentialPartition } from './credential-isolation-registry';
 
 const sessionsByPartition = new Map<string, object>();
 
@@ -151,39 +150,6 @@ describe('BrowserWebContentsRegistry', () => {
     expect(registry.isRegistered('browser-1', PROFILE_PARTITION)).toBe(true);
     expect(registry.isRegistered('browser-1', 'persist:gugu-browser-profile-work')).toBe(false);
     expect(registry.isRegistered('missing', PROFILE_PARTITION)).toBe(false);
-  });
-
-  it('does not revive a credential destination identity when the same registration object is reused', () => {
-    const registry = new BrowserWebContentsRegistry();
-    const input = { browserId: 'browser-1', partition: PROFILE_PARTITION, sessionId: 'owner' };
-    registry.registerSession(input);
-    const original = registry.registrationIdentity(input.browserId);
-    input.sessionId = 'mutated';
-    expect(registry.isRegisteredForSession(input.browserId, 'owner', PROFILE_PARTITION)).toBe(true);
-    registry.unregisterSession(input.browserId);
-    input.sessionId = 'owner'; registry.registerSession(input);
-    expect(registry.registrationIdentity(input.browserId)).not.toBe(original);
-  });
-
-  it('permits native pending adoption while refusing Agent lists, DevTools, clipboard capture and popup events', async () => {
-    const registry = new BrowserWebContentsRegistry(), partition = 'persist:gugu-browser-pending-admission';
-    const contents = fakeWebContents(partition), capture = vi.fn();
-    Object.assign(contents, { capturePage: capture });
-    registry.registerSession({ browserId: 'pending', partition, sessionId: 'owner' });
-    const release = restrictCredentialPartition(partition, contents.session, { allowsPublication: candidate => candidate === contents });
-    markCredentialHandoffCandidate(contents);
-    try {
-      adopt(registry, 'pending', contents);
-      expect(registry.browsersOfSession('owner')).toEqual([]);
-      expect(registry.openDevTools('pending')).toBe(false);
-      await expect(registry.captureScreenshotToClipboard('pending')).rejects.toThrow();
-      expect(capture).not.toHaveBeenCalled();
-      expect(contents.openDevTools).not.toHaveBeenCalled();
-      expect(contents.windowOpenHandler!({ url: 'https://example.com/private', disposition: 'foreground-tab' } as never).action).toBe('deny');
-      expect(events.emit).not.toHaveBeenCalled();
-    } finally { publishCredentialHandoffCandidate(contents); release(); }
-    expect(registry.browsersOfSession('owner')).toHaveLength(1);
-    expect(registry.openDevTools('pending')).toBe(true);
   });
 
   it('#7274 同一份配置上的几张网页各归各的页签', () => {
@@ -333,25 +299,6 @@ describe('BrowserWebContentsRegistry', () => {
     expect(events.emit).not.toHaveBeenCalledWith(browserFocusedChannel, expect.anything());
     webContents.emitEvent('before-mouse-event', {}, { type: 'mouseDown', x: 1, y: 1 });
     expect(events.emit).toHaveBeenCalledWith(browserFocusedChannel, { browserId: 'browser-1' });
-  });
-
-  it('#7274 agent 自己合成的点击不让页签焦点跟过去(❌ 把人正看着的页签换掉)', () => {
-    const registry = new BrowserWebContentsRegistry();
-    registry.registerSession({ browserId: 'browser-1', partition: PROFILE_PARTITION });
-    const webContents = fakeWebContents();
-    adopt(registry, 'browser-1', webContents);
-    let agentsOwn = true;
-    const observer = vi.fn(() => agentsOwn);
-    registry.setMouseDownObserver(observer);
-
-    webContents.emitEvent('before-mouse-event', {}, { type: 'mouseDown', x: 1, y: 1 });
-    expect(observer).toHaveBeenCalledWith('browser-1', webContents);
-    expect(events.emit).not.toHaveBeenCalledWith(browserFocusedChannel, expect.anything());
-
-    agentsOwn = false;
-    webContents.emitEvent('before-mouse-event', {}, { type: 'mouseDown', x: 1, y: 1 });
-    expect(events.emit).toHaveBeenCalledWith(browserFocusedChannel, { browserId: 'browser-1' });
-    registry.setMouseDownObserver(null);
   });
 
   it('emits tab navigation shortcuts from focused browser webContents', () => {

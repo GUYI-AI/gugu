@@ -216,6 +216,42 @@ export const ANTIGRAVITY_LAUNCH_SCRIPT = [
 ].join('\n');
 
 /**
+ * 只读探测(`agy models` 查登录、`agy -p /usage` 查用量)用的启动器:同一个启动器,但配置根换成一份**没有 MCP 服务**的探测根。
+ *
+ * ## 为什么
+ *
+ * `agy` 一启动就把配置里的每个 MCP 服务都拉起来 —— 连没登录、连 `agy models` 这种一句话的命令也一样
+ * (2026-11-10 MBP 实测:临时 home 里放一个会留痕的假 MCP,没登录的 `agy models` 照样把它启动了)。用户配的
+ * MCP 多半是 `npx …@latest`,每个都要联网查最新版本再运行:一次登录读数 = 一排 `npm` 各占 100% 以上,
+ * 设置页每打开一次「模型」「订阅」,资源监视器上就是一个 5–10 核的波峰。`--settings` 里没有关 MCP 的键
+ * (`mcpServers` / `mcp` / `mcpEnabled` 都回 unknown setting),所以只能让它读不到。
+ *
+ * ## 怎么做
+ *
+ * 探测根 `<影子 home>/.gugu-probe/.gemini`:托管 `.gemini` 里每一项都做成**软链**(登录凭据、设置、缓存照旧共用,
+ * 不复制任何凭据),只有 `config/mcp_config.json`(以及老位置的 `.gemini/mcp_config.json`)不链,换成一份空的。
+ * 每次探测都重做一遍链接,托管根里新增的东西下一次就跟上。
+ * ⚠️ `.gemini/` 顶层的两个普通文件(`settings.json`、`jetski-standalone-oauth-token`)若被 agy 用「写临时文件再改名」
+ *    的方式更新,落在探测根里而不是托管根 —— 下一次探测会用托管根里那份重新链上,最坏是一次令牌续期没留住、
+ *    下次用到时再续一次;真会话从不经过这条启动器。
+ */
+export const ANTIGRAVITY_PROBE_LAUNCH_SCRIPT = [
+  'case "${GEMINI_HOME:-}" in */.gemini) ;; *) echo "gugu: GEMINI_HOME must point at the Gugu-managed .gemini (got \'${GEMINI_HOME:-}\')" >&2; exit 64;; esac',
+  'managed="$GEMINI_HOME"',
+  'probe="${managed%/.gemini}/.gugu-probe"',
+  'mkdir -p "$probe/.gemini/config" || exit 65',
+  'for e in "$managed"/* "$managed"/.[!.]*; do',
+  '  if [ -e "$e" ] || [ -L "$e" ]; then n="${e##*/}"; case "$n" in config|mcp_config.json) ;; *) ln -sfn "$e" "$probe/.gemini/$n";; esac; fi',
+  'done',
+  'for e in "$managed"/config/* "$managed"/config/.[!.]*; do',
+  '  if [ -e "$e" ] || [ -L "$e" ]; then n="${e##*/}"; case "$n" in mcp_config.json) ;; *) ln -sfn "$e" "$probe/.gemini/config/$n";; esac; fi',
+  'done',
+  'printf \'{"mcpServers":{}}\\n\' > "$probe/.gemini/config/mcp_config.json" || exit 65',
+  'export GEMINI_HOME="$probe/.gemini"',
+  ANTIGRAVITY_LAUNCH_SCRIPT,
+].join('\n');
+
+/**
  * 终端腿的 MCP 与 hooks 落点 —— 托管 `.gemini` 里的两份全局文件(两条腿共用同一份,见 `configRoot`)。
  *  · MCP:https://antigravity.google/docs/cli/mcp.md「Global server setups: Configured in
  *    `~/.gemini/config/mcp_config.json`」;形状照 `./mcp.ts`(HTTP 用 `serverUrl`、启用状态是 `disabled`)。

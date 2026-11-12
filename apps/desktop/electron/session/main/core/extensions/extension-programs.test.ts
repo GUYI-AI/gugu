@@ -246,58 +246,6 @@ describe('extension programs run by gugu (#6615)', () => {
     }
   });
 
-  it('revocation also stops native resources and waits for their cleanup', async () => {
-    let active = true;
-    const cleanup = Promise.withResolvers<void>();
-    extensionPrograms.registerNative('computer-use', {
-      tools: async () => [], call: async () => ({ content: [] }),
-      status: () => ({ running: active ? 1 : 0 }),
-      retire: async () => { active = false; await cleanup.promise; },
-    });
-    let outcome = 'pending';
-    const stopped = revokeExtensionPrograms('native-revoke').then(() => { outcome = 'stopped'; });
-    try {
-      await new Promise(resolve => setImmediate(resolve));
-      expect(active).toBe(false);
-      expect(outcome).toBe('pending');
-      cleanup.resolve();
-      await stopped;
-      expect(outcome).toBe('stopped');
-    } finally {
-      cleanup.resolve();
-      await stopped;
-      extensionPrograms.registerNative('computer-use', {
-        tools: async () => [], call: async () => ({ content: [] }),
-        status: () => ({ running: 0 }), retire: async () => {},
-      });
-    }
-  });
-
-  it('a failed native retirement still waits for the other cleanup before rejecting', async () => {
-    const cleanup = Promise.withResolvers<void>();
-    const failure = new Error('one native resource failed to close');
-    const idle = { tools: async () => [], call: async () => ({ content: [] }), status: () => ({ running: 0 }) };
-    extensionPrograms.registerNative('computer-use', { ...idle, retire: async () => { throw failure; } });
-    extensionPrograms.registerNative('browser-use', { ...idle, retire: async () => { await cleanup.promise; } });
-    let outcome = 'pending';
-    const stopped = revokeExtensionPrograms('native-failure').then(() => { outcome = 'stopped'; }, error => {
-      outcome = 'rejected';
-      return error;
-    });
-    try {
-      await new Promise(resolve => setImmediate(resolve));
-      expect(outcome).toBe('pending');
-      cleanup.resolve();
-      expect(await stopped).toBe(failure);
-    } finally {
-      cleanup.resolve();
-      await stopped;
-      for (const name of ['computer-use', 'browser-use'] as const) {
-        extensionPrograms.registerNative(name, { ...idle, retire: async () => {} });
-      }
-    }
-  });
-
   it.each(['person', 'agent'] as const)('revokes an in-flight %s page call without stopping another App', async (caller) => {
     const release = path.join(dir, `page-${caller}-release`);
     const own = program(`page-${caller}`, 'v1', 'held', release);
@@ -623,6 +571,41 @@ describe('extension programs run by gugu (#6615)', () => {
       'App not installed: agent-notes',
     ]);
     Object.assign(service, { installed: true, enabled: true, agentTools: true });
+  });
+});
+
+describe('an outdated version of a gugu App (its program is a `host` gugu no longer has)', () => {
+  const outdated: ExtensionProgram = { extensionId: 'browser-use', server: 'browser-use', digest: 'v0.3', outdated: true,
+    command: 'Gugu Browser Use', args: [], env: {}, cwd: os.tmpdir(), dataDir: path.join(os.tmpdir(), 'gugu-outdated-app') };
+  const needsUpdate = 'The installed version of the App browser-use is outdated and no longer runs on this version of Gugu. '
+    + 'The person must update it from the App market before it can be used.';
+  beforeEach(() => extensionPrograms.setSource(() => [outdated]));
+  afterEach(() => extensionPrograms.setSource(() => []));
+
+  it('shows a recorded failure that says it needs an update, before anything called it', () => {
+    expect(extensionProgramStatus('browser-use')).toEqual({ running: 0, lastFailure: {
+      kind: 'outdated', server: 'browser-use', at: expect.any(String), said: needsUpdate, notStarted: true, code: null,
+      command: 'Gugu Browser Use', stderrTail: needsUpdate } });
+    // Control: another App's status is untouched.
+    expect(extensionProgramStatus('agent-notes').lastFailure).toBeNull();
+  });
+
+  it('tells an agent listing or calling its tools, and a page calling it, that the person must update it', async () => {
+    await expect(extensionPrograms.tools(outdated)).rejects.toThrow(needsUpdate);
+    await expect(extensionPrograms.call(outdated, { name: 'browser_navigate', arguments: {} }, { signal: new AbortController().signal }))
+      .rejects.toThrow(needsUpdate);
+    await expect(extensionPrograms.callFromPage('browser-use', { name: 'browser_navigate', from: { sessionId: 'task-1' } }))
+      .rejects.toThrow(needsUpdate);
+    expect(extensionProgramStatus('browser-use').running).toBe(0);
+  });
+
+  it('an App switched off is refused as switched off, not as outdated', async () => {
+    service.enabled = false;
+    try {
+      await expect(extensionPrograms.tools(outdated)).rejects.toThrow('Extension browser-use is turned off');
+    } finally {
+      service.enabled = true;
+    }
   });
 });
 

@@ -12,7 +12,7 @@
 .tfc-count { flex-shrink: 0; color: var(--muted-fg); font-size: var(--font-caption); }
 .tfc-time { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--faint-fg); font-size: var(--font-caption); }
 .tfc-reason { grid-column: 2; display: block; min-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font: inherit; color: inherit; cursor: pointer; border-radius: var(--radius-control); }
-.tfc-reason:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.tfc-reason:focus-visible:not([data-pointer-focus] *) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .tfc-actions { grid-column: 3; grid-row: 1 / span 2; display: flex; align-self: center; }
 .tfc-actions > button { color: var(--muted-fg); }
 .tfc-dismiss { grid-column: 4; grid-row: 1 / span 2; align-self: center; color: var(--faint-fg); }

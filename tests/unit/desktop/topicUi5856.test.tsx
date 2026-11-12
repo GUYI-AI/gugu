@@ -393,7 +393,8 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
         askReveal('topic-1', 't-1', 'topic'); window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked))
       })
       expect(harness.container.querySelector('[data-testid="topic-split-workspace"]'), 'the panel gave the list back').toBeNull()
-      expect(harness.container.querySelector('[data-msg-id="t-1"]')?.className).toContain('msg-src-flash')
+      // The line flashes once the list has settled on it (revealMessage), a few frames later.
+      await vi.waitFor(() => expect(harness.container.querySelector('[data-msg-id="t-1"]')?.className).toContain('msg-src-flash'))
       expect(harness.container.querySelector('[data-msg-id="t-2"]')?.className).not.toContain('msg-src-flash')
     } finally {
       HTMLElement.prototype.checkVisibility = originalCheckVisibility

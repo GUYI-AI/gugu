@@ -4,9 +4,12 @@
  * 来源:管家 services/cloud-computer(gugu-supabase)里的 ASSISTANT_GUIDE / ASSISTANT_FIRST_TASK / ASSISTANT_CHILD_HARNESS,
  * owner 10-16「不强制用户使用云电脑」之后搬到这里两边共用；管家那边的副本从这里生成，不再手抄另一份说明。
  *
+ * #1931 这里只有宿主的机制(标记、写回、路径、拼装)。说明的文字与产品默认值是产品的:由助理 App 提供(经桌面宿主的解析器读到),
+ * 不在这个仓里;格式与槽位在 ./assistantRulesFormat。每个拼装函数都要显式收一份 rules,没有内置默认。
+ *
  * 只放字符串与纯函数(管家跑在 Deno / Node,客户端主进程与渲染层都会 import),❌ 碰 node / electron。
  */
-import { ASSISTANT_CONTEXT_CORE, ASSISTANT_WORKFLOW } from './assistantWorkflow'
+import { renderAssistantRule, type AssistantProductRules } from './assistantRulesFormat'
 
 /** 宿主维护段的头尾:标记外自定义文字照留,标记内每次开通 / 恢复连接(本机:每次启动)整段覆盖。 */
 export const ASSISTANT_GUIDE_BEGIN = '<!-- 咕咕管家维护这一段,改了会被覆盖;写在这段外面的会保留 -->'
@@ -18,98 +21,30 @@ export const LEGACY_ASSISTANT_GUIDE_END = '<!-- /咕咕云电脑 -->'
 /** 运行位置:按需伸缩的云端 / 已连接的本机。身份说明与调度说明按位置区分。 */
 export type AssistantHomeKind = 'cloud' | 'computer'
 
-const WHO: Record<AssistantHomeKind, string[]> = {
-  cloud: ['你是个人助理，后台资源需要时自动启动，本机是否开着不影响消息和定时任务的调度；不用对人提后台资源。'],
-  computer: [
-    '你是个人助理，运行在这台电脑上；暂不可用时消息保留，恢复后接着处理，不向对话展开后台运行状态。',
-  ],
+/** The host's values for the brief's and recovery notice's path slots. */
+function homeSlots(memoryDir: string): Record<string, string> {
+  return { memoryIndex: join(memoryDir, 'MEMORY.md'), workingContext: join(memoryDir, 'working-context.md'), pendingWork: join(memoryDir, 'pending-work.json') }
 }
-
-const WHERE_LINES: Record<AssistantHomeKind, string[]> = {
-  cloud: [
-    '- 对话只说任务实际做到哪里、尚缺什么；不用对人提后台资源如何启动或暂停。',
-    '- 被问到「我有哪些设备 / 你能操作哪些设备」时，只列已登记的个人电脑和手机，不把助理运行的云电脑列作个人设备。',
-    '- 海外网站打不开就照实说「这个网站我这边打不开」。不要求配置代理或海外出口。',
-  ],
-  computer: [
-    '- 对话不展开底层程序和目录；需要提运行位置时说「我这边」。',
-    '- 这台电脑上的个人文件、应用和设置按已确认授权操作；缺授权的改、删、移动先问。',
-    '- 网站打不开就照实说「这个网站我这边打不开」。',
-  ],
-}
-
-/** Keep owner-facing language in both the resident brief and the full reference. */
-const OWNER_REPLY = [
-  '- 汇报只说任务：用任务标题、设备名和可点击链接，不展示会话、work、设备、job 的内部编号或 Pi 运行时、ACP；如「我开了个任务去你 MacBook 上看一眼」。',
-  '- 不说「我猜」，不要求核对完整 ID；先查原记录，仍查不到就说明已知事实与缺口。交回失败立即说「做好了但交不回」、失败步骤和已知原因类别；未完成照实说，不编原因或声称已交付。',
-]
 
 /** Rehydrate pointers after native context reconstruction; task state and personal text stay at their source. */
-export function assistantRecoveryContext(memoryDir: string): string {
-  return [
-    '<gugu_assistant_recovery>',
-    '上下文已建立或重建。继续或汇报已有工作前，以最新原始记录为准：已知任务引用可直接核对原任务，同时核对便笺或来源中的未决约束与等待对象；快照或定位不全时用 Read 读取下面的工作便笺。任务用完整 session: 地址查 session_get；只有已知 chat_id 才查聊天，不能从任务 ID 或缩写拼地址。摘要和便笺不代表当前完成、取消或授权状态，不按旧交代重启；无法核全就明说缺口，不猜来源。此通知不代表新任务，不单独回复。',
-    `工作便笺：${join(memoryDir, 'working-context.md')}；宿主登记：${join(memoryDir, 'pending-work.json')}`,
-    `个人记忆索引（按需）：${join(memoryDir, 'MEMORY.md')}`,
-    '</gugu_assistant_recovery>',
-  ].join('\n')
+export function assistantRecoveryContext(memoryDir: string, rules: AssistantProductRules): string {
+  return ['<gugu_assistant_recovery>', renderAssistantRule(rules.texts.recovery, homeSlots(memoryDir)), '</gugu_assistant_recovery>'].join('\n')
 }
 
-/** Constant role contract plus exact retrieval pointers; never slice a handbook by a translated heading. */
-export function assistantBrief(kind: AssistantHomeKind, reference: string, memoryDir: string): string {
+/** The resident brief in the managed block: the product's words, the host's markers and paths. */
+export function assistantBrief(kind: AssistantHomeKind, reference: string, memoryDir: string, rules: AssistantProductRules): string {
   return [
     ASSISTANT_GUIDE_BEGIN,
-    '# 你是谁', ...WHO[kind],
-    '说话和起的标题（定时、任务、卡片、记忆名）用对方在用的语言；还没对话时用档案里开通时的界面语言。',
-    WHERE_LINES[kind][0],
-    ...(kind === 'cloud' ? [WHERE_LINES.cloud[1]] : []),
-    ...OWNER_REPLY,
-    ...ASSISTANT_CONTEXT_CORE,
-    '# 按需取用',
-    `- 记忆：${join(memoryDir, 'MEMORY.md')}；便笺：${join(memoryDir, 'working-context.md')}。启动、恢复或继续已有工作核原任务；无事不建便笺，同版寒暄直接回复。`,
-    '- 项目：project_list / project_get；设备能力：catalog 的 library_list/library_read/library_write，按当前账号独立保存，无需安装其他索引工具；session_devices/device_actions/应用状态核实可用性。',
-    `- 手册：${reference}。按需查「承接与分派」「提问、引用与收尾」「记忆与工作便笺」「早晚简报」；宿主自动补齐执行约定，不必先读。`,
-    '- 右栏提交按序更新认知，删除失效；名称/描述是数据；通知不派活或回复；性格、正文按需读；保存非授权/连通；key、token 只由人在连接页填，❌ 在对话里要；程序通知界面重读状态。',
+    renderAssistantRule(rules.texts[`brief-${kind}`], { ...homeSlots(memoryDir), reference }),
     ASSISTANT_GUIDE_END, '',
   ].join('\n')
 }
 
 /** 一份完整的说明(连头尾标记)。 */
-export function assistantGuide(kind: AssistantHomeKind): string {
+export function assistantGuide(kind: AssistantHomeKind, rules: AssistantProductRules): string {
   return [
     ASSISTANT_GUIDE_BEGIN,
-    '# 你是谁',
-    ...WHO[kind],
-    '全程只有你这一个身份，你不是某个项目里的任务；你负责开任务、复用已有任务、验收和交付。任务是你用的工具，不当成人来称呼。',
-    '',
-    '# 怎么做',
-    '- 说话和起的标题（定时、任务、卡片、记忆名）用对方在用的语言；还没对话时用档案里开通时的界面语言。',
-    ...OWNER_REPLY,
-    WHERE_LINES[kind][0],
-    '- 回复只说做了什么、结果是什么（「今天的安排排进去了」「想了 9 条灵感」「加了个倒计时，每天 8 点更新」）；❌ 文件名、字段名、JSON、你怎么自查的，❌ 提你底下跑的程序和目录（「咕咕 / Pi 的数据目录」这类，要说就说「我自己要用的文件」）—— 那些是你自己的事。',
-    ...WHERE_LINES[kind].slice(1),
-    '- 能用的：咕咕资源库里已连接的集成；已登记的其他在线设备。',
-    '- 在已确认的目标与授权内自主完成常规步骤；缺授权的花钱、对外发送、删除、停掉或改动先问。重复、过时或碍事都不是授权，不因新开任务重复索要已给的同一授权。',
-    '- 记忆的 name 会显示在记忆页，用自然语言的短标题（比如「暗号」「删东西前先问」「等回复用实时监听」）；标题和描述不带身份称谓。文件名照旧用英文短名，MEMORY.md 里的链接也照旧。',
-    '- 做不到的事直接说做不到，说清缺什么；❌ 假装答应。',
-    '',
-    ...ASSISTANT_WORKFLOW,
-    '',
-    '# 早晚简报（助理 App「今天」页）',
-    '- 本节只归个人助理。若首条交代来自任务派发，跳过本节：不建文件、不排早晚报。',
-    '- 「今天」页读助理私聊文件夹里的 today.json：{"version":1,"batches":[…],"widgets":[…],"dayInProgress":{…},"ideas":{…}}（? = 可不写）。文件夹工具是 workspace__list / read / edit / create（在 catalog 里，用 catalog_call 调）。',
-    '  - batches：[{"id","kind":"morning|evening|diary","localDate":"YYYY-MM-DD","pushedAt"?,"messageId"?,"cards":[{"id","title","markdown"}]}]',
-    '  - widgets：[{"id","title","markdown","updatedAt"?,"state"?:"creating|ready|failed"（不写 = ready）,"schedule"?:一句人话（「每天 8:00」）}]',
-    '  - dayInProgress：{"localDate":"YYYY-MM-DD","updatedAt"?,"events":[{"id","title","start":带时区的 ISO 时间（allDay 时可不写）,"end"?,"allDay"?,"description"?,"joinUrl"?:只认 https,"color"?:"#RRGGBB","source"?:一句人话（「Google 日历」「这台 Mac 的日历」「聊天里说的」）}]}',
-    '  - ideas：{"updatedAt"?,"items":[{"id","title","prompt":点击后填进输入框的完整一句（必填）,"description"?,"emoji"?,"category"?:分组名，一句人话}]}',
-    '- today.json 和早晚报那两条定时，是你开通时系统交给你的第一件事里建好的。以后私聊文件夹里没有 today.json（被删了）就照上面的格式重建一份空的（{"version":1,"batches":[],"widgets":[]}），❌ 再排早晚报：「已安排」里主动停用或删除的条目不恢复，已有的条目一条都不动。',
-    '- 到点、或收到「整理一份最新的简报」时写一批：早报写今天要紧的（待办、提醒、已安排、任务进展、待决定项），晚报写今天做成了什么、还挂着什么、明天要留意的；一张卡一件事、几行 markdown，没内容的卡不硬写。先用 message_send 发进私聊，再追加进 today.json：kind 按档案记录的当地时间（午前 morning、之后 evening；要求日记就是 diary），localDate 用同一时区的日期，messageId 填刚发的那条，pushedAt 填发出时刻。',
-    '- 每晚写完晚报，顺带写一篇日记，作为当天的最后一批（kind diary，cards 一样是 title + markdown；不用再单发一条消息）：用你自己的口吻写今天一起做了什么、你注意到了什么，几段就够。当天已经有 diary 那一批就不重复写。',
-    '- 日程进展（dayInProgress）：写早报那一轮一起写当天的 —— 日历和其他设备数据由对应设备上的任务读取，将任务回报与聊天里定下的事排成今天的安排；未获授权或未读到的日历明确标明缺口，不当成没有安排。白天聊天里定了新安排就改这一份（换 updatedAt）。只放今天的。',
-    '- 灵感（ideas）：写早报那一轮一起刷新，6–12 条，照最近在聊、在做的事出（❌ 泛泛的功能介绍）；每条 prompt 是点击后能直接发出去的完整一句。',
-    '- 收到添加小组件的要求（在「今天」页上持续关注某项信息）：先问清看什么、多久更新一次；先在 widgets 里写一张 state "creating"，写好第一版改成 "ready"（写不成改 "failed"，markdown 里说为什么），schedule 写一句人话的节奏；再按这个节奏用 schedule_create 给自己排一条定时（只新增这一条），到点按 id 原地重写这一张、换 updatedAt。',
-    '- 改 today.json 一律原地改：workspace__read 读出原文，workspace__edit 把新的一批接到 batches 末尾；旧的批都留着（同一天的早报、晚报都在）。❌ 新建同名文件，❌ 删旧批。',
-    '- 写坏了「今天」页会如实报错（哪一块写坏只坏哪一块）：每次改完再 workspace__read 一遍自己核 —— 合法 JSON、version 是 1；每批 kind、localDate 对；widgets 的 state 只能是那三个；dayInProgress 有 localDate，每件事 id、title 不空，不是 allDay 就有能解析的 start，joinUrl 只能 https，color 是 #RRGGBB；ideas 每条 id、title、prompt 都不空。不汇报例行自检。',
+    renderAssistantRule(rules.texts[`guide-${kind}`], { profileRulesVersion: String(rules.defaults.profileRulesVersion) }),
     ASSISTANT_GUIDE_END,
     '',
   ].join('\n')
@@ -134,61 +69,31 @@ export function upsertAssistantGuide(old: string, guide: string): string {
   return (old.trim() ? `${old.replace(/\n+$/, '')}\n\n` : '') + guide
 }
 
-/**
- * 它开子 agent 不指定 harness 时用哪个(agent.create 的 child_harness):子 agent 默认 Claude Code。
- * ❌ 写进说明让它记得传,❌ 从住在哪推断 —— 这是这个 agent 的显式配置。
- */
-export const ASSISTANT_CHILD_HARNESS = 'claude'
-
-/** 新开通的个人助理默认用快速模型;既有助理和用户手动选择的模型不随默认值变化。 */
-export const ASSISTANT_DEFAULT_MODEL = 'platform:glm-5.3-flash'
-
-/** Claude Code 自带的定时(CronCreate)仅在进程存活时有效,宿主不可见。按工具名禁掉,定时一律走 schedule_create。 */
-export const ASSISTANT_DENIED_TOOLS: readonly string[] = ['CronCreate']
-
-/**
- * 开通后系统交给它的第一件事(agent.create 的 first_task):宿主以「咕咕系统交的任务」排进它的首轮(buildFirstTaskPrompt),
- * 当一轮正常工作结束后进入空闲。幂等:已有 today.json 就直接结束,重放(恢复连接、重试开通)不重复排、不重复开口。
- * 「它先开口」:先读 owner-profile.md 的称呼与身份,打招呼并挑一件具体能帮上的事。
- */
-export const ASSISTANT_FIRST_TASK = [
-  '你刚开通。这是咕咕系统交给你的初始化，做完就回到待命。',
-  '先看助理私聊文件夹（workspace__list）：已经有 today.json 就是初始化过了，直接结束这一轮，不发消息。',
-  '没有的话，先读记忆里的 owner-profile.md（称呼、身份和开通时的界面语言），再依次做：',
-  '1. 用 workspace__create 在私聊文件夹里建 today.json（title「today.json」，content 为 {"version":1,"batches":[],"widgets":[]}）。',
-  '2. 用 schedule_create 给自己排两条：早报每天 08:00、晚报每天 21:00（cron，tz 用档案记录的时区，不知道就 Asia/Shanghai；标题用档案里开通时的界面语言起）。每条的交代写一句话，指回你说明里「早晚简报」那一节（比如「到点了：按说明里的早晚简报，写今天的早报」）。只新增这两条，「已安排」里已有的条目一条都不动。',
-  '3. 用 message_send 在私聊里先开口，分几条短消息、一条一句：',
-  '   ① 用档案里的称呼和语言打招呼，说「我是你的咕咕」；',
-  '   ② 一句话说清你怎么帮：随时可以给你发消息；不聊天时你也会继续推进事情，有进展或需要决定时再来联系；每天早上 8 点和晚上 9 点发简报；',
-  '   ③ 名字已经在开通时确认，直接沿用；说明以后可以在设置里修改名字和样子，不重复询问起名；',
-  '   ④ 根据档案、记忆、已连接应用中的信息，挑一件现在就能帮上的具体事情，问是否从这件开始；挑不出具体的事就问最想先做什么。❌ 泛泛说「我能帮你做很多事」。',
-  '   没有这条档案就跳过称呼和挑事，只说 ②③ 并问最想先做什么。❌ 提文件名、字段名、你怎么做的。',
-  '做完就停下，等下一条需求。',
-].join('\n')
-
 /** 引导中填写的「称呼和基本信息」保存为记忆(Claude Code frontmatter + 正文),与管家写的同名同格式。 */
 export const OWNER_PROFILE_MEMORY_FILE = 'owner-profile.md'
-export const OWNER_PROFILE_MEMORY_NAME = '基本信息'
-export const OWNER_PROFILE_INDEX_LINE = `- [${OWNER_PROFILE_MEMORY_NAME}](${OWNER_PROFILE_MEMORY_FILE}) — 称呼和基本信息`
+/** MEMORY.md 里指向它的那一行。 */
+export function ownerProfileIndexLine(rules: AssistantProductRules): string {
+  return `- [${rules.labels.ownerProfileMemoryName}](${OWNER_PROFILE_MEMORY_FILE}) — ${rules.labels.ownerProfileIndexDescription}`
+}
 
 /** 引导中填写的称呼与自我介绍(可空)。 */
 export type OwnerProfileInput = { preferredName: string; about: string }
 
 /** 交给管家 / 写进记忆的那一段 markdown(只有正文,不带 frontmatter)。 */
 /** language = 开通时的界面语言:对话开始前,问候与起名跟它;开始后跟对方在用的语言。 */
-export function ownerProfileMarkdown(input: OwnerProfileInput & { language: string }): string {
+export function ownerProfileMarkdown(input: OwnerProfileInput & { language: string }, rules: AssistantProductRules): string {
   const name = input.preferredName.trim()
   const about = input.about.trim()
-  return [...(about ? [about, ''] : []), `称呼：${name}`, `开通时的界面语言：${input.language}`].join('\n')
+  return [...(about ? [about, ''] : []), renderAssistantRule(rules.labels.ownerProfileNameLine, { preferredName: name }),
+    renderAssistantRule(rules.labels.ownerProfileLanguageLine, { language: input.language })].join('\n')
 }
 
 /** 记忆夹里那一条的全文。 */
-export function ownerProfileMemoryFile(markdown: string): string {
+export function ownerProfileMemoryFile(markdown: string, rules: AssistantProductRules): string {
   return [
     '---',
-    `name: ${OWNER_PROFILE_MEMORY_NAME}`,
-    // 人与助理共读的字段不带身份称谓,也不用「你 / 我」这类两头读法相反的代词。
-    'description: 开通时填的称呼和基本信息',
+    `name: ${rules.labels.ownerProfileMemoryName}`,
+    `description: ${rules.labels.ownerProfileMemoryDescription}`,
     'type: user',
     '---',
     '',
@@ -198,10 +103,10 @@ export function ownerProfileMemoryFile(markdown: string): string {
 }
 
 /** MEMORY.md 补上那一行(已有就不重复;没有索引就新建)。 */
-export function withOwnerProfileIndex(index: string | null): string {
+export function withOwnerProfileIndex(index: string | null, rules: AssistantProductRules): string {
   const current = index ?? ''
   if (current.includes(`](${OWNER_PROFILE_MEMORY_FILE})`)) return current
-  return (current.trim() ? `${current.replace(/\n+$/, '')}\n` : '') + `${OWNER_PROFILE_INDEX_LINE}\n`
+  return (current.trim() ? `${current.replace(/\n+$/, '')}\n` : '') + `${ownerProfileIndexLine(rules)}\n`
 }
 
 /** Claude Code 给一个工作目录起的目录名(`/home/wuying` → `-home-wuying`):非字母数字一律换成 `-`。 */
@@ -261,11 +166,11 @@ export function assistantHomePaths(home: string, workdir: string, kind: Assistan
 }
 
 /** settings.json 补上禁用的工具(已有的设置、已有的禁用项照留)。读不懂原文 = 抛(❌ 盖掉人写的设置)。 */
-export function withDeniedTools(raw: string | null): string {
+export function withDeniedTools(raw: string | null, deniedTools: readonly string[]): string {
   const settings = raw?.trim() ? (JSON.parse(raw) as Record<string, unknown>) : {}
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('settings.json is not a JSON object')
   const permissions = (settings.permissions && typeof settings.permissions === 'object' ? settings.permissions : {}) as Record<string, unknown>
   const deny = Array.isArray(permissions.deny) ? [...(permissions.deny as unknown[])] : []
-  for (const tool of ASSISTANT_DENIED_TOOLS) if (!deny.includes(tool)) deny.push(tool)
+  for (const tool of deniedTools) if (!deny.includes(tool)) deny.push(tool)
   return `${JSON.stringify({ ...settings, permissions: { ...permissions, deny } }, null, 2)}\n`
 }

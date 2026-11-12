@@ -229,7 +229,7 @@
   overflow: hidden;
 }
 /* 暗底上用白线,外面那圈咕咕的描边色在暗底上看不见。 */
-.mk-hero-title:focus-visible {
+.mk-hero-title:focus-visible:not([data-pointer-focus] *) {
   outline: 2px solid white;
   outline-offset: 2px;
   border-radius: 4px;
@@ -418,7 +418,7 @@
   right: -24px;
 }
 .mk-shelf:hover .mk-shelf-arrow,
-.mk-shelf-arrow:focus-visible {
+.mk-shelf-arrow:focus-visible:not([data-pointer-focus] *) {
   opacity: 1;
 }
 /* 类别那一排(照 Google Play「手机 / 平板电脑…」那排筛选块):咕咕的分段控件,一块一块分开,选中的那块实底。 */
@@ -654,7 +654,7 @@ button.mk-name {
   text-align: left;
   cursor: default;
 }
-button.mk-name:focus-visible {
+button.mk-name:focus-visible:not([data-pointer-focus] *) {
   outline: 1px solid var(--border-primary);
   outline-offset: 2px;
   border-radius: 4px;
@@ -1347,7 +1347,7 @@ button.mk-name:focus-visible {
   border: 0;
   background: none;
 }
-.mk-hero-open:focus-visible {
+.mk-hero-open:focus-visible:not([data-pointer-focus] *) {
   outline: 2px solid white;
   outline-offset: -4px;
 }

@@ -151,9 +151,16 @@ export class AcpLiveSession {
     return session;
   }
 
-  /** `changedSince`:只要这个改动游标之后新增或改过的回合(@@@history-change-cursor),忽略 before / limit。 */
-  getHistory(before?: number, limit = 50, changedSince?: HistoryCursor): Promise<Result<HistoryPage, unknown>> {
-    return this.client.getHistory({ sessionId: this.sessionId, before, limit, ...(changedSince === undefined ? {} : { changedSince }) });
+  /**
+   * `changedSince`:只要这个改动游标之后新增或改过的回合(@@@history-change-cursor),忽略 before / limit。
+   * `contentFrom`:那之前的改动轮只要身份(读者自己回库里重读,#2493)。
+   */
+  getHistory(before?: number, limit = 50, changedSince?: HistoryCursor, contentFrom?: number): Promise<Result<HistoryPage, unknown>> {
+    return this.client.getHistory({
+      sessionId: this.sessionId, before, limit,
+      ...(changedSince === undefined ? {} : { changedSince }),
+      ...(changedSince === undefined || contentFrom === undefined ? {} : { contentFrom }),
+    });
   }
 
   getToolImage(itemId: string, index: number) {

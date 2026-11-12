@@ -25,6 +25,7 @@ import { platformProtocolForEngine } from './engine-injection-contract'
 import { pluginRegistry, PRODUCT_CAPABILITY_PACKAGES } from '@gugu/session-plugins/agents'
 import {
   buildSocialBridge,
+  guguToolsOff,
   providerEnv,
   type AcpMcpServer,
   type AcpEngineRuntimeContext,
@@ -69,6 +70,8 @@ export interface SessionCapabilityBundle {
   extensionSkills: readonly ExtensionSkill[]
   /** 上下文工程第二批 P3: the Apps whose tools this session reaches through the catalog (`<gugu_apps>` names them). Required, same reason. */
   extensionApps: readonly ExtensionAgentApp[]
+  /** The built-in tool groups switched off in the library: `<gugu_apps>` leaves out the lines that name their tools. */
+  guguToolsOff?: readonly string[]
   /** #6387 Which extension each extension program in `mcpServers` came from (for the `/mcp` panel). */
   extensionServerOrigins: readonly { name: string; extensionId: string }[]
   /** #7199 这台机器上 Browser Use App 装着、开着、许给 agent 工具(buildSessionBundle 读一次;交给各家物化器,见 core 那一格)。 */
@@ -444,6 +447,18 @@ export function setBrowserUseApp(probe: { installed: () => boolean; server: bool
   browserUseApp = probe
 }
 
+/** The Browser Use App's id in the App market. */
+export const BROWSER_USE_APP_ID = 'browser-use'
+
+/**
+ * Whether this machine has the Browser Use App: installed, switched on and still allowed to give agents tools, whatever
+ * kind of program it runs. An outdated version (a program gugu itself once hosted) does not count: it runs nothing.
+ */
+export function browserUseAppInstalled(programs: { installed(): readonly { extensionId: string; outdated?: true }[]; agentToolsRefusal(extensionId: string): string | null }): boolean {
+  return programs.installed().some((program) => program.extensionId === BROWSER_USE_APP_ID && !program.outdated
+    && !programs.agentToolsRefusal(program.extensionId))
+}
+
 /**
  * #1607 / #2401 The same on a Gugu server as on a desktop: the installed Browser Use App is this machine's browser (on a
  * server it drives the server's own headless Chromium). A server never offers the agent's built-in browser plugin — it
@@ -547,6 +562,7 @@ export async function buildSessionBundle(
     env: { ...bootstrap.env, ...library.env },
     extensionSkills: [...extensions.skills, ...integrationSkills],
     extensionApps: extensions.apps,
+    guguToolsOff: await guguToolsOff(),
     extensionServerOrigins: extensions.origins,
     ...browserUseOf(),
     mcpServers,
@@ -1113,15 +1129,12 @@ function withSurfaceSelfDescription(
   // 这一次物化不投平台块（resume：session-open 时已经投过），就同样不投它，否则 resume 会重复一段自述。
   if (!platform) return bundle
   const nativeSkills = mountsExtensionSkillsNatively(pluginRegistry.get(providerId)?.capabilities.sessionBundle?.extension)
-  const apps = guguAppsBlock(bundle.extensionApps, nativeSkills ? [] : bundle.extensionSkills)
+  const apps = guguAppsBlock(bundle.extensionApps, nativeSkills ? [] : bundle.extensionSkills, bundle.guguToolsOff)
   return {
     ...bundle,
     promptBlocks: { ...bundle.promptBlocks, platform: `${platform}${guguSessionSurfaceBlock(surface, providerId, bundle.mcpServers.some((server) => server.owner === 'gugu'))}${apps}` },
   }
 }
-
-/** #7317 What `<gugu_apps>` says while Computer Use is on (off: nothing, no token). */
-export const COMPUTER_USE_LINE = 'Computer Use is on: use browser_* tools for webpages in this session\'s own browser tabs. Use device_actions with group computer, then device_call, only for the person\'s other desktop apps.'
 
 /**
  * 上下文工程第二批 P3 (D-27, owner 10-07 chose (c); owner 10-31 raised it from 300): the App lines together are at most
@@ -1176,20 +1189,18 @@ export const GUGU_APPS_SEARCH_LINE = [
  * 集体记忆对账第 13 条：写给 agent 的散文叫 App（#6874 把「扩展」改名 App，guide 和工具说明早就这么叫）；
  * 存储层的标识（gugu-ext://、.guguext、信封的 route="extension"）不在改名范围里。
  */
-export function guguAppsBlock(apps: readonly ExtensionAgentApp[], skills: readonly ExtensionSkill[]): string {
+export function guguAppsBlock(apps: readonly ExtensionAgentApp[], skills: readonly ExtensionSkill[], off: readonly string[] = []): string {
   if (apps.length === 0 && skills.length === 0) return ''
   const parts: string[] = []
-  // Computer Use stays on the device API path, independently of App tool disclosure.
-  if (apps.some((app) => app.computerUse)) parts.push(COMPUTER_USE_LINE)
-  const catalogApps = apps.filter((app) => !app.computerUse)
-  if (catalogApps.length > 0) {
-    parts.push(['Apps available in this session:', ...appLines(catalogApps)].join('\n'))
+  if (apps.length > 0) {
+    parts.push(['Apps available in this session:', ...appLines(apps)].join('\n'))
   }
   if (skills.length > 0) {
     const lines = skills.map(skillLine)
     parts.push(['Skills from Apps installed in 咕咕. When a task matches one, read its SKILL.md first and follow it.', ...lines].join('\n'))
   }
-  parts.push(GUGU_APPS_SEARCH_LINE)
+  if (!off.includes('apps')) parts.push(GUGU_APPS_SEARCH_LINE)
+  if (parts.length === 0) return ''
   return `<gugu_apps>
 ${parts.join('\n')}
 </gugu_apps>

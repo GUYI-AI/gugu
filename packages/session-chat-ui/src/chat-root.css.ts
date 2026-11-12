@@ -6,7 +6,7 @@
  * should now pass a VE class or a raw CSS class string.
  */
 
-import { style } from '@vanilla-extract/css';
+import { keyframes, style } from '@vanilla-extract/css';
 import { vars } from './styles/theme.css';
 import {
   CHAT_CONTENT_GUTTER_PX,
@@ -80,6 +80,49 @@ export const canvas = style({
   position: 'relative',
 });
 
+// One dot lengthens while the one before it shortens, on the same curve: the three always add up to the same width,
+// so the group never shifts sideways.
+const olderPageFlow = keyframes({
+  '0%': { width: 5, opacity: 0.2, animationTimingFunction: 'cubic-bezier(0.45, 0, 0.55, 1)' },
+  '33.333%': { width: 13, opacity: 0.62, animationTimingFunction: 'cubic-bezier(0.45, 0, 0.55, 1)' },
+  '66.667%': { width: 5, opacity: 0.2 },
+  '100%': { width: 5, opacity: 0.2 },
+});
+
+/**
+ * An older page is on its way: three dots in the padding above the first row, the lit one handing its length on to
+ * the next. The box takes no layout space and contains its own layout, so showing, hiding and animating it never
+ * moves or re-measures a row.
+ */
+export const olderPageLoading = style({
+  position: 'absolute',
+  left: '50%',
+  width: 31,
+  height: 5,
+  marginLeft: -15.5,
+  display: 'flex',
+  justifyContent: 'center',
+  gap: 4,
+  contain: 'strict',
+  pointerEvents: 'none',
+});
+
+export const olderPageLoadingDot = style({
+  flex: 'none',
+  width: 5,
+  height: 5,
+  borderRadius: 2.5,
+  background: vars.fg,
+  opacity: 0.2,
+  animation: `${olderPageFlow} 1500ms infinite`,
+  selectors: {
+    '&:nth-child(1)': { animationDelay: '-1500ms' },
+    '&:nth-child(2)': { animationDelay: '-1000ms' },
+    '&:nth-child(3)': { animationDelay: '-500ms' },
+  },
+  '@media': { '(prefers-reduced-motion: reduce)': { animation: 'none', opacity: 0.34 } },
+});
+
 /**
  * Zero-height width probe — carries `contentClass` so it reports the capped
  * content-column width. The width ResizeObserver targets this instead of the
@@ -149,8 +192,9 @@ export const pinBackdrop = style({
 
 /**
  * A user message's summary sticks in front of its own message (@@@pin-cover in ChatRoot): resting, it lies
- * exactly over the message's first two lines; stuck, the message slides on beneath it. It is drawn only
- * while stuck, with its opaque backdrop, so the pinned strip never shows anything behind it.
+ * exactly over the message's first two lines, and it sticks at the pin line as the message scrolls up. It is drawn
+ * while stuck (ChatRoot decides when: at once for a message that fits, only after it has gone for one that folds),
+ * with its opaque backdrop, so the pinned strip never shows anything behind it.
  */
 export const pinSummaryLayer = style({
   // Takes no room: the message row after it moves up by its height (pinMessageRow). A negative margin here

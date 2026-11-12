@@ -2,14 +2,11 @@ import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { PasswordSection } from './settings/PasswordSection'
 import { lazy, Suspense, useRef, useState } from 'react'
 import { useAuth } from '../store/auth'
-import { useContactsStore } from '../store/contactsContext'
-import { useDevicesStore } from '../store/devicesContext'
-import { useMyAssistantContact } from '../lib/myAssistant'
 import { membershipSettingsSection } from '../lib/billing/settingsDestination'
 import { AboutSection } from './settings/AboutSection'
 import { AccountSection } from './settings/AccountSection'
-import { AssistantSection, type AssistantPageTab } from './settings/AssistantSection'
 import { ConnectorsSection } from './settings/ConnectorsSection'
+import { useConnectionAuthority } from '@/lib/connectionBridge'
 import { DevicesSection } from './settings/DevicesSection'
 import { FileStorageSection } from './settings/FileStorageSection'
 import { GeneralSection } from './settings/GeneralSection'
@@ -28,12 +25,12 @@ import { IconButton } from './ui/IconButton'
 import { useBackLayer } from './ui/sheetStack'
 import { platform } from '../platform'
 import { UI_EVENTS } from '../lib/uiEvents'
-import { connectionBridge,useConnectionAuthority } from '@/lib/connectionBridge'
 import { appState } from '../session/renderer/lib/stores/app-state'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import {
   SETTINGS_SECTIONS,
   SESSION_HOST_SETTINGS_SECTIONS,
+  isAssistantSettingsSection,
   type ActiveSection,
 } from '@gugu/core/shared/enums/settingsSectionModels'
 import { useTranslation } from 'react-i18next'
@@ -45,7 +42,9 @@ import { useTranslation } from 'react-i18next'
  * - 「App」只在手机壳上:那里的 App 由这一页自己的 App 仓管(L9);桌面在最左栏的「App」里管,网页不装 App;
  * - 「这台手机」只在手机壳上(#7199 手机当设备:那几个动作要安卓的系统接口;桌面的「这台电脑能做的事」在「设备」里);
  * - 会话页那几格只在有会话页宿主的桌面形态上(它们是会话页的组件);手机「我的」不画。
- * - 「咕咕」组:云上可开通、已经有它、或桌面可在本机安家时显示;手机的连接应用复用资料页里的授权流程。
+ * 咕咕的资料、连接应用不在这里:它们在它的 App 里(owner 11-12)。
+ * - 「连接应用」(人自己连的应用,不是咕咕的)只在手机壳上、「通用」那组:手机没有资源库;电脑上它们在资源库「集成」。
+ *   连接还记在助理家里(legacy)时那是它的,不画。
  */
 const sectionsFor = (mobile: boolean): ActiveSection[] =>
   SETTINGS_SECTIONS.filter(
@@ -54,11 +53,11 @@ const sectionsFor = (mobile: boolean): ActiveSection[] =>
       (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0) &&
       (section !== 'apps' || platform.kind === 'capacitor') &&
       (section !== 'phone' || platform.kind === 'capacitor') &&
-      (!SESSION_HOST_SETTINGS_SECTIONS.includes(section) || (mobile && section === 'connectors') || (!mobile && platform.capabilities.sessionHost)),
+      (section !== 'connectors' || mobile) &&
+      (!SESSION_HOST_SETTINGS_SECTIONS.includes(section) || (!mobile && platform.capabilities.sessionHost)),
   )
 const MOBILE_SECTIONS_FOR_PLATFORM = sectionsFor(true)
 const DESKTOP_SECTIONS_FOR_PLATFORM = sectionsFor(false)
-const ASSISTANT_SECTIONS: readonly ActiveSection[] = ['assistant']
 /** 内页自己没有一句话说明的几页:由这里补在最上面(其余各页自己有,❌ 重复)。 */
 const MobileAppsSection = lazy(() => import('./settings/MobileAppsSection').then((module) => ({ default: module.MobileAppsSection })))
 
@@ -88,20 +87,19 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
 }) {
   const { user, updateUser, logout } = useAuth()
   const { t } = useTranslation('main')
-  const { contacts } = useContactsStore()
-  const { cloudComputer } = useDevicesStore()
-  const cloudAvailable = !!cloudComputer?.available
-  const assistantName = useMyAssistantContact(contacts, cloudComputer?.snapshot?.deviceId).contact?.display_name ?? null
-  const platformSections = mobile ? MOBILE_SECTIONS_FOR_PLATFORM : DESKTOP_SECTIONS_FOR_PLATFORM
-  const assistantAvailable = cloudAvailable || !!assistantName || platform.capabilities.agentRuntime
-  const { route: connectionAuthority } = useConnectionAuthority()
-  const sections = assistantAvailable ? platformSections : platformSections.filter((s) => !ASSISTANT_SECTIONS.includes(s)
-    && (s !== 'connectors' || connectionAuthority?.mode !== 'legacy'))
+  // The person's own connected apps (a phone row): not while connections are still kept in the assistant's home (legacy).
+  const { route: connectionRoute } = useConnectionAuthority()
+  const sections = mobile
+    ? MOBILE_SECTIONS_FOR_PLATFORM.filter((s) => s !== 'connectors' || connectionRoute?.mode !== 'legacy')
+    : DESKTOP_SECTIONS_FOR_PLATFORM
 
   // @@@1507 初始 section 可由调用方指定(如侧栏「额度」直接开到 quota);缺省 account。
   const [internalSection, setInternalSection] = useState<ActiveSection>(initialSection)
   const requestedSection = section ?? internalSection
-  const activeSection = requestedSection === 'channels' ? 'connectors' : requestedSection
+  // The assistant's pages are in its App (MainLayout sends their routes there): never drawn here. On the phone a route to
+  // connected apps (or its chat tools, part of them) is the person's own row, where it is shown.
+  const ownConnections = sections.includes('connectors') && (requestedSection === 'connectors' || requestedSection === 'channels')
+  const activeSection = ownConnections ? 'connectors' : isAssistantSettingsSection(requestedSection) ? 'account' : requestedSection
   const setActiveSection = onSectionChange ?? setInternalSection
   const [internalPane, setInternalPane] = useState<'nav' | 'detail'>(mobile ? 'nav' : 'detail')
   const mobilePane = pane ?? internalPane
@@ -122,7 +120,6 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
 
   function renderSection() {
     switch (activeSection) {
-      case 'assistant': return <AssistantSection available={sections} onOpenSection={selectSection} onOpenAssistantPage={openAssistantPage} />
       case 'connectors': return <ConnectorsSection />
       case 'account':  return <AccountSection user={user} updateUser={updateUser} logout={logout} mobile={mobile} />
       case 'general':  return <GeneralSection onOpenPermissions={() => selectSection('permissions')} onOpenThemes={openThemes} />
@@ -145,16 +142,6 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
     }
   }
 
-  // 咕咕那一页里指向助理 App 数据页(记忆、定时任务)的入口:先收起设置弹窗再去那一页。
-  // 手机上助理是底部 tab(手机端那一套),设置「我的」里不给。
-  const openAssistantPage = !mobile && onClose
-    ? (tab: AssistantPageTab) => {
-        onClose()
-        window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
-        appState.navigation.navigate('assistant', { tab })
-      }
-    : undefined
-
   // 主题在资源库「主题」那一格里选(owner 11-07);资源库只在有本机会话页的桌面上,手机「我的」不给。
   const openThemes = !mobile && onClose && platform.capabilities.agentRuntime
     ? () => {
@@ -164,11 +151,7 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
       }
     : undefined
 
-  const selectSection = async (section: ActiveSection) => {
-    if (mobile && section === 'connectors') {
-      const route = await Promise.resolve().then(() => connectionBridge().routing.read()).catch(() => null)
-      if (route?.mode === 'legacy') { window.dispatchEvent(new Event(UI_EVENTS.openAssistantConnectors)); return }
-    }
+  const selectSection = (section: ActiveSection) => {
     if (mobile) setParentSection(mobilePane === 'detail' ? activeSection : null)
     setActiveSection(section)
     if (mobile) setMobilePane('detail')
@@ -193,7 +176,7 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
       >
         {(!mobile || mobilePane === 'nav') && (
           // inline(tab 页)时 nav 是顶层页,无出口箭头;仅弹窗形态(有 onClose)才给返回
-          <SettingsNav activeSection={activeSection} sections={sections} mobile={mobile} user={user} assistantName={assistantName} onSelect={selectSection} onBack={mobile && onClose ? () => onClose() : undefined} />
+          <SettingsNav activeSection={activeSection} sections={sections} mobile={mobile} user={user} onSelect={selectSection} onBack={mobile && onClose ? () => onClose() : undefined} />
         )}
         {(!mobile || mobilePane === 'detail') && (
           <Pane paneRole="detail" mobile={mobile} className="gg-settings-detail">

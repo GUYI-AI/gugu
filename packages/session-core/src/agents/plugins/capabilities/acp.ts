@@ -470,6 +470,13 @@ export interface IAcpBehavior {
    */
   catalogModelsInConfigUpdate?: boolean;
 
+  /**
+   * 进程级认证,「报了才认」(#2507 Antigravity 的网关):`initialize` 时在 `clientCapabilities.auth._meta` 里声明
+   * `clientAuthMeta`;agent 在 `authMethods` 里报了 `methodId`,就在开第一条会话前 `authenticate {methodId}` 一次。
+   * 没报(那条进程不是带着连接起的)就一个请求都不多发。模型目录探针读这一格,与这一家 `connect` 里的会话同一条。
+   */
+  authenticateWhenAdvertised?: { methodId: string; clientAuthMeta: Record<string, unknown> };
+
   /** Model ids (as the catalog names them) whose raw tool-call markers show in replies here: a session opening on one gets one notice. */
   modelsLeakingToolCallMarkers?: readonly string[];
 

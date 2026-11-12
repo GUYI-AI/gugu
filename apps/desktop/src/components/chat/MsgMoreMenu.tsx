@@ -24,7 +24,7 @@ export function MsgMoreMenu({ hasHoverBar, onReact, onClose, lift, isRetracted, 
   const items = messageActionItems({ isRetracted, content, hasSelection, onReply, onQuoteSelection, onCopy, onSelectText, onCopyLink, onOpenLink, onForward, onDownload, onKeep, onDelete, onSelect, onOpenTopic, onQuoteToComposer, onOpenFile, onEditMessage, onForkTask }, t)
   if (lift) {
     return <PhoneMessageMenu open={lift.open} bubble={lift.bubble} touchY={lift.touchY} mine={lift.mine} items={items}
-      reactionsDisabled={isRetracted} onReact={onReact} onClose={onClose} />
+      reactionsDisabled={isRetracted || !showReactions} onReact={onReact} onClose={onClose} />
   }
   const row = (item: MessageActionItem) => (
     <MenuItem key={item.key} icon={<item.icon size={15} />} disabled={item.disabled} danger={item.danger}

@@ -22,7 +22,7 @@ import { noopLogger } from '@gugu/session-shared/logger';
 import { createScope } from '@gugu/session-wire/util';
 import { describe, expect, it, vi, type Mock } from 'vitest';
 import { until } from '../../../../../tests/support/awaitCondition';
-import { AgentConfigRuntime } from './runtime';
+import { AgentConfigRuntime, USAGE_REUSE_MS } from './runtime';
 import { AuthExpiryMarks, type AuthExpiryPersistence } from './auth-expiry';
 
 /**
@@ -246,8 +246,8 @@ describe('AgentConfigRuntime', () => {
       command: SELECTED_CLI_PATH,
       args: [],
       cwd: '/home/ada',
-      cols: 120,
-      rows: 30,
+      cols: 1000,
+      rows: 40,
     });
 
     ptySpawner.processes[0]?.emitData('Open https://example.com/login\n');
@@ -257,6 +257,33 @@ describe('AgentConfigRuntime', () => {
 
     expect(runtime.sendLoginInput('claude', 'code\n')).toEqual(ok(undefined));
     expect(ptySpawner.processes[0]?.writes).toEqual(['code\n']);
+    await runtime.dispose();
+  });
+
+  it('#2507 the login state carries the device code, the paste-back prompt and the failure lines (no terminal needed)', async () => {
+    const ptySpawner = new FakePtySpawner();
+    const { runtime } = makeRuntime({ ptySpawner });
+    await runtime.startLogin('claude', 'login', SELECTED_CLI);
+    const process = ptySpawner.processes[0]!;
+    expect(runtime.install.getAuth('claude').login).toMatchObject({ userCode: null, awaitingInput: false });
+
+    process.emitData('Enter this one-time code\n  ABCD-EFGH\nPaste code here if prompted > ');
+    expect(runtime.install.getAuth('claude').login).toMatchObject({
+      userCode: 'ABCD-EFGH',
+      awaitingInput: true,
+      inputPromptCount: 1,
+    });
+
+    expect(runtime.sendLoginInput('claude', 'xyz\r')).toEqual(ok(undefined));
+    expect(process.writes).toEqual(['xyz\r']);
+    expect(runtime.install.getAuth('claude').login?.awaitingInput).toBe(false);
+
+    process.emitData('\r\nOAuth error: invalid code\r\n');
+    process.emitExit({ exitCode: 1, signal: null });
+    expect(runtime.install.getAuth('claude').login?.exit).toMatchObject({
+      exitCode: 1,
+      tail: expect.stringContaining('OAuth error: invalid code'),
+    });
     await runtime.dispose();
   });
 
@@ -601,7 +628,7 @@ describe('AgentConfigRuntime', () => {
     await runtime.dispose();
   });
 
-  it('does not merge refreshes on different CLIs, and the newer one owns the published status', async () => {
+  it('does not merge refreshes on different CLIs; they run one after the other and the newer one owns the published status', async () => {
     let resolveSelected!: () => void;
     const selectedGate = new Promise<void>((resolve) => {
       resolveSelected = resolve;
@@ -618,14 +645,72 @@ describe('AgentConfigRuntime', () => {
     const stale = runtime.refreshAuthStatus('claude', SELECTED_CLI);
     await until('the stale refresh starts its auth check', () => authCheckStatus.mock.calls.length, (n) => n >= 1);
     expect(authCheckStatus).toHaveBeenCalledTimes(1);
-    const newer = await runtime.refreshAuthStatus('claude', OTHER_CLI);
+    const newer = runtime.refreshAuthStatus('claude', OTHER_CLI);
+    // 探测排队:前一个 CLI 还没答完,后一个不起(同一时刻只有一个 CLI 在被问)。
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(authCheckStatus).toHaveBeenCalledTimes(1);
     resolveSelected();
 
+    await expect(newer).resolves.toEqual(ok({ kind: 'unauthenticated' }));
     expect(authCheckStatus).toHaveBeenCalledTimes(2);
-    expect(newer).toEqual(ok({ kind: 'unauthenticated' }));
     await expect(stale).resolves.toEqual(ok({ kind: 'authenticated' }));
     // 慢的那次读数晚到,❌ 不许盖掉较新的那次发布出去的状态。
     expect(runtime.install.getAuth('claude').status).toEqual({ kind: 'unauthenticated' });
+    await runtime.dispose();
+  });
+
+  it('never has two CLIs being asked at the same time', async () => {
+    let running = 0;
+    let peak = 0;
+    const authCheckStatus = vi.fn(async (_ctx: AgentAuthContext): Promise<AgentAuthStatus> => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      running -= 1;
+      return { kind: 'unauthenticated' };
+    });
+    const { runtime } = makeRuntime({ authCheckStatus });
+    await Promise.all([
+      runtime.refreshAuthStatus('claude', SELECTED_CLI),
+      runtime.refreshAuthStatus('claude', OTHER_CLI),
+      runtime.refreshAuthStatus('claude', SELECTED_CLI, 'claude-tui'),
+    ]);
+    expect(authCheckStatus.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(peak).toBe(1);
+    await runtime.dispose();
+  });
+
+  it('reuses a signed-in reading for five minutes, but asks again once the sign-in changed or when it was not signed in', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const authCheckStatus = vi.fn(async (_ctx: AgentAuthContext): Promise<AgentAuthStatus> => ({ kind: 'authenticated' }));
+      const { runtime } = makeRuntime({ authCheckStatus });
+      await runtime.refreshAuthStatus('claude', SELECTED_CLI);
+      await runtime.refreshAuthStatus('claude', SELECTED_CLI);
+      expect(authCheckStatus).toHaveBeenCalledTimes(1);
+      // 另一份 CLI 是另一格读数
+      await runtime.refreshAuthStatus('claude', OTHER_CLI);
+      expect(authCheckStatus).toHaveBeenCalledTimes(2);
+      // 过了五分钟:再问一次
+      vi.setSystemTime(Date.now() + 5 * 60_000 + 1);
+      await runtime.refreshAuthStatus('claude', SELECTED_CLI);
+      expect(authCheckStatus).toHaveBeenCalledTimes(3);
+      // 被会话报的鉴权失败作废:立刻重问,且读到「已失效」
+      await runtime.markAuthExpired('claude');
+      await runtime.refreshAuthStatus('claude', SELECTED_CLI);
+      expect(authCheckStatus).toHaveBeenCalledTimes(4);
+      await runtime.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not reuse a reading that was not "signed in"', async () => {
+    const authCheckStatus = vi.fn(async (_ctx: AgentAuthContext): Promise<AgentAuthStatus> => ({ kind: 'unauthenticated' }));
+    const { runtime } = makeRuntime({ authCheckStatus });
+    await runtime.refreshAuthStatus('claude', SELECTED_CLI);
+    await runtime.refreshAuthStatus('claude', SELECTED_CLI);
+    expect(authCheckStatus).toHaveBeenCalledTimes(2);
     await runtime.dispose();
   });
 });
@@ -1062,13 +1147,49 @@ it('opening a subscription reads automatically and merges concurrent reads of th
   await runtime.dispose();
 });
 
+/** 把时钟推过 5 分钟的复用窗口,下一次打开才会真去问厂商(#2438)。 */
+function pastUsageReuseWindow() {
+  const later = Date.now() + USAGE_REUSE_MS + 1;
+  return vi.spyOn(Date, 'now').mockReturnValue(later);
+}
+
+it('reopening within five minutes answers the last reading without asking the vendor again; after that the next open asks', async () => {
+  const start = 1_000_000;
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(start);
+  const usage = vi.fn(async (): Promise<SubscriptionUsageReading> => ({ kind: 'windows', readAt: Date.now(), windows: [{ usedPercent: 42, windowMinutes: 300 }] }));
+  const { runtime } = makeRuntime({ subscriptionUsage: usage, usageRefresh: 'on-open' });
+  await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false);
+  clock.mockReturnValue(start + USAGE_REUSE_MS - 1);
+  expect(await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false)).toMatchObject({ data: { kind: 'windows', readAt: start } });
+  expect(usage).toHaveBeenCalledTimes(1);
+  // 另一个账号的缓存分开记:它没读过,照样去问。
+  await runtime.readSubscriptionUsage('claude', { ...SELECTED_CLI, connectionId: 'different' }, false);
+  expect(usage).toHaveBeenCalledTimes(2);
+  clock.mockReturnValue(start + USAGE_REUSE_MS);
+  expect(await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false)).toMatchObject({ data: { kind: 'windows', readAt: start + USAGE_REUSE_MS } });
+  expect(usage).toHaveBeenCalledTimes(3);
+  clock.mockRestore();
+  await runtime.dispose();
+});
+
+it('a failed read is not reused: the next open asks again', async () => {
+  const usage = vi.fn(async (): Promise<SubscriptionUsageReading> => ({ kind: 'unavailable', reason: 'error', readAt: 1, message: 'rate limited' }));
+  const { runtime } = makeRuntime({ subscriptionUsage: usage, usageRefresh: 'on-open' });
+  await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false);
+  await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false);
+  expect(usage).toHaveBeenCalledTimes(2);
+  await runtime.dispose();
+});
+
 it('a failed refresh preserves the last successful figures and timestamp without leaking them to another connection', async () => {
   const usage = vi.fn(async (): Promise<SubscriptionUsageReading> => ({ kind: 'windows', readAt: 123, windows: [{ usedPercent: 42, windowMinutes: 300 }] }));
   const { runtime } = makeRuntime({ subscriptionUsage: usage, usageRefresh: 'on-open' });
   await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false);
+  const later = pastUsageReuseWindow();
   usage.mockResolvedValue({ kind: 'unavailable', reason: 'error', readAt: 456, message: 'rate limited' });
   expect(await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false)).toMatchObject({ data: { kind: 'windows', readAt: 123, refreshError: 'rate limited', windows: [{ usedPercent: 42 }] } });
   expect(await runtime.readSubscriptionUsage('claude', { ...SELECTED_CLI, connectionId: 'different' }, false)).toMatchObject({ data: { kind: 'unavailable', readAt: 456 } });
+  later.mockRestore();
   await runtime.dispose();
 });
 
@@ -1076,11 +1197,13 @@ it('a failed host refresh also preserves successful quota in its original connec
   const usage = vi.fn(async (): Promise<SubscriptionUsageReading> => ({ kind: 'windows', readAt: 123, windows: [{ usedPercent: 42, windowMinutes: 300 }] }));
   const { runtime } = makeRuntime({ subscriptionUsage: usage, usageRefresh: 'on-open' });
   await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false);
+  const later = pastUsageReuseWindow();
   usage.mockRejectedValue(new Error('host offline'));
   expect(await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false)).toMatchObject({ data: {
     kind: 'windows', readAt: 123, refreshError: expect.stringContaining('host offline'), windows: [{ usedPercent: 42 }],
   } });
   expect(await runtime.readSubscriptionUsage('claude', { ...SELECTED_CLI, connectionId: 'different' }, false)).toMatchObject({ data: { kind: 'unavailable', reason: 'error' } });
+  later.mockRestore();
   await runtime.dispose();
 });
 
@@ -1095,6 +1218,17 @@ it('refuses to start login over an authenticated account without clearing its st
   expect(ptySpawner.processes).toHaveLength(0);
   expect(runtime.install.getAuth('claude').status).toMatchObject({ kind: 'authenticated', account: 'existing@example.test' });
   expect(await runtime.readSubscriptionUsage('claude', existing, false)).toMatchObject({ data: { kind: 'windows', readAt: 123 } });
+  await runtime.dispose();
+});
+
+it('lets an account connection sign in again once its login is marked expired, though the CLI still reads the stale credentials as signed in', async () => {
+  const ptySpawner = new FakePtySpawner();
+  const { runtime } = makeRuntime({ ptySpawner, authCheckStatus: async () => ({ kind: 'authenticated', account: 'existing@example.test' }) });
+  const existing = { ...SELECTED_CLI, connectionId: 'existing' };
+  await runtime.refreshAuthStatus('claude', existing);
+  await runtime.markAuthExpired('claude', 'existing');
+  expect(await runtime.startLogin('claude', 'login', existing, undefined, {}, 'existing')).toEqual(ok(undefined));
+  expect(ptySpawner.processes).toHaveLength(1);
   await runtime.dispose();
 });
 

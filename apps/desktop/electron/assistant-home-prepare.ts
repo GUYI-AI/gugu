@@ -15,6 +15,7 @@ import {
 } from '@gugu/core/shared/assistantPolicy'
 import type { PrepareLocalHomeInput, PrepareLocalHomeResult, WipeLocalHomeResult } from '../src/lib/assistantHomeIpc'
 import { createLogger } from './lib/logger'
+import { refreshedAssistantRules } from './assistant-rules-resolver'
 import { refreshAssistantContext } from './sessionpage/assistant-instructions'
 import { readAssistantFile, writeAssistantFile } from './sessionpage/assistant-files'
 
@@ -84,16 +85,19 @@ export async function prepareLocalAssistantHome(
   const paths = assistantHomePaths(home, workdir, 'computer')
   // 只问不写:搬家的预览与读旧家都走这里,人还没点确认之前不往它家里写任何东西。
   if (input.dryRun) return { workdir, home }
+  // Setup looks at the assistant App again (#1931); the handbook and the profile memory come from this one snapshot. With
+  // none here yet the setup waits for them (the ensure step is putting the App in; the entry shows it is preparing).
+  const { rules } = await refreshedAssistantRules()
   if (input.fresh) await wipeLocalAssistantHome(env)
   await mkdir(workdir, { recursive: true })
   await mkdir(paths.resourcesDir, { recursive: true })
   await mkdir(paths.memoryDir, { recursive: true })
   if (input.engine !== 'codex') await linkClaudeMemory(paths.claudeMemoryDir, paths.memoryDir)
-  await refreshAssistantContext(workdir, env.guguHome ?? resolveGuguHome(), 'computer', home, input.engine)
+  await refreshAssistantContext(workdir, env.guguHome ?? resolveGuguHome(), 'computer', home, input.engine, rules)
   const profile = input.ownerProfile?.trim()
   if (profile) {
-    await writeAssistantFile(join(paths.memoryDir, OWNER_PROFILE_MEMORY_FILE), ownerProfileMemoryFile(profile))
-    await writeAssistantFile(paths.memoryIndex, withOwnerProfileIndex(await readAssistantFile(paths.memoryIndex)))
+    await writeAssistantFile(join(paths.memoryDir, OWNER_PROFILE_MEMORY_FILE), ownerProfileMemoryFile(profile, rules))
+    await writeAssistantFile(paths.memoryIndex, withOwnerProfileIndex(await readAssistantFile(paths.memoryIndex), rules))
   }
   log.info({ workdir, wroteProfile: !!profile }, 'local assistant home prepared')
   return { workdir, home }

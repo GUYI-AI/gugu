@@ -18,6 +18,7 @@ import { hasAgentInstallsInProgress } from './core/agents/install-progress-ledge
 // emdash-main-bridge.cjs with electron + native addons (better-sqlite3, node-pty, @parcel/watcher)
 // externalized (required at runtime).
 import { takeLastExit } from '../../lib/exit-reason'
+import { setGuguToolsOffReader } from '../../acp-engine-utils'
 import { resumeHostUpdate } from './core/agent-status/resume-host-update'
 import type { BirthGroup } from '@shared/core/sessions/create-session';
 export { readCurrentActivityInput,readCurrentAssistantWorkInput } from './core/sessions/session-activity-source'
@@ -191,6 +192,7 @@ import {
   runSessionAction,
   sessionCallerFacts,
   setRemotePaneOpener,
+  setRemoteTaskViewers,
   stopExactSessionpageSession,
   type SessionAction,
   type SessionCallerContext,
@@ -271,7 +273,9 @@ import { checkpointEmdashPlatformSession } from '@main/core/acp/emdash-platform-
 // capability-bundle),会话页这边只留注入口。不注册 = 第二遍与第一遍完全一样,目录退回「未登录」。
 export {
   setProbePlatformEnvResolver,
+  setProbeConnectionModelResolver,
   type ProbePlatformEnvResolver,
+  type ProbeConnectionModelResolver,
 } from '@main/core/agents/harness-model-catalog'
 // @@@4972 「咕咕提供的模型」那一组的读取口 —— 会话发现工具(session_list_models)与 composer 下拉
 // 必须给出同一份,而算它要账号态与引擎协议映射,两样都住宿主 bundle。不注册 = 那一组缺席,
@@ -430,6 +434,8 @@ const HEADLESS_SERVER = process.env.GUGU_SERVER_MODE === '1'
 export async function bootEmdashModule(ipcMain: IpcMain, discovery?: Pick<SessionHostBootOptions, 'scheduleDiscovery'>): Promise<void> {
   // #6264 没有窗口:会话里的 open_in_tab 送到正看着这条会话的桌面,❌ 问一个不存在的渲染层干等超时(remote-pane.ts)。
   if (HEADLESS_SERVER) setRemotePaneOpener(sharedRemotePaneRoute())
+  // #1607 桌面:别的电脑正看着这台机器上的任务时,App 的任务页签也推给它们(本机面板照开)。
+  else setRemoteTaskViewers(sharedRemotePaneRoute())
   const electronIpc = createElectronHostIpc({ ipcMain, BrowserWindow, MessageChannelMain })
   // @@@task-web-host 方案 A:桌面 app 额外对浏览器开一个 WebSocket 口。owner 09-03 硬约束——这个口等于
   // 「操纵本机 agent 与 shell」,**对安装用户必须不可用**:打包版永远不起;dev 也要显式开关。
@@ -780,6 +786,8 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   setSessionWake(ensureEmdashSession)
   // 手机端的「停止」= 桌面端删忙 agent 用的同一条取消口(ACP cancel / 终端腿中断键),❌ 不另写一份。
   setSessionCancel(cancelEmdashTurn)
+  // 资源库 → MCP 关掉的内置工具组:咕咕那台 server 每次有客户端连上都现读这一份。
+  setGuguToolsOffReader(() => mcpLibraryService.guguToolsOff())
 
   // 这里原先是旧账号体系的会话恢复 + 「OAuth 拿到的 GitHub token 落库」那条登记。
   // 整条链只有那套账号自己的登录服务能触发,咕咕里进不去 —— 2026-09-10 连同子系统一起拆。

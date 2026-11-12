@@ -52,7 +52,7 @@ jobs:
       - id: setup
         uses: ./.github/actions/setup-community
       - name: Install real ripgrep for native file-boundary regressions
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ripgrep
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/apt-install.sh" --no-install-recommends ripgrep
       - if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         uses: actions/cache@v4
         with:
@@ -102,7 +102,7 @@ jobs:
       - if: steps.gradle.outputs.cache-hit != 'true'
         uses: ./.github/actions/setup-community
       - if: steps.gradle.outputs.cache-hit != 'true'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends icu-devtools llvm clang lld
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/apt-install.sh" --no-install-recommends icu-devtools llvm clang lld
       - if: steps.gradle.outputs.cache-hit != 'true'
         run: pnpm android:build
       - if: steps.gradle.outputs.cache-hit != 'true'

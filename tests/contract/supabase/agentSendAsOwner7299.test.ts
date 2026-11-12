@@ -31,6 +31,6 @@ describe('owner send client/database contract (#7299)', () => {
       has_function_privilege('anon',p.oid,'EXECUTE') AS anonymous
       FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
       WHERE n.nspname='chat' AND p.proname='send_friend_message_as_owner'`)
-    expect(result.rows).toEqual([{ names: ['p_agent_user_id','p_friend_user_id','p_content','p_request_id','p_content_type','p_storage_bucket_id','p_storage_object_name'], allowed: true, anonymous: false }])
+    expect(result.rows).toEqual([{ names: ['p_agent_user_id','p_friend_user_id','p_content','p_request_id'], allowed: true, anonymous: false }])
   })
 })

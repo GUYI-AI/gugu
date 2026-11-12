@@ -211,7 +211,7 @@ describe('FrameSessionHost over a device-shaped link', () => {
     host.onConnectionClosed((sender) => released.push(sender));
     expect(await host.invokeOnce('sessionTimeline.sessionAfter', [{ conversationId: 'c1' }])).toEqual({ echoed: { conversationId: 'c1' } });
     expect(released).toEqual(seen);
-    await expect(host.invokeOnce('browser.open', [], (channel) => !channel.startsWith('browser.'))).rejects.toThrow(/No handler/);
+    await expect(host.invokeOnce('browser.open', [], (channel) => !channel.startsWith('browser.'))).rejects.toMatchObject({ code: 'forbidden' });
     await expect(host.invokeOnce('nope.missing', [])).rejects.toThrow(/No handler/);
   });
 
@@ -222,7 +222,9 @@ describe('FrameSessionHost over a device-shaped link', () => {
     const link = memoryLink(host, (channel) => !channel.startsWith('app.'));
     client = createSessionHostClient(link.open);
     await expect(client.api.invoke('tasks.getTasks')).resolves.toEqual(['t1']);
-    await expect(client.api.invoke('app.quit')).rejects.toThrow(/No handler registered for 'app.quit'/);
+    // A refusal is its own error: callers read `No handler registered` as "that machine is older".
+    await expect(client.api.invoke('app.quit')).rejects.toMatchObject({ code: 'forbidden', message: expect.not.stringContaining('No handler') });
+    await expect(client.api.invoke('tasks.missing')).rejects.toThrow(/No handler registered for 'tasks.missing'/);
   });
 
   it('checks App operation arguments on a persistent frame connection as well as one-shot calls', async () => {
@@ -232,8 +234,8 @@ describe('FrameSessionHost over a device-shaped link', () => {
     client = createSessionHostClient(memoryLink(host, remoteInvokePolicyForCaller('owner')).open);
     await expect(client.api.invoke('app.assistantAppCall', 'callProgram', { name: 'assistant_work_list' }, 'owner')).resolves.toBe('assistant_work_list');
     await expect(client.api.invoke('app.assistantAppCall', 'callProgram', { name: 'assistant_work_clear' }, 'owner')).resolves.toBe('assistant_work_clear');
-    await expect(client.api.invoke('app.assistantAppCall', 'callProgram', { name: 'assistant_work_clear' }, 'other')).rejects.toThrow(/No handler/);
-    await expect(client.api.invoke('app.assistantAppCall', 'callProgram', { name: 'library_write' }, 'owner')).rejects.toThrow(/No handler/);
+    await expect(client.api.invoke('app.assistantAppCall', 'callProgram', { name: 'assistant_work_clear' }, 'other')).rejects.toMatchObject({ code: 'forbidden' });
+    await expect(client.api.invoke('app.assistantAppCall', 'callProgram', { name: 'library_write' }, 'owner')).rejects.toMatchObject({ code: 'forbidden' });
     expect(run).toHaveBeenCalledTimes(2);
   });
 

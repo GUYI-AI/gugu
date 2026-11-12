@@ -9,13 +9,14 @@ export function imagePixelSize(b: Uint8Array): { width: number; height: number }
   const u24le = (i: number) => b[i]! | (b[i + 1]! << 8) | (b[i + 2]! << 16)
   const u32be = (i: number) => ((b[i]! << 24) | (b[i + 1]! << 16) | (b[i + 2]! << 8) | b[i + 3]!) >>> 0
   const size = (width: number, height: number) => width > 0 && height > 0 ? { width, height } : null
-  if (b.length >= 24 && b[0] === 0x89 && ascii(1, 4) === 'PNG' && ascii(12, 16) === 'IHDR') return size(u32be(16), u32be(20))
+  if (b.length >= 24 && b[0] === 0x89 && ascii(1, 4) === 'PNG' && ascii(4, 8) === '\r\n\x1a\n'
+    && u32be(8) === 13 && ascii(12, 16) === 'IHDR') return size(u32be(16), u32be(20))
   if (b.length >= 10 && (ascii(0, 6) === 'GIF87a' || ascii(0, 6) === 'GIF89a')) return size(u16le(6), u16le(8))
-  if (b.length >= 30 && ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') {
+  if (b.length >= 25 && ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') {
     const chunk = ascii(12, 16)
-    if (chunk === 'VP8 ') return size(u16le(26) & 0x3fff, u16le(28) & 0x3fff)
-    if (chunk === 'VP8L') { const bits = (b[21]! | (b[22]! << 8) | (b[23]! << 16) | (b[24]! << 24)) >>> 0; return size((bits & 0x3fff) + 1, ((bits >>> 14) & 0x3fff) + 1) }
-    if (chunk === 'VP8X') return size(u24le(24) + 1, u24le(27) + 1)
+    if (chunk === 'VP8 ' && b.length >= 30 && (b[20]! & 1) === 0 && ascii(23, 26) === '\x9d\x01\x2a') return size(u16le(26) & 0x3fff, u16le(28) & 0x3fff)
+    if (chunk === 'VP8L' && b[20] === 0x2f) { const bits = (b[21]! | (b[22]! << 8) | (b[23]! << 16) | (b[24]! << 24)) >>> 0; return size((bits & 0x3fff) + 1, ((bits >>> 14) & 0x3fff) + 1) }
+    if (chunk === 'VP8X' && b.length >= 30) return size(u24le(24) + 1, u24le(27) + 1)
     return null
   }
   if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
@@ -24,7 +25,9 @@ export function imagePixelSize(b: Uint8Array): { width: number; height: number }
     let turned = false
     for (let i = 2; i + 9 < b.length; ) {
       if (b[i] !== 0xff) return null
+      if (b[i + 1] === 0xff) { i++; continue }
       const marker = b[i + 1]!
+      if (marker === 0xda || marker === 0xd9) return null
       if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { i += 2; continue }
       if (marker === 0xe1) {
         // An XMP packet is APP1 too, often right after the EXIF one: only the EXIF segment names the orientation.
@@ -41,10 +44,21 @@ export function imagePixelSize(b: Uint8Array): { width: number; height: number }
 /** EXIF orientation of an APP1 segment whose payload is b[at, end): null when the segment is not EXIF, 1 when it names none. */
 function exifOrientation(b: Uint8Array, at: number, end: number): number | null {
   if (end > b.length || String.fromCharCode(...b.subarray(at, at + 6)) !== 'Exif\0\0') return null
+  if (at + 14 > end) return null
   const t = at + 6, le = b[t] === 0x49 && b[t + 1] === 0x49
   const u16 = (i: number) => (i + 2 > end ? -1 : le ? b[i]! | (b[i + 1]! << 8) : (b[i]! << 8) | b[i + 1]!)
   const u32 = (i: number) => (le ? (b[i]! | (b[i + 1]! << 8) | (b[i + 2]! << 16) | (b[i + 3]! << 24)) >>> 0 : ((b[i]! << 24) | (b[i + 1]! << 16) | (b[i + 2]! << 8) | b[i + 3]!) >>> 0)
-  const ifd = t + u32(t + 4)
-  for (let k = 0, n = u16(ifd); k < n; k++) if (u16(ifd + 2 + 12 * k) === 0x0112) return u16(ifd + 2 + 12 * k + 8)
+  if ((!le && !(b[t] === 0x4d && b[t + 1] === 0x4d)) || u16(t + 2) !== 42) return null
+  const offset = u32(t + 4), ifd = t + offset
+  if (offset < 8 || ifd + 2 > end) return null
+  for (let k = 0, n = u16(ifd); k < n; k++) {
+    const entry = ifd + 2 + 12 * k
+    if (entry + 12 > end) return null
+    if (u16(entry) === 0x0112) {
+      if (u16(entry + 2) !== 3 || u32(entry + 4) !== 1) return null
+      const orientation = u16(entry + 8)
+      return orientation >= 1 && orientation <= 8 ? orientation : null
+    }
+  }
   return 1
 }

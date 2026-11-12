@@ -99,6 +99,44 @@
   padding-right: 56px;
 }
 
+/* owner 11-12 「颜色不对,输入框也不对」:over an App's panel the task is part of that panel (AppHostLayerHost → appPanel).
+   Its surface shows through; its header is the panel's top row — same height (--ta-h-top), same 16px edge, the round back
+   as the panel's own pages draw it, clear of the collapse in the corner (32 + 8 + 16); its composer is the chat column's. */
+.assistant-task-chat-window[data-app-panel] .gg-aw { background: transparent; }
+.assistant-task-chat-window[data-app-panel] .gg-pane-header {
+  height: var(--ta-h-top);
+  padding: 0 56px 0 16px;
+  gap: 8px;
+  border-bottom: 0;
+}
+/* The panel's round back (.ta-circle), over the icon button's ghost look whichever sheet loads first. */
+.assistant-task-chat-window[data-app-panel] .gg-aw-panel-back {
+  border-radius: var(--ta-radius-control);
+  background: var(--ta-circle-bg);
+  box-shadow: var(--ta-circle-shadow);
+  color: var(--ta-fg);
+}
+.assistant-task-chat-window[data-app-panel] .gg-aw-panel-back:hover { background: var(--ta-glass-hover); }
+/* The transcript's fades paint its page color (white strips on the gradient): off here. The messages fade out instead,
+   as the chat column's do — under the header, and before the composer layer (--chat-composer-slot-h, ChatRoot). */
+.assistant-task-chat-window[data-app-panel] [data-chat-root]::before,
+.assistant-task-chat-window[data-app-panel] [data-chat-composer-placement] > :last-child::before,
+.assistant-task-chat-window[data-app-panel] [data-chat-composer-placement] > :last-child > [data-composer-band]::before {
+  content: none;
+}
+.assistant-task-chat-window[data-app-panel] [data-chat-scroll] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 16px, black calc(100% - var(--chat-composer-slot-h, 0px) - 24px), transparent calc(100% - var(--chat-composer-slot-h, 0px)));
+  mask-image: linear-gradient(to bottom, transparent 0, black 16px, black calc(100% - var(--chat-composer-slot-h, 0px) - 24px), transparent calc(100% - var(--chat-composer-slot-h, 0px)));
+}
+/* The composer sits on the panel's content line, 16px off its bottom, level with the chat column's. */
+.assistant-task-chat-window[data-app-panel] [data-chat-composer-placement] > :last-child { padding-bottom: 16px; }
+/* A pinned message's strip is opaque (rows run under it), in the panel's own color where it sticks — right under the top
+   row: the panel's gradient at the panel's size (the window is a size container), moved up by that row. */
+.assistant-task-chat-window[data-app-panel] { container-type: size; }
+.assistant-task-chat-window[data-app-panel] [data-chat-pin-backdrop] {
+  background: var(--ta-panel-bg) 0 calc(-1 * var(--ta-h-top)) / 100% 100cqh no-repeat;
+}
+
 .ta-panel-top[hidden],
 .ta-panel-body[hidden],
 .ta-phone [hidden] {

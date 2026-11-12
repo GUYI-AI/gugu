@@ -286,18 +286,20 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     this._rememberPlacement(source.pane.entries.get(tabId)!, 'separate');
     const pair = this.pair;
     const wasActive = source.pane.resolvedActiveTabId === tabId;
+    const at = source.pane.tabOrder.indexOf(tabId);
+    const after = at > 0 ? source.pane.tabOrder[at - 1] : null;
     const detached = source.pane.detachTab(tabId);
     if (!detached) return null;
     if (pair && (tabId === pair.pinned || tabId === pair.side)) this._pair = null;
     // Windowing a hidden member only clears its recorded pair; the content being used stays put.
-    if (wasActive && this.sidePaneId !== null) this._collapseDisplay(source.paneId === this.sidePaneId ? 'pinned' : 'side');
+    if (wasActive && this.sidePaneId !== null) this._collapseDisplay(source.paneId === this.sidePaneId ? 'pinned' : 'side', after);
     const paneId = crypto.randomUUID();
     const pane = new PaneStore<R>(this._registry, this._ctx, {
       layoutOpener: (kind, args, config) => this.open(kind, args, config),
       // 窗开着就是看得见的,和这条会话此刻是不是正看着的那页无关。
       isViewActive: () => true,
     });
-    pane.adoptEntry(detached.entry, detached.resource, { activate: true });
+    pane.adoptEntry(detached.entry, detached.resource, { activate: true, shown: detached.shown });
     this._windowPanes.set(paneId, { paneId, pane, originPaneId: source.paneId });
     // 窗里那枚被 × 关掉了:这一格跟着收掉(窗也就跟着关)。
     this._autoCloseDisposers.set(
@@ -320,7 +322,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const target = this.mainGroup;
     for (const tabId of [...windowPane.pane.tabOrder]) {
       const detached = windowPane.pane.detachTab(tabId);
-      if (detached) target.pane.adoptEntry(detached.entry, detached.resource, { activate });
+      if (detached) target.pane.adoptEntry(detached.entry, detached.resource, { activate, shown: detached.shown });
     }
     if (activate) this.activePaneId = target.paneId;
     this._dropWindowPane(windowPaneId);
@@ -432,7 +434,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   }
 
   /** A tab left for good: hand its record on; if it was on screen in the pair, bring back what it pushed out. */
-  private _tabRemoved(paneId: string, tabId: string, wasActive: boolean): void {
+  private _tabRemoved(paneId: string, tabId: string, wasActive: boolean, after: string | null): void {
     const pair = this.pair;
     const member = pair && (tabId === pair.pinned || tabId === pair.side);
     const displayed = !!pair && wasActive && (paneId === this.sidePaneId
@@ -454,10 +456,10 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       const opts = { by: 'restore' as const, activate: displayed };
       if (back.role === 'pinned') this.pairWith(back.tabId, remaining, opts);
       else this.pairWith(remaining, back.tabId, opts);
-      if (!displayed && wasActive && this.sidePaneId !== null) this._collapseDisplay(paneId === this.sidePaneId ? 'pinned' : 'side');
+      if (!displayed && wasActive && this.sidePaneId !== null) this._collapseDisplay(paneId === this.sidePaneId ? 'pinned' : 'side', after);
       return;
     }
-    if (wasActive && this.sidePaneId !== null) this._collapseDisplay(paneId === this.sidePaneId ? 'pinned' : 'side');
+    if (wasActive && this.sidePaneId !== null) this._collapseDisplay(paneId === this.sidePaneId ? 'pinned' : 'side', after);
   }
 
   /**
@@ -479,14 +481,19 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     }
   }
 
-  /** Collapse the displayed panes without changing a different pair recorded in the background. */
-  private _collapseDisplay(fill: 'pinned' | 'side'): void {
+  /**
+   * Collapse the displayed panes without changing a different pair recorded in the background. The side's pages go back
+   * right after the pinned page; `fill: 'side'` after the pinned page left the strip (closed, in a window): into its place,
+   * right after `left` (null: first) — the main pane's front has already moved on to a neighbour by then.
+   */
+  private _collapseDisplay(fill: 'pinned' | 'side', left?: string | null): void {
     const side = this.sideGroup;
     if (!side) return;
     const main = this.mainGroup;
     const pinned = main.pane.resolvedActiveTabId;
     const front = fill === 'pinned' ? pinned : side.pane.resolvedActiveTabId;
-    for (const id of [...side.pane.tabOrder]) this._move(id, main, pinned);
+    const anchor = fill === 'side' && left !== undefined ? left : pinned;
+    for (const id of [...side.pane.tabOrder]) this._move(id, main, anchor);
     this.closePane(side.paneId);
     if (front) main.pane.activeTabId = front;
     this.activePaneId = main.paneId;
@@ -496,14 +503,15 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     return this.groups.find((g) => g.pane.entries.has(tabId));
   }
 
-  /** Detach + adopt: the resource survives unchanged, no lifecycle calls. `after`: insert right after that tab. */
-  private _move(tabId: string, to: Pane<R>, after?: string): void {
+  /** Detach + adopt: the resource survives unchanged, no lifecycle calls. `after`: insert right after that tab (null: first). */
+  private _move(tabId: string, to: Pane<R>, after?: string | null): void {
     const from = this._groupOf(tabId);
     if (!from || from === to) return;
     const detached = from.pane.detachTab(tabId);
     if (!detached) return;
     const at = after ? to.pane.tabOrder.indexOf(after) : -1;
-    to.pane.adoptEntry(detached.entry, detached.resource, { insertBeforeTabId: at === -1 ? undefined : to.pane.tabOrder[at + 1], activate: false });
+    const insertBeforeTabId = after === null ? to.pane.tabOrder[0] : at === -1 ? undefined : to.pane.tabOrder[at + 1];
+    to.pane.adoptEntry(detached.entry, detached.resource, { insertBeforeTabId, activate: false, shown: detached.shown });
   }
 
   closePane(paneId: string): void {
@@ -925,7 +933,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
           this._rememberPlacement(entry, paired || this.sidePaneId !== null ? 'beside' : 'separate');
         },
         // Closing the pinned page = the side fills (closing the side closes its pane): 关掉一页 ≠ 拆开.
-        tabRemoved: (tabId, wasActive) => this._tabRemoved(paneId, tabId, wasActive),
+        tabRemoved: (tabId, wasActive, after) => this._tabRemoved(paneId, tabId, wasActive, after),
         // While paired, bringing any other tab of the strip forward replaces the side; the pinned page stays.
         activating: (tabId) => {
           const pair = this.pair;
@@ -948,6 +956,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
         split: (tabId) => { this.splitPane(paneId, 'right', tabId); },
         splitBlocked: (tabId) => this.splitBlocked(paneId, tabId, 'right'),
         entryForTab: (tabId) => this.groups.map(({ pane }) => pane.entries.get(tabId)).find(Boolean),
+        stripTabIds: () => this.stripTabIds,
         isOnScreen: (tabId) => !this.narrow && (this._shownPair?.pinned === tabId || this._shownPair?.side === tabId),
         revealTab: (tabId) => {
           const group = this._groupOf(tabId);

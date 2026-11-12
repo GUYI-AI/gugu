@@ -31,8 +31,6 @@ export const VOICE_NOTE_MIN_SEGMENT_VOICED_MS = 400
 export const VOICE_NOTE_MIN_TOTAL_VOICED_MS = 1_500
 /** 交给助理之后这么久还没有总结 = 失败(可重试)。 */
 export const VOICE_NOTE_SUMMARY_TIMEOUT_MS = 10 * 60_000
-/** 录 / 传 / 转写中的那一端这么久没再写进度 = 那一端已经不在了(关了 App、断了网):如实说失败,给重试。 */
-export const VOICE_NOTE_STALE_MS = 15 * 60_000
 
 export type VoiceNoteStatus =
   /** 正在录(录的那一端每传完一段写一次进度)。 */
@@ -193,72 +191,10 @@ export type VoiceNoteView =
   | { kind: 'failed'; stage: VoiceNoteFailureStage; retryable: boolean; message: string; notice: string | null; code: string | null }
   | { kind: 'no_speech' }
 
-/**
- * 只看云电脑上的文件判状态(本机正在跑的那一条由调用方拿本机进度盖过它):
- * - 有 summary.md 就是好了(助理写完了,哪怕 note.json 还没来得及改);
- * - 手机录完传完(uploaded)= 等转写,❌ 当「处理中」也 ❌ 按 15 分钟判失败;
- * - 还在录 / 转写,但那一端很久没写进度 = 那一端不在了 → 失败(可重试),❌ 一直「处理中」;
- * - 交给助理太久没回 → 失败(可重试)。
- */
-export function voiceNoteView(meta: VoiceNoteMeta, summaryTitle: string | null | undefined, now: number): VoiceNoteView {
-  if (summaryTitle !== undefined && summaryTitle !== null) return { kind: 'ready', title: summaryTitle || meta.title }
-  if (meta.status === 'ready') return { kind: 'ready', title: meta.title }
-  if (meta.status === 'no_speech') return { kind: 'no_speech' }
-  // 在等人点「开始转写」,不是谁卡住了:❌ 按 stale 判失败。
-  if (meta.status === 'uploaded') return { kind: 'queued' }
-  if (meta.status === 'failed') {
-    const failure = meta.failure ?? { stage: 'transcribe', message: '', retryable: true }
-    return { kind: 'failed', stage: failure.stage, retryable: failure.retryable, message: failure.message, notice: failure.notice ?? null, code: failure.code ?? null }
-  }
-  if (meta.status === 'summarizing') {
-    const asked = Date.parse(meta.summaryRequestedAt ?? meta.updatedAt)
-    if (Number.isFinite(asked) && now - asked > VOICE_NOTE_SUMMARY_TIMEOUT_MS)
-      return { kind: 'failed', stage: 'summarize', retryable: true, message: 'timeout', notice: null, code: null }
-    return { kind: 'processing', phase: 'summarizing' }
-  }
-  const touched = Date.parse(meta.updatedAt)
-  if (Number.isFinite(touched) && now - touched > VOICE_NOTE_STALE_MS)
-    return { kind: 'failed', stage: meta.status === 'recording' ? 'upload' : 'transcribe', retryable: true, message: 'stale', notice: null, code: null }
-  return { kind: 'processing', phase: meta.status === 'recording' ? 'recording' : 'transcribing' }
-}
-
 /** 重试从哪一步接着做:转写全齐了就只再交一次给助理,否则把没转写的段补上。 */
 export function retryStartsAt(meta: VoiceNoteMeta): 'transcribe' | 'summarize' {
   const pending = meta.segments.some((s) => !s.transcribed && s.voicedMs >= VOICE_NOTE_MIN_SEGMENT_VOICED_MS)
   return pending || meta.segments.length === 0 ? 'transcribe' : 'summarize'
-}
-
-// ── 列表:按周分组(周一起算,本周 / 上周 / 9月7日–13日) ─────────────────────────
-
-export type VoiceNoteWeek = { key: string; kind: 'thisWeek' | 'lastWeek' | 'range'; start: Date; end: Date }
-
-export function weekStart(at: Date): Date {
-  const d = new Date(at.getFullYear(), at.getMonth(), at.getDate())
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
-  return d
-}
-
-export function groupVoiceNotesByWeek<T>(items: readonly T[], timeOf: (item: T) => string, now: Date): { week: VoiceNoteWeek; items: T[] }[] {
-  const current = weekStart(now).getTime()
-  const groups = new Map<number, T[]>()
-  const sorted = [...items].sort((a, b) => timeOf(b).localeCompare(timeOf(a)))
-  for (const item of sorted) {
-    const at = new Date(timeOf(item))
-    const key = Number.isNaN(at.getTime()) ? 0 : weekStart(at).getTime()
-    const list = groups.get(key) ?? []
-    list.push(item)
-    groups.set(key, list)
-  }
-  return [...groups.entries()]
-    .sort((a, b) => b[0] - a[0])
-    .map(([key, list]) => {
-      const start = new Date(key)
-      const end = new Date(start)
-      end.setDate(end.getDate() + 6)
-      const weeksAgo = Math.round((current - key) / (7 * 86_400_000))
-      const kind: VoiceNoteWeek['kind'] = weeksAgo <= 0 ? 'thisWeek' : weeksAgo === 1 ? 'lastWeek' : 'range'
-      return { week: { key: String(key), kind, start, end }, items: list }
-    })
 }
 
 // ── 转写:模型回的行 → 段;段 ↔ transcript.md ─────────────────────────────────────
@@ -281,7 +217,7 @@ export function formatClock(ms: number): string {
   return `${two(Math.floor(total / 3600))}:${two(Math.floor((total % 3600) / 60))}:${two(total % 60)}`
 }
 
-const LINE = /^\s*\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]\s*([^：:\n]{1,40}?)\s*[：:]\s*(.*)$/
+const LINE = /^\s*\[(\d+):(\d{2})(?::(\d{2}))?\]\s*([^：:\n]{1,40}?)\s*[：:]\s*(.*)$/
 
 function stampMs(a: string, b: string, c: string | undefined): number {
   return c === undefined ? (Number(a) * 60 + Number(b)) * 1000 : (Number(a) * 3600 + Number(b) * 60 + Number(c)) * 1000
@@ -333,12 +269,13 @@ export function looksHallucinated(lines: readonly TranscriptLine[], durationMs: 
 }
 
 export function renderTranscript(lines: readonly TranscriptLine[]): string {
-  return `${lines.map((l) => `[${formatTimestamp(l.startMs)}] ${l.speaker}：${l.text}`).join('\n')}\n`
+  return `${lines.map((l) => `[${formatTimestamp(l.startMs)}] ${l.speaker}：${l.text.replace(/\r?\n/g, '\n  ')}`).join('\n')}\n`
 }
 
 export function parseTranscript(markdown: string): TranscriptLine[] {
   const out: TranscriptLine[] = []
   for (const raw of markdown.replace(/\r\n/g, '\n').split('\n')) {
+    if (raw.startsWith('  ') && out.length > 0) { out[out.length - 1].text += '\n' + raw.slice(2); continue }
     const m = LINE.exec(raw.trim())
     if (m && m[5].trim()) out.push({ startMs: stampMs(m[1], m[2], m[3]), speaker: m[4].trim(), text: m[5].trim() })
   }
@@ -353,6 +290,7 @@ export function speakersOf(lines: readonly TranscriptLine[]): string[] {
 
 /** 接着上一段转写:把上一段最后几行带给模型,好让说话人编号接得上。 */
 export function transcriptTail(lines: readonly TranscriptLine[], count = 6): string {
+  if (count <= 0) return ''
   return lines.slice(-count).map((l) => `${l.speaker}：${l.text}`).join('\n')
 }
 
@@ -374,7 +312,7 @@ export function transcriptionPrompt(previousTail: string): string {
 export function summaryTitle(markdown: string): string {
   const first = markdown.replace(/\r\n/g, '\n').split('\n').find((line) => line.trim()) ?? ''
   const m = /^#\s+(.+)$/.exec(first.trim())
-  return m ? m[1].trim().slice(0, 200) : ''
+  return m ? Array.from(m[1].trim()).slice(0, 200).join('') : ''
 }
 
 /** 正文里开头那个和标题一样的 `# 标题` 去掉(页头已经写着了)。 */
@@ -388,7 +326,8 @@ export function summaryBody(markdown: string): string {
 // ── 导出(文件名 = 标题,`# 标题` + 总结 + `## 转写`) ────────────────────────────
 
 export function exportFileName(title: string): string {
-  const safe = title.replace(/[\\/:*?"<>|]/g, '_').trim().slice(0, 120)
+  let safe = Array.from(title.replace(/\p{Cc}/gu, '').replace(/[\\/:*?"<>|]/g, '_').trim()).slice(0, 120).join('')
+  if (/^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(safe)) safe = '_' + safe
   return `${safe || '语音笔记'}.md`
 }
 
@@ -462,11 +401,6 @@ export function summaryRequestText(input: {
     `3. 写好后在你和${owner}的私聊里发一句:「语音笔记《标题》整理好了」,再加一句最要紧的事。别把整份总结贴进聊天。`,
     '4. 值得长期记住的(人、项目、约定),照你平时的习惯记进记忆。',
   ].join('\n')
-}
-
-/** 「就这次会议提问」:填进左边聊天框的开头,人接着打问题。 */
-export function askAboutNoteDraft(title: string, dir: string): string {
-  return `关于语音笔记《${title}》（${dir}）：`
 }
 
 // ── 会议提醒(会快开始时提醒你录音) ─────────────────────────────

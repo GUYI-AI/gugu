@@ -17,14 +17,19 @@ export {
 } from './timeline';
 
 export {
+  LOCAL_PAYLOAD_BUDGET,
+  REMOTE_OLDER_PAGE_BUDGET,
+  TRANSPORT_PAYLOAD_BUDGET,
   TRANSPORT_TEXT_LIMIT,
+  transportSizeOf,
   trimAfterResultForTransport,
   trimBatchForTransport,
   trimCursorPageForTransport,
   trimItemsForTransport,
   trimOlderForTransport,
   trimSnapshotForTransport,
-  trimTurnsForTransport
+  trimTurnsForTransport,
+  type LeanPage
 } from './transport-trim';
 
 export { findToolImage, findToolItem, type ToolImageLookup } from './tool-image';

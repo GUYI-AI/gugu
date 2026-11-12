@@ -51,7 +51,7 @@ export default {
       "partnersBody": "在这里找项目和朋友。一个项目就是一个群。"
     },
     "desktop": {
-      "guguBody": "你的个人助理，帮你记安排、办事情。在左栏最上面。",
+      "guguBody": "你的个人助理，帮你记安排、办事情。",
       "projectsBody": "和 Agent 一起推进工作，一个项目就是一个群。在「消息」里的「项目」。",
       "chatsBody": "和朋友及彼此的 Agent 沟通、协作。在「消息」里的「对话」。"
     }
@@ -91,7 +91,6 @@ export default {
     "save": "保存",
     "saving": "保存中…",
     "delete": "删除",
-    "more": "更多操作"
   },
   "machine": {
     "stale": "这份资料尚未更新到当前版本。",
@@ -133,7 +132,6 @@ export default {
     "ownerOccupation": "- 身份：{{occupation}}",
     "back": "返回",
     "continue": "继续",
-    "skip": "先跳过",
     "defaultName": "咕咕",
     "namePlaceholder": "咕咕",
     "homeCloudUpgrade": "升级到 Plus",
@@ -164,12 +162,7 @@ export default {
     "ended": "上次开通已结束，可以重新开通。",
     "startNew": "重新开通",
     "resuming": "上次没装完，接着装{{name}}…",
-    "connectTitle": "连几个常用应用",
     "connectBody": "连上之后{{name}}才能替你读日历、发消息。不连也行，以后在「连接应用」里连。",
-    "readyTitle": "一切就绪，{{name}}。",
-    "readyTitleNoName": "一切就绪。",
-    "readySub": "{{name}}已经安好家，进去它会先跟你打招呼。",
-    "go": "此刻出发"
   },
   "server": {
     "title": "选择自己的服务器",
@@ -446,66 +439,6 @@ export default {
       "delete": "删除组件",
       "deletePrompt": "把「{{title}}」这张小组件删掉，并停掉更新它的定时任务。"
     },
-    "discover": {
-      "title": "发现组件",
-      "sub": "挑一个起点，或者直接写下你想持续关注的内容；加上以后由{{name}}按时更新。",
-      "close": "关闭",
-      "placeholder": "描述你想持续关注的内容…",
-      "startingPoint": "这是一个起点，而不是固定模板",
-      "request": "我想在动态加一个小组件，一直帮我盯着：{{want}}\n先问我最多三个问题（盯什么、多久更新一次、几点前要准备好），然后把它加到动态上，按时更新。",
-      "group": {
-        "day": "每天的节奏",
-        "watch": "盯着变化",
-        "life": "生活与健康"
-      },
-      "template": {
-        "weather": {
-          "title": "出门前的天气",
-          "body": "今天和明天的天气、要不要带伞、穿什么",
-          "starter": "每天早上告诉我今天的天气、要不要带伞、穿什么，城市是："
-        },
-        "todos": {
-          "title": "今天的待办",
-          "body": "从聊天和日历里整理出今天要做的事",
-          "starter": "每天整理一份我今天要做的事，按轻重缓急排好"
-        },
-        "news": {
-          "title": "每日要闻",
-          "body": "我关心的领域里，今天最值得看的几条",
-          "starter": "每天挑三条我关心的领域里最值得看的新闻，领域是："
-        },
-        "stocks": {
-          "title": "股价与持仓",
-          "body": "几只股票的价格、涨跌和相关新闻",
-          "starter": "盯着这几只股票的价格、涨跌和相关新闻："
-        },
-        "competitors": {
-          "title": "竞品动态",
-          "body": "竞争对手的新版本、价格变化和新闻",
-          "starter": "盯着这几家竞品的新版本、价格变化和新闻："
-        },
-        "industry": {
-          "title": "行业风向",
-          "body": "一个行业里的融资、发布和大事",
-          "starter": "每周汇总这个行业里的融资、发布和大事："
-        },
-        "spending": {
-          "title": "每月开销",
-          "body": "这个月花了多少、花在哪、和上月比",
-          "starter": "帮我盯着这个月的开销：花了多少、花在哪、和上个月比"
-        },
-        "flights": {
-          "title": "航班降价",
-          "body": "一条航线的票价，降了就告诉我",
-          "starter": "盯着这条航线的票价，降价了告诉我："
-        },
-        "learning": {
-          "title": "学习进度",
-          "body": "一门课或一个目标，每周进度和下一步",
-          "starter": "帮我盯着这个学习目标的进度和下一步："
-        }
-      }
-    }
   },
   "tasks": {
     "closeChat": "关闭任务聊天",
@@ -518,61 +451,19 @@ export default {
     "collaborationReady": "含个人助理的协作记录",
     "collaborationOlder": "加载更早的协作记录",
     "title": "任务",
-    "segment": "任务",
-    "create": "创建任务",
-    "createPrompt": "帮我做一件事：",
     "day": {
       "today": "今天",
       "yesterday": "昨天",
       "week": "近 7 天",
       "earlier": "更早"
     },
-    "unseen": "有没看过的结果",
-    "emptyTitle": "还没有任务",
-    "loadFailed": "任务列表没读到",
-  },
-  "routines": {
-    "loadFailed": "定时任务没读到，稍后再试。",
-    "title": "定时任务",
-    "by": "{{name}}排的",
-    "active": "进行中",
-    "inactive": "已停用",
-    "next": "下次 {{time}}",
-    "nextUnavailable": "暂时读不到下次执行时间",
-    "ended": "已结束",
-    "enabled": "开启",
-    "everyDay": "每天 {{time}}",
-    "everyWeekday": "周一至周五 {{time}}",
-    "everyWeek": "每{{day}} {{time}}",
-    "schedule": "执行时间",
-    "instructions": "指令",
-    "editPrompt": "请帮我调整“{{name}}”的执行时间。",
-    "changeTime": "改时间",
-    "delete": "删除",
-    "deleteTitle": "删除定时任务",
-    "deleteBody": "将删除“{{name}}”。此操作无法撤销。",
-    "deleted": "定时任务已删除",
-    "deleteFailed": "删除定时任务失败",
-    "enabledToast": "定时任务已开启",
-    "disabledToast": "定时任务已关闭",
-    "updateFailed": "更新定时任务失败",
-    "emptyTitle": "暂无定时任务",
-    "empty": "跟{{name}}说「明早 8 点提醒我…」，它就会排上。",
-    "create": "创建定时任务",
-    "createPrompt": "帮我排一个定时任务：",
-    "goneTitle": "此定时任务不可用",
-    "gone": "它可能已经被删掉了。"
   },
   "memory": {
     "loadFailed": "记忆没读到，稍后再试。",
     "aboutUserTitle": "我对{{owner}}的了解",
     "updated": "更新于 {{time}}",
-    "faster": "更快设置记忆",
-    "fasterPrompt": "请帮我更快地设置记忆。",
     "all": "全部",
     "voiceNotes": "语音笔记",
-    "voiceNotesEmptyTitle": "还没有语音笔记",
-    "voiceLoadFailed": "语音笔记没读到",
     "items_one": "{{count}} 项",
     "items_other": "{{count}} 项",
     "createdBy": "由{{name}}记下",
@@ -591,13 +482,11 @@ export default {
     "editAboutMePrompt": "你记的关于我的那些，我想改一下：",
     "deleteTitle": "删除这条记忆？",
     "deleteBody": "“{{name}}”将被永久移除。此操作无法撤销。",
-    "deleted": "已删除",
     "deleteFailed": "删除失败，请重试。",
     "goneTitle": "这条记忆不在了",
     "gone": "它可能已经被删掉或改了名字。"
   },
   "health": {
-    "desktopEmpty": "暂无健康数据",
     "title": "健康",
     "tileSub_one": "{{count}} 项数据",
     "tileSub_other": "{{count}} 项数据",
@@ -698,7 +587,6 @@ export default {
     "analyzeReport": "分析健康报告",
     "analyzeReportDescription": "上传健康报告，获取个性化分析。",
     "healthReportMessage": "这是我的健康报告，帮我把里面值得记录的内容记录到我的健康信息中，如果有分析的价值，就做一个分析报告。",
-    "reportPicked": "已放进和{{name}}的聊天，看过再发送。",
     "unit": {
       "bpm": "次/分",
       "ms": "毫秒",
@@ -712,79 +600,8 @@ export default {
       "perMinute": "次/分"
     }
   },
-  "files": {
-    "saveFailed": "部分文件未能保存。",
-    "note": "添加与你有关的文件，放进{{name}}的「{{folder}}」里，它随时能看。",
-    "upload": "上传文件",
-    "uploading": "正在上传 {{name}}…",
-    "uploaded_one": "上传成功：{{count}} 个文件",
-    "uploaded_other": "上传成功：{{count}} 个文件",
-    "uploadFailed": "{{name}} 上传失败：{{message}}",
-    "uploadedBanner": "已上传 {{files}}",
-    "analyze": "让{{name}}去看",
-    "analyzePrompt": "我在你的「{{path}}」里放了 {{files}}，请看一下，把对了解我有用的记进记忆。",
-    "tooLarge": "每个文件必须小于 50MB",
-    "unsupported": "不支持视频、音频和压缩包文件",
-    "newFolder": "新建文件夹",
-    "folderName": "文件夹名称",
-    "create": "创建",
-    "folderCreated": "文件夹已创建",
-    "folderCreateFailed": "创建文件夹失败",
-    "rename": "重命名",
-    "renamed": "已重命名",
-    "renameFailed": "重命名失败，请重试。",
-    "nameRequired": "名称不能为空",
-    "nameSlash": "名称不能包含“/”。",
-    "deleteFileTitle": "删除文件？",
-    "deleteFolderTitle": "删除文件夹？",
-    "deleteFileBody": "“{{name}}”将被永久移除。此操作无法撤销。",
-    "deleteFolderBody": "“{{name}}”及其中所有内容都将被永久移除。此操作无法撤销。",
-    "fileDeleted": "文件已删除",
-    "folderDeleted": "文件夹已删除",
-    "deleteFailed": "删除失败，请重试。",
-    "folderEmpty": "这个文件夹是空的",
-    "empty": "还没有文件。上传你的文件，帮助{{name}}更了解你。",
-    "loadFailed": "资料没读到",
-    "goneTitle": "这一项不在了",
-    "gone": "它可能已经被删掉或改了名字。",
-    "notText": "这个文件不是文本，手机上看不了。",
-    "tooBigToView": "这个文件有 {{size}}，手机上只看 1 MB 以内的。"
-  },
   "customize": {
-    "title": "自定义",
-    "name": "名字",
     "look": "换形象",
-    "character": "性格",
-    "setCharacter": "设置性格",
-    "custom": "自定义性格",
-    "describe": "描述你希望助理如何说话和表现。留空可清除。",
-    "preset": {
-      "balanced": "均衡",
-      "warm": "温暖",
-      "direct": "直接",
-      "concise": "简洁",
-      "playful": "俏皮",
-      "sassy": "毒舌"
-    },
-    "saved": "更改已保存",
-    "saveFailed": "没保存上：{{message}}",
-    "shellMissing": "咕咕主界面还没准备好，稍后再试。",
-    "loadFailed": "没读到性格"
-  },
-  "diary": {
-    "title": "日记",
-    "emptyTitle": "还没有日记",
-    "ask": "问{{name}}今天怎么样",
-    "prompt": "今天过得怎么样？用你自己的口吻写一篇今天的日记给我。",
-    "loading": "正在读日记…",
-    "unreadable": "暂时读不到日记，稍后再试。",
-    "all": "全部日记（{{count}}）",
-    "listSub": "{{name}}每晚用自己的口吻写的",
-    "of": "{{name}}的日记",
-    "goneTitle": "这篇日记不在了",
-    "gone": "{{name}}可能整理过日记，回去看看别的。",
-    "talk": "和{{name}}聊聊这篇",
-    "talkPrompt": "聊聊你 {{date}} 写的那篇日记："
   },
   "capabilities": {
     "title": "能力与连接"
@@ -811,8 +628,6 @@ export default {
     "retrying": "正在恢复",
     "savedCount": "已添加 {{count}} 个",
     "connectedCount": "已连接 {{count}} 个",
-    "deviceCount_one": "{{count}} 台设备",
-    "deviceCount_other": "{{count}} 台设备",
     "unverified": "尚未验证",
     "prepareFailed": "暂时无法完成授权准备。",
     "authorizationUnavailable": "暂时无法使用授权所需的云端服务。",
@@ -828,7 +643,6 @@ export default {
       "device": "本机",
       "other": "其他设备"
     },
-    "cloudNote": "授权保存在：{{name}}的云设备。换设备登录、你的电脑关着也能用。",
     "connectedGroup": "已连接",
     "savedGroup": "已添加",
     "manage": "管理连接",
@@ -846,8 +660,6 @@ export default {
     "cloudWhereNote": "存在云上，{{name}}随时用得上，不靠哪台设备开着",
     "goneTitle": "此应用不可用",
     "gone": "云端没有这个连接应用。",
-    "accountNoteHere": "授权保存在：{{device}}（本机）。与这台设备的「资源库 → 集成」同步；设备开着，{{name}}就能从各端使用。",
-    "accountNoteThere": "授权保存在：{{device}}。这台设备开着，{{name}}就能从各端使用。",
     "accountWhereNote": "存在{{name}}的家里，{{device}}开着它就用得上",
     "thisComputer": "这台电脑",
     "goneHome": "{{device}}上没有这个连接应用。",
@@ -952,12 +764,7 @@ export default {
     "desktopOnly": "聊天工具由咕咕云端替你挂着：电脑关着，{{name}}也照样收得到。"
   },
   "railEntry": {
-    "claim": "领取你的咕咕",
-    "create": "创建你的咕咕",
-    "set": "开通你的咕咕",
-    "preparing": "正在准备你的咕咕…",
-    "loading": "正在读取咕咕…",
-    "unreadable": "读不到你的咕咕，点开看看"
+    "preparing": "正在准备你的咕咕…"
   },
   "settingsPage": {
     "editName": "编辑{{name}}的名字",
@@ -1036,7 +843,7 @@ export default {
       "home": "它已经删掉了，但它的家没清干净；开通新的一位时会再清一次。"
     },
     "elsewhereTitle": "要在它住的电脑上关闭",
-    "elsewhereBody": "{{name}} 住在「{{device}}」上，它的家和定时任务都在那台电脑上。请在那台电脑的设置 → 咕咕里关闭。",
+    "elsewhereBody": "{{name}} 住在「{{device}}」上，它的家和定时任务都在那台电脑上。请在那台电脑上它的设置里关闭。",
     "elsewhereOk": "知道了"
   },
   "ideas": {

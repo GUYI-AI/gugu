@@ -18,10 +18,10 @@ afterEach(() => { harness?.cleanup(); document.getSelection()?.removeAllRanges()
 
 it.each(['backward', 'forward', 'single'] as const)('copies exactly the painted text for an Android %s selection', async direction => {
   vi.spyOn(Capacitor, 'getPlatform').mockReturnValue('android');
-  const store = { sessionId: 'task-a', setDraftText: vi.fn() } as unknown as AcpChatStore;
+  const store = { sessionId: 'task-a', setDraftText: vi.fn(), chatState: { transcript: { state: { committedTurns: [] } } } } as unknown as AcpChatStore;
   function Harness() {
     const parent = useRef<HTMLDivElement>(null);
-    const quotes = useSessionMessageQuotes(store, useRef(null));
+    const quotes = useSessionMessageQuotes(store, useRef(null), { phone: true });
     useEffect(() => {
       const context = createChatContext({ locale: () => 'en-US', theme: buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 48, agentConversation: true }) });
       const state = createChatState(context);

@@ -161,3 +161,48 @@ describe('presence 对账:一次批量读,只写不一样的', () => {
     expect(warnings.some((message) => message.includes('agent-opaque is unauthorized'))).toBe(true)
   })
 })
+
+// #1760 旁证:队列空着时 tick 几分钟才一轮,上一轮 tick 留下的令牌会过期 —— 服务端日志里每小时一阵
+// 「presence reconcile failed: JWT expired」。对账要用 provider 此刻给的令牌,❌ 用上一轮 tick 留下的。
+test('presence 对账用的是 provider 此刻给的令牌,不是上一轮 tick 留下的', async () => {
+  const env = await isolatedGuguEnv('gugu-presence-reconcile-fresh-token-')
+  await createTestLocalAgent(env, { name: 'idle', gugu_user_id: 'agent-idle' })
+  const client = newClient()
+  let issued = 0
+  const presenceTokens: Array<{ used: number; issuedBefore: number }> = []
+  const host = createDeviceRuntimeHostLoop({
+    env,
+    intervalMs: 15,
+    superviseIntervalMs: 60_000,
+    // 心跳照常现取令牌(provider 每次给新的一枚);tick 则因为 wake 订着、队列空着,开机之后不再跑。
+    heartbeatIntervalMs: 20,
+    activityReconcileIntervalMs: 120,
+    subscribeCommandWake: ({ onSubscribed }) => (onSubscribed?.(), () => undefined),
+    machineIdentifier: () => 'presence-fresh-token-machine',
+    capabilities: { terminals: [], runtimes: [] },
+    authProvider: { getAuth: async () => ({ accessToken: `token-${++issued}`, userId: OWNER }) },
+    makeIdentityClient: (accessToken) => new Proxy(client, {
+      get(target, property, receiver) {
+        if (property !== 'rpc') return Reflect.get(target, property, receiver)
+        return (fn: string, args: unknown) => {
+          if (fn === 'get_agent_presence_batch') presenceTokens.push({ used: Number(accessToken.slice('token-'.length)), issuedBefore: issued })
+          return (target.rpc as (fn: string, args: unknown) => unknown)(fn, args)
+        }
+      },
+    }) as unknown as DeviceRuntimeIdentityClient,
+    runtimeBridge: {
+      create: async () => {},
+      injectAgentInbox: async () => 'accepted' as const,
+      stop: async () => {},
+      agentStatus: () => null,
+    },
+  })
+  host.start()
+  try {
+    await until('开机之后又对了一次账', () => presenceTokens.length >= 2)
+    // 第二次对账用的令牌,必须是第一次对账之后才发出来的那些里的一枚。
+    expect(presenceTokens[1]!.used).toBeGreaterThan(presenceTokens[0]!.issuedBefore)
+  } finally {
+    await host.stop()
+  }
+})

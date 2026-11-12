@@ -155,11 +155,14 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
     const scroller = scrollerRef.current, content = contentRef.current
     if (!scroller || !content || !rowIds.length) return
     const request = pending.current?.key === resetKey ? pending.current : null
-    if (paintedRef.current !== resetKey) {
+    // 落点还在补行时来的请求(切过去的群当场定位一条消息)等落点放好再执行,❌ 不被落点盖掉、也不丢。
+    const landing = paintedRef.current !== resetKey
+    if (landing) {
       placeAtLanding(scroller, content, landingRef.current.landing ?? { index: 'LAST', align: 'end' })
       if (grow(scroller)) return
       paintedRef.current = resetKey
-    } else if (request) {
+    }
+    if (request) {
       if (request.id === undefined) {
         scroller.scrollTop = scroller.scrollHeight
         if (grow(scroller)) return
@@ -175,7 +178,7 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
         }
       }
       pending.current = null
-    } else {
+    } else if (!landing) {
       // 新行进来时保留旧贴底意图,先贴住再重算电平;否则会在 ResizeObserver 前把意图清掉。
       if (followRef.current && atBottomRef.current && end === rowIds.length) scroller.scrollTop = scroller.scrollHeight
       grow(scroller)

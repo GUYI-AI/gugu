@@ -54,7 +54,7 @@ export const cardClickable = style([
     selectors: {
       '&:hover': { background: vars.bgHover },
       '&:active': { background: vars.bgPress },
-      '&:focus-visible': { outline: `2px solid ${vars.link}`, outlineOffset: '-2px' },
+      '&:focus-visible:not([data-pointer-focus] *)': { outline: `2px solid ${vars.link}`, outlineOffset: '-2px' },
     },
   },
 ]);
@@ -150,7 +150,7 @@ export const modeButton = style({
   selectors: {
     '&:hover': { background: vars.bg1 },
     '&:active': { background: vars.bgPress },
-    '&:focus-visible': { outline: `2px solid ${vars.link}`, outlineOffset: '1px' },
+    '&:focus-visible:not([data-pointer-focus] *)': { outline: `2px solid ${vars.link}`, outlineOffset: '1px' },
   },
 });
 

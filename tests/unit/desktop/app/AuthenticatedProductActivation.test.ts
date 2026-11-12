@@ -67,8 +67,6 @@ vi.mock('../../../../apps/desktop/src/lib/firstRun', () => ({
   readFirstRunProgress: vi.fn(async () => ({ stage: 'done', occupation: null })),
   writeOccupation: vi.fn(),
   finishFirstRun: vi.fn(),
-  requestAssistantSetupHandoff: vi.fn(),
-  takeAssistantOpenRequest: vi.fn(() => false),
   takeAssistantStartAtHome: vi.fn(() => false),
   readOccupation: vi.fn(async () => null),
 }))

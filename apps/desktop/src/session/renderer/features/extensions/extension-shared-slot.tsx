@@ -65,7 +65,8 @@ export function ExtensionSharedSlot({
       <ExtensionTabToolbar tabKind={tabKind} sessionId={sessionId ?? null} tabId={tabId} />
       {/* What the page opens beside it (G1) goes in this slot too: side by side, or over it when narrow. */}
       <AppPeekSlot sessionId={sessionId ?? null} tabId={tabId}>
-        <div ref={slotRef} className="min-h-0 flex-1 bg-background" />
+        {/* The page takes this box's corners too (page-corners.ts): a place that rounds it rounds the page. */}
+        <div ref={slotRef} className="min-h-0 flex-1 bg-background" data-extension-slot="" />
       </AppPeekSlot>
     </div>
   );

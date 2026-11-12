@@ -38,11 +38,12 @@ export type { ExtensionHandedChat, ExtensionHandedFile };
  *   descriptor source both use, and a page may call only tools whose MCP Apps visibility includes `app`.
  */
 
-/** Host resources an App reaches as a program (`"host"` in its manifest): Browser Use, and Computer Use (#7317). */
-export type NativeProgramHost = 'browser-use' | 'computer-use';
-
 export interface ExtensionProgram {
-  native?: NativeProgramHost;
+  /**
+   * An outdated version of a gugu App: its manifest names a program gugu itself once hosted (`"host"`, the old Browser Use
+   * and Computer Use), which gugu no longer has. It never runs; it says it needs an update (outdatedProgramError).
+   */
+  outdated?: true;
   extensionId: string;
   /** The program's name in the manifest. */
   server: string;
@@ -60,7 +61,6 @@ export interface ExtensionProgram {
 }
 
 export interface ExtensionPrograms {
-  registerNative(name: NativeProgramHost, provider: NativeAppProgram): void;
   /** Why the extension may not give agents tools right now (not installed, turned off, revoked); null when it may. */
   agentToolsRefusal(extensionId: string): string | null;
   tools(program: ExtensionProgram): Promise<Tool[]>;
@@ -99,19 +99,10 @@ export interface ExtensionPrograms {
   }): Promise<CallToolResult>;
 }
 
-/** A host resource driven through the same App gateway, caller stamps, catalog and revocation as stdio programs. */
-export interface NativeAppProgram {
-  tools(): Promise<Tool[]>;
-  call(program: ExtensionProgram, params: CallToolRequest['params'], signal: AbortSignal): Promise<CallToolResult>;
-  status(extensionId: string): Pick<ExtensionAgentStatus, 'running' | 'sessions'>;
-  retire(extensionId: string): Promise<void>;
-}
-
-const nativePrograms = new Map<NativeProgramHost, NativeAppProgram>();
-function nativeProgram(program: ExtensionProgram): NativeAppProgram {
-  const provider = program.native && nativePrograms.get(program.native);
-  if (!provider) throw new Error(`Host capability is unavailable: ${program.native}`);
-  return provider;
+/** What an agent (or a page) asking an outdated program for anything is told: the person has to update the App. */
+export function outdatedProgramError(program: Pick<ExtensionProgram, 'extensionId'>): Error {
+  return new Error(`The installed version of the App ${program.extensionId} is outdated and no longer runs on this version of Gugu. `
+    + 'The person must update it from the App market before it can be used.');
 }
 
 /**
@@ -324,7 +315,7 @@ export function onExtensionProgramNotification(listener: ProgramNotificationList
   return () => void notificationListeners.delete(listener);
 }
 
-/** A native program's own notification (#7317), delivered as a stdio program's is: to the App's pages. */
+/** A notification gugu sends for an App's program itself (the assistant panel), delivered as a stdio program's is: to the App's pages. */
 export function notifyFromNativeProgram(program: Pick<ExtensionProgram, 'extensionId' | 'server'>, notification: Notification): void {
   for (const listener of notificationListeners) listener(program.extensionId, program.server, notification);
 }
@@ -529,10 +520,9 @@ function retire(instance: Instance): void {
 export async function retireExtensionPrograms(extensionId: string): Promise<void> {
   // Its settings in gugu changed, or it was upgraded: what its programs give is asked again.
   for (const key of [...toolLists.keys()]) if (key.startsWith(`${extensionId}/`)) toolLists.delete(key);
-  const native = [...nativePrograms.values()].map((provider) => provider.retire(extensionId));
   const own = [...instances].filter((instance) => instance.key.startsWith(`${extensionId}/`));
   for (const instance of own) retire(instance);
-  await Promise.all([...native, ...own.map(async (instance) => { await instance.gone; await instance.stopped; })]);
+  await Promise.all(own.map(async (instance) => { await instance.gone; await instance.stopped; }));
 }
 
 /** Off, agents:tools withdrawn, or uninstalled: no old call or starting process may outlive that authorization. */
@@ -543,7 +533,7 @@ export async function revokeExtensionPrograms(extensionId: string): Promise<void
   for (const key of [...starting.keys()]) if (key.startsWith(`${extensionId}/`)) starting.delete(key);
   const own = [...instances].filter((instance) => instance.key.startsWith(`${extensionId}/`));
   const stopped = own.map(stop);
-  const settled = await Promise.allSettled([...stopped, ...[...nativePrograms.values()].map((provider) => provider.retire(extensionId))]);
+  const settled = await Promise.allSettled(stopped);
   const failed = settled.find((result) => result.status === 'rejected');
   if (failed?.status === 'rejected') throw failed.reason;
 }
@@ -593,9 +583,6 @@ async function use<T>(program: ExtensionProgram, signal: AbortSignal, work: (cli
 }
 
 export const extensionPrograms: ExtensionPrograms = {
-  registerNative(name, provider) {
-    nativePrograms.set(name, provider);
-  },
   agentToolsRefusal(extensionId) {
     const service = extensionsService();
     try {
@@ -612,11 +599,12 @@ export const extensionPrograms: ExtensionPrograms = {
     return withExtensionProgramAccess(program.extensionId, undefined, async (signal) => {
       const refusal = extensionPrograms.agentToolsRefusal(program.extensionId);
       if (refusal) throw Object.assign(new Error(refusal), { code: 'denied' });
+      if (program.outdated) throw outdatedProgramError(program);
       const dataChanged = await dataChangedAt(program.dataDir);
       signal.throwIfAborted();
       const cached = toolLists.get(versionKeyOf(program));
       if (cached?.dataChanged === dataChanged) return cached.tools;
-      const { tools } = program.native ? { tools: await nativeProgram(program).tools() } : await use(program, signal, (client) => client.listTools(undefined, { signal }));
+      const { tools } = await use(program, signal, (client) => client.listTools(undefined, { signal }));
       signal.throwIfAborted();
       toolLists.set(versionKeyOf(program), { tools, dataChanged });
       return tools;
@@ -629,10 +617,10 @@ export const extensionPrograms: ExtensionPrograms = {
     return withExtensionProgramAccess(program.extensionId, parent, async (signal) => {
       const refusal = extensionPrograms.agentToolsRefusal(program.extensionId);
       if (refusal) throw Object.assign(new Error(refusal), { code: 'denied' });
+      if (program.outdated) throw outdatedProgramError(program);
       const id = randomUUID();
       const stamped = { ...params, _meta: { ...params._meta, [PROGRAM_CALL_META_KEY]: id } };
-      const call = program.native ? nativeProgram(program).call(program, stamped, signal)
-        : use(program, signal, (client) => client.callTool(stamped, undefined, { signal, onprogress, timeout: NO_TIMEOUT_MS }) as Promise<CallToolResult>, { id, agent, sessionId, handed, handedChats });
+      const call = use(program, signal, (client) => client.callTool(stamped, undefined, { signal, onprogress, timeout: NO_TIMEOUT_MS }) as Promise<CallToolResult>, { id, agent, sessionId, handed, handedChats });
       return call.then((result) => {
         signal.throwIfAborted();
         if (result.isError) {
@@ -685,7 +673,6 @@ export const extensionPrograms: ExtensionPrograms = {
           ...(context?.agentName ? { [AGENT_NAME_META_KEY]: context.agentName } : {}),
           ...(context?.taskTitle ? { [TASK_TITLE_META_KEY]: context.taskTitle } : {}),
         };
-        if (program.native) return extensionPrograms.call(program, { name, arguments: args, _meta }, { signal, sessionId: from.sessionId });
         return use(program, signal, (client) => client.callTool({ name, arguments: args, _meta }, undefined, { signal }) as Promise<CallToolResult>,
           { id, sessionId: from.sessionId, callerKind: 'person', handed: [], handedChats: [] });
       }
@@ -695,22 +682,26 @@ export const extensionPrograms: ExtensionPrograms = {
       const given = await handedAs(extensionPrograms, from.agent.slice('user:'.length), tool, name, args);
       const id = randomUUID();
       const _meta = { 'gugu/caller': 'app', ...stamp, [PROGRAM_CALL_META_KEY]: id };
-      if (program.native) return extensionPrograms.call(program, { name, arguments: given.args, _meta }, { signal, sessionId: from.agentSession });
       return use(program, signal, (client) => client.callTool({ name, arguments: given.args, _meta }, undefined, { signal }) as Promise<CallToolResult>,
         { id, agent: from.agent.slice('user:'.length), sessionId: from.agentSession, handed: given.handed, handedChats: given.handedChats });
     }, 'agent' in from ? from.agentSession : undefined);
   },
 };
 
-/** What the extension panel shows: how many of its programs run now, and the last failure since one last worked. */
+/**
+ * What the extension panel shows: how many of its programs run now, and the last failure since one last worked. An
+ * outdated version's program has failed for as long as it is installed: it says so, whether or not anything called it.
+ */
 export function extensionProgramStatus(extensionId: string): ExtensionAgentStatus {
   const running = [...live.keys()].filter((key) => key.startsWith(`${extensionId}/`)).length;
+  const outdated = programSource().find((program) => program.extensionId === extensionId && program.outdated);
+  if (outdated) {
+    const said = outdatedProgramError(outdated).message;
+    return { running, lastFailure: { kind: 'outdated', server: outdated.server, at: new Date().toISOString(), said,
+      notStarted: true, code: null, command: outdated.command, stderrTail: said } };
+  }
   const failure = failures.get(extensionId) ?? null;
-  const native = programSource().filter((program) => program.extensionId === extensionId && program.native)
-    .map((program) => nativePrograms.get(program.native!)?.status(extensionId));
-  const sessions = native.flatMap((status) => status?.sessions ?? []);
-  return { running: running + native.reduce((sum, status) => sum + (status?.running ?? 0), 0),
-    ...(native.length ? { sessions } : {}), lastFailure: failure && failure.at > (lastWorked.get(extensionId) ?? '') ? failure : null };
+  return { running, lastFailure: failure && failure.at > (lastWorked.get(extensionId) ?? '') ? failure : null };
 }
 
 /** At quit: every program tree goes with gugu. */

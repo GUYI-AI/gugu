@@ -46,7 +46,7 @@ describe('the server package smoke starts preinstalled Apps\' programs as gugu d
       servers.forEach((server, index) => {
         const product = programs[index]!;
         if ('host' in server) {
-          expect(product.native).toBe(server.host);
+          expect(product.outdated).toBe(true);
           return;
         }
         const smoke = launchOf(appId, root, server, { node: NODE, programRuntime: PROGRAM_RUNTIME, toolsRuntime: TOOLS_RUNTIME, dataDir, linkPrefix: LINK_PREFIX });

@@ -62,7 +62,8 @@ function preloadVerbs(): string[] {
   // Every host's members come from one table (host-calls.ts): a page's own and the background page's own (`VerbFacts.only`) too.
   // `appFiles.*` and `clipboard.*` are host halves internal to the platform runtime: pages call `gugu.files.*` and
   // `gugu.clipboard.writeText`, which the runtime builds on them (checked below); so is `onFilesChanged`.
-  const hostHalves = ['navigationGo', 'navigationClaimBack', 'onBack', 'onDownloadProgress', 'onFilesChanged', 'onCloudHeard', 'onModalFocus', 'onProjection', 'onProjectionSource', 'onTaskPage', 'onSurface']
+  // `onAssistantChanged` is `gugu.assistant.onChanged`'s host half (#1925), checked below as the page reaches it.
+  const hostHalves = ['navigationGo', 'navigationClaimBack', 'onBack', 'onDownloadProgress', 'onFilesChanged', 'onCloudHeard', 'onBindingResources', 'onVoiceNote', 'onSchedulesChanged', 'onModalFocus', 'onProjection', 'onProjectionSource', 'onTaskPage', 'onSurface', 'onAssistantChanged']
   return [...Object.keys(HOST_CALLS), ...Object.keys(HOST_EVENTS)].filter((key) => !key.includes('.') && !hostHalves.includes(key))
 }
 
@@ -99,7 +100,10 @@ describe('扩展指南与源码对得上 (#6614)', () => {
     const modalVerbs = Object.keys(HOST_CALLS).filter((key) => key.startsWith('modal.') && key !== 'modal.key')
     expect(messageVerbs).toEqual(['messages.history', 'messages.search', 'chats.list', 'chats.members', 'projects.list', 'sessions.index', 'sessions.read'])
     const all = EXTENSION_GUIDE_TOPICS.map(({ text }) => text).join('\n')
-    const missing = [...verbs.map((verb) => `gugu.files.${verb}(`), ...messageVerbs.map((key) => `gugu.${key}(`), ...cloudVerbs.map((key) => `gugu.${key}(`), ...modalVerbs.map((key) => `gugu.${key}(`), 'gugu.bind.codemirror(', 'gugu.codemirror(', 'gugu.clipboard.writeText(', 'gugu.navigation.go(']
+    // `gugu.assistant.*` (#1925): the host's rows, and `onChanged` built on `onAssistantChanged` (create-gugu.ts).
+    const assistantVerbs = [...Object.keys(HOST_CALLS).filter((key) => key.startsWith('assistant.')), 'assistant.onChanged']
+    expect(assistantVerbs).toEqual(['assistant.status', 'assistant.open', 'assistant.advanceSetup', 'assistant.rename', 'assistant.figure', 'assistant.connect', 'assistant.onChanged'])
+    const missing = [...verbs.map((verb) => `gugu.files.${verb}(`), ...messageVerbs.map((key) => `gugu.${key}(`), ...cloudVerbs.map((key) => `gugu.${key}(`), ...modalVerbs.map((key) => `gugu.${key}(`), ...assistantVerbs.map((key) => `gugu.${key}(`), 'gugu.bind.codemirror(', 'gugu.codemirror(', 'gugu.clipboard.writeText(', 'gugu.navigation.go(']
       .filter((call) => !all.includes(call))
     expect(missing).toEqual([])
   })

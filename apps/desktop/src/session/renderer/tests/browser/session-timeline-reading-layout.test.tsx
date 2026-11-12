@@ -4,7 +4,7 @@ import { createReactHarness } from '../../../../../../../tests/support/testHarne
 import { SessionTimeline } from '../../features/sessions/view/session-timeline';
 import { READING_LINE } from '../../features/sessions/view/session-timeline-geometry';
 const scope = vi.hoisted(() => ({ turns: Array.from({ length: 64 }, (_, i) => ({ id: `turn-${i}`, anchorItemId: `item-${i}`, itemIds: [`item-${i}`], prompt: `Input ${i}`, reply: '' })) }));
-vi.mock('@renderer/features/sessions/acp/acp-chat-resource-manager', () => ({ findAcpChatStore: () => ({ chatState: { transcript: {}, session: {} } }) }));
+vi.mock('@renderer/features/sessions/acp/acp-chat-resource-manager', () => ({ findAcpChatStore: () => ({ chatState: { transcript: { state: { committedTurns: [] } }, session: {} } }) }));
 vi.mock('@renderer/features/sessions/stores/session-registry', () => ({ sessionRegistry: { get: () => undefined } }));
 vi.mock('@renderer/lib/chat/shared-chat-context', () => ({ getSharedChatContext: () => ({ selfIdentity: () => null }) }));
 vi.mock('../../features/sessions/view/use-transcript-timeline', () => ({ useTranscriptTimeline: (_t: unknown, _s: unknown, select: (turns: typeof scope.turns) => unknown) => select(scope.turns) }));

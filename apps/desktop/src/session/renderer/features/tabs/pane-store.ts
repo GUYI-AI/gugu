@@ -83,8 +83,11 @@ class TabEntryImpl<S = unknown> implements TabEntry<S> {
  */
 export interface PaneSplitter {
   tabClosing?(entry: TabEntry): void;
-  /** A tab left this pane for good; `wasActive`: it was the one in front. */
-  tabRemoved?(tabId: string, wasActive: boolean): void;
+  /**
+   * A tab left this pane for good; `wasActive`: it was the one in front; `after`: the tab that stood left of it (null:
+   * it was first) — where it stood, told by the removal itself, since the pane's front has already moved on.
+   */
+  tabRemoved?(tabId: string, wasActive: boolean, after: string | null): void;
   /** A tab is being brought forward; true = the layout placed it (it replaced the side of the pair). */
   activating?(tabId: string): boolean;
   /** 这一枚能不能单独成窗,能的话怎么开(会话自己那枚 = 整个会话,App 那枚 = 这个 App,别的附页 = 这一枚)。 */
@@ -107,6 +110,8 @@ export interface PaneSplitter {
   pairSide?(): { paneId: string; pane: PaneStore } | undefined;
   /** This pane is the side of a pair: its tab is drawn in the main pane's strip, it has no strip of its own. */
   isSide?(): boolean;
+  /** The one strip this pane is drawn in (with the side of a pair), left to right. */
+  stripTabIds?(): string[];
   /** 拆开. */
   separatePair?(): void;
 }
@@ -129,6 +134,10 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
   dimensions: { width: number; height: number } | null = null;
   /** The tab that had focus before the one in front: 向右分 / ⌘\ put the one in front beside it. */
   private _previousActiveTabId: string | undefined = undefined;
+  /** What `onActivate` last saw on screen here. */
+  private _lastShown: TabResource[] = [];
+  /** Moved in while on screen (@@@carried-on-screen); good until the move's action has ended. */
+  private readonly _carriedShown = new Set<TabResource>();
 
   readonly registry: R;
   private readonly _ctx: TabViewContext;
@@ -230,8 +239,15 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
         this.isVisible
           ? this.shownTabIds.map((id) => this._resources.get(id)).filter((r): r is TabResource => r !== undefined)
           : [],
-      (shown, previous) => {
-        for (const resource of shown) if (!previous?.includes(resource)) resource.onActivate?.();
+      (shown) => {
+        // @@@carried-on-screen - a page moved here from another pane while on screen (a pair collapsing, 向右分, a
+        // window) did not come on screen: the move says so (`adoptEntry` `shown`), this pane's history cannot.
+        // The mark lives until the next microtask, so this relies on MobX running this reaction synchronously when
+        // the move's batch ends: every move goes through actions (detachTab / adoptEntry / the layout's own), and the
+        // page must reach this pane's screen in that same synchronous run. A move split across an await (or done
+        // outside an action, its screen change landing after a microtask) would activate the page once more.
+        for (const resource of shown) if (!this._lastShown.includes(resource) && !this._carriedShown.has(resource)) resource.onActivate?.();
+        this._lastShown = shown;
       },
       { fireImmediately: true, equals: comparer.shallow }
     );
@@ -254,10 +270,24 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
    * the user had closed each one.
    */
   private _closeTabsOfKind(kind: string, which?: (state: unknown) => boolean): void {
-    const ids = [...this.entries.values()]
-      .filter((e) => e.kind === kind && (!which || which(e.state)))
-      .map((e) => e.tabId);
-    for (const id of ids) this._removeTab(id);
+    // The whole strip's, fixed now: closing one can collapse a pair, which moves the next into the other pane and
+    // closes this one's neighbour (its own listener then never runs). Each is closed where it is by then.
+    const ids = this._stripTabIds.filter((id) => {
+      const entry = this.entries.get(id) ?? this._layoutSplitter?.entryForTab?.(id);
+      return entry?.kind === kind && (!which || which(entry.state));
+    });
+    for (const id of ids) this._holderOf(id)?._removeTab(id);
+  }
+
+  /** The pane holding this tab now (a pair collapsing moves tabs between the two panes of a strip). */
+  private _holderOf(tabId: string): PaneStore<R> | undefined {
+    const entry = this.entries.get(tabId) ?? this._layoutSplitter?.entryForTab?.(tabId);
+    return entry ? (entryHolders.get(entry as TabEntryImpl) as PaneStore<R> | undefined) : undefined;
+  }
+
+  /** The strip the person sees this pane's tabs in: with the side of a pair, if there is one. */
+  private get _stripTabIds(): string[] {
+    return this._layoutSplitter?.stripTabIds?.() ?? this.tabOrder;
   }
 
   /**
@@ -646,7 +676,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
 
 
   closeOthers(tabId: string): void {
-    void this._requestCloseInTurn(this.tabOrder.filter((id) => id !== tabId));
+    void this._requestCloseInTurn(this._stripTabIds.filter((id) => id !== tabId));
   }
 
   /** 这一格是不是它那个布局里握着焦点的那格;单独成窗的那一格只有它自己。 */
@@ -702,14 +732,15 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
 
   /** 关闭右侧页签:这一枚右边的都关掉(照 VS Code / Chrome)。 */
   closeToRight(tabId: string): void {
-    const index = this.tabOrder.indexOf(tabId);
+    const strip = this._stripTabIds;
+    const index = strip.indexOf(tabId);
     if (index < 0) return;
-    void this._requestCloseInTurn(this.tabOrder.slice(index + 1));
+    void this._requestCloseInTurn(strip.slice(index + 1));
   }
 
   /** 关闭全部页签。最后一枚关掉,这一格跟着关掉(由布局的自动关闭接)。 */
   closeAll(): void {
-    void this._requestCloseInTurn([...this.tabOrder]);
+    void this._requestCloseInTurn([...this._stripTabIds]);
   }
 
   /**
@@ -717,7 +748,8 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
    * 后一个会把前一个顶掉,被顶掉的那枚就永远等不到回答。❌ 直接强关:那会把没存的修改悄悄扔掉。
    */
   private async _requestCloseInTurn(tabIds: readonly string[]): Promise<void> {
-    for (const id of tabIds) await this._requestClose(id, false);
+    // The targets are fixed now, by id; each is closed by the pane holding it when its turn comes.
+    for (const id of tabIds) await this._holderOf(id)?._requestClose(id, false);
   }
 
   /** 关掉这几枚(一枚一枚问,同一排):会话那枚问过「会话和页签都关」之后,替它把别的页签关掉。 */
@@ -835,7 +867,8 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
    * Used by moveTab — the resource survives unchanged.
    * Returns { entry, resource } or undefined if not found.
    */
-  detachTab(id: string): { entry: TabEntryImpl; resource: TabResource } | undefined {
+  /** `shown`: it was on screen here as it left (what `onActivate` last saw), told to the pane that adopts it. */
+  detachTab(id: string): { entry: TabEntryImpl; resource: TabResource; shown: boolean } | undefined {
     const entry = this.entries.get(id);
     const resource = this._resources.get(id);
     if (!entry || !resource) return undefined;
@@ -843,7 +876,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     this.entries.delete(id);
     this._resources.delete(id);
     removeTabId(this, id);
-    return { entry, resource };
+    return { entry, resource, shown: this._lastShown.includes(resource) };
   }
 
   /**
@@ -853,8 +886,13 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
   adoptEntry(
     entry: TabEntryImpl,
     resource: TabResource,
-    opts?: { insertBeforeTabId?: string; activate?: boolean }
+    opts?: { insertBeforeTabId?: string; activate?: boolean; shown?: boolean }
   ): void {
+    // Until this pane's next look at its screen: a page that stays on screen through the move is not newly shown.
+    if (opts?.shown) {
+      this._carriedShown.add(resource);
+      queueMicrotask(() => this._carriedShown.delete(resource));
+    }
     this.entries.set(entry.tabId, entry);
     entryHolders.set(entry, this);
     this._resources.set(entry.tabId, resource);
@@ -929,7 +967,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     for (const kind of new Set(pages.map((page) => page.kind))) {
       if (this.registry.has(kind)) this.registry.get(kind).closed?.(id, this._ctx, pages.filter((page) => page.kind === kind).map((page) => page.state) as never);
     }
-    this._layoutSplitter?.tabRemoved?.(id, wasActive);
+    this._layoutSplitter?.tabRemoved?.(id, wasActive, index > 0 ? this.tabOrder[index - 1] ?? null : null);
   }
 
   /** Call provider.dispose() for an entry if its resource exists. Does NOT remove from maps. */

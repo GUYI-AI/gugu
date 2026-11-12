@@ -9,7 +9,6 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { localizedManifestText } from '@shared/extensions/catalog';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { AppSettingsForm } from './app-settings-form';
-import { ComputerUseAccess, switchesComputerControl } from './computer-use-access';
 import { installedExtensionsStore } from './installed-extensions-store';
 import { openApp } from './app-dock';
 import './panel/app-store.css';
@@ -51,8 +50,6 @@ export const AppSettingsPage = observer(function AppSettingsPage({ manifest, act
         </div>
         <button type="button" className="mk-link" data-testid="app-settings-manage" onClick={() => void followLink({ kind: 'app-detail', extensionId: manifest.id })}>{t('extensions.allSettings')}</button>
       </header>
-      {/* #7317 Computer Use is the switch of computer control: the permissions it needs are given here, once. */}
-      {active && switchesComputerControl(manifest) ? <ComputerUseAccess /> : null}
       {tabs.length > 1 ? <div className="tool-app-tabs" role="tablist" aria-label={text.name}>
         {tabs.map(name => <button key={name} type="button" role="tab" id={`${prefix}-${name}-tab`} aria-selected={tab === name}
           aria-controls={`${prefix}-${name}`} tabIndex={tab === name ? 0 : -1} onClick={() => setTab(name)}

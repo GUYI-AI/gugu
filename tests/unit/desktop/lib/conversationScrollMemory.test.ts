@@ -61,6 +61,47 @@ describe('conversation scroll memory', () => {
       carrier.remove(); host.remove(); vi.restoreAllMocks()
     }
   })
+  it('a viewport hidden and shown again (a topic tab pushed aside, then back) keeps the saved position', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    let memory: ReturnType<typeof useConversationScrollMemory> | null = null
+    let shown = true
+    function Harness({ enabled }: { enabled: boolean }) {
+      memory = useConversationScrollMemory({ listRef, viewportKey: 'topic-split', chatId: 'topic-1', activationKey: 'topic-1', enabled,
+        messageIds: ['older', 'anchor', 'newer'], isAtBottomRef: { current: true }, setFollowingTail: vi.fn() })
+      return createElement('div', { ref: memory.setScrollerRef, id: 'scroller' }, createElement('div', { 'data-msg-id': 'anchor' }))
+    }
+    try {
+      await act(async () => { root.render(createElement(Harness, { enabled: true })) })
+      const scroller = host.querySelector('#scroller') as HTMLElement
+      const row = scroller.firstElementChild as HTMLElement
+      // Hidden (display:none in a retained tab) = no geometry.
+      Object.defineProperties(scroller, {
+        scrollHeight: { configurable: true, get: () => shown ? 2_000 : 0 },
+        clientHeight: { configurable: true, get: () => shown ? 800 : 0 },
+        scrollTop: { configurable: true, writable: true, value: 700 },
+      })
+      vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({ top: 100, bottom: 900 } as DOMRect)
+      vi.spyOn(row, 'getBoundingClientRect').mockReturnValue({ top: 84, bottom: 160 } as DOMRect)
+      await act(async () => { scroller.dispatchEvent(new Event('scroll')); await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))) })
+      expect(memory!.hasSavedOffBottomPosition()).toBe(true)
+      // The list re-renders (leaving the tail does) and the restore settles on it, long before anyone hides the tab.
+      await act(async () => { root.render(createElement(Harness, { enabled: true })) })
+      for (let frame = 0; frame < 6; frame++) await act(async () => { await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))) })
+      expect(memory!.isPreservingPosition(), 'settled').toBe(false)
+      shown = false
+      await act(async () => { root.render(createElement(Harness, { enabled: false })) })
+      expect(memory!.hasSavedOffBottomPosition(), 'hidden: nothing to read, nothing forgotten').toBe(true)
+      shown = true
+      await act(async () => { root.render(createElement(Harness, { enabled: true })) })
+      expect(memory!.hasSavedOffBottomPosition(), 'shown again: the position is still there to come back to').toBe(true)
+    } finally {
+      await act(async () => { root.unmount() })
+      host.remove(); vi.restoreAllMocks()
+    }
+  })
+
   it('reads bottom state from the current viewport geometry', () => {
     expect(isConversationViewportAtBottom(
       { scrollHeight: 2_000, scrollTop: 1_120, clientHeight: 800 },

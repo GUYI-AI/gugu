@@ -7,20 +7,13 @@ import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
 import { useLocale } from '@/i18n'
 import { focusComposer, registerComposerFocusTarget, scheduleComposerFocus } from '@/lib/focusComposer'
 import { useComposerEntryFocus } from '@/lib/composerEntryFocus'
-import { activeMentionPicks, MENTION_ALL_USER_ID, type MentionCandidate } from '@/lib/mention'
-import { isMentionQueryActive } from '@/lib/mentionMatch'
-import { rankMentionCandidates } from '@/lib/mentionRanking'
-import { useProjectGroupMembers } from '@/lib/projectGroupChatsBridge'
+import { activeMentionPicks } from '@/lib/mention'
 import { AUTOMATION_TEST_IDS } from '@/lib/automationDom'
 import { UI_EVENTS } from '@/lib/uiEvents'
-import { useContactsStore } from '../../store/contactsContext'
-import { useChatStore, useChatStoreSelect } from '../../store/chatContext'
+import { useChatStore } from '../../store/chatContext'
 import { useTheme } from '../../store/theme'
 import { useMobileShell } from '../../hooks/useMobileShell'
-import { Avatar } from '../Avatar'
 import { useInChatSlot, useChatSlotProjectName } from '../../lib/shellSlots'
-import { createLocalSessionMentionProvider } from '../../session/renderer/lib/chat/local-session-mention-provider'
-import { useSessionAgentCreationTools } from '../../session/renderer/lib/chat/use-session-agent-creation-tools'
 import { sessionComposerDockedWidthClassName } from '../../session/renderer/features/sessions/session-composer-styles'
 import { useChatTaskDrop } from './useChatTaskDrop'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
@@ -33,10 +26,8 @@ import { IconButton } from '../ui/IconButton'
 import { Camera, Image, Paperclip, Plus } from '@/lib/icons'
 import { ComposerVerbs } from './ComposerVerbs'
 import { useComposerVerbTakeover } from './useComposerVerbTakeover'
-import { parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
 import { ChatComposerContextBands } from './ChatComposerContextBands'
-import { AgentMentionOptionLabel } from './AgentMentionStatusNotice'
-import { mentionOptionStatusProps } from './agentMentionStatusModels'
+import { useGroupMentionProvider } from './useGroupMentionProvider'
 import type { ChatMessageComposerProps } from './chatComposerModels'
 import { AgentConversationComposer } from '@renderer/lib/chat/agent-conversation-view'
 import { usePhoneNewTask } from '../../mobile/chat/PhoneNewTask'
@@ -91,56 +82,13 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   const inChatSlot = useInChatSlot()
   const projectName = useChatSlotProjectName()
   const takenOver = useComposerVerbTakeover(chatId)
-  const { contacts } = useContactsStore()
   const { identitiesById, writeDraft, registerDraftEditor } = useChatStore('identitiesById', 'writeDraft', 'registerDraftEditor')
-  const sourceChatId = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.source_chat_id ?? null)
   // 手机项目群的「新任务」(电脑上是 ComposerVerbs 换上会话页那一侧的框;手机就地换成新任务的框)。
   const phoneTask = usePhoneNewTask({ chatId, enabled: mobile && isMain && !!isGroupChat, clear: () => writeDraft(chatId, '') })
-  const projectMembers = useProjectGroupMembers()
-  const projectMemberIds = projectMembers.get(sourceChatId ?? chatId ?? '')
-  const members = useMemo<MentionCandidate[]>(() => isGroupChat ? [
-    { id: '__all__', name: t('composer.mentionAll'), type: 'all' },
-    ...groupMembers.filter((member) => member.id !== currentUserId).map((member) => ({ ...member, alias: contacts.find((contact) => contact.id === member.id)?.alias })),
-  ] : [], [isGroupChat, groupMembers, currentUserId, contacts, t])
+  const { members, mentionProvider, renderMentionIcon, pickOf } = useGroupMentionProvider({ chatId, isGroupChat: !!isGroupChat, groupMembers, currentUserId: currentUserId ?? null,
+    agentStatuses, messages, participantIds, replyToMessageId: quoteContent?.messageId, enabled: !whisperTarget })
   const activeTargets = activeMentionPicks(text, mentionTargets, members)
   const { sending, handleSend } = useChatMessageSend({ ...deliveryProps, disabled, disabledReason }, draft, members, activeTargets, inputRef, mobile)
-  const { byEngine, renderMentionIcon: renderSessionMentionIcon } = useSessionAgentCreationTools()
-  const renderMentionIcon = useCallback<NonNullable<Parameters<typeof ChatComposer>[0]['renderMentionIcon']>>((attrs) => {
-    if (attrs.id === MENTION_ALL_USER_ID) return <Avatar name={attrs.name ?? attrs.label} size={14} variant="group"
-      memberAvatars={members.filter((member) => member.type !== 'all').map((member) => ({ id: member.id, name: member.name, avatar: member.avatar ?? null }))} />
-    return renderSessionMentionIcon(attrs)
-  }, [members, renderSessionMentionIcon])
-  const localProvider = useMemo(() => createLocalSessionMentionProvider({ creationToolsByEngine: byEngine }), [byEngine])
-  const decorate = useCallback((item: MentionItem): MentionItem => ({ ...item,
-    annotation: isGroupChat && !members.some((member) => `aid:${member.id}` === item.label) ? t('composer.notInGroup') : item.annotation,
-  }), [isGroupChat, members, t])
-  const mentionProvider = useMemo(() => ({
-    allowSpaces: true,
-    emptyLabel: isGroupChat && !whisperTarget ? t('composer.mentionNoMatch') : undefined,
-    isQueryActive: (query: string) => !!isGroupChat && !whisperTarget && isMentionQueryActive(query, members),
-    async search(query: string) {
-      if (!isGroupChat || whisperTarget || !isMentionQueryActive(query, members)) return []
-      return rankMentionCandidates(members, query, { chatId, currentUserId, messages, participantIds, projectMemberIds,
-        replyToMessageId: quoteContent?.messageId, now: Date.now() }).map((member): MentionItem => ({
-        id: member.type === 'all' ? MENTION_ALL_USER_ID : member.id,
-        label: member.rawName ? `aid:${member.id}` : member.name, name: member.rawName ?? member.name, kind: 'custom', role: member.type === 'all' ? undefined : member.type,
-        annotation: member.rawName ? member.name.slice(member.rawName.length).trim() : undefined,
-        optionLabel: <span {...mentionOptionStatusProps(member, agentStatuses)}><AgentMentionOptionLabel member={member} status={agentStatuses[member.id]} /></span>,
-      }))
-    },
-    resolve(target: string, label: string): MentionItem | null {
-      const file = parseGroupFileLink(target)
-      if (file) return { id: target, label: target, name: label, kind: 'file',
-        description: file.version === undefined ? label : `${label} · ${t('filePill.picked', { version: file.version })}` }
-      if (!target.startsWith('aid:')) return null
-      const member = members.find(candidate => `aid:${candidate.id}` === target)
-      return decorate({ id: target, label: target, name: member?.rawName ?? member?.name ?? label, role: member?.type === 'human' ? 'human' : 'agent', kind: 'custom', annotation: member?.rawName ? member.name.slice(member.rawName.length).trim() : undefined })
-    },
-    async resolveSession(id: string) {
-      const item = await localProvider.resolveSession(id)
-      return item ? decorate(item) : null
-    },
-  }), [isGroupChat, whisperTarget, members, agentStatuses, decorate, localProvider, t, chatId, currentUserId, messages, participantIds, projectMemberIds, quoteContent?.messageId])
   const receiveInput = useCallback((element: HTMLElement | null) => { inputRef.current = element }, [])
   const enqueueFiles = useCallback((files: File[]) => {
     const picked = fileSelection.choose(files)
@@ -195,10 +143,8 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
     imageQuality: attachment.photo && (attachment.file === attachment.photo.compressed ? 'compressed' : 'original'),
   }))
   const onMentionInsert = (item: MentionItem) => {
-    const member = members.find((candidate) => candidate.id === item.id || `aid:${candidate.id}` === item.label)
-    if (!member) return
-    const userId = member.type === 'all' ? MENTION_ALL_USER_ID : member.id
-    setMentionTargets((picks) => picks.some((pick) => pick.userId === userId) ? picks : [...picks, { userId, displayName: member.name }])
+    const pick = pickOf(item)
+    if (pick) setMentionTargets((picks) => picks.some((existing) => existing.userId === pick.userId) ? picks : [...picks, pick])
   }
   // Aside candidates also include invitees from the source line; only actual topic members may be recalled.
   const recallMembers = members.filter((member) => !identitiesById[member.id]?.removed_at && (surface !== 'aside' || participantIds?.includes(member.id)))

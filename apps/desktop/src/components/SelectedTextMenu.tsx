@@ -65,7 +65,7 @@ export function SelectedTextMenu({ range, item, onClose, onCopy }: {
     >
       <Popover.Popup ref={popup} role="menu" aria-label={item.label} initialFocus={false} finalFocus={false}
         data-occludes-browser-page className={cn(menuSurfaceClassName, 'min-w-40 p-[var(--gg-menu-padding,4px)]')}>
-        <ButtonPrimitive role="menuitem" className={cn(menuRowClassName, 'p-[var(--gg-menu-item-padding,6px_10px)] [&:hover:not([data-disabled])]:bg-[var(--menu-item-hover)] [&:focus-visible:not([data-disabled])]:bg-[var(--menu-item-hover)]')}
+        <ButtonPrimitive role="menuitem" className={cn(menuRowClassName, 'p-[var(--gg-menu-item-padding,6px_10px)] [&:hover:not([data-disabled])]:bg-[var(--menu-item-hover)] [&:focus-visible:not([data-pointer-focus]_*):not([data-disabled])]:bg-[var(--menu-item-hover)]')}
           disabled={item.enabled === false}
           onPointerDown={event => event.preventDefault()} onClick={onCopy}>
           <span className={menuRowLabelClassName}>{item.label}</span>

@@ -21,7 +21,6 @@ import { scheduleComposerFocus } from '@/lib/focusComposer'
 import { ArrowUpToLine, ChevronLeft, Mic, Paperclip, Search, Sparkles } from '@/lib/icons'
 import { useReportChatOnScreen } from '@/lib/onScreenChat'
 import { UI_EVENTS } from '@/lib/uiEvents'
-import { connectionBridge } from '@/lib/connectionBridge'
 import { searchInChat } from '@renderer/features/global-search/search-session'
 import { showAssistantTaskChat, useOpenedAssistantTaskChat } from '@/lib/assistantTaskChat'
 import { ShellSlot } from '@/session/renderer/features/assistant/assistant-shell'
@@ -29,12 +28,27 @@ import { useChatStore } from '@/store/chatContext'
 import { ChatLineScope } from '@/store/chatLineScope'
 import { useAssistantPanelPage } from '@/lib/assistantPanelPage'
 import { PhoneHomeContext } from './phoneHome'
+import { PhoneAppFrame } from '@/components/appSlot/PhoneAppFrame'
+import { phoneAssistantLayer } from '@/components/appSlot/phoneAssistantLayer'
+import { requestAssistantClose } from '@/lib/assistantClose'
+import { ASSISTANT_APP_ID, type AssistantLayerEntry } from '@/session/shared/extensions/assistant-entry'
+import type { PhoneAssistantScreen, PhoneSurfaceSection } from '@/session/shared/extensions/phone-binding'
+import type { AppSurfaceIntent } from '@/session/shared/extensions/unread-binding'
+import { PhoneConfirmDialog } from './PhoneConfirmDialog'
+import { usePhoneAssistantAppStuck } from '@/components/appSlot/phoneAssistantAppEnsure'
+import { phoneInstalledApp } from '@/components/appSlot/phoneBindingPorts'
+import { personsOwnAssistantApp } from '../../../electron/assistant-app-ensure'
+import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
+import { PHONE_ASSISTANT_LAYER_TAB, usePhoneAssistantEntry } from './phoneAssistantEntry'
+import { PhoneAssistantWorkLedger } from './PhoneAssistantWorkLedger'
+import { PhoneAssistantCountsSource } from './PhoneAssistantCounts'
+import { phoneWorkChats } from './phoneWorkChats'
+import { useContactsStore } from '@/store/contactsContext'
 import { PhoneIdeas } from './PhoneIdeas'
 import { PhoneMemory } from './PhoneMemory'
 import { PhoneProfile } from './PhoneProfile'
-import { PhoneTasks } from './PhoneTasks'
 import { phoneNextRoute, phoneParentRoute, type PhoneParentRoute } from './phoneRoutes'
-import { PhoneToday } from './PhoneToday'
 import { PhoneVoiceBar } from './PhoneVoiceBar'
 import { usePhoneVoiceNotes } from './phoneVoiceRuntime'
 import { usePhoneMachine, type PhoneMachineState } from './phoneMachine'
@@ -117,10 +131,12 @@ function MobileAssistantAppContent({
 } & AssistantChatHandlers) {
   const { t } = useTranslation('assistant')
   const [route, setRoute] = useState<PhoneRoute>({ tab: 'chat' })
+  // Its 连接应用 (or its settings, `detail.sub`), asked from elsewhere: a page of its profile here, never Settings (owner 11-12).
   useEffect(() => {
-    const open = () => { void Promise.resolve().then(() => connectionBridge().routing.read()).then(authority => {
-      if (authority.mode === 'legacy') setRoute({ tab: 'profile',sub: 'connectors' })
-    }).catch(() => {}) }
+    const open = (event: Event) => {
+      const sub = (event as CustomEvent<{ sub?: 'settings' | 'connectors' } | null>).detail?.sub === 'settings' ? 'settings' : 'connectors'
+      setRoute({ tab: 'profile', sub })
+    }
     window.addEventListener(UI_EVENTS.openAssistantConnectors,open)
     return () => window.removeEventListener(UI_EVENTS.openAssistantConnectors,open)
   },[])
@@ -131,12 +147,36 @@ function MobileAssistantAppContent({
     setRoute(next)
   }, [route])
   const tab = route.tab
+  // API 49 The assistant's place (assistant-entry.ts): the product's assistant App fills every section but the conversation.
+  const entry = usePhoneAssistantEntry()
+  const app = entry.entry === 'app' ? entry : null
+  // #1931 Until the App is in (phoneAssistantAppEnsure.ts puts it in by itself), 动态 / 任务 / 记忆 / 资料 say it is being
+  // prepared — 聊天 works meanwhile; said stuck only once every try of the backoff window failed.
+  const ensureStuck = usePhoneAssistantAppStuck()
+  // An App with its id that is the person's own (from a chat, switched off): gugu does not put over it — stuck. gugu's own
+  // market copy the phone does not trust is not: the ensure step puts the signed release over it (preparing meanwhile).
+  const held = !app && installedExtensionsStore.isLoaded ? phoneInstalledApp(ASSISTANT_APP_ID) : null
+  const appHeldElsewise = held !== null && personsOwnAssistantApp(held) !== null
   const opened = useOpenedAssistantTaskChat()
   useEffect(() => {
     if (opened?.request.assistantId === assistant.id) setRoute({ tab: 'tasks' })
   }, [opened, assistant.id])
   const taskChat = tab === 'tasks' && opened?.request.assistantId === assistant.id
   const sub = route.sub ?? null
+  // The App's page shows the section the person is on; on 聊天 it stays where it was, hidden. A screen of the phone's own
+  // (`sub`, opened for it: settings, look, devices…) is drawn over it.
+  const appSection = useRef<PhoneSurfaceSection>('today')
+  if (tab !== 'chat') appSection.current = tab
+  const { user: signedIn } = useAuth()
+  const ownerId = signedIn?.id ?? null
+  const hostScreen = Boolean(app && sub)
+  // API 50 `removeVoiceNote`: the layer's own question (the built-in note page's), answered yes or no.
+  const [removal, setRemoval] = useState<{ title: string | null; answer: (yes: boolean) => void } | null>(null)
+  const confirmRemoval = useCallback((question: { kind: 'voice-note'; title: string | null }) =>
+    new Promise<boolean>((resolve) => setRemoval({ title: question.title, answer: resolve })), [])
+  // What the person asked of the App's page here (the recording bar's note, the 自定义 card): told once the layer shows it.
+  const [intent, setIntent] = useState<AppSurfaceIntent | null>(null)
+  useLayerForApp(app, ownerId, visible, appSection.current, hostScreen, open, assistant.id, confirmRemoval, intent, () => setIntent(null))
   const pageBody = useRef<HTMLElement | null>(null)
   const pageScroll = useRef(new Map<string, number>())
   const pageKey = `${tab}:${sub ?? ''}`
@@ -183,8 +223,19 @@ function MobileAssistantAppContent({
   const typing = useAssistantTyping(chatId, assistant.id, name)
   const { user } = useAuth()
   const customizeOffered = useCustomizeCardOffered(user?.id)
+  // 自定义 is the App's 资料 (name, look, character), told `profile` as a computer's header click tells it.
+  const openCustomize = () => {
+    open({ tab: 'profile' })
+    if (app) setIntent({ kind: 'profile' })
+  }
   const composerEntries = <AssistantComposerEntries assistantId={assistant.id} busy={false} onOpen={() => setIdeasOpen(true)}
-    customize={customizeOffered && user?.id ? { ownerUserId: user.id, name, onOpen: () => open({ tab: 'profile', sub: 'customize' }) } : undefined} />
+    customize={customizeOffered && user?.id ? { ownerUserId: user.id, name, onOpen: openCustomize } : undefined} />
+  // The recording bar's 「查看」: the App's 记忆, told `voice-note` (it reads the note through `voice-notes`).
+  const openFromBar = (route: PhoneRoute) => {
+    if (route.tab !== 'memory') return open(route)
+    open({ tab: 'memory' })
+    if (app) setIntent({ kind: 'voice-note' })
+  }
   const reportInput = useRef<HTMLInputElement>(null)
   // 「+」里的:获取灵感(胶囊隐藏了也一直在)、录制语音笔记(正在录时置灰,录音条在聊天上面)、
   // 分析健康报告(选一份 PDF / 图片连同那句话排进输入框)。
@@ -253,7 +304,17 @@ function MobileAssistantAppContent({
         /></FilePreviewHost.Provider>
       </div>
       {/* 录音条:在 App 根上而不是聊天那一段里 —— 切到别的格也看得到「还在录」。 */}
-      <PhoneVoiceBar voice={voice} name={name} column={chatColumn} onChat={tab === 'chat'} open={open} />
+      <PhoneVoiceBar voice={voice} name={name} column={chatColumn} onChat={tab === 'chat'} open={openFromBar} />
+      <PhoneConfirmDialog
+        open={removal !== null}
+        title={tVoice('deleteTitle', { name: removal?.title || tVoice('untitled') })}
+        body={tVoice('deleteBody')}
+        confirmLabel={tVoice('delete')}
+        failedText={tVoice('deleteFailed')}
+        testId="mobile-assistant-voice-delete-dialog"
+        onConfirm={async () => removal?.answer(true)}
+        onClose={() => { removal?.answer(false); setRemoval(null) }}
+      />
       <input
         ref={reportInput}
         type="file"
@@ -267,18 +328,98 @@ function MobileAssistantAppContent({
         }}
       />
       {ideasOpen ? <PhoneIdeas assistant={assistant} chatId={chatId} askInChat={askInChat} onClose={() => setIdeasOpen(false)} /> : null}
-      {tab === 'chat' ? null : (
+      {app ? (
+        <div className="ta-phone-app" data-testid="mobile-assistant-app-page" hidden={tab === 'chat' || taskChat || hostScreen}>
+          <PhoneAppFrame kind={app.tabKind} tabId={PHONE_ASSISTANT_LAYER_TAB} chatId={null} hidden={tab === 'chat' || taskChat || hostScreen}
+            onOpenWith={() => undefined} testId="mobile-assistant-app-frame" missingTestId="mobile-assistant-app-missing" />
+        </div>
+      ) : null}
+      {app ? <PhoneAssistantWorkLedger ownerId={ownerId} assistantId={assistant.id} /> : null}
+      {app && ownerId ? <PhoneAssistantCountsSource ownerId={ownerId} assistantId={assistant.id} machine={machine} cloudDeviceId={cloudDeviceId} /> : null}
+      {tab === 'chat' || (app && !hostScreen) ? null : (
         <main id={`assistant-${assistant.id}-${tab}`} role="tabpanel" aria-label={labels[tab]} className="ta-phone-body" ref={pageBody} onScroll={(event) => pageScroll.current.set(pageKey, event.currentTarget.scrollTop)} data-testid={`mobile-assistant-${tab}`} hidden={taskChat}>
-          {tab === 'today' ? <PhoneToday {...page} /> : null}
-          {tab === 'tasks' ? <PhoneTasks {...page} /> : null}
-          {tab === 'memory' ? <PhoneMemory {...page} /> : null}
-          {tab === 'profile' ? <PhoneProfile {...page} /> : null}
+          {/* The App's page fills each section; under it only the phone's own screens it opens (PHONE_ASSISTANT_SCREENS). */}
+          {!app && !sub ? <AppPreparing stuck={ensureStuck || appHeldElsewise} /> : <>
+            {tab === 'memory' ? <PhoneMemory {...page} /> : null}
+            {tab === 'profile' ? <PhoneProfile {...page} /> : null}
+          </>}
         </main>
       )}
       {taskChat ? <ShellSlot name="task-chat" className="ta-task-chat-slot" /> : null}
     </div>
     </PhoneHomeContext.Provider>
   )
+}
+
+/**
+ * A section before the assistant App is in: the gate's own waiting line (正在准备你的咕咕…); once every try failed, the one
+ * statement of why (an App with its id that gugu does not put over, switched off, or the market out of reach) — in place, no
+ * toast, no button: it goes on by itself.
+ */
+function AppPreparing({ stuck }: { stuck: boolean }) {
+  const { t } = useTranslation('assistant')
+  const main = useTranslation('main').t
+  return (
+    <div className="ta-phone-gate" data-testid="mobile-assistant-app-preparing" data-stuck={stuck || undefined}>
+      <div className="ta-intro">
+        {stuck ? <>
+          <h1 className="ta-intro-title">{main('assistantRules.stuckTitle')}</h1>
+          <p className="ta-intro-body">{main('assistantRules.stuckBody')}</p>
+        </> : (
+          <p className="ta-intro-body inline-flex items-center gap-2" role="status">
+            <LoadingIndicator size="inline" />
+            {t('railEntry.preparing')}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * While the layer is up with the App's page in it: the binding host hears which section the page fills (null when the layer
+ * is not on screen), and the layer does what the page asks — move to a section, open one of the phone's own screens for the
+ * assistant (PHONE_ASSISTANT_SCREENS), draw a task's conversation over 任务.
+ */
+function useLayerForApp(app: Extract<AssistantLayerEntry, { entry: 'app' }> | null, ownerId: string | null, visible: boolean,
+  section: PhoneSurfaceSection, hostPage: boolean, open: (route: PhoneRoute) => void, assistantId: string,
+  confirmRemoval: (question: { kind: 'voice-note'; title: string | null }) => Promise<boolean>,
+  intent: AppSurfaceIntent | null, told: () => void) {
+  const extensionId = app?.extensionId ?? null
+  useEffect(() => {
+    phoneAssistantLayer.report(extensionId && ownerId && visible ? { ownerId, extensionId, tabId: PHONE_ASSISTANT_LAYER_TAB, section, hostPage } : null)
+  }, [extensionId, ownerId, visible, section, hostPage])
+  // After the report above (effects run in order): the page hears the intent in the section it is now shown in.
+  useEffect(() => {
+    if (!intent || !extensionId || !ownerId || !visible || hostPage) return
+    phoneAssistantLayer.tell(intent)
+    told()
+  }, [intent, extensionId, ownerId, visible, section, hostPage, told])
+  useEffect(() => () => phoneAssistantLayer.report(null), [])
+  const openRef = useRef(open)
+  openRef.current = open
+  const { updateAgentProfile } = useContactsStore()
+  const renameRef = useRef(updateAgentProfile)
+  renameRef.current = updateAgentProfile
+  const confirmRef = useRef(confirmRemoval)
+  confirmRef.current = confirmRemoval
+  useEffect(() => {
+    if (!extensionId) return undefined
+    return phoneAssistantLayer.provide({
+      rename: async (agentId, name) => {
+        if (agentId !== assistantId) throw Object.assign(new Error('Not this layer\'s assistant'), { code: 'denied' })
+        await renameRef.current(agentId, { name })
+      },
+      move: (next) => { showAssistantTaskChat(null); openRef.current({ tab: next }) },
+      open: (screen: PhoneAssistantScreen) => {
+        if ('confirm' in screen) requestAssistantClose()
+        else if ('connectors' in screen) openRef.current({ tab: 'profile', sub: 'connectors' })
+        else openRef.current({ tab: screen.section, sub: screen.page })
+      },
+      openWork: (work) => { phoneWorkChats.open(assistantId, work) },
+      confirmRemoval: (question) => confirmRef.current(question),
+    })
+  }, [extensionId, assistantId])
 }
 
 export function MobileAssistantApp(props: Parameters<typeof MobileAssistantAppContent>[0]) {

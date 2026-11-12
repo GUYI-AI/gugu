@@ -64,7 +64,7 @@
   color: var(--foreground);
   border-bottom-color: var(--foreground);
 }
-.xp-segment-btn:focus-visible {
+.xp-segment-btn:focus-visible:not([data-pointer-focus] *) {
   outline: 1px solid var(--border-primary);
   outline-offset: -1px;
   border-radius: var(--radius-control, 8px);
@@ -113,7 +113,7 @@
 .xp-search:hover {
   border-color: var(--border-1);
 }
-.xp-search:focus-visible {
+.xp-search:focus-visible:not([data-pointer-focus] *) {
   border-color: var(--border-primary);
 }
 
@@ -236,7 +236,7 @@
   cursor: pointer;
   border-radius: inherit;
 }
-.xp-card-hit:focus-visible {
+.xp-card-hit:focus-visible:not([data-pointer-focus] *) {
   outline: 1px solid var(--border-primary);
   outline-offset: -1px;
 }

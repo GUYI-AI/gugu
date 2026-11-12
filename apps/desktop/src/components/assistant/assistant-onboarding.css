@@ -17,7 +17,6 @@
   color: var(--fg);
   overflow-wrap: anywhere;
 }
-.ta-onb-wide { width: min(560px, 100%); max-height: 100%; }
 .ta-onb-title { margin: 0; font-size: var(--font-size-xl); line-height: var(--lh-page); font-weight: 600; }
 .ta-onb-sub { margin: 0; font-size: var(--font-prose); line-height: var(--lh-prose); color: var(--muted-fg); }
 .ta-onb-note { margin: 0; font-size: var(--font-body); line-height: var(--lh-body); color: var(--muted-fg); }
@@ -57,7 +56,7 @@
 /* 引导输入与其他页面使用同一档控件边界，不叠第二层阴影。 */
 .ta-onb .ta-input,
 .ta-onb .ta-pill-btn { border: 1px solid var(--border); border-radius: var(--radius-control); box-shadow: none; }
-.ta-onb .ta-input:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+.ta-onb .ta-input:focus-visible:not([data-pointer-focus] *) { outline: 2px solid var(--fg); outline-offset: 2px; }
 
 /* 助理单独在上,下面两项对应这台设备的入口。 */
 .ta-onb-intro-gugu { display: flex; width: 100%; flex-direction: column; gap: 4px; text-align: left; }
@@ -104,9 +103,6 @@
 .ta-server-target.ta-server-target { width: 100%; flex-direction: column; align-items: flex-start; }
 .ta-server-target[aria-pressed='true'] { background: var(--muted); border-color: var(--border-strong); }
 .ta-server-target-name { font-size: var(--font-body); line-height: var(--lh-body); }
-
-/* The shell centers earlier onboarding steps; only the engine step fills its height. */
-.ta-centered:has(.ta-onb-slot-engine) { align-items: stretch; }
 
 /* Local engine choice: the approved v6b geometry is stable across auth states. */
 .ta-onb-slot-engine { align-self: stretch; align-items: flex-start; height: 100%; padding-top: 24px; }

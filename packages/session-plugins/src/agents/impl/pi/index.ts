@@ -1,3 +1,4 @@
+import { piApiKeyConnection } from './api-key-connection';
 import { platformModel } from './platform-model';
 import {
   definePlugin,
@@ -38,6 +39,7 @@ export const plugin = definePlugin(
   },
   {
     sessionBundle: piSessionBundleDescriptor,
+    apiKeyConnection: piApiKeyConnection,
     // 「订阅」页(product spec):Pi 本身免费，读 `/login` 登了哪几家;不报余量(./subscription.ts)。
     subscription: { kind: 'supported', usageRefresh: 'on-open' },
     /** Pi's ACP adapter has no live catalog during task creation; keep this in sync with its six ACP thought levels. */

@@ -12,11 +12,13 @@ import { rpc } from '../../session/renderer/lib/ipc'
 import { appsHere } from '../appSlot/appsHere'
 import { updateUnasked } from '../appSlot/updateUnasked'
 import { ForwardMessageDialog } from '../chat/ForwardMessageDialog'
+import type { ForwardNote } from '../chat/forwardToChats'
 import { useToast } from '../toastContext'
 import { ListRow } from '../ui/ListRow'
 import { installPackageOf, packageArrived } from './sharedPackages'
 import { isExtensionBundle } from './summarizeExtensionBundle'
 import { useExtensionWorkspaceRevisions } from './useExtensionWorkspaceRevisions'
+import { useAssistantAppStatus } from './useAssistantAppStatus'
 
 const log = rendererLogger('chat/extension-forward')
 
@@ -33,7 +35,9 @@ export interface ExtensionForwardRequest {
 export function ExtensionForwardHost() {
   // The shell's other always-mounted duty for App pages: group workspace changes (hook's own note).
   useExtensionWorkspaceRevisions()
-  const { chats, subscribeAccountRevision, sendAttachmentsToChat } = useChatStore('chats', 'subscribeAccountRevision', 'sendAttachmentsToChat')
+  // #1925 And the person's assistant, as an App bound to it may see it.
+  useAssistantAppStatus()
+  const { chats, subscribeAccountRevision, sendAttachmentsToChat, sendMessageToChat } = useChatStore('chats', 'subscribeAccountRevision', 'sendAttachmentsToChat', 'sendMessageToChat')
   const { user } = useAuth()
   const { toast } = useToast()
   // 摩擦单 F66: an App package sent in any chat here (the account revision bus, whatever is on screen) — that chat's list
@@ -62,14 +66,18 @@ export function ExtensionForwardHost() {
   const t = translateSessionMessage
   const close = () => setRequest(null)
 
-  const forward = async (targetChatIds: string[]) => {
+  const forward = async (targetChatIds: string[], note: ForwardNote, sent: (chatId: string) => void) => {
     const packed = await rpc.extensions.packInstalled({ extensionId: request.extensionId })
     if (!packed.success || !packed.data) {
       log.error({ extensionId: request.extensionId, error: packed.error }, 'packing an extension to forward failed')
       throw new Error(messageForUser(packed.error), { cause: packed.error })
     }
     const file = new File([packed.data.bytes], packed.data.fileName, { type: packed.data.mimeType })
-    for (const chatId of targetChatIds) await sendAttachmentsToChat(chatId, [file])
+    for (const chatId of targetChatIds) {
+      await sendAttachmentsToChat(chatId, [file])
+      if (note.text.trim()) await sendMessageToChat(chatId, note.text.trim(), { toUserIds: note.toUserIds })
+      sent(chatId)
+    }
   }
 
   const exportToFile = async () => {

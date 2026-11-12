@@ -1,13 +1,14 @@
 // #6264 桌面开窗口时报「我是哪一版」:咕咕 server 的账号进程记进这个账号的数据目录(守护进程据此让它跑匹配的版本);
 // 协议在兼容窗口外 = 版本信号,留「当场换」请求。桌面自己(非 server)什么也不记。
 import fs from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MIN_CLIENT_PROTOCOL, REMOTE_PROTOCOL_VERSION } from '@gugu/core/cloud/serverMachineHealth';
 import type { DeviceRpcHandlerContext } from '@gugu/core/cloud/deviceRpcResponder';
 import { createSessionHostDeviceRpcHandlers } from './device-session-host';
-import { FrameSessionHost } from './frame-host';
+import { FrameSessionHost, type FrameSocket } from './frame-host';
 
 const saved = { mode: process.env.GUGU_SERVER_MODE, data: process.env.GUGU_TASK_HOST_USER_DATA };
 afterEach(() => {
@@ -52,37 +53,59 @@ describe('taskhost.open accepts only protocol facts from released desktop report
   });
 });
 
+describe('answers to a reader that reads packed frames', () => {
+  const page = JSON.stringify({ t: 'result', id: 3, ok: true, value: { turns: Array.from({ length: 200 }, (_, seq) => ({ id: `s:turn:s${seq}`, seq, items: [{ kind: 'message', role: 'assistant', text: 'All green. ' }] })) } });
+  const pushed = JSON.stringify({ t: 'event', channel: 'sessions.changed', data: 'x'.repeat(page.length) });
+  async function sentTo(open: Record<string, unknown>) {
+    let socket!: FrameSocket;
+    const published: Array<{ frames: Array<Record<string, string>> }> = [];
+    const { handlers, dispose } = createSessionHostDeviceRpcHandlers({ host: () => ({ attach: (given: FrameSocket) => { socket = given; } }) as unknown as FrameSessionHost });
+    await handlers['taskhost.open']!({ client: 'window001', protocol: REMOTE_PROTOCOL_VERSION, ...open }, { ...ctx, publishEvent: (event: unknown) => { published.push(event as never); } } as unknown as DeviceRpcHandlerContext);
+    socket.send(page); socket.send(pushed);
+    await Promise.resolve();
+    dispose();
+    return published.flatMap(batch => batch.frames);
+  }
+  it('packs the answer and leaves a pushed event as it is', async () => {
+    const [answer, event] = await sentTo({ pack: ['gzip'] });
+    expect(gunzipSync(Buffer.from(answer!.z!, 'base64')).toString()).toBe(page);
+    expect(answer!.z!.length).toBeLessThan(page.length / 5);
+    expect(event).toEqual({ f: pushed });
+  });
+  it('sends every frame as it is to a reader that said nothing, or named a packing this machine does not have', async () => {
+    for (const open of [{}, { pack: ['zstd'] }, { pack: 'gzip' }]) expect(await sentTo(open)).toEqual([{ f: page }, { f: pushed }]);
+  });
+});
+
 describe('taskhost.call(一问一答,不开窗口)', () => {
-  it('binds assistant home requests to the authenticated remote account', async () => {
+  it('binds assistant home requests to the authenticated remote account; a refusal is not a missing handler', async () => {
     const frameHost = new FrameSessionHost();
     const prepare = vi.fn(() => ({ phase: 'runtime' }));
     frameHost.ipcMain.handle('assistantHome.start', prepare);
     const { handlers } = createSessionHostDeviceRpcHandlers({ host: () => frameHost });
-    const request = { channel: 'assistantHome.start', args: [{ ownerUserId: 'owner' }], desktop: { id: 'desktop', version: '0.3.1', protocol: REMOTE_PROTOCOL_VERSION } };
+    const request = { channel: 'assistantHome.start', args: [{ ownerUserId: 'owner' }] };
     expect(await handlers['taskhost.call']!(request, ctx)).toMatchObject({ result: { value: { phase: 'runtime' } } });
-    expect(await handlers['taskhost.call']!({ ...request, args: [{ ownerUserId: 'another' }] }, ctx)).toMatchObject({ error: { message: expect.stringContaining('No handler registered') } });
-    expect(await handlers['taskhost.call']!(request, { ...ctx, request: { ...ctx.request, user_id: '' } })).toMatchObject({ error: { message: expect.stringContaining('No handler registered') } });
-    expect(prepare).toHaveBeenCalledOnce();
-  });
-  it('refuses a same-account direct assistant start without a valid desktop identity', async () => {
-    const frameHost = new FrameSessionHost();
-    const prepare = vi.fn(() => ({ phase: 'runtime' }));
-    frameHost.ipcMain.handle('assistantHome.start', prepare);
-    const { handlers } = createSessionHostDeviceRpcHandlers({ host: () => frameHost });
-    for (const desktop of [undefined, { id: 'phone' }, { id: 'phone', version: '' }]) {
-      expect(await handlers['taskhost.call']!({ channel: 'assistantHome.start', args: [{ ownerUserId: 'owner' }], desktop }, ctx))
-        .toMatchObject({ error: { message: expect.stringContaining('No handler registered') } });
+    for (const refused of [
+      handlers['taskhost.call']!({ ...request, args: [{ ownerUserId: 'another' }] }, ctx),
+      handlers['taskhost.call']!(request, { ...ctx, request: { ...ctx.request, user_id: '' } }),
+      handlers['taskhost.call']!({ ...request, args: [{ ownerUserId: 'owner' }, 'extra'] }, ctx),
+    ]) {
+      const reply = await refused;
+      expect(reply).toMatchObject({ error: { code: 'forbidden' } });
+      expect(JSON.stringify(reply)).not.toContain('No handler registered');
     }
-    expect(prepare).not.toHaveBeenCalled();
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(await handlers['taskhost.call']!({ channel: 'assistantHome.missing', args: [{ ownerUserId: 'owner' }] }, ctx))
+      .toMatchObject({ error: { message: "No handler registered for 'assistantHome.missing'" } });
   });
-  it('keeps desktop admission per window instead of granting it to a phone window opened by the same owner', async () => {
+  it('admits the owner on every window opened with the plain protocol handshake (no client self-description)', async () => {
     const attach = vi.fn();
     const { handlers, dispose } = createSessionHostDeviceRpcHandlers({ host: () => ({ attach }) as unknown as FrameSessionHost });
-    await handlers['taskhost.open']!({ client: 'desktop01', desktop: { id: 'desktop', version: '0.3.1', protocol: REMOTE_PROTOCOL_VERSION } }, ctx);
-    await handlers['taskhost.open']!({ client: 'phone0001', protocol: REMOTE_PROTOCOL_VERSION }, ctx);
+    await handlers['taskhost.open']!({ client: 'window001', protocol: REMOTE_PROTOCOL_VERSION }, ctx);
+    await handlers['taskhost.open']!({ client: 'window002', protocol: REMOTE_PROTOCOL_VERSION }, { ...ctx, request: { user_id: 'another' } } as unknown as DeviceRpcHandlerContext);
     const args = [{ ownerUserId: 'owner' }];
-    expect(attach.mock.calls[0]![1].policy('assistantHome.start', args)).toBe(true);
-    expect(attach.mock.calls[1]![1].policy('assistantHome.start', args)).toBe(false);
+    expect(attach.mock.calls[0]![1].policy('assistantHome.preflight', args)).toBe(true);
+    expect(attach.mock.calls[1]![1].policy('assistantHome.preflight', args)).toBe(false);
     dispose();
   });
   it('can read and edit the host books while window controls and unlisted app calls remain refused', async () => {
@@ -109,12 +132,12 @@ describe('taskhost.call(一问一答,不开窗口)', () => {
       .toMatchObject({ result: { value: { verb: 'callProgram', args: { name: 'assistant_work_list', arguments: {} }, expectedOwnerId: 'owner' } } });
     expect(assistantApp).toHaveBeenCalledOnce();
     expect(await call('app.assistantAppCall', ['callProgram', { name: 'library_write', arguments: {} }, 'owner']))
-      .toMatchObject({ error: { message: expect.stringContaining('No handler registered') } });
+      .toMatchObject({ error: { code: 'forbidden' } });
     expect(await handlers['taskhost.call']!({ channel: 'app.assistantAppCall', args: ['callProgram', { name: 'assistant_work_clear' }, 'owner'] },
       { ...ctx, request: { ...ctx.request, user_id: 'other' } }))
-      .toMatchObject({ error: { message: expect.stringContaining('No handler registered') } });
+      .toMatchObject({ error: { code: 'forbidden' } });
     expect(assistantApp).toHaveBeenCalledOnce();
-    for (const channel of ['app.closeWindow', 'app.getUserLibraryVolumeExtra', 'app.assistantAppCallExtra', 'browser.open']) expect(await call(channel)).toMatchObject({ error: { message: expect.stringContaining('No handler registered') } });
+    for (const channel of ['app.closeWindow', 'app.getUserLibraryVolumeExtra', 'app.assistantAppCallExtra', 'browser.open']) expect(await call(channel)).toMatchObject({ error: { code: 'forbidden' } });
     expect(forbidden).not.toHaveBeenCalled();
   });
 

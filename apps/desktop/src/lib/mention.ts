@@ -95,6 +95,11 @@ export function activeMentionPicks<T extends { displayName: string; userId?: str
   return picks.filter((pick) => (pick.userId && addressed.has(pick.userId)) || typed.has(pick.displayName))
 }
 
+/** Whom a text written into a group addresses: its @ (picked or typed) resolved against the members, as a sent message's are. */
+export function addressedUserIds(text: string, picks: { userId: string; displayName: string }[], members: MentionCandidate[]): string[] {
+  return resolveMentionUserIds(text, activeMentionPicks(text, picks, members).map((pick) => pick.userId), members, true)
+}
+
 function mentionParts(text: string) {
   const references = markdownMentionReferences(text)
   let plain = text

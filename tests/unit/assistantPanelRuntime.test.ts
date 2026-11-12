@@ -1,7 +1,10 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, expect, it, vi } from 'vitest'
+import { installAssistantRulesResolver } from '../../apps/desktop/electron/assistant-rules-resolver'
+import { fixedAssistantRules } from './desktop/assistantRules/fixtureApp'
+import { NEUTRAL_ASSISTANT_RULES } from './desktop/assistantRules/neutralRules'
 import { createAssistantPanelRuntime } from '../../apps/desktop/electron/sessionpage/assistant-panel-runtime'
 
 // Drive the explicit library/integration callbacks without fixture filesystem events starting an unrelated full publication.
@@ -45,6 +48,9 @@ vi.mock('@gugu/core/cloud/supabase',() => ({ createGuguSupabaseClient: () => ({
     } }
   },
 }) }))
+// Each turn's profile review is rendered from the assistant App's rules (#1931): fixed rules here, at the version the
+// index lines below name.
+beforeAll(() => installAssistantRulesResolver(fixedAssistantRules({ ...NEUTRAL_ASSISTANT_RULES, defaults: { ...NEUTRAL_ASSISTANT_RULES.defaults, profileRulesVersion: 6 } })))
 afterEach(() => { vi.useRealTimers(); calls.signals.length = 0; calls.domains.length=0; calls.assistants.length=0; calls.rpcNames.length=0; calls.holdRpc=null; calls.commitPublication=false; calls.live=true; calls.readable=false; calls.stalled=true; calls.collectIntegrations=false; calls.blockedDomain=null; calls.hold=null })
 
 it('stops only the removed assistant timers and listeners and never recreates its cached binding',async()=>{
@@ -126,8 +132,8 @@ it('prepares stale profiles at each actual personal-assistant turn, independentl
     await writeFile(join(memory, 'owner-profile.md'), '姓名：测试')
     await writeFile(join(memory, 'MEMORY.md'), '- [关于你](owner-profile.md) profile_rules: 2')
     await runtime.bind({ sessionId: 'session', assistantId: 'assistant', ownerId: 'owner', cwd })
-    expect((await runtime.prepare('session', 'hi')).beforeText).toContain('读owner-profile.md：')
-    expect((await runtime.prepare('session', 'hi')).beforeText).toContain('读owner-profile.md：')
+    expect((await runtime.prepare('session', 'hi')).beforeText).toContain('<gugu_profile_review>\nReview the profile under rules 6.\n</gugu_profile_review>')
+    expect((await runtime.prepare('session', 'hi')).beforeText).toContain('<gugu_profile_review>\nReview the profile under rules 6.\n</gugu_profile_review>')
     await writeFile(join(memory, 'MEMORY.md'), '- [关于你](owner-profile.md) profile_rules: 6')
     expect((await runtime.prepare('session', 'hi')).text).toBe('')
   } finally { runtime.dispose(); await rm(cwd, { recursive: true, force: true }) }

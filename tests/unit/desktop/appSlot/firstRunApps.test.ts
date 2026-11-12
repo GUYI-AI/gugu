@@ -76,6 +76,29 @@ describe('the first-run set goes in by itself (runFirstRun)', () => {
     expect(state.record).toEqual({ state: 'done', at: '2026-10-16T12:00:00Z' })
   })
 
+  it('gugu\'s own under the market repository\'s current name (GUYI-AI/gugu-apps, where compiled releases are recorded) goes in too', async () => {
+    const { state, deps } = device({ state: 'pending' })
+    state.market = [offer('office'), offer('assistant', true, { repo: 'GUYI-AI/gugu-apps' }), offer('lookalike', true, { repo: 'GUYI-AI/gugu-apps-fork' })]
+    await runFirstRun(deps)
+    expect(state.installs).toEqual(['office@1.0.0', 'assistant@1.0.0'])
+  })
+
+  it('#1931 an App this device requires goes in with the set though the index does not mark it; only gugu\'s own', async () => {
+    const { state, deps } = device({ state: 'pending' })
+    state.market = [offer('office'), offer('gugu-assistant', false, { repo: 'GUYI-AI/gugu-apps' }), offer('radar', false)]
+    await runFirstRun({ ...deps, required: ['gugu-assistant'] })
+    expect(state.installs).toEqual(['office@1.0.0', 'gugu-assistant@1.0.0'])
+    // A device that does not require it (the phone) leaves it to the index's mark.
+    const phone = device({ state: 'pending' })
+    phone.state.market = [offer('office'), offer('gugu-assistant', false, { repo: 'GUYI-AI/gugu-apps' })]
+    await runFirstRun(phone.deps)
+    expect(phone.state.installs).toEqual(['office@1.0.0'])
+    const elsewhere = device({ state: 'pending' })
+    elsewhere.state.market = [offer('gugu-assistant', false, { repo: 'someone/gugu-apps' })]
+    await runFirstRun({ ...elsewhere.deps, required: ['gugu-assistant'] })
+    expect(elsewhere.state.installs).toEqual([])
+  })
+
   it('offline (the market cannot be read): nothing said, nothing put in, the profile still new — the next start puts it in', async () => {
     const { state, deps } = device({ state: 'pending' })
     state.marketDown = true

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 
 const owner = '11111111-1111-4111-8111-111111111111'
 const device = '22222222-2222-4222-8222-222222222222'
@@ -14,8 +14,14 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => mo
 vi.mock('../extensions/account-token', () => ({ currentAccountAccessToken: async () => 'account-token' }))
 vi.mock('../../../../lib/logger', () => ({ createLogger: () => ({ error: vi.fn() }) }))
 vi.mock('../../../../assistant-home-prepare', () => ({ prepareLocalAssistantHome: vi.fn(), wipeLocalAssistantHome: mocks.wipe }))
+vi.mock('../../../../assistant-rules-root', () => ({ ensureAssistantApp: vi.fn(async () => 'present') }))
 vi.mock('../../../../assistant-server-preparation', () => ({ createAssistantServerPreparation: () => ({ start: mocks.start, assertProvision: mocks.assertProvision, closeHome: mocks.close }) }))
 import { assistantHomeController as controller, setAssistantHomeDeviceResolver } from './assistant-home-controller'
+import { installAssistantRulesResolver } from '../../../../assistant-rules-resolver'
+import { fixedAssistantRules } from '../../../../../../../tests/unit/desktop/assistantRules/fixtureApp'
+
+// #1931 The default model is the assistant App's: here, the neutral test rules'.
+beforeAll(() => installAssistantRulesResolver(fixedAssistantRules()))
 
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!
 const originalArch = Object.getOwnPropertyDescriptor(process, 'arch')!

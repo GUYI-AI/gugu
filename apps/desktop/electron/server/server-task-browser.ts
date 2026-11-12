@@ -6,6 +6,7 @@ import { mkdir } from 'node:fs/promises';
 import type { Readable, Writable } from 'node:stream';
 import { promisify } from 'node:util';
 import type { TaskPageControl, TaskPageState } from '@shared/browser-task-page';
+import { runPrivateLogin, type PrivateLoginInput, type PrivateLoginStatus } from './server-private-login';
 
 /**
  * #1607 node 4b — a Gugu server's task pages (owner decision 11-08): one headless Chromium ("new" headless) per
@@ -354,6 +355,8 @@ export interface ServerTaskBrowser {
   existingPage(sessionId: string): Promise<TaskPageScreenTarget | null>;
   /** The task ended: close its page. */
   closeTask(sessionId: string): Promise<void>;
+  /** A password login in a private context (server-private-login.ts); on success the task's page opens the site. */
+  privateLogin(sessionId: string, input: Omit<PrivateLoginInput, 'website'>): Promise<{ status: PrivateLoginStatus; cookies: number }>;
   dispose(): Promise<void>;
 }
 
@@ -442,6 +445,15 @@ export function createServerTaskBrowser(options: {
       const running = await starting?.catch(() => null);
       await running?.connection.send('Target.closeTarget', { targetId: target.targetId }).catch(() => {});
       target.destroy();
+    },
+    async privateLogin(sessionId, input) {
+      const { connection } = await browser();
+      const outcome = await runPrivateLogin((method, params, session) => connection.send(method, params, session), connection, input);
+      if (outcome.status === 'submitted_unconfirmed') {
+        const page = await this.existingPage(sessionId) as PageTarget | null;
+        await page?.control({ action: 'navigate', url: input.origin }).catch(() => {});
+      }
+      return outcome;
     },
     async dispose() {
       const running = await starting?.catch(() => null);

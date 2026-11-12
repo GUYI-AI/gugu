@@ -7,8 +7,6 @@ import { Pane, PaneHeader } from '../ui/Pane'
 import { ListRow } from '../ui/ListRow'
 import { IconButton } from '../ui/IconButton'
 import {
-  Sparkles,
-  SparklesFilled,
   Plug,
   PlugFilled,
   ChevronLeft,
@@ -38,7 +36,6 @@ type NavGroupId = SettingsGroupId | 'diagnostics'
 // Desktop organization is independent of the existing mobile Settings order.
 const DESKTOP_NAV_GROUPS: readonly { id: NavGroupId; sections: readonly ActiveSection[] }[] = [
   { id: 'account', sections: ['account', 'subscriptions', 'usage'] },
-  { id: 'assistant', sections: ['assistant', 'connectors'] },
   { id: 'preferences', sections: ['general', 'interface', 'model', 'permissions', 'passwords'] },
   { id: 'work', sections: ['sessions', 'devices', 'browser', 'files'] },
   { id: 'diagnostics', sections: ['resource-monitor', 'about'] },
@@ -52,8 +49,6 @@ interface SettingsNavProps {
   onSelect: (section: ActiveSection) => void
   // @@@1787 手机导航规范(owner):页面出口=左上返回箭头,❌桌面式右上✗
   onBack?: () => void
-  /** 咕咕那一组的小标题用它现在的名字(改过名就是新名);没读到就叫「咕咕」。 */
-  assistantName?: string | null
 }
 
 // Solar Icon Set — linear (inactive) and bold/filled (active) variants
@@ -131,9 +126,9 @@ function IbPhone() {
   return <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"><path fill="currentColor" fillRule="evenodd" d="M12.052 2h-.104c-1.68 0-3.01 0-4.052.142c-1.072.147-1.94.456-2.624 1.152s-.988 1.58-1.132 2.67C4 7.024 4 8.378 4 10.087v3.826c0 1.71 0 3.064.14 4.123c.144 1.09.448 1.974 1.132 2.67s1.552 1.005 2.624 1.152C8.937 22 10.268 22 11.948 22h.104c1.68 0 3.01 0 4.052-.142c1.072-.147 1.94-.456 2.624-1.152s.988-1.58 1.132-2.67c.14-1.06.14-2.414.14-4.123v-3.826c0-1.71 0-3.064-.14-4.123c-.144-1.09-.448-1.974-1.132-2.67s-1.552-1.005-2.624-1.152C15.063 2 13.732 2 12.052 2m-3.48 16.512a.69.69 0 0 1 .685-.698h5.486c.379 0 .686.312.686.698a.69.69 0 0 1-.686.697H9.257a.69.69 0 0 1-.686-.697" clipRule="evenodd"/></svg>
 }
 
+// Nothing of the assistant here: its 资料 and 连接应用 live in its App (owner 11-12). 连接应用 here is the person's own
+// connected apps, a phone row under 通用 (a computer has them in the Library's 集成).
 const NAV_ITEMS: NavItem[] = [
-  // 咕咕那一组(owner 10-16):资料 = 它是谁与它的状态;连接应用 = 它连着的服务与设备上的数据。
-  { key: 'assistant', labelKey: 'settings.nav.assistant', il: <Sparkles size={15} />, ib: <SparklesFilled size={15} /> },
   { key: 'connectors', labelKey: 'settings.nav.connectors', il: <Plug size={15} />, ib: <PlugFilled size={15} /> },
   { key: 'account', labelKey: 'settings.nav.account', il: <IlAccount />, ib: <IbAccount /> },
   { key: 'general', labelKey: 'settings.nav.general', il: <IlGeneral />, ib: <IbGeneral /> },
@@ -154,7 +149,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'browser', labelKey: 'settings.nav.browser', il: <Globe size={15} />, ib: <GlobeFilled size={15} /> },
 ]
 
-export function SettingsNav({ activeSection, sections, mobile = false, user, assistantName, onSelect, onBack }: SettingsNavProps) {
+export function SettingsNav({ activeSection, sections, mobile = false, user, onSelect, onBack }: SettingsNavProps) {
   const { t } = useTranslation('main')
   if (!mobile && import.meta.env.DEV) {
     const missing = sections.filter((section) => !DESKTOP_NAV_GROUPS.some((group) => group.sections.includes(section)))
@@ -164,11 +159,9 @@ export function SettingsNav({ activeSection, sections, mobile = false, user, ass
   const navGroups = (mobile ? SETTINGS_GROUPS : DESKTOP_NAV_GROUPS)
     .map((group) => ({ id: group.id, items: group.sections.flatMap((key) => (sections.includes(key) ? NAV_ITEMS.filter((item) => item.key === key) : [])) }))
     .filter((group) => group.items.length > 0)
-  // 组名:「关于」组只有一格、名字与那一格同名,不画;其余都画(手机上咕咕组只剩「资料」一格,没有组名就不知道是谁的资料)。
-  // 咕咕那组用它现在的名字。
+  // 组名:「关于」组只有一格、名字与那一格同名,不画;其余都画。
   const captionFor = (id: NavGroupId): string | null => {
     if (id === 'about') return null
-    if (id === 'assistant') return assistantName || t('settings.group.assistant')
     if (id === 'account' && !mobile) return t('settings.nav.account')
     return t(`settings.group.${id}`)
   }

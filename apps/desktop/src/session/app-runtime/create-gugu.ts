@@ -10,12 +10,53 @@ import { projectionSources } from './projection-source';
 import { mountProjection } from './projection-view';
 import { taskPagesApi, mountTaskPage } from './task-pages';
 import { appSurfacesApi } from './app-surfaces';
+import { bindingResourcesApi } from './binding-resources';
+import { voiceNoteApi } from './voice-note-api';
 
 /**
  * `gugu` itself, built on a host — the same object wherever an App runs (F16): a page (desktop webview or
  * phone iframe, `gugu-entry.ts`) and an App's MCP program (`program-entry.ts`). What a host does not offer
  * is not there: a program has no editor and no clipboard, and its host refuses what needs a person's gesture.
  */
+
+/**
+ * #1928 (43) `gugu.bindings.schedules` / `controlSchedule` / `onSchedulesChanged(name, fn)`, where the host has them (a
+ * page, `chat:schedules`). `onSchedulesChanged` keeps one host watch per binding name however many handlers, as `cloud.on`
+ * does per topic; a watch the host refuses is reported as the App's error — the call returns the unsubscribe.
+ */
+function boundSchedules(raw: GuguHost): Record<string, unknown> {
+  const { schedules, watchSchedules, controlSchedule } = raw.bindings ?? {};
+  const heard = raw.onSchedulesChanged;
+  const listeners = new Map<string, Set<(change: { name: string }) => void>>();
+  let hearing: (() => void) | null = null;
+  const onSchedulesChanged = watchSchedules && heard ? (name: unknown, handler: (change: { name: string }) => void): (() => void) => {
+    if (typeof name !== 'string' || !name) throw guguError('invalid', 'bindings.onSchedulesChanged(name, fn) names a binding');
+    if (typeof handler !== 'function') throw guguError('invalid', 'bindings.onSchedulesChanged(name, fn) takes a function');
+    hearing ??= heard((binding) => {
+      for (const fn of listeners.get(binding) ?? []) fn({ name: binding });
+    });
+    let handlers = listeners.get(name);
+    if (!handlers) {
+      handlers = new Set();
+      listeners.set(name, handlers);
+      watchSchedules(name, true).catch((error: unknown) => {
+        void raw.reportError(`gugu.bindings.onSchedulesChanged(${name}): ${error instanceof Error ? error.message : String(error)}`).catch(() => undefined);
+      });
+    }
+    handlers.add(handler);
+    return () => {
+      const current = listeners.get(name);
+      if (!current?.delete(handler) || current.size > 0) return;
+      listeners.delete(name);
+      void watchSchedules(name, false).catch(() => undefined);
+    };
+  } : undefined;
+  return {
+    ...(schedules ? { schedules: coded(schedules) } : {}),
+    ...(controlSchedule ? { controlSchedule: coded(controlSchedule) } : {}),
+    ...(onSchedulesChanged ? { onSchedulesChanged } : {}),
+  };
+}
 
 export type FilesModule = typeof import('./files-entry');
 export type CodemirrorModule = typeof import('./codemirror-entry');
@@ -209,7 +250,7 @@ export function createGugu(
   // `files.onChanged`) are host halves.
   const api: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
-    if (['navigationGo', 'navigationClaimBack', 'onBack', 'appFiles', 'chats', 'checkPage', 'clipboard', 'bindings', 'messages', 'prompts', 'cloud', 'framed', 'program', 'projects', 'sessions', 'theme', 'onFilesChanged', 'onDownloadProgress', 'onCloudHeard', 'modal', 'onModalFocus', 'projection', 'onProjection', 'onProjectionSource', 'pages', 'onTaskPage', 'surfaces', 'onSurface', 'projectionMedia'].includes(key)) continue;
+    if (['navigationGo', 'navigationClaimBack', 'onBack', 'appFiles', 'chats', 'checkPage', 'clipboard', 'bindings', 'assistant', 'onAssistantChanged', 'messages', 'prompts', 'cloud', 'framed', 'program', 'projects', 'sessions', 'theme', 'onFilesChanged', 'onDownloadProgress', 'onCloudHeard', 'onBindingResources', 'voiceNote', 'onVoiceNote', 'onSchedulesChanged', 'modal', 'onModalFocus', 'projection', 'onProjection', 'onProjectionSource', 'pages', 'onTaskPage', 'surfaces', 'onSurface', 'projectionMedia'].includes(key)) continue;
     api[key] = typeof value === 'function' && verbs.has(key) ? coded(value as (...args: never[]) => unknown) : value;
   }
   api.files = files;
@@ -287,8 +328,60 @@ export function createGugu(
   }
   // Called straight through, not deferred: the preload checks the person's gesture on this very call.
   if (raw.clipboard) api.clipboard = Object.freeze({ writeText: coded(raw.clipboard.writeText) });
+  // `gugu.bindings` (`chat:unread`; `list` / `read`, 40: `chat:files`; `surface` / `setPanel` / `onSurface`, 41:
+  // `chat:surface`; `work` / `openWork` / `closeWork` / `onWorkChanged`, 46: `chat:work`): the one conversation the person
+  // chose, by its name. `openWork` is called straight through: the preload reads the person's gesture on this very call.
+  if (raw.bindings) {
+    const { get, list, read, surface, setPanel, onSurface, work, openWork, closeWork, onWork } = raw.bindings;
+    api.bindings = Object.freeze({
+      get: coded(get), ...(list ? { list: coded(list) } : {}), ...(read ? { read: coded(read) } : {}),
+      ...(surface && setPanel && onSurface ? {
+        surface: coded(surface),
+        setPanel: coded(setPanel),
+        onSurface: (listener: unknown) => {
+          if (typeof listener !== 'function') throw guguError('invalid', 'gugu.bindings.onSurface(fn) takes a function');
+          return onSurface(listener as Parameters<typeof onSurface>[0]);
+        },
+      } : {}),
+      ...boundSchedules(raw),
+      ...(work && openWork && closeWork && onWork ? {
+        work: coded(work),
+        openWork: coded(openWork),
+        closeWork: coded(closeWork),
+        // One host event for every binding: this listener hears its binding's alone.
+        onWorkChanged: (name: unknown, listener: unknown) => {
+          if (typeof name !== 'string' || typeof listener !== 'function') throw guguError('invalid', 'gugu.bindings.onWorkChanged(name, fn) takes the binding\'s name and a function');
+          return onWork((answer) => { if (answer.name === name) (listener as (work: typeof answer) => void)(answer); });
+        },
+      } : {}),
+    });
+  }
+  // `gugu.assistant` (44, `assistant:status` / `assistant:open`): the bound conversation's assistant, by the binding's name.
+  // `open` and `advanceSetup` are called straight through: the preload reads the person's gesture on this very call.
+  if (raw.assistant) {
+    const { status, open, advanceSetup, rename, figure, connect } = raw.assistant;
+    const onAssistantChanged = raw.onAssistantChanged;
+    api.assistant = Object.freeze({
+      status: coded(status),
+      open: coded(open),
+      advanceSetup: coded(advanceSetup),
+      rename: coded(rename),
+      figure: coded(figure),
+      connect: coded(connect),
+      ...(onAssistantChanged ? {
+        onChanged: (handler: unknown): (() => void) => {
+          if (typeof handler !== 'function') throw guguError('invalid', 'gugu.assistant.onChanged takes a function');
+          return onAssistantChanged((read) => handler(read));
+        },
+      } : {}),
+    });
+  }
+  // #1927 (42, `chat:resources`): the bound conversation's agent's resources, beside the binding's other verbs.
+  if (raw.bindings?.resources) api.bindings = Object.freeze({ ...(api.bindings as object), ...bindingResourcesApi(raw, host.reportError) });
+  // #1927 (47, `chat:voice-notes:record`): the host's voice-note recorder, driven by name; the audio stays in the host.
+  const voiceNote = voiceNoteApi(raw, host.reportError);
+  if (voiceNote) api.voiceNote = Object.freeze(voiceNote);
   // `gugu.messages` (`chat:read`): a chat's timeline or thread, and the messages holding a text or naming a file.
-  if (raw.bindings) api.bindings = Object.freeze({ get: coded(raw.bindings.get) });
   if (raw.messages) api.messages = Object.freeze({ history: coded(raw.messages.history), search: coded(raw.messages.search) });
   // `gugu.chats` (`chat:read`): the chats whoever reads is in, and who is in one.
   if (raw.chats) api.chats = Object.freeze({ list: coded(raw.chats.list), members: coded(raw.chats.members) });

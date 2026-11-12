@@ -1,18 +1,19 @@
-import { app, safeStorage, systemPreferences } from 'electron'
+import { app, safeStorage } from 'electron'
 import { timingSafeEqual } from 'node:crypto'
 import { VaultError, type VaultKeyProtector } from './contracts'
 import { decode } from './crypto'
 
-/** Import only in the real desktop main. Headless/server shims must never supply vault keys. */
-export function macVaultKeyProtector(): VaultKeyProtector {
+/** Import only in the real desktop main. Headless/server shims must never supply vault keys.
+ * `verifyOwner` is the system owner check (Touch ID, or this Mac's login password when Touch ID is unavailable),
+ * used only before revealing plaintext; opening the vault itself needs no person step. */
+export function macVaultKeyProtector(verifyOwner: (reason: string) => Promise<void>): VaultKeyProtector {
   function available(): void {
     if (process.platform !== 'darwin' || process.type !== 'browser' || !app.isReady() || !safeStorage.isEncryptionAvailable()) throw new VaultError('UNAVAILABLE')
   }
   return {
     async verifyPerson() {
       available()
-      if (!systemPreferences.canPromptTouchID()) throw new VaultError('UNAVAILABLE')
-      try { await systemPreferences.promptTouchID('解锁咕咕本机密码保险箱') }
+      try { await verifyOwner('查看已保存的密码') }
       catch { throw new VaultError('CANNOT_UNLOCK') }
     },
     async wrap(key, binding) {

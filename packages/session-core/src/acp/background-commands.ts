@@ -26,7 +26,12 @@ function walk(items: readonly TranscriptItem[], out: BackgroundNode[]): void {
 
 export function runningBackgroundCommands(
   turns: readonly TranscriptTurn[],
-  activeTurn: TranscriptTurn | null
+  activeTurn: TranscriptTurn | null,
+  /**
+   * Calls subagents made on their own streams, from the subagent registry (#2500). A command a subagent started in
+   * the background hangs on one of these, not on anything in the turns. They are live calls, never replayed ones.
+   */
+  subagentSteps: readonly TranscriptItem[] = []
 ): RunningBackgroundCommand[] {
   const found: BackgroundNode[] = [];
   const replayed = new Set<string>();
@@ -38,6 +43,7 @@ export function runningBackgroundCommands(
   };
   for (const turn of turns) scan(turn);
   if (activeTurn) scan(activeTurn);
+  walk(subagentSteps, found);
 
   const byCallId = new Map<string, RunningBackgroundCommand>();
   for (const node of found) {

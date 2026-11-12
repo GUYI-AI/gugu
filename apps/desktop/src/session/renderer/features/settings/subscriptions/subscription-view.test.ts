@@ -36,8 +36,10 @@ describe('「订阅」页一行里的字', () => {
     ).toEqual(['接入：Claude · ChatGPT', '套餐信息更新于 10-10 23:51', '按 Claude 额外用量计费，不占套餐额度']);
   });
 
-  it('没登自己的账号:附注指去哪里登', () => {
-    expect(planNotes({ payer: 'not-signed-in' }, t, () => '')).toEqual(['去「资源库 → 智能体」里登录']);
+  // #2507 owner 2026-11-12:「订阅里面说去资源库智能体里登录，但我去看现在根本没有登录选项……本来这里应该点击直接跳转的」。
+  // ⇒ 没登录时那一行右侧直接是「登录」按钮(SubscriptionsSettingsPage),附注里 ❌ 再指路。
+  it('没登自己的账号:附注不再指路(入口是这一行的「登录」按钮)', () => {
+    expect(planNotes({ payer: 'not-signed-in' }, t, () => '')).toEqual([]);
     expect(planNotes({ payer: 'api-key' }, t, () => '')).toEqual([]);
   });
 

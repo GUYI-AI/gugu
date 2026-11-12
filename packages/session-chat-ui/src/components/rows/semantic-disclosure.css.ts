@@ -7,7 +7,7 @@ export const row = style({
 });
 export const toggle = style({
   position: 'absolute', inset: 0, width: '100%', border: 0, padding: 0, background: 'transparent', cursor: 'pointer',
-  ':focus-visible': { outline: `2px solid ${vars.fgMuted}`, outlineOffset: -2 },
+  selectors: { '&:focus-visible:not([data-pointer-focus] *)': { outline: `2px solid ${vars.fgMuted}`, outlineOffset: -2 } },
 });
 export const inline = style({
   display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0,

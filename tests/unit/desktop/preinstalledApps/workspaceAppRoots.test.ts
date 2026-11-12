@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
 import { until } from '../../../support/awaitCondition'
+import { fakeSharedMenu } from './sharedMenu'
 
 const at = '2026-10-31T12:00:00Z'
 type Entry = { id: string; name: string; displayName: string; type: string; contentType: string; parentId: string | null; path: string; workspace?: string; chat?: string; systemRole: null; version: number | null; createdBy: null; createdAt: string; updatedAt: string; sourceMessageIds: string[]; canDelete: boolean; size: number | null }
@@ -31,13 +32,14 @@ const context = {
 }
 let hear: ((change: unknown) => void) | null = null
 let contextChanged: ((ctx: unknown) => void) | null = null
+const menu = fakeSharedMenu()
 const gugu = {
   linkTo: vi.fn(async () => 'gugu-file://x'),
   setTabTitle: vi.fn(async () => {}),
   getContext: vi.fn(async () => context),
   onContextChanged: vi.fn((fn: (ctx: unknown) => void) => { contextChanged = fn; return () => {} }),
   onLink: vi.fn(() => () => {}),
-  showContextMenu: vi.fn(async () => null),
+  showContextMenu: menu.showContextMenu,
   files: {
     viewPreferences: vi.fn(async () => ({ showAppData: false })),
     list: vi.fn(async (place: { chat?: string; workspace?: string; folder?: string }) =>
@@ -136,10 +138,10 @@ describe('a session\'s tab: one folder, two roots', () => {
     expect(gugu.linkTo.mock.calls.filter((args: unknown[]) => (args[0] as { file?: Entry } | undefined)?.file?.workspace)).toEqual([])
     const row = [...document.querySelectorAll('li')].find((li) => li.textContent?.includes('main.md'))!
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-    const items = () => [...document.getElementById('menu')!.querySelectorAll('button')].map((item) => item.textContent)
-    await until('the menu open', () => items().length > 0)
-    expect(items()).not.toContain('复制链接')
-    expect(items()).toContain('复制相对路径')
+    await until('the menu open', () => menu.isOpen())
+    expect(menu.labels()).not.toContain('复制链接')
+    expect(menu.labels()).toContain('复制相对路径')
+    await menu.dismiss()
   })
 
   test('computer-file selection offers no chat retention or source-location actions', () => {
@@ -236,7 +238,7 @@ describe('a session\'s tab: one folder, two roots', () => {
       gugu.files.list.mockImplementationOnce(() => Promise.reject(Object.assign(new Error('offline'), { code: 'unavailable' })))
       press('data')
       await until('it says so', () => $('files-empty-message').textContent === 'Server 现在离线，上线后才能看这个文件夹。')
-      expect(($('upload') as HTMLButtonElement).hidden).toBe(true)
+      expect(($('new-doc') as HTMLButtonElement).hidden).toBe(true)
       expect(crumbs()).toEqual(['电脑文件', 'Server · /srv/data'])
       ;($('crumbs').querySelector('.back') as HTMLButtonElement).click()
       await until('back again', () => rows().length === 2)
@@ -310,16 +312,15 @@ describe('a session\'s tab: one folder, two roots', () => {
     await until('phone chat files shown', () => names().includes('plan.md'))
     switchRoot('workspace')
     await until('phone computer files shown', () => names().includes('README.md'))
-    expect(($('upload') as HTMLButtonElement).hidden).toBe(true)
-    expect(($('new-doc') as HTMLButtonElement).hidden).toBe(true)
+    expect(($('new-doc') as HTMLButtonElement).hidden, 'nothing to add here, upload included').toBe(true)
     const row = document.querySelector('[data-id="README.md"]') as HTMLElement
     expect(row.draggable).toBe(false)
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-    const labels = [...$('menu').querySelectorAll('button')].map((button) => button.textContent)
+    const labels = menu.labels()
     for (const desktop of ['在新页签打开', '在旁边打开', '在文件管理器中显示', '改名', '删除']) expect(labels).not.toContain(desktop)
     switchRoot('chat')
     await until('phone chat files shown again', () => names().includes('plan.md'))
-    expect(($('upload') as HTMLButtonElement).hidden).toBe(false)
+    expect(($('new-doc') as HTMLButtonElement).hidden, '「+」, upload in it').toBe(false)
     expect((document.querySelector('[data-id="item-1"]') as HTMLElement).draggable).toBe(false)
   })
 })

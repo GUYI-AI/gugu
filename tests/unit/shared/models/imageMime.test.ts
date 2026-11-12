@@ -10,6 +10,16 @@ import { attachmentTypeKey } from '../../../../apps/desktop/src/components/chat/
 
 // 「PNG 有时渲染有时不渲染」:agent 发文件时 mime_type 可选、大小写随意,判据必须是 mime ∪ 扩展名。
 describe('image mime resolution', () => {
+  it.each(['__proto__', 'constructor'])('treats the inherited property %s as an unknown suffix', (suffix) => {
+    const fileName = `file.${suffix}`
+    expect(mimeTypeFromName(fileName)).toBeNull()
+    expect(resolveAttachmentMimeType(fileName, '')).toBe('application/octet-stream')
+    expect(resolveAttachmentMimeType(fileName, 'text/plain')).toBe('text/plain')
+    expect(isRenderableImage(fileName, '')).toBe(false)
+    expect(resolveFileMimeType({ name: fileName, type: '' })).toBe('application/octet-stream')
+    expect(inferAttachmentKind({ name: fileName, type: '' })).toBe('file')
+  })
+
   it('fills a missing or generic mime from the extension, case-insensitively', () => {
     expect(resolveAttachmentMimeType('chart.png', undefined)).toBe('image/png')
     expect(resolveAttachmentMimeType('CHART.PNG', '')).toBe('image/png')

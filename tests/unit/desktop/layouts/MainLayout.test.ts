@@ -2,6 +2,12 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/OwnedAgentResourcesHost
 const resourceHosts = vi.hoisted(() => ({ host: vi.fn(), suspend: vi.fn(), resume: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/ownedAgentResources', () => ({ hostOwnedAgentResources: resourceHosts.host, suspendOwnedAgentResources: resourceHosts.suspend, resumeOwnedAgentResources: resourceHosts.resume }))
 vi.mock('../../../../apps/desktop/src/hooks/useSessionInputOutbox', () => ({ SessionInputOutboxHost: () => null }))
+// #1925 Which chats are drawn beside an App's page right now (the host's own answer is AppConversationSurfaceHost.test.tsx's).
+const besideApp = vi.hoisted(() => new Set<string>())
+vi.mock('../../../../apps/desktop/src/lib/appConversationSurfaceBridge', async (original) => ({
+  ...await original<typeof import('../../../../apps/desktop/src/lib/appConversationSurfaceBridge')>(),
+  appConversationSurfaceShows: (chatId: string) => besideApp.has(chatId),
+}))
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
 import postcss from 'postcss'
@@ -21,7 +27,12 @@ import { drainTopicSplitRequest } from '../../../../apps/desktop/src/lib/topicSp
 import { APP_OPEN_WITH_EVENT, APP_OPEN_IN_CHAT_EVENT, APP_COMPOSE_EVENT, APP_SHOW_SESSION_EVENT } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { sheetStack } from '../../../../apps/desktop/src/components/ui/sheetStack'
 import { rememberAssistantTaskChat } from '../../../../apps/desktop/src/lib/assistantTaskChat'
+import { UNAVAILABLE_APP_STATES, clearAssistantAppState, setAssistantAppState } from '../../../support/assistantAppStates'
 import { installAssistantShellBridge, publishAssistantShell } from '../../../../apps/desktop/src/lib/assistantShellBridge'
+import { ASSISTANT_APP_ID, installAssistantAppEntryBridge, publishAssistantAppWord } from '../../../../apps/desktop/src/lib/assistantEntry'
+import { installedExtensionsStore } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
+import { EXTENSION_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
+import { publishAppConversationSurfaces } from '../../../../apps/desktop/src/lib/appConversationSurfaceBridge'
 import { appState } from '../../../../apps/desktop/src/session/renderer/lib/stores/app-state'
 import { MOBILE_TABS } from '@gugu/core/shared/enums/sidebarTabModels'
 import * as needsYouTasks from '../../../../apps/desktop/src/components/needsYou/useNeedsYouTasks'
@@ -856,14 +867,50 @@ describe('MainLayout', () => {
     expect(layerOpen('mobile-assistant-layer')).toBe(true)
     expect(harness.container.querySelector('[data-testid="mock-assistant-tab"]')?.getAttribute('data-visible')).toBe('true')
   })
-  it.each(['owner','read-error'])('opens standalone phone settings without an assistant for %s',async state => {
+  // Owner 11-12「设置里面不应该有咕咕设置吧?」: on a computer an old route to its 资料 / 连接应用 never opens Settings (it goes to
+  // the App: assistantEntry.test.ts `openAssistantPageInApp`); any other section still does.
+  it('a desktop Settings route to the assistant\'s pages opens no Settings; another section does', async () => {
+    platformMock.kind = 'web'
+    platformMock.capabilities.sessionHost = false
+    await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
+    for (const section of ['assistant', 'connectors', 'channels']) {
+      await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section } })) })
+      expect(harness.container.querySelector('[data-testid="mock-settings-panel"]')).toBeNull()
+    }
+    await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'devices' } })) })
+    expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="devices"]')).not.toBeNull()
+  })
+  // 11-12 gap: the person's own connected apps are not the assistant's. A phone with no assistant has them as a plain row of
+  // Settings (under 偏好, SettingsPanel): a route to them (or the chat tools, part of them) opens that page; its 资料 has none.
+  it.each(['owner','read-error'])('a phone with no assistant opens its own connected apps in Settings for %s',async state => {
     platformMock.kind = 'capacitor'; platformMock.capabilities.sessionHost = false
     phoneAssistantMock.state.available = false
     connectionAuthority.mode = 'owner'; connectionAuthority.failed = state === 'read-error'
     await harness.render(createNode(MainLayout,{ user: { id: 'user-1',email: 'user@example.com',nickname: 'User' } }))
-    await act(async () => { window.dispatchEvent(new Event(UI_EVENTS.openAssistantConnectors)) })
-    await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="connectors"]')).not.toBeNull())
+    await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'assistant' } })) })
+    expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="assistant"]')).toBeNull()
+    for (const section of ['connectors', 'channels']) {
+      await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section } })) })
+      await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="connectors"]')).not.toBeNull())
+    }
     expect(layerOpen('mobile-assistant-layer')).toBe(false)
+  })
+  it.each(['assistant', 'connectors', 'channels'] as const)('a %s Settings route on the phone opens the assistant layer, not Settings', async (section) => {
+    platformMock.kind = 'capacitor'; platformMock.capabilities.sessionHost = false
+    phoneAssistantMock.state.available = true
+    phoneAssistantMock.state.assistant = { id: 'agent-1', display_name: '小咕', avatar: null, created_at: null }
+    const asked: unknown[] = []
+    const hear = (event: Event) => asked.push((event as CustomEvent).detail)
+    window.addEventListener(UI_EVENTS.openAssistantConnectors, hear)
+    try {
+      await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
+      await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section } })) })
+      expect(layerOpen('mobile-assistant-layer')).toBe(true)
+      expect(harness.container.querySelector('[data-testid="mock-settings-panel"]:is([data-section="connectors"], [data-section="channels"], [data-section="assistant"])')).toBeNull()
+      expect(asked).toEqual([{ sub: section === 'assistant' ? 'settings' : 'connectors' }])
+    } finally {
+      window.removeEventListener(UI_EVENTS.openAssistantConnectors, hear)
+    }
   })
   // owner 10-16「得考虑最开始没有创建咕咕的新用户」:没有它,那一行照样在,头像是淡一点的默认咕咕 + 小「+」,点进去是安家引导。
   it('keeps the 咕咕 row first for a new user with no assistant, and marks it as the place to set one up', async () => {
@@ -1160,27 +1207,79 @@ describe('MainLayout: personal assistant destinations', () => {
   beforeEach(() => { installAssistantShellBridge(); publishAssistantShell(shell) })
   afterEach(() => { publishAssistantShell({ ...shell, assistant: null, assistantState: 'none', chatId: null }) })
 
+  // The App not usable here — switched off by the person, still being put in, failing to go in — every route into the assistant's
+  // chat is that chat as any chat, with the requested action kept: file, draft, notification, chat link (verify-pass1 D10).
+  const PERSONAL_DM = '0b1e7c1a-0000-4000-8000-0000000000aa'
+  describe.each(UNAVAILABLE_APP_STATES)('the assistant App %s', (state) => {
+    afterEach(() => clearAssistantAppState())
+    it.each([
+      ['resource-file', { chatId: PERSONAL_DM, itemId: 'personal-file' }],
+      [APP_OPEN_WITH_EVENT, { chatId: PERSONAL_DM, itemId: 'personal-file', name: 'budget.md', typedName: 'budget.md', choice: { kind: 'none' } }],
+      [APP_COMPOSE_EVENT, { chatId: PERSONAL_DM, text: 'follow-up' }],
+      [UI_EVENTS.notificationClicked, { chatId: PERSONAL_DM }],
+      ['chat-link', { chatId: PERSONAL_DM }],
+    ])('opens %s as any chat, and preserves the requested action', async (name, detail) => {
+      chatStoreMock.chats = [{ id: PERSONAL_DM, kind: 'dm', peer_user_id: 'personal-agent' } as never]
+      fileOwner.mockResolvedValue({ data: { chat_id: PERSONAL_DM }, error: null })
+      const navigate = vi.spyOn(appState.navigation, 'navigate').mockImplementation(() => undefined)
+      try {
+        await renderMainLayoutWithToast()
+        await act(async () => {
+          publishAssistantShell({ ...shell, ownerId: 'user-1', chatId: PERSONAL_DM })
+          setAssistantAppState(state, 'user-1')
+        })
+        await act(async () => {
+          if (name === 'resource-file' && 'itemId' in detail) await openLinkTarget({ kind: 'file', itemId: detail.itemId })
+          else if (name === 'chat-link') await clickLink(conversationLink(PERSONAL_DM))
+          else window.dispatchEvent(new CustomEvent(name, { detail }))
+        })
+        // The built-in assistant page is gone; not the App's page either (it is not usable here).
+        expect(navigate).not.toHaveBeenCalledWith('app', { appId: ASSISTANT_APP_ID })
+        expect(sessionPageViewRequests.openChat.mock.calls[0]?.[0]).toBe(PERSONAL_DM)
+        if ('itemId' in detail) expect((takeChatAsk(PERSONAL_DM) as { itemId?: string } | null)?.itemId).toBe('personal-file')
+        if ('text' in detail) expect(chatStoreMock.writeDraft).toHaveBeenCalledWith(PERSONAL_DM, { at: 'end', text: 'follow-up' })
+      } finally { navigate.mockRestore() }
+    })
+  })
+
+  // Entry switch: once main trusts the installed assistant App for this account and its conversation beside the App's page
+  // is the assistant chat, every one of these lands on the App's page instead — the requested action kept, nothing read.
   it.each([
-    ['resource-file', { chatId: 'personal-dm', itemId: 'personal-file' }],
-    [APP_OPEN_WITH_EVENT, { chatId: 'personal-dm', itemId: 'personal-file', name: 'budget.md', typedName: 'budget.md', choice: { kind: 'none' } }],
-    [APP_COMPOSE_EVENT, { chatId: 'personal-dm', text: 'follow-up' }],
-    [UI_EVENTS.notificationClicked, { chatId: 'personal-dm' }],
-  ])('opens %s in the desktop Gugu page and preserves the requested action', async (name, detail) => {
-    chatStoreMock.chats = [{ id: 'personal-dm', kind: 'dm', peer_user_id: 'personal-agent' } as never]
+    ['resource-file', { chatId: PERSONAL_DM, itemId: 'personal-file' }],
+    [APP_COMPOSE_EVENT, { chatId: PERSONAL_DM, text: 'follow-up' }],
+    [UI_EVENTS.notificationClicked, { chatId: PERSONAL_DM }],
+    ['chat-link', { chatId: PERSONAL_DM }],
+  ])('opens %s on the assistant App\'s page when the host bound it', async (name, detail) => {
+    chatStoreMock.chats = [{ id: PERSONAL_DM, kind: 'dm', peer_user_id: 'personal-agent' } as never]
+    fileOwner.mockResolvedValue({ data: { chat_id: PERSONAL_DM }, error: null })
     const navigate = vi.spyOn(appState.navigation, 'navigate').mockImplementation(() => undefined)
     try {
       await renderMainLayoutWithToast()
       await act(async () => {
-        publishAssistantShell(shell)
+        installAssistantAppEntryBridge()
+        installedExtensionsStore.applyList({ extensions: [{ id: ASSISTANT_APP_ID, name: 'A', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'today', title: 'A' }] } }], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
+        publishAssistantShell({ ...shell, ownerId: 'user-1', chatId: PERSONAL_DM })
+        publishAssistantAppWord({ ownerId: 'user-1', trusted: true })
+        publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: PERSONAL_DM })
+      })
+      await act(async () => {
         if (name === 'resource-file' && 'itemId' in detail) await openLinkTarget({ kind: 'file', itemId: detail.itemId })
+        else if (name === 'chat-link') await clickLink(conversationLink(PERSONAL_DM))
         else window.dispatchEvent(new CustomEvent(name, { detail }))
       })
-      expect(navigate).toHaveBeenCalledWith('assistant')
+      expect(navigate).toHaveBeenCalledWith('app', { appId: ASSISTANT_APP_ID })
       expect(sessionPageViewRequests.openChat).not.toHaveBeenCalled()
       expect(chatStoreMock.setActiveChatId).not.toHaveBeenCalled()
-      if ('itemId' in detail) expect((takeChatAsk('personal-dm') as { itemId?: string } | null)?.itemId).toBe('personal-file')
-      if ('text' in detail) expect(chatStoreMock.writeDraft).toHaveBeenCalledWith('personal-dm', { at: 'end', text: 'follow-up' })
-    } finally { navigate.mockRestore() }
+      // Opening it marks nothing read: only the conversation column on screen does (AppConversationSurfaceHost).
+      expect(chatOnScreen()).not.toBe(PERSONAL_DM)
+      if ('itemId' in detail) expect((takeChatAsk(PERSONAL_DM) as { itemId?: string } | null)?.itemId).toBe('personal-file')
+      if ('text' in detail) expect(chatStoreMock.writeDraft).toHaveBeenCalledWith(PERSONAL_DM, { at: 'end', text: 'follow-up' })
+    } finally {
+      navigate.mockRestore()
+      publishAssistantAppWord(null)
+      publishAppConversationSurfaces({})
+      installedExtensionsStore.applyList({ extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
+    }
   })
 
   it('opens the same file in the phone Gugu layer, without the tab bar', async () => {
@@ -1216,6 +1315,32 @@ it.each(['group', 'topic', 'owned', 'assistant'] as const)('places an annotated 
   expect(chatStoreMock.setDraftAttachments).toHaveBeenCalledWith(target, [expect.objectContaining({ file: expect.objectContaining({ name: 'edited.png', type: 'image/png' }) })])
   if (kind === 'topic') expect(drainTopicSplitRequest(parent)).toMatchObject({ chatId: target })
   if (kind === 'assistant') await act(async () => publishAssistantShell({ assistant: null, chatId: null } as never))
+})
+
+// #1925 A `{ binding }` draft reaches main's `draftInChat` as a draft into the bound chat: drawn beside the App's page, that
+// composer takes it and the person stays on the App's page. Control: the same draft, not drawn there, brings the chat up.
+it.each(['group', 'owned'] as const)('a draft for a %s conversation drawn beside an App\'s page lands in that composer; nothing else comes up', async kind => {
+  const target = '0b1e7c1a-0000-4000-8000-000000000003'
+  chatStoreMock.activeChatId = 'other-chat'
+  chatStoreMock.chats = [{ id: target, kind: kind === 'owned' ? 'dm' : 'group', peer_user_id: kind === 'owned' ? 'agent' : null }] as never
+  if (kind === 'owned') taskRoute.contacts = [{ id: 'agent', type: 'agent', owner_user_id: 'user-1' }]
+  const navigate = vi.spyOn(appState.navigation, 'navigate').mockImplementation(() => undefined)
+  try {
+    besideApp.add(target)
+    await renderMainLayoutWithToast()
+    await act(async () => { window.dispatchEvent(new CustomEvent(APP_COMPOSE_EVENT, { detail: { chatId: target, text: 'What is first today?\n' } })) })
+    expect(chatStoreMock.writeDraft).toHaveBeenCalledExactlyOnceWith(target, { at: 'end', text: 'What is first today?\n' })
+    expect(chatStoreMock.setDraftQuote).not.toHaveBeenCalled()
+    expect(chatStoreMock.setActiveChatId).not.toHaveBeenCalled()
+    expect(sessionPageViewRequests.openChat).not.toHaveBeenCalled()
+    expect(navigate).not.toHaveBeenCalled()
+    besideApp.clear()
+    chatStoreMock.writeDraft.mockClear()
+    await act(async () => { window.dispatchEvent(new CustomEvent(APP_COMPOSE_EVENT, { detail: { chatId: target, text: 'again' } })) })
+    // The owned agent's own page takes it (its composer, `setDraftQuote`); a group comes up in the chats.
+    if (kind === 'owned') expect(chatStoreMock.setDraftQuote).toHaveBeenCalledWith(target, null)
+    else expect(chatStoreMock.setActiveChatId.mock.calls.length + sessionPageViewRequests.openChat.mock.calls.length).toBeGreaterThan(0)
+  } finally { besideApp.clear(); navigate.mockRestore() }
 })
 
 it.each(['group', 'topic'] as const)('keeps a private annotated image private in its %s destination draft', async kind => {

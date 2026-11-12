@@ -125,7 +125,7 @@ async function findApps(dir: string, depth: number): Promise<string[]> {
 
 // ───────────────────────── 脚本 ─────────────────────────
 
-/** 脚本里调 `screencapture` 一律不跑(会以咕咕的身份要「屏幕录制」、弹系统框);截屏走 computer.get_window_state / computer.get_desktop_state。 */
+/** 脚本里调 `screencapture` 一律不跑(会以咕咕的身份要「屏幕录制」、弹系统框);截屏走 screen.get。 */
 const COMMAND_WRAPPERS = new Set(['sudo', 'env', 'exec', 'nohup', 'time', 'command', 'builtin', 'xargs', 'nice', 'caffeinate'])
 const COMMAND_SEPARATOR = /\$\(|[\n;|&(){}`"']/
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/
@@ -140,7 +140,7 @@ export function invokesScreenCapture(script: string): boolean {
   return false
 }
 
-const SCREENCAPTURE_REFUSED = 'screencapture is not allowed in scripts here (it would make macOS ask for Screen Recording on the person\'s screen). Use computer.get_window_state (or screen.get) to look at the screen instead.'
+const SCREENCAPTURE_REFUSED = 'screencapture is not allowed in scripts here (it would make macOS ask for Screen Recording on the person\'s screen). Use screen.get to look at the screen instead.'
 
 const preview = (script: string) => (script.length > 120 ? `${script.slice(0, 120)}…` : script)
 
@@ -649,7 +649,7 @@ export function createSystemFamily(options: SystemFamilyOptions = {}): ActionFam
         group: 'shell',
         title: '运行 JXA / AppleScript',
         titleEn: 'Run JXA / AppleScript',
-        description: 'Run a JXA (JavaScript for Automation, default) or AppleScript snippet with osascript on this Mac and return its stdout (the value of the last expression / `run` return), stderr and exit code (64 KB each). args are passed to `run(argv)`. Prefer the dedicated actions (calendar.*, reminders.*, notes.*, mail.*, contacts.*, messages.*) and fall back to scripts only when none covers the task; use sdef.get to look up an app\'s scripting dictionary first. The first time a script controls an app, macOS asks the person to allow it. Scripts calling `screencapture` are refused (use computer.get_window_state). Runs arbitrary code, so every run must be confirmed by the person: without confirmed: true it returns needs_confirmation. timeoutMs defaults to 30000 (max 280000); set the call\'s timeout_ms above it.',
+        description: 'Run a JXA (JavaScript for Automation, default) or AppleScript snippet with osascript on this Mac and return its stdout (the value of the last expression / `run` return), stderr and exit code (64 KB each). args are passed to `run(argv)`. Prefer the dedicated actions (calendar.*, reminders.*, notes.*, mail.*, contacts.*, messages.*) and fall back to scripts only when none covers the task; use sdef.get to look up an app\'s scripting dictionary first. The first time a script controls an app, macOS asks the person to allow it. Scripts calling `screencapture` are refused (use screen.get). Runs arbitrary code, so every run must be confirmed by the person: without confirmed: true it returns needs_confirmation. timeoutMs defaults to 30000 (max 280000); set the call\'s timeout_ms above it.',
         risk: 'high',
         confirm: 'always',
         input_schema: {
@@ -693,7 +693,7 @@ export function createSystemFamily(options: SystemFamilyOptions = {}): ActionFam
         group: 'shell',
         title: '运行 shell 脚本',
         titleEn: 'Run shell script',
-        description: 'Run a shell script on this Mac (`<shell> -c script`, zsh by default; bash / sh also available) and return stdout, stderr (64 KB each) and the exit code — a non-zero exit is still a normal result. args become $1, $2 …; env adds variables; cwd must be inside a connected file location (default: home folder). It is a non-login, non-interactive shell with 咕咕\'s PATH (see system.shell.get): ~/.zshrc is not read, so source it in the script if you need Homebrew / nvm paths. `screencapture` is refused (use computer.get_window_state). Runs arbitrary code, so every run must be confirmed by the person: without confirmed: true it returns needs_confirmation. timeoutMs defaults to 30000 (max 280000); set the call\'s timeout_ms above it.',
+        description: 'Run a shell script on this Mac (`<shell> -c script`, zsh by default; bash / sh also available) and return stdout, stderr (64 KB each) and the exit code — a non-zero exit is still a normal result. args become $1, $2 …; env adds variables; cwd must be inside a connected file location (default: home folder). It is a non-login, non-interactive shell with 咕咕\'s PATH (see system.shell.get): ~/.zshrc is not read, so source it in the script if you need Homebrew / nvm paths. `screencapture` is refused (use screen.get). Runs arbitrary code, so every run must be confirmed by the person: without confirmed: true it returns needs_confirmation. timeoutMs defaults to 30000 (max 280000); set the call\'s timeout_ms above it.',
         risk: 'high',
         confirm: 'always',
         input_schema: {

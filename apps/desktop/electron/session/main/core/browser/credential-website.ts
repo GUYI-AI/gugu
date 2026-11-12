@@ -20,3 +20,14 @@ export function assertCredentialWebsite(actualUrl: string, expectedOrigin: strin
   const expected = httpsUrl(expectedOrigin);
   if (expectedOrigin !== expected.origin || httpsUrl(actualUrl).origin !== expected.origin) throw new CredentialWebsiteError();
 }
+
+/** The website itself, or one of its subdomains over HTTPS on the default port (api.example.com for example.com). */
+export function isCredentialWebsiteOrSubdomain(actualUrl: string, expectedOrigin: string): boolean {
+  try {
+    const expected = httpsUrl(expectedOrigin), actual = httpsUrl(actualUrl);
+    if (expectedOrigin !== expected.origin) return false;
+    if (actual.origin === expected.origin) return true;
+    return !expected.port && !actual.port && /[a-z]/.test(expected.hostname) && !expected.hostname.endsWith('.')
+      && actual.hostname.endsWith('.' + expected.hostname);
+  } catch { return false; }
+}

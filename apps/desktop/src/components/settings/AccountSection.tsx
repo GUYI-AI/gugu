@@ -15,6 +15,7 @@ import { rendererLogger } from '../../lib/log'
 import { officialServicesEnabled } from '@gugu/core/cloud/optionalServices'
 import { GuguSubscriptionRow } from '../../session/renderer/features/settings/subscriptions/GuguSubscriptionRow'
 import { AccountLoginMethods } from './AccountLoginMethods'
+import { PasswordRecoveryGroup } from '../password/PasswordRecovery'
 
 import { ReferralAccountPreview } from '../referralPreview/ReferralPreview'
 
@@ -244,6 +245,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
       </div>
 
       {user && <AccountLoginMethods key={user.id} userId={user.id} onEmailChanged={email => updateUser({ ...user, email })} />}
+      {user && <PasswordRecoveryGroup />}
       <ReferralAccountPreview />
 
       {mobile && officialServicesEnabled() && (

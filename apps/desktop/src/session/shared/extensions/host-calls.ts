@@ -63,6 +63,52 @@ export const HOST_CALLS = {
   dispatch: { verb: 'dispatch', pack: (text: string, options?: Record<string, unknown>) => ({ ...options, text }) },
   // A chat's messages (`chat:read`): each call names its chat, as a file call names its place.
   'bindings.get': { verb: 'bindingsGet', pack: (name: string) => ({ name }) },
+  // #1927 (40, `chat:files`): the bound conversation's files, named by the binding and a path there, never by a chat.
+  'bindings.list': { verb: 'bindingsList', pack: (name: string, options?: Record<string, unknown>) => ({ ...options, name }) },
+  'bindings.read': { verb: 'bindingsRead', pack: (name: string, path: string) => ({ name, path }) },
+  // #1925 (41, `chat:surface`): the conversation drawn beside this page — shown or not, the panel collapsed or not.
+  'bindings.surface': { verb: 'bindingsSurface', pack: (name: string) => ({ name }) },
+  'bindings.setPanel': { verb: 'bindingsSurfacePanel', pack: (name: string, options?: Record<string, unknown>) => ({ ...options, name }) },
+  // #1927 (42, `chat:resources` / `chat:resources:write`): the bound conversation's agent's resources, named by the binding, a
+  // domain and a key; `onResourcesChanged` rides on `watch` and `onBindingResources` (create-gugu.ts).
+  'bindings.resources': { verb: 'bindingsResources', pack: (name: string, domain: string) => ({ name, domain }) },
+  'bindings.resource': { verb: 'bindingsResource', pack: (name: string, domain: string, key: string) => ({ name, domain, key }) },
+  'bindings.watch': { verb: 'bindingsWatch', pack: (watchId: string, name: string, on: boolean) => ({ watchId, name, on }) },
+  'bindings.save': { verb: 'bindingsSave', pack: (name: string, change: Record<string, unknown>) => ({ ...change, name }) },
+  'bindings.remove': { verb: 'bindingsRemove', pack: (name: string, change: Record<string, unknown>) => ({ ...change, name }) },
+  // 50 (resources-management.ts): 给助理的资料 and voice notes, as the assistant's own pages manage them.
+  'bindings.upload': { verb: 'bindingsUpload', pack: (name: string, options?: { folder?: string }) => ({ ...(options ?? {}), name }) },
+  'bindings.createFolder': { verb: 'bindingsCreateFolder', pack: (name: string, key: string) => ({ name, key }) },
+  'bindings.rename': { verb: 'bindingsRename', pack: (name: string, key: string, to: string) => ({ name, key, to }) },
+  'bindings.removeFolder': { verb: 'bindingsRemoveFolder', pack: (name: string, key: string) => ({ name, key }) },
+  'bindings.transcribeVoiceNote': { verb: 'bindingsTranscribeVoiceNote', pack: (name: string, key: string) => ({ name, key }) },
+  'bindings.removeVoiceNote': { verb: 'bindingsRemoveVoiceNote', pack: (name: string, key: string) => ({ name, key }) },
+  'bindings.exportVoiceNote': { verb: 'bindingsExportVoiceNote', pack: (name: string, key: string) => ({ name, key }) },
+  // #1928 (43, `chat:schedules` / `chat:schedules:control`): the bound agent's schedules, named by the binding, never by an agent.
+  'bindings.schedules': { verb: 'bindingsSchedules', pack: (name: string) => ({ name }) },
+  'bindings.watchSchedules': { verb: 'bindingsSchedulesWatch', pack: (name: string, on: boolean) => ({ name, on }) },
+  'bindings.controlSchedule': { verb: 'bindingsScheduleControl', pack: (name: string, change?: Record<string, unknown>) => ({ ...change, name }) },
+  // #1925 (44, `assistant:status` / `assistant:open`): the bound conversation's assistant, named by the binding alone.
+  'assistant.status': { verb: 'assistantStatus', pack: (name: string) => ({ name }) },
+  'assistant.open': { verb: 'assistantOpen', pack: (name: string, screen: string) => ({ name, screen }) },
+  'assistant.advanceSetup': { verb: 'assistantAdvanceSetup', pack: (name: string, next: string) => ({ name, next }) },
+  'assistant.rename': { verb: 'assistantRename', pack: (name: string, text: string) => ({ name, text }) },
+  'assistant.figure': { verb: 'assistantFigure', pack: (name: string, figure: unknown = null) => ({ name, figure }) },
+  'assistant.connect': { verb: 'assistantConnect', pack: (name: string, id: string) => ({ name, id }) },
+  // #1925 (46, `chat:work`): the assistant's work, by the binding's name, and one row's conversation by the handle it came with.
+  'bindings.work': { verb: 'bindingsWork', pack: (name: string) => ({ name }) },
+  'bindings.openWork': { verb: 'bindingsOpenWork', pack: (name: string, handle: string) => ({ name, handle }) },
+  'bindings.closeWork': { verb: 'bindingsCloseWork', pack: (name: string) => ({ name }) },
+  // #1927 (47, `chat:voice-notes:record`): the host's voice-note recorder, named by the binding; `onChanged` rides on `watch`
+  // and `onVoiceNote` (create-gugu.ts).
+  'voiceNote.start': { verb: 'voiceNoteStart', pack: (name: string, options?: Record<string, unknown>) => ({ ...options, name }) },
+  'voiceNote.pause': { verb: 'voiceNotePause', pack: (name: string) => ({ name }) },
+  'voiceNote.resume': { verb: 'voiceNoteResume', pack: (name: string) => ({ name }) },
+  'voiceNote.stop': { verb: 'voiceNoteStop', pack: (name: string) => ({ name }) },
+  'voiceNote.retry': { verb: 'voiceNoteRetry', pack: (name: string, job: string) => ({ name, job }) },
+  'voiceNote.openMicSettings': { verb: 'voiceNoteOpenMicSettings', pack: (name: string) => ({ name }) },
+  'voiceNote.status': { verb: 'voiceNoteStatus', pack: (name: string) => ({ name }) },
+  'voiceNote.watch': { verb: 'voiceNoteWatch', pack: (watchId: string, name: string, on: boolean) => ({ watchId, name, on }) },
   'messages.history': { verb: 'messagesHistory' },
   'messages.search': { verb: 'messagesSearch' },
   // The chats whoever reads is in, and one's members (`chat:read`): `{ chat }` names it.
@@ -91,6 +137,8 @@ export const HOST_CALLS = {
   'sessions.index': { verb: 'sessionsIndex', pack: (options?: Record<string, unknown>) => ({ ...options }) },
   'sessions.read': { verb: 'sessionsRead' },
   notify: { verb: 'notify' },
+  // #1925 (44) The host's own toast, a short line while the page is on screen and focused.
+  toast: { verb: 'toast', pack: (text: string) => ({ text }) },
   openLink: { verb: 'openLink', pack: (url: string) => ({ url }) },
   linkTo: { verb: 'linkTo', pack: (options: Record<string, unknown> = {}) => options },
   setTabTitle: { verb: 'setTabTitle', pack: (title: string) => ({ title }) },
@@ -162,13 +210,28 @@ export const HOST_EVENTS = {
   onProjectionSource: { event: 'projectionSource', only: 'program', pick: (event: Event<'projectionSource'>) => [event.event] },
   onModalFocus: { event: 'modalFocus', only: 'page', pick: (event: Event<'modalFocus'>) => [event.edge] },
   onContextChanged: { event: 'context', pick: (event: Event<'context'>) => [event.context] },
+  /** `gugu.bindings.onSurface(fn)` (41): what `bindings.surface` answers, each time it changes. */
+  'bindings.onSurface': { event: 'bindingSurface', only: 'page', pick: (event: Event<'bindingSurface'>) => [event.surface] },
+  /** `gugu.bindings.onWorkChanged(name, fn)` rides on it (46, create-gugu.ts): what `bindings.work` answers, each time it changes. */
+  'bindings.onWork': { event: 'bindingWork', only: 'page', pick: (event: Event<'bindingWork'>) => [event.work] },
   /** `gugu.files.onChanged(place, fn)` rides on it; it says files moved, never who moved them. */
   onFilesChanged: { event: 'filesChanged', pick: (event: Event<'filesChanged'>) => [event.watchId, event.change] },
   /** `gugu.files.download(file, { onProgress })` rides on it. */
   onDownloadProgress: { event: 'downloadProgress', only: 'page', pick: (event: Event<'downloadProgress'>) => [event.transferId, event.done, event.total] },
   onAppStateChanged: { event: 'appState', pick: (event: Event<'appState'>) => [event.state] },
   onAgentsChanged: { event: 'agentsChanged', pick: (event: Event<'agentsChanged'>) => [event.agentIds] },
+  /** `gugu.assistant.onChanged(fn)` rides on it (#1925): the answer `status` gives, to a page the person works. */
+  onAssistantChanged: {
+    event: 'assistantChanged', only: 'page',
+    pick: (event: Event<'assistantChanged'>) => [event.state === 'ready'
+      ? { name: event.name, state: event.state, status: event.status, hostPage: event.hostPage }
+      : { name: event.name, state: event.state }],
+  },
   onCloudHeard: { event: 'cloudHeard', only: 'page', pick: (event: Event<'cloudHeard'>) => [event.topic, event.event, event.heard] },
+  onBindingResources: { event: 'bindingResources', only: 'page', pick: (event: Event<'bindingResources'>) => [event.watchId, event.event] },
+  /** `gugu.bindings.onSchedulesChanged(name, fn)` rides on it (#1928): which binding's agent's schedules changed. */
+  onSchedulesChanged: { event: 'schedulesChanged', only: 'page', pick: (event: Event<'schedulesChanged'>) => [event.binding] },
+  onVoiceNote: { event: 'voiceNote', only: 'page', pick: (event: Event<'voiceNote'>) => [event.watchId, event.event] },
   onProgramNotification: {
     event: 'programNotification',
     pick: (event: Event<'programNotification'>) => [{ server: event.server, method: event.method, ...(event.params === undefined ? {} : { params: event.params }) }],

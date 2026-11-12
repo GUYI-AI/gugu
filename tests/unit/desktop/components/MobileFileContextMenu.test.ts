@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({ mobile: true, copy: vi.fn(async (_text: string
 vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => state.mobile }))
 vi.mock('@/platform', () => ({ platform: { kind: 'capacitor', writeClipboardText: state.copy } }))
 vi.mock('@/components/toastContext', () => ({ useToast: () => ({ toast: state.toast }) }))
-vi.mock('react-i18next', async importOriginal => ({ ...await importOriginal<typeof import('react-i18next')>(), useTranslation: () => ({ i18n: { resolvedLanguage: 'en-US' } }) }))
+vi.mock('react-i18next', async importOriginal => ({ ...await importOriginal<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => key, i18n: { resolvedLanguage: 'en-US' } }) }))
 let harness: ReturnType<typeof createReactHarness>
 let root: HTMLElement
 let body: HTMLElement

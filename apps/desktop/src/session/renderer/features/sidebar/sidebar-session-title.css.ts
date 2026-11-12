@@ -27,7 +27,7 @@ export const viewport = style({
   '@media': {
     '(prefers-reduced-motion: no-preference)': {
       selectors: {
-        '[data-session-id]:is(:hover, :focus-visible) &[data-overflow], [data-session-id] button:focus-visible &[data-overflow]': {
+        '[data-session-id]:is(:hover, :focus-visible:not([data-pointer-focus] *)) &[data-overflow], [data-session-id] button:focus-visible:not([data-pointer-focus] *) &[data-overflow]': {
           ...motion, animationName: revealEnd,
         },
       },
@@ -42,10 +42,10 @@ export const content = style({
   '@media': {
     '(prefers-reduced-motion: no-preference)': {
       selectors: {
-        [`[data-session-id]:is(:hover, :focus-visible) ${viewport}[data-overflow] &`]: {
+        [`[data-session-id]:is(:hover, :focus-visible:not([data-pointer-focus] *)) ${viewport}[data-overflow] &`]: {
           ...motion, animationName: revealTitle,
         },
-        [`[data-session-id] button:focus-visible ${viewport}[data-overflow] &`]: {
+        [`[data-session-id] button:focus-visible:not([data-pointer-focus] *) ${viewport}[data-overflow] &`]: {
           ...motion, animationName: revealTitle,
         },
       },

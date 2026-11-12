@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore } from '../../store/chatContext'
+import { BellOff, Pin } from '@/lib/icons'
 import { MenuSwitchItem } from '../ui/Menu'
 import { useToast } from '../toastContext'
 import { messageForUser } from '../../lib/userFacingError'
@@ -25,7 +26,7 @@ export function ChatHeaderSwitches() {
     } finally { setPending(null) }
   }
   return <>
-    <MenuSwitchItem data-testid={AUTOMATION_TEST_IDS.chatHeaderPinSwitch} label={t('header.pinConversation')} checked={pinned} disabled={pending !== null} onCheckedChange={(checked) => void change('pin', checked)} />
-    <MenuSwitchItem data-testid={AUTOMATION_TEST_IDS.chatHeaderMuteSwitch} label={t('header.mute')} checked={muted} disabled={pending !== null} onCheckedChange={(checked) => void change('mute', checked)} />
+    <MenuSwitchItem data-testid={AUTOMATION_TEST_IDS.chatHeaderPinSwitch} icon={<Pin size={16} />} label={t('header.pinConversation')} checked={pinned} disabled={pending !== null} onCheckedChange={(checked) => void change('pin', checked)} />
+    <MenuSwitchItem data-testid={AUTOMATION_TEST_IDS.chatHeaderMuteSwitch} icon={<BellOff size={16} />} label={t('header.mute')} checked={muted} disabled={pending !== null} onCheckedChange={(checked) => void change('mute', checked)} />
   </>
 }

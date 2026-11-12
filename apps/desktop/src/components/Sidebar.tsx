@@ -1,6 +1,6 @@
 import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
-import { useState, useSyncExternalStore } from 'react'
+import { useState } from 'react'
 import type { AgentAttention } from '@gugu/core/shared/agentStatus'
 import { observer } from 'mobx-react-lite'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
@@ -13,26 +13,20 @@ import { extensionSurfaceStore } from '../session/renderer/features/extensions/e
 import { appIsRunning, openApp, openAppInWindow, quitApp, setDock, unpinFromDock } from '../session/renderer/features/extensions/app-dock'
 import { appState } from '../session/renderer/lib/stores/app-state'
 import { returnToScreen } from '../session/renderer/app/screen-layout-actions'
-import { useContactsStore } from '../store/contactsContext'
-import { useDevicesStore } from '../store/devicesContext'
-import { useMyAssistantContact } from '../lib/myAssistant'
-import '../i18n/registerAssistantCatalog'
 import type { SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
-import { AssistantDefaultAvatar } from './assistant/AssistantDefaultAvatar'
-import { Avatar } from './Avatar'
-import { DEFAULT_ASSISTANT_LOOK } from './agentAvatar/look'
 import { RailAppIcon } from './RailAppIcon'
 import { UpdateBanner } from './UpdateBanner'
-import { LoadingIndicator } from '../lib/loading/LoadingIndicator'
 import { AUTOMATION_TEST_IDS, type AutomationTestId } from '../lib/automationDom'
-import { HelpCircle, Library, Plus, Settings } from '@/lib/icons'
+import { HelpCircle, Library, Settings } from '@/lib/icons'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { resumableStep, TOUR_STEPS, useProductTourState, type ProductTourRequest } from '../lib/productTour'
 import { useAuth } from '../store/auth'
 import '../components/productTour/catalog'
-import { readAssistantShellBridge } from '../lib/assistantShellBridge'
+import { ASSISTANT_APP_ID, assistantEntryUnread, openAssistantEntry, useAssistantEntryTarget } from '../lib/assistantEntry'
+import { useChatStore } from '../store/chatContext'
 import { cn } from '@/lib/cn'
 import { DropdownMenu, Menu, MenuItem as DropdownMenuItem, MenuSeparator } from './ui/Menu'
+import { OpenableAppRows } from './chat/OpenAppMenuItems'
 import { useRowContextMenu } from '../hooks/useRowContextMenu'
 import { followLink } from '../lib/guguLinks'
 import { Hint } from './ui/Tooltip'
@@ -113,10 +107,8 @@ interface RailItemProps extends Omit<React.ComponentPropsWithRef<'button'>, 'tit
   onContextMenu?: (event: React.MouseEvent) => void
   /** Its right-click menu is open: it stays lit like under the pointer, so the menu reads as this one's. */
   menuOpen?: boolean
-  /** A different box (the 咕咕 cell at the top is an avatar, 44px, not a 40px icon tile). */
+  /** A different box than the 40px icon tile. */
   className?: string
-  /** What this cell is showing right now, for the top 咕咕 cell (found / none / preparing / …). */
-  entry?: string
 }
 
 function RailItem({
@@ -132,7 +124,6 @@ function RailItem({
   onContextMenu,
   menuOpen = false,
   className,
-  entry,
   ...button
 }: RailItemProps) {
   // @@@4323 说明文字走产品自己的浮层。原生 title 在这条竖排图标栏上最难受:
@@ -148,7 +139,6 @@ function RailItem({
         data-testid={testId}
         data-on={active || undefined}
         data-rail={rail}
-        data-entry={entry}
         data-menu-open={menuOpen || undefined}
         onClick={onClick}
         onContextMenu={onContextMenu}
@@ -195,11 +185,10 @@ function HelpOnRail() {
 // shows the session page there. Desktop only — Apps run in the desktop app.
 
 /** Where the session page is, as the rail lights it: its App page, one App from the dock, the library, or the tasks. */
-function sessionPagePlace(): 'tasks' | 'apps' | 'library' | 'assistant' | { app: string } {
+function sessionPagePlace(): 'tasks' | 'apps' | 'library' | { app: string } {
   const view = appState.navigation.currentViewId
   if (view === 'apps') return 'apps'
   if (view === 'library') return 'library'
-  if (view === 'assistant') return 'assistant'
   if (view === 'app') return { app: appState.navigation.viewParamsStore.app?.appId ?? '' }
   return 'tasks'
 }
@@ -250,13 +239,35 @@ const DockItem = observer(function DockItem({ app, active, onOpen, onOpenInWindo
   )
 })
 
+/**
+ * The assistant App on the rail (owner 11-06: the assistant is an App, its entry is with the Apps; 11-12: 「放在 App 那块，
+ * 哪怕是内置的也要放到下面」): the first App of the group, its own icon, the siblings' look. A click goes where the entry
+ * decision says (lib/assistantEntry.ts); its dot is the assistant chat's unread (#1930, read from the chat itself) or a
+ * voice note being recorded in it. There only while the App is where the assistant lives — installed, on, trusted
+ * (`target.kind === 'app'`); otherwise nothing of it is on the rail and its chat is a chat in the message list.
+ */
+const AssistantAppItem = observer(function AssistantAppItem({ app, chatId, active, onOpen }: { app: RailApp; chatId: string | null; active: boolean; onOpen: () => void }) {
+  const { chats } = useChatStore('chats')
+  const unread = !!chatId && assistantEntryUnread(chats, chatId) === true
+  const { t: tVoice } = useTranslation('voiceNotes')
+  const { recording } = useVoiceNoteHandler()
+  return (
+    <RailItem icon={<RailAppIcon app={app} />} active={active} onClick={onOpen} title={recording ? tVoice('bar.recording') : app.name}
+      testId={AUTOMATION_TEST_IDS.sidebarAssistantNav} rail="assistant" running={appIsRunning(app.extensionId)}
+      badge={recording || unread || extensionSurfaceStore.badgedAnywhere(app.kind) ? 1 : 0} />
+  )
+})
+
 const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }: { sessionsShown: boolean; showSessions: () => void }) {
   const { t } = useTranslation('main')
   const { toast } = useToast()
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const { menuPos, onContextMenu, closeMenu } = useRowContextMenu()
   const place = sessionsShown ? sessionPagePlace() : null
-  const apps = installedExtensionsStore.dockedApps
+  // The assistant App heads the group (AssistantAppItem), so it is not a second icon among the pinned ones.
+  const target = useAssistantEntryTarget()
+  const assistantApp = target.kind === 'app' ? installedExtensionsStore.openableApps.find((app) => app.extensionId === ASSISTANT_APP_ID) ?? null : null
+  const apps = installedExtensionsStore.dockedApps.filter((app) => !(assistantApp && app.extensionId === ASSISTANT_APP_ID))
   // A right click on 「App」 lists every App it can open, pinned or not: a click opens it, as its icon on the rail would.
   const openable = installedExtensionsStore.openableApps
   const open = (appId?: string) => {
@@ -285,24 +296,18 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
       />
       {menuPos && openable.length > 0 && (
         <Menu x={menuPos.x} y={menuPos.y} minWidth={180} onClose={closeMenu} ariaLabel={t('shell.apps')}>
-          {openable.map((app) => (
-            <DropdownMenuItem
-              key={app.extensionId}
-              className="gg-sidebar-launch-item"
-              icon={<RailAppIcon app={app} className="gg-sidebar-launch-icon" />}
-              onClick={() => { open(app.extensionId); closeMenu() }}
-            >
-              {app.name}
-              {appIsRunning(app.extensionId) && <i className="gg-sidebar-launch-running" aria-hidden="true" />}
-            </DropdownMenuItem>
-          ))}
+          <OpenableAppRows apps={openable} onOpen={(appId) => { open(appId); closeMenu() }} />
         </Menu>
       )}
-      {apps.length > 0 && <i className="gg-sidebar-rail-sep" aria-hidden="true" />}
-      {apps.length > 0 && (
+      {(assistantApp || apps.length > 0) && <i className="gg-sidebar-rail-sep" aria-hidden="true" />}
+      {(assistantApp || apps.length > 0) && (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={reorder}>
           <SortableContext items={apps.map((app) => app.extensionId)} strategy={verticalListSortingStrategy}>
             <div className="gg-sidebar-dock" data-testid={AUTOMATION_TEST_IDS.sidebarDock}>
+              {assistantApp && target.kind === 'app' ? (
+                <AssistantAppItem app={assistantApp} chatId={target.chatId} active={typeof place === 'object' && place?.app === ASSISTANT_APP_ID}
+                  onOpen={() => { showSessions(); openAssistantEntry() }} />
+              ) : null}
               {apps.map((app) => (
                 <DockItem
                   key={app.extensionId}
@@ -322,95 +327,6 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
   )
 })
 
-// ─── 咕咕 on the rail ──────────────────────────────────────────────────────────
-// 最左栏顶上那一格就是咕咕(owner 10-16「替换掉这个人物头像,用咕咕」):它的头像,点了进咕咕。下面的格不再重复放一个。
-// 主人自己的头像挪到栏底、设置齿轮上面(Slack / Linear / Discord 同摆法)。
-// 还没有咕咕的新用户这一格照样在:默认咕咕形象淡一点 + 右下一个「+」,悬停说「领取 / 创建你的咕咕」,点了进咕咕那页
-// (没有它时那一页自己画「安家」引导);正在准备是一圈转;读不到它是谁时如实说读不到,❌ 当成没有。
-// 管家说这里没开放云电脑照样在:非会员装在这台电脑上(owner 10-16「不强制用户使用云电脑」),调用处按桌面运行时门控。
-
-type AssistantEntry = 'found' | 'none' | 'preparing' | 'loading' | 'unreadable'
-
-/** 入口那一格此刻是哪种样子:只由「通讯录里认出的它」「正在安家」「读它是谁的结果」决定,读不到不当没有。 */
-function assistantEntryState(opts: {
-  found: boolean
-  preparing: boolean
-  cloudPending: boolean
-  identityLoading: boolean
-  identityError: boolean
-}): AssistantEntry {
-  if (opts.found) return 'found'
-  if (opts.preparing) return 'preparing'
-  if (opts.cloudPending || opts.identityLoading) return 'loading'
-  if (opts.identityError) return 'unreadable'
-  return 'none'
-}
-
-/** 壳发布在 snapshot 上的两项(助理安家那一半):是不是会员(没读到 = null,提示里就先不写会员相关)、是不是正在安家。 */
-function useAssistantShell(): { member: boolean | null; preparing: boolean } {
-  const bridge = readAssistantShellBridge()
-  const snapshot = useSyncExternalStore(
-    (listener) => bridge?.subscribe(listener) ?? (() => undefined),
-    () => bridge?.getSnapshot() ?? null,
-  )
-  const view = snapshot as { member?: boolean | null; preparing?: boolean } | null
-  return { member: typeof view?.member === 'boolean' ? view.member : null, preparing: view?.preparing === true }
-}
-
-function AssistantRailTop({ active, onOpen }: { active: boolean; onOpen: () => void }) {
-  const { t } = useTranslation('assistant')
-  const { contacts } = useContactsStore()
-  const mine = useMyAssistantContact(contacts)
-  const assistant = mine.contact
-  const { cloudComputer } = useDevicesStore()
-  const shell = useAssistantShell()
-  // 正在录语音笔记(录音条在助理 App 里,人可能已经走开了):这一格上挂一个红点,点回去就看得到录音条。
-  const { t: tVoice } = useTranslation('voiceNotes')
-  const { recording } = useVoiceNoteHandler()
-  const entry = assistantEntryState({
-    found: !!assistant,
-    // 正在给它安家:云上在开,或本机正在建(壳那一半发布;读不到这一项 = 没在准备)。
-    preparing: shell.preparing,
-    // 管家那一读还没回来:云上是不是在开还不知道,先转圈,❌ 先说「没有」再闪成「准备中」。
-    cloudPending: !!cloudComputer?.available && !cloudComputer.snapshot && !cloudComputer.loadError,
-    identityLoading: mine.loading || (!!mine.agentId && !assistant),
-    identityError: !!mine.error,
-  })
-  const member = shell.member
-  const label = recording
-    ? tVoice('bar.recording')
-    : entry === 'found'
-      ? assistant!.display_name
-      : entry === 'none'
-        ? member === true ? t('railEntry.claim') : member === false ? t('railEntry.create') : t('railEntry.set')
-        : entry === 'preparing' ? t('railEntry.preparing')
-        : entry === 'loading' ? t('railEntry.loading')
-        : t('railEntry.unreadable')
-  return (
-    <RailItem
-      className="gg-sidebar-item-avatar"
-      icon={(
-        entry === 'preparing' || entry === 'loading' ? <LoadingIndicator size="inline" /> : <>
-          <span className="gg-sidebar-assistant-face" data-dim={entry !== 'found' || undefined} inert={!active}>
-            {assistant
-              ? <Avatar name={assistant.display_name} avatarUrl={assistant.avatar} seed={assistant.id} size={40} isAgent harnessBadge={false} imageMatteColor="var(--nav-rail)" />
-              : <AssistantDefaultAvatar id="assistant-intro" name={t('rail')} look={DEFAULT_ASSISTANT_LOOK} size={40} still />}
-          </span>
-          {entry === 'none' ? <span className="gg-sidebar-assistant-mark" aria-hidden="true"><Plus size={10} /></span> : null}
-          {entry === 'unreadable' ? <span className="gg-sidebar-assistant-mark" data-tone="warn" aria-hidden="true">!</span> : null}
-        </>
-      )}
-      active={active}
-      onClick={onOpen}
-      title={label}
-      testId={AUTOMATION_TEST_IDS.sidebarAssistantNav}
-      rail="assistant"
-      entry={entry}
-      badge={recording ? 1 : 0}
-    />
-  )
-}
-
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 export const Sidebar = observer(function Sidebar({ activeTab, onTabChange, settingsOpen = false, pendingContactsCount = 0, sessionAttention = null }: SidebarProps) {
@@ -421,18 +337,10 @@ export const Sidebar = observer(function Sidebar({ activeTab, onTabChange, setti
   return (
     <aside className="gg-sidebar-rail" aria-label={t('shell.mainNavigation')}>
       <div className="gg-sidebar-primary">
-        {/* 顶格 = 咕咕(见上面 AssistantRailTop);栏底只留设置。 */}
-        <div className="gg-sidebar-profile-slot">
-          <AssistantRailTop active={activeTab === 'tasks' && sessionPagePlace() === 'assistant'} onOpen={() => {
-            onTabChange('tasks')
-            appState.navigation.navigate('assistant')
-          }} />
-        </div>
-
         {/* @@@task-web-host — 任务入口在 web 与桌面两个目标下都渲染:网页版由无头宿主供后端。 */}
         <nav className="gg-sidebar-nav" aria-label={t('shell.features')}>
           {/* gugu-dev#181:「项目」「对话」两格合成一格「消息」—— 项目就是群,没有项目的会话就是和 agent 私聊,
-              两边都在会话页侧栏里(顶上「项目 | 对话」两枚页签)。「咕咕」= 栏顶那一格(它自己的头像)。
+              两边都在会话页侧栏里(顶上「项目 | 对话」两枚页签)。咕咕是 App,在 App 那一组里(AssistantAppItem)。
               对话还没做成会话页的块之前,打开一条对话仍落在聊天页上,那里这一格照样亮着。 */}
           <RailItem
             icon={<ChatIcon />}
@@ -500,3 +408,4 @@ export const Sidebar = observer(function Sidebar({ activeTab, onTabChange, setti
     </aside>
   )
 })
+

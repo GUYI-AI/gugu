@@ -20,6 +20,7 @@ import { deterministicModuleSideEffects } from './scripts/build/deterministic-mo
 import { devNodeExternals, type DependencyManifest } from './scripts/build/dev-node-externals.mjs'
 import { activateDbEnv, serverChannelForDb } from './scripts/build/build-env-preflight.mts'
 import { serverPackageIdentity } from './scripts/build/server-package-identity.mts'
+import { rendererNodeShimGuard } from './scripts/build/renderer-node-shim-guard.mts'
 import { vanillaExtractPlugin } from '@vanilla-extract/vite-plugin'
 import solid from 'vite-plugin-solid'
 import { emdashAliasEntries } from './apps/desktop/electron/sessionpage/emdash-aliases.mjs'
@@ -29,7 +30,6 @@ import {
   webHostEntries,
   desktopPreloadEntry,
   extensionPreloadEntry,
-  vaultLoginPreloadEntry,
 } from './scripts/build/product-build-entries.mts'
 import {
   EMDASH_EXTERNAL,
@@ -378,6 +378,9 @@ export const electronBuildEntries: ElectronOptions[] = [
       resolve: {
         alias: workspaceAliases,
       },
+      // The preload decides which trusted bridges exist (e.g. Settings → 密码 in Beta). Without the tier it reads
+      // `typeof __GUGU_TIER__` at runtime, gets undefined, and silently withholds every Beta-only bridge.
+      define: { __GUGU_TIER__: JSON.stringify(guguTier) },
       plugins: [deterministicModuleSideEffects()],
     },
     onstart(options) {
@@ -396,19 +399,13 @@ export const electronBuildEntries: ElectronOptions[] = [
       resolve: {
         alias: workspaceAliases,
       },
+      define: { __GUGU_TIER__: JSON.stringify(guguTier) },
       plugins: [deterministicModuleSideEffects()],
     },
     onstart(options) {
       if (!viteOwnsElectronProcess) return
       options.reload()
     },
-  },
-  {
-    // Keep the existing main/preload positions stable; the private login bridge is an additional entry.
-    // It gets no application/App bridge and exposes nothing to the page world.
-    entry: vaultLoginPreloadEntry,
-    vite: { plugins: [deterministicModuleSideEffects()] },
-    onstart(options) { if (viteOwnsElectronProcess) options.reload() },
   },
 ]
 
@@ -692,6 +689,8 @@ export default defineConfig(({ command }) => ({
     // 并入本体后它们不再各自 tsdown 出 dist,而是由这一次构建直接编 .css.ts —— 少一套构建。
     vanillaExtractPlugin(),
     rendererChunkCycleGuard(),
+    // #1931 A Node built-in imported by renderer code becomes a shim calling `require`, which the renderer lacks: no build.
+    rendererNodeShimGuard(fileURLToPath(new URL('.', import.meta.url))),
     // ⚠️ 必须在 rendererAsciiOutput() 之前:ASCII 转义要最后收尾(#6484),顺序由 obfuscateOwnChunks7195 测试钉住。
     ...(obfuscateRenderer ? [obfuscateOwnChunks({ version: appVersion })] : []),
     rendererAsciiOutput(),

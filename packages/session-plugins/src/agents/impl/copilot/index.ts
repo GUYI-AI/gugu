@@ -1,3 +1,4 @@
+import { copilotApiKeyConnection, copilotApiKeyConnectionBehavior } from './api-key-connection';
 import { platformModel } from './platform-model';
 import {
   definePlugin,
@@ -19,6 +20,7 @@ import {
   materializeCopilotSessionBundle,
 } from './session-bundle';
 import { copilotMcpAdapter } from './mcp';
+import { COPILOT_LOGIN_METHOD_ID, copilotAuthStatus } from './auth';
 
 export const plugin = definePlugin(
   {
@@ -32,10 +34,28 @@ export const plugin = definePlugin(
     sessionBundle: copilotSessionBundleDescriptor,
     // 「订阅」页(product spec):套餐与本月额度经 `gh api /copilot_internal/user` 读(./subscription.ts)。
     subscription: { kind: 'supported', usageRefresh: 'on-open' },
+    auth: {
+      kind: 'supported',
+      methods: [
+        {
+          kind: 'cli-login',
+          id: COPILOT_LOGIN_METHOD_ID,
+          name: 'GitHub account',
+          // #2507 本机:`copilot login` 打印 github.com 的授权链接、浏览器回跳本机端口,不用回填。
+          // 别的机器(浏览器不在那台上、回跳不回去):`--device-code` 打印 github.com/login/device + 一次性码,
+          // 轮询到授权完成(1.0.109 隔离环境实跑;输出里夹着把码写进剪贴板的 OSC 52 转义,读输出那层会剥掉)。
+          args: ['login'],
+          headlessArgs: ['login', '--device-code'],
+          description: 'Runs `copilot login` with your GitHub account.',
+        },
+      ],
+    },
     /**
      * 厂商账号是不是硬门槛 —— 判据与陷阱见 `capabilities/vendor-account.ts` 抬头。
      * 这一格是**实测**出来的，❌ 不收「文档写着」。
      */
+    // 「API Key 连接」(#2507):一把 key 怎么进这一家的进程,见 ./api-key-connection.ts。
+    apiKeyConnection: copilotApiKeyConnection,
     vendorAccount: {
       kind: 'not-required',
       evidence:
@@ -176,6 +196,8 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
+  apiKeyConnection: copilotApiKeyConnectionBehavior,
+  auth: { checkStatus: copilotAuthStatus },
   sessionBundle: { materialize: materializeCopilotSessionBundle, platformModel },
   subscription: copilotSubscription,
   // `copilot --acp` 就是执行工具的那个进程(没有独立 adapter),所以物化器为 ACP 腿产出的 argv

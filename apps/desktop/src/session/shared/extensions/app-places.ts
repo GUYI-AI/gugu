@@ -66,21 +66,9 @@ export interface PlaceChange {
   on: boolean;
 }
 
-/**
- * An App whose tools reach agents: what 「给哪些 agent」 is about. One that gives none is never asked (125 10-05) —
- * Computer Use among them (#7317): its program only answers its own page, and it brings no skills.
- */
-export const givesAgentTools = (manifest: Pick<ExtensionManifest, 'permissions'> & { contributes?: Pick<ExtensionManifest['contributes'], 'mcpServers' | 'skills'> }): boolean =>
-  (manifest.permissions?.capabilities ?? []).includes('agents:tools') && !isComputerUseView(manifest);
-
-/**
- * #7317 Only the switch of gugu's computer control on a computer: its programs all `computer-use`, no skills. It runs no
- * program of its own; the one reading of that, for `givesAgentTools` and the install sheet's sentence.
- */
-export const isComputerUseView = (manifest: { contributes?: Pick<ExtensionManifest['contributes'], 'mcpServers' | 'skills'> }): boolean => {
-  const servers = manifest.contributes?.mcpServers ?? [];
-  return servers.length > 0 && servers.every((server) => 'host' in server && server.host === 'computer-use') && !manifest.contributes?.skills;
-};
+/** An App whose tools reach agents: what 「给哪些 agent」 is about. One that gives none is never asked (125 10-05). */
+export const givesAgentTools = (manifest: Pick<ExtensionManifest, 'permissions'>): boolean =>
+  (manifest.permissions?.capabilities ?? []).includes('agents:tools');
 
 /**
  * Whether this computer's places give an App to every agent here: `here:all` among them, or none recorded at all (an App

@@ -136,16 +136,15 @@ export function useConversationScrollMemory({
     restoreDeadlineRef.current = null
     requestedAnchorRef.current = null
     if (revealRef.current) {
-      revealRef.current.reject(new Error('The conversation changed before the message was shown'))
+      // A cancellation, not a miss: the reason travels with it so the asker does not read it as 「not found」.
+      revealRef.current.reject(new DOMException('The conversation changed before the message was shown', 'AbortError'))
       revealRef.current = null
     }
   }
 
   const capturePosition = useCallback((owner: NonNullable<typeof scrollerOwnerRef.current>) => {
-    if (!owner.captureEnabled) {
-      positions.delete(owner.key)
-      return
-    }
+    // Hidden (a retained tab behind another): nothing to read, and hiding is not leaving — what was saved stays.
+    if (!owner.captureEnabled) return
     if (owner.element.scrollHeight <= 0 || owner.element.clientHeight <= 0) return
     if (isConversationViewportAtBottom(owner.element, AT_BOTTOM_THRESHOLD)) {
       positions.set(owner.key, { atBottom: true })

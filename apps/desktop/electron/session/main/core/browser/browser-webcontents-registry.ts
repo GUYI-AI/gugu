@@ -31,7 +31,6 @@ import { COMMANDS, type CommandId } from '@shared/commands';
 import { getElectronTabNavigationDirection, resolveDefaultHotkey,  } from '@shared/shortcuts';
 import { isGoogleAuthUrl, userAgentForBrowserUrl } from './browser-user-agent';
 import { isSupportedBrowserNavigationUrl } from './browser-navigation';
-import { assertCredentialAgentContents, assertCredentialNativeAdoption } from './credential-isolation-registry';
 
 type RegisteredBrowserSession = {
   browserId: string;
@@ -74,8 +73,6 @@ export class BrowserWebContentsRegistry {
   private activeBrowserId: string | null = null;
   /** #7191 每个页签最近一次被看着的时刻:会话有好几个页签时,agent 拿人最近看的那个。 */
   private readonly lastActiveAt = new Map<string, number>();
-  /** 返回 true = 这一下是 agent 自己合成的点击。 */
-  private mouseDownObserver: ((browserId: string, webContents: WebContents) => boolean) | null = null;
   private browserShortcuts = getBrowserShortcuts();
 
   registerSession(input: RegisteredBrowserSession): void {
@@ -127,8 +124,6 @@ export class BrowserWebContentsRegistry {
     return registered?.partition === partition && registered.sessionId === sessionId;
   }
 
-  /** Host-only lifetime identity. Closing/re-registering the same tab ID cannot revive an old login. */
-  registrationIdentity(browserId: string): object | undefined { return this.sessionsByBrowserId.get(browserId); }
 
   /**
    * #7274 页签的网页(主进程建的 WebContentsView,见 browser-page-views.ts)建好了:收紧它、认作这个页签的网页。
@@ -139,7 +134,7 @@ export class BrowserWebContentsRegistry {
     webContents: WebContents,
     placement: { window: () => BrowserWindow | null; origin: () => { x: number; y: number } }
   ): void {
-    assertCredentialNativeAdoption(webContents);
+    if (webContents.isDestroyed()) throw new Error('the browser tab was closed');
     const webContentsId = webContents.id;
     this.hardenBrowserWebContents(webContents, placement);
 
@@ -148,8 +143,6 @@ export class BrowserWebContentsRegistry {
       if (mouse.type !== 'mouseDown') return;
       const boundBrowserId = this.browserIdByWebContentsId.get(webContentsId);
       if (!boundBrowserId) return;
-      // agent 自己合成的点击(#7274)不算人点进了这一页:页签焦点不跟过去,❌ 把人正看着的页签换掉。
-      if (this.mouseDownObserver?.(boundBrowserId, webContents) === true) return;
       events.emit(browserFocusedChannel, { browserId: boundBrowserId });
     });
 
@@ -180,7 +173,7 @@ export class BrowserWebContentsRegistry {
       if (registered.sessionId !== sessionId) continue;
       const webContents = this.webContentsByBrowserId.get(browserId);
       if (!webContents || webContents.isDestroyed()) continue;
-      try { assertCredentialAgentContents(webContents); } catch { continue; }
+      if (webContents.isDestroyed()) continue;
       found.push({ browserId, webContents, at: this.lastActiveAt.get(browserId) ?? 0 });
     }
     return found.sort((a, b) => b.at - a.at).map(({ browserId, webContents }) => ({ browserId, webContents }));
@@ -191,11 +184,6 @@ export class BrowserWebContentsRegistry {
     return [...this.sessionsByBrowserId.values()]
       .filter((entry) => entry.sessionId === sessionId)
       .sort((a, b) => (this.lastActiveAt.get(b.browserId) ?? 0) - (this.lastActiveAt.get(a.browserId) ?? 0))[0]?.browserId;
-  }
-
-  /** #7191 某个页签里按下了鼠标(agent 据此知道人接管了;它认出是自己合成的点击就回 true)。只有一个观察者:agent-browser。 */
-  setMouseDownObserver(observer: ((browserId: string, webContents: WebContents) => boolean) | null): void {
-    this.mouseDownObserver = observer;
   }
 
   /** #6264 这个 webContents 是哪个浏览器页签(远端页签的 localhost 请求据此认出是哪台机器)。 */
@@ -216,7 +204,7 @@ export class BrowserWebContentsRegistry {
   openDevTools(browserId: string): boolean {
     const webContents = this.webContentsByBrowserId.get(browserId);
     if (!webContents || webContents.isDestroyed()) return false;
-    try { assertCredentialAgentContents(webContents); } catch { return false; }
+    if (webContents.isDestroyed()) return false;
     webContents.openDevTools({ mode: 'detach' });
     return true;
   }
@@ -224,9 +212,9 @@ export class BrowserWebContentsRegistry {
   async captureScreenshotToClipboard(browserId: string): Promise<boolean> {
     const webContents = this.webContentsByBrowserId.get(browserId);
     if (!webContents || webContents.isDestroyed()) throw new Error('Browser is no longer available');
-    assertCredentialAgentContents(webContents);
+    if (webContents.isDestroyed()) throw new Error('the browser tab was closed');
     const image = await webContents.capturePage();
-    assertCredentialAgentContents(webContents);
+    if (webContents.isDestroyed()) throw new Error('the browser tab was closed');
     if (image.isEmpty()) throw new Error('Browser screenshot is empty');
     // @@@electron44-clipboard (#4394) — electron 44 用 W3C ClipboardItem 取代了 clipboard.writeImage。
     // 必须 await:旧的同步 writeImage 一返回就保证系统剪贴板已写好,而新 API 的 promise 没落地前
@@ -280,7 +268,7 @@ export class BrowserWebContentsRegistry {
     placement: { window: () => BrowserWindow | null; origin: () => { x: number; y: number } }
   ): void {
     webContents.setWindowOpenHandler((details) => {
-      try { assertCredentialAgentContents(webContents); } catch { return { action: 'deny' }; }
+      if (webContents.isDestroyed()) { return { action: 'deny' }; }
       if (!isSupportedBrowserNavigationUrl(details.url)) {
         return { action: 'deny' };
       }
@@ -297,7 +285,7 @@ export class BrowserWebContentsRegistry {
     });
 
     this.bindAppShortcuts(webContents, (commandId) => {
-      try { assertCredentialAgentContents(webContents); } catch { return false; }
+      if (webContents.isDestroyed()) return false;
       if (commandId !== 'session.browserCopyUrl') {
         const browserId = this.browserIdByWebContentsId.get(webContents.id);
         if (!browserId) return false;
@@ -309,7 +297,7 @@ export class BrowserWebContentsRegistry {
       copyTextThenNotify(normalized.url, () => events.emit(browserLinkCopiedChannel, { kind: 'url', url: normalized.url }));
       return true;
     }, (direction) => {
-      try { assertCredentialAgentContents(webContents); } catch { return false; }
+      if (webContents.isDestroyed()) return false;
       const browserId = this.browserIdByWebContentsId.get(webContents.id);
       if (!browserId) return false;
       events.emit(tabNavigationShortcutChannel, { source: { kind: 'browser', browserId }, direction });
@@ -318,7 +306,7 @@ export class BrowserWebContentsRegistry {
 
     webContents.on('context-menu', (event, params) => {
       event.preventDefault();
-      try { assertCredentialAgentContents(webContents); } catch { return; }
+      if (webContents.isDestroyed()) return;
       const window = placement.window();
       const origin = placement.origin();
       const position = { window: window ?? undefined, x: origin.x + params.x, y: origin.y + params.y };

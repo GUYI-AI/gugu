@@ -19,6 +19,14 @@ export function questionAnswerText(answers: readonly QuestionAnswer[]): string {
   return answers.map((answer) => [...(answer.selected ?? []), ...(answer.other?.trim() ? [answer.other.trim()] : [])].join(', ')).join(' / ')
 }
 
+/** 读取保存的答案时只校验数据形状，不替代写入端针对具体题目的校验。 */
+export function parseQuestionAnswers(value: unknown): readonly QuestionAnswer[] | null {
+  if (!Array.isArray(value) || value.some((answer) => !answer || typeof answer !== 'object'
+    || !Array.isArray(answer.selected) || answer.selected.some((selected: unknown) => typeof selected !== 'string')
+    || (answer.other !== undefined && typeof answer.other !== 'string'))) return null
+  return value as QuestionAnswer[]
+}
+
 const ANSWER_DELIVERY = /^<gugu_question_answer>\n([^\n]*)\n<\/gugu_question_answer>/
 
 /**
@@ -30,7 +38,9 @@ export function readQuestionAnswerDelivery(text: string): { answer: string | nul
   if (!block) return undefined
   let data: unknown
   try { data = JSON.parse(block[1]!) } catch { return undefined }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return undefined
   const fact = data as { state?: unknown; answers?: unknown }
   if (fact.state === 'withdrawn') return { answer: null }
-  return fact.state === 'answered' && Array.isArray(fact.answers) ? { answer: questionAnswerText(fact.answers as QuestionAnswer[]) } : undefined
+  const answers = parseQuestionAnswers(fact.answers)
+  return fact.state === 'answered' && answers ? { answer: questionAnswerText(answers) } : undefined
 }

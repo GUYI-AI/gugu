@@ -3,24 +3,26 @@
 //
 // 线 = 设备 RPC(远程 SSH 的机器走 `gugu-server link`,远程隧道的机器走咕咕云频道;两条线同一张处理表,
 // 见 server/device-link-host.ts)。三个动词 + 一种推送:
-//   taskhost.open  {client, desktop?}           开一条「窗口」(FrameSessionHost 上的一个 sender);desktop = 桌面报的版本
+//   taskhost.open  {client, protocol}           开一条「窗口」(FrameSessionHost 上的一个 sender)
 //   taskhost.frame {client, seq, frames[]}      桌面 → 这台机器的帧(按 seq 排好再交出去)
 //   taskhost.close {client}
 //   推送 {type: 'taskhost.frame', client, seq, frames[]}   这台机器 → 那台桌面
 // 帧就是会话页宿主协议(host-ws-protocol)的帧,装进 JSON 信封(frameToCarrier);超过 PIECE_CHARS 的帧分片。
 //
 // 成本:每条连接双向各一拍心跳(20s);一条帧的往返 = 一次设备 RPC(同一微任务里的帧合成一条)。
+import { gzipSync } from 'node:zlib';
 import {
   createPieceJoiner,
   createSeqOrderer,
   SESSION_HOST_FRAME_EVENT,
+  SESSION_HOST_PACK,
   SESSION_HOST_RPC,
   toPieces,
   type SessionHostFrameBatch,
   type SessionHostPiece,
 } from '@shared/lib/ipc/session-host-device-frames';
 import type { DeviceRpcAskerContext, DeviceRpcHandlers, PublishDeviceRpcEvent } from '@gugu/core/cloud/deviceRpcResponder';
-import { parseDesktopHello, type DesktopHello } from '@gugu/core/cloud/serverDesktopVersions';
+import { parseDesktopHello } from '@gugu/core/cloud/serverDesktopVersions';
 import { MIN_CLIENT_PROTOCOL, REMOTE_PROTOCOL_VERSION } from '@gugu/core/cloud/serverMachineHealth';
 import { SESSIONPAGE_PLATFORM_CATALOG_CHANNEL, SESSIONPAGE_PLATFORM_RETRY_CHANNEL } from '@shared/core/agents/platform-model';
 import { SESSIONPAGE_SESSION_RELOAD_CHANNEL } from '@shared/core/agents/session-reload';
@@ -63,14 +65,17 @@ export const remoteInvokePolicy: FrameInvokePolicy = (channel) => {
   return !REMOTE_DENIED_EXTENSIONS.test(channel);
 };
 
-/** Read recovery entries, or explicitly clear them, from an owner-bound remote App page.
- * This is not a grant to the whole App dispatcher. The handler additionally checks the
- * expected owner against its current authenticated account before reading or writing. */
-export function remoteInvokePolicyForCaller(callerId: string | undefined, desktop: DesktopHello | null = null): FrameInvokePolicy {
+/** Owner-bound grants for a remote caller (callerId = the device RPC's authenticated account):
+ * - assistantHome.*: preparing the account's assistant home on this machine. Admission is the account, not the
+ *   kind of client: a client's self-description (the removed desktop hello) attests nothing, and which client
+ *   offers the action is that client's UI. The handler re-checks the owner against its signed-in account.
+ * - app.assistantAppCall: read or explicitly clear recovery entries from an owner-bound remote App page.
+ *   This is not a grant to the whole App dispatcher. */
+export function remoteInvokePolicyForCaller(callerId: string | undefined): FrameInvokePolicy {
   return (channel, args) => {
     if (channel.startsWith('assistantHome.')) {
       const input = args?.[0] as { ownerUserId?: unknown } | null
-      return !!desktop && !!callerId && args?.length === 1 && input?.ownerUserId === callerId
+      return !!callerId && args?.length === 1 && input?.ownerUserId === callerId
     }
     if (channel !== 'app.assistantAppCall') return remoteInvokePolicy(channel, args);
     if (!callerId || args?.length !== 3 || args[0] !== 'callProgram' || args[2] !== callerId) return false;
@@ -83,6 +88,17 @@ export function remoteInvokePolicyForCaller(callerId: string | undefined, deskto
       || Array.isArray(operation.arguments) || Object.keys(operation.arguments).length !== 0)) return false;
     return operation.name === 'assistant_work_list' || operation.name === 'assistant_work_clear';
   };
+}
+
+/**
+ * What is packed for a reader that asked (`taskhost.open {pack}`): an answer. A page of history is one, and the bulk
+ * of what a device link carries. Pushed events go as they are: they are small, and the link reads a terminal's output
+ * off the frame itself to tell a machine in use from one merely connected (server/device-link-host.ts `isTunnelUse`).
+ * Measured on a real 3055-turn conversation read back to its first turn: 38 folded pages, 18.7MB as written on the
+ * line, 6.1MB packed; packing all of them took 0.26 s on this side and unpacking 0.03 s on the other.
+ */
+export function packAnswer(frame: string): string | null {
+  return frame.startsWith('{"t":"result"') ? gzipSync(frame).toString('base64') : null;
 }
 
 let installed: FrameSessionHost | null = null;
@@ -151,9 +167,9 @@ export function createSessionHostDeviceRpcHandlers(options: { host?: () => Frame
     client: string,
     publish: PublishDeviceRpcEvent,
     frameHost: FrameSessionHost,
-    desktop: DesktopHello | null,
     asker: DeviceRpcAskerContext | undefined,
     callerId: string | undefined,
+    packed: boolean,
   ): void => {
     clients.get(client)?.close('replaced');
     let frameCb: ((frame: string | Uint8Array) => void) | null = null;
@@ -166,7 +182,7 @@ export function createSessionHostDeviceRpcHandlers(options: { host?: () => Frame
       flushScheduled = false;
       const frames = outbox;
       outbox = [];
-      for (const pieces of toPieces(frames)) {
+      for (const pieces of toPieces(frames, packed ? packAnswer : undefined)) {
         const batch: SessionHostFrameBatch = { client, seq: outSeq++, frames: pieces };
         void Promise.resolve(publish({ type: SESSION_HOST_FRAME_EVENT, ...batch })).catch((error: unknown) =>
           log.warn('[session-host-device] push failed', { client, error: String(error) })
@@ -208,10 +224,10 @@ export function createSessionHostDeviceRpcHandlers(options: { host?: () => Frame
     // 开与关成对落盘(关那句在 shut 里),两头的日志才对得上是哪一条窗口(桌面那头按同一个 client 记,remoteSessionHost)。
     // 用 warn 是因为会话进程默认只落 warn 及以上(@gugu/session-shared/logger 的 resolveLogLevel):frame-host 那句
     // info 的「client connected」在用户机器上落不了盘,2026-10-27 d22 上就只剩关、没有开。一条窗口一行,❌ 按帧记。
-    log.warn('[session-host-device] client opened', { client, desktop: desktop?.id ?? null });
+    log.warn('[session-host-device] client opened', { client });
     frameHost.attach(socket, {
       remote: `device:${client.slice(0, 8)}`,
-      policy: remoteInvokePolicyForCaller(callerId, desktop),
+      policy: remoteInvokePolicyForCaller(callerId),
       outgoing: createRemotePtyPacer({ screenSnapshot: (id) => ptySessionRegistry.screenSnapshot(id) }),
     });
   };
@@ -226,10 +242,9 @@ export function createSessionHostDeviceRpcHandlers(options: { host?: () => Frame
       if (!client) return { error: { code: 'invalid_payload', message: 'client 是必填的' } };
       const frameHost = host();
       if (!frameHost) return { error: { code: 'unavailable', message: 'session host is not running on this machine' } };
-      const desktop = parseDesktopHello((payload as { desktop?: unknown }).desktop);
       // Released peers may still carry protocol inside desktop; do not retain or select its version.
       const said = (payload as { protocol?: unknown }).protocol;
-      const protocol = typeof said === 'number' ? said : desktop?.protocol;
+      const protocol = typeof said === 'number' ? said : parseDesktopHello((payload as { desktop?: unknown }).desktop)?.protocol;
       if (protocol != null && protocol < MIN_CLIENT_PROTOCOL) {
         return {
           error: {
@@ -238,7 +253,9 @@ export function createSessionHostDeviceRpcHandlers(options: { host?: () => Frame
           },
         };
       }
-      openClient(client, ctx.publishEvent, frameHost, desktop, ctx.asker, ctx.request?.user_id);
+      // The reader says what it can read packed; one that says nothing is sent every frame as it is.
+      const pack = (payload as { pack?: unknown }).pack;
+      openClient(client, ctx.publishEvent, frameHost, ctx.asker, ctx.request?.user_id, Array.isArray(pack) && pack.includes(SESSION_HOST_PACK));
       return { result: { opened: true, protocol: REMOTE_PROTOCOL_VERSION } };
     },
     [SESSION_HOST_RPC.frame]: (payload) => {
@@ -256,12 +273,12 @@ export function createSessionHostDeviceRpcHandlers(options: { host?: () => Frame
     [SESSION_HOST_RPC.call]: async (payload, ctx) => {
       const frameHost = host();
       if (!frameHost) return { error: { code: 'unavailable', message: 'session host is not running on this machine' } };
-      const body = (payload ?? {}) as { channel?: unknown; args?: unknown; protocol?: unknown; desktop?: unknown };
+      const body = (payload ?? {}) as { channel?: unknown; args?: unknown };
       if (typeof body.channel !== 'string' || !Array.isArray(body.args)) {
         return { error: { code: 'invalid_payload', message: 'channel 与 args 是必填的' } };
       }
       try {
-        const value = (await frameHost.invokeOnce(body.channel, body.args, remoteInvokePolicyForCaller(ctx.request?.user_id, parseDesktopHello(body.desktop)))) ?? null;
+        const value = (await frameHost.invokeOnce(body.channel, body.args, remoteInvokePolicyForCaller(ctx.request?.user_id))) ?? null;
         return { result: { value, protocol: REMOTE_PROTOCOL_VERSION } };
       } catch (error) {
         const failed = serializeHostWsError(error);

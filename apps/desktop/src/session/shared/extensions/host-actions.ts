@@ -5,6 +5,7 @@ import type { GroupAvatarMember } from '@gugu/core/shared/types/chat';
 import type { ExtensionManifest } from './manifest';
 import type { MarketCodeSource } from './market';
 import type { AppModalPage } from './app-modal';
+import type { AssistantScreen, AssistantSetupAdvance } from './assistant-binding';
 
 /**
  * What the bridge asks the renderer to do on an extension's behalf.
@@ -51,6 +52,17 @@ export type ExtensionHostAction =
   /** `gugu.dispatch` with `draft`: into the composer of the chat (the window brings it up), or of that agent's session. */
   | { kind: 'compose'; detail: AppComposeDetail }
   | { kind: 'compose'; sessionId: string; text: string }
+  /**
+   * #1925 `gugu.bindings.setPanel`: the page's own panel beside its bound conversation, collapsed or expanded. #1927 (48)
+   * `uncover`: any host page over the App's page there is closed too — the host is about to tell that page an intent.
+   */
+  | { kind: 'conversationPanel'; collapsed: boolean; uncover?: true }
+  /**
+   * #1925 (46) `gugu.bindings.openWork` / `closeWork`: that task's own conversation drawn in the App's panel over its page,
+   * or taken away. `ownerId` is the account main checked, which the window must still show; the ids are host data.
+   */
+  | { kind: 'openWork'; ownerId: string; workId: string; sessionId: string }
+  | { kind: 'closeWork' }
   /** `gugu.showMessage` / `files.openWith`: the window that shows chats does it, bringing the chat up. */
   | { kind: 'showMessage'; detail: AppShowMessageDetail }
   | { kind: 'openWith'; detail: AppOpenWithDetail }
@@ -67,7 +79,26 @@ export type ExtensionHostAction =
   /** An install could not give the chat it was asked for (main's own, no page asks it): the window says so, with the App's page. */
   | { kind: 'notGivenAt'; extensionId: string; chat: { id: string; name: string } }
   /** A banner's click naming a chat's file: opened in its chat, as a link to it is. */
-  | { kind: 'openChatFile'; chatId: string; itemId: string; onlyIfOpen?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown> };
+  | { kind: 'openChatFile'; chatId: string; itemId: string; onlyIfOpen?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown> }
+  /**
+   * #1925 One of the host's own screens for the person's assistant (`gugu.assistant.open`): its own pages over the App's
+   * panel (`ASSISTANT_LAYER_SCREENS`, app-host-layer.tsx), the rest by their existing entry (lib/assistantAppHost.ts); and
+   * the setup steps an App draws moved on (`advanceSetup`). `ownerId` is main's: the account it checked, which the window
+   * must still show.
+   */
+  | { kind: 'openAssistantScreen'; screen: AssistantScreen; ownerId: string }
+  | { kind: 'advanceAssistantSetup'; next: AssistantSetupAdvance; ownerId: string }
+  /** #1925 (44) Renamed through the shell's own `renameAssistant`, the built-in field's rule checked again (`renameCheck`). */
+  | { kind: 'renameAssistant'; text: string; ownerId: string }
+  /** #1925 (44) `gugu.toast(text)`: the host's own toast, the text alone (main checked the page, its focus and the rate). */
+  | { kind: 'toast'; text: string }
+  /**
+   * #1925 (44) The assistant's moving figure over this App's page at `figure` (null: taken away): the bound assistant's,
+   * or — `draft` — the setup guide's bird while the account has none. `ownerId` is main's checked account.
+   */
+  | { kind: 'assistantFigure'; figure: import('./assistant-binding').AssistantFigure | null; ownerId: string | null; who: 'assistant' | 'draft' }
+  /** #1925 (44) The connect dialog of one service of the connect step's list, for the assistant's home (`useOpenConnector`). */
+  | { kind: 'openAssistantConnector'; id: string; ownerId: string };
 
 export interface ExtensionHostActionCommand {
   /** The page that asked; null for a link's or a banner's click, which no page made. */
@@ -98,6 +129,29 @@ export const EXTENSION_LISTED_SESSION_METHOD = 'extensions.listedSession';
  * `INSTALL_CONSENT_HUMAN_WINDOW_MS`, as an install's consent does (ipc-bridge's clock is longer).
  */
 export const EXTENSION_PICK_DISPATCH_TARGET_METHOD = 'extensions.pickDispatchTarget';
+
+/**
+ * #50 (resources-management.ts) What an App's managing calls ask of the window that draws its page: the question the
+ * assistant's page asks before a delete (with its words), its voice-note pipeline's 开始转写, and its 导出 Markdown.
+ * The window checks the account and the assistant itself; the page sees only the outcome.
+ */
+export const EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD = 'extensions.confirmResourceRemoval';
+export const EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD = 'extensions.transcribeVoiceNote';
+export const EXTENSION_EXPORT_VOICE_NOTE_METHOD = 'extensions.exportVoiceNote';
+/** `folder`: its last name; `voice-note`: its title (null: untitled). For a voice note, its id, to stop this window's job first. */
+export type ResourceRemovalAsk =
+  | { kind: 'folder'; name: string }
+  | { kind: 'voice-note'; title: string | null; ownerId: string; assistantId: string; noteId: string };
+export type VoiceNoteTranscribeAsk = { ownerId: string; assistantId: string; noteId: string };
+export type VoiceNoteTranscribeOutcome = 'started' | 'busy' | 'not-ready' | 'denied';
+export type VoiceNoteExportAsk = { ownerId: string; title: string | null; summary: string | null; transcript: string | null };
+export type VoiceNoteExportOutcome = 'saved' | 'cancelled' | 'denied' | 'failed';
+/**
+ * #1927 (47) Main asks the window that holds the voice-note recorder (`gugu.voiceNote`): `VoiceNoteWindowRequest` →
+ * `VoiceNoteWindowAnswer` (voice-note-session.ts). Main has checked the App's grant and found the assistant; the window
+ * checks it is that account's and that assistant's recorder before it does anything.
+ */
+export const EXTENSION_VOICE_NOTE_METHOD = 'extensions.voiceNote';
 
 /**
  * 留给**人**读完权限再决定的时间,谁发起的安装都是这一个。

@@ -59,7 +59,7 @@ export interface OutboxWiring {
   outbox: ChatOutbox
   stageAttachment(message: MessageItem, dependsOn?: string): Promise<void>
   commitAttachment(message: MessageItem, prepared: PreparedChatAttachment, commit: Omit<CommitArgs, 'staging_key'>, timing?: AttachmentSendTiming, dependsOn?: string): Promise<void>
-  forward(source: MessageItem | Extract<AppForwardFilesDetail, { files: unknown }>['files'][number], targetChatId: string, senderUserId: string): Promise<void>
+  forward(source: MessageItem | Extract<AppForwardFilesDetail, { files: unknown }>['files'][number], targetChatId: string, senderUserId: string, opts?: { toUserIds?: string[] }): Promise<void>
   createTopic(input: CreateTopicInput, senderUserId: string): Promise<CreatedTopic | null>
   dispose(): void
   /** sendMessage 入队入口:建持久化记录并入队(乐观行由 chat.tsx 先行插入,二者同 id)。 */
@@ -92,9 +92,9 @@ export function bindOutboxActions(
   ref: { current: OutboxWiring | null }, senderUserId: string | null,
 ): Pick<ChatContextValue, 'forwardMessage' | 'createTopic' | 'retrySend' | 'discardSend'> {
   return {
-    forwardMessage: async (source, targetChatId) => {
+    forwardMessage: async (source, targetChatId, opts) => {
       if (!ref.current || !senderUserId) throw new Error('Not authenticated')
-      await ref.current.forward(source, targetChatId, senderUserId)
+      await ref.current.forward(source, targetChatId, senderUserId, opts)
     },
     createTopic: async (input) => {
       if (!ref.current || !senderUserId) throw new Error('Not authenticated')
@@ -111,10 +111,10 @@ export function forwardingDeviceFiles<Actions extends Pick<ChatContextValue, 'fo
 ): Actions {
   return {
     ...actions,
-    forwardMessage: async (source, targetChatId) => {
+    forwardMessage: async (source, targetChatId, opts) => {
       const { deviceFileCopy } = await import('../lib/forwardDeviceFile')
       const copy = await deviceFileCopy(source)
-      if (!copy) return actions.forwardMessage(source, targetChatId)
+      if (!copy) return actions.forwardMessage(source, targetChatId, opts)
       // A message holds one file; its caption goes with the copy, as it does with a forward by reference.
       const caption = 'itemId' in source ? undefined : parseAttachmentContent(source.content)?.caption
       await sendAttachments(targetChatId, [copy], caption ? { caption } : undefined)
@@ -403,19 +403,19 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
         if (row && active) await outbox.confirm(message.id, row)
       }
     },
-    async forward(source, targetChatId, senderUserId) {
+    async forward(source, targetChatId, senderUserId, opts) {
       const { stageAttachment, commitAttachment } = wiring
       const file = 'itemId' in source
       const message: MessageItem = { ...(file ? { content: source.name, content_type: 'system' as const } : source),
         id: crypto.randomUUID(), chat_id: targetChatId, sender_user_id: senderUserId,
-        to_user_ids: null, is_whisper: false, thread_root_id: null, reply_to_message_id: null, is_thread_root: false,
+        to_user_ids: opts?.toUserIds?.length ? opts.toUserIds : null, is_whisper: false, thread_root_id: null, reply_to_message_id: null, is_thread_root: false,
         seq: -1, created_at: new Date().toISOString(), reactions: [], is_mine: true, local_send_state: 'sending',
         retracted_at: null, delivered: false, delivery_status: null }
       const record = outboxRecordForMessage(message, { kind: 'forward', source: file
         ? { kind: 'file', id: source.itemId, version: source.document ? null : source.version }
         : { kind: 'message', id: source.id } })
       const target = io.chats().find(chat => chat.id === targetChatId)
-      record.payload.resolveDmPeer = target?.kind === 'dm' || target?.kind === 'ai'
+      record.payload.resolveDmPeer = !record.payload.toUserIds && (target?.kind === 'dm' || target?.kind === 'ai')
       await outbox.enqueue(record)
       io.appendMessage(outboxRecordToMessage(record, io.user()!))
       const card = !file && source.content_type === 'card' ? parseComposerCard(source.content) : null

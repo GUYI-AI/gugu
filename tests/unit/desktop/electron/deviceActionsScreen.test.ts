@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { FamilyDeps } from '../../../../apps/desktop/electron/device-actions/catalog'
 import type { DeviceActionGrants, DeviceActionGrantsStore } from '../../../../apps/desktop/electron/device-actions/grants-store'
-import { createComputerFamily } from '../../../../apps/desktop/electron/device-actions/families/computer'
 import { createScreenFamily } from '../../../../apps/desktop/electron/device-actions/families/screen'
 import { NativeCallError } from '../../../../apps/desktop/electron/device-actions/native/mac-helper-client'
 import { createDeviceActionsProvider } from '../../../../apps/desktop/electron/device-actions/provider'
@@ -14,39 +13,32 @@ function setup(platform: NodeJS.Platform = 'darwin') {
     record: vi.fn(), recent: () => [], onChange: () => () => undefined,
   }
   const captureScreen = vi.fn(async (_options: { maxEdge: number }) => ({ mimeType: 'image/jpeg', data: 'native-image', width: 1200, height: 800, displays: 2 }))
-  const callTool = vi.fn(async () => ({ content: [], structuredContent: { apps: [] } }))
-  const stop = vi.fn()
-  const cua = vi.fn(() => ({ available: () => ({ ok: true as const }), callTool, stop, dispose: vi.fn() }))
   const helperCall = vi.fn(async (_method: string, _params?: unknown) => ({ status: 'granted' }))
   const deps: FamilyDeps = {
     platform, nativeDir: null, now: () => new Date(), homedir: () => '/unused',
     clipboardRead: () => '', clipboardWrite: vi.fn(), notify: vi.fn(async () => ({ shown: true })),
     openExternal: vi.fn(), trashItem: vi.fn(), jxa: vi.fn(), exec: vi.fn(),
     macHelper: () => ({ available: () => ({ ok: true as const }), call: helperCall as never, dispose: vi.fn() }),
-    captureScreen, cua,
+    captureScreen,
   }
-  const provider = createDeviceActionsProvider({ store, deps,
-    families: [createComputerFamily(null), createScreenFamily(platform)],
-    managedBy: group => group === 'computer' ? { on: false, offMessage: 'Computer Use is off' } : null })
+  const provider = createDeviceActionsProvider({ store, deps, families: [createScreenFamily(platform)] })
   const invoke = async (action = 'screen.get') => {
     const permit = await provider.provider.permit(action)
     return permit.ok ? provider.provider.run(action, {}, { callId: 'screen-test', signal: new AbortController().signal, note: () => undefined }) : permit
   }
   const entry = (name: string) => provider.capability()!.actions.find(action => action.name === name)
-  return { provider, invoke, entry, grants, store, captureScreen, cua, callTool, helperCall, stop, deps }
+  return { provider, invoke, entry, grants, store, captureScreen, helperCall, deps }
 }
 
-describe('screen.get: host screen capture, independent of Computer Use', () => {
-  it.each(['darwin', 'win32', 'linux'] as const)('%s captures a picture with Computer Use off and no CUA calls', async platform => {
-    const { invoke, captureScreen, cua } = setup(platform)
-    cua.mockImplementation(() => { throw new Error('screen.get must not load CUA') })
+describe('screen.get: host screen capture', () => {
+  it.each(['darwin', 'win32', 'linux'] as const)('%s captures a picture', async platform => {
+    const { invoke, captureScreen } = setup(platform)
     expect(await invoke()).toEqual({ ok: true, data: { width: 1200, height: 800, displays: 2,
       pictures: [{ label: 'screen.get screenshot', mimeType: 'image/jpeg', data: 'native-image' }] } })
     expect(captureScreen).toHaveBeenCalledWith({ maxEdge: 1568 })
-    expect(cua).not.toHaveBeenCalled()
   })
 
-  it('is the only screen action; the AX lookup belongs to Computer Use and is absent while it is off', () => {
+  it('is the only screen action; there is no AX lookup', () => {
     const { entry } = setup()
     expect(entry('screen.capture')).toBeUndefined()
     expect(entry('screen.get')).toMatchObject({ group: 'screen', available: true })
@@ -63,10 +55,9 @@ describe('screen.get: host screen capture, independent of Computer Use', () => {
   })
 
   it('reports a build without capture as unsupported', async () => {
-    const { invoke, deps, cua } = setup()
+    const { invoke, deps } = setup()
     delete deps.captureScreen
     expect(await invoke()).toMatchObject({ ok: false, code: 'unsupported' })
-    expect(cua).not.toHaveBeenCalled()
   })
 
   it('a missing Screen Recording grant is reported without asking macOS, and clears once capture works', async () => {
@@ -81,13 +72,11 @@ describe('screen.get: host screen capture, independent of Computer Use', () => {
     expect(entry('screen.get')).toMatchObject({ available: true })
   })
 
-  it('macOS Connect asks for Screen Recording (not Accessibility), then verifies with a real capture; CUA untouched', async () => {
-    const { provider, helperCall, captureScreen, stop, cua } = setup()
+  it('macOS Connect asks for Screen Recording (not Accessibility), then verifies with a real capture', async () => {
+    const { provider, helperCall, captureScreen } = setup()
     expect(await provider.connect('screen')).toEqual({ ok: true })
     expect(helperCall.mock.calls.map(c => c[1])).toEqual([{ kind: 'screen' }])
     expect(captureScreen).toHaveBeenCalledWith({ maxEdge: 320 })
-    expect(stop).not.toHaveBeenCalled()
-    expect(cua).not.toHaveBeenCalled()
   })
 
   it('macOS Connect stays disconnected, with a restart hint, when the grant is refused or capture still fails', async () => {

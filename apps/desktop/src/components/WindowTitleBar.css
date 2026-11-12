@@ -68,7 +68,7 @@
 
 /* 键盘在菜单栏里左右走时,落点靠底色标出来 —— ❌ 焦点环(@@@no-focus-ring,owner 拍板全站无环)。 */
 :root .gg-titlebar-menu-trigger:hover,
-:root .gg-titlebar-menu-trigger:focus-visible,
+:root .gg-titlebar-menu-trigger:focus-visible:not([data-pointer-focus] *),
 :root .gg-titlebar-menu-trigger[data-popup-open] {
   background: var(--press);
   color: var(--text-primary);

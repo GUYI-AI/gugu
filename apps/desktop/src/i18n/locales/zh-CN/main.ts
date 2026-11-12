@@ -73,7 +73,6 @@ export default {
     "profileTitle": "先认识一下你",
     "profileSub": "咕咕和你的 agent 会用这些称呼你、了解你。以后可以在「设置 → 账户」里改。",
     "profileSubDesktop": "咕咕和你的 agent 会用这些称呼你。",
-    "introSubDesktop": "咕咕是你的个人助理，帮你记安排、办事情。",
     "avatar": "换头像",
     "avatarUploading": "正在上传…",
     "nameLabel": "怎么称呼你",
@@ -104,8 +103,6 @@ export default {
     "harnessVerifyFailed": "安装后暂时检测不到，请重试。",
     "harnessReadFailed": "暂时读不到智能体状态，请重试。",
     "harnessCancelFailed": "没能取消安装，请重试。",
-    "introStart": "开通我的咕咕",
-    "introLater": "先逛逛",
     "terminalTitle": "终端",
     "terminalSub": "习惯在终端里用 Claude Code、Codex 这类 CLI？开启后，可以用 TUI 的方式和 agent 交互。",
     "terminalToggle": "启用终端",
@@ -418,6 +415,10 @@ export default {
     "sendFailed": "发送失败，请重试",
     "verifyFailed": "验证失败，请重试"
   },
+  "assistantRules": {
+    "stuckTitle": "咕咕暂时无法启动",
+    "stuckBody": "它需要「咕咕助理」App，目前没能装上或已停用。联网或重新启用后会自动继续。"
+  },
   "brand": {
     "name": "咕咕"
   },
@@ -513,7 +514,6 @@ export default {
       "open": "打开"
     },
     "group": {
-      "assistant": "咕咕",
       "account": "我的",
       "preferences": "偏好",
       "work": "工作",
@@ -522,7 +522,6 @@ export default {
     },
     "nav": {
       "about": "关于",
-      "assistant": "资料",
       "connectors": "连接应用",
       "account": "账户",
       "apps": "App",

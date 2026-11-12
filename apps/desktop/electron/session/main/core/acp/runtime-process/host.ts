@@ -622,21 +622,9 @@ function reportUnpinnedPlatformModel<C extends { input: { sessionId: string; pro
   return command;
 }
 
-async function closeAcpBrowserToolsBestEffort(sessionId: string): Promise<void> {
+async function stopAcpHumanToolWaits(sessionId: string): Promise<void> {
   const { stopHumanToolWaits } = await import('../../asks/human-tool-wait');
   stopHumanToolWaits(sessionId);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let active = true;
-  try {
-    await Promise.race([
-      import('../../../../../browser-agent-mcp').then(module => active ? module.closeSessionBrowserTools(sessionId) : undefined),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('Browser tool cleanup timed out after 1000ms')), 1_000);
-      }),
-    ]);
-  } catch (error) {
-    log.warn('acp stop: browser tool cleanup failed', { sessionId, error: String(error) });
-  } finally { active = false; if (timer) clearTimeout(timer); }
 }
 
 /** The worker's stop has its own deadline: a stop that does not answer in 12 s is a failed stop. */
@@ -660,12 +648,12 @@ async function stopAcpWorkerSession(
 }
 
 /**
- * The one ACP session stop: worker stop (with its deadline) and browser tools, then — only once the worker no longer
+ * The one ACP session stop: worker stop (with its deadline) and the tool waits on a person, then — only once the worker no longer
  * owns the process — fork ownership and the platform ticket. Throws while the worker still owns the process.
  */
 export async function stopAcpSessionAndSettle(client: ContractClient<AcpRuntimeApiContract>, sessionId: string): Promise<void> {
   cancelExtensionSessionCalls(sessionId);
-  const [result] = await Promise.all([stopAcpWorkerSession(client, { sessionId }), closeAcpBrowserToolsBestEffort(sessionId)]);
+  const [result] = await Promise.all([stopAcpWorkerSession(client, { sessionId }), stopAcpHumanToolWaits(sessionId)]);
   if (!result.success && await (client as AcpRuntimeProcessClient).adapterProvenance({ sessionId }) !== null) {
     throw new Error(`ACP session ${sessionId} did not stop: ${result.error.message ?? result.error.type}`);
   }
@@ -699,12 +687,7 @@ function decorateRuntimeClient(client: ContractClient<AcpRuntimeApiContract>): A
       cancelExtensionSessionCalls(input.sessionId);
       const { stopHumanToolWaits } = await import('../../asks/human-tool-wait');
       stopHumanToolWaits(input.sessionId);
-      // Harnesses do not all cancel their outstanding MCP requests when interrupted.
-      // Stop this turn's browser work at the owning host as well; the person's page stays open.
-      const { closeSessionBrowserTools } = await import('../../../../../browser-agent-mcp');
-      const closingBrowser = closeSessionBrowserTools(input.sessionId);
-      const [result] = await Promise.all([client.cancelTurn(input, meta), closingBrowser]);
-      return result;
+      return client.cancelTurn(input, meta);
     },
     revertSession: createHistoryReverter({
       boundary: storedRevertBoundary,

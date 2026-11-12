@@ -216,10 +216,9 @@ describe('a project folder elsewhere', () => {
     }
   });
   it('goes to its machine as a place call, with no session to follow', () => {
-    const manifest = { contributes: {} } as never;
-    expect(notOnSessionMachine(manifest, 'filesList', { place: { workspace: 'folder:d/w' } })).toBeNull();
-    expect(notOnSessionMachine(manifest, 'filesRead', { ref: { workspace: 'folder:d/w', id: 'a' } })).toBeNull();
-    expect(notOnSessionMachine(manifest, 'filesList', { place: { chat: 'c' } })).not.toBeNull();
+    expect(notOnSessionMachine('filesList', { place: { workspace: 'folder:d/w' } })).toBeNull();
+    expect(notOnSessionMachine('filesRead', { ref: { workspace: 'folder:d/w', id: 'a' } })).toBeNull();
+    expect(notOnSessionMachine('filesList', { place: { chat: 'c' } })).not.toBeNull();
   });
   it('tells a page where a project keeps its folders only if it may read files', () => {
     const chat = { id: 'c', name: 'P', kind: 'group' as const, groupId: 'c', folders: [{ workspace: 'folder:d/w', path: '/p', machine: 'M', online: true }] };

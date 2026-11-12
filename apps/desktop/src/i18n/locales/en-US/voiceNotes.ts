@@ -1,58 +1,21 @@
 export default {
   "title": "Voice notes",
   "untitled": "Voice note",
-  "preparing": "Preparing your voice note",
   "record": "Record a voice note",
-  "emptyTitle": "No voice notes yet",
-  "empty": "Record a meeting or a thought from the + in your chat with {{name}}. {{name}} transcribes it, sums it up from your point of view, and keeps it here.",
   "week": {
     "thisWeek": "This week",
     "lastWeek": "Last week"
   },
-  "today": "Today {{time}}",
-  "status": {
-    "recording": "Recording",
-    "processing": "Processing…",
-    "failed": "Failed",
-    "noSpeech": "No speech detected",
-    "queued": "Waiting to transcribe"
-  },
-  "queued": {
-    "start": "Start transcribing",
-    "bodyDesktop": "The recording is already on {{name}}'s computer. Choose \"Start transcribing\" to transcribe it and turn it into a voice note.",
-    "bodyPhone": "The recording is already on {{name}}'s computer. Open this voice note in Gugu on your computer and choose \"Start transcribing\"."
-  },
-  "recordedAt": "Recorded {{time}}",
-  "minutes": "{{n}} min",
-  "seconds": "{{n}} s",
-  "speakers_one": "{{count}} speaker",
-  "speakers_other": "{{count}} speakers",
-  "summary": "Summary",
-  "transcript": "Transcript",
-  "noTranscript": "No transcript yet.",
-  "copySummary": "Copy summary",
-  "summaryCopied": "Summary copied",
-  "copyFailed": "Couldn't copy. Try again.",
-  "export": "Export Markdown",
-  "exportTitle": "Export voice note",
-  "exported": "Exported",
-  "exportFailed": "Couldn't export. Try again.",
-  "ask": "Ask about this meeting",
-  "more": "More actions",
   "delete": "Delete",
   "deleteTitle": "Delete “{{name}}”?",
   "deleteBody": "This can't be undone.",
-  "deleted": "Deleted",
   "deleteFailed": "Couldn't delete this voice note. Try again.",
-  "gone": "This voice note is no longer available.",
   "phase": {
     "recording": "Recording… {{name}} will sort it out once you stop.",
     "uploading": "Uploading… {{name}} will let you know when the voice note is ready.",
     "transcribing": "Transcribing… {{name}} will let you know when the voice note is ready.",
     "summarizing": "Writing the voice note… {{name}} will let you know when it's ready."
   },
-  "noSpeechDescription": "No usable speech was detected in this recording.",
-  "errorTitle": "Something went wrong",
   "failure": {
     "upload": "Couldn't upload the audio. Check your connection.",
     "transcribe": "Transcription failed. Try again later.",
@@ -67,7 +30,6 @@ export default {
     }
   },
   "retry": "Retry",
-  "retryFailed": "Couldn't reprocess. Try again.",
   "bar": {
     "starting": "Starting to record…",
     "cancel": "Cancel",

@@ -1,4 +1,8 @@
 export default {
+  "menu": {
+    "search": "搜索",
+    "noResults": "没有找到"
+  },
   "agentName": {
     "naming": "正在起名…"
   },

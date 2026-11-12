@@ -121,39 +121,60 @@ export function zcodePlatformEnv(model: SessionModelCapability | null | undefine
   const selected = model.model?.trim();
   const platform = model.platformProvider;
   if (!platform || !selected) return {};
-  const ids = [...new Set([selected, ...(model.platformModels ?? []).map((entry) => entry.id)])];
+  return zcodeProviderTableEnv({
+    providerId: ZCODE_PLATFORM_PROVIDER_ID,
+    apiKey: platform.apiKey,
+    apiType: harnessPlatform.wireProtocol,
+    baseUrl: platform.baseUrl,
+    selected,
+    modelIds: [...new Set([selected, ...(model.platformModels ?? []).map((entry) => entry.id)])],
+  });
+}
+
+/**
+ * 一份只有一家 provider 的 ZCode 个人 provider 表(`ZCODE_PERSONAL_PROVIDER_CONFIG_CONTENT`)+ 把菜单钉在它上面的
+ * `ZCODE_PROVIDER`。平台会话(`zcodePlatformEnv`)与 API Key 连接(./api-key-connection.ts)同一个形状。
+ */
+export function zcodeProviderTableEnv(input: {
+  providerId: string;
+  apiKey: string;
+  apiType: 'anthropic-messages' | 'openai-chat-completions' | 'openai-responses';
+  baseUrl: string;
+  selected: string;
+  modelIds: readonly string[];
+}): Record<string, string> {
   const table = {
     schemaVersion: 1,
     config: {
       providerConfigRules: {
         providerRules: [{
-          providerId: ZCODE_PLATFORM_PROVIDER_ID,
+          providerId: input.providerId,
           config: {
             group: 'standard-personal',
-            access: { type: 'api-key', apiKey: platform.apiKey },
-            api: { type: harnessPlatform.wireProtocol, baseUrl: platform.baseUrl },
-            personalModelIds: ids,
+            access: { type: 'api-key', apiKey: input.apiKey },
+            api: { type: input.apiType, baseUrl: input.baseUrl },
+            personalModelIds: [...input.modelIds],
           },
         }],
       },
       modelConfigRules: {
-        providerModelRules: ids.map((modelId) => ({
-          providerId: ZCODE_PLATFORM_PROVIDER_ID,
+        providerModelRules: input.modelIds.map((modelId) => ({
+          providerId: input.providerId,
           modelId,
           config: { properties: {} },
         })),
         manualProviderModelRules: [],
       },
       defaultModelSelection: {
-        providerId: ZCODE_PLATFORM_PROVIDER_ID,
-        modelId: selected,
+        providerId: input.providerId,
+        modelId: input.selected,
         options: { reasoningLevel: 'disabled' },
       },
     },
   };
   return {
     ZCODE_PERSONAL_PROVIDER_CONFIG_CONTENT: JSON.stringify(table),
-    ZCODE_PROVIDER: ZCODE_PLATFORM_PROVIDER_ID,
+    ZCODE_PROVIDER: input.providerId,
   };
 }
 

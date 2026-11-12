@@ -28,7 +28,8 @@ vi.mock('@/lib/fileStorage', async (original) => {
 });
 const { SettingsPanel } = await import('@/components/SettingsPanel');
 
-const desktopSections = SETTINGS_SECTIONS.filter((section) => section !== 'apps' && section !== 'phone');
+// apps / phone / the person's own connected apps are phone rows (a computer keeps those in the Library's 集成).
+const desktopSections = SETTINGS_SECTIONS.filter((section) => section !== 'apps' && section !== 'phone' && section !== 'connectors');
 const nickname = '一个名称很长但仍能完整访问的验收账号';
 const user: AuthUser = { id: 'settings-7333', nickname, gugu_number: 7333, email: 'settings@example.com' };
 let harness: ReturnType<typeof createReactHarness>;
@@ -66,10 +67,9 @@ describe('settings navigation hierarchy and interaction (#7333)', () => {
     const scroll = pane.querySelector<HTMLElement>('.gg-settings-nav-scroll')!;
     const rows = pane.querySelectorAll<HTMLElement>('[data-testid^="settings-nav-"]');
     expect(pane.getBoundingClientRect().width).toBe(216);
-    expect(rows).toHaveLength(16);
+    expect(rows).toHaveLength(14);
     expect([...rows].map((row) => row.dataset.testid)).toEqual([
       'settings-nav-account', 'settings-nav-subscriptions', 'settings-nav-usage',
-      'settings-nav-assistant', 'settings-nav-connectors',
       'settings-nav-general', 'settings-nav-interface', 'settings-nav-model', 'settings-nav-permissions', 'settings-nav-passwords',
       'settings-nav-sessions', 'settings-nav-devices', 'settings-nav-browser', 'settings-nav-files',
       'settings-nav-resource-monitor', 'settings-nav-about',

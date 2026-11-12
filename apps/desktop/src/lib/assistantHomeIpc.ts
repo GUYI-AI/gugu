@@ -21,7 +21,24 @@ export const ASSISTANT_HOME_CHANNELS = {
    * Claude Code 认的那一夹记忆只在它是链到这个家的链接时拆掉。路径由主进程算,❌ 渲染层传路径。
    */
   wipe: 'assistant-home:wipe',
+  /**
+   * #1931 The assistant's product rules for setting it up (invoke, no arguments → AssistantProductRules): the trusted
+   * assistant App's, or the last good copy of them — whichever the main process resolves now. With neither yet, the answer
+   * waits until the assistant App is in (the call itself starts putting it in).
+   */
+  rules: 'assistant-home:rules',
+  /** #1931 Whether the assistant here waits for its rules (invoke, no arguments → AssistantRulesState). */
+  rulesState: 'assistant-home:rules-state',
+  /** #1931 The same, each time it changes (main → every window, AssistantRulesState). */
+  rulesStateChanged: 'assistant-home:rules-state-changed',
 } as const
+
+/**
+ * #1931 `pending`: this machine needs the assistant's product rules (it lives here, or its setup started) and has none yet
+ * — the assistant's sessions wait, its entry shows it preparing. `stuck`: and getting them truly failed (offline for the
+ * whole retry window, or an App here holding its id that gugu does not put over).
+ */
+export type AssistantRulesState = { pending: boolean; stuck: boolean }
 
 export type AssistantEngine = 'claude' | 'codex'
 

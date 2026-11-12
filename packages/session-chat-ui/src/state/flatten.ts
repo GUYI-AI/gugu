@@ -1,7 +1,7 @@
 import { decorateConversationDensity } from './conversation-density';
 import { conversationOutput } from './conversation-process';
 import { conversationMessages } from './conversation-messages';
-import { sentMessagesOf, withSentReplies } from './sent-replies';
+import { sentMessagesOf, withSentReplies, withSettledSentReplies } from './sent-replies';
 import { activityArtifacts } from './activity-artifacts';
 import { planConversationSegments } from './conversation-segments';
 import { continuedActivityHeader, foldActivityUnits, hasUnconfirmedSend, incomingActivity, outgoingActivity, pendingActivity,
@@ -195,7 +195,8 @@ export function flattenTier(
   previousConversation?: ChatMessage,
   previousActivity?: AgentActivityGroup,
 ): RenderUnit[] {
-  turns = turns.map(turn => withSentReplies(turn, { allDestinations: ctx.agentConversation }));
+  const sentReplies = ctx.settled ? withSettledSentReplies : withSentReplies;
+  turns = turns.map(turn => sentReplies(turn, { allDestinations: ctx.agentConversation }));
   if (ctx.agentConversation) turns = conversationMessages(turns);
   // One send, drawn once. On the session page the call itself is drawn as the agent's words (agent-send, below), so the
   // reply copied out of it goes. In the agent conversation the copy is the reply bubble that carries the turn's process

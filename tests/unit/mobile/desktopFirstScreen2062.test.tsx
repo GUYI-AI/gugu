@@ -69,7 +69,7 @@ it('retains the existing native history reader for the mobile path', async () =>
     return null
   }
   await harness.render(<Probe />)
-  expect(f.rpc).toHaveBeenCalledExactlyOnceWith({ conversationId: 'phone', tail: true })
+  expect(f.rpc).toHaveBeenCalledExactlyOnceWith({ conversationId: 'phone', tail: true, lean: 'folded' })
 })
 
 it('boots the actual bounded timeline hook without reading or writing the aggregate legacy cache', async () => {
@@ -121,6 +121,6 @@ it.each(['opencode', 'hermes', 'copilot', 'qwen', 'pi', 'codebuddy'])(
     await harness.render(<Probe />)
     expect(shown.boundedHistory).toBe(false)
     expect(shown.nativeHistory).toBe(true)
-    expect(f.rpc).toHaveBeenCalledExactlyOnceWith({ conversationId: 'legacy', tail: true })
+    expect(f.rpc).toHaveBeenCalledExactlyOnceWith({ conversationId: 'legacy', tail: true, lean: 'folded' })
   },
 )

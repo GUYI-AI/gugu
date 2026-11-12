@@ -9,7 +9,7 @@ import { createMemo } from 'solid-js';
 import { toolCallLabel, toolImageUrl } from '@gugu/session-core/acp/client';
 import type { ChatToolCall, ToolNode } from '@session-chat/model';
 import { hasToolPictures } from '@session-chat/state/tool-run';
-import { deriveToolInputSummary } from '../tool-input-summary';
+import { deriveToolInputSummary } from '@gugu/session-core/session-record/tool-input-summary';
 import { Tool } from './Tool';
 import { toolRoot, toolVars, type ToolStyleVars } from './tool.css';
 import { toolThumbStrip, type ToolThumbStrip } from './tool-images';

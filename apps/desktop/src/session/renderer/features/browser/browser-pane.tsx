@@ -12,10 +12,6 @@ import {
 } from '@shared/browser';
 import { tabNavigationShortcutChannel } from '@shared/events/appEvents';
 import { browserFocusedChannel } from '@shared/events/browserEvents';
-import { AgentBrowserOverlay } from './agent-browser-overlay';
-import { useAgentBrowserStateSync } from './agent-browser-state';
-import { AgentBrowserAssistant } from './agent-browser-assistant';
-import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { browserControlsRegistry } from './browser-controls-registry';
 import {
   browserLoadErrorCode,
@@ -152,13 +148,6 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
       };
     });
   }, [resolveUrl, session, sessionBrowserId, sessionPartition]);
-
-  // Sync current activity when a pane becomes visible, even if its driving event was missed.
-  useAgentBrowserStateSync(
-    sessionBrowserId ?? '',
-    visible && isRegistered && Boolean(sessionBrowserId),
-    page?.element?.ownerDocument.defaultView ?? window
-  );
 
   // #7191 页签开在哪条会话里,一并告诉主进程:那条会话的 agent 只拿得到它自己会话的页签。
   const owningSessionId = session?.sessionId;
@@ -439,11 +428,6 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
           <div className="absolute inset-0 bg-background">
             <BrowserStartPage actions={startPageActions} devServerUrls={devServerUrls} onOpenUrl={navigateTo} />
           </div>
-        ) : null}
-        {sessionBrowserId ? (
-          <AgentBrowserOverlay browserId={sessionBrowserId} hostElement={page?.element ?? null} visible={visible}
-            assistant={session.sessionId ? <AgentBrowserAssistant owner={session}
-              agentName={sessionRegistry.get(session.sessionId)?.sessions.get(session.sessionId)?.data.title ?? translate('browser.assistantNameFallback')} /> : null} />
         ) : null}
       </div>
     </div>

@@ -1,4 +1,8 @@
 export default {
+  "menu": {
+    "search": "Search",
+    "noResults": "No results"
+  },
   "agentName": {
     "naming": "Naming the agent…"
   },

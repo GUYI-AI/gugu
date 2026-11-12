@@ -16,22 +16,33 @@ export function createConnectionMetadataStore(input: {
   commit(change: AssistantPanelCommit): ReturnType<ConnectionMetadataStore['save']>
   cache: ConnectionMetadataCache
   readBody?(item: ConnectionMetadataItem): Promise<Uint8Array>
+  /**
+   * Two directions, never the same call (#1922 D8). `reread`: something outside changed, so this window's readers read
+   * again (`invalidate`). `changed`: this store changed it, so the others are told. Neither is ever called from a
+   * reader's reaction to them: a reader reads, and an outside change only arrives from outside.
+   */
+  reread(): void
   changed(): void
 }): ConnectionMetadataStore {
   let reading: Promise<ConnectionMetadataSnapshot> | undefined
   const peekSnapshot = () => input.accountId() === input.ownerId ? input.cache.peek() : undefined
   async function snapshot() {
     await input.assertCurrent()
-    reading ??= input.read().then(async value => {
-      await input.assertCurrent()
-      if (value.items.some(row => row.owner_user_id !== input.ownerId)) throw new AssistantPanelError('account-changed', 'CONNECTION_ACCOUNT_CHANGED')
-      const previous = peekSnapshot()
-      if (previous && BigInt(previous.revision) > BigInt(value.revision)) return previous
-      input.cache.save(value)
-      return value
-    }).finally(() => { reading = undefined })
+    if (!reading) {
+      const current: Promise<ConnectionMetadataSnapshot> = input.read().then(async value => {
+        await input.assertCurrent()
+        if (value.items.some(row => row.owner_user_id !== input.ownerId)) throw new AssistantPanelError('account-changed', 'CONNECTION_ACCOUNT_CHANGED')
+        const previous = peekSnapshot()
+        if (previous && BigInt(previous.revision) > BigInt(value.revision)) return previous
+        input.cache.save(value)
+        return value
+      }).finally(() => { if (reading === current) reading = undefined })
+      reading = current
+    }
     return reading
   }
+  /** A read already under way began before the change: the next read starts afresh instead of joining it. */
+  const forgetReading = () => { reading = undefined }
   const live = (item: ConnectionMetadataItem) => peekSnapshot()?.items.find(row => row.resource_key === item.resource_key
     && row.device_id === item.device_id && row.revision === item.revision && !row.deleted_at)
   function publicBody(item: ConnectionMetadataItem) {
@@ -58,11 +69,11 @@ export function createConnectionMetadataStore(input: {
               data: { providerId: row.data.providerId,accountId: row.data.accountId,configured: false } } : row) })
       }
       return receipt
-    } finally { input.changed() }
+    } finally { forgetReading(); input.changed() }
   }
   return {
     ownerId: input.ownerId, assertCurrent: input.assertCurrent, snapshot, peekSnapshot,
-    invalidate: input.changed,
+    invalidate() { forgetReading(); input.reread() },
     async collection() { return (await snapshot()).items.filter(row => row.domain === 'integrations' && !row.deleted_at && !row.resource_key.startsWith('__collection__')) },
     peekBody: publicBody,
     async body(item) {

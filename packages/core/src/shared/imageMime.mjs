@@ -82,7 +82,8 @@ export function normalizeMimeType(mimeType) {
 
 /** What a file's name says it is, or `null` when the table does not know its suffix. */
 export function mimeTypeFromName(fileName) {
-  return MIME_BY_EXT[extensionOf(fileName)] ?? null
+  const extension = extensionOf(fileName)
+  return Object.hasOwn(MIME_BY_EXT, extension) ? MIME_BY_EXT[extension] : null
 }
 
 /** The table's first extension for a content type, or null when its type is unknown. */

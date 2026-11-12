@@ -33,7 +33,7 @@ jobs:
       - id: setup
         uses: ./.github/actions/setup-community
       - name: Install real ripgrep for native file-boundary regressions
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ripgrep
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/apt-install.sh" --no-install-recommends ripgrep
       # Each shard restores its compatible dev module snapshot without writing a PR cache.
       - uses: actions/cache/restore@v4
         with:

@@ -10,8 +10,11 @@ export { setSessionIdentityHost } from '../session/main/core/sessions/session-id
 export { recordConfirmedDeviceSleep } from '../session/main/core/activity/collector'
 export { readAssistantWorkOwnerReceipts } from '../session/main/core/sessions/assistant-work-owner-receipts'
 export { commitOwnerNotification } from '../session/main/core/sessions/owner-notifications'
-export { deliverPasswordBetaDecision } from '../session/main/core/sessions/password-beta-delivery'
-export { installPasswordBetaHost, passwordBetaAgent } from '../password-vault/beta-host'
+export { deliverPasswordBetaDecision, deliverPasswordBetaSaveResult } from '../session/main/core/sessions/password-beta-delivery'
+export { installPasswordBetaHost, passwordBetaAgent, passwordBetaRemoteHandlers } from '../password-vault/beta-host'
+export { createServerPasswordAgent } from '../password-vault/server-agent'
+export { passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
+export { serverTaskPrivateLogin } from '../session/main/core/extensions/task-page-host'
 export { archiveSession } from '../session/main/core/sessions/archiveSession'
 export { appInbox } from '../session/main/core/extensions/app-inbox'
 // #1607 node 5: pushes from another computer for an App projection watched from here; the host's requester hands them over.
@@ -149,6 +152,8 @@ export {
   withEmdashPlatformSessionRestart,
   // 模型目录第二遍探测的占位凭据注入口(实现在宿主的 harness-catalog-probe-env.ts)。
   setProbePlatformEnvResolver,
+  // #2507 同一个探针看得见选中的模型注入 API Key 连接(实现在宿主的 harness-catalog-probe-connection.ts)。
+  setProbeConnectionModelResolver,
   // @@@4972 会话发现工具的「咕咕提供的模型」读取口 —— 宿主装的就是 composer 那条 IPC 调的
   // 同一个 sessionpagePlatformCatalog,于是 agent 查到的和用户看到的是同一次计算。
   setPlatformModelCatalogResolver,
@@ -204,15 +209,8 @@ export {
 export { registerWebviewAttachPolicy } from '@main/app/webview-policy'
 // #6615 问题 11 扩展网关给程序盖的调用方上下文(任务、工作副本),每次调用现读。
 export { callerSessionContext as emdashAgentSessionContext } from '@main/core/extensions/extension-programs'
-// #7191 会话的 agent 操作它会话页里的浏览器页签:宿主的 MCP 层(Playwright 工具)经它拿到连那个页签的 transport。
-export { agentBrowserBridge as emdashAgentBrowser } from '@main/core/browser/agent-browser'
 // @@@touchid-passkey 网页要选通行密钥时,对话框挂在那张网页此刻所在、看得见的咕咕窗口上(停放着 / 窗口收起 ⇒ 无)。
 export { visibleHostOfPage as emdashVisibleHostOfPage } from '@main/core/browser/browser-page-views'
-// #7317 Computer Use 的「电脑」页签:宿主告诉 App 的页面「有新的一步」,任务第一次用电脑时把那一页开到任务里。
-export { notifyFromNativeProgram as emdashNotifyFromNativeProgram } from '@main/core/extensions/extension-programs'
-export { openTaskPagesOfApp as emdashOpenTaskPagesOfApp } from '@main/core/sessions/session-orchestration'
-// #7317 Computer Use 是电脑控制的开关:App 装上 / 卸掉 / 启用 / 停用,这台电脑的电脑控制当场跟着变。
-export { onInstalledAppsChanged as emdashOnInstalledAppsChanged } from '@main/core/extensions/extension-bridge'
 // #6264「别的机器上的编程只给用 SSH 装上的机器」:
 //  · server 模式:账号进程开本机套接字,设备连接(`gugu-server link`)与 open-url 经它到账号进程;
 //  · 桌面:宿主注入「这台机器怎么直连」(SSH 一步装好时记下的映射),会话页据此开直连终端。

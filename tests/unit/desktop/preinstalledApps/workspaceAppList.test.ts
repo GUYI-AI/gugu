@@ -8,6 +8,7 @@ import { runInNewContext } from 'node:vm'
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { listedIn } from './folderList'
 import { until } from '../../../support/awaitCondition'
+import { fakeSharedMenu } from './sharedMenu'
 
 const now = Date.parse('2026-10-28T12:00:00Z')
 const ago = (seconds: number) => new Date(now - seconds * 1000).toISOString()
@@ -26,7 +27,9 @@ const ENTRIES = [
 ]
 
 const context = { chat: { id: 'chat-1', name: 'G', kind: 'group', groupId: 'chat-1' }, locale: 'zh-CN', capabilities: ['files:read', 'files:write'] }
+const menu = fakeSharedMenu()
 const gugu = {
+  showContextMenu: menu.showContextMenu,
   linkTo: vi.fn(async ({ file }: { file: { id: string } }) => `gugu-file://${file.id}`),
   setTabTitle: vi.fn(async () => {}),
   getContext: vi.fn(async () => context),
@@ -54,8 +57,7 @@ const toggle = (name: string) => [...$('file-list').querySelectorAll<HTMLButtonE
 const more = () => $('file-list').querySelector<HTMLButtonElement>('.section-more')
 const row = (id: string) => document.querySelector(`[data-id="${id}"]`) as HTMLElement
 const kind = (name: string) => $('kinds').querySelector<HTMLButtonElement>(`[data-kind="${name}"]`)!
-const radios = () => [...$('menu').querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')]
-const item = (text: string) => [...$('menu').querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === text)!
+const radios = (...path: string[]) => menu.rows(...path).filter((r) => r.checked !== undefined)
 const openMenu = (id: string) => row(id).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
 const pressEscape = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
 const banner = () => [$('banner'), $('list-banner')].filter((node) => !node.hidden).map((node) => node.textContent).join('')
@@ -76,12 +78,13 @@ beforeAll(async () => {
 
 afterAll(() => vi.restoreAllMocks())
 
-beforeEach(() => {
+beforeEach(async () => {
   pressEscape()
+  await menu.dismiss()
   kind('all').click()
   if ($('sort-label').textContent !== '最近') {
     $('sort').click()
-    item('最近').click()
+    await menu.pick('最近')
   }
 })
 
@@ -117,16 +120,16 @@ describe('kinds and order', () => {
     expect(localStorage.getItem('workspace.kind')).toBe('other')
   })
 
-  test('by size or by name: one run, no time sections', () => {
+  test('by size or by name: one run, no time sections', async () => {
     $('sort').click()
-    expect(radios().map((r) => [r.textContent, r.getAttribute('aria-checked')])).toEqual([['最近', 'true'], ['名称', 'false'], ['大小', 'false']])
-    item('大小').click()
+    expect(radios().map((r) => [r.label, r.checked])).toEqual([['最近', true], ['名称', false], ['大小', false]])
+    await menu.pick('大小')
     expect(ids()).toEqual(['pack', 'spec', 'clip', 'shot', 'notes'])
     expect(sections()).toEqual([])
     expect($('sort-label').textContent).toBe('大小')
     expect(localStorage.getItem('workspace.sort')).toBe('size')
     $('sort').click()
-    item('名称').click()
+    await menu.pick('名称')
     expect(ids()).toEqual(['clip', 'notes', 'pack', 'shot', 'spec'])
   })
 })
@@ -157,35 +160,31 @@ describe('a row: its suffix, its size, how long its cloud copy has left, the mac
 describe('「设为临时 / 持续保存」 in the ⋯', () => {
   test('my upload: both ways offered, the current one ticked; choosing one keeps it so and reads the list again', async () => {
     openMenu('spec')
-    item('保留方式 ›').click()
-    expect(radios().map((r) => [r.textContent, r.getAttribute('aria-checked'), r.disabled])).toEqual([['临时', 'true', false], ['持续保存', 'false', false]])
+    expect(radios('保留方式').map((r) => [r.label, r.checked, r.enabled === false])).toEqual([['临时', true, false], ['持续保存', false, false]])
     const reads = gugu.files.list.mock.calls.length
-    item('持续保存').click()
+    await menu.pick('保留方式', '持续保存')
     await until('the list read again', () => gugu.files.list.mock.calls.length > reads)
     expect(gugu.files.keep).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'spec' }), 'permanent')
   })
 
-  test('someone else\'s upload, or a file that stays on its machine: shown, not choosable, why on hover', () => {
+  test('someone else\'s upload, or a file that stays on its machine: shown, not choosable, why on hover', async () => {
     openMenu('clip')
-    item('保留方式 ›').click()
-    expect(radios().map((r) => r.disabled)).toEqual([true, true])
-    expect(radios()[0]!.title).toBe('只有上传这份文件的人能改它保留多久。')
-    pressEscape()
+    expect(radios('保留方式').map((r) => r.enabled === false)).toEqual([true, true])
+    expect(radios('保留方式')[0]!.title).toBe('只有上传这份文件的人能改它保留多久。')
+    await menu.dismiss()
     openMenu('shot')
-    item('保留方式 ›').click()
-    expect(radios().map((r) => [r.getAttribute('aria-checked'), r.disabled])).toEqual([['false', true], ['false', true]])
-    expect(radios()[0]!.title).toContain('R server')
-    pressEscape()
+    expect(radios('保留方式').map((r) => [r.checked, r.enabled === false])).toEqual([[false, true], [false, true]])
+    expect(radios('保留方式')[0]!.title).toContain('R server')
+    await menu.dismiss()
     openMenu('notes')
-    expect(radios(), 'a document has no cloud copy to keep').toEqual([])
-    pressEscape()
+    expect(menu.labels(), 'a document has no cloud copy to keep').not.toContain('保留方式')
+    await menu.dismiss()
   })
 
   test('a refusal is said on the list', async () => {
     gugu.files.keep.mockRejectedValueOnce(Object.assign(new Error('Only the person who uploaded a file can change how long it is kept'), { code: 'denied' }))
     openMenu('pack')
-    item('保留方式 ›').click()
-    item('临时').click()
+    await menu.pick('保留方式', '临时')
     await until('the refusal said', () => banner(), (said) => said === '只有上传这份文件的人能改它保留多久。')
   })
 })
@@ -205,9 +204,8 @@ describe('a file that arrives while the folder is open', () => {
     await new Promise((done) => setTimeout(done, 900))
     expect(gugu.files.list.mock.calls.length, 'two changes, one read').toBe(reads + 1)
     openMenu('late')
-    item('保留方式 ›').click()
-    expect(radios().map((r) => r.disabled)).toEqual([true, true])
-    pressEscape()
+    expect(radios('保留方式').map((r) => r.enabled === false)).toEqual([true, true])
+    await menu.dismiss()
   })
 })
 

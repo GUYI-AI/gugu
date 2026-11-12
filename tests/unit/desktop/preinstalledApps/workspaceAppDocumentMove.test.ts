@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeAll, beforeEach, expect, test, vi } from 'vitest'
+import { fakeSharedMenu } from './sharedMenu'
 
 type Context = { locale: string; chat: { id: string; name: string; kind: string; groupId: string }; capabilities: string[]; file?: { chat: string; id: string } }
 const documents = new Map<string, ReturnType<typeof makeFile>>()
@@ -26,7 +27,9 @@ const folders = (chat = context.chat.id) => [
   { id: 'target-b', chat, name: 'Target B', displayName: 'Target B', type: 'folder' },
   documents.get(context.file?.id ?? '')!.entry,
 ]
+const menu = fakeSharedMenu()
 const gugu = {
+  showContextMenu: menu.showContextMenu,
   getContext: vi.fn(async () => context), onContextChanged: (fn: typeof contextChanged) => { contextChanged = fn; return () => {} },
   setTabTitle: vi.fn(async () => {}), onLink: () => () => {}, linkTo: vi.fn(async () => 'gugu-file://document'),
   markdown: async () => ({ render: (element: HTMLElement, text: string) => { element.textContent = text } }),
@@ -40,20 +43,19 @@ const gugu = {
   },
 }
 const $ = (id: string) => document.getElementById(id)!
-const offered = () => [...$('menu').querySelectorAll<HTMLButtonElement>('button')]
+const offered = () => menu.labels()
 const targets = () => [...$('move-targets').querySelectorAll<HTMLButtonElement>('button')]
 const paint = () => new Promise<void>((done) => requestAnimationFrame(() => done()))
-const close = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+const close = async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); await menu.dismiss() }
 async function show(ctx: Context) {
   context = ctx
   contextChanged(ctx)
   if (ctx.file) await vi.waitFor(() => expect($('doc-title').textContent).toBe(documents.get(ctx.file!.id)!.entry.name))
 }
-function clickMove() {
+async function clickMove() {
   $('more').click()
-  const move = offered().find((button) => button.textContent === 'Move to…')!
-  expect(move).toBeDefined()
-  move.click()
+  expect(offered()).toContain('Move to…')
+  await menu.pick('Move to…')
 }
 beforeAll(async () => {
   document.body.innerHTML = new DOMParser().parseFromString(readFileSync(resolve('apps/desktop/preinstalled-apps/workspace/index.html'), 'utf8'), 'text/html').body.innerHTML
@@ -63,7 +65,7 @@ beforeAll(async () => {
   await vi.waitFor(() => expect($('preview').textContent).toBe('# A document'))
 })
 beforeEach(async () => {
-  close()
+  await close()
   gugu.files.list.mockReset().mockImplementation(async () => folders())
   gugu.files.move.mockClear()
   if (sequence++) await show(contextFor(`plan-${sequence}`, `chat-${sequence}`))
@@ -80,7 +82,7 @@ test('cold document paints without reading or watching its folder, even before t
 test('cold document Move loads both folders and moves the handed file through the existing host verb', async () => {
   const entry = documents.get(context.file!.id)!.entry
   expect(gugu.files.list).not.toHaveBeenCalled()
-  clickMove()
+  await clickMove()
   await vi.waitFor(() => expect(targets().map((button) => button.textContent)).toContain('Target A'))
   expect(targets().map((button) => button.textContent)).toContain('Target B')
   expect(gugu.files.list).toHaveBeenCalledWith({ chat: entry.chat })
@@ -93,14 +95,14 @@ test('a late directory response cannot open a move dialog for a different docume
   const oldFolders = folders()
   gugu.files.list.mockImplementationOnce(() => pending.promise)
   try {
-    clickMove()
+    await clickMove()
     expect(gugu.files.list).toHaveBeenCalledOnce()
     await show(contextFor('replacement', 'another-chat'))
     pending.resolve(oldFolders)
     await paint()
     expect($('move-dialog').hidden).toBe(true)
     expect(gugu.files.move).not.toHaveBeenCalled()
-  } finally { pending.resolve(oldFolders); await paint(); close() }
+  } finally { pending.resolve(oldFolders); await paint(); await close() }
 })
 
 test('write permission withdrawn during the directory read cannot expose move targets', async () => {
@@ -108,19 +110,19 @@ test('write permission withdrawn during the directory read cannot expose move ta
   const listed = folders()
   gugu.files.list.mockImplementationOnce(() => pending.promise)
   try {
-    clickMove()
+    await clickMove()
     expect(gugu.files.list).toHaveBeenCalledOnce()
     await show({ ...context, capabilities: ['files:read'] })
     pending.resolve(listed)
     await paint()
     expect($('move-dialog').hidden).toBe(true)
     expect(gugu.files.move).not.toHaveBeenCalled()
-  } finally { pending.resolve(listed); await paint(); close() }
+  } finally { pending.resolve(listed); await paint(); await close() }
 })
 
 test('a refused directory read reports its error without opening an unusable move dialog', async () => {
   gugu.files.list.mockRejectedValueOnce(new Error('List refused'))
-  clickMove()
+  await clickMove()
   await vi.waitFor(() => expect($('banner').textContent).toContain('List refused'))
   expect($('move-dialog').hidden).toBe(true)
   expect(gugu.files.move).not.toHaveBeenCalled()
@@ -129,14 +131,14 @@ test('a refused directory read reports its error without opening an unusable mov
 test('a readonly document has no Move action and does not read the folder for its menu', () => {
   documents.get(context.file!.id)!.readOnly = true
   $('more').click()
-  expect(offered().map((button) => button.textContent)).not.toContain('Move to…')
+  expect(offered()).not.toContain('Move to…')
   expect(gugu.files.list).not.toHaveBeenCalled()
 })
 
 test('read-only capability has no Move action and does not read the folder for its menu', async () => {
   await show({ ...context, capabilities: ['files:read'] })
   $('more').click()
-  expect(offered().map((button) => button.textContent)).not.toContain('Move to…')
+  expect(offered()).not.toContain('Move to…')
   expect(gugu.files.list).not.toHaveBeenCalled()
 })
 
@@ -149,12 +151,12 @@ test('the list entry reads every folder once for its targets (the list holds onl
   const reads = gugu.files.list.mock.calls.length
   const moveFromList = async () => {
     document.querySelector(`[data-id="${entry.id}"]`)!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-    offered().find((button) => button.textContent === 'Move to…')!.click()
+    await menu.pick('Move to…')
     await vi.waitFor(() => expect(targets().map((button) => button.textContent)).toContain('Target A'))
   }
   await moveFromList()
   expect(gugu.files.list.mock.calls.slice(reads)).toEqual([[{ chat: entry.chat }]])
-  close()
+  await close()
   await moveFromList()
   expect(gugu.files.list, 'read once: the second 「移动到…」 uses it').toHaveBeenCalledTimes(reads + 1)
   targets().find((button) => button.textContent === 'Target A')!.click()

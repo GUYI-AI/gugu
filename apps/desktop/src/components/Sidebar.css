@@ -23,100 +23,12 @@
   gap: 20px;
 }
 
-.gg-sidebar-profile-slot {
-  position: relative;
-  -webkit-app-region: no-drag;
-}
-
-.gg-sidebar-profile-button {
-  width: 44px;
-  height: 44px;
-  padding: 2px;
-  border: none;
-  border-radius: var(--radius-xl);
-  background: transparent;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease);
-  -webkit-app-region: no-drag;
-}
-
-.gg-sidebar-profile-button:hover {
-  background: var(--hover);
-}
-
-.gg-sidebar-profile-button:active {
-  background: var(--press);
-}
-
-.gg-sidebar-profile-button[data-open] {
-  background: var(--selected);
-}
-
-.gg-sidebar-profile-button[data-open]:active {
-  background: var(--press);
-}
-
-/* 栏顶那一格 = 咕咕(owner 10-16)。是栏上一个普通的格(gg-sidebar-item:选中 / 悬浮 / 按下同一套底色),只是盒子
-   大一号:44 盒 / 40 头像,与原来顶格的本人头像钮同一份数。 */
-.gg-sidebar-item.gg-sidebar-item-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-xl);
-}
-.gg-sidebar-assistant-face {
-  display: grid;
-  place-items: center;
-  transition: opacity var(--dur-fast) var(--ease);
-}
-/* 还没有 / 还在读:淡一点,看得出「这里该有一个咕咕」但不抢眼。 */
-.gg-sidebar-assistant-face[data-dim] {
-  opacity: 0.5;
-}
-/* 右下角的小标记:「+」= 去领取 / 创建;「!」= 读不到它。16px 圆点,外围不垫底圈。 */
-.gg-sidebar-assistant-mark {
-  position: absolute;
-  inset-block-end: 0;
-  inset-inline-end: 0;
-  width: 16px;
-  height: 16px;
-  display: grid;
-  place-items: center;
-  border: 2px solid transparent;
-  border-radius: var(--radius-capsule);
-  background: var(--primary);
-  background-clip: padding-box;
-  color: var(--primary-fg);
-  font-size: var(--font-caption);
-  font-weight: var(--font-weight-semibold);
-  line-height: 1;
-  box-sizing: border-box;
-  pointer-events: none;
-}
-.gg-sidebar-assistant-mark[data-tone='warn'] {
-  background-color: var(--warn, var(--badge-red));
-}
 /* 更新入口(有更新时)在设置齿轮上方。 */
 .gg-sidebar-bottom {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-}
-
-.gg-sidebar-profile-button img,
-.gg-sidebar-profile-button [data-avatar-matte] {
-  border-radius: 10px !important;
-}
-
-.gg-sidebar-profile-avatar-pending {
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  background: var(--bg-elevated);
-  box-sizing: border-box;
 }
 
 .gg-sidebar-nav {

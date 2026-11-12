@@ -71,6 +71,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   draft,
   initialAppKind,
   local = false,
+  cleanedRecord = false,
+  appPanel = false,
   onBack,
 }: {
   device: Device
@@ -81,6 +83,13 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   initialAppKind?: string
   /** The session is on this computer (desktop assistant task pane): read it over IPC, also without a network. */
   local?: boolean
+  /** Read what the left column reads, never the bounded source window (useSessionHistorySource): the assistant/App layer. */
+  cleanedRecord?: boolean
+  /**
+   * owner 11-12 Over an App's panel (AssistantTaskChatWindow): the panel's top row and the assistant chat's composer. The
+   * view switcher is not offered there — the panel is the task's conversation, nothing else.
+   */
+  appPanel?: boolean
   onBack: () => void
 }) {
   const { t } = useTranslation('main')
@@ -111,7 +120,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
   const { boundedHistory, nativeHistory, nativeRecord } = useSessionHistorySource({
     deviceId: device.device_id, sessionId: session.conversationId, mobile, phoneHost,
-    sourceFormat: session.harness, native, online, local,
+    sourceFormat: session.harness, native, online, local, cleanedRecord,
   })
   const {
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
@@ -228,7 +237,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
         </IconButton>
       ) : null}
       {phoneHost ? <PhoneTaskSkills deviceId={device.device_id} sessionId={session.conversationId} online={online} busy={attention === 'running' || attention === 'waiting' || sending || pendingSends.length > 0 || cancelling} /> : null}
-      {!phoneHost ? <SessionAppMenu
+      {!phoneHost && !appPanel ? <SessionAppMenu
         appKind={appKind}
         onConversation={() => setAppKind(null)}
         apps={apps}
@@ -255,6 +264,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       testId="agent-watch-timeline-page"
       actions={headerActions}
       bodyFill
+      panelLayer={appPanel}
     >
       {recovery.canStartFresh ? <Button variant="secondary" onClick={() => { void recovery.startFresh() }} disabled={recovery.busy}>
         {translateSessionMessage('transcript.condition.startFresh')}
@@ -272,7 +282,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           sessionId={session.conversationId}
           draft={draft === appliedDraft ? undefined : draft}
           onDraftApplied={() => setAppliedDraft(draft)}
-          phoneHost={phoneHost} local={local} nativeRecord={native} hostReachable={answering}
+          phoneHost={phoneHost} local={local} nativeRecord={native} hostReachable={answering} appPanel={appPanel}
           unseen={session.unseen === true}
           queueReady={queueReady}
           machineLabel={machineLabel(device)}
@@ -304,6 +314,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           onAtBottom={nativeHistory ? nativeRecord.loadNewer : undefined}
           historyReady={boundedHistory ? windowReady : !nativeHistory || nativeRecord.record !== null} historyCursor={nativeHistory ? nativeRecord.record?.nextCursor : undefined}
           onLoadOlder={nativeHistory ? nativeRecord.loadOlder : loadOlder}
+          onHeldShown={nativeHistory ? nativeRecord.fillHeldTurn : undefined}
           onLoadToolImage={loadToolImage}
           emptyNote={answering && (phase === 'loading' || timeline.turns.length > 0) ? (
             /* 刚建的会话:记录要等 agent 写下第一行才有。那时说「正在等它开口」,❌ 不说「正在读取」——

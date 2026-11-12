@@ -1,4 +1,4 @@
-import { FILE_LINK_IN_TEXT, guguLinkScheme, parseGuguLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink';
+import { guguLinkScheme, parseGuguLink } from '@gugu/core/shared/ui/guguLink';
 /**
  * The one markdown dialect of Gugu.
  *
@@ -58,7 +58,9 @@ export function normalizeMarkdownSourceWithLines(text: string): { text: string; 
 
 // CJK sentence punctuation ends a bare URL: GFM autolinks would otherwise swallow `。` / `，` into the link.
 const CJK_URL_STOPS = new Set('。．，、？！：；（）【】「」『』〈〉《》');
-const BARE_URL = /^(https?:\/\/|mailto:|www\.|gugu-file:\/\/)/i;
+const BARE_URL = /^(https?:\/\/|mailto:|www\.|gugu-(?:file|chat|widget):\/\/)/i;
+/** gugu's own links as an agent writes them bare: a group's file, a conversation or one message, a widget. */
+const GUGU_LINK_IN_TEXT = /gugu-(?:file|chat|widget):\/\/[^\s()[\]<>"'`]+/gi;
 
 function remarkCjkAutolinkBoundary() {
   return (tree: Root) => {
@@ -84,16 +86,17 @@ function remarkCjkAutolinkBoundary() {
 }
 
 /**
- * A bare group file link in prose is a link, the same node `[…](gugu-file://…)` parses to: the tools hand agents the
- * link bare, and GFM autolinks only `http(s)://`, `www.` and mail. Trailing sentence punctuation stays prose, as GFM
+ * A bare gugu link in prose (a group's file, a conversation or message, a widget) is a link, the same node `[…](gugu-…)`
+ * parses to: the tools hand agents these links bare, and GFM autolinks only `http(s)://`, `www.` and mail. Alone in its
+ * paragraph a message or widget link is still a reference block (messageReferenceBlocks). Trailing sentence punctuation stays prose, as GFM
  * leaves it out of an autolink; CJK punctuation is cut by the autolink boundary that runs next.
  */
-function remarkBareFileLinks() {
+function remarkBareGuguLinks() {
   return (tree: Root) => {
     const visit = (parent: Parent) => {
       parent.children = parent.children.flatMap((child) => {
         const node = child as Nodes;
-        if (node.type === 'text') return bareFileLinks(node) as RootContent[];
+        if (node.type === 'text') return bareGuguLinks(node) as RootContent[];
         if ('children' in node && node.type !== 'link' && node.type !== 'linkReference') visit(node as Parent);
         return [child];
       });
@@ -102,12 +105,15 @@ function remarkBareFileLinks() {
   };
 }
 
-function bareFileLinks(node: Text): Array<Text | Link> {
+function bareGuguLinks(node: Text): Array<Text | Link> {
   const out: Array<Text | Link> = [];
   let at = 0;
-  for (const match of node.value.matchAll(FILE_LINK_IN_TEXT)) {
-    const url = match[0].replace(/[.,:;!?]+$/, '');
-    if (!parseGroupFileLink(url)) continue;
+  for (const match of node.value.matchAll(GUGU_LINK_IN_TEXT)) {
+    const chars = [...match[0]];
+    const stop = chars.findIndex((ch) => CJK_URL_STOPS.has(ch));
+    const url = (stop < 0 ? match[0] : chars.slice(0, stop).join('')).replace(/[.,:;!?]+$/, '');
+    const kind = parseGuguLink(url)?.kind;
+    if (kind !== 'file' && kind !== 'chat' && kind !== 'widget') continue;
     if (match.index > at) out.push({ type: 'text', value: node.value.slice(at, match.index) });
     out.push({ type: 'link', url, children: [{ type: 'text', value: url }] });
     at = match.index + url.length;
@@ -132,7 +138,7 @@ const GRAMMAR: PluggableList = [
   remarkCjkFriendly,
   [remarkGfm, { singleTilde: false }],
   [remarkCjkFriendlyGfmStrikethrough, { singleTilde: false }],
-  remarkBareFileLinks,
+  remarkBareGuguLinks,
   remarkCjkAutolinkBoundary,
   [remarkMath, { singleDollarTextMath: true }],
   remarkPandocDollarMath,
@@ -168,7 +174,7 @@ export function messageReferenceBlocks(source: string): { content: string; block
     const raw = content.slice(start, end).trim();
     const only = node.children[0];
     const href = only?.type === 'text' && only.value === raw ? raw
-      : only?.type === 'link' && raw === `<${only.url}>` ? only.url : null;
+      : only?.type === 'link' && (raw === `<${only.url}>` || raw === only.url) ? only.url : null;
     if (!href || (!href.toLowerCase().startsWith('gugu-chat://') && !href.toLowerCase().startsWith('gugu-widget://'))) continue;
     const parsed = parseGuguLink(href);
     const target: MessageReferenceTarget | null = parsed?.kind === 'widget' ? parsed

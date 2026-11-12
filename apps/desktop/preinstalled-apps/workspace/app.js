@@ -544,6 +544,9 @@ const state = {
   place: null, // { query: a pill's `at`, file: the file its link names }, waiting for that file's text to be drawn
   found: null, // what a pill's place showed, until the next press: { lines: [first, last] marked or null, said: in the banner }
   menuAnchor: null, // the control whose menu is open
+  menuOpened: null, // the open menu (a new one's answer is the one taken)
+  menuPressed: null, // the control of the open menu, pressed
+  uploading: false,
   shown: null, // the entry on screen, text/JSON or binary: what Download saves
   titled: null, // the title last given to the host (setTabTitle)
 }
@@ -769,8 +772,7 @@ function renderChrome() {
   $('new-doc').hidden = !canWriteHere()
   $('move-cancel').textContent = t.cancel
   $('conflicts-done').textContent = t.done
-  $('upload-label').textContent = $('empty-upload').textContent = t.upload
-  $('upload').hidden = !canWriteHere()
+  $('empty-upload').textContent = t.upload
   $('download').textContent = t.download
   $('open-with').textContent = t.openWith
   $('more').setAttribute('aria-label', t.more)
@@ -1293,7 +1295,6 @@ function renderTools() {
   // A folder that cannot be read now has nowhere to put anything.
   const canAdd = canWriteHere() && !(inWorkspace() && state.listError)
   $('new-doc').hidden = !canAdd
-  $('upload').hidden = !canAdd
   $('place-switch').setAttribute('aria-label', t.title)
   // Only one place here (a chat with no computer): nothing to switch between, so no switch.
   $('place-switch').hidden = rootsOf(state.ctx).length < 2
@@ -1350,7 +1351,7 @@ function filterItems(files, now) {
   const machines = [...new Set(files.filter((e) => e.storedOn).map((e) => machineOf(e.storedOn)))]
   const kept = new Set(files.map((e) => keptAs(e, now)).filter(Boolean))
   const options = {
-    who: people.size > 1 || state.filters.who ? [...people.values()].map((person) => [person.id, who(person)]) : [],
+    who: people.size > 1 || state.filters.who ? [...people.values()].map((person) => [person.id, nameOf(person)]) : [],
     where: machines.length || state.filters.where ? [['cloud', t.cloud], ...machines.map((name) => [name, name])] : [],
     keep: kept.size || state.filters.keep ? [['temporary', t.keep_temporary], ['soon', t.keep_soon], ['kept', t.keep_kept]] : [],
   }
@@ -1361,7 +1362,9 @@ function filterItems(files, now) {
     const label = set ? options[key].find(([value]) => value === set)?.[1] ?? set : null
     items.push({
       text: label ? `${t[`filter_${key}`]}: ${label}` : t[`filter_${key}`],
-      children: [[null, t.anyone], ...options[key]].map(([value, text]) => ({ text, checked: (state.filters[key] ?? null) === value, run: () => setFilter(key, value) })),
+      children: [[null, t.anyone], ...options[key]].map(([value, text]) => ({
+        text, ...(key === 'who' && value ? { person: value.replace(/^user:/, '') } : {}), checked: (state.filters[key] ?? null) === value, run: () => setFilter(key, value),
+      })),
     })
   }
   if (Object.values(state.filters).some(Boolean)) {
@@ -1536,8 +1539,8 @@ function goUp() {
 // In a folder, or with this page's own menu open, the host's Back (the phone's back key) is a step here rather than leaving
 // the App (gugu.navigation.onBack): the menu closes first, then a folder up; at the top it is the host's again. One claim or release at a time; `state.releaseBack` is set only once a claim has
 // succeeded, so a failed claim is tried again on the next change.
-const backStepWanted = () => ((!!state.folder || (inWorkspace() && choosesFolder() && !!copyOf())) && !state.ctx?.file) || !$('menu').hidden
-const stepBack = () => (!$('menu').hidden ? closeMenu() : goUp())
+const backStepWanted = () => (!!state.folder || (inWorkspace() && choosesFolder() && !!copyOf())) && !state.ctx?.file
+const stepBack = () => goUp()
 let backStep = Promise.resolve()
 function holdBack(want) {
   if (typeof gugu.navigation?.onBack !== 'function') return
@@ -1703,10 +1706,11 @@ function folderMark() {
 }
 
 // A person or an agent by name, the system as itself (entry.createdBy, §2.4).
+// A member by name. A line of text says an agent is one; a menu row (`person`) is drawn by the host with the member's avatar.
+const nameOf = (person) => person.name?.trim() || person.id.slice(0, 6)
 function who(person) {
   if (person.kind === 'system') return state.t.system
-  const name = person.name || person.id.slice(0, 6)
-  return person.kind === 'agent' ? `${name} (${state.t.agent})` : name
+  return person.kind === 'agent' ? `${nameOf(person)} (${state.t.agent})` : nameOf(person)
 }
 
 // Creation and editing are separate facts: the creator must never be paired with the last edit's time.
@@ -2127,17 +2131,17 @@ async function copyContent(entry, copied) {
 const makeHereItems = (then = () => {}) => [
   { text: state.t.newFile, run: () => { then(); startCreate('file') } },
   { text: state.t.newFolder, run: () => { then(); startCreate('folder') } },
-  { text: state.t.upload, run: () => { then(); pickUpload() } },
+  { text: state.t.upload, disabled: state.uploading, run: () => { then(); pickUpload() } },
 ]
 
 // Preserve the existing immediate-open and per-version deletion authorization for both entry points.
 function showFileMenu(anchor, entry, items, context = {}) {
   const said = deletableSaid.get(deletableKey(entry))
   toggleMenu(anchor, items(said === true), { ...context, entry })
-  const opened = $('menu').firstElementChild
+  const opened = state.menuOpened
   if (said === undefined) {
     void mayDelete(entry).then((yes) => {
-      if (!yes || state.menuAnchor !== anchor || $('menu').firstElementChild !== opened) return
+      if (!yes || state.menuAnchor !== anchor || state.menuOpened !== opened) return
       closeMenu()
       toggleMenu(anchor, items(true), { ...context, entry })
     })
@@ -2213,7 +2217,7 @@ function fileMenu(li, open, entry) {
         void mayDelete(entry).then((yes) => {
           if (!yes) return
           const remove = rowMenu(li, entry, true).find((item) => item.ask)
-          toggleMenu(open, [{ ...remove, text: remove.ask }], { entry })
+          toggleMenu(open, [{ text: remove.ask, danger: true, run: remove.run }], { entry })
         })
       }
     }
@@ -2455,6 +2459,8 @@ const pickInput = () => {
   input.onchange = () => void uploadToCopy([...input.files].map((file) => ({ file, path: file.name })), state.folder ?? '')
   return input
 }
+// @@@pick-gesture: Upload is picked in the host's menu, and the host lends this page the person's gesture as it answers
+// (app-context-menu.ts runs `executeJavaScript('0', true)` first), so the file input opens even when the menu stayed open a while.
 const pickUpload = () => pickInput().click()
 
 const droppingFiles = (event) => inWorkspace() && canWriteHere() && !state.dragging && !!event.dataTransfer?.types.includes('Files')
@@ -2492,7 +2498,7 @@ async function uploadToCopy(files, folder, folders = []) {
   let sentBefore = 0
   let answer = null
   hideBanner()
-  $('upload').disabled = true
+  state.uploading = true
   try {
     for (const path of folders) {
       await gugu.files.mkdir({ workspace, path: under(path) }).catch((error) => { if (error.code !== 'name-taken') throw error })
@@ -2519,7 +2525,7 @@ async function uploadToCopy(files, folder, folders = []) {
     if (!row.signal.aborted) showBanner(failureText(error), 'error')
   } finally {
     row.done()
-    $('upload').disabled = false
+    state.uploading = false
     await refreshList()
   }
 }
@@ -2547,7 +2553,7 @@ function askReplace(name) {
 async function uploadFiles(place = { chat: state.ctx.chat.id, ...(state.folder ? { folder: state.folder } : {}) }) {
   hideBanner()
   // One upload at a time: the button is back once the files are in the list and anything to ask is asked.
-  $('upload').disabled = true
+  state.uploading = true
   try {
     const before = new Set(state.entries.map((e) => e.id))
     // The host's file picker, into the folder on screen; [] when the person cancels.
@@ -2560,7 +2566,7 @@ async function uploadFiles(place = { chat: state.ctx.chat.id, ...(state.folder ?
     await refreshList()
     showBanner(error.code === 'too-large' ? fmt(state.t.uploadTooLarge, { e: error.message }) : failureText(error), 'error')
   } finally {
-    $('upload').disabled = false
+    state.uploading = false
   }
 }
 
@@ -3560,19 +3566,33 @@ async function openBlockMenu(event) {
   }
 }
 
-// The host's shared menu at an App-local point, items as toggleMenu's (`[text, run]` or `{ text, run, disabled,
-// children }`, `{ separator: true }`); `children` open beside their row. Resolves after the picked item has run.
+// The host's shared menu at an App-local point, items as toggleMenu's; `children` open beside their row (the host's
+// submenu: placed clear of its parent, scrolled and searchable when long). Resolves after the picked item has run.
 async function sharedMenu(x, y, items) {
-  const runs = []
+  const picked = await sharedPick(x, y, items)
+  if (picked) await picked.run()
+}
+
+// The item picked in the host's shared menu, or null when it closed without one.
+async function sharedPick(x, y, items) {
+  const picks = []
   const entries = (list) => list.map((given) => {
-    const { text, run, disabled, separator, children } = Array.isArray(given) ? { text: given[0], run: given[1] } : given
-    if (separator) return { type: 'separator' }
-    const id = String(runs.push(run) - 1)
-    const nested = typeof children === 'function' ? children() : children
-    return { id, label: text, ...(disabled ? { enabled: false } : {}), ...(nested ? { items: entries(nested) } : {}) }
+    const item = Array.isArray(given) ? { text: given[0], run: given[1], ask: given[2] } : given
+    if (item.separator) return { type: 'separator' }
+    const id = String(picks.push(item) - 1)
+    const nested = typeof item.children === 'function' ? item.children() : item.children
+    return {
+      id, label: item.text,
+      ...(item.disabled ? { enabled: false } : {}),
+      ...(item.checked === undefined ? {} : { checked: item.checked }),
+      ...(item.ask || item.danger ? { danger: true } : {}),
+      ...(item.title ? { title: item.title } : {}),
+      ...(item.person ? { person: item.person } : {}),
+      ...(nested ? { items: entries(nested) } : {}),
+    }
   })
   const picked = await gugu.showContextMenu({ x, y, items: entries(items) })
-  if (picked !== null) await runs[Number(picked)]?.()
+  return picked === null ? null : picks[Number(picked)] ?? null
 }
 
 function changeBlock(current, range, change, userEvent = 'input.complete') {
@@ -3604,7 +3624,7 @@ function insertionItems(current, range, below = true) {
   })
   return INSERT_BLOCKS.map((item) => ({
     text: state.t[item.label],
-    disabled: !item.text && (!current.entry.chat || !canWrite() || $('upload').disabled),
+    disabled: !item.text && (!current.entry.chat || !canWrite() || state.uploading),
     run: blockAction(async () => {
       if (item.text !== undefined) return insert(item.text, item.caret, item.id)
       const arrived = await uploadFiles({ chat: current.entry.chat, ...(current.entry.parentId ? { folder: current.entry.parentId } : {}) })
@@ -4038,108 +4058,27 @@ function applyMode() {
   syncBlockControls(true)
 }
 
-// The page's one menu (#menu): file context menus and the open file's actions. At the pointer or control, above when there
-// is no room below; a press elsewhere, Escape, a scroll or a resize closes it, and so does choosing an item. An item that
-// asks first (`ask`: Delete, in red) only says its question on the first press; the items are made anew on every open,
-// so closing the menu takes the question back. The keyboard goes with it: in on the first item, back to its control on close.
+// Every menu of the page is the host's shared menu (the same surface, rows, submenus and keyboard as the rest of the app,
+// on a desktop and on a phone), below the control or at the pointer. A press on the control while its menu is open closes it.
+// An item that asks first (`ask`: Delete) says its question in a menu of its own, in red.
+// An item: `[text, run, ask]`, or `{ text, run, ask, checked, disabled, title, person, children }`; `{ separator: true }`
+// sets groups apart. A `checked` one is one of a choice; `person` (a member's id) is drawn as that member.
 function toggleMenu(anchor, items, context = {}) {
-  const again = state.menuAnchor === anchor
+  const again = state.menuAnchor === anchor || state.menuPressed === anchor
+  state.menuPressed = null
   closeMenu()
   if (again) return
-  const menu = $('menu')
-  // An item: `[text, run, ask]`, or `{ text, run, ask, checked, disabled, title }`; `{ label }` names the items after it,
-  // `{ separator: true }` sets groups apart. A `checked` one is one of a choice (its state shown by a tick).
-  const nodes = (entries) => entries.map((given) => {
-    const { text, run, ask, checked, disabled, title, label, separator, children } = Array.isArray(given) ? { text: given[0], run: given[1], ask: given[2] } : given
-    if (separator) return Object.assign(document.createElement('div'), { className: 'menu-separator', role: 'separator' })
-    if (label) {
-      const head = Object.assign(document.createElement('div'), { className: 'menu-label', textContent: label })
-      head.setAttribute('role', 'presentation')
-      if (title) head.title = title
-      return head
-    }
-    const item = document.createElement('button')
-    item.type = 'button'
-    if (ask) item.className = 'destructive'
-    if (checked !== undefined) {
-      item.setAttribute('role', 'menuitemradio')
-      item.setAttribute('aria-checked', String(checked))
-      item.classList.add('menu-choice')
-    } else {
-      item.setAttribute('role', 'menuitem')
-    }
-    item.textContent = children ? `${text} ›` : text
-    if (children) item.setAttribute('aria-haspopup', 'menu')
-    if (title) item.title = title
-    if (disabled) item.disabled = true
-    let submenu = null
-    const childItems = () => typeof children === 'function' ? children() : children
-    const expand = () => {
-      if (!submenu) return
-      if (!submenu.childElementCount) submenu.append(...nodes(childItems()))
-      submenu.dataset.open = ''
-      item.setAttribute('aria-expanded', 'true')
-    }
-    item.onclick = () => {
-      if (submenu) { expand(); return void submenu.querySelector('button:not(:disabled)')?.focus() }
-      if (ask && item.textContent !== ask) return void (item.textContent = ask)
-      closeMenu()
-      if (children) toggleMenu(anchor, [{ text: `‹ ${text}`, run: () => toggleMenu(anchor, items, context) }, { separator: true }, ...childItems()], context)
-      else run()
-    }
-    if (children && !touchPane?.matches) {
-      const group = Object.assign(document.createElement('div'), { className: 'menu-group', role: 'presentation' })
-      submenu = Object.assign(document.createElement('div'), { className: 'menu-submenu card list', role: 'menu' })
-      group.append(item, submenu)
-      group.onpointerenter = expand
-      item.onkeydown = (event) => {
-        if (event.key === 'ArrowRight') { event.preventDefault(); expand(); submenu.querySelector('button:not(:disabled)')?.focus() }
-      }
-      submenu.onkeydown = (event) => {
-        if (event.key === 'ArrowLeft') {
-          event.preventDefault()
-          event.stopPropagation()
-          delete submenu.dataset.open
-          item.setAttribute('aria-expanded', 'false')
-          item.focus()
-        }
-      }
-      return group
-    }
-    return item
-  })
-  menu.replaceChildren(...nodes(items))
-  const fileContext = !!(context.entry || context.selection)
-  menu.classList.toggle('file-context', fileContext)
-  if (fileContext && touchPane?.matches) {
-    const heading = Object.assign(document.createElement('div'), { className: 'menu-file' })
-    const words = Object.assign(document.createElement('div'), { className: 'menu-file-words' })
-    words.append(Object.assign(document.createElement('strong'), { textContent: context.selection ? fmt(state.t.picked, { n: state.picked.size }) : shownName(context.entry) }))
-    if (context.entry) {
-      words.append(Object.assign(document.createElement('small'), { textContent: fileTip(context.entry) }))
-      heading.append(isFolder(context.entry) ? folderMark() : fileMark(context.entry))
-    }
-    heading.append(words)
-    menu.prepend(heading)
-  }
+  const box = anchor.getBoundingClientRect()
+  const at = context.point ?? { x: box.left, y: box.bottom + 4 }
+  const opened = state.menuOpened = {}
   state.menuAnchor = anchor
   anchor.setAttribute('aria-expanded', 'true')
-  menu.hidden = false
-  holdBack(backStepWanted())
-  menu.style.top = menu.style.left = ''
-  if (!fileContext || !touchPane?.matches) {
-    const box = context.point ? { left: context.point.x, right: context.point.x, top: context.point.y, bottom: context.point.y } : anchor.getBoundingClientRect()
-    const below = box.bottom + 4 + menu.offsetHeight <= innerHeight - 8
-    menu.style.top = `${below ? box.bottom + 4 : Math.max(8, box.top - 4 - menu.offsetHeight)}px`
-    let left = Math.max(8, Math.min(context.point ? box.left : box.right - menu.offsetWidth, innerWidth - menu.offsetWidth - 8))
-    const subWidth = Math.min(180, innerWidth - menu.offsetWidth - 24)
-    const opensLeft = !!menu.querySelector('.menu-submenu') && left + menu.offsetWidth + subWidth > innerWidth - 8
-    if (opensLeft) left = Math.max(left, subWidth + 8)
-    menu.classList.toggle('submenu-left', opensLeft)
-    menu.style.setProperty('--submenu-width', `${subWidth}px`)
-    menu.style.left = `${left}px`
-  }
-  menu.querySelector('button:not(:disabled)')?.focus({ preventScroll: true })
+  void sharedPick(at.x, at.y, items).then(async (picked) => {
+    if (state.menuOpened !== opened) return
+    closeMenu()
+    if (picked?.ask) return toggleMenu(anchor, [{ text: picked.ask, danger: true, run: picked.run }], context)
+    try { await picked?.run() } catch (error) { showBanner(failureText(error), 'error') }
+  }, (error) => showBanner(failureText(error), 'error'))
 }
 
 // ─── 多选 ───────────────────────────────────────────────────────────────────
@@ -4404,11 +4343,8 @@ function closeDetails() {
 }
 
 function closeMenu() {
-  if ($('menu').contains(document.activeElement)) state.menuAnchor?.focus({ preventScroll: true })
   state.menuAnchor?.setAttribute('aria-expanded', 'false')
   state.menuAnchor = null
-  $('menu').hidden = true
-  holdBack(backStepWanted())
 }
 
 // ─── start ──────────────────────────────────────────────────────────────────
@@ -4460,10 +4396,10 @@ function start() {
   }
   $('search-toggle').onclick = (event) => ($('search').hidden ? showSearch(true) : closeSearch(event.detail > 0))
   $('page-back').onclick = () => navigate(-1)
-  $('new-doc').onclick = () => toggleMenu($('new-doc'), inWorkspace()
-    ? [[state.t.newFile, () => startCreate('file')], [state.t.newFolder, () => startCreate('folder')]]
-    : [[state.t.newDoc, createDoc], [state.t.newFolder, createFolder]])
-  $('upload').onclick = $('empty-upload').onclick = () => (inWorkspace() ? pickUpload() : uploadFiles())
+  // Upload is one of what 「+」 adds here (owner 11-10: no button of its own beside it).
+  $('new-doc').onclick = () => toggleMenu($('new-doc'), inWorkspace() ? makeHereItems()
+    : [[state.t.newDoc, createDoc], [state.t.newFolder, createFolder], { text: state.t.upload, disabled: state.uploading, run: () => uploadFiles() }])
+  $('empty-upload').onclick = () => (inWorkspace() ? pickUpload() : uploadFiles())
   // The computer's files dropped on the list: into the folder on screen (a folder's row takes them itself, dropOnto).
   const listPane = $('file-list').parentElement
   listPane.addEventListener('dragover', (event) => {
@@ -4491,7 +4427,9 @@ function start() {
     if (entry) showFileMenu($('more'), entry, (yes) => [...split, ...fileActions($('doc-title'), entry, yes), ...(inCopy(entry) ? [{ separator: true }, ...copyActions(entry)] : [])])
   }
   document.addEventListener('pointerdown', (event) => {
-    if (state.menuAnchor && !$('menu').contains(event.target) && !state.menuAnchor.contains(event.target)) closeMenu()
+    // A press on the control of the open menu: its click closes the menu (the host's menu may already have closed itself).
+    state.menuPressed = state.menuAnchor?.contains(event.target) ? state.menuAnchor : null
+    if (state.menuAnchor && !state.menuAnchor.contains(event.target)) closeMenu()
   })
   document.addEventListener('keydown', (event) => {
     if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key === 's' && state.current?.source) {
@@ -4503,11 +4441,6 @@ function start() {
     else if (!state.menuAnchor && (state.picked.size || state.selecting)) clearPicks()
     closeMenu()
     if (!$('move-dialog').hidden) closeMoveDialog()
-  })
-  // Tabbing out of the menu closes it too (past its last item the focus leaves the page, and Escape with it); a move
-  // to its own ⋯ is left to that ⋯'s click, which toggles.
-  $('menu').addEventListener('focusout', (event) => {
-    if (!$('menu').contains(event.relatedTarget) && event.relatedTarget !== state.menuAnchor) closeMenu()
   })
   // The menu stays where its ⋯ was: a scroll (the list's too, captured) or a resize moves the ⋯ away from it.
   document.addEventListener('scroll', () => closeMenu(), true)

@@ -3,18 +3,17 @@ import { OWNER_PROFILE_MEMORY_FILE } from './assistantPolicy';
 export function readFrontmatter(text: string): { fields: Record<string, string>; body: string } {
   const normalized = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
   if (!normalized.startsWith('---\n')) return { fields: {}, body: normalized.trim() };
-  const close = normalized.indexOf('\n---', 4);
-  if (close < 0) return { fields: {}, body: normalized.trim() };
-  const fields: Record<string, string> = {};
-  for (const line of normalized.slice(4, close).split('\n')) {
+  const close = /^---[ \t]*(?:\n|$)/m.exec(normalized.slice(4));
+  if (!close) return { fields: {}, body: normalized.trim() };
+  const fields: Record<string, string> = Object.create(null) as Record<string, string>;
+  for (const line of normalized.slice(4, 4 + close.index).split('\n')) {
     const match = /^\s*([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
     if (!match) continue;
     const [, key, raw] = match;
     const value = raw.trim().replace(/^(['"])(.*)\1$/, '$2');
     if (value && !(key in fields)) fields[key] = value;
   }
-  const after = normalized.slice(close + 4);
-  return { fields, body: after.replace(/^[^\n]*\n/, '').trim() };
+  return { fields, body: normalized.slice(4 + close.index + close[0].length).trim() };
 }
 
 /** Claude Code 的记忆分四种;「关于你 / 关于助理」对应前两种。 */
@@ -39,7 +38,8 @@ export function isOwnerProfileNote(note: { file: string }): boolean {
 const MEMORY_KINDS: readonly MemoryKind[] = ['user', 'feedback', 'project', 'reference'];
 const memoryKind = (value: string | undefined): MemoryKind | undefined => {
   const aliases: Record<string, MemoryKind> = { 用户: 'user', 关于主人: 'user', 偏好: 'user', 反馈: 'feedback', 关于助理: 'feedback', 项目: 'project', 参考: 'reference', 资料: 'reference' };
-  return MEMORY_KINDS.find(kind => kind === value?.toLowerCase()) ?? aliases[value ?? ''];
+  return MEMORY_KINDS.find(kind => kind === value?.toLowerCase())
+    ?? (value !== undefined && Object.hasOwn(aliases, value) ? aliases[value] : undefined);
 };
 
 /** Legacy memories often put their readable name/category in the index instead of YAML. */
@@ -49,7 +49,7 @@ export function memoryIndexHints(index: string): Map<string, { title: string; ki
   for (const line of index.split('\n')) {
     const heading = /^#{1,6}\s+(.+?)\s*$/.exec(line);
     if (heading) kind = memoryKind(heading[1].trim());
-    const link = /\[([^\]]+)\]\((?:\.\/)?([^\s)]+\.md)\)/.exec(line);
+    const link = /\[([^\]]+)\]\((?:\.\/)?([^\s)]+\.md)\)/i.exec(line);
     if (link && !link[2].includes('/')) result.set(link[2], { title: link[1], ...(kind ? { kind } : {}) });
   }
   return result;
@@ -73,9 +73,10 @@ export function parseMemoryNote(file: string, text: string, hint?: { title: stri
 /** 删一条记忆时把索引里指向它的那一行一起拿掉(否则 MEMORY.md 里留一条指向空处的链接)。 */
 export function removeIndexEntry(index: string, file: string): string {
   const target = `](${file})`;
+  const relativeTarget = `](./${file})`;
   return index
     .split('\n')
-    .filter((line) => !line.includes(target))
+    .filter((line) => !line.includes(target) && !line.includes(relativeTarget))
     .join('\n');
 }
 

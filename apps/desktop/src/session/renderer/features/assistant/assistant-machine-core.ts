@@ -103,12 +103,6 @@ export async function removePath(machine: AssistantMachine, path: string, recurs
   if (!result.data.success) fail(result.data.error);
 }
 
-export async function renamePath(machine: AssistantMachine, path: string, name: string): Promise<void> {
-  if (machine.panel) return machine.panel.rename(path,name);
-  const result = await nativeRpc(machine).workspace.files.renameEntry(machine.projectId, machine.workspaceId, path, name);
-  if (!result.success) fail({ type: result.error.type, message: 'message' in result.error ? String(result.error.message) : undefined });
-}
-
 /** 建一个文件夹;已经有了不算错(资料夹第一次上传时顺手建)。 */
 export async function makeFolder(machine: AssistantMachine, dir: string, name: string): Promise<string> {
   if (machine.panel) { const path = joinPath(dir,name); await machine.panel.mkdir(path); return path; }

@@ -10,6 +10,7 @@ import z from 'zod';
 export { PLATFORM_STANDALONE_SEARCH_ROUTE, platformStandaloneSearchGranted } from './platform-search';
 import { hostDependencyCapability } from '../../host-dependencies/capability';
 import { acpCapability } from './capabilities/acp';
+import { apiKeyConnectionCapability } from './capabilities/api-key-connection';
 import { authCapability } from './capabilities/auth';
 import { autoApproveCapability } from './capabilities/auto-approve';
 import { effortCapability } from './capabilities/effort';
@@ -27,6 +28,7 @@ import { vendorAccountCapability } from './capabilities/vendor-account';
 
 export const PLUGIN_CAPABILITIES = {
   acp: acpCapability,
+  apiKeyConnection: apiKeyConnectionCapability,
   auth: authCapability,
   autoApprove: autoApproveCapability,
   effort: effortCapability,
@@ -147,6 +149,20 @@ export type {
   IAgentAuthBehavior,
   IAgentProgramAuthBehavior,
 } from './capabilities/auth';
+export type {
+  ApiKeyConnectionDescriptor,
+  ApiKeyConnectionFields,
+  ApiKeyConnectionInput,
+  ApiKeyConnectionLaunch,
+  IApiKeyConnectionBehavior,
+} from './capabilities/api-key-connection';
+export {
+  apiKeyConnectionDescriptorSchema,
+  apiKeyConnectionInjectsModel,
+  apiKeyConnectionInputError,
+  apiKeyConnectionPlan,
+  apiKeyConnectionUsage,
+} from './capabilities/api-key-connection';
 export type { HarnessPresence, HarnessPresenceFile, HarnessPresenceStatus, HooksDescriptor, IHooksBehavior } from './capabilities/hooks';
 export type {
   ISubscriptionBehavior,

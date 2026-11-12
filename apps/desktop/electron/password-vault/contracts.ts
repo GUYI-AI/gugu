@@ -6,13 +6,20 @@ export class VaultError extends Error {
   constructor(readonly code: VaultCode) { super(code); this.name = 'VaultError' }
 }
 export interface CredentialReference { id: string; version: number; epoch: string }
-export interface CredentialSummary { reference: CredentialReference; origin: string; maskedAccount: string }
+export interface CredentialGrant { subject: string; level: 'read' | 'write' }
+/** Values marked non-secret are included (`account`, a field's `value`); secret ones never are. */
+export interface CredentialSummary { reference: CredentialReference; name: string; origin: string; account?: string; maskedAccount: string; accountSecret: boolean
+  hasPassword: boolean; fields: { id: string; name: string; secret: boolean; value?: string }[]; grants: CredentialGrant[]; sites: string[] }
+/** Person-only plaintext, returned after local system verification. Never an Agent result. */
+export interface CredentialSecrets { account: string; password: string; fields: { id: string; name: string; value: string }[] }
+export interface CredentialInput { origin: string; name?: string; account: string; accountSecret?: boolean; password: string
+  fields?: { id: string; name: string; value: string; secret?: boolean }[]; sites?: string[] }
 export type LockReason = 'explicit' | 'os-lock' | 'suspend' | 'logout' | 'account-switch' | 'app-exit' | 'failure'
 export interface Invalidation { epoch: string; reason: LockReason | 'edit' | 'delete' | 'recovery'; credentialId?: string }
 export interface VaultState { status: 'locked' | 'unlocked' | 'unavailable'; epoch: string; reason?: VaultCode }
 export interface AuditInput {
   id: string
-  action: 'pre-submit' | 'setup' | 'recovery' | 'unlock' | 'lock' | 'add' | 'edit' | 'delete' | 'request' | 'decision' | 'use' | 'invalidate' | 'clear'
+  action: 'pre-submit' | 'setup' | 'recovery' | 'unlock' | 'lock' | 'add' | 'edit' | 'delete' | 'request' | 'decision' | 'use' | 'invalidate' | 'clear' | 'grant' | 'reveal'
   loginSurfaceId?: string; agentId?: string; sessionId?: string; requestId?: string; useId?: string
   credential?: { id: string; version: number }; origin?: string
   decision?: 'allow-once' | 'reject' | 'cancel' | 'expire'
@@ -44,6 +51,8 @@ export interface VaultDependencies {
   browser?: VaultBrowserSink
   /** Synchronous revocation first, then wait for browser cleanup before edit/delete success. */
   invalidate(event: Invalidation): Promise<void>
+  /** Cross-device sync (SYNC.md). Absent = this device keeps a local-only vault. */
+  sync?: { publish(change: import('./management').SyncChange): Promise<void> }
   now?: () => number
 }
 import type { PasswordAvailability } from '../permissions/password-readiness'
@@ -58,10 +67,21 @@ import type { FixedVaultUseSettlementSink } from '../session/main/core/browser/c
 export type VaultUseBinding = CredentialUseBinding
 export type BrowserOutcome = CredentialLoginOutcome
 export type VaultSinkControl = AuditedCredentialUseLease
+/** One value of a credential, by what it is: the account, the password, a field (by id), or the current one-time code
+ * computed from a field holding a TOTP seed. */
+/** `typed`: a value nothing stores; the person (or the Agent, for one it already knows) supplies it in `typed`. */
+export type VaultFillValue = Readonly<{ kind: 'account' } | { kind: 'password' } | { kind: 'field'; id: string } | { kind: 'code'; id: string } | { kind: 'typed' }>
+/**
+ * What a use releases, in the order of the page's targets. `elsewhere`: the person approved this use on a website that
+ * is neither the credential's own nor one of its sites. Built by the trusted host from the approved request only.
+ */
+/** `typed[i]`: what the person typed on the card (or the Agent already knew) for value i, used instead of the stored one
+ * for this use only. `transient`: no saved credential at all; every value is typed, and nothing is looked up. */
+export type VaultFillPlan = Readonly<{ values: readonly VaultFillValue[]; elsewhere: boolean; typed?: readonly (string | undefined)[]; transient?: boolean }>
 export interface VaultBrowserSink extends FixedVaultUseSettlementSink {
   claimCredentialSink(capability: VaultUseCapability, binding: VaultUseBinding): CredentialUseLease
   /** Fixed at trusted host construction, never supplied by an Agent or per-call callback. */
-  fillAndSubmit(binding: VaultUseBinding, secrets: { account: Buffer; password: Buffer }, control: VaultSinkControl): Promise<BrowserOutcome>
+  fillAndSubmit(binding: VaultUseBinding, secrets: { values: readonly Buffer[] }, control: VaultSinkControl): Promise<BrowserOutcome>
   /** Cleanup proves clearing only and MUST NOT hand back the isolated surface; only the coordinator can finalize handoff. */
   cleanup(useRef: string): Promise<CredentialUseCleanup>
 }

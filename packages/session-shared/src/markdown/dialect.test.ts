@@ -69,6 +69,15 @@ describe('markdown dialect', () => {
     expect(urls(`\`gugu-file://${id}\` and gugu-file://not-a-file`)).toEqual([]);
   });
 
+  it('reads a bare conversation, message or widget link in prose as a link, as the guide promises', () => {
+    const chat = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', message = '11111111-2222-4333-8444-555555555555';
+    const urls = (text: string) => collect(run(text, { trust: 'chat' }), 'link').map((node) => ('url' in node ? node.url : ''));
+    expect(urls(`First card: gugu-widget://${message} end`)).toEqual([`gugu-widget://${message}`]);
+    expect(urls(`see gugu-chat://${chat}/${message}.`)).toEqual([`gugu-chat://${chat}/${message}`]);
+    expect(urls(`群 gugu-chat://${chat}。`)).toEqual([`gugu-chat://${chat}`]);
+    expect(urls(`\`gugu-widget://${message}\` and gugu-chat://`)).toEqual([]);
+  });
+
   it('keeps raw HTML and images literal for chat trust, and parses them for documents', () => {
     const source = 'hi <b>bold</b> ![pic](https://example.com/p.png)';
     const chat = run(source, { trust: 'chat' });

@@ -157,6 +157,9 @@ export type ChatContext = {
  * `clearTextMeasure()` flushes pretext's glyph cache and `bumpEpoch()`
  * invalidates all block geometry caches.
  */
+/** How long actor updates are gathered before the rows are rebuilt once for all of them. */
+const ACTORS_BUMP_MS = 50;
+
 export function createChatContext(opts: ChatContextOptions): ChatContext {
   const config = opts.config ?? DEFAULT_CONFIG;
   const initialTheme = opts.theme ?? buildChatTheme(config, opts.layout ?? DEFAULT_LAYOUT);
@@ -233,7 +236,12 @@ export function createChatContext(opts: ChatContextOptions): ChatContext {
   });
 
   let disposed = false;
-  const unsubscribeActors = opts.subscribeActors?.(() => { if (!disposed) bumpActors(); });
+  // Names arrive in bursts while older pages load (each page asks for the identities it meets), and every bump
+  // rebuilds the committed rows. One rebuild answers all of a burst.
+  let actorsBump: ReturnType<typeof setTimeout> | undefined;
+  const unsubscribeActors = opts.subscribeActors?.(() => {
+    actorsBump ??= setTimeout(() => { actorsBump = undefined; if (!disposed) bumpActors(); }, ACTORS_BUMP_MS);
+  });
   const unsubscribeTranslator = opts.subscribeTranslator?.(() => {
     if (!disposed) bumpTranslation();
   });
@@ -280,6 +288,7 @@ export function createChatContext(opts: ChatContextOptions): ChatContext {
     dispose() {
       disposed = true;
       unsubscribeActors?.();
+      clearTimeout(actorsBump);
       unsubscribeTranslator?.();
       unsubscribeSelfIdentity?.();
       unsubscribeSenderAvatars?.();

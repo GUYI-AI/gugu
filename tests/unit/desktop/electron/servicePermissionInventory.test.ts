@@ -52,10 +52,10 @@ describe('service permission risk inventory', () => {
       expect(CORE_TOOL_RISKS[name]).toEqual({ risk: 'medium', effect: 'read' })
     }
   })
-  it('classifies exactly the actual device actions, including generated computer mappings and mixed-case names', () => {
-    const names = new Set(createAllFamilies(null).flatMap(family => family.actions.map(action => action.name)))
+  it('classifies exactly the actual device actions, including mixed-case names', () => {
+    const names = new Set(createAllFamilies().flatMap(family => family.actions.map(action => action.name)))
     expect(Object.keys(DEVICE_ACTION_RISKS).sort()).toEqual([...names].sort())
     expect(DEVICE_ACTION_RISKS['mail.send']).toMatchObject({ risk: 'high', effect: 'owner' })
-    expect(DEVICE_ACTION_RISKS['computer.run_steps']).toMatchObject({ risk: 'high', effect: 'execute' })
+    expect(DEVICE_ACTION_RISKS['script.shell']).toMatchObject({ risk: 'high', effect: 'execute' })
   })
 })

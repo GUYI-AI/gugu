@@ -2,13 +2,11 @@
 
 export const enUSThemeMessages = {
   'themes.title': 'Themes',
-  'themes.description': 'Only changes Gugu on this computer. Colors come from VS Code and Obsidian community themes; authors and licenses are kept.',
   'themes.import': 'Import from link',
   'themes.mode.dual': 'Light & dark',
   'themes.mode.dark': 'Dark only',
   'themes.mode.light': 'Light only',
   'themes.default': 'Gugu default',
-  'themes.current': 'In dark mode: {dark} · In light mode: {light}',
   'themes.applied': 'Switched to {name}',
   'themes.appliedDark': 'Switched to {name} for dark mode, and switched to dark mode',
   'themes.appliedLight': 'Switched to {name} for light mode, and switched to light mode',
@@ -37,13 +35,11 @@ export type ThemeMessageKey = keyof typeof enUSThemeMessages;
 
 export const zhCNThemeMessages: Record<ThemeMessageKey, string> = {
   'themes.title': '主题',
-  'themes.description': '只改这台电脑上的咕咕。配色取自 VS Code 和 Obsidian 社区主题，保留作者与许可证。',
   'themes.import': '从链接导入',
   'themes.mode.dual': '双模式',
   'themes.mode.dark': '仅深色',
   'themes.mode.light': '仅浅色',
   'themes.default': '咕咕默认',
-  'themes.current': '深色时：{dark} · 浅色时：{light}',
   'themes.applied': '已换成 {name}',
   'themes.appliedDark': '深色时已换成 {name}，并已切到深色',
   'themes.appliedLight': '浅色时已换成 {name}，并已切到浅色',

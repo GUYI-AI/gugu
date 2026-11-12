@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
-import type { LibraryMcpCheck, LibraryMcpHarnessServer, LibraryMcpServer } from '@shared/mcp-library';
+import type { GuguToolsOff } from '@shared/gugu-tool-groups';
+import type { LibraryMcpCheck, LibraryMcpHarnessServer, LibraryMcpProvided, LibraryMcpServer } from '@shared/mcp-library';
 
 const harnessKey = (hostKey: string, agentId: string) => ['mcpLibrary', 'harness', hostKey, agentId] as const;
 
@@ -38,8 +39,9 @@ export function useMcpLibrary() {
   });
 
   // 「咕咕提供」里的内置、集成、App 三组:和开会话时读的是同一组来源(见 mcp-library/service.ts `provided`)。
+  const providedKey = ['mcpLibrary', 'provided', host.key] as const;
   const provided = useQuery({
-    queryKey: ['mcpLibrary', 'provided', host.key],
+    queryKey: providedKey,
     queryFn: () => host.mcpLibrary.provided(),
     enabled: reachable,
     ...(host.remote ? { retry: false } : {}),
@@ -56,6 +58,18 @@ export function useMcpLibrary() {
   const setEnabledByDefault = useMutation({
     mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) => host.mcpLibrary.setEnabledByDefault(name, enabled),
     onSettled: invalidate,
+  });
+
+  // 内置那台的工具组开关:先改这一页上的读数(开关不回弹),失败回滚、再以宿主那一份为准。
+  const setGuguToolsOff = useMutation({
+    mutationFn: (off: GuguToolsOff) => host.mcpLibrary.setGuguToolsOff(off),
+    onMutate: (off) => {
+      const before = queryClient.getQueryData<LibraryMcpProvided>(providedKey);
+      if (before) queryClient.setQueryData<LibraryMcpProvided>(providedKey, { ...before, guguToolsOff: off });
+      return before;
+    },
+    onError: (_error, _off, before) => before && queryClient.setQueryData(providedKey, before),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: providedKey }),
   });
 
   // 正在检测的那几台(键 = `gugu:<名>` 或 `<家>:<名>`),以及各家那几台这一页上检测出来的结果。
@@ -115,10 +129,11 @@ export function useMcpLibrary() {
     update: update.mutateAsync,
     remove: remove.mutateAsync,
     setEnabledByDefault: (name: string, enabled: boolean) => setEnabledByDefault.mutate({ name, enabled }),
+    setGuguToolsOff: setGuguToolsOff.mutateAsync,
     checking,
     check: (name: string) => track(`gugu:${name}`, () => host.mcpLibrary.check(name)).finally(invalidate),
     harnessChecks,
-    /** 集成、App 那几台的工具列表(键见 `LibraryMcpProvidedServer.key`),这一页上取的,不记下来。 */
+    /** 内置、集成、App 那几台的工具列表(键见 `LibraryMcpProvidedServer.key`,内置那台是它的名字),这一页上取的,不记下来。 */
     providedChecks,
     checkProvided: (key: string) =>
       track(key, async () => {

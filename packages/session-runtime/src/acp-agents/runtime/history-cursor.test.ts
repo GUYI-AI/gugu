@@ -34,6 +34,33 @@ describe('ACP history change cursor', () => {
     await rt.stopSession('history');
   });
 
+  it('sends changed turns before the reader content floor as identity only, so a large old turn no longer resets the delta (#2493)', async () => {
+    const { rt } = await started();
+    const api = createAcpProcedures(rt);
+    const initial = api.getHistory({ sessionId: 'history', limit: 100 });
+    if (!initial.success) throw initial.error;
+    // The older turn alone is over the 128KB page budget; the newer one is small.
+    await rt.sendPrompt('history', { text: 'a'.repeat(150_000) });
+    await rt.sendPrompt('history', { text: 'b'.repeat(10_000) });
+    const all = rt.getHistory('history');
+    if (!all.success) throw all.error;
+    const [older, newer] = all.data.turns.slice(-2);
+    const whole = api.getHistory({ sessionId: 'history', limit: 100, changedSince: initial.data.cursor });
+    expect(whole).toMatchObject({ success: true, data: { reset: true } });
+    const delta = api.getHistory({ sessionId: 'history', limit: 100, changedSince: initial.data.cursor, contentFrom: newer!.seq });
+    if (!delta.success) throw delta.error;
+    expect(delta.data.reset).toBe(false);
+    expect(delta.data.turns.map((turn) => turn.id)).toEqual([older!.id, newer!.id]);
+    expect(delta.data.turns[0]).toMatchObject({ id: older!.id, seq: older!.seq, items: [] });
+    expect(delta.data.turns[0]!.terminals).toBeUndefined();
+    expect(JSON.stringify(delta.data.turns[1])).toContain('b'.repeat(100));
+    // Answering by identity never touches the runtime's own record.
+    const again = rt.getHistory('history');
+    if (!again.success) throw again.error;
+    expect(again.data.turns.find((turn) => turn.id === older!.id)!.items.length).toBeGreaterThan(0);
+    await rt.stopSession('history');
+  });
+
   it('returns only newly committed turns and leaves the stored transcript isolated from the reply', async () => {
     const { rt } = await started();
     await rt.sendPrompt('history', { text: 'first' });

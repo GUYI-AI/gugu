@@ -25,6 +25,9 @@ import {
   setExtensionAppView,
   unbindExtensionSurfaces,
   updateExtensionSurfaceLayout,
+  pushBindingSurfaces,
+  deliverSurfaceIntent,
+  pushBindingWork,
 } from '@main/core/extensions/extension-bridge';
 import {
   extensionDataRoot,
@@ -384,6 +387,27 @@ export const extensionsController = createRPCController({
       .filter((change) => typeof change?.chatId === 'string' && Array.isArray(change.itemIds))
       .map((change) => ({ chatId: change.chatId, itemIds: change.itemIds.filter((id) => typeof id === 'string') }));
     void notifyGroupWorkspaceChanged(changes);
+    return { success: true };
+  },
+
+  /**
+   * #1927 (42) The account's event bus said these agents' panel resources changed (`assistant_panel_changed`), or — `resync`
+   * — it joined again or the signed-in account changed: pages hearing their binding's agent resources read again, or end.
+   */
+  agentResourcesChanged: async (args: { agentIds?: string[]; resync?: boolean }) => {
+    const agentIds = (Array.isArray(args?.agentIds) ? args.agentIds : []).filter((id): id is string => typeof id === 'string');
+    const { notifyAgentResourcesChanged } = await import('@main/core/extensions/app-resource-watches');
+    void notifyAgentResourcesChanged(args?.resync === true ? 'all' : agentIds);
+    return { success: true };
+  },
+
+  /**
+   * #1927 (47) The main window's voice-note recorder moved (app-voice-note-host.ts, at most about ten times a second): pages
+   * hearing it (`gugu.voiceNote.onChanged`) hear it whole, as its allow-list lets them, or end.
+   */
+  voiceNoteChanged: async (change: unknown) => {
+    const { voiceNoteChanged } = await import('@main/core/extensions/app-voice-note-watches');
+    void voiceNoteChanged(change);
     return { success: true };
   },
 
@@ -804,11 +828,150 @@ export const extensionsController = createRPCController({
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
 
+  /** #1925 The window drawing an App's main page beside its bound conversation: which, for this account (host-only). */
+  conversationSurfaceBindings: async (args: { ownerId: string }) => {
+    try {
+      const { grantedSurfaceBindings } = await import('./app-unread-bindings');
+      return { success: true as const, data: { ownerId: args.ownerId, bindings: await grantedSurfaceBindings(args.ownerId) } };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  /** #1925 What that window draws now (null: not the conversation): the App's pages hear `gugu.bindings.onSurface`. */
+  reportConversationSurface: async (args: { extensionId: string; tabKind: string; tabId: string; shown: { chatId: string; collapsed: boolean } | null; intent?: 'profile' }) => {
+    try {
+      const { reportConversationSurface } = await import('./app-unread-bindings');
+      // 46 `intent`: the person's click in the host's row above the conversation — told once, whatever else changed.
+      if (reportConversationSurface(args) || args.intent) {
+        void pushBindingSurfaces(args.extensionId, args.intent ? { kind: args.intent } : undefined)
+          .catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
+      }
+      return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  /**
+   * #1927 (48) The composer 「+」 entries of an App placed beside the person's own assistant chat, for the column the shell
+   * drew under `authority`; and one the person clicked, run by the host (app-composer-actions.ts). Trusted window only.
+   */
+  conversationComposerActions: async (args: { ownerId: string; extensionId: string; authority: string }) => {
+    try {
+      const { composerActionsFor } = await import('./app-composer-actions');
+      return { success: true as const, data: await composerActionsFor(args) };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+  runConversationComposerAction: async (args: { ownerId: string; extensionId: string; authority: string; actionId: string }) => {
+    try {
+      const { runComposerAction } = await import('./app-composer-actions');
+      return { success: true as const, data: await runComposerAction(args, deliverSurfaceIntent) };
+    } catch (error) {
+      return { success: false as const, error: error instanceof Error ? error.message : String(error), code: String((error as { code?: unknown } | null)?.code ?? 'failed') };
+    }
+  },
+  /** #1927 (48) The host's recording bar beside that conversation: the person opened the note it shows. */
+  conversationVoiceNoteOpened: async (args: { ownerId: string; extensionId: string }) => {
+    try {
+      const { voiceNoteOpenedBeside } = await import('./app-composer-actions');
+      return { success: true as const, data: { told: await voiceNoteOpenedBeside(args, deliverSurfaceIntent) } };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+  /** The host's 自定义 hint above that conversation's composer: the person opened it (app-composer-actions.ts). */
+  conversationCustomizeOpened: async (args: { ownerId: string; extensionId: string }) => {
+    try {
+      const { customizeOpenedBeside } = await import('./app-composer-actions');
+      return { success: true as const, data: { told: await customizeOpenedBeside(args, deliverSurfaceIntent) } };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  /**
+   * #1925 (46) The window's reading of the account's work ledger, as the built-in list reads it (AppWorkLedgerHost): kept
+   * for `gugu.bindings.work`, and told to the pages of each App reading it (app-work-binding.ts).
+   */
+  workLedgerChanged: async (args: { ownerId: string | null; assistantId: string | null; state: string; rows: unknown[] }) => {
+    try {
+      const { workLedgerChanged } = await import('./app-work-binding');
+      for (const extensionId of await workLedgerChanged(args)) {
+        void pushBindingWork(extensionId).catch((error: unknown) => log.warn('The work list could not be told to an App\'s pages:', error));
+      }
+      return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  /**
+   * #1925 (44, 46) What that window draws over an App's panel now (app-host-layer.ts; null: nothing): its pages hear
+   * `hostPage` (`onAssistantChanged`), `panel.hostPage` (`onSurface`) and, reading work, which row is open (`onWorkChanged`).
+   */
+  reportHostLayer: async (args: { extensionId: string; layer: import('@shared/extensions/app-host-layer').AppHostLayer | null }) => {
+    try {
+      // One record for every host page over an App's panel (app-host-layers.ts): a task (46) or a panel page (44).
+      const [{ appHostLayerChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
+      if (await appHostLayerChanged(args, deliverToPersonPages)) {
+        void pushBindingWork(args.extensionId).catch((error: unknown) => log.warn('The work list could not be told to an App\'s pages:', error));
+        void pushBindingSurfaces(args.extensionId).catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
+      }
+      return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
   unreadBindingChoices: async (args: { extensionId: string; name: string }) => {
     try {
       const { unreadBindingChoices } = await import('./app-unread-bindings');
       return { success: true as const, data: await unreadBindingChoices(args.extensionId, args.name) };
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  /**
+   * #1925 The shell's assistant snapshot, as an App may see it (`useAssistantAppStatus`): kept for `gugu.assistant.status`,
+   * and told to the pages of each App still entitled to hear it (app-assistant-binding.ts).
+   */
+  assistantStatusChanged: async (args: { ownerId: string; status: unknown }) => {
+    try {
+      const [{ assistantStatusChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
+      await assistantStatusChanged(args, deliverToPersonPages);
+      return { success: true as const };
+    } catch (error) {
+      log.warn('Failed to take the assistant snapshot for Apps:', error);
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  /**
+   * Entry switch: the window's assistant changed (or the assistant App did): the trusted assistant App's binding is brought to
+   * the account's own assistant chat by the host (assistant-app-entry.ts). Answers whether that App is the trusted one; a
+   * binding written is told as a choice in the App's permissions is.
+   */
+  /**
+   * Entry switch (G6): the tab the person last had open on the built-in assistant page, handed to the trusted assistant App
+   * once (assistant-app-entry.ts `handOverAssistantPage`). True: held for its page.
+   */
+  handOverAssistantPage: async (args: { ownerId: string; tab: string }) => {
+    try {
+      const { handOverAssistantPage } = await import('./assistant-app-entry');
+      return { success: true as const, data: { held: await handOverAssistantPage(args) } };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  syncAssistantAppEntry: async (args: { ownerId: string; chatId: string | null }) => {
+    try {
+      const { syncAssistantAppEntry } = await import('./assistant-app-entry');
+      const state = await syncAssistantAppEntry(args);
+      if (state.changed) {
+        events.emit(extensionsInventoryChangedChannel, { extensionId: state.extensionId });
+        void notifyInstalledAppsChanged();
+      }
+      return { success: true as const, data: state };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  /** #1925 (44) The assistant panel's numbers as the session page read them (`useAssistantAppCounts`), for Apps to see. */
+  assistantCountsChanged: async (args: { ownerId: string; counts: unknown; connectors: unknown }) => {
+    try {
+      const [{ assistantCountsChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
+      await assistantCountsChanged(args, deliverToPersonPages);
+      return { success: true as const };
+    } catch (error) {
+      log.warn('Failed to take the assistant counts for Apps:', error);
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
   },
 
   setUnreadBinding: async (args: { extensionId: string; name: string; ownerId: string; authority: string; chatId: string | null }) => {
@@ -892,7 +1055,9 @@ export const extensionsController = createRPCController({
       // Capabilities need no reload: the bridge asks for the granted set on every
       // call, so a withdrawn capability stops working on the next call either way.
       reloadExtensionSurfaces(installed.manifest.id);
-      if (args.permission === 'chat:unread') events.emit(extensionsInventoryChangedChannel, { extensionId: args.extensionId });
+      // The window's projections of the binding (rail unread, #1925 the conversation beside the page, a task's conversation
+      // in its panel) read it again.
+      if (args.permission === 'chat:unread' || args.permission === 'chat:surface' || args.permission === 'chat:work') events.emit(extensionsInventoryChangedChannel, { extensionId: args.extensionId });
       void notifyInstalledAppsChanged();
       return { success: true, data: { revoked: service.revokedPermissions(args.extensionId) } };
     } catch (error) {

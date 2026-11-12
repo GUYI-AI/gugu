@@ -13,29 +13,6 @@ export const browserOpenInNewTabChannel = defineEvent<{
  */
 export const browserFocusedChannel = defineEvent<{ browserId: string }>('browser:focused');
 
-/** Current browser activity only. Stop/continue belongs to the Agent conversation. */
-export type BrowserAgentState = 'driving' | 'idle';
-export const browserAgentStateChannel = defineEvent<{ browserId: string; state: BrowserAgentState }>(
-  'browser:agent-state'
-);
-
-/**
- * #7191 agent 的鼠标。坐标是页签里网页区域的 CSS 像素(主进程已乘上网页缩放),取自 Playwright 发给网页的真实输入。
- * `move`:页签把 agent 的鼠标移过去,到了回 `browser.agentCursorArrived(moveId)` —— 主进程等到这一声才把这一下交给网页,
- * 人看见鼠标先到、再点。`target` 是要落进去的那一块(打字的输入框),给动画算时长用。`click`:在鼠标所在处画一下点击。
- */
-export type BrowserAgentCursorEvent =
-  | {
-      browserId: string;
-      kind: 'move';
-      moveId: number;
-      x: number;
-      y: number;
-      target: [x: number, y: number, width: number, height: number] | null;
-    }
-  | { browserId: string; kind: 'click' };
-export const browserAgentCursorChannel = defineEvent<BrowserAgentCursorEvent>('browser:agent-cursor');
-
 /**
  * #7274 页签里那张网页此刻的导航状态,随每一条网页事件一起报(网页是主进程持有的 WebContentsView,页签那边
  * 读不到它,只能照这一份画地址栏、前进后退)。

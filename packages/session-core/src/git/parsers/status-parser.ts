@@ -27,6 +27,7 @@ export class StatusParser {
   }
 
   update(chunk: string): void {
+    if (this.tooManyFiles) return;
     let raw = this.lastRaw + chunk;
     let index = 0;
     let nextIndex: number | undefined;
@@ -64,6 +65,7 @@ export class StatusParser {
       case 'u':
         return this.parseUnmerged(raw, index);
       case '!':
+      case '#':
         return this.skipSimple(raw, index);
       default:
         return undefined;

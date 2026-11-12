@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { contact, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
-import { SettingsPanel } from '@/components/SettingsPanel';
+import { AssistantSection } from '@/components/settings/AssistantSection';
 import { AgentSettingsModal } from '@/components/agentsettings/AgentSettingsModal';
 import { AgentModelPicker } from '@/components/agentsettings/AgentModelPicker';
 import { Sheet } from '@/components/ui/Sheet';
@@ -53,8 +53,10 @@ async function dialog() {
   return document.querySelector<HTMLElement>('[data-testid="agent-settings-modal"]')!;
 }
 
-it.each(['look', 'model'])('the real %s settings dialog receives hits above the settings panel', async (entry) => {
-  await renderWithAppProviders(harness, <SettingsPanel initialSection="assistant" onClose={vi.fn()} />, {
+// The assistant's settings page (drawn over its App's panel; nothing of it is in Settings) opens its figure dialog; its model
+// is a screen of that same page (AssistantSettingsPage), not a dialog.
+it.each(['look'])('the real %s settings dialog receives hits above the assistant settings page', async (entry) => {
+  await renderWithAppProviders(harness, <AssistantSection available={[]} onOpenSection={vi.fn()} onOpenModel={vi.fn()} />, {
     auth: { id: 'owner-layer' }, contacts: { contacts: [contact(fixture.assistant)] },
   });
   const trigger = page.getByTestId(`settings-assistant-${entry}`);

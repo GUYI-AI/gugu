@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactElement, type ReactNode } f
 import { ChevronDown, MoreHorizontal, Plus } from '@/lib/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config'
-import type { AgentPayload } from '@shared/core/agents/agent-payload'
+import { agentConnectionForm, type AgentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { onMachineEvent } from '@renderer/lib/ipc'
 import { subscriptionSwitchProgressChannel } from '@shared/core/sessions/subscriptionSwitchEvents'
@@ -35,6 +35,8 @@ import { useLibraryHost } from '@renderer/features/library/library-host'
 import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog'
 import { harnessModelCredentialKey } from '@renderer/lib/stores/use-harness-model-credential'
 import { resolveSignInMethod } from '../agents-page/agent-account'
+import { dropIfNeverSignedIn } from './drop-unsigned-connection'
+import { rendererLogger } from '@/lib/log'
 import type { SubscriptionUsageWindow } from '@gugu/session-core/agents/plugins'
 import {
   ConnectionActionError,
@@ -50,11 +52,13 @@ function connectionsKey(machine: string | null, providerId: string) {
   return ['subscriptions', machine ?? 'local', providerId, 'connections']
 }
 
+/** 有连接的家:Claude / Codex(账号 + API Key),以及声明了 API Key 连接的家(#2507)。 */
 export function useSubscriptionConnections(
   machine: string | null,
-  providerId: string,
+  agent: Pick<AgentPayload, 'id' | 'capabilities'>,
   background = false
 ) {
+  const providerId = agent.id
   return useQuery({
     queryKey: connectionsKey(machine, providerId),
     queryFn: async () => {
@@ -64,7 +68,7 @@ export function useSubscriptionConnections(
       if (!result.success) throw new Error(errorText(result.error))
       return result.data
     },
-    enabled: providerId === 'claude' || providerId === 'codex',
+    enabled: agentConnectionForm(agent) !== null,
     staleTime: 30_000,
     retry: background,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30_000)
@@ -127,9 +131,11 @@ export function SubscriptionConnections({
   const queryClient = useQueryClient()
   const showSignIn = useShowModal('agentSignInModal')
   const host = useLibraryHost()
-  const connections = useSubscriptionConnections(machine, agent.id, settingsRows)
+  const connections = useSubscriptionConnections(machine, agent, settingsRows)
+  const form = agentConnectionForm(agent)
   const method = resolveSignInMethod(agent.capabilities)
-  const canSignIn = method?.kind === 'cli-login' && (!machine || !!method.headlessArgs)
+  // 账号连接(多个账号、各自登录)只有 Claude / Codex;其余家的账号就是它 CLI 自己那份登录,❌ 在这里再开一个。
+  const canSignIn = !!form?.accounts && method?.kind === 'cli-login' && (!machine || !!method.headlessArgs)
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: subscriptionKey(machine, agent.id) })
     void queryClient.invalidateQueries({ queryKey: harnessModelCredentialKey(agent.id) })
@@ -144,13 +150,12 @@ export function SubscriptionConnections({
       id: string
       stopBusySessions?: true
     }) => {
-      if (agent.id !== 'claude' && agent.id !== 'codex') throw new Error('Unsupported harness')
       const client = await getAgentConfigRuntimeClient(machine)
       if (kind === 'refresh') {
         const reading = await client.refreshAuthStatus({ providerId: agent.id, connectionId: id })
         if (!reading.success) throw new Error(errorText(reading.error))
       } else {
-        const input: { providerId: 'claude' | 'codex'; connectionId: string } = {
+        const input: { providerId: string; connectionId: string } = {
           providerId: agent.id,
           connectionId: id
         }
@@ -214,7 +219,18 @@ export function SubscriptionConnections({
           }
     )
   }, [failure, tone, refusedId, closeAndSwitch, closing, progress, onError])
-  const signIn = (connectionId: string) => {
+  /** 刚加的账号连接窗口关了还没登上:这条没有用处,拿掉(见 `dropIfNeverSignedIn`)。失败只记日志 —— 留下一条就是原来的样子。 */
+  const dropIfUnsigned = async (connectionId: string) => {
+    try {
+      const client = await getAgentConfigRuntimeClient(machine)
+      await dropIfNeverSignedIn(client, { providerId: agent.id, connectionId })
+    } catch (error) {
+      rendererLogger('settings/subscriptions').warn({ error, providerId: agent.id }, 'unsigned connection not removed')
+    } finally {
+      refresh()
+    }
+  }
+  const signIn = (connectionId: string, fresh = false) => {
     if (!method || !canSignIn) return
     setOpen(false)
     const finished = () => action.mutate({ kind: 'refresh', id: connectionId })
@@ -234,13 +250,36 @@ export function SubscriptionConnections({
           }
         : {}),
       onSuccess: finished,
-      onClose: finished
+      onClose: fresh ? () => void dropIfUnsigned(connectionId) : finished
     })
   }
+  // 正在用的连接登不上了(失效 / 没登录):「登录」直接摆在外面,❌ 藏进「切换连接 → ⋯」两层菜单里。
+  const current = connections.data?.find((c) => c.current)
+  const currentStatus = useConnectionDetails(
+    machine,
+    agent.id,
+    current?.kind === 'account' ? current.id : undefined
+  ).data?.status
+  const currentSignIn = canSignIn && current && currentStatus?.kind === 'unauthenticated' && (
+    <Button
+      size={settingsRows ? 'sm' : 'xs'}
+      variant="outline"
+      disabled={action.isPending}
+      data-testid={`subscription-sign-in-${agent.id}`}
+      onClick={() => signIn(current.id)}
+    >
+      {translate(
+        currentStatus.reason === 'expired'
+          ? 'subscriptions.connections.signInAgain'
+          : 'subscriptions.connections.signIn'
+      )}
+    </Button>
+  )
   return (
     <>
       {settingsRows ? (
         <ConnectionSettingsRows
+          signIn={currentSignIn || undefined}
           connections={connections.data}
           open={open}
           onOpenChange={setOpen}
@@ -270,10 +309,11 @@ export function SubscriptionConnections({
                   agent={agent}
                   machine={machine}
                   canSignIn={canSignIn}
+                  form={form}
                   onCreated={(connection) => {
                     refresh()
                     setAdding(false)
-                    if (connection.kind === 'account') signIn(connection.id)
+                    if (connection.kind === 'account') signIn(connection.id, true)
                     else setOpen(true)
                   }}
                 />
@@ -300,27 +340,31 @@ export function SubscriptionConnections({
         </ConnectionSettingsRows>
       ) : (
         <DropdownMenu open={open} onOpenChange={changeOpen}>
-          {trigger !== null && (
-            <DropdownMenuTrigger
-              render={
-                trigger ?? (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    disabled={action.isPending}
-                    data-testid={`subscription-switch-${agent.id}`}
-                  />
-                )
-              }
-            >
-              {label ?? (
-                <>
-                  {translate('subscriptions.connections.switch')}
-                  <ChevronDown className="ml-1 size-3" />
-                </>
-              )}
-            </DropdownMenuTrigger>
-          )}
+          {/* 「重新登录」与「切换连接」并排一行;操作列本身是竖排的,❌ 让它俩上下叠。 */}
+          <div className="flex items-center gap-1">
+            {trigger === undefined && currentSignIn}
+            {trigger !== null && (
+              <DropdownMenuTrigger
+                render={
+                  trigger ?? (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      disabled={action.isPending}
+                      data-testid={`subscription-switch-${agent.id}`}
+                    />
+                  )
+                }
+              >
+                {label ?? (
+                  <>
+                    {translate('subscriptions.connections.switch')}
+                    <ChevronDown className="ml-1 size-3" />
+                  </>
+                )}
+              </DropdownMenuTrigger>
+            )}
+          </div>
           <DropdownMenuContent align="end" anchor={anchor} className="subscription-connection-menu">
             {!onError && failure && (
               <p
@@ -381,10 +425,11 @@ export function SubscriptionConnections({
               agent={agent}
               machine={machine}
               canSignIn={canSignIn}
+              form={form}
               onCreated={(connection) => {
                 refresh()
                 setAdding(false)
-                if (connection.kind === 'account') signIn(connection.id)
+                if (connection.kind === 'account') signIn(connection.id, true)
                 else setOpen(true)
               }}
             />
@@ -393,6 +438,30 @@ export function SubscriptionConnections({
       </Dialog>
     </>
   )
+}
+
+/** 一个连接的登录读数与套餐。菜单里的行和菜单外的「重新登录」读同一份(同一把键)。 */
+function useConnectionDetails(
+  machine: string | null,
+  providerId: string,
+  connectionId: string | undefined
+) {
+  return useQuery({
+    queryKey: [...connectionsKey(machine, providerId), connectionId],
+    queryFn: async () => {
+      const client = await getAgentConfigRuntimeClient(machine)
+      const input = { providerId, connectionId: connectionId! }
+      const [status, plan] = await Promise.all([
+        client.refreshAuthStatus(input),
+        client.readSubscription(input)
+      ])
+      if (!status.success) throw new Error(errorText(status.error))
+      return { status: status.data, plan: plan.success ? plan.data : null }
+    },
+    enabled: connectionId !== undefined,
+    staleTime: 30_000,
+    retry: false
+  })
 }
 
 function ConnectionOption({
@@ -413,21 +482,7 @@ function ConnectionOption({
   onSignIn?: () => void
 }) {
   const { translate } = useSessionMessages()
-  const details = useQuery({
-    queryKey: [...connectionsKey(machine, agent.id), connection.id],
-    queryFn: async () => {
-      const client = await getAgentConfigRuntimeClient(machine)
-      const input = { providerId: agent.id, connectionId: connection.id }
-      const [status, plan] = await Promise.all([
-        client.refreshAuthStatus(input),
-        client.readSubscription(input)
-      ])
-      if (!status.success) throw new Error(errorText(status.error))
-      return { status: status.data, plan: plan.success ? plan.data : null }
-    },
-    staleTime: 30_000,
-    retry: false
-  })
+  const details = useConnectionDetails(machine, agent.id, connection.id)
   // 不切过去也看得到这个号还剩多少(10-30 owner):按连接读，与「订阅」行同一把键、同一份读数。
   const usage = useQuery({
     queryKey: subscriptionKey(machine, agent.id, 'usage', connection.id),
@@ -451,9 +506,14 @@ function ConnectionOption({
     status?.kind === 'authenticated' && status.account
       ? status.account
       : connection.kind === 'api-key'
-        ? connection.endpoint
-          ? new URL(connection.endpoint).host
-          : translate('subscriptions.connections.officialApi')
+        ? [
+            connection.endpoint
+              ? new URL(connection.endpoint).host
+              : translate('subscriptions.connections.officialApi'),
+            connection.model
+          ]
+            .filter(Boolean)
+            .join(' · ')
         : status?.kind === 'unauthenticated'
           ? translate(
               status.reason === 'expired'
@@ -576,20 +636,25 @@ function ConnectionForm({
   agent,
   machine,
   canSignIn,
+  form,
   onCreated
 }: {
   agent: AgentPayload
   machine: string | null
   canSignIn: boolean
+  form: AgentConnectionForm | null
   onCreated: (connection: HarnessConnection) => void
 }) {
   const { translate } = useSessionMessages()
   const [kind, setKind] = useState<'account' | 'api-key'>(canSignIn ? 'account' : 'api-key')
   const [thirdParty, setThirdParty] = useState(false)
+  // 地址:可选的家勾「第三方」才出;必填的家直接摆出来(#2507,格子照这家的声明)。
+  const endpointField = form?.endpoint ?? 'none'
+  const showEndpoint = endpointField === 'required' || (endpointField === 'optional' && thirdParty)
+  const showModel = form?.model === 'required'
   const create = useMutation({
-    mutationFn: async (form: HTMLFormElement) => {
-      const data = new FormData(form)
-      if (agent.id !== 'claude' && agent.id !== 'codex') throw new Error('Unsupported harness')
+    mutationFn: async (element: HTMLFormElement) => {
+      const data = new FormData(element)
       const result = await (
         await getAgentConfigRuntimeClient(machine)
       ).createConnection({
@@ -599,12 +664,13 @@ function ConnectionForm({
         ...(kind === 'api-key'
           ? {
               apiKey: String(data.get('apiKey') ?? '').trim(),
-              ...(thirdParty ? { endpoint: String(data.get('endpoint') ?? '').trim() } : {})
+              ...(showEndpoint ? { endpoint: String(data.get('endpoint') ?? '').trim() } : {}),
+              ...(showModel ? { model: String(data.get('model') ?? '').trim() } : {})
             }
           : {})
       })
       if (!result.success) throw new Error(errorText(result.error))
-      form.reset()
+      element.reset()
       return result.data
     },
     onSuccess: onCreated
@@ -654,25 +720,38 @@ function ConnectionForm({
               placeholder="sk-…"
             />
           </label>
-          <label className="subscription-checkbox">
-            <input
-              type="checkbox"
-              checked={thirdParty}
-              onChange={(event) => setThirdParty(event.target.checked)}
-            />
-            {translate('subscriptions.connections.thirdParty')}
-          </label>
-          {thirdParty && (
+          {endpointField === 'optional' && (
+            <label className="subscription-checkbox">
+              <input
+                type="checkbox"
+                checked={thirdParty}
+                onChange={(event) => setThirdParty(event.target.checked)}
+              />
+              {translate('subscriptions.connections.thirdParty')}
+            </label>
+          )}
+          {showEndpoint && (
             <label>
               {translate('subscriptions.connections.endpoint')}
               <Input
                 name="endpoint"
                 type="url"
                 required
-                placeholder={
-                  agent.id === 'codex' ? 'https://api.example.com/v1' : 'https://api.example.com'
-                }
+                placeholder={endpointPlaceholder(agent.id, form?.protocol)}
               />
+            </label>
+          )}
+          {showEndpoint && form?.protocol && (
+            <p className="subscription-connection-description">
+              {translate('subscriptions.connections.protocolHint', {
+                protocol: PROTOCOL_NAMES[form.protocol]
+              })}
+            </p>
+          )}
+          {showModel && (
+            <label>
+              {translate('subscriptions.connections.model')}
+              <Input name="model" required autoComplete="off" spellCheck={false} />
             </label>
           )}
         </>
@@ -706,4 +785,19 @@ function ConnectionForm({
       </Button>
     </form>
   )
+}
+
+/** 接口的官方名字(专名,不翻译)—— 地址下那一行提示用。 */
+const PROTOCOL_NAMES: Record<NonNullable<AgentConnectionForm['protocol']>, string> = {
+  'anthropic-messages': 'Anthropic Messages',
+  'openai-chat-completions': 'OpenAI Chat Completions',
+  'openai-responses': 'OpenAI Responses',
+  'gemini-generate-content': 'Gemini'
+}
+
+/** Claude 的地址是裸根、Codex 带 `/v1`(与之前一样);其余家照它要讲的接口:OpenAI 那两种带 `/v1`。 */
+function endpointPlaceholder(providerId: string, protocol: AgentConnectionForm['protocol']): string {
+  if (providerId === 'codex') return 'https://api.example.com/v1'
+  if (protocol === 'openai-chat-completions' || protocol === 'openai-responses') return 'https://api.example.com/v1'
+  return 'https://api.example.com'
 }

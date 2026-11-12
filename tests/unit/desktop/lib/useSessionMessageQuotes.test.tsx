@@ -25,12 +25,17 @@ afterEach(() => harness.cleanup());
 const rightClick = (root: Element) => act(async () => { root.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); });
 const asked = () => messageMenu.mock.calls.at(-1)![0];
 
-async function setup(actions: Parameters<typeof useSessionMessageQuotes>[2] | null = {}) {
-  const state = { sessionId: 'session-a', draftText: 'my question', submitPrompt: vi.fn(), queuePrompt: vi.fn(), setDraftText(text: string) { this.draftText = text; } };
+async function setup(actions: Parameters<typeof useSessionMessageQuotes>[2] = {}) {
+  const turns = [{ id: 'turn-1', seq: 1, initiator: 'user', items: [
+    { kind: 'message', id: 'prompt', role: 'user', text: 'What is the harbor?' },
+    { kind: 'message', id: 'first', role: 'assistant', text: 'same words' },
+  ] }];
+  const state = { sessionId: 'session-a', draftText: 'my question', submitPrompt: vi.fn(), queuePrompt: vi.fn(), setDraftText(text: string) { this.draftText = text; },
+    chatState: { transcript: { state: { committedTurns: turns, activeTurnSnapshot: null } } } };
   const store = state as unknown as AcpChatStore;
   const editor = { current: { setText: vi.fn(), focus: vi.fn(), getText: () => state.draftText } as unknown as PromptEditorRef };
   let commands!: ReturnType<typeof useSessionMessageQuotes>;
-  function Probe({ current = store }: { current?: AcpChatStore }) { commands = useSessionMessageQuotes(current, editor, actions ?? undefined); return null; }
+  function Probe({ current = store }: { current?: AcpChatStore }) { commands = useSessionMessageQuotes(current, editor, actions); return null; }
   await harness.render(createElement(Probe));
   const root = document.createElement('div'); root.textContent = 'same words'; document.body.append(root);
   let item: ChatMessage = { kind: 'message', id: 'first', role: 'assistant', text: 'same words' };
@@ -141,17 +146,19 @@ describe('task message copy menus and legacy prompt restoration', () => {
     expect(c.editor.current.setText).toHaveBeenCalledWith('retry this');
     c.dispose(); c.root.remove();
   });
-  it('keeps the copy menu, and nothing on a link, where the host gives no message actions (the phone)', async () => {
-    const c = await setup(null);
-    menu.mockResolvedValue('copy');
-    await rightClick(c.root);
-    expect(messageMenu).not.toHaveBeenCalled();
-    expect(menu.mock.calls[0]![0]).toEqual([{ id: 'copy', label: 'transcript.copyMessage' }]);
-    expect(writeClipboardText).toHaveBeenCalledExactlyOnceWith('same words');
-    menu.mockClear();
-    const link = document.createElement('a'); link.href = 'https://example.com/a'; c.root.append(link);
-    await rightClick(link);
-    expect(menu).not.toHaveBeenCalled();
-    c.dispose(); c.root.remove();
+  it('forwards an answer with the prompt that opened its turn, and lifts the bubble on the phone', async () => {
+    const forwards: unknown[] = [];
+    const capture = (event: Event) => forwards.push((event as CustomEvent).detail);
+    window.addEventListener('gugu:forward-pieces-open', capture);
+    try {
+      const c = await setup({ phone: true });
+      await rightClick(c.root);
+      expect(menu).not.toHaveBeenCalled();
+      expect(asked().lift.bubble).toBe(c.root);
+      expect(asked().onEditMessage).toBeUndefined();
+      await act(async () => asked().onForward());
+      expect(forwards).toEqual([[{ kind: 'text', sender: null, senderId: null, text: 'What is the harbor?' }, { kind: 'text', sender: 'Agent', text: 'same words' }]]);
+      c.dispose(); c.root.remove();
+    } finally { window.removeEventListener('gugu:forward-pieces-open', capture); }
   });
 });

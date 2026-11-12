@@ -843,6 +843,15 @@ export async function forwardTargets(page: DesktopFilePage, args: { refs?: unkno
 export const chatMembersOf = files.members;
 /** Host permission UI only; App content access still goes through chat:read. */
 export const unreadBindingChatChoices = () => files.chats();
+/**
+ * #1927 The host's conversation binding only (app-unread-bindings.ts), read as the signed-in person: the chat is the one
+ * the binding names, never an App's argument, and the caller keeps what the App may see of each entry.
+ */
+export const boundConversationFiles = {
+  list: (chatId: string, folder: string | undefined) => files.groupFiles(chatId, folder === undefined ? {} : { folder }),
+  read: (chatId: string, filePath: string, maxBytes: number) => files.readAtPath(chatId, filePath, maxBytes),
+  resourceChat: (chatId: string) => files.resourceChat(chatId),
+};
 export const chatsOf = files.chats;
 export const surfaceChatOf = files.chat;
 export const resourceChatOf = files.resourceChat;

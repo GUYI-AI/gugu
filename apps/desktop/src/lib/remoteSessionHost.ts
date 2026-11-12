@@ -13,10 +13,12 @@ import { callDeviceRpc, subscribeDeviceRpcEvents } from './deviceRpc'
 import { isSshMachine, requestSshServerUpgrade, usesDeviceLink, waitForTunnel } from './sshLinkChannel'
 import { rendererLogger } from './log'
 import type { SessionHostPipe, SessionHostPipeOpener } from '../session/shared/lib/ipc/session-host-client'
+import { base64ToBytes } from '../session/shared/lib/base64'
 import {
   createPieceJoiner,
   createSeqOrderer,
   SESSION_HOST_FRAME_EVENT,
+  SESSION_HOST_PACK,
   SESSION_HOST_READY_EVENT,
   SESSION_HOST_RPC,
   toPieces,
@@ -29,6 +31,20 @@ import {
  * 2026-10-27 那次「开机时会话起不来」,桌面这头只有一句不带 client 的「连接关闭」,对不上那台机器上的哪一条。
  */
 const log = rendererLogger('session-host/device')
+
+/**
+ * Packed frames (session-host-device-frames `PackedFrameCarrier`): this side asks for them when it can unpack gzip.
+ * A packed frame that could not be read stops the asking for as long as this page lives: the window it came on is
+ * closed, and the one opened in its place is sent every frame as it is.
+ */
+let packUnreadable = false
+export function readsPackedFrames(): boolean {
+  return !packUnreadable && typeof DecompressionStream === 'function'
+}
+export async function unpackFrame(packed: string): Promise<string> {
+  const stream = new Blob([base64ToBytes(packed) as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new DecompressionStream('gzip'))
+  return await new Response(stream).text()
+}
 
 export class SessionHostTooOldError extends Error {
   /** 与会话 / 资源库各处认「版本太旧」的同一个码(connection-status 的 TOO_OLD_CODES)。 */
@@ -135,7 +151,15 @@ export function openRemoteSessionHostPipe(
     let live = false
     /** 开线那一问还在路上时频道重接上了:那一问多半随断开的那段丢了,当场放弃,❌ 干等它超时。 */
     let abandonOpen: ((error: Error) => void) | null = null
-    const joiner = createPieceJoiner(onFrame)
+    // A frame still being unpacked when the window closes is not handed over: whoever asked has already been told.
+    const joiner = createPieceJoiner((frame) => { if (!closed) onFrame(frame) }, {
+      read: unpackFrame,
+      failed: (error) => {
+        packUnreadable = true
+        log.warn({ deviceId, client, error: String(error) }, 'packed frame unreadable')
+        shut('packed frame unreadable')
+      },
+    })
     const order = createSeqOrderer<SessionHostPiece[]>(joiner)
     /** 听到那台机器多少回(推来的一批、对哪一批的应答)。探活那一问没回,可期间听到过它 = 它还在,只是线上正忙。 */
     let heard = 0
@@ -187,7 +211,7 @@ export function openRemoteSessionHostPipe(
     let request: ReturnType<DeviceRpcDeps['call']> | null = null
     try {
       const protocol = await deps.protocol?.(deviceId).catch(() => REMOTE_PROTOCOL_VERSION) ?? REMOTE_PROTOCOL_VERSION
-      request = deps.call(deviceId, SESSION_HOST_RPC.open, { client, protocol }, { timeoutMs: OPEN_TIMEOUT_MS })
+      request = deps.call(deviceId, SESSION_HOST_RPC.open, { client, protocol, ...(readsPackedFrames() ? { pack: [SESSION_HOST_PACK] } : {}) }, { timeoutMs: OPEN_TIMEOUT_MS })
       opened = await Promise.race([request, new Promise<never>((_, reject) => { abandonOpen = reject })])
     } catch (error) {
       closed = true

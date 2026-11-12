@@ -157,14 +157,6 @@ img.details-picture { object-fit: contain; }
   .file-pick[aria-checked='true']::after { left: 19px; top: 16px; }
   .file-pick::after { pointer-events: none; }
   .file-list.selecting.as-grid .cell { display: grid; grid-template-columns: 44px minmax(0, 1fr); }
-  .menu.file-context { inset: auto 0 0; width: auto; min-width: 0; max-height: 55vh; overflow-y: auto; border-radius: var(--em-radius-xl) var(--em-radius-xl) 0 0; padding: var(--em-spacing-sm) var(--em-spacing-sm) calc(var(--em-spacing-sm) + env(safe-area-inset-bottom, 0px)); }
-  .menu.file-context::before { content: ''; width: 36px; height: 4px; border-radius: 2px; background: var(--em-border); margin: 0 auto var(--em-spacing-sm); }
-  .menu-file { display: flex; align-items: center; gap: var(--em-spacing-sm); padding: var(--em-spacing-sm); border-bottom: 1px solid var(--em-border); }
-  .menu-file .file-mark { width: var(--em-icon-xl); height: var(--em-icon-xl); }
-  .menu-file-words { display: flex; flex-direction: column; min-width: 0; }
-  .menu-file strong, .menu-file small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .menu-file small { color: var(--em-foreground-muted); }
-  .menu.file-context button { min-height: var(--em-control-h-touch); }
   .pick-bar { order: 1; margin: 0; left: 0; right: 0; bottom: 0; transform: none; max-width: none; border-radius: 0; justify-content: center; padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)); }
   .details { padding-top: var(--em-spacing-sm); }
   .details::before { content: ''; align-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--em-border); }
@@ -188,18 +180,6 @@ img.details-picture { object-fit: contain; }
 /* 「再显示 N 条」: under the section's last row shown, quiet, the width of its words. */
 .section-more { border: 0; background: none; font: inherit; font-weight: 400; color: var(--em-foreground-muted); padding: 4px var(--em-spacing-sm) var(--em-spacing-sm); cursor: pointer; border-radius: var(--em-radius-control); }
 .section-more:hover { color: var(--em-foreground); text-decoration: underline; }
-/* The menu is a .list: its label and separators are not rows (no row padding or height). */
-.menu > .menu-label { min-height: 0; padding: var(--em-spacing-xs) var(--em-spacing-sm) 0; font-size: var(--em-font-caption); color: var(--em-foreground-muted); cursor: default; }
-.menu > .menu-separator { flex: none; width: auto; height: 1px; min-height: 0; padding: 0; margin: var(--em-spacing-xs) var(--em-spacing-sm); border-radius: 0; background: var(--em-border); }
-.menu-choice::before { content: ''; display: inline-block; width: 1.2em; }
-.menu-choice[aria-checked='true']::before { content: '✓'; }
-/* Retention opens beside the existing menu on desktop; mobile uses the same menu's back/More pages. */
-.menu .menu-group { position: relative; padding: 0; min-height: 0; }
-.menu-group > button { padding: var(--em-row-pad); width: 100%; border: 0; background: none; text-align: start; }
-.menu-submenu { position: absolute; left: 100%; top: 0; width: var(--submenu-width); padding: var(--em-spacing-xs); box-shadow: var(--em-shadow-lift); display: none; }
-.menu.submenu-left .menu-submenu { left: auto; right: 100%; }
-.menu-group:hover > .menu-submenu[data-open], .menu-group:focus-within > .menu-submenu[data-open] { display: flex; }
-.menu button:disabled { opacity: .5; cursor: default; }
 .rename-input { flex: 1; min-width: 0; }
 .empty { margin: var(--em-spacing-lg); color: var(--em-foreground-muted); }
 
@@ -261,8 +241,6 @@ img.details-picture { object-fit: contain; }
 .more-toggle:not([hidden]) { display: inline-block; }
 /* Who is here and what state the file is in sit right, beside ⋯; the modes left. */
 .doc-actions > .status { margin-left: auto; }
-.menu { position: fixed; z-index: 10; min-width: 180px; margin: 0; padding: var(--em-spacing-xs); box-shadow: var(--em-shadow-lift); }
-.menu .destructive { color: var(--em-foreground-destructive); }
 .json-actions { display: none; gap: var(--em-spacing-sm); }
 
 /* Selection and citation keep the same editor and preview behavior. */

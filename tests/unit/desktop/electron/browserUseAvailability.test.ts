@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
-import { browserUseAppInstalled } from '../../../../apps/desktop/electron/browser-agent-mcp'
 import { createDesktopGuguMcpHost, type DesktopGuguMcpHost } from '../../../../apps/desktop/electron/acp-engine-utils'
-import { buildSessionBundle, loadCodexAppServerCapabilities, setBrowserUseApp } from '../../../../apps/desktop/electron/capability-bundle'
+import { browserUseAppInstalled, buildSessionBundle, loadCodexAppServerCapabilities, setBrowserUseApp } from '../../../../apps/desktop/electron/capability-bundle'
 
 const hosts: DesktopGuguMcpHost[] = []
 afterEach(async () => {
@@ -11,16 +10,23 @@ afterEach(async () => {
 })
 
 describe('#7199 这台机器装没装 Browser Use', () => {
-  const app = (extensionId: string, native?: 'browser-use' | 'computer-use') => ({ extensionId, server: extensionId, digest: 'd',
-    command: 'x', args: [], env: {}, cwd: '/tmp', dataDir: '/tmp', ...(native ? { native } : {}) })
+  const app = (extensionId: string, outdated?: true) => ({ extensionId, ...(outdated ? { outdated } : {}) })
+  const programs = (installed: ReturnType<typeof app>[], refusals: Record<string, string> = {}) =>
+    ({ installed: () => installed, agentToolsRefusal: (id: string) => refusals[id] ?? null })
 
-  it('装着、开着、许给工具的 Browser Use 才算;别的 App、停用的、收回权限的不算', () => {
-    const refusals: Record<string, string> = { off: 'Extension off is turned off' }
-    const programs = (installed: ReturnType<typeof app>[]) => ({ installed: () => installed, agentToolsRefusal: (id: string) => refusals[id] ?? null })
+  it('the Browser Use App running its own program counts, by its id, whatever its program is called', () => {
     expect(browserUseAppInstalled(programs([]))).toBe(false)
-    expect(browserUseAppInstalled(programs([app('computer', 'computer-use'), app('plain')]))).toBe(false)
-    expect(browserUseAppInstalled(programs([app('off', 'browser-use')]))).toBe(false)
-    expect(browserUseAppInstalled(programs([app('off', 'browser-use'), app('browser', 'browser-use')]))).toBe(true)
+    expect(browserUseAppInstalled(programs([app('computer-use'), app('plain')]))).toBe(false)
+    expect(browserUseAppInstalled(programs([app('plain'), app('browser-use')]))).toBe(true)
+  })
+
+  it('switched off or no longer allowed to give agents tools: it does not count', () => {
+    expect(browserUseAppInstalled(programs([app('browser-use')], { 'browser-use': 'Extension browser-use is turned off' }))).toBe(false)
+    expect(browserUseAppInstalled(programs([app('browser-use')], { 'browser-use': 'Extension browser-use may no longer give agents tools' }))).toBe(false)
+  })
+
+  it('an outdated version (a program gugu once hosted) runs nothing, so it does not count', () => {
+    expect(browserUseAppInstalled(programs([app('browser-use', true)]))).toBe(false)
   })
 })
 

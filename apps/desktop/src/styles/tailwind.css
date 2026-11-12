@@ -8,6 +8,9 @@
 @import 'tailwindcss/preflight.css' layer(base.preflight);
 @import 'tailwindcss/utilities.css' layer(utilities);
 
+/* @@@focus-modality: `focus-visible:` (and group-/peer-) only in keyboard modality; see lib/focus-modality.ts. */
+@custom-variant focus-visible (&:focus-visible:not([data-pointer-focus] *));
+
 /* Tailwind v4 otherwise uses currentColor for unspecified borders.
  * Only supply a color; widths and explicit semantic/state colors stay owned
  * by components and utilities. The fallback supports the standalone renderer.

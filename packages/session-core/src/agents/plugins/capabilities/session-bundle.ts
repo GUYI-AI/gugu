@@ -1146,6 +1146,15 @@ export interface SessionModelCapability {
    */
   platformProvider?: { baseUrl: string; apiKey: string }
   /**
+   * Who provides the model, in the name the harness's own UI shows for the provider block Gugu writes.
+   *
+   * Set only for an API key connection (#2507): the connection's name — the user's note, or the generated
+   * one ("Pi 1"). The endpoint and key there are the user's, so the harness must not call that provider
+   * "Gugu 平台额度" / `gugu-platform`. Absent = a Gugu-model session: each writer keeps its platform id and
+   * name byte-for-byte. Each writer decides where the name goes (pi shows the provider id, opencode its name).
+   */
+  providerName?: string
+  /**
    * Every Gugu model this session may run on, for harnesses whose own model picker we
    * populate.
    *
@@ -1182,9 +1191,9 @@ export interface SessionModelCapability {
    * inside its config document. Each harness emits it in its own shape (see each plugin's `platform-model.ts`).
    *
    * Null/absent = unknown. Dialects that can keep their own conservative default may omit it;
-   * OpenCode-family config documents omit the field during generic materialization, while the
-   * platform launch path rejects an unknown window before spawning (their provider schema requires
-   * `limit.context`).
+   * OpenCode-family config documents omit the whole `limit` block when the window is unknown (generic
+   * materialization, an API key connection — their schema requires `limit.context` once `limit` is
+   * present), while the platform launch path rejects an unknown window before spawning.
    * ❌ Never substitute a guess: too large turns "compacts early" into "overflows the gateway",
    * which is the worse failure.
    */

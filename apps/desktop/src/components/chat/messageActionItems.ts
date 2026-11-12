@@ -55,8 +55,8 @@ export function messageActionItems(input: MessageActionTarget, t: TFunction<'mes
   const items: (MessageActionItem | false)[] = [
     !!target.onReply && { key: 'reply', icon: Reply, label: t('message.actions.reply'), onSelect: target.onReply, disabled: target.isRetracted },
     SELECTED_MESSAGE_QUOTES_ENABLED && !!target.onQuoteSelection && { key: 'quoteSelection', icon: Reply, label: t('message.actions.quoteSelection'), onSelect: target.onQuoteSelection, disabled: target.isRetracted },
-    !!target.onQuoteToComposer && { key: 'quoteToComposer', icon: Reply, label: t(input.hasSelection ? 'message.actions.quoteSelectionToComposer' : 'message.actions.quoteToComposer'), onSelect: target.onQuoteToComposer, disabled: !hasContent },
     !!target.onCopy && { key: 'copy', icon: Copy, label: t('message.actions.copy'), onSelect: target.onCopy, disabled: !hasContent },
+    !!target.onQuoteToComposer && { key: 'quoteToComposer', icon: Reply, label: t(input.hasSelection ? 'message.actions.quoteSelectionToComposer' : 'message.actions.quoteToComposer'), onSelect: target.onQuoteToComposer, disabled: !hasContent },
     !!target.onSelectText && { key: 'selectText', icon: TextCursorInput, label: t('message.actions.selectText'), onSelect: target.onSelectText, disabled: !hasContent },
     !!target.onCopyLink && { key: 'copyLink', icon: Copy, label: t('message.actions.copyLink'), onSelect: target.onCopyLink, disabled: target.isRetracted },
     !!target.onOpenLink && { key: 'openLink', icon: ExternalLink, label: t('message.actions.openLink'), onSelect: target.onOpenLink, disabled: target.isRetracted },

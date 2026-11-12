@@ -9,6 +9,7 @@ import { resolve } from 'node:path'
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { listedIn } from './folderList'
 import { until } from '../../../support/awaitCondition'
+import { fakeSharedMenu } from './sharedMenu'
 
 // Every entry shares one fixed clock: creation order must not become a newer timestamp across a millisecond boundary.
 const ago = (seconds: number) => new Date(Date.parse('2026-10-28T12:00:00Z') - seconds * 1000).toISOString()
@@ -40,7 +41,9 @@ const coded = (code: string, message: string) => Object.assign(new Error(message
 
 // The phone's back key (gugu.navigation.onBack): held while in a folder, let go at the top.
 const back = { handler: null as (() => void) | null, releases: 0 }
+const menu = fakeSharedMenu()
 const gugu = {
+  showContextMenu: menu.showContextMenu,
   navigation: {
     go: vi.fn(async () => false),
     onBack: vi.fn(async (handler: () => void) => {
@@ -92,7 +95,6 @@ const names = () => [...$('file-list').querySelectorAll('.file .file-name')].map
 const row = (id: string) => document.querySelector(`[data-id="${id}"]`) as HTMLElement
 const open = (id: string) => (row(id).querySelector('.file-open') as HTMLButtonElement).click()
 const more = (id: string) => ({ click: () => row(id).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })) })
-const menuItem = (text: string) => [...$('menu').querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent === text)!
 const crumbs = () => ($('crumbs').hidden ? null : [...$('crumbs').querySelectorAll('.crumb')].map((c) => c.textContent))
 // What the page says, where a person can see it: with the App's own style.css applied (a style element while a test
 // reads it), a line counts only when neither it nor anything it is in is hidden or not drawn — the list page does not draw
@@ -107,15 +109,22 @@ const said = () => [...document.querySelectorAll('.banner')].filter(drawn).map((
 const STYLE = readFileSync(resolve(process.cwd(), 'apps/desktop/preinstalled-apps/workspace/style.css'), 'utf8')
 const styled = () => document.head.appendChild(Object.assign(document.createElement('style'), { textContent: STYLE }))
 // What a case waits for (until has no deadline, and this project gives a case none — @@@no-case-budget): only the end of
-// what was done — a call made, the upload's button back, the list read again. Never an exact value: the value is held
+// what was done — a call made, the list read again. Never an exact value: the value is held
 // with expect once the step has ended, so a wrong one is red there and then; only a step that never ends waits.
-/** The upload's own end: its button is back once the files are in the list and anything to ask is asked. */
-const uploaded = () => until('the upload done', () => !($('upload') as HTMLButtonElement).disabled)
-/** The App reads the list again (a read replaces all it held): through the upload's door, the refresh with an end to wait for. */
-const refreshed = async () => {
-  $('upload').click()
-  await uploaded()
+/** 「+」 › 上传, to its end: the files are in the list (read again) and anything to ask is asked. */
+const upload = async () => {
+  $('new-doc').click()
+  await menu.pick('上传')
+  // Its end: 「上传」 is offered again once the files are in the list and anything to ask is asked.
+  await vi.waitFor(async () => {
+    $('new-doc').click()
+    const done = menu.row('上传').enabled !== false
+    await menu.dismiss()
+    if (!done) throw new Error('the upload still under way')
+  }, { timeout: 20_000 })
 }
+/** The App reads the list again (a read replaces all it held): through the upload's door, the refresh with an end to wait for. */
+const refreshed = upload
 /** After something done that reads the list again when it is over (a move, a rename): that read, drawn once it is back. */
 const readAgain = (after: number) => until('the list read again', () => gugu.files.list.mock.calls.length > after)
 /** What a step asked of the host (a folder read, the whole tree for a search or 「移动到…」), back and drawn: the rig answers at once. */
@@ -149,6 +158,7 @@ beforeEach(async () => {
   // case holds the list — it is not drawn while a name is typed), no filter, and the list read again by the App itself
   // from the entries as they start — so what a red case left in it (an upload, a folder it made) is not there.
   (document.activeElement as HTMLElement | null)?.blur?.()
+  await menu.dismiss()
   reset()
   gugu.files.upload.mockReset().mockImplementation(async () => [])
   ;($('filter') as HTMLInputElement).value = ''
@@ -245,14 +255,14 @@ describe('the host\'s Back (the phone\'s back key)', () => {
     expect(back.releases - releases).toBe(1)
   })
 
-  test('with the App\'s own menu open, Back closes the menu first and stays in the folder', async () => {
+  test('with a row\'s menu open, Back is the host\'s menu\'s own; the page\'s Back stays a folder up', async () => {
     await enter('contracts')
     await until('the back step held', () => back.handler !== null)
     more('y2026').click()
-    expect($('menu').hidden, 'the row menu is open').toBe(false)
-    back.handler!()
-    expect($('menu').hidden, 'Back closed the menu').toBe(true)
-    expect(crumbs(), 'and stayed in the folder').toEqual(['聊天文件', '合同'])
+    // The desktop's row menu is the host's shared menu: it takes Back first itself (its back layer), not through the page.
+    expect(menu.isOpen(), 'the row menu is open').toBe(true)
+    await menu.dismiss()
+    expect(crumbs(), 'closing it stays in the folder').toEqual(['聊天文件', '合同'])
     back.handler!()
     expect(crumbs(), 'the next Back is a folder up').toBeNull()
     await until('let go at the top', () => back.handler === null)
@@ -297,7 +307,7 @@ describe('making, moving, uploading, deleting', () => {
     expect(names()).toEqual(['2026'])
     gugu.files.mkdir.mockClear()
     $('new-doc').click()
-    menuItem('新建文件夹').click()
+    await menu.pick('新建文件夹')
     await until('files.mkdir asked', () => gugu.files.mkdir.mock.calls.length > 0)
     expect(gugu.files.mkdir.mock.calls).toEqual([[{ chat: 'chat-1', path: '合同/新建文件夹' }]])
     await until('the name field', () => document.querySelector('.rename-input') !== null)
@@ -307,7 +317,7 @@ describe('making, moving, uploading, deleting', () => {
 
   test('「移动到…」 lists where it can go — not itself or what is in it; where it is now cannot be picked — and moves it there', async () => {
     more('contracts')!.click()
-    menuItem('移动到…').click()
+    await menu.pick('移动到…')
     await settle() // every folder, read for where it can go
     expect($('move-dialog').hidden).toBe(false)
     expect($('move-title').textContent).toBe('把「合同」移到')
@@ -319,7 +329,7 @@ describe('making, moving, uploading, deleting', () => {
 
     gugu.files.move.mockClear()
     more('notes')!.click()
-    menuItem('移动到…').click()
+    await menu.pick('移动到…')
     await settle()
     const into = [...$('move-targets').querySelectorAll<HTMLButtonElement>('.move-target')].find((t) => t.textContent === '2026')!
     const listed = gugu.files.list.mock.calls.length
@@ -333,7 +343,7 @@ describe('making, moving, uploading, deleting', () => {
     ENTRIES.push(entry('dup', 'notes.md', 'text', 'contracts', '合同/notes.md'))
     await refreshed() // the list now has the second notes.md
     more('notes')!.click()
-    menuItem('移动到…').click()
+    await menu.pick('移动到…')
     await settle()
     const css = styled()
     try {
@@ -354,7 +364,7 @@ describe('making, moving, uploading, deleting', () => {
       expect(said(), 'the instrument: nothing said yet').toEqual([])
       gugu.files.rename.mockRejectedValueOnce(coded('name-taken', '这个文件夹里已经有「合同」了'))
       more('notes')!.click()
-      menuItem('改名').click()
+      await menu.pick('改名')
       const input = document.querySelector('.rename-input') as HTMLInputElement
       input.value = '合同'
       const listed = gugu.files.list.mock.calls.length
@@ -384,8 +394,7 @@ describe('making, moving, uploading, deleting', () => {
       ENTRIES.push(copy)
       return [copy]
     })
-    $('upload').click()
-    await uploaded()
+    await upload()
     // The question is up by the upload's end (asked as the files come in, never later).
     expect($('conflicts').hidden).toBe(false)
     expect(gugu.files.upload.mock.calls.at(-1)).toEqual([{ chat: 'chat-1', folder: 'y2026' }])
@@ -408,8 +417,7 @@ describe('making, moving, uploading, deleting', () => {
       return [picked]
     })
     gugu.files.replace.mockClear()
-    $('upload').click()
-    await uploaded()
+    await upload()
     // Both kept, side by side (same change time here: the order between them is not what this reads).
     expect([...names()].sort()).toEqual(['甲方 (2).pdf', '甲方.pdf'])
     expect($('conflicts').hidden).toBe(true)
@@ -441,7 +449,7 @@ describe('making, moving, uploading, deleting', () => {
     heard({ kind: 'entries', entries: [renamedParent], gone: [] })
     gugu.files.mkdir.mockClear()
     $('new-doc').click()
-    menuItem('新建文件夹').click()
+    await menu.pick('新建文件夹')
     await until('files.mkdir asked', () => gugu.files.mkdir.mock.calls.length > 0)
     expect(gugu.files.mkdir.mock.calls).toEqual([[{ chat: 'chat-1', path: '协议/2026/新建文件夹' }]])
     await until('the name field', () => document.querySelector('.rename-input') !== null)
@@ -458,9 +466,10 @@ describe('making, moving, uploading, deleting', () => {
 
   test('deleting a folder asks once more, saying how much is in it', async () => {
     more('contracts')!.click()
-    menuItem('删除').click()
-    expect(menuItem('删除它和里面的 2 项')).toBeTruthy()
-    menuItem('删除它和里面的 2 项').click()
+    await until('delete offered', () => menu.labels().includes('删除'))
+    await menu.pick('删除')
+    expect(menu.labels()).toEqual(['删除它和里面的 2 项'])
+    await menu.pick('删除它和里面的 2 项')
     await until('contracts removed', () => gugu.files.remove.mock.calls.some(([e]) => (e as { id?: string } | undefined)?.id === 'contracts'))
   })
 
@@ -470,9 +479,9 @@ describe('making, moving, uploading, deleting', () => {
     expect(row('far').querySelector('.file-meta')!.textContent, 'no count before it is read').not.toContain('项')
     more('far')!.click()
     await settle() // whether it can be deleted, asked as the menu opens
-    menuItem('删除').click()
-    expect(menuItem('删除它和里面的全部内容')).toBeTruthy()
-    $('menu').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await menu.pick('删除')
+    expect(menu.labels()).toEqual(['删除它和里面的全部内容'])
+    await menu.dismiss()
     await enter('far')
     goTop()
     expect(row('far').querySelector('.file-meta')!.textContent, 'counted once read').toContain('1 项')

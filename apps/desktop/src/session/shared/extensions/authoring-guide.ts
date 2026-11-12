@@ -216,7 +216,7 @@ Free:
 - \`gugu.navigation.go(-1|1)\` → boolean; own history/chat opener. State: \`getContext().navigation\`.
 - \`onContextChanged(fn)\` → theme, language, visibility and size changes; member changes only through API 26. Returns an unsubscribe.
 - \`onCommand(fn)\` → the person picked one of your menu/toolbar entries: its id.
-- \`showContextMenu({ x, y, items: [{ id, label, enabled?, items? }, { type: "separator" }] })\` (API 18, page): App-local point, shared host menu → id or null.
+- \`showContextMenu({ x, y, items: [{ id, label, enabled?, checked?, danger?, title?, person?, items? }, { type: "separator" }] })\` (API 18/38, page) → id | null.
 - \`setTabTitle(title)\` → title (max 48); file tabs use it as a tooltip. Back/forward stay local.
 - \`setTabBadge(badge)\` → a count (99+ max, <=0 none), a string (a dot) or \`null\`.
 - \`openBrowserTab(url)\` → http(s) only.
@@ -652,7 +652,7 @@ Each call names a file: an entry, \`ctx.file\`, or \`{ chat | workspace, name }\
   create and upload take \`folder\` too (made if missing); \`gugu.files.mkdir({ chat, path })\`,
   \`gugu.files.move(entry, { folder, name })\`; remove takes a whole folder. A name the folder has (any case):
   a new file gets \` (2)\`, a rename or move is \`name-taken\`. 「附件」 (\`systemRole\`) stays put.
-  \`files.create(place, content, { ifExists: 'use' })\`: the file already there instead (two at once: both get one).
+  \`files.create(place, content, { ifExists: 'use' })\` (API 39): the file already there instead (two at once: both get one).
 - A session's working copy, listing and changing it on its own machine: \`apps-working-copy\`.
 - \`gugu.files.onChanged(place, fn)\` → unsubscribe. Chat: \`{ kind: 'entries', entries, gone }\`.
 - \`gugu.files.openWith(entry)\`: claim or "always use"; \`{ ask: true }\`: pick among all.
@@ -868,7 +868,7 @@ tools by their full name. Not installed, off or without \`agents:tools\` on that
 only (no chat to say it in), and retries once it is there.
 `;
 
-export const EXTENSION_GUIDE_MESSAGES = `# gugu.chats, gugu.messages — the chats you are in, and what was said
+export const EXTENSION_GUIDE_BINDINGS = `# gugu.bindings — one conversation the person chooses for your App
 
 Needs \`chat:unread\` (desktop, API 37): declare \`permissions.bindings: [{name: "main", kind: "conversation", actions: ["unread"]}]\`
 and \`chat:unread\`. The person chooses one conversation in the App's common permission section.
@@ -877,6 +877,208 @@ a chat ID, messages or another conversation. This grants neither \`chat:read\` n
 The host validates the current account, installed publisher, grant and active membership. An App cannot set its own target.
 Declare \`contributes.unreadSource: {binding: "main"}\` for the host rail red dot. It follows the original chat unread source
 even before your page opens or after eviction. Opening the App does not mark messages read; page badges still work.
+API 40, the same conversation only: add \`"files"\` (with \`chat:files\`) and/or \`"draft"\` (with \`chat:draft\`) to
+\`actions\`; each is consented and withdrawn on its own, and \`get\` lists the granted ones in \`actions\`.
+- \`gugu.bindings.list("main", { folder? })\` → \`{ state: "ready", entries }\`: one folder by its path (\`""\` the top; none: all).
+  \`gugu.bindings.read("main", "today.json")\` → \`{ state: "ready", entry, content, truncated, totalSize, binary?, exact? }\`, text up to 20 MiB.
+  Entry: \`{ name, path, type, contentType, size, version, createdAt, updatedAt }\` — no chat, item id, people or messages.
+- Otherwise \`state\` says why, never an empty list: \`unbound\` (no conversation chosen), \`missing\` (no such file or folder),
+  \`unprepared\` (there, its content not stored yet), \`unavailable\` (cannot be read now: try again later). Read only: no
+  write, rename or delete, no other chat; a topic is refused. Paths are names from the top; \`..\`, absolute paths, ids: \`invalid\`.
+- \`gugu.dispatch(text, { draft: true, to: { binding: "main" } })\` in a click: the text into that conversation's composer. Nothing is sent.
+API 41, your main page beside that conversation: add \`"surface"\` (with \`chat:surface\`) and
+\`contributes.conversationSurface: {binding: "main", placement: "side-panel"}\`. The host draws the conversation itself (composer,
+streaming, voice, attachments, read state) as the main column; your main page is the collapsible panel on its right.
+- \`gugu.bindings.surface("main")\` → \`{ state: "bound", panel: { collapsed, inset } }\` while it is drawn beside this page, else
+  \`{ state: "unbound" }\`: none chosen, a grant withdrawn, another account, no longer in it, or your page opened elsewhere.
+  \`gugu.bindings.onSurface(fn)\` hears each change; \`gugu.bindings.setPanel("main", { collapsed })\` collapses or expands your panel.
+- \`panel.inset\` \`{ top, right }\` (px): the host's collapse button covers your page's top-right corner, centred in the top
+  \`top\` px, within \`right\` px of the edge. Make your top row (name, tabs) \`top\` px high and keep \`right\` px clear.
+- You get no chat, message, person or DOM of it. Opening your page marks nothing read; a \`{ binding }\` draft lands in that composer.
+API 42 to 46, when that conversation is the person's private one with their own agent or assistant (its resources,
+schedules, the work it handed out): \`guide_read apps-bindings-agent\`; the assistant itself (\`gugu.assistant\`, 44) and
+\`toast\`: \`guide_read apps-assistant\`; the host's top row over it, its voice-note recorder, your composer "+" entries
+(46 to 48): \`guide_read apps-bindings-assistant\`. On a phone (49): \`guide_read apps-bindings-phone\`.
+Managing its files and voice notes, and drafts carrying files (API 50): \`guide_read apps-bindings-manage\`.
+`;
+
+export const EXTENSION_GUIDE_BINDINGS_AGENT = `# gugu.bindings — the agent behind the chosen conversation
+
+The binding of \`apps-bindings\` (\`chat:unread\`, the one conversation the person chooses), when that conversation is the
+person's private one with an agent of theirs or their own assistant: more actions on it, each with its own capability,
+consented and withdrawn on its own; \`get\` lists the granted ones in \`actions\`.
+API 42, when that conversation is the person's private one with their personal assistant: \`"resources"\` (\`chat:resources\`)
+and \`"resources:write"\` (\`chat:resources:write\`) reach its resources, each with its domains:
+\`domains: { "resources": ["memory", "files", "personality", "skills", "voice-notes"], "resources:write": ["memory"] }\`
+(write: only domains also read, never voice-notes). Any other conversation is \`denied\`. An update listing more domains asks again.
+- \`gugu.bindings.resources("main", "memory")\` → \`{ state: "ready", revision, resources: [{ key, revision, updatedAt, data }] }\`.
+  \`gugu.bindings.resource("main", "memory", key)\` → \`{ state: "ready", resource, content, truncated, totalSize, binary? }\`.
+  Otherwise \`unbound\`, \`unprepared\` (not published yet), \`unavailable\` (try later), or \`missing\` with the \`revision\` a
+  save expects (\`"0"\`; a deleted one's tombstone, \`deleted: true\`).
+- \`gugu.bindings.save("main", { domain, key, operationId, expectedRevision, content })\` /
+  \`gugu.bindings.remove("main", { domain, key, operationId, expectedRevision })\` → \`{ state: "committed", receipt: { operationId,
+  revision, status } }\` (\`pending\` until the agent's machine applies it), or \`conflict\` (read again), \`deleted\`,
+  \`unavailable\`, \`unbound\`. \`operationId\` is your UUID: the same call again answers the same receipt, status now.
+- \`gugu.bindings.onResourcesChanged("main", fn)\` → unsubscribe; \`fn\` hears \`{ state: "changed" }\`: read again, or
+  \`{ state: "ended" }\`: the grant, account or chosen conversation changed — call \`get\` again.
+API 43, when that conversation is the person's private one with an agent of theirs: \`"schedules"\` (with \`chat:schedules\`)
+and \`"schedules:control"\` (with \`chat:schedules:control\`; needs \`"schedules"\` too) — that agent's schedules, the ones its
+own \`schedule_*\` tools and the person's list show: on this computer, or the person's assistant's wherever it lives. Another
+chat, or someone else's agent: \`denied\`.
+- \`gugu.bindings.schedules("main")\` → \`{ state: "ready", schedules }\`, each \`{ id, revision, title, prompt, at, cron, tz,
+  state: "active" | "paused" | "ended", nextRunAt, lastRun: { status, at } | null, updatedAt }\`; or \`unbound\`,
+  \`elsewhere\` (an agent, not the assistant, lives on another computer) or \`unavailable\` (try again later).
+- \`gugu.bindings.onSchedulesChanged("main", fn)\` → unsubscribe: they changed, list again. Silent for good once the grant goes.
+- \`gugu.bindings.controlSchedule("main", { operationId, op, … })\`, \`op\`: \`register\` (\`prompt\`, \`title?\`, \`at\` or \`cron\`,
+  \`tz?\`), \`update\` (\`title\` and/or a new time; what it asks stays the agent's), \`pause\`, \`resume\`, \`remove\` — those four
+  with \`scheduleId\` and the \`revision\` you read. → \`{ operationId, op, status, scheduleId, revision, at }\`: \`applied\`,
+  \`conflict\` (changed since: list, decide, new \`operationId\`) or \`missing\`. The same \`operationId\` again answers the same
+  receipt, never a second change. A run under way is never stopped (\`remove\` then: \`unavailable\`). Closing your page,
+  disabling or uninstalling your App leaves the schedules as they are. The assistant living elsewhere: \`pause\`, \`resume\`,
+  \`remove\` only (else \`elsewhere\`), first \`pending\` until its computer applies it — the same \`operationId\` again tells
+  \`applied\`, \`failed\` or \`superseded\` (a later change replaced it).
+API 44, the assistant itself (\`gugu.assistant\`: its status, gugu's screens over your page, setup, rename, its moving
+figure): \`guide_read apps-assistant\`.
+API 46, the assistant's 任务 list: add \`"work"\` (with \`chat:work\`). Only while the chosen conversation is the person's private
+chat with their own assistant; any other is refused (\`denied\`). The host keeps the ledger; it reads it as its own list does,
+wherever the assistant lives (this computer, another, the cloud).
+- \`gugu.bindings.work("main")\` → \`{ state: "ready", items, stale, open }\`, items newest first, each
+  \`{ handle, title, naming, status, unseen, updatedAt }\`: \`naming\` = draw "naming…" for the title; \`status\` =
+  \`{ status, detail }\` as an agent's state is drawn, or null; \`unseen\` = idle with news; \`stale\` = the last refresh failed,
+  these are the last rows read. Else \`{ state: "unavailable", open }\` (not read yet / cannot be: wait for the event) or
+  \`{ state: "unbound" }\`. \`gugu.bindings.onWorkChanged("main", fn)\` hears every new answer.
+- \`handle\` is opaque: this App, this account, this choice of conversation; read again after a restart. No work, session,
+  chat or device id, path, URL or message.
+- \`gugu.bindings.openWork("main", handle)\` in a click: the host draws that task's conversation in your panel, over your
+  page, with its own back control; \`gugu.bindings.closeWork("main")\` takes it away. \`open\` is that row's handle while it is
+  drawn, else null — hide your list then. You cannot see it. Another account, a withdrawn grant, a new choice: it closes.
+
+The same assistant chat, drawn by the host: its top row (\`header\`, 46), its voice-note recorder (\`gugu.voiceNote\`, 47),
+your entries in its composer "+" (\`composerActions\`, 48): \`guide_read apps-bindings-assistant\`.
+`;
+
+export const EXTENSION_GUIDE_ASSISTANT = `# gugu.assistant, toast — the person's own assistant, and gugu's toast
+
+Through the binding of \`apps-bindings\` (\`chat:unread\`, the one conversation the person chooses), when that
+conversation is the person's private chat with their own assistant (\`apps-bindings-agent\`): the assistant itself.
+API 44, only when that conversation is the person's private chat with their own assistant (else \`denied\`): add
+\`"assistant-status"\` (\`assistant:status\`), \`"assistant-open"\` (\`assistant:open\`), \`"assistant-rename"\` (\`assistant:rename\`).
+- \`gugu.assistant.status("main")\` → \`{ state: "ready", status, hostPage }\` | \`{ state: "unbound" | "unavailable" }\`;
+  \`gugu.assistant.onChanged(fn)\` hears each new one. \`status\`: \`{ assistant: "found"|"loading"|"none"|"unreadable", name, avatar
+  (data: image), tint (hue 0–360|null), home: { kind: "cloud"|"this-computer"|"other-computer"|"server", online, label } | null,
+  setup: "shell"|"connect"|"ready"|null, preparing, cloudAvailable, member: boolean|null, loadError, ownerName, nameMax (30),
+  counts: { devices, connectedApps (value { saved, connected }), projects, capabilities }, connectors }\` — no id. Each count and
+  \`connectors\` is \`{ state: "ready", value }\` | \`{ state: "loading" }\` | \`{ state: "unreadable" }\` (say gugu's "can't read it now");
+  \`connectors\` value: the connect step's rows \`{ id, name, icon: { light, dark, invertInDark } | null (data: images), connected }\`.
+- With no assistant yet (\`none\`, \`loading\`, \`unreadable\`): \`ready\` with any or no conversation, \`name\`, \`avatar\`, \`tint\`, \`home\`,
+  \`counts\`, \`connectors\` null, and \`gugu.assistant.open("main", "setup")\` works. Once one appears, unchosen: \`onChanged\` hears \`{ state: "unbound" }\` once.
+- In a click: \`gugu.assistant.open("main", screen)\` — gugu's screens \`close\`, \`look\`, \`model\`, \`devices\`, or the assistant's
+  own pages \`setup\`, \`move\`, \`settings\`, \`connected-apps\`, \`projects\`, \`capabilities\` drawn over your page with gugu's back control
+  (\`hostPage\` true until closed: hide yours; \`setup\` starts at the name, your intro being its first screen, and closes once the
+  assistant is there). None of these is in gugu's Settings. \`gugu.assistant.advanceSetup("main", "ready" | "done")\`: from \`connect\`, or \`ready\` to done; else \`invalid\`.
+  \`gugu.assistant.rename("main", text)\` → \`"renamed"|"unchanged"|"empty"|"too-long"|"failed"\` (trimmed, ≤ \`nameMax\`).
+  \`gugu.assistant.connect("main", id)\`: that row's connect dialog, as gugu's connect step (\`id\` from \`connectors\`, else \`not-found\`).
+- \`gugu.assistant.figure("main", { x, y, size } | null)\`: gugu draws the assistant moving (none yet: the setup bird) over your
+  page at x, y (CSS px), size 16–512, clipped, clicks pass through; say it again when your layout moves, null removes it.
+
+Free (API 44, desktop page): \`toast(text)\` → one line in gugu's own toast, as its "Changes saved": ≤ 80 characters,
+text only, while your page is on screen and focused (else \`denied\`), one every 2 s (else \`rate-limited\`).
+`;
+
+export const EXTENSION_GUIDE_BINDINGS_ASSISTANT = `# Header row, gugu.voiceNote, composer actions — the person's own assistant chat
+
+The binding of \`apps-bindings\` when its conversation is the person's private chat with their own assistant (as
+\`apps-bindings-agent\`): what the host draws there for your App — its top row, its voice-note recorder, your entries in
+that conversation's composer "+". Each is told to your page only as \`gugu.bindings.onSurface\` → \`intent\`, once, after
+the person's click, your panel expanded and any host page over it closed; no data comes with it.
+
+API 46: \`contributes.conversationSurface.header: "assistant"\`: the host draws the built-in assistant page's top row above
+the conversation — its face and name, search, settings gear, expand — from its own data. A click on the face and name:
+\`intent: { kind: "profile" }\`; show its profile. The gear opens the host's settings page over your page. \`panel.hostPage\`
+is true while a host page (that, or a task) is over your page. Another conversation: no row.
+Only the product's own assistant App, when it replaces the built-in assistant page: \`intent: { kind: "resume", tab }\`
+(tasks | memory | profile), once, in the first bound \`surface\` answer or \`onSurface\` event after the hand-over; open that tab.
+
+API 47: \`"voice-notes:record"\` (\`chat:voice-notes:record\`) drives the host's voice-note recorder. The host
+records from the microphone, uploads, transcribes and hands the note to the assistant; your page never gets the audio.
+- In a click: \`gugu.voiceNote.start("main", { meeting? })\` → \`{ state: "started", job }\` or \`busy\`, \`no_assistant\`, \`cancelled\`,
+  \`mic_denied\` (offer \`gugu.voiceNote.openMicSettings("main")\`, also in a click), \`mic_missing\`, \`capture_failed\`, \`unbound\`.
+  \`meeting\`: \`{ title, start, end }\` (ISO times). \`gugu.voiceNote.resume("main")\` and \`gugu.voiceNote.retry("main", job)\` also take a click;
+  \`gugu.voiceNote.pause("main")\` and \`gugu.voiceNote.stop("main")\` do not. Each answers the status.
+- \`gugu.voiceNote.status("main")\` → \`{ state: "ready", recorder: { phase, elapsedMs, level, silentMs, error }, jobs: [{ job, phase,
+  failure: { stage, retryable, reason } | null, createdAt }] }\`; \`phase\` idle|starting|recording|paused|stopping; a job's
+  recording|uploading|transcribing|summarizing|ready|failed|no_speech. \`job\` is an opaque handle for \`retry\`; transcript
+  and summary are read through the \`voice-notes\` domain (API 42).
+- \`gugu.voiceNote.onChanged("main", fn)\` → unsubscribe; \`fn\` hears \`{ state: "changed", recorder, jobs }\` (about 10 a second
+  while recording) or \`{ state: "ended" }\`. A recording goes on when your page closes. Disabled or uninstalled mid-recording:
+  the host stops it and keeps the note, and takes no further call from your App; another account: it stops.
+
+API 48: \`contributes.conversationSurface.composerActions\` adds entries to that conversation's composer
+"+", drawn and run by the host on the person's click (no code of yours runs then). Not drawn beside any other conversation.
+\`[{ id, label: { zh, en } (one line, ≤ 40), icon, chip?, run }]\`, at most 6; \`icon\` one of sparkles, mic, upload, lightbulb, pencil,
+heart, checklist, document, book, image, message. \`chip: { zh, en }\` (one entry at most): also a capsule with that shorter label
+at the right end of the row above that composer (the built-in 「灵感」); a click runs the entry; hidden while a note records.
+\`run\`, each needing that binding action (and its capability):
+- \`{ kind: "voice-note" }\` (\`voice-notes:record\`): the host starts a voice note and says why if it cannot, as its own entry does.
+- \`{ kind: "draft", text: { zh, en } }\` (\`draft\`): the person's language (≤ 2000) goes after what is in that composer. Nothing is sent.
+- \`{ kind: "page-intent" }\` (\`surface\`): your page hears \`intent: { kind: "composer-action", id }\`, that entry's \`id\`;
+  show that view.
+The host's recording bar sits above that composer while a note for this assistant records (whoever started it); when the
+person opens the note it shows, your page hears \`intent: { kind: "voice-note" }\` (read it through \`voice-notes\`).
+With \`header\`, the host's 「自定义<name>」 hint starts that row once after the assistant is set up (gone once opened or
+dismissed); opened, your page hears \`intent: { kind: "customize" }\`: open what customizes it (name, look, character).
+`;
+
+export const EXTENSION_GUIDE_BINDINGS_PHONE = `# gugu.bindings on a phone (API 49)
+
+List \`"phone"\` in \`platforms\` with the binding, at \`apiVersion\` 49 (earlier: refused). A phone has no picker: it binds only gugu's own
+assistant App (\`gugu-assistant\`, from the market) to the account's private chat with its own assistant; any other App's binding is
+\`unbound\` there. Calls answer as on a computer — files, draft, resources, schedules, \`gugu.assistant\`, work, \`toast\` — as the
+person signed in on that phone, checked again after every wait.
+
+- Layout: \`gugu.bindings.surface("main")\` is \`{ state: "bound", layout: "side-panel", panel }\` on a computer and
+  \`{ state: "bound", layout: "phone", section, hostPage }\` on a phone. There gugu draws the layer, its header and its tabs: \`聊天\` is
+  the conversation (gugu's; you never see it), and your main page fills the others, full screen inside the safe areas. \`section\` is
+  \`today\`, \`tasks\`, \`memory\` or \`profile\` (behind the assistant's face): draw that section's phone layout, with no tab row and
+  no header of your own. \`hostPage\`: one of the phone's own screens covers your page now. \`gugu.bindings.onSurface(fn)\` hears
+  each move; \`gugu.bindings.setPanel("main", { section })\` moves the layer; \`gugu.navigation.onBack(fn)\` holds Back for your steps.
+- \`{ state: "unsupported" }\` — closed, not an error, the same if asked again: hide that control on a phone. It answers
+  \`gugu.bindings.setPanel("main", { collapsed })\`, \`gugu.assistant.open("main", "move")\` (a phone is never its home), \`advanceSetup\`,
+  \`gugu.assistant.figure\` (the layer's header draws the face) and every \`gugu.voiceNote.*\` (聊天 records with the phone's own
+  recorder). Composer entries (\`composerActions\`) and \`unreadSource\` draw nothing there: 聊天 keeps the phone's own 「+」.
+- \`onSurface\` also brings \`intent\` there, once: \`{ kind: "voice-note" }\` when the person opens the note the recording bar shows
+  (the layer is on \`memory\`; read it through \`voice-notes\`), \`{ kind: "profile" }\` from the assistant's 自定义 card (on \`profile\`).
+- \`gugu.assistant.open\` opens the phone's own screens: \`setup\` and \`settings\` its settings page, \`look\` its 换形象 page,
+  \`model\`, \`devices\`, \`connected-apps\`, \`projects\`, \`capabilities\` theirs under 资料, \`health\` its 健康 page under 记忆,
+  \`close\` the one confirmation. \`gugu.assistant.rename\` works as on a computer. \`gugu.bindings.openWork\` draws the task's
+  conversation over 任务, with its own back. A \`{ binding }\` draft lands in 聊天 and the layer goes there.
+- Health: read on the phone and never handed to you. Draw a 健康 row or card with no figures; on a click,
+  \`gugu.assistant.open("main", "health")\`. A computer answers \`unsupported\`: hide it there.
+- Files: \`gugu.bindings.list\` / \`read\` (the chat's own folder, by path), the \`files\` / \`memory\` / \`voice-notes\` resources and
+  \`save\` / \`remove\` work. API 50's \`upload\` (the phone's picker) and \`removeVoiceNote\` (the phone asks first) work;
+  \`createFolder\`, \`rename\`, \`removeFolder\`, \`transcribeVoiceNote\`, \`exportVoiceNote\` and a draft's \`attach\` answer
+  \`unsupported\` on a phone (a draft with \`attach\` places nothing): hide those controls there.
+- Schedules: the assistant always lives elsewhere seen from a phone; pause, resume and remove go through its panel (\`pending\`
+  until its home applies them); adding or retiming one is asked of the assistant (\`invalid\`).
+`;
+
+export const EXTENSION_GUIDE_BINDINGS_MANAGE = `# gugu.bindings — managing the agent's files and voice notes, drafts carrying files
+
+The same binding as \`apps-bindings-agent\`: the person's private conversation with their personal assistant, desktop only.
+API 50: every \`unavailable\` carries \`reason\`: \`stale\`, \`not-applied\`, \`timed-out\`, \`unreadable\`, \`access-unverified\`,
+\`owner-unknown\`, \`too-large\`. Each call below, in a click, your page only; \`key\` as \`resources\` gives it:
+- \`"resources:write"\` with \`"files"\`: \`bindings.upload("main", { folder? })\` opens gugu's file picker (50 MB, no video, audio or archive)
+  → \`{ state: "done", uploaded: [{ key, name, receipt }], refused: [{ name, why }] }\` | \`cancelled\`; \`bindings.createFolder("main", key)\` →
+  \`committed\` | \`exists\`; \`bindings.rename("main", key, to)\` → \`{ renamedTo, receipts }\` | \`missing\` | \`exists\`; \`bindings.removeFolder("main", key)\`
+  → gugu asks the person first: \`committed\` | \`cancelled\`.
+- \`"voice-notes:manage"\` (\`chat:voice-notes:manage\`, needs \`"voice-notes"\` read), \`key\` the note's id:
+  \`transcribeVoiceNote\` → \`started\` | \`not-waiting\` | \`busy\` | \`not-ready\` (its home not reachable now: try later);
+  \`removeVoiceNote\` (gugu asks) → \`committed\` | \`cancelled\`; \`exportVoiceNote\` (gugu's save dialog) → \`saved\` | \`cancelled\`.
+- A draft carries files: \`gugu.dispatch(text, { draft: true, to: { binding: "main" }, attach: [{ file: path } | { domain, key }] })\`,
+  up to 9, each one you may read (\`"files"\` / that domain). Pills in the composer; nothing is sent.
+`;
+
+export const EXTENSION_GUIDE_MESSAGES = `# gugu.chats, gugu.messages — the chats you are in, and what was said
 
 Which chats the reader is in and who is in one — for a page that is in no chat (an App's own tab, full screen) to
 offer one — and what people and agents said in a chat: a stretch of its timeline, one thread, or the messages that
@@ -1026,6 +1228,18 @@ On a phone, a page with steps of its own (folders) holds Back with \`gugu.naviga
 whole line in every new session's \`<gugu_apps>\`: name the tools that matter and when to read which skill. Longer
 standing behavior is a skill whose description says when to read it.
 
+## The personal assistant's product rules (API 45)
+
+\`contributes.assistantRules\` names a bundle folder holding the personal assistant's product rules as text and data:
+\`rules.json\` (\`format: 1\`, \`rulesVersion\`, \`defaults\` and one-line \`labels\`) and one \`<key>.md\` per text, each ending
+with one newline. Text files are UTF-8 without a byte-order mark, LF only; \`{{slot}}\`s are limited per key and filled by
+the host. Nothing in the folder runs: the host reads it at its own points and refuses it whole on any unknown key or
+file, an unsupported \`format\`, a bad encoding, a size over its bound or a path leaving the folder.
+**It is honoured only for the product's assistant App: id \`gugu-assistant\`, installed from the market, its code in
+gugu's market repository, no fork switched on.** Any other App's folder is never read, so declaring it gives an ordinary
+App nothing. The host keeps a copy of the last folder it accepted and goes on using it when that App is switched off,
+uninstalled, or a later version's folder is refused.
+
 ## Prompts (API 34)
 
 \`contributes.prompts\`: up to 8 \`{ "name", "title", "prompt" }\`, plain text the person picks from the composer's \`/\`
@@ -1050,13 +1264,8 @@ including startup), closes program IPC authority and stops its process tree. Oth
 Single-call cancellation does not stop other sessions sharing the program. Upgrades/settings drain already-running
 stdio calls; calls still starting may be interrupted.
 A program's real failures reach the agent in its tool result and the person on the App's page; installed does not mean running.
-Native host resources use \`contributes.mcpServers:[{"name":"browser-use","host":"browser-use"}]\`
-(API 5, desktop GUI). They use the same App permissions, Agent scope, catalog and disclosure as stdio
-programs; \`browser-use\` operates only the calling local session's browser tab; it is not available on Gugu server. Optional \`startUrl\` in
-\`settings\` supplies the initial URL when that session has no tab; an explicit navigation wins.
-\`"host":"computer-use"\` gives agents no tools: they control the computer with gugu's \`device_call\` (\`computer.*\`).
-It gives the App's own pages \`preview_state\`: the page's session's latest frame (a real screenshot) and its recent
-computer actions; \`notifications/computer-use/changed\` says there is a newer one.
+\`{"name","host"}\` programs (\`browser-use\`, \`computer-use\`) only mark outdated versions of gugu's own Apps: Gugu no longer
+hosts them, so such a version runs nothing and tells the person to update it from the App market. Write a stdio program instead.
 A tab with \`"widget": { "height": 240 }\` (API26; integer ${WIDGET_HEIGHT_MIN}–${WIDGET_HEIGHT_MAX}) can also be sent with \`widget_send\`: read \`guide_read widgets\`.
 Settings go in \`settings\`, which the host draws. If they need a page of their own, name its tab in \`contributes.settingsTab\` (API35): the App's settings page links to it.
 If the App has other tabs, a task's + and the command list do not offer this one as a page.
@@ -1071,8 +1280,7 @@ and binds its original input. Steps are real operations as the calling agent; sh
 while draft/display handoffs return in \`shown\` without touching the human composer. Deduplicate votes by
 \`ctx.operator.id\`, and label agent votes as such. See guide \`widgets\` for sizes, unavailable cards and continued pages.
 A tab with \`"perSession": true\` has one page in each session, never moved between them — two sessions side by side
-each show their own (not with \`opensFiles\` or \`"hostPage":"settings"\`). A computer-use App's per-session tabs come up beside a
-session's conversation at that session's first computer action, once.
+each show their own (not with \`opensFiles\` or \`"hostPage":"settings"\`).
 Use the existing \`agents:tools\` capability for programs/skills (see \`apps-programs\`).
 Tool Apps run and are configured on Gugu Desktop. Phone package installs refuse host pages explicitly.
 \`app_check\` drives custom HTML pages; open a host page with the \`tab_kind\` returned by \`app_install\`
@@ -1244,6 +1452,36 @@ export const EXTENSION_GUIDE_TOPICS: readonly { topic: string; about: string; te
     topic: 'apps-together',
     about: 'Several people in one App at once: presence (cursors, game frames), a game loop, and where a secret may and may not go.',
     text: EXTENSION_GUIDE_TOGETHER,
+  },
+  {
+    topic: 'apps-bindings',
+    about: 'gugu.bindings (chat:unread, API 37+): the one conversation the person chooses for your App — its unread dot, its files (40), a draft into it (40), your main page beside it (41) — and where to read the rest.',
+    text: EXTENSION_GUIDE_BINDINGS,
+  },
+  {
+    topic: 'apps-bindings-agent',
+    about: 'The same binding when its conversation is the person\'s private one with their own agent or assistant: the agent\'s resources (42) and schedules (43), the work the assistant handed out (46).',
+    text: EXTENSION_GUIDE_BINDINGS_AGENT,
+  },
+  {
+    topic: 'apps-assistant',
+    about: 'gugu.assistant on the person\'s own assistant chat (44): its status and counts, gugu\'s screens over your page, setup, rename, its moving figure; and toast, gugu\'s own one-line notice for a desktop page.',
+    text: EXTENSION_GUIDE_ASSISTANT,
+  },
+  {
+    topic: 'apps-bindings-manage',
+    about: 'gugu.bindings (API 50, desktop): the assistant\'s files uploaded, foldered, renamed, removed; its voice notes transcribed, removed, exported — as its own pages do, the person asked first; a draft carrying files; why a read is unavailable.',
+    text: EXTENSION_GUIDE_BINDINGS_MANAGE,
+  },
+  {
+    topic: 'apps-bindings-assistant',
+    about: 'What the host draws for your App on the person\'s own assistant chat: its top row (header, 46), its voice-note recorder driven from your page (gugu.voiceNote, 47), your entries in that conversation\'s composer "+", run by the host (composerActions, 48); intents your page hears.',
+    text: EXTENSION_GUIDE_BINDINGS_ASSISTANT,
+  },
+  {
+    topic: 'apps-bindings-phone',
+    about: 'The binding on a phone (API 49): who is bound there, the phone layout and the section your page fills, what answers unsupported, and the phone\'s own screens.',
+    text: EXTENSION_GUIDE_BINDINGS_PHONE,
   },
   {
     topic: 'apps-messages',

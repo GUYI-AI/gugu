@@ -10,6 +10,8 @@ import type { VaultDependencies, VaultSinkControl, VaultUseBinding } from '../..
 import { CredentialApprovalState } from '../../../apps/desktop/electron/session/main/core/browser/credential-approval-state'
 import { CredentialUseAuthorityBridge } from '../../../apps/desktop/electron/session/main/core/browser/credential-use-authority'
 import type { CredentialUseSettlement } from '../../../apps/desktop/electron/session/main/core/browser/credential-settlement-contract'
+const LOGIN = { values: [{ kind: 'account' }, { kind: 'password' }], elsewhere: false } as const
+
 
 vi.mock('@gugu/core/shared/passwordBeta', () => ({ PASSWORD_BETA_ENABLED: true }))
 
@@ -29,7 +31,7 @@ async function scenario() {
   const register = vi.fn((_capability: object, _binding: VaultUseBinding, _revoked: AbortSignal): void => {})
   const authority = new CredentialUseAuthorityBridge({ approval, isolationCurrent: () => true, cleanup, registerUse: register })
   let fillSignal: AbortSignal | undefined, fillRevoked: AbortSignal | undefined
-  const fill = vi.fn(async (_binding: VaultUseBinding, _secrets: { account: Buffer; password: Buffer }, control: VaultSinkControl) => {
+  const fill = vi.fn(async (_binding: VaultUseBinding, _secrets: { values: readonly Buffer[] }, control: VaultSinkControl) => {
     fillRevoked = control.revokedSignal
     state.deliveries++; await control.prepareSubmission(); control.claimSubmission(); state.submissions++
     return 'submitted_unconfirmed' as const
@@ -51,7 +53,7 @@ async function scenario() {
   }
   const { browser, acquireFeatureGuard, ...host } = dependencies
   const ports = createVaultStorage(host, browser!, acquireFeatureGuard!), vault = ports.vault; vaults.push(vault)
-  const material = await vault.beginSetup(person); await vault.confirmRecovery(person, material.setupId, material.recoveryMaterial)
+  await vault.list(person)
   const saved = await vault.save(person, randomUUID(), { origin: 'https://login.example.test', account: randomUUID(), password: randomBytes(32).toString('base64url') })
   const checked = await vault.checkReference(actor, saved.reference)
   if (checked.status !== 'valid') throw new Error('synthetic fixture unavailable')
@@ -67,7 +69,7 @@ async function scenario() {
 
 describe('vault with the real credential approval and use authority', () => {
   it('completes normal cleanup after stopping the fill lease without revoking approval', async () => {
-    const f = await scenario(), result = await f.vault.useCredential(f.capability, f.binding)
+    const f = await scenario(), result = await f.vault.useCredential(f.capability, f.binding, LOGIN)
     expect(f.ports.outcomeAudit).toBe(f.vault.outcomeAudit)
     expect(f.fillSignal()?.aborted).toBe(true); expect(f.revokedSignal.aborted).toBe(false)
     expect(f.fillRevoked()).toBe(f.revokedSignal)
@@ -80,17 +82,17 @@ describe('vault with the real credential approval and use authority', () => {
   })
   it.each(['readiness', 'approval'] as const)('clears delivered buffers and blocks submission on genuine %s revocation', async source => {
     const f = await scenario(), entered = deferred(), release = deferred()
-    let secret: { account: Buffer; password: Buffer } | undefined
+    let secret: { values: readonly Buffer[] } | undefined
     f.fill.mockImplementationOnce(async (_binding, secrets, control) => {
       f.state.deliveries++; secret = secrets; await control.prepareSubmission(); entered.resolve(); await release.promise
       control.claimSubmission(); f.state.submissions++; return 'submitted_unconfirmed'
     })
-    const pending = f.vault.useCredential(f.capability, f.binding)
+    const pending = f.vault.useCredential(f.capability, f.binding, LOGIN)
     await entered.promise
-    const hadPlaintext = !!secret?.password.some(byte => byte !== 0)
+    const hadPlaintext = !!secret?.values[1]!.some(byte => byte !== 0)
     if (source === 'readiness') f.readiness.abort()
     else f.approval.cancel(f.binding.requestId, f.binding)
-    const clearedSynchronously = !!secret && [secret.account, secret.password].every(value => value.every(byte => byte === 0))
+    const clearedSynchronously = !!secret && [...secret.values].every(value => value.every(byte => byte === 0))
     release.resolve(); const result = await pending
     expect(hadPlaintext).toBe(true); expect(clearedSynchronously).toBe(true)
     expect(f.state.submissions).toBe(0); expect(result.status).toBe('uncertain'); expect(result.retainIsolatedLogin).toBe(true)
@@ -98,7 +100,7 @@ describe('vault with the real credential approval and use authority', () => {
   it.each(['readiness', 'approval', 'disabled'] as const)('keeps a genuine %s failure latched while normal cleanup is awaiting', async source => {
     const f = await scenario(), entered = deferred(), release = deferred()
     f.cleanup.mockImplementationOnce(async () => { entered.resolve(); await release.promise; return { status: 'cleaned' } })
-    const pending = f.vault.useCredential(f.capability, f.binding)
+    const pending = f.vault.useCredential(f.capability, f.binding, LOGIN)
     await entered.promise
     const fillAlreadyStopped = f.fillSignal()?.aborted, approvalWasCurrent = !f.revokedSignal.aborted
     if (source === 'readiness') f.readiness.abort()

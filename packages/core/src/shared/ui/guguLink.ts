@@ -42,11 +42,12 @@ export const FILE_LINK_IN_TEXT = /gugu-file:\/\/[^\s()[\]<>"'`]+/gi
 export function parseGroupFileLink(href: string): GroupFileLink | null {
   const match = GROUP_FILE_LINK.exec(href.trim())
   if (!match) return null
-  const version = /(?:^|&)v=(\d+)(?:&|$)/.exec(match[2] ?? '')?.[1]
+  const versionText = /(?:^|&)v=(\d+)(?:&|$)/.exec(match[2] ?? '')?.[1]
+  const version = versionText === undefined ? undefined : Number(versionText)
   const at = match[3] === undefined ? null : placeOf(match[3])
   return {
     itemId: match[1]!.toLowerCase(),
-    ...(version === undefined ? {} : { version: Number(version) }),
+    ...(Number.isSafeInteger(version) ? { version } : {}),
     ...(at && Object.keys(at).length > 0 ? { at } : {}),
   }
 }
@@ -140,8 +141,8 @@ export function classifyFileLink(href: string): FileLinkClassification {
   const placed = at && Object.keys(at).length > 0 ? { at } : {}
   let path = raw
   try {
-    // decodeURI keeps `%23` as it is: the one escape a name's own `#` needs, read back here.
-    path = decodeURI(raw).replace(/%23/gi, '#')
+    // 先还原原文里的 %23，再解码一次，保留 %25 解码后产生的字面 %23。
+    path = decodeURI(raw.replace(/%23/gi, '#'))
   } catch {
     // A literal '%' is valid in a filesystem name; preserve malformed URI text as a path.
   }
@@ -334,7 +335,7 @@ export function parseGuguLink(raw: string, options: { supabaseUrl?: string } = {
     try { path = rest.map(decodeURIComponent).join('/') } catch { return null }
     const chat = url.searchParams.get(PLACE_KEYS.chat)
     const session = url.searchParams.get(PLACE_KEYS.session)
-    const query: Record<string, string> = {}
+    const query: Record<string, string> = Object.create(null) as Record<string, string>
     for (const [key, value] of url.searchParams) if (!key.startsWith('gugu.')) query[key] = value
     return { kind: 'app', extensionId, tab, path, query, place: session ? { session } : chat ? { chat } : null }
   }

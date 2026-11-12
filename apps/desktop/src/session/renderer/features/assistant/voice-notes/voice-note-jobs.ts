@@ -67,9 +67,23 @@ export type VoiceNotesContext = {
 };
 
 let context: VoiceNotesContext | null = null;
+const contextListeners = new Set<() => void>();
 
 export function setVoiceNotesContext(next: VoiceNotesContext | null) {
   context = next;
+  for (const listener of contextListeners) listener();
+}
+
+/** #1927 (47) Which assistant the notes go to now (an App's `gugu.voiceNote`, and its managing calls (50), check it is the one its binding found). */
+export function voiceNotesAssistantId(): string | null {
+  return context?.assistantId ?? null;
+}
+
+export function subscribeVoiceNotesContext(listener: () => void): () => void {
+  contextListeners.add(listener);
+  return () => {
+    contextListeners.delete(listener);
+  };
 }
 
 export function voiceNotesDir(machine: AssistantMachine): string {

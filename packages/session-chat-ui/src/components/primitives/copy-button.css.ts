@@ -39,7 +39,7 @@ const buttonBase = style({
   color: vars.fgPassive,
   selectors: {
     '&:hover': { color: vars.fg },
-    '&:focus-visible': { opacity: 1 },
+    '&:focus-visible:not([data-pointer-focus] *)': { opacity: 1 },
   },
 });
 

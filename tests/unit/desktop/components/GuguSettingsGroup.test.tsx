@@ -89,7 +89,7 @@ async function render(node: ReactNode, cloud: typeof awake | typeof asleep, upda
 }
 const q = (testId: string) => harness.container.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
 
-describe('咕咕组 · 资料', () => {
+describe('咕咕的设置页(资料,画在它 App 的面板上)', () => {
   it('名字原位编辑:点笔后才出现输入,保存通讯录里它那一位', async () => {
     mine.value = { contact: CONTACT, agentId: 'a1', loading: false, error: null }
     const update = await render(createNode(AssistantSection, { available: ['connectors', 'devices', 'channels'], onOpenSection: vi.fn() }), awake)
@@ -181,7 +181,7 @@ describe('咕咕组 · 资料', () => {
   })
 })
 
-describe('咕咕组 · 连接应用', () => {
+describe('咕咕的连接应用(画在它 App 的面板上)', () => {
   it('应用列表委托给会话页，不再混入设备授权或三格页签', async () => {
     mine.value = { contact: CONTACT, agentId: 'a1', loading: false, error: null }
     await render(createNode(ConnectorsSection, {}), awake)
@@ -221,13 +221,51 @@ describe('咕咕组 · 连接应用', () => {
 })
 
 
-describe('retired chat channel settings links', () => {
-  it.each([false, true])('opens Connect apps for a legacy channels link (mobile=%s)', async (mobile) => {
+// Owner 11-12「设置里面不应该有咕咕设置吧?」: Settings never draws the assistant's pages, whatever names them (an old link,
+// a route that slipped past MainLayout): it shows the account instead. Its pages are in its App (assistantSettingsInApp.test.tsx).
+// The phone's one exception is not the assistant's: the person's own connected apps (below).
+describe('Settings has nothing of the assistant', () => {
+  it.each([
+    ['assistant', false], ['connectors', false], ['channels', false],
+    ['assistant', true], ['connectors', true], ['channels', true],
+  ] as const)('a %s route draws the account, not the assistant (mobile=%s; connections kept in its home)', async (section, mobile) => {
     mine.value = { contact: CONTACT, agentId: 'a1', loading: false, error: null }
-    await render(createNode(SettingsPanel, { initialSection: 'channels', inline: true, mobile, pane: 'detail' }), awake)
-    expect(harness.container.querySelector('[data-settings-section="connectors"]')).not.toBeNull()
-    expect(q('settings-connectors')).not.toBeNull()
-    expect(q('settings-nav-channels')).toBeNull()
-    expect(harness.container.querySelector('.gg-settings-detail .gg-pane-title')?.textContent).toBe('连接应用')
+    await render(createNode(SettingsPanel, { initialSection: section, inline: true, mobile, pane: 'detail' }), awake)
+    expect(harness.container.querySelector('[data-settings-section="account"]')).not.toBeNull()
+    expect(q('settings-assistant')).toBeNull()
+    expect(q('settings-connectors')).toBeNull()
+    expect(q('settings-nav-assistant')).toBeNull()
+    expect(q('settings-nav-connectors')).toBeNull()
+  })
+})
+
+// 11-12 gap: on a phone with no assistant, Settings' 连接应用 was the only way to the person's own connected apps. They are
+// the person's, not the assistant's: a plain row under 偏好 (no 咕咕 heading) on the phone, which has no Library; a computer
+// keeps them in the Library's 集成. Not while connections are still kept in the assistant's home (legacy, above).
+describe('the person\'s own connected apps on the phone', () => {
+  it('a plain row under 偏好, beside 通用; a route to them (or its chat tools) draws them', async () => {
+    authority.mode = 'owner'
+    await render(createNode(SettingsPanel, { inline: true, mobile: true, pane: 'nav' }), awake)
+    const row = q('settings-nav-connectors')!
+    expect(row.textContent).toContain('连接应用')
+    expect(row.closest('[role="group"]')?.getAttribute('data-group')).toBe('preferences')
+    expect([...row.closest('[role="group"]')!.querySelectorAll('[data-testid^="settings-nav-"]')].slice(0, 2).map((el) => el.getAttribute('data-testid'))).toEqual(['settings-nav-general', 'settings-nav-connectors'])
+    expect([...harness.container.querySelectorAll('.gg-settings-nav-caption')].map((el) => el.textContent)).not.toContain('咕咕')
+    expect(q('settings-nav-assistant')).toBeNull()
+    expect(harness.container.textContent).not.toMatch(/资料/)
+    for (const section of ['connectors', 'channels'] as const) {
+      harness.cleanup(); harness = createReactHarness(); sessionSection.props = null
+      await render(createNode(SettingsPanel, { initialSection: section, inline: true, mobile: true, pane: 'detail' }), awake)
+      expect(q('settings-connectors')).not.toBeNull()
+      expect(sessionSection.props).toMatchObject({ section: 'connectors', context: { connectionRoute: { mode: 'owner' } } })
+    }
+  })
+
+  it('never on a computer: its home there is the Library\'s 集成', async () => {
+    authority.mode = 'owner'
+    await render(createNode(SettingsPanel, { initialSection: 'connectors', inline: true, mobile: false, pane: 'detail' }), awake)
+    expect(q('settings-nav-connectors')).toBeNull()
+    expect(q('settings-connectors')).toBeNull()
+    expect(harness.container.querySelector('[data-settings-section="account"]')).not.toBeNull()
   })
 })

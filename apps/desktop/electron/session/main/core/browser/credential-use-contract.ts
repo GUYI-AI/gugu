@@ -81,7 +81,8 @@ export type CredentialAuditWrite =
   | Readonly<{ status: 'unavailable' }>
   | Readonly<{ status: 'uncertain' }>;
 
-export type CredentialLoginOutcome = 'submitted_unconfirmed' | 'login_confirmed' | 'person_interaction_required' | 'failed' | 'uncertain';
+/** `filled`: the values went into the page's inputs and nothing was submitted (the Agent goes on by itself). */
+export type CredentialLoginOutcome = 'submitted_unconfirmed' | 'login_confirmed' | 'person_interaction_required' | 'failed' | 'uncertain' | 'filled';
 export type CredentialHandoffState = 'isolated_login_active' | 'person_interaction_required' | 'handed_back' | 'isolated_login_retained';
 export type CredentialHandoffReason = 'isolation_unavailable' | 'cleanup_unconfirmed' | 'audit_unavailable'
   | 'target_invalidated' | 'outcome_uncertain' | 'person_interaction_required' | 'handoff_unconfirmed';

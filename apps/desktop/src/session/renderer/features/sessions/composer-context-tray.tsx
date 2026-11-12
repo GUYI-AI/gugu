@@ -9,7 +9,8 @@
 // 设备维度的数据与 per-user 记忆都在 gugu 侧（identity.gugu_devices + identity.user_settings）；
 // 这里只负责渲染与回调。
 import { nameTwinIds } from '@renderer/features/projects/name-twins';
-import { AlertTriangle, ChevronDown, Clock, Folder, Plus, Search, Users, X } from '@/lib/icons'
+import { AlertTriangle, ChevronDown, Clock, Folder, Plus, Users, X } from '@/lib/icons'
+import { MenuSearch } from '@/components/ui/Menu'
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
 import {
@@ -43,34 +44,6 @@ import { machineRegistry } from '@renderer/lib/machine-routing';
  */
 export function mountedProjects(includeRemote = false) {
   return sidebarStore.orderedProjects.filter((p) => p.state === 'mounted' && (includeRemote || machineRegistry.machineOf(p.id) === null));
-}
-
-/** 菜单顶上的搜索框 —— 本机与别的机器的项目选择器同一个。 */
-function TrayMenuSearch({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string;
-  onChange: (next: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <div className="flex items-center gap-2 border-b border-border bg-[var(--em-surface-input)] px-3 py-2">
-      <Search className="size-3.5 shrink-0 text-foreground-muted" />
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        // 拦住普通按键,免得被菜单的 typeahead 抢走;但 Escape/Tab 必须放行,
-        // 否则在搜索框里按 Esc 关不掉下拉(一律 stopPropagation 就是这个 bug)。
-        onKeyDown={(e) => {
-          if (e.key !== 'Escape' && e.key !== 'Tab') e.stopPropagation();
-        }}
-        placeholder={placeholder}
-        className="w-full bg-transparent text-sm outline-none placeholder:text-foreground-muted"
-      />
-    </div>
-  );
 }
 
 /**
@@ -134,10 +107,11 @@ export const ComposerProjectPicker = observer(function ComposerProjectPicker({
           <div className="px-3 py-2 text-xs text-foreground-muted">{unavailableHint}</div>
         ) : (
           <>
-            <TrayMenuSearch
+            <MenuSearch
               value={projectQuery}
               onChange={setProjectQuery}
               placeholder={translate('task.projectSearchPlaceholder')}
+              className="top-0"
             />
             <div className="max-h-64 overflow-y-auto py-1">
               {allowNone ? (
@@ -264,7 +238,7 @@ export function ComposerRemoteProjectPicker({
         }
       />
       <DropdownMenuContent side="top" className="min-w-72 p-0">
-        <TrayMenuSearch value={query} onChange={setQuery} placeholder={translate('task.projectSearchPlaceholder')} />
+        <MenuSearch value={query} onChange={setQuery} placeholder={translate('task.projectSearchPlaceholder')} className="top-0" />
         <div className="max-h-72 overflow-y-auto py-1">
           <DropdownMenuItem onClick={() => onSelect(null)}>
             <Folder className="size-3.5" />

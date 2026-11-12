@@ -78,7 +78,9 @@ describe('device-specific one-page introduction', () => {
     cleanup.push(h.cleanup)
     await h.render(createNode(AssistantIntro, { primaryLabel: '开通我的咕咕', onPrimary: vi.fn(), laterLabel: '先逛逛', onLater: vi.fn() }))
     expect([...h.container.querySelectorAll('[data-intro-row]')].map((row) => row.getAttribute('data-intro-row'))).toEqual(device === 'phone' ? ['gugu', 'messages', 'partners'] : ['gugu', 'projects', 'chats'])
-    expect(h.container.querySelector('.ta-onb-intro-gugu')?.textContent).toContain(device === 'phone' ? '打开「消息」，第一行就是咕咕。' : '在左栏最上面。')
+    expect(h.container.querySelector('.ta-onb-intro-gugu')?.textContent).toContain(device === 'phone' ? '打开「消息」，第一行就是咕咕。' : '你的个人助理，帮你记安排、办事情。')
+    // The desktop says nothing of where it is: it is the first App of the rail's App group, not the top of the rail.
+    if (device === 'desktop') expect(h.container.querySelector('.ta-onb-intro-gugu')?.textContent).not.toContain('左栏')
     expect(h.container.textContent).not.toContain('每件任务')
     expect(h.container.querySelector('.ta-onb-intro')?.children).toHaveLength(2)
   })

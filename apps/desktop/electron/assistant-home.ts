@@ -1,11 +1,13 @@
 // #7199 个人助理住在这台电脑上时,它的家由主进程在本机准备(assistant-home-prepare.ts);这里只是把它挂到 IPC 上。
-import { ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { resolveGuguHome } from '@gugu/core/local/state/paths'
 import { createMoveJournalFileStore } from './assistant-move-journal'
 import { stdSerializers } from 'pino'
 import { ASSISTANT_HOME_CHANNELS, type AssistantEngine, type PrepareLocalHomeInput } from '../src/lib/assistantHomeIpc'
 import { prepareLocalAssistantHome, wipeLocalAssistantHome } from './assistant-home-prepare'
+import { refreshedAssistantRules } from './assistant-rules-resolver'
+import { assistantRulesState, ensureAssistantApp, onAssistantRulesState } from './assistant-rules-root'
 import { createAssistantSetupPreparation } from './assistant-setup-preparation'
 import { createLogger } from './lib/logger'
 
@@ -59,5 +61,15 @@ export function installAssistantHome(): void {
     owners.delete(id)
   })
   ipcMain.handle(ASSISTANT_HOME_CHANNELS.prepare, (_event, input: PrepareLocalHomeInput | undefined) => prepareLocalAssistantHome(input ?? {}))
+  // The window asks for the rules when the assistant's setup starts: from then on this machine needs the assistant App.
+  ipcMain.handle(ASSISTANT_HOME_CHANNELS.rules, async () => {
+    void ensureAssistantApp('setup')
+    // With none here yet the setup waits for them: the ensure step is putting the App in, the entry shows it preparing.
+    return (await refreshedAssistantRules()).rules
+  })
+  ipcMain.handle(ASSISTANT_HOME_CHANNELS.rulesState, () => assistantRulesState())
+  onAssistantRulesState((state) => {
+    for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send(ASSISTANT_HOME_CHANNELS.rulesStateChanged, state)
+  })
   ipcMain.handle(ASSISTANT_HOME_CHANNELS.wipe, () => wipeLocalAssistantHome())
 }

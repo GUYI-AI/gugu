@@ -488,6 +488,8 @@
   --z-overlay-local: 50;   /* 面板内浮层：emoji picker、斜杠命令、@ 提及 */
   /* Workspace surfaces share a stacking context; only the fullscreen guest rises above its opaque pane. */
   --z-pane-resident: 10;
+  /* Host controls drawn over a resident App page's corner (#1925: the collapse control beside a conversation). */
+  --z-pane-resident-chrome: 15;
   --z-pane-divider: 20;
   --z-pane-fullscreen: 30;
   --z-pane-fullscreen-resident: 40;
@@ -1115,11 +1117,15 @@ button, [role="button"] {
    product spec 焦点条)。
    - 鼠标/触摸聚焦(:focus 但不 :focus-visible):不画。
    - 键盘聚焦:2px live 色环,外偏 2px,跟着元素圆角走。放在 @layer base:组件要换自己的焦点表达时用工具类覆盖得了。
-   - 文字输入(input / textarea / contenteditable)以光标为焦点指示,不画环 —— 浏览器对它们鼠标点击也报 :focus-visible。 */
+   - 文字输入(input / textarea / contenteditable)以光标为焦点指示,不画环 —— 浏览器对它们鼠标点击也报 :focus-visible。
+   - 指针模态(根上 data-pointer-focus,见 lib/focus-modality.ts):点过之后单按修饰键,Chromium 也报 :focus-visible —— 不画。
+     自己写焦点样式的组件一律用 `:focus-visible:not([data-pointer-focus] *)`;Tailwind 的 focus-visible: 变体已是这个选择器。 */
 :focus:not(:focus-visible) { outline: none; }
 @layer base {
-  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-  :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='button'], [type='submit']), textarea, [contenteditable]):focus-visible { outline: none; }
+  :focus-visible:not([data-pointer-focus] *) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  /* 指针模态下浏览器自带的 :focus-visible 轮廓也不要。 */
+  [data-pointer-focus] :focus-visible { outline: none; }
+  :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='button'], [type='submit']), textarea, [contenteditable]):focus-visible:not([data-pointer-focus] *) { outline: none; }
 }
 
 /* ───────────── theme batch D(宿主组件:二维码、形象工坊、看图 / 文档预览)───────────── */
@@ -1450,6 +1456,14 @@ body.barcode-scanner-active #root {
   /* 「自定义」对话框与浮出菜单的玻璃底:深色就是 glass-strong,浅色各有一档更实的白(原来是两条 !important 规则)。 */
   --ta-dialog-bg: var(--ta-glass-strong);
   --ta-menu-bg: var(--ta-glass-strong);
+  /* 次级字与日程小按钮(深色)。深色的玻璃是往前景色提亮的叠层:展开的日程行叠了两层(卡片 + 行),行里的小按钮又叠一层
+     glass-strong,底色一层层逼近次级字。全局 --muted-fg / --faint-fg 是按实色深底(--card / --muted)校准的(faint 还只是
+     装饰色),放到这几层玻璃上只剩 1.8–2.7:1。这里按两层玻璃校准:次级字 ≥4.5:1;小按钮压暗一层而不是再提亮,描边 ≥3:1。
+     浅色的玻璃往白提亮、离深色字更远,浅色段沿用全局值,样子不变。 */
+  --ta-muted: color-mix(in oklab, var(--fg) 80%, var(--muted-fg));
+  --ta-faint: color-mix(in oklab, var(--fg) 62%, var(--muted-fg));
+  --ta-day-chip-bg: color-mix(in oklab, var(--bg) 35%, transparent);
+  --ta-day-chip-edge: color-mix(in oklab, var(--fg) 25%, var(--muted-fg));
 }
 [data-theme='light'] .ta-app,
 [data-theme='light'] .ta-dialog,
@@ -1481,6 +1495,10 @@ body.barcode-scanner-active #root {
   --ta-bubble-other: #fff;
   --ta-dialog-bg: rgba(248, 249, 251, 0.8);
   --ta-menu-bg: rgba(250, 250, 252, 0.82);
+  --ta-muted: var(--muted-fg);
+  --ta-faint: var(--faint-fg);
+  --ta-day-chip-bg: var(--ta-glass-strong);
+  --ta-day-chip-edge: var(--ta-divider);
 }
 
 /* #1284 手机回到中性纯色;嵌套的助理/引导页会重新声明变量,要与外壳一起覆盖。电脑的 .ta-app 不在此范围。 */
@@ -2234,7 +2252,7 @@ body.barcode-scanner-active #root {
 }
 .gg-member-join-name { font-size: inherit; line-height: inherit; cursor: pointer; }
 .gg-member-join-name:hover,
-.gg-member-join-name:focus-visible { background: transparent; color: var(--primary); text-decoration: underline; }
+.gg-member-join-name:focus-visible:not([data-pointer-focus] *) { background: transparent; color: var(--primary); text-decoration: underline; }
 
 .gg-topic-anchor { position: relative; }
 .gg-topic-anchor::before {

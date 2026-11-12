@@ -7,12 +7,19 @@ import type { AppDetailLink, GuguLinkTarget } from '@gugu/core/shared/ui/guguLin
 import { readMobileShell } from './useMobileShell'
 import { SERVER_LOGIN_APPROVE_EVENT } from '../lib/inAppLinks'
 import { readAssistantShellBridge } from '../lib/assistantShellBridge'
+import { assistantAppUsable } from '../lib/assistantEntry'
 import { OPEN_ASSISTANT_TASK_CHAT, readAssistantTaskChat, type AssistantTaskChat } from '../lib/assistantTaskChat'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { chatService } from '../lib/chat'
 import { askReveal } from './useSourceMessageReveal'
 import { readIdentityDirectoryBridge } from '../lib/identityDirectoryBridge'
 import { openOwnedAgentFile } from '../lib/ownedAgentConversation'
+
+/**
+ * Whether the assistant's tasks have their place here: the phone's own layer, or on a computer the assistant App (the one
+ * decision, lib/assistantEntry.ts). Not: the task is an ordinary one, opened as any chat or session is.
+ */
+const assistantTasksHavePlace = () => readMobileShell() || assistantAppUsable()
 
 /** The navigation belongs to the chat shell, not a Markdown renderer or an agent. */
 export function useLinkNavigation(input: {
@@ -99,7 +106,8 @@ export function useLinkNavigation(input: {
       }
       if (target.kind === 'session') {
         const assistant=readAssistantShellBridge()?.getSnapshot()
-        if(assistant?.assistant){
+        // A task of the assistant's has its place over the App's panel; without one, it is an ordinary task, brought up as any session is.
+        if(assistant?.assistant&&assistantTasksHavePlace()){
           const {resolveAssistantWorkTarget}=await import('../lib/assistantWorkTarget')
           const task=await resolveAssistantWorkTarget(assistant.assistant.id,{sessionId:target.sessionId})
           if(asked!==generation||current.current.ownerId!==state.ownerId)return
@@ -135,7 +143,7 @@ export function useLinkNavigation(input: {
       let task: AssistantTaskChat | null = null
       const contact = state.contacts().find((row) => row.id === chat.peer_user_id)
       if (assistant?.assistant && contact?.type === 'agent' && contact.owner_user_id === state.ownerId
-        && contact.id !== assistant.assistant.id) {
+        && contact.id !== assistant.assistant.id && assistantTasksHavePlace()) {
         // Choosing the known task viewport must not wait for its cloud reader to be ready.
         const known=readAssistantTaskChat(state.ownerId,contact.id)
         if(known?.assistantId===assistant.assistant.id)task=known

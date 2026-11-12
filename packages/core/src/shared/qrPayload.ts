@@ -59,6 +59,8 @@ export function createContactQrPayload(guguNumber: number): GuguContactQrPayload
 
 /** The one encoder for every QR and share link. */
 export function createGuguQrUrl(payload: GuguQrPayload): string {
+  const id = payload.kind === 'contact' ? payload.gugu_number : payload.group_public_id
+  if (!isPositiveInteger(id)) throw new Error('QR link requires a positive safe integer id')
   if (payload.kind === 'contact') return `${GUGU_SHORT_LINK_BASE}?${payload.gugu_number}`
   const token = payload.join_token ?? ''
   // join_token is encode(gen_random_bytes(16), 'hex') in the database; anything else is a bug upstream.
@@ -116,9 +118,14 @@ function unwrapQrPayload(value: unknown): Record<string, unknown> | null {
       return null
     }
   }
-  if (!value || typeof value !== 'object') return null
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) return null
   const record = value as Record<string, unknown>
   if (record.payload && typeof record.payload === 'object') {
+    if (Array.isArray(record.payload)) return null
+    const wrappedPrototype = Object.getPrototypeOf(record.payload)
+    if (wrappedPrototype !== Object.prototype && wrappedPrototype !== null) return null
     return record.payload as Record<string, unknown>
   }
   return record
@@ -146,5 +153,5 @@ function base64UrlToHex(text: string): string {
 }
 
 function isPositiveInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
 }

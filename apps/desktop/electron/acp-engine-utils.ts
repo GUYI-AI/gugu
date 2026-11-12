@@ -13,11 +13,15 @@ import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
 import { requireRuntimeAuth, resolveGuguHome, type RuntimeAuth, type RuntimeAuthProvider } from '@gugu/core'
 import { assistantExecutionAction } from '@gugu/core/shared/assistantWorkflow'
 import { coordinateAssistantAction, type AssistantWorkBinding } from './sessionpage/assistant-work'
+import { assistantRules } from './assistant-rules-resolver'
 import { makeIdentityClient } from './supabase'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { GuguMcpHost, type GuguMcpHostPersistence } from './gugu-mcp-host'
+import { GuguMcpHost, type GuguMcpHostPersistence, type GuguMcpServerFactory } from './gugu-mcp-host'
 // @ts-expect-error -- the MCP tool implementation is an untyped ESM module.
-import { createGuguImServer, createSessionState, sendWidgetOf, serveToolsList, widgetGetOf } from './mcp/gugu-im-server.mjs'
+import { advertisedTool, createGuguImServer, createSessionState, sendWidgetOf, serveToolsList, widgetGetOf } from './mcp/gugu-im-server.mjs'
+import type { RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { Tool } from '@modelcontextprotocol/sdk/types.js'
+import { guguToolGroupOf, type GuguToolsOff } from '../src/session/shared/gugu-tool-groups'
 import { registerGuguWidgetTool } from './mcp/gugu-widget-tool'
 import { GUGU_MCP_SERVER_NAME } from './mcp/gugu-mcp-name.mjs'
 import { registerGuguScheduleTools } from './mcp/gugu-schedule-tool'
@@ -213,122 +217,182 @@ export type GuguMcpContext = GuguMcpContextBase & (
 
 export type DesktopGuguMcpHost = GuguMcpHost<GuguMcpContext>
 
+/** 资源库 → MCP 里关掉的内置工具组(那台机器 KV 里的那一份);宿主就绪前没设 = 全开。 */
+let guguToolsOffReader: () => Promise<GuguToolsOff> = async () => []
+export function setGuguToolsOffReader(read: () => Promise<GuguToolsOff>): void {
+  guguToolsOffReader = read
+}
+export const guguToolsOff = (): Promise<GuguToolsOff> => guguToolsOffReader()
+
+/** 已连上的那几台,开关一变就当场改它们(`applyGuguToolsOff`)。 */
+const liveGuguServers = new Set<McpServer>()
+
+/** 按开关给一台的工具标 enabled;变了就返回 true。关掉的工具原生清单、catalog 都不列,按名调也被拒(SDK 认 enabled)。 */
+function switchGuguTools(server: McpServer, off: ReadonlySet<string>): boolean {
+  let changed = false
+  for (const [name, tool] of Object.entries(registeredTools(server))) {
+    const enabled = !off.has(guguToolGroupOf(name) ?? '')
+    if (tool.enabled !== enabled) { tool.enabled = enabled; changed = true }
+  }
+  return changed
+}
+
+/** 开关改了:作用到每台已连上的 server,发一次 `notifications/tools/list_changed`,支持它的 harness 当场重新列工具。 */
+export function applyGuguToolsOff(off: GuguToolsOff): void {
+  const set = new Set<string>(off)
+  for (const server of liveGuguServers) if (switchGuguTools(server, set) && server.isConnected()) void server.sendToolListChanged()
+}
+
+/**
+ * 一个 MCP 客户端连上来时组装的那台 server。`off` 里的组照常注册、标成不可用;连着的时候开关再变由 `applyGuguToolsOff` 改。
+ * 同一份开关下清单不变,模型前缀照样复用。
+ */
+function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSignal, trackHostRequest]: Parameters<GuguMcpServerFactory<GuguMcpContext>>): McpServer {
+  const initial = getContext()
+  const baseTools = initial.personalAssistant ? GUGU_ASSISTANT_LISTED_TOOLS : GUGU_LISTED_TOOLS
+  const search = initial.webSearch?.available() ? initial.webSearch : undefined
+  const listedTools = new Set<string>(search ? [...baseTools, 'web_search'] : baseTools)
+  if (PASSWORD_BETA_ENABLED) for (const name of ['password_credentials', 'password_fill']) listedTools.add(name)
+  const trackRequest: GuguMcpRequestTracker = (work, toolName, requestId) => {
+    const tracked = trackHostRequest(work, toolName, requestId)
+    if (initial.personalAssistant && toolName) {
+      void tracked.then(() => startupDiscovery.release(), () => startupDiscovery.release())
+    }
+    return tracked
+  }
+  const imState = createSessionState()
+  const server = initial.kind === 'social'
+    ? createGuguImServer(() => {
+        const latest = getContext()
+        if (latest.kind !== 'social') throw new Error('Gugu MCP grant changed context kind')
+        return latest
+      }, { signal: grantSignal, trackRequest, state: imState })
+    : new McpServer({ name: GUGU_MCP_SERVER_NAME, version: '0.3.0' })
+  // session_* 与 app_* 两个域(#4191)与社交域同 server 注册:
+  // 一条 grant 只要拿得到其中任一半就两个域全部注册,缺的那一半在调用时报错 —— 工具清单不随
+  // 同角色的 grant 变,否则每种组合都是一份新的模型前缀。助理常驻派活、叫停和活动回顾;
+  // 两种固定角色工具面各自复用前缀,不是按会话的动态授权清单。
+  if (getContext().runSessionAction || getContext().runExtensionAction) {
+    const sessionDispatcher: SessionDispatcher | undefined = getContext().runSessionAction
+      ? async (action, requestSignal) => {
+          const run = getContext().runSessionAction
+          if (!run) throw new Error('session_* tools are unavailable for this grant')
+          const dispatch = (input: unknown) => run(input, anySignal([grantSignal, requestSignal]))
+          if (!initial.personalAssistant) return dispatch(action)
+          // One snapshot of the assistant's product rules for the whole dispatch (#1931): the task context and the report.
+          // A running assistant started with them, so they are there; nothing is dispatched without them.
+          const { rules } = await assistantRules().available()
+          const work = assistantExecutionAction(action, rules)
+          return initial.assistantWork ? coordinateAssistantAction(initial.assistantWork, work, dispatch, rules) : dispatch(work)
+        }
+      : undefined
+    registerGuguSessionTools(server, sessionDispatcher, trackRequest, initial.personalAssistant === true)
+    registerGuguProjectTools(server, sessionDispatcher, trackRequest)
+    registerGuguLibraryTools(server, sessionDispatcher, trackRequest)
+    if (sessionDispatcher) registerAssistantResource(server, {
+      accountId: async () => {
+        const context = getContext()
+        if (context.kind !== 'social' || context.forkOf !== undefined) return null
+        await context.getAccessToken(grantSignal)
+        return context.expectedOwnerUserId
+      },
+      run: (action, signal) => sessionDispatcher(action, anySignal([grantSignal, signal])),
+      ...(initial.readAssistantResources ? { localSources: () => {
+        const read = getContext().readAssistantResources
+        if (!read) throw new Error('Personal assistant context is unavailable')
+        return read()
+      } } : {}),
+    }, initial.personalAssistant && initial.kind === 'social' ? initial.guguHome : undefined)
+    registerGuguActivityTools(server, sessionDispatcher, trackRequest)
+    // #7221 schedule_* 与 session_* 同一个分派器:给自己排的已安排只作用于这条会话。
+    registerGuguScheduleTools(server, sessionDispatcher, trackRequest)
+    registerGuguExtensionTools(
+      server,
+      getContext().runExtensionAction
+        ? (action, requestSignal) => {
+            const run = getContext().runExtensionAction
+            if (!run) throw new Error('app_* tools are unavailable for this grant')
+            const signal = anySignal([grantSignal, requestSignal])
+            const runSession = getContext().runSessionAction
+            return runAppAction(
+              action,
+              getContext(),
+              (ready, lifetime) => run(ready, lifetime ?? signal),
+              runSession ? (session, lifetime) => runSession(session, lifetime ?? signal) : undefined,
+              signal,
+            )
+          }
+        : undefined,
+      trackRequest,
+    )
+  }
+  registerGuguGuideTools(server)
+  if (search) registerGuguWebSearchTool(server, {
+    available: search.available,
+    run: (query, signal) => {
+      const latest = getContext().webSearch
+      if (!latest) throw new Error('Web search is unavailable for this session')
+      return latest.run(query, anySignal([grantSignal, signal]))
+    },
+  }, trackRequest)
+  // 侧边聊天(分叉)不带扩展,与原生条目同一条规矩。
+  const extensionsFor = (context: GuguMcpContext) =>
+    context.kind === 'social' && context.forkOf === undefined && context.grantKey ? sessionExtensionCatalog : null
+  registerGuguCatalogTools(server, async (name) => {
+    const context = getContext()
+    const agentUserId = context.kind === 'social' ? context.agentId : undefined
+    return context.grantKey ? await extensionsFor(context)?.tools(context.grantKey, agentUserId, name) ?? [] : []
+  }, async () => {
+    // #6634 问题 16: the installed Apps this session cannot use, and why — the same states app_search shows.
+    const found = await extensionsFor(getContext())?.apps(getContext().grantKey, false)
+    return (found?.apps ?? []).filter((app) => app.state !== 'on').map((app) => `${app.manifest.name} (${app.manifest.id}): ${app.next}`)
+  }, async () => {
+    const context = getContext()
+    return context.grantKey ? await extensionsFor(context)?.skills(context.grantKey) ?? [] : []
+  }, listedTools)
+  // 10-19 Finding an App is app_search's alone (owner: catalog_list lists tools, not Apps); in the catalog, not the native list.
+  registerGuguAppSearchTool(server, () => extensionsFor(getContext())?.apps(getContext().grantKey, true) ?? null)
+  registerGuguWidgetTool(server, () => extensionsFor(getContext())?.apps(getContext().grantKey, false) ?? null, async (args, content) => {
+    const context = getContext()
+    if (context.kind !== 'social') throw new Error('widget_send needs a Gugu identity')
+    return trackRequest(sendWidgetOf({ ...context, getAccessToken: () => context.getAccessToken(grantSignal) }, args, content, {}, imState), 'widget_send')
+  }, async (widgetId) => {
+    const context = getContext()
+    if (context.kind !== 'social') throw new Error('widget_get needs a Gugu identity')
+    return trackRequest(widgetGetOf({ ...context, getAccessToken: () => context.getAccessToken(grantSignal) }, widgetId), 'widget_get')
+  })
+  registerPasswordBetaTools(server, getContext, trackRequest, grantSignal)
+  switchGuguTools(server, off)
+  liveGuguServers.add(server)
+  const closed = server.server.onclose
+  server.server.onclose = () => { liveGuguServers.delete(server); closed?.() }
+  serveToolsList(server, getContext, (name: string) => listedTools.has(name) && registeredTools(server)[name]?.enabled === true)
+  return server
+}
+
+const registeredTools = (server: McpServer) => (server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools
+
+/**
+ * 资源库 → MCP 展开内置那台时列的工具:照会话页 agent 的角色组装一台真的(不连、不执行),列它注册的全部 ——
+ * 原生列出的和 catalog 里的都算,开关一律当全开(关掉的也要列出来才能再打开)。
+ */
+export async function guguMcpTools(): Promise<Tool[]> {
+  const unavailable = async (): Promise<never> => { throw new Error('listing only') }
+  const context: GuguMcpContext = {
+    kind: 'social', expectedOwnerUserId: '', subjectId: '', supabaseUrl: '', anonKey: '', agentId: '', threadRootId: null, guguHome: '',
+    getAccessToken: unavailable, runSessionAction: unavailable, runExtensionAction: unavailable,
+    webSearch: { available: () => true, run: unavailable },
+  }
+  const server = buildGuguMcpServer(new Set(), () => context, new AbortController().signal, (work) => work)
+  const tools = Object.entries(registeredTools(server)).map(([name, tool]) => advertisedTool(name, tool) as Tool)
+  await server.close()
+  liveGuguServers.delete(server)
+  return tools
+}
+
 export function createDesktopGuguMcpHost(persistence?: GuguMcpHostPersistence): DesktopGuguMcpHost {
   return new GuguMcpHost<GuguMcpContext>(
-    (getContext, grantSignal, trackHostRequest) => {
-      const initial = getContext()
-      const baseTools = initial.personalAssistant ? GUGU_ASSISTANT_LISTED_TOOLS : GUGU_LISTED_TOOLS
-      const search = initial.webSearch?.available() ? initial.webSearch : undefined
-      const listedTools = new Set<string>(search ? [...baseTools, 'web_search'] : baseTools)
-      if (PASSWORD_BETA_ENABLED) for (const name of ['password_credentials', 'password_login']) listedTools.add(name)
-      const trackRequest: GuguMcpRequestTracker = (work, toolName, requestId) => {
-        const tracked = trackHostRequest(work, toolName, requestId)
-        if (initial.personalAssistant && toolName) {
-          void tracked.then(() => startupDiscovery.release(), () => startupDiscovery.release())
-        }
-        return tracked
-      }
-      const imState = createSessionState()
-      const server = initial.kind === 'social'
-        ? createGuguImServer(() => {
-            const latest = getContext()
-            if (latest.kind !== 'social') throw new Error('Gugu MCP grant changed context kind')
-            return latest
-          }, { signal: grantSignal, trackRequest, state: imState })
-        : new McpServer({ name: GUGU_MCP_SERVER_NAME, version: '0.3.0' })
-      // session_* 与 app_* 两个域(#4191)与社交域同 server 注册:
-      // 一条 grant 只要拿得到其中任一半就两个域全部注册,缺的那一半在调用时报错 —— 工具清单不随
-      // 同角色的 grant 变,否则每种组合都是一份新的模型前缀。助理常驻派活、叫停和活动回顾;
-      // 两种固定角色工具面各自复用前缀,不是按会话的动态授权清单。
-      if (getContext().runSessionAction || getContext().runExtensionAction) {
-        const sessionDispatcher: SessionDispatcher | undefined = getContext().runSessionAction
-          ? (action, requestSignal) => {
-              const run = getContext().runSessionAction
-              if (!run) throw new Error('session_* tools are unavailable for this grant')
-              const dispatch = (input: unknown) => run(input, anySignal([grantSignal, requestSignal]))
-              const work = initial.personalAssistant ? assistantExecutionAction(action) : action
-              return initial.personalAssistant && initial.assistantWork ? coordinateAssistantAction(initial.assistantWork, work, dispatch) : dispatch(work)
-            }
-          : undefined
-        registerGuguSessionTools(server, sessionDispatcher, trackRequest, initial.personalAssistant === true)
-        registerGuguProjectTools(server, sessionDispatcher, trackRequest)
-        registerGuguLibraryTools(server, sessionDispatcher, trackRequest)
-        if (sessionDispatcher) registerAssistantResource(server, {
-          accountId: async () => {
-            const context = getContext()
-            if (context.kind !== 'social' || context.forkOf !== undefined) return null
-            await context.getAccessToken(grantSignal)
-            return context.expectedOwnerUserId
-          },
-          run: (action, signal) => sessionDispatcher(action, anySignal([grantSignal, signal])),
-          ...(initial.readAssistantResources ? { localSources: () => {
-            const read = getContext().readAssistantResources
-            if (!read) throw new Error('Personal assistant context is unavailable')
-            return read()
-          } } : {}),
-        }, initial.personalAssistant && initial.kind === 'social' ? initial.guguHome : undefined)
-        registerGuguActivityTools(server, sessionDispatcher, trackRequest)
-        // #7221 schedule_* 与 session_* 同一个分派器:给自己排的已安排只作用于这条会话。
-        registerGuguScheduleTools(server, sessionDispatcher, trackRequest)
-        registerGuguExtensionTools(
-          server,
-          getContext().runExtensionAction
-            ? (action, requestSignal) => {
-                const run = getContext().runExtensionAction
-                if (!run) throw new Error('app_* tools are unavailable for this grant')
-                const signal = anySignal([grantSignal, requestSignal])
-                const runSession = getContext().runSessionAction
-                return runAppAction(
-                  action,
-                  getContext(),
-                  (ready, lifetime) => run(ready, lifetime ?? signal),
-                  runSession ? (session, lifetime) => runSession(session, lifetime ?? signal) : undefined,
-                  signal,
-                )
-              }
-            : undefined,
-          trackRequest,
-        )
-      }
-      registerGuguGuideTools(server)
-      if (search) registerGuguWebSearchTool(server, {
-        available: search.available,
-        run: (query, signal) => {
-          const latest = getContext().webSearch
-          if (!latest) throw new Error('Web search is unavailable for this session')
-          return latest.run(query, anySignal([grantSignal, signal]))
-        },
-      }, trackRequest)
-      // 侧边聊天(分叉)不带扩展,与原生条目同一条规矩。
-      const extensionsFor = (context: GuguMcpContext) =>
-        context.kind === 'social' && context.forkOf === undefined && context.grantKey ? sessionExtensionCatalog : null
-      registerGuguCatalogTools(server, async (name) => {
-        const context = getContext()
-        const agentUserId = context.kind === 'social' ? context.agentId : undefined
-        return context.grantKey ? await extensionsFor(context)?.tools(context.grantKey, agentUserId, name) ?? [] : []
-      }, async () => {
-        // #6634 问题 16: the installed Apps this session cannot use, and why — the same states app_search shows.
-        const found = await extensionsFor(getContext())?.apps(getContext().grantKey, false)
-        return (found?.apps ?? []).filter((app) => app.state !== 'on').map((app) => `${app.manifest.name} (${app.manifest.id}): ${app.next}`)
-      }, async () => {
-        const context = getContext()
-        return context.grantKey ? await extensionsFor(context)?.skills(context.grantKey) ?? [] : []
-      }, listedTools)
-      // 10-19 Finding an App is app_search's alone (owner: catalog_list lists tools, not Apps); in the catalog, not the native list.
-      registerGuguAppSearchTool(server, () => extensionsFor(getContext())?.apps(getContext().grantKey, true) ?? null)
-      registerGuguWidgetTool(server, () => extensionsFor(getContext())?.apps(getContext().grantKey, false) ?? null, async (args, content) => {
-        const context = getContext()
-        if (context.kind !== 'social') throw new Error('widget_send needs a Gugu identity')
-        return trackRequest(sendWidgetOf({ ...context, getAccessToken: () => context.getAccessToken(grantSignal) }, args, content, {}, imState), 'widget_send')
-      }, async (widgetId) => {
-        const context = getContext()
-        if (context.kind !== 'social') throw new Error('widget_get needs a Gugu identity')
-        return trackRequest(widgetGetOf({ ...context, getAccessToken: () => context.getAccessToken(grantSignal) }, widgetId), 'widget_get')
-      })
-      registerPasswordBetaTools(server, getContext, trackRequest, grantSignal)
-      serveToolsList(server, getContext, (name: string) => listedTools.has(name))
-      return server
-    },
+    async (...args) => buildGuguMcpServer(new Set(await guguToolsOff()), ...args),
     (context) => ({
       ownerId: context.expectedOwnerUserId,
       subjectId: context.subjectId,

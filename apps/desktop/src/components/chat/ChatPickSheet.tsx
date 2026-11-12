@@ -57,6 +57,10 @@ interface ChatPickSheetProps {
   onAction: () => void
   actionDisabled?: boolean
   error?: string | null
+  /** One chat per pick: a tap picks it (`onToggle`), rows carry no tick and no foot. Default: several, ticked. */
+  single?: boolean
+  /** In the title bar, before the close button (forwarding: the 「多选」 switch). */
+  headerAction?: ReactNode
 }
 
 // The topic sub-row of the chat list (TopicSubRow): indented onto the `.gg-topic-subrows` rail, the topic mark for an avatar.
@@ -72,7 +76,7 @@ const TOPIC_MARK = <MessageSquare size={13} className="shrink-0 self-center" sty
 export function ChatPickSheet(props: ChatPickSheetProps) {
   const { t } = useTranslation('messaging')
   const mobile = useMobileShell()
-  const { rows, sections = [], selected, query, actionDisabled = false } = props
+  const { rows, sections = [], selected, query, actionDisabled = false, single = false } = props
   // A chip outlives the search that hid its row: every row seen is kept by id.
   const seen = useRef(new Map<string, ChatPickRow>()).current
   const renderRow = (row: ChatPickRow, topic = false): ReactNode => {
@@ -86,7 +90,7 @@ export function ChatPickSheet(props: ChatPickSheetProps) {
           mobile={mobile}
           style={topic ? TOPIC_ROW_STYLE : undefined}
           onClick={() => props.onToggle(row.id)}
-          leading={<><SelectionCheckbox checked={selected.has(row.id)} />{row.avatar ? <Avatar size={mobile ? 'md' : 'sm'} {...row.avatar} /> : TOPIC_MARK}</>}
+          leading={<>{single ? null : <SelectionCheckbox checked={selected.has(row.id)} />}{row.avatar ? <Avatar size={mobile ? 'md' : 'sm'} {...row.avatar} /> : TOPIC_MARK}</>}
           title={row.name}
           accessory={row.badge}
           meta={row.trailing}
@@ -102,7 +106,7 @@ export function ChatPickSheet(props: ChatPickSheetProps) {
       {section.rows.map((row) => renderRow(row))}
     </div>
   ))]
-  const chips = [...selected].flatMap((id) => seen.get(id) ?? [])
+  const chips = single ? [] : [...selected].flatMap((id) => seen.get(id) ?? [])
   const action = (
     <Button variant="primary" size={mobile ? 'sm' : 'md'} onClick={props.onAction} disabled={actionDisabled} data-testid={`${props.testId}-action`}>
       {props.actionLabel}
@@ -122,7 +126,8 @@ export function ChatPickSheet(props: ChatPickSheetProps) {
         <div className={cn('flex items-center gap-2', mobile ? '!px-3 !pt-3 !pb-2' : '!px-5 !pt-4 !pb-3')}>
           {mobile ? close : null}
           <h3 className={cn('m-0 min-w-0 flex-1 truncate text-[length:var(--font-heading)] font-semibold text-[var(--text-primary)]', mobile && 'text-center')}>{props.title}</h3>
-          {mobile ? action : close}
+          {props.headerAction}
+          {mobile ? (single ? null : action) : close}
         </div>
         <div className={cn('flex flex-col gap-2 !pb-2', mobile ? '!px-3' : '!px-5')}>
           {props.above}
@@ -139,14 +144,14 @@ export function ChatPickSheet(props: ChatPickSheetProps) {
             ))}
           </div>
         ) : null}
-        <div role="listbox" aria-multiselectable="true" className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--border-subtle)] !px-2 !pb-3">
+        <div role="listbox" aria-multiselectable={!single} className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--border-subtle)] !px-2 !pb-3">
           {!query.trim() && props.top}
           {rows.length === 0 && sections.every((section) => section.rows.length === 0)
             ? <p className="!m-0 !p-8 text-center text-[length:var(--font-body)] text-[var(--muted-fg)]">{props.empty}</p>
             : list}
         </div>
         {props.error ? <p role="alert" className="!m-0 !px-5 !py-2 text-[length:var(--font-caption)] text-[var(--danger-fg)]">{props.error}</p> : null}
-        {!mobile ? (
+        {!mobile && !single ? (
           <div className="flex shrink-0 items-center justify-end gap-3 border-t border-[var(--border-subtle)] !px-5 !py-3">
             <span className="min-w-0 flex-1 truncate text-[length:var(--font-caption)] text-[var(--muted-fg)]">{props.picked}</span>
             {action}

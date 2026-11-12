@@ -51,7 +51,7 @@ export default {
       "partnersBody": "Find projects and friends here. Each project is a group."
     },
     "desktop": {
-      "guguBody": "Your personal assistant for plans and everyday tasks. At the top of the left rail.",
+      "guguBody": "Your personal assistant for plans and everyday tasks.",
       "projectsBody": "Work with Agents in a group for each project. Find Projects in Messages.",
       "chatsBody": "Talk and collaborate with friends and each other’s Agents. Find Chats in Messages."
     }
@@ -91,7 +91,6 @@ export default {
     "save": "Save",
     "saving": "Saving…",
     "delete": "Delete",
-    "more": "More actions"
   },
   "machine": {
     "stale": "This resource has not been updated to its current version.",
@@ -133,7 +132,6 @@ export default {
     "ownerOccupation": "- Occupation: {{occupation}}",
     "back": "Back",
     "continue": "Continue",
-    "skip": "Skip for now",
     "defaultName": "Gugu",
     "namePlaceholder": "Gugu",
     "homeCloudUpgrade": "Upgrade to Plus",
@@ -164,12 +162,7 @@ export default {
     "ended": "The previous setup has ended. You can start a new one.",
     "startNew": "Start a new setup",
     "resuming": "The last setup didn't finish; continuing with {{name}}…",
-    "connectTitle": "Connect a few apps",
     "connectBody": "Once connected, {{name}} can read your calendar and send messages for you. You can also do it later under Connected apps.",
-    "readyTitle": "All set, {{name}}.",
-    "readyTitleNoName": "All set.",
-    "readySub": "{{name}} has settled in and will say hello first.",
-    "go": "Let's go"
   },
   "server": {
     "title": "Choose your server",
@@ -446,66 +439,6 @@ export default {
       "delete": "Delete widget",
       "deletePrompt": "Delete the \"{{title}}\" widget and stop the scheduled task that updates it."
     },
-    "discover": {
-      "title": "Discover widgets",
-      "sub": "Pick a starting point, or write what you want to follow. Once added, {{name}} keeps it up to date.",
-      "close": "Close",
-      "placeholder": "Describe what you want to follow...",
-      "startingPoint": "A starting point, not a fixed template",
-      "request": "I'd like a widget on Activity that keeps an eye on: {{want}}\nAsk me up to three questions first (what to watch, how often to update, when it should be ready), then add it to Activity and keep it updated on schedule.",
-      "group": {
-        "day": "Daily rhythm",
-        "watch": "Watch for changes",
-        "life": "Life and health"
-      },
-      "template": {
-        "weather": {
-          "title": "Weather before you go",
-          "body": "Today and tomorrow, umbrella or not, what to wear",
-          "starter": "Every morning, tell me today's weather, whether to bring an umbrella and what to wear. City: "
-        },
-        "todos": {
-          "title": "Today's to-dos",
-          "body": "What to do today, from chats and your calendar",
-          "starter": "Every day, list what I need to do today, most important first"
-        },
-        "news": {
-          "title": "Daily headlines",
-          "body": "The few stories worth reading in fields I care about",
-          "starter": "Every day, pick the three most worthwhile stories in these fields: "
-        },
-        "stocks": {
-          "title": "Stocks and holdings",
-          "body": "Prices, moves and news for a few tickers",
-          "starter": "Keep an eye on the price, moves and news for these stocks: "
-        },
-        "competitors": {
-          "title": "Competitor moves",
-          "body": "New releases, pricing changes and news",
-          "starter": "Keep an eye on new releases, pricing changes and news from these competitors: "
-        },
-        "industry": {
-          "title": "Industry pulse",
-          "body": "Funding, launches and big news in one industry",
-          "starter": "Every week, sum up funding, launches and big news in this industry: "
-        },
-        "spending": {
-          "title": "Monthly spending",
-          "body": "How much, on what, compared with last month",
-          "starter": "Keep an eye on my spending this month: how much, on what, compared with last month"
-        },
-        "flights": {
-          "title": "Flight price drops",
-          "body": "Fares on one route; tell me when they drop",
-          "starter": "Watch fares on this route and tell me when they drop: "
-        },
-        "learning": {
-          "title": "Learning progress",
-          "body": "A course or goal: weekly progress and next steps",
-          "starter": "Keep track of my progress and next steps on this learning goal: "
-        }
-      }
-    }
   },
   "tasks": {
     "closeChat": "Close task chat",
@@ -518,61 +451,19 @@ export default {
     "collaborationReady": "Includes assistant collaboration history",
     "collaborationOlder": "Load earlier collaboration",
     "title": "Tasks",
-    "segment": "Tasks",
-    "create": "Create task",
-    "createPrompt": "Please do this for me: ",
     "day": {
       "today": "Today",
       "yesterday": "Yesterday",
       "week": "Last 7 days",
       "earlier": "Earlier"
     },
-    "unseen": "Has unseen results",
-    "emptyTitle": "No tasks yet",
-    "loadFailed": "Couldn't load tasks",
-  },
-  "routines": {
-    "loadFailed": "Couldn't load scheduled tasks. Try again shortly.",
-    "title": "Scheduled",
-    "by": "Scheduled by {{name}}",
-    "active": "Active",
-    "inactive": "Paused",
-    "next": "Next {{time}}",
-    "nextUnavailable": "Couldn't read the next run time",
-    "ended": "Ended",
-    "enabled": "On",
-    "everyDay": "Daily at {{time}}",
-    "everyWeekday": "Mon–Fri at {{time}}",
-    "everyWeek": "Every {{day}} at {{time}}",
-    "schedule": "Schedule",
-    "instructions": "Instructions",
-    "editPrompt": "Please change when “{{name}}” runs.",
-    "changeTime": "Change time",
-    "delete": "Delete",
-    "deleteTitle": "Delete scheduled task",
-    "deleteBody": "“{{name}}” will be deleted. This can't be undone.",
-    "deleted": "Scheduled task deleted",
-    "deleteFailed": "Couldn't delete the scheduled task",
-    "enabledToast": "Scheduled task turned on",
-    "disabledToast": "Scheduled task turned off",
-    "updateFailed": "Couldn't update the scheduled task",
-    "emptyTitle": "No scheduled tasks",
-    "empty": "Tell {{name}} “remind me at 8 tomorrow morning…” and it will schedule it.",
-    "create": "Create scheduled task",
-    "createPrompt": "Please schedule this for me: ",
-    "goneTitle": "This scheduled task isn't available",
-    "gone": "It may have been deleted."
   },
   "memory": {
     "loadFailed": "Couldn't load memories. Try again shortly.",
     "aboutUserTitle": "What I know about {{owner}}",
     "updated": "Updated {{time}}",
-    "faster": "Set up memory faster",
-    "fasterPrompt": "Please help me set up memory faster.",
     "all": "All",
     "voiceNotes": "Voice notes",
-    "voiceNotesEmptyTitle": "No voice notes yet",
-    "voiceLoadFailed": "Couldn't load voice notes",
     "items_one": "{{count}} item",
     "items_other": "{{count}} items",
     "createdBy": "Noted by {{name}}",
@@ -591,13 +482,11 @@ export default {
     "editAboutMePrompt": "About what you've noted about me, I'd like to change: ",
     "deleteTitle": "Delete this memory?",
     "deleteBody": "“{{name}}” will be removed permanently. This can't be undone.",
-    "deleted": "Deleted",
     "deleteFailed": "Couldn't delete it. Try again.",
     "goneTitle": "This memory is gone",
     "gone": "It may have been deleted or renamed."
   },
   "health": {
-    "desktopEmpty": "No health data yet",
     "title": "Health",
     "tileSub_one": "{{count}} metric",
     "tileSub_other": "{{count}} metrics",
@@ -698,7 +587,6 @@ export default {
     "analyzeReport": "Analyze a health report",
     "analyzeReportDescription": "Upload a health report for a personal analysis.",
     "healthReportMessage": "Here is my health report. Record what's worth keeping in my health information, and if it's worth analyzing, write an analysis report.",
-    "reportPicked": "Added to your chat with {{name}}. Review it, then send.",
     "unit": {
       "bpm": "bpm",
       "ms": "ms",
@@ -712,79 +600,8 @@ export default {
       "perMinute": "/min"
     }
   },
-  "files": {
-    "saveFailed": "Some files could not be saved.",
-    "note": "Add files about you. They go into {{name}}'s “{{folder}}”, where it can read them anytime.",
-    "upload": "Upload files",
-    "uploading": "Uploading {{name}}…",
-    "uploaded_one": "Uploaded {{count}} file",
-    "uploaded_other": "Uploaded {{count}} files",
-    "uploadFailed": "Couldn't upload {{name}}: {{message}}",
-    "uploadedBanner": "Uploaded {{files}}",
-    "analyze": "Have {{name}} look",
-    "analyzePrompt": "I put {{files}} in your “{{path}}”. Please take a look and remember what helps you know me.",
-    "tooLarge": "Each file must be under 50MB",
-    "unsupported": "Video, audio and archive files aren't supported",
-    "newFolder": "New folder",
-    "folderName": "Folder name",
-    "create": "Create",
-    "folderCreated": "Folder created",
-    "folderCreateFailed": "Couldn't create the folder",
-    "rename": "Rename",
-    "renamed": "Renamed",
-    "renameFailed": "Couldn't rename it. Try again.",
-    "nameRequired": "Name can't be empty",
-    "nameSlash": "Name can't contain “/”.",
-    "deleteFileTitle": "Delete file?",
-    "deleteFolderTitle": "Delete folder?",
-    "deleteFileBody": "“{{name}}” will be removed permanently. This can't be undone.",
-    "deleteFolderBody": "“{{name}}” and everything in it will be removed permanently. This can't be undone.",
-    "fileDeleted": "File deleted",
-    "folderDeleted": "Folder deleted",
-    "deleteFailed": "Couldn't delete it. Try again.",
-    "folderEmpty": "This folder is empty",
-    "empty": "No files yet. Upload yours to help {{name}} know you better.",
-    "loadFailed": "Couldn't load the files",
-    "goneTitle": "This item is gone",
-    "gone": "It may have been deleted or renamed.",
-    "notText": "This isn't a text file, so it can't be shown on the phone.",
-    "tooBigToView": "This file is {{size}}; the phone only shows files up to 1 MB."
-  },
   "customize": {
-    "title": "Customize",
-    "name": "Name",
     "look": "Change look",
-    "character": "Personality",
-    "setCharacter": "Set personality",
-    "custom": "Custom personality",
-    "describe": "Describe how you want the assistant to talk and behave. Leave empty to clear.",
-    "preset": {
-      "balanced": "Balanced",
-      "warm": "Warm",
-      "direct": "Direct",
-      "concise": "Concise",
-      "playful": "Playful",
-      "sassy": "Sassy"
-    },
-    "saved": "Changes saved",
-    "saveFailed": "Couldn't save: {{message}}",
-    "shellMissing": "Gugu's main window isn't ready yet. Try again shortly.",
-    "loadFailed": "Couldn't read the personality"
-  },
-  "diary": {
-    "title": "Diary",
-    "emptyTitle": "No diary yet",
-    "ask": "Ask {{name}} how today went",
-    "prompt": "How did today go? Write me today's diary entry in your own voice.",
-    "loading": "Reading the diary…",
-    "unreadable": "Can't read the diary right now. Try again shortly.",
-    "all": "All entries ({{count}})",
-    "listSub": "Written by {{name}} every night, in its own words",
-    "of": "{{name}}'s diary",
-    "goneTitle": "This entry is gone",
-    "gone": "{{name}} may have tidied up its diary. Go back and look at the others.",
-    "talk": "Talk with {{name}} about this entry",
-    "talkPrompt": "About the diary entry you wrote on {{date}}: "
   },
   "capabilities": {
     "title": "Capabilities and connections"
@@ -811,8 +628,6 @@ export default {
     "retrying": "Reconnecting",
     "savedCount": "{{count}} added",
     "connectedCount": "{{count}} connected",
-    "deviceCount_one": "{{count}} device",
-    "deviceCount_other": "{{count}} devices",
     "unverified": "Not yet verified",
     "prepareFailed": "Authorization preparation is unavailable.",
     "authorizationUnavailable": "The cloud service needed for authorization is unavailable.",
@@ -828,7 +643,6 @@ export default {
       "device": "This device",
       "other": "Other devices"
     },
-    "cloudNote": "Authorizations are stored on {{name}}'s cloud device and work even with your computers off.",
     "connectedGroup": "Connected",
     "savedGroup": "Added",
     "manage": "Manage connection",
@@ -846,8 +660,6 @@ export default {
     "cloudWhereNote": "Kept in the cloud, so {{name}} can use it any time without any device being on",
     "goneTitle": "This app isn't available",
     "gone": "This connected app isn't in the cloud.",
-    "accountNoteHere": "Authorizations are stored on {{device}} (this device), shared with Library → Integrations. {{name}} can use them from any device while this computer is on.",
-    "accountNoteThere": "Authorizations are stored on {{device}}. {{name}} can use them from any device while that computer is on.",
     "accountWhereNote": "Stored in {{name}}'s home; usable while {{device}} is on",
     "thisComputer": "This computer",
     "goneHome": "{{device}} doesn't have this app.",
@@ -952,12 +764,7 @@ export default {
     "desktopOnly": "Chat apps are kept connected by the Gugu cloud, so {{name}} gets them even with your computer off."
   },
   "railEntry": {
-    "claim": "Claim your Gugu",
-    "create": "Create your Gugu",
-    "set": "Set up your Gugu",
-    "preparing": "Getting your Gugu ready…",
-    "loading": "Reading your Gugu…",
-    "unreadable": "Can't read your Gugu right now; open it to look"
+    "preparing": "Getting your Gugu ready…"
   },
   "settingsPage": {
     "editName": "Edit {{name}}’s name",
@@ -1019,7 +826,7 @@ export default {
       "home": "It has been deleted, but its home wasn't fully cleared; it will be cleared again when you set up a new one."
     },
     "elsewhereTitle": "Close it on the computer it lives on",
-    "elsewhereBody": "{{name}} lives on “{{device}}”, and its home and scheduled tasks are there. Close it from Settings → Gugu on that computer.",
+    "elsewhereBody": "{{name}} lives on “{{device}}”, and its home and scheduled tasks are there. Close it from its settings on that computer.",
     "elsewhereOk": "OK"
   },
   "ideas": {

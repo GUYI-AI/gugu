@@ -23,7 +23,7 @@ import { refusedLine } from '../extensionBundle/installedHere'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { IconButton } from '../ui/IconButton'
-import { DropdownMenu, menuRowClassName } from '../ui/Menu'
+import { DropdownMenu, MenuItem } from '../ui/Menu'
 import { PaneHeader } from '../ui/Pane'
 import { useBackLayer } from '../ui/sheetStack'
 import { RightPanelBackButton } from '../chat/RightPanel'
@@ -347,11 +347,9 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
           </DropdownMenu.Trigger>
           <DropdownMenu.Content align="end">
             {folded.map((command) => (
-              <DropdownMenu.Item key={command.id} className={menuRowClassName} data-command={command.id} onClick={() => runCommand(command.id)}>
-                {command.title}
-              </DropdownMenu.Item>
+              <MenuItem key={command.id} onClick={() => runCommand(command.id)}>{command.title}</MenuItem>
             ))}
-            {fileHost ? <DropdownMenu.Item className={menuRowClassName} onClick={openFileStorageSettings}>{t('fileStoredOn.settings')}</DropdownMenu.Item> : null}
+            {fileHost ? <MenuItem onClick={openFileStorageSettings}>{t('fileStoredOn.settings')}</MenuItem> : null}
           </DropdownMenu.Content>
         </DropdownMenu.Root>
       ) : null}

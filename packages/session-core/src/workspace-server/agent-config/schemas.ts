@@ -200,10 +200,26 @@ export const authLoginStateSchema = z.object({
    * 厂商已经自己开过浏览器了,它只是「浏览器没打开时点这里」的备用链接 —— ❌ 不再自动打开一次。
    */
   pendingUrl: authPendingUrlSchema.nullable(),
+  /**
+   * 终端登录印出来、要用户**带去浏览器**输入的设备码(#2507)。登录窗口不再摆终端,码要单独摆出来。
+   * 缺席 = 老宿主(没读这一格)或没有设备码。
+   */
+  userCode: z.string().nullable().optional(),
+  /**
+   * CLI 正停在「把网页给的授权码贴回来」的提示上(#2507):界面给一个输入框,交上去的码经
+   * `sendLoginInput` 送进这趟登录。缺席 = 老宿主,界面退回「网页给了授权码?」的手动入口。
+   */
+  awaitingInput: z.boolean().optional(),
+  /** 第几次提示要码;比上次大 = 刚交的码没被接受、又在要。 */
+  inputPromptCount: z.number().int().nonnegative().optional(),
+  /** 要的是网页给的授权码(`code`),还是一把 API key(`key`,如 opencode「Enter your API key」)。 */
+  inputKind: z.enum(['code', 'key']).optional(),
   exit: z
     .object({
       exitCode: z.number().int().nullable(),
       signal: z.string().nullable(),
+      /** 退出那一刻的最后几行原话(#2507):失败时原样摆给用户,❌ 只说「登录失败」。 */
+      tail: z.string().optional(),
     })
     .nullable(),
   outcome: authLoginOutcomeSchema.nullable().optional(),

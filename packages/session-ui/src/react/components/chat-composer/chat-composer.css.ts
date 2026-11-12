@@ -263,7 +263,7 @@ export const attachmentChip = style({
     "&[data-viewable='image']": { cursor: 'zoom-in' },
     '&[data-viewable]:hover': { backgroundColor: vars.surfaceBaseHover },
     '&[data-viewable]:active': { transform: 'scale(0.96)' },
-    '&[data-viewable]:focus-visible': { boxShadow: `0 0 0 1px ${vars.border1}` },
+    '&[data-viewable]:focus-visible:not([data-pointer-focus] *)': { boxShadow: `0 0 0 1px ${vars.border1}` },
   },
 });
 
@@ -360,7 +360,7 @@ export const attachmentRetry = style({
   textDecoration: 'underline',
   textUnderlineOffset: '2px',
   selectors: {
-    '&:focus-visible': { outline: `1px solid ${vars.border1}`, outlineOffset: '1px' },
+    '&:focus-visible:not([data-pointer-focus] *)': { outline: `1px solid ${vars.border1}`, outlineOffset: '1px' },
     '&:disabled': { opacity: 0.5, cursor: 'default' },
   },
 });
@@ -401,7 +401,7 @@ export const attachmentRemove = style({
   selectors: {
     '&:hover': { backgroundColor: vars.surfaceHover, color: vars.foreground },
     '&:active': { scale: '0.96' },
-    '&:focus-visible': { boxShadow: `0 0 0 1px ${vars.border1}` },
+    '&:focus-visible:not([data-pointer-focus] *)': { boxShadow: `0 0 0 1px ${vars.border1}` },
   },
   '@media': {
     '(prefers-reduced-motion: reduce)': { transition: 'none' },
@@ -1058,7 +1058,7 @@ export const modelFilterChip = style({
   transition: `color ${durFast} ${easeStandard}, background-color ${durFast} ${easeStandard}`,
   selectors: {
     '&:hover': { color: vars.foreground },
-    '&:focus-visible': { outline: `1px solid ${vars.borderPrimary}`, outlineOffset: '-1px' },
+    '&:focus-visible:not([data-pointer-focus] *)': { outline: `1px solid ${vars.borderPrimary}`, outlineOffset: '-1px' },
     '&[data-pressed]': {
       backgroundColor: vars.surfaceSelected,
       color: vars.foreground,
@@ -1269,7 +1269,7 @@ export const modelEffortReset = style({
   transition: `color ${durFast} ${easeStandard}, background-color ${durFast} ${easeStandard}`,
   selectors: {
     '&:hover': { color: vars.foreground, backgroundColor: vars.surfaceHover },
-    '&:focus-visible': { outline: `1px solid ${vars.borderPrimary}`, outlineOffset: '1px' },
+    '&:focus-visible:not([data-pointer-focus] *)': { outline: `1px solid ${vars.borderPrimary}`, outlineOffset: '1px' },
   },
 });
 
@@ -1509,7 +1509,7 @@ export const modelEffortThumb = style({
     // "按下要有形变"这条原则,不是它那个形状。上游实测静止 28 / 拖动 32。
     '&:active': { transform: `scale(${EFFORT_THUMB_PRESS_SCALE})` },
     [`${modelEffortSlider}[data-dragging] &`]: { transform: `scale(${EFFORT_THUMB_PRESS_SCALE})` },
-    '&:focus-visible': { outline: `2px solid ${vars.borderPrimary}`, outlineOffset: '2px' },
+    '&:focus-visible:not([data-pointer-focus] *)': { outline: `2px solid ${vars.borderPrimary}`, outlineOffset: '2px' },
   },
 });
 
@@ -1755,7 +1755,7 @@ export const modelPanelFooterAction = style({
   whiteSpace: 'nowrap',
   cursor: 'pointer',
   selectors: {
-    '&:hover, &:focus-visible': { backgroundColor: vars.surfaceHover, color: vars.foreground },
+    '&:hover, &:focus-visible:not([data-pointer-focus] *)': { backgroundColor: vars.surfaceHover, color: vars.foreground },
   },
 });
 

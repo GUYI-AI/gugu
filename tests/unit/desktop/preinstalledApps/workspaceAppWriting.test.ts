@@ -60,7 +60,7 @@ const md = {
   }),
 }
 // The host's menu (showContextMenu): it takes the App's rows and answers with the picked one's id, or null.
-type Row = { id: string; label: string; enabled?: boolean; items?: Row[] } | { type: 'separator' }
+type Row = { id: string; label: string; enabled?: boolean; checked?: boolean; items?: Row[] } | { type: 'separator' }
 let shown: { items: Row[]; answer: (id: string | null) => void } | null = null
 const rowsOf = (items: Row[] = shown?.items ?? []) => items.filter((row): row is Exclude<Row, { type: 'separator' }> => !('type' in row))
 const labels = (items?: Row[]) => rowsOf(items).map((row) => row.label)
@@ -79,7 +79,6 @@ function dismiss() {
   shown = null
   open?.answer(null)
 }
-const menuItems = () => [...$('menu').querySelectorAll('button')]
 const gugu = {
   showContextMenu: vi.fn(({ items }: { items: Row[] }) => new Promise<string | null>((answer) => { shown?.answer(null); shown = { items, answer } })),
   navigation: { go: vi.fn(async (_delta: number) => true) },
@@ -236,15 +235,16 @@ describe('markdown redesign: the real document page', () => {
     $('more').click()
     await frame()
     // 对照 (side by side) leads, then the file's actions (owner 11-06: the head keeps one read/edit toggle).
-    expect(menuItems().map((item) => item.textContent)).toEqual(['Side by side', 'Forward', 'Copy link', 'Open with another App', 'Download', 'Rename', 'Move to…', 'Delete'])
+    expect(labels()).toEqual(['Side by side', 'Forward', 'Copy link', 'Open with another App', 'Download', 'Rename', 'Move to…', 'Delete'])
     close()
   })
 
   test('M7 a read-only document never offers rename, move or delete even in a writable folder', () => {
     file.readOnly = true
     $('more').click()
-    const labels = menuItems().map((item) => item.textContent)
-    expect(labels).toEqual(['Side by side', 'Forward', 'Copy link', 'Open with another App', 'Download'])
+    // 对照 is one of a choice (side by side or not): the host draws its mark.
+    expect(rowNamed('Side by side').checked).toBe(false)
+    expect(labels()).toEqual(['Side by side', 'Forward', 'Copy link', 'Open with another App', 'Download'])
   })
 
   test('editing coalesces pointer bursts into one placement and one geometry read per frame', async () => {

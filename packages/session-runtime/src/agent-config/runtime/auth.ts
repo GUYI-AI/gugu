@@ -15,9 +15,14 @@ import { applyAuthExpiry, AuthExpiryMarks } from './auth-expiry';
 import type { AgentInstallManager } from './install';
 import type { AgentConfigRuntimeDeps } from './types';
 import { runAcpAuthenticate, type AcpAuthenticateOptions } from './acp-authenticate';
+import { LoginOutputReader } from './login-prompt';
 
-const DEFAULT_COLS = 120;
-const DEFAULT_ROWS = 30;
+/**
+ * 登录终端的尺寸。登录窗口不再摆终端(#2507),宽度放到足够大:Ink 一类的 CLI 按终端宽度给长链接**硬折行**,
+ * 折开的授权链接拼不回来。老版本的客户端仍会按自己的终端尺寸 resize,不受影响。
+ */
+const DEFAULT_COLS = 1000;
+const DEFAULT_ROWS = 40;
 const URL_PATTERN = /https?:\/\/[^\s"'<>]+/gi;
 /**
  * 终端颜色控制序列(CSI / OSC)。登录命令给链接上色(codex `--device-auth` 印的是
@@ -65,6 +70,8 @@ type LoginSession = {
   pty: PtySession | null;
   acp: { abort: AbortController } | null;
   seenUrls: Set<string>;
+  /** 终端登录的输出读取器(#2507):设备码、「要码」提示、失败原话。协议登录没有终端,恒 null。 */
+  output: LoginOutputReader | null;
 };
 
 type LoginLease = {
@@ -79,6 +86,17 @@ type StatusProbe = {
   runContext: AgentRunContext;
 };
 
+/**
+ * 登录读数的两条节流(设置页「模型」「订阅」一打开,每家装着的 Agent CLI 都要被问一遍登没登):
+ *  · 同一时刻只跑**一个**探测。每次探测都是在本机起一个 CLI(`mimo auth list` 实测单个就占满一个核,`claude auth status`
+ *    约 35%),几家并行 = 资源监视器上一个几核的波峰(2026-11-10 MBP:打开「订阅」「模型」两页,最高 950%)。排队后
+ *    峰值就是一个进程的量;代价是最后一家的读数晚几秒出来,界面本来就按「读数还没来」显示。
+ *  · 探到**已登录**之后 5 分钟内,再被问同一家同一份 CLI 就直接用那次读数,❌ 每打开一次页面重起一个 CLI。
+ *    只复用「已登录」:没登录 / 判不出 / 已失效这几种要尽快翻,每次照问。登录、登出、被鉴权拒、标记失效与撤销都先把
+ *    这家的复用读数作废,所以换了账号、重新登录之后的第一次读数一定是新探的。
+ */
+export const AUTH_PROBE_REUSE_MS = 5 * 60_000;
+
 export class AgentAuthManager {
   private readonly scope: Scope;
   private readonly statusGenerations = new Map<string, number>();
@@ -90,6 +108,11 @@ export class AgentAuthManager {
   readonly expiry: AuthExpiryMarks;
   /** 每家上一次读登录态用的那份 CLI —— 撤掉「登录已失效」后重读时量同一份。 */
   private readonly lastRunContext = new Map<string, AgentRunContext>();
+  /** 探到「已登录」的读数(键同在途去重那一把),`AUTH_PROBE_REUSE_MS` 内被问到就直接用它。 */
+  private readonly recentLoggedIn = new Map<string, { at: number; providerId: string; status: AgentAuthStatus }>();
+  /** 探测排成一条队:同一时刻只有一个 CLI 在被问。 */
+  private probeTail: Promise<unknown> = Promise.resolve();
+  private invalidations = 0;
   private readonly currentConnection = new Map<string, string>();
 
   constructor(
@@ -124,8 +147,7 @@ export class AgentAuthManager {
       (input: StatusProbe) =>
         this.probeAndUpdate(input.providerId, input.program, input.runContext, input.connectionId),
       {
-        key: (input) =>
-          `${authKey(input.providerId, input.program, input.connectionId)}\u0000${agentRunContextKey(input.runContext)}`,
+        key: (input) => this.probeKey(input),
       }
     );
     this.scope.add(() => {
@@ -133,6 +155,7 @@ export class AgentAuthManager {
       this.statusGenerations.clear();
       this.lastRunContext.clear();
       this.currentConnection.clear();
+      this.recentLoggedIn.clear();
     });
   }
 
@@ -148,7 +171,26 @@ export class AgentAuthManager {
       this.lastRunContext.set(authExpiryKey(providerId, runContext.connectionId), runContext);
       if (!connectionId) this.currentConnection.set(providerId, runContext.connectionId ?? 'native');
     }
+    const recent = this.recentLoggedIn.get(this.probeKey({ providerId, program, connectionId, runContext }));
+    if (recent && Date.now() - recent.at < AUTH_PROBE_REUSE_MS) return ok(recent.status);
     return ok(await this.probeStatus({ providerId, program, connectionId, runContext }));
+  }
+
+  private probeKey(input: StatusProbe): string {
+    return `${authKey(input.providerId, input.program, input.connectionId)}\u0000${agentRunContextKey(input.runContext)}`;
+  }
+
+  /** 作废这家的复用读数;已经在途的探测(开始在作废之前)探完也不许再存。 */
+  private forgetRecentReadings(providerId: string): void {
+    this.invalidations += 1;
+    for (const [key, entry] of this.recentLoggedIn) if (entry.providerId === providerId) this.recentLoggedIn.delete(key);
+  }
+
+  /** 排队跑一个探测:前一个(不论成败)结束后才轮到它。 */
+  private inProbeLane<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.probeTail.then(task, task);
+    this.probeTail = run.catch(() => undefined);
+    return run;
   }
 
   /**
@@ -157,11 +199,20 @@ export class AgentAuthManager {
   async markExpired(providerId: string, connectionId?: string): Promise<Result<void, AgentConfigAuthError>> {
     if (!this.hasProvider(providerId)) return err({ type: 'unknown-provider', providerId });
     await this.expiry.ready;
+    this.forgetRecentReadings(providerId);
     if (this.expiry.mark(authExpiryKey(providerId, connectionId), Date.now())) {
       this.deps.logger.info('AgentAuthManager: marked sign-in expired after an auth failure', { providerId });
     }
     this.publishExpiry(providerId, connectionId);
     return ok();
+  }
+
+  /** 这个连接此刻是不是标着「登录已失效」(凭据还在盘上、真用时被拒)。 */
+  async isMarkedExpired(providerId: string, connectionId?: string): Promise<boolean> {
+    // 与读数那条路(`probe`)同一个做法:先读一次盘,别的咕咕账号刚标上的也算。
+    await this.expiry.ready;
+    await this.expiry.reload();
+    return this.expiry.has(authExpiryKey(providerId, connectionId));
   }
 
   /**
@@ -172,6 +223,7 @@ export class AgentAuthManager {
     if (!this.hasProvider(providerId)) return err({ type: 'unknown-provider', providerId });
     await this.expiry.ready;
     if (!this.expiry.clear(authExpiryKey(providerId, connectionId))) return ok();
+    this.forgetRecentReadings(providerId);
     this.deps.logger.info('AgentAuthManager: sign-in works again, expiry cleared', { providerId });
     const runContext = this.lastRunContext.get(authExpiryKey(providerId, connectionId));
     if (runContext) {
@@ -199,6 +251,7 @@ export class AgentAuthManager {
   ): Promise<Result<void, AgentConfigAuthError>> {
     if (!this.hasProvider(providerId)) return err({ type: 'unknown-provider', providerId });
     const key = authKey(providerId, program, connectionId);
+    this.forgetRecentReadings(providerId);
     await this.releaseLogin(key, undefined, { force: true });
     const generation = randomUUID();
     const lease = this.loginSource.acquire(key, {
@@ -246,6 +299,8 @@ export class AgentAuthManager {
     const session = this.currentLogin(authKey(providerId, program, connectionId));
     if (!session?.pty) return noLogin(providerId);
     session.pty.write(data);
+    // 交了码 ⇒ 提示收起,直到 CLI 再要一次(#2507)。
+    if (session.output?.noteInput()) this.publishLoginOutput(providerId, program, connectionId, session.output);
     return ok();
   }
 
@@ -316,6 +371,7 @@ export class AgentAuthManager {
     }
     const startedAt = Date.now();
     const seenUrls = new Set<string>();
+    const reader = new LoginOutputReader();
     this.publish(
       providerId,
       program,
@@ -326,6 +382,10 @@ export class AgentAuthManager {
           startedAt,
           transport: 'terminal',
           pendingUrl: null,
+          userCode: null,
+          awaitingInput: false,
+          inputPromptCount: 0,
+          inputKind: 'code',
           exit: null,
         },
       }),
@@ -348,6 +408,9 @@ export class AgentAuthManager {
       {
         replaceExisting: false,
         onData: (chunk) => {
+          if (reader.push(chunk) && this.isCurrentLogin(key, context.generation)) {
+            this.publishLoginOutput(providerId, program, connectionId, reader);
+          }
           outputLine += chunk;
           const end = Math.max(outputLine.lastIndexOf('\n'), outputLine.lastIndexOf('\r'));
           if (end < 0) return;
@@ -355,14 +418,14 @@ export class AgentAuthManager {
           outputLine = outputLine.slice(end + 1);
         },
         onExit: (info) => {
-          void this.handleLoginExit(context, info);
+          void this.handleLoginExit(context, { ...info, tail: reader.tail() });
         },
       }
     );
     scope.add(() => {
       if (this.ptys.get(key) === pty) this.ptys.dispose(key);
     });
-    return { providerId, program, connectionId, generation: context.generation, pty, acp: null, seenUrls };
+    return { providerId, program, connectionId, generation: context.generation, pty, acp: null, seenUrls, output: reader };
   }
 
   /** 这家这个程序的这个方法若是协议登录,返回厂商自报的 `methodId`;否则 null(走终端那条)。 */
@@ -442,6 +505,7 @@ export class AgentAuthManager {
       pty: null,
       acp: { abort },
       seenUrls,
+      output: null,
     };
   }
 
@@ -474,7 +538,7 @@ export class AgentAuthManager {
     );
   }
 
-  private async handleLoginExit(context: LoginContext, info: PtyExitInfo): Promise<void> {
+  private async handleLoginExit(context: LoginContext, info: PtyExitInfo & { tail?: string }): Promise<void> {
     const { providerId, program, generation, connectionId } = context;
     const key = authKey(providerId, program, connectionId);
     if (!this.isCurrentLogin(key, generation)) return;
@@ -525,7 +589,15 @@ export class AgentAuthManager {
   ): Promise<AgentAuthStatus> {
     const key = authKey(providerId, program, connectionId);
     const generation = this.nextStatusGeneration(key);
+    const epoch = this.invalidations;
     const status = await this.probe(providerId, program, runContext);
+    const reuseKey = this.probeKey({ providerId, program, connectionId, runContext });
+    // 探测期间有人登录 / 登出 / 标记失效(`invalidations` 翻了页),这次读数就不留作复用。
+    if (status.kind === 'authenticated' && this.statusGenerations.get(key) === generation && this.invalidations === epoch) {
+      this.recentLoggedIn.set(reuseKey, { at: Date.now(), providerId, status });
+    } else {
+      this.recentLoggedIn.delete(reuseKey);
+    }
     const selected =
       !runContext.connectionId ||
       connectionId !== undefined ||
@@ -542,7 +614,7 @@ export class AgentAuthManager {
     runContext: AgentRunContext
   ): Promise<AgentAuthStatus> {
     try {
-      const status = await this.deps.agentHost.checkAuthStatus(providerId, runContext, program);
+      const status = await this.inProbeLane(() => this.deps.agentHost.checkAuthStatus(providerId, runContext, program));
       if (!status.success) {
         this.deps.logger.warn('AgentAuthManager: spawn context resolution failed', {
           providerId,
@@ -600,7 +672,26 @@ export class AgentAuthManager {
     );
   }
 
-  private publishLoginExit(context: LoginContext, exit: PtyExitInfo): void {
+  /** 设备码 / 「要码」提示变了才发(#2507);转圈重绘不发。 */
+  private publishLoginOutput(
+    providerId: string,
+    program: string | undefined,
+    connectionId: string | undefined,
+    reader: LoginOutputReader
+  ): void {
+    const reading = reader.reading();
+    this.publish(
+      providerId,
+      program,
+      (current) => {
+        if (!current.login) return current;
+        return { ...current, login: { ...current.login, ...reading } };
+      },
+      connectionId
+    );
+  }
+
+  private publishLoginExit(context: LoginContext, exit: PtyExitInfo & { tail?: string }): void {
     const { providerId, program, generation, connectionId } = context;
     if (!this.isCurrentLogin(authKey(providerId, program, connectionId), generation)) return;
     this.publish(

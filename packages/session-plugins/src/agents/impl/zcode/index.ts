@@ -1,3 +1,4 @@
+import { zcodeApiKeyConnection, zcodeApiKeyConnectionBehavior } from './api-key-connection';
 import { platformModel } from './platform-model';
 import {
   definePlugin,
@@ -65,8 +66,10 @@ export const plugin = definePlugin(
   },
   {
     sessionBundle: zcodeSessionBundleDescriptor,
+    // 「API Key 连接」(#2507):一把 key 怎么进这一家的进程,见 ./api-key-connection.ts。
+    apiKeyConnection: zcodeApiKeyConnection,
     /**
-     * 思考档 = 桥报的 configOption `thought`(category `thought_level`)的取值,逐字:low / high / max
+     * 思考档 =桥报的 configOption `thought`(category `thought_level`)的取值,逐字:low / high / max
      * (`session/new` 实测;GLM-5.3 的推理档就是这三档,不能关)。
      */
     effort: {
@@ -124,6 +127,7 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
+  apiKeyConnection: zcodeApiKeyConnectionBehavior,
   mcp: zcodeMcpAdapter(),
   sessionBundle: { materialize: materializeZcodeSessionBundle, platformModel },
   acp: {

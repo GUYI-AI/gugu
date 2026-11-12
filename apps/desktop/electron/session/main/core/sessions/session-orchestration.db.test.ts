@@ -49,7 +49,7 @@ const mocks = vi.hoisted(() => ({
   mounted: new Map<string, { sessionPath: string | undefined; sessions: { startSession: unknown; stopSession: unknown; sendMessage: unknown; ownsSession: (id: string) => boolean } }>(),
   ensureSessionMounted: vi.fn(),
   installedExtensions: [] as Array<{
-    manifest: { id: string; contributes: { tabs: Array<{ name: string; title?: string; opensFiles?: { session?: string[]; chat?: string[] } }> } };
+    manifest: { id: string; contributes: { tabs: Array<{ name: string; title?: string; opensFiles?: { session?: string[]; chat?: string[] }; perSession?: boolean }> } };
   }>,
   sessionpageProjectGroup: { kind: 'none', reason: 'no-project' } as
     | { kind: 'group'; projectId: string; groupChatId: string }
@@ -202,6 +202,8 @@ import {
   sessionCallerFacts,
   spawnSessionForApp,
   setRemotePaneOpener,
+  setRemoteTaskViewers,
+  openTaskPagesOfApp,
   stopExactSessionpageSession,
   type SessionCallerContext,
   stopSessionByPerson,
@@ -2705,6 +2707,41 @@ describe('session_archive', () => {
     ).rejects.toThrow('session not found on this machine');
   });
 });
+
+  // #1607 A task running on this desktop, watched from another computer: an App's task page reaches that computer too.
+  describe('App task pages of a desktop task watched from another computer', () => {
+    const viewers = { open: vi.fn(), watching: vi.fn() };
+    const target = { projectId: 'project-1', sessionId: 'caller' };
+    beforeEach(() => {
+      viewers.open.mockReset(); viewers.watching.mockReset();
+      mocks.installedExtensions = [{ manifest: { id: 'computer-use', contributes: { tabs: [{ name: 'settings' }, { name: 'preview', perSession: true }] } } }];
+      setRemoteTaskViewers(viewers);
+    });
+    afterEach(() => setRemoteTaskViewers(null));
+
+    it('opens the page in this window and on the computer watching the task', async () => {
+      viewers.watching.mockReturnValue(true);
+      viewers.open.mockResolvedValue({ opened: true });
+      await expect(openTaskPagesOfApp(target, 'computer-use')).resolves.toEqual(['computer-use.preview']);
+      expect(viewers.open).toHaveBeenCalledWith('caller', { kind: 'app-tab', tabKind: 'computer-use.preview', ifAbsent: true }, 'pinned');
+      expect(mocks.emit).toHaveBeenCalledWith(sessionOpenExtensionInPaneChannel, expect.objectContaining({ sessionId: 'caller', tabKind: 'computer-use.preview', ifAbsent: true }));
+    });
+
+    it('asks no other computer when nobody elsewhere is watching (nothing queued for later)', async () => {
+      viewers.watching.mockReturnValue(false);
+      await expect(openTaskPagesOfApp(target, 'computer-use')).resolves.toEqual(['computer-use.preview']);
+      expect(viewers.open).not.toHaveBeenCalled();
+    });
+
+    it('counts as opened when either side opened it, and fails only when both failed', async () => {
+      viewers.watching.mockReturnValue(true);
+      mocks.nextOpenFileResult = { success: false, error: 'this window could not' };
+      viewers.open.mockResolvedValue({ opened: true });
+      await expect(openTaskPagesOfApp(target, 'computer-use')).resolves.toEqual(['computer-use.preview']);
+      viewers.open.mockRejectedValue(new Error('the watching window could not'));
+      await expect(openTaskPagesOfApp(target, 'computer-use')).rejects.toThrow('this window could not');
+    });
+  });
 
   // #6264 咕咕 server:没有本机渲染层,open_in_tab 交给正看着这条会话的桌面(remote-pane.ts)。
   describe('on a Gugu server (remote pane route)', () => {

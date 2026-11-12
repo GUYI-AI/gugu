@@ -58,6 +58,8 @@ export type AssistantShellSnapshot = {
   member: boolean | null
   /** 正在给它安家(云上正在开 / 本机正在建):入口那一格画转圈,❌ 画成坏掉或「没有」。 */
   preparing: boolean
+  /** #1931 住这台电脑的它在等自己的规则(助理 App 正在装):已经有它也画转圈,它的会话等规则到了才开。 */
+  rulesPending?: boolean
 }
 
 /** 壳往会话页里画的那几格(在 lib/shellSlots.ts 里登记为 `assistant:<格>`)。新增一格 = 这里加一个名字 + AssistantShellHost 里配一个组件。 */
@@ -71,8 +73,10 @@ export type AssistantShellSlot = 'onboarding' | 'chat' | 'file-preview' | 'task-
 export type AssistantShellActions = {
   /** 改它的名字(与 agent 设置里改名同一条路:云端身份 + 本机花名册)。 */
   renameAssistant(name: string): Promise<void>
-  /** 打开它的形象工坊(agent 设置的「形象」那一页)。 */
+  /** 打开它的形象工坊(它的 agent 设置只有这一页)。 */
   openLook(): void
+  /** #1925 打开它用哪个模型:App 资料页(画在 App 面板上)的模型那一屏,与资料页「模型」那一行同一份。 */
+  openModel(): void
   /** 再问一次管家云电脑此刻的样子(读不到时页面上的「重试」)。 */
   refreshCloud(): void
   /** 引导往下走一步(连应用 → 一切就绪)/ 走完(null)。 */
@@ -197,6 +201,10 @@ function sameSnapshot(a: AssistantShellSnapshot, b: AssistantShellSnapshot): boo
     a.ownerName === b.ownerName &&
     a.assistantState === b.assistantState &&
     a.chatId === b.chatId && a.chatReadFailed === b.chatReadFailed &&
+    // #1925 只差会员档、正在安家、换了账号的那一份也是新的:从前漏比,读到会员档 / 开始安家 / 换号后桥上一直是旧的。
+    a.member === b.member && a.preparing === b.preparing && a.ownerId === b.ownerId && a.ownerAvatar === b.ownerAvatar &&
+    // #1931 等不等自己的规则也要比:漏了,只变这一项的那一份被吞,栏顶那一格一直不转圈(或一直转)。
+    (a.rulesPending ?? false) === (b.rulesPending ?? false) &&
     JSON.stringify(a.cloud) === JSON.stringify(b.cloud) &&
     JSON.stringify(a.assistant) === JSON.stringify(b.assistant)
   )

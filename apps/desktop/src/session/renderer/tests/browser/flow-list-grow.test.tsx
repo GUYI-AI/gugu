@@ -1,4 +1,4 @@
-import { act, useRef, useState } from 'react'
+import { act, useEffect, useRef, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { userEvent } from '@vitest/browser/context'
@@ -9,11 +9,13 @@ import { until } from '../../../../../../../tests/support/awaitCondition'
 
 let root: Root, host: HTMLDivElement
 const ids = (count: number) => Array.from({ length: count }, (_, i) => `r${i}`)
-function Scene({ landing }: { landing: ListLanding }) {
+function Scene({ landing, rowHeight = 100, jumpAtMount = false }: { landing: ListLanding; rowHeight?: number; jumpAtMount?: boolean }) {
   const [rows, setRows] = useState(ids(120))
   const [prepended, setPrepended] = useState(false)
   const scrollerRef = useRef<HTMLDivElement>(null), contentRef = useRef<HTMLDivElement>(null), api = useRef<FlowListHandle>(null)
   const { start, end } = useFlowList({ scrollerRef, contentRef, handleRef: api, resetKey: 'fixture', rowIds: rows, landing, followTail: true, atBottomThreshold: 5 })
+  // A chat just switched to that is asked for one of its messages asks before its first landing has filled the view.
+  useEffect(() => { if (jumpAtMount) api.current!.scrollToIndex({ index: 6, align: 'start' }) }, [jumpAtMount])
   return <>
     <button onClick={() => api.current!.scrollToIndex({ index: rows.indexOf('r6'), align: 'start' })}>Jump six</button>
     <button onClick={() => api.current!.autoscrollToBottom()}>Latest</button>
@@ -22,7 +24,7 @@ function Scene({ landing }: { landing: ListLanding }) {
     <div ref={scrollerRef} data-flow-view="" tabIndex={0} style={{ height: 300, width: 500, overflowY: 'auto', overflowAnchor: 'auto' }}>
       <div ref={contentRef}>{rows.slice(start, end).map((id, offset) => {
         const index = start + offset
-        return <div key={id} data-row={id} role="listitem" aria-posinset={index + 1} style={{ display: 'flex', height: id === 'r0' && !prepended ? 133 : 100 }}>
+        return <div key={id} data-row={id} role="listitem" aria-posinset={index + 1} style={{ display: 'flex', height: id === 'r0' && !prepended ? 133 : rowHeight }}>
           <GroupAvatarSlot wide={false} groupedWithPrev={index > 0} groupedWithNext={index < rows.length - 1}><button>Avatar</button></GroupAvatarSlot>
           <div data-message-bubble-row="" style={{ flex: 1 }}>{id}</div>
         </div>
@@ -69,6 +71,12 @@ it('mounts an omitted jump target before positioning it and can return to the re
   await until('unmounted target placed from real rectangle', () => Boolean(row('r6')) && Math.abs(y('r6')) < 1)
   await click('Latest')
   await until('real last row is aligned', () => Math.abs(y('r119') - 200) < 1)
+})
+
+it('places a jump asked while the first landing is still filling the view, and keeps it there', async () => {
+  await act(async () => root.render(<Scene landing={{ index: 'LAST', align: 'end' }} rowHeight={20} jumpAtMount />))
+  await until('the jump target is placed at the top', () => Boolean(row('r6')) && Math.abs(y('r6')) < 1)
+  expect((await frames(() => y('r6'))).every(top => Math.abs(top) < 1)).toBe(true)
 })
 
 it('keeps every sampled frame anchored when prepending changes the old first row header height', async () => {

@@ -37,6 +37,18 @@ describe('gugu-file links (F10, F112)', () => {
 // App 引用 pill (owner 10-14, 148 17:03): the version a place was picked on and the place itself ride in the link, so every
 // reader of it — a chat link, a pill, session_open_in_tab — has them, not only the one that draws the pill.
 describe('a pill’s link: the file, the version it was picked on, the place in it', () => {
+  it('omits unrepresentable revisions while retaining the file and place', () => {
+    for (const version of ['9007199254740992', '9007199254740993', '9'.repeat(400)]) {
+      expect(parseGroupFileLink(`gugu-file://${ITEM}?v=${version}#slide=3`)).toEqual({
+        itemId: ITEM, at: { slide: '3' },
+      })
+    }
+    expect(parseGroupFileLink(`gugu-file://${ITEM}?v=${Number.MAX_SAFE_INTEGER}`)).toEqual({
+      itemId: ITEM, version: Number.MAX_SAFE_INTEGER,
+    })
+    expect(parseGroupFileLink(`gugu-file://${ITEM}?v=007`)).toEqual({ itemId: ITEM, version: 7 })
+  })
+
   it('reads ?v= and #k=v&k=v beside the item, the place as keys and values; either may be missing', () => {
     expect(parseGroupFileLink(`gugu-file://${ITEM}?v=7#slide=3&shape=12`)).toEqual({ itemId: ITEM, version: 7, at: { slide: '3', shape: '12' } })
     expect(parseGroupFileLink(`gugu-file://${ITEM}?v=3`)).toEqual({ itemId: ITEM, version: 3 })
@@ -116,5 +128,21 @@ describe('a working-copy link’s place: `path#k=v&k=v` or a line, read in this 
   it('keeps web links and in-page anchors what they were', () => {
     expect(classifyFileLink('https://example.com/a#page=2')).toEqual({ kind: 'external' })
     expect(classifyFileLink('#page=2')).toEqual({ kind: 'external' })
+  })
+
+  it('decodes filename escapes once, including a literal percent-encoded hash', () => {
+    for (const [href, path] of [
+      ['notes/literal%2523.md', 'notes/literal%23.md'],
+      ['notes/literal%2523.md#L10', 'notes/literal%23.md'],
+      ['notes/hash%23.md', 'notes/hash#.md'],
+      ['notes/literal%252523.md', 'notes/literal%2523.md'],
+      ['C:/notes/literal%2523.md', 'C:/notes/literal%23.md'],
+      ['notes/literal%25%23.md', 'notes/literal%#.md'],
+    ]) {
+      expect(classifyFileLink(href)).toMatchObject({ kind: 'workspace-file', path })
+    }
+    expect(classifyFileLink('notes/literal%2523.md#L10')).toEqual({
+      kind: 'workspace-file', path: 'notes/literal%23.md', at: { L10: '' },
+    })
   })
 })

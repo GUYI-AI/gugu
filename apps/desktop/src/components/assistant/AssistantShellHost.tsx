@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import type { CloudComputerSnapshot } from '@gugu/core/cloud/cloudComputer'
 import type { Device } from '@gugu/core/shared/types/chat'
-import { AssistantChatSlot, type AssistantChatHandlers } from './AssistantChatSlot'
 import { useAssistantDm } from './useAssistantDm'
 import { MeetingReminder } from './MeetingReminder'
 import { QuickChatHost } from './QuickChatHost'
@@ -32,14 +31,14 @@ import { membershipSettingsSection } from '../../lib/billing/settingsDestination
 import { rendererLogger } from '../../lib/log'
 import { installShellSlots, readShellSlots } from '../../lib/shellSlots'
 import { platform } from '../../platform'
+import { useAssistantRulesState, useAssistantRulesStuckNotice } from '../../lib/assistantRulesState'
 import { AssistantOnboarding } from './AssistantOnboarding'
 import { QuickChatSettingsGroup } from './ComputerHomeSettings'
 import { AssistantMoveGroup, type AssistantMoveGroupProps } from './AssistantMoveGroup'
 import { AssistantMoveDialog } from './AssistantMoveDialog'
 import { AssistantDevicesPage } from '../devices/AssistantDevicesPage'
-import { ConnectorsSection } from '../settings/ConnectorsSection'
-import { AssistantSettingsPage } from './AssistantSettingsPage'
 import { UI_EVENTS } from '../../lib/uiEvents'
+import { openAssistantPageInApp } from '../../lib/assistantEntry'
 import { useAuth } from '../../store/auth'
 import { useContactsStore } from '../../store/contactsContext'
 import { useDevicesStore } from '../../store/devicesContext'
@@ -57,7 +56,7 @@ function openSettings(section: ActiveSection) {
 
 /**
  * 还没有咕咕:给它安家的流程(欢迎 → 起名选色 → 称呼 → 安家),会员一键住云上、非会员装在这台电脑上。
- * 会话页的「咕咕」App 和全局设置「咕咕」那一页(没有它时)画的是同一份,数据都从壳的 store 读。
+ * 画在咕咕 App 面板上的开通那一层(AssistantSetupPage)与它的设置页(没有它时)画的是同一份,数据都从壳的 store 读。
  */
 export function OnboardingSlot({ snapshot: given, device: givenDevice }: { snapshot?: CloudComputerSnapshot | null; device?: Device | null } = {}) {
   const { user } = useAuth()
@@ -80,11 +79,11 @@ export function OnboardingSlot({ snapshot: given, device: givenDevice }: { snaps
 }
 
 /**
- * 全局设置「咕咕」那一页里的状态 / 快速聊天 / 关闭三组(owner 10-16:只有一个设置,咕咕是其中一组)。
+ * 咕咕设置页(画在它 App 的面板上,AssistantSettingsPage)里的状态 / 快速聊天 / 关闭三组。
  * 连接状态(只取真实读数)、它花了多少积分、关闭;背后是它住的那台云端宿主,但说的一律是它
  * (owner 10-15:用户看不到它住在哪;❌「云电脑」「运行中 / 休眠中」)。owner 10-17:Agent 没有休息这回事 ——
  * ❌「休息中」「这次醒着」「现在叫醒」「休息」那几行;宿主闲时收回、有事自己醒,那是后台资源的事。
- * 原来画在助理 App 的齿轮页,现在设置里直接画,App 的齿轮只是打开设置。
+ * App 的齿轮打开那一页;全局设置里没有咕咕(owner 11-12)。
  */
 export function AssistantStatusGroups({
   snapshot,
@@ -136,7 +135,7 @@ const ASSISTANT_SLOT_PREFIX = 'assistant:'
  * #7199 「助理」App 在壳这一侧的那一半(见 lib/assistantShellBridge.ts):把云电脑、个人助理是谁发布给会话页,
  * 并把壳自己的组件画进 App 留的格子。挂在 MainLayout 里(通讯录、设备、登录态都在它外面)。
  */
-export function AssistantShellHost({ visible, ...chatHandlers }: { /** 会话页那一屏此刻摆在眼前(MainLayout 的 tab 在「任务」)。 */ visible: boolean } & AssistantChatHandlers) {
+export function AssistantShellHost() {
   const { user } = useAuth()
   const { contacts, contactsStatus, updateAgentProfile } = useContactsStore()
   const { cloudComputer, devices, phones } = useDevicesStore()
@@ -147,7 +146,8 @@ export function AssistantShellHost({ visible, ...chatHandlers }: { /** 会话页
   const contact = mine.contact
   // 和它的那条私聊:聊天格子画它,「今天」页读它的文件夹 —— 同一条,在这里认一次。
   const dm = useAssistantDm(contact?.id ?? null)
-  const [lookOpen, setLookOpen] = useState(false)
+  // 它的 agent 设置只有形象(形象工坊)一页(owner 11-12);null = 没开。
+  const [settingsTab, setSettingsTab] = useState<'look' | null>(null)
   const ownerUserId = user?.id ?? null
   const readyCloudDeviceId = snapshot?.state === 'awake' ? snapshot.deviceId : null
   useEffect(() => {
@@ -163,7 +163,11 @@ export function AssistantShellHost({ visible, ...chatHandlers }: { /** 会话页
         if (!contact) throw new Error('personal assistant is not in contacts')
         await updateAgentProfile(contact.id, { name })
       },
-      openLook: () => setLookOpen(true),
+      openLook: () => setSettingsTab('look'),
+      // #1925 App 打开的「模型」:它在 App 资料页(画在 App 面板上),直接开到模型那一屏。
+      openModel: () => {
+        openAssistantPageInApp('settings', 'aimodel')
+      },
       refreshCloud: () => void refreshCloudComputer().catch(() => undefined),
       advanceSetup: (next) => {
         if (ownerUserId) writeSetupStep(ownerUserId, next === 'shell' ? null : next)
@@ -210,6 +214,8 @@ export function AssistantShellHost({ visible, ...chatHandlers }: { /** 会话页
     return () => window.clearInterval(timer)
   }, [contact, ownerUserId])
   const preparing = !contact && (snapshot?.state === 'provisioning' || localPreparing)
+  const rules = useAssistantRulesState()
+  useAssistantRulesStuckNotice(rules.stuck)
   // 它已经有了、这台电脑上那一次开通却没走完(开通页没等到它起来):接着推完,让它先开口(见 lib/assistantSetupFinish)。
   const contactId = contact?.id ?? null
   useEffect(() => {
@@ -253,8 +259,9 @@ export function AssistantShellHost({ visible, ...chatHandlers }: { /** 会话页
       setup,
       member,
       preparing,
+      rulesPending: rules.pending,
     })
-  }, [deviceCount, cloudComputer?.available, cloudComputer?.loadError, localDeviceId, snapshot, contact, assistantState, user?.nickname, user?.id, user?.avatarUrl, dm.chatId, dm.failed, home, setup, member, preparing])
+  }, [deviceCount, cloudComputer?.available, cloudComputer?.loadError, localDeviceId, snapshot, contact, assistantState, user?.nickname, user?.id, user?.avatarUrl, dm.chatId, dm.failed, home, setup, member, preparing, rules.pending])
 
   const shellSlots = readShellSlots()
   const slots = useSyncExternalStore(
@@ -264,12 +271,10 @@ export function AssistantShellHost({ visible, ...chatHandlers }: { /** 会话页
 
   const content = (slot: AssistantShellSlot): ReactNode => {
     switch (slot) {
-      case 'onboarding': return <OnboardingSlot />
-      // 格子挂着 = 「助理」App 开在「聊天」那一页;再加上会话页那一屏摆在眼前,才算人在看。
-      case 'chat': return contact ? <AssistantChatSlot dm={dm} assistantId={contact.id} assistantName={contact.display_name} visible={visible} {...chatHandlers} /> : null
+      // The devices page of the assistant's panel (AssistantLibraryVolume, drawn over the App's panel). Setup is the App's
+      // host layer (AssistantSetupPage); the conversation, the App's.
       case 'devices': return <AssistantDevicesPage cloudDeviceId={cloudDeviceId} panelNavigation />
-      case 'connectors': return <ConnectorsSection panelNavigation />
-      case 'settings': return <AssistantSettingsPage panelNavigation />
+      default: return null
     }
   }
   return (
@@ -277,7 +282,7 @@ export function AssistantShellHost({ visible, ...chatHandlers }: { /** 会话页
       {[...slots].flatMap(([key, element]) => key.startsWith(ASSISTANT_SLOT_PREFIX)
         ? [createPortal(content(key.slice(ASSISTANT_SLOT_PREFIX.length) as AssistantShellSlot), element, key)]
         : [])}
-      {lookOpen && contact ? <AgentSettingsModal agent={contact} initialTab="look" onClose={() => setLookOpen(false)} /> : null}
+      {settingsTab && contact ? <AgentSettingsModal key={settingsTab} agent={contact} initialTab={settingsTab} onClose={() => setSettingsTab(null)} /> : null}
       {/* 搬家的弹窗:搬着时设置页上的搬家那一组会换位置、重挂,弹窗不跟着丢(状态在 assistant-move-controller)。 */}
       <AssistantMoveDialog />
       {/* 会议提醒(语音笔记):有个人助理才看日历 —— 录下的要交给它整理。 */}
