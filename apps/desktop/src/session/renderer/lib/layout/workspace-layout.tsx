@@ -59,6 +59,8 @@ export function WorkspaceLayout({ leftSidebar, mainContent, sidebarHidden = fals
     leftWidth,
     leftProgress,
     leftAnimatedWidth,
+    leftRail,
+    leftRailWidth,
     workspaceRootRef,
     setLeftWidth,
     setCollapsed,
@@ -80,18 +82,22 @@ export function WorkspaceLayout({ leftSidebar, mainContent, sidebarHidden = fals
   // 「右边有了,但是左边又丢失了,正常应该两边都有」。
   //
   // 浮出态不吃这套:它是浮在主区之上的一整块预览,本来就该是整宽从左缘滑入。
+  //
+  // GUYI-AI/gugu#2548 收起成一列头像(收起宽 > 0)也不吃这套:那一列就是展开态本身,只是窄 —— 内容整宽不动,
+  // 每个头像、每颗按钮都在原坐标,文字由侧栏自己藏起来(left-sidebar),外层裁掉的只剩空白。收起宽是这几个量的一员
+  // (motion value),❌ 读 React 状态:变换只在挂上那一刻拿一次闭包,动画中途读到的是旧值。
   const dockedContent = (progress: number, width: number) =>
     panelContentLayout(progress, width, SIDEBAR_CONTENT_MIN_PX);
-  const contentWidth = useTransform([leftProgress, leftWidth], (latest: number[]) =>
-    latest[0] > 0 ? dockedContent(latest[0], latest[1]).width : latest[1]
+  const contentWidth = useTransform([leftProgress, leftWidth, leftRailWidth], (latest: number[]) =>
+    latest[2] > 0 || latest[0] <= 0 ? latest[1] : dockedContent(latest[0], latest[1]).width
   );
   const contentOpacity = useTransform(
-    [leftProgress, peekProgress, leftWidth],
+    [leftProgress, peekProgress, leftWidth, leftRailWidth],
     (latest: number[]) =>
-      latest[0] > 0 ? dockedContent(latest[0], latest[2]).opacity : latest[1]
+      latest[3] > 0 ? 1 : latest[0] > 0 ? dockedContent(latest[0], latest[2]).opacity : latest[1]
   );
-  const contentX = useTransform([leftProgress, peekProgress, leftWidth], (latest: number[]) =>
-    latest[0] > 0 ? dockedContent(latest[0], latest[2]).offset : (latest[1] - 1) * latest[2]
+  const contentX = useTransform([leftProgress, peekProgress, leftWidth, leftRailWidth], (latest: number[]) =>
+    latest[3] > 0 ? 0 : latest[0] > 0 ? dockedContent(latest[0], latest[2]).offset : (latest[1] - 1) * latest[2]
   );
 
   const maxSidebarWidth = () => {
@@ -142,7 +148,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, sidebarHidden = fals
             width: contentWidth,
             opacity: contentOpacity,
             x: contentX,
-            pointerEvents: isLeftOpen || isPeekVisible ? 'auto' : 'none',
+            pointerEvents: isLeftOpen || isPeekVisible || leftRail > 0 ? 'auto' : 'none',
           }}
         >
           {leftSidebar}

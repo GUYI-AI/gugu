@@ -539,6 +539,7 @@ export function ChatListPanel({
   const notificationsOpen = useSidebarNotificationsOpen()
   // The IM page's list (web / phone) is on screen when the shell shows 消息; the task page's sidebar copy never is.
   const chatsShown = useShellTabIs('chats')
+  const tasksShown = useShellTabIs('tasks')
   const sidebarView = useSidebarChatView()
   const { t } = useTranslation('messaging')
   const { t: tMain } = useTranslation('main')
@@ -870,8 +871,11 @@ export function ChatListPanel({
     toggleTopics(chat.id)
   }
 
+  // ⌘↑/⌘↓ walk the list that is on screen: the IM page's on 消息; with the desktop sidebar as one list (#2548) the task
+  // page's copy, whose rows are the sidebar's conversations (the task page's own key chain then holds none of them).
+  const walksListKeys = inSidebar ? agentHomes !== null && tasksShown : chatsShown
   useEffect(() => {
-    if (!chatsShown || notificationsOpen) return
+    if (!walksListKeys || notificationsOpen) return
     const handleGlobalShortcut = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return
       if (
@@ -889,7 +893,8 @@ export function ChatListPanel({
       // @@@5856 话题分栏里那个输入框也算「在聊天输入框里」。它 surface="aside",刻意不挂主 composer
       // 那个 test-id(那是全局唯一锚点)⇒ 不认它的话,焦点一落进分栏,⌘↑/⌘↓ 就被下面那道
       // 「在别的文本控件里就放行给它」的闸吃掉,整条快捷键在分栏里是死的。
-      const composerSelector = `[data-testid="${AUTOMATION_TEST_IDS.chatComposer}"], [data-testid="topic-split-pane"]`
+      // #2548 on the task page the one list's rows are walked from its composer too, as its old task rows were.
+      const composerSelector = `[data-testid="${AUTOMATION_TEST_IDS.chatComposer}"], [data-testid="topic-split-pane"]${inSidebar ? ', [data-testid="prompt-editor"]' : ''}`
       const insideChatComposer = path.some(
         (node) =>
           node instanceof HTMLElement &&
@@ -911,7 +916,7 @@ export function ChatListPanel({
           // @@@5856 游标是「现在选中的那一行」,选中话题时那是**子行**,不是来源线。
           // 用 activeChatId 当游标会在有话题的线上原地打转:它停在来源线不动,
           // nextChatId 每次都返回同一条子行(找茬第十轮实测:连按 6 次读数一字不变)。
-          : nextChatId(visibleChatIds, activeTopicChatId ?? activeChatId, shortcut.direction)
+          : nextChatId(visibleChatIds, activeTopicChatId ?? selectedChatId, shortcut.direction)
       const target = targetId ? chats.find((chat) => chat.id === targetId) : undefined
       if (!target) return
       const focusTarget = insideChatComposer ? 'composer' : 'sidebar'
@@ -921,7 +926,7 @@ export function ChatListPanel({
 
     window.addEventListener('keydown', handleGlobalShortcut)
     return () => window.removeEventListener('keydown', handleGlobalShortcut)
-  }, [activeChatId, activeTopicChatId, chatsShown, chats, selectChat, visibleChatIds, notificationsOpen, focusChatRow])
+  }, [selectedChatId, activeTopicChatId, walksListKeys, inSidebar, chats, selectChat, visibleChatIds, notificationsOpen, focusChatRow])
 
   const handleChatKeyDown = (event: Parameters<KeyboardEventHandler<HTMLDivElement>>[0], chat: ChatItem) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {

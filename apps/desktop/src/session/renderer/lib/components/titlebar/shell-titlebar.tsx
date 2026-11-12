@@ -37,6 +37,9 @@ const TITLEBAR_ACTION_TOP_PX = (WINDOW_CONTROL_BAR_HEIGHT_PX - TITLEBAR_ACTION_S
 export const ShellSidebarToggle = observer(function ShellSidebarToggle() {
   const { translate } = useSessionMessages()
   const { value: keyboard } = useAppSettingsKey('keyboard')
+  // GUYI-AI/gugu#2548 the sidebar as one list: its collapse button is at the foot of the list (left-sidebar); only the bell stays here.
+  const { value: interfaceSettings } = useAppSettingsKey('interface')
+  const oneList = interfaceSettings?.desktopSidebarV2 ?? false
   const { isLeftOpen, isLeftPeeking, toggleLeft, setTriggerHovered } = useWorkspaceLayoutContext()
   const hotkey = getEffectiveHotkey('app.toggleLeftSidebar', keyboard)
   const shortcut = hotkey ? formatHotkeyText(hotkey) : undefined
@@ -58,7 +61,7 @@ export const ShellSidebarToggle = observer(function ShellSidebarToggle() {
       data-sidebar-header-controls=""
     >
       {/* List visibility stays first; the global notification view belongs to the visible list. */}
-      <ListColumnToggle slot="list:sessions" />
+      {oneList ? null : <ListColumnToggle slot="list:sessions" />}
       {isLeftOpen || isLeftPeeking ? <NotificationSlot part="toggle" /> : null}
     </div>
   )

@@ -21,7 +21,7 @@ beforeEach(() => {
   for (const [key, value] of [['offsetHeight', 900], ['offsetWidth', 1024]] as const) Object.defineProperty(document.documentElement, key, { configurable: true, get: () => value })
 })
 
-const mine = new Set(['a-room', 'a-project', 'a-solo', 'a-idle'])
+const mine = new Set(['a-room', 'a-project', 'a-solo', 'a-idle', 'a-fork'])
 const openChat = vi.fn()
 const openAgent = vi.fn((_chatId: string | undefined, _peerId?: string) => true)
 let harness: ReturnType<typeof createReactHarness>
@@ -39,6 +39,7 @@ beforeEach(() => {
     sessions: [
       { conversationId: 's-project', projectId: 'app', title: 'Fix', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-project' } },
       { conversationId: 's-solo', projectId: 'tasks', title: 'Solo', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, agent: { userId: 'a-solo' } },
+      { conversationId: 's-fork', projectId: 'tasks', title: 'Fork', harness: 'codex', runtime: 'acp', agentStatus: 'idle', lastInteractedAt: null, supported: true, parentConversationId: 's-solo', agent: { userId: 'a-fork' } },
     ],
     cached: false, loading: false,
   })
@@ -62,6 +63,7 @@ const chats = [
   chat({ id: 'dm-project-agent', peer_user_id: 'a-project', last_message_at: at(2) }),
   chat({ id: 'dm-solo', peer_user_id: 'a-solo', created_at: at(1) }),
   chat({ id: 'dm-idle', peer_user_id: 'a-idle', created_at: at(1) }),
+  chat({ id: 'dm-fork', peer_user_id: 'a-fork', last_message_at: at(8) }),
 ]
 const identitiesById = {
   me: displayIdentity('me'),
@@ -75,10 +77,10 @@ describe('the sidebar chat list as one list', () => {
   it('switch off: today\'s Chats tab (project groups out, topics nested, empty DMs out)', async () => {
     publishSidebarChatView({ focusedChatId: null, groups: [] })
     await render()
-    expect(rows()).toEqual(['dm-room-agent', 'room', 'room-topic', 'dm-human', 'dm-project-agent'])
+    expect(rows()).toEqual(['dm-fork', 'dm-room-agent', 'room', 'room-topic', 'dm-human', 'dm-project-agent'])
   })
 
-  it('switch on: standalone agents, groups, project groups and people, by activity; no topics; agents living elsewhere have no row', async () => {
+  it('switch on: standalone agents, groups, project groups and people, by activity; no topics; agents living elsewhere and forks have no row', async () => {
     publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
     await render()
     expect(rows()).toEqual(['room', 'project', 'dm-human', 'dm-solo'])

@@ -6,9 +6,11 @@ import { screenLayout } from '@renderer/app/screen-layout';
 import { SampleNewProjectButton } from '@renderer/features/sample-project/sample-new-project-button';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
 import { SampleProjectRowMenu } from '@renderer/features/sample-project/sample-project-row-menu';
+import { sampleProjectContent } from '@renderer/features/sample-project/use-sample-project';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { ProjectRowTitle } from './project-row-parts';
+import { sampleProjectLastLine } from '@/lib/sidebarOneList';
+import { OneListProjectRow, ProjectRowTitle } from './project-row-parts';
 import { SidebarMenuAction, SidebarMenuRow, sidebarGroupInsetX } from './sidebar-primitives';
 import { sidebarRowContentInsetPx, sidebarRowInsetPx } from './sidebar-row-metrics';
 import { SidebarTwistyLane } from './sidebar-twisty';
@@ -18,12 +20,20 @@ import { SidebarTwistyLane } from './sidebar-twisty';
  * 那一行和项目行同一套列(车道、文件夹、名字),名字后面一枚「示例」;点它马上打开那一块 —— 内容在包里,❌ 读网络。
  */
 export const SampleProjectSidebar = observer(function SampleProjectSidebar({ rowOnly = false }: {
-  /** #2548 the sidebar as one list: only the sample row; the no-projects line belongs to the old 「项目」 section. */
+  /**
+   * #2548 the sidebar as one list: only the sample row, drawn as the project group's conversation row it stands for
+   * (OneListSampleRow); the no-projects line belongs to the old 「项目」 section.
+   */
   rowOnly?: boolean;
 }) {
   const { translate } = useSessionMessages();
   const sample = useSampleProject();
   const empty = !rowOnly && sidebarStore.sidebarProjects.length === 0;
+  if (rowOnly) {
+    return sample.shown && sample.owner ? (
+      <SampleProjectRowMenu userId={sample.owner.id}><OneListSampleRow /></SampleProjectRowMenu>
+    ) : null;
+  }
   return (
     <>
       {/* 和项目行同一层列表留白(虚拟列表里那一层),选中底色才和项目行一样收在两边。 */}
@@ -42,16 +52,48 @@ export const SampleProjectSidebar = observer(function SampleProjectSidebar({ row
   );
 });
 
+/** The sample's row is lit while its block is the one being looked at. */
+function sampleRowActive(): boolean {
+  const focused = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
+  return focused?.kind === 'sample-project' && isScreenView(appState.navigation.currentViewId);
+}
+
+/** Open the sample's block; ⌘ 点 = 拼到正看着那块右边,和项目行同一个手势。 */
+function openSampleProject(beside: boolean): void {
+  if (beside && isScreenView(appState.navigation.currentViewId)) showBesideOnScreen({ kind: 'sample-project' });
+  else showOnScreen({ kind: 'sample-project' });
+}
+
+/**
+ * #2548 the sample in the one list: the group avatar, its name with 「示例」, and the transcript's last message and its time
+ * as the preview, as any project group's row shows its last message. The avatar is the plain group one, without members:
+ * the member composite looks every member up in the identity directory (a lookup on the server for the sample agent's
+ * made-up id, then an empty tile), and the sample's agent is no account.
+ */
+const OneListSampleRow = observer(function OneListSampleRow() {
+  const { translate, locale } = useSessionMessages();
+  const name = translate('projects.sample.name');
+  const { preview, time } = sampleProjectLastLine(sampleProjectContent(locale));
+  return (
+    <OneListProjectRow
+      name={name}
+      tag={translate('projects.sample.tag')}
+      time={time}
+      preview={preview}
+      selected={sampleRowActive()}
+      onOpen={openSampleProject}
+      aria-label={translate('sidebar.openProject', { project: name })}
+      data-tour="sample-project"
+      data-sample-project-row=""
+    />
+  );
+});
+
 const SampleProjectRow = observer(function SampleProjectRow() {
   const { translate } = useSessionMessages();
   const name = translate('projects.sample.name');
-  const focused = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
-  const active = focused?.kind === 'sample-project' && isScreenView(appState.navigation.currentViewId);
-  const open = (beside: boolean) => {
-    // ⌘ 点 = 拼到正看着那块右边,和项目行同一个手势。
-    if (beside && isScreenView(appState.navigation.currentViewId)) showBesideOnScreen({ kind: 'sample-project' });
-    else showOnScreen({ kind: 'sample-project' });
-  };
+  const active = sampleRowActive();
+  const open = openSampleProject;
   return (
     <SidebarMenuRow
       className="group/row flex h-9 items-center justify-between gap-1 pr-1"

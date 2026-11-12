@@ -1,4 +1,7 @@
-import type { ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
+import { Avatar } from '@/components/Avatar';
+import { Chip } from '@/components/ui/Chip';
+import { ListRow } from '@/components/ui/ListRow';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
 // 项目行的零件:本机项目行(project-item)与别的机器上的项目行(#6264,sidebar-remote-project-item)共用,
@@ -31,5 +34,42 @@ export function ProjectRowTitle({ name, children, keepChildren = false }: { name
       <span className={keepChildren ? 'min-w-0 truncate' : 'max-w-full shrink-0 truncate'}>{name}</span>
       {keepChildren ? <span className="flex shrink-0">{children}</span> : children}
     </span>
+  );
+}
+
+/**
+ * GUYI-AI/gugu#2548 a project in the sidebar as one list is a conversation row: the chat list's own row (ListRow + the
+ * group Avatar at the sidebar size, inside the list's 12px gutter), for the projects that have no project group chat yet
+ * and for the sample project. Not a new row: the pieces ChatRow (components/ChatListPanel.tsx) composes, fed without a
+ * chat. Two lines like every conversation row; `preview` '' = nothing said yet (the second line stays, empty). The
+ * avatar is the group one without a picture or members: these groups have neither yet.
+ */
+export function OneListProjectRow({ name, tag, time, preview, selected, onOpen, ...data }: {
+  name: string;
+  /** A chip next to the name (the sample's 「示例」). */
+  tag?: string;
+  time?: string;
+  preview: string;
+  selected: boolean;
+  onOpen: (beside: boolean) => void;
+} & Omit<HTMLAttributes<HTMLDivElement>, 'title' | 'onClick' | 'onKeyDown'>) {
+  return (
+    <div className="px-3">
+      <ListRow
+        {...data}
+        role="button"
+        tabIndex={0}
+        selected={selected}
+        onClick={(event) => onOpen(event.metaKey || event.ctrlKey)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') onOpen(false);
+        }}
+        leading={<Avatar name={name} size="sm" variant="group" />}
+        title={name}
+        accessory={tag ? <Chip>{tag}</Chip> : undefined}
+        meta={time}
+        subtitle={preview}
+      />
+    </div>
   );
 }

@@ -231,11 +231,18 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
    * owner:「它不应该生活在任务区」—— 它自己的会话不进这里的任何列表;它派出来的照常在,行上标「助理发起」。
    */
   assistantAgentId: string | null = null;
+  /**
+   * GUYI-AI/gugu#2548 the sidebar as one list (internal switch `interface.desktopSidebarV2`): the project rows it draws
+   * itself, in order (local projects whose project group does not exist yet; mirrored in by SidebarOneList). The
+   * pinned / projects / tasks sections are not drawn then, so they are not stations either. null = the switch is off.
+   */
+  oneListProjects: readonly string[] | null = null;
   constructor(private readonly projectManager: ProjectManagerStore) {
     makeAutoObservable<SidebarStore, 'remoteEntryById'>(this, {
       remoteEntryById: false,
       machines: observable.ref,
       joinedGroups: observable.ref,
+      oneListProjects: observable.ref,
       homeLayout: computed,
       projectGroups: computed,
       expandedProjectIds: false,
@@ -366,6 +373,11 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
    */
   get navChain(): SidebarNavNode[] {
     const nodes: SidebarNavNode[] = [{ kind: 'new-session' }];
+    // #2548 one list: only what it draws. Its conversation rows are the chat list's own (walked there, ChatListPanel).
+    if (this.oneListProjects) {
+      for (const projectId of this.oneListProjects) nodes.push({ kind: 'project', projectId });
+      return nodes;
+    }
     const pushSession = (entry: SessionEntry) =>
       nodes.push({
         kind: 'conversation',
@@ -1084,6 +1096,14 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
 
   setListPage(page: SidebarListPage): void {
     this.listPage = page;
+  }
+
+  /** #2548 SidebarOneList mirrors the project rows it draws (null when it is not drawn). Same rows: no change. */
+  setOneListProjects(projectIds: readonly string[] | null): void {
+    const current = this.oneListProjects;
+    if (current === projectIds) return;
+    if (current && projectIds && current.length === projectIds.length && current.every((id, index) => id === projectIds[index])) return;
+    this.oneListProjects = projectIds;
   }
 
   /** 「项目」页签上的琥珀点:各项目里在等你的会话数(与收起的项目行那颗同一个读数)。 */

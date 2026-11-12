@@ -31,7 +31,7 @@ import { SidebarSearchTrigger } from './sidebar-search-trigger';
 import { SidebarSpace } from './sidebar-space';
 import { SidebarListSwitch, useSidebarLayoutContextMenu } from './sidebar-list-switch';
 import { openShellChatAction, shellChatActions, SidebarChatsSection } from './sidebar-chats-section';
-import { publishSidebarChatView, useSidebarChatSignals, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge';
+import { publishSidebarChatView, setSidebarNotificationsOpen, useSidebarChatSignals, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge';
 import { NotificationSlot } from '@/components/needsYou/NotificationSlot';
 import { RETAINED_SURFACE_HIDDEN_STYLE } from '@/lib/retainedSurface';
 import { SidebarSessionsSection } from './sidebar-sessions-section';
@@ -42,17 +42,20 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { useNativeConversationChat } from '@/hooks/useNativeConversationChat';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { SidebarOneList } from './sidebar-one-list';
+import { ONE_LIST_RAIL_PX, SidebarOneListFoot, SidebarOneListTop } from './sidebar-one-list-chrome';
 
 // 侧栏自上而下:布局 / 折叠 / 搜索 →「项目 | 对话」→ 三行入口 → 置顶 → 列表,两页同一副骨架。
 // 三行入口的第一行都是「新建任务」;项目页另两行是会话历史、已安排,对话页是新建群聊、添加联系人。
 // 合在一起时没有切换,入口留项目那三行,列表是 置顶 → 项目 → 会话 → 对话。
 // No foot: 资源库 and 设置 are on the far-left rail (product spec, #7046) — they belong to the gugu shell.
-// #2548 internal switch `interface.desktopSidebarV2` (desktop only): search, then ONE list (SidebarOneList); no tabs,
-// action rows, pinned / projects / tasks sections or merged layout.
+// #2548 internal switch `interface.desktopSidebarV2` (desktop only): bell + search, 创建智能体 + 「+」, then ONE list
+// (SidebarOneList); at the foot the collapse button and 会话历史 (sidebar-one-list-chrome); 已安排 in the bell's panel.
+// No tabs, action rows, pinned / projects / tasks sections or merged layout. Collapsed = a rail of the list's avatars:
+// the same content, not moved, with its text hidden.
 export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
-  const { isLeftOpen } = useWorkspaceLayoutContext();
+  const { isLeftOpen, setLeftRail } = useWorkspaceLayoutContext();
   const notificationsOpen = useSidebarNotificationsOpen();
   const { translate } = useSessionMessages();
 
@@ -93,6 +96,13 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   React.useEffect(() => {
     sidebarStore.setAgentNameOnHoverEnabled(agentNameOnHoverEnabled);
   }, [agentNameOnHoverEnabled]);
+  // #2548 one list: collapsing leaves the rail of avatars (the layout keeps that width), so the bell's panel cannot stay
+  // open in it; the rail has no bell.
+  React.useEffect(() => setLeftRail(oneList ? ONE_LIST_RAIL_PX : 0), [oneList, setLeftRail]);
+  const railed = oneList && !isLeftOpen;
+  React.useEffect(() => {
+    if (railed && notificationsOpen) setSidebarNotificationsOpen(false);
+  }, [railed, notificationsOpen]);
 
   // 新建任务 always lands on the dedicated compose view (owner: 点「新建任务」直接进该界面;
   // 命名统一为「新建任务」, 不再出现「新建会话」).
@@ -156,9 +166,12 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       data-region="left-sidebar"
       className={cn(
         'relative flex h-full flex-col bg-background-tertiary text-foreground-tertiary-muted transition-colors',
-        isLeftOpen && 'border-r border-border',
-        isDragOver && 'bg-background-2 ring-2 ring-inset ring-border-2'
+        (isLeftOpen || oneList) && 'border-r border-border',
+        isDragOver && 'bg-background-2 ring-2 ring-inset ring-border-2',
+        // #2548 the rail: every row keeps its avatar where it is; its name, preview, time and count are hidden.
+        railed && '[&_.gg-list-row-body]:invisible'
       )}
+      data-sidebar-rail={railed || undefined}
       onDragOver={onDragOver}
       onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}
@@ -174,9 +187,10 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
           </span>
         </div>
       )}
-      <SidebarSpace><SidebarSearchTrigger /></SidebarSpace>
+      <SidebarSpace controls={oneList ? 1 : 2} className={railed ? 'invisible' : undefined}><SidebarSearchTrigger /></SidebarSpace>
       <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col" data-notification-original-list="" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
+          {oneList && <SidebarOneListTop collapsed={railed} onCreateAgent={handleNewSession} />}
           {/* mb-2:固定的动作区与下面滚动的分区之间要有一道呼吸。原先 mb-0 让「已安排」与
               「项目」标题之间的距离与行距一模一样,三个分区因此读不出是三个分区。 */}
           {!oneList && (
@@ -288,7 +302,25 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
           </div>
         </SidebarContent>
         <NotificationSlot part="list" active={notificationsOpen} />
+        {/* #2548 one list: 已安排 lives in the bell's panel (mock v23 / v33), the same entry the old action rows had. */}
+        {oneList && notificationsOpen && (
+          <SidebarMenu className="shrink-0 pb-2">
+            <SidebarMenuButton
+              isActive={isCurrentView(currentView, 'automations')}
+              onClick={() => navigate('automations')}
+              aria-label={translate('sidebar.scheduled')}
+              className="w-full justify-between"
+              data-testid="sidebar-scheduled"
+            >
+              <span className={cn('flex min-w-0 items-center gap-2', sidebarRowContentInsetX)}>
+                <Clock className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
+                <span className="truncate">{translate('sidebar.scheduled')}</span>
+              </span>
+            </SidebarMenuButton>
+          </SidebarMenu>
+        )}
       </SidebarContainer>
+      {oneList && <SidebarOneListFoot />}
     </div>
   );
 });

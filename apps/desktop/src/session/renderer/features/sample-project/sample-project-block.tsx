@@ -23,7 +23,7 @@ type OpenPane = { kind: 'file'; fileId: string } | { kind: 'task' } | null;
  */
 export const SampleProjectBlock = observer(function SampleProjectBlock({ blockId, blockActions }: { blockId: string; blockActions?: ReactNode }) {
   const { translate, locale } = useSessionMessages();
-  const { isLeftOpen } = useWorkspaceLayoutContext();
+  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const sample = useSampleProject();
   const [pane, setPane] = useState<OpenPane>(null);
   const corners = screenLayout.corners(blockId);
@@ -36,7 +36,7 @@ export const SampleProjectBlock = observer(function SampleProjectBlock({ blockId
   return (
     <>
       <TabStripShell
-        reserveShellRestoreLane={corners.topLeft && !isLeftOpen}
+        reserveShellRestoreLane={corners.topLeft && !isLeftOpen && leftRail === 0}
         actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{blockActions}</TabBarActionRow>}
       >
         <TabSlot data-sample-project-tab="">

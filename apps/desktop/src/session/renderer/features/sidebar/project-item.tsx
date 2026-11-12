@@ -24,7 +24,7 @@ import { cn } from '@renderer/utils/utils';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { sessionKeyboardNav } from './session-keyboard-nav';
-import { ProjectNeedsYouDot, ProjectRowTitle } from './project-row-parts';
+import { OneListProjectRow, ProjectNeedsYouDot, ProjectRowTitle } from './project-row-parts';
 import { SidebarUnreadCount } from './sidebar-list-switch';
 import { requestTopicSplit } from '@/lib/topicSplitRequest';
 import { useSidebarChatSignals } from '@/lib/sidebarChatsBridge';
@@ -62,11 +62,14 @@ const UNREGISTERED_PHASE_KEY: Record<UnregisteredProject['phase'], SessionMessag
  */
 export const SidebarProjectItem = observer(function SidebarProjectItem({
   projectId,
-  expandable = true,
+  oneList = false,
 }: {
   projectId: string;
-  /** #2548 the sidebar as one list has no session rows under a project: the row keeps its lane but no arrow. */
-  expandable?: boolean;
+  /**
+   * #2548 the sidebar as one list: a project is its project group's conversation row. This one has no group chat yet,
+   * so it is drawn as that row would be (OneListProjectRow: group avatar, name, no preview); same click, same menu.
+   */
+  oneList?: boolean;
 }) {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
@@ -92,7 +95,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
     if (isProjectActive) prefetchRepository();
   }, [isProjectActive, prefetchRepository]);
 
-  const isExpanded = expandable && sidebarStore.expandedProjectIds.has(projectId);
+  const isExpanded = !oneList && sidebarStore.expandedProjectIds.has(projectId);
   // spec session-page 链6: a collapsed project whose conversations are waiting on the human shows an
   // amber dot on its row — raw status, so viewing a conversation never clears it; it fades only
   // when the "needs you" count returns to zero. When expanded, the per-section header carries it.
@@ -175,15 +178,32 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
     );
   };
 
+  const removeProject = () => {
+    void confirmDeleteProject({
+      projectId,
+      projectLabel: project.name ?? translate('projects.fallbackName'),
+      onDeleted: () => { if (isProjectActive) navigate('home'); },
+    });
+  };
+
+  if (oneList) {
+    return (
+      <ProjectRowContextMenu disabled={false} chatId={groupChatId} onRemove={removeProject}>
+        <OneListProjectRow
+          name={projectLabel}
+          preview=""
+          selected={isProjectActive}
+          onOpen={openProject}
+          aria-label={translate('sidebar.openProject', { project: projectLabel })}
+          data-project-row={projectId}
+          data-offline={machineDown || undefined}
+        />
+      </ProjectRowContextMenu>
+    );
+  }
+
   return (
-    <ProjectRowContextMenu disabled={false} chatId={groupChatId}
-      onRemove={() => {
-        void confirmDeleteProject({
-          projectId,
-          projectLabel: project.name ?? translate('projects.fallbackName'),
-          onDeleted: () => { if (isProjectActive) navigate('home'); },
-        });
-      }}>
+    <ProjectRowContextMenu disabled={false} chatId={groupChatId} onRemove={removeProject}>
 
         <SidebarMenuRow
           // @@@sidebar-row-metrics — 与会话行同一套列:[车道][图标][标题]。
@@ -218,7 +238,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
             expanded={isExpanded}
             label={translate(isExpanded ? 'sidebar.collapseProject' : 'sidebar.expandProject', { project: projectLabel })}
             onToggle={
-              project.state === 'unregistered' || !expandable
+              project.state === 'unregistered'
                 ? undefined
                 : () => sidebarStore.toggleProjectExpanded(projectId)
             }
