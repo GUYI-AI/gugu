@@ -179,14 +179,16 @@ describe('the chat list tells the sidebar which groups it has', () => {
 })
 
 describe('rows that are not a conversation yet come after every conversation row', () => {
-  it('projects without a group chat first (in the sidebar\'s project order), the sample last', () => {
-    expect(oneListTail(['p2', 'p1'], true)).toEqual([{ kind: 'project', projectId: 'p2' }, { kind: 'project', projectId: 'p1' }, { kind: 'sample' }])
+  it('projects without a group chat first (in the sidebar\'s project order), then tasks with no agent identity, the sample last', () => {
+    expect(oneListTail(['p2', 'p1'], [{ projectId: 'w', sessionId: 's' }], true)).toEqual([
+      { kind: 'project', projectId: 'p2' }, { kind: 'project', projectId: 'p1' }, { kind: 'task', projectId: 'w', sessionId: 's' }, { kind: 'sample' },
+    ])
   })
 
   it('has no time to sort by: whatever the sample says, it is not placed among the conversations', () => {
-    expect(oneListTail([], true)).toEqual([{ kind: 'sample' }])
-    expect(oneListTail([], false)).toEqual([])
-    expect(oneListTail(['p'], false)).toEqual([{ kind: 'project', projectId: 'p' }])
+    expect(oneListTail([], [], true)).toEqual([{ kind: 'sample' }])
+    expect(oneListTail([], [], false)).toEqual([])
+    expect(oneListTail(['p'], [], false)).toEqual([{ kind: 'project', projectId: 'p' }])
   })
 })
 

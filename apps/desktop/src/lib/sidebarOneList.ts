@@ -175,15 +175,24 @@ export function projectsWithoutGroupRow(
 
 /**
  * Rows of the one list that are not a conversation yet: an account project whose project group is not in the chat list,
- * and the sample project. They are drawn as conversation rows but come after every conversation row, in this order,
+ * a top-level task outside every project whose session has no 咕咕 identity (so no agent conversation stands for it), and
+ * the sample project. They are drawn as conversation rows but come after every conversation row, in this order,
  * whatever their times say: the sample's times are written into it, so sorting by them would pin it to the top for
  * everyone.
  */
-export type OneListTailRow = { readonly kind: 'project'; readonly projectId: string } | { readonly kind: 'sample' }
+export type OneListTailRow =
+  | { readonly kind: 'project'; readonly projectId: string }
+  | { readonly kind: 'task'; readonly projectId: string; readonly sessionId: string }
+  | { readonly kind: 'sample' }
 
-export function oneListTail(grouplessProjects: readonly string[], sampleShown: boolean): OneListTailRow[] {
+export function oneListTail(
+  grouplessProjects: readonly string[],
+  tasksWithoutAgent: readonly { readonly projectId: string; readonly sessionId: string }[],
+  sampleShown: boolean,
+): OneListTailRow[] {
   return [
     ...grouplessProjects.map((projectId) => ({ kind: 'project' as const, projectId })),
+    ...tasksWithoutAgent.map(({ projectId, sessionId }) => ({ kind: 'task' as const, projectId, sessionId })),
     ...(sampleShown ? [{ kind: 'sample' as const }] : []),
   ]
 }

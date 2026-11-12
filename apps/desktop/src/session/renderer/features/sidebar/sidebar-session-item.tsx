@@ -89,6 +89,21 @@ export type SidebarSessionItemProps = {
   agentAvatar?: boolean;
 };
 
+/** Open a session of the sidebar the way clicking its row does. */
+export function openSidebarSession(projectId: string, sessionId: string, beside = false): void {
+  // behavior session-page「键盘导航」: the highlight is the cursor, so a click moves the cursor too —
+  // pressing ↓ right after clicking must continue from the row you just clicked.
+  sessionKeyboardNav.syncCursorFromPointer({ kind: 'conversation', projectId, sessionId });
+  // ⌘ 点 = 并排放在正看着那块的右边(spec session-page「一屏几块」);只在看这屏的视图上才有「正看着那块」。
+  if (beside && isScreenView(appState.navigation.currentViewId)) {
+    // The block is placed only once the task can open: one that never gets ready leaves nothing behind.
+    openSessionInSessionWhenReady({ projectId, sessionId, onReady: () => showSessionBeside({ projectId, sessionId }) });
+    return;
+  }
+  appState.navigation.navigate('session', { projectId, sessionId });
+  openSessionInSessionWhenReady({ projectId, sessionId });
+}
+
 /** 侧栏里的一条会话(#6264 别的机器上的会话也是这一行:同一张会话表、点开同一个任务视图)。 */
 export const SidebarSessionItem = observer(function SidebarSessionItem({
   projectId,
@@ -182,19 +197,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
     manifestsLoaded: installedExtensionsStore.isLoaded,
   });
 
-  const openSession = ({ beside = false }: { beside?: boolean } = {}) => {
-    // behavior session-page「键盘导航」: the highlight is the cursor, so a click moves the cursor too —
-    // pressing ↓ right after clicking must continue from the row you just clicked.
-    sessionKeyboardNav.syncCursorFromPointer({ kind: 'conversation', projectId, sessionId });
-    // ⌘ 点 = 并排放在正看着那块的右边(spec session-page「一屏几块」);只在看这屏的视图上才有「正看着那块」。
-    if (beside && isScreenView(appState.navigation.currentViewId)) {
-      // The block is placed only once the task can open: one that never gets ready leaves nothing behind.
-      openSessionInSessionWhenReady({ projectId, sessionId, onReady: () => showSessionBeside({ projectId, sessionId }) });
-      return;
-    }
-    navigate('session', { projectId, sessionId: sessionId });
-    openSessionInSessionWhenReady({ projectId, sessionId });
-  };
+  const openSession = ({ beside = false }: { beside?: boolean } = {}) => openSidebarSession(projectId, sessionId, beside);
 
   const cursor = sessionKeyboardNav.cursor;
   const isCursor = cursor?.kind === 'conversation' && cursor.sessionId === sessionId;

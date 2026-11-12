@@ -267,6 +267,23 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     return this.isTasksProject(this.projectManager.projects.get(projectId) ?? { id: projectId }) ? null : row;
   }
 
+  /**
+   * #2548 top-level tasks outside every project whose session has no 咕咕 identity (never driven, or an engine that cannot be
+   * addressed), newest first. The one list draws a standalone task as its agent's conversation; these have none, so each
+   * is a row of its own (oneListTail). This machine's identities not read yet = none, rather than rows about to move.
+   */
+  get tasksWithoutAgent(): { projectId: string; sessionId: string }[] {
+    if (!sessionAgentBindings.isLoaded) return [];
+    return (this.placement.entries.get(SESSIONS_SECTION) ?? [])
+      .filter(
+        (entry) =>
+          !entry.parentSessionId &&
+          !sessionAgentBindings.bindingFor(entry.id) &&
+          !this.remoteSession(entry.projectId, entry.id)?.summary.agent?.userId
+      )
+      .map(({ projectId, id }) => ({ projectId, sessionId: id }));
+  }
+
   /** 一行自己的会话:这个项目在各台机器上的本地项目里的(membersOf)。 */
   private rowOwnEntries(chatId: string): SidebarSessionEntry[] {
     const entries = this.accountProjects.membersOf(chatId).flatMap((id) => {

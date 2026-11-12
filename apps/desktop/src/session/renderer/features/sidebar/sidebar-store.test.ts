@@ -358,6 +358,43 @@ describe('SidebarStore project ordering', () => {
     }
   });
 
+  // #2548 the one list draws my standalone tasks as their agents' conversations; a task whose session has no 咕咕 identity
+  // (never driven, an engine that cannot be addressed) has no conversation, so it is a row of its own (oneListTail).
+  it('lists the top-level standalone tasks with no agent identity, once this machine\'s identities are read', () => {
+    const home = 'tasks-workspace';
+    const record = (id: string, lastInteractedAt: string, parentSessionId?: string) => ({
+      id, projectId: home, providerId: 'codex', title: id, runtime: 'pty' as const, agentStatus: 'idle' as const,
+      parentSessionId, lastInteractedAt,
+    });
+    const records = [
+      record('no-identity-old', '2026-01-01T00:00:01.000Z'),
+      record('no-identity-new', '2026-01-01T00:00:03.000Z'),
+      record('with-identity', '2026-01-01T00:00:02.000Z'),
+      record('fork-no-identity', '2026-01-01T00:00:04.000Z', 'with-identity'),
+    ];
+    for (const record of records) sessionRegistry.acquire(record.id, home, [record]);
+    const identity = vi.spyOn(sessionAgentBindings, 'bindingFor').mockImplementation((id) =>
+      id === 'with-identity' ? { agentUserId: 'agent-1' } : undefined);
+    try {
+      const manager = projectManagerWithSessions([
+        { id: home, createdAt: '2026-01-01T00:00:00.000Z', sessionIds: records.map((r) => r.id) },
+      ]);
+      (manager.projects.get(home) as unknown as { data: { kind?: string } }).data = { kind: 'workspace' };
+      const store = sidebarOf(manager);
+      runInAction(() => { sessionAgentBindings.isLoaded = false; });
+      expect(store.tasksWithoutAgent, 'not known yet: none rather than a row that is about to move').toEqual([]);
+      runInAction(() => { sessionAgentBindings.isLoaded = true; });
+      expect(store.tasksWithoutAgent).toEqual([
+        { projectId: home, sessionId: 'no-identity-new' },
+        { projectId: home, sessionId: 'no-identity-old' },
+      ]);
+    } finally {
+      runInAction(() => { sessionAgentBindings.isLoaded = false; });
+      identity.mockRestore();
+      for (const record of records) sessionRegistry.release(record.id);
+    }
+  });
+
 });
 
 // #6264 behavior gugu-server「会话页里的别的机器」(owner 2026-09-25 选 A):别的机器上的会话一律属于那台机器上的

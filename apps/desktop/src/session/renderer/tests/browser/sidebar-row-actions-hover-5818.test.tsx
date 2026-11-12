@@ -56,16 +56,21 @@ vi.mock('@renderer/features/sessions/stores/session-registry', () => ({
 }))
 /**
  * 键盘光标那套是**真的**(session-keyboard-nav 没被替),它只从这一格取世界:
- *  · `navigation` 要说得出「主区在哪」,否则 `viewNode` 取不到值;点一行走的 `navigate` 把它挪到那一行,
- *    与真的一样 —— 光标就是主区所在(❌ 不摆一个假的光标)。
+ *  · `navigation` 要说得出「主区在哪」,否则 `viewNode` 取不到值;点一行走的 `navigation.navigate`(useNavigate 也只是
+ *    它的壳)把它挪到那一行,与真的一样 —— 光标就是主区所在(❌ 不摆一个假的光标)。
  * 项目树给空的:行按「项目没挂载」渲,与真实的早期状态同形。
  */
-const shown = vi.hoisted(() => ({ navigation: null as { currentViewId: string; viewParamsStore: Record<string, unknown> } | null }))
+type Shown = { currentViewId: string; viewParamsStore: Record<string, unknown>; navigate: (view: string, params: unknown) => void }
+const shown = vi.hoisted(() => ({ navigation: null as Shown | null }))
 vi.mock('@renderer/lib/stores/app-state', async () => {
   const { observable } = await import('mobx')
   shown.navigation = observable({
     currentViewId: 'session',
     viewParamsStore: { session: { projectId: 'proj-1', sessionId: 'task-1' } } as Record<string, unknown>,
+    navigate(view: string, params: unknown) {
+      this.currentViewId = view
+      this.viewParamsStore[view] = params
+    },
   })
   return { appState: {
     projects: { projects: new Map() },
@@ -94,10 +99,7 @@ vi.mock('@renderer/features/sessions/open-session-in-session', () => ({
   openSessionInSessionWhenReady: () => undefined,
 }))
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({
-  useNavigate: () => ({ navigate: (view: string, params: unknown) => runInAction(() => {
-    shown.navigation!.currentViewId = view
-    shown.navigation!.viewParamsStore[view] = params
-  }) }),
+  useNavigate: () => ({ navigate: (view: string, params: unknown) => shown.navigation!.navigate(view, params) }),
   useParams: () => ({ params: {} }),
   useWorkspaceSlots: () => ({ currentView: 'task' }),
 }))

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // GUYI-AI/gugu#2548 rows of the one list that are not a conversation yet (an account project whose group chat is not in
-// the chat list, the sample): drawn as conversation rows, always after every conversation row.
+// the chat list, a task with no agent identity, the sample): drawn as conversation rows, always after every conversation
+// row.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +12,8 @@ const state = vi.hoisted(() => ({
   /** The account project rows (sidebarStore.sidebarProjects), each with its project group. */
   projects: [] as { id: string; chatId: string }[],
   listedGroups: null as ReadonlySet<string> | null,
+  /** Top-level standalone tasks whose session has no 咕咕 identity (sidebarStore.tasksWithoutAgent). */
+  tasks: [] as { projectId: string; sessionId: string }[],
   sampleShown: false,
   accountStatus: 'ready' as 'loading' | 'ready' | 'error',
   leftOpen: true,
@@ -31,6 +34,7 @@ vi.mock('@renderer/features/sample-project/use-sample-project', () => ({
 vi.mock('@renderer/lib/stores/app-state', () => ({
   sidebarStore: {
     get sidebarProjects() { return state.projects; },
+    get tasksWithoutAgent() { return state.tasks; },
   },
 }));
 // The chat list is drawn into this slot by the shell's tree (ChatListPanel, its own tests); here it stands for every
@@ -42,6 +46,9 @@ vi.mock('./project-item', () => ({
   SidebarProjectItem: ({ projectId }: { projectId: string }) => <div data-row={`project:${projectId}`} />,
 }));
 vi.mock('./sample-project-row', () => ({ SampleProjectSidebar: () => <div data-row="sample" /> }));
+vi.mock('./one-list-task-row', () => ({
+  OneListTaskRow: ({ sessionId }: { sessionId: string }) => <div data-row={`task:${sessionId}`} />,
+}));
 
 const { SidebarOneList } = await import('./sidebar-one-list');
 
@@ -50,6 +57,7 @@ let root: Root;
 beforeEach(() => {
   state.projects = [{ id: 'with-group', chatId: 'chat-1' }, { id: 'no-group-b', chatId: 'chat-b' }, { id: 'no-group-a', chatId: 'chat-a' }];
   state.listedGroups = new Set(['chat-1']);
+  state.tasks = [];
   state.sampleShown = true;
   state.accountStatus = 'ready';
   state.leftOpen = true;
@@ -69,6 +77,13 @@ describe('rows that are not a conversation yet', () => {
   it('come after every conversation row: account projects whose group chat is not listed (sidebar order), then the sample', async () => {
     await render();
     expect(order()).toEqual(['conversations', 'project:no-group-b', 'project:no-group-a', 'sample']);
+  });
+
+  // A standalone task is its agent's conversation row; one whose session has no identity has no conversation to be.
+  it('a top-level task with no agent identity is a row of its own, after the projects and before the sample', async () => {
+    state.tasks = [{ projectId: 'workspace', sessionId: 'pty-new' }, { projectId: 'workspace', sessionId: 'pty-old' }];
+    await render();
+    expect(order()).toEqual(['conversations', 'project:no-group-b', 'project:no-group-a', 'task:pty-new', 'task:pty-old', 'sample']);
   });
 
   it('a project whose group chat is in the list is that conversation row, not one of these', async () => {
