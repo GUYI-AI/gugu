@@ -1,3 +1,4 @@
+import { createElement } from 'react';
 import { messageForUser } from '@/lib/userFacingError';
 import {
   canOfferDontAskAgain,
@@ -10,6 +11,7 @@ import { showModal } from '@renderer/lib/modal/modal-provider';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { log } from '@renderer/utils/logger';
 import type { ArchivedSessionRef } from '@shared/core/sessions/sessions';
+import { ArchivedToastHint } from './archived-toast-hint';
 import { tellChildrenNotReached } from './children-not-reached';
 import { countSessionDescendants } from './session-descendants';
 import { restoreArchivedSession } from './restore-session-flow';
@@ -81,7 +83,8 @@ export function archiveSessionNow(args: { projectId: string; sessionId: string; 
 }
 
 /**
- * 归档要有去处(spec session-page-flows,#6083):提示里说得出「在会话历史里能找回」,并给**一次**「撤销」。
+ * 归档要有去处(spec session-page-flows,#6083):提示里说得出「在会话历史里能找回」(那四个字点了就过去,ArchivedToastHint),
+ * 并给**一次**「撤销」。
  * 撤销按主进程报回的清单原样放回 —— 点名的那条与勾了范围时一起收走的子会话,一条不多一条不少;
  * 走 [[restore-session-flow]] 那条唯一路径。❌ 渲染侧自己猜范围:子会话可能在别的机器上,这里数不全。
  */
@@ -90,7 +93,7 @@ function offerUndo(archived: ArchivedSessionRef[]): void {
   let undone = false;
   toast({
     title: translateSessionMessage('task.archivedToast'),
-    description: translateSessionMessage('task.archivedToastHint'),
+    description: createElement(ArchivedToastHint),
     duration: ARCHIVE_UNDO_DWELL_MS,
     action: {
       label: translateSessionMessage('task.archiveUndo'),
