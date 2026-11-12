@@ -389,11 +389,15 @@ describe('inner sidebar', () => {
     act(() => shell.unmount());
   });
 
-  it('publishes my running agents per project group for the project row badge', async () => {
+  it('publishes my agents per project group and per group for the row badge: only those living there', async () => {
     openChat('dm');
     await render();
     // shop-task (running), shop-idle, shop-chat-agent: agent-a and agent-m are members there but live elsewhere (#2599).
-    expect([...counts()]).toEqual([['shop-chat', { total: 3, running: 1 }]]);
+    // Planning: mine-in-group (running) lives there; member-only is running and a member, but was created in a DM.
+    expect([...counts()]).toEqual([
+      ['shop-chat', { total: 3, running: 1 }],
+      ['group', { total: 1, running: 1 }],
+    ]);
   });
 });
 

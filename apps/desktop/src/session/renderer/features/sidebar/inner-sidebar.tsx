@@ -300,7 +300,10 @@ export const InnerSidebarRestore = observer(function InnerSidebarRestore() {
   );
 });
 
-/** 项目行头像角上那个数(#2548):每个项目群里我的智能体,与分区头同一个推导。 */
+/**
+ * 项目行、群行头像角上那个数(#2548;群行 #2599:群也是 agent 住的地方):每个项目群 / 用户群里住着的我的智能体,
+ * 与这一列「智能体」分区头同一个推导(chatScope),❌ 群里所有是成员的 agent。
+ */
 const MyChatAgentCountsPublisher = observer(function MyChatAgentCountsPublisher({
   agents,
   summaries,
@@ -310,10 +313,13 @@ const MyChatAgentCountsPublisher = observer(function MyChatAgentCountsPublisher(
 }) {
   const counts = new Map<string, ChatAgentCounts>();
   const projects = listedProjectIds();
+  const count = (anchor: InnerSidebarRoomAnchor) =>
+    counts.set(anchor.chatId, chatAgentCounts(myAgentsInChat(agents, chatScope(anchor, summaries, projects))));
   for (const ref of sidebarStore.sidebarProjects) {
-    const chatId = ref.chatId;
-    if (counts.has(chatId)) continue;
-    counts.set(chatId, chatAgentCounts(myAgentsInChat(agents, chatScope({ kind: 'project', chatId }, summaries, projects))));
+    if (!counts.has(ref.chatId)) count({ kind: 'project', chatId: ref.chatId });
+  }
+  for (const [chatId, summary] of summaries) {
+    if (summary.kind === 'group' && !counts.has(chatId) && !isProjectChat(chatId)) count({ kind: 'group', chatId });
   }
   // 依赖是序列化后的数:每次渲染新建的 Map 不算变化(publish 自己也只在数变了时才通知)。
   const key = JSON.stringify([...counts]);
