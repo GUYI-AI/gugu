@@ -579,7 +579,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
           uploadRetries.delete(clientMessageId)
           // Its bytes went up and only the commit failed: the ordinary retry resends that.
           if (resumed) again(); else return outbox.retry(clientMessageId)
-        }).catch((err) => { if (active) console.error('[chatOutbox] upload retry failed', err) })
+        }).catch((err) => { if (active) rendererLogger('chat/outbox').error({ messageId: clientMessageId, error: err }, 'upload retry failed') })
         return
       }
       void outbox.retry(clientMessageId).catch((err) => { if (active) console.error('[chatOutbox] retry failed', err) })
