@@ -7,7 +7,8 @@ import { attachmentBytes, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/
 import { openImageFromThumb, registerFullImage } from '../../lib/imageViewer'
 import { sentFileCopy } from '../../lib/sentFileCopies'
 import { Markdown } from '../markdown/Markdown'
-import { layoutAlbum } from './albumLayout'
+import { layoutAlbum, type AlbumLayout } from './albumLayout'
+import { Button } from '../ui/Button'
 import { MediaAttachmentBubble } from './MediaAttachmentBubble'
 import { useNearViewport } from './useNearViewport'
 import { SentMessageSurface } from './sentMessageSurface'
@@ -17,7 +18,15 @@ import { SentMessageSurface } from './sentMessageSurface'
 
 /** Tiles are laid out on this width and drawn in proportion, so the album narrows with its column like one image does. */
 const ALBUM_WIDTH = 280
-const ALBUM_STYLE: CSSProperties = { position: 'relative', width: `min(${ALBUM_WIDTH}px, calc(100cqw - 24px))`, maxWidth: '100%' }
+const percent = (value: number, of: number) => `${(value / of) * 100}%`
+/** The album keeps the proportions of its layout. */
+function albumBox(layout: AlbumLayout): CSSProperties {
+  return { aspectRatio: `${layout.width} / ${layout.height}` }
+}
+/** A tile sits where the layout put it, in proportion to the album. */
+function tileBox(tile: AlbumLayout['tiles'][number], layout: AlbumLayout): CSSProperties {
+  return { left: percent(tile.x, layout.width), top: percent(tile.y, layout.height), width: percent(tile.width, layout.width), height: percent(tile.height, layout.height) }
+}
 
 type Part = { member: MessageItem; meta: ParsedAttachment }
 
@@ -42,7 +51,7 @@ export function MessageAlbumBubble({ members, isMine, chatId, senderName, onOpen
     {listed.map(({ member, meta }) => <div key={member.id} className="relative max-w-full" data-album-failed={member.local_send_state === 'failed' || undefined}>
       <MediaAttachmentBubble meta={{ ...meta, caption: undefined }} messageId={member.id} isMine={isMine} chatId={chatId} senderName={senderName}
         onOpenFile={onOpenFile ? (file) => onOpenFile(file, member) : undefined} />
-      {member.local_send_state === 'failed' && <FailedMark style={{ position: 'absolute', top: 6, right: 6 }} />}
+      {member.local_send_state === 'failed' && <span className="absolute right-1.5 top-1.5"><FailedMark /></span>}
     </div>)}
     {caption && <Markdown trust="chat" content={caption} onAccent={isMine} />}
   </div>
@@ -53,15 +62,8 @@ function AlbumTiles({ parts, chatId }: { parts: Part[]; chatId: string }) {
     const size = meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision : meta.imageDimensions ?? member.image_dimensions
     return size?.width && size.height ? size.width / size.height : 1
   }), ALBUM_WIDTH), [parts])
-  const percent = (value: number, of: number) => `${(value / of) * 100}%`
-  return <div style={{ ...ALBUM_STYLE, aspectRatio: `${layout.width} / ${layout.height}` }} data-testid="message-album-tiles">
-    {parts.map((part, index) => {
-      const tile = layout.tiles[index]!
-      return <AlbumTile key={part.member.id} part={part} chatId={chatId} style={{
-        position: 'absolute', left: percent(tile.x, layout.width), top: percent(tile.y, layout.height),
-        width: percent(tile.width, layout.width), height: percent(tile.height, layout.height),
-      }} />
-    })}
+  return <div className="relative w-[min(280px,calc(100cqw-24px))] max-w-full" style={albumBox(layout)} data-testid="message-album-tiles">
+    {parts.map((part, index) => <AlbumTile key={part.member.id} part={part} chatId={chatId} style={tileBox(layout.tiles[index]!, layout)} />)}
   </div>
 }
 
@@ -92,21 +94,20 @@ function AlbumTile({ part: { member, meta }, chatId, style }: { part: Part; chat
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sourceKey 就是 meta.source 的身份
   }, [ready, sourceKey, meta.fileName, meta.mimeType, chatId, member.id, size?.width, size?.height])
   const failed = member.local_send_state === 'failed'
-  return <div ref={box as RefObject<HTMLDivElement>} data-album-failed={failed || undefined}
-    style={{ ...style, overflow: 'hidden', background: 'var(--muted)' }}>
-    <button type="button" aria-label={meta.fileName} disabled={!ready} onClick={() => img.current && openImageFromThumb(img.current)}
-      className={`relative block size-full border-0 bg-transparent p-0 ${ready ? 'cursor-zoom-in' : 'cursor-default'}`}>
+  return <div ref={box as RefObject<HTMLDivElement>} data-album-failed={failed || undefined} className="absolute overflow-hidden bg-[var(--muted)]" style={style}>
+    <Button variant="ghost" size="icon" aria-label={meta.fileName} disabled={!ready} onClick={() => img.current && openImageFromThumb(img.current)}
+      className={`relative block size-full min-h-0 rounded-none border-0 p-0 max-[719px]:min-h-0 max-[719px]:w-full ${ready ? 'cursor-zoom-in' : 'cursor-default'}`}>
       {ready && <img ref={img} src={view.objectUrl} data-image-viewer-src={view.objectUrl} alt={meta.fileName}
         data-testid={AUTOMATION_TEST_IDS.messageAttachmentImage} draggable={false}
-        decoding={view.link ? 'async' : 'sync'} style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }} />}
-      {failed && <span style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'rgb(0 0 0 / 0.36)' }}><FailedMark /></span>}
-    </button>
+        decoding={view.link ? 'async' : 'sync'} className="block size-full object-cover" />}
+      {failed && <span className="absolute inset-0 grid place-items-center bg-[var(--bg-overlay-strong)]"><FailedMark /></span>}
+    </Button>
   </div>
 }
 
 /** The failed-send glyph of FailedSendStatus, filled, on top of the file that did not go up. */
-function FailedMark({ style }: { style?: CSSProperties }) {
-  return <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" style={style}>
+function FailedMark() {
+  return <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="12" cy="12" r="11" fill="var(--danger)" />
     <path d="M12 6.5v6.5" stroke="var(--surface-white)" strokeWidth="2.2" strokeLinecap="round" />
     <circle cx="12" cy="17" r="1.3" fill="var(--surface-white)" />
