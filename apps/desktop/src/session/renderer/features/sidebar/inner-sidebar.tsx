@@ -27,7 +27,6 @@ import {
 } from '@/lib/innerSidebarBridge';
 import { publishPanelToggle } from '@/lib/panelToggles';
 import { readShellSlots } from '@/lib/shellSlots';
-import { ProjectFolderAvatar } from '@/mobile/partners/ProjectFolderAvatar';
 import { openInfoTab } from '@renderer/features/chats/chat-tabs/chat-layouts';
 import { openChatOnScreen } from '@renderer/features/chats/open-chat';
 import { ProjectMenuItems } from '@renderer/features/projects/components/project-menu';
@@ -321,7 +320,7 @@ const InnerSidebarColumn = observer(function InnerSidebarColumn({
   const agentsSection = <InnerAgentsSection anchor={anchor} agents={agents} />;
   return (
     <InnerSidebarFrame kind={anchor.kind} chatId={anchor.chatId}>
-      <InnerHeadRow anchor={anchor} summary={summary} active={headActive} running={chatAgentCounts(agents).running} />
+      <InnerHeadRow anchor={anchor} summary={summary} active={headActive} />
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto" data-region="inner-sidebar-scroll">
         {/* 第二级(全部话题):「话题」上面的分区原样留着,下面的收走 —— 「全部 › / ‹ 返回」因此永远在同一个位置。 */}
         {anchor.kind === 'project' ? (
@@ -425,12 +424,10 @@ const InnerHeadRow = observer(function InnerHeadRow({
   anchor,
   summary,
   active,
-  running,
 }: {
   anchor: InnerSidebarRoomAnchor;
   summary: ChatSummary | null;
   active: boolean;
-  running: number;
 }) {
   const { translate } = useSessionMessages();
   const { t } = useTranslation('messaging');
@@ -450,11 +447,8 @@ const InnerHeadRow = observer(function InnerHeadRow({
     else setComposerVerb(chatId, 'task', '', { name, joinable: true });
     openChatOnScreen(chatId, false);
   };
-  const avatar: ReactNode = anchor.kind === 'project' ? (
-    <ProjectFolderAvatar coverId={rowProjectId ?? chatId} running={running} size={24} />
-  ) : (
-    <GroupHeadAvatar chatId={chatId} summary={summary} />
-  );
+  // #2600 项目群和别的群一样戴群自己的头像(没设 = 成员拼图),❌ 文件夹封面。
+  const avatar: ReactNode = <GroupHeadAvatar chatId={chatId} summary={summary} />;
   return (
     <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => openChatOnScreen(chatId, false)} trailingButtons={2}>
       <InnerHeadActionsMenu label={actionsLabel}>

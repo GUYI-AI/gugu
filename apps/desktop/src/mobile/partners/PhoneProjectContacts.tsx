@@ -14,6 +14,7 @@ import { useContactsStore } from '@/store/contactsContext'
 import { followLink } from '@/lib/guguLinks'
 import { agentName, matchesQuery, projectAgents, projectAgentTarget, type PartnerProject, type ProjectAgent } from './partnersModel'
 import { ProjectFolderAvatar } from './ProjectFolderAvatar'
+import { ChatGroupAvatar } from '@/components/chat/ChatGroupAvatar'
 
 /**
  * 项目通讯录(「伙伴」里点一个项目推进来):页头 返回 · 项目头像 · 项目名;「群」= 项目的群聊这一行,
@@ -71,7 +72,7 @@ export function PhoneProjectContacts({
           <PaneHeader
             mobile
             leading={<PaneBackButton label={t('shell.back')} onBack={onBack} />}
-            title={<h2 className="gg-pane-title gg-partners-head-title"><ProjectFolderAvatar coverId={project.coverId} running={running} size={32} /><span>{project.name}</span></h2>}
+            title={<h2 className="gg-pane-title gg-partners-head-title">{project.chatId ? <ChatGroupAvatar chatId={project.chatId} name={project.name} size={32} /> : <ProjectFolderAvatar coverId={project.coverId} running={running} size={32} />}<span>{project.name}</span></h2>}
             actions={searchButton}
           />
         )}
@@ -80,7 +81,7 @@ export function PhoneProjectContacts({
         <div className="gg-partners-list">
           {showGroup ? <SectionLabel>{t('partners.rooms', { count: 1 })}</SectionLabel> : null}
           {showGroup ? (
-            <ListRow mobile role="button" tabIndex={0} leading={<ProjectFolderAvatar coverId={project.coverId} running={running} />} title={groupLabel} onClick={onOpenGroup} onKeyDown={rowKeyActivate(onOpenGroup)} />
+            <ListRow mobile role="button" tabIndex={0} leading={project.chatId ? <ChatGroupAvatar chatId={project.chatId} name={project.name} size={40} /> : <ProjectFolderAvatar coverId={project.coverId} running={running} />} title={groupLabel} onClick={onOpenGroup} onKeyDown={rowKeyActivate(onOpenGroup)} />
           ) : null}
           {shownAgents.length ? <SectionLabel>{t('partners.agents', { count: shownAgents.length })}</SectionLabel> : null}
           {shownAgents.map((agent) => {

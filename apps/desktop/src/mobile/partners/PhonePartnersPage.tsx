@@ -36,6 +36,7 @@ import { matchesQuery, partnerFriends, partnerGroupAgents, partnerProjects, proj
 import { PhoneNewProjectPage, type CreatedProject } from './PhoneNewProjectPage'
 import { PhoneProjectContacts } from './PhoneProjectContacts'
 import { ProjectFolderAvatar } from './ProjectFolderAvatar'
+import { ChatGroupAvatar } from '@/components/chat/ChatGroupAvatar'
 import './partners.css'
 
 /** 推在「伙伴」首页上的一页:整屏、没有底栏,返回一步回到下面那一页。 */
@@ -259,7 +260,9 @@ export function PhonePartnersPage({
                 const open = () => push({ kind: 'project', key: project.key })
                 return (
                   <ListRow key={project.key} mobile role="button" tabIndex={0} data-testid="phone-partners-project"
-                    leading={<ProjectFolderAvatar coverId={project.coverId} running={runningCount(projectSessions(project, id => sessionsOf(id).sessions, id => sessionsOf(id).hostOnline))} />}
+                    leading={project.chatId
+                      ? <ChatGroupAvatar chatId={project.chatId} name={project.name} size={40} />
+                      : <ProjectFolderAvatar coverId={project.coverId} running={runningCount(projectSessions(project, id => sessionsOf(id).sessions, id => sessionsOf(id).hostOnline))} />}
                     title={project.name} onClick={open} onKeyDown={rowKeyActivate(open)} />
                 )
               })}

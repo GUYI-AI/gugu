@@ -18,7 +18,8 @@ vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [d
   projects: [{ localProjectId: 'project', chatId: 'project-chat', name: 'task-project', rootPath: '/project', createdAt: '2026-11-02T00:00:00Z', folders: [] }],
 })] }) }))
 vi.mock('@/hooks/useAgentDisplayStatus', () => ({ useAgentDisplayStatuses: () => ({ codex: 'error' }) }))
-// The folder badge reads the project's tasks (the desktop project dot's count): one waits for approval.
+// The project group's badge reads the project's tasks (the desktop project dot's count): one waits for approval.
+// #2600 the row keeps the group's own avatar (here the group default) — no folder cover in its place.
 vi.mock('@/session/shared/remote-sessions/session-directory', async original => ({
   ...await original<typeof import('@/session/shared/remote-sessions/session-directory')>(),
   useLiveDeviceSessions: () => ({ host: { projects: [], cached: false, loading: false, error: null, sessions: [
@@ -62,16 +63,16 @@ it.each(['light', 'dark'].flatMap(theme => [360, 390].map(width => ({ theme, wid
     for (const row of rows) expect(row.getBoundingClientRect().width).toBeGreaterThan(300)
     for (const slot of slots) { expect(slot.width).toBe(48); expect(slot.height).toBe(48); expect(slot.x).toBe(slots[0].x) }
     for (const title of titles) expect(title.x).toBe(slots[0].right + 16)
-    const art = rows.map(row => row.querySelector<HTMLElement>('canvas, svg[viewBox="0 0 36 36"], svg.gg-project-avatar')!.getBoundingClientRect())
+    const art = rows.map(row => row.querySelector<HTMLElement>('canvas, svg[viewBox="0 0 36 36"], [data-avatar-empty]')!.getBoundingClientRect())
     art.forEach((rect, i) => {
       expect(rect.width).toBe(48); expect(rect.height).toBe(48)
       expect(rect.x + rect.width / 2).toBe(slots[i].x + slots[i].width / 2)
       expect(rect.y + rect.height / 2).toBe(slots[i].y + slots[i].height / 2)
     })
     const pending = rows[1].querySelector<HTMLElement>('.gg-phone-message-avatar-badge')!.getBoundingClientRect()
-    const folder = rows[2].querySelector<HTMLElement>('.gg-phone-message-avatar-badge')!.getBoundingClientRect()
+    const project = rows[2].querySelector<HTMLElement>('.gg-phone-message-avatar-badge')!.getBoundingClientRect()
     const ordinary = rows[3].querySelector<HTMLElement>('.av-status')!.getBoundingClientRect()
-    for (const [badge, index] of [[pending, 1], [folder, 2], [ordinary, 3]] as const) {
+    for (const [badge, index] of [[pending, 1], [project, 2], [ordinary, 3]] as const) {
       expect(badge.x + badge.width / 2 - slots[index].right).toBe(-5)
       expect(badge.y + badge.height / 2 - slots[index].top).toBe(5)
     }
