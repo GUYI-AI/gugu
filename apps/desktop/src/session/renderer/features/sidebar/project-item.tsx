@@ -67,7 +67,8 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
   projectId: string;
   /**
    * #2548 the sidebar as one list: a project is its project group's conversation row. This one has no group chat yet,
-   * so it is drawn as that row would be (OneListProjectRow: group avatar, name, no preview); same click, same menu.
+   * so it is drawn as that row would be (OneListProjectRow: the project cover, name, no preview); same click, same menu.
+   * The cover is keyed by the merged row's project id, as partnerProjects keys every project group's cover.
    */
   oneList?: boolean;
 }) {
@@ -191,6 +192,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
       <ProjectRowContextMenu disabled={false} chatId={groupChatId} onRemove={removeProject}>
         <OneListProjectRow
           name={projectLabel}
+          coverId={rowId}
           preview=""
           selected={isProjectActive}
           onOpen={openProject}

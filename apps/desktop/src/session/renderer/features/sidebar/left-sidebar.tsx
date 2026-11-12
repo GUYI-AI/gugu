@@ -42,6 +42,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { useNativeConversationChat } from '@/hooks/useNativeConversationChat';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { SidebarOneList } from './sidebar-one-list';
+import { innerSidebarChat } from './inner-sidebar';
 import { ONE_LIST_RAIL_PX, SidebarOneListFoot, SidebarOneListTop } from './sidebar-one-list-chrome';
 
 // 侧栏自上而下:布局 / 折叠 / 搜索 →「项目 | 对话」→ 三行入口 → 置顶 → 列表,两页同一副骨架。
@@ -142,13 +143,15 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   const chatSignals = useSidebarChatSignals();
   const chatsUnread = chatSignals?.chatsUnread ?? 0;
   const projectsUnread = chatSignals ? [...chatSignals.groupUnread.values()].reduce((sum, count) => sum + count, 0) : 0;
-  // 壳画的对话列表要知道:正看着哪条对话(那一行高亮)。
-  const focusedChatId =
+  // 壳画的对话列表要知道:正看着哪条对话(那一行高亮)。#2548 内层侧栏开着时是它那个群 / 项目:点进它里面的一个智能体,
+  // 正文换成那条会话,那一行仍亮着(innerSidebarChat 是 mobx 的 box,这个 observer 读它就跟着变)。
+  const viewedChatId =
     useNativeConversationChat(currentView === 'session'
       ? (appState.navigation.viewParamsStore.session as { sessionId?: string } | undefined)?.sessionId
       : currentView === 'screen' ? screenLayout.recentSession?.sessionId : undefined) ?? (currentView === 'chat'
       ? ((appState.navigation.viewParamsStore.chat as { chatId?: string } | undefined)?.chatId ?? null)
       : null);
+  const focusedChatId = innerSidebarChat.get()?.chatId ?? viewedChatId;
   // 拼在一屏的几组:壳画的「对话」也把同一组的几行并在一处(同「项目」这边)。
   const joinedGroups = sidebarStore.joinedGroups;
   React.useEffect(
@@ -168,8 +171,19 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         'relative flex h-full flex-col bg-background-tertiary text-foreground-tertiary-muted transition-colors',
         (isLeftOpen || oneList) && 'border-r border-border',
         isDragOver && 'bg-background-2 ring-2 ring-inset ring-border-2',
-        // #2548 the rail: every row keeps its avatar where it is; its name, preview, time and count are hidden.
-        railed && '[&_.gg-list-row-body]:invisible'
+        // #2548 one list: a row's text (name, preview, time) and the 「对话」 header follow the open/close progress
+        // (--gg-sidebar-text, workspace-layout: text only in the second half). Its unread count does not fade: on the rail
+        // it sits on the avatar's top-right corner instead (the muted bell stays in the row). The rows narrow with the
+        // sidebar, so the selected background ends the size of the avatar's cell.
+        oneList && [
+          '[&_.gg-list-row-line>:not(.gg-list-row-trailing)]:opacity-(--gg-sidebar-text)',
+          '[&_[data-sidebar-chats-header]]:opacity-(--gg-sidebar-text)',
+        ],
+        railed && [
+          '[&_.gg-list-row-body]:pointer-events-none',
+          '[&_.gg-list-row-trailing]:absolute [&_.gg-list-row-trailing]:top-1 [&_.gg-list-row-trailing]:left-7',
+          '[&_.gg-list-row-trailing>:not(.gg-chip)]:hidden',
+        ]
       )}
       data-sidebar-rail={railed || undefined}
       onDragOver={onDragOver}
@@ -187,7 +201,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
           </span>
         </div>
       )}
-      <SidebarSpace controls={oneList ? 1 : 2} className={railed ? 'invisible' : undefined}><SidebarSearchTrigger /></SidebarSpace>
+      <SidebarSpace controls={oneList ? 1 : 2} className={oneList ? cn('opacity-(--gg-sidebar-text)', railed && 'pointer-events-none') : undefined}><SidebarSearchTrigger /></SidebarSpace>
       <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col" data-notification-original-list="" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
           {oneList && <SidebarOneListTop collapsed={railed} onCreateAgent={handleNewSession} />}
@@ -271,7 +285,8 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
           <div
             ref={setScroller}
             data-region="sidebar-scroll"
-            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+            // #2548 one list: rows scrolling down fade out over the last 24px above the foot instead of being cut off.
+            className={cn('min-h-0 flex-1 overflow-x-hidden overflow-y-auto', oneList && 'mask-b-from-[calc(100%-1.5rem)]')}
           >
             <div ref={setScrollContent}>
               <SidebarScrollContext.Provider value={scrollTargets}>

@@ -713,6 +713,37 @@ describe('SidebarStore keyboard navigation chain', () => {
     sessionRegistry.release('task-nav');
   });
 
+  it('#2548 one list: the chain is New task and the project rows the list draws; the hidden sections are no stations', () => {
+    sessionRegistry.acquire('task-nav', 'project-nav', [
+      session('pinned-one', { isPinned: true }),
+      session('plain-one'),
+    ] as never);
+    const store = new SidebarStore(
+      projectManagerWithSessions([
+        { id: 'project-nav', createdAt: '2026-01-01T00:00:00.000Z', sessionIds: ['task-nav'] },
+      ])
+    );
+    store.ensureProjectExpanded('project-nav');
+    const before = store.navChain;
+
+    store.setOneListProjects(['groupless-a', 'groupless-b']);
+    expect(store.navChain).toEqual([
+      { kind: 'new-session' },
+      { kind: 'project', projectId: 'groupless-a' },
+      { kind: 'project', projectId: 'groupless-b' },
+    ]);
+    // ⌘↓ walks conversation stations only: none here, so the key is left to the one list's own rows (ChatListPanel).
+    expect(store.navChain.some((node) => node.kind === 'conversation')).toBe(false);
+
+    store.setOneListProjects([]);
+    expect(store.navChain).toEqual([{ kind: 'new-session' }]);
+
+    store.setOneListProjects(null);
+    expect(store.navChain).toEqual(before);
+
+    sessionRegistry.release('task-nav');
+  });
+
   it('drops a collapsed Pinned section out of the chain', () => {
     sessionRegistry.acquire('task-nav', 'project-nav', [
       session('pinned-one', { isPinned: true }),

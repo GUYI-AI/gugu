@@ -10,13 +10,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@renderer/lib/ui/dropdown-menu';
+import { MicroLabel } from '@renderer/lib/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
 import { SidebarGroupToggle } from './sidebar-group-toggle';
 import { SidebarUnreadCount } from './sidebar-list-switch';
 import { useSidebarScrollTargets } from './sidebar-scroll-context';
-import { SidebarGroup, sidebarGroupHeaderClass, sidebarHeaderIconButtonClass } from './sidebar-primitives';
+import { SidebarGroup, sidebarGroupHeaderClass, sidebarGroupTitleClass, sidebarHeaderIconButtonClass } from './sidebar-primitives';
 
 // gugu-dev#181「对话」:人、用户群和它们的话题。行是聊天列表那一行原样搬过来(壳那棵树画进这一格),
 // 新建群聊、添加联系人的弹窗也是聊天列表那一套 —— 会话页只转达这两个动作,❌ 在这边另写一份。
@@ -40,12 +41,15 @@ export const shellChatActions = [
 export const SidebarChatsSection = observer(function SidebarChatsSection({
   merged,
   unread,
-  headerless = false,
+  oneList = false,
 }: {
   merged: boolean;
   unread: number;
-  /** #2548 the sidebar as one list: just the list, always open, no 「对话」 header. */
-  headerless?: boolean;
+  /**
+   * #2548 the sidebar as one list: the list is always open, so its 「对话」 header is a plain title with the unread count
+   * (no collapse toggle, no 「+」: the one list's top has it).
+   */
+  oneList?: boolean;
 }) {
   const { translate } = useSessionMessages();
   const { scroller } = useSidebarScrollTargets();
@@ -60,13 +64,21 @@ export const SidebarChatsSection = observer(function SidebarChatsSection({
     if (sidebarStore.chatsCollapsed) sidebarStore.toggleChatsCollapsed();
     scroller.scrollBy({ top: natural - scroller.getBoundingClientRect().top, behavior: 'smooth' });
   };
-  const collapsed = !headerless && sidebarStore.chatsCollapsed;
+  const collapsed = !oneList && sidebarStore.chatsCollapsed;
   const listSlot = useCallback((element: HTMLDivElement | null) => readShellSlots()?.setSlot(CHAT_LIST_SLOT_KEY, element), []);
 
   return (
     <SidebarGroup className="mb-0 flex flex-col" data-sidebar-chats="">
       <div ref={sentinel} aria-hidden="true" />
-      {!headerless && (
+      {oneList && (
+        <div className={sidebarGroupHeaderClass} data-sidebar-chats-header="">
+          <span className="flex items-center gap-1">
+            <MicroLabel className={sidebarGroupTitleClass}>{translate('sidebar.chats')}</MicroLabel>
+            <SidebarUnreadCount count={unread} />
+          </span>
+        </div>
+      )}
+      {!oneList && (
         <div
           ref={header}
           onClickCapture={jumpWhenStuck}

@@ -15,11 +15,25 @@ import { PhoneMessageAvatar } from '../chat/PhoneMessageAvatar'
 
 /**
  * 消息中的项目群沿用项目封面;提醒仅占头像一角,不进伙伴通讯录。
- * 桌面(#2548,开关 interface.desktopSidebarV2):项目行头像右下角挂「我的智能体里有几个在跑」;用户群没有这个数。
+ * 桌面(#2548,开关 interface.desktopSidebarV2):项目行也是项目封面(同一个 ProjectFolderAvatar,侧栏头像位 32),
+ * 头像右下角挂「我的智能体里有几个在跑」;用户群没有这个数,也不换封面。
  */
 export function PhoneProjectChatAvatar({ chat, mobile, children }: { chat: ChatItem; mobile: boolean; children: ReactNode }) {
-  return mobile ? <ProjectChatAvatar chat={chat}>{children}</ProjectChatAvatar> : <ProjectRunningCount chatId={chat.id}>{children}</ProjectRunningCount>
+  return mobile ? <ProjectChatAvatar chat={chat}>{children}</ProjectChatAvatar> : <DesktopProjectChatAvatar chat={chat}>{children}</DesktopProjectChatAvatar>
 }
+
+/** 桌面:项目群换成它的项目封面(哪个项目、哪张封面与手机同一个推导 partnerProjects),封面的鲜明度跟着在跑的数。 */
+function DesktopProjectChatAvatar({ chat, children }: { chat: ChatItem; children: ReactNode }) {
+  const { devices } = useDevicesStore()
+  const project = useMemo(() => (chat.kind === 'group' ? partnerProjects(devices).find((row) => row.chatId === chat.id) : undefined), [devices, chat.kind, chat.id])
+  const running = useMyChatAgentCounts(chat.id)?.running ?? 0
+  return <ProjectRunningCount chatId={chat.id}>
+    {project ? <ProjectFolderAvatar coverId={project.coverId} running={running} size={DESKTOP_ROW_AVATAR_PX} /> : children}
+  </ProjectRunningCount>
+}
+
+/** 桌面会话行的头像位(Avatar size="sm")。 */
+const DESKTOP_ROW_AVATAR_PX = 32
 
 // 角落与引擎角标同一处(.agent-harness-badge:右下,各让出 2px);群头像不挂引擎角标,这一角是空的。
 const RUNNING_AVATAR_STYLE: CSSProperties = { position: 'relative', display: 'inline-flex' }

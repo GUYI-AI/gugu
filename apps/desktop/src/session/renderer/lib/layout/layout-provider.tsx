@@ -42,6 +42,25 @@ function writeStoredSidebarWidth(width: number): void {
   }
 }
 
+/**
+ * 侧栏占位宽:收起宽 + 进度 × (宽 − 收起宽)。收起宽 0 = 今天的 进度 × 宽(usePanelAnimatedSize);#2548 一个列表时收起成
+ * 一列头像,收起宽就是那一列。
+ */
+export function sidebarOccupiedWidth(progress: number, width: number, rail: number): number {
+  return rail + clamp01(progress) * (width - rail);
+}
+
+/**
+ * #2548 收起成一列头像时,侧栏里文字(名字、预览、时间、搜索、分区头)的不透明度,由开合的同一条进度推出:
+ * 只在进度的后一半里有字 —— 收起时字在前一半淡出,展开时在后一半淡入(一个式子两个方向都对)。
+ */
+export function sidebarRailTextOpacity(progress: number): number {
+  return clamp01(2 * progress - 1);
+}
+
+/** 侧栏里文字跟着它淡入淡出的那个 CSS 变量(内容层上设,left-sidebar 里各段文字读)。 */
+export const SIDEBAR_TEXT_OPACITY_VAR = '--gg-sidebar-text';
+
 export interface WorkspaceLayoutContextValue {
   isLeftOpen: boolean;
   /** 侧栏收起后指针停在左缘/开关钮上,浮出的那一份预览。 */
@@ -100,6 +119,8 @@ const WorkspaceLayoutContext = createContext<WorkspaceLayoutContextValue | undef
  * 新的宽度键有自己的默认值,再也不会有"折了回不来"。
  */
 export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
+  // Starts expanded (#2548 「默认展开」). Open / collapsed is not stored, only the width is (SIDEBAR_WIDTH_STORAGE_KEY):
+  // every start is expanded, and a stored width still wins over the default width.
   const [isLeftOpen, setIsLeftOpen] = useState(true);
   const prefersReducedMotion = useReducedMotion();
   const workspaceRootRef = useRef<HTMLDivElement | null>(null);
@@ -112,10 +133,8 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     leftRailWidth.set(px);
     setLeftRailState(px);
   }, [leftRailWidth]);
-  // Same as usePanelAnimatedSize (progress × width), from the rail's width instead of 0.
-  const leftAnimatedWidth = useTransform(
-    [leftProgress, leftWidth, leftRailWidth],
-    ([progress, width, rail]: number[]) => rail + clamp01(progress) * (width - rail)
+  const leftAnimatedWidth = useTransform([leftProgress, leftWidth, leftRailWidth], ([progress, width, rail]: number[]) =>
+    sidebarOccupiedWidth(progress, width, rail)
   );
   const runningAnimationRef = useRef<{ stop: () => void } | null>(null);
 

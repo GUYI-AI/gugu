@@ -1,7 +1,7 @@
 import type { HTMLAttributes, ReactNode } from 'react';
-import { Avatar } from '@/components/Avatar';
 import { Chip } from '@/components/ui/Chip';
 import { ListRow } from '@/components/ui/ListRow';
+import { ProjectFolderAvatar } from '@/mobile/partners/ProjectFolderAvatar';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
 // 项目行的零件:本机项目行(project-item)与别的机器上的项目行(#6264,sidebar-remote-project-item)共用,
@@ -38,15 +38,17 @@ export function ProjectRowTitle({ name, children, keepChildren = false }: { name
 }
 
 /**
- * GUYI-AI/gugu#2548 a project in the sidebar as one list is a conversation row: the chat list's own row (ListRow + the
- * group Avatar at the sidebar size, inside the list's 12px gutter), for the projects that have no project group chat yet
- * and for the sample project. Not a new row: the pieces ChatRow (components/ChatListPanel.tsx) composes, fed without a
- * chat. Two lines like every conversation row; `preview` '' = nothing said yet (the second line stays, empty). The
- * avatar is the group one without a picture or members: these groups have neither yet.
+ * GUYI-AI/gugu#2548 a project in the sidebar as one list is a conversation row: the chat list's own row (ListRow inside
+ * the list's 12px gutter, as ChatRow in components/ChatListPanel.tsx composes it) wearing the project cover
+ * (ProjectFolderAvatar at the sidebar's 32, as every project group row does), for the projects that have no project
+ * group chat yet and for the sample project. Not a new row: those pieces fed without a chat. Two lines like every
+ * conversation row; `preview` '' = nothing said yet (the second line stays, empty).
  */
-export function OneListProjectRow({ name, tag, time, preview, selected, onOpen, ...data }: {
+export function OneListProjectRow({ name, coverId, tag, time, preview, selected, onOpen, ...data }: {
   name: string;
-  /** A chip next to the name (the sample's 「示例」). */
+  /** Whose cover: the project the row stands for. */
+  coverId: string;
+  /** A chip in front of the preview (the sample's 「示例」). */
   tag?: string;
   time?: string;
   preview: string;
@@ -64,11 +66,10 @@ export function OneListProjectRow({ name, tag, time, preview, selected, onOpen, 
         onKeyDown={(event) => {
           if (event.key === 'Enter') onOpen(false);
         }}
-        leading={<Avatar name={name} size="sm" variant="group" />}
+        leading={<ProjectFolderAvatar coverId={coverId} size={32} />}
         title={name}
-        accessory={tag ? <Chip>{tag}</Chip> : undefined}
         meta={time}
-        subtitle={preview}
+        subtitle={tag ? <><Chip>{tag}</Chip>{' '}{preview}</> : preview}
       />
     </div>
   );

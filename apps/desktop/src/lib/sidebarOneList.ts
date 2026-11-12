@@ -134,12 +134,16 @@ export function oneListTail(grouplessProjects: readonly string[], sampleShown: b
   ]
 }
 
-/** The sample project's row: its transcript's last message, as the list shows any conversation's last message. */
-export function sampleProjectLastLine(content: SampleProjectContent): { readonly preview: string; readonly time: string } {
+/**
+ * The sample project's row: its transcript's last message as a group row shows one, `<sender>: <text>`. The sender is
+ * the sample's agent or the person looking at it (`ownerName`, the sample's other member); a task card is always theirs.
+ */
+export function sampleProjectLastLine(content: SampleProjectContent, ownerName: string): { readonly preview: string; readonly time: string } {
   const last = content.messages.at(-1)
   if (!last) throw new Error('the sample project has no messages')
-  if (last.kind !== 'file') return { preview: markdownPlainText(last.text), time: last.time }
+  const sender = last.kind !== 'task' && last.from === 'agent' ? content.agent.name : ownerName
+  if (last.kind !== 'file') return { preview: `${sender}: ${markdownPlainText(last.text)}`, time: last.time }
   const file = content.files.find((entry) => entry.id === last.file)
   if (!file) throw new Error(`the sample project's last message names a file it does not carry: ${last.file}`)
-  return { preview: file.name, time: last.time }
+  return { preview: `${sender}: ${file.name}`, time: last.time }
 }

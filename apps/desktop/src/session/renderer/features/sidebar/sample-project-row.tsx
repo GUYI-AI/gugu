@@ -31,7 +31,7 @@ export const SampleProjectSidebar = observer(function SampleProjectSidebar({ row
   const empty = !rowOnly && sidebarStore.sidebarProjects.length === 0;
   if (rowOnly) {
     return sample.shown && sample.owner ? (
-      <SampleProjectRowMenu userId={sample.owner.id}><OneListSampleRow /></SampleProjectRowMenu>
+      <SampleProjectRowMenu userId={sample.owner.id}><OneListSampleRow ownerName={sample.owner.name} /></SampleProjectRowMenu>
     ) : null;
   }
   return (
@@ -65,18 +65,18 @@ function openSampleProject(beside: boolean): void {
 }
 
 /**
- * #2548 the sample in the one list: the group avatar, its name with 「示例」, and the transcript's last message and its time
- * as the preview, as any project group's row shows its last message. The avatar is the plain group one, without members:
- * the member composite looks every member up in the identity directory (a lookup on the server for the sample agent's
- * made-up id, then an empty tile), and the sample's agent is no account.
+ * #2548 the sample in the one list, as any project group's row: the project cover, its name, then 「示例」 and the
+ * transcript's last message (`<sender>: <text>`) with its time. The cover's colour is keyed by the sample's block kind:
+ * the sample is no local project, so it has no project id of its own.
  */
-const OneListSampleRow = observer(function OneListSampleRow() {
+const OneListSampleRow = observer(function OneListSampleRow({ ownerName }: { ownerName: string }) {
   const { translate, locale } = useSessionMessages();
   const name = translate('projects.sample.name');
-  const { preview, time } = sampleProjectLastLine(sampleProjectContent(locale));
+  const { preview, time } = sampleProjectLastLine(sampleProjectContent(locale), ownerName);
   return (
     <OneListProjectRow
       name={name}
+      coverId="sample-project"
       tag={translate('projects.sample.tag')}
       time={time}
       preview={preview}
