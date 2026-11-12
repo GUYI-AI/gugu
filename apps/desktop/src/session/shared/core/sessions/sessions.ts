@@ -226,6 +226,11 @@ export type Session = {
   runtime?: SessionRuntime;
   /** spec session-page: pinned conversations gather in the sidebar Pinned section. */
   isPinned?: boolean;
+  /**
+   * #2548 固定到左侧栏: a top-level session whose agent lives in a group or project keeps its own row at the top
+   * of the desktop left list. Independent of `isPinned`.
+   */
+  isPinnedToSidebar?: boolean;
   /** Parent conversation for a locally spawned child session; null/absent means a root session. */
   parentSessionId?: string | null;
   /** Conversation that created this session through the session-management MCP. */

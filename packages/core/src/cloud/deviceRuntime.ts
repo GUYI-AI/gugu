@@ -161,6 +161,8 @@ export type DeviceSessionDigestEntry = {
    * ⚠️ 可选：读侧（`normalizeSessionDigest`）要能接住**老宿主写的、没有这几个键**的旧摘要。
    */
   isPinned?: boolean
+  /** #2548 固定到左侧栏;同上,可选。 */
+  isPinnedToSidebar?: boolean
   unseen?: boolean
   parentConversationId?: string | null
   /** 这条会话的 agent id(#7199,见 `DeviceSessionSummary.agentUserId`);宿主还没读到花名册时不带。 */

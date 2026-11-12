@@ -776,6 +776,7 @@ function summaryOf(
     // 更画不出子 agent 的谱系,而桌面侧栏三样都有。口径与 `sessions/utils.ts`
     // 逐字相同,❌ 不在这里另立一套(两套必然漂移)。
     isPinned: session.isPinned === 1,
+    isPinnedToSidebar: session.isPinnedToSidebar === 1,
     unseen: session.agentStatusSeen !== 1,
     parentConversationId: sessionParentId(session),
     spawnedByConversationId: sessionSpawnerId(session),
@@ -1340,7 +1341,7 @@ const sessionsSubscriptions = new Map<string, { stop: () => void }>();
 const SESSIONS_PUSH_DEBOUNCE_MS = 200;
 
 /** 列表上看得见、又不经状态写入者的变化:会话增删、这几格元信息,以及会话给自己排的定时。 */
-const LISTED_FIELDS = ['title', 'isPinned', 'archivedAt', 'parentSessionId', 'nativeUnreadKeys', 'nativeLastMessage', 'nativeOwnerNotificationSeq', 'nativeOwnerNotificationEpoch'];
+const LISTED_FIELDS = ['title', 'isPinned', 'isPinnedToSidebar', 'archivedAt', 'parentSessionId', 'nativeUnreadKeys', 'nativeLastMessage', 'nativeOwnerNotificationSeq', 'nativeOwnerNotificationEpoch'];
 function changesSessionList(channel: string, data: unknown): boolean {
   if (channel === sessionCreatedChannel.name) {
     return true;

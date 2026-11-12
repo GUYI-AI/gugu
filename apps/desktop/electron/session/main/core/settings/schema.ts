@@ -186,6 +186,7 @@ export const interfaceSettingsSchema = z.object({
    * 设置页这一行是反悔的地方(owner 2026-09-23)。
    */
   confirmBeforeCancelAndSend: z.boolean(),
+  desktopSidebarV2: z.boolean(),
 });
 
 export const changesViewModeSchema = z.object({

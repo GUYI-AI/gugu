@@ -16,6 +16,7 @@ import { markSessionSeen } from './markSessionSeen';
 import { renameSession } from './renameSession';
 import { restartSession } from './restart-session';
 import { setSessionPinned } from './setSessionPinned';
+import { setSessionPinnedToSidebar } from './setSessionPinnedToSidebar';
 import { setSessionParent } from './session-family';
 import { switchSessionRuntime } from './switch-session-runtime';
 import { sendMessage } from './sendMessage';
@@ -64,6 +65,7 @@ export const sessionController = createRPCController({
   dehydrateSession,
   renameSession,
   setSessionPinned,
+  setSessionPinnedToSidebar,
   // 人在侧栏把一条会话拖到另一条上 = 挂到它下面:与 agent 的 `session_set_parent` 同一个动作(校验、落库、事件都在
   // setSessionParent 里)。同样在 child 所在的机器上做 —— agent 那边由宿主按 child 的地址转,人这边由会话页按 child 的机器选线。
   setSessionParent,
