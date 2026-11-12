@@ -21,6 +21,9 @@ function sortRoleWeight(role: GroupMemberRole): number {
   return 2
 }
 
+/** How many members a group shows by face: its grid avatar and its share poster. */
+export const GROUP_FACES = 9
+
 export function buildUnifiedMembers(snapshot: GroupCollabSnapshot): UnifiedMember[] {
   const all: UnifiedMember[] = [
     ...snapshot.humans.map((h) => ({ id: h.id, type: 'human' as const, raw: h, role: h.role })),

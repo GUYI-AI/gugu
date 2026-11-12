@@ -14,7 +14,8 @@ export function SubscriptionServiceRow({
   name: string;
   logo: ReactNode;
   badge?: string;
-  identity: ReactNode;
+  /** 缺席 = 状态写在下面那一块「连接」里(#2507:与资源库详情同一块),标题行只有名字。 */
+  identity?: ReactNode;
   action?: ReactNode;
   /** 整行宽度的提示(如切换被拒的原因)。❌ 塞进 `action`:那一列宽度是 auto,长句会把它撑开、把账号列挤没。 */
   notice?: ReactNode;
@@ -32,7 +33,7 @@ export function SubscriptionServiceRow({
           <h3>{name}</h3>
           {badge && <span className="subscription-plan-badge">{badge}</span>}
         </div>
-        <div className="subscription-service-identity">{identity}</div>
+        {identity !== undefined && <div className="subscription-service-identity">{identity}</div>}
       </div>
       <div className="subscription-service-actions">
         {action}

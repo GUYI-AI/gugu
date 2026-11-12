@@ -34,6 +34,8 @@ const {
 } = await import('./harness-connections');
 
 beforeEach(async () => {
+  // 讲得了两种接口的家(pi / opencode)建连接时会探地址:这里的地址都是假的,一律答「没有这个接口」⇒ 用声明的那一种。
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
   state.home = await mkdtemp(join(tmpdir(), 'gugu-api-key-connections-'));
   state.fixture = await openRegistryFixture('empty');
   state.fixture.sqlite.exec(`INSERT INTO projects (id, name, path) VALUES ('project', 'Project', '/repo');
@@ -42,6 +44,7 @@ beforeEach(async () => {
            ('kiro-session', 'project', 'kiro', 'acp', '{"version":"1","type":"acp"}');`);
 });
 afterEach(async () => {
+  vi.unstubAllGlobals();
   state.fixture?.close();
   state.fixture = null;
   await rm(state.home, { recursive: true, force: true });
@@ -61,12 +64,13 @@ it('only Claude, Codex and the agents that declare an API key mapping have conne
 
 it('checks the form against the declaration: no account connections, required address and model, nothing extra', async () => {
   await expect(createHarnessConnection({ providerId: 'qwen', kind: 'account' })).rejects.toThrow('own CLI');
-  await expect(createHarnessConnection({ providerId: 'qwen', kind: 'api-key', apiKey: 'k', model: 'm' })).rejects.toThrow('address is required');
-  await expect(createHarnessConnection({ providerId: 'qwen', kind: 'api-key', apiKey: 'k', endpoint: 'https://g.example/v1' })).rejects.toThrow('model is required');
+  // 没有官方地址可预填的家(antigravity)才会缺地址;qwen 不填 = 官方地址。
+  await expect(createHarnessConnection({ providerId: 'antigravity', kind: 'api-key', apiKey: 'k', models: ['m'] })).rejects.toThrow('address is required');
+  await expect(createHarnessConnection({ providerId: 'qwen', kind: 'api-key', apiKey: 'k', endpoint: 'https://g.example/v1' })).rejects.toThrow('at least one model');
   await expect(createHarnessConnection({ providerId: 'mimocode', kind: 'api-key', apiKey: 'k', endpoint: 'https://g.example' })).rejects.toThrow('official API key');
-  await expect(createHarnessConnection({ providerId: 'dsh', kind: 'api-key', apiKey: 'k', model: 'm' })).rejects.toThrow('no model');
+  await expect(createHarnessConnection({ providerId: 'dsh', kind: 'api-key', apiKey: 'k', models: ['m'] })).rejects.toThrow('no model');
   // Claude / Codex 的 API 连接一如既往:地址可选、没有模型格。
-  await expect(createHarnessConnection({ providerId: 'codex', kind: 'api-key', apiKey: 'k', model: 'm' })).rejects.toThrow('no model');
+  await expect(createHarnessConnection({ providerId: 'codex', kind: 'api-key', apiKey: 'k', models: ['m'] })).rejects.toThrow('no model');
   expect(await createHarnessConnection({ providerId: 'dsh', kind: 'api-key', apiKey: 'k' })).toMatchObject({ kind: 'api-key', name: 'DeepSeek Harness 1' });
 });
 
@@ -80,9 +84,9 @@ it('keeps the key out of the metadata, starts sessions on the selected key, and 
     kind: 'api-key',
     apiKey: 'test-secret',
     endpoint: 'https://gateway.example/v1/',
-    model: 'qwen3-coder-plus',
+    models: ['qwen3-coder-plus'],
   });
-  expect(connection).toMatchObject({ kind: 'api-key', name: 'gateway.example', endpoint: 'https://gateway.example/v1', model: 'qwen3-coder-plus', current: false });
+  expect(connection).toMatchObject({ kind: 'api-key', name: 'gateway.example', endpoint: 'https://gateway.example/v1', models: ['qwen3-coder-plus'], current: false });
   const listed = await listHarnessConnections('qwen');
   expect(listed.map((row) => row.id)).toEqual(['native', connection.id]);
   expect(JSON.stringify(listed)).not.toContain('test-secret');
@@ -105,17 +109,17 @@ it('keeps the key out of the metadata, starts sessions on the selected key, and 
       connectionId: connection.id,
       credentialEnv: { OPENAI_API_KEY: 'test-secret', OPENAI_BASE_URL: 'https://gateway.example/v1', OPENAI_MODEL: 'qwen3-coder-plus' },
       unsetEnv: ['QWEN_OAUTH', 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL', 'QWEN_MODEL'],
-      apiKeyConnection: { endpoint: 'https://gateway.example/v1' },
+      apiKeyConnection: { endpoint: 'https://gateway.example/v1', model: 'qwen3-coder-plus' },
     });
   }
   expect(await sessionHarnessConnectionId('qwen-session')).toBe(connection.id);
   expect(await sessionHarnessConnectionId('kiro-session')).toBe('native');
 
-  await expect(removeHarnessConnection('qwen', connection.id)).rejects.toThrow('Select another');
-  await selectHarnessConnection('qwen', 'native');
-  expect(await resolveHarnessConnection('qwen', { sessionId: 'qwen-session' })).toEqual({});
+  // #2507 只剩这一把 key 也删得掉:删当前连接落回原生,会话照原生起(一个字都不加)。
   await removeHarnessConnection('qwen', connection.id);
-  expect((await listHarnessConnections('qwen')).map((row) => row.id)).toEqual(['native']);
+  expect(await listHarnessConnections('qwen')).toEqual([{ id: 'native', kind: 'native', name: '', current: true, endpoint: undefined }]);
+  expect(await resolveHarnessConnection('qwen', { sessionId: 'qwen-session' })).toEqual({});
+  expect(await sessionHarnessConnectionId('qwen-session')).toBe('native');
 });
 
 it('an official key connection needs no address and still reads as the selected API key', async () => {
@@ -132,8 +136,7 @@ it('an official key connection needs no address and still reads as the selected 
 
 it('a model-injection agent (pi): the key stays out of the spawn env and out of the metadata; the host model resolver gets it', async () => {
   await expect(createHarnessConnection({ providerId: 'pi', kind: 'account' })).rejects.toThrow('own CLI');
-  await expect(createHarnessConnection({ providerId: 'pi', kind: 'api-key', apiKey: 'k', model: 'm' })).rejects.toThrow('address is required');
-  await expect(createHarnessConnection({ providerId: 'pi', kind: 'api-key', apiKey: 'k', endpoint: 'https://g.example/v1' })).rejects.toThrow('model is required');
+  await expect(createHarnessConnection({ providerId: 'pi', kind: 'api-key', apiKey: 'k', endpoint: 'https://g.example/v1' })).rejects.toThrow('at least one model');
   // 原生连接:宿主不造模型声明,起进程一个字都不加。
   expect(await resolveConnectionModel('pi')).toBeNull();
   expect(await resolveHarnessConnection('pi', { sessionId: 'pi-session' })).toEqual({});
@@ -143,7 +146,7 @@ it('a model-injection agent (pi): the key stays out of the spawn env and out of 
     kind: 'api-key',
     apiKey: 'pi-secret',
     endpoint: 'https://gateway.example/v1',
-    model: 'gpt-5.5',
+    models: ['gpt-5.5'],
   });
   expect(
     state.fixture!.sqlite.prepare('SELECT meta FROM provider_accounts').all().map((row) => JSON.stringify(row)).join('')
@@ -163,7 +166,9 @@ it('a model-injection agent (pi): the key stays out of the spawn env and out of 
     name: connection.name,
     endpoint: 'https://gateway.example/v1',
     apiKey: 'pi-secret',
-    model: 'gpt-5.5',
+    models: ['gpt-5.5'],
+    // 假地址两种接口都答 404 ⇒ 探不出来,用 pi 声明的那一种。
+    protocol: 'openai-responses',
   });
   // 只有走模型注入的家才有这一口:qwen 的 key 走它自己的 `launch`。
   expect(await resolveConnectionModel('qwen')).toBeNull();
@@ -180,9 +185,9 @@ it('the host model resolver names the connection by the user’s note when there
     name: '我的 DeepSeek',
     apiKey: 'oc-secret',
     endpoint: 'https://api.deepseek.example/v1',
-    model: 'deepseek-chat',
+    models: ['deepseek-chat'],
   });
   await selectHarnessConnection('opencode', connection.id);
-  expect(await resolveConnectionModel('opencode')).toMatchObject({ name: '我的 DeepSeek', model: 'deepseek-chat' });
+  expect(await resolveConnectionModel('opencode')).toMatchObject({ name: '我的 DeepSeek', models: ['deepseek-chat'] });
   await selectHarnessConnection('opencode', 'native');
 });

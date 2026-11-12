@@ -48,7 +48,7 @@ export type SpecialAuxWindow = {
 }
 
 /**
- * 主窗能换到的页面：应用自己的页面(同一协议、同一 host 和端口：重载、AgentJoinRoute 回首页)。❌ 比 origin:
+ * 主窗能换到的页面：应用自己的页面(同一协议、同一 host 和端口：重载)。❌ 比 origin:
  * `blob:gugu-app://app/…` 的源就是应用的源;主进程的 URL 对 gugu-app: 这种非特殊协议又只给 'null'。
  */
 export function isOwnPage(target: string, current: string): boolean {

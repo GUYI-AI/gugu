@@ -3,7 +3,6 @@ import { act, createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness } from '../../../support/testHarness'
-import { AgentJoinPage } from '../../../../apps/desktop/src/pages/AgentJoinPage'
 import { displayAvatarUrl } from '../../../../apps/desktop/src/lib/dicebearAvatar'
 import { dicebearAvatarDataUri } from '../../../../apps/desktop/src/lib/dicebearAvatar'
 import { Avatar } from '../../../../apps/desktop/src/components/Avatar'
@@ -11,39 +10,6 @@ import { Avatar } from '../../../../apps/desktop/src/components/Avatar'
 //   身份投影 —— 自定义头像逐字，或按稳定 id 生成的默认脸；
 //   非身份 —— 署名文字、显式的模板标记。两者不得互相冒充。
 const GENERATED = 'data:image/svg+xml'
-/** 数整页里生成脸(默认脸 SVG)的总数,用来判断署名行有没有多出一张。agent 自己的头像位是小鸟 canvas,不在这个数里。 */
-function generatedFaceCount(html: string): number {
-  return html.split(GENERATED).length - 1
-}
-function joinPage(ownerAvatar: string | null) {
-  return renderToString(createElement(AgentJoinPage, {
-    agent: {
-      id: 'agent-1',
-      displayName: 'Codex 1',
-      avatar: null,
-      bio: null,
-      ownerDisplayName: '阿力',
-      ownerAvatar,
-    },
-    onStartChat: vi.fn(),
-    onRequireLogin: vi.fn(),
-    isLoggedIn: false,
-  }))
-}
-describe('公开加入页的 owner 行是署名，不是身份投影', () => {
-  it('owner 没有真上传头像时，头像位整个不渲染——不给空圈，也不生成脸', () => {
-    const html = joinPage(null)
-    expect(html, '署名文字仍在').toContain('阿力')
-    // agent 自己的头像位是身份投影:没上传 → 咕咕小鸟(canvas),一只;署名行不得再多出任何一张生成脸。
-    expect(html.split('data-agent-avatar-boring=').length - 1, 'the agent default SVG').toBe(1)
-    expect(generatedFaceCount(html), '署名行不得生成脸').toBe(0)
-    expect(html, '也不得留一个空头像位').not.toContain('data-avatar-empty')
-  })
-  it('owner 真上传过头像时逐字渲染', () => {
-    const uploaded = 'https://db.example/storage/v1/object/public/avatars/owner.png'
-    expect(joinPage(uploaded)).toContain(uploaded)
-  })
-})
 describe('displayAvatarUrl 的口径', () => {
   it('自定义头像原样返回', () => {
     const url = 'https://db.example/storage/v1/object/public/avatars/a.png'
@@ -107,12 +73,5 @@ describe('review3 回归钉', () => {
     }))
     expect(html).toContain('data-avatar-empty')
     expect(html).not.toContain(GENERATED)
-  })
-  it('R3-4 脏哨兵串在署名行也要被诊断，不能因为不渲染头像位就吞掉', () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    errorSpy.mockClear()
-    joinPage('undefined')
-    expect(errorSpy, '公开加入页的 owner 行必须走共享入口并 fail loud').toHaveBeenCalled()
-    errorSpy.mockRestore()
   })
 })

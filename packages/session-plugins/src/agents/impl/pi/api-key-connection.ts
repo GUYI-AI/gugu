@@ -1,3 +1,4 @@
+import { OPENAI_OFFICIAL_ENDPOINT } from '@gugu/session-core/agents/plugins';
 import type { ApiKeyConnectionDescriptor } from '@gugu/session-core/agents/plugins';
 
 /**
@@ -10,6 +11,9 @@ export const piApiKeyConnection = {
   kind: 'supported',
   delivery: 'model-injection',
   endpoint: 'required',
+  officialEndpoint: OPENAI_OFFICIAL_ENDPOINT,
+  // 很多中转只讲 Chat Completions:建连接时宿主按地址探一次(不花 token),探不出来才用上面那一种。
+  protocols: ['openai-responses', 'openai-chat-completions'],
   model: 'required',
   protocol: 'openai-responses',
   evidence:

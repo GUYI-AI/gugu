@@ -14,19 +14,39 @@ import type { SubscriptionPlanReading, SubscriptionUsageReading } from './subscr
  *    也不在这里声明 —— 它们的连接仍走自己那条路。其余家的「账号」= 这家 CLI 自己的登录(`auth`)。
  * ⚠️ 没声明 = 这家没有经核实的「一把 key 怎么进进程」,表单里不出 API Key。❌ 凭「它读 OPENAI_API_KEY」猜。
  */
+const apiKeyConnectionProtocolSchema = z.enum([
+  'anthropic-messages',
+  'openai-responses',
+  'openai-chat-completions',
+  'gemini-generate-content',
+]);
+export type ApiKeyConnectionProtocol = z.infer<typeof apiKeyConnectionProtocolSchema>;
+
 export const apiKeyConnectionDescriptorSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('none') }),
   z
     .object({
       kind: z.literal('supported'),
-      /** 地址:`none` = 只认官方 key;`optional` = 勾「第三方」才填;`required` = 必填。 */
+      /**
+       * 地址(owner 2026-11-12:「地址 + Key 是主体,官方和中转一视同仁,官方也只是一个地址」):
+       * `none` = 只认官方 key、没有地址格;`optional` = 不给地址这家也跑官方;`required` = 这家离了地址起不来。
+       */
       endpoint: z.enum(['none', 'optional', 'required']),
-      /** 模型:`required` = 这家用自定义地址时必须点名一个模型,否则起不来。 */
+      /**
+       * 官方地址:表单里地址格**一开始就填好的值**(「不要让用户填默认地址」)。用户没改它 = 官方 ——
+       * 存的时候不记地址,付款方、连接上那一行、用量处处读作「官方」(见 `apiKeyConnectionEndpoint`)。
+       * 缺席 = 这家没有一个拿这把 key 就能用的官方地址(地址格空着让人填)。
+       */
+      officialEndpoint: z.string().url().optional(),
+      /** 模型:`required` = 这家必须点名模型才起得来;一把连接可以点名好几个(新建任务的模型菜单里都在)。 */
       model: z.enum(['none', 'required']),
-      /** 地址必须讲的接口(表单地址下那一行提示)。有地址就必须写。 */
-      protocol: z
-        .enum(['anthropic-messages', 'openai-responses', 'openai-chat-completions', 'gemini-generate-content'])
-        .optional(),
+      /** 地址讲的接口。有地址就必须写;`protocols` 有好几种时,它是探不出来时用的那一种。 */
+      protocol: apiKeyConnectionProtocolSchema.optional(),
+      /**
+       * 这家的写法讲得了的全部接口(pi 的 `api`、opencode 的 provider 包都能在 Responses 与 Chat Completions 之间换)。
+       * 多于一种 ⇒ 宿主建连接时按地址探一次(不花 token)选一种;缺席 = 只讲 `protocol` 那一种。
+       */
+      protocols: z.array(apiKeyConnectionProtocolSchema).min(1).optional(),
       /**
        * 这把 key 怎么进进程:
        * - `env`(缺省):behavior 的 `launch` 把它落成环境变量 / 参数,叠在平台注入之下。
@@ -44,6 +64,12 @@ export const apiKeyConnectionDescriptorSchema = z.discriminatedUnion('kind', [
       if (value.endpoint !== 'none' && !value.protocol) {
         ctx.addIssue({ code: 'custom', path: ['protocol'], message: 'An endpoint needs the protocol it must speak' });
       }
+      if (value.endpoint === 'none' && value.officialEndpoint) {
+        ctx.addIssue({ code: 'custom', path: ['officialEndpoint'], message: 'An agent without an address field has no address to prefill' });
+      }
+      if (value.protocols && (!value.protocol || !value.protocols.includes(value.protocol))) {
+        ctx.addIssue({ code: 'custom', path: ['protocols'], message: 'The fallback protocol must be one of the protocols this agent speaks' });
+      }
       if (value.delivery === 'model-injection' && (value.endpoint !== 'required' || value.model !== 'required')) {
         ctx.addIssue({
           code: 'custom',
@@ -59,8 +85,9 @@ export type ApiKeyConnectionFields = Extract<ApiKeyConnectionDescriptor, { kind:
 
 export type ApiKeyConnectionInput = {
   apiKey: string;
-  /** 用户填的地址;缺席 = 官方。 */
+  /** 这次要用的地址(用户没改官方地址时,宿主递的是官方地址);缺席 = 这家自己的默认。 */
   endpoint?: string;
+  /** 这次会话跑的那一个模型(连接点名的几个里,会话选中的那个)。 */
   model?: string;
 };
 
@@ -77,6 +104,18 @@ export type IApiKeyConnectionBehavior = {
   /** 纯函数:同样的输入恒得同样的输出,❌ 读环境、读盘。 */
   launch(input: ApiKeyConnectionInput): ApiKeyConnectionLaunch;
 };
+
+/**
+ * Claude / Codex 的 API 连接的官方地址(它们不在这一格声明,连接走自己那条路):表单地址格预填它,
+ * 宿主照它判「官方」。Codex 的地址带 `/v1`(它的 provider `base_url` 就这么写),Claude 是裸根。
+ */
+export const ACCOUNT_PROVIDER_OFFICIAL_ENDPOINTS: Readonly<Record<string, string>> = {
+  claude: 'https://api.anthropic.com',
+  codex: 'https://api.openai.com/v1',
+};
+
+/** OpenAI 的官方地址:讲 OpenAI 接口(Responses / Chat Completions)的家,地址格预填它。 */
+export const OPENAI_OFFICIAL_ENDPOINT = 'https://api.openai.com/v1';
 
 /** 这一家的 API Key 经宿主造的模型声明进进程(见 `delivery`)。 */
 export function apiKeyConnectionInjectsModel(descriptor: ApiKeyConnectionDescriptor | undefined): boolean {
@@ -97,13 +136,42 @@ export const apiKeyConnectionCapability = definePluginCapability<IApiKeyConnecti
  */
 export function apiKeyConnectionInputError(
   fields: Pick<ApiKeyConnectionFields, 'endpoint' | 'model'>,
-  input: { endpoint?: string; model?: string }
+  input: { endpoint?: string; models?: readonly string[] }
 ): string | null {
   if (fields.endpoint === 'none' && input.endpoint) return 'This agent only takes its official API key; it has no address field';
   if (fields.endpoint === 'required' && !input.endpoint) return 'An API address is required';
-  if (fields.model === 'none' && input.model) return 'This agent takes no model with its API key';
-  if (fields.model === 'required' && !input.model) return 'A model is required';
+  if (fields.model === 'none' && input.models?.length) return 'This agent takes no model with its API key';
+  if (fields.model === 'required' && !input.models?.length) return 'Pick at least one model';
   return null;
+}
+
+/** 地址比较:去掉结尾的 `/`,协议与主机不分大小写(`https://API.openai.com/v1/` 就是官方那一个)。 */
+function sameEndpoint(a: string, b: string): boolean {
+  const normal = (value: string) => {
+    const trimmed = value.trim().replace(/\/+$/, '');
+    try {
+      const url = new URL(trimmed);
+      return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, '')}`.toLowerCase();
+    } catch {
+      return trimmed.toLowerCase();
+    }
+  };
+  return normal(a) === normal(b);
+}
+
+/**
+ * 一把连接**记下来**的地址:空着、或就是这家的官方地址 ⇒ 不记(undefined = 官方)。
+ * 「官方」于是只有一种写法,付款方、连接那一行、用量都照「没有地址」读作官方,❌ 读成「自定义服务」。
+ * 读旧数据时也过一遍:修改前存进去的官方地址照样读作官方。
+ */
+export function apiKeyConnectionEndpoint(
+  fields: Pick<ApiKeyConnectionFields, 'officialEndpoint'>,
+  endpoint: string | undefined
+): string | undefined {
+  const value = endpoint?.trim().replace(/\/+$/, '');
+  if (!value) return undefined;
+  if (fields.officialEndpoint && sameEndpoint(value, fields.officialEndpoint)) return undefined;
+  return value;
 }
 
 /** 选中的是 API Key 连接时「订阅」那一格的读数:谁付钱一目了然,❌ 去读 CLI 自己的文件说「未登录」。 */

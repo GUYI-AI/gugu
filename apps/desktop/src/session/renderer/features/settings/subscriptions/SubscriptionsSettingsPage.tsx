@@ -1,18 +1,20 @@
 import { officialServicesEnabled } from '@gugu/core/cloud/optionalServices';
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query';
 import { observer } from 'mobx-react-lite';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { SubscriptionUsageReading, SubscriptionUsageWindow } from '@gugu/session-core/agents/plugins';
 import { SettingsGroup, SettingsNote, SettingsPage } from '@/components/settings/SettingsPrimitives';
 import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/library/library-host';
 import { useSelectedRemoteDevice } from '@renderer/features/remote-hosts/device-scope-picker';
 import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store';
-import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
-import { useAgentSignIn } from '@renderer/features/settings/agents-page/use-agent-sign-in';
+import { AgentConnectionDetails } from '@renderer/features/settings/agents-page/AgentConnectionDetails';
+import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
+import { compareAgents, isInstalledAgent } from '@renderer/features/settings/agents-page/agent-order';
 import { refreshSpendingPower } from '@/lib/billing';
 import { GuguSubscriptionRow } from './GuguSubscriptionRow';
 import { SubscriptionServiceRow } from './SubscriptionServiceRow';
-import { SubscriptionConnections, useSubscriptionConnections, type SwitchNotice } from './SubscriptionConnections';
+import { useListedConnections } from './listed-connections';
+import { useConnectionStatus } from './connection-status';
 import './subscriptions.css';
 import { AppIcon } from '@renderer/lib/components/app-icon';
 import { PageHeader } from '@renderer/lib/components/page-header';
@@ -20,25 +22,18 @@ import { rpc } from '@renderer/lib/ipc';
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { agentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload';
-import { NEARLY_USED_PERCENT, payerLine, planNotes, quotaReading, unavailableText, windowLabel } from './subscription-view';
-import {
-  errorText,
-  readUsage,
-  SUBSCRIPTION_STALE_MS,
-  subscriptionKey,
-  useSubscriptionPlan,
-} from './subscription-queries';
+import type { AgentPayload } from '@shared/core/agents/agent-payload';
+import { NEARLY_USED_PERCENT, planNotes, quotaReading, unavailableText, windowLabel } from './subscription-view';
+import { errorText, readUsage, SUBSCRIPTION_STALE_MS, subscriptionKey } from './subscription-queries';
 
 /**
  * 设置「订阅」页(product spec,owner 2026-10-13 定单开一页):这台电脑(或选中的那台机器)上
  * 装着的每家 Harness,用户自己买的套餐与这一期还剩多少。读数在那台机器的 agent-config worker 里跑
- * (`readSubscription` / `readSubscriptionUsage`),与「账号」那一行的登录读数同一套 CLI 与凭据。
+ * (`readSubscription` / `readSubscriptionUsage`),与资源库详情「连接」那一块同一套 CLI 与凭据。
  *
  * 打开页面读取当前连接的额度，页首刷新重问。每条读数按设备和连接分开缓存。
+ * 列哪几家、什么顺序 = 资源库「已安装」那一组(`agent-order.ts`,#2507);没装的家只在资源库里。
  */
-const RECOMMENDED_IDS = new Set(['claude', 'codex', 'antigravity']);
-
 export const SubscriptionsSettingsPage = observer(function SubscriptionsSettingsPage() {
   const { translate } = useSessionMessages();
   const selected = useSelectedRemoteDevice(settingsDeviceStore);
@@ -79,17 +74,7 @@ function SubscriptionRefresh({ machine }: { machine: string | null }) {
 function SubscriptionList({ machine }: { machine: string | null }) {
   const { translate } = useSessionMessages();
   const { data: agents, error, isPending } = useManagementAgents();
-  const installed = useMemo(
-    () =>
-      (agents ?? [])
-        .filter((agent) => agent.reading !== 'not-detected')
-        .sort(
-          (a, b) =>
-            Number(RECOMMENDED_IDS.has(b.id)) - Number(RECOMMENDED_IDS.has(a.id)) ||
-            a.name.localeCompare(b.name)
-        ),
-    [agents]
-  );
+  const installed = useMemo(() => (agents ?? []).filter(isInstalledAgent).sort(compareAgents), [agents]);
   return (
     <SettingsGroup
       footer={<SettingsNote>{translate('subscriptions.connections.hint')}</SettingsNote>}
@@ -112,16 +97,11 @@ function SubscriptionList({ machine }: { machine: string | null }) {
 
 function SubscriptionRow({ agent, machine }: { agent: AgentPayload; machine: string | null }) {
   const { translate, locale } = useSessionMessages();
-  const [switchNotice, setSwitchNotice] = useState<SwitchNotice | null>(null);
-  const connections = useSubscriptionConnections(machine, agent);
-  // 有连接的家:Claude / Codex(账号 + API Key),以及声明了 API Key 连接的家(#2507)。
-  const connectionForm = agentConnectionForm(agent);
-  const manageable = connectionForm !== null;
-  const currentConnection = connections.data?.find((connection) => connection.current);
-  const hasNoConnections = connections.isSuccess && connections.data.length === 0;
+  // 有「连接」一块的家:状态、当前连接、添加连接都画在那一块里,与资源库详情同一块(#2507)。
+  const offered = agentOffersConnections(agent);
+  const { listed } = useListedConnections(machine, agent);
+  const { identity, badge, plan, ready, currentConnection, connections } = useConnectionStatus(machine, agent);
   const connectionId = currentConnection?.id;
-  const ready = !manageable || !!currentConnection;
-  const plan = useSubscriptionPlan(machine, agent.id, connectionId, ready);
   const usage = useQuery({
     queryKey: subscriptionKey(machine, agent.id, 'usage', connectionId),
     queryFn: () => readUsage(machine, agent.id, false, connectionId),
@@ -130,77 +110,30 @@ function SubscriptionRow({ agent, machine }: { agent: AgentPayload; machine: str
     enabled: ready,
     refetchOnWindowFocus: false,
   });
-  const { auth } = useAgentAuthStatus(agent.id, undefined, { machine });
 
   const formatDateTime = (epochMs: number) => formatWhen(epochMs, locale);
-  const description = plan.data
-    ? payerLine(plan.data, translate, false)
-    : plan.error
-      ? translate('subscriptions.unavailable.error', { message: errorText(plan.error) })
-      : translate('subscriptions.checking');
   const notes = plan.data ? planNotes(plan.data, translate, (at) => formatDate(at, locale)) : [];
-  /**
-   * 没登录 ⇒ 这一行右侧就是「登录」,点了打开与资源库同一个登录窗口(#2507)。
-   * 读数由上面那一探给(`useAgentAuthStatus`),这里只订阅、❌ 再起一次探测。
-   * 没有可登录方法的家不给入口(`signIn.row` 为 null),❌ 指向一个登不了的地方(subscriptions.md)。
-   * 有 API Key 连接的家:这一格只属于「现有 CLI 配置」(这家 CLI 自己的登录);选中的是 API Key 连接时不给。
-   * Claude / Codex 的账号登录在连接菜单里,这里不摆。
-   */
-  const signIn = useAgentSignIn(agent, { probe: false });
-  const signInAction = !connectionForm?.accounts && currentConnection?.kind !== 'api-key'
-    && plan.data?.payer === 'not-signed-in' && signIn.row ? (
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={!signIn.row.canSignIn}
-      onClick={signIn.openSignIn}
-      data-testid={`subscription-sign-in-${agent.id}`}
-    >
-      {translate('agentsPage.accountSignIn')}
-    </Button>
-  ) : undefined;
   const reading = quotaReading(plan.data, usage.data);
-  const connectionsAction = (
-    <SubscriptionConnections agent={agent} machine={machine} onError={setSwitchNotice}
-      addDirectly={hasNoConnections}
-      label={hasNoConnections ? translate('subscriptions.connections.add') : undefined}
-    />
-  );
 
   return (
     <SubscriptionServiceRow
       testId={`subscription-row-${agent.id}`}
       logo={<AppIcon id={agent.id} size={24} />}
       name={agent.name}
-      badge={plan.data?.plan ?? (plan.data?.payer === 'api-key' || plan.data?.payer === 'custom-endpoint' ? 'API' : undefined)}
-      identity={
-        auth?.status.kind === 'unauthenticated' && auth.status.reason === 'expired'
-          ? translate('subscriptions.connections.expired')
-          : currentConnection?.kind === 'api-key'
-            ? currentConnection.name || description
-            : auth?.status.kind === 'authenticated' && auth.status.account ? auth.status.account : description
-      }
+      {...(offered ? {} : { badge, identity })}
       scope={
-        manageable && connections.data
-          ? translate('subscriptions.connections.count', { count: connections.data.length })
+        offered && listed
+          ? translate('subscriptions.connections.count', { count: listed.length })
           : translate('subscriptions.connections.device')
       }
-      action={manageable ? (
-        // 「登录」(这家 CLI 自己的那份)与「切换连接」并排一行;Claude / Codex 没有这一格,原样只有连接菜单。
-        signInAction ? (
-          <div className="flex items-center gap-1">
-            {signInAction}
-            {connectionsAction}
-          </div>
-        ) : connectionsAction
-      ) : signInAction}
-      notice={switchNotice ? <SwitchNoticeLine notice={switchNotice} /> : undefined}
     >
+      {offered && <AgentConnectionDetails agent={agent} machine={machine} embedded />}
       <UsageBlock
         agentId={agent.id}
         reading={reading}
         pending={ready ? usage.isPending : connections.isPending}
-        error={connections.error ?? usage.error}
+        // 连接读不出由上面那一块说(与资源库详情同一处),这里只说额度。
+        error={offered ? usage.error : (connections.error ?? usage.error)}
         formatDateTime={formatDateTime}
       />
       {(notes.length > 0 || reading?.kind === 'windows') && <div className="subscription-reading-footer">
@@ -208,37 +141,6 @@ function SubscriptionRow({ agent, machine }: { agent: AgentPayload; machine: str
         {reading?.kind === 'windows' && <span data-testid={`subscription-read-at-${agent.id}`}>{formatAgo(reading.readAt, locale)}</span>}
       </div>}
     </SubscriptionServiceRow>
-  );
-}
-
-/** 被拒(有会话正在工作)是平常事,用安静的字色说,旁边给一键「关掉并切换」;真出错才红。 */
-function SwitchNoticeLine({ notice }: { notice: SwitchNotice }) {
-  const { translate } = useSessionMessages();
-  if (notice.tone !== 'gentle') return <p className="subscription-error" role="alert">{notice.text}</p>;
-  if (notice.progress !== undefined) {
-    const { closed, total } = notice.progress ?? { closed: 0, total: 0 };
-    return (
-      <div className="subscription-switch-progress" role="status">
-        <div className="subscription-quota-label">
-          <span>{notice.text}</span>
-          {total > 0 && <span data-testid="subscription-close-progress-count">{closed} / {total}</span>}
-        </div>
-        <div className="subscription-meter" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={closed}
-          data-testid="subscription-close-progress">
-          <i style={{ width: total > 0 ? `${(closed / total) * 100}%` : '0%' }} />
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="subscription-switch-refusal">
-      <p className="subscription-note" role="status">{notice.text}</p>
-      {notice.closeAndSwitch && (
-        <Button variant="outline" size="sm" data-testid="subscription-close-and-switch" onClick={notice.closeAndSwitch}>
-          {translate('subscriptions.connections.closeAndSwitch')}
-        </Button>
-      )}
-    </div>
   );
 }
 

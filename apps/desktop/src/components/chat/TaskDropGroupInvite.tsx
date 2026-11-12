@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
+import type { GroupChatSettings, GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
 import { chatService } from '../../lib/chat'
 import { groupInviteAccess, isProjectGroupChat } from '../../lib/groupMemberPermissions'
 import { groupJoinError } from '../../lib/groupAgentJoinService'
@@ -13,7 +13,7 @@ export function TaskDropGroupInvite({ chatId, agentId, onClose }: {
   chatId: string; agentId: string; onClose: () => void
 }) {
   const { t } = useTranslation('messaging')
-  const [group, setGroup] = useState<{ snapshot: GroupCollabSnapshot; canInviteHumans: boolean } | null>(null)
+  const [group, setGroup] = useState<{ snapshot: GroupCollabSnapshot; settings: GroupChatSettings; canInviteHumans: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const projectGroup = isProjectGroupChat(chatId)
   useEffect(() => {
@@ -22,7 +22,7 @@ export function TaskDropGroupInvite({ chatId, agentId, onClose }: {
       const { snapshot } = await chatService.getGroupCollab(chatId)
       const settings = await chatService.getGroupChatSettings(chatId)
       if (!settings.my_role) throw new Error('actor_not_member')
-      if (active) setGroup({ snapshot, canInviteHumans: groupInviteAccess(chatId, 'group', settings).canInviteHumans })
+      if (active) setGroup({ snapshot, settings, canInviteHumans: groupInviteAccess(chatId, 'group', settings).canInviteHumans })
     })().catch((reason: Error) => { if (active) setError(groupJoinError(reason).message) })
     return () => { active = false }
   }, [chatId, projectGroup, t])
@@ -32,7 +32,7 @@ export function TaskDropGroupInvite({ chatId, agentId, onClose }: {
       <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
     </div>
   </Sheet>
-  return <AddGroupMembers chatId={chatId} snapshot={group.snapshot} canInviteHumans={group.canInviteHumans}
+  return <AddGroupMembers chatId={chatId} snapshot={group.snapshot} settings={group.settings} canInviteHumans={group.canInviteHumans}
     humanDeniedHint={projectGroup ? t('group.projectGroupNoInvite') : undefined} initialSelectedIds={[agentId]} onClose={onClose}
     onReload={async () => {
       const { snapshot } = await chatService.getGroupCollab(chatId)

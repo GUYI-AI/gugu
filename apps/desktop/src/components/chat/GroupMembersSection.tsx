@@ -1,17 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { CSSProperties, ReactNode } from 'react'
-import { buildGroupInviteShareUrl } from '../../lib/groupInviteShareUrl'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import type { ChatItem, GroupCollabSnapshot, NotificationLevel } from '@gugu/core/shared/types/chat'
-import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import { GroupNameRow } from './GroupNameRow'
 import { Avatar } from '../Avatar'
 import { Button } from '../ui/Button'
-import { displayAvatarUrl } from '../../lib/dicebearAvatar'
-import { useAgentLookPostersVersion } from '../agentAvatar/posters'
-import { SharePosterDialog } from '../SharePosterDialog'
-import { buildUnifiedMembers } from './groupMemberModels'
+import { buildUnifiedMembers, GROUP_FACES } from './groupMemberModels'
 import { chatService } from '../../lib/chat'
 import { useGroupAvatarUpload } from './useGroupAvatarUpload'
 import { useChatStore } from '../../store/chatContext'
@@ -21,7 +16,7 @@ import { MemberListPanel, type MemberListPanelProps } from './MemberListPanel'
 import { AnnouncementDrawer } from './AnnouncementDrawer'
 import { groupRoleRevision, useGroupChatSettings, type GroupChatSettingsState } from './useGroupChatSettings'
 import { useSettingsPages } from './useSettingsPages'
-import { MemberInviteLink, SettingsNavRow, SettingsPageFrame, SettingsPageHead } from './groupSettingsUi'
+import { SettingsNavRow, SettingsPageFrame, SettingsPageHead } from './groupSettingsUi'
 import {
   settingsBodyStyle,
   settingsErrorStyle,
@@ -122,23 +117,15 @@ export function GroupMembersSection({
   const { avatarUploading, handleAvatarFile } = useGroupAvatarUpload({ chatId, viewerIsManager, setAvatarUrl, setActionError })
   const [avatarDragOver, setAvatarDragOver] = useState(false)
   const avatarInputRef = useRef<HTMLInputElement>(null)
-  const [showSharePoster, setShowSharePoster] = useState(false)
   const [draft, setDraft] = useState('')
 
   const unifiedMembers = useMemo(() => buildUnifiedMembers(snapshot), [snapshot])
   const totalMembers = snapshot.humans.length + snapshot.agents.length
-  const inviteLink = useMemo(
-    () => buildGroupInviteShareUrl(settings?.public_id ?? null, settings?.join_token ?? null),
-    [settings?.public_id, settings?.join_token],
-  )
   // @@@1461-gap3 群头像组合只用成员已有的 canonical URL,与聊天列表群项同口径。
   const groupAvatarMembers = useMemo(
-    () => unifiedMembers.slice(0, 9).map((m) => ({ id: m.id, name: identitiesById[m.id]?.display_name ?? '', avatar: identitiesById[m.id]?.avatar ?? null })),
+    () => unifiedMembers.slice(0, GROUP_FACES).map((m) => ({ id: m.id, name: identitiesById[m.id]?.display_name ?? '', avatar: identitiesById[m.id]?.avatar ?? null })),
     [identitiesById, unifiedMembers],
   )
-  // @@@445/#2470 海报 canvas 不走 React Avatar → 按同一口径预解析成员头像;小鸟的定格画好了会重渲染,这里跟着重读(海报按 URL 串判变)。
-  useAgentLookPostersVersion()
-  const posterMemberUrls = groupAvatarMembers.map((m) => identitiesById[m.id] ? displayAvatarUrl(m.avatar, m.id, `poster member "${m.name || m.id}"`, identitiesById[m.id].type) : null)
 
   // @@@2070 群名就地编辑:只写 name。写失败要抛给 GroupNameInlineEdit —— 它据此留在编辑态并标出失败,
   // ❌ 当作改好了把输入框关掉(原因已由 update 放进错误行)。
@@ -203,9 +190,7 @@ export function GroupMembersSection({
             chatId={chatId}
             settings={settings}
             totalMembers={totalMembers}
-            inviteLink={inviteLink}
             onUpdate={update}
-            onOpenPoster={() => setShowSharePoster(true)}
           />
           {errorLine}
         </div>
@@ -287,8 +272,6 @@ export function GroupMembersSection({
           <SettingsNavRow title={t('header.announcement')} testId="group-settings-announcement" onClick={() => push('announcement')} />
           <SettingsNavRow title={t('group.settings.rules')} testId="group-settings-rules" value={settings ? firstLine(settings.group_prompt) ?? t('group.settings.rulesUnset') : undefined} onClick={() => openTextPage('rules')} />
           <SettingsNavRow title={t('group.settings.description')} testId="group-settings-description" value={settings ? firstLine(settings.description) ?? t('group.settings.descriptionUnset') : undefined} onClick={() => openTextPage('description')} />
-          {/* 邀请链接本身所有成员都能分享;管理者在「群管理」里看到同一块(连同开关)。 */}
-          <MemberInviteLink chatId={chatId} inviteLink={!viewerIsManager && settings?.invite_link_enabled ? inviteLink : null} onOpenPoster={() => setShowSharePoster(true)} />
           {viewerIsManager && settings ? (
             <SettingsNavRow title={t('group.settings.manage')} testId="group-settings-manage" onClick={() => push('manage')} />
           ) : null}
@@ -327,22 +310,5 @@ export function GroupMembersSection({
     )
   }
 
-  return (
-    <>
-      <SettingsPageFrame page={page}>{content}</SettingsPageFrame>
-      {/* @@@445 群邀请海报;guard 含 invite_link_enabled:开关关掉时链接对加入无效,别让海报带死 QR。 */}
-      {showSharePoster && settings?.invite_link_enabled && inviteLink ? (
-        <SharePosterDialog
-          title={resolveOrLoud(groupName, 'group share poster title')}
-          subtitle={t('group.settings.posterSubtitle', { count: totalMembers })}
-          qrValue={inviteLink}
-          memberAvatarUrls={posterMemberUrls}
-          totalMemberCount={totalMembers}
-          qrCaption={t('group.settings.posterQrCaption')}
-          ctaText={t('group.settings.posterCta')}
-          onClose={() => setShowSharePoster(false)}
-        />
-      ) : null}
-    </>
-  )
+  return <SettingsPageFrame page={page}>{content}</SettingsPageFrame>
 }

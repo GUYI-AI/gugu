@@ -1,3 +1,4 @@
+import { OPENAI_OFFICIAL_ENDPOINT } from '@gugu/session-core/agents/plugins';
 import type { ApiKeyConnectionDescriptor } from '@gugu/session-core/agents/plugins';
 
 /**
@@ -10,6 +11,7 @@ export const codebuddyApiKeyConnection = {
   kind: 'supported',
   delivery: 'model-injection',
   endpoint: 'required',
+  officialEndpoint: OPENAI_OFFICIAL_ENDPOINT,
   model: 'required',
   protocol: 'openai-chat-completions',
   evidence:

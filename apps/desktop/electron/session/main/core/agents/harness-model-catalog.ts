@@ -179,10 +179,11 @@ export type HarnessCatalogState =
     efforts: HarnessModelChoice[];
     selectedEffort: string | null;
     /**
-     * 这份目录照一把 API Key 连接读(#2507)时:连接的模型在这家目录里的 id(这家自己的写法)。它在 `models` 里的
-     * 名字已经是裸模型名;活会话报的清单里同一个 id 就是同一条,输入框照这里叫它。不是连接的目录 = 缺席。
+     * 这份目录照一把 API Key 连接读(#2507)时:连接勾选的每个模型在这家目录里的 id(这家自己的写法,起步模型在前)。
+     * 它们在 `models` 里的名字已经是裸模型名;活会话报的清单里同一个 id 就是同一条,输入框与 chip 照这里叫它。
+     * 不是连接的目录 = 缺席。
      */
-    connectionModel?: string;
+    connectionModels?: string[];
   }
   /** harness 没装（起不来）。界面引导安装。 */
   | { kind: 'not-installed' }
@@ -263,9 +264,10 @@ export type ProbePlatformCredentials = {
    * 只有连接那一趟给(#2507):这条会话跑的模型(按这家目录的叫法)。目录里没报它就补上,并选中它;
    * `only` = 这家把任何模型的请求都送到连接地址,别的名字选了也是错的 ⇒ 清单只留它。
    */
-  sessionModel?: { id: string; only: boolean };
-  /** 只有连接那一趟给(#2507):连接的模型在输入框里叫什么 —— 只叫模型名(见 `withConnectionModelName`)。 */
-  modelName?: string;
+  /** `others`:连接点名的其余模型(#2507,一把连接可以点名好几个);`only` 时清单就是 id + others。 */
+  sessionModel?: { id: string; only: boolean; others?: readonly string[] };
+  /** 只有连接那一趟给(#2507):连接勾选的模型(起步模型在前),输入框里只叫模型名(见 `withConnectionModelNames`)。 */
+  modelNames?: readonly string[];
 };
 
 /**
@@ -949,7 +951,7 @@ export async function probeHarnessModelCatalog(
     const connection = await resolveProbeConnectionModel(pluginId, connectionScratch);
     if (connection) {
       const read = withSessionModel(await probeOnce(pluginId, leg, connection, model), connection.sessionModel);
-      return withConnectionModelName(read, connection.modelName);
+      return withConnectionModelNames(read, connection.modelNames);
     }
   } finally {
     await rm(connectionScratch, { recursive: true, force: true });
@@ -979,30 +981,50 @@ export async function probeHarnessModelCatalog(
   }
 }
 
-/** 连接那一趟:会话跑的模型这家目录里没报(CodeBuddy 只报自家目录)⇒ 补上并选中;`only` 时清单只留它。 */
+/**
+ * 连接那一趟:会话跑的模型这家目录里没报(CodeBuddy 只报自家目录)⇒ 补上并选中;`only` 时清单只留连接勾选的那几个。
+ * `only` 的家(key 与模型经环境变量 / 设置文档进进程)这一趟要是读成「要登录」,菜单照样是这几个:跑会话的是这把 key,
+ * 不是这家自己的登录(档位说不出就空着)。
+ */
 function withSessionModel(state: HarnessCatalogState, sessionModel: ProbePlatformCredentials['sessionModel']): HarnessCatalogState {
+  if (sessionModel?.only && state.kind === 'auth-required') {
+    return withSessionModel(
+      { kind: 'ready', models: [], selected: null, efforts: state.efforts, selectedEffort: state.selectedEffort },
+      sessionModel
+    );
+  }
   if (!sessionModel || state.kind !== 'ready') return state;
-  const listed = state.models.find((choice) => choice.id === sessionModel.id) ?? { id: sessionModel.id, name: sessionModel.id };
-  const others = sessionModel.only ? [] : state.models.filter((choice) => choice.id !== sessionModel.id);
-  return { ...state, models: [listed, ...others], selected: sessionModel.id };
+  const entry = (id: string) => state.models.find((choice) => choice.id === id) ?? { id, name: id };
+  const named = [sessionModel.id, ...(sessionModel.others ?? []).filter((id) => id !== sessionModel.id)];
+  const others = sessionModel.only ? [] : state.models.filter((choice) => !named.includes(choice.id));
+  return { ...state, models: [...named.map(entry), ...others], selected: sessionModel.id };
 }
 
 /**
- * 连接那一趟:连接的模型在输入框里只叫模型名(#2507)。pi / opencode 报的名字带提供方(`<provider>/<model>`),
- * 提供方是这把连接 —— 用户在连接那一格已经选过它,❌ 在每条模型上再念一遍(更 ❌ 念成「Gugu 平台额度」)。
+ * 连接那一趟:连接勾选的**每个**模型在输入框里只叫模型名(#2507,spec「菜单里只写模型名;这一家自己的界面里,
+ * 提供方写连接的名字」)。pi / opencode 报的名字带提供方(`<provider>/<model>`),提供方是这把连接 —— 用户在连接那一格
+ * 已经选过它,❌ 在每条模型上再念一遍(更 ❌ 念成「Gugu 平台额度」)。
  *
- * 认哪一条:这家**自己报的当前选中**。连接那份配置在同一份文档里声明这个模型、并把它设成启动模型,按构造选中的就是它;
- * ❌ 按前缀 / 名字的字符串去猜哪条是它。这家没报选中(或选中的不在清单里)⇒ 不改名,原样。
- * 记下这条的 id(`connectionModel`):活会话报的清单里同一个 id 就是同一条,输入框照这里的名字叫它(`ownModelTierOptions`)。
+ * 认哪几条:先认这家**自己报的当前选中** —— 连接那份配置把起步模型(`modelNames[0]`)设成启动模型,按构造选中的就是它。
+ * 它的 id 就是「这家的写法 + 起步模型名」,写法(`<provider>/`,或什么都不加)从这一条里取出来,其余模型的 id 照同一个写法
+ * 一一对上;❌ 在别的条目上按前缀猜。这家没报选中、或选中的那条不是起步模型 ⇒ 不改名,原样。
+ * 记下这几条的 id(`connectionModels`):活会话报的清单里同一个 id 就是同一条,输入框照这里的名字叫它(`ownModelTierOptions`)。
  */
-function withConnectionModelName(state: HarnessCatalogState, modelName: string | undefined): HarnessCatalogState {
-  if (!modelName || state.kind !== 'ready' || state.selected === null) return state;
-  const id = state.selected;
-  if (!state.models.some((choice) => choice.id === id)) return state;
+function withConnectionModelNames(state: HarnessCatalogState, modelNames: readonly string[] | undefined): HarnessCatalogState {
+  const start = modelNames?.[0];
+  if (!start || state.kind !== 'ready' || state.selected === null) return state;
+  const selected = state.selected;
+  if (!state.models.some((choice) => choice.id === selected) || !selected.endsWith(start)) return state;
+  const writing = selected.slice(0, selected.length - start.length);
+  const named = new Map(modelNames.map((name) => [`${writing}${name}`, name] as const));
+  const connectionModels = [...named.keys()].filter((id) => state.models.some((choice) => choice.id === id));
   return {
     ...state,
-    models: state.models.map((choice) => (choice.id === id ? { ...choice, name: modelName } : choice)),
-    connectionModel: id,
+    models: state.models.map((choice) => {
+      const name = named.get(choice.id);
+      return name ? { ...choice, name } : choice;
+    }),
+    connectionModels,
   };
 }
 

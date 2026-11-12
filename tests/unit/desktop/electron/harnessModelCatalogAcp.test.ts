@@ -1321,6 +1321,7 @@ function handle(msg) {
         options: [
           { value: 'opencode/big-pickle', name: 'OpenCode Zen/Big Pickle' },
           { value: 'api-key-connection/user-model', name: '我的 Key/user-model' },
+          ...(process.env.SECOND ? [{ value: 'api-key-connection/second-model', name: '我的 Key/second-model' }] : []),
         ] },
     ] });
   }
@@ -1331,7 +1332,7 @@ function handle(msg) {
 
   it('the composer calls the connection model by its model name: the entry this harness starts on, recorded by id', async () => {
     await useProviderPrefixedAgent()
-    setProbeConnectionModelResolver(async () => ({ env: {}, modelName: 'user-model' }))
+    setProbeConnectionModelResolver(async () => ({ env: {}, modelNames: ['user-model'] }))
     expect(await probeHarnessModelCatalog('opencode', 'acp')).toEqual({
       kind: 'ready',
       models: [
@@ -1341,7 +1342,60 @@ function handle(msg) {
       selected: 'api-key-connection/user-model',
       efforts: [],
       selectedEffort: null,
-      connectionModel: 'api-key-connection/user-model',
+      connectionModels: ['api-key-connection/user-model'],
+    })
+  })
+
+  // spec subscriptions.md「菜单里只写模型名;这一家自己的界面里,提供方写连接的名字」:连接勾选的**每个**模型都只叫模型名。
+  it('every model the connection names is called by its model name, not only the one it starts on', async () => {
+    await useProviderPrefixedAgent()
+    setProbeConnectionModelResolver(async () => ({ env: { SECOND: '1' }, modelNames: ['user-model', 'second-model'] }))
+    expect(await probeHarnessModelCatalog('opencode', 'acp')).toMatchObject({
+      kind: 'ready',
+      models: [
+        { id: 'opencode/big-pickle', name: 'OpenCode Zen/Big Pickle' },
+        { id: 'api-key-connection/user-model', name: 'user-model' },
+        { id: 'api-key-connection/second-model', name: 'second-model' },
+      ],
+      selected: 'api-key-connection/user-model',
+      connectionModels: ['api-key-connection/user-model', 'api-key-connection/second-model'],
+    })
+  })
+
+  // spec「一家使用中的是 API Key 连接时,新任务里这一家的模型菜单列出这把连接勾选的全部模型,默认选中第一个」:
+  // key 走环境变量的家(Qwen …)自己只报环境变量里那一个,菜单照连接勾选的列。
+  it('a key-through-environment agent lists every model the connection names, the first selected', async () => {
+    await useAgent(`
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1, authMethods: [] });
+  if (msg.method === 'session/new') return reply(msg.id, { sessionId: 's', configOptions: [
+    { id: 'model', category: 'model', type: 'select', currentValue: 'q-1', options: [{ value: 'q-1', name: 'q-1' }] },
+    { id: 'effort', category: 'thought_level', type: 'select', currentValue: 'high', options: [{ value: 'high', name: 'High' }] },
+  ] });
+}
+`)
+    setProbeConnectionModelResolver(async () => ({ env: {}, sessionModel: { id: 'q-1', only: true, others: ['q-2', 'q-3'] }, modelNames: ['q-1', 'q-2', 'q-3'] }))
+    expect(await probeHarnessModelCatalog('qwen', 'acp')).toEqual({
+      kind: 'ready',
+      models: [{ id: 'q-1', name: 'q-1' }, { id: 'q-2', name: 'q-2' }, { id: 'q-3', name: 'q-3' }],
+      selected: 'q-1',
+      efforts: [{ id: 'high', name: 'High' }],
+      selectedEffort: 'high',
+      connectionModels: ['q-1', 'q-2', 'q-3'],
+    })
+    // 这家要它自己的登录才答 session/new:跑会话的是这把 key,菜单照样是这几个(档位说不出就空着)。
+    await useAgent(`
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1, authMethods: [{ id: 'own', name: 'Own sign-in' }] });
+  if (msg.method === 'session/new') return fail(msg.id, { code: -32000, message: 'Authentication required' });
+}
+`)
+    expect(await probeHarnessModelCatalog('qwen', 'acp')).toMatchObject({
+      kind: 'ready',
+      models: [{ id: 'q-1', name: 'q-1' }, { id: 'q-2', name: 'q-2' }, { id: 'q-3', name: 'q-3' }],
+      selected: 'q-1',
+      efforts: [],
+      connectionModels: ['q-1', 'q-2', 'q-3'],
     })
   })
 
@@ -1349,13 +1403,13 @@ function handle(msg) {
     await useProviderPrefixedAgent()
     setProbeConnectionModelResolver(async () => ({ env: {} }))
     const plain = await probeHarnessModelCatalog('opencode', 'acp')
-    expect(plain).not.toHaveProperty('connectionModel')
+    expect(plain).not.toHaveProperty('connectionModels')
     expect(plain.kind === 'ready' && plain.models.map((m) => m.name)).toEqual(['OpenCode Zen/Big Pickle', '我的 Key/user-model'])
 
-    setProbeConnectionModelResolver(async () => ({ env: { NO_CURRENT: '1' }, modelName: 'user-model' }))
+    setProbeConnectionModelResolver(async () => ({ env: { NO_CURRENT: '1' }, modelNames: ['user-model'] }))
     const unselected = await probeHarnessModelCatalog('opencode', 'acp')
     expect(unselected).toMatchObject({ kind: 'ready', selected: null })
-    expect(unselected).not.toHaveProperty('connectionModel')
+    expect(unselected).not.toHaveProperty('connectionModels')
     expect(unselected.kind === 'ready' && unselected.models.map((m) => m.name)).toEqual(['OpenCode Zen/Big Pickle', '我的 Key/user-model'])
   })
 

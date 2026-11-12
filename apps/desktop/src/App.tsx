@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { LoginPage } from './pages/LoginPage'
 import { authCallbacks, startAuthCallbackRouting } from './lib/authCallbacks'
+import { watchReferralLinks } from './lib/referral'
 import { googleLogin } from './lib/googleLogin'
 import { LoginMethodChangeNotice } from './components/LoginMethodChangeNotice'
 import { logoutAndRelaunch } from './lib/authLogout'
 import { MainLayout } from './layouts/MainLayout'
-import { AgentJoinRoute } from './pages/AgentJoinRoute'
 import { AuthContext, type AuthUser } from './store/auth'
 import { ChatProvider } from './store/chat'
 import { setPresenceBusContext } from './lib/agentPresenceStore'
@@ -36,14 +36,6 @@ import { platform } from './platform'
 import { type RendererRpcHandlers, useRendererRpcHandlers } from './rpc-renderer/rendererRpc'
 
 if (typeof window !== 'undefined') { installAssistantPanelHost(); installConnectionHost() }
-
-// ── URL-based view detection ───────────────────────────────────────────────────
-
-/** 解析 /join/agent/:id 路径，返回 agentId 或 null */
-function parseAgentJoinRoute(): string | null {
-  const m = window.location.pathname.match(/^\/join\/agent\/([^/?#]+)/)
-  return m ? m[1] : null
-}
 
 function AuthenticatedProduct({ user }: { user: AuthUser }) {
   const [effectsActive, setEffectsActive] = useState(false)
@@ -116,6 +108,7 @@ export default function App() {
     return sessionCoordinator.start()
   }, [])
   useEffect(startAuthCallbackRouting, [])
+  useEffect(() => watchReferralLinks(platform.watchOpenedLinks, sessionCoordinator), [])
   useEffect(() => { authCallbacks.setAuthenticated(Boolean(session.session)) }, [session.session])
   useEffect(() => { googleLogin.initialize() }, [])
 
@@ -129,20 +122,6 @@ export default function App() {
   useRendererRpcHandlers(rendererCommandEventName('auth'), 'auth', authRpcHandlers, (reqId, result) => {
     platform.sendRendererCommandResult('auth', reqId, result)
   }, platform.capabilities.rendererCommandBridge, () => platform.sendRendererCommandReady('auth'))
-
-  const agentJoinId = parseAgentJoinRoute()
-  if (agentJoinId !== null) {
-    return (
-      <ThemeProvider>
-        <ToastProvider>
-          <ContentContextMenuHost />
-          <AuthContext.Provider value={authContextValue}>
-            <AgentJoinRoute agentId={agentJoinId} user={user} authLoading={loading} />
-          </AuthContext.Provider>
-        </ToastProvider>
-      </ThemeProvider>
-    )
-  }
 
   if (loading) {
     return <FullScreenLoader />

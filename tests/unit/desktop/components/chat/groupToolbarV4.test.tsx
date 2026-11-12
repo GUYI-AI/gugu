@@ -137,24 +137,30 @@ describe('final group toolbar v4', () => {
     }
   })
 
-  it('mobile: no topics button, invitation and Apps are in More', async () => {
+  // @@@group-share invitation (people + link / QR) is one press at every width: narrow only folds it to an icon.
+  it('mobile: no topics button, invitation is an icon in the header, Apps are in More', async () => {
     headerWidth = 900
     await header('group', { menu: true, mobile: true })
     expect(button('话题')).toBeUndefined()
-    expect(button('邀请')).toBeUndefined()
+    expect(button('邀请')?.textContent).toBe('')
     expect(button('应用')).toBeUndefined()
-    expect(menuItem('邀请')).toBeDefined()
+    expect(menuItem('邀请')).toBeUndefined()
     expect(menuItem('应用')).toBeDefined()
   })
 
-  it.each(['strip', 'width'] as const)('%s: keeps topics but moves invitation and Apps into More', async (reason) => {
+  it.each(['strip', 'width'] as const)('%s: keeps topics and the invitation icon, moves Apps into More', async (reason) => {
     headerWidth = reason === 'width' ? 560 : 900
     await header('group', { menu: true, stripNarrow: reason === 'strip' })
     expect(button('话题')).toBeDefined()
-    expect(button('邀请')).toBeUndefined()
+    expect(button('邀请')?.textContent).toBe('')
     expect(button('应用')).toBeUndefined()
-    expect(menuItem('邀请')).toBeDefined()
+    expect(menuItem('邀请')).toBeUndefined()
     expect(menuItem('应用')).toBeDefined()
+  })
+
+  it('wide: the invitation button carries its label', async () => {
+    await header('group')
+    expect(button('邀请')?.textContent).toBe('邀请')
   })
 
   it('uses the own header width, restoring wide actions above the inclusive 560px boundary', async () => {

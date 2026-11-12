@@ -609,6 +609,7 @@ export default {
     "settings": {
       "notLoaded": "Group settings are still loading. Try again in a moment.",
       "manage": "Group management",
+      "qrCode": "QR code",
       "saveFailed": "Could not save. The previous setting has been restored; try again.",
       "sectionAgents": "Agent collaboration",
       "sectionChat": "Chat",
@@ -693,7 +694,6 @@ export default {
       "rules": "Collaboration rules",
       "rulesPlaceholder": "Core principles, direction, and collaboration agreements…",
       "rulesUnset": "No collaboration rules",
-      "sharePoster": "Share group poster",
       "title": "Group settings",
       "unavailable": "Unavailable",
       "uploading": "Uploading"

@@ -1,9 +1,8 @@
 // Resolve a bundled `/assets/…` reference for the current runtime. #1285.
 //
 // Web (http/https): the renderer is served from the origin root, so a root-absolute
-// `/assets/…` is correct at ANY route depth. A `./`-relative path breaks under deep routes
-// like `/join/agent/<id>` — it resolves against the route, yielding `/join/agent/assets/…`
-// (404), which crashed the public landing.
+// `/assets/…` is correct at ANY route depth. A `./`-relative path breaks under a deep route —
+// it resolves against the route, not the root (404).
 //
 // Electron production (file://): there is no server root, so `/assets/…` would point at the
 // filesystem root. The renderer is loaded from `dist/index.html` (loadFile) and Electron only

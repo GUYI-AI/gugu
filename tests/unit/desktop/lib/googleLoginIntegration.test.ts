@@ -9,7 +9,7 @@ const m = vi.hoisted(() => ({
   browserSubscribe: vi.fn(async () => () => {}), openBrowser: vi.fn(async (_url: string) => {}),
   persistent: false, requestOtp: vi.fn(async (_email: string) => ({ success: false, error: 'fixture send failure' })),
   values: new Map<string, string>(), signIn: vi.fn(), exchange: vi.fn(),
-  begin: vi.fn(() => 17), accept: vi.fn(async (_attempt: number, _session: Session) => {}), referrer: vi.fn(),
+  begin: vi.fn(() => 17), accept: vi.fn(async (_attempt: number, _session: Session) => {}),
 }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { authCallbacks: {}, oauthBrowser: { openBrowser: m.openBrowser, subscribeBrowserFinished: m.browserSubscribe } } }))
 vi.mock('../../../../apps/desktop/src/lib/authCallbacks', () => ({ authCallbacks: { ready: m.sourceReady, redirectTo: m.redirectTo, subscribe: m.subscribe, setAuthenticated: m.authenticated } }))
@@ -22,7 +22,6 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
   supabase: { auth: { signInWithOAuth: m.signIn, exchangeCodeForSession: m.exchange } },
 }))
 vi.mock('../../../../apps/desktop/src/lib/sessionCoordinator', () => ({ sessionCoordinator: { beginInteractiveLogin: m.begin, acceptInteractiveSession: m.accept, getSnapshot: () => ({ status: m.status, session: m.session }), subscribe: m.coordinatorSubscribe } }))
-vi.mock('../../../../apps/desktop/src/lib/referral', () => ({ clearPendingReferrer: m.referrer }))
 vi.mock('@gugu/core/cloud/config', () => ({ getSupabaseUrl: () => 'https://auth.example.test', getSupabaseAnonKey: () => 'public-test-key' }))
 vi.mock('../../../../apps/desktop/src/lib/auth', () => ({ authService: { requestLoginOtp: m.requestOtp } }))
 vi.mock('../../../../apps/desktop/src/pages/login/AuthBrandMotion', () => ({ AuthBrandMotion: () => null }))
@@ -70,7 +69,6 @@ it('waits for both native subscriptions, then exchanges into the existing coordi
   expect(m.exchange).toHaveBeenCalledExactlyOnceWith('returned')
   expect(m.begin).toHaveBeenCalledOnce()
   expect(m.accept).toHaveBeenCalledExactlyOnceWith(17, session)
-  expect(m.referrer).toHaveBeenCalledOnce()
   expect(m.values.has(MAIN_PKCE_STORAGE_KEY)).toBe(false)
 })
 

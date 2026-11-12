@@ -1625,7 +1625,8 @@ describe('InitialSessionField', () => {
 
   async function renderField(props: React.ComponentProps<typeof FieldProbe> = {}) {
     await act(async () => {
-      root.render(React.createElement(FieldProbe, props));
+      // 「去登录」打开的连接面板读连接列表(react-query)。
+      root.render(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(FieldProbe, props)));
     });
     // The shared catalog query notifies on the next macrotask.
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
@@ -2204,6 +2205,18 @@ describe('InitialSessionField', () => {
     expect(noticeText()).toContain('harnessCatalog.authRequiredWith');
   });
 
+  /** 「去登录」打开的是这一家的连接面板(#2507,与订阅页、资源库详情同一块),留在原草稿 —— ❌ 跳资源库、❌ 自己弹登录终端。 */
+  function expectConnectionPanel(provider: string, machine: string | null) {
+    const panel = latestState?.connectionPanel;
+    expect(React.isValidElement(panel)).toBe(true);
+    expect((panel as React.ReactElement).type).toBe(SubscriptionConnections);
+    expect((panel as React.ReactElement<{ agent: { id: string }; machine: string | null }>).props)
+      .toMatchObject({ agent: { id: provider }, machine });
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.hostInstallNavigation).not.toHaveBeenCalled();
+    expect(modalStore.activeModalId).not.toBe('agentSignInModal');
+  }
+
   it('hands a needs-login harness a way to actually sign in, not just the news', async () => {
     // owner 2026-08-26 实测的缺口:咕咕说了「需要先登录(Login with Kimi account)」,
     // 然后就没有然后了 —— 一句陈述,没有下一步。这条断言钉的是「下一步存在,且它真的通向
@@ -2240,19 +2253,16 @@ describe('InitialSessionField', () => {
     (window as typeof window & {
       __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
     }).__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__ = mocks.hostInstallNavigation;
-    act(() => latestState?.harnessSignIn?.());
+    mocks.navigate.mockClear(); mocks.hostInstallNavigation.mockClear();
+    await act(async () => { latestState?.harnessSignIn?.(); });
 
     /**
-     * 真的走到了那条路 —— 现在的落点是**抽屉的「账号」行**(#6100),不再是这里自己弹的登录终端。
+     * 真的走到了那条路 —— 现在的落点是**这一家的连接面板**(#2507:与 Claude / Codex 同一个,「添加连接 → 账号」
+     * 就是它 CLI 自己那份登录),留在原草稿;❌ 跳资源库、❌ 这里自己弹登录终端。
      * 入口的判据没变:这一条只对**自己声明了命令行登录方式**的家出现(kimi 声明了 kimi-login),
      * 那道闸在 `resolveSignInMethod`,阴控在下面那条「没声明 CLI 登录的家没有这条出路」。
-     *
-     * 两半缺一不可:外壳管顶层 tab,会话页管自己的资源库路由。
      */
-    expect(mocks.hostInstallNavigation).toHaveBeenCalledWith('kimi');
-    expect(mocks.navigate).toHaveBeenCalledWith('library', { tab: 'agents', agentId: 'kimi' });
-    // 阴控:composer ❌ 不再自己开登录终端。
-    expect(modalStore.activeModalId).not.toBe('agentSignInModal');
+    expectConnectionPanel('kimi', null);
   });
 
   it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared: true }, { provider: 'codex', declared: false }, { provider: 'codex', declared: true }])('$provider declared=$declared opens the shared connection menu over the original task draft', async ({ provider, declared }) => {
@@ -2279,8 +2289,10 @@ describe('InitialSessionField', () => {
       const panel = latestState?.connectionPanel;
       expect(React.isValidElement(panel)).toBe(true);
       expect((panel as React.ReactElement).type).toBe(SubscriptionConnections);
-      expect((panel as React.ReactElement<{ open: boolean; agent: { id: string }; machine: string | null }>).props)
-        .toMatchObject({ open: true, agent: { id: provider }, machine: null });
+      // 一个连接都没有(「现有 CLI 配置」没登上就不列,owner 2026-11-12):面板请求打开后自己换成「添加连接」表单,
+      // 菜单那一格随即收起(表单在 agent-connection-panel.test.tsx 里真画出来看)。
+      expect((panel as React.ReactElement<{ agent: { id: string }; machine: string | null }>).props)
+        .toMatchObject({ agent: { id: provider }, machine: null });
       expect(latestState?.prompt).toBe('Keep the original task draft');
       expect(latestState?.attachments).toEqual(before?.attachments);
       expect(latestState?.provider).toBe(provider);
@@ -2310,9 +2322,13 @@ describe('InitialSessionField', () => {
     await act(async () => {
       root.render(
         React.createElement(
-          LibraryHostProvider,
-          { value: machineLibraryHost({ deviceId: 'dev-walk', deviceLabel: '走查机', online: true, lastSeenAt: null }) },
-          React.createElement(FieldProbe, { provider: 'kimi' })
+          QueryClientProvider,
+          { client: queryClient },
+          React.createElement(
+            LibraryHostProvider,
+            { value: machineLibraryHost({ deviceId: 'dev-walk', deviceLabel: '走查机', online: true, lastSeenAt: null }) },
+            React.createElement(FieldProbe, { provider: 'kimi' })
+          )
         )
       );
     });
@@ -2322,26 +2338,12 @@ describe('InitialSessionField', () => {
     (window as typeof window & {
       __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
     }).__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__ = mocks.hostInstallNavigation;
-    act(() => latestState?.harnessSignIn?.());
+    await act(async () => { latestState?.harnessSignIn?.(); });
 
-    expect(modalStore.activeModalId).toBe('agentSignInModal');
-    const args = modalStore.activeModalArgs as {
-      providerId: string;
-      remote?: { deviceId: string; deviceLabel: string; headless: boolean; command: string };
-      onClose: () => void;
-    };
-    expect(args.providerId).toBe('kimi');
-    expect(args.remote).toMatchObject({ deviceId: 'dev-walk', deviceLabel: '走查机', command: 'kimi login' });
-    // 本机那条路一步都没走。
-    expect(mocks.navigate).not.toHaveBeenCalled();
-    expect(mocks.hostInstallNavigation).not.toHaveBeenCalled();
+    // 连接面板开在**那台机器**上(读、登都在那台机器上;登录窗口的远端参数见 agent-connection-panel.test.tsx)。
+    expectConnectionPanel('kimi', 'dev-walk');
     // 「去装」同理:远端没有跳本机资源库这一步。
     expect(chatComposerProps().onAgentAction).toBeUndefined();
-    // 关窗(登没登成只有那台机器知道)⇒ 这一家的目录重问(那台机器那一份在同一前缀下)。
-    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
-    act(() => args.onClose());
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['agents', 'modelCatalog', 'kimi'] });
-    act(() => modalStore.closeModal());
   });
 
   it('tells a forced-login harness how to sign in, and does not claim Gugu models work', async () => {
@@ -2381,12 +2383,11 @@ describe('InitialSessionField', () => {
     (window as typeof window & {
       __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
     }).__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__ = mocks.hostInstallNavigation;
-    act(() => args.onSuccess({ action: 'sign-in' }));
+    mocks.navigate.mockClear(); mocks.hostInstallNavigation.mockClear();
+    await act(async () => { args.onSuccess({ action: 'sign-in' }); });
 
-    // #6100:「去登录」把人送到抽屉的「账号」那一行,❌ 不在这里再弹一个登录终端。
-    expect(mocks.hostInstallNavigation).toHaveBeenCalledWith('qoder');
-    expect(mocks.navigate).toHaveBeenCalledWith('library', { tab: 'agents', agentId: 'qoder' });
-    expect(modalStore.activeModalId).not.toBe('agentSignInModal');
+    // #2507:「去登录」打开这一家的连接面板(「添加连接 → 账号」),❌ 跳资源库、❌ 这里再弹一个登录终端。
+    expectConnectionPanel('qoder', null);
   });
 
   it('offers no sign-in exit when the harness declares no CLI login', async () => {
@@ -2432,12 +2433,10 @@ describe('InitialSessionField', () => {
     (window as typeof window & {
       __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void
     }).__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__ = mocks.hostInstallNavigation;
-    act(() => latestState?.harnessSignIn?.());
-    // #6100:落点从「这里自己弹一个登录终端」改成抽屉的「账号」行 —— 登录终端只有一个主人。
-    // ⚠️ 阴控在下面那行:composer ❌ 不再开任何弹窗。
-    expect(mocks.hostInstallNavigation).toHaveBeenCalledWith('kimi');
-    expect(mocks.navigate).toHaveBeenCalledWith('library', { tab: 'agents', agentId: 'kimi' });
-    expect(modalStore.activeModalId).not.toBe('agentSignInModal');
+    mocks.navigate.mockClear(); mocks.hostInstallNavigation.mockClear();
+    await act(async () => { latestState?.harnessSignIn?.(); });
+    // #2507:落点是这一家的连接面板 —— 登录终端只有一个主人(面板里「添加连接 → 账号」)。
+    expectConnectionPanel('kimi', null);
   });
 
   it('puts no sign-in row in the model list when it has no login to offer', async () => {

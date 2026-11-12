@@ -1,3 +1,4 @@
+import { OPENAI_OFFICIAL_ENDPOINT } from '@gugu/session-core/agents/plugins';
 import type { ApiKeyConnectionDescriptor, IApiKeyConnectionBehavior } from '@gugu/session-core/agents/plugins';
 
 /**
@@ -13,6 +14,7 @@ import type { ApiKeyConnectionDescriptor, IApiKeyConnectionBehavior } from '@gug
 export const qwenApiKeyConnection = {
   kind: 'supported',
   endpoint: 'required',
+  officialEndpoint: OPENAI_OFFICIAL_ENDPOINT,
   model: 'required',
   protocol: 'openai-chat-completions',
   evidence: '只给 OPENAI_BASE_URL/API_KEY/MODEL 三件套、零 Qwen 账号,`qwen -p` exit=0,假端点收到 chat/completions(vendorAccount 同一条)',

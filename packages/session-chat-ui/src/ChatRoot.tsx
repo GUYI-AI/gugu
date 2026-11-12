@@ -90,7 +90,7 @@ import {
   collectUserTurnUnits,
   trailingDayKey,
   BACKGROUND_TASKS_ID,
-  BACKGROUND_TASKS_TOGGLE,
+  backgroundTasksView,
 } from './state/flatten';
 import type { UnitsView } from './state/flatten';
 import { segmentCtxFor } from './state/segment-ctx';
@@ -836,12 +836,8 @@ export function ChatRoot(props: ChatRootProps) {
     const owner = activeLayout().backgroundOwner;
     if (!owner || owner === BACKGROUND_TASKS_ID) return null;
     const tasks = state().session.state.backgroundTasks;
-    return {
-      ownerId: owner,
-      commands: tasks.commands,
-      subagents: tasks.subagents,
-      expanded: viewState().isCollapsed(BACKGROUND_TASKS_TOGGLE),
-    };
+    const view = backgroundTasksView(tasks, (id) => viewState().isCollapsed(id));
+    return { ownerId: owner, commands: view.commands, subagents: view.subagents, expanded: view.expanded };
   });
 
   let pendingPromptCommittedTurns = state().transcript.state.committedTurns;

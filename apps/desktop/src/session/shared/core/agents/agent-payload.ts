@@ -1,6 +1,6 @@
 import { normalizeAgentAuthCapabilities } from '@gugu/session-plugins/agents/connection-capabilities';
 import type { GuguPermissionMode, ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
-import { declaredInjectionTiming } from '@gugu/session-core/agents/plugins';
+import { ACCOUNT_PROVIDER_OFFICIAL_ENDPOINTS, declaredInjectionTiming } from '@gugu/session-core/agents/plugins';
 import type {
   AgentAuthDescriptor,
   ApiKeyConnectionDescriptor,
@@ -182,17 +182,24 @@ export function agentSupportsAcp(capabilities: AgentCapabilities | undefined | n
  */
 export type AgentConnectionForm = {
   accounts: boolean;
-} & Pick<ApiKeyConnectionFields, 'endpoint' | 'model' | 'protocol'>;
+  /** 地址讲哪种接口由宿主按地址探(这家讲得了不止一种):表单 ❌ 再写「地址须支持某某接口」那一行。 */
+  protocolDetected: boolean;
+} & Pick<ApiKeyConnectionFields, 'endpoint' | 'model' | 'protocol' | 'officialEndpoint'>;
 
 export function agentConnectionForm(agent: Pick<AgentPayload, 'id' | 'capabilities'> | undefined | null): AgentConnectionForm | null {
-  if (agentSupportsConnectionManagement(agent)) return { accounts: true, endpoint: 'optional', model: 'none' };
+  if (agentSupportsConnectionManagement(agent)) {
+    const officialEndpoint = agent ? ACCOUNT_PROVIDER_OFFICIAL_ENDPOINTS[agent.id] : undefined;
+    return { accounts: true, endpoint: 'optional', model: 'none', protocolDetected: false, ...(officialEndpoint ? { officialEndpoint } : {}) };
+  }
   const declared = agent?.capabilities.apiKeyConnection;
   if (declared?.kind !== 'supported') return null;
   return {
     accounts: false,
     endpoint: declared.endpoint,
     model: declared.model,
+    protocolDetected: (declared.protocols?.length ?? 0) > 1,
     ...(declared.protocol ? { protocol: declared.protocol } : {}),
+    ...(declared.officialEndpoint ? { officialEndpoint: declared.officialEndpoint } : {}),
   };
 }
 

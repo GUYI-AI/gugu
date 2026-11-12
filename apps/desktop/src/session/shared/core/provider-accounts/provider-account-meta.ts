@@ -31,9 +31,14 @@ const v1Schema = z.object({
   /** Harness credentials belong to this device; removed connections remain available to bound sessions. */
   harnessConnection: z.object({
     kind: z.enum(['native', 'account', 'api-key']),
+    /** 缺席 = 这家的官方地址(用户没改预填的那一个,#2507)。 */
     endpoint: z.string().optional(),
-    /** API Key 连接点名的模型(#2507,只有声明了 `model: 'required'` 的家才有)。 */
+    /** API Key 连接点名的模型(#2507,只有声明了 `model: 'required'` 的家才有),一个或几个。 */
+    models: z.array(z.string()).optional(),
+    /** 修改前只能点名一个模型时存的那一格;读的时候并进 `models`。 */
     model: z.string().optional(),
+    /** 建连接时按地址探出来的接口(这家讲得了不止一种时才有,#2507)。 */
+    protocol: z.enum(['openai-responses', 'openai-chat-completions']).optional(),
     removed: z.boolean().optional(),
   }).optional(),
 });

@@ -165,6 +165,11 @@ export type AcpSpawnContext = {
    */
   capabilityArgs?: readonly string[];
   /**
+   * 选中连接要的启动参数(`AgentRunContext.connectionArgs`,#2507:Codex API Key 连接的 provider `-c`)。
+   * 放不放、放哪由这一家定;跑咕咕平台模型时平台那一份 provider 恒赢,这一格 ❌ 盖过它。
+   */
+  connectionArgs?: readonly string[];
+  /**
    * 宿主按这一家的 `IAcpBehavior.bridge` 声明解析好的桥入口(`AgentRunContext.acpAdapterEntry`,#6394)。
    * 声明了 `bridge` 的家,宿主**一定**给;插件 ❌ 自己再 `require.resolve` / 读环境变量找桥。
    * 没有桥的家(CLI 自己就讲 ACP)不读它。

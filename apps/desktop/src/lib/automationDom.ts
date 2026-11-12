@@ -145,7 +145,6 @@ export const AUTOMATION_TEST_IDS = {
   plazaAuthorProfileButton: 'plaza-author-profile-button',
   plazaAuthorProfileMenu: 'plaza-author-profile-menu',
   // #855 group invite link copy + join confirm dialog
-  groupInviteLinkCopyButton: 'group-invite-link-copy-button',
   groupJoinConfirmDialog: 'group-join-confirm-dialog',
   groupJoinConfirmButton: 'group-join-confirm-button',
 } as const

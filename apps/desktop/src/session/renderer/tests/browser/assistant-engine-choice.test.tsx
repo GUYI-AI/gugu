@@ -13,7 +13,7 @@ import { setLocalePreference } from '@/i18n';
 import '@/i18n/registerAssistantCatalog';
 import { modalStore } from '@renderer/lib/modal/modal-store';
 import { ModalRenderer } from '@renderer/lib/modal/modal-renderer';
-import { untilStable } from '../../../../../../../tests/support/awaitCondition';
+import { until, untilStable } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
 import '@/components/assistant/assistant-onboarding.css';
@@ -61,6 +61,14 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
     readSubscription: async () => ({ success: true, data: { payer: 'not-signed-in' } }),
     readSubscriptionUsage: async () => ({ success: true, data: { kind: 'unavailable', reason: 'not-signed-in' } }),
   }),
+}));
+// The panel's CLI sign-in row subscribes to the agent-config wire's live auth state (`client.agents.state`), which this
+// fixture's client does not have; the engine's own readout comes from `refreshAuthStatus` above. Same stub as the other
+// connection-panel tests: no readout yet.
+vi.mock('@renderer/lib/stores/use-agent-auth-status', async original => ({
+  ...await original<typeof import('@renderer/lib/stores/use-agent-auth-status')>(),
+  useAgentAuthStatus: () => ({ auth: null, refresh: async () => {} }),
+  useAgentAuthStatuses: (_: string, programs: unknown[]) => ({ auths: programs.map(() => null), refresh: async () => {} }),
 }));
 let root: Root;
 let host: HTMLDivElement;
@@ -155,9 +163,9 @@ it.each(['claude', 'codex'])('opens the existing %s connection panel and accessi
   await userEvent.click(page.getByTestId(`assistant-engine-${id}`));
   const name = id === 'codex' ? 'Codex' : 'Claude';
   await userEvent.click(page.getByRole('button', { name: `Configure ${name}`, exact: true }));
-  await userEvent.click(page.getByRole('menuitem', { name: 'Add connection', exact: true }));
+  // #2507 没登上的「现有 CLI 配置」不列 ⇒ 一个连接都没有:直接是「添加连接」表单,❌ 先弹一个只有「添加连接」的菜单。
   await expect.element(page.getByRole('dialog', { name: `Add a ${name} connection`, exact: true })).toBeVisible();
-  await userEvent.click(page.getByRole('button', { name: 'API Key', exact: true }));
+  await userEvent.click(page.getByRole('tab', { name: 'API Key', exact: true }));
   await expect.element(page.getByLabelText('API Key', { exact: true })).toBeVisible();
   const form = document.querySelector('.subscription-connection-form')!;
   expect(form.closest('[aria-hidden="true"], [inert]')).toBeNull();
@@ -171,22 +179,54 @@ const centerOf = (element: Element) => {
   const { x, y, width, height } = element.getBoundingClientRect();
   return { x: x + width / 2, y: y + height / 2 };
 };
-it.each(['claude', 'codex'])('draws the %s connection menu and add dialog with a solid surface above the setup card', async id => {
+/** A popup of the panel: in a themed layer, painted (not transparent), and the topmost thing at its own center. */
+function expectSolidOnTop(element: Element, what: string) {
+  expect(element.closest('.emlight, .emdark'), what).not.toBeNull();
+  expect(surface(element), what).not.toBe('rgba(0, 0, 0, 0)');
+  const { x, y } = centerOf(element);
+  expect(element.contains(document.elementFromPoint(x, y)), what).toBe(true);
+}
+async function openAddDialog(name: string) {
+  const dialog = page.getByRole('dialog', { name: `Add a ${name} connection`, exact: true });
+  await expect.element(dialog).toBeVisible();
+  return dialog.element();
+}
+
+// #2507: with no connection yet, Configure is the add form itself (no menu holding only "Add connection").
+it.each(['claude', 'codex'])('with no %s connection yet, Configure opens the add dialog directly, solid above the setup card', async id => {
   f.states[id] = 'unauthenticated'; render();
   await expect.element(page.getByTestId('assistant-engine-claude')).toBeVisible();
   await userEvent.click(page.getByTestId(`assistant-engine-${id}`));
   const name = id === 'codex' ? 'Codex' : 'Claude';
   await userEvent.click(page.getByRole('button', { name: `Configure ${name}`, exact: true }));
-  const menu = page.getByRole('menu').element();
-  expect(surface(menu)).not.toBe('rgba(0, 0, 0, 0)');
-  expect(menu.closest('.emlight, .emdark')).not.toBeNull();
-  await userEvent.click(page.getByRole('menuitem', { name: 'Add connection', exact: true }));
-  const dialog = page.getByRole('dialog', { name: `Add a ${name} connection`, exact: true }).element();
-  await expect.element(page.getByRole('dialog', { name: `Add a ${name} connection`, exact: true })).toBeVisible();
-  expect(surface(dialog)).not.toBe('rgba(0, 0, 0, 0)');
-  expect(dialog.closest('.emlight, .emdark')).not.toBeNull();
+  const dialog = await openAddDialog(name);
+  // While the connections are read the panel stands in a "Checking…" menu; once none is found it closes into this form.
+  await until('the stand-in menu has closed', () => document.querySelector('[role="menu"]') === null);
+  expectSolidOnTop(dialog, 'add dialog');
+  // Its submit sits above the card too (the dialog's own layer, not the card under it).
   const { x, y } = centerOf(dialog.querySelector('button[type="submit"], form button:last-of-type') ?? dialog);
   expect(dialog.contains(document.elementFromPoint(x, y))).toBe(true);
+});
+
+// With a saved connection the panel opens its switch menu; that menu, a connection's options menu and the add dialog
+// reached from it are all popups of the same panel.
+it.each(['claude', 'codex'])('with a saved %s connection, the menu, its options menu and the add dialog are solid above the setup card', async id => {
+  f.states[id] = 'unauthenticated'; f.saved = true; render();
+  await expect.element(page.getByTestId('assistant-engine-claude')).toBeVisible();
+  await userEvent.click(page.getByTestId(`assistant-engine-${id}`));
+  const name = id === 'codex' ? 'Codex' : 'Claude';
+  await userEvent.click(page.getByRole('button', { name: `Configure ${name}`, exact: true }));
+  await expect.element(page.getByRole('menuitemradio', { name: /Saved API/ })).toBeVisible();
+  const menu = page.getByRole('menu').element();
+  expectSolidOnTop(menu, 'connection menu');
+  await userEvent.click(page.getByRole('menuitem', { name: 'Options for Saved API', exact: true }));
+  await expect.element(page.getByRole('menuitem', { name: 'Remove', exact: true })).toBeVisible();
+  const options = page.getByRole('menuitem', { name: 'Remove', exact: true }).element().closest('[role="menu"]')!;
+  expect(options).not.toBe(menu);
+  expectSolidOnTop(options, 'options menu');
+  await userEvent.keyboard('{Escape}');
+  await userEvent.click(page.getByRole('menuitem', { name: 'Add connection', exact: true }));
+  expectSolidOnTop(await openAddDialog(name), 'add dialog');
 });
 
 it('shows retry while unknown and completes a fresh check before allowing setup', async () => {
@@ -209,11 +249,10 @@ it('returns from the shared API form and continues with the same selected Codex 
   f.states.codex = 'unauthenticated'; render();
   await userEvent.click(page.getByTestId('assistant-engine-codex'));
   await userEvent.click(page.getByRole('button', { name: 'Configure Codex', exact: true }));
-  await userEvent.click(page.getByRole('menuitem', { name: 'Add connection', exact: true }));
-  await userEvent.click(page.getByRole('button', { name: 'API Key', exact: true }));
+  await userEvent.click(page.getByRole('tab', { name: 'API Key', exact: true }));
   await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'sk-isolated-test-fixture');
   await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }));
-  await userEvent.click(page.getByTestId('connection-use-saved'));
+  // 当前是「没有」:存好的这一把直接成为当前连接,❌ 再去菜单里选一次。
   await expect.element(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
   await expect.element(page.getByTestId('assistant-engine-codex')).toHaveAttribute('aria-checked', 'true');
   await userEvent.click(page.getByRole('button', { name: 'Continue', exact: true }));

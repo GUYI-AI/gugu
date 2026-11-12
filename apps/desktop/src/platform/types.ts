@@ -85,6 +85,8 @@ export interface AppPlatform {
     ready: () => Promise<void>
     subscribe: (listener: (url: string) => void, onError: (error: unknown) => void) => () => void
   }
+  /** Every link the OS hands this app (system link handler, cold launch), as it arrives, before and after sign-in. */
+  watchOpenedLinks?: (listener: (url: string) => void, onError: (error: unknown) => void) => () => void
   oauthBrowser?: {
     openBrowser: (url: string) => Promise<void>
     openLinkBrowser?: (url: string, redirectTo: string) => Promise<void>

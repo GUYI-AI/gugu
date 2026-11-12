@@ -1,12 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
-import { useLibraryHost } from '@renderer/features/library/library-host';
+import { useLibraryHost, type LibraryRemoteDevice } from '@renderer/features/library/library-host';
 import { subscriptionKey } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { useAgentAuthStatuses } from '@renderer/lib/stores/use-agent-auth-status';
 import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { harnessModelCredentialKey } from '@renderer/lib/stores/use-harness-model-credential';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
-import type { AgentPayload } from '@shared/core/agents/agent-payload';
+import { agentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload';
 import { accountRowOf, mergeAccountRows, resolveAccountTargets, type MergedAccountRow } from './agent-account';
 
 /**
@@ -18,12 +18,19 @@ import { accountRowOf, mergeAccountRows, resolveAccountTargets, type MergedAccou
  */
 export function useAgentSignIn(
   agent: AgentPayload,
-  options: { probe?: boolean } = {}
+  options: {
+    probe?: boolean;
+    /**
+     * 登哪台机器(缺席 = 资源库正在看的那台)。连接面板也从新建任务、会话里打开,那里没有资源库的机器,
+     * 由调用方按会话所在的机器给(null = 本机)。
+     */
+    remote?: Pick<LibraryRemoteDevice, 'deviceId' | 'deviceLabel'> | null;
+  } = {}
 ): { row: MergedAccountRow | null; openSignIn: () => void; refreshAuth: () => Promise<void> } {
   const targets = resolveAccountTargets(agent);
   // #6264 资源库看的是别的机器:读数与登录都在**那台机器上**(同一组动词,rpc 送到那台机器),行还是这一行。
   const host = useLibraryHost();
-  const remote = host.remote;
+  const remote = options.remote === undefined ? host.remote : options.remote;
   // 没有可登录的方法就一个都不问(空列表会被读成「问主程序」)。
   const local = useAgentAuthStatuses(
     targets.length > 0 ? agent.id : null,
@@ -35,6 +42,12 @@ export function useAgentSignIn(
   const showSignIn = useShowModal('agentSignInModal');
   const row = mergeAccountRows(targets.map((target, index) => accountRowOf(target, local.auths[index])));
   const machine = remote?.deviceId ?? null;
+  /**
+   * 有 API Key 连接、账号是它 CLI 自己那一份的家(#2507):这一趟登的、读的是「现有 CLI 配置」(`native`)。
+   * 选着一把 key 时主读数是那把 key(恒「已登录」),拿它判会在登录还没走完时就关窗;登录进程的环境由主进程定成原生。
+   */
+  const form = agentConnectionForm(agent);
+  const loginConnectionId = form && !form.accounts ? 'native' : undefined;
 
   /**
    * 装上 / 卸掉 / 换一份之后重探一次登录态。挂载时那一探若赶在装好之前,读到的是「没这个程序」
@@ -64,6 +77,7 @@ export function useAgentSignIn(
       showSignIn({
         providerId: agent.id,
         providerName: agent.name,
+        ...(loginConnectionId ? { connectionId: loginConnectionId } : {}),
         steps: method ? [{ methodId: method.id }] : [],
         remote: {
           deviceId: remote.deviceId,
@@ -99,6 +113,7 @@ export function useAgentSignIn(
     showSignIn({
       providerId: agent.id,
       providerName: agent.name,
+      ...(loginConnectionId ? { connectionId: loginConnectionId } : {}),
       steps: (row?.steps ?? []).map((step) => ({
         methodId: step.method.id,
         ...(step.program === undefined ? {} : { program: step.program }),
@@ -107,7 +122,7 @@ export function useAgentSignIn(
       onSuccess: refreshAfterLogin,
       onClose: refreshAfterLogin,
     });
-  }, [agent.id, agent.name, agent.command, queryClient, refreshAuth, row?.steps, showSignIn, remote, machine]);
+  }, [agent.id, agent.name, agent.command, queryClient, refreshAuth, row?.steps, showSignIn, remote, machine, loginConnectionId]);
 
   return { row, openSignIn, refreshAuth };
 }

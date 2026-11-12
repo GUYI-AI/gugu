@@ -184,7 +184,6 @@ vi.mock('../../../../apps/desktop/src/components/UnfinishedAgentCreateSweeper', 
 
 vi.mock('../../../../apps/desktop/src/components/UpdateBanner', () => ({ UpdateBanner: () => null }))
 vi.mock('../../../../apps/desktop/src/pages/LoginPage', () => ({ LoginPage: () => createNode('div', null, 'login') }))
-vi.mock('../../../../apps/desktop/src/pages/AgentJoinRoute', () => ({ AgentJoinRoute: () => null }))
 
 vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({
   contactsService: {

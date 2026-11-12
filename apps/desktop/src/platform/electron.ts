@@ -10,7 +10,7 @@ import { anchorDownload } from './anchorDownload'
 import { systemSettingsUrl, type HostOs } from '../../shared/system-settings-urls'
 import { detectHostOs } from '@shared/host-os'
 import type { SystemPermission } from './types'
-import { electronAuthCallbacks } from './electronAuthCallbacks'
+import { electronAuthCallbacks, watchElectronOpenedLinks } from './electronOpenedLinks'
 
 /** @@@host-os 系统探针只有 `@shared/host-os` 一条;这里只是把 'other' 翻成本地的 ''。 */
 function hostOs(): HostOs {
@@ -52,6 +52,7 @@ export const electronPlatform: AppPlatform = {
   kind: 'electron',
   documentTitle: '咕咕 Desktop',
   authCallbacks: electronAuthCallbacks,
+  watchOpenedLinks: watchElectronOpenedLinks,
   oauthBrowser: {
     async openLinkBrowser(url, redirectTo) {
       const api = electronApi()

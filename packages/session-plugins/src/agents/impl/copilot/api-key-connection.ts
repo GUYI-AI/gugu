@@ -1,3 +1,4 @@
+import { OPENAI_OFFICIAL_ENDPOINT } from '@gugu/session-core/agents/plugins';
 import type { ApiKeyConnectionDescriptor, IApiKeyConnectionBehavior } from '@gugu/session-core/agents/plugins';
 
 /**
@@ -13,6 +14,7 @@ import type { ApiKeyConnectionDescriptor, IApiKeyConnectionBehavior } from '@gug
 export const copilotApiKeyConnection = {
   kind: 'supported',
   endpoint: 'required',
+  officialEndpoint: OPENAI_OFFICIAL_ENDPOINT,
   model: 'required',
   protocol: 'openai-chat-completions',
   evidence:

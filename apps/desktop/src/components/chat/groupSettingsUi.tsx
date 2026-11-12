@@ -1,26 +1,19 @@
-import { platform } from '@/platform'
-import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
 import type { CSSProperties, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { DUR_FAST_MS, tween } from '@/styles/motion'
 import { ChevronLeft, ChevronRight } from '@/lib/icons'
-import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { useBackLayer } from '../ui/sheetStack'
 import { Switch } from '../ui/Switch'
-import { useToast } from '../toastContext'
-import { Copy } from '@/lib/icons'
 import {
   settingsRowStyle,
   settingsCenteredRowStyle,
   settingsRowTitleStyle,
   settingsRowSubtitleStyle,
-  settingsSectionLabelStyle,
 } from './groupSettingsStyles'
-import { isProjectGroupChat } from '../../lib/groupMemberPermissions'
 
-// @@@6418 群设置抽屉各页共用的小件(页头 / 导航行 / 开关行 / 邀请链接)。几何在 groupSettingsStyles.ts。
+// @@@6418 群设置抽屉各页共用的小件(页头 / 导航行 / 开关行)。几何在 groupSettingsStyles.ts。
 
 const headStyle: CSSProperties = {
   height: 'var(--pane-header-h)', padding: '0 16px', fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)', fontWeight: 600,
@@ -140,61 +133,6 @@ export function SettingsToggleRow({ title, description, ariaLabel, checked, onCh
         {description ? <div style={settingsRowSubtitleStyle}>{description}</div> : null}
       </div>
       <Switch checked={checked} onCheckedChange={onChange} aria-label={ariaLabel} disabled={disabled} style={switchStyle} />
-    </div>
-  )
-}
-
-const linkBlockStyle: CSSProperties = { padding: '0 0 12px' }
-const linkBoxStyle: CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 8, border: '1px solid var(--border-strong)', borderRadius: 'var(--radius-control)', padding: '9px 11px',
-}
-const linkTextStyle: CSSProperties = {
-  flex: 1, minWidth: 0, fontSize: 'var(--font-body)', color: 'var(--muted-fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-}
-const posterButtonStyle: CSSProperties = { marginTop: 10, width: '100%' }
-
-/** 群设置一级页上给普通成员的那一块邀请链接(没有链接 = 不画)。项目群不拉人(gugu-dev#181):只说原因。 */
-export function MemberInviteLink({ chatId, inviteLink, onOpenPoster }: { chatId: string; inviteLink: string | null | undefined; onOpenPoster: () => void }) {
-  const { t } = useTranslation('messaging')
-  if (isProjectGroupChat(chatId)) return <div data-testid="project-group-no-invite" style={settingsRowSubtitleStyle}>{t('group.projectGroupNoInvite')}</div>
-  if (!inviteLink) return null
-  return (
-    <>
-      <div style={settingsSectionLabelStyle}>{t('group.settings.inviteLink')}</div>
-      <GroupInviteLinkBlock inviteLink={inviteLink} onOpenPoster={onOpenPoster} />
-    </>
-  )
-}
-
-/**
- * 邀请链接 + 复制 + 生成海报(#1164-G2 / #445)。开关是群主/管理员的事(在「群管理」里),
- * 但**链接本身所有成员都能拿来分享**(改版前的抽屉就是这样),所以这一块两处都用:
- * 群管理页给管理者、一级页给普通成员。开关关掉时调用方不渲染它 —— 那时链接对加入无效。
- */
-export function GroupInviteLinkBlock({ inviteLink, onOpenPoster }: { inviteLink: string; onOpenPoster: () => void }) {
-  const { t } = useTranslation('messaging')
-  const { toast } = useToast()
-  return (
-    <div data-testid="group-invite-link" style={linkBlockStyle}>
-      <div style={linkBoxStyle}>
-        <span style={linkTextStyle}>{inviteLink}</span>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={async () => {
-            try {
-              await platform.writeClipboardText(inviteLink)
-              toast(t('group.settings.inviteCopied'), 'success')
-            } catch (error) {
-              toast(t('actions.copyFailed', { ns: 'common' }), 'error', safeFailureLine(String((error as Error)?.message ?? error)))
-            }
-          }}
-        >
-          <Copy size={12} />
-          {t('group.settings.copyLink')}
-        </Button>
-      </div>
-      <Button variant="secondary" size="md" style={posterButtonStyle} onClick={onOpenPoster}>{t('group.settings.sharePoster')}</Button>
     </div>
   )
 }

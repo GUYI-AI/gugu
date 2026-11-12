@@ -607,6 +607,7 @@ export default {
     "settings": {
       "notLoaded": "群设置还没加载完，请稍后再试",
       "manage": "群管理",
+      "qrCode": "二维码",
       "saveFailed": "保存失败，已恢复为原来的设置。请重试。",
       "sectionAgents": "Agent 协作",
       "sectionChat": "聊天",
@@ -691,7 +692,6 @@ export default {
       "rules": "协作规则",
       "rulesPlaceholder": "群协作规则：核心原则、方向确认、协作约定…",
       "rulesUnset": "未设置协作规则",
-      "sharePoster": "分享本群（生成海报）",
       "title": "群设置",
       "unavailable": "不可用",
       "uploading": "上传中"

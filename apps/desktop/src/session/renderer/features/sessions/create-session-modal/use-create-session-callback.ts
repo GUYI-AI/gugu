@@ -3,7 +3,7 @@ import { sessionpageLegOfView } from '@shared/core/sessions/sessions';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useRef, useState } from 'react';
-import { getSessionPageStore, asProvisioned, getSessionManagerStore } from '@renderer/features/sessions/stores/session-selectors';
+import { getSessionPageStore, asProvisioned, getSessionManagerStore, sessionViewKind } from '@renderer/features/sessions/stores/session-selectors';
 import {
   SessionCreationFailedError,
   type SessionFailure,
@@ -344,7 +344,12 @@ export function useCreateSessionCallback({
       finishSubmission(submission);
       setDeliveryError(null);
       onCreated?.({ projectId: selectedProjectId, sessionId });
-      if (!openAfterCreate) {
+      // @@@start-failure-exit - A task dispatched from a chat stays in the chat because its card lands there; a task
+      // whose workspace could not be prepared never lands one. Staying would leave the person with no card, no task and
+      // no reason, so it opens like any other new task: the session's own failure screen says why and retries.
+      if (!openAfterCreate && sessionViewKind(getSessionPageStore(selectedProjectId, sessionId), selectedProjectId) === 'provision-error') {
+        navigate('session', { projectId: selectedProjectId, sessionId });
+      } else if (!openAfterCreate) {
         void rpcOn(machineRegistry.machineOf(selectedProjectId) ?? null).sessionTimeline.sessionStart({ conversationId: sessionId }).then((started) => {
           if (!started.ok) log.warn('start a session nobody opens failed', { sessionId, error: started.error });
         });

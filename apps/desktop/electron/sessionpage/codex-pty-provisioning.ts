@@ -38,7 +38,8 @@ import {
   promoteSessionpageDeliveryOwner,
   restoreSessionpageOfflineDeliveryOwner,
 } from './sessionpage-delivery-owner-registry'
-import { composeAgentSpawnEnv } from '@gugu/session-core/agents/agent-run-context'
+import { composeAgentSpawnEnv, runContextLaunchArgs } from '@gugu/session-core/agents/agent-run-context'
+import { CODEX_PLATFORM_PROVIDER_ID } from '@gugu/session-plugins/agents'
 import { resolveLocalAgentRunContext } from '@main/core/agents/agent-run-context'
 import { closeRuntimeForkOwnership } from '@main/core/sessions/runtime-fork-ownership'
 import { codexForkHandoffItems } from '../runtime/codex-fork-handoff.mjs'
@@ -335,9 +336,12 @@ async function provisionAndOverrideOnce(
       sessionId: info.sessionId,
       sourceSessionId: info.sourceSessionId,
     })
+    // #2507 平台额度的会话:物化器已把平台的 provider 写进这条 argv(codex 会话包的 modelArgs,`model_provider` 只有它产出)。
+    // 所选连接的 provider ❌ 再跟上去 —— codex 的 `-c` 后者盖前者,平台模型名会带着平台令牌发去连接的地址。
+    const platformQuota = (capabilities.extraArgs ?? []).includes(`model_provider=${CODEX_PLATFORM_PROVIDER_ID}`)
     const engineOptions = {
-      // 同一格的另一半:用户填的额外参数,补在物化器那几个之后。
-      extraArgs: [...(capabilities.extraArgs ?? []), ...runContext.extraArgs],
+      // 同一格的另一半:用户填的额外参数,补在物化器那几个之后;所选连接的 provider 只在不跑平台额度时跟上。
+      extraArgs: [...(capabilities.extraArgs ?? []), ...runContextLaunchArgs(runContext, { platformQuota })],
       threadConfig: capabilities.threadConfig,
       threadStart: capabilities.threadStart,
       skillRoots: capabilities.skillRoots,

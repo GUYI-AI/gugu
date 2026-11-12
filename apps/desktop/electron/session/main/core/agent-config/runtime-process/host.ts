@@ -27,7 +27,7 @@ import { systemProxyFill } from '@main/utils/systemProxyEnv';
 import { loginShellEnv } from '@main/utils/userEnv';
 import { err, ok, type Result } from '@gugu/session-shared';
 import type { AgentConfigAuthError } from '@gugu/session-core/workspace-server';
-import { createHarnessConnection, harnessHasConnections, listHarnessConnections, removeHarnessConnection, selectHarnessConnection, sessionHarnessConnectionId } from '@main/core/agents/harness-connections';
+import { createHarnessConnection, harnessHasConnections, harnessLoginConnectionId, listHarnessConnections, readConnectionModels, removeHarnessConnection, selectHarnessConnection, sessionHarnessConnectionId, updateHarnessConnectionModels } from '@main/core/agents/harness-connections';
 import { connectionFailure } from '@main/core/sessions/subscription-sessions-busy';
 
 const AGENT_CONFIG_WIRE_CHANNEL = 'agent-config-wire';
@@ -192,7 +192,7 @@ export async function disposeAgentConfigRuntimeProcess(): Promise<void> {
 // 依赖 id ⇒ 按它认领的那条腿解析(`authProgramRole`),登的、问的就是那条腿的会话真会跑的那一份
 // (Antigravity 终端腿的 `agy`),❌ 不拿主程序去答伴随程序的登录态 —— 两个程序不共享登录。
 // 凭据判断(`modelCredential`)问的是主程序自报的模型,仍按 `primary`。
-function withHostResolvedCli(
+export function withHostResolvedCli(
   client: ContractClient<AgentConfigRuntimeContract>
 ): AgentConfigRuntimeClient {
   const runContextFor = (input: { providerId: string; program?: string; connectionId?: string }) =>
@@ -214,10 +214,27 @@ function withHostResolvedCli(
     },
     listConnections: (input) => connectionOperation(() => listHarnessConnections(input.providerId)),
     createConnection: (input) => connectionOperation(() => createHarnessConnection(input)),
-    removeConnection: (input) => connectionOperation(async () => {
-      await removeHarnessConnection(input.providerId, input.connectionId);
+    // 读模型清单在宿主里做:key 只发给那个地址本身(#2507)。
+    listConnectionModels: (input) => connectionOperation(() => readConnectionModels(input)),
+    updateConnectionModels: ({ models, ...input }) => connectionOperation(() => updateHarnessConnectionModels(input.providerId, input.connectionId, models)),
+    removeConnection: ({ stopBusySessions, ...input }) => connectionOperation(async () => {
+      // 按原生解析取这份 env:❌ 解开要删的那把 key(它解不开时也得删得掉)。
+      const nativeEnv = (await runContextFor({ providerId: input.providerId, connectionId: 'native' })).env;
+      const current = input.connectionId !== 'native'
+        && (await listHarnessConnections(input.providerId)).some((connection) => connection.current && connection.id === input.connectionId);
+      if (current) {
+        // 删当前连接 = 一次切换,落回原生(#2507):与「切换连接」同一条路 —— 有会话在忙就先不切(拒绝带着
+        // 「关掉并切换」的出路),在跑的会话停下、换回原生凭据,下一条消息接着原对话跑。
+        const { switchSubscription } = await import('@main/core/sessions/subscription-switch');
+        await switchSubscription(input.providerId, 'native', nativeEnv, { stopBusySessions });
+      }
+      await removeHarnessConnection(input.providerId, input.connectionId, { nativeEnv });
       const cancelled = await client.cancelLogin(input);
       if (!cancelled.success) throw new Error('Connection removed, but its sign-in process could not be cancelled');
+      if (!current) return;
+      // 主读数跟着选择走(同 `selectConnection`)。
+      const refreshed = await client.refreshAuthStatus({ providerId: input.providerId, runContext: await runContextFor({ providerId: input.providerId }) });
+      if (!refreshed.success) throw new Error('Connection removed, but the sign-in status could not be refreshed');
     }),
     selectConnection: ({ stopBusySessions, ...input }) => connectionOperation(async () => {
       const status = await client.refreshAuthStatus({ ...input, runContext: await runContextFor(input) });
@@ -235,8 +252,13 @@ function withHostResolvedCli(
       const refreshed = await client.refreshAuthStatus({ providerId: input.providerId, runContext: await runContextFor({ providerId: input.providerId }) });
       if (!refreshed.success) throw new Error('Connection selected, but its sign-in status could not be refreshed');
     }),
+    // 登录进程的环境由这里定(#2507):其余家的账号是它 CLI 自己那一份 ⇒ 恒按原生解析(CLI 自己的目录、
+    // ❌ 默认连接的 key)。renderer 送来什么连接都一样 —— 旧版本的界面没带连接,也不会把选中的 key 带进去。
     startLogin: async (input, options) =>
-      client.startLogin({ ...input, runContext: await runContextFor(input) }, options),
+      client.startLogin(
+        { ...input, runContext: await runContextFor({ ...input, connectionId: harnessLoginConnectionId(input.providerId, input.connectionId) }) },
+        options
+      ),
     refreshAuthStatus: async (input, options) =>
       client.refreshAuthStatus({ ...input, runContext: await runContextFor(input) }, options),
     modelCredential: async (input, options) =>

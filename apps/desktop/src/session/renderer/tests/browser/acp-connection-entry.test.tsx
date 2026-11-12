@@ -60,6 +60,8 @@ function harness(id: string, declared: boolean): AgentPayload {
     acp: { kind: 'supported' }, autoApprove: { kind: 'none' }, models: { kind: 'none' }, effort: { kind: 'none' },
     sessions: {}, sessionpage: { acp: { identity: 'addressable', messageTransport: 'router' } },
     auth: { kind: 'supported', ...(declared ? { connections: { kind: 'managed' } } : {}), methods: [{ kind: 'cli-login', id: `${id}-login`, name: id, args: ['login'] }] },
+    // #2507:OpenCode 这类家登的是它 CLI 自己那一份,另能接一把 API Key。
+    ...(id === 'opencode' ? { apiKeyConnection: { kind: 'supported', endpoint: 'none', model: 'none', evidence: 'test' } } : {}),
   } } as unknown as AgentPayload
 }
 
@@ -71,7 +73,9 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   }),
 }))
 
-it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared: true }, { provider: 'codex', declared: false }, { provider: 'codex', declared: true }])('the real $provider declared=$declared session sign-in action opens connections and returns to the same unsent draft', async ({ provider, declared }) => {
+// 「重新登录」/「去登录」打开的都是这一家的连接面板(#2507);一个连接都没有(没登上的「现有 CLI 配置」不列)
+// 就直接是「添加连接」表单 —— ❌ 先弹一个只有占位的菜单(owner 2026-11-12)。关掉回到原会话、原草稿。
+it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared: true }, { provider: 'codex', declared: false }, { provider: 'codex', declared: true }, { provider: 'opencode', declared: false }])('the real $provider declared=$declared session sign-in action opens connections and returns to the same unsent draft', async ({ provider, declared }) => {
   registerSessionLocaleResources()
   setLocalePreference('en-US')
   await page.viewport(1100, 740)
@@ -108,9 +112,10 @@ it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared
   await until('session sign-in is visible or its real tree failed', () => errors.length > 0 || signIn.query() !== null)
   expect(errors).toEqual([])
   await userEvent.click(signIn)
-  await expect.element(page.getByRole('menuitem', { name: 'Add connection', exact: true })).toBeVisible()
-  await userEvent.click(page.getByRole('menuitem', { name: 'Add connection', exact: true }))
   await expect.element(page.getByRole('dialog', { name: `Add a ${provider} connection`, exact: true })).toBeVisible()
+  expect(document.querySelector('.subscription-connection-menu[data-open]')).toBeNull()
+  expect([...document.querySelectorAll('.subscription-connection-form [role="tab"]')].map(b => b.textContent))
+    .toEqual(['Account sign-in', 'API Key'])
   await userEvent.click(page.getByRole('button', { name: 'Close', exact: true }))
   await until('the connection form has closed', () => document.querySelector('.subscription-connection-form') === null)
   expect(current.sessionId).toBe(id)

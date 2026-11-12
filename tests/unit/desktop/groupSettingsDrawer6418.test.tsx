@@ -269,13 +269,9 @@ describe('settings held above the panel (the chat area): opening the panel reads
 })
 
 describe('#6418 群聊设置 —— 谁看得到什么', () => {
-  it('邀请链接开着时,普通成员在一级页也能复制链接 / 生成海报(改版前就能)', async () => {
+  // @@@group-share 链接 / 二维码只在「邀请」那张单里(群头部一步就到),群信息里不再放第二份。
+  it('邀请链接开着时,群信息里也不另放一份链接(成员和群主都一样)', async () => {
     await renderDrawer('member-1', {}, true, { invite_link_enabled: true })
-    expect(q('[data-testid="group-invite-link"]')).not.toBeNull()
-  })
-
-  it('反例:邀请链接关着时,普通成员看不到链接', async () => {
-    await renderDrawer('member-1')
     expect(q('[data-testid="group-invite-link"]')).toBeNull()
   })
 

@@ -221,6 +221,7 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
         <AddGroupMembers
           chatId={chatId}
           snapshot={snapshot}
+          settings={settings}
           canInviteHumans={canInvite}
           humanDeniedHint={projectGroup ? t('group.projectGroupNoInvite') : undefined}
           onClose={() => setPickerOpen(false)}

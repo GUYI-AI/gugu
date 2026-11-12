@@ -177,16 +177,6 @@ export default {
     "title": "Agent templates",
     "use": "Use"
   },
-  "public": {
-    "capabilities": "Capabilities",
-    "disclaimer": "This agent is shared publicly by its owner. Please interact responsibly.",
-    "loadFailed": "Could not load this Agent",
-    "loginToChat": "Sign in to chat",
-    "ownerCreatedPrefix": "Created by",
-    "ownerCreatedSuffix": "on Gugu",
-    "startChat": "Start chatting",
-    "unavailable": "This Agent does not exist or is not shared publicly"
-  },
   "runtime": {
     "groupMine": "Mine",
     "groupOthers": "Others",

@@ -106,14 +106,13 @@ describe('share and invite surfaces use the approved roles without changing acti
     expect(onJoin).not.toHaveBeenCalled();
   });
 
-  it('the QR section waits for the token, renders the actual QR, and copies the same link', async () => {
+  it('the contacts QR section waits for the group, renders the invite sheet\'s code, and copies the same link', async () => {
     const settings = deferred<Awaited<ReturnType<typeof chatService.getGroupChatSettings>>>();
     const getSettings = vi.spyOn(chatService, 'getGroupChatSettings').mockReturnValue(settings.promise);
+    vi.spyOn(chatService, 'getGroupCollab').mockResolvedValue({ snapshot: { humans: [], agents: [] }, identities: [] } as never);
     const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
     await render(createNode(GroupInviteQrShare, { group: { id: group.id, kind: 'group', name: group.name, public_id: 7333, member_count: 3, avatar_url: null, is_muted: false } }));
-    const copyQr = harness.container.querySelector<HTMLButtonElement>('[data-group-invite-qr-copy]')!;
-    expect(copyQr.disabled).toBe(true);
-    expect(copyQr.dataset.qrPayload).toBe('');
+    expect(harness.container.querySelector('[data-testid="group-invite-copy-link"]')).toBeNull();
     await act(async () => settings.resolve({
       my_role: 'member', can_manage: false, can_dissolve: false, can_archive_topic: false,
       id: group.id, public_id: 7333, creator_user_id: 'user-1', name: group.name, status: 'active', group_prompt: null, default_agent_type: null,
@@ -123,15 +122,10 @@ describe('share and invite surfaces use the approved roles without changing acti
     }));
     await until('the actual QR image loaded', () => !!harness.container.querySelector<HTMLImageElement>('img')?.naturalWidth);
     expect(getSettings).toHaveBeenCalledWith(group.id);
-    expect(copyQr.disabled).toBe(false);
-    expect(copyQr.getBoundingClientRect().height).toBe(32);
-    const image = harness.container.querySelector<HTMLImageElement>('img')!;
-    expect(image.naturalWidth).toBe(132);
-    expect(tier(textElement(harness.container, t('groupInvite.groupNumber', { number: 7333 })))).toEqual([12, 18]);
-    const payload = copyQr.dataset.qrPayload!;
-    expect(payload).toBe('https://gugu.nextmind.space/j/?7333.ASNFZ4mrze8BI0VniavN7w');
-    await page.getByRole('button', { name: t('groupInvite.copyLink'), exact: true }).click();
-    expect(writeText).toHaveBeenCalledExactlyOnceWith(payload);
+    const copy = harness.container.querySelector<HTMLButtonElement>('[data-testid="group-invite-copy-link"]')!;
+    expect(copy.title).toBe('https://gugu.nextmind.space/j/?7333.ASNFZ4mrze8BI0VniavN7w');
+    await act(async () => copy.click());
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('https://gugu.nextmind.space/j/?7333.ASNFZ4mrze8BI0VniavN7w');
   });
 
   it('sharing keeps selection through search, disables submit while waiting, and retries only the failed friend', async () => {

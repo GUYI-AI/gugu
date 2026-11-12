@@ -154,14 +154,18 @@ export type {
   ApiKeyConnectionFields,
   ApiKeyConnectionInput,
   ApiKeyConnectionLaunch,
+  ApiKeyConnectionProtocol,
   IApiKeyConnectionBehavior,
 } from './capabilities/api-key-connection';
 export {
+  ACCOUNT_PROVIDER_OFFICIAL_ENDPOINTS,
   apiKeyConnectionDescriptorSchema,
+  apiKeyConnectionEndpoint,
   apiKeyConnectionInjectsModel,
   apiKeyConnectionInputError,
   apiKeyConnectionPlan,
   apiKeyConnectionUsage,
+  OPENAI_OFFICIAL_ENDPOINT,
 } from './capabilities/api-key-connection';
 export type { HarnessPresence, HarnessPresenceFile, HarnessPresenceStatus, HooksDescriptor, IHooksBehavior } from './capabilities/hooks';
 export type {

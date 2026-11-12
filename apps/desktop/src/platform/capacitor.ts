@@ -14,7 +14,7 @@ import { checkForUpdates, downloadUpdate, installUpdate, updateState } from './c
 import { openInApps, saveToDevice, shareToApps, subscribeIncomingShares } from './capacitorShare'
 import { PlatformError } from './errors'
 import { nativeAudioPermissions } from './capacitorMicrophone'
-import { nativeOpenedLinksReady, subscribeNativeOpenedLinks } from './capacitorOpenedLinks'
+import { nativeOpenedLinksReady, subscribeNativeOpenedLinks, watchNativeOpenedLinks } from './capacitorOpenedLinks'
 import { openBrowser, subscribeBrowserFinished } from './capacitorOAuthBrowser'
 import { googleIdentityLinkUrl } from '../../shared/google-authorization-url'
 import { getSupabaseUrl } from '@gugu/core/cloud/config'
@@ -198,6 +198,7 @@ export const capacitorPlatform: AppPlatform = {
     ready: nativeOpenedLinksReady,
     subscribe: (listener, onError) => subscribeNativeOpenedLinks('auth', listener, onError),
   },
+  watchOpenedLinks: watchNativeOpenedLinks,
   capabilities: { ...base.capabilities, clipboard: true, barcodeScan: true, notifications: true, backgroundWatch: true, appUpdates: true, shareToApps: true, externalFileOpen: true },
   async writeClipboardText(value) {
     await Clipboard.write({ string: value })

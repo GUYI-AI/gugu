@@ -673,6 +673,24 @@ export const BACKGROUND_TASKS_ID = 'background-tasks';
 /** 那一行单子展开 / 收起的开关 id(走 ChatRoot 既有的 `data-collapse-id` 点击委派)。 */
 export const BACKGROUND_TASKS_TOGGLE = `${BACKGROUND_TASKS_ID}:open`;
 
+/** 单子里一条后台命令点开看整条命令的开关 id —— 同一套 per-id 开关,同一条 `data-collapse-id` 点击委派。 */
+export function backgroundCommandToggleId(entryId: string): string {
+  return `${BACKGROUND_TASKS_ID}:command:${entryId}`;
+}
+
+/** 给点开着的那几条命令标上 `open`(量高与画都读这一格);收着的原样不动。 */
+export function markOpenCommands<T extends { id: string }>(commands: readonly T[], isOpen: (toggleId: string) => boolean): T[] {
+  return commands.map((entry) => (isOpen(backgroundCommandToggleId(entry.id)) ? { ...entry, open: true } : entry));
+}
+
+/**
+ * 后台单子此刻画成什么样:单子开着没有、哪几条命令点开着。单独成行(segment-ctx)与挂在回复上(ChatRoot)读这同一份,
+ * ❌ 各算各的 —— 两边一旦差一格,同一张单子换个地方挂就量出不同的高。
+ */
+export function backgroundTasksView<T extends { commands: readonly { id: string }[] }>(tasks: T, isOpen: (toggleId: string) => boolean) {
+  return { ...tasks, commands: markOpenCommands(tasks.commands, isOpen), expanded: isOpen(BACKGROUND_TASKS_TOGGLE) };
+}
+
 export function turnDiscardedId(turnId: string): string {
   return `${turnId}:discarded`;
 }

@@ -84,8 +84,11 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
           <GroupTopicsRows chatId={groupId} />
         </DropdownMenu.Content>
       </DropdownMenu.Root>}
+      {/* @@@group-share 邀请(选人 + 链接 / 二维码)在每种宽度都是一步:窄了只收成图标,❌ 收进「更多」。 */}
+      {invite.showInvite && !innerColumn && (narrow
+        ? <IconButton data-testid={AUTOMATION_TEST_IDS.chatHeaderInviteButton} aria-label={t('header.invite')} title={t('header.invite')} onClick={() => openPopup('invite')}><UserPlus /></IconButton>
+        : <Button variant="ghost" size="md" data-testid={AUTOMATION_TEST_IDS.chatHeaderInviteButton} aria-label={t('header.invite')} onClick={() => openPopup('invite')}><UserPlus />{t('header.invite')}</Button>)}
       {wideGroup && <>
-        {invite.showInvite && !innerColumn && <Button variant="ghost" size="md" data-testid={AUTOMATION_TEST_IDS.chatHeaderInviteButton} aria-label={t('header.invite')} onClick={() => openPopup('invite')}><UserPlus />{t('header.invite')}</Button>}
         <Popover.Trigger ref={appsButton} data-testid={AUTOMATION_TEST_IDS.chatHeaderAppsButton} onClick={onCloseHeaderMenu}
           render={<Button variant="ghost" size="md" aria-label={t('header.groupApps')}><LayoutGrid />{t('header.groupApps')}</Button>} />
         <span aria-hidden className="mx-1 h-4 border-s border-[var(--border)]" />
@@ -95,10 +98,7 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
       <DropdownMenu.Trigger ref={moreButtonRef} data-testid={AUTOMATION_TEST_IDS.chatHeaderMoreButton} title={t('header.more')} aria-pressed={showHeaderMenu}
         render={<IconButton on={showHeaderMenu || undefined} aria-label={t('header.more')}><MoreHorizontal /></IconButton>} />
       {showHeaderMenu && <DropdownMenu.Content data-testid={AUTOMATION_TEST_IDS.groupHeaderMenu} side="bottom" align="end" sideOffset={4} style={{ minWidth: 220 }}>
-        {groupId && narrow && <>
-          {invite.showInvite && <MenuItem data-testid={AUTOMATION_TEST_IDS.chatHeaderInviteButton} onClick={() => openPopup('invite')} icon={<UserPlus size={16} />}>{t('header.invite')}</MenuItem>}
-          <MenuItem onClick={() => openPopup('apps')} icon={<LayoutGrid size={16} />}>{t('header.groupApps')}</MenuItem>
-        </>}
+        {groupId && narrow && <MenuItem onClick={() => openPopup('apps')} icon={<LayoutGrid size={16} />}>{t('header.groupApps')}</MenuItem>}
         <MenuItem data-testid={AUTOMATION_TEST_IDS.chatHeaderSearchButton} onClick={onSearch} icon={<Search size={16} />} shortcut={isRoomChat ? '⌘F' : undefined}>
           {t(isRoomChat ? 'header.searchHistory' : 'header.searchChat')}
         </MenuItem>
@@ -110,7 +110,7 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
       </DropdownMenu.Content>}
     </DropdownMenu.Root>
     {groupId && popup.kind === 'apps' && <GroupAppsPicker chatId={groupId} mobile={mobile} anchor={narrow ? moreButtonRef : appsButton} onClose={closePopup} />}
-    {groupId && popup.kind === 'invite' && room && <AddGroupMembers chatId={groupId} snapshot={room.snapshot} canInviteHumans={invite.canInviteHumans}
+    {groupId && popup.kind === 'invite' && room && <AddGroupMembers chatId={groupId} snapshot={room.snapshot} settings={room.settings} canInviteHumans={invite.canInviteHumans}
       humanDeniedHint={invite.projectGroup ? t('group.projectGroupNoInvite') : undefined} onReload={room.onReload} onClose={closePopup} />}
   </Popover.Root>
 })
