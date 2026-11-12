@@ -197,6 +197,34 @@ describe('accountProjectsStore reading', () => {
     await vi.waitFor(() => expect(read.list).toHaveBeenCalledTimes(6));
   });
 
+  // #2548 a project's name and status are its group's: dissolving the group (archive_group_as) or renaming it changes them,
+  // and the backend says so with chat_meta_changed (chats_meta_broadcast, to every member, the owner too). A dissolved
+  // project's row stayed in the list until something else made it read again.
+  it('reads again when one of its projects\' groups changes status or name; another group\'s change is none of its business', async () => {
+    const store = new AccountProjectsStore();
+    const revisions = new Map<string, (operations: readonly { payload: unknown }[]) => void>();
+    const subscribe = ((event: string, listener: (operations: readonly { payload: unknown }[]) => void) => {
+      revisions.set(event, listener);
+      return () => revisions.delete(event);
+    }) as unknown as Parameters<AccountProjectsStore['start']>[1];
+    read.list.mockResolvedValue([paper, empty]);
+    const stop = store.start('user-a', subscribe);
+    await vi.waitFor(() => expect(store.status).toBe('ready'));
+    expect(read.list).toHaveBeenCalledTimes(1);
+
+    revisions.get('chat_meta_changed')!([{ payload: { chat_id: 'chat-someone-elses-group', entity_id: 'chat-someone-elses-group' } }]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(read.list).toHaveBeenCalledTimes(1);
+
+    const dissolved = { ...paper, archived: true };
+    read.list.mockResolvedValueOnce([dissolved, empty]);
+    revisions.get('chat_meta_changed')!([{ payload: { chat_id: 'chat-paper', entity_id: 'chat-paper' } }]);
+    await vi.waitFor(() => expect(store.projects).toEqual([dissolved, empty]));
+    expect(read.list).toHaveBeenCalledTimes(2);
+    stop();
+    expect(revisions.size).toBe(0);
+  });
+
   it('a refresh asked for while reading reads again afterwards; a read that lands after clear is dropped', async () => {
     const store = new AccountProjectsStore();
     let resolveFirst!: (list: AccountProject[]) => void;
