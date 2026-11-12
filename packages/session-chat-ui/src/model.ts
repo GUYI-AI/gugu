@@ -131,7 +131,7 @@ export type ChatMessage = {
   sentChat?: string;
   /** View-only disclosure of the completed thinking/execution segment. */
   conversationProcess?: { live?: boolean; starting?: 'starting' | 'restoring' | 'connecting'; id: string; startedAt?: number; endedAt?: number; idleMs?: number; steps?: number; empty?: boolean;
-    /** Opens and closes the line instead of `id` while a woken run turns a finished line live again (#2587). */
+    /** Opens and closes the line instead of `id` once a woken run has continued it (#2587): a key while it runs, a fresh one after. */
     toggleId?: string };
   /**
    * View-only split of one agent-conversation reply (owner 0 号图): `head` draws the name and the
@@ -524,7 +524,7 @@ export type TurnProcessItem = {
   conversationPreviousSpeaker?: string;
   kind: 'turn-process';
   id: string;
-  /** Opens and closes the line instead of `id` while a woken run turns a finished line live again (#2587). */
+  /** Opens and closes the line instead of `id` once a woken run has continued it (#2587): a key while it runs, a fresh one after. */
   toggleId?: string;
   turnId: string;
   /** This segment explicitly chose silence; a status label, never an assistant reply. */

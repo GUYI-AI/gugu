@@ -292,7 +292,8 @@ describe('subagent / background command completions and compaction continue the 
     ({ kind: 'compaction', id, seq: 0, compactionId: id, status, summary: '', startedAt: at } as unknown as ChatItem);
 
   it('joins an agent turn woken by a completion onto the answered turn: one line, idle time excluded, latest answer is the bubble', () => {
-    const rows = flattenTier([answered, woken()], context(false, ['p:process']), segmenters);
+    // Opened after the woken run is over: the finished line's own key (see the live case below).
+    const rows = flattenTier([answered, woken()], context(false, ['p:process~n1:ended']), segmenters);
     expect(heads(rows).map(row => row.itemId)).toEqual(['p:process:head']);
     // 3 s before the wake + 5 s after it; the 56 s it sat idle in between is not work.
     expect((heads(rows)[0]!.data as ChatMessage).conversationProcess).toMatchObject({ startedAt: 1000, endedAt: 65000, idleMs: 56000, steps: 2 });
@@ -308,11 +309,11 @@ describe('subagent / background command completions and compaction continue the 
     expect(projected.active?.id).toBe('p');
     const rows = flattenTier([projected.active!], context(true), segmenters);
     expect(heads(rows).map(row => row.itemId)).toEqual(['p:process:head']);
-    // Opened and closed under a key of its own while it runs again; back under its id once the run is over.
+    // Opened and closed under a key of its own while it runs again, and under a fresh one once the run is over.
     expect((heads(rows)[0]!.data as ChatMessage).conversationProcess).toMatchObject({ live: true, startedAt: 1000, idleMs: 56000, toggleId: 'p:process~n1' });
     expect(bodies(rows)).toEqual(['later']);
     const settled = flattenTier([answered, woken()], context(false), segmenters);
-    expect((heads(settled)[0]!.data as ChatMessage).conversationProcess?.toggleId).toBeUndefined();
+    expect((heads(settled)[0]!.data as ChatMessage).conversationProcess?.toggleId).toBe('p:process~n1:ended');
   });
 
   it('gives a whole run of continued turns back to the live tier, and nothing when the last turn did not end cleanly', () => {
@@ -332,6 +333,25 @@ describe('subagent / background command completions and compaction continue the 
     const rows = flattenTier([answered, woken(over)], context(false), segmenters);
     expect(heads(rows).map(row => row.itemId)).toEqual(['p:process:head', 'w:process:head']);
     expect(bodies(rows)).toEqual(['answer', 'later']);
+  });
+
+  // A task that finished while the answered turn was still going is recorded in that turn; the turn the agent opens
+  // to answer it starts with its own work (mac1 real window 2026-11-13: a 3 s command inside a 12 s turn).
+  it('joins a wake whose completion landed in the turn before; an owner notification or nothing finished still splits', () => {
+    const midRun: TranscriptTurn = { ...answered, items: [message('u', 'user', 1000), call('c1'), notice('n0', 2000),
+      message('answer', 'assistant', 3000)] as TranscriptTurn['items'] };
+    const wake = woken({ items: [call('c2'), message('later', 'assistant', 64000)] as TranscriptTurn['items'] });
+    const rows = flattenTier([midRun, wake], context(false), segmenters);
+    expect(heads(rows).map(row => row.itemId)).toEqual(['p:process:head']);
+    expect(bodies(rows)).toEqual(['later']);
+    const live = { ...wake, endedAt: undefined, outcome: undefined };
+    expect(withContinuedActiveTurn({ committed: [midRun], active: live }).active?.id).toBe('p');
+
+    expect(joinContinuedTurns([answered, wake])).toHaveLength(2);
+    const notification = woken({ items: [{ kind: 'message', id: 'note', seq: 0, role: 'assistant', text: 'Done.', at: 64000,
+      ownerNotification: { requestId: 'r', requestHash: 'h' } }] as TranscriptTurn['items'] });
+    expect(joinContinuedTurns([midRun, notification])).toHaveLength(2);
+    expect(joinContinuedTurns([midRun, woken({ ...wake, trigger: { kind: 'delivery', chatIds: ['206258'] } })])).toHaveLength(2);
   });
 
   it('still splits on a user message inside the turn', () => {

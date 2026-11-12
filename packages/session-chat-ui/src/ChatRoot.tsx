@@ -624,7 +624,7 @@ export function ChatRoot(props: ChatRootProps) {
       !joinsFoldRunAt(next, prevSource.length, ctx.foldTurnProcess === true) &&
       // 新来的那一轮接续上一轮(#2587)时同理:只 flatten 新的画不出接续,走整条重建。
       !(ctx.agentConversation && prevSource.length > 0 && next[prevSource.length] !== undefined
-        && canBeContinued(prevSource[prevSource.length - 1]!) && continuesPreviousTurn(next[prevSource.length]!))
+        && canBeContinued(prevSource[prevSource.length - 1]!) && continuesPreviousTurn(next[prevSource.length]!, prevSource[prevSource.length - 1]))
     ) {
       // Incremental append: only process the new tail.
       const tail = next.slice(prevSource.length);
