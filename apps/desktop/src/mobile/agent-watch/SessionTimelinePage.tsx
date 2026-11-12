@@ -46,6 +46,7 @@ import { useMobileShell } from '@/hooks/useMobileShell'
 import { hostedInputIds } from './local-queued-inputs'
 import { canResumePhoneInput, phoneInputQueueIntent } from './phone-input-queue'
 import { runNativeInputAction } from '@/lib/nativeInputFailureNotice'
+import { SessionChatLoading } from '@renderer/features/sessions/acp/session-chat-loading'
 
 /**
  * owner 10-16 The App tabs a session offers on the phone: installed, switched on, opening no file — the session page's 「+」
@@ -321,10 +322,13 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
                读取早就成功了,是对面还没写。线上已画着刚发的那句时不说(线程有内容就不画空态):那句本身就是「发出去了」。
                画在线程自己的空态位上,❌ 在线程上方另起一行:那样空着的线程还会再说一句「Nothing in this task yet」
                (对一条有历史的任务是错话),撤掉上方那一行时整条线程跟着上移(owner 10-12「进去就颤两下」)。
-               时间线已经到手、线程还没画出来的那一两帧(运行时下一拍才收到)也是这一句,❌ 退回官方空态闪一下。 */
-            <div className="gg-aw-placeholder" data-testid={waitingForRecord ? 'agent-watch-waiting-record' : undefined}>
-              {t(waitingForRecord ? 'agentWatch.timeline.waitingRecord' : 'agentWatch.timeline.loading')}
-            </div>
+               时间线已经到手、线程还没画出来的那一两帧(运行时下一拍才收到)也是这一句,❌ 退回官方空态闪一下。
+               读取中画骨架屏,和桌面会话页一样画在消息区上、输入框下(owner 11-12:❌ 输入框下面多一行「正在读取时间线…」)。 */
+            waitingForRecord ? (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="gg-aw-placeholder" data-testid="agent-watch-waiting-record">{t('agentWatch.timeline.waitingRecord')}</div>
+              </div>
+            ) : <SessionChatLoading label={t('agentWatch.timeline.loading')} />
           ) : null}
         />
       )}

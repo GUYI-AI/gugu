@@ -47,6 +47,7 @@ function SessionTranscriptContent({
   pendingMessages,
   backgroundTasks,
   onReachStart,
+  contentOverlay = false,
   mobile = false,
   className,
   style,
@@ -58,6 +59,8 @@ function SessionTranscriptContent({
   sourceWindow?: TimelineWindowFields
   commands?: ChatCommands
   composerContent?: ReactNode
+  /** A layer over the messages, under the composer (`onReady`'s `contentOverlay`): loading draws its skeleton there. */
+  contentOverlay?: boolean
   shown?: boolean
   activeTurnId?: string | null
   pendingPrompt?: import('@gugu/session-chat-ui').PendingPrompt | null
@@ -141,6 +144,7 @@ function SessionTranscriptContent({
       stickToBottom
       layout={layout ?? defaultLayout}
       onReachStart={onReachStart}
+      contentOverlay={contentOverlay}
       className={[mobile ? 'gg-session-transcript gg-session-transcript--mobile' : 'gg-session-transcript', className].filter(Boolean).join(' ')}
       style={style}
     />
