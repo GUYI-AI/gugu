@@ -45,6 +45,8 @@ export type ToolRunCategory =
   | 'subagentStopped'
   | 'commandDone'
   | 'commandStopped'
+  | 'compacting'
+  | 'compact'
   | 'plan'
   | 'hook'
   | 'tool';
@@ -63,6 +65,8 @@ const CATEGORY_ORDER: readonly ToolRunCategory[] = [
   'subagentStopped',
   'commandDone',
   'commandStopped',
+  'compacting',
+  'compact',
   'plan',
   'hook',
   'tool',
@@ -102,6 +106,10 @@ export function toolRunCategory(item: ChatItem, conversation = false): ToolRunCa
       return item.outcome === 'stopped' ? 'subagentStopped' : 'subagentDone';
     case 'background-command-done-tool-call':
       return item.outcome === 'stopped' ? 'commandStopped' : 'commandDone';
+    case 'compaction':
+      // 对话布局里压缩接续当前段(#2587),收进过程这一句;压缩失败照旧单独一行(conversation-segments)。
+      if (!conversation || item.status === 'failed') return null;
+      return item.status === 'in_progress' ? 'compacting' : 'compact';
     case 'unknown-tool-call':
       // 提问 / 计划批准是读者自己的一步，不并进「用了 N 个工具」（同 turn-fold 的 isQuestionCall）。
       return isQuestionOrPlanToolName(toolCallName(item)) ? null : 'tool';
@@ -158,6 +166,8 @@ const ONE_KEYS: Record<ToolRunCategory, string> = {
   subagentStopped: 'transcript.toolRun.subagentStoppedOne',
   commandDone: 'transcript.toolRun.commandDoneOne',
   commandStopped: 'transcript.toolRun.commandStoppedOne',
+  compacting: 'transcript.toolRun.compacting',
+  compact: 'transcript.toolRun.compactOne',
   plan: 'transcript.toolRun.planOne',
   hook: 'transcript.toolRun.hookOne',
   tool: 'transcript.toolRun.toolOne',
@@ -176,6 +186,8 @@ const MANY_KEYS: Record<ToolRunCategory, string> = {
   subagentStopped: 'transcript.toolRun.subagentStopped',
   commandDone: 'transcript.toolRun.commandDone',
   commandStopped: 'transcript.toolRun.commandStopped',
+  compacting: 'transcript.toolRun.compacting',
+  compact: 'transcript.toolRun.compact',
   plan: 'transcript.toolRun.plan',
   hook: 'transcript.toolRun.hook',
   tool: 'transcript.toolRun.tool',

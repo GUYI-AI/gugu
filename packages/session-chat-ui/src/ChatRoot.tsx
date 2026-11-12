@@ -83,6 +83,7 @@ import type { ChatItem, ChatMessage, TranscriptTurn } from './model';
 import type { ChatState, ScrollMode } from './state/chat-state';
 import { activeTurnWithInputs, latestVisibleTurnId, pendingPromptLanded, projectPendingMessages, type PendingMessageProjectionCache } from './state/pending-prompt';
 import { isEmptyAgentTurn, joinsFoldRunAt } from './state/turn-fold';
+import { canBeContinued, continuesPreviousTurn, withContinuedActiveTurn } from './state/conversation-segments';
 import {
   flattenTier, lastConversationMessage,
   isDeliveredFromAgent,
@@ -349,7 +350,9 @@ export function ChatRoot(props: ChatRootProps) {
   const pendingMessageCache: PendingMessageProjectionCache = new WeakMap();
   const projectedInputs = createMemo(() => {
     const s = state();
-    return projectPendingMessages(s.transcript.state.committedTurns, s.transcript.state.activeTurnSnapshot, s.session.state.pendingMessages, pendingMessageCache);
+    const projected = projectPendingMessages(s.transcript.state.committedTurns, s.transcript.state.activeTurnSnapshot, s.session.state.pendingMessages, pendingMessageCache);
+    // A running turn that continues the last one renders together with it (#2587).
+    return props.context.theme.layout.agentConversation ? withContinuedActiveTurn(projected) : projected;
   });
   const projectedCommitted = createMemo(() => projectedInputs().committed, undefined,
     { equals: (a, b) => a.length === b.length && a.every((turn, index) => turn === b[index]) });
@@ -618,7 +621,10 @@ export function ChatRoot(props: ChatRootProps) {
       // The previous acknowledgement stops being the latest when another turn arrives.
       (prevSource.length === 0 || !isEmptyAgentTurn(prevSource[prevSource.length - 1])) &&
       // 新来的那一轮要并进上一条还没收尾的折叠(#4981)时,只 flatten 新的画不出合并,走整条重建。
-      !joinsFoldRunAt(next, prevSource.length, ctx.foldTurnProcess === true)
+      !joinsFoldRunAt(next, prevSource.length, ctx.foldTurnProcess === true) &&
+      // 新来的那一轮接续上一轮(#2587)时同理:只 flatten 新的画不出接续,走整条重建。
+      !(ctx.agentConversation && prevSource.length > 0 && next[prevSource.length] !== undefined
+        && canBeContinued(prevSource[prevSource.length - 1]!) && continuesPreviousTurn(next[prevSource.length]!))
     ) {
       // Incremental append: only process the new tail.
       const tail = next.slice(prevSource.length);

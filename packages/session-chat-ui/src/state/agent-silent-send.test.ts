@@ -101,14 +101,19 @@ describe('settled silence between confirmed Agent sends', () => {
     expect(rows.filter(row => row.kind === 'agent-activity')).toHaveLength(2);
   });
 
-  it('preserves a background completion notification followed by silence', () => {
+  // #2587: the completion continues the agent's work instead of standing as its own row. A confirmed send already sealed the
+  // segment before it, so it carries on in a process line of its own, still outside the A2A fold.
+  it('keeps a background completion after a send visible as a process line followed by silence', () => {
     const notice: TranscriptTurn = { ...quiet('background'), items: [
       { kind: 'subagent-done-tool-call', id: 'completed-child', seq: 0, toolCallId: 'completed-child',
         title: 'Background task finished', status: 'done', name: 'Report', agentId: 'child',
         launchToolCallId: 'launch', outcome: 'completed' }, ...quiet('background').items,
     ] };
     const rows = flattenTier([sent('first'), notice, sent('last')], ctx, segmenters);
-    expect(rows.some(row => row.itemId === 'completed-child' && !row.activityFold)).toBe(true);
+    expect(rows.some(row => row.itemId === 'completed-child')).toBe(false);
+    expect(rows.filter(row => row.kind === 'turn-process' && !row.activityFold)).toHaveLength(1);
+    const expanded = flattenTier([sent('first'), notice, sent('last')], { ...ctx, revealAllFolds: true }, segmenters);
+    expect(expanded.some(row => row.itemId === 'completed-child')).toBe(true);
     expect(rows.filter(row => row.kind === 'agent-activity')).toHaveLength(2);
   });
 });

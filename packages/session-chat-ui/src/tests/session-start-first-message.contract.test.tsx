@@ -393,7 +393,8 @@ describe('incoming deliveries share the transcript layout', () => {
     await until('all native messages replace their unknown markers', () => host.querySelectorAll('[data-user-card]').length === 3 && !host.querySelector('[data-send-state="unknown"]'))
     expect(host.querySelectorAll('[data-user-card]')).toHaveLength(3)
     expect(host.querySelectorAll('[data-send-state="unknown"] button')).toHaveLength(0)
-    expect(host.textContent).toContain('Compacting')
+    // #2587: the compaction continues turn-1's segment, so it sits inside that (collapsed) process line, not as a divider.
+    expect(host.textContent).not.toContain('Compacting')
     expect(host.textContent).toContain('Stopped')
     expect(host.textContent).toContain('Host status remains visible')
     const rows = [...host.querySelectorAll<HTMLElement>('[data-user-card]')].map(el => el.getBoundingClientRect()).sort((a, b) => a.top - b.top)

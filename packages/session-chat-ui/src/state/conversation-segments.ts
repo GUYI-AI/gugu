@@ -14,9 +14,85 @@ export type ConversationSegment = {
   endedAt?: number;
   live: boolean;
   idleMs: number;
+  /** The idle stretch before a continued turn (#2587). Final as soon as the turn resumes, so it counts while live too. */
+  resumedIdleMs: number;
   fullReply?: true;
 };
 export type ConversationBlock = { kind: 'input'; item: ChatItem } | ConversationSegment;
+
+/**
+ * A finished subagent, a finished background command and a context compaction are part of the agent's own work:
+ * they continue the segment they land in and never open a new one (owner 2026-11-13, #2587:「三类消息之前是会创建
+ * 新的气泡段落，现在是接续之前气泡段落」). They fold into the process like any step. A failed compaction keeps its
+ * own row: the user has to see that nothing was compacted.
+ */
+export function continuesConversationSegment(item: ChatItem): boolean {
+  return item.kind === 'subagent-done-tool-call' || item.kind === 'background-command-done-tool-call'
+    || (item.kind === 'compaction' && item.status !== 'failed');
+}
+
+/** A turn joined onto the one before it; `resumedAfterIdle` holds the idle stretch keyed by the first joined item. */
+export type ContinuedTurn = TranscriptTurn & { resumedAfterIdle?: ReadonlyMap<string, number> };
+
+/**
+ * A turn the agent opened by itself because one of its tasks finished (or its context was compacted) carries on the
+ * turn before it (#2587). Turns opened by people — the owner, an A2A or group delivery, a schedule — still split
+ * (owner:「A2A 消息或者用户消息造成的分割，还是会分割消息气泡」).
+ */
+export function continuesPreviousTurn(turn: TranscriptTurn): boolean {
+  if (turn.initiator !== 'agent' || (turn.trigger !== undefined && turn.trigger.kind !== 'agent')) return false;
+  const first = (turn.items as readonly ChatItem[])[0];
+  return first !== undefined && continuesConversationSegment(first);
+}
+
+/** Only a cleanly finished turn is continued: a stopped or failed one keeps its own ending. */
+export function canBeContinued(turn: TranscriptTurn): boolean {
+  return turn.outcome === undefined || turn.outcome.kind === 'done';
+}
+
+/** `turn` appended to `previous`: one turn under `previous`'s id, so its process line, fold state and anchors stay put. */
+export function joinContinuedTurn(previous: ContinuedTurn, turn: TranscriptTurn): ContinuedTurn {
+  const first = turn.items[0];
+  const idle = previous.endedAt !== undefined && turn.startedAt !== undefined ? Math.max(0, turn.startedAt - previous.endedAt) : 0;
+  const resumedAfterIdle = new Map(previous.resumedAfterIdle);
+  if (first !== undefined && idle > 0) resumedAfterIdle.set(first.id, idle);
+  const terminals = previous.terminals || turn.terminals ? [...(previous.terminals ?? []), ...(turn.terminals ?? [])] : undefined;
+  const { endedAt: _endedAt, outcome: _outcome, ...rest } = previous;
+  return {
+    ...rest,
+    items: [...previous.items, ...turn.items],
+    ...(turn.endedAt !== undefined ? { endedAt: turn.endedAt } : {}),
+    ...(turn.outcome !== undefined ? { outcome: turn.outcome } : {}),
+    ...(terminals ? { terminals } : {}),
+    resumedAfterIdle,
+  };
+}
+
+/**
+ * While a continued turn runs, the committed turns it continues move into the live tier with it, so the process line
+ * already on screen is the one that turns live again — ❌ a second line that only merges once the run ends.
+ * The committed tier gives the run back when the turn commits (its tail then appends as one joined turn).
+ */
+export function withContinuedActiveTurn<T extends { committed: readonly TranscriptTurn[]; active: TranscriptTurn | null }>(projected: T): T {
+  const { committed, active } = projected;
+  if (!active || committed.length === 0 || !canBeContinued(committed[committed.length - 1]!) || !continuesPreviousTurn(active)) return projected;
+  let start = committed.length - 1;
+  while (start > 0 && continuesPreviousTurn(committed[start]!) && canBeContinued(committed[start - 1]!)) start--;
+  const run = joinContinuedTurns(committed.slice(start));
+  if (run.length !== 1) return projected;
+  return { ...projected, committed: committed.slice(0, start), active: joinContinuedTurn(run[0]!, active) };
+}
+
+/** Folds every continued turn into the turn it continues (see `continuesPreviousTurn`). */
+export function joinContinuedTurns(turns: readonly TranscriptTurn[]): ContinuedTurn[] {
+  const out: ContinuedTurn[] = [];
+  for (const turn of turns) {
+    const previous = out.at(-1);
+    if (previous !== undefined && canBeContinued(previous) && continuesPreviousTurn(turn)) out[out.length - 1] = joinContinuedTurn(previous, turn);
+    else out.push(turn);
+  }
+  return out;
+}
 
 export function conversationSpoken(item: ChatItem): item is ChatMessage {
   return item.kind === 'message' && item.role === 'assistant' && !!item.text.trim()
@@ -48,10 +124,11 @@ export function planConversationSegments(turn: TranscriptTurn, active: boolean):
   let pendingInput = false;
   let previousAt: number | undefined;
   let pendingStop: { owner: ConversationSegment; items: ChatItem[] } | undefined;
+  let resumedIdle = 0;
   const open = (): ConversationSegment => {
     if (!segment) {
       segment = { kind: 'segment', id: boundary ? `${turnProcessId(turn.id)}@${boundary}` : turnProcessId(turn.id),
-        items: [], live: false, idleMs: 0, ...(startedAt !== undefined ? { startedAt } : {}) };
+        items: [], live: false, idleMs: 0, resumedIdleMs: 0, ...(startedAt !== undefined ? { startedAt } : {}) };
       blocks.push(segment);
       hadSegment = true;
     }
@@ -99,10 +176,11 @@ export function planConversationSegments(turn: TranscriptTurn, active: boolean):
       else pendingStop = { owner, items: [item] };
       continue;
     }
+    resumedIdle += (turn as ContinuedTurn).resumedAfterIdle?.get(item.id) ?? 0;
     const activity = item.kind === 'thinking' || conversationSpoken(item) || ('toolCallId' in item
       && item.kind !== 'subagent-done-tool-call' && item.kind !== 'background-command-done-tool-call');
-    const boundaryItem = (item.kind === 'message' && item.role === 'user') || item.kind === 'compaction' || item.kind === 'context-reset'
-      || item.kind === 'subagent-done-tool-call' || item.kind === 'background-command-done-tool-call';
+    const boundaryItem = (item.kind === 'message' && item.role === 'user') || item.kind === 'context-reset'
+      || (item.kind === 'compaction' && !continuesConversationSegment(item));
     if (pendingStop && !activity && !boundaryItem) { pendingStop.items.push(item); continue; }
     finishStop(at, activity);
     if (item.kind === 'message' && item.role === 'user') {
@@ -114,17 +192,9 @@ export function planConversationSegments(turn: TranscriptTurn, active: boolean):
       pendingInput = true;
       continue;
     }
-    const notification = item.kind === 'subagent-done-tool-call' || item.kind === 'background-command-done-tool-call';
-    if (notification) {
-      // Completion is its own observed event, never an inferred reply target.
-      close(!hadSegment && active ? turn.startedAt ?? at : at, item.id);
-      blocks.push({ kind: 'input', item });
-      pendingInput = true;
-      continue;
-    }
     const question = 'toolCallId' in item && isQuestionOrPlanToolName(toolCallName(item));
     // Context and engine boundaries keep their chronological place outside process folds.
-    if (question || item.kind === 'compaction' || item.kind === 'context-reset'
+    if (question || (item.kind === 'compaction' && !continuesConversationSegment(item)) || item.kind === 'context-reset'
       || (item.kind === 'session-notice' && item.code !== 'provider-notice' && !hookSpeakerOfNotice(item))) {
       close(at, item.id);
       blocks.push({ kind: 'input', item });
@@ -132,6 +202,8 @@ export function planConversationSegments(turn: TranscriptTurn, active: boolean):
       continue;
     }
     const current = open();
+    current.resumedIdleMs += resumedIdle;
+    resumedIdle = 0;
     if (item.kind === 'session-notice' && at !== undefined && previousAt !== undefined) current.idleMs += Math.max(0, at - previousAt);
     current.items.push(item);
     current.endedAt = 'completedAt' in item ? item.completedAt ?? at : at;
