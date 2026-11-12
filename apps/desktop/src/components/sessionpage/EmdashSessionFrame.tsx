@@ -10,7 +10,7 @@
 // CSS 之后注入一段桥接 <style>:把会话页的原始色阶/语义原色重定义为 gugu 的语义 token
 // (--bg/--fg/--accent/--border-color… 经 host 继承进 shadow)。桥接规则不进 @layer、且
 // 注入在后 → 稳压会话页的分层/在前规则。gugu 切明暗 → 挂载类翻转 → 会话页整体跟随。
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { platform } from '@/platform'
 import { i18n } from '@/i18n'
@@ -18,6 +18,7 @@ import { useTheme, type Theme } from '@/store/theme'
 import { sessionSkinClassName } from './sessionSkin'
 import { AlertCircle, RefreshCw } from '@/lib/icons'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
+import { hasStartupMotion, retainStartupMotion, subscribeStartupMotion } from '@/lib/startup-motion'
 import {
   createSessionHostWsClient,
   resolveSessionHostEndpoint,
@@ -266,6 +267,11 @@ export function EmdashSessionFrame() {
   // 加载态只有那个加载动画,无墙钟兜底页(owner 拍板砍掉):会话页在 App 启动即常驻预热,
   // 正常路径用户到达时已就绪;错误卡只留给真起不来(资源加载失败 / renderer bootstrap 失败,fail loud),不给「慢」。
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
+  // Cold start keeps one loader (spec loading-state): while the startup wordmark is still up, this frame holds it until the
+  // task page has drawn or failed, instead of a second loader after it (#2571). A later load shows the ordinary one.
+  const startupShown = useSyncExternalStore(subscribeStartupMotion, hasStartupMotion, () => false)
+  const holdsStartup = loadState === 'loading' && startupShown
+  useLayoutEffect(() => holdsStartup ? retainStartupMotion() : undefined, [holdsStartup])
   // 网页版:无头宿主的连接状态;桌面版恒为 null(桥在 preload 里,没有"连接"这回事)。
   const [hostState, setHostState] = useState<SessionHostConnectionState | null>(null)
   const [hostEndpoint, setHostEndpoint] = useState<string | null>(null)
@@ -361,7 +367,7 @@ export function EmdashSessionFrame() {
   return (
     <div className="gg-session-frame">
       <div ref={hostRef} className="gg-session-frame-host" />
-      {loadState === 'loading' && (
+      {loadState === 'loading' && !holdsStartup && (
         <div
           className="gg-session-frame-placeholder gg-session-frame-loading"
         >
