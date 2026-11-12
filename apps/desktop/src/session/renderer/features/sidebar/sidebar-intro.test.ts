@@ -11,7 +11,7 @@ import {
 
 const run = (events: SidebarIntroEvent[], from: SidebarIntro = { step: 'collapse', up: false }) => events.reduce(nextSidebarIntro, from);
 const opened = { kind: 'opened', expanded: true } as const;
-const view = { expanded: true, onScreen: true, notificationsOpen: false };
+const view = { expanded: true, onScreen: true, notificationsOpen: false, touring: false };
 
 describe('it comes up', () => {
   it('the first time a group or a project is opened while the sidebar is expanded, at step 1', () => {
@@ -79,6 +79,12 @@ describe('the step drawn', () => {
     expect(sidebarIntroShown('ended', true, view)).toBeNull();
     expect(sidebarIntroShown('history', true, { ...view, onScreen: false })).toBeNull();
     expect(sidebarIntroShown('history', true, { ...view, notificationsOpen: true })).toBeNull();
+  });
+
+  it('steps aside while the feature tour is on screen, without ending: two bubbles never show at once', () => {
+    expect(sidebarIntroShown('collapse', true, { ...view, touring: true })).toBeNull();
+    expect(sidebarIntroShown('history', true, { ...view, touring: true })).toBeNull();
+    expect(sidebarIntroShown('history', true, { ...view, touring: false })).toBe('history');
   });
 
   it('step 2 also on the rail; step 1 only expanded', () => {

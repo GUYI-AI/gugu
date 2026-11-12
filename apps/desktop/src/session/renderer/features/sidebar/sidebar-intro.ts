@@ -51,16 +51,17 @@ export function nextSidebarIntro(intro: SidebarIntro, event: SidebarIntroEvent):
 
 /**
  * The step drawn, or null. Drawn only while it is up and can be seen: the foot on screen (the task page or its sidebar
- * can be a hidden retained surface) and the list not swapped for the bell's panel; hidden that way it is not ended.
+ * can be a hidden retained surface), the list not swapped for the bell's panel, and the feature tour not on screen (two
+ * bubbles at once); hidden that way it is not ended.
  * Step 1 needs the sidebar expanded (a collapse moves it on); step 2 is drawn on the rail too.
  * `stored` undefined = the settings are not read yet: not drawn (❌ flash a bubble the user already ended).
  */
 export function sidebarIntroShown(
   stored: SidebarIntroStored | undefined,
   up: boolean,
-  view: { expanded: boolean; onScreen: boolean; notificationsOpen: boolean }
+  view: { expanded: boolean; onScreen: boolean; notificationsOpen: boolean; touring: boolean }
 ): SidebarIntroStep | null {
-  if (stored === undefined || stored === 'ended' || !up || !view.onScreen || view.notificationsOpen) return null;
+  if (stored === undefined || stored === 'ended' || !up || !view.onScreen || view.notificationsOpen || view.touring) return null;
   if (stored === 'collapse' && !view.expanded) return null;
   return stored;
 }

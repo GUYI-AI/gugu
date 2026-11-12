@@ -24,6 +24,7 @@ const state = vi.hoisted(() => {
     intro: 'collapse' as string | undefined,
     update: (() => {}) as (partial: { sidebarIntro?: string }) => void,
     notificationsOpen: false,
+    touring: false,
     /** What the bubble's Root was handed (the popover itself is replaced below). */
     onOpenChange: undefined as undefined | ((open: boolean, details: unknown) => void),
     /** A change to the layout, the settings or the bell, seen by the mounted foot (as the real hooks would). */
@@ -93,6 +94,10 @@ vi.mock('@/lib/sidebarChatsBridge', () => ({
     useSyncExternalStore(state.subscribe, state.version);
     return state.notificationsOpen;
   },
+  useProductTourOnScreen: () => {
+    useSyncExternalStore(state.subscribe, state.version);
+    return state.touring;
+  },
 }));
 // The tooltip's text is what matters here; Base UI draws it only on hover.
 vi.mock('@/components/ui/Tooltip', () => ({ Hint: ({ label, children }: { label: string; children: ReactElement }) => <span data-hint={label}>{children}</span> }));
@@ -129,6 +134,7 @@ beforeEach(() => {
   state.canGoBack = true;
   state.intro = 'collapse';
   state.notificationsOpen = false;
+  state.touring = false;
   state.onOpenChange = undefined;
   for (const fn of [state.toggleLeft, state.navigate, state.back, state.dispatch, state.request, state.update]) vi.mocked(fn).mockClear();
   host = document.createElement('div');
@@ -440,6 +446,17 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
     expect(bubble()).toBeNull();
     await change(() => (state.notificationsOpen = false));
     expect(bubble()!.dataset.testid).toBe('sidebar-intro-collapse');
+    expect(state.update).not.toHaveBeenCalled();
+  });
+
+  it('steps aside while the feature tour is on screen (❌ two bubbles at once), and comes back where it was', async () => {
+    state.touring = true;
+    await render(<SidebarOneListFoot openChatId="g1" />);
+    expect(bubble()).toBeNull();
+    await change(() => (state.touring = false));
+    expect(bubble()!.dataset.testid).toBe('sidebar-intro-collapse');
+    await change(() => (state.touring = true));
+    expect(bubble()).toBeNull();
     expect(state.update).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { saveProductTourState, useRememberProductTourState, type ProductTourState, type TourStepId } from '../../lib/productTour'
 import { rendererLogger } from '../../lib/log'
+import { setProductTourOnScreen } from '../../lib/sidebarChatsBridge'
 import { TourBubble } from './TourBubble'
 import { useTourTarget } from './tourTargets'
 
@@ -54,6 +55,11 @@ export function ProductTour({ userId, steps, start, onDone }: {
   const step = tourSteps[index]
   const { target, rect, measured } = useTourTarget(step)
   const last = index === tourSteps.length - 1
+  // 导览在屏幕上的这段时间,会话页侧栏的两步介绍让开(#2548)。
+  useEffect(() => {
+    setProductTourOnScreen(true)
+    return () => setProductTourOnScreen(false)
+  }, [])
 
   // 普通目标照常能点;之后键盘换步时,焦点回新卡片,不留在刚才的功能入口。
   useLayoutEffect(() => {

@@ -7,7 +7,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { DropdownMenu, MenuItem, MenuSubmenu } from '@/components/ui/Menu';
 import { TourBubble } from '@/components/productTour/TourBubble';
 import { Hint } from '@/components/ui/Tooltip';
-import { requestShellChatAction, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge';
+import { requestShellChatAction, useProductTourOnScreen, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { getEffectiveHotkey } from '@renderer/lib/hooks/useKeyboardShortcuts';
@@ -167,7 +167,8 @@ function useSidebarIntro(openChatId: string | null, expanded: boolean) {
   const live = up && (stored === 'collapse' || stored === 'history');
   const { ref: footRef, shown: onScreen } = useConversationVisibility(live);
   const notificationsOpen = useSidebarNotificationsOpen();
-  const step = sidebarIntroShown(stored, up, { expanded, onScreen, notificationsOpen });
+  const touring = useProductTourOnScreen();
+  const step = sidebarIntroShown(stored, up, { expanded, onScreen, notificationsOpen, touring });
   return { footRef, step, move };
 }
 

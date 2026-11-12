@@ -17,6 +17,7 @@ vi.mock('../../../../apps/desktop/src/components/ui/Popover', () => ({
 const { ProductTour } = await import('../../../../apps/desktop/src/components/productTour/ProductTour')
 const { availableTourSteps } = await import('../../../../apps/desktop/src/components/productTour/tourTargets')
 const { publishPanelToggle } = await import('../../../../apps/desktop/src/lib/panelToggles')
+const { useProductTourOnScreen } = await import('../../../../apps/desktop/src/lib/sidebarChatsBridge')
 const { i18n } = await import('../../../../apps/desktop/src/i18n/runtime')
 
 const box = (x: number, y: number, width: number, height: number) => () => ({ width, height, x, y, top: y, left: x, right: x + width, bottom: y + height, toJSON() {} }) as DOMRect
@@ -109,6 +110,19 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
       expect(h.done).toHaveBeenCalledOnce()
       expect(io.save).toHaveBeenLastCalledWith('owner-1', { step: 'settings', status: 'done' })
     } finally { h.cleanup() }
+  })
+  it('tells the task page it is on screen while it shows (#2548: the sidebar intro steps aside), and not after', async () => {
+    const seen = { onScreen: false }
+    function Probe() { seen.onScreen = useProductTourOnScreen(); return null }
+    const probe = createReactHarness()
+    await probe.render(createNode(Probe, {}))
+    try {
+      expect(seen.onScreen).toBe(false)
+      const h = await mount()
+      await waitForCondition(() => seen.onScreen, 'on screen while the tour shows')
+      h.cleanup()
+      await waitForCondition(() => !seen.onScreen, 'off once it is gone')
+    } finally { probe.cleanup() }
   })
   it('follows Enter, →, ← and Esc; Esc skips and remembers where it stopped', async () => {
     const h = await mount()

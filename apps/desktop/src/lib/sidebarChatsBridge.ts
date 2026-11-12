@@ -59,6 +59,8 @@ const NOTIFICATIONS_KEY = '__GUGU_SIDEBAR_NOTIFICATIONS_OPEN__'
 const NOTIFICATIONS_EVENT = 'gugu:sidebar-notifications-open'
 const PINNED_AGENTS_KEY = '__GUGU_SIDEBAR_PINNED_AGENTS__'
 const PINNED_AGENTS_EVENT = 'gugu:sidebar-pinned-agents'
+const TOUR_KEY = '__GUGU_PRODUCT_TOUR_ON_SCREEN__'
+const TOUR_EVENT = 'gugu:product-tour-on-screen'
 
 /**
  * 壳:从聊天列表那一份算出两枚页签和项目行上的数。项目群(及从它开出来的话题)的未读记在那个群名下,其余记进「对话」;免打扰的不算(gugu-dev#181:
@@ -112,6 +114,18 @@ export function setSidebarNotificationsOpen(open: boolean): void {
 
 export function useSidebarNotificationsOpen(): boolean {
   return useSyncExternalStore(subscribeNotifications, () => read<boolean>(NOTIFICATIONS_KEY) ?? false, () => false)
+}
+
+const subscribeTour = subscribeTo(TOUR_EVENT)
+
+/** 壳:功能导览正在屏幕上(#2548:侧栏的两步介绍这时让开,❌ 两个气泡同时出来)。 */
+export function setProductTourOnScreen(onScreen: boolean): void {
+  if ((read<boolean>(TOUR_KEY) ?? false) === onScreen) return
+  write(TOUR_KEY, TOUR_EVENT, onScreen)
+}
+
+export function useProductTourOnScreen(): boolean {
+  return useSyncExternalStore(subscribeTour, () => read<boolean>(TOUR_KEY) ?? false, () => false)
 }
 
 function sameIds(current: ReadonlySet<string> | null, next: ReadonlySet<string> | null): boolean {
