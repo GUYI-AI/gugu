@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Avatar } from '@/components/Avatar';
 import { ListColumnToggle } from '@/components/PanelToggleButtons';
 import { ChatDetailsMenuItems } from '@/components/chat/ChatDetailsMenuItems';
+import { IconButton } from '@/components/ui/IconButton';
 import { MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { useChatSummaries, type ChatSummary } from '@/lib/chatSummariesBridge';
 import { setComposerVerb } from '@/lib/composerVerbBridge';
@@ -56,7 +57,6 @@ import {
   SidebarGroup,
   SidebarMenu,
   sidebarCountClass,
-  sidebarHeaderIconButtonClass,
 } from './sidebar-primitives';
 import { SampleInnerSidebar } from './sample-inner-sidebar';
 import { SidebarSessionItem } from './sidebar-session-item';
@@ -303,7 +303,7 @@ function GroupHeadAvatar({ chatId, summary }: { chatId: string; summary: ChatSum
       name={summary?.name ?? ''}
       avatarUrl={summary?.avatar}
       seed={chatId}
-      size={20}
+      size={24}
       variant="group"
       harnessBadge={false}
       memberAvatars={memberIds.flatMap((id) => {
@@ -349,12 +349,12 @@ const InnerHeadRow = observer(function InnerHeadRow({
     openChatOnScreen(chatId, false);
   };
   const avatar: ReactNode = anchor.kind === 'project' ? (
-    <ProjectFolderAvatar coverId={rowProjectId ?? chatId} running={running} size={20} />
+    <ProjectFolderAvatar coverId={rowProjectId ?? chatId} running={running} size={24} />
   ) : (
     <GroupHeadAvatar chatId={chatId} summary={summary} />
   );
   return (
-    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => openChatOnScreen(chatId, false)} trailingButtons={3}>
+    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => openChatOnScreen(chatId, false)} trailingButtons={2}>
       <InnerHeadActionsMenu label={actionsLabel}>
         <ChatDetailsMenuItems isGroupChat onOpenInfo={() => openInfo()} />
         <MenuItem icon={<Users size={16} />} onClick={() => openInfo('members')}>
@@ -370,9 +370,9 @@ const InnerHeadRow = observer(function InnerHeadRow({
       <Tooltip>
         <TooltipTrigger
           render={
-            <button type="button" aria-label={newAgentLabel} data-inner-head-new-agent="" className={sidebarHeaderIconButtonClass} onClick={newAgent}>
+            <IconButton size="md" tone="strong" aria-label={newAgentLabel} data-inner-head-new-agent="" onClick={newAgent}>
               <SquarePen />
-            </button>
+            </IconButton>
           }
         />
         <TooltipContent>{newAgentLabel}</TooltipContent>

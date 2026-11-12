@@ -149,7 +149,8 @@ describe('the inner column for the sample project', () => {
     expect(headRow.querySelector('[data-slot="chip"]')?.textContent).toBe('projects.sample.tag');
     expect(headRow.querySelector('[data-inner-head-actions]')?.getAttribute('aria-label')).toBe('projects.sample.actions');
     expect(host.querySelector('[data-inner-head-new-agent]'), 'read-only: nobody to send a new agent to').toBeNull();
-    expect(head().dataset.active).toBe('true');
+    expect(head().getAttribute('aria-current')).toBe('page');
+    expect(head().dataset.active, 'the head row is a title, never a selected row').toBeUndefined();
 
     expect(sections()).toEqual(['agents', 'topics']);
     const rows = agentRows();
@@ -177,13 +178,14 @@ describe('the inner column for the sample project', () => {
     // pane that leaves the conversation a sliver beside the inner column. The conversation is kept, only hidden.
     expect(conversation.style.contentVisibility).toBe('hidden');
     expect(agentRows()[0].dataset.active).toBe('true');
-    expect(head().dataset.active).toBeUndefined();
+    expect(head().getAttribute('aria-current')).toBeNull();
 
     await act(async () => head().click());
     expect(taskPane()).toBeNull();
     expect(host.querySelector('[data-sample-conversation]'), 'the same conversation, not a rebuilt one').toBe(conversation);
     expect(conversation.style.contentVisibility).toBe('');
-    expect(head().dataset.active).toBe('true');
+    expect(head().getAttribute('aria-current')).toBe('page');
+    expect(head().dataset.active, 'the head row is a title, never a selected row').toBeUndefined();
     expect(agentRows()[0].dataset.active).toBeUndefined();
 
     // The task card in the conversation and the agent row are one pane: closing it from the pane deselects the row.

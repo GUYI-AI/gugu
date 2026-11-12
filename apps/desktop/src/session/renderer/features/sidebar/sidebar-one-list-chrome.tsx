@@ -232,7 +232,9 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
           }
         : null;
   return (
-    <SidebarSpace ref={intro.headRef} controls={0} className="gap-1 pl-5" data-sidebar-head="">
+    // On one line with the inner column's head and the content's tabs (刘威提议稿 v1: .ltop / .ihead / .mhead share a line):
+    // those sit in the card stacked on this list, which starts one surface inset lower, so this band starts there too.
+    <SidebarSpace ref={intro.headRef} controls={0} className="mt-(--desktop-surface-inset) gap-1 pl-5" data-sidebar-head="">
       <Hint label={shortcut ? `${foldLabel} (${shortcut})` : foldLabel} side="bottom">
         <IconButton size="md" tone="strong" aria-label={foldLabel} aria-expanded={isLeftOpen} onClick={toggleLeft} data-testid="sidebar-fold">
           {isLeftOpen ? <ChevronsLeft /> : <ChevronsRight />}

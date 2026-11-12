@@ -92,12 +92,15 @@ for (const material of ['native', 'opaque'] as const) {
     const lights = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--titlebar-traffic-lights-width'));
     expect(lights, 'the mac tokens must be present').toBeGreaterThan(0);
     // 「«」 in the top band, centred on the avatars' axis (x = 36), right of the icon rail and the traffic lights over it.
+    // The band starts one surface inset down, so it is on one line with the card's own top band (proposal v1: the list's
+    // top row, the inner column's head and the content's head share a line).
     const head = (state: string) => {
       const box = fold.getBoundingClientRect();
       const panel = aside.getBoundingClientRect();
+      const inset = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--desktop-surface-inset'));
+      expect(inset, 'the desktop shell tokens must be present').toBeGreaterThan(0);
       expect(box.left + box.width / 2 - panel.left, state).toBe(36);
-      expect(box.top - panel.top, state).toBeGreaterThanOrEqual(0);
-      expect(box.bottom - panel.top, state).toBeLessThanOrEqual(40);
+      expect(box.top + box.height / 2 - panel.top, state).toBeCloseTo(inset + 20);
       expect(box.left, state).toBeGreaterThanOrEqual(document.querySelector('.gg-sidebar-rail')!.getBoundingClientRect().right);
       expect(box.left, state).toBeGreaterThan(lights);
     };

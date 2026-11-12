@@ -182,17 +182,19 @@ describe('inner sidebar', () => {
     expect(rows.every((row) => row.dataset.agentAvatar === 'true')).toBe(true);
   });
 
-  it('the head row is the chat itself: selected while its chat is open, a click goes back to it, the pen starts a new agent there', async () => {
+  it('the head row is the chat itself: current (never a selected fill) while its chat is open, a click goes back to it, the pen starts a new agent there', async () => {
     publishChatSummaries([{ id: 'group', kind: 'group', name: 'Planning', unread_count: 5, member_user_ids: ['agent-a'] }, { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a'] }]);
     openChat('group');
     await render();
     const head = () => host.querySelector<HTMLElement>('[data-inner-head="group"] [data-slot="button"]')!;
-    expect(head().dataset.active).toBe('true');
+    // The column's title (proposal v1 .ihead): it marks where you are without the list rows' selected fill.
+    expect(head().getAttribute('aria-current')).toBe('page');
+    expect(head().dataset.active).toBeUndefined();
     // No unread number on the head row: the group's row in the list carries it (proposal v1 state0).
     expect(host.querySelector('[data-inner-head="group"] [aria-label^="sidebar.unreadCount"]')).toBeNull();
     openSession('mine-in-group');
     await render();
-    expect(head().dataset.active).toBeUndefined();
+    expect(head().getAttribute('aria-current')).toBeNull();
     await act(async () => head().click());
     expect(state.openChatOnScreen).toHaveBeenCalledWith('group', false);
 
