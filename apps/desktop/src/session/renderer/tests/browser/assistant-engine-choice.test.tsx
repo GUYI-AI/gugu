@@ -164,6 +164,31 @@ it.each(['claude', 'codex'])('opens the existing %s connection panel and accessi
   expect(f.continued).not.toHaveBeenCalled();
 });
 
+// The connection menu and its add dialog are session-page components the shell draws over the App's panel. Their popups portal
+// to <body>; unless they land in a themed layer they paint transparent, and the setup card shows through (and over) them.
+const surface = (element: Element) => getComputedStyle(element).backgroundColor;
+const centerOf = (element: Element) => {
+  const { x, y, width, height } = element.getBoundingClientRect();
+  return { x: x + width / 2, y: y + height / 2 };
+};
+it.each(['claude', 'codex'])('draws the %s connection menu and add dialog with a solid surface above the setup card', async id => {
+  f.states[id] = 'unauthenticated'; render();
+  await expect.element(page.getByTestId('assistant-engine-claude')).toBeVisible();
+  await userEvent.click(page.getByTestId(`assistant-engine-${id}`));
+  const name = id === 'codex' ? 'Codex' : 'Claude';
+  await userEvent.click(page.getByRole('button', { name: `Configure ${name}`, exact: true }));
+  const menu = page.getByRole('menu').element();
+  expect(surface(menu)).not.toBe('rgba(0, 0, 0, 0)');
+  expect(menu.closest('.emlight, .emdark')).not.toBeNull();
+  await userEvent.click(page.getByRole('menuitem', { name: 'Add connection', exact: true }));
+  const dialog = page.getByRole('dialog', { name: `Add a ${name} connection`, exact: true }).element();
+  await expect.element(page.getByRole('dialog', { name: `Add a ${name} connection`, exact: true })).toBeVisible();
+  expect(surface(dialog)).not.toBe('rgba(0, 0, 0, 0)');
+  expect(dialog.closest('.emlight, .emdark')).not.toBeNull();
+  const { x, y } = centerOf(dialog.querySelector('button[type="submit"], form button:last-of-type') ?? dialog);
+  expect(dialog.contains(document.elementFromPoint(x, y))).toBe(true);
+});
+
 it('shows retry while unknown and completes a fresh check before allowing setup', async () => {
   f.states.claude = 'unknown'; render();
   await userEvent.click(page.getByRole('button', { name: 'Check again', exact: true }));
