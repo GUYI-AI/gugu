@@ -129,8 +129,9 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
         .map((c) => (target?.current ? { ...c, current: c.id === 'native' } : c))
       return { success: true }
     },
-    selectConnection: async ({ connectionId }: { connectionId: string }) => {
-      if (control.rejectSelect) {
+    selectConnection: async ({ connectionId, stopBusySessions }: { connectionId: string; stopBusySessions?: boolean }) => {
+      // 「关掉并切换」= 正在工作的也关掉:宿主不再以「在忙」拒。
+      if (control.rejectSelect && !(control.busy && stopBusySessions)) {
         control.selected = 'rejected'
         return {
           success: false,
@@ -221,9 +222,9 @@ it.each([1440, 390])(
     const dialog = page.getByRole('dialog', { name: 'Codex', exact: true })
     await expect.element(dialog).toBeVisible()
     await expect
-      .element(page.getByRole('button', { name: 'Account sign-in', exact: true }))
+      .element(page.getByRole('tab', { name: 'Account sign-in', exact: true }))
       .toBeVisible()
-    await userEvent.click(page.getByRole('button', { name: 'API Key', exact: true }))
+    await userEvent.click(page.getByRole('tab', { name: 'API Key', exact: true }))
     await expect.element(page.getByLabelText('API Key', { exact: true })).toBeVisible()
     await userEvent.click(
       page.getByRole('checkbox', { name: 'Use a third-party API', exact: true })
@@ -328,7 +329,7 @@ it('a task overlays the same connection form and returns to its draft after API 
   })
   await until('the existing CLI configuration is listed', () => !!document.querySelector('[data-testid="connection-native"]'))
   await userEvent.click(page.getByRole('menuitem', { name: 'Add connection', exact: true }))
-  await userEvent.click(page.getByRole('button', { name: 'API Key', exact: true }))
+  await userEvent.click(page.getByRole('tab', { name: 'API Key', exact: true }))
   await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')
   await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
   await until(
@@ -355,22 +356,41 @@ it.each(['codex', 'pi'])('with nothing configured, %s Go sign in opens Add conne
   const dialog = page.getByRole('dialog', { name: `Add a ${NAMES[id]} connection`, exact: true })
   await expect.element(dialog).toBeVisible()
   expect(document.querySelector('[data-testid="connection-native"]')).toBeNull()
-  const methods = [...document.querySelectorAll('.subscription-connection-form [role="group"] button')].map((b) => b.textContent)
-  expect(methods).toEqual(id === 'pi' ? ['API Key'] : ['Account sign-in', 'API Key'])
-  if (id !== 'pi') await userEvent.click(page.getByRole('button', { name: 'API Key', exact: true }))
+  const methods = [...document.querySelectorAll('.subscription-connection-form [role="tab"]')].map((b) => b.textContent)
+  // 只有一种方式(Pi)不画分段,直接是那一种表单。
+  expect(methods).toEqual(id === 'pi' ? [] : ['Account sign-in', 'API Key'])
+  if (id !== 'pi') await userEvent.click(page.getByRole('tab', { name: 'API Key', exact: true }))
   await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')
   if (id === 'pi') {
     await userEvent.fill(page.getByRole('textbox', { name: 'API address', exact: true }), 'https://gateway.example/v1')
     await userEvent.fill(page.getByRole('textbox', { name: 'Model', exact: true }), 'fixture-model')
   }
   await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
-  await until('saved API is listed', () => !!document.querySelector('[data-testid="connection-use-api"]'))
+  // 当前是「没有」:存好的这一把直接成为当前连接(走切换那条路),❌ 再让人去菜单里选一次。
+  await until('the saved key becomes the current connection', () => control.selected === 'api')
   expect(document.querySelector('[data-testid="connection-native"]')).toBeNull()
-  await userEvent.click(page.getByTestId('connection-use-api'))
-  await until('the selected connection is committed', () => control.selected === 'api')
   await expect.element(page.getByRole('textbox', { name: 'Task draft' })).toHaveValue('Keep this draft')
   expect(location.href).toBe(href)
   expect(control.created).toMatchObject({ providerId: id, kind: 'api-key', apiKey: 'fixture-key' })
+})
+
+// 面板(新建任务、会话里打开的那份)同一条:第一把 key 被「在忙」拒了,菜单打开,里面同一句、同一个「关掉并切换」。
+it('a task panel shows the busy refusal of its first key with Close and switch', async () => {
+  control.rejectSelect = true
+  control.busy = true
+  render(<TaskDraft />)
+  await userEvent.click(page.getByTestId('composer-model-trigger'))
+  await userEvent.click(page.getByRole('button', { name: 'Go sign in', exact: true }))
+  await expect.element(page.getByRole('dialog', { name: 'Add a Codex connection', exact: true })).toBeVisible()
+  await userEvent.click(page.getByRole('tab', { name: 'API Key', exact: true }))
+  await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')
+  await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
+  await until('the menu carries the refusal and its way out', () =>
+    !!document.querySelector('.subscription-connection-menu [data-testid="subscription-close-and-switch"]'))
+  expect(document.querySelector('.subscription-connection-menu [role="status"]')?.textContent).toContain('2 Codex sessions')
+  expect(control.connections.find((c) => c.current)?.id).toBe('native')
+  await userEvent.click(page.getByTestId('subscription-close-and-switch'))
+  await until('the key becomes current', () => control.selected === 'api')
 })
 
 it('a rejected task connection remains visible with its cause and keeps the original draft and connection', async () => {
@@ -513,7 +533,7 @@ it.each([800, 1440])(
 // #2507 owner 2026-11-12:「pi 还是没地方登录或者用 apikey」「你非得每个都不一样干嘛」——每一家的详情都是同一块
 // 「连接」:当前连接 + 添加连接,方式按这家支持的给。
 const methodButtons = () =>
-  [...document.querySelectorAll('.subscription-connection-form [role="group"] button')].map((b) => b.textContent)
+  [...document.querySelectorAll('.subscription-connection-form [role="tab"]')].map((b) => b.textContent)
 const addRowHint = (id: string) =>
   document.querySelector(`[data-testid="subscription-add-${id}"]`)?.closest('.gg-settings-row')?.querySelector('.gg-settings-row-description')?.textContent
 
@@ -529,15 +549,65 @@ it('Pi detail has the Connections section: with nothing configured it says None 
   expect(document.querySelector('[data-testid="connection-status-pi"]')?.textContent).toBe('Not signed in')
   expect(addRowHint('pi')).toBe('API Key')
   await userEvent.click(detail.getByRole('button', { name: 'Add', exact: true }))
-  expect(methodButtons()).toEqual(['API Key'])
+  // 只有一种方式:不画分段,直接是 API Key 表单;展开期间「添加」收起,收回去靠表单里的「取消」。
+  expect(methodButtons()).toEqual([])
+  expect(document.querySelector('[data-testid="subscription-add-pi"]')).toBeNull()
   await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')
   await userEvent.fill(page.getByRole('textbox', { name: 'API address', exact: true }), 'https://gateway.example/v1')
   await userEvent.fill(page.getByRole('textbox', { name: 'Model', exact: true }), 'fixture-model')
   await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
   await until('the key is saved', () => control.created !== null)
   expect(control.created).toMatchObject({ providerId: 'pi', kind: 'api-key', apiKey: 'fixture-key', endpoint: 'https://gateway.example/v1', model: 'fixture-model' })
-  // 有了一条连接,「当前连接」才有可选的东西。
-  await expect.element(detail.getByRole('combobox', { name: 'Current connection', exact: true })).toBeEnabled()
+  // 当前是「没有」:加上的第一把直接成为当前连接,选择框写它。
+  await until('the new key is the current connection', () => control.selected === 'api')
+  const connection = detail.getByRole('combobox', { name: 'Current connection', exact: true })
+  await expect.element(connection).toBeEnabled()
+  await until('the select names the new key', () => connection.query()?.textContent?.includes('Saved API') === true)
+  expect(document.querySelector('[data-testid="subscription-add-pi"]')).not.toBeNull()
+})
+
+// 已经有当前真连接时再加一把:不自动切,保持原来的选择。
+it('adding a key while another key is current keeps the current one', async () => {
+  control.connections = [
+    { id: 'native', kind: 'native', name: '', current: false },
+    { id: 'key', kind: 'api-key', name: 'Saved key', current: true }
+  ]
+  render(<AgentDetailModal agentId="pi" onClose={vi.fn()} />)
+  const detail = page.getByRole('dialog', { name: 'Pi', exact: true })
+  const connection = detail.getByRole('combobox', { name: 'Current connection', exact: true })
+  await expect.element(connection).toBeEnabled()
+  await userEvent.click(detail.getByRole('button', { name: 'Add', exact: true }))
+  await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')
+  await userEvent.fill(page.getByRole('textbox', { name: 'API address', exact: true }), 'https://gateway.example/v1')
+  await userEvent.fill(page.getByRole('textbox', { name: 'Model', exact: true }), 'fixture-model')
+  await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
+  await until('the key is saved', () => control.created !== null)
+  await until('the form closes', () => !document.querySelector('.subscription-connection-form'))
+  expect(control.selected).toBe('')
+  expect(control.connections.find((c) => c.current)?.id).toBe('key')
+  expect(detail.getByRole('combobox', { name: 'Current connection', exact: true }).element().textContent).toContain('Saved key')
+})
+
+// 从「没有」加第一把时有会话在忙:同一道护栏 —— 连接加上了、没切,给「关掉并切换」;点了才成为当前连接。
+it('the first key added while a session is busy is kept but not switched until Close and switch', async () => {
+  control.connections = [{ id: 'native', kind: 'native', name: '', current: true }]
+  control.rejectSelect = true
+  control.busy = true
+  render(<AgentDetailModal agentId="pi" onClose={vi.fn()} />)
+  const detail = page.getByRole('dialog', { name: 'Pi', exact: true })
+  await until('Pi reads no connection', () => !!document.querySelector('[data-testid="subscription-no-connection-pi"]'))
+  await userEvent.click(detail.getByRole('button', { name: 'Add', exact: true }))
+  await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')
+  await userEvent.fill(page.getByRole('textbox', { name: 'API address', exact: true }), 'https://gateway.example/v1')
+  await userEvent.fill(page.getByRole('textbox', { name: 'Model', exact: true }), 'fixture-model')
+  await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
+  await until('the switch is refused with a way out', () => !!document.querySelector('[data-testid="subscription-close-and-switch"]'))
+  expect(control.connections.map((c) => [c.id, c.current])).toEqual([['native', true], ['api', false]])
+  expect(detail.getByRole('combobox', { name: 'Current connection', exact: true }).element().textContent).toBe('None')
+  await userEvent.click(page.getByTestId('subscription-close-and-switch'))
+  await until('the key becomes current', () => control.selected === 'api')
+  await until('the select names it', () =>
+    detail.getByRole('combobox', { name: 'Current connection', exact: true }).query()?.textContent?.includes('Saved API') === true)
 })
 
 it('Pi configured on its own (its sign-in file names who pays) lists the existing CLI configuration as that source', async () => {
@@ -585,7 +655,8 @@ it('OpenCode signed in on its own lists that CLI configuration and offers no sec
   expect(connection.element().textContent).toContain('Existing CLI configuration')
   await until('the add hint follows what is left', () => addRowHint('opencode') === 'API Key')
   await userEvent.click(detail.getByRole('button', { name: 'Add', exact: true }))
-  expect(methodButtons()).toEqual(['API Key'])
+  expect(methodButtons()).toEqual([])
+  expect(page.getByLabelText('API Key', { exact: true }).query()).not.toBeNull()
 })
 
 // #2507 owner 2026-11-12「删掉最后一个连接要能回到『没有』」:正在用的那把 key 也能删 —— 删了就是切回原生
@@ -645,6 +716,49 @@ it('an agent that can neither sign in in Gugu nor take a key has no Connections 
   await expect.element(detail.getByText('Advanced', { exact: true })).toBeVisible()
   expect(document.querySelector('[data-testid="connection-block-amp"]')).toBeNull()
   expect(detail.element().textContent).not.toContain('Add connection')
+})
+
+// owner 2026-11-12 真机走查:「账号登录 | API Key」两项长得一样、看不出选中哪个;表单底部一颗通栏大按钮、「取消」挂在下面。
+// ⇒ 方式切换照仓里的分段控件(SegmentedTabs pill:选中 = --muted 实底块,卡片里分得出);只有一种方式不画。
+//   底部照「来源 → 自定义路径」那格:主按钮与「取消」同一行靠行尾;展开期间「添加」收起。
+it('the inline form shows which way is chosen and ends with its main action and Cancel on one row', async () => {
+  const root = document.documentElement
+  root.classList.add('gugu-skin', 'emlight')
+  root.setAttribute('data-theme', 'light')
+  try {
+    render(<AgentDetailModal agentId="claude" onClose={vi.fn()} />)
+    await until('the add row is drawn', () => !!document.querySelector('[data-testid="subscription-add-claude"]'))
+    await userEvent.click(page.getByRole('button', { name: 'Add', exact: true }))
+    expect(document.querySelector('[data-testid="subscription-add-claude"]')).toBeNull()
+    const chosen = page.getByRole('tab', { name: 'Account sign-in', exact: true }).element()
+    const other = page.getByRole('tab', { name: 'API Key', exact: true }).element()
+    const surface = getComputedStyle(document.querySelector('[role="dialog"]')!).backgroundColor
+    expect(chosen.getAttribute('aria-selected')).toBe('true')
+    expect(getComputedStyle(other).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+    // 选中那一块是实底,而且不是卡片底色(从前的 --background-2 = --card,所以看不出来)。
+    expect(getComputedStyle(chosen).backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    expect(getComputedStyle(chosen).backgroundColor).not.toBe(surface)
+    await userEvent.click(other)
+    await until('the choice moves', () => other.getAttribute('aria-selected') === 'true')
+    // 底色有一段过渡(--dur-med):等它落定。
+    await until('the old choice loses its fill', () => getComputedStyle(chosen).backgroundColor === 'rgba(0, 0, 0, 0)')
+    expect(getComputedStyle(other).backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+
+    const form = document.querySelector('.subscription-connection-form')!.getBoundingClientRect()
+    const submit = page.getByRole('button', { name: 'Save connection', exact: true }).element().getBoundingClientRect()
+    const cancel = page.getByRole('button', { name: 'Cancel', exact: true }).element().getBoundingClientRect()
+    expect(Math.round(cancel.top)).toBe(Math.round(submit.top))
+    expect(cancel.left).toBeGreaterThan(submit.right)
+    expect(Math.round(cancel.right)).toBe(Math.round(form.right))
+    // 不再是通栏:主按钮比表单窄得多。
+    expect(submit.width).toBeLessThan(form.width / 2)
+    await userEvent.click(page.getByRole('button', { name: 'Cancel', exact: true }))
+    await until('the form folds back', () => !document.querySelector('.subscription-connection-form'))
+    expect(document.querySelector('[data-testid="subscription-add-claude"]')).not.toBeNull()
+  } finally {
+    root.classList.remove('gugu-skin', 'emlight')
+    root.removeAttribute('data-theme')
+  }
 })
 
 it.each(['claude', 'codex'])('%s detail keeps both ways under Add connection', async (id) => {

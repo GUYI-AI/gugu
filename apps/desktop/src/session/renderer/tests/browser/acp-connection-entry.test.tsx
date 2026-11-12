@@ -114,7 +114,7 @@ it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared
   await userEvent.click(signIn)
   await expect.element(page.getByRole('dialog', { name: `Add a ${provider} connection`, exact: true })).toBeVisible()
   expect(document.querySelector('.subscription-connection-menu[data-open]')).toBeNull()
-  expect([...document.querySelectorAll('.subscription-connection-form [role="group"] button')].map(b => b.textContent))
+  expect([...document.querySelectorAll('.subscription-connection-form [role="tab"]')].map(b => b.textContent))
     .toEqual(['Account sign-in', 'API Key'])
   await userEvent.click(page.getByRole('button', { name: 'Close', exact: true }))
   await until('the connection form has closed', () => document.querySelector('.subscription-connection-form') === null)

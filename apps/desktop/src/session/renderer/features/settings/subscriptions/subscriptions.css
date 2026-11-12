@@ -46,6 +46,8 @@ article.subscription-service {
 .subscription-connection-form label { display: flex; flex-direction: column; gap: 6px; color: var(--muted-fg); font-size: var(--font-body); }
 .subscription-connection-form label.subscription-checkbox { flex-direction: row; align-items: center; }
 .subscription-connection-form input[type='checkbox'] { accent-color: var(--fg); }
+/* 表单底部:与「来源 → 自定义路径」那格同一种排法 —— 主按钮、「取消」同一行靠行尾,间距 8。 */
+.subscription-connection-form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 @container gg-settings (max-width: 520px) {
   article.subscription-service { padding: 20px 16px; gap: 16px 12px; }
   .subscription-quota-grid { gap: 20px; }

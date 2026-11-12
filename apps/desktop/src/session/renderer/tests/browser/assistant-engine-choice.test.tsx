@@ -155,9 +155,9 @@ it.each(['claude', 'codex'])('opens the existing %s connection panel and accessi
   await userEvent.click(page.getByTestId(`assistant-engine-${id}`));
   const name = id === 'codex' ? 'Codex' : 'Claude';
   await userEvent.click(page.getByRole('button', { name: `Configure ${name}`, exact: true }));
-  await userEvent.click(page.getByRole('menuitem', { name: 'Add connection', exact: true }));
+  // #2507 没登上的「现有 CLI 配置」不列 ⇒ 一个连接都没有:直接是「添加连接」表单,❌ 先弹一个只有「添加连接」的菜单。
   await expect.element(page.getByRole('dialog', { name: `Add a ${name} connection`, exact: true })).toBeVisible();
-  await userEvent.click(page.getByRole('button', { name: 'API Key', exact: true }));
+  await userEvent.click(page.getByRole('tab', { name: 'API Key', exact: true }));
   await expect.element(page.getByLabelText('API Key', { exact: true })).toBeVisible();
   const form = document.querySelector('.subscription-connection-form')!;
   expect(form.closest('[aria-hidden="true"], [inert]')).toBeNull();
@@ -209,11 +209,10 @@ it('returns from the shared API form and continues with the same selected Codex 
   f.states.codex = 'unauthenticated'; render();
   await userEvent.click(page.getByTestId('assistant-engine-codex'));
   await userEvent.click(page.getByRole('button', { name: 'Configure Codex', exact: true }));
-  await userEvent.click(page.getByRole('menuitem', { name: 'Add connection', exact: true }));
-  await userEvent.click(page.getByRole('button', { name: 'API Key', exact: true }));
+  await userEvent.click(page.getByRole('tab', { name: 'API Key', exact: true }));
   await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'sk-isolated-test-fixture');
   await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }));
-  await userEvent.click(page.getByTestId('connection-use-saved'));
+  // 当前是「没有」:存好的这一把直接成为当前连接,❌ 再去菜单里选一次。
   await expect.element(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
   await expect.element(page.getByTestId('assistant-engine-codex')).toHaveAttribute('aria-checked', 'true');
   await userEvent.click(page.getByRole('button', { name: 'Continue', exact: true }));

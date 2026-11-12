@@ -160,11 +160,27 @@ it('adds an account from the inline form and only then opens the existing login 
     providerId: 'codex',
     connectionId: 'new-account'
   })
+  // 当前是「没有」(没登上的「现有 CLI 配置」不列,另一个号没在用):登上那一刻这一条直接成为当前连接。
+  mocks.login.mock.calls[0][0].onSuccess()
+  await until('the new account becomes current', () => mocks.select.mock.calls.length === 1)
+  expect(mocks.select).toHaveBeenCalledWith({ providerId: 'codex', connectionId: 'new-account' })
+})
+
+it('a new account signed in while another account is current leaves the current one alone', async () => {
+  mocks.connections = mocks.connections.map((c) => ({ ...c, current: c.id === 'other' }))
+  await until('the current account is read', () =>
+    page.getByRole('combobox', { name: 'Current connection', exact: true }).query()?.textContent?.includes('Other account') === true)
+  await userEvent.click(page.getByRole('button', { name: 'Add', exact: true }))
+  await userEvent.click(page.getByRole('button', { name: 'Add and sign in', exact: true }))
+  await until('existing sign-in opens', () => mocks.login.mock.calls.length === 1)
+  mocks.login.mock.calls[0][0].onSuccess()
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  expect(mocks.select).not.toHaveBeenCalled()
 })
 
 it('saves an API connection without starting account authentication', async () => {
   await userEvent.click(page.getByRole('button', { name: 'Add', exact: true }))
-  await userEvent.click(page.getByRole('button', { name: 'API Key', exact: true }))
+  await userEvent.click(page.getByRole('tab', { name: 'API Key', exact: true }))
   await userEvent.fill(
     page.getByRole('textbox', { name: 'API Key', exact: true }),
     'test-key-not-a-credential'

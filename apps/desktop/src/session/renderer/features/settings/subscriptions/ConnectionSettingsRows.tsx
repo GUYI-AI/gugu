@@ -45,6 +45,7 @@ export function ConnectionSettingsRows({
   unreadable?: boolean
   embedded?: boolean
   children: ReactNode
+  /** 「添加连接」的就地表单;给了就展开在那一行里。 */
   form: ReactNode
 }) {
   const { translate } = useSessionMessages()
@@ -103,23 +104,27 @@ export function ConnectionSettingsRows({
         {notice}
       </SettingsRow>
       {onAdd && (
+        // 表单就地展开在这一行里(照「来源」那一行的「自定义路径」):展开期间「添加」收起,收回去靠表单里的「取消」。
         <SettingsRow
           title={translate('subscriptions.connections.add')}
           description={addHint}
           control={
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={onAdd}
-              data-testid={`subscription-add-${agentId}`}
-            >
-              {translate('agentsPage.addConnectionAction')}
-            </Button>
+            form ? undefined : (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={onAdd}
+                data-testid={`subscription-add-${agentId}`}
+              >
+                {translate('agentsPage.addConnectionAction')}
+              </Button>
+            )
           }
-        />
+        >
+          {form && <div className="agent-connection-form pt-1">{form}</div>}
+        </SettingsRow>
       )}
-      {form}
     </>
   )
   if (embedded)

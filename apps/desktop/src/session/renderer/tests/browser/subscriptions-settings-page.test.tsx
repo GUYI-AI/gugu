@@ -207,7 +207,8 @@ const onError = (event: ErrorEvent) => { if (event.error !== null) thrown.push(e
 const addButton = (provider: string) => host.querySelector<HTMLButtonElement>(`[data-testid="subscription-add-${provider}"]`);
 const switchTrigger = (provider: string) => host.querySelector<HTMLElement>(`[data-testid="subscription-switch-${provider}"]`);
 const noConnection = (provider: string) => host.querySelector(`[data-testid="subscription-no-connection-${provider}"]`);
-const methodButtons = () => [...host.querySelectorAll('.subscription-connection-form [role="group"] button')].map(b => b.textContent);
+/** 表单顶上的方式分段;只有一种方式时不画(空)。 */
+const methodButtons = () => [...host.querySelectorAll('.subscription-connection-form [role="tab"]')].map(b => b.textContent);
 async function openSwitch(provider: string) {
   await until('the current connection can be switched', () => switchTrigger(provider)?.hasAttribute('data-disabled') === false);
   await userEvent.click(page.getByTestId(`subscription-switch-${provider}`));
@@ -379,7 +380,8 @@ it('another agent that is not signed in signs in through Add connection → Acco
   expect(host.textContent).not.toContain('Library');
   addButton('kimi')!.click();
   await until('the Kimi form opens', () => !!host.querySelector('[data-testid="subscription-row-kimi"] .subscription-connection-form'));
-  expect(methodButtons()).toEqual(['Account sign-in']);
+  // 只有账号一种方式:不画分段,直接是登录那一种。
+  expect(methodButtons()).toEqual([]);
   const submit = host.querySelector<HTMLButtonElement>('.subscription-connection-form button[type="submit"]')!;
   expect(submit.textContent).toBe('Sign in');
   submit.click();
@@ -403,7 +405,8 @@ it('a Qwen row adds an API key connection with address and model and switches to
   // Kiro:只有 CLI 自己的登录 ——「添加连接」里只有「账号」,没有 API Key。
   addButton('kiro')!.click();
   await until('the Kiro form opens', () => !!host.querySelector('[data-testid="subscription-row-kiro"] .subscription-connection-form'));
-  expect(methodButtons()).toEqual(['Account sign-in']);
+  expect(methodButtons()).toEqual([]);
+  expect(host.querySelector('[data-testid="subscription-row-kiro"] .subscription-connection-form button[type="submit"]')?.textContent).toBe('Sign in');
   ([...host.querySelectorAll<HTMLButtonElement>('[data-testid="subscription-row-kiro"] button')].find(b => b.textContent === 'Cancel'))!.click();
   await until('the Kiro form closes', () => !host.querySelector('.subscription-connection-form'));
 
@@ -411,7 +414,9 @@ it('a Qwen row adds an API key connection with address and model and switches to
   await until('the connection form opens', () => !!host.querySelector('.subscription-connection-form'));
   const form = host.querySelector('.subscription-connection-form') as HTMLFormElement;
   // 只有 API Key 一种方式;地址直接摆出来(没有「第三方」勾选);模型必填;地址下一行说接口。
-  expect([...form.querySelectorAll('[role="group"] button')].map(b => b.textContent)).toEqual(['API Key']);
+  // 只有 API Key 一种方式:不画分段,直接是 API Key 表单。
+  expect(form.querySelectorAll('[role="tab"]')).toHaveLength(0);
+  expect(form.querySelector('input[name="apiKey"]')).not.toBeNull();
   expect(form.querySelector('input[type="checkbox"]')).toBeNull();
   expect(form.querySelector('input[name="endpoint"]')?.hasAttribute('required')).toBe(true);
   expect(form.querySelector('input[name="model"]')?.hasAttribute('required')).toBe(true);
@@ -421,8 +426,8 @@ it('a Qwen row adds an API key connection with address and model and switches to
   (form.querySelector('input[name="endpoint"]') as HTMLInputElement).value = 'https://dashscope.example/v1';
   (form.querySelector('input[name="model"]') as HTMLInputElement).value = 'qwen3-coder-plus';
   form.requestSubmit();
-  // 存好就把当前连接的列表打开,新的那一条在里面(与资源库详情同一个动作)。
-  await until('the saved connection appears', () => layer.querySelector('[data-testid="connection-api-1"]') !== null);
+  // 当前是「没有」:存好的这一把直接成为当前连接(走切换那条路),❌ 再让人去列表里选一次。
+  await until('the saved key becomes the current connection', () => control.selected === 'api-1');
   expect(control.created).toEqual({
     providerId: 'qwen',
     kind: 'api-key',
@@ -430,10 +435,11 @@ it('a Qwen row adds an API key connection with address and model and switches to
     endpoint: 'https://dashscope.example/v1',
     model: 'qwen3-coder-plus',
   });
+  await until('the select names the new key', () => switchTrigger('qwen')?.textContent === 'Saved API');
+  await openSwitch('qwen');
+  await until('the saved connection is listed', () => layer.querySelector('[data-testid="connection-api-1"]') !== null);
   expect(layer.querySelector('[data-testid="connection-api-1"]')?.textContent).toContain('dashscope.example · qwen3-coder-plus');
-  await until('the connection can be selected', () => layer.querySelector('[data-testid="connection-use-api-1"]')?.hasAttribute('data-disabled'), disabled => disabled === false);
-  await userEvent.click(page.getByTestId('connection-use-api-1'));
-  await until('the API key connection is selected', () => control.selected === 'api-1');
+  await userEvent.keyboard('{Escape}');
 
   // 选中之后这一行就是这把 key:API 角标、连接名,❌「未登录」,❌「登录」。
   const row = () => host.querySelector('[data-testid="subscription-row-qwen"]') as HTMLElement;

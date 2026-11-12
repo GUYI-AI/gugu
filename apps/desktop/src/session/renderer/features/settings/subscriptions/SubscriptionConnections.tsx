@@ -51,6 +51,7 @@ import {
 import { NEARLY_USED_PERCENT, payerLine, windowLabel } from './subscription-view'
 import { nativeConfigured, useConnectionDetails, useListedConnections } from './listed-connections'
 import { SwitchNoticeLine } from './SwitchNoticeLine'
+import { SegmentedTabs } from '@/components/ui/SegmentedTabs'
 import './subscriptions.css'
 
 /**
@@ -275,10 +276,26 @@ export function SubscriptionConnections({
       refresh()
     }
   }
-  const signIn = (connectionId: string, fresh = false) => {
+  /**
+   * 当前是「没有」(落在原生、原生又不列)时,新加的那一条直接成为当前连接(owner 2026-11-12:刚加的 key 却还没用上)。
+   * 走的就是切换那条路:有会话在忙照样被拒、给「关掉并切换」,连接已经加上、只是没切。已有当前真连接时不动它。
+   * 面板(下拉)没有行可以摆那句拒绝:把菜单打开,拒绝写在菜单里。
+   */
+  const nothingCurrent = listed !== undefined && !listed.some((c) => c.current)
+  const adopt = (connectionId: string) =>
+    action.mutate(
+      { kind: 'select', id: connectionId },
+      {
+        onError: () => {
+          if (!settingsRows && !onError) setOpen(true)
+        }
+      }
+    )
+  const signIn = (connectionId: string, fresh = false, adoptWhenSignedIn = false) => {
     if (!method || !canSignIn) return
     setOpen(false)
-    const finished = () => action.mutate({ kind: 'refresh', id: connectionId })
+    const finished = () =>
+      adoptWhenSignedIn ? adopt(connectionId) : action.mutate({ kind: 'refresh', id: connectionId })
     showSignIn({
       providerId: agent.id,
       providerName: agent.name,
@@ -295,7 +312,7 @@ export function SubscriptionConnections({
           }
         : {}),
       onSuccess: finished,
-      onClose: fresh ? () => void dropIfUnsigned(connectionId) : finished
+      onClose: fresh ? () => void dropIfUnsigned(connectionId) : () => action.mutate({ kind: 'refresh', id: connectionId })
     })
   }
   /** 「添加连接 → 账号」在只能登 CLI 自己那一份的家:就是从前那颗「登录」做的事,同一个登录窗口。 */
@@ -307,7 +324,9 @@ export function SubscriptionConnections({
   const onCreated = (connection: HarnessConnection) => {
     refresh()
     setAdding(false)
-    if (connection.kind === 'account') signIn(connection.id, true)
+    // 账号连接要登上才能用:登上那一刻再切;API Key 存好就能用,当场切。
+    if (connection.kind === 'account') signIn(connection.id, true, nothingCurrent)
+    else if (nothingCurrent) adopt(connection.id)
     else {
       reopenedAfterSave.current = true
       setOpen(true)
@@ -322,6 +341,7 @@ export function SubscriptionConnections({
       form={form}
       onCreated={onCreated}
       onCliSignIn={signInCli}
+      {...(settingsRows ? { onCancel: () => setAdding(false) } : {})}
     />
   )
   // 正在用的连接登不上了(失效 / 没登录):「登录」直接摆在外面,❌ 藏进「切换连接 → ⋯」两层菜单里。
@@ -399,16 +419,7 @@ export function SubscriptionConnections({
               )
             )
           }
-          form={
-            adding && canAdd && (
-              <div className="p-4">
-                {connectionForm}
-                <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>
-                  {translate('agentsPage.cancel')}
-                </Button>
-              </div>
-            )
-          }
+          form={adding && canAdd ? connectionForm : null}
         >
           {open && options(true)}
         </ConnectionSettingsRows>
@@ -443,13 +454,18 @@ export function SubscriptionConnections({
             )}
           </div>
           <DropdownMenuContent align="end" anchor={anchor} className="subscription-connection-menu">
+            {/* 与订阅页那一行同一句、同一个出路(被拒时「关掉并切换」)。 */}
             {!onError && failure && (
-              <p
-                className={tone === 'error' ? 'subscription-error p-2' : 'subscription-note p-2'}
-                role={tone === 'error' ? 'alert' : 'status'}
-              >
-                {failure}
-              </p>
+              <div className="p-2">
+                <SwitchNoticeLine
+                  notice={{
+                    tone,
+                    text: failure,
+                    ...(refusedId ? { closeAndSwitch } : {}),
+                    ...(closing ? { progress } : {})
+                  }}
+                />
+              </div>
             )}
             {listed === undefined && !connections.error && (
               <p className="p-2 text-xs">{translate('subscriptions.checking')}</p>
@@ -670,7 +686,8 @@ function ConnectionForm({
   apiKey,
   form,
   onCreated,
-  onCliSignIn
+  onCliSignIn,
+  onCancel
 }: {
   agent: AgentPayload
   machine: string | null
@@ -679,6 +696,8 @@ function ConnectionForm({
   form: AgentConnectionForm | null
   onCreated: (connection: HarnessConnection) => void
   onCliSignIn: () => void
+  /** 就地展开时(订阅页那一行、资源库详情)才有:「取消」与主按钮同一行。弹窗用它自己的关闭。 */
+  onCancel?: () => void
 }) {
   const { translate } = useSessionMessages()
   const [kind, setKind] = useState<'account' | 'api-key'>(account || !apiKey ? 'account' : 'api-key')
@@ -720,33 +739,25 @@ function ConnectionForm({
         if (cliAccount) onCliSignIn()
         else create.mutate(event.currentTarget)
       }}
+      // 与「来源 → 自定义路径」那格一样:Esc 收起。
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && onCancel) onCancel()
+      }}
     >
-      <div
-        className="flex gap-2"
-        role="group"
-        aria-label={translate('subscriptions.connections.method')}
-      >
-        {account && (
-          <Button
-            type="button"
-            variant={kind === 'account' ? 'secondary' : 'ghost'}
-            aria-pressed={kind === 'account'}
-            onClick={() => setKind('account')}
-          >
-            {translate('subscriptions.connections.account')}
-          </Button>
-        )}
-        {apiKey && (
-          <Button
-            type="button"
-            variant={kind === 'api-key' ? 'secondary' : 'ghost'}
-            aria-pressed={kind === 'api-key'}
-            onClick={() => setKind('api-key')}
-          >
-            API Key
-          </Button>
-        )}
-      </div>
+      {/* 两种方式才有得选:照仓里的分段控件(SegmentedTabs pill,选中 = --muted 实底块)。
+          ❌ 从前那对 secondary / ghost 按钮:选中底色 --background-2 就是卡片底色(--card)、字色两档一样,看不出选中。
+          只有一种方式(Pi、Qwen 只接 Key;Kiro 只能登 CLI)就不画,直接是那一种表单。 */}
+      {account && apiKey && (
+        <SegmentedTabs<'account' | 'api-key'>
+          items={[
+            { value: 'account', label: translate('subscriptions.connections.account') },
+            { value: 'api-key', label: 'API Key' }
+          ]}
+          value={kind}
+          onChange={setKind}
+          ariaLabel={translate('subscriptions.connections.method')}
+        />
+      )}
       {kind === 'api-key' ? (
         <>
           <label>
@@ -822,15 +833,23 @@ function ConnectionForm({
           {errorText(create.error)}
         </p>
       )}
-      <Button type="submit" disabled={create.isPending}>
-        {create.isPending
-          ? translate('subscriptions.connections.saving')
-          : cliAccount
-            ? translate('subscriptions.connections.signIn')
-            : kind === 'account'
-              ? translate('subscriptions.connections.addAndSignIn')
-              : translate('subscriptions.connections.save')}
-      </Button>
+      {/* 照「来源 → 自定义路径」那格:主按钮与「取消」同一行、靠行尾,都是 sm;「取消」是 outline。 */}
+      <div className="subscription-connection-form-actions">
+        <Button type="submit" size="sm" disabled={create.isPending}>
+          {create.isPending
+            ? translate('subscriptions.connections.saving')
+            : cliAccount
+              ? translate('subscriptions.connections.signIn')
+              : kind === 'account'
+                ? translate('subscriptions.connections.addAndSignIn')
+                : translate('subscriptions.connections.save')}
+        </Button>
+        {onCancel && (
+          <Button type="button" size="sm" variant="outline" disabled={create.isPending} onClick={onCancel}>
+            {translate('agentsPage.cancel')}
+          </Button>
+        )}
+      </div>
     </form>
   )
 }
