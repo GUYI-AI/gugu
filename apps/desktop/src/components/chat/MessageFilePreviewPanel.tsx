@@ -15,7 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { CsvTable } from '@renderer/lib/editor/csv-renderer'
 import { ImageRenderer } from '@renderer/lib/editor/image-renderer'
-import { useFileZoom, type FileZoomKind } from '../preview/file-content-zoom'
+import { createFileZoomView, FileZoomViewContext, useFileZoom, type FileZoomKind } from '../preview/file-content-zoom'
 import { ZoomMenuRow } from '../preview/ZoomMenuRow'
 import { usePinchZoom } from '@/hooks/usePinchZoom'
 import { pinchZoom, DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM } from '@/session/shared/preview/pinch-zoom'
@@ -75,6 +75,8 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
   const { translate } = useSessionMessages()
   const pane = useContext(PaneContext)?.pane
   const tabId = pane?.resolvedActiveTabId
+  // This panel's own zoom: its ⋯ menu row and the document under it change it; a panel beside it keeps its own (#2567).
+  const [zoomView] = useState(createFileZoomView)
   const fileToolbar = tabbed && !mobile && pane && tabId
     ? <FileToolbar host={pane} tabId={tabId} path={<span className="flex min-w-0 flex-1 items-center justify-end overflow-hidden whitespace-nowrap">
       <span className="flex min-w-0 flex-[0_2_auto] items-center justify-end overflow-hidden text-xs text-[var(--text-secondary)]">
@@ -87,18 +89,19 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
       <DropdownMenuContent align="end">
         {actions.map((item) => <DropdownMenuItem key={item.key} disabled={item.disabled} onClick={item.onSelect}><item.icon />{item.label}</DropdownMenuItem>)}
         {onOpenExternal && <DropdownMenuItem onClick={onOpenExternal}><ExternalLink />{t('chatArea.filePreview.openExternal')}</DropdownMenuItem>}
-        {READING_ZOOM[kind] ? <><DropdownMenuSeparator /><ZoomMenuRow kind={READING_ZOOM[kind]} /></> : null}
+        {READING_ZOOM[kind] ? <><DropdownMenuSeparator /><ZoomMenuRow kind={READING_ZOOM[kind]} view={zoomView} /></> : null}
       </DropdownMenuContent>
     </DropdownMenu>} /> : null
   const [undrawable, setUndrawable] = useState<string | null>(null)
   const failure = error ?? (undrawable !== null && undrawable === content ? t('chatArea.filePreview.renderFailed') : undefined)
   const textRef = useRef<HTMLDivElement>(null)
-  const { zoom, setZoom } = useFileZoom(kind === 'markdown' ? 'markdown' : 'text-code', textRef)
+  const { zoom, setZoom } = useFileZoom(kind === 'markdown' ? 'markdown' : 'text-code', textRef, undefined, zoomView)
   usePinchZoom(textRef, delta => setZoom(value => pinchZoom(value, delta, DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM)))
   // 手机页头第二行:扩展名 + 大小(「HTML · 791 B」);大小还不知道就只写扩展名。❌ MIME 原文。
   const extension = /\.([A-Za-z0-9]{1,8})$/.exec(file.fileName)?.[1]?.toUpperCase() ?? null
   const meta = [extension, file.sizeBytes > 0 ? formatAttachmentSize(file.sizeBytes) : null].filter(Boolean).join(' · ')
   return (
+    <FileZoomViewContext.Provider value={zoomView}>
     <aside ref={viewerRef} data-testid="message-file-preview-panel" data-preview-kind={kind} style={{ width: mobile || fill ? '100%' : 'clamp(380px, 38vw, 520px)', height: '100%', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderLeft: mobile || fill ? undefined : '1px solid var(--border-subtle)', background: 'var(--bg-primary)' }}>
       {/* 手机左上返回、右上消息动作;桌面从 App/列表打开时左上返回。页签里:页签就是文件名、×(关掉回上一页)和最大化,不再画一行。 */}
       {tabbed && !mobile ? null : mobile ? (
@@ -137,6 +140,7 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
         {loading ? <div style={statusStyle} data-testid="message-file-preview-loading">{loadingLabel ?? t('chatArea.filePreview.loading')}{loadingFraction !== undefined ? <progress className="gg-progress" value={loadingFraction} max={1} /> : null}</div> : failure ? <div style={{ ...statusStyle, color: 'var(--danger-fg)' }}>{failure}{unreadableAction ? <div>{unreadableAction}</div> : null}</div> : kind === 'video' ? <video data-testid="message-file-preview-video" src={videoUrl} onError={event => onVideoError?.(event.currentTarget)} controls autoPlay playsInline className="block max-h-full w-full" /> : kind === 'unsupported' ? <div style={statusStyle}>{t('chatArea.filePreview.unsupported')}{unreadableAction ? <div>{unreadableAction}</div> : null}</div> : kind === 'image' && typeof content === 'string' ? <ImageRenderer file={{ path: file.fileName, content }} onError={() => setUndrawable(content)} /> : typeof content === 'string' && kind === 'text' && /\.csv$/i.test(file.fileName) ? <CsvTable content={content} /> : typeof content === 'string' && (kind === 'text' || kind === 'markdown') ? <div style={{ padding: fileToolbar ? '4px 18px 16px' : '16px 18px', zoom }}>{kind === 'markdown' ? <Markdown trust="chat" density="comfortable" content={content} hardBreaks /> : <pre style={{ margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: 'inherit', fontSize: 'var(--font-body)', lineHeight: 1.65 }}>{content}</pre>}</div> : <Suspense fallback={<div style={statusStyle} data-testid="message-file-preview-loading">{loadingLabel ?? t('chatArea.filePreview.loading')}</div>}><DocumentPreviewContent kind={kind} content={content} title={file.fileName} onOpenExternally={onOpenExternal} registerHtml={registerHtml} at={at} /></Suspense>}
       </div>
     </aside>
+    </FileZoomViewContext.Provider>
   )
 }
 

@@ -4,17 +4,18 @@ import { Minus, Plus } from '@/lib/icons'
 import { Button } from '@renderer/lib/ui/button'
 import { clampZoom, DOCUMENT_MAX_ZOOM, DOCUMENT_MIN_ZOOM } from '@/session/shared/preview/pinch-zoom'
 import type { FileZoomCommand } from '@/session/shared/preview/file-zoom'
-import { readFileZoom, subscribeFileZoom, writeFileZoom, zoomForCommand, type FileZoomKind } from './file-content-zoom'
+import { zoomForCommand, type FileZoomKind, type FileZoomView } from './file-content-zoom'
 
 /**
  * Zoom B's one control (owner 11-05): a row in a readable view's ⋯ menu — − ratio +, the ratio itself back to 100%.
- * The same preference and steps as the keys and a pinch; the row is not a menu item, so pressing it keeps the menu open.
+ * It zooms the view whose menu it is in (`view`), with the same steps as the keys and a pinch; the row is not a menu
+ * item, so pressing it keeps the menu open.
  */
-export function ZoomMenuRow({ kind }: { kind: FileZoomKind }) {
+export function ZoomMenuRow({ kind, view }: { kind: FileZoomKind; view: FileZoomView }) {
   const { t } = useTranslation('messaging')
-  const zoom = useSyncExternalStore(subscribeFileZoom, () => readFileZoom(kind), () => 1)
+  const zoom = useSyncExternalStore(view.subscribe, () => view.get(kind), () => 1)
   const min = kind === 'image' ? 1 : DOCUMENT_MIN_ZOOM
-  const run = (command: FileZoomCommand) => writeFileZoom(kind, clampZoom(zoomForCommand(zoom, command), min, DOCUMENT_MAX_ZOOM))
+  const run = (command: FileZoomCommand) => view.set(kind, clampZoom(zoomForCommand(zoom, command), min, DOCUMENT_MAX_ZOOM))
   const step = (command: 'zoomOut' | 'zoomIn', disabled: boolean) => (
     <Button size="icon-xs" variant="ghost" aria-label={t(`chatArea.filePreview.${command}`)} title={t(`chatArea.filePreview.${command}`)} disabled={disabled} onClick={() => run(command)}>
       {command === 'zoomOut' ? <Minus /> : <Plus />}
