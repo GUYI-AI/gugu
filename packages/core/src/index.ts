@@ -311,13 +311,13 @@ export {
 export {
   readAgentCreateDefaults,
   rememberAgentCreateDevice,
-  rememberAgentCreateProject
+  rememberAgentCreateProject,
+  rememberAgentCreateRunMachine
 } from './cloud/agentCreateDefaults'
 export {
   agentCreateDeviceBlockMessage,
   parseAgentCreateDefaults,
   resolveAgentCreateDevice,
-  resolveAgentCreateProject,
   EMPTY_AGENT_CREATE_DEFAULTS,
   type AgentCreateDefaults,
   type AgentCreateDeviceResolution

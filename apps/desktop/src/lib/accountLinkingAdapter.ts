@@ -153,7 +153,10 @@ export function createAccountLinking(userId: string): AccountLinking {
   return new AccountLinking(userId, {
     currentUserId: owner,
     getUser: async () => {
-      const { data, error } = await supabase.auth.getUser()
+      // With the coordinator's token: a bare getUser() refreshes on its own (@@@single-refresher).
+      const accessToken = sessionCoordinator.getAccessToken()
+      if (!accessToken) throw new Error('account linking needs a signed-in session')
+      const { data, error } = await supabase.auth.getUser(accessToken)
       if (error) throw error
       return data.user
     },

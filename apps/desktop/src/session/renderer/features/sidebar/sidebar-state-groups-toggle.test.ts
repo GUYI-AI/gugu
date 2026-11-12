@@ -4,6 +4,7 @@ import { needsYouCount, sidebarStateGroup } from './session-groups';
 import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation';
 import { SidebarStore } from './sidebar-store';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
+import { sidebarOf } from './mirror-account-projects.testing';
 
 type SidebarProjectManager = ConstructorParameters<typeof SidebarStore>[0];
 
@@ -89,7 +90,7 @@ describe('sidebar state groups and the Needs you count', () => {
     }
     for (const online of [false, true]) {
       const projectId = 'remote-attention-project';
-      const store = new SidebarStore(projectManagerWith(projectId, 'remote-host'));
+      const store = sidebarOf(projectManagerWith(projectId, 'remote-host'));
       const sessions = (['needs_user', 'error'] as const).map(status => ({
         conversationId: status, projectId, title: status, runtime: 'acp', harness: 'codex',
         agentStatus: status, status: { status, detail: null }, supported: true, lastInteractedAt: null, unseen: true,
@@ -113,7 +114,7 @@ describe('sidebar state groups and the Needs you count', () => {
       session('attention-running', 'attention-project', 'working', '03'),
       session('attention-idle', 'attention-project', null, '04'),
     ] as never);
-    const store = new SidebarStore(projectManagerWith('attention-project', 'attention-task'));
+    const store = sidebarOf(projectManagerWith('attention-project', 'attention-task'));
     try {
       expect(projectNeedsYou(store, 'attention-project')).toBe(2);
       expect(store.placement.entries.get('attention-project')?.map((entry) => entry.id)).toContain('attention-error');
@@ -125,7 +126,7 @@ describe('sidebar state groups and the Needs you count', () => {
       ...Array.from({ length: 40 }, (_, i) => session(`old-failure-${i}`, 'read-project', 'error', '01', true)),
       session('fresh-failure', 'read-project', 'error', '02'),
     ] as never);
-    const store = new SidebarStore(projectManagerWith('read-project', 'read-task'));
+    const store = sidebarOf(projectManagerWith('read-project', 'read-task'));
     try {
       expect(projectNeedsYou(store, 'read-project')).toBe(1);
       expect(store.placement.entries.get('read-project')?.every((entry) => entry.group === 'needs-you')).toBe(true);

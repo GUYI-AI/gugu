@@ -266,7 +266,7 @@ it.each(['claude', 'codex'])('an unsigned native %s connection preserves selecti
   control.connections.push({ id: 'saved-api', kind: 'api-key', name: 'Saved API', current: false });
   root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
   await until('the harness connection action is ready', () => !!host.querySelector(`[data-testid="subscription-switch-${provider}"]`));
-  (host.querySelector(`[data-testid="subscription-switch-${provider}"]`) as HTMLButtonElement).click();
+  await openSwitch(provider);
   await until('the connection action opens', () => !!layer.querySelector('.subscription-connection-form, [data-testid="connection-saved-api"]'));
   expect(layer.querySelector('.subscription-connection-form')).toBeNull();
   await until('the saved API can be selected', () => layer.querySelector('[data-testid="connection-use-saved-api"]')?.hasAttribute('data-disabled') === false);
@@ -651,7 +651,7 @@ it('a failed dropdown switch keeps the previous current connection', async () =>
   control.connections.push({ id: 'saved-api', kind: 'api-key', name: 'Saved API', current: false });
   root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
   await until('the switch is ready', () => host.querySelector('[data-testid="subscription-switch-claude"]') !== null);
-  (host.querySelector('[data-testid="subscription-switch-claude"]') as HTMLButtonElement).click();
+  await openSwitch('claude');
   await until('the API option can be used', () => layer.querySelector('[data-testid="connection-use-saved-api"]')?.hasAttribute('data-disabled'), disabled => disabled === false);
   expect(layer.querySelector('[role="dialog"]')).toBeNull();
   (layer.querySelector('[data-testid="connection-use-saved-api"]') as HTMLElement).click();
@@ -736,7 +736,7 @@ it.each([
   root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
   await until('the Codex switch is ready', () => host.querySelector('[data-testid="subscription-switch-codex"]') !== null);
   const row = host.querySelector('[data-testid="subscription-row-codex"]') as HTMLElement;
-  (host.querySelector('[data-testid="subscription-switch-codex"]') as HTMLButtonElement).click();
+  await openSwitch('codex');
   await until('the saved API option can be used', () => layer.querySelector('[data-testid="connection-use-saved-api"]')?.hasAttribute('data-disabled'), disabled => disabled === false);
   (layer.querySelector('[data-testid="connection-use-saved-api"]') as HTMLElement).click();
   await until('the note is displayed', () => row.querySelector('.subscription-note') !== null);
@@ -761,7 +761,7 @@ it.each([
   await until('the note follows the language', () => row.querySelector('.subscription-note')?.textContent !== before);
   expect(row.querySelector('.subscription-note')?.textContent).toMatch(other === 'zh-CN' ? /^还有 \d+ 个 Codex 会话/ : /^\d+ Codex sessions? (is|are) still working/);
   control.rejectSelect = false;
-  if (!layer.querySelector('[data-testid="connection-use-saved-api"]')) (host.querySelector('[data-testid="subscription-switch-codex"]') as HTMLButtonElement).click();
+  if (!layer.querySelector('[data-testid="connection-use-saved-api"]')) await openSwitch('codex');
   await until('the saved API option can be used again', () => layer.querySelector('[data-testid="connection-use-saved-api"]')?.hasAttribute('data-disabled'), disabled => disabled === false);
   (layer.querySelector('[data-testid="connection-use-saved-api"]') as HTMLElement).click();
   await until('the note is gone once a switch goes through', () => row.querySelector('.subscription-note') === null);
@@ -781,7 +781,7 @@ it('a refusal offers one click that closes the working sessions and switches to 
   root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
   await until('the Codex switch is ready', () => host.querySelector('[data-testid="subscription-switch-codex"]') !== null);
   const row = host.querySelector('[data-testid="subscription-row-codex"]') as HTMLElement;
-  (host.querySelector('[data-testid="subscription-switch-codex"]') as HTMLButtonElement).click();
+  await openSwitch('codex');
   await until('the saved API option can be used', () => layer.querySelector('[data-testid="connection-use-saved-api"]')?.hasAttribute('data-disabled'), disabled => disabled === false);
   (layer.querySelector('[data-testid="connection-use-saved-api"]') as HTMLElement).click();
   await until('the refusal offers to close and switch', () => row.querySelector('[data-testid="subscription-close-and-switch"]') !== null);
@@ -827,7 +827,7 @@ it('a host too old to close working sessions says to update it instead of offeri
   root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
   await until('the Codex switch is ready', () => host.querySelector('[data-testid="subscription-switch-codex"]') !== null);
   const row = host.querySelector('[data-testid="subscription-row-codex"]') as HTMLElement;
-  (host.querySelector('[data-testid="subscription-switch-codex"]') as HTMLButtonElement).click();
+  await openSwitch('codex');
   await until('the saved API option can be used', () => layer.querySelector('[data-testid="connection-use-saved-api"]')?.hasAttribute('data-disabled'), disabled => disabled === false);
   (layer.querySelector('[data-testid="connection-use-saved-api"]') as HTMLElement).click();
   await until('the refusal offers to close and switch', () => row.querySelector('[data-testid="subscription-close-and-switch"]') !== null);
@@ -847,7 +847,7 @@ it('a real failure is red and offers no close-and-switch', async () => {
   root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
   await until('the Codex switch is ready', () => host.querySelector('[data-testid="subscription-switch-codex"]') !== null);
   const row = host.querySelector('[data-testid="subscription-row-codex"]') as HTMLElement;
-  (host.querySelector('[data-testid="subscription-switch-codex"]') as HTMLButtonElement).click();
+  await openSwitch('codex');
   await until('the saved API option can be used', () => layer.querySelector('[data-testid="connection-use-saved-api"]')?.hasAttribute('data-disabled'), disabled => disabled === false);
   (layer.querySelector('[data-testid="connection-use-saved-api"]') as HTMLElement).click();
   await until('the failure is displayed', () => row.querySelector('[role="alert"]') !== null);

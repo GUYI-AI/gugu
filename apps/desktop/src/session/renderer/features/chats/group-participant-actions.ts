@@ -4,6 +4,7 @@ import { auxWindows } from '@renderer/app/aux-windows';
 import { returnToScreen } from '@renderer/app/screen-layout-actions';
 import { sidebarStore } from '@renderer/lib/stores/app-state';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
+import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { yieldChatAuxiliary } from './chat-tabs/chat-layouts';
 import { groupParticipantPanes } from './group-participant-panes';
 
@@ -12,7 +13,7 @@ function sourceContent(chatId: string): ScreenBlockContent {
   // the previous project is still on screen; placement belongs to that visible group, not the row.
   for (const id of screenLayout.order) {
     const content = screenLayout.blocks.get(id);
-    if (content?.kind === 'project' && projectGroupsStore.chatIdOf(content.projectId) === chatId) return content;
+    if (content?.kind === 'project' && accountProjectsStore.projectOfLocal(content.projectId)?.chatId === chatId) return content;
     if (content?.kind === 'chat' && content.chatId === chatId) return content;
   }
   const projectId = projectGroupsStore.projectOfChat(chatId);

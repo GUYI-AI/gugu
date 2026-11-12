@@ -10,9 +10,12 @@ import {
   countSessions,
   locateSession,
   projectSectionKey,
+  sectionProjects,
   sessionSections as sectionsOf,
   type SessionNode,
 } from '../../../apps/desktop/src/mobile/agent-watch/session-sections'
+import { runInAction } from 'mobx'
+import { AccountProjectsStore } from '../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store'
 
 /** 拆成「置顶分区的树」与「项目分区」两半,并核置顶分区只会出现在第一位。默认全在一台机器上。 */
 const split = (sections: ReturnType<typeof sectionsOf>) => {
@@ -216,7 +219,22 @@ describe('sessionSections — 多台机器与个人助理那一组', () => {
   const mac = { deviceId: 'mac', projects: [project('p')] }
   const thinkpad = { deviceId: 'thinkpad', projects: [project('p')] }
 
-  it('两台机器上同名(同 id)的项目是各自的一格,页头带各自的机器,不并成一格', () => {
+  // 项目是账号上的(项目群 chatId):绑同一个群的各台机器上的本地项目是同一个项目,一格;机器只是行的属性。
+  it('一个项目在两台机器上都有文件夹(绑同一个项目群):一格,两台的会话按最近动静排在一起', () => {
+    const work = (id: string) => ({ ...project(id), name: 'work', chatId: 'chat-work' })
+    const sections = sectionsOf(
+      [{ deviceId: 'gpu', projects: [work('gpu-work')] }, { deviceId: 'juma', projects: [work('juma-work')] }],
+      [...rowsOn('gpu', [session('g1', 'gpu-work', 1), session('g2', 'gpu-work', 3)]), ...rowsOn('juma', [session('j1', 'juma-work', 2)])],
+      NO_ASSISTANT,
+      NO_FOLD,
+    )
+    expect(sections.map((s) => [s.key, s.deviceId, s.project?.name, s.projectIds, shape(s.roots)])).toEqual([
+      [projectSectionKey('gpu', 'gpu-work', 'chat-work'), null, 'work', ['gpu-work', 'juma-work'], 'g2,j1,g1'],
+    ])
+    expect(sections[0]!.roots.map((root) => root.item.deviceId)).toEqual(['gpu', 'juma', 'gpu'])
+  })
+
+  it('两台机器上同名(同 id)、没绑项目群的项目是各自的一格,页头带各自的机器,不并成一格', () => {
     const sections = sectionsOf(
       [mac, thinkpad],
       [...rowsOn('mac', [session('m1', 'p', 1)]), ...rowsOn('thinkpad', [session('t1', 'p', 2), session('t2', 'p', 3)])],
@@ -312,5 +330,33 @@ describe('sessionSections — 多台机器与个人助理那一组', () => {
     const found = locateSession(open, 'deep')
     expect(found?.section.key).toBe(projectSectionKey('mac', 'p'))
     expect(found?.ancestors).toEqual(['r7'])
+  })
+})
+
+// 项目与机器解耦:「项目」页的格从 accountProjectsStore 认项目(桌面侧栏同一份),❌ 读设备行上的 chat_id。
+describe('sessionSections — 项目来自账号上的项目', () => {
+  it('两台机器上的本地项目属于同一个账号项目:一格,键是项目群,格名是项目名;不属于任何项目的照旧是那台的一格', () => {
+    const accounts = new AccountProjectsStore()
+    runInAction(() => {
+      accounts.list = [{ chatId: 'chat-paper', name: 'Paper', archived: false, bindings: [
+        { deviceId: 'gpu', localProjectId: 'gpu-paper' }, { deviceId: 'juma', localProjectId: 'juma-paper' },
+      ] }]
+      accounts.status = 'ready'
+    })
+    const gpu = { deviceId: 'gpu', projects: sectionProjects('gpu', [project('gpu-paper'), project('gpu-loose')], accounts) }
+    // Same local id on another machine is not the project: bindings are per machine.
+    const juma = { deviceId: 'juma', projects: sectionProjects('juma', [project('juma-paper'), project('gpu-paper')], accounts) }
+    const rows = [
+      { deviceId: 'gpu', session: session('g1', 'gpu-paper', 1) },
+      { deviceId: 'juma', session: session('j1', 'juma-paper', 2) },
+      { deviceId: 'gpu', session: session('l1', 'gpu-loose', 3) },
+      { deviceId: 'juma', session: session('x1', 'gpu-paper', 0) },
+    ]
+    const sections = sectionsOf([gpu, juma], rows, NO_ASSISTANT, NO_FOLD)
+    expect(sections.map((s) => [s.key, s.project?.name, s.projectIds, shape(s.roots)])).toEqual([
+      [projectSectionKey('gpu', 'gpu-loose'), 'GPU-LOOSE', ['gpu-loose'], 'l1'],
+      ['project|chat-paper', 'Paper', ['gpu-paper', 'juma-paper'], 'j1,g1'],
+      [projectSectionKey('juma', 'gpu-paper'), 'GPU-PAPER', ['gpu-paper'], 'x1'],
+    ])
   })
 })

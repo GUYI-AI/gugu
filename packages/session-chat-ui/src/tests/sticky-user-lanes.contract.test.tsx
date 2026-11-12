@@ -161,14 +161,16 @@ describe('sticky user lanes', () => {
       };
       const seen = new Map<number, number>();
       const down = Array.from({ length: to - from + 1 }, (_, i) => from + i);
-      // Every pixel down and back with no frame in between, then every 7th in an order no drag makes, a frame each.
+      // Every pixel down and back with no frame in between, then every 21st in an order no drag makes, a frame each.
+      // The jumps are the part paced by frames (two per jump); every 21st still lands each regime (below the pin line,
+      // stuck, pushed off: each tens of pixels wide) several times, while every pixel is checked without frames above.
       for (const st of [...down, ...[...down].reverse()]) {
         t.scrollEl.scrollTop = st;
         const now = read(st);
         expect(seen.get(st) ?? now.top, `${id} scrollTop=${st}: the same place both ways`).toBe(now.top);
         seen.set(st, now.top);
       }
-      for (const st of down.filter(st => st % 7 === 0).sort((x, y) => (x * 7919) % 101 - (y * 7919) % 101)) {
+      for (const st of down.filter(st => st % 21 === 0).sort((x, y) => (x * 7919) % 101 - (y * 7919) % 101)) {
         t.scrollEl.scrollTop = st;
         await frames();
         const now = read(st);

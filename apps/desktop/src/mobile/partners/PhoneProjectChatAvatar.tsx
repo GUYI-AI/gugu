@@ -1,7 +1,9 @@
-import { useMemo, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useMemo, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { useAgentDisplayStatuses } from '@/hooks/useAgentDisplayStatus'
 import { useDevicesStore } from '@/store/devicesContext'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import { isAssistantHome, type AssistantHomeRow } from '@/lib/assistantHome'
 import { deviceSessionsOf, useLiveDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { needsYouCount } from '@/session/renderer/features/sidebar/session-groups'
 import { useSessionMessages } from '@/session/renderer/localization/use-session-messages'
@@ -9,7 +11,7 @@ import { sessionPresentation } from '@/mobile/agent-watch/watch-status'
 import { useMyChatAgentCounts } from '@/lib/innerSidebarBridge'
 import { Chip } from '@/components/ui/Chip'
 import { TaskStatusMark } from '@/components/chat/ComposerCardView'
-import { partnerProjects } from './partnersModel'
+import { partnerProjects, type PartnerProject } from './partnersModel'
 import { ProjectFolderAvatar } from './ProjectFolderAvatar'
 import { PhoneMessageAvatar } from '../chat/PhoneMessageAvatar'
 
@@ -24,8 +26,7 @@ export function PhoneProjectChatAvatar({ chat, mobile, children }: { chat: ChatI
 
 /** 桌面:项目群换成它的项目封面(哪个项目、哪张封面与手机同一个推导 partnerProjects),封面的鲜明度跟着在跑的数。 */
 function DesktopProjectChatAvatar({ chat, children }: { chat: ChatItem; children: ReactNode }) {
-  const { devices } = useDevicesStore()
-  const project = useMemo(() => (chat.kind === 'group' ? partnerProjects(devices).find((row) => row.chatId === chat.id) : undefined), [devices, chat.kind, chat.id])
+  const project = useChatProject(chat.kind === 'group' ? chat.id : null)
   const running = useMyChatAgentCounts(chat.id)?.running ?? 0
   return <ProjectRunningCount chatId={chat.id}>
     {project ? <ProjectFolderAvatar coverId={project.coverId} running={running} size={DESKTOP_ROW_AVATAR_PX} /> : children}
@@ -56,10 +57,20 @@ function ProjectRunningCount({ chatId, children }: { chatId: string; children: R
   </span>
 }
 
+/** 这个群是哪个项目(手机与桌面同一个推导 partnerProjects,读账号上的项目);不是项目群 / chatId null = undefined。 */
+function useChatProject(chatId: string | null): PartnerProject | undefined {
+  const { devices, cloudComputer } = useDevicesStore()
+  // 个人助理宿主:与 useMachineLabel 同一个判据(只读设备 store,头像不依赖登录态)。
+  const homeId = cloudComputer?.snapshot?.deviceId ?? null
+  const isHome = useCallback((row: AssistantHomeRow) => isAssistantHome(row, homeId), [homeId])
+  const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
+  return useMemo(() => (chatId === null ? undefined : partnerProjects(accountList, devices, isHome).find((row) => row.chatId === chatId)), [accountList, devices, isHome, chatId])
+}
+
 function ProjectChatAvatar({ chat, children }: { chat: ChatItem; children: ReactNode }) {
   const { devices } = useDevicesStore()
   const directory = useLiveDeviceSessions()
-  const project = useMemo(() => partnerProjects(devices).find((row) => row.chatId === chat.id), [devices, chat.id])
+  const project = useChatProject(chat.id)
   const statuses = useAgentDisplayStatuses(chat.member_user_ids ?? [])
   if (!project) return <PhoneMessageAvatar>{children}</PhoneMessageAvatar>
   const running = Object.values(statuses).filter((status) => status === 'working').length

@@ -48,11 +48,13 @@ vi.mock('@renderer/localization/use-session-messages', () => ({
 vi.mock('@renderer/features/sessions/stores/session-agent-bindings', () => ({
   sessionAgentBindings: { bindingFor: (id: string) => (state.agents.has(id) ? { agentUserId: state.agents.get(id) } : undefined) },
 }));
-vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({
-  projectGroupsStore: {
-    chatIdOf: (projectId: string) => state.projectChats.get(projectId),
-    rowProjectOfChat: (chatId: string) => [...state.projectChats].find(([, chat]) => chat === chatId)?.[0],
-    projectOfChat: () => undefined,
+// The account project list: each project here has one local project (its row id) and its group (projectChats).
+const localOfChat = (chatId: string) => [...state.projectChats].find(([, chat]) => chat === chatId)?.[0];
+vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({
+  accountProjectsStore: {
+    projectOfLocal: (projectId: string) => (state.projectChats.has(projectId) ? { chatId: state.projectChats.get(projectId) } : undefined),
+    membersOf: (chatId: string) => { const local = localOfChat(chatId); return local ? [local] : []; },
+    representativeOf: (chatId: string) => localOfChat(chatId),
   },
 }));
 vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: (...args: unknown[]) => state.openChatOnScreen(...args) }));
@@ -69,7 +71,7 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
       return { nodeById: new Map(state.items.map((entry) => [entry.id, { item: entry, children: [] }])) };
     },
     get sidebarProjects() {
-      return [...state.projectChats.keys()].map((id) => ({ id }));
+      return [...state.projectChats].map(([id, chatId]) => ({ kind: 'local', id, chatId }));
     },
     projectMembersOf: (row: string) => [row],
     rowProjectIdOf: (id: string) => id,

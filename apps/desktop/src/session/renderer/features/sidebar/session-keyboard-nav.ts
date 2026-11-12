@@ -3,9 +3,9 @@ import { archiveSessionNow } from '@renderer/features/sessions/archive-session-f
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
 import { focusedSessionId } from '@renderer/features/sessions/pane-selectors';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
-import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { getSessionView } from '@renderer/features/sessions/stores/session-selectors';
 import { showModal } from '@renderer/lib/modal/modal-provider';
+import { openChatOnScreen } from '@renderer/features/chats/open-chat';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { navNodeKey, navNodesEqual, type SidebarNavNode } from './sidebar-store';
 import { withMountedSession } from './with-mounted-session';
@@ -436,11 +436,10 @@ class SessionKeyboardNavStore {
       return;
     }
     if (node.kind === 'project') {
-      // 代位的任务工作区那一行(那台机器还没有主目录项目):它的「主页」是预选那台机器的新建页。
-      const standIn = sidebarStore.homeLayout.standIns.get(node.projectId);
-      if (standIn) {
-        remoteHostsStore.requestNewSession(standIn, null);
-        nav.navigateTransient('new-session');
+      // 没有本地项目的项目那一行(行 id = 项目群):它的「主页」是项目群。
+      const ref = sidebarStore.sidebarProjects.find((row) => row.id === node.projectId);
+      if (ref?.kind === 'group') {
+        openChatOnScreen(ref.chatId, false);
         return;
       }
       nav.navigateTransient('project', { projectId: node.projectId });

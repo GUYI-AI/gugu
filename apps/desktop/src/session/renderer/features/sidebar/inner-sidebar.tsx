@@ -27,7 +27,7 @@ import { openInfoTab } from '@renderer/features/chats/chat-tabs/chat-layouts';
 import { openChatOnScreen } from '@renderer/features/chats/open-chat';
 import { ProjectMenuItems } from '@renderer/features/projects/components/project-menu';
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
-import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
+import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
@@ -85,10 +85,14 @@ export function mySidebarAgents(): ChatAgentEntry[] {
   }));
 }
 
-/** 这个项目群绑的本地项目(各台机器上的同一个项目合成的那一行,连同并进来的)。 */
+/** 这个项目(账号上的项目 = 它的项目群)在各台机器上的本地项目,代表在最前;一个文件夹都没有 = []。 */
 function projectIdsOfChat(chatId: string): readonly string[] {
-  const row = projectGroupsStore.rowProjectOfChat(chatId) ?? projectGroupsStore.projectOfChat(chatId);
-  return row ? sidebarStore.projectMembersOf(row) : [];
+  return accountProjectsStore.membersOf(chatId);
+}
+
+/** 这个群是不是侧栏列着的一个项目(账号上的项目,归档的不列):是 = 内层侧栏按项目画它。 */
+export function isProjectChat(chatId: string): boolean {
+  return sidebarStore.sidebarProjects.some((ref) => ref.chatId === chatId);
 }
 
 export function chatScope(anchor: InnerSidebarAnchor, summaries: ReadonlyMap<string, ChatSummary>): ChatAgentScope {
@@ -108,12 +112,12 @@ function currentView(summaries: ReadonlyMap<string, ChatSummary>): InnerSidebarV
       kind: 'chat',
       chatId,
       chatKind: summaries.get(chatId)?.kind ?? null,
-      projectGroup: projectGroupsStore.rowProjectOfChat(chatId) !== undefined,
+      projectGroup: isProjectChat(chatId),
     };
   }
   if (currentViewId === 'project') {
     const projectId = (viewParamsStore.project as { projectId?: string } | undefined)?.projectId;
-    return projectId ? { kind: 'project', chatId: projectGroupsStore.chatIdOf(sidebarStore.rowProjectIdOf(projectId)) } : { kind: 'other' };
+    return projectId ? { kind: 'project', chatId: accountProjectsStore.projectOfLocal(projectId)?.chatId } : { kind: 'other' };
   }
   if (currentViewId === 'session') {
     const sessionId = (viewParamsStore.session as { sessionId?: string } | undefined)?.sessionId;
@@ -218,8 +222,8 @@ const MyChatAgentCountsPublisher = observer(function MyChatAgentCountsPublisher(
 }) {
   const counts = new Map<string, ChatAgentCounts>();
   for (const ref of sidebarStore.sidebarProjects) {
-    const chatId = projectGroupsStore.chatIdOf(ref.id);
-    if (!chatId || counts.has(chatId)) continue;
+    const chatId = ref.chatId;
+    if (counts.has(chatId)) continue;
     counts.set(chatId, chatAgentCounts(myAgentsInChat(agents, chatScope({ kind: 'project', chatId }, summaries))));
   }
   // 依赖是序列化后的数:每次渲染新建的 Map 不算变化(publish 自己也只在数变了时才通知)。
@@ -330,7 +334,8 @@ const InnerHeadRow = observer(function InnerHeadRow({
   const { t } = useTranslation('messaging');
   const { chatId } = anchor;
   const name = summary?.name ?? '';
-  const rowProjectId = anchor.kind === 'project' ? projectGroupsStore.rowProjectOfChat(chatId) ?? projectGroupsStore.projectOfChat(chatId) : undefined;
+  // 项目的代表本地项目(与侧栏那一行同一个);一个文件夹都没有的项目没有 —— 新智能体走群那一条,封面按群取色(同 partnerProjects)。
+  const rowProjectId = anchor.kind === 'project' ? accountProjectsStore.representativeOf(chatId) : undefined;
   const actionsLabel = translate(anchor.kind === 'project' ? 'sidebar.projectActions' : 'sidebar.groupActions');
   const newAgentLabel = translate(anchor.kind === 'project' ? 'sidebar.newAgentInProject' : 'sidebar.newAgentInGroup');
   const openInfo = (page?: 'members') => {
@@ -343,8 +348,8 @@ const InnerHeadRow = observer(function InnerHeadRow({
     else setComposerVerb(chatId, 'task', '', { name, joinable: true });
     openChatOnScreen(chatId, false);
   };
-  const avatar: ReactNode = rowProjectId ? (
-    <ProjectFolderAvatar coverId={rowProjectId} running={running} size={20} />
+  const avatar: ReactNode = anchor.kind === 'project' ? (
+    <ProjectFolderAvatar coverId={rowProjectId ?? chatId} running={running} size={20} />
   ) : (
     <GroupHeadAvatar chatId={chatId} summary={summary} />
   );

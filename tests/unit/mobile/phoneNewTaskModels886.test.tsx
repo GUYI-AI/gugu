@@ -9,6 +9,15 @@ import * as tasks from '@/mobile/agent-watch/createTaskInGroup'
 import * as rpc from '@/mobile/agent-watch/sessionpage-rpc'
 import { clickElement, createReactHarness, deferred, device, renderWithAppProviders } from '../../support/testHarness'
 import { readComposer, writeComposer } from '../../support/composerEditor'
+import { runInAction } from 'mobx'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+
+// The task folder card's project is the account project of this group (accountProjectsStore); 'machine' has its folder.
+beforeEach(() => runInAction(() => {
+  accountProjectsStore.list = [{ chatId: 'chat', name: 'Project', archived: false, bindings: [{ deviceId: 'machine', localProjectId: 'project' }] }]
+  accountProjectsStore.status = 'ready'
+}))
+afterEach(() => accountProjectsStore.clear())
 
 let harness: ReturnType<typeof createReactHarness>
 const width = Object.getOwnPropertyDescriptor(window, 'innerWidth')!

@@ -38,16 +38,18 @@ export async function attachPhoneProjectFolder(input: {
   const deps: LinkFolderDeps = {
     ensureGroup: (id) => projectRpcOn(rowDevice).projects.ensureProjectGroup(id),
     createProjectOn: async () => {
-      const result = await rpc.projects.createProject({ type: 'local', id: crypto.randomUUID(), path, name: project.name, createDirectory: false, allowNonGit: true })
+      // The host answers the project the folder already is (merged in, or detached earlier: it re-attaches the root).
+      const id = crypto.randomUUID()
+      const result = await rpc.projects.createProject({ type: 'local', id, path, name: project.name, createDirectory: false, allowNonGit: true })
       if (!result.success) throw new Error('message' in result.error ? result.error.message : result.error.type)
-      return { projectId: result.data.id, created: true }
+      return { projectId: result.data.id, created: result.data.id === id }
     },
     bind: (_, id, chatId) => rpc.projects.bindProjectToGroup(id, chatId),
     unbind: (_, id) => rpc.projects.unbindProjectGroup(id),
     deleteProject: (id) => rpc.projects.deleteProject(id),
     sessionCountOf: async (id) => (await rpc.sessions.getSessionsForProject(id)).length,
   }
-  const linked = await linkFolderOnMachine(deps, { rowId: project.rowId, machine: device.device_id, path, existingProjectId: merge?.id })
+  const linked = await linkFolderOnMachine(deps, { rowId: project.rowId, machine: device.device_id, path })
   if (!linked.ok) throw linked.error
   const folders = await rpc.projects.listProjectFolders(linked.projectId)
   if (!folders.success) throw new Error(folders.error.message)

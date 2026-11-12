@@ -24,7 +24,9 @@ type CreationTurns = Pick<Session, 'id' | 'initialQueue' | 'initialMessageId' | 
 /**
  * The desktop task page's launch: it creates its own session, then asks for its workspace; once that exists (a fresh
  * profile's first workspace is only registered then), the session's creation turns are admitted (their enqueue starts
- * it). An empty task is started by the page itself when it opens. `initialQueue` is only read while it never ran.
+ * it) in that same host call, before anything else can start it — files still being placed included: their dispatch
+ * waits (first-turn-placement), the turn does not (#2558). Opening the page never starts it. `initialQueue` is only read
+ * while it never ran: that is what keeps a reprovision of an old task from sending its first message again.
  */
 export async function admitFirstMessages(sessionId: string): Promise<void> {
   const [row] = await db.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);

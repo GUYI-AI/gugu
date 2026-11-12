@@ -30,10 +30,11 @@ vi.mock('@/session/shared/remote-sessions/session-directory', () => ({
   useLiveDeviceSessions: () => ({}),
   deviceSessionsOf: (device: { sessions: Session[] }) => ({ sessions: device.sessions }),
 }));
+// 会话历史按机器读(useSessionHistoryDirectories):这里只记问了哪几台,这台电脑('local')答 state.history。
 vi.mock('@renderer/features/session-history/use-session-history', () => ({
-  useSessionHistory: (query: unknown) => {
-    state.queries.push(query);
-    return query === null ? { page: null, error: null } : state.history;
+  useSessionHistoryDirectories: (query: unknown, machines: readonly string[]) => {
+    state.queries.push(machines.length > 0 ? { query, machines } : null);
+    return { byMachine: machines.includes('local') ? { local: state.history } : {}, refresh: () => undefined };
   },
 }));
 
@@ -65,7 +66,7 @@ afterEach(async () => {
 describe('SidebarOneListEmpty', () => {
   it('with no tasks: the note, then the import box naming the tools, when this computer has sessions to import', async () => {
     await render();
-    expect(state.queries.at(-1)).toEqual({ status: 'not-imported', limit: 1 });
+    expect(state.queries.at(-1)).toEqual({ query: { status: 'not-imported', limit: 1 }, machines: ['local'] });
     expect(note()?.textContent).toContain('sidebar.emptyHintCreatesidebar.emptyHintPlace');
     expect(offer()?.textContent).toBe('sessionHistory.importOffer {"tools":"Claude Code / Codex"}sessionHistory.importOfferAction');
   });

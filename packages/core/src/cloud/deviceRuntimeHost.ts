@@ -1,3 +1,4 @@
+import { bindBackendProbe, noteBackendAnswer } from './backendReachability'
 import {
   createAgentRuntimeStateReporter,
   DeviceCapabilityTimeoutError,
@@ -352,6 +353,7 @@ export function createDeviceRuntimeHostLoop(
   let blanketAnnouncementDuringTick = false
   let unannouncedVerdict: { pending: Map<string, string>; timer: ReturnType<typeof setTimeout> } | null = null
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  let unbindBackendProbe: (() => void) | null = null
   let activeHeartbeat: Promise<void> | null = null
   let activeLeaseRenewal: Promise<void> | null = null
   // Suppress immediate retry storms after a capability timeout; the next explicit work tick
@@ -1162,11 +1164,14 @@ export function createDeviceRuntimeHostLoop(
         env
       )
       lastHeartbeatAt = nowMs()
+      noteBackendAnswer(true) // the host's reading of backendReachability (no window needed)
     } catch (error) {
       // The independent heartbeat is where stale-online would otherwise hide: surface a permanent
       // auth loss here too (once), so the device can't keep heartbeating-then-failing in silence.
       if (handleAuthExpired(error)) return
       if (error instanceof DeviceCapabilityTimeoutError) heartbeatCapabilityTimedOut = true
+      // A local capability read that timed out says nothing about the backend; any other failure is a failed reading.
+      else noteBackendAnswer(false)
       options.warn?.(`[device-runtime] heartbeat: ${(error as Error).message}`)
     }
   }
@@ -1308,6 +1313,8 @@ export function createDeviceRuntimeHostLoop(
       )
     }
     stopped = false
+    // A failed backend write elsewhere in this process asks for a heartbeat now: if the backend is down, the edge arms.
+    unbindBackendProbe = bindBackendProbe(scheduleHeartbeat)
     // ⚠️ 先装监督节拍再发首轮:首轮 tick 结尾的排空跟进以「监督节拍已装上」判定宿主在长跑。
     superviseTimer = setInterval(() => {
       // @@@safety-cadence — wake 订着时这一拍只是兜底,每 safetyIntervalMs 一次;没订着照旧每拍。
@@ -1466,6 +1473,7 @@ export function createDeviceRuntimeHostLoop(
     const ownerAtStop = activeOwnerUserId
     const deviceAtStop = lastDeviceId
     stopped = true
+    unbindBackendProbe?.(); unbindBackendProbe = null
     lifecycleGeneration += 1
     activeTickAbortController?.abort(new Error('device runtime host stopped'))
     if (superviseTimer !== null) clearInterval(superviseTimer)

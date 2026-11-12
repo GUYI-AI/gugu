@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, type MutableRefObject } from 'react'
 import { mergeFetchedChatsPreservingActiveLocal } from '@gugu/core/shared/ui/chatModels'
 import { createChatNotificationPayload, shouldNotify } from '@gugu/core/shared/ui/notificationModels'
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
-import { publishChatSnapshot } from '../lib/chatSnapshotPublication'
+import { publishChatSnapshot, readDurableList } from '../lib/chatSnapshotPublication'
 import { platform } from '../platform'
 import { i18n } from '@/i18n'
 import { isChatOnScreen } from '../lib/onScreenChat'
@@ -10,7 +10,7 @@ import { parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import { chatPreviewText } from '../lib/systemNoticeText'
 import { imSelectors, type AccountImRepository } from '../lib/imRepository'
 import type { PersonalConversationDeletion } from '../lib/deleteListedConversation'
-import { patchChatRows, prepareProjectedReadWatermark, type PatchChat } from './chatRealtimeMutations'
+import { prepareProjectedReadWatermark } from './chatRealtimeMutations'
 import { currentAuthSessionSignal } from '../lib/authSessionLoss'
 import {
   createChatProjection, readProjectionCursor,
@@ -111,7 +111,6 @@ export function acknowledgeOnScreenChatRows(
     canAcknowledge?: (chatId: string) => boolean
     /** 屏幕上真正可见的最大 seq(已落地的窗口消息);确认不得越过它。 */
     visibleSeqOf?: (chatId: string) => number
-    patchChat: PatchChat
     /** 延迟写入真正执行时用它读**当前**的行:决策与执行之间隔着 await(评审)。 */
     liveRows?: () => readonly ChatItem[]
     deferPersist?: (persist: () => void) => void
@@ -131,7 +130,7 @@ export function acknowledgeOnScreenChatRows(
     const visible = context.visibleSeqOf ? context.visibleSeqOf(chat.id) : Number.POSITIVE_INFINITY
     const seq = Math.min(Math.max(basis.last_read_seq, basis.next_message_seq - 1), visible)
     if (seq <= basis.last_read_seq) return basis
-    const prepared = prepareProjectedReadWatermark(basis, seq, context.patchChat)
+    const prepared = prepareProjectedReadWatermark(basis, seq)
     const persist = () => {
       // 决策到这里中间隔着 await(评审):用户若刚标了手工未读,或读状态已往前走,这条确认作废 —— 本地不写,RPC 也不发。
       const latest = context.liveRows?.().find((row) => row.id === chat.id)
@@ -173,10 +172,6 @@ export function useChatProjectionBinding(deps: {
     setChats(rows)
     chatsRef.current = rows
   }, [repositoryRef, chatsRef, setChats])
-  const patchChatFor = useCallback((accountId: string): PatchChat => (chatId, partial, expectedReadStateVersion) => {
-    if (repositoryRef.current?.accountId !== accountId) return
-    acceptRows(accountId, patchChatRows(chatsRef.current, chatId, partial, expectedReadStateVersion))
-  }, [repositoryRef, acceptRows, chatsRef])
 
   const ownerFor = useCallback((accountId: string): ChatProjection => {
     if (ownerRef.current?.accountId !== accountId) {
@@ -184,6 +179,7 @@ export function useChatProjectionBinding(deps: {
       ownerRef.current = { accountId, owner: createChatProjection(accountId, {
         rows: () => chatsRef.current,
         identity: (id) => repositoryRef.current?.accountId === accountId ? imSelectors.identitiesById(repositoryRef.current.snapshot())[id] : undefined,
+        durable: () => repositoryRef.current?.accountId === accountId ? readDurableList(repositoryRef.current) : null,
       }) }
     }
     return ownerRef.current.owner
@@ -225,13 +221,13 @@ export function useChatProjectionBinding(deps: {
       { preserveMissingActive: false })
     const pendingReads: Array<() => void> = []
     const acknowledged = acknowledgeOnScreenChatRows(merged, {
-      current, onScreen: isChatOnScreen, canAcknowledge, visibleSeqOf, patchChat: patchChatFor(accountId),
+      current, onScreen: isChatOnScreen, canAcknowledge, visibleSeqOf,
       deferPersist: (persist) => pendingReads.push(persist),
     })
     acceptRows(accountId, shareRows(current, acknowledged))
     for (const persist of pendingReads) persist()
     if (revokeMissingActive && activeChatId) onActiveRevoked(activeChatId)
-  }, [ledger, activeChatIdRef, canAcknowledge, visibleSeqOf, chatsRef, getRepository, onActiveRevoked, patchChatFor, acceptRows, repositoryRef])
+  }, [ledger, activeChatIdRef, canAcknowledge, visibleSeqOf, chatsRef, getRepository, onActiveRevoked, acceptRows, repositoryRef])
 
   /** 冷启快照:一次「哪些会话属于我」的读 + 与增量同一套族读 ⇒ 2 波(spec I7,没有第二条拉取路)。 */
   const hydrate = useCallback((accountId: string) => ownerFor(accountId)

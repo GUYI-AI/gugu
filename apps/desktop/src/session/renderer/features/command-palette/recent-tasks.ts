@@ -1,5 +1,5 @@
 import { getRendererSession } from '@/lib/sessionPublication';
-import { browserStorage } from '@renderer/features/remote-hosts/remote-recent-folders';
+import { browserStorage } from '@renderer/features/remote-hosts/browser-storage';
 
 const key = (owner: string) => `gugu:recent-tasks:${owner}`;
 export function recentTaskIds(owner = getRendererSession()?.user.id ?? null): string[] {

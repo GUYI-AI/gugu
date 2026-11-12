@@ -8,7 +8,7 @@ import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
 import { topicService, type CreateTopicInput, type CreatedTopic } from '../lib/topics'
 // @@@send-outbox (#1762 洞③/#1941) — outbox 与 chat store 的接线层(卫星,参照 chatRealtimeMutations
 // 的 mutators-bag 抽法):乐观行构造、状态迁移落 UI、送达连带动作(水位/预览/agent 运行态点亮)、
-// 重启恢复注入、online kick。god-file chat.tsx 只保留「建乐观行 + enqueue」。
+// 重启恢复注入、后端恢复 kick。god-file chat.tsx 只保留「建乐观行 + enqueue」。
 // 连带动作对「实时发送」与「重启恢复的投递」走同一条 onSent 路径——上下文一律从 refs/记录派生,
 // 不闭包捕获发送时的组件状态(恢复投递没有那个闭包)。
 
@@ -31,6 +31,7 @@ import {
 } from '../lib/imRepository'
 import { advanceReadWatermark, applyThreadSnapshot, type PatchChat } from './chatRealtimeMutations'
 import { createChatOutbox, type ChatOutbox } from './chatOutbox'
+import { noteBackendRequestFailed, subscribeBackendRecovered } from '@gugu/core/cloud/backendReachability'
 import { i18n } from '@/i18n'
 import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 import { rendererLogger } from '@/lib/log'
@@ -79,7 +80,7 @@ export interface OutboxWiring {
     /** 投递前置(如 agent 私聊的会话页会话就绪)。只活在内存:重启恢复的投递没有它(C1)。 */
     beforeDeliver?: () => Promise<void>
   }): Promise<void>
-  /** 启动恢复:重建乐观行注入主线缓存 + 开始投递;并挂 window online kick。返回清理函数。 */
+  /** 启动恢复:重建乐观行注入主线缓存 + 开始投递;并挂后端恢复 kick(backendReachability)。返回清理函数。 */
   restoreAndWatch(): () => void
   /** 开话题时把该话题的未决行注入 threadMessages(applyThreadSnapshot 只保留已在场的乐观行)。 */
   injectThreadOutboxRows(chatId: string, rootId: string): void
@@ -218,6 +219,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
       if (record.operation?.kind === 'attachment') attachmentTimings.get(record.clientMessageId)?.finish('failed', 'outbox')
       finishChatSendTiming(record.clientMessageId)
       rendererLogger('chat/outbox').error({ chatId: record.chatId, messageId: record.clientMessageId, error: record.lastError }, 'message send failed')
+      noteBackendRequestFailed() // if the backend is down, the beat's next success retries this row
       const onScreen = record.payload.threadRootId
         ? io.activeChatId() === record.chatId && io.activeThreadRootId() === record.payload.threadRootId
         : io.activeChatId() === record.chatId
@@ -538,10 +540,8 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
           io.setMessagesAndCache((prev) => upsertMessageById(prev, row), record.chatId)
         }
       }).catch((err) => { if (active) console.error('[chatOutbox] restore failed', err) })
-      // 网络恢复 → 全部 failed 自动重投(验收②的自动路径;拍板 a:退避封顶后交 online kick)
-      const onOnline = () => { if (active) void outbox.retryAllFailed() }
-      window.addEventListener('online', onOnline)
-      return () => window.removeEventListener('online', onOnline)
+      // 后端恢复(同步节拍失败过又拉通)→ 全部 failed 自动重投;网络通而后端不通时 window online 不会响。
+      return subscribeBackendRecovered(() => { if (active) void outbox.retryAllFailed() })
     },
     injectThreadOutboxRows(chatId, rootId) {
       const user = io.user()

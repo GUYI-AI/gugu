@@ -92,14 +92,14 @@ describe('open-chat reads after the actual repository publication await', () => 
     expect(boundary.write).not.toHaveBeenCalled()
   })
 
-  it('rolls a failed read back to the complete newer tuple used to prepare it', async () => {
+  it('a failed read keeps the local read position prepared from the newer tuple (reconciled on recovery)', async () => {
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     boundary.write.mockRejectedValueOnce(new Error('offline'))
     await pausePublication()
     rows.current = [newer()]
     release.resolve(); await publication
     await Promise.resolve(); await Promise.resolve()
-    expect(rows.current[0]).toMatchObject({ unread_count: 2, last_read_seq: 3, read_state_version: 8,
+    expect(rows.current[0]).toMatchObject({ unread_count: 2, last_read_seq: 5, read_state_version: 9,
       unread_locator: newer().unread_locator })
     expect(boundary.write).toHaveBeenCalledExactlyOnceWith({ kind: 'main', chatId: 'tuple-race', seq: 5 })
     quiet.mockRestore()

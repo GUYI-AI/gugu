@@ -61,7 +61,7 @@
   },
   {
     "rule": "console-member",
-    "file": "apps/desktop/electron/sessionpage/sessionpage-project-groups.ts",
+    "file": "apps/desktop/session-tooling/generate-fixtures.ts",
     "count": 1
   },
   {
@@ -111,12 +111,12 @@
   },
   {
     "rule": "console-member",
-    "file": "apps/desktop/src/components/sharePosterCanvas.ts",
+    "file": "apps/desktop/src/components/sessionpage/EmdashSessionFrame.tsx",
     "count": 1
   },
   {
     "rule": "console-member",
-    "file": "apps/desktop/src/components/sessionpage/EmdashSessionFrame.tsx",
+    "file": "apps/desktop/src/components/sharePosterCanvas.ts",
     "count": 1
   },
   {
@@ -186,6 +186,36 @@
   },
   {
     "rule": "console-member",
+    "file": "apps/desktop/src/session/renderer/features/browser/browser-toolbar-actions.ts",
+    "count": 1
+  },
+  {
+    "rule": "console-member",
+    "file": "apps/desktop/src/session/renderer/features/sessions/open-session-in-session.ts",
+    "count": 1
+  },
+  {
+    "rule": "console-member",
+    "file": "apps/desktop/src/session/renderer/features/sessions/stores/open-file-in-file-editor.ts",
+    "count": 1
+  },
+  {
+    "rule": "console-member",
+    "file": "apps/desktop/src/session/renderer/features/sessions/stores/project-sessions-store.ts",
+    "count": 1
+  },
+  {
+    "rule": "console-member",
+    "file": "apps/desktop/src/session/renderer/features/sessions/stores/session-store.ts",
+    "count": 1
+  },
+  {
+    "rule": "console-member",
+    "file": "apps/desktop/src/session/renderer/features/tabs/pane-store.ts",
+    "count": 1
+  },
+  {
+    "rule": "console-member",
     "file": "apps/desktop/src/store/chat.tsx",
     "count": 8
   },
@@ -208,41 +238,6 @@
     "rule": "console-member",
     "file": "apps/desktop/src/store/contacts.tsx",
     "count": 3
-  },
-  {
-    "rule": "console-member",
-    "file": "apps/desktop/src/session/renderer/features/browser/browser-toolbar-actions.ts",
-    "count": 1
-  },
-  {
-    "rule": "console-member",
-    "file": "apps/desktop/src/session/renderer/features/sessions/open-session-in-session.ts",
-    "count": 1
-  },
-  {
-    "rule": "console-member",
-    "file": "apps/desktop/src/session/renderer/features/tabs/pane-store.ts",
-    "count": 1
-  },
-  {
-    "rule": "console-member",
-    "file": "apps/desktop/src/session/renderer/features/sessions/stores/open-file-in-file-editor.ts",
-    "count": 1
-  },
-  {
-    "rule": "console-member",
-    "file": "apps/desktop/src/session/renderer/features/sessions/stores/project-sessions-store.ts",
-    "count": 1
-  },
-  {
-    "rule": "console-member",
-    "file": "apps/desktop/src/session/renderer/features/sessions/stores/session-store.ts",
-    "count": 1
-  },
-  {
-    "rule": "console-member",
-    "file": "apps/desktop/session-tooling/generate-fixtures.ts",
-    "count": 1
   },
   {
     "rule": "console-member",

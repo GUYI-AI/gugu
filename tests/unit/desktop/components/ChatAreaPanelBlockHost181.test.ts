@@ -50,7 +50,6 @@ vi.mock('../../../../apps/desktop/src/lib/chat', () => ({
     getOtherMembersReadSeqs: vi.fn(async () => ({})),
     getThreadMessages: vi.fn(async () => []),
     getGroupChatSettings: vi.fn(async () => ({ chat_id: 'group-1', my_role: 'owner', can_manage: true, can_dissolve: true, can_archive_topic: true, max_members: 500, allow_member_invite: true, invite_link_enabled: false, agent_join_approval: false, join_mode: 'open', group_prompt: null, description: null, public_id: null, join_token: null })),
-    listGroupJoinRequests: vi.fn(async () => []),
   },
 }))
 

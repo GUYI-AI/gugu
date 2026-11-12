@@ -4,6 +4,7 @@ import {
   agentHasOwnRow,
   agentsInRooms,
   agentTaskHomes,
+  accountProjectReading,
   oneListShows,
   oneListTail,
   projectsWithoutGroupRow,
@@ -37,46 +38,72 @@ describe('which agents live in a room', () => {
 })
 
 describe('which agents live in a project and which have a top-level task', () => {
-  it('a session in a project puts its agent in the project; the task workspace is not a project', () => {
+  // The account project list: `app` on mac is a project; nothing else is.
+  const accounts = accountProjectReading([{ bindings: [{ deviceId: 'mac', localProjectId: 'app' }] }], false)
+
+  it('a session in an account project puts its agent in the project; the task workspace is not a project', () => {
     const { inProjects, withTopLevelTask } = agentTaskHomes([{
+      deviceId: 'mac',
       projects: [project('app'), project('tasks', 'workspace')],
       sessions: [session('s1', 'app', 'a-project'), session('s2', 'tasks', 'a-solo'), session('s3', 'tasks', null)],
-    }])
+    }], accounts)
+    expect([...inProjects]).toEqual(['a-project'])
+    expect([...withTopLevelTask]).toEqual(['a-solo'])
+  })
+
+  it('a local project the account list does not hold is no project: its agent has a top-level task, wherever the machine lists it', () => {
+    const { inProjects, withTopLevelTask } = agentTaskHomes([{
+      deviceId: 'mac',
+      projects: [project('app'), project('fresh')],
+      sessions: [session('s1', 'app', 'a-project'), session('s2', 'fresh', 'a-unpublished')],
+    }], accounts)
+    expect([...inProjects]).toEqual(['a-project'])
+    expect([...withTopLevelTask]).toEqual(['a-unpublished'])
+  })
+
+  it('on the account list\'s first read, with nothing in hand, a machine\'s own projects count; its task workspace does not', () => {
+    const { inProjects, withTopLevelTask } = agentTaskHomes([{
+      deviceId: 'mac',
+      projects: [project('app'), project('tasks', 'workspace')],
+      sessions: [session('s1', 'app', 'a-project'), session('s2', 'tasks', 'a-solo')],
+    }], accountProjectReading([], true))
     expect([...inProjects]).toEqual(['a-project'])
     expect([...withTopLevelTask]).toEqual(['a-solo'])
   })
 
   it('a fork is never a top-level task, also when its parent is on no machine we see', () => {
     const { withTopLevelTask, onlyForks } = agentTaskHomes([{
+      deviceId: 'mac',
       projects: [project('tasks', 'workspace')],
       sessions: [session('root', 'tasks', 'a-root'), session('fork', 'tasks', 'a-fork', 'root'), session('orphan', 'tasks', 'a-orphan', 'archived')],
-    }])
+    }], accounts)
     expect([...withTopLevelTask]).toEqual(['a-root'])
     expect([...onlyForks].sort()).toEqual(['a-fork', 'a-orphan'])
   })
 
   it('an agent with a top-level task and a fork is not only a fork; one without any session is neither', () => {
     const { onlyForks } = agentTaskHomes([{
+      deviceId: 'mac',
       projects: [project('tasks', 'workspace')],
       sessions: [session('root', 'tasks', 'a-both'), session('fork', 'tasks', 'a-both', 'root'), session('loose', 'tasks', null, 'root')],
-    }])
+    }], accounts)
     expect([...onlyForks]).toEqual([])
   })
 
-  it('reads each machine against its own projects; a session whose project the machine did not report is a task', () => {
+  it('reads each machine\'s local projects against that machine\'s bindings', () => {
     const { inProjects, withTopLevelTask } = agentTaskHomes([
-      { projects: [project('app')], sessions: [session('s1', 'app', 'a-1')] },
-      { projects: [], sessions: [session('s2', 'app', 'a-2')] },
-    ])
+      { deviceId: 'mac', projects: [project('app')], sessions: [session('s1', 'app', 'a-1')] },
+      { deviceId: 'pc', projects: [project('app')], sessions: [session('s2', 'app', 'a-2')] },
+    ], accounts)
     expect([...inProjects]).toEqual(['a-1'])
     expect([...withTopLevelTask]).toEqual(['a-2'])
   })
 
   it('a fork on another machine still hangs under its parent', () => {
     const { withTopLevelTask } = agentTaskHomes([
-      { projects: [project('tasks', 'workspace')], sessions: [session('root', 'tasks', 'a-root')] },
-      { projects: [project('tasks2', 'workspace')], sessions: [session('fork', 'tasks2', 'a-fork', 'root')] },
-    ])
+      { deviceId: 'mac', projects: [project('tasks', 'workspace')], sessions: [session('root', 'tasks', 'a-root')] },
+      { deviceId: 'pc', projects: [project('tasks2', 'workspace')], sessions: [session('fork', 'tasks2', 'a-fork', 'root')] },
+    ], accounts)
     expect([...withTopLevelTask]).toEqual(['a-root'])
   })
 })
@@ -127,18 +154,15 @@ describe('what the one list shows', () => {
   })
 })
 
-describe('projects without a conversation row keep their project row', () => {
-  const bound: Record<string, string> = { reserved: 'chat-reserved', listed: 'chat-listed' }
-  const groupOf = (id: string) => bound[id]
-  const ids = ['listed', 'reserved', 'unbound', 'reading']
-  const known = (id: string) => id !== 'reading'
+describe('account projects without a conversation row keep their project row', () => {
+  const projects = [{ id: 'listed', chatId: 'chat-listed' }, { id: 'reserved', chatId: 'chat-reserved' }, { id: 'chat-folderless', chatId: 'chat-folderless' }]
 
-  it('lists the projects whose group is not in the chat list or that have no group, once bindings are known', () => {
-    expect(projectsWithoutGroupRow(ids, groupOf, known, new Set(['chat-listed']))).toEqual(['reserved', 'unbound'])
+  it('lists the account projects whose group is not in the chat list, in the given order', () => {
+    expect(projectsWithoutGroupRow(projects, new Set(['chat-listed']))).toEqual(['reserved', 'chat-folderless'])
   })
 
   it('says nothing while the chat list has not loaded', () => {
-    expect(projectsWithoutGroupRow(ids, groupOf, known, null)).toEqual([])
+    expect(projectsWithoutGroupRow(projects, null)).toEqual([])
   })
 })
 

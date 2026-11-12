@@ -152,11 +152,18 @@ export function createDesktopSourceWindowReader(options: {
       },
     });
   }
-  async function measured<T>(input: WindowReadRequest, read: () => Promise<T>) {
-    await scheduler.pause();
-    for (const owner of listeners.values()) if (owner.signal === input.signal) owner.pending = undefined;
-    try { return await read(); }
-    finally { finish(input); resumePending(); }
+  // Window reads still running (a stopped subscription's last read finishes and may save its checkpoints).
+  const reading = new Set<Promise<unknown>>();
+  function measured<T>(input: WindowReadRequest, read: () => Promise<T>): Promise<T> {
+    const task = (async () => {
+      await scheduler.pause();
+      for (const owner of listeners.values()) if (owner.signal === input.signal) owner.pending = undefined;
+      try { return await read(); }
+      finally { finish(input); resumePending(); }
+    })();
+    reading.add(task);
+    void task.then(() => reading.delete(task), () => reading.delete(task));
+    return task;
   }
   const bridge = createDesktopWindowReader({ request: options.request, finish,
     openRecent: input => measured(input, async () => {
@@ -191,5 +198,11 @@ export function createDesktopSourceWindowReader(options: {
       };
     },
   });
-  return { ...bridge, async dispose() { for (const job of discoveries.values()) job.abort.abort(); await scheduler.dispose(); await Promise.allSettled([...discoveries.values()].map(job => job.promise)); } };
+  // Disposed = nothing of this reader touches its files any more: background jobs, discoveries and window reads.
+  return { ...bridge, async dispose() {
+    for (const job of discoveries.values()) job.abort.abort();
+    await scheduler.dispose();
+    await Promise.allSettled([...discoveries.values()].map(job => job.promise));
+    await Promise.allSettled([...reading]);
+  } };
 }

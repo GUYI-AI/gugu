@@ -4,7 +4,6 @@
 import { act } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness } from '../../../support/testHarness'
-import type { ContactGroupChat } from '@gugu/core/shared/types/contacts'
 import type { ManagedGroupJoinRequest } from '../../../../apps/desktop/src/lib/groupJoinRequests'
 
 // The chat store's functions keep one identity across renders, as the real store's do: the provider's loaders are
@@ -66,7 +65,6 @@ function Capture() {
 
 const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() })
 
-const myGroup: ContactGroupChat = { id: 'g-1', public_id: null, kind: 'group', name: '合作方群', alias: null, avatar_url: null, member_count: 2, is_muted: false, my_role: 'owner', member_user_ids: ['user-1', 'user-2'] }
 const agentAsks: ManagedGroupJoinRequest = {
   id: 'r-1',
   chat_id: 'g-1',
@@ -141,7 +139,7 @@ describe('入群申请随 friend_requests_changed 到审批人', () => {
     await act(async () => { await revisionHandlers.get('friend_requests_changed')?.() })
     await flush()
 
-    expect(listManagedMock).toHaveBeenLastCalledWith([myGroup])
+    expect(listManagedMock).toHaveBeenLastCalledWith()
     expect(store?.groupJoinRequests.map((request) => request.id)).toEqual(['r-1'])
     expect(store?.pendingRequestCount).toBe(1)
   })

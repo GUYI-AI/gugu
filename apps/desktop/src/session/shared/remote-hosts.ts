@@ -85,6 +85,8 @@ export type RemoteHostDevice = {
    * 都读这一份;连着时以那台机器此刻的为准。缺席 = 这一端还没读到过账号上的那份。
    */
   projects?: readonly DeviceProject[];
+  /** 这一端上一次读账号上的那份没读到(原因):`projects` 是更早的那份。读到了 = 缺席。 */
+  projectsError?: string;
   /** #113 那台机器的主目录(心跳报的);认它上面的「~」项目用。老宿主不报 = 缺席。 */
   homeDir?: string;
 };

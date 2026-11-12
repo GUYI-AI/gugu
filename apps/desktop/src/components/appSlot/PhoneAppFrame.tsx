@@ -278,6 +278,8 @@ export function PhoneAppFrame({
         // credentials — it reaches gugu through its host alone. No popups or top navigation. Forms submit as on the desktop: the
         // page's own submit handler runs, and a form that would go somewhere is stopped by the App's CSP (`form-action 'none'`).
         sandbox="allow-scripts allow-same-origin allow-forms"
+        // A video's own fullscreen button, as the desktop's App tab allows it (embedded-page-permissions.ts).
+        allow="fullscreen"
         src={app.src}
         className="min-h-0 w-full flex-1 border-0"
         data-testid={testId}

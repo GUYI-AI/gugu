@@ -164,20 +164,20 @@ describe('project folders', () => {
     fixture.sqlite.exec("INSERT INTO sessions (id, project_id, workspace_id) VALUES ('source-session', 'project-b', 'ws-root-b')");
 
     const pending = await runProjectAgentAction({ projectId: 'project-a' }, { action: 'project_add_folder', path: rootB }) as { needs_confirmation: boolean; source_project_id: string; sessions: number };
-    expect(pending).toMatchObject({ needs_confirmation: true, source_project_id: 'project-b', sessions: 1 });
+    expect(pending).toMatchObject({ project_id: 'chat-a', needs_confirmation: true, source_project_id: 'chat-b', sessions: 1 });
     expect(groups.get('project-b')).toBe('chat-b');
     expect(workspaceRow('ws-root-b')?.project_id).toBeNull();
 
     const joined = await runProjectAgentAction({ projectId: 'project-a' }, {
       action: 'project_add_folder', path: rootB, merge_existing: true, source_project_id: pending.source_project_id,
-    }) as { undo: { tool: 'project_restore_device'; project_id: string; chat_id: string; expected_chat_id: string } };
+    }) as { undo: { tool: 'project_restore_device'; project_id: string; path: string; expected_chat_id: string } };
     expect(groups.get('project-b')).toBe('chat-a');
-    expect(joined.undo).toEqual({ tool: 'project_restore_device', project_id: 'project-b', chat_id: 'chat-b', expected_chat_id: 'chat-a' });
+    expect(joined.undo).toEqual({ tool: 'project_restore_device', project_id: 'chat-b', path: rootB, expected_chat_id: 'chat-a' });
     expect((await listProjectFolders('project-b')).success).toBe(true);
     expect((fixture.sqlite.prepare("SELECT project_id FROM sessions WHERE id = 'source-session'").get() as { project_id: string }).project_id).toBe('project-b');
     expect(await readFile(path.join(rootB, 'keep.txt'), 'utf8')).toBe('original');
 
-    await runProjectAgentAction({}, { action: joined.undo.tool, project_id: joined.undo.project_id, chat_id: joined.undo.chat_id, expected_chat_id: joined.undo.expected_chat_id });
+    await runProjectAgentAction({}, { action: joined.undo.tool, project_id: joined.undo.project_id, path: joined.undo.path, expected_chat_id: joined.undo.expected_chat_id });
     expect(groups.get('project-b')).toBe('chat-b');
   });
 

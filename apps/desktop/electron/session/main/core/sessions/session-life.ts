@@ -1,4 +1,4 @@
-import { hydrateLife, OUTCOME_UNKNOWN, shouldStartOnHydrate, step } from '@gugu/core/local/session-life/step';
+import { hydrateLife, OUTCOME_UNKNOWN, shouldStartAfterOutage, shouldStartOnHydrate, step } from '@gugu/core/local/session-life/step';
 import { STAGES } from '@gugu/core/local/session-life/types';
 import { isSqliteBusy } from '@gugu/core/shared/sqliteBusy';
 import { toSerializedError } from '@gugu/session-shared/result';
@@ -277,6 +277,19 @@ export class SessionLife {
     this.send(sessionId, { k: 'start', origin });
   }
 
+  /** The backend is back: every session a start failure left holding rows starts again; `before` runs first for each. */
+  startAfterOutage(before: (sessionId: string) => void): readonly string[] {
+    if (this.account === null || this.leaving) return [];
+    const started: string[] = [];
+    for (const [sessionId, entry] of this.entries) {
+      if (!shouldStartAfterOutage(entry.life, this.ports.store(sessionId).pending(sessionId))) continue;
+      before(sessionId);
+      this.send(sessionId, { k: 'start', origin: 'retry' });
+      started.push(sessionId);
+    }
+    return started;
+  }
+
   interrupt(sessionId: string, event: InterruptEvent): Promise<void> {
     const entry = this.entry(sessionId);
     this.send(sessionId, event);
@@ -531,7 +544,10 @@ export class SessionLife {
         if (run.abort.signal.aborted) return;
         let out: StageResult;
         try {
-          out = await runStage(run, effect);
+          const aborted = await untilAborted(runStage(run, effect), run.abort.signal,
+            late => { void run.adapter.teardown({ [late.at]: late.value }, { gen: run.gen }).catch(error => this.ports.failed(sessionId, error)); });
+          if (aborted === ABORTED) return;
+          out = aborted;
         } catch (error) {
           if (!run.abort.signal.aborted) this.send(sessionId, { k: 'stage-fail', gen: run.gen, at: effect.at, cause: toSerializedError(error),
             ...((error as { awaitsPerson?: unknown }).awaitsPerson === true ? { awaitsPerson: true as const } : {}) });
@@ -639,6 +655,25 @@ function stageOf(entry: Pick<Entry, 'life' | 'since'>): LifeView['stage'] {
 }
 
 function assertNever(value: never): never { throw new Error(`Unhandled lifecycle effect: ${String(value)}`); }
+
+const ABORTED = Symbol('aborted');
+/**
+ * @@@stop-never-waits-on-a-stage — a stop aborts the run at once; a stage still waiting on the network (a model-access
+ * request that never answers) must not hold the session's effect chain, or the stop never settles. The stage's late
+ * result, if it ever comes, is torn down like any result that lands after an abort.
+ */
+function untilAborted(stage: Promise<StageResult>, signal: AbortSignal, teardownLate: (late: StageResult) => void): Promise<StageResult | typeof ABORTED> {
+  if (signal.aborted) return stage;
+  return new Promise((resolve, reject) => {
+    const onAbort = () => resolve(ABORTED);
+    signal.addEventListener('abort', onAbort, { once: true });
+    stage.then(out => {
+      signal.removeEventListener('abort', onAbort);
+      if (signal.aborted) teardownLate(out);
+      resolve(out);
+    }, error => { signal.removeEventListener('abort', onAbort); reject(error); });
+  });
+}
 
 async function runStage(run: Run, effect: RunStageEffect): Promise<StageResult> {
   const ctx = { gen: run.gen, signal: run.abort.signal };

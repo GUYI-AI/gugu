@@ -25,7 +25,7 @@ vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   chatService: {
     getGroupCollab: vi.fn(),
     getGroupChatSettings: vi.fn(),
-    listGroupJoinRequests: vi.fn(),
+    listManagedGroupJoinRequests: vi.fn(),
     decideGroupJoin: vi.fn(async () => {}),
     setAgentListenMode: vi.fn(async () => {}),
     setGroupMemberRole: vi.fn(async () => {}),
@@ -43,7 +43,7 @@ const { MemberListPanelFixture: MemberListPanel } = await import('../../support/
 const { MemberListPanel: ControlledMemberListPanel } = await import('../../../apps/desktop/src/components/chat/MemberListPanel')
 
 const getGroupCollab = vi.mocked(chatService.getGroupCollab)
-const listJoinRequests = vi.mocked(chatService.listGroupJoinRequests)
+const listJoinRequests = vi.mocked(chatService.listManagedGroupJoinRequests)
 const removeMember = vi.mocked(chatService.removeGroupMember)
 const setListenMode = vi.mocked(chatService.setAgentListenMode)
 const getSettings = vi.mocked(chatService.getGroupChatSettings)

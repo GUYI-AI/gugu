@@ -1,15 +1,18 @@
+import { noteBackendRequestFailed, subscribeBackendRecovered } from '@gugu/core/cloud/backendReachability'
 import { loadMessageAgentWakes } from './chatMessageRevalidation'
 import { rendererLogger } from './log'
 
 // @@@agent-wakes - the server writes a message's wakes with the message and never changes them, so the signed-in
 // account keeps one answer per message for every view that shows it (the only cache of them). The account's owner
 // (accountStartBeat) forgets it on sign-out / account switch. A read that fails is logged; those messages stay
-// without a receipt ring or a wait, and are not asked for again in a loop.
+// without a receipt ring or a wait until the backend answers again (backendReachability), then they are read once
+// more. They are never retried in a loop.
 const known = new Map<string, ReadonlySet<string>>()
 const pending = new Set<string>()
 const failed = new Set<string>()
 const listeners = new Set<() => void>()
 let account = 0
+let stopRetry: (() => void) | null = null
 const log = rendererLogger('chat/agent-wakes')
 
 function changed(): void {
@@ -34,6 +37,8 @@ export function requestMessageAgentWakes(ids: readonly string[]): void {
     if (asked !== account) return
     for (const id of wanted) failed.add(id)
     log.error({ error: String(error), count: wanted.length }, 'message recipients could not be read')
+    stopRetry ??= subscribeBackendRecovered(retryFailed)
+    noteBackendRequestFailed()
   }).finally(() => {
     if (asked !== account) return
     for (const id of wanted) pending.delete(id)
@@ -41,9 +46,19 @@ export function requestMessageAgentWakes(ids: readonly string[]): void {
   })
 }
 
+function retryFailed(): void {
+  stopRetry?.()
+  stopRetry = null
+  const ids = [...failed]
+  failed.clear()
+  requestMessageAgentWakes(ids)
+}
+
 /** Sign-out / account switch: the next account starts with nothing known, nothing pending and nothing failed. */
 export function forgetMessageAgentWakes(): void {
   account += 1
+  stopRetry?.()
+  stopRetry = null
   known.clear()
   pending.clear()
   failed.clear()

@@ -79,7 +79,7 @@ describe('database refusals reach the App through the real local publisher', () 
       return { data: null, error }
     })
     const publish = createProjectFilePublisher({ identity: async () => ({ accountId: ME, deviceId: 'device' }),
-      root: async () => root, rpc: f.rpc, env, storage: async () => DEFAULT_FILE_STORAGE, projectChat: async () => true })
+      root: async () => root, project: async () => 'project', rpc: f.rpc, env, storage: async () => DEFAULT_FILE_STORAGE, projectChat: async () => true })
     const files = createAppFiles({ publishFile: publish, account: async () => ({ token: 'fixture-token', userId: ME }),
       hasCapability: () => true, sync: {} as never, identities: async () => [], faces: async () => ({}),
       filesUrl: () => 'http://files.invalid', warn: () => undefined })

@@ -7,7 +7,9 @@ import { expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   navigate: vi.fn(), expand: vi.fn(), beside: vi.fn(), show: vi.fn(), screen: false, topicSplit: vi.fn(),
-  group: undefined as string | undefined,
+  /** The account project rows (sidebarStore.sidebarProjects). */
+  rows: [] as Array<{ kind: 'group' | 'local'; id: string; chatId: string; name: string }>,
+  openChat: vi.fn(),
   signals: null as null | { groupUnread: Map<string, number>; groupCallingTopic: Map<string, { chatId: string; name: string }> },
 }));
 vi.mock('@renderer/features/projects/hooks/use-confirm-delete-project', () => ({ useConfirmDeleteProject: () => vi.fn() }));
@@ -22,7 +24,7 @@ vi.mock('@renderer/lib/layout/navigation-provider', () => ({
 }));
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { navigation: { currentViewId: 'new-session' } },
-  sidebarStore: { expandedProjectIds: new Set(), homeLayout: { homeRows: new Set(), standIns: new Map() },
+  sidebarStore: { get sidebarProjects() { return state.rows; }, expandedProjectIds: new Set(),
     projectMembersOf: () => ['business'], rowProjectIdOf: (id: string) => id,
     ensureProjectExpanded: state.expand },
 }));
@@ -42,7 +44,7 @@ vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: 
 vi.mock('./session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: vi.fn() } }));
 vi.mock('@/lib/sidebarChatsBridge', () => ({ useSidebarChatSignals: () => state.signals }));
 vi.mock('@/lib/topicSplitRequest', () => ({ requestTopicSplit: state.topicSplit }));
-vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: { chatIdOf: () => state.group } }));
+vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: state.openChat }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
 
 import { SidebarProjectItem } from './project-item';
@@ -74,7 +76,7 @@ it('a project row whose count comes from a topic calling you opens that topic be
   const host = document.createElement('div');
   document.body.append(host);
   const root = createRoot(host);
-  state.group = 'business-group';
+  state.rows = [{ kind: 'local', id: 'business', chatId: 'business-group', name: 'Research' }];
   try {
     // Control: the count is the group's own main line — only the group opens.
     state.signals = { groupUnread: new Map([['business-group', 2]]), groupCallingTopic: new Map() };
@@ -89,8 +91,31 @@ it('a project row whose count comes from a topic calling you opens that topic be
     expect(state.topicSplit).toHaveBeenCalledWith({ chatId: 'topic-1', name: 'Release', sourceChatId: 'business-group', focusComposer: true });
     expect(state.show).toHaveBeenLastCalledWith({ kind: 'project', projectId: 'business' });
   } finally {
-    state.group = undefined;
+    state.rows = [];
     state.signals = null;
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+// 项目与机器解耦:账号上的项目在这一端一个本地项目都没有(哪台上都没有文件夹)也有一行,点开是它的项目群。
+// #2548 it is a row of the one list like any other: it opens, it does not drag out.
+it('a project without any local project is a row named after the project that opens its group chat', async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  state.rows = [{ kind: 'group', id: 'chat-paper', chatId: 'chat-paper', name: 'Paper' }];
+  try {
+    await act(async () => root.render(<SidebarProjectItem projectId="chat-paper" />));
+    const row = host.querySelector('[data-project-row="chat-paper"]') as HTMLElement;
+    expect(row.getAttribute('data-project-chat')).toBe('chat-paper');
+    expect(row.textContent).toContain('Paper');
+    expect(row.draggable).toBe(false);
+    await act(async () => row.click());
+    expect(state.openChat).toHaveBeenCalledWith('chat-paper', false);
+    expect(state.show).not.toHaveBeenCalledWith({ kind: 'project', projectId: 'chat-paper' });
+  } finally {
+    state.rows = [];
     await act(async () => root.unmount());
     host.remove();
   }

@@ -143,7 +143,7 @@ const IntegrationsCard: React.FC = () => {
   // 连在别的机器(助理的云电脑)上的,任务也开在那台:连接只在那台的会话里有,开在本机 agent 用不上。
   const tryPlaybook = (prompt: string) => {
     composerDrafts.set(NEW_SESSION_DRAFT_KEY, prompt);
-    if (host.remote) remoteHostsStore.requestNewSession(host.remote.deviceId, null);
+    if (host.remote) remoteHostsStore.requestNewSession(host.remote.deviceId);
     navigate('new-session');
   };
 

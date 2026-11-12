@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions, projects, workspaces } from '@main/db/schema';
 import { hasLocalSessionSource, getLocalSessionSource } from '@main/core/session-import/host-source';
+import { machineOutwardProjectIds } from '@main/core/projects/project-public-id';
 import type { SessionRuntime } from '@shared/core/sessions/sessions';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
 import {
@@ -13,22 +14,25 @@ import {
   SESSION_HISTORY_SOURCES,
   SESSION_HISTORY_STATUSES,
   SESSION_HOME_SECTION_KEY,
+  compareSessionHistoryRows,
+  compareSessionHistorySections,
   displaySessionTitle,
+  matchesSessionHistoryFilters,
+  projectSectionKey,
   type SessionHistoryDirectoryPage,
   type SessionHistoryDirectoryParams,
   type SessionHistoryDirectoryRow,
   type SessionHistoryPage,
   type SessionHistoryParams,
   type SessionHistoryRow,
-  type SessionHistorySort,
 } from '@shared/core/session-history/session-history';
 import { sessionParentId } from '@main/core/sessions/utils';
 import { taskName } from '@main/core/sessions/task-name';
 import { createLocalGroupOf } from './local-session-group';
 
 // spec session-page「会话历史」(#6083):把咕咕自己的会话(活跃 + 已归档)与本机引擎磁盘上还没导入的会话
-// 合成**一张表**,筛 / 排全在这里做完再切页;目录视图(默认)= 同一份筛选结果按目录聚合,一目录一节,
-// 每节随行带回头几条会话。
+// 合成**一张表**,筛 / 排全在这里做完再切页;目录视图(默认)= 同一份筛选结果按节聚合 —— 在项目群里的按
+// 账号项目(`project:<群>`),别的按目录 —— 每节随行带回头几条会话。筛与排的函数在 @shared,渲染层归并几台机器时用同一份。
 //
 // 为什么不在渲染层排:本机索引是分轮的(cached 首帧 → fresh 多轮,见 use-session-history),只对
 // 「当前已索引的那 200 条」排序,索引没走完时给出的「最早 / 最晚」是错的。这里向索引要**全量已索引行**
@@ -54,26 +58,11 @@ export function toEpochMs(text: string | null | undefined): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-function splitQuery(query: string | undefined): string[] {
-  return (query ?? '')
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((term) => term.length > 0);
-}
-
-/** 关键词匹配标题、目录、项目名、session id 与 conversation id(设计同事 2026-09-23:「特色是支持基于 sessionid 的搜索」)。 */
-function matchesTerms(row: SessionHistoryRow, terms: string[]): boolean {
-  if (terms.length === 0) return true;
-  const haystack = [row.title, row.directory ?? '', row.projectName ?? '', row.providerSessionId ?? '', row.gugu?.sessionId ?? '']
-    .join('\n')
-    .toLowerCase();
-  return terms.every((term) => haystack.includes(term));
-}
-
 type GuguJoinedRow = {
   session: typeof sessions.$inferSelect;
   projectName: string;
   projectPath: string;
+  projectKind: 'project' | 'workspace';
   workspacePath: string | null;
 };
 
@@ -83,6 +72,7 @@ async function readGuguRows(): Promise<GuguJoinedRow[]> {
       session: sessions,
       projectName: projects.name,
       projectPath: projects.path,
+      projectKind: projects.kind,
       workspacePath: workspaces.path,
     })
     .from(sessions)
@@ -171,30 +161,6 @@ function toLocalRow(local: LocalSessionRow): SessionHistoryRow {
   };
 }
 
-type Sortable = { updatedAt: number; lastPromptAt: number | null; addedAt: number | null };
-
-/** 会话行与目录行同一套排序:时间倒序、没有那个时间的排最后、字母正序;并列按更新时间倒序。 */
-function compareBy<T extends Sortable>(sort: SessionHistorySort, nameOf: (row: T) => string) {
-  const byTime = (pick: (row: T) => number | null) => (a: T, b: T) => {
-    const av = pick(a);
-    const bv = pick(b);
-    if (av === null && bv === null) return b.updatedAt - a.updatedAt;
-    if (av === null) return 1;
-    if (bv === null) return -1;
-    return bv - av || b.updatedAt - a.updatedAt;
-  };
-  switch (sort) {
-    case 'lastPrompt':
-      return byTime((row) => row.lastPromptAt);
-    case 'added':
-      return byTime((row) => row.addedAt);
-    case 'title':
-      return (a: T, b: T) => nameOf(a).localeCompare(nameOf(b)) || b.updatedAt - a.updatedAt;
-    case 'updated':
-      return byTime((row) => row.updatedAt);
-  }
-}
-
 function emptyCounts<K extends string>(keys: readonly K[]): Record<K, number> {
   return Object.fromEntries(keys.map((key) => [key, 0])) as Record<K, number>;
 }
@@ -212,14 +178,16 @@ type Collected = {
   countsByStatus: Record<SessionHistoryRow['status'], number>;
   directories: SessionHistoryPage['directories'];
   local: SessionHistoryPage['local'];
-  /** 这一行归哪一节:咕咕项目的路径(一个项目一节),不在任何项目下的就是它自己的目录;没有目录为 null。 */
+  /** 这一行归哪一节:项目群里的项目 → `project:<群>`;别的项目 → 项目路径;不在任何项目下的 → 它的仓库 / 目录;没有目录为 null。 */
   groupOf: (row: SessionHistoryRow) => { key: string | null; projectName: string | null };
 };
 
 /** 两种视图共用的前半段:读库 + 读索引 → 合并去重 → 计数 → 筛选。排序 / 聚合 / 切页由调用方做。 */
 async function collect(params: SessionHistoryParams): Promise<Collected> {
-  const [guguJoined, localPage] = await Promise.all([
+  const [guguJoined, localProjects, outward, localPage] = await Promise.all([
     readGuguRows(),
+    db.select({ projectId: projects.id, projectPath: projects.path, projectName: projects.name }).from(projects),
+    machineOutwardProjectIds(),
     hasLocalSessionSource()
       ? getLocalSessionSource().list({
           // 全量:排序要在合并之后做,切页之前的任何截断都会把「最早」截没。
@@ -249,26 +217,38 @@ async function collect(params: SessionHistoryParams): Promise<Collected> {
   const all = [...guguRows, ...localRows];
 
   // 本机行没有咕咕项目,按「它所在的 git 仓库」归节(同一仓库的子目录、worktree 并成一节);不在仓库里的按目录本身。
-  // 咕咕项目只收**它自己那个仓库之内**的原件:项目路径是 cwd 或 cwd 的上级,且不高出 cwd 所在仓库的根
+  // 本机的项目(有没有任务都算)只收**它自己那个仓库之内**的原件:项目路径是 cwd 或 cwd 的上级,且不高出 cwd 所在仓库的根
   // (不在仓库里时 = 就是 cwd 本身)。❌ 纯前缀匹配 —— 一个路径是 /Users 的项目会把它底下几千条原件全吞掉
   // (mac1 2026-09-24 读数:一节 3424 条)。
-  const localGroupOf = createLocalGroupOf(guguJoined.map((j) => ({
-    projectId: j.session.projectId, projectPath: j.projectPath, projectName: j.projectName,
-  })));
-  const sessionHomeGroup = { key: SESSION_HOME_SECTION_KEY, label: null };
-  // 一个项目一节(设计同事 2026-09-23 参照页:节名是「gugu」,❌ 每个 worktree 目录各一节)。
-  // 咕咕行直接认它自己的项目(工作区 worktree 常常不在项目路径之下,按前缀猜会猜丢);本机行按仓库归。
-  const guguProjectOf = new Map(
+  const localGroupOf = createLocalGroupOf(localProjects);
+  // 项目路径在本机唯一(idx_projects_path):原件归到的那个项目路径就认得出是哪个项目。
+  const projectAtPath = new Map(localProjects.map((project) => [project.projectPath, project.projectId]));
+  // 一个账号项目一节(设计同事 2026-09-23 参照页:节名是「gugu」,❌ 每个 worktree 目录各一节):项目是账号级的,
+  // 本机项目在哪个项目群里,这一行就进那个群的节 —— 同一个群的几个本机项目、几台机器上的这个项目都并成一节。
+  // 不在项目群里的本机项目按它的路径一节。
+  const projectGroup = (projectId: string, path: string, name: string | null) => {
+    const chatId = outward(projectId);
+    return { key: chatId ? projectSectionKey(chatId) : path, projectName: name };
+  };
+  const sessionHomeGroup = { key: SESSION_HOME_SECTION_KEY, projectName: null };
+  // 咕咕行直接认它自己的项目(工作区 worktree 常常不在项目路径之下,按前缀猜会猜丢);独立任务与任务工作区
+  // (#609 workspace:咕咕为自己的需要记的目录,不是项目)进任务那一节。本机行按仓库归,落在项目文件夹里的认那个项目。
+  const guguGroupOf = new Map(
     guguJoined.map((j) => [
       `gugu:${j.session.id}`,
-      isImplicitSessionHomeProjectId(j.session.projectId)
+      isImplicitSessionHomeProjectId(j.session.projectId) || j.projectKind === 'workspace'
         ? sessionHomeGroup
-        : { key: j.projectPath, label: j.projectName },
+        : projectGroup(j.session.projectId, j.projectPath, j.projectName),
     ])
   );
-  const groupOf = (row: SessionHistoryRow) => {
-    const project = guguProjectOf.has(row.key) ? guguProjectOf.get(row.key)! : localGroupOf(row.directory);
-    return { key: project.key, projectName: project.label };
+  const groupOf = (row: SessionHistoryRow): { key: string | null; projectName: string | null } => {
+    const gugu = guguGroupOf.get(row.key);
+    if (gugu) return gugu;
+    const local = localGroupOf(row.directory);
+    const projectId = local.key === null ? undefined : projectAtPath.get(local.key);
+    return projectId && local.key !== null
+      ? projectGroup(projectId, local.key, local.label)
+      : { key: local.key, projectName: local.label };
   };
 
   const countsBySource = emptyCounts(SESSION_HISTORY_SOURCES);
@@ -289,14 +269,10 @@ async function collect(params: SessionHistoryParams): Promise<Collected> {
     // 全部列出(项目下拉可搜索,❌ 只给条数最多的前 N 个 —— 剩下的就再也选不到)。
     .sort((a, b) => b.count - a.count || (a.directory ?? '').localeCompare(b.directory ?? ''));
 
-  const terms = splitQuery(params.query);
   const matching = all.filter(
     (row) =>
-      (params.source ? row.source === params.source : true) &&
-      (params.status ? row.status === params.status : true) &&
-      (params.directory === undefined ? true : groupOf(row).key === params.directory) &&
-      (params.since !== undefined ? row.updatedAt >= params.since : true) &&
-      matchesTerms(row, terms)
+      matchesSessionHistoryFilters(row, params) &&
+      (params.directory === undefined ? true : groupOf(row).key === params.directory)
   );
 
   return {
@@ -322,7 +298,7 @@ export async function listSessionHistory(params: SessionHistoryParams = {}): Pro
   const limit = params.limit ?? DEFAULT_LIMIT;
   const offset = params.offset ?? 0;
   const { matching, countsBySource, countsByStatus, directories, local } = await collect(params);
-  const sorted = matching.sort(compareBy(sort, (row) => row.title));
+  const sorted = matching.sort(compareSessionHistoryRows(sort));
   return {
     // 切页在排序**之后**:第 n 页就是全集里排好序的那一截,❌ 先切再排。
     rows: sorted.slice(offset, offset + limit),
@@ -335,7 +311,7 @@ export async function listSessionHistory(params: SessionHistoryParams = {}): Pro
 }
 
 /**
- * 目录视图(默认):筛选 → 按目录聚合 → 排序 → 切页,一目录一节,每节随行带回头 `sessionsPerDirectory` 条。
+ * 目录视图(默认):筛选 → 按节聚合 → 排序 → 切页,一节一行(节 = `collect` 的 groupOf),每节随行带回头 `sessionsPerDirectory` 条。
  * 聚合在筛选**之后**:节头的计数就是「这个目录里符合当前筛选的有几条」,节内看到的与数字一致。
  * 没有目录的会话(独立任务 / 读不出 cwd 的原件)拢成 key 为 '' 的一节,展开时用 `directory: null` 取。
  */
@@ -379,11 +355,9 @@ export async function listSessionHistoryDirectories(
     bucket.sessions.push(row);
   }
 
-  const byRow = compareBy(sort, (row: SessionHistoryRow) => row.title);
-  const byDirectory = compareBy(sort, (row: SessionHistoryDirectoryRow) => row.directory ?? '');
+  const byRow = compareSessionHistoryRows(sort);
   const sorted = [...buckets.values()]
-    // 「未关联目录」那一节永远排最后:它是个杂物筐,不该因为里面刚好有一条最新的就顶到页首。
-    .sort((a, b) => Number(a.directory === null) - Number(b.directory === null) || byDirectory(a, b))
+    .sort(compareSessionHistorySections(sort))
     .slice(offset, offset + limit)
     .map((bucket) => ({ ...bucket, sessions: perDirectory > 0 ? bucket.sessions.sort(byRow).slice(0, perDirectory) : [] }));
   return {

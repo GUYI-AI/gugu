@@ -874,7 +874,6 @@ async function provisionLockedBody(
         projectName,
         groupChatId,
         directChatId,
-        roster,
         afterBinding,
       })
     }
@@ -998,7 +997,7 @@ async function provisionLockedBody(
     projectId
       ? Promise.all([
           resolveProjectGroupName(deps, projectId),
-          prepareProjectGroup(ownerAuth.accessToken, ownerUserId, projectId, roster, env),
+          prepareProjectGroup(ownerAuth.accessToken, ownerUserId, projectId, env),
         ]).then(([projectName, prepared]) => ({ projectName, prepared }))
       : null,
   ])
@@ -1098,7 +1097,7 @@ async function provisionFreshLocalFirst(
   const [projectName, mappedGroupId] = await Promise.all([
     projectId ? resolveProjectGroupName(deps, projectId) : Promise.resolve(''),
     projectId
-      ? readProjectGroupId(projectId, ownerAuth.userId, env).then((id) => id || findGroupIdForProject(roster, projectId, ownerAuth.userId) || '')
+      ? readProjectGroupId(projectId, ownerAuth.userId, env).then((id) => id ?? '')
       : Promise.resolve(''),
   ])
   mark('identity-inputs-loaded', { rosterSize: roster.length, minting: true, localFirst: true })
@@ -1349,7 +1348,6 @@ function startReuseBackfill(job: {
   projectName: string
   groupChatId: string
   directChatId: string
-  roster: Awaited<ReturnType<typeof listAgents>>
   afterBinding: Promise<void>
 }): void {
   const log = createLogger('sessionpage/provision')
@@ -1368,7 +1366,7 @@ function startReuseBackfill(job: {
     if (!directChatId) directChatId = await findOwnerDirectChatMemoized(job.accessToken, job.agentUserId)
     if (job.projectId && !groupChatId) {
       groupChatId = await ensureProjectGroupMembership(
-        job.accessToken, job.ownerUserId, job.agentUserId, job.projectId, job.projectName, job.roster, job.env,
+        job.accessToken, job.ownerUserId, job.agentUserId, job.projectId, job.projectName, job.env,
       )
     }
     if (groupChatId === job.groupChatId && directChatId === job.directChatId) return
@@ -1581,10 +1579,9 @@ async function ensureProjectGroupMembership(
   guguAgentUserId: string,
   projectId: string,
   groupName: string,
-  roster: Awaited<ReturnType<typeof listAgents>>,
   env: NodeJS.ProcessEnv,
 ): Promise<string> {
-  const prepared = await prepareProjectGroup(accessToken, ownerUserId, projectId, roster, env)
+  const prepared = await prepareProjectGroup(accessToken, ownerUserId, projectId, env)
   return joinProjectGroup(prepared, guguAgentUserId, groupName)
 }
 
@@ -1614,14 +1611,12 @@ async function prepareProjectGroup(
   accessToken: string,
   ownerUserId: string,
   projectId: string,
-  roster: Awaited<ReturnType<typeof listAgents>>,
   env: NodeJS.ProcessEnv,
 ): Promise<PreparedProjectGroup> {
   const chat = makeChatClient(accessToken)
-  // 群的寿命属于项目,不属于某个 agent 实例 → 先问那份与 agent 生命周期无关的映射;它没有再退回 roster
-  // (老数据只记在 roster 上)。只依赖 roster 时,项目里最后一个 agent 被摘掉映射就没了,同一项目下次开
-  // 会话又建一个新群(实机上攒出过两个同名群)。
-  const priorGroupId = (await readProjectGroupId(projectId, ownerUserId, env)) || findGroupIdForProject(roster, projectId, ownerUserId)
+  // 群的寿命属于项目,不属于某个 agent 实例 → 只问那份与 agent 生命周期无关的映射(老数据只记在 roster 上的群,
+  // 映射第一次被读时就迁了进去,见 sessionpage-project-groups 的 roster-migration)。
+  const priorGroupId = await readProjectGroupId(projectId, ownerUserId, env)
   const priorState = priorGroupId ? await groupIsUsable(chat, priorGroupId) : 'missing'
   return {
     chat, ownerUserId, projectId, env,
@@ -1687,21 +1682,6 @@ async function joinProjectGroup(
 /** Postgres 撞主键(23505)。PostgREST 把 code 带在错误上;老一些的形状只有文字。 */
 export function isUniqueViolation(error: { code?: string | null; message?: string | null }): boolean {
   return error.code === '23505' || /duplicate key|unique constraint/i.test(error.message ?? '')
-}
-
-/** The group id already bound to THIS session-page project (recorded on any prior agent of the same project).
- *  Scans the roster already in hand (see provisionLocked) rather than re-reading GUGU_HOME/agents. */
-export function findGroupIdForProject(
-  roster: Awaited<ReturnType<typeof listAgents>>,
-  projectId: string,
-  ownerUserId: string,
-): string | null {
-  for (const agent of agentsForOwner(roster, ownerUserId)) {
-    if (cacheString(agent.cache, PROJECT_CACHE_KEY) !== projectId) continue
-    const groupId = cacheString(agent.cache, GROUP_CACHE_KEY)
-    if (groupId) return groupId
-  }
-  return null
 }
 
 /**

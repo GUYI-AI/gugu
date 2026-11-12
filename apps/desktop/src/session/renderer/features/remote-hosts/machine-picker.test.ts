@@ -384,8 +384,8 @@ describe('每个按机器的页面都挂在模块层、没有第二个选择器(
     expect(source).toContain('<DeviceScopeProvider store={libraryDeviceStore} inTitle={false}>');
   });
 
-  it('选机器的地方全用同一个组件:会话历史(导入会话已并进它)与新建框也是它', () => {
-    expect(read('features/session-history/session-history-view.tsx')).toContain('<MachinePicker');
+  it('选机器的地方全用同一个组件:新建框也是它;会话历史不再选机器(全部机器一起列,机器只是筛选)', () => {
+    expect(read('features/session-history/session-history-view.tsx')).not.toContain('<MachinePicker');
     // 新建页的机器选择器在 use-new-session-machine.tsx(新建页经它拿选择器)。
     expect(read('features/sessions/new-session-page.tsx')).toContain('useNewSessionMachine(');
     expect(read('features/remote-hosts/use-new-session-machine.tsx')).toMatch(/<MachinePicker\s+size="compact"/);

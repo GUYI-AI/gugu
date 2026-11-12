@@ -32,7 +32,6 @@ vi.mock('../../../apps/desktop/src/lib/chat', () => ({
     getGroupChatSettings: vi.fn(),
     updateGroupChatSettings: vi.fn(),
     // @@@6418 群面板现在也读入群申请(群主/管理员);本文件不关心它,给一个空表。
-    listGroupJoinRequests: vi.fn(async () => []),
   },
   // @@@5856 「名册是空的」不是故障,是「你还不是这条话题的参与者」—— 面板按这个类型分流。
   GroupCollabEmptyError: class GroupCollabEmptyError extends Error {},

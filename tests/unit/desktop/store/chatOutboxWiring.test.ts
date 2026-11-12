@@ -17,6 +17,7 @@ import {
 import type { OutboxRecord } from '../../../../apps/desktop/src/lib/imRepository'
 import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { chat } from '../../../support/testHarness'
+import { bindBackendProbe, noteBackendAnswer } from '../../../../packages/core/src/cloud/backendReachability'
 const logError = vi.hoisted(() => vi.fn())
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: logError }) }))
 vi.mock('../../../../apps/desktop/src/lib/loading/LoadingIndicator', () => ({ LoadingIndicator: () => null }))
@@ -464,5 +465,43 @@ it('does not publish a native reply discarded while waiting for its source', asy
   await committing
   expect(publish).not.toHaveBeenCalled()
   expect((await f.repository).snapshot().outbox).toEqual([])
+  f.wiring.dispose()
+})
+
+it('re-sends a failed row when the sync beat recovers from a failed pull, not on window online or while the backend kept answering', async () => {
+  const f = wiringHarness('outage-row')
+  const now = new Date().toISOString()
+  await putOutboxRecord(await f.repository, { clientMessageId: 'outage-row', chatId: 'chat-1', senderUserId: 'owner-1',
+    payload: { content: 'hello', contentType: 'text', toUserIds: ['agent-1'], replyToMessageId: null, threadRootId: null, isThreadRoot: false, isWhisper: false },
+    state: 'failed', attempts: 3, lastError: 'Failed to fetch', enqueuedAt: now, updatedAt: now })
+  const send = vi.spyOn(chatService, 'sendMessage').mockImplementation(async (_chat, _sender, _content, id) => persistedMessage(id!))
+  const unbind = bindBackendProbe(() => {})
+  const stop = f.wiring.restoreAndWatch()
+  await vi.waitFor(() => expect(f.messages().some(row => row.id === 'outage-row')).toBe(true))
+  window.dispatchEvent(new Event('online'))
+  noteBackendAnswer(true) // the backend kept answering: a row that failed for another reason is not re-sent in a loop
+  await flushMicrotasks()
+  expect(send).not.toHaveBeenCalled()
+  noteBackendAnswer(false)
+  noteBackendAnswer(true)
+  await vi.waitFor(() => expect(send).toHaveBeenCalledOnce())
+  await vi.waitFor(async () => expect((await f.repository).snapshot().outbox).toEqual([]))
+  stop()
+  unbind()
+  f.wiring.dispose()
+})
+
+it('a send that fails asks the beat to pull now, so an outage shorter than one beat is still seen', async () => {
+  const pull = vi.fn()
+  const unbind = bindBackendProbe(pull)
+  const f = wiringHarness('probe-row')
+  vi.spyOn(chatService, 'sendMessage').mockRejectedValue(new Error('Failed to fetch'))
+  vi.useFakeTimers()
+  try {
+    await f.wiring.enqueue(enqueueInput('probe-row'))
+    await vi.runAllTimersAsync()
+  } finally { vi.useRealTimers() }
+  await vi.waitFor(() => expect(pull).toHaveBeenCalledOnce())
+  unbind()
   f.wiring.dispose()
 })

@@ -1,8 +1,11 @@
 // GUYI-AI/gugu#2548 — the desktop left sidebar as one list. Which conversations
 // that list holds and where my own agents live, read only from data both trees already have. The shell's chat list
 // (ChatListPanel) and the task page's left sidebar both import this file, so it holds no state.
-import { useMemo } from 'react'
+import { reaction } from 'mobx'
+import { useMemo, useSyncExternalStore } from 'react'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
+import type { AccountProject } from '@gugu/core/cloud/deviceProjects'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 import { deviceSessionsOf, useDirectoryDevices, useLiveDeviceSessions, type DeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import type { SidebarPinnedAgent } from './sidebarChatsBridge'
 import type { SampleProjectContent } from '@/session/renderer/features/sample-project/content/types'
@@ -12,7 +15,7 @@ import { markdownPlainText } from './markdownPlainText'
 export type AgentHomes = {
   /** Agent members of a group chat in the list (an ordinary group or a project group). */
   readonly inRooms: ReadonlySet<string>
-  /** Agents with a session in a project on any machine (a task workspace is not a project). */
+  /** Agents with a session in a project on any machine (a project of the account project list; a task workspace is none). */
   readonly inProjects: ReadonlySet<string>
   /** Agents with a top-level task (no parent session) outside every project. */
   readonly withTopLevelTask: ReadonlySet<string>
@@ -30,22 +33,41 @@ export function agentsInRooms(chats: readonly Pick<ChatItem, 'id' | 'kind'>[], a
 }
 
 /**
- * A session is in a project when its machine lists that project as a project (`kind: 'workspace'` is the task
- * workspace; same reading as the phone's task sections). Top-level = no parent session. A fork (parent set) is never
- * top-level, also when its parent is not on any machine we can see: forks are not rows of the one list, top-level
- * tasks are (#2548 "one row per top-level task, forks stay under their parent").
+ * Which local project is a project: the account project list holds it on that machine (`accountProject`, the one project
+ * source; the task page's sidebar places sessions by the same list). `firstRead` = that list is on its first read with
+ * nothing in hand: nothing can be matched yet, so meanwhile a machine's own projects count (a task workspace never does)
+ * rather than list their agents as standalone rows only to move them away (as the sidebar holds those sessions back).
  */
-export function agentTaskHomes(machines: readonly Pick<DeviceSessions, 'projects' | 'sessions'>[]): Pick<AgentHomes, 'inProjects' | 'withTopLevelTask' | 'onlyForks'> {
+export type ProjectReading = {
+  readonly firstRead: boolean
+  readonly accountProject: (deviceId: string, localProjectId: string) => boolean
+}
+
+/** The account project list read as a ProjectReading (each binding is a machine's local project in that project). */
+export function accountProjectReading(list: readonly Pick<AccountProject, 'bindings'>[], firstRead: boolean): ProjectReading {
+  const bound = new Set(list.flatMap((project) => project.bindings.map((binding) => `${binding.deviceId}\u0000${binding.localProjectId}`)))
+  return { firstRead, accountProject: (deviceId, localProjectId) => bound.has(`${deviceId}\u0000${localProjectId}`) }
+}
+
+/**
+ * A session is in a project when its machine's local project is a project (ProjectReading). Top-level = no parent
+ * session. A fork (parent set) is never top-level, also when its parent is not on any machine we can see: forks are not
+ * rows of the one list, top-level tasks are (#2548 "one row per top-level task, forks stay under their parent").
+ */
+export function agentTaskHomes(
+  machines: readonly (Pick<DeviceSessions, 'projects' | 'sessions'> & { readonly deviceId: string })[],
+  reading: ProjectReading,
+): Pick<AgentHomes, 'inProjects' | 'withTopLevelTask' | 'onlyForks'> {
   const inProjects = new Set<string>()
   const withTopLevelTask = new Set<string>()
   const topLevel = new Set<string>()
   const forked = new Set<string>()
-  for (const { projects, sessions } of machines) {
-    const realProjects = new Set(projects.filter((project) => project.kind !== 'workspace').map((project) => project.id))
+  for (const { deviceId, projects, sessions } of machines) {
+    const ownProjects = reading.firstRead ? new Set(projects.filter((project) => project.kind !== 'workspace').map((project) => project.id)) : null
     for (const session of sessions) {
       const agentId = session.agent?.userId
       if (!agentId) continue
-      const inProject = realProjects.has(session.projectId)
+      const inProject = ownProjects ? ownProjects.has(session.projectId) : reading.accountProject(deviceId, session.projectId)
       if (inProject) inProjects.add(agentId)
       if (session.parentConversationId) {
         forked.add(agentId)
@@ -103,6 +125,10 @@ export function sidebarPinnedRows<C extends Pick<ChatItem, 'kind' | 'peer_user_i
   return rows
 }
 
+/** The account project list is on its first read with nothing in hand (ProjectReading.firstRead). */
+const readFirstRead = () => accountProjectsStore.status === 'loading' && accountProjectsStore.projects.length === 0
+const subscribeFirstRead = (listener: () => void) => reaction(readFirstRead, listener)
+
 /** The list's agent homes while the one list is on; null = the list keeps today's rules. */
 export function useAgentHomes(
   enabled: boolean,
@@ -112,9 +138,16 @@ export function useAgentHomes(
 ): AgentHomes | null {
   const devices = useDirectoryDevices()
   const directory = useLiveDeviceSessions()
+  const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
+  const firstRead = useSyncExternalStore(subscribeFirstRead, readFirstRead)
   const tasks = useMemo(
-    () => (enabled ? agentTaskHomes(devices.map((device) => deviceSessionsOf(device, directory))) : null),
-    [enabled, devices, directory],
+    () => (enabled
+      ? agentTaskHomes(
+        devices.map((device) => ({ deviceId: device.device_id, ...deviceSessionsOf(device, directory) })),
+        accountProjectReading(accountList, firstRead),
+      )
+      : null),
+    [enabled, devices, directory, accountList, firstRead],
   )
   return useMemo(
     () => tasks && {
@@ -127,29 +160,24 @@ export function useAgentHomes(
 }
 
 /**
- * Projects the one list has no conversation row for: their project group is not in the chat list (the cloud creates
- * it only when the first agent joins; until then its id is just reserved) or they have no group binding yet. These
- * keep their existing project row. `listedGroups` null = the chat list has not loaded yet; a project whose binding is
- * still being read also waits — either way say nothing rather than flash a row that is about to move.
+ * Account projects (the account project list, one row per project) the one list has no conversation row for: their
+ * project group is not in the chat list yet. These keep a project row of their own. `listedGroups` null = the chat list
+ * has not loaded yet: say nothing rather than flash a row that is about to move. A local project the account list does
+ * not hold is no project here (its sessions are tasks until the list holds it).
  */
 export function projectsWithoutGroupRow(
-  projectIds: readonly string[],
-  groupOf: (projectId: string) => string | undefined,
-  bindingKnown: (projectId: string) => boolean,
+  projects: readonly { readonly id: string; readonly chatId: string }[],
   listedGroups: ReadonlySet<string> | null,
 ): string[] {
   if (!listedGroups) return []
-  return projectIds.filter((projectId) => {
-    if (!bindingKnown(projectId)) return false
-    const chatId = groupOf(projectId)
-    return chatId === undefined || !listedGroups.has(chatId)
-  })
+  return projects.filter((project) => !listedGroups.has(project.chatId)).map((project) => project.id)
 }
 
 /**
- * Rows of the one list that are not a conversation yet: a local project whose project group does not exist yet, and the
- * sample project. They are drawn as conversation rows but come after every conversation row, in this order, whatever
- * their times say: the sample's times are written into it, so sorting by them would pin it to the top for everyone.
+ * Rows of the one list that are not a conversation yet: an account project whose project group is not in the chat list,
+ * and the sample project. They are drawn as conversation rows but come after every conversation row, in this order,
+ * whatever their times say: the sample's times are written into it, so sorting by them would pin it to the top for
+ * everyone.
  */
 export type OneListTailRow = { readonly kind: 'project'; readonly projectId: string } | { readonly kind: 'sample' }
 

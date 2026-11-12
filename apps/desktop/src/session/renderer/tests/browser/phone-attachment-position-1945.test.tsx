@@ -13,6 +13,15 @@ import { i18n } from '@/i18n'
 import '@/i18n/registerMessagingCatalog'
 import { createReactHarness, device, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { runInAction } from 'mobx'
+import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store'
+
+// The task folder card's project is the account project of this group (accountProjectsStore); 'machine' has its folder.
+beforeEach(() => runInAction(() => {
+  accountProjectsStore.list = [{ chatId: 'position-task', name: '测试项目', archived: false, bindings: [{ deviceId: 'machine', localProjectId: 'project' }] }]
+  accountProjectsStore.status = 'ready'
+}))
+afterEach(() => accountProjectsStore.clear())
 import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
 import '@gugu/session-ui/theme/semantic.css'

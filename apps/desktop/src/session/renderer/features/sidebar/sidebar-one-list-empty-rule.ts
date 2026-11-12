@@ -36,7 +36,7 @@ export function listHasNoTasks(
 
 /**
  * The offer shows when the list has no tasks and this computer has sessions in 会话历史's import part.
- * `importable` = how many sessions that part lists (null = not read yet).
+ * `importable` = how many sections that part lists on this computer (null = not read yet).
  */
 export function importOfferShown(noTasks: boolean | null, importable: number | null): boolean {
   return noTasks === true && importable !== null && importable > 0;

@@ -11,6 +11,10 @@ registerLocaleNamespace('mobileTaskFlow', {
     connecting: '正在连接',
     pendingCreation: '上次创建尚未确认。发送原任务可继续确认，不会重复创建。',
     originalTask: '查看原任务',
+    machine: '机器',
+    noProject: '不选项目',
+    noMachine: '没有可用的机器',
+    noFolderHere: '这台机器上还没有这个项目的文件夹',
   },
   'en-US': {
     phoneAgent: 'Phone Agent',
@@ -22,5 +26,9 @@ registerLocaleNamespace('mobileTaskFlow', {
     connecting: 'Connecting',
     pendingCreation: 'The previous creation is not confirmed. Send the original task to confirm it without creating another agent.',
     originalTask: 'View the original task',
+    machine: 'Machine',
+    noProject: 'No project',
+    noMachine: 'No machine available',
+    noFolderHere: 'This project has no folder on this machine yet',
   },
 })

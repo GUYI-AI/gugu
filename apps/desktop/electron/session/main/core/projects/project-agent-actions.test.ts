@@ -23,7 +23,36 @@ function ops(overrides: Partial<ProjectAgentOps> = {}): ProjectAgentOps {
 
 describe('agent project operations', () => {
   it('reads the current project and its actual folder IDs', async () => {
-    expect(await runProjectAgentAction({ projectId: 'p1' }, { action: 'project_get' }, ops())).toMatchObject({ project_id: 'p1', chat_id: 'chat1', folders: [{ folder_id: 'root', kind: 'root' }, { path: '/work/docs' }] });
+    expect(await runProjectAgentAction({ projectId: 'p1' }, { action: 'project_get' }, ops())).toMatchObject({ project_id: 'chat1', folders: [{ folder_id: 'root', kind: 'root' }, { path: '/work/docs' }] });
+  });
+
+  it('names every project by its project group: one row per group, none for a local project in no group', async () => {
+    const api = ops({
+      list: async () => [project('p1', '/work/app'), project('joined', '/work/legacy'), project('loose', '/work/loose')],
+      get: async (id) => project(id, id === 'p1' ? '/work/app' : '/work/legacy'),
+      bindings: async () => ok([{ projectId: 'p1', chatId: 'chat1' }, { projectId: 'joined', chatId: 'chat1' }]),
+    });
+    expect(await runProjectAgentAction({}, { action: 'project_list' }, api)).toEqual([{ project_id: 'chat1', name: 'App', path: '/work/app' }]);
+  });
+
+  it('resolves a project id to every folder this device has in it', async () => {
+    const api = ops({
+      bindings: async () => ok([{ projectId: 'p1', chatId: 'chat1' }, { projectId: 'joined', chatId: 'chat1' }]),
+      folders: async (id) => ok(id === 'p1' ? [folder('/work/app', 'root')] : [{ ...folder('/work/legacy', 'root'), projectId: 'joined', workspaceId: 'joined-root' }]),
+    });
+    expect(await runProjectAgentAction({}, { action: 'project_get', project_id: 'chat1' }, api)).toMatchObject({ project_id: 'chat1', folders: [{ folder_id: 'root' }, { folder_id: 'joined-root' }] });
+    await runProjectAgentAction({}, { action: 'project_remove_folder', project_id: 'chat1', folder_id: 'joined-root' }, api);
+    expect(api.detach).toHaveBeenCalledWith('joined', 'joined-root');
+    await expect(runProjectAgentAction({}, { action: 'project_remove_device', project_id: 'chat1' }, api)).rejects.toThrow('pass path');
+    expect(api.unbind).not.toHaveBeenCalled();
+  });
+
+  it('refuses a local project id loudly, naming the project id to use', async () => {
+    const api = ops();
+    await expect(runProjectAgentAction({}, { action: 'project_get', project_id: 'p1' }, api)).rejects.toThrow('use project:chat1');
+    await expect(runProjectAgentAction({}, { action: 'project_add_folder', project_id: 'p1', path: '/x' }, ops({ bindings: async () => ok([]) }))).rejects.toThrow('which is in no project');
+    await expect(runProjectAgentAction({}, { action: 'project_get', project_id: 'chat-elsewhere' }, ops({ get: async () => undefined }))).rejects.toThrow('This device has no folder for project:chat-elsewhere');
+    expect(api.attach).not.toHaveBeenCalled();
   });
 
   it('requires an explicit project on another device, instead of guessing', async () => {
@@ -36,7 +65,7 @@ describe('agent project operations', () => {
     const api = ops({ folders: async () => ok([folder('/work/app', 'root')]) });
     const added = await runProjectAgentAction({ projectId: 'p1' }, { action: 'project_add_folder', path: '/work/docs' }, api);
     expect(api.attach).toHaveBeenCalledWith('p1', '/work/docs');
-    expect(added).toMatchObject({ undo: { tool: 'project_remove_folder', project_id: 'p1', folder_id: 'f1' }, group_notice: { chat_id: 'chat1', text: expect.stringContaining('/work/docs') } });
+    expect(added).toMatchObject({ project_id: 'chat1', undo: { tool: 'project_remove_folder', project_id: 'chat1', folder_id: 'f1' }, group_notice: { chat_id: 'chat1', text: expect.stringContaining('/work/docs') } });
   });
 
   it('explains an existing local project root before joining its agents to the target group', async () => {
@@ -51,25 +80,28 @@ describe('agent project operations', () => {
       sessionCount: async () => 2,
     });
     const pending = await runProjectAgentAction({ projectId: 'p1' }, { action: 'project_add_folder', path: source.path }, api);
-    expect(pending).toMatchObject({ needs_confirmation: true, source_project_id: source.id, source_folders: [source.path], sessions: 2 });
+    expect(pending).toMatchObject({ project_id: 'chat1', needs_confirmation: true, source_project_id: 'old-chat', source_folders: [source.path], sessions: 2 });
     expect(api.bind).not.toHaveBeenCalled();
     expect(api.ensureGroup).not.toHaveBeenCalled();
 
     const joined = await runProjectAgentAction({ projectId: 'p1' }, {
-      action: 'project_add_folder', path: source.path, merge_existing: true, source_project_id: source.id,
+      action: 'project_add_folder', path: source.path, merge_existing: true, source_project_id: 'old-chat',
     }, api);
     expect(api.bind).toHaveBeenCalledWith(source.id, 'chat1', 'old-chat');
     expect(joined).toMatchObject({
-      project_id: 'p1', linked_project_id: source.id, folder_id: 'source-root',
-      undo: { tool: 'project_restore_device', project_id: source.id, chat_id: 'old-chat', expected_chat_id: 'chat1' },
+      project_id: 'chat1', source_project_id: 'old-chat', folder_id: 'source-root',
+      undo: { tool: 'project_restore_device', project_id: 'old-chat', path: source.path, expected_chat_id: 'chat1' },
       group_notice: { chat_id: 'chat1', text: expect.stringContaining('原群历史保留') },
     });
   });
 
   it('rejects stale source confirmation before changing folder or group ownership', async () => {
-    const api = ops({ inspect: async () => ({ isDirectory: true, existingProject: project('other', '/work/legacy') }) });
+    const api = ops({
+      inspect: async () => ({ isDirectory: true, existingProject: project('other', '/work/legacy') }),
+      bindings: async () => ok([{ projectId: 'p1', chatId: 'chat1' }, { projectId: 'other', chatId: 'other-chat' }]),
+    });
     await expect(runProjectAgentAction({ projectId: 'p1' }, {
-      action: 'project_add_folder', path: '/work/legacy', merge_existing: true, source_project_id: 'source',
+      action: 'project_add_folder', path: '/work/legacy', merge_existing: true, source_project_id: 'source-chat',
     }, api)).rejects.toThrow('项目归属已经变化');
     expect(api.attach).not.toHaveBeenCalled();
     expect(api.bind).not.toHaveBeenCalled();
@@ -88,7 +120,7 @@ describe('agent project operations', () => {
       bind: vi.fn(async () => { linked = true; return ok({}); }),
     });
     const joined = await runProjectAgentAction({ projectId: 'p1' }, { action: 'project_add_folder', path: source.path }, api);
-    expect(joined).toMatchObject({ linked_project_id: source.id, undo: { tool: 'project_restore_device', chat_id: 'old-chat' } });
+    expect(joined).toMatchObject({ project_id: 'chat1', undo: { tool: 'project_restore_device', project_id: 'old-chat', path: source.path } });
     expect(await runProjectAgentAction({ projectId: 'p1' }, { action: 'project_add_folder', path: source.path }, api)).toMatchObject({ already_attached: true });
     expect(api.bind).toHaveBeenCalledOnce();
   });
@@ -104,7 +136,7 @@ describe('agent project operations', () => {
     const removed = await runProjectAgentAction({ projectId: 'p1' }, { action: 'project_remove_folder', folder_id: 'f1' }, api);
     expect(api.detach).toHaveBeenCalledWith('p1', 'f1');
     expect(api.delete).not.toHaveBeenCalled();
-    expect(removed).toMatchObject({ undo: { tool: 'project_add_folder' } });
+    expect(removed).toMatchObject({ undo: { tool: 'project_add_folder', project_id: 'chat1', path: '/work/docs' } });
   });
 
   it('returns an executable restore on unlink, including the prior group and expected replacement', async () => {
@@ -112,19 +144,21 @@ describe('agent project operations', () => {
     const api = ops({
       bindings: async () => ok(chat ? [{ projectId: 'p1', chatId: chat }] : []),
       unbind: vi.fn(async () => { chat = 'original'; return ok({ expectedChatId: chat }); }),
-      bind: vi.fn(async (_id, target, expected) => { expect(expected).toBe(chat); chat = target; return ok({}); }),
+      bind: vi.fn(async (id, target, expected) => { expect(id).toBe('p1'); expect(expected).toBe(chat); chat = target; return ok({}); }),
+      inspect: async () => ({ isDirectory: true, existingProject: project() }),
+      get: async (id) => id === 'p1' ? project() : undefined,
     });
-    const removed = await runProjectAgentAction({ projectId: 'p1' }, { action: 'project_remove_device' }, api) as { undo: { tool: 'project_restore_device'; project_id: string; chat_id: string; expected_chat_id: string | null } };
-    expect(removed.undo).toEqual({ tool: 'project_restore_device', project_id: 'p1', chat_id: 'shared', expected_chat_id: 'original' });
+    const removed = await runProjectAgentAction({}, { action: 'project_remove_device', project_id: 'shared' }, api) as { undo: { tool: 'project_restore_device'; project_id: string; path: string; expected_chat_id: string | null } };
+    expect(removed.undo).toEqual({ tool: 'project_restore_device', project_id: 'shared', path: '/work/app', expected_chat_id: 'original' });
     const { tool, ...args } = removed.undo;
-    expect(await runProjectAgentAction({}, { action: tool, ...args }, api)).toMatchObject({ restored: true, chat_id: 'shared' });
+    expect(await runProjectAgentAction({}, { action: tool, ...args }, api)).toMatchObject({ restored: true, project_id: 'shared' });
     expect(chat).toBe('shared');
   });
 
   it('does not adopt a concurrent later binding as the undo checkpoint', async () => {
     const bindings = vi.fn(async () => ok([{ projectId: 'p1', chatId: 'shared' }]));
     const api = ops({ bindings, unbind: async () => { bindings.mockResolvedValue(ok([{ projectId: 'p1', chatId: 'newer' }])); return ok({ expectedChatId: null }); } });
-    expect(await runProjectAgentAction({ projectId: 'p1' }, { action: 'project_remove_device' }, api)).toMatchObject({ undo: { chat_id: 'shared', expected_chat_id: null } });
+    expect(await runProjectAgentAction({ projectId: 'p1' }, { action: 'project_remove_device' }, api)).toMatchObject({ undo: { project_id: 'shared', expected_chat_id: null } });
     expect(bindings).toHaveBeenCalledOnce();
   });
 
@@ -136,7 +170,7 @@ describe('agent project operations', () => {
 
   it('reserves the new project group for the acting agent to materialize', async () => {
     const api = ops();
-    expect(await runProjectAgentAction({}, { action: 'project_create', name: 'App', path: '/work/app' }, api)).toMatchObject({ project_id: 'p1', chat_id: 'chat1', group_notice: { chat_id: 'chat1' } });
+    expect(await runProjectAgentAction({}, { action: 'project_create', name: 'App', path: '/work/app' }, api)).toMatchObject({ project_id: 'chat1', group_notice: { chat_id: 'chat1' } });
     expect(api.ensureGroup).toHaveBeenCalledWith('p1');
   });
 

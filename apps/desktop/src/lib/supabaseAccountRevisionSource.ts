@@ -9,14 +9,18 @@ import {
 } from './realtimeChannel'
 import { parseWakeHead } from './chatProjection'
 import { dataClient } from './supabase'
+import { noteBackendAnswer } from '@gugu/core/cloud/backendReachability'
 
 export function createSupabaseAccountRevisionSource(): AccountRevisionSource {
   return {
     async syncSince(cursor, limit, signal) {
+      // 这一拉是「后端能不能用」的唯一读数(backendReachability);被中止的不算。
       const { data, error } = await dataClient
         .schema('chat')
         .rpc('sync_since', { p_after_revision: cursor, p_limit: limit })
         .abortSignal(signal)
+        .then(answer => answer, (thrown: unknown) => ({ data: null, error: thrown }))
+      if (!signal.aborted) noteBackendAnswer(!error)
       if (error) throw error
       return parseRevisionPage(data)
     },

@@ -3,6 +3,7 @@ import { readStoredAgentTurnFailures, type StoredAgentTurnFailure, type StoredFa
 import { readAgentTurnFailureDismissals, writeAgentTurnFailureDismissals, type AgentTurnFailureDismissals } from '../lib/agentTurnFailureDismissals'
 import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from '../lib/realtimeChannel'
 import { rendererLogger } from '../lib/log'
+import { subscribeBackendRecovered } from '@gugu/core/cloud/backendReachability'
 import { useAuth } from '../store/auth'
 
 const log = rendererLogger('agent/stored-turn-failure')
@@ -86,7 +87,7 @@ export function useStoredAgentTurnFailure(scope: StoredFailureScope | null, agen
     }, { onSubscribed: refresh })
     const visible = () => { if (document.visibilityState === 'visible') refresh() }
     window.addEventListener('focus', refresh)
-    window.addEventListener('online', refresh)
+    const stopRecovered = subscribeBackendRecovered(refresh) // the backend came back: read the failure rows again
     document.addEventListener('visibilitychange', visible)
     // The first read is the bus's onSubscribed: it fires on mount when the channel is already live, otherwise once it
     // subscribes — reading here as well sent every open twice.
@@ -95,7 +96,7 @@ export function useStoredAgentTurnFailure(scope: StoredFailureScope | null, agen
       clearTimeout(retryTimer)
       unsubscribePrivateUserEventBus(handle)
       window.removeEventListener('focus', refresh)
-      window.removeEventListener('online', refresh)
+      stopRecovered()
       document.removeEventListener('visibilitychange', visible)
     }
   }, [user?.id, scopeKey, ids, subject, changeDismissals])

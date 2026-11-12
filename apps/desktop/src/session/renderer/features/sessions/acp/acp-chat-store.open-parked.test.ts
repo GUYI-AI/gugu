@@ -634,12 +634,9 @@ describe('#980 打开一条在跑的会话', () => {
 });
 
 describe('#980 照旧当场起的', () => {
-  it('新建会话带着第一句:打开就请宿主起,宿主说起好了才挂;不去问会话表', async () => {
+  it('持久分叉还没分出去:打开就请宿主起(分叉就发生在首启),宿主说起好了才挂;不去问会话表', async () => {
     create.mockImplementation(async () => liveSession());
-    const { store } = storeFor({
-      providerId: 'claude',
-      initialQueue: [{ text: '看看这个项目的启动流程', origin: 'manual' }],
-    });
+    const { store } = storeFor({ providerId: 'claude', forkFromProviderSessionId: 'prov-parent' });
 
     store.bootstrap();
 
@@ -651,6 +648,28 @@ describe('#980 照旧当场起的', () => {
     life.settle(store.sessionId, 'ready');
     await vi.waitFor(() => expect(store.session).not.toBeNull());
     expect(create).toHaveBeenCalledWith(store.sessionId);
+  });
+});
+
+describe('#2558 新建会话带着第一句', () => {
+  it('打开 ❌ 替它起:那句话建的时候已入队、入队把它起起来;页面停着画队首那句,它跑起来了才挂', async () => {
+    create.mockImplementation(async () => liveSession());
+    const { store } = storeFor({ providerId: 'claude', initialQueue: [{ text: '看看这个项目的启动流程', origin: 'manual' }] });
+
+    store.bootstrap();
+    await parked(store);
+    expect(life.start, '那次起不带那句话:附件还没放完时它先拿到引擎会话号,晚到的入队就会被读成跑过了').not.toHaveBeenCalled();
+
+    const first: PendingRow = { seq: 1, messageId: 'first', preview: '看看这个项目的启动流程', text: '看看这个项目的启动流程', kind: 'ordinary', sentAt: 5000, state: 'queued', failure: null };
+    life.pend(store.sessionId, 'starting', [first]);
+    await vi.waitFor(() => expect(store.chatState.session.state.pendingPrompt?.id).toBe('first'));
+    expect(store.chatState.session.state.pendingPrompt, '附件还在放、引擎还在起:那句话照样在页面上').toMatchObject({ text: '看看这个项目的启动流程', starting: 'starting' });
+    expect(store.isEmpty).toBe(false);
+
+    running.set(store.runtimeSessionId, 'running');
+    await vi.waitFor(() => expect(store.session).not.toBeNull());
+    expect(create).toHaveBeenCalledWith(store.sessionId);
+    expect(life.start).not.toHaveBeenCalled();
   });
 });
 
@@ -818,7 +837,8 @@ describe('the first message keeps one place while its session starts', () => {
 
   it('reopening a session the person stopped does not start it: the stop holds until they continue', async () => {
     create.mockImplementation(async () => liveSession());
-    const { store } = storeFor({ providerId: 'claude', initialQueue: [{ text: '说一句你好', origin: 'manual' }] });
+    // A session the page itself starts on open (a persistent fork not yet forked): its stop still holds.
+    const { store } = storeFor({ providerId: 'claude', forkFromProviderSessionId: 'prov-parent' });
     life.pend(store.sessionId, 'dormant', [row('queued')], 'user-stop');
     store.bootstrap();
     await vi.waitFor(() => expect(store.stoppedRowId).toBe('m-first'));
@@ -907,7 +927,8 @@ describe('the first message keeps one place while its session starts', () => {
 describe('a start answered by session-life', () => {
   const startFresh = () => {
     create.mockImplementation(async () => liveSession());
-    return storeFor({ providerId: 'claude', initialQueue: [{ text: 'hello', origin: 'manual' }] }).store;
+    // A session the page itself starts on open: a persistent fork not yet forked (#2558: a new task is started by its queue).
+    return storeFor({ providerId: 'claude', forkFromProviderSessionId: 'prov-parent' }).store;
   };
 
   it('a typed ACP refusal becomes its load error (remedies), an untyped one keeps the stage message', async () => {
@@ -1127,7 +1148,7 @@ describe('#1449 every attachment entry uses the current-host ready gate', () => 
     attachment.wait = entry === 'released-transcript' ? null : readyWait;
     create.mockImplementation(async () => liveSession());
     const starts = entry === 'new-start' || entry === 'user-stop';
-    const { store } = storeFor(starts ? { providerId: 'claude', initialQueue: [{ text: 'first', origin: 'manual' }] }
+    const { store } = storeFor(starts ? { providerId: 'claude', forkFromProviderSessionId: 'prov-parent' }
       : { providerId: 'claude', providerSessionId: 'old-provider' });
     let opened = store;
     if (entry === 'side-chat') opened = new AcpChatStore(store.sessionId, store.projectId,

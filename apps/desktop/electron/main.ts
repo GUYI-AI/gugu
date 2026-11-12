@@ -314,7 +314,7 @@ import { MAIN_UI_EVENTS } from '../src/lib/mainUiEvents'
 import { createSessionpageIdentityHost } from './sessionpage/sessionpage-identity-host'
 import { createSessionpageProjectGroupHost, ensureProjectNoticeAccess } from './sessionpage/sessionpage-project-group-binding'
 import { prepareProjectAgentNotice } from './sessionpage/project-agent-notice'
-import { onProjectGroupMappingChanged } from './sessionpage/sessionpage-project-groups'
+import { forgetProjectGroupId, onProjectGroupMappingChanged } from './sessionpage/sessionpage-project-groups'
 import { readSessionpageOpenTarget } from './sessionpage/sessionpage-agent-mapping'
 import {
   clearLocalSessionDeliveryFailuresForTest,
@@ -362,6 +362,7 @@ import { sessionPlatformModel } from './session/main/core/sessions/platform-mode
 import { providerSessionIdForSession } from './session/main/core/sessions/provider-session-id'
 import { SESSIONPAGE_SESSION_RELOAD_CHANNEL } from '../src/session/shared/core/agents/session-reload'
 import { SESSIONPAGE_PLATFORM_RETRY_CHANNEL } from '../src/session/shared/core/agents/platform-model'
+import { subscribeBackendRecovered } from '@gugu/core/cloud/backendReachability'
 import {
   VOICE_NOTE_MEETINGS_CHANNEL,
   VOICE_NOTE_MICROPHONE_CHANNEL,
@@ -2422,6 +2423,7 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
   rpc: signedInFileRpc(() => desktopAuthProvider().getAuth(), makeChatClient),
   downloads: fileStoreDirectory(resolveGuguHome(process.env)), fetch: electronFetch, links: () => sshLinks,
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
+  project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
 })
 function drainProjectFiles() { void desktopFiles.drain().catch(error => createLogger('files').warn({ error: String(error) }, 'Project transfer reconciliation failed')) }
@@ -2516,6 +2518,14 @@ ipcMain.handle(VOICE_NOTE_MEETINGS_CHANNEL, () => {
 handleShellChannel(SESSIONPAGE_PLATFORM_RETRY_CHANNEL, (_event, sessionId: unknown) => {
   if (typeof sessionId !== 'string' || !sessionId.trim()) throw new Error('session id is required for a platform retry')
   clearPlatformIssueBackoff(sessionId.trim())
+})
+
+// 后端恢复(这个宿主的心跳失败过又答上,见 backendReachability):起不来、还压着消息的会话各自重来一次,
+// 先清它的取票退避 —— 和人点重试同一条路。没有窗口的宿主也一样。
+subscribeBackendRecovered(() => {
+  if (!sessionLifeBooted) return
+  const started = bootedSessionLife().startAfterOutage(clearPlatformIssueBackoff)
+  if (started.length) createLogger('session-life').info({ started }, 'backend recovered; restarting failed sessions')
 })
 
 /**
@@ -3651,6 +3661,11 @@ function crossMachine(): CrossMachineSessions {
       })
     },
     requester,
+    outbound: async (action) => {
+      const bridge = loadEmdashBridge()
+      if (!bridge) throw new Error('Project registry is unavailable')
+      await bridge.assertOutboundProjectIds(action)
+    },
     // #7199 云电脑管家:地址同渲染层(开发实例的 GUGU_CLOUD_COMPUTER_URL,否则这套库的云端函数),带这台桌面登着的用户 JWT。
     cloudComputerState: async () => {
       try {
@@ -6463,8 +6478,14 @@ app.whenReady().then(async () => {
           deviceId: () => localDeviceId(),
           client: (accessToken) => makeIdentityClient(accessToken) as unknown as DeviceProjectsRpcClient,
           records: () => emdash.listDeviceProjectRecords(),
+          dropBindings: async (ownerUserId, localProjectIds) => {
+            for (const projectId of localProjectIds) await forgetProjectGroupId(projectId, ownerUserId)
+          },
           warn: (message, fields) => createLogger('device-projects').warn(fields, message),
-          onPublished: () => emdash.projectFoldersPublished(),
+          onPublished: () => {
+            emdash.projectFoldersPublished()
+            emdash.deviceProjectsPublished()
+          },
         })
         try {
           emdash.onDeviceProjectsMaybeChanged(() => deviceProjectsPublisher?.notify())

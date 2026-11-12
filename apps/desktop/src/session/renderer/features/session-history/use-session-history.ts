@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { LOCAL_IMPORT_DEVICE } from '@renderer/features/session-import/import-source';
 import { rpcOn } from '@renderer/lib/ipc';
 import type {
   SessionHistoryDirectoryPage,
@@ -12,8 +13,7 @@ import type {
 //   第 1 轮 对账磁盘 + 解析一小批(400ms 预算)
 //   第 n 轮 继续解析,直到本机索引 pending 归零
 // 每轮结果整页替换 —— 筛 / 排 / 聚合都在主进程做完了,这里**不排序、不分组**,只按给定顺序画。
-// 目录视图与会话视图是同一套节奏、不同的主进程读法;展开一个目录 = 再开一路会话读法(带 directory)。
-// #6264 会话历史按机器:所选那台机器上同一个 `sessionHistory` 控制器(读的是那台机器的库与各家原件)。
+// 每台问得到的机器各读各的(那台机器上同一个 `sessionHistory` 控制器,读的是它的库与各家原件),由面板合并。
 
 const PAGE_LIMIT = 200;
 const FIRST_ROUND_BUDGET_MS = 400;
@@ -36,7 +36,6 @@ export type SessionHistoryState<TPage> = {
   cause: unknown;
 };
 
-export type SessionHistoryQuery = Omit<SessionHistoryParams, 'mode' | 'hydrateBudgetMs'>;
 export type SessionHistoryDirectoryQuery = Omit<SessionHistoryDirectoryParams, 'mode' | 'hydrateBudgetMs'>;
 
 const IDLE = { page: null, isLoading: false, isIndexing: false, error: null, cause: null };
@@ -59,86 +58,80 @@ function serialize(query: object): string {
   return JSON.stringify(normalized);
 }
 
-function useRounds<TParams extends object, TPage extends { local: LocalProgress }>(
+/** 一台机器按轮读到第几轮了;读完 / 读错停下。`put` 只写这一台那一格,❌ 动别的机器。 */
+async function runRounds<TParams extends object, TPage extends { local: LocalProgress }>(
   fetchPage: (params: TParams & RoundParams) => Promise<TPage>,
-  query: TParams | null,
-  /** 换了机器:上一台的那页 ❌ 留着冒充这一台的,从骨架重来。 */
-  machine: string | null
-): SessionHistoryState<TPage> & { refresh: () => void } {
+  base: TParams,
+  cancelled: () => boolean,
+  put: (next: (prev: SessionHistoryState<TPage>) => SessionHistoryState<TPage>) => void
+): Promise<void> {
+  try {
+    const cached = await fetchPage({ ...base, mode: 'cached' });
+    if (cancelled()) return;
+    // 缓存页只在本机索引真有缓存时才值得画;没有时下一轮 fresh 马上到。
+    if (cached.local?.stale) put(() => ({ page: cached, isLoading: false, isIndexing: false, error: null, cause: null }));
+
+    let budgetMs = FIRST_ROUND_BUDGET_MS;
+    for (let round = 0; round < MAX_ROUNDS; round += 1) {
+      const fresh = await fetchPage({ ...base, mode: 'fresh', hydrateBudgetMs: budgetMs });
+      if (cancelled()) return;
+      const pending = fresh.local?.pending ?? 0;
+      put(() => ({ page: fresh, isLoading: false, isIndexing: pending > 0, error: null, cause: null }));
+      if (pending === 0) return;
+      budgetMs = BACKGROUND_ROUND_BUDGET_MS;
+      await new Promise((resolve) => setTimeout(resolve, ROUND_PAUSE_MS));
+      if (cancelled()) return;
+    }
+  } catch (error) {
+    if (cancelled()) return;
+    put((prev) => ({
+      ...prev,
+      isLoading: false,
+      isIndexing: false,
+      error: error instanceof Error ? error.message : String(error),
+      cause: error,
+    }));
+  }
+}
+
+export type MachineHistory = Readonly<Record<string, SessionHistoryState<SessionHistoryDirectoryPage>>>;
+
+/**
+ * 目录视图,全部问得到的机器一起读(每台各自分轮、各自出错);键是机器 id(本机 = LOCAL_IMPORT_DEVICE)。
+ * 换筛选时各台留着上一页直到新的一页到(❌ 闪空);不再问的那台连同它的页一起丢掉。
+ */
+export function useSessionHistoryDirectories(query: SessionHistoryDirectoryQuery, machines: readonly string[]) {
   const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<SessionHistoryState<TPage>>({ ...IDLE, isLoading: query !== null });
+  const [byMachine, setByMachine] = useState<MachineHistory>({});
   const refresh = useCallback(() => setAttempt((n) => n + 1), []);
-  const key = query ? serialize(query) : null;
-  const lastMachine = useRef(machine);
+  const key = serialize(query);
+  const machinesKey = machines.join('\n');
 
   useEffect(() => {
-    const machineChanged = lastMachine.current !== machine;
-    lastMachine.current = machine;
-    if (key === null) {
-      setState(IDLE);
-      return;
-    }
+    const ids = machinesKey ? machinesKey.split('\n') : [];
+    setByMachine((prev) =>
+      Object.fromEntries(
+        ids.map((id) => {
+          const old = prev[id];
+          return [id, old ? { ...old, isLoading: old.page === null, error: null, cause: null } : { ...IDLE, isLoading: true }];
+        })
+      )
+    );
     let cancelled = false;
-    const base = JSON.parse(key) as TParams;
-
-    const run = async () => {
-      setState((prev) =>
-        machineChanged ? { ...IDLE, isLoading: true } : { ...prev, isLoading: prev.page === null, error: null, cause: null }
+    const base = JSON.parse(key) as SessionHistoryDirectoryQuery;
+    for (const id of ids) {
+      const rpc = rpcOn(id === LOCAL_IMPORT_DEVICE ? null : id);
+      void runRounds<SessionHistoryDirectoryQuery, SessionHistoryDirectoryPage>(
+        (params) => rpc.sessionHistory.listDirectories(params),
+        base,
+        () => cancelled,
+        (next) => setByMachine((prev) => (prev[id] ? { ...prev, [id]: next(prev[id]) } : prev))
       );
-      try {
-        const cached = await fetchPage({ ...base, mode: 'cached' });
-        if (cancelled) return;
-        // 缓存页只在本机索引真有缓存时才值得画;没有时下一轮 fresh 马上到。
-        if (cached.local?.stale) {
-          setState({ page: cached, isLoading: false, isIndexing: false, error: null, cause: null });
-        }
-
-        let budgetMs = FIRST_ROUND_BUDGET_MS;
-        for (let round = 0; round < MAX_ROUNDS; round += 1) {
-          const fresh = await fetchPage({ ...base, mode: 'fresh', hydrateBudgetMs: budgetMs });
-          if (cancelled) return;
-          const pending = fresh.local?.pending ?? 0;
-          setState({ page: fresh, isLoading: false, isIndexing: pending > 0, error: null, cause: null });
-          if (pending === 0) return;
-          budgetMs = BACKGROUND_ROUND_BUDGET_MS;
-          await new Promise((resolve) => setTimeout(resolve, ROUND_PAUSE_MS));
-          if (cancelled) return;
-        }
-      } catch (error) {
-        if (cancelled) return;
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          isIndexing: false,
-          error: error instanceof Error ? error.message : String(error),
-          cause: error,
-        }));
-      }
-    };
-
-    void run();
+    }
     return () => {
       cancelled = true;
     };
-  }, [fetchPage, key, attempt, machine]);
+  }, [key, machinesKey, attempt]);
 
-  return { ...state, refresh };
-}
-
-/** 会话视图(也是展开一个目录时的那一路)。`query` 为 null = 这一路不用拉,状态停在空闲。machine:null = 本机。 */
-export function useSessionHistory(query: SessionHistoryQuery | null, machine: string | null = null) {
-  const fetchSessions = useCallback(
-    (params: SessionHistoryParams) => rpcOn(machine).sessionHistory.list(params),
-    [machine]
-  );
-  return useRounds<SessionHistoryQuery, SessionHistoryPage>(fetchSessions, query, machine);
-}
-
-/** 目录视图(默认)。 */
-export function useSessionHistoryDirectories(query: SessionHistoryDirectoryQuery | null, machine: string | null = null) {
-  const fetchDirectories = useCallback(
-    (params: SessionHistoryDirectoryParams) => rpcOn(machine).sessionHistory.listDirectories(params),
-    [machine]
-  );
-  return useRounds<SessionHistoryDirectoryQuery, SessionHistoryDirectoryPage>(fetchDirectories, query, machine);
+  return { byMachine, refresh };
 }

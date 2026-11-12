@@ -43,12 +43,14 @@ export function buildSessionpageProjectContextBlock(input?: SessionpageProjectCo
   const projectName = input.projectName?.trim() || projectId
   const groupName = input.groupName?.trim() || projectName
   const path = input.projectPath?.trim()
+  // A project's id is its project group (account-level, the same on every device); `projectId` is only this machine's
+  // folder binding and never reaches the agent. Built on every start, so a resumed session reads the same id.
   // 集体记忆对账第 1 条：群里是「在本项目生出来的会话」，这是入群那一步做的事（[[agent-provisioning]]）。派你的、你派的
   // 会话不一定在 —— session_spawn 能点名别的项目、起在别的机器上（#6883 / #6894，D-29），那时 spawn 回给派它的会话的
   // message_route 就是 session_message（session-orchestration.ts spawn 的 message_route）。所以这里只写读得出来的那一半，
   // ❌ 再断言「派你的会话也在群里、之后在群里回」：跨项目的子会话照那句在自己的项目群里回，派它的会话不在群里，永远收不到。
   return `<gugu_project_context>
-<project id="${escapeXml(projectId)}" name="${escapeXml(projectName)}"${path ? ` path="${escapeXml(path)}"` : ''} />
+<project id="project:${escapeXml(groupChatId)}" name="${escapeXml(projectName)}"${path ? ` path="${escapeXml(path)}"` : ''} />
 <project_group chat_id="${escapeXml(groupChatId)}" name="${escapeXml(groupName)}" />
 ${input.membership === 'member' ? MEMBER_GROUP_TEXT : UNCONFIRMED_GROUP_TEXT}
 session_message reaches one session point-to-point and appears in no chat. Inside this project exactly two things belong there: a session outside this group — one born in another project or on another machine, even one you spawned or the one that spawned you — and content this group must not see, such as a credential.

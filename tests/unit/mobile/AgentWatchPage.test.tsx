@@ -41,24 +41,6 @@ vi.mock('../../../apps/desktop/src/session/shared/remote-sessions/session-direct
   ...(await original<typeof import('../../../apps/desktop/src/session/shared/remote-sessions/session-directory')>()),
   useLiveDeviceSessions: vi.fn(() => ({})),
 }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/MachinesPage', async () => {
-  const React = await vi.importActual<typeof import('react')>('react')
-  return {
-    // 只剩「新建会话先选机器」这一件事。
-    MachinesPage: ({
-      onBack,
-      onOpenDevice,
-    }: {
-      onBack: () => void
-      onOpenDevice: (device: Device) => void
-    }) => React.createElement(
-      'div',
-      { 'data-testid': 'pick-machine' },
-      React.createElement('button', { type: 'button', 'data-testid': 'machines-back', onClick: onBack }, 'back'),
-      React.createElement('button', { type: 'button', 'data-testid': 'open-device', onClick: () => onOpenDevice(deviceStore.devices[0]) }, 'open'),
-    ),
-  }
-})
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/ProjectsPage', async () => {
   const React = await vi.importActual<typeof import('react')>('react')
   return {
@@ -95,19 +77,18 @@ vi.mock('../../../apps/desktop/src/mobile/agent-watch/SessionTimelinePage', asyn
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage', async () => {
   const React = await vi.importActual<typeof import('react')>('react')
   return {
+    // 新建页自己定项目与机器;建成时交出建在哪台上。
     CreateSessionPage: ({
-      device,
       onBack,
       onCreated,
     }: {
-      device: Device
       onBack: () => void
-      onCreated: (session: SessionpageSessionSummary, firstPrompt: { id: string; text: string; sentAt: number } | undefined) => void
+      onCreated: (device: Device, session: SessionpageSessionSummary, firstPrompt: { id: string; text: string; sentAt: number } | undefined) => void
     }) => React.createElement(
       'div',
-      { 'data-testid': 'create', 'data-device-id': device.device_id },
+      { 'data-testid': 'create' },
       React.createElement('button', { type: 'button', 'data-testid': 'create-back', onClick: onBack }, 'back'),
-      React.createElement('button', { type: 'button', 'data-testid': 'create-done', onClick: () => onCreated(device.capabilities.host_kind === 'phone' ? { ...session, conversationId: 'made', supported: true, agent: { userId: 'phone-agent' } } : { ...session, conversationId: 'made' }, { id: 'first-prompt', text: 'hello', sentAt: 0 }) }, 'done'),
+      React.createElement('button', { type: 'button', 'data-testid': 'create-done', onClick: () => { const device = deviceStore.devices[0]!; onCreated(device, device.capabilities.host_kind === 'phone' ? { ...session, conversationId: 'made', supported: true, agent: { userId: 'phone-agent' } } : { ...session, conversationId: 'made' }, { id: 'first-prompt', text: 'hello', sentAt: 0 }) } }, 'done'),
     ),
   }
 })
@@ -206,7 +187,7 @@ describe('AgentWatchPage native back routing', () => {
       expect(harness.container.querySelector('[data-testid="timeline-back"]')).toBeTruthy()
       expect(skip, 'the old page snapshot must not keep animating over the new destination').toHaveBeenCalledOnce()
       await act(async () => { updates[0]!() })
-      expect(harness.container.querySelector('[data-testid="pick-machine"]')).toBeNull()
+      expect(harness.container.querySelector('[data-testid="create"]')).toBeNull()
       expect(harness.container.querySelector('[data-testid="timeline-back"]')).toBeTruthy()
       expect(props.onRouteChange).toHaveBeenLastCalledWith('timeline')
     } finally {
@@ -354,7 +335,8 @@ describe('AgentWatchPage native back routing', () => {
     expect(harness.container.querySelector('[data-testid="projects"]'), 'coming back lands on the root').toBeTruthy()
   })
 
-  it('walks + → machine picker → create, and each step back lands one step earlier', async () => {
+  // DESIGN 点击路径 4a:「+」直接进新建页(项目、机器是页上带默认值的两行),❌ 先进选机器页。
+  it('walks + straight to create, and back lands on the project list', async () => {
     const onExit = vi.fn()
     const onRouteChange = vi.fn()
     await harness.render(createNode(AgentWatchPage, { active: true, onExit, onRouteChange }))
@@ -362,32 +344,21 @@ describe('AgentWatchPage native back routing', () => {
     await act(async () => {
       (harness.container.querySelector('[data-testid="create-agent"]') as HTMLButtonElement).click()
     })
-    expect(harness.container.querySelector('[data-testid="pick-machine"]')).toBeTruthy()
-    expect(onRouteChange).toHaveBeenLastCalledWith('pick-machine')
-    await act(async () => {
-      (harness.container.querySelector('[data-testid="open-device"]') as HTMLButtonElement).click()
-    })
     // CreateSessionPage is React.lazy: it renders once its chunk resolves.
     await act(async () => { await import('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage') })
-    expect(harness.container.querySelector('[data-testid="create"]')?.getAttribute('data-device-id')).toBe('device-1')
+    expect(harness.container.querySelector('[data-testid="create"]')).toBeTruthy()
     expect(onRouteChange).toHaveBeenLastCalledWith('create')
     await act(async () => {
       expect(nativeBack()).toBe(true)
       await Promise.resolve()
     })
-    expect(harness.container.querySelector('[data-testid="pick-machine"]'), 'create goes back to the picker').toBeTruthy()
-    await act(async () => {
-      expect(nativeBack()).toBe(true)
-      await Promise.resolve()
-    })
-    expect(harness.container.querySelector('[data-testid="projects"]'), 'the picker goes back to the project list').toBeTruthy()
+    expect(harness.container.querySelector('[data-testid="projects"]'), 'create goes back to the project list').toBeTruthy()
     expect(onExit).not.toHaveBeenCalled()
   })
 
   it('a created session lands in its timeline; back from there is the project list', async () => {
     await harness.render(createNode(AgentWatchPage, { active: true, onExit: vi.fn() }))
     await act(async () => { (harness.container.querySelector('[data-testid="create-agent"]') as HTMLButtonElement).click() })
-    await act(async () => { (harness.container.querySelector('[data-testid="open-device"]') as HTMLButtonElement).click() })
     // CreateSessionPage is React.lazy: it renders once its chunk resolves.
     await act(async () => { await import('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage') })
     await act(async () => { (harness.container.querySelector('[data-testid="create-done"]') as HTMLButtonElement).click() })
@@ -396,16 +367,17 @@ describe('AgentWatchPage native back routing', () => {
     expect(harness.container.querySelector('[data-testid="projects"]')).toBeTruthy()
   })
 
-  it('#6784 an outside create request (contacts「新建 Agent」) opens the machine picker, each time', async () => {
+  it('#6784 an outside create request (contacts「新建 Agent」) opens the create page, each time', async () => {
     const props = { active: true, onExit: vi.fn() }
     await harness.render(createNode(AgentWatchPage, { ...props, createRequest: 3 }))
     expect(harness.container.querySelector('[data-testid="projects"]'), 'mounting with a count is not a request').toBeTruthy()
     await harness.render(createNode(AgentWatchPage, { ...props, createRequest: 4 }))
-    expect(harness.container.querySelector('[data-testid="pick-machine"]')).toBeTruthy()
-    await act(async () => { (harness.container.querySelector('[data-testid="machines-back"]') as HTMLButtonElement).click() })
+    await act(async () => { await import('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage') })
+    expect(harness.container.querySelector('[data-testid="create"]')).toBeTruthy()
+    await act(async () => { (harness.container.querySelector('[data-testid="create-back"]') as HTMLButtonElement).click() })
     expect(harness.container.querySelector('[data-testid="projects"]')).toBeTruthy()
     await harness.render(createNode(AgentWatchPage, { ...props, createRequest: 5 }))
-    expect(harness.container.querySelector('[data-testid="pick-machine"]'), 'a second tap asks again').toBeTruthy()
+    expect(harness.container.querySelector('[data-testid="create"]'), 'a second tap opens it again').toBeTruthy()
   })
 
   // gugu.showSession on the phone: the row an App named opens as a tap on it does — even an offline machine's (the row is
@@ -465,8 +437,8 @@ describe('phone creation reuses the existing route', () => {
     const props = { active: true, onExit: vi.fn() }
     await harness.render(createNode(AgentWatchPage, { ...props, createRequest: 0 }))
     await harness.render(createNode(AgentWatchPage, { ...props, createRequest: 1 }))
-    await act(async () => { (harness.container.querySelector('[data-testid="open-device"]') as HTMLButtonElement).click() })
-    expect(harness.container.querySelector('[data-testid="create"]')?.getAttribute('data-device-id')).toBe('device-1')
+    await act(async () => { await import('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage') })
+    expect(harness.container.querySelector('[data-testid="create"]')).toBeTruthy()
     expect(harness.container.querySelector('[data-testid="phone-agent-page"]')).toBeNull()
     await act(async () => { (harness.container.querySelector('[data-testid="create-done"]') as HTMLButtonElement).click() })
     expect(harness.container.querySelector('[data-testid="timeline-back"]')).toBeTruthy()

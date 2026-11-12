@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import { folderBytes } from '@main/core/extensions/extension-data';
 import { session, webContents, type Session } from 'electron';
 import { log } from '@main/lib/logger';
+import { applyEmbeddedPagePermissions } from '@main/core/shared/embedded-page-permissions';
 import { extensionPartition } from '@shared/extensions/partition';
 import {
   applyExtensionCorsGrant,
@@ -22,9 +23,6 @@ import {
  * exists so the author sees the same rule as an error rather than a silence.
  * Refs #2374.
  */
-
-/** Web permissions an extension may use unasked. Everything else is denied. */
-const ALLOWED_EXTENSION_PERMISSIONS: ReadonlySet<string> = new Set(['clipboard-sanitized-write']);
 
 type ConfiguredExtension = {
   session: Session;
@@ -97,13 +95,8 @@ export function configureExtensionSession(bundle: ExtensionBundle): Session {
   ses.webRequest.onCompleted((details) => corsRequests.delete(details.id));
   ses.webRequest.onErrorOccurred((details) => corsRequests.delete(details.id));
 
-  ses.setPermissionRequestHandler((_webContents, permission, callback) => {
-    const granted = ALLOWED_EXTENSION_PERMISSIONS.has(permission);
-    if (!granted) log.debug('Denied extension permission request', { extensionId, permission });
-    callback(granted);
-  });
-  ses.setPermissionCheckHandler((_webContents, permission) =>
-    ALLOWED_EXTENSION_PERMISSIONS.has(permission)
+  applyEmbeddedPagePermissions(ses, (permission) =>
+    log.debug('Denied extension permission request', { extensionId, permission })
   );
 
   return ses;

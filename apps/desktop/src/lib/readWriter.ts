@@ -1,5 +1,7 @@
 import { platform } from '@/platform'
 import { chatDb } from './supabase'
+import { noteBackendRequestFailed, subscribeBackendRecovered } from '@gugu/core/cloud/backendReachability'
+import { rendererLogger } from './log'
 
 declare const brand: unique symbol
 /** 云端会话的消息序号(chat.messages.seq,主线与话题共用一个计数)。 */
@@ -45,10 +47,60 @@ export async function readOwnerNotificationSnapshot(deviceId: string | null, con
 }
 
 /**
- * 已读的**唯一写入口**。服务端读位单调只增,这里不守卫也不回滚:守卫(陈旧 seq 不发)与乐观 patch 的回滚
- * 归调用方(advanceReadWatermark)。失败一律抛。
+ * 已读的**唯一写入口**。服务端读位单调只增,这里不守卫:守卫(陈旧 seq 不发)归调用方(advanceReadWatermark)。
+ * 失败一律抛;云端的已读写不上时本地读位不回滚(它就是事实),记下这条流,后端恢复时推上去(见下)。
  */
 export async function writeRead(target: ReadTarget): Promise<void> {
+  try {
+    await sendRead(target)
+  } catch (error) {
+    if (target.kind !== 'native') keepUnconfirmed(target)
+    throw error
+  }
+}
+
+// @@@read-reconcile — 本地读位是事实,服务端的读位落后于它时,在后端恢复那一刻(backendReachability 的那条边)
+// 把它推上去:和发件箱的失败行同一条恢复路,❌ 回滚本地、❌ 另起定时器。推不上(后端又断了)就留着等下一次恢复,
+// 直到服务端和本地一致 —— 服务端单调只增,多推一次无害。
+// 上界:每条流只留最高的那个读位,回执按消息记(只有后端断着时看到的那几条);按账号:换号 / 登出时
+// 由账号节拍的主人清掉(forgetUnconfirmedReads),上一个号的读位 ❌ 用下一个号的身份写出去。
+const unconfirmed = new Map<string, Exclude<ReadTarget, { kind: 'native' }>>()
+let stopReconcile: (() => void) | null = null
+const readLog = rendererLogger('chat/read-writer')
+
+function readKey(target: Exclude<ReadTarget, { kind: 'native' }>): string {
+  return target.kind === 'receipt' ? `receipt:${target.messageId}:${target.readerUserId}`
+    : target.kind === 'thread' ? `thread:${target.chatId}:${target.rootId}` : `main:${target.chatId}`
+}
+
+function keepUnconfirmed(target: Exclude<ReadTarget, { kind: 'native' }>): void {
+  const key = readKey(target)
+  const kept = unconfirmed.get(key)
+  if (!(kept && 'seq' in kept && 'seq' in target && kept.seq >= target.seq)) unconfirmed.set(key, target)
+  stopReconcile ??= subscribeBackendRecovered(reconcileReads)
+  noteBackendRequestFailed()
+}
+
+function reconcileReads(): void {
+  const due = [...unconfirmed.entries()]
+  unconfirmed.clear()
+  for (const [key, read] of due) {
+    void sendRead(read).catch((error) => {
+      // Still not written: it waits for the next recovery, unless a newer read of the stream or a new account replaced it.
+      if (!unconfirmed.has(key) && stopReconcile) unconfirmed.set(key, read)
+      readLog.warn({ error: String(error), kind: read.kind }, 'read not written on recovery; kept for the next one')
+    })
+  }
+}
+
+/** 换号 / 登出:上一个号没推上去的读位作废(它的本地库也随号作废)。 */
+export function forgetUnconfirmedReads(): void {
+  unconfirmed.clear()
+  stopReconcile?.()
+  stopReconcile = null
+}
+
+async function sendRead(target: ReadTarget): Promise<void> {
   switch (target.kind) {
     case 'main':
       return markCloudStreamRead(target.chatId, `main:${target.chatId}`, target.seq, null)

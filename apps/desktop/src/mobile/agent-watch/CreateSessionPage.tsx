@@ -1,5 +1,5 @@
 import type { FirstPrompt } from './use-timeline-session'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererLogger } from '@/lib/log'
 import {
@@ -21,11 +21,17 @@ import { ComposerExtrasProvider } from '@/components/assistant-ui/composer-extra
 import { Button } from '@/components/ui/Button'
 import { isAgentHostDevice, isPhoneDevice } from '@gugu/core/cloud/devices'
 import { useAuth } from '@/store/auth'
+import { useDevicesStore } from '@/store/devicesContext'
+import { rememberRunMachine, useProjectRunMachine } from '@renderer/features/projects/components/main-panel/project-run-machine'
 import { forgetPhoneSessionCreate, readPhoneSessionCreate, rememberPhoneSessionCreate } from '../local-agent/phoneSessionCreate'
 import { AgentWatchScreen } from './AgentWatchChrome'
 import { LiveGlyph } from './StatusGlyph'
 import { CreateOptionsPill } from './CreateOptionsPill'
 import { useMachineLabel } from './useMachineLabel'
+import { visibleMachines } from './machine-list'
+import { accountProjects, createMachines, runCandidates } from './create-target'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import { CreateTarget } from './CreateTarget'
 import { ConnectionStatus } from '@/components/connection/ConnectionStatus'
 import { connectionStateOf } from '@/components/connection/connectionState'
 import { IconButton } from '@/components/ui/IconButton'
@@ -52,7 +58,6 @@ const createLog = rendererLogger('mobile/agent-watch')
 
 /** 「没沿用上」那句话里每一格叫什么 —— 与选项胶囊上的行名同一套词。 */
 const LAST_USED_ITEM_LABEL_KEYS: Record<LastUsedItem, string> = {
-  project: 'agentWatch.create.project',
   harness: 'agentWatch.create.harness',
   permissionMode: 'agentWatch.create.permissionLabel',
   model: 'agentWatch.create.model',
@@ -60,13 +65,12 @@ const LAST_USED_ITEM_LABEL_KEYS: Record<LastUsedItem, string> = {
 }
 
 /**
- * 第四张页:在**这台机器上**开一条新会话。
+ * 新建任务页:「+」直接进来(DESIGN 点击路径 4a,项目与机器解耦:项目是账号上的,机器只是这一次跑在哪)。
  *
- * owner 2026-09-06:「新建任务应该是先选择设备再新建任务」「手机端的话,我建议是和你手机端会话
- * 一个输入框,然后是也 assistant 的组件」。所以:
- *   · 进这一页之前设备已经选定(从机器页的 + 走一遍选机器,或在某台机器的会话页直接 +);
+ * owner 2026-09-06:「手机端的话,我建议是和你手机端会话一个输入框,然后是也 assistant 的组件」。所以:
+ *   · 输入框上方「项目 · 机器」两行,都带默认值(CreateTarget;默认机器与桌面同一条规则);
  *   · 界面就是会话页那一套 —— 同一个官方 `Thread`、同一个输入框、同一颗选项胶囊(这里选的是
- *     项目 · harness),只是线程是空的。❌ 不再渲桌面会话页那张 composer:它是给 IDE 面画的。
+ *     harness · 模型),只是线程是空的。❌ 不再渲桌面会话页那张 composer:它是给 IDE 面画的。
  *   · 发送 = 建会话。建成直接跳进新会话的时间线,第一句话就在那儿。
  *
  * 发送失败**把那句话还给输入框**:assistant-ui 在发送时就清空了输入框,不还回去的话
@@ -77,19 +81,79 @@ function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+type CreatedHandler = (session: SessionpageSessionSummary, firstPrompt: FirstPrompt | undefined, result?: SessionpageSessionCreateResult) => void
+
 export function CreateSessionPage({
-  device,
   taskGroup = null,
   onBack,
   onCreated,
 }: {
-  device: Device
   /** 群输入框的「新任务」(非项目群,同桌面 TaskDispatchComposer):首句落成这个群里的任务卡,agent 进群(chatId + taskChatId)。 */
   taskGroup?: { chatId: string; name: string } | null
   onBack?: () => void
-  /** 建成了:带着攒好的摘要与那句话跳进时间线(那句由时间线页接着画)。 */
+  /** 建成了:带着建在哪台机器上、攒好的摘要与那句话跳进时间线。 */
+  onCreated: (device: Device, ...created: Parameters<CreatedHandler>) => void
+}) {
+  const { t } = useTranslation('main')
+  const { devices: hosts, phones, cloudComputer } = useDevicesStore()
+  const { isHome, label: machineLabel } = useMachineLabel()
+  const devices = useMemo(() => [...new Map([...hosts, ...(phones ?? [])].map((one) => [one.device_id, one])).values()], [hosts, phones])
+  const machines = useMemo(() => visibleMachines(devices, isHome), [devices, isHome])
+  // 账号上的项目(accountProjectsStore,桌面项目选择器同一份)。
+  const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
+  const projects = useMemo(() => accountProjects(accountList, devices, cloudComputer?.snapshot?.deviceId ?? null), [accountList, devices, cloudComputer])
+  // 默认不选项目(桌面 New task 同:`No project · 默认机器`)。
+  const [projectKey, setProjectKey] = useState<string | null>(null)
+  const project = projects.find((one) => one.chatId === projectKey) ?? null
+  const rows = useMemo(() => createMachines(project, machines), [project, machines])
+  const runKey = project?.chatId ?? ''
+  const { machine: machineId, pick } = useProjectRunMachine(runKey, runCandidates(rows, project), project?.chatId)
+  const machine = rows.find((row) => row.device.device_id === machineId)
+  const target = (busy: boolean) => (
+    <CreateTarget projects={projects} project={project} onProject={setProjectKey} machines={rows} machine={machine} onMachine={pick} machineLabel={machineLabel} busy={busy} />
+  )
+
+  if (!machine) {
+    return (
+      <AgentWatchScreen title={t('agentWatch.create.title')} onBack={onBack} testId="agent-watch-create-page">
+        <div className="gg-aw">{target(false)}</div>
+      </AgentWatchScreen>
+    )
+  }
+  return (
+    <CreateOnMachine
+      key={machine.device.device_id}
+      device={machine.device}
+      projectId={machine.localProjectId}
+      target={target}
+      taskGroup={taskGroup}
+      onBack={onBack}
+      onCreated={(...created) => {
+        rememberRunMachine(project?.chatId, machine.device.device_id)
+        onCreated(machine.device, ...created)
+      }}
+    />
+  )
+}
+
+/** 在选定的这台机器上开:换机器 = 换一份(key),那台的选项、模型目录、未确认的手机创建各读各的。 */
+function CreateOnMachine({
+  device,
+  projectId,
+  target,
+  taskGroup,
+  onBack,
+  onCreated,
+}: {
+  device: Device
+  /** 选了项目时那台机器上的本地项目;null = 不选项目(那台的任务工作区)。手机任务宿主用它自己报的那个项目。 */
+  projectId: string | null
+  /** 输入框上方的「项目 · 机器」两行;`busy` = 建着 / 有未确认的创建,不让换。 */
+  target: (busy: boolean) => ReactNode
+  taskGroup: { chatId: string; name: string } | null
+  onBack?: () => void
   /** firstPrompt: absent only when retrying a stored phone attempt from before the first prompt carried its id. */
-  onCreated: (session: SessionpageSessionSummary, firstPrompt: FirstPrompt | undefined, result?: SessionpageSessionCreateResult) => void
+  onCreated: CreatedHandler
 }) {
   const { t } = useTranslation('main')
   const { t: tFlow } = useTranslation('mobileTaskFlow')
@@ -110,7 +174,7 @@ export function CreateSessionPage({
   const [options, setOptions] = useState<SessionpageSessionCreateOptions | null>(null)
   const [optionsError, setOptionsError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
-  const [selection, setSelection] = useState<CreateSelection>({ projectId: null, harness: null, model: null, permissionMode: null, effort: null })
+  const [selection, setSelection] = useState<CreateSelection>({ harness: null, model: null, permissionMode: null, effort: null })
   /** 人动过选择没有 —— 动过之后「上次那一套没沿用上」就不再说(那是人自己的改动)。 */
   const [touched, setTouched] = useState(false)
   /** 与桌面创建框同一条：明确点选的自家默认不被自动默认覆盖；换 harness 后重算。 */
@@ -138,7 +202,7 @@ export function CreateSessionPage({
         modelTouched.current = attempt !== null
         setPhoneAttempt(attempt)
         setOptions(next)
-        setSelection(attempt ? { ...initialSelection(next), ...(attempt.projectId ? { projectId: attempt.projectId } : {}), harness: attempt.harness, model: attempt.model ?? null } : initialSelection(next))
+        setSelection(attempt ? { ...initialSelection(next), harness: attempt.harness, model: attempt.model ?? null } : initialSelection(next))
       })
       .catch((err) => { if (!cancelled) setOptionsError(describe(err)) })
     return () => { cancelled = true }
@@ -210,7 +274,8 @@ export function CreateSessionPage({
         if (phoneAttempt && phoneAttempt.prompt !== text) throw new Error('上次创建尚未确认，请先发送原来的任务以继续同一次创建')
         const request: SessionpageSessionCreateRequest = phoneAttempt ?? {
           ...(phone ? { clientRequestId: crypto.randomUUID() } : {}),
-          projectId: selection.projectId!,
+          // 手机任务宿主跑它自己报的那个项目;电脑上不带 = 那台的任务工作区。
+          ...(phone ? (options.projects[0] ? { projectId: options.projects[0].id } : {}) : projectId ? { projectId } : {}),
           harness: selection.harness!,
           prompt: text,
           // The host admits the first prompt under this id; the page's optimistic first bubble uses the same one.
@@ -275,18 +340,8 @@ export function CreateSessionPage({
     if (phoneAttempt && pendingText === null && !runtime.thread.composer.getState().text) runtime.thread.composer.setText(phoneAttempt.prompt)
   }, [phoneAttempt, pendingText, runtime.thread.composer])
 
-  // The header owns the page title and machine; the empty thread only explains the first action.
-  const Welcome = useMemo(
-    () =>
-      function CreateWelcome() {
-        return (
-          <div className="aui-thread-welcome-root gg-aw-create-intro">
-            <p className="aui-thread-welcome-hint">{t('agentWatch.create.welcomeHint')}</p>
-          </div>
-        )
-      },
-    [t],
-  )
+  // The empty thread stays empty: the rows above the composer already say where it runs (no helper sentence).
+  const Welcome = useMemo(() => function CreateWelcome() { return <div className="aui-thread-welcome-root gg-aw-create-intro" /> }, [])
 
   const errorNotice = createError ? (
     <div
@@ -379,9 +434,7 @@ export function CreateSessionPage({
       <LiveGlyph state="busy" />
       <span>{busyLabel}</span>
     </span>
-  ) : (
-    <span>{machineLabel(device)}</span>
-  )
+  ) : null
 
   return (
     <AgentWatchScreen
@@ -397,7 +450,7 @@ export function CreateSessionPage({
       bodyFill
     >
         <AssistantRuntimeProvider runtime={runtime}>
-          <div className="gg-aw-thread-host" data-testid="agent-watch-create-thread">
+          <div className="gg-aw-thread-host gg-aw-create-host" data-testid="agent-watch-create-thread">
             <ComposerExtrasProvider
               placeholder={t('agentWatch.create.placeholder')}
               extras={
@@ -418,16 +471,15 @@ export function CreateSessionPage({
                 ) : null
               }
               above={
-                errorNotice || optionsNotice || blockerNotice || pendingCreationNotice || lastUsedNotice || taskGroupNotice ? (
-                  <div className="gg-aw-thread-extras">
-                    {errorNotice}
-                    {optionsNotice}
-                    {blockerNotice}
-                    {pendingCreationNotice}
-                    {lastUsedNotice}
-                    {taskGroupNotice}
-                  </div>
-                ) : null
+                <div className="gg-aw-thread-extras">
+                  {errorNotice}
+                  {optionsNotice}
+                  {blockerNotice}
+                  {pendingCreationNotice}
+                  {lastUsedNotice}
+                  {taskGroupNotice}
+                  {target(creating || phoneAttempt !== null)}
+                </div>
               }
             >
               <Thread components={{ Welcome }} autoFocus={false} submitOnEnter={false} sendDisabled={!canSubmit} />

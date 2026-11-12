@@ -41,11 +41,13 @@ export function signedInFileRpc(
 
 export function createDesktopFileAccess(deps: {
   auth(): Promise<RuntimeAuth | null>; root(projectId: string): Promise<string | null>
+  /** This device's project bound to a chat, as the account records it. */
+  project(chatId: string): Promise<string | undefined>
   links(): HeldFileSshLinks | null; tempRoot: string; downloads: string; fetch: typeof fetch; env?: NodeJS.ProcessEnv
   rpc(name: string, args: Record<string, unknown>): Promise<unknown>
   /** Where this device keeps what it sends into project chats it binds no project to (DEVICE_STORE). */
   deviceStore: string
-  /** The identity schema, as the signed-in account: its own settings and device projects. */
+  /** The identity schema, as the signed-in account: its own settings and projects. */
   identityDb(accessToken: string): ReturnType<typeof makeIdentityClient>
 }) {
   // The device store is served and written like a project root.
@@ -93,14 +95,16 @@ export function createDesktopFileAccess(deps: {
     return resolve(fileRef, reader, { ...(options?.localOnly ? { localOnly: true } : {}), ...(options?.signal ? { signal: options.signal } : {}) })
   }
   const sshHandlers: DeviceRpcHandlers = { [PROJECT_FILE_READ]: async (payload, ctx) => ({ result: await read(payload as Parameters<typeof read>[0], ctx.request.user_id) }) }
-  const publish = createProjectFilePublisher({ identity, root, rpc: deps.rpc, env: deps.env,
+  const publish = createProjectFilePublisher({ identity, root, project: deps.project, rpc: deps.rpc, env: deps.env,
     requestCopy: async (itemId, version) => attachmentRequest(await endpoint(), 'file-request', { ref: { item_id: itemId, version }, as: (await identity()).accountId, request_id: crypto.randomUUID() }),
     async storage() { const { auth, db } = await identityDb(); return parseFileStorage(await readUserSettingsConfig(db as unknown as SettingsTableClient, auth.userId, 'user')) },
+    // The account's projects are its project groups (chat.project_groups), with or without a folder on any machine.
     async projectChat(chatId) {
       const { db } = await identityDb()
-      const { count, error } = await db.from('device_projects').select('device_id', { count: 'exact', head: true }).eq('chat_id', chatId)
-      if (error) throw new Error(error.message)
-      return (count ?? 0) > 0
+      const { data, error } = await db.rpc('is_my_project', { p_chat_id: chatId })
+      if (error) throw new Error(`is_my_project: ${error.message}`)
+      if (typeof data !== 'boolean') throw new Error('is_my_project: unexpected answer')
+      return data
     },
   })
   return { providers, resolve, resolveAccount, read, drain, publish,

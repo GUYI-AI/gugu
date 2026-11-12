@@ -7,7 +7,7 @@ import { isAbsolute, join, relative, sep } from 'node:path'
 import { DEVICE_STORE, FILE_CHUNK_BYTES, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { imagePixelSize } from '@gugu/core/shared/imagePixelSize'
 import { isInside, readWorkspaceChunk } from './session/main/core/files/workspace-transfer'
-import { findProjectFileCopy, listProjectGroupIds, rememberProjectFile } from './sessionpage/sessionpage-project-groups'
+import { findProjectFileCopy, rememberProjectFile } from './sessionpage/sessionpage-project-groups'
 import { importProjectFile } from './projectFileImport'
 import { sanitizeRemoteFileName } from './remoteFileOpen'
 import { createLogger } from './lib/logger'
@@ -40,7 +40,9 @@ export function createProjectFilePublisher(deps: {
   rpc: Rpc; env?: NodeJS.ProcessEnv
   /** This account's own file storage setting. */
   storage(): Promise<FileStorage>
-  /** Whether a device of this account binds the chat to a project: what makes it a project chat here. */
+  /** This device's project bound to the chat — the one the account records for it (device_projects), so the publication names a project the account knows. */
+  project(chatId: string): Promise<string | undefined>
+  /** Whether the chat is one of this account's projects (its project group), whatever folders its machines bind. */
   projectChat(chatId: string): Promise<boolean>
   /** Ask for a version's temporary copy, as a reader's first open does. */
   requestCopy?(itemId: string, version: number): Promise<unknown>
@@ -49,9 +51,9 @@ export function createProjectFilePublisher(deps: {
   const place = async (chatId: string, task = false) => {
     const identity = await deps.identity()
     if (task) return { identity, projectId: DEVICE_STORE, storage: null }
-    const bound = (await listProjectGroupIds(identity.accountId, deps.env)).find(row => row.chatId === chatId)
+    const bound = await deps.project(chatId)
     if (!bound && !await deps.projectChat(chatId)) return null
-    return { identity, projectId: bound?.projectId ?? DEVICE_STORE, storage: await deps.storage() }
+    return { identity, projectId: bound ?? DEVICE_STORE, storage: await deps.storage() }
   }
   const publishFile = async (chatId: string, file: SelectedProjectFile, parentId: string | null, actor: string,
     store?: Parameters<Publisher>[4], { message, next, task, itemId }: ProjectFilePublishOptions = {}, temporary = false): Promise<Awaited<ReturnType<Publisher>> & { message?: Record<string, unknown>; path?: string } | null> => {

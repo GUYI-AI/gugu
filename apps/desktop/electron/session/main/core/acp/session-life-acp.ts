@@ -1,4 +1,5 @@
 import { turnFileText } from '../session-timeline/turn-files';
+import { firstTurnPlacement } from '../sessions/first-turn-placement';
 import { isHumanDmDelivery } from '@gugu/core/local/agent/deliveryEnvelope';
 import { declaredInjectionTiming } from '@gugu/session-core/agents/plugins';
 import { resolveSessionpageSessionIntegration } from '@gugu/session-plugins/agents';
@@ -156,14 +157,24 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     },
     async capabilities(have): Promise<CapabilityGrant> {
       if (!facts) throw new Error('ACP capabilities ran before identity');
-      await platformPreparation;
-      const command = await startInput(read<Workspace>(have.workspace));
-      // The injector lands a still-queued first turn's gugu message; it only needs that row's text.
-      const firstTurn = (fork ? forkStore : lifeStore).unaccepted(sessionId).find(row => row.turn.kind === 'chat-page-first-turn' && row.state === 'queued');
-      const injection = await withEmdashMcpInjection(command, lifecycleOf(known(), fork), facts, identity, firstTurn?.message.text, firstTurn?.message.delivery?.files);
-      return lease<Capabilities>({ injection, facts }) as CapabilityGrant;
+      try {
+        const command = await startInput(read<Workspace>(have.workspace));
+        // The injector lands a still-queued first turn's gugu message; it only needs that row's text.
+        const firstTurn = (fork ? forkStore : lifeStore).unaccepted(sessionId).find(row => row.turn.kind === 'chat-page-first-turn' && row.state === 'queued');
+        const injection = await withEmdashMcpInjection(command, lifecycleOf(known(), fork), facts, identity, firstTurn?.message.text, firstTurn?.message.delivery?.files);
+        return lease<Capabilities>({ injection, facts }) as CapabilityGrant;
+      } catch (error) {
+        // The ticket was asked first: when the backend is down both fail, and the ticket's reason (unreachable,
+        // refused, membership) is the one the page can say and act on. A ticket that never answers keeps this start
+        // waiting, as the platform stage would: visible, and a stop is not held by it (session-life untilAborted).
+        const ticketFailure = platformPreparation ? await platformPreparation.then(() => null, (reason: unknown) => reason) : null;
+        throw ticketFailure ?? error;
+      }
     },
     async platform(have): Promise<PlatformTicket> {
+      // The model-access ticket issued since identity is waited for here, in the stage that is the model service: the
+      // page says「正在连接咕咕模型服务」for exactly this wait, and a stop is not held by it (session-life).
+      await platformPreparation;
       const { injection, facts: f } = read<Capabilities>(have.capabilities);
       const platform = await withEmdashPlatformInjection(
         injection.command, lifecycleOf(known(), fork), f, injection.mcpServers, injection.sessionPrompt, injection.sessionMeta,
@@ -217,9 +228,17 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
 
   async function admit(have: StageOut, pending: PendingRow, signal: AbortSignal): ReturnType<LegAdapter['dispatch']> {
     const delivery = pending.message.delivery;
+    const stopped = { result: 'rejected-before-admission', cause: { name: 'AdmissionCancelled', message: 'The session stopped before dispatch' } } as const;
+    // A new task's first turn is queued before its files have landed in the agent's folder: preparing them starts by
+    // waiting for the page that is placing them (#2558).
+    const placing = delivery?.files?.length ? firstTurnPlacement(sessionId, signal) : null;
+    if (placing) {
+      await placing;
+      if (signal.aborted) return stopped;
+    }
     const turn = delivery?.files?.length ? await turnFileText(sessionId, delivery.files, true, delivery.attachments) : null;
     // A stop during file preparation still precedes every provider byte. Use Life's existing refusal receipt.
-    if (signal.aborted) return { result: 'rejected-before-admission', cause: { name: 'AdmissionCancelled', message: 'The session stopped before dispatch' } };
+    if (signal.aborted) return stopped;
     const images = [...(delivery?.attachments ?? []), ...(turn?.images ?? [])];
     const attachments = { ...(images.length ? { attachments: images } : {}), ...(turn?.files?.length ? { files: turn.files } : {}) };
     let sent: Awaited<ReturnType<typeof injectEmdashPromptDetached>>;
@@ -281,12 +300,13 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
       stopping = true;
       if (have.process || have.channel) {
         await stopAcpSessionAndSettle((have.process ? read<Worker>(have.process) : await acpWorkerLease()).client, sessionId);
-      } else if (have.platform || have.capabilities) await releaseEmdashPlatformSession(sessionId);
+      } else if (have.platform) await releaseEmdashPlatformSession(sessionId);
       else if (platformPreparation) {
-        // The attempt can stop during workspace work. Settle only the generation this early operation owns.
+        // The attempt can stop before the platform stage took the ticket (its issue may still be out, or never answer):
+        // settle only the generation this early operation owns, without waiting for it.
         void platformPreparation.then(generation => generation ? releaseEmdashPlatformSession(sessionId, generation) : undefined)
           .catch(error => log.warn('early platform preparation could not settle', { sessionId, error: String(error) }));
-      }
+      } else if (have.capabilities) await releaseEmdashPlatformSession(sessionId); // a session on its own model asks no ticket early
     },
     onExit(have, cb) {
       const worker = read<Worker>(have.process);

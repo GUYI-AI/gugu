@@ -15,7 +15,6 @@ import { useBackLayer } from '@/components/ui/sheetStack'
 import { navigateMobile, skipMobileTransition } from '../navigateMobile'
 import { requestAlertPermissionOnce, useAgentWatchAlerts, useAgentWatchFocus } from './useAgentWatchAlerts'
 import { rowOpens, useLiveDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
-import { MachinesPage } from './MachinesPage'
 import { ProjectsPage } from './ProjectsPage'
 import { SessionTimelinePage } from './SessionTimelinePage'
 import './agent-watch.css'
@@ -29,7 +28,7 @@ const log = rendererLogger('mobile/agent-watch')
 const CreateSessionPage = lazy(() => import('./CreateSessionPage').then((m) => ({ default: m.CreateSessionPage })))
 
 /**
- * 手机「项目」tab:项目页(根)→ 时间线,一条两层的栈;新建会话是从根页 + 推进去的两步。
+ * 手机「项目」tab:项目页(根)→ 时间线,一条两层的栈;新建会话是从根页 + 推进去的一页。
  *
  * 它自己管标题与返回,所以在「我的」里是**顶掉** detail 那层壳来渲染的,
  * 不是套在 SettingsPanel 的 PaneHeader 之下 —— 套着会出现两个返回箭头,
@@ -43,12 +42,8 @@ export type AgentWatchRoute =
   | { name: 'projects'; reveal?: { deviceId: string; sessionId: string } | { projectId: string } }
   /** `deviceId` = 会话所在的机器(跨机器的子会话在它自己那台上打开)。 */
   | { name: 'timeline'; deviceId: string; session: SessionpageSessionSummary; firstPrompt?: FirstPrompt; appKind?: string; draft?: { text: string } }
-  /**
-   * 新建会话的两步(owner 2026-09-06:「新建任务应该是先选择设备再新建任务」):
-   * 根页的 + → `pick-machine`(「在哪台机器上」,离线的点不动)→ `create`。
-   */
-  | { name: 'pick-machine' }
-  | { name: 'create'; deviceId: string }
+  /** 新建任务(DESIGN 点击路径 4a):根页的 + 直接进来,项目与机器是页上带默认值的两行,❌ 先选机器。 */
+  | { name: 'create' }
 
 /** 看管订阅与「后台守着」常驻通知:挂在移动壳根上,切 tab 不拆。 */
 export function AgentWatchRoot() {
@@ -72,7 +67,7 @@ export function AgentWatchPage({
   onExit: () => void
   /** 报出当前在哪一层,好让外壳决定要不要收起底部 tab 栏(时间线页与新建页要把整屏让给输入框)。 */
   onRouteChange?: (name: AgentWatchRoute['name']) => void
-  /** 每变一次 = 外面要建 agent(联系人页的「新建 Agent」):直接进「在哪台机器上」,与根页的 + 同一步。 */
+  /** 每变一次 = 外面要建 agent(联系人页的「新建 Agent」):直接进新建页,与根页的 + 同一步。 */
   createRequest?: number
   /** 随 createRequest 一起来:群输入框「新任务」带的群(首句落成群里的任务卡、agent 进群、建完回到群)。null = 不进群。 */
   taskInGroup?: { chatId: string; name: string } | null
@@ -148,13 +143,13 @@ export function AgentWatchPage({
 
   // 只认「变了」:重挂时带着旧计数不能自己跳进去。
   const seenCreateRequest = useRef(createRequest)
-  // 这一次新建派到哪个群里:只跟着外面那次请求来,退回机器页就清掉(机器页的 + 是不进群的新建)。
+  // 这一次新建派到哪个群里:只跟着外面那次请求来,退回项目页就清掉(项目页的 + 是不进群的新建)。
   const [taskGroup, setTaskGroup] = useState<{ chatId: string; name: string } | null>(null)
   useEffect(() => {
     if (createRequest === seenCreateRequest.current) return
     seenCreateRequest.current = createRequest
     setTaskGroup(taskInGroup)
-    navigate([{ name: 'projects' }, { name: 'pick-machine' }], 'push')
+    navigate([{ name: 'projects' }, { name: 'create' }], 'push')
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 群只在请求变的那一刻读
   }, [createRequest, navigate])
   useEffect(() => {
@@ -180,16 +175,15 @@ export function AgentWatchPage({
     )
   }
 
-  if (route.name === 'create' && device) {
+  if (route.name === 'create') {
     return (
       <Suspense fallback={null}>
         <CreateSessionPage
-          key={`${ownerId}:${device.device_id}`}
-          device={device}
+          key={ownerId}
           taskGroup={taskGroup}
           onBack={goBack}
           // 从群里新建的会话回到那个群;其余打开新会话,返回时回到项目页。
-          onCreated={(session, firstPrompt, result) => {
+          onCreated={(device, session, firstPrompt, result) => {
             const phone = isPhoneDevice(device)
             if (phone && result?.birthGroup?.status === 'failed') {
               log.error({ deviceId: device.device_id, sessionId: session.conversationId, chatId: result.birthGroup.chatId, reason: result.birthGroup.error ?? null }, 'phone agent created but group join failed')
@@ -212,20 +206,11 @@ export function AgentWatchPage({
     )
   }
 
-  if (route.name === 'pick-machine') {
-    return (
-      <MachinesPage
-        onBack={goBack}
-        onOpenDevice={(picked) => setRoute({ name: 'create', deviceId: picked.device_id })}
-      />
-    )
-  }
-
   return (
     <ProjectsPage
       scrollMemo={projectsScroll}
       reveal={route.name === 'projects' ? route.reveal : undefined}
-      onCreate={() => { setTaskGroup(null); setRoute({ name: 'pick-machine' }) }}
+      onCreate={() => { setTaskGroup(null); setRoute({ name: 'create' }) }}
       onOpenSession={(deviceId, session) => {
         // 权限在**用户动作之后**要:点开一条会话 = 他确实要看管它。一进 App 就弹权限框
         // 多数人会直接拒掉,然后这个功能永远用不了。

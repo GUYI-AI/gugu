@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-// GUYI-AI/gugu#2548 rows of the one list that are not a conversation yet (a project without its group chat, the sample):
-// drawn as conversation rows, always after every conversation row, and the keyboard chain holds exactly those projects.
+// GUYI-AI/gugu#2548 rows of the one list that are not a conversation yet (an account project whose group chat is not in
+// the chat list, the sample): drawn as conversation rows, always after every conversation row, and the keyboard chain
+// holds exactly those projects.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,24 +9,30 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const state = vi.hoisted(() => ({
-  projects: [] as string[],
-  groups: new Map<string, string>(),
+  /** The account project rows (sidebarStore.sidebarProjects), each with its project group. */
+  projects: [] as { id: string; chatId: string }[],
   listedGroups: null as ReadonlySet<string> | null,
   sampleShown: false,
+  accountStatus: 'ready' as 'loading' | 'ready' | 'error',
+  leftOpen: true,
   setOneListProjects: vi.fn(),
 }));
 vi.mock('@/lib/sidebarChatsBridge', () => ({
   useSidebarChatSignals: () => ({ listedGroups: state.listedGroups, chatsUnread: 3, groupUnread: new Map([['chat-1', 2], ['chat-2', 4]]), groupCallingTopic: new Map() }),
 }));
-vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({
-  projectGroupsStore: { chatIdOf: (id: string) => state.groups.get(id), bindingKnown: () => true },
+vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({
+  accountProjectsStore: { get status() { return state.accountStatus; } },
 }));
+vi.mock('@renderer/features/projects/components/account-projects-error', () => ({
+  AccountProjectsError: () => <p data-row="account-projects-error" />,
+}));
+vi.mock('@renderer/lib/layout/layout-provider', () => ({ useWorkspaceLayoutContext: () => ({ isLeftOpen: state.leftOpen }) }));
 vi.mock('@renderer/features/sample-project/use-sample-project', () => ({
   useSampleProject: () => ({ shown: state.sampleShown, settled: true, owner: { id: 'me', name: 'Me', avatarUrl: null } }),
 }));
 vi.mock('@renderer/lib/stores/app-state', () => ({
   sidebarStore: {
-    get sidebarProjects() { return state.projects.map((id) => ({ id })); },
+    get sidebarProjects() { return state.projects; },
     setOneListProjects: state.setOneListProjects,
   },
 }));
@@ -44,10 +51,11 @@ const { SidebarOneList } = await import('./sidebar-one-list');
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
-  state.projects = ['with-group', 'no-group-b', 'no-group-a'];
-  state.groups = new Map([['with-group', 'chat-1'], ['no-group-b', 'chat-reserved']]);
+  state.projects = [{ id: 'with-group', chatId: 'chat-1' }, { id: 'no-group-b', chatId: 'chat-b' }, { id: 'no-group-a', chatId: 'chat-a' }];
   state.listedGroups = new Set(['chat-1']);
   state.sampleShown = true;
+  state.accountStatus = 'ready';
+  state.leftOpen = true;
   state.setOneListProjects.mockClear();
   host = document.createElement('div');
   document.body.append(host);
@@ -62,15 +70,29 @@ const render = () => act(async () => root.render(<SidebarOneList />));
 const order = () => [...host.querySelectorAll<HTMLElement>('[data-region="sidebar-chat-list"], [data-row]')].map((node) => node.dataset.row ?? 'conversations');
 
 describe('rows that are not a conversation yet', () => {
-  it('come after every conversation row: projects without a group chat (sidebar order), then the sample', async () => {
+  it('come after every conversation row: account projects whose group chat is not listed (sidebar order), then the sample', async () => {
     await render();
     expect(order()).toEqual(['conversations', 'project:no-group-b', 'project:no-group-a', 'sample']);
   });
 
   it('a project whose group chat is in the list is that conversation row, not one of these', async () => {
-    state.listedGroups = new Set(['chat-1', 'chat-reserved']);
+    state.listedGroups = new Set(['chat-1', 'chat-b']);
     await render();
     expect(order()).toEqual(['conversations', 'project:no-group-a', 'sample']);
+  });
+
+  it('the account project list unread: the list ends with that line and its retry, not on the rail', async () => {
+    state.accountStatus = 'error';
+    await render();
+    expect(order()).toEqual(['conversations', 'project:no-group-b', 'project:no-group-a', 'sample', 'account-projects-error']);
+    // The list is an observer (memoized) over plain test state: remount so it reads the new state.
+    state.projects = [];
+    state.sampleShown = false;
+    await act(async () => root.render(<SidebarOneList key="no-rows" />));
+    expect(order()).toEqual(['conversations', 'account-projects-error']);
+    state.leftOpen = false;
+    await act(async () => root.render(<SidebarOneList key="rail" />));
+    expect(order()).toEqual(['conversations']);
   });
 
   it('draw nothing of their own until the chat list has loaded, and no sample when it is not shown', async () => {

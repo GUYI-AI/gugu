@@ -2,8 +2,10 @@ import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
 import { useSidebarChatSignals } from '@/lib/sidebarChatsBridge';
 import { oneListTail, projectsWithoutGroupRow } from '@/lib/sidebarOneList';
-import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
+import { AccountProjectsError } from '@renderer/features/projects/components/account-projects-error';
+import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
+import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { sidebarStore } from '@renderer/lib/stores/app-state';
 import { SidebarProjectItem } from './project-item';
 import { SampleProjectSidebar } from './sample-project-row';
@@ -11,31 +13,30 @@ import { SidebarChatsSection } from './sidebar-chats-section';
 
 /**
  * GUYI-AI/gugu#2548 the left sidebar as one list: the chat list drawn into its slot holds my standalone agents, groups,
- * project groups and people (lib/sidebarOneList). A local project whose project group chat does not exist yet, and the
- * sample project, have no conversation: they are drawn as the conversation rows they stand for (OneListProjectRow), after
- * every conversation row (oneListTail), so none of them goes missing. The task page's keyboard chain holds those project
- * rows (sidebarStore.oneListProjects); the conversation rows are walked by the chat list itself.
+ * project groups and people (lib/sidebarOneList). An account project whose project group is not in the chat list yet,
+ * and the sample project, have no conversation: they are drawn as the conversation rows they stand for
+ * (OneListProjectRow), after every conversation row (oneListTail), so none of them goes missing. The task page's keyboard
+ * chain holds those project rows (sidebarStore.oneListProjects); the conversation rows are walked by the chat list
+ * itself. When the account project list cannot be read, the list ends with that line and its retry (the projects it
+ * still shows are the last ones read); collapsed, the rail has no room for it.
  */
 export const SidebarOneList = observer(function SidebarOneList() {
   const signals = useSidebarChatSignals();
   const listedGroups = signals?.listedGroups ?? null;
   const sample = useSampleProject();
-  const groupless = projectsWithoutGroupRow(
-    sidebarStore.sidebarProjects.map(({ id }) => id),
-    (projectId) => projectGroupsStore.chatIdOf(projectId),
-    (projectId) => projectGroupsStore.bindingKnown(projectId),
-    listedGroups
-  );
+  const { isLeftOpen } = useWorkspaceLayoutContext();
+  const groupless = projectsWithoutGroupRow(sidebarStore.sidebarProjects, listedGroups);
   const grouplessKey = groupless.join('\n');
   useEffect(() => {
     sidebarStore.setOneListProjects(grouplessKey ? grouplessKey.split('\n') : []);
   }, [grouplessKey]);
   useEffect(() => () => sidebarStore.setOneListProjects(null), []);
   const tail = oneListTail(groupless, sample.shown && sample.owner !== null);
+  const readError = isLeftOpen && accountProjectsStore.status === 'error';
   return (
     <>
       <SidebarChatsSection />
-      {tail.length > 0 && (
+      {tail.length > 0 || readError ? (
         // The chat list ends in its 8px bottom padding; these rows continue it (-mt-2), then end the same way.
         <div className="-mt-2 pb-2" data-sidebar-one-list-tail="">
           {tail.map((row) =>
@@ -45,8 +46,9 @@ export const SidebarOneList = observer(function SidebarOneList() {
               <SidebarProjectItem key={row.projectId} projectId={row.projectId} />
             )
           )}
+          {readError ? <AccountProjectsError className="px-5 py-2 text-xs" /> : null}
         </div>
-      )}
+      ) : null}
     </>
   );
 });

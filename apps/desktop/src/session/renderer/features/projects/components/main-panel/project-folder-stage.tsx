@@ -1,26 +1,27 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { useEffect, type ReactNode } from 'react';
+import { localMachineChoice } from '@renderer/features/remote-hosts/machine-choice';
+import { MachinePicker } from '@renderer/features/remote-hosts/machine-picker';
+import { remoteChoice } from '@renderer/features/remote-hosts/use-new-session-machine';
 import { getProjectStore, projectDisplayName } from '@renderer/features/projects/stores/project-selectors';
 import { useMachineCreateContext } from '@renderer/features/sessions/use-machine-create-target';
 import { electronApi } from '@renderer/lib/electron-api';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { rpc, rpcOn } from '@renderer/lib/ipc';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
-import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
+import { sidebarStore } from '@renderer/lib/stores/app-state';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
+import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { useEnsureMounted } from '@renderer/features/projects/hooks/use-ensure-mounted';
-import { foldersInScope, useProjectDeviceScope } from './project-device-scope';
+import { foldersInScope, machineOfKey, scopeKey, useProjectRunMachine } from './project-run-machine';
 import { ProjectFolderCard, shortHome, type AttachMachine, type FolderCardMachine } from './project-folder-card';
-import { linkFolderOnMachine, planAttach, type LinkFolderDeps } from '@shared/core/projects/project-attach-flow';
+import { linkFolderOnMachine, planAttach } from '@shared/core/projects/project-attach-flow';
+import { projectLinkDeps } from '@renderer/features/projects/project-link-deps';
 import { MAX_PROJECT_FOLDERS, useProjectFolders, type AttachResult } from './project-folders';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { log } from '@renderer/utils/logger';
-
-function folderName(path: string): string {
-  return path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path;
-}
 
 /**
  * 一个项目的文件夹卡和它背后的那一套(#7341):各台机器上的文件夹、设备范围、挂文件夹 / 接进来 / 并进来、
@@ -52,12 +53,21 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
   const machineOf = (deviceId: string | null): FolderCardMachine => (deviceId ? describeMachine(deviceId) : thisComputer);
   // 「+」能挂到的机器:这台电脑 + 名下每台机器(此刻连不上的列着、灰掉)。
   const attachMachines: AttachMachine[] = [thisComputer, ...remoteHostsStore.pickableMachineIds().map(describeMachine)];
-  const projectMachines = [...new Map(memberIds.map((id) => {
+  // 有这个项目文件夹的机器 = 那台上的本地项目在这个项目里、而且挂着至少一个文件夹。从项目中摘除之后,那台的本地项目还在项目里
+  // 但一个文件夹都没有:它归到分隔线下(点了重新挂),❌ 留在上面、选中了却说「文件夹暂不可用」。文件夹还没读到时照成员算。
+  const hasFolderOn = (deviceId: string | null) =>
+    folders.folders === null || folders.folders.some((folder) => scopeKey(folder.deviceId) === scopeKey(deviceId));
+  const projectMachines = [...new Map(memberIds.flatMap((id) => {
     const deviceId = machineRegistry.machineOf(id) ?? null;
-    return [deviceId, deviceId ? describeMachine(deviceId) : thisComputer] as const;
+    return hasFolderOn(deviceId) ? [[deviceId, deviceId ? describeMachine(deviceId) : thisComputer] as const] : [];
   })).values()];
-  const scope = useProjectDeviceScope(projectGroupsStore.chatIdOf(rowId) ?? rowId, rowId, projectMachines);
-  const scopedFolders = foldersInScope(folders, scope.selected, (id) => machineRegistry.machineOf(id) ?? null, (deviceId) => {
+  // 在哪台跑:有这个项目文件夹的机器里选一台(默认规则见 defaultRunMachine);没有文件夹的机器在选择器分隔线下,点了先挂文件夹。
+  const runMachine = useProjectRunMachine(
+    rowId,
+    projectMachines.map((machine) => ({ key: scopeKey(machine.id), online: machine.online })),
+    accountProjectsStore.projectOfLocal(rowId)?.chatId,
+  );
+  const scopedFolders = foldersInScope(folders, runMachine.selected, (id) => machineRegistry.machineOf(id) ?? null, (deviceId) => {
     const state = remoteHostsStore.connectionState(deviceId);
     return state === 'asleep' || state === 'waking';
   });
@@ -69,10 +79,7 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
   useEffect(() => remoteHostsStore.start(), []);
   // 在哪台上开工:选中的那个文件夹自己记着(folder.deviceId);没选 = 这一页的项目所在的那台。
   const executionDevice = scopedFolders.chosen ? scopedFolders.chosen.deviceId : machineRegistry.machineOf(targetProjectId) ?? null;
-  const machineContext = useMachineCreateContext(executionDevice ? {
-    deviceId: executionDevice, projectId: targetProjectId,
-    projectPath: getProjectStore(targetProjectId)?.data?.path ?? null,
-  } : null);
+  const machineContext = useMachineCreateContext(executionDevice ? { deviceId: executionDevice, projectId: targetProjectId } : null);
   const machineLabel = (machine: string | null) => (machine ? describeMachine(machine).label : thisComputer.label);
   const showConfirm = useShowModal('confirmActionModal');
 
@@ -97,16 +104,16 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
   };
 
   // 挂到这个项目在那台机器上已有的本地项目下(与第一步同一条路)。
-  const attachToMember = async (memberId: string, machine: string | null, path: string) => {
+  // 挂上了 = true(各条路同一个回答,托盘的机器选择器据此才选中那台)。
+  const attachToMember = async (memberId: string, machine: string | null, path: string): Promise<boolean> => {
     const result = await folders.attach(memberId, path);
     if (!result.ok) {
       // 那个文件夹本身就是那台机器上的另一个项目 ⇒ 不是「挂不上」,是「要不要把那个项目并进来」。
       if (result.error.type === 'is-project-root' && !memberIds.includes(result.error.projectId)) {
-        confirmMerge(machine, result.error.projectId, result.error.projectName, path);
-        return;
+        return confirmMerge(machine, result.error.projectId, result.error.projectName, path);
       }
       toast({ tier: 'error', title: attachErrorText(result.error) });
-      return;
+      return false;
     }
     const attached = result.folder;
     toast({
@@ -125,37 +132,22 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
       },
       duration: 8000,
     });
+    return true;
   };
 
   // 那台机器上还没有这个项目:在那台把文件夹认成项目(并进来的就用那一个),绑到这个项目的群上(product spec,owner 选 A)。
-  const linkDeps: LinkFolderDeps = {
-    ensureGroup: (row) => rpc.projects.ensureProjectGroup(row),
-    createProjectOn: async (machine, path) => {
-      // 那台机器上的这个项目就是这个项目(product spec「项目不属于任何一台机器」):叫同一个名字,
-      // ❌ 用文件夹名 —— 否则那台机器的侧栏、这边的托盘上同一个项目各叫各的(实机:「shop」挂进去成了「shop-on-b」)。
-      const started = await appState.projects.startProjectCreation(
-        machine ? { type: 'local', machine } : { type: 'local' },
-        { mode: 'pick', path, name: displayName || folderName(path), initGitRepository: false, createDirectory: false, allowNonGit: true }
-      );
-      if (started.kind === 'existing') return { projectId: started.projectId, created: false };
-      const completion = await started.completion;
-      if (!completion.success) return null;
-      if (machine) await appState.projects.ensureMounted(started.projectId);
-      return { projectId: started.projectId, created: true };
-    },
-    bind: (machine, linked, chatId) => rpcOn(machine).projects.bindProjectToGroup(linked, chatId),
-    unbind: (machine, linked) => rpcOn(machine).projects.unbindProjectGroup(linked),
-    deleteProject: (linked) => appState.projects.deleteProject(linked),
-    sessionCountOf,
-  };
-  const linkOnMachine = async (machine: string | null, path: string, existingProjectId?: string) => {
+  const linkDeps = projectLinkDeps(displayName, sessionCountOf);
+  const linkOnMachine = async (machine: string | null, path: string): Promise<boolean> => {
     try {
-      const linked = await linkFolderOnMachine(linkDeps, { rowId, machine, path, existingProjectId });
+      const linked = await linkFolderOnMachine(linkDeps, { rowId, machine, path });
       projectGroupsStore.refreshAll();
       // 那台机器的项目清单变了(多了一个 / 绑了群):重读一遍,下次它离线时侧栏照样列着(❌ 只在连上那一刻读过)。
       const resyncMachine = () => (machine ? void remoteHostsStore.syncProjects(machine) : undefined);
       resyncMachine();
-      if (!linked.ok) return failLinking(linked.error);
+      if (!linked.ok) {
+        failLinking(linked.error);
+        return false;
+      }
       toast({
         title: translate('projects.folders.attachedOn', { machine: machineLabel(machine), path: shortHome(path), projectName: displayName }),
         action: {
@@ -173,26 +165,27 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
         },
         duration: 8000,
       });
+      return true;
     } catch (error) {
       failLinking(error);
+      return false;
     }
   };
 
   // 那台机器上的这个文件夹已经是一个有会话的项目:先说清会发生什么,确认了才并(owner 2026-10-17 选 A)。
-  const confirmMerge = (machine: string | null, existingProjectId: string, name: string, path: string) => {
+  const confirmMerge = (machine: string | null, existingProjectId: string, name: string, path: string): Promise<boolean> => {
     const count = sessionCountOf(existingProjectId);
-    if (count === 0) {
-      void linkOnMachine(machine, path, existingProjectId);
-      return;
-    }
-    showConfirm({
+    if (count === 0) return linkOnMachine(machine, path);
+    return new Promise<boolean>((resolve) => showConfirm({
       title: translate('projects.folders.mergeTitle', { name, projectName: displayName }),
       description: translate('projects.folders.mergeDescription', { machine: machineLabel(machine), name, count, projectName: displayName }),
       confirmLabel: translate('projects.folders.mergeConfirm'),
       // 并进来不删任何东西(原来的群留作历史):❌ 删除那种红按钮。
       variant: 'default',
-      onSuccess: () => void linkOnMachine(machine, path, existingProjectId),
-    });
+      onSuccess: () => resolve(linkOnMachine(machine, path)),
+      // 取消 / Esc:没并,❌ 当成挂上了。
+      onClose: () => resolve(false),
+    }));
   };
 
   // 挂满了就当场说,❌ 先弹目录框、挑完才拒(各台机器上的合计;列表还没读到时数不出来,不拦)。
@@ -202,8 +195,8 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
     return true;
   };
 
-  const attachOn = async (machine: string | null, path: string) => {
-    if (refuseWhenFull()) return;
+  const attachOn = async (machine: string | null, path: string): Promise<boolean> => {
+    if (refuseWhenFull()) return false;
     const plan = await planAttach({
       machine,
       path,
@@ -215,7 +208,7 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
       failLinking(error);
       return null;
     });
-    if (!plan) return;
+    if (!plan) return false;
     switch (plan.kind) {
       case 'member':
         return attachToMember(plan.memberId, machine, path);
@@ -223,15 +216,15 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
         return confirmMerge(machine, plan.projectId, plan.name, path);
       case 'taken':
         toast({ tier: 'error', title: translate('projects.folders.errorOtherProject', { projectName: plan.projectName }) });
-        return;
+        return false;
       case 'link':
         return linkOnMachine(machine, path);
     }
   };
 
   // 「+」:在选的那台机器上挑文件夹 —— 本机弹系统的目录框,别的机器由那台机器画目录树(同「新建项目 › 使用现有文件夹」)。
-  const pickAndAttach = (machine: string | null) => {
-    if (refuseWhenFull()) return;
+  const pickAndAttach = (machine: string | null): Promise<boolean> => {
+    if (refuseWhenFull()) return Promise.resolve(false);
     const picked = machine
       ? (remoteHostsStore.connectionState(machine) === 'asleep'
           ? remoteHostsStore.wakeCloudComputer(machine)
@@ -241,9 +234,13 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
           title: translate('projects.folders.attachDialogTitle', { projectName: displayName }),
           message: translate('projects.folders.attachDialogMessage'),
         });
-    void picked
-      .then((path) => (path ? attachOn(machine, path) : undefined))
-      .catch((error: unknown) => log.error('[project-home] 挂文件夹失败', { projectId, error }));
+    return picked
+      // 挑了路径不等于挂上了(那是别的项目的文件夹、并入被取消、接进来失败):只有挂上了才算。
+      .then((path) => (path ? attachOn(machine, path) : false))
+      .catch((error: unknown) => {
+        log.error('[project-home] 挂文件夹失败', { projectId, error });
+        return false;
+      });
   };
   // 从 Finder 拖进来的是这台电脑上的文件夹:挂到这个项目在这台电脑上的那一个(没有就在这台电脑上接进来)。
   const dropFolder = (file: File) => {
@@ -255,13 +252,38 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
     void attachOn(null, path);
   };
 
+  // 托盘上的机器选择器:上面是有这个项目文件夹的机器(淡色字 = 那台上的文件夹),分隔线下是还没有的,点了先在那台上挑文件夹、挂上就选中它。
+  const choiceOf = (deviceId: string | null) => (deviceId ? remoteChoice(deviceId, translate) : localMachineChoice('local', thisComputer.label));
+  const folderOn = (key: string) => folders.folders?.find((folder) => scopeKey(folder.deviceId) === key && folder.kind === 'root')
+    ?? folders.folders?.find((folder) => scopeKey(folder.deviceId) === key);
+  const withFolder = new Set(projectMachines.map((machine) => scopeKey(machine.id)));
+  const runMachinePicker = (
+    <MachinePicker
+      size="compact"
+      testId="composer-device-picker"
+      wakeOnPick="retry"
+      machines={projectMachines.map((machine) => choiceOf(machine.id))}
+      selectedId={runMachine.selected[0] ?? null}
+      onSelect={(key) => runMachine.pick(machineOfKey(key))}
+      metaOf={(machine) => { const folder = folderOn(machine.id); return folder ? shortHome(folder.path) : null; }}
+      elsewhere={{
+        machines: attachMachines.filter((machine) => !withFolder.has(scopeKey(machine.id))).map((machine) => choiceOf(machine.id)),
+        onPick: (key) => {
+          const machine = machineOfKey(key);
+          void pickAndAttach(machine).then((picked) => { if (picked) runMachine.pick(machine); });
+        },
+      }}
+      onAddMachine={remoteHostsStore.canAddMachine ? () => remoteHostsStore.openAddMachine() : undefined}
+    />
+  );
+
   const card: ReactNode = (
     <ProjectFolderCard
       projectId={rowId}
       projectName={displayName}
       folders={{ ...folders, chosen: scopedFolders.chosen, choose: (workspaceId) => {
         const folder = folders.folders?.find((item) => item.workspaceId === workspaceId);
-        if (folder) scope.include(folder.deviceId);
+        if (folder) runMachine.pick(folder.deviceId);
         folders.choose(workspaceId);
         onChosen?.();
       } }}
@@ -276,7 +298,7 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
     />
   );
   return {
-    rowId, displayName, folders, scope, scopedFolders, targetProjectId, machineContext, projectMachines,
+    rowId, displayName, folders, runMachine, runMachinePicker, scopedFolders, targetProjectId, machineContext, projectMachines,
     machineOf, pickAndAttach, card,
   };
 }

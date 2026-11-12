@@ -89,7 +89,7 @@ import { useBackgroundUsageSync } from '../components/usage/useBackgroundUsageSy
 import { useContactsReader, usePendingRequestCount } from '../store/contactsContext'
 import { chatService } from '../lib/chat'
 import { readAgentCreateDefaults, rememberAgentCreateProject } from '../lib/agentCreateDefaults'
-import { rememberedAgentCreateProject } from '@gugu/core/shared/ui/agentCreateDefaultsModels'
+import { rememberedChatProject } from '@gugu/core/shared/ui/agentCreateDefaultsModels'
 import { createOptimisticDmChat, createOptimisticGroupChat } from '@gugu/core/shared/ui/chatModels'
 import { pushToHost as pushTrayBadgeEnabled } from '../lib/trayBadgeSetting'
 import { hydrateSidebarTint } from '../lib/sidebarTint'
@@ -859,7 +859,7 @@ function InnerLayout({
       async sendCardToChat(chatId, content) {
         await chatService.sendMessage(chatId, user.id, content, crypto.randomUUID(), 'card')
       },
-      rememberedTaskProject: async (chatId, deviceId) => rememberedAgentCreateProject(await readAgentCreateDefaults(), deviceId, chatId),
+      rememberedTaskProject: async (chatId, localDeviceId) => rememberedChatProject(await readAgentCreateDefaults(), chatId, localDeviceId),
       rememberTaskProject: async (chatId, deviceId, projectId) => { await rememberAgentCreateProject(deviceId, projectId, chatId) },
     }
     w.__GUGU_SESSIONPAGE_MESSAGES__ = host

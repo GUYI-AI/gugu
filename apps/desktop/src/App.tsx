@@ -151,7 +151,8 @@ export default function App() {
           <ContentContextMenuHost />
           <AuthContext.Provider value={authContextValue}>
             {/* 新账号先走一遍首次引导(product spec,#7348);老账号 / 走完的直接进主界面 */}
-            <LoginMethodChangeNotice key={`login-notice:${user.id}`} userId={user.id} />
+            {/* 启动外壳期间那张候选证可能已过期:等协调器接受了会话再读,不另起刷新 */}
+            {session.status === 'authenticated' && <LoginMethodChangeNotice key={`login-notice:${user.id}`} userId={user.id} />}
             <FirstRunGate key={user.id} user={user}>
               <AuthenticatedProduct key={user.id} user={user} />
             </FirstRunGate>

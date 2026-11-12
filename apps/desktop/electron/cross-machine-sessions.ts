@@ -101,6 +101,8 @@ export type CrossMachineDeps = {
     deviceId: string | null
   }>>
   requester: Pick<DeviceRpcRequester, 'call'>
+  /** An action about to leave this machine: throws when it names a local project id of this machine (project-public-id). */
+  outbound(action: Action): Promise<void>
   now?: () => number
   /** #7199 这个账号的云电脑此刻怎样(云电脑管家 /state);拿不到管家地址 = null。session_devices 据此标出哪台是它、睡没睡。 */
   cloudComputerState?(): Promise<CloudComputerSnapshot | null>
@@ -269,6 +271,7 @@ export function createCrossMachineSessions(deps: CrossMachineDeps) {
   }
 
   const call = async (deviceId: string, caller: RemoteCaller, action: Action, signal?: AbortSignal): Promise<unknown> => {
+    await deps.outbound(action)
     const sessionCaller = 'kind' in caller ? null : caller
     // Older hosts understand default/spawner and root through nest. The new parent field stays authoritative.
     const wire = sessionCaller && action.action === 'spawn' ? { ...action, nest: action.parent_session_id !== null } : action
