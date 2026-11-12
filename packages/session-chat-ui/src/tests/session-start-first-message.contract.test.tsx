@@ -6,7 +6,7 @@ import type { TranscriptTurn } from '@session-chat/model'
 import { createChatState } from '@session-chat/state/chat-state'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
-import { until } from '../../../../tests/support/awaitCondition'
+import { until, untilStable } from '../../../../tests/support/awaitCondition'
 
 /**
  * 新建会话带着第一条消息(behavior session-page「打开速度」):那条消息发出那一刻就在屏上,下面就是
@@ -397,6 +397,9 @@ describe('incoming deliveries share the transcript layout', () => {
     expect(host.textContent).not.toContain('Compacting')
     expect(host.textContent).toContain('Stopped')
     expect(host.textContent).toContain('Host status remains visible')
+    // Geometry is read once the rows stop moving: the markers are replaced a frame before the rows above them finish
+    // measuring, and a loaded CI runner read two rows overlapping by 3.6px in that frame (#2597 run 43288653984).
+    await untilStable('the rows settle', () => [...host.querySelectorAll<HTMLElement>('[data-user-card]')].map(el => el.getBoundingClientRect().top))
     const rows = [...host.querySelectorAll<HTMLElement>('[data-user-card]')].map(el => el.getBoundingClientRect()).sort((a, b) => a.top - b.top)
     for (let i = 1; i < rows.length; i++) expect(rows[i]!.top).toBeGreaterThan(rows[i-1]!.bottom)
     state.session.setPendingMessages([])
