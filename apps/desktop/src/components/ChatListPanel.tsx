@@ -39,7 +39,8 @@ import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestB
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
 import { isOneListProjectLine, oneListShows, placeProjectLines, sidebarPinnedRows, useAgentHomes, useOneListProjectLines, type OneListProjectLine } from '../lib/sidebarOneList'
 import { mobileListDiagnostics } from '@/mobile/mobileListDiagnostics'
-import { installOneListNeighbour, setOneListProjectSlot, subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
+import { readShellSlots } from '../lib/shellSlots'
+import { installOneListNeighbour, oneListProjectSlotKey, subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
 import { NotificationSlot } from './needsYou/NotificationSlot'
 import { RETAINED_SURFACE_HIDDEN_STYLE } from '../lib/retainedSurface'
 import { blockKey, joinRows, type JoinedGroup, type SidebarJoin } from '../lib/sidebarJoinedGroups'
@@ -133,11 +134,23 @@ const lineChatId = (row: ChatItem | OneListProjectLine) => (isOneListProjectLine
 
 /**
  * #2548 where an account project with no conversation row yet stands in the one list: the task page draws the project's
- * row into this element (setOneListProjectSlot), as it needs the task page's context. Nothing of the shell's goes in it.
+ * row into this element (shell slot oneListProjectSlotKey), as it needs the task page's context. Nothing of the shell's
+ * goes in it.
  */
-const OneListProjectSlot = memo(function OneListProjectSlot({ chatId }: { chatId: string }) {
-  const place = useCallback((element: HTMLDivElement | null) => setOneListProjectSlot(chatId, element), [chatId])
-  return <div ref={place} data-one-list-project={chatId} />
+const OneListProjectSlot = memo(function OneListProjectSlot({ chatId, joinPos, joinOnScreen }: {
+  chatId: string
+  /** The joined box's segment it draws, as a conversation row does (ChatRow). */
+  joinPos?: SidebarJoin['pos']
+  joinOnScreen?: boolean
+}) {
+  const place = useCallback((element: HTMLDivElement) => {
+    const slots = readShellSlots()
+    if (!slots) throw new Error('shell slots are not installed: the one list cannot place a project row')
+    const key = oneListProjectSlotKey(chatId)
+    slots.setSlot(key, element)
+    return () => slots.setSlot(key, null)
+  }, [chatId])
+  return <div ref={place} data-one-list-project={chatId} data-join={joinPos} data-join-on={joinOnScreen || undefined} />
 })
 
 /** The element whose scrolling moves this node: in the shell that is the sidebar's one scroller (@@@sidebar-single-scroller). */
@@ -698,9 +711,10 @@ export function ChatListPanel({
   const pinnedRows = joinRows(pinnedChats, (chat) => blockKey.chat(chat.id), joinedGroups)
   const normalLines = joinRows(normalChats, (chat) => blockKey.chat(chat.id), joinedGroups)
   // #2548 the sidebar draws the project lines among them too; the keyboard walks the conversations (normalLines).
+  // A project line is its group's conversation row-to-be: same key, so a joined box holds it as it will hold that row.
   const oneListLines = projectLines.length === 0 ? normalLines : joinRows(
     placeProjectLines(normalChats, activityOf, projectLines),
-    (row) => (isOneListProjectLine(row) ? `one-list-project:${row.projectChatId}` : blockKey.chat(row.id)),
+    (row) => blockKey.chat(lineChatId(row)),
     joinedGroups,
   )
   // @@@5856 顶层不再有「沉降」这一段:isSunkTopic 只对话题为真,而话题现在永不占顶层 ⇒ 那一段恒空。
@@ -1077,7 +1091,7 @@ export function ChatListPanel({
             const { row, join } = sidebarLines[item.index]!
             return (
               <div key={item.key} data-index={item.index} ref={lineWindow.measureElement} style={lineStyle(item.start - windowMargin)}>
-                {isOneListProjectLine(row) ? <OneListProjectSlot chatId={row.projectChatId} /> : renderChatRow(row, join)}
+                {isOneListProjectLine(row) ? <OneListProjectSlot chatId={row.projectChatId} joinPos={join?.pos} joinOnScreen={join?.onScreen} /> : renderChatRow(row, join)}
               </div>
             )
           })}

@@ -1,6 +1,8 @@
 import { observer } from 'mobx-react-lite';
+import { useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
-import { useOneListProjectSlots } from '@/lib/sidebarChatsBridge';
+import { readShellSlots } from '@/lib/shellSlots';
+import { ONE_LIST_PROJECT_SLOT_PREFIX } from '@/lib/sidebarChatsBridge';
 import { oneListTail } from '@/lib/sidebarOneList';
 import { AccountProjectsError } from '@renderer/features/projects/components/account-projects-error';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
@@ -16,26 +18,34 @@ import { SidebarChatsSection } from './sidebar-chats-section';
  * GUYI-AI/gugu#2548 the left sidebar as one list: the chat list drawn into its slot holds my standalone agents, groups,
  * project groups and people (lib/sidebarOneList). An account project whose project group is not in the chat list yet has
  * no conversation: it stands among the conversation rows at the time its group's row will have, in an element the chat
- * list leaves there (useOneListProjectSlots), and is drawn into it as the conversation row it stands for. A standalone
+ * list leaves there (a shell slot, ONE_LIST_PROJECT_SLOT_PREFIX), and is drawn into it as the conversation row it stands for. A standalone
  * task whose session has no 咕咕 identity, and the sample project, come after every conversation row (oneListTail), so
  * none of them goes missing. The conversation rows are walked by the chat list itself (⌘↑/⌘↓). When the account project
  * list cannot be read, the list ends with that line and its retry (the projects it still shows are the last ones read);
  * collapsed, the rail has no room for it.
  */
+const NO_SLOTS: ReadonlyMap<string, HTMLElement> = new Map();
+
 export const SidebarOneList = observer(function SidebarOneList() {
   const sample = useSampleProject();
   const { isLeftOpen } = useWorkspaceLayoutContext();
-  const projectSlots = useOneListProjectSlots();
+  const slots = readShellSlots();
+  const shellSlots = useSyncExternalStore(
+    (listener) => slots?.subscribeSlots(listener) ?? (() => {}),
+    () => slots?.getSlots() ?? NO_SLOTS
+  );
   const tail = oneListTail(sidebarStore.tasksWithoutAgent, sample.shown && sample.owner !== null);
   const readError = isLeftOpen && accountProjectsStore.status === 'error';
   return (
     <>
       <SidebarChatsSection />
-      {[...projectSlots].map(([chatId, element]) => {
+      {[...shellSlots].map(([key, element]) => {
+        if (!key.startsWith(ONE_LIST_PROJECT_SLOT_PREFIX)) return null;
+        const chatId = key.slice(ONE_LIST_PROJECT_SLOT_PREFIX.length);
         // The chat list placed it from the same account project list; a project that has just left that list leaves its
         // place on the chat list's next render.
         const project = sidebarStore.sidebarProjects.find((ref) => ref.chatId === chatId);
-        return project ? createPortal(<SidebarProjectItem projectId={project.id} />, element, chatId) : null;
+        return project ? createPortal(<SidebarProjectItem projectId={project.id} />, element, key) : null;
       })}
       {tail.length > 0 || readError ? (
         // The chat list ends in its 8px bottom padding; these rows continue it (-mt-2), then end the same way, in the

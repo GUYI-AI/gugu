@@ -4,7 +4,9 @@ import { runInAction } from 'mobx'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatListPanel } from '../../../../apps/desktop/src/components/ChatListPanel'
-import { publishSidebarChatView } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
+import { oneListProjectSlotKey, publishSidebarChatView } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
+import { installShellSlots, readShellSlots } from '../../../../apps/desktop/src/lib/shellSlots'
+import { blockKey } from '../../../../apps/desktop/src/lib/sidebarJoinedGroups'
 import { installOwnedAgentEntry } from '../../../../apps/desktop/src/lib/ownedAgentConversation'
 import { publishProjectGroupChats } from '../../../../apps/desktop/src/session/renderer/features/projects/stores/project-group-chats-bridge'
 import { publishDirectoryDevices, removeDeviceSessions, updateDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
@@ -134,7 +136,8 @@ describe('#2548 an account project whose group is not in the chat list yet stand
   /** The lines of the list, top to bottom: a conversation row, or the place left for a project row. */
   const lines = () => [...harness.container.querySelectorAll<HTMLElement>('[data-chat-row], [data-one-list-project]')]
     .map((line) => line.dataset.oneListProject ? `place:${line.dataset.oneListProject}` : line.dataset.chatRow)
-  const slots = () => (window as unknown as Record<string, ReadonlyMap<string, HTMLElement> | undefined>).__GUGU_SIDEBAR_ONE_LIST_PROJECT_SLOTS__
+  installShellSlots()
+  const slots = () => readShellSlots()!.getSlots()
   afterEach(() => accountProjectsStore.clear())
 
   // The owner's recording (11-13): 新建空白项目 drew the new project after every conversation, and ~200 ms later, when its
@@ -150,7 +153,7 @@ describe('#2548 an account project whose group is not in the chat list yet stand
     await render()
     expect(lines()).toEqual(['room', 'place:new-project', 'project', 'dm-human', 'dm-solo'])
     // The task page draws the project's row into that place (sidebar-one-list).
-    expect(slots()?.get('new-project')).toBe(harness.container.querySelector('[data-one-list-project="new-project"]'))
+    expect(slots().get(oneListProjectSlotKey('new-project'))).toBe(harness.container.querySelector('[data-one-list-project="new-project"]'))
 
     // Its group reaches the chat list: the conversation row is in the same place, and the place for the project row is gone.
     await renderWithAppProviders(harness, createNode(ChatListPanel, { placement: 'sidebar' }), {
@@ -158,7 +161,29 @@ describe('#2548 an account project whose group is not in the chat list yet stand
       contacts: {},
     })
     expect(lines()).toEqual(['room', 'new-project', 'project', 'dm-human', 'dm-solo'])
-    expect(slots()?.has('new-project')).toBe(false)
+    expect(slots().has(oneListProjectSlotKey('new-project'))).toBe(false)
+  })
+
+  // Opened beside another block before its conversation arrives: the box holds the project's place as it will hold the
+  // conversation row (one key), so nothing snaps into the box when the conversation lands.
+  it('a joined box holds the project\'s place as it holds its conversation row once that arrives', async () => {
+    const box = { members: [blockKey.chat('room'), blockKey.chat('new-project')], onScreen: true }
+    publishSidebarChatView({ focusedChatId: null, groups: [box], oneList: true })
+    const created = '2099-01-02T12:00:00Z'
+    runInAction(() => {
+      accountProjectsStore.list = [app, newProject(created)]
+      accountProjectsStore.status = 'ready'
+    })
+    await render()
+    expect(lines()).toEqual(['room', 'place:new-project', 'project', 'dm-human', 'dm-solo'])
+    expect(harness.container.querySelector<HTMLElement>('[data-one-list-project="new-project"]')!.dataset.join).toBe('last')
+
+    await renderWithAppProviders(harness, createNode(ChatListPanel, { placement: 'sidebar' }), {
+      chat: { chats: [...chats, chat({ id: 'new-project', kind: 'group', name: 'Blink', member_user_ids: ['me'], created_at: created })], identitiesById },
+      contacts: {},
+    })
+    expect(lines()).toEqual(['room', 'new-project', 'project', 'dm-human', 'dm-solo'])
+    expect(harness.container.querySelector<HTMLElement>('[data-chat-row="new-project"]')!.dataset.join).toBe('last')
   })
 
   it('a project created a moment ago stands at the top; a dissolved one stands nowhere; switch off: no project places', async () => {

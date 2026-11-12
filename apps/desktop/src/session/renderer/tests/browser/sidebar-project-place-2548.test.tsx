@@ -8,7 +8,7 @@
 import { createPortal } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import { runInAction } from 'mobx';
-import { act } from 'react';
+import { act, useSyncExternalStore } from 'react';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { chat, createNode, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
@@ -16,7 +16,8 @@ import { i18n } from '@/i18n';
 import '@/i18n/registerMessagingCatalog';
 import '@/i18n/registerMainCatalog';
 import '@/styles/tokens.css';
-import { publishSidebarChatView, useOneListProjectSlots } from '@/lib/sidebarChatsBridge';
+import { installShellSlots, readShellSlots } from '@/lib/shellSlots';
+import { ONE_LIST_PROJECT_SLOT_PREFIX, publishSidebarChatView } from '@/lib/sidebarChatsBridge';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 
@@ -28,8 +29,11 @@ vi.mock('@/components/AddFriendSearch', () => ({ AddFriendSearch: () => null }))
 const { ChatListPanel } = await import('@/components/ChatListPanel');
 
 /** The task page's side, as sidebar-one-list draws it: a row in each place the chat list left. */
+installShellSlots();
+const slots = readShellSlots()!;
 function TaskPageRows() {
-  const places = useOneListProjectSlots();
+  const all = useSyncExternalStore(slots.subscribeSlots, slots.getSlots);
+  const places = [...all].flatMap(([key, element]) => (key.startsWith(ONE_LIST_PROJECT_SLOT_PREFIX) ? [[key.slice(ONE_LIST_PROJECT_SLOT_PREFIX.length), element] as const] : []));
   return [...places].map(([chatId, element]) => createPortal(<div data-drawn={chatId} style={{ height: 58 }}>{chatId}</div>, element, chatId));
 }
 

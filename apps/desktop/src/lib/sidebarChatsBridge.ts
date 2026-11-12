@@ -173,30 +173,14 @@ export function useSidebarPinnedAgents(): readonly SidebarPinnedAgent[] {
   return useSyncExternalStore(subscribePinnedAgents, () => read<readonly SidebarPinnedAgent[]>(PINNED_AGENTS_KEY) ?? NO_PINNED_AGENTS, () => NO_PINNED_AGENTS)
 }
 
-const PROJECT_SLOTS_KEY = '__GUGU_SIDEBAR_ONE_LIST_PROJECT_SLOTS__'
-const PROJECT_SLOTS_EVENT = 'gugu:sidebar-one-list-project-slots'
-const subscribeProjectSlots = subscribeTo(PROJECT_SLOTS_EVENT)
-const NO_PROJECT_SLOTS: ReadonlyMap<string, HTMLElement> = new Map()
-
 /**
  * #2548 壳 → 会话页: an account project with no conversation row yet stands among the conversation rows at its time
  * (lib/sidebarOneList, OneListProjectLine). Where is the chat list's to say, the row is the task page's to draw (it needs
- * the task page's own context): the chat list leaves an empty element at that place, keyed by the project's group chat
- * id, and the task page draws the project's row into it. null = the element went (the line left the list or the window).
+ * the task page's own context): the chat list leaves an empty element there, a shell slot (lib/shellSlots) under this key
+ * with the project's group chat id, and the task page draws the project's row into it.
  */
-export function setOneListProjectSlot(chatId: string, element: HTMLElement | null): void {
-  const current = read<ReadonlyMap<string, HTMLElement>>(PROJECT_SLOTS_KEY) ?? NO_PROJECT_SLOTS
-  if ((current.get(chatId) ?? null) === element) return
-  const next = new Map(current)
-  if (element) next.set(chatId, element)
-  else next.delete(chatId)
-  write(PROJECT_SLOTS_KEY, PROJECT_SLOTS_EVENT, next)
-}
-
-/** 会话页: the places the chat list left for project rows, by the project's group chat id. */
-export function useOneListProjectSlots(): ReadonlyMap<string, HTMLElement> {
-  return useSyncExternalStore(subscribeProjectSlots, () => read<ReadonlyMap<string, HTMLElement>>(PROJECT_SLOTS_KEY) ?? NO_PROJECT_SLOTS, () => NO_PROJECT_SLOTS)
-}
+export const ONE_LIST_PROJECT_SLOT_PREFIX = 'one-list-project:'
+export const oneListProjectSlotKey = (chatId: string) => `${ONE_LIST_PROJECT_SLOT_PREFIX}${chatId}`
 
 const ONE_LIST_NEIGHBOUR_KEY = '__GUGU_SIDEBAR_ONE_LIST_NEIGHBOUR__'
 

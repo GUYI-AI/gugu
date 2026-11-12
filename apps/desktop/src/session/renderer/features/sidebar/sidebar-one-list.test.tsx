@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   /** The account project rows (sidebarStore.sidebarProjects), each with its project group. */
   projects: [] as { id: string; chatId: string }[],
-  /** The places the chat list left for project rows (useOneListProjectSlots), by group chat id. */
+  /** The shell slots: the places the chat list left for project rows, under oneListProjectSlotKey. */
   slots: new Map<string, HTMLElement>(),
   /** Top-level standalone tasks whose session has no 咕咕 identity (sidebarStore.tasksWithoutAgent). */
   tasks: [] as { projectId: string; sessionId: string }[],
@@ -19,7 +19,7 @@ const state = vi.hoisted(() => ({
   accountStatus: 'ready' as 'loading' | 'ready' | 'error',
   leftOpen: true,
 }));
-vi.mock('@/lib/sidebarChatsBridge', () => ({ useOneListProjectSlots: () => state.slots }));
+vi.mock('@/lib/shellSlots', () => ({ readShellSlots: () => ({ subscribeSlots: () => () => {}, getSlots: () => state.slots }) }));
 vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({
   accountProjectsStore: { get status() { return state.accountStatus; } },
 }));
@@ -75,7 +75,7 @@ const order = () => [...host.querySelectorAll<HTMLElement>('[data-region="sideba
 const slot = (chatId: string) => {
   const element = document.createElement('div');
   element.dataset.oneListProject = chatId;
-  state.slots.set(chatId, element);
+  state.slots.set(`one-list-project:${chatId}`, element);
   return element;
 };
 
@@ -93,6 +93,13 @@ describe('rows that are not a conversation yet', () => {
     expect(b.querySelector('[data-row]')?.getAttribute('data-row')).toBe('project:no-group-b');
     expect(a.querySelector('[data-row]')?.getAttribute('data-row')).toBe('project:no-group-a');
     expect(host.querySelector('[data-sidebar-one-list-tail] [data-row^="project:"]')).toBeNull();
+  });
+
+  it('other shell slots are not project places', async () => {
+    const other = document.createElement('div');
+    state.slots.set('chat:chat-b', other);
+    await render();
+    expect(other.childElementCount).toBe(0);
   });
 
   it('a place for a project that has just left the account project list stays empty (the chat list drops it next)', async () => {
