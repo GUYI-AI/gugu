@@ -1,4 +1,4 @@
-import { i18n } from '@/i18n'
+import { i18n } from '@/i18n/runtime'
 
 /** #2581 The latest message is several files sent at once: the chat list and its notification say how many, not the last file's name. */
 export function sendGroupPreview(size: unknown): string | null {
