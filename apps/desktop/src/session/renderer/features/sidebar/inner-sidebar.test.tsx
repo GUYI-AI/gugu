@@ -78,7 +78,11 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
     toggleIdleExpanded: (key: string) => state.toggleIdleExpanded(key),
   },
 }));
-vi.mock('./sidebar-session-item', () => ({ SidebarSessionItem: ({ sessionId }: { sessionId: string }) => <div data-session-row={sessionId} /> }));
+vi.mock('./sidebar-session-item', () => ({
+  SidebarSessionItem: ({ sessionId, agentAvatar }: { sessionId: string; agentAvatar?: boolean }) => (
+    <div data-session-row={sessionId} data-agent-avatar={agentAvatar === true || undefined} />
+  ),
+}));
 vi.mock('./sidebar-session-branch-view', () => ({
   SidebarSessionBranchCount: ({ summary, label }: { summary: { total: number; active: { count: number }[] }; label: string }) => (
     <span data-agents-pill={`${summary.total}|${summary.active[0]?.count ?? 0}`} aria-label={label} />
@@ -172,6 +176,14 @@ describe('inner sidebar', () => {
     expect(sections()).toEqual(['agents', 'topics']);
     expect(host.textContent).toContain('sidebar.agents');
     expect(sessionRows()).toEqual(['mine-in-group', 'shop-task', 'shop-idle']);
+  });
+
+  it("agent rows lead with the agent's own avatar: every row asks the session row for it (mock v33)", async () => {
+    openProject('p-shop');
+    await render();
+    const rows = [...host.querySelectorAll<HTMLElement>('[data-session-row]')];
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.dataset.agentAvatar === 'true')).toBe(true);
   });
 
   it('the head row is the chat itself: selected while its chat is open, a click goes back to it, the pen starts a new agent there', async () => {

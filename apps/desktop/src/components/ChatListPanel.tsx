@@ -13,7 +13,7 @@ import { PaneEmptyState } from './ui/PaneEmptyState'
 import { SearchField } from './ui/SearchField'
 import { Pane, PaneHeader } from './ui/Pane'
 import { ListRow } from './ui/ListRow'
-import { clearDraggedScreenContent, setDraggedScreenContent } from '../session/renderer/lib/drag-screen-content'
+import { clearDraggedScreenContent, startChatDrag } from '../session/renderer/lib/drag-screen-content'
 import { Chip } from './ui/Chip'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
@@ -208,11 +208,6 @@ interface ChatRowProps {
 const TOPIC_SUBROW_STYLE: React.CSSProperties = { paddingLeft: 40, paddingTop: 4, paddingBottom: 4 }
 const TOPIC_SUBROW_ICON_STYLE: React.CSSProperties = { color: 'var(--text-tertiary)' }
 const TOPIC_SUBROW_NAME_STYLE: React.CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--text-secondary)' }
-
-function startChatDrag(event: React.DragEvent<HTMLElement>, chat: ChatItem, title: string) {
-  if (!event.currentTarget.draggable) return
-  setDraggedScreenContent(event.dataTransfer, { kind: 'chat', chatId: chat.kind === 'topic' ? chat.source_chat_id! : chat.id, title, ...(chat.kind === 'topic' ? { topic: { chatId: chat.id, name: chat.name ?? '' } } : {}) }, event.currentTarget)
-}
 
 // 与 ChatRow 同一做法(@@@chat-row-memo):一条消息只重画它那一行,子行也一样。
 export const TopicSubRow = memo(function TopicSubRow({ topic, mobile, isActive, tabIndex, actions }: {

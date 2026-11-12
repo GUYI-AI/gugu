@@ -4,6 +4,7 @@ import type { ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { MessageSquare } from '@/lib/icons'
 import { cn } from '@/session/renderer/utils/utils'
 import { SidebarMenuButton, sidebarRowContentInsetX } from '@/session/renderer/features/sidebar/sidebar-primitives'
+import { clearDraggedScreenContent, startChatDrag } from '@/session/renderer/lib/drag-screen-content'
 import { useChatStore, useStoreValueBy } from '../../store/chatContext'
 import { useRowContextMenu } from '../../hooks/useRowContextMenu'
 import { useStableHandler } from '../../hooks/useStableHandler'
@@ -75,10 +76,12 @@ const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin
   onRemove: (topicId: string) => void
 }) {
   const menu = useRowContextMenu()
+  // 拖进聊天区 = 开成分栏:与聊天列表话题子行(TopicSubRow)同一个拖拽源;行里那枚按钮因此放开原生拖拽。
   return (
-    <div role="listitem">
+    <div role="listitem" draggable onDragStart={(event) => startChatDrag(event, topic, topic.name)} onDragEnd={clearDraggedScreenContent}>
       <SidebarMenuButton
         isActive={active}
+        allowNativeDrag
         data-topic-row={topic.id}
         aria-label={topic.name ?? ''}
         className="w-full justify-between pr-2"
