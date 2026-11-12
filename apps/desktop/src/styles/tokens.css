@@ -2193,6 +2193,9 @@ body.barcode-scanner-active #root {
 .gg-chip[data-appearance='plain'] { background: transparent; }
 /* 计数徽标:同一 chip 的圆形变体(未读数) */
 .gg-chip[data-shape='count'] { min-width: 18px; padding: 0 5px; justify-content: center; font-variant-numeric: tabular-nums; }
+/* 小灰点:同一 chip 的无数字变体 —— 有新消息、没有叫到你(#2548)。装饰色 --faint-fg:非文字的指示 ≥3:1(WCAG 1.4.11)。
+   四周各让 5px:占一枚一位数计数(18×18)的位置、落在它正中 —— 与上下行的数同一列,收起成头像列时也落在数落的那个角上。 */
+.gg-chip[data-shape='dot'] { flex: none; width: 8px; height: 8px; margin: 5px; padding: 0; background: var(--faint-fg); }
 
 /* #5111 设置→账户 头像上传钮的**内容**。钮本身是 ui/Button variant=ghost(hover/press/disabled
    全部由那份变体表出,这里不重复一遍);这三条只管钮里面那块 40px 的头像与上传中的遮罩。 */

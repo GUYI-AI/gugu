@@ -292,6 +292,7 @@ export default {
     "markUnreadFailed": "标记未读失败，请重试",
     "muted": "消息免打扰",
     "newMessage": "收到一条新消息",
+    "newsNotCallingYou": "有新消息，但没有叫到你",
     "noResults": "未找到对话",
     "searchMessagesTitle": "搜索消息",
     "listLabel": "对话列表",

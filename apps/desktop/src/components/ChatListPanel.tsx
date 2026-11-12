@@ -30,6 +30,7 @@ import { AddFriendSearch } from './AddFriendSearch'
 import { Avatar } from './Avatar'
 import { PhoneProjectChatAvatar } from '@/mobile/partners/PhoneProjectChatAvatar'
 import { phoneChatUnread } from '@/mobile/chat/phoneChatUnread'
+import { oneListCalls, oneListNewsDot } from '@/lib/chatLineUnread'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
@@ -178,8 +179,10 @@ export interface ChatRowActions {
 
 interface ChatRowProps {
   chat: ChatItem
-  /** 这一行显示的未读数(手机上并进了话题的未读,见 phoneChatUnread)。 */
+  /** 这一行显示的未读数(手机上并进了话题的未读,见 phoneChatUnread;桌面一个列表上是叫到你的,见 oneListCalls)。 */
   unreadCount: number
+  /** #2548 desktop one list: the number is red and counts only the calls; other news is a grey dot (oneListNewsDot). */
+  callsOnly?: boolean
   agentStatus?: AgentDisplayStatus
   isActive: boolean
   topicsExpanded?: boolean
@@ -285,7 +288,7 @@ export function TopicSubRows({ topics, isSunk, expanded, onExpand, children }: {
 
 // @@@chat-row-memo - 一条消息只重画它那一行:props 只有这一行自己的数据(store 里没变的会话行是同一个对象,
 // 见 applyFetchedChatList 的结构共享) + 一份稳定的动作。❌ 每次渲染新建的闭包 / 对象 props —— 那会让一次更新重画整列。
-const ChatRow = memo(function ChatRow({ chat, unreadCount, agentStatus, isActive, topicsExpanded, draft, mobile = false, tabIndex, actions, joinPos, joinOnScreen, pinnedHome, pinnedSessionId, noDrag = false }: ChatRowProps) {
+const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, agentStatus, isActive, topicsExpanded, draft, mobile = false, tabIndex, actions, joinPos, joinOnScreen, pinnedHome, pinnedSessionId, noDrag = false }: ChatRowProps) {
   const { t } = useTranslation('messaging')
   const { identitiesById } = useChatStore('identitiesById')
   const menu = useRowContextMenu()
@@ -300,6 +303,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, agentStatus, isActive
   const displayName = chatDisplayName(chat, peerName)
   const shownName = useShownAgentName({ name: displayName, createdAt: isAgentChat ? peerIdentity?.created_at ?? undefined : undefined })
   const preview = chatPreviewText(chat)
+  const newsDot = callsOnly && oneListNewsDot(chat, unreadCount)
 
   return (
     <>
@@ -315,7 +319,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, agentStatus, isActive
         data-unread-message-id={chat.unread_locator?.message_id ?? undefined}
         selected={isActive}
         pinned={chat.is_pinned}
-        emphasis={unreadCount > 0}
+        emphasis={unreadCount > 0 || newsDot}
         mobile={mobile}
         role="option"
         aria-selected={isActive}
@@ -387,10 +391,11 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, agentStatus, isActive
               </span>
             )}
             {unreadCount > 0 && (
-              <Chip tone="accent" shape="count">
+              <Chip tone={callsOnly ? 'danger' : 'accent'} shape="count">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </Chip>
             )}
+            {newsDot && <Chip shape="dot" role="img" aria-label={t('chatList.newsNotCallingYou')} title={t('chatList.newsNotCallingYou')} />}
           </>
         ) : undefined}
       />
@@ -714,7 +719,8 @@ export function ChatListPanel({
   // @@@5856 一条线 + 挂在它底下的话题子行。置顶段与常规段共用这一份 ——
   // ❌ 不在两处各抄一遍「记得也画子行」,那种东西漏一处就只在某一段里话题消失。
   // 并在一组里的那一行:框画在它最外面那一层上 —— 有话题子行时是连同子行的那一层,框把子行一起圈住。
-  const phoneUnread = useMemo(() => mobile ? phoneChatUnread(chats) : null, [mobile, chats])
+  // 手机:话题并进来源行(主聊天全算);桌面一个列表(#2548):同一个并法,只算叫到你的,其余新消息挂小灰点。
+  const lineUnread = useMemo(() => mobile ? phoneChatUnread(chats) : oneList ? oneListCalls(chats) : null, [mobile, oneList, chats])
   // 这些处理函数在下面定义、每次渲染新建;行拿到的是调它们最新那一版的稳定入口。
   const activate = useStableHandler((chat: ChatItem, beside: boolean) => activateChatRow(chat, beside))
   const openTopic = useStableHandler((topic: ChatItem, beside: boolean) => selectChat(topic, 'composer', beside))
@@ -739,7 +745,8 @@ export function ChatListPanel({
       <ChatRow
         key={chat.id}
         chat={chat}
-        unreadCount={phoneUnread ? phoneUnread.get(chat.id) ?? 0 : chat.unread_count}
+        unreadCount={lineUnread ? lineUnread.get(chat.id) ?? 0 : chat.unread_count}
+        callsOnly={oneList}
         joinPos={hasTopics ? undefined : join?.pos}
         joinOnScreen={hasTopics ? undefined : join?.onScreen}
         agentStatus={rowAgentStatus(chat, identitiesById, agentStatuses, shownAgent, membership.parts.get(chat.id)!.agents)}

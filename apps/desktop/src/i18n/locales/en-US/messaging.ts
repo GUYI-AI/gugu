@@ -293,6 +293,7 @@ export default {
     "markUnreadFailed": "Could not mark this chat unread. Try again.",
     "muted": "Notifications muted",
     "newMessage": "New message",
+    "newsNotCallingYou": "New messages, none calling you",
     "noResults": "No chats found",
     "searchMessagesTitle": "Search messages",
     "listLabel": "Chats",

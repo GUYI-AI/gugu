@@ -29,7 +29,9 @@ export type ChatAttention = {
   unread: number
   /** 列表里算到你头上的:话题只算叫到你的(点名你、@all、回复你说的),其余会话算全部未读。 */
   forYou: number
-  /** 出窗口的徽标与横幅:免打扰为 0;群与话题只算叫到你的,私聊算全部未读。 */
+  /** 叫到你的:群与话题只算叫到你的,私聊每一条都算;免打扰照算(桌面一个列表的红数字,#2548)。 */
+  callsYou: number
+  /** 出窗口的徽标与横幅:免打扰为 0,其余同 callsYou。 */
   askingYou: number
 }
 
@@ -40,10 +42,12 @@ export type ChatAttention = {
  */
 export function chatAttention(chat: Pick<ChatItem, 'kind' | 'unread_count' | 'unread_locator' | 'is_muted'>): ChatAttention {
   const addressed = chat.unread_locator ? chat.unread_locator.addressed_count : chat.unread_count
+  const callsYou = isRoomChat(chat.kind) ? addressed : chat.unread_count
   return {
     unread: chat.unread_count,
     forYou: chat.kind === 'topic' ? addressed : chat.unread_count,
-    askingYou: chat.is_muted ? 0 : isRoomChat(chat.kind) ? addressed : chat.unread_count,
+    callsYou,
+    askingYou: chat.is_muted ? 0 : callsYou,
   }
 }
 

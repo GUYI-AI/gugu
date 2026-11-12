@@ -88,9 +88,15 @@ describe('the inner sidebar topics slot', () => {
     const slot = document.body.appendChild(document.createElement('div'))
     await act(async () => readShellSlots()!.setSlot(innerSidebarTopicsSlotKey('group'), slot))
     expect(rows()).toEqual(['calls-me', 'news', 't0', 't1', 't2'])
-    // The row's mark is today's topic-row mark (the unread number), untouched.
-    expect(slot.querySelector('[data-topic-row="news"] [data-slot="chip"]')?.textContent).toBe('2')
-    expect(slot.querySelector('[data-topic-row="t0"] [data-slot="chip"]')).toBeNull()
+    // #2548 a topic that calls me (3 unread, 1 addressed) says 「@1」 in red; one with news that does not call me (2 unread,
+    // 0 addressed) only wears the grey dot, without a number; one with nothing new wears nothing.
+    const mark = (id: string) => {
+      const chip = slot.querySelector<HTMLElement>(`[data-topic-row="${id}"] [data-slot="chip"]`)
+      return chip && { text: chip.textContent, tone: chip.dataset.tone, shape: chip.dataset.shape, label: chip.getAttribute('aria-label') }
+    }
+    expect(mark('calls-me')).toEqual({ text: '@1', tone: 'danger', shape: 'count', label: null })
+    expect(mark('news')).toEqual({ text: '', tone: undefined, shape: 'dot', label: expect.any(String) })
+    expect(mark('t0')).toBeNull()
 
     await act(async () => setInnerSidebarTopicsAll('group'))
     expect(rows()).toHaveLength(9)

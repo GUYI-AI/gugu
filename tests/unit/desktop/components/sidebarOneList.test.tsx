@@ -124,3 +124,34 @@ describe('the sidebar chat list as one list', () => {
     }
   })
 })
+
+describe('#2548 the one list\'s unread marks: a red number for what calls you, a grey dot for other news', () => {
+  // `count` unread, of which `addressed` call me (the server's addressed_count: a mention of me, @所有人, a reply to me).
+  const locator = (id: string, count: number, addressed: number) => ({
+    unread_count: count,
+    unread_locator: { stream_id: `main:${id}`, stream_kind: 'main' as const, thread_root_id: null, message_id: `${id}-1`, message_seq: 1,
+      unread_count: count, addressed_count: addressed, cursor_seq: 0, version: 1, is_marked_unread: false },
+  })
+  const unreadChats = [
+    chat({ id: 'called', kind: 'group', name: 'Called', member_user_ids: ['me'], last_message_at: at(8), ...locator('called', 2, 0) }),
+    chat({ id: 'called-topic', kind: 'topic', name: 'Pricing', source_chat_id: 'called', last_message_at: at(8), ...locator('called-topic', 4, 1) }),
+    chat({ id: 'plain', kind: 'group', name: 'Plain', member_user_ids: ['me'], last_message_at: at(7), ...locator('plain', 5, 0) }),
+    chat({ id: 'named', kind: 'group', name: 'Named', member_user_ids: ['me'], last_message_at: at(6), ...locator('named', 5, 2) }),
+    chat({ id: 'dm-human', peer_user_id: 'human', last_message_at: at(5), ...locator('dm-human', 3, 0) }),
+  ]
+  const renderUnread = (props: Record<string, unknown>) => renderWithAppProviders(harness, createNode(ChatListPanel, props), { chat: { chats: unreadChats, identitiesById }, contacts: {} })
+  const marks = () => Object.fromEntries([...harness.container.querySelectorAll<HTMLElement>('[data-chat-row]')].map((row) => [row.dataset.chatRow,
+    [...row.querySelectorAll<HTMLElement>('.gg-list-row-trailing [data-slot="chip"]')].map((chip) => chip.dataset.shape === 'dot' ? 'dot' : `${chip.dataset.tone}:${chip.textContent}`)]))
+
+  it('desktop: a group counts its main chat\'s calls plus its topics\' calls; a DM counts every message; other news is a dot', async () => {
+    publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
+    await renderUnread({ placement: 'sidebar' })
+    expect(marks()).toEqual({ called: ['danger:1'], plain: ['dot'], named: ['danger:2'], 'dm-human': ['danger:3'] })
+  })
+
+  it('the phone is unchanged: its row counts its main chat whole plus its topics\' calls, in today\'s chip, never a dot', async () => {
+    publishSidebarChatView({ focusedChatId: null, groups: [] })
+    await renderUnread({ mobile: true })
+    expect(marks()).toEqual({ called: ['accent:3'], plain: ['accent:5'], named: ['accent:5'], 'dm-human': ['accent:3'] })
+  })
+})
