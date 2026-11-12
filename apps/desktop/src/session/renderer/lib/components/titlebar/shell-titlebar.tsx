@@ -2,34 +2,20 @@ import { motion, useTransform } from 'framer-motion'
 import { observer } from 'mobx-react-lite'
 import { useEffect, type ReactNode } from 'react'
 import { publishListHotkey, publishPanelToggle } from '@/lib/panelToggles'
-import {
-  readRendererPlatform,
-  shellRestoreLane,
-  TITLEBAR_ACTION_SLOT_WIDTH_PX,
-  TITLEBAR_ACTION_SLOT_GAP_PX,
-  TITLEBAR_LEFT_EDGE_GAP_PX,
-  WINDOW_CONTROL_BAR_HEIGHT_PX,
-} from '@/lib/window-chrome'
+import { readRendererPlatform, shellRestoreLane, TITLEBAR_LEFT_EDGE_GAP_PX } from '@/lib/window-chrome'
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
 import { getEffectiveHotkey } from '@renderer/lib/hooks/useKeyboardShortcuts'
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider'
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
-import { NotificationSlot } from '@/components/needsYou/NotificationSlot'
-
-/** 28px 按钮在这条 40px 带里居中 —— 左右两端同一个式子,❌ 别在调用点另写 top-*。 */
-const TITLEBAR_ACTION_TOP_PX = (WINDOW_CONTROL_BAR_HEIGHT_PX - TITLEBAR_ACTION_SLOT_WIDTH_PX) / 2
-
 
 /**
- * The sidebar's toggle (published for the shortcut and 消息, lib/panelToggles) and the bell, fixed at the workspace root
- * on every platform: it is not in the sidebar or the main area, so it does not move while the sidebar opens or closes.
- * The collapse button itself is at the foot of the one list (sidebar-one-list-chrome).
+ * The sidebar's toggle, published for the shortcut and 消息 (lib/panelToggles). It draws nothing: GUYI-AI/gugu#2548 the
+ * collapse button and the bell are in the one list's head (sidebar-one-list-chrome), on the sidebar's own top band.
  */
 export const ShellSidebarToggle = observer(function ShellSidebarToggle() {
   const { translate } = useSessionMessages()
   const { value: keyboard } = useAppSettingsKey('keyboard')
-  // GUYI-AI/gugu#2548 the sidebar's collapse button is at the foot of the one list (left-sidebar); only the bell stays here.
   const { isLeftOpen, isLeftPeeking, toggleLeft, setTriggerHovered } = useWorkspaceLayoutContext()
   const hotkey = getEffectiveHotkey('app.toggleLeftSidebar', keyboard)
   const shortcut = hotkey ? formatHotkeyText(hotkey) : undefined
@@ -43,17 +29,7 @@ export const ShellSidebarToggle = observer(function ShellSidebarToggle() {
   // 对话页的列表栏用同一个键(useListColumnCollapse)。
   useEffect(() => publishListHotkey(hotkey), [hotkey])
 
-  return (
-    <div
-      className="absolute z-50 flex items-center [-webkit-app-region:no-drag]"
-      // 几何内联而不用 utility:tokens.css 那条 `*{margin:0;padding:0}` 在皮肤壳外面会静默抹平 utility。
-      style={{ top: TITLEBAR_ACTION_TOP_PX, left: TITLEBAR_LEFT_EDGE_GAP_PX, gap: TITLEBAR_ACTION_SLOT_GAP_PX }}
-      data-sidebar-header-controls=""
-    >
-      {/* The global notification view belongs to the visible list. */}
-      {isLeftOpen || isLeftPeeking ? <NotificationSlot part="toggle" /> : null}
-    </div>
-  )
+  return null
 })
 
 /** The shared frameless-window handle used by full workspace and composer-only surfaces. */
@@ -81,8 +57,8 @@ export function ShellTitlebarDragRegion() {
  *
  * 竖直基线只有一个来源:28px 按钮居中在 40px 带里 = top 6px。❌ 别在调用点另写 top-*。
  *
- * ⚠️ 侧栏开关**不在这里** —— 它在会话页根部(<WorkspaceLayout> 的 <ShellSidebarToggle>),
- * 因为这一层住在主区里、会跟着侧栏左右移动,而那枚按钮的要求正是"不移动"。
+ * ⚠️ 侧栏开关**不在这里** —— 这一层住在主区里、会跟着侧栏左右移动,而那枚按钮的要求正是"不移动"。
+ * #2548 起它在一张表侧栏自己的头一行(sidebar-one-list-chrome),收起成一列头像时原地不动。
  */
 export const ShellTitlebar = observer(function ShellTitlebar({
   leftSlot,

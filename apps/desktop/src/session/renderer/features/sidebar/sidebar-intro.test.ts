@@ -1,13 +1,7 @@
 // GUYI-AI/gugu#2548 C9: the sidebar's two-step intro (侧栏可以收起来 → 会话历史): when it comes up, how it moves, what
 // ends it for good, and which step is drawn.
 import { describe, expect, it } from 'vitest';
-import {
-  nextSidebarIntro,
-  sidebarIntroCanGoBack,
-  sidebarIntroShown,
-  type SidebarIntro,
-  type SidebarIntroEvent,
-} from './sidebar-intro';
+import { nextSidebarIntro, sidebarIntroShown, type SidebarIntro, type SidebarIntroEvent } from './sidebar-intro';
 
 const run = (events: SidebarIntroEvent[], from: SidebarIntro = { step: 'collapse', up: false }) => events.reduce(nextSidebarIntro, from);
 const opened = { kind: 'opened', expanded: true } as const;
@@ -49,12 +43,6 @@ describe('the steps', () => {
   it('collapsing on step 2 changes nothing', () => {
     expect(run([opened, { kind: 'next' }, { kind: 'collapsed' }])).toEqual({ step: 'history', up: true });
   });
-
-  it('上一步 is offered on step 2 only while expanded (step 1 is about collapsing)', () => {
-    expect(sidebarIntroCanGoBack('history', true)).toBe(true);
-    expect(sidebarIntroCanGoBack('history', false)).toBe(false);
-    expect(sidebarIntroCanGoBack('collapse', true)).toBe(false);
-  });
 });
 
 describe('it ends for good', () => {
@@ -87,9 +75,11 @@ describe('the step drawn', () => {
     expect(sidebarIntroShown('history', true, { ...view, touring: false })).toBe('history');
   });
 
-  it('step 2 also on the rail; step 1 only expanded', () => {
-    expect(sidebarIntroShown('history', true, { ...view, expanded: false })).toBe('history');
+  it('neither step on the rail (会话历史 hides there with the names), and neither is ended by it', () => {
+    expect(sidebarIntroShown('history', true, { ...view, expanded: false })).toBeNull();
     expect(sidebarIntroShown('collapse', true, { ...view, expanded: false })).toBeNull();
+    // Expanded again, the step it waited on is drawn.
+    expect(sidebarIntroShown('history', true, view)).toBe('history');
   });
 
   it('nothing before the settings are read (no flash of an intro already ended)', () => {

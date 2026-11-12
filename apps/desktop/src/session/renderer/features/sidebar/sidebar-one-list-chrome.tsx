@@ -2,6 +2,7 @@ import { ChevronsLeft, ChevronsRight, FolderPlus, History, Plus, SquarePen, User
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
+import { NotificationSlot } from '@/components/needsYou/NotificationSlot';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { DropdownMenu, MenuItem, MenuSubmenu } from '@/components/ui/Menu';
@@ -19,19 +20,16 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { cn } from '@renderer/utils/utils';
 import { LOCAL_SESSION_ENGINE_LABEL } from '@shared/core/session-import/session-import';
 import { AddProjectMenuItems } from './add-project-menu-items';
-import {
-  nextSidebarIntro,
-  SIDEBAR_INTRO_STEPS,
-  sidebarIntroCanGoBack,
-  sidebarIntroShown,
-  type SidebarIntroEvent,
-} from './sidebar-intro';
+import { nextSidebarIntro, SIDEBAR_INTRO_STEPS, sidebarIntroShown, type SidebarIntroEvent } from './sidebar-intro';
+import { SidebarSearchTrigger } from './sidebar-search-trigger';
+import { SidebarSpace } from './sidebar-space';
 
 /**
- * GUYI-AI/gugu#2548 the top and the foot of the sidebar as one list.
- * Composition only: every control is an existing one (Button, IconButton, DropdownMenu + MenuItem, Hint) running an
- * existing action. Collapsed, the sidebar is a rail of the list's avatars (ONE_LIST_RAIL_PX wide, every avatar where it
- * was): what has text fades, the 「+」 and the collapse button sit on the avatars' axis.
+ * GUYI-AI/gugu#2548 the head and the top of the sidebar as one list.
+ * Composition only: every control is an existing one (Button, IconButton, DropdownMenu + MenuItem, Hint, the bell's slot, the
+ * search box) running an existing action. Collapsed, the sidebar is a rail of the list's avatars (ONE_LIST_RAIL_PX wide,
+ * every avatar where it was): what has text fades, and so do the bell, the search box and 会话历史; the collapse button and
+ * the 「+」 sit on the avatars' axis.
  */
 
 /**
@@ -162,14 +160,14 @@ function useSidebarIntro(innerShownFor: string | null, expanded: boolean) {
     wasExpanded.current = expanded;
   }, [expanded, move]);
 
-  // The foot can be on a hidden retained surface (another place of the shell, a page without the task list): the bubble is
-  // portalled, so it asks whether the foot is on screen (@@@hint-visibility, an IntersectionObserver).
+  // The head can be on a hidden retained surface (another place of the shell, a page without the task list): the bubble is
+  // portalled, so it asks whether the head is on screen (@@@hint-visibility, an IntersectionObserver).
   const live = up && (stored === 'collapse' || stored === 'history');
-  const { ref: footRef, shown: onScreen } = useConversationVisibility(live);
+  const { ref: headRef, shown: onScreen } = useConversationVisibility(live);
   const notificationsOpen = useSidebarNotificationsOpen();
   const touring = useProductTourOnScreen();
   const step = sidebarIntroShown(stored, up, { expanded, onScreen, notificationsOpen, touring });
-  return { footRef, step, move };
+  return { headRef, step, move };
 }
 
 /** 会话历史's importable tools, named as the import list names them (❌ another copy of the list). */
@@ -178,14 +176,20 @@ function importableTools(locale: string): string {
   return locale.startsWith('zh') ? labels.join('、') : new Intl.ListFormat(locale, { type: 'disjunction' }).format(labels);
 }
 
+/** What the rail hides along with the names: faded with them, and inert there (out of the pointer's way and the tab order). */
+const HIDDEN_ON_RAIL = 'opacity-(--gg-sidebar-text)';
+
 /**
- * The foot: the collapse button (chevrons only; its tooltip says what it does and the shortcut, as the old header toggle's
- * did) and 会话历史 next to it. The collapse button sits on the rail's axis and never moves; collapsed, 会话历史 stacks
- * above it (the rail has room for one button per line). Over them, once: C9 (useSidebarIntro).
+ * The head, the window's top band over the list (proposal v1 ①, owner-approved): the collapse button, the bell, the search
+ * box and 会话历史, in that order. The collapse button (chevrons only; its tooltip says what it does and the shortcut, as
+ * the old header toggle's did) is first, centred on the avatars' axis (20 + 32 / 2 = 36), and never moves: collapsed it is
+ * 「»」 in the same place. Everything after it hides with the names on the rail (proposal v1, extra 1), so the rail keeps only
+ * 「»」 and the 「+」 under it. There is no foot: the list runs to the window's bottom edge. Over the head, once: C9
+ * (useSidebarIntro), drawn below the row so it never covers the buttons it explains.
  *
  * `innerShownFor`: what the inner sidebar is drawn for (innerSidebarShownFor: a chat, or the sample), null when none.
  */
-export const SidebarOneListFoot = observer(function SidebarOneListFoot({ innerShownFor = null }: { innerShownFor?: string | null }) {
+export const SidebarOneListHead = observer(function SidebarOneListHead({ innerShownFor = null }: { innerShownFor?: string | null }) {
   const { translate, locale } = useSessionMessages();
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
@@ -197,10 +201,11 @@ export const SidebarOneListFoot = observer(function SidebarOneListFoot({ innerSh
   const foldLabel = translate(isLeftOpen ? 'sidebar.collapseSidebar' : 'sidebar.expandSidebar');
   const historyLabel = translate('sidebar.sessionHistory');
   const historyShown = isCurrentView(currentView, 'session-history');
+  const railed = !isLeftOpen;
   const intro = useSidebarIntro(innerShownFor, isLeftOpen);
   const step = intro.step;
   const end = () => intro.move({ kind: 'end' });
-  // 打开看看: the foot button's navigation, then the intro is over. Already on 会话历史 there is nothing to open (❌ the
+  // 打开看看: the head button's navigation, then the intro is over. Already on 会话历史 there is nothing to open (❌ the
   // button's toggle back).
   const openHistory = () => {
     if (!historyShown) navigate('session-history');
@@ -217,7 +222,7 @@ export const SidebarOneListFoot = observer(function SidebarOneListFoot({ innerSh
         ? {
             title: translate('sidebar.introHistoryTitle'),
             body: translate('sidebar.introHistoryBody', { tools: importableTools(locale) }),
-            onPrevious: sidebarIntroCanGoBack(step, isLeftOpen) ? () => intro.move({ kind: 'previous' }) : undefined,
+            onPrevious: () => intro.move({ kind: 'previous' }),
             onNext: end,
             extra: (
               <Button variant="secondary" size="sm" onClick={openHistory} data-testid="sidebar-intro-open-history">
@@ -227,20 +232,27 @@ export const SidebarOneListFoot = observer(function SidebarOneListFoot({ innerSh
           }
         : null;
   return (
-    // 20 + 32 / 2 = 36: the collapse button is centred on the avatars' axis, as the 「+」 is; it is first in both
-    // directions, so it holds its place (the bottom-left) and only 会话历史 moves.
-    <div ref={intro.footRef} className={cn('flex shrink-0 gap-2 py-2 pl-5', isLeftOpen ? 'flex-row items-center' : 'flex-col-reverse items-start')} data-sidebar-foot="">
-      <Hint label={shortcut ? `${foldLabel} (${shortcut})` : foldLabel} side="top">
+    <SidebarSpace ref={intro.headRef} controls={0} className="gap-1 pl-5" data-sidebar-head="">
+      <Hint label={shortcut ? `${foldLabel} (${shortcut})` : foldLabel} side="bottom">
         <IconButton size="md" tone="strong" aria-label={foldLabel} aria-expanded={isLeftOpen} onClick={toggleLeft} data-testid="sidebar-fold">
           {isLeftOpen ? <ChevronsLeft /> : <ChevronsRight />}
         </IconButton>
       </Hint>
-      <Hint label={historyLabel} side="top">
+      {/* The bell (NeedsYouHost draws it into this slot) and the search box, as they are. */}
+      <div className={cn('flex shrink-0', HIDDEN_ON_RAIL)} inert={railed}>
+        <NotificationSlot part="toggle" />
+      </div>
+      <div className={cn('flex min-w-0 flex-1', HIDDEN_ON_RAIL)} inert={railed}>
+        <SidebarSearchTrigger />
+      </div>
+      <Hint label={historyLabel} side="bottom">
         {/* A toggle: open, 会话历史 is lit; clicked again it goes back to the view before it, by the task page's own back
             (navigateBack: the back button, Mod+[ and the window's ← take the same path), ❌ a second history here. */}
         <IconButton
           size="md"
           tone="strong"
+          className={HIDDEN_ON_RAIL}
+          inert={railed}
           aria-label={historyLabel}
           aria-pressed={historyShown}
           on={historyShown}
@@ -250,14 +262,15 @@ export const SidebarOneListFoot = observer(function SidebarOneListFoot({ innerSh
           <History />
         </IconButton>
       </Hint>
-      {/* C9 over the step's button, in the feature tour's card without its shade: it is contextual and blocks nothing,
+      {/* C9 under the step's button, in the feature tour's card without its shade: it is contextual and blocks nothing,
           so it takes no focus, and a click elsewhere neither closes it nor is swallowed by it. Escape ends it and still
-          reaches whatever it was meant for. */}
+          reaches whatever it was meant for. Below the row, so the row's buttons stay in sight, and running on from the
+          step's button (❌ back from 会话历史: at the default width the card does not fit there and would flip anyway). */}
       {step && card && (
         <TourBubble
           key={step}
-          anchor={() => intro.footRef.current?.querySelector(`[data-testid="${SIDEBAR_INTRO_ANCHOR[step]}"]`) ?? null}
-          side="top"
+          anchor={() => intro.headRef.current?.querySelector(`[data-testid="${SIDEBAR_INTRO_ANCHOR[step]}"]`) ?? null}
+          side="bottom"
           align="start"
           sideOffset={10}
           collisionPadding={8}
@@ -277,9 +290,9 @@ export const SidebarOneListFoot = observer(function SidebarOneListFoot({ innerSh
           {...card}
         />
       )}
-    </div>
+    </SidebarSpace>
   );
 });
 
-/** Each step's button in the foot. */
+/** Each step's button in the head. */
 const SIDEBAR_INTRO_ANCHOR = { collapse: 'sidebar-fold', history: 'sidebar-session-history' } as const;

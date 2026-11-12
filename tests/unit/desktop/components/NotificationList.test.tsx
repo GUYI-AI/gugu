@@ -31,7 +31,7 @@ vi.mock('@renderer/features/assistant/assistant-shell', () => ({ useAssistantShe
 vi.mock('@renderer/features/assistant/assistant-home-sessions', () => ({ localHomeSessions: { sessions: [] } }))
 vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: {} }) }))
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: vi.fn() }), useWorkspaceSlots: () => ({ currentView: 'home' }), isCurrentView: (current: string, view: string) => current === view }))
-vi.mock('@renderer/lib/layout/layout-provider', () => ({ useWorkspaceLayoutContext: () => ({ isLeftOpen: true, isLeftPeeking: false, toggleLeft: vi.fn(), setTriggerHovered: vi.fn(), setLeftRail: vi.fn() }), useLeftRailLayout: () => false }))
+vi.mock('@renderer/lib/layout/layout-provider', () => ({ SIDEBAR_PROGRESS_VAR: '--gg-sidebar-progress', useWorkspaceLayoutContext: () => ({ isLeftOpen: true, isLeftPeeking: false, toggleLeft: vi.fn(), setTriggerHovered: vi.fn(), setLeftRail: vi.fn() }), useLeftRailLayout: () => false }))
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }))
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {} } },
@@ -43,7 +43,9 @@ vi.mock('@renderer/features/sidebar/use-sidebar-drop', () => ({ useSidebarDrop: 
 vi.mock('@renderer/features/sidebar/sidebar-search-trigger', () => ({ SidebarSearchTrigger: () => <span>Search</span> }))
 vi.mock('@renderer/features/sidebar/sidebar-one-list', () => ({ SidebarOneList: () => <div data-original-list="">Original list</div> }))
 vi.mock('@renderer/features/sidebar/sidebar-one-list-empty', () => ({ SidebarOneListEmpty: () => null }))
-vi.mock('@renderer/features/sidebar/sidebar-one-list-chrome', () => ({ ONE_LIST_RAIL_PX: 72, SidebarOneListTop: () => null, SidebarOneListFoot: () => null }))
+// The desktop bell is in the sidebar's head (#2548): the real head, with the row under it left out.
+vi.mock('@renderer/features/sidebar/sidebar-one-list-chrome', async original => ({ ...await original<object>(), SidebarOneListTop: () => null }))
+vi.mock('@renderer/lib/components/nav-buttons', () => ({ navigateBack: vi.fn() }))
 vi.mock('@renderer/features/sidebar/inner-sidebar', async () => {
   const { observable } = await import('mobx')
   return { innerSidebarChat: observable.box(null, { deep: false }), innerSidebarShownFor: observable.box(null) }

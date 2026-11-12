@@ -1,17 +1,25 @@
-import type { ReactNode } from 'react';
-import { SHELL_RESTORE_LANE_PX, SIDEBAR_HEADER_CONTROLS_PX } from '@/lib/window-chrome';
+import type { HTMLAttributes, Ref } from 'react';
+import { SIDEBAR_HEADER_CONTROLS_PX } from '@/lib/window-chrome';
 import { cn } from '@renderer/utils/utils';
 
 /**
- * Search shares the 40px header with layout and collapse on every desktop platform.
- * ShellSidebarToggle owns the two fixed controls, so they stay reachable when the list slides away.
- * GUYI-AI/gugu#2548 the sidebar as one list keeps only the bell up there (`controls={1}`): the collapse button is at its foot.
+ * A sidebar's 40px top band, the window's drag handle. `controls={2}` leaves the lane of two fixed shell controls at its
+ * start. GUYI-AI/gugu#2548 the sidebar as one list carries its own controls in the band (`controls={0}`, its head:
+ * collapse, bell, search, 会话历史), so it leaves no lane.
  */
-export function SidebarSpace({ children, controls = 2, className }: { children?: ReactNode; controls?: 1 | 2; className?: string }) {
+export function SidebarSpace({
+  children,
+  controls = 2,
+  className,
+  ref,
+  ...props
+}: HTMLAttributes<HTMLDivElement> & { controls?: 0 | 2; ref?: Ref<HTMLDivElement> }) {
   return (
     <div
+      {...props}
+      ref={ref}
       className={cn('flex h-10 w-full shrink-0 items-center pr-3 [-webkit-app-region:drag]', className)}
-      style={{ paddingLeft: controls === 1 ? SHELL_RESTORE_LANE_PX : SIDEBAR_HEADER_CONTROLS_PX }}
+      style={controls === 0 ? undefined : { paddingLeft: SIDEBAR_HEADER_CONTROLS_PX }}
       data-sidebar-space=""
     >
       {children}

@@ -12,8 +12,6 @@ import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { cn } from '@renderer/utils/utils';
 import { SidebarContainer, SidebarContent, SidebarMenu, SidebarMenuButton, sidebarRowContentInsetX } from './sidebar-primitives';
 import { sessionKeyboardNav } from './session-keyboard-nav';
-import { SidebarSearchTrigger } from './sidebar-search-trigger';
-import { SidebarSpace } from './sidebar-space';
 import { publishSidebarChatView, setSidebarNotificationsOpen, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge';
 import { NotificationSlot } from '@/components/needsYou/NotificationSlot';
 import { RETAINED_SURFACE_HIDDEN_STYLE } from '@/lib/retainedSurface';
@@ -24,12 +22,12 @@ import { useNativeConversationChat } from '@/hooks/useNativeConversationChat';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { SidebarOneList } from './sidebar-one-list';
 import { innerSidebarChat, innerSidebarShownFor } from './inner-sidebar';
-import { ONE_LIST_RAIL_PX, SidebarOneListFoot, SidebarOneListTop } from './sidebar-one-list-chrome';
+import { ONE_LIST_RAIL_PX, SidebarOneListHead, SidebarOneListTop } from './sidebar-one-list-chrome';
 
-// #2548 the desktop left sidebar, one list: bell + search, 创建智能体 + 「+」, then ONE list (SidebarOneList); at the foot
-// the collapse button and 会话历史 (sidebar-one-list-chrome); 已安排 in the bell's panel. 资源库 and 设置 are on the
-// far-left rail (product spec, #7046) — they belong to the gugu shell. Collapsed = a rail of the list's avatars: the same
-// content, not moved, with its text hidden. Desktop only: the task renderer never runs in the phone shell.
+// #2548 the desktop left sidebar, one list: the head (collapse, bell, search, 会话历史), 创建智能体 + 「+」, then ONE list
+// (SidebarOneList) down to the window's bottom edge (sidebar-one-list-chrome); 已安排 in the bell's panel. 资源库 and 设置
+// are on the far-left rail (product spec, #7046) — they belong to the gugu shell. Collapsed = a rail of the list's avatars:
+// the same content, not moved, with its text hidden. Desktop only: the task renderer never runs in the phone shell.
 export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
@@ -67,7 +65,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
     sidebarStore.setAgentNameOnHoverEnabled(agentNameOnHoverEnabled);
   }, [agentNameOnHoverEnabled]);
   // #2548 collapsing leaves the rail of avatars (the layout keeps that width), so the bell's panel cannot stay open in it;
-  // the rail has no bell.
+  // the rail hides the bell (SidebarOneListHead).
   React.useEffect(() => setLeftRail(ONE_LIST_RAIL_PX), [setLeftRail]);
   const railed = !isLeftOpen;
   React.useEffect(() => {
@@ -140,7 +138,8 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
           </span>
         </div>
       )}
-      <SidebarSpace controls={1} className={cn('opacity-(--gg-sidebar-text)', railLayout && 'pointer-events-none')}><SidebarSearchTrigger /></SidebarSpace>
+      {/* The one-time bubble (C9) on the head comes up when the inner sidebar appears: a group, a project or the sample. */}
+      <SidebarOneListHead innerShownFor={innerSidebarShownFor.get()} />
       <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col" data-notification-original-list="" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
           <SidebarOneListTop collapsed={railed} onCreateAgent={handleNewSession} />
@@ -150,7 +149,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
               scrollbar never shows again. */}
           <div
             data-region="sidebar-scroll"
-            // #2548 rows scrolling down fade out over the last 24px above the foot instead of being cut off.
+            // #2548 rows scrolling down fade out over the last 24px above the window's bottom edge instead of being cut off.
             className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto mask-b-from-[calc(100%-1.5rem)]"
           >
             <div>
@@ -178,8 +177,6 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
           </SidebarMenu>
         )}
       </SidebarContainer>
-      {/* The foot's one-time bubble (C9) comes up when the inner sidebar appears: a group, a project or the sample. */}
-      <SidebarOneListFoot innerShownFor={innerSidebarShownFor.get()} />
     </div>
   );
 });

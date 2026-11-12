@@ -1,6 +1,7 @@
 // GUYI-AI/gugu#2548: the one-list sidebar collapsed to its rail, inside the desktop shell's light workspace (#7610 C, the
 // owner's window): the rail is painted over its whole occupied width in one colour, the reading surface starts right at
-// its edge, and that edge is the same one the expanded sidebar has.
+// its edge, and that edge is the same one the expanded sidebar has. The head's 「«」 / 「»」 sits on the avatars' axis in
+// the top band, clear of the macOS traffic lights, in both states; the list runs to the window's bottom edge (no foot).
 import { afterEach, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
@@ -10,6 +11,7 @@ import { WorkspaceLayoutContextProvider } from '@renderer/lib/layout/layout-prov
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import '@/styles/tokens.css';
 import '@/components/sessionpage/EmdashSessionFrame.css';
+import '@/components/Sidebar.css';
 import '@renderer/index.css';
 
 // Real layout layers and stylesheets; data, services and the list's rows (drawn by the shell) replaced.
@@ -38,6 +40,7 @@ afterEach(() => {
   harness?.cleanup();
   delete document.documentElement.dataset.windowMaterial;
   delete document.documentElement.dataset.theme;
+  delete document.documentElement.dataset.platform;
 });
 
 /** The colour on screen at a point: the first non-transparent background from the topmost element up. */
@@ -59,6 +62,8 @@ for (const material of ['native', 'opaque'] as const) {
     await page.viewport(1000, 700);
     document.documentElement.dataset.theme = 'light';
     document.documentElement.dataset.windowMaterial = material;
+    // The macOS window: its traffic lights sit at the top-left, over the icon rail (tokens.css, --sidebar-rail-width).
+    document.documentElement.dataset.platform = 'mac';
     harness = createReactHarness();
     // MainLayout's desktop shell: the far-left rail, then the workspace that paints --shell-bg (layouts/MainLayout.tsx).
     await harness.render(
@@ -82,9 +87,35 @@ for (const material of ['native', 'opaque'] as const) {
     const aside = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
     const surface = document.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
     const expandedEdge = surfaceEdge(surface);
+    const fold = document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!;
+    const history = document.querySelector<HTMLElement>('[data-testid="sidebar-session-history"]')!;
+    const lights = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--titlebar-traffic-lights-width'));
+    expect(lights, 'the mac tokens must be present').toBeGreaterThan(0);
+    // 「«」 in the top band, centred on the avatars' axis (x = 36), right of the icon rail and the traffic lights over it.
+    const head = (state: string) => {
+      const box = fold.getBoundingClientRect();
+      const panel = aside.getBoundingClientRect();
+      expect(box.left + box.width / 2 - panel.left, state).toBe(36);
+      expect(box.top - panel.top, state).toBeGreaterThanOrEqual(0);
+      expect(box.bottom - panel.top, state).toBeLessThanOrEqual(40);
+      expect(box.left, state).toBeGreaterThanOrEqual(document.querySelector('.gg-sidebar-rail')!.getBoundingClientRect().right);
+      expect(box.left, state).toBeGreaterThan(lights);
+    };
+    head('expanded');
+    // 会话历史 is at the band's other end; nothing is left at the bottom: the list runs to the window's bottom edge.
+    expect(Math.round(history.getBoundingClientRect().right)).toBe(Math.round(aside.getBoundingClientRect().right) - 12);
+    expect(document.querySelector('[data-sidebar-foot]')).toBeNull();
+    expect(document.querySelector('[data-region="sidebar-scroll"]')!.getBoundingClientRect().bottom).toBe(aside.getBoundingClientRect().bottom);
 
-    document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
+    fold.click();
     await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(72);
+    head('collapsed');
+    // The rail keeps 「»」 and the 「+」; the bell, the search box and 会话历史 are hidden with the names.
+    expect(fold.closest('[inert]')).toBeNull();
+    for (const hidden of [history, document.querySelector('[data-notification-slot="toggle"]')!]) {
+      expect(hidden.closest('[inert]')).not.toBeNull();
+      expect(Number(getComputedStyle(hidden.closest('[inert]')!).opacity)).toBe(0);
+    }
 
     const rail = aside.getBoundingClientRect();
     for (const layer of [aside.firstElementChild!, document.querySelector('[data-region="left-sidebar"]')!]) {
