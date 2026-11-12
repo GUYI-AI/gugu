@@ -5,7 +5,21 @@
 import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'electron' } }))
+const platform = vi.hoisted(() => ({ kind: 'electron' as 'electron' | 'web' }))
+vi.mock('../../../../apps/desktop/src/platform', () => ({ platform }))
+
+// The web build's session host: one that never connects (the frame shows "host not connected").
+vi.mock('../../../../apps/desktop/src/lib/session-host-ws-client', () => ({
+  resolveSessionHostEndpoint: () => 'ws://127.0.0.1:1/host',
+  createSessionHostWsClient: () => ({
+    endpoint: { url: 'ws://127.0.0.1:1/host' },
+    state: () => 'closed',
+    onStateChange: () => () => undefined,
+    api: { invoke: vi.fn(async () => undefined) },
+    connect: async () => undefined,
+  }),
+}))
+vi.mock('../../../../apps/desktop/src/lib/session-shell-auth-handoff', () => ({ installSessionShellAuthHandoff: () => undefined }))
 
 const entry = vi.hoisted(() => {
   const pending: Array<{ resolve: (value?: unknown) => void; reject: (error: unknown) => void }> = []
@@ -52,6 +66,8 @@ describe('task page frame on a cold start', () => {
   let harness: ReturnType<typeof createReactHarness>
   const loader = () => harness.container.querySelector('[role=status]')
   const errorCard = () => harness.container.querySelector('[role=alert]')
+  // MainLayout sizes the frame over its slot when the task page is on screen; behind another page it stays 0 × 0.
+  let onScreen = true
 
   beforeEach(() => {
     entry.pending.length = 0
@@ -63,10 +79,18 @@ describe('task page frame on a cold start', () => {
     ;(window as unknown as Record<string, unknown>)[SESSION_HOST_BRIDGE_KEY] = { invoke: vi.fn(async () => undefined) }
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, text: async () => `<script type="module" src="${MODULE_SRC}"></script>` })))
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    onScreen = true
+    platform.kind = 'electron'
+    const rect = HTMLElement.prototype.getBoundingClientRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (!this.classList.contains('gg-session-frame')) return rect.call(this)
+      return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: onScreen ? 900 : 0, height: onScreen ? 700 : 0, toJSON: () => ({}) } as DOMRect
+    })
     harness = createReactHarness()
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     harness.cleanup()
     vi.unstubAllGlobals()
     delete (window as unknown as Record<string, unknown>)[SESSION_HOST_BRIDGE_KEY]
@@ -123,5 +147,26 @@ describe('task page frame on a cold start', () => {
 
     expect(startup.state.holders).toBe(0)
     expect(loader()).not.toBeNull()
+  })
+
+  it('warming up behind another page, it lets go of the wordmark at once: that page is what is on screen', async () => {
+    onScreen = false
+    startup.set(true)
+    const imported = await renderUntilEntryImported()
+    await act(async () => { imported.resolve() })
+
+    expect(startup.state.holders).toBe(0)
+    expect(startup.state.release).toHaveBeenCalledTimes(1)
+  })
+
+  // Web build with no session host: the frame shows "host not connected" while its page never loads.
+  it('lets go of the wordmark when the web build cannot reach its session host, so that card is usable', async () => {
+    platform.kind = 'web'
+    startup.set(true)
+    await harness.render(createElement(EmdashSessionFrame))
+    await act(async () => { await Promise.resolve() })
+
+    expect(startup.state.holders).toBe(0)
+    expect(errorCard()).not.toBeNull()
   })
 })
