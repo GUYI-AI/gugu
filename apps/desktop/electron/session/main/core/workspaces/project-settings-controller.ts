@@ -10,13 +10,17 @@ async function getSettings(workspaceId: string): Promise<ProjectSettingsLoadResu
     return err({ type: 'not_found', entity: 'workspace', workspaceId });
   }
 
-  return ok(
-    await getEffectiveSessionSettings({
-      projectSettings: workspace.settings,
-      sessionFs: workspace.fileSystem,
-      sessionConfigPath: workspace.configPath,
-    })
-  );
+  try {
+    return ok(
+      await getEffectiveSessionSettings({
+        projectSettings: workspace.settings,
+        sessionFs: workspace.fileSystem,
+        sessionConfigPath: workspace.configPath,
+      })
+    );
+  } catch (error) {
+    return err({ type: 'fs_error', message: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 export const projectSettingsController = createRPCController({

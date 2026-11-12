@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   assertProtocol: vi.fn(),
   installAgent: vi.fn(),
   stopInstallProgress: vi.fn(),
+  viewKind: vi.fn(),
 }));
 const devices = vi.hoisted(() => [] as Array<{ device_id: string; capabilities: { remote_protocol?: number } }>);
 
@@ -29,6 +30,7 @@ vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({
   getSessionManagerStore: () => ({ createSession: mocks.createSession }),
   getSessionPageStore: () => ({ workspaceId: 'workspace' }),
   asProvisioned: (value: unknown) => value,
+  sessionViewKind: mocks.viewKind,
 }));
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: { sessions: { sendMessage: mocks.localSendMessage } },
@@ -140,6 +142,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     mocks.createSession.mockImplementation(async (_params: unknown, options?: { onOptimistic?: () => void }) => { options?.onOptimistic?.(); });
     mocks.localSendMessage.mockResolvedValue({ id: 'local-id', status: 'queued' });
     mocks.start.mockResolvedValue({ ok: true });
+    mocks.viewKind.mockReturnValue('ready');
     mocks.installAgent.mockResolvedValue({ success: true });
     devices.length = 0;
     initialSession.attachments = [];
@@ -580,6 +583,15 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     expect(initialSession.prompt).toBe('');
     expect(mocks.navigate).not.toHaveBeenCalled();
     expect(mocks.start).toHaveBeenCalledOnce();
+  });
+
+  it('a dispatched task whose workspace could not be prepared opens, instead of vanishing from the chat', async () => {
+    mocks.viewKind.mockReturnValue('provision-error');
+    await act(async () => root.render(React.createElement(Probe, { taskChatId: 'chat-1', openAfterCreate: false })));
+    await act(async () => latest?.handleCreateSession());
+    expect(mocks.navigate).toHaveBeenCalledWith('session', { projectId: 'project-1', sessionId: expect.any(String) });
+    // Its life would only fail the same way; the session page's retry prepares it again.
+    expect(mocks.start).not.toHaveBeenCalled();
   });
 
   it('a successful PTY attachment delivery consumes the raw caption rather than the expanded prompt', async () => {
