@@ -36,12 +36,13 @@ export function createProbeConnectionCredentials(
       name: connection.name,
       endpoint: connection.endpoint,
       apiKey: connection.apiKey,
-      model: connection.model,
+      models: connection.models,
+      ...(connection.protocol ? { protocol: connection.protocol } : {}),
     })
     const capability = launch.modelCapability
     if (!capability) throw new Error(`model catalog probe: ${pluginId} API key connection produced no model declaration`)
     // 输入框里连接的模型只叫模型名(pi / opencode 报的是「提供方/模型」)。
-    const modelName = connection.model
+    const [modelName, ...otherModels] = connection.models
     // opencode:配置文档就在 spawnEnv 里(`OPENCODE_CONFIG_CONTENT`),与会话同路。
     if (providerUsesSessionProcessConfig(pluginId)) return { env: { ...launch.spawnEnv }, modelName }
     if (providerDeliversModelViaConfigFile(pluginId, 'acp')) {
@@ -63,7 +64,7 @@ export function createProbeConnectionCredentials(
       if (Object.keys(spawnEnv).length === 0) {
         throw new Error(`model catalog probe: ${pluginId} API key connection materialized no environment for the probe`)
       }
-      return { env: spawnEnv, sessionModel: { id: connection.model, only: true }, modelName }
+      return { env: spawnEnv, sessionModel: { id: modelName!, only: true, others: otherModels }, modelName }
     }
     throw new Error(`model catalog probe: ${pluginId} API key connection has no channel the probe can reach`)
   }

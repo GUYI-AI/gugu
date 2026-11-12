@@ -24,8 +24,13 @@ export function connectionModelLaunch(input: {
   name: string
   endpoint: string
   apiKey: string
-  model: string
+  /** 连接点名的模型,第一个是起步模型;全部写进这一家的模型声明(这家自己的模型切换里都在)。 */
+  models: readonly string[]
+  /** 建连接时按地址探出来的接口;缺席 = 这一家平台声明的那一种(与改动前一样)。 */
+  protocol?: 'openai-responses' | 'openai-chat-completions'
 }): SessionpagePlatformModel {
+  const [model, ...others] = input.models
+  if (!model) throw new Error(`${input.providerId}: an API key connection names no model`)
   const plugin = pluginRegistry.get(input.providerId)
   const platformModel = plugin?.behavior.sessionBundle?.platformModel
   if (!plugin || plugin.capabilities.sessionBundle.platform.kind !== 'supported' || !platformModel) {
@@ -33,13 +38,14 @@ export function connectionModelLaunch(input: {
   }
   const platformProvider = { baseUrl: input.endpoint, apiKey: input.apiKey }
   const declared = platformModel.declare({
-    explicitModel: input.model,
+    explicitModel: model,
     requestedEffort: undefined,
     // 调试开关只给平台会话:一把连接点名的模型就是它的模型。
     envOverride: () => undefined,
     platformProvider,
     platformAccess: null,
-    platformModels: undefined,
+    // 连接点名的其余模型:pi 的 models.json / opencode 的 provider 都按这一组逐条声明(窗口说不出,不说)。
+    platformModels: others.length ? others.map((id) => ({ id, displayName: id })) : undefined,
     // 连接说不出窗口:不说,让这一家用它自己的默认(❌ 猜一个数)。
     contextWindow: undefined,
     callableRoutes: {},
@@ -47,7 +53,11 @@ export function connectionModelLaunch(input: {
       throw new Error(`${input.providerId}: an API key connection carries no platform protocol environment`)
     },
   })
-  const modelCapability: SessionModelCapability = { ...declared, providerName: input.name }
+  const modelCapability: SessionModelCapability = {
+    ...declared,
+    providerName: input.name,
+    ...(input.protocol ? { wireProtocol: input.protocol } : {}),
+  }
   const viaConfigFile = providerDeliversModelViaConfigFile(input.providerId, input.surface === 'tui' ? 'tui' : 'acp')
   const materialized = viaConfigFile ? {} : materializeModelCapability(modelCapability)
   if (materialized.settingsOverride) {

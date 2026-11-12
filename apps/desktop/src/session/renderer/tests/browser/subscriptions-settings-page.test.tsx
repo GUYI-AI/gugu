@@ -146,10 +146,12 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
       const connection: HarnessConnection = input.kind === 'account'
         ? { id: 'account-1', kind: 'account', name: 'Claude 1', current: false }
         : { id: 'api-1', kind: 'api-key', name: 'Saved API', endpoint: input.endpoint as string | undefined,
-          ...(input.model ? { model: input.model as string } : {}), current: false };
+          ...(Array.isArray(input.models) ? { models: input.models as string[] } : {}), current: false };
       connectionsOf(input.providerId as string).push(connection);
       return { success: true, data: connection };
     },
+    // 宿主读这个地址的模型清单(#2507 第 6 轮)。
+    listConnectionModels: async () => ({ success: true, data: { kind: 'listed', models: ['qwen3-coder-plus', 'qwen3-max'] } }),
     removeConnection: async ({ providerId, connectionId }: { providerId?: string; connectionId: string }) => {
       control.removed.push(connectionId);
       const list = connectionsOf(providerId);
@@ -419,12 +421,18 @@ it('a Qwen row adds an API key connection with address and model and switches to
   expect(form.querySelector('input[name="apiKey"]')).not.toBeNull();
   expect(form.querySelector('input[type="checkbox"]')).toBeNull();
   expect(form.querySelector('input[name="endpoint"]')?.hasAttribute('required')).toBe(true);
-  expect(form.querySelector('input[name="model"]')?.hasAttribute('required')).toBe(true);
+  // 模型 ❌ 一个必填文本框:从地址读清单、多选(#2507 第 6 轮)。
+  expect(form.querySelector('input[name="model"]')).toBeNull();
+  expect(form.querySelector('[data-testid="connection-models"]')).not.toBeNull();
   expect(form.textContent).toContain('This address must support the OpenAI Chat Completions API');
 
-  (form.querySelector('input[name="apiKey"]') as HTMLInputElement).value = 'test-api-key';
-  (form.querySelector('input[name="endpoint"]') as HTMLInputElement).value = 'https://dashscope.example/v1';
-  (form.querySelector('input[name="model"]') as HTMLInputElement).value = 'qwen3-coder-plus';
+  await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'test-api-key');
+  await userEvent.fill(page.getByRole('textbox', { name: 'API address', exact: true }), 'https://dashscope.example/v1');
+  const models = page.getByRole('combobox', { name: 'Models', exact: true });
+  await expect.element(models).toBeEnabled();
+  await userEvent.click(models);
+  await userEvent.click(page.getByRole('option', { name: 'qwen3-coder-plus', exact: true }));
+  await until('the model is ticked', () => form.querySelector('[data-slot="combobox-chip"]')?.textContent === 'qwen3-coder-plus');
   form.requestSubmit();
   // 当前是「没有」:存好的这一把直接成为当前连接(走切换那条路),❌ 再让人去列表里选一次。
   await until('the saved key becomes the current connection', () => control.selected === 'api-1');
@@ -433,7 +441,7 @@ it('a Qwen row adds an API key connection with address and model and switches to
     kind: 'api-key',
     apiKey: 'test-api-key',
     endpoint: 'https://dashscope.example/v1',
-    model: 'qwen3-coder-plus',
+    models: ['qwen3-coder-plus'],
   });
   await until('the select names the new key', () => switchTrigger('qwen')?.textContent === 'Saved API');
   await openSwitch('qwen');
@@ -547,16 +555,17 @@ it('Gugu Free shares the same collection and membership errors are never shown a
   expect(thrown).toEqual([]);
 });
 
-it('adds a third-party API and explicitly switches the connection without opening Agent creation', async () => {
+it('adds a relay API over the prefilled official address and explicitly switches the connection without opening Agent creation', async () => {
   root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
   await until('the add action is ready', () => addButton('claude') !== null);
   addButton('claude')!.click();
   await until('connection method choices are visible', () => [...host.querySelectorAll('button')].some(b => b.textContent === 'API Key'));
   ([...host.querySelectorAll('button')].find(b => b.textContent === 'API Key') as HTMLButtonElement).click();
   await until('API form is visible', () => host.querySelector('input[name="apiKey"]') !== null);
-  expect(host.querySelector('input[name="endpoint"]')).toBeNull();
-  (host.querySelector('.subscription-connection-form input[type="checkbox"]') as HTMLInputElement).click();
-  await until('third-party endpoint is exposed', () => host.querySelector('input[name="endpoint"]') !== null);
+  // 地址 + Key 是主体(owner 2026-11-12):地址一直摆着、一开始就是 Anthropic 官方地址;❌「使用第三方 API」勾选。中转就改掉它。
+  expect(host.querySelector('.subscription-connection-form input[type="checkbox"]')).toBeNull();
+  expect((host.querySelector('input[name="endpoint"]') as HTMLInputElement).value).toBe('https://api.anthropic.com');
+  expect(host.querySelector('input[name="endpoint"]')?.hasAttribute('required')).toBe(false);
   (host.querySelector('input[name="apiKey"]') as HTMLInputElement).value = 'test-api-key';
   (host.querySelector('input[name="endpoint"]') as HTMLInputElement).value = 'https://gateway.example/v1';
   (host.querySelector('.subscription-connection-form') as HTMLFormElement).requestSubmit();

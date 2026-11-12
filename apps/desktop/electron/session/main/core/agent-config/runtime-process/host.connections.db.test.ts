@@ -218,3 +218,31 @@ it('removing a connection that is not current switches nothing', async () => {
   expect(await host.removeConnection({ providerId: 'mimocode', connectionId: 'native' })).toMatchObject({ success: false });
   expect(state.switches).toEqual([]);
 });
+
+it('the model list is read by the host (the key goes only to the address) and models change in place', async () => {
+  const { createServer } = await import('node:http');
+  const seen: Array<string | undefined> = [];
+  const relay = createServer((req, res) => {
+    seen.push(req.headers.authorization);
+    res.writeHead(req.url === '/v1/models' ? 200 : 404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(req.url === '/v1/models' ? { data: [{ id: 'm-2' }, { id: 'm-1' }] } : {}));
+  });
+  await new Promise<void>((resolve) => relay.listen(0, '127.0.0.1', resolve));
+  const endpoint = `http://127.0.0.1:${(relay.address() as { port: number }).port}/v1`;
+  try {
+    expect(await host.listConnectionModels({ providerId: 'qwen', apiKey: 'qwen-secret', endpoint })).toEqual({
+      success: true,
+      data: { kind: 'listed', models: ['m-1', 'm-2'] },
+    });
+    expect(seen).toEqual(['Bearer qwen-secret']);
+    const created = await createHarnessConnection({ providerId: 'qwen', kind: 'api-key', apiKey: 'qwen-secret', endpoint, models: ['m-1'] });
+    expect(await host.updateConnectionModels({ providerId: 'qwen', connectionId: created.id, models: ['m-1', 'm-2'] })).toMatchObject({
+      success: true,
+      data: { id: created.id, models: ['m-1', 'm-2'] },
+    });
+    // 不点名模型的家没有这一格:答一条失败,❌ 抛出去。
+    expect(await host.listConnectionModels({ providerId: 'mimocode', apiKey: 'k' })).toMatchObject({ success: false });
+  } finally {
+    await new Promise((resolve) => relay.close(resolve));
+  }
+});

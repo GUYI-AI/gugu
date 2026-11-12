@@ -27,7 +27,7 @@ import { systemProxyFill } from '@main/utils/systemProxyEnv';
 import { loginShellEnv } from '@main/utils/userEnv';
 import { err, ok, type Result } from '@gugu/session-shared';
 import type { AgentConfigAuthError } from '@gugu/session-core/workspace-server';
-import { createHarnessConnection, harnessHasConnections, harnessLoginConnectionId, listHarnessConnections, removeHarnessConnection, selectHarnessConnection, sessionHarnessConnectionId } from '@main/core/agents/harness-connections';
+import { createHarnessConnection, harnessHasConnections, harnessLoginConnectionId, listHarnessConnections, readConnectionModels, removeHarnessConnection, selectHarnessConnection, sessionHarnessConnectionId, updateHarnessConnectionModels } from '@main/core/agents/harness-connections';
 import { connectionFailure } from '@main/core/sessions/subscription-sessions-busy';
 
 const AGENT_CONFIG_WIRE_CHANNEL = 'agent-config-wire';
@@ -214,6 +214,9 @@ export function withHostResolvedCli(
     },
     listConnections: (input) => connectionOperation(() => listHarnessConnections(input.providerId)),
     createConnection: (input) => connectionOperation(() => createHarnessConnection(input)),
+    // 读模型清单在宿主里做:key 只发给那个地址本身(#2507)。
+    listConnectionModels: (input) => connectionOperation(() => readConnectionModels(input)),
+    updateConnectionModels: ({ models, ...input }) => connectionOperation(() => updateHarnessConnectionModels(input.providerId, input.connectionId, models)),
     removeConnection: ({ stopBusySessions, ...input }) => connectionOperation(async () => {
       // 按原生解析取这份 env:❌ 解开要删的那把 key(它解不开时也得删得掉)。
       const nativeEnv = (await runContextFor({ providerId: input.providerId, connectionId: 'native' })).env;

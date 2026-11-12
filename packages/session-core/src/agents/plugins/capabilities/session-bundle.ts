@@ -1155,6 +1155,14 @@ export interface SessionModelCapability {
    */
   providerName?: string
   /**
+   * The interface the provider block speaks, when it is not the harness's declared platform `wireProtocol`.
+   *
+   * Set only for an API key connection (#2507) whose address was probed at creation: many relays speak Chat
+   * Completions but not Responses, and pi (`api`) / opencode (provider package) can write either. Absent = the
+   * harness's platform protocol, byte-for-byte as before.
+   */
+  wireProtocol?: 'openai-responses' | 'openai-chat-completions'
+  /**
    * Every Gugu model this session may run on, for harnesses whose own model picker we
    * populate.
    *

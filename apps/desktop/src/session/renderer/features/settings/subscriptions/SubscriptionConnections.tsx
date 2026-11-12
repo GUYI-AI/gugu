@@ -51,6 +51,7 @@ import {
 import { NEARLY_USED_PERCENT, payerLine, windowLabel } from './subscription-view'
 import { nativeConfigured, useConnectionDetails, useListedConnections } from './listed-connections'
 import { SwitchNoticeLine } from './SwitchNoticeLine'
+import { ConnectionModelPicker, modelsLine } from './ConnectionModelPicker'
 import { SegmentedTabs } from '@/components/ui/SegmentedTabs'
 import './subscriptions.css'
 
@@ -368,6 +369,8 @@ export function SubscriptionConnections({
       )}
     </Button>
   )
+  // 「管理模型」的弹窗挂在菜单外面:菜单一关,里面的行就卸了。
+  const [managing, setManaging] = useState<HarnessConnection | null>(null)
   const options = (selectItem: boolean) =>
     listed?.map((connection) => (
       <ConnectionOption
@@ -379,6 +382,14 @@ export function SubscriptionConnections({
         selectItem={selectItem}
         onSignIn={canSignIn ? () => signIn(connection.id) : undefined}
         onRemove={() => action.mutate({ kind: 'remove', id: connection.id })}
+        {...(connection.kind === 'api-key' && form?.model === 'required'
+          ? {
+              onManageModels: () => {
+                setOpen(false)
+                setManaging(connection)
+              }
+            }
+          : {})}
       />
     ))
   return (
@@ -508,7 +519,130 @@ export function SubscriptionConnections({
           <DialogContentArea>{connectionForm}</DialogContentArea>
         </DialogContent>
       </Dialog>
+      <ManageModelsDialog
+        agent={agent}
+        machine={machine}
+        connection={managing}
+        onClose={() => setManaging(null)}
+        onSaved={async (connection) => {
+          refresh()
+          setManaging(null)
+          // 正在用的就是它:新建任务的模型菜单照新的几个重读。
+          if (connection.current) await forceRefreshHarnessModelCatalog(queryClient, agent.id, 'acp', machine)
+        }}
+      />
     </>
+  )
+}
+
+/**
+ * 「管理模型」(#2507):换一把已存连接点名的模型,与新建时同一个选择器;清单由宿主拿这把连接自己的 key 读。
+ * 订阅页那一行与面板(新建任务、会话)都从连接的 ⋯ 打开它。
+ */
+function ManageModelsDialog({
+  agent,
+  machine,
+  connection,
+  onClose,
+  onSaved
+}: {
+  agent: AgentPayload
+  machine: string | null
+  connection: HarnessConnection | null
+  onClose: () => void
+  onSaved: (connection: HarnessConnection) => Promise<void>
+}) {
+  const { translate } = useSessionMessages()
+  return (
+    <Dialog open={connection !== null} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>
+            {translate('subscriptions.connections.manageModelsTitle', { name: connection?.name ?? '' })}
+          </DialogTitle>
+        </DialogHeader>
+        <DialogContentArea>
+          {connection && (
+            <ManageModelsForm
+              key={connection.id}
+              agent={agent}
+              machine={machine}
+              connection={connection}
+              onCancel={onClose}
+              onSaved={onSaved}
+            />
+          )}
+        </DialogContentArea>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ManageModelsForm({
+  agent,
+  machine,
+  connection,
+  onCancel,
+  onSaved
+}: {
+  agent: AgentPayload
+  machine: string | null
+  connection: HarnessConnection
+  onCancel: () => void
+  onSaved: (connection: HarnessConnection) => Promise<void>
+}) {
+  const { translate } = useSessionMessages()
+  const [models, setModels] = useState<string[]>(connection.models ?? [])
+  const [missing, setMissing] = useState(false)
+  const save = useMutation({
+    mutationFn: async () => {
+      const result = await (
+        await getAgentConfigRuntimeClient(machine)
+      ).updateConnectionModels({ providerId: agent.id, connectionId: connection.id, models })
+      if (!result.success) throw new Error(errorText(result.error))
+      return result.data
+    },
+    onSuccess: onSaved
+  })
+  return (
+    <form
+      className="subscription-connection-form"
+      data-testid="connection-models-form"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (models.length === 0) setMissing(true)
+        else save.mutate()
+      }}
+    >
+      <ConnectionModelPicker
+        machine={machine}
+        providerId={agent.id}
+        source={{ connectionId: connection.id }}
+        value={models}
+        onChange={(next) => {
+          setModels(next)
+          if (next.length > 0) setMissing(false)
+        }}
+      />
+      {missing && (
+        <p className="subscription-error" role="alert">
+          {translate('subscriptions.connections.modelsRequired')}
+        </p>
+      )}
+      {save.error && (
+        <p className="subscription-error" role="alert">
+          {errorText(save.error)}
+        </p>
+      )}
+      <div className="subscription-connection-form-actions">
+        <Button type="submit" size="sm" disabled={save.isPending}>
+          {save.isPending ? translate('subscriptions.connections.saving') : translate('subscriptions.connections.saveModels')}
+        </Button>
+        <Button type="button" size="sm" variant="outline" disabled={save.isPending} onClick={onCancel}>
+          {translate('agentsPage.cancel')}
+        </Button>
+      </div>
+    </form>
   )
 }
 
@@ -520,6 +654,7 @@ function ConnectionOption({
   busy,
   onRemove,
   onSignIn,
+  onManageModels,
   selectItem = false
 }: {
   connection: HarnessConnection
@@ -529,6 +664,8 @@ function ConnectionOption({
   selectItem?: boolean
   onRemove: () => void
   onSignIn?: () => void
+  /** 点名模型的家的 API Key 连接才有:换它的模型,❌ 删了重加。 */
+  onManageModels?: () => void
 }) {
   const { translate } = useSessionMessages()
   const details = useConnectionDetails(machine, agent.id, connection.id)
@@ -563,7 +700,7 @@ function ConnectionOption({
             connection.endpoint
               ? new URL(connection.endpoint).host
               : translate('subscriptions.connections.officialApi'),
-            connection.model
+            modelsLine(connection.models, translate)
           ]
             .filter(Boolean)
             .join(' · ')
@@ -582,6 +719,11 @@ function ConnectionOption({
       {canSignIn && (
         <DropdownMenuItem disabled={busy} onClick={onSignIn}>
           {translate('subscriptions.connections.signIn')}
+        </DropdownMenuItem>
+      )}
+      {onManageModels && (
+        <DropdownMenuItem disabled={busy} onClick={onManageModels}>
+          {translate('subscriptions.connections.manageModels')}
         </DropdownMenuItem>
       )}
       <DropdownMenuItem disabled={busy} variant="destructive" onClick={onRemove}>
@@ -657,6 +799,11 @@ function ConnectionOption({
                   {translate('subscriptions.connections.signIn')}
                 </DropdownMenuItem>
               )}
+              {onManageModels && (
+                <DropdownMenuItem disabled={busy} onClick={onManageModels}>
+                  {translate('subscriptions.connections.manageModels')}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem disabled={busy} variant="destructive" onClick={onRemove}>
                 {translate('subscriptions.connections.remove')}
               </DropdownMenuItem>
@@ -705,14 +852,26 @@ function ConnectionForm({
   const [kind, setKind] = useState<'account' | 'api-key'>(account || !apiKey ? 'account' : 'api-key')
   // 登它 CLI 自己那一份:不存连接、不起名，直接是那个登录窗口。
   const cliAccount = kind === 'account' && account === 'cli'
-  const [thirdParty, setThirdParty] = useState(false)
-  // 地址:可选的家勾「第三方」才出;必填的家直接摆出来(#2507,格子照这家的声明)。
+  // 地址 + Key 是主体(owner 2026-11-12):有地址格的家一律摆出来,一开始就填好这家的官方地址(真值,❌ 占位);
+  // 用中转就改掉它。官方那一个没改 ⇒ 宿主不记地址,处处读作「官方」。
   const endpointField = form?.endpoint ?? 'none'
-  const showEndpoint = endpointField === 'required' || (endpointField === 'optional' && thirdParty)
+  const showEndpoint = endpointField !== 'none'
   const showModel = form?.model === 'required'
+  const official = form?.officialEndpoint ?? ''
+  const [apiKeyText, setApiKeyText] = useState('')
+  const [endpointText, setEndpointText] = useState(official)
+  const [models, setModels] = useState<string[]>([])
+  const [modelsMissing, setModelsMissing] = useState(false)
+  const endpointValue = endpointText.trim()
+  // 模型清单照这把 key 和这个地址读(宿主里读);地址还不成形就先不读。
+  const modelSource =
+    showModel && apiKeyText.trim() && (!showEndpoint || isEndpointUrl(endpointValue))
+      ? { apiKey: apiKeyText.trim(), ...(showEndpoint && endpointValue ? { endpoint: endpointValue } : {}) }
+      : null
   const create = useMutation({
     mutationFn: async (element: HTMLFormElement) => {
       const data = new FormData(element)
+      const endpoint = String(data.get('endpoint') ?? '').trim()
       const result = await (
         await getAgentConfigRuntimeClient(machine)
       ).createConnection({
@@ -722,13 +881,17 @@ function ConnectionForm({
         ...(kind === 'api-key'
           ? {
               apiKey: String(data.get('apiKey') ?? '').trim(),
-              ...(showEndpoint ? { endpoint: String(data.get('endpoint') ?? '').trim() } : {}),
-              ...(showModel ? { model: String(data.get('model') ?? '').trim() } : {})
+              // 原样交给宿主:是不是官方由宿主判(同一个值),❌ 在这里先替它删。
+              ...(showEndpoint && endpoint ? { endpoint } : {}),
+              ...(showModel ? { models } : {})
             }
           : {})
       })
       if (!result.success) throw new Error(errorText(result.error))
       element.reset()
+      setApiKeyText('')
+      setEndpointText(official)
+      setModels([])
       return result.data
     },
     onSuccess: onCreated
@@ -739,6 +902,7 @@ function ConnectionForm({
       onSubmit={(event) => {
         event.preventDefault()
         if (cliAccount) onCliSignIn()
+        else if (kind === 'api-key' && showModel && models.length === 0) setModelsMissing(true)
         else create.mutate(event.currentTarget)
       }}
       // 与「来源 → 自定义路径」那格一样:Esc 收起。
@@ -771,30 +935,29 @@ function ConnectionForm({
               autoComplete="off"
               spellCheck={false}
               placeholder="sk-…"
+              // 换「账号 | API Key」再换回来:填过的还在(模型清单照它读)。
+              defaultValue={apiKeyText}
+              onChange={(event) => setApiKeyText(event.target.value)}
             />
           </label>
-          {endpointField === 'optional' && (
-            <label className="subscription-checkbox">
-              <input
-                type="checkbox"
-                checked={thirdParty}
-                onChange={(event) => setThirdParty(event.target.checked)}
-              />
-              {translate('subscriptions.connections.thirdParty')}
-            </label>
-          )}
           {showEndpoint && (
             <label>
               {translate('subscriptions.connections.endpoint')}
               <Input
                 name="endpoint"
                 type="url"
-                required
-                placeholder={endpointPlaceholder(agent.id, form?.protocol)}
+                // 可选的家(Claude / Codex)清空 = 官方;离了地址起不来的家必填。
+                required={endpointField === 'required'}
+                defaultValue={endpointText}
+                placeholder={official ? undefined : endpointPlaceholder(agent.id, form?.protocol)}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => setEndpointText(event.target.value)}
               />
             </label>
           )}
-          {showEndpoint && form?.protocol && (
+          {/* 宿主按地址探接口的家(pi / opencode)❌ 再说「地址须支持某某接口」:它讲哪种就用哪种。 */}
+          {showEndpoint && form?.protocol && !form.protocolDetected && (
             <p className="subscription-connection-description">
               {translate('subscriptions.connections.protocolHint', {
                 protocol: PROTOCOL_NAMES[form.protocol]
@@ -802,10 +965,21 @@ function ConnectionForm({
             </p>
           )}
           {showModel && (
-            <label>
-              {translate('subscriptions.connections.model')}
-              <Input name="model" required autoComplete="off" spellCheck={false} />
-            </label>
+            <ConnectionModelPicker
+              machine={machine}
+              providerId={agent.id}
+              source={modelSource}
+              value={models}
+              onChange={(next) => {
+                setModels(next)
+                if (next.length > 0) setModelsMissing(false)
+              }}
+            />
+          )}
+          {showModel && modelsMissing && (
+            <p className="subscription-error" role="alert">
+              {translate('subscriptions.connections.modelsRequired')}
+            </p>
           )}
         </>
       ) : (
@@ -864,7 +1038,16 @@ const PROTOCOL_NAMES: Record<NonNullable<AgentConnectionForm['protocol']>, strin
   'gemini-generate-content': 'Gemini'
 }
 
-/** Claude 的地址是裸根、Codex 带 `/v1`(与之前一样);其余家照它要讲的接口:OpenAI 那两种带 `/v1`。 */
+/** 地址成不成形(宿主那边要的是一个 http(s) URL):没成形就先不去读模型清单。 */
+function isEndpointUrl(value: string): boolean {
+  try {
+    return ['http:', 'https:'].includes(new URL(value).protocol)
+  } catch {
+    return false
+  }
+}
+
+/** 没有官方地址可填的家才有占位(例子)。Claude 的地址是裸根、Codex 带 `/v1`;其余家照它要讲的接口:OpenAI 那两种带 `/v1`。 */
 function endpointPlaceholder(providerId: string, protocol: AgentConnectionForm['protocol']): string {
   if (providerId === 'codex') return 'https://api.example.com/v1'
   if (protocol === 'openai-chat-completions' || protocol === 'openai-responses') return 'https://api.example.com/v1'

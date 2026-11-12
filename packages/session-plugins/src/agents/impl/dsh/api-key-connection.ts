@@ -12,6 +12,8 @@ import type { ApiKeyConnectionDescriptor, IApiKeyConnectionBehavior } from '@gug
 export const dshApiKeyConnection = {
   kind: 'supported',
   endpoint: 'optional',
+  // DeepSeek 自己的 Anthropic 兼容地址(api-docs.deepseek.com 的 Anthropic API 指引);不改它 = 不给 DEEPSEEK_BASE_URL,dsh 用它自带的。
+  officialEndpoint: 'https://api.deepseek.com/anthropic',
   model: 'none',
   protocol: 'anthropic-messages',
   evidence:

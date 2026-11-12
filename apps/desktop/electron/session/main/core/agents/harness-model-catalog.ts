@@ -263,7 +263,8 @@ export type ProbePlatformCredentials = {
    * 只有连接那一趟给(#2507):这条会话跑的模型(按这家目录的叫法)。目录里没报它就补上,并选中它;
    * `only` = 这家把任何模型的请求都送到连接地址,别的名字选了也是错的 ⇒ 清单只留它。
    */
-  sessionModel?: { id: string; only: boolean };
+  /** `others`:连接点名的其余模型(#2507,一把连接可以点名好几个);`only` 时清单就是 id + others。 */
+  sessionModel?: { id: string; only: boolean; others?: readonly string[] };
   /** 只有连接那一趟给(#2507):连接的模型在输入框里叫什么 —— 只叫模型名(见 `withConnectionModelName`)。 */
   modelName?: string;
 };
@@ -982,9 +983,10 @@ export async function probeHarnessModelCatalog(
 /** 连接那一趟:会话跑的模型这家目录里没报(CodeBuddy 只报自家目录)⇒ 补上并选中;`only` 时清单只留它。 */
 function withSessionModel(state: HarnessCatalogState, sessionModel: ProbePlatformCredentials['sessionModel']): HarnessCatalogState {
   if (!sessionModel || state.kind !== 'ready') return state;
-  const listed = state.models.find((choice) => choice.id === sessionModel.id) ?? { id: sessionModel.id, name: sessionModel.id };
-  const others = sessionModel.only ? [] : state.models.filter((choice) => choice.id !== sessionModel.id);
-  return { ...state, models: [listed, ...others], selected: sessionModel.id };
+  const entry = (id: string) => state.models.find((choice) => choice.id === id) ?? { id, name: id };
+  const named = [sessionModel.id, ...(sessionModel.others ?? []).filter((id) => id !== sessionModel.id)];
+  const others = sessionModel.only ? [] : state.models.filter((choice) => !named.includes(choice.id));
+  return { ...state, models: [...named.map(entry), ...others], selected: sessionModel.id };
 }
 
 /**

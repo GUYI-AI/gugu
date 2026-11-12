@@ -1,3 +1,4 @@
+import { OPENAI_OFFICIAL_ENDPOINT } from '@gugu/session-core/agents/plugins';
 import type { ApiKeyConnectionDescriptor, IApiKeyConnectionBehavior } from '@gugu/session-core/agents/plugins';
 import { harnessPlatform } from './platform';
 import { hermesPlatformEnv } from './session-bundle';
@@ -13,6 +14,7 @@ import { hermesPlatformEnv } from './session-bundle';
 export const hermesApiKeyConnection = {
   kind: 'supported',
   endpoint: 'required',
+  officialEndpoint: OPENAI_OFFICIAL_ENDPOINT,
   model: 'required',
   protocol: harnessPlatform.wireProtocol,
   evidence:

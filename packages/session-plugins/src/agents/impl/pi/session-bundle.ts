@@ -1,4 +1,4 @@
-import { harnessPlatform, PI_PROVIDER_API } from './platform';
+import { harnessPlatform, piProviderApi } from './platform';
 import { join } from 'node:path';
 import type {
   CapabilityPackage,
@@ -372,14 +372,14 @@ function modelArtifact(
       providers: {
         [piProviderId(model)]: {
           name: model.providerName || 'Gugu platform quota',
-          api: PI_PROVIDER_API,
+          api: piProviderApi(model.wireProtocol),
           baseUrl: model.platformProvider.baseUrl,
           apiKey: '${GUGU_PI_API_KEY}',
           authHeader: true,
           models: entries.map((entry) => ({
             id: entry.id,
             name: entry.name,
-            api: PI_PROVIDER_API,
+            api: piProviderApi(model.wireProtocol),
             // pi `docs/models.md` 的模型字段表:`reasoning` 缺省 **false** = 「不支持扩展思考」。
             // 而 pi 把它当**硬门**:`model.reasoning` 为假时,`setThinkingLevel` 会被它自己钉回
             // `off`(2026-09-13 实测:逐档设、read_back 恒 "off"、上游请求体里根本没有

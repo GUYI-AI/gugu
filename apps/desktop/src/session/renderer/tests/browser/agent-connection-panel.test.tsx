@@ -27,6 +27,10 @@ const control = vi.hoisted(() => ({
   hold: null as Promise<void> | null,
   connections: [] as HarnessConnection[],
   created: null as Record<string, unknown> | null,
+  /** 宿主读 `{地址}/models` 的答复;缺席时答「这个地址不报清单」(表单退回手填)。 */
+  modelList: null as { kind: 'listed'; models: string[] } | null,
+  modelReads: [] as Record<string, unknown>[],
+  updatedModels: null as Record<string, unknown> | null,
   selected: '',
   rejectSelect: false,
   busy: false,
@@ -40,9 +44,21 @@ function agent(id: string): AgentPayload {
   const login = id === 'pi' || id === 'amp'
     ? { kind: 'none' }
     : { kind: 'supported', methods: [{ kind: 'cli-login', id: `${id}-login`, name: id, args: ['login'] }] }
-  const apiKeyConnection = id === 'pi' || id === 'opencode'
-    ? { kind: 'supported', endpoint: id === 'pi' ? 'required' : 'none', model: id === 'pi' ? 'required' : 'none', protocol: id === 'pi' ? 'openai-chat-completions' : undefined, evidence: 'test' }
-    : { kind: 'none' }
+  // Pi 的声明照它真的那份(#2507 第 6 轮):官方地址预填、模型从地址读、接口由宿主按地址探。
+  const apiKeyConnection = id === 'pi'
+    ? {
+        kind: 'supported',
+        delivery: 'model-injection',
+        endpoint: 'required',
+        officialEndpoint: 'https://api.openai.com/v1',
+        model: 'required',
+        protocol: 'openai-responses',
+        protocols: ['openai-responses', 'openai-chat-completions'],
+        evidence: 'test'
+      }
+    : id === 'opencode'
+      ? { kind: 'supported', endpoint: 'none', model: 'none', evidence: 'test' }
+      : { kind: 'none' }
   return {
     id,
     name: NAMES[id] ?? id,
@@ -103,12 +119,22 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
       success: true,
       data: { kind: 'unavailable', reason: 'not-signed-in' }
     }),
+    listConnectionModels: async (input: Record<string, unknown>) => {
+      control.modelReads.push(input)
+      return { success: true, data: control.modelList ?? { kind: 'unlisted', reason: 'no-list' } }
+    },
+    updateConnectionModels: async (input: { connectionId: string; models: string[] }) => {
+      control.updatedModels = input
+      control.connections = control.connections.map((c) => (c.id === input.connectionId ? { ...c, models: input.models } : c))
+      return { success: true, data: control.connections.find((c) => c.id === input.connectionId)! }
+    },
     createConnection: async (input: Record<string, unknown>) => {
       control.created = input
       const created: HarnessConnection = {
         id: 'api',
         kind: 'api-key',
         name: 'Saved API',
+        ...(Array.isArray(input.models) ? { models: input.models as string[] } : {}),
         current: false
       }
       control.connections.push(created)
@@ -182,6 +208,9 @@ beforeEach(() => {
   control.payer = 'not-signed-in'
   control.hold = null
   control.created = null
+  control.modelList = null
+  control.modelReads = []
+  control.updatedModels = null
   control.selected = ''
   control.rejectSelect = false
   control.busy = false
@@ -226,12 +255,11 @@ it.each([1440, 390])(
       .toBeVisible()
     await userEvent.click(page.getByRole('tab', { name: 'API Key', exact: true }))
     await expect.element(page.getByLabelText('API Key', { exact: true })).toBeVisible()
-    await userEvent.click(
-      page.getByRole('checkbox', { name: 'Use a third-party API', exact: true })
-    )
+    // 地址 + Key 是主体:地址一直摆着,一开始就是官方地址;❌「使用第三方 API」勾选。
+    expect(document.querySelector('.subscription-connection-form input[type="checkbox"]')).toBeNull()
     await expect
       .element(page.getByRole('textbox', { name: 'API address', exact: true }))
-      .toBeVisible()
+      .toHaveValue('https://api.openai.com/v1')
     await expect
       .element(page.getByRole('button', { name: 'Save connection', exact: true }))
       .toBeVisible()
@@ -363,7 +391,7 @@ it.each(['codex', 'pi'])('with nothing configured, %s Go sign in opens Add conne
   await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')
   if (id === 'pi') {
     await userEvent.fill(page.getByRole('textbox', { name: 'API address', exact: true }), 'https://gateway.example/v1')
-    await userEvent.fill(page.getByRole('textbox', { name: 'Model', exact: true }), 'fixture-model')
+    await userEvent.fill(page.getByRole('textbox', { name: 'Models', exact: true }), 'fixture-model')
   }
   await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
   // 当前是「没有」:存好的这一把直接成为当前连接(走切换那条路),❌ 再让人去菜单里选一次。
@@ -554,10 +582,10 @@ it('Pi detail has the Connections section: with nothing configured it says None 
   expect(document.querySelector('[data-testid="subscription-add-pi"]')).toBeNull()
   await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')
   await userEvent.fill(page.getByRole('textbox', { name: 'API address', exact: true }), 'https://gateway.example/v1')
-  await userEvent.fill(page.getByRole('textbox', { name: 'Model', exact: true }), 'fixture-model')
+  await userEvent.fill(page.getByRole('textbox', { name: 'Models', exact: true }), 'fixture-model')
   await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
   await until('the key is saved', () => control.created !== null)
-  expect(control.created).toMatchObject({ providerId: 'pi', kind: 'api-key', apiKey: 'fixture-key', endpoint: 'https://gateway.example/v1', model: 'fixture-model' })
+  expect(control.created).toMatchObject({ providerId: 'pi', kind: 'api-key', apiKey: 'fixture-key', endpoint: 'https://gateway.example/v1', models: ['fixture-model'] })
   // 当前是「没有」:加上的第一把直接成为当前连接,选择框写它。
   await until('the new key is the current connection', () => control.selected === 'api')
   const connection = detail.getByRole('combobox', { name: 'Current connection', exact: true })
@@ -579,7 +607,7 @@ it('adding a key while another key is current keeps the current one', async () =
   await userEvent.click(detail.getByRole('button', { name: 'Add', exact: true }))
   await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')
   await userEvent.fill(page.getByRole('textbox', { name: 'API address', exact: true }), 'https://gateway.example/v1')
-  await userEvent.fill(page.getByRole('textbox', { name: 'Model', exact: true }), 'fixture-model')
+  await userEvent.fill(page.getByRole('textbox', { name: 'Models', exact: true }), 'fixture-model')
   await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
   await until('the key is saved', () => control.created !== null)
   await until('the form closes', () => !document.querySelector('.subscription-connection-form'))
@@ -606,7 +634,7 @@ it('the first key added while a session is busy is kept but not switched until C
   await userEvent.click(detail.getByRole('button', { name: 'Add', exact: true }))
   await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')
   await userEvent.fill(page.getByRole('textbox', { name: 'API address', exact: true }), 'https://gateway.example/v1')
-  await userEvent.fill(page.getByRole('textbox', { name: 'Model', exact: true }), 'fixture-model')
+  await userEvent.fill(page.getByRole('textbox', { name: 'Models', exact: true }), 'fixture-model')
   await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
   await until('the switch is refused with a way out', () => !!document.querySelector('[data-testid="subscription-close-and-switch"]'))
   expect(control.connections.map((c) => [c.id, c.current])).toEqual([['native', true], ['api', false]])
@@ -802,4 +830,121 @@ it('a task on another machine signs in that machine\'s own CLI from Add connecti
   } finally {
     runInAction(() => remoteHostsStore.hosts.delete('dev-walk'))
   }
+})
+
+// #2507 第 6 轮(owner 2026-11-12):「地址 + Key 是主体:官方和中转一视同仁」「默认是官方地址 …… 一开始就写上」
+// 「这里的模型不是可选的吗?…如果多个模型那?」—— Pi 的地址格一开始就是官方地址,宿主按地址探接口所以没有「要支持某某接口」
+// 那一行;填好 key,宿主读这个地址的模型清单,带搜索多选,至少勾一个,存的是几个模型。
+it('Pi starts on the official address and ticks several models the address lists', async () => {
+  control.connections = [{ id: 'native', kind: 'native', name: '', current: true }]
+  control.modelList = { kind: 'listed', models: ['gpt-5.5', 'gpt-5.5-mini', 'o4'] }
+  render(<AgentDetailModal agentId="pi" onClose={vi.fn()} />)
+  const detail = page.getByRole('dialog', { name: 'Pi', exact: true })
+  await until('Pi reads no connection', () => !!document.querySelector('[data-testid="subscription-no-connection-pi"]'))
+  await userEvent.click(detail.getByRole('button', { name: 'Add', exact: true }))
+  await expect.element(page.getByRole('textbox', { name: 'API address', exact: true })).toHaveValue('https://api.openai.com/v1')
+  const form = document.querySelector('.subscription-connection-form')!
+  expect(form.querySelector('input[type="checkbox"]')).toBeNull()
+  expect(form.textContent).not.toContain('must support')
+  // 没填 key 之前不读:那一格说先填 key。
+  expect(control.modelReads).toEqual([])
+  expect(page.getByRole('combobox', { name: 'Models', exact: true }).element().getAttribute('placeholder')).toBe(
+    'Fill in the key and address to read the models'
+  )
+  await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')
+  await until('the host reads the address’s models with this key', () => control.modelReads.length > 0)
+  expect(control.modelReads.at(-1)).toEqual({ providerId: 'pi', apiKey: 'fixture-key', endpoint: 'https://api.openai.com/v1' })
+  const models = page.getByRole('combobox', { name: 'Models', exact: true })
+  await expect.element(models).toBeEnabled()
+  // 一个都没勾就存:说一句,❌ 存。
+  await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
+  await expect.element(page.getByText('Pick at least one model', { exact: true })).toBeVisible()
+  expect(control.created).toBeNull()
+  // 搜索:打字只剩匹配的那几条。
+  await userEvent.click(models)
+  await userEvent.keyboard('mini')
+  await until('the list narrows to the match', () =>
+    [...document.querySelectorAll('[data-slot="combobox-item"]')].map((item) => item.textContent).join('|') === 'gpt-5.5-mini')
+  await userEvent.click(page.getByRole('option', { name: 'gpt-5.5-mini', exact: true }))
+  // 换一个搜索词再勾一个。
+  await userEvent.clear(models)
+  await userEvent.keyboard('o4')
+  await userEvent.click(page.getByRole('option', { name: 'o4', exact: true }))
+  await until('two models are ticked', () =>
+    [...form.querySelectorAll('[data-slot="combobox-chip"]')].map((chip) => chip.textContent).join('|') === 'gpt-5.5-mini|o4')
+  expect(page.getByText('Pick at least one model', { exact: true }).query()).toBeNull()
+  // Esc 收起的是模型清单,❌ 连带把整张表单收掉(表单自己的 Esc = 取消)。
+  await userEvent.clear(models)
+  await userEvent.keyboard('gpt')
+  await until('the list is open', () => models.element().getAttribute('aria-expanded') === 'true')
+  await userEvent.keyboard('{Escape}')
+  await until('the list closes', () => models.element().getAttribute('aria-expanded') === 'false')
+  expect(document.querySelector('.subscription-connection-form')).not.toBeNull()
+  await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
+  await until('the key is saved', () => control.created !== null)
+  // 地址原样交给宿主(是不是官方由宿主判)。
+  expect(control.created).toEqual({
+    providerId: 'pi',
+    kind: 'api-key',
+    apiKey: 'fixture-key',
+    endpoint: 'https://api.openai.com/v1',
+    models: ['gpt-5.5-mini', 'o4']
+  })
+  await until('the new key is the current connection', () => control.selected === 'api')
+})
+
+it('an address that lists no models says so in one line and takes several names by hand', async () => {
+  control.connections = [{ id: 'native', kind: 'native', name: '', current: true }]
+  render(<AgentDetailModal agentId="pi" onClose={vi.fn()} />)
+  const detail = page.getByRole('dialog', { name: 'Pi', exact: true })
+  await until('Pi reads no connection', () => !!document.querySelector('[data-testid="subscription-no-connection-pi"]'))
+  await userEvent.click(detail.getByRole('button', { name: 'Add', exact: true }))
+  await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')
+  await userEvent.fill(page.getByRole('textbox', { name: 'API address', exact: true }), 'https://relay.example/v1')
+  await until('the reason is said', () =>
+    document.querySelector('[data-testid="connection-models-unlisted"]')?.textContent === 'This address doesn’t list its models. Enter them yourself.')
+  expect(control.modelReads.at(-1)).toEqual({ providerId: 'pi', apiKey: 'fixture-key', endpoint: 'https://relay.example/v1' })
+  await userEvent.fill(page.getByRole('textbox', { name: 'Models', exact: true }), 'glm-5, kimi-k3  deepseek-v4,glm-5')
+  await userEvent.click(page.getByRole('button', { name: 'Save connection', exact: true }))
+  await until('the key is saved', () => control.created !== null)
+  expect(control.created).toMatchObject({ endpoint: 'https://relay.example/v1', models: ['glm-5', 'kimi-k3', 'deepseek-v4'] })
+})
+
+// 换模型 ❌ 删了重加:连接的 ⋯ 里「管理模型」,同一个选择器;清单由宿主拿这把连接自己的 key 读。
+it('manage models changes a saved key’s models in place and the row lists them', async () => {
+  control.connections = [
+    { id: 'native', kind: 'native', name: '', current: false },
+    { id: 'key', kind: 'api-key', name: 'Relay', endpoint: 'https://relay.example/v1', models: ['glm-5'], current: true }
+  ]
+  control.modelList = { kind: 'listed', models: ['glm-5', 'kimi-k3', 'deepseek-v4'] }
+  render(<AgentDetailModal agentId="pi" onClose={vi.fn()} />)
+  const detail = page.getByRole('dialog', { name: 'Pi', exact: true })
+  const connection = detail.getByRole('combobox', { name: 'Current connection', exact: true })
+  await expect.element(connection).toBeEnabled()
+  await userEvent.click(connection)
+  await until('the key row is listed', () => !!document.querySelector('[data-testid="connection-key"]'))
+  expect(document.querySelector('[data-testid="connection-key"]')?.textContent).toContain('relay.example · glm-5')
+  await userEvent.click(page.getByRole('button', { name: 'Options for Relay', exact: true }))
+  await userEvent.click(page.getByRole('menuitem', { name: 'Manage models', exact: true }))
+  const dialog = page.getByRole('dialog', { name: 'Models of Relay', exact: true })
+  await expect.element(dialog).toBeVisible()
+  await until('the saved connection’s list is read by its id', () => control.modelReads.length > 0)
+  expect(control.modelReads.at(-1)).toEqual({ providerId: 'pi', connectionId: 'key' })
+  const chips = () => [...document.querySelectorAll('[data-testid="connection-models-form"] [data-slot="combobox-chip"]')].map((chip) => chip.textContent)
+  expect(chips()).toEqual(['glm-5'])
+  const models = dialog.getByRole('combobox', { name: 'Models', exact: true })
+  await expect.element(models).toBeEnabled()
+  await userEvent.click(models)
+  await userEvent.click(page.getByRole('option', { name: 'kimi-k3', exact: true }))
+  await userEvent.click(page.getByRole('option', { name: 'deepseek-v4', exact: true }))
+  await userEvent.keyboard('{Escape}')
+  await until('three models are ticked', () => chips().length === 3)
+  await userEvent.click(dialog.getByRole('button', { name: 'Save models', exact: true }))
+  await until('the models are saved in place', () => control.updatedModels !== null)
+  expect(control.updatedModels).toEqual({ providerId: 'pi', connectionId: 'key', models: ['glm-5', 'kimi-k3', 'deepseek-v4'] })
+  expect(control.created).toBeNull()
+  await until('the dialog closes', () => !document.querySelector('[data-testid="connection-models-form"]'))
+  await userEvent.click(detail.getByRole('combobox', { name: 'Current connection', exact: true }))
+  await until('the row lists the new models', () =>
+    document.querySelector('[data-testid="connection-key"]')?.textContent?.includes('relay.example · glm-5 +2') === true)
 })

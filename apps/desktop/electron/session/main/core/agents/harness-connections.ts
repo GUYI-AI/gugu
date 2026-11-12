@@ -5,14 +5,18 @@ import { app } from 'electron';
 import { eq } from 'drizzle-orm';
 import { pluginRegistry, requireNativeHome } from '@gugu/session-plugins/agents';
 import {
+  ACCOUNT_PROVIDER_OFFICIAL_ENDPOINTS,
+  apiKeyConnectionEndpoint,
   apiKeyConnectionInjectsModel,
   apiKeyConnectionInputError,
   type ApiKeyConnectionFields,
 } from '@gugu/session-core/agents/plugins';
 import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-context';
 import type {
+  ConnectionModelList,
   CreateHarnessConnection,
   HarnessConnection,
+  ListConnectionModels,
 } from '@gugu/session-core/workspace-server/agent-config';
 import { providerAccountRegistry as registry } from '@main/core/provider-accounts/provider-account-registry-instance';
 import { db } from '@main/db/client';
@@ -41,6 +45,7 @@ import {
   claudeApiKeyEnv,
   codexApiKeyConnectionArgs,
 } from './harness-connection-launch';
+import { detectEndpointProtocol, listEndpointModels } from './connection-endpoint-probe';
 
 /**
  * 订阅连接(#26,照 cockpit-tools):两家的会话都跑在用户自己的配置根上(`~/.claude` / `~/.codex`,
@@ -85,8 +90,56 @@ function supported(providerId: string): void {
   if (!harnessHasConnections(providerId)) throw new Error('Connection management is unavailable for this harness');
 }
 
-/** Claude / Codex 的 API 连接表单一直是:地址可选、没有模型格。 */
-const ACCOUNT_PROVIDER_API_FIELDS: Pick<ApiKeyConnectionFields, 'endpoint' | 'model'> = { endpoint: 'optional', model: 'none' };
+type ConnectionFields = Pick<ApiKeyConnectionFields, 'endpoint' | 'model' | 'officialEndpoint' | 'protocol' | 'protocols'>;
+
+/**
+ * 这一家 API Key 连接的格子。Claude / Codex:地址可选(预填官方地址)、没有模型格;其余家照它的声明。
+ */
+function connectionFields(providerId: string): ConnectionFields {
+  const generic = apiKeyConnectionOf(providerId);
+  if (generic) return generic.fields;
+  return {
+    endpoint: 'optional',
+    model: 'none',
+    officialEndpoint: ACCOUNT_PROVIDER_OFFICIAL_ENDPOINTS[providerId],
+    protocol: providerId === 'claude' ? 'anthropic-messages' : 'openai-responses',
+  };
+}
+
+type StoredConnection = NonNullable<NonNullable<Awaited<ReturnType<typeof registry.getAccount>>>['meta']>['harnessConnection'];
+
+/** 连接点名的模型:修改前只存了一个(`model`),读的时候并进来。 */
+function storedModels(details: StoredConnection): string[] {
+  if (details?.models?.length) return [...details.models];
+  return details?.model ? [details.model] : [];
+}
+
+/**
+ * 进程要用的地址:记下的(用户改过的)那一个;没记 = 官方 —— 离了地址起不来的家递官方地址,
+ * 地址可选的家(Claude / Codex / dsh)什么都不递,它们自己就是官方。
+ */
+function launchEndpoint(fields: ConnectionFields, stored: string | undefined): string | undefined {
+  return apiKeyConnectionEndpoint(fields, stored) ?? (fields.endpoint === 'required' ? fields.officialEndpoint : undefined);
+}
+
+/** 读模型清单 / 探接口要打的地址:用户填的,没填就是官方的。 */
+function probeEndpoint(fields: ConnectionFields, typed: string | undefined): string | undefined {
+  return apiKeyConnectionEndpoint(fields, typed) ?? fields.officialEndpoint;
+}
+
+function connectionView(row: { accountId: string; isDefault: boolean; meta?: { displayName?: string; harnessConnection?: StoredConnection } | null }, fields: ConnectionFields): HarnessConnection {
+  const details = row.meta?.harnessConnection;
+  const endpoint = apiKeyConnectionEndpoint(fields, details?.endpoint);
+  const models = storedModels(details);
+  return {
+    id: row.accountId,
+    kind: details?.kind ?? 'native',
+    name: row.meta?.displayName ?? '',
+    ...(endpoint ? { endpoint } : {}),
+    ...(models.length ? { models } : {}),
+    current: row.isDefault,
+  };
+}
 
 async function ensureNative(providerId: string): Promise<void> {
   if (await registry.getAccount(namespace(providerId), 'native')) return;
@@ -100,16 +153,10 @@ async function ensureNative(providerId: string): Promise<void> {
 export async function listHarnessConnections(providerId: string): Promise<HarnessConnection[]> {
   supported(providerId);
   await ensureNative(providerId);
+  const fields = connectionFields(providerId);
   return (await registry.listAccounts(namespace(providerId)))
     .filter((row) => !row.meta?.harnessConnection?.removed)
-    .map((row) => ({
-      id: row.accountId,
-      kind: row.meta?.harnessConnection?.kind ?? 'native',
-      name: row.meta?.displayName ?? '',
-      endpoint: row.meta?.harnessConnection?.endpoint,
-      ...(row.meta?.harnessConnection?.model ? { model: row.meta.harnessConnection.model } : {}),
-      current: row.isDefault,
-    }));
+    .map((row) => connectionView(row, fields));
 }
 
 export async function createHarnessConnection(input: CreateHarnessConnection): Promise<HarnessConnection> {
@@ -117,14 +164,29 @@ export async function createHarnessConnection(input: CreateHarnessConnection): P
   const generic = apiKeyConnectionOf(input.providerId);
   // 账号连接只有 Claude / Codex;其余家的账号就是它 CLI 自己的那份登录(「现有 CLI 配置」上的「登录」)。
   if (generic && input.kind !== 'api-key') throw new Error('This harness signs in through its own CLI; add an API key connection instead');
+  const fields = connectionFields(input.providerId);
+  const typed = input.endpoint?.trim().replace(/\/+$/, '') || undefined;
   if (input.kind === 'api-key') {
-    const problem = apiKeyConnectionInputError(generic?.fields ?? ACCOUNT_PROVIDER_API_FIELDS, input);
+    // 地址格预填的是官方地址:没改 = 官方,离了地址起不来的家也算填了。
+    const problem = apiKeyConnectionInputError(fields, { endpoint: typed ?? (fields.endpoint === 'required' ? fields.officialEndpoint : undefined), models: input.models });
     if (problem) throw new Error(problem);
   }
   await ensureNative(input.providerId);
   const id = randomUUID();
-  const endpoint = input.endpoint?.replace(/\/+$/, '');
-  const model = input.model?.trim() || undefined;
+  // 官方地址不记:处处照「没有地址」读作官方(付款方、连接那一行、用量)。
+  const endpoint = apiKeyConnectionEndpoint(fields, typed);
+  const models = input.kind === 'api-key' && input.models?.length ? [...input.models] : undefined;
+  // 讲得了好几种接口的家(pi / opencode):这一刻按地址探一次,记下来,会话照它写配置。
+  const detected =
+    input.kind === 'api-key' && input.apiKey && fields.protocols && fields.protocols.length > 1 && fields.protocol
+      ? await detectEndpointProtocol({
+          endpoint: probeEndpoint(fields, typed)!,
+          apiKey: input.apiKey,
+          candidates: fields.protocols,
+          fallback: fields.protocol,
+        })
+      : undefined;
+  const protocol = detected === 'openai-responses' || detected === 'openai-chat-completions' ? detected : undefined;
   const rows = await listHarnessConnections(input.providerId);
   const name =
     input.name ||
@@ -142,10 +204,61 @@ export async function createHarnessConnection(input: CreateHarnessConnection): P
     ...(input.apiKey ? { secret: input.apiKey } : {}),
     meta: {
       displayName: name,
-      harnessConnection: { kind: input.kind, ...(endpoint ? { endpoint } : {}), ...(model ? { model } : {}) },
+      harnessConnection: {
+        kind: input.kind,
+        ...(endpoint ? { endpoint } : {}),
+        ...(models ? { models } : {}),
+        ...(protocol ? { protocol } : {}),
+      },
     },
   });
-  return { id, name, kind: input.kind, endpoint, ...(model ? { model } : {}), current: false };
+  return { id, name, kind: input.kind, ...(endpoint ? { endpoint } : {}), ...(models ? { models } : {}), current: false };
+}
+
+/** 「管理模型」(#2507):换一把已存 API Key 连接点名的模型,❌ 删了重加。 */
+export async function updateHarnessConnectionModels(providerId: string, connectionId: string, models: readonly string[]): Promise<HarnessConnection> {
+  supported(providerId);
+  const fields = connectionFields(providerId);
+  if (fields.model !== 'required') throw new Error('This agent takes no model with its API key');
+  const target = await registry.getAccount(namespace(providerId), connectionId);
+  const details = target?.meta?.harnessConnection;
+  if (!target || !details || details.removed) throw new Error('Connection no longer exists');
+  if (details.kind !== 'api-key') throw new Error('Only an API key connection names its models');
+  const problem = apiKeyConnectionInputError({ endpoint: 'none', model: 'required' }, { models });
+  if (problem) throw new Error(problem);
+  const { model: _legacy, ...rest } = details;
+  await registry.upsertAccount({
+    providerId: namespace(providerId),
+    accountId: connectionId,
+    meta: { ...target.meta, harnessConnection: { ...rest, models: [...new Set(models)] } },
+  });
+  const updated = await registry.getAccount(namespace(providerId), connectionId);
+  return connectionView({ accountId: connectionId, isDefault: updated?.isDefault ?? target.isDefault, meta: updated?.meta ?? null }, fields);
+}
+
+/**
+ * 读一个地址报的模型清单(#2507):表单里还没存的连接用它带来的 key 与地址;已存的连接用它自己的。
+ * 只在宿主里读,key 只发给那个地址本身。
+ */
+export async function readConnectionModels(input: ListConnectionModels): Promise<ConnectionModelList> {
+  supported(input.providerId);
+  const fields = connectionFields(input.providerId);
+  if (fields.model !== 'required') throw new Error('This agent takes no model with its API key');
+  let endpoint: string | undefined;
+  let apiKey: string | undefined;
+  if (input.connectionId) {
+    const account = await registry.getAccount(namespace(input.providerId), input.connectionId);
+    const details = account?.meta?.harnessConnection;
+    if (!account || details?.kind !== 'api-key' || details.removed) throw new Error('Connection no longer exists');
+    endpoint = probeEndpoint(fields, details.endpoint);
+    apiKey = (await registry.resolveSecret(namespace(input.providerId), input.connectionId)) ?? undefined;
+    if (!apiKey) throw new Error('The connection’s API key is unavailable');
+  } else {
+    endpoint = probeEndpoint(fields, input.endpoint);
+    apiKey = input.apiKey;
+  }
+  if (!endpoint || !apiKey) return { kind: 'unlisted', reason: 'unreachable' };
+  return listEndpointModels({ endpoint, apiKey, protocol: fields.protocol });
 }
 
 export async function selectHarnessConnection(
@@ -327,9 +440,11 @@ export async function resolveHarnessConnection(
   if (details.kind === 'api-key') {
     const secret = await registry.resolveSecret(namespace(providerId), id);
     if (!secret) throw new Error('The connection’s API key is unavailable');
+    // 修改前存进去的官方地址照「官方」跑(与没写地址逐字节一样)。
+    const endpoint = apiKeyConnectionEndpoint(connectionFields(providerId), details.endpoint);
     return providerId === 'codex'
-      ? { connectionId: id, credentialEnv: { OPENAI_API_KEY: secret }, unsetEnv, extraArgs: codexApiKeyConnectionArgs(id, details.endpoint) }
-      : { connectionId: id, credentialEnv: claudeApiKeyEnv(secret, details.endpoint), unsetEnv };
+      ? { connectionId: id, credentialEnv: { OPENAI_API_KEY: secret }, unsetEnv, extraArgs: codexApiKeyConnectionArgs(id, endpoint) }
+      : { connectionId: id, credentialEnv: claudeApiKeyEnv(secret, endpoint), unsetEnv };
   }
   const unset = details.kind === 'account' ? { unsetEnv } : {};
   // 会话、模型目录探针、主读数:恒在用户根上跑。按连接问的,这个账号此刻不在用户根里时,保管目录那份才是它最新的凭据。
@@ -364,16 +479,21 @@ async function resolveApiKeyConnection(
   if (!account) throw new Error('The session’s subscription connection is unavailable');
   const details = account.meta?.harnessConnection;
   if (details?.kind !== 'api-key') return {};
-  const marker = details.endpoint ? { endpoint: details.endpoint } : {};
+  const fields = connectionFields(providerId);
+  // 官方地址(没改预填的那个,或修改前存进去的)不进标记:付款方与用量照「官方」答。
+  const custom = apiKeyConnectionEndpoint(fields, details.endpoint);
+  const marker = custom ? { endpoint: custom } : {};
   // 走模型注入的家:key 不进这份环境 —— 它随宿主造的模型声明进这家自己的配置(见 `resolveConnectionModel`)。
   // 这里只标「选中的是一把 API Key」,登录态与付费方照它答。
   if (generic.injectsModel) return { connectionId: id, apiKeyConnection: marker };
   const secret = await registry.resolveSecret(namespace(providerId), id);
   if (!secret) throw new Error('The connection’s API key is unavailable');
+  const endpoint = launchEndpoint(fields, details.endpoint);
+  const model = await sessionModelAmong(input.sessionId, storedModels(details));
   const launch = generic.launch({
     apiKey: secret,
-    ...(details.endpoint ? { endpoint: details.endpoint } : {}),
-    ...(details.model ? { model: details.model } : {}),
+    ...(endpoint ? { endpoint } : {}),
+    ...(model ? { model } : {}),
   });
   return {
     connectionId: id,
@@ -385,16 +505,38 @@ async function resolveApiKeyConnection(
 }
 
 /**
- * 一把要经模型注入进进程的 API Key 连接:解密后的 key 与它的地址、模型。只在主进程、起会话那一刻有。
- * `name` = 连接的名字(用户的备注,没写就是建连接时生成的那个):这一家自己的界面里,提供方就叫它。
+ * 会话跑连接点名的哪一个模型:会话自己选的(新建任务的模型菜单)在其中就是它,否则第一个。
+ * 没有会话(探针、登录态)⇒ 第一个。
  */
-export type ConnectionModel = { connectionId: string; name: string; endpoint: string; apiKey: string; model: string };
+async function sessionModelAmong(sessionId: string | undefined, models: readonly string[]): Promise<string | undefined> {
+  if (models.length === 0) return undefined;
+  if (sessionId) {
+    const row = db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
+    const chosen = row?.config?.model?.trim();
+    if (chosen && models.includes(chosen)) return chosen;
+  }
+  return models[0];
+}
+
+/**
+ * 一把要经模型注入进进程的 API Key 连接:解密后的 key 与它的地址、点名的模型、探出来的接口。只在主进程、起会话那一刻有。
+ * `name` = 连接的名字(用户的备注,没写就是建连接时生成的那个):这一家自己的界面里,提供方就叫它。
+ * `models` 全部写进这一家的模型声明(新建任务的模型菜单里都在、会话里能切),第一个是起步模型。
+ */
+export type ConnectionModel = {
+  connectionId: string;
+  name: string;
+  endpoint: string;
+  apiKey: string;
+  models: string[];
+  protocol?: 'openai-responses' | 'openai-chat-completions';
+};
 
 /**
  * 声明了 `delivery: 'model-injection'` 的家(#2507):会话此刻该跑的那把 API Key —— 默认连接是它就给,
  * 原生连接 / 没声明的家给 null(宿主照旧,与没有连接时逐字节一样)。会话跟着默认连接走,与上面同一条。
  */
-export async function resolveConnectionModel(providerId: string): Promise<ConnectionModel | null> {
+export async function resolveConnectionModel(providerId: string, sessionId?: string): Promise<ConnectionModel | null> {
   const generic = apiKeyConnectionOf(providerId);
   if (!generic?.injectsModel) return null;
   await ensureNative(providerId);
@@ -404,12 +546,17 @@ export async function resolveConnectionModel(providerId: string): Promise<Connec
   if (!account) throw new Error('The session’s subscription connection is unavailable');
   const details = account.meta?.harnessConnection;
   if (details?.kind !== 'api-key') return null;
-  if (!details.endpoint || !details.model) throw new Error('The connection has no API address or model');
+  const endpoint = launchEndpoint(generic.fields, details.endpoint);
+  const named = storedModels(details);
+  if (!endpoint || named.length === 0) throw new Error('The connection has no API address or model');
+  // 会话自己选的那个排第一(起步模型),其余照旧。
+  const first = await sessionModelAmong(sessionId, named);
+  const models = [first!, ...named.filter((model) => model !== first)];
   const secret = await registry.resolveSecret(namespace(providerId), id);
   if (!secret) throw new Error('The connection’s API key is unavailable');
   // 名字在建连接时就落定了(`createHarnessConnection`);缺了(手改过的库)就叫这一家的名字,❌ 落回平台的叫法。
   const name = account.meta?.displayName?.trim() || generic.name;
-  return { connectionId: id, name, endpoint: details.endpoint, apiKey: secret, model: details.model };
+  return { connectionId: id, name, endpoint, apiKey: secret, models, ...(details.protocol ? { protocol: details.protocol } : {}) };
 }
 
 /**
