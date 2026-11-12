@@ -11,7 +11,6 @@ import {
   createDeviceProjectsPublisher,
   PUBLISH_TIMEOUT_MS,
   REFRESH_MS,
-  RETRY_MS,
   SETTLE_MS,
 } from '../../../../packages/core/src/cloud/deviceProjectsPublisher'
 
@@ -200,6 +199,7 @@ describe('createDeviceProjectsPublisher', () => {
     })
     const records = vi.fn(async () => [project()])
     const warn = vi.fn()
+    const backend = { probes: 0, recovered: new Set<() => void>() }
     const publisher = createDeviceProjectsPublisher({
       getAuth: overrides.auth ?? (async () => ({ accessToken: 'token', userId: 'u1' })),
       deviceId: async () => 'dev-1',
@@ -215,6 +215,10 @@ describe('createDeviceProjectsPublisher', () => {
         const index = timers.indexOf(handle as never)
         if (index >= 0) timers.splice(index, 1)
       },
+      backend: {
+        writeFailed: () => { backend.probes += 1 },
+        onRecovered: (run) => { backend.recovered.add(run); return () => { backend.recovered.delete(run) } },
+      },
     })
     const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
     const fire = async () => {
@@ -225,7 +229,7 @@ describe('createDeviceProjectsPublisher', () => {
       await vi.waitFor(() => expect(rpc.mock.calls.length + warn.mock.calls.length).toBeGreaterThan(before))
       await settled()
     }
-    return { publisher, timers, rpc, reply, signals, records, warn, fire, settled }
+    return { publisher, timers, rpc, reply, signals, records, warn, fire, settled, backend }
   }
 
   it('settles a burst of changes into one publish, then keeps the account’s copy refreshed', async () => {
@@ -266,12 +270,30 @@ describe('createDeviceProjectsPublisher', () => {
     publisher.notify()
     await fire()
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('publish failed'), expect.objectContaining({ error: 'network down' }))
-    expect(timers.map((timer) => timer.ms)).toEqual([RETRY_MS])
+    expect(timers.map((timer) => timer.ms)).toEqual([REFRESH_MS])
     publisher.notify()
     expect(timers.map((timer) => timer.ms)).toEqual([SETTLE_MS])
     await fire()
     expect(rpc).toHaveBeenCalledTimes(2)
     expect(timers.map((timer) => timer.ms)).toEqual([REFRESH_MS])
+  })
+
+  it('a failed publish asks for a reading and publishes again on the backend-recovered edge, not on a timer of its own', async () => {
+    const { publisher, timers, rpc, reply, fire, backend } = harness()
+    reply.mockResolvedValueOnce({ data: null, error: { message: 'network down' } })
+    publisher.notify()
+    await fire()
+    expect(backend.probes).toBe(1)
+    expect(timers.map((timer) => timer.ms)).toEqual([REFRESH_MS])
+    expect(backend.recovered.size).toBe(1)
+    for (const run of [...backend.recovered]) run()
+    expect(backend.recovered.size).toBe(0)
+    expect(timers.map((timer) => timer.ms)).toEqual([SETTLE_MS])
+    await fire()
+    expect(rpc).toHaveBeenCalledTimes(2)
+    expect(timers.map((timer) => timer.ms)).toEqual([REFRESH_MS])
+    expect(backend.recovered.size).toBe(0) // a published copy waits for the refresh only
+    publisher.stop()
   })
 
   it('a publish that hangs is abandoned after the timeout and retried (❌ blocks every later change)', async () => {
@@ -285,7 +307,7 @@ describe('createDeviceProjectsPublisher', () => {
       await vi.advanceTimersByTimeAsync(PUBLISH_TIMEOUT_MS)
       expect(signals[0]?.aborted).toBe(true)
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('publish failed'), expect.objectContaining({ error: expect.stringMatching(/did not finish/) }))
-      expect(timers.map((timer) => timer.ms)).toEqual([RETRY_MS])
+      expect(timers.map((timer) => timer.ms)).toEqual([REFRESH_MS])
     } finally {
       vi.useRealTimers()
     }
@@ -324,7 +346,7 @@ describe('createDeviceProjectsPublisher', () => {
     await fire()
     expect(rpc).not.toHaveBeenCalled()
     expect(warn).toHaveBeenCalled()
-    expect(timers.map((timer) => timer.ms)).toEqual([RETRY_MS])
+    expect(timers.map((timer) => timer.ms)).toEqual([REFRESH_MS])
   })
 
   it('stop() cancels what is pending', () => {

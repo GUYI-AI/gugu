@@ -13,7 +13,9 @@ const host = vi.hoisted(() => {
 })
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
   supabase: { auth: host },
+  MAIN_AUTH_STORAGE_KEY: 'gugu-auth',
   mainAuthSessionStorage: {
+    storage: { getItem: () => null },
     getState: () => ({ bootCandidate: null, warning: null }),
     commit: async () => {},
     remove: async () => {},

@@ -3,7 +3,7 @@
 //
 // 状态机: pending →(领取)→ sending →(prepare 前置 → writer 返回送达)→ sent(删行,onSent)
 //                                   →(错误/15s 超时)→ 退避重试(2s/8s,共 3 次尝试)→ failed(可见,onState)
-//         failed →(手动重试 | window online)→ pending
+//         failed →(手动重试 | 后端恢复 backendReachability)→ pending
 //
 // 设计要点(#1762 评论拍板):
 // * 持久化经注入的 persistence(localSyncDb outbox store):enqueue 先落盘再投,reload/崩溃不丢;
@@ -26,7 +26,7 @@ const outboxLog = rendererLogger('chat/outbox')
 
 export const OUTBOX_DELIVER_TIMEOUT_MS = 15_000
 // 3 次尝试(拍板 a):真实故障是分钟级网关中断,更长退避只会推迟 fail-loud 暴露;
-// 快退避(~10s 总预算)兜秒级瞬断,之后立刻亮 failed 交手动 + online kick。
+// 快退避(~10s 总预算)兜秒级瞬断,之后立刻亮 failed 交手动 + 后端恢复 kick。
 export const OUTBOX_RETRY_BACKOFF_MS = [2_000, 8_000] as const
 
 export interface OutboxDeps {
@@ -70,7 +70,7 @@ export interface ChatOutbox {
   failUpload(clientMessageId: string, error: unknown): Promise<void>
   /** 显式丢弃:删行 + onDiscarded(调用方负责移除乐观行)。 */
   discard(clientMessageId: string): Promise<void>
-  /** 网络恢复 kick:全部 failed → pending 自动重投(验收②的自动路径)。 */
+  /** 后端恢复 kick:全部 failed → pending 自动重投(验收②的自动路径)。 */
   retryAllFailed(): Promise<void>
   /** 启动恢复:载入持久化行('sending'→'pending'),返回记录供 UI 重建乐观行,并开始投递。 */
   restore(): Promise<OutboxRecord[]>

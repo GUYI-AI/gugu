@@ -4,15 +4,17 @@
  *  · 变化往往一串一串来(挂一个文件夹 = 文件夹变了 + 显隐变了):从头一个变化起攒 {@link SETTLE_MS} 再记
  *    (后来的变化不往后推,❌ 一直有变化就一直不记),一次只记一份;记的途中又变了,记完再记一次。
  *  · 没登录 = 不记(登录态一变宿主会再叫一次)。记不上(断网、库拒了、{@link PUBLISH_TIMEOUT_MS} 还没回话 ——
- *    作废那次请求)= 过 {@link RETRY_MS} 再记,直到记上:账号上那份旧着,别的端看到的就是旧的,❌ 只喊一声就算了。
+ *    作废那次请求)= 后端恢复那一刻再记(backendReachability 的那条边;记不上时先请宿主心跳马上拉一次,
+ *    后端真断着边就挂上了),最迟 {@link REFRESH_MS} 再记,直到记上:账号上那份旧着,别的端看到的就是旧的,
+ *    ❌ 只喊一声就算了;❌ 自己再起一个重试定时器。
  *  · 记上之后每 {@link REFRESH_MS} 再记一次:账号上那份也会在这台机器不知道的时候没了(设备行被收掉又登记回来,
  *    它的项目跟着删了),这台机器自己没有变化可报。记的是整份,库里没变就什么都不动(不推进账号 revision),多记一次无害。
  */
 import { withBoundedOperation } from './boundedOperation'
+import { noteBackendRequestFailed, subscribeBackendRecovered } from './backendReachability'
 import { publishDeviceProjects, type DeviceProject, type DeviceProjectsRpcClient } from './deviceProjects'
 
 export const SETTLE_MS = 1_000
-export const RETRY_MS = 30_000
 export const PUBLISH_TIMEOUT_MS = 60_000
 export const REFRESH_MS = 15 * 60_000
 
@@ -28,6 +30,8 @@ export type DeviceProjectsPublisherDeps = {
   onPublished?: () => void
   setTimeout?: (run: () => void, ms: number) => unknown
   clearTimeout?: (handle: unknown) => void
+  /** Defaults to this process's backendReachability. */
+  backend?: { writeFailed: () => void; onRecovered: (run: () => void) => () => void }
 }
 
 export type DeviceProjectsPublisher = {
@@ -45,15 +49,30 @@ export function createDeviceProjectsPublisher(deps: DeviceProjectsPublisherDeps)
   let running = false
   let dirty = false
   let stopped = false
+  const backend = deps.backend ?? { writeFailed: noteBackendRequestFailed, onRecovered: subscribeBackendRecovered }
+  /** While a failed publish waits: the backend-recovered subscription (dropped with the timer it shadows). */
+  let unsubscribeRecovered: (() => void) | null = null
+
+  const cancel = () => {
+    if (timer !== null) clearTimer(timer)
+    timer = null
+    timerKind = null
+    unsubscribeRecovered?.()
+    unsubscribeRecovered = null
+  }
 
   const schedule = (kind: 'settle' | 'retry' | 'refresh', ms: number) => {
     if (stopped || timer !== null) return
     timerKind = kind
     timer = setTimer(() => {
       timer = null
-      timerKind = null
+      cancel()
       void run()
     }, ms)
+    if (kind === 'retry') unsubscribeRecovered = backend.onRecovered(() => {
+      cancel()
+      schedule('settle', SETTLE_MS)
+    })
   }
 
   const run = async () => {
@@ -81,12 +100,13 @@ export function createDeviceProjectsPublisher(deps: DeviceProjectsPublisherDeps)
         },
       )
     } catch (error) {
-      deps.warn('device projects: publish failed, retrying', { error: String((error as Error)?.message ?? error), retryMs: RETRY_MS })
+      deps.warn('device projects: publish failed; retrying when the backend answers again', { error: String((error as Error)?.message ?? error), latestMs: REFRESH_MS })
+      backend.writeFailed()
     } finally {
       running = false
     }
     if (dirty) schedule('settle', SETTLE_MS)
-    else if (outcome === 'failed') schedule('retry', RETRY_MS)
+    else if (outcome === 'failed') schedule('retry', REFRESH_MS)
     else if (outcome === 'published') {
       schedule('refresh', REFRESH_MS)
       deps.onPublished?.()
@@ -102,18 +122,12 @@ export function createDeviceProjectsPublisher(deps: DeviceProjectsPublisherDeps)
       }
       // 已经在攒:照原来那一拍记(❌ 往后推)。在等重试 / 定期再记的那一拍换成马上(攒一下):有了新变化就不必再等。
       if (timerKind === 'settle') return
-      if (timer !== null) {
-        clearTimer(timer)
-        timer = null
-        timerKind = null
-      }
+      cancel()
       schedule('settle', SETTLE_MS)
     },
     stop() {
       stopped = true
-      if (timer !== null) clearTimer(timer)
-      timer = null
-      timerKind = null
+      cancel()
     },
   }
 }

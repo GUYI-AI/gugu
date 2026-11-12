@@ -111,6 +111,9 @@ export async function authBoundedFetch(input: RequestInfo | URL, init?: RequestI
   if (!recoverRejectedAccessToken || !sent || !isUserAccessToken(sent) || input instanceof Request) return response
   if (!(await isRejectedTokenResponse(input, response))) return response
   const next = await recoverRejectedAccessToken(sent)
+  // 换证期间会话没了(永久错误转登录页、登出):这条请求属于已结束的那一代,按边界的生命周期取消收场,
+  // ❌ 不把 401 当数据失败交给登录页去报错(#7172)。
+  if (boundary.aborted) throw new DOMException('Auth session ended during token recovery', 'AbortError')
   if (!next || next === sent) return response
   const headers = new Headers(init?.headers)
   headers.set('Authorization', `Bearer ${next}`)

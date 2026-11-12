@@ -52,6 +52,7 @@ function harness(overrides: Partial<SessionCoordinatorDeps> = {}) {
     publishSession: vi.fn(),
     writeMirror: vi.fn(async () => {}),
     clearMirror: vi.fn(async () => {}),
+    loadPersistedSession: async () => {},
     getPersistedSessionState: vi.fn(() => ({ bootCandidate: null, warning: null })),
     commitPersistedSession: vi.fn(async () => {}),
     clearPersistedSession: vi.fn(async () => {}),
@@ -118,14 +119,9 @@ describe('SessionCoordinator', () => {
       error: { name: 'AuthApiError', status: 400, code: 'refresh_token_not_found', message: 'Invalid Refresh Token: Refresh Token Not Found' },
     }))
     const h = harness({ getSession, getPersistedSessionState: vi.fn(() => ({ bootCandidate: candidate, warning: null })) })
-    // 已登录界面一瞬都不该挂上:它挂上就会发请求,随即被登出中断,在登录页上报错。
-    const shownUsers: (string | null)[] = []
-    h.coordinator.subscribe(() => shownUsers.push(h.coordinator.getSnapshot().user?.id ?? null))
     h.coordinator.start()
     await vi.advanceTimersByTimeAsync(0)
     expect(h.coordinator.getSnapshot()).toMatchObject({ status: 'expired', session: null, user: null })
-    expect(shownUsers.length).toBeGreaterThan(0)
-    expect(shownUsers).not.toContain('user-b')
     expect(h.deps.clearPersistedSession).toHaveBeenCalledOnce()
     expect(h.deps.clearPersistedSession).toHaveBeenCalledWith(candidate, expect.any(AbortSignal))
     expect(h.deps.publishSession).toHaveBeenLastCalledWith('RESTORE_EXPIRED', null)
@@ -161,6 +157,81 @@ describe('SessionCoordinator', () => {
     expect(statuses).not.toContain('expired')
     expect(statuses).not.toContain('anonymous')
     expect(h.deps.clearPersistedSession).not.toHaveBeenCalled()
+  })
+  // 本地优先:令牌过期、刷新很慢(或挂住)时,外壳与身份立刻用 boot candidate 发布,刷新在后面跑。
+  it('publishes the boot candidate shell before getSession settles, with no boot budget of its own', async () => {
+    vi.useFakeTimers()
+    const candidate = session('user-b')
+    const refreshed = { ...session('user-b'), access_token: 'access-user-b-2', refresh_token: 'refresh-user-b-2' }
+    let finish: (value: { data: { session: Session | null }; error: unknown }) => void = () => {}
+    const getSession = vi.fn(() => new Promise<{ data: { session: Session | null }; error: unknown }>((resolve) => { finish = resolve }))
+    const h = harness({
+      getSession,
+      getUser: vi.fn(async () => ({ data: { user: candidate.user }, error: null })),
+      getPersistedSessionState: vi.fn(() => ({ bootCandidate: candidate, warning: null })),
+    })
+    h.coordinator.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.coordinator.getSnapshot()).toMatchObject({ status: 'degraded', session: candidate, user: { id: 'user-b' } })
+    expect(h.deps.publishSession).toHaveBeenCalledWith('BOOT_CANDIDATE', candidate)
+    // 8 s 的慢刷新:没有启动专用的短预算把它丢掉、再拿同一个 refresh token 重来。
+    await vi.advanceTimersByTimeAsync(8_000)
+    expect(getSession).toHaveBeenCalledOnce()
+    finish({ data: { session: refreshed }, error: null })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.coordinator.getSnapshot()).toMatchObject({ status: 'authenticated', session: { access_token: 'access-user-b-2' }, user: { id: 'user-b' } })
+    expect(h.deps.publishSession).toHaveBeenLastCalledWith('INITIAL_SESSION', refreshed)
+  })
+  it('keeps the candidate shell through a hung refresh and retries only after the auth budget', async () => {
+    vi.useFakeTimers()
+    const candidate = session('user-b')
+    const getSession = vi.fn(() => new Promise<{ data: { session: Session | null }; error: unknown }>(() => {}))
+    const h = harness({ getSession, getPersistedSessionState: vi.fn(() => ({ bootCandidate: candidate, warning: null })) })
+    h.coordinator.start()
+    await vi.advanceTimersByTimeAsync(14_000)
+    expect(getSession).toHaveBeenCalledOnce()
+    expect(h.coordinator.getSnapshot()).toMatchObject({ status: 'degraded', user: { id: 'user-b' } })
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(h.coordinator.getSnapshot()).toMatchObject({ status: 'degraded', session: candidate, user: { id: 'user-b' } })
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(getSession).toHaveBeenCalledTimes(2)
+    expect(h.deps.clearPersistedSession).not.toHaveBeenCalled()
+  })
+  it('lets a request rejected during the candidate shell wait for the restore instead of refreshing again', async () => {
+    const rejected = `e30.${btoa(JSON.stringify({ sub: 'user-b' }))}.sig`
+    const candidate = { ...session('user-b'), access_token: rejected }
+    const refreshed = { ...session('user-b'), access_token: 'access-user-b-2', refresh_token: 'refresh-user-b-2' }
+    let finish: (value: { data: { session: Session | null }; error: unknown }) => void = () => {}
+    const h = harness({
+      getSession: vi.fn(() => new Promise<{ data: { session: Session | null }; error: unknown }>((resolve) => { finish = resolve })),
+      getUser: vi.fn(async () => ({ data: { user: candidate.user }, error: null })),
+      getPersistedSessionState: vi.fn(() => ({ bootCandidate: candidate, warning: null })),
+    })
+    h.coordinator.start()
+    await flush()
+    const recovering = h.coordinator.recoverRejectedAccessToken(rejected)
+    await flush()
+    finish({ data: { session: refreshed }, error: null })
+    await expect(recovering).resolves.toBe('access-user-b-2')
+    expect(h.deps.refreshSession).not.toHaveBeenCalled()
+  })
+  it('does not let a foreground reconcile refresh the expired candidate while its restore is in flight', async () => {
+    const candidate = { ...session('user-b'), expires_at: Math.floor(Date.now() / 1000) - 60 }
+    const refreshed = { ...session('user-b'), access_token: 'access-user-b-2', refresh_token: 'refresh-user-b-2', expires_at: Math.floor(Date.now() / 1000) + 3600 }
+    let finish: (value: { data: { session: Session | null }; error: unknown }) => void = () => {}
+    const h = harness({
+      getSession: vi.fn(() => new Promise<{ data: { session: Session | null }; error: unknown }>((resolve) => { finish = resolve })),
+      getUser: vi.fn(async () => ({ data: { user: candidate.user }, error: null })),
+      getPersistedSessionState: vi.fn(() => ({ bootCandidate: candidate, warning: null })),
+    })
+    h.coordinator.start()
+    await flush()
+    h.foreground()
+    await flush()
+    finish({ data: { session: refreshed }, error: null })
+    await flush(); await flush()
+    expect(h.deps.refreshSession).not.toHaveBeenCalled()
+    expect(h.coordinator.getSnapshot()).toMatchObject({ status: 'authenticated', session: { access_token: 'access-user-b-2' } })
   })
   it('restores projected B after A to B commits, and clears A across terminal restart', async () => {
     let persisted: Session | null = session('user-a')

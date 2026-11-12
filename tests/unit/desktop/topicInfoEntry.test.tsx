@@ -51,10 +51,8 @@ vi.mock('../../../apps/desktop/src/lib/identityReadAdapter', async (importOrigin
 const shell = vi.hoisted(() => ({ mobile: false }))
 vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
 
-const { chatService } = await import('../../../apps/desktop/src/lib/chat')
 const { ChatSettingsPanel } = await import('../../../apps/desktop/src/components/chat/ChatSettingsPanel')
 const { NATIVE_BACK_EVENT } = await import('../../../apps/desktop/src/components/ui/sheetStack')
-vi.spyOn(chatService, 'listGroupJoinRequests').mockResolvedValue([])
 const snapshot: GroupCollabSnapshot = {
   scheduler: { chat_id: 'topic-1', paused: false, queue_count: 0, blocked_count: 0, summary: null, updated_at: new Date(0).toISOString() },
   humans: [{ id: 'viewer', role: 'member', type: 'human', account_status: null }], agents: [], tasks: [],

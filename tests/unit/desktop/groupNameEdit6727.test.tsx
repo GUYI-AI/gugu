@@ -11,7 +11,6 @@ vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   chatService: {
     getGroupChatSettings: vi.fn(),
     updateGroupChatSettings: vi.fn(),
-    listGroupJoinRequests: vi.fn(async () => []),
     decideGroupJoin: vi.fn(async () => {}),
     getGroupCollab: vi.fn(async () => ({ snapshot: { humans: [], agents: [] }, identities: [] })),
     uploadGroupAvatar: vi.fn(),

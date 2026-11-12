@@ -10,6 +10,7 @@ import { BellOff, ChevronDown, ChevronRight, FolderClosed, MessageCircle, Messag
 import { Sheet } from './ui/Sheet'
 import { DropdownMenu, MenuItem } from './ui/Menu'
 import { PaneEmptyState } from './ui/PaneEmptyState'
+import { ContactsSectionState } from './contacts/ContactsSectionState'
 import { SearchField } from './ui/SearchField'
 import { Pane, PaneHeader } from './ui/Pane'
 import { ListRow } from './ui/ListRow'
@@ -542,7 +543,9 @@ export function ChatListPanel({
   const { t } = useTranslation('messaging')
   const { t: tMain } = useTranslation('main')
   const assistantShell = useAssistantShell()
-  const { chats: imChats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, pinChat, deleteChat, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'pinChat', 'deleteChat', 'setChatNotificationLevel', 'drafts')
+  const { chats: imChats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, chatsLoadFailed, refreshChats, pinChat, deleteChat, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'chatsLoadFailed', 'refreshChats', 'pinChat', 'deleteChat', 'setChatNotificationLevel', 'drafts')
+  // The list read failed with nothing to show: that is a failure, not "no conversations" (same rule as the contacts sections).
+  const listReadFailed = chatsLoadFailed && imChats.length === 0
   const chats = useNativeAgentChats(imChats)
   useOwnedAgentEntries()
   const projectGroupChats = useProjectGroupChats()
@@ -964,7 +967,11 @@ export function ChatListPanel({
 
       {!hasSearchQuery && lead}
 
-      {!inSidebar && !lead && !loadingChats && !hasSearchQuery && pinnedChats.length === 0 && normalChats.length === 0 && (
+      {listReadFailed && !hasSearchQuery && (
+        <ContactsSectionState status="error" isEmpty align="center" onRetry={() => { void refreshChats() }} />
+      )}
+
+      {!inSidebar && !lead && !loadingChats && !listReadFailed && !hasSearchQuery && pinnedChats.length === 0 && normalChats.length === 0 && (
         <div
           style={EMPTY_STATE_WRAP_STYLE}
         >

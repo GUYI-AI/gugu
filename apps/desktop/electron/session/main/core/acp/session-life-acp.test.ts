@@ -81,7 +81,14 @@ describe('session-life ACP leg', () => {
     h.platformModel = { modelId: 'platform-model' };
     h.preparePlatform.mockRejectedValueOnce(new Error('Platform access was refused'));
     const adapter = await boundAdapter();
-    await expect(adapter.run('capabilities', {} as never, ctx())).rejects.toThrow('Platform access was refused');
+    await expect(adapter.run('platform', {} as never, ctx())).rejects.toThrow('Platform access was refused');
+  });
+
+  it('when capability work and the ticket both fail, the ticket\'s reason is the start failure', async () => {
+    h.platformModel = { modelId: 'platform-model' };
+    h.preparePlatform.mockRejectedValueOnce(new Error('gugu-models:unreachable'));
+    const adapter = await boundAdapter();
+    await expect(adapter.run('capabilities', {} as never, ctx())).rejects.toThrow('gugu-models:unreachable');
   });
 
   it('settles a late platform preparation when the attempt stopped before capabilities', async () => {
@@ -90,6 +97,17 @@ describe('session-life ACP leg', () => {
     h.preparePlatform.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
     const adapter = await boundAdapter();
     await adapter.teardown({}, ctx());
+    finish('prepared-generation');
+    await vi.waitFor(() => expect(h.release).toHaveBeenCalledWith('s', 'prepared-generation'));
+  });
+
+  it('a stop during capability work does not wait for a ticket that never answers, and settles it by generation if it does', async () => {
+    h.platformModel = { modelId: 'platform-model' };
+    let finish!: (generation: string) => void;
+    h.preparePlatform.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const adapter = await boundAdapter();
+    await adapter.teardown({ capabilities: {} } as never, ctx());
+    expect(h.release).not.toHaveBeenCalled();
     finish('prepared-generation');
     await vi.waitFor(() => expect(h.release).toHaveBeenCalledWith('s', 'prepared-generation'));
   });

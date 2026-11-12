@@ -168,13 +168,11 @@ export function ContactsProvider({ children, active = true }: { children: React.
     }
   }, [getImRepository, userId])
 
-  const groupChatsRef = useRef(groupChats)
-  groupChatsRef.current = groupChats
   const loadGroupJoinRequests = useCallback(async (options: RevisionRefreshOptions = {}) => {
     if (!userId) return
     const generation = ++groupJoinRequestsGenerationRef.current
     try {
-      const rows = await listManagedGroupJoinRequests(managedGroupChats(groupChatsRef.current))
+      const rows = await listManagedGroupJoinRequests()
       if (generation !== groupJoinRequestsGenerationRef.current) return
       if (rows.length) await (await getImRepository()).putIdentities(await readRequiredDisplayIdentities(joinRequestIdentityIds(rows)))
       if (generation !== groupJoinRequestsGenerationRef.current) return

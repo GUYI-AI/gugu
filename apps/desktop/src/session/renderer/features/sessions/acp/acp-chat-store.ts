@@ -933,6 +933,16 @@ export class AcpChatStore {
     }
   }
 
+  /** How a start in progress is said — the pending row and the loading overlay read this one answer. The platform stage is
+   * the model-access request (ticket): said as it is, so a slow or stuck one is visible and stoppable. */
+  startPhaseOf(view: LifeView | null): PendingPrompt['starting'] {
+    if (view === null || !lifeIsStarting(view)) return undefined;
+    if (view.stage?.at === 'platform') return 'connecting';
+    const record = this._sessionRecord();
+    const resumes = !!(record?.providerSessionId || record?.forkFromProviderSessionId || this.runtimeView?.forkFromProviderSessionId);
+    return resumes ? 'restoring' : 'starting';
+  }
+
   private _projectLifeHead(view: LifeView | null, sender: readonly SessionInput[]): void {
     const session = this.chatState.session;
     const prior = session.state.pendingPrompt;
@@ -951,9 +961,7 @@ export class AcpChatStore {
         })),
       ] },
     } : view;
-    const record = this._sessionRecord();
-    const resumes = !!(record?.providerSessionId || record?.forkFromProviderSessionId || this.runtimeView?.forkFromProviderSessionId);
-    const starting: PendingPrompt['starting'] = view !== null && lifeIsStarting(view) ? (resumes ? 'restoring' : 'starting') : undefined;
+    const starting = this.startPhaseOf(view);
     const transcriptState = this.chatState.transcript.state;
     const turns = [...transcriptState.committedTurns, ...(transcriptState.activeTurnSnapshot ? [transcriptState.activeTurnSnapshot] : [])];
     const projections = new Set([...(this.stoppedRowId ? [stoppedTurnId(this.stoppedRowId)] : []), ...this.failedRowIds.map(failedTurnId)]);

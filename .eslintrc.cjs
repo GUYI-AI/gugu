@@ -35,6 +35,14 @@ const noSyncSpawnInput = {
     "同步 spawn 的 `input` 在 macOS 上会间歇性挂死到超时(#3766，详见 .eslintrc.cjs 顶部 @@@spawnsync-input)。改成:参数传值 / 从文件喂 stdin(stdio:[fd,…]) / 空 stdin 用 stdio:['ignore',…] / 需要管道语义的改异步 spawn。"
 }
 
+// @@@single-refresher (#6723) —— 会话协调器是唯一的刷新者。无参的 auth.getUser() / auth.getSession() 会让 SDK 读它自己
+// 存的那份会话、过期就自己刷新,拿同一个 refresh token 和协调器各换一次(撞上复用检测就被登出)。读用户带协调器的
+// 令牌(auth.getUser(token));协调器自己的那一处 getSession 依赖逐行豁免并写明。
+const noBareAuthRefresher = {
+  selector: "CallExpression[arguments.length=0]:matches([callee.property.name='getUser'],[callee.property.name='getSession'])[callee.object.property.name='auth']",
+  message: 'The session coordinator is the only refresher: call auth.getUser(sessionCoordinator.getAccessToken()) — a bare auth.getUser()/getSession() lets the SDK refresh the same refresh token on its own.'
+}
+
 const radixImportGate = {
   group: ['radix-ui', 'radix-ui/*', '@radix-ui/*'],
   message:
@@ -230,7 +238,8 @@ module.exports = {
             message: '裸 <button style={...}> 已停止新增(#2987)——改用 components/ui/Button.tsx(variant/size 已覆盖多数场景);缺的 variant 先去补组件，别再手搓。'
           },
           // 顶层那条在这里是被整条替换掉的,不重新列一遍就等于给这批文件开了后门。
-          noSyncSpawnInput
+          noSyncSpawnInput,
+          noBareAuthRefresher
         ]
       }
     },
@@ -263,10 +272,16 @@ module.exports = {
       rules: {
         '@typescript-eslint/no-explicit-any': 'off'
       }
+    },
+    {
+      // Tests drive the auth SDK directly on purpose (what a bare call does is what they prove); the single-refresher
+      // rule guards product code only.
+      files: ['tests/**'],
+      rules: { 'no-restricted-syntax': ['error', noSyncSpawnInput] }
     }
   ],
   rules: {
-    'no-restricted-syntax': ['error', noSyncSpawnInput],
+    'no-restricted-syntax': ['error', noSyncSpawnInput, noBareAuthRefresher],
     // Android System WebView before 116 has no AbortSignal.any: calling it threw before the request was sent (images
     // could not load). One function owns the native call and its fallback; everything else combines signals through it.
     'no-restricted-properties': ['error', {

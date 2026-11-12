@@ -1443,7 +1443,7 @@ const ComposerForStore = observer(function ComposerForStore({
       {agentUserId ? <AgentFailureSlot agentUserId={agentUserId} /> : null}
       {/* History and lifecycle loading share the message area; a pending input keeps its own live row. */}
       {contentOverlaySlot && life && lifeIsStarting(life) && !store.showHistoryLoading && !store.transcriptPendingId && !store.chatState.session.state.pendingMessages.length ? (
-        createPortal(<SessionChatLoading label={translate('transcript.starting')} stage={life.stage?.at} />, contentOverlaySlot)
+        createPortal(<SessionChatLoading label={translate(`transcript.${store.startPhaseOf(life) ?? 'starting'}`)} stage={life.stage?.at} />, contentOverlaySlot)
       ) : null}
       {/* Every send of a task page is in custody until the transcript has it, so its bubbles always show here. */}
       <SessionInputQueue sessionId={store.runtimeSessionId} waitingForConnection life={life}

@@ -19,15 +19,14 @@ vi.mock('../../../../apps/desktop/src/lib/readWriter', async original => ({
 }))
 afterEach(() => { vi.restoreAllMocks(); boundary.write.mockReset() })
 
-it.each(['send', 'restore-native'] as const)('%s read failure cannot be resurrected by a later hidden publication', async mode => {
+it.each(['send', 'restore-native'] as const)('%s read failure keeps the local read position through a later hidden publication (reconciled on recovery)', async mode => {
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
   const basis = chat({ id: 'outbox-read', kind: 'group', member_user_ids: [], next_message_seq: 8,
     last_read_seq: 3, read_state_version: 8, unread_count: 2, is_marked_unread: false,
     unread_locator: { stream_id: 'main:outbox-read', stream_kind: 'main', thread_root_id: null,
       message_id: 'unread-6', message_seq: 6, unread_count: 2, addressed_count: 1,
       cursor_seq: 3, version: 8, is_marked_unread: false } })
-  const expected = { last_read_seq: basis.last_read_seq, read_state_version: basis.read_state_version,
-    unread_count: basis.unread_count, is_marked_unread: basis.is_marked_unread, unread_locator: basis.unread_locator }
+  const expected = { read_state_version: 9, last_read_seq: 7, unread_count: 0 }
   const read = deferred<void>(); boundary.visible = true; boundary.write.mockReturnValueOnce(read.promise)
   const repository = await openImRepository('outbox-owner', { adapter: createMemoryLocalSyncDb() })
   const rendered = createReactHarness()

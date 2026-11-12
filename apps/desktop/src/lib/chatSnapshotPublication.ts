@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { subscribeIdentities } from './chatMessageWindowPublication'
 import type { IdentityDirectorySnapshot } from './identityDirectoryBridge'
+import type { DisplayIdentity } from './displayIdentity'
 import { imSelectors, readChatRows, replaceChatRowsAndIdentities, type AccountImRepository } from './imRepository'
 import { rendererLogger } from './log'
 
@@ -10,13 +11,28 @@ const publicationLog = rendererLogger('im/first-frame')
 /** Cached chats whose people are all known locally. A chat missing one is left out of the first frame (the account
  * read brings it back); it never takes the other rows with it. */
 export function readCompleteCachedChats(repository: AccountImRepository): ChatItem[] {
+  const { chats, incomplete } = splitCachedChats(repository)
+  if (incomplete.length > 0) publicationLog.error({ count: incomplete.length, chatIds: incomplete.slice(0, 20) }, 'cached chats reference people missing locally; left out of the first frame')
+  return chats
+}
+
+/**
+ * The stored list and its people when it is a whole list (see @@@durable-snapshot). Null when a row lacks its people,
+ * or when nothing is stored: an empty table cannot tell "no conversations" from "not written", and the keyset read
+ * that settles it costs one request.
+ */
+export function readDurableList(repository: AccountImRepository): { rows: ChatItem[]; identities: DisplayIdentity[] } | null {
+  const { chats, incomplete } = splitCachedChats(repository)
+  return incomplete.length > 0 || chats.length === 0 ? null : { rows: chats, identities: Object.values(imSelectors.identitiesById(repository.snapshot())) }
+}
+
+function splitCachedChats(repository: AccountImRepository): { chats: ChatItem[]; incomplete: string[] } {
   const identities = imSelectors.identitiesById(repository.snapshot())
   const incomplete: string[] = []
   const chats = readChatRows(repository).filter((chat) => (chat.kind === 'group'
     ? (chat.member_user_ids ?? []).every((id) => !!identities[id])
     : !chat.peer_user_id || !!identities[chat.peer_user_id]) || (incomplete.push(chat.id), false))
-  if (incomplete.length > 0) publicationLog.error({ count: incomplete.length, chatIds: incomplete.slice(0, 20) }, 'cached chats reference people missing locally; left out of the first frame')
-  return chats
+  return { chats, incomplete }
 }
 
 // @@@local-first-frame — the list and its people paint from the local store as soon as it is read. Whatever the account

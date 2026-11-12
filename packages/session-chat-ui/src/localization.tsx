@@ -132,6 +132,7 @@ const fallbackMessages = {
   'transcript.thinkingLive': 'Thinking and working',
   'transcript.starting': 'Starting',
   'transcript.restoring': 'Restoring',
+  'transcript.connecting': 'Connecting to Gugu model service',
   'transcript.sending': 'Sending',
   'transcript.waitingToReceive': 'Waiting to be received',
   'transcript.waitingToSend': 'Waiting to send',

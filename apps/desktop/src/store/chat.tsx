@@ -242,7 +242,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     toast: (message: string, type?: ToastType) => void
     appendMessage: (message: MessageItem) => void
   } | null>(null)
-  // 启动恢复(reload/崩溃后未送达的行重建 + 续投)+ window online kick;换用户重跑(db 句柄按 user 隔离)。
+  // 启动恢复(reload/崩溃后未送达的行重建 + 续投)+ 后端恢复 kick;换用户重跑(db 句柄按 user 隔离)。
   useEffect(() => {
     if (!userId) return
     const wiring = createOutboxWiring({
