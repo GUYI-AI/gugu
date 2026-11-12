@@ -54,6 +54,9 @@ export function InnerSidebarTopics({ chatId }: { chatId: string }) {
       throw new Error('inner sidebar topic rows have no topics of their own to toggle')
     },
     pin,
+    unpinFromSidebar: () => {
+      throw new Error('inner sidebar topic rows are never pinned to the sidebar')
+    },
     setNotificationLevel: setLevel,
     remove,
     // 这一格没有键盘游标(每一行都在 Tab 序里):获得焦点不用记。

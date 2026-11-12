@@ -17,7 +17,7 @@ const session = (conversationId: string, projectId: string, agent: string | null
   supported: true, parentConversationId: parent, agent: agent ? { userId: agent } : null,
 })
 const homes = (parts: Partial<Record<keyof AgentHomes, string[]>> = {}): AgentHomes => ({
-  inRooms: new Set(parts.inRooms), inProjects: new Set(parts.inProjects), withTopLevelTask: new Set(parts.withTopLevelTask),
+  inRooms: new Set(parts.inRooms), inProjects: new Set(parts.inProjects), withTopLevelTask: new Set(parts.withTopLevelTask), pinned: new Set(parts.pinned),
 })
 const mine = new Set(['a-solo', 'a-room', 'a-project', 'a-idle'])
 const owns = (id: string) => mine.has(id)

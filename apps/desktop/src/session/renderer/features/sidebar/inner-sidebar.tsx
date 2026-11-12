@@ -50,7 +50,7 @@ import { SidebarStateHeader } from './sidebar-state-header';
 // 嵌在群下面的那一行 —— 由壳画进「话题」那一格(components/ChatListSlotHost.tsx → InnerSidebarTopics)。
 
 /** 侧栏里我的每一条会话,带上它背后的 agent(同 SidebarSessionItem 认身份的两条腿)。 */
-function mySidebarAgents(): ChatAgentEntry[] {
+export function mySidebarAgents(): ChatAgentEntry[] {
   return [...sidebarStore.placement.nodeById.values()].map(({ item }) => ({
     id: item.id,
     projectId: item.projectId,
@@ -70,7 +70,7 @@ function projectIdsOfChat(chatId: string): readonly string[] {
   return row ? sidebarStore.projectMembersOf(row) : [];
 }
 
-function chatScope(anchor: InnerSidebarAnchor, summaries: ReadonlyMap<string, ChatSummary>): ChatAgentScope {
+export function chatScope(anchor: InnerSidebarAnchor, summaries: ReadonlyMap<string, ChatSummary>): ChatAgentScope {
   const memberUserIds = summaries.get(anchor.chatId)?.memberUserIds ?? [];
   return anchor.kind === 'group'
     ? { kind: 'group', memberUserIds }

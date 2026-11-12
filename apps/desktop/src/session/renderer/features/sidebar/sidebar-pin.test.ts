@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { pinnedSidebarAgents, sidebarPinMenuAction, type SidebarAgentHome, type SidebarPinCandidate } from './sidebar-pin';
+import type { ChatAgentEntry } from './chat-agents';
+import {
+  pinnedSidebarAgents,
+  sidebarAgentHome,
+  sidebarPinMenuAction,
+  type SidebarAgentHome,
+  type SidebarHomeCandidate,
+  type SidebarPinCandidate,
+} from './sidebar-pin';
 
 // #2548 固定到左侧栏: when the session menu offers it, and which agents the left list puts at the top.
 describe('sidebarPinMenuAction', () => {
@@ -85,5 +93,42 @@ describe('pinnedSidebarAgents', () => {
       homeOf
     );
     expect(result.map(({ session }) => session.title)).toEqual(['fresh', 'in-group']);
+  });
+});
+
+describe('sidebarAgentHome', () => {
+  const entry = (facts: Partial<ChatAgentEntry> = {}): ChatAgentEntry => ({
+    id: 's1',
+    projectId: 'tasks',
+    isPinned: false,
+    time: 0,
+    agentUserId: 'a1',
+    ...facts,
+  });
+  const group = (name: string, members: string[]): SidebarHomeCandidate => ({
+    kind: 'group',
+    name,
+    scope: { kind: 'group', memberUserIds: members },
+  });
+  const project = (name: string, projectIds: string[], members: string[] = []): SidebarHomeCandidate => ({
+    kind: 'project',
+    name,
+    scope: { kind: 'project', projectIds, memberUserIds: members },
+  });
+
+  it('is the group or project whose inner-sidebar column lists the agent (its project, or a membership)', () => {
+    expect(sidebarAgentHome(entry(), [group('其他群', ['a2']), group('运营群', ['a1'])])?.name).toBe('运营群');
+    expect(sidebarAgentHome(entry({ projectId: 'app' }), [project('App', ['app'])])?.name).toBe('App');
+    expect(sidebarAgentHome(entry(), [project('App', ['app'], ['a1'])])?.name).toBe('App');
+  });
+
+  it('prefers a project to a group: the session works in its project', () => {
+    const home = sidebarAgentHome(entry({ projectId: 'app' }), [group('运营群', ['a1']), project('App', ['app'])]);
+    expect(home).toMatchObject({ kind: 'project', name: 'App' });
+  });
+
+  it('is null for a standalone agent (in no group, no project), or a session without an agent in no project', () => {
+    expect(sidebarAgentHome(entry(), [group('运营群', ['a2']), project('App', ['app'])])).toBeNull();
+    expect(sidebarAgentHome(entry({ agentUserId: undefined }), [group('运营群', ['a1'])])).toBeNull();
   });
 });
