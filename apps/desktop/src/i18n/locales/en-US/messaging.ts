@@ -465,7 +465,8 @@ export default {
       "unavailable": "The send did not finish. Try sending again later."
     },
     "verb": {
-      "task": "New task"
+      "task": "New task",
+      "agent": "New agent"
     },
     "whisperBanner": "Whisper to {{name}} · only visible to you both",
     "whisperPlaceholder": "Whisper to {{name}}…"

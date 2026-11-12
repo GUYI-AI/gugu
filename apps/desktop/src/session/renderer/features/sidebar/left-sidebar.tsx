@@ -37,6 +37,7 @@ import { RETAINED_SURFACE_HIDDEN_STYLE } from '@/lib/retainedSurface';
 import { SidebarSessionsSection } from './sidebar-sessions-section';
 import { SidebarVirtualList } from './sidebar-virtual-list';
 import { SampleProjectSidebar } from './sample-project-row';
+import { SidebarOneListEmpty } from './sidebar-one-list-empty';
 import { useSidebarDrop } from './use-sidebar-drop';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useNativeConversationChat } from '@/hooks/useNativeConversationChat';
@@ -312,6 +313,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
                 )}
                 {showChats && <SidebarChatsSection merged={merged} unread={chatsUnread} />}
                 {oneList && <SidebarOneList />}
+                {oneList && <SidebarOneListEmpty />}
               </SidebarScrollContext.Provider>
             </div>
           </div>

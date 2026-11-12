@@ -136,6 +136,8 @@ export const enUSSessionWorkflowMessages = {
   'sessionHistory.detailArchived': 'Archived',
   'sessionHistory.emptyNone': 'No tasks yet',
   'sessionHistory.localUnavailable': 'Engine sessions on this machine can’t be read',
+  'sessionHistory.importOffer': 'Used {tools} before?',
+  'sessionHistory.importOfferAction': 'Import earlier sessions ›',
 
   'task.newTask': 'New task',
   'task.creatingAgent': 'Creating agent…',
@@ -730,6 +732,8 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'sessionHistory.detailArchived': '归档',
   'sessionHistory.emptyNone': '还没有会话',
   'sessionHistory.localUnavailable': '这台机器上读不到各家引擎的会话',
+  'sessionHistory.importOffer': '用过 {tools}？',
+  'sessionHistory.importOfferAction': '导入以前的会话 ›',
 
   'task.newTask': '新建任务',
   'task.creatingAgent': '正在创建 Agent…',
