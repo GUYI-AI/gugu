@@ -1,7 +1,7 @@
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 import { messageForUser } from '@/lib/userFacingError';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, Folder, ListFilter, Monitor } from '@/lib/icons';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { restoreArchivedSession } from '@renderer/features/sessions/restore-session-flow';
@@ -25,6 +25,7 @@ import { toast } from '@renderer/lib/hooks/use-toast';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { useDebounce } from '@renderer/lib/hooks/useDebounce';
+import { useParams } from '@renderer/lib/layout/navigation-provider';
 import { openLink } from '@/lib/guguLinks';
 import { Button } from '@renderer/lib/ui/button';
 import {
@@ -52,8 +53,6 @@ import {
   projectSectionKey,
   type SessionHistoryGuguRef,
   type SessionHistorySort,
-  type SessionHistorySource,
-  type SessionHistoryStatus,
 } from '@shared/core/session-history/session-history';
 import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 import {
@@ -69,6 +68,7 @@ import {
 } from './history-sections';
 import { STATUS_MESSAGE_KEY, SessionHistoryRow, historyOptionId, sourceLabel } from './session-history-row';
 import { SessionHistorySectionBox } from './session-history-section-box';
+import type { SessionHistorySourceFilter, SessionHistoryStatusFilter, SessionHistoryViewParams } from './session-history-import-part';
 import { useSessionHistoryDirectories } from './use-session-history';
 import { LegacyDmArchiveButton } from '@/components/legacy-dm-history/LegacyDmHistoryEntry';
 
@@ -91,8 +91,8 @@ import { LegacyDmArchiveButton } from '@/components/legacy-dm-history/LegacyDmHi
 // 和一个可选筛选。问得到的机器并行读;离线的用心跳摘要顶上(≤50 条),行标离线,节尾写哪台离线。
 // 行动作都作用在**这一行所在的机器**上 —— 会话归原件所在的机器,❌ 原件跨机器搬。
 
-type SourceFilter = SessionHistorySource | 'all';
-type StatusFilter = SessionHistoryStatus | 'all';
+type SourceFilter = SessionHistorySourceFilter;
+type StatusFilter = SessionHistoryStatusFilter;
 
 /** 滚到底一次多要这么多目录(每台机器)。 */
 const BATCH_SIZE = 50;
@@ -160,8 +160,17 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
   const unreachable = inView.filter((choice) => !reachable.includes(choice.id)).map((choice) => choice.id);
   const describe = (error: unknown, kind: 'list' | 'preview' | 'import', machine: string) =>
     describeImportFailure(error, { isLocal: machine === LOCAL_IMPORT_DEVICE }, labelOf(machine), kind, translate);
-  const [source, setSource] = useState<SourceFilter>(DEFAULT_SOURCE);
-  const [status, setStatus] = useState<StatusFilter>('all');
+  // 进来时可以带一部分(#2548 侧栏「导入以前的会话」带的是导入那一部分,SESSION_HISTORY_IMPORT_PART):首帧就停在那里;
+  // 页面开着时又带着进来一次,就再落回那一部分。参数是转瞬的,之后的筛选照旧由人自己改。
+  const { params: entry } = useParams('session-history');
+  const entryPart = entry.source !== undefined || entry.status !== undefined ? entry : null;
+  const [source, setSource] = useState<SourceFilter>(entryPart?.source ?? DEFAULT_SOURCE);
+  const [status, setStatus] = useState<StatusFilter>(entryPart?.status ?? 'all');
+  useEffect(() => {
+    if (!entryPart) return;
+    setSource(entryPart.source ?? DEFAULT_SOURCE);
+    setStatus(entryPart.status ?? 'all');
+  }, [entryPart]);
   const [sort, setSort] = useState<SessionHistorySort>('updated');
   const [rawQuery, setRawQuery] = useState('');
   const query = useDebounce(rawQuery, 200);
@@ -842,7 +851,14 @@ export function SessionHistoryTitlebar() {
   return <ShellTitlebar />;
 }
 
+/** Draws nothing: a view's params are typed from its WrapView's props (`WrapParams`), so `useParams('session-history')` knows them. */
+function SessionHistoryViewWrapper({ children }: { children: ReactNode } & SessionHistoryViewParams) {
+  return <>{children}</>;
+}
+
 export const sessionHistoryView = {
+  WrapView: SessionHistoryViewWrapper,
+  transientParams: ['source', 'status'],
   TitlebarSlot: SessionHistoryTitlebar,
   MainPanel: SessionHistoryMainPanel,
-} satisfies ViewDefinition;
+} satisfies ViewDefinition<SessionHistoryViewParams>;

@@ -47,16 +47,9 @@ export const sidebarGroupHeaderClass = 'group/ghdr flex h-8 items-center justify
 export const sidebarDropTargetClass = 'bg-foreground/10 ring-1 ring-inset ring-foreground/20';
 
 /**
- * 分区头那一条通栏(左右贴着侧栏边),行却缩进 12px、带圆角:落点那一层画在头里面缩进的一块上,与下面的行同宽同形。
- * 用伪元素画,头本身的排版一像素不动。
- */
-export const sidebarHeaderDropTargetClass =
-  'relative isolate before:pointer-events-none before:absolute before:-z-10 before:inset-y-0 before:inset-x-3 before:rounded-md before:bg-foreground/10 before:ring-1 before:ring-inset before:ring-foreground/20';
-
-/**
  * 分区头标题(置顶 / 项目 / 任务)的角色 —— MicroLabel 自带 text-xs,咕咕字阶只有 14/12,
  * 这里落在 14 档(text-sm)。三个分区头引用同一个常量,❌ 各写一遍手抄同一串覆盖类:
- * 手抄三份正是「项目」曾经掉队成 12px、和「任务」的 14px 不一致的成因(见 projects-group-label)。
+ * 手抄三份正是「项目」曾经掉队成 12px、和「任务」的 14px 不一致的成因。
  */
 export const sidebarGroupTitleClass = 'font-medium text-sm text-foreground-muted';
 
@@ -161,14 +154,6 @@ export const SidebarGroup = React.forwardRef<HTMLDivElement, React.HTMLAttribute
 );
 SidebarGroup.displayName = 'SidebarGroup';
 
-export const SidebarGroupContent = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn('grid gap-0.5', className)} {...props} />
-));
-SidebarGroupContent.displayName = 'SidebarGroupContent';
-
 // list body —— 它拥有这一组的横向留白(见 sidebarGroupInsetX)。
 export const SidebarMenu = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
@@ -222,15 +207,17 @@ const sidebarMenuItemClass =
 
 interface SidebarMenuButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   isActive?: boolean;
+  /** 所在的行可以被拖走时打开,同下面 SidebarMenuAction 的 allowNativeDrag(#2548 内层侧栏的话题行)。 */
+  allowNativeDrag?: boolean;
 }
 export const SidebarMenuButton = React.forwardRef<HTMLButtonElement, SidebarMenuButtonProps>(
-  ({ className, isActive, ...props }, ref) => (
+  ({ className, isActive, allowNativeDrag, ...props }, ref) => (
     <button
       ref={ref}
       data-slot="button"
       data-active={isActive || undefined}
       className={cn(sidebarMenuItemClass, className)}
-      onMouseDown={(e) => e.preventDefault()}
+      onMouseDown={allowNativeDrag ? undefined : (e) => e.preventDefault()}
       {...props}
     />
   )

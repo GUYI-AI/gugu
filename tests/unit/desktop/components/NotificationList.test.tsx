@@ -13,9 +13,7 @@ import { installShellSlots } from '../../../../apps/desktop/src/lib/shellSlots'
 import { installAssistantShellBridge, publishAssistantShell } from '../../../../apps/desktop/src/lib/assistantShellBridge'
 import { chat, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
-const state = vi.hoisted(() => ({ sessions: [] as SessionpageSessionSummary[], mobile: false, readError: null as Error | null, sidebar: undefined as unknown as {
-  listLayout: string; listPage: string; setListLayout(value: string): void; setListPage(value: string): void
-} }))
+const state = vi.hoisted(() => ({ sessions: [] as SessionpageSessionSummary[], mobile: false, readError: null as Error | null }))
 const followLink = vi.hoisted(() => vi.fn())
 const markSeen = vi.hoisted(() => vi.fn(async (_id: string) => { if (state.readError) throw state.readError }))
 vi.mock('@/lib/guguLinks', () => ({ followLink }))
@@ -33,24 +31,25 @@ vi.mock('@renderer/features/assistant/assistant-shell', () => ({ useAssistantShe
 vi.mock('@renderer/features/assistant/assistant-home-sessions', () => ({ localHomeSessions: { sessions: [] } }))
 vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: {} }) }))
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: vi.fn() }), useWorkspaceSlots: () => ({ currentView: 'home' }), isCurrentView: (current: string, view: string) => current === view }))
-vi.mock('@renderer/lib/layout/layout-provider', () => ({ useWorkspaceLayoutContext: () => ({ isLeftOpen: true, isLeftPeeking: false, toggleLeft: vi.fn(), setTriggerHovered: vi.fn() }) }))
+vi.mock('@renderer/lib/layout/layout-provider', () => ({ SIDEBAR_PROGRESS_VAR: '--gg-sidebar-progress', useWorkspaceLayoutContext: () => ({ isLeftOpen: true, isLeftPeeking: false, toggleLeft: vi.fn(), setTriggerHovered: vi.fn(), setLeftRail: vi.fn() }), useLeftRailLayout: () => false }))
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }))
-vi.mock('@renderer/lib/stores/app-state', async () => {
-  const { observable } = await import('mobx')
-  state.sidebar = observable({ projectsCollapsed: false, listLayout: 'split', listPage: 'projects', sidebarProjects: [], joinedGroups: [],
-    setStateGroupsEnabled: () => {}, setAssistantAgentId: () => {}, setAgentNameOnHoverEnabled: () => {},
-    setListLayout(value: string) { this.listLayout = value }, setListPage(value: string) { this.listPage = value } })
-  return { appState: { projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {} } }, sidebarStore: state.sidebar }
-})
+vi.mock('@renderer/lib/stores/app-state', () => ({
+  appState: { projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {} } },
+  sidebarStore: { sidebarProjects: [], joinedGroups: [], setAssistantAgentId: () => {}, setAgentNameOnHoverEnabled: () => {} },
+}))
 vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: {} }))
 vi.mock('@renderer/features/sidebar/session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: () => {} } }))
 vi.mock('@renderer/features/sidebar/use-sidebar-drop', () => ({ useSidebarDrop: () => ({ isDragOver: false }) }))
-vi.mock('@renderer/features/sidebar/pinned-session-list', () => ({ SidebarPinnedSessionList: () => null }))
-vi.mock('@renderer/features/sidebar/projects-group-label', () => ({ ProjectsGroupLabel: () => null }))
 vi.mock('@renderer/features/sidebar/sidebar-search-trigger', () => ({ SidebarSearchTrigger: () => <span>Search</span> }))
-vi.mock('@renderer/features/sidebar/sidebar-sessions-section', () => ({ SidebarSessionsSection: () => null }))
-vi.mock('@renderer/features/sidebar/sidebar-virtual-list', () => ({ SidebarVirtualList: () => <div data-original-project-list="">Original projects</div> }))
-vi.mock('@renderer/features/sidebar/sidebar-chats-section', () => ({ shellChatActions: [], openShellChatAction: vi.fn(), SidebarChatsSection: () => <div data-original-chat-list="">Original chats</div> }))
+vi.mock('@renderer/features/sidebar/sidebar-one-list', () => ({ SidebarOneList: () => <div data-original-list="">Original list</div> }))
+vi.mock('@renderer/features/sidebar/sidebar-one-list-empty', () => ({ SidebarOneListEmpty: () => null }))
+// The desktop bell is in the sidebar's head (#2548): the real head, with the row under it left out.
+vi.mock('@renderer/features/sidebar/sidebar-one-list-chrome', async original => ({ ...await original<object>(), SidebarOneListTop: () => null }))
+vi.mock('@renderer/lib/components/nav-buttons', () => ({ navigateBack: vi.fn() }))
+vi.mock('@renderer/features/sidebar/inner-sidebar', async () => {
+  const { observable } = await import('mobx')
+  return { innerSidebarChat: observable.box(null, { deep: false }), innerSidebarShownFor: observable.box(null) }
+})
 
 let shell: ReturnType<typeof createReactHarness>
 let workspace: ReturnType<typeof createReactHarness>
@@ -63,7 +62,6 @@ beforeEach(() => {
   vi.clearAllMocks(); state.mobile = false; state.readError = null
   state.sessions = [task('agent-a'), task('agent-b')]
   delete (window as unknown as Record<string, unknown>).__GUGU_SIDEBAR_NOTIFICATIONS_OPEN__
-  state.sidebar.setListLayout('split'); state.sidebar.setListPage('projects')
   installShellSlots(); observations.clear()
   vi.stubGlobal('IntersectionObserver', class {
     record: { callback: IntersectionObserverCallback; targets: Set<Element> }
@@ -99,7 +97,8 @@ async function see(id: string, ratio = 1) {
 it.each([false, true])('the actual list header toggles global notifications and back (phone=%s)', async mobile => {
   await mount(mobile)
   expect(document.querySelector('[data-testid="notification-count"]')?.textContent).toBe('2')
-  expect(document.querySelector('[data-testid="sidebar-list-layout"]')).toBeNull()
+  // #2548: on the desktop head the bell is drawn like the collapse and 会话历史 buttons beside it; the phone's stays as it was.
+  expect(toggle()?.dataset.tone).toBe(mobile ? undefined : 'strong')
   expect(list()).toBeNull()
   await open()
   expect(toggle()?.getAttribute('aria-pressed')).toBe('true')
@@ -109,21 +108,17 @@ it.each([false, true])('the actual list header toggles global notifications and 
   expect(toggle()?.getAttribute('aria-pressed')).toBe('false')
   expect(list()).toBeNull()
 })
-it('desktop toggling retains the original list nodes, scroll and split/merged choice', async () => {
+it('desktop toggling retains the original list nodes and scroll', async () => {
   await mount()
   const scroller = workspace.container.querySelector<HTMLElement>('[data-region="sidebar-scroll"]')!
   scroller.scrollTop = 87
-  const original = workspace.container.querySelector('[data-original-project-list]')
+  const original = workspace.container.querySelector('[data-original-list]')
+  expect(original, 'the one list is mounted').not.toBeNull()
   await open()
-  expect(workspace.container.querySelector('[data-original-project-list]')).toBe(original)
+  expect(workspace.container.querySelector('[data-original-list]')).toBe(original)
   expect(original?.closest('[data-notification-original-list]')?.getAttribute('style')).toContain('content-visibility: hidden')
   await act(async () => toggle()!.click())
   expect(scroller.scrollTop).toBe(87)
-  expect(state.sidebar.listLayout).toBe('split')
-  await act(async () => state.sidebar.setListLayout('merged'))
-  await open(); await act(async () => toggle()!.click())
-  expect(state.sidebar.listLayout).toBe('merged')
-  expect(workspace.container.querySelector('[data-original-chat-list]')).not.toBeNull()
 })
 it('the old composer has no floating Needs you entrance', async () => {
   await renderWithAppProviders(shell, <><ChatBottomDock reserve={false}><textarea /></ChatBottomDock><NeedsYouHost /></>)

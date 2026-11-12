@@ -149,13 +149,13 @@ describe('addressed_count is a required column of list_unread_locators', () => {
 
 describe('chatAttention is the one unread formula', () => {
   it('a topic counts only what is addressed to you in the list; its own tab keeps the full count', () => {
-    expect(chatAttention(topic(5, 1))).toEqual({ unread: 5, forYou: 1, askingYou: 1 })
+    expect(chatAttention(topic(5, 1))).toEqual({ unread: 5, forYou: 1, callsYou: 1, askingYou: 1 })
   })
 
   it('a group keeps its full unread in the list and badges only what is addressed to you', () => {
     const group = chat({ id: 'g', kind: 'group', unread_count: 5, unread_locator: { ...locator(5, 1), stream_id: 'main:g' } })
-    expect(chatAttention(group)).toEqual({ unread: 5, forYou: 5, askingYou: 1 })
-    expect(chatAttention({ ...group, is_muted: true }).askingYou).toBe(0)
+    expect(chatAttention(group)).toEqual({ unread: 5, forYou: 5, callsYou: 1, askingYou: 1 })
+    expect(chatAttention({ ...group, is_muted: true })).toMatchObject({ callsYou: 1, askingYou: 0 })
   })
 
   it('the desktop sidebar and the phone fold a topic into its row by the same number', () => {

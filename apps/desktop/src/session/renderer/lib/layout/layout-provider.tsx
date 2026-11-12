@@ -1,4 +1,11 @@
-import { animate, useMotionValue, useReducedMotion, type MotionValue } from 'framer-motion';
+import {
+  animate,
+  useMotionValue,
+  useMotionValueEvent,
+  useReducedMotion,
+  useTransform,
+  type MotionValue,
+} from 'framer-motion';
 import {
   createContext,
   useCallback,
@@ -9,7 +16,7 @@ import {
 } from 'react';
 import { useState } from 'react';
 import { NAV_COLUMN_WIDTH } from '@/lib/uiRuler';
-import { PANEL_SPRING, usePanelAnimatedSize } from './panel-motion';
+import { clamp01, PANEL_SNAP_RATIO, PANEL_SPRING } from './panel-motion';
 import { useSidebarPeek } from './sidebar-peek';
 
 /** 侧栏宽度的边界与默认值。min 沿用改造前的 200px;max 取 Codex 同款 520。 */
@@ -42,6 +49,74 @@ function writeStoredSidebarWidth(width: number): void {
   }
 }
 
+/**
+ * 侧栏占位宽:收起宽 + 进度 × (宽 − 收起宽)。收起宽 0 = 今天的 进度 × 宽(usePanelAnimatedSize);#2548 一个列表时收起成
+ * 一列头像,收起宽就是那一列。
+ */
+export function sidebarOccupiedWidth(progress: number, width: number, rail: number): number {
+  return rail + clamp01(progress) * (width - rail);
+}
+
+/**
+ * #2548 收起成一列头像时,侧栏里文字(名字、预览、时间、搜索、分区头)的不透明度,由开合的同一条进度推出:
+ * 只在进度的后一半里有字 —— 收起时字在前一半淡出,展开时在后一半淡入(一个式子两个方向都对)。
+ */
+export function sidebarRailTextOpacity(progress: number): number {
+  return clamp01(2 * progress - 1);
+}
+
+/** 侧栏里文字跟着它淡入淡出的那个 CSS 变量(内容层上设,left-sidebar 里各段文字读)。 */
+export const SIDEBAR_TEXT_OPACITY_VAR = '--gg-sidebar-text';
+
+/**
+ * #2548 the open/close progress itself (0 = the rail, 1 = expanded), as a CSS variable on the content layer: geometry that
+ * has to move with everything else (the 「+」 sliding onto the avatars' axis, 创建智能体 narrowing) reads it. No rail = 1.
+ */
+export const SIDEBAR_PROGRESS_VAR = '--gg-sidebar-progress';
+
+/**
+ * #2548 on the rail a row's unread count sits on the avatar's top-right corner. It fades in near the end of collapsing
+ * (mock v18: 快到头时头像右上角的数字淡入) and out first when expanding: the mirror of the text, offset so that the two
+ * are both 0 around SIDEBAR_RAIL_LAYOUT_BELOW, where the count changes place.
+ */
+export function sidebarRailBadgeOpacity(progress: number): number {
+  return clamp01((0.4 - progress) * 3);
+}
+
+/** The CSS variable the rail's corner badge reads (same layer as the text one). */
+export const SIDEBAR_BADGE_OPACITY_VAR = '--gg-sidebar-badge';
+
+/**
+ * Below this progress the rows are laid out as the rail (the count on the avatar's corner, row bodies inert). The text
+ * (sidebarRailTextOpacity) and the corner badge (sidebarRailBadgeOpacity) are both invisible around it, so the switch
+ * between the two places is never seen: nothing jumps when collapsing starts.
+ */
+export const SIDEBAR_RAIL_LAYOUT_BELOW = 0.45;
+
+export function sidebarRailLayout(progress: number): boolean {
+  return progress < SIDEBAR_RAIL_LAYOUT_BELOW;
+}
+
+/**
+ * #2548 dragging the edge of a sidebar that collapses to a rail: the sidebar follows the pointer, no threshold mid-drag.
+ * At or above the minimum width it is a resize (progress 1). Below it the width rests at the minimum and the progress
+ * carries the rest, so the occupied width is still where the pointer is, and the text fades with it as in a click
+ * collapse. Continuous at the minimum (progress 1 on both sides).
+ */
+export function sidebarEdgeDrag(
+  rawWidth: number,
+  bounds: { rail: number; min: number; max: number }
+): { width: number; progress: number } {
+  const { rail, min, max } = bounds;
+  if (rawWidth >= min) return { width: Math.max(min, Math.min(max, rawWidth)), progress: 1 };
+  return { width: min, progress: min > rail ? clamp01((rawWidth - rail) / (min - rail)) : 0 };
+}
+
+/** Letting go snaps to the nearer state: expanded from half the way between the rail and the minimum width up. */
+export function sidebarEdgeSnapsOpen(progress: number): boolean {
+  return progress >= PANEL_SNAP_RATIO;
+}
+
 export interface WorkspaceLayoutContextValue {
   isLeftOpen: boolean;
   /** 侧栏收起后指针停在左缘/开关钮上,浮出的那一份预览。 */
@@ -50,8 +125,16 @@ export interface WorkspaceLayoutContextValue {
   leftWidth: MotionValue<number>;
   /** 开合进度 0→1,由弹簧驱动。 */
   leftProgress: MotionValue<number>;
-  /** 侧栏实际占位宽 = 进度 × 宽。主区宽是"剩下的",所以两者永远同步。 */
+  /** 侧栏实际占位宽 = 收起宽 + 进度 × (宽 − 收起宽)。主区宽是"剩下的",所以两者永远同步。 */
   leftAnimatedWidth: MotionValue<number>;
+  /**
+   * GUYI-AI/gugu#2548 收起时留下的那一列宽(px):0 = 收起就整列让开(今天);>0 = 侧栏是一个列表时,收起成这么宽的一列头像
+   * (内容不动,文字藏起来,见 left-sidebar)。这一列一直在,所以没有浮出预览。
+   */
+  leftRail: number;
+  /** 同一个数,给动画里的变换读(useTransform 的输入得是 motion value)。 */
+  leftRailWidth: MotionValue<number>;
+  setLeftRail: (px: number) => void;
   /** 会话页根元素 —— 浮出预览要按它的左缘算,不是窗口。 */
   workspaceRootRef: RefObject<HTMLDivElement | null>;
   setLeftWidth: (width: number, options?: { persist?: boolean }) => void;
@@ -64,6 +147,13 @@ export interface WorkspaceLayoutContextValue {
     }
   ) => void;
   toggleLeft: () => void;
+  /**
+   * #2548 rail only: the edge is being dragged; `rawWidth` is where the pointer puts it (unclamped), `maxWidth` the
+   * page's cap. The sidebar follows (sidebarEdgeDrag); open / collapsed does not change until the release.
+   */
+  dragLeftEdge: (rawWidth: number, maxWidth: number) => void;
+  /** #2548 rail only: let go of the edge. Snaps to the nearer state (sidebarEdgeSnapsOpen) with the collapse spring. */
+  releaseLeftEdge: () => void;
   /** 开关按钮把自己的悬停状态报进来:悬停满 100ms 也会浮出侧栏。 */
   setTriggerHovered: (hovered: boolean) => void;
   exitZenMode: () => void;
@@ -92,14 +182,31 @@ const WorkspaceLayoutContext = createContext<WorkspaceLayoutContextValue | undef
  * 新的宽度键有自己的默认值,再也不会有"折了回不来"。
  */
 export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
+  // Starts expanded (#2548 「默认展开」). Open / collapsed is not stored, only the width is (SIDEBAR_WIDTH_STORAGE_KEY):
+  // every start is expanded, and a stored width still wins over the default width.
   const [isLeftOpen, setIsLeftOpen] = useState(true);
   const prefersReducedMotion = useReducedMotion();
   const workspaceRootRef = useRef<HTMLDivElement | null>(null);
 
   const leftWidth = useMotionValue(readStoredSidebarWidth());
   const leftProgress = useMotionValue(1);
-  const leftAnimatedWidth = usePanelAnimatedSize(leftProgress, leftWidth);
+  const [leftRail, setLeftRailState] = useState(0);
+  const leftRailWidth = useMotionValue(0);
+  const setLeftRail = useCallback((px: number) => {
+    leftRailWidth.set(px);
+    setLeftRailState(px);
+  }, [leftRailWidth]);
+  const leftAnimatedWidth = useTransform([leftProgress, leftWidth, leftRailWidth], ([progress, width, rail]: number[]) =>
+    sidebarOccupiedWidth(progress, width, rail)
+  );
   const runningAnimationRef = useRef<{ stop: () => void } | null>(null);
+  /** An edge drag under way (rail only): the width it started from. */
+  const edgeDragRef = useRef<{ startWidth: number } | null>(null);
+  /**
+   * A drag that snapped shut passed through the minimum width and left it there; the next open comes back at the width
+   * the drag started from instead (nothing was stored, so the next start does too).
+   */
+  const restoreWidthRef = useRef<number | null>(null);
 
   const zenModeSnapshotRef = useRef<{
     leftOpen: boolean;
@@ -108,7 +215,8 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   } | null>(null);
 
   const peek = useSidebarPeek({
-    isLeftOpen,
+    // A rail never goes away, so there is nothing to peek at.
+    isLeftOpen: isLeftOpen || leftRail > 0,
     rootRef: workspaceRootRef,
     getProgress: () => leftProgress.get(),
     getWidth: () => leftWidth.get(),
@@ -136,18 +244,61 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
       const target = open ? 1 : 0;
       runningAnimationRef.current?.stop();
       runningAnimationRef.current = null;
+      const restore = open ? restoreWidthRef.current : null;
+      if (restore != null) {
+        // Re-based so the occupied width stays put if this lands mid-collapse; from the rail (progress 0) it is the same.
+        restoreWidthRef.current = null;
+        const rail = leftRailWidth.get();
+        const occupied = sidebarOccupiedWidth(leftProgress.get(), leftWidth.get(), rail);
+        leftWidth.set(restore);
+        leftProgress.set(restore > rail ? clamp01((occupied - rail) / (restore - rail)) : target);
+      }
       if (pin || prefersReducedMotion) {
         leftProgress.set(target);
         return;
       }
       runningAnimationRef.current = animate(leftProgress, target, PANEL_SPRING);
     },
-    [dismissPeek, leftProgress, peek.isPeekOpen, prefersReducedMotion, suppressUntilPointerLeaves]
+    [dismissPeek, leftProgress, leftRailWidth, leftWidth, peek.isPeekOpen, prefersReducedMotion, suppressUntilPointerLeaves]
   );
 
   const toggleLeft = useCallback(() => {
     setCollapsed('left', isLeftOpen);
   }, [isLeftOpen, setCollapsed]);
+
+  const dragLeftEdge = useCallback(
+    (rawWidth: number, maxWidth: number) => {
+      if (!edgeDragRef.current) {
+        // Grabbing the edge mid-animation takes over from the spring.
+        runningAnimationRef.current?.stop();
+        runningAnimationRef.current = null;
+        edgeDragRef.current = { startWidth: restoreWidthRef.current ?? leftWidth.get() };
+      }
+      const next = sidebarEdgeDrag(rawWidth, {
+        rail: leftRailWidth.get(),
+        min: SIDEBAR_MIN_WIDTH_PX,
+        max: Math.min(SIDEBAR_MAX_WIDTH_PX, maxWidth),
+      });
+      leftWidth.set(next.width);
+      leftProgress.set(next.progress);
+    },
+    [leftProgress, leftRailWidth, leftWidth]
+  );
+
+  const releaseLeftEdge = useCallback(() => {
+    const drag = edgeDragRef.current;
+    // Pressed and let go without moving: nothing changed, nothing to snap (❌ reverse a collapse that is still running).
+    if (!drag) return;
+    edgeDragRef.current = null;
+    if (sidebarEdgeSnapsOpen(leftProgress.get())) {
+      restoreWidthRef.current = null;
+      writeStoredSidebarWidth(leftWidth.get());
+      setCollapsed('left', false);
+    } else {
+      restoreWidthRef.current = drag.startWidth;
+      setCollapsed('left', true, { suppressPeek: false });
+    }
+  }, [leftProgress, leftWidth, setCollapsed]);
 
   const exitZenMode = useCallback(() => {
     const snapshot = zenModeSnapshotRef.current;
@@ -184,14 +335,30 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     leftWidth,
     leftProgress,
     leftAnimatedWidth,
+    leftRail,
+    leftRailWidth,
+    setLeftRail,
     workspaceRootRef,
     setLeftWidth,
     setCollapsed,
     toggleLeft,
+    dragLeftEdge,
+    releaseLeftEdge,
     setTriggerHovered,
     exitZenMode,
     toggleZenMode,
   };
+}
+
+/**
+ * #2548 whether the rows are laid out as the rail right now (sidebarRailLayout of the live progress, so it follows a click
+ * collapse and a drag alike). Re-renders only when it flips.
+ */
+export function useLeftRailLayout(): boolean {
+  const { leftProgress, leftRail } = useWorkspaceLayoutContext();
+  const [railLayout, setRailLayout] = useState(() => sidebarRailLayout(leftProgress.get()));
+  useMotionValueEvent(leftProgress, 'change', (progress) => setRailLayout(sidebarRailLayout(progress)));
+  return leftRail > 0 && railLayout;
 }
 
 export function WorkspaceLayoutContextProvider({ children }: { children: ReactNode }) {

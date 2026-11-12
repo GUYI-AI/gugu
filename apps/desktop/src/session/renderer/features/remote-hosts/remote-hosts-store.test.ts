@@ -264,7 +264,8 @@ describe('没连着的机器照账号上记着的那份', () => {
       expect(original.data).toMatchObject({ id: legacy.localProjectId, path: '/srv/repo', rootFolderDetached: true });
       expect(sidebarStore.orderedProjects.map(project => project.id)).not.toContain(legacy.localProjectId);
       expect(sidebarStore.rowProjectIdOf(legacy.localProjectId)).toBe(legacy.localProjectId);
-      expect(sidebarStore.standaloneSessionEntries.map(row => [row.projectId, row.sessionId])).toContainEqual([legacy.localProjectId, summary.conversationId]);
+      expect(sidebarStore.placement.nodeById.get(summary.conversationId)?.item.projectId).toBe(legacy.localProjectId);
+      expect(sidebarStore.rowOfSession(legacy.localProjectId, summary.conversationId)).toBeNull();
       expect(store.listedProject(summary.conversationId)).toBe(legacy.localProjectId);
       expect(isWorkspaceProject(appState.projects.projects.get(ordinary.localProjectId)!)).toBe(false);
       expect(sidebarStore.orderedProjects.map(project => project.id)).toContain(ordinary.localProjectId);

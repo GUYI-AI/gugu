@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Sidebar } from '../../../../apps/desktop/src/components/Sidebar'
 import { appState } from '../../../../apps/desktop/src/session/renderer/lib/stores/app-state'
 import { screenLayout, type ScreenBlockContent } from '../../../../apps/desktop/src/session/renderer/app/screen-layout'
+import { publishSidebarChatView } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
+import { publishPanelToggle } from '../../../../apps/desktop/src/lib/panelToggles'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
 // No session host here. appState registers its navigation snapshot at module load with a 1 s debounced
@@ -78,5 +80,49 @@ describe('Messages returns to the shared screen', () => {
     await clickMessages()
     expect(appState.navigation.currentViewId).toBe('screen')
     expect(screenLayout.snapshot).toEqual(saved)
+  })
+})
+
+describe('#2548 the sidebar as one list: 「消息」 again folds and unfolds that list', () => {
+  const sidebar = { open: true, label: '', toggle: vi.fn() }
+  afterEach(() => {
+    sidebar.toggle.mockClear()
+    publishSidebarChatView({ focusedChatId: null, groups: [] })
+  })
+
+  it('a click on 「消息」 while its list is the one shown runs the sidebar\'s own toggle, and goes nowhere', async () => {
+    publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
+    const unregister = publishPanelToggle('list:sessions', sidebar)
+    try {
+      appState.navigation.navigate('home')
+      await clickMessages()
+      expect(sidebar.toggle).toHaveBeenCalledTimes(1)
+      expect(appState.navigation.currentViewId).toBe('home')
+    } finally {
+      unregister()
+    }
+  })
+
+  it('away on the library it brings the list back first, as today (no toggle)', async () => {
+    publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
+    const unregister = publishPanelToggle('list:sessions', sidebar)
+    try {
+      appState.navigation.navigate('library')
+      await clickMessages()
+      expect(sidebar.toggle).not.toHaveBeenCalled()
+    } finally {
+      unregister()
+    }
+  })
+
+  it('switch off: today (a click on the active 「消息」 does nothing to the sidebar)', async () => {
+    const unregister = publishPanelToggle('list:sessions', sidebar)
+    try {
+      appState.navigation.navigate('home')
+      await clickMessages()
+      expect(sidebar.toggle).not.toHaveBeenCalled()
+    } finally {
+      unregister()
+    }
   })
 })

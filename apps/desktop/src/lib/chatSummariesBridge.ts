@@ -3,6 +3,8 @@
 //   · 叫什么:会话里「来自 X」那一句 —— 投递信封里只有群号(给 agent 寻址),人读群名。
 //   · 是群还是私聊:块页签的右键菜单(私聊没有群公告)。
 //   · 最后一句、话题从哪个对话开出来:⌘K 那个面板在会话页一次搜对话和话题(名字、最后一句),打开话题要先开它的源对话。
+//   · 成员:内层侧栏(#2548)列一个群 / 项目里我的智能体 —— 我的会话里 agent 是这个对话成员的那些。
+//   · 头像:内层侧栏头一行画这个群自己(群头像,没设就是成员拼图,同聊天列表那一行)。
 //
 // 壳那棵树知道每个对话(聊天列表那一份),会话页不知道:壳写、会话页读,同一个 window 对象 +
 // 一个 window 事件(谁先起来都接得上)。两边都只 import 这一个文件,❌ 各写一份键名。
@@ -23,6 +25,10 @@ export type ChatSummary = {
   readonly lastMessagePreview: string | null
   /** 话题从哪个对话开出来;别的 = null。 */
   readonly sourceChatId: string | null
+  /** 成员(chat.member_user_ids);列表行没带成员的对话 = 空。 */
+  readonly memberUserIds: readonly string[]
+  /** 群自己设的头像(chat.avatar);没设 = null。 */
+  readonly avatar: string | null
 }
 
 const KEY = '__GUGU_CHAT_SUMMARIES__'
@@ -32,7 +38,7 @@ const NAMES_VERSION_KEY = '__GUGU_CHAT_NAMES_VERSION__'
 
 type Summaries = ReadonlyMap<string, ChatSummary>
 type SummarySource = {
-  peer_user_id?: string | null; unread_locator?: { message_id: string | null } | null; id: string; kind: string; unread_count: number; is_marked_unread?: boolean; name?: string | null; alias?: string | null; public_id?: number | null; last_message_at?: string | null; last_message_preview?: string | null; source_chat_id?: string | null
+  peer_user_id?: string | null; unread_locator?: { message_id: string | null } | null; id: string; kind: string; unread_count: number; is_marked_unread?: boolean; name?: string | null; alias?: string | null; public_id?: number | null; last_message_at?: string | null; last_message_preview?: string | null; source_chat_id?: string | null; member_user_ids?: readonly string[] | null; avatar?: string | null
 }
 const summaryOf = memoizeByReference((chat: SummarySource, name: string | null | undefined): ChatSummary =>
   replaceEqualDeep(read()?.get(chat.id), {
@@ -47,6 +53,8 @@ const summaryOf = memoizeByReference((chat: SummarySource, name: string | null |
     kind: chat.kind,
     lastMessagePreview: chat.last_message_preview || null,
     sourceChatId: chat.source_chat_id || null,
+    memberUserIds: chat.member_user_ids ?? [],
+    avatar: chat.avatar || null,
   }))
 
 /** 壳:聊天列表那一份(整份替换;没变不通知)。 */
@@ -110,7 +118,7 @@ export function subscribeChatNames(listener: () => void): () => void {
 /** 会话页(不在渲染里):这个对话的摘要;壳还没告诉过 = null,壳的列表里没有它 = 没有过消息、不知道名字。 */
 export function readChatSummary(chatId: string): ChatSummary | null {
   const summaries = read()
-  return summaries ? (summaries.get(chatId) ?? { unreadCount: 0, isMarkedUnread: false, hasMessages: false, name: null, kind: null, lastMessagePreview: null, sourceChatId: null }) : null
+  return summaries ? (summaries.get(chatId) ?? { unreadCount: 0, isMarkedUnread: false, hasMessages: false, name: null, kind: null, lastMessagePreview: null, sourceChatId: null, memberUserIds: [], avatar: null }) : null
 }
 
 /** 会话页:这个对话有没有过消息;壳还没告诉过 = null(还不知道,❌ 当成没有)。 */

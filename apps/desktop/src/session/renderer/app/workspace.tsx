@@ -1,4 +1,6 @@
 import { LeftSidebar } from '@renderer/features/sidebar/left-sidebar';
+import { InnerSidebar, InnerSidebarRestore } from '@renderer/features/sidebar/inner-sidebar';
+import { PinnedSidebarAgentsPublisher } from '@renderer/features/sidebar/sidebar-pinned-agents';
 import { SessionKeyboardNavListener } from '@renderer/features/sidebar/session-keyboard-nav-listener';
 import { SESSION_NAV_FOCUS_REGION } from '@renderer/features/sidebar/session-keyboard-nav';
 import { CommandShortcutBinder } from '@renderer/lib/commands/command-shortcut-binder';
@@ -65,9 +67,13 @@ export function Workspace() {
           :has() rules and restyled the whole page (~130 ms at 1000 chat rows). */}
       <div data-region={SESSION_NAV_FOCUS_REGION} tabIndex={-1} aria-hidden="true" style={{ position: 'fixed', width: 0, height: 0, opacity: 0, outline: 'none' }} />
       <CodeEditorKeyboardBridge />
+      {/* #2548 my agents pinned to the one list (固定到左侧栏), for the shell that draws that list. Draws nothing. */}
+      <PinnedSidebarAgentsPublisher />
       <WorkspaceLayout
         sidebarHidden={withoutSessionSidebar}
         leftSidebar={<LeftSidebar />}
+        innerSidebar={<InnerSidebar />}
+        innerSidebarRestore={<InnerSidebarRestore />}
         mainContent={
           <ScreenArea
             onScreenView={isScreenView(currentView)}

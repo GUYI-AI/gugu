@@ -39,7 +39,6 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   joinChat = false,
   verbKey = chatId,
   onSessionCreated,
-  placeholder,
 }: {
   chatId: string;
   /** 群名(托盘上那一格);`joinChat` 时要。 */
@@ -49,10 +48,10 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   verbKey?: string;
   /** 建好之后(框已还原):会话里派的,新会话拼到右边。 */
   onSessionCreated?: (result: { projectId: string; sessionId: string }) => void;
-  /** 缺省「想让 X 做点什么？」;会话里派的说清是一个新的 agent。 */
-  placeholder?: (agentName: string) => string;
 }) {
   const { translate } = useSessionMessages();
+  // #2548 the chip reads 「新智能体」, as the composer button that opened this box (mock v33 派智能体); the box asks
+  // 「想让新智能体做点什么？」 (already says it is a new one, so no per-caller wording) and the group chip reads 「进群：群名」.
   const draftKey = taskDispatchDraftKey(verbKey);
   // 选词那一刻框里写着的话跟过来:要在 NewSessionComposer 挂上(读草稿)之前放好。
   useState(() => {
@@ -83,8 +82,8 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
     chatId,
     birthChip: joinChat && chatName ? <ComposerBirthGroupChip name={chatName} /> : null,
     composer: {
-      placeholder: placeholder ?? ((agent: string) => translate('taskDispatch.placeholder', { agent })),
-      verb: composerVerbLook('task', { label: translate('taskDispatch.task'), onCancel: () => cancelComposerVerb(verbKey, draftKey), testId: 'task-dispatch' }),
+      placeholder: translate('taskDispatch.placeholderAgent'),
+      verb: composerVerbLook('task', { label: translate('taskDispatch.agent'), onCancel: () => cancelComposerVerb(verbKey, draftKey), testId: 'task-dispatch' }),
       taskChatId: chatId,
       openAfterCreate: false,
       birthChatId: joinChat ? chatId : undefined,

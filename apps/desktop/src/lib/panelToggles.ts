@@ -4,14 +4,14 @@ import type { SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
 /**
  * @@@panel-toggles (#6753) — 列表栏开关的唯一控制器。
  *
- *   收放**当前页签**的列表栏(会话页侧栏 / 对话页会话列表)。
+ *   收放**当前页签**的列表栏(会话页侧栏 / 对话页会话列表),以及会话页的内层栏(#2548,打开一个群 / 项目时列表右边那一列)。
  *
  * 面板由各页自己登记进来;按钮(PanelToggleButtons.tsx,各处挂的是同一个组件)、Windows 标题栏的「视图」菜单、
  * 快捷键都只经这里下命令 ⇒ 每颗按钮只有一个坐标,❌ 各页再各长一颗(#5454)。
  * 会话页是同一文档里另一份模块(sessionpageHistoryBridge.ts 同一理由),所以这张表挂在 window 上,两边读写同一份;
  * 文案也由登记方给,按钮本身不碰哪一边的词表。
  */
-export type PanelSlot = 'list:sessions' | 'list:chats'
+export type PanelSlot = 'list:sessions' | 'list:chats' | 'column:inner'
 
 export interface PanelToggle {
   open: boolean

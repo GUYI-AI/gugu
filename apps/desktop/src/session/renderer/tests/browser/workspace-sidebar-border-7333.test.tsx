@@ -16,18 +16,22 @@ vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHos
 vi.mock('@renderer/features/assistant/assistant-shell', () => ({ useAssistantShell: () => null }));
 vi.mock('@renderer/features/assistant/assistant-home-sessions', () => ({ localHomeSessions: { sessions: [] } }));
 vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: {} }) }));
-vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: () => {} }), useWorkspaceSlots: () => ({ currentView: 'home' }), isCurrentView: (current: string, view: string) => current === view }));
-vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {} } }, sidebarStore: { projectsCollapsed: true, listLayout: 'split', listPage: 'projects', projectsNeedYouCount: 0, sidebarProjects: [], setStateGroupsEnabled: () => {}, setAssistantAgentId: () => {}, setAssistantHomeProjectId: () => {}, setAgentNameOnHoverEnabled: () => {} } }));
+vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: () => {} }), useWorkspaceSlots: () => ({ currentView: 'home' }), isCurrentView: (current: string, view: string) => current === view, useParams: () => ({ params: {}, setParams: () => {} }) }));
+vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { canGoBack: false }, projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {} } }, sidebarStore: { sidebarProjects: [], joinedGroups: [], setAssistantAgentId: () => {}, setAssistantHomeProjectId: () => {}, setAgentNameOnHoverEnabled: () => {} } }));
 vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: {} }));
 vi.mock('@renderer/features/sidebar/session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: () => {} } }));
 vi.mock('@renderer/features/sidebar/use-sidebar-drop', () => ({ useSidebarDrop: () => ({ isDragOver: false }) }));
-vi.mock('@renderer/features/sidebar/pinned-session-list', () => ({ SidebarPinnedSessionList: () => null }));
-vi.mock('@renderer/features/sidebar/projects-group-label', () => ({ ProjectsGroupLabel: () => null }));
+vi.mock('@renderer/features/sidebar/sidebar-one-list', () => ({ SidebarOneList: () => null }));
+vi.mock('@renderer/features/sidebar/sidebar-one-list-empty', () => ({ SidebarOneListEmpty: () => null }));
+vi.mock('@renderer/features/sidebar/inner-sidebar', async () => {
+  const { observable } = await import('mobx');
+  return { innerSidebarChat: observable.box(null, { deep: false }), innerSidebarShownFor: observable.box(null) };
+});
 vi.mock('@renderer/features/sidebar/sidebar-search-trigger', () => ({ SidebarSearchTrigger: () => null }));
 vi.mock('@renderer/features/sidebar/sidebar-space', () => ({ SidebarSpace: () => null }));
-vi.mock('@renderer/features/sidebar/sidebar-sessions-section', () => ({ SidebarSessionsSection: () => null }));
-vi.mock('@renderer/features/sidebar/sidebar-virtual-list', () => ({ SidebarVirtualList: () => null }));
 vi.mock('@renderer/lib/components/titlebar/shell-titlebar', () => ({ ShellSidebarToggle: () => null }));
+vi.mock('@renderer/lib/components/nav-buttons', () => ({ navigateBack: () => {} }));
+vi.mock('@/hooks/useNativeConversationChat', () => ({ useNativeConversationChat: () => null }));
 
 let harness: ReturnType<typeof createReactHarness>;
 afterEach(() => {

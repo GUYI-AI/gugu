@@ -48,7 +48,7 @@ vi.mock('@renderer/lib/layout/navigation-provider', async (original) => ({
 }));
 vi.mock('@renderer/lib/layout/layout-provider', async (original) => ({
   ...await original<typeof import('@renderer/lib/layout/layout-provider')>(),
-  useWorkspaceLayoutContext: () => ({ leftAnimatedWidth: motionValue(0) }),
+  useWorkspaceLayoutContext: () => ({ leftAnimatedWidth: motionValue(0), leftRail: 0 }),
 }));
 // The App's page itself is the stand-in webview below; the slot only holds its place, as the real one does.
 vi.mock('@renderer/features/extensions/extension-shared-slot', () => ({

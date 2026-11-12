@@ -52,8 +52,8 @@ export default {
     },
     "desktop": {
       "guguBody": "你的个人助理，帮你记安排、办事情。",
-      "projectsBody": "和 Agent 一起推进工作，一个项目就是一个群。在「消息」里的「项目」。",
-      "chatsBody": "和朋友及彼此的 Agent 沟通、协作。在「消息」里的「对话」。"
+      "projectsBody": "和 Agent 一起推进工作，一个项目就是一个群。在「消息」的列表里。",
+      "chatsBody": "和朋友及彼此的 Agent 沟通、协作。也在「消息」的列表里。"
     }
   },
   "hints": {
@@ -62,8 +62,7 @@ export default {
       "collaboration": "在这里找项目和朋友，点进去就能开始协作。"
     },
     "desktop": {
-      "assistant": "你的个人助理在这里，记安排、办事情直接告诉它。",
-      "collaboration": "一个项目一个群，和 Agent 一起推进工作。"
+      "assistant": "你的个人助理在这里，记安排、办事情直接告诉它。"
     },
     "dismiss": "知道了"
   },

@@ -36,6 +36,8 @@ const mocks = vi.hoisted(() => ({
   syncProjects: vi.fn(),
   openLink: vi.fn(async () => true),
 }));
+/** 这次进会话历史带的那一部分(useParams('session-history'));默认什么都不带。 */
+const entry = vi.hoisted(() => ({ params: {} as Record<string, unknown> }));
 // #6956 推到渲染层的事件:按机器分(与真 onMachineEvent 同一个判据,null = 本机),用例自己当主进程往里发。
 // 离线机器的心跳摘要(remoteHostsStore.sessionsOf)、账号上的项目(accountProjectsStore,`bound` = 各台上绑着 webapp 的本地项目)与本地项目表:用例自己摆。
 const world = vi.hoisted(() => ({
@@ -113,6 +115,7 @@ vi.mock('@renderer/features/remote-hosts/remote-hosts-store', async () => {
 vi.mock('@/lib/guguLinks', () => ({ openLink: mocks.openLink }));
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({
   useNavigate: () => ({ navigate: mocks.navigate }),
+  useParams: () => ({ params: entry.params, setParams: () => {} }),
 }));
 vi.mock('@renderer/features/sessions/open-session-in-session', () => ({
   openSessionInSessionWhenReady: mocks.openSession,
@@ -139,6 +142,7 @@ import { setLocalePreference } from '@/i18n';
 import { setPortalContainer } from '@renderer/lib/portal-container';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { SessionHistoryMainPanel } from '@renderer/features/session-history/session-history-view';
+import { SESSION_HISTORY_IMPORT_PART } from '@renderer/features/session-history/session-history-import-part';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { runInAction } from 'mobx';
 
@@ -334,6 +338,7 @@ describe('会话历史(按目录分节)核心合同', () => {
   beforeEach(async () => {
     await page.viewport(1280, 860);
     setLocalePreference('zh-CN');
+    entry.params = {};
     for (const fn of Object.values(mocks)) fn.mockReset();
     mocks.list.mockResolvedValue(pageOf(ROWS));
     mocks.listDirectories.mockResolvedValue(directoryPageOf(DIRS));
@@ -572,14 +577,28 @@ describe('会话历史(按目录分节)核心合同', () => {
     expect(rowKeys()).toEqual(ROWS.map((row) => row.key));
   });
 
+  it('#2548 带着导入那一部分进来(侧栏「导入以前的会话」):第一次就问全部来源里未导入的,触发钮照实写着', async () => {
+    entry.params = { ...SESSION_HISTORY_IMPORT_PART };
+    render();
+    await vi.waitFor(() => expect(directoryParams().length).toBeGreaterThan(0));
+    expect(directoryParams().every((p) => p.source === undefined && p.status === 'not-imported')).toBe(true);
+    await expect.element(screen.getByTestId('session-history-filter')).toHaveTextContent('全部来源 · 未导入');
+  });
+
+  const scrollToListEnd = () => (screen.getByTestId('session-history-total').element().parentElement as HTMLElement).scrollIntoView();
+
   it('滚动加载:目录多于已带回的,滚到底把 limit 放大交给主进程(❌ 翻页、❌ offset)', async () => {
     const many = Array.from({ length: 50 }, (_, i) => dir({ key: `/d/${i}`, sessionCount: 1, sessions: [gugu({ key: `gugu:c${i}`, title: `c${i}`, directory: `/d/${i}`, gugu: { projectId: `p-${i}`, sessionId: `c${i}`, runtime: 'acp' } })] }));
     mocks.listDirectories.mockResolvedValue(directoryPageOf(many, { matched: 250 }));
     render();
     await vi.waitFor(() => expect(screen.getByTestId('session-history-section').all()).toHaveLength(50));
     expect(directoryParams().every((p) => p.limit === 50 && p.offset === undefined)).toBe(true);
-    (screen.getByTestId('session-history-total').element().parentElement as HTMLElement).scrollIntoView();
-    await vi.waitFor(() => expect(directoryParams().some((p) => p.limit === 100 && p.offset === undefined)).toBe(true));
+    // Scroll on every check: once rendered, the list puts its cursor row (the first one) into view, and when that lands
+    // after our scroll it takes the list back to the top before the end-of-list marker is seen (#2578).
+    await vi.waitFor(() => {
+      scrollToListEnd();
+      expect(directoryParams().some((p) => p.limit === 100 && p.offset === undefined)).toBe(true);
+    });
     expect(screen.getByTestId('session-history-page').all()).toHaveLength(0);
   });
 
@@ -590,8 +609,10 @@ describe('会话历史(按目录分节)核心合同', () => {
     mocks.remoteListDirectories.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(directoryPageOf([], { directories: [] })), 800)));
     render();
     await vi.waitFor(() => expect(screen.getByTestId('session-history-section').all()).toHaveLength(50));
-    (screen.getByTestId('session-history-total').element().parentElement as HTMLElement).scrollIntoView();
-    await vi.waitFor(() => expect(directoryParams().some((p) => p.limit === 100)).toBe(true), { timeout: 600 });
+    await vi.waitFor(() => {
+      scrollToListEnd();
+      expect(directoryParams().some((p) => p.limit === 100)).toBe(true);
+    }, { timeout: 600 });
   });
 
   it('点一行展开详情(咕咕行含 session id),再点收起;已归档的行:恢复走唯一路径并刷新', async () => {

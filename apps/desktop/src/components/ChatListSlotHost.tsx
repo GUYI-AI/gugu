@@ -6,6 +6,8 @@ import { useProjectGroupChats } from '../lib/projectGroupChatsBridge'
 import { subscribeShellChatActions, takeShellChatAction, type ShellChatAction, CHAT_LIST_SLOT_KEY, publishSidebarChatSignals, sidebarChatSignals } from '../lib/sidebarChatsBridge'
 import { useChatStore } from '../store/chatContext'
 import { ChatListPanel } from './ChatListPanel'
+import { InnerSidebarTopics } from './chat/InnerSidebarTopics'
+import { INNER_SIDEBAR_TOPICS_SLOT_PREFIX } from '../lib/innerSidebarBridge'
 import { useMarkChatsRead } from '../hooks/useMarkChatsRead'
 import { useAssistantShell } from '../session/renderer/features/assistant/assistant-shell'
 
@@ -18,7 +20,7 @@ const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
  * (`placement="sidebar"`),❌ 在会话页里另写一份行。侧栏两枚页签上的未读数也从这里发过去 —— 不管「对话」那一格挂没挂着。
  */
 export function ChatListSlotHost() {
-  const { chats: imChats } = useChatStore('chats')
+  const { chats: imChats, loadingChats } = useChatStore('chats', 'loadingChats')
   const chats = useNativeAgentChats(imChats)
   const markRead = useMarkChatsRead()
   useEffect(() => {
@@ -32,8 +34,8 @@ export function ChatListSlotHost() {
   const projectGroupChats = useProjectGroupChats()
   const assistant = useAssistantShell()
   useEffect(() => {
-    publishSidebarChatSignals(sidebarChatSignals(chats, projectGroupChats, assistant))
-  }, [chats, projectGroupChats, assistant])
+    publishSidebarChatSignals(sidebarChatSignals(chats, projectGroupChats, assistant, !loadingChats))
+  }, [chats, projectGroupChats, assistant, loadingChats])
   const slots = readShellSlots()
   const targets = useSyncExternalStore(
     (listener) => slots?.subscribeSlots(listener) ?? (() => undefined),
@@ -41,6 +43,8 @@ export function ChatListSlotHost() {
   )
   return [...targets].map(([key, element]) => {
     if (key === CHAT_LIST_SLOT_KEY) return createPortal(<ChatListPanel placement="sidebar" />, element, key)
+    // #2548 内层侧栏「话题」那一格:聊天列表嵌在群下面的那几行,挂到内层侧栏里。
+    if (key.startsWith(INNER_SIDEBAR_TOPICS_SLOT_PREFIX)) return createPortal(<InnerSidebarTopics chatId={key.slice(INNER_SIDEBAR_TOPICS_SLOT_PREFIX.length)} />, element, key)
     return null
   })
 }

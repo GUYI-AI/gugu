@@ -7,6 +7,7 @@ import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { ChatEmptyContent, ChatPartSlot, ChatSlot } from '@renderer/lib/chat-slot';
@@ -40,7 +41,7 @@ export const ProjectBlock = observer(function ProjectBlock({
   blockActions?: ReactNode;
 }) {
   const { translate } = useSessionMessages();
-  const { isLeftOpen } = useWorkspaceLayoutContext();
+  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const corners = screenLayout.corners(blockId);
   const focused = screenLayout.focusedBlockId === blockId;
   const label = projectDisplayName(getProjectStore(projectId)) ?? translate('projects.fallbackName');
@@ -65,7 +66,7 @@ export const ProjectBlock = observer(function ProjectBlock({
     return (
       <>
         <TabStripShell
-          reserveShellRestoreLane={corners.topLeft && !isLeftOpen}
+          reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
           actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{blockActions}</TabBarActionRow>}
         >
           {projectChip}
@@ -80,7 +81,7 @@ export const ProjectBlock = observer(function ProjectBlock({
     <ChatPanes
       chatId={chatId}
       blockId={blockId}
-      reserveShellRestoreLane={corners.topLeft && !isLeftOpen}
+      reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
       actionsSlot={
         <TabBarActionRow atWindowEdge={corners.topRight}>
           <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />

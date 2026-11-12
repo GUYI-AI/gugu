@@ -177,7 +177,7 @@ describe('NavigationStore preserves manual sidebar disclosure', () => {
     const sidebar = sidebarOf({ projects: new Map() } as never);
     Object.assign(appState, { sidebar });
     try {
-      sidebar.toggleProjectExpanded('open-project');
+      sidebar.ensureProjectExpanded('open-project');
       sidebar.toggleSessionExpanded('open-parent');
       const before = structuredClone(sidebar.snapshot);
       const store = buildStore();

@@ -184,6 +184,7 @@ import { GUGU_CLIENT_COMMAND_MCP, isGuguClientCommand } from '@gugu/session-core
 import { classifyProviderPermissionMode } from '@gugu/session-core/acp/client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useBoundChatView } from './use-bound-chat-view';
+import { useSessionHeroCopy } from './use-session-hero-copy';
 import { useLastTurnSignInRequired } from './use-last-turn-sign-in';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { isAuthExpired } from '@renderer/lib/stores/harness-auth-expiry';
@@ -2042,6 +2043,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       })),
     [promptLibrary]
   );
+  const hero = useSessionHeroCopy();
   const handleSelectSuggestion = useCallback(
     (suggestion: ThreadSuggestion) => {
       // submitPrompt toasts a failure; the suggestion stays on screen to click again.
@@ -2307,7 +2309,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         heroSlot &&
         createPortal(
           <ThreadWelcome
-            title={translate('chat.hero')}
+            title={hero.title}
+            description={hero.description}
             suggestions={welcomeSuggestions}
             onSelectSuggestion={handleSelectSuggestion}
             suggestionsLabel={translate('chat.suggestions')}

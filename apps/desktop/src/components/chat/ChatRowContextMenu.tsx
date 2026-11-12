@@ -14,12 +14,14 @@ import { nativeUnreadTargets } from '../../lib/nativeUnreadTargets'
 
 const log = rendererLogger('chat/row-menu')
 
-export function ChatRowContextMenu({ chat, onPin, onSetNotificationLevel, onDelete, ...menu }: {
+export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotificationLevel, onDelete, ...menu }: {
   x: number
   y: number
   chat: ChatItem
   onClose: () => void
   onPin: () => void
+  /** #2548 given only for an agent row pinned to the desktop one list: the menu offers 取消固定到左侧栏. */
+  onUnpinFromSidebar?: () => void
   onSetNotificationLevel: (level: NotificationLevel) => void
   onDelete: () => void
 }) {
@@ -33,7 +35,7 @@ export function ChatRowContextMenu({ chat, onPin, onSetNotificationLevel, onDele
   const peer = identitiesById[chat.peer_user_id ?? '']
   const ownedAgentDm = user && peer?.type === 'agent' && peer.owner_user_id === user.id ? peer : undefined
   const canDelete = conversationCanDelete(chat.kind, settings, ownedAgentDm)
-  return <ConversationRowContextMenu {...menu} loadError={error} state={{ kind: 'chat', canDelete, pinned: chat.is_pinned,
+  return <ConversationRowContextMenu {...menu} loadError={error} state={{ kind: 'chat', canDelete, pinned: chat.is_pinned, pinnedToSidebar: onUnpinFromSidebar !== undefined,
     notificationsMuted: chat.notification_level === 'none',
     hasUnread: hasUnreadInRows(chatsInReadScope(chats, chat.id)) || nativeUnreadTargets(nativeRows, chatsInReadScope(chats, chat.id), false).length > 0,
     hasAnyUnread: hasUnreadInRows(chats) || nativeUnreadTargets(nativeRows, chats, true).length > 0 }}
@@ -41,6 +43,7 @@ export function ChatRowContextMenu({ chat, onPin, onSetNotificationLevel, onDele
       if (action === 'mark-read') markRead(chat.id)
       else if (action === 'mark-all-read') markRead()
       else if (action === 'pin') onPin()
+      else if (action === 'unpin-from-sidebar') onUnpinFromSidebar!()
       else if (action === 'notifications') onSetNotificationLevel(chat.notification_level === 'none' ? 'all' : 'none')
       // 解散影响全体成员、撤不回:和群设置、联系人那两处解散同一句确认。
       else if (action === 'delete-chat' && canDelete && (chat.kind !== 'group' || window.confirm(t('group.settings.dissolveConfirm')))) void Promise.resolve().then(onDelete).catch((error: unknown) => {

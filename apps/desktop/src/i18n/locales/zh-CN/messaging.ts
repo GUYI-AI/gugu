@@ -292,6 +292,7 @@ export default {
     "markUnreadFailed": "标记未读失败，请重试",
     "muted": "消息免打扰",
     "newMessage": "收到一条新消息",
+    "newsNotCallingYou": "有新消息，但没有叫到你",
     "sendPreview": "[{{count}} 个附件]",
     "noResults": "未找到对话",
     "searchMessagesTitle": "搜索消息",
@@ -299,7 +300,8 @@ export default {
     "pin": "置顶",
     "scan": "扫一扫",
     "search": "搜索",
-    "unpin": "取消置顶"
+    "unpin": "取消置顶",
+    "unpinFromSidebar": "取消固定到左侧栏"
   },
   "chatService": {
     "errors": {
@@ -463,7 +465,8 @@ export default {
       "unavailable": "发送未完成，请稍后重新发送"
     },
     "verb": {
-      "task": "新任务"
+      "task": "新任务",
+      "agent": "新智能体"
     },
     "whisperBanner": "悄悄话给 {{name}} · 仅你与对方可见",
     "whisperPlaceholder": "悄悄话给 {{name}}…"

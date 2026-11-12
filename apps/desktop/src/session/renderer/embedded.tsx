@@ -73,6 +73,7 @@ import { openChatOnScreen } from './features/chats/open-chat';
 import { showGroupParticipant } from './features/chats/group-participant-actions';
 import { groupParticipantRequests } from './features/chats/group-participant-requests';
 import { wireGroupParticipantAccount } from './features/chats/group-participant-account';
+import { openSidebarPin, unpinSessionFromSidebar } from './features/sidebar/sidebar-pin-actions';
 import { installSessionTabViews, prewarmSessionTabViews } from './features/sessions/session-tab-views';
 import { appState } from './lib/stores/app-state';
 import { restoreSavedScreenSessionLocations, savedScreenSessionIds } from './features/sessions/restore-session-projects';
@@ -159,6 +160,8 @@ async function bootstrap() {
     openChatResource,
     openGroupChat: (sourceChatId, chatId) => showGroupParticipant(sourceChatId, { kind: 'chat', chatId }),
     prepareGroupSession: (sourceChatId, target) => groupParticipantRequests.prepare(sourceChatId, target),
+    unpinFromSidebar: unpinSessionFromSidebar,
+    openSidebarPin,
   });
   installRemoteHostSessionpageBridges(window, () => appState.navigation.navigate('new-session'));
   if (hasEntryRoot(container)) {

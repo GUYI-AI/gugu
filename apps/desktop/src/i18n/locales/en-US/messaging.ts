@@ -293,6 +293,7 @@ export default {
     "markUnreadFailed": "Could not mark this chat unread. Try again.",
     "muted": "Notifications muted",
     "newMessage": "New message",
+    "newsNotCallingYou": "New messages, none calling you",
     "sendPreview": "[{{count}} attachments]",
     "noResults": "No chats found",
     "searchMessagesTitle": "Search messages",
@@ -300,7 +301,8 @@ export default {
     "pin": "Pin",
     "scan": "Scan",
     "search": "Search",
-    "unpin": "Unpin"
+    "unpin": "Unpin",
+    "unpinFromSidebar": "Unpin from sidebar"
   },
   "chatService": {
     "errors": {
@@ -465,7 +467,8 @@ export default {
       "unavailable": "The send did not finish. Try sending again later."
     },
     "verb": {
-      "task": "New task"
+      "task": "New task",
+      "agent": "New agent"
     },
     "whisperBanner": "Whisper to {{name}} · only visible to you both",
     "whisperPlaceholder": "Whisper to {{name}}…"

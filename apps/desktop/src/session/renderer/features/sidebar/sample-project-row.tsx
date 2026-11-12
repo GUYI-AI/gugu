@@ -1,82 +1,52 @@
 import { observer } from 'mobx-react-lite';
-import { FolderClosed } from '@/lib/icons';
-import { Chip } from '@/components/ui/Chip';
 import { isScreenView, showBesideOnScreen, showOnScreen } from '@renderer/app/screen-layout-actions';
-import { screenLayout } from '@renderer/app/screen-layout';
-import { SampleNewProjectButton } from '@renderer/features/sample-project/sample-new-project-button';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
 import { SampleProjectRowMenu } from '@renderer/features/sample-project/sample-project-row-menu';
-import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
+import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
+import { sampleProjectContent } from '@renderer/features/sample-project/use-sample-project';
+import { appState } from '@renderer/lib/stores/app-state';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { ProjectRowTitle } from './project-row-parts';
-import { SidebarMenuAction, SidebarMenuRow, sidebarGroupInsetX } from './sidebar-primitives';
-import { sidebarRowContentInsetPx, sidebarRowInsetPx } from './sidebar-row-metrics';
-import { SidebarTwistyLane } from './sidebar-twisty';
-import { AccountProjectsError } from '@renderer/features/projects/components/account-projects-error';
-import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
+import { sampleProjectLastLine } from '@/lib/sidebarOneList';
+import { OneListProjectRow } from './project-row-parts';
 
 /**
- * 项目列表最后:示例项目那一行(#709,账号上的键说它在才有),和用户自己一个项目都没有时那一句空状态。
- * 那一行和项目行同一套列(车道、文件夹、名字),名字后面一枚「示例」;点它马上打开那一块 —— 内容在包里,❌ 读网络。
+ * 示例项目那一行(#709,账号上的键说它在才有),在一张表里画成它代表的那个项目群的对话行(OneListSampleRow);
+ * 点它马上打开那一块 —— 内容在包里,❌ 读网络。
  */
 export const SampleProjectSidebar = observer(function SampleProjectSidebar() {
-  const { translate } = useSessionMessages();
   const sample = useSampleProject();
-  // 账号上的项目读到了、一个都没有,才算空(还在读 / 读失败 ❌ 说成「没有项目」)。
-  const empty = sidebarStore.sidebarProjects.length === 0 && accountProjectsStore.status === 'ready';
-  return (
-    <>
-      <div style={{ paddingInlineStart: `${sidebarRowContentInsetPx('project')}px` }}><AccountProjectsError className="py-2 pr-3" /></div>
-      {/* 和项目行同一层列表留白(虚拟列表里那一层),选中底色才和项目行一样收在两边。 */}
-      {sample.shown && sample.owner ? (
-        <div className={sidebarGroupInsetX}>
-          <SampleProjectRowMenu userId={sample.owner.id}><SampleProjectRow /></SampleProjectRowMenu>
-        </div>
-      ) : null}
-      {empty && sample.settled ? (
-        <div className="flex flex-col items-start gap-2 py-2 pr-3" style={{ paddingInlineStart: `${sidebarRowContentInsetPx('project')}px` }} data-projects-empty="">
-          <p className="m-0 text-sm text-foreground-muted">{translate(sample.shown ? 'projects.sample.emptyWithSample' : 'projects.sample.empty')}</p>
-          <SampleNewProjectButton />
-        </div>
-      ) : null}
-    </>
-  );
+  return sample.shown && sample.owner ? (
+    <SampleProjectRowMenu userId={sample.owner.id}><OneListSampleRow ownerName={sample.owner.name} /></SampleProjectRowMenu>
+  ) : null;
 });
 
-const SampleProjectRow = observer(function SampleProjectRow() {
-  const { translate } = useSessionMessages();
+/** Open the sample's block; ⌘ 点 = 拼到正看着那块右边,和项目行同一个手势。 */
+function openSampleProject(beside: boolean): void {
+  if (beside && isScreenView(appState.navigation.currentViewId)) showBesideOnScreen({ kind: 'sample-project' });
+  else showOnScreen({ kind: 'sample-project' });
+}
+
+/**
+ * #2548 the sample in the one list, as any project group's row: the project cover, its name, then 「示例」 and the
+ * transcript's last message (`<sender>: <text>`) with its time. The cover's colour is keyed by the sample's block kind:
+ * the sample is no local project, so it has no project id of its own.
+ */
+const OneListSampleRow = observer(function OneListSampleRow({ ownerName }: { ownerName: string }) {
+  const { translate, locale } = useSessionMessages();
   const name = translate('projects.sample.name');
-  const focused = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
-  const active = focused?.kind === 'sample-project' && isScreenView(appState.navigation.currentViewId);
-  const open = (beside: boolean) => {
-    // ⌘ 点 = 拼到正看着那块右边,和项目行同一个手势。
-    if (beside && isScreenView(appState.navigation.currentViewId)) showBesideOnScreen({ kind: 'sample-project' });
-    else showOnScreen({ kind: 'sample-project' });
-  };
+  const { preview, time } = sampleProjectLastLine(sampleProjectContent(locale), ownerName);
   return (
-    <SidebarMenuRow
-      className="group/row flex h-9 items-center justify-between gap-1 pr-1"
-      style={{ paddingInlineStart: `${sidebarRowInsetPx('project')}px` }}
-      data-active={active || undefined}
-      isActive={active}
+    <OneListProjectRow
+      name={name}
+      coverId="sample-project"
+      tag={translate('projects.sample.tag')}
+      time={time}
+      preview={preview}
+      selected={sampleProjectInView()}
+      onOpen={openSampleProject}
+      aria-label={translate('sidebar.openProject', { project: name })}
       data-tour="sample-project"
-      tabIndex={0}
-      role="treeitem"
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={(event) => open(event.metaKey || event.ctrlKey)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') open(false);
-      }}
-    >
-      <SidebarTwistyLane expanded={false} label={name} />
-      <div className="flex min-w-0 flex-1 items-center gap-1">
-        <FolderClosed className="size-4 shrink-0" />
-        <SidebarMenuAction aria-label={translate('sidebar.openProject', { project: name })} className="truncate font-medium transition-colors select-none">
-          <ProjectRowTitle name={name} keepChildren>
-            <Chip>{translate('projects.sample.tag')}</Chip>
-          </ProjectRowTitle>
-        </SidebarMenuAction>
-      </div>
-    </SidebarMenuRow>
+      data-sample-project-row=""
+    />
   );
 });

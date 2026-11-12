@@ -9,6 +9,7 @@ import '@renderer/lib/stores/app-state'
 import { ChatListPanel, TopicSubRow } from '../../../apps/desktop/src/components/ChatListPanel'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import { SidebarStore } from '@renderer/features/sidebar/sidebar-store'
+import { needsYouCount } from '@renderer/features/sidebar/session-groups'
 import { AccountProjectsStore } from '@renderer/features/projects/stores/account-projects-store'
 import { runInAction } from 'mobx'
 import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../support/testHarness'
@@ -79,7 +80,7 @@ const task = (id: string, status: 'needs_user' | 'error' | 'working' | 'idle', u
   conversationId: id, projectId, title: id, harness: 'codex', runtime: 'acp', supported: true, unseen, lastInteractedAt: null,
   agentStatus: status, status: { status, detail: status === 'needs_user' ? 'approval' : null },
 } as SessionpageSessionSummary)
-/** The desktop project dot for the same host listing (SidebarStore's remote route). */
+/** The desktop count for the same host listing: SidebarStore's remote route, read through the shared rule. */
 function desktopDot(sessions: readonly SessionpageSessionSummary[]): number {
   const project = { id: 'local', createdAt: '2026-10-01T00:00:00.000Z', mountedProject: { sessionManager: { sessions: new Map() } } }
   const projects = new Map([['local', project]])
@@ -89,7 +90,7 @@ function desktopDot(sessions: readonly SessionpageSessionSummary[]): number {
   runInAction(() => { accounts.list = [{ chatId: 'chat-local', name: 'local', archived: false, bindings: [{ deviceId: 'mac', localProjectId: 'local' }] }] })
   const store = new SidebarStore({ projects } as unknown as ConstructorParameters<typeof SidebarStore>[0], accounts)
   store.machines = { machineOf: () => 'mac', label: () => 'mac', homeDir: () => '/work', connected: () => true, sessionsOf: () => ({ live: true, sessions }), session: (_deviceId, id) => sessions.find(session => session.conversationId === id) ?? null }
-  return store.needsYouCountForProject('local')
+  return needsYouCount(store.placement.entries.get('local') ?? [])
 }
 
 it.each([

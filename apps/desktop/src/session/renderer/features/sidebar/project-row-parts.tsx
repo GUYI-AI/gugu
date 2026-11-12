@@ -1,35 +1,52 @@
-import type { ReactNode } from 'react';
-import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import type { HTMLAttributes, ReactNode } from 'react';
+import { Chip } from '@/components/ui/Chip';
+import { ListRow } from '@/components/ui/ListRow';
+import { ProjectFolderAvatar } from '@/mobile/partners/ProjectFolderAvatar';
 
-// 项目行的零件:本机项目行(project-item)与别的机器上的项目行(#6264,sidebar-remote-project-item)共用,
-// 两种行长得一样只因为用的是同一份零件。
+type OneListRowProps = {
+  name: string;
+  /** A chip in front of the preview (the sample's 「示例」). */
+  tag?: string;
+  time?: string;
+  preview: string;
+  selected: boolean;
+  onOpen: (beside: boolean) => void;
+} & Omit<HTMLAttributes<HTMLDivElement>, 'title' | 'onClick' | 'onKeyDown'>;
 
 /**
- * spec session-page 链6: 收起的项目行上,「有会话在等你」的那颗琥珀点。本机与别的机器上的项目行同一颗。
+ * GUYI-AI/gugu#2548 a row of the one list that is not a conversation yet is drawn as a conversation row: the chat list's
+ * own row (ListRow inside the list's 12px gutter, as ChatRow in components/ChatListPanel.tsx composes it) with its
+ * 32px avatar. Two lines like every conversation row; `preview` '' = nothing said yet (the second line stays, empty).
  */
-export function ProjectNeedsYouDot({ count }: { count: number }) {
-  const { translate } = useSessionMessages();
-  if (count <= 0) return null;
-  const label = translate('sidebar.sessionsNeedYou', { count });
+export function OneListRow({ leading, name, tag, time, preview, selected, onOpen, ...data }: OneListRowProps & { leading: ReactNode }) {
   return (
-    <span
-      aria-label={label}
-      title={label}
-      className="size-1.5 shrink-0 rounded-[var(--radius-circle,50%)] bg-foreground-warning"
-    />
+    <div className="px-3">
+      <ListRow
+        {...data}
+        role="button"
+        tabIndex={0}
+        selected={selected}
+        onClick={(event) => onOpen(event.metaKey || event.ctrlKey)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') onOpen(false);
+        }}
+        leading={leading}
+        title={name}
+        meta={time}
+        subtitle={tag ? <><Chip>{tag}</Chip>{' '}{preview}</> : preview}
+      />
+    </div>
   );
 }
 
 /**
- * 项目名 + 挨着它的次级信息(本机:同名歧义的路径 / 告警图标;别的机器:机器名 / 离线)。
- * 宽度不够时次级信息先让给名字。`keepChildren` 反过来:名字先截,后面那枚保持完整 —— 只给示例项目那一行(#709),
- * 它的「示例」是这一行唯一说明「这是示例」的地方,截成两个字母等于没有。
+ * A project in the one list wears the project cover (ProjectFolderAvatar at the sidebar's 32, as every project group row
+ * does), for the projects that have no project group chat yet and for the sample project. Not a new row: those pieces fed
+ * without a chat.
  */
-export function ProjectRowTitle({ name, children, keepChildren = false }: { name: ReactNode; children?: ReactNode; keepChildren?: boolean }) {
-  return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      <span className={keepChildren ? 'min-w-0 truncate' : 'max-w-full shrink-0 truncate'}>{name}</span>
-      {keepChildren ? <span className="flex shrink-0">{children}</span> : children}
-    </span>
-  );
+export function OneListProjectRow({ coverId, ...row }: OneListRowProps & {
+  /** Whose cover: the project the row stands for. */
+  coverId: string;
+}) {
+  return <OneListRow leading={<ProjectFolderAvatar coverId={coverId} size={32} />} {...row} />;
 }

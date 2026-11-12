@@ -11,6 +11,7 @@ import type { ChatItem, GroupChatSettings, GroupCollabSnapshot } from '@gugu/cor
 import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
 import type { groupAgentStatusIndicatorProps } from '../../../../../apps/desktop/src/lib/groupAgentStatus'
 import { ChatHeaderActions } from '../../../../../apps/desktop/src/components/chat/ChatHeaderActions'
+import { publishInnerSidebarChat } from '../../../../../apps/desktop/src/lib/innerSidebarBridge'
 
 /** Topic chatter: unread, none of it addressed to you. */
 const topicFixture = (patch: Partial<ChatItem>) => chat({ ...patch, unread_locator: { stream_id: 'main', stream_kind: 'main', thread_root_id: null, message_id: 'first', message_seq: 1,
@@ -120,6 +121,20 @@ describe('final group toolbar v4', () => {
     expect(menuItem('搜索聊天记录')).toBeDefined()
     expect(menuItem('文件')).toBeDefined()
     expect(harness.container.querySelector('[data-agent-display-status="working"]')).toBeNull()
+  })
+
+  it('#2548 with the desktop inner column on this chat: members, topics and invitation leave the bar; Apps and More stay', async () => {
+    publishInnerSidebarChat('chat')
+    try {
+      await header('group', { menu: true })
+      expect(button('成员列表')).toBeUndefined()
+      expect(button('话题')).toBeUndefined()
+      expect(button('邀请')).toBeUndefined()
+      expect(button('应用')).toBeDefined()
+      expect(button('更多操作')).toBeDefined()
+    } finally {
+      publishInnerSidebarChat(null)
+    }
   })
 
   // @@@group-share invitation (people + link / QR) is one press at every width: narrow only folds it to an icon.

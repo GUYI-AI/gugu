@@ -21,6 +21,30 @@
   overflow: hidden;
 }
 
+/* GUYI-AI/gugu#2548 叠一层(owner 11-12):一个对话的内层栏和正文是同一张卡片,叠在一级列表上 ——
+ * 与图标栏和列表那一层同一种层次。内层栏是卡片的左半(上、下、左三条边和左边两个圆角),正文是右半;
+ * 两半之间那条竖线是内层栏自己的右边线。❌ 内层栏平铺在列表上、只靠一条线和正文分开(owner 圈过「层次没出来」)。
+ */
+.gugu-skin [data-workspace-shell] > [data-region='inner-sidebar'] {
+  margin-block: var(--desktop-surface-inset);
+  height: auto;
+  border-start-start-radius: var(--radius-surface);
+  border-end-start-radius: var(--radius-surface);
+  box-shadow:
+    -0.5px 0 0 0 var(--border-color),
+    0 -0.5px 0 0 var(--border-color),
+    0 0.5px 0 0 var(--border-color);
+}
+
+.gugu-skin [data-region='inner-sidebar'] + [data-workspace-content-surface] {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+  box-shadow:
+    0.5px 0 0 0 var(--border-color),
+    0 -0.5px 0 0 var(--border-color),
+    0 0.5px 0 0 var(--border-color);
+}
+
 /* The curved content surface owns this boundary. Full-height list borders otherwise
  * continue above and below it, producing the spurs visible at both rounded corners.
  * The invisible resize target is kept, including keyboard resizing.
@@ -60,11 +84,13 @@
   outline-offset: -0.5px;
 }
 
-/* 正文不再单独画第二层外框。它与侧栏之间的分隔、用户保存的栏宽仍归原布局。 */
+/* 正文不再单独画第二层外框。它与侧栏之间的分隔、用户保存的栏宽仍归原布局。
+ * #2548 会话页只有不带一级列表的整页(资源库、App)这样平铺;列表在旁边时正文是叠在列表上的那张卡片(见上面「叠一层」)。
+ */
 :root[data-window-material][data-theme='light'] :is(
   [data-desktop-shell] [data-shell-chat-detail],
   [data-desktop-shell] [data-shell-contacts] > div > :nth-child(2),
-  [data-desktop-shell] .gugu-skin [data-workspace-content-surface]
+  [data-desktop-shell] .gugu-skin [data-workspace-sidebar-hidden] > [data-workspace-content-surface]
 ) {
   --workspace-chrome-inset: 0px;
   margin: 0;

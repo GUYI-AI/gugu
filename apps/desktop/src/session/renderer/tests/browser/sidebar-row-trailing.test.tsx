@@ -4,7 +4,7 @@
  * 行内没有空着的预留区。真 Chromium、真 CSS —— 要判的是 flex 最终排出来的几何。
  */
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation';
@@ -13,40 +13,6 @@ import type { SessionBranchSummary } from '@renderer/features/sidebar/sidebar-se
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
-
-// 项目行周围的宿主依赖(store 树、导航、远端机器)换成同形替身,与 features/sidebar/project-item.test.tsx 同一套;
-// 行本身、行尾那一格、未读数都是真的。
-const unread = vi.hoisted(() => ({ count: 0 }));
-vi.mock('@renderer/features/projects/hooks/use-confirm-delete-project', () => ({ useConfirmDeleteProject: () => vi.fn() }));
-vi.mock('@renderer/features/projects/stores/project', () => ({ isUnregisteredProject: () => false }));
-vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
-  getProjectStore: () => ({ id: 'proj', name: '一个名字很长很长、长到会被截断的项目', state: 'unmounted', data: { path: '/proj' } }),
-  getGitRepositoryStore: () => null, projectViewKind: () => 'idle_unmounted',
-}));
-vi.mock('@renderer/lib/layout/navigation-provider', () => ({
-  useNavigate: () => ({ navigate: vi.fn() }), useParams: () => ({ params: {} }), useWorkspaceSlots: () => ({ currentView: 'new-session' }),
-}));
-vi.mock('@renderer/lib/stores/app-state', () => ({
-  appState: { navigation: { currentViewId: 'new-session' } },
-  sidebarStore: { sidebarProjects: [{ kind: 'local', id: 'proj', chatId: 'proj-group', name: '' }], expandedProjectIds: new Set(),
-    needsYouCountForProject: () => 0, projectMembersOf: () => ['proj'], hasNameTwin: () => false, rowProjectIdOf: (id: string) => id,
-    ensureProjectExpanded: vi.fn(), toggleProjectExpanded: vi.fn() },
-}));
-vi.mock('@renderer/app/screen-layout-actions', () => ({ isScreenView: () => false, showBesideOnScreen: vi.fn(), showOnScreen: vi.fn() }));
-vi.mock('@/lib/composerVerbBridge', () => ({ readComposerVerb: () => null, setComposerVerb: vi.fn() }));
-vi.mock('@renderer/features/projects/project-task-entry', () => ({ prepareProjectTask: vi.fn() }));
-vi.mock('@renderer/features/sessions/composer-drafts', () => ({ composerDrafts: { get: () => '' }, projectDraftKey: () => '' }));
-vi.mock('@/components/chat/ProjectRowContextMenu', () => ({ ProjectRowContextMenu: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
-vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
-  remoteHostsStore: { machineOfProject: () => undefined, connectionState: () => 'connected', device: () => undefined },
-}));
-vi.mock('@renderer/features/sidebar/session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: vi.fn() } }));
-vi.mock('@/lib/sidebarChatsBridge', () => ({ useSidebarChatSignals: () => ({ groupUnread: new Map([['proj-group', unread.count]]), groupCallingTopic: new Map() }) }));
-vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: {} }));
-vi.mock('@renderer/features/sidebar/use-session-drop-target', () => ({ useSessionDropTarget: () => ({ bind: () => ({}) }) }));
-vi.mock('@renderer/features/sessions/set-session-parent-flow', () => ({ moveSessionUnder: vi.fn() }));
-
-const { SidebarProjectItem } = await import('@renderer/features/sidebar/project-item');
 
 const LONG_TITLE = '总管（juma3）把这一车道的进度、证据和交接件整理好再汇报';
 let root: Root;
@@ -70,7 +36,7 @@ afterEach(() => { root.unmount(); host.remove(); park.remove(); });
 
 const running = presentAgentStatus({ reading: { status: 'working', detail: null } });
 const tree = (total: number, active: number): SessionBranchSummary => ({
-  total, remainingDepth: 0, active: active > 0 ? [{ count: active, presentation: running }] : [],
+  total, active: active > 0 ? [{ count: active, presentation: running }] : [],
 });
 
 async function mount(rows: { id: string; tree?: SessionBranchSummary; expanded?: boolean; needsAttention?: boolean }[]) {
@@ -136,28 +102,4 @@ it('keeps the count and the status side by side against the right edge, leaving 
     }
   }
   expect([...gaps]).toEqual([12]);
-});
-
-it('gives a project row the same trailing slot: the unread count rests on the right edge, the new-session button only replaces it on hover', async () => {
-  for (const count of [3, 0]) {
-    unread.count = count;
-    root.render(<SessionLocalizationProvider><SidebarProjectItem key={count} projectId="proj" /></SessionLocalizationProvider>);
-    await until('project row rendered', () => host.querySelector('[data-project-row="proj"]') != null);
-    await userEvent.hover(park);
-    const row = host.querySelector<HTMLElement>('[data-project-row="proj"]')!;
-    const contentRight = row.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(row).paddingRight);
-    const newSession = row.querySelector<HTMLElement>('[data-row-hover-actions] > :first-child')!;
-    // 静止时「新建会话」既不可见,也不占宽(等它从上一轮 hover 淡出完)。
-    await until('new-session button hidden at rest', () => Number.parseFloat(getComputedStyle(newSession).opacity) === 0);
-    const badge = row.querySelector<HTMLElement>('[data-row-hover-actions] > :last-child > *');
-    if (count > 0) {
-      expect(badge?.getBoundingClientRect().right, 'the unread count sits on the right edge').toBeCloseTo(contentRight, 0);
-    } else {
-      expect(badge).toBeNull();
-      expect(row.querySelector('[data-row-hover-actions]')!.getBoundingClientRect().width).toBe(0);
-    }
-    await userEvent.hover(row);
-    await until('new-session button shown on hover', () => Number.parseFloat(getComputedStyle(newSession).opacity) === 1);
-    expect(newSession.getBoundingClientRect().right).toBeCloseTo(contentRight, 0);
-  }
 });

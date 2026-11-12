@@ -135,6 +135,8 @@ export const interfaceSettingsSchema = z.object({
    * 三样元数据要么没了、要么成了常驻 —— 开关**一处消费者都没有**,拨了没反应(#5829,owner:
    * 「如果没人读,那你把这三个给关了吧」)。2026-09-18 连同设置页那三行一起删掉。
    * 第四格 `taskHoverAction`(悬停删除还是归档)同样没有消费者,2026-10-05 随 PR-2 删掉。
+   * 第五格是 #2548 一张表侧栏的内部开关:新侧栏成了唯一的桌面侧栏,开关连同旧侧栏一起删掉
+   * (interface-legacy-keys.db.test.ts 守着存量库里留下的这一格)。
    *
    * 存量用户库里可能还留着这几个键:读的时候只是 mergeDeep 里一格没人问的多余字段,
    * 下一次写这组设置时被 zod 剥掉(`z.object` 默认丢弃未知键),所以不需要迁移。
@@ -186,6 +188,15 @@ export const interfaceSettingsSchema = z.object({
    * 设置页这一行是反悔的地方(owner 2026-09-23)。
    */
   confirmBeforeCancelAndSend: z.boolean(),
+
+  /**
+   * GUYI-AI/gugu#2548 C9: where the one-list sidebar's two-step intro is (renderer `sidebar-intro.ts`). `collapse` = step 1
+   * (侧栏可以收起来, on the collapse button) is next; `history` = step 1 is done with (下一步, or the sidebar was collapsed
+   * once by any route) and step 2 (会话历史) is next; `ended` = 跳过 / 完成 / 打开看看 / Escape, it never comes up again.
+   * Internal, no settings UI. Coming up is not stored: an unfinished intro comes up again, at this step, the first time a
+   * group or project opens while the sidebar is expanded.
+   */
+  sidebarIntro: z.enum(['collapse', 'history', 'ended']),
 });
 
 export const changesViewModeSchema = z.object({

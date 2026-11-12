@@ -22,6 +22,8 @@ export type SidebarChatSignals = {
   readonly groupUnread: ReadonlyMap<string, number>
   /** 项目群从哪个话题叫到了你:点项目行直接开它,读了 groupUnread 就减。没有叫到你的话题的群不在里面。 */
   readonly groupCallingTopic: ReadonlyMap<string, SidebarCallingTopic>
+  /** #2548 the group chats the chat list has (project groups included); null = the list has not loaded yet. */
+  readonly listedGroups: ReadonlySet<string> | null
 }
 
 export type SidebarCallingTopic = { readonly chatId: string; readonly name: string }
@@ -30,6 +32,23 @@ export type SidebarChatView = {
   readonly focusedChatId: string | null
   /** 拼在一屏的几组(这屏那一组和收起来的那些):「对话」里同一组的几行并在一处。 */
   readonly groups: readonly JoinedGroup[]
+  /**
+   * #2548 the task page's desktop sidebar (one list) is mounted and published this view. The phone never mounts it, so
+   * absent = the phone: shared components (chat list, composer verbs, the rail's 消息) read this to tell, never settings.
+   */
+  readonly oneList?: boolean
+}
+
+/**
+ * #2548 固定到左侧栏: an agent of mine that lives in a group or a project, pinned to the top of the one list.
+ * 会话页 → 壳: the task page knows my sessions and where their agents live; the shell draws the agent's DM row.
+ */
+export type SidebarPinnedAgent = {
+  readonly agentUserId: string
+  /** The pinned session: 取消固定到左侧栏 writes it. */
+  readonly sessionId: string
+  /** Where the agent lives (the group, or the project's project group): its row says so, and clicking it opens that. */
+  readonly home: { readonly kind: 'group' | 'project'; readonly name: string; readonly chatId: string }
 }
 
 const SIGNALS_KEY = '__GUGU_SIDEBAR_CHAT_SIGNALS__'
@@ -38,12 +57,17 @@ const VIEW_KEY = '__GUGU_SIDEBAR_CHAT_VIEW__'
 const VIEW_EVENT = 'gugu:sidebar-chat-view'
 const NOTIFICATIONS_KEY = '__GUGU_SIDEBAR_NOTIFICATIONS_OPEN__'
 const NOTIFICATIONS_EVENT = 'gugu:sidebar-notifications-open'
+const PINNED_AGENTS_KEY = '__GUGU_SIDEBAR_PINNED_AGENTS__'
+const PINNED_AGENTS_EVENT = 'gugu:sidebar-pinned-agents'
+const TOUR_KEY = '__GUGU_PRODUCT_TOUR_ON_SCREEN__'
+const TOUR_EVENT = 'gugu:product-tour-on-screen'
 
 /**
  * 壳:从聊天列表那一份算出两枚页签和项目行上的数。项目群(及从它开出来的话题)的未读记在那个群名下,其余记进「对话」;免打扰的不算(gugu-dev#181:
  * 「对话」页签挂对话那边的未读总数,项目行与「项目」页签挂项目群的未读;owner 10-28:话题只算叫到你的)。只读未读数,真读了它自己会减。
  */
-export function sidebarChatSignals(chats: readonly ChatItem[], projectGroupChats: ReadonlySet<string>, assistant: AssistantShellSnapshot | null = null): SidebarChatSignals {
+export function sidebarChatSignals(chats: readonly ChatItem[], projectGroupChats: ReadonlySet<string>, assistant: AssistantShellSnapshot | null = null, loaded = true): SidebarChatSignals {
+  const listedGroups = loaded ? new Set(chats.flatMap((chat) => (chat.kind === 'group' ? [chat.id] : []))) : null
   let chatsUnread = 0
   const groupUnread = new Map<string, number>()
   const groupCallingTopic = new Map<string, SidebarCallingTopic>()
@@ -57,7 +81,7 @@ export function sidebarChatSignals(chats: readonly ChatItem[], projectGroupChats
       if (count > 0 && chat.kind === 'topic' && !groupCallingTopic.has(line)) groupCallingTopic.set(line, { chatId: chat.id, name: chat.name ?? '' })
     } else chatsUnread += count
   }
-  return { chatsUnread, groupUnread, groupCallingTopic }
+  return { chatsUnread, groupUnread, groupCallingTopic, listedGroups }
 }
 
 const NO_VIEW: SidebarChatView = { focusedChatId: null, groups: [] }
@@ -79,6 +103,8 @@ const subscribeTo = (event: string) => (listener: () => void) => {
 const subscribeSignals = subscribeTo(SIGNALS_EVENT)
 const subscribeView = subscribeTo(VIEW_EVENT)
 const subscribeNotifications = subscribeTo(NOTIFICATIONS_EVENT)
+const subscribePinnedAgents = subscribeTo(PINNED_AGENTS_EVENT)
+const NO_PINNED_AGENTS: readonly SidebarPinnedAgent[] = []
 
 /** One ephemeral list-view choice across the shell and workspace roots; layout settings stay separate. */
 export function setSidebarNotificationsOpen(open: boolean): void {
@@ -90,6 +116,23 @@ export function useSidebarNotificationsOpen(): boolean {
   return useSyncExternalStore(subscribeNotifications, () => read<boolean>(NOTIFICATIONS_KEY) ?? false, () => false)
 }
 
+const subscribeTour = subscribeTo(TOUR_EVENT)
+
+/** 壳:功能导览正在屏幕上(#2548:侧栏的两步介绍这时让开,❌ 两个气泡同时出来)。 */
+export function setProductTourOnScreen(onScreen: boolean): void {
+  if ((read<boolean>(TOUR_KEY) ?? false) === onScreen) return
+  write(TOUR_KEY, TOUR_EVENT, onScreen)
+}
+
+export function useProductTourOnScreen(): boolean {
+  return useSyncExternalStore(subscribeTour, () => read<boolean>(TOUR_KEY) ?? false, () => false)
+}
+
+function sameIds(current: ReadonlySet<string> | null, next: ReadonlySet<string> | null): boolean {
+  if (current === null || next === null) return current === next
+  return current.size === next.size && [...next].every((id) => current.has(id))
+}
+
 /** 壳:整份替换;没变不通知。 */
 export function publishSidebarChatSignals(next: SidebarChatSignals): void {
   const current = read<SidebarChatSignals>(SIGNALS_KEY)
@@ -99,7 +142,8 @@ export function publishSidebarChatSignals(next: SidebarChatSignals): void {
     current.groupUnread.size === next.groupUnread.size &&
     [...next.groupUnread].every(([chatId, count]) => current.groupUnread.get(chatId) === count) &&
     current.groupCallingTopic.size === next.groupCallingTopic.size &&
-    [...next.groupCallingTopic].every(([chatId, topic]) => current.groupCallingTopic.get(chatId)?.chatId === topic.chatId && current.groupCallingTopic.get(chatId)?.name === topic.name)
+    [...next.groupCallingTopic].every(([chatId, topic]) => current.groupCallingTopic.get(chatId)?.chatId === topic.chatId && current.groupCallingTopic.get(chatId)?.name === topic.name) &&
+    sameIds(current.listedGroups, next.listedGroups)
   ) return
   write(SIGNALS_KEY, SIGNALS_EVENT, next)
 }
@@ -115,7 +159,8 @@ export function publishSidebarChatView(next: SidebarChatView): void {
   if (
     current &&
     current.focusedChatId === next.focusedChatId &&
-    JSON.stringify(current.groups) === JSON.stringify(next.groups)
+    JSON.stringify(current.groups) === JSON.stringify(next.groups) &&
+    (current.oneList ?? false) === (next.oneList ?? false)
   ) return
   write(VIEW_KEY, VIEW_EVENT, next)
 }
@@ -123,6 +168,38 @@ export function publishSidebarChatView(next: SidebarChatView): void {
 /** 壳:会话页还没说过 = 没看着哪条对话。 */
 export function useSidebarChatView(): SidebarChatView {
   return useSyncExternalStore(subscribeView, () => read<SidebarChatView>(VIEW_KEY) ?? NO_VIEW, () => NO_VIEW)
+}
+
+/** 会话页:the agents pinned to the one list, in display order (整份替换;没变不通知). */
+export function publishSidebarPinnedAgents(next: readonly SidebarPinnedAgent[]): void {
+  const current = read<readonly SidebarPinnedAgent[]>(PINNED_AGENTS_KEY)
+  if (current && JSON.stringify(current) === JSON.stringify(next)) return
+  write(PINNED_AGENTS_KEY, PINNED_AGENTS_EVENT, next)
+}
+
+/** 壳:the agents pinned to the one list, in display order; the task page has not said yet = none. */
+export function useSidebarPinnedAgents(): readonly SidebarPinnedAgent[] {
+  return useSyncExternalStore(subscribePinnedAgents, () => read<readonly SidebarPinnedAgent[]>(PINNED_AGENTS_KEY) ?? NO_PINNED_AGENTS, () => NO_PINNED_AGENTS)
+}
+
+const ONE_LIST_NEIGHBOUR_KEY = '__GUGU_SIDEBAR_ONE_LIST_NEIGHBOUR__'
+
+/**
+ * #2548 壳 → 会话页: the one list's rows are the chat list's, and so is their keyboard order (⌘↑/⌘↓). ⌃X⌃X on the task page
+ * archives the open task, then moves on as the old sidebar did: to the row after the lit one (the one before it at the
+ * end), opened as ⌘↓ opens it. The chat list installs this while it is the one list. Returns the uninstall.
+ */
+export function installOneListNeighbour(open: () => boolean): () => void {
+  const target = window as unknown as Record<string, unknown>
+  target[ONE_LIST_NEIGHBOUR_KEY] = open
+  return () => {
+    if (target[ONE_LIST_NEIGHBOUR_KEY] === open) delete target[ONE_LIST_NEIGHBOUR_KEY]
+  }
+}
+
+/** 会话页: open the one list's row next to the lit one; false = there is none (no other row, no lit row, no one list). */
+export function openOneListNeighbour(): boolean {
+  return read<() => boolean>(ONE_LIST_NEIGHBOUR_KEY)?.() ?? false
 }
 
 export type ShellChatDialog = 'create-group' | 'add-contact'

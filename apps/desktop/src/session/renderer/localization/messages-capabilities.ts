@@ -68,8 +68,6 @@ export const enUSCapabilityMessages = {
   'terminal.optionAsMeta': 'Use Option as Meta key',
 
   // ── settings · left sidebar metadata ───────────────────────────────────────
-  'sidebarMeta.stateGroups': 'Group tasks by status',
-  'sidebarMeta.stateGroupsToggle': 'Group left sidebar tasks by status',
   'sidebarMeta.agentNameOnHover': 'Show the identity card on hover',
   'sidebarMeta.agentNameOnHoverToggle': 'Show the identity card on hover',
 
@@ -1011,8 +1009,6 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'terminal.optionAsMeta': '把 Option 作为 Meta 键',
 
   // ── 设置 · 左侧栏信息 ───────────────────────────────────────────────────────
-  'sidebarMeta.stateGroups': '二级分类',
-  'sidebarMeta.stateGroupsToggle': '左侧栏按状态分二级分类',
   'sidebarMeta.agentNameOnHover': '悬浮显示身份卡',
   'sidebarMeta.agentNameOnHoverToggle': '悬浮时显示身份卡',
 

@@ -1,13 +1,13 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import { archiveSessionNow } from '@renderer/features/sessions/archive-session-flow';
-import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
 import { focusedSessionId } from '@renderer/features/sessions/pane-selectors';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { getSessionView } from '@renderer/features/sessions/stores/session-selectors';
 import { showModal } from '@renderer/lib/modal/modal-provider';
 import { openChatOnScreen } from '@renderer/features/chats/open-chat';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
-import { navNodeKey, navNodesEqual, type SidebarNavNode } from './sidebar-store';
+import { openOneListNeighbour } from '@/lib/sidebarChatsBridge';
+import type { SidebarNavNode } from './sidebar-store';
 import { withMountedSession } from './with-mounted-session';
 import {
   COMPOSER_INPUT_SELECTOR,
@@ -30,12 +30,6 @@ const STATION_VIEWS: ReadonlySet<string> = new Set(['home', 'new-session', 'proj
  */
 
 export const SESSION_NAV_FOCUS_REGION = 'session-nav-focus';
-
-/**
- * ↑↓ walks stations and the main area follows each one. Opening is coalesced so holding ↓ does not
- * fire one navigation per station — only the station you land on is actually opened.
- */
-const OPEN_COALESCE_MS = 100;
 
 /** How long the first ⌃X stays armed before the archive silently disarms itself. */
 export const ARCHIVE_CONFIRM_WINDOW_MS = 3_000;
@@ -77,21 +71,7 @@ function focusNavLayer(): boolean {
   return true;
 }
 
-function focusNavCursorRow(): boolean {
-  const row = document.querySelector<HTMLElement>('[data-nav-cursor]');
-  if (!row) return false;
-  row.focus({ preventScroll: true });
-  return document.activeElement === row;
-}
-
 class SessionKeyboardNavStore {
-  /**
-   * A keyboard move that has not landed yet (↓ waiting out its coalesce window). Null means "wherever the main area
-   * currently is" (see `cursor`) — once a move lands, or anything else takes the main area somewhere (a click, a project
-   * picked on the new-task page, a link, ⌘P), the view is where you are and the one highlight sits there
-   * (owner 2026-10-23: New task stayed lit after the page jumped into a project).
-   */
-  private _cursor: SidebarNavNode | null = null;
   get focusLayer(): SessionNavFocusLayer {
     return sessionNavigationFocus.focusLayer;
   }
@@ -100,16 +80,9 @@ class SessionKeyboardNavStore {
 
   private _focusAttempt = 0;
   private _archiveTimer: ReturnType<typeof setTimeout> | null = null;
-  private _openTimer: ReturnType<typeof setTimeout> | null = null;
-  private _disposeOpen: (() => void) | null = null;
 
   constructor() {
-    makeAutoObservable<
-      this,
-      '_disposeOpen' | '_openTimer' | '_archiveTimer' | '_focusAttempt'
-    >(this, {
-      _disposeOpen: false,
-      _openTimer: false,
+    makeAutoObservable<this, '_archiveTimer' | '_focusAttempt'>(this, {
       _archiveTimer: false,
       _focusAttempt: false,
     });
@@ -117,19 +90,14 @@ class SessionKeyboardNavStore {
 
   /**
    * The station the highlight sits on. The cursor and "what you are looking at" are the same thing —
-   * there is only ever one highlight, and it must not disagree with the main area. So an explicit
-   * cursor is only honoured while it still exists in the chain; otherwise we fall back to the view.
+   * there is only ever one highlight, and it must not disagree with the main area (owner 2026-10-23: New task stayed lit
+   * after the page jumped into a project). #2548 the rows the keyboard walks are the one list's, walked by the chat list
+   * itself (⌘↑/⌘↓), so the cursor here is always the view.
    */
   get cursor(): SidebarNavNode | null {
     // 主区在一个不是站点的页面上(会话历史、已安排……):没有哪个站点正被看着,光标也就不在任何一行上 ——
     // 点过「新建任务」再点「会话历史」,❌ 让「新建任务」那一行留着光标的底色(和「会话历史」同时亮)。
     if (!STATION_VIEWS.has(appState.navigation.currentViewId)) return null;
-    const chain = sidebarStore.navChain;
-    if (this._cursor) {
-      const key = navNodeKey(this._cursor);
-      const live = chain.find((node) => navNodeKey(node) === key);
-      if (live) return live;
-    }
     return this.viewNode;
   }
 
@@ -179,47 +147,9 @@ class SessionKeyboardNavStore {
     if (isComposerLayerElement(element)) this.setFocusLayer('composer');
   }
 
-  /** Move one station and let the main area follow. Stops at both ends; never wraps. */
-  move(delta: 1 | -1): boolean {
-    const returnToComposer = this.focusLayer === 'composer';
-    const from = this.cursor;
-    // Session switching walks the visible conversation rows only. The shared navigation chain
-    // also contains the New task entry and project homes for their own shortcuts; those are not
-    // sessions and must not become Cmd+Arrow destinations.
-    const chain = sidebarStore.navChain.filter((node) => node.kind === 'conversation');
-    if (chain.length === 0) return false;
-    const index = from ? chain.findIndex((node) => navNodesEqual(node, from)) : -1;
-    const next = index === -1 ? (delta === 1 ? chain[0] : chain[chain.length - 1]) : chain[index + delta];
-    if (!next) return false;
-    if (returnToComposer) {
-      this.clearPendingArchive();
-      this._cursor = next;
-      this.setFocusLayer('composer');
-      this._scheduleApply(next, () => this.handOffToComposer());
-    } else {
-      this.setCursor(next);
-    }
-    return true;
-  }
-
-  /** Put the cursor on a station and take the main area there. */
-  setCursor(node: SidebarNavNode): void {
-    this.clearPendingArchive();
-    this._cursor = node;
-    this.setFocusLayer('nav');
-    focusNavLayer();
-    this._scheduleApply(node, () => {
-      if (this.focusLayer !== 'nav' || !navNodesEqual(this.cursor, node)) return;
-      // The auto-focus writers yield while focusLayer is nav, so one settled attempt is enough.
-      // A virtualized row may not be mounted yet; the holder remains the explicit nav focus target.
-      focusNavCursorRow();
-    });
-  }
-
   /** Click and other pointer paths land here: same cursor, but focus is the caller's business. */
   syncCursorFromPointer(_node: SidebarNavNode): void {
     // The click takes the main area to the row (or the row is already what it shows): the view is the cursor.
-    this._cursor = null;
     // Pointer activation follows the existing product path: opening a session hands the keyboard
     // to its composer. A later focusin keeps the same fact true if another surface wins the race.
     this.setFocusLayer('composer');
@@ -244,7 +174,7 @@ class SessionKeyboardNavStore {
     const row = appState.projects.projects.has(node.projectId)
       ? sidebarStore.rowOfSession(node.projectId, node.sessionId)
       : null;
-    const parent: SidebarNavNode = row === null ? { kind: 'new-session' } : { kind: 'project', projectId: row };
+    const parent: Exclude<SidebarNavNode, { kind: 'conversation' }> = row === null ? { kind: 'new-session' } : { kind: 'project', projectId: row };
     this.clearPendingArchive();
     this._applyNow(parent);
     // The project home and the New session page exist to be typed into, so ← lands in the composer.
@@ -391,66 +321,31 @@ class SessionKeyboardNavStore {
 
   private _archiveCursorSession(node: SidebarNavNode & { kind: 'conversation' }): void {
     withMountedSession(node.projectId, node.sessionId, () => {
-      const chain = sidebarStore.navChain;
-      const index = chain.findIndex((entry) => navNodesEqual(entry, node));
-      const successor = index === -1 ? null : (chain[index + 1] ?? chain[index - 1] ?? null);
-      const moveOn = () => {
-        const target = successor ?? { kind: 'new-session' as const };
-        runInAction(() => this._applyNow(target));
-      };
       // The two key presses ARE this path's confirmation (behavior session-page「键盘导航」), so no
       // dialog; the scope is this one session, as before.
       archiveSessionNow({ projectId: node.projectId, sessionId: node.sessionId, withChildren: false });
-      moveOn();
+      // Then on to the next item of the list the user sees, as the old sidebar did. #2548 that is the one list's next row
+      // (the one before it at the end), which the chat list opens as ⌘↓ does; no other row = the New task page.
+      if (!openOneListNeighbour()) runInAction(() => this._applyNow({ kind: 'new-session' }));
     });
   }
 
   // ---- main-area follow ----
 
-  private _scheduleApply(node: SidebarNavNode, onApplied?: () => void): void {
-    if (this._openTimer) clearTimeout(this._openTimer);
-    this._openTimer = setTimeout(() => {
-      this._openTimer = null;
-      this._applyNow(node);
-      onApplied?.();
-    }, OPEN_COALESCE_MS);
-  }
-
-  private _applyNow(node: SidebarNavNode): void {
-    // An immediate apply supersedes a scheduled one. Without this, ← pressed within the coalesce
-    // window of the ↓ before it lands on the project home and is then dragged back to the
-    // conversation when the stale timer fires — the highlight says one thing, the main area another.
-    if (this._openTimer) {
-      clearTimeout(this._openTimer);
-      this._openTimer = null;
-    }
-    // The move lands here: from now on the main area is where the cursor is.
-    this._cursor = null;
-    // A pending open for the station we just left would otherwise land later, or time out into a
-    // toast for a conversation the user has already arrowed past.
-    this._disposeOpen?.();
-    this._disposeOpen = null;
+  /** Take the main area to a parent station: the New task page or a project's home. */
+  private _applyNow(node: Exclude<SidebarNavNode, { kind: 'conversation' }>): void {
     const nav = appState.navigation;
     if (node.kind === 'new-session') {
       nav.navigateTransient('new-session');
       return;
     }
-    if (node.kind === 'project') {
-      // 没有本地项目的项目那一行(行 id = 项目群):它的「主页」是项目群。
-      const ref = sidebarStore.sidebarProjects.find((row) => row.id === node.projectId);
-      if (ref?.kind === 'group') {
-        openChatOnScreen(ref.chatId, false);
-        return;
-      }
-      nav.navigateTransient('project', { projectId: node.projectId });
+    // 没有本地项目的项目那一行(行 id = 项目群):它的「主页」是项目群。
+    const ref = sidebarStore.sidebarProjects.find((row) => row.id === node.projectId);
+    if (ref?.kind === 'group') {
+      openChatOnScreen(ref.chatId, false);
       return;
     }
-    nav.navigateTransient('session', { projectId: node.projectId, sessionId: node.sessionId });
-    this._disposeOpen = openSessionInSessionWhenReady({
-      projectId: node.projectId,
-      sessionId: node.sessionId,
-      preview: true,
-    });
+    nav.navigateTransient('project', { projectId: node.projectId });
   }
 }
 

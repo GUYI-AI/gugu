@@ -334,6 +334,27 @@ export class PageSessionsStore implements IDisposable {
     }
   }
 
+  // #2548 固定到左侧栏: same optimistic shape as setSessionPinned.
+  async setSessionPinnedToSidebar(sessionId: string, pinned: boolean): Promise<void> {
+    const store = this.sessions.get(sessionId);
+    if (!store) return;
+
+    const previous = store.data.isPinnedToSidebar ?? false;
+
+    runInAction(() => {
+      store.data.isPinnedToSidebar = pinned;
+    });
+
+    try {
+      await rpc.sessions.setSessionPinnedToSidebar(sessionId, pinned);
+    } catch (err) {
+      runInAction(() => {
+        store.data.isPinnedToSidebar = previous;
+      });
+      throw err;
+    }
+  }
+
   async renameSession(sessionId: string, name: string): Promise<void> {
     const store = this.sessions.get(sessionId);
     if (!store) return;

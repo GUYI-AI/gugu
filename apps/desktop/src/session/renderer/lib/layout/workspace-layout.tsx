@@ -1,9 +1,17 @@
-import { motion, useTransform } from 'framer-motion';
+import { motion, useTransform, type MotionStyle } from 'framer-motion';
 import { type ReactNode, useState } from 'react';
 import { ShellSidebarToggle } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
-import { SIDEBAR_MIN_WIDTH_PX } from '@renderer/lib/layout/layout-provider';
-import { panelContentLayout, usePanelMounted, usePanelProgress } from '@renderer/lib/layout/panel-motion';
+import {
+  SIDEBAR_BADGE_OPACITY_VAR,
+  SIDEBAR_MIN_WIDTH_PX,
+  SIDEBAR_PROGRESS_VAR,
+  SIDEBAR_TEXT_OPACITY_VAR,
+  sidebarOccupiedWidth,
+  sidebarRailBadgeOpacity,
+  sidebarRailTextOpacity,
+} from '@renderer/lib/layout/layout-provider';
+import { clamp01, panelContentLayout, usePanelMounted, usePanelProgress } from '@renderer/lib/layout/panel-motion';
 import { PanelResizeDragGuard, PanelResizeHandle } from '@renderer/lib/layout/panel-resize-handle';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
@@ -26,6 +34,10 @@ const SIDEBAR_CONTENT_MIN_PX = 120;
 interface WorkspaceLayoutProps {
   leftSidebar: ReactNode;
   mainContent: ReactNode;
+  /** #2548 内层侧栏:列表与正文之间的那一列(打开一个群 / 项目时才有,不该出现时它自己什么都不画)。 */
+  innerSidebar?: ReactNode;
+  /** #2548 ⑤ 内层栏收起时正文左上角那枚展开钮(ShellRestoreLane);不在时它自己什么都不画。 */
+  innerSidebarRestore?: ReactNode;
   /** A place of its own on the far-left rail (App, Library): no task list beside it. The sidebar stays
    *  mounted, only not shown — swapping the layout out rebuilt the whole task tree on every way back. */
   sidebarHidden?: boolean;
@@ -51,7 +63,7 @@ interface WorkspaceLayoutProps {
  * 摊平成"内容跟着容器缩"。它同时**跟着窗口整块左移**(见下面 contentX),否则固定宽会变成
  * 「原地被右边削平」—— 那是遮罩不是收起。
  */
-export function WorkspaceLayout({ leftSidebar, mainContent, sidebarHidden = false }: WorkspaceLayoutProps) {
+export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null, innerSidebarRestore = null, sidebarHidden = false }: WorkspaceLayoutProps) {
   const { translate } = useSessionMessages();
   const {
     isLeftOpen,
@@ -59,9 +71,13 @@ export function WorkspaceLayout({ leftSidebar, mainContent, sidebarHidden = fals
     leftWidth,
     leftProgress,
     leftAnimatedWidth,
+    leftRail,
+    leftRailWidth,
     workspaceRootRef,
     setLeftWidth,
     setCollapsed,
+    dragLeftEdge,
+    releaseLeftEdge,
   } = useWorkspaceLayoutContext();
   const [isResizing, setIsResizing] = useState(false);
 
@@ -80,18 +96,35 @@ export function WorkspaceLayout({ leftSidebar, mainContent, sidebarHidden = fals
   // 「右边有了,但是左边又丢失了,正常应该两边都有」。
   //
   // 浮出态不吃这套:它是浮在主区之上的一整块预览,本来就该是整宽从左缘滑入。
+  //
+  // GUYI-AI/gugu#2548 收起成一列头像(收起宽 > 0)也不吃这套:那一列就是展开态本身,只是窄 —— 内容宽就是占位宽
+  // (收起宽 → 整宽),不滑、不淡;行跟着缩到头像那么宽(选中底色也是),头像左缘不动,所以每个头像、每颗按钮都在原坐标。
+  // 文字跟着同一条进度淡入淡出(sidebarRailTextOpacity,经 CSS 变量交给 left-sidebar)。收起宽是这几个量的一员
+  // (motion value),❌ 读 React 状态:变换只在挂上那一刻拿一次闭包,动画中途读到的是旧值。
   const dockedContent = (progress: number, width: number) =>
     panelContentLayout(progress, width, SIDEBAR_CONTENT_MIN_PX);
-  const contentWidth = useTransform([leftProgress, leftWidth], (latest: number[]) =>
-    latest[0] > 0 ? dockedContent(latest[0], latest[1]).width : latest[1]
+  const contentWidth = useTransform([leftProgress, leftWidth, leftRailWidth], (latest: number[]) =>
+    latest[2] > 0
+      ? sidebarOccupiedWidth(latest[0], latest[1], latest[2])
+      : latest[0] <= 0 ? latest[1] : dockedContent(latest[0], latest[1]).width
+  );
+  const textOpacity = useTransform([leftProgress, leftRailWidth], (latest: number[]) =>
+    latest[1] > 0 ? sidebarRailTextOpacity(latest[0]) : 1
+  );
+  // The same progress for the geometry that moves with it (the 「+」, 创建智能体) and the rail's corner badge.
+  const railProgress = useTransform([leftProgress, leftRailWidth], (latest: number[]) =>
+    latest[1] > 0 ? clamp01(latest[0]) : 1
+  );
+  const badgeOpacity = useTransform([leftProgress, leftRailWidth], (latest: number[]) =>
+    latest[1] > 0 ? sidebarRailBadgeOpacity(latest[0]) : 0
   );
   const contentOpacity = useTransform(
-    [leftProgress, peekProgress, leftWidth],
+    [leftProgress, peekProgress, leftWidth, leftRailWidth],
     (latest: number[]) =>
-      latest[0] > 0 ? dockedContent(latest[0], latest[2]).opacity : latest[1]
+      latest[3] > 0 ? 1 : latest[0] > 0 ? dockedContent(latest[0], latest[2]).opacity : latest[1]
   );
-  const contentX = useTransform([leftProgress, peekProgress, leftWidth], (latest: number[]) =>
-    latest[0] > 0 ? dockedContent(latest[0], latest[2]).offset : (latest[1] - 1) * latest[2]
+  const contentX = useTransform([leftProgress, peekProgress, leftWidth, leftRailWidth], (latest: number[]) =>
+    latest[3] > 0 ? 0 : latest[0] > 0 ? dockedContent(latest[0], latest[2]).offset : (latest[1] - 1) * latest[2]
   );
 
   const maxSidebarWidth = () => {
@@ -104,6 +137,8 @@ export function WorkspaceLayout({ leftSidebar, mainContent, sidebarHidden = fals
       ref={workspaceRootRef}
       className="relative flex h-full w-full overflow-hidden"
       data-workspace-shell=""
+      // #2548 the content is a card stacked on the one list only while the list is beside it (desktop-shell.css).
+      data-workspace-sidebar-hidden={sidebarHidden ? '' : undefined}
     >
       <motion.aside
         data-workspace-left-panel=""
@@ -142,30 +177,49 @@ export function WorkspaceLayout({ leftSidebar, mainContent, sidebarHidden = fals
             width: contentWidth,
             opacity: contentOpacity,
             x: contentX,
-            pointerEvents: isLeftOpen || isPeekVisible ? 'auto' : 'none',
+            // A CSS variable bound to a motion value (motion sets it as a var each frame); MotionStyle does not type
+            // custom properties.
+            ...({
+              [SIDEBAR_TEXT_OPACITY_VAR]: textOpacity,
+              [SIDEBAR_PROGRESS_VAR]: railProgress,
+              [SIDEBAR_BADGE_OPACITY_VAR]: badgeOpacity,
+            } as MotionStyle),
+            pointerEvents: isLeftOpen || isPeekVisible || leftRail > 0 ? 'auto' : 'none',
           }}
         >
           {leftSidebar}
         </motion.div>
       </motion.aside>
-      {isLeftOpen && !sidebarHidden ? (
+      {/* #2548 a sidebar that collapses to a rail keeps its edge: dragging the rail's edge opens it. */}
+      {(isLeftOpen || leftRail > 0) && !sidebarHidden ? (
         <PanelResizeHandle
           edge="end"
           offset={leftAnimatedWidth}
           ariaLabel={translate('task.resizeSidebar')}
-          getSize={() => leftWidth.get()}
+          // #2548 the sidebar as one list draws no line on its edge: hovering it only shows the resize cursor.
+          className={leftRail > 0 ? 'hover:bg-transparent' : undefined}
+          // On the rail a drag starts from where the edge is now (the rail, or mid-animation); otherwise from the width.
+          getSize={() => (leftRail > 0 ? leftAnimatedWidth.get() : leftWidth.get())}
           minSize={SIDEBAR_MIN_WIDTH_PX}
           maxSize={maxSidebarWidth}
           onSize={(size) => setLeftWidth(size)}
           onCollapse={() => setCollapsed('left', true, { suppressPeek: false })}
           onSizeCommit={(size) => setLeftWidth(size, { persist: true })}
           onDraggingChange={setIsResizing}
+          // #2548 the whole sidebar follows the pointer (text fading with it) and snaps to the nearer state on release
+          // (mock v18 拖边缘), ❌ the half-the-minimum threshold that collapsed it mid-drag.
+          follow={leftRail > 0 ? { onMove: (raw) => dragLeftEdge(raw, maxSidebarWidth()), onRelease: releaseLeftEdge } : undefined}
         />
       ) : null}
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">{mainContent}</div>
-      {isLeftOpen && !sidebarHidden ? <PanelResizeDragGuard edge="end" offset={leftAnimatedWidth} /> : null}
-      {/* 左侧栏开关:整个会话页**唯一**一枚,永远钉在会话页左缘同一个坐标 ——
-          侧栏是从它下面滑过去的,不是把它顶走。❌ 别再在侧栏内部另放一枚。 */}
+      {/* 固定占这一格(没有内层侧栏时是 null):正文那一格的位置不因它出现 / 收起而变,正文 ❌ 重挂。
+          #2548 有内层栏时它和正文是同一张卡片的左右两半(desktop-shell.css),所以它必须紧挨着正文那一格。 */}
+      {sidebarHidden ? null : innerSidebar}
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">
+        {mainContent}
+        {sidebarHidden ? null : innerSidebarRestore}
+      </div>
+      {(isLeftOpen || leftRail > 0) && !sidebarHidden ? <PanelResizeDragGuard edge="end" offset={leftAnimatedWidth} /> : null}
+      {/* 左侧栏开关的控制器(快捷键、「消息」再点一下都走它);按钮本身 #2548 起在一张表侧栏的头一行。 */}
       {sidebarHidden ? null : <ShellSidebarToggle />}
     </div>
   );

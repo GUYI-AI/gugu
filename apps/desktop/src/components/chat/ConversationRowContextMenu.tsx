@@ -1,9 +1,9 @@
 import { useTranslation } from 'react-i18next'
-import { BellOff, CheckCircle, MoreHorizontal, Pin, Trash } from '@/lib/icons'
+import { BellOff, CheckCircle, MoreHorizontal, PanelLeftClose, Pin, Trash } from '@/lib/icons'
 import { Menu, MenuFold, MenuItem } from '../ui/Menu'
 import { conversationRowMenu, type ConversationRowAction, type ConversationRowMenuState } from '../../session/shared/conversation-row-menu'
 
-const icons = { read: CheckCircle, pin: Pin, notifications: BellOff, trash: Trash }
+const icons = { read: CheckCircle, pin: Pin, sidebar: PanelLeftClose, notifications: BellOff, trash: Trash }
 
 export function ConversationRowContextMenu({ x, y, state, onClose, onAction, loadError }: {
   x: number

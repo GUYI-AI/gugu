@@ -9,7 +9,7 @@ import { allFirstRunHintsDismissed, dismissFirstRunHints, readFirstRunHints, typ
 import { rendererLogger } from '@/lib/log'
 import { Button } from '../ui/Button'
 import { Popover } from '../ui/Popover'
-import { HINT_ENTRIES, useFirstRunHintTargets } from './firstRunHintTargets'
+import { HINT_ENTRIES, deviceHintsDismissed, useFirstRunHintTargets } from './firstRunHintTargets'
 
 const log = rendererLogger('first-run/hints')
 const backgroundRetry = { retry: 3, retryDelay: (attempt: number) => Math.min(1000 * 2 ** attempt, 30_000) }
@@ -31,7 +31,7 @@ export function FirstRunHints({ userId }: { userId: string }) {
     },
     ...backgroundRetry,
   })
-  const targets = useFirstRunHintTargets(device, !progress.isError && progress.data != null && !allFirstRunHintsDismissed(progress.data))
+  const targets = useFirstRunHintTargets(device, !progress.isError && progress.data != null && !deviceHintsDismissed(device, progress.data))
   const [pending, setPending] = useState<FirstRunHintId[]>([])
   // Retire the current encounter, not every hint currently on screen in a chain.
   // Another hint can appear when its entry is encountered on a later page/visit.

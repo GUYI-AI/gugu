@@ -1,71 +1,31 @@
-import { FolderClosed, ShieldAlert, TriangleAlert, Zap } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
-import React, { useCallback, useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useConfirmDeleteProject } from '@renderer/features/projects/hooks/use-confirm-delete-project';
-import {
-  isUnregisteredProject,
-  type UnregisteredProject,
-} from '@renderer/features/projects/stores/project';
-import {
-  getProjectStore,
-  getGitRepositoryStore,
-  projectViewKind,
-} from '@renderer/features/projects/stores/project-selectors';
+import { getProjectStore, getGitRepositoryStore } from '@renderer/features/projects/stores/project-selectors';
 import { useNavigate, useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { isScreenView, showBesideOnScreen, showOnScreen } from '@renderer/app/screen-layout-actions';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { readComposerVerb, setComposerVerb } from '@/lib/composerVerbBridge';
-import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
 import { composerDrafts, projectDraftKey } from '@renderer/features/sessions/composer-drafts';
 import { ProjectRowContextMenu } from '@/components/chat/ProjectRowContextMenu';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
-import { cn } from '@renderer/utils/utils';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { sessionKeyboardNav } from './session-keyboard-nav';
-import { ProjectNeedsYouDot, ProjectRowTitle } from './project-row-parts';
-import { SidebarUnreadCount } from './sidebar-list-switch';
+import { OneListProjectRow } from './project-row-parts';
 import { requestTopicSplit } from '@/lib/topicSplitRequest';
 import { useSidebarChatSignals } from '@/lib/sidebarChatsBridge';
 import { openChatOnScreen } from '@renderer/features/chats/open-chat';
-import {
-  SidebarItemMiniButton,
-  SidebarMenuAction,
-  SidebarMenuButton,
-  SidebarMenuRow,
-  sidebarDropTargetClass,
-  sidebarRowActionsSlotClass,
-  sidebarRowHoverActionsClass,
-  sidebarRowRestActionsClass,
-} from './sidebar-primitives';
-import { useSessionDropTarget } from './use-session-drop-target';
-import { clearDraggedScreenContent, setDraggedScreenContent } from '@renderer/lib/drag-screen-content';
-import { moveSessionUnder } from '@renderer/features/sessions/set-session-parent-flow';
-import { sidebarRowInsetPx } from './sidebar-row-metrics';
-import { SidebarTwistyLane } from './sidebar-twisty';
-import type { SessionMessageKey } from '@renderer/localization/messages';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
-
-// 转圈 tooltip 的三个进行中档位与主面板的阶段清单是同一批语义(pending-project.tsx),
-// 复用同一批 key;省略号是这一面自己的("还在跑"),所以在下面拼,不进文案。
-const UNREGISTERED_PHASE_KEY: Record<UnregisteredProject['phase'], SessionMessageKey> = {
-  'creating-repo': 'projects.pending.creatingRepo',
-  cloning: 'projects.pending.cloning',
-  registering: 'projects.pending.registering',
-  error: 'sidebar.projectPhase.failed',
-};
 
 /**
- * 「项目」分区的一行。#6264 别的机器上的项目也是这一行(按 Zed:设备范围属于项目,具体设备属于文件夹):项目行汇总设备数量,
- * 机器前那颗点是连接状态;那台机器没连上时整行灰掉、悬停说清楚,项目照样列着(behavior gugu-server)。
+ * #2548 a project in the one list is its project group's conversation row. `projectId` is a row of the account project
+ * list (sidebarStore.sidebarProjects) whose group is not a conversation of the chat list yet, so it is drawn as that row
+ * would be (OneListProjectRow: the project cover, name, no preview); same click, same menu. The cover is keyed by the
+ * row's representative local project, as partnerProjects keys every project group's cover. #6264 a project on another
+ * machine is this row too; that machine not connected = the row reads offline (data-offline), the project stays listed.
  */
-export const SidebarProjectItem = observer(function SidebarProjectItem({
-  projectId,
-}: {
-  projectId: string;
-}) {
+export const SidebarProjectItem = observer(function SidebarProjectItem({ projectId }: { projectId: string }) {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
   const confirmDeleteProject = useConfirmDeleteProject();
@@ -91,35 +51,17 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
     if (isProjectActive) prefetchRepository();
   }, [isProjectActive, prefetchRepository]);
 
-  const isExpanded = sidebarStore.expandedProjectIds.has(projectId);
-  // spec session-page 链6: a collapsed project whose conversations are waiting on the human shows an
-  // amber dot on its row — raw status, so viewing a conversation never clears it; it fades only
-  // when the "needs you" count returns to zero. When expanded, the per-section header carries it.
-  const needsYouCount = sidebarStore.needsYouCountForProject(projectId);
-  // gugu-dev#181 项目就是群:行尾挂项目群的未读(含它的话题),壳发过来的那一份;真读了才减。
+  // gugu-dev#181 项目就是群(账号上的项目 = 它的项目群):项目群从哪个话题叫到了你,壳发过来的那一份。
   const groupChatId = ref?.chatId;
   const chatSignals = useSidebarChatSignals();
-  const groupUnread = chatSignals?.groupUnread.get(groupChatId ?? '') ?? 0;
   const callingTopic = chatSignals?.groupCallingTopic.get(groupChatId ?? '');
-  // 挂在别的会话下面的一条拖回它自己的项目行 = 回到根(spec session-page「把会话拖成 child」)。
-  // 只有它不挂着时本来就显示在这一行的才收:换项目不是这个动作。
-  const unnestDrop = useSessionDropTarget();
-  const unnestHere = unnestDrop.bind(
-    (dragged) => sidebarStore.parentOf(dragged.sessionId) !== null && sidebarStore.rootRowOf(dragged.sessionId) === projectId,
-    (child) => moveSessionUnder(child, null, sidebarStore.parentOf(child.sessionId))
-  );
 
-  if (ref?.kind === 'group') return <SidebarGroupProjectItem projectId={projectId} chatId={ref.chatId} name={ref.name} unread={groupUnread} />;
+  if (ref?.kind === 'group') return <OneListGroupProjectRow projectId={projectId} chatId={ref.chatId} name={ref.name} />;
   if (!project) return null;
-  const ProjectIcon = FolderClosed;
   const deviceIds = [...new Set(sidebarStore.projectMembersOf(projectId).map((id) => machineRegistry.machineOf(id) ?? null))];
   const machineDown = deviceIds.every((id) => id !== null && remoteHostsStore.connectionState(id) !== 'connected');
-  const deviceLabels = deviceIds.map((id) => id ? remoteHostsStore.device(id)?.label ?? id : translate('task.deviceLocal'));
   const projectName = ref?.name || project.name;
   const projectLabel = projectName ?? 'project';
-  const hasNameTwin = sidebarStore.hasNameTwin(projectId);
-  const disambiguationPath = hasNameTwin ? project.data?.path : undefined;
-  // Opening a project never changes disclosure; only its arrow or the explicit keyboard action does.
   const openProject = (beside = false) => {
     // 行尾的数里有话题叫到你:话题不是项目行的子行,这一下就是去读它的入口(owner 11-07「红点消不掉」)。
     if (callingTopic && groupChatId) requestTopicSplit({ chatId: callingTopic.chatId, name: callingTopic.name, sourceChatId: groupChatId, focusComposer: true });
@@ -140,228 +82,52 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
     showOnScreen({ kind: 'project', projectId: rowId });
   };
 
-  // The project-row action opens the existing project-scoped composer. It must not eagerly
-  // create the session page's backing task; that happens only after the user submits the composer.
-  const openNewSession = () => {
-    sessionKeyboardNav.syncCursorFromPointer({ kind: 'project', projectId });
-    // gugu-dev#181 悬停的「+」= 在这个项目里开新任务。
-    prepareProjectTask(projectId);
-    if (!isProjectActive) showOnScreen({ kind: 'project', projectId: rowId });
-  };
-
-  const projectCursor = sessionKeyboardNav.cursor;
-  const isProjectCursor = projectCursor?.kind === 'project' && projectCursor.projectId === projectId;
-
-  const renderSpinnerWithTooltip = () => {
-    if (!isUnregisteredProject(project)) return null;
-    const phaseKey = UNREGISTERED_PHASE_KEY[project.phase];
-    const label = phaseKey
-      ? project.phase === 'error'
-        ? translate(phaseKey)
-        : `${translate(phaseKey)}…`
-      : `${translate('sidebar.projectPhase.loading')}…`;
-    return (
-      <Tooltip>
-        <TooltipTrigger
-          render={<span className="flex size-4 shrink-0 items-center justify-center" />}
-          aria-label={translate('sidebar.projectPhase.loading')}
-        >
-          {/* 转圈占的是**图标位**,不再套一个 24px 迷你钮 —— 那个钮当初兼着「点它折叠」,
-              折叠现在归车道里的箭头,钮就只剩一个比图标大的盒子,会把这一行的图标顶偏。 */}
-          <LoadingIndicator size="inline" className="text-foreground/60" />
-        </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
-    );
+  const removeProject = () => {
+    void confirmDeleteProject({
+      projectId,
+      projectLabel: project.name ?? translate('projects.fallbackName'),
+      onDeleted: () => { if (isProjectActive) navigate('home'); },
+    });
   };
 
   return (
-    <ProjectRowContextMenu disabled={false} chatId={groupChatId}
-      onRemove={() => {
-        void confirmDeleteProject({
-          projectId,
-          projectLabel: project.name ?? translate('projects.fallbackName'),
-          onDeleted: () => { if (isProjectActive) navigate('home'); },
-        });
-      }}>
-
-        <SidebarMenuRow
-          // @@@sidebar-row-metrics — 与会话行同一套列:[车道][图标][标题]。
-          // 原来是 `px-1` + 迷你钮内的 4px 把字形顶到 20px 那条内容列上;现在车道自己占掉前 20px,
-          // 文件夹字形落在 32、项目名落在 52 —— 而项目底下那些会话的身份图标也正是 52,
-          // 「会话对齐到项目名」这条关系换算过来仍然成立(数见 sidebar-row-metrics.ts)。
-          className={cn('group/row flex h-9 items-center justify-between gap-1 pr-1', unnestDrop.over && sidebarDropTargetClass)}
-          style={{ paddingInlineStart: `${sidebarRowInsetPx('project')}px` }}
-          data-unnest-target={unnestDrop.over || undefined}
-          {...unnestHere}
-          data-active={isProjectActive || undefined}
-          isActive={isProjectActive}
-          isCursor={isProjectCursor}
-          data-project-row={projectId}
-          data-offline={machineDown || undefined}
-          tabIndex={0}
-          role="treeitem"
-          // 项目行就是项目群那一行:和会话行、对话行同一份拖拽内容 —— 落在一块的边上分出这个项目块
-          // (与 ⌘ 点同一块),落在项目列表里换次序(见 sidebar-virtual-list)。
-          // ❌ 这里不能 `onMouseDown preventDefault`:那会连 dragstart 都拦掉(见 allowNativeDrag)。
-          draggable
-          onDragStart={(event) => setDraggedScreenContent(event.dataTransfer, { kind: 'project', projectId: rowId, title: projectLabel }, event.currentTarget)}
-          onDragEnd={clearDraggedScreenContent}
-          onClick={(event) => openProject(event.metaKey || event.ctrlKey)}
-          onKeyDown={(e) => {
-            // Arrows belong to the session navigation listener (see sidebar-session-item for
-            // why the old sibling walk could not work here either).
-            if (e.key === 'Enter') openProject();
-          }}
-        >
-          {/* 折叠箭头与会话行同一个原语、同一条车道(见 sidebar-twisty.tsx)。
-              原来这里是另一套:在**图标位上**让 folder 与 chevron 交叉淡入淡出。那套不位移,
-              但与会话行不同形 —— 同一条侧栏两种折叠惯用法(owner 2026-09-07:「项目行的折叠要统一」)。
-              换过来之后文件夹图标常驻不再消失,箭头有自己的位置。 */}
-          <SidebarTwistyLane
-            alwaysVisible
-            expanded={isExpanded}
-            label={translate(isExpanded ? 'sidebar.collapseProject' : 'sidebar.expandProject', { project: projectLabel })}
-            onToggle={
-              project.state === 'unregistered'
-                ? undefined
-                : () => sidebarStore.toggleProjectExpanded(projectId)
-            }
-          />
-          <div className="flex min-w-0 flex-1 items-center gap-1">
-            {project.state === 'unregistered' ? (
-              renderSpinnerWithTooltip()
-            ) : (
-              <ProjectIcon className={cn('size-4 shrink-0', machineDown && 'opacity-60')} />
-            )}
-            <SidebarMenuAction
-              allowNativeDrag
-              aria-label={translate('sidebar.openProject', { project: projectLabel })}
-              className={cn(
-                'truncate font-medium transition-colors select-none',
-                (projectViewKind(getProjectStore(projectId)) === 'bootstrapping' || machineDown) &&
-                  'text-foreground-muted'
-              )}
-            >
-              <ProjectRowTitle name={projectName}>
-                {disambiguationPath ? (
-                  <span title={disambiguationPath} className="text-foreground-muted min-w-0 max-w-[40%] shrink-[3] truncate text-xs">
-                    {disambiguationPath}
-                  </span>
-                ) : null}
-                {projectViewKind(project) === 'path_not_found' && (
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-foreground-destructive" />
-                    </TooltipTrigger>
-                    <TooltipContent>{translate('sidebar.projectMissing')}</TooltipContent>
-                  </Tooltip>
-                )}
-                {projectViewKind(project) === 'permission_blocked' && (
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-foreground-warning" />
-                    </TooltipTrigger>
-                    <TooltipContent>{translate('sidebar.projectUnreadable')}</TooltipContent>
-                  </Tooltip>
-                )}
-              </ProjectRowTitle>
-            </SidebarMenuAction>
-            {deviceIds.length > 1 ? (
-              <span className="shrink-0 text-xs font-normal text-foreground-passive" title={deviceLabels.join(' · ')} data-testid="project-device-count">
-                {translate('projects.folders.deviceCount', { count: deviceIds.length })}
-              </span>
-            ) : null}
-            {!isExpanded && <ProjectNeedsYouDot count={needsYouCount} />}
-          </div>
-          {/* 行尾同会话行一格:静止只占未读数的宽度,悬浮才换成「新建会话」(见 sidebarRowActionsSlotClass)。 */}
-          <span data-row-hover-actions className={sidebarRowActionsSlotClass}>
-            <span className={sidebarRowHoverActionsClass}>
-              <Tooltip>
-                <TooltipTrigger
-                  className="h-6"
-                  render={
-                    <SidebarItemMiniButton
-                      type="button"
-                      aria-label={translate('sidebar.newSessionIn', { project: projectLabel })}
-                      onPointerEnter={() => prefetchRepository()}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openNewSession();
-                      }}
-                      disabled={project.state === 'unregistered'}
-                    >
-                      <Zap className="h-4 w-4" />
-                    </SidebarItemMiniButton>
-                  }
-                />
-                <TooltipContent>{translate('sidebar.newSession')}</TooltipContent>
-              </Tooltip>
-            </span>
-            <span className={sidebarRowRestActionsClass}><SidebarUnreadCount count={groupUnread} /></span>
-          </span>
-        </SidebarMenuRow>
+    <ProjectRowContextMenu disabled={false} chatId={groupChatId} onRemove={removeProject}>
+      <OneListProjectRow
+        name={projectLabel}
+        coverId={rowId}
+        preview=""
+        selected={isProjectActive}
+        onOpen={openProject}
+        aria-label={translate('sidebar.openProject', { project: projectLabel })}
+        data-project-row={projectId}
+        data-offline={machineDown || undefined}
+      />
     </ProjectRowContextMenu>
   );
 });
 
 /**
- * 账号上一个项目、这一端项目表里没有它的本地项目(哪台机器上都没有文件夹,或文件夹只在还没载入的机器上):
- * 行照样在,点开是它的项目群(与侧栏「对话」里点开一个群同一条 openChatOnScreen)。下面没有会话可展开。
+ * An account project with no local project in this table (no folder on any machine, or its folders are only on machines
+ * not loaded yet): its row is still there and opens its project group (openChatOnScreen, as a group row of the list does).
+ * The cover is keyed by the group, as partnerProjects keys a project with no folder.
  */
-const SidebarGroupProjectItem = observer(function SidebarGroupProjectItem({ projectId, chatId, name, unread }: { projectId: string; chatId: string; name: string; unread: number }) {
+const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projectId, chatId, name }: { projectId: string; chatId: string; name: string }) {
   const { translate } = useSessionMessages();
-  const isCursor = sessionKeyboardNav.cursor?.kind === 'project' && sessionKeyboardNav.cursor.projectId === projectId;
-  const isActive = screenLayout.focusedBlockId ? (() => {
-    const block = screenLayout.blocks.get(screenLayout.focusedBlockId);
-    return block?.kind === 'chat' && block.chatId === chatId;
-  })() : false;
+  const focused = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
   const open = (beside: boolean) => {
     sessionKeyboardNav.syncCursorFromPointer({ kind: 'project', projectId });
     openChatOnScreen(chatId, beside);
   };
   return (
-    <SidebarMenuRow
-      className="group/row flex h-9 items-center justify-between gap-1 pr-1"
-      style={{ paddingInlineStart: `${sidebarRowInsetPx('project')}px` }}
-      data-active={isActive || undefined}
-      isActive={isActive}
-      isCursor={isCursor}
+    <OneListProjectRow
+      name={name}
+      coverId={chatId}
+      preview=""
+      selected={focused?.kind === 'chat' && focused.chatId === chatId}
+      onOpen={open}
+      aria-label={translate('sidebar.openProject', { project: name })}
       data-project-row={projectId}
       data-project-chat={chatId}
-      tabIndex={0}
-      role="treeitem"
-      // 拖起来的就是它点开的那块(项目群);落在项目列表里 = 换次序(sidebar-virtual-list)。❌ `onMouseDown preventDefault`:会拦掉 dragstart。
-      draggable
-      onDragStart={(event) => setDraggedScreenContent(event.dataTransfer, { kind: 'chat', chatId, title: name }, event.currentTarget)}
-      onDragEnd={clearDraggedScreenContent}
-      onClick={(event) => open(event.metaKey || event.ctrlKey)}
-      onKeyDown={(e) => { if (e.key === 'Enter') open(false); }}
-    >
-      <SidebarTwistyLane alwaysVisible expanded={false} label={translate('sidebar.expandProject', { project: name })} />
-      <div className="flex min-w-0 flex-1 items-center gap-1">
-        <FolderClosed className="size-4 shrink-0" />
-        <SidebarMenuAction allowNativeDrag aria-label={translate('sidebar.openProject', { project: name })} className="truncate font-medium transition-colors select-none">
-          <ProjectRowTitle name={name} />
-        </SidebarMenuAction>
-      </div>
-      <span className={sidebarRowActionsSlotClass}>
-        <span className={sidebarRowRestActionsClass}><SidebarUnreadCount count={unread} /></span>
-      </span>
-    </SidebarMenuRow>
-  );
-});
-
-interface BaseProjectItemProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  isActive: boolean;
-}
-
-export function BaseProjectItem({ isActive, className, ...props }: BaseProjectItemProps) {
-  return (
-    <SidebarMenuButton
-      className={cn('justify-between flex item px-1 py-1', className)}
-      isActive={isActive}
-      {...props}
     />
   );
-}
+});
