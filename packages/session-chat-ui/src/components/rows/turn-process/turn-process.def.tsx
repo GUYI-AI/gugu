@@ -115,7 +115,7 @@ export const turnProcessUnitDef = defineUnit<TurnProcessItem, { extraH: number }
             </div>
           </div>
         }>
-          <div class={conversationHeader} style={{ height: `${header().height}px` }}>
+          <div class={conversationHeader} style={{ height: `${header().height}px`, gap: `${header().gap}px` }}>
             <Show when={header().name}>{name => <SenderName class={conversationName} name={name().text}
               style={{ width: `${header().nameWidth}px` }} target={conversationAgentTarget({ sessionId: commands().conversationAgentSession?.(), userId: commands().conversationAgentUserId?.() })} />}</Show>
             <div class={conversationTime} data-slot="tool-timeline-line" style={{ width: `${header().processWidth}px`, height: `${processRowHeight(props.data.id, props.data, header().processCtx)}px` }}>

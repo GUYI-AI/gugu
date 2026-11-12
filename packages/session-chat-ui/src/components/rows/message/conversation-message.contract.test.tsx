@@ -784,3 +784,22 @@ it.each([390, 600])('reserves background controls beside duration before truncat
     expect(Math.abs(view.host.getBoundingClientRect().height - messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!))).toBeLessThanOrEqual(1);
   } finally { view.dispose(); }
 });
+
+it.each([300, 360, 390, 430])('keeps the background pill on one line when it renders a hair wider than it measured, at width %s', async width => {
+  const view = await mount({ kind: 'message', id: 'wider-background', role: 'assistant', text: '', conversationPart: 'head', conversationPreviousSpeaker: '$agent',
+    conversationProcess: { id: 'wider-background:work', live: true, startedAt: Date.now() - 4000, steps: 1 } }, width, {}, undefined,
+    { background: { ownerId: 'wider-background', expanded: false, commands: [], subagents: [{ id: 's', launchToolCallId: 'launch', name: 'Look into it', completedSteps: 0, calls: [], elapsedMs: 4000 }] } });
+  try {
+    // Another font or pixel ratio can paint every glyph a little wider than the canvas measured it; the measure knows nothing of letter-spacing.
+    const wider = document.createElement('style');
+    wider.textContent = '[data-slot="background-tasks-pill"] { letter-spacing: 0.02px; }';
+    view.host.append(wider);
+    const process = view.host.querySelector<HTMLElement>('[data-conversation-process]')!.getBoundingClientRect();
+    const pill = view.host.querySelector<HTMLElement>('[data-slot="background-tasks-pill"]')!;
+    const text = pill.firstElementChild!.getBoundingClientRect();
+    expect(text.height, 'the label is one line').toBe(22);
+    expect(Math.min(process.bottom, text.bottom) - Math.max(process.top, text.top) > 0 && Math.min(process.right, text.right) - Math.max(process.left, text.left) > 0,
+      'the label does not sit on the process header').toBe(false);
+    expect(Math.abs(view.host.getBoundingClientRect().height - messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!))).toBeLessThanOrEqual(1);
+  } finally { view.dispose(); }
+});
