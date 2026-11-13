@@ -1,7 +1,7 @@
 import type { ManagedFileKind } from './types';
 
 /** Raster image extensions — rendered with <img>, not the code editor. */
-export const RASTER_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp']);
+export const RASTER_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'bmp']);
 
 /** HTML extensions — rendered with the HTML preview iframe. */
 export const HTML_EXTS = new Set(['html', 'htm']);
