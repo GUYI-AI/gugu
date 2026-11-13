@@ -170,8 +170,8 @@ export interface MessageItem {
   edited_at?: string | null
 }
 
-/** undelivered = persisted, but no running instance holds an agent it wakes (shared/ui/systemNotice.ts deliveryWaits). */
-export type MessageSendState = 'sending' | 'undelivered' | 'sent' | 'delivered' | 'read' | 'failed' | 'unknown'
+/** The whole message's state. That no running instance holds one agent it wakes is that agent's own fact (shared/ui/systemNotice.ts deliveryWaits), said beside the bubble and in the read list. */
+export type MessageSendState = 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | 'unknown'
 
 export interface ReactionGroup {
   emoji: string

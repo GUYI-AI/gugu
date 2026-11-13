@@ -434,7 +434,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   // @@@1577 phase3 — canonical (chat,thread) 键单一派生(消手拼 chatId:rootId)。
   // @@@acp-stream (#966)/@@@1577 — 流式首 chunk 引导 started activity（#2115 god-file 抽取,行为不变,详见 hook 头注）。
   const { recipientFacts, deliveryWaits } = useMessageDelivery(messages, memberReadSeqs, messageMemberProfiles)
-  const { readReceiptHandle, receiptOf } = useReadReceiptPanel({ chatId: activeChatId, messages, memberReadSeqs, memberProfiles: messageMemberProfiles, recipientFacts })
+  const { readReceiptHandle, receiptOf } = useReadReceiptPanel({ chatId: activeChatId, messages, memberReadSeqs, memberProfiles: messageMemberProfiles, recipientFacts, deliveryWaits })
   const groupSettings = useGroupChatSettings(isRoomChatSurface ? activeChatId : null, groupRoleRevision(groupCollabSnapshot), authorityRevision)
   const messageListenEditControlsFor = useListenModeEditControls({ chatId: isRoomChatSurface ? activeChatId : null, currentUserId: user?.id ?? null, settings: groupSettings.settings, onAuthorityReload: groupSettings.reload, onReload: loadGroupCollab })
   const drawerMemberProfiles = useMemo(() => Object.values(messageMemberProfiles).filter((profile) => profile.membership !== 'former'), [messageMemberProfiles])

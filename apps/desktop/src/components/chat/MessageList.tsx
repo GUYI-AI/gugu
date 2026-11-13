@@ -231,7 +231,7 @@ const MessageListRow = memo(function MessageListRow({
   const counted = whole ? { ...msg, seq: whole.newest.seq } : msg // read as far as its last file
   const readReceipt = computeReadReceipt(counted, memberReadSeqs, recipientFacts) // @@@1577 M5 A6 — 单次派生,原同行同参调两次
   const held = deliveryWaits.get(msg.id)
-  const sendState = held?.wait ?? computeSendState(counted, memberReadSeqs, recipientFacts)
+  const sendState = computeSendState(counted, memberReadSeqs, recipientFacts)
 
   // 连续消息合组：同一发送者、无时间分隔线切断、双方都是普通消息时，后续消息隐藏头像+名字/时间行，
   // 只留气泡（间距也收紧）。whisper 形态特殊，不参与合组。
