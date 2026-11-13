@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import type { CanonicalPath } from '@gugu/session-core/files';
 import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
@@ -25,7 +26,7 @@ export interface AgentSessionContext {
   projectId: string;
   /** The workspace it runs in (`sessions.workspaceId`): what the window reads its files through. */
   workspaceId: string | null;
-  workspaceRoot: string | null;
+  workspaceRoot: CanonicalPath | null;
   /**
    * The model gugu runs this session on, as `listAgents()` gives it (`spawn_model_id`: a Gugu model's `platform:<id>`,
    * else the harness's own id). Null when the session never chose one — not guessed. One switched inside the agent's

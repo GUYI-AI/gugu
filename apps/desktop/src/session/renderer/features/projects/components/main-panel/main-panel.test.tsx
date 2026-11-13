@@ -5,6 +5,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalProject } from '@shared/projects';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 const mocks = vi.hoisted(() => ({ store: undefined as unknown }));
 
@@ -27,7 +28,7 @@ function localProject(): LocalProject {
     type: 'local',
     id: 'project-id',
     name: 'Project',
-    path: '/project',
+    path: '/project' as CanonicalPath,
     baseRef: 'main',
     repositoryWorkspaceId: null,
     createdAt: '2026-10-22T00:00:00.000Z',

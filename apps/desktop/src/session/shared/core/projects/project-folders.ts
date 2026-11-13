@@ -1,3 +1,4 @@
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 /**
  * 项目挂的文件夹(product spec,#7341)。
  *
@@ -12,8 +13,8 @@ export type ProjectFolder = {
   workspaceId: string;
   projectId: string;
   kind: ProjectFolderKind;
-  /** 绝对路径(在项目所在的那台机器上)。 */
-  path: string;
+  /** 绝对路径(在项目所在的那台机器上),那台机器的规范写法(`@@@canonical-path`)。 */
+  path: CanonicalPath;
   /** 那里当前检出的 git 分支;不是 git 仓库或读不到时为 null。 */
   branch: string | null;
   /** 从这个文件夹开工、还没归档的会话 id(渲染层据此算「几个在这儿跑」)。 */

@@ -12,7 +12,8 @@ export {
 export { includeAllFiles, type FileExclusionPredicate } from './exclusions';
 export { FileSystem, decodeUtf8Sample, type Utf8Sample } from './fs';
 export { createRootPathPolicy, type RootPathPolicy } from './path-policy';
-export { validateAbsolutePath, contains, type AbsPath } from './paths';
+export { validateAbsolutePath, contains, canonicalPath, inWorkingCopy, type AbsPath } from './paths';
+export { placeUnder, type CanonicalPath } from '@gugu/session-shared/canonical-path';
 export { isExpandableFileNode } from './tree/models/tree';
 export { classifyFileTreeFsError, type FileTreeError, type FileTreeOnError } from './tree/errors';
 export type * from './types';

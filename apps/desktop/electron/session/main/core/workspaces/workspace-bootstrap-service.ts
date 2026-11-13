@@ -1,4 +1,5 @@
 import { err, ok, type Result } from '@gugu/session-shared';
+import type { CanonicalPath } from '@gugu/session-core/files';
 import { stat } from 'node:fs/promises';
 import { and, eq, or } from 'drizzle-orm';
 import { projectManager } from '@main/core/projects/project-manager';
@@ -88,7 +89,7 @@ export class WorkspaceBootstrapService {
     workspaceId: string,
     session: MountedSession,
     project: ProjectProvider,
-    workDir: string,
+    workDir: CanonicalPath,
     git: WorkspaceGitContext,
     retain = true
   ) {
@@ -118,7 +119,7 @@ export class WorkspaceBootstrapService {
       type: WorkspaceType;
       kind?: string | null;
       location?: 'local' | 'remote' | null;
-      path: string | null;
+      path: CanonicalPath | null;
     },
     session: MountedSession,
     project: ProjectProvider
@@ -190,7 +191,7 @@ export class WorkspaceBootstrapService {
     workspaceId: string,
     session: MountedSession,
     project: ProjectProvider,
-    workDir: string,
+    workDir: CanonicalPath,
     git: WorkspaceGitContext
   ): Promise<Result<WorkspaceBootstrapResult, ProvisionWorkspaceError>> {
     emitSessionProvisionProgress({
