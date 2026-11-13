@@ -550,9 +550,17 @@ export function createLocalFileService(options: { warn: (message: string, data?:
      * file caught half-written is read again with the next batch. `resync`: anything may have changed.
      */
     heard(update: FileChangeUpdate): void {
+      // A change is said under its working copy's path as named (`@@@named-root`); an open file is kept by its real path.
+      const folders = new Map<string, string>();
+      const realOf = (changed: string) => {
+        const folder = path.dirname(changed);
+        if (!folders.has(folder)) folders.set(folder, (() => { try { return fs.realpathSync.native(folder); } catch { return folder; } })());
+        return path.join(folders.get(folder)!, path.basename(changed));
+      };
+      const changed = update.kind === 'resync' ? [] : update.changes.map((change) => realOf(change.path));
       for (const reg of byKey.values()) {
         if (!loadedAt(reg.abs) && reg.waiters.size === 0) continue;
-        const touched = update.kind === 'resync' || update.changes.some((change) => reg.abs === change.path || reg.abs.startsWith(change.path + path.sep));
+        const touched = update.kind === 'resync' || changed.some((at) => reg.abs === at || reg.abs.startsWith(at + path.sep));
         if (touched) void look(reg).catch(() => warn('Local files: protected file is unavailable'));
       }
     },

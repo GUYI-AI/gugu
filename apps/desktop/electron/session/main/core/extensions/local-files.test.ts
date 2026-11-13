@@ -237,11 +237,11 @@ beforeEach(async () => {
  * This test's local file service, `gugu.files` over it, and the working copy's change stream feeding it — as main feeds
  * it from workspace-factory's `watchChanges`.
  */
-async function localService() {
+async function localService(feedRoot = root) {
   feed?.unsubscribe();
   service = createLocalFileService({ warn: (message) => warnings.push(message) });
   heard = [];
-  const started = runtime.watchChanges(root, (update) => {
+  const started = runtime.watchChanges(feedRoot, (update) => {
     heard.push(update);
     service.heard(update);
   });
@@ -313,6 +313,23 @@ describe('gugu.files on a working copy', () => {
     expect(fa.text().toString()).toBe('one\nTWO\nthree\nfour\n');
     await until(() => read('plan.md') !== 'one\nTWO\nthree\n');
     expect(read('plan.md')).toBe('one\nTWO\nthree\nfour\n');
+  });
+
+  it('a working copy whose change stream is named through a link (a server account link): an edit on the disk still reaches the page', async () => {
+    const holder = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-local-files-link-'));
+    const linked = path.join(holder, 'task-home');
+    fs.symlinkSync(root, linked);
+    try {
+      await localService(linked);
+      write('plan.md', 'one\n');
+      const fa = await new Page(nextId++, 'plan.md').open();
+      write('plan.md', 'ONE\n');
+      await until(() => fa.text().toString() === 'ONE\n');
+      // Said under the name the stream was asked with, not the folder the link leads to.
+      expect(heard.some((update) => update.kind === 'changes' && update.changes.some((change) => change.path === path.join(linked, 'plan.md')))).toBe(true);
+    } finally {
+      fs.rmSync(holder, { recursive: true, force: true });
+    }
   });
 
   it('a write from outside is never written over: merged first, whatever the page had not saved yet', async () => {
