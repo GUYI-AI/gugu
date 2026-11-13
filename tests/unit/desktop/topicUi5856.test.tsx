@@ -358,6 +358,8 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
   })
 
   it('点击话题已读环显示该消息的已读/未读名单，排除只在来源群里的成员', async () => {
+    // 名单只挂可见那一窗(@@@receipt-window);jsdom 没有布局,给滚动区一个高度,窗口才有行。
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(288)
     await renderWithAppProviders(harness, createNode(TopicSplitPane, receiptProps))
     await clickElement(harness.container.querySelector('[data-testid="message-read-receipt"]') as HTMLElement)
     const panel = document.querySelector('[data-testid="message-read-receipt-panel"]')
@@ -369,7 +371,7 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
     await renderWithAppProviders(harness, createNode(TopicSplitPane, {
       ...receiptProps, memberReadSeqs: { read: 0, unread: 10 },
     }))
-    expect(receiptHeads()).toEqual(['已读2', '未读0'])
+    expect(receiptHeads()).toEqual(['全部已读'])
   })
 
   it('换话题关闭回执名单，切回原话题也不恢复旧弹层', async () => {

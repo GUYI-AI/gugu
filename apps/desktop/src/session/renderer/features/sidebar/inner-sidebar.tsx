@@ -46,6 +46,7 @@ import {
   chatAgentCounts,
   chatAgentNeedsYou,
   chatAgentSection,
+  openSessionAncestors,
   myAgentsInChat,
   subAgentsOf,
   type AgentFamilies,
@@ -186,10 +187,17 @@ function currentView(summaries: ReadonlyMap<string, ChatSummary>): InnerSidebarV
     return projectId ? { kind: 'project', chatId: accountProjectsStore.projectOfLocal(projectId)?.chatId } : { kind: 'other' };
   }
   if (currentViewId === 'session') {
-    const sessionId = (viewParamsStore.session as { sessionId?: string } | undefined)?.sessionId;
+    const sessionId = openSessionId();
     return sessionId ? { kind: 'session', sessionId } : { kind: 'other' };
   }
   return { kind: 'other' };
+}
+
+/** 主区此刻打开着的会话(不在会话页 = null)。 */
+function openSessionId(): string | null {
+  const { currentViewId, viewParamsStore } = appState.navigation;
+  if (currentViewId !== 'session') return null;
+  return (viewParamsStore.session as { sessionId?: string } | undefined)?.sessionId ?? null;
 }
 
 // 它住在 inner-sidebar-anchor(轻,列表顶上的搜索也读它);从这里照旧拿得到。
@@ -585,7 +593,13 @@ const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents
   // 「展开显示」点开了没有,记在侧栏同一张表里,键与项目 / 任务分区分开。
   const foldKey = `chat:${anchor.chatId}`;
   const showAll = sidebarStore.idleExpandedProjectIds.has(foldKey);
-  const list = chatAgentSection(agents, { expanded: sidebarStore.expandedSessionIds, showAll });
+  // 主区打开着的会话(#2630):它的家族 ❌ 收进「展开显示」;是子会话就把它上面几层展开一次(之后照样能手动收起)。
+  const open = openSessionId();
+  const ancestorsKey = openSessionAncestors(agents, open).join(',');
+  useEffect(() => {
+    if (ancestorsKey) sidebarStore.expandSessions(ancestorsKey.split(','));
+  }, [ancestorsKey]);
+  const list = chatAgentSection(agents, { expanded: sidebarStore.expandedSessionIds, showAll, open });
   const total = chatAgentCounts(agents).total;
   return (
     <SidebarGroup className="mb-2 flex shrink-0 flex-col" data-inner-sidebar-section="agents">

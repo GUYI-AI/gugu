@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { LocalProject } from '@shared/projects';
 import { createUnmountedProject } from './project';
 import { projectViewKind } from './project-selectors';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 // project-selectors 引入 appState 只为拿 store map,而 appState 一构造就拉起
 // SshConnectionStore 去打 IPC。这里只测纯映射函数,把 appState 整个挡掉最干净。
@@ -14,7 +15,7 @@ function localProject(): LocalProject {
     type: 'local',
     id: 'project-id',
     name: 'Project',
-    path: '/project',
+    path: '/project' as CanonicalPath,
     baseRef: 'main',
     repositoryWorkspaceId: null,
     createdAt: '2026-08-12T00:00:00.000Z',

@@ -32,7 +32,9 @@ import {
 } from '@gugu/core/shared/agentStatus';
 import { readAcpSessionSummaries } from '@main/core/acp/session-summary-reader';
 import { resolveSession, resolveWorkspace } from '@main/core/projects/utils';
-import { containsMachinePath, isAbsoluteMachinePath, joinMachinePath } from '@main/core/files/path-utils';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { canonicalPath, inWorkingCopy } from '@gugu/session-core/files';
 import {
   localAgentForSession,
   sessionpageProjectGroupForSession,
@@ -1505,9 +1507,9 @@ async function openFileInTab(
 
   const requestedPath = action.path.trim();
   if (!requestedPath) throw new Error('path is required');
-  const absolutePath = isAbsoluteMachinePath(requestedPath)
-    ? requestedPath
-    : joinMachinePath(workspace.path, requestedPath);
+  // Where the agent's path enters: one spelling from here on (`@@@canonical-path`), the one its tab, card and output carry.
+  const absolutePath = canonicalPath(path.isAbsolute(requestedPath) ? requestedPath : path.join(workspace.path, requestedPath));
+  const inWorkspace = inWorkingCopy(workspace.path, absolutePath) !== null;
   await requireAgentFileAccess(absolutePath);
   const stat = await workspace.fileSystem.stat(absolutePath);
   signal?.throwIfAborted();
@@ -1520,7 +1522,7 @@ async function openFileInTab(
   if (remotePaneOpener) {
     if (tabKind) throw new Error(REMOTE_PANE_NO_EXTENSIONS);
     // 桌面那一格只读得到会话工作目录里的文件(远端工作区的边界):目录外的当场说清,❌ 推过去再开出一个打不开的 tab。
-    if (!containsMachinePath(workspace.path, absolutePath)) throw new Error(describeOutsideWorkspace(workspace.path));
+    if (!inWorkspace) throw new Error(describeOutsideWorkspace(workspace.path));
     const outcome = await remotePaneOpener.open(
       context.sessionId,
       { kind: 'file', path: absolutePath },
@@ -1543,7 +1545,7 @@ async function openFileInTab(
       projectId: context.projectId,
       sessionId: context.sessionId,
       path: absolutePath,
-      external: !containsMachinePath(workspace.path, absolutePath),
+      external: !inWorkspace,
       intent: action.intent,
       ...(tabKind ? { tabKind } : {}),
     });
@@ -1638,6 +1640,15 @@ export async function showTaskPageOnDesktop(sessionId: string, signal?: AbortSig
   await remotePaneOpener.open(sessionId, { kind: 'task-page' }, 'pinned', signal);
 }
 
+/** A `file:` page an agent names, in its one spelling (`@@@canonical-path`) — its card and output then match the file's. */
+function canonicalFileUrl(url: string): string {
+  if (!url.startsWith('file:')) return url;
+  const named = fileUrlToMachinePath(url);
+  if (!named) return url;
+  const parsed = new URL(url);
+  return `${pathToFileURL(canonicalPath(named)).href}${parsed.search}${parsed.hash}`;
+}
+
 async function openBrowserInTab(
   context: SessionCallerContext,
   action: Extract<SessionAction, { action: 'open_in_tab'; url: string }>,
@@ -1650,7 +1661,7 @@ async function openBrowserInTab(
   // the person is taken — the same as a click on that link in the chat. It goes the browser request's way there, with the
   // place a pill's link points at (`?v=`, `#…`) kept: the App that opens it is taken there too.
   const resource = parseGuguLink(action.url);
-  const url = resource ? action.url : normalizeOpenInTabUrl(action.url);
+  const url = resource ? action.url : canonicalFileUrl(normalizeOpenInTabUrl(action.url));
   if (remotePaneOpener) {
     // localhost 的端口由桌面那一格经 SSH 转过去(remote-browser-tab);公网地址直接加载;
     // `file:` 网页由桌面那一格经会话工作区的读文件动词取来渲染 —— 只认工作目录里的文件,先在这里核清楚。
@@ -1685,10 +1696,11 @@ async function requireRemotePageFile(
   url: string,
   signal?: AbortSignal
 ): Promise<void> {
-  const path = fileUrlToMachinePath(url);
-  if (!path) throw new Error(REMOTE_PANE_PAGE_NOT_FILE);
-  if (!containsMachinePath(workspace.path, path)) throw new Error(describePageOutsideWorkspace(workspace.path));
-  const stat = await workspace.fileSystem.stat(path);
+  const named = fileUrlToMachinePath(url);
+  if (!named) throw new Error(REMOTE_PANE_PAGE_NOT_FILE);
+  const file = canonicalPath(named);
+  if (inWorkingCopy(workspace.path, file) === null) throw new Error(describePageOutsideWorkspace(workspace.path));
+  const stat = await workspace.fileSystem.stat(file);
   signal?.throwIfAborted();
   if (!stat.success || stat.data.type !== 'file') throw new Error(REMOTE_PANE_PAGE_NOT_FILE);
 }

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureRepositoryWorkspace } from './ensure-repository-workspace';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 const mocks = vi.hoisted(() => ({
   selectAll: vi.fn(),
@@ -57,7 +58,7 @@ const localProject = {
   type: 'local' as const,
   id: 'project-1',
   name: 'My Project',
-  path: '/home/user/project',
+  path: '/home/user/project' as CanonicalPath,
   baseRef: 'main',
   repositoryWorkspaceId: null,
   createdAt: '2026-01-01T00:00:00.000Z',

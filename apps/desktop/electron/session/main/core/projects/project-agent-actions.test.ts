@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { LocalProject } from '@shared/projects';
 import type { ProjectFolder } from '@shared/core/projects/project-folders';
 import { runProjectAgentAction, type ProjectAgentOps } from './project-agent-actions';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
-const project = (id = 'p1', path = '/work/app'): LocalProject => ({ type: 'local', id, name: 'App', path, baseRef: null, repositoryWorkspaceId: 'root', createdAt: '', updatedAt: '' });
-const folder = (path = '/work/docs', kind: ProjectFolder['kind'] = 'attached'): ProjectFolder => ({ projectId: 'p1', workspaceId: kind === 'root' ? 'root' : 'f1', path, kind, branch: null, sessionIds: [], attachedAt: null });
+const project = (id = 'p1', path = '/work/app'): LocalProject => ({ type: 'local', id, name: 'App', path: path as CanonicalPath, baseRef: null, repositoryWorkspaceId: 'root', createdAt: '', updatedAt: '' });
+const folder = (path = '/work/docs', kind: ProjectFolder['kind'] = 'attached'): ProjectFolder => ({ projectId: 'p1', workspaceId: kind === 'root' ? 'root' : 'f1', path: path as CanonicalPath, kind, branch: null, sessionIds: [], attachedAt: null });
 const ok = <T>(data: T) => ({ success: true as const, data });
 
 function ops(overrides: Partial<ProjectAgentOps> = {}): ProjectAgentOps {

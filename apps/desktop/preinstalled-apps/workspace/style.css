@@ -252,21 +252,13 @@ img.details-picture { object-fit: contain; }
 body:not(.has-selection) .sel-bar, body:not([data-state='doc']) .sel-bar { display: none; }
 .sel-bar button { border: 0; }
 .sel-bar button + button { border-left: 1px solid var(--em-border); }
-/* The marks a selection in the source can be wrapped in, before Copy · Cite · ＋ (not for the reading page's or a JSON file's). */
+/* The marks a selection in the source can be wrapped in, before Copy · Cite (not for the reading page's or a JSON file's). */
 .fmt-bar { display: flex; border-right: 1px solid var(--em-border); }
 .sel-bar .fmt { min-width: 0; padding-inline: var(--em-spacing-sm); color: var(--em-foreground-muted); }
 .sel-bar .fmt gugu-icon { width: var(--em-icon-sm); height: var(--em-icon-sm); }
 .sel-bar .fmt + .fmt { border-left: 0; }
 body.picks-in-preview .fmt-bar, body[data-kind='json'] .fmt-bar { display: none; }
-body[data-kind='json'] #hold-sel { display: none; }
-.held-bar { position: fixed; z-index: 10; left: 50%; bottom: var(--em-spacing-lg); transform: translateX(-50%); display: flex; align-items: center; gap: var(--em-spacing-xs); padding: var(--em-spacing-xs) var(--em-spacing-xs) var(--em-spacing-xs) var(--em-spacing-md); border-radius: var(--em-radius-capsule); background: var(--em-foreground); color: var(--em-background); box-shadow: var(--em-shadow-lift); }
-body:not([data-state='doc']) .held-bar { display: none; }
-.held-count { font-weight: 600; font-variant-numeric: tabular-nums; }
-.held-cite { background: var(--em-background); color: var(--em-foreground); }
-.held-clear { border: 0; color: inherit; }
-.cm-held { background: color-mix(in srgb, var(--em-accent-11) 10%, transparent); }
 .cm-found { background: color-mix(in srgb, var(--em-accent-11) 16%, transparent); box-shadow: inset 2px 0 var(--em-accent-11); }
-.preview .md-held { background: color-mix(in srgb, var(--em-accent-11) 10%, transparent); }
 .preview .md-found { outline: 2px solid var(--em-accent-11); outline-offset: 3px; border-radius: var(--em-radius-document); }
 .cm-found-text, ::highlight(found) { background-color: color-mix(in srgb, var(--em-accent-11) 36%, transparent); }
 .banner { flex: none; margin: 0; border-radius: 0; }

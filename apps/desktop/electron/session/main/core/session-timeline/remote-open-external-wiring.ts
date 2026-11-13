@@ -22,9 +22,10 @@ async function sessionRoots(): Promise<SessionRoot[]> {
     .leftJoin(workspaces, eq(sessions.workspaceId, workspaces.id))
     .orderBy(desc(sessions.updatedAt))
     .all();
-  return rows
-    .map((row) => ({ sessionId: row.sessionId, root: row.workspacePath || row.projectPath || '' }))
-    .filter((row) => row.root);
+  return rows.flatMap((row) => {
+    const root = row.workspacePath || row.projectPath;
+    return root ? [{ sessionId: row.sessionId, root }] : [];
+  });
 }
 
 export function openExternalDeps(): OpenExternalDeps {

@@ -10,6 +10,7 @@ import { ProjectFolderCard, shortHome, FAN_MAX_ROWS, FAN_ROW_MAX, fanPlace } fro
 import { UNANSWERED_AFTER_MS, useProjectFolders, type ProjectFoldersState } from './project-folders';
 import { foldersInScope } from './project-run-machine';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 const mocks = vi.hoisted(() => ({
   entries: new Map<string, Array<{ projectId: string; sessionId: string; group: 'working' | 'needs-you' | null; time: number; title: string }>>(),
@@ -69,7 +70,7 @@ const folder = (workspaceId: string, kind: ProjectFolder['kind'], path: string, 
   workspaceId,
   projectId,
   kind,
-  path,
+  path: path as CanonicalPath,
   branch: null,
   sessionIds,
   attachedAt: kind === 'root' ? null : new Date().toISOString(),

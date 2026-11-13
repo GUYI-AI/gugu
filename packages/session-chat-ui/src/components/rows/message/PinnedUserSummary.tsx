@@ -4,7 +4,8 @@ import { layout as layoutText, prepareWithSegments } from '@chenglou/pretext';
 import type { MeasureCtx } from '@session-chat/core/define';
 import { blockPlainText } from '@session-chat/core/markdown/plain-text';
 import type { ChatMessage } from '@session-chat/model';
-import { conversationContext, conversationVars } from './ConversationMessage';
+import { conversationBubbleTop, conversationContext, conversationVars } from './ConversationMessage';
+import { DELIVERY_VARS, deliveryBodyTop } from './DeliveryCard';
 import { conversationRoot } from './conversation-message.css';
 import { effectiveMessageVars, userInnerWidth, type MessageVars } from './metrics';
 import { userBubbleBox } from './user-message-metrics';
@@ -25,10 +26,14 @@ export function pinSummary(item: ChatMessage, ctx: MeasureCtx, baseVars: Message
   const text = body || (item.attachments ?? []).map(attachment => attachment.name).join(', ');
   // The summary rests behind the last `height` px of the bubble it repeats, in the bubble's own box (ChatRoot @@@pin-cover).
   const bubble = conversation ? userBubbleBox(item, conversationContext(ctx, item), conversationVars(item, baseVars)) : userBubbleBox(item, ctx, baseVars);
+  // `bubble.bottom` is counted from the top of the message card; a delivered message draws more above that card — its
+  // sender's name in the agent conversation, the delivery card's padding and source line elsewhere. Without it the
+  // summary rested that much above its bubble: over the attachment's name and the bubble's top edge (#2629).
+  const above = conversation ? conversationBubbleTop(item, ctx) : item.role === 'user' && item.guguDelivery ? deliveryBodyTop(item, ctx, DELIVERY_VARS) : 0;
   const lineHeight = ctx.theme.fonts.body.lineHeight;
   const lines = summaryLineCount(text, ctx.theme.fonts.body.font, userInnerWidth(bubble.width, vars), lineHeight, ctx.measureEpoch ?? 0);
   const height = Math.min(Math.max(lines, 1), 2) * lineHeight + 2 * vars.userCardPadY + 2 * vars.cardBorder;
-  return { text, vars, conversation, height, clipped: lines > 2, rest: Math.max(0, bubble.bottom - height), width: bubble.width, bare: !bubble.drawn };
+  return { text, vars, conversation, height, clipped: lines > 2, rest: Math.max(0, above + bubble.bottom - height), width: bubble.width, bare: !bubble.drawn };
 }
 
 // @@@summary-lines-once — the list asks for every anchor's summary each time it is rebuilt (an older page lands, a
