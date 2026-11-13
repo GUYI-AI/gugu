@@ -10,11 +10,10 @@ import type { groupAgentStatusIndicatorProps } from '../../lib/groupAgentStatus'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { Popover } from '../ui/Popover'
-import { DropdownMenu, MenuItem, MenuSeparator } from '../ui/Menu'
+import { DropdownMenu, MenuItem } from '../ui/Menu'
 import { OpenAppMenuItems } from './OpenAppMenuItems'
 import { GroupAppsPicker } from './GroupAppsPicker'
 import { ChatDetailsMenuItems } from './ChatDetailsMenuItems'
-import { ChatHeaderSwitches } from './ChatHeaderSwitches'
 import { GroupTopicsRows, TopicCallChip, TopicUnreadChip } from './GroupTopicsRows'
 import { useChatTopicPins } from './useChatTopicPins'
 import { topicCallTotal, topicUnreadTotal } from './topicPinsModel'
@@ -98,8 +97,6 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
         </MenuItem>
         <MenuItem onClick={onOpenFolder} icon={<Folder size={16} />}>{folderName}</MenuItem>
         <ChatDetailsMenuItems isGroupChat={isGroupChat} onOpenInfo={() => isGroupChat ? onOpenInfo('main') : onOpenInfo()} />
-        <MenuSeparator />
-        <ChatHeaderSwitches />
         {activeChatId && !wideGroup && <OpenAppMenuItems chatId={activeChatId} separated />}
       </DropdownMenu.Content>}
     </DropdownMenu.Root>

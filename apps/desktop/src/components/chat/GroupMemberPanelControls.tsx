@@ -26,7 +26,7 @@ import { settingsErrorStyle } from './groupSettingsStyles'
 
 const errorStyle: CSSProperties = { ...settingsErrorStyle, padding: '4px 14px' }
 
-export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapshot, identities, agentStatuses, currentUserId, onReload, onOpenUserChat, onWhisper }: {
+export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapshot, identities, agentStatuses, currentUserId, onReload, onOpenUserChat, onWhisper, invite = false }: {
   chatId: string
   chatKind: 'group' | 'topic'
   settings: GroupChatSettings | null
@@ -37,11 +37,13 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
   onReload: () => Promise<void>
   onOpenUserChat?: (target: MemberProfileChatTarget) => void
   onWhisper?: (target: MemberProfileChatTarget) => void
+  /** 进来时选人页已经开着(群信息页成员行的「+」)。 */
+  invite?: boolean
 }) {
   const { t } = useTranslation(['messaging', 'contacts'])
   const viewerIsManager = settings?.can_manage === true
   const isGroup = chatKind === 'group'
-  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(invite && chatKind === 'group')
   // 资料卡:每一行是它的 Trigger(payload = 那一行的资料),再点同一行就关。开着时错误显示在卡里。
   const [profileCard] = useState(() => Popover.createHandle<ActiveMemberProfile>())
   const [profileOpen, setProfileOpen] = useState(false)

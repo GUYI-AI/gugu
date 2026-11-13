@@ -204,17 +204,10 @@ describe('final group toolbar v4', () => {
     expect(onCloseInfo).toHaveBeenCalledOnce()
   })
 
-  it.each(['group', 'topic', 'dm'] as const)('%s: pin and mute use chat writes and leave More open', async (kind) => {
+  it.each(['group', 'topic', 'dm'] as const)('%s: More has no pin or mute switch (both are on the info page); a private chat keeps its folder item', async (kind) => {
     await header(kind, { menu: true })
-    const switches = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')]
-    expect(switches).toHaveLength(2)
-    expect(switches.every((element) => element.getAttribute('aria-checked') === 'false')).toBe(true)
-    await clickElement(switches[0]!)
-    expect(pinChat).toHaveBeenCalledWith('chat', true)
     expect(document.querySelector('[data-testid="group-header-menu"]')).not.toBeNull()
-    await clickElement(switches[1]!)
-    expect(setChatNotificationLevel).toHaveBeenCalledWith('chat', 'none')
-    expect(document.querySelector('[data-testid="group-header-menu"]')).not.toBeNull()
+    expect(document.querySelectorAll('[role="menuitemcheckbox"]')).toHaveLength(0)
     if (kind === 'dm') {
       expect(button('文件'), 'a private chat has no header folder button, like a group').toBeUndefined()
       await clickElement(menuItem('文件')!)
@@ -229,22 +222,5 @@ describe('final group toolbar v4', () => {
     expect(search.textContent).toContain('⌘F')
     await clickElement(search)
     expect(onSearch).toHaveBeenCalledOnce()
-  })
-
-  it.each(['Enter', ' '])('keyboard %j exposes checked state and toggles existing pin/mute state off', async (key) => {
-    await header('group', { menu: true, pinned: true, muted: true })
-    const switches = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')]
-    expect(switches).toHaveLength(2)
-    expect(switches.every((element) => element.getAttribute('aria-checked') === 'true')).toBe(true)
-    const activate = async (element: HTMLElement) => act(async () => {
-      element.focus()
-      element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
-      element.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true, cancelable: true }))
-    })
-    await activate(switches[0]!)
-    expect(pinChat).toHaveBeenCalledExactlyOnceWith('chat', false)
-    await activate(switches[1]!)
-    expect(setChatNotificationLevel).toHaveBeenCalledExactlyOnceWith('chat', 'all')
-    expect(document.querySelector('[data-testid="group-header-menu"]')).not.toBeNull()
   })
 })
