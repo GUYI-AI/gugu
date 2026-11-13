@@ -20,7 +20,7 @@ export function formatVoiceAttachmentMetadata(durationMs: number, transcript: st
 export function parseVoiceAttachmentContent(content: string | null): VoiceAttachmentMeta | null {
   if (!content) return null
 
-  const lines = content.split('\n')
+  const lines = content.replace(/\r\n/g, '\n').split('\n')
   if (lines.length < 3) {
     return null
   }

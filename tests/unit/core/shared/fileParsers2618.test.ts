@@ -45,3 +45,6 @@ it('ignores the CSV BOM before a quoted first header', () => {
   expect(parseCsv('first,\ufeffsecond').rows).toEqual([['first', '\ufeffsecond']])
 })
 
+
+
+it('reads CRLF voice attachment envelopes', () => { expect(parseVoiceAttachmentContent('[附件] voice.webm (audio/webm)\r\n[语音] durationMs=1500\r\n[转写] Hello\r\nSecond')?.transcript).toBe('Hello\nSecond') })
