@@ -21,6 +21,8 @@ export interface ReadReceiptMember {
   avatar: string | null
   isAgent: boolean
   agentStatus?: AgentDisplayStatus
+  /** 没有运行中的实例持有它:这条消息到不了它,只它一个,与气泡旁那行同一句话。 */
+  undelivered?: boolean
 }
 
 /** 每组先给这么多人，其余收进「还有 N 位」：打开时两组的开头都在眼前，不被一组刷满。 */
@@ -35,10 +37,12 @@ type Line =
 function MemberRow({ member }: { member: ReadReceiptMember }) {
   const identity = useAvatarIdentity(member.isAgent ? member.id : '')
   const name = useShownAgentName({ name: member.displayName, createdAt: member.isAgent ? identity?.created_at ?? undefined : undefined })
+  const { t } = useTranslation('messaging')
   return (
     // 名字放不下时才截断；悬停给全名。
     <div className="gg-list-row" title={name}>
-      <ListRowContent leading={<Avatar name={name} avatarUrl={member.avatar} seed={member.id} isAgent={member.isAgent} agentStatus={member.agentStatus} size="sm" />} title={name} />
+      <ListRowContent leading={<Avatar name={name} avatarUrl={member.avatar} seed={member.id} isAgent={member.isAgent} agentStatus={member.agentStatus} size="sm" />} title={name}
+        subtitle={member.undelivered ? <span title={t('agent.turnFailure.undelivered')}>{t('message.sendStatus.undelivered')}</span> : undefined} />
     </div>
   )
 }
