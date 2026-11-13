@@ -89,7 +89,8 @@ state.live = observable(
 );
 const { publishChatSummaries } = await import('@/lib/chatSummariesBridge');
 const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
-const { innerSidebarFoldedAway, setInnerSidebarFolded } = await import('./inner-sidebar-fold');
+const { innerSidebarFoldedAway } = await import('./inner-sidebar-fold');
+const { sidebarFolds } = await import('./sidebar-folds');
 const { SampleProjectBlock } = await import('@renderer/features/sample-project/sample-project-block');
 const { openSamplePane } = await import('@renderer/features/sample-project/sample-project-view');
 const { SAMPLE_AGENT_SEED } = await import('@renderer/features/sample-project/sample-project-transcript');
@@ -135,7 +136,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   openSamplePane(null);
-  setInnerSidebarFolded(false);
+  sidebarFolds.clear(); // the folds are stored state now: one test's fold must not be the next test's start
 });
 
 describe('the inner column for the sample project', () => {

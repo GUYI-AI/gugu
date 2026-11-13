@@ -60,6 +60,7 @@ import {
   type InnerSidebarView,
 } from './inner-sidebar-anchor';
 import { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded } from './inner-sidebar-fold';
+import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 import {
   InnerHeadRowLayout,
   InnerSidebarFoldButton,
@@ -513,9 +514,9 @@ const InnerAgentHeadRow = observer(function InnerAgentHeadRow({
   );
 });
 
-function InnerTopicsSection({ chatId, levelTwo, view }: { chatId: string; levelTwo: boolean; view: InnerSidebarTopicsView | null }) {
+const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelTwo, view }: { chatId: string; levelTwo: boolean; view: InnerSidebarTopicsView | null }) {
   const { translate } = useSessionMessages();
-  const [collapsed, setCollapsed] = useState(false);
+  const collapsed = sidebarFolds.has('inner:topics');
   const slot = useCallback(
     (element: HTMLDivElement | null) => readShellSlots()?.setSlot(innerSidebarTopicsSlotKey(chatId), element),
     [chatId]
@@ -529,7 +530,7 @@ function InnerTopicsSection({ chatId, levelTwo, view }: { chatId: string; levelT
             label={translate('sidebar.topics')}
             count={0}
             collapsed={collapsed}
-            onToggle={() => setCollapsed((value) => !value)}
+            onToggle={() => setSidebarFold('inner:topics', !collapsed)}
             ariaLabel={translate(collapsed ? 'sidebar.expandTopics' : 'sidebar.collapseTopics')}
           />
           {view && view.total > 0 ? <span className={sidebarCountClass}>{view.total}</span> : null}
@@ -569,7 +570,7 @@ function InnerTopicsSection({ chatId, levelTwo, view }: { chatId: string; levelT
       ) : null}
     </SidebarGroup>
   );
-}
+});
 
 /**
  * 「智能体」:标题旁一个数(总数,连子会话),❌ 药丸、❌「需要你 / 运行中」组头(#2548 ⑥):一张平的表(chatAgentSection),
@@ -577,7 +578,7 @@ function InnerTopicsSection({ chatId, levelTwo, view }: { chatId: string; levelT
  */
 const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents }: { anchor: InnerSidebarAnchor; agents: readonly ChatAgentEntry[] }) {
   const { translate } = useSessionMessages();
-  const [collapsed, setCollapsed] = useState(false);
+  const collapsed = sidebarFolds.has('inner:agents');
   // 「展开显示」点开了没有,记在侧栏同一张表里,键与项目 / 任务分区分开。
   const foldKey = `chat:${anchor.chatId}`;
   const showAll = sidebarStore.idleExpandedProjectIds.has(foldKey);
@@ -597,7 +598,7 @@ const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents
             label={translate('sidebar.agents')}
             count={0}
             collapsed={collapsed}
-            onToggle={() => setCollapsed((value) => !value)}
+            onToggle={() => setSidebarFold('inner:agents', !collapsed)}
             ariaLabel={translate(collapsed ? 'sidebar.expandAgents' : 'sidebar.collapseAgents')}
           />
           {total > 0 ? <span className={sidebarCountClass} data-inner-agents-count="">{total}</span> : null}

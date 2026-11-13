@@ -8,6 +8,7 @@ import { createReactHarness } from '../../../../../../../tests/support/testHarne
 import { LeftSidebar } from '@renderer/features/sidebar/left-sidebar';
 import { WorkspaceLayout } from '@renderer/lib/layout/workspace-layout';
 import { WorkspaceLayoutContextProvider } from '@renderer/lib/layout/layout-provider';
+import { sidebarFolds } from '@renderer/features/sidebar/sidebar-folds';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import '@/styles/tokens.css';
 import '@/components/sessionpage/EmdashSessionFrame.css';
@@ -38,6 +39,7 @@ vi.mock('@/hooks/useNativeConversationChat', () => ({ useNativeConversationChat:
 let harness: ReturnType<typeof createReactHarness>;
 afterEach(() => {
   harness?.cleanup();
+  sidebarFolds.clear(); // a fold is stored state: it must not be the next test's start
   delete document.documentElement.dataset.windowMaterial;
   delete document.documentElement.dataset.theme;
   delete document.documentElement.dataset.platform;

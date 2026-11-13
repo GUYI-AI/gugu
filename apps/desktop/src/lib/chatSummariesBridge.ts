@@ -35,6 +35,7 @@ const KEY = '__GUGU_CHAT_SUMMARIES__'
 const EVENT = 'gugu:chat-summaries'
 const NAMES_EVENT = 'gugu:chat-names'
 const NAMES_VERSION_KEY = '__GUGU_CHAT_NAMES_VERSION__'
+const RESTORED_KEY = '__GUGU_CHAT_LIST_RESTORED__'
 
 type Summaries = ReadonlyMap<string, ChatSummary>
 type SummarySource = {
@@ -74,6 +75,20 @@ export function publishChatSummaries<T extends SummarySource>(chats: readonly T[
     window.dispatchEvent(new Event(NAMES_EVENT))
   }
 }
+
+/**
+ * The account's stored list has been read: painted from local rows, found empty, or failed. The session tree's first
+ * draw waits for this (local only, like the view state it restores), so it never draws "no conversations" for a list
+ * that was simply not read yet. On window, as the summaries are.
+ */
+function listRestored(): { promise: Promise<void>; settle: () => void } {
+  const host = window as unknown as Record<string, { promise: Promise<void>; settle: () => void } | undefined>
+  return host[RESTORED_KEY] ??= (() => { let settle!: () => void; return { promise: new Promise<void>((resolve) => { settle = resolve }), settle } })()
+}
+/** 壳:存着的那份列表读过了(先发布摘要,再调这个)。 */
+export const markChatListRestored = (): void => listRestored().settle()
+/** 会话页:启动时等它。 */
+export const chatListRestored = (): Promise<void> => listRestored().promise
 
 /** Changes with what `subscribeChatNames` announces, for a render that reads names as it draws. On window, as the summaries are. */
 export function chatNamesVersion(): number {

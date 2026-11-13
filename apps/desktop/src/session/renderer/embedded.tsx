@@ -7,6 +7,7 @@ import { installLocalRendererDiagnostics } from '@/lib/localRendererDiagnostics'
 import '@/lib/insecure-context-shims';
 installLocalRendererDiagnostics();
 import { hasEntryRoot, renderEntryRoot } from '@/lib/renderer-entry-root';
+import { chatListRestored } from '@/lib/chatSummariesBridge';
 import { installRemoteHostSessionpageBridges } from './features/remote-hosts/install-sessionpage-bridges';
 import './lib/install-sessionpage-history-bridge';
 import { setupNavigationGuards } from '@renderer/app/view-registry';
@@ -259,6 +260,9 @@ async function bootstrap() {
     settleOptional(rpcOn(null).viewState.getForRestore(savedScreenSessionIds())),
     settleOptional(prefetchAppSettingsKey('interface')),
     settleOptional(prefetchAppSettingsKey('browser')),
+    // The account's stored conversations (local rows, never the network): the list, the inner head and the open
+    // conversation are in the first frame instead of arriving after it.
+    chatListRestored(),
   ]);
   const [navState, sidebarState, allViewStateResult] = results;
   for (const result of results) {

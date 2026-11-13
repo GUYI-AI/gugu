@@ -18,6 +18,7 @@ import {
 import { useState } from 'react';
 import { NAV_COLUMN_WIDTH } from '@/lib/uiRuler';
 import { clamp01, PANEL_SNAP_RATIO, PANEL_SPRING } from './panel-motion';
+import { setSidebarFold, sidebarFolds } from '@renderer/features/sidebar/sidebar-folds';
 import { useSidebarPeek } from './sidebar-peek';
 
 /** 侧栏宽度的边界与默认值。min 沿用改造前的 200px;max 取 Codex 同款 520。 */
@@ -227,14 +228,14 @@ const WorkspaceLayoutContext = createContext<WorkspaceLayoutContextValue | undef
  * 新的宽度键有自己的默认值,再也不会有"折了回不来"。
  */
 export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
-  // Starts expanded (#2548 「默认展开」). Open / collapsed is not stored, only the width is (SIDEBAR_WIDTH_STORAGE_KEY):
-  // every start is expanded, and a stored width still wins over the default width.
-  const [isLeftOpen, setIsLeftOpen] = useState(true);
+  // Expanded until the user folds it (#2548 「默认展开」); the fold is stored with the sidebar's snapshot (sidebar-folds) and
+  // the width under SIDEBAR_WIDTH_STORAGE_KEY, so a restart comes back as it was left.
+  const [isLeftOpen, setIsLeftOpen] = useState(() => !sidebarFolds.has('left'));
   const prefersReducedMotion = useReducedMotion();
   const workspaceRootRef = useRef<HTMLDivElement | null>(null);
 
   const leftWidth = useMotionValue(readStoredWidth(SIDEBAR_WIDTH_STORAGE_KEY, clampSidebarWidth, SIDEBAR_DEFAULT_WIDTH_PX));
-  const leftProgress = useMotionValue(1);
+  const leftProgress = useMotionValue(isLeftOpen ? 1 : 0);
   const [leftRail, setLeftRailState] = useState(0);
   const leftRailWidth = useMotionValue(0);
   const setLeftRail = useCallback((px: number) => {
@@ -300,8 +301,10 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   );
 
   const setCollapsed = useCallback(
-    (_side: 'left', collapsed: boolean, options?: { suppressPeek?: boolean }) => {
+    (_side: 'left', collapsed: boolean, options?: { suppressPeek?: boolean; passing?: boolean }) => {
       const open = !collapsed;
+      // Zen mode folds the list for the moment and puts it back: that is not the user's layout.
+      if (!options?.passing) setSidebarFold('left', collapsed);
       // 预览浮着时展开 = 把它钉住:它已经画在那儿了,再从 0 滑一次是重影 —— 直接跳到终值。
       const pin = open && peek.isPeekOpen;
       setIsLeftOpen(open);
@@ -371,7 +374,7 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     const snapshot = zenModeSnapshotRef.current;
     if (!snapshot) return;
 
-    setCollapsed('left', !snapshot.leftOpen);
+    setCollapsed('left', !snapshot.leftOpen, { passing: true });
     if (snapshot.setRightCollapsed && snapshot.rightCollapsed !== undefined) {
       snapshot.setRightCollapsed(snapshot.rightCollapsed);
     }
@@ -390,7 +393,7 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
         rightCollapsed: rightSidebar?.isCollapsed,
         setRightCollapsed: rightSidebar?.setCollapsed,
       };
-      setCollapsed('left', true);
+      setCollapsed('left', true, { passing: true });
       rightSidebar?.setCollapsed(true);
     },
     [exitZenMode, isLeftOpen, setCollapsed]
