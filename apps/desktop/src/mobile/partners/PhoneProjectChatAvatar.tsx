@@ -23,9 +23,10 @@ export function PhoneProjectChatAvatar({ chat, mobile, children }: { chat: ChatI
   return mobile ? <ProjectChatAvatar chat={chat}>{children}</ProjectChatAvatar> : <DesktopProjectChatAvatar chat={chat}>{children}</DesktopProjectChatAvatar>
 }
 
-/** 桌面:群头像照旧,项目群和用户群在角上挂在跑的数。 */
+/** 桌面:群头像照旧,项目群和用户群在角上挂在跑的数;是不是项目(头像左下角那枚标)和手机同一个推导。 */
 function DesktopProjectChatAvatar({ chat, children }: { chat: ChatItem; children: ReactNode }) {
-  return <ProjectRunningCount chatId={chat.id}>{children}</ProjectRunningCount>
+  const project = useChatProject(chat.id) !== undefined
+  return <ProjectRunningCount chatId={chat.id}><ProjectFaceContext.Provider value={project}>{children}</ProjectFaceContext.Provider></ProjectRunningCount>
 }
 
 // 角落与引擎角标同一处(.agent-harness-badge:右下,各让出 2px);群头像不挂引擎角标,这一角是空的。
