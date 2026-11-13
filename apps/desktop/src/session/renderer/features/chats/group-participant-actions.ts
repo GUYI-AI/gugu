@@ -5,7 +5,7 @@ import { returnToScreen } from '@renderer/app/screen-layout-actions';
 import { sidebarStore } from '@renderer/lib/stores/app-state';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
-import { yieldChatAuxiliary } from './chat-tabs/chat-layouts';
+import { showChatOnly } from './chat-tabs/chat-layouts';
 import { groupParticipantPanes } from './group-participant-panes';
 
 function sourceContent(chatId: string): ScreenBlockContent {
@@ -36,8 +36,8 @@ export function showGroupParticipant(sourceChatId: string, target: ScreenBlockCo
     ? document.querySelector<HTMLElement>(`[data-screen-block="${id}"]`) : null;
   const extent = (blockElement(sourceId)?.getBoundingClientRect().width ?? 0)
     + (previous ? blockElement(screenLayout.blockOf(previous.target))?.getBoundingClientRect().width ?? 0 : 0);
-  // Preserve topic/file/App tabs, while yielding their visible half to the participant's own workspace.
-  yieldChatAuxiliary(sourceChatId);
   if (!groupParticipantPanes.show(sourceChatId, source, target, extent)) throw new Error('No room to open this conversation beside the group');
+  // The group's own tabs and pairs stay as they are; narrower now, the block draws what fits, the chat first.
+  showChatOnly(sourceChatId);
   returnToScreen();
 }
