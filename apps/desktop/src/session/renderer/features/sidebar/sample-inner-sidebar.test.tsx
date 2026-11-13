@@ -61,7 +61,6 @@ vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({
 vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: vi.fn() }));
 vi.mock('@renderer/features/chats/chat-tabs/chat-layouts', () => ({ openInfoTab: vi.fn() }));
 vi.mock('@renderer/features/projects/project-task-entry', () => ({ prepareProjectTask: vi.fn() }));
-vi.mock('@renderer/features/projects/components/project-menu', () => ({ ProjectMenuItems: () => null }));
 vi.mock('./sidebar-session-title', () => ({ SidebarSessionTitle: ({ title }: { title: string }) => <span data-row-title="">{title}</span> }));
 // The sample block around the pane, without its tab strip, transcript and file preview (unchanged, drawn elsewhere).
 vi.mock('@renderer/features/tabs/tab-bar', () => ({ TabStripShell: () => null }));

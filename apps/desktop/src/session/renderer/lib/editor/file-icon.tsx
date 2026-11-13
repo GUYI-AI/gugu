@@ -15,7 +15,7 @@ const inkIconClass = (filename: string) => resolveFileIconClass(filename)?.repla
  *
  * 原来每一格还带一个 `text-sky-500` / `text-fuchsia-500` 之类的品牌彩色 className，
  * 七个扩展名七种颜色。文件树是会话页同屏密度最大的常驻表面，彩色在这里不是信息、是噪音
- * （owner 在 `lib/components/titlebar/open-in-menu.tsx` 上已就「常驻触发位不许彩色图标」
+ * （owner 在 `lib/components/titlebar/open-in-app-icon.tsx` 上已就「常驻触发位不许彩色图标」
  * 拍过同一条；2026-09-22 按 design.md「Chrome is ink」把它传导到文件树）。
  * 去掉颜色之后这张表只剩标签 ⇒ 整格收成 `扩展名 → 标签`。
  */
