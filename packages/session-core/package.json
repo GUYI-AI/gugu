@@ -50,6 +50,7 @@
     "./acp/platform-model-address": "./src/acp/models/platform-model-address.ts",
     "./acp/node": "./src/acp/transport.ts",
     "./pty/node": "./src/pty/node/index.ts",
+    "./files/paths": "./src/files/paths.ts",
     "./files": "./src/files/index.ts",
     "./deps": "./src/host-dependencies/capability.ts",
     "./exec": "./src/exec/index.ts",

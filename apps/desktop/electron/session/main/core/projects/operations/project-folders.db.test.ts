@@ -61,6 +61,7 @@ vi.mock('./read-folder-branch', () => ({
   readFolderBranch: async (folderPath: string) => mocks.branches.get(folderPath) ?? null,
 }));
 
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import {
   attachProjectFolder,
   detachProjectFolder,
@@ -94,8 +95,8 @@ describe('project folders', () => {
     related = path.join(tmp, 'gugu-supabase');
     for (const dir of [rootA, rootB, worktree, related]) await mkdir(dir);
     fixture.sqlite.exec(`
-      INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-root-a', 'project-root', 'local', 'local', '${rootA}', '${computeWorkspaceKey(rootA)}');
-      INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-root-b', 'project-root', 'local', 'local', '${rootB}', '${computeWorkspaceKey(rootB)}');
+      INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-root-a', 'project-root', 'local', 'local', '${rootA}', '${computeWorkspaceKey(rootA as CanonicalPath)}');
+      INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-root-b', 'project-root', 'local', 'local', '${rootB}', '${computeWorkspaceKey(rootB as CanonicalPath)}');
       INSERT INTO projects (id, name, path, repository_workspace_id) VALUES ('project-a', 'gugu', '${rootA}', 'ws-root-a');
       INSERT INTO projects (id, name, path, repository_workspace_id) VALUES ('project-b', 'other', '${rootB}', 'ws-root-b');
     `);
@@ -365,7 +366,7 @@ describe('project folders', () => {
       const rowPath = path.join(tmp, 'moved');
       await mkdir(rowPath);
       fixture.sqlite.exec(`
-        INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-root-d', 'project-root', 'local', 'local', '${rowPath}', '${computeWorkspaceKey(rowPath)}');
+        INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-root-d', 'project-root', 'local', 'local', '${rowPath}', '${computeWorkspaceKey(rowPath as CanonicalPath)}');
         INSERT INTO projects (id, name, path, repository_workspace_id) VALUES ('project-d', 'moved', '${path.join(tmp, 'elsewhere')}', 'ws-root-d');
       `);
 
@@ -395,7 +396,7 @@ describe('project folders', () => {
 
     it('同一路径已有一条无主的旧行:认领它(沿用 id,kind 改成 path),在里面的本项目会话算这个文件夹的', async () => {
       fixture.sqlite.exec(`
-        INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-old', 'worktree', 'local', 'local', '${worktree}', '${computeWorkspaceKey(worktree)}');
+        INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-old', 'worktree', 'local', 'local', '${worktree}', '${computeWorkspaceKey(worktree as CanonicalPath)}');
         INSERT INTO sessions (id, project_id, workspace_id) VALUES ('s-old', 'project-a', 'ws-old');
       `);
 
@@ -407,7 +408,7 @@ describe('project folders', () => {
 
     it('无主的旧行正被别的项目没归档的会话用着 ⇒ belongs-to-other-project,不认领', async () => {
       fixture.sqlite.exec(`
-        INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-old', 'worktree', 'local', 'local', '${worktree}', '${computeWorkspaceKey(worktree)}');
+        INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-old', 'worktree', 'local', 'local', '${worktree}', '${computeWorkspaceKey(worktree as CanonicalPath)}');
         INSERT INTO sessions (id, project_id, workspace_id) VALUES ('s-b', 'project-b', 'ws-old');
       `);
 

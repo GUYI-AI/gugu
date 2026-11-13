@@ -11,7 +11,7 @@ import { log } from '@main/lib/logger';
 import type { FileTreeProjector } from '@main/core/files/file-tree/projector';
 import { createWorkspaceUploads, inWorkspace, WorkspaceTransferError, type WorkspaceWriteChunk } from '@main/core/files/workspace-transfer';
 import { workingCopyEntry, workingCopyFolder } from './local-files';
-import { resolvesInside } from './path-containment';
+import { canonicalPath, inWorkingCopy, placeUnder, type CanonicalPath } from '@gugu/session-core/files';
 
 /**
  * A working copy's files as an App reads them, on the machine it is on — the file panel's own chain: the file tree
@@ -24,7 +24,7 @@ import { resolvesInside } from './path-containment';
  */
 
 /** A subscription to the working copy's tree: a page keeps one while it is open, so the folders it listed stay loaded. */
-interface View { place: WorkspacePlace; root: string; projector: FileTreeProjector; subscriptionId: string; projectId: string; workspaceId: string | null; git: IGitWorktree | undefined; close: () => Promise<void> }
+interface View { place: WorkspacePlace; root: CanonicalPath; projector: FileTreeProjector; subscriptionId: string; projectId: string; workspaceId: string | null; git: IGitWorktree | undefined; close: () => Promise<void> }
 
 async function openGit(manager: Pick<RuntimeManager, 'acquire'>, root: string): Promise<{ value: IGitWorktree; release: () => Promise<void> } | null> {
   const lease = await manager.acquire();
@@ -62,21 +62,27 @@ async function openView(place: WorkspacePlace): Promise<View> {
 
 const views = new Map<string, Promise<View>>();
 
-/** A folder as a call names it (`''` the top) → its absolute path there (null: the top), never outside. */
-function folderPath(root: string, folder: string | undefined): string | null {
+/**
+ * A folder as a call names it (`''` the top) → its canonical path there (null: the top). Never outside, by name or through
+ * a link (`@@@working-copy-containment`).
+ */
+function folderPath(root: CanonicalPath, folder: string | undefined): CanonicalPath | null {
   const rel = (folder ?? '').replace(/^\/+|\/+$/g, '');
-  const abs = path.resolve(root, rel);
-  if (abs !== root && !abs.startsWith(root + path.sep)) throw new AppFileError('invalid', `${JSON.stringify(folder)} is not a folder of this working copy`);
-  return rel ? abs : null;
+  if (!rel) return null;
+  const abs = canonicalPath(path.join(root, rel));
+  if (!inWorkingCopy(root, abs)) throw new AppFileError('invalid', `${folder} is outside this working copy`);
+  return abs;
 }
 
 /** What a chunked write is still gathering beside its file: not a file of the working copy yet. */
 const UPLOADING_SUFFIX = '.gugu-tmp';
 
-const relOf = (root: string, abs: string) => path.relative(root, abs).split(path.sep).join('/');
+/** A canonical path's place under the working copy (`placeUnder`); null outside it. */
+const relOf = (root: CanonicalPath, abs: CanonicalPath) => placeUnder(root, abs);
 
 /** One folder as entries: subfolders as `folder` entries, a file's size and dates read now. */
-async function entriesOf(view: View, dir: string): Promise<AppFileEntry[]> {
+async function entriesOf(view: View, dir: CanonicalPath): Promise<AppFileEntry[]> {
+  const base = relOf(view.root, dir) ?? '';
   const status = await view.git?.getStatus().catch((error: unknown) => {
     log.warn('[working-copy] git status failed', { root: view.root, error: String(error) });
     return null;
@@ -88,7 +94,7 @@ async function entriesOf(view: View, dir: string): Promise<AppFileEntry[]> {
   const names = await fsp.readdir(dir);
   const entries = await Promise.all(names.map(async (name): Promise<AppFileEntry | null> => {
     const node = { path: path.join(dir, name) };
-    const rel = relOf(view.root, node.path);
+    const rel = base ? `${base}/${name}` : name;
     if (rel.endsWith(UPLOADING_SUFFIX)) return null;
     const parentId = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : null;
     const link = await fsp.lstat(node.path).then((found) => found.isSymbolicLink(), () => false);
@@ -119,7 +125,6 @@ export async function listWorkingCopy(place: WorkspacePlace, folder: string | un
   try {
     await requireAgentFileTreeAccess(view.root);
     // A link to a folder out of the working copy lists as a name; what is in that folder is not this working copy's.
-    if (folder && !resolvesInside(view.root, folder)) throw new AppFileError('invalid', `${folder} is outside this working copy`);
     const listed = await view.projector.listDir(view.subscriptionId, folderPath(view.root, folder));
     if (!listed.success) throw new AppFileError('not-found', `No folder ${JSON.stringify(folder ?? '')} in this working copy`);
     return await entriesOf(view, folderPath(view.root, folder) ?? view.root).catch((error: NodeJS.ErrnoException) => {
@@ -165,26 +170,11 @@ async function outsideFile(place: WorkspacePlace, file: string, handed: HandedFi
 }
 
 /**
- * @@@working-copy-place - an absolute path's place in a working copy: relative, POSIX separators; null outside it. Placed by
- * its name under either spelling of the root (`localRootOf`): the real one, and the one its record names (a server's task
- * folder through `accounts/<id>` → `account`) — or every file an agent names there is outside its own working copy. By
- * name, never by following the file: a link in the working copy to a file outside stays a link in it, which no read follows.
- * The one answer for what a tab is bound to (`workspaceRelativeFile`) and for what its reads reach (`fileRootOf`).
- */
-export function pathInWorkingCopy(root: { workspaceRoot: string; recordedRoot: string }, file: string): string | null {
-  for (const base of new Set([root.workspaceRoot, path.resolve(root.recordedRoot)])) {
-    const relative = path.relative(base, path.resolve(file));
-    if (relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) return relative.split(path.sep).join('/');
-  }
-  return null;
-}
-
-/**
  * Where the chunked transfer finds a file a call names: by its path in the working copy (named absolute or not), or, to read, the file
  * outside it a person opened (`outsideFile`), in its real folder. Both then go through the same reads and writes, on
  * the machine the file is on, with the working copy's bound and private storage shut.
  */
-export async function fileRootOf(place: WorkspacePlace, file: string, handed: HandedFile): Promise<{ root: string; path: string }> {
+export async function fileRootOf(place: WorkspacePlace, file: string, handed: HandedFile): Promise<{ root: CanonicalPath; path: string }> {
   const { localRootOf } = await import('./app-files');
   // A working copy is handed over whole, so its whole tree is checked; a file named outside it only itself, by what reads it.
   if (!path.isAbsolute(file)) {
@@ -193,13 +183,17 @@ export async function fileRootOf(place: WorkspacePlace, file: string, handed: Ha
     return { root, path: file };
   }
   const found = await localRootOf(place).catch(() => null);
-  const inside = found === null ? null : pathInWorkingCopy(found, file);
-  if (found !== null && inside !== null) {
+  const named = canonicalPath(file);
+  if (found !== null && placeUnder(found.workspaceRoot, named) !== null) {
+    // Named in the working copy: it is its file, read only where it is; a link there that leads out is no way out, whoever
+    // opened it (`@@@working-copy-containment`).
+    const inside = inWorkingCopy(found.workspaceRoot, named);
+    if (inside === null) throw new AppFileError('invalid', `path leads outside this workspace: ${file}`);
     await requireAgentFileTreeAccess(found.workspaceRoot);
     return { root: found.workspaceRoot, path: inside };
   }
   const real = await outsideFile(place, file, handed);
-  return { root: path.dirname(real), path: path.basename(real) };
+  return { root: canonicalPath(path.dirname(real)), path: path.basename(real) };
 }
 
 /** `f.read(offset, length)`: up to 512 KB of a working copy's file, as the file panel reads it. */
@@ -232,7 +226,8 @@ export async function writeWorkingCopyChunk(place: WorkspacePlace, chunk: Worksp
   try {
     if (chunk.offset === 0) {
       // Its folders are made once the path is known to be inside, a link in the chain followed; one already there is said before any bytes go.
-      const inside = path.isAbsolute(found.path) ? null : resolvesInside(found.root, found.path);
+      const target = path.isAbsolute(found.path) ? null : canonicalPath(path.join(found.root, found.path));
+      const inside = target && inWorkingCopy(found.root, target) ? target : null;
       if (!inside) throw new AppFileError('invalid', `${chunk.path} is outside this working copy`);
       const file = await inWorkspace(found.root, found.path);
       if (chunk.expectedEtag === null && await fsp.lstat(file).then(() => true, () => false)) throw taken();
@@ -241,7 +236,7 @@ export async function writeWorkingCopyChunk(place: WorkspacePlace, chunk: Worksp
     const { received, committed } = await uploads.write(found.root, { ...chunk, path: found.path });
     if (!committed) return { received };
     const stat = await fsp.stat(path.resolve(found.root, found.path));
-    return { received, entry: workingCopyEntry(place, path.isAbsolute(chunk.path) ? chunk.path : relOf(found.root, path.resolve(found.root, found.path)), stat), etag: committed.etag };
+    return { received, entry: workingCopyEntry(place, path.isAbsolute(chunk.path) ? chunk.path : found.path.split(path.sep).join('/'), stat), etag: committed.etag };
   } catch (error) {
     if (!(error instanceof WorkspaceTransferError)) throw error;
     // Saved over the version it read, and the disk has moved on: said as a stale `files.replace` is. No version named: the name is taken.
@@ -264,9 +259,8 @@ export async function watchWorkingCopy(place: WorkspacePlace, folder: string | u
   if (session && await sessionMachine(session).catch(() => null)) return hearElsewhere(session, { folder: folder ?? '' }, hear);
   const { workspaceRoot: root } = await localRootOf(place);
   await requireAgentFileTreeAccess(root);
-  if (folder && !resolvesInside(root, folder)) throw new AppFileError('invalid', `${folder} is outside this working copy`);
   const named = folderPath(root, folder) ?? root;
-  const below = relOf(root, named);
+  const below = relOf(root, named) ?? '';
   return watchFeed(root, named, (rel) => !below || rel === below || rel.startsWith(`${below}/`), (rel) => rel, hear);
 }
 
@@ -277,15 +271,16 @@ export async function watchWorkingCopyFile(place: WorkspacePlace, file: string, 
 }
 
 /** What the file panel hears: the change feed under `root`, with `named` watched (`@@@tree-by-directories`). */
-async function watchFeed(root: string, named: string, wanted: (rel: string) => boolean, nameOf: (rel: string) => string, hear: (change: ExtensionFileChangeBatch) => void): Promise<() => void> {
+async function watchFeed(root: CanonicalPath, named: string, wanted: (rel: string) => boolean, nameOf: (rel: string) => string, hear: (change: ExtensionFileChangeBatch) => void): Promise<() => void> {
   const { runtimeManager } = await import('@main/core/runtime/runtime-manager');
   const cannotWatch = () => new AppFileError('not-found', 'This folder cannot be watched on its computer');
   const lease = await runtimeManager.acquire();
   const feed = lease.value.files.watchChanges(root, (update) => {
     if (update.kind === 'resync') return hear({ kind: 'resync' });
-    const changes = update.changes.map((change) => ({ kind: change.kind, rel: relOf(root, change.path) }))
-      .filter(({ rel }) => rel && !rel.startsWith('..') && wanted(rel))
-      .map(({ kind, rel }) => ({ kind, path: nameOf(rel) }));
+    const changes = update.changes.flatMap((change) => {
+      const rel = relOf(root, change.path);
+      return rel && wanted(rel) ? [{ kind: change.kind, path: nameOf(rel) }] : [];
+    });
     if (changes.length > 0) hear({ kind: 'changes', changes });
   }, { ignore: ['**/{.git,node_modules}/**'] });
   if (!feed.success) {

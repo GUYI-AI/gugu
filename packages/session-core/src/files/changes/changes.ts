@@ -1,4 +1,5 @@
 import { lstatSync } from 'node:fs';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import { sep } from 'node:path';
 import { err, ok, type Result } from '@gugu/session-shared';
 import type { IWatchService, WatchEvent, WatchHandle } from '../../services/fs-watch/api';
@@ -159,7 +160,9 @@ function rawEventsToChanges(
     if (!isWatchedPath(absPath, pathPolicy, watchedPaths)) continue;
     changes.push({
       kind: event.kind,
-      path: absPath,
+      // @@@canonical-path - the feed's own decoder: an OS event under a canonical root names a canonical path (its folder
+      // real, its last part as the OS saw it), so it is typed here, once, never per consumer.
+      path: absPath as CanonicalPath,
       entryType: entryTypeForRawEvent(event),
     });
   }

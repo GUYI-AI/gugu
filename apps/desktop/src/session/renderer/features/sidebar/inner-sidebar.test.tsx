@@ -48,6 +48,9 @@ const state = vi.hoisted(() => ({
   projectChats: new Map<string, string>(),
   placementReads: 0,
   openChatOnScreen: vi.fn(),
+  openInfoTab: vi.fn(),
+  closeInfoTab: vi.fn(),
+  infoShown: false,
   openSessionWhenReady: vi.fn(),
   prepareProjectTask: vi.fn(),
   toggleIdleExpanded: vi.fn(),
@@ -72,9 +75,12 @@ vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: (...arg
 vi.mock('@renderer/features/sessions/open-session-in-session', () => ({
   openSessionInSessionWhenReady: (...args: unknown[]) => state.openSessionWhenReady(...args),
 }));
-vi.mock('@renderer/features/chats/chat-tabs/chat-layouts', () => ({ openInfoTab: vi.fn() }));
+vi.mock('@renderer/features/chats/chat-tabs/chat-layouts', () => ({
+  openInfoTab: (...args: unknown[]) => state.openInfoTab(...args),
+  closeInfoTab: (...args: unknown[]) => state.closeInfoTab(...args),
+  infoTabOf: () => (state.infoShown ? { shown: true } : null),
+}));
 vi.mock('@renderer/features/projects/project-task-entry', () => ({ prepareProjectTask: (...args: unknown[]) => state.prepareProjectTask(...args) }));
-vi.mock('@renderer/features/projects/components/project-menu', () => ({ ProjectMenuItems: () => null }));
 // The sample project's column has its own file (sample-inner-sidebar.test.tsx); here no account shows the sample.
 vi.mock('@renderer/features/sample-project/use-sample-project', () => ({ useSampleProject: () => ({ shown: false, settled: true, owner: null }) }));
 vi.mock('./sample-inner-sidebar', () => ({ SampleInnerSidebar: () => null }));
@@ -158,6 +164,9 @@ beforeEach(() => {
     state.live.shownMore.clear();
   });
   state.openChatOnScreen.mockClear();
+  state.openInfoTab.mockClear();
+  state.closeInfoTab.mockClear();
+  state.infoShown = false;
   state.prepareProjectTask.mockClear();
   // #2599 where each lives: `mine-in-group` was created in Planning; `mine-elsewhere` in a DM; `member-only` in a DM too, though
   // it is a member of both groups; `shop-chat-agent` in the shop project's group with no project chosen (so in the project).
@@ -226,7 +235,7 @@ describe('inner sidebar', () => {
     expect(rows.every((row) => row.dataset.agentAvatar === 'true')).toBe(true);
   });
 
-  it('the head row is the chat itself: current (never a selected fill) while its chat is open, a click goes back to it, the pen starts a new agent there', async () => {
+  it('the head row is the chat itself: current (never a selected fill) while its chat is open, a click opens its info beside it (again: puts it away), the pen starts a new agent there', async () => {
     publishChatSummaries([{ id: 'group', kind: 'group', name: 'Planning', unread_count: 5, member_user_ids: ['agent-a'] }, { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a'] }]);
     openChat('group');
     await render();
@@ -239,12 +248,23 @@ describe('inner sidebar', () => {
     openSession('mine-in-group');
     await render();
     expect(head().getAttribute('aria-current')).toBeNull();
+    // From one of its agents: back to the chat, with its info beside it.
     await act(async () => head().click());
     expect(state.openChatOnScreen).toHaveBeenCalledWith('group', false);
+    expect(state.openInfoTab).toHaveBeenCalledWith('group');
+    // On the chat with the info shown: the same click puts the info away.
+    openChat('group');
+    state.infoShown = true;
+    await render();
+    await act(async () => head().click());
+    expect(state.closeInfoTab).toHaveBeenCalledWith('group');
+    expect(state.openInfoTab).toHaveBeenCalledTimes(1);
+    state.infoShown = false;
 
     await act(async () => host.querySelector<HTMLElement>('[data-inner-head-new-agent]')!.click());
     expect(readComposerVerb('group')).toBe('task');
-    expect(host.querySelector('[data-inner-head-actions]')).not.toBeNull();
+    // No 「…」: the row itself is the way into the info; members and invitation are in the chat's header.
+    expect(host.querySelector('[data-inner-head] [aria-haspopup]')).toBeNull();
 
     openProject('p-shop');
     await render();
@@ -471,9 +491,8 @@ describe('a standalone agent with sub-agents', () => {
     expect(column.dataset.innerSidebarChat).toBe('dm-solo');
     expect(host.querySelector('[data-inner-head="dm-solo"]')?.textContent).toContain('Solo');
     expect(head()!.getAttribute('aria-current'), 'its own conversation is open').toBe('page');
-    // No pen (its sub-agents are its own to spawn) and no 「…」 (its header gives nothing up to the column).
+    // No pen: its sub-agents are its own to spawn.
     expect(host.querySelector('[data-inner-head-new-agent]')).toBeNull();
-    expect(host.querySelector('[data-inner-head-actions]')).toBeNull();
     const fold = host.querySelector<HTMLElement>('[data-inner-head="dm-solo"] [data-inner-head-fold]')!;
     expect([...fold.parentElement!.children].at(-1)).toBe(fold);
     // No 话题: the agent's conversation is its session.

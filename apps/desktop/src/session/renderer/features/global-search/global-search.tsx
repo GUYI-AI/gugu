@@ -37,12 +37,13 @@ const ResultAvatar = observer(function ResultAvatar({ hit, name }: { hit: Search
   )
 })
 
-/** A group or person found by name (`userId`: a person). The phone has no quick switcher, so its panel answers names too. */
-const NameRow = observer(function NameRow({ id, userId, name, query, onOpen }: { id: string; userId: string; name: string; query: string; onOpen: () => void }) {
+/** A group (`groupAvatar`: its picture, null when unset) or person (`userId`) found by name. The phone has no quick switcher, so its panel answers names too. */
+const NameRow = observer(function NameRow({ id, userId, groupAvatar, name, query, onOpen }: { id: string; userId: string; groupAvatar?: string | null; name: string; query: string; onOpen: () => void }) {
   const identity = useAvatarIdentity(userId)
   return (
     <button type="button" data-testid="global-search-name" data-id={id} onClick={onOpen} className="gg-list-row gg-row max-sm:min-h-11">
-      <ListRowContent leading={<Avatar name={identity?.display_name ?? name} avatarUrl={identity?.avatar} seed={id} size={20} isAgent={identity?.type === 'agent'} still />}
+      <ListRowContent leading={groupAvatar !== undefined ? <Avatar name={name} avatarUrl={groupAvatar} seed={id} size={20} variant="group" />
+        : <Avatar name={identity?.display_name ?? name} avatarUrl={identity?.avatar} seed={id} size={20} isAgent={identity?.type === 'agent'} still />}
         title={<Highlighted text={name} query={query} />} />
     </button>
   )
@@ -108,8 +109,8 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
   }
   const ordered = groups.flatMap((group) => group.hits)
   const named = useNameMatches(view.query, NAMED_LIMIT, names && !!view.query && facet === 'all' && chips.length === 0)
-  const nameRows = [...named.groups.map(([id, chat]) => ({ id, userId: '', name: chat.name ?? '', open: () => openGroup(id) })),
-      ...named.people.map((person) => ({ id: person.id, userId: person.id, name: person.name, open: () => openPerson(person.id) }))]
+  const nameRows = [...named.groups.map(([id, chat]) => ({ id, userId: '', groupAvatar: chat.avatar ?? null, name: chat.name ?? '', open: () => openGroup(id) })),
+      ...named.people.map((person) => ({ id: person.id, userId: person.id, groupAvatar: undefined, name: person.name, open: () => openPerson(person.id) }))]
   const selected = ordered.find((hit) => hit.id === selectedId) ?? ordered[0] ?? null
   const scoped = view.scopes.some((chip) => chip.kind === 'in' || chip.kind === 'in-task')
   // Words, a sender or a kind of message: any of them is a search; with none the panel shows the quick filters.
@@ -255,7 +256,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
         {nameRows.length > 0 && (
           <div data-testid="global-search-names">
             <SectionLabel>{translate('globalSearch.names')}</SectionLabel>
-            {nameRows.map((row) => <NameRow key={row.id} id={row.id} userId={row.userId} name={row.name} query={view.query} onOpen={() => { rememberSearch(recentScope, view.query); onOpen(); row.open() }} />)}
+            {nameRows.map((row) => <NameRow key={row.id} id={row.id} userId={row.userId} groupAvatar={row.groupAvatar} name={row.name} query={view.query} onOpen={() => { rememberSearch(recentScope, view.query); onOpen(); row.open() }} />)}
           </div>
         )}
         {hasQuery && !view.unresolved && !view.loading && !view.error && ordered.length === 0 && nameRows.length === 0 && (

@@ -43,6 +43,14 @@ const noBareAuthRefresher = {
   message: 'The session coordinator is the only refresher: call auth.getUser(sessionCoordinator.getAccessToken()) — a bare auth.getUser()/getSession() lets the SDK refresh the same refresh token on its own.'
 }
 
+// @@@canonical-path —— 工作副本路径只有一种写法,只由 canonicalPath(session-core files/paths)产出;从那台机器经线路收到的
+// 走 receivedCanonicalPath(session-shared canonical-path)。别处 `as CanonicalPath` 就是绕过这道门:一个没规范过的路径
+// 带着「规范」的类型混进去,比较照样会对不上(#2580、#2622 撞的就是这个)。测试里的字面量路径除外(下面的 override)。
+const noMintCanonicalPath = {
+  selector: ":matches(TSAsExpression, TSTypeAssertion)[typeAnnotation.typeName.name='CanonicalPath']",
+  message: 'A CanonicalPath is made only by canonicalPath() (@gugu/session-core/files), or taken as received from its machine by receivedCanonicalPath(). Never cast a string to it.'
+}
+
 const radixImportGate = {
   group: ['radix-ui', 'radix-ui/*', '@radix-ui/*'],
   message:
@@ -239,7 +247,8 @@ module.exports = {
           },
           // 顶层那条在这里是被整条替换掉的,不重新列一遍就等于给这批文件开了后门。
           noSyncSpawnInput,
-          noBareAuthRefresher
+          noBareAuthRefresher,
+          noMintCanonicalPath
         ]
       }
     },
@@ -278,10 +287,16 @@ module.exports = {
       // rule guards product code only.
       files: ['tests/**'],
       rules: { 'no-restricted-syntax': ['error', noSyncSpawnInput] }
+    },
+    {
+      // @@@canonical-path: the one producer, the one wire boundary and the feed's decoder make the type; a test names its fixture
+      // paths as literals.
+      files: ['**/*.test.ts', '**/*.test.tsx', 'packages/session-core/src/files/paths.ts', 'packages/session-shared/src/canonical-path.ts', 'packages/session-core/src/files/changes/changes.ts'],
+      rules: { 'no-restricted-syntax': ['error', noSyncSpawnInput] }
     }
   ],
   rules: {
-    'no-restricted-syntax': ['error', noSyncSpawnInput, noBareAuthRefresher],
+    'no-restricted-syntax': ['error', noSyncSpawnInput, noBareAuthRefresher, noMintCanonicalPath],
     // Android System WebView before 116 has no AbortSignal.any: calling it threw before the request was sent (images
     // could not load). One function owns the native call and its fallback; everything else combines signals through it.
     'no-restricted-properties': ['error', {

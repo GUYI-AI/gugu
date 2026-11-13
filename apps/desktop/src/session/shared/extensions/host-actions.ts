@@ -1,7 +1,6 @@
 import type { TabOpenIntent } from '@shared/view-state';
 import type { GuguLinkTarget, LinkPlace } from '@gugu/core/shared/ui/guguLink';
 import type { AppComposeDetail, AppForwardFilesDetail, AppOpenWithDetail, AppShowMessageDetail, PeekTarget } from './app-runtime-protocol';
-import type { GroupAvatarMember } from '@gugu/core/shared/types/chat';
 import type { ExtensionManifest } from './manifest';
 import type { MarketCodeSource } from './market';
 import type { ExtensionOrigin } from './upgrade';
@@ -185,9 +184,8 @@ export interface EnablePlace {
   agentId?: string;
   project?: boolean;
   enabled: boolean;
-  /** Drawn as the chat list draws it: an agent's face, a group's picture or its members' faces. */
+  /** Drawn as the chat list draws it: an agent's face, a group's picture or the default group face. */
   avatar?: string | null;
-  members?: GroupAvatarMember[];
   memberCount?: number;
   /** When it last spoke: the ones recently talked in first. */
   lastAt?: string | null;

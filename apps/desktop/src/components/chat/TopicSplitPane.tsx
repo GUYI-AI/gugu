@@ -234,7 +234,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   const [mentionToInsert, setMentionToInsert] = useState<{ id: string; name: string } | null>(null)
   const { recipientFacts, deliveryWaits } = useMessageDelivery(messages, memberReadSeqs, memberProfiles)
   const { readReceiptHandle, receiptOf } = useReadReceiptPanel({
-    chatId: topic.chatId, messages, memberReadSeqs, memberProfiles, recipientFacts,
+    chatId: topic.chatId, messages, memberReadSeqs, memberProfiles, recipientFacts, deliveryWaits,
   })
   // 宽度记在本机:拖过一次之后下次打开还是那个宽度(与会话列表同口径)。
   const [width, setWidth] = useState(() => readStoredTopicSplitWidth())

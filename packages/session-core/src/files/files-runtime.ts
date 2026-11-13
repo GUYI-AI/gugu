@@ -1,4 +1,5 @@
 import { err, ok, type Result } from '@gugu/session-shared';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import { ResourceMap } from '../lib';
 import type { IWatchService } from '../services/fs-watch/api';
 import { nativeWatchBackend } from '../services/fs-watch/impl/native-backend';
@@ -80,7 +81,7 @@ export class FilesRuntime implements IFilesRuntime {
   }
 
   watchChanges(
-    rootPath: string,
+    rootPath: CanonicalPath,
     cb: (update: FileChangeUpdate) => void,
     options?: FileChangeWatchOptions
   ): Result<FileChangeSubscription, FileError> {
@@ -91,12 +92,9 @@ export class FilesRuntime implements IFilesRuntime {
         message: 'FilesRuntime disposed',
       });
     }
-    const validatedRoot = validateAbsolutePath(rootPath);
-    if (!validatedRoot.success) return validatedRoot;
-    const changes = new FileChanges({
-      rootPath: realpathOrResolve(validatedRoot.data),
-      watcher: this.watcher,
-    });
+    // A canonical root is the folder's real path (`@@@canonical-path`): what the OS reports under it is said in the same
+    // spelling every consumer compares with, no path changed per event.
+    const changes = new FileChanges({ rootPath, watcher: this.watcher });
     const subscription = changes.watch(cb, options);
     if (!subscription.success) {
       changes.dispose();

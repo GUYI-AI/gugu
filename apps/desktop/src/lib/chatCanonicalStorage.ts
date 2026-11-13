@@ -1,7 +1,7 @@
 import { getCurrentAuthUserId } from './supabase'
 import { i18n } from '@/i18n'
 import { CHAT_MEDIA_BUCKET } from './publicMedia'
-import { setGroupAvatar } from '@gugu/core/cloud/groupAdmin'
+import { clearGroupAvatar, setGroupAvatar } from '@gugu/core/cloud/groupAdmin'
 import { currentGroupAdmin } from './groupAdmin'
 import { dataClient } from './supabase'
 
@@ -14,4 +14,8 @@ export async function uploadCanonicalGroupAvatar(chatId: string, file: File): Pr
     if (error) throw new Error(error.message)
     return bucket.getPublicUrl(path).data.publicUrl
   })
+}
+
+export async function clearCanonicalGroupAvatar(chatId: string): Promise<void> {
+  await clearGroupAvatar(await currentGroupAdmin(), chatId)
 }

@@ -110,11 +110,11 @@ describe('final group toolbar v4', () => {
     expect(catalog.header.groupApps).toBe(label)
   })
 
-  it('puts members, topics, invitation, Apps and More on a wide group; search and files live in More', async () => {
+  it('puts members, topics, Apps and More on a wide group (no invitation button: it is the members page\'s first row); search and files live in More', async () => {
     await header('group', { menu: true })
     expect(button('成员列表')?.textContent).toContain('3')
     expect(button('话题')).toBeDefined()
-    expect(button('邀请')).toBeDefined()
+    expect(button('邀请')).toBeUndefined()
     expect(button('应用')).toBeDefined()
     expect(button('在对话中搜索')).toBeUndefined()
     expect(button('文件')).toBeUndefined()
@@ -123,13 +123,12 @@ describe('final group toolbar v4', () => {
     expect(harness.container.querySelector('[data-agent-display-status="working"]')).toBeNull()
   })
 
-  it('#2548 with the desktop inner column on this chat: members, topics and invitation leave the bar; Apps and More stay', async () => {
+  it('#2548 with the desktop inner column on this chat: only topics leave the bar (the column lists them); the members button stays', async () => {
     publishInnerSidebarChat('chat')
     try {
       await header('group', { menu: true })
-      expect(button('成员列表')).toBeUndefined()
       expect(button('话题')).toBeUndefined()
-      expect(button('邀请')).toBeUndefined()
+      expect(button('成员列表')).toBeDefined()
       expect(button('应用')).toBeDefined()
       expect(button('更多操作')).toBeDefined()
     } finally {
@@ -137,30 +136,23 @@ describe('final group toolbar v4', () => {
     }
   })
 
-  // @@@group-share invitation (people + link / QR) is one press at every width: narrow only folds it to an icon.
-  it('mobile: no topics button, invitation is an icon in the header, Apps are in More', async () => {
+  it('mobile: the members button, no topics and no invitation button, Apps are in More', async () => {
     headerWidth = 900
     await header('group', { menu: true, mobile: true })
+    expect(button('成员列表')).toBeDefined()
     expect(button('话题')).toBeUndefined()
-    expect(button('邀请')?.textContent).toBe('')
+    expect(button('邀请')).toBeUndefined()
     expect(button('应用')).toBeUndefined()
     expect(menuItem('邀请')).toBeUndefined()
     expect(menuItem('应用')).toBeDefined()
   })
 
-  it.each(['strip', 'width'] as const)('%s: keeps topics and the invitation icon, moves Apps into More', async (reason) => {
+  it.each(['strip', 'width'] as const)('%s: keeps topics, moves Apps into More', async (reason) => {
     headerWidth = reason === 'width' ? 560 : 900
     await header('group', { menu: true, stripNarrow: reason === 'strip' })
     expect(button('话题')).toBeDefined()
-    expect(button('邀请')?.textContent).toBe('')
     expect(button('应用')).toBeUndefined()
-    expect(menuItem('邀请')).toBeUndefined()
     expect(menuItem('应用')).toBeDefined()
-  })
-
-  it('wide: the invitation button carries its label', async () => {
-    await header('group')
-    expect(button('邀请')?.textContent).toBe('邀请')
   })
 
   it('uses the own header width, restoring wide actions above the inclusive 560px boundary', async () => {
@@ -212,17 +204,10 @@ describe('final group toolbar v4', () => {
     expect(onCloseInfo).toHaveBeenCalledOnce()
   })
 
-  it.each(['group', 'topic', 'dm'] as const)('%s: pin and mute use chat writes and leave More open', async (kind) => {
+  it.each(['group', 'topic', 'dm'] as const)('%s: More has no pin or mute switch (both are on the info page); a private chat keeps its folder item', async (kind) => {
     await header(kind, { menu: true })
-    const switches = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')]
-    expect(switches).toHaveLength(2)
-    expect(switches.every((element) => element.getAttribute('aria-checked') === 'false')).toBe(true)
-    await clickElement(switches[0]!)
-    expect(pinChat).toHaveBeenCalledWith('chat', true)
     expect(document.querySelector('[data-testid="group-header-menu"]')).not.toBeNull()
-    await clickElement(switches[1]!)
-    expect(setChatNotificationLevel).toHaveBeenCalledWith('chat', 'none')
-    expect(document.querySelector('[data-testid="group-header-menu"]')).not.toBeNull()
+    expect(document.querySelectorAll('[role="menuitemcheckbox"]')).toHaveLength(0)
     if (kind === 'dm') {
       expect(button('文件'), 'a private chat has no header folder button, like a group').toBeUndefined()
       await clickElement(menuItem('文件')!)
@@ -237,22 +222,5 @@ describe('final group toolbar v4', () => {
     expect(search.textContent).toContain('⌘F')
     await clickElement(search)
     expect(onSearch).toHaveBeenCalledOnce()
-  })
-
-  it.each(['Enter', ' '])('keyboard %j exposes checked state and toggles existing pin/mute state off', async (key) => {
-    await header('group', { menu: true, pinned: true, muted: true })
-    const switches = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')]
-    expect(switches).toHaveLength(2)
-    expect(switches.every((element) => element.getAttribute('aria-checked') === 'true')).toBe(true)
-    const activate = async (element: HTMLElement) => act(async () => {
-      element.focus()
-      element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
-      element.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true, cancelable: true }))
-    })
-    await activate(switches[0]!)
-    expect(pinChat).toHaveBeenCalledExactlyOnceWith('chat', false)
-    await activate(switches[1]!)
-    expect(setChatNotificationLevel).toHaveBeenCalledExactlyOnceWith('chat', 'all')
-    expect(document.querySelector('[data-testid="group-header-menu"]')).not.toBeNull()
   })
 })

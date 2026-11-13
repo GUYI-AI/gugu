@@ -1,4 +1,5 @@
 import { ok } from '@gugu/session-shared';
+import type { CanonicalPath } from '@gugu/session-core/files';
 import { LocalSessionProvider } from '@main/core/sessions/impl/local-session';
 import type { SessionProvider } from '@main/core/sessions/types';
 import { LocalExecutionContext } from '@main/core/execution-context/local-execution-context';
@@ -38,7 +39,7 @@ import { getSessionEnvVars } from './workspace-env';
 export type WorkspaceFactoryContext = {
   /** 第一次把这个工作区挂上的那条会话。 */
   session: MountedSession;
-  workDir: string;
+  workDir: CanonicalPath;
   projectId: string;
   projectPath: string;
   workspaceRuntime: { manager: Pick<RuntimeManager, 'acquire'> };

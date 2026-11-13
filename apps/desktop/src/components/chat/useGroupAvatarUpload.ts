@@ -1,13 +1,17 @@
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { chatService } from '../../lib/chat'
+import { clearCanonicalGroupAvatar } from '../../lib/chatCanonicalStorage'
+import { rendererLogger } from '../../lib/log'
 import { useToast } from '../toastContext'
 
-/** The group's avatar upload keeps the same validation, write and failure feedback. */
+const avatarLog = rendererLogger('chat/group-avatar')
+
+/** The group's avatar upload and its reset to the default face keep the same write and failure feedback. */
 export function useGroupAvatarUpload({ chatId, viewerIsManager, setAvatarUrl, setActionError }: {
   chatId: string
   viewerIsManager: boolean
-  setAvatarUrl: (url: string) => void
+  setAvatarUrl: (url: string | null) => void
   setActionError: (error: string | null) => void
 }) {
   const { t } = useTranslation('messaging')
@@ -29,5 +33,20 @@ export function useGroupAvatarUpload({ chatId, viewerIsManager, setAvatarUrl, se
       setAvatarUploading(false)
     }
   }, [avatarUploading, chatId, setActionError, setAvatarUrl, t, toast, viewerIsManager])
-  return { avatarUploading, handleAvatarFile }
+  const handleAvatarReset = useCallback(async () => {
+    if (!viewerIsManager || avatarUploading) return
+    setAvatarUploading(true)
+    setActionError(null)
+    try {
+      await clearCanonicalGroupAvatar(chatId)
+      setAvatarUrl(null)
+      toast(t('group.settings.avatarUpdated'), 'success')
+    } catch (err) {
+      avatarLog.error({ chatId, err }, 'restore default group avatar failed')
+      setActionError(t('group.settings.avatarResetFailed'))
+    } finally {
+      setAvatarUploading(false)
+    }
+  }, [avatarUploading, chatId, setActionError, setAvatarUrl, t, toast, viewerIsManager])
+  return { avatarUploading, handleAvatarFile, handleAvatarReset }
 }

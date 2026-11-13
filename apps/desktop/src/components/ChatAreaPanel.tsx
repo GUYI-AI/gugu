@@ -434,7 +434,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   // @@@1577 phase3 — canonical (chat,thread) 键单一派生(消手拼 chatId:rootId)。
   // @@@acp-stream (#966)/@@@1577 — 流式首 chunk 引导 started activity（#2115 god-file 抽取,行为不变,详见 hook 头注）。
   const { recipientFacts, deliveryWaits } = useMessageDelivery(messages, memberReadSeqs, messageMemberProfiles)
-  const { readReceiptHandle, receiptOf } = useReadReceiptPanel({ chatId: activeChatId, messages, memberReadSeqs, memberProfiles: messageMemberProfiles, recipientFacts })
+  const { readReceiptHandle, receiptOf } = useReadReceiptPanel({ chatId: activeChatId, messages, memberReadSeqs, memberProfiles: messageMemberProfiles, recipientFacts, deliveryWaits })
   const groupSettings = useGroupChatSettings(isRoomChatSurface ? activeChatId : null, groupRoleRevision(groupCollabSnapshot), authorityRevision)
   const messageListenEditControlsFor = useListenModeEditControls({ chatId: isRoomChatSurface ? activeChatId : null, currentUserId: user?.id ?? null, settings: groupSettings.settings, onAuthorityReload: groupSettings.reload, onReload: loadGroupCollab })
   const drawerMemberProfiles = useMemo(() => Object.values(messageMemberProfiles).filter((profile) => profile.membership !== 'former'), [messageMemberProfiles])
@@ -564,7 +564,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       messages={messages}
       onClose={() => closeInfoTab(activeChatId)}
       onClearMessages={clearMessages}
-      onOpenSearch={() => searchInChat(activeChat.id)}
       onSetNotificationLevel={(level) => setChatNotificationLevel(activeChat.id, level)}
       onTogglePinned={(pinned) => pinChat(activeChat.id, pinned)}
       memberProfiles={drawerMemberProfiles}
@@ -630,7 +629,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     >
       {/* 会话头共用 PaneHeader 尺寸和窗控留白，与正文同色，只用 divider 分隔。
           ChatBlockHead 把同一份标题和动作放进块头。 */}
-      {blockHost && <ChatBlockHead host={blockHost} actions={headerActions} chat={activeChat} name={shownActiveChatName} avatar={activeChatAvatar} isAgent={peerIdentity?.type === 'agent'} identitiesById={identitiesById} />}
+      {blockHost && <ChatBlockHead host={blockHost} actions={headerActions} chat={activeChat} name={shownActiveChatName} avatar={activeChatAvatar} isAgent={peerIdentity?.type === 'agent'} />}
       {blockTabs}
       {!chrome && !blockHost && <PaneHeader
         divider={!(mobile && topicSurface.topics.length > 0)} data-chat-area-header=""

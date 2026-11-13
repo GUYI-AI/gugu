@@ -41,6 +41,7 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
 }) {
   const { t } = useTranslation('messaging')
   const { contacts } = useContactsStore()
+  const groupAvatarUrl = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.avatar ?? null)
   const sourceChatId = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.source_chat_id ?? null)
   const projectMembers = useProjectGroupMembers()
   const projectMemberIds = projectMembers.get(sourceChatId ?? chatId ?? '')
@@ -50,10 +51,9 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
   ] : [], [isGroupChat, groupMembers, currentUserId, contacts, t])
   const { byEngine, renderMentionIcon: renderSessionMentionIcon } = useSessionAgentCreationTools()
   const renderMentionIcon = useCallback<NonNullable<Parameters<typeof ChatComposer>[0]['renderMentionIcon']>>((attrs) => {
-    if (attrs.id === MENTION_ALL_USER_ID) return <Avatar name={attrs.name ?? attrs.label} size={14} variant="group"
-      memberAvatars={members.filter((member) => member.type !== 'all').map((member) => ({ id: member.id, name: member.name, avatar: member.avatar ?? null }))} />
+    if (attrs.id === MENTION_ALL_USER_ID) return <Avatar name={attrs.name ?? attrs.label} size={14} variant="group" seed={chatId ?? undefined} avatarUrl={groupAvatarUrl} />
     return renderSessionMentionIcon(attrs)
-  }, [members, renderSessionMentionIcon])
+  }, [chatId, groupAvatarUrl, renderSessionMentionIcon])
   const localProvider = useMemo(() => createLocalSessionMentionProvider({ creationToolsByEngine: byEngine }), [byEngine])
   const decorate = useCallback((item: MentionItem): MentionItem => ({ ...item,
     annotation: isGroupChat && !members.some((member) => `aid:${member.id}` === item.label) ? t('composer.notInGroup') : item.annotation,

@@ -27,13 +27,6 @@ export function basenameMachinePath(value: string): string {
   return path.posix.basename(value.replace(/\\/g, '/'));
 }
 
-export function containsMachinePath(parentPath: string, childPath: string): boolean {
-  const parent = parentPath.replace(/\\/g, '/');
-  const child = childPath.replace(/\\/g, '/');
-  const rel = path.posix.relative(parent, child);
-  return rel === '' || (rel !== '..' && !rel.startsWith('../') && !path.posix.isAbsolute(rel));
-}
-
 export function displayPathInDirectory(parentPath: string, childPath: string): string {
   const rel = path.posix.relative(parentPath.replace(/\\/g, '/'), childPath.replace(/\\/g, '/'));
   return rel === '.' ? '' : rel;

@@ -7,6 +7,7 @@ import {
   type OpenExternalDeps,
 } from './remote-open-external';
 import { RemotePaneError } from './remote-pane';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 function deps(overrides: Partial<OpenExternalDeps> = {}) {
   const open = vi.fn(async () => ({ opened: true as const }));
@@ -14,9 +15,9 @@ function deps(overrides: Partial<OpenExternalDeps> = {}) {
     route: { open, watching: () => false },
     sessionFromPtyId: () => null,
     sessionRoots: async () => [
-      { sessionId: 'recent', root: '/srv/app' },
-      { sessionId: 'older', root: '/srv/app' },
-      { sessionId: 'deep', root: '/srv/app/web' },
+      { sessionId: 'recent', root: '/srv/app' as CanonicalPath },
+      { sessionId: 'older', root: '/srv/app' as CanonicalPath },
+      { sessionId: 'deep', root: '/srv/app/web' as CanonicalPath },
     ],
     isFile: async () => true,
     ...overrides,
@@ -36,14 +37,14 @@ describe('open a web page from a program on this machine', () => {
 
   it('finds the session: deepest folder wins, then one someone is watching, then the most recent', () => {
     const roots = [
-      { sessionId: 'recent', root: '/srv/app' },
-      { sessionId: 'watched', root: '/srv/app/' },
-      { sessionId: 'deep', root: '/srv/app/web' },
+      { sessionId: 'recent', root: '/srv/app' as CanonicalPath },
+      { sessionId: 'watched', root: '/srv/app/' as CanonicalPath },
+      { sessionId: 'deep', root: '/srv/app/web' as CanonicalPath },
     ];
-    expect(pickSessionForCwd('/srv/app/web/src', roots, () => false)).toBe('deep');
-    expect(pickSessionForCwd('/srv/app/api', roots, () => false)).toBe('recent');
-    expect(pickSessionForCwd('/srv/app/api', roots, (id) => id === 'watched')).toBe('watched');
-    expect(pickSessionForCwd('/home/alice', roots, () => false)).toBeNull();
+    expect(pickSessionForCwd('/srv/app/web/src' as CanonicalPath, roots, () => false)).toBe('deep');
+    expect(pickSessionForCwd('/srv/app/api' as CanonicalPath, roots, () => false)).toBe('recent');
+    expect(pickSessionForCwd('/srv/app/api' as CanonicalPath, roots, (id) => id === 'watched')).toBe('watched');
+    expect(pickSessionForCwd('/home/alice' as CanonicalPath, roots, () => false)).toBeNull();
   });
 
   it('prefers the session named by GUGU_PTY_ID over the folder', async () => {

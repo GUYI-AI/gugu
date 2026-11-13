@@ -214,9 +214,11 @@ export type MemberListPanelProps = {
   onReload: () => Promise<void>
   onOpenUserChat?: (target: MemberProfileChatTarget) => void
   onWhisper?: (target: MemberProfileChatTarget) => void
+  /** 群:进来时选人页已经开着(群信息页成员行的「+」)。 */
+  invite?: boolean
 }
 
-export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, settingsState, error, onReload: load, onOpenUserChat, onWhisper }: MemberListPanelProps) {
+export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, settingsState, error, onReload: load, onOpenUserChat, onWhisper, invite }: MemberListPanelProps) {
   const { t } = useTranslation('messaging')
   const { t: tContacts } = useTranslation('contacts')
   const { user } = useAuth()
@@ -251,6 +253,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
     onReload: reload,
     onOpenUserChat,
     onWhisper,
+    invite,
   })
 
   // @@@6418 搜索:名字、主人、引擎、模型、设备,与行上看得见的字一致(看不见的字段不参与匹配)。
@@ -395,6 +398,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
           searchButton,
         )}</HeaderSearch>
 
+        {group.inviteAction ? <div style={MEMBER_LIST_SEARCH_STYLE}>{group.inviteAction}</div> : null}
         {snapshot && (!mobile || chatKind === 'group') ? (
           <div style={MEMBER_LIST_SEARCH_STYLE}>
             <SearchField
@@ -406,7 +410,6 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
               clearLabel={t('group.memberList.clearSearch')}
               onClear={() => setQuery('')}
             />
-            {group.inviteAction}
           </div>
         ) : null}
 
