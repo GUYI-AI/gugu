@@ -7,3 +7,5 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 const row = (): MessageItem => ({ id: 'm', chat_id: 'c', sender_user_id: 'u', to_user_ids: null, seq: 1, content: 'Hello', content_type: 'text', reply_to_message_id: null, retracted_at: null, created_at: '2026-11-13', is_mine: false, delivered: true, delivery_status: null })
 
 it('rejects Windows paths outside the parent directory', () => { const windowsRelative = path.win32.relative; const relative = vi.spyOn(path, 'relative').mockImplementation(windowsRelative); try { expect(contains('C:/root', 'C:/outside/file.txt')).toBe(false); expect(contains('C:/root', 'C:/root/child.txt')).toBe(true) } finally { relative.mockRestore() } })
+
+it('clears renderer timeout timers after a promise settles', async () => { vi.useFakeTimers(); vi.stubGlobal('window', globalThis); try { expect(await withTimeout(Promise.resolve(3), 1000, 'timeout')).toBe(3); expect(vi.getTimerCount()).toBe(0); await expect(withTimeout(Promise.reject(new Error('source')), 1000, 'timeout')).rejects.toThrow('source'); expect(vi.getTimerCount()).toBe(0) } finally { vi.useRealTimers(); vi.unstubAllGlobals() } })
