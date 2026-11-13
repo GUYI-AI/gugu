@@ -84,8 +84,8 @@ it('sees an unclickable overlay that appears, is re-marked or goes after the fir
   const rect = placeholder.getBoundingClientRect();
   expect(isBrowserPageOccluded(placeholder, rect)).toBe(false);
   const toast = document.createElement('div');
-  toast.innerHTML = '<div><div style="position:fixed;left:420px;top:120px;width:100px;height:40px;pointer-events:none">saved</div></div>';
-  const inner = toast.querySelector<HTMLElement>('div > div')!;
+  toast.innerHTML = '<div><div id="toast-body" style="position:fixed;left:420px;top:120px;width:100px;height:40px;pointer-events:none">saved</div></div>';
+  const inner = toast.querySelector<HTMLElement>('#toast-body')!;
   inner.setAttribute('data-sonner-toast', '');
   document.body.append(toast);
   await Promise.resolve();

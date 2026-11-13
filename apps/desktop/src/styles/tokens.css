@@ -1446,9 +1446,11 @@ body.barcode-scanner-active #root {
 
 /* @@@chat-offscreen-rows 消息流里的行(MessageRow):屏幕外的跳过样式、布局与绘制,同通讯录行(@@@contacts-offscreen-rows)一套机制。
    主区宽度一变(收放侧栏的每一帧、拖窗口、开关右栏),要重排的只是看得见的那几行,不随翻过的历史和公式量变多;页内查找照样搜得到。
-   auto 记住画过的实际高度,往上翻时没画过的行先按 160px 占位,真高度出来时视口上方的差由浏览器滚动锚定吸收(flowList)。
+   行挂上后先按真实内容排一次、画一帧,auto 记下真实高度,MessageRow 再打 data-laid-out 才允许跳过:跳过的行占着记下的真高,
+   落点、恢复阅读位置、往上翻都不会先按占位排再跳。宽度变过之后再露出来的行按新宽度重排,视口上方的差由滚动锚定吸收(flowList)。
    paint containment 会裁到框外的东西:来源消息闪烁的 2px 环画在框外,用 overflow-clip-margin 让出来。 */
-.gg-msg-row { content-visibility: auto; contain-intrinsic-size: auto 160px; overflow-clip-margin: 4px; }
+.gg-msg-row { contain-intrinsic-size: auto 160px; }
+.gg-msg-row[data-laid-out] { content-visibility: auto; overflow-clip-margin: 4px; }
 
 /* ── theme batch A:助理 App(.ta-*)的颜色取值 ───────────────────────────────────────────────
    从 assistant-today.css 原样搬来(owner 10-28 批的 token 方案:颜色只在 tokens.css 里写),
