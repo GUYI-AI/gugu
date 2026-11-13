@@ -238,7 +238,7 @@ function buildAppLink(input: ParsedExtensionLink, scheme: string): string {
     const [kind, id] = 'chat' in input.place ? (['chat', input.place.chat] as const) : (['session', input.place.session] as const);
     search.append(PLACE_KEYS[kind], id);
   }
-  const tail = segments.map(encodeURIComponent).join('/');
+  const tail = segments.map(segment => encodeURIComponent(segment).replace(/[()]/g, escaped)).join('/');
   const query = search.toString();
   const link = `${scheme}://ext/${input.extensionId}/${tab}${tail ? `/${tail}` : ''}${query ? `?${query}` : ''}`;
   if (link.length > MAX_EXTENSION_LINK_LENGTH) {

@@ -11,3 +11,5 @@ it('rejects unsafe revisions in App file targets', () => { const own = { id: 'bo
 it('classifies trimmed file paths consistently', () => { expect(classifyFileLink('  notes/a.md  ')).toEqual({ kind: 'workspace-file', path: 'notes/a.md' }); expect(classifyFileLink('  notes/a.md#L10  ')).toEqual({ kind: 'workspace-file', path: 'notes/a.md', at: { L10: '' } }) })
 
 it('writes Markdown-safe session and project link destinations', () => { for (const kind of ['session', 'project'] as const) { const target = kind === 'session' ? { kind, sessionId: 'session(1)' } : { kind, projectId: 'project(1)' }; const link = guguLink(target, 'gugu'); expect(link).not.toMatch(/[()]/); expect(parseGuguLink(link)).toEqual(target) } })
+
+it('writes Markdown-safe App path destinations', () => { const target = { kind: 'app' as const, extensionId: 'board', tab: 'main', path: 'sheet(1)/notes', query: {}, place: null }; const link = guguLink(target, 'gugu'); expect(link).not.toMatch(/[()]/); expect(parseGuguLink(link)).toEqual(target) })
