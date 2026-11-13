@@ -1,8 +1,11 @@
 import { motion, useTransform, type MotionStyle } from 'framer-motion';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useLayoutEffect, useState } from 'react';
 import { ShellSidebarToggle } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import {
+  INNER_SIDEBAR_MIN_WIDTH_PX,
+  innerSidebarMaxWidth,
+  innerSidebarShownWidth,
   SIDEBAR_BADGE_OPACITY_VAR,
   SIDEBAR_MIN_WIDTH_PX,
   SIDEBAR_PROGRESS_VAR,
@@ -78,8 +81,27 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     setCollapsed,
     dragLeftEdge,
     releaseLeftEdge,
+    workspaceWidth,
+    innerWidth,
+    innerShownWidth,
+    setInnerWidth,
+    innerSidebarShown,
   } = useWorkspaceLayoutContext();
   const [isResizing, setIsResizing] = useState(false);
+
+  // #2642 会话页的宽:内层栏放得下多宽由它推出(窗口变窄时那一列跟着让)。
+  useLayoutEffect(() => {
+    const root = workspaceRootRef.current;
+    if (!root) return;
+    const measure = () => workspaceWidth.set(root.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [workspaceRootRef, workspaceWidth]);
+  // #2642 内层栏的右边缘 = 列表占位宽 + 内层栏画出来的宽(内层栏紧挨列表,左右都不留缝,desktop-shell.css)。
+  const innerEdge = useTransform([leftAnimatedWidth, innerShownWidth], ([left, inner]: number[]) => left + inner);
+  const showInnerHandle = innerSidebarShown && !sidebarHidden;
 
   // 浮出预览用自己的一条进度:它从左缘滑入,而不是把主区推开。
   const peekProgress = usePanelProgress(isLeftPeeking);
@@ -130,6 +152,11 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
   const maxSidebarWidth = () => {
     const rootWidth = workspaceRootRef.current?.clientWidth ?? 0;
     return rootWidth > 0 ? rootWidth * SIDEBAR_MAX_SHARE : Number.POSITIVE_INFINITY;
+  };
+  /** #2642 内层栏与正文合起来那张卡片此刻的宽;null = 还没量到。 */
+  const innerCardWidth = () => {
+    const rootWidth = workspaceRootRef.current?.clientWidth ?? 0;
+    return rootWidth > 0 ? rootWidth - leftAnimatedWidth.get() : null;
   };
 
   return (
@@ -211,6 +238,22 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
           follow={leftRail > 0 ? { onMove: (raw) => dragLeftEdge(raw, maxSidebarWidth()), onRelease: releaseLeftEdge } : undefined}
         />
       ) : null}
+      {/* #2642 内层栏右边缘的分隔条,规矩同上面那一根(悬停才出线、拖动跟手、松手存、左右键步进),只是拖不收:这一列有自己的
+          收起钮,拖到最窄就停住。排在这一列**前面**:它和正文之间 ❌ 夹东西(desktop-shell.css 用相邻选择器把两半拼成一张卡片)。 */}
+      {showInnerHandle ? (
+        <PanelResizeHandle
+          edge="end"
+          offset={innerEdge}
+          ariaLabel={translate('task.resizeInnerSidebar')}
+          // 从画出来的宽起拖(窗口窄时它可能正被夹着,从存着的宽起拖会先空拖一截),由源头现算:innerShownWidth 是变换,
+          // 下一帧才更新,连按两下方向键第二下会读到旧值、吞掉一步(浏览器用例实测)。
+          getSize={() => innerSidebarShownWidth(innerWidth.get(), innerCardWidth())}
+          minSize={INNER_SIDEBAR_MIN_WIDTH_PX}
+          maxSize={() => innerSidebarMaxWidth(innerCardWidth())}
+          onSize={(size) => setInnerWidth(size)}
+          onSizeCommit={(size) => setInnerWidth(size, { persist: true })}
+        />
+      ) : null}
       {/* 固定占这一格(没有内层侧栏时是 null):正文那一格的位置不因它出现 / 收起而变,正文 ❌ 重挂。
           #2548 有内层栏时它和正文是同一张卡片的左右两半(desktop-shell.css),所以它必须紧挨着正文那一格。 */}
       {sidebarHidden ? null : innerSidebar}
@@ -219,6 +262,8 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
         {sidebarHidden ? null : innerSidebarRestore}
       </div>
       {(isLeftOpen || leftRail > 0) && !sidebarHidden ? <PanelResizeDragGuard edge="end" offset={leftAnimatedWidth} /> : null}
+      {/* #2642 正文的页签条压在内层栏分隔条的右半截上:守卫排在正文后面,那半截才是拖宽度而 ❌ 拖窗口。 */}
+      {showInnerHandle ? <PanelResizeDragGuard edge="end" offset={innerEdge} /> : null}
       {/* 左侧栏开关的控制器(快捷键、「消息」再点一下都走它);按钮本身 #2548 起在一张表侧栏的头一行。 */}
       {sidebarHidden ? null : <ShellSidebarToggle />}
     </div>

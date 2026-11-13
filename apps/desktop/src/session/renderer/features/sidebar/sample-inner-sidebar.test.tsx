@@ -30,7 +30,7 @@ vi.mock('@renderer/localization/use-session-messages', () => ({
   }),
 }));
 vi.mock('@renderer/lib/layout/layout-provider', () => ({
-  SIDEBAR_DEFAULT_WIDTH_PX: 260,
+  useInnerSidebarFrame: () => 260,
   useWorkspaceLayoutContext: () => ({ isLeftOpen: true, leftRail: 0 }),
 }));
 vi.mock('@renderer/lib/stores/app-state', () => ({

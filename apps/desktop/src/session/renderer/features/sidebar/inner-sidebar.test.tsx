@@ -52,7 +52,7 @@ const state = vi.hoisted(() => ({
   prepareProjectTask: vi.fn(),
   toggleIdleExpanded: vi.fn(),
 }));
-vi.mock('@renderer/lib/layout/layout-provider', () => ({ SIDEBAR_DEFAULT_WIDTH_PX: 260 }));
+vi.mock('@renderer/lib/layout/layout-provider', () => ({ useInnerSidebarFrame: () => 260 }));
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ translate: (key: string, params?: Record<string, unknown>) => (params ? `${key}:${Object.values(params).join(',')}` : key) }),
 }));

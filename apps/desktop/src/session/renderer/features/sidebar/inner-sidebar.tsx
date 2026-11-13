@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, SquarePen, Users } from '@/lib/icons';
+import { motion } from 'framer-motion';
 import { computed, observable, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
@@ -36,7 +37,7 @@ import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
-import { SIDEBAR_DEFAULT_WIDTH_PX } from '@renderer/lib/layout/layout-provider';
+import { useInnerSidebarFrame } from '@renderer/lib/layout/layout-provider';
 import { ShellRestoreLane } from '@renderer/lib/components/titlebar/shell-restore-lane';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { Button } from '@renderer/lib/ui/button';
@@ -400,22 +401,26 @@ const InnerAgentColumn = observer(function InnerAgentColumn({
   );
 });
 
-/** 这一列本身(群 / 项目 / 智能体 / 示例都是它):列表与正文之间、默认侧栏宽的一列;里面是头一行(这一列顶上那条带)与分区。 */
+/**
+ * 这一列本身(群 / 项目 / 智能体 / 示例都是它):列表与正文之间的一列;里面是头一行(这一列顶上那条带)与分区。
+ * 宽度拖它右边缘调(#2642,分隔条由工作区画,useInnerSidebarFrame),没拖过就是默认侧栏宽。
+ */
 function InnerSidebarFrame({ kind, chatId, children }: { kind: InnerSidebarAnchor['kind'] | 'sample'; chatId?: string; children: ReactNode }) {
+  const width = useInnerSidebarFrame();
   return (
     // isolate:分区头、行里那几层 z 序关在这一列里,❌ 压过左边列表那根拖动分隔条。
     // 底色是正文的底色:这一列是叠在列表上那张卡片的左半(desktop-shell.css「叠一层」,#2548),❌ 侧栏那一档。
-    <div
+    <motion.div
       data-region="inner-sidebar"
       data-inner-sidebar-chat={chatId}
       data-inner-sidebar-kind={kind}
       className="relative isolate flex h-full shrink-0 flex-col border-r border-border bg-background text-foreground-tertiary-muted"
-      style={{ width: SIDEBAR_DEFAULT_WIDTH_PX }}
+      style={{ width }}
     >
       <SidebarContainer className="min-h-0 w-full flex-1">
         <SidebarContent className="flex flex-col">{children}</SidebarContent>
       </SidebarContainer>
-    </div>
+    </motion.div>
   );
 }
 
