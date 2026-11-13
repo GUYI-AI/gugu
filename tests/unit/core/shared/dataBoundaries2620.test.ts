@@ -11,3 +11,5 @@ it('treats JSON null rollback state as unavailable', () => { expect(parseServerR
 it('keeps old measurements outside the health baseline window', () => { expect(baselineStatus('sleep', 400, [600, 600, 600, ...Array(14).fill(null)])).toEqual({ baseline: null, status: null }); expect(baselineStatus('sleep', 400, [600, ...Array(11).fill(null), 400, 400, 400]).baseline).toBe(400) })
 
 it('reports nonfinite body readings at their field', () => { for (const value of [NaN, Infinity, -Infinity]) expect(readHealthSummary({ ...summary(), body: { weight_kg: { value, at: '2026-11-13' } } })).toEqual({ ok: false, problem: 'body.weight_kg' }) })
+
+it('reports malformed sleep sources instead of stringifying them', () => { expect(readHealthSummary({ ...summary(), last_night: { date: '2026-11-13', start: '', end: '', sources: [null] } })).toEqual({ ok: false, problem: 'last_night.sources[0]' }) })

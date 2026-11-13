@@ -273,7 +273,10 @@ export function readHealthSummary(raw: unknown): HealthSummaryRead {
         in_bed_minutes: numOrNull(n, 'in_bed_minutes', 'last_night') ?? 0,
         asleep_minutes: numOrNull(n, 'asleep_minutes', 'last_night') ?? 0,
         stages,
-        sources: arr(n, 'sources', 'last_night').map(String),
+        sources: arr(n, 'sources', 'last_night').map((source, index) => {
+          if (typeof source !== 'string') throw new Problem(`last_night.sources[${index}]`)
+          return source
+        }),
       }
     }
     return {
