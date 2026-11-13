@@ -151,9 +151,6 @@ const STRINGS = {
     copy: '复制',
     copied: '已复制',
     cite: '引用',
-    hold: '＋ 记下',
-    held: '{n} 处',
-    heldClear: '全部取消',
     line: '第 {first} 行',
     lines: '第 {first}–{last} 行',
     placeMoved: '引用的那几行挪到了{lines}',
@@ -392,9 +389,6 @@ const STRINGS = {
     copy: 'Copy',
     copied: 'Copied',
     cite: 'Cite',
-    hold: '+ Keep',
-    held: '{n} spot{s}',
-    heldClear: 'Clear all',
     line: 'Line {first}',
     lines: 'Lines {first}–{last}',
     placeMoved: 'The cited lines moved: {lines}',
@@ -543,7 +537,6 @@ const state = {
   cm: null,
   md: null,
   picks: [], // the selection: { text, lines: [first, last] | null } per range (several, with Ctrl / Cmd in the source)
-  held: [], // places kept with ＋ (refs), cited with the selection's
   listing: null, // the list asked last, on its way: { heard: [changes said meanwhile] }
   place: null, // { query: a pill's `at`, file: the file its link names }, waiting for that file's text to be drawn
   found: null, // what a pill's place showed, until the next press: { lines: [first, last] marked or null, said: in the banner }
@@ -800,11 +793,6 @@ function renderChrome() {
   $('json-discard').textContent = t.discard
   $('copy-sel').textContent = t.copy
   $('cite-sel').textContent = t.cite
-  $('hold-sel').textContent = t.hold
-  $('held-cite').textContent = t.cite
-  $('held-clear').title = t.heldClear
-  $('held-clear').setAttribute('aria-label', t.heldClear)
-  renderHeld()
 }
 
 // ─── list ───────────────────────────────────────────────────────────────────
@@ -2746,9 +2734,8 @@ function clearShownFile() {
   document.body.classList.remove('empty-doc')
   hideBlockHandle()
   showSelection([], null)
-  state.held = []
   state.found = null
-  renderHeld()
+  applyMarks()
   hideBanner()
 }
 
@@ -3186,8 +3173,8 @@ async function mountPlain(current) {
 }
 
 // The selected text — in the editor (the source, each range of a multiple selection) or the preview — kept as it
-// changes, with the lines it was written on and where it ends on screen: a small bar beside it offers Copy, Cite and
-// ＋ Keep. On a phone the sandboxed page gets no native copy menu (WebView 133, L1), so Copy hands the text to the host
+// changes, with the lines it was written on and where it ends on screen: a small bar beside it offers Copy and Cite.
+// On a phone the sandboxed page gets no native copy menu (WebView 133, L1), so Copy hands the text to the host
 // (gugu.clipboard.writeText). Read at click time from here, because pressing a button may already have collapsed it.
 let selectionEnd = null // () => the selection's end on screen, read again as the page scrolls
 let picksInPreview = false
@@ -3254,19 +3241,17 @@ function refOf(current, { text, lines }) {
   return { file: current.entry, at: placeOf(current.file.text, first, last), label }
 }
 
-// Cite: the places kept (＋), then the selection's, each a pill into this chat's composer (a gugu.dispatch draft with refs) — the person
+// Cite: the selection's places, each a pill into this chat's composer (a gugu.dispatch draft with refs) — the person
 // says what to do with them, @s whom they like and sends it. A JSON file's view is not its text: its cite stays as it was,
 // each range quoted with the lines it is shown on, and a pill to the file. Called inside the click, as a draft needs.
-async function cite(current = state.current, picks = state.picks, held = state.held, whole = false) {
-  if (!current || (!whole && !(held.length || picks.length))) return
+async function cite(current = state.current, picks = state.picks, whole = false) {
+  if (!current || (!whole && !picks.length)) return
   const quoted = ({ text, lines: [first, last] }) =>
     `${fmt(first === last ? state.t.line : state.t.lines, { first, last })}\n${text.replace(/\s+$/, '').split('\n').map((line) => `> ${line}`).join('\n')}`
   try {
     if (whole) await gugu.dispatch('', { draft: true, refs: [{ file: current.entry }] })
-    else if (current.file.type === 'text') await gugu.dispatch('', { draft: true, refs: [...held, ...picks.map((pick) => refOf(current, pick))] })
+    else if (current.file.type === 'text') await gugu.dispatch('', { draft: true, refs: picks.map((pick) => refOf(current, pick)) })
     else await gugu.dispatch(picks.map(quoted).join('\n\n'), { draft: true, refs: [{ file: current.entry }] })
-    state.held = []
-    renderHeld()
   } catch (error) {
     showBanner(failureText(error), 'error')
   }
@@ -3281,7 +3266,7 @@ function bindFileMenu(current) {
     const receive = ({ detail }) => {
       if (detail.action === 'snapshot') {
         const picks = (id === 'editor' ? !picksInPreview : picksInPreview) ? [...state.picks] : []
-        pending = { requestId: detail.requestId, picks, held: [...state.held], source: { entry: { ...current.entry }, file: { type: current.file.type, text: current.file.text } } }
+        pending = { requestId: detail.requestId, picks, source: { entry: { ...current.entry }, file: { type: current.file.type, text: current.file.text } } }
         detail.selection = { text: picks.map(pick => pick.text).join('\n') }
         detail.editable = id === 'editor' && !!current.view && !current.view.state.readOnly
         if (detail.editable && (current.file.type !== 'text' || current.source)) detail.editorHistory = { undo: state.cm.commands.undoDepth(current.view.state) > 0, redo: state.cm.commands.redoDepth(current.view.state) > 0 }
@@ -3296,7 +3281,7 @@ function bindFileMenu(current) {
           current.view?.focus()
           if (current.view && !current.view.state.readOnly) state.cm.commands[detail.action](current.view)
         } else if (detail.action === 'quote-selection' || detail.action === 'quote-file') {
-          void cite(captured.source, captured.picks, captured.held, detail.action === 'quote-file')
+          void cite(captured.source, captured.picks, detail.action === 'quote-file')
         }
       }
     }
@@ -3305,25 +3290,7 @@ function bindFileMenu(current) {
   }
 }
 
-// ＋ Keep: the selection's places held for one Cite, marked where they are — a phone's Cite closes the file (演示稿's
-// way of gathering, #7238), and a desktop's can gather across a long file.
-function hold() {
-  const current = state.current
-  if (!current || !state.picks.length || current.file.type !== 'text') return
-  state.held.push(...state.picks.map((pick) => refOf(current, pick)))
-  document.getSelection()?.removeAllRanges()
-  current.view?.dispatch({ selection: { anchor: current.view.state.selection.main.head } })
-  renderHeld()
-}
-
-function renderHeld() {
-  const n = state.held.length
-  $('held-bar').hidden = n === 0
-  $('held-count').textContent = fmt(state.t.held, { n, s: n === 1 ? '' : 's' })
-  applyMarks()
-}
-
-// Lines marked in the source — the kept places, and the place a pill pointed at — as line decorations that follow edits;
+// Lines marked in the source — the place a pill pointed at — as line decorations that follow edits;
 // a link's found words (`{ from, to, cls }`) as a mark on just them.
 function lineMarks(cm) {
   const { StateEffect, StateField } = cm.state
@@ -3350,8 +3317,7 @@ function lineMarks(cm) {
 
 function applyMarks() {
   const current = state.current
-  const kept = state.held.map((ref) => spanOf(ref.at?.lines)).filter(Boolean)
-  const spans = [...kept.map(([a, b]) => [a, b, 'cm-held']), ...(state.found?.lines ? [[...state.found.lines, 'cm-found']] : [])]
+  const spans = state.found?.lines ? [[...state.found.lines, 'cm-found']] : []
   if (state.found?.text) spans.push({ ...state.found.text, cls: 'cm-found-text' })
   if (current?.view && current.marks) current.view.dispatch({ effects: current.marks.set.of(spans) })
   previewMarks()
@@ -3365,10 +3331,8 @@ function blocksOn(span) {
 }
 
 function previewMarks() {
-  const held = new Set(state.held.flatMap((ref) => blocksOn(spanOf(ref.at?.lines))))
   const found = new Set(blocksOn(state.found?.lines))
   for (const block of $('preview').querySelectorAll('[data-line]')) {
-    block.classList.toggle('md-held', held.has(block))
     block.classList.toggle('md-found', found.has(block))
   }
   foundWords([...found])
@@ -3752,14 +3716,14 @@ function blockMenu(box) {
 function blockLinks(current, pick) {
   return [
     ...(inCopy(current.entry) ? [] : [[state.t.copyBlockLink, blockAction(() => { const p = pick(); return copyLink(current.entry, placeOf(current.file.text, p.lines[0], p.lines[1])) })]]),
-    [state.t.cite, blockAction(() => cite(current, [pick()], state.held))],
+    [state.t.cite, blockAction(() => cite(current, [pick()]))],
   ]
 }
 
 function readBlockMenu(event) {
   const current = state.current
   if (document.body.dataset.mode !== 'preview' || current?.file.type !== 'text' || current.previewPending) return
-  // While text is selected here, a press belongs to the selection: its bar (Copy, Cite, ＋ Keep) is its one menu. A
+  // While text is selected here, a press belongs to the selection: its bar (Copy, Cite) is its one menu. A
   // phone's long-press selects a word and then sends this event, which would open the block's menu over that bar.
   const picked = document.getSelection()
   if (picked && !picked.isCollapsed && $('preview').contains(picked.anchorNode)) return event.preventDefault()
@@ -4528,9 +4492,8 @@ function start() {
   // Keep the editor's focus and selection when the button is pressed; copy inside the click (a user gesture).
   $('copy-sel').addEventListener('pointerdown', (event) => event.preventDefault())
   $('copy-sel').onclick = () => copySelection()
-  for (const id of ['cite-sel', 'hold-sel', 'held-cite']) $(id).addEventListener('pointerdown', (event) => event.preventDefault())
+  $('cite-sel').addEventListener('pointerdown', (event) => event.preventDefault())
   $('cite-sel').onclick = () => cite()
-  $('hold-sel').onclick = () => hold()
   for (const button of document.querySelectorAll('#sel-bar .fmt')) {
     button.addEventListener('pointerdown', (event) => event.preventDefault())
     button.onclick = () => format(button.dataset.fmt)
@@ -4548,11 +4511,6 @@ function start() {
   $('empty-draft').onclick = () => {
     const current = state.current
     if (current) gugu.dispatch(state.t.emptyAsk, { draft: true, refs: [{ file: current.entry }] }).catch((error) => showBanner(failureText(error), 'error'))
-  }
-  $('held-cite').onclick = () => cite()
-  $('held-clear').onclick = () => {
-    state.held = []
-    renderHeld()
   }
   // A pill's place stays marked, and what was said of it, until the next press on the file.
   for (const id of ['editor', 'preview']) {

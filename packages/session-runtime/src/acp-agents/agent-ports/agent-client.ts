@@ -1,4 +1,5 @@
 import type { AcpPermissionParams } from '@gugu/session-core/agents/plugins';
+import { canonicalToolPaths } from './canonical-tool-paths';
 import type { AcpClient } from '@gugu/session-core/agents/plugins';
 import type {
   CreateTerminalRequest,
@@ -49,7 +50,10 @@ export function buildAgentClient(
   ports: AgentPorts
 ): AcpClient {
   return {
-    sessionEvent: params => router.onSessionUpdate(connection, params, params.event),
+    sessionEvent: params => {
+      const event = canonicalToolPaths(params.event);
+      router.onSessionUpdate(connection, params, event);
+    },
 
     requestPermission: (params: AcpPermissionParams): Promise<RequestPermissionResponse> => {
       return router.onPermissionRequest(connection, params);

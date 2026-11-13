@@ -38,9 +38,9 @@ vi.mock('@main/core/extensions/file-sync', () => ({ fileSync: {}, localFileServi
 vi.mock('@main/core/extensions/extension-icon', () => ({ renderExtensionIcon: vi.fn() }));
 // The session is on this machine for `local`, and on the other one (`dev-there`) for the cross-machine cases.
 const SESSION = '22222222-2222-4222-8222-222222222222';
-const scene = vi.hoisted(() => ({ sessionOn: 'here' as 'here' | 'there', recorded: null as string | null }));
+const scene = vi.hoisted(() => ({ sessionOn: 'here' as 'here' | 'there' }));
 vi.mock('@main/core/extensions/extension-agent-context', () => ({
-  agentSessionContext: async () => (scene.sessionOn === f.side ? { workspaceRoot: scene.recorded ?? f.root, projectId: 'p', workspaceId: 'w' } : null),
+  agentSessionContext: async () => (scene.sessionOn === f.side ? { workspaceRoot: f.root, projectId: 'p', workspaceId: 'w' } : null),
 }));
 /** The device RPC: the call arrives at the other machine as JSON, is parsed as it is there, and answered there. */
 const across = async (caller: unknown, action: unknown) => {
@@ -115,22 +115,18 @@ function handedCases() {
     expect(text(await read(pageOn(null), 'in.txt'))).toBe('inside');
   });
 
-  it('a working copy recorded through a link to its folder: its files, named that way, are its own however the page was opened', async () => {
-    // A server records its task folder as `accounts/<id>/…`, a link to `account/…`, and its agent names files that way.
+  it('a file named through a link to its working copy (a server account link) is that working copy\'s, however its page was opened', async () => {
+    // A server's task folder was once recorded through `accounts/<id>` → `account`; the record is canonical now, and an agent
+    // that still names its files the old way names the same files.
     const linked = path.join(home, 'linked-root');
     fs.symlinkSync(f.root, linked);
-    scene.recorded = linked;
-    try {
-      const named = path.join(linked, 'in.txt');
-      expect(text(await read(pageOn(named, 'host'), named))).toBe('inside');
-      expect(text(await read(pageOn(null), named))).toBe('inside');
-      expect(text(await read(pageOn(null), path.join(f.root, 'in.txt')))).toBe('inside');
-      // A link in it to a file outside is still not followed, whoever opened it.
-      fs.symlinkSync(path.join(outside, 'id_ed25519'), path.join(f.root, 'key'));
-      await expect(read(pageOn(path.join(linked, 'key')), path.join(linked, 'key'))).rejects.toThrow(/outside this workspace/);
-    } finally {
-      scene.recorded = null;
-    }
+    const named = path.join(linked, 'in.txt');
+    expect(text(await read(pageOn(named, 'host'), named))).toBe('inside');
+    expect(text(await read(pageOn(null), named))).toBe('inside');
+    expect(text(await read(pageOn(null), path.join(f.root, 'in.txt')))).toBe('inside');
+    // A link in it to a file outside is still not followed, whoever opened it.
+    fs.symlinkSync(path.join(outside, 'id_ed25519'), path.join(f.root, 'key'));
+    await expect(read(pageOn(path.join(linked, 'key')), path.join(linked, 'key'))).rejects.toThrow(/outside this workspace/);
   });
 
   it('a file a person opened is never written, even by an App that may write files: it stays as it was', async () => {

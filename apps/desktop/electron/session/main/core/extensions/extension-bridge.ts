@@ -589,8 +589,8 @@ async function workspaceRelativeFile(place: WorkspacePlace | null, filePath?: st
   const { localRootOf } = await import('@main/core/extensions/app-files');
   const found = await localRootOf(place).catch(() => null);
   if (!found) return filePath;
-  const { pathInWorkingCopy } = await import('@main/core/extensions/working-copy-files');
-  return pathInWorkingCopy(found, filePath) ?? filePath;
+  const { canonicalPath, inWorkingCopy } = await import('@gugu/session-core/files');
+  return inWorkingCopy(found.workspaceRoot, canonicalPath(filePath)) ?? filePath;
 }
 
 /** @@@outside-file - a page bound to a file named absolute that a person opened, not the host for an App. */
@@ -1405,7 +1405,7 @@ async function workspaceOf(binding: SurfaceBinding): Promise<ExtensionWorkspace 
     sessionId,
     ...(agentId ? { agentId } : {}),
     ...(facts?.projectId ? { projectId: facts.projectId, ...(isImplicitSessionHomeProjectId(facts.projectId) ? { taskHome: true as const } : {}) } : {}),
-    ...(mayReachWorkspace && facts?.workspaceRoot ? { root: fs.realpathSync(facts.workspaceRoot) } : {}),
+    ...(mayReachWorkspace && facts?.workspaceRoot ? { root: facts.workspaceRoot } : {}),
   };
 }
 
