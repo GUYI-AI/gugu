@@ -23,3 +23,12 @@ it('keeps NUL-containing UTF-8 bytes out of editable text documents', () => {
   expect(workspaceUploadKind('note.txt', null, bytes).kind).toBe('file')
 })
 
+
+
+it('retains UTF-8 BOM bytes in text marked exact', () => {
+  const bytes = new TextEncoder().encode('\ufeff# Note')
+  const stored = workspaceStoredText('note.md', null, bytes)!
+  expect(stored.exact).toBe(true)
+  expect(new TextEncoder().encode(stored.text)).toEqual(bytes)
+})
+
