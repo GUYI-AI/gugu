@@ -74,7 +74,9 @@ export const OFFICE_KINDS = { docx: 'docx', pptx: 'pptx', xlsx: 'xlsx', xlsm: 'x
  * and checking the `truncated` flag from the FS layer.
  */
 export function getFileKind(filePath: string): Exclude<ManagedFileKind, 'too-large'> {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+  const name = filePath.split(/[\\/]/).pop() ?? '';
+  const dot = name.lastIndexOf('.');
+  const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
   if (RASTER_EXTS.has(ext)) return 'image';
   // PDF 有自己的渲染器(pdf.js,与主 app 聊天里那份文档预览同一份),❌ 不再和 .exe/.zip
   // 一起归进 binary —— 归错的代价是文件 tab 给它画一张「不支持的文件格式」占位卡(#5269)。
