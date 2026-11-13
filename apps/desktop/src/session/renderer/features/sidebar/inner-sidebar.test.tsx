@@ -138,7 +138,8 @@ const { readComposerVerb, setComposerVerb } = await import('@/lib/composerVerbBr
 const { setInnerSidebarTopicsAll, publishInnerSidebarTopicsView, publishOneListAgentRows, useInnerSidebarChat } = await import('@/lib/innerSidebarBridge');
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
 const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
-const { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
+const { innerSidebarFolded, innerSidebarFoldedAway, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
+const { sidebarFolds } = await import('./sidebar-folds');
 const { readPanelToggle } = await import('@/lib/panelToggles');
 const { sidebarStore } = await import('@renderer/lib/stores/app-state');
 
@@ -194,7 +195,7 @@ afterEach(() => {
   host.remove();
   act(() => setInnerSidebarTopicsAll(null));
   setComposerVerb('group', null);
-  setInnerSidebarFolded(false);
+  sidebarFolds.clear(); // the folds are stored state now: one test's fold must not be the next test's start
 });
 
 const go = (currentViewId: string, viewParamsStore: Record<string, unknown>) =>

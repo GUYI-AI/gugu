@@ -1,5 +1,4 @@
 import { observer } from 'mobx-react-lite';
-import { useState } from 'react';
 import { engineLabel } from '@/lib/usage/engineLabel';
 import { Avatar } from '@/components/Avatar';
 import { SAMPLE_AGENT_SEED } from '@renderer/features/sample-project/sample-project-transcript';
@@ -12,6 +11,7 @@ import {
   innerSectionEmptyClass,
   innerSectionHeaderClass,
 } from './inner-sidebar-parts';
+import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 import { SidebarGroupToggle } from './sidebar-group-toggle';
 import { SidebarGroup, SidebarMenu, sidebarCountClass } from './sidebar-primitives';
 import { SessionRowShell } from './sidebar-session-row';
@@ -50,9 +50,9 @@ export const SampleInnerSidebar = observer(function SampleInnerSidebar() {
   );
 });
 
-function SampleAgentsSection({ agent, active }: { agent: { name: string; engine: string }; active: boolean }) {
+const SampleAgentsSection = observer(function SampleAgentsSection({ agent, active }: { agent: { name: string; engine: string }; active: boolean }) {
   const { translate } = useSessionMessages();
-  const [collapsed, setCollapsed] = useState(false);
+  const collapsed = sidebarFolds.has('inner:agents');
   return (
     <SidebarGroup className="mb-2 flex shrink-0 flex-col" data-inner-sidebar-section="agents">
       <div className={innerSectionHeaderClass}>
@@ -61,7 +61,7 @@ function SampleAgentsSection({ agent, active }: { agent: { name: string; engine:
             label={translate('sidebar.agents')}
             count={0}
             collapsed={collapsed}
-            onToggle={() => setCollapsed((value) => !value)}
+            onToggle={() => setSidebarFold('inner:agents', !collapsed)}
             ariaLabel={translate(collapsed ? 'sidebar.expandAgents' : 'sidebar.collapseAgents')}
           />
           {/* 标题旁一个数,同群 / 项目那一列(#2548 ⑥)。只读的一段过去:那个 agent 早做完了,❌ 在跑。 */}
@@ -95,11 +95,11 @@ function SampleAgentsSection({ agent, active }: { agent: { name: string; engine:
       )}
     </SidebarGroup>
   );
-}
+});
 
-function SampleTopicsSection() {
+const SampleTopicsSection = observer(function SampleTopicsSection() {
   const { translate } = useSessionMessages();
-  const [collapsed, setCollapsed] = useState(false);
+  const collapsed = sidebarFolds.has('inner:topics');
   return (
     <SidebarGroup className="mb-2 flex shrink-0 flex-col" data-inner-sidebar-section="topics">
       <div className={innerSectionHeaderClass}>
@@ -108,7 +108,7 @@ function SampleTopicsSection() {
             label={translate('sidebar.topics')}
             count={0}
             collapsed={collapsed}
-            onToggle={() => setCollapsed((value) => !value)}
+            onToggle={() => setSidebarFold('inner:topics', !collapsed)}
             ariaLabel={translate(collapsed ? 'sidebar.expandTopics' : 'sidebar.collapseTopics')}
           />
         </span>
@@ -116,4 +116,4 @@ function SampleTopicsSection() {
       {collapsed ? null : <div className={innerSectionEmptyClass}>{translate('sidebar.noTopics')}</div>}
     </SidebarGroup>
   );
-}
+});

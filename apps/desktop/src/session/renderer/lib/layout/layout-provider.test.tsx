@@ -25,6 +25,7 @@ const {
   SIDEBAR_MIN_WIDTH_PX,
   SIDEBAR_RAIL_LAYOUT_BELOW,
 } = await import('./layout-provider');
+const { sidebarFolds } = await import('@renderer/features/sidebar/sidebar-folds');
 
 let layout: ReturnType<typeof useWorkspaceLayoutService>;
 function Probe() {
@@ -35,6 +36,7 @@ let host: HTMLDivElement;
 let root: Root;
 beforeEach(async () => {
   localStorage.clear();
+  sidebarFolds.clear();
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -51,11 +53,29 @@ const hoverToggle = () => act(async () => {
 });
 
 describe('the sidebar starts expanded', () => {
-  it('opens on every start; only the width is stored, and a stored width wins over the default', async () => {
+  it('opens expanded until the user folds it, and a stored width wins over the default', async () => {
     localStorage.setItem('gugu.taskpage.sidebarWidth', '300');
     await mount();
     expect(layout.isLeftOpen).toBe(true);
     expect(layout.leftAnimatedWidth.get()).toBe(300);
+  });
+
+  it('comes back folded after a restart when the user had folded it', async () => {
+    await mount();
+    await act(async () => layout.toggleLeft());
+    expect(sidebarFolds.has('left')).toBe(true);
+    act(() => root.unmount());
+    root = createRoot(host);
+    await mount();
+    expect(layout.isLeftOpen).toBe(false);
+    expect(layout.leftAnimatedWidth.get()).toBe(0);
+  });
+
+  it('zen mode folds it for the moment only: the next start is expanded', async () => {
+    await mount();
+    await act(async () => layout.toggleZenMode());
+    expect(layout.isLeftOpen).toBe(false);
+    expect(sidebarFolds.has('left')).toBe(false);
   });
 
   it('starts at the default width when nothing is stored', async () => {

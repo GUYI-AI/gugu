@@ -9,6 +9,7 @@ import type { ProjectManagerStore } from '@renderer/features/projects/stores/pro
 import { pageSessions } from '@renderer/features/sessions/stores/session-selectors';
 import { isWorkspaceProject } from '@renderer/features/sessions/session-home-project-constants';
 import type { Snapshottable } from '@renderer/lib/stores/snapshottable';
+import { sidebarFolds, type SidebarFold } from './sidebar-folds';
 import type { SidebarSnapshot, SidebarSessionSortBy } from '@shared/view-state';
 import type { JoinedGroup } from '@/lib/sidebarJoinedGroups';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
@@ -474,6 +475,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
       expandedProjectIds: [...this.expandedProjectIds],
       expandedSessionIds: [...this.expandedSessionIds],
       idleExpandedProjectIds: [...this.idleExpandedProjectIds],
+      folds: [...sidebarFolds],
       projectOrder: [...this.projectOrder],
       sessionOrderByProject: { ...this.sessionOrderByProject },
       sessionSortBy: this.sessionSortBy,
@@ -489,6 +491,9 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     }
     if (snapshot.idleExpandedProjectIds !== undefined) {
       this.idleExpandedProjectIds.replace(snapshot.idleExpandedProjectIds);
+    }
+    if (snapshot.folds !== undefined) {
+      sidebarFolds.replace(snapshot.folds as SidebarFold[]);
     }
     if (snapshot.projectOrder !== undefined) {
       this.projectOrder = [...snapshot.projectOrder];
