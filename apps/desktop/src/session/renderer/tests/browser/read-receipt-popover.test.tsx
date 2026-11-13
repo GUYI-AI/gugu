@@ -12,7 +12,7 @@ import '@/styles/tokens.css';
 const { ReadReceiptPopover } = await import('@/components/ReadReceiptPopover');
 const { Popover } = await import('@/components/ui/Popover');
 
-type Member = { id: string; displayName: string; avatar: null; isAgent: boolean; agentStatus?: AgentDisplayStatus };
+type Member = { id: string; displayName: string; avatar: null; isAgent: boolean; agentStatus?: AgentDisplayStatus; undelivered?: boolean };
 const member = (i: number, agentStatus?: AgentDisplayStatus): Member => ({ id: `m${i}`, displayName: `成员 ${i}`, avatar: null, isAgent: !!agentStatus, agentStatus });
 const range = (from: number, n: number) => Array.from({ length: n }, (_, k) => member(from + k));
 
@@ -61,6 +61,12 @@ describe('read receipt list', () => {
   it('puts online agents first among the unread, keeping the rest in order', async () => {
     await open([member(1)], [member(2), member(3, 'offline'), member(4, 'working'), member(5), member(6, 'idle')]);
     expect(names()).toEqual(['成员 1', '成员 4', '成员 6', '成员 2', '成员 5', '成员 3']);
+  });
+
+  it('says on its own row which agent the message never reached', async () => {
+    await open([member(1)], [{ ...member(2, 'offline'), undelivered: true }, member(3)]);
+    const rows = [...panel()!.querySelectorAll('.gg-list-row')].map((row) => row.textContent);
+    expect(rows).toEqual(['成员 1', '成员 3', '成员 2所在实例未运行、未送达']);
   });
 
   it('opens a 2000-member receipt with the nodes of a 200-member one, both groups in view', async () => {
