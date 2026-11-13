@@ -97,6 +97,8 @@ interface Loaded {
   base: Uint8Array;
   goneCheck: ReturnType<typeof setTimeout> | null;
   gone: boolean;
+  /** Letting go of its folder's watch (`watchFolder`); null when it could not be watched. */
+  unwatch: Promise<(() => void) | null>;
 }
 
 const MAX_BYTES = WORKSPACE_TEXT_MAX_BYTES;
@@ -228,8 +230,15 @@ export function workingCopyEntry(place: WorkspacePlace, rel: string, stat: fs.St
   };
 }
 
-export function createLocalFileService(options: { warn: (message: string, data?: Record<string, unknown>) => void }) {
-  const { warn } = options;
+export function createLocalFileService(options: {
+  warn: (message: string, data?: Record<string, unknown>) => void;
+  /**
+   * Watch a folder while a file in it is open (`@@@tree-by-directories`): where a tree is watched one folder at a time
+   * (Linux) the change stream only carries folders someone watches, and an open file's must be one. Resolves to letting go.
+   */
+  watchFolder: (folder: string) => Promise<() => void>;
+}) {
+  const { warn, watchFolder } = options;
   const openFiles = createOpenFiles<{ contentType: string }>({
     maxBytes: MAX_BYTES,
     // One person types here; these only stop an App that runs away — it would hold up main, which all of gugu shares.
@@ -422,7 +431,11 @@ export function createLocalFileService(options: { warn: (message: string, data?:
       built.destroy();
       Y.applyUpdate(document, base);
       openFiles.attach(document, documentName, { contentType: reg.contentType });
-      const l: Loaded = { reg, document, shape: disk.shape, diskHash: sha(raw), diskText: disk.text, base, goneCheck: null, gone: false };
+      const unwatch = watchFolder(path.dirname(reg.abs)).catch((error: unknown) => {
+        warn('Local files: the folder of an open file cannot be watched; changes on the disk reach it at its next write', { error: String(error) });
+        return null;
+      });
+      const l: Loaded = { reg, document, shape: disk.shape, diskHash: sha(raw), diskText: disk.text, base, goneCheck: null, gone: false, unwatch };
       loaded.set(documentName, l);
       // The file held a {"$text"} mark (made live text now): the disk gets the plain projection at once, as a group
       // file's text does — the mark is never read back. Anything else is left exactly as it was until a change.
@@ -445,6 +458,7 @@ export function createLocalFileService(options: { warn: (message: string, data?:
       loaded.delete(documentName);
       openFiles.docs.delete(documentName);
       if (!l) return;
+      void l.unwatch.then((stop) => stop?.());
       if (l.goneCheck) clearTimeout(l.goneCheck);
       // Built from the disk at the next open: a new generation (a deleted one moved on when it went).
       if (!l.gone) l.reg.gen += 1;

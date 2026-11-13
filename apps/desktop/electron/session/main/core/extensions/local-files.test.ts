@@ -41,13 +41,15 @@ const pages: Page[] = [];
  * deterministic: fseventsd under load is minutes late, or never sends (#7371). The service's own writes are echoed only
  * in the cell about that echo.
  */
-const sinks = new Map<string, WatchSink>();
+// One sink per subscription, as the OS keeps one per watch: a folder watched on its own (an open file's) beside the tree.
+const sinks = new Map<string, { root: string; sink: WatchSink }>();
 const watcher = createWatchService({
   backend: {
     async subscribe(key, sink, scope) {
-      sinks.set(key.root, sink);
+      const id = JSON.stringify(key);
+      sinks.set(id, { root: key.root, sink });
       scope.add(() => {
-        sinks.delete(key.root);
+        sinks.delete(id);
       });
     },
   },
@@ -56,7 +58,7 @@ const runtime = new FilesRuntime({ watcher });
 /** One batch from the OS, a moment after the change (never inside the call that made it). */
 function reported(events: WatchEvent[]) {
   setTimeout(() => {
-    for (const [watched, sink] of sinks) {
+    for (const { root: watched, sink } of sinks.values()) {
       const mine = events.filter((event) => event.path === watched || event.path.startsWith(watched + path.sep));
       if (mine.length > 0) sink.events(mine);
     }
@@ -65,6 +67,8 @@ function reported(events: WatchEvent[]) {
 let feed: { unsubscribe(): void } | null = null;
 /** Every update the change stream handed the service, in order. */
 let heard: FileChangeUpdate[] = [];
+/** The folders the service watches now, for the files open in it. */
+const watchedFolders: string[] = [];
 /** The file service side, per test: by default there is none (a working copy never reaches it) and nobody is signed in. */
 const remote: { token: string | null; connect: FileSyncPlatform['connect'] } = { token: null, connect: noFileService };
 function noFileService(): never {
@@ -239,7 +243,18 @@ beforeEach(async () => {
  */
 async function localService(feedRoot = root) {
   feed?.unsubscribe();
-  service = createLocalFileService({ warn: (message) => warnings.push(message) });
+  service = createLocalFileService({
+    warn: (message) => warnings.push(message),
+    watchFolder: async (folder) => {
+      watchedFolders.push(folder);
+      const watched = runtime.watchDirectory(folder);
+      if (!watched.success) throw new Error(watched.error.message);
+      return () => {
+        watchedFolders.splice(watchedFolders.indexOf(folder), 1);
+        watched.data();
+      };
+    },
+  });
   heard = [];
   const started = runtime.watchChanges(feedRoot, (update) => {
     heard.push(update);
@@ -330,6 +345,16 @@ describe('gugu.files on a working copy', () => {
     } finally {
       fs.rmSync(holder, { recursive: true, force: true });
     }
+  });
+
+  it("an open file's folder is watched while it is open (Linux watches a tree one folder at a time), and let go after", async () => {
+    fs.mkdirSync(path.join(root, 'notes'));
+    write('notes/a.md', 'one\n');
+    const a = new Page(nextId++, 'notes/a.md');
+    await a.open();
+    await until(() => watchedFolders.includes(path.join(root, 'notes')));
+    a.gone();
+    await until(() => !watchedFolders.includes(path.join(root, 'notes')));
   });
 
   it('a write from outside is never written over: merged first, whatever the page had not saved yet', async () => {

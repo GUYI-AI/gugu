@@ -30,7 +30,7 @@ beforeEach(() => {
   secret = path.join(privatePasswordVaultDirectory(), 'vault.png');
   fs.writeFileSync(secret, privateBytes);
   surface = { pageId: 1, extensionId: 'file-app', place: { workspace: 'session:private-test' }, workspaceRoot: root, filePath: null };
-  service = createLocalFileService({ warn: vi.fn() });
+  service = createLocalFileService({ warn: vi.fn(), watchFolder: async () => () => undefined });
   files = createLocalAppFiles({
     service, hasCapability: () => true, self: async () => ({ userId: 'owner', name: 'Owner' }),
     sync: { ensureFor: vi.fn(), pageFor: vi.fn(), grant: vi.fn(), ungrant: vi.fn(), revoke: vi.fn() },
