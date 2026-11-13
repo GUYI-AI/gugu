@@ -4,7 +4,6 @@ import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import type { DeviceProject } from '@gugu/core/shared/types/deviceProject'
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
-import { deviceSessionsOf } from '../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 import {
   newProjectPath,
   partnerFriends,
