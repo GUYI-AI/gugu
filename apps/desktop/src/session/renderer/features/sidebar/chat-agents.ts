@@ -154,6 +154,8 @@ export type ChatAgentDisclosure = {
   expanded: ReadonlySet<string>;
   /** 「展开显示 (N)」点开了。 */
   showAll: boolean;
+  /** 此刻在主区打开着的会话(#2630):它所在的家族同需要你的一样 ❌ 收,打开着的会话在这一列里总找得到。 */
+  open?: string | null;
 };
 
 /** 需要你 → 在跑 → 其余:表里的三档(sidebarStateGroup 的次序,其余排最后)。 */
@@ -166,7 +168,8 @@ const tierOf = (entry: ChatAgentEntry): number => {
  * 分区里的行:一张平的表,❌ 组头(#2548 ⑥,刘威:「直接通过状态图标来显示……别单独分栏」)。按根会话的状态排 ——
  * 需要你的在最上面,在跑的第二层,其余在最下面;同一档里置顶的在前、再按最后交互新的在前。是哪一档只看行尾那几个记号
  * (行组件自己画:橙点要你确认、红点出错、转动的字符在跑、时钟是定时的)。子会话挂在父会话下(展开着才列出)。
- * 露 CHAT_AGENT_LIMIT 个家族,多出来的收进一行;需要你的全露。置顶的 ❌ 搬走(这一列没有「置顶」分区)。
+ * 露 CHAT_AGENT_LIMIT 个家族,多出来的收进一行;需要你的全露,打开着的会话所在的家族也露(排在露出来的最后,收起行少数一个)。
+ * 置顶的 ❌ 搬走(这一列没有「置顶」分区)。
  */
 export function chatAgentSection(entries: readonly ChatAgentEntry[], disclosure: ChatAgentDisclosure): ChatAgentList {
   const forest = buildSessionTree(entries);
@@ -193,6 +196,26 @@ export function chatAgentSection(entries: readonly ChatAgentEntry[], disclosure:
     if (!disclosure.expanded.has(node.item.id)) return;
     for (const child of node.children) visit(child, depth + 1, node.item.projectId);
   };
-  for (const root of disclosure.showAll ? roots : roots.slice(0, limit)) visit(root, 0);
-  return { rows, total: roots.length, overflow: Math.max(0, roots.length - limit) };
+  const holds = (node: SessionTreeNode<ChatAgentEntry>): boolean => node.item.id === disclosure.open || node.children.some(holds);
+  const openRoot = disclosure.open ? roots.find(holds) : undefined;
+  const openPastLimit = openRoot !== undefined && roots.indexOf(openRoot) >= limit;
+  const shown = disclosure.showAll ? roots : [...roots.slice(0, limit), ...(openPastLimit ? [openRoot] : [])];
+  for (const root of shown) visit(root, 0);
+  return { rows, total: roots.length, overflow: Math.max(0, roots.length - limit - (openPastLimit ? 1 : 0)) };
+}
+
+/**
+ * 打开着的会话往上的各层父会话(#2630):会话一打开就把它们展开一次,这一列里看得见它;之后照样能手动收起。
+ * 父会话不在这张表里(挂在别处)就停在那一层。
+ */
+export function openSessionAncestors(entries: readonly ChatAgentEntry[], open: string | null | undefined): string[] {
+  if (!open) return [];
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const ancestors: string[] = [];
+  const seen = new Set<string>([open]);
+  for (let parent = byId.get(open)?.parentSessionId; parent && byId.has(parent) && !seen.has(parent); parent = byId.get(parent)?.parentSessionId) {
+    ancestors.push(parent);
+    seen.add(parent);
+  }
+  return ancestors;
 }
