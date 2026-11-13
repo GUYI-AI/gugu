@@ -47,14 +47,23 @@ it.each([10, 100, 1000])('derives only the changed row among %i rows', size => {
   expect(actual[0]).toBe('new')
 })
 
-it('derives the same member signature for a preview change and updates membership/identity changes', () => {
+it('derives the same member signature for a preview change and updates on a membership change', () => {
   const project = createChatMembershipProjection()
   const directory = { agent: displayIdentity('agent', { type: 'agent' }), human: displayIdentity('human') }
   const original = chat({ id: 'group', kind: 'group', member_user_ids: ['human', 'agent'] })
   const before = project([original], directory)
   expect(project([{ ...original, last_message_preview: 'new' }], directory)).toBe(before)
   expect(project([{ ...original, member_user_ids: ['human'] }], directory).key).toBe('group:human')
-  expect(project([original], { ...directory, human: displayIdentity('human', { type: 'agent' }) }).agentIds).toEqual(['agent', 'human'])
+})
+
+it('lists only the agents of private chats: a group row draws no status, so its agent members are not followed', () => {
+  const project = createChatMembershipProjection()
+  const directory = { agent: displayIdentity('agent', { type: 'agent' }), member: displayIdentity('member', { type: 'agent' }), human: displayIdentity('human') }
+  const dm = chat({ id: 'dm', kind: 'dm', peer_user_id: 'agent' })
+  const person = chat({ id: 'person', kind: 'dm', peer_user_id: 'human' })
+  const group = chat({ id: 'group', kind: 'group', member_user_ids: ['member', 'human'] })
+  expect(project([dm, person, group], directory).agentIds).toEqual(['agent'])
+  expect(project([dm, person, group], { ...directory, human: displayIdentity('human', { type: 'agent' }) }).agentIds).toEqual(['agent', 'human'])
 })
 
 it('keeps aggregate agent ids and skips sort when a private preview changes or rows move', () => {
@@ -70,24 +79,25 @@ it('keeps aggregate agent ids and skips sort when a private preview changes or r
     expect(next).toBe(before)
     expect(next.agentIds).toBe(before.agentIds)
   } finally { sort.mockRestore() }
-  expect(project([dm], directory).agentIds).toEqual(['agent'])
+  expect(project([group], directory).agentIds).toEqual([])
 })
 
 it.each([10, 100, 1000])('does not revisit settled member fields after %i preview-only row updates', size => {
   const project = createChatMembershipProjection()
   const directory = { agent: displayIdentity('agent', { type: 'agent' }) }
-  const rows = Array.from({ length: size }, (_, index) => chat({ id: `g${index}`, kind: 'group', member_user_ids: ['agent'] }))
-  const before = project(rows, directory)
-  const updated = rows.map(row => ({ ...row, last_message_preview: 'new' }))
-  expect(project(updated, directory)).toBe(before)
   const reads: string[] = []
-  for (const [id, part] of before.parts) {
-    const agents = part.agents
-    Object.defineProperty(part, 'agents', { enumerable: true, get() { reads.push(id); return agents } })
+  const row = (index: number, preview: string) => {
+    const members = ['agent']
+    return { ...chat({ id: `g${index}`, kind: 'group', last_message_preview: preview }), get member_user_ids() { reads.push(`g${index}`); return members } }
   }
-  expect(project(updated, directory)).toBe(before)
+  const rows = Array.from({ length: size }, (_, index) => row(index, 'old'))
+  const before = project(rows, directory)
+  reads.length = 0
+  expect(project(rows, directory)).toBe(before)
   console.info('settled member fields', reads)
   expect(reads).toEqual([])
+  expect(project([row(0, 'new'), ...rows.slice(1)], directory)).toBe(before)
+  expect(reads).toEqual(['g0'])
 })
 
 it.each([10, 100, 1000])('reads summary fields for only the changed row among %i rows', size => {
