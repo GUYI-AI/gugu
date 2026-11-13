@@ -536,7 +536,7 @@ function materializeSessionAcp(
   const modelConfig = materializePiModelConfig('acp', bundle);
   const env = { ...childEnv(bundle, promptValue), ...modelConfig.env };
   const autonomy = bundle.autonomy;
-  if (autonomy) env[GUGU_PI_AUTONOMY_ENV] = autonomy.mode;
+  if (autonomy) env[GUGU_PI_AUTONOMY_ENV] = autonomy.permissionMode === 'full-access' ? 'full-access' : 'approval-required';
   const base = report(ctx, promptValue, bundle);
   return {
     // ❌ 这条腿不发 argv:`buildAcpSpawn` 只从 `behavior.acp.buildSpawn` 造 args,

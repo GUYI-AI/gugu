@@ -1,7 +1,7 @@
 import { taskNameFor } from './task-name';
 import { randomUUID } from 'node:crypto';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
-import type { GuguPermissionMode } from '@gugu/session-core/acp';
+import { NEW_SESSION_PERMISSION_MODE, type GuguPermissionMode } from '@gugu/session-core/acp';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import { events } from '@main/lib/events';
@@ -160,7 +160,7 @@ export async function attachAgentToSession(
         provider: params.provider,
         runtime: sessionRuntime,
         origin: params.origin,
-        permissionMode: params.permissionMode,
+        permissionMode: params.permissionMode ?? NEW_SESSION_PERMISSION_MODE,
         model: params.model,
         effort: params.effort,
         initialPrompt: params.initialPrompt,

@@ -107,9 +107,9 @@ describe('终端腿:每一档的 argv 带的正是这一档的旗标', () => {
     expect(containsRun(args, expected), `${id}/${mode}: ${args.join(' ')}`).toBe(true);
   });
 
-  it('没有档位的记录(导入的会话)按编辑档,照样显式推旗标', () => {
-    expect(containsRun(argv('claude', undefined, false), ['--permission-mode', 'acceptEdits'])).toBe(true);
-    expect(containsRun(argv('claude', undefined, true), ['--permission-mode', 'acceptEdits'])).toBe(true);
+  it('没有档位的记录不起:读档报错,❌ 按默认档猜(每条会话都记着档,导入也写进记录)', () => {
+    expect(() => argv('claude', undefined, false)).toThrow('no permission tier');
+    expect(() => argv('claude', undefined, true)).toThrow('no permission tier');
   });
 
   it.runIf(ANTIGRAVITY_SESSION_TUI_ENABLED)('antigravity 的只读只在聊天面板腿:终端腿递进来就抛', () => {

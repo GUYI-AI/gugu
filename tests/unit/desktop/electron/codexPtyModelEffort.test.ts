@@ -290,6 +290,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       {
         sessionId: 'conv-model-1',
         providerId: 'codex',
+        permissionMode: 'edit' as const,
         cwd: '/tmp/w',
         baseCommand: '/x/codex',
         initialPrompt: 'model test',
@@ -318,6 +319,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       {
         sessionId: 'conv-name-1',
         providerId: 'codex',
+        permissionMode: 'edit' as const,
         cwd: '/tmp/w',
         baseCommand: '/x/codex',
         agentDisplayName: 'Codex 7',
@@ -360,6 +362,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       {
         sessionId: 'conv-mcp-env-1',
         providerId: 'codex',
+        permissionMode: 'edit' as const,
         cwd: '/tmp/w',
         baseCommand: '/x/codex',
         initialPrompt: 'mcp env test',
@@ -390,6 +393,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       {
         sessionId: 'conv-reopen-home-1',
         providerId: 'codex',
+        permissionMode: 'edit' as const,
         cwd: '/tmp/w',
         baseCommand: '/x/codex',
         initialPrompt: 'home test',
@@ -400,6 +404,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       {
         sessionId: 'conv-reopen-home-1',
         providerId: 'codex',
+        permissionMode: 'edit' as const,
         cwd: '/tmp/w',
         baseCommand: '/x/codex',
         resumeProviderSessionId: 'thread-1',
@@ -417,6 +422,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       {
         sessionId: 'conv-concurrent-reopen-1',
         providerId: 'codex',
+        permissionMode: 'edit' as const,
         cwd: '/tmp/w',
         baseCommand: '/x/codex',
       },
@@ -427,6 +433,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       {
         sessionId: 'conv-concurrent-reopen-1',
         providerId: 'codex',
+        permissionMode: 'edit' as const,
         cwd: '/tmp/w',
         baseCommand: '/x/codex',
       },
@@ -450,6 +457,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       {
         sessionId: 'conv-concurrent-before-publication',
         providerId: 'codex',
+        permissionMode: 'edit' as const,
         cwd: '/tmp/w',
         baseCommand: '/x/codex',
       },
@@ -459,6 +467,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       {
         sessionId: 'conv-concurrent-before-publication',
         providerId: 'codex',
+        permissionMode: 'edit' as const,
         cwd: '/tmp/w',
         baseCommand: '/x/codex',
       },
@@ -487,6 +496,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
     const info = {
       sessionId: 'conv-stop-before-publication',
       providerId: 'codex',
+      permissionMode: 'edit' as const,
       cwd: '/tmp/w',
       baseCommand: '/x/codex',
     }
@@ -514,6 +524,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       {
         sessionId: 'conv-first-turn-fails',
         providerId: 'codex',
+        permissionMode: 'edit' as const,
         cwd: '/tmp/w',
         baseCommand: '/x/codex',
       },
@@ -561,7 +572,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
         cwd: '/tmp/w',
         baseCommand: '/x/codex',
         initialPrompt: 'approval required test',
-        permissionMode: 'edit',
+        permissionMode: 'edit' as const,
       },
       deps,
     )
@@ -573,6 +584,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       {
         sessionId: 'conv-model-2',
         providerId: 'codex',
+        permissionMode: 'edit' as const,
         cwd: '/tmp/w',
         baseCommand: '/x/codex',
         initialPrompt: 'default model test',
@@ -671,7 +683,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       extraArgs: [],
     }))
     await provisionAndOverride({
-      sessionId, sourceSessionId, providerId: 'codex', cwd: '/tmp/w', baseCommand: '/x/codex',
+      sessionId, sourceSessionId, providerId: 'codex', permissionMode: 'edit', cwd: '/tmp/w', baseCommand: '/x/codex',
       ...(lifecycle === 'resume' ? { resumeProviderSessionId: 'free-thread', model: 'gpt-6.1-sol' } : {}),
       ...(lifecycle === 'fork' ? { forkFromProviderSessionId: 'free-thread' } : {}),
     }, deps)
@@ -687,6 +699,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       {
         sessionId: 'conv-missing-prompt',
         providerId: 'codex',
+        permissionMode: 'edit' as const,
         cwd: '/tmp/w',
         baseCommand: '/x/codex',
       },

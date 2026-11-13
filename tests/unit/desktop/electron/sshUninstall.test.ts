@@ -23,6 +23,7 @@ import { SERVER_SSH_MACHINES_CHANNELS, type ServerUninstallState } from '../../.
 import { binLauncher } from '../../../../apps/desktop/electron/server/server-names'
 import { migrateAccountLayout } from '../../../../apps/desktop/electron/server/server-boot.cjs'
 import { accountLockHolder } from '../../../../apps/desktop/electron/server/server-account-lock'
+import { UNREGISTERED_MARK } from '../../../../apps/desktop/electron/server/server-unregister'
 
 const ME = '11111111-1111-4111-8111-111111111111'
 const OTHER = '22222222-2222-4222-8222-222222222222'
@@ -272,6 +273,28 @@ describe('#6264 卸载时把同机别的账号都注销(照 code tunnel unregist
       expect(calls.join('\n')).not.toContain(`unregister --account ${ME}`)
       expect(calls).toContain('service uninstall')
       expect(fs.existsSync(serverHome)).toBe(false)
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('有账号连不上云端 ⇒ 中止卸载,什么都不删,报出是哪个账号', () => {
+    const home = tmp()
+    try {
+      const serverHome = fakeInstall(home)
+      fs.writeFileSync(path.join(serverHome, 'accounts', OTHER, 'data', 'server-session.enc'), 'x')
+      const log = path.join(home, 'calls.log')
+      const bin = path.join(serverHome, 'versions', '0.2.99', 'bin', 'gugu-server')
+      fs.writeFileSync(bin, `#!/bin/sh\necho "$*" >> '${log}'\n[ "$1" = unregister ] && echo '${UNREGISTERED_MARK} unreachable getaddrinfo ENOTFOUND'\nexit 0\n`, { mode: 0o755 })
+      const file = path.join(home, '.script.sh')
+      fs.writeFileSync(file, uninstallScript({ keepUserId: ME }))
+      const result = spawnSync('sh', [file], { env: { ...process.env, HOME: home, GUGU_SERVER_HOME: '' }, encoding: 'utf8' })
+      expect(result.status).toBe(1)
+      expect(result.stdout).not.toContain(UNINSTALLED_MARK)
+      expect(result.stderr).toContain(`卸载失败:账号 ${OTHER} 连不上咕咕云端`)
+      expect(result.stderr).toContain('(getaddrinfo ENOTFOUND)')
+      expect(fs.readFileSync(log, 'utf8')).not.toContain('service uninstall')
+      expect(fs.existsSync(serverHome)).toBe(true)
     } finally {
       fs.rmSync(home, { recursive: true, force: true })
     }

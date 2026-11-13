@@ -153,9 +153,10 @@ describe.skipIf(!ANTIGRAVITY_SESSION_TUI_ENABLED)('antigravity 终端腿(agy,#63
 
   it('argv:启动器包在 agy 外面;首句 -i;三档权限;续跑 --conversation <原生 id>;--model 只带用户选的', () => {
     const build = agy().behavior.prompt!.buildCommand;
-    const fresh = build({ cli: '/bin/agy', initialPrompt: 'hi', cliSessionId: 's', model: '' });
+    const fresh = build({ cli: '/bin/agy', permissionMode: 'edit', initialPrompt: 'hi', cliSessionId: 's', model: '' });
     expect(fresh.command).toBe('/bin/sh');
-    // 没有档位的旧布尔 false ⇒ 编辑档,照样显式推旗标(#7366)
+    // 没记档位的会话不起(每条会话都记着档,迁移 0052 补齐存量),❌ 按默认档猜
+    expect(() => build({ cli: '/bin/agy', initialPrompt: 'hi', cliSessionId: 's', model: '' })).toThrow('no permission tier');
     expect(fresh.args).toEqual(['-c', ANTIGRAVITY_LAUNCH_SCRIPT, '/bin/agy', '--mode', 'accept-edits', '-i', 'hi']);
 
     const full = build({ cli: '/bin/agy', permissionMode: 'full-access', cliSessionId: 's', model: '' });
@@ -168,12 +169,12 @@ describe.skipIf(!ANTIGRAVITY_SESSION_TUI_ENABLED)('antigravity 终端腿(agy,#63
       .toThrow(/no read-only mode on the terminal leg/);
 
     const resumed = build({
-      cli: '/bin/agy', cliSessionId: 's', providerSessionId: 'conv-1', isResuming: true,
+      cli: '/bin/agy', permissionMode: 'edit', cliSessionId: 's', providerSessionId: 'conv-1', isResuming: true,
       initialPrompt: 'ignored', model: 'gemini-3.1-pro-low',
     });
     expect(resumed.args.slice(2)).toEqual(['/bin/agy', '--conversation', 'conv-1', '--mode', 'accept-edits', '--model', 'gemini-3.1-pro-low']);
     // 没有原生 id 的续跑:❌ 发一个没有值的 --conversation
-    expect(() => build({ cli: '/bin/agy', cliSessionId: 's', isResuming: true, model: '' })).toThrow(
+    expect(() => build({ cli: '/bin/agy', permissionMode: 'edit', cliSessionId: 's', isResuming: true, model: '' })).toThrow(
       /native conversation id/
     );
   });

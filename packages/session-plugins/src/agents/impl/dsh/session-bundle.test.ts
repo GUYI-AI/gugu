@@ -101,7 +101,7 @@ describe('DeepSeek Harness 会话包', () => {
     ['edit', 'workspace-write'],
     ['full-access', 'danger-full-access'],
   ] as const)('自治级别 %s ⇒ 权限插件按 %s 写进会话(新建与续接同一条路,❌ DSH_PERMISSION_MODE)', (permissionMode, mode) => {
-    const result = materializeDshSessionBundle(ctx, bundle({ autonomy: { mode: permissionMode === 'full-access' ? 'full-access' : 'approval-required', permissionMode } }));
+    const result = materializeDshSessionBundle(ctx, bundle({ autonomy: { permissionMode } }));
     const { rows } = patchOf(result);
     const plugin = result.artifacts.find((artifact) => /gugu-permission\.mjs$/.test(artifact.path))!;
     expect(plugin.content).toBe(DSH_PERMISSION_PLUGIN_SOURCE);
@@ -118,7 +118,7 @@ describe('DeepSeek Harness 会话包', () => {
   });
 
   it('没有规划档:选了 plan 响亮拒绝,❌ 悄悄换成别的档', () => {
-    expect(() => materializeDshSessionBundle(ctx, bundle({ autonomy: { mode: 'approval-required', permissionMode: 'plan' } })))
+    expect(() => materializeDshSessionBundle(ctx, bundle({ autonomy: { permissionMode: 'plan' } })))
       .toThrow(/no permission mode for 'plan' or any stricter one/);
   });
 

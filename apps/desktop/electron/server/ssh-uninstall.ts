@@ -20,6 +20,7 @@ import { buildSshArgs, classifySshFailure, lastLines, type SshTarget } from './s
 import type { SpawnSsh, SshRunResult } from './ssh-install/runner'
 import { desktopServerChannel, remoteServerPaths, serverNames } from './server-names'
 import { verifiedUninstallProcessesScript } from './ssh-uninstall-processes'
+import { UNREGISTERED_MARK } from './server-unregister'
 
 export const INSPECT_BEGIN = '__GUGU_UNINSTALL_PROBE_BEGIN__'
 export const INSPECT_END = '__GUGU_UNINSTALL_PROBE_END__'
@@ -109,7 +110,9 @@ export function uninstallScript(options: { keepUserId?: string | null } = {}): s
     '    [ -f "$d/data/server-session.enc" ] || continue',
     '    id="$(sed -n \'s/.*"userId": *"\\([^"]*\\)".*/\\1/p\' "$d/account.json" 2>/dev/null | head -n 1)"; [ -n "$id" ] || id="$(basename "$d")"',
     '    [ "$id" = "$KEEP" ] && continue',
-    '    if [ "${d%/}" = "$H/account" ]; then "$B" unregister </dev/null 2>/dev/null; else "$B" unregister --account "$id" </dev/null 2>/dev/null; fi',
+    '    if [ "${d%/}" = "$H/account" ]; then o="$("$B" unregister </dev/null 2>/dev/null)"; else o="$("$B" unregister --account "$id" </dev/null 2>/dev/null)"; fi',
+    // 连不上云端的账号:它的登录态还在,停在这里(什么都还没删),网络好了重卸一次就能补上。
+    `    case "$o" in *"${UNREGISTERED_MARK} unreachable"*) echo "卸载失败:账号 $id 连不上咕咕云端,没能从它的设备列表里移除这台机器(\${o#*${UNREGISTERED_MARK} unreachable });网络恢复后再卸载一次" >&2; exit 1 ;; esac`,
     '  done',
     'fi',
     'if [ -n "$OWN_B" ] && [ -x "$B" ]; then',

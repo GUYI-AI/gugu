@@ -461,6 +461,13 @@ export interface AppFileEntry {
    * `null`: no cloud copy (a project file kept on its machine, a document, a folder). Absent where the read does not say.
    */
   keep?: { expiresAt: string | null; mine: boolean } | null;
+  /**
+   * `files.list`'s answer only: when its cloud copy was cleared at its expiry and nothing replaced it — it no longer opens
+   * (a file its machine keeps is never expired). Absent otherwise.
+   */
+  expiredAt?: string;
+  /** `files.list`'s answer only: how many items are directly in a folder, counted up to 1000 (1000 means 1000 or more). Absent otherwise. */
+  childCount?: number;
   /** A working copy's entry that is a symbolic link (`files.list`'s answer): it may point nowhere, or outside. */
   symlink?: true;
   /** A chat file's version (G1: `files.replace` makes the next one); `null` for a working copy's file. */

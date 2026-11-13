@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { eq } from 'drizzle-orm';
-import { resolveSessionPermissionMode } from '@gugu/session-core/acp';
+import { NEW_SESSION_PERMISSION_MODE } from '@gugu/session-core/acp';
 import { createLocalProject } from '@main/core/projects/operations/create-local-project';
 import { ensureRepositoryWorkspace } from '@main/core/projects/operations/ensure-repository-workspace';
 import { getLocalProjectByPath } from '@main/core/projects/operations/getProjects';
@@ -173,7 +173,7 @@ export async function importLocalSession(
         origin: { kind: 'import', providerSessionId: providerSessionId },
         type: runtime,
         // 档位显式写进记录:缺席时终端腿会退回「不加旗标」= harness 自己挑档(#7366)。与新建缺省同一个答案。
-        permissionMode: resolveSessionPermissionMode({}),
+        permissionMode: NEW_SESSION_PERMISSION_MODE,
       },
     },
     workspaceConfig: buildWorkspaceConfigFromPreset('repo-root', { repositoryWorkspaceId }),

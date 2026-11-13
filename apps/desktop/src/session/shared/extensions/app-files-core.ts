@@ -186,6 +186,10 @@ interface ItemRow {
    */
   expires_at?: string | null;
   is_mine?: boolean | null;
+  /** `workspace_list_as` only: when the group's cloud copy was cleared at its expiry and no live copy replaced it. */
+  copy_expired_at?: string | null;
+  /** `workspace_list_as` only (gugu-supabase 20261112030000): how many items are directly in a folder; null for a file. */
+  child_count?: number | string | null;
   /** `workspace_list_as` only: the device that keeps its current version, when that is not in the cloud. */
   host_device_id?: string | null;
 }
@@ -288,6 +292,9 @@ function entryOf(row: ItemRow, claimant: Claimant): AppFileEntry {
       : null,
     sourceMessageIds: row.source_message_ids ?? [],
     ...('is_mine' in row ? { keep: typeof row.is_mine === 'boolean' ? { expiresAt: row.expires_at ?? null, mine: row.is_mine } : null } : {}),
+    // A file its machine keeps opens from there (file_resolve_as answers it local), whatever became of a cloud copy.
+    ...(row.copy_expired_at && !row.host_device_id ? { expiredAt: row.copy_expired_at } : {}),
+    ...(folder && row.child_count != null ? { childCount: Number(row.child_count) } : {}),
   }, claimant);
 }
 
@@ -636,7 +643,7 @@ async function asListed(token: string, row: ItemRow, actor: string): Promise<Ite
     .catch(() => []);
   const listed = found.find((one) => one.id === row.id);
   // A list that does not say which machine holds it (undefined) leaves that to be resolved, as the row from get does.
-  return listed ? { ...row, expires_at: listed.expires_at ?? null, is_mine: listed.is_mine ?? null, host_device_id: listed.host_device_id } : row;
+  return listed ? { ...row, expires_at: listed.expires_at ?? null, is_mine: listed.is_mine ?? null, copy_expired_at: listed.copy_expired_at ?? null, host_device_id: listed.host_device_id } : row;
 }
 
 /**
