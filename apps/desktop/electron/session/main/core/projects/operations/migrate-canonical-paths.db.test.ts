@@ -19,6 +19,7 @@ vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), info: vi.fn(), error:
 
 import { claudeProjectKey, copyClaudeHistoryForMovedFolders, migrateCanonicalPaths, migrateSessionOutputPaths } from './migrate-canonical-paths';
 import { KV } from '@main/db/kv';
+import { log } from '@main/lib/logger';
 
 describe('canonical-path migration', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>;
@@ -78,6 +79,8 @@ describe('canonical-path migration', () => {
     expect(conflicts).toEqual([{ table: 'workspaces', id: 'ws-home', path: alias }]);
     expect(moved.map((m) => m.id)).toEqual(['00000000-0000-4000-8000-000000000001']);
     expect(rows('workspaces')['ws-home'].path).toBe(alias);
+    // Loud, not only in the record: a warn with how many and the first one.
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('canonical paths'), expect.objectContaining({ count: 1, first: alias }));
   });
 
   it('what a session opened follows its folder', async () => {

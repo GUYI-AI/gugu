@@ -85,7 +85,11 @@ export function migrateCanonicalPaths(file: string): CanonicalPathMigration {
       moved.push(move);
     }
   });
-  if (conflicts.length > 0) log.warn('canonical paths: rows left as they were, another row holds their folder', { conflicts });
+  // Said at every start while it stands (the run is idempotent, so a conflict comes back each time), at warn: it is the
+  // one outcome a person has to act on.
+  if (conflicts.length > 0) {
+    log.warn('canonical paths: rows left as they were, another row holds their folder', { count: conflicts.length, first: conflicts[0]!.path, conflicts });
+  }
   return { moved, conflicts };
 }
 
