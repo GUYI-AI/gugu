@@ -1,4 +1,5 @@
-import { canonicalPath, inWorkingCopy } from '@gugu/session-core/files';
+// The paths module alone, not the files barrel: an App's confined program loads this, and has no use for the watcher.
+import { canonicalPath, inWorkingCopy } from '@gugu/session-core/files/paths';
 import * as path from 'node:path';
 
 /**
