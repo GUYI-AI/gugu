@@ -174,7 +174,7 @@ const arr = (o: Obj, k: string, at: string): unknown[] => {
 }
 const latest = (v: unknown, at: string): HealthLatest | null => {
   if (v === null || v === undefined) return null
-  if (!isObj(v) || typeof v.value !== 'number' || typeof v.at !== 'string') throw new Problem(at)
+  if (!isObj(v) || typeof v.value !== 'number' || !Number.isFinite(v.value) || typeof v.at !== 'string') throw new Problem(at)
   return { value: v.value, at: v.at }
 }
 
