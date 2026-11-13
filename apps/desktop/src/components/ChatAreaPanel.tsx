@@ -564,7 +564,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       messages={messages}
       onClose={() => closeInfoTab(activeChatId)}
       onClearMessages={clearMessages}
-      onOpenSearch={() => searchInChat(activeChat.id)}
       onSetNotificationLevel={(level) => setChatNotificationLevel(activeChat.id, level)}
       onTogglePinned={(pinned) => pinChat(activeChat.id, pinned)}
       memberProfiles={drawerMemberProfiles}

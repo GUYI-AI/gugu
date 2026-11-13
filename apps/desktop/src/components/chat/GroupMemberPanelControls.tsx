@@ -11,8 +11,8 @@ import { MemberProfilePopover, MemberProfileRoot } from '../MemberProfilePopover
 import { Popover } from '../ui/Popover'
 import type { MemberProfileCardModel, MemberProfileChatTarget, MemberProfileEditControls } from '../MemberProfileCard'
 import { type ActiveMemberProfile, type MemberProfileHandle, agentOwnerDisplayName, toAgentProfile, toHumanProfile } from '../memberProfileModels'
+import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
-import { Hint } from '../ui/Tooltip'
 import { DropdownMenu, MenuItem } from '../ui/Menu'
 import { AddGroupMembers } from './AddGroupMembers'
 import { useMobileShell } from '../../hooks/useMobileShell'
@@ -26,7 +26,7 @@ import { settingsErrorStyle } from './groupSettingsStyles'
 
 const errorStyle: CSSProperties = { ...settingsErrorStyle, padding: '4px 14px' }
 
-export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapshot, identities, agentStatuses, currentUserId, onReload, onOpenUserChat, onWhisper }: {
+export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapshot, identities, agentStatuses, currentUserId, onReload, onOpenUserChat, onWhisper, invite = false }: {
   chatId: string
   chatKind: 'group' | 'topic'
   settings: GroupChatSettings | null
@@ -37,11 +37,13 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
   onReload: () => Promise<void>
   onOpenUserChat?: (target: MemberProfileChatTarget) => void
   onWhisper?: (target: MemberProfileChatTarget) => void
+  /** 进来时选人页已经开着(群信息页成员行的「+」)。 */
+  invite?: boolean
 }) {
   const { t } = useTranslation(['messaging', 'contacts'])
   const viewerIsManager = settings?.can_manage === true
   const isGroup = chatKind === 'group'
-  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(invite && chatKind === 'group')
   // 资料卡:每一行是它的 Trigger(payload = 那一行的资料),再点同一行就关。开着时错误显示在卡里。
   const [profileCard] = useState(() => Popover.createHandle<ActiveMemberProfile>())
   const [profileOpen, setProfileOpen] = useState(false)
@@ -139,12 +141,11 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
   const { projectGroup, canInviteHumans: canInvite, showInvite } = groupInviteAccess(chatId, chatKind, settings)
   const mobile = useMobileShell()
 
+  // 成员页的第一行,带字、通栏:邀请只有这一个入口(页头只有「成员 N」),所以它得一眼看得见。
   const inviteAction: ReactNode = showInvite ? (
-    <Hint label={t('group.memberList.invite')} side="bottom">
-      <IconButton aria-label={t('group.memberList.invite')} onClick={openPicker} data-testid="member-list-invite">
-        <UserPlus />
-      </IconButton>
-    </Hint>
+    <Button className="flex-1" onClick={openPicker} data-testid="member-list-invite">
+      <UserPlus />{t('group.memberList.invite')}
+    </Button>
   ) : null
 
   const rowActions = useCallback((memberId: string): ReactNode => {

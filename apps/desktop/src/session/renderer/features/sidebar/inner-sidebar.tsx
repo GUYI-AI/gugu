@@ -1,13 +1,10 @@
-import { ChevronLeft, ChevronRight, SquarePen, Users } from '@/lib/icons';
+import { ChevronLeft, ChevronRight, SquarePen } from '@/lib/icons';
 import { computed, observable, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
 import { Avatar } from '@/components/Avatar';
 import { ListColumnToggle } from '@/components/PanelToggleButtons';
-import { ChatDetailsMenuItems } from '@/components/chat/ChatDetailsMenuItems';
 import { IconButton } from '@/components/ui/IconButton';
-import { MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { useShownAgentName } from '@/hooks/useShownAgentName';
 import { useChatSummaries, type ChatSummary } from '@/lib/chatSummariesBridge';
 import { setComposerVerb } from '@/lib/composerVerbBridge';
@@ -26,9 +23,8 @@ import {
 } from '@/lib/innerSidebarBridge';
 import { publishPanelToggle } from '@/lib/panelToggles';
 import { readShellSlots } from '@/lib/shellSlots';
-import { openInfoTab } from '@renderer/features/chats/chat-tabs/chat-layouts';
+import { closeInfoTab, infoTabOf, openInfoTab } from '@renderer/features/chats/chat-tabs/chat-layouts';
 import { openChatOnScreen } from '@renderer/features/chats/open-chat';
-import { ProjectMenuItems } from '@renderer/features/projects/components/project-menu';
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
@@ -63,7 +59,6 @@ import {
 } from './inner-sidebar-anchor';
 import { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded } from './inner-sidebar-fold';
 import {
-  InnerHeadActionsMenu,
   InnerHeadRowLayout,
   InnerSidebarFoldButton,
   innerSectionEmptyClass,
@@ -230,7 +225,7 @@ export const InnerSidebar = observer(function InnerSidebar() {
   // 换了对话就回到第一级(「全部」只对那一个对话)。
   useEffect(() => setInnerSidebarTopicsAll(null), [next?.chatId]);
   useEffect(() => runInAction(() => innerSidebarChat.set(next)), [next?.chatId, next?.kind]);
-  // 壳据此收起对话页头上与这一列重复的按钮(成员、话题、邀请)。
+  // 壳据此收起对话页头上与这一列重复的那一枚(话题)。
   useEffect(() => publishInnerSidebarChat(next?.chatId ?? null), [next?.chatId]);
   // 头一行是这一列自己:群 / 项目开着它的对话时,智能体开着它自己的(顶层)会话时(❌ 它的子智能体)。
   const ownSessions = next?.kind === 'agent' ? (families.topLevelOf.get(next.agentUserId) ?? []) : [];
@@ -286,7 +281,7 @@ export const InnerSidebar = observer(function InnerSidebar() {
         />
       ) : sampleOwnerId ? (
         <InnerSidebarFrame kind="sample">
-          <SampleInnerSidebar ownerId={sampleOwnerId} />
+          <SampleInnerSidebar />
         </InnerSidebarFrame>
       ) : null}
     </>
@@ -424,8 +419,9 @@ function GroupHeadAvatar({ chatId, summary }: { chatId: string; summary: ChatSum
 }
 
 /**
- * 头一行就是这个群 / 项目自己:头像 + 名字,点它回到群聊(群聊开着时它是选中的)。行尾:「…」(悬停才出:群信息与设置、成员,
- * 项目再加项目那份菜单)、新智能体(常显)、收起这一列(常显,最右)。几枚钮是「对话」分区头上那种钮。
+ * 头一行就是这个群 / 项目自己:头像 + 名字,点它 = 它的信息与设置(回到群聊,信息摆在旁边;开着时再点一下收起)。
+ * 行尾:新智能体、收起这一列(最右),都常显,是「对话」分区头上那种钮。❌「…」:信息与设置就是点这一行,成员与邀请在页头
+ * (ChatHeaderActions,和手机、没有这一列时同一处),项目那份菜单在项目页签的右键里。
  * ❌ 未读数(#2548 提议稿 state0):这个群的数挂在左边列表它那一行上(叫到你的才是红数,其余一颗灰点),这里再挂一份就是两处。
  */
 const InnerHeadRow = observer(function InnerHeadRow({
@@ -438,16 +434,15 @@ const InnerHeadRow = observer(function InnerHeadRow({
   active: boolean;
 }) {
   const { translate } = useSessionMessages();
-  const { t } = useTranslation('messaging');
   const { chatId } = anchor;
   const name = summary?.name ?? '';
   // 项目的代表本地项目(与侧栏那一行同一个);一个文件夹都没有的项目没有 —— 新智能体走群那一条,封面按群取色(同 partnerProjects)。
   const rowProjectId = anchor.kind === 'project' ? accountProjectsStore.representativeOf(chatId) : undefined;
-  const actionsLabel = translate(anchor.kind === 'project' ? 'sidebar.projectActions' : 'sidebar.groupActions');
   const newAgentLabel = translate(anchor.kind === 'project' ? 'sidebar.newAgentInProject' : 'sidebar.newAgentInGroup');
-  const openInfo = (page?: 'members') => {
+  const toggleInfo = () => {
+    if (active && infoTabOf(chatId)?.shown) return closeInfoTab(chatId);
     openChatOnScreen(chatId, false);
-    openInfoTab(chatId, page);
+    openInfoTab(chatId);
   };
   // 同输入框「+」右边那个「新任务」:项目走项目行「+」那一条(prepareProjectTask),群把这个群的框换成新任务。
   const newAgent = () => {
@@ -458,19 +453,7 @@ const InnerHeadRow = observer(function InnerHeadRow({
   // #2600 项目群和别的群一样戴群自己的头像(没设 = 成员拼图),❌ 文件夹封面。
   const avatar: ReactNode = <GroupHeadAvatar chatId={chatId} summary={summary} />;
   return (
-    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => openChatOnScreen(chatId, false)} trailingButtons={2}>
-      <InnerHeadActionsMenu label={actionsLabel}>
-        <ChatDetailsMenuItems isGroupChat onOpenInfo={() => openInfo()} />
-        <MenuItem icon={<Users size={16} />} onClick={() => openInfo('members')}>
-          {t('header.memberList')}
-        </MenuItem>
-        {rowProjectId ? (
-          <>
-            <MenuSeparator />
-            <ProjectMenuItems projectId={rowProjectId} chatId={chatId} />
-          </>
-        ) : null}
-      </InnerHeadActionsMenu>
+    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={toggleInfo} trailingButtons={2}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -489,9 +472,8 @@ const InnerHeadRow = observer(function InnerHeadRow({
 /**
  * #2574 独立智能体那一列的头一行:它自己 —— 左边列表它那一行的名字与头像(同一份,同一层「起名中」),点它直接回到它自己的会话
  * (❌ 绕道打开私聊:那一下若落成聊天视图,这一列就跟着收了)。
- * 行尾只有收起这一列(最右,同群 / 项目):
- *  · ❌ 新智能体那支笔:子智能体是它自己派出去的,这里没有「在它里面新建」这件事;新建一个智能体是列表顶上那一行。
- *  · ❌「…」:群 / 项目的「…」装的是页头让给这一列的群信息、成员;智能体的页头什么都没让出来,它自己的菜单在左边它那一行上。
+ * 行尾只有收起这一列(最右,同群 / 项目)。❌ 新智能体那支笔:子智能体是它自己派出去的,这里没有「在它里面新建」这件事;
+ * 新建一个智能体是列表顶上那一行。
  */
 const InnerAgentHeadRow = observer(function InnerAgentHeadRow({
   anchor,
@@ -518,7 +500,6 @@ const InnerAgentHeadRow = observer(function InnerAgentHeadRow({
       active={active}
       onOpen={openOwnSession}
       trailingButtons={1}
-      hoverMenu={false}
     >
       <InnerSidebarFoldButton />
     </InnerHeadRowLayout>

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { CSSProperties, ReactNode } from 'react'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import type { ChatItem, GroupCollabSnapshot, NotificationLevel } from '@gugu/core/shared/types/chat'
+import { GroupFolderRow, GroupMembersRow } from './GroupInfoRows'
 import { GroupNameRow } from './GroupNameRow'
 import { Avatar } from '../Avatar'
 import { Button } from '../ui/Button'
@@ -42,8 +43,6 @@ const avatarUploadingStyle: CSSProperties = {
 }
 const profileTextStyle: CSSProperties = { flex: 1, minWidth: 0 }
 const memberCountStyle: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--muted-fg)', marginTop: 3 }
-const memberStackStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', marginRight: 8 }
-const memberStackItemStyle: CSSProperties = { display: 'inline-flex', marginLeft: -6, borderRadius: 'var(--radius-circle)' }
 const leaveStyle: CSSProperties = {
   marginTop: 20, textAlign: 'center', color: 'var(--danger-fg)', fontSize: 'var(--font-body)', fontWeight: 500,
   cursor: 'pointer', padding: 11, borderRadius: 'var(--radius-xl)', background: 'var(--danger-tint)',
@@ -52,7 +51,6 @@ const confirmStyle: CSSProperties = { marginTop: 20 }
 const confirmTextStyle: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--text-secondary)', margin: '0 0 8px' }
 const confirmActionsStyle: CSSProperties = { display: 'flex', gap: 8 }
 const confirmButtonStyle: CSSProperties = { flex: 1 }
-const MEMBER_PREVIEW_COUNT = 5
 
 function firstLine(text: string | null | undefined): string | null {
   const line = text?.split('\n').find((part) => part.trim())
@@ -72,7 +70,6 @@ export function GroupMembersSection({
   onDissolveGroup,
   onOpenUserChat,
   onWhisper,
-  onOpenSearch,
   onSetNotificationLevel,
   onTogglePinned,
   onClearMessages,
@@ -92,7 +89,6 @@ export function GroupMembersSection({
   onDissolveGroup?: () => void | Promise<void>
   onOpenUserChat?: MemberListPanelProps['onOpenUserChat']
   onWhisper?: MemberListPanelProps['onWhisper']
-  onOpenSearch: () => void
   onSetNotificationLevel: (level: NotificationLevel) => Promise<void>
   onTogglePinned: (pinned: boolean) => Promise<void>
   onClearMessages: () => Promise<void>
@@ -118,6 +114,9 @@ export function GroupMembersSection({
   const [avatarDragOver, setAvatarDragOver] = useState(false)
   const [avatarEditing, setAvatarEditing] = useState(false)
   const [draft, setDraft] = useState('')
+  // 成员行的「+」:进成员页时选人页已经开着(成员页自己那一个)。
+  const [inviting, setInviting] = useState(false)
+  const openMembers = (invite: boolean) => { setInviting(invite); push('members') }
 
   const unifiedMembers = useMemo(() => buildUnifiedMembers(snapshot), [snapshot])
   const totalMembers = snapshot.humans.length + snapshot.agents.length
@@ -173,7 +172,7 @@ export function GroupMembersSection({
   const subHead = (title: ReactNode, action?: ReactNode) => <SettingsPageHead title={title} action={action} onBack={canPop ? pop : undefined} onClose={mobileShell ? onClose : undefined} mobile={mobileShell} />
   let content: ReactNode
   if (page === 'members') {
-    content = <MemberListPanel settingsState={settingsState ?? ownSettings} chatId={chatId} chatKind="group" snapshot={snapshot} error={snapshotError} onReload={onReload} onOpenUserChat={onOpenUserChat} onWhisper={onWhisper} head={subHead} />
+    content = <MemberListPanel settingsState={settingsState ?? ownSettings} chatId={chatId} chatKind="group" invite={inviting} snapshot={snapshot} error={snapshotError} onReload={onReload} onOpenUserChat={onOpenUserChat} onWhisper={onWhisper} head={subHead} />
   } else if (page === 'announcement') {
     content = <AnnouncementDrawer chatId={chatId} isAdmin={viewerIsManager} head={subHead} />
   } else if (page === 'manage' && settings) {
@@ -217,7 +216,6 @@ export function GroupMembersSection({
       </>
     )
   } else {
-    const preview = unifiedMembers.slice(0, MEMBER_PREVIEW_COUNT)
     content = (
       <>
         {/* 桌面上群信息是一枚页签:它自己就是标题和 ×,只有二级页画返回;手机整页照旧左上返回 = 关。 */}
@@ -246,23 +244,8 @@ export function GroupMembersSection({
             </div>
           </div>
 
-          <SettingsNavRow
-            title={t('group.settings.members')}
-            testId="group-settings-members"
-            onClick={() => push('members')}
-            value={(
-              <>
-                <span style={memberStackStyle}>
-                  {preview.map((member) => (
-                    <span key={member.id} style={memberStackItemStyle}>
-                      <Avatar name={identitiesById[member.id]?.display_name ?? ''} avatarUrl={identitiesById[member.id]?.avatar ?? null} seed={member.id} size={24} />
-                    </span>
-                  ))}
-                </span>
-                {totalMembers}
-              </>
-            )}
-          />
+          <GroupMembersRow chatId={chatId} settings={settings} memberIds={unifiedMembers.map((member) => member.id)} total={totalMembers} onOpen={() => openMembers(false)} onInvite={() => openMembers(true)} />
+          <GroupFolderRow chatId={chatId} />
           <SettingsNavRow title={t('header.announcement')} testId="group-settings-announcement" onClick={() => push('announcement')} />
           <SettingsNavRow title={t('group.settings.rules')} testId="group-settings-rules" value={settings ? firstLine(settings.group_prompt) ?? t('group.settings.rulesUnset') : undefined} onClick={() => openTextPage('rules')} />
           <SettingsNavRow title={t('group.settings.description')} testId="group-settings-description" value={settings ? firstLine(settings.description) ?? t('group.settings.descriptionUnset') : undefined} onClick={() => openTextPage('description')} />
@@ -276,7 +259,7 @@ export function GroupMembersSection({
             appearance="settings"
             onClose={onClose}
             onClearMessages={onClearMessages}
-            onOpenSearch={onOpenSearch}
+            beforeClear={<div style={settingsSectionLabelStyle}>{t('group.settings.sectionDanger')}</div>}
             onSetNotificationLevel={onSetNotificationLevel}
             onTogglePinned={onTogglePinned}
           />

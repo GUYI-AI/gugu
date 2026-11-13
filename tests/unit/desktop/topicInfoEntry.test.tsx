@@ -76,7 +76,7 @@ async function renderTopic(mobile: boolean, manageable: boolean, subscribeAccoun
   await renderWithAppProviders(harness, createNode(ChatSettingsPanel, {
     activeChat: chat({ id: 'source', kind: 'group', name: 'Source group' }),
     topic: { topicChatId: 'topic-1', name: 'Current topic' }, mobile,
-    messages: [], onClose, onClearMessages: vi.fn(), onOpenSearch: vi.fn(),
+    messages: [], onClose, onClearMessages: vi.fn(),
     onSetNotificationLevel: vi.fn(), onTogglePinned: vi.fn(), memberProfiles: [], currentUserId: 'viewer',
     groupCollabSnapshot: snapshot, groupAgentStatuses: {}, onReloadGroupCollab: vi.fn(),
     onLeaveGroup: vi.fn(), onDissolveGroup: vi.fn(),
