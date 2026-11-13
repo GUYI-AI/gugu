@@ -379,7 +379,7 @@ export function guguLink(target: Exclude<GuguLinkTarget, { kind: 'server-login' 
     case 'session':
     case 'project':
       if (!scheme) throw new Error('An external resource link needs the build scheme')
-      return `${scheme}://${target.kind}/${encodeURIComponent(target.kind === 'session' ? target.sessionId : target.projectId)}`
+      return `${scheme}://${target.kind}/${encodeURIComponent(target.kind === 'session' ? target.sessionId : target.projectId).replace(/[()]/g, escaped)}`
   }
 }
 
