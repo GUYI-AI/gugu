@@ -117,6 +117,7 @@ export type MembershipValue = {
   joined_at: string
   inbox_published: boolean
   conversation_deleted_at?: string | null
+  conversation_hidden_at?: string | null
   role: GroupMemberRole | null
 }
 
@@ -471,6 +472,7 @@ export function shareRows<T extends { id: string }>(current: readonly T[], next:
 export type AssembleSource = {
   value<T extends EntityValue>(family: EntityFamily, id: string): T | undefined
   members(chatId: string): readonly MembershipValue[]
+  stamp?(family: EntityFamily, id: string): string | undefined
 }
 
 /** Members in display order: joined_at, then user id. */
@@ -536,6 +538,11 @@ export function assembleChat(source: AssembleSource, viewerId: string, chatId: s
     my_role: isRoomChat(chat.kind) ? own.role : undefined,
     source_chat_id: chat.source_chat_id,
     source_message_id: chat.source_message_id,
+    conversation_hidden_at: own.conversation_hidden_at ?? null,
+    conversation_visibility_revision: source.stamp?.('membership', membershipId(chat.id, viewerId)),
+    source_conversation_visibility_revision: chat.source_chat_id ? source.stamp?.('membership', membershipId(chat.source_chat_id, viewerId)) : undefined,
+    source_conversation_hidden_at: chat.source_chat_id
+      ? source.value<MembershipValue>('membership', membershipId(chat.source_chat_id, viewerId))?.conversation_hidden_at ?? null : null,
   }
 }
 
@@ -564,6 +571,7 @@ export function assemble(cache: ProjectionCache, viewerId: string): ChatItem[] {
   const source: AssembleSource = {
     value: <T extends EntityValue>(family: EntityFamily, id: string) => values.get(family)?.get(id) as T | undefined,
     members: (chatId) => membersByChat.get(chatId) ?? [],
+    stamp: (family, id) => cache.get(entityKey(family, id))?.stamp,
   }
   const rows: ChatItem[] = []
   for (const chatId of values.get('chat')?.keys() ?? []) {

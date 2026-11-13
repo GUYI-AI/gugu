@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { BellOff, CheckCircle, MoreHorizontal, PanelLeftClose, Pin, Trash } from '@/lib/icons'
-import { Menu, MenuFold, MenuItem } from '../ui/Menu'
+import { Menu, MenuFold, MenuItem, MenuSeparator } from '../ui/Menu'
 import { conversationRowMenu, type ConversationRowAction, type ConversationRowMenuState } from '../../session/shared/conversation-row-menu'
 
 const icons = { read: CheckCircle, pin: Pin, sidebar: PanelLeftClose, notifications: BellOff, trash: Trash }
@@ -25,7 +25,9 @@ export function ConversationRowContextMenu({ x, y, state, onClose, onAction, loa
   }
   return <Menu x={x} y={y} minWidth={160} onClose={onClose}>
     {loadError ? <p role="alert" className="px-3 py-2 text-sm text-[var(--danger-fg)]">{loadError}</p> : null}
-    {items.filter((item) => !item.fold).map(row)}
+    {items.filter((item) => !item.fold && item.id !== 'hide-chat' && item.id !== 'delete-chat').map(row)}
+    {state.kind === 'chat' && state.personalHiding ? <MenuSeparator /> : null}
+    {items.filter((item) => !item.fold && (item.id === 'hide-chat' || item.id === 'delete-chat')).map(row)}
     <MenuFold icon={<MoreHorizontal size={15} />} label={t('message.actions.more')} data-testid="conversation-row-more">{items.filter((item) => item.fold).map(row)}</MenuFold>
   </Menu>
 }

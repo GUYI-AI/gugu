@@ -11,6 +11,7 @@ import { parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import { chatPreviewText } from '../lib/systemNoticeText'
 import { imSelectors, type AccountImRepository } from '../lib/imRepository'
 import type { PersonalConversationDeletion } from '../lib/deleteListedConversation'
+import type { PersonalConversationHiding } from '../lib/hideListedConversation'
 import { prepareProjectedReadWatermark } from './chatRealtimeMutations'
 import { currentAuthSessionSignal } from '../lib/authSessionLoss'
 import {
@@ -248,6 +249,15 @@ export function useChatProjectionBinding(deps: {
   const identities = useCallback((accountId: string) => ownerFor(accountId).identities(), [ownerFor])
   deps.conversations.readSeqsOf = (chatId) => ownerRef.current?.owner.memberReadSeqs(chatId)
 
+  const confirmPersonalHiding = useCallback(async (accountId: string, receipt: PersonalConversationHiding) => {
+    const binding = ownerRef.current
+    if (!binding || binding.accountId !== accountId) throw new Error('Conversation projection is not attached')
+    const rows = await binding.owner.confirmPersonalHiding(receipt, currentAuthSessionSignal())
+    if (ownerRef.current !== binding) return
+    await publish(rows, binding.owner.identities(), { requestSeq: ++requestSeqRef.current,
+      notify: false, preserveMissingActive: true })
+  }, [publish, requestSeqRef])
+
   const confirmPersonalDeletion = useCallback(async (accountId: string, receipt: PersonalConversationDeletion): Promise<boolean> => {
     const binding = ownerRef.current
     if (!binding || binding.accountId !== accountId) return false
@@ -274,5 +284,5 @@ export function useChatProjectionBinding(deps: {
 
   // ⚠️ 必须**稳定**:返回新字面量 ⇒ 依赖它的 effect 与 useCallback 每渲染都重建 ⇒ 订阅/渲染循环
   // (实测:第一版返回字面量,chatSelectionIntent4314 直接跑到 heap OOM)。
-  return useMemo(() => ({ hydrate, identities, publish, attach, hasDeletedConversation, confirmPersonalDeletion }), [hydrate, identities, publish, attach, hasDeletedConversation, confirmPersonalDeletion])
+  return useMemo(() => ({ hydrate, identities, publish, attach, hasDeletedConversation, confirmPersonalHiding, confirmPersonalDeletion }), [hydrate, identities, publish, attach, hasDeletedConversation, confirmPersonalHiding, confirmPersonalDeletion])
 }
