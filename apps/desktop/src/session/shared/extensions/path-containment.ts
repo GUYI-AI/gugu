@@ -1,4 +1,4 @@
-import * as fs from 'node:fs';
+import { canonicalPath, inWorkingCopy } from '@gugu/session-core/files';
 import * as path from 'node:path';
 
 /**
@@ -13,20 +13,9 @@ import * as path from 'node:path';
 export function resolvesInside(root: string, relative: string): string | null {
   if (typeof relative !== 'string' || relative.length === 0) return null;
   if (path.isAbsolute(relative)) return null;
-  const target = path.resolve(root, relative);
-  if (target !== root && !target.startsWith(root + path.sep)) return null;
-  // Resolve whatever exists of the chain: a symlink at any level would otherwise
-  // pass the string test above and still land outside.
-  let existing = target;
-  while (!fs.existsSync(existing) && path.dirname(existing) !== existing) {
-    existing = path.dirname(existing);
-  }
-  // ⚠️ 两边都要 realpath 再比。macOS 上 `/var/...` 的真身是 `/private/var/...`,
-  // 只解目标那一半会让**每一次调用都判成越界** —— 在 macOS 上这意味着扩展图标
-  // 一个都渲染不出来、工作副本一个字节也写不进去,而 Linux 上全绿。这条是在
-  // mac1 上真跑单测才露出来的,不是想出来的。
-  const realRoot = fs.existsSync(root) ? fs.realpathSync(root) : root;
-  const real = fs.realpathSync(existing);
-  if (real !== realRoot && !real.startsWith(realRoot + path.sep)) return null;
-  return target;
+  // The one containment check (`@@@working-copy-containment`): both sides canonical, by name, and a link that leads out
+  // (at any level) is outside. macOS's `/var` → `/private/var` is resolved on both sides alike.
+  const base = canonicalPath(path.resolve(root));
+  const target = canonicalPath(path.resolve(base, relative));
+  return inWorkingCopy(base, target) === null ? null : target;
 }

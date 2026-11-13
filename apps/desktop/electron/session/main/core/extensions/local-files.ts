@@ -23,7 +23,7 @@ import {
 } from '@shared/extensions/app-runtime-protocol';
 import { LOCAL_DOC_PREFIX, type Grant, type SocketEvents, type SocketHandle } from '@shared/extensions/file-sync-core';
 import type { FileChangeUpdate } from '@gugu/session-core/files';
-import { resolvesInside } from './path-containment';
+import { canonicalPath, inWorkingCopy, placeUnder, type CanonicalPath } from '@gugu/session-core/files';
 
 /**
  * `gugu.files` on a task's working copy: a file service in main, over the disk (App platform design L2, task files
@@ -68,7 +68,7 @@ interface Registered {
   abs: string;
   rel: string;
   /** The working copy's real path (the one it was opened in). */
-  root: string;
+  root: CanonicalPath;
   contentType: string;
   gen: number;
   /** Who opened it last: presence and `self` are stamped with it (one person per machine). */
@@ -179,7 +179,7 @@ function bytesOf(text: string, shape: DiskShape): Buffer {
 /** Where a file is: its real path, its working copy's real path, and its path in it (POSIX). Read live: a rename moves it. */
 export interface WatchedFile {
   abs: string;
-  root: string;
+  root: CanonicalPath;
   rel: string;
 }
 
@@ -511,9 +511,7 @@ export function createLocalFileService(options: {
       const { abs, rel } = file;
       let reg = byPath.get(abs);
       if (!reg) {
-        // Real, as `abs` is (macOS's /tmp is /private/tmp), as the change stream speaks.
-        const root = fs.realpathSync.native(file.root);
-        reg = { key: randomBytes(12).toString('hex'), abs, rel, root, contentType, gen: 1, actor, waiters: new Set() };
+        reg = { key: randomBytes(12).toString('hex'), abs, rel, root: file.root, contentType, gen: 1, actor, waiters: new Set() };
         byPath.set(abs, reg);
         byKey.set(reg.key, reg);
       }
@@ -564,17 +562,10 @@ export function createLocalFileService(options: {
      * file caught half-written is read again with the next batch. `resync`: anything may have changed.
      */
     heard(update: FileChangeUpdate): void {
-      // A change is said under its working copy's path as named (`@@@named-root`); an open file is kept by its real path.
-      const folders = new Map<string, string>();
-      const realOf = (changed: string) => {
-        const folder = path.dirname(changed);
-        if (!folders.has(folder)) folders.set(folder, (() => { try { return fs.realpathSync.native(folder); } catch { return folder; } })());
-        return path.join(folders.get(folder)!, path.basename(changed));
-      };
-      const changed = update.kind === 'resync' ? [] : update.changes.map((change) => realOf(change.path));
+      // The stream speaks canonical paths (`@@@canonical-path`), as an open file's `abs` is: compared as they come.
       for (const reg of byKey.values()) {
         if (!loadedAt(reg.abs) && reg.waiters.size === 0) continue;
-        const touched = update.kind === 'resync' || changed.some((at) => reg.abs === at || reg.abs.startsWith(at + path.sep));
+        const touched = update.kind === 'resync' || update.changes.some((change) => reg.abs === change.path || reg.abs.startsWith(change.path + path.sep));
         if (touched) void look(reg).catch(() => warn('Local files: protected file is unavailable'));
       }
     },
@@ -604,7 +595,7 @@ export interface LocalSurface {
   /** Which folder this is, as the call named it. */
   place: WorkspacePlace;
   /** The folder's real path. */
-  workspaceRoot: string;
+  workspaceRoot: CanonicalPath;
   /** The file (relative to it) the host opened this page for, if it is in this folder: it needs no capability. */
   filePath: string | null;
 }
@@ -626,25 +617,30 @@ export function createLocalAppFiles(platform: {
   const { service, sync } = platform;
   const has = (surface: LocalSurface, capability: 'files:read' | 'files:write') => platform.hasCapability(surface.extensionId, capability);
 
-  /** A path in the working copy, by its real path: a link that points outside it is not there (`resolvesInside`, the one check). */
-  function inside(root: string, rel: string, what: 'existing' | 'new'): { abs: string; rel: string } {
+  /**
+   * A path in the working copy (`@@@working-copy-containment`, the one check): where its bytes are, and its path there. A link
+   * in it that leads inside is read where it leads; one that leads out is not there.
+   */
+  function inside(root: CanonicalPath, rel: string, what: 'existing' | 'new'): { abs: string; rel: string } {
     if (typeof rel !== 'string' || !rel || rel.includes('\0') || path.isAbsolute(rel)) {
       throw new AppFileError('invalid', 'Say which file, by its path in the working copy');
     }
-    const target = resolvesInside(root, rel);
     try {
-      if (!target || target === root) throw new Error('outside');
-      const abs = what === 'existing' ? fs.realpathSync(target) : path.join(fs.realpathSync(path.dirname(target)), path.basename(target));
-      return { abs, rel: path.relative(root, abs).split(path.sep).join('/') };
+      const file = canonicalPath(path.join(root, rel));
+      const placed = inWorkingCopy(root, file);
+      if (!placed) throw new Error('outside');
+      const abs = what === 'existing' ? fs.realpathSync(file) : file;
+      return { abs, rel: what === 'existing' ? inWorkingCopy(root, canonicalPath(abs)) ?? placed : placed };
     } catch {
       throw new AppFileError('not-found', `No file ${JSON.stringify(rel)} in this working copy`);
     }
   }
 
   /** The folders a new path needs, made only once it is known to be inside (R22): `../x/y` or a link out makes none outside. */
-  function makeFolderOf(root: string, rel: string): void {
-    const target = resolvesInside(root, rel);
-    if (target) fs.mkdirSync(path.dirname(target), { recursive: true });
+  function makeFolderOf(root: CanonicalPath, rel: string): void {
+    if (typeof rel !== 'string' || !rel || path.isAbsolute(rel)) return;
+    const target = canonicalPath(path.join(root, rel));
+    if (inWorkingCopy(root, target)) fs.mkdirSync(path.dirname(target), { recursive: true });
   }
 
   /** In a working copy a file's id and its name are the same thing: its path. */
@@ -652,17 +648,16 @@ export function createLocalAppFiles(platform: {
   const pathOf = (surface: LocalSurface, ref: WorkspaceFileRef) => {
     const name = 'id' in ref ? ref.id : ref.name;
     if (!path.isAbsolute(name)) return name;
-    const rel = path.relative(surface.workspaceRoot, name);
-    return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel.split(path.sep).join('/') : name;
+    return placeUnder(surface.workspaceRoot, canonicalPath(name)) || name;
   };
 
   const nameTaken = (rel: string) => new AppFileError('name-taken', `${rel} already exists`);
 
   /** What is at `rel` itself: a link stays the link, wherever it points. Its folder must be inside; the top is no entry to move or delete. */
-  function entryAt(root: string, rel: string): { abs: string; rel: string } {
+  function entryAt(root: CanonicalPath, rel: string): { abs: string; rel: string } {
     const name = path.posix.basename(rel);
     const folder = path.posix.dirname(rel);
-    const parent = folder === '.' ? { abs: fs.realpathSync(root), rel: '' } : inside(root, folder, 'existing');
+    const parent = folder === '.' ? { abs: root, rel: '' } : inside(root, folder, 'existing');
     const abs = path.join(parent.abs, name);
     if (!name || name === '.' || name === '..' || !fs.lstatSync(abs, { throwIfNoEntry: false })) throw new AppFileError('not-found', `No file ${JSON.stringify(rel)} in this working copy`);
     return { abs, rel: path.posix.join(parent.rel, name) };

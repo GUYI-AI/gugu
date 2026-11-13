@@ -1,5 +1,5 @@
-import { sep } from 'node:path';
 import { err, ok, type Result } from '@gugu/session-shared';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import { ResourceMap } from '../lib';
 import type { IWatchService } from '../services/fs-watch/api';
 import { nativeWatchBackend } from '../services/fs-watch/impl/native-backend';
@@ -81,7 +81,7 @@ export class FilesRuntime implements IFilesRuntime {
   }
 
   watchChanges(
-    rootPath: string,
+    rootPath: CanonicalPath,
     cb: (update: FileChangeUpdate) => void,
     options?: FileChangeWatchOptions
   ): Result<FileChangeSubscription, FileError> {
@@ -92,19 +92,10 @@ export class FilesRuntime implements IFilesRuntime {
         message: 'FilesRuntime disposed',
       });
     }
-    const validatedRoot = validateAbsolutePath(rootPath);
-    if (!validatedRoot.success) return validatedRoot;
-    const named = validatedRoot.data;
-    const real = realpathOrResolve(named);
-    const changes = new FileChanges({ rootPath: real, watcher: this.watcher });
-    // @@@named-root - the watch runs on the real folder, but what changed is said under the root as the caller named it:
-    // every consumer compares with that name (a workspace's recorded path, a server's task folder through the account link
-    // `accounts/<id>` → `account`), so real paths matched none of them.
-    const underNamed = (path: string) =>
-      path === real ? named : path.startsWith(real + sep) ? named + path.slice(real.length) : path;
-    const report = real === named ? cb : (update: FileChangeUpdate) =>
-      cb(update.kind === 'resync' ? update : { kind: 'changes', changes: update.changes.map((change) => ({ ...change, path: underNamed(change.path) })) });
-    const subscription = changes.watch(report, options);
+    // A canonical root is the folder's real path (`@@@canonical-path`): what the OS reports under it is said in the same
+    // spelling every consumer compares with, no path changed per event.
+    const changes = new FileChanges({ rootPath, watcher: this.watcher });
+    const subscription = changes.watch(cb, options);
     if (!subscription.success) {
       changes.dispose();
       return subscription;

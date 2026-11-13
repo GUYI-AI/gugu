@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Workspace } from './workspace';
 import { WorkspaceRegistry } from './workspace-registry';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 function makeWorkspace(id: string): {
   workspace: Workspace;
@@ -15,7 +16,7 @@ function makeWorkspace(id: string): {
   return {
     workspace: {
       id,
-      path: `/tmp/${id}`,
+      path: `/tmp/${id}` as CanonicalPath,
       configPath: `/tmp/${id}/.emdash.json`,
       fileSystem: {} as Workspace['fileSystem'],
       fileTree: { dispose: fileTreeDispose } as unknown as Workspace['fileTree'],

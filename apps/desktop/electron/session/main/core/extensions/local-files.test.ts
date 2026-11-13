@@ -13,6 +13,8 @@ import type { WatchSink } from '../../../../../../../packages/session-core/src/s
 import { createWatchService } from '../../../../../../../packages/session-core/src/services/fs-watch/impl/watch-service';
 import { awaitFact } from '../../../../../../../tests/support/awaitFact';
 import { createLocalAppFiles, createLocalFileService, workingCopyEntry, type LocalSurface } from './local-files';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
+import { canonicalPath } from '@gugu/session-core/files';
 
 /**
  * `gugu.files` on a task's working copy, end to end in one process: the real relay (`file-sync-core.ts`) with the local
@@ -122,7 +124,7 @@ class Page {
     readonly id: number,
     filePath: string | null,
   ) {
-    this.surface = { pageId: id, extensionId: 'ext', place: { workspace: WS }, workspaceRoot: root, filePath };
+    this.surface = { pageId: id, extensionId: 'ext', place: { workspace: WS }, workspaceRoot: root as CanonicalPath, filePath };
     this.sync = relay.attachPage(id, 'ext', {
       // A MessagePort delivers later, and a copy.
       post: (message) => setTimeout(() => this.fromMain(message instanceof ArrayBuffer ? message.slice(0) : message), 0),
@@ -256,7 +258,7 @@ async function localService(feedRoot = root) {
     },
   });
   heard = [];
-  const started = runtime.watchChanges(feedRoot, (update) => {
+  const started = runtime.watchChanges(canonicalPath(feedRoot), (update) => {
     heard.push(update);
     service.heard(update);
   });
@@ -330,18 +332,18 @@ describe('gugu.files on a working copy', () => {
     expect(read('plan.md')).toBe('one\nTWO\nthree\nfour\n');
   });
 
-  it('a working copy whose change stream is named through a link (a server account link): an edit on the disk still reaches the page', async () => {
+  it('a working copy named through a link (a server account link): its stream is its one spelling, and an edit on the disk reaches the page', async () => {
     const holder = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-local-files-link-'));
     const linked = path.join(holder, 'task-home');
     fs.symlinkSync(root, linked);
     try {
+      expect(canonicalPath(linked)).toBe(root);
       await localService(linked);
       write('plan.md', 'one\n');
       const fa = await new Page(nextId++, 'plan.md').open();
       write('plan.md', 'ONE\n');
       await until(() => fa.text().toString() === 'ONE\n');
-      // Said under the name the stream was asked with, not the folder the link leads to.
-      expect(heard.some((update) => update.kind === 'changes' && update.changes.some((change) => change.path === path.join(linked, 'plan.md')))).toBe(true);
+      expect(heard.some((update) => update.kind === 'changes' && update.changes.some((change) => change.path === path.join(root, 'plan.md')))).toBe(true);
     } finally {
       fs.rmSync(holder, { recursive: true, force: true });
     }
@@ -774,7 +776,7 @@ describe('the relay with a working copy', () => {
 /** A page running the real runtime (`files-entry` → OpenFile), its sync port on the relay, as main wires a page's port. */
 async function runtimePage(filePath: string) {
   const id = nextId++;
-  const surface: LocalSurface = { pageId: id, extensionId: 'ext', place: { workspace: WS }, workspaceRoot: root, filePath };
+  const surface: LocalSurface = { pageId: id, extensionId: 'ext', place: { workspace: WS }, workspaceRoot: root as CanonicalPath, filePath };
   vi.resetModules();
   const { setSyncPortSource } = await import('../../../../../src/session/app-runtime/sync-link');
   const told: SyncToPage[] = [];

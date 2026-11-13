@@ -4,6 +4,7 @@
  * 根目录那一格是对照:项目自己的 git 服务原样注入,复查目录不改。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 const mocks = vi.hoisted(() => ({
   createWorkspaceFactory: vi.fn(),
@@ -53,7 +54,7 @@ describe('ensureWorkspaceSetup for a project folder', () => {
     mocks.buildSessionFromWorkspace.mockResolvedValue({ sessionMount: { sessionPath: 'mounted' } });
   });
 
-  async function setUp(row: { id: string; kind: string; path: string }) {
+  async function setUp(row: { id: string; kind: string; path: CanonicalPath }) {
     const service = new WorkspaceBootstrapService({} as never, async () => null);
     const result = await service.ensureWorkspaceSetup(
       { ...row, type: 'local' },
@@ -68,7 +69,7 @@ describe('ensureWorkspaceSetup for a project folder', () => {
     const { result, workspaceId, context } = await setUp({
       id: 'ws-attached',
       kind: 'path',
-      path: '/work/gugu-7341',
+      path: '/work/gugu-7341' as CanonicalPath,
     });
 
     expect(result).toMatchObject({ success: true, data: { path: '/work/gugu-7341', workspaceId: 'ws-attached' } });
@@ -84,7 +85,7 @@ describe('ensureWorkspaceSetup for a project folder', () => {
   });
 
   it('control — the project root: project git services as before, re-check stays on the project path', async () => {
-    const { result, context } = await setUp({ id: 'ws-root', kind: 'project-root', path: '/work/gugu' });
+    const { result, context } = await setUp({ id: 'ws-root', kind: 'project-root', path: '/work/gugu' as CanonicalPath });
 
     expect(result).toMatchObject({ success: true, data: { path: '/work/gugu', workspaceId: 'ws-root' } });
     expect(context).toMatchObject({

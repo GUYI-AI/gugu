@@ -233,7 +233,7 @@ export const workspaceFileSystemController = createRPCController({
     if (!resolved.success) return resolved;
     const { env, fileSystem } = resolved.data;
 
-    const target = await assertWorkspaceWriteAllowed(fileSystem, env.path, filePath);
+    const target = await assertWorkspaceWriteAllowed(env.path, filePath);
     if (!target.success) {
       return err({ type: 'fs_error' as const, message: fileErrorToMessage(target.error) });
     }
@@ -263,7 +263,7 @@ export const workspaceFileSystemController = createRPCController({
     if (!resolved.success) return resolved;
     const { env, fileSystem } = resolved.data;
 
-    const target = await assertWorkspaceRemoveAllowed(fileSystem, env.path, filePath);
+    const target = await assertWorkspaceRemoveAllowed(env.path, filePath);
     if (!target.success) {
       return ok({ success: false as const, error: fileErrorToMessage(target.error) });
     }
@@ -447,7 +447,7 @@ export const workspaceFileSystemController = createRPCController({
     if (!resolved.success) return resolved;
     const { env, fileSystem } = resolved.data;
     if (!isSingleSegmentName(name)) return err({ type: 'invalid_name' as const, message: 'Invalid name' });
-    const target = await assertWorkspaceWriteAllowed(fileSystem, env.path, joinMachinePath(dirPath, name));
+    const target = await assertWorkspaceWriteAllowed(env.path, joinMachinePath(dirPath, name));
     if (!target.success) return err({ type: 'fs_error' as const, message: fileErrorToMessage(target.error) });
     const exists = await fileSystem.exists(target.data.path);
     if (exists.success && exists.data) return err({ type: 'exists' as const, message: 'Name already exists' });
@@ -465,11 +465,9 @@ export const workspaceFileSystemController = createRPCController({
     if (!resolved.success) return resolved;
     const { env, fileSystem } = resolved.data;
     if (!isSingleSegmentName(name)) return err({ type: 'invalid_name' as const, message: 'Invalid name' });
-    const source = await assertWorkspaceRemoveAllowed(fileSystem, env.path, filePath);
+    const source = await assertWorkspaceRemoveAllowed(env.path, filePath);
     if (!source.success) return err({ type: 'fs_error' as const, message: fileErrorToMessage(source.error) });
-    const target = await assertWorkspaceWriteAllowed(
-      fileSystem,
-      env.path,
+    const target = await assertWorkspaceWriteAllowed(env.path,
       joinMachinePath(dirnameMachinePath(source.data.path), name)
     );
     if (!target.success) return err({ type: 'fs_error' as const, message: fileErrorToMessage(target.error) });

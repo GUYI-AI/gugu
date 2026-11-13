@@ -23,6 +23,7 @@ import { quoteShellArg as shQuote } from '../../../../apps/desktop/electron/sess
 import { answerOpenExternal, type OpenExternalDeps } from '../../../../apps/desktop/electron/session/main/core/session-timeline/remote-open-external'
 import { parseOpenUrlArgs, runOpenUrl } from '../../../../apps/desktop/electron/server/open-url-cli'
 import type { ServerAccount } from '../../../../apps/desktop/electron/server/server-layout'
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path'
 
 const ACCOUNT = '0f8fad5b-d9cb-469f-a165-70867728950e'
 
@@ -137,7 +138,7 @@ describe('gugu-server open-url → attach 套接字 → 账号进程', () => {
     const deps: OpenExternalDeps = {
       route: { open, watching: () => false },
       sessionFromPtyId: (ptyId) => (ptyId === 'claude:conv-7' ? 'conv-7' : null),
-      sessionRoots: async () => [{ sessionId: 'conv-1', root: '/srv/app' }],
+      sessionRoots: async () => [{ sessionId: 'conv-1', root: '/srv/app' as CanonicalPath }],
       isFile: async () => true,
     }
     return { deps, open }
