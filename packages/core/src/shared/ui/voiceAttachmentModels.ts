@@ -21,7 +21,7 @@ export function parseVoiceAttachmentContent(content: string | null): VoiceAttach
   if (!content) return null
 
   const lines = content.split('\n')
-  if (lines.length !== 3) {
+  if (lines.length < 3) {
     return null
   }
 
@@ -55,7 +55,7 @@ export function parseVoiceAttachmentContent(content: string | null): VoiceAttach
     return null
   }
 
-  const transcript = transcriptLine.slice(VOICE_TRANSCRIPT_LINE_PREFIX.length).trim()
+  const transcript = [transcriptLine.slice(VOICE_TRANSCRIPT_LINE_PREFIX.length), ...lines.slice(3)].join('\n').trim()
   if (!transcript) {
     return null
   }
