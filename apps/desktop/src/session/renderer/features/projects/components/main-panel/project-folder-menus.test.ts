@@ -74,7 +74,7 @@ describe('project home menus open for real', () => {
     feedback.attach.mockResolvedValue({ success: true, data: ROOT });
     await act(async () => root.render(
       React.createElement(SessionLocalizationProvider, null,
-        React.createElement(ProjectFolderMenu, { folder: ROOT, projectName: 'P', state: { detach }, disabled: false,
+        React.createElement(ProjectFolderMenu, { folder: ROOT, projectName: 'P', state: { detach, folders: [ROOT, WT] }, disabled: false,
           children: React.createElement('div', { 'data-testid': 'folder-menu-target' }, 'Folder') }))
     ));
     await act(async () => container.querySelector('[data-testid="folder-menu-target"]')!.dispatchEvent(
@@ -89,6 +89,24 @@ describe('project home menus open for real', () => {
     await act(async () => root.render(null));
     await act(async () => undo());
     expect(feedback.attach).toHaveBeenCalledWith('p1', ROOT.path);
+  });
+
+  it('does not offer to remove the last folder of a project', async () => {
+    const detach = vi.fn().mockResolvedValue(true);
+    await act(async () => root.render(
+      React.createElement(SessionLocalizationProvider, null,
+        React.createElement(ProjectFolderMenu, { folder: ROOT, projectName: 'P', state: { detach, folders: [ROOT] }, disabled: false,
+          children: React.createElement('div', { 'data-testid': 'folder-menu-target' }, 'Folder') }))
+    ));
+    await act(async () => container.querySelector('[data-testid="folder-menu-target"]')!.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, button: 2, clientX: 10, clientY: 10 })
+    ));
+    await until(() => menuItems().length > 0 || thrown.length > 0, 'detach menu');
+    const item = document.querySelector<HTMLElement>('[role="menuitem"]')!;
+    expect(item.getAttribute('aria-disabled')).toBe('true');
+    expect(item.getAttribute('title')).toContain('至少要有一个文件夹');
+    await act(async () => item.click());
+    expect(detach).not.toHaveBeenCalled();
   });
 
   it('the composer folder picker lists every folder and the attach action', async () => {

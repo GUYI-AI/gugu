@@ -237,7 +237,7 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
         ).then((awake) => (awake ? remoteHostsStore.pickFolder(machine, '~') : null))
       : rpc.app.openSelectDirectoryDialog({
           title: translate('projects.folders.attachDialogTitle', { projectName: displayName }),
-          message: translate('projects.folders.attachDialogMessage'),
+          message: translate('projects.folders.attachDialogMessage', { projectName: displayName }),
         });
     return picked
       // 挑了路径不等于挂上了(那是别的项目的文件夹、并入被取消、接进来失败):只有挂上了才算。
