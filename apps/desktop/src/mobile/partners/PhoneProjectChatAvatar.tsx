@@ -29,9 +29,10 @@ function DesktopProjectChatAvatar({ chat, children }: { chat: ChatItem; children
   return <ProjectRunningCount chatId={chat.id}><ProjectFaceContext.Provider value={project}>{children}</ProjectFaceContext.Provider></ProjectRunningCount>
 }
 
-// 角落与引擎角标同一处(.agent-harness-badge:右下,各让出 2px);群头像不挂引擎角标,这一角是空的。
+// 右下角:群头像不挂引擎角标,这一角是空的。头像里现在是字,所以这枚数往外挂(伸进头像右边和下边的空隙),少盖字,
+// 也不碰左下角那枚「这是项目」的标。
 const RUNNING_AVATAR_STYLE: CSSProperties = { position: 'relative', display: 'inline-flex' }
-const RUNNING_CORNER_STYLE: CSSProperties = { position: 'absolute', right: -2, bottom: -2, pointerEvents: 'none' }
+const RUNNING_CORNER_STYLE: CSSProperties = { position: 'absolute', right: -9, bottom: -6, pointerEvents: 'none' }
 
 /**
  * 数由会话页算好发过来(innerSidebarBridge:项目群和用户群有、开关关着没有),与内层侧栏「智能体」分区头那枚药丸同一个推导;
