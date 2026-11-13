@@ -40,8 +40,8 @@ export function OneListRow({ leading, name, tag, time, preview, selected, onOpen
 }
 
 /**
- * A project in the one list wears the face a group does, marked as a project: its project group's (the picture that
- * group set included) when it has one, else one drawn from its own id and name. For the projects that have no project
+ * A project in the one list wears the face a group does: its project group's (the picture that group set included)
+ * when it has one, else one drawn from its own id and name. For the projects that have no project
  * group chat yet and for the sample project. Not a new row: those pieces fed without a chat.
  */
 export function OneListProjectRow({ faceId, ...row }: OneListRowProps & {
@@ -49,5 +49,5 @@ export function OneListProjectRow({ faceId, ...row }: OneListRowProps & {
   faceId: string;
 }) {
   const picture = useChatSummariesSelect((summaries) => summaries.get(faceId)?.avatar ?? null);
-  return <OneListRow leading={<Avatar variant="group" project name={row.name} seed={faceId} avatarUrl={picture} size={32} />} {...row} />;
+  return <OneListRow leading={<Avatar variant="group" name={row.name} seed={faceId} avatarUrl={picture} size={32} />} {...row} />;
 }

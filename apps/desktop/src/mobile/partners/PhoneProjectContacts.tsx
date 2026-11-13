@@ -69,7 +69,7 @@ export function PhoneProjectContacts({
           <PaneHeader
             mobile
             leading={<PaneBackButton label={t('shell.back')} onBack={onBack} />}
-            title={<h2 className="gg-pane-title gg-partners-head-title"><ChatGroupAvatar chatId={project.chatId ?? project.coverId} name={project.name} size={32} project /><span>{project.name}</span></h2>}
+            title={<h2 className="gg-pane-title gg-partners-head-title"><ChatGroupAvatar chatId={project.chatId ?? project.coverId} name={project.name} size={32} /><span>{project.name}</span></h2>}
             actions={searchButton}
           />
         )}
@@ -78,7 +78,7 @@ export function PhoneProjectContacts({
         <div className="gg-partners-list">
           {showGroup ? <SectionLabel>{t('partners.rooms', { count: 1 })}</SectionLabel> : null}
           {showGroup ? (
-            <ListRow mobile role="button" tabIndex={0} leading={<ChatGroupAvatar chatId={project.chatId ?? project.coverId} name={project.name} size={40} project />} title={groupLabel} onClick={onOpenGroup} onKeyDown={rowKeyActivate(onOpenGroup)} />
+            <ListRow mobile role="button" tabIndex={0} leading={<ChatGroupAvatar chatId={project.chatId ?? project.coverId} name={project.name} size={40} />} title={groupLabel} onClick={onOpenGroup} onKeyDown={rowKeyActivate(onOpenGroup)} />
           ) : null}
           {shownAgents.length ? <SectionLabel>{t('partners.agents', { count: shownAgents.length })}</SectionLabel> : null}
           {shownAgents.map((agent) => {

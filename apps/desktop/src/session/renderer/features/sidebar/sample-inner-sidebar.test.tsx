@@ -148,7 +148,6 @@ describe('the inner column for the sample project', () => {
 
     const headRow = host.querySelector<HTMLElement>('[data-inner-head="sample-project"]')!;
     expect(headRow.querySelector('[data-group-face]')).not.toBeNull();
-    expect(headRow.querySelector('[data-project-mark]')).not.toBeNull();
     expect(headRow.textContent).toContain('projects.sample.name');
     expect(headRow.querySelector('[data-slot="chip"]')?.textContent).toBe('projects.sample.tag');
     expect(headRow.querySelector('[data-inner-head-actions]')?.getAttribute('aria-label')).toBe('projects.sample.actions');

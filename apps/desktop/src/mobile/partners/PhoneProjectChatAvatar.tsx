@@ -12,7 +12,6 @@ import { Chip } from '@/components/ui/Chip'
 import { TaskStatusMark } from '@/components/chat/ComposerCardView'
 import { partnerProjects, type PartnerProject } from './partnersModel'
 import { PhoneMessageAvatar } from '../chat/PhoneMessageAvatar'
-import { ProjectFaceContext } from '@/lib/projectFace'
 
 /**
  * 消息中的项目群和别的群一样用群自己的头像(#2600 owner 11-13:没要过文件夹封面,群头像换了就该看得见);
@@ -23,14 +22,12 @@ export function PhoneProjectChatAvatar({ chat, mobile, children }: { chat: ChatI
   return mobile ? <ProjectChatAvatar chat={chat}>{children}</ProjectChatAvatar> : <DesktopProjectChatAvatar chat={chat}>{children}</DesktopProjectChatAvatar>
 }
 
-/** 桌面:群头像照旧,项目群和用户群在角上挂在跑的数;是不是项目(头像左下角那枚标)和手机同一个推导。 */
+/** 桌面:群头像照旧,项目群和用户群在角上挂在跑的数。 */
 function DesktopProjectChatAvatar({ chat, children }: { chat: ChatItem; children: ReactNode }) {
-  const project = useChatProject(chat.id) !== undefined
-  return <ProjectRunningCount chatId={chat.id}><ProjectFaceContext.Provider value={project}>{children}</ProjectFaceContext.Provider></ProjectRunningCount>
+  return <ProjectRunningCount chatId={chat.id}>{children}</ProjectRunningCount>
 }
 
-// 右下角:群头像不挂引擎角标,这一角是空的。头像里现在是字,所以这枚数往外挂(伸进头像右边和下边的空隙),少盖字,
-// 也不碰左下角那枚「这是项目」的标。
+// 右下角:群头像不挂引擎角标,这一角是空的。头像里现在是字,所以这枚数往外挂(伸进头像右边和下边的空隙),少盖字。
 const RUNNING_AVATAR_STYLE: CSSProperties = { position: 'relative', display: 'inline-flex' }
 const RUNNING_CORNER_STYLE: CSSProperties = { position: 'absolute', right: -9, bottom: -6, pointerEvents: 'none' }
 
@@ -78,6 +75,6 @@ function ProjectChatAvatar({ chat, children }: { chat: ChatItem; children: React
     }))
   }))
   return <PhoneMessageAvatar badge={needsYou > 0 ? <span className="gg-phone-project-attention" data-testid="phone-project-waiting" aria-hidden /> : null}>
-    <ProjectFaceContext.Provider value>{children}</ProjectFaceContext.Provider>
+    {children}
   </PhoneMessageAvatar>
 }

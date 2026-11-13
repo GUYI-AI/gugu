@@ -258,7 +258,7 @@ export function PhonePartnersPage({
                 const open = () => push({ kind: 'project', key: project.key })
                 return (
                   <ListRow key={project.key} mobile role="button" tabIndex={0} data-testid="phone-partners-project"
-                    leading={<ChatGroupAvatar chatId={project.chatId ?? project.coverId} name={project.name} size={40} project />}
+                    leading={<ChatGroupAvatar chatId={project.chatId ?? project.coverId} name={project.name} size={40} />}
                     title={project.name} onClick={open} onKeyDown={rowKeyActivate(open)} />
                 )
               })}

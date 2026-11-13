@@ -157,7 +157,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
       />
       <div className="gg-partners-scroll">
         <div className="gg-partners-new-hero">
-          <Avatar variant="group" project name={trimmed} seed={projectId} size={64} />
+          <Avatar variant="group" name={trimmed} seed={projectId} size={64} />
           <input
             ref={nameInput}
             className="gg-partners-name-input"

@@ -144,7 +144,6 @@ describe('they are drawn as a project group\'s conversation row is (ListRow + pr
     expect(row.className).toContain('gg-list-row');
     expect(row.dataset.selected).toBe('true');
     expect(row.querySelector('.gg-list-row-leading [data-group-face]'), 'a project wears the face a group does').not.toBeNull();
-    expect(row.querySelector('.gg-list-row-leading [data-project-mark]'), 'marked as a project').not.toBeNull();
     expect(row.querySelector('.gg-list-row-title')!.textContent).toBe('Weekend');
     expect(row.querySelector('.gg-list-row-meta')!.textContent).toBe('14:34');
     const subtitle = row.querySelector('.gg-list-row-subtitle')!;
@@ -160,7 +159,6 @@ describe('they are drawn as a project group\'s conversation row is (ListRow + pr
     await act(async () => root.render(<OneListProjectRow name="App" faceId="project-app" preview="" selected={false} onOpen={vi.fn()} />));
     const row = host.querySelector<HTMLElement>('[data-slot="list-row"]')!;
     expect(row.querySelector('.gg-list-row-leading [data-group-face]'), 'a project wears the face a group does').not.toBeNull();
-    expect(row.querySelector('.gg-list-row-leading [data-project-mark]'), 'marked as a project').not.toBeNull();
     expect(row.querySelector('.gg-chip')).toBeNull();
     expect(row.querySelector('.gg-list-row-meta')).toBeNull();
     expect(row.querySelectorAll('.gg-list-row-line')).toHaveLength(2);

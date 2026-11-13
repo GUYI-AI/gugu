@@ -410,9 +410,9 @@ function InnerSidebarFrame({ kind, chatId, children }: { kind: InnerSidebarAncho
   );
 }
 
-/** 群或项目的脸:自己设的头像,没设就是默认头像(同聊天列表那一行);项目带左下角那枚标。 */
-function GroupHeadAvatar({ chatId, summary, project }: { chatId: string; summary: ChatSummary | null; project: boolean }) {
-  return <Avatar name={summary?.name ?? ''} avatarUrl={summary?.avatar} seed={chatId} size={24} variant="group" project={project} />;
+/** 群或项目的脸:自己设的头像,没设就是默认头像(同聊天列表那一行)。 */
+function GroupHeadAvatar({ chatId, summary }: { chatId: string; summary: ChatSummary | null }) {
+  return <Avatar name={summary?.name ?? ''} avatarUrl={summary?.avatar} seed={chatId} size={24} variant="group" />;
 }
 
 /**
@@ -448,7 +448,7 @@ const InnerHeadRow = observer(function InnerHeadRow({
     openChatOnScreen(chatId, false);
   };
   // #2600 项目群和别的群一样戴群自己的头像(没设 = 成员拼图),❌ 文件夹封面。
-  const avatar: ReactNode = <GroupHeadAvatar chatId={chatId} summary={summary} project={anchor.kind === 'project'} />;
+  const avatar: ReactNode = <GroupHeadAvatar chatId={chatId} summary={summary} />;
   return (
     <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => openChatOnScreen(chatId, false)} trailingButtons={2}>
       <InnerHeadActionsMenu label={actionsLabel}>

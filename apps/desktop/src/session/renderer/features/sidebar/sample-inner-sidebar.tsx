@@ -36,7 +36,7 @@ export const SampleInnerSidebar = observer(function SampleInnerSidebar({ ownerId
         headKey="sample-project"
         name={translate('projects.sample.name')}
         tag={translate('projects.sample.tag')}
-        avatar={<Avatar variant="group" project name={translate('projects.sample.name')} seed="sample-project" size={24} />}
+        avatar={<Avatar variant="group" name={translate('projects.sample.name')} seed="sample-project" size={24} />}
         active={!taskOpen}
         onOpen={() => {
           if (taskOpen) openSamplePane(null);
