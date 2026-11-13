@@ -17,7 +17,7 @@ import type { ResolvedTab } from '@renderer/features/tabs/core/tab-provider';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { ContextMenu } from '@/components/ui/Menu';
-import { chatAuxiliaryYielded, chatBlockContentOf, chatLayoutOf, closeChatTab } from './chat-layouts';
+import { chatBlockContentOf, chatLayoutOf, closeChatTab } from './chat-layouts';
 import { CHAT_TAB_KIND, ChatTabHostContext, type ChatTabHost } from './chat-tab-providers';
 
 /**
@@ -72,7 +72,7 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
     <ChatTabHostContext.Provider value={host}>
       <PaneLayoutProvider paneLayout={layout}>
         <DndContext sensors={drag.sensors} collisionDetection={edgeFirst} onDragStart={drag.onDragStart} onDragMove={drag.onDragMove} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
-          <PaneTreeView layout={layout} singlePaneId={chatAuxiliaryYielded(chatId) ? layout.groups.find(({ pane }) => [...pane.entries.values()].some((entry) => entry.kind === CHAT_TAB_KIND))?.paneId : undefined} renderPane={(paneId, first, last, part) => {
+          <PaneTreeView layout={layout} renderPane={(paneId, first, last, part) => {
             const group = layout.groups.find((candidate) => candidate.paneId === paneId)!;
             const focused = screenLayout.focusedBlockId === blockId && layout.activePaneId === paneId;
             const strip = { tabTrailingSlot: <ChatPartSlot chatId={chatId} part="tabs" className="flex h-full items-center" />, actionsSlot: last ? actionsSlot : undefined, reserveShellRestoreLane: first && reserveShellRestoreLane };
