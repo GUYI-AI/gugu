@@ -167,7 +167,7 @@ export function parseAttachmentContent(content: string | null, ref?: MessageFile
 function parseHeader(headerLine: string): { fileName: string; mimeType: string } | null {
   const rawHeader = headerLine.slice(HEADER_PREFIX.length).trim()
   if (!rawHeader) return null
-  const headerMatch = rawHeader.match(/^(.*?)(?: \(([^()]+)\))?$/)
+  const headerMatch = rawHeader.match(/^(.*?)(?: \(([a-z\d!#$&^_.+-]+\/[a-z\d!#$&^_.+-]+(?:;[^()]*)?)\))?$/i)
   const fileName = headerMatch?.[1]?.trim() ?? ''
   return fileName ? { fileName, mimeType: headerMatch?.[2]?.trim() ?? '' } : null
 }

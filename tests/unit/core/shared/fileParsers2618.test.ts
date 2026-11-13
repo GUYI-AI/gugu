@@ -50,3 +50,5 @@ it('ignores the CSV BOM before a quoted first header', () => {
 it('reads CRLF voice attachment envelopes', () => { expect(parseVoiceAttachmentContent('[附件] voice.webm (audio/webm)\r\n[语音] durationMs=1500\r\n[转写] Hello\r\nSecond')?.transcript).toBe('Hello\nSecond') })
 
 it('reads case-insensitive audio MIME types', () => { expect(parseVoiceAttachmentContent('[附件] voice.webm (Audio/WebM; codecs=opus)\n[语音] durationMs=1500\n[转写] Hello')?.mimeType).toBe('audio/webm') })
+
+it('keeps parenthesized filename text that is not a MIME descriptor', () => { expect(parseAttachmentContent('[附件] notes (draft)\n[Size] 10\n[Kind] file')?.fileName).toBe('notes (draft)') })
