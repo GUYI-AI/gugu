@@ -2,7 +2,7 @@ import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { normalizeReferralCode, parseReferralLink } from '@gugu/core/shared/referralLink'
 import { claimMyReferral } from '@/lib/referrals'
-import { clearPersonalReferral, pendingPersonalReferral } from '@/lib/referralPending'
+import { clearPersonalReferral, pendingPersonalReferral, refreshPersonalReferrals } from '@/lib/referralPending'
 import { Button } from '../ui/Button'
 import { useReferral } from './useReferral'
 
@@ -32,7 +32,7 @@ export function ReferralClaimField({ userId }: { userId: string }) {
       if (result === 'attributed' || result === 'already_attributed') {
         try { clearPersonalReferral(userId); localStorage.removeItem(`gugu:referral-code:${userId}`) }
         catch { /* The confirmed server source remains authoritative. */ }
-        reload()
+        refreshPersonalReferrals(userId)
       }
     } catch { setStatus('unavailable') }
     finally { setBusy(false) }

@@ -45,3 +45,16 @@ it('requires explicit source confirmation and preserves the draft on a failed re
   expect(harness.container.textContent).toContain('请重试')
   expect(harness.container.textContent).not.toContain('邀请来源已确认')
 })
+
+it('refreshes every visible source field for the account after confirmation', async () => {
+  rpc.read.mockResolvedValue(summary())
+  rpc.claim.mockImplementation(async () => {
+    rpc.read.mockResolvedValue({ ...summary(), attribution: { code: 'ABCDEF123456', qualified: false, reward_state: 'pending' } })
+    return 'attributed'
+  })
+  await harness.render(createNode('div',{},createNode(ReferralClaimField,{userId:'new-user'}),createNode(ReferralClaimField,{userId:'new-user'})))
+  await typeInto(harness.container.querySelector('input')!,'ABCDEF123456')
+  await clickElement([...harness.container.querySelectorAll('button')].find(button=>button.textContent==='确认邀请来源')!)
+  expect(harness.container.querySelectorAll('input')).toHaveLength(0)
+  expect([...harness.container.querySelectorAll('[role="status"]')].filter(p=>p.textContent?.includes('邀请来源已确认'))).toHaveLength(2)
+})
