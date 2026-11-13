@@ -119,6 +119,7 @@ export function parseServerRollback(text: string, nowMs: number, supervisorVersi
   } catch {
     return null
   }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
   if (data.lastOutcome?.kind === 'rolledBack') data = { version: data.lastOutcome.bad, restored: data.lastOutcome.back, at: data.lastOutcome.at }
   if (typeof data.version !== 'string' || !data.version || typeof data.restored !== 'string' || !data.restored) return null
   if (typeof data.at !== 'number' || nowMs - data.at > SERVER_ROLLBACK_REPORT_MS) return null

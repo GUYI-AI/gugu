@@ -5,3 +5,5 @@ import { isModelAccessProtocol, normalizeAgentModelSelection } from '@gugu/core/
 const summary = () => ({ v: 1, timezone: 'Asia/Hong_Kong', generated_at: '2026-11-13T00:00:00Z', range: { start_date: '2026-11-01', end_date: '2026-11-13' }, background: { supported: true, granted: true }, granted_types: [], missing_types: [], days: [], signals: [], workouts: [], last_night: null, body: {}, unreadable: [] })
 
 it('treats JSON null update state as unavailable', () => { expect(parseServerUpdateState('null', 1000)).toBeNull() })
+
+it('treats JSON null rollback state as unavailable', () => { expect(parseServerRollback('null', 1000, '1.0.0')).toBeNull() })
