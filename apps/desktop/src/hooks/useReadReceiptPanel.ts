@@ -28,7 +28,7 @@ export function useReadReceiptPanel({ chatId, messages, memberReadSeqs, memberPr
     if (!receipt) return null
     const toMember = (id: string): ReadReceiptMember => {
       const profile = memberProfiles[id]
-      return { id, displayName: profile?.displayName ?? id, avatar: profile?.avatar ?? null, isAgent: profile?.type === 'agent' }
+      return { id, displayName: profile?.displayName ?? id, avatar: profile?.avatar ?? null, isAgent: profile?.type === 'agent', agentStatus: profile?.agentStatus }
     }
     const readers = new Set(receipt.readerIds)
     return {
