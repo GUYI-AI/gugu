@@ -86,6 +86,7 @@ export function parseServerUpdateState(text: string, nowMs: number, activityText
   } catch {
     return null
   }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
   if (data.state !== 'downloading' && data.state !== 'ready' && data.state !== 'switching' && data.state !== 'failed') return null
   if (typeof data.version !== 'string' || !data.version) return null
   if (typeof data.at !== 'number' || !Number.isFinite(data.at)) return null
