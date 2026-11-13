@@ -22,6 +22,9 @@ public class GuguAgentHostPolicyTest {
     }
     @Test public void httpsEndpointIsAccepted() { GuguAgentHostPolicy.endpoint("https://test.example.invalid"); }
     @Test(expected = IllegalArgumentException.class) public void insecureEndpointIsRejected() { GuguAgentHostPolicy.endpoint("http://test.example.invalid"); }
+    @Test public void explicitLocalDebugEndpointIsAccepted() { GuguAgentHostPolicy.endpoint("http://10.0.2.2:57741", true); }
+    @Test(expected = IllegalArgumentException.class) public void debugCannotAllowPublicHttp() { GuguAgentHostPolicy.endpoint("http://test.example.invalid", true); }
+    @Test(expected = IllegalArgumentException.class) public void debugCannotAllowLocalLookalikes() { GuguAgentHostPolicy.endpoint("http://10.0.2.2.example.invalid", true); }
     @Test(expected = IllegalArgumentException.class) public void endpointCredentialsAreRejected() { GuguAgentHostPolicy.endpoint("https://password@test.example.invalid"); }
     @Test public void runtimeErrorRedactsCredentialAndBearerButKeepsDiagnosis() {
         String message = GuguAgentHostPolicy.publicMessage("refresh denied refresh-secret, Bearer header-secret", "refresh-secret");

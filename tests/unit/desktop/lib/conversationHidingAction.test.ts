@@ -6,7 +6,9 @@ describe('shared personal hiding action', () => {
   it('allows every conversation kind without group authority and labels the personal action', () => {
     for (const kind of ['dm', 'ai', 'group', 'topic']) expect(conversationCanHide(kind)).toBe(true)
     expect(conversationCanHide(null)).toBe(false)
-    expect(conversationRowMenu({ kind: 'chat', personalHiding: true, canDelete: true, hasUnread: false }).at(-1)?.label).toBe('removeFromList')
+    const menu = conversationRowMenu({ kind: 'chat', personalHiding: true, canDelete: true, hasUnread: false })
+    expect(menu.find(action => action.id === 'hide-chat')?.label).toBe('hide')
+    expect(menu.find(action => action.id === 'delete-chat')?.label).toBe('delete')
   })
   it('only hides when Agent removal is unchecked', async () => {
     const hide = vi.fn().mockResolvedValue(undefined)

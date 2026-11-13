@@ -24,6 +24,9 @@ it('applies a received clear to an already open native session and retains it ac
   f.rows = [{ session: { conversationId: 'native-session', chatId: 'chat' } }]
   for (const changed of f.changed) changed()
   expect(update).toHaveBeenLastCalledWith(at)
+  f.rows = []
+  for (const changed of f.changed) changed()
+  expect(update).toHaveBeenLastCalledWith(at)
   recordNativeConversationHistoryClear('owner', 'chat', '2026-11-14T00:00:00.000499Z')
   expect(update).toHaveBeenLastCalledWith(at)
   f.userId = 'other'

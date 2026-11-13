@@ -86,7 +86,6 @@ export type WindowSourceLocator = {
 };
 export type WindowCacheContext = {
   cacheDirectory: string; scope: string; conversationScope: string; branchLineage: string; decoderVersion: number;
-  historyFloor?: string | null;
 };
 export type WindowCursor = {
   version: 1; scope: string; sourceLineage: string; snapshotRevision: string;

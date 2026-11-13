@@ -145,7 +145,7 @@ it('phone group long-press reuses all row actions and marks only the group and d
   await render(true)
   await hold(row())
   expect([...document.querySelectorAll('[role=menuitem]')].map(item => item.getAttribute('data-testid'))).toEqual([
-    'conversation-row-mark-read', 'conversation-row-pin', 'conversation-row-notifications', 'chat-row-mark-all-read', 'conversation-row-delete-chat',
+    'conversation-row-mark-read', 'conversation-row-pin', 'conversation-row-notifications', 'conversation-row-hide-chat', 'conversation-row-delete-chat', 'chat-row-mark-all-read',
   ])
   expect(state.select).not.toHaveBeenCalled()
   expect(state.open).not.toHaveBeenCalled()
@@ -158,7 +158,8 @@ it('phone group long-press keeps personal removal when the member cannot dissolv
   state.canDissolve = false
   await render(true)
   await hold(row())
-  expect(document.querySelector('[data-testid=conversation-row-delete-chat]')?.textContent).toContain('从列表删除')
+  expect(document.querySelector('[data-testid=conversation-row-hide-chat]')?.textContent).toContain('不显示')
+  expect(document.querySelector('[data-testid=conversation-row-delete-chat]')?.textContent).toContain('删除')
   expect(chatService.getGroupChatSettings).not.toHaveBeenCalled()
   expect(readAction()).not.toBeNull()
   expect(document.querySelector('[data-testid=conversation-row-pin]')).not.toBeNull()

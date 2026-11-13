@@ -1,4 +1,4 @@
-import { batch, createMemo, createSignal } from 'solid-js';
+import { batch, createSignal } from 'solid-js';
 import { clearedHistoryTurns } from '@gugu/session-core/session-record/conversation-history-clear';
 import { createStore, reconcile, unwrap } from 'solid-js/store';
 import type { ChatItem, TranscriptTurn } from '@session-chat/model';
@@ -157,17 +157,17 @@ export function createTranscript(): TranscriptApi {
   // Expose the TranscriptState shape via getters. committed() is read in the
   // getter so createMemo/createEffect readers re-run on identity changes.
   // live.activeTurn/live.turnStatus retain fine-grained reactivity.
-  const visibleCommitted = createMemo(() => historyFloor() ? clearedHistoryTurns([...committed()], historyFloor()) : committed());
-  const visibleActive = createMemo(() => {
-    const active = live.activeTurn;
-    return active && historyFloor() ? clearedHistoryTurns([active], historyFloor())[0] ?? null : active;
-  });
+  let masked: { input: readonly TranscriptTurn[]; floor: string; turns: TranscriptTurn[] } | undefined;
   const state: TranscriptState = {
     get committedTurns() {
-      return visibleCommitted();
+      const input = committed(), floor = historyFloor();
+      if (!floor) return input;
+      if (masked?.input !== input || masked.floor !== floor) masked = { input, floor, turns: clearedHistoryTurns([...input], floor) };
+      return masked.turns;
     },
     get activeTurnSnapshot() {
-      return visibleActive();
+      const active = live.activeTurn, floor = historyFloor();
+      return active && floor ? clearedHistoryTurns([active], floor)[0] ?? null : active;
     },
     get turnStatus() {
       return live.turnStatus;
