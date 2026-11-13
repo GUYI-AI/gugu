@@ -111,7 +111,7 @@ export function formatAttachmentMetadata(meta: AttachmentMeta): string {
  */
 export function parseAttachmentContent(content: string | null, ref?: MessageFileRef | null): ParsedAttachment | null {
   if (!content) return null
-  const lines = content.split('\n')
+  const lines = content.replace(/\r\n/g, '\n').split('\n')
   if (!lines[0]?.startsWith(HEADER_PREFIX)) return null
   const legacy = lines[1]?.startsWith(URL_PREFIX) ?? false
   const body = legacy ? lines : [lines[0], '', ...lines.slice(1)]

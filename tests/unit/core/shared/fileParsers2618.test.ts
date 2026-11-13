@@ -1,0 +1,12 @@
+import { expect, it } from 'vitest'
+import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
+import { formatVoiceAttachmentMetadata, parseVoiceAttachmentContent } from '@gugu/core/shared/ui/voiceAttachmentModels'
+import { workspaceStoredText, workspaceUploadKind } from '@gugu/core/shared/workspaceUpload.mjs'
+import { parseCsv } from '../../../../apps/desktop/src/session/renderer/lib/editor/csv-parser'
+
+
+it('keeps attachment captions from CRLF envelopes', () => {
+  const content = '[附件] note.txt (text/plain)\r\n[Size] 10\r\n[Kind] file\r\n[Caption]\r\nFirst\r\nSecond'
+  expect(parseAttachmentContent(content)?.caption).toBe('First\nSecond')
+})
+
