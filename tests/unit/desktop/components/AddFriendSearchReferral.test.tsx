@@ -4,6 +4,8 @@ import { i18n } from '../../../../apps/desktop/src/i18n'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders, typeInto } from '../../../support/testHarness'
 
+vi.mock('../../../../apps/desktop/src/lib/referrals', () => ({ getMyReferral: vi.fn(async () => { throw new Error('unavailable') }) }))
+
 let AddFriendSearch: typeof import('../../../../apps/desktop/src/components/AddFriendSearch')['AddFriendSearch']
 let harness: ReturnType<typeof createReactHarness>
 

@@ -5,6 +5,8 @@
 // @@@referral-entry 只有一个入口:平台的「系统交来的链接」流(platform.watchOpenedLinks,桌面和安卓各自实现;网页版没有
 // 系统交来的链接,官网 /j/ 页也不会把人送进网页版)。没人登录时打开的名片码才记成推荐人;登录上了就清掉。
 import { parseGuguQrPayload } from '@gugu/core/shared/qrPayload'
+import { parseReferralLink } from '@gugu/core/shared/referralLink'
+import { rememberPersonalReferral } from './referralPending'
 import type { AppPlatform } from '../platform/types'
 import { rendererLogger } from './log'
 
@@ -17,6 +19,12 @@ interface SessionSource { getSnapshot: () => { session: unknown }; subscribe: (l
 export function watchReferralLinks(watchOpenedLinks: AppPlatform['watchOpenedLinks'], sessions: SessionSource): () => void {
   if (!watchOpenedLinks) return () => {}
   const stopLinks = watchOpenedLinks((url) => {
+    const personalCode = parseReferralLink(url)
+    if (personalCode) {
+      try { rememberPersonalReferral(personalCode) }
+      catch { log.error({}, 'personal referral hint could not be saved') }
+      return
+    }
     if (!sessions.getSnapshot().session) rememberReferrer(url)
   }, (error) => log.error({ err: error instanceof Error ? error.message : String(error) }, 'opened links unavailable: invite referrers are not recorded'))
   // 登录/注册成功(或恢复出一个已登录的会话):暂存的推荐人已经用过或不该用,清掉,免得算给之后在本机注册的人。

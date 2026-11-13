@@ -1,4 +1,36 @@
 export default {
+  "referrals": {
+    "accountNote": "个人邀请码、邀请成功人数与来源确认",
+    "loading": "正在读取…",
+    "unavailable": "暂时读不到邀请信息，请重试。",
+    "retry": "重试",
+    "refresh": "刷新人数",
+    "successCount": "邀请成功人数：{{count}}",
+    "earned": "已获得 {{amount}} 积分",
+    "codeDisabled": "邀请码已停用，暂不能分享。",
+    "copied": "已复制",
+    "copyFailed": "复制失败，请重试。",
+    "confirm": "确认邀请来源",
+    "confirming": "正在确认…",
+    "confirmedSource": "邀请来源已确认：{{code}}",
+    "claimUnavailable": "此账号当前不能补填邀请来源。",
+    "optionalNote": "填写后点“确认邀请来源”。也可以留空继续，稍后在账户中补填。",
+    "condition": {
+      "verified_login": "朋友首次验证登录并确认来源后计为成功。",
+      "first_message": "朋友首次验证登录、确认来源并发出一条消息后计为成功。"
+    },
+    "status": {
+      "attributed": "邀请来源已确认。",
+      "already_attributed": "邀请来源已确认。",
+      "source_locked": "邀请来源已确定，不能更换。",
+      "claim_expired": "已超过补填邀请来源的期限。",
+      "invalid_code": "邀请码无效或已停用，请检查后重试。",
+      "self_invite": "不能填写自己的邀请码。",
+      "not_eligible": "此账号当前不符合确认条件。",
+      "unavailable": "暂时无法确认，来源不会丢失，请重试。",
+      "storage_error": "本机草稿未保存，仍可确认来源或继续注册。"
+    }
+  },
   "referralPreview": {
     "contactCaption": "扫码加我为联系人",
     "contactFooter": "用咕咕连接你的 AI 协作网络",
