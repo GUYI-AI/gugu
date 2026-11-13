@@ -13,7 +13,7 @@ export function createReferralLink(value: string): string {
 export function parseReferralLink(value: string): string | null {
   try {
     const url = new URL(value)
-    if (!['https:', 'gugu:'].includes(url.protocol) || url.hostname !== 'gugu.nextmind.space'
+    if (!(url.protocol === 'https:' || /^gugu(?:-beta|-dev)?:$/.test(url.protocol)) || url.hostname !== 'gugu.nextmind.space'
       || !/^\/j\/?$/.test(url.pathname) || [...url.searchParams.keys()].some(key => key !== 'r')
       || url.searchParams.getAll('r').length !== 1) return null
     return normalizeReferralCode(url.searchParams.get('r') ?? '')

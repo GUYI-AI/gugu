@@ -20,6 +20,8 @@ describe('personal referral transport', () => {
   it('uses a separate link format and rejects duplicate params and untrusted hosts', () => {
     expect(createReferralLink('abcdef123456')).toBe('https://gugu.nextmind.space/j/?r=ABCDEF123456')
     expect(parseReferralLink('gugu://gugu.nextmind.space/j/?r=ABCDEF123456')).toBe('ABCDEF123456')
+    expect(parseReferralLink('gugu-beta://gugu.nextmind.space/j/?r=ABCDEF123456')).toBe('ABCDEF123456')
+    expect(parseReferralLink('gugu-dev://gugu.nextmind.space/j/?r=ABCDEF123456')).toBe('ABCDEF123456')
     expect(parseReferralLink('https://gugu.nextmind.space/j/?123456')).toBeNull()
     expect(parseReferralLink('https://evil.test/j/?r=ABCDEF123456')).toBeNull()
     expect(parseReferralLink('https://gugu.nextmind.space/j/?r=ABCDEF123456&r=ABCDEF123456')).toBeNull()
