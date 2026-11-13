@@ -1,5 +1,5 @@
 import * as fs from 'node:fs/promises';
-import { canonicalPath, inWorkingCopy, placeUnder, type CanonicalPath } from '@gugu/session-core/files';
+import { canonicalPath, placeUnder, type CanonicalPath } from '@gugu/session-core/files';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BrowserWindow, dialog, shell, type WebContents } from 'electron';

@@ -9,7 +9,7 @@ import { canonicalPath, inWorkingCopy } from '@gugu/session-core/files';
  * 写回按「打开时那一版」核对,agent 正在改同一个文件时拒绝,❌ 静默盖掉它的改动。
  */
 import { createReadStream, createWriteStream } from 'node:fs';
-import { appendFile, open, realpath, rename, rm, stat } from 'node:fs/promises';
+import { appendFile, open, rename, rm, stat } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
