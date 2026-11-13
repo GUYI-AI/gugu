@@ -1052,7 +1052,13 @@ const isFolder = (entry) => entry.type === 'folder'
 const visibleEntry = (entry) => state.showAppData || !entry.appState
 
 async function folderContextMenu(x, y) {
-  if (inWorkspace() && !state.ctx?.file && canWriteHere()) return void toggleMenu($('new-doc'), makeHereItems(), { point: { x, y } })
+  if (inWorkspace() && !state.ctx?.file) {
+    const here = state.entries.find((entry) => entry.id === state.folder)
+    const openIn = !onThisComputer() ? [] : here ? openInActions(here) : folderOpenIn(copyOf().id)
+    const make = canWriteHere() ? makeHereItems() : []
+    const items = [...make, ...(make.length && openIn.length ? [{ separator: true }] : []), ...openIn]
+    return items.length ? void toggleMenu($('new-doc'), items, { point: { x, y } }) : undefined
+  }
   if (!state.ctx?.chat || inWorkspace() || state.ctx.file || !canRead()) return
   const chat = state.ctx.chat.id
   const show = !state.showAppData
@@ -1495,6 +1501,12 @@ function renderCrumbs() {
   if (copy?.root) {
     home.classList.add('crumb-root')
     home.replaceChildren(Object.assign(document.createElement('bdi'), { textContent: copy.deviceLabel ? `${copy.deviceLabel} · ${copy.root}` : copy.root }))
+    if (onThisComputer(copy)) home.addEventListener('contextmenu', (event) => {
+      const items = folderOpenIn(copy.id)
+      if (!items.length) return
+      event.preventDefault()
+      toggleMenu(home, items, { point: { x: event.clientX, y: event.clientY } })
+    })
   }
   const parts = choosing ? [up, Object.assign(crumb(t.workingCopy, null, false), { onclick: () => pickFolder(null) }), Object.assign(document.createElement('span'), { className: 'crumb-sep', textContent: '/' }), home] : [up, home]
   trail.forEach((folder, i) => {
@@ -1576,6 +1588,12 @@ function renderFolderChoice() {
     meta.append(where)
     open.append(title, meta)
     li.append(open)
+    if (folder.thisMachine) li.addEventListener('contextmenu', (event) => {
+      const items = folderOpenIn(folder.workspace)
+      if (!items.length) return
+      event.preventDefault()
+      toggleMenu(open, items, { point: { x: event.clientX, y: event.clientY } })
+    })
     return li
   }))
 }
@@ -2163,18 +2181,23 @@ function copyActions(entry) {
   ]
 }
 
-// 「用 VS Code、访达、终端打开」: this computer's programs, as the project tab's menu lists them.
+// 「用 VS Code、访达、终端打开」: this computer's programs, each drawn with its icon (the row's `program`). A file or folder
+// of a working copy has them, and so does a project's folder itself: its row where one is picked, the top of the path, the list's empty space.
 let openInApps = []
+const onThisComputer = (copy = copyOf()) => !!copy?.root && copy.thisMachine !== false
 // Asked again with each context: settings can change the list, and main keeps the scan of what is installed.
 const hearOpenInApps = () => {
-  if (!copyOf()?.root || copyOf().thisMachine === false || !gugu.files.openInApps) return
+  if (!gugu.files.openInApps || !(onThisComputer() || chatFolders().some((folder) => folder.thisMachine))) return
   gugu.files.openInApps().then((apps) => { openInApps = apps }, (error) => showBanner(failureText(error), 'error'))
 }
-function openInActions(entry) {
-  if (touchPane?.matches || !copyOf()?.root || copyOf().thisMachine === false || !openInApps.length) return []
+function openInItems(ref) {
+  if (touchPane?.matches || !openInApps.length) return []
   const failed = (error) => showBanner(failureText(error), 'error')
-  return [{ text: state.t.openIn, children: openInApps.map((app) => ({ text: app.label, run: () => gugu.files.openIn(entry, app.id).catch(failed) })) }]
+  return [{ text: state.t.openIn, children: openInApps.map((app) => ({ text: app.label, program: app.id, run: () => gugu.files.openIn(ref, app.id).catch(failed) })) }]
 }
+const openInActions = (entry) => (onThisComputer() ? openInItems(entry) : [])
+// A working copy's own folder is named `.` there (files.openIn).
+const folderOpenIn = (workspace) => openInItems({ workspace, id: '.' })
 
 const COPY_CONTENT_MAX_BYTES = 10 * 1024 * 1024
 async function copyContent(entry, copied) {
@@ -3628,6 +3651,7 @@ async function sharedPick(x, y, items) {
       ...(item.ask || item.danger ? { danger: true } : {}),
       ...(item.title ? { title: item.title } : {}),
       ...(item.person ? { person: item.person } : {}),
+      ...(item.program ? { program: item.program } : {}),
       ...(nested ? { items: entries(nested) } : {}),
     }
   })
