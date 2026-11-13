@@ -123,7 +123,7 @@ export function isTextModelKind(kind: ManagedFileKind): boolean {
 /** True for files the diff viewer must not load as text. */
 export function isBinaryForDiff(filePath: string): boolean {
   const kind = getFileKind(filePath);
-  return kind === 'binary' || kind === 'image' || kind === 'svg' || isOfficeKind(kind);
+  return kind === 'binary' || kind === 'image' || kind === 'svg' || isSelfLoadingKind(kind);
 }
 
 /** True for files the diff viewer renders as an `<img>` preview instead of text. */
