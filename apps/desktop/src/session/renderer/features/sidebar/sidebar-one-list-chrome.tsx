@@ -93,16 +93,17 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
       </Button>
       <DropdownMenu.Root open={menuOpen} modal={false} onOpenChange={setMenuOpen}>
         {/* The chat list header's 「+」 (ChatListPanel): the same trigger on the same icon-button skin. */}
-        <DropdownMenu.Trigger
-          className="gg-icon-btn gg-ghost window-no-drag-region"
-          data-size="md"
-          data-on={menuOpen || undefined}
-          aria-label={menuLabel}
-          title={menuLabel}
-          data-testid="sidebar-create-menu"
-        >
-          <Plus />
-        </DropdownMenu.Trigger>
+        <Hint label={menuOpen ? '' : menuLabel} side={collapsed ? 'right' : 'bottom'}>
+          <DropdownMenu.Trigger
+            className="gg-icon-btn gg-ghost window-no-drag-region"
+            data-size="md"
+            data-on={menuOpen || undefined}
+            aria-label={menuLabel}
+            data-testid="sidebar-create-menu"
+          >
+            <Plus />
+          </DropdownMenu.Trigger>
+        </Hint>
         {menuOpen ? (
           <DropdownMenu.Content aria-label={menuLabel} side="bottom" align={collapsed ? 'start' : 'end'} sideOffset={4}>
             {collapsed && (

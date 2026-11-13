@@ -22,6 +22,7 @@ import { useNativeConversationChat } from '@/hooks/useNativeConversationChat';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { SidebarOneList } from './sidebar-one-list';
 import { innerSidebarChat, innerSidebarShownFor } from './inner-sidebar';
+import { RailRowHint } from './rail-row-hint';
 import { ONE_LIST_RAIL_PX, SidebarOneListHead, SidebarOneListTop } from './sidebar-one-list-chrome';
 
 // #2548 the desktop left sidebar, one list: the head (collapse, bell, search, 会话历史), 创建智能体 + 「+」, then ONE list
@@ -74,6 +75,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   // What the rows look like follows the open/close progress, not the open state: the state flips the moment collapsing
   // starts (or only on release, for a drag), the progress is what is on screen.
   const railLayout = useLeftRailLayout();
+  const listRef = React.useRef<HTMLDivElement>(null);
 
   // 创建智能体 (what 新建任务 did) always lands on the dedicated compose view. Routing to 'project' instead made the
   // button a no-op whenever the user was already sitting on that project's home — which is the default landing view.
@@ -106,6 +108,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
 
   return (
     <div
+      ref={listRef}
       data-region="left-sidebar"
       className={cn(
         'relative flex h-full flex-col border-r border-border bg-background-tertiary text-foreground-tertiary-muted transition-colors',
@@ -139,6 +142,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         </div>
       )}
       {/* The one-time bubble (C9) on the head comes up when the inner sidebar appears: a group, a project or the sample. */}
+      <RailRowHint list={listRef} enabled={railLayout} />
       <SidebarOneListHead innerShownFor={innerSidebarShownFor.get()} />
       <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col" data-notification-original-list="" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
