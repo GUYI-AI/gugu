@@ -8,6 +8,7 @@ export const MAX_PREVIEW_ROWS = 1000;
 export const MAX_PREVIEW_COLUMNS = 100;
 
 export function parseCsv(content: string): CsvParseResult {
+  content = content.replace(/^\ufeff/, '');
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = '';

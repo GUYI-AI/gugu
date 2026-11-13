@@ -39,3 +39,9 @@ it('retains a final quoted empty CSV cell without a trailing newline', () => {
   expect(parseCsv('').rows).toEqual([])
 })
 
+
+it('ignores the CSV BOM before a quoted first header', () => {
+  expect(parseCsv('\ufeff"first",second\n1,2').rows).toEqual([['first', 'second'], ['1', '2']])
+  expect(parseCsv('first,\ufeffsecond').rows).toEqual([['first', '\ufeffsecond']])
+})
+
