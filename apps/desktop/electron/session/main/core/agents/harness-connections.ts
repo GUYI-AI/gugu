@@ -362,7 +362,8 @@ export function connectionConfigRoot(providerId: string, connectionId: string): 
 }
 
 /** 用户自己的配置根:用户导出了 `CLAUDE_CONFIG_DIR` / `CODEX_HOME` 就是那里,否则 `~/.claude` / `~/.codex`。 */
-function nativeConfigRoot(providerId: Provider, env: Record<string, string | undefined> = process.env): string {
+/** The folder a harness keeps its own records in on this machine (Claude's `projects/<cwd>/`, say), as it is started here. */
+export function nativeConfigRoot(providerId: Provider, env: Record<string, string | undefined> = process.env): string {
   const home = requireNativeHome(providerId);
   return env[home.envVar]?.trim() || join(homedir(), home.userPath);
 }
