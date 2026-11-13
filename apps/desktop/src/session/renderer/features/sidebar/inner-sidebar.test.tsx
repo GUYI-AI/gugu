@@ -94,6 +94,7 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
     expandedSessionIds: new Set<string>(),
     get idleExpandedProjectIds() { return state.live.shownMore; },
     toggleSessionExpanded: vi.fn(),
+    expandSessions: vi.fn(),
     toggleIdleExpanded: (key: string) => state.toggleIdleExpanded(key),
   },
 }));
@@ -133,6 +134,7 @@ const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
 const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
 const { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
 const { readPanelToggle } = await import('@/lib/panelToggles');
+const { sidebarStore } = await import('@renderer/lib/stores/app-state');
 
 let host: HTMLDivElement;
 let root: Root;
@@ -294,6 +296,30 @@ describe('inner sidebar', () => {
     await act(async () => host.querySelector<HTMLElement>('[data-more-row="chat:shop-chat"]')!.click());
     expect(sessionRows()).toHaveLength(13);
     expect(moreRows()).toEqual(['sidebar.showLess']);
+  });
+
+  it('#2630 the session open in the main area never folds away; an open fork expands its parent once', async () => {
+    state.items = [
+      ...Array.from({ length: 12 }, (_, index) => item(`idle-${index}`, 'p-shop', idle, 100 - index)),
+      item('parent', 'p-shop', idle, 0),
+      item('fork', 'p-shop', idle, 0, 'parent'),
+    ];
+    openProject('p-shop');
+    await render();
+    expect(sessionRows()).toEqual(Array.from({ length: 10 }, (_, index) => `idle-${index}`));
+    expect(moreRows()).toEqual(['sidebar.showMore:3']);
+
+    openSession('idle-11');
+    await render();
+    expect(sessionRows()).toEqual([...Array.from({ length: 10 }, (_, index) => `idle-${index}`), 'idle-11']);
+    expect(moreRows()).toEqual(['sidebar.showMore:2']);
+    expect(sidebarStore.expandSessions).not.toHaveBeenCalled();
+
+    openSession('fork');
+    await render();
+    expect(sessionRows()).toContain('parent');
+    expect(moreRows()).toEqual(['sidebar.showMore:2']);
+    expect(sidebarStore.expandSessions).toHaveBeenCalledWith(['parent']);
   });
 
   it('a collapsed Agents keeps its count and shows how many need me next to the title', async () => {

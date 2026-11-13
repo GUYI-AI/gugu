@@ -436,6 +436,11 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     }
   }
 
+  /** 把这些父会话展开(已展开的不动)。打开一个子会话时用,侧栏里看得见它(#2630)。 */
+  expandSessions(sessionIds: readonly string[]): void {
+    for (const sessionId of sessionIds) this.expandedSessionIds.add(sessionId);
+  }
+
   /** 独立会话及助理家里的执行者。隐藏家目录项目行时,不能连同其中的任务一起摘掉。 */
   private standaloneOwnEntries(): SidebarSessionEntry[] {
     return [...this.projectManager.projects.values()]
