@@ -231,6 +231,23 @@ it('a narrower window or a wider list makes the column give way; the stored widt
   await expect.poll(() => width(ui.column()!)).toBe(500);
 });
 
+it('while the window holds the column narrower than chosen, a press without a move or an arrow at the cap keeps the choice', async () => {
+  localStorage.setItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY, '500');
+  await page.viewport(1000, 700);
+  const ui = await renderWorkspace();
+  await expect.poll(() => width(ui.column()!)).toBe(304);
+  const handle = ui.innerHandle()!;
+  const x = centreX(handle);
+  pointer('pointerdown', handle, x);
+  pointer('pointerup', handle, x);
+  handle.focus();
+  await userEvent.keyboard('{ArrowRight}');
+  expect(width(ui.column()!)).toBe(304);
+  expect(localStorage.getItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY), 'nothing the drawn width did not change is stored').toBe('500');
+  await page.viewport(1700, 700);
+  await expect.poll(() => width(ui.column()!)).toBe(500);
+});
+
 it('a narrow window never cuts the column below today\'s width', async () => {
   await page.viewport(800, 700);
   const ui = await renderWorkspace();

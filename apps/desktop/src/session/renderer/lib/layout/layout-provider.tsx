@@ -197,7 +197,8 @@ export interface WorkspaceLayoutContextValue {
   setInnerWidth: (width: number, options?: { persist?: boolean }) => void;
   /** #2642 内层栏此刻画着(这一列挂上 / 卸下时自己报,useInnerSidebarFrame):它右边那根分隔条只在这时才有。 */
   innerSidebarShown: boolean;
-  setInnerSidebarShown: (shown: boolean) => void;
+  /** 这一列挂上时登记一次,返回的函数在卸下时注销(按次数记:换对话时新旧两列的挂卸先后不影响结果)。 */
+  registerInnerSidebarFrame: () => () => void;
   /** 开关按钮把自己的悬停状态报进来:悬停满 100ms 也会浮出侧栏。 */
   setTriggerHovered: (hovered: boolean) => void;
   exitZenMode: () => void;
@@ -284,7 +285,11 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   const innerShownWidth = useTransform([innerWidth, leftAnimatedWidth, workspaceWidth], ([width, left, root]: number[]) =>
     innerSidebarShownWidth(width, root > 0 ? root - left : null)
   );
-  const [innerSidebarShown, setInnerSidebarShown] = useState(false);
+  const [innerSidebarFrames, setInnerSidebarFrames] = useState(0);
+  const registerInnerSidebarFrame = useCallback(() => {
+    setInnerSidebarFrames((count) => count + 1);
+    return () => setInnerSidebarFrames((count) => count - 1);
+  }, []);
   const setInnerWidth = useCallback(
     (width: number, options?: { persist?: boolean }) => {
       const next = clampInnerSidebarWidth(width);
@@ -410,8 +415,8 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     innerWidth,
     innerShownWidth,
     setInnerWidth,
-    innerSidebarShown,
-    setInnerSidebarShown,
+    innerSidebarShown: innerSidebarFrames > 0,
+    registerInnerSidebarFrame,
     setTriggerHovered,
     exitZenMode,
     toggleZenMode,
@@ -423,11 +428,8 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
  * 它右边那根分隔条只在这一列画着时才有。
  */
 export function useInnerSidebarFrame(): MotionValue<number> {
-  const { innerShownWidth, setInnerSidebarShown } = useWorkspaceLayoutContext();
-  useLayoutEffect(() => {
-    setInnerSidebarShown(true);
-    return () => setInnerSidebarShown(false);
-  }, [setInnerSidebarShown]);
+  const { innerShownWidth, registerInnerSidebarFrame } = useWorkspaceLayoutContext();
+  useLayoutEffect(registerInnerSidebarFrame, [registerInnerSidebarFrame]);
   return innerShownWidth;
 }
 

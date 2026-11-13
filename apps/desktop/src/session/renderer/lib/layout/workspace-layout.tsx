@@ -1,5 +1,5 @@
 import { motion, useTransform, type MotionStyle } from 'framer-motion';
-import { type ReactNode, useLayoutEffect, useState } from 'react';
+import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import { ShellSidebarToggle } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import {
@@ -153,11 +153,16 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     const rootWidth = workspaceRootRef.current?.clientWidth ?? 0;
     return rootWidth > 0 ? rootWidth * SIDEBAR_MAX_SHARE : Number.POSITIVE_INFINITY;
   };
-  /** #2642 内层栏与正文合起来那张卡片此刻的宽;null = 还没量到。 */
+  /** #2642 内层栏与正文合起来那张卡片此刻的宽;null = 还没量到。与画这一列的变换读同一个会话页宽(workspaceWidth)。 */
   const innerCardWidth = () => {
-    const rootWidth = workspaceRootRef.current?.clientWidth ?? 0;
+    const rootWidth = workspaceWidth.get();
     return rootWidth > 0 ? rootWidth - leftAnimatedWidth.get() : null;
   };
+  /** 内层栏此刻画出来的宽,由源头现算:innerShownWidth 是变换,下一帧才更新,连按两下方向键第二下会读到旧值、吞掉一步(浏览器用例实测)。 */
+  const innerShownNow = () => innerSidebarShownWidth(innerWidth.get(), innerCardWidth());
+  // #2642 这一下手势真改了画出来的宽才存:按下不动就松手、在上限处再按右键,画出来的宽没变 —— 存着的那个宽(可能更宽,
+  // 只是此刻被窗口夹着)❌ 被夹出来的值覆盖。
+  const innerResizedRef = useRef(false);
 
   return (
     <div
@@ -245,13 +250,20 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
           edge="end"
           offset={innerEdge}
           ariaLabel={translate('task.resizeInnerSidebar')}
-          // 从画出来的宽起拖(窗口窄时它可能正被夹着,从存着的宽起拖会先空拖一截),由源头现算:innerShownWidth 是变换,
-          // 下一帧才更新,连按两下方向键第二下会读到旧值、吞掉一步(浏览器用例实测)。
-          getSize={() => innerSidebarShownWidth(innerWidth.get(), innerCardWidth())}
+          // 从画出来的宽起拖:窗口窄时它可能正被夹着,从存着的宽起拖会先空拖一截。
+          getSize={innerShownNow}
           minSize={INNER_SIDEBAR_MIN_WIDTH_PX}
           maxSize={() => innerSidebarMaxWidth(innerCardWidth())}
-          onSize={(size) => setInnerWidth(size)}
-          onSizeCommit={(size) => setInnerWidth(size, { persist: true })}
+          onSize={(size) => {
+            if (size === innerShownNow()) return;
+            innerResizedRef.current = true;
+            setInnerWidth(size);
+          }}
+          onSizeCommit={(size) => {
+            if (!innerResizedRef.current) return;
+            innerResizedRef.current = false;
+            setInnerWidth(size, { persist: true });
+          }}
         />
       ) : null}
       {/* 固定占这一格(没有内层侧栏时是 null):正文那一格的位置不因它出现 / 收起而变,正文 ❌ 重挂。
