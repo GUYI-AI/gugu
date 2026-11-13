@@ -100,8 +100,8 @@ export function SessionTimelineRail({
         const tone = isCurrent
           ? 'bg-foreground-info'
           : tick.delivered
-            ? 'bg-foreground/70 group-hover:bg-foreground group-focus-visible:bg-foreground'
-            : 'bg-foreground-muted/40 group-hover:bg-foreground-muted group-focus-visible:bg-foreground-muted';
+            ? 'bg-foreground/70 group-hover:bg-foreground group-kbd-focus:bg-foreground'
+            : 'bg-foreground-muted/40 group-hover:bg-foreground-muted group-kbd-focus:bg-foreground-muted';
         const jumpLabel = tick.delivered
           ? translate('task.jumpToDelivery', { sender: label, prompt: [...turn.prompt].slice(0, 50).join('') })
           : translate('task.jumpToTurn', { prompt: [...turn.prompt].slice(0, 50).join('') });

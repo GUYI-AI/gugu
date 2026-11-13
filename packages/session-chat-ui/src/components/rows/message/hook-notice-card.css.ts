@@ -136,5 +136,5 @@ const filled = { background: vars.fg, color: vars.bg } as const;
 export const noticeOptionPrimary = style([
   outcomeActionPrimary,
   wraps,
-  { ...filled, selectors: { '&:hover, &:focus-visible:not([data-pointer-focus] *)': { ...filled, opacity: 0.88 }, '&:active': filled } }
+  { ...filled, selectors: { '&:hover, &:focus-visible:not([data-pointer-focus])': { ...filled, opacity: 0.88 }, '&:active': filled } }
 ]);

@@ -28,6 +28,7 @@ export type WebviewPreferences = {
   /** Comma-separated Chromium runtime-enabled features the guest is built without. */
   disableBlinkFeatures?: string;
   preload?: string;
+  disableHtmlFullscreenWindowResize?: boolean;
 };
 
 export type BrowserPageMountValidation =

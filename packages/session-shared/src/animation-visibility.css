@@ -5,9 +5,11 @@
 }
 
 /* One pause policy for CSS motion, including inline animation shorthands,
-   Tailwind utilities and pseudo-elements. Window/surface pauses take priority
+   Tailwind utilities and pseudo-elements. A surface pause takes priority
    over the per-element viewport state (pauseAnimationsOffscreen). Keep the animation clock intact
-   so showing the same surface resumes rather than restarting its animation. */
+   so showing the same surface resumes rather than restarting its animation.
+   A window nobody sees is not in this cascade: its animations are held directly (animation-visibility.ts,
+   holdAnimations), because a flag on <html> would re-style the whole document on every hide and show. */
 *, ::before, ::after {
-  animation-play-state: var(--gugu-animation-window-paused, var(--gugu-animation-surface-paused, var(--gugu-animation-viewport-paused, running))) !important;
+  animation-play-state: var(--gugu-animation-surface-paused, var(--gugu-animation-viewport-paused, running)) !important;
 }

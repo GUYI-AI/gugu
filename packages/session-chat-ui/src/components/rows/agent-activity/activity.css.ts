@@ -8,7 +8,7 @@ export const row = style({
 });
 export const toggle = style({
   position: 'absolute', inset: 0, border: 0, background: 'transparent', color: 'inherit', cursor: 'pointer',
-  selectors: { '&:focus-visible:not([data-pointer-focus] *)': { outline: `2px solid ${vars.fgMuted}`, outlineOffset: -2 } },
+  selectors: { '&:focus-visible:not([data-pointer-focus])': { outline: `2px solid ${vars.fgMuted}`, outlineOffset: -2 } },
 });
 export const inline = style({
   position: 'relative', display: 'inline-flex', alignItems: 'center', gap: metrics.gap, maxWidth: '100%',
@@ -20,7 +20,7 @@ export const word = style({ flexShrink: 0, whiteSpace: 'pre' });
 export const hanging = style({ flex: '0 0 0px', width: 0, overflow: 'hidden', whiteSpace: 'pre' });
 export const name = style({
   all: 'unset', flexShrink: 0, cursor: 'pointer', pointerEvents: 'auto', borderRadius: 2,
-  ':hover': { textDecoration: 'underline' }, selectors: { '&:focus-visible:not([data-pointer-focus] *)': { outline: `2px solid ${vars.fgMuted}` } },
+  ':hover': { textDecoration: 'underline' }, selectors: { '&:focus-visible:not([data-pointer-focus])': { outline: `2px solid ${vars.fgMuted}` } },
 });
 export const icon = style({ flex: '0 0 auto', width: metrics.icon, height: metrics.icon });
 export const chevron = style({ flex: '0 0 auto', width: metrics.chevron, height: metrics.chevron, transition: 'transform 200ms ease',

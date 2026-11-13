@@ -201,7 +201,7 @@ async function main() {
   fs.accessSync(mainPath) // 主进程本体在真实 app/ 目录
   // 任务页主进程 chunk、三个 fork worker 与用量页的 token 扫描线程(#6334)必须与 main.js 同目录真实存在
   // (worker 按本 chunk 同目录解析,见 worker-manifest.ts)
-  for (const sibling of ['emdash-main-bridge.js', 'acp-runtime.js', 'agent-config-runtime.js', 'fs-watch-runtime.js', 'usage-token-scan.js']) {
+  for (const sibling of ['emdash-main-bridge.js', 'acp-runtime.js', 'agent-config-runtime.js', 'fs-watch-runtime.js', 'usage-token-scan.js', 'task-turn-search.js']) {
     fs.accessSync(path.join(distElectron, sibling))
   }
   await probeAnchor('app-anchor', createRequire(mainPath))

@@ -36,7 +36,7 @@
   background: transparent;
   color: inherit;
 }
-.gg-folder-card__toggle:focus-visible:not([data-pointer-focus] *) {
+.gg-folder-card__toggle:focus-visible:not([data-pointer-focus]) {
   outline: 2px solid var(--live);
   outline-offset: 2px;
   border-radius: 6px;

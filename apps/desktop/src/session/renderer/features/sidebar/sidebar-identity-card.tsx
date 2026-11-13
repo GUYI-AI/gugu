@@ -370,7 +370,7 @@ function IdentityRow({ row }: { row: RowSpec }) {
       <span
         className={cn(
           'flex size-4 shrink-0 items-center justify-center text-foreground-muted transition-opacity duration-[var(--dur-fast)]',
-          state === null && 'opacity-0 group-hover/identity-row:opacity-100 group-focus-visible/identity-row:opacity-100'
+          state === null && 'opacity-0 group-hover/identity-row:opacity-100 group-identity-row-kbd-focus:opacity-100'
         )}
       >
         {state === copiedLabel ? <Check className="size-3" /> : <Copy className="size-3" />}

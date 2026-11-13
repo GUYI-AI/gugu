@@ -7,10 +7,10 @@
 .first-run-harness-choice:hover:not(:has(input:disabled)) { background: var(--hover); }
 .first-run-harness-choice[data-selected='true'] { border-color: var(--border-strong); background: var(--muted); }
 .first-run-harness-choice:has(input:disabled) { cursor: not-allowed; opacity: 0.58; }
-.first-run-harness-choice:has(input:focus-visible:not([data-pointer-focus] *)) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.first-run-harness-choice:has(input:focus-visible:not([data-pointer-focus])) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .first-run-harness-input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
 /* 真 checkbox 是透明的,全局键盘焦点环画在它身上等于看不见;环改由磁贴自己画(上一条)。 */
-.first-run-harness-input:focus-visible:not([data-pointer-focus] *) { outline: none; }
+.first-run-harness-input:focus-visible:not([data-pointer-focus]) { outline: none; }
 .first-run-harness-check { position: absolute; top: 12px; right: 12px; display: grid; place-items: center; width: 20px; height: 20px; border: 1.5px solid color-mix(in oklab, var(--fg) 28%, transparent); border-radius: 6px; color: var(--primary-fg); transition: background var(--transition-fast), border-color var(--transition-fast); }
 .first-run-harness-choice[data-selected='true'] .first-run-harness-check { border-color: var(--primary); background: var(--primary); }
 /* 选择器多叠一级:.gg-chip 在 tokens.css 里没进 @layer,真 app 里它排在本文件后面,同权重会盖掉这里的底色 */

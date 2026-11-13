@@ -142,7 +142,7 @@ export const stopButtonOverlay = style({
   transition: 'opacity 150ms ease',
   selectors: {
     [`${userCardGroup}:hover &`]: { opacity: 1 },
-    '&:focus-visible:not([data-pointer-focus] *)': { opacity: 1 },
+    '&:focus-visible:not([data-pointer-focus])': { opacity: 1 },
     '&:hover': { color: vars.fg },
   },
 });
@@ -209,7 +209,7 @@ export const userMessageActionButton = style({
   cursor: 'pointer',
   selectors: {
     '&:hover': { color: vars.fg, background: vars.bgHover },
-    '&:focus-visible:not([data-pointer-focus] *)': { outline: `2px solid ${vars.fgMuted}`, outlineOffset: '1px' },
+    '&:focus-visible:not([data-pointer-focus])': { outline: `2px solid ${vars.fgMuted}`, outlineOffset: '1px' },
   },
 });
 
@@ -222,7 +222,7 @@ export const userMessageExpand = style({
   padding: 0, border: 0, background: 'transparent', cursor: 'pointer',
   minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1, lineHeight: '16px',
   color: vars.fgMuted, fontFamily: vars.fontSans, fontSize: vars.typeChromeTinyFontSize, whiteSpace: 'nowrap',
-  selectors: { '&:hover': { color: vars.fg }, '&:focus-visible:not([data-pointer-focus] *)': { outline: `1px solid ${vars.fgMuted}`, outlineOffset: 2, borderRadius: 3 } },
+  selectors: { '&:hover': { color: vars.fg }, '&:focus-visible:not([data-pointer-focus])': { outline: `1px solid ${vars.fgMuted}`, outlineOffset: 2, borderRadius: 3 } },
 });
 
 export const userMessageTime = style({
@@ -289,7 +289,7 @@ globalStyle(`${attachChip}:hover ${attachChipTile}`, {
   background: vars.bgPress,
 });
 
-globalStyle(`${attachChip}:focus-visible:not([data-pointer-focus] *) ${attachChipTile}`, {
+globalStyle(`${attachChip}:focus-visible:not([data-pointer-focus]) ${attachChipTile}`, {
   background: vars.bgPress,
 });
 

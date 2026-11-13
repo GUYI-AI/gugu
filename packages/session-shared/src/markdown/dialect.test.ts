@@ -13,6 +13,8 @@ import {
   type MarkdownDialectOptions,
 } from './dialect';
 
+type HastTree = { tagName?: string; value?: string; properties?: { className?: string[]; role?: string; ariaLabel?: string }; children?: HastTree[] };
+
 function run(text: string, options: MarkdownDialectOptions): Root {
   const processor = unified().use(remarkParse).use(markdownRemarkPlugins(options));
   return processor.runSync(processor.parse(text)) as Root;
@@ -177,6 +179,30 @@ describe('markdown dialect', () => {
       'user-content-install-steps-1',
       'user-content-install-steps-2',
       null,
+    ]);
+  });
+
+  it('keeps a formula\'s source for a reader without a MathML element: one costs every later insertion a re-style of whole subtrees', () => {
+    const math = (className: string[], value: string) => ({ type: 'element', tagName: 'code', properties: { className }, children: [{ type: 'text', value }] });
+    const tree = { type: 'root', children: [
+      { type: 'element', tagName: 'p', properties: {}, children: [math(['language-math', 'math-inline'], 'x^2')] },
+      { type: 'element', tagName: 'pre', properties: {}, children: [math(['language-math', 'math-display'], '\\frac{a}{b}')] },
+    ] };
+    const out = unified().use(markdownRehypePlugins({ trust: 'chat' })).runSync(tree as never) as unknown as HastTree;
+    const tags = new Set<string>();
+    const formulas: HastTree[] = [];
+    const walk = (node: HastTree) => {
+      if (node.tagName) tags.add(node.tagName);
+      if (node.properties?.className?.includes('katex')) formulas.push(node);
+      node.children?.forEach(walk);
+    };
+    walk(out);
+    expect([...tags].filter((tag) => ['math', 'semantics', 'annotation', 'mrow', 'mi', 'msup', 'mfrac'].includes(tag))).toEqual([]);
+    // named by its TeX source for assistive technology; the hidden span carries the same text for a copied selection
+    expect(formulas.map((node) => [node.properties?.role, node.properties?.ariaLabel])).toEqual([['math', 'x^2'], ['math', '\\frac{a}{b}']]);
+    expect(formulas.map((node) => node.children?.map((child) => [child.properties?.className?.[0], child.children?.[0]?.value ?? null]))).toEqual([
+      [['katex-mathml', 'x^2'], ['katex-html', null]],
+      [['katex-mathml', '\\frac{a}{b}'], ['katex-html', null]],
     ]);
   });
 

@@ -449,12 +449,14 @@ function InnerLayout({
       frame.style.height = `${rect.height}px`
       frame.dataset.emdashSlot = dest === sessionSlotRef.current ? 'task' : 'composer'
       shown = rect.width > 0 && rect.height > 0
-      frame.style.pointerEvents = shown ? 'auto' : 'none'
       hide()
     }
-    // Hidden, the frame's page is skipped (content-visibility): not drawn, focusable, findable or intersecting, so its
-    // animations stop too. ❌ An inherited property (visibility, inert, a custom property) toggled on the frame restyles
-    // every element of the page: 158–168 ms at 1000 chat rows on mac1, paid on each switch to and from Messages, ~2 ms this way.
+    // Hidden, the frame's page is skipped (content-visibility): not drawn, clickable, focusable, findable or intersecting,
+    // so its animations stop too. ❌ An inherited property (visibility, pointer-events, inert, a custom property) toggled
+    // on the frame restyles every element of the page: 158–168 ms at 1000 chat rows on mac1, paid on each switch to and
+    // from Messages, ~2 ms this way. `pointer-events` was toggled here until 2026-11: every switch re-styled the page
+    // (9136 elements of a 7.5k-node page each way). It bought nothing: skipped content takes no clicks, the frame's own
+    // box is scaled to nothing, and while a page is peeked everything else is `visibility: hidden`.
     // A session opened beside an App in a chat's side panel (G1) is the frame's page, drawn over that panel: while the
     // frame is hidden (the chats tab) and holds one, the page stays and only the rest hides (visibility; the peeked page
     // says visible for itself), and the frame sits above the panels (z-float), not under them.
@@ -1189,8 +1191,8 @@ function InnerLayout({
             unclickable) is what's visible before that effect's first run — never a flex participant,
             so this JSX position can stay fixed forever without any conditional-sibling insertBefore
             crash (see the effect's comment for why that matters). content-visibility over display:none so the
-            page keeps its layout while hidden; pointerEvents mirrors visibility so a
-            visually-hidden frame never eats clicks meant for whatever's actually on screen. */}
+            page keeps its layout while hidden; skipped and scaled to nothing, the hidden frame takes no clicks
+            meant for whatever's actually on screen. */}
         {/* 门只看 sessionHost 能力,不看 shell 宽度(见 @@@web-target-gate;❌ 不是旧说法的「没有会话页
             资产」)。桌面 Electron 永不进移动 shell(#3566);移动 shell 里(web 目标窄视口 / Capacitor,
             sessionHost 在场时)这份实例要承载 #2525 的全屏创建页,也绝不能因为一次视口变化就被卸载
@@ -1198,7 +1200,7 @@ function InnerLayout({
         {sessionHostAvailable && (
           <div
             ref={emdashFrameHomeRef}
-            style={{ position: 'fixed', top: 0, left: 0, width: 0, height: 0, overflow: 'hidden', contentVisibility: 'hidden', transform: 'scale(0)', pointerEvents: 'none', zIndex: 5 }}
+            style={{ position: 'fixed', top: 0, left: 0, width: 0, height: 0, overflow: 'hidden', contentVisibility: 'hidden', transform: 'scale(0)', zIndex: 5 }}
           >
             <EmdashSessionFrame />
           </div>
