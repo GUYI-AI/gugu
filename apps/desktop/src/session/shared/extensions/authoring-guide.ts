@@ -967,13 +967,13 @@ API 44, only when that conversation is the person's private chat with their own 
   \`gugu.assistant.onChanged(fn)\` hears each new one. \`status\`: \`{ assistant: "found"|"loading"|"none"|"unreadable", name, avatar
   (data: image), tint (hue 0–360|null), home: { kind: "cloud"|"this-computer"|"other-computer"|"server", online, label } | null,
   setup: "shell"|"connect"|"ready"|null, preparing, cloudAvailable, member: boolean|null, loadError, ownerName, nameMax (30),
-  counts: { devices, connectedApps (value { saved, connected }), projects, capabilities }, connectors }\` — no id. Each count and
+  counts: { devices, connectedApps (value { saved, connected }), projects }, connectors }\` — no id. Each count and
   \`connectors\` is \`{ state: "ready", value }\` | \`{ state: "loading" }\` | \`{ state: "unreadable" }\` (say gugu's "can't read it now");
   \`connectors\` value: the connect step's rows \`{ id, name, icon: { light, dark, invertInDark } | null (data: images), connected }\`.
 - With no assistant yet (\`none\`, \`loading\`, \`unreadable\`): \`ready\` with any or no conversation, \`name\`, \`avatar\`, \`tint\`, \`home\`,
   \`counts\`, \`connectors\` null, and \`gugu.assistant.open("main", "setup")\` works. Once one appears, unchosen: \`onChanged\` hears \`{ state: "unbound" }\` once.
 - In a click: \`gugu.assistant.open("main", screen)\` — gugu's screens \`close\`, \`look\`, \`model\`, \`devices\`, or the assistant's
-  own pages \`setup\`, \`move\`, \`settings\`, \`connected-apps\`, \`projects\`, \`capabilities\` drawn over your page with gugu's back control
+  own pages \`setup\`, \`move\`, \`settings\`, \`connected-apps\`, \`projects\` drawn over your page with gugu's back control
   (\`hostPage\` true until closed: hide yours; \`setup\` starts at the name, your intro being its first screen, and closes once the
   assistant is there). None of these is in gugu's Settings. \`gugu.assistant.advanceSetup("main", "ready" | "done")\`: from \`connect\`, or \`ready\` to done; else \`invalid\`.
   \`gugu.assistant.rename("main", text)\` → \`"renamed"|"unchanged"|"empty"|"too-long"|"failed"\` (trimmed, ≤ \`nameMax\`).
@@ -1049,7 +1049,7 @@ person signed in on that phone, checked again after every wait.
 - \`onSurface\` also brings \`intent\` there, once: \`{ kind: "voice-note" }\` when the person opens the note the recording bar shows
   (the layer is on \`memory\`; read it through \`voice-notes\`), \`{ kind: "profile" }\` from the assistant's 自定义 card (on \`profile\`).
 - \`gugu.assistant.open\` opens the phone's own screens: \`setup\` and \`settings\` its settings page, \`look\` its 换形象 page,
-  \`model\`, \`devices\`, \`connected-apps\`, \`projects\`, \`capabilities\` theirs under 资料, \`health\` its 健康 page under 记忆,
+  \`model\`, \`devices\`, \`connected-apps\`, \`projects\` theirs under 资料, \`health\` its 健康 page under 记忆,
   \`close\` the one confirmation. \`gugu.assistant.rename\` works as on a computer. \`gugu.bindings.openWork\` draws the task's
   conversation over 任务, with its own back. A \`{ binding }\` draft lands in 聊天 and the layer goes there.
 - Health: read on the phone and never handed to you. Draw a 健康 row or card with no figures; on a click,

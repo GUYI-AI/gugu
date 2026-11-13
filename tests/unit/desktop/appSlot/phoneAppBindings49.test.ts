@@ -462,7 +462,6 @@ describe('the layout signal and the unsupported-here states', () => {
       model: { section: 'profile', page: 'settings:aimodel' }, devices: { section: 'profile', page: 'devices' }, 'connected-apps': { connectors: true },
       health: { section: 'memory', page: 'health' },
       settings: { section: 'profile', page: 'settings' }, projects: { section: 'profile', page: 'library:workspace' },
-      capabilities: { section: 'profile', page: 'library:capabilities' },
     })
     // Every screen the contract takes has a phone answer: a page of its own, or the closed unsupported state — never a dead tap.
     for (const screen of ASSISTANT_SCREENS) expect(PHONE_ASSISTANT_SCREENS).toHaveProperty([screen])

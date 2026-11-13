@@ -62,8 +62,8 @@ export type AssistantShellSnapshot = {
   rulesPending?: boolean
 }
 
-/** 壳往会话页里画的那几格(在 lib/shellSlots.ts 里登记为 `assistant:<格>`)。新增一格 = 这里加一个名字 + AssistantShellHost 里配一个组件。 */
-export type AssistantShellSlot = 'onboarding' | 'chat' | 'file-preview' | 'task-chat' | 'devices' | 'connectors' | 'connectors-device' | 'connectors-other' | 'settings'
+/** 壳往会话页里画的那几格(在 lib/shellSlots.ts 里登记为 `assistant:<格>`)。新增一格 = 这里加一个名字,壳那一侧配一个组件。 */
+export type AssistantShellSlot = 'onboarding' | 'chat' | 'file-preview' | 'task-chat' | 'connectors' | 'connectors-device' | 'connectors-other' | 'settings'
 
 // 连接应用复用全局设置的同一个组件,在助理资料页直接展开;聊天工具与状态仍走设置。
 // ⚠ 'connectors-device' / 'connectors-other' 只为「助理安家」的 assistant-capabilities.tsx(安好家之后的「连应用」一步,设置重做把它删了)暂时编得过,

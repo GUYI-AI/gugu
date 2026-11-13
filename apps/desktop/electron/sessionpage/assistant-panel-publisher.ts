@@ -12,7 +12,7 @@ import { assistantPanelPath } from './assistant-panel-paths'
 import { sameStoredJson } from './stored-json'
 
 export type PanelObservation = { key: string; data: Record<string, unknown>; bytes?: Uint8Array }
-const deviceDomains: readonly AssistantPanelDomain[] = ['tasks','capabilities','device-notes','integrations']
+const deviceDomains: readonly AssistantPanelDomain[] = ['tasks','integrations']
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 
 /** Only natural host activity calls this publisher. A complete collection is

@@ -9,7 +9,6 @@ import { createRPCController } from '@shared/lib/ipc/rpc';
 import type { OpenInAppId } from '@shared/openInApps';
 import { resolveWorkspace } from '../projects/utils';
 import { appService } from './service';
-import { readUserLibrary, readUserLibraryEntry, readUserLibraryVolume, writeUserLibraryEntry } from './user-library';
 import { callAssistantApp } from './assistant-app';
 
 const execFileAsync = promisify(execFile);
@@ -170,10 +169,6 @@ export const appController = createRPCController({
   getAppVersion: () => appService.getCachedAppVersion(),
   /** 宿主机的家目录(应用内目录浏览器的起点;网页版本机项目用)。 */
   getHomeDirectory: (): string => homedir(),
-  getUserLibrary: () => readUserLibrary(),
-  getUserLibraryVolume: (kind: import('@shared/user-library').UserLibraryKind) => readUserLibraryVolume(kind),
-  readUserLibraryEntry: (kind: import('@shared/user-library').UserLibraryKind, link: string) => readUserLibraryEntry(kind, link),
-  writeUserLibraryEntry: (input: import('@shared/user-library').UserLibraryWrite) => writeUserLibraryEntry(input, undefined, 'ui'),
   getElectronVersion: () => process.versions.electron,
   getPlatform: () => process.platform,
   getPlatformDisplayName,

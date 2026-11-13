@@ -13,7 +13,6 @@ import { refreshAssistantContext, personalAssistantContext } from '../../apps/de
 import type { Materialization } from '../../apps/desktop/electron/capability-bundle'
 import { GUGU_PLATFORM_BLOCK } from '../../apps/desktop/electron/product-platform-prompt'
 import { SESSION_TOOL_DEFS } from '../../apps/desktop/electron/mcp/gugu-session-tool'
-import { LIBRARY_TOOL_DEFS } from '../../apps/desktop/electron/mcp/gugu-library-tool'
 import { PROJECT_TOOL_DEFS } from '../../apps/desktop/electron/mcp/gugu-project-tool'
 import { assistantHomePaths, assistantRecoveryContext } from '../../packages/core/src/shared/assistantPolicy'
 import { readAssistantProductRules } from '../../apps/desktop/electron/assistant-product-rules'
@@ -110,9 +109,6 @@ async function run(test: AssistantCase) {
     }
     if (name === 'project_list') return { items: [{ project_id: 'project:launch', name: '发布准备', device_id: 'device:mac', path: join(root, 'launch') }] }
     if (name === 'project_get') return { project_id: 'project:launch', name: '发布准备', device_id: 'device:mac', path: join(root, 'launch') }
-    if (name === 'library_list') return { volumes: ['capabilities', 'devices'] }
-    if (name === 'library_read') return { device_id: input.device_id ?? 'device:mac',
-      items: [{ name: '办公与研究', description: 'Mac：邮箱、文档、浏览器、财务软件；手机：短信和手机日历。说明不代表当前授权。' }] }
     if (name === 'session_children' || name === 'session_peers') return { items: test.reuse || test.route === 'closed'
       ? [{ session_id: 'session:existing', title: '发布准备', project_id: 'project:launch', device_id: 'device:mac', status: 'idle' }] : [] }
     if (name === 'session_get' && !sessions.has(String(input.session_id))) return { ok: false, code: 'session_not_found' }
@@ -151,7 +147,7 @@ async function run(test: AssistantCase) {
     if (name === 'message_history') return { messages: phase === 2 && test.recoveryNote
       ? [{ message_id: 'msg:44444444-4444-4444-8444-444444444444', source_link: pendingSource, text: pendingMessage }] : [] }
     if (name === 'session_ask_user') return { status: 'pending', question_id: 'fixture-question' }
-    if (name === 'catalog_list') return { tools: ['library_list', 'library_read', 'project_list', 'project_get', 'session_ask_user'] }
+    if (name === 'catalog_list') return { tools: ['project_list', 'project_get', 'session_ask_user'] }
     if (name === 'catalog_call') return invoke(String(input.tool), (input.args ?? {}) as Record<string, unknown>)
     // These effects are deliberately observable failures, never real external actions.
     if (['external_send', 'payment', 'schedule_create', 'project_create'].includes(name)) return { ok: false, code: 'not_authorized' }
@@ -169,8 +165,6 @@ async function run(test: AssistantCase) {
     ['device_call', 'Execute one native device action.', { device: z.string(), name: z.string(), args: z.record(z.string(), z.unknown()).optional() }],
     ['project_list', 'List existing projects on one device.', { device_id: z.string().optional(), name: z.string().optional() }],
     ['project_get', 'Read a project and its actual folders.', { project_id: z.string(), device_id: z.string().optional() }],
-    ['library_list', 'Locate capability/device notes.', { device_id: z.string().optional() }],
-    ['library_read', 'Read a capability/device index or entry. Notes do not grant access.', { kind: z.string(), device_id: z.string().optional(), entry: z.string().optional() }],
     ['session_children', 'List existing child task agents.', {}],
     ['session_peers', 'List task agents on a device.', { device: z.string().optional(), project: z.string().optional() }],
     ['session_get', 'Read current task messages, status and artifacts.', { session_id: z.string() }],
@@ -190,7 +184,7 @@ async function run(test: AssistantCase) {
     ['project_create', 'Create a new project.', { name: z.string() }],
   ] as const
   const makeServer = () => createSdkMcpServer({ name: 'gugu', version: '1.0.0', tools: definitions.map(([name, description, schema]) => {
-    const actual = [...SESSION_TOOL_DEFS, ...LIBRARY_TOOL_DEFS, ...PROJECT_TOOL_DEFS].find(definition => definition.name === name)
+    const actual = [...SESSION_TOOL_DEFS, ...PROJECT_TOOL_DEFS].find(definition => definition.name === name)
     return tool(name, actual?.description ?? description, actual?.schema instanceof z.ZodObject ? actual.schema.shape : schema, async input => {
       const value = await invoke(name, input)
       return { content: [{ type: 'text' as const, text: JSON.stringify(value) }] }

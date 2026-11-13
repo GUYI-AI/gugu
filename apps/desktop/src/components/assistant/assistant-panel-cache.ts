@@ -7,7 +7,7 @@ import { ASSISTANT_PANEL_CHANGED } from './assistant-panel-events'
 const PREFIX='assistant-panel.v1:'
 const HOT_KEY='gugu.assistantPanel.v1'
 const MAX_BYTES=32*1024*1024, HOT_BYTES=1024*1024
-const cachedDomains=new Set(['integrations','capabilities','device-notes'])
+const cachedDomains=new Set(['integrations'])
 type CacheRow=LocalRow&{scope:string;owner:string;assistant:string;kind:'snapshot'|'body'|'account-state';value:unknown;bytes:number}
 const encode=(bytes:Uint8Array)=>{let value='';for(let start=0;start<bytes.length;start+=8192)value+=String.fromCharCode(...bytes.subarray(start,start+8192));return btoa(value)}
 const decode=(value:string)=>Uint8Array.from(atob(value),character=>character.charCodeAt(0))

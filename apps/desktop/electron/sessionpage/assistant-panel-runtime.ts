@@ -146,8 +146,8 @@ export function createAssistantPanelRuntime(deps: {
           const route = await deps.connectionAuthority()
           if (route.mode !== 'legacy' || route.phase !== 'stable' || !route.acceptingNewOperations) throw new Error('CONNECTION_ROUTE_CHANGED')
         }
-        return applyAssistantPanelService(change,async () => deps.local.apply(change,change.operation === 'remove' || !change.payload.bodyItemId ? null : await readBody(change),
-          (await deps.local.sessions(binding.ownerId)).filter(row => row.agentId === binding.assistantId).map(row => row.summary.conversationId),binding.ownerId),cloud)
+        return applyAssistantPanelService(change,async () => deps.local.apply(change,
+          (await deps.local.sessions(binding.ownerId)).filter(row => row.agentId === binding.assistantId).map(row => row.summary.conversationId)),cloud)
       },
       invalidate: () => invalidateAssistantIndex(deps.guguHome,binding.cwd,binding.kind,binding.ownerId),
     })
@@ -186,10 +186,6 @@ export function createAssistantPanelRuntime(deps: {
         })))
         return rows
       }
-      if (domain === 'capabilities' || domain === 'device-notes') return (await deps.local.library(domain === 'capabilities' ? 'capabilities' : 'devices')).map(row => ({
-        key: row.id,data: { name: row.name,description: row.description,group: row.group,modifiedAt: row.modifiedAt,contentFormat: 'markdown' },
-        bytes: new TextEncoder().encode(row.content),
-      }))
       if (domain === 'integrations') return [
         ...deps.local.integrationCatalog().map(row => ({ key: `catalog:${row.id}`,data: { providerId: row.id,configured: false,displayName: row.en.name,catalog: row.en.catalog },
           bytes: new TextEncoder().encode(JSON.stringify({ version: 1,en: row.en,'zh-CN': row.zh })),
@@ -259,9 +255,8 @@ export function createAssistantPanelRuntime(deps: {
       },250)
       scheduled.unref()
     }
-    // Native library tools notify only after their atomic write is durable.
-    // Give that domain its own lane: a memory upload or integration check must
-    // not hold a newly created capability behind the full inventory sweep.
+    // A domain that changed on its own gets its own lane: a memory upload must
+    // not hold it behind the full inventory sweep.
     function scheduleCollection(domain: AssistantPanelDomain) {
       if (disposed) return
       clearTimeout(collectionTimers.get(domain))
@@ -271,9 +266,6 @@ export function createAssistantPanelRuntime(deps: {
       },100)
       timer.unref(); collectionTimers.set(domain,timer)
     }
-    const stopLibrary = deps.local.onLibraryChanged?.((ownerId,kind) => {
-      if (ownerId === binding.ownerId) scheduleCollection(kind === 'capabilities' ? 'capabilities' : 'device-notes')
-    })
     const stopIntegrations = deps.local.onIntegrationsChanged?.(() => scheduleCollection('integrations'))
     const stopSchedules = deps.local.onSchedulesChanged?.(() => scheduleCollection('schedules'))
     function publishCollection(domain: AssistantPanelDomain, baseline?: AssistantPanelSnapshot): Promise<void> {
@@ -318,7 +310,7 @@ export function createAssistantPanelRuntime(deps: {
         if ((await hostAuth())?.userId !== binding.ownerId) { dispose(); return }
         await pullPending()
         const baseline = await cloud.snapshot(binding.assistantId)
-        for (const domain of ['memory','personality','files','skills','voice-notes','schedules','capabilities','device-notes','integrations'] as const) {
+        for (const domain of ['memory','personality','files','skills','voice-notes','schedules','integrations'] as const) {
           if (disposed) break
           try {
             await publishCollection(domain,baseline)
@@ -341,7 +333,6 @@ export function createAssistantPanelRuntime(deps: {
       disposed = true; republish = false
       lifetime.abort(new Error('PANEL_IDENTITY_REMOVED'))
       clearInterval(refresh); clearInterval(reconcile); clearTimeout(scheduled)
-      stopLibrary?.()
       stopIntegrations?.()
       stopSchedules?.()
       for (const timer of collectionTimers.values()) clearTimeout(timer)

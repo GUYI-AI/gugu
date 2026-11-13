@@ -5167,7 +5167,6 @@ app.whenReady().then(async () => {
     })
     app.once('will-quit', () => { nativeInbox.dispose(); assistantPanelRuntime?.dispose() })
     // 项目的跨设备身份由宿主的群对照维护；每次写入后通知渲染层重读。
-    emdash.setUserLibraryOwner(async () => (await getSessionpageAuth())?.userId ?? null)
     const assistantPanel = assistantPanelRuntime = createPanelConnectionRuntime({
       locale: currentHostLocale,
       getAuth: getSessionpageAuth,

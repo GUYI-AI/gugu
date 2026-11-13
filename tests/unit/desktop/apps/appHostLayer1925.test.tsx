@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * #1925 (API 44) One host layer over an App's panel: the built-in panel's own page (settings, projects, capabilities) drawn
+ * #1925 (API 44) One host layer over an App's panel: the built-in panel's own page (settings, projects) drawn
  * where the App's page was, with the host's back control; one at a time; taken away on back, on an account change, when the
  * window no longer shows the assistant and when the panel goes. The layer is the shell's one record per App (the same one a
  * task's conversation, API 46, uses); the shell tells main each open and close (AppWorkLedgerHost.test.tsx).
@@ -20,7 +20,6 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assist
   AssistantShellPageFrame: ({ testId, children }: { testId: string; children: unknown }) => <div data-testid={testId}>{children as never}</div>,
 }));
 vi.mock('../../../../apps/desktop/src/components/assistant/AssistantProjectsLibrary', () => ({ AssistantProjectsLibrary: () => <div data-testid="page-projects" /> }));
-vi.mock('../../../../apps/desktop/src/components/assistant/AssistantLibraryVolume', () => ({ AssistantLibraryVolume: ({ kind }: { kind: string }) => <div data-testid={`page-${kind}`} /> }));
 vi.mock('../../../../apps/desktop/src/session/renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCountsSource: () => null }));
 vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ isMyAssistant: () => false }));
 // The engine draws in WebGL, which jsdom has not: who is drawn, and how big, is what is checked here.
@@ -50,7 +49,7 @@ const mount = () => act(() => root.render(<AppHostLayerFrame extensionId={APP} t
 /** The App's page where it stands (a box around it, for the figure, 44). */
 const PAGE = ['app-page-anchor', 'app-page'];
 const PANEL = pageKey(null, 'dock');
-const open = (screen: 'settings' | 'projects' | 'capabilities', owner = OWNER) => act(() => openAssistantLayer(APP, screen, owner, PANEL));
+const open = (screen: 'settings' | 'projects', owner = OWNER) => act(() => openAssistantLayer(APP, screen, owner, PANEL));
 /** The shell's record of this App's layer (what it tells main). */
 const layer = () => readAppHostLayerBridge()!.getSnapshot()[APP] ?? null;
 
@@ -73,7 +72,6 @@ describe('the host layer over an App\'s panel', () => {
     // The settings: the shell draws the built-in page into this App's own cell (AppHostLayerHost).
     ['settings', ['app-host-layer-assistant-settings', 'app-host-layer-cell']],
     ['projects', ['page-projects']],
-    ['capabilities', ['page-capabilities']],
   ] as const)('%s: the built-in page in the App\'s place, with the host\'s back; back gives the App its page again', (screen, page) => {
     mount();
     expect(shown()).toEqual(PAGE);
@@ -106,7 +104,7 @@ describe('the host layer over an App\'s panel', () => {
 
   it('taken away on an account change, or when the window no longer shows the assistant', () => {
     mount();
-    open('capabilities');
+    open('projects');
     act(() => publishAssistantShell(shell({ ownerId: OTHER })));
     expect(shown()).toEqual(PAGE);
     expect(layer()).toBeNull();
@@ -124,8 +122,8 @@ describe('the host layer over an App\'s panel', () => {
       return null;
     }
     act(() => root.render(<><AppHostLayerFrame extensionId={APP} tabKind={`${APP}.main`} /><Probe /></>));
-    open('capabilities');
-    expect(seen.at(-1)).toBe('assistant-capabilities');
+    open('projects');
+    expect(seen.at(-1)).toBe('assistant-projects');
     const from = seen.length;
     act(() => publishAssistantShell(shell({ ownerId: OTHER })));
     expect(seen.length).toBeGreaterThan(from);

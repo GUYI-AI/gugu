@@ -19,7 +19,7 @@ describe('remote invoke policy', () => {
       expect(policy('app.assistantAppCall', ['callProgram', { name }, 'other'])).toBe(false);
       expect(remoteInvokePolicyForCaller(undefined)('app.assistantAppCall', ['callProgram', { name }, 'owner'])).toBe(false);
     }
-    for (const name of ['library_write', 'arbitrary', 'assistant_work_clear_extra'])
+    for (const name of ['arbitrary', 'assistant_work_clear_extra'])
       expect(policy('app.assistantAppCall', ['callProgram', { name }, 'owner'])).toBe(false);
     expect(policy('app.assistantAppCall', ['messageAgent', {}, 'owner'])).toBe(false);
     expect(policy('app.assistantAppCall', ['callProgram', { name: 'assistant_work_clear', arguments: { owner: 'other' } }, 'owner'])).toBe(false);

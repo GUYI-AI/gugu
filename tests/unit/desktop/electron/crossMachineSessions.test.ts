@@ -162,7 +162,6 @@ describe('reaching another machine', () => {
       if (action.action === 'devices') return xm.listDeviceRows()
       if (action.action === 'device_actions') return { devices: await native.describe() }
       if (action.action === 'project_list') return []
-      if (action.action === 'library_read') return { items: [] }
       throw new Error(`Unexpected action ${action.action}`)
     } })
     const records = index.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line))
