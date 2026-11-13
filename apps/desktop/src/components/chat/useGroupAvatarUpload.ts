@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { chatService } from '../../lib/chat'
+import { clearCanonicalGroupAvatar } from '../../lib/chatCanonicalStorage'
 import { rendererLogger } from '../../lib/log'
 import { useToast } from '../toastContext'
 
@@ -37,7 +38,7 @@ export function useGroupAvatarUpload({ chatId, viewerIsManager, setAvatarUrl, se
     setAvatarUploading(true)
     setActionError(null)
     try {
-      await chatService.resetGroupAvatar(chatId)
+      await clearCanonicalGroupAvatar(chatId)
       setAvatarUrl(null)
       toast(t('group.settings.avatarUpdated'), 'success')
     } catch (err) {

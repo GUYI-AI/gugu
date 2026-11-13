@@ -71,7 +71,6 @@ import {
   type WindowRevalidation,
 } from './chatMessageRevalidation'
 import {
-  clearCanonicalGroupAvatar,
   uploadCanonicalGroupAvatar,
 } from './chatCanonicalStorage'
 import { writeIdempotentChatMessage } from './chatMessageWriter'
@@ -698,10 +697,6 @@ export const chatService = {
   // 上传到 chat-media 后,由共同 RPC 一次保存 URL 与 storage 引用。
   async uploadGroupAvatar(chatId: string, file: File): Promise<string> {
     return uploadCanonicalGroupAvatar(chatId, file)
-  },
-
-  async resetGroupAvatar(chatId: string): Promise<void> {
-    return clearCanonicalGroupAvatar(chatId)
   },
 
   // @@@group-join-mode (#1018 step3 #858) — 凭 token 请求加入：open→直接入群('joined')，
