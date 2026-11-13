@@ -137,7 +137,7 @@ export function classifyFileLink(href: string): FileLinkClassification {
   const groupFile = parseGroupFileLink(candidate)
   if (groupFile) return { kind: 'group-file', ...groupFile }
 
-  const { path: raw, at } = workspacePlace(href)
+  const { path: raw, at } = workspacePlace(candidate)
   const placed = at && Object.keys(at).length > 0 ? { at } : {}
   let path = raw
   try {

@@ -7,3 +7,5 @@ it('keeps quoted sheet names in extracted file references', () => { const at = {
 it('omits revision zero from group file links', () => { expect(parseGroupFileLink(`gugu-file://${ITEM}?v=0`)).toEqual({ itemId: ITEM }); expect(parseGroupFileLink(`gugu-file://${ITEM}?v=1`)?.version).toBe(1) })
 
 it('rejects unsafe revisions in App file targets', () => { const own = { id: 'board', contributes: { tabs: [{ name: 'main' }] } }; expect(() => linkTargetOf({ kind: 'file', file: ITEM, version: 9007199254740992 }, own)).toThrow(); expect(linkTargetOf({ kind: 'file', file: ITEM, version: 1 }, own)).toMatchObject({ version: 1 }) })
+
+it('classifies trimmed file paths consistently', () => { expect(classifyFileLink('  notes/a.md  ')).toEqual({ kind: 'workspace-file', path: 'notes/a.md' }); expect(classifyFileLink('  notes/a.md#L10  ')).toEqual({ kind: 'workspace-file', path: 'notes/a.md', at: { L10: '' } }) })
