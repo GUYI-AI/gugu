@@ -1,3 +1,5 @@
+import { normalizeMimeType } from '../imageMime.mjs'
+
 export const VOICE_ATTACHMENT_LINE_PREFIX = '[语音] durationMs='
 export const VOICE_TRANSCRIPT_LINE_PREFIX = '[转写] '
 
@@ -50,7 +52,7 @@ export function parseVoiceAttachmentContent(content: string | null): VoiceAttach
   }
 
   const fileName = headerMatch[1]?.trim() ?? ''
-  const mimeType = headerMatch[2]?.trim() ?? null
+  const mimeType = normalizeMimeType(headerMatch[2]) || null
   if (!fileName || !mimeType?.startsWith('audio/')) {
     return null
   }
