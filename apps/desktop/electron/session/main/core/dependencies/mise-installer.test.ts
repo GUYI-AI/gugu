@@ -421,5 +421,7 @@ describe('application-owned mise lifecycle', () => {
     expect(env.MISE_NO_CONFIG).toBeUndefined();
     expect(env.MISE_GLOBAL_CONFIG_FILE).toBe(path.join(home, 'owned.toml'));
     expect(env.MISE_SYSTEM_CONFIG_DIR).toBe(path.join(home, 'system'));
+    // The pinned engine never checks the network for a newer mise of its own.
+    expect(env.MISE_DISABLE_UPDATE_WARNING).toBe('1');
   });
 });
