@@ -11,7 +11,6 @@ import { buildUnifiedMembers } from './groupMemberModels'
 import { chatService } from '../../lib/chat'
 import { GroupAvatarEditor } from './GroupAvatarEditor'
 import { useGroupAvatarUpload } from './useGroupAvatarUpload'
-import { useChatStore } from '../../store/chatContext'
 import { ChatManagementActions } from './ChatManagementActions'
 import { GroupSettingsManagePage } from './GroupSettingsManagePage'
 import { MemberListPanel, type MemberListPanelProps } from './MemberListPanel'
@@ -95,7 +94,6 @@ export function GroupMembersSection({
 }) {
   const chatId = chat.id
   const { t } = useTranslation('messaging')
-  const { identitiesById } = useChatStore('identitiesById')
   const mobileShell = useMobileShell()
   const { page, push, pop, canPop } = useSettingsPages(chatId, initialPage)
 
