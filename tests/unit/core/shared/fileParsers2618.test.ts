@@ -32,3 +32,10 @@ it('retains UTF-8 BOM bytes in text marked exact', () => {
   expect(new TextEncoder().encode(stored.text)).toEqual(bytes)
 })
 
+
+it('retains a final quoted empty CSV cell without a trailing newline', () => {
+  expect(parseCsv('""').rows).toEqual([['']])
+  expect(parseCsv('id\n""').rows).toEqual([['id'], ['']])
+  expect(parseCsv('').rows).toEqual([])
+})
+
