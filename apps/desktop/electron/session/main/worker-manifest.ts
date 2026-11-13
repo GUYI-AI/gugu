@@ -7,6 +7,10 @@ export const desktopWorkers = {
     entry: 'main/db/turn-text-backfill-worker.ts',
     file: 'turn-text-backfill.js',
   },
+  'task-turn-search': {
+    entry: 'main/core/search/task-turn-search-worker.ts',
+    file: 'task-turn-search.js',
+  },
   acp: {
     entry: 'src/main/core/acp/runtime-process/entry.ts',
     file: 'acp-runtime.js',

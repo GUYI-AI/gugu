@@ -442,8 +442,7 @@ export class SessionCell {
 
   private reconcileReplayedQueue(): void {
     const queued = this.machine.queuedPrompts.filter((prompt) => prompt.origin === 'communication');
-    const hasCanonicalReplay = this.deps.providerId === 'claude'
-      || this.deps.providerId === 'codex' || this.deps.historyRecovery?.canonicalReplay === true;
+    const hasCanonicalReplay = this.deps.historyRecovery?.canonicalReplay === true;
     const recorded = this.recordedDeliveryIds;
     const historyUnknown = this.replayHistoryUnknown || recorded === null;
     if (!queued.length || (!hasCanonicalReplay && !historyUnknown)) return;

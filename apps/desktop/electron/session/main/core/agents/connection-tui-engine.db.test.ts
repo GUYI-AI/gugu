@@ -129,7 +129,7 @@ async function terminalEngine(model: string, platform?: typeof PLATFORM) {
   const sessionId = `tui-${sessionSeq}`;
   const before = state.started.length;
   const out = await provisionAndOverride(
-    { sessionId, providerId: 'codex', cwd: state.home, baseCommand: state.codexCli, model },
+    { sessionId, providerId: 'codex', cwd: state.home, baseCommand: state.codexCli, model, permissionMode: 'edit' as const },
     {
       getAuth: vi.fn(),
       resolveDeviceId: vi.fn(),

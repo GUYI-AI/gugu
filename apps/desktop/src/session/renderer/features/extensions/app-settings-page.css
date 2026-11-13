@@ -12,7 +12,7 @@
 .tool-app-tabs > button { height: 38px; padding: 0 1px; border-bottom: 2px solid transparent; color: var(--foreground-muted); font: inherit; cursor: pointer; }
 .tool-app-tabs > button[aria-selected=true] { border-bottom-color: var(--foreground); color: var(--foreground); }
 .tool-app-tabs > button:hover { color: var(--foreground); }
-.tool-app-tabs > button:focus-visible:not([data-pointer-focus] *) { outline: 2px solid var(--border-primary); outline-offset: 3px; }
+.tool-app-tabs > button:focus-visible:not([data-pointer-focus]) { outline: 2px solid var(--border-primary); outline-offset: 3px; }
 .tool-app-content [hidden] { display: none !important; }
 .tool-app-content h2 { margin-bottom: 4px; font-size: var(--font-size-sm); font-weight: var(--font-weight-regular); color: var(--foreground-muted); }
 .tool-app-fields { display: flex; flex-direction: column; gap: 24px; }

@@ -17,7 +17,7 @@ function materialize(surface: 'acp' | 'tui', permissionMode: string) {
       ],
       env: { GUGU_HOME },
       model: null,
-      autonomy: { mode: permissionMode === 'full-access' ? 'full-access' : 'approval-required', permissionMode },
+      autonomy: { permissionMode },
       promptBlocks: { platform: 'PLATFORM', identity: 'IDENTITY' },
       packages: [],
     } as never,

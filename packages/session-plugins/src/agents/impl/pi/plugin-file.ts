@@ -2,7 +2,7 @@
 export const GUGU_PI_SYSTEM_PROMPT_ENV = 'GUGU_PI_SYSTEM_PROMPT';
 export const GUGU_PI_MCP_SERVERS_ENV = 'GUGU_PI_MCP_SERVERS';
 /**
- * 这一轮的权限档 —— 只有两个合法值,与 `SessionAutonomyCapability.mode` 同名。
+ * 这一轮的权限档 —— 只有两个合法值,由 `SessionAutonomyCapability.permissionMode` 是否为 full-access 投影出来。
  *
  * ⚠️ 缺席**不是**第三档,它是「这条腿没有声明自治」(终端腿今天就是),此时事件模块一个门都不加,
  *    行为与加这一维之前逐字一致。给一个**不认识**的值必须响亮失败:静默当成不设防,正是

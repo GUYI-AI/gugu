@@ -197,6 +197,9 @@ const STRINGS = {
     leftHours: '临时 · {n} 小时',
     leftMinutes: '临时 · {n} 分钟',
     clearsAt: '{time} 清除云端副本',
+    sent: '聊天附件',
+    expired: '已过期',
+    expiredAt: '{time} 到期，云端副本已清除',
     keep: '保留方式',
     keepTemporary: '临时',
     keepPermanent: '持续保存',
@@ -435,6 +438,9 @@ const STRINGS = {
     leftHours: 'Temporary · {n}h',
     leftMinutes: 'Temporary · {n}m',
     clearsAt: 'Cloud copy cleared {time}',
+    sent: 'Chat attachments',
+    expired: 'Expired',
+    expiredAt: 'Expired {time}: the cloud copy was cleared',
     keep: 'Keep',
     keepTemporary: 'Temporary',
     keepPermanent: 'Kept',
@@ -988,16 +994,30 @@ function heard(change) {
   showList()
 }
 
-// A change is read one file at a time, with how long its cloud copy is kept (`keep`, the list's: the host reads it with
-// the file). One it came without keeps the list's answer; a file new to the list with none is read again with its
-// own folder — never the whole tree. Says those folders ('' the top).
+// A change is read one file at a time, with what only a list says (`keep` — how long its cloud copy is kept —, `expiredAt`,
+// `childCount`: the host reads them with the file). One it came without keeps the list's answer; a file new to the list
+// with none is read again with its own folder — never the whole tree. Says those folders ('' the top).
+const listed = ({ keep, expiredAt, childCount }) => ({ keep, expiredAt, childCount })
 function take(change) {
   const before = new Map(state.entries.map((entry) => [entry.id, entry]))
   const listsKeep = state.entries.some((entry) => 'keep' in entry)
-  const fresh = new Map(change.entries.map((entry) => [entry.id, 'keep' in entry || !before.has(entry.id) || !('keep' in before.get(entry.id)) ? entry : { ...entry, keep: before.get(entry.id).keep }]))
+  const fresh = new Map(change.entries.map((entry) => [entry.id, 'keep' in entry || !before.has(entry.id) || !('keep' in before.get(entry.id)) ? entry : { ...entry, ...listed(before.get(entry.id)) }]))
   state.entries = [...state.entries.filter((entry) => !fresh.has(entry.id) && !change.gone.includes(entry.id)), ...fresh.values()]
   if (!listsKeep) return []
-  return [...fresh.values()].filter((entry) => !('keep' in entry) && entry.type !== 'folder').map((entry) => entry.parentId ?? '')
+  // An item come into, moved in or out of, or gone from a folder not read yet changes the count its row says
+  // (childCount): the folder that row is listed in is read again.
+  const recount = (entry) => {
+    const folder = entry?.parentId && !state.listed.has(entry.parentId) ? before.get(entry.parentId) : null
+    return folder ? [folder.parentId ?? ''] : []
+  }
+  return [
+    ...[...fresh.values()].filter((entry) => !('keep' in entry) && entry.type !== 'folder').map((entry) => entry.parentId ?? ''),
+    ...[...fresh.values()].flatMap((entry) => {
+      const was = before.get(entry.id)
+      return !was ? recount(entry) : was.parentId !== entry.parentId ? [...recount(entry), ...recount(was)] : []
+    }),
+    ...change.gone.map((id) => before.get(id)).flatMap(recount),
+  ]
 }
 
 // Several files arriving together (an upload of ten) are one read of each folder they are in, a moment after the last.
@@ -1093,9 +1113,10 @@ function under(folderId) {
 // What the top of the folder shows (owner 10-28): its folders, and every file there or in 「附件」 — what was sent in the
 // chat is not one folder further down. 「附件」 itself is not a row; it is still a folder a file can be moved to.
 function topEntries() {
-  const attachments = inside(null).filter((e) => e.systemRole === 'attachments')
-  return [...inside(null).filter((e) => e.systemRole !== 'attachments'), ...attachments.flatMap((folder) => under(folder.id))]
+  return [...inside(null).filter((e) => e.systemRole !== 'attachments'), ...sentEntries()]
 }
+// What is in 「附件」: what was sent in the chat.
+const sentEntries = () => inside(null).filter((e) => e.systemRole === 'attachments').flatMap((folder) => under(folder.id))
 
 // The folders of a list: 「附件」 first where a search lists it, the rest by name.
 function folderOrder(a, b) {
@@ -1146,7 +1167,13 @@ function renderList() {
   }
   const filtering = Object.values(state.filters).some(Boolean)
   const folders = state.kind === 'all' && !filtering ? shown.filter(isFolder).sort(folderOrder) : []
-  const files = ofKind.filter((e) => matches(e, state.filters, machineOf, now)).sort(comparer(state.sort, shownName, changedAt, state.ctx?.locale))
+  const picked = ofKind.filter((e) => matches(e, state.filters, machineOf, now)).sort(comparer(state.sort, shownName, changedAt, state.ctx?.locale))
+  // Files whose cloud copy expired no longer open (owner 11-12): one folded section under the rest, closed until pressed.
+  const files = picked.filter((e) => !e.expiredAt)
+  const expired = picked.filter((e) => e.expiredAt)
+  // At the top, the files placed there and the ones sent in the chat (「附件」) are two blocks under their own headings (owner 11-12).
+  const sentIds = new Set(!needle && !state.folder ? sentEntries().map((e) => e.id) : [])
+  const sent = files.filter((e) => sentIds.has(e.id))
   const grid = viewOf(state.kind) === 'grid'
   list.classList.toggle('as-grid', grid)
   const item = (entry) => (grid && !isFolder(entry) ? gridItem(entry, now) : listItem(entry, now))
@@ -1154,11 +1181,21 @@ function renderList() {
   if (!grid && (folders.length || files.length)) rows.push(tableHead())
   if (folders.length && files.length) rows.push(sectionRow(t.folders))
   rows.push(...folders.map(item))
-  // What is drawn: in the recent order, each time section under its own heading — a press folds it away, and a long one
-  // shows its first SECTION_ROWS with 「再显示 N 条」 under them (owner 11-06). Other orders: every file, one list.
+  // What is drawn. At the top, the two blocks under a plain heading each, one list apiece in the order picked (the time is
+  // on each row; owner 11-12: one level of headings). Elsewhere, in the recent order, each time section under its own
+  // heading — a press folds it away (owner 11-06); other orders: every file, one list. A long block or section shows its
+  // first SECTION_ROWS with 「再显示 N 条」 under them.
   const drawn = []
   const draw = (entries) => { for (const entry of entries) { rows.push(item(entry)); drawn.push(entry) } }
-  if (state.sort === 'recent') {
+  if (sent.length) {
+    for (const [block, entries] of [[HERE, files.filter((e) => !sentIds.has(e.id))], [SENT, sent]]) {
+      if (!entries.length) continue
+      rows.push(blockRow(block, entries.length))
+      const cut = state.openSections.has(block.key) ? entries.length : SECTION_ROWS
+      draw(entries.slice(0, cut))
+      if (entries.length > cut) rows.push(moreRow(block, entries.length - cut))
+    }
+  } else if (state.sort === 'recent') {
     const sections = []
     for (const entry of files) {
       const at = sectionOf(changedAt(entry), now)
@@ -1177,6 +1214,12 @@ function renderList() {
     if (folders.length && files.length) rows.push(sectionRow(t.files))
     draw(files)
   }
+  // The only block that folds: closed until pressed.
+  if (expired.length) {
+    const open = state.openSections.has(EXPIRED.key)
+    rows.push(sectionToggle(EXPIRED, expired.length, !open, state.openSections))
+    if (open) draw(expired)
+  }
   list.replaceChildren(...rows)
   // 多选: what is picked stays picked while it is on screen; the order a range runs along is the order drawn (a folded
   // section, or the rows past 「再显示」, are not on screen: neither picked nor in a range).
@@ -1190,7 +1233,7 @@ function renderList() {
     if (fresh) showDetails(fresh)
     else closeDetails()
   }
-  const count = folders.length + files.length
+  const count = folders.length + picked.length
   empty.hidden = count > 0
   $('files-empty-progress').hidden = true
   // A folder this App may not read is never read: it says so (a read is not on its way).
@@ -1204,10 +1247,30 @@ function renderList() {
 /** How many files a time section shows before 「再显示 N 条」. */
 const SECTION_ROWS = 20
 
-/** A time section's heading: the whole line folds the section away and back, with how many files are in it. */
-function sectionToggle(section, count, closed) {
+/**
+ * The blocks of a list, each under its own heading: the files placed at the top and the ones sent in the chat, and at the
+ * bottom the expired ones, closed unless its key is in `openSections`.
+ */
+const HERE = { key: 'here', kind: 'files' }
+const SENT = { key: 'sent', kind: 'sent' }
+const EXPIRED = { key: 'expired', kind: 'expired' }
+
+/** A block's heading: its name and how many files are in it, with a hairline above. */
+function blockRow(block, count) {
+  const li = sectionRow(sectionName(block))
+  li.dataset.block = block.key
+  li.append(Object.assign(document.createElement('span'), { className: 'section-count', textContent: String(count) }))
+  return li
+}
+
+/**
+ * A section's heading: the whole line folds the section away and back, with how many files are in it. A press flips its
+ * key in `flips` — the folded-away ones for a time section, the opened ones for one closed until pressed.
+ */
+function sectionToggle(section, count, closed, flips = state.closedSections) {
   const li = sectionRow('')
   li.classList.add('list-section-toggle')
+  if (section === EXPIRED) li.dataset.block = section.key
   const button = Object.assign(document.createElement('button'), { type: 'button', className: 'section-toggle' })
   button.setAttribute('aria-expanded', String(!closed))
   const chevron = document.createElement('gugu-icon')
@@ -1216,8 +1279,8 @@ function sectionToggle(section, count, closed) {
     Object.assign(document.createElement('span'), { textContent: sectionName(section) }),
     Object.assign(document.createElement('span'), { className: 'section-count', textContent: String(count) }))
   button.onclick = () => {
-    if (state.closedSections.has(section.key)) state.closedSections.delete(section.key)
-    else state.closedSections.add(section.key)
+    if (flips.has(section.key)) flips.delete(section.key)
+    else flips.add(section.key)
     renderList()
   }
   li.append(button)
@@ -1882,6 +1945,15 @@ function keepMark(entry, now) {
   return mark
 }
 
+// A file whose cloud copy expired: said on its row, the day it was cleared on hover.
+function expiredMark(entry) {
+  if (!entry.expiredAt) return null
+  const mark = Object.assign(document.createElement('span'), { className: 'file-keep', textContent: state.t.expired })
+  mark.dataset.expired = ''
+  mark.title = fmt(state.t.expiredAt, { time: new Intl.DateTimeFormat(state.ctx?.locale || 'en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(entry.expiredAt)) })
+  return mark
+}
+
 // When, as a list says it: the time today (and yesterday, under its own heading), the day this year, the date before.
 function whenOf(iso, now) {
   const at = new Date(iso ?? '')
@@ -1901,9 +1973,13 @@ function metaOf(entry, now) {
   const t = state.t
   const cells = []
   if (isFolder(entry)) {
-    // Both roots are read one folder at a time: one not entered yet has no count to say (never a 0).
-    // A computer's folders are read one at a time: a count only for those already entered would come and go.
-    if (state.listed.has(entry.id) && !inCopy(entry)) cells.push(['size', fmt(t.items, { n: inside(entry.id).filter(visibleEntry).length })])
+    // A chat folder already read counts what it holds here, kept current by its changes; one not entered yet says the
+    // count its list came with (entry.childCount). A computer's folders are read one at a time and come with none: a count
+    // only for those already entered would come and go.
+    // The list counts up to 1000: 1000 there means 1000 or more.
+    const n = inCopy(entry) ? undefined : state.listed.has(entry.id) ? inside(entry.id).filter(visibleEntry).length
+      : entry.childCount >= 1000 ? '999+' : entry.childCount
+    if (n !== undefined) cells.push(['size', fmt(t.items, { n })])
   } else {
     const when = whenOf(changedAt(entry), now)
     if (when) cells.push(['when', when])
@@ -1975,6 +2051,7 @@ function listItem(entry, now = new Date(Date.now())) {
   open.onauxclick = (event) => { if (!folder && event.button === 1) { event.preventDefault(); pressFile(entry, event) } }
   if (!folder) pickable(li, entry)
   if (offline(entry)) li.dataset.offline = ''
+  if (entry.expiredAt) li.dataset.expired = ''
   // Files carry the same resource link outside this App; folder moves stay inside it.
   const drag = (text, isLink) => {
     if (touchPane?.matches) return
@@ -2003,7 +2080,7 @@ function listItem(entry, now = new Date(Date.now())) {
   if (folder) dropOnto(li, entry.id)
   // At the row's end: how long its cloud copy has left, and the machine it stays on.
   li.append(open)
-  const marks = [keepMark(entry, now), entry.storedOn ? storedOnMark(entry.storedOn) : null].filter(Boolean)
+  const marks = [expiredMark(entry), keepMark(entry, now), entry.storedOn ? storedOnMark(entry.storedOn) : null].filter(Boolean)
   if (marks.length) {
     const box = Object.assign(document.createElement('span'), { className: 'file-marks' })
     box.append(...marks)
@@ -2022,6 +2099,7 @@ function gridItem(entry, now) {
   li.setAttribute('role', 'option')
   li.setAttribute('aria-selected', 'false')
   if (offline(entry)) li.dataset.offline = ''
+  if (entry.expiredAt) li.dataset.expired = ''
   const open = document.createElement('button')
   open.type = 'button'
   open.className = 'file-open'
@@ -2040,7 +2118,7 @@ function gridItem(entry, now) {
   open.onauxclick = (event) => { if (event.button === 1) { event.preventDefault(); pressFile(entry, event) } }
   li.append(open)
   pickable(li, entry)
-  const keep = keepMark(entry, now)
+  const keep = expiredMark(entry) ?? keepMark(entry, now)
   if (keep) li.append(Object.assign(keep, { className: `${keep.className} cell-keep` }))
   if (entry.storedOn) li.append(Object.assign(storedOnMark(entry.storedOn), { className: 'file-host cell-host' }))
   fileMenu(li, open, entry)

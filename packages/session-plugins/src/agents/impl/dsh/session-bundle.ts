@@ -157,8 +157,7 @@ export function materializeDshSessionBundle(
     Object.entries(bundle.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
   );
   // 所选之档这一家没有(plan)⇒ 落到不比它更松的最近一档,一档都落不到就抛 —— 与注册表收档同一个判据。
-  const wanted = bundle.autonomy?.permissionMode
-    ?? (bundle.autonomy?.mode === 'full-access' ? 'full-access' : bundle.autonomy ? 'edit' : undefined);
+  const wanted = bundle.autonomy?.permissionMode;
   const tier = wanted ? resolveDeclaredPermissionMode(wanted, DSH_PERMISSION_MODES) : undefined;
   if (wanted && !tier) throw new Error(`DeepSeek Harness has no permission mode for '${wanted}' or any stricter one`);
   const permission = tier ? DSH_PERMISSION_MODES[tier as keyof typeof DSH_PERMISSION_MODES].id : undefined;

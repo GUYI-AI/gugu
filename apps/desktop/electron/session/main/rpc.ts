@@ -37,7 +37,6 @@ import { sessionCreateController } from './core/sessions/create-controller';
 import { terminalsController } from './core/terminals/controller';
 import { usageController } from './core/usage/controller';
 import { viewStateController } from './core/view-state/controller';
-import { projectSettingsController } from './core/workspaces/project-settings-controller';
 
 export const rpcRouter = createRPCRouter({
   agents: agentsController,
@@ -79,7 +78,6 @@ export const rpcRouter = createRPCRouter({
   sessionHistory: sessionHistoryController,
   sessionImport: sessionImportController,
   sessionTimeline: sessionTimelineController,
-  projectSettings: projectSettingsController,
   usage: usageController,
   workspace: createRPCNamespace({
     gitWorktree: gitWorktreeController,

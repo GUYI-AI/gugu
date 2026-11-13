@@ -335,7 +335,7 @@ function platformModelEntry(bundle: SessionCapabilityBundle): Record<string, unk
 /** 完全访问 ↔ 其余。❌ 不摆 `plan`：咕咕这一维只有两态，见 units.autonomy 的抬头。 */
 function permissionMode(bundle: SessionCapabilityBundle): string | null {
   if (!bundle.autonomy) return null;
-  return bundle.autonomy.mode === 'full-access' ? 'bypass_permissions' : 'default';
+  return bundle.autonomy.permissionMode === 'full-access' ? 'bypass_permissions' : 'default';
 }
 
 export function materializeQoderSessionBundle(

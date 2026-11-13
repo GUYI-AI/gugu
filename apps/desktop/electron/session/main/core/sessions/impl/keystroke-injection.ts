@@ -147,7 +147,6 @@ function injectWhenReady(args: {
     : undefined;
 
   const payload = buildPromptInjectionPayload({
-    providerId: args.session.providerId,
     text: args.text,
     multilineEncoding: multilineEncodingFor(args.session),
   });
@@ -249,7 +248,6 @@ function injectImmediately(args: {
     ? promptDelivery.submitDelayMs
     : undefined;
   const payload = buildPromptInjectionPayload({
-    providerId: args.session.providerId,
     text: args.text,
     multilineEncoding: multilineEncodingFor(args.session),
   });

@@ -122,7 +122,7 @@ export const body = style({
   paddingTop: 0,
   outline: 'none',
   selectors: {
-    '&:focus-visible:not([data-pointer-focus] *)': { outline: 'none' },
+    '&:focus-visible:not([data-pointer-focus])': { outline: 'none' },
   },
 });
 

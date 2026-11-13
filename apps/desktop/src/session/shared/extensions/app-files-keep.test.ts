@@ -14,6 +14,10 @@ const listed = [
   { ...base, id: item, filename: 'mine.pdf', path: 'mine.pdf', expires_at: '2026-11-04T00:00:00Z', is_mine: true },
   { ...base, id: 'theirs', filename: 'theirs.pdf', path: 'theirs.pdf', expires_at: null, is_mine: false },
   { ...base, id: 'doc', kind: 'document', filename: 'notes.md', path: 'notes.md', pointer: null, expires_at: null, is_mine: null },
+  // Its copy cleared at its expiry, nothing replaced it; the same on a machine that keeps it (it opens from there); a folder.
+  { ...base, id: 'gone', filename: 'gone.pdf', path: 'gone.pdf', expires_at: null, is_mine: null, copy_expired_at: '2026-11-11T00:00:00Z', host_device_id: null },
+  { ...base, id: 'held', filename: 'held.pdf', path: 'held.pdf', pointer: null, expires_at: null, is_mine: null, copy_expired_at: '2026-11-11T00:00:00Z', host_device_id: 'device-1' },
+  { ...base, id: 'dir', kind: 'folder', filename: 'Docs', path: 'Docs', pointer: null, content_type: 'inode/directory', expires_at: null, is_mine: null, child_count: 3 },
 ];
 // As workspace_get_as answers one file: without the two.
 const { expires_at: _expires, is_mine: _mine, ...single } = listed[0]!;
@@ -45,6 +49,17 @@ it('the list says how long each cloud copy is kept and whose it is; no cloud cop
     [item, { expiresAt: '2026-11-04T00:00:00Z', mine: true }],
     ['theirs', { expiresAt: null, mine: false }],
     ['doc', null],
+    ['gone', null],
+    ['held', null],
+    ['dir', null],
+  ]);
+});
+
+it('the list says which files expired (not one its machine keeps) and how many items each folder holds', async () => {
+  const entries = await createAppFiles(platform).groupFiles(chat);
+  expect(entries.map((entry) => [entry.id, entry.expiredAt, entry.childCount])).toEqual([
+    [item, undefined, undefined], ['theirs', undefined, undefined], ['doc', undefined, undefined],
+    ['gone', '2026-11-11T00:00:00Z', undefined], ['held', undefined, undefined], ['dir', undefined, 3],
   ]);
 });
 

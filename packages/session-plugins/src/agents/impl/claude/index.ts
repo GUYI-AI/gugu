@@ -349,6 +349,8 @@ export const provider = registerPluginBehavior(plugin, {
     materialize: materializeClaudeSessionBundle,
   },
   acp: {
+    // Its session/load replays the user messages it received: canonical evidence of delivered communications.
+    historyRecovery: { canonicalReplay: true },
     explainError: (cause) => {
       const models = plugin.capabilities.models;
       if (!/Invalid value for config option model/i.test(cause.message ?? '')

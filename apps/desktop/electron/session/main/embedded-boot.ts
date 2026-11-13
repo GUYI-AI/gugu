@@ -106,6 +106,7 @@ import {
 } from '@main/core/extensions/extension-background'
 import { rpcRouter } from '@main/rpc' // ← the complete router, every controller
 import { initializeDatabase } from '@main/db/initialize'
+import { stopTaskTurnSearch } from '@main/core/search/task-turn-search'
 import { startTurnTextBackfillWorker, stopTurnTextBackfillWorker, type SearchBackfillLogger } from '@main/db/turn-text-backfill-runner'
 import { migrateProjectKind } from '@main/core/projects/operations/migrate-project-kind'
 import { closeDatabase, db, sqlite } from '@main/db/client'
@@ -846,6 +847,7 @@ let stopPtyRecordSync: () => void = () => {}
 
 async function disposeEmdashModuleOnce(): Promise<void> {
   stopTurnTextBackfillWorker()
+  stopTaskTurnSearch()
   const failures: unknown[] = []
   const runPhase = async (phase: string, action: () => void | Promise<void>): Promise<void> => {
     const startedAt = performance.now()

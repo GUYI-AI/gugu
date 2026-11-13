@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { runUnregister, UNREGISTERED_MARK, type UnregisterDeps } from '../../../../apps/desktop/electron/server/server-unregister'
 
-// #6264 卸载时注销这台机器上的账号:从账号里移除这台机器 + 续期令牌作废 + 删本地登录态;网络不通也照删本地。
+// #6264 卸载时注销这台机器上的账号:从账号里移除这台机器 + 续期令牌作废 + 删本地登录态;连不上云端时留着本地登录态。
 function deps(over: Partial<UnregisterDeps> = {}) {
   const lines: string[] = []
   const d: UnregisterDeps = {
@@ -30,9 +30,22 @@ describe('gugu-server unregister', () => {
   it('库拒了移除(绑着智能体)⇒ 只注销;换不到令牌(已失效 / 没网)⇒ 只删本地', async () => {
     const refused = deps({ removeDevice: vi.fn(async () => { throw new Error('DEVICE_HAS_AGENTS') }) })
     expect(await runUnregister(refused.d)).toBe('revoked')
-    const offline = deps({ refresh: vi.fn(async () => { throw new Error('ENOTFOUND') }) })
-    expect(await runUnregister(offline.d)).toBe('local')
-    expect(offline.d.clearLocal).toHaveBeenCalledOnce()
+    const rejected = deps({ refresh: vi.fn(async () => null) })
+    expect(await runUnregister(rejected.d)).toBe('local')
+    expect(rejected.d.clearLocal).toHaveBeenCalledOnce()
+  })
+
+  it('连不上云端 ⇒ unreachable,本地登录态留着(卸载据此中止,网络好了重卸能补上)', async () => {
+    for (const [over, cause] of [
+      [{ refresh: vi.fn(async () => { throw new Error('ENOTFOUND') }) }, 'ENOTFOUND'],
+      [{ deviceId: vi.fn(async () => { throw new Error('fetch\nfailed') }) }, 'fetch failed'],
+    ] as const) {
+      const { d, lines } = deps(over)
+      expect(await runUnregister(d)).toBe('unreachable')
+      expect(d.clearLocal).not.toHaveBeenCalled()
+      expect(d.revoke).not.toHaveBeenCalled()
+      expect(lines).toEqual([`${UNREGISTERED_MARK} unreachable ${cause}`])
+    }
   })
 
   it('没登录态:什么都不做', async () => {

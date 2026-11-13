@@ -15,6 +15,7 @@ const create = {
   agentDisplayName: 'Codex 1',
   origin: { kind: 'create' as const, firstUtterance: 'hi' },
   claimsFirstSpawn: false,
+  permissionMode: 'edit' as const,
 };
 
 describe('conversation birth status follows the status source (#6206)', () => {

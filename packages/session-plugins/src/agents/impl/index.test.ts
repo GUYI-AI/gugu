@@ -132,7 +132,7 @@ function channelProbeBundle(
               : {}),
           }
         : null,
-    autonomy: unit === 'autonomy' && populated ? { mode: 'full-access' } : null,
+    autonomy: unit === 'autonomy' && populated ? { permissionMode: 'full-access' } : null,
     promptBlocks:
       unit === 'promptBlocks' && populated
         ? { platform: '<gugu_platform>NATIVE_CHANNEL_PROMPT_PROBE</gugu_platform>\n' }
@@ -609,6 +609,40 @@ describe('pluginRegistry', () => {
         `${providerId} acp steering tier`,
       ).toBe('next-tool-call');
     }
+  });
+
+  it('every native autonomy channel reads the exact tier alone: full access and edit materialize differently', () => {
+    // `permissionMode` is the one autonomy channel (the coarse `mode` twin is gone): a materializer that still
+    // read anything else would project both tiers to the same output here.
+    vi.stubEnv(GUGU_MCP_STDIO_RELAY_ENTRY_ENV, '/app/dist-electron/runtime/gugu-mcp-stdio-relay.mjs');
+    const same: string[] = [];
+    let probed = 0;
+    for (const provider of pluginRegistry.getAll()) {
+      const descriptor = provider.capabilities.sessionBundle;
+      const behavior = provider.behavior.sessionBundle;
+      if (!behavior) continue;
+      for (const surface of descriptor.surfaces) {
+        const leaf = resolveUnitDelivery(descriptor.units.autonomy, surface);
+        if (leaf.kind !== 'native') continue;
+        const fields = SESSION_BUNDLE_CHANNEL_MATERIALIZATION_FIELDS[leaf.channel];
+        // A refusal (Grok cannot honor approval) is a distinct outcome too.
+        const at = (permissionMode: 'full-access' | 'edit') => {
+          try {
+            return normalizedFields(behavior.materialize(
+              { surface, lifecycle: 'fresh', cwd: NATIVE_CHANNEL_CWD },
+              { ...channelProbeBundle(provider.metadata.id, 'autonomy', true), autonomy: { permissionMode } },
+            ), fields);
+          } catch (error) { return `refused: ${String(error)}`; }
+        };
+        probed += 1;
+        if (at('full-access') === at('edit')) same.push(`${provider.metadata.id}/${surface}`);
+      }
+    }
+    vi.unstubAllEnvs();
+    expect(probed).toBeGreaterThan(5);
+    // Copilot's ACP leg declares an argv channel but keeps approvals on session/request_permission and never
+    // appends the flag there (#6234, see its materializer); it is the one known declaration/behavior gap.
+    expect(same).toEqual(['copilot/acp']);
   });
 
   it('materializes every declared native unit through its contract channel', () => {
@@ -1159,13 +1193,13 @@ describe('pluginRegistry', () => {
 
   it('delivers the own-model pick on the pi terminal leg (#6246)', () => {
     const args = pluginRegistry.get('pi')!.behavior.prompt!.buildCommand({
-      cli: '/bin/pi', initialPrompt: 'hi', cliSessionId: 's', isResuming: false,
+      cli: '/bin/pi', permissionMode: 'edit', initialPrompt: 'hi', cliSessionId: 's', isResuming: false,
       model: 'mine/own-a', effort: '',
     }).args;
     expect(args.slice(args.indexOf('--model'), args.indexOf('--model') + 2)).toEqual(['--model', 'mine/own-a']);
     // [control] no pick ⇒ no flag: pi keeps its own default (the bytes snapshot below pins this).
     expect(pluginRegistry.get('pi')!.behavior.prompt!.buildCommand({
-      cli: '/bin/pi', initialPrompt: 'hi', cliSessionId: 's', isResuming: false,
+      cli: '/bin/pi', permissionMode: 'edit', initialPrompt: 'hi', cliSessionId: 's', isResuming: false,
       model: '', effort: '',
     }).args).not.toContain('--model');
   });
@@ -1971,6 +2005,7 @@ describe('pluginRegistry', () => {
 
     const resumed = pi.behavior.prompt!.buildCommand({
       cli: 'pi',
+      permissionMode: 'edit',
       cliSessionId: 'conv-1',
       providerSessionId: '/Users/test/.pi/agent/sessions/project/session.jsonl',
       isResuming: true,

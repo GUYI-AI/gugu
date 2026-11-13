@@ -42,7 +42,6 @@ export async function composeInSession(view: WorkspaceViewModel, text: string): 
   const terminal = session?.pty;
   if (!session || !terminal) throw new Error('The conversation open in this session is not running');
   await pastePromptInjection({
-    providerId: sessions?.sessions.get(sessionId)?.data.providerId,
     text,
     forceBracketedPaste: true,
     sendInput: (data) => rpc.pty.sendInput(session.ptySessionId, data),

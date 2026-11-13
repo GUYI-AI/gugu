@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { GuguPermissionMode } from '@gugu/session-core/acp'
+import { resolveSessionPermissionMode, type GuguPermissionMode } from '@gugu/session-core/acp'
 import { harnessPinnedEnv, type SessionTuiHostAdapter } from '@gugu/session-core/agents/plugins'
 import { resolveSessionTuiHostAdapter, resolveSessionTuiStartupPolicy } from '@gugu/session-plugins/agents'
 import { getPlugin } from '@main/core/agents/plugin-registry'
@@ -303,13 +303,9 @@ const startOpencodeServeAttach: HostStart = async (ctx, info, platformPromise, {
   const bundle = await buildSessionTuiSessionBundle({
     bootstrap: {
       runtime,
-      // `permissionMode` crosses this boundary unchanged; the coarse mode is projected from it.
-      // OpenCode's provider materializer is the only place that interprets the exact tier into
-      // its permission rules.
-      autonomy: {
-        mode: info.permissionMode === 'full-access' ? 'full-access' : 'approval-required',
-        ...(info.permissionMode !== undefined ? { permissionMode: info.permissionMode } : {}),
-      },
+      // The session's recorded tier crosses this boundary unchanged. OpenCode's provider materializer
+      // is the only place that interprets the exact tier into its permission rules.
+      autonomy: { permissionMode: resolveSessionPermissionMode(info) },
       additionalEnv: { ...platform.env, ...platform.spawnEnv },
       promptBlocks: {
         platform: `${GUGU_PLATFORM_BLOCK}${buildSessionpageProjectContextBlock(provisioned.projectContext)}`,

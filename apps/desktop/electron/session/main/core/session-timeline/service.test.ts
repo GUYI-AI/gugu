@@ -59,7 +59,9 @@ const state = vi.hoisted(() => ({
   /** D-31 The waits the host reported to the status writer, in order. */
   hostWaits: [] as Array<{ sessionId: string; id: string; open: boolean }>,
   /** 聊天腿的 agent 此刻在不在跑(write-bridge `acpSessionLive` 的桩)。 */
-  acpLive: false,
+  acpLive: false as boolean | Error,
+  /** 那台机器上这家的模型目录(session-discovery 的桩);设成 Error 就是目录读不到。 */
+  catalog: null as Error | null,
   /** 唤醒(write-bridge `ensureAcpSessionLive` 的桩):默认 ❌ —— 谁走到这里就是叫醒了它。 */
   wake: vi.fn(async (_id: string): Promise<void> => {
     throw new Error('❌ 没开起来的会话不许走唤醒');
@@ -167,7 +169,7 @@ vi.mock('./write-bridge', () => {
   return {
     SessionWriteError,
     deliverSessionText: (...args: unknown[]) => state.deliverText(...args),
-    acpSessionLive: async () => state.acpLive,
+    acpSessionLive: async () => { if (state.acpLive instanceof Error) throw state.acpLive; return state.acpLive; },
     ensureAcpSessionLive: (id: string) => state.wake(id),
     deliverPermissionDecision: (...args: unknown[]) => state.deliverPermission(...args),
     permissionChannelError: (...args: unknown[]) => state.permissionChannelError(...args),
@@ -215,7 +217,10 @@ vi.mock('@main/core/sessions/platform-model-selection', () => ({
   sessionPlatformModel: async () => ({ modelId: 'gpt-5' }),
 }));
 vi.mock('@main/core/agents/session-discovery', () => ({
-  listLocalModels: async () => ({ models: [{ id: 'platform:gpt-5', name: 'GPT-5' }] }),
+  listLocalModels: async () => {
+    if (state.catalog) throw state.catalog;
+    return { models: [{ id: 'platform:gpt-5', name: 'GPT-5' }] };
+  },
 }));
 // 真实现要把平台模型目录、agent 控制器一起拉进来;这一组只问「附没附上菜单」。
 vi.mock('./session-model-menu', () => ({
@@ -765,6 +770,23 @@ describe('session timeline service', () => {
         modelMenu: expect.objectContaining({ agentName: 'menu-of-conv-1' }),
       },
     });
+  });
+
+  it('读选项时运行时连不上、模型目录读不到 ⇒ 报 options_failed,❌ 给一份「没在跑」的选项充数', async () => {
+    state.rows = [row()];
+    state.acpLive = new Error('runtime socket closed');
+    expect(await service.sessionOptions({ conversationId: 'conv-1' })).toEqual({
+      ok: false, error: expect.objectContaining({ code: 'options_failed', message: 'runtime socket closed' }),
+    });
+    state.rows = [row({ providerSessionId: null })];
+    expect(await service.sessionOptions({ conversationId: 'conv-1' })).toMatchObject({ ok: false });
+    state.acpLive = false;
+    state.catalog = new Error('catalog unreadable');
+    try {
+      expect(await service.sessionOptions({ conversationId: 'conv-1' })).toEqual({
+        ok: false, error: expect.objectContaining({ code: 'options_failed', message: 'catalog unreadable' }),
+      });
+    } finally { state.catalog = null; }
   });
 
   it('#980 在跑:读活的那一份,同样不走唤醒', async () => {

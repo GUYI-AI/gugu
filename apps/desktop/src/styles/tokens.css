@@ -1118,14 +1118,14 @@ button, [role="button"] {
    - 鼠标/触摸聚焦(:focus 但不 :focus-visible):不画。
    - 键盘聚焦:2px live 色环,外偏 2px,跟着元素圆角走。放在 @layer base:组件要换自己的焦点表达时用工具类覆盖得了。
    - 文字输入(input / textarea / contenteditable)以光标为焦点指示,不画环 —— 浏览器对它们鼠标点击也报 :focus-visible。
-   - 指针模态(根上 data-pointer-focus,见 lib/focus-modality.ts):点过之后单按修饰键,Chromium 也报 :focus-visible —— 不画。
-     自己写焦点样式的组件一律用 `:focus-visible:not([data-pointer-focus] *)`;Tailwind 的 focus-visible: 变体已是这个选择器。 */
+   - 指针模态(焦点元素自己带 data-pointer-focus,见 lib/focus-modality.ts):点过之后单按修饰键,Chromium 也报 :focus-visible —— 不画。
+     自己写焦点样式的组件一律用 `:focus-visible:not([data-pointer-focus])`;Tailwind 的 focus-visible: 变体已是这个选择器。 */
 :focus:not(:focus-visible) { outline: none; }
 @layer base {
-  :focus-visible:not([data-pointer-focus] *) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  :focus-visible:not([data-pointer-focus]) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   /* 指针模态下浏览器自带的 :focus-visible 轮廓也不要。 */
-  [data-pointer-focus] :focus-visible { outline: none; }
-  :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='button'], [type='submit']), textarea, [contenteditable]):focus-visible:not([data-pointer-focus] *) { outline: none; }
+  [data-pointer-focus]:focus-visible { outline: none; }
+  :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='button'], [type='submit']), textarea, [contenteditable]):focus-visible:not([data-pointer-focus]) { outline: none; }
 }
 
 /* ───────────── theme batch D(宿主组件:二维码、形象工坊、看图 / 文档预览)───────────── */
@@ -2255,7 +2255,7 @@ body.barcode-scanner-active #root {
 }
 .gg-member-join-name { font-size: inherit; line-height: inherit; cursor: pointer; }
 .gg-member-join-name:hover,
-.gg-member-join-name:focus-visible:not([data-pointer-focus] *) { background: transparent; color: var(--primary); text-decoration: underline; }
+.gg-member-join-name:focus-visible:not([data-pointer-focus]) { background: transparent; color: var(--primary); text-decoration: underline; }
 
 .gg-topic-anchor { position: relative; }
 .gg-topic-anchor::before {

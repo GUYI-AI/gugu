@@ -126,6 +126,10 @@ function renderSessionTree(container: HTMLElement, mountEl: HTMLElement | undefi
           <App />
         </ErrorBoundary>
       </SessionLocalizationProvider>
+      {/* @@@root-stays-put: this page's popups portal into the mount element, after the tree above. With this fixed
+          sibling the page is never :last-child of the mount, so opening a popup does not re-style every table cell,
+          list item and paragraph on the page (same reason as the element after #root in index.html). */}
+      <div data-root-sibling hidden />
     </UiPortalContainerProvider>
   );
 }
