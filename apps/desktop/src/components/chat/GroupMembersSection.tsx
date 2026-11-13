@@ -108,7 +108,7 @@ export function GroupMembersSection({
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [confirmExit, setConfirmExit] = useState(false)
-  const { avatarUploading, handleAvatarFile } = useGroupAvatarUpload({ chatId, viewerIsManager, setAvatarUrl, setActionError })
+  const { avatarUploading, handleAvatarFile, handleAvatarReset } = useGroupAvatarUpload({ chatId, viewerIsManager, setAvatarUrl, setActionError })
   const [avatarDragOver, setAvatarDragOver] = useState(false)
   const [avatarEditing, setAvatarEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -234,7 +234,7 @@ export function GroupMembersSection({
               {avatarUploading ? <div style={avatarUploadingStyle}>{t('group.settings.uploading')}</div> : null}
             </div>
             {avatarEditing ? (
-              <GroupAvatarEditor chatId={chatId} groupName={groupName ?? ''} busy={avatarUploading} onFile={handleAvatarFile} onClose={() => setAvatarEditing(false)} />
+              <GroupAvatarEditor chatId={chatId} groupName={groupName ?? ''} avatarUrl={settings?.avatar_url ?? null} busy={avatarUploading} onFile={handleAvatarFile} onReset={handleAvatarReset} onClose={() => setAvatarEditing(false)} />
             ) : null}
             <div style={profileTextStyle}>
               <GroupNameRow chat={chat} name={groupName} canEdit={viewerIsManager && Boolean(settings)} onCommit={handleRename} />

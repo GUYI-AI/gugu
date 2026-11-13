@@ -634,12 +634,11 @@ export default {
       "allowMemberInviteAria": "允许普通成员邀请联系人",
       "allowMemberInviteDescription": "开启后普通成员也可邀请联系人入群",
       "avatarEditor": {
-        "color": "选择颜色",
-        "text": "自定义文字",
-        "textPlaceholder": "输入头像文字",
+        "reset": "恢复默认",
         "title": "修改头像",
         "upload": "上传图片"
       },
+      "avatarResetFailed": "恢复默认头像失败：{{reason}}",
       "avatarUpdated": "群头像已更新",
       "avatarUploadFailed": "群头像上传失败：{{reason}}",
       "changeAvatar": "点击修改群头像，或拖入图片",

@@ -54,6 +54,20 @@ describe('shared group avatar transport', () => {
     await expect(chatService.uploadGroupAvatar('g1', fakeFile())).rejects.toThrow('avatar was not confirmed')
   })
 })
+describe('restore the default group avatar', () => {
+  it('clears the URL and both storage references in one write', async () => {
+    mockRpc.mockResolvedValueOnce({ data: settingsRow({ avatar_url: null }), error: null })
+    await chatService.resetGroupAvatar('g1')
+    expect(mockRpc).toHaveBeenCalledWith('update_group_as', { p_chat_id: 'g1', p_as_user_id: 'uploader-1', p_changes: {
+      avatar_url: null, avatar_storage_bucket_id: null, avatar_storage_object_name: null,
+    } })
+    expect(mockUpload).not.toHaveBeenCalled()
+  })
+  it('does not report success while the picture is still there', async () => {
+    mockRpc.mockResolvedValueOnce({ data: settingsRow({ avatar_url: url }), error: null })
+    await expect(chatService.resetGroupAvatar('g1')).rejects.toThrow('avatar was not cleared')
+  })
+})
 describe('group settings avatar projection through group_info_as', () => {
   it.each(['https://media/g1.png', undefined])('projects the saved avatar %s', async (avatar_url) => {
     mockRpc.mockResolvedValueOnce({ data: settingsRow({ avatar_url }), error: null })

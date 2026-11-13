@@ -2,24 +2,15 @@
 // colours around the first characters of its name, or around a group mark when it has no name. Every surface draws it
 // from this one description; a picture the group uploaded replaces it whole.
 
-/**
- * The eight colours: ink with a little hue, so a list of groups stays quiet beside people and agents. A live face takes
- * its colour from the theme (`groupAvatarThemeColor`: the dark theme has a lighter set); these are the light theme's
- * values, which a face saved as a picture is drawn with.
- */
-export const GROUP_AVATAR_COLORS = ['#54657a', '#655f78', '#486b6a', '#536a57', '#62664c', '#6f6149', '#775c50', '#765a64'] as const
-
-/** Colour `index` as the current theme draws it (tokens.css `--group-face-1` … `--group-face-8`). */
+/** Eight colours, each a theme token (tokens.css `--group-face-1` … `--group-face-8`): ink with a little hue, lighter on the dark theme. */
+const COLOR_COUNT = 8
 export const groupAvatarThemeColor = (index: number) => `var(--group-face-${index + 1})`
 
-/** The inside of a face saved as a picture: a picture cannot follow the theme, so it is white on every surface. */
-export const GROUP_AVATAR_PICTURE_FILL = '#ffffff'
-
-/** Which of the colours a group gets before anyone picks one: fixed by its id, so every member and surface sees the same. */
+/** Which of the colours a group gets: fixed by its id, so every member and surface sees the same. */
 export function groupAvatarColorIndex(chatId: string): number {
   let hash = 0x811c9dc5
   for (let i = 0; i < chatId.length; i++) hash = Math.imul(hash ^ chatId.charCodeAt(i), 0x01000193)
-  return (hash >>> 0) % GROUP_AVATAR_COLORS.length
+  return (hash >>> 0) % COLOR_COUNT
 }
 
 // A line holds two full-width characters or four half-width ones; a face holds two lines.
@@ -28,7 +19,7 @@ const MAX_LINES = 2
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 const unitsOf = (grapheme: string) => (grapheme.codePointAt(0)! >= 0x2e80 ? 2 : 1)
 
-/** What a face shows before anyone chooses a text: the name, or the initials of a name of several Latin words. */
+/** What a face shows: the name, or the initials of a name of several Latin words. */
 export function groupAvatarDefaultText(name: string): string {
   const words = name.trim().split(/\s+/)
   return words.length > 1 && /^[\x20-\x7e]+$/.test(name.trim()) ? words.slice(0, LINE_UNITS).map((word) => word[0]!.toUpperCase()).join('') : name
@@ -75,10 +66,9 @@ const escapeXml = (value: string) => value.replace(/[&<>"']/g, (char) => `&#${ch
 /**
  * The face as one SVG. `fill` is the surface inside the outline (a CSS colour, so a live face can follow the theme);
  * `px` is the size it is shown at, which keeps the outline at least a pixel and a half wide and drops the second line,
- * then the text, where they would not be readable; `fixed` gives the SVG that size itself, for drawing it as an image; `label` names it
- * for a screen reader.
+ * then the text, where they would not be readable; `label` names it for a screen reader.
  */
-export function groupAvatarSvg({ color, text = '', fill, px, fixed = false, label }: { color: string; text?: string; fill: string; px: number; fixed?: boolean; label?: string }): string {
+export function groupAvatarSvg({ color, text = '', fill, px, label }: { color: string; text?: string; fill: string; px: number; label?: string }): string {
   const lines = px < TEXT_FROM_PX ? [] : groupAvatarTextLines(text).slice(0, px < TWO_LINES_FROM_PX ? 1 : MAX_LINES)
   const count = lines.reduce((sum, line) => sum + Array.from(segmenter.segment(line)).length, 0)
   const fontSize = fontSizeFor(count)
@@ -89,7 +79,6 @@ export function groupAvatarSvg({ color, text = '', fill, px, fixed = false, labe
     ? `<g fill="${color}" font-family="${FONT}" font-size="${fontSize}" font-weight="500" text-anchor="middle">${lines.map((line, index) =>
       `<text x="${SIZE / 2}" y="${first + pitch * index}" dominant-baseline="central">${escapeXml(line)}</text>`).join('')}</g>`
     : `<g fill="${color}">${GROUP_MARK}</g>`
-  const side = fixed ? px : '100%'
-  return `<svg xmlns="http://www.w3.org/2000/svg" role="img"${label ? ` aria-label="${escapeXml(label)}"` : ''} viewBox="0 0 ${SIZE} ${SIZE}" width="${side}" height="${side}">`
+  return `<svg xmlns="http://www.w3.org/2000/svg" role="img"${label ? ` aria-label="${escapeXml(label)}"` : ''} viewBox="0 0 ${SIZE} ${SIZE}" width="100%" height="100%">`
     + `<rect x="${stroke / 2}" y="${stroke / 2}" width="${SIZE - stroke}" height="${SIZE - stroke}" rx="${CORNER - stroke / 2}" fill="${fill}" stroke="${color}" stroke-width="${stroke}"/>${inner}</svg>`
 }

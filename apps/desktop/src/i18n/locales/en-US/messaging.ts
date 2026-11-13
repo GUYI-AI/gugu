@@ -636,12 +636,11 @@ export default {
       "allowMemberInviteAria": "Allow regular members to invite contacts",
       "allowMemberInviteDescription": "Regular members can invite their contacts",
       "avatarEditor": {
-        "color": "Color",
-        "text": "Custom text",
-        "textPlaceholder": "Avatar text",
+        "reset": "Restore default",
         "title": "Edit avatar",
         "upload": "Upload an image"
       },
+      "avatarResetFailed": "Could not restore the default avatar: {{reason}}",
       "avatarUpdated": "Group avatar updated",
       "avatarUploadFailed": "Could not upload the group avatar: {{reason}}",
       "changeAvatar": "Click to edit the group avatar, or drop an image",
