@@ -57,6 +57,8 @@ playwright-report/
 !scripts/imagegen/inputs/**/*.png
 # 预装 App 的图片(manifest 的 icon 与页面用的图,随包装上)
 !apps/desktop/preinstalled-apps/**/*.png
+# 「在…中打开」那几个程序的图标(shared/openInApps.ts 的 ICON_PATHS 按文件名引用,随包装上)
+!apps/desktop/src/session/assets/images/*.png
 
 # 通用日志和 editor 备份
 *.log
