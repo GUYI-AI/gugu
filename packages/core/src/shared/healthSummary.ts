@@ -139,7 +139,7 @@ export function baselineStatus(
   value: number | null,
   history: ReadonlyArray<number | null>,
 ): { baseline: number | null; status: BaselineStatus | null } {
-  const known = history.filter((v): v is number => typeof v === 'number' && Number.isFinite(v)).slice(-BASELINE_WINDOW_DAYS)
+  const known = history.slice(-BASELINE_WINDOW_DAYS).filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
   const baseline = known.length >= BASELINE_MIN_DAYS ? median(known) : null
   if (value === null || baseline === null || baseline === 0) return { baseline, status: null }
   const delta = (value - baseline) / baseline
