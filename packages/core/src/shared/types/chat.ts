@@ -19,15 +19,6 @@ export type MessageDeliveryStatus = 'delivered' | 'read'
 export type GroupMemberType = 'human' | 'agent'
 export type NotificationLevel = 'all' | 'important' | 'none'
 
-// @@@group-avatar-tile — 群头像组合的一格。产品对「群的脸」只有一个定义：显式群头像原样投影，
-// 从未设过则由成员组合表达（presets 不变量）。每格必须带**稳定 id**——它既是 key 也是该成员没上传
-// 头像时生成默认脸的 seed；姓名永不当 seed。所有渲染群头像的 surface 都喂这一种结构。
-export type GroupAvatarMember = {
-  id: string
-  name: string
-  avatar: string | null
-}
-
 export type ChatUnreadLocator = {
   stream_id: string
   stream_kind: 'main' | 'thread'

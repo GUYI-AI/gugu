@@ -77,7 +77,7 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/src/components/Avatar.tsx",
-    "count": 4
+    "count": 3
   },
   {
     "rule": "console-member",

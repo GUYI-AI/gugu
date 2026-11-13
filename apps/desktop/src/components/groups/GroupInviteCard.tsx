@@ -1,6 +1,6 @@
 import { useGroupDisplayName } from '../../hooks/useGroupDisplayName'
 import { useTranslation } from 'react-i18next'
-import type { GroupAvatarMember, GroupJoinMode } from '@gugu/core/shared/types/chat'
+import type { GroupJoinMode } from '@gugu/core/shared/types/chat'
 import { Avatar } from '../Avatar'
 import { Button } from '../ui/Button'
 
@@ -15,10 +15,6 @@ export interface GroupInviteCardGroup {
   avatar_url?: string | null
   description?: string | null
   creator_name?: string | null
-  // @@@group-avatar-tile — 群头像组合的成员格。产品对「群的脸」只有一个定义：显式群头像原样投影，
-  // 从未设过则用成员组合表达（presets 不变量）——这张卡是这条链路的第四个 surface，不是它的例外。
-  // 数据源没带成员格时留 undefined：组合分支不开，落回可诊断空态，❌ 不给群编一张生成脸。
-  member_avatars?: GroupAvatarMember[]
 }
 export type GroupInviteCardState =
   | 'joinable'
@@ -86,7 +82,7 @@ export function GroupInviteCard({
       data-density={density}
       style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', minWidth: 0, padding: inline ? 12 : '12px 0', border: inline ? '1px solid var(--border-subtle)' : 'none', borderBottom: inline ? 'none' : '1px solid var(--border-subtle)', borderRadius: inline ? 'var(--radius-surface)' : 0, background: inline ? 'var(--bg-elevated)' : 'transparent' }}
     >
-      <Avatar avatarUrl={group.avatar_url ?? null} seed={group.id ?? String(group.public_id)} name={name} variant="group" size={inline ? 40 : 36} memberAvatars={group.member_avatars} />
+      <Avatar avatarUrl={group.avatar_url ?? null} seed={group.id ?? String(group.public_id)} name={name} variant="group" size={inline ? 40 : 36} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ color: 'var(--text-primary)', fontSize: 'var(--font-body)', fontWeight: 600, lineHeight: 'var(--lh-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {name}

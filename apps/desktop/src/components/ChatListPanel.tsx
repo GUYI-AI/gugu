@@ -375,13 +375,12 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
           <PhoneProjectChatAvatar chat={chat} mobile={mobile}><Avatar
             name={shownName}
             avatarUrl={isRoom ? chat.avatar : peerIdentity?.avatar}
-            seed={chat.peer_user_id ?? undefined}
+            seed={isRoom ? chat.id : chat.peer_user_id ?? undefined}
             size={mobile ? 48 : 'sm'}
             isAgent={isAgentChat}
             harnessBadge={!mobile}
             agentStatus={agentStatus}
             variant={isRoom ? 'group' : 'default'}
-            memberAvatars={chat.member_user_ids?.flatMap((id) => identitiesById[id] ? [{ id, name: identitiesById[id].display_name, avatar: identitiesById[id].avatar }] : [])}
           /></PhoneProjectChatAvatar>
         }
         title={

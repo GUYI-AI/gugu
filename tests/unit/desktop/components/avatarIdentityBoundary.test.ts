@@ -32,15 +32,16 @@ describe('displayAvatarUrl 的口径', () => {
   })
 })
 describe('review3 回归钉', () => {
-  it('R3-3 群没有稳定 id 是正常的，不得被诊断成「缺身份 key 的人」', async () => {
+  it('R3-3 群按会话 id 画默认群头像，不拿人脸、不发诊断', async () => {
     const harness = createReactHarness()
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     errorSpy.mockClear()
     try {
-      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group' }))
+      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1' }))
       await act(async () => { await Promise.resolve() })
-      expect(errorSpy, '群不该触发 missing identity key 诊断').not.toHaveBeenCalled()
-      expect(harness.container.querySelector('img'), '群也不该拿到一张人脸').toBeNull()
+      expect(errorSpy).not.toHaveBeenCalled()
+      expect(harness.container.querySelector('img'), '群不该拿到一张人脸').toBeNull()
+      expect(harness.container.querySelector('[data-group-face] svg')).not.toBeNull()
     } finally {
       harness.cleanup()
       errorSpy.mockRestore()
@@ -65,13 +66,28 @@ describe('review3 回归钉', () => {
     expect(() => dicebearAvatarDataUri('')).toThrow(/stable identity key/)
     expect(() => dicebearAvatarDataUri('   ')).toThrow(/stable identity key/)
   })
-  it('R3-5 群组合里纯空白的成员 id 留空槽，而不是共用脸', () => {
-    const html = renderToString(createElement(Avatar, {
-      name: '群',
-      variant: 'group',
-      memberAvatars: [{ id: '   ', name: '空白 id', avatar: null }],
-    }))
-    expect(html).toContain('data-avatar-empty')
-    expect(html).not.toContain(GENERATED)
+  it('R3-5 群缺会话 id 时留空槽，而不是共用一张默认群头像', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const html = renderToString(createElement(Avatar, { name: '群', variant: 'group', seed: '   ' }))
+      expect(html).toContain('data-avatar-empty')
+      expect(html).not.toContain('data-group-face')
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+})
+
+describe('default group face', () => {
+  it('keeps its drawn nodes across re-renders, so a press that spans one still clicks', async () => {
+    const harness = createReactHarness()
+    try {
+      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1' }))
+      const drawn = harness.container.querySelector('[data-group-face] svg')
+      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1', size: 'lg' }))
+      expect(harness.container.querySelector('[data-group-face] svg')).toBe(drawn)
+    } finally {
+      harness.cleanup()
+    }
   })
 })
