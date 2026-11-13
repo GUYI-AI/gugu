@@ -144,7 +144,9 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // `resources:write` listing `files`; `voice-notes:manage` (`chat:voice-notes:manage`): `transcribeVoiceNote`,
 // `removeVoiceNote` (asked first), `exportVoiceNote` (the host's save dialog); a binding draft's `attach` (files of its
 // folder or the agent's resources, by the path or key the App holds).
-export const EXTENSION_API_VERSION = 50;
+// 51: `showContextMenu` rows say `program` (an id of `files.openInApps`): the row is drawn with that program's icon.
+// Presentation only, as 38's hints: an older host draws the label alone.
+export const EXTENSION_API_VERSION = 51;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
