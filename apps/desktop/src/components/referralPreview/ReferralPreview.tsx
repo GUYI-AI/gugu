@@ -14,7 +14,7 @@ import { Mail } from '@/lib/icons'
 import '../../i18n/registerMainCatalog'
 import './referralPreview.css'
 
-const enabled = officialServicesEnabled()
+const referralEnabled = () => officialServicesEnabled()
 
 /** Both entry points use the existing QR sheet; other people's cards stay unchanged. */
 export function PersonalSharePreview({
@@ -23,7 +23,7 @@ export function PersonalSharePreview({
 }: SharePosterDialogProps & { initialPurpose?: 'invite' | 'contact' }) {
   const { t } = useTranslation('main')
   const [purpose, setPurpose] = useState<'invite' | 'contact'>(initialPurpose)
-  if (!enabled) return <SharePosterDialog {...props} />
+  if (!referralEnabled()) return <SharePosterDialog {...props} />
   return (
     <SharePosterDialog
       {...props}
@@ -81,7 +81,7 @@ export function ReferralSharePreview({ onClose, zIndex }: { onClose: () => void;
 
 export function InviteFriendsMenuItem({ onSelect }: { onSelect: () => void }) {
   const { t } = useTranslation('main')
-  if (!enabled) return null
+  if (!referralEnabled()) return null
   return (
     <MenuItem data-testid="referral-preview-menu" icon={<Mail size={15} />} onClick={onSelect}>
       <span className="flex items-center gap-2">{t('referralPreview.invite')}</span>
@@ -92,7 +92,7 @@ export function InviteFriendsMenuItem({ onSelect }: { onSelect: () => void }) {
 export function InviteFriendsPreview() {
   const { t } = useTranslation('main')
   const [open, setOpen] = useState(false)
-  if (!enabled) return null
+  if (!referralEnabled()) return null
   return (
     <>
       <div className="mt-1 flex justify-center">
@@ -114,7 +114,7 @@ export function InviteFriendsPreview() {
 export function ReferralAccountPreview() {
   const { t } = useTranslation('main')
   const [open, setOpen] = useState(false)
-  if (!enabled) return null
+  if (!referralEnabled()) return null
   return (
     <>
       <SettingsGroup className="gg-referral-account-preview">
@@ -143,6 +143,6 @@ export function ReferralAccountPreview() {
 }
 
 export function ReferralCodePreview({ userId }: { userId: string }) {
-  if (!enabled) return null
+  if (!referralEnabled()) return null
   return <ReferralClaimField key={userId} userId={userId} />
 }

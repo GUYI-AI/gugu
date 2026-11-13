@@ -5,6 +5,11 @@ import { i18n, setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import '../../../../apps/desktop/src/i18n/registerContactsCatalog'
 import { createNode, createReactHarness } from '../../../support/testHarness'
 
+vi.mock('@gugu/core/cloud/optionalServices', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@gugu/core/cloud/optionalServices')>(),
+  officialServicesEnabled: () => false,
+}))
+
 const poster = vi.hoisted(() => vi.fn(async (_options: Record<string, unknown>) => ({ toDataURL: () => 'data:image/png;base64,cG9zdGVy' })))
 vi.mock('qrcode', () => ({ default: { toDataURL: vi.fn(async () => 'data:image/png;base64,cXI=') } }))
 vi.mock('../../../../apps/desktop/src/components/sharePosterCanvas', () => ({
