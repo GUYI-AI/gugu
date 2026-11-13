@@ -47,7 +47,7 @@ export function parseGroupFileLink(href: string): GroupFileLink | null {
   const at = match[3] === undefined ? null : placeOf(match[3])
   return {
     itemId: match[1]!.toLowerCase(),
-    ...(Number.isSafeInteger(version) ? { version } : {}),
+    ...(Number.isSafeInteger(version) && version! > 0 ? { version } : {}),
     ...(at && Object.keys(at).length > 0 ? { at } : {}),
   }
 }
