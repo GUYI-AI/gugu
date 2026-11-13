@@ -10,6 +10,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useLayoutEffect,
   useRef,
   type ReactNode,
   type RefObject,
@@ -31,19 +32,52 @@ export function clampSidebarWidth(width: number): number {
   return Math.max(SIDEBAR_MIN_WIDTH_PX, Math.min(SIDEBAR_MAX_WIDTH_PX, width));
 }
 
-function readStoredSidebarWidth(): number {
+/**
+ * GUYI-AI/gugu#2642 内层栏(打开一个群 / 项目时列表与正文之间那一列)的宽:拖它右边缘调。范围暂与左边列表同档,
+ * 默认就是它一直以来写死的那个宽 —— 没拖过的人看到的与从前一样。宽度存自己的键,与列表各管各的。
+ */
+export const INNER_SIDEBAR_MIN_WIDTH_PX = 200;
+export const INNER_SIDEBAR_MAX_WIDTH_PX = 520;
+export const INNER_SIDEBAR_DEFAULT_WIDTH_PX = SIDEBAR_DEFAULT_WIDTH_PX;
+/** 内层栏最多占这张卡片(内层栏 + 正文)宽的这个比例 —— 与列表占会话页的比例同一个口径,正文至少留六成。 */
+export const INNER_SIDEBAR_MAX_SHARE = 0.4;
+export const INNER_SIDEBAR_WIDTH_STORAGE_KEY = 'gugu.taskpage.innerSidebarWidth';
+
+export function clampInnerSidebarWidth(width: number): number {
+  if (!Number.isFinite(width)) return INNER_SIDEBAR_DEFAULT_WIDTH_PX;
+  return Math.max(INNER_SIDEBAR_MIN_WIDTH_PX, Math.min(INNER_SIDEBAR_MAX_WIDTH_PX, width));
+}
+
+/**
+ * 内层栏此刻最宽能到哪:卡片宽(会话页宽 − 列表占位宽)的 INNER_SIDEBAR_MAX_SHARE,不过硬上限;`null` = 还没量到,只有硬上限。
+ * 默认宽永远放得下(❌ 低于它):窗口再窄,这一列也不比从前更窄 —— 只有拖宽的那一截要给正文让路。
+ */
+export function innerSidebarMaxWidth(cardWidth: number | null): number {
+  if (cardWidth == null) return INNER_SIDEBAR_MAX_WIDTH_PX;
+  return Math.max(INNER_SIDEBAR_DEFAULT_WIDTH_PX, Math.min(INNER_SIDEBAR_MAX_WIDTH_PX, cardWidth * INNER_SIDEBAR_MAX_SHARE));
+}
+
+/**
+ * 内层栏画出来的宽:用户选定的宽,夹进此刻放得下的范围。窗口变窄、列表拖宽时它跟着让(正文 ❌ 被挤没);
+ * 选定的宽照旧存着,地方回来了它就回来。
+ */
+export function innerSidebarShownWidth(width: number, cardWidth: number | null): number {
+  return Math.max(INNER_SIDEBAR_MIN_WIDTH_PX, Math.min(innerSidebarMaxWidth(cardWidth), width));
+}
+
+function readStoredWidth(key: string, clamp: (width: number) => number, fallback: number): number {
   try {
-    const raw = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
-    if (raw == null) return SIDEBAR_DEFAULT_WIDTH_PX;
-    return clampSidebarWidth(Number.parseFloat(raw));
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    return clamp(Number.parseFloat(raw));
   } catch {
-    return SIDEBAR_DEFAULT_WIDTH_PX;
+    return fallback;
   }
 }
 
-function writeStoredSidebarWidth(width: number): void {
+function writeStoredWidth(key: string, width: number): void {
   try {
-    localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(Math.round(width)));
+    localStorage.setItem(key, String(Math.round(width)));
   } catch {
     // 存储不可用:宽度这一项丢了就丢了,不该因此让侧栏用不了。
   }
@@ -154,6 +188,17 @@ export interface WorkspaceLayoutContextValue {
   dragLeftEdge: (rawWidth: number, maxWidth: number) => void;
   /** #2548 rail only: let go of the edge. Snaps to the nearer state (sidebarEdgeSnapsOpen) with the collapse spring. */
   releaseLeftEdge: () => void;
+  /** 会话页根元素此刻的宽(px),WorkspaceLayout 量;0 = 还没量到。 */
+  workspaceWidth: MotionValue<number>;
+  /** #2642 用户选定的内层栏宽(px,存着的那个)。 */
+  innerWidth: MotionValue<number>;
+  /** #2642 内层栏此刻画出来的宽:选定的宽夹进这张卡片此刻放得下的范围(innerSidebarShownWidth)。这一列与它右边的分隔条都读它。 */
+  innerShownWidth: MotionValue<number>;
+  setInnerWidth: (width: number, options?: { persist?: boolean }) => void;
+  /** #2642 内层栏此刻画着(这一列挂上 / 卸下时自己报,useInnerSidebarFrame):它右边那根分隔条只在这时才有。 */
+  innerSidebarShown: boolean;
+  /** 这一列挂上时登记一次,返回的函数在卸下时注销(按次数记:换对话时新旧两列的挂卸先后不影响结果)。 */
+  registerInnerSidebarFrame: () => () => void;
   /** 开关按钮把自己的悬停状态报进来:悬停满 100ms 也会浮出侧栏。 */
   setTriggerHovered: (hovered: boolean) => void;
   exitZenMode: () => void;
@@ -188,7 +233,7 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   const prefersReducedMotion = useReducedMotion();
   const workspaceRootRef = useRef<HTMLDivElement | null>(null);
 
-  const leftWidth = useMotionValue(readStoredSidebarWidth());
+  const leftWidth = useMotionValue(readStoredWidth(SIDEBAR_WIDTH_STORAGE_KEY, clampSidebarWidth, SIDEBAR_DEFAULT_WIDTH_PX));
   const leftProgress = useMotionValue(1);
   const [leftRail, setLeftRailState] = useState(0);
   const leftRailWidth = useMotionValue(0);
@@ -227,9 +272,31 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     (width: number, options?: { persist?: boolean }) => {
       const next = clampSidebarWidth(width);
       leftWidth.set(next);
-      if (options?.persist) writeStoredSidebarWidth(next);
+      if (options?.persist) writeStoredWidth(SIDEBAR_WIDTH_STORAGE_KEY, next);
     },
     [leftWidth]
+  );
+
+  const workspaceWidth = useMotionValue(0);
+  const innerWidth = useMotionValue(
+    readStoredWidth(INNER_SIDEBAR_WIDTH_STORAGE_KEY, clampInnerSidebarWidth, INNER_SIDEBAR_DEFAULT_WIDTH_PX)
+  );
+  // 卡片宽 = 会话页宽 − 列表此刻的占位宽(列表开合、拖动时逐帧跟着变,所以读占位宽,❌ 读用户选定宽)。
+  const innerShownWidth = useTransform([innerWidth, leftAnimatedWidth, workspaceWidth], ([width, left, root]: number[]) =>
+    innerSidebarShownWidth(width, root > 0 ? root - left : null)
+  );
+  const [innerSidebarFrames, setInnerSidebarFrames] = useState(0);
+  const registerInnerSidebarFrame = useCallback(() => {
+    setInnerSidebarFrames((count) => count + 1);
+    return () => setInnerSidebarFrames((count) => count - 1);
+  }, []);
+  const setInnerWidth = useCallback(
+    (width: number, options?: { persist?: boolean }) => {
+      const next = clampInnerSidebarWidth(width);
+      innerWidth.set(next);
+      if (options?.persist) writeStoredWidth(INNER_SIDEBAR_WIDTH_STORAGE_KEY, next);
+    },
+    [innerWidth]
   );
 
   const setCollapsed = useCallback(
@@ -292,7 +359,7 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     edgeDragRef.current = null;
     if (sidebarEdgeSnapsOpen(leftProgress.get())) {
       restoreWidthRef.current = null;
-      writeStoredSidebarWidth(leftWidth.get());
+      writeStoredWidth(SIDEBAR_WIDTH_STORAGE_KEY, leftWidth.get());
       setCollapsed('left', false);
     } else {
       restoreWidthRef.current = drag.startWidth;
@@ -344,10 +411,26 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     toggleLeft,
     dragLeftEdge,
     releaseLeftEdge,
+    workspaceWidth,
+    innerWidth,
+    innerShownWidth,
+    setInnerWidth,
+    innerSidebarShown: innerSidebarFrames > 0,
+    registerInnerSidebarFrame,
     setTriggerHovered,
     exitZenMode,
     toggleZenMode,
   };
+}
+
+/**
+ * #2642 内层栏那一列自己用:它画出来的宽(motion value,拖分隔条时逐帧跟手、❌ 重渲染),并在它挂着的时候报给工作区 ——
+ * 它右边那根分隔条只在这一列画着时才有。
+ */
+export function useInnerSidebarFrame(): MotionValue<number> {
+  const { innerShownWidth, registerInnerSidebarFrame } = useWorkspaceLayoutContext();
+  useLayoutEffect(registerInnerSidebarFrame, [registerInnerSidebarFrame]);
+  return innerShownWidth;
 }
 
 /**

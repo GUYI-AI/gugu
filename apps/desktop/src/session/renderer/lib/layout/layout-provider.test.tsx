@@ -10,6 +10,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('framer-motion', async (importOriginal) => ({ ...(await importOriginal<typeof import('framer-motion')>()), useReducedMotion: () => true }));
 
 const {
+  innerSidebarMaxWidth,
+  innerSidebarShownWidth,
+  INNER_SIDEBAR_DEFAULT_WIDTH_PX,
+  INNER_SIDEBAR_WIDTH_STORAGE_KEY,
   sidebarEdgeDrag,
   sidebarEdgeSnapsOpen,
   sidebarOccupiedWidth,
@@ -200,5 +204,58 @@ describe('dragging the edge of a sidebar that collapses to a rail', () => {
     await act(async () => layout.releaseLeftEdge());
     expect(layout.isLeftOpen).toBe(true);
     expect(occupied()).toBe(300);
+  });
+});
+
+describe('the inner column\'s width (#2642)', () => {
+  it('starts at today\'s width when nothing is stored, else at the stored width clamped to 200–520', async () => {
+    await mount();
+    expect(layout.innerWidth.get()).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
+    expect(layout.innerShownWidth.get()).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
+    act(() => root.unmount());
+    for (const [stored, expected] of [['310', 310], ['90', 200], ['9000', 520], ['nonsense', INNER_SIDEBAR_DEFAULT_WIDTH_PX]] as const) {
+      localStorage.setItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY, stored);
+      root = createRoot(host);
+      await mount();
+      expect(layout.innerWidth.get(), stored).toBe(expected);
+      act(() => root.unmount());
+    }
+    root = createRoot(host);
+  });
+
+  it('is stored only when asked, under its own key; the list\'s width is its own', async () => {
+    await mount();
+    act(() => layout.setInnerWidth(333));
+    expect(localStorage.getItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBeNull();
+    act(() => layout.setInnerWidth(333.4, { persist: true }));
+    expect(localStorage.getItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe('333');
+    expect(INNER_SIDEBAR_WIDTH_STORAGE_KEY).not.toBe('gugu.taskpage.sidebarWidth');
+    expect(localStorage.getItem('gugu.taskpage.sidebarWidth')).toBeNull();
+    expect(layout.leftWidth.get()).toBe(SIDEBAR_DEFAULT_WIDTH_PX);
+  });
+
+  it('may take at most 40% of the card, never less than today\'s width nor more than 520', () => {
+    expect(innerSidebarMaxWidth(860)).toBe(344);
+    expect(innerSidebarMaxWidth(560), 'a narrow card still holds today\'s width').toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
+    expect(innerSidebarMaxWidth(-40)).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
+    expect(innerSidebarMaxWidth(4000)).toBe(520);
+    expect(innerSidebarMaxWidth(null), 'not measured yet: only the hard cap').toBe(520);
+  });
+
+  it('is drawn at the chosen width clamped into that cap (and the minimum), following the page and the list', async () => {
+    expect(innerSidebarShownWidth(500, 760)).toBe(304);
+    expect(innerSidebarShownWidth(300, 1360)).toBe(300);
+    expect(innerSidebarShownWidth(150, 1360)).toBe(200);
+    localStorage.setItem(INNER_SIDEBAR_WIDTH_STORAGE_KEY, '500');
+    await mount();
+    expect(layout.innerShownWidth.get(), 'not measured yet').toBe(500);
+    // A transform recomputes on the next frame.
+    act(() => layout.workspaceWidth.set(1000));
+    await expect.poll(() => layout.innerShownWidth.get()).toBe(304);
+    act(() => layout.setLeftWidth(400));
+    await expect.poll(() => layout.innerShownWidth.get()).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
+    act(() => layout.workspaceWidth.set(2000));
+    await expect.poll(() => layout.innerShownWidth.get()).toBe(500);
+    expect(layout.innerWidth.get(), 'the choice itself never changed').toBe(500);
   });
 });

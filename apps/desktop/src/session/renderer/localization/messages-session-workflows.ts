@@ -189,6 +189,8 @@ export const enUSSessionWorkflowMessages = {
   'task.collapseSidebar': 'Collapse sidebar',
   // 分隔条的无障碍名(PanelResizeHandle 的 aria-label)。从前两处都写死中文,英文界面读屏也念中文。
   'task.resizeSidebar': 'Resize sidebar',
+  // #2642 内层栏(群 / 项目里「智能体 / 话题」那一列)右边缘的分隔条;叫法同它的收起钮(sidebar.collapseInner)。
+  'task.resizeInnerSidebar': 'Resize inner sidebar',
 
   'task.renameTitle': 'Rename task',
   'task.renameSession': 'Rename task',
@@ -783,6 +785,7 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'task.expandSidebar': '展开左侧栏',
   'task.collapseSidebar': '收起左侧栏',
   'task.resizeSidebar': '调整侧栏宽度',
+  'task.resizeInnerSidebar': '调整内层栏宽度',
 
   'task.renameTitle': '重命名会话',
   'task.renameSession': '重命名会话',
