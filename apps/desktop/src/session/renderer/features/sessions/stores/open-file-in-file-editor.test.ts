@@ -161,10 +161,11 @@ describe('task file preview routing', () => {
     });
     mocks.provisionSession.mockResolvedValue(undefined);
     mocks.workspaceGet.mockReturnValue({ path: '/repo' });
-    mocks.fileExists.mockResolvedValue({
-      success: true,
-      data: { exists: true, isDirectory: false },
-    });
+    // The machine answers for its working copy only: a path outside `/repo` is refused, as `resolveWorkspacePath` does.
+    mocks.fileExists.mockImplementation(async (_projectId: string, _workspaceId: string, filePath: string) =>
+      /^([A-Za-z]:[\\/]|\/)/.test(filePath) && !filePath.startsWith('/repo/')
+        ? { success: false, error: { type: 'fs_error', message: 'Path must be inside the workspace' } }
+        : { success: true, data: { exists: true, isDirectory: false } });
     mocks.statExternalFile.mockResolvedValue({
       success: true,
       data: { exists: true, isDirectory: false },
@@ -172,6 +173,16 @@ describe('task file preview routing', () => {
     mocks.getHomeDirectory.mockResolvedValue('/Users/tester');
     mocks.openPath.mockResolvedValue({ success: true });
     mocks.openIn.mockResolvedValue({ success: true });
+  });
+
+  it('a path written through an alias of the working copy opens on the machine’s spelling, the tab a canonical open lands on', async () => {
+    const alias = '/srv/accounts/u1/data/notes.md';
+    mocks.fileExists.mockImplementation(async (_projectId: string, _workspaceId: string, filePath: string) =>
+      filePath === alias ? { success: true, data: { exists: true, isDirectory: false, path: '/repo/notes.md' } } : { success: false, error: { type: 'fs_error', message: 'outside' } });
+    await openFileInSessionEditor('project-1', 'session-1', alias);
+    expect(mocks.paneLayoutOpen).toHaveBeenCalledTimes(1);
+    expect(Object.values(mocks.paneLayoutOpen.mock.calls[0]![1] as Record<string, unknown>)).toContain('/repo/notes.md');
+    expect(mocks.statExternalFile).not.toHaveBeenCalled();
   });
 
   it('工作区外的普通文件照原路径打开', async () => {
@@ -477,7 +488,8 @@ describe('task file preview routing', () => {
     await openFileInSessionEditor('project-1', 'session-1', '/tmp/Application Support/note.md');
     await openFileBesideConversation('project-1', 'session-1', '/tmp/Application Support/note.md');
 
-    expect(mocks.fileExists).not.toHaveBeenCalled();
+    // Asked by name, the machine said it is not in this working copy: the external preview opens it.
+    expect(mocks.fileExists).toHaveBeenCalledWith('project-1', 'workspace-1', '/tmp/Application Support/note.md');
     // 工作区外那支是 fire-and-forget(openSessionFile 里 `void openExternalFilePath`),外部 stat
     // 又多了一跳 —— 同步断言会跟第一次 open 赛跑,必须等它落地。
     // 同一条外部预览回退;从对话里点开的那次开在对话旁边(spec session-page「并排」)。
