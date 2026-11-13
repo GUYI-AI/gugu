@@ -113,5 +113,5 @@ export function workspaceUploadKind(fileName, mimeType, bytes) {
   const problem = contentType === 'application/json' ? jsonObjectProblem(text) : null
   if (problem?.problem === 'invalid') return { kind: 'file', why: 'not valid JSON' }
   if (problem) return { kind: 'file', why: 'a JSON file lives as an object at the top ({...}); this one is not' }
-  return { kind: 'document', contentType, text }
+  return { kind: 'document', contentType, text: contentType === 'application/json' ? text.replace(/^\ufeff/, '') : text }
 }
