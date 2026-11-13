@@ -31,7 +31,7 @@ import {
 
 const profileRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }
 const avatarFrameStyle: CSSProperties = {
-  position: 'relative', width: 52, height: 52, borderRadius: 'var(--radius-circle)', overflow: 'hidden', flexShrink: 0,
+  position: 'relative', width: 52, height: 52, borderRadius: 'var(--radius-2xl)', overflow: 'hidden', flexShrink: 0,
   background: 'transparent', display: 'grid', placeItems: 'center', cursor: 'default',
 }
 const avatarFrameEditableStyle: CSSProperties = { ...avatarFrameStyle, cursor: 'pointer' }

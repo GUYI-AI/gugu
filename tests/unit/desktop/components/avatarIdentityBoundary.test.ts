@@ -79,12 +79,27 @@ describe('review3 回归钉', () => {
 })
 
 describe('default group face', () => {
+  it('shows the first characters of the name, and marks a project only when told it is one', async () => {
+    const harness = createReactHarness()
+    try {
+      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1' }))
+      expect(harness.container.querySelector('[data-group-face] text')?.textContent).toBe('协作')
+      expect(harness.container.querySelector('[data-project-mark]')).toBeNull()
+      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1', project: true }))
+      expect(harness.container.querySelector('[data-project-mark]')).not.toBeNull()
+      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1', project: true, size: 16 }))
+      expect(harness.container.querySelector('[data-project-mark]'), 'too small to carry the mark').toBeNull()
+    } finally {
+      harness.cleanup()
+    }
+  })
+
   it('keeps its drawn nodes across re-renders, so a press that spans one still clicks', async () => {
     const harness = createReactHarness()
     try {
       await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1' }))
       const drawn = harness.container.querySelector('[data-group-face] svg')
-      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1', size: 'lg' }))
+      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1', harnessBadge: false }))
       expect(harness.container.querySelector('[data-group-face] svg')).toBe(drawn)
     } finally {
       harness.cleanup()

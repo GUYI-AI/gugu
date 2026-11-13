@@ -14,7 +14,6 @@ import {
   projectAgentTarget,
   projectNameProblem,
   projectSessions,
-  runningCount,
 } from '../../../apps/desktop/src/mobile/partners/partnersModel'
 
 function project(localProjectId: string, name: string, createdAt: string, chatId: string | null): DeviceProject {
@@ -169,26 +168,8 @@ describe('project address book', () => {
         : [session('c', 'p-server')],
     )
     expect(sessions.map(({ session: row }) => row.conversationId)).toEqual(['a', 'c'])
-    expect(runningCount(sessions)).toBe(1)
   })
 
-  it.each([false, true])('counts a cached working digest only while its host is online: %s', hostOnline => {
-    const host = {
-      device_id: 'host', is_online: hostOnline, projects: [],
-      capabilities: { runtimes: [], terminals: [] },
-      session_digest: [{ ...session('working', 'p', { status: { status: 'working', detail: 'running' } }) }],
-    } as unknown as Device
-    const listed = deviceSessionsOf(host, {})
-    const sessions = projectSessions({ members: [{ deviceId: 'host', localProjectId: 'p' }] }, () => listed.sessions, () => hostOnline)
-    expect(runningCount(sessions)).toBe(hostOnline ? 1 : 0)
-    expect(listed.sessions[0]?.status).toEqual({ status: 'working', detail: 'running' })
-  })
-
-  it('preserves online and local parked counts', () => {
-    const working = session('parked', 'p', { status: { status: 'working', detail: 'parked' } })
-    expect(runningCount([{ session: working }, { session: working, hostOnline: true }])).toBe(2)
-    expect(runningCount([{ session: working, hostOnline: false }])).toBe(0)
-  })
 
 })
 

@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
 import { engineLabel } from '@/lib/usage/engineLabel';
-import { ProjectFolderAvatar } from '@/mobile/partners/ProjectFolderAvatar';
+import { Avatar } from '@/components/Avatar';
 import { SampleProjectRemoveItem, useRemoveSampleProject } from '@renderer/features/sample-project/sample-project-row-menu';
 import { SAMPLE_AGENT_SEED } from '@renderer/features/sample-project/sample-project-transcript';
 import { openSamplePane, samplePane } from '@renderer/features/sample-project/sample-project-view';
@@ -36,7 +36,7 @@ export const SampleInnerSidebar = observer(function SampleInnerSidebar({ ownerId
         headKey="sample-project"
         name={translate('projects.sample.name')}
         tag={translate('projects.sample.tag')}
-        avatar={<ProjectFolderAvatar coverId="sample-project" size={24} />}
+        avatar={<Avatar variant="group" project name={translate('projects.sample.name')} seed="sample-project" size={24} />}
         active={!taskOpen}
         onOpen={() => {
           if (taskOpen) openSamplePane(null);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GROUP_AVATAR_COLORS, groupAvatarColor, groupAvatarSvg, groupAvatarTextLines } from '@gugu/core/shared/ui/groupAvatar'
+import { GROUP_AVATAR_COLORS, groupAvatarColor, groupAvatarDefaultText, groupAvatarSvg, groupAvatarTextLines } from '@gugu/core/shared/ui/groupAvatar'
 
 describe('default group face', () => {
   it('gives a group one of the eight colours, the same one every time', () => {
@@ -19,12 +19,30 @@ describe('default group face', () => {
     expect(groupAvatarTextLines('🚀发布')).toEqual(['🚀发', '布'])
   })
 
-  it('draws the group mark without text and the text in its place, sized by how many characters show', () => {
-    const mark = groupAvatarSvg({ color: '#3370FF', fill: '#fff' })
+  it('shows the name by default, or the initials of a name of several Latin words', () => {
+    expect(groupAvatarDefaultText('产品讨论群')).toBe('产品讨论群')
+    expect(groupAvatarDefaultText('MKT')).toBe('MKT')
+    expect(groupAvatarDefaultText('Design Review')).toBe('DR')
+    expect(groupAvatarDefaultText('  a b c d e ')).toBe('ABCD')
+    expect(groupAvatarDefaultText('周末 去杭州')).toBe('周末 去杭州')
+    expect(groupAvatarDefaultText('')).toBe('')
+  })
+
+  it('draws a rounded square outline around the text, or around the group mark when there is none', () => {
+    const mark = groupAvatarSvg({ color: '#3370FF', fill: '#fff', px: 64 })
     expect(mark).not.toContain('<text')
-    expect(mark).toContain('stroke="#3370FF"')
-    const sizeOf = (text: string) => /font-size="(\d+)"/.exec(groupAvatarSvg({ color: '#3370FF', text, fill: '#fff' }))?.[1]
+    expect(mark).toMatch(/<rect [^>]*rx="[\d.]+"[^>]*stroke="#3370FF"/)
+    const sizeOf = (text: string) => /font-size="(\d+)"/.exec(groupAvatarSvg({ color: '#3370FF', text, fill: '#fff', px: 64 }))?.[1]
     expect([sizeOf('团'), sizeOf('团队'), sizeOf('MKT'), sizeOf('产品设计'), sizeOf('Branding')]).toEqual(['116', '92', '72', '72', '60'])
-    expect(groupAvatarSvg({ color: '#3370FF', text: '<b>&', fill: '#fff' })).toContain('&#60;b&#62;&#38;')
+    expect(groupAvatarSvg({ color: '#3370FF', text: '<b>&', fill: '#fff', px: 64 })).toContain('&#60;b&#62;&#38;')
+  })
+
+  it('keeps the outline a pixel and a half wide and drops the second line where a face is small', () => {
+    const strokeOf = (px: number) => Number(/stroke-width="([\d.]+)"/.exec(groupAvatarSvg({ color: '#3370FF', fill: '#fff', px }))![1])
+    expect(strokeOf(208)).toBe(6.5)
+    expect(strokeOf(32) * 32 / 208).toBeCloseTo(1.5)
+    const texts = (px: number) => groupAvatarSvg({ color: '#3370FF', text: '产品讨论', fill: '#fff', px }).match(/<text/g)?.length
+    expect([texts(32), texts(40)]).toEqual([1, 2])
+    expect(/font-size="(\d+)"/.exec(groupAvatarSvg({ color: '#3370FF', text: '产品讨论', fill: '#fff', px: 32 }))?.[1], 'sized for the one line shown').toBe('92')
   })
 })

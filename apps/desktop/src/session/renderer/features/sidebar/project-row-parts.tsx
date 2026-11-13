@@ -1,7 +1,8 @@
 import type { HTMLAttributes, ReactNode } from 'react';
 import { Chip } from '@/components/ui/Chip';
 import { ListRow } from '@/components/ui/ListRow';
-import { ProjectFolderAvatar } from '@/mobile/partners/ProjectFolderAvatar';
+import { Avatar } from '@/components/Avatar';
+import { useChatSummariesSelect } from '@/lib/chatSummariesBridge';
 
 type OneListRowProps = {
   name: string;
@@ -39,13 +40,14 @@ export function OneListRow({ leading, name, tag, time, preview, selected, onOpen
 }
 
 /**
- * A project in the one list wears the project cover (ProjectFolderAvatar at the sidebar's 32, as every project group row
- * does), for the projects that have no project group chat yet and for the sample project. Not a new row: those pieces fed
- * without a chat.
+ * A project in the one list wears the face a group does, marked as a project: its project group's (the picture that
+ * group set included) when it has one, else one drawn from its own id and name. For the projects that have no project
+ * group chat yet and for the sample project. Not a new row: those pieces fed without a chat.
  */
-export function OneListProjectRow({ coverId, ...row }: OneListRowProps & {
-  /** Whose cover: the project the row stands for. */
-  coverId: string;
+export function OneListProjectRow({ faceId, ...row }: OneListRowProps & {
+  /** Whose face: the project group's chat id, or the project's own id while it has no group. */
+  faceId: string;
 }) {
-  return <OneListRow leading={<ProjectFolderAvatar coverId={coverId} size={32} />} {...row} />;
+  const picture = useChatSummariesSelect((summaries) => summaries.get(faceId)?.avatar ?? null);
+  return <OneListRow leading={<Avatar variant="group" project name={row.name} seed={faceId} avatarUrl={picture} size={32} />} {...row} />;
 }

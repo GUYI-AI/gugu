@@ -1,11 +1,13 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { pauseAnimationsOffscreen } from '@gugu/session-shared/animation-visibility'
 import { useTranslation } from 'react-i18next'
 import { colorOfDisplayStatus, labelOfDisplayStatus } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import type { AgentStatusLabel } from '@gugu/core/shared/agentStatusPresentation'
 import { normalizeAvatarUrl, reportInvalidAvatarUrl } from '@gugu/core/shared/ui/avatarUrl'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
-import { groupAvatarColor, groupAvatarSvg } from '@gugu/core/shared/ui/groupAvatar'
+import { GROUP_AVATAR_CORNER, groupAvatarColor, groupAvatarDefaultText, groupAvatarSvg } from '@gugu/core/shared/ui/groupAvatar'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import { Folder } from '@/lib/icons'
 import { dicebearAvatarDataUri } from '../lib/dicebearAvatar'
 import { AgentNeedsUserGlyph } from './AgentNeedsUserGlyph'
 import { AgentHarnessBadge } from './AgentHarnessIdentity'
@@ -37,8 +39,11 @@ export interface AvatarProps {
   canvasPaddingX?: number
   // The assistant can use its still poster in dense rows. Ordinary agents are always static SVGs.
   still?: boolean
-  // A group: `seed` is the chat id. With no picture of its own it shows the default group face in that id's colour.
+  // A group or a project: `seed` is its id (the project group's chat id; a project with no group yet, its own). With no
+  // picture of its own it shows the default face: that id's colour around the first characters of `name`.
   variant?: 'default' | 'group'
+  // A project that has no project group yet says so itself; a project group is recognised by its chat id.
+  project?: boolean
   imageMatteColor?: string
 }
 
@@ -103,6 +108,24 @@ function AgentStatusBadge({ status, size }: { status: AgentDisplayStatus; size: 
   )
 }
 
+// Smaller than this the mark would cover the face it sits on.
+const PROJECT_MARK_FROM_PX = 24
+
+/**
+ * 「这是项目」: a small grey mark on the lower left corner of a project's face. The upper right corner belongs to unread
+ * counts and the lower right to the running count, so this is the corner left. A project group is recognised from the
+ * account's projects, the same on desktop and phone.
+ */
+function ProjectMark({ chatId, project }: { chatId: string; project?: boolean }) {
+  const projects = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
+  if (!(project ?? projects.some((one) => one.chatId === chatId))) return null
+  return (
+    <span data-project-mark aria-hidden className="pointer-events-none absolute -bottom-[5px] -left-[5px] grid h-[15px] w-[15px] place-items-center rounded-full border border-[var(--border-subtle)] bg-[var(--card)] text-[var(--text-tertiary)]">
+      <Folder size={9} />
+    </span>
+  )
+}
+
 export function Avatar({
   name,
   avatarUrl,
@@ -116,6 +139,7 @@ export function Avatar({
   canvasPaddingX = 0,
   still = false,
   variant = 'default',
+  project,
   imageMatteColor,
 }: AvatarProps) {
   const [imgFailed, setImgFailed] = useState(false)
@@ -139,7 +163,8 @@ export function Avatar({
     setImgFailed(false)
   }
   const px = typeof size === 'number' ? size : SIZE_MAP[size]
-  const radius = '50%'
+  // A person or an agent is round; a group is a rounded square, whether it shows its default face or its own picture.
+  const radius = variant === 'group' ? `${Math.round(px * GROUP_AVATAR_CORNER)}px` : '50%'
 
   // Missing/null and failed canonical URLs stay local explicit empty states; onError records the diagnostic.
   useEffect(() => {
@@ -199,7 +224,7 @@ export function Avatar({
   const groupFace = variant === 'group' && wantsGeneratedFace && !!identityKey
   // One object per face: a new `__html` object makes React write the markup again, and a press that spans that write
   // loses its click.
-  const groupFaceMarkup = useMemo(() => (groupFace ? { __html: groupAvatarSvg({ color: groupAvatarColor(identityKey), fill: 'var(--card)', label: name }) } : undefined), [groupFace, identityKey, name])
+  const groupFaceMarkup = useMemo(() => (groupFace ? { __html: groupAvatarSvg({ color: groupAvatarColor(identityKey), text: groupAvatarDefaultText(name), fill: 'var(--card)', px, label: name }) } : undefined), [groupFace, identityKey, name, px])
   const agentDefault = variant !== 'group' && agent === true && wantsGeneratedFace && !!identityKey
   const animatedAssistant = agentDefault && assistant && !still
   const generatedUrl = variant !== 'group' && wantsGeneratedFace && agent === false && identityKey ? dicebearAvatarDataUri(identityKey) : null
@@ -258,6 +283,7 @@ export function Avatar({
         />
       )}
       {agent && harnessBadge && variant !== 'group' ? <AgentHarnessBadge agentId={seed} avatarSize={px} /> : null}
+      {variant === 'group' && px >= PROJECT_MARK_FROM_PX ? <ProjectMark chatId={identityKey} project={project} /> : null}
       {agentStatus && !animatedAssistant ? (
         <AgentStatusBadge status={agentStatus} size={badgeSize} />
       ) : null}

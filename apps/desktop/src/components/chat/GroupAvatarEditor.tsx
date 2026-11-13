@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Camera, Check } from '@/lib/icons'
-import { GROUP_AVATAR_COLORS, GROUP_AVATAR_PICTURE_FILL, groupAvatarColor, groupAvatarSvg, groupAvatarTextLines } from '@gugu/core/shared/ui/groupAvatar'
+import { GROUP_AVATAR_COLORS, GROUP_AVATAR_PICTURE_FILL, groupAvatarColor, groupAvatarDefaultText, groupAvatarSvg } from '@gugu/core/shared/ui/groupAvatar'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 
@@ -9,7 +9,7 @@ const PNG_SIZE = 416
 
 /** The composed face as a picture: a group's avatar is always one uploaded image, whoever drew it. */
 async function groupAvatarPng(face: { color: string; text: string }): Promise<File> {
-  const url = URL.createObjectURL(new Blob([groupAvatarSvg({ ...face, fill: GROUP_AVATAR_PICTURE_FILL, px: PNG_SIZE })], { type: 'image/svg+xml' }))
+  const url = URL.createObjectURL(new Blob([groupAvatarSvg({ ...face, fill: GROUP_AVATAR_PICTURE_FILL, px: PNG_SIZE, fixed: true })], { type: 'image/svg+xml' }))
   try {
     const image = new Image()
     image.src = url
@@ -25,7 +25,10 @@ async function groupAvatarPng(face: { color: string; text: string }): Promise<Fi
   }
 }
 
-/** 「修改头像」: a few characters and one of eight colours, or a picture of one's own. Saving either uploads an image. */
+/**
+ * 「修改头像」: a few characters and one of eight colours, or a picture of one's own. Saving either uploads an image. With
+ * nothing typed the face keeps what it shows by default, the first characters of the group's name.
+ */
 export function GroupAvatarEditor({ chatId, groupName, busy, onFile, onClose }: {
   chatId: string
   groupName: string
@@ -37,8 +40,8 @@ export function GroupAvatarEditor({ chatId, groupName, busy, onFile, onClose }: 
   const [text, setText] = useState('')
   const [color, setColor] = useState(() => groupAvatarColor(chatId))
   const fileInput = useRef<HTMLInputElement>(null)
-  const suggestion = groupAvatarTextLines(groupName).join('')
-  const preview = useMemo(() => ({ __html: groupAvatarSvg({ color, text, fill: 'var(--card)' }) }), [color, text])
+  const shown = text.trim() ? text : groupAvatarDefaultText(groupName)
+  const preview = useMemo(() => ({ __html: groupAvatarSvg({ color, text: shown, fill: 'var(--card)', px: 96 }) }), [color, shown])
   const submit = (file: Promise<File> | File) => { void Promise.resolve(file).then(onFile).then(onClose) }
   return (
     <Sheet onClose={() => { if (!busy) onClose() }} desktopWidth="min(520px, 100%)" mobileFitContent testId="group-avatar-editor" ariaLabel={t('group.settings.avatarEditor.title')}>
@@ -58,12 +61,8 @@ export function GroupAvatarEditor({ chatId, groupName, busy, onFile, onClose }: 
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-2">
             <div className="text-[length:var(--font-body)] font-semibold text-[var(--text-primary)]">{t('group.settings.avatarEditor.text')}</div>
-            {suggestion ? (
-              <Button variant="secondary" size="sm" data-testid="group-avatar-suggestion" onClick={() => setText(suggestion)}
-                className="self-start !rounded-[var(--radius-capsule)]">{suggestion}</Button>
-            ) : null}
             <input data-testid="group-avatar-text" value={text} onChange={(event) => setText(event.target.value)}
-              placeholder={t('group.settings.avatarEditor.textPlaceholder')}
+              placeholder={groupAvatarDefaultText(groupName) || t('group.settings.avatarEditor.textPlaceholder')}
               className="h-9 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-transparent !px-3 text-[length:var(--font-body)] text-[var(--text-primary)] outline-none focus:border-[var(--primary)]" />
             <div className="!pt-2 text-[length:var(--font-body)] font-semibold text-[var(--text-primary)]">{t('group.settings.avatarEditor.color')}</div>
             <div role="radiogroup" aria-label={t('group.settings.avatarEditor.color')} className="flex flex-wrap gap-3">
@@ -78,7 +77,7 @@ export function GroupAvatarEditor({ chatId, groupName, busy, onFile, onClose }: 
         </div>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" disabled={busy} onClick={onClose}>{t('common.cancel')}</Button>
-          <Button variant="primary" data-testid="group-avatar-save" disabled={busy} onClick={() => submit(groupAvatarPng({ color, text }))}>{t('common.save')}</Button>
+          <Button variant="primary" data-testid="group-avatar-save" disabled={busy} onClick={() => submit(groupAvatarPng({ color, text: shown }))}>{t('common.save')}</Button>
         </div>
       </div>
     </Sheet>

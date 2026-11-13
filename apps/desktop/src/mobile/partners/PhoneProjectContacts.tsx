@@ -13,7 +13,6 @@ import { useAuth } from '@/store/auth'
 import { useContactsStore } from '@/store/contactsContext'
 import { followLink } from '@/lib/guguLinks'
 import { agentName, matchesQuery, projectAgents, projectAgentTarget, type PartnerProject, type ProjectAgent } from './partnersModel'
-import { ProjectFolderAvatar } from './ProjectFolderAvatar'
 import { ChatGroupAvatar } from '@/components/chat/ChatGroupAvatar'
 
 /**
@@ -25,14 +24,12 @@ import { ChatGroupAvatar } from '@/components/chat/ChatGroupAvatar'
  */
 export function PhoneProjectContacts({
   project,
-  running,
   sessions,
   active,
   onBack,
   onOpenGroup,
 }: {
   project: PartnerProject
-  running: number
   sessions: readonly { deviceId: string; session: SessionpageSessionSummary }[]
   active: boolean
   onBack: () => void
@@ -72,7 +69,7 @@ export function PhoneProjectContacts({
           <PaneHeader
             mobile
             leading={<PaneBackButton label={t('shell.back')} onBack={onBack} />}
-            title={<h2 className="gg-pane-title gg-partners-head-title">{project.chatId ? <ChatGroupAvatar chatId={project.chatId} name={project.name} size={32} /> : <ProjectFolderAvatar coverId={project.coverId} running={running} size={32} />}<span>{project.name}</span></h2>}
+            title={<h2 className="gg-pane-title gg-partners-head-title"><ChatGroupAvatar chatId={project.chatId ?? project.coverId} name={project.name} size={32} project /><span>{project.name}</span></h2>}
             actions={searchButton}
           />
         )}
@@ -81,7 +78,7 @@ export function PhoneProjectContacts({
         <div className="gg-partners-list">
           {showGroup ? <SectionLabel>{t('partners.rooms', { count: 1 })}</SectionLabel> : null}
           {showGroup ? (
-            <ListRow mobile role="button" tabIndex={0} leading={project.chatId ? <ChatGroupAvatar chatId={project.chatId} name={project.name} size={40} /> : <ProjectFolderAvatar coverId={project.coverId} running={running} />} title={groupLabel} onClick={onOpenGroup} onKeyDown={rowKeyActivate(onOpenGroup)} />
+            <ListRow mobile role="button" tabIndex={0} leading={<ChatGroupAvatar chatId={project.chatId ?? project.coverId} name={project.name} size={40} project />} title={groupLabel} onClick={onOpenGroup} onKeyDown={rowKeyActivate(onOpenGroup)} />
           ) : null}
           {shownAgents.length ? <SectionLabel>{t('partners.agents', { count: shownAgents.length })}</SectionLabel> : null}
           {shownAgents.map((agent) => {

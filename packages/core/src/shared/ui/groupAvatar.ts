@@ -1,10 +1,10 @@
-// A group's default face: a ring in one of eight colours around a group mark, or around up to two short lines of
-// text the group chose. Every surface draws a group from this one description; a picture the group uploaded
-// replaces it whole.
+// A group's default face (a project's too: a project is its group): a rounded square outlined in one of eight colours
+// around the first characters of its name, or around a group mark when it has no name. Every surface draws it from this
+// one description; a picture the group uploaded replaces it whole.
 
 export const GROUP_AVATAR_COLORS = ['#3370FF', '#7F3BF5', '#04B49C', '#2EA121', '#8FAC02', '#DC9B04', '#DE7802', '#F01D94'] as const
 
-/** The disc of a face saved as a picture: a picture cannot follow the theme, so it is white on every surface. */
+/** The inside of a face saved as a picture: a picture cannot follow the theme, so it is white on every surface. */
 export const GROUP_AVATAR_PICTURE_FILL = '#ffffff'
 
 /** The colour a group gets before anyone picks one: fixed by its id, so every member and surface sees the same. */
@@ -19,6 +19,12 @@ const LINE_UNITS = 4
 const MAX_LINES = 2
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 const unitsOf = (grapheme: string) => (grapheme.codePointAt(0)! >= 0x2e80 ? 2 : 1)
+
+/** What a face shows before anyone chooses a text: the name, or the initials of a name of several Latin words. */
+export function groupAvatarDefaultText(name: string): string {
+  const words = name.trim().split(/\s+/)
+  return words.length > 1 && /^[\x20-\x7e]+$/.test(name.trim()) ? words.slice(0, LINE_UNITS).map((word) => word[0]!.toUpperCase()).join('') : name
+}
 
 /** The lines a face shows for `text`: what does not fit in two lines is dropped. */
 export function groupAvatarTextLines(text: string): string[] {
@@ -44,6 +50,11 @@ export function groupAvatarTextLines(text: string): string[] {
 
 const SIZE = 208
 const STROKE = 6.5
+const CORNER = 54
+/** The corner of the face (and of a picture in its place), as a share of its side. */
+export const GROUP_AVATAR_CORNER = CORNER / SIZE
+// Below this size a second line is unreadable, so only the first is drawn.
+const TWO_LINES_FROM_PX = 36
 // Type size steps down with the number of characters shown (on the 208 square).
 const fontSizeFor = (count: number) => (count <= 1 ? 116 : count === 2 ? 92 : count <= 4 ? 72 : 60)
 const FONT = "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', 'Noto Sans CJK SC', sans-serif"
@@ -53,19 +64,23 @@ const GROUP_MARK = '<circle cx="90" cy="82" r="21"/><path d="M52 146c0-21 17-34 
 const escapeXml = (value: string) => value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`)
 
 /**
- * The face as one SVG: `fill` is the disc behind the ring (a CSS colour, so a live face can follow the theme); `px` gives
- * it a size of its own, for drawing it as an image rather than into a sized box; `label` names it for a screen reader.
+ * The face as one SVG. `fill` is the surface inside the outline (a CSS colour, so a live face can follow the theme);
+ * `px` is the size it is shown at, which keeps the outline at least a pixel and a half wide and drops the second line
+ * where it would not be readable; `fixed` gives the SVG that size itself, for drawing it as an image; `label` names it
+ * for a screen reader.
  */
-export function groupAvatarSvg({ color, text = '', fill, px, label }: { color: string; text?: string; fill: string; px?: number; label?: string }): string {
-  const lines = groupAvatarTextLines(text)
+export function groupAvatarSvg({ color, text = '', fill, px, fixed = false, label }: { color: string; text?: string; fill: string; px: number; fixed?: boolean; label?: string }): string {
+  const lines = groupAvatarTextLines(text).slice(0, px < TWO_LINES_FROM_PX ? 1 : MAX_LINES)
   const count = lines.reduce((sum, line) => sum + Array.from(segmenter.segment(line)).length, 0)
   const fontSize = fontSizeFor(count)
   const pitch = fontSize * 1.13
   const first = SIZE / 2 - (pitch * (lines.length - 1)) / 2
+  const stroke = Math.max(STROKE, (SIZE / px) * 1.5)
   const inner = lines.length
     ? `<g fill="${color}" font-family="${FONT}" font-size="${fontSize}" font-weight="500" text-anchor="middle">${lines.map((line, index) =>
       `<text x="${SIZE / 2}" y="${first + pitch * index}" dominant-baseline="central">${escapeXml(line)}</text>`).join('')}</g>`
     : `<g fill="${color}">${GROUP_MARK}</g>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" role="img"${label ? ` aria-label="${escapeXml(label)}"` : ''} viewBox="0 0 ${SIZE} ${SIZE}" width="${px ?? '100%'}" height="${px ?? '100%'}">`
-    + `<circle cx="${SIZE / 2}" cy="${SIZE / 2}" r="${(SIZE - STROKE) / 2}" fill="${fill}" stroke="${color}" stroke-width="${STROKE}"/>${inner}</svg>`
+  const side = fixed ? px : '100%'
+  return `<svg xmlns="http://www.w3.org/2000/svg" role="img"${label ? ` aria-label="${escapeXml(label)}"` : ''} viewBox="0 0 ${SIZE} ${SIZE}" width="${side}" height="${side}">`
+    + `<rect x="${stroke / 2}" y="${stroke / 2}" width="${SIZE - stroke}" height="${SIZE - stroke}" rx="${CORNER - stroke / 2}" fill="${fill}" stroke="${color}" stroke-width="${stroke}"/>${inner}</svg>`
 }

@@ -139,11 +139,12 @@ describe('they are drawn as a project group\'s conversation row is (ListRow + pr
   it('cover, name, time, then the chip and the preview in the list row\'s slots; a click opens, ⌘ click opens beside', async () => {
     const { OneListProjectRow } = await import('./project-row-parts');
     const open = vi.fn();
-    await act(async () => root.render(<OneListProjectRow name="Weekend" coverId="sample-project" tag="Sample" time="14:34" preview="Codex 6: Three files" selected onOpen={open} />));
+    await act(async () => root.render(<OneListProjectRow name="Weekend" faceId="sample-project" tag="Sample" time="14:34" preview="Codex 6: Three files" selected onOpen={open} />));
     const row = host.querySelector<HTMLElement>('[data-slot="list-row"]')!;
     expect(row.className).toContain('gg-list-row');
     expect(row.dataset.selected).toBe('true');
-    expect(row.querySelector('.gg-list-row-leading svg.gg-project-avatar')).not.toBeNull();
+    expect(row.querySelector('.gg-list-row-leading [data-group-face]'), 'a project wears the face a group does').not.toBeNull();
+    expect(row.querySelector('.gg-list-row-leading [data-project-mark]'), 'marked as a project').not.toBeNull();
     expect(row.querySelector('.gg-list-row-title')!.textContent).toBe('Weekend');
     expect(row.querySelector('.gg-list-row-meta')!.textContent).toBe('14:34');
     const subtitle = row.querySelector('.gg-list-row-subtitle')!;
@@ -156,9 +157,10 @@ describe('they are drawn as a project group\'s conversation row is (ListRow + pr
 
   it('a project with no group chat yet: nothing said, so an empty preview line, same two lines (no time given = none shown)', async () => {
     const { OneListProjectRow } = await import('./project-row-parts');
-    await act(async () => root.render(<OneListProjectRow name="App" coverId="project-app" preview="" selected={false} onOpen={vi.fn()} />));
+    await act(async () => root.render(<OneListProjectRow name="App" faceId="project-app" preview="" selected={false} onOpen={vi.fn()} />));
     const row = host.querySelector<HTMLElement>('[data-slot="list-row"]')!;
-    expect(row.querySelector('.gg-list-row-leading svg.gg-project-avatar')).not.toBeNull();
+    expect(row.querySelector('.gg-list-row-leading [data-group-face]'), 'a project wears the face a group does').not.toBeNull();
+    expect(row.querySelector('.gg-list-row-leading [data-project-mark]'), 'marked as a project').not.toBeNull();
     expect(row.querySelector('.gg-chip')).toBeNull();
     expect(row.querySelector('.gg-list-row-meta')).toBeNull();
     expect(row.querySelectorAll('.gg-list-row-line')).toHaveLength(2);
