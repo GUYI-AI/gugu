@@ -34,11 +34,10 @@ async function open(readers: Member[], unreaders: Member[]) {
   await renderWithAppProviders(harness, createElement(Fragment, null,
     createElement(Popover.Trigger, { handle, payload: 'msg-1', render: createElement('button', { 'data-testid': 'ring', style: { margin: 40 } }) }),
     createElement(ReadReceiptPopover, { handle, receiptOf: () => ({ readers, unreaders }), testId: 'receipt' })));
-  const t0 = performance.now();
   document.querySelector<HTMLElement>('[data-testid="ring"]')!.click();
   await until('receipt list painted', () => !!panel() && names().length > 0);
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  return { openMs: performance.now() - t0, nodes: panel()!.querySelectorAll('*').length };
+  return { nodes: panel()!.querySelectorAll('*').length };
 }
 
 describe('read receipt list', () => {
@@ -64,13 +63,10 @@ describe('read receipt list', () => {
     expect(names()).toEqual(['成员 1', '成员 4', '成员 6', '成员 2', '成员 5', '成员 3']);
   });
 
-  it('opens a 2000-member receipt with the nodes of a small one, both groups in view', async () => {
-    const small = await open(range(1, 3), range(4, 2));
-    harness.cleanup(); harness = createReactHarness();
+  it('opens a 2000-member receipt with the nodes of a 200-member one, both groups in view', async () => {
     const mid = await open(range(1, 100), range(101, 100));
     harness.cleanup(); harness = createReactHarness();
     const big = await open(range(1, 1000), range(1001, 1000));
-    console.info(`[receipt-open] 5: ${small.openMs.toFixed(1)}ms ${small.nodes} nodes | 200: ${mid.openMs.toFixed(1)}ms ${mid.nodes} nodes | 2000: ${big.openMs.toFixed(1)}ms ${big.nodes} nodes`);
     expect(big.nodes).toBe(mid.nodes);
     // 每组先 20 位,其余收进「还有 N 位」:滚到底就看到未读那组的开头。
     const more = () => [...panel()!.querySelectorAll('button')].map((b) => b.textContent);

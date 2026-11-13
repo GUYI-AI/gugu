@@ -7,6 +7,7 @@ import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { groupAgentStatusRank } from '@/lib/groupAgentStatus'
 import { Check } from '@/lib/icons'
 import { Popover } from './ui/Popover'
+import { Button } from './ui/Button'
 import { ListRowContent } from './ui/ListRow'
 import { SectionLabel } from './ui/SectionLabel'
 import type { ReadReceiptHandle } from '@/hooks/useReadReceiptPanel'
@@ -125,14 +126,9 @@ function ReadReceiptList({ readers, unreaders, testId }: {
     if (line.kind === 'member') return <MemberRow member={line.member} />
     if (line.kind === 'more') {
       return (
-        <button
-          type="button"
-          className="gg-list-row gg-row"
-          style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-body)' }}
-          onClick={() => setExpanded((previous) => new Set(previous).add(line.group))}
-        >
+        <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => setExpanded((previous) => new Set(previous).add(line.group))}>
           {ct('groupDetail.remainingMembers', { count: line.count })}
-        </button>
+        </Button>
       )
     }
     const all = line.group === 'all'
