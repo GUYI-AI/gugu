@@ -86,7 +86,7 @@ function decoded(part: string): string {
 const NOT_BARE = /[&=%;#+\s<>\\()[\]{}"`|\u0000-\u001f\u007f]/g
 /** As `%XX`: encodeURIComponent leaves `(` and `)` as they are, and a bare one ends a markdown link. */
 const escaped = (c: string) => (c === '(' || c === ')' ? `%${c.charCodeAt(0).toString(16).toUpperCase()}` : encodeURIComponent(c))
-const part = (text: string) => text.replace(NOT_BARE, escaped)
+const part = (text: string) => text.replace(NOT_BARE, escaped).replace(/'/g, '%27')
 
 /**
  * The one way gugu writes such a link — the place's keys and values escaped one by one, in the App's order, so whatever
