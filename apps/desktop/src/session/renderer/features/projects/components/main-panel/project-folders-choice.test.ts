@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import { chosenFolderOf, rememberFolderChoice, type ShownFolder } from './project-folders';
 
 const folder = (workspaceId: string, kind: ShownFolder['kind'], deviceId: string | null): ShownFolder => ({
-  workspaceId, projectId: 'row-1', kind, path: `/work/${workspaceId}`, branch: null, sessionIds: [], attachedAt: null, offline: false, deviceId,
+  workspaceId, projectId: 'row-1', kind, path: `/work/${workspaceId}` as CanonicalPath, branch: null, sessionIds: [], attachedAt: null, offline: false, deviceId,
 });
 
 // #2640: picking a folder in the project picker is what the project block starts new tasks from.
