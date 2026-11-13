@@ -9,6 +9,7 @@
 // 与到达顺序无关这三件事就是这个代数的**定理**(见 spec 的 I1–I4),不再是调用点要守的纪律。
 
 import { replaceEqualDeep } from '@tanstack/react-query'
+import { historyMessageVisible, historyTime } from '@gugu/core/shared/conversationHistoryTime'
 import { IN_FILTER_CHUNK } from '@gugu/core/shared/inChunks'
 import type { SystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import type { ChatItem, ChatKind, ChatStatus, ChatUnreadLocator, GroupMemberRole, NotificationLevel } from '@gugu/core/shared/types/chat'
@@ -117,6 +118,10 @@ export type MembershipValue = {
   joined_at: string
   inbox_published: boolean
   conversation_deleted_at?: string | null
+  conversation_cleared_at?: string | null
+  native_personal_activity_at?: string | null
+  native_personal_activity_revision?: string
+  personal_state_observed_revision?: string
   conversation_hidden_at?: string | null
   role: GroupMemberRole | null
 }
@@ -472,7 +477,7 @@ export function shareRows<T extends { id: string }>(current: readonly T[], next:
 export type AssembleSource = {
   value<T extends EntityValue>(family: EntityFamily, id: string): T | undefined
   members(chatId: string): readonly MembershipValue[]
-  stamp?(family: EntityFamily, id: string): string | undefined
+  stamp(family: EntityFamily, id: string): string | undefined
 }
 
 /** Members in display order: joined_at, then user id. */
@@ -505,6 +510,11 @@ export function assembleChat(source: AssembleSource, viewerId: string, chatId: s
   const preview = source.value<PreviewValue>('preview', chat.id)
   const locator = source.value<UnreadValue>('unread', chat.id) ?? null
   const notificationLevel = own.notification_level
+  const messageAt = preview ? preview.created_at : chat.last_message_at
+  const nativeAt = own.native_personal_activity_at
+  const messageVisible = messageAt && historyMessageVisible(messageAt, own.conversation_cleared_at)
+  const nativeVisible = nativeAt && historyMessageVisible(nativeAt, own.conversation_cleared_at)
+  const nativeNewer = nativeVisible && (!messageVisible || historyTime(nativeAt) > historyTime(messageAt))
   return {
     id: chat.id,
     public_id: chat.public_id,
@@ -521,9 +531,9 @@ export function assembleChat(source: AssembleSource, viewerId: string, chatId: s
       : undefined,
     name: isRoomChat(chat.kind) ? (chat.name ?? fallbackChatName(chat.kind)) : '',
     created_at: chat.created_at,
-    last_message_at: preview ? preview.created_at : chat.last_message_at,
-    last_message_preview: preview ? preview.preview : chat.last_message_preview,
-    last_message_notice: preview?.notice ?? null,
+    last_message_at: nativeNewer ? nativeAt : messageVisible ? messageAt : null,
+    last_message_preview: nativeNewer || !messageVisible ? null : preview ? preview.preview : chat.last_message_preview,
+    last_message_notice: messageVisible && !nativeNewer ? preview?.notice ?? null : null,
     unread_count: locator?.unread_count ?? 0,
     unread_locator: locator,
     pinned_message_id: chat.pinned_message_id,
@@ -539,8 +549,12 @@ export function assembleChat(source: AssembleSource, viewerId: string, chatId: s
     source_chat_id: chat.source_chat_id,
     source_message_id: chat.source_message_id,
     conversation_hidden_at: own.conversation_hidden_at ?? null,
-    conversation_visibility_revision: source.stamp?.('membership', membershipId(chat.id, viewerId)),
-    source_conversation_visibility_revision: chat.source_chat_id ? source.stamp?.('membership', membershipId(chat.source_chat_id, viewerId)) : undefined,
+    conversation_cleared_at: own.conversation_cleared_at ?? null,
+    native_personal_activity_at: nativeAt ?? null,
+    native_personal_activity_revision: own.native_personal_activity_revision,
+    personal_state_observed_revision: own.personal_state_observed_revision,
+    conversation_visibility_revision: source.stamp('membership', membershipId(chat.id, viewerId)),
+    source_conversation_visibility_revision: chat.source_chat_id ? source.stamp('membership', membershipId(chat.source_chat_id, viewerId)) : undefined,
     source_conversation_hidden_at: chat.source_chat_id
       ? source.value<MembershipValue>('membership', membershipId(chat.source_chat_id, viewerId))?.conversation_hidden_at ?? null : null,
   }

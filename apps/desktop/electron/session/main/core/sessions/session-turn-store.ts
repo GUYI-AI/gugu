@@ -1,4 +1,5 @@
-import { nativePublicationContext } from './native-publication-host';
+import { nativeConversationHistoryFloor, nativePublicationContext } from './native-publication-host';
+import { clearedHistoryResult, clearedHistoryTurns } from '@gugu/session-core/session-record/conversation-history-clear';
 import { prepareNativePublicationTurn } from './native-publication-turn';
 import { beginCanonicalQueueTask } from './canonical-queue-state';
 import { renumberStoredTurn, rewriteTurnId } from './session-turn-identity';
@@ -373,10 +374,10 @@ export async function getStoredHistory(params: {
     });
     // A revert can reuse every sequence in the page. Its rows and generation must describe the same snapshot.
     if (epoch !== ownerNotificationEpoch(params.sessionId)) continue;
-    const snapshot = { ...page, nativeOwnerNotificationEpoch: epoch };
+    const snapshot = clearedHistoryResult({ ...page, nativeOwnerNotificationEpoch: epoch }, await nativeConversationHistoryFloor(params.sessionId));
     return params.fromSeq === undefined
       ? trimCursorPageForTransport(snapshot, TRANSPORT_TEXT_LIMIT, budget, lean)
-      : { ...snapshot, turns: trimTurnsForTransport(page.turns) };
+      : { ...snapshot, turns: trimTurnsForTransport(snapshot.turns) };
   }
 }
 
@@ -389,7 +390,8 @@ export async function getStoredToolImage(params: {
       eq(sessionTurns.sessionId, params.sessionId),
       'seq' in params ? eq(sessionTurns.seq, params.seq) : eq(sessionTurns.turnId, params.originTurnId),
     )).orderBy(desc(sessionTurns.seq)).limit(1);
-  const turn = row ? JSON.parse(row.data) as TranscriptTurn : null;
+  const stored = row ? JSON.parse(row.data) as TranscriptTurn : null;
+  const turn = stored ? clearedHistoryTurns([stored], await nativeConversationHistoryFloor(params.sessionId))[0] ?? null : null;
   const itemId = row && turn && !('seq' in params)
     ? rewriteTurnId(params.itemId, row.turnId, turn.id) : params.itemId;
   const found = findToolImage(turn ? [turn] : [], itemId, params.index, Number.POSITIVE_INFINITY);
@@ -411,8 +413,8 @@ export async function getStoredSettledTurn(params: { sessionId: string; referenc
       sql`json_extract(${sessionTurns.data}, '$.referenceId') = ${params.referenceId}`))
     .orderBy(desc(sessionTurns.seq)).limit(1);
   if (!row) return null;
-  const turn = JSON.parse(row.data) as TranscriptTurn;
-  return turn.outcome ? { originTurnId: row.originTurnId, turn: trimTurnsForTransport([turn])[0]! } : null;
+  const turn = clearedHistoryTurns([JSON.parse(row.data) as TranscriptTurn], await nativeConversationHistoryFloor(params.sessionId))[0];
+  return turn?.outcome ? { originTurnId: row.originTurnId, turn: trimTurnsForTransport([turn])[0]! } : null;
 }
 
 /** How many rows one step of a budgeted page read takes: what a full page overshoots by, at most. */

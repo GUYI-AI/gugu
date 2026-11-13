@@ -290,7 +290,7 @@ export const TopicSubRow = memo(function TopicSubRow({ topic, mobile, isActive, 
         onClose={menu.closeMenu}
         onPin={() => actions.pin(topic)}
         onSetNotificationLevel={(level) => actions.setNotificationLevel(topic.id, level)}
-        onDelete={() => actions.remove(topic.id)}
+        onHide={() => actions.remove(topic.id)}
       />
     )}
     </>
@@ -591,7 +591,7 @@ export function ChatListPanel({
   const { t: tMain } = useTranslation('main')
   const assistantShell = useAssistantShell()
   const { user } = useAuth()
-  const { chats: imChats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, chatsLoadFailed, refreshChats, pinChat, hideConversation, deleteChat, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'chatsLoadFailed', 'refreshChats', 'pinChat', 'hideConversation', 'deleteChat', 'setChatNotificationLevel', 'drafts')
+  const { chats: imChats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, chatsLoadFailed, refreshChats, pinChat, hideConversation, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'chatsLoadFailed', 'refreshChats', 'pinChat', 'hideConversation', 'setChatNotificationLevel', 'drafts')
   // The list read failed with nothing to show: that is a failure, not "no conversations" (same rule as the contacts sections).
   const listReadFailed = chatsLoadFailed && imChats.length === 0
   const chats = useNativeAgentChats(imChats)

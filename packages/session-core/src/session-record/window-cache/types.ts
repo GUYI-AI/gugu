@@ -86,6 +86,7 @@ export type WindowSourceLocator = {
 };
 export type WindowCacheContext = {
   cacheDirectory: string; scope: string; conversationScope: string; branchLineage: string; decoderVersion: number;
+  historyFloor?: string | null;
 };
 export type WindowCursor = {
   version: 1; scope: string; sourceLineage: string; snapshotRevision: string;
@@ -113,6 +114,7 @@ export type WindowReadRequest = {
   locator: SessionRecordLocator; conversationId: string; cacheDirectory: string;
   scope: string; conversationScope: string; branchLineage: string;
   limit?: number; signal?: AbortSignal; budget: WindowBudget;
+  historyFloor?: string | null;
 };
 export type WindowPage = {
   kind: 'page' | 'continuation'; scope: string; sourceLineage: string;

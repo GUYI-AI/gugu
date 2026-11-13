@@ -1,3 +1,4 @@
+import { historyTime } from '../conversationHistoryTime'
 import type { ChatItem, ChatKind } from '../types/chat'
 
 /**
@@ -37,7 +38,7 @@ export type ChatAttention = {
 
 /** Personal list visibility. Hidden rows remain addressable in the full chat directory. */
 export type ConversationVisibility = Pick<ChatItem,
-  'conversation_hidden_at' | 'source_conversation_hidden_at' |
+  'conversation_cleared_at' | 'conversation_hidden_at' | 'source_conversation_hidden_at' |
   'conversation_visibility_revision' | 'source_conversation_visibility_revision'>
 
 export function isConversationHidden(chat: ConversationVisibility): boolean {
@@ -64,6 +65,8 @@ export function mergeConversationVisibility<T extends ConversationVisibility>(fe
     merged = { ...merged, source_conversation_hidden_at: local.source_conversation_hidden_at,
       source_conversation_visibility_revision: local.source_conversation_visibility_revision }
   }
+  if (local.conversation_cleared_at && (!fetched.conversation_cleared_at || historyTime(local.conversation_cleared_at) > historyTime(fetched.conversation_cleared_at)))
+    merged = { ...merged, conversation_cleared_at: local.conversation_cleared_at }
   return merged
 }
 

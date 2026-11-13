@@ -263,6 +263,8 @@ export default {
     }
   },
   "chatList": {
+    "hide": "不显示",
+    "deleteHistoryDescription": "删除后，你自己的已有聊天记录将无法恢复。其他成员的记录和群关系会保留。",
     "hideFailed": "无法从列表删除这条对话",
     "removeFromList": "从列表删除",
     "hideAgentDescription": "这条对话会从你的列表移除，有新消息时会重新出现。",

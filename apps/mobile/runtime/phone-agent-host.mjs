@@ -1,3 +1,4 @@
+import { createPhoneConversationHistory } from './phone-conversation-history.mjs'
 import { archiveIdentity } from '../../../packages/core/src/cloud/agentIdentityRemoval.ts'
 import { SessionInputAdmissionError, sessionInputAdmission } from '../../../packages/core/src/shared/sessionInputAdmission.ts'
 import { archiveAgentRecord, agentsForOwner } from '../../../packages/core/src/local/state/agentOwner.ts'
@@ -93,7 +94,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
   const execution = () => activeJob?.status === 'running' ? { sessionId: store.state.agents[activeJob.agentUserId]?.sessionId, jobId: activeJob.id, phase: activeJob.cancelRequested ? 'stopping' : activeJob.phase ?? 'preparing' } : null
   const state = () => {
     const error = healthErrors.auth ?? healthErrors.rpc ?? healthErrors.heartbeat
-    return { ownerId, deviceId, project, taskTimeline: true, execution: execution(), status: stopped ? 'stopped' : ready ? 'ready' : error ? 'failed' : 'starting', ready, error: stopped ? null : error?.message ?? null, errorCode: stopped ? null : error?.code ?? null, authError: stopped ? null : healthErrors.auth?.authError ?? null, lastHeartbeatAt, sessions: agents().map((agent) => ({ agentUserId: agent.agentUserId, sessionId: agent.sessionId, displayName: agent.displayName, chatId: agent.chatId, modelId: agent.modelId, status: agent.status, lastError: agent.lastError ?? null, lastActiveAt: agent.lastActiveAt ?? null, lastJobStatus: lastJob(agent.agentUserId)?.status ?? null, birthGroup: agent.birthGroup ?? null })) }
+    return { ownerId, deviceId, project, taskTimeline: true, execution: execution(), status: stopped ? 'stopped' : ready ? 'ready' : error ? 'failed' : 'starting', ready, error: stopped ? null : error?.message ?? null, errorCode: stopped ? null : error?.code ?? null, authError: stopped ? null : healthErrors.auth?.authError ?? null, lastHeartbeatAt, accountRevision: store.state.personalAccountRevision ?? null, sessions: agents().map((agent) => ({ agentUserId: agent.agentUserId, sessionId: agent.sessionId, displayName: agent.displayName, chatId: agent.chatId, modelId: agent.modelId, status: agent.status, lastError: agent.lastError ?? null, lastActiveAt: agent.lastActiveAt ?? null, lastJobStatus: lastJob(agent.agentUserId)?.status ?? null, birthGroup: agent.birthGroup ?? null })) }
   }
   const publish = (patch = {}) => emit({ type: 'host_state', ...state(), ...patch })
   const warn = (message) => emit({ type: 'host_log', ownerId, level: 'warn', message })
@@ -123,7 +124,9 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     emit({ type: 'auth_session', ownerId, session, accessToken: session.access_token, refreshToken: session.refresh_token, expiresAt: session.expires_at })
     authenticated = true; healthErrors.auth = null; updateReadiness()
   }, undefined, { onRequestFailure: recordRequestFailure })
-  conversationPublisher = createPhoneConversationPublisher({ store, cloud, isReady: () => authenticated && !stopped && !signingOut, authorize: (...args) => authorizeReply(...args), warn: ({ code }) => warn(`personal conversation publication: ${code}`) })
+  conversationPublisher = createPhoneConversationPublisher({ store, cloud, isReady: () => authenticated && !stopped && !signingOut, authorize: (...args) => authorizeReply(...args), published: async receipt => {
+    if (!store.state.personalAccountRevision || BigInt(receipt.account_revision) > BigInt(store.state.personalAccountRevision)) { store.state.personalAccountRevision = receipt.account_revision; await store.save(); publish() }
+  }, warn: ({ code }) => warn(`personal conversation publication: ${code}`) })
   const models = modelFactory(cloud, store, warn)
   const agents = () => agentsForOwner(Object.values(store.state.agents), ownerId)
   const findSession = (id, includeArchived = false) => {
@@ -428,7 +431,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
       delete store.state.preparationBackoff; delete job.networkWait
       await store.save()
       const tools = [
-        ...phoneCommunicationTools({ agent, job, cloud, store, env, sendSession, emit, authorize: authorizeReply }).filter((tool) => tool.name !== 'session_message'),
+        ...phoneCommunicationTools({ agent, job, cloud, store, env, deviceId, sendSession, emit, publicationQueued: () => { void conversationPublisher.kick() }, authorize: authorizeReply }).filter((tool) => tool.name !== 'session_message'),
         ...phoneChatReadTools({ agent, cloud, store, env }),
         ...phoneFileTools({ agent, job, cloud, store, env, authorize: authorizeReply, emit }),
         phoneWebTool({ agent, job, authorize: authorizeReply }),
@@ -585,7 +588,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
 
   const provision = createPhoneProvisioner({ ownerId, cloud, store, deviceId, projectId, root, models, tick, admit, snapshot, publish })
 
-  const timelines = createPhoneTimelineRuntime({ root, store, confirmations: (agent) => actions?.settlements?.(agent) ?? [], authorize: async (agent) => {
+  const timelines = createPhoneTimelineRuntime({ root, store, historyFloor: createPhoneConversationHistory({ cloud, store, ownerId }), confirmations: (agent) => actions?.settlements?.(agent) ?? [], authorize: async (agent) => {
     const proof = agent.dataProof ?? { groups: [], permissionRequirements: [] }
     const current = activeJob?.agentUserId === agent.agentUserId ? activeJob : null
     const inputs = Object.values(store.state.jobs).filter((job) => job.agentUserId === agent.agentUserId && (!job.contextEpoch || job.contextEpoch === agent.contextEpoch)).map((job) => job.inputDataProof).filter(Boolean)

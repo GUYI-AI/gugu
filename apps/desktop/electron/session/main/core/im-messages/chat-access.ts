@@ -1,8 +1,9 @@
 import type { ImChatAccess, ImMessageWrite } from '@shared/core/im-messages'
 import { decimal, dropMessages, dropRanges, requireId, type MessageSqlDatabase } from './message-row'
+import { historyMessageVisible, historyTime } from '@gugu/core/shared/conversationHistoryTime'
 
 type AccessRow = { source_chat_id: string | null; own_member: number | null; membership_revoked: number; archived: number;
-  membership_revision: string | null; chat_revision: string | null }
+  membership_revision: string | null; chat_revision: string | null; history_cleared_at: string | null }
 
 /** Permission facts decide which histories may stay on disk, including observer topics absent from the chat list. */
 export function createChatAccess(connection: MessageSqlDatabase) {
@@ -43,6 +44,23 @@ export function createChatAccess(connection: MessageSqlDatabase) {
     // Observer reads do not receive every revision. Joining starts a new coverage baseline.
     if (membership && member === 1 && old?.own_member !== 1) dropRanges(connection, accountId, access.chatId)
     const applied: ImMessageWrite[] = []
+    if (access.clearedAt && (!old?.history_cleared_at || historyTime(access.clearedAt) > historyTime(old.history_cleared_at))) {
+      const affected = connection.prepare(`WITH RECURSIVE descendants(chat_id) AS (
+        SELECT ? UNION SELECT c.chat_id FROM im_message_chats c JOIN descendants d ON c.source_chat_id=d.chat_id WHERE c.account_id=?
+      ) SELECT d.chat_id,c.history_cleared_at FROM descendants d LEFT JOIN im_message_chats c ON c.account_id=? AND c.chat_id=d.chat_id`).all(access.chatId, accountId, accountId) as { chat_id: string; history_cleared_at?: string | null }[]
+      for (const child of affected) {
+        const cutoff = child.history_cleared_at && historyTime(child.history_cleared_at) > historyTime(access.clearedAt) ? child.history_cleared_at : access.clearedAt
+        connection.prepare('UPDATE im_message_chats SET history_cleared_at=? WHERE account_id=? AND chat_id=?')
+          .run(cutoff, accountId, child.chat_id)
+        const rows = connection.prepare('SELECT id,created_at FROM im_messages WHERE account_id=? AND chat_id=?')
+          .all(accountId, child.chat_id) as { id: string; created_at: string }[]
+        for (const row of rows) if (!historyMessageVisible(row.created_at, cutoff)) {
+          dropMessages(connection, 'account_id=? AND id=?', accountId, row.id)
+          applied.push({ type: 'delete', chatId: child.chat_id, id: row.id })
+        }
+        dropRanges(connection, accountId, child.chat_id)
+      }
+    }
     if (archived || revoked || (member === 0 && source && departed(accountId, source))) {
       applied.push(removeChat(accountId, access.chatId))
     } else if (member === 1 || (member === 0 && source && !departed(accountId, source))) {

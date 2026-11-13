@@ -37,4 +37,18 @@ describe('shared store hide controller', () => {
     expect(f.hide).toHaveBeenCalledTimes(1)
     expect(f.confirm).not.toHaveBeenCalled()
   })
+  it('reuses the uncertain admission after a process restart and reconciles an acknowledged admission without sending it again', async () => {
+    const storage = new Map<string, string>()
+    const persisted = { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => { storage.set(key, value) }, removeItem: (key: string) => { storage.delete(key) } }
+    const f = fixture()
+    const restart = () => createConversationHider({ hide: f.hide, confirm: f.confirm, operationId: f.operationId, boundary: () => f.boundary.signal, storage: persisted, storageKey: 'hide' })
+    f.hide.mockRejectedValueOnce(new Error('connection lost after send'))
+    await expect(restart()('owner', 'chat')).rejects.toThrow('connection lost')
+    f.confirm.mockRejectedValueOnce(new Error('disk offline'))
+    await expect(restart()('owner', 'chat')).rejects.toThrow('disk offline')
+    await restart()('owner', 'chat')
+    expect(f.hide.mock.calls).toEqual([['chat', 'op1'], ['chat', 'op1']])
+    expect(f.operationId).toHaveBeenCalledTimes(1)
+    expect(storage.size).toBe(0)
+  })
 })

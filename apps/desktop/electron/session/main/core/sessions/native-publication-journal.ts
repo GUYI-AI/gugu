@@ -24,7 +24,7 @@ export function writePublicationValue(key: string, value: unknown, source: Publi
 }
 
 /** The caller writes this beside the actual input/transcript admission, in the same SQLite transaction. */
-export function queueNativePublication(context: NativePublicationContext, sessionId: string, occurredAt: string, source: PublicationDb, id = randomUUID()): NativePublication {
+export function queueNativePublication(context: NativePublicationContext, sessionId: string, occurredAt: string, source: PublicationDb, id: string = randomUUID()): NativePublication {
   if (!context.ownerUserId || !context.deviceId || !Number.isFinite(Date.parse(occurredAt))) throw new Error('Invalid native publication admission');
   const session = source.select({ projectId: sessions.projectId }).from(sessions).where(eq(sessions.id, sessionId)).get();
   if (!session) throw new Error(`Native publication session is missing: ${sessionId}`);
@@ -76,4 +76,11 @@ export function saveNativePublication(entry: NativePublication, source: Publicat
 export function onNativePublicationQueued(listener: () => void): () => void {
   listeners.add(listener);
   return () => { listeners.delete(listener); };
+}
+
+export function nativeHistoryFloorCache(ownerUserId: string, sessionId: string): { floor: string | null } | undefined {
+  return readPublicationValue(`native-history-floor:${JSON.stringify([ownerUserId, sessionId])}`, db);
+}
+export function saveNativeHistoryFloor(ownerUserId: string, sessionId: string, floor: string | null): void {
+  writePublicationValue(`native-history-floor:${JSON.stringify([ownerUserId, sessionId])}`, { floor }, db);
 }

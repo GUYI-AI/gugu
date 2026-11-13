@@ -94,6 +94,7 @@ function fakeCloud() {
     },
     rpc: async (schema, name, args) => {
       calls.push([name, args])
+      if (name === 'list_conversation_memberships') return args.p_chat_ids.map(chat_id => ({ chat_id, user_id: ownerId, conversation_cleared_at: null }))
       if (name === 'publish_native_conversation_message') return { chat_id: args.p_chat_id, already: false, account_revision: '9007199254740993' }
       if (name === 'start_agent_provision_operation') {
         provision ??= { ...args.p_blueprint.members[0], id: args.p_blueprint.members[0].provision_id, operation_id: args.p_operation_id, member_key: 'single', device_id: deviceId, phase: 'queued', project_path: null, avatar: null, special_focus: null }
@@ -807,7 +808,9 @@ test('a local initial message enters the shared inbox envelope and replies with 
     const tool = hooks.extraTools.find((item) => item.name === 'message_send')
     const args = { chat_id: chatId, text: '日历结果', to_user_ids: [`user:${ownerId}`], reply_to_message_id: command.prompt.match(/msg="(msg:[^"]+)/)[1] }
     await tool.execute('call-one', args)
-    await tool.execute('call-retry-with-different-tool-id', args)
+    // A transport replay retains its admitted tool-call identity. Identical text
+    // in a new tool call is a new message, not evidence of a retry.
+    await tool.execute('call-one', args)
     return { status: 'done', text: '已回复' }
   })
   const messageId = randomUUID()
@@ -822,6 +825,27 @@ test('a local initial message enters the shared inbox envelope and replies with 
     const journal = JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8'))
     assert.equal(inboxJob(journal, messageId).prompt.includes('gugu_delivery'), true)
     assert.equal(JSON.stringify(journal).includes('private-turn-token'), false)
+  } finally { await fx.close() }
+})
+
+test('two separately admitted owner notices retain distinct IDs even when their text is identical', async () => {
+  const fx = await fixture(async (command, hooks) => {
+    if (!command.prompt.includes('gugu_delivery')) return { status: 'done', text: '[NO_REPLY]' }
+    const tool = hooks.extraTools.find(item => item.name === 'message_send')
+    const args = { chat_id: chatId, text: '相同文字的新消息', to_user_ids: [`user:${ownerId}`] }
+    await tool.execute('first-notice', args)
+    await tool.execute('second-notice', args)
+    await tool.execute('first-notice', args)
+    return { status: 'done', text: '[NO_REPLY]' }
+  })
+  const messageId = randomUUID()
+  fx.inboxRows.push({ chat_id: chatId, chat_kind: 'dm', chat_public_id: null, id: messageId, seq: 1, sender_user_id: ownerId, sender_type: 'human', sender_display_name: '主人', content: '通知我两次', content_type: 'text', to_user_ids: [agentId], is_whisper: false, file_item_id: null, file_version: null, file_blob_id: null, group_rules: null, named_identities: {}, created_at: new Date().toISOString() })
+  try {
+    await fx.host.invoke('sessionTimeline.sessionCreate', [{ harness: 'pi', model: 'platform:free', prompt: '通知我两次' }], 'two-owner-notices')
+    await until(async () => inboxJob(JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')), messageId)?.status === 'done', fx.events)
+    const replies = fx.messages.filter(message => message.p_sender_user_id === agentId)
+    assert.equal(replies.length, 2)
+    assert.notEqual(replies[0].p_message_id, replies[1].p_message_id)
   } finally { await fx.close() }
 })
 

@@ -1,3 +1,4 @@
+import { subscribeNativeConversationHistoryClear } from '@/lib/nativeConversationHistoryClear';
 /**
  * chat-transcript.tsx — React adapter for @gugu/session-chat-ui.
  *
@@ -219,6 +220,8 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
   }, [shown]);
 
   // Swap the underlying ChatState when props.state identity changes (setModel path).
+  useLayoutEffect(() => subscribeNativeConversationHistoryClear(props.state.uri,
+    floor => props.state.transcript.setHistoryFloor?.(floor)), [props.state]);
   // The view handle, composer slot, and commands remain stable across swaps.
   useEffect(() => {
     viewRef.current?.setModel(props.state);

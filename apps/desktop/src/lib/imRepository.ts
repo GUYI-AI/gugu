@@ -1,3 +1,4 @@
+import { historyMessageVisible, historyTime } from '@gugu/core/shared/conversationHistoryTime'
 import { replaceEqualDeep } from '@tanstack/react-query'
 import { memoizeByReference } from './memoizeByReference'
 import type { CommitArgs } from '@gugu/core/cloud/attachmentsApi'
@@ -314,7 +315,22 @@ function createTransaction(accountId: string, operations: LocalImDbOperation[], 
       identityWrites.add(identity.id)
       put('identity', { accountId, id: identity.id, value: identity })
     },
-    putChat: (id, value) => put('chat', { accountId, id: nonEmpty(id, 'chat.id'), value }),
+    putChat(id, value) {
+      const key = `history-cleared:${id}`, before = readView(key) as string | undefined
+      const at = value.conversation_cleared_at
+      if (at && (!before || historyTime(at) > historyTime(before))) {
+        const ids = new Set([id])
+        for (const sourceId of ids) for (const row of stored.chat) if (row.value.source_chat_id === sourceId) ids.add(row.id)
+        for (const chatId of ids) {
+          const held = readView(`history-cleared:${chatId}`) as string | undefined
+          const floor = held && historyTime(held) > historyTime(at) ? held : at
+          put('view', { accountId, key: `history-cleared:${chatId}`, value: floor })
+          for (const row of stored.message) if (row.chatId === chatId && !historyMessageVisible(row.value.created_at, floor))
+            operations.push({ type: 'delete', store: 'message', key: [accountId, row.id] })
+        }
+      }
+      put('chat', { accountId, id: nonEmpty(id, 'chat.id'), value })
+    },
     putMembership: (chatId, identityId, value) => put('membership', {
       accountId,
       chatId: nonEmpty(chatId, 'membership.chatId'),
@@ -324,6 +340,7 @@ function createTransaction(accountId: string, operations: LocalImDbOperation[], 
     putMessage(value) {
       if ((readView(`message-revision:${value.id}`) as { deleted?: boolean } | undefined)?.deleted) return
       const chatId = nonEmpty(value.chat_id, 'message.chatId')
+      if (value.seq >= 0 && !historyMessageVisible(value.created_at, readView(`history-cleared:${chatId}`) as string | undefined)) return
       const root = value.thread_root_id ?? null
       const streamId = messageStreamId(value)
       put('stream', { accountId, id: streamId, chatId, kind: root ? 'thread' : 'main', rootMessageId: root })

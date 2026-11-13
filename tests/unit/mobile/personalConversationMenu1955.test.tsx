@@ -16,9 +16,9 @@ it.each<ChatKind>(['dm', 'ai', 'group', 'topic'])('the personal menu for %s invo
   await renderWithAppProviders(harness, createNode(PersonalConversationRowMenu, {
     chat: row, x: 20, y: 40, onClose: vi.fn(), onPin: vi.fn(), onSetNotificationLevel: vi.fn(), onHide: hide,
   }), { chat: { chats: [row], deleteChat: legacyDelete, leaveGroup: leave }, contacts: { removeOwnedAgent: removeAgent } })
-  const remove = document.querySelector<HTMLElement>('[data-testid=conversation-row-delete-chat]')
+  const remove = document.querySelector<HTMLElement>('[data-testid=conversation-row-hide-chat]')
   expect(remove).not.toBeNull()
-  expect(remove?.textContent).toContain('从列表删除')
+  expect(remove?.textContent).toContain('不显示')
   await clickElement(remove!)
   expect(hide).toHaveBeenCalledTimes(1)
   expect(settings).not.toHaveBeenCalled()

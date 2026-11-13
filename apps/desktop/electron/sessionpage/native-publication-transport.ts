@@ -31,6 +31,22 @@ export function createNativePublicationTransport(deps: {
   };
   return {
     context,
+    async historyFloor(sessionId: string): Promise<string | null> {
+      const auth = await deps.getAuth();
+      if (!auth) return null;
+      const agent = await localAgentForSession(sessionId, deps.env, auth.userId);
+      const chatId = agent?.cache?.sessionpage_direct_chat_id;
+      if (typeof chatId !== 'string' || !chatId) return null;
+      const { data, error } = await makeChatClient(auth.accessToken).rpc('list_conversation_memberships', { p_chat_ids: [chatId] });
+      if (error) throw new Error(`Native conversation history state failed: ${error.message}`);
+      const own = (data as Array<{ chat_id: string; user_id: string; conversation_cleared_at?: string | null }> | null)
+        ?.find(row => row.chat_id === chatId && row.user_id === auth.userId);
+      if (!own || !('conversation_cleared_at' in own)) throw new Error('Native conversation history state was not confirmed');
+      const floor = own.conversation_cleared_at;
+      if (floor != null && (typeof floor !== 'string' || !Number.isFinite(Date.parse(floor)))) throw new Error('Invalid native conversation history floor');
+      if ((await deps.getAuth())?.userId !== auth.userId) throw new Error('Native history account changed while reading');
+      return floor ?? null;
+    },
     async address(entry: NativePublication) {
       await requireContext(entry);
       const address = await deps.ensureAgentAddress(entry);

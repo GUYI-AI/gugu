@@ -6,27 +6,27 @@ import { notify, dismissNotice } from './notices'
 import { messageForUser } from './userFacingError'
 
 /** Shared by desktop right-click and phone long-press menus. The Agent option starts unchecked. */
-export async function confirmHideConversation({ hide, ownedAgent }: {
-  hide: () => Promise<void>
+export async function confirmDeleteConversation({ clear, ownedAgent }: {
+  clear: () => Promise<void>
   ownedAgent?: { id: string; remove: () => Promise<void> }
 }): Promise<void> {
   const boundary = currentAuthSessionSignal()
   const t = (key: string) => i18n.t(`chatList.${key}`, { ns: 'messaging' })
-  const choice = ownedAgent ? await new Promise<boolean | null>((resolve) => showModal('confirmActionModal', {
-    title: t('removeFromList'),
-    description: t('hideAgentDescription'),
-    confirmLabel: t('removeFromList'),
-    variant: 'default',
-    option: { label: t('alsoRemoveAgent'), defaultChecked: false },
+  const choice = await new Promise<boolean | null>((resolve) => showModal('confirmActionModal', {
+    title: t('delete'),
+    description: t('deleteHistoryDescription'),
+    confirmLabel: t('delete'),
+    variant: 'destructive',
+    ...(ownedAgent ? { option: { label: t('alsoRemoveAgent'), defaultChecked: false } } : {}),
     onSuccess: ({ optionChecked }) => resolve(optionChecked),
     onClose: () => resolve(null),
-  })) : false
+  }))
   if (choice === null || boundary.aborted) return
   const key = `conversation-agent-removal:${ownedAgent?.id}`
   const dismiss = () => dismissNotice(key)
   let watching = false
   await runConversationHidingAction({
-    hide,
+    hide: clear,
     isCurrent: () => !boundary.aborted,
     removeAgent: choice && ownedAgent ? async () => {
       await ownedAgent.remove()

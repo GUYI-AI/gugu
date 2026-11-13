@@ -280,3 +280,20 @@ describe('durable local IM messages', () => {
     expect([...compiled].filter(([, times]) => times > 1)).toEqual([])
   })
 })
+
+it('clears one account history and FTS durably without admitting an older in-flight page', async () => {
+  fixture = await openFixture('empty')
+  try {
+    const store = createImMessageStore(fixture.sqlite)
+    store.ingest(account, batch(message('old', 'orchid old', 1), message('new', 'orchid new', 2, { created_at: '2026-11-14T00:00:01Z' })))
+    store.ingest('peer', batch(message('peer-old', 'orchid old', 1)))
+    store.ingest(account, { writes: [{ type: 'chatAccess', access: { chatId: 'chat-a', clearedAt: '2026-11-14T00:00:00Z', revision: '9007199254740993' } }], revisions: [] })
+    expect(store.page(account, { chatId: 'chat-a', limit: 20 }).rows.map(row => row.id)).toEqual(['new'])
+    expect(hits('old')).toEqual([])
+    expect(store.page('peer', { chatId: 'chat-a', limit: 20 }).rows.map(row => row.id)).toEqual(['peer-old'])
+    const reopened = createImMessageStore(fixture.sqlite)
+    reopened.ingest(account, batch(message('late-old', 'orchid resurrected', 3)))
+    expect(reopened.windows(account, ['chat-a'], 20).map(row => row.id)).toEqual(['new'])
+    integrity()
+  } finally { fixture.close() }
+})

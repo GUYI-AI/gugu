@@ -16,6 +16,7 @@ export interface PhoneAgentState {
 }
 
 export interface PhoneAgentHostState {
+  accountRevision?: string | null
   taskTimeline?: boolean
   project?: { id: string; name: string; path: string }
   ownerId?: string

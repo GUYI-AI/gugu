@@ -480,7 +480,12 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       for (const [family, byId] of results) {
         for (const [id, value] of byId) {
           const key = entityKey(family, id)
-          cells.push([key, { value: (value ?? null) as Cell['value'], stamp: cursor }])
+          // A read can observe a personal action newer than the wake requesting
+          // it. Preserve that authority against a delayed older receipt.
+          const observed = family === 'membership' ? (value as MembershipValue | null)?.personal_state_observed_revision : undefined
+          if (observed) assertRevision(observed, 'personal membership observation')
+          const stamp = observed && compareStamp(observed, cursor) > 0 ? observed : cursor
+          cells.push([key, { value: (value ?? null) as Cell['value'], stamp }])
           settled.push(key)
         }
       }
@@ -611,7 +616,8 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       const current = cache.get(key)
       if (current?.value) {
         merge([[key, { stamp: receipt.account_revision,
-          value: { ...current.value, conversation_hidden_at: receipt.hidden_at } }]])
+          value: { ...current.value, conversation_hidden_at: receipt.hidden_at, ...(receipt.cleared_at ? { conversation_cleared_at: receipt.cleared_at } : {}) } }]])
+        if (receipt.cleared_at) await ingestMessages(viewerId, { writes: messageAccessWrites(cache, viewerId, [key]), revisions: [] })
         return republish()
       }
       return await owner.advance([{ revision: receipt.account_revision, event: 'chat_members_changed',
@@ -711,6 +717,10 @@ export function membershipValue(row: Record<string, unknown>): Record<string, un
     inbox_published: row.inbox_published_at != null,
     conversation_deleted_at: typeof row.conversation_deleted_at === 'string' ? row.conversation_deleted_at : null,
     conversation_hidden_at: typeof row.conversation_hidden_at === 'string' ? row.conversation_hidden_at : null,
+    conversation_cleared_at: typeof row.conversation_cleared_at === 'string' ? row.conversation_cleared_at : null,
+    native_personal_activity_at: typeof row.native_personal_activity_at === 'string' ? row.native_personal_activity_at : null,
+    native_personal_activity_revision: typeof row.native_personal_activity_revision === 'string' ? row.native_personal_activity_revision : undefined,
+    personal_state_observed_revision: typeof row.personal_state_observed_revision === 'string' ? row.personal_state_observed_revision : undefined,
     historical_only: row.historical_only === true,
     role: typeof row.role === 'string' ? (row.role as GroupMemberRole) : null,
   }

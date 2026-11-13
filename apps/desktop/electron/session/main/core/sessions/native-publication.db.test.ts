@@ -116,3 +116,17 @@ it('wires live transcript commits to the journal but leaves replay and old-row r
   await persistCommittedTurn({ sessionId: 's', source: 'revision', turn: { ...live, endedAt: live.endedAt! + 20 } });
   expect(pendingNativePublications()).toHaveLength(2);
 });
+
+it('freezes window bytes before capture while admission and global ordering commit with the canonical row', async () => {
+  const { prepareNativePublicationTurn } = await import('./native-publication-turn')
+  const prepared = prepareNativePublicationTurn({ sessionId: 's', rowId: 's:7', source: 'live', turn: record(), context: owner }, fixture.db)
+  const serialized = JSON.stringify(prepared.turn)
+  expect(pendingNativePublications()).toEqual([])
+  await Promise.resolve()
+  queueNativePublication(owner, 's', at, fixture.db)
+  fixture.db.transaction(tx => prepared.commit(tx))
+  expect(JSON.stringify(prepared.turn)).toBe(serialized)
+  const entries = pendingNativePublications()
+  expect(new Set(entries.map(entry => entry.order)).size).toBe(entries.length)
+  for (const item of prepared.turn.items) if (item.kind === 'message') expect(entries.some(entry => entry.id === item._meta?.guguPublicationId)).toBe(true)
+})

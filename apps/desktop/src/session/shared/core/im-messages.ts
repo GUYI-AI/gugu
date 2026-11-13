@@ -9,6 +9,7 @@ export interface ImChatAccess {
   ownMember?: boolean
   membershipRevoked?: boolean
   archived?: boolean
+  clearedAt?: string | null
 }
 
 export type ImMessageWrite =

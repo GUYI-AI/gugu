@@ -1,3 +1,4 @@
+import { historyMessageVisible, historyTime } from '@gugu/core/shared/conversationHistoryTime'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { mergeMessagesById } from '@gugu/core/shared/ui/messageListModels'
 import { ChatHistoryWindow, type HistoryWindow } from './chatHistoryWindow'
@@ -17,12 +18,22 @@ type Listener = (rows: MessageItem[]) => void
 /** Account data and receipts are shared; each presenter owns its history range and navigation. */
 export class ChatWindowCache extends Map<string, MessageItem[]> {
   constructor(private readonly accountId: string | null = null) { super() }
+  private readonly cleared = new Map<string, string>()
+  private readonly visible = (row: MessageItem) => row.seq < 0 || historyMessageVisible(row.created_at, this.cleared.get(row.chat_id))
+  clearHistoryBefore(chatId: string, at: string | null | undefined): void {
+    const before = this.cleared.get(chatId)
+    if (!at || before && historyTime(before) >= historyTime(at)) return
+    this.cleared.set(chatId, at)
+    this.update(chatId, rows => rows.filter(this.visible))
+    const view = this.histories.get(chatId)?.view
+    if (view) this.patchView(chatId, { threadMessages: view.threadMessages.filter(this.visible) })
+  }
   /** Read positions the account already holds, so a newly opened conversation paints its receipts in its first frame. */
   readSeqsOf: (chatId: string) => Record<string, number> | undefined = () => undefined
   private readonly histories = new Map<string, { window: ChatHistoryWindow; stop: () => void; stopReading?: () => void; receipts: Set<string>; view: ConversationSnapshot }>()
   private readonly listeners = new Map<string, Map<Listener, ConversationViewport>>()
   override set(chatId: string, rows: MessageItem[]): this {
-    const merge = (previous: MessageItem[]) => mergeMessagesById(previous, rows, chatId)
+    const merge = (previous: MessageItem[]) => mergeMessagesById(previous, rows.filter(this.visible), chatId)
     const history = this.getHistory(chatId)
     if (history) history.update(merge)
     else { super.set(chatId, trimToMessageWindow(merge(this.get(chatId) ?? []))); this.publish(chatId) }
@@ -86,7 +97,7 @@ export class ChatWindowCache extends Map<string, MessageItem[]> {
     if (viewport) {
       if (viewport.owner !== this || !viewport.window) {
         viewport.owner = this
-        viewport.window = new ChatHistoryWindow(this.accountId)
+        viewport.window = new ChatHistoryWindow(this.accountId, this.visible)
         viewport.window.reset(chatId, this.get(chatId))
       }
       this.history(chatId)
@@ -94,7 +105,7 @@ export class ChatWindowCache extends Map<string, MessageItem[]> {
     }
     const existing = this.histories.get(chatId)
     if (existing) return existing.window
-    const window = new ChatHistoryWindow(this.accountId)
+    const window = new ChatHistoryWindow(this.accountId, this.visible)
     window.reset(chatId, this.get(chatId))
     const stop = window.subscribe(() => {
       const entry = this.histories.get(chatId)!

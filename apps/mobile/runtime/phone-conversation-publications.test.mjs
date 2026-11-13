@@ -12,7 +12,7 @@ const agent = { agentUserId: '558fcc98-9d61-4054-8a18-900d969b1849', sessionId: 
 const deviceId = 'test-phone'
 const context = { agent, deviceId }
 const receipt = args => ({ chat_id: args.p_chat_id, already: false, account_revision: '900719925474099312345' })
-const input = (route = { kind: 'task', senderUserId: owner }) => ({ id: randomUUID(), agentUserId: agent.agentUserId, prompt: '真实个人输入', route })
+const input = (route = { kind: 'task', senderUserId: owner, personalAdmission: 'owner-input' }) => ({ id: randomUUID(), agentUserId: agent.agentUserId, prompt: '真实个人输入', route })
 const complete = (id, text = '给主人的回复') => ({ kind: 'complete', id, at: 1730000000123, content: [{ type: 'text', text }] })
 const journal = store => readFile(join(store.directory, 'host.json'), 'utf8').then(JSON.parse)
 async function fixture(run) {
@@ -62,7 +62,7 @@ test('multiple visible replies in one job get separate durable UUIDs; stream fra
 
 test('legacy history, group work, session deliveries, status events and NO_REPLY never create personal publications', () => fixture(async (store, root) => {
   const legacy = await admitPhoneJob(store, input())
-  for (const route of [{ kind: 'chat', chatId: randomUUID(), senderUserId: owner }, { kind: 'session-direct' }, { kind: 'task', senderUserId: randomUUID() }]) {
+  for (const route of [{ kind: 'chat', chatId: randomUUID(), senderUserId: owner }, { kind: 'session-direct' }, { kind: 'task', senderUserId: randomUUID() }, { kind: 'task', senderUserId: owner }]) {
     const job = await admitPhoneJob(store, input(route), context)
     job.status = 'running'
     assert.equal(recordPhonePersonalReply(store, job, agent, deviceId, complete('background')), false)

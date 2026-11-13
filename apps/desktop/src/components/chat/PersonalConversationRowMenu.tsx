@@ -8,7 +8,7 @@ import { useMarkChatsRead } from '../../hooks/useMarkChatsRead'
 import { chatsInReadScope, conversationCanHide, hasUnreadInRows } from '../../session/shared/conversation-row-menu'
 import { directoryRows, useDirectoryDevices, useLiveDeviceSessions } from '../../session/shared/remote-sessions/session-directory'
 import { nativeUnreadTargets } from '../../lib/nativeUnreadTargets'
-import { confirmHideConversation } from '../../lib/confirmHideConversation'
+import { confirmDeleteConversation } from '../../lib/confirmDeleteConversation'
 import { messageForUser } from '../../lib/userFacingError'
 import { ConversationRowContextMenu } from './ConversationRowContextMenu'
 
@@ -23,7 +23,7 @@ export function PersonalConversationRowMenu({ chat, onPin, onUnpinFromSidebar, o
   onSetNotificationLevel: (level: NotificationLevel) => void
   onHide: () => Promise<void>
 }) {
-  const { chats, identitiesById } = useChatStore('chats', 'identitiesById')
+  const { chats, identitiesById, clearConversation } = useChatStore('chats', 'identitiesById', 'clearConversation')
   const nativeRows = directoryRows(useDirectoryDevices(), useLiveDeviceSessions())
   const { user } = useAuth()
   const { removeOwnedAgent } = useContactsStore()
@@ -45,8 +45,9 @@ export function PersonalConversationRowMenu({ chat, onPin, onUnpinFromSidebar, o
       else if (action === 'pin') onPin()
       else if (action === 'unpin-from-sidebar') onUnpinFromSidebar!()
       else if (action === 'notifications') onSetNotificationLevel(chat.notification_level === 'none' ? 'all' : 'none')
-      else if (action === 'hide-chat') void confirmHideConversation({ hide: onHide,
+      else if (action === 'hide-chat') void onHide().catch((error: unknown) => toast(t('chatList.hideFailed'), 'error', messageForUser(error)))
+      else if (action === 'delete-chat') void confirmDeleteConversation({ clear: () => clearConversation(chat.id),
         ownedAgent: owned ? { id: owned.id, remove: () => removeOwnedAgent(owned.id, { removeSocialIdentity: true }) } : undefined,
-      }).catch((error: unknown) => toast(t('chatList.hideFailed'), 'error', messageForUser(error)))
+      }).catch((error: unknown) => toast(t('chatList.deleteFailed'), 'error', messageForUser(error)))
     }} />
 }

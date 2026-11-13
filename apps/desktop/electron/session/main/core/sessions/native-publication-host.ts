@@ -1,7 +1,33 @@
-import { onNativePublicationQueued, pendingNativePublications, saveNativePublication, type NativePublication, type NativePublicationContext } from './native-publication-journal';
+import { onNativePublicationQueued, pendingNativePublications, saveNativePublication, nativeHistoryFloorCache, saveNativeHistoryFloor, type NativePublication, type NativePublicationContext } from './native-publication-journal';
+import { historyTime } from '@gugu/core/shared/conversationHistoryTime';
+import { events } from '@main/lib/events';
+import { nativePersonalPublicationChannel } from '@shared/core/sessions/sessionEvents';
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 
-let currentHost: { context(sessionId: string): Promise<NativePublicationContext | null> } | null = null;
+let currentHost: { context(sessionId: string): Promise<NativePublicationContext | null>; historyFloor?(sessionId: string): Promise<string | null> } | null = null;
+const readingFloors = new Map<string, Promise<string | null>>();
+export async function nativeConversationHistoryFloor(sessionId: string): Promise<string | null> {
+  const host = currentHost;
+  if (!host?.historyFloor) return null;
+  const owner = await host.context(sessionId);
+  if (!owner) return null;
+  const key = JSON.stringify([owner.ownerUserId, sessionId]);
+  if (readingFloors.has(key)) return readingFloors.get(key)!;
+  const read = (async () => {
+    const cached = nativeHistoryFloorCache(owner.ownerUserId, sessionId);
+    try {
+      const incoming = await host.historyFloor!(sessionId);
+      const floor = cached?.floor && (!incoming || historyTime(cached.floor) > historyTime(incoming)) ? cached.floor : incoming;
+      saveNativeHistoryFloor(owner.ownerUserId, sessionId, floor);
+      return floor;
+    } catch (error) {
+      if (cached && /fetch failed|failed to fetch|network|timeout/i.test(String(error))) return cached.floor;
+      throw error;
+    }
+  })().finally(() => { readingFloors.delete(key); });
+  readingFloors.set(key, read);
+  return read;
+}
 export async function nativePublicationContext(sessionId: string, requireOwner = false): Promise<NativePublicationContext | null> {
   const host = currentHost;
   const context = await host?.context(sessionId) ?? null;
@@ -25,6 +51,7 @@ export function startNativeConversationPublicationHost(deps: {
   address(entry: NativePublication): Promise<{ chatId: string; agentUserId: string }>;
   publish(entry: NativePublication & { chatId: string; agentUserId: string }): Promise<{ accountRevision: string; already: boolean }>;
   failed(error: unknown): void;
+  historyFloor?(sessionId: string): Promise<string | null>;
 }) {
   if (currentHost) throw new Error('Native conversation publication host is already running');
   currentHost = deps;
@@ -54,6 +81,7 @@ export function startNativeConversationPublicationHost(deps: {
             const ack = await deps.publish(entry);
             if (!/^(0|[1-9][0-9]*)$/.test(ack.accountRevision) || typeof ack.already !== 'boolean') throw new Error('Invalid native publication receipt');
             saveNativePublication({ ...entry, ack });
+            events.emit(nativePersonalPublicationChannel, { accountId: entry.ownerUserId, revision: ack.accountRevision });
             reported.delete(entry.id);
           } catch (error) {
             if (!reported.has(original.id)) { reported.add(original.id); deps.failed(error); }

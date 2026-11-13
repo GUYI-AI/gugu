@@ -785,7 +785,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     }
   }, [chatsRef, setChats, userId])
 
-  const hideConversation = useConversationHiding(userId, chatProjection)
+  const { hideConversation, clearConversation } = useConversationHiding(userId, chatProjection)
   const deleteChat = useCallback(async (chatId: string, persist = false) => {
     if (persist) { await (chatsRef.current.find((chat) => chat.id === chatId)?.kind === 'topic' ? topicService.archiveTopic(chatId) : chatService.archiveChat(chatId)); if (imRepositoryScope.disposed) return }
     projectionRef.current.forgetChat(chatId) // 显式删除是权威动作:乐观行与投影水位一起出列 (#4314)
@@ -888,7 +888,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
         upsertChat,
         pinChat,
         deleteChat,
-        hideConversation,
+        hideConversation, clearConversation,
         leaveGroup,
         markUnread,
         setChatNotificationLevel,

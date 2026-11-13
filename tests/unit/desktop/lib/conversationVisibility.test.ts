@@ -24,9 +24,9 @@ describe('personal conversation visibility', () => {
   })
   it('keeps raw unread/read cursors while suppressing hidden attention, including muted rows', () => {
     const hidden = chat({ conversation_hidden_at: hiddenAt, unread_count: 5, last_read_seq: 7, is_muted: false })
-    expect(chatAttention(hidden)).toEqual({ unread: 5, forYou: 0, askingYou: 0 })
+    expect(chatAttention(hidden)).toEqual({ unread: 5, forYou: 0, callsYou: 0, askingYou: 0 })
     const restored = { ...hidden, conversation_hidden_at: null, is_muted: true }
-    expect(chatAttention(restored)).toEqual({ unread: 5, forYou: 5, askingYou: 0 })
+    expect(chatAttention(restored)).toEqual({ unread: 5, forYou: 5, callsYou: 5, askingYou: 0 })
     expect(restored.last_read_seq).toBe(7)
   })
   it('compares revisions above 2^53 exactly and protects both hides and newer restorations', () => {

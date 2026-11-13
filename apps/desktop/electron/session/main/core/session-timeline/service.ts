@@ -1,3 +1,5 @@
+import { nativeConversationHistoryFloor } from '../sessions/native-publication-host';
+import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
 import { prepareWindowLivePosition } from './window-live-position';
 import { promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
 import { SessionInputAdmissionError, sessionInputAdmission, type SessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
@@ -647,12 +649,13 @@ function release(entry: TimelineEntry): void {
 
 async function withTimeline<T>(
   conversationId: string,
-  use: (timeline: SessionTimeline) => T | Promise<T>
+  use: (timeline: SessionTimeline, floor: string | null) => T | Promise<T>
 ): Promise<SessionTimelineResult<T>> {
   const acquired = await acquire(conversationId);
   if (!acquired.ok) return acquired;
   try {
-    return { ok: true, value: await use(acquired.value.timeline) };
+    const floor = await nativeConversationHistoryFloor(conversationId);
+    return { ok: true, value: clearedHistoryResult(await use(acquired.value.timeline, floor), floor) };
   } catch (error) {
     return fail('timeline_failed', (error as Error)?.message ?? String(error));
   } finally {
@@ -809,7 +812,10 @@ export function after(input: {
   conversationId: string;
   cursor: RecordCursor;
 }): Promise<SessionTimelineResult<TimelineAfterResult>> {
-  return withTimeline(input.conversationId, (timeline) => timeline.getAfter(input.cursor));
+  return withTimeline(input.conversationId, (timeline, floor) => {
+    if (floor && !input.cursor.epoch.endsWith(historyClearEpoch(floor))) return { ok: false as const, reset: 'epoch_changed' as const, snapshot: timeline.getSnapshot() };
+    return timeline.getAfter(floor ? { ...input.cursor, epoch: input.cursor.epoch.slice(0, -historyClearEpoch(floor).length) } : input.cursor);
+  });
 }
 
 type SourceWindowReader = ReturnType<typeof import('./desktop-source-reader').createDesktopSourceWindowReader>;
@@ -832,9 +838,10 @@ function sourceWindowReader(): Promise<SourceWindowReader> {
         const located = locateRow(row);
         if (!located.supported || !supportsSourceWindow(located.locator.harness))
           throw Object.assign(new Error(located.supported ? 'This native format has no window reader' : located.reason), { code: 'unsupported_format' });
-        const conversationScope = hash([cacheDirectory, conversationId]);
-        return { conversationId, locator: located.locator, cacheDirectory, conversationScope,
-          scope: hash([conversationScope, located.locator.harness, located.locator.providerSessionId]),
+        const historyFloor = await nativeConversationHistoryFloor(conversationId);
+        const conversationScope = hash([cacheDirectory, conversationId, historyFloor]);
+        return { conversationId, historyFloor, locator: located.locator, cacheDirectory, conversationScope,
+          scope: hash([conversationScope, located.locator.harness, located.locator.providerSessionId, historyFloor]),
           branchLineage: hash([located.locator.harness, located.locator.providerSessionId]),
           cwd: row.workspaceId ? persistedWorkspacePath(row.workspaceId) ?? undefined
             : readSessionRows(false, conversationId).find(value => value.session.id === conversationId)?.project.path,
@@ -862,6 +869,7 @@ export const body = (input: SessionpageSessionBodyReadRequest): Promise<SessionT
 const windowOpenings = createWindowOpenings({
   reserve: (input, failed) => reserveWindowCommitHost(input.subscriptionId, input.conversationId, failed),
   capture: async conversationId => {
+    if (await nativeConversationHistoryFloor(conversationId)) return null;
     const row = readSessionRow(conversationId);
     if (!row) throw Object.assign(new Error('The session is no longer available'), { code: 'session_not_found' });
     const { supportsSourceWindow } = await import('@gugu/session-core/session-record/window-cache/formats');
@@ -1104,11 +1112,13 @@ export function older(input: {
  */
 export async function toolImage(input: SessionpageSessionToolImageRequest): Promise<SessionTimelineResult<ToolImage>> {
   // 存档装回来的轮里图只剩位置,要由时间线从记录里读回来(#980);没有这个口的(代读时间线)照旧在快照里找。
-  const found = await withTimeline(input.conversationId, (timeline) =>
-    timeline.toolImage
+  const found = await withTimeline(input.conversationId, (timeline, floor) => {
+    if (floor && !clearedHistoryResult(timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }), floor).turns.some(turn => turn.items.some(item => item.id === input.itemId)))
+      return { ok: false as const, code: 'not_found' as const, message: 'This image was cleared from the conversation' };
+    return timeline.toolImage
       ? timeline.toolImage({ itemId: input.itemId, index: input.index })
-      : findToolImage(timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns, input.itemId, input.index)
-  );
+      : findToolImage(timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns, input.itemId, input.index);
+  });
   if (!found.ok) return found;
   return found.value.ok ? { ok: true, value: found.value.image } : fail(found.value.code, found.value.message);
 }
@@ -1133,16 +1143,17 @@ export async function recordHistoryPage(input: {
   try {
     if (acquired.value.standIn) return { ok: true, value: 'no-record' };
     const timeline = acquired.value.timeline;
+    const floor = await nativeConversationHistoryFloor(input.conversationId);
     // Read the moment a turn ended (radar's 「做完了」): the record as written by now, not as far as the tail got.
     await timeline.catchUp();
     if (input.beforeSeq === undefined) {
       const { turns, hasOlder } = timeline.getSnapshot({ limit: input.limit });
-      return { ok: true, value: { turns, hasOlder } };
+      return { ok: true, value: clearedHistoryResult({ turns, hasOlder }, floor) };
     }
     const at = timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns.find((turn) => turn.seq === input.beforeSeq);
     if (!at) return { ok: true, value: 'no-such-turn' };
     const { turns, hasOlder } = timeline.getOlder({ beforeTurnId: at.id, limit: input.limit });
-    return { ok: true, value: { turns, hasOlder } };
+    return { ok: true, value: clearedHistoryResult({ turns, hasOlder }, floor) };
   } catch (error) {
     return fail('timeline_failed', (error as Error)?.message ?? String(error));
   } finally {

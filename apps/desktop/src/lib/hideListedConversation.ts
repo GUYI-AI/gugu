@@ -5,6 +5,7 @@ export type PersonalConversationHiding = {
   hidden_at: string
   operation_id: string
   account_revision: string
+  cleared_at?: string
 }
 
 /** Temporary personal list state. Never dispatch through group-management or Agent-lifecycle APIs. */

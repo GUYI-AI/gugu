@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-const personal = (store, job) => job.route?.kind === 'task' && job.route.senderUserId === store.state.ownerId
+const personal = (store, job) => job.route?.kind === 'task' && job.route.personalAdmission === 'owner-input' && job.route.senderUserId === store.state.ownerId
 const visibleContent = content => Array.isArray(content) && content.some(block => block?.type === 'image' || (block?.type === 'text' && block.text?.trim() && block.text.trim() !== '[NO_REPLY]'))
 
 // Called only at live admission, never while opening a journal or reading a transcript.
@@ -22,6 +22,13 @@ export function admitPhonePersonalInput(store, job, { agent, deviceId }) {
   admitMessage(store, job, agent, deviceId, 'input', { role: 'user', text: job.prompt, ...(job.files?.length ? { files: structuredClone(job.files) } : {}), occurredAt: job.createdAt })
 }
 
+/** IM and native delivery of one explicit owner notice share this admitted UUID. */
+export function recordPhoneOwnerNotice(store, job, agent, deviceId, callId, text) {
+  return admitMessage(store, job, agent, deviceId, `notice:${callId}`, {
+    role: 'assistant', content: [{ type: 'text', text }], occurredAt: new Date().toISOString(),
+  })
+}
+
 /** A completed live message is the first durable reply content in the host journal. Its
  * publication UUID is independent of the runtime counter and later Pi record aliases. */
 export function recordPhonePersonalReply(store, job, agent, deviceId, event) {
@@ -41,7 +48,7 @@ export function recordPhonePersonalReply(store, job, agent, deviceId, event) {
 
 /** A separate queue from message_send: only metadata is published, never transcript bodies.
  * Save again before every request, including recovery from an earlier failed admission save. */
-export function createPhoneConversationPublisher({ store, cloud, isReady, authorize, warn, retryMs = 30_000 }) {
+export function createPhoneConversationPublisher({ store, cloud, isReady, authorize, warn, published = () => {}, retryMs = 30_000 }) {
   let closed = false, flight = null, rerun = false, timer = null
   const current = () => !closed && isReady()
   const retry = () => {
@@ -73,6 +80,7 @@ export function createPhoneConversationPublisher({ store, cloud, isReady, author
           if (receipt?.chat_id !== entry.chatId || typeof receipt.already !== 'boolean' || typeof receipt.account_revision !== 'string' || !/^(0|[1-9][0-9]*)$/.test(receipt.account_revision)) throw new Error('invalid personal conversation publication receipt')
           entry.status = 'published'; entry.receipt = receipt; delete entry.errorCode
           await store.save()
+          await published(receipt)
         } catch (error) {
           entry.status = 'pending'
           delete entry.receipt
