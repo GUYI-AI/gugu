@@ -395,6 +395,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
           searchButton,
         )}</HeaderSearch>
 
+        {group.inviteAction ? <div style={MEMBER_LIST_SEARCH_STYLE}>{group.inviteAction}</div> : null}
         {snapshot && (!mobile || chatKind === 'group') ? (
           <div style={MEMBER_LIST_SEARCH_STYLE}>
             <SearchField
@@ -406,7 +407,6 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
               clearLabel={t('group.memberList.clearSearch')}
               onClear={() => setQuery('')}
             />
-            {group.inviteAction}
           </div>
         ) : null}
 

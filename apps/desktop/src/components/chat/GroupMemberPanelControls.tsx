@@ -11,8 +11,8 @@ import { MemberProfilePopover, MemberProfileRoot } from '../MemberProfilePopover
 import { Popover } from '../ui/Popover'
 import type { MemberProfileCardModel, MemberProfileChatTarget, MemberProfileEditControls } from '../MemberProfileCard'
 import { type ActiveMemberProfile, type MemberProfileHandle, agentOwnerDisplayName, toAgentProfile, toHumanProfile } from '../memberProfileModels'
+import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
-import { Hint } from '../ui/Tooltip'
 import { DropdownMenu, MenuItem } from '../ui/Menu'
 import { AddGroupMembers } from './AddGroupMembers'
 import { useMobileShell } from '../../hooks/useMobileShell'
@@ -139,12 +139,11 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
   const { projectGroup, canInviteHumans: canInvite, showInvite } = groupInviteAccess(chatId, chatKind, settings)
   const mobile = useMobileShell()
 
+  // 成员页的第一行,带字、通栏:邀请只有这一个入口(页头只有「成员 N」),所以它得一眼看得见。
   const inviteAction: ReactNode = showInvite ? (
-    <Hint label={t('group.memberList.invite')} side="bottom">
-      <IconButton aria-label={t('group.memberList.invite')} onClick={openPicker} data-testid="member-list-invite">
-        <UserPlus />
-      </IconButton>
-    </Hint>
+    <Button className="flex-1" onClick={openPicker} data-testid="member-list-invite">
+      <UserPlus />{t('group.memberList.invite')}
+    </Button>
   ) : null
 
   const rowActions = useCallback((memberId: string): ReactNode => {

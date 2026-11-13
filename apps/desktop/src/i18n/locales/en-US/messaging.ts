@@ -706,7 +706,6 @@ export default {
     "groupApps": "Apps",
     "members_one": "{{count}} member",
     "members_other": "{{count}} members",
-    "invite": "Invite",
     "mute": "Mute notifications",
     "pinConversation": "Pin conversation",
     "searchHistory": "Search chat history",

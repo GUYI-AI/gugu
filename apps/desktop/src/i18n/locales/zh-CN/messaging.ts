@@ -703,7 +703,6 @@ export default {
     "openApp": "打开 App",
     "groupApps": "应用",
     "members": "{{count}} 位成员",
-    "invite": "邀请",
     "mute": "消息免打扰",
     "pinConversation": "置顶对话",
     "searchHistory": "搜索聊天记录",

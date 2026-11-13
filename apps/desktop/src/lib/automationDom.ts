@@ -29,7 +29,6 @@ export const AUTOMATION_TEST_IDS = {
   chatHeaderMembersButton: 'chat-header-members-button',
   chatHeaderMoreButton: 'chat-header-more-button',
   chatHeaderAppsButton: 'chat-header-apps-button',
-  chatHeaderInviteButton: 'chat-header-invite-button',
   chatHeaderPinSwitch: 'chat-header-pin-switch',
   chatHeaderMuteSwitch: 'chat-header-mute-switch',
   groupTopicsPopup: 'group-topics-popup',
