@@ -8,6 +8,7 @@ import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
 import { GROUP_AVATAR_CORNER, groupAvatarColor, groupAvatarDefaultText, groupAvatarSvg } from '@gugu/core/shared/ui/groupAvatar'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 import { Folder } from '@/lib/icons'
+import { useProjectGroupChats } from '@/lib/projectGroupChatsBridge'
 import { dicebearAvatarDataUri } from '../lib/dicebearAvatar'
 import { AgentNeedsUserGlyph } from './AgentNeedsUserGlyph'
 import { AgentHarnessBadge } from './AgentHarnessIdentity'
@@ -114,11 +115,13 @@ const PROJECT_MARK_FROM_PX = 24
 /**
  * 「这是项目」: a small grey mark on the lower left corner of a project's face. The upper right corner belongs to unread
  * counts and the lower right to the running count, so this is the corner left. A project group is recognised from the
- * account's projects, the same on desktop and phone.
+ * account's projects (desktop and phone) or from the projects this computer has bound (known before the account list
+ * catches up with a project just made here).
  */
 function ProjectMark({ chatId, project }: { chatId: string; project?: boolean }) {
   const projects = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
-  if (!(project ?? projects.some((one) => one.chatId === chatId))) return null
+  const bound = useProjectGroupChats()
+  if (!(project ?? (bound.has(chatId) || projects.some((one) => one.chatId === chatId)))) return null
   return (
     <span data-project-mark aria-hidden className="pointer-events-none absolute -bottom-[5px] -left-[5px] grid h-[15px] w-[15px] place-items-center rounded-full border border-[var(--border-subtle)] bg-[var(--card)] text-[var(--text-tertiary)]">
       <Folder size={9} />
