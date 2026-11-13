@@ -65,11 +65,11 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
   const closePopup = () => setPopup({ chatId: activeChatId, kind: null })
   const memberCount = memberTopic ? memberTopicCount : room ? room.snapshot.humans.length + room.snapshot.agents.length : 0
   const wideGroup = isGroupChat && !narrow
-  // #2548 桌面内层侧栏挂着这个对话时,成员、话题、邀请三枚与那一列重复(成员在它头一行的「…」里),收起来。
+  // #2548 桌面内层侧栏挂着这个对话时,话题那一枚与那一列重复(话题就列在那里),收起来。成员、邀请只在这里,每种宽度、每个端都在。
   const innerChat = useInnerSidebarChat()
   const innerColumn = !mobile && activeChatId !== null && innerChat === activeChatId
   return <Popover.Root open={popup.kind === 'apps' && !mobile} modal={false} onOpenChange={(open) => open ? openPopup('apps') : closePopup()}>
-    {(isRoomChat || memberTopic) && !innerColumn ? <>
+    {isRoomChat || memberTopic ? <>
       <Button variant="ghost" size="md" className={mobile ? 'min-h-[var(--control-h-touch)]' : undefined} data-testid={AUTOMATION_TEST_IDS.chatHeaderMembersButton} aria-label={t('header.memberList')} title={t('header.memberList')} aria-pressed={infoShown}
         onClick={() => infoShown ? onCloseInfo() : onOpenInfo('members')}>
         <Users className="text-[var(--faint-fg)]" />{memberCount}
@@ -85,7 +85,7 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
         </DropdownMenu.Content>
       </DropdownMenu.Root>}
       {/* @@@group-share 邀请(选人 + 链接 / 二维码)在每种宽度都是一步:窄了只收成图标,❌ 收进「更多」。 */}
-      {invite.showInvite && !innerColumn && (narrow
+      {invite.showInvite && (narrow
         ? <IconButton data-testid={AUTOMATION_TEST_IDS.chatHeaderInviteButton} aria-label={t('header.invite')} title={t('header.invite')} onClick={() => openPopup('invite')}><UserPlus /></IconButton>
         : <Button variant="ghost" size="md" data-testid={AUTOMATION_TEST_IDS.chatHeaderInviteButton} aria-label={t('header.invite')} onClick={() => openPopup('invite')}><UserPlus />{t('header.invite')}</Button>)}
       {wideGroup && <>

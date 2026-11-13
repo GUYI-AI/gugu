@@ -7,11 +7,8 @@ import { messageForUser } from '@/lib/userFacingError';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
-/**
- * Removing bundled content only saves its account key; a failed save says so and keeps the sample. The row's menu and
- * the inner sidebar's head row (#2548) remove it the same way.
- */
-export function useRemoveSampleProject(userId: string): { busy: boolean; remove: () => Promise<void> } {
+/** Removing bundled content only saves its account key; a failed save says so and keeps the sample. */
+function useRemoveSampleProject(userId: string): { busy: boolean; remove: () => Promise<void> } {
   const { translate } = useSessionMessages();
   const [busy, setBusy] = useState(false);
   const remove = async () => {
@@ -29,7 +26,7 @@ export function useRemoveSampleProject(userId: string): { busy: boolean; remove:
 }
 
 /** The sample's one menu item: remove it. */
-export function SampleProjectRemoveItem({ busy, onRemove }: { busy: boolean; onRemove: () => void }) {
+function SampleProjectRemoveItem({ busy, onRemove }: { busy: boolean; onRemove: () => void }) {
   const { translate } = useSessionMessages();
   return (
     <MenuItem icon={<Trash size={15} aria-hidden />} danger disabled={busy} onClick={onRemove}>

@@ -101,7 +101,6 @@ export const enUSProjectMessages = {
   'projects.sample.handoffContext':
     'This project started as the sample project “{name}”. Its original request was:\n\n{request}\n\n{files}, written for that request, are already in the project folder.',
   'projects.sample.remove': 'Remove sample project',
-  'projects.sample.actions': 'Sample project actions',
   'projects.sample.removeFailed': 'Could not remove sample project',
   'projects.sample.taskDetail': 'Task',
   'projects.sample.taskDone': 'Done',
@@ -342,7 +341,6 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.sample.handoffContext':
     '这个项目是从示例项目「{name}」变来的。示例里最初的请求是：\n\n{request}\n\n按这个请求写好的 {files} 已经在项目文件夹里了。',
   'projects.sample.remove': '移除示例项目',
-  'projects.sample.actions': '示例项目操作',
   'projects.sample.removeFailed': '未能移除示例项目',
   'projects.sample.taskDetail': '任务',
   'projects.sample.taskDone': '已完成',

@@ -123,13 +123,13 @@ describe('final group toolbar v4', () => {
     expect(harness.container.querySelector('[data-agent-display-status="working"]')).toBeNull()
   })
 
-  it('#2548 with the desktop inner column on this chat: members, topics and invitation leave the bar; Apps and More stay', async () => {
+  it('#2548 with the desktop inner column on this chat: only topics leave the bar (the column lists them); members and invitation stay one press away', async () => {
     publishInnerSidebarChat('chat')
     try {
       await header('group', { menu: true })
-      expect(button('成员列表')).toBeUndefined()
       expect(button('话题')).toBeUndefined()
-      expect(button('邀请')).toBeUndefined()
+      expect(button('成员列表')).toBeDefined()
+      expect(button('邀请')).toBeDefined()
       expect(button('应用')).toBeDefined()
       expect(button('更多操作')).toBeDefined()
     } finally {
