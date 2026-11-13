@@ -638,7 +638,7 @@ export default {
         "title": "修改头像",
         "upload": "上传图片"
       },
-      "avatarResetFailed": "恢复默认头像失败：{{reason}}",
+      "avatarResetFailed": "没能恢复默认头像，请再试一次",
       "avatarUpdated": "群头像已更新",
       "avatarUploadFailed": "群头像上传失败：{{reason}}",
       "changeAvatar": "点击修改群头像，或拖入图片",

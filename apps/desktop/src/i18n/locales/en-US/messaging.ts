@@ -640,7 +640,7 @@ export default {
         "title": "Edit avatar",
         "upload": "Upload an image"
       },
-      "avatarResetFailed": "Could not restore the default avatar: {{reason}}",
+      "avatarResetFailed": "Could not restore the default avatar. Try again.",
       "avatarUpdated": "Group avatar updated",
       "avatarUploadFailed": "Could not upload the group avatar: {{reason}}",
       "changeAvatar": "Click to edit the group avatar, or drop an image",

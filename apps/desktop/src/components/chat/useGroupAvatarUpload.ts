@@ -1,7 +1,10 @@
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { chatService } from '../../lib/chat'
+import { rendererLogger } from '../../lib/log'
 import { useToast } from '../toastContext'
+
+const avatarLog = rendererLogger('chat/group-avatar')
 
 /** The group's avatar upload and its reset to the default face keep the same write and failure feedback. */
 export function useGroupAvatarUpload({ chatId, viewerIsManager, setAvatarUrl, setActionError }: {
@@ -38,7 +41,8 @@ export function useGroupAvatarUpload({ chatId, viewerIsManager, setAvatarUrl, se
       setAvatarUrl(null)
       toast(t('group.settings.avatarUpdated'), 'success')
     } catch (err) {
-      setActionError(t('group.settings.avatarResetFailed', { reason: String((err as Error)?.message ?? err) }))
+      avatarLog.error({ chatId, err }, 'restore default group avatar failed')
+      setActionError(t('group.settings.avatarResetFailed'))
     } finally {
       setAvatarUploading(false)
     }
