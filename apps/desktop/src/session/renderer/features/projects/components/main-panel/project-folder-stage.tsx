@@ -71,14 +71,18 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
     const state = remoteHostsStore.connectionState(deviceId);
     return state === 'asleep' || state === 'waking';
   });
-  // 新会话开在哪:卡片 / 托盘上选中的那个文件夹所属的本地项目(可能在别的机器上);没选 = 这一页的项目。
-  const targetProjectId = scopedFolders.chosen?.projectId ?? projectId;
+  // 在哪台上开工 = 托盘上选着的那一台(runMachine,与选择器画的同一份);文件夹只在那台的里面挑。
+  // ❌ 文件夹还没读回来时按这一页的项目所在的那台 —— 那可能是一台离线的机器,新建框会对它报离线、问它要模型目录。
+  // 一台有这个项目文件夹的机器都没有时才回到这一页的项目所在的那台。
+  const executionDevice = runMachine.machine !== undefined ? runMachine.machine : machineRegistry.machineOf(projectId) ?? null;
+  // 新会话开在哪:选中的那个文件夹所属的本地项目;还没选到 = 这个项目在那台机器上的本地项目。
+  const targetProjectId = scopedFolders.chosen?.projectId
+    ?? memberIds.find((id) => (machineRegistry.machineOf(id) ?? null) === executionDevice)
+    ?? projectId;
   // 这一页画的项目和新会话要建进去的项目(选了别的机器上的文件夹时是那台上的本地项目)都要挂上:
   // 发送要它的会话列表,「在…中打开」要它的路径。
   useEnsureMounted([projectId, targetProjectId]);
   useEffect(() => remoteHostsStore.start(), []);
-  // 在哪台上开工:选中的那个文件夹自己记着(folder.deviceId);没选 = 这一页的项目所在的那台。
-  const executionDevice = scopedFolders.chosen ? scopedFolders.chosen.deviceId : machineRegistry.machineOf(targetProjectId) ?? null;
   const machineContext = useMachineCreateContext(executionDevice ? { deviceId: executionDevice, projectId: targetProjectId } : null);
   const machineLabel = (machine: string | null) => (machine ? describeMachine(machine).label : thisComputer.label);
   const showConfirm = useShowModal('confirmActionModal');
@@ -298,7 +302,7 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
     />
   );
   return {
-    rowId, displayName, folders, runMachine, runMachinePicker, scopedFolders, targetProjectId, machineContext, projectMachines,
+    rowId, displayName, folders, runMachine, runMachinePicker, scopedFolders, targetProjectId, executionDevice, machineContext, projectMachines,
     machineOf, pickAndAttach, card,
   };
 }
