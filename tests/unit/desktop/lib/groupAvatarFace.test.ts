@@ -37,12 +37,12 @@ describe('default group face', () => {
     expect(groupAvatarSvg({ color: '#3370FF', text: '<b>&', fill: '#fff', px: 64 })).toContain('&#60;b&#62;&#38;')
   })
 
-  it('keeps the outline a pixel and a half wide and drops the second line where a face is small', () => {
+  it('keeps the outline a pixel and a half wide and drops the second line, then the text, where a face is small', () => {
     const strokeOf = (px: number) => Number(/stroke-width="([\d.]+)"/.exec(groupAvatarSvg({ color: '#3370FF', fill: '#fff', px }))![1])
     expect(strokeOf(208)).toBe(6.5)
     expect(strokeOf(32) * 32 / 208).toBeCloseTo(1.5)
     const texts = (px: number) => groupAvatarSvg({ color: '#3370FF', text: '产品讨论', fill: '#fff', px }).match(/<text/g)?.length
-    expect([texts(32), texts(40)]).toEqual([1, 2])
+    expect([texts(20), texts(24), texts(32), texts(40)]).toEqual([undefined, 1, 1, 2])
     expect(/font-size="(\d+)"/.exec(groupAvatarSvg({ color: '#3370FF', text: '产品讨论', fill: '#fff', px: 32 }))?.[1], 'sized for the one line shown').toBe('92')
   })
 })

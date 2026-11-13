@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import { useContext, useState, useEffect, useMemo, useRef } from 'react'
 import { pauseAnimationsOffscreen } from '@gugu/session-shared/animation-visibility'
 import { useTranslation } from 'react-i18next'
 import { colorOfDisplayStatus, labelOfDisplayStatus } from '@gugu/core/shared/ui/agentConversationStatusModels'
@@ -6,7 +6,7 @@ import type { AgentStatusLabel } from '@gugu/core/shared/agentStatusPresentation
 import { normalizeAvatarUrl, reportInvalidAvatarUrl } from '@gugu/core/shared/ui/avatarUrl'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
 import { GROUP_AVATAR_CORNER, groupAvatarColor, groupAvatarDefaultText, groupAvatarSvg } from '@gugu/core/shared/ui/groupAvatar'
-import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import { ProjectFaceContext } from '@/lib/projectFace'
 import { Folder } from '@/lib/icons'
 import { useProjectGroupChats } from '@/lib/projectGroupChatsBridge'
 import { dicebearAvatarDataUri } from '../lib/dicebearAvatar'
@@ -43,7 +43,7 @@ export interface AvatarProps {
   // A group or a project: `seed` is its id (the project group's chat id; a project with no group yet, its own). With no
   // picture of its own it shows the default face: that id's colour around the first characters of `name`.
   variant?: 'default' | 'group'
-  // A project that has no project group yet says so itself; a project group is recognised by its chat id.
+  // A project that has no project group yet says so itself; a project group is recognised without it (ProjectMark).
   project?: boolean
   imageMatteColor?: string
 }
@@ -114,14 +114,14 @@ const PROJECT_MARK_FROM_PX = 24
 
 /**
  * 「这是项目」: a small grey mark on the lower left corner of a project's face. The upper right corner belongs to unread
- * counts and the lower right to the running count, so this is the corner left. A project group is recognised from the
- * account's projects (desktop and phone) or from the projects this computer has bound (known before the account list
- * catches up with a project just made here).
+ * counts and the lower right to the running count, so this is the corner left. Who says it is a project, first that
+ * speaks: the caller (a project with no group yet), the surface around it (ProjectFaceContext), else the project groups
+ * this computer knows.
  */
 function ProjectMark({ chatId, project }: { chatId: string; project?: boolean }) {
-  const projects = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
+  const said = useContext(ProjectFaceContext)
   const bound = useProjectGroupChats()
-  if (!(project ?? (bound.has(chatId) || projects.some((one) => one.chatId === chatId)))) return null
+  if (!(project ?? said ?? bound.has(chatId))) return null
   return (
     <span data-project-mark aria-hidden className="pointer-events-none absolute -bottom-[5px] -left-[5px] grid h-[15px] w-[15px] place-items-center rounded-full border border-[var(--border-subtle)] bg-[var(--card)] text-[var(--text-tertiary)]">
       <Folder size={9} />

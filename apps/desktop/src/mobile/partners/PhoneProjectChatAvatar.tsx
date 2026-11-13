@@ -12,6 +12,7 @@ import { Chip } from '@/components/ui/Chip'
 import { TaskStatusMark } from '@/components/chat/ComposerCardView'
 import { partnerProjects, type PartnerProject } from './partnersModel'
 import { PhoneMessageAvatar } from '../chat/PhoneMessageAvatar'
+import { ProjectFaceContext } from '@/lib/projectFace'
 
 /**
  * 消息中的项目群和别的群一样用群自己的头像(#2600 owner 11-13:没要过文件夹封面,群头像换了就该看得见);
@@ -75,6 +76,6 @@ function ProjectChatAvatar({ chat, children }: { chat: ChatItem; children: React
     }))
   }))
   return <PhoneMessageAvatar badge={needsYou > 0 ? <span className="gg-phone-project-attention" data-testid="phone-project-waiting" aria-hidden /> : null}>
-    {children}
+    <ProjectFaceContext.Provider value>{children}</ProjectFaceContext.Provider>
   </PhoneMessageAvatar>
 }

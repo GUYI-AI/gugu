@@ -53,8 +53,9 @@ const STROKE = 6.5
 const CORNER = 54
 /** The corner of the face (and of a picture in its place), as a share of its side. */
 export const GROUP_AVATAR_CORNER = CORNER / SIZE
-// Below this size a second line is unreadable, so only the first is drawn.
+// Below these sizes a second line, then any text at all, is unreadable: one line is drawn, then the group mark.
 const TWO_LINES_FROM_PX = 36
+const TEXT_FROM_PX = 24
 // Type size steps down with the number of characters shown (on the 208 square).
 const fontSizeFor = (count: number) => (count <= 1 ? 116 : count === 2 ? 92 : count <= 4 ? 72 : 60)
 const FONT = "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', 'Noto Sans CJK SC', sans-serif"
@@ -65,12 +66,12 @@ const escapeXml = (value: string) => value.replace(/[&<>"']/g, (char) => `&#${ch
 
 /**
  * The face as one SVG. `fill` is the surface inside the outline (a CSS colour, so a live face can follow the theme);
- * `px` is the size it is shown at, which keeps the outline at least a pixel and a half wide and drops the second line
- * where it would not be readable; `fixed` gives the SVG that size itself, for drawing it as an image; `label` names it
+ * `px` is the size it is shown at, which keeps the outline at least a pixel and a half wide and drops the second line,
+ * then the text, where they would not be readable; `fixed` gives the SVG that size itself, for drawing it as an image; `label` names it
  * for a screen reader.
  */
 export function groupAvatarSvg({ color, text = '', fill, px, fixed = false, label }: { color: string; text?: string; fill: string; px: number; fixed?: boolean; label?: string }): string {
-  const lines = groupAvatarTextLines(text).slice(0, px < TWO_LINES_FROM_PX ? 1 : MAX_LINES)
+  const lines = px < TEXT_FROM_PX ? [] : groupAvatarTextLines(text).slice(0, px < TWO_LINES_FROM_PX ? 1 : MAX_LINES)
   const count = lines.reduce((sum, line) => sum + Array.from(segmenter.segment(line)).length, 0)
   const fontSize = fontSizeFor(count)
   const pitch = fontSize * 1.13
