@@ -179,14 +179,23 @@ export async function openImRepository(
   } = {},
 ): Promise<AccountImRepository> {
   assertId(accountId, 'accountId')
+  const startedAt = performance.now()
   const adapter = options.adapter ?? await openLocalSyncDb()
   try {
+    const openedAt = performance.now()
     await initializeMessages(accountId, adapter)
     if (!options.initialize) {
       if (options.storage !== undefined) await migrateLegacyChatList(adapter, accountId, options.storage)
       else if (typeof window !== 'undefined') await migrateLegacyChatList(adapter, accountId)
     }
-    const repository = createAccountRepository(accountId, adapter, await adapter.loadAccount(accountId), options.adapter === undefined)
+    const preparedAt = performance.now()
+    const rows = await adapter.loadAccount(accountId)
+    // What a start spends on the local store before the first frame can draw: stage times and row counts, nothing else.
+    repositoryLog.info({
+      openMs: Math.round(openedAt - startedAt), prepareMs: Math.round(preparedAt - openedAt), loadMs: Math.round(performance.now() - preparedAt),
+      chats: rows.chat.length, identities: rows.identity.length, memberships: rows.membership.length,
+    }, 'local account rows read')
+    const repository = createAccountRepository(accountId, adapter, rows, options.adapter === undefined)
     options.loaded?.(repository)
     await options.initialize?.(repository)
     return repository
