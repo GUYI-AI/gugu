@@ -25,6 +25,7 @@ import {
 import { publishPanelToggle } from '@/lib/panelToggles';
 import { readShellSlots } from '@/lib/shellSlots';
 import { closeInfoTab, infoTabOf, openInfoTab } from '@renderer/features/chats/chat-tabs/chat-layouts';
+import { chatBlockOnScreen } from '@renderer/features/chats/group-participant-actions';
 import { openChatOnScreen } from '@renderer/features/chats/open-chat';
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
@@ -219,7 +220,8 @@ export const InnerSidebar = observer(function InnerSidebar() {
     anchor,
     view,
     (previous, sessionId) => columnAgents(previous, families, summaries, agentRows).some((entry) => entry.id === sessionId),
-    (sessionId) => standaloneAgentAnchor(sessionId, families, agentRows)
+    (sessionId) => standaloneAgentAnchor(sessionId, families, agentRows),
+    (previous) => chatBlockOnScreen(previous.chatId) !== undefined
   );
   // 上一次挂在哪是这一列自己记的(从这一列点开一个智能体,它还留着):换了才记,同一个对话不重设。
   if (next?.chatId !== anchor?.chatId || next?.kind !== anchor?.kind) setAnchor(next);

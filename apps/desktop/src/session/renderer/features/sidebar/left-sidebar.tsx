@@ -95,8 +95,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       : currentView === 'screen' ? screenLayout.recentSession?.sessionId : undefined) ?? (currentView === 'chat'
       ? ((appState.navigation.viewParamsStore.chat as { chatId?: string } | undefined)?.chatId ?? null)
       : null);
+  // 正看着的是一条对话自己(它在列表里有自己那一行,比如群旁边的一条私聊):亮它那一行。
   const innerChatId = innerSidebarChat.get()?.chatId ?? null;
-  const focusedChatId = innerChatId ?? viewedChatId;
+  const focusedChatId = currentView === 'chat' ? viewedChatId : innerChatId ?? viewedChatId;
   // 拼在一屏的几组:壳画的「对话」也把同一组的几行并在一处(同「项目」这边)。
   const joinedGroups = sidebarStore.joinedGroups;
   // oneList: the desktop one list is mounted. The phone never mounts this sidebar, so the shell's shared components
