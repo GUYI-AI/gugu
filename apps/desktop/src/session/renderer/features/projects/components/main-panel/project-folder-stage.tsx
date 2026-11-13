@@ -54,12 +54,13 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
   // 「+」能挂到的机器:这台电脑 + 名下每台机器(此刻连不上的列着、灰掉)。
   const attachMachines: AttachMachine[] = [thisComputer, ...remoteHostsStore.pickableMachineIds().map(describeMachine)];
   // 有这个项目文件夹的机器 = 那台上的本地项目在这个项目里、而且挂着至少一个文件夹。从项目中摘除之后,那台的本地项目还在项目里
-  // 但一个文件夹都没有:它归到分隔线下(点了重新挂),❌ 留在上面、选中了却说「文件夹暂不可用」。文件夹还没读到时照成员算。
+  // 但一个文件夹都没有:它归到分隔线下(点了重新挂),❌ 留在上面、选中了却说「文件夹暂不可用」。还没答的那台照成员算 ——
+  // ❌ 先答的那台(离线的机器拿账号上记着的先答)一家独占,默认机器先落到它上面、等慢的那台答了再跳回来。
   const hasFolderOn = (deviceId: string | null) =>
     folders.folders === null || folders.folders.some((folder) => scopeKey(folder.deviceId) === scopeKey(deviceId));
   const projectMachines = [...new Map(memberIds.flatMap((id) => {
     const deviceId = machineRegistry.machineOf(id) ?? null;
-    return hasFolderOn(deviceId) ? [[deviceId, deviceId ? describeMachine(deviceId) : thisComputer] as const] : [];
+    return folders.unanswered.includes(id) || hasFolderOn(deviceId) ? [[deviceId, deviceId ? describeMachine(deviceId) : thisComputer] as const] : [];
   })).values()];
   // 在哪台跑:有这个项目文件夹的机器里选一台(默认规则见 defaultRunMachine);没有文件夹的机器在选择器分隔线下,点了先挂文件夹。
   const runMachine = useProjectRunMachine(

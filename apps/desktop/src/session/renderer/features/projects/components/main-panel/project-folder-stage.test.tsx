@@ -76,4 +76,12 @@ describe('new task in a project: the machine it runs on', () => {
     expect(createContext).toHaveBeenLastCalledWith({ deviceId: 'dev-on', projectId: 'p-on' });
     expect(createContext.mock.calls.some(([target]) => (target as { deviceId?: string } | null)?.deviceId === 'dev-off')).toBe(false);
   });
+
+  it('the offline machine answering first (with its recorded folders) does not make it the default before the online one answers', async () => {
+    const recorded = { deviceId: 'dev-off', projectId: 'p-off', workspaceId: 'w-off', kind: 'root', path: '/work', offline: true };
+    folders.state = { folders: [recorded], unanswered: ['p-on'], chosen: null };
+    await act(async () => root.render(<Stage projectId="p-off" />));
+    expect(createContext).toHaveBeenLastCalledWith({ deviceId: 'dev-on', projectId: 'p-on' });
+    expect(createContext.mock.calls.some(([target]) => (target as { deviceId?: string } | null)?.deviceId === 'dev-off')).toBe(false);
+  });
 });
