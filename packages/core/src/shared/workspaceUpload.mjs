@@ -51,7 +51,7 @@ function textContentTypeOf(fileName, mimeType) {
  */
 export function workspaceStoredText(fileName, mimeType, bytes) {
   const contentType = textContentTypeOf(fileName, mimeType)
-  if (!contentType) return null
+  if (!contentType || bytes.includes(0)) return null
   try {
     return { contentType, text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), exact: true }
   } catch {

@@ -16,3 +16,10 @@ it('round-trips multiline voice attachment transcriptions', () => {
   expect(parseVoiceAttachmentContent('[附件] voice.webm (audio/webm)\n' + body)?.transcript).toBe('First\nSecond')
 })
 
+
+it('keeps NUL-containing UTF-8 bytes out of editable text documents', () => {
+  const bytes = new TextEncoder().encode('header\0payload')
+  expect(workspaceStoredText('note.txt', null, bytes)).toBeNull()
+  expect(workspaceUploadKind('note.txt', null, bytes).kind).toBe('file')
+})
+
