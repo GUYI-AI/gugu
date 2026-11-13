@@ -1,17 +1,25 @@
-// A group's default face (a project's too: a project is its group): a rounded square outlined in one of eight colours
-// around the first characters of its name, or around a group mark when it has no name. Every surface draws it from this
-// one description; a picture the group uploaded replaces it whole.
+// A group's default face (a project's too: a project is its group): a rounded square outlined in one of eight quiet
+// colours around the first characters of its name, or around a group mark when it has no name. Every surface draws it
+// from this one description; a picture the group uploaded replaces it whole.
 
-export const GROUP_AVATAR_COLORS = ['#3370FF', '#7F3BF5', '#04B49C', '#2EA121', '#8FAC02', '#DC9B04', '#DE7802', '#F01D94'] as const
+/**
+ * The eight colours: ink with a little hue, so a list of groups stays quiet beside people and agents. A live face takes
+ * its colour from the theme (`groupAvatarThemeColor`: the dark theme has a lighter set); these are the light theme's
+ * values, which a face saved as a picture is drawn with.
+ */
+export const GROUP_AVATAR_COLORS = ['#54657a', '#655f78', '#486b6a', '#536a57', '#62664c', '#6f6149', '#775c50', '#765a64'] as const
+
+/** Colour `index` as the current theme draws it (tokens.css `--group-face-1` … `--group-face-8`). */
+export const groupAvatarThemeColor = (index: number) => `var(--group-face-${index + 1})`
 
 /** The inside of a face saved as a picture: a picture cannot follow the theme, so it is white on every surface. */
 export const GROUP_AVATAR_PICTURE_FILL = '#ffffff'
 
-/** The colour a group gets before anyone picks one: fixed by its id, so every member and surface sees the same. */
-export function groupAvatarColor(chatId: string): string {
+/** Which of the colours a group gets before anyone picks one: fixed by its id, so every member and surface sees the same. */
+export function groupAvatarColorIndex(chatId: string): number {
   let hash = 0x811c9dc5
   for (let i = 0; i < chatId.length; i++) hash = Math.imul(hash ^ chatId.charCodeAt(i), 0x01000193)
-  return GROUP_AVATAR_COLORS[(hash >>> 0) % GROUP_AVATAR_COLORS.length]
+  return (hash >>> 0) % GROUP_AVATAR_COLORS.length
 }
 
 // A line holds two full-width characters or four half-width ones; a face holds two lines.

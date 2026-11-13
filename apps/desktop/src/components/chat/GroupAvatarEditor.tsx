@@ -1,13 +1,13 @@
 import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Camera, Check } from '@/lib/icons'
-import { GROUP_AVATAR_COLORS, GROUP_AVATAR_PICTURE_FILL, groupAvatarColor, groupAvatarDefaultText, groupAvatarSvg } from '@gugu/core/shared/ui/groupAvatar'
+import { GROUP_AVATAR_COLORS, GROUP_AVATAR_PICTURE_FILL, groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg, groupAvatarThemeColor } from '@gugu/core/shared/ui/groupAvatar'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 
 const PNG_SIZE = 416
 
-/** The composed face as a picture: a group's avatar is always one uploaded image, whoever drew it. */
+/** The composed face as a picture (in the light theme's colour, on white): a group's avatar is always one uploaded image, whoever drew it. */
 async function groupAvatarPng(face: { color: string; text: string }): Promise<File> {
   const url = URL.createObjectURL(new Blob([groupAvatarSvg({ ...face, fill: GROUP_AVATAR_PICTURE_FILL, px: PNG_SIZE, fixed: true })], { type: 'image/svg+xml' }))
   try {
@@ -38,10 +38,10 @@ export function GroupAvatarEditor({ chatId, groupName, busy, onFile, onClose }: 
 }) {
   const { t } = useTranslation('messaging')
   const [text, setText] = useState('')
-  const [color, setColor] = useState(() => groupAvatarColor(chatId))
+  const [color, setColor] = useState(() => groupAvatarColorIndex(chatId))
   const fileInput = useRef<HTMLInputElement>(null)
   const shown = text.trim() ? text : groupAvatarDefaultText(groupName)
-  const preview = useMemo(() => ({ __html: groupAvatarSvg({ color, text: shown, fill: 'var(--card)', px: 96 }) }), [color, shown])
+  const preview = useMemo(() => ({ __html: groupAvatarSvg({ color: groupAvatarThemeColor(color), text: shown, fill: 'var(--card)', px: 96 }) }), [color, shown])
   const submit = (file: Promise<File> | File) => { void Promise.resolve(file).then(onFile).then(onClose) }
   return (
     <Sheet onClose={() => { if (!busy) onClose() }} desktopWidth="min(520px, 100%)" mobileFitContent testId="group-avatar-editor" ariaLabel={t('group.settings.avatarEditor.title')}>
@@ -66,9 +66,9 @@ export function GroupAvatarEditor({ chatId, groupName, busy, onFile, onClose }: 
               className="h-9 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-transparent !px-3 text-[length:var(--font-body)] text-[var(--text-primary)] outline-none focus:border-[var(--primary)]" />
             <div className="!pt-2 text-[length:var(--font-body)] font-semibold text-[var(--text-primary)]">{t('group.settings.avatarEditor.color')}</div>
             <div role="radiogroup" aria-label={t('group.settings.avatarEditor.color')} className="flex flex-wrap gap-3">
-              {GROUP_AVATAR_COLORS.map((one) => (
-                <Button key={one} variant="ghost" size="icon" role="radio" aria-checked={one === color} aria-label={one} data-color={one} onClick={() => setColor(one)}
-                  className="h-7 w-7 rounded-full text-[var(--color-white)]" style={{ background: one }}>
+              {GROUP_AVATAR_COLORS.map((picture, one) => (
+                <Button key={picture} variant="ghost" size="icon" role="radio" aria-checked={one === color} aria-label={picture} data-color={one} onClick={() => setColor(one)}
+                  className="h-7 w-7 rounded-full text-[var(--card)]" style={{ background: groupAvatarThemeColor(one) }}>
                   {one === color ? <Check size={14} /> : null}
                 </Button>
               ))}
@@ -77,7 +77,7 @@ export function GroupAvatarEditor({ chatId, groupName, busy, onFile, onClose }: 
         </div>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" disabled={busy} onClick={onClose}>{t('common.cancel')}</Button>
-          <Button variant="primary" data-testid="group-avatar-save" disabled={busy} onClick={() => submit(groupAvatarPng({ color, text: shown }))}>{t('common.save')}</Button>
+          <Button variant="primary" data-testid="group-avatar-save" disabled={busy} onClick={() => submit(groupAvatarPng({ color: GROUP_AVATAR_COLORS[color]!, text: shown }))}>{t('common.save')}</Button>
         </div>
       </div>
     </Sheet>

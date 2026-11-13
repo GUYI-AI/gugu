@@ -665,6 +665,15 @@
   --bg:       #181818; /* 内容表面 */
   --page:     #121212; /* 窗口底层:rail、会话列表 */
   --card:     #212121; /* 局部表面:分组卡、浮层(gray-fixed-800) */
+  /* 群和项目默认头像的 8 个描边色:墨色里带一点色相,暗色这一组提亮,在深底上读得清(core 的 groupAvatar.ts 按 id 取第几个)。 */
+  --group-face-1: #a3b3c8;
+  --group-face-2: #b2adc6;
+  --group-face-3: #98b8b8;
+  --group-face-4: #a2b8a6;
+  --group-face-5: #b0b49b;
+  --group-face-6: #bdaf99;
+  --group-face-7: #c5ab9f;
+  --group-face-8: #c4a8b2;
   --popover:  #212121;
   --sidebar:  var(--page);
   --fg:       #dfdfdf; /* gray-fixed-150 */
@@ -887,6 +896,15 @@
   --bg:       #ffffff; /* 内容表面 */
   --page:     #f9f9f9; /* 窗口底层:rail、会话列表(gray-fixed-50) */
   --card:     #ffffff;
+  /* 群和项目默认头像的 8 个描边色:墨色里带一点色相,亮色这一组(core 的 groupAvatar.ts 按 id 取第几个)。 */
+  --group-face-1: #54657a;
+  --group-face-2: #655f78;
+  --group-face-3: #486b6a;
+  --group-face-4: #536a57;
+  --group-face-5: #62664c;
+  --group-face-6: #6f6149;
+  --group-face-7: #775c50;
+  --group-face-8: #765a64;
   --popover:  #ffffff;
   --menu-bg: var(--popover);
   --sidebar:  var(--page);

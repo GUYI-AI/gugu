@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { GROUP_AVATAR_COLORS, groupAvatarColor, groupAvatarDefaultText, groupAvatarSvg, groupAvatarTextLines } from '@gugu/core/shared/ui/groupAvatar'
+import { GROUP_AVATAR_COLORS, groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg, groupAvatarTextLines, groupAvatarThemeColor } from '@gugu/core/shared/ui/groupAvatar'
 
 describe('default group face', () => {
   it('gives a group one of the eight colours, the same one every time', () => {
-    const color = groupAvatarColor('3f6c1a52-chat')
-    expect(GROUP_AVATAR_COLORS).toContain(color)
-    expect(groupAvatarColor('3f6c1a52-chat')).toBe(color)
-    expect(new Set(Array.from({ length: 200 }, (_, index) => groupAvatarColor(`chat-${index}`))).size).toBe(GROUP_AVATAR_COLORS.length)
+    const index = groupAvatarColorIndex('3f6c1a52-chat')
+    expect(index).toBeGreaterThanOrEqual(0)
+    expect(index).toBeLessThan(GROUP_AVATAR_COLORS.length)
+    expect(groupAvatarColorIndex('3f6c1a52-chat')).toBe(index)
+    expect(new Set(Array.from({ length: 200 }, (_, n) => groupAvatarColorIndex(`chat-${n}`))).size).toBe(GROUP_AVATAR_COLORS.length)
+    expect(groupAvatarThemeColor(index)).toBe(`var(--group-face-${index + 1})`)
   })
 
   it('fits text into two lines of two full-width or four half-width characters', () => {
