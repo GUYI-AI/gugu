@@ -1,9 +1,21 @@
-import type { ChatItem } from '@gugu/core/shared/types/chat'
+import type { AgentDisplayStatus, ChatItem } from '@gugu/core/shared/types/chat'
+import type { DisplayIdentity } from './displayIdentity'
 import type { IdentityDirectorySnapshot } from './identityDirectoryBridge'
 import { replaceEqualDeep } from '@tanstack/react-query'
 import { memoizeByReference } from './memoizeByReference'
 
 type MembershipParts = { group: string | null; peer: string | null; agents: string[] }
+
+/** Archival hides an owned Agent's ordinary list row, without changing its addressable history. */
+export function isArchivedOwnedAgentChat(
+  chat: Pick<ChatItem, 'kind'>,
+  ownerId: string | undefined,
+  peer: DisplayIdentity | undefined,
+  status?: AgentDisplayStatus,
+): boolean {
+  return (chat.kind === 'dm' || chat.kind === 'ai') && !!ownerId && peer?.type === 'agent'
+    && peer.owner_user_id === ownerId && (peer.session_archived_at != null || status === 'archived')
+}
 
 /** Activity can reorder rows without changing any membership. Only rebuild aggregate strings/ids when parts change. */
 export function createChatMembershipProjection() {
