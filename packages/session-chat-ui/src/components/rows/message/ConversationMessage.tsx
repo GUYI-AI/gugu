@@ -84,13 +84,21 @@ function headerLayout(item: ChatMessage, ctx: MeasureCtx) {
   return conversationHeaderLayout(item, ctx, conversationSenderName(item, ctx));
 }
 
+/**
+ * How far below the top of a conversation message its bubble starts: the header line drawn above it (a delivered
+ * message's sender name). The row's height and the pinned summary's rest position both add it (#2629).
+ */
+export function conversationBubbleTop(item: ChatMessage, ctx: MeasureCtx): number {
+  return item.conversationPart === 'body' ? 0 : headerLayout(item, ctx).height;
+}
+
 function singleHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): number {
   if (item.conversationNarration) return conversationNarrationHeight(item, ctx);
   if (item.conversationPart === 'head') {
     const head = headerLayout(item, ctx);
     return head.height + backgroundHeight(item, ctx) + (head.referenceInFooter ? measureUserMessage(item, conversationContext(ctx, item), conversationVars(item, vars)) : 0);
   }
-  const header = item.conversationPart === 'body' ? 0 : headerLayout(item, ctx).height;
+  const header = conversationBubbleTop(item, ctx);
   const password = passwordRequest(item);
   if (password) return header + passwordCardHeight(password);
   const bodyVars = conversationVars(item, vars);

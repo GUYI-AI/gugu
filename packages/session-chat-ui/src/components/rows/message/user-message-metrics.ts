@@ -19,8 +19,9 @@ export function measureUserMessage(item: ChatMessage, ctx: MeasureCtx, baseVars:
 }
 
 /**
- * The bubble as drawn, below the message's top: where it ends (its attachments sit above it) and how wide it is.
- * The row's height and the pinned summary's rest position both read it, so they cannot disagree.
+ * The bubble as drawn, below the top of the message card: where it ends (its attachments sit above it) and how wide it is.
+ * The row's height and the pinned summary's rest position both read it, so they cannot disagree. What a row draws above
+ * the card (a delivered message's sender line) is added by each of them from one helper of that row (#2629).
  */
 export function userBubbleBox(item: ChatMessage, ctx: MeasureCtx, baseVars: MessageVars): { bottom: number; width: number; drawn: boolean } {
   const vars = effectiveMessageVars(baseVars, ctx.theme.layout);

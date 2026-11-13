@@ -92,6 +92,22 @@ it('uses the same bounded Markdown preview in the standalone shared transcript',
   } finally { view.dispose(); }
 });
 
+it('draws the reader\'s own delivered message with a file and words once each, at its measured height (#2629)', async () => {
+  // The stored shape of a task started from a chat message: the words in a delivery envelope, the pasted text as a file.
+  const view = await mount({ kind: 'message', id: 'own-delivery', role: 'user',
+    text: '<gugu_delivery route="chat" msg="msg:own" from="Owner" from_id="user:owner" from_type="human" chat="1" chat_kind="group"><![CDATA[Are the results out?]]></gugu_delivery>',
+    files: [{ itemId: 'pasted', version: 1, name: 'pasted-text.txt', mimeType: 'text/plain', sizeBytes: 18407 }] });
+  try {
+    const row = view.host.querySelector<HTMLElement>('[data-agent-conversation-message]')!;
+    expect(row.offsetHeight).toBe(messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!));
+    expect(row.querySelectorAll('[data-attachment-chip]')).toHaveLength(1);
+    expect(row.querySelectorAll('[data-user-card]')).toHaveLength(1);
+    expect(row.textContent!.split('Are the results out?')).toHaveLength(2);
+    const label = row.querySelector('[data-attachment-chip] > span:last-child')!.getBoundingClientRect();
+    expect(label.bottom).toBeLessThanOrEqual(row.querySelector('[data-user-card]')!.getBoundingClientRect().top);
+  } finally { view.dispose(); }
+});
+
 describe('agent-centered conversation bubbles', () => {
   it('keeps an authorized system notice visible in a closed zero-step process header', () => {
     const host = document.createElement('div');

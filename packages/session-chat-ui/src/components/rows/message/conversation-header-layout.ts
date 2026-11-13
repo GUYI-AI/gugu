@@ -4,6 +4,22 @@ import { conversationSpeaker, messageReplyReference } from '@session-chat/state/
 import { readableLabel } from '../readable-label';
 import { processButtonLayout, processRowHeight, backgroundPillLayout } from './process-row-layout';
 
+// @@@sender-label-once — a sender line is laid out for its row and again for its pinned summary each time the pin geometry
+// is rebuilt (every anchor at once): with 500 delivered anchors that was 14 ms a rebuild (#2629, Chromium). Unwrapped, the
+// label depends on its text, the theme and the font epoch alone, so the most recently asked keep theirs.
+const SENDER_LABELS_KEPT = 4096;
+const senderLabels = new WeakMap<MeasureCtx['theme'], Map<string, ReturnType<typeof readableLabel>>>();
+function senderLabel(text: string, ctx: MeasureCtx): ReturnType<typeof readableLabel> {
+  let kept = senderLabels.get(ctx.theme);
+  if (!kept) senderLabels.set(ctx.theme, kept = new Map());
+  const key = `${ctx.measureEpoch ?? 0}\n${text}`;
+  const label = kept.get(key) ?? readableLabel(text, ctx, Number.MAX_SAFE_INTEGER, 12, 18, 650);
+  kept.delete(key);
+  if (kept.size >= SENDER_LABELS_KEPT) kept.delete(kept.keys().next().value!);
+  kept.set(key, label);
+  return label;
+}
+
 const speaker = (key: string | undefined, ctx: MeasureCtx) => key === '$owner' && ctx.selfIdentity?.userId ? `user:${ctx.selfIdentity.userId}` : key;
 export function conversationShowsName(item: ChatMessage, ctx: MeasureCtx): boolean {
   // What the reader typed here is theirs without saying so; a delivered message keeps its sender (owner 2026-11-07).
@@ -25,11 +41,11 @@ export function conversationHeaderLayout(item: ChatMessage, ctx: MeasureCtx, sen
   const naturalBackground = process && backgroundPillLayout(item.id, naturalCtx);
   const naturalProcess = naturalButton ? naturalButton.width + (naturalBackground ? naturalBackground.width + 19 : 0) : 0;
   const slots = Number(showName) + Number(quote) + Number(Boolean(process)) + Number(Boolean(separator));
-  const namePrefix = showName ? readableLabel(`${Array.from(senderName)[0] ?? ''}…`, ctx, Number.MAX_SAFE_INTEGER, 12, 18, 650).width : 0;
+  const namePrefix = showName ? senderLabel(`${Array.from(senderName)[0] ?? ''}…`, ctx).width : 0;
   const gap = slots > 1 ? Math.min(8, Math.max(0, (ctx.width - naturalProcess - metadataWidth - namePrefix) / (slots - 1))) : 8;
   const namedGap = Math.max(0, slots - 1) * gap;
   const nameBudget = Math.max(0, ctx.width - naturalProcess - metadataWidth - namedGap);
-  const name = showName && nameBudget > 0 ? readableLabel(senderName, ctx, Number.MAX_SAFE_INTEGER, 12, 18, 650) : null;
+  const name = showName && nameBudget > 0 ? senderLabel(senderName, ctx) : null;
   const nameWidth = name ? Math.min(nameBudget, name.width) : 0;
   const referenceInFooter = quote && !name && !process;
   const gapWidth = Math.max(0, Number(Boolean(name)) + Number(quote) + Number(Boolean(process)) + Number(Boolean(separator)) - 1) * gap;

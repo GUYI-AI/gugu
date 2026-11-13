@@ -16,6 +16,7 @@ import { PIN_SUMMARY_GAP } from '@session-chat/layout-geometry';
 import { DEFAULT_CONFIG, buildChatTheme } from '@session-chat/core/config';
 import type { ChatItem, TranscriptTurn } from '@session-chat/model';
 import { createChatState } from '@session-chat/state/chat-state';
+import type { SelfIdentity } from '@session-chat/lib/self-identity';
 import { afterEach, describe, expect, it } from 'vitest';
 import { page } from 'vitest/browser';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
@@ -47,11 +48,12 @@ function longTurn(id: string, seq: number, replies: number, inserted: string[] =
 async function mount(
   committed: TranscriptTurn[] = [longTurn('a', 0, 150), longTurn('b', 1, 150)],
   active?: TranscriptTurn,
-  theme = DEFAULT_THEME
+  theme = DEFAULT_THEME,
+  self?: SelfIdentity
 ) {
   // The host is 800 px wide; hit-testing a right-aligned card needs the whole host inside the viewport.
   await page.viewport(800, 600);
-  const context = createChatContext({ locale: () => 'en-US', theme });
+  const context = createChatContext({ locale: () => 'en-US', theme, ...(self ? { selfIdentity: () => self } : {}) });
   const state = createChatState(context);
   state.transcript.history.seed(committed);
   if (active) state.transcript.activeTurn.set(active, 'generating');
@@ -285,6 +287,50 @@ describe('sticky user lanes', () => {
       t.scrollEl.scrollTop = st + i * 6;
       const a = t.pinBottom('a-user');
       if (a !== null) expect(a, `step ${i}`).toBeLessThanOrEqual(deliveredRow()!.getBoundingClientRect().top + 1);
+    }
+  });
+
+  // #2629: the reader's own message that came in as a delivery (a task started from a chat message) is drawn below its
+  // sender's name (agent conversation) or the delivery card's padding (classic). Its summary rested as if neither were
+  // there: over the attached file's name and above the bubble's top edge, a clipped second copy of its words.
+  it.each([
+    ['agent conversation', { preset: 'double', userGutter: 72, agentConversation: true }],
+    ['classic', { preset: 'double', userGutter: 72 }],
+  ] as const)('rests behind its own bubble, below the sender and the attachment of a delivered message (%s)', async (_, layout) => {
+    const file = { itemId: 'pasted', version: 1, name: 'pasted-text.txt', mimeType: 'text/plain', sizeBytes: 18407 };
+    const turn = (id: string, seq: number, text: string): TranscriptTurn => ({ id, seq, initiator: 'user', items: [
+      { kind: 'message', id: `${id}-user`, seq: 0, role: 'user', text, files: [file] },
+      { kind: 'message', id: `${id}-final`, seq: 1, role: 'assistant',
+        text: Array.from({ length: 12 }, (_, i) => `${id} reply ${i}. Lorem ipsum dolor sit amet.`).join('\n\n') },
+    ] as TranscriptTurn['items'] });
+    const t = await mount([
+      turn('a', 0, '<gugu_delivery route="chat" msg="msg:a" from="Me" from_id="user:me" from_type="human" chat="1" chat_kind="group"><![CDATA[Are the results out?]]></gugu_delivery>'),
+      // Positive control: the same words and file sent from this session's composer.
+      turn('b', 1, 'Are the results out?'),
+    ], undefined, buildChatTheme(DEFAULT_CONFIG, layout), { userId: 'me', displayName: 'Me', guguNumber: 1 });
+    for (const id of ['a-user', 'b-user']) {
+      await t.view.scrollToItem(id, { align: 'start', offset: -100 });
+      await until(`${id} on screen`, () => t.card(id), el => el != null);
+      await untilStable(`${id} settled`, () => t.cardTop(id));
+      expect(t.cardTop(id)!, `${id} rests below the pin line`).toBeGreaterThan(PIN_LINE);
+      const card = t.card(id)!.getBoundingClientRect(), pin = t.summary(id)!.getBoundingClientRect();
+      const label = t.card(id)!.closest('[data-index]')!.querySelector('[data-attachment-chip] > span:last-child')!.getBoundingClientRect();
+      expect(pin.bottom, `${id}: the summary ends where its bubble ends`).toBeCloseTo(card.bottom, 1);
+      expect(pin.top, `${id}: no part of the summary is above its bubble`).toBeGreaterThanOrEqual(card.top - 0.5);
+      expect(pin.top, `${id}: the summary leaves the attachment's name uncovered`).toBeGreaterThanOrEqual(label.bottom - 0.5);
+    }
+    // Scrolled through, the delivered message is placed by the same rule as any other: T = min(max(P, b - h), e - h - gap).
+    await t.view.scrollToItem('a-user', { align: 'start', offset: -100 });
+    await untilStable('a settled', () => t.cardTop('a-user'));
+    const edge = () => t.scrollEl.getBoundingClientRect().top;
+    const lane = t.card('a-user')!.closest<HTMLElement>('[data-index]')!, summary = t.summary('a-user')!;
+    const h = summary.getBoundingClientRect().height, from = Math.round(t.scrollEl.scrollTop);
+    for (let st = from; st <= from + Math.round(lane.getBoundingClientRect().bottom - edge()); st += 3) {
+      t.scrollEl.scrollTop = st;
+      const card = t.card('a-user')!.getBoundingClientRect(), pin = summary.getBoundingClientRect();
+      const b = card.bottom - edge(), e = lane.getBoundingClientRect().bottom - edge();
+      expect(pin.top - edge(), `scrollTop=${st}`).toBeCloseTo(Math.min(Math.max(PIN_LINE, b - h), e - h - PIN_SUMMARY_GAP), 1);
+      expect(card.bottom, `scrollTop=${st}: nothing of the bubble shows below its summary`).toBeLessThanOrEqual(pin.bottom + 0.01);
     }
   });
 
