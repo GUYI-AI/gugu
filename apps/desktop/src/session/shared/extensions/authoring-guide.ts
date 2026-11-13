@@ -1259,6 +1259,10 @@ Optional top-level \`settings\` declares up to 32 fields: \`{ "key":"mode", "tit
 \`options:[{"value":"local","title":"Local"}]\`; \`description\` and a typed \`default\` are optional.
 Programs read \`JSON.parse(process.env.GUGU_APP_SETTINGS)\`. Values survive upgrades; after a change,
 new calls start with the new values. Uninstall clears them.
+\`contributes.hostLinks\` (API 52): up to 4 of gugu's own pages where what your tools manage is shown, e.g.
+\`["library:prompts"]\` for an App whose tools edit the person's prompts. The host page draws each as one entry, titled with
+that page's own name; you write no text. Values: \`library:prompts\`, \`library:agents\`, \`library:integrations\`,
+\`library:mcp\`, \`library:themes\`.
 Switching the App off, withdrawing \`agents:tools\`, or uninstalling cancels pending calls (agent/page,
 including startup), closes program IPC authority and stops its process tree. Other Apps are unaffected.
 Single-call cancellation does not stop other sessions sharing the program. Upgrades/settings drain already-running

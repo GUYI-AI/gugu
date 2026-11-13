@@ -8,6 +8,7 @@ import { INSTRUCTIONS_MAX_CHARS, SUBTITLE_MAX_CHARS } from './app-listing';
 import { BINDING_ACTION_API_VERSION, BINDING_ACTION_CAPABILITY, BINDING_NAME, CONVERSATION_BINDING_ACTIONS, CONVERSATION_SURFACE_HEADER_API_VERSION, CONVERSATION_SURFACE_HEADERS, CONVERSATION_SURFACE_PLACEMENTS } from './unread-binding';
 import { PHONE_BINDING_API_VERSION } from './phone-binding';
 import { RESOURCE_BINDING_ACTIONS, resourceDomainProblem } from './agent-resources';
+import { HOST_LINK_MAX, HOST_LINKS, HOST_LINKS_API_VERSION } from './host-links';
 import { COMPOSER_ACTION_MAX, COMPOSER_ACTIONS_API_VERSION, COMPOSER_RUN_ACTION, composerActionSchema } from './composer-actions';
 
 /**
@@ -699,6 +700,11 @@ export const extensionManifestSchema = z
        */
       settingsTab: z.string().regex(TAB_NAME_PATTERN).optional(),
       /**
+       * API 52 (host-links.ts): gugu's own pages this App points at, drawn by the host as entries on the App's host page.
+       * A closed `<family>:<page>` set; `library:` is the first family, the prefix leaves room for others.
+       */
+      hostLinks: z.array(z.enum(HOST_LINKS)).min(1).max(HOST_LINK_MAX).optional(),
+      /**
        * API 45 (#1931): bundle-relative folder of the personal assistant's product rules — `rules.json` and one `<key>.md`
        * per text (@gugu/core/shared/assistantRulesFormat). Text and data the host reads at its own read points; nothing in
        * it runs. Honoured only for the App the host trusts as the product's rules provider: any other App's folder is never read.
@@ -776,6 +782,9 @@ export const extensionManifestSchema = z
       if (!tab) ctx.addIssue({ code: 'custom', path: ['contributes', 'settingsTab'], message: `this App has no tab named ${settingsTab}` });
       else if (!isOwnPage(manifest, tab) || tab.widget || tab.hostPage || tab.perSession) ctx.addIssue({ code: 'custom', path: ['contributes', 'settingsTab'], message: 'settingsTab must name a page of its own, not a host page, a card, a file opener or a per-task tab' });
     }
+    const hostLinks = manifest.contributes.hostLinks ?? [];
+    if (hostLinks.length > 0 && manifest.apiVersion < HOST_LINKS_API_VERSION) ctx.addIssue({ code: 'custom', path: ['contributes', 'hostLinks'], message: `hostLinks require apiVersion ${HOST_LINKS_API_VERSION}` });
+    if (new Set(hostLinks).size !== hostLinks.length) ctx.addIssue({ code: 'custom', path: ['contributes', 'hostLinks'], message: 'duplicate host link' });
     const prompts = manifest.contributes.prompts ?? [];
     if (prompts.length > 0 && manifest.apiVersion < 34) ctx.addIssue({ code: 'custom', path: ['contributes', 'prompts'], message: 'prompts require apiVersion 34' });
     if (manifest.contributes.assistantRules !== undefined && manifest.apiVersion < EXTENSION_ASSISTANT_RULES_API_VERSION) {
