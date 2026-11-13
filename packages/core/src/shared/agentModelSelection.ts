@@ -101,7 +101,7 @@ export function agentModelSelectionForProtocol(
 }
 
 export function isModelAccessProtocol(value: unknown): value is ModelAccessProtocol {
-  return typeof value === 'string' && value in MODEL_ACCESS_PROTOCOL_CREDENTIAL_ENV
+  return typeof value === 'string' && Object.hasOwn(MODEL_ACCESS_PROTOCOL_CREDENTIAL_ENV, value)
 }
 
 export function normalizeAgentModelSelection(value: unknown): AgentModelSelection {
