@@ -9,3 +9,7 @@ const row = (): MessageItem => ({ id: 'm', chat_id: 'c', sender_user_id: 'u', to
 it('rejects Windows paths outside the parent directory', () => { const windowsRelative = path.win32.relative; const relative = vi.spyOn(path, 'relative').mockImplementation(windowsRelative); try { expect(contains('C:/root', 'C:/outside/file.txt')).toBe(false); expect(contains('C:/root', 'C:/root/child.txt')).toBe(true) } finally { relative.mockRestore() } })
 
 it('clears renderer timeout timers after a promise settles', async () => { vi.useFakeTimers(); vi.stubGlobal('window', globalThis); try { expect(await withTimeout(Promise.resolve(3), 1000, 'timeout')).toBe(3); expect(vi.getTimerCount()).toBe(0); await expect(withTimeout(Promise.reject(new Error('source')), 1000, 'timeout')).rejects.toThrow('source'); expect(vi.getTimerCount()).toBe(0) } finally { vi.useRealTimers(); vi.unstubAllGlobals() } })
+
+
+
+it('keeps thread placement and edit metadata updates when merging rows', () => { const previous = { ...row(), local_send_state: null }; const incoming = { ...previous, thread_root_id: 'root', is_thread_root: true, edited_at: '2026-11-13T01:00:00Z' }; expect(mergeMessagesById([previous], [incoming], 'c')[0]).toMatchObject({ thread_root_id: 'root', is_thread_root: true, edited_at: incoming.edited_at }); expect(mergeMessagesById([previous], [{ ...previous }], 'c')[0]).toBe(previous) })
