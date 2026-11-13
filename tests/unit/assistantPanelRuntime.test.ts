@@ -7,7 +7,7 @@ import { fixedAssistantRules } from './desktop/assistantRules/fixtureApp'
 import { NEUTRAL_ASSISTANT_RULES } from './desktop/assistantRules/neutralRules'
 import { createAssistantPanelRuntime } from '../../apps/desktop/electron/sessionpage/assistant-panel-runtime'
 
-// Drive the explicit library/integration callbacks without fixture filesystem events starting an unrelated full publication.
+// Drive the explicit schedule/integration callbacks without fixture filesystem events starting an unrelated full publication.
 vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof import('node:fs')>(),
   watch: () => ({ on() { return this }, close() {} }),
 }))
@@ -56,15 +56,15 @@ afterEach(() => { vi.useRealTimers(); calls.signals.length = 0; calls.domains.le
 it('stops only the removed assistant timers and listeners and never recreates its cached binding',async()=>{
   vi.useFakeTimers();calls.stalled=false;calls.readable=true
   const cwd=await mkdtemp(join(tmpdir(),'panel-removed-'))
-  const listeners=new Set<(owner:string,kind:'capabilities'|'devices')=>void>()
+  const listeners=new Set<()=>void>()
   const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
-    local:{onLibraryChanged:(listener:(owner:string,kind:'capabilities'|'devices')=>void)=>{listeners.add(listener);return()=>listeners.delete(listener)}} as never,guguHome:cwd,kind:'computer',env:{},failed:vi.fn(),locale:()=> 'en-US'})
+    local:{onSchedulesChanged:(listener:()=>void)=>{listeners.add(listener);return()=>listeners.delete(listener)}} as never,guguHome:cwd,kind:'computer',env:{},failed:vi.fn(),locale:()=> 'en-US'})
   try{
     await runtime.bind({sessionId:'old',assistantId:'removed',ownerId:'owner',cwd})
     await runtime.bind({sessionId:'other',assistantId:'live',ownerId:'owner',cwd})
     await vi.advanceTimersByTimeAsync(1000);calls.assistants.length=0
     runtime.remove('removed');runtime.remove('removed')
-    for(const listener of listeners) listener('owner','capabilities')
+    for(const listener of listeners) listener()
     await runtime.publish('old');await vi.advanceTimersByTimeAsync(600_001)
     expect(calls.assistants.length).toBeGreaterThan(0)
     expect(new Set(calls.assistants)).toEqual(new Set(['live']))
@@ -79,7 +79,7 @@ it('stops only the removed assistant timers and listeners and never recreates it
 
 it('aborts a commit already in flight and sends no later domain or retry after removal',async()=>{
   vi.useFakeTimers();calls.readable=true;calls.stalled=false
-  const f=await libraryFixture()
+  const f=await panelFixture()
   try{
     calls.commitPublication=true;calls.holdRpc='assistant_panel_commit'
     const publication=f.runtime.publish('session')
@@ -88,14 +88,14 @@ it('aborts a commit already in flight and sends no later domain or retry after r
     expect(calls.signals[0]!.aborted).toBe(true)
     await publication
     const before=calls.rpcNames.length
-    f.changed('owner','capabilities');await vi.advanceTimersByTimeAsync(600_001)
+    f.schedulesChanged();await vi.advanceTimersByTimeAsync(600_001)
     expect(calls.rpcNames).toHaveLength(before)
     expect(calls.rpcNames.filter(name=>name==='assistant_panel_commit')).toHaveLength(1)
   }finally{await f.cleanup()}
 })
 
 it('requires fresh live identity evidence after an uncertain removal failure',async()=>{
-  vi.useFakeTimers();const f=await libraryFixture()
+  vi.useFakeTimers();const f=await panelFixture()
   try{
     const first=f.runtime.pauseRemoval('assistant'),second=f.runtime.pauseRemoval('assistant')
     first(false);await f.runtime.publish('session');expect(calls.domains).toEqual([])
@@ -196,32 +196,31 @@ it('publishes completed verification even when it finishes during the previous p
   } finally { held.resolve(); runtime.dispose(); vi.useRealTimers(); await rm(cwd,{ recursive: true,force: true }) }
 })
 
-async function libraryFixture() {
+async function panelFixture() {
   calls.stalled=false
-  const cwd=await mkdtemp(join(tmpdir(),'panel-library-publication-'))
-  let changed:((owner:string,kind:'capabilities'|'devices')=>void)|undefined
+  const cwd=await mkdtemp(join(tmpdir(),'panel-publication-'))
   let integrationChanged:(()=>void)|undefined
   let schedulesChanged:(()=>void)|undefined
-  const unsubscribe=vi.fn(),unsubscribeIntegrations=vi.fn(),unsubscribeSchedules=vi.fn()
+  const unsubscribeIntegrations=vi.fn(),unsubscribeSchedules=vi.fn()
   const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
-    local:{onLibraryChanged:(listener:typeof changed)=>{changed=listener;return unsubscribe},onIntegrationsChanged:(listener:()=>void)=>{integrationChanged=listener;return unsubscribeIntegrations},onSchedulesChanged:(listener:()=>void)=>{schedulesChanged=listener;return unsubscribeSchedules}} as never,guguHome:cwd,kind:'computer',env:{},failed:vi.fn(),locale:()=> 'zh-CN'})
+    local:{onIntegrationsChanged:(listener:()=>void)=>{integrationChanged=listener;return unsubscribeIntegrations},onSchedulesChanged:(listener:()=>void)=>{schedulesChanged=listener;return unsubscribeSchedules}} as never,guguHome:cwd,kind:'computer',env:{},failed:vi.fn(),locale:()=> 'zh-CN'})
   await runtime.bind({sessionId:'session',assistantId:'assistant',ownerId:'owner',cwd})
-  return {runtime,changed:(owner:string,kind:'capabilities'|'devices')=>changed?.(owner,kind),integrationChanged:()=>integrationChanged?.(),schedulesChanged:()=>schedulesChanged?.(),unsubscribe,unsubscribeIntegrations,unsubscribeSchedules,
+  return {runtime,integrationChanged:()=>integrationChanged?.(),schedulesChanged:()=>schedulesChanged?.(),unsubscribeIntegrations,unsubscribeSchedules,
     async cleanup(){runtime.dispose();await rm(cwd,{recursive:true,force:true})}}
 }
 
-it('shares one snapshot across the nine publication domains',async()=>{
-  const f=await libraryFixture()
+it('shares one snapshot across the seven publication domains',async()=>{
+  const f=await panelFixture()
   try {
     calls.rpcNames.length=0
     await f.runtime.publish('session')
     expect(calls.rpcNames).toEqual(['assistant_panel_snapshot'])
-    expect(calls.domains).toEqual(['memory','personality','files','skills','voice-notes','schedules','capabilities','device-notes','integrations'])
+    expect(calls.domains).toEqual(['memory','personality','files','skills','voice-notes','schedules','integrations'])
   }finally{await f.cleanup()}
 })
 
 it('publishes scheduler events in their independent domain and disposes the bridge',async()=>{
-  vi.useFakeTimers();const f=await libraryFixture()
+  vi.useFakeTimers();const f=await panelFixture()
   try {
     await f.runtime.publish('session');calls.domains.length=0
     f.schedulesChanged();f.schedulesChanged()
@@ -234,26 +233,9 @@ it('publishes scheduler events in their independent domain and disposes the brid
   }finally{await f.cleanup()}
 })
 
-it('publishes a durable library change promptly without scanning unrelated panel collections',async()=>{
-  vi.useFakeTimers()
-  const f=await libraryFixture()
-  try{
-    await f.runtime.publish('session');calls.domains.length=0
-    f.changed('other-owner','capabilities');await vi.advanceTimersByTimeAsync(300)
-    expect(calls.domains).toEqual([])
-    f.changed('owner','capabilities');f.changed('owner','capabilities')
-    await vi.advanceTimersByTimeAsync(300)
-    expect(calls.domains).toEqual(['capabilities'])
-    f.changed('owner','devices');await vi.advanceTimersByTimeAsync(300)
-    expect(calls.domains).toEqual(['capabilities','device-notes'])
-    f.runtime.dispose();f.changed('owner','capabilities');await vi.advanceTimersByTimeAsync(1000)
-    expect(calls.domains).toHaveLength(2);expect(f.unsubscribe).toHaveBeenCalledOnce()
-  }finally{await f.cleanup()}
-})
-
 it('publishes externally completed authorizations through the same independent domain lane',async()=>{
   vi.useFakeTimers();const held=Promise.withResolvers<void>();calls.blockedDomain='memory';calls.hold=held.promise
-  const f=await libraryFixture()
+  const f=await panelFixture()
   try{
     const full=f.runtime.publish('session');await vi.advanceTimersByTimeAsync(1)
     f.integrationChanged();await vi.advanceTimersByTimeAsync(300)
@@ -263,29 +245,17 @@ it('publishes externally completed authorizations through the same independent d
   }finally{held.resolve();await f.cleanup()}
 })
 
-it('does not queue library publication behind an unrelated slow collection',async()=>{
-  vi.useFakeTimers();const held=Promise.withResolvers<void>();calls.blockedDomain='memory';calls.hold=held.promise
-  const f=await libraryFixture()
-  try{
-    const full=f.runtime.publish('session');await vi.advanceTimersByTimeAsync(1)
-    expect(calls.domains).toEqual(['memory'])
-    f.changed('owner','capabilities');await vi.advanceTimersByTimeAsync(300)
-    expect(calls.domains).toEqual(['memory','capabilities'])
-    held.resolve();await full
-  }finally{held.resolve();await f.cleanup()}
-})
-
-it('publishes again when a second library write arrives during the first publication',async()=>{
+it('publishes again when a second schedule change arrives during the first publication',async()=>{
   vi.useFakeTimers();const held=Promise.withResolvers<void>()
-  const f=await libraryFixture()
+  const f=await panelFixture()
   try{
     await f.runtime.publish('session');calls.domains.length=0
-    calls.blockedDomain='capabilities';calls.hold=held.promise
-    f.changed('owner','capabilities');await vi.advanceTimersByTimeAsync(300)
-    expect(calls.domains).toEqual(['capabilities'])
-    f.changed('owner','capabilities');await vi.advanceTimersByTimeAsync(300)
-    expect(calls.domains).toEqual(['capabilities'])
+    calls.blockedDomain='schedules';calls.hold=held.promise
+    f.schedulesChanged();await vi.advanceTimersByTimeAsync(300)
+    expect(calls.domains).toEqual(['schedules'])
+    f.schedulesChanged();await vi.advanceTimersByTimeAsync(300)
+    expect(calls.domains).toEqual(['schedules'])
     held.resolve();await vi.advanceTimersByTimeAsync(300)
-    expect(calls.domains).toEqual(['capabilities','capabilities'])
+    expect(calls.domains).toEqual(['schedules','schedules'])
   }finally{held.resolve();await f.cleanup()}
 })

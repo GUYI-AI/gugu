@@ -253,7 +253,6 @@ import { setSessionMessageOutboxReady } from '@main/core/sessions/session-messag
 import { sessionProcess } from '@main/core/sessions/session-process'
 import { ptyRecordResumeSet, startPtyRecordSync } from '@main/core/sessions/pty-record-sync'
 export { sessionProcess }
-export { setUserLibraryOwner } from '@main/core/app/user-library'
 // #7341 第二步 项目跨设备:`projects.*` 的项目群四件事由宿主接上实现(对照 / 登录态 / 云端都在宿主那边);
 // 宿主那份对照的唯一写口每写一次就经这里让渲染层重读。
 export {

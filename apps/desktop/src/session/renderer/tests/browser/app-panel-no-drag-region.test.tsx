@@ -59,7 +59,6 @@ vi.mock('@renderer/features/global-search/search-session', () => ({ searchInChat
 // The panel's own host pages and their reads (app-host-layer.tsx): not this test's; their modules read the cloud on import.
 vi.mock('@renderer/features/assistant/assistant-data', () => ({ useAssistantMachine: () => ({ data: undefined }) }));
 vi.mock('@/components/assistant/AssistantProjectsLibrary', () => ({ AssistantProjectsLibrary: () => null }));
-vi.mock('@/components/assistant/AssistantLibraryVolume', () => ({ AssistantLibraryVolume: () => null }));
 vi.mock('@renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCountsSource: () => null }));
 
 const { appView } = await import('@renderer/features/apps/apps-views');

@@ -235,7 +235,7 @@ describe('FrameSessionHost over a device-shaped link', () => {
     await expect(client.api.invoke('app.assistantAppCall', 'callProgram', { name: 'assistant_work_list' }, 'owner')).resolves.toBe('assistant_work_list');
     await expect(client.api.invoke('app.assistantAppCall', 'callProgram', { name: 'assistant_work_clear' }, 'owner')).resolves.toBe('assistant_work_clear');
     await expect(client.api.invoke('app.assistantAppCall', 'callProgram', { name: 'assistant_work_clear' }, 'other')).rejects.toMatchObject({ code: 'forbidden' });
-    await expect(client.api.invoke('app.assistantAppCall', 'callProgram', { name: 'library_write' }, 'owner')).rejects.toMatchObject({ code: 'forbidden' });
+    await expect(client.api.invoke('app.assistantAppCall', 'callProgram', { name: 'arbitrary' }, 'owner')).rejects.toMatchObject({ code: 'forbidden' });
     expect(run).toHaveBeenCalledTimes(2);
   });
 

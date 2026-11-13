@@ -63,8 +63,7 @@ export function resourceGroups(lines: readonly string[], partial = false): Recor
     if (row.status !== 'read' || !Array.isArray(row.items)) continue
     const scope = key(row.device ?? (row.this_machine ? home : ''))
     const source = text(row.source)
-    const type = ({ projects: ['项目', 'project_list'], library_capabilities: ['能力', 'library_read'],
-      library_devices: ['设备资料', 'library_read'], assistant_memory: ['记忆', 'Read'],
+    const type = ({ projects: ['项目', 'project_list'], assistant_memory: ['记忆', 'Read'],
       assistant_schedules: ['定时', 'schedule_list'], integrations: ['连接应用', INTEGRATION_READ] } as const)[source]
     if (!type) continue
     const group: Group = { kind: type[0], read: type[1], items: {} }
@@ -165,8 +164,7 @@ export function createResourceChanges(owner: string, storage: { load(): Promise<
       await state()
       if (!value) return false
       if (value.notices.includes(operationId)) return true
-      const type = ({ devices: ['设备', 'session_devices'], projects: ['项目', 'project_list'], capabilities: ['能力', 'library_read'],
-        'device-notes': ['设备资料', 'library_read'], memory: ['记忆', 'Read'], schedules: ['定时', 'schedule_list'],
+      const type = ({ devices: ['设备', 'session_devices'], projects: ['项目', 'project_list'], memory: ['记忆', 'Read'], schedules: ['定时', 'schedule_list'],
         integrations: ['连接应用', INTEGRATION_READ] } as const)[text(notice.resource)]
       if (!type) return false
       const scope = key(notice.deviceId), groupId = type[0] === '设备' ? 'devices' : `${type[0]}:${scope}`

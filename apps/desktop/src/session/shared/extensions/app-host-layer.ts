@@ -11,19 +11,19 @@ import { z } from 'zod';
  *                                   or the host's own routes to set it up); closed once the assistant is there;
  *   · `assistant-connected-apps` (44) — the apps connected to it (`gugu.assistant.open(name, "connected-apps")`, or the
  *                                   host's own routes to them);
- *   · `assistant-projects`, `assistant-capabilities` (44) — the assistant panel's own pages (`gugu.assistant.open`).
+ *   · `assistant-projects` (44)    — the assistant panel's own 项目 page (`gugu.assistant.open`).
  * None of these is in Settings: everything about the assistant lives in its App.
  *
  * The App hears only that a host page is open or not — `panel.hostPage` (`gugu.bindings.surface` / `onSurface`) and
  * `hostPage` (`gugu.assistant.status` / `onChanged`) — and with `chat:work` which of its rows is open (`gugu.bindings.work` →
  * `open`); never what a page shows.
  */
-export const APP_HOST_LAYER_PAGES = ['assistant-setup', 'assistant-settings', 'assistant-connected-apps', 'assistant-projects', 'assistant-capabilities'] as const;
+export const APP_HOST_LAYER_PAGES = ['assistant-setup', 'assistant-settings', 'assistant-connected-apps', 'assistant-projects'] as const;
 export type AppHostLayerPage = (typeof APP_HOST_LAYER_PAGES)[number];
 export const APP_HOST_LAYER_KINDS = ['work', ...APP_HOST_LAYER_PAGES] as const;
 
 /** The assistant page a request names, drawn over the App's panel: which host page (`found`: the assistant is there now). */
-export type AssistantPageRequest = 'setup' | 'settings' | 'move' | 'connected-apps' | 'projects' | 'capabilities';
+export type AssistantPageRequest = 'setup' | 'settings' | 'move' | 'connected-apps' | 'projects';
 export function assistantLayerPage(request: AssistantPageRequest, found: boolean): AppHostLayerPage {
   switch (request) {
     // With no assistant yet, setting it up; once there is one, its settings page (as Settings' 咕咕 page drew either).
@@ -33,7 +33,6 @@ export function assistantLayerPage(request: AssistantPageRequest, found: boolean
     case 'settings': return 'assistant-settings';
     case 'connected-apps': return 'assistant-connected-apps';
     case 'projects': return 'assistant-projects';
-    case 'capabilities': return 'assistant-capabilities';
   }
 }
 

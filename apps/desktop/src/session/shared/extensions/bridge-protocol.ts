@@ -115,7 +115,7 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 44 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
 // `assistant-status` (`assistant:status`: `gugu.assistant.status` / `onChanged`) and `assistant-open` (`assistant:open`:
 // `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`), and
-// `assistant-rename` (`assistant:rename`: `gugu.assistant.rename`). The panel's own pages (settings, projects, capabilities)
+// `assistant-rename` (`assistant:rename`: `gugu.assistant.rename`). The panel's own pages (settings, projects)
 // open as one host layer over the App's panel (`app-host-layer.ts`). Any page: `gugu.toast(text)`, the host's toast.
 // 45 (#1931): `contributes.assistantRules`, the personal assistant's product rules as text/data files the host reads at its
 // own read points (assistantRulesFormat.ts); never run, and honoured only for the App the host trusts as their provider.

@@ -16,7 +16,6 @@ import { receiveAssistantWorkReport, workReportSchema, type WorkReport } from '.
 import { isProjectAgentAction, runProjectAgentAction, type ProjectAgentAction } from '../projects/project-agent-actions';
 import { machineLocalProjectOf, machineLocalProjectsOf, machineOutwardProjectIds } from '../projects/project-public-id';
 import { getProjectById } from '../projects/operations/getProjects';
-import { isLibraryAgentAction, runLibraryAgentAction, type LibraryAgentAction } from '../app/user-library';
 import { randomUUID } from 'node:crypto';
 import { sessionDirectMessageId } from './session-direct-identity';
 import { parseGuguLink } from '@gugu/core/shared/ui/guguLink';
@@ -217,7 +216,6 @@ export type SessionAction =
   /** #7221 schedule_*:建只给自己;看与取消可指名主人的另一条会话(agent-schedules.ts)。 */
   | AgentScheduleAction
   | ProjectAgentAction
-  | LibraryAgentAction
   | ActivityAction;
 
 // `SessionModel` 与它的取值规则搬去了 `./session-model-fact` —— 那一格的合同里有一条
@@ -2045,7 +2043,6 @@ export async function runSessionAction(
 ): Promise<unknown> {
   signal?.throwIfAborted();
   if (isProjectAgentAction(action)) return runProjectAgentAction(context, action);
-  if (isLibraryAgentAction(action)) return runLibraryAgentAction(action);
   if (isActivityAction(action)) return runActivityAction(action);
   const caller = await callerRow(context);
   signal?.throwIfAborted();
@@ -2269,7 +2266,6 @@ export async function runRemoteSessionAction(
 ): Promise<unknown> {
   signal?.throwIfAborted();
   if (isProjectAgentAction(action)) return runProjectAgentAction({}, action);
-  if (isLibraryAgentAction(action)) return runLibraryAgentAction(action);
   if (isActivityAction(action)) return runActivityAction(action);
 
 

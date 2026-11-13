@@ -23,7 +23,6 @@ vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { navigation: { nav
 // The panel's own pages and their reads (app-host-layer.tsx): not this test's; their modules read the cloud on import.
 vi.mock('@renderer/features/assistant/assistant-data', () => ({ useAssistantMachine: () => ({ data: undefined }) }));
 vi.mock('@/components/assistant/AssistantProjectsLibrary', () => ({ AssistantProjectsLibrary: () => null }));
-vi.mock('@/components/assistant/AssistantLibraryVolume', () => ({ AssistantLibraryVolume: () => null }));
 vi.mock('@renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCountsSource: () => null }));
 const { AppConversationFrame } = await import('./app-conversation-frame');
 const { applyExtensionHostAction } = await import('@renderer/features/extensions/host-action-handlers');

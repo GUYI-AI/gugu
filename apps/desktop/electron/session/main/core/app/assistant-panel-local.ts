@@ -18,7 +18,6 @@ import { platformCredentials } from '@main/core/integrations/platform-credential
 import { listAgents } from '@gugu/core'
 import { agentsForOwner } from '@gugu/core/local/state/agentOwner'
 import type { AssistantPanelChange } from '@gugu/core/cloud/assistantPanel'
-import { readUserLibraryVolume, readUserLibraryEntry, writeUserLibraryEntry, removeUserLibraryEntry, onUserLibraryChanged } from './user-library'
 
 /** This bridge lives in the embedded module, beside the actual registries and
  * scheduler. The Electron host must not construct a second copy of either. */
@@ -26,7 +25,6 @@ export const assistantPanelLocal = {
   setOwnerConnectionControl,
   integrationIndex: configuredIntegrationIndex,
   integrationCustody(providerId: string) { return platformCredentials.custody(providerId) },
-  onLibraryChanged: onUserLibraryChanged,
   onIntegrationsChanged(listener: () => void) { return providerAccountRegistry.onChanged(listener) },
   onSchedulesChanged(listener: () => void) {
     return tapMainEvents(channel => {
@@ -58,10 +56,6 @@ export const assistantPanelLocal = {
         return { ...row,nextRunAt: summary?.nextRunAt ?? null,
           lastRun: last ? { status: last.status,at: last.at,errorCode: last.error?.code ?? null } : null }
       })
-  },
-  async library(kind: 'capabilities' | 'devices') {
-    const volume = await readUserLibraryVolume(kind)
-    return Promise.all(volume.items.map(item => readUserLibraryEntry(kind,item.id)))
   },
   async integrations(ownerId: string,onVerified?: () => void) {
     // #921 credentials the platform keeps: what another device connected or disconnected shows here too.
@@ -105,25 +99,9 @@ export const assistantPanelLocal = {
     }
     refuse('CONNECTION_OPERATION_UNSUPPORTED')
   },
-  async apply(change: AssistantPanelChange, body: Uint8Array | null, sessionIds: readonly string[], ownerId: string) {
+  async apply(change: AssistantPanelChange, sessionIds: readonly string[]) {
     const removed = change.operation === 'remove'
     const data = (change.payload[removed ? 'before' : 'data'] ?? {}) as Record<string, unknown>
-    if (change.domain === 'capabilities' || change.domain === 'device-notes') {
-      const kind = change.domain === 'capabilities' ? 'capabilities' : 'devices'
-      if (removed) return removeUserLibraryEntry(kind,change.resource_key,ownerId)
-      const current = await readUserLibraryEntry(kind,change.resource_key).catch((error: NodeJS.ErrnoException) => {
-        if (error.code === 'ENOENT') return null
-        throw error
-      })
-      if (!body || typeof data.name !== 'string' || typeof data.description !== 'string') throw new Error('PANEL_LIBRARY_DATA_INVALID')
-      const content = new TextDecoder('utf-8',{ fatal: true }).decode(body)
-      if (current && current.content === content && current.name === data.name && current.description === data.description && current.group === (data.group ?? null)) return
-      await writeUserLibraryEntry({ kind,id: change.resource_key,name: data.name,description: data.description,
-        group: typeof data.group === 'string' ? data.group : null,content,
-        ...(current ? { expectedModifiedAt: current.modifiedAt } : {}),
-      },undefined,'ui',ownerId)
-      return
-    }
     if (change.domain === 'schedules') {
       const current = (await automationsService.listAutomations()).find(row => row.id === change.resource_key)
       if (!current) {
