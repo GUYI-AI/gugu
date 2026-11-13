@@ -13,6 +13,12 @@ import type { groupAgentStatusIndicatorProps } from '../../../../../apps/desktop
 import { ChatHeaderActions } from '../../../../../apps/desktop/src/components/chat/ChatHeaderActions'
 import { publishInnerSidebarChat } from '../../../../../apps/desktop/src/lib/innerSidebarBridge'
 
+// #2609 The search item's shortcut label follows the platform; these cases describe macOS (⌘F).
+vi.mock('@tanstack/react-hotkeys', async (original) => ({
+  ...await original<typeof import('@tanstack/react-hotkeys')>(),
+  detectPlatform: () => 'mac',
+}))
+
 /** Topic chatter: unread, none of it addressed to you. */
 const topicFixture = (patch: Partial<ChatItem>) => chat({ ...patch, unread_locator: { stream_id: 'main', stream_kind: 'main', thread_root_id: null, message_id: 'first', message_seq: 1,
   unread_count: patch.unread_count ?? 0, addressed_count: 0, cursor_seq: 0, version: 1, is_marked_unread: false } })
