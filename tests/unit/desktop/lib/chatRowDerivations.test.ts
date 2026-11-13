@@ -1,12 +1,30 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import { chat, displayIdentity } from '../../../support/testHarness'
-import { createChatMembershipProjection } from '../../../../apps/desktop/src/lib/chatRowDerivations'
+import { createChatMembershipProjection, isArchivedOwnedAgentChat } from '../../../../apps/desktop/src/lib/chatRowDerivations'
 import { memoizeByReference } from '../../../../apps/desktop/src/lib/memoizeByReference'
 import { publishChatSummaries, readChatSummaries } from '../../../../apps/desktop/src/lib/chatSummariesBridge'
 import { assertIdentityClosure } from '../../../../apps/desktop/src/lib/identityClosure'
 
 afterEach(() => publishChatSummaries([]))
+
+it('hides only owned Agent DMs with a positive archive fact, including local archive before identity synchronization', () => {
+  const peer = displayIdentity('agent', { type: 'agent', owner_user_id: 'me' })
+  const archived = { ...peer, session_archived_at: '2026-11-01T00:00:00Z' }
+  for (const kind of ['dm', 'ai'] as const) {
+    const row = chat({ kind, peer_user_id: peer.id })
+    expect(isArchivedOwnedAgentChat(row, 'me', archived)).toBe(true)
+    expect(isArchivedOwnedAgentChat(row, 'me', peer, 'archived')).toBe(true)
+    expect(isArchivedOwnedAgentChat(row, 'me', archived, 'idle')).toBe(true)
+    expect(isArchivedOwnedAgentChat(row, 'me', peer, 'idle')).toBe(false)
+    expect(isArchivedOwnedAgentChat(row, 'me', peer, 'offline')).toBe(false)
+    expect(isArchivedOwnedAgentChat(row, 'other-owner', archived)).toBe(false)
+    expect(isArchivedOwnedAgentChat(row, undefined, archived)).toBe(false)
+    expect(isArchivedOwnedAgentChat(row, 'me', undefined, 'archived')).toBe(false)
+    expect(isArchivedOwnedAgentChat(row, 'me', { ...archived, type: 'human' })).toBe(false)
+  }
+  for (const kind of ['group', 'topic'] as const) expect(isArchivedOwnedAgentChat(chat({ kind }), 'me', archived, 'archived')).toBe(false)
+})
 
 it('rechecks an identity array that a caller mutates in place', () => {
   const identities = [displayIdentity('first')]
