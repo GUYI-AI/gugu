@@ -53,7 +53,6 @@ interface ChatRightPanelBodyProps {
   messages: MessageItem[]
   onClose: () => void
   onClearMessages: () => Promise<void>
-  onOpenSearch: () => void
   onSetNotificationLevel: (level: NotificationLevel) => Promise<void>
   onTogglePinned: (pinned: boolean) => Promise<void>
   memberProfiles: MemberProfileCardModel[]
@@ -73,7 +72,7 @@ interface ChatRightPanelBodyProps {
 
 // @@@right-panel-body - One right-side surface for DM + group + mobile. Members section differs by chat
 // kind (group gets the rich role-switching list, DM keeps the simple peer card), then ChatManagementActions.
-function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages, onOpenSearch, onSetNotificationLevel, onTogglePinned, memberProfiles, currentUserId, onOpenUserChat, onWhisper, groupSettings, groupCollabSnapshot, groupCollabError, onReloadGroupCollab, onLeaveGroup, onDissolveGroup }: ChatRightPanelBodyProps) {
+function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages, onSetNotificationLevel, onTogglePinned, memberProfiles, currentUserId, onOpenUserChat, onWhisper, groupSettings, groupCollabSnapshot, groupCollabError, onReloadGroupCollab, onLeaveGroup, onDissolveGroup }: ChatRightPanelBodyProps) {
   const { t } = useTranslation('messaging')
   const [profileCard] = useState(() => Popover.createHandle<ActiveMemberProfile>())
   const isGroupChat = activeChat.kind === 'group'
@@ -106,7 +105,6 @@ function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages,
           onDissolveGroup={onDissolveGroup}
           onOpenUserChat={onOpenUserChat}
           onWhisper={onWhisper}
-          onOpenSearch={onOpenSearch}
           onSetNotificationLevel={onSetNotificationLevel}
           onTogglePinned={onTogglePinned}
           onClearMessages={onClearMessages}
@@ -155,7 +153,6 @@ function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages,
             activeChat={activeChat}
             onClose={onClose}
             onClearMessages={onClearMessages}
-            onOpenSearch={onOpenSearch}
             onSetNotificationLevel={onSetNotificationLevel}
             onTogglePinned={onTogglePinned}
           />

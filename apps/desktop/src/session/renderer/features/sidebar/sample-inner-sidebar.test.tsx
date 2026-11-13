@@ -150,7 +150,7 @@ describe('the inner column for the sample project', () => {
     expect(headRow.querySelector('svg.gg-project-avatar')).not.toBeNull();
     expect(headRow.textContent).toContain('projects.sample.name');
     expect(headRow.querySelector('[data-slot="chip"]')?.textContent).toBe('projects.sample.tag');
-    expect(headRow.querySelector('[data-inner-head-actions]')?.getAttribute('aria-label')).toBe('projects.sample.actions');
+    expect(headRow.querySelector('[aria-haspopup]'), 'no 「…」: removing it is in its row menu in the list').toBeNull();
     expect(host.querySelector('[data-inner-head-new-agent]'), 'no project yet: nobody to send a new agent to').toBeNull();
     expect(head().getAttribute('aria-current')).toBe('page');
     expect(head().dataset.active, 'the head row is a title, never a selected row').toBeUndefined();
@@ -204,20 +204,6 @@ describe('the inner column for the sample project', () => {
     await act(async () => host.querySelector<HTMLElement>('[data-close-pane]')!.click());
     expect(taskPane()).toBeNull();
     expect(agentRows()[0].dataset.active).toBeUndefined();
-  });
-
-  it('removing the sample from the head row 「…」 saves the account key and takes the column away', async () => {
-    await render();
-    await act(async () => host.querySelector<HTMLElement>('[data-inner-head-actions]')!.click());
-    const remove = () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === 'projects.sample.remove');
-    await until(() => !!remove(), 'the head menu opened');
-    expect(document.querySelectorAll('[role="menuitem"]'), 'only what the sample row menu offers').toHaveLength(1);
-    await act(async () => remove()!.click());
-    await until(() => column() === null, 'the column left with the sample');
-    expect(io.rows.get('u/user')?.config).toEqual({ sampleProject: { version: 1, dismissed: true } });
-    expect(io.toast).not.toHaveBeenCalled();
-    await flush();
-    expect(host.querySelector('[data-inner-sidebar-section]')).toBeNull();
   });
 
   it('only while its block is the one looked at: a group swaps it out, closing the sample or leaving the screen removes it', async () => {
