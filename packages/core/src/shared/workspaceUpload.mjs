@@ -24,7 +24,7 @@ export const WORKSPACE_STORED_TEXT_MAX_BYTES = 20 * 1024 * 1024
 export function jsonObjectProblem(text) {
   let value
   try {
-    value = JSON.parse(text)
+    value = JSON.parse(text.replace(/^\ufeff/, ''))
   } catch (err) {
     return { problem: 'invalid', message: err instanceof Error ? err.message : String(err) }
   }
@@ -73,7 +73,7 @@ export function workspaceFileText(fileName, bytes) {
   // An SVG's type says image, but on a disk it is text like any other.
   if (stored || (type && type !== 'image/svg+xml') || bytes.includes(0)) return stored
   try {
-    return { contentType: 'text/plain', text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), exact: true }
+    return { contentType: 'text/plain', text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes), exact: true }
   } catch {
     return null
   }
