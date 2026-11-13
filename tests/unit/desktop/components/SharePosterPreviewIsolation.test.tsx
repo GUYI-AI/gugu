@@ -15,7 +15,8 @@ let SharePosterDialog: typeof import('../../../../apps/desktop/src/components/Sh
 let PersonalSharePreview: typeof import('../../../../apps/desktop/src/components/referralPreview/ReferralPreview')['PersonalSharePreview']
 let harness: ReturnType<typeof createReactHarness>
 beforeAll(async () => {
-  vi.stubEnv('VITE_REFERRAL_ENTRY_PREVIEW', '0')
+  vi.stubEnv('VITE_GUGU_CLOUD_COMPUTER_ENABLED', 'false')
+  vi.stubEnv('VITE_GUGU_PLATFORM_MODELS_ENABLED', 'false')
   ;({ SharePosterDialog } = await import('../../../../apps/desktop/src/components/SharePosterDialog'))
   ;({ PersonalSharePreview } = await import('../../../../apps/desktop/src/components/referralPreview/ReferralPreview'))
 })
@@ -26,7 +27,7 @@ beforeEach(async () => {
 afterEach(() => harness.cleanup())
 afterAll(() => vi.unstubAllEnvs())
 
-describe('default sharing with the referral preview disabled', () => {
+describe('default sharing on an installation without official services', () => {
   for (const surface of ['default share', 'personal card fallback'] as const) {
     it(`preserves the existing shared copy and poster options for ${surface}`, async () => {
       const Component = surface === 'default share' ? SharePosterDialog : PersonalSharePreview

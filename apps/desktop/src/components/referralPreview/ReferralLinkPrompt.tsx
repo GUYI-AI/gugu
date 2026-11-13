@@ -8,18 +8,19 @@ import { ReferralClaimField } from './ReferralClaimField'
 
 export function ReferralLinkPrompt() {
   const { user } = useAuth()
+  const userId = user?.id
   const { t } = useTranslation('main')
   const [owner, setOwner] = useState<string | null>(null)
   useEffect(() => {
     const check = () => {
-      if (!user || !officialServicesEnabled()) return
-      try { if (pendingPersonalReferral(user.id)) setOwner(user.id) }
-      catch { setOwner(user.id) }
+      if (!userId || !officialServicesEnabled()) return
+      try { if (pendingPersonalReferral(userId)) setOwner(userId) }
+      catch { setOwner(userId) }
     }
     check()
     window.addEventListener(REFERRAL_LINK_EVENT, check)
     return () => window.removeEventListener(REFERRAL_LINK_EVENT, check)
-  }, [user?.id])
+  }, [userId])
   if (!user || owner !== user.id) return null
   const close = () => {
     try { clearPersonalReferral(user.id) } catch { /* User can still close the prompt. */ }
