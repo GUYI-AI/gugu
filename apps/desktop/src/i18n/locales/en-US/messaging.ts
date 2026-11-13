@@ -635,9 +635,15 @@ export default {
       "allowMemberInvite": "Let members invite people",
       "allowMemberInviteAria": "Allow regular members to invite contacts",
       "allowMemberInviteDescription": "Regular members can invite their contacts",
+      "avatarEditor": {
+        "reset": "Restore default",
+        "title": "Edit avatar",
+        "upload": "Upload an image"
+      },
+      "avatarResetFailed": "Could not restore the default avatar. Try again.",
       "avatarUpdated": "Group avatar updated",
       "avatarUploadFailed": "Could not upload the group avatar: {{reason}}",
-      "changeAvatar": "Click or drop an image to change the group avatar",
+      "changeAvatar": "Click to edit the group avatar, or drop an image",
       "copyLink": "Copy link",
       "description": "Group description",
       "descriptionPlaceholder": "Describe this group in one sentence…",

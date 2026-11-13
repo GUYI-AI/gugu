@@ -96,7 +96,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
     <ProjectRowContextMenu disabled={false} chatId={groupChatId} onRemove={removeProject}>
       <OneListProjectRow
         name={projectLabel}
-        coverId={rowId}
+        faceId={groupChatId ?? rowId}
         time={ref?.activeAt ? formatCalendarDay(ref.activeAt) : undefined}
         preview=""
         selected={isProjectActive}
@@ -112,7 +112,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
 /**
  * An account project with no local project in this table (no folder on any machine, or its folders are only on machines
  * not loaded yet): its row is still there and opens its project group (openChatOnScreen, as a group row of the list does).
- * The cover is keyed by the group, as partnerProjects keys a project with no folder.
+ * Its face is its group's.
  */
 const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projectId, chatId, name, activeAt }: { projectId: string; chatId: string; name: string; activeAt: string | null }) {
   const { translate } = useSessionMessages();
@@ -124,7 +124,7 @@ const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projec
   return (
     <OneListProjectRow
       name={name}
-      coverId={chatId}
+      faceId={chatId}
       time={activeAt === null ? undefined : formatCalendarDay(activeAt)}
       preview=""
       selected={focused?.kind === 'chat' && focused.chatId === chatId}

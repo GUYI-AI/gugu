@@ -633,9 +633,15 @@ export default {
       "allowMemberInvite": "允许成员邀人",
       "allowMemberInviteAria": "允许普通成员邀请联系人",
       "allowMemberInviteDescription": "开启后普通成员也可邀请联系人入群",
+      "avatarEditor": {
+        "reset": "恢复默认",
+        "title": "修改头像",
+        "upload": "上传图片"
+      },
+      "avatarResetFailed": "没能恢复默认头像，请再试一次",
       "avatarUpdated": "群头像已更新",
       "avatarUploadFailed": "群头像上传失败：{{reason}}",
-      "changeAvatar": "点击或拖入图片更换群头像",
+      "changeAvatar": "点击修改群头像，或拖入图片",
       "copyLink": "复制链接",
       "description": "群描述",
       "descriptionPlaceholder": "一句话介绍这个群…",

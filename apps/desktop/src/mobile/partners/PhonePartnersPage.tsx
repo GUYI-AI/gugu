@@ -32,10 +32,9 @@ import { accountProjectsStore } from '@/session/renderer/features/projects/store
 import { useToast } from '@/components/toastContext'
 import { messageForUser } from '@/lib/userFacingError'
 import { projectRpcOn } from './projectRpc'
-import { matchesQuery, partnerFriends, partnerGroupAgents, partnerProjects, projectSessions, runningCount, type PartnerProject } from './partnersModel'
+import { matchesQuery, partnerFriends, partnerGroupAgents, partnerProjects, projectSessions, type PartnerProject } from './partnersModel'
 import { PhoneNewProjectPage, type CreatedProject } from './PhoneNewProjectPage'
 import { PhoneProjectContacts } from './PhoneProjectContacts'
-import { ProjectFolderAvatar } from './ProjectFolderAvatar'
 import { ChatGroupAvatar } from '@/components/chat/ChatGroupAvatar'
 import './partners.css'
 
@@ -187,7 +186,6 @@ export function PhonePartnersPage({
     return (
       <PhoneProjectContacts
         project={project}
-        running={runningCount(sessions)}
         sessions={sessions}
         active={active}
         onBack={pop}
@@ -260,9 +258,7 @@ export function PhonePartnersPage({
                 const open = () => push({ kind: 'project', key: project.key })
                 return (
                   <ListRow key={project.key} mobile role="button" tabIndex={0} data-testid="phone-partners-project"
-                    leading={project.chatId
-                      ? <ChatGroupAvatar chatId={project.chatId} name={project.name} size={40} />
-                      : <ProjectFolderAvatar coverId={project.coverId} running={runningCount(projectSessions(project, id => sessionsOf(id).sessions, id => sessionsOf(id).hostOnline))} />}
+                    leading={<ChatGroupAvatar chatId={project.chatId ?? project.coverId} name={project.name} size={40} />}
                     title={project.name} onClick={open} onKeyDown={rowKeyActivate(open)} />
                 )
               })}

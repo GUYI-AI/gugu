@@ -54,7 +54,7 @@ describe('participant mention presentation', () => {
     root = createRoot(host)
     root.render(
       <LocalizationProvider>
-        <ChatMessageComposer onSend={vi.fn(async () => {})} isGroupChat groupMembers={members} />
+        <ChatMessageComposer onSend={vi.fn(async () => {})} chatId="group-1" isGroupChat groupMembers={members} />
       </LocalizationProvider>,
     )
   })

@@ -39,13 +39,9 @@ export function chatPickRow(chat: ChatItem, name: string, identitiesById: Identi
     avatar: chat.kind === 'topic' ? undefined : {
       name,
       avatarUrl: isRoomChat(chat.kind) ? chat.avatar : identity?.avatar,
-      seed: chat.peer_user_id ?? undefined,
+      seed: isRoomChat(chat.kind) ? chat.id : chat.peer_user_id ?? undefined,
       isAgent: identity?.type === 'agent',
       variant: isRoomChat(chat.kind) ? 'group' : 'default',
-      memberAvatars: chat.member_user_ids?.flatMap((id) => {
-        const member = identitiesById[id]
-        return member ? [{ id, name: member.display_name, avatar: member.avatar }] : []
-      }),
     },
   }
 }

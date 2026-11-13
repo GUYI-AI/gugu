@@ -147,7 +147,7 @@ describe('the inner column for the sample project', () => {
     expect(innerSidebarChat.get(), 'the sample is no chat: the list keeps lighting the sample row by itself').toBeNull();
 
     const headRow = host.querySelector<HTMLElement>('[data-inner-head="sample-project"]')!;
-    expect(headRow.querySelector('svg.gg-project-avatar')).not.toBeNull();
+    expect(headRow.querySelector('[data-group-face]')).not.toBeNull();
     expect(headRow.textContent).toContain('projects.sample.name');
     expect(headRow.querySelector('[data-slot="chip"]')?.textContent).toBe('projects.sample.tag');
     expect(headRow.querySelector('[aria-haspopup]'), 'no 「…」: removing it is in its row menu in the list').toBeNull();

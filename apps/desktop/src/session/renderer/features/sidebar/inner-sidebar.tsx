@@ -1,14 +1,13 @@
 import { ChevronLeft, ChevronRight, SquarePen } from '@/lib/icons';
 import { computed, observable, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import { Avatar } from '@/components/Avatar';
 import { ListColumnToggle } from '@/components/PanelToggleButtons';
 import { IconButton } from '@/components/ui/IconButton';
 import { useShownAgentName } from '@/hooks/useShownAgentName';
 import { useChatSummaries, type ChatSummary } from '@/lib/chatSummariesBridge';
 import { setComposerVerb } from '@/lib/composerVerbBridge';
-import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge';
 import {
   innerSidebarTopicsSlotKey,
   publishInnerSidebarChat,
@@ -416,31 +415,9 @@ function InnerSidebarFrame({ kind, chatId, children }: { kind: InnerSidebarAncho
   );
 }
 
-const noIdentities = () => () => undefined;
-
-/** 群的脸:群自己设的头像,没设就是成员拼图(同聊天列表那一行),身份从壳的身份目录读。 */
+/** 群或项目的脸:自己设的头像,没设就是默认头像(同聊天列表那一行)。 */
 function GroupHeadAvatar({ chatId, summary }: { chatId: string; summary: ChatSummary | null }) {
-  const directory = readIdentityDirectoryBridge();
-  const identities = useSyncExternalStore(directory?.subscribe ?? noIdentities, () => directory?.getSnapshot() ?? null, () => null);
-  const memberIds = summary?.memberUserIds ?? [];
-  const missing = memberIds.filter((id) => !identities?.[id]).join(',');
-  useEffect(() => {
-    if (missing) directory?.ensure(missing.split(','));
-  }, [directory, missing]);
-  return (
-    <Avatar
-      name={summary?.name ?? ''}
-      avatarUrl={summary?.avatar}
-      seed={chatId}
-      size={24}
-      variant="group"
-      harnessBadge={false}
-      memberAvatars={memberIds.flatMap((id) => {
-        const identity = identities?.[id];
-        return identity ? [{ id, name: identity.display_name, avatar: identity.avatar }] : [];
-      })}
-    />
-  );
+  return <Avatar name={summary?.name ?? ''} avatarUrl={summary?.avatar} seed={chatId} size={24} variant="group" />;
 }
 
 /**

@@ -154,3 +154,9 @@ export async function setGroupAvatar(
   if (row.avatar_url !== url) throw new Error('update_group_as: avatar was not confirmed')
   return url
 }
+
+/** Back to the default face: the picture's URL and both storage references are cleared together. */
+export async function clearGroupAvatar(admin: ReturnType<typeof createGroupAdmin>, chatId: string): Promise<void> {
+  const row = await admin.update(chatId, { avatar_url: null, avatar_storage_bucket_id: null, avatar_storage_object_name: null })
+  if (row.avatar_url) throw new Error('update_group_as: avatar was not cleared')
+}

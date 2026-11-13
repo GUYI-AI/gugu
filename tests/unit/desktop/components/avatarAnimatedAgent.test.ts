@@ -164,21 +164,6 @@ describe('default agent avatars', () => {
     expect(harness.container.querySelector('img')?.getAttribute('src')).toBe(UPLOAD)
   })
 
-  it('composites use the directory type, showing Boring only for agents and waiting for unknown members', async () => {
-    const ensure = vi.fn()
-    publishIdentityDirectory({}, ensure)
-    const member = { id: ID, name: 'Member', avatar: LOOK }
-    await render({ variant: 'group', memberAvatars: [member] })
-    expect(svg()).toBeNull()
-    expect(harness.container.querySelector('[data-avatar-empty]')).not.toBeNull()
-    expect(ensure).toHaveBeenCalledWith([ID])
-    await act(async () => publishIdentityDirectory({ [ID]: identity('agent') }, ensure))
-    expect(svg()).not.toBeNull()
-    await act(async () => publishIdentityDirectory({ [ID]: identity('human') }, ensure))
-    expect(svg()).toBeNull()
-    expect(harness.container.querySelector('img')).not.toBeNull()
-  })
-
   it('phone rows use the same canonical id and upload, while an unavailable status stays unavailable', async () => {
     await render()
     const face = geometry()
