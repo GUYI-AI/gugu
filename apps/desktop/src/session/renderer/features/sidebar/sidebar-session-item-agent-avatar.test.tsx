@@ -22,7 +22,7 @@ vi.mock('@/lib/avatarIdentity', () => ({
 }));
 vi.mock('@/hooks/useShownAgentName', () => ({ useShownAgentName: ({ name }: { name: string }) => name }));
 vi.mock('@/components/chat/useAgentsOnCloudComputer', () => ({ useShownAgentStatus: () => ({ presentation: () => state.presentation }) }));
-vi.mock('@/hooks/useConversationSessionSummary', () => ({ useConversationSessionSummary: () => null }));
+vi.mock('@/hooks/useConversationSessionSummary', () => ({ useConversationSessionSummary: (_id: unknown, _device: unknown, pick: (summary: undefined) => unknown) => pick(undefined) }));
 vi.mock('@renderer/features/automations/use-session-schedules', () => ({ useSessionSchedules: () => [] }));
 vi.mock('@renderer/lib/stores/use-agents', () => ({
   useAgents: () => ({ data: [{ id: 'claude', name: 'Claude Code', capabilities: { hooks: { kind: 'native' }, sessions: { fork: [] } } }] }),
