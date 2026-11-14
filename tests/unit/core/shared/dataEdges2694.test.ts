@@ -18,3 +18,5 @@ it('omits rollback records with nonfinite timestamps', () => { expect(parseServe
 it('reports malformed health background booleans', () => { expect(readHealthSummary({...summary(),background:{supported:'yes',granted:true}})).toEqual({ok:false,problem:'background.supported'}); expect(readHealthSummary({...summary(),background:{supported:true,granted:1}})).toEqual({ok:false,problem:'background.granted'}) })
 
 it('uses generic panel text for inherited category and error names', () => { const actual=panelApplicationFailure('constructor','item','constructor','en-US'); expect(actual).toContain('Panel resource'); expect(actual).toContain('The resource update could not complete'); expect(actual).not.toContain('undefined') })
+
+it('uses needsAction for inherited wait detail labels', () => { expect(presentAgentStatus({reading:{status:'needs_user',detail:'constructor'} as never,reachability:'online'}).label).toBe('needsAction') })
