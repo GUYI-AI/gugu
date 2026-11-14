@@ -13,3 +13,5 @@ it('orders textual prerelease identifiers lexically', () => {expect(compareServe
 it('orders numeric prerelease identifiers before textual identifiers', () => {expect(compareServerVersions('1.0.0-2','1.0.0-1alpha')).toBeLessThan(0);expect(compareServerVersions('1.0.0-1alpha','1.0.0-2')).toBeGreaterThan(0)})
 
 it('orders longer matching prereleases after their prefix', () => {expect(compareServerVersions('1.0.0-beta.0','1.0.0-beta')).toBeGreaterThan(0);expect(compareServerVersions('1.0.0-beta','1.0.0-beta.0')).toBeLessThan(0)})
+
+it('preserves four-digit early years in usage dates', () => {const date=new Date(0);date.setFullYear(42,0,2);expect(localDay(date)).toBe('0042-01-02');expect(parseDay('0042-01-02').getFullYear()).toBe(42);expect(addDays('0042-01-02',1)).toBe('0042-01-03')})
