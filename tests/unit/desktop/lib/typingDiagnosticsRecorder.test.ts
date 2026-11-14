@@ -4,13 +4,13 @@ import { createTypingDiagnosticsRecorder } from '../../../../apps/desktop/src/li
 import type { TypingDiagnosticRecord } from '../../../../apps/desktop/shared/beta-typing-diagnostics'
 let recorder: ReturnType<typeof createTypingDiagnosticsRecorder> | null = null
 afterEach(() => { recorder?.stop(); recorder = null; document.body.replaceChildren(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
-function setup() {
+function setup(taskWorkMs = 0) {
  vi.useFakeTimers(); let clock = 0
  vi.spyOn(performance, 'now').mockImplementation(() => clock)
  const options: PerformanceObserverInit[] = [], callbacks: Array<(entries: object[]) => void> = [], disconnect = vi.fn()
  vi.stubGlobal('PerformanceObserver', class {
   static supportedEntryTypes = ['longtask', 'long-animation-frame', 'event']
-  constructor(callback: (list: { getEntries(): object[] }) => void) { callbacks.push(entries => callback({ getEntries: () => entries })) }
+  constructor(callback: (list: { getEntries(): object[] }) => void) { callbacks.push(entries => callback({ getEntries: () => { clock += taskWorkMs; return entries } })) }
   observe(option: PerformanceObserverInit) { options.push(option) }
   disconnect = disconnect
  })
@@ -41,8 +41,8 @@ describe('incident-only renderer trigger', () => {
   expect(t.rows.filter(x => x.event === 'long-task')).toHaveLength(0)
  })
  it('accounts keyboard and observer callback counts and elapsed own work per actual window', async () => {
-  const t = setup(); t.clock(100); t.key(); t.task([{ startTime: 101, duration: 60 }]); t.clock(60_000); recorder!.reportAccounting(false); await recorder!.flush()
-  expect(t.rows.find(x => x.event === 'callback-accounting')).toMatchObject({ keyCallbacks: 1, taskCallbacks: 1, taskEntries: 1, durationMs: 60_000, partial: false, totalOwnCallbackMs: 0 })
+  const t = setup(3); t.clock(100); t.key({ composedPath: () => { t.clock(102); return [t.input] } }); t.task([{ startTime: 101, duration: 60 }]); t.clock(60_000); recorder!.reportAccounting(false); await recorder!.flush()
+  expect(t.rows.find(x => x.event === 'callback-accounting')).toMatchObject({ keyCallbacks: 1, taskCallbacks: 1, taskEntries: 1, durationMs: 60_000, partial: false, keyCallbackMs: 2, taskCallbackMs: 3, totalOwnCallbackMs: 5 })
  })
  it('bounds pending histories and writes without recording input content', async () => {
   const t = setup(); for (let i = 0; i < 300; i++) { t.clock(i); t.key() }

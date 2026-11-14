@@ -36,8 +36,9 @@ export function createTypingDiagnosticsRecorder(win: Window & typeof globalThis,
     try {
       const replyPromise = (() => { const sentAt = now(); try { return send(batch) } finally { stats.flushCallbackMs += Math.max(0, now() - sentAt) } })()
       const reply = await replyPromise
-      stats.flushCallbacks++
-      if (!reply.accepted) { if (reply.reason === 'busy') dropped += batch.length; else stop() }
+      const resumedAt = now()
+      try { stats.flushCallbacks++; if (!reply.accepted) { if (reply.reason === 'busy') dropped += batch.length; else stop() } }
+      finally { stats.flushCallbackMs += Math.max(0, now() - resumedAt) }
     } catch { stop() }
     finally { const at = now(); inFlight = false; if (!stopped && queue.length) schedule(); stats.flushCallbackMs += Math.max(0, now() - at) }
   }
