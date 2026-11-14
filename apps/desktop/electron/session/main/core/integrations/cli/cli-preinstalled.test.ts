@@ -42,6 +42,16 @@ it('retains an existing account-local installation and its credential location',
   await mkdir(dir, { recursive: true }); await writeFile(path.join(dir, '.complete'), 'existing');
   expect(installedCliTool('lark-cli').binPath).toBe(path.join(dir, 'bin', 'lark-cli'));
 });
+it('keeps a connected macOS/Linux DWS 1.0.64 cache usable without a download or account migration', async () => {
+  const dir = path.join(root, 'account', 'integration-tools', 'dws', '1.0.64');
+  await mkdir(path.join(dir, 'bin'), { recursive: true });
+  await writeFile(path.join(dir, 'bin', 'dws'), '#!/bin/sh\necho original-install\n', { mode: 0o755 });
+  await writeFile(path.join(dir, '.complete'), '1.0.64\n');
+  const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+  expect(isCliToolInstalled('dws')).toBe(true);
+  expect((await ensureCliTool('dws')).binPath).toBe(path.join(dir, 'bin', 'dws'));
+  expect(fetch).not.toHaveBeenCalled();
+});
 it('ignores a preinstall on an ordinary local computer', async () => {
   await preload(); vi.stubEnv('GUGU_CLOUD_COMPUTER', '0');
   expect(isCliToolInstalled('lark-cli')).toBe(false);

@@ -1,4 +1,7 @@
 export default {
+  "startup": {
+    "slogan": "别自己做，让 AI 来。"
+  },
   "menu": {
     "search": "搜索",
     "noResults": "没有找到"

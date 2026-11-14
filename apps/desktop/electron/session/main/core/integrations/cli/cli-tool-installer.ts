@@ -13,10 +13,13 @@ import { resolvesInside } from '../../extensions/path-containment';
 import { cliToolsRoot } from './cli-paths';
 import { preinstalledCliDirectory, preinstalledCliVersions } from './cli-preinstalled';
 import { DWS_LINUX_PRODUCT, installManagedProduct, managedProductRoot } from './cli-managed-products';
-import { FEISHU_BINARY_SHA256, FEISHU_CLI_VERSION, FEISHU_SKILLS_COMMIT, feishuArchiveName } from './feishu-cli';
+import { FEISHU_SKILLS_COMMIT, feishuArchiveName } from './feishu-cli';
+import { downloadFeishuBinary } from './feishu-download';
 import { TMEET_BINARY, TMEET_SKILLS_COMMIT } from './tmeet-cli';
 import {
   cliToolRecipe,
+  cliBinaryName,
+  assertCliToolSupported,
   currentCliPlatform,
   WECOM_SKILLS_COMMIT,
   type CliPackage,
@@ -62,7 +65,7 @@ export function installedCliTool(tool: IntegrationCliTool, guguHome?: string): I
   return {
     tool,
     version: recipe.version,
-    binPath: path.join(dir, 'bin', recipe.bin),
+    binPath: path.join(dir, 'bin', cliBinaryName(recipe.bin)),
     skillsDir: path.join(dir, 'skills'),
     homeDir: cliToolHome(tool, guguHome),
   };
@@ -70,7 +73,8 @@ export function installedCliTool(tool: IntegrationCliTool, guguHome?: string): I
 
 /** 装完整了没有(`.complete` 是最后一步才写的)。 */
 export function isCliToolInstalled(tool: IntegrationCliTool, guguHome?: string): boolean {
-  return existsSync(path.join(path.dirname(installedCliTool(tool, guguHome).binPath), '..', '.complete'));
+  const installed = installedCliTool(tool, guguHome);
+  return existsSync(installed.binPath) && existsSync(path.join(path.dirname(installed.binPath), '..', '.complete'));
 }
 
 const installs = new Map<IntegrationCliTool, Promise<InstalledCliTool>>();
@@ -82,6 +86,7 @@ export function isCliToolInstalling(tool: IntegrationCliTool): boolean {
 
 /** 装好(已装就直接给);同一个工具同时只装一份。 */
 export function ensureCliTool(tool: IntegrationCliTool): Promise<InstalledCliTool> {
+  try { assertCliToolSupported(tool); } catch (error) { return Promise.reject(error); }
   if (isCliToolInstalled(tool)) return Promise.resolve(installedCliTool(tool));
   let pending = installs.get(tool);
   if (!pending) {
@@ -120,15 +125,15 @@ async function install(tool: IntegrationCliTool): Promise<InstalledCliTool> {
       } else if (tool === 'dws') {
         await installDws(packageDir, platform, staging);
       } else if (tool === 'tmeet') {
-        await fs.copyFile(path.join(packageDir, 'dist', TMEET_BINARY[platform]), path.join(staging, 'bin', recipe.bin));
+        await fs.copyFile(path.join(packageDir, 'dist', TMEET_BINARY[platform]), path.join(staging, 'bin', cliBinaryName(recipe.bin)));
         await installTmeetSkills(staging, report);
       } else {
-        await fs.copyFile(path.join(packageDir, 'bin', recipe.bin), path.join(staging, 'bin', recipe.bin));
+        await fs.copyFile(path.join(packageDir, 'bin', cliBinaryName(recipe.bin)), path.join(staging, 'bin', cliBinaryName(recipe.bin)));
         await installWecomSkills(path.join(staging, 'skills'), path.join(staging, 'download'), report);
       }
     }
     report({ phase: 'install', receivedBytes: 0 });
-    await fs.chmod(path.join(staging, 'bin', recipe.bin), 0o755);
+    await fs.chmod(path.join(staging, 'bin', cliBinaryName(recipe.bin)), 0o755);
     await fs.rm(path.join(staging, 'download'), { recursive: true, force: true });
     await fs.writeFile(path.join(staging, '.complete'), `${recipe.version}\n`);
     await fs.rm(dir, { recursive: true, force: true });
@@ -146,11 +151,7 @@ async function install(tool: IntegrationCliTool): Promise<InstalledCliTool> {
 async function installFeishu(platform: CliPlatform, staging: string, report: ReportProgress): Promise<void> {
   const archiveName = feishuArchiveName(platform);
   const archive = path.join(staging, 'download', archiveName);
-  const digest = await downloadTo(
-    `https://github.com/larksuite/cli/releases/download/v${FEISHU_CLI_VERSION}/${archiveName}`,
-    archive, 'sha256', 'hex', report
-  );
-  if (digest !== FEISHU_BINARY_SHA256[platform]) throw new Error(`${archiveName} integrity mismatch`);
+  await downloadFeishuBinary(platform, (url) => downloadTo(url, archive, 'sha256', 'hex', report));
   await execFileAsync('tar', ['-xzf', archive, '-C', path.join(staging, 'bin'), 'lark-cli']);
   const sourceArchive = path.join(staging, 'download', 'source.tgz');
   await downloadTo(`https://codeload.github.com/larksuite/cli/tar.gz/${FEISHU_SKILLS_COMMIT}`, sourceArchive, 'sha256', 'hex', report);
@@ -350,7 +351,7 @@ async function sha256File(file: string): Promise<string> {
 async function installDws(packageDir: string, platform: CliPlatform, staging: string): Promise<void> {
   const assets = path.join(packageDir, 'assets');
   const [os, arch] = platform.split('-') as [string, string];
-  const archiveName = `dws-${os}-${arch === 'x64' ? 'amd64' : arch}.tar.gz`;
+  const archiveName = platform === 'win32-x64' ? 'dws-windows-amd64.zip' : `dws-${os}-${arch === 'x64' ? 'amd64' : arch}.tar.gz`;
   const checksums = await fs.readFile(path.join(assets, 'checksums.txt'), 'utf8');
   const expected = checksums
     .split('\n')
@@ -359,8 +360,14 @@ async function installDws(packageDir: string, platform: CliPlatform, staging: st
   if (!expected) throw new Error(`dws checksums.txt does not list ${archiveName}`);
   const archive = path.join(assets, archiveName);
   if ((await sha256File(archive)) !== expected) throw new Error(`${archiveName} does not match dws checksums.txt`);
-  await execFileAsync('tar', ['-xzf', archive, '-C', path.join(staging, 'bin')]);
-  if (!existsSync(path.join(staging, 'bin', 'dws'))) throw new Error(`${archiveName} has no dws program`);
+  if (platform === 'win32-x64') {
+    const binary = (await JSZip.loadAsync(await fs.readFile(archive))).file('dws.exe');
+    if (!binary) throw new Error(`${archiveName} 没有 dws.exe 程序。`);
+    await fs.writeFile(path.join(staging, 'bin', 'dws.exe'), await binary.async('nodebuffer'));
+  } else {
+    await execFileAsync('tar', ['-xzf', archive, '-C', path.join(staging, 'bin')]);
+  }
+  if (!existsSync(path.join(staging, 'bin', cliBinaryName('dws')))) throw new Error(`${archiveName} 没有 dws 程序。`);
 
   // 只要单技能那一套(`mono/`,一个 `dws` skill + 它的参考文档),不要按产品拆开的几十个。
   const zip = await JSZip.loadAsync(await fs.readFile(path.join(assets, 'dws-skills.zip')));

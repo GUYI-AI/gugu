@@ -10,6 +10,7 @@ import { readExtensionSkills } from '../../../../../extension-session-mcp';
 import { cliLauncherDir } from './cli-paths';
 import { installedCliTool, isCliToolInstalled, type InstalledCliTool } from './cli-tool-installer';
 import { cliToolRecipe, type CliToolRecipe } from './cli-tools';
+import { cliToolSupportsHost } from '@shared/integration-cli-platform';
 
 /** 这家集成走官方命令行吗;是 → 它的那一条授权方式。 */
 export function cliMethodOf(integrationId: string): IntegrationCliMethod | null {
@@ -26,18 +27,42 @@ function shellQuote(value: string): string {
  * agent 敲的那个命令:一个小脚本,带上这个工具在咕咕里的登录态目录,再交给装好的程序。
  * 连上才写、断开就删 —— agent 的 PATH 上有它 = 在咕咕里连着。
  */
-export function cliLauncherScript(recipe: CliToolRecipe, installed: InstalledCliTool): string {
+export function cliLauncherScript(recipe: CliToolRecipe, installed: InstalledCliTool, platform: string = process.platform): string {
+  if (platform === 'win32') {
+    const quote = (value: string) => {
+      if (/[\r\n"]/.test(value)) throw new Error('命令行工具的目录包含无效字符。');
+      return value.replace(/%/g, '%%');
+    };
+    const env = Object.entries(recipe.env(installed.homeDir)).map(([key, value]) => `set "${key}=${quote(value)}"`).join('\r\n');
+    return `@echo off\r\nsetlocal DisableDelayedExpansion\r\n${env}\r\n"${quote(installed.binPath)}" %*\r\n`;
+  }
   const env = Object.entries(recipe.env(installed.homeDir))
     .map(([key, value]) => `export ${key}=${shellQuote(value)}`)
     .join('\n');
   return `#!/bin/sh\n# 咕咕资源库里连上的 ${recipe.bin} ${installed.version}\n${env}\nexec ${shellQuote(installed.binPath)} "$@"\n`;
 }
 
+function powershellLauncherScript(recipe: CliToolRecipe, installed: InstalledCliTool): string {
+  const quote = (value: string) => `'${value.replace(/'/g, "''")}'`;
+  const entries = Object.entries(recipe.env(installed.homeDir));
+  const previous = entries.map(([key]) => `${quote(key)}=[Environment]::GetEnvironmentVariable(${quote(key)},'Process')`).join(';');
+  const env = entries.map(([key, value]) => `$env:${key}=${quote(value)}`).join('\r\n');
+  // PowerShell environment variables survive a script's local scope. Restore
+  // the caller's values even when the vendor executable fails.
+  return `$guguCliPrevious=@{${previous}}\r\ntry {\r\n${env}\r\n& ${quote(installed.binPath)} @args\r\n$guguCliExit=$LASTEXITCODE\r\n} finally {\r\nforeach ($guguCliKey in $guguCliPrevious.Keys) { [Environment]::SetEnvironmentVariable($guguCliKey,$guguCliPrevious[$guguCliKey],'Process') }\r\n}\r\nexit $guguCliExit\r\n`;
+}
+
 export async function publishCliLauncher(recipe: CliToolRecipe, installed: InstalledCliTool, guguHome?: string): Promise<void> {
   const dir = cliLauncherDir(guguHome);
   await fs.mkdir(dir, { recursive: true });
-  const file = path.join(dir, recipe.bin);
-  const script = cliLauncherScript(recipe, installed);
+  const scripts = process.platform === 'win32' ? {
+    [`${recipe.bin}.cmd`]: cliLauncherScript(recipe, installed),
+    [`${recipe.bin}.ps1`]: powershellLauncherScript(recipe, installed),
+  } : { [recipe.bin]: cliLauncherScript(recipe, installed) };
+  for (const [name, script] of Object.entries(scripts)) await writeLauncher(path.join(dir, name), script);
+}
+
+async function writeLauncher(file: string, script: string): Promise<void> {
   const previous = await fs.readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return null;
     throw error;
@@ -56,7 +81,7 @@ export async function publishCliLauncher(recipe: CliToolRecipe, installed: Insta
 }
 
 export async function removeCliLauncher(recipe: CliToolRecipe, guguHome?: string): Promise<void> {
-  await fs.rm(path.join(cliLauncherDir(guguHome), recipe.bin), { force: true });
+  for (const suffix of ['', '.cmd', '.ps1']) await fs.rm(path.join(cliLauncherDir(guguHome), recipe.bin + suffix), { force: true });
 }
 
 /**
@@ -72,7 +97,7 @@ export async function connectedCliSkills(
   for (const plugin of integrationPluginRegistry.getAll()) {
     const integrationId = plugin.metadata.id;
     const method = cliMethodOf(integrationId);
-    if (!method || !(await isConfigured(integrationId))) continue;
+    if (!method || !cliToolSupportsHost(method.tool, { platform: process.platform, arch: process.arch }) || !(await isConfigured(integrationId))) continue;
     if (!isCliToolInstalled(method.tool)) {
       onProblem(`integration ${integrationId}: ${method.tool} is connected but not installed; its skills are left out.`);
       continue;

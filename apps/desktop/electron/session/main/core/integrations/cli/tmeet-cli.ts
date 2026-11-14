@@ -3,6 +3,7 @@ import type { CliLoginPrompt, CliToolRecipe } from './cli-tools';
 
 export const TMEET_SKILLS_COMMIT = 'e631b355da2b001d24b82f453b65d96f39c59865';
 export const TMEET_BINARY = {
+  'win32-x64': 'tmeet-Windows-x86_64.exe',
   'darwin-arm64': 'tmeet-macOS-AppleSilicon', 'darwin-x64': 'tmeet-macOS-Intel',
   'linux-arm64': 'tmeet-Linux-ARM64', 'linux-x64': 'tmeet-Linux-x86_64',
 } as const;
