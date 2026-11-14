@@ -13,6 +13,8 @@ private final class Fixture {
     let commandId = UUID().uuidString.lowercased(), instanceId = UUID().uuidString.lowercased(), agentId = UUID().uuidString.lowercased(), chatId = UUID().uuidString.lowercased()
     var status = "pending", token: String?, claimedBy: String?, loseSettle = true, allowLease = true, foreignAgent = false, starts: [String] = [], casCount = 0
     var commandPath: Any?
+    var heldStart: ((Result<Void, Error>) -> Void)?
+    var startEntered: DispatchSemaphore?
     init(_ root: URL) throws {
         let owner = UUID().uuidString.lowercased(), install = UUID().uuidString.lowercased()
         binding = .init(ownerId: owner, deviceId: "phone-\(install)-\(owner)", installationId: install)
@@ -47,7 +49,9 @@ private final class Fixture {
     })
     func executor() -> GuguIOSCreateCommand {
         .init(broker: broker, store: store, instanceId: instanceId, projectPath: "/private/phone", check: {}, start: { agent, done in
-            self.starts.append(agent["sessionId"] as! String); done(.success(()))
+            self.starts.append(agent["sessionId"] as! String)
+            if let entered = self.startEntered { self.heldStart = done; entered.signal() }
+            else { done(.success(())) }
         })
     }
 }
@@ -62,6 +66,38 @@ private final class Fixture {
         try require(try fixture.store.record("requests", id: "command:\(fixture.commandId)")?["status"] as? String == "completed", "Reconciliation did not persist known completion")
         try require(fixture.starts == [originalSession, originalSession] && fixture.token == originalToken && fixture.casCount == 1, "Lost settlement retry minted a session or reclaimed command")
         var cases = ["claim_recheck_native_admission_and_lost_settlement_reconcile_same_session"]
+        for loseACK in [false, true] {
+            let concurrent = try Fixture(root.appendingPathComponent("concurrent-\(loseACK)"))
+            concurrent.loseSettle = loseACK
+            let entered = DispatchSemaphore(value: 0), drained = DispatchSemaphore(value: 0)
+            concurrent.startEntered = entered
+            let executor = concurrent.executor(), completed = DispatchGroup(), lock = NSLock()
+            var outcomes: [Result<Void, Error>] = []
+            let done: (Result<Void, Error>) -> Void = { value in
+                lock.lock(); outcomes.append(value); lock.unlock(); completed.leave()
+            }
+            completed.enter(); executor.execute(id: concurrent.commandId, completion: done)
+            try require(entered.wait(timeout: .now() + 10) == .success, "First native start did not arrive")
+            completed.enter(); executor.execute(id: concurrent.commandId, completion: done)
+            // A subsequent invalid request provides a serial-queue barrier without
+            // sleeping or exposing the executor's private queue to the test.
+            executor.execute(id: "invalid") { _ in drained.signal() }
+            try require(drained.wait(timeout: .now() + 10) == .success, "Concurrent observer was not admitted")
+            try require(concurrent.starts.count == 1 && concurrent.casCount == 1, "Concurrent caller reclaimed or restarted command")
+            concurrent.heldStart?(.success(()))
+            try require(completed.wait(timeout: .now() + 10) == .success, "Concurrent callbacks did not both settle")
+            try require(outcomes.count == 2, "Original observers lost their callbacks")
+            for outcome in outcomes {
+                if loseACK {
+                    guard case .failure(let error as GuguHostFailure) = outcome, error.code == "cloud_transport_uncertain" else {
+                        throw GuguHostFailure(code: "create_command_test_failed", message: "Lost settlement was not shared as uncertain")
+                    }
+                } else { _ = try outcome.get() }
+            }
+            try require(concurrent.starts.count == 1 && concurrent.casCount == 1 && concurrent.status == "done", "Shared completion changed original execution")
+        }
+        cases.append("provision_and_command_pump_share_one_claim_session_and_terminal_result")
+        cases.append("concurrent_observers_share_lost_settlement_uncertainty_without_retry")
         let denied = try Fixture(root.appendingPathComponent("denied")); denied.loseSettle = false; denied.allowLease = false
         guard case .failure(let error as GuguHostFailure) = try awaitExecute(denied.executor(), id: denied.commandId), error.code == "stale_context" else { throw GuguHostFailure(code: "create_command_test_failed", message: "Lost command lease executed") }
         try require(denied.starts.isEmpty && (try denied.store.snapshot()["agents"] as? [String: Any])?.isEmpty == true, "Lease denial created native session")

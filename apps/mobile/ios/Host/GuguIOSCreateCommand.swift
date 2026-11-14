@@ -11,7 +11,7 @@ final class GuguIOSCreateCommand {
     private let projectPath: String
     private let check: () throws -> Void
     private let start: Start
-    private var inFlight: Set<String> = []
+    private var inFlight: [String: [(Result<Void, Error>) -> Void]] = [:]
 
     init(broker: GuguIOSCloudBroker, store: GuguIOSBackendStore, instanceId: String, projectPath: String,
          check: @escaping () throws -> Void, start: @escaping Start) {
@@ -23,13 +23,19 @@ final class GuguIOSCreateCommand {
             do {
                 try self.check()
                 guard UUID(uuidString: id) != nil, UUID(uuidString: self.instanceId) != nil else { throw Self.failure("invalid_args", "Command and runtime IDs must be UUIDs") }
-                guard !self.inFlight.contains(id) else { throw Self.failure("admission_uncertain", "Original create command is still in progress") }
+                // Provisioning and the command pump can observe the same command.
+                // Join this executor's original work; never claim or start it twice.
+                if self.inFlight[id] != nil { self.inFlight[id]!.append(completion); return }
                 let saved = try self.store.admit("requests", id: "command:\(id)", fingerprint: id) {
                     ["kind": "create-command", "claimToken": UUID().uuidString.lowercased(), "instanceId": self.instanceId, "status": "pending"]
                 }
                 guard let token = saved["claimToken"] as? String else { throw Self.failure("invalid_journal", "Original command claim is missing") }
-                self.inFlight.insert(id)
-                let finish: (Result<Void, Error>) -> Void = { result in self.queue.async { self.inFlight.remove(id); completion(result) } }
+                self.inFlight[id] = [completion]
+                let finish: (Result<Void, Error>) -> Void = { result in self.queue.async {
+                    let callbacks = self.inFlight.removeValue(forKey: id) ?? []
+                    let checked = result.flatMap { _ in Result { try self.check() } }
+                    for callback in callbacks { callback(checked) }
+                } }
                 let done: (Result<Void, Error>) -> Void = { result in
                     if case .failure(let error as GuguHostFailure) = result,
                        ["invalid_args", "unsupported", "not_granted", "model_unavailable"].contains(error.code) {
