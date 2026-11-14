@@ -6,6 +6,8 @@ export async function downloadFeishuBinary(
   platform: CliPlatform,
   download: (url: string) => Promise<string>,
 ): Promise<void> {
+  const expected = FEISHU_BINARY_SHA256[platform];
+  if (!expected) throw new Error(`No pinned Feishu binary for ${platform}`);
   const archive = feishuArchiveName(platform);
   const sources = [
     `https://registry.npmmirror.com/-/binary/lark-cli/v${FEISHU_CLI_VERSION}/${archive}`,
@@ -20,7 +22,7 @@ export async function downloadFeishuBinary(
       failures.push(`${url}: ${(error as Error).message}`);
       continue;
     }
-    if (digest !== FEISHU_BINARY_SHA256[platform]) throw new Error(`${archive} integrity mismatch`);
+    if (digest !== expected) throw new Error(`${archive} integrity mismatch`);
     return;
   }
   throw new Error(`Could not download ${archive}. ${failures.join('; ')}`);

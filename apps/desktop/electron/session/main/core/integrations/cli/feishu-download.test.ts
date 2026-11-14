@@ -9,6 +9,12 @@ const mirror = `https://registry.npmmirror.com/-/binary/lark-cli/v${FEISHU_CLI_V
 const upstream = `https://github.com/larksuite/cli/releases/download/v${FEISHU_CLI_VERSION}/${archive}`;
 
 describe('pinned Feishu binary sources', () => {
+  it('refuses an unsupported platform before making any request', async () => {
+    const download = vi.fn();
+    await expect(downloadFeishuBinary('win32-x64', download)).rejects.toThrow('No pinned Feishu binary for win32-x64');
+    expect(download).not.toHaveBeenCalled();
+  });
+
   it.each(Object.keys(FEISHU_BINARY_SHA256) as CliPlatform[])('uses only the mirror on a verified %s download', async (target) => {
     const download = vi.fn().mockResolvedValue(FEISHU_BINARY_SHA256[target]);
     await downloadFeishuBinary(target, download);
