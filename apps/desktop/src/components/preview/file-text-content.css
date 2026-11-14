@@ -1,4 +1,5 @@
 .gg-file-source { font-family: var(--font-mono); font-size: var(--font-body); line-height: 1.65; }
+::highlight(gugu-file-comment) { background: var(--text-selection); color: var(--text-primary); }
 .gg-file-source-row { display: flex; align-items: flex-start; min-height: 1lh; }
 .gg-file-source-row > [data-file-line] { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; flex: 1; }
 .gg-file-line-number { flex: none; width: 40px; height: auto; min-height: 0; padding: 0 8px 0 0; border: 0; border-radius: 0; font: inherit; line-height: inherit; color: var(--text-tertiary); justify-content: flex-end; }

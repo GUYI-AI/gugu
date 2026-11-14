@@ -36,6 +36,15 @@ export function FileTextContent({ content, kind, fileName, style, onAnnotate }: 
   useBackLayer(close, !!selection)
 
   useEffect(() => {
+    // Focusing a same-document input stops painting the native selection. Keep the captured range visible.
+    const highlights = globalThis.CSS?.highlights
+    if (!editing || !selection || !highlights || typeof Highlight === 'undefined') return
+    const highlight = new Highlight(selection.range)
+    highlights.set('gugu-file-comment', highlight)
+    return () => { if (highlights.get('gugu-file-comment') === highlight) highlights.delete('gugu-file-comment') }
+  }, [editing, selection])
+
+  useEffect(() => {
     const element = root.current
     if (!element || !onAnnotate || editing) return
     const doc = element.ownerDocument
