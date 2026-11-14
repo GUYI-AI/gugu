@@ -55,7 +55,7 @@ const TEXT_FROM_PX = 24
 // Keep both rows inside the circle, including broad Latin letters and mixed names.
 const fontSizeFor = (count: number) => (count <= 1 ? 104 : count === 2 ? 76 : count <= 4 ? 60 : 52)
 const lineWidthInEms = (line: string) => Array.from(segmenter.segment(line)).reduce((width, { segment }) =>
-  width + (unitsOf(segment) === 2 || /[MW@%&]/.test(segment) ? 1 : 0.8), 0)
+  width + (unitsOf(segment) === 2 || /[MWmw@%&]/.test(segment) ? 1 : 0.7), 0)
 const FONT = "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', 'Noto Sans CJK SC', sans-serif"
 const GROUP_MARK = '<circle cx="90" cy="82" r="21"/><path d="M52 146c0-21 17-34 38-34s38 13 38 34c0 4-3 7-7 7H59c-4 0-7-3-7-7z"/>'
   + '<circle cx="136" cy="92" r="15"/><path d="M137 116c13 2 23 12 23 28 0 4-3 7-7 7h-17c1-2 1-4 1-6 0-11-5-20-12-27 4-2 8-2 12-2z"/>'

@@ -35,9 +35,10 @@ describe('default group face', () => {
     expect(mark).not.toContain('<text')
     expect(mark).toMatch(/<circle cx="104" cy="104" r="[\d.]+"[^>]*stroke="#3370FF"/)
     const sizeOf = (text: string) => /font-size="(\d+)"/.exec(groupAvatarSvg({ color: '#3370FF', text, fill: '#fff', px: 64 }))?.[1]
-    expect([sizeOf('团'), sizeOf('团队'), sizeOf('MKT'), sizeOf('产品设计'), sizeOf('Branding')]).toEqual(['104', '70', '53', '60', '43'])
+    expect([sizeOf('团'), sizeOf('团队'), sizeOf('MKT'), sizeOf('产品设计'), sizeOf('Branding')]).toEqual(['104', '70', '58', '60', '50'])
     expect(sizeOf('WWWW')).toBe('35')
-    expect(sizeOf('AI研发')).toBe('53')
+    expect(sizeOf('mmmm')).toBe('35')
+    expect(sizeOf('AI研发')).toBe('58')
     expect(groupAvatarSvg({ color: '#3370FF', text: '<b>&', fill: '#fff', px: 64 })).toContain('&#60;b&#62;&#38;')
   })
 
