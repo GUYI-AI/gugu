@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({ modal: vi.fn(), notice: vi.fn(), dismiss: vi.fn(), boundary: new AbortController(), checked: false }))
-vi.mock('@renderer/lib/modal/modal-provider', () => ({ showModal: state.modal }))
+vi.mock('../../../../apps/desktop/src/lib/conversationDeleteConfirmation', () => ({ requestConversationDeleteConfirmation: state.modal }))
 vi.mock('../../../../apps/desktop/src/lib/notices', () => ({ notify: state.notice, dismissNotice: state.dismiss }))
 vi.mock('../../../../apps/desktop/src/lib/authSessionLoss', () => ({ currentAuthSessionSignal: () => state.boundary.signal }))
 vi.mock('../../../../apps/desktop/src/lib/userFacingError', () => ({ messageForUser: () => 'offline' }))
@@ -10,22 +10,22 @@ beforeEach(() => {
   vi.clearAllMocks()
   state.boundary = new AbortController()
   state.checked = false
-  state.modal.mockImplementation((_kind, options) => options.onSuccess({ optionChecked: state.checked }))
+  state.modal.mockImplementation(() => Promise.resolve(state.checked))
 })
 describe('shared Agent delete confirmation', () => {
   it('defaults Agent removal to unchecked and only hides on confirmation', async () => {
     const hide = vi.fn().mockResolvedValue(undefined), remove = vi.fn()
     await confirmDeleteConversation({ clear: hide, ownedAgent: { id: 'agent', remove } })
-    expect(state.modal.mock.calls[0][1].option.defaultChecked).toBe(false)
+    expect(state.modal).toHaveBeenCalledWith(state.boundary.signal, true)
     expect(hide).toHaveBeenCalledTimes(1)
     expect(remove).not.toHaveBeenCalled()
   })
   it('does nothing when cancelled and hides other conversations without an Agent option', async () => {
     const hide = vi.fn().mockResolvedValue(undefined)
-    state.modal.mockImplementation((_kind, options) => options.onClose())
+    state.modal.mockResolvedValueOnce(null)
     await confirmDeleteConversation({ clear: hide, ownedAgent: { id: 'agent', remove: vi.fn() } })
     expect(hide).not.toHaveBeenCalled()
-    state.modal.mockImplementation((_kind, options) => options.onSuccess({ optionChecked: false }))
+    state.modal.mockResolvedValueOnce(false)
     await confirmDeleteConversation({ clear: hide })
     expect(hide).toHaveBeenCalledTimes(1)
     expect(state.modal).toHaveBeenCalledTimes(2)

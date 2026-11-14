@@ -1,4 +1,4 @@
-import { showModal } from '@renderer/lib/modal/modal-provider'
+import { requestConversationDeleteConfirmation } from './conversationDeleteConfirmation'
 import { i18n } from '../i18n'
 import { currentAuthSessionSignal } from './authSessionLoss'
 import { runConversationHidingAction } from './conversationHidingAction'
@@ -12,15 +12,7 @@ export async function confirmDeleteConversation({ clear, ownedAgent }: {
 }): Promise<void> {
   const boundary = currentAuthSessionSignal()
   const t = (key: string) => i18n.t(`chatList.${key}`, { ns: 'messaging' })
-  const choice = await new Promise<boolean | null>((resolve) => showModal('confirmActionModal', {
-    title: t('delete'),
-    description: t('deleteHistoryDescription'),
-    confirmLabel: t('delete'),
-    variant: 'destructive',
-    ...(ownedAgent ? { option: { label: t('alsoRemoveAgent'), defaultChecked: false } } : {}),
-    onSuccess: ({ optionChecked }) => resolve(optionChecked),
-    onClose: () => resolve(null),
-  }))
+  const choice = await requestConversationDeleteConfirmation(boundary, Boolean(ownedAgent))
   if (choice === null || boundary.aborted) return
   const key = `conversation-agent-removal:${ownedAgent?.id}`
   const dismiss = () => dismissNotice(key)
