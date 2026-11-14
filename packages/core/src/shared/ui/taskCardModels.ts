@@ -113,5 +113,5 @@ export function composerCardPreview(preview: string | null | undefined): { type:
   if (!head) return null
   let text: string
   try { text = JSON.parse(`"${head[2]}"`) as string } catch { return null }
-  return { type: head[1] as ComposerCard['type'], text }
+  return { type: head[1] as ComposerCard['type'], text: text.replace(/[\ud800-\udbff]$/, '') }
 }
