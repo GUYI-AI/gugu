@@ -2,13 +2,22 @@ import { Capacitor, registerPlugin } from '@capacitor/core'
 import type { IOSOwnerBinding } from '../ios-runtime/iosOwnerClient'
 
 export type IOSHostStatus = 'starting' | 'ready' | 'failed' | 'stopped' | 'interrupted'
+export interface IOSHostSession {
+  agentUserId: string
+  sessionId: string
+  displayName: string
+  status: string
+  chatId: string
+  modelId: string
+  lastActiveAt?: string | null
+}
 export interface IOSHostState {
   ownerId: string
   deviceId: string
   status: IOSHostStatus
   ready: boolean
   taskTimeline: boolean
-  sessions: readonly Record<string, unknown>[]
+  sessions: readonly IOSHostSession[]
   project: { id: string; name: string; path: string } | null
   lastHeartbeatAt: number | null
   error: string | null
@@ -44,6 +53,15 @@ function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid()
   return value as Record<string, unknown>
 }
+function sessionReply(value: unknown, binding: IOSOwnerBinding): IOSHostSession {
+  const row = object(value)
+  if (['agentUserId', 'sessionId', 'chatId'].some(key => typeof row[key] !== 'string' || !uuid.test(row[key] as string))
+    || ['displayName', 'status', 'modelId'].some(key => typeof row[key] !== 'string')
+    || row.lastActiveAt != null && typeof row.lastActiveAt !== 'string'
+    || ['ownerId', 'deviceId', 'installationId'].some(key => row[key] !== undefined && row[key] !== binding[key as keyof IOSOwnerBinding])) throw invalid()
+  return { agentUserId: row.agentUserId as string, sessionId: row.sessionId as string, chatId: row.chatId as string,
+    displayName: row.displayName as string, status: row.status as string, modelId: row.modelId as string, lastActiveAt: row.lastActiveAt as string | null | undefined }
+}
 function stateReply(value: unknown, binding: IOSOwnerBinding): IOSHostState {
   const reply = object(value)
   if (reply.error && typeof reply.error === 'object') throw invalid()
@@ -58,7 +76,7 @@ function stateReply(value: unknown, binding: IOSOwnerBinding): IOSHostState {
   const heartbeat = reply.lastHeartbeatAt ?? null
   if (heartbeat !== null && (typeof heartbeat !== 'number' || !Number.isFinite(heartbeat))) throw invalid()
   return { ownerId: binding.ownerId, deviceId: binding.deviceId, status: reply.status as IOSHostStatus,
-    ready: reply.ready, taskTimeline: reply.taskTimeline, sessions: reply.sessions as Record<string, unknown>[],
+    ready: reply.ready, taskTimeline: reply.taskTimeline, sessions: reply.sessions.map(row => sessionReply(row, binding)),
     project: project as IOSHostState['project'], lastHeartbeatAt: heartbeat as number | null,
     error: reply.error as string | null, errorCode: reply.errorCode as string | null }
 }
