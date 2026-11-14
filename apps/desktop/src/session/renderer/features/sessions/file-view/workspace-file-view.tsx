@@ -25,6 +25,7 @@ import { OPENED_FILE_MAX_BYTES } from '@gugu/session-core/session-record/contrac
 import { getFileKind } from '@renderer/lib/editor/fileKind';
 import { FOLDER_APP_FILE_TAB, openFolderInTab } from './file-view-kinds';
 import { OpenWithSystemButton } from './open-with-system-button';
+import { sessionAnnotations } from '../annotations/session-annotations';
 
 const isTextRead = (path: string) => ['text', 'markdown', 'html', 'csv'].includes(getFileKind(path));
 
@@ -115,6 +116,7 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
         read: () => readBytes(projectId, workspaceId, path, inWorkspace),
         registerHtml: (documentHtml) => registerHtmlPreview(documentHtml, (content) => workspaceRpc(projectId).files.createPreview(projectId, workspaceId, absolutePath, content)),
         quote: (selection) => sessionId ? quoteWorkspaceFile(projectId, sessionId, path, selection) : Promise.resolve(),
+        ...(sessionId ? { annotate: (comment: Parameters<NonNullable<HostedPreviewFile['source']['annotate']>>[0]) => { sessionAnnotations.forSession(sessionId).add({ kind: 'file', path, ...comment }); } } : {}),
         // On another machine this computer's programs cannot reach it: it is downloaded instead.
         ...(elsewhere ? {} : {
           openExternal: () => void openPathWithFailureToast(absolutePath, inWorkspace ? { projectId, workspaceId } : undefined),
