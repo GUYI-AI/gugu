@@ -188,6 +188,8 @@ export function readHealthSummary(raw: unknown): HealthSummaryRead {
     if (!isObj(range)) throw new Problem('range')
     const background = raw.background
     if (!isObj(background)) throw new Problem('background')
+    if (typeof background.supported !== 'boolean') throw new Problem('background.supported')
+    if (typeof background.granted !== 'boolean') throw new Problem('background.granted')
     const body = raw.body
     if (!isObj(body)) throw new Problem('body')
     const strings = (k: string) => arr(raw, k, 'root').map((v, i) => {

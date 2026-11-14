@@ -11,7 +11,7 @@ export type ResourceRejection = 'too_large' | 'unsupported';
 
 export function resourceRejection(file: { name: string; size: number; type?: string }): ResourceRejection | null {
   if (file.size > RESOURCE_MAX_BYTES) return 'too_large';
-  const type = file.type ?? '';
+  const type = (file.type ?? '').trim().toLowerCase();
   if (REJECTED_EXTENSIONS.test(file.name) || type.startsWith('video/') || type.startsWith('audio/')) return 'unsupported';
   return null;
 }
@@ -19,6 +19,6 @@ export function resourceRejection(file: { name: string; size: number; type?: str
 /** 名字只能是一段(新建文件夹、重命名):非空、不含 `/`。 */
 export function folderNameProblem(name: string): 'required' | 'slash' | null {
   if (!name.trim()) return 'required';
-  if (name.includes('/')) return 'slash';
+  if (name.includes('/') || name.includes('\\')) return 'slash';
   return null;
 }

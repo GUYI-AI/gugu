@@ -7,7 +7,7 @@ const labels: Record<string, [string, string]> = {
 /** Stable public categories. Native/provider diagnostics never become UI copy. */
 export function panelApplicationFailure(domain: string, resource: string, code: string, locale: string, operation?: string): string {
   const english = locale.startsWith('en'), index = english ? 1 : 0
-  const label = (labels[domain] ?? ['面板资料','Panel resource'])[index]
+  const label = (Object.hasOwn(labels, domain) ? labels[domain] : ['面板资料','Panel resource'])[index]
   const reasons: Record<string, [string,string]> = {
     EACCES: ['没有读写权限','Permission to read or write this item was denied'],
     EPERM: ['没有修改权限','Permission to change this item was denied'],
@@ -20,7 +20,7 @@ export function panelApplicationFailure(domain: string, resource: string, code: 
     CHANGE_ACK_UNAVAILABLE: ['暂时无法记录处理结果','The outcome could not be recorded'],
     CONCURRENT_CHANGES_RETRY: ['仍有新的面板变更正在整理','Additional panel changes are being reconciled'],
   }
-  const reason = (reasons[code] ?? ['处理过程中未能完成读写','The resource update could not complete'])[index]
+  const reason = (Object.hasOwn(reasons, code) ? reasons[code] : ['处理过程中未能完成读写','The resource update could not complete'])[index]
   return english ? `${label} “${resource}” ${operation === 'remove' ? 'deletion cleanup could not finish' : 'could not be applied'}: ${reason}.`
     : `${label}「${resource}」${operation === 'remove' ? '的删除清理未完成' : '未能应用'}：${reason}。`
 }
