@@ -8,6 +8,7 @@ import { execFile } from '@gugu/core/local/childProcess'
 import { statSync, type Dirent } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { prepareBundledNpm } from './bundled-npm/cache'
 
 // #2004 §3 (product spec) —— 运行时下载 stall 检测。
 // 起因：npm 下载原用 execFileSync('npm', ...) 同步跑，npm 卡半开连接（网络中途断但
@@ -249,12 +250,13 @@ export interface BundledNpmInvocation {
  * Run the production npm dependency through Electron's embedded Node. Windows npm installs expose a
  * `npm.cmd` shim that `execFile` cannot execute, and ordinary app users may not have Node/npm at all.
  */
-export function resolveBundledNpmInvocation(
+export async function resolveBundledNpmInvocation(
   env: NodeJS.ProcessEnv = process.env,
   appRoot: string = join(__dirname, '../../..'),
   execPath: string = process.execPath
-): BundledNpmInvocation {
-  const npmCli = join(appRoot, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+): Promise<BundledNpmInvocation> {
+  const npmCli = (await prepareBundledNpm(appRoot, env))
+    ?? join(appRoot, 'node_modules', 'npm', 'bin', 'npm-cli.js')
   if (!isNonEmptyFile(npmCli)) {
     throw new Error(`[engine-downloader] 随 App 交付的 npm CLI 缺失/空：${npmCli}`)
   }

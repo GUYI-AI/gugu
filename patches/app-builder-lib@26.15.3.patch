@@ -9,13 +9,16 @@
 # Not taken: the registry InstallLocation matching (#10022) and the single-quote escaping — other bugs,
 # not hit here.
 #
-# DELETE this patch (and its line in package.json pnpm.patchedDependencies) when electron-builder is
-# upgraded to a release that contains #10024 (27.x, or a 26.x that backports it). Bumping app-builder-lib
-# away from 26.15.3 makes pnpm install fail on this unused patch, so it cannot be left behind silently.
+# Remove the upstream process-matching hunks when upgrading to a release containing #10024.
+# The installSection hooks below are Gugu-specific: retain or replace them during an upgrade;
+# build-resources/nsis/zip-transaction.nsh supplies the same-volume ZIP installation transaction.
 #
 # Also from upstream (electron-builder master, allowOnlyOneInstallerInstance.nsh): every PowerShell call runs with
 # -NoProfile -NonInteractive. Without it each call loads the user's profile; on a machine whose profile runs
 # `conda init` that is 6–10 s per call, and an update makes six of them (installer + old uninstaller).
+# #2734 adds two optional payload transaction hooks, retaining upstream UI, registration,
+# shortcut management, and uninstaller generation/signing. Without them ZIP installation
+# still uninstalls the old app before extraction and cannot roll back a disk/full or lock error.
 diff --git a/templates/nsis/include/allowOnlyOneInstallerInstance.nsh b/templates/nsis/include/allowOnlyOneInstallerInstance.nsh
 index a5cb3fe536a9fe95a95ac796f92a27f62d9762cc..f4c9ae6d7774cf9de873d77c86210cbff81545dc 100644
 --- a/templates/nsis/include/allowOnlyOneInstallerInstance.nsh
@@ -90,3 +93,39 @@ index a5cb3fe536a9fe95a95ac796f92a27f62d9762cc..f4c9ae6d7774cf9de873d77c86210cbf
    ${else}
      !ifdef INSTALL_MODE_PER_ALL_USERS
        nsExec::Exec `taskkill /IM "${_FILE}" /FI "PID ne $pid"`
+diff --git a/templates/nsis/installSection.nsh b/templates/nsis/installSection.nsh
+index 053772f55ca6ece52f0a34c4fa0f05c9a5f07bd2..405e4b483a98045bd8b36044515e802e889f551c 100644
+--- a/templates/nsis/installSection.nsh
++++ b/templates/nsis/installSection.nsh
+@@ -49,6 +49,11 @@ ${if} $isTryToKeepShortcuts == "true"
+   ${endIf}
+ ${endif}
+ 
++# Allow a package to prepare and atomically publish its payload before registration,
++# while retaining the stock uninstaller generation/signing and all UI/scope behavior.
++!ifmacrodef customInstallApplication
++  !insertmacro customInstallApplication
++!else
+ !insertmacro uninstallOldVersion SHELL_CONTEXT
+ !insertmacro handleUninstallResult SHELL_CONTEXT
+ 
+@@ -64,6 +69,8 @@ SetOutPath $INSTDIR
+ !endif
+ 
+ !insertmacro installApplicationFiles
++!endif
++
+ !insertmacro registryAddInstallInfo
+ !insertmacro addStartMenuLink $keepShortcuts
+ !insertmacro addDesktopLink $keepShortcuts
+@@ -82,6 +89,10 @@ ${endIf}
+   !insertmacro customInstall
+ !endif
+ 
++!ifmacrodef customInstallApplicationComplete
++  !insertmacro customInstallApplicationComplete
++!endif
++
+ !macro doStartApp
+   # otherwise app window will be in background
+   HideWindow
