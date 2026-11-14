@@ -113,6 +113,7 @@ export type WindowReadRequest = {
   locator: SessionRecordLocator; conversationId: string; cacheDirectory: string;
   scope: string; conversationScope: string; branchLineage: string;
   limit?: number; signal?: AbortSignal; budget: WindowBudget;
+  historyFloor?: string | null;
 };
 export type WindowPage = {
   kind: 'page' | 'continuation'; scope: string; sourceLineage: string;

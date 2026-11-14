@@ -365,6 +365,13 @@
       "when": 1794473000000,
       "tag": "0052_session_permission_tier",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1794609516964,
+      "tag": "0053_personal_conversation_history",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import { readMessageWindow, type AccountImRepository } from '../lib/imRepository
 import { trimToMessageWindow } from './chatMessageWindow'
 import { messageWindow, publishMessageWindows } from '../lib/messageWindows'
 import type { ChatWindowCache } from './chatWindowCache'
+import { recordNativeConversationHistoryClear } from '../lib/nativeConversationHistoryClear'
 
 /** One account commit feeds every viewport, including conversations not open yet. */
 export function bindRepositoryMessageCache(repository: AccountImRepository, cache: ChatWindowCache): () => void {
@@ -11,6 +12,10 @@ export function bindRepositoryMessageCache(repository: AccountImRepository, cach
   publishMessageWindows(repository.accountId, (chatId, rows) => { if (rows) cache.set(chatId, rows); else cache.delete(chatId) })
   let previous: ReturnType<AccountImRepository['snapshot']> | undefined
   return repository.subscribe(snapshot => snapshot, snapshot => {
+    for (const row of snapshot.chat) {
+      cache.clearHistoryBefore(row.id, row.value.conversation_cleared_at)
+      recordNativeConversationHistoryClear(repository.accountId, row.id, row.value.conversation_cleared_at)
+    }
     if (previous && previous.chat !== snapshot.chat) {
       for (const row of previous.chat) if (!snapshot.chat.some(chat => chat.id === row.id)) cache.delete(row.id)
     }

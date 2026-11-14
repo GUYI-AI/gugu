@@ -8,6 +8,7 @@ type Response = { data: unknown; error: { message: string } | null }
 const calls: Array<{ key: string; columns?: string; ids?: readonly string[] }> = []
 const rowsByKey = new Map<string, unknown[]>()
 function builder(key: string, args?: { p_chat_ids?: readonly string[] }): unknown {
+  if (key === 'rpc:list_conversation_memberships') key = 'active_members'
   const call: { key: string; columns?: string; ids?: readonly string[] } = { key, ids: args?.p_chat_ids }
   const chain: unknown = new Proxy(function noop() {} as unknown as object, {
     get(_target, prop) {

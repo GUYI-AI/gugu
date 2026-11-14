@@ -104,7 +104,7 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, projec
     const id = stableId(request.operationId, 'initial-task')
     const source = caller ?? { sessionId: agent.sessionId, name: '主人', deviceId, agentUserId: ownerId }
     if (caller) await admit({ id, agentUserId: agent.agentUserId, prompt: buildSessionDirectEnvelope({ senderSessionId: source.sessionId, senderTitle: source.name, messageId: id, content: request.prompt, at: formatDeliveryTimestamp(new Date().toISOString()) }), ...(request.inputDataProof ? { inputDataProof: request.inputDataProof } : {}), route: { kind: 'session-direct', caller, sourceMessageId: id } })
-    else await admit({ id, agentUserId: agent.agentUserId, prompt: request.prompt, route: { kind: 'task', senderUserId: ownerId } })
+    else await admit({ id, agentUserId: agent.agentUserId, prompt: request.prompt, route: { kind: 'task', senderUserId: ownerId, personalAdmission: 'owner-input' } })
     request.result = snapshot(agent)
     await store.save(); publish()
     return request.result

@@ -264,6 +264,16 @@ export default {
     }
   },
   "chatList": {
+    "hide": "Hide",
+    "deleteHistoryDescription": "Clear your chat history. Other members are not affected.",
+    "hideFailed": "Could not remove this conversation from the list",
+    "removeFromList": "Remove from list",
+    "hideAgentDescription": "This conversation will leave your list and return when a new message arrives.",
+    "alsoRemoveAgent": "Also delete this Agent",
+    "hiddenAgentDeleteFailed": "Conversation history deleted, but could not delete the Agent",
+    "retryAgentDelete": "Retry deleting Agent",
+    "agentDeleted": "Agent deleted",
+    "hiddenRefreshFailed": "Removed from list, but the list could not refresh. Please retry.",
     "addContact": "Add contact",
     "clearSearch": "Clear search",
     "create": "New",

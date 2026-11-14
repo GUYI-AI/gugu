@@ -20,6 +20,8 @@ import { searchTaskTurnMatches } from './task-turn-search';
 import { textCondition } from './text-condition';
 import { workspaceFileIndexService } from './workspace-file-index-service';
 import { taskTurnIndexStatus } from '@main/db/search-backfill-state';
+import { nativeConversationHistoryFloor } from '../sessions/native-publication-host';
+import { historyTime } from '@gugu/core/shared/conversationHistoryTime';
 
 type FtsRow = {
   item_type: string;
@@ -101,8 +103,24 @@ class SearchService {
 
   /** What was said in local tasks, newest first: matched off the main thread (task-turn-matches.ts), named here. */
   async searchTaskTurns(query: string, limit?: number): Promise<TaskTurnHit[]> {
-    return (await searchTaskTurnMatches(query, limit)).map(({ agentDisplayName, ...match }) => ({ ...match,
-      title: taskName({ id: match.sessionId, config: { agentDisplayName: agentDisplayName ?? undefined } }) }));
+    const size = Math.min(Math.max(limit ?? 30, 1), 100), hits: TaskTurnHit[] = [];
+    const floors = new Map<string, string | null>(), retained = new Set<string>();
+    for (let offset = 0; hits.length < size; offset += size) {
+      const batch = await searchTaskTurnMatches(query, size, offset);
+      await Promise.all([...new Set(batch.map(hit => hit.sessionId))].filter(id => !floors.has(id))
+        .map(async id => { floors.set(id, await nativeConversationHistoryFloor(id)); }));
+      for (const { agentDisplayName, messageTime, ...match } of batch) {
+        const floor = floors.get(match.sessionId);
+        if (floor && (messageTime === undefined || messageTime < historyTime(floor))) continue;
+        const key = JSON.stringify([match.sessionId, match.itemId]);
+        if (retained.has(key)) continue;
+        retained.add(key);
+        hits.push({ ...match, title: taskName({ id: match.sessionId, config: { agentDisplayName: agentDisplayName ?? undefined } }) });
+        if (hits.length === size) break;
+      }
+      if (batch.length < size) break;
+    }
+    return hits;
   }
 
   /** 没有输入时:最近交互的任务。 */

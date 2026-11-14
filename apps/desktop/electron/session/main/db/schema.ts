@@ -63,6 +63,7 @@ export const imMessageChats = sqliteTable('im_message_chats', {
   membershipRevision: text('membership_revision'),
   chatRevision: text('chat_revision'),
   archived: integer('archived').notNull().default(0),
+  historyClearedAt: text('history_cleared_at'),
 }, table => ({
   key: primaryKey({ columns: [table.accountId, table.chatId] }),
   source: index('im_message_chats_source').on(table.accountId, table.sourceChatId, table.ownMember),

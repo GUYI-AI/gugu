@@ -628,7 +628,7 @@ public class GuguAgentHostService extends Service {
         String redact(String value) { return GuguAgentHostPolicy.publicMessage(value, config.optString("accessToken"), config.optString("refreshToken"), config.optString("supabaseAnonKey")); }
         JSObject sanitize(JSObject event) throws Exception {
             JSObject out = new JSObject().put("ownerId", owner);
-            String[] keys = {"status", "ready", "message", "error", "sessions", "project", "taskTimeline", "lastHeartbeatAt"};
+            String[] keys = {"status", "ready", "message", "error", "sessions", "project", "taskTimeline", "lastHeartbeatAt", "accountRevision"};
             for (String key : keys) if (event.has(key)) out.put(key, event.get(key));
             return new JSObject(redact(out.toString()));
         }

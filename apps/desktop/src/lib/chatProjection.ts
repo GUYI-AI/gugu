@@ -98,6 +98,8 @@ export type ChatProjectionLedgerEntry = {
 }
 
 export type ChatProjection = {
+  /** Versioned list maintenance; a newer cleared membership supersedes a delayed hide receipt. */
+  confirmPersonalHiding: (receipt: import('./hideListedConversation').PersonalConversationHiding, signal?: AbortSignal) => Promise<ChatItem[]>
   /** RPC receipt has no revision stamp; retain this monotonic list fact until account reset. */
   confirmPersonalDeletion: (receipt: import('./deleteListedConversation').PersonalConversationDeletion) => void
   /**
@@ -240,6 +242,7 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
   const source: AssembleSource = {
     value: <T extends EntityValue>(family: EntityFamily, id: string) => (cache.get(entityKey(family, id))?.value ?? undefined) as T | undefined,
     members: chatId => sortMembers([...(membersByChat.get(chatId)?.values() ?? [])]),
+    stamp: (family, id) => cache.get(entityKey(family, id))?.stamp,
   }
   const confirmedDeletions = new Map<string, string>()
   const ledger: ChatProjectionLedgerEntry[] = []
@@ -309,9 +312,7 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       // membership 的键是 <chatId>/<userId>。按 chat 分组成一次 in(),再按键落位。
       const parsed = ids.map((id) => ({ id, ...splitMembershipId(id) }))
       const chatIds = [...new Set(parsed.map((entry) => entry.chatId))]
-      const { data, error } = await chatDb.from('active_members')
-        .select('chat_id, user_id, last_read_seq, is_marked_unread, version, notification_level, is_pinned, updated_at, joined_at, inbox_published_at, role, conversation_deleted_at')
-        .in('chat_id', chatIds).abortSignal(signal)
+      const { data, error } = await chatDb.rpc('list_conversation_memberships', { p_chat_ids: chatIds }).abortSignal(signal)
       if (error) throw new Error(error.message)
       const found = (data ?? []) as Array<Record<string, unknown> & { chat_id: string; user_id: string }>
       const byKey = new Map<string, unknown>()
@@ -479,7 +480,12 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       for (const [family, byId] of results) {
         for (const [id, value] of byId) {
           const key = entityKey(family, id)
-          cells.push([key, { value: (value ?? null) as Cell['value'], stamp: cursor }])
+          // A read can observe a personal action newer than the wake requesting
+          // it. Preserve that authority against a delayed older receipt.
+          const observed = family === 'membership' ? (value as MembershipValue | null)?.personal_state_observed_revision : undefined
+          if (observed) assertRevision(observed, 'personal membership observation')
+          const stamp = observed && compareStamp(observed, cursor) > 0 ? observed : cursor
+          cells.push([key, { value: (value ?? null) as Cell['value'], stamp }])
           settled.push(key)
         }
       }
@@ -604,6 +610,19 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
   }
 
   const owner: ChatProjection = {
+    async confirmPersonalHiding(receipt, signal = new AbortController().signal) {
+      assertRevision(receipt.account_revision, 'hide receipt')
+      const key = entityKey('membership', membershipId(receipt.chat_id, viewerId))
+      const current = cache.get(key)
+      if (current?.value) {
+        merge([[key, { stamp: receipt.account_revision,
+          value: { ...current.value, conversation_hidden_at: receipt.hidden_at, ...(receipt.cleared_at ? { conversation_cleared_at: receipt.cleared_at } : {}) } }]])
+        if (receipt.cleared_at) await ingestMessages(viewerId, { writes: messageAccessWrites(cache, viewerId, [key]), revisions: [] })
+        return republish()
+      }
+      return await owner.advance([{ revision: receipt.account_revision, event: 'chat_members_changed',
+        chatId: receipt.chat_id, entityId: viewerId, own: true }], receipt.account_revision, signal) ?? rows
+    },
     confirmPersonalDeletion({ chat_id, deleted_at }) {
       confirmedDeletions.set(chat_id, deleted_at)
       rows = rows.filter(row => row.id !== chat_id)
@@ -697,6 +716,12 @@ export function membershipValue(row: Record<string, unknown>): Record<string, un
     joined_at: String(row.joined_at ?? row.updated_at ?? ''),
     inbox_published: row.inbox_published_at != null,
     conversation_deleted_at: typeof row.conversation_deleted_at === 'string' ? row.conversation_deleted_at : null,
+    conversation_hidden_at: typeof row.conversation_hidden_at === 'string' ? row.conversation_hidden_at : null,
+    conversation_cleared_at: typeof row.conversation_cleared_at === 'string' ? row.conversation_cleared_at : null,
+    native_personal_activity_at: typeof row.native_personal_activity_at === 'string' ? row.native_personal_activity_at : null,
+    native_personal_activity_revision: typeof row.native_personal_activity_revision === 'string' ? row.native_personal_activity_revision : undefined,
+    personal_state_observed_revision: typeof row.personal_state_observed_revision === 'string' ? row.personal_state_observed_revision : undefined,
+    historical_only: row.historical_only === true,
     role: typeof row.role === 'string' ? (row.role as GroupMemberRole) : null,
   }
 }

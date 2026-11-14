@@ -57,6 +57,7 @@ import { useShownAgentStatus, type ShownAgentStatus } from './chat/useAgentsOnCl
 import { AgentHostStaleBadge } from './AgentHostStaleBadge'
 import { chatActivityAt, chatDisplayName, isChatListed, isRoomChat, isSunkTopic, TOPIC_SINK_AFTER_DAYS } from '@gugu/core/shared/ui/chatModels'
 import { platform } from '../platform'
+import { visibleConversationRows } from '@gugu/core/shared/ui/chatModels'
 import type { AgentDisplayStatus, ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import { rendererLogger } from '../lib/log'
@@ -204,7 +205,7 @@ export interface ChatRowActions {
   /** #2548 取消固定到左侧栏: the pinned session of an agent pinned to the one list. */
   unpinFromSidebar: (sessionId: string) => void
   setNotificationLevel: (chatId: string, level: NotificationLevel) => void
-  remove: (chatId: string) => void
+  remove: (chatId: string) => Promise<void>
   focus: (chatId: string) => void
   keyDown: (event: Parameters<KeyboardEventHandler<HTMLDivElement>>[0], chat: ChatItem) => void
 }
@@ -291,7 +292,7 @@ export const TopicSubRow = memo(function TopicSubRow({ topic, mobile, isActive, 
         onClose={menu.closeMenu}
         onPin={() => actions.pin(topic)}
         onSetNotificationLevel={(level) => actions.setNotificationLevel(topic.id, level)}
-        onDelete={() => actions.remove(topic.id)}
+        onHide={() => actions.remove(topic.id)}
       />
     )}
     </>
@@ -441,7 +442,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
           onPin={() => actions.pin(chat)}
           onUnpinFromSidebar={pinnedSessionId === undefined ? undefined : () => actions.unpinFromSidebar(pinnedSessionId)}
           onSetNotificationLevel={(level) => actions.setNotificationLevel(chat.id, level)}
-          onDelete={() => actions.remove(chat.id)}
+          onHide={() => actions.remove(chat.id)}
         />
       )}
     </>
@@ -592,7 +593,7 @@ export function ChatListPanel({
   const { t: tMain } = useTranslation('main')
   const assistantShell = useAssistantShell()
   const { user } = useAuth()
-  const { chats: imChats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, chatsLoadFailed, refreshChats, pinChat, deleteChat, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'chatsLoadFailed', 'refreshChats', 'pinChat', 'deleteChat', 'setChatNotificationLevel', 'drafts')
+  const { chats: imChats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, chatsLoadFailed, refreshChats, pinChat, hideConversation, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'chatsLoadFailed', 'refreshChats', 'pinChat', 'hideConversation', 'setChatNotificationLevel', 'drafts')
   // The list read failed with nothing to show: that is a failure, not "no conversations" (same rule as the contacts sections).
   const listReadFailed = chatsLoadFailed && imChats.length === 0
   const chats = useNativeAgentChats(imChats)
@@ -680,7 +681,9 @@ export function ChatListPanel({
   const isProjectGroupLine = (chat: ChatItem) => projectGroupChats.has(chat.kind === 'topic' ? (chat.source_chat_id ?? '') : chat.id)
   const shownAsLead = lead ? leadChatId : null
   const listedByActivity = (chat: ChatItem) => hasSearchQuery || isChatListed(chat, { activeChatId: selectedChatId, hasDraft: Boolean(drafts[chat.id]?.trim()) })
+  const visibleIds = new Set(visibleConversationRows(chats).map(chat => chat.id))
   const isListed = (chat: ChatItem) =>
+    (hasSearchQuery || visibleIds.has(chat.id)) &&
     !isDuplicateAssistantChat(chat, assistantShell, workrooms)
       && !(inSidebar && !mobile && !hasSearchQuery && isArchivedOwnedAgentChat(chat, user?.id, identitiesById[chat.peer_user_id ?? ''], agentStatuses[chat.peer_user_id ?? '']))
       && chat.id !== shownAsLead
@@ -782,7 +785,7 @@ export function ChatListPanel({
     sessionPage.unpinFromSidebar(sessionId)
   })
   const setLevel = useStableHandler((chatId: string, level: NotificationLevel) => setChatNotificationLevel(chatId, level))
-  const remove = useStableHandler((chatId: string) => deleteChat(chatId, true))
+  const remove = useStableHandler((chatId: string) => hideConversation(chatId))
   const keyDown = useStableHandler((event: Parameters<KeyboardEventHandler<HTMLDivElement>>[0], chat: ChatItem) => handleChatKeyDown(event, chat))
   const rowActions = useMemo<ChatRowActions>(() => ({ activate, openTopic, toggleTopics: toggle, pin, unpinFromSidebar, setNotificationLevel: setLevel, remove, focus: setFocusedChatId, keyDown }),
     [activate, openTopic, toggle, pin, unpinFromSidebar, setLevel, remove, keyDown])

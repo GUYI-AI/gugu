@@ -55,7 +55,7 @@ function tailBound(previous: readonly MessageItem[]): number {
 
 /** One committed row set owns its bounds and virtual indices; requests own an activation token. */
 export class ChatHistoryWindow {
-  constructor(readonly accountId: string | null = null) {}
+  constructor(readonly accountId: string | null = null, private readonly visible: (row: MessageItem) => boolean = () => true) {}
   private state: HistoryWindow = {
     chatId: null, messages: [], firstItemIndex: HISTORY_START_INDEX, hasOlder: false,
     hasNewer: false, loading: null, change: 'reset', navigation: 'reset', navigationVersion: 0, viewVersion: 0, newMessageCount: 0, latestSeen: 0,
@@ -73,6 +73,8 @@ export class ChatHistoryWindow {
   }
 
   private publish(next: HistoryWindow): void {
+    const visible = next.messages.filter(this.visible)
+    if (visible.length !== next.messages.length) next = { ...next, messages: visible, hasOlder: false }
     if ((Object.keys(next) as (keyof HistoryWindow)[]).every((key) => this.state[key] === next[key])) return
     this.state = next
     if (next.chatId) this.latestSeenByChat.set(next.chatId, next.latestSeen)

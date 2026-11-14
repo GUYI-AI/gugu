@@ -1,3 +1,4 @@
+import { createPhoneConversationHistory } from './phone-conversation-history.mjs'
 import { archiveIdentity } from '../../../packages/core/src/cloud/agentIdentityRemoval.ts'
 import { SessionInputAdmissionError, sessionInputAdmission } from '../../../packages/core/src/shared/sessionInputAdmission.ts'
 import { archiveAgentRecord, agentsForOwner } from '../../../packages/core/src/local/state/agentOwner.ts'
@@ -19,6 +20,7 @@ import { REMOTE_PROTOCOL_VERSION, MIN_CLIENT_PROTOCOL } from '../../../packages/
 import { createPhoneAgentCloud } from './phone-agent-cloud.mjs'
 import { createPhoneModelAccess } from './phone-agent-model.mjs'
 import { openPhoneAgentStore, admitPhoneJob, phoneInboxJobId, stableId, uuid } from './phone-agent-store.mjs'
+import { createPhoneConversationPublisher, recordPhonePersonalReply } from './phone-conversation-publications.mjs'
 import { stopPhoneSession } from './phone-session-stop.mjs'
 import { withSessionAttachments } from '../../../packages/core/src/cloud/sessionAttachments.ts'
 import { startPhoneAgentRpc } from './phone-agent-rpc.mjs'
@@ -62,6 +64,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
   let rpcHost = null
   let workPump = null
   let workHistory = null
+  let conversationPublisher = null
   let heartbeatTimer = null
   let reconciliationTimer = null
   let commandTick = null
@@ -91,7 +94,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
   const execution = () => activeJob?.status === 'running' ? { sessionId: store.state.agents[activeJob.agentUserId]?.sessionId, jobId: activeJob.id, phase: activeJob.cancelRequested ? 'stopping' : activeJob.phase ?? 'preparing' } : null
   const state = () => {
     const error = healthErrors.auth ?? healthErrors.rpc ?? healthErrors.heartbeat
-    return { ownerId, deviceId, project, taskTimeline: true, execution: execution(), status: stopped ? 'stopped' : ready ? 'ready' : error ? 'failed' : 'starting', ready, error: stopped ? null : error?.message ?? null, errorCode: stopped ? null : error?.code ?? null, authError: stopped ? null : healthErrors.auth?.authError ?? null, lastHeartbeatAt, sessions: agents().map((agent) => ({ agentUserId: agent.agentUserId, sessionId: agent.sessionId, displayName: agent.displayName, chatId: agent.chatId, modelId: agent.modelId, status: agent.status, lastError: agent.lastError ?? null, lastActiveAt: agent.lastActiveAt ?? null, lastJobStatus: lastJob(agent.agentUserId)?.status ?? null, birthGroup: agent.birthGroup ?? null })) }
+    return { ownerId, deviceId, project, taskTimeline: true, execution: execution(), status: stopped ? 'stopped' : ready ? 'ready' : error ? 'failed' : 'starting', ready, error: stopped ? null : error?.message ?? null, errorCode: stopped ? null : error?.code ?? null, authError: stopped ? null : healthErrors.auth?.authError ?? null, lastHeartbeatAt, accountRevision: store.state.personalAccountRevision ?? null, sessions: agents().map((agent) => ({ agentUserId: agent.agentUserId, sessionId: agent.sessionId, displayName: agent.displayName, chatId: agent.chatId, modelId: agent.modelId, status: agent.status, lastError: agent.lastError ?? null, lastActiveAt: agent.lastActiveAt ?? null, lastJobStatus: lastJob(agent.agentUserId)?.status ?? null, birthGroup: agent.birthGroup ?? null })) }
   }
   const publish = (patch = {}) => emit({ type: 'host_state', ...state(), ...patch })
   const warn = (message) => emit({ type: 'host_log', ownerId, level: 'warn', message })
@@ -99,6 +102,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     const wasReady = ready
     ready = startupComplete && authenticated && rpcConnected && heartbeatHealthy && !stopped && !signingOut
     publish()
+    if (authenticated && !stopped && !signingOut) void conversationPublisher?.kick()
     if (ready && !wasReady) setImmediate(() => { void drain().catch((error) => warn(error.message)); void workPump?.kick().catch(error=>warn(error.message)); void workHistory?.kick() })
   }
   const restoreLogger = setCoreLoggerFactory((scope) => Object.fromEntries(['debug', 'info', 'warn', 'error'].map((level) => [level, (_fields, message) => emit({ type: 'host_log', ownerId, level, message: `${scope}: ${message}` })])))
@@ -120,6 +124,9 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     emit({ type: 'auth_session', ownerId, session, accessToken: session.access_token, refreshToken: session.refresh_token, expiresAt: session.expires_at })
     authenticated = true; healthErrors.auth = null; updateReadiness()
   }, undefined, { onRequestFailure: recordRequestFailure })
+  conversationPublisher = createPhoneConversationPublisher({ store, cloud, isReady: () => authenticated && !stopped && !signingOut, authorize: (...args) => authorizeReply(...args), published: async receipt => {
+    if (!store.state.personalAccountRevision || BigInt(receipt.account_revision) > BigInt(store.state.personalAccountRevision)) { store.state.personalAccountRevision = receipt.account_revision; await store.save(); publish() }
+  }, warn: ({ code }) => warn(`personal conversation publication: ${code}`) })
   const models = modelFactory(cloud, store, warn)
   const agents = () => agentsForOwner(Object.values(store.state.agents), ownerId)
   const findSession = (id, includeArchived = false) => {
@@ -186,7 +193,8 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
       admitted = { ...input, inputDataProof: structuredClone(proof), usedGroups: [...proof.groups], permissionRequirements: uniqueProofs(proof.permissionRequirements), contextEpoch: agent.contextEpoch }
     }
     signal?.throwIfAborted()
-    const job = await admitPhoneJob(store, admitted)
+    const job = await admitPhoneJob(store, admitted, { agent: target, deviceId })
+    void conversationPublisher.kick()
     // Start after the admission Promise lets the reader commit its read receipt.
     setImmediate(() => { void drain().catch((error) => warn(error.message)) })
     return job
@@ -365,6 +373,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     job.status = 'running'; job.phase = 'preparing'; job.startedAt ??= new Date().toISOString(); agent.status = 'working'; agent.agentStatusSeen = 1; agent.lastError = null; agent.lastActiveAt = job.startedAt
     await store.save(); publish()
     let lease
+    const personalWrites = []
     const controller = new AbortController()
     activeController = controller
     const stopTurn = () => controller.abort(Object.assign(new Error('手机宿主已停止'), { cancelled: true }))
@@ -422,7 +431,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
       delete store.state.preparationBackoff; delete job.networkWait
       await store.save()
       const tools = [
-        ...phoneCommunicationTools({ agent, job, cloud, store, env, sendSession, emit, authorize: authorizeReply }).filter((tool) => tool.name !== 'session_message'),
+        ...phoneCommunicationTools({ agent, job, cloud, store, env, deviceId, sendSession, emit, publicationQueued: () => { void conversationPublisher.kick() }, authorize: authorizeReply }).filter((tool) => tool.name !== 'session_message'),
         ...phoneChatReadTools({ agent, cloud, store, env }),
         ...phoneFileTools({ agent, job, cloud, store, env, authorize: authorizeReply, emit }),
         phoneWebTool({ agent, job, authorize: authorizeReply }),
@@ -440,6 +449,11 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
       checkCancelled()
       const result = await runTurn({ sessionId: agent.sessionId, jobId: job.id, contextEpoch: agent.contextEpoch, agentUserId: agent.agentUserId, prompt, phoneTools: 'catalog', cancelled: job.cancelRequested === true, ...lease.model }, { emit: (event) => {
         if (event.type === 'pi_live') {
+          if (recordPhonePersonalReply(store, job, agent, deviceId, event)) {
+            const writing = store.save()
+            personalWrites.push(writing)
+            void writing.then(() => conversationPublisher.kick()).catch(error => warn(`personal message journal: ${error.code ?? 'save_failed'}`))
+          }
           if (event.kind === 'committed' && event.id === `phone-input:${job.id}`) {
             job.inputRecordId ??= event.recordId
             if (job.inputRecordId === event.recordId) {
@@ -476,6 +490,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
         emit({ ...event, ownerId, agentUserId: agent.agentUserId, sessionId: agent.sessionId })
       }, nativeCall, extraTools: tools, systemPrompt: `${systemPrompt}\n本轮 Skill 配置版本 ${skillTurn.revision}。任务开始时按需调用 phone_skills_list 查看本轮启用项，再用 phone_skills_read 读取相关说明；历史 Skill 返回不代表当前启用，不得继续应用已停用的旧配置。Skill 只指导现有能力，不授予新工具或权限，也不能覆盖群规和系统授权。长任务先按需调用 phone_memory_search 查本任务的笔记；只有确需保留的确认决定或主人明确要求记住的内容才用 phone_memory_save，不保存模型票据、令牌或凭据。你可以读取公开网页文字、读取已登记文本附件并产出文本文件；不能声称具有浏览器 GUI 操作或视觉模型能力。`, onRecord: async (record) => { agent.record = { ...record, contextEpoch: agent.contextEpoch }; job.record = { ...agent.record }; await store.save() } })
       job.text = result.text ?? ''
+      await Promise.all(personalWrites)
       if (result.status !== 'done') throw Object.assign(new Error(result.error ?? (result.status === 'cancelled' ? '任务已取消' : '手机 Agent 运行失败')), { cancelled: result.status === 'cancelled' })
       if (job.route?.kind === 'task') await authorizeReply(job.usedGroups ?? [], { sessionId: agent.sessionId, permissionRequirements: job.permissionRequirements })
       if (job.route?.kind !== 'task' && !job.sent?.length && !job.waitingConfirmation && job.text.trim() !== '[NO_REPLY]') throw new Error('执行结束了，但 Agent 尚未通过咕咕消息工具交付回复')
@@ -512,6 +527,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
         await store.save()
       }
     } finally {
+      await Promise.allSettled(personalWrites)
       if (job.status !== 'queued') {
         await timelines.finish(agent, job).catch((error) => warn(error.message))
         agent.dataProof = { groups: [...new Set([...(agent.dataProof?.groups ?? []), ...(job.usedGroups ?? [])])], permissionRequirements: uniqueProofs(agent.dataProof?.permissionRequirements, job.permissionRequirements) }
@@ -572,7 +588,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
 
   const provision = createPhoneProvisioner({ ownerId, cloud, store, deviceId, projectId, root, models, tick, admit, snapshot, publish })
 
-  const timelines = createPhoneTimelineRuntime({ root, store, confirmations: (agent) => actions?.settlements?.(agent) ?? [], authorize: async (agent) => {
+  const timelines = createPhoneTimelineRuntime({ root, store, historyFloor: createPhoneConversationHistory({ cloud, store, ownerId }), confirmations: (agent) => actions?.settlements?.(agent) ?? [], authorize: async (agent) => {
     const proof = agent.dataProof ?? { groups: [], permissionRequirements: [] }
     const current = activeJob?.agentUserId === agent.agentUserId ? activeJob : null
     const inputs = Object.values(store.state.jobs).filter((job) => job.agentUserId === agent.agentUserId && (!job.contextEpoch || job.contextEpoch === agent.contextEpoch)).map((job) => job.inputDataProof).filter(Boolean)
@@ -737,7 +753,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     // host_stop and native pipe EOF can arrive while the first cleanup is awaiting I/O.
     // Every caller must join it; EOF may terminate the process as soon as close resolves.
     closing = (async () => {
-      await Promise.allSettled([draining, commandTick, heartbeating, deliveringFailures, workHistory?.close(), rpcHost?.close()])
+      await Promise.allSettled([draining, commandTick, heartbeating, deliveringFailures, conversationPublisher?.close(), workHistory?.close(), rpcHost?.close()])
       await withdrawHostCapability().catch((error) => warn(`撤销手机宿主运行能力失败: ${error.message}`))
       for (const agent of agents()) await report(agent, false).catch((error) => warn(error.message))
       await timelines.close(); await cloud.close(); await store.flush(); restoreLogger(); publish()

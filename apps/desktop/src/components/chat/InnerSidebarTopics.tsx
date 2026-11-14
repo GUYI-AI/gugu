@@ -26,7 +26,7 @@ import { innerSidebarTopicRows, topicsOfChat } from './innerSidebarTopicsModel'
  */
 export function InnerSidebarTopics({ chatId }: { chatId: string }) {
   const { t } = useTranslation('messaging')
-  const { pinChat, deleteChat, setChatNotificationLevel } = useChatStore('pinChat', 'deleteChat', 'setChatNotificationLevel')
+  const { pinChat, hideConversation, setChatNotificationLevel } = useChatStore('pinChat', 'hideConversation', 'setChatNotificationLevel')
   // Only this chat's topics: a message elsewhere must not redraw these rows.
   const topics = useStoreValueBy(
     (store) => topicsOfChat(store.chats, chatId),
@@ -57,7 +57,7 @@ export function InnerSidebarTopics({ chatId }: { chatId: string }) {
   })
   const pin = useStableHandler((topic: ChatItem) => pinChat(topic.id, !topic.is_pinned))
   const setLevel = useStableHandler((topicId: string, notificationLevel: NotificationLevel) => setChatNotificationLevel(topicId, notificationLevel))
-  const remove = useStableHandler((topicId: string) => deleteChat(topicId, true))
+  const remove = useStableHandler((topicId: string) => hideConversation(topicId))
 
   return (
     <div role="list" aria-label={t('history.tabs.topics')} data-inner-sidebar-topics={chatId}>
@@ -107,7 +107,7 @@ const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin
           onClose={menu.closeMenu}
           onPin={() => onPin(topic)}
           onSetNotificationLevel={(level) => onSetLevel(topic.id, level)}
-          onDelete={() => onRemove(topic.id)}
+          onHide={async () => { await onRemove(topic.id) }}
         />
       )}
     </div>

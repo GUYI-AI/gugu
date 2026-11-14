@@ -24,6 +24,7 @@
     "./acp/hermes-prompt": "./src/acp/hermes-prompt.ts",
     "./session-record/contract": "./src/session-record/contract.ts",
     "./session-record/window-cache/*": "./src/session-record/window-cache/*.ts",
+    "./session-record/conversation-history-clear": "./src/session-record/conversation-history-clear.ts",
     "./session-record/personal-conversation": "./src/session-record/personal-conversation.ts",
     "./session-record/preview-activity": "./src/session-record/preview-activity.ts",
     "./session-record/native-read": "./src/session-record/native-read.ts",

@@ -281,6 +281,8 @@ export function chatStore(overrides: Partial<ChatContextValue> = {}): ChatContex
     appendMessage: vi.fn(),
     upsertChat: vi.fn(),
     pinChat: vi.fn(),
+    hideConversation: vi.fn(async () => {}),
+    clearConversation: vi.fn(async () => {}),
     deleteChat: vi.fn(async () => {}),
     leaveGroup: vi.fn(async () => {}),
     markUnread: vi.fn(),

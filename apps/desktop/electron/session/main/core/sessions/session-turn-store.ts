@@ -1,3 +1,6 @@
+import { nativeConversationHistoryFloor, nativePublicationContext } from './native-publication-host';
+import { clearedHistoryResult, clearedHistoryTurns } from '@gugu/session-core/session-record/conversation-history-clear';
+import { prepareNativePublicationTurn } from './native-publication-turn';
 import { beginCanonicalQueueTask } from './canonical-queue-state';
 import { renumberStoredTurn, rewriteTurnId } from './session-turn-identity';
 export { renumberStoredTurn } from './session-turn-identity';
@@ -92,9 +95,10 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
     try { input.windowCapture?.phase?.('canonical_committed', receipt); }
     catch (error) { observationFailed(error); }
   };
+  const context = input.source === 'live' ? await nativePublicationContext(input.sessionId) : null;
   if (input.source === 'revision' || input.source === 'backfill') {
     const [row] = await db
-      .select({ id: sessionTurns.id, seq: sessionTurns.seq })
+      .select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data })
       .from(sessionTurns)
       .where(and(
         eq(sessionTurns.sessionId, input.sessionId),
@@ -105,10 +109,14 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
     if (!row) throw new Error(`Cannot revise missing stored turn: sessionId=${input.sessionId} turnId=${input.turn.id} source=${input.source}`);
     // 改口的可能是结局(进程退出改写 prompt_failed),也可能是内容(落定后才到的尾巴,#6191)
     // ⇒ 整轮按库里的序号重编号后替换,❌ 只挑某个字段写。
-    const revised = renumberStoredTurn(input.turn, input.sessionId, row.seq), serialized = JSON.stringify(revised);
+    const previous = JSON.parse(row.data) as TranscriptTurn;
+    const turn = { ...input.turn, referenceId: input.turn.referenceId ?? previous.referenceId };
+    const prepared = prepareNativePublicationTurn({ ...input, turn: renumberStoredTurn(turn, input.sessionId, row.seq), rowId: row.id, source: input.source, context }, db);
+    const revised = prepared.turn, serialized = JSON.stringify(revised);
     const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
       rowId: row.id, storedSeq: row.seq, insert: false, serialized, capture: input.windowCapture }) : undefined;
     const publish = db.transaction(tx => {
+      prepared.commit(tx);
       tx.update(sessionTurns).set({ data: serialized }).where(eq(sessionTurns.id, row.id)).run();
       if (captured) commitWindowReceipt(sqlite, captured);
       return noteNativeConversationReplies(input.sessionId, revised, input.turn, tx);
@@ -125,7 +133,9 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
   // 到达序由这里分配。❌ 不复用运行时那份回合序号：重开会话后它从 0 重数，而重放只含压缩边界
   // 之后的一段，直接拿来当键必然与库里已有的行撞号。
   const next = await nextSeq(input.sessionId);
-  const turn = renumberStoredTurn(input.turn, input.sessionId, next);
+  const rawTurn = renumberStoredTurn(input.turn, input.sessionId, next);
+  const prepared = input.source === 'live' ? prepareNativePublicationTurn({ ...input, turn: rawTurn, rowId: `${input.sessionId}:${next}`, source: 'live', context }, db) : undefined;
+  const turn = prepared?.turn ?? rawTurn;
   const serialized = JSON.stringify(turn);
   const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
     rowId: `${input.sessionId}:${next}`, storedSeq: next, insert: true, serialized, capture: input.windowCapture }) : undefined;
@@ -142,7 +152,10 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
     })
     .onConflictDoNothing()
     .returning({ seq: sessionTurns.seq }).all();
-    if (result.length && captured) commitWindowReceipt(sqlite, captured);
+    if (result.length) {
+      prepared?.commit(tx);
+      if (captured) commitWindowReceipt(sqlite, captured);
+    }
     const publish = !result.length ? undefined : input.source === 'live'
       ? noteNativeConversationReplies(input.sessionId, turn, input.turn, tx)
       : noteNativeConversationHistory(input.sessionId, turn, tx);
@@ -361,10 +374,10 @@ export async function getStoredHistory(params: {
     });
     // A revert can reuse every sequence in the page. Its rows and generation must describe the same snapshot.
     if (epoch !== ownerNotificationEpoch(params.sessionId)) continue;
-    const snapshot = { ...page, nativeOwnerNotificationEpoch: epoch };
+    const snapshot = clearedHistoryResult({ ...page, nativeOwnerNotificationEpoch: epoch }, await nativeConversationHistoryFloor(params.sessionId));
     return params.fromSeq === undefined
       ? trimCursorPageForTransport(snapshot, TRANSPORT_TEXT_LIMIT, budget, lean)
-      : { ...snapshot, turns: trimTurnsForTransport(page.turns) };
+      : { ...snapshot, turns: trimTurnsForTransport(snapshot.turns) };
   }
 }
 
@@ -377,7 +390,8 @@ export async function getStoredToolImage(params: {
       eq(sessionTurns.sessionId, params.sessionId),
       'seq' in params ? eq(sessionTurns.seq, params.seq) : eq(sessionTurns.turnId, params.originTurnId),
     )).orderBy(desc(sessionTurns.seq)).limit(1);
-  const turn = row ? JSON.parse(row.data) as TranscriptTurn : null;
+  const stored = row ? JSON.parse(row.data) as TranscriptTurn : null;
+  const turn = stored ? clearedHistoryTurns([stored], await nativeConversationHistoryFloor(params.sessionId))[0] ?? null : null;
   const itemId = row && turn && !('seq' in params)
     ? rewriteTurnId(params.itemId, row.turnId, turn.id) : params.itemId;
   const found = findToolImage(turn ? [turn] : [], itemId, params.index, Number.POSITIVE_INFINITY);
@@ -399,8 +413,8 @@ export async function getStoredSettledTurn(params: { sessionId: string; referenc
       sql`json_extract(${sessionTurns.data}, '$.referenceId') = ${params.referenceId}`))
     .orderBy(desc(sessionTurns.seq)).limit(1);
   if (!row) return null;
-  const turn = JSON.parse(row.data) as TranscriptTurn;
-  return turn.outcome ? { originTurnId: row.originTurnId, turn: trimTurnsForTransport([turn])[0]! } : null;
+  const turn = clearedHistoryTurns([JSON.parse(row.data) as TranscriptTurn], await nativeConversationHistoryFloor(params.sessionId))[0];
+  return turn?.outcome ? { originTurnId: row.originTurnId, turn: trimTurnsForTransport([turn])[0]! } : null;
 }
 
 /** How many rows one step of a budgeted page read takes: what a full page overshoots by, at most. */

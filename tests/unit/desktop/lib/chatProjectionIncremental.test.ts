@@ -20,6 +20,7 @@ const cells = (stamp: string, entries: Array<[EntityKey, EntityValue | null]>): 
 /** The cache read the way the projection owner reads it (members scanned here; the owner keeps an index). */
 function sourceOf(cache: ProjectionCache): AssembleSource {
   return {
+    stamp: (family, id) => cache.get(entityKey(family, id))?.stamp,
     value: <T extends EntityValue>(family: Parameters<typeof entityKey>[0], id: string) => (cache.get(entityKey(family, id))?.value ?? undefined) as T | undefined,
     members: (chatId) => sortMembers([...cache].flatMap(([key, cell]) => {
       const { family, id } = splitKey(key)
@@ -93,6 +94,7 @@ it.each([10, 100, 1000])('assembles one changed row with the same cell-read budg
   const source = sourceOf(base)
   let reads = 0
   const counted: AssembleSource = {
+    stamp: source.stamp,
     value: (family, id) => { reads += 1; return source.value(family, id) },
     members: source.members,
   }

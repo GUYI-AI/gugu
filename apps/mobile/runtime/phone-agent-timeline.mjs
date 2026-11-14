@@ -1,3 +1,4 @@
+import { clearedHistoryResult, historyClearEpoch } from '../../../packages/session-core/src/session-record/conversation-history-clear.ts'
 import { readdir, stat, realpath } from 'node:fs/promises'
 import { join, relative, isAbsolute } from 'node:path'
 import { createPiJsonlSource } from '../../../packages/session-core/src/session-record/sources/pi-jsonl.ts'
@@ -16,7 +17,7 @@ const message = (key, at, text, role = 'user') => ({ key, ...(at === undefined ?
 
 /** Decode Pi's actual JSONL with the existing source/reducer. The host journal supplies only
  * admitted inputs and real failures before Pi could open a record, plus interrupted boundaries. */
-export function createPhoneTimelineRuntime({ root, store, authorize, confirmations = () => [] }) {
+export function createPhoneTimelineRuntime({ root, store, authorize, historyFloor = async () => null, confirmations = () => [] }) {
   const open = new Map()
   const hidden = new Map()
   const opening = new Map()
@@ -189,7 +190,8 @@ export function createPhoneTimelineRuntime({ root, store, authorize, confirmatio
   })
   const deliver = async (agent, read) => {
     const epoch = agent.contextEpoch
-    const raw = read(await timeline(agent))
+    const floor = await historyFloor(agent)
+    const raw = read(await timeline(agent), floor)
     const identify = turns => phoneInputIdentity(turns, jobsOf(agent), agent.inputIdentities?.epoch === agent.contextEpoch ? agent.inputIdentities.records : undefined)
     const value = Array.isArray(raw.turns) ? { ...raw, turns: identify(raw.turns) }
       : raw.ok === true && raw.batch ? { ...raw, batch: { ...raw.batch, turns: identify(raw.batch.turns) } }
@@ -198,7 +200,7 @@ export function createPhoneTimelineRuntime({ root, store, authorize, confirmatio
     // record alone cannot authorize handing its contents back after those asynchronous reads.
     await checkAuthorization(agent)
     if (agent.contextEpoch !== epoch) throw failure('record_unreadable', '手机任务上下文已更新，请重新读取时间线')
-    return value
+    return clearedHistoryResult(value, floor)
   }
   const readable = async (agent, read) => {
     try { return await deliver(agent, read) }
@@ -213,9 +215,9 @@ export function createPhoneTimelineRuntime({ root, store, authorize, confirmatio
     async finish(agent, job) { await open.get(agent.sessionId)?.timeline.catchUp(); live.finish(agent, job) },
     reset(sessionId) { live.reset(sessionId); open.get(sessionId)?.timeline.dispose(); open.delete(sessionId); hidden.get(sessionId)?.timeline.dispose(); hidden.delete(sessionId) },
     async snapshot(agent, input) { pageSize(input); return readable(agent, (read) => { const result = read.getSnapshot({ limit: input.limit }); return input.trim ? trimSnapshotForTransport(result) : result }) },
-    async after(agent, input) { if (!input.cursor || typeof input.cursor.epoch !== 'string' || !Number.isSafeInteger(input.cursor.seq) || input.cursor.seq < 0) throw failure('invalid_args', '手机任务时间线游标无效'); return readable(agent, (read) => { const result = read.getAfter(input.cursor); return input.trim ? trimAfterResultForTransport(result) : result }) },
+    async after(agent, input) { if (!input.cursor || typeof input.cursor.epoch !== 'string' || !Number.isSafeInteger(input.cursor.seq) || input.cursor.seq < 0) throw failure('invalid_args', '手机任务时间线游标无效'); return readable(agent, (read, floor) => { const suffix = floor ? historyClearEpoch(floor) : ''; const result = floor && !input.cursor.epoch.endsWith(suffix) ? { ok: false, reset: 'epoch_changed', snapshot: read.getSnapshot() } : read.getAfter(suffix ? { ...input.cursor, epoch: input.cursor.epoch.slice(0, -suffix.length) } : input.cursor); return input.trim ? trimAfterResultForTransport(result) : result }) },
     async older(agent, input) { pageSize(input); if (typeof input.beforeTurnId !== 'string') throw failure('invalid_args', '请指定要往前读取的任务轮次'); return readable(agent, (read) => { const result = read.getOlder(input); return input.trim ? trimOlderForTransport(result) : result }) },
-    async image(agent, input) { return deliver(agent, (read) => { const found = findToolImage(read.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns, input.itemId, input.index); if (!found.ok) throw failure(found.code, found.code === 'too_large' ? '这张工具图片超过单次读取大小限制' : '这条手机任务记录中没有指定的工具图片'); return found.image }) },
+    async image(agent, input) { return deliver(agent, (read, floor) => { const found = findToolImage(clearedHistoryResult(read.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }), floor).turns, input.itemId, input.index); if (!found.ok) throw failure(found.code, found.code === 'too_large' ? '这张工具图片超过单次读取大小限制' : '这条手机任务记录中没有指定的工具图片'); return found.image }) },
     async close() { closed = true; await Promise.allSettled([...opening.values()]); for (const { timeline } of [...open.values(), ...hidden.values()]) timeline.dispose(); open.clear(); hidden.clear(); live.clear() },
   }
 }

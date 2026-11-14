@@ -18,8 +18,14 @@ final class GuguAgentHostPolicy {
     }
 
     static void endpoint(String value) {
+        endpoint(value, false);
+    }
+
+    static void endpoint(String value, boolean allowLocalHttp) {
         URI uri = URI.create(value == null ? "" : value);
-        if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null)
+        boolean local = allowLocalHttp && "http".equalsIgnoreCase(uri.getScheme())
+            && java.util.Arrays.asList("localhost", "127.0.0.1", "[::1]", "10.0.2.2").contains(uri.getHost());
+        if (!("https".equalsIgnoreCase(uri.getScheme()) || local) || uri.getHost() == null || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null)
             throw new IllegalArgumentException("手机宿主连接必须使用有效 HTTPS 地址");
     }
 

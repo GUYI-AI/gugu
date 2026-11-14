@@ -5,6 +5,7 @@ import { createChatAccess } from './chat-access'
 import { decimal, dropMessages, dropRanges, encodeRest, requireId, requireLimit, restore, reusingStatements,
   type MessageSqlDatabase, type StoredMessage } from './message-row'
 import { searchMessages } from './search'
+import { historyMessageVisible } from '@gugu/core/shared/conversationHistoryTime'
 
 /** All durable messages and their derived index share the existing session connection. */
 export function createImMessageStore(database: MessageSqlDatabase) {
@@ -63,6 +64,12 @@ export function createImMessageStore(database: MessageSqlDatabase) {
     requireId(message.chat_id)
     if (!Number.isSafeInteger(message.seq)) throw new Error('Invalid message sequence')
     if (message.seq < 1 || isDeleted.get(accountId, message.chat_id, message.id)) return []
+    const cleared = connection.prepare(`WITH RECURSIVE ancestors(chat_id) AS (
+      SELECT ? UNION SELECT c.source_chat_id FROM im_message_chats c JOIN ancestors a ON c.chat_id=a.chat_id
+        WHERE c.account_id=? AND c.source_chat_id IS NOT NULL
+      ) SELECT history_cleared_at FROM im_message_chats WHERE account_id=? AND chat_id IN(SELECT chat_id FROM ancestors)
+        AND history_cleared_at IS NOT NULL`).all(message.chat_id, accountId, accountId) as { history_cleared_at: string }[]
+    if (cleared.some(row => !historyMessageVisible(message.created_at, row.history_cleared_at))) return []
     // Compute before mutating; either the original row and index both change, or neither does.
     const text = projectMessageSearchText(message)
     const old = find.get(accountId, message.id) as { rowid: number; claimed_revision: string | null; rest: string } | undefined

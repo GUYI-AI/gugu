@@ -1,4 +1,5 @@
 import { batch, createSignal } from 'solid-js';
+import { clearedHistoryTurns } from '@gugu/session-core/session-record/conversation-history-clear';
 import { createStore, reconcile, unwrap } from 'solid-js/store';
 import type { ChatItem, TranscriptTurn } from '@session-chat/model';
 
@@ -66,6 +67,7 @@ export type ActiveTurn = {
 // ── TranscriptApi ──────────────────────────────────────────────────────────────
 
 export type TranscriptApi = {
+  setHistoryFloor?(floor: string | null): void;
   /** Imperative history write surface (seed / prepend / append). */
   history: ChatHistory;
   /** Controlled active-turn write surface (set / commit). */
@@ -136,6 +138,7 @@ function assertOrderedItems(turn: TranscriptTurn): void {
 // ── Factory ───────────────────────────────────────────────────────────────────
 
 export function createTranscript(): TranscriptApi {
+  const [historyFloor, setHistoryFloor] = createSignal<string | null>(null);
   // Committed items are immutable after placement — only ever swapped as a whole
   // array identity (seed/prepend/append). A plain signal gives coarse tracking
   // with zero store-proxy overhead on the hot measure/render path.
@@ -154,12 +157,17 @@ export function createTranscript(): TranscriptApi {
   // Expose the TranscriptState shape via getters. committed() is read in the
   // getter so createMemo/createEffect readers re-run on identity changes.
   // live.activeTurn/live.turnStatus retain fine-grained reactivity.
+  let masked: { input: readonly TranscriptTurn[]; floor: string; turns: TranscriptTurn[] } | undefined;
   const state: TranscriptState = {
     get committedTurns() {
-      return committed();
+      const input = committed(), floor = historyFloor();
+      if (!floor) return input;
+      if (masked?.input !== input || masked.floor !== floor) masked = { input, floor, turns: clearedHistoryTurns([...input], floor) };
+      return masked.turns;
     },
     get activeTurnSnapshot() {
-      return live.activeTurn;
+      const active = live.activeTurn, floor = historyFloor();
+      return active && floor ? clearedHistoryTurns([active], floor)[0] ?? null : active;
     },
     get turnStatus() {
       return live.turnStatus;
@@ -260,11 +268,13 @@ export function createTranscript(): TranscriptApi {
   };
 
   return {
+    setHistoryFloor,
     history,
     activeTurn: activeTurnApi,
     state,
 
     findItemById(id) {
+      if (historyFloor()) return [...state.committedTurns, ...(state.activeTurnSnapshot ? [state.activeTurnSnapshot] : [])].flatMap(turn => turn.items).find(item => item.id === id) as ChatItem | undefined;
       const committedItem = itemMap.get(id);
       if (committedItem) return committedItem;
       const at = live.activeTurn;

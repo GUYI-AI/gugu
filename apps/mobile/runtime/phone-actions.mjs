@@ -172,7 +172,7 @@ export async function createPhoneActionRuntime({ ownerId, store, nativeCall, sen
         confirmationDecision: input.optionId === 'approve' ? 'approve' : 'cancel',
         confirmationSource: { kind: 'task', messageId: responseId, senderUserId: ownerId, sessionId: agent.sessionId },
         prompt: input.optionId === 'approve' ? `主人已在任务页允许这次手机操作：${pending.question}` : `主人已在任务页取消这次手机操作：${pending.question}`,
-        route: { kind: 'task', senderUserId: ownerId } })
+        route: { kind: 'task', senderUserId: ownerId, personalAdmission: 'owner-input' } })
       return { accepted: true, settlement: phoneConfirmationSettlement(pending) }
     },
 

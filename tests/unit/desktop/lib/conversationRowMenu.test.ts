@@ -1,27 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { chatsInReadScope, conversationCanDelete, conversationRowMenu, hasUnreadInRows } from '../../../../apps/desktop/src/session/shared/conversation-row-menu'
+import { chatsInReadScope, conversationCanHide, conversationRowMenu, hasUnreadInRows } from '../../../../apps/desktop/src/session/shared/conversation-row-menu'
 
 describe('conversation row actions', () => {
-  it('limits owned agent DM deletion to archived or removed identities', () => {
-    expect(conversationCanDelete('dm', null, { session_archived_at: null, removed_at: null })).toBe(false)
-    expect(conversationCanDelete('dm', null, {})).toBe(false)
-    expect(conversationCanDelete('dm', null, { session_archived_at: '2026-11-06T10:00:00Z' })).toBe(true)
-    expect(conversationCanDelete('dm', null, { removed_at: '2026-11-06T10:00:00Z' })).toBe(true)
-  })
-  it('keeps distinct server authority for groups and topics', () => {
-    expect(conversationCanDelete('dm', { can_dissolve: true })).toBe(false)
-    expect(conversationCanDelete('ai', { can_dissolve: true }, { removed_at: '2026-11-06T10:00:00Z' })).toBe(false)
-    expect(conversationCanDelete('group', null)).toBe(false)
-    expect(conversationCanDelete('group', { can_archive_topic: true })).toBe(false)
-    expect(conversationCanDelete('group', { can_dissolve: true })).toBe(true)
-    expect(conversationCanDelete('topic', { can_dissolve: true })).toBe(false)
-    expect(conversationCanDelete('topic', { can_archive_topic: true })).toBe(true)
+  it('supports personal hiding for every conversation without Agent archival or group authority', () => {
+    for (const kind of ['dm', 'ai', 'group', 'topic']) expect(conversationCanHide(kind)).toBe(true)
+    expect(conversationCanHide(null)).toBe(false)
   })
   it('puts the same scoped read action first, followed only by the row type’s own actions', () => {
     const chat = conversationRowMenu({ kind: 'chat', canDelete: true, hasUnread: true, hasAnyUnread: true })
     const project = conversationRowMenu({ kind: 'project', hasUnread: true })
     expect(chat[0]).toEqual(project[0])
-    expect(chat.map((item) => item.id)).toEqual(['mark-read', 'pin', 'notifications', 'mark-all-read', 'delete-chat'])
+    expect(chat.map((item) => item.id)).toEqual(['mark-read', 'mark-all-read', 'pin', 'notifications', 'delete-chat'])
     expect(project.map((item) => item.id)).toEqual(['mark-read', 'remove-project'])
     const topic = conversationRowMenu({ kind: 'topic', hasUnread: false, hasAnyUnread: true })
     expect(topic.map((item) => [item.id, item.disabled])).toEqual([['mark-read', true], ['mark-all-read', false]])
@@ -29,7 +18,7 @@ describe('conversation row actions', () => {
 
   it('keeps personal actions when the server denies topic management', () => {
     const items = conversationRowMenu({ kind: 'chat', canDelete: false, hasUnread: true, hasAnyUnread: true })
-    expect(items.map((item) => item.id)).toEqual(['mark-read', 'pin', 'notifications', 'mark-all-read'])
+    expect(items.map((item) => item.id)).toEqual(['mark-read', 'mark-all-read', 'pin', 'notifications'])
   })
 
   it('keeps scoped availability independent from unread conversations elsewhere', () => {
@@ -42,7 +31,7 @@ describe('conversation row actions', () => {
 
   it('offers 取消固定到左侧栏 right after 置顶 only for a row pinned to the sidebar (#2548)', () => {
     const pinned = conversationRowMenu({ kind: 'chat', canDelete: false, hasUnread: false, pinnedToSidebar: true })
-    expect(pinned.map((item) => item.id)).toEqual(['mark-read', 'pin', 'unpin-from-sidebar', 'notifications', 'mark-all-read'])
+    expect(pinned.map((item) => item.id)).toEqual(['mark-read', 'mark-all-read', 'pin', 'unpin-from-sidebar', 'notifications'])
     expect(pinned.find((item) => item.id === 'unpin-from-sidebar')).toMatchObject({ label: 'unpinFromSidebar', icon: 'sidebar' })
     expect(conversationRowMenu({ kind: 'chat', canDelete: false, hasUnread: false }).some((item) => item.id === 'unpin-from-sidebar')).toBe(false)
   })
