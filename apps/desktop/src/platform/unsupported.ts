@@ -28,6 +28,7 @@ export function createUnsupportedPlatform(
     logTail: false,
       backgroundWatch: false,
       shareToApps: false,
+      readingZoomMemory: false,
     },
     syncResolvedLocale: async () => {},
     subscribeAppForeground: () => () => {},

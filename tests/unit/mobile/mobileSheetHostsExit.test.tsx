@@ -23,7 +23,7 @@ vi.mock('../../../apps/desktop/src/mobile/agent-watch/opened-output-open', async
   readWholeOpenedFile: (input: { signal: AbortSignal }) => { m.signal = input.signal; return m.read() },
 }))
 vi.mock('../../../apps/desktop/src/lib/imageViewer', () => ({ openImageViewer: m.image }))
-vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { kind: 'capacitor', subscribeIncomingShares: (fn: (share: IncomingShare) => void) => { m.incoming = fn; return () => { m.incoming = null } } } }))
+vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { kind: 'capacitor', capabilities: { readingZoomMemory: false }, subscribeIncomingShares: (fn: (share: IncomingShare) => void) => { m.incoming = fn; return () => { m.incoming = null } } } }))
 vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true }))
 vi.mock('../../../apps/desktop/src/mobile/server-login/serverLoginApproval', () => ({ readServerLoginRequest: vi.fn(async () => ({ code: 'test-code', state: 'expired', machine: {} })) }))
 

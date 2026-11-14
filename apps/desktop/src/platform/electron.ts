@@ -90,6 +90,7 @@ export const electronPlatform: AppPlatform = {
     logTail: true,
     appRelaunch: true,
     shareToApps: false,
+    readingZoomMemory: true,
   },
   async relaunchApp() {
     const api = electronApi()
