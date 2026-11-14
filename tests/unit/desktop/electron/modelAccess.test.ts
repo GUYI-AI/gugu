@@ -21,7 +21,7 @@ vi.mock('@gugu/core/cloud/config', () => ({
   getSupabaseUrl: () => 'https://db.example.test',
 }))
 
-import { listPlatformModels, resolveAgentModelLaunch } from '../../../../apps/desktop/electron/model-access'
+import { listPlatformModels, resolveAgentModelLaunch, issuePlatformModelAccess, renewPlatformModelAccess, modelAccessFailureReason } from '../../../../apps/desktop/electron/model-access'
 import { createLogger } from '../../../../apps/desktop/electron/lib/logger'
 import { parsePlatformReasoningEfforts } from '../../../../apps/desktop/src/session/shared/core/agents/platform-model'
 
@@ -375,5 +375,54 @@ describe('reasoning efforts from the directory (#6447)', () => {
     warn.mockClear()
     await expect(issuedCallableRoutes(['gpt-image-2'])).resolves.toEqual({})
     expect(warn).toHaveBeenCalledWith({ received: 'object' }, expect.stringContaining('not an object'))
+  })
+})
+
+describe('fixed team model funding', () => {
+  const taskId = 'runtime-task-a'
+  const funding = { kind: 'team', team_id: 'team-a', member_id: 'member-a', task_id: taskId, unit_version: 2, locked_at: '2026-11-15T00:00:00Z' }
+  const teamAuth = { userId: 'principal-a', accessToken: `head.${Buffer.from(JSON.stringify({ sub: 'principal-a', app_metadata: { gugu_account_kind: 'team_member' } })).toString('base64url')}.signature` }
+  const request = { authProvider: {} as never, agentUserId: 'agent-team-a', engineId: 'codex', modelId: 'model-a', protocol: 'openai-responses' as const, sessionId: taskId }
+  beforeEach(() => {
+    vi.stubEnv('GUGU_HOME', mkdtempSync(join(tmpdir(), 'gugu-team-access-')))
+    vi.stubEnv('GUGU_PLATFORM_MODELS_ENABLED', 'true')
+    coreMocks.requireRuntimeAuth.mockResolvedValue(teamAuth)
+  })
+  const context = { kind: 'team', team_id: 'team-a', member_id: 'member-a', member_identity_id: 'identity-a', member_state: 'active', membership_revision: 9, stop_reason: null }
+  function issueReply(sessionId: string) {
+    return { session_id: sessionId, relay_url: 'https://gateway.example.test', token: 'synthetic-ticket', model: 'model-a', protocol: 'openai-responses', expires_at: '2099-11-15T01:00:00Z', funding }
+  }
+  it('sends the team context once per issue and retains task/funding during keep-from replacement and renewal', async () => {
+    let issued = 0
+    const calls: Record<string, unknown>[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: context }))
+      const body = JSON.parse(String(init?.body)); calls.push(body)
+      return new Response(JSON.stringify(body.action === 'renew' ? { expires_at: '2099-11-15T02:00:00Z', funding } : issueReply(`team-access-${++issued}`)))
+    })
+    const first = await issuePlatformModelAccess(request)
+    const next = await issuePlatformModelAccess({ ...request, keepFromAccessSessionId: first.accessSessionId })
+    await renewPlatformModelAccess(request.authProvider, next.accessSessionId)
+    expect(calls[0]).toMatchObject({ action: 'issue', team_id: 'team-a', member_identity_id: 'identity-a', task_id: taskId, expected_membership_revision: 9 })
+    expect(calls[1]).toMatchObject({ action: 'issue', keep_from_session_id: first.accessSessionId, task_id: taskId })
+    expect(calls[2]).toEqual({ action: 'renew', session_id: next.accessSessionId })
+    expect(next.teamTask).toEqual(first.teamTask)
+  })
+  it('refuses reissue under a switched personal actor before making another request', async () => {
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async url => new Response(JSON.stringify(String(url).includes('team-billing') ? { ok: true, data: context } : issueReply('team-access-a'))))
+    const first = await issuePlatformModelAccess(request)
+    coreMocks.requireRuntimeAuth.mockResolvedValue({ userId: 'personal-b', accessToken: 'personal-token' })
+    await expect(issuePlatformModelAccess({ ...request, keepFromAccessSessionId: first.accessSessionId })).rejects.toThrow()
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+  it('classifies structured team limits while keeping session_ended as a separate rotation reason', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async url => new Response(JSON.stringify(String(url).includes('team-billing') ? { ok: true, data: context } : {
+      reason: 'session_ended', error: { code: 'credits_exhausted', reason_code: 'team_credits_exhausted', message: 'private diagnostic' },
+    }), { status: String(url).includes('team-billing') ? 200 : 409 }))
+    const error = await issuePlatformModelAccess(request).catch(error => error)
+    expect(error.reason).toBe('session_ended')
+    expect(error.reason_code).toBe('team_credits_exhausted')
+    expect(error.message).not.toContain('private diagnostic')
+    expect(modelAccessFailureReason(error)).toBe('team-credits-exhausted')
   })
 })

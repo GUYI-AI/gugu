@@ -18,6 +18,8 @@ import { AccountLoginMethods } from './AccountLoginMethods'
 import { PasswordRecoveryGroup } from '../password/PasswordRecovery'
 
 import { ReferralAccountPreview } from '../referralPreview/ReferralPreview'
+import { TeamAccountMembership, TeamAccountMethods } from '@/features/team/TeamAccount'
+import { hasTeamAccountMarker } from '@/features/team/accountKind'
 
 const log = rendererLogger('settings/account')
 
@@ -31,6 +33,8 @@ interface AccountSectionProps {
 export function AccountSection({ user, updateUser, logout, mobile = false }: AccountSectionProps) {
   const { t } = useTranslation('settings')
   const { t: tMain } = useTranslation('main')
+  const { t: tTeam } = useTranslation('team')
+  const teamAccount = hasTeamAccountMarker(user)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [nickname, setNickname] = useState(user?.nickname ?? '')
@@ -49,14 +53,14 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
   // 读不到 = 这一行如实说读不到、不给改,❌ 当成没填让人覆盖掉原值。
   const [occupation, setOccupation] = useState<{ kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; saved: Occupation | null; draft: Occupation | null }>({ kind: 'loading' })
   useEffect(() => {
-    if (!user?.id) return
+    if (!user?.id || teamAccount) return
     let cancelled = false
     readOccupation(user.id)
       .then((saved) => { if (!cancelled) setOccupation({ kind: 'ready', saved, draft: saved }) })
       .catch((e: unknown) => { log.error({ error: e }, 'read occupation failed'); if (!cancelled) setOccupation({ kind: 'error', message: messageForUser(e) }) })
     return () => { cancelled = true }
-  }, [user?.id])
-  const occupationDirty = occupation.kind === 'ready' && JSON.stringify(occupation.draft) !== JSON.stringify(occupation.saved)
+  }, [user?.id, teamAccount])
+  const occupationDirty = !teamAccount && occupation.kind === 'ready' && JSON.stringify(occupation.draft) !== JSON.stringify(occupation.saved)
   const occupationInvalid = occupation.kind === 'ready' && occupationDirty && !occupationComplete(occupation.draft)
 
   const dirty = nickname.trim() !== (user?.nickname ?? '') || (bio ?? '') !== (user?.bio ?? '') || occupationDirty
@@ -124,6 +128,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
 
   return (
     <SettingsPage data-testid="settings-account">
+      {teamAccount && <TeamAccountMembership />}
       <SettingsNote>{t('account.intro')}</SettingsNote>
 
       {/* Identity summary and labelled editors retain the original save/upload paths. */}
@@ -188,7 +193,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
             />
           )}
         />
-        <SettingsRow
+        {!teamAccount && <SettingsRow
           stack
           layout="field"
           title={<label htmlFor="settings-account-occupation">{t('account.occupation')}</label>}
@@ -233,6 +238,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
             </span>
           )}
         />
+        }
       </SettingsGroup>
 
       {/* 保存:靠右一行,状态(失败 / 已保存)在按钮左边。 */}
@@ -244,11 +250,13 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
         </Button>
       </div>
 
-      {user && <AccountLoginMethods key={user.id} userId={user.id} onEmailChanged={email => updateUser({ ...user, email })} />}
-      {user && <PasswordRecoveryGroup />}
-      <ReferralAccountPreview />
+      {teamAccount ? <TeamAccountMethods /> : <>
+        {user && <AccountLoginMethods key={user.id} userId={user.id} onEmailChanged={email => updateUser({ ...user, email })} />}
+        {user && <PasswordRecoveryGroup />}
+        <ReferralAccountPreview />
+      </>}
 
-      {mobile && officialServicesEnabled() && (
+      {mobile && !teamAccount && officialServicesEnabled() && (
         <SettingsGroup presentation="summary"><GuguSubscriptionRow /></SettingsGroup>
       )}
 
@@ -267,6 +275,8 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
             </Button>
           )}
         />
+        <SettingsRow title={tTeam('accountSwitch')} description={tTeam('accountSwitchNote')}
+          control={<Button variant="ghost" size="sm" onClick={() => { void handleLogout() }} disabled={loggingOut}>{tTeam('accountSwitch')}</Button>} />
       </SettingsGroup>
     </SettingsPage>
   )

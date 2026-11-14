@@ -240,6 +240,8 @@ const fallbackMessages = {
   'transcript.deliveryFact.viaApp': 'App',
   'transcript.turnFinished': 'Finished{reason}',
   'transcript.creditsExhausted': 'You’re out of credits. {recharge} to continue.',
+  'transcript.teamMonthlyCapReached': 'You have used your monthly team credit limit. Only your AI use is paused. Ask an administrator to raise your limit.',
+  'transcript.teamCreditsExhausted': 'Team credits have run out. AI use is paused for everyone. Ask an administrator to top up.',
   'transcript.rechargeCredits': 'Top up',
   'transcript.viewMermaid': 'View Mermaid diagram',
   'transcript.mermaidDiagram': 'Mermaid diagram',

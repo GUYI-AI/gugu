@@ -10,6 +10,9 @@ export interface CredentialProxyOptions {
   localOnlyHeaders: ReadonlySet<string>
   credential: () => Promise<string>
   refresh: (rejected: string) => Promise<string>
+  refreshForbidden?: boolean
+  refusal?: (status: number, retried: boolean) => Promise<{ code: string; reason_code?: string; message: string } | null>
+  refusalError?: (error: unknown) => { code: string; reason_code?: string; message: string } | null
   warn: (event: { kind: 'connection' | 'stream'; status?: number; code?: string }) => void
   streamTiming?: (timing: PlatformStreamTiming) => void
 }
@@ -66,11 +69,30 @@ export async function proxyPlatformCredentialRequest(
       method: request.method,
       headers: upstreamHeaders(request.headers, options, token, upstream),
     }, (upstreamResponse) => {
-      if (upstreamResponse.statusCode === 401 && !retried) {
+      const forward = async () => {
+      const status = upstreamResponse.statusCode ?? 502
+      if (options.refusal && (status === 401 || status === 403)) {
+        const refusal = await options.refusal(status, retried)
+        if (refusal) {
+          upstreamResponse.resume()
+          if (!harnessGone && !response.headersSent) {
+            response.writeHead(409, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+            response.end(JSON.stringify({ type: 'error', error: { type: 'permission_error', ...refusal } }))
+          }
+          return
+        }
+      }
+      if ((status === 401 || (status === 403 && options.refreshForbidden)) && !retried) {
         // No inference was accepted and no response headers/bytes have reached the harness.
         upstreamResponse.resume()
-        void options.refresh(token).then(next => send(next, true), () => {
+        void options.refresh(token).then(next => send(next, true), error => {
           if (!response.headersSent && !harnessGone) {
+            const refusal = options.refusalError?.(error)
+            if (refusal) {
+              response.writeHead(409, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+              response.end(JSON.stringify({ type: 'error', error: { type: 'permission_error', ...refusal } }))
+              return
+            }
             response.writeHead(503, { 'content-type': 'application/json' })
             response.end(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'Platform credential refresh failed' } }))
           }
@@ -97,6 +119,12 @@ export async function proxyPlatformCredentialRequest(
         if (!error) return
         upstreamRequest?.destroy()
         if (gatewayCut) options.warn({ kind: 'stream', status: upstreamResponse.statusCode })
+      })
+      }
+      void forward().catch(() => {
+        upstreamResponse.resume()
+        if (!response.headersSent && !harnessGone) response.writeHead(503).end()
+        else response.destroy()
       })
     })
     upstreamRequest.on('error', (error: NodeJS.ErrnoException) => {

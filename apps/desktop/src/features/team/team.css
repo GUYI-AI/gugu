@@ -1,0 +1,59 @@
+.gg-team-page { display: flex; flex: 1; min-width: 0; height: 100%; color: var(--text-primary); background: var(--bg-primary); font-size: var(--font-body); }
+.gg-team-page h1, .gg-team-page h2 { margin: 0; font-weight: var(--font-weight-semibold); }
+.gg-team-page h1 { font-size: var(--font-title); }
+.gg-team-page h2 { font-size: var(--font-body); }
+.gg-team-nav { flex: 0 0 200px; padding: 24px 16px; display: flex; flex-direction: column; gap: 8px; border-right: 1px solid var(--border-color); }
+.gg-team-nav h1 { padding: 8px; margin-bottom: 16px; }
+.gg-team-nav > p { margin: 16px 8px 0; color: var(--muted-fg); }
+.gg-team-nav-item { justify-content: flex-start; }
+.gg-team-nav-item[aria-current=page] { background: var(--selected); color: var(--text-primary); }
+.gg-team-content { flex: 1; min-width: 0; overflow: auto; padding: 24px; }
+.gg-team-page-heading { display: flex; align-items: center; margin-bottom: 24px; min-height: var(--control-h-lg); }
+.gg-team-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.gg-team-overview-title, .gg-team-person, .gg-team-person-summary { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.gg-team-overview-title > div { display: flex; flex-direction: column; gap: 8px; }
+.gg-team-overview-title span, .gg-team-muted { color: var(--muted-fg); }
+.gg-team-overview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px; }
+.gg-team-overview-grid > section { min-width: 0; border: 1px solid var(--border-color); border-radius: var(--radius-surface); padding: 16px; }
+.gg-team-my-summary { display: flex; flex-direction: column; gap: 8px; }
+.gg-team-credit-totals { display: flex; align-items: center; gap: 24px; }
+.gg-team-my-summary > small, .gg-team-usage-record small { color: var(--muted-fg); font-size: var(--font-body); }
+.gg-team-my-summary > strong { font-size: var(--font-size-xl); font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; }
+.gg-team-list { display: flex; flex-direction: column; margin-block: 16px; }
+.gg-team-person-row, .gg-team-cap-row { min-height: 64px; border-bottom: 1px solid var(--border-color); }
+.gg-team-value-row { display: flex; justify-content: space-between; padding-block: 16px; border-bottom: 1px solid var(--border-color); }
+.gg-team-usage > h2 { margin-top: 24px; }
+.gg-team-usage-record { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border-color); }
+.gg-team-usage-record > span:first-child { display: flex; flex-direction: column; gap: 4px; }
+.gg-team-cap-heading, .gg-team-cap-row { display: grid; grid-template-columns: 32px minmax(120px, 1fr) 120px 120px 160px; align-items: center; gap: 16px; }
+.gg-team-cap-heading { color: var(--muted-fg); margin-top: 24px; }
+.gg-team-checkbox { padding: 4px; width: 32px; min-width: 32px; }
+.gg-team-checkbox > span { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: 4px; }
+.gg-team-checkbox > span[data-checked] { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+.gg-team-checkbox-label { display: flex; align-items: center; gap: 8px; }
+.gg-team-state { min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+.gg-team-dialog-backdrop { position: fixed; inset: 0; z-index: var(--z-modal); background: var(--bg-overlay-modal); }
+.gg-team-dialog-viewport { position: fixed; inset: 0; z-index: var(--z-modal); display: flex; align-items: center; justify-content: center; padding: 24px; overflow: auto; pointer-events: none; }
+.gg-team-dialog { position: relative; flex-shrink: 0; pointer-events: auto; width: min(480px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); overflow: auto; padding: 24px; outline: none;
+  color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-surface); }
+.gg-team-dialog-heading > h2 { font-size: var(--font-title); font-weight: var(--font-weight-semibold); }
+.gg-team-dialog-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.gg-team-dialog-body { display: flex; flex-direction: column; gap: 16px; padding-block: 24px; }
+.gg-team-dialog-body p { margin: 0; }
+.gg-team-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.gg-team-command-list { display: flex; flex-direction: column; gap: 8px; }
+.gg-team-error { color: var(--danger-fg); }
+.gg-team-pause { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; max-width: 560px; padding-top: 24px; }
+.gg-team-pause p { margin: 0; line-height: var(--line-height-base); }
+.gg-team-pause > div { display: flex; gap: 8px; }
+.gg-team-access-blocker { position: fixed; inset: 0; z-index: var(--z-modal); background: var(--bg-primary); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+.gg-team-access-blocker > div { display: flex; gap: 8px; }
+.gg-team-account-role { display: inline-flex; padding: 4px 8px; border-radius: var(--radius-control); background: var(--muted); color: var(--muted-fg); }
+.gg-team-login-link { display: flex; justify-content: flex-end; margin-top: 16px; }
+.gg-team-auth .gugu-auth-form { display: flex; flex-direction: column; gap: 16px; margin-top: 24px; }
+.gg-team-choice { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+@media (max-width: 959px) {
+  .gg-team-nav { flex-basis: 160px; }
+  .gg-team-overview-grid { grid-template-columns: 1fr; }
+  .gg-team-cap-heading, .gg-team-cap-row { grid-template-columns: 32px minmax(100px, 1fr) 80px 80px 140px; gap: 8px; }
+}

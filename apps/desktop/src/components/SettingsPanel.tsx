@@ -12,6 +12,8 @@ import { FileStorageSection } from './settings/FileStorageSection'
 import { GeneralSection } from './settings/GeneralSection'
 import { ModelSection } from './settings/ModelSection'
 import { UsageSection } from './usage/UsageSection'
+import { hasTeamAccountMarker } from '@/features/team/accountKind'
+import { TeamSettingsUsage } from '@/features/team/TeamSettingsUsage'
 import { PermissionsSection } from './settings/PermissionsSection'
 import { SettingsDetailNavigation, type SettingsDetailState } from './settings/SettingsDetailNavigation'
 import { usePanelScroll } from '../session/renderer/features/assistant/use-panel-scroll'
@@ -86,12 +88,14 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
   onPaneChange?: (pane: 'nav' | 'detail') => void
 }) {
   const { user, updateUser, logout } = useAuth()
+  const teamAccount = hasTeamAccountMarker(user)
   const { t } = useTranslation('main')
   // The person's own connected apps (a phone row): not while connections are still kept in the assistant's home (legacy).
   const { route: connectionRoute } = useConnectionAuthority()
-  const sections = mobile
+  const platformSections = mobile
     ? MOBILE_SECTIONS_FOR_PLATFORM.filter((s) => s !== 'connectors' || connectionRoute?.mode !== 'legacy')
     : DESKTOP_SECTIONS_FOR_PLATFORM
+  const sections = teamAccount ? platformSections.filter(section => section !== 'subscriptions') : platformSections
 
   // @@@1507 初始 section 可由调用方指定(如侧栏「额度」直接开到 quota);缺省 account。
   const [internalSection, setInternalSection] = useState<ActiveSection>(initialSection)
@@ -101,7 +105,7 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
   const ownConnections = sections.includes('connectors') && (requestedSection === 'connectors' || requestedSection === 'channels')
   const unsupportedPhoneSection = (requestedSection === 'apps' && !platform.capabilities.mobileApps)
     || (requestedSection === 'phone' && !platform.capabilities.phoneDevice)
-  const activeSection = unsupportedPhoneSection ? 'account' : ownConnections ? 'connectors' : isAssistantSettingsSection(requestedSection) ? 'account' : requestedSection
+  const activeSection = unsupportedPhoneSection || (teamAccount && requestedSection === 'subscriptions') ? 'account' : ownConnections ? 'connectors' : isAssistantSettingsSection(requestedSection) ? 'account' : requestedSection
   const setActiveSection = onSectionChange ?? setInternalSection
   const [internalPane, setInternalPane] = useState<'nav' | 'detail'>(mobile ? 'nav' : 'detail')
   const mobilePane = pane ?? internalPane
@@ -129,7 +133,7 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
       // This is a primary page now; keep its content while opting out of nested-page navigation.
       case 'files':    return <SettingsDetailNavigation.Provider value={null}><FileStorageSection onBack={back} /></SettingsDetailNavigation.Provider>
       case 'model':    return <ModelSection />
-      case 'usage':    return <UsageSection />
+      case 'usage':    return teamAccount ? <TeamSettingsUsage /> : <UsageSection />
       case 'about':    return <AboutSection />
       case 'permissions': return <PermissionsSection />
       case 'passwords': return PASSWORD_BETA_ENABLED ? <PasswordSection actionsHost={() => passwordActions.current} /> : null

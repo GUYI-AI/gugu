@@ -16,6 +16,8 @@ import { retainStartupMotion } from '../lib/startup-motion'
 import { loginOtpRequestPending, subscribeLoginOtpRequests } from '../lib/loginOtpTransport'
 import { useLoginOtpSend } from './login/useLoginOtpSend'
 import './login/login.css'
+import { TeamAuthPane } from '@/features/team/TeamAuthPane'
+import { teamInvitation } from '@/features/team/invitation'
 
 const APP_LOGO_URL = publicAssetPath('/assets/app/gugu-icon-512.png')
 type Step = 'email' | 'otp'
@@ -32,6 +34,9 @@ function PrimaryButton({ disabled, loading, label }: { disabled: boolean; loadin
 
 export function LoginPage() {
   const { t } = useTranslation('main')
+  const { t: tTeam } = useTranslation('team')
+  const invitation = useSyncExternalStore(teamInvitation.subscribe, teamInvitation.getSnapshot)
+  const [teamMode, setTeamMode] = useState(false)
   const [googleEnabled, setGoogleEnabled] = useState<boolean | null>(null)
   const [step, setStep] = useState<Step>('email')
   const [email, setEmail] = useState('')
@@ -109,7 +114,9 @@ export function LoginPage() {
           <p className="gugu-auth-brand-sub">{t('auth.brandSubtitle')}</p>
         </div>
       </aside>
-      <div className="gugu-auth-pane">{googleEnabled === null ? <div className="gugu-auth-placeholder" role="status" aria-label={t('auth.loadingMethods')} /> : <div className="gugu-auth-login">
+      <div className="gugu-auth-pane">{teamMode || (invitation.pending && !google.busy && !loading && !otpRequestPending) ? <TeamAuthPane key={invitation.version} googleEnabled={googleEnabled === true}
+        invitationToken={teamInvitation.readToken()} onPersonal={() => { teamInvitation.clear(); setTeamMode(false) }} />
+        : googleEnabled === null ? <div className="gugu-auth-placeholder" role="status" aria-label={t('auth.loadingMethods')} /> : <div className="gugu-auth-login">
         <header className="gugu-auth-heading">
           <img className="gugu-auth-logo" src={APP_LOGO_URL} alt={t('brand.name')} draggable={false} />
           <h1 id="gugu-auth-title">{t('auth.welcome')}</h1>
@@ -155,6 +162,9 @@ export function LoginPage() {
           terms: <a href="https://gugu.nextmind.space/zh/terms.html" target="_blank" rel="noreferrer" />,
           privacy: <a href="https://gugu.nextmind.space/zh/privacy.html" target="_blank" rel="noreferrer" />,
         }} /></p>
+        {invitation.invalid && <p role="alert" className="gugu-auth-error">{tTeam('invitationInvalid')}</p>}
+        {invitation.pending && (google.busy || loading || otpRequestPending) && <p role="status" className="gugu-auth-status">{tTeam('finishCurrentLogin')}</p>}
+        <div className="gg-team-login-link"><Button variant="ghost" size="sm" disabled={loading || google.busy || otpRequestPending} onClick={() => setTeamMode(true)}>{tTeam('loginTitle')}</Button></div>
       </div>}</div>
     </section>
     <div className="gugu-auth-window-drag" aria-hidden="true" />
