@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const native = vi.hoisted(() => ({ isNative: true, platform: 'ios', available: true,
-  publishSession: vi.fn(), getBinding: vi.fn(), retireSession: vi.fn() }))
+  prepareSignOut: vi.fn(), publishSession: vi.fn(), getBinding: vi.fn(), retireSession: vi.fn() }))
 vi.mock('@capacitor/core', () => ({
   Capacitor: { isNativePlatform: () => native.isNative, getPlatform: () => native.platform,
     isPluginAvailable: (name: string) => name === 'GuguIOSOwner' && native.available },
@@ -10,7 +10,7 @@ vi.mock('@capacitor/core', () => ({
     return native
   },
 }))
-import { iosOwnerClient } from '../../../../apps/desktop/src/mobile/ios-runtime/iosOwnerClient'
+import { iosOwnerClient, prepareIOSSignOut } from '../../../../apps/desktop/src/mobile/ios-runtime/iosOwnerClient'
 
 const ownerId = '10000000-0000-0000-0000-000000000001'
 const installationId = '30000000-0000-0000-0000-000000000003'
@@ -82,6 +82,16 @@ describe('GuguIOSOwner client', () => {
     const failure = { code: 'stop_failed' }
     native.retireSession.mockRejectedValue(failure)
     await expect(iosOwnerClient.retire(ownerId)).rejects.toBe(failure)
+  })
+
+  it('requires explicit native acknowledgement before SDK sign-out', async () => {
+    native.prepareSignOut.mockResolvedValue({ prepared: true })
+    await expect(prepareIOSSignOut(ownerId)).resolves.toBeUndefined()
+    expect(native.prepareSignOut).toHaveBeenCalledExactlyOnceWith({ ownerId })
+  })
+  it.each([undefined, null, {}, { prepared: false }, { prepared: 'true' }])('rejects incomplete logout preparation %#', async reply => {
+    native.prepareSignOut.mockResolvedValue(reply)
+    await expect(prepareIOSSignOut(ownerId)).rejects.toMatchObject({ code: 'invalid_native_reply' })
   })
 
   it('rejects missing or malformed caller input without invoking native', async () => {

@@ -9,6 +9,7 @@ final class GuguIOSOwnerPlugin: CAPPlugin, CAPBridgedPlugin {
     let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "publishSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getBinding", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "prepareSignOut", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "retireSession", returnType: CAPPluginReturnPromise),
     ]
     private let ownerSession: GuguIOSOwnerSession
@@ -45,6 +46,15 @@ final class GuguIOSOwnerPlugin: CAPPlugin, CAPBridgedPlugin {
         do {
             let current = try ownerSession.snapshot(expectedOwnerId: owner(call))
             call.resolve(["available": current != nil, "binding": current.map(binding) as Any? ?? NSNull()])
+        } catch { reject(call, error) }
+    }
+
+    @objc func prepareSignOut(_ call: CAPPluginCall) {
+        do {
+            ownerSession.prepareSignOut(expectedOwnerId: try owner(call)) { result in
+                do { try result.get(); call.resolve(["prepared": true]) }
+                catch { self.reject(call, error) }
+            }
         } catch { reject(call, error) }
     }
 

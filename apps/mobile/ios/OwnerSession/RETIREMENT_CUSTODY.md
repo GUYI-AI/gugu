@@ -32,6 +32,15 @@ the exact commit can recover that completed write without a new remote mutation.
 Unknown cleanup, lost original credentials, corruption, or another same-owner
 token cannot take this recovery path.
 
+Explicit iOS sign-out prepares credential-write cleanup before the SDK revokes
+its Auth session. Preparation checks the expected current owner and leaves the
+saved SDK envelope unchanged. The later empty-envelope write can reuse completed
+cleanup only when its captured original owner, installation, Auth session and
+access digest still match. This also survives a restart between revocation and
+local persistence. Pending or failed cleanup still requires online verification;
+a different original token or installation cannot consume the completed proof.
+The ordinary commit target, generation and exact readback checks still apply.
+
 Ordinary WebView/publication stop still does not permanently close the current
 push session. The App currently assembles this persisted write barrier with the
 push close and existing local lifecycle stop. The additional dedicated Host

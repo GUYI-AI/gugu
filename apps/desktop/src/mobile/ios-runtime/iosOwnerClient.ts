@@ -21,6 +21,7 @@ export class IOSOwnerClientError extends Error {
 const nativeOwner = registerPlugin<{
   publishSession(input: { ownerId: string; accessToken: string }): Promise<unknown>
   getBinding(input: { ownerId: string }): Promise<unknown>
+  prepareSignOut(input: { ownerId: string }): Promise<unknown>
   retireSession(input: { ownerId: string }): Promise<unknown>
 }>('GuguIOSOwner')
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -65,4 +66,11 @@ export const iosOwnerClient: IOSOwnerClient = {
     const reply = await nativeOwner.retireSession({ ownerId })
     if (!reply || typeof reply !== 'object' || (reply as Record<string, unknown>).retired !== true) throw invalidReply()
   },
+}
+
+/** Cleanup must finish while the saved login still passes server verification. */
+export async function prepareIOSSignOut(ownerId: string): Promise<void> {
+  requireNative(ownerId)
+  const reply = await nativeOwner.prepareSignOut({ ownerId })
+  if (!reply || typeof reply !== 'object' || (reply as Record<string, unknown>).prepared !== true) throw invalidReply()
 }
