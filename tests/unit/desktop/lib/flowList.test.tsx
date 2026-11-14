@@ -180,31 +180,15 @@ describe('useFlowList 贴底', () => {
     await resize()
     expect(gap(), '视口变矮').toBe(80)
   })
-  it('往上滚开的读者(哪怕只滚开 30px)不再算在底部,自己滚回底部才重新跟随;内容变矮把位置夹回去不算滚开', async () => {
+  it('停在贴底阈值以内的读者照旧跟随:滚到离底 30px 停下,新消息来了贴到底', async () => {
     await harness.render(createElement(List, { rows: rowsOf(20), landing: { index: 'LAST', align: 'end' } }))
     await nextFrames()
     await scrollTo(maxTop(scroller()) - 30)
-    expect(events.atBottom.at(-1)).toBe(false)
+    expect(events.atBottom.at(-1)).toBe(true)
     await nextFrames()
     await harness.render(createElement(List, { rows: rowsOf(21), landing: null }))
     await resize()
-    expect(maxTop(scroller()) - scroller().scrollTop, '新消息不拽他').toBe(130)
-
-    await scrollTo(maxTop(scroller()))
-    expect(events.atBottom.at(-1)).toBe(true)
-    await nextFrames()
-    await harness.render(createElement(List, { rows: rowsOf(22), landing: null }))
-    await resize()
-    expect(topOf('r21'), '滚回底部之后照旧跟随').toBe(200)
-
-    await nextFrames()
-    ;(scroller().firstElementChild!.lastElementChild as HTMLElement).dataset.h = '40'
-    scroller().scrollTop = scroller().scrollTop
-    await resize()
-    await nextFrames()
-    await harness.render(createElement(List, { rows: rowsOf(23), landing: null }))
-    await resize()
-    expect(topOf('r22'), '最后一条变矮之后来的新消息').toBe(200)
+    expect(topOf('r20')).toBe(200)
   })
   it('调用方关掉跟随(还有更新的页没载、正在定位未读)时在底部也不贴', async () => {
     await harness.render(createElement(List, { rows: rowsOf(10), landing: { index: 'LAST', align: 'end' }, followTail: false }))

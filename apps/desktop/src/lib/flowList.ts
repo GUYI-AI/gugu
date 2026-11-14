@@ -83,40 +83,33 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
   }, [contentRef])
 
   const rangeRef = useRef({ key: resetKey, rowIds, start: 0, end: rowIds.length })
-  // 读者自己往上滚开了没有。「在不在底部」离底一个阈值以内都算,而且要等这一帧画完才重算:只看它的话,读者从底部往上滚的
-  // 头几帧里,每来一次重渲染或高度变化就被写回底部,滚不出去(owner:「一直被引力往下拉到底」)。所以和上一帧画出来的位置比:
-  // scrollTop 变小了(且不是内容变矮夹回去的)= 他在往上走,从这一刻起不算在底部,直到他自己往下滚回来。
-  // 上方补挂了行、窗口头换了的那一帧,位置是锚定挪的,不算读者动。
-  const leftRef = useRef(false)
+  // 上一帧画出来时读者在哪(绘制之后读,不占这一帧的布局);每次重算电平都约下一次读数。
   const lastFrameRef = useRef<{ key: Slice['key']; top: number; head?: string; from?: string }>({ key: resetKey, top: 0 })
-  if (lastFrameRef.current.key !== resetKey) { lastFrameRef.current = { key: resetKey, top: 0 }; leftRef.current = false }
-  const sense = useCallback((scroller: HTMLElement) => {
-    const range = rangeRef.current, last = lastFrameRef.current
+  if (lastFrameRef.current.key !== resetKey) lastFrameRef.current = { key: resetKey, top: 0 }
+  const [lastFrame] = useState(() => afterPaint(() => {
+    const scroller = scrollerRef.current, range = rangeRef.current
     // 橡皮筋回弹(scrollTop 一度超过最大值)不算往上走。
-    const end = scroller.scrollHeight - scroller.clientHeight, top = Math.min(scroller.scrollTop, end)
-    const still = last.head === range.rowIds[0] && last.from === range.rowIds[range.start]
-    if (still && top < last.top - 1 && end - top > 1) leftRef.current = true
-    else if (still && top > last.top + 1) leftRef.current = false
-    return { key: range.key, top, head: range.rowIds[0], from: range.rowIds[range.start] }
-  }, [])
-  // 绘制之后读(不占这一帧的布局);每次重算电平都约下一次读数。
-  const [lastFrame] = useState(() => afterPaint(() => { if (scrollerRef.current) lastFrameRef.current = sense(scrollerRef.current) }))
+    if (scroller) lastFrameRef.current = { key: range.key, top: Math.min(scroller.scrollTop, scroller.scrollHeight - scroller.clientHeight), head: range.rowIds[0], from: range.rowIds[range.start] }
+  }))
   const report = useCallback((scroller: HTMLElement) => {
     lastFrame.schedule()
-    sense(scroller)
     const range = rangeRef.current
-    const atBottom = range.end === range.rowIds.length && isAtListEnd(scroller, atBottomThreshold) && !leftRef.current
+    const atBottom = range.end === range.rowIds.length && isAtListEnd(scroller, atBottomThreshold)
     atBottomRef.current = atBottom
     if (reportedRef.current !== atBottom) {
       reportedRef.current = atBottom
       callbacksRef.current.onAtBottomChange?.(atBottom)
     }
-  }, [atBottomThreshold, lastFrame, sense])
-  // 这一刻该不该贴底。电平是上一帧的,所以先看读者这一帧动没动;上方刚补挂行的那次提交,尾部没有东西要跟。
+  }, [atBottomThreshold, lastFrame])
+  // 贴底只拽停着的读者。「在不在底部」离底一个阈值以内都算,而且要等这一帧画完才重算:读者正从底部往上滚的那几帧里,
+  // 每来一次重渲染或高度变化就把他写回底部,滚不出去。所以写之前和上一帧画出来的位置比:scrollTop 变小了 = 他这一帧
+  // 自己在往上走,不拽;上方刚补挂了行 = 位置是锚定挪的,尾部没有东西要跟。窗口头换了(头部裁行)照旧贴。
+  // 停在阈值以内不动的读者照旧跟随。
   const followsTail = useCallback((scroller: HTMLElement) => {
-    const { head, from } = sense(scroller), last = lastFrameRef.current
-    return followRef.current && atBottomRef.current && !leftRef.current && (last.head !== head || last.from === from)
-  }, [sense])
+    if (!followRef.current || !atBottomRef.current) return false
+    const range = rangeRef.current, last = lastFrameRef.current
+    return last.head !== range.rowIds[0] || (last.from === range.rowIds[range.start] && scroller.scrollTop >= last.top - 1)
+  }, [])
 
   // 落点按挂载读一次 —— 调用方的落点在恢复落定后会变。
   const landingRef = useRef({ key: resetKey, landing })
