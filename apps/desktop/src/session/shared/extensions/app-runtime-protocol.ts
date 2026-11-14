@@ -461,6 +461,8 @@ export interface AppFileEntry {
    * `null`: no cloud copy (a project file kept on its machine, a document, a folder). Absent where the read does not say.
    */
   keep?: { expiresAt: string | null; mine: boolean } | null;
+  /** Service-reported readability across its sources; absent on older list/search responses. */
+  availability?: 'available' | 'expired' | 'deleted';
   /**
    * `files.list`'s answer only: when its cloud copy was cleared at its expiry and nothing replaced it — it no longer opens
    * (a file its machine keeps is never expired). Absent otherwise.

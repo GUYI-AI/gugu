@@ -15,7 +15,7 @@ import { selectionComment, annotationLineNumbers, previewSelectionLines } from '
 import { findIn, linesText, placeOf, plainWords, relocate, spanOf } from './lines.js'
 import { INSERT_BLOCKS, isFrontmatter, listInsertion, moveBlock, previewBlock, sourceBlocks, turnBlockChanges } from './blocks.js'
 import { HARD_MAX_BYTES, bufferAnchors, firstBytes, sourceFile } from './source-file.js'
-import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, wantsThumb } from './list.js'
+import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, wantsThumb } from './list.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -198,6 +198,7 @@ const STRINGS = {
     clearsAt: '{time} 清除云端副本',
     sent: '聊天附件',
     expired: '已过期',
+    cloudDeleted: '云端已删除，可以让上传的人重新发',
     expiredAt: '{time} 到期，云端副本已清除',
     keep: '保留方式',
     keepTemporary: '临时',
@@ -437,6 +438,7 @@ const STRINGS = {
     clearsAt: 'Cloud copy cleared {time}',
     sent: 'Chat attachments',
     expired: 'Expired',
+    cloudDeleted: 'The cloud copy was deleted. Ask the uploader to send it again.',
     expiredAt: 'Expired {time}: the cloud copy was cleared',
     keep: 'Keep',
     keepTemporary: 'Temporary',
@@ -989,11 +991,11 @@ function heard(change) {
 // A change is read one file at a time, with what only a list says (`keep` — how long its cloud copy is kept —, `expiredAt`,
 // `childCount`: the host reads them with the file). One it came without keeps the list's answer; a file new to the list
 // with none is read again with its own folder — never the whole tree. Says those folders ('' the top).
-const listed = ({ keep, expiredAt, childCount }) => ({ keep, expiredAt, childCount })
+const listed = ({ keep, availability, expiredAt, childCount }) => ({ keep, availability, expiredAt, childCount })
 function take(change) {
   const before = new Map(state.entries.map((entry) => [entry.id, entry]))
   const listsKeep = state.entries.some((entry) => 'keep' in entry)
-  const fresh = new Map(change.entries.map((entry) => [entry.id, 'keep' in entry || !before.has(entry.id) || !('keep' in before.get(entry.id)) ? entry : { ...entry, ...listed(before.get(entry.id)) }]))
+  const fresh = new Map(change.entries.map((entry) => [entry.id, 'keep' in entry || !before.has(entry.id) || !('keep' in before.get(entry.id)) ? entry : { ...listed(before.get(entry.id)), ...entry }]))
   state.entries = [...state.entries.filter((entry) => !fresh.has(entry.id) && !change.gone.includes(entry.id)), ...fresh.values()]
   if (!listsKeep) return []
   // An item come into, moved in or out of, or gone from a folder not read yet changes the count its row says
@@ -1167,8 +1169,8 @@ function renderList() {
   const folders = state.kind === 'all' && !filtering ? shown.filter(isFolder).sort(folderOrder) : []
   const picked = ofKind.filter((e) => matches(e, state.filters, machineOf, now)).sort(comparer(state.sort, shownName, changedAt, state.ctx?.locale))
   // Files whose cloud copy expired no longer open (owner 11-12): one folded section under the rest, closed until pressed.
-  const files = picked.filter((e) => !e.expiredAt)
-  const expired = picked.filter((e) => e.expiredAt)
+  const files = picked.filter((e) => !fileUnavailable(e))
+  const expired = picked.filter(fileUnavailable)
   // At the top, the files placed there and the ones sent in the chat (「附件」) are two blocks under their own headings (owner 11-12).
   const sentIds = new Set(!needle && !state.folder ? sentEntries().map((e) => e.id) : [])
   const sent = files.filter((e) => sentIds.has(e.id))
@@ -1823,7 +1825,7 @@ function fileMark(entry) {
   mark.setAttribute('aria-hidden', 'true')
   if (entry.claimedBy) mark.title = entry.claimedBy.name
   // An image with a cloud copy: its picture, once it is on screen (until then, and if it cannot be read, its suffix).
-  if (wantsThumb(entry)) thumbInto(mark, entry)
+  if (wantsThumb(entry) && !fileUnavailable(entry)) thumbInto(mark, entry)
   return mark
 }
 
@@ -1958,10 +1960,12 @@ function keepMark(entry, now) {
 
 // A file whose cloud copy expired: said on its row, the day it was cleared on hover.
 function expiredMark(entry) {
-  if (!entry.expiredAt) return null
+  if (!fileUnavailable(entry)) return null
   const mark = Object.assign(document.createElement('span'), { className: 'file-keep', textContent: state.t.expired })
   mark.dataset.expired = ''
-  mark.title = fmt(state.t.expiredAt, { time: new Intl.DateTimeFormat(state.ctx?.locale || 'en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(entry.expiredAt)) })
+  mark.title = Number.isFinite(Date.parse(entry.expiredAt ?? '')) && entry.availability !== 'deleted'
+    ? fmt(state.t.expiredAt, { time: new Intl.DateTimeFormat(state.ctx?.locale || 'en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(entry.expiredAt)) })
+    : state.t.cloudDeleted
   return mark
 }
 
@@ -2009,7 +2013,7 @@ function readAgain(entry, into) {
   return into !== undefined && state.listed.has(into) ? listFolder(into, true) : undefined
 }
 
-const fileTip = (entry) => [
+const fileTip = (entry) => fileUnavailable(entry) ? `${pathOf(entry)}\n${state.t.cloudDeleted}` : [
   pathOf(entry), ...activityOf(entry), sizeOf(entry.size), entry.storedOn ? machineOf(entry.storedOn) : '',
   entry.keep ? entry.keep.expiresAt ? state.t.keepTemporary : state.t.keepPermanent : '',
 ].filter(Boolean).join(' · ')
@@ -2053,7 +2057,7 @@ function listItem(entry, now = new Date(Date.now())) {
     span.dataset.cell = cell
     meta.append(span)
   }
-  if (!folder) meta.title = activityOf(entry).join(' · ')
+  if (!folder) meta.title = fileUnavailable(entry) ? state.t.cloudDeleted : activityOf(entry).join(' · ')
   open.append(title)
   const where = state.filter.trim() && entry.parentId ? pathOf(entry).split('/').slice(0, -1).join('/') : ''
   if (where) meta.prepend(Object.assign(document.createElement('span'), { className: 'file-path', textContent: where }))
@@ -2062,7 +2066,7 @@ function listItem(entry, now = new Date(Date.now())) {
   open.onauxclick = (event) => { if (!folder && event.button === 1) { event.preventDefault(); pressFile(entry, event) } }
   if (!folder) pickable(li, entry)
   if (offline(entry)) li.dataset.offline = ''
-  if (entry.expiredAt) li.dataset.expired = ''
+  if (fileUnavailable(entry)) li.dataset.expired = ''
   // Files carry the same resource link outside this App; folder moves stay inside it.
   const drag = (text, isLink) => {
     if (touchPane?.matches) return
@@ -2091,7 +2095,7 @@ function listItem(entry, now = new Date(Date.now())) {
   if (folder) dropOnto(li, entry.id)
   // At the row's end: how long its cloud copy has left, and the machine it stays on.
   li.append(open)
-  const marks = [expiredMark(entry), keepMark(entry, now), entry.storedOn ? storedOnMark(entry.storedOn) : null].filter(Boolean)
+  const marks = [expiredMark(entry) ?? keepMark(entry, now), entry.storedOn ? storedOnMark(entry.storedOn) : null].filter(Boolean)
   if (marks.length) {
     const box = Object.assign(document.createElement('span'), { className: 'file-marks' })
     box.append(...marks)
@@ -2110,7 +2114,7 @@ function gridItem(entry, now) {
   li.setAttribute('role', 'option')
   li.setAttribute('aria-selected', 'false')
   if (offline(entry)) li.dataset.offline = ''
-  if (entry.expiredAt) li.dataset.expired = ''
+  if (fileUnavailable(entry)) li.dataset.expired = ''
   const open = document.createElement('button')
   open.type = 'button'
   open.className = 'file-open'
@@ -2420,6 +2424,7 @@ async function copyLink(entry, at) {
 // the host hands the file back as context.file and applyContext opens it; nothing opens inline on a click.
 // `ask`: "Open with another App" — the host's picker, every App that opens this file, this one included.
 async function openInHost(entry, ask = false, intent = 'navigate') {
+  if (fileUnavailable(entry)) return showBanner(state.t.cloudDeleted, 'info')
   try {
     const viewState = { root: state.root, folder: state.folder, filter: state.filter, kind: state.kind, sort: state.sort, filters: state.filters, picked: [...state.picked], selecting: state.selecting, pickFrom: state.pickFrom, scrollTop: $('file-list').scrollTop }
     await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}) })

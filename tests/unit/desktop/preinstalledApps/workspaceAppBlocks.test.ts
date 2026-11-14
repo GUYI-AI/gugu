@@ -15,6 +15,7 @@ const entry = (id: string, name: string, more: Record<string, unknown> = {}) => 
   id, name, displayName: name, contentType: 'application/pdf', type: 'binary', size: 1000, parentId: null, path: name, systemRole: null,
   version: 1, createdAt: ago(600), updatedAt: ago(600), createdBy: { id: 'u1', name: '张三', kind: 'human' }, sourceMessageIds: [], keep: null, ...more,
 })
+
 const ENTRIES = [
   entry('att', '附件', { type: 'folder', contentType: 'inode/directory', systemRole: 'attachments', size: null }),
   entry('docs', 'Docs', { type: 'folder', contentType: 'inode/directory', size: null, childCount: 4 }),
@@ -103,5 +104,49 @@ describe('the top of a chat folder', () => {
     filesChanged({ kind: 'entries', entries: [note], gone: [] })
     await until('Docs says 5', () => document.querySelector('[data-id="docs"] [data-cell="size"]')?.textContent === '5 项')
     expect(gugu.files.list.mock.calls.slice(reads).map(([place]) => (place as { folder?: string }).folder)).toEqual([''])
+  })
+})
+
+
+describe('service-reported file availability', () => {
+  const missing = [
+    entry('expired-image', 'expired-photo.png', { availability: 'expired', contentType: 'image/png' }),
+    entry('deleted-pdf', 'expired-report.pdf', { availability: 'deleted' }),
+    entry('expired-markdown', 'expired-notes.md', { availability: 'expired', type: 'text', contentType: 'text/markdown', expiredAt: ago(3600) }),
+    entry('deleted-json', 'expired-config.json', { availability: 'deleted', type: 'json', contentType: 'application/json' }),
+  ]
+
+  test('all unavailable file kinds are dimmed and explain deletion on an ordinary open gesture', async () => {
+    ENTRIES.push(...missing)
+    filesChanged({ kind: 'entries', entries: missing, gone: [] })
+    await until('the expired section includes the service states', () => toggle('expired').textContent?.includes('5') === true)
+    if (toggle('expired').getAttribute('aria-expanded') === 'false') toggle('expired').click()
+    gugu.files.openWith.mockClear()
+    for (const file of missing) {
+      const row = document.querySelector<HTMLElement>(`[data-id="${file.id}"]`)!
+      expect(row.hasAttribute('data-expired'), file.name).toBe(true)
+      expect(row.querySelector('.file-keep[data-expired]')?.textContent).toBe('已过期')
+      row.querySelector<HTMLButtonElement>('.file-open')!.click()
+      expect($('list-banner').textContent).toContain('云端已删除，可以让上传的人重新发')
+    }
+    expect(gugu.files.openWith).not.toHaveBeenCalled()
+  })
+
+  test('folder search keeps availability and an authoritative available update restores opening', async () => {
+    const filter = $('filter') as HTMLInputElement
+    filter.value = 'expired-'
+    filter.dispatchEvent(new Event('input', { bubbles: true }))
+    await until('search across the tree lists every matching unavailable kind', () => ids().length === missing.length)
+    for (const file of missing) expect(document.querySelector(`[data-id="${file.id}"][data-expired]`)).not.toBeNull()
+    const revived = { ...missing[0]!, availability: 'available', expiredAt: ago(10) }
+    Object.assign(ENTRIES.find(file => file.id === revived.id)!, revived)
+    // The change is allowed to omit list-only keep while supplying a newer authoritative state.
+    const { keep: _keep, ...partial } = revived
+    filesChanged({ kind: 'entries', entries: [partial], gone: [] })
+    await until('the available update is no longer dimmed', () => document.querySelector(`[data-id="${revived.id}"]:not([data-expired])`) !== null)
+    expect(document.querySelector(`[data-id="${revived.id}"] .file-keep[data-expired]`)).toBeNull()
+    gugu.files.openWith.mockClear()
+    document.querySelector<HTMLButtonElement>(`[data-id="${revived.id}"] .file-open`)!.click()
+    await until('the available file uses the ordinary host opener', () => gugu.files.openWith.mock.calls.length === 1)
   })
 })

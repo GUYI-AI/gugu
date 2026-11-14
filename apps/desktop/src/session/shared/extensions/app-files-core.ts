@@ -188,6 +188,9 @@ interface ItemRow {
   is_mine?: boolean | null;
   /** `workspace_list_as` only: when the group's cloud copy was cleared at its expiry and no live copy replaced it. */
   copy_expired_at?: string | null;
+  /** List/search availability; optional until the service returns the new contract. */
+  availability?: AppFileEntry['availability'];
+  expired_at?: string | null;
   /** `workspace_list_as` only (gugu-supabase 20261112030000): how many items are directly in a folder; null for a file. */
   child_count?: number | string | null;
   /** `workspace_list_as` only: the device that keeps its current version, when that is not in the cloud. */
@@ -265,6 +268,8 @@ type Claimant = FilesPlatform['claimant'];
 function entryOf(row: ItemRow, claimant: Claimant): AppFileEntry {
   const file = { name: row.filename, contentType: row.content_type };
   const folder = row.kind === 'folder';
+  const availability = ['available', 'expired', 'deleted'].includes(row.availability ?? '') ? row.availability : undefined;
+  const expiredAt = row.expired_at ?? (!row.host_device_id ? row.copy_expired_at : null);
   return claimEntry({
     id: row.id,
     chat: row.chat_id,
@@ -293,7 +298,8 @@ function entryOf(row: ItemRow, claimant: Claimant): AppFileEntry {
     sourceMessageIds: row.source_message_ids ?? [],
     ...('is_mine' in row ? { keep: typeof row.is_mine === 'boolean' ? { expiresAt: row.expires_at ?? null, mine: row.is_mine } : null } : {}),
     // A file its machine keeps opens from there (file_resolve_as answers it local), whatever became of a cloud copy.
-    ...(row.copy_expired_at && !row.host_device_id ? { expiredAt: row.copy_expired_at } : {}),
+    ...(!folder && availability ? { availability } : {}),
+    ...(!folder && expiredAt ? { expiredAt } : {}),
     ...(folder && row.child_count != null ? { childCount: Number(row.child_count) } : {}),
   }, claimant);
 }
@@ -643,7 +649,7 @@ async function asListed(token: string, row: ItemRow, actor: string): Promise<Ite
     .catch(() => []);
   const listed = found.find((one) => one.id === row.id);
   // A list that does not say which machine holds it (undefined) leaves that to be resolved, as the row from get does.
-  return listed ? { ...row, expires_at: listed.expires_at ?? null, is_mine: listed.is_mine ?? null, copy_expired_at: listed.copy_expired_at ?? null, host_device_id: listed.host_device_id } : row;
+  return listed ? { ...row, expires_at: listed.expires_at ?? null, is_mine: listed.is_mine ?? null, copy_expired_at: listed.copy_expired_at ?? null, availability: listed.availability, expired_at: listed.expired_at, host_device_id: listed.host_device_id } : row;
 }
 
 /**
