@@ -11,7 +11,7 @@ export type ResourceRejection = 'too_large' | 'unsupported';
 
 export function resourceRejection(file: { name: string; size: number; type?: string }): ResourceRejection | null {
   if (file.size > RESOURCE_MAX_BYTES) return 'too_large';
-  const type = file.type ?? '';
+  const type = (file.type ?? '').trim().toLowerCase();
   if (REJECTED_EXTENSIONS.test(file.name) || type.startsWith('video/') || type.startsWith('audio/')) return 'unsupported';
   return null;
 }

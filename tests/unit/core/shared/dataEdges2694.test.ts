@@ -1,0 +1,10 @@
+import { expect, it } from 'vitest'
+import { resourceRejection, folderNameProblem } from '@gugu/core/shared/assistantResourceRules'
+import { linuxNameFromOsRelease, parseServerRollback } from '@gugu/core/cloud/deviceHostInfo'
+import { readHealthSummary } from '@gugu/core/shared/healthSummary'
+import { panelApplicationFailure } from '@gugu/core/shared/assistantPanelFailure'
+import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation'
+import { opensAsStoredText } from '@gugu/core/shared/workspaceUpload.mjs'
+const summary = () => ({ v:1,timezone:'UTC',generated_at:'',range:{start_date:'',end_date:''},background:{supported:true,granted:true},body:{},days:[],signals:[],workouts:[],last_night:null,granted_types:[],missing_types:[],unreadable:[] })
+
+it('rejects case-insensitive audio and video resource MIME', () => { expect(resourceRejection({ name:'unknown', size:1, type:' Audio/ogg; codecs=opus ' })).toBe('unsupported'); expect(resourceRejection({ name:'unknown', size:1, type:'Video/MP4' })).toBe('unsupported') })
