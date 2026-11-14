@@ -98,6 +98,25 @@ describe('#6053 agent owners in the mention popup', () => {
     expect(onSend).toHaveBeenLastCalledWith(text, expect.objectContaining({ toUserIds: ids }))
   })
 
+  it('writes the plain @name for a picked same-named agent of one owner and routes it by id', async () => {
+    const onSend = vi.fn(async () => {})
+    const twins: GroupRosterCandidate[] = [
+      { id: 'twin-a', name: 'Solver', type: 'agent', ownerDisplayName: 'Alice' },
+      { id: 'twin-b', name: 'Solver', type: 'agent', ownerDisplayName: 'Alice' },
+    ]
+    await renderWithAppProviders(harness, <ChatMessageComposer onSend={onSend} isGroupChat groupMembers={twins} />)
+    await typeMention('@Solver')
+    const options = Array.from(document.body.querySelectorAll('[role="option"]'))
+    expect(options.map((option) => option.textContent)).toEqual([expect.stringContaining('Solver（Alice 的 agent）'), expect.stringContaining('Solver（Alice 的 agent）')])
+    expect(document.body.querySelector('[role="listbox"]')?.textContent).not.toContain('#')
+    const option = options[1]
+    await act(async () => { option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })) })
+    await act(async () => {
+      harness.container.querySelector('button[aria-label="发送消息"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onSend).toHaveBeenLastCalledWith('@Solver', expect.objectContaining({ toUserIds: ['twin-b'] }))
+  })
+
   it('refreshes late owner identities, renamed owners and language while the picker stays open', async () => {
     const onSend = vi.fn()
     const render = (groupMembers: GroupRosterCandidate[]) => renderWithAppProviders(harness,

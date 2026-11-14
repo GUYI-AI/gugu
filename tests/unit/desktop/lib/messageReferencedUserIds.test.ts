@@ -8,7 +8,7 @@ import type { DisplayIdentity } from '../../../../apps/desktop/src/lib/displayId
 
 function identity(id: string, display_name: string): DisplayIdentity {
   return {
-    id, type: 'agent', display_name, nameSerial: null, avatar: null, gugu_number: null, bio: null,
+    id, type: 'agent', display_name, avatar: null, gugu_number: null, bio: null,
     owner_user_id: null, agent_public: null, desired_status: null, device_id: null,
     category: null, is_official: null, local_path: null,
     created_at: null, updated_at: '2026-11-09T00:00:00.000Z',

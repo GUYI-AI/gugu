@@ -59,8 +59,6 @@ import { useContactsStore } from '../../store/contactsContext'
 import { useDevicesStore } from '../../store/devicesContext'
 import { agentOwnerDisplayName, toAgentProfile } from '../memberProfileModels'
 import { buildUnifiedMembers } from './groupMemberModels'
-import { groupClashNames, NO_CLASH_NAMES } from '../../lib/chatClashNames'
-import { ChatClashNames } from './ChatClashNames'
 import { useListenModeEditControls } from './useListenModeEditControls'
 import { ChevronRight } from '../../lib/icons'
 import type { UseGroupCollabLoaderResult } from '../../hooks/useGroupCollabLoader'
@@ -165,7 +163,7 @@ function MemberRow({
   // 名册里有这个 id、身份却没跟上来 —— 这是数据层该出而没出的值,照 GroupMemberAvatarRow 的做法喊出来,
   // ❌ 不静默补一个「未知用户」。
   const diagnostic = identity ? null : resolveOrLoud(undefined, `member list identity ${memberId}`)
-  const shownName = useShownAgentName({ id: memberId, name: identity?.display_name ?? diagnostic ?? '', createdAt: isAgent ? identity?.created_at ?? undefined : undefined })
+  const shownName = useShownAgentName({ name: identity?.display_name ?? diagnostic ?? '', createdAt: isAgent ? identity?.created_at ?? undefined : undefined })
   const rowData = { 'data-member-row': memberId, 'data-member-kind': isAgent ? 'agent' : 'human' }
   const content = (
     <ListRowContent
@@ -260,7 +258,6 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   const [query, setQuery] = useState('')
   const [myAgentsExpanded, setMyAgentsExpanded] = useState(true)
   const mobile = useMobileShell()
-  const nameScope = useMemo(() => ({ chatId, names: mobile || !snapshot ? NO_CLASH_NAMES : groupClashNames(snapshot, identities) }), [chatId, mobile, snapshot, identities])
   useEffect(() => { setQuery('') }, [chatId])
 
   // The row and profile use the same owner/source-group permission and mutation hook.
@@ -311,7 +308,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
     const agent = member.raw as GroupAgentItem
     const identity = identities[agent.id]
     return matchesQuery([
-      nameScope.names.get(agent.id) ?? identity?.display_name,
+      identity?.display_name,
       identity ? agentOwnerDisplayName(identity, identities) : null,
       engineLabel(agent),
       agent.model_source,
@@ -372,7 +369,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   }
 
   return (
-    <ChatClashNames.Provider value={nameScope}>
+    <>
       <div
         data-testid="member-list-panel"
         data-chat-kind={chatKind}
@@ -482,6 +479,6 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
         </div>
       </div>
       {group.overlays}
-    </ChatClashNames.Provider>
+    </>
   )
 }

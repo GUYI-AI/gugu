@@ -45,7 +45,6 @@ import { buildSubmitKeymap } from './extensions/submit-keymap';
 import { buildPromptHistoryKeymap } from './extensions/prompt-history-keymap';
 import { compactMentionPath } from './mention-pill-helpers';
 import { isEmptyPromptDocument, mentionInsertContent, plainTextDoc, serializeDoc, serializeNode } from './serialize';
-import { MentionDisplayContext } from './mention-display-context';
 import type {
   CommandItem,
   MentionItem,
@@ -604,7 +603,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
   return (
     <>
       <div className={cx(styles.editorWrapper, className)}>
-        <MentionDisplayContext.Provider value={mentionProvider?.resolve}><EditorContent editor={editor} className={styles.editorContent} aria-disabled={disabled} /></MentionDisplayContext.Provider>
+        <EditorContent editor={editor} className={styles.editorContent} aria-disabled={disabled} />
         {isEmpty && (
           <span aria-hidden={emptyHint ? undefined : true} className={styles.editorPlaceholder} style={emptyHint ? { right: 0 } : undefined}>
             {emptyHint ?? placeholder}
