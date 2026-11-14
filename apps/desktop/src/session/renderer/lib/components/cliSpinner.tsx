@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { joinSharedBeat, observeAnimationViewport } from '@gugu/session-shared/animation-visibility';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import './cliSpinner.css';
 
 const FRAMES_1 = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -54,7 +54,7 @@ export function CLISpinner({
   animate?: boolean;
 }) {
   const element = useRef<HTMLSpanElement>(null);
-  const shown = useContext(PageShownContext);
+  const shown = useContext(SurfaceShownContext);
   const [inView, setInView] = useState(true);
 
   useEffect(() => {

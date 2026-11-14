@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useContext, useEffect } from 'react';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { SshPromptCard } from '@/components/settings/addServer/SshPromptCard';
 import '@/i18n/registerSettingsCatalog';
 import { BrowserPane } from '@renderer/features/browser/browser-pane';
@@ -26,7 +26,7 @@ export const TabContent = observer(function BrowserTabContent({ host }: TabConte
   const anyShown = browserTabs.some((t) => t.isActive);
   // Session pages stay mounted while hidden (@@@retained-session-pages): only the page on screen
   // names the active browser, and it does so again whenever it comes back on screen.
-  const pageActive = useContext(PageShownContext);
+  const pageActive = useContext(SurfaceShownContext);
 
   useEffect(() => {
     if (!pageActive || anyShown) return;

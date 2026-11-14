@@ -430,8 +430,8 @@ function InnerLayout({
   // (base position:fixed;top:0;left:0;width:0;height:0 set in JSX so it's out of flow from the
   // first paint — no flash) that this effect sizes/positions to exactly cover whichever slot
   // (sessionSlotRef/composerSlotRef) is current, via getBoundingClientRect(). A hidden slot (display:
-  // none, e.g. sessionSlotRef while on another tab) has a zero rect, which hides the overlay too — no
-  // separate branch needed for "nothing should show". ResizeObserver + window resize + explicit
+  // none, e.g. sessionSlotRef while on another tab) has a zero rect: the overlay keeps its last box and is
+  // hidden the retained-surface way (content-visibility + scale(0)), so its scroll offsets survive. ResizeObserver + window resize + explicit
   // chatListPaneWidth / activeTab dependencies keep the rect in sync (activeTab: same commit as the tab switch, #6753).
   // 移动 shell 走同一套:全屏创建页的正文区就是 composerSlotRef 指的那个槽(两个 shell 的槽互斥
   // 渲染,共用一个 ref),量到的 rect 只是变成了整屏 —— ❌ 不为移动端另开一条定位分支。
@@ -443,12 +443,16 @@ function InnerLayout({
     let shown = false
     const syncRect = () => {
       const rect = dest.getBoundingClientRect()
-      frame.style.top = `${rect.top}px`
-      frame.style.left = `${rect.left}px`
-      frame.style.width = `${rect.width}px`
-      frame.style.height = `${rect.height}px`
       frame.dataset.emdashSlot = dest === sessionSlotRef.current ? 'task' : 'composer'
       shown = rect.width > 0 && rect.height > 0
+      // A hidden slot measures 0×0; the frame keeps its last drawn box instead (lib/retainedSurface.ts): shrunk to
+      // nothing, every scroller in the page is clamped to 0 and every ResizeObserver fires, as with display:none.
+      if (shown) {
+        frame.style.top = `${rect.top}px`
+        frame.style.left = `${rect.left}px`
+        frame.style.width = `${rect.width}px`
+        frame.style.height = `${rect.height}px`
+      }
       hide()
     }
     // Hidden, the frame's page is skipped (content-visibility): not drawn, clickable, focusable, findable or intersecting,
