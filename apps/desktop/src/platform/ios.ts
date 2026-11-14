@@ -3,6 +3,7 @@ import { Clipboard } from '@capacitor/clipboard'
 import type { AppPlatform } from './types'
 import { createUnsupportedPlatform } from './unsupported'
 import { rendererLogger } from '../lib/log'
+import { iosCalendarPermissionsAvailable } from '../mobile/ios-calendar/iosCalendarPermissionsAvailability'
 
 const base = createUnsupportedPlatform('capacitor', 'iOS')
 const lifecycleError = (error: unknown) => rendererLogger('ios/lifecycle').error({ error }, 'Cannot observe application lifecycle')
@@ -10,7 +11,9 @@ const lifecycleError = (error: unknown) => rendererLogger('ios/lifecycle').error
 /** Foreground client only. Missing Android plugins never become advertised iOS capabilities. */
 export const iosPlatform: AppPlatform = {
   ...base,
-  capabilities: { ...base.capabilities, appVersion: true, clipboard: true },
+  capabilities: { ...base.capabilities, appVersion: true, clipboard: true,
+    get calendarSettings() { return iosCalendarPermissionsAvailable() },
+  },
   getAppVersion: async () => (await App.getInfo()).version,
   writeClipboardText: async (string) => { await Clipboard.write({ string }) },
   subscribeAppForeground(listener, onError) {

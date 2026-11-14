@@ -50,7 +50,7 @@ const sectionsFor = (mobile: boolean): ActiveSection[] =>
   SETTINGS_SECTIONS.filter(
     (section) =>
       (section !== 'passwords' || (PASSWORD_BETA_ENABLED && platform.kind === 'electron' && !mobile)) &&
-      (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0) &&
+      (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0 || platform.capabilities.calendarSettings) &&
       (section !== 'apps' || platform.capabilities.mobileApps) &&
       (section !== 'phone' || platform.capabilities.phoneDevice) &&
       (section !== 'connectors' || mobile) &&

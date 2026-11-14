@@ -2,7 +2,7 @@ import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
-import { openBillingPage } from '../../lib/appLinks'
+import { billingLinksAvailable, openBillingPage } from '../../lib/appLinks'
 import { fetchPlatformModelCatalog, setPlatformModelHidden, type PlatformCatalogModel } from '../../lib/agentModelSelection'
 import { rendererLogger } from '../../lib/log'
 import { Button } from '../ui/Button'
@@ -115,10 +115,10 @@ export function ModelSection() {
           {locked.length > 0 && (
             <SettingsGroup title={t('model.membersOnly')} data-testid="settings-model-locked">
               {/* 一处去路,❌ 每行一枚按钮:那是同一句话说 N 遍。买会员只在网页面板(GUGU_BILLING_URL 抬头写了为什么)。 */}
-              <SettingsRow
+              {billingLinksAvailable() && <SettingsRow
                 description={t('model.upgradeHint')}
                 control={<Button variant="secondary" size="sm" onClick={openBillingPage}>{t('model.upgrade')}</Button>}
-              />
+              />}
               {locked.map((model) => (
                 <SettingsRow key={model.id} data-model-id={model.id} title={model.displayName} />
               ))}

@@ -6,6 +6,7 @@ import { Button } from '../ui/Button'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { AgentAvatar } from '../agentAvatar/AgentAvatar'
 import { CloudComputerRefusal, type CloudComputerActionFailure } from '../settings/CloudComputerSection'
+import { billingLinksAvailable } from '../../lib/appLinks'
 
 export function AssistantHomeChoice({
   name, member, cloudEnabled, cloudAvailable, canHostHere, busy, error, cloudFailure,
@@ -56,10 +57,10 @@ export function AssistantHomeChoice({
             </Button>
             {!cloudCheck.error ? <span className="ta-onb-note" role="status">{t(cloudCheck.isSuccess ? 'setup.cloudStillUnavailable' : 'setup.cloudNotOpen')}</span> : null}
           </> : <>
-            <Button variant="primary" size="lg" className="rounded-full" disabled={busy} onClick={member ? onCloud : onUpgrade}
+            {(member || billingLinksAvailable()) && <Button variant="primary" size="lg" className="rounded-full" disabled={busy} onClick={member ? onCloud : onUpgrade}
               data-testid={member ? 'assistant-setup-claim-cloud' : 'assistant-setup-member'}>
               {t(member ? 'setup.homeCloudAction' : 'setup.homeCloudUpgrade')}
-            </Button>
+            </Button>}
             {!member ? <span className="ta-onb-note">{t('setup.homeCloudMember')}</span> : null}
           </>}
         </div>

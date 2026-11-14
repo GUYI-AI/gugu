@@ -1,4 +1,5 @@
 import { notifyCopied } from '@/lib/copyFeedback'
+import { billingLinksAvailable } from '../../lib/appLinks'
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -198,7 +199,7 @@ export function DevicesSection({
           onMethodChange={setAddingServer}
           onClose={() => { setAddingServer(null); setRelogin(null) }}
           onAdded={(added) => { setRelogin(null); onServerAdded(added) }}
-          onUpgrade={onUpgrade}
+          onUpgrade={billingLinksAvailable() ? onUpgrade : undefined}
           relogin={relogin ?? undefined}
         />
       )}

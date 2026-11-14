@@ -40,6 +40,8 @@ interface PlatformCapabilities {
    * 手机上的捏合、双击只是看一眼,不留下比例,所以手机壳没有这一位(读写都不发生)。
    */
   readingZoomMemory: boolean
+  /** This shell registers an owner-verified native calendar settings surface. */
+  calendarSettings?: boolean
 }
 
 /** 交给系统分享面板的一份内容。附件只给地址,由宿主自己取字节,交出去的是文件本身。 */
