@@ -10,15 +10,19 @@ let root: Root, host: HTMLDivElement
 let setWidth: (width: number) => void = () => {}
 const TEXT = 'A bubble long enough to wrap onto more lines when its column gets narrower than it was. '.repeat(3)
 
-// Groups of two rows; every second row is a group tail with its own avatar layer. Laid-out rows are content-visibility:auto.
-function Scene({ rows }: { rows: number }) {
+// The shape MessageList + MessageBubble give a row: the avatar slot beside the message column, which holds the bubble.
+// A laid-out row's message column is content-visibility:auto (tokens.css); the avatar slot is outside it.
+// groupSize rows per group; the last row of each group is its tail, with the avatar layer.
+function Scene({ rows, groupSize = 2 }: { rows: number; groupSize?: number }) {
   const [width, setState] = useState(500)
   setWidth = setState
   return <div data-scroller="" style={{ height: 300, width, overflowY: 'auto' }}>
     <div>{Array.from({ length: rows }, (_, index) =>
-      <div key={index} data-row={index} role="listitem" data-laid-out="" className="gg-msg-row" style={{ display: 'flex' }}>
-        <GroupAvatarSlot wide={false} groupedWithPrev={index % 2 === 1} groupedWithNext={index % 2 === 0}><button>Avatar</button></GroupAvatarSlot>
-        <div data-message-bubble-row="" style={{ flex: 1 }}>{TEXT}</div>
+      <div key={index} data-row={index} role="listitem" data-laid-out="" className="gg-msg-row">
+        <div style={{ display: 'flex' }}>
+          <GroupAvatarSlot wide={false} groupedWithPrev={index % groupSize !== 0} groupedWithNext={index % groupSize !== groupSize - 1}><button>Avatar</button></GroupAvatarSlot>
+          <div data-message-bubble-column="" style={{ flex: 1, minWidth: 0 }}><div data-message-bubble-row="">{TEXT}</div></div>
+        </div>
       </div>)}</div>
   </div>
 }
@@ -45,7 +49,7 @@ afterEach(() => { Element.prototype.getBoundingClientRect = nativeRect; root.unm
 
 async function readsPerWidthChange(rows: number) {
   await act(async () => root.render(<Scene rows={rows} />))
-  // Offscreen rows are skipped (their contents report hidden) before the width changes.
+  // Offscreen message columns are skipped (their contents report hidden) before the width changes.
   await until('offscreen rows skipped', () => !row(rows - 1).querySelector('[data-message-bubble-row]')!.checkVisibility({ contentVisibilityAuto: true }))
   await frames(3)
   bubbleReads = 0
@@ -69,4 +73,21 @@ it('measures a tail that was skipped during the width change when it is scrolled
   const tail = 151
   row(tail).scrollIntoView({ block: 'center' })
   await until('skipped tail measured on unskip', () => Math.abs(Number.parseFloat(layer(tail).style.height) - expected(tail)) < 1)
+})
+
+it('paints a group avatar at the bottom of the view while its tail is below it, and hit-tests it there', async () => {
+  await act(async () => root.render(<Scene rows={40} groupSize={10} />))
+  // Group 1 is rows 10–19. Put row 12 at the top of the view: its tail (row 19) is far below the view.
+  const scroller = host.querySelector<HTMLElement>('[data-scroller]')!
+  scroller.scrollTop += row(12).getBoundingClientRect().top - scroller.getBoundingClientRect().top
+  await until('offscreen rows skipped', () => !row(39).querySelector('[data-message-bubble-row]')!.checkVisibility({ contentVisibilityAuto: true }))
+  await frames(3)
+  const view = scroller.getBoundingClientRect()
+  expect(row(19).getBoundingClientRect().top).toBeGreaterThan(view.bottom)
+  const avatar = row(19).querySelector('button')!.getBoundingClientRect()
+  // Sticky at the bottom of the view, inside it.
+  expect(avatar.bottom).toBeLessThanOrEqual(view.bottom)
+  expect(avatar.bottom).toBeGreaterThan(view.bottom - 40)
+  // Painted there: the hit test lands on this group's avatar, not on what is under it.
+  expect(document.elementFromPoint(avatar.left + avatar.width / 2, avatar.top + avatar.height / 2)).toBe(row(19).querySelector('button'))
 })

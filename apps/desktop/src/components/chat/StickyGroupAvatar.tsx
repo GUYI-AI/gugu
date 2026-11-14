@@ -4,10 +4,12 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react'
 const GROUP_TOP_ATTR = 'data-avatar-group-top'
 
 type AvatarBounds = { layer: HTMLDivElement; bottom: number; height: number }
-type AvatarMeasure = { row: Element; read: () => AvatarBounds | undefined }
+type AvatarMeasure = { rows: () => Element[]; read: () => AvatarBounds | undefined; parked: Element[] }
 const avatarMeasures = new Map<Element, Set<AvatarMeasure>>()
-// Rows are content-visibility:auto once laid out. Reading a bubble in a skipped row forces that row's layout, once per row,
-// and a skipped row paints nothing, so its layer waits for the row's unskip event instead. Unknown state counts as shown.
+// A laid-out row's message column is content-visibility:auto; the avatar layer sits outside it and spans its group's bubbles.
+// Reading a bubble in a skipped column forces that column's layout. When every row of the group is skipped, the whole group
+// is outside the view and its margin, so no part of the layer can show: the measure waits for any of those rows to unskip.
+// Unknown state counts as shown.
 const skippedRows = new WeakSet<Element>()
 const waitingRows = new Map<Element, Set<AvatarMeasure>>()
 const skipWatchedLists = new WeakSet<Element>()
@@ -28,26 +30,37 @@ function avatarResizeObserver(): ResizeObserver {
     const measures = new Set<AvatarMeasure>()
     for (const { target } of entries) {
       for (const measure of avatarMeasures.get(target) ?? []) {
-        if (!skippedRows.has(measure.row)) { measures.add(measure); continue }
-        const waiting = waitingRows.get(measure.row) ?? new Set<AvatarMeasure>()
-        waitingRows.set(measure.row, waiting.add(measure))
+        const rows = measure.rows()
+        if (rows.some(row => !skippedRows.has(row))) { measures.add(measure); continue }
+        unparkAvatarMeasure(measure)
+        measure.parked = rows
+        for (const row of rows) waitingRows.set(row, (waitingRows.get(row) ?? new Set<AvatarMeasure>()).add(measure))
       }
     }
+    for (const measure of measures) unparkAvatarMeasure(measure)
     applyAvatarMeasures(measures)
   })
+}
+
+function unparkAvatarMeasure(measure: AvatarMeasure) {
+  for (const row of measure.parked) {
+    const waiting = waitingRows.get(row)
+    if (waiting?.delete(measure) && !waiting.size) waitingRows.delete(row)
+  }
+  measure.parked = []
 }
 
 function watchRowSkips(list: Element) {
   if (skipWatchedLists.has(list)) return
   skipWatchedLists.add(list)
-  // The event does not bubble; a capture listener on the list sees every row's.
+  // The event does not bubble; a capture listener on the list sees every message column's.
   list.addEventListener('contentvisibilityautostatechange', (event) => {
-    const row = event.target as Element
+    const row = (event.target as Element).closest('[role="listitem"]')
+    if (!row) return
     if ((event as Event & { skipped?: boolean }).skipped) { skippedRows.add(row); return }
     skippedRows.delete(row)
-    const waiting = waitingRows.get(row)
-    if (!waiting) return
-    waitingRows.delete(row)
+    const waiting = [...waitingRows.get(row) ?? []]
+    for (const measure of waiting) unparkAvatarMeasure(measure)
     applyAvatarMeasures(waiting)
   }, true)
 }
@@ -72,21 +85,24 @@ function StickyGroupAvatar({ width, continuesGroup, children }: { width: string;
     const row = slot?.closest('[role="listitem"]')
     const list = row?.parentElement
     if (!slot || !layer || !row || !list) return
-    const read = () => {
+    // 这一组挂着的行,从组尾往上到组首(没挂上的话到最上面挂着的那行)。只走 DOM,不读布局。
+    const rows = () => {
+      const group = [row]
       // 一条成组的消息,组首就是自己这一行 ⇒ 不往上找(往上找会落到上一组的组首,层伸进别的组)。
-      let top: Element | null = null
-      let firstMounted = row
-      for (let r = continuesGroup ? row.previousElementSibling : null; r && !top; r = r.previousElementSibling) {
-        firstMounted = r
-        top = r.querySelector(`[${GROUP_TOP_ATTR}]`)
+      for (let r = continuesGroup ? row.previousElementSibling : null; r; r = r.previousElementSibling) {
+        group.push(r)
+        if (r.querySelector(`[${GROUP_TOP_ATTR}]`)) break
       }
+      return group
+    }
+    const read = () => {
       // 层的上下沿 = 组首那条气泡的上沿、这一条气泡的下沿:名字/时间行、表情回应都不算。
       const bubble = (r: Element) => r.querySelector('[data-message-bubble-row]')?.getBoundingClientRect()
-      const own = bubble(row), first = bubble(top?.closest('[role="listitem"]') ?? firstMounted), box = slot.getBoundingClientRect()
+      const own = bubble(row), first = bubble(rows().at(-1)!), box = slot.getBoundingClientRect()
       if (!own || !first) return
       return { layer, bottom: box.bottom - own.bottom, height: own.bottom - first.top }
     }
-    const measure: AvatarMeasure = { row, read }
+    const measure: AvatarMeasure = { rows, read, parked: [] }
     watchRowSkips(list)
     // The first delivery still measures after layout and before paint, without a synchronous mid-commit read.
     const observer = avatarResizeObserver()
@@ -98,8 +114,7 @@ function StickyGroupAvatar({ width, continuesGroup, children }: { width: string;
       return { target, measures }
     })
     return () => {
-      const waiting = waitingRows.get(row)
-      if (waiting?.delete(measure) && !waiting.size) waitingRows.delete(row)
+      unparkAvatarMeasure(measure)
       for (const { target, measures } of targets) {
         measures.delete(measure)
         if (!measures.size) { avatarMeasures.delete(target); observer.unobserve(target) }
