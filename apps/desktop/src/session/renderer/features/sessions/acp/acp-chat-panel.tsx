@@ -1553,7 +1553,7 @@ const ComposerForStore = observer(function ComposerForStore({
           if (!isGuguClientCommand(item.id)) return;
           if (item.id === GUGU_CLIENT_COMMAND_MCP) void openMcpPanel();
         }}
-        attachmentExtra={<AnnotationTray sessionId={store.sessionId} onRemove={id => { if (!sendingRef.current) { const imageId = annotationImageId(id); fileUploads.forget(imageId); setAttachments(current => current.filter(item => item.id !== imageId)); } }} onSend={() => { void handleSubmit(store.draftText); }} enabled={sendHold !== 'waiting' && membershipLockedModel === null && !store.messageEdit && !store.reverting} />}
+        attachmentExtra={annotationDraft.items.length ? <AnnotationTray sessionId={store.sessionId} onRemove={id => { if (!sendingRef.current) { const imageId = annotationImageId(id); fileUploads.forget(imageId); setAttachments(current => current.filter(item => item.id !== imageId)); } }} onSend={() => { void handleSubmit(store.draftText); }} enabled={sendHold !== 'waiting' && membershipLockedModel === null && !store.messageEdit && !store.reverting} /> : null}
         attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')}
         onAttachmentsChange={handleAttachmentsChange}
         onAttach={handleAttach}

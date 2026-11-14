@@ -43,6 +43,9 @@ function taskPageHost(deviceId: string, sessionId: string, watching: { asked(wat
 const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: { resource: TaskPageResource; visible: boolean }) {
   const { translate } = useSessionMessages();
   const root = useRef<HTMLDivElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
+  const [pictureSize, setPictureSize] = useState({ width: 0, height: 0 });
+  const [frame, setFrame] = useState<{ width: number; height: number } | null>(null);
   const [state, setState] = useState<ProjectionViewState>('connecting');
   const [watchId, setWatchId] = useState<string | null>(null);
   // Watched only while on screen: a hidden tab costs that machine nothing.
@@ -61,7 +64,8 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
       if (id === current) resource.setPage(page);
     });
     void mountProjection(host, root.current, `${resource.deviceId}:${resource.sessionId}`, {
-      state: (next) => setState(next),
+      state: (next) => { if (!gone) setState(next); },
+      painted: (next) => { if (!gone) setFrame(next); },
       error: () => setState('closed'),
     }).then((view) => { if (gone) void view.close(); else mounted = view; }, () => setState('closed'));
     return () => { gone = true; offState(); setWatchId(null); void mounted?.close(); };
@@ -72,11 +76,12 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
   };
   // The page there takes this tab's size (CSS pixels, at this screen's density, as a page here would).
   useEffect(() => {
-    const element = root.current;
+    const element = viewport.current;
     if (!watchId || !element) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const resize = () => {
       const { width, height } = element.getBoundingClientRect();
+      setPictureSize({ width, height });
       if (width < 100 || height < 100) return;
       void rpc.browser.controlTaskPage({ watchId, control: { action: 'resize', width: Math.round(width), height: Math.round(height),
         scale: Math.min(2, Math.max(1, window.devicePixelRatio || 1)) } }).catch(() => undefined);
@@ -94,6 +99,8 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
       if (!result.inspection) throw new Error('The page annotation could not be read');
       return result.inspection;
     } });
+  const ratio = frame ? frame.width / frame.height : pictureSize.width / (pictureSize.height || 1);
+  const pictureWidth = Math.min(pictureSize.width, pictureSize.height * ratio);
   const session = resource.session;
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -110,9 +117,11 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
           onForceReload={() => control({ action: 'reload' })}
         />
       )}
-      <div data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
-        <div ref={root} className="absolute inset-0" />
-        {annotations.overlay}
+      <div ref={viewport} data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ width: pictureWidth, height: ratio > 0 ? pictureWidth / ratio : pictureSize.height }}>
+          <div ref={root} className="absolute inset-0" />
+          {annotations.overlay}
+        </div>
         {state !== 'live' && state !== 'input-paused' && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-foreground-muted">
             {translate(state === 'closed' ? 'browser.sessionUnavailable' : 'browser.preparingSession')}

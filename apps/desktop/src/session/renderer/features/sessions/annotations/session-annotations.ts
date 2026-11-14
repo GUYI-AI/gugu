@@ -32,7 +32,7 @@ export class SessionAnnotations {
   private nextNumber = 1;
   private nextFileNumber = 1;
   submissionVersion = 0;
-  private sender: (() => void) | null = null;
+  private senders: readonly (() => void)[] = [];
 
   constructor() {
     makeAutoObservable(this, { items: observable.ref }, { autoBind: true });
@@ -62,12 +62,12 @@ export class SessionAnnotations {
   }
 
   bindSend(sender: () => void): () => void {
-    this.sender = sender;
-    return action(() => { if (this.sender === sender) this.sender = null; });
+    this.senders = [...this.senders, sender];
+    return action(() => { this.senders = this.senders.filter(current => current !== sender); });
   }
 
-  get canSend(): boolean { return this.sender !== null && this.items.length > 0; }
-  send(): void { this.sender?.(); }
+  get canSend(): boolean { return this.senders.length > 0 && this.items.length > 0; }
+  send(): void { this.senders.at(-1)?.(); }
 }
 
 const drafts = new Map<string, SessionAnnotations>();

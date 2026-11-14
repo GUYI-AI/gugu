@@ -184,6 +184,7 @@ export function BrowserToolbar({
       >
         {session.isLoading ? <Square className="size-4" /> : <Reload className="size-4" />}
       </ToolbarIconButton>
+      {annotationAction}
       <form
         className="min-w-0 flex-1"
         onSubmit={(event) => {
@@ -229,7 +230,6 @@ export function BrowserToolbar({
           </div>
         )}
       </form>
-      {annotationAction}
       {!remote && (
         <DropdownMenu>
           <DropdownMenuTrigger

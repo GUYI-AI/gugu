@@ -16,7 +16,7 @@ export const AnnotationTray = observer(function AnnotationTray({ sessionId, onSe
   useEffect(() => enabled ? draft.bindSend(onSend) : undefined, [draft, onSend, enabled]);
   if (!draft.items.length) return null;
   return (
-    <div data-composer-annotations className="flex px-4 pt-4">
+    <div data-composer-annotations className="col-span-full flex min-w-0">
       <Popover>
         <PopoverTrigger render={<Button type="button" variant="outline" size="sm" className="gap-2 rounded-xl" />}>
           <MessageSquare className="size-4" />{translate('annotations.count', { count: draft.items.length })}

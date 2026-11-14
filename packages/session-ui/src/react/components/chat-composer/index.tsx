@@ -832,9 +832,8 @@ export function ChatComposer({
           onDrop={queueEdit ? undefined : handleDrop}
         >
           {/* Attachment chips — anatomy vendored from assistant-ui (#5269), see composer-attachment-chip.tsx */}
-          {!queueEdit && <ComposerAttachmentStrip attachments={attachments} status={attachmentStatus}
+          {!queueEdit && <ComposerAttachmentStrip attachments={attachments} status={attachmentStatus} extra={attachmentExtra}
             onView={onViewAttachment} onRemove={onAttachmentsChange ? removeAttachment : undefined} onRetry={onRetryAttachment} onQualityChange={onAttachmentQualityChange} qualityLocked={disabled || attachmentQualityLocked} />}
-          {!queueEdit && attachmentExtra}
 
           {/* Editor area */}
           <div

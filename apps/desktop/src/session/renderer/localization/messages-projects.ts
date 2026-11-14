@@ -10,6 +10,7 @@ import type { SessionMessageLookupKey } from './messages';
 export type ProjectsTranslate = (key: SessionMessageLookupKey, values?: SessionMessageValues) => string;
 
 export const enUSProjectMessages = {
+  'annotations.active': 'Annotating · {{count}}',
   'annotations.count': '{{count}} annotations',
   'annotations.comment': 'Comment',
   'annotations.placeholder': 'Add a comment…',
@@ -267,6 +268,7 @@ export const enUSProjectMessages = {
 type ProjectMessageKey = keyof typeof enUSProjectMessages;
 
 export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
+  'annotations.active': '批注中 · {{count}}',
   'annotations.count': '{{count}} 条批注',
   'annotations.comment': '评论',
   'annotations.placeholder': '添加评论…',

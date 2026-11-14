@@ -1,4 +1,4 @@
-import { MessageSquare, X } from '@/lib/icons';
+import { Check, MessageSquare, X } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import type { BrowserAnnotationInspection, BrowserAnnotationQuery, BrowserAnnotationTarget } from '@shared/browser-annotation';
@@ -22,7 +22,7 @@ export function useBrowserAnnotations({ sessionId, browserId, visible, available
   const { translate } = useSessionMessages();
   return {
     toolbar: sessionId && available ? <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0"
-      aria-label={translate(active ? 'annotations.exit' : 'annotations.annotate')} aria-pressed={active} title={translate('annotations.annotate')}
+      aria-label={translate(active ? 'annotations.exit' : 'annotations.annotate')} aria-pressed={active} title={active ? `${translate('annotations.hint')} · ${translate('annotations.browse')}` : translate('annotations.annotate')}
       onClick={() => setActive(!active)}><MessageSquare className="size-4" /></Button> : null,
     overlay: active && visible && sessionId ? <BrowserAnnotationOverlay key={browserId} sessionId={sessionId} browserId={browserId}
       inspect={inspect} onExit={exit} /> : null,
@@ -124,21 +124,26 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
         <span key={item.id} className="pointer-events-none absolute flex size-6 items-center justify-center rounded-full bg-[var(--live-light)] text-xs text-white" style={{ left: `${Math.max(0, item.rect.x / item.viewport.width * 100)}%`, top: `${Math.max(0, item.rect.y / item.viewport.height * 100)}%` }}>{item.number}</span>)}
       {target && <div className="pointer-events-none absolute border-2 border-[var(--live-light)] bg-[color-mix(in_oklab,var(--live-light)_10%,transparent)]" style={box(target)} />}
       {drag && <div className="pointer-events-none absolute border-2 border-[var(--live-light)] bg-[color-mix(in_oklab,var(--live-light)_10%,transparent)]" style={{ left: `${drag.x * 100}%`, top: `${drag.y * 100}%`, width: `${drag.width * 100}%`, height: `${drag.height * 100}%` }} />}
-      {selection && <form data-browser-annotation-input className="absolute flex w-80 max-w-[calc(100%_-_32px)] cursor-auto flex-col gap-2 rounded-xl border border-border bg-background p-4 shadow-lift"
-        style={{ left: `clamp(16px, ${selection.target.rect.x / selection.target.viewport.width * 100}%, calc(100% - 336px))`, top: `clamp(16px, ${(selection.target.rect.y + selection.target.rect.height) / selection.target.viewport.height * 100}%, calc(100% - 176px))` }}
+      {selection && <form data-browser-annotation-input className="absolute flex h-11 w-80 max-w-[calc(100%_-_32px)] cursor-auto items-center gap-2 rounded-full border border-border bg-background px-4 py-2 shadow-lift"
+        style={{ left: `clamp(16px, ${selection.target.rect.x / selection.target.viewport.width * 100}%, calc(100% - 336px))`, top: `clamp(16px, ${(selection.target.rect.y + selection.target.rect.height) / selection.target.viewport.height * 100}%, calc(100% - 64px))` }}
         onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
         onSubmit={event => { event.preventDefault(); void save(); }}>
-        <textarea autoFocus value={text} onChange={event => setText(event.target.value)} placeholder={translate('annotations.placeholder')} aria-label={translate('annotations.comment')}
-          className="min-h-16 w-full resize-none bg-transparent text-sm text-foreground outline-none" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setSelection(null); } }} />
-        <div className="flex justify-end gap-2"><Button type="button" size="sm" variant="ghost" onClick={() => setSelection(null)}>{translate('annotations.adjust')}</Button>
-          <Button type="submit" size="sm" disabled={busy || !text.trim()}>{translate('annotations.comment')}</Button></div>
+        <input autoFocus type="text" value={text} onChange={event => setText(event.target.value)} placeholder={translate('annotations.placeholder')} aria-label={translate('annotations.comment')}
+          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none" onKeyDown={event => {
+            if (event.key === 'Enter' && (event.nativeEvent.isComposing || event.keyCode === 229)) event.preventDefault();
+            if (event.key === 'Escape') { event.stopPropagation(); setSelection(null); }
+          }} />
+        <Button type="submit" size="icon" className="size-7 shrink-0 rounded-full" aria-label={translate('annotations.comment')} disabled={busy || !text.trim()}><Check className="size-3.5" /></Button>
       </form>}
+      {!selection && !draft.items.length && <div className="pointer-events-none absolute top-2 left-4 max-w-80 rounded-xl bg-foreground px-4 py-2 text-center text-xs text-background">
+        {translate('annotations.hint')} · {translate('annotations.browse')}
+      </div>}
       {error && <p role="alert" className="absolute top-4 left-4 rounded-lg bg-background p-2 text-sm">{translate('annotations.failed')}</p>}
     </div>}
-    {!browsing && <div data-occludes-browser-page className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%_-_32px)] -translate-x-1/2 items-center gap-2 rounded-xl border border-border bg-background px-4 py-2 text-xs shadow-lift">
-      <span className="min-w-0 truncate text-foreground-muted">{translate(browsing ? 'annotations.browse' : 'annotations.hint')}</span>
-      <Button type="button" size="sm" disabled={!draft.canSend || busy} onClick={draft.send}>{translate('annotations.send')}</Button>
-      <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0" aria-label={translate('annotations.exit')} onClick={onExit}><X className="size-4" /></Button>
+    {!browsing && draft.items.length > 0 && <div data-occludes-browser-page className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%_-_32px)] -translate-x-1/2 items-center gap-2 rounded-xl bg-foreground px-4 py-2 text-xs text-background shadow-lift">
+      <span className="min-w-0 truncate">{translate('annotations.active', { count: draft.items.length })}</span>
+      <Button type="button" size="sm" className="rounded-full bg-[var(--live-light)] text-white hover:bg-[var(--live-light)]" disabled={!draft.canSend || busy} onClick={draft.send}>{translate('annotations.send')}</Button>
+      <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0 text-background hover:text-background" aria-label={translate('annotations.exit')} onClick={onExit}><X className="size-4" /></Button>
     </div>}
   </>;
 });

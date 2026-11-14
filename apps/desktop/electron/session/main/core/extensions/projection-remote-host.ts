@@ -13,16 +13,8 @@ import { log } from '@main/lib/logger';
  * asker only. The projection's own one-picture-in-flight acknowledgement paces them: a slow link lowers the frame rate,
  * it never builds a backlog. Nothing here knows what the picture shows or how the App made it.
  */
-export const PROJECTION_REMOTE_RPC = {
-  watch: 'appProjection.watch',
-  send: 'appProjection.send',
-  unwatch: 'appProjection.unwatch',
-  /** A task page's toolbar there: go to an address, back, forward, reload, stop, the tab's size. */
-  control: 'appProjection.pageControl',
-} as const;
-export const PROJECTION_REMOTE_PACKET = 'appProjection.packet';
-/** A task page's toolbar state, pushed to its watcher whenever it changes. */
-export const PROJECTION_REMOTE_PAGE_STATE = 'appProjection.pageState';
+export { PROJECTION_REMOTE_RPC, PROJECTION_REMOTE_PACKET, PROJECTION_REMOTE_PAGE_STATE } from '@shared/extensions/projection-remote-rpc';
+import { PROJECTION_REMOTE_RPC, PROJECTION_REMOTE_PACKET, PROJECTION_REMOTE_PAGE_STATE } from '@shared/extensions/projection-remote-rpc';
 /** Viewers held for other computers at once (each is one page watching one projection). */
 export const PROJECTION_REMOTE_VIEWERS = 32;
 
