@@ -374,6 +374,11 @@ module.exports = {
     // @@@packed-app-allowlist - resources/app holds the build output and its runtime dependencies, nothing else.
     // The checkout around it is not product: in CD it also carries the private operations overlay.
     const appDir = packedAppDir(context)
+    if (context.electronPlatformName === 'win32') {
+      const { compactPackedJs } = require('./scripts/build/compact-packed-js.cjs')
+      const compacted = await compactPackedJs({ appDir })
+      console.log(`[packed-js] ${JSON.stringify(compacted)}`)
+    }
     // Check the materialized dependency tree, including optional extraResources.
     // A top-level-only glob silently shipped both Claude CLI architectures in 0.3.0.
     const payload = verifyPackedClaudePayload(path.dirname(appDir))
