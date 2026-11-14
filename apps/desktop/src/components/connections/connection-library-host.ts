@@ -9,6 +9,7 @@ import { waitForAssistantControl } from '@/lib/assistantControlReady'
 import { isAssistantActionRefusal } from '@/lib/assistantActionRefusal'
 import { rendererLogger } from '@/lib/log'
 import { anySignal } from '@gugu/core/shared/anySignal'
+import { supportedCliIntegrations } from '@shared/integration-cli-platform'
 
 const log = rendererLogger('assistant/authorization')
 
@@ -77,7 +78,7 @@ export function connectionLibraryHost(base: LibraryHost, panel: ConnectionMetada
     return { success: true as const }
   }
   const integrations: LibraryIntegrationsRpc = {
-    list: async locale => ownerMode ? builtinConnectionCatalog(locale ?? 'en-US') : (await read(locale)).items,
+    list: async locale => supportedCliIntegrations(ownerMode ? builtinConnectionCatalog(locale ?? 'en-US') : (await read(locale)).items,base.executionHost),
     checkConfiguredConnections: async () => (await read()).configured,
     checkAllConnections: async () => (await read()).statuses,
     accounts: async provider => Promise.all((await accounts(provider)).map(async row => {

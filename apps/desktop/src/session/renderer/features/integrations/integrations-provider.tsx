@@ -24,6 +24,7 @@ import {
 import { integrationErrorText } from './integration-display';
 import { prepareThenStartCliLogin } from './cli-tool-prepare';
 import type { IntegrationFormInput } from './types';
+import { supportedCliIntegrations } from '@shared/integration-cli-platform';
 
 export const ISSUE_CONNECTION_STATUS_QUERY_KEY = ['issues:connection-status'] as const;
 export const INTEGRATIONS_LIST_QUERY_KEY = ['integrations:list'] as const;
@@ -138,7 +139,10 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
   });
 
   const ownerItems = useMemo(() => ownerSnapshot ? ownerConnectionMetadataView(ownerSnapshot,locale).items : undefined,[ownerSnapshot,locale]);
-  const integrations = useAssistantIntegrationSummaries(metadata,ownerItems ?? listData ?? EMPTY_INTEGRATION_SUMMARIES,locale);
+  const summaries = useAssistantIntegrationSummaries(metadata,ownerItems ?? listData ?? EMPTY_INTEGRATION_SUMMARIES,locale);
+  // Includes cached/generated metadata and the first render. A saved row or
+  // an older host publication must not restore an unsupported setup entry.
+  const integrations = supportedCliIntegrations(summaries,host.executionHost);
 
   useEffect(() => {
     // @issue 的图标是聊天里用的,聊天只跟本机那一份走。
