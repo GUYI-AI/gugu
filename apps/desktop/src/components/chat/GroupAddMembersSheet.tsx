@@ -41,3 +41,21 @@ export function GroupAddMembersSheet({ chatId, initialSelectedIds, onClose }: {
       window.dispatchEvent(new CustomEvent(UI_EVENTS.groupCollabChanged, { detail: { chatId } }))
     }} />
 }
+
+/**
+ * 「添加成员」 from any group's 「+」 (GroupAddMenu), drawn here in the shell, under its contacts and devices. The picker's
+ * candidates are those two providers; the inner column's 「+」 lives in the task page's own React root, which has neither,
+ * so a picker mounted beside that 「+」 had nobody to pick. Mounted once (MainLayout); it sits over whatever page asked.
+ */
+export function GroupAddMembersHost() {
+  const [chatId, setChatId] = useState<string | null>(null)
+  useEffect(() => {
+    const open = (event: Event) => {
+      const asked = (event as CustomEvent<{ chatId?: unknown }>).detail?.chatId
+      if (typeof asked === 'string' && asked.length > 0) setChatId(asked)
+    }
+    window.addEventListener(UI_EVENTS.addGroupMembers, open)
+    return () => window.removeEventListener(UI_EVENTS.addGroupMembers, open)
+  }, [])
+  return chatId ? <GroupAddMembersSheet key={chatId} chatId={chatId} onClose={() => setChatId(null)} /> : null
+}
