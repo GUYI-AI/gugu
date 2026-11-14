@@ -24,7 +24,7 @@ import { accountProjectsStore } from '@/session/renderer/features/projects/store
 import { directoryMachines, visibleMachines } from './machine-list'
 import { DeviceDirectoryRetry } from './DeviceDirectoryRetry'
 import { PhoneHostSetupEntry } from './PhoneHostSetupEntry'
-import { phoneAgentAvailable } from '../local-agent/nativeAgent'
+import { platform } from '@/platform'
 import './task-flow-catalog'
 
 // 折叠与「展开显示」只是本机的阅读偏好。键是格(`project|项目群`,没绑群的 `机器|项目`)与父会话 id,全局唯一,所以一份就够。
@@ -325,7 +325,7 @@ export const ProjectsPage = observer(function ProjectsPage({
       {nothingYet && !waitingForMachines && !refreshing && !devicesError && failures.length === 0 ? (
         <div className="gg-aw-placeholder" data-testid="agent-watch-projects-empty">
           <div>{t('agentWatch.projects.empty')}</div>
-          {hostCount === 0 && <div>{phoneAgentAvailable() ? tFlow('noHost') : t('agentWatch.projects.noMachines')}</div>}
+          {hostCount === 0 && <div>{platform.capabilities.phoneAgentHost ? tFlow('noHost') : t('agentWatch.projects.noMachines')}</div>}
           {hostCount === 0 ? <PhoneHostSetupEntry /> : onCreate ? (
             <Button variant="secondary" size="lg" onClick={onCreate} data-testid="agent-watch-empty-create">{tFlow('createTask')}</Button>
           ) : null}

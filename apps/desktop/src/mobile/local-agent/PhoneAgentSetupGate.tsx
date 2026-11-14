@@ -7,31 +7,37 @@ import { SettingsNote, SettingsPage } from '@/components/settings/SettingsPrimit
 import { platform } from '@/platform'
 import { readPhoneInstallation } from '../phone-device/phoneInstallation'
 import { phoneInstallId } from '../phone-device/phoneDeviceSettings'
-import { phoneAgentAvailable } from './nativeAgent'
+import { useTranslation } from 'react-i18next'
+import { usePhoneHostIdentity } from './usePhoneHostIdentity'
+import { retryIOSOwnerPublication } from '../ios-runtime/startIOSOwnerPublication'
 import { PhoneAgentSetup } from './PhoneAgentSetup'
 import { PhoneInstallationContext } from './PhoneInstallationContext'
 import { phoneAgentSetupRequest, readPhoneAgentSetup, savePhoneAgentSetup, subscribePhoneAgentSetup, type PhoneAgentSetupProgress } from './PhoneAgentSetupState'
 
 /** Keep the app roots mounted: enabling a host in the guide must start the real native lifecycle. */
 export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; children: ReactNode }) {
+  const { t } = useTranslation('settings')
+  const identity = usePhoneHostIdentity(ownerId)
+  const binding = identity.binding
   const [setup, setSetup] = useState<{ ownerId: string; request: number; installId: string; progress: PhoneAgentSetupProgress } | null>(null)
   const [visible, setVisible] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
   const requested = useSyncExternalStore(subscribePhoneAgentSetup, () => phoneAgentSetupRequest(ownerId), () => 0)
   const handled = useRef(new Map<string, number>())
-  const currentSetup = setup?.ownerId === ownerId && setup.request === retry ? setup : null
+  const currentSetup = setup?.ownerId === ownerId && setup.request === retry && (!identity.ios || setup.installId === binding?.installationId) ? setup : null
 
   useEffect(() => {
-    if (platform.kind !== 'capacitor' || !platform.capabilities.phoneDevice) return
+    if (platform.kind !== 'capacitor' || !platform.capabilities.phoneAgentHost) return
     let alive = true
     setError(null)
     setVisible(false)
-    void readPhoneInstallation(ownerId).then((info) => {
+    if (identity.ios && !binding) { setSetup(null); return }
+    const installation = identity.ios ? Promise.resolve(binding!.installationId)
+      : readPhoneInstallation(ownerId).then(info => phoneInstallId(info.install_key ?? '', info.registration_id ?? '', info.previous_install_key))
+    void installation.then((installId) => {
       if (!alive) return
-      const installId = phoneInstallId(info.install_key ?? '', info.registration_id ?? '', info.previous_install_key)
-      // Rebind a restored WebView installation to the actual native device before reading progress.
-      if (!alive) return
+      // Progress belongs to the native installation, never a restored WebView identifier.
       try {
         const progress = readPhoneAgentSetup(ownerId, installId)
         setSetup({ ownerId, request: retry, installId, progress })
@@ -49,15 +55,16 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
       if (alive) { setError(messageForUser(error)); setVisible(true) }
     })
     return () => { alive = false }
-  }, [ownerId, retry])
+  }, [ownerId, retry, identity.ios, binding?.installationId])
 
   useEffect(() => {
     if (!requested || requested <= (handled.current.get(ownerId) ?? 0)) return
+    if (identity.ios && !binding) { setVisible(true); return }
     handled.current.set(ownerId, requested)
     setError(null)
     if (currentSetup) setVisible(true)
     else setRetry((value) => value + 1)
-  }, [ownerId, requested, currentSetup])
+  }, [ownerId, requested, currentSetup, identity.ios, binding])
 
   const save = (progress: PhoneAgentSetupProgress) => {
     if (!currentSetup) return false
@@ -80,8 +87,8 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
   return (
     <PhoneInstallationContext.Provider value={currentSetup ? ownerId : null}>
       {children}
-      {phoneAgentAvailable() && visible && (
-        <Sheet onClose={dismiss} ariaLabel="设置这台手机上的 Agent" titleId="phone-agent-setup-heading" fullScreenMobile testId="phone-agent-setup">
+      {platform.capabilities.phoneAgentHost && visible && (
+        <Sheet onClose={dismiss} ariaLabel={t('devices.phoneActions.setupTitle')} titleId="phone-agent-setup-heading" fullScreenMobile testId="phone-agent-setup">
           {currentSetup ? (
             <PhoneAgentSetup
               key={`${ownerId}:${currentSetup.installId}`}
@@ -92,11 +99,17 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
             />
           ) : (
             <SettingsPage className="gg-phone-setup gg-phone-setup-unavailable">
-              <h2 id="phone-agent-setup-heading" className="gg-phone-setup-heading">暂时无法打开手机设置</h2>
-              <SettingsNote role="alert">{error}</SettingsNote>
+              <h2 id="phone-agent-setup-heading" className="gg-phone-setup-heading">{t('devices.phoneActions.setupUnavailable')}</h2>
+              <SettingsNote role="alert">{error ?? t('devices.phoneActions.host.waiting')}</SettingsNote>
               <div className="flex gap-2">
-                <Button onClick={() => setRetry((value) => value + 1)}>重试</Button>
-                <Button variant="ghost" onClick={dismiss}>先使用咕咕</Button>
+                <Button onClick={() => {
+                  if (identity.ios && !binding) void retryIOSOwnerPublication().catch(cause => {
+                    rendererLogger('actions/PhoneAgentSetupGate').error({ error: cause }, 'action failed')
+                    setError(t('devices.phoneActions.host.operationFailed'))
+                  })
+                  setRetry((value) => value + 1)
+                }}>{t('devices.retry')}</Button>
+                <Button variant="ghost" onClick={dismiss}>{t('devices.phoneActions.setupBack')}</Button>
               </div>
             </SettingsPage>
           )}
