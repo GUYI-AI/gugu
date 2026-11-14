@@ -67,6 +67,7 @@ export function BrowserToolbar({
   onFitToWidth,
   onFocusUrl,
   remote = false,
+  annotationAction,
 }: {
   session: BrowserSessionSnapshot;
   adapter: BrowserWebviewAdapter | null;
@@ -85,6 +86,7 @@ export function BrowserToolbar({
    * here, and none of the actions menu (screenshot, profile, zoom, data) applies to it.
    */
   remote?: boolean;
+  annotationAction?: ReactNode;
 }) {
   const [urlText, setUrlText] = useState(browserUrlInputText(session.currentUrl));
   const [urlError, setUrlError] = useState<string | null>(null);
@@ -227,6 +229,7 @@ export function BrowserToolbar({
           </div>
         )}
       </form>
+      {annotationAction}
       {!remote && (
         <DropdownMenu>
           <DropdownMenuTrigger

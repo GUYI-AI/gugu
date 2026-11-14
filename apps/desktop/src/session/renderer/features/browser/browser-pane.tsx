@@ -1,3 +1,4 @@
+import { useBrowserAnnotations } from './browser-annotations';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { usePaneContext } from '@renderer/features/tabs/pane-context';
@@ -151,6 +152,8 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
 
   // #7191 页签开在哪条会话里,一并告诉主进程:那条会话的 agent 只拿得到它自己会话的页签。
   const owningSessionId = session?.sessionId;
+  const annotations = useBrowserAnnotations({ sessionId: owningSessionId, browserId, visible, available: !!adapter && !showStartPage && !loadError,
+    inspect: (query, capture) => rpc.browser.inspectAnnotation({ browserId, sessionId: owningSessionId!, query, capture }) });
   useEffect(() => {
     if (!sessionBrowserId || !sessionPartition) return;
     let disposed = false;
@@ -379,6 +382,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
       <BrowserToolbar
         session={session}
         adapter={adapter}
+        annotationAction={annotations.toolbar}
         // 空白页一露出来就把光标放进地址栏;并排时露出来的是另一页,❌ 把焦点从用户正看的那页抢走。
         autoFocusUrl={showStartPage && focused}
         onNavigate={navigateTo}
@@ -394,6 +398,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
       />
       {/* 网页区固定浅色:emlight 给会话页那套名字,data-theme="light" 让它们接到的咕咕 token 也是浅色那一套(宿主是深色时也一样)。 */}
       <div data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
+        {annotations.overlay}
         {pageMount && isRegistered ? (
           // #7274 网页一直挂着(加载失败页、起始页都盖在它上面,❌ 代替它):换了位置、出错重试都接着用同一张,
           // 会话的 agent 也一直有页面可操作(#7191)。被这些盖住时网页自己让开(见 browser-page-occlusion.ts)。

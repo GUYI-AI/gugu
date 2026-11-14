@@ -1,3 +1,4 @@
+import { useBrowserAnnotations } from './browser-annotations';
 import { observer } from 'mobx-react-lite';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
@@ -86,6 +87,13 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
     return () => { observer.disconnect(); if (timer) clearTimeout(timer); };
   }, [watchId]);
 
+  const annotations = useBrowserAnnotations({ sessionId: resource.sessionId, browserId: `task-page:${resource.deviceId}:${resource.sessionId}`, visible, available: !!watchId && state === 'live',
+    inspect: async (query, capture) => {
+      if (!watchId) throw new Error('This page is not watched');
+      const result = await rpc.browser.controlTaskPage({ watchId, control: { action: 'annotate', query, capture } });
+      if (!result.inspection) throw new Error('The page annotation could not be read');
+      return result.inspection;
+    } });
   const session = resource.session;
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -94,6 +102,7 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
           session={session}
           adapter={null}
           remote
+          annotationAction={annotations.toolbar}
           onNavigate={(url) => { control({ action: 'navigate', url }); return true; }}
           onGoBack={() => control({ action: 'back' })}
           onGoForward={() => control({ action: 'forward' })}
@@ -103,6 +112,7 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
       )}
       <div data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
         <div ref={root} className="absolute inset-0" />
+        {annotations.overlay}
         {state !== 'live' && state !== 'input-paused' && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-foreground-muted">
             {translate(state === 'closed' ? 'browser.sessionUnavailable' : 'browser.preparingSession')}

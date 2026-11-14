@@ -1,6 +1,6 @@
 import type { DeviceRpcHandlerContext, DeviceRpcHandlers } from '@gugu/core/cloud/deviceRpcResponder';
 import type { ProjectionHostPacket } from '@shared/extensions/projection-protocol';
-import { readTaskPageControl, type TaskPageControl, type TaskPageState } from '@shared/browser-task-page';
+import { readTaskPageControl, type TaskPageControl, type TaskPageControlResult, type TaskPageState } from '@shared/browser-task-page';
 import { log } from '@main/lib/logger';
 
 /**
@@ -32,7 +32,7 @@ export type ProjectionRemoteWatch = { watch: string } & (ProjectionRemoteAppWatc
 export type ProjectionRemotePacketEvent = { type: typeof PROJECTION_REMOTE_PACKET; watch: string; packet: ProjectionHostPacket };
 export type ProjectionRemotePageStateEvent = { type: typeof PROJECTION_REMOTE_PAGE_STATE; watch: string; state: TaskPageState };
 
-type Viewer = { receive(packet: unknown): Promise<void>; control?(control: TaskPageControl): Promise<void>; close(): void };
+type Viewer = { receive(packet: unknown): Promise<void>; control?(control: TaskPageControl): Promise<TaskPageControlResult>; close(): void };
 export interface ProjectionRemoteSources {
   /** Admit a viewer for this App's projection in this session, on this machine; throws a coded refusal. */
   connect(input: ProjectionRemoteAppWatch, send: (packet: ProjectionHostPacket) => void): Promise<Viewer>;
@@ -117,8 +117,8 @@ export function createProjectionRemoteHost(sources: () => ProjectionRemoteSource
       const entry = viewers.get(body.watch);
       if (!entry?.viewer.control) return refuse('not_open', 'This page is not watched');
       try {
-        await entry.viewer.control(control);
-        return { result: { done: true } };
+        const inspection = await entry.viewer.control(control);
+        return { result: { done: true, ...(inspection ? { inspection } : {}) } };
       } catch (error) {
         return refuse('failed', error instanceof Error ? error.message : String(error));
       }

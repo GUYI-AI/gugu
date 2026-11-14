@@ -10,6 +10,20 @@ import type { SessionMessageLookupKey } from './messages';
 export type ProjectsTranslate = (key: SessionMessageLookupKey, values?: SessionMessageValues) => string;
 
 export const enUSProjectMessages = {
+  'annotations.count': '{{count}} annotations',
+  'annotations.comment': 'Comment',
+  'annotations.placeholder': 'Add a comment…',
+  'annotations.edit': 'Edit annotation',
+  'annotations.delete': 'Delete annotation',
+  'annotations.cancel': 'Cancel',
+  'annotations.send': 'Send',
+  'annotations.annotate': 'Annotate this page',
+  'annotations.exit': 'Exit annotation mode',
+  'annotations.hint': 'Click an element or drag an area',
+  'annotations.browse': 'Hold Space to browse',
+  'annotations.adjust': 'Adjust',
+  'annotations.failed': 'Could not select this page',
+
   // ── browser: toolbar ────────────────────────────────────────────────────
   'browser.back': 'Back',
   'browser.forward': 'Forward',
@@ -253,6 +267,20 @@ export const enUSProjectMessages = {
 type ProjectMessageKey = keyof typeof enUSProjectMessages;
 
 export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
+  'annotations.count': '{{count}} 条批注',
+  'annotations.comment': '评论',
+  'annotations.placeholder': '添加评论…',
+  'annotations.edit': '修改批注',
+  'annotations.delete': '删除批注',
+  'annotations.cancel': '取消',
+  'annotations.send': '发送',
+  'annotations.annotate': '批注此页',
+  'annotations.exit': '退出批注',
+  'annotations.hint': '点击元素或拖选区域',
+  'annotations.browse': '按住空格浏览',
+  'annotations.adjust': '调整',
+  'annotations.failed': '无法选取此页',
+
   // ── browser: toolbar ────────────────────────────────────────────────────
   'browser.back': '后退',
   'browser.forward': '前进',

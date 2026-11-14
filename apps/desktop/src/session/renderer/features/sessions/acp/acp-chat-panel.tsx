@@ -1,3 +1,6 @@
+import { AnnotationTray } from '../annotations/annotation-tray';
+import { annotationPrompt, sessionAnnotations } from '../annotations/session-annotations';
+import { isAnnotationImage, prepareAnnotationImages } from '../annotations/annotation-images';
 import { useSessionInputNotice, type SessionInputNotice } from '../session-input-notice';
 import { sessionStartupFailureCopy } from '../session-input-failure-copy';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
@@ -332,6 +335,7 @@ const ComposerForStore = observer(function ComposerForStore({
   }, [verb, store]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
+  const annotationDraft = sessionAnnotations.forSession(store.sessionId);
   const fileSelection = useAttachmentFileSelection(attachments, store.sessionId);
   const attachmentsRef = useRef(attachments);
   // 发送等待的是上传 promise;账本必须在它 resolve 前更新,不能等 React 的下一次渲染。
@@ -392,8 +396,10 @@ const ComposerForStore = observer(function ComposerForStore({
     async (value: string, deliver: (text: string, files: TurnFileRef[]) => void | Promise<void>) => {
       if (sendingRef.current) return;
       sendingRef.current = true;
+      const annotated = annotationDraft.items;
       try {
-        await sendComposerInput(value, {
+        prepareAnnotationImages(annotated, fileUploads);
+        await sendComposerInput(annotationPrompt(value, annotated), {
           started: onScrollToBottom, unsettled: () => fileUploads.unsettled(),
           waitForUploads: async () => { await fileUploads.waitForUploads(); },
           hasFailedAttachments: () => attachmentsRef.current.some(att => att.state === 'error'),
@@ -401,6 +407,7 @@ const ComposerForStore = observer(function ComposerForStore({
           status: setSendHold,
           deliver,
           committed: () => flushSync(() => {
+            annotationDraft.submitted(annotated);
             setAttachments([]);
             fileUploads.clear();
             if (editorApiRef.current?.getText() === value) editorApiRef.current.clear();
@@ -411,7 +418,7 @@ const ComposerForStore = observer(function ComposerForStore({
         sendingRef.current = false;
       }
     },
-    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments]
+    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments, annotationDraft]
   );
 
   const handleSubmit = useCallback(
@@ -1464,7 +1471,7 @@ const ComposerForStore = observer(function ComposerForStore({
         // Store owns both live sending and pre-session queue admission.
         // 正在用的咕咕模型要会员了(#7056):下一轮之前停下,原因与去路在面板那一行。
         canSubmit={composerCanSubmit({ promptReady: a.canSubmit, isWorking: a.isWorking, reverting: store.reverting, editingMessage: !!store.messageEdit,
-          queuesOffline: canQueueNativeInput(store), hasDraft: store.draftText.trim().length > 0 || attachments.length > 0,
+          queuesOffline: canQueueNativeInput(store), hasDraft: store.draftText.trim().length > 0 || attachments.length > 0 || annotationDraft.items.length > 0,
           attachmentWaiting: sendHold === 'waiting', membershipLocked: membershipLockedModel !== null })}
         placeholder={startupPlaceholderKeyValue ? translate(startupPlaceholderKeyValue) : undefined}
         onSubmit={handleSubmit}
@@ -1542,7 +1549,8 @@ const ComposerForStore = observer(function ComposerForStore({
           if (!isGuguClientCommand(item.id)) return;
           if (item.id === GUGU_CLIENT_COMMAND_MCP) void openMcpPanel();
         }}
-        attachments={attachments}
+        attachmentExtra={<AnnotationTray sessionId={store.sessionId} onSend={() => { void handleSubmit(store.draftText); }} enabled={sendHold !== 'waiting' && membershipLockedModel === null && !store.messageEdit && !store.reverting} />}
+        attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')}
         onAttachmentsChange={handleAttachmentsChange}
         onAttach={handleAttach}
         onImageFilesDropped={(files, source) => {
