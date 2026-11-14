@@ -1,3 +1,4 @@
+/* global __guguMonotonic, __guguUUID, __guguNativeCancel, __guguNativeRequest, __guguNativeEvent, __guguNativeProjection */
 import 'core-js/actual/url/index.js'
 import { calendarTools } from './calendar-tools.mjs'
 import { Agent } from '@earendil-works/pi-agent-core'
