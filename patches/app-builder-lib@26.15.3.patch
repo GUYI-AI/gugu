@@ -132,15 +132,16 @@ index 053772f55ca6ece52f0a34c4fa0f05c9a5f07bd2..405e4b483a98045bd8b36044515e802e
 diff --git a/templates/nsis/include/installUtil.nsh b/templates/nsis/include/installUtil.nsh
 --- a/templates/nsis/include/installUtil.nsh
 +++ b/templates/nsis/include/installUtil.nsh
-@@ -105,6 +105,7 @@
+@@ -105,6 +105,8 @@
    ${endif}
  !macroend
  
-+!ifnmacrodef customInstallApplication
++!ifmacrodef customInstallApplication
++!else
  Function handleUninstallResult
    Var /GLOBAL rootKey_uninstallResult
    Exch $rootKey_uninstallResult
-@@ -137,6 +138,7 @@ FunctionEnd
+@@ -137,6 +139,7 @@ FunctionEnd
    Push "${ROOT_KEY}"
    Call handleUninstallResult
  !macroend
