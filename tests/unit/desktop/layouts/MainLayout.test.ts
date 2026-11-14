@@ -348,7 +348,23 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', async (importOriginal)
   useChatStoreReader: () => () => chatStoreMock,
   useChatStoreSelect: <T,>(select: (store: typeof chatStoreMock) => T) => select(chatStoreMock),
   useStoreValueBy: <T,>(read: (store: typeof chatStoreMock) => T) => read(chatStoreMock),
+  // The shell reads "is the active conversation still listed" straight from the chat store (lib/shellTab @@@phone-chat-layer).
+  useActiveChatListedSource: () => chatListSource,
 }))
+const chatListListeners = vi.hoisted(() => new Set<() => void>())
+const chatListSource = {
+  activeListed: () => chatStoreMock.chats.some((chat) => chat.id === chatStoreMock.activeChatId),
+  subscribe: (listener: () => void) => { chatListListeners.add(listener); return () => { chatListListeners.delete(listener) } },
+}
+// The chat store published a new list / selection: what the provider's layout-phase notification does.
+async function publishChats(change: { chats?: Array<{ id: string }>; activeChatId?: string | null }) {
+  await act(async () => {
+    if (change.chats) chatStoreMock.chats = change.chats
+    if (change.activeChatId !== undefined) chatStoreMock.activeChatId = change.activeChatId
+    for (const listener of [...chatListListeners]) listener()
+    await Promise.resolve()
+  })
+}
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({
   chatService: chatServiceMock
 }))
@@ -658,6 +674,76 @@ describe('MainLayout', () => {
     expect((window as Window & { __guguNativeBackHandled?: boolean }).__guguNativeBackHandled).toBe(true)
     expect(harness.container.textContent).toContain('chat-list-panel')
     expect(chatArea?.parentElement?.parentElement?.style.display).toBe('none')
+  })
+  // owner 11-14:退群后手机停在桌面的「选择一个会话」空态,没有顶栏、返回、底栏。会话页是盖在来源 tab 上的一层,
+  // 它只在当前会话还在列表里时成立(lib/shellTab @@@phone-chat-layer)。
+  describe('the phone chat page whose conversation goes away', () => {
+    const user = { id: 'user-1', email: 'user@example.com', nickname: 'User' }
+    const chatPageShown = () => (harness.container.querySelector('[data-testid="mock-chat-area"]') as HTMLElement).parentElement?.parentElement?.style.display === 'flex'
+    const tabBarShown = () => harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileMessagesNav}"]`) !== null
+    const pageActive = (tab: string) => harness.container.querySelector(`[data-mobile-tab-page="${tab}"]`)?.hasAttribute('inert') === false
+    async function openFromList() {
+      platformMock.kind = 'capacitor'
+      platformMock.capabilities.sessionHost = false
+      chatStoreMock.chats = [{ id: 'chat-1' }]
+      chatStoreMock.activeChatId = 'chat-1'
+      await harness.render(createNode(MainLayout, { user }))
+      await clickElement(harness.container.querySelector('[data-testid="mock-chat-row"]') as HTMLElement)
+      expect(chatPageShown(), 'positive control: inside the chat page').toBe(true)
+      expect(tabBarShown()).toBe(false)
+    }
+    it('lands on the chat list with its tab bar after leaving the group', async () => {
+      await openFromList()
+      await publishChats({ chats: [], activeChatId: null })
+      expect(chatPageShown()).toBe(false)
+      expect(harness.container.textContent).toContain('chat-list-panel')
+      expect(tabBarShown()).toBe(true)
+      expect(pageActive('chats')).toBe(true)
+    })
+    it('lands on the chat list in the frame the row leaves the list, before the selection is revoked', async () => {
+      await openFromList()
+      await publishChats({ chats: [] })
+      expect(chatPageShown(), 'removed: the row is gone while the selection still names it').toBe(false)
+      expect(tabBarShown()).toBe(true)
+      await publishChats({ activeChatId: null })
+      expect(chatPageShown()).toBe(false)
+    })
+    it('does not jump back into the group when invited back after being removed', async () => {
+      await openFromList()
+      await publishChats({ chats: [], activeChatId: null })
+      await publishChats({ chats: [{ id: 'chat-1' }] })
+      expect(chatPageShown()).toBe(false)
+      expect(tabBarShown()).toBe(true)
+    })
+    it('returns to Partners when a project group opened there goes away', async () => {
+      platformMock.kind = 'capacitor'
+      platformMock.capabilities.sessionHost = false
+      chatStoreMock.chats = [{ id: 'project-chat' }]
+      chatStoreMock.setActiveChatId.mockImplementation(id => { chatStoreMock.activeChatId = id; for (const listener of [...chatListListeners]) listener() })
+      await harness.render(createNode(MainLayout, { user }))
+      await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileContactsNav}"]`) as HTMLElement)
+      await clickElement(harness.container.querySelector('[data-testid="mock-phone-partners-group"]') as HTMLElement)
+      expect(chatPageShown(), 'positive control: the project group is open').toBe(true)
+      await publishChats({ chats: [], activeChatId: null })
+      expect(chatPageShown()).toBe(false)
+      expect(pageActive('contacts')).toBe(true)
+      expect(harness.container.querySelector('[data-testid="mock-phone-partners"]')?.getAttribute('data-active')).toBe('true')
+      expect(tabBarShown()).toBe(true)
+    })
+    it('goes back to the tab it was opened from after a notification opened it', async () => {
+      platformMock.kind = 'capacitor'
+      platformMock.capabilities.sessionHost = false
+      chatStoreMock.chats = [{ id: 'chat-1' }]
+      chatStoreMock.setActiveChatId.mockImplementation(id => { chatStoreMock.activeChatId = id; for (const listener of [...chatListListeners]) listener() })
+      await harness.render(createNode(MainLayout, { user }))
+      await clickElement(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileContactsNav}"]`) as HTMLElement)
+      await act(async () => { notificationClicks.listener?.({ chatId: 'chat-1' }); await Promise.resolve() })
+      expect(chatPageShown(), 'positive control: the notification opened the chat').toBe(true)
+      await nativeBack()
+      expect(chatPageShown()).toBe(false)
+      expect(pageActive('contacts')).toBe(true)
+      expect(tabBarShown()).toBe(true)
+    })
   })
   it('leaves the mobile chat pane alone on Android back while a layer is open over it', async () => {
     platformMock.kind = 'capacitor'
