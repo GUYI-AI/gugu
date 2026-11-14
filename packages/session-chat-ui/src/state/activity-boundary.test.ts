@@ -7,7 +7,7 @@ const activity = 'agent-activity:report';
 const message = (id: string, text = id, extra: Partial<ChatMessage> = {}): ChatMessage =>
   ({ kind: 'message', id, seq: 0, role: 'user', text, ...extra });
 const turn = (id: string, items: ChatMessage[]): TranscriptTurn =>
-  ({ id, seq: 0, initiator: 'user', items });
+  ({ id, seq: 0, initiator: 'user', items: items as TranscriptTurn['items'] });
 const answer = (state: 'answered' | 'withdrawn') => message(state, '<gugu_question_answer>\n'
   + JSON.stringify({ question_id: 'question', state, answers: [{ selected: ['Keep it'] }] }) + '\n</gugu_question_answer>');
 
