@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { LoginPage } from './pages/LoginPage'
 import { authCallbacks, startAuthCallbackRouting } from './lib/authCallbacks'
+import { ReferralLinkPrompt } from './components/referralPreview/ReferralLinkPrompt'
 import { watchReferralLinks } from './lib/referral'
 import { googleLogin } from './lib/googleLogin'
 import { LoginMethodChangeNotice } from './components/LoginMethodChangeNotice'
@@ -136,6 +137,7 @@ export default function App() {
           <ToastProvider>
             <ContentContextMenuHost />
             <AuthContext.Provider value={authContextValue}>
+            <ReferralLinkPrompt />
               <LoginPage />
             </AuthContext.Provider>
           </ToastProvider>
@@ -150,6 +152,7 @@ export default function App() {
         <ToastProvider>
           <ContentContextMenuHost />
           <AuthContext.Provider value={authContextValue}>
+            <ReferralLinkPrompt />
             {/* 新账号先走一遍首次引导(product spec,#7348);老账号 / 走完的直接进主界面 */}
             {/* 启动外壳期间那张候选证可能已过期:等协调器接受了会话再读,不另起刷新 */}
             {session.status === 'authenticated' && <LoginMethodChangeNotice key={`login-notice:${user.id}`} userId={user.id} />}
