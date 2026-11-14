@@ -221,6 +221,38 @@ function handle(msg) {
     expect(state.models[0]).toEqual({ id: 'openai-api:gpt-5.6', name: 'GPT 5.6', description: 'OpenAI' })
     expect(state.selected).toBe('openai-api:gpt-5.6')
   })
+  it.each(['dsh', 'kimi', 'qwen', 'zcode'].flatMap((providerId) =>
+    ['flat', 'grouped'].map((format) => ({ providerId, format }))
+  ))('reads $format SDK options for $providerId without rewriting values', async ({ providerId, format }) => {
+    const selected = JSON.stringify([providerId, 'first'])
+    const other = JSON.stringify([providerId, 'second'])
+    const choices = [
+      { value: selected, name: 'First', description: 'Provider-owned value' },
+      { value: other, name: 'Second' },
+    ]
+    const options = format === 'flat' ? choices : [{ group: 'own', name: 'Own provider', options: choices }]
+    await useAgent(`
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1, agentCapabilities: {} });
+  if (msg.method === 'session/new') return reply(msg.id, {
+    sessionId: 'grouped-select',
+    configOptions: [{ id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: ${JSON.stringify(selected)},
+      options: ${JSON.stringify(options)}
+    }]
+  });
+}
+`)
+    expect(await probeHarnessModelCatalog(providerId, 'acp')).toEqual({
+      kind: 'ready',
+      models: [
+        { id: selected, name: 'First', description: 'Provider-owned value' },
+        { id: other, name: 'Second' },
+      ],
+      selected,
+      efforts: [],
+      selectedEffort: null,
+    })
+  })
   it('两种 ACP 清单同时存在时按 id 去重而不吞另一来源', async () => {
     await useAgent(`
 function handle(msg) {

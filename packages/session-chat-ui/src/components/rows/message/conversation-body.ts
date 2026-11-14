@@ -1,9 +1,10 @@
 import type { ChatMessage } from '@session-chat/model';
 import type { MeasureCtx } from '@session-chat/core/define';
 import type { UnitsView } from '@session-chat/state/flatten';
+import { messageQuestionAnswer } from '@session-chat/state/message-presentation';
 
 export function isConversationMessage(item: ChatMessage, ctx: Pick<MeasureCtx, 'theme'>): boolean {
-  if (!ctx.theme.layout?.agentConversation || item.hookNotice || item.questionAnswer || item.role === 'thought') return false;
+  if (!ctx.theme.layout?.agentConversation || item.hookNotice || messageQuestionAnswer(item) || item.role === 'thought') return false;
   return !item.guguDelivery || item.guguDelivery.segments.every(segment => segment.facts?.route === 'chat' || segment.facts?.route === 'session-direct');
 }
 

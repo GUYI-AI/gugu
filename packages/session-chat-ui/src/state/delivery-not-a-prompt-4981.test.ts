@@ -36,7 +36,7 @@ function turnOf(items: ChatItem[]): TranscriptTurn {
 /** 一个下标一条条目的最小 UnitsView —— 判据只关心「哪些条目进了名单」。 */
 function unitsOf(items: ChatItem[]) {
   return makeUnitsView(
-    items.map((item, i) => ({ kind: 'message', itemId: item.id, index: i }) as never),
+    items.map((item, i) => ({ kind: 'message', itemId: item.id, index: i, data: normalizeMessage(item as ChatMessage) }) as never),
     [] as never
   );
 }

@@ -2004,7 +2004,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     });
   }, [store, translate]);
 
-  useMarkSeenWhenShown(sessionStore, visibility.shown && !store?.isTransient);
+  useMarkSeenWhenShown(sessionStore, visibility.shown && !store?.isTransient, store?.sessionId);
 
   useEffect(() => {
     if (!store) return;

@@ -51,7 +51,8 @@ import { defaultEngineTreeOps, signalEngineTree } from '@gugu/session-core/acp/n
 import { errorDetail } from '@gugu/session-shared';
 import { redactSecrets } from '@gugu/session-shared/logger';
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
-import type { AcpPlatformInjection } from '@gugu/session-core/acp';
+import { flattenSelectOptions, type AcpPlatformInjection } from '@gugu/session-core/acp';
+import type { SessionConfigSelectOptions } from '@agentclientprotocol/sdk';
 import { mergeTrustedSessionMeta } from '../acp/runtime-process/session-meta';
 import { createLogger } from '../../../../lib/logger';
 
@@ -717,7 +718,7 @@ export async function __drainProbesForTest(): Promise<void> {
  */
 function toChoices(option: RawConfigOption | undefined): HarnessModelChoice[] {
   const out: HarnessModelChoice[] = [];
-  for (const raw of option?.options ?? []) {
+  for (const raw of flattenSelectOptions(option?.options)) {
     if (typeof raw?.value !== 'string' || !raw.value) continue;
     out.push({
       id: raw.value,
@@ -736,7 +737,7 @@ interface RawConfigOption {
   category?: string;
   type?: string;
   currentValue?: unknown;
-  options?: { value?: unknown; name?: unknown; description?: unknown }[];
+  options?: SessionConfigSelectOptions;
 }
 
 function toAvailableModels(raw: unknown[] | undefined): HarnessModelChoice[] {
