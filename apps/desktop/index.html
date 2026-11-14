@@ -15,7 +15,8 @@
       [data-gugu-boot] > svg { position: absolute; width: min(355.2px, calc(100vw - 48px)); height: auto; }
       [data-gugu-boot] [data-startup-poster-settled] { display: none; }
       [data-gugu-boot] > iframe { width: 640px; max-width: none; height: 100vh; border: 0; transform: scale(.6); opacity: 0; }
-      [data-startup-slogan] { position: absolute; inset-inline: 24px; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); margin: 0; color: var(--text-muted, color-mix(in srgb, currentColor 45%, transparent)); font-family: var(--font-family-system, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif); font-size: 12px; line-height: 18px; text-align: center; text-wrap: balance; }
+      [data-startup-slogan] { position: absolute; inset-inline: 24px; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); margin: 0; color: var(--muted-fg, #68696b); font-family: var(--font-family-system, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif); font-size: 12px; line-height: 18px; text-align: center; text-wrap: balance; }
+      [data-theme="dark"] [data-startup-slogan] { color: var(--muted-fg, #939393); }
       @media (prefers-reduced-motion: reduce) {
         [data-gugu-boot] [data-startup-poster-enter] { display: none; }
         [data-gugu-boot] [data-startup-poster-settled] { display: inline; }
