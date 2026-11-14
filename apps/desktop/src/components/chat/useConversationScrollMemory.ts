@@ -50,7 +50,8 @@ interface UseConversationScrollMemoryOptions {
   listRef: RefObject<FlowListHandle | null>
   chatId: string | null
   viewportKey: string
-  // Conversation-scoped on purpose: an openNonce remount reopens at LAST (#461), it does not replay the saved anchor.
+  // One per opening: a phone reopening the same conversation (openNonce) replays the saved anchor like any other opening;
+  // an opening with new unread lands at the latest instead (discardSaved, #6530). Replaces #461's "reopen at LAST".
   activationKey: string
   enabled: boolean
   messageIds: ReadonlyArray<string>
