@@ -8,6 +8,7 @@ import { useTeamApi } from './context'
 import { teamErrorCopy } from './copy'
 import { TeamDialog } from './TeamPrimitives'
 import { useTeamCommandKey } from './operations'
+import { useTeamDisableIntent } from './disableIntents'
 import type { TeamInvitation, TeamMember } from './types'
 
 export function TeamInviteDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => Promise<void> }) {
@@ -54,34 +55,38 @@ export function TeamDisableDialog({ member, candidates, onMore, loadingMore, onC
   member: TeamMember; candidates: TeamMember[]; onMore?: () => void; loadingMore?: boolean; onClose: () => void; onSaved: () => Promise<void>
 }) {
   const { t } = useTranslation('team'), api = useTeamApi(), key = useTeamCommandKey()
-  const [operation, setOperation] = useState<string | null>(null), [complete, setComplete] = useState(false)
-  const [handoff, setHandoff] = useState<string | undefined>()
+  const receipt = useTeamDisableIntent(member.id)
+  const [complete, setComplete] = useState(false)
+  const [handoff, setHandoff] = useState<string | undefined>(receipt.intent?.handoff_member_id)
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
   async function disable() {
     setBusy(true); setError('')
     try {
-      const operationId = operation ?? (await api.disable(member.id, handoff, member.revision,
-        key({ member_id: member.id, handoff_member_id: handoff, expected_revision: member.revision }))).revocation.operation_id
-      setOperation(operationId)
+      const command = { member_id: member.id, handoff_member_id: handoff, expected_revision: member.revision }
+      const intent = receipt.store.prepare({ ...command, idempotency_key: key(command) })
+      const operationId = intent.operation_id ?? (await api.disable(intent.member_id, intent.handoff_member_id, intent.expected_revision, intent.idempotency_key)).revocation.operation_id
+      receipt.store.noteOperation(intent.idempotency_key, operationId)
       // Even an initial 'complete' must be read back with all three effective-access checks.
       const result = await api.revocationResult(operationId)
       setComplete(result.state === 'complete')
+      if (result.state === 'complete') receipt.store.complete(intent.idempotency_key)
       await onSaved()
     } catch (cause) { setError(teamErrorCopy(cause, t)) }
     finally { setBusy(false) }
   }
   return <TeamDialog title={t('disableTitle')} onClose={() => { if (!busy) onClose() }} actions={complete ? <Button onClick={onClose}>{t('close')}</Button> : <>
     <Button disabled={busy} onClick={onClose}>{t('cancel')}</Button>
-    <Button variant="primary" disabled={busy} onClick={() => { void disable() }}>{operation ? t('retry') : t('disable')}</Button>
+    <Button variant="primary" disabled={busy || receipt.unreadable} onClick={() => { void disable() }}>{receipt.pending ? t('retry') : t('disable')}</Button>
   </>}>
     {complete ? <p role="status">{t('revoked')}</p> : <><p>{t('disableHint', { name: member.name })}</p>
       <div className="gg-team-value-row"><span>{t('handoffTo')}</span><DropdownMenu.Root>
-        <DropdownMenu.Trigger render={<Button disabled={busy || operation !== null}>{handoff ? candidates.find(candidate => candidate.id === handoff)?.name : t('defaultHandoff')}</Button>} />
+        <DropdownMenu.Trigger render={<Button disabled={busy || receipt.pending}>{handoff ? candidates.find(candidate => candidate.id === handoff)?.name ?? t('selectedHandoff') : t('defaultHandoff')}</Button>} />
         <DropdownMenu.Content><MenuItem onClick={() => setHandoff(undefined)}>{t('defaultHandoff')}</MenuItem>
           {candidates.filter(candidate => candidate.state === 'active' && candidate.id !== member.id).map(candidate => <MenuItem key={candidate.id} onClick={() => setHandoff(candidate.id)}>{candidate.name}</MenuItem>)}
           {onMore && <MenuItem disabled={loadingMore} closeOnClick={false} onClick={onMore}>{t('more')}</MenuItem>}
         </DropdownMenu.Content></DropdownMenu.Root></div>
-      {operation && <p role="status">{t('revokePending')}</p>}</>}
+      {receipt.pending && <p role="status">{t(receipt.intent?.operation_id ? 'revokePending' : 'revokeUnknown')}</p>}
+      {receipt.unreadable && <p role="alert" className="gg-team-error">{t('revokeCheckFailed')}</p>}</>}
     {error && <p role="alert" className="gg-team-error">{error}</p>}
   </TeamDialog>
 }

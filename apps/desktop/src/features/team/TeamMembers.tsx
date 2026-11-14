@@ -12,6 +12,7 @@ import { teamErrorCopy, teamRoleLabel } from './copy'
 import { TeamAsyncState, TeamDialog } from './TeamPrimitives'
 import { TeamDisableDialog, TeamEmailDialog, TeamInviteDialog } from './TeamMemberCommands'
 import { useTeamCommandKey } from './operations'
+import { useTeamDisableIntent } from './disableIntents'
 import type { TeamMember, TeamMemberState } from './types'
 
 function MemberDialog({ member, onClose, onChanged, onEmail, onDisable }: {
@@ -19,6 +20,7 @@ function MemberDialog({ member, onClose, onChanged, onEmail, onDisable }: {
 }) {
   const { t } = useTranslation('team'), session = useTeamSession(), api = useTeamApi(), key = useTeamCommandKey()
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
+  const disableIntent = useTeamDisableIntent(member.id)
   const role = session.context?.role
   const canManage = member.role !== 'superadmin' && (role === 'superadmin' || (role === 'admin' && member.role === 'member'))
   async function update(action: 'role' | 'restore') {
@@ -34,14 +36,22 @@ function MemberDialog({ member, onClose, onChanged, onEmail, onDisable }: {
   return <TeamDialog title={t('manageMember', { name: member.name })} onClose={() => { if (!busy) onClose() }}>
     <p>{member.email}</p><p className="gg-team-muted">{teamRoleLabel(member.role, t)}</p>
     {notice ? <p role="status">{notice}</p> : <div className="gg-team-command-list">
-      {member.state === 'active' && canManage && <Button disabled={busy} onClick={onEmail}>{t('changeLoginEmail')}</Button>}
-      {member.state === 'active' && role === 'superadmin' && member.role !== 'superadmin' && <Button disabled={busy} onClick={() => { void update('role') }}>{t(member.role === 'admin' ? 'revokeAdmin' : 'appointAdmin')}</Button>}
-      {canManage && member.state === 'active' && <Button disabled={busy} onClick={onDisable}>{t('disable')}</Button>}
-      {canManage && member.state === 'disabled' && <Button disabled={busy} onClick={() => { void update('restore') }}>{t('restore')}</Button>}
+      {member.state === 'active' && canManage && !disableIntent.pending && <Button disabled={busy} onClick={onEmail}>{t('changeLoginEmail')}</Button>}
+      {member.state === 'active' && role === 'superadmin' && member.role !== 'superadmin' && !disableIntent.pending && <Button disabled={busy} onClick={() => { void update('role') }}>{t(member.role === 'admin' ? 'revokeAdmin' : 'appointAdmin')}</Button>}
+      {canManage && (disableIntent.pending || member.state === 'active') && <Button disabled={busy} onClick={onDisable}>{t(disableIntent.pending ? 'checkDisable' : 'disable')}</Button>}
+      {canManage && member.state === 'disabled' && !disableIntent.pending && <Button disabled={busy} onClick={() => { void update('restore') }}>{t('restore')}</Button>}
       {member.role === 'superadmin' && <p>{t('creatorProtected')}</p>}
     </div>}
     {error && <p role="alert" className="gg-team-error">{error}</p>}
   </TeamDialog>
+}
+
+function ManagedMemberRow({ member, onSelect }: { member: TeamMember; onSelect: () => void }) {
+  const { t } = useTranslation('team'), intent = useTeamDisableIntent(member.id)
+  return <ListRow role="button" tabIndex={0} className="gg-team-person-row" onClick={onSelect}
+    onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect() } }}
+    leading={<Avatar name={member.name} seed={member.identity_id ?? member.id} size="md" />} title={member.name} subtitle={member.email}
+    trailing={<span className="gg-team-muted">{intent.pending ? t('disableUnconfirmed') : teamRoleLabel(member.role, t)}</span>} />
 }
 
 export function TeamMembers() {
@@ -60,10 +70,7 @@ export function TeamMembers() {
       <Button onClick={() => setInvite(true)}>{t('invite')}</Button></div>
     {result.isPending || result.isError ? <TeamAsyncState pending={result.isPending} error={result.error} retry={() => { void result.refetch() }} />
       : result.data.pages.some(page => page.members.length) ? <div className="gg-team-list">{result.data.pages.flatMap(page => page.members).map(member =>
-        <ListRow key={member.id} role="button" tabIndex={0} className="gg-team-person-row" onClick={() => setSelected({ member, action: 'details' })}
-          onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelected({ member, action: 'details' }) } }}
-          leading={<Avatar name={member.name} seed={member.identity_id ?? member.id} size="md" />} title={member.name} subtitle={member.email}
-          trailing={<span className="gg-team-muted">{teamRoleLabel(member.role, t)}</span>} />)}</div> : <PaneEmptyState caption={t('noMembers')} />}
+        <ManagedMemberRow key={member.id} member={member} onSelect={() => setSelected({ member, action: 'details' })} />)}</div> : <PaneEmptyState caption={t('noMembers')} />}
     {result.hasNextPage && <Button disabled={result.isFetchingNextPage} onClick={() => { void result.fetchNextPage() }}>{t('more')}</Button>}
     {invite && <TeamInviteDialog onClose={() => setInvite(false)} onSaved={refresh} />}
     {selected?.action === 'details' && <MemberDialog member={selected.member} onClose={() => setSelected(null)} onChanged={refresh}

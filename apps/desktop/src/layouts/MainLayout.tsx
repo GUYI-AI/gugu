@@ -1053,7 +1053,7 @@ function InnerLayout({
           pages={{
             team: !mobile && team.status === 'ready' && <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', ...(activeTab === 'team' ? undefined : RETAINED_SURFACE_HIDDEN_STYLE) }}>
               <TeamPage onMessage={member => { void handleOpenProfileChat({ id: member.identity_id, displayName: member.name,
-                avatar: member.avatar, email: null, bio: null, type: 'human' }) }} onTopUp={() => { window.open(GUGU_BILLING_URL, '_blank', 'noopener,noreferrer') }} />
+                avatar: member.avatar, email: null, bio: null, type: 'human' }) }} onTopUp={() => { window.open(`${GUGU_BILLING_URL}#topup`, '_blank', 'noopener,noreferrer') }} />
             </div>,
             // #6158 聊天面常驻(与上面会话页那格同法):切到别的 tab 只隐藏(见 lib/retainedSurface.ts),❌ 条件卸载、❌ 换 key 重挂 ——
             // 话题分栏/选中会话/滚动/分栏草稿全是本地状态。隐藏期间快捷键与「看见即已读」由 ChatAreaPanel/ChatListPanel 按 activeTab 门控(#6089)。

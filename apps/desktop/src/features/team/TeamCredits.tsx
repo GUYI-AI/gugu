@@ -78,6 +78,7 @@ export function TeamCredits({ onTopUp }: { onTopUp: () => void }) {
     <div className="gg-team-section-heading"><div className="gg-team-credit-totals"><div className="gg-team-my-summary"><small>{t('remainingCredits')}</small><strong>{formatCredits(summary.data.team_balance_credits)}</strong></div>
       <div className="gg-team-my-summary"><small>{t('monthUsed')}</small><strong>{formatCredits(total)}</strong></div></div>
       <Button onClick={onTopUp}>{t('topUp')}</Button></div>
+    <p className="gg-team-muted">{t('billingLoginHint')}</p>
     <div className="gg-team-section-heading"><h2>{t('memberUsageCaps')}</h2><Button disabled={!selectedRows.length} onClick={() => setEditing(selectedRows)}>{t('bulkCap')}</Button></div>
     <div className="gg-team-cap-heading"><TeamCheckbox checked={allSelected} label={t('selectAll')} onChange={checked => setSelected(checked ? new Set(rows.map(row => row.member_id)) : new Set())} />
       <span>{selectedRows.length ? t('selected', { count: selectedRows.length }) : t('directory')}</span><span>{t('monthUsed')}</span><span>{t('monthCap')}</span><span /></div>

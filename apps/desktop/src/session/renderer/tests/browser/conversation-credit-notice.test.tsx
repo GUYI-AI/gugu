@@ -99,4 +99,5 @@ it.each([
   expect(harness.container.textContent).not.toMatch(/private server diagnostics|·/)
   expect(row.getBoundingClientRect().bottom).toBeLessThanOrEqual(composer.getBoundingClientRect().top - 8)
   expect(row.scrollHeight).toBeLessThanOrEqual(row.clientHeight + 1)
+  if (import.meta.env.VITE_TEAM_CAPTURE === '1') await page.screenshot({ element: harness.container, path: `__screenshots__/team-desktop-${reason}.png` })
 })

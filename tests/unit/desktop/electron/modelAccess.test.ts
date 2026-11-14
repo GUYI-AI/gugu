@@ -415,14 +415,21 @@ describe('fixed team model funding', () => {
     await expect(issuePlatformModelAccess({ ...request, keepFromAccessSessionId: first.accessSessionId })).rejects.toThrow()
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
-  it('classifies structured team limits while keeping session_ended as a separate rotation reason', async () => {
+  it('classifies structured team limits without exposing backend diagnostics', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async url => new Response(JSON.stringify(String(url).includes('team-billing') ? { ok: true, data: context } : {
-      reason: 'session_ended', error: { code: 'credits_exhausted', reason_code: 'team_credits_exhausted', message: 'private diagnostic' },
+      error: { code: 'credits_exhausted', reason_code: 'team_credits_exhausted', message: 'private diagnostic' },
     }), { status: String(url).includes('team-billing') ? 200 : 409 }))
     const error = await issuePlatformModelAccess(request).catch(error => error)
-    expect(error.reason).toBe('session_ended')
     expect(error.reason_code).toBe('team_credits_exhausted')
     expect(error.message).not.toContain('private diagnostic')
     expect(modelAccessFailureReason(error)).toBe('team-credits-exhausted')
+  })
+  it('preserves session_ended for rotation without treating it as an exhausted team pool', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async url => new Response(JSON.stringify(String(url).includes('team-billing') ? { ok: true, data: context }
+      : { reason: 'session_ended' }), { status: String(url).includes('team-billing') ? 200 : 409 }))
+    const error = await issuePlatformModelAccess(request).catch(error => error)
+    expect(error.reason).toBe('session_ended')
+    expect(error.reason_code).toBeUndefined()
+    expect(modelAccessFailureReason(error)).not.toMatch(/team-.*(?:cap|exhausted)/)
   })
 })
