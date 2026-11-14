@@ -22,7 +22,9 @@ vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({
 }))
 
 import { keepSentAttachment, useAttachmentObjectUrl } from '../../../../apps/desktop/src/lib/attachmentBytes'
-import { attachmentQueryClient } from '../../../../apps/desktop/src/lib/attachmentQueryClient'
+import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/readModel'
+// The read model reads for the signed-in account, as the product publishes it.
+;(await import('../../../../apps/desktop/src/lib/readModel')).followRendererSession('SIGNED_IN', 'owner')
 
 const file = new NodeBlob(['local png bytes'], { type: 'image/png' }) as unknown as Blob
 const sha256 = 'c31ecc1f113b9873b72782c15123e0215c6d6f616964d5b3a27ce230d584bd77'

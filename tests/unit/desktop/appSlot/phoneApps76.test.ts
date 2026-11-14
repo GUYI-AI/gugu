@@ -131,7 +131,7 @@ vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => ({
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({
   rendererLogger: () => ({ error: () => undefined, warn: () => undefined, info: () => undefined, debug: () => undefined }),
 }))
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => shell.token }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => shell.token }))
 // Every uploader here is a person, so the publisher is the uploader, named as the directory names them (app-identity.ts).
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({
   readDisplayIdentities: async (ids: string[]) =>

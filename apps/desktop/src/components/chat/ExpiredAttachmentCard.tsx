@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
 import { attachmentMetadata, cachedAttachmentCopy } from '../../lib/attachmentBytes'
-import { attachmentQueryClient } from '../../lib/attachmentQueryClient'
+import { attachmentState } from '../../lib/attachmentState'
 import { chatService } from '../../lib/chat'
 import { useAuth } from '../../store/auth'
 import { useChatStore } from '../../store/chatContext'
@@ -34,7 +34,7 @@ export function ExpiredAttachmentCard({ meta, messageId, isMine }: { meta: Parse
       if (!local) { setNeedsOriginal(true); return }
       await sendAttachmentsToChat(original.chat_id, [new File([local], attachment.fileName, { type: attachment.mimeType })], { toUserIds: original.to_user_ids, isWhisper: original.is_whisper,
         threadRootId: original.thread_root_id ?? (original.is_thread_root ? original.id : null) })
-      await attachmentQueryClient.invalidateQueries({ queryKey: ['attachment-state', user.id] })
+      await attachmentState.refresh()
     } catch (error) {
       toast(error instanceof Error ? error.message : t('attachmentView.fileUnavailable'), 'error')
     } finally { setBusy(false) }

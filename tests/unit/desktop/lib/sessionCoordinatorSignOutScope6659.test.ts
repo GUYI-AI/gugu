@@ -24,7 +24,7 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
 vi.mock('../../../../apps/desktop/src/lib/auth', () => ({
   hydrateIdentityAuthUser: async (user: { id: string }) => ({ id: user.id, email: '', nickname: 'A' }),
 }))
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ publishRendererSession: () => {} }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, publishRendererSession: () => {} }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: {
     capabilities: { localHumanAuthSession: false },

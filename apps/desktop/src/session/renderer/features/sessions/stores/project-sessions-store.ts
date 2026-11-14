@@ -49,7 +49,7 @@ import { terminalRegistry } from './terminal-registry';
 import { workspaceRegistry } from './workspace-registry';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { rendererLogger } from '../../../../../lib/log';
-import { queryClient } from '@renderer/lib/query-client';
+import { queryClient } from '@/lib/readModel';
 import { AGENTS_METADATA_QUERY_KEY } from '@renderer/lib/stores/use-agents';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { rememberTask } from '@renderer/features/command-palette/recent-tasks';

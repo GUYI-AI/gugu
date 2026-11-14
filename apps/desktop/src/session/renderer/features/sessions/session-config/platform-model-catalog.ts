@@ -1,6 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { queryClient } from '@renderer/lib/query-client';
+import { queryClient } from '@/lib/readModel';
 import { getRendererSession, observeRendererSession } from '@/lib/sessionPublication';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { invokeOnMachine } from '@renderer/lib/ipc';

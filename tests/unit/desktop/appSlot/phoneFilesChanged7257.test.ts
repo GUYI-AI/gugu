@@ -23,7 +23,7 @@ const auth = vi.hoisted(() => ({ token: `h.${Buffer.from(JSON.stringify({ sub: '
  * its ids; the chat's lists; a way to hold a read open until the test lets it answer; reads to fail.
  */
 const db = vi.hoisted(() => ({ reads: [] as string[][], lists: 0, hold: null as Promise<void> | null, fail: 0, openingName: 'a.md', factsHold: null as Promise<void> | null, factsEntered: null as (() => void) | null }))
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => auth.token }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => auth.token }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({ readDisplayIdentities: async () => [] }))
 vi.mock('@gugu/core/cloud/supabase', () => {
   let open: { ids: string[]; fail: boolean } | null = null

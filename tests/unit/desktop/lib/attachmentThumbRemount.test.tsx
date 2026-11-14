@@ -16,7 +16,9 @@ vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({
 }))
 
 import { useAttachmentObjectUrl } from '../../../../apps/desktop/src/lib/attachmentBytes'
-import { attachmentQueryClient } from '../../../../apps/desktop/src/lib/attachmentQueryClient'
+import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/readModel'
+// The read model reads for the signed-in account, as the product publishes it.
+;(await import('../../../../apps/desktop/src/lib/readModel')).followRendererSession('SIGNED_IN', 'owner')
 
 const revision = { sha256: 'a'.repeat(64), size_bytes: 3, content_type: 'image/png', source: 'managed-object', width: 4, height: 3 }
 function Thumb({ source }: { source: AttachmentSource }) {
