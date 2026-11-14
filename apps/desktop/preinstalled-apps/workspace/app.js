@@ -14,7 +14,7 @@
 import { findIn, placeOf, plainWords, relocate, spanOf } from './lines.js'
 import { INSERT_BLOCKS, isFrontmatter, listInsertion, moveBlock, previewBlock, sourceBlocks, turnBlockChanges } from './blocks.js'
 import { HARD_MAX_BYTES, bufferAnchors, firstBytes, sourceFile } from './source-file.js'
-import { KINDS, SORTS, compareNames, comparer, defaultView, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, wantsThumb } from './list.js'
+import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, wantsThumb } from './list.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -1394,6 +1394,7 @@ function renderTools() {
     button.setAttribute('aria-label', label)
     button.setAttribute('aria-pressed', String(viewOf(state.kind) === button.dataset.view))
   }
+  fitTools($('place-switch').parentElement, $('sort-label'))
 }
 
 // The filters (who sent a file, where it is kept, how long it is kept) are in the order's menu, under its orders (owner
@@ -4552,6 +4553,8 @@ function start() {
   const contextFailed = (error) => showDocMessage(failureText(error))
   gugu.onContextChanged((ctx) => applyContext(ctx).catch(contextFailed))
   gugu.getContext().then(applyContext).catch(contextFailed)
+  const bar = document.querySelector('.files-toolbar')
+  new ResizeObserver(() => fitTools(bar, $('sort-label'))).observe(bar)
 }
 
 start()

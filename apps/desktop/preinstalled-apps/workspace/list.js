@@ -168,3 +168,13 @@ export function keepable(entries) {
     noCopy: entries.filter((e) => !e.keep),
   }
 }
+
+// @@@tools-fit (owner 11-14): the folder's bar stays one row. Where its words do not fit (a narrow pane, or a phone whose system
+// font size made the page narrower), the place switch shows only its icons (each keeps its name: its title, which is also what a screen reader reads once the
+// words are hidden; no aria-label, which would also take away the gap ui.css gives an icon before words);
+// the order's words give way last (ellipsis, style.css). Measured, not a width breakpoint: what fits depends on the
+// language, a set filter and the font.
+export function fitTools(bar, sortLabel) {
+  bar.classList.remove('places-icons')
+  if (bar.scrollWidth > bar.clientWidth + 1 || sortLabel.scrollWidth > sortLabel.clientWidth + 1) bar.classList.add('places-icons')
+}
