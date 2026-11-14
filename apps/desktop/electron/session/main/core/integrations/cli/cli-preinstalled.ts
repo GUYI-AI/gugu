@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { CliToolRecipe } from './cli-tools';
-import { currentCliPlatform } from './cli-tools';
+import { cliBinaryName, currentCliPlatform } from './cli-tools';
 
 /** Public software in the managed image; account credentials never live here.
  * The image builder verifies release hashes before writing both final markers.
@@ -35,8 +35,8 @@ export function preinstalledCliDirectory(recipe: CliToolRecipe): string | undefi
   try {
     if (readFileSync(path.join(dir, '.complete'), 'utf8').trim() !== recipe.version
       || readFileSync(path.join(dir, '.platform'), 'utf8').trim() !== currentCliPlatform()) return;
-    const binary = statSync(path.join(dir, 'bin', recipe.bin));
-    if (!binary.isFile() || !(binary.mode & 0o111) || !statSync(path.join(dir, 'skills')).isDirectory()) return;
+    const binary = statSync(path.join(dir, 'bin', cliBinaryName(recipe.bin)));
+    if (!binary.isFile() || process.platform !== 'win32' && !(binary.mode & 0o111) || !statSync(path.join(dir, 'skills')).isDirectory()) return;
     return dir;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
