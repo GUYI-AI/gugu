@@ -800,6 +800,8 @@ export default {
     },
     "attachment": "[Attachment]",
     "copied": "Copied",
+    "selectTextFailed": "Could not open text selection",
+    "selectionClose": "Back",
     "copyFailed": "Could not copy. Select the text and copy it manually.",
     "forwarded": "↪ Forwarded",
     "forwardedFrom": "↪ From {{line}}",

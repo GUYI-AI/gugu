@@ -1,4 +1,5 @@
 import type { PermissionState } from '@capacitor/core'
+import { nativeTextSelection } from './nativeTextSelection'
 import { BackgroundMode } from '@anuradev/capacitor-background-mode'
 import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
 import { App } from '@capacitor/app'
@@ -188,6 +189,7 @@ let notificationSeq = Math.floor(Date.now() / 1000) % 1_000_000_000
 
 export const capacitorPlatform: AppPlatform = {
   ...base,
+  textSelection: nativeTextSelection,
   accountOAuthBrowser: {
     openBrowser,
     openLinkBrowser: async (url) => openBrowser(googleIdentityLinkUrl(url, getSupabaseUrl())),

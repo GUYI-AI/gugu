@@ -18,6 +18,7 @@ final class GuguViewController: CAPBridgeViewController {
 
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(GuguAuthStoragePlugin())
+        bridge?.registerPluginInstance(GuguTextSelectionPlugin())
         bridge?.registerPluginInstance(GuguImageViewerChromePlugin())
     }
 

@@ -3,6 +3,7 @@ import type { RendererCommandDomain } from '../lib/rendererCommandProtocol'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { HumanAuthSession } from '@gugu/core'
 import type { SupportedLocale } from '@/i18n'
+import type { NativeTextSelection } from './nativeTextSelection'
 import type { FileHandle } from '@gugu/core/shared/fileResolver'
 
 interface PlatformCapabilities {
@@ -87,6 +88,7 @@ export type DeviceFreeCreditsStatus = 'granted' | 'already_claimed' | 'device_fu
 export interface AppPlatform {
   kind: 'electron' | 'capacitor' | 'web'
   documentTitle: string
+  textSelection?: NativeTextSelection
   capabilities: PlatformCapabilities
   /** Login callbacks arrive before the authenticated navigation tree exists. */
   authCallbacks?: {

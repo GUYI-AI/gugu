@@ -3,6 +3,7 @@ import { Clipboard } from '@capacitor/clipboard'
 import type { AppPlatform } from './types'
 import { createUnsupportedPlatform } from './unsupported'
 import { rendererLogger } from '../lib/log'
+import { nativeTextSelection } from './nativeTextSelection'
 
 const base = createUnsupportedPlatform('capacitor', 'iOS')
 const lifecycleError = (error: unknown) => rendererLogger('ios/lifecycle').error({ error }, 'Cannot observe application lifecycle')
@@ -10,6 +11,7 @@ const lifecycleError = (error: unknown) => rendererLogger('ios/lifecycle').error
 /** Foreground client only. Missing Android plugins never become advertised iOS capabilities. */
 export const iosPlatform: AppPlatform = {
   ...base,
+  textSelection: nativeTextSelection,
   capabilities: { ...base.capabilities, appVersion: true, clipboard: true },
   getAppVersion: async () => (await App.getInfo()).version,
   writeClipboardText: async (string) => { await Clipboard.write({ string }) },
