@@ -224,6 +224,7 @@ export class LiveCollection<K, V, E = unknown> implements IDisposable {
     load: () => Promise<Result<Iterable<readonly [K, V]>, E>>
   ): Promise<Result<number, E>> {
     const loaded = await load();
+    this.assertNotDisposed();
     if (!loaded.success) return err(loaded.error);
 
     const nextEntries = new Map<K, V>();
