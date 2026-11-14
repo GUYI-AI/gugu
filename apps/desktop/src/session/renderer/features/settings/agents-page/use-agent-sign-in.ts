@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
 import { useLibraryHost, type LibraryRemoteDevice } from '@renderer/features/library/library-host';
-import { subscriptionKey } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { useAgentAuthStatuses } from '@renderer/lib/stores/use-agent-auth-status';
 import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { harnessModelCredentialKey } from '@renderer/lib/stores/use-harness-model-credential';
@@ -69,7 +69,7 @@ export function useAgentSignIn(
       const refresh = () => {
         void refreshAuth();
         void queryClient.invalidateQueries({ queryKey: ['agents'] });
-        void queryClient.invalidateQueries({ queryKey: subscriptionKey(machine, agent.id) });
+        refreshSubscriptionReadings(machine, agent.id);
       };
       const main = row?.steps.find((step) => step.program === undefined) ?? row?.steps[0];
       const method = main?.method;
@@ -105,7 +105,7 @@ export function useAgentSignIn(
     const touchesMain = (row?.steps ?? []).some((step) => step.program === undefined);
     const refreshAfterLogin = () => {
       void refreshAuth();
-      void queryClient.invalidateQueries({ queryKey: subscriptionKey(machine, agent.id) });
+      refreshSubscriptionReadings(machine, agent.id);
       if (!touchesMain) return;
       void forceRefreshHarnessModelCatalog(queryClient, agent.id);
       void queryClient.invalidateQueries({ queryKey: harnessModelCredentialKey(agent.id) });

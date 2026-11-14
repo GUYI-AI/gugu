@@ -12,6 +12,7 @@ export const enUSCapabilityMessages = {
   'reset.builtIn': 'built-in',
   'reset.always': 'always',
   'settings.readFailed': 'Could not read this setting',
+  'settings.refreshFailed': 'Could not read the latest; showing what was read last',
 
   // ── settings · task defaults ───────────────────────────────────────────────
   'taskDefaults.autoGenerateName': 'Auto-generate task names',
@@ -958,6 +959,7 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'reset.builtIn': '内置',
   'reset.always': '始终',
   'settings.readFailed': '读不到这项设置',
+  'settings.refreshFailed': '没读到最新的，显示的是上次读到的',
 
   // ── 设置 · 任务默认值 ───────────────────────────────────────────────────────
   'taskDefaults.autoGenerateName': '自动生成会话名',

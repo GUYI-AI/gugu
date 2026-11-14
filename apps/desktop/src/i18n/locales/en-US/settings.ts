@@ -76,6 +76,7 @@ export default {
   "account": {
     "occupation": "Occupation",
     "occupationRequired": "If you pick Other, say in a few words what you do",
+    "occupationReadFailed": "Couldn't read your occupation. Check the connection and retry.",
     "occupationUnreadable": "Couldn't read your occupation. Reopen Settings to try again.",
     "occupationNote": "Only you and your Gugu can see this.",
     "occupationUnset": "Not set",

@@ -1,4 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
+import { queryClient as readModelClient } from '@/lib/readModel';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
@@ -8,7 +9,7 @@ import { agentInstallProgressChannel, agentInstallationStatusUpdatedChannel } fr
 import { useAgentInstallationStatus, useAgentInstallationStatuses } from './use-agent-installation-statuses';
 import { LibraryHostProvider, LOCAL_LIBRARY_HOST } from '@renderer/features/library/library-host';
 import { useConnectionAvailability } from '@renderer/features/settings/subscriptions/use-connection-availability';
-import { subscriptionKey } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { connectionAvailability } from '@renderer/features/settings/subscriptions/subscription-queries';
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -91,7 +92,8 @@ describe('useAgentInstallationStatuses invalidate', () => {
     vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
     vi.stubGlobal('Event', dom.window.Event);
 
-    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // The availability reading is a read model: it lives in the one client (lib/readModel), cleared after each case.
+    queryClient = readModelClient;
     container = dom.window.document.getElementById('root') as HTMLDivElement;
     root = createRoot(container);
 
@@ -225,7 +227,7 @@ describe('useAgentInstallationStatuses invalidate', () => {
     await settle();
 
     expect(otherReads()).toHaveLength(1);
-    expect(queryClient.getQueryState([...subscriptionKey('server-a', 'codex'), 'availability'])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(connectionAvailability.key('server-a', 'codex')!)?.isInvalidated).toBe(true);
     expect(availability.auth).toEqual({ kind: 'unknown' });
     await renderAvailability('server-a');
     expect(availability.auth?.kind).toBe('unauthenticated');
@@ -243,7 +245,7 @@ describe('useAgentInstallationStatuses invalidate', () => {
     await settle();
 
     expect(mocks.refreshAuthStatus.mock.calls.filter(([machine]) => machine === 'server-b')).toHaveLength(1);
-    expect(queryClient.getQueryState([...subscriptionKey('server-a', 'codex'), 'availability'])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(connectionAvailability.key('server-a', 'codex')!)?.isInvalidated).toBe(true);
   });
 
   it('subscribes to progress while updating and clears it when the update settles', async () => {

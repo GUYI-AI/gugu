@@ -8,9 +8,14 @@ import { DEFAULT_FILE_STORAGE, type FileStorage } from '../../../../packages/cor
 import { FileStorageSection } from '../../../../apps/desktop/src/components/settings/FileStorageSection'
 
 const f = vi.hoisted(() => ({ stored: {} as Record<string, unknown>, write: vi.fn(), projects: vi.fn() }))
+// The page reads file storage from the account's own settings row (lib/ownSettings); a write puts the saved row back.
+vi.mock('@gugu/core/cloud/userSettings', async (original) => ({ ...await original<object>(), readUserSettingsConfig: async () => ({ file_storage: f.stored }) }))
 vi.mock('../../../../apps/desktop/src/lib/fileStorage', () => ({
-  readFileStorage: async () => f.stored,
-  writeFileStorage: async (_user: string, change: Partial<FileStorage>) => { f.write(change); f.stored = { ...f.stored, ...change }; return f.stored },
+  writeFileStorage: async (_user: string, change: Partial<FileStorage>) => {
+    f.write(change); f.stored = { ...f.stored, ...change }
+    ;(await import('../../../../apps/desktop/src/lib/ownSettings')).ownSettings.set(['user'], { file_storage: f.stored })
+    return f.stored
+  },
 }))
 vi.mock('../../../../apps/desktop/src/components/settings/FileStorageDashboard', () => ({ FileStorageDashboard: () => null }))
 vi.mock('../../../../apps/desktop/src/lib/deviceProjects', () => ({ listMyDeviceProjects: f.projects }))

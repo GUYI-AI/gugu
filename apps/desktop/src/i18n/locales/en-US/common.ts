@@ -1,4 +1,8 @@
 export default {
+  "staleRead": {
+    "failed": "Couldn't read the latest; showing what was read last.",
+    "retry": "Retry"
+  },
   "menu": {
     "search": "Search",
     "noResults": "No results"

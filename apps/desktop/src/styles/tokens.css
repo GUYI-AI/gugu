@@ -2319,3 +2319,9 @@ body.barcode-scanner-active #root {
   width: 1px;
   background: var(--border-subtle);
 }
+
+/* @@@unknown-slot — the read model's placeholder (components/ui/Unknown.tsx): it holds the value's place from the first
+   frame but is drawn only after 150 ms, so a read that answers sooner shows nothing in between (❌ a flash of a bar). */
+@keyframes gg-unknown-appear { to { opacity: 1; } }
+.gg-unknown { opacity: 0; animation: gg-unknown-appear 0s linear 150ms forwards; }
+@media (prefers-reduced-motion: reduce) { .gg-unknown { animation-duration: 0s; } }

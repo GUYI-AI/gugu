@@ -8,6 +8,7 @@ import { accountGoogleAvailable, cancelAccountGoogle, createAccountLinking } fro
 import { userVisibleAuthError } from '../../lib/authErrors'
 import { Button } from '../ui/Button'
 import { SettingsGroup, SettingsNote, SettingsRow } from './SettingsPrimitives'
+import { RefreshFailed } from '../ui/RefreshFailed'
 
 type Action = 'email' | 'link' | 'unlink'
 
@@ -59,18 +60,20 @@ export function AccountLoginMethods({ userId, onEmailChanged }: { userId: string
   async function run(work: (controller: AccountLinking) => Promise<void>) {
     const controller = service.current
     if (!controller || busy) return
+    const shown = loginMethodsModel.at() // bound to the account that acts: a read that answers after a switch lands there
     setBusy(true); setError(''); setMessage('')
     try { await work(controller) }
     catch (reason) {
       setError(reason instanceof AccountLinkingError ? t(`loginMethods.errors.${reason.code}`) : userVisibleAuthError(reason))
       if (reason instanceof AccountLinkingError && reason.code === 'verifyRequired') { setStage('verify'); setSent(false); setCode('') }
       // A successful server mutation followed by a failed notice/sign-out must remain visible.
-      try { loginMethodsModel.set([], viewOf(await controller.read())) } catch { /* Preserve the operation's actionable error. */ }
+      try { shown.set(viewOf(await controller.read())) } catch { /* Preserve the operation's actionable error. */ }
     } finally { setBusy(false) }
   }
   async function refreshed(controller: AccountLinking, noticeSaved = true) {
+    const shown = loginMethodsModel.at()
     const latest = await controller.read()
-    loginMethodsModel.set([], viewOf(latest)); onEmailChanged(latest.email ?? '')
+    shown.set(viewOf(latest)); onEmailChanged(latest.email ?? '')
     setStage('idle'); setCode('')
     setMessage(t(noticeSaved ? 'loginMethods.saved' : 'loginMethods.noticeFailed'))
   }
@@ -98,6 +101,7 @@ export function AccountLoginMethods({ userId, onEmailChanged }: { userId: string
       {message && <SettingsNote role="status">{message}</SettingsNote>}
       {notice && <SettingsNote>{t(`loginMethods.notices.${notice.kind}`)}</SettingsNote>}
       {busy && <SettingsNote role="status">{t('loginMethods.working')}</SettingsNote>}
+      {methods && reading.state === 'value' ? <RefreshFailed error={reading.error} onRetry={() => { void loginMethodsModel.refresh() }} /> : null}
     </>}>
     {!methods ? (reading.state === 'error'
       ? <SettingsRow title={t('loginMethods.email')} control={button(t('loginMethods.retry'), () => { void loginMethodsModel.refresh() })} />

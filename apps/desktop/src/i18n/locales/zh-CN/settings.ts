@@ -76,6 +76,7 @@ export default {
   "account": {
     "occupation": "身份",
     "occupationRequired": "选了「其他」要写一句你是做什么的",
+    "occupationReadFailed": "读不到你的身份，联网后重试",
     "occupationUnreadable": "读不到你的身份，稍后重新打开设置再试",
     "occupationNote": "只有你和你的咕咕看得到，别人看不到。",
     "occupationUnset": "还没选",

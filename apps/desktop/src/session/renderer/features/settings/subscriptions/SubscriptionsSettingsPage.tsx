@@ -1,5 +1,4 @@
 import { officialServicesEnabled } from '@gugu/core/cloud/optionalServices';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { observer } from 'mobx-react-lite';
 import { useMemo, useState } from 'react';
 import { Unknown } from '@/components/ui/Unknown';
@@ -25,7 +24,7 @@ import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { NEARLY_USED_PERCENT, planNotes, quotaReading, unavailableText, windowLabel } from './subscription-view';
-import { errorText, readUsage, SUBSCRIPTION_STALE_MS, subscriptionKey } from './subscription-queries';
+import { errorText, refreshSubscriptionReadings, useSubscriptionUsage } from './subscription-queries';
 
 /**
  * 设置「订阅」页(product spec,owner 2026-10-13 定单开一页):这台电脑(或选中的那台机器)上
@@ -64,13 +63,12 @@ export const SubscriptionsSettingsPage = observer(function SubscriptionsSettings
 
 function SubscriptionRefresh() {
   const { translate } = useSessionMessages();
-  const queryClient = useQueryClient();
   // 只有人按了才写「查询中…」:打开页面时的后台对账 ❌ 把按钮换来换去。
   const [refreshing, setRefreshing] = useState(false);
   return <Button variant="outline" size="sm" disabled={refreshing} data-testid="subscriptions-refresh" onClick={() => {
     setRefreshing(true);
     refreshSpendingPower();
-    void queryClient.invalidateQueries({ queryKey: ['subscriptions'] }).finally(() => setRefreshing(false));
+    void refreshSubscriptionReadings().finally(() => setRefreshing(false));
   }}>{refreshing ? translate('subscriptions.checking') : translate('subscriptions.refresh')}</Button>;
 }
 
@@ -105,14 +103,7 @@ function SubscriptionRow({ agent, machine }: { agent: AgentPayload; machine: str
   const { listed } = useListedConnections(machine, agent);
   const { identity, badge, plan, ready, currentConnection, connections } = useConnectionStatus(machine, agent);
   const connectionId = currentConnection?.id;
-  const usage = useQuery({
-    queryKey: subscriptionKey(machine, agent.id, 'usage', connectionId),
-    queryFn: () => readUsage(machine, agent.id, false, connectionId),
-    staleTime: SUBSCRIPTION_STALE_MS,
-    retry: false,
-    enabled: ready,
-    refetchOnWindowFocus: false,
-  });
+  const usage = useSubscriptionUsage(machine, agent.id, connectionId, ready);
 
   const formatDateTime = (epochMs: number) => formatWhen(epochMs, locale);
   const notes = plan.data ? planNotes(plan.data, translate, (at) => formatDate(at, locale)) : [];
