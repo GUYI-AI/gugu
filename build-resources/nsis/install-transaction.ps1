@@ -22,11 +22,22 @@ function Registry-Path([string]$hive, [string]$key) {
   return "Registry::$full\$key"
 }
 
+function Retry-Files([scriptblock]$operation) {
+  $delays = @(50,100,200,400,800)
+  for ($attempt=0; ; $attempt++) {
+    try { & $operation; return } catch {
+      $cause = $_.Exception.GetBaseException()
+      if ($attempt -ge $delays.Count -or
+          ($cause -isnot [IO.IOException] -and $cause -isnot [UnauthorizedAccessException])) { throw }
+      Start-Sleep -Milliseconds $delays[$attempt]
+    }
+  }
+}
 function Save-State($s) {
   $temp = "$statePath.tmp"
   [IO.File]::WriteAllText($temp, ($s | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
-  if ([IO.File]::Exists($statePath)) { [IO.File]::Replace($temp, $statePath, $null) }
-  else { [IO.File]::Move($temp, $statePath) }
+  if ([IO.File]::Exists($statePath)) { Retry-Files { [IO.File]::Replace($temp, $statePath, $null) } }
+  else { Retry-Files { [IO.File]::Move($temp, $statePath) } }
 }
 function Load-State {
   $s = Get-Content -LiteralPath $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -37,7 +48,7 @@ function Load-State {
   return $s
 }
 function Remove-OwnedStage {
-  if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+  if (Test-Path -LiteralPath $stage) { Retry-Files { Remove-Item -LiteralPath $stage -Recurse -Force } }
 }
 function Restore-State($s) {
   # A marker proves that the new target belongs to this transaction. Never remove an
@@ -45,12 +56,12 @@ function Restore-State($s) {
   $marker = Join-Path $Target '.gugu-install-transaction'
   if (Test-Path -LiteralPath $marker) {
     if (([IO.File]::ReadAllText($marker)) -ne $s.token) { throw 'Target ownership changed; rollback preserved' }
-    Remove-Item -LiteralPath $Target -Recurse -Force
+    Retry-Files { Remove-Item -LiteralPath $Target -Recurse -Force }
   }
   foreach ($entry in @($s.roots)) {
     if (Test-Path -LiteralPath $entry.backup) {
       if (Test-Path -LiteralPath $entry.root) { throw 'Old install location is occupied; backup preserved' }
-      [IO.Directory]::Move($entry.backup, $entry.root)
+      Retry-Files { [IO.Directory]::Move($entry.backup, $entry.root) }
     }
   }
   if ($s.registryMayHaveChanged) {
@@ -77,7 +88,7 @@ function Finish-State($s) {
   $s.completed = $true
   Save-State $s
   foreach ($entry in $s.roots) {
-    if (Test-Path -LiteralPath $entry.backup) { Remove-Item -LiteralPath $entry.backup -Recurse -Force }
+    if (Test-Path -LiteralPath $entry.backup) { Retry-Files { Remove-Item -LiteralPath $entry.backup -Recurse -Force } }
   }
   $marker = Join-Path $Target '.gugu-install-transaction'
   if ((Test-Path -LiteralPath $marker) -and ([IO.File]::ReadAllText($marker)) -eq $s.token) { Remove-Item -LiteralPath $marker }
@@ -148,8 +159,8 @@ try {
     [IO.File]::WriteAllText((Join-Path $stage '.gugu-install-transaction'), $s.token)
     # Persist intent before the first rename. Recovery inspects actual paths, so a
     # crash between any two renames cannot lose the untouched old installation.
-    foreach ($entry in $s.roots) { [IO.Directory]::Move($entry.root, $entry.backup) }
-    [IO.Directory]::Move($stage, $Target)
+    foreach ($entry in $s.roots) { Retry-Files { [IO.Directory]::Move($entry.root, $entry.backup) } }
+    Retry-Files { [IO.Directory]::Move($stage, $Target) }
     $s.registryMayHaveChanged = $true
     Save-State $s
   } else {
