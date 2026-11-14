@@ -26,9 +26,18 @@ export function onElectronCloudAnswer(listener: () => void): () => void {
   return () => { cloudAnswerListeners.delete(listener) }
 }
 
+/** ws waits for an upgrade answer forever by default. A path that accepts the connection and never answers (a dead
+ * tunnel) would leave Realtime "connecting" for good: it skips connect() while connecting, so every channel join
+ * times out until something else replaces the socket. Bound the handshake like the file-sync socket does. */
+class HandshakeBoundedWebSocket extends WebSocket {
+  constructor(address: string | URL, protocols?: string | string[]) {
+    super(address, protocols, { handshakeTimeout: 10_000 })
+  }
+}
+
 const electronRealtime = {
   // @@@electron-realtime-transport - Electron main runs in Node, so pin Realtime to ws instead of environment-detected globals.
-  transport: WebSocket as never
+  transport: HandshakeBoundedWebSocket as never
 }
 
 // Construct lazily: merely importing this module (e.g. from contract-check

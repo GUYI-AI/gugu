@@ -1,3 +1,5 @@
+import { createLogger } from './lib/logger'
+
 export type ElectronManagedRealtimeChannel = {
   unsubscribe?: () => unknown | Promise<unknown>
   subscribe: (callback: (status: string, err?: Error) => void) => ElectronManagedRealtimeChannel
@@ -262,6 +264,9 @@ async function subscribeRegistryEntry(id: string, reconnecting: boolean): Promis
   if (unsubscribeRequested) removeCurrentChannel()
 }
 
+const log = createLogger('realtime/channel')
+const SETTLED_STATUSES = new Set<ElectronRealtimeChannelStatus>(['subscribed', 'error', 'auth_error', 'closed'])
+
 function setRegistryStatus(
   id: string,
   status: ElectronRealtimeChannelStatus,
@@ -269,6 +274,11 @@ function setRegistryStatus(
 ): void {
   const entry = registry.get(id)
   if (!entry) return
+  // One line per change into or out of a joined channel: without the success line, a channel that never came back
+  // looks the same in the log as one that did. An authentication error's text can carry credentials: name only.
+  if (status !== entry.status && SETTLED_STATUSES.has(status)) {
+    log.info({ channel: entry.label, status, ...(lastError && status !== 'auth_error' ? { reason: lastError } : {}) }, 'realtime channel')
+  }
   registry.set(id, {
     ...entry,
     status,
