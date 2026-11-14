@@ -108,11 +108,13 @@ export function IOSCalendarPermissionsPanel({ ownerId, client = iosCalendarPermi
       : detail ? <SettingsNote>{t(detail)}</SettingsNote> : undefined}>
     <SettingsRow title={t('iosCalendar.calendar')} description={t('iosCalendar.description')} stack control={<div className="flex flex-wrap items-center gap-2">
       <span className="gg-settings-row-value" role="status">{statusText(current, t)}</span>
+      <div className="flex flex-wrap gap-2">
       {current.kind === 'ready' && <Button size="sm" variant="secondary"
         onClick={() => void changeConnection(current.status.calendarConnected ? 'disconnect' : 'connect')}>
         {t(current.status.calendarConnected ? 'iosCalendar.disconnect' : 'iosCalendar.connect')}
       </Button>}
       <Button size="sm" variant="secondary" disabled={busy} aria-label={t('iosCalendar.refreshLabel')} onClick={() => void refresh()}>{t('iosCalendar.refresh')}</Button>
+      </div>
     </div>} />
   </SettingsGroup>
 }
