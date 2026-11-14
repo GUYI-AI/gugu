@@ -16,3 +16,5 @@ it('decodes escaped quotes in os-release pretty names', () => { expect(linuxName
 it('omits rollback records with nonfinite timestamps', () => { expect(parseServerRollback('{"version":"bad","restored":"good","at":1e400}', 1000, 'good')).toBeNull() })
 
 it('reports malformed health background booleans', () => { expect(readHealthSummary({...summary(),background:{supported:'yes',granted:true}})).toEqual({ok:false,problem:'background.supported'}); expect(readHealthSummary({...summary(),background:{supported:true,granted:1}})).toEqual({ok:false,problem:'background.granted'}) })
+
+it('uses generic panel text for inherited category and error names', () => { const actual=panelApplicationFailure('constructor','item','constructor','en-US'); expect(actual).toContain('Panel resource'); expect(actual).toContain('The resource update could not complete'); expect(actual).not.toContain('undefined') })
