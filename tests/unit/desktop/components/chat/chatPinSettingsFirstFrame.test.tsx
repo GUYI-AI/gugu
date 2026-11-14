@@ -31,7 +31,7 @@ describe('pinned topics of a revisited group', () => {
     await renderWithAppProviders(harness, createNode(Pins, {}), { auth: { id: 'u-1' } })
     await vi.waitFor(() => expect(shown()).toBe('t-1'))
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    harness.cleanup() // the last observer leaves: the query library schedules its collection now
+    harness.cleanup({ keepReads: true }) // the last observer leaves: the query library schedules its collection now
     vi.advanceTimersByTime(6 * 60_000) // past its default five minutes
     vi.useRealTimers()
     pins.ids = ['t-1', 't-2'] // pinned elsewhere while nobody watched this group

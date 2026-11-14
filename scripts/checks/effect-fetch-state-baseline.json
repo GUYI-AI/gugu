@@ -41,7 +41,6 @@
   "apps/desktop/src/components/chat/WidgetSnapshot.tsx": 1,
   "apps/desktop/src/components/chat/messageActionModules.tsx": 1,
   "apps/desktop/src/components/chat/useConversationOptions.tsx": 1,
-  "apps/desktop/src/components/chat/useGroupChatSettings.ts": 1,
   "apps/desktop/src/components/chat/useMessageReference.ts": 1,
   "apps/desktop/src/components/contacts/ContactDetail.tsx": 1,
   "apps/desktop/src/components/contacts/GroupInvite.tsx": 2,
