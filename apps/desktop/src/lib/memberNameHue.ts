@@ -1,7 +1,6 @@
 import { BODY_COLORS } from '../components/agentAvatar/engine/identity'
 import { isBuiltinAgentAvatarUrl, resolveAgentLook, type AgentLook } from '../components/agentAvatar/look'
-import { avatarColorNameHue, boringAvatarNameHue } from './agentAvatarPalette'
-import { dicebearAvatarMainColor } from './dicebearAvatar'
+import { avatarColorIndex } from '@gugu/core/shared/ui/avatarPalette'
 
 /** Follow each generated avatar's existing main colour; uploaded images keep their identity hue. */
 export function memberNameHue({ id, avatar, isAgent, assistantLook }: {
@@ -11,10 +10,7 @@ export function memberNameHue({ id, avatar, isAgent, assistantLook }: {
   assistantLook?: AgentLook
 }): number {
   const identityHue = BODY_COLORS[resolveAgentLook(id, avatar).color].hue
-  if (!isAgent) {
-    if (!id?.trim() || avatar != null) return identityHue
-    return avatarColorNameHue(dicebearAvatarMainColor(id), identityHue)
-  }
   if (!id?.trim() || (avatar != null && !isBuiltinAgentAvatarUrl(avatar))) return identityHue
-  return assistantLook ? BODY_COLORS[assistantLook.color].hue : boringAvatarNameHue(id, identityHue)
+  if (isAgent && assistantLook) return BODY_COLORS[assistantLook.color].hue
+  return BODY_COLORS[avatarColorIndex(id)].hue
 }

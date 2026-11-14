@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg, groupAvatarTextLines, groupAvatarThemeColor } from '@gugu/core/shared/ui/groupAvatar'
+import { groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg, groupAvatarTextLines, groupAvatarThemeColors } from '@gugu/core/shared/ui/groupAvatar'
 
 describe('default group face', () => {
-  it('gives a group one of the eight colours, the same one every time', () => {
+  it('gives a group one of the twelve hue families, the same one every time', () => {
     const index = groupAvatarColorIndex('3f6c1a52-chat')
     expect(index).toBeGreaterThanOrEqual(0)
-    expect(index).toBeLessThan(8)
+    expect(index).toBeLessThan(12)
     expect(groupAvatarColorIndex('3f6c1a52-chat')).toBe(index)
-    expect(new Set(Array.from({ length: 200 }, (_, n) => groupAvatarColorIndex(`chat-${n}`))).size).toBe(8)
-    expect(groupAvatarThemeColor(index)).toBe(`var(--group-face-${index + 1})`)
+    expect(new Set(Array.from({ length: 200 }, (_, n) => groupAvatarColorIndex(`chat-${n}`))).size).toBe(12)
+    expect(groupAvatarThemeColors(index)).toEqual({ color: `var(--avatar-group-text-${index + 1})`, strokeColor: `var(--avatar-group-stroke-${index + 1})`, fill: `var(--avatar-group-fill-${index + 1})` })
   })
 
   it.each([

@@ -1,17 +1,20 @@
 import { useId } from 'react'
-import { BORING_MASK_FILL, boringAvatarAppearance, boringFaceFeatureColor } from '../lib/agentAvatarPalette'
+import { AVATAR_FEATURE_COLOR, type AvatarTheme } from '@gugu/core/shared/ui/avatarPalette'
+import { useAvatarTheme } from '../lib/avatarTheme'
+import { BORING_MASK_FILL, boringAvatarAppearance } from '../lib/agentAvatarPalette'
 
 // Boring avatars' beam variant (MIT, boringdesigners/boring-avatars 2.0.4; see THIRD_PARTY_NOTICES.md), ported so the
-// face can take its own colour: geometry and hashing are unchanged, so every agent keeps its shape and palette.
+// face can take its own colour: geometry and hashing are unchanged, so every agent keeps its shape.
 const SIZE = 36
 const digit = (n: number, place: number) => Math.floor((n / 10 ** place) % 10)
 const unit = (n: number, range: number, place?: number) => (place && digit(n, place) % 2 === 0 ? -(n % range) : n % range)
 
-export function BoringAgentAvatar({ id, name, size }: { id: string; name: string; size: number }) {
+export function BoringAgentAvatar({ id, name, size, theme }: { id: string; name: string; size: number; theme?: AvatarTheme }) {
   const mask = useId()
+  const hostTheme = useAvatarTheme()
   if (!id.trim()) throw new Error('[Avatar] a Boring avatar requires a stable agent id')
-  const { seed: n, body, background } = boringAvatarAppearance(id)
-  const face = boringFaceFeatureColor(body)
+  const { seed: n, body, background } = boringAvatarAppearance(id, theme ?? hostTheme)
+  const face = AVATAR_FEATURE_COLOR
   const x0 = unit(n, 10, 1), y0 = unit(n, 10, 2)
   const x = x0 < 5 ? x0 + SIZE / 9 : x0, y = y0 < 5 ? y0 + SIZE / 9 : y0
   const mouthSpread = unit(n, 3), eyeSpread = unit(n, 5)

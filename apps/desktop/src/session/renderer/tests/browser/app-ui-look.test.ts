@@ -19,7 +19,7 @@ type Context = {
   locale: string;
   chat: { id: string; name: string; kind: 'group'; members: { id: string; name: string; kind: 'human' | 'agent'; avatar?: string }[] };
 };
-const FACE = 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2"%3E%3Crect width="2" height="2" fill="%23c0aede"/%3E%3C/svg%3E';
+const FACE = 'data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2"%3E%3Crect width="2" height="2" fill="%23ecdab9"/%3E%3C/svg%3E';
 let push: ((context: Context) => void) | null = null;
 const context: Context = {
   themeMode: 'dark',

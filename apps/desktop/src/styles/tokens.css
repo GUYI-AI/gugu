@@ -665,15 +665,43 @@
   --bg:       #181818; /* 内容表面 */
   --page:     #121212; /* 窗口底层:rail、会话列表 */
   --card:     #212121; /* 局部表面:分组卡、浮层(gray-fixed-800) */
-  /* 群和项目默认头像的 8 个描边色:墨色里带一点色相,暗色这一组提亮,在深底上读得清(core 的 groupAvatar.ts 按 id 取第几个)。 */
-  --group-face-1: #a3b3c8;
-  --group-face-2: #b2adc6;
-  --group-face-3: #98b8b8;
-  --group-face-4: #a2b8a6;
-  --group-face-5: #b0b49b;
-  --group-face-6: #bdaf99;
-  --group-face-7: #c5ab9f;
-  --group-face-8: #c4a8b2;
+  /* Default group/project avatars: the twelve shared identity hue families. */
+  --avatar-group-fill-1: #342a16;
+  --avatar-group-stroke-1: #a48c5d;
+  --avatar-group-text-1: #d7c198;
+  --avatar-group-fill-2: #2b2d19;
+  --avatar-group-stroke-2: #8f9462;
+  --avatar-group-text-2: #c4c99c;
+  --avatar-group-fill-3: #213020;
+  --avatar-group-stroke-3: #769b74;
+  --avatar-group-text-3: #aecfac;
+  --avatar-group-fill-4: #17312a;
+  --avatar-group-stroke-4: #609d8b;
+  --avatar-group-text-4: #9cd1c1;
+  --avatar-group-fill-5: #133033;
+  --avatar-group-stroke-5: #579ca2;
+  --avatar-group-text-5: #96d0d6;
+  --avatar-group-fill-6: #192e3a;
+  --avatar-group-stroke-6: #6397b3;
+  --avatar-group-text-6: #9ecbe5;
+  --avatar-group-fill-7: #222b3d;
+  --avatar-group-stroke-7: #798fbb;
+  --avatar-group-text-7: #b0c5ec;
+  --avatar-group-fill-8: #2c283b;
+  --avatar-group-stroke-8: #9187b6;
+  --avatar-group-text-8: #c5bde8;
+  --avatar-group-fill-9: #342535;
+  --avatar-group-stroke-9: #a481a8;
+  --avatar-group-text-9: #d8b8db;
+  --avatar-group-fill-10: #39242d;
+  --avatar-group-stroke-10: #b27e93;
+  --avatar-group-text-10: #e4b5c7;
+  --avatar-group-fill-11: #3b2423;
+  --avatar-group-stroke-11: #b67f7b;
+  --avatar-group-text-11: #e9b6b2;
+  --avatar-group-fill-12: #39271b;
+  --avatar-group-stroke-12: #b28467;
+  --avatar-group-text-12: #e4baa0;
   --popover:  #212121;
   --sidebar:  var(--page);
   --fg:       #dfdfdf; /* gray-fixed-150 */
@@ -883,8 +911,6 @@
 
   --badge-red: var(--danger);            /* @@@one-red 别名 → --danger */
 
-  /* Avatar palette stays brand-fixed across themes for identity continuity */
-
   /* Modal-light tokens stay light surfaces in both themes (modal is intentionally white) */
 
   --border-spinner-on-dark: color-mix(in oklab, var(--fg) 40%, transparent);
@@ -896,15 +922,43 @@
   --bg:       #ffffff; /* 内容表面 */
   --page:     #f9f9f9; /* 窗口底层:rail、会话列表(gray-fixed-50) */
   --card:     #ffffff;
-  /* 群和项目默认头像的 8 个描边色:墨色里带一点色相,亮色这一组(core 的 groupAvatar.ts 按 id 取第几个)。 */
-  --group-face-1: #54657a;
-  --group-face-2: #655f78;
-  --group-face-3: #486b6a;
-  --group-face-4: #536a57;
-  --group-face-5: #62664c;
-  --group-face-6: #6f6149;
-  --group-face-7: #775c50;
-  --group-face-8: #765a64;
+  /* Default group/project avatars: the twelve shared identity hue families. */
+  --avatar-group-fill-1: #ecdab9;
+  --avatar-group-stroke-1: #907644;
+  --avatar-group-text-1: #4f3d16;
+  --avatar-group-fill-2: #dce0bc;
+  --avatar-group-stroke-2: #7a7f4a;
+  --avatar-group-text-2: #40431b;
+  --avatar-group-fill-3: #cae5c8;
+  --avatar-group-stroke-3: #5f865d;
+  --avatar-group-text-3: #2c482a;
+  --avatar-group-fill-4: #bce7d9;
+  --avatar-group-stroke-4: #468976;
+  --avatar-group-text-4: #154a3d;
+  --avatar-group-fill-5: #b8e6eb;
+  --avatar-group-stroke-5: #3b878e;
+  --avatar-group-text-5: #07494e;
+  --avatar-group-fill-6: #bee3f8;
+  --avatar-group-stroke-6: #4a82a0;
+  --avatar-group-text-6: #19455a;
+  --avatar-group-fill-7: #ccddfe;
+  --avatar-group-stroke-7: #637aa7;
+  --avatar-group-text-7: #2f3f60;
+  --avatar-group-fill-8: #ddd7fa;
+  --avatar-group-stroke-8: #7c72a3;
+  --avatar-group-text-8: #41395d;
+  --avatar-group-fill-9: #edd2ef;
+  --avatar-group-stroke-9: #906b94;
+  --avatar-group-text-9: #4f3552;
+  --avatar-group-fill-10: #f8d0df;
+  --avatar-group-stroke-10: #9d687e;
+  --avatar-group-text-10: #583242;
+  --avatar-group-fill-11: #fbd1cd;
+  --avatar-group-stroke-11: #a26865;
+  --avatar-group-text-11: #5c3230;
+  --avatar-group-fill-12: #f7d4bf;
+  --avatar-group-stroke-12: #9e6e4f;
+  --avatar-group-text-12: #583620;
   --popover:  #ffffff;
   --menu-bg: var(--popover);
   --sidebar:  var(--page);
