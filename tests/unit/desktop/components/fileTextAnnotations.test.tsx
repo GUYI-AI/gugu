@@ -105,7 +105,7 @@ describe('file source ranges', () => {
   })
 })
 
-it('saves the captured source after the textarea takes focus and lets another comment accumulate', async () => {
+it('saves the captured source after the comment input takes focus and lets another comment accumulate', async () => {
   const onAnnotate = vi.fn()
   await act(async () => root.render(createElement(FileTextContent, { content: 'first\nsecond\nthird', kind: 'text', fileName: 'a.ts', onAnnotate })))
   for (const line of [2, 3]) {
@@ -121,14 +121,20 @@ it('saves the captured source after the textarea takes focus and lets another co
     const add = document.querySelector<HTMLButtonElement>('.gg-file-annotation-popup button')!
     expect(add).not.toBeNull()
     await act(async () => add.click())
-    const textarea = document.querySelector('textarea')!
-    expect(textarea).not.toBeNull()
+    const input = document.querySelector('input')!
+    expect(input).not.toBeNull()
+    if (line === 2) {
+      const composingEnter = new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true })
+      await act(async () => { input.dispatchEvent(composingEnter) })
+      expect(composingEnter.defaultPrevented).toBe(true)
+      expect(onAnnotate).not.toHaveBeenCalled()
+    }
     await act(async () => {
       if (line === 2) {
-        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'Please update this line')
-        textarea.dispatchEvent(new Event('input', { bubbles: true }))
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Please update this line')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
       }
-      textarea.focus()
+      input.focus()
       document.getSelection()?.removeAllRanges()
       document.dispatchEvent(new Event('selectionchange'))
     })
@@ -145,8 +151,8 @@ it('retains the selected quote and comment input after a failed save, then retri
   await act(async () => document.querySelector<HTMLButtonElement>('.gg-file-annotation-popup button')!.click())
   const submit = document.querySelector<HTMLButtonElement>('.gg-file-annotation-form button[type="submit"]')!
   await act(async () => submit.click())
-  expect(document.querySelector('.gg-file-annotation-form [role="alert"]')).not.toBeNull()
-  expect(document.querySelector('textarea')).not.toBeNull()
+  expect(document.querySelector('.gg-file-annotation-error[role="alert"]')).not.toBeNull()
+  expect(document.querySelector('input')).not.toBeNull()
   await act(async () => submit.click())
   expect(onAnnotate.mock.calls).toEqual([[{ startLine: 1, endLine: 1, text: 'one', annotation: '' }], [{ startLine: 1, endLine: 1, text: 'one', annotation: '' }]])
   expect(document.querySelector('.gg-file-annotation-form')).toBeNull()

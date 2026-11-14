@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useUiPortalContainer } from '@gugu/session-ui/react/primitives'
+import { Check } from '@/lib/icons'
 import { Markdown } from '../markdown/Markdown'
 import { Button } from '../ui/Button'
 import { Popover } from '../ui/Popover'
@@ -125,16 +126,22 @@ export function FileTextContent({ content, kind, fileName, style, onAnnotate }: 
           ? root.current!.querySelector(`[data-file-line="${selection.quote.startLine}"]`)!.parentElement!.getBoundingClientRect() : selection.range.getBoundingClientRect() }}
           side="bottom" align="start" sideOffset={8} collisionPadding={8} collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}>
           <Popover.Popup initialFocus={editing ? undefined : false} finalFocus={false} data-occludes-browser-page
-            className="gg-file-annotation-popup" aria-label={t(editing ? 'fileAnnotation.comment' : 'fileAnnotation.addToChat')}>
+            className="gg-file-annotation-popup" data-editing={editing || undefined} data-failed={failed || undefined} aria-label={t(editing ? 'fileAnnotation.comment' : 'fileAnnotation.addToChat')}>
             {!editing ? <Button variant="ghost" size="md" onPointerDown={event => event.preventDefault()} onClick={() => setEditing(true)}>{t('fileAnnotation.addToChat')}</Button>
-              : <form className="gg-file-annotation-form" onSubmit={event => { event.preventDefault(); void save() }}>
-                <div className="gg-file-annotation-title">{fileName} · {t(selection.quote.startLine === selection.quote.endLine ? 'fileAnnotation.line' : 'fileAnnotation.lines', { start: selection.quote.startLine, end: selection.quote.endLine })}</div>
-                <textarea autoFocus aria-label={t('fileAnnotation.optionalComment')} placeholder={t('fileAnnotation.optionalComment')}
-                  value={annotation} disabled={saving} rows={3} onChange={event => setAnnotation(event.target.value)}
-                  onKeyDown={event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) { event.preventDefault(); void save() } }} />
-                {failed ? <div role="alert">{t('fileAnnotation.failed')}</div> : null}
-                <div className="gg-file-annotation-actions"><Button variant="ghost" size="md" disabled={saving} onClick={close}>{t('common.cancel')}</Button><Button type="submit" size="md" disabled={saving}>{t('fileAnnotation.comment')}</Button></div>
-              </form>}
+              : <>
+                <form className="gg-file-annotation-form" aria-label={`${fileName} · ${t(selection.quote.startLine === selection.quote.endLine ? 'fileAnnotation.line' : 'fileAnnotation.lines', { start: selection.quote.startLine, end: selection.quote.endLine })}`}
+                  onSubmit={event => { event.preventDefault(); void save() }}>
+                  <input type="text" autoFocus aria-label={t('fileAnnotation.optionalComment')} placeholder={t('fileAnnotation.optionalComment')}
+                    value={annotation} disabled={saving} onChange={event => setAnnotation(event.target.value)}
+                    onKeyDown={event => {
+                      if (event.key !== 'Enter') return
+                      if (event.nativeEvent.isComposing || event.keyCode === 229) { event.preventDefault(); return }
+                      if (event.metaKey || event.ctrlKey) { event.preventDefault(); void save() }
+                    }} />
+                  <Button type="submit" variant="primary" size="icon" className="gg-file-annotation-submit" aria-label={t('fileAnnotation.comment')} disabled={saving}><Check className="size-3.5" /></Button>
+                </form>
+                {failed ? <div className="gg-file-annotation-error" role="alert">{t('fileAnnotation.failed')}</div> : null}
+              </>}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
