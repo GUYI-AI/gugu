@@ -131,7 +131,8 @@ describe('iOS reuses the phone setup and host controls', () => {
     native.publication = { status: 'failed', binding: null, error: { code: 'auth_check_failed', message: 'native diagnostic' } }
     await h.render(createNode(IOSPhoneAgentHostControl, { ownerId: native.owner, setup: true }))
     expect(h.container.querySelector('[role="alert"]')?.textContent).toBe('Action could not be completed')
-    expect(element('phone-setup-enable-host')).toBeDisabled()
+    expect((element('phone-setup-enable-host') as HTMLButtonElement).disabled).toBe(true)
+    await clickElement(element('phone-setup-enable-host'))
     expect(native.retry).not.toHaveBeenCalled()
   })
   it('keeps a completed installation quiet and hides the entry when the native host is unavailable', async () => {
