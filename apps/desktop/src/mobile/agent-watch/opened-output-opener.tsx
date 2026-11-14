@@ -22,6 +22,7 @@ import { rendererLogger } from '@/lib/log'
 import type { OpenedOutputHandlers } from './opened-output-handlers'
 import { OpenedFileChangedError, phoneOpenPlan, readWholeOpenedFile } from './opened-output-open'
 import { readOpenedFileChunk, SessionpageRpcError } from './sessionpage-rpc'
+import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
 
 const log = rendererLogger('mobile/opened-output')
 type FileOpenSource = Parameters<NonNullable<ChatCommands['onOpenFile']>>[0]['source']
@@ -243,6 +244,7 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
         videoUrl={preview.file.url || undefined}
         kind={preview.kind}
         content={preview.content}
+        onAnnotate={sessionId ? comment => { sessionAnnotations.forSession(sessionId).add({ kind: 'file', path: preview.path, ...comment }) } : undefined}
         loading={preview.loading}
         loadingLabel={
           preview.progress

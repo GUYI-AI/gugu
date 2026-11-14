@@ -1,4 +1,5 @@
 import { defaultBrowser, importDefaultBrowserCookies } from '@main/core/browser/browser-cookie-import';
+import { inspectBrowserAnnotation } from './browser-annotation';
 import { configureBrowserProfileSession } from '@main/core/browser/browser-profile-session';
 import {
   destroyBrowserPage,
@@ -68,6 +69,7 @@ export const browserController = createRPCController({
   setPageZoom: (args: { browserId: string; factor: number }) => ({ success: setBrowserPageZoom(args.browserId, args.factor) }),
   measurePage: async (browserId: string) => ({ layout: await measureBrowserPage(browserId) }),
   snapshotPage: async (browserId: string) => ({ dataUrl: await snapshotBrowserPage(browserId) }),
+  inspectAnnotation: inspectBrowserAnnotation,
   /**
    * #1607 node 5: a task's page on another of the person's computers, watched here as its live picture. The person's
    * input goes to that page directly, as their click into a page on this computer does; no App is involved.

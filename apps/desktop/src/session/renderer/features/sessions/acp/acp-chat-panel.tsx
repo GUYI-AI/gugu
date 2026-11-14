@@ -1,3 +1,6 @@
+import { AnnotationTray } from '../annotations/annotation-tray';
+import { annotationPrompt, sessionAnnotations } from '../annotations/session-annotations';
+import { annotationImageId, currentAnnotationImages, isAnnotationImage, prepareAnnotationImages } from '../annotations/annotation-images';
 import { useSessionInputNotice, type SessionInputNotice } from '../session-input-notice';
 import { sessionStartupFailureCopy } from '../session-input-failure-copy';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
@@ -332,6 +335,7 @@ const ComposerForStore = observer(function ComposerForStore({
   }, [verb, store]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
+  const annotationDraft = sessionAnnotations.forSession(store.sessionId);
   const fileSelection = useAttachmentFileSelection(attachments, store.sessionId);
   const attachmentsRef = useRef(attachments);
   // 发送等待的是上传 promise;账本必须在它 resolve 前更新,不能等 React 的下一次渲染。
@@ -392,8 +396,13 @@ const ComposerForStore = observer(function ComposerForStore({
     async (value: string, deliver: (text: string, files: TurnFileRef[]) => void | Promise<void>) => {
       if (sendingRef.current) return;
       sendingRef.current = true;
+      const annotated = annotationDraft.items;
       try {
-        await sendComposerInput(value, {
+        const retained = currentAnnotationImages(annotated, attachmentsRef.current);
+        fileUploads.keepOnly(new Set(retained.map(item => item.id)));
+        setAttachments(retained);
+        prepareAnnotationImages(annotated, fileUploads);
+        await sendComposerInput(annotationPrompt(value, annotated), {
           started: onScrollToBottom, unsettled: () => fileUploads.unsettled(),
           waitForUploads: async () => { await fileUploads.waitForUploads(); },
           hasFailedAttachments: () => attachmentsRef.current.some(att => att.state === 'error'),
@@ -401,6 +410,7 @@ const ComposerForStore = observer(function ComposerForStore({
           status: setSendHold,
           deliver,
           committed: () => flushSync(() => {
+            annotationDraft.submitted(annotated);
             setAttachments([]);
             fileUploads.clear();
             if (editorApiRef.current?.getText() === value) editorApiRef.current.clear();
@@ -411,7 +421,7 @@ const ComposerForStore = observer(function ComposerForStore({
         sendingRef.current = false;
       }
     },
-    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments]
+    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments, annotationDraft]
   );
 
   const handleSubmit = useCallback(
@@ -561,7 +571,8 @@ const ComposerForStore = observer(function ComposerForStore({
   }, [store, composerShown, inputAccount, attachFiles]);
 
   const handleAttachmentsChange = useCallback(
-    (next: ComposerAttachment[]) => {
+    (visible: ComposerAttachment[]) => {
+      const next = [...visible, ...attachmentsRef.current.filter(item => isAnnotationImage(item.id) && item.state !== 'error' && !visible.some(kept => kept.id === item.id))];
       fileUploads.keepOnly(new Set(next.map((attachment) => attachment.id)));
       if (next.every((att) => att.state !== 'error')) setSendHold((hold) => (hold === 'blocked' ? null : hold));
       setAttachments(next);
@@ -1464,7 +1475,7 @@ const ComposerForStore = observer(function ComposerForStore({
         // Store owns both live sending and pre-session queue admission.
         // 正在用的咕咕模型要会员了(#7056):下一轮之前停下,原因与去路在面板那一行。
         canSubmit={composerCanSubmit({ promptReady: a.canSubmit, isWorking: a.isWorking, reverting: store.reverting, editingMessage: !!store.messageEdit,
-          queuesOffline: canQueueNativeInput(store), hasDraft: store.draftText.trim().length > 0 || attachments.length > 0,
+          queuesOffline: canQueueNativeInput(store), hasDraft: store.draftText.trim().length > 0 || attachments.length > 0 || annotationDraft.items.length > 0,
           attachmentWaiting: sendHold === 'waiting', membershipLocked: membershipLockedModel !== null })}
         placeholder={startupPlaceholderKeyValue ? translate(startupPlaceholderKeyValue) : undefined}
         onSubmit={handleSubmit}
@@ -1542,7 +1553,8 @@ const ComposerForStore = observer(function ComposerForStore({
           if (!isGuguClientCommand(item.id)) return;
           if (item.id === GUGU_CLIENT_COMMAND_MCP) void openMcpPanel();
         }}
-        attachments={attachments}
+        attachmentExtra={annotationDraft.items.length ? <AnnotationTray sessionId={store.sessionId} onRemove={id => { if (!sendingRef.current) { const imageId = annotationImageId(id); fileUploads.forget(imageId); setAttachments(current => current.filter(item => item.id !== imageId)); } }} onSend={() => { void handleSubmit(store.draftText); }} enabled={sendHold !== 'waiting' && membershipLockedModel === null && !store.messageEdit && !store.reverting} /> : null}
+        attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')}
         onAttachmentsChange={handleAttachmentsChange}
         onAttach={handleAttach}
         onImageFilesDropped={(files, source) => {
