@@ -83,15 +83,40 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
   }, [contentRef])
 
   const rangeRef = useRef({ key: resetKey, rowIds, start: 0, end: rowIds.length })
+  // 读者自己往上滚开了没有。「在不在底部」离底一个阈值以内都算,而且要等这一帧画完才重算:只看它的话,读者从底部往上滚的
+  // 头几帧里,每来一次重渲染或高度变化就被写回底部,滚不出去(owner:「一直被引力往下拉到底」)。所以和上一帧画出来的位置比:
+  // scrollTop 变小了(且不是内容变矮夹回去的)= 他在往上走,从这一刻起不算在底部,直到他自己往下滚回来。
+  // 上方补挂了行、窗口头换了的那一帧,位置是锚定挪的,不算读者动。
+  const leftRef = useRef(false)
+  const lastFrameRef = useRef<{ key: Slice['key']; top: number; head?: string; from?: string }>({ key: resetKey, top: 0 })
+  if (lastFrameRef.current.key !== resetKey) { lastFrameRef.current = { key: resetKey, top: 0 }; leftRef.current = false }
+  const sense = useCallback((scroller: HTMLElement) => {
+    const range = rangeRef.current, last = lastFrameRef.current
+    // 橡皮筋回弹(scrollTop 一度超过最大值)不算往上走。
+    const end = scroller.scrollHeight - scroller.clientHeight, top = Math.min(scroller.scrollTop, end)
+    const still = last.head === range.rowIds[0] && last.from === range.rowIds[range.start]
+    if (still && top < last.top - 1 && end - top > 1) leftRef.current = true
+    else if (still && top > last.top + 1) leftRef.current = false
+    return { key: range.key, top, head: range.rowIds[0], from: range.rowIds[range.start] }
+  }, [])
+  // 绘制之后读(不占这一帧的布局);每次重算电平都约下一次读数。
+  const [lastFrame] = useState(() => afterPaint(() => { if (scrollerRef.current) lastFrameRef.current = sense(scrollerRef.current) }))
   const report = useCallback((scroller: HTMLElement) => {
+    lastFrame.schedule()
+    sense(scroller)
     const range = rangeRef.current
-    const atBottom = range.end === range.rowIds.length && isAtListEnd(scroller, atBottomThreshold)
+    const atBottom = range.end === range.rowIds.length && isAtListEnd(scroller, atBottomThreshold) && !leftRef.current
     atBottomRef.current = atBottom
     if (reportedRef.current !== atBottom) {
       reportedRef.current = atBottom
       callbacksRef.current.onAtBottomChange?.(atBottom)
     }
-  }, [atBottomThreshold])
+  }, [atBottomThreshold, lastFrame, sense])
+  // 这一刻该不该贴底。电平是上一帧的,所以先看读者这一帧动没动;上方刚补挂行的那次提交,尾部没有东西要跟。
+  const followsTail = useCallback((scroller: HTMLElement) => {
+    const { head, from } = sense(scroller), last = lastFrameRef.current
+    return followRef.current && atBottomRef.current && !leftRef.current && (last.head !== head || last.from === from)
+  }, [sense])
 
   // 落点按挂载读一次 —— 调用方的落点在恢复落定后会变。
   const landingRef = useRef({ key: resetKey, landing })
@@ -144,10 +169,10 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
   // 浏览器的原生锚定多数时候已经做了(这里读到的差就是 0);它不管的是滚动条正好顶在 0 的时候,以及不支持锚定的 WebKit。
   useLayoutEffect(() => {
     const scroller = scrollerRef.current, anchor = anchorRef.current
-    if (!scroller || !anchor || !anchor.row.isConnected || (followRef.current && atBottomRef.current)) return
+    if (!scroller || !anchor || !anchor.row.isConnected || followsTail(scroller)) return
     const delta = anchor.row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchor.top
     if (Math.abs(delta) > 0.5) scroller.scrollTop += delta
-  }, [headKey, dataHead, scrollerRef])
+  }, [headKey, dataHead, scrollerRef, followsTail])
 
   // 初次落点和未挂载目标都先补到真实行,在这次绘制前定位;没有请求时不再重放落点。
   useLayoutEffect(() => {
@@ -179,11 +204,11 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
       pending.current = null
     } else if (!landing) {
       // 新行进来时保留旧贴底意图,先贴住再重算电平;否则会在 ResizeObserver 前把意图清掉。
-      if (followRef.current && atBottomRef.current && end === rowIds.length) scroller.scrollTop = scroller.scrollHeight
+      if (end === rowIds.length && followsTail(scroller)) scroller.scrollTop = scroller.scrollHeight
       grow(scroller)
     }
     report(scroller)
-  }, [resetKey, slice, rowIds, end, scrollerRef, contentRef, grow, report])
+  }, [resetKey, slice, rowIds, end, scrollerRef, contentRef, grow, report, followsTail])
 
   // 内容长高/变矮、视口变高/变矮:在底部就贴住(新消息、最后一条长高、图片晚到、输入框长高);ResizeObserver 在布局之后、
   // 绘制之前回调。挂在 layout effect 里:首帧之前就在看,落点之后、第一次绘制之前长出来的高度(代码块、公式排好)
@@ -193,7 +218,7 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
     const scroller = scrollerRef.current, content = contentRef.current
     if (!scroller || !content || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => {
-      if (followRef.current && atBottomRef.current) scroller.scrollTop = scroller.scrollHeight
+      if (followsTail(scroller)) scroller.scrollTop = scroller.scrollHeight
       report(scroller)
       grow(scroller)
     })
@@ -205,7 +230,7 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
     })
     scroller.addEventListener('scroll', scrolled.schedule, { passive: true })
     return () => { observer.disconnect(); scroller.removeEventListener('scroll', scrolled.schedule); scrolled.cancel() }
-  }, [resetKey, scrollerRef, contentRef, report, grow])
+  }, [resetKey, scrollerRef, contentRef, report, grow, followsTail])
 
   // 原生全选发生之前补齐同一数据窗口;不接管选区/复制,也不处理输入框或其它面板的快捷键。
   useEffect(() => {

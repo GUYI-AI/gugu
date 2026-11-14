@@ -160,6 +160,52 @@ describe('useFlowList 贴底', () => {
     await resize()
     expect(scroller().scrollTop, '读历史的人不被拽回底部').toBe(reading)
   })
+  it('正从底部往上滚、还没滚出贴底阈值的读者不被拽回去:重渲染、内容变高、视口变矮都不拽', async () => {
+    await harness.render(createElement(List, { rows: rowsOf(20), landing: { index: 'LAST', align: 'end' } }))
+    await nextFrames()
+    const gap = () => maxTop(scroller()) - scroller().scrollTop
+    // 滚轮的每一帧只走十几像素,这一帧的读数要等绘制之后才有:此刻列表还以为读者在底部。
+    scroller().scrollTop -= 30
+    await harness.render(createElement(List, { rows: rowsOf(20), landing: null }))
+    expect(gap(), '没有新消息的一次重渲染').toBe(30)
+    expect(topOf('r19'), '上方补挂的行不挪动读者正看着的内容').toBe(230)
+    await nextFrames()
+    scroller().scrollTop -= 20
+    ;(scroller().firstElementChild!.lastElementChild as HTMLElement).dataset.h = '110'
+    await resize()
+    expect(gap(), '最后一条变高').toBe(60)
+    await nextFrames()
+    scroller().scrollTop -= 10
+    VIEW = 290
+    await resize()
+    expect(gap(), '视口变矮').toBe(80)
+  })
+  it('往上滚开的读者(哪怕只滚开 30px)不再算在底部,自己滚回底部才重新跟随;内容变矮把位置夹回去不算滚开', async () => {
+    await harness.render(createElement(List, { rows: rowsOf(20), landing: { index: 'LAST', align: 'end' } }))
+    await nextFrames()
+    await scrollTo(maxTop(scroller()) - 30)
+    expect(events.atBottom.at(-1)).toBe(false)
+    await nextFrames()
+    await harness.render(createElement(List, { rows: rowsOf(21), landing: null }))
+    await resize()
+    expect(maxTop(scroller()) - scroller().scrollTop, '新消息不拽他').toBe(130)
+
+    await scrollTo(maxTop(scroller()))
+    expect(events.atBottom.at(-1)).toBe(true)
+    await nextFrames()
+    await harness.render(createElement(List, { rows: rowsOf(22), landing: null }))
+    await resize()
+    expect(topOf('r21'), '滚回底部之后照旧跟随').toBe(200)
+
+    await nextFrames()
+    ;(scroller().firstElementChild!.lastElementChild as HTMLElement).dataset.h = '40'
+    scroller().scrollTop = scroller().scrollTop
+    await resize()
+    await nextFrames()
+    await harness.render(createElement(List, { rows: rowsOf(23), landing: null }))
+    await resize()
+    expect(topOf('r22'), '最后一条变矮之后来的新消息').toBe(200)
+  })
   it('调用方关掉跟随(还有更新的页没载、正在定位未读)时在底部也不贴', async () => {
     await harness.render(createElement(List, { rows: rowsOf(10), landing: { index: 'LAST', align: 'end' }, followTail: false }))
     await nextFrames()
