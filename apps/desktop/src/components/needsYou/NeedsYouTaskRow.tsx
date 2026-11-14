@@ -18,8 +18,9 @@ import type { NeedsYouTask } from './useNeedsYouTasks'
 export const NeedsYouTaskRow = observer(function NeedsYouTaskRow({ task, onClick, onKeyDown, mobile = true, emphasis }: {
   task: NeedsYouTask
   mobile?: boolean
-  /** Unread (still counted): bold title and the chat list's unread count badge. A read row is muted, regular weight. */
-  emphasis?: boolean
+  /** Unread (still counted): bold title, status mark on the avatar and the chat list's unread count badge. A read row is muted,
+   * regular weight, with no mark: its state stays in words on the second line. */
+  emphasis: boolean
   onClick: React.MouseEventHandler<HTMLElement>
   onKeyDown: React.KeyboardEventHandler<HTMLElement>
 }) {
@@ -50,7 +51,7 @@ export const NeedsYouTaskRow = observer(function NeedsYouTaskRow({ task, onClick
     emphasis={emphasis}
     onClick={onClick}
     onKeyDown={onKeyDown}
-    leading={<PhoneMessageAvatar badge={presentation && <span className="inline-flex" role="img" aria-label={agentStatusText(presentation.label)}><AgentContactStatusMark tone={displayStatusOf(presentation.tone)} /></span>}>
+    leading={<PhoneMessageAvatar badge={emphasis && presentation && <span className="inline-flex" role="img" aria-label={agentStatusText(presentation.label)}><AgentContactStatusMark tone={displayStatusOf(presentation.tone)} /></span>}>
       <Avatar name={name!} avatarUrl={agent?.avatar ?? null} seed={agentId} size={mobile ? 48 : 'sm'} isAgent harnessBadge={false} />
     </PhoneMessageAvatar>}
     title={emphasis ? name : <span className="font-normal text-[var(--muted-fg)]">{name}</span>}
