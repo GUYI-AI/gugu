@@ -2,7 +2,9 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Avatar } from '../../../../apps/desktop/src/components/Avatar'
-import { AGENT_AVATAR_PALETTES, agentAvatarPalette, boringFaceFeatureColor } from '../../../../apps/desktop/src/lib/agentAvatarPalette'
+import { boringAvatarAppearance } from '../../../../apps/desktop/src/lib/agentAvatarPalette'
+import { AVATAR_FEATURE_COLOR } from '@gugu/core/shared/ui/avatarPalette'
+import { dicebearAvatarDataUri } from '../../../../apps/desktop/src/lib/dicebearAvatar'
 import { boringAgentAvatarDataUri } from '../../../../apps/desktop/src/lib/boringAgentAvatar'
 import { SessionAvatar } from '../../../../apps/desktop/src/mobile/agent-watch/StatusGlyph'
 import { runtime } from '../../../../apps/desktop/src/components/agentAvatar/engine/runtime'
@@ -25,6 +27,7 @@ const render = (props: Record<string, unknown> = {}) => harness.render(createNod
   name: 'Agent', seed: ID, size: 32, isAgent: true, harnessBadge: false, ...props,
 }))
 beforeEach(() => {
+  document.documentElement.dataset.theme = 'light'
   harness = createReactHarness()
   installIdentityDirectoryBridge()
   publishIdentityDirectory({}, () => {})
@@ -37,6 +40,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   harness.cleanup()
+  delete document.documentElement.dataset.theme
   publishIdentityDirectory(null, null)
   assistant(null)
   vi.restoreAllMocks()
@@ -60,39 +64,27 @@ describe('default agent avatars', () => {
     expect(harness.container.querySelector('canvas')).toBeNull()
     expect(harness.container.querySelector('.av-status--working')).not.toBeNull()
     const fills = Array.from(svg()!.querySelectorAll('[fill]')).map((el) => el.getAttribute('fill'))
-    expect(fills.some((fill) => agentAvatarPalette(ID).includes(fill!))).toBe(true)
+    expect(fills).toContain(boringAvatarAppearance(ID).body)
     expect(runtime.register).not.toHaveBeenCalled()
   })
 
-  it('spreads ids over the curated palettes and keeps image-only projections on the same palette', () => {
-    const used = new Set(Array.from({ length: 400 }, (_, i) => agentAvatarPalette(`${ID}-${i}`)))
-    expect(used.size).toBe(AGENT_AVATAR_PALETTES.length)
-    const svgText = decodeURIComponent(boringAgentAvatarDataUri(ID))
-    expect(agentAvatarPalette(ID).some((color) => svgText.includes(`fill="${color}"`))).toBe(true)
-  })
-
-  it('draws light features once white reaches 3:1 on the body, dark ones otherwise', async () => {
-    // Mid-dark reds, corals and purples took black features under beam's own YIQ test.
-    for (const body of ['#e76f51', '#ff4d6d', '#7678ed', '#b08968', '#3d5e92']) expect(boringFaceFeatureColor(body)).toBe('#FFFFFF')
-    for (const body of ['#ff9915', '#fad928', '#edecb3', '#80ffdb', '#38b000']) expect(boringFaceFeatureColor(body)).toBe('#000000')
+  it('updates beam and human faces on a real theme change, including image-only projections', async () => {
     await render()
-    const rects = svg()!.querySelectorAll('g[mask] > rect')
-    const face = svg()!.querySelector('g[mask] > g rect')!.getAttribute('fill')
-    expect(face).toBe(boringFaceFeatureColor(rects[1].getAttribute('fill')!))
-  })
-
-  it('keeps every palette colour within the first palette\'s contrast bounds on the dark page and on white', () => {
-    const channel = (v: number) => (v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
-    const luminance = (hex: string) => [1, 3, 5].map((i) => channel(parseInt(hex.slice(i, i + 2), 16)))
-      .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0)
-    const contrast = (a: string, b: string) => {
-      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
-      return (hi + 0.05) / (lo + 0.05)
-    }
-    const floor = (surface: string) => Math.min(...AGENT_AVATAR_PALETTES[0].map((c) => contrast(c, surface)))
-    for (const surface of ['#121212', '#ffffff']) {
-      for (const color of AGENT_AVATAR_PALETTES.flat()) expect(contrast(color, surface)).toBeGreaterThanOrEqual(floor(surface))
-    }
+    const stripColors = () => geometry()?.replace(/(?:fill|stroke)="[^"]+"/g, '')
+    const shape = stripColors()
+    const lightProjection = boringAgentAvatarDataUri(ID)
+    const lightHuman = dicebearAvatarDataUri(ID)
+    expect(svg()!.querySelector('g[mask] > g rect')!.getAttribute('fill')).toBe(AVATAR_FEATURE_COLOR)
+    await act(async () => { document.documentElement.dataset.theme = 'dark' })
+    expect(stripColors()).toBe(shape)
+    expect(svg()!.querySelectorAll('g[mask] > rect')[1].getAttribute('fill')).toBe(boringAvatarAppearance(ID, 'dark').body)
+    expect(decodeURIComponent(boringAgentAvatarDataUri(ID))).toContain(boringAvatarAppearance(ID, 'dark').body)
+    expect(boringAgentAvatarDataUri(ID)).not.toBe(lightProjection)
+    await render({ isAgent: false })
+    expect(harness.container.querySelector('img')?.getAttribute('src')).toBe(dicebearAvatarDataUri(ID))
+    expect(dicebearAvatarDataUri(ID)).not.toBe(lightHuman)
+    await act(async () => { document.documentElement.dataset.theme = 'light' })
+    expect(harness.container.querySelector('img')?.getAttribute('src')).toBe(lightHuman)
   })
 
   it('keeps the same face across renames, sizes and built-in v1 URLs, including older or unknown looks', async () => {
@@ -122,7 +114,7 @@ describe('default agent avatars', () => {
     expect(svg()).toBeNull()
   })
 
-  it('keeps human defaults and uploads unchanged', async () => {
+  it('keeps human illustrations and uploaded images', async () => {
     await render({ isAgent: false })
     expect(harness.container.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/)
     expect(svg()).toBeNull()

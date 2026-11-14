@@ -1,3 +1,5 @@
+import { requirePreinstalledFiles, workspaceFileAnnotation } from '../../session/shared/extensions/file-annotation'
+import { sessionAnnotations } from '../../session/renderer/features/sessions/annotations/session-annotations'
 import { composeChatDraft } from '@/lib/composeDraft'
 import { widgetContext } from '../../session/shared/extensions/widget-context'
 import { showRendererContentMenu } from '../../lib/contentContextMenu'
@@ -675,6 +677,12 @@ export function hostAppFrame(
       }
       case 'clipboardWriteText':
         return platform.writeClipboardText(pageArgument('clipboardWriteText', args))
+      case 'filesAnnotateSelection': {
+        requirePreinstalledFiles({ id: hosted.binding.extensionId, origin: installedExtensionsStore.origins[hosted.binding.extensionId] })
+        if (!session) refused('denied', 'File annotations require a session page')
+        sessionAnnotations.forSession(session.id).add({ kind: 'file', ...workspaceFileAnnotation(args, sessionWorkspace(session.id)) })
+        return
+      }
       case 'listAgents': {
         const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
         if (!manifest) refused('not-installed', 'This App is not installed')

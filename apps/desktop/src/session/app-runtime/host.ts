@@ -105,6 +105,7 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
   onFilesChanged(handler: (watchId: string, change: ExtensionFileChangeBatch) => void): () => void;
   /** Every call names where its file is (`AppPlace`, `AppFileRef`, 真源原则 13). */
   readonly appFiles: {
+    annotateSelection?(args: { ref: AppFileRef } & import('@shared/extensions/file-annotation').FileAnnotationFields): Promise<void>;
     open(args: { ref: AppFileRef; readOnly?: boolean; deferDetails?: boolean; expectedVersion?: number }): Promise<AppFileOpened>;
     reopen(args: { ref: AppFileRef; readOnly?: boolean }): Promise<AppFileOpened>;
     close(args: { docName?: string; ref?: AppFileRef & { version?: number } }): Promise<void>;

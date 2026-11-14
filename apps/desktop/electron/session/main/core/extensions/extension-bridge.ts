@@ -1,3 +1,4 @@
+import { requirePreinstalledFiles, workspaceFileAnnotation } from '@shared/extensions/file-annotation';
 import type { ExtensionFileChangeBatch } from '@shared/extensions/bridge-protocol';
 import { chatForCapabilities } from '@shared/extensions/bridge-protocol';
 import type { AppSurfaceIntent } from '@shared/extensions/unread-binding';
@@ -1940,6 +1941,12 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
   if (isMachineVerb(method)) return await machineCall(caller, method, args);
   const { binding, extensionId } = caller;
   switch (method) {
+    case 'filesAnnotateSelection': {
+      requirePreinstalledFiles({ id: caller.extensionId, origin: extensionsService().origins()[caller.extensionId] });
+      const page = thePage(caller);
+      if (!sessionOfBinding(page)) throw Object.assign(new Error('File annotations require a session page'), { code: 'denied' });
+      return await deliver(page, { kind: 'annotateFile', selection: workspaceFileAnnotation(args, page.workspace) });
+    }
     case 'taskMessage': {
       const service = extensionsService();
       service.get(extensionId);
