@@ -43,8 +43,8 @@ describe('main-window typing observations', () => {
     expect(t.rows.find(row => row.event === 'long-task')).toMatchObject({ durationMs: 100, typingActive: true, typingOverlap: true, typingContextComplete: true })
     expect(t.rows.filter(row => row.event === 'long-task')).toHaveLength(1)
     expect(t.rows.find(row => row.event === 'key-latency')).toMatchObject({ metric: 'event-timing-next-paint', latencyMs: 112, captureDelayMs: 85, processingDelayMs: 80, processingMs: 10, presentationDelayMs: 22, composing: true })
-    expect(t.rows.find(row => row.event === 'start')).toMatchObject({ eventThresholdMs: 16, eventResolutionMs: 8 })
-    expect(t.options.find(option => option.type === 'event')).toMatchObject({ durationThreshold: 16 })
+    expect(t.rows.find(row => row.event === 'start')).toMatchObject({ eventThresholdMs: 48, eventResolutionMs: 8 })
+    expect(t.options.find(option => option.type === 'event')).toMatchObject({ durationThreshold: 48 })
     expect(t.sampling).not.toHaveBeenCalled()
   })
 

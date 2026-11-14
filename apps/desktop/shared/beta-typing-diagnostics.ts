@@ -6,6 +6,7 @@ export const TYPING_DIAGNOSTICS_SCOPE = 'beta-typing-diagnostics'
 export const TYPING_DIAGNOSTICS_BYTES = 20_000_000
 export const TYPING_DIAGNOSTICS_FILES = 5
 export const TYPING_DIAGNOSTICS_BATCH = 64
+export const TYPING_DIAGNOSTICS_EVENT_THRESHOLD = 48
 export const TYPING_DIAGNOSTICS_TYPING_WINDOW = 1_000
 
 export function typingDiagnosticsEnabled(betaBuild: boolean, control: string | undefined): boolean {

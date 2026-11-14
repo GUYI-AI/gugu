@@ -1,4 +1,4 @@
-import { sanitizeTypingDiagnosticRecord, TYPING_DIAGNOSTICS_BATCH, TYPING_DIAGNOSTICS_TYPING_WINDOW, type TypingDiagnosticRecord } from '../../shared/beta-typing-diagnostics'
+import { sanitizeTypingDiagnosticRecord, TYPING_DIAGNOSTICS_BATCH, TYPING_DIAGNOSTICS_EVENT_THRESHOLD, TYPING_DIAGNOSTICS_TYPING_WINDOW, type TypingDiagnosticRecord } from '../../shared/beta-typing-diagnostics'
 
 interface TaskEntry extends PerformanceEntry { attribution?: Array<{ name?: string; containerType?: string }> }
 interface ScriptEntry { sourceURL?: string; sourceFunctionName?: string; startTime?: number; duration?: number; executionStart?: number; forcedStyleAndLayoutDuration?: number; pauseDuration?: number; sourceCharPosition?: number }
@@ -84,7 +84,7 @@ export function createTypingDiagnosticsRecorder(win: Window & typeof globalThis,
         try { for (const entry of list.getEntries()) read(entry) }
         catch { observer.disconnect(); emit({ event: 'observer-error', observer: type }) }
       })
-      observer.observe({ type, ...(type === 'event' ? { durationThreshold: 16 } : {}) } as PerformanceObserverInit)
+      observer.observe({ type, ...(type === 'event' ? { durationThreshold: TYPING_DIAGNOSTICS_EVENT_THRESHOLD } : {}) } as PerformanceObserverInit)
       observers.push(observer); return true
     } catch { return false }
   }
@@ -116,7 +116,7 @@ export function createTypingDiagnosticsRecorder(win: Window & typeof globalThis,
   win.addEventListener('compositionstart', composition, true)
   win.addEventListener('compositionend', composition, true)
   win.addEventListener('blur', blur, true)
-  emit({ event: 'start', timeOrigin: win.performance.timeOrigin, startMs: now(), longTaskSupported, longFrameSupported, eventTimingSupported, eventThresholdMs: 16, eventResolutionMs: 8, typingWindowMs: TYPING_DIAGNOSTICS_TYPING_WINDOW, visible: win.document.visibilityState === 'visible' })
+  emit({ event: 'start', timeOrigin: win.performance.timeOrigin, startMs: now(), longTaskSupported, longFrameSupported, eventTimingSupported, eventThresholdMs: TYPING_DIAGNOSTICS_EVENT_THRESHOLD, eventResolutionMs: 8, typingWindowMs: TYPING_DIAGNOSTICS_TYPING_WINDOW, visible: win.document.visibilityState === 'visible' })
   function stop(finalFlush = false) {
     if (stopped) return
     if (finalFlush && !inFlight && (queue.length || dropped || keysObserved !== writtenKeys || eventEntriesObserved !== writtenEntries)) { try { void send(take()).catch(() => undefined) } catch { /* App teardown never waits for the recorder. */ } }
