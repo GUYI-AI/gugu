@@ -16,7 +16,7 @@ vi.mock('@main/db/client', () => ({
 }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 // The matcher runs on a thread of its own in the app (task-turn-search-worker.test.ts); here it reads the fixture.
-vi.mock('./task-turn-search', () => ({ searchTaskTurnMatches: async (query: string, limit?: number) => matchTaskTurns(fixtureRef.current!.sqlite, query, limit) }));
+vi.mock('./task-turn-search', () => ({ searchTaskTurnMatches: async (query: string, limit?: number, offset?: number) => matchTaskTurns(fixtureRef.current!.sqlite, query, limit, offset) }));
 
 const { backfillTurnText, initializeDatabase } = await import('@main/db/initialize');
 const { searchService } = await import('./search-service');
@@ -30,7 +30,7 @@ const { messageQuoteLink } = await import('@gugu/core/shared/ui/messageQuote');
 function turn(id: string, items: TranscriptTurn['items'], seq = 0): TranscriptTurn {
   return { id, seq, initiator: 'user', items } as TranscriptTurn;
 }
-const said = (id: string, role: 'user' | 'assistant', text: string) => ({ kind: 'message', id, seq: 0, role, text }) as TranscriptTurn['items'][number];
+const said = (id: string, role: 'user' | 'assistant', text: string) => ({ kind: 'message', id, seq: 0, role, text }) as Extract<TranscriptTurn['items'][number], { kind: 'message' }>;
 
 const fixture = () => fixtureRef.current!;
 const indexed = () => fixture().sqlite.prepare('SELECT session_id, seq, role, text FROM turn_text_rows ORDER BY session_id, seq, id').all();
@@ -73,6 +73,7 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     fixtureRef.current?.close();
     fixtureRef.current = undefined;
   });
@@ -86,6 +87,30 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
     await backfillTurnText(fixture().sqlite);
     expect(searchController.taskTurnIndexStatus().state).toBe('ready');
     expect(await searchController.taskTurns({ query: 'indexing' })).toHaveLength(1);
+  });
+
+  it('clears search by original message time even when an old turn was indexed after deletion', async () => {
+    const at = Date.parse('2026-11-14T00:00:00Z');
+    const value = turn('late-indexed', [
+      { ...said('old', 'user', 'privacy searchable old'), at: at + 5000, _meta: { guguPublicationAt: new Date(at - 1000).toISOString() } },
+      { ...said('new', 'assistant', 'privacy searchable new'), at: at + 1000 },
+    ]);
+    await persistCommittedTurn({ sessionId: 's1', source: 'live', turn: value });
+    vi.spyOn(await import('../sessions/native-publication-host'), 'nativeConversationHistoryFloor').mockResolvedValue('2026-11-14T00:00:00.000501Z');
+    const hits = await searchService.searchTaskTurns('privacy searchable');
+    expect(hits.map(hit => hit.itemId)).toHaveLength(1);
+    expect(hits[0].excerpt).toBe('privacy searchable new');
+    expect(found('privacy searchable')).toHaveLength(2);
+  });
+
+  it('continues beyond cleared matches to find another conversation without clearing its index', async () => {
+    const at = Date.parse('2026-11-14T00:00:00Z');
+    await persistCommittedTurn({ sessionId: 's2', source: 'live', turn: turn('retained', [{ ...said('keep', 'user', 'sharedsearch retained'), at: at - 1000 }]) });
+    for (let index = 0; index < 4; index++) await persistCommittedTurn({ sessionId: 's1', source: 'live',
+      turn: turn(`cleared-${index}`, [{ ...said(`old-${index}`, 'user', 'sharedsearch cleared'), at: at - 1000 }]) });
+    vi.spyOn(await import('../sessions/native-publication-host'), 'nativeConversationHistoryFloor').mockImplementation(async id => id === 's1' ? '2026-11-14T00:00:00Z' : null);
+    const hits = await searchService.searchTaskTurns('sharedsearch', 2);
+    expect(hits.map(hit => [hit.sessionId, hit.excerpt])).toEqual([['s2', 'sharedsearch retained']]);
   });
 
   it('indexes only what the person and the agent said, from every live turn', async () => {
@@ -216,7 +241,7 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
     const ranking = String(prepare.mock.calls.find(([sql]) => String(sql).includes('hit AS MATERIALIZED'))![0]);
     prepare.mockRestore();
     // Reading a turn's created_at or data means walking its whole record; the ranking reaches turns only through their index.
-    const plan = (fixture().sqlite.prepare(`EXPLAIN QUERY PLAN ${ranking}`).all('%al%', 30) as { detail: string }[]).map((row) => row.detail);
+    const plan = (fixture().sqlite.prepare(`EXPLAIN QUERY PLAN ${ranking}`).all('%al%', 30, 0) as { detail: string }[]).map((row) => row.detail);
     expect(plan.filter((step) => /\bt\b/.test(step))).toEqual(['SEARCH t USING COVERING INDEX idx_session_turns_session_seq (session_id=? AND seq=?)']);
   });
 

@@ -13,6 +13,7 @@ import { replaceEqualDeep } from '@tanstack/react-query'
 import { memoizeByReference } from './memoizeByReference'
 
 export type ChatSummary = {
+  readonly historyClearedAt?: string
   readonly peerUserId?: string | null
   readonly firstUnreadMessageId?: string | null
   readonly alias?: string | null
@@ -39,10 +40,11 @@ const RESTORED_KEY = '__GUGU_CHAT_LIST_RESTORED__'
 
 type Summaries = ReadonlyMap<string, ChatSummary>
 type SummarySource = {
-  peer_user_id?: string | null; unread_locator?: { message_id: string | null } | null; id: string; kind: string; unread_count: number; is_marked_unread?: boolean; name?: string | null; alias?: string | null; public_id?: number | null; last_message_at?: string | null; last_message_preview?: string | null; source_chat_id?: string | null; member_user_ids?: readonly string[] | null; avatar?: string | null
+  conversation_cleared_at?: string | null; peer_user_id?: string | null; unread_locator?: { message_id: string | null } | null; id: string; kind: string; unread_count: number; is_marked_unread?: boolean; name?: string | null; alias?: string | null; public_id?: number | null; last_message_at?: string | null; last_message_preview?: string | null; source_chat_id?: string | null; member_user_ids?: readonly string[] | null; avatar?: string | null
 }
 const summaryOf = memoizeByReference((chat: SummarySource, name: string | null | undefined): ChatSummary =>
   replaceEqualDeep(read()?.get(chat.id), {
+    ...(chat.conversation_cleared_at ? { historyClearedAt: chat.conversation_cleared_at } : {}),
     ...(chat.alias ? { alias: chat.alias } : {}),
     ...(typeof chat.public_id === 'number' && Number.isSafeInteger(chat.public_id) && chat.public_id > 0 ? { publicId: chat.public_id } : {}),
     peerUserId: chat.peer_user_id ?? null,

@@ -5,8 +5,8 @@ import type { TranscriptTurn } from '@gugu/session-core/acp';
 const mock = vi.hoisted(() => ({ db: undefined as AppDb | undefined }));
 vi.mock('@main/db/client', () => ({ get db() { if (!mock.db) throw new Error('Missing fixture'); return mock.db; } }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
-import { nativeInputPublication, pendingNativePublications, queueNativeInput, queueNativePublication, type NativePublicationContext } from './native-publication-journal';
-import { startNativeConversationPublicationHost } from './native-publication-host';
+import { nativeHistoryFloorCache, nativeInputPublication, pendingNativePublications, queueNativeInput, queueNativePublication, type NativePublicationContext } from './native-publication-journal';
+import { nativeConversationHistoryFloor, startNativeConversationPublicationHost } from './native-publication-host';
 import { recordNativePublicationTurn } from './native-publication-turn';
 import { persistCommittedTurn } from './session-turn-store';
 import { enqueuePending } from './session-pending';
@@ -24,6 +24,30 @@ beforeEach(async () => {
   fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','Fixture','/fixture'); INSERT INTO sessions(id,project_id) VALUES('s','p')");
 });
 afterEach(() => { host?.dispose(); host = undefined; fixture.close(); mock.db = undefined; });
+
+it('retains the last confirmed history boundary offline without treating a permission failure as success', async () => {
+  const floor = '2026-11-14T00:00:00.000501Z';
+  const read = vi.fn<() => Promise<string | null>>().mockResolvedValue(floor);
+  host = startNativeConversationPublicationHost({ context: async () => owner, address, historyFloor: read,
+    publish: async () => ({ accountRevision: '1', already: false }), failed: vi.fn() });
+  expect(await nativeConversationHistoryFloor('s')).toBe(floor);
+  read.mockRejectedValueOnce(Error('fetch failed'));
+  expect(await nativeConversationHistoryFloor('s')).toBe(floor);
+  read.mockRejectedValueOnce(Error('permission denied'));
+  await expect(nativeConversationHistoryFloor('s')).rejects.toThrow('permission denied');
+});
+
+it('does not save another account boundary or reuse the previous account cache after an interrupted read', async () => {
+  let current = owner;
+  const read = vi.fn<() => Promise<string | null>>().mockResolvedValue(at);
+  host = startNativeConversationPublicationHost({ context: async () => current, address, historyFloor: read,
+    publish: async () => ({ accountRevision: '1', already: false }), failed: vi.fn() });
+  await nativeConversationHistoryFloor('s');
+  read.mockImplementationOnce(async () => { current = { ...owner, ownerUserId: 'owner-b' }; throw Error('fetch failed'); });
+  await expect(nativeConversationHistoryFloor('s')).rejects.toThrow('account changed');
+  expect(nativeHistoryFloorCache(owner.ownerUserId, 's')?.floor).toBe(at);
+  expect(nativeHistoryFloorCache('owner-b', 's')).toBeUndefined();
+});
 
 it('rolls the publication back with rejected local admission, and never reconstructs it from history', () => {
   expect(() => fixture.db.transaction(tx => { queueNativeInput(owner, 's', 'input-a', at, tx); throw Error('admission failed'); })).toThrow('admission failed');

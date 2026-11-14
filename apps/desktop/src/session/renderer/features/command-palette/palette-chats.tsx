@@ -13,15 +13,26 @@ import { rankPaletteMatches } from './palette-rank';
 export function useNameMatches(query: string, limit: number, enabled = true) {
   const summaries = useChatSummaries();
   const contacts = useContactSummaries();
-  const groups = !enabled ? [] : rankPaletteMatches([...summaries].filter(([id, chat]) => chat.kind === 'group'
+  if (!enabled) return { groups: [], people: [] };
+  const groups = rankPaletteMatches([...summaries].filter(([id, chat]) => chat.kind === 'group'
     && !!chat.name && !projectGroupsStore.rowProjectOfChat(id)), query, ([, chat]) => [chat.name, chat.alias]).slice(0, limit);
-  const people = !enabled ? [] : rankPaletteMatches(contacts, query, (contact) => [contact.name]).slice(0, limit);
+  const named = new Map<string, { id: string; name: string; chatId?: string }>(contacts.map(contact => [contact.id, contact]));
+  for (const [chatId, chat] of summaries) {
+    const name = chat.alias || chat.name;
+    if ((chat.kind === 'dm' || chat.kind === 'ai') && chat.peerUserId && name && !named.has(chat.peerUserId)) {
+      named.set(chat.peerUserId, { id: chat.peerUserId, name, chatId });
+    }
+  }
+  const people = rankPaletteMatches([...named.values()], query, (contact) => [contact.name]).slice(0, limit);
   return { groups, people };
 }
 
-/** A group opens its conversation; a person opens their contact details (never creates a conversation). */
+/** Contacts open their details; a retained private chat without a contact opens its existing conversation. */
 export function openGroup(id: string): void { followLink(conversationLink(id)); }
-export function openPerson(id: string): void { window.dispatchEvent(new CustomEvent(UI_EVENTS.openContact, { detail: id })); }
+export function openPerson(id: string, chatId?: string): void {
+  if (chatId) openGroup(chatId);
+  else window.dispatchEvent(new CustomEvent(UI_EVENTS.openContact, { detail: id }));
+}
 
 export function PaletteChatGroups({ query, groupClassName, onDone }: {
   query: string; groupClassName: string; onDone: () => void;
@@ -44,7 +55,7 @@ export function PaletteChatGroups({ query, groupClassName, onDone }: {
         <Command.Group heading={translate('palette.contacts')} className={groupClassName}>
           {people.map((contact) => (
             <Command.Item key={contact.id} value={`contact:${contact.id}`} className={PALETTE_ITEM_CLASS}
-              onSelect={() => { onDone(); openPerson(contact.id); }}>
+              onSelect={() => { onDone(); openPerson(contact.id, contact.chatId); }}>
               <Users size={14} className="shrink-0 text-foreground/40" /><span className="flex-1 truncate">{contact.name}</span>
             </Command.Item>
           ))}

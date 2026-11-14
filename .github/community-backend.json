@@ -1,5 +1,5 @@
 {
-  "repository": "OpenDCAI/gugu-supabase",
-  "ref": "4b12c3c0fa79aaccfddfedd8d68711e0e7e34637",
-  "status": "gugu-supabase dev 4b12c3c0 (includes #262 send groups: files sent at once are one message, gugu#2581)"
+  "repository": "GUYI-AI/gugu-supabase",
+  "ref": "2c9cb6a9b0ef47f2cdb2860f66bb8f1193494833",
+  "status": "Paired draft #267 candidate: personal hiding, history deletion and idempotent native activity. Isolated CI fixture only; not deployed."
 }

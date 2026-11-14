@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect } from 'react'
 import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 import { useChatStore } from '@/store/chatContext'
 import { useContactsStore } from '@/store/contactsContext'
@@ -10,7 +10,7 @@ export function ChatSummariesHost() {
   const { chats: imChats, chatsRead, loadingChats, chatsLoadFailed, identitiesById } = useChatStore('chats', 'chatsRead', 'loadingChats', 'chatsLoadFailed', 'identitiesById')
   const chats = useNativeAgentChats(imChats)
   const { contacts } = useContactsStore()
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (chatsRead) publishChatSummaries(chats, chat => chatDisplayName(chat, identitiesById[chat.peer_user_id ?? '']?.display_name))
     if (chatsRead || loadingChats || chatsLoadFailed) markChatListRestored()
   }, [chats, chatsRead, loadingChats, chatsLoadFailed, identitiesById])

@@ -6,7 +6,7 @@ import { matchTaskTurns } from './task-turn-matches';
 const port = parentPort;
 if (!port) throw new Error('task-turn-search: must run inside a worker thread');
 const connection = new Database((workerData as { database: string }).database, { readonly: true });
-port.on('message', ({ id, query, limit }: { id: number; query: string; limit?: number }) => {
-  try { port.postMessage({ id, matches: matchTaskTurns(connection, query, limit) }); }
+port.on('message', ({ id, query, limit, offset }: { id: number; query: string; limit?: number; offset?: number }) => {
+  try { port.postMessage({ id, matches: matchTaskTurns(connection, query, limit, offset) }); }
   catch (error) { port.postMessage({ id, error: String(error) }); }
 });

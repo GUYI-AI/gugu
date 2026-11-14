@@ -3,6 +3,14 @@ import type { TranscriptTurn } from '../acp';
 
 export const historyClearEpoch = (floor: string) => `:history-cleared:${floor}`;
 
+/** A live message's admitted time survives a provider alias or a later revision of its turn. */
+export function nativeMessageTime(turn: TranscriptTurn, item: Extract<TranscriptTurn['items'][number], { kind: 'message' }>): bigint | undefined {
+  const published = item._meta?.guguPublicationAt;
+  if (typeof published === 'string') return historyTime(published);
+  const at = item.at ?? (item.role === 'user' ? turn.startedAt : turn.endedAt);
+  return at === undefined ? undefined : BigInt(at) * 1_000_000n;
+}
+
 /** A clear boundary belongs to the reader. It does not rewrite the model's context or stop its turn. */
 export function clearedHistoryTurns<T extends TranscriptTurn>(turns: T[], floor?: string | null): T[] {
   if (!floor) return turns;
@@ -11,8 +19,8 @@ export function clearedHistoryTurns<T extends TranscriptTurn>(turns: T[], floor?
     let admitted = false;
     const items = turn.items.filter(item => {
       if (item.kind === 'message') {
-        const at = item.at ?? (item.role === 'user' ? turn.startedAt : turn.endedAt);
-        admitted = at !== undefined && BigInt(at) * 1_000_000n >= boundary;
+        const at = nativeMessageTime(turn, item);
+        admitted = at !== undefined && at >= boundary;
       }
       return admitted;
     });

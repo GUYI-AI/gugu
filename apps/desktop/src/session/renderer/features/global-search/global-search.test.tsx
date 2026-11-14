@@ -131,6 +131,32 @@ const sessionSnapshot = () => latestSession
 const options = () => [...host.querySelectorAll<HTMLElement>('[role=option]')]
 const recentWords = () => [...host.querySelectorAll<HTMLElement>('[data-testid=global-search-recent] button:not([data-testid=global-search-recent-clear])')].map((button) => button.textContent)
 const headers = () => [...host.querySelectorAll<HTMLElement>('[role=listbox] > button:not([role=option])')].map((button) => button.textContent)
+
+it('drops a freshly cached message search after personal deletion while retaining the other conversation', async () => {
+  await render('回滚', false)
+  expect(host.textContent).toContain(rows[0].content)
+  const calls = remote.messages.mock.calls.length
+  remote.messages.mockResolvedValue({ data: [rows[1]], error: null })
+  await act(async () => publishChatSummaries([
+    { id: GROUP, kind: 'group', name: '搜索测试群甲', unread_count: 0, conversation_cleared_at: '2026-11-14T00:00:00.000501Z' },
+    { id: OTHER, kind: 'group', name: '设计组', unread_count: 0 },
+  ]))
+  await settle()
+  expect(host.textContent).not.toContain(rows[0].content)
+  expect(host.textContent).toContain('回滚方案.pdf')
+  expect(remote.messages.mock.calls.length).toBeGreaterThan(calls)
+})
+
+it('does not reuse another account message search when both accounts have no clear boundary', async () => {
+  await render('回滚', false)
+  expect(host.textContent).toContain(rows[0].content)
+  const calls = remote.messages.mock.calls.length
+  remote.messages.mockResolvedValue({ data: [], error: null })
+  await act(async () => publishSelfIdentity({ userId: 'other-account', displayName: null, guguNumber: null }))
+  await settle()
+  expect(host.textContent).not.toContain(rows[0].content)
+  expect(remote.messages.mock.calls.length).toBeGreaterThan(calls)
+})
 const tab = (key: string) => [...host.querySelectorAll<HTMLElement>('[role=tab]')].find((button) => button.textContent!.startsWith(key))!
 
 describe('global search sender avatars', () => {
@@ -295,7 +321,7 @@ describe('global search panel', () => {
     remote.desktop = true
     setNetwork(false)
     await render('orchid', false)
-    expect(queryClient?.getQueryCache().find({ queryKey: ['global-search-messages', 'orchid', null] })?.state.fetchStatus).toBe('paused')
+    expect(queryClient?.getQueryCache().find({ queryKey: ['global-search-messages', 'orchid', null, 'me-1'] })?.state.fetchStatus).toBe('paused')
     expect(remote.messages).not.toHaveBeenCalled()
     expect(remote.local).not.toHaveBeenCalled()
   })

@@ -37,4 +37,9 @@ describe('personal native history clear', () => {
     expect(value.nextCursor).toBeNull()
     expect(clearedHistoryResult(value, floor).epoch).toBe(value.epoch)
   })
+  it('keeps a cleared message hidden when an alias or late turn revision carries a newer provider time', () => {
+    const value = turn()
+    value.items[0] = { ...value.items[0], at: at + 5000, _meta: { guguPublicationAt: new Date(at - 1000).toISOString() } } as typeof value.items[number]
+    expect(clearedHistoryTurns([value], floor)[0].items.map(item => item.id)).toEqual(['new'])
+  })
 })

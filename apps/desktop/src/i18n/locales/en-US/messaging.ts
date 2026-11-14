@@ -270,7 +270,7 @@ export default {
     "removeFromList": "Remove from list",
     "hideAgentDescription": "This conversation will leave your list and return when a new message arrives.",
     "alsoRemoveAgent": "Also delete this Agent",
-    "hiddenAgentDeleteFailed": "Removed from list, but could not delete the Agent",
+    "hiddenAgentDeleteFailed": "Conversation history deleted, but could not delete the Agent",
     "retryAgentDelete": "Retry deleting Agent",
     "agentDeleted": "Agent deleted",
     "hiddenRefreshFailed": "Removed from list, but the list could not refresh. Please retry.",

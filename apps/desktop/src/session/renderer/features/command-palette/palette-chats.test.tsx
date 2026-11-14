@@ -97,4 +97,16 @@ describe('quick switcher groups and contacts', () => {
       window.removeEventListener(UI_EVENTS.openContact, openContact);
     }
   });
+
+  it('finds a retained private conversation by name even when its peer is absent from contacts, and opens that existing chat', async () => {
+    publishChatSummaries([{ id: '0b1e7c1a-0000-4000-8000-000000000004', kind: 'dm', peer_user_id: 'former-contact', name: '保留的私聊', unread_count: 0 }]);
+    publishContactSummaries([]);
+    await render('保留');
+    expect(rows()).toEqual(['保留的私聊']);
+    await act(async () => (host.querySelector('[cmdk-item]') as HTMLElement).click());
+    expect(opened.links).toEqual([conversationLink('0b1e7c1a-0000-4000-8000-000000000004')]);
+    await act(async () => publishContactSummaries([{ id: 'former-contact', name: '保留的私聊' }]));
+    await render('保留');
+    expect(rows()).toEqual(['保留的私聊']);
+  });
 });

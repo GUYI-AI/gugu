@@ -15,12 +15,17 @@ export async function nativeConversationHistoryFloor(sessionId: string): Promise
   if (readingFloors.has(key)) return readingFloors.get(key)!;
   const read = (async () => {
     const cached = nativeHistoryFloorCache(owner.ownerUserId, sessionId);
+    const sameOwner = async () => {
+      if (currentHost !== host || (await host.context(sessionId))?.ownerUserId !== owner.ownerUserId) throw new Error('Native history account changed while reading');
+    };
     try {
       const incoming = await host.historyFloor!(sessionId);
+      await sameOwner();
       const floor = cached?.floor && (!incoming || historyTime(cached.floor) > historyTime(incoming)) ? cached.floor : incoming;
-      saveNativeHistoryFloor(owner.ownerUserId, sessionId, floor);
+      if (!cached || cached.floor !== floor) saveNativeHistoryFloor(owner.ownerUserId, sessionId, floor);
       return floor;
     } catch (error) {
+      await sameOwner();
       if (cached && /fetch failed|failed to fetch|network|timeout/i.test(String(error))) return cached.floor;
       throw error;
     }
