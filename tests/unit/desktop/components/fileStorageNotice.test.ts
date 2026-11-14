@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { chat, createReactHarness, message, renderWithAppProviders } from '../../../support/testHarness'
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
 import { FileStorageNotice } from '../../../../apps/desktop/src/components/chat/FileStorageNotice'
-import { fileStorageUsageClient } from '../../../../apps/desktop/src/components/chat/fileStorageUsage'
+import { queryClient as fileStorageUsageClient } from '../../../../apps/desktop/src/lib/readModel'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 
 const rpc = vi.hoisted(() => vi.fn())

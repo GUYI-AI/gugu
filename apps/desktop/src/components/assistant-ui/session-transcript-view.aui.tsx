@@ -9,7 +9,7 @@ import { createSessionChatContext } from '@renderer/lib/chat/shared-chat-context
 import { applyTranscriptSnapshot, planHistorySync, splitActiveTurn } from './transcript-sync'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { batch } from 'solid-js'
-import { queryClient } from '@renderer/lib/query-client'
+import { queryClient } from '@/lib/readModel'
 import { useMobileShell } from '@/hooks/useMobileShell'
 
 export type SessionBackgroundTasks = Parameters<ChatState['session']['setBackgroundTasks']>[0]

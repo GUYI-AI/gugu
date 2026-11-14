@@ -7,7 +7,7 @@ import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../../apps/
 import { APP_FRAME_MARKER, APP_RUNTIME_GATE_PAGE } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol';
 
 vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => ({}) }));
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => null }));
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => null }));
 const manifest = parseExtensionManifest({ id: 'board', name: 'Board', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'main.html', contributes: { tabs: [{ name: 'main', title: 'Board' }] } });
 let frame: HTMLIFrameElement;
 let host: ReturnType<typeof hostAppFrame>;
