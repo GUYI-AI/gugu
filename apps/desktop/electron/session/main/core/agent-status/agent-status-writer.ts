@@ -161,6 +161,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
     if (raced) return raced;
     const status = parseAgentStatus(row.agentStatus);
     const detail = parseAgentStatusDetail(row.agentStatusDetail, status);
+    if (status === 'error' && row.agentStatusSeen === 1) acknowledgeErrorNotice(sessionId);
     const entry: SessionStatusLog = {
       projectId: row.projectId,
       state: restoreStatusLog(status, detail),

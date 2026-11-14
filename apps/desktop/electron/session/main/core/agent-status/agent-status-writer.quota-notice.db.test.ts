@@ -64,6 +64,14 @@ describe('acknowledged persistent quota errors', () => {
   it('does not deduplicate a failure nobody has opened', async () => {
     await fail(); await fail(); expect(row()).toEqual({ status: 'error', seen: 0 });
   });
+  it.each([0, 1])('recognizes a stored quota error from before the upgrade (seen=%s)', async seen => {
+    fixture.sqlite.prepare("UPDATE sessions SET agent_status = 'error', agent_status_seen = ?, config = ? WHERE id = 'c1'")
+      .run(seen, JSON.stringify({ version: '1', type: 'acp', model: 'model-a' }));
+    fixture.sqlite.prepare("INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES ('t1', 'c1', 0, 't1', ?)")
+      .run(JSON.stringify({ outcome: { kind: 'error', detail: weekly } }));
+    if (!seen) await agentStatusWriter.markSeen('c1');
+    await fail(); expect(row()).toEqual({ status: 'error', seen: 1 });
+  });
   it('a failed durable read cannot poison the writer cache or acknowledge the quota', async () => {
     await fail();
     fixture.sqlite.exec("CREATE TRIGGER reject_seen BEFORE UPDATE OF agent_status_seen ON sessions WHEN NEW.agent_status_seen = 1 BEGIN SELECT RAISE(ABORT, 'read write failed'); END");
