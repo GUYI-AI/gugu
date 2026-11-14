@@ -392,7 +392,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
         onRemove={id => { if (!inFlight.current) { const imageId = annotationImageId(id); uploads.forget(imageId); setAttachments(current => current.filter(file => file.id !== imageId)) } }} /> : null}
       attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')} onAttachmentsChange={changeAttachments}
       onRetryAttachment={uploads.retry} onFilesDropped={addFiles} onImageFilesDropped={addFiles}
-      toolbarExtra={<><ComposerAttachButton disabled={sending} mobile glyph={appPanel ? <Plus /> : undefined} onPickFile={() => input.current?.click()} /></>} />
+      toolbarExtra={<><ComposerAttachButton disabled={sending} mobile glyph={!mobile && appPanel ? <Plus /> : undefined} onPickFile={() => input.current?.click()} /></>} />
   </>
   return <SessionUiTheme theme={theme}><MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
     <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} sourceWindow={boundedWindowReady(timeline) ? timeline : undefined} turns={turns} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}

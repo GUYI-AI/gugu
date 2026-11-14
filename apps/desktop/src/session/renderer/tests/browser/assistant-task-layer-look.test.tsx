@@ -190,6 +190,7 @@ it.each(['light', 'dark'] as const)('over the App panel the task reads as part o
   //    permission or harness.
   const input = host.querySelector('[data-slot="composer-input"]')!;
   const composer = host.querySelector('[data-slot="composer"]') ?? input.parentElement!;
+  expect(composer.hasAttribute('data-phone-capsule')).toBe(false);
   expect(input.textContent + (input.querySelector('[data-placeholder]')?.getAttribute('data-placeholder') ?? '')).toContain('和能力测试:写一份说明聊天');
   expect(host.querySelector('[data-testid="composer-model-trigger"]')).toBeNull();
   expect(host.querySelector('[data-composer-locked-agent]')).toBeNull();

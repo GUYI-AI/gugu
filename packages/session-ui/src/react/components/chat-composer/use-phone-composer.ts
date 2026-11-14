@@ -7,7 +7,12 @@ export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement
   const expandedRef = useRef(false);
 
   useLayoutEffect(() => {
-    if (!mobile) return;
+    if (!mobile) {
+      expandedRef.current = false;
+      setExpanded(false);
+      root.current?.style.removeProperty('min-height');
+      return;
+    }
     const node = root.current;
     const editor = node?.querySelector<HTMLElement>('[contenteditable]');
     if (!node || !editor) return;
@@ -42,6 +47,20 @@ export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement
       viewport?.removeEventListener('scroll', measure);
       window.removeEventListener('resize', measure);
       for (const edge of ['top', 'height', 'left', 'width']) node.style.removeProperty(`--phone-editor-viewport-${edge}`);
+    };
+  }, [mobile, expanded, root]);
+
+  useLayoutEffect(() => {
+    if (!mobile || !expanded) return;
+    const panel = root.current?.querySelector<HTMLElement>('[data-slot="composer-bar"]');
+    if (!panel || typeof panel.showPopover !== 'function') return;
+    // The top layer escapes container-query/transform containing blocks on phone WebViews.
+    // The editor stays in this same DOM subtree; manual popovers neither autofocus nor dismiss on outside taps.
+    panel.setAttribute('popover', 'manual');
+    panel.showPopover();
+    return () => {
+      panel.hidePopover();
+      panel.removeAttribute('popover');
     };
   }, [mobile, expanded, root]);
 
