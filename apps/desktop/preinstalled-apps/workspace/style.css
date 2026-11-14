@@ -306,6 +306,28 @@ body[data-mode='edit'] .panes, body[data-mode='preview'] .panes, body[data-kind=
 body[data-mode='edit'] .preview, body[data-mode='preview'] .editor { display: none; }
 .preview-cut { flex: none; margin: 0; padding: var(--em-spacing-xs) 18px; color: var(--em-foreground-muted); }
 body[data-mode='edit'] .preview-cut, .preview-cut[hidden] { display: none; }
+/* The outline (outline.js; owner 11-14, as Feishu has it): the document's headings in the room left of the reading column,
+   only while reading. That room is (pane − 720) / 2; where it is too narrow, the outline folds to a rail of short lines in
+   the margin, its list drawn over the text while the pointer is on it. A touch screen has no margin to put it in. */
+.panes { position: relative; container: panes / inline-size; }
+.outline { position: absolute; z-index: 2; top: 16px; left: 24px; width: 184px; max-height: calc(100% - 48px); box-sizing: border-box; overflow: auto; scrollbar-width: none; display: flex; flex-direction: column; gap: 2px; }
+.outline[hidden], body:not([data-mode='preview']) .outline, body.empty-doc .outline { display: none; }
+.outline-item { flex: none; display: block; width: 100%; min-height: 0; padding: 4px 8px; border: 0; border-radius: var(--em-radius-control); background: none; color: var(--em-foreground-muted); font-size: var(--em-font-caption); line-height: var(--em-lh-caption); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.outline-item[data-depth='1'] { padding-left: 20px; }
+.outline-item[data-depth='2'] { padding-left: 32px; }
+.outline-item:hover { background: var(--em-hover); color: var(--em-foreground); }
+.outline-item[aria-current] { color: var(--em-foreground); font-weight: 600; }
+.preview > .gg-md > :is(h1, h2, h3) { scroll-margin-top: 16px; }
+@container panes (max-width: 1167px) {
+  .outline { left: 12px; }
+  .outline:not(:hover, :focus-within) { width: 28px; gap: 8px; padding: 6px; }
+  .outline:not(:hover, :focus-within) > .outline-item { width: 16px; height: 2px; padding: 0; border-radius: 1px; font-size: 0; background: var(--em-border-1); }
+  .outline:not(:hover, :focus-within) > .outline-item[data-depth='1'] { width: 12px; }
+  .outline:not(:hover, :focus-within) > .outline-item[data-depth='2'] { width: 8px; }
+  .outline:not(:hover, :focus-within) > .outline-item[aria-current] { background: var(--em-foreground); }
+  .outline:is(:hover, :focus-within) { width: 240px; padding: 6px; border: 1px solid var(--em-border); border-radius: var(--em-radius-control); background: var(--em-background); box-shadow: var(--em-shadow-dialog); }
+}
+@media (hover: none) and (pointer: coarse) { .outline { display: none; } }
 body[data-kind='json']:not(.read-in-host) .modes, body[data-kind='json'] .preview { display: none; }
 body[data-kind='json'] .editor { display: block; }
 body.json-dirty .json-actions { display: flex; }
