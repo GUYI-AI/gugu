@@ -40,7 +40,7 @@ async function archive(name: string, files: Record<string, string | Buffer>): Pr
 
 it.each(['dws', 'wecom-cli'] as const)('installs the verified Windows %s executable and Skills without vendor install scripts', async tool => {
   const program = Buffer.from('MZ-Windows-test-program');
-  const recipe = cliToolRecipe(tool);
+  const recipe = cliToolRecipe(tool, 'win32');
   let pkg: Buffer;
   if (tool === 'dws') {
     const zip = new JSZip(); zip.file('dws.exe', program);

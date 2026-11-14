@@ -307,7 +307,7 @@ export class IntegrationConnectionService {
         await setFeishuUserIdentity(installed);
         if (!current()) return superseded;
         const connected = await this.connect(integrationId, { tool: recipe.tool, connectedAt: Date.now() }, undefined, includeAccountId);
-        if (!connected.success) return connected;
+        if (!connected.success) return { success: false, error: cliFailureMessage(connected.error, 'verify') };
         try {
           await publishCliLauncher(recipe, installed);
         } catch (error) {
@@ -389,7 +389,7 @@ export class IntegrationConnectionService {
       if (this.cliLogins.get(integrationId) !== pending) return { status: 'failed', error: '授权已取消。' };
       // 先记连接、再放命令:「agent 的 PATH 上有它」必须意味着「记着连着」。放命令失败就撤回记录。
       const connected = await this.connect(integrationId, { tool: recipe.tool, connectedAt: Date.now() }, undefined, pending.includeAccountId);
-      if (!connected.success) return { status: 'failed', error: connected.error };
+      if (!connected.success) return { status: 'failed', error: cliFailureMessage(connected.error, 'verify') };
       try {
         await publishCliLauncher(recipe, installed);
       } catch (error) {
@@ -689,7 +689,7 @@ export class IntegrationConnectionService {
         if (!loggedIn) {
           return {
             connected: false,
-            error: `${recipe.bin} is not logged in any more.`,
+            error: '授权已失效，请重新连接。',
             errorType: 'authorization_expired',
             capabilities,
           };

@@ -66,7 +66,7 @@ export type CliToolRecipe = {
   parseStatus(stdout: string): boolean;
 };
 
-const DWS_VERSION = '1.0.68';
+const DWS_VERSION = '1.0.64';
 const WECOM_VERSION = '1.3.4';
 const WECOM_INTEGRITY: Record<CliPlatform, string> = {
   'win32-x64': 'sha512-FomGDkkDVZpKB9GZjAdMvR7491z9DMiaEzYQyDkA+3Yx6I100gJFnIJ31VZr6oMIRrZCT19GzNP+7c4DzuoPbg==',
@@ -89,7 +89,7 @@ const dws: CliToolRecipe = {
   binaryPackage: () => ({
     name: 'dingtalk-workspace-cli',
     version: DWS_VERSION,
-    integrity: 'sha512-ONgoyNSUGN9o7M/1UR4ZAjXrLiPn5DaTXN8Y2LsmshVExYNtpU0Ko/DcPl2ulutw6Xfw2CPBSsgZhRCfRzoQqA==',
+    integrity: 'sha512-0ySv3ZezEeMwYY4m3Db7AEON9DceVr/dQaS2lz07gy/fIlNMh50qbnQN7Llqc5B5CjuZoUrBKUaspTbJN0Vyaw==',
   }),
   // 关掉系统钥匙串:登录态落在 `home` 下的加密文件里,咕咕删得掉、也搬得走(dws README「Migrate auth」)。
   // Preserve existing macOS/Linux paths. Windows v1.0.68 derives a private
@@ -138,7 +138,19 @@ export function wecomQrPath(work: string): string {
 
 const RECIPES: Record<IntegrationCliTool, CliToolRecipe> = { dws, 'wecom-cli': wecom, 'lark-cli': feishuCliRecipe, tmeet: tmeetCliRecipe };
 
-export function cliToolRecipe(tool: IntegrationCliTool): CliToolRecipe {
+// Keep existing macOS/Linux installations and managed images usable without
+// forcing a download merely to read a connection or start a session. Windows
+// needs the first published release with directory-scoped registry credentials.
+const dwsWindows: CliToolRecipe = {
+  ...dws,
+  version: '1.0.68',
+  binaryPackage: () => ({ name: 'dingtalk-workspace-cli', version: '1.0.68',
+    integrity: 'sha512-ONgoyNSUGN9o7M/1UR4ZAjXrLiPn5DaTXN8Y2LsmshVExYNtpU0Ko/DcPl2ulutw6Xfw2CPBSsgZhRCfRzoQqA==',
+  }),
+};
+
+export function cliToolRecipe(tool: IntegrationCliTool, platform: NodeJS.Platform = process.platform): CliToolRecipe {
+  if (tool === 'dws' && platform === 'win32') return dwsWindows;
   return RECIPES[tool];
 }
 

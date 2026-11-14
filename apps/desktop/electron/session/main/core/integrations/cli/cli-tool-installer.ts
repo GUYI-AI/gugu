@@ -106,9 +106,7 @@ async function install(tool: IntegrationCliTool): Promise<InstalledCliTool> {
   await fs.mkdir(path.join(staging, 'bin'), { recursive: true });
   await fs.mkdir(path.join(staging, 'skills'), { recursive: true });
   try {
-    // A managed image may still contain the previous pinned version. Never
-    // install those bytes under the new version marker.
-    const managedRoot = recipe.version === DWS_LINUX_PRODUCT.version ? managedProductRoot(tool, platform) : undefined;
+    const managedRoot = managedProductRoot(tool, platform);
     const preinstalled = managedRoot ? undefined : preinstalledCliVersions(recipe);
     if (preinstalled) {
       // 云电脑本该用镜像里那份,却要下载:多半是客户端先升了版本、镜像还是旧的。留一句,查「为什么又在下载」。

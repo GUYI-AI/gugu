@@ -94,7 +94,8 @@ describe('平台', () => {
 
   it('wecom-cli 按平台取它那个程序包;dws 一个包带全平台', () => {
     expect(cliToolRecipe('wecom-cli').binaryPackage('linux-arm64')).toMatchObject({ name: '@wecom/cli-linux-arm64', version: '1.3.4' });
-    expect(cliToolRecipe('dws').binaryPackage('linux-arm64')).toMatchObject({ name: 'dingtalk-workspace-cli', version: '1.0.68' });
+    expect(cliToolRecipe('dws', 'linux').binaryPackage('linux-arm64')).toMatchObject({ name: 'dingtalk-workspace-cli', version: '1.0.64' });
+    expect(cliToolRecipe('dws', 'win32').binaryPackage('win32-x64')).toMatchObject({ name: 'dingtalk-workspace-cli', version: '1.0.68' });
     expect(cliToolRecipe('wecom-cli').binaryPackage('win32-x64')).toMatchObject({ name: '@wecom/cli-win32-x64', version: '1.3.4' });
   });
 
