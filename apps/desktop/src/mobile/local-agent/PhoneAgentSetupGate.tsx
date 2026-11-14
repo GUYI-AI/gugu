@@ -27,6 +27,7 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
   const [retry, setRetry] = useState(0)
   const requested = useSyncExternalStore(subscribePhoneAgentSetup, () => phoneAgentSetupRequest(ownerId), () => 0)
   const handled = useRef(new Map<string, number>())
+  const dismissedBeforeIdentity = useRef<string | null>(null)
   const currentSetup = setup?.ownerId === ownerId && setup.request === retry && (!identity.ios || setup.installId === iosInstallationId) ? setup : null
 
   useEffect(() => {
@@ -41,7 +42,12 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
       if (!alive) return
       // Progress belongs to the native installation, never a restored WebView identifier.
       try {
-        const progress = readPhoneAgentSetup(ownerId, installId)
+        let progress = readPhoneAgentSetup(ownerId, installId)
+        if (dismissedBeforeIdentity.current === ownerId) {
+          progress = { ...progress, dismissed: true }
+          savePhoneAgentSetup(ownerId, installId, progress)
+          dismissedBeforeIdentity.current = null
+        }
         setSetup({ ownerId, request: retry, installId, progress })
         setError(null)
         setVisible(!progress.dismissed && !progress.completed)
@@ -83,7 +89,9 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
     }
   }
   const dismiss = () => {
+    handled.current.set(ownerId, requested)
     if (currentSetup) save({ ...currentSetup.progress, dismissed: true })
+    else dismissedBeforeIdentity.current = ownerId
     setVisible(false)
   }
 

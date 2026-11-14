@@ -114,6 +114,18 @@ describe('iOS reuses the phone setup and host controls', () => {
     ready(); await publish()
     expect(element('phone-agent-setup-form')).not.toBeNull()
   })
+  it('honors Later while identity is pending and permits an explicit reopen afterwards', async () => {
+    setLocalePreference('en-US')
+    native.publication = { status: 'publishing', binding: null, error: null }
+    await h.render(product()); await clickElement(element('agent-watch-setup-phone'))
+    const later = [...h.container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Use Gugu first')!
+    await clickElement(later)
+    ready(); await publish()
+    expect(element('phone-agent-setup-form')).toBeNull()
+    expect(readPhoneAgentSetup(native.owner, 'install-a').dismissed).toBe(true)
+    await clickElement(element('agent-watch-setup-phone'))
+    expect(element('phone-agent-setup-form')).not.toBeNull()
+  })
   it('keeps a completed installation quiet and hides the entry when the native host is unavailable', async () => {
     savePhoneAgentSetup(native.owner, 'install-a', { step: 'tools', dismissed: true, completed: true })
     await h.render(product()); expect(element('phone-agent-setup-form')).toBeNull()
