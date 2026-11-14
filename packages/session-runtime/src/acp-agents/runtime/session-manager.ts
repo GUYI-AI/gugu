@@ -2738,6 +2738,7 @@ export class SessionManager implements InboundRouter {
       isGenerating: state.isGenerating,
       lastStopReason: cell?.sessionState.lastStopReason ?? null,
       lastTurnOutcome: cell?.sessionState.lastTurnOutcome ?? 'none',
+      lastTurnError: cell?.lastTurnError ?? null,
       pendingPermissionCount: state.pendingPermissionCount ?? state.pendingPermissions?.length ?? 0,
       // 起动 / 起不来的占位摘要没有 cell、也就没有任何待决请求(`pendingPermissionCount: 0`)。
       pendingPermissionWaits: pendingPermissionWaits(state.pendingPermissions ?? []),
