@@ -17,7 +17,8 @@ export function compareServerVersions(a: string, b: string): number {
   if (x.hasSuffix !== y.hasSuffix) return x.hasSuffix ? -1 : 1
   for (let i = 0; i < Math.max(x.suffix.length, y.suffix.length); i += 1) {
     const left = x.suffix[i] ?? 0, right = y.suffix[i] ?? 0;
-    const d = typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right));
+    const d = typeof left === 'number' && typeof right === 'number' ? left - right
+      : typeof left === 'number' ? -1 : typeof right === 'number' ? 1 : left < right ? -1 : left > right ? 1 : 0;
     if (d !== 0) return d
   }
   return 0

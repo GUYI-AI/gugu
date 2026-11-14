@@ -8,3 +8,6 @@ import { creditDecimal } from '@gugu/core/billing/creditAmount'
 it('ignores SemVer build metadata when comparing versions', () => {expect(compareServerVersions('1.2.3+build.5','1.2.3')).toBe(0);expect(compareServerVersions('1.2.3-beta.2+build.9','1.2.3-beta.2')).toBe(0)})
 
 it('orders textual prerelease identifiers lexically', () => {expect(compareServerVersions('1.0.0-beta.1','1.0.0-alpha.1')).toBeGreaterThan(0);expect(compareServerVersions('1.0.0-beta.1','1.0.0-rc.1')).toBeLessThan(0)})
+
+
+it('orders numeric prerelease identifiers before textual identifiers', () => {expect(compareServerVersions('1.0.0-2','1.0.0-1alpha')).toBeLessThan(0);expect(compareServerVersions('1.0.0-1alpha','1.0.0-2')).toBeGreaterThan(0)})
