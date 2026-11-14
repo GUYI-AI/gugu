@@ -1178,6 +1178,11 @@ input::placeholder {
   color: var(--color-text-placeholder);
 }
 
+/* A one-line field narrower than its words (a long placeholder on a phone) ends them with an ellipsis, not mid-letter. */
+input {
+  text-overflow: ellipsis;
+}
+
 /* Themed scrollbar —— 只给鼠标指针的宿主。
    ::-webkit-scrollbar 一旦被定义,WebKit/Blink 就把那个元素换成**经典**滚动条:常驻、占布局宽度。
    触屏上这会把系统自带的「滚动时才浮出、停下就消失」的悬浮条换掉 —— 安卓 App 里每个可滚区域

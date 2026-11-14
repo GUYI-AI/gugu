@@ -165,7 +165,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
       <div className="flex h-12 shrink-0 items-center gap-2 px-4">
         <Search className="h-4 w-4 shrink-0 text-foreground/40" />
         {chips.map((chip, index) => (
-          <span key={`${chip.kind}:${index}`} className="flex h-6 max-w-40 shrink-0 items-center gap-1 rounded-md bg-foreground/[0.06] pl-2 pr-1 text-xs text-foreground/75">
+          <span key={`${chip.kind}:${index}`} className="flex h-6 min-w-0 max-w-40 items-center gap-1 rounded-md bg-foreground/[0.06] pl-2 pr-1 text-xs text-foreground/75">
             <span className="truncate">{chipLabel(chip)}</span>
             <button type="button" aria-label={translate('globalSearch.removeChip')} onClick={() => setChips(chips.filter((_, at) => at !== index))}
               className="grid h-5 w-5 place-items-center rounded text-foreground/40 hover:bg-foreground/10 hover:text-foreground"><X className="h-3 w-3" /></button>

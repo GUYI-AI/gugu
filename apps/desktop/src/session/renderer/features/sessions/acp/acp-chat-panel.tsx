@@ -50,7 +50,7 @@ import { observer, useObserver } from 'mobx-react-lite';
 import { collectBackgroundCommands, collectSubagents } from '@renderer/features/sessions/view/background-task-rosters';
 import { dismissSubagent } from '@renderer/features/sessions/view/subagent-dismissals';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { nativeChatAppearance } from '@renderer/lib/chat/native-chat-appearance.css';
 import { useMarkSeenWhenShown } from '@renderer/features/sessions/hooks/use-mark-seen-when-shown';
 import { createPortal, flushSync } from 'react-dom';
@@ -547,7 +547,7 @@ const ComposerForStore = observer(function ComposerForStore({
     [store, translate]
   );
 
-  const composerShown = useContext(PageShownContext);
+  const composerShown = useContext(SurfaceShownContext);
   const inputAccount = useSessionInputAccount();
   useEffect(() => {
     if (!composerShown) return;
@@ -1594,7 +1594,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const activeTab = pane.resolvedTabs.find((t) => t.isActive && t.kind === tabKind);
   const store = activeTab ? (activeTab.resource as AcpChatTabResource).store : null;
 
-  const visibility = useConversationVisibility(useContext(PageShownContext));
+  const visibility = useConversationVisibility(useContext(SurfaceShownContext));
   useRememberNativeTail(store?.projectId, store?.runtimeSessionId, store?.affordances.isBusy ?? false, visibility.shown);
   useOwnerNotifications(store, visibility.shown);
   const rootRef = visibility.ref;

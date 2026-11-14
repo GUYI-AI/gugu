@@ -1,11 +1,8 @@
-import { createContext, useRef } from 'react';
+import { useRef } from 'react';
 
 /** Session pages kept mounted (hidden) after you leave them; the 7th most recent is unmounted. */
 export const RETAINED_SESSION_PAGES = 6;
 export type SessionParams = { projectId: string; sessionId: string };
-
-/** False inside a retained session page that is not on screen; true everywhere else. */
-export const PageShownContext = createContext(true);
 
 /**
  * @@@retained-session-pages — every session page you visited stays mounted, hidden, until it falls out of

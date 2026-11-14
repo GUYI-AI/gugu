@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useContext, useEffect, useRef, useState } from 'react';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import type { ResolvedTab, TabContentProps } from '@renderer/features/tabs/core/tab-provider';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { events, rpc } from '@renderer/lib/ipc';
@@ -114,7 +114,7 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
 });
 
 export const TabContent = observer(function TaskPageTabContent({ host }: TabContentProps) {
-  const pageActive = useContext(PageShownContext);
+  const pageActive = useContext(SurfaceShownContext);
   const tabs = host.resolvedTabs.filter((t): t is ResolvedTab<TaskPageResource> => t.kind === 'task-page');
   return (
     <>

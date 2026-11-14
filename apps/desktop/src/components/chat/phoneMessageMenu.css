@@ -51,7 +51,9 @@
   transform-origin: var(--origin);
   animation: gg-phone-menu-pop 340ms var(--gg-phone-menu-ease) both;
 }
-.gg-phone-menu-reactions { border-radius: 24px; padding: 2px 4px; }
+.gg-phone-menu-reactions { border-radius: 24px; padding: 2px 4px; box-sizing: border-box; max-width: calc(100vw - 16px); }
+/* Seven touch-size buttons are wider than a 300 px page (a phone at a large system font size): they share the row instead. */
+.gg-phone-menu-reactions [role='group'] > * { width: 100%; max-width: var(--control-h-touch); min-width: 0; }
 .gg-phone-menu-reactions[data-expanded] { width: min(366px, calc(100vw - 16px)); border-radius: var(--radius-surface); padding: 8px; }
 .gg-phone-menu-reactions [role='group'] { padding-bottom: 0; }
 .gg-phone-menu-reactions [role='group'] > * { animation: gg-phone-menu-pop 340ms var(--gg-phone-menu-ease) both; }

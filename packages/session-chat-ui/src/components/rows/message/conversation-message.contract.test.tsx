@@ -8,6 +8,7 @@ import { ThemeContext } from '@session-chat/components/contexts/ThemeContext';
 import { CachesContext } from '@session-chat/components/contexts/CachesContext';
 import { SelfIdentityProvider } from '@session-chat/lib/self-identity';
 import { ConversationProcess } from './ConversationProcess';
+import { ViewShownContext } from '@session-chat/view-visibility';
 import { conversationBubbleKey } from './conversation-body';
 import { createChatCaches } from '@session-chat/core/caches';
 import { DEFAULT_CONFIG, buildChatTheme } from '@session-chat/core/config';
@@ -109,6 +110,32 @@ it('draws the reader\'s own delivered message with a file and words once each, a
 });
 
 describe('agent-centered conversation bubbles', () => {
+  it('stops the running process clock while its view is hidden and reads the time once when shown again', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const host = document.createElement('div');
+    document.body.append(host);
+    const [shown, setShown] = createSignal(true);
+    let reads = 0;
+    const measureCtx: MeasureCtx = { theme: buildChatTheme(DEFAULT_CONFIG), caches: createChatCaches(), width: 320, isCollapsed: () => false, expanded: () => false };
+    const dispose = render(() => <ViewShownContext.Provider value={shown}>
+      <CommandsContext.Provider value={() => ({ conversationClock: () => { reads += 1; return 60_000 + reads * 1000; } })}>
+        <ConversationProcess measureCtx={() => measureCtx} process={{ id: 'p', steps: 2, live: true, startedAt: 0 }} anchorId="p" expanded={false} />
+      </CommandsContext.Provider>
+    </ViewShownContext.Provider>, host);
+    try {
+      vi.advanceTimersByTime(3000);
+      const ticking = reads;
+      expect(ticking).toBeGreaterThanOrEqual(3);
+      setShown(false);
+      vi.advanceTimersByTime(10_000);
+      expect(reads - ticking, 'no ticks while hidden').toBe(0);
+      setShown(true);
+      expect(reads - ticking, 'one read on showing').toBe(1);
+      vi.advanceTimersByTime(1000);
+      expect(reads - ticking).toBe(2);
+    } finally { dispose(); host.remove(); vi.useRealTimers(); }
+  });
+
   it('keeps an authorized system notice visible in a closed zero-step process header', () => {
     const host = document.createElement('div');
     host.style.width = '320px';

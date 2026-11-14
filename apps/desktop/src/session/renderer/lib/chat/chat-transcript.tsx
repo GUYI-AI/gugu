@@ -32,7 +32,7 @@ import type {
   ChatViewOptions,
   TranscriptTurn,
 } from '@gugu/session-chat-ui';
-import { createElement, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { createElement, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Hint } from '@/components/ui/Tooltip';
 import { FailedSendStatus } from '@/components/chat/FailedSendStatus';
@@ -44,9 +44,7 @@ import { toast } from '@renderer/lib/hooks/use-toast';
 import { messageForUser } from '@/lib/userFacingError';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { platform } from '@/platform';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
-import { TabLayerShownContext } from '@renderer/features/tabs/retained-tab-content';
-import { isEmbedVisible, subscribeEmbedVisibility } from '../portal-container';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 
 const onCopyError = (error: unknown) => toast({ title: translateSessionMessage('task.copyFailed'), description: messageForUser(error), tier: 'error' });
 const writeClipboardText = (text: string) => platform.writeClipboardText(text);
@@ -113,10 +111,7 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
   const ref = useRef<HTMLDivElement>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
-  const pageShown = useContext(PageShownContext);
-  const layerShown = useContext(TabLayerShownContext);
-  const embedVisible = useSyncExternalStore(subscribeEmbedVisibility, isEmbedVisible);
-  const shown = pageShown && layerShown && embedVisible;
+  const shown = useContext(SurfaceShownContext);
   const shownRef = useRef(shown);
   shownRef.current = shown;
 

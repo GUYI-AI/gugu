@@ -7,7 +7,7 @@ import { type Terminal } from '@xterm/xterm';
 import { isMacHost, isWindowsHost } from '@shared/host-os';
 import { reaction } from 'mobx';
 import { useCallback, useContext, useEffect, useRef } from 'react';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { dispatchMatchingHotkeys } from '@renderer/lib/hotkeys/dispatch-matching-hotkeys';
 import { events, rpc } from '@renderer/lib/ipc';
 import { observePtyOutput } from '../session-output-observers';
@@ -294,7 +294,7 @@ export function usePty(
     })();
   }, [focus, sendInput]);
 
-  const pageShown = useContext(PageShownContext);
+  const pageShown = useContext(SurfaceShownContext);
 
   // ─── Main effect: mount terminal once per sessionId ────────────────────────
 
