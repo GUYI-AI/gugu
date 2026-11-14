@@ -46,9 +46,9 @@ function main() {
       if (!existsSync(ipa) || !ipa.endsWith('.ipa')) throw new Error('IOS_IPA must be an exported device IPA')
       // Only metadata is passed here. altool reads its own key from a protected external directory.
       required('API_PRIVATE_KEYS_DIR')
-      const auth = ['--apiKey', required('ASC_KEY_ID'), '--apiIssuer', required('ASC_ISSUER_ID')]
-      run('validate', '/usr/bin/xcrun', ['altool', '--validate-app', '-f', ipa, '-t', 'ios', ...auth])
-      run('upload', '/usr/bin/xcrun', ['altool', '--upload-app', '-f', ipa, '-t', 'ios', ...auth])
+      const auth = ['--api-key', required('ASC_KEY_ID'), '--api-issuer', required('ASC_ISSUER_ID')]
+      run('validate', '/usr/bin/xcrun', ['altool', '--validate-app', ipa, ...auth])
+      run('upload', '/usr/bin/xcrun', ['altool', '--upload-package', ipa, ...auth])
       receipt.status = 'uploaded-awaiting-processing'
     } else {
       const versions = versionSettings(required('IOS_VERSION'), required('IOS_BUILD'))
