@@ -1,6 +1,6 @@
 import type { ProjectionFrame, ProjectionHostPacket, ProjectionInput } from '@shared/extensions/projection-protocol';
 import { PROJECTION_FRAME_BYTES } from '@shared/extensions/projection-protocol';
-import type { TaskPageControl, TaskPageState } from '@shared/browser-task-page';
+import type { TaskPageControl, TaskPageControlResult, TaskPageState } from '@shared/browser-task-page';
 import { ExtensionProjections } from '../extensions/extension-projections';
 import type { TaskPageScreenTarget } from '../../../../server/server-task-browser';
 
@@ -105,7 +105,7 @@ async function openScreen(sessionId: string, page: TaskPageScreenTarget): Promis
  */
 export async function connectTaskPageScreen(sessionId: string, page: () => Promise<TaskPageScreenTarget | null>,
   send: (packet: ProjectionHostPacket) => void, state: (state: TaskPageState) => void = () => {},
-): Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<void>; close(): void }> {
+): Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<TaskPageControlResult>; close(): void }> {
   let entry = open.get(sessionId);
   if (!entry) {
     const target = await page();

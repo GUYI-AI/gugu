@@ -57,3 +57,6 @@ export const browserLinkCopiedChannel = defineEvent<{
   kind: 'image' | 'link' | 'url';
   url: string;
 }>('browser:link-copied');
+
+/** Space released in the native guest returns the person to annotation mode. */
+export const browserAnnotationSpaceChannel = defineEvent<{ browserId: string; pressed: boolean }>('browser:annotation-space');
