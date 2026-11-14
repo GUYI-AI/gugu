@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { commitStartupContent, retainStartupMotion, startStartupMotion, deferStartupMotion, discardStartupMotion, subscribeStartupContentReady, hasStartupMotion } from '../../../../apps/desktop/src/lib/startup-motion'
+import { LOCALE_CHANGED_EVENT, LOCALE_STORAGE_KEY } from '../../../../apps/desktop/src/i18n/locale'
 
 beforeEach(() => {
   const host = document.createElement('div')
@@ -12,6 +13,26 @@ beforeEach(() => {
 afterEach(discardStartupMotion)
 
 describe('HTML to React startup animation ownership', () => {
+  it('uses the selected interface language and removes the slogan when content takes over', async () => {
+    const previous = localStorage.getItem(LOCALE_STORAGE_KEY)
+    try {
+      localStorage.setItem(LOCALE_STORAGE_KEY, 'zh-CN')
+      startStartupMotion()
+      const slogan = document.querySelector<HTMLElement>('[data-startup-slogan]')!
+      expect(slogan.textContent).toBe('别自己做，让 AI 来。')
+      expect(slogan.lang).toBe('zh-CN')
+      window.dispatchEvent(new CustomEvent(LOCALE_CHANGED_EVENT, { detail: { preference: 'system', resolvedLocale: 'en-US' } }))
+      expect(slogan.textContent).toBe("Don't do it yourself. Let AI.")
+      expect(slogan.lang).toBe('en-US')
+      commitStartupContent()
+      await Promise.resolve()
+      expect(slogan.isConnected).toBe(false)
+    } finally {
+      if (previous === null) localStorage.removeItem(LOCALE_STORAGE_KEY)
+      else localStorage.setItem(LOCALE_STORAGE_KEY, previous)
+    }
+  })
+
   it('attaches the complete sandboxed document once and reuses its frame', () => {
     const state = startStartupMotion()!
     expect(state.frame.getAttribute('sandbox')).toBe('allow-scripts')
