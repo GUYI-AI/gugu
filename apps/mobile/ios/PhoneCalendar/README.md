@@ -39,3 +39,29 @@ The package has no external dependencies. With Swift 6+, `swift test --package-p
 5. Call `remove(manifestURL:)` at teardown. It validates the run, identifier, title and local source, and removes only this fixture calendar. Mismatches fail; there is no title-based sweep or deletion of user calendars.
 
 Until an authorized simulator run produces a manifest, the fixture ID and all EventKit outcomes remain unverified. Final iOS evidence must include the same frozen source, App binary, xcresult and raw run logs used by the independent reader.
+
+## App-hosted EventKit acceptance
+
+`IOSHostValidation` includes `DHostedRuntimeTests/testRealEventKitPermissionBoundary`
+and `testRealEventKitCRUDRecurrenceAndOwnerRevocation`. Run on a dedicated,
+signed-out simulator with the existing HostValidation isolation environment.
+Prepare Calendar permission externally and set `GUGU_E6_AUTHORIZATION` to the
+expected native authorization string. Run the boundary test first with
+`notDetermined`, then `denied`, then `fullAccess`, then revoke and repeat
+`denied`, then grant and repeat `fullAccess`. Preserve the isolated home across
+these launches: the test verifies that OS revocation retires saved owner
+consent and OS reauthorization alone does not restore it.
+
+Run the CRUD test only with full access. It creates a uniquely named local
+fixture calendar and deletes that exact calendar in teardown. It checks CRUD
+against a fresh independent EventKit reader, preserves an original control
+record, reads three daily recurrence occurrences, rejects recurrence update
+and delete before consuming approval, rejects recurrence creation arguments,
+and verifies that a disconnected original owner cannot mutate the control.
+Creating recurrence is not part of the tool contract (`invalid_args` for extra
+fields); recurring/detached edits and deletes return
+`unsupported_recurrence_scope`. Listing occurrences is supported.
+
+These native tests do not prove the renderer permission page, authenticated
+chat-to-calendar delivery, or model execution. Those require separate App UI
+acceptance; native authorization assertions must not be reported as UI evidence.
