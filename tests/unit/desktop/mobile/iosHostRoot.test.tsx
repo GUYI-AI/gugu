@@ -12,6 +12,8 @@ vi.mock('../../../../apps/desktop/src/mobile/ios-host/iosAgentClient', async imp
   ...await importOriginal<typeof import('../../../../apps/desktop/src/mobile/ios-host/iosAgentClient')>(),
   iosAgentClient: { ...native, available: () => native.enabled },
 }))
+vi.mock('@capacitor/core', () => ({ registerPlugin: () => ({}), Capacitor: { isNativePlatform: () => true, getPlatform: () => 'ios', isPluginAvailable: () => native.enabled } }))
+import { liveDeviceSessions, retainDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 import { IOSHostRoot } from '../../../../apps/desktop/src/mobile/ios-host/IOSHostRoot'
 import { iosHostRuntime, useIOSHostRuntimeSnapshot } from '../../../../apps/desktop/src/mobile/ios-host/iosHostRuntime'
 const ownerId = '10000000-0000-0000-0000-000000000001', installationId = '30000000-0000-0000-0000-000000000003'
@@ -26,7 +28,7 @@ beforeEach(() => {
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 })
-afterEach(async () => { await act(async () => root.unmount()); container.remove() })
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); retainDeviceSessions([]) })
 describe('independent iOS host root', () => {
   it('waits for actual publication and retains unavailable native truth in the rendered store', async () => {
     await act(async () => root.render(createElement('div', null, createElement(IOSHostRoot), createElement(Reader))))
@@ -35,6 +37,16 @@ describe('independent iOS host root', () => {
     expect(container.textContent).toBe('configured:false:unknown')
     expect(native.configure).toHaveBeenCalledExactlyOnceWith(binding, undefined)
     expect(native.stop).not.toHaveBeenCalled()
+  })
+  it('publishes sessions delivered by the real App-root store and withdraws them on account retirement', async () => {
+    const session = { agentUserId: '40000000-0000-0000-0000-000000000004', sessionId: '50000000-0000-0000-0000-000000000005', chatId: '60000000-0000-0000-0000-000000000006', displayName: 'Local Agent', status: 'idle', modelId: 'model' }
+    const state = { ownerId, deviceId: binding.deviceId, status: 'ready', ready: true, taskTimeline: true, sessions: [session], project: { id: 'project', name: 'Phone', path: '/phone' }, lastHeartbeatAt: 1, error: null, errorCode: null }
+    native.configure.mockResolvedValue(state); native.state.mockResolvedValue(state)
+    await act(async () => root.render(createElement(IOSHostRoot)))
+    await act(async () => { source.current = { status: 'ready', binding }; source.listeners.forEach(fn => fn()); await iosHostRuntime.whenIdle() })
+    expect(liveDeviceSessions()[binding.deviceId]?.sessions).toEqual([expect.objectContaining({ conversationId: session.sessionId, chatId: session.chatId })])
+    await act(async () => { source.current = { status: 'retiring', binding: null }; source.listeners.forEach(fn => fn()) })
+    expect(liveDeviceSessions()[binding.deviceId]).toBeUndefined()
   })
   it('detaches observations without stopping an active native host', async () => {
     source.current = { status: 'ready', binding }
