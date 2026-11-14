@@ -84,8 +84,6 @@ vi.mock('@renderer/features/projects/project-task-entry', () => ({ prepareProjec
 // The sample project's column has its own file (sample-inner-sidebar.test.tsx); here no account shows the sample.
 vi.mock('@renderer/features/sample-project/use-sample-project', () => ({ useSampleProject: () => ({ shown: false, settled: true, owner: null }) }));
 vi.mock('./sample-inner-sidebar', () => ({ SampleInnerSidebar: () => null }));
-// The 「+」's picker loads the group from the backend; this column's tests only open the menu.
-vi.mock('@/components/chat/GroupAddMembersSheet', () => ({ GroupAddMembersSheet: () => null }));
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { get navigation() { return state.live; } },
   sidebarStore: {

@@ -37,6 +37,7 @@ vi.mock('../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/cha
 
 const { chatService } = await import('../../../apps/desktop/src/lib/chat')
 const { GroupMembersSection } = await import('../../../apps/desktop/src/components/chat/GroupMembersSection')
+const { GroupAddMembersHost } = await import('../../../apps/desktop/src/components/chat/GroupAddMembersSheet')
 const { useGroupChatSettings } = await import('../../../apps/desktop/src/components/chat/useGroupChatSettings')
 const { NATIVE_BACK_EVENT } = await import('../../../apps/desktop/src/components/ui/sheetStack')
 const getSettings = vi.mocked(chatService.getGroupChatSettings)
@@ -402,6 +403,9 @@ describe('the first page after the header cleanup', () => {
   })
 
   it('the 「+」 on the members row is the group add menu; 添加成员 opens the picker over this page and closing it comes back here', async () => {
+    // The shell draws the picker (GroupAddMembersHost, mounted once in MainLayout).
+    const shell = createReactHarness()
+    await renderWithAppProviders(shell, createNode(GroupAddMembersHost), { contacts: {} })
     await renderDrawer('owner-1')
     await click(q('[data-testid="group-settings-members"] [data-group-add-menu]'))
     await waitForCondition(() => q('[data-testid="group-add-members"]') !== null, 'the menu is open')
@@ -413,6 +417,7 @@ describe('the first page after the header cleanup', () => {
     await waitForCondition(() => picker() === null, 'one back closes the picker')
     expect(page()).toBe('main')
     expect(panels.openPanelItem).not.toHaveBeenCalled()
+    shell.cleanup()
   })
 
   it('opened from the row, the members page has the add menu in its title row and no full-width invite button', async () => {
