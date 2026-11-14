@@ -1,3 +1,4 @@
+import { selectionComment, annotationLineNumbers, previewSelectionLines } from './comments.js'
 /* global gugu */ // window.gugu: the platform runtime puts it on the page before this module runs.
 // 文件 (code: workspace) — the built-in App for chat and computer files: the file list, a
 // markdown source editor with a preview, and JSON files as editable text. Several people and agents edit the same
@@ -11,7 +12,7 @@
 // Where it runs is read from the context, never assumed: with a chat it shows that chat's
 // workspace; with a file (ctx.file) it opens the file it was handed; with neither there is nothing to show.
 
-import { findIn, placeOf, plainWords, relocate, spanOf } from './lines.js'
+import { findIn, linesText, placeOf, plainWords, relocate, spanOf } from './lines.js'
 import { INSERT_BLOCKS, isFrontmatter, listInsertion, moveBlock, previewBlock, sourceBlocks, turnBlockChanges } from './blocks.js'
 import { HARD_MAX_BYTES, bufferAnchors, firstBytes, sourceFile } from './source-file.js'
 import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, wantsThumb } from './list.js'
@@ -151,6 +152,7 @@ const STRINGS = {
     copy: '复制',
     copied: '已复制',
     cite: '引用',
+    addToChat: '添加到对话', comment: '评论', commentPlaceholder: '添加可选评论…', commentFailed: '未能保存评论，请重试',
     line: '第 {first} 行',
     lines: '第 {first}–{last} 行',
     placeMoved: '引用的那几行挪到了{lines}',
@@ -389,6 +391,7 @@ const STRINGS = {
     copy: 'Copy',
     copied: 'Copied',
     cite: 'Cite',
+    addToChat: 'Add to chat', comment: 'Comment', commentPlaceholder: 'Add an optional comment…', commentFailed: 'Could not save the comment. Try again.',
     line: 'Line {first}',
     lines: 'Lines {first}–{last}',
     placeMoved: 'The cited lines moved: {lines}',
@@ -793,6 +796,7 @@ function renderChrome() {
   $('json-discard').textContent = t.discard
   $('copy-sel').textContent = t.copy
   $('cite-sel').textContent = t.cite
+  $('annotate-sel').textContent = t.addToChat
 }
 
 // ─── list ───────────────────────────────────────────────────────────────────
@@ -2750,6 +2754,7 @@ function closeCurrent() {
 }
 
 function clearShownFile() {
+  comment.close()
   syncBlockControls()
   $('editor').replaceChildren()
   $('preview').replaceChildren()
@@ -3023,6 +3028,7 @@ async function showWhole(current) {
       extensions: [
         cm.EditorView.editorAttributes.of({ class: 'code-view' }),
         cm.view.highlightActiveLine(),
+        annotationLineNumbers(cm),
         cm.commands.history(),
         cm.keymap.of(cm.commands.historyKeymap),
         cm.code.editing({ language, dark: state.ctx.themeMode === 'dark', editable: !file.readOnly }),
@@ -3202,9 +3208,12 @@ async function mountPlain(current) {
 // (gugu.clipboard.writeText). Read at click time from here, because pressing a button may already have collapsed it.
 let selectionEnd = null // () => the selection's end on screen, read again as the page scrolls
 let picksInPreview = false
+const comment = selectionComment({ document, labels: () => state.t, save: (file, selection) => gugu.files.annotateSelection(file, selection) })
 
 function showSelection(picks, end, inPreview = false) {
   state.picks = picks
+  $('annotate-sel').hidden = !state.ctx?.workspace?.sessionId || !state.current?.entry?.workspace
+  $('annotate-sel').disabled = picks.length !== 1 || !picks[0]?.lines
   selectionEnd = picks.length ? end : null
   picksInPreview = inPreview && picks.length > 0
   document.body.classList.toggle('has-selection', picks.length > 0)
@@ -4519,6 +4528,14 @@ function start() {
   $('copy-sel').onclick = () => copySelection()
   $('cite-sel').addEventListener('pointerdown', (event) => event.preventDefault())
   $('cite-sel').onclick = () => cite()
+  $('annotate-sel').addEventListener('pointerdown', event => event.preventDefault())
+  $('annotate-sel').onclick = () => {
+    const pick = state.picks[0]
+    if (!state.current || state.picks.length !== 1 || !pick?.lines) return
+    const selected = document.getSelection()
+    const lines = picksInPreview && selected?.rangeCount ? previewSelectionLines(selected.getRangeAt(0)) ?? pick.lines : pick.lines
+    comment.open({ file: state.current.entry, pick: { ...pick, text: state.current.file.type === 'source' ? linesText(state.current.file.text, ...lines) : pick.text, lines: [...lines] }, anchor: selectionEnd })
+  }
   for (const button of document.querySelectorAll('#sel-bar .fmt')) {
     button.addEventListener('pointerdown', (event) => event.preventDefault())
     button.onclick = () => format(button.dataset.fmt)

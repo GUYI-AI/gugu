@@ -252,6 +252,14 @@ img.details-picture { object-fit: contain; }
 body:not(.has-selection) .sel-bar, body:not([data-state='doc']) .sel-bar { display: none; }
 .sel-bar button { border: 0; }
 .sel-bar button + button { border-left: 1px solid var(--em-border); }
+.file-comment-popup { position: fixed; z-index: 20; max-width: calc(100vw - 16px); padding: 4px; border: 1px solid var(--em-border); border-radius: 999px; background: var(--em-background); box-shadow: var(--em-shadow-lift); }
+.file-comment-popup[data-failed] { border-radius: var(--em-radius-control); }
+.file-comment-form { display: flex; align-items: center; gap: 8px; width: min(288px, calc(100vw - 32px)); padding: 4px; }
+.file-comment-form input { flex: 1; min-width: 0; border: 0; outline: 0; padding: 4px 8px; background: transparent; color: var(--em-foreground); font: inherit; }
+.file-comment-form .file-comment-submit { flex: none; min-height: 28px; width: 28px; height: 28px; padding: 0; border-radius: 50%; }
+.file-comment-error { padding: 4px 8px 8px; font-size: var(--em-font-caption); color: var(--em-foreground-destructive); }
+::highlight(files-comment) { background: color-mix(in srgb, var(--em-accent-11) 32%, transparent); }
+@media (pointer: coarse) { .file-comment-form input { font-size: 16px; } .file-comment-form .file-comment-submit { width: 44px; height: 44px; min-height: 44px; } }
 /* The marks a selection in the source can be wrapped in, before Copy · Cite (not for the reading page's or a JSON file's). */
 .fmt-bar { display: flex; border-right: 1px solid var(--em-border); }
 .sel-bar .fmt { min-width: 0; padding-inline: var(--em-spacing-sm); color: var(--em-foreground-muted); }

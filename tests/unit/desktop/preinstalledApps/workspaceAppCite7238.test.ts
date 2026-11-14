@@ -19,6 +19,10 @@ import { EditorView } from '@codemirror/view'
 import * as lezerHighlight from '@lezer/highlight'
 import { basicSetup } from 'codemirror'
 import * as autocomplete from '@codemirror/autocomplete'
+import * as commands from '@codemirror/commands'
+import { SessionAnnotations, annotationPrompt } from '../../../../apps/desktop/src/session/renderer/features/sessions/annotations/session-annotations'
+import { workspaceFileAnnotation } from '../../../../apps/desktop/src/session/shared/extensions/file-annotation'
+import { documentToHtml } from '../../../../packages/session-chat-ui/src/core/markdown/to-html'
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 // @ts-expect-error — 内置 App 是不经构建的纯 ES module,没有类型;运行时 import 可用。
 import { fingerprint } from '../../../../apps/desktop/preinstalled-apps/workspace/lines.js'
@@ -54,6 +58,10 @@ const file = {
 // lines a list whose items say theirs too.
 const md = {
   render: vi.fn((element: Element, text: string) => {
+    if (text === SESSION_TEXT) {
+      element.innerHTML = `<div class="gg-md">${documentToHtml(text, { trust: 'chat', sourceLines: true })}</div>`
+      return
+    }
     const blocks: string[] = []
     let start = 0
     const lines = text.split('\n')
@@ -77,7 +85,14 @@ const config = {
 // A chat's .txt, live text that is not markdown.
 const notes = { ...file, entry: { ...entry, id: 'notes', name: 'notes.txt', contentType: 'text/plain' }, text: 'one\ntwo: the Blue Heron\nthree', onChange: () => () => {}, onStatus: () => () => {} }
 const slowFile = () => ({ ...file, entry: { ...entry, id: 'slow', name: 'slow.md' }, text: file.text, onChange: () => () => {}, onStatus: () => () => {} })
-const ctxOf = (id: string) => ({ chat: { id: 'chat-1', name: 'G', kind: 'group', groupId: 'chat-1' }, file: { chat: 'chat-1', id }, locale: 'en', capabilities: ['files:read', 'files:write'] })
+const WS = 'session:11111111-1111-4111-8111-111111111111'
+const SESSION_TEXT = ['# Heading', '', 'First paragraph', 'Second line', '', 'Second paragraph'].join('\n')
+const CODE = ['def greet(name):', '    title = "Hi"', '    message = title + name', '    return message'].join('\n')
+const sessionEntry = { ...entry, id: 'notes.md', name: 'notes.md', chat: undefined, workspace: WS }
+const codeEntry = { ...sessionEntry, id: 'sample.py', name: 'sample.py', type: 'file', contentType: 'text/x-python' }
+const sessionFile = { ...file, entry: sessionEntry, text: SESSION_TEXT, onChange: () => () => {}, onStatus: () => () => {} }
+let annotationDraft = new SessionAnnotations()
+const ctxOf = (id: string) => ({ chat: { id: 'chat-1', name: 'G', kind: 'group', groupId: 'chat-1' }, ...(id === 'notes.md' || id === 'sample.py' ? { file: { workspace: WS, id }, workspace: { id: WS, sessionId: '11111111-1111-4111-8111-111111111111', root: '/project', name: 'Project' } } : { file: { chat: 'chat-1', id } }), locale: 'en', capabilities: ['files:read', 'files:write'] })
 let link: (event: { type: 'link'; tab: string; path: string; query: Record<string, string>; file: string | null }) => void = () => {}
 let contextChanged: (ctx: ReturnType<typeof ctxOf>) => void = () => {}
 const gugu = {
@@ -93,7 +108,7 @@ const gugu = {
     return () => {}
   }),
   dispatch: vi.fn(async (_text: string, _options: unknown) => ({ to: { chat: 'g-1' } })),
-  codemirror: vi.fn(async () => ({ EditorView, EditorState: cmState.EditorState, basicSetup, markdown, markdownLanguage, json, view: cmView, state: cmState, language, autocomplete, lezerHighlight })),
+  codemirror: vi.fn(async () => ({ EditorView, EditorState: cmState.EditorState, basicSetup, markdown, markdownLanguage, json, view: cmView, state: cmState, language, autocomplete, lezerHighlight, commands, keymap: cmView.keymap, code: { languageFor: () => 'python', load: async () => [], editing: () => [] } })),
   markdown: vi.fn(async () => md),
   // The file's text in the editor, as the binding puts it there.
   bind: {
@@ -103,7 +118,10 @@ const gugu = {
     }),
   },
   files: {
-    viewPreferences: vi.fn(async () => ({ showAppData: false })), list: vi.fn(async () => [entry]), onChanged: vi.fn(() => () => {}), open: vi.fn(async (handle: { id: string }): Promise<unknown> => (handle.id === 'cfg' ? config : handle.id === 'slow' ? slowFile() : handle.id === 'notes' ? notes : file)) },
+    annotateSelection: vi.fn(async (file: typeof sessionEntry, fields: { startLine: number; endLine: number; text: string; annotation: string }) => { annotationDraft.add({ kind: 'file', ...workspaceFileAnnotation({ ref: { workspace: file.workspace, id: file.id }, ...fields }, WS) }) }),
+    draft: vi.fn(async () => null),
+    readText: vi.fn(async () => ({ entry: codeEntry, content: CODE, binary: false, truncated: false, totalSize: CODE.length })),
+    viewPreferences: vi.fn(async () => ({ showAppData: false })), list: vi.fn(async () => [entry]), onChanged: vi.fn(() => () => {}), open: vi.fn(async (handle: { id: string }): Promise<unknown> => (handle.id === 'notes.md' ? sessionFile : handle.id === 'cfg' ? config : handle.id === 'slow' ? slowFile() : handle.id === 'notes' ? notes : file)) },
 }
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement
@@ -334,5 +352,59 @@ describe("a pill's place is the file's it came for; a JSON file's cite stays a q
     $('cite-sel').click()
     await until('Cite has composed', () => gugu.dispatch.mock.calls.length > 0)
     expect(gugu.dispatch.mock.calls).toEqual([['Lines 2–3\n>   "a": "**粗**",\n>   "b": "# 不是标题"', { draft: true, refs: [{ file: config.entry }] }]])
+  })
+})
+
+describe('the default Files App annotation toolbar', () => {
+  test('Markdown preview selection opens the optional comment and queues its range for Selected text', async () => {
+    annotationDraft = new SessionAnnotations()
+    gugu.files.annotateSelection.mockClear()
+    contextChanged(ctxOf('notes.md'))
+    await until('the session Markdown is open in the real Files App', () => document.querySelector('.cm-editor') !== null && view().state.doc.toString() === SESSION_TEXT)
+    const paragraph = document.querySelector('#preview [data-line="3-4"]')!
+    const selected = document.createRange()
+    selected.selectNodeContents(paragraph)
+    document.getSelection()?.removeAllRanges()
+    document.getSelection()?.addRange(selected)
+    document.dispatchEvent(new Event('selectionchange'))
+    expect(($('annotate-sel') as HTMLButtonElement).hidden).toBe(false)
+    expect(($('annotate-sel') as HTMLButtonElement).disabled).toBe(false)
+    $('annotate-sel').click()
+    const input = document.querySelector<HTMLInputElement>('.file-comment-form input')!
+    expect(input).not.toBeNull()
+    input.value = 'Shorten this paragraph'
+    document.querySelector('form.file-comment-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await until('the annotation reaches the session draft', () => annotationDraft.items.length === 1)
+    expect(gugu.files.annotateSelection).toHaveBeenCalledWith(sessionEntry, { startLine: 3, endLine: 4, text: 'First paragraph\nSecond line', annotation: input.value })
+    expect(annotationPrompt('', annotationDraft.items)).toContain('# Selected text:')
+    expect(annotationDraft.items[0]).toMatchObject({ path: 'notes.md', startLine: 3, endLine: 4 })
+    expect(JSON.parse(annotationPrompt('', annotationDraft.items).split(' (file)\n')[1]!)).toMatchObject({ path: 'notes.md', startLine: 3, endLine: 4 })
+    const secondLine = document.createRange()
+    secondLine.setStart(paragraph.firstChild!, 'First paragraph\n'.length)
+    secondLine.setEnd(paragraph.firstChild!, paragraph.firstChild!.textContent!.length)
+    document.getSelection()?.removeAllRanges()
+    document.getSelection()?.addRange(secondLine)
+    document.dispatchEvent(new Event('selectionchange'))
+    $('annotate-sel').click()
+    document.querySelector('form.file-comment-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await until('a partial paragraph keeps its physical source line', () => annotationDraft.items.length === 2)
+    expect(annotationDraft.items[1]).toMatchObject({ path: 'notes.md', startLine: 4, endLine: 4, text: 'Second line' })
+  })
+  test('the default code editor toolbar queues original selected source lines for the same payload', async () => {
+    annotationDraft = new SessionAnnotations()
+    gugu.files.annotateSelection.mockClear()
+    contextChanged(ctxOf('sample.py'))
+    await until('the actual source editor opens the Python file', () => document.querySelector('.cm-editor') !== null && view().state.doc.toString() === CODE)
+    // jsdom has no editor geometry; the real document and selection still run through the Files App.
+    vi.spyOn(view(), 'coordsAtPos').mockReturnValue({ left: 10, right: 20, top: 20, bottom: 40 })
+    select([line(2).from, line(4).to])
+    expect(($('annotate-sel') as HTMLButtonElement).disabled).toBe(false)
+    $('annotate-sel').click()
+    const input = document.querySelector<HTMLInputElement>('.file-comment-form input')!
+    input.value = 'Explain the return value'
+    document.querySelector('form.file-comment-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await until('the code annotation reaches the session draft', () => annotationDraft.items.length === 1)
+    expect(gugu.files.annotateSelection).toHaveBeenCalledWith(codeEntry, { startLine: 2, endLine: 4, text: CODE.split('\n').slice(1).join('\n'), annotation: input.value })
+    expect(JSON.parse(annotationPrompt('', annotationDraft.items).split(' (file)\n')[1]!)).toMatchObject({ path: 'sample.py', startLine: 2, endLine: 4 })
   })
 })
