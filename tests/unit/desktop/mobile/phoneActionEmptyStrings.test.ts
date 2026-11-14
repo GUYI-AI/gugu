@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const native = vi.hoisted(() => ({ calendarList: vi.fn(), calendarCreate: vi.fn() }))
+const native = vi.hoisted(() => ({ calendarList: vi.fn(), calendarCreate: vi.fn(), calendarUpdate: vi.fn() }))
 vi.mock('@capacitor/core', () => ({ registerPlugin: () => native }))
 
 import { phoneActionByName } from '../../../../apps/desktop/src/mobile/phone-device/phoneActionCatalog'
@@ -10,6 +10,7 @@ describe('optional phone action strings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     native.calendarList.mockResolvedValue({ events: [], timezone: 'UTC' })
+    native.calendarUpdate.mockResolvedValue({ event_id: 'fixture-event' })
   })
   afterEach(() => vi.useRealTimers())
 
@@ -46,5 +47,27 @@ describe('optional phone action strings', () => {
     const args = { optional: '  ', required: '', text: '  keep  ', typed: null, count: 0, unknown: '' }
     expect(normalizePhoneActionArguments(schema, args)).toEqual({ required: '', text: '  keep  ', typed: null, count: 0, unknown: '' })
     expect(args.optional).toBe('  ')
+  })
+
+  it.each([
+    ['title', '标题改成「」'],
+    ['location', '地点改成「」'],
+    ['description', '改备注'],
+  ])('preserves clearing %s in native updates and confirmation text', async (field, change) => {
+    const action = phoneActionByName('calendar.events.update')!
+    const args = { event_id: 'fixture-event', [field]: '' }
+    expect(action.confirmQuestion!(args).question).toContain(change)
+    await action.run(args)
+    expect(native.calendarUpdate).toHaveBeenCalledExactlyOnceWith(args)
+  })
+
+  it('omits blank update dates before both confirmation and native execution', async () => {
+    const action = phoneActionByName('calendar.events.update')!
+    const args = { event_id: 'fixture-event', title: 'New title', start: '', end: ' \t' }
+    const question = action.confirmQuestion!(args).question
+    expect(question).toContain('标题改成「New title」')
+    expect(question).not.toMatch(/开始改到|结束改到/)
+    await action.run(args)
+    expect(native.calendarUpdate).toHaveBeenCalledExactlyOnceWith({ event_id: 'fixture-event', title: 'New title' })
   })
 })

@@ -644,11 +644,15 @@ const PHONE_ACTION_DEFINITIONS: readonly PhoneActionDefinition[] = [
 
 // All provider and local-agent entry points share these handlers. Keep their
 // published schemas intact and normalize only at the invocation boundary.
+const PRESERVE_BLANK_FIELDS: Record<string, readonly string[]> = {
+  // These update fields explicitly clear saved text; omission would mean no change.
+  'calendar.events.update': ['title', 'location', 'description'],
+}
 export const PHONE_ACTIONS: readonly PhoneActionDefinition[] = PHONE_ACTION_DEFINITIONS.map((action) => ({
   ...action,
-  run: (args: Record<string, unknown>) => action.run(normalizePhoneActionArguments(action.input_schema, args)),
+  run: (args: Record<string, unknown>) => action.run(normalizePhoneActionArguments(action.input_schema, args, PRESERVE_BLANK_FIELDS[action.name])),
   ...(action.confirmQuestion ? {
-    confirmQuestion: (args: Record<string, unknown>) => action.confirmQuestion!(normalizePhoneActionArguments(action.input_schema, args)),
+    confirmQuestion: (args: Record<string, unknown>) => action.confirmQuestion!(normalizePhoneActionArguments(action.input_schema, args, PRESERVE_BLANK_FIELDS[action.name])),
   } : {}),
 }))
 
