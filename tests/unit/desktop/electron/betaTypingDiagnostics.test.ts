@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTypingDiagnosticsFile } from '../../../../apps/desktop/electron/typing-diagnostics-file'
-import { createBetaTypingDiagnosticsHandler } from '../../../../apps/desktop/electron/beta-typing-diagnostics'
+import { createBetaTypingDiagnosticsHandler, withTypingDiagnosticPolicy } from '../../../../apps/desktop/electron/beta-typing-diagnostics'
 import { createRendererLogForwarder } from '../../../../apps/desktop/electron/local-renderer-diagnostics'
 import { TYPING_DIAGNOSTICS_SCOPE } from '../../../../apps/desktop/shared/beta-typing-diagnostics'
 
@@ -76,4 +76,25 @@ describe('local Beta typing sink', () => {
     expect(await bad(sender, { operation: 'config' })).toEqual({ enabled: false })
   })
 
+  it('keeps the six-capture launch budget across page identities and reserves a full cooldown', async () => {
+    let clock = 0
+    const handler = createBetaTypingDiagnosticsHandler({ enabled: true, directory: () => '/unused', mainWindowId: () => 17, now: () => clock })
+    for (let capture = 1; capture <= 6; capture++) {
+      expect(await handler(sender, { operation: 'claim-profile' })).toEqual({ accepted: true, capture })
+      expect(await handler({ ...sender }, { operation: 'claim-profile' })).toEqual({ accepted: false })
+      clock += 329_999
+      expect(await handler(sender, { operation: 'claim-profile' })).toEqual({ accepted: false })
+      clock++
+    }
+    expect(await handler(sender, { operation: 'claim-profile' })).toEqual({ accepted: false })
+    const off = createBetaTypingDiagnosticsHandler({ enabled: false, directory: () => '/unused', mainWindowId: () => 17 })
+    expect(await off(sender, { operation: 'claim-profile' })).toMatchObject({ accepted: false })
+  })
+
+  it('grants document permission only to the enabled Beta entry, preserving other policy directives', () => {
+    const response = new Response('app', { headers: { 'Document-Policy': 'force-load-at-top' } })
+    expect(withTypingDiagnosticPolicy(response, 'gugu-app://app/index.html', true).headers.get('Document-Policy')).toBe('force-load-at-top, js-profiling')
+    for (const url of ['gugu-app://app/assets/main.js', 'gugu-app://other/index.html', 'https://app/index.html']) expect(withTypingDiagnosticPolicy(response, url, true)).toBe(response)
+    expect(withTypingDiagnosticPolicy(response, 'gugu-app://app/index.html', false)).toBe(response)
+  })
 })

@@ -1,3 +1,4 @@
+import { createTypingProfiler, type TypingTaskRange } from './typing-diagnostics-profile'
 import { sanitizeTypingDiagnosticRecord, TYPING_DIAGNOSTICS_BATCH, TYPING_DIAGNOSTICS_TYPING_WINDOW, type TypingDiagnosticRecord } from '../../shared/beta-typing-diagnostics'
 
 interface TaskEntry extends PerformanceEntry { attribution?: Array<{ name?: string; containerType?: string }> }
@@ -8,10 +9,11 @@ interface KeyTime { sequence: number; startMs: number; captureDelayMs: number; c
 export type TypingDiagnosticReply = { accepted: boolean; reason?: string }
 
 /** Scalar input timings only: no key/data/value/text, target references, selectors, or DOM scans. */
-export function createTypingDiagnosticsRecorder(win: Window & typeof globalThis, send: (records: TypingDiagnosticRecord[]) => Promise<TypingDiagnosticReply>) {
+export function createTypingDiagnosticsRecorder(win: Window & typeof globalThis, send: (records: TypingDiagnosticRecord[]) => Promise<TypingDiagnosticReply>, claimProfile: () => Promise<{ accepted: boolean; capture?: number }> = async () => ({ accepted: false })) {
   const pageId = win.crypto.randomUUID()
   const queue: TypingDiagnosticRecord[] = [], keys: KeyTime[] = []
   const observers: PerformanceObserver[] = []
+  const taskRanges: TypingTaskRange[] = []
   let sequence = 0, stopped = false, inFlight = false, composing = false, dropped = 0, keysObserved = 0, eventEntriesObserved = 0
   let writtenKeys = 0, writtenEntries = 0, keyHistoryDropped = 0
   let keysDiscardedThrough = -Infinity
@@ -24,6 +26,11 @@ export function createTypingDiagnosticsRecorder(win: Window & typeof globalThis,
     if (queue.length >= 256) { dropped++; return }
     const safe = sanitizeTypingDiagnosticRecord({ ...record, pageId, timeOrigin: win.performance.timeOrigin })
     if (safe) { queue.push(safe); schedule() }
+  }
+  const profile = createTypingProfiler(win, () => taskRanges, emit, claimProfile)
+  const maybeProfile = () => {
+    const task = taskRanges.findLast(task => task.durationMs >= 100 && now() <= task.startMs + task.durationMs + 2_000 && keys.some(key => key.startMs >= task.startMs - TYPING_DIAGNOSTICS_TYPING_WINDOW && key.startMs <= task.startMs + task.durationMs))
+    if (task) void profile.trigger(task)
   }
   const typing = (record: TypingDiagnosticRecord) => {
     if (record.event !== 'long-task' && record.event !== 'long-frame') return record
@@ -66,6 +73,7 @@ export function createTypingDiagnosticsRecorder(win: Window & typeof globalThis,
     keysObserved++
     keys.push({ sequence: ++sequence, startMs, captureDelayMs: Math.max(0, now() - startMs), composing: event.isComposing })
     if (keys.length > 256) { keysDiscardedThrough = keys.shift()!.startMs; keyHistoryDropped++ }
+    maybeProfile()
     schedule()
   }
   const composition = (event: CompositionEvent) => {
@@ -91,12 +99,17 @@ export function createTypingDiagnosticsRecorder(win: Window & typeof globalThis,
   const longTaskSupported = observe('longtask', raw => {
     const entry = raw as TaskEntry
     if (entry.duration < 50) return
-    emit({ event: 'long-task', sequence: ++sequence, startMs: entry.startTime, durationMs: entry.duration, attribution: entry.attribution?.map(value => ({ container: value.containerType, scope: entry.name })) })
+    const range = { sequence: ++sequence, startMs: entry.startTime, durationMs: entry.duration }
+    taskRanges.push(range)
+    while (taskRanges.length > 64 || taskRanges[0]?.startMs < now() - 60_000) taskRanges.shift()
+    maybeProfile()
+    emit({ event: 'long-task', sequence: range.sequence, startMs: entry.startTime, durationMs: entry.duration, attribution: entry.attribution?.map(value => ({ container: value.containerType, scope: entry.name })) })
   })
   const longFrameSupported = observe('long-animation-frame', raw => {
     const entry = raw as FrameEntry
     if (entry.duration < 50) return
-    emit({ event: 'long-frame', sequence: ++sequence, startMs: entry.startTime, durationMs: entry.duration, blockingMs: entry.blockingDuration, renderStartMs: entry.renderStart, styleAndLayoutStartMs: entry.styleAndLayoutStart, firstUIEventMs: entry.firstUIEventTimestamp,
+    emit({ event: 'long-frame', sequence: ++sequence, startMs: entry.startTime, durationMs: entry.duration, blockingMs: entry.blockingDuration,
+      preRenderMs: entry.renderStart ? Math.max(0, entry.renderStart - entry.startTime) : undefined, renderCallbackMs: entry.renderStart && entry.styleAndLayoutStart ? Math.max(0, entry.styleAndLayoutStart - entry.renderStart) : undefined, styleLayoutRenderMs: entry.styleAndLayoutStart ? Math.max(0, entry.startTime + entry.duration - entry.styleAndLayoutStart) : undefined, renderStartMs: entry.renderStart, styleAndLayoutStartMs: entry.styleAndLayoutStart, firstUIEventMs: entry.firstUIEventTimestamp,
       scriptsTotal: entry.scripts?.length, scripts: entry.scripts?.slice().sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0)).slice(0, 12).map(script => ({ file: script.sourceURL, functionName: script.sourceFunctionName, startMs: script.startTime, durationMs: script.duration, executionStartMs: script.executionStart, forcedStyleAndLayoutMs: script.forcedStyleAndLayoutDuration, pauseMs: script.pauseDuration, sourceOffset: script.sourceCharPosition })) })
   })
   const eventTimingSupported = observe('event', raw => {
@@ -120,6 +133,7 @@ export function createTypingDiagnosticsRecorder(win: Window & typeof globalThis,
     if (stopped) return
     if (finalFlush && !inFlight && (queue.length || dropped || keysObserved !== writtenKeys || eventEntriesObserved !== writtenEntries)) { try { void send(take()).catch(() => undefined) } catch { /* App teardown never waits for the recorder. */ } }
     stopped = true
+    profile.stop()
     if (timer !== null) clearTimeout(timer)
     timer = null
     for (const observer of observers) observer.disconnect()
@@ -127,7 +141,7 @@ export function createTypingDiagnosticsRecorder(win: Window & typeof globalThis,
     win.removeEventListener('compositionstart', composition, true)
     win.removeEventListener('compositionend', composition, true)
     win.removeEventListener('blur', blur, true)
-    queue.length = 0; keys.length = 0
+    queue.length = 0; keys.length = 0; taskRanges.length = 0
   }
   return { flush, stop }
 }

@@ -27,17 +27,17 @@ describe('Beta typing diagnostic metadata', () => {
     expect(sanitizeTypingDiagnosticRecord({ event: 'key-latency', durationMs: NaN, startMs: -1 })).toEqual({ event: 'key-latency' })
   })
 
-  it('bounds long-frame metadata and rejects retired sampling payloads', () => {
+  it('bounds long-frame and sampled metadata at both privacy boundaries', () => {
     const out = sanitizeTypingDiagnosticRecord({ event: 'long-frame', scriptsTotal: 25,
       scripts: Array.from({ length: 25 }, (_, index) => ({ file: 'gugu-app://app/assets/main.js', functionName: 'render', durationMs: index })),
       samples: [{ stack: [{ functionName: 'PRIVATE_STACK_CANARY' }] }], taskSequences: [1], sampleIntervalMs: 500,
     })!
     expect(out.scripts).toHaveLength(12)
     expect(out.scriptsTotal).toBe(25)
-    expect(out).not.toHaveProperty('samples')
-    expect(out).not.toHaveProperty('taskSequences')
-    expect(out).not.toHaveProperty('sampleIntervalMs')
-    expect(sanitizeTypingDiagnosticRecord({ event: 'profile', samples: [{ stack: ['PRIVATE_STACK_CANARY'] }] })).toBeNull()
+    expect(out.samples).toEqual([])
+    expect(out.taskSequences).toEqual([1])
+    expect(out.sampleIntervalMs).toBe(500)
+    expect(sanitizeTypingDiagnosticRecord({ event: 'profile', samples: [{ timestampMs: 1, stack: ['PRIVATE_STACK_CANARY'] }] })).toMatchObject({ samples: [{ timestampMs: 1, stack: [] }] })
     expect(sanitizeTypingDiagnosticRecord({ event: 'observer-error', observer: 'event', error: 'PRIVATE_ERROR_CANARY' })).toEqual({ event: 'observer-error', observer: 'event' })
     expect(sanitizeTypingDiagnosticRecord({ event: 'observer-error', observer: 'PRIVATE_OBSERVER_CANARY' })).toEqual({ event: 'observer-error' })
   })

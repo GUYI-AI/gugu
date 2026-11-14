@@ -6,7 +6,7 @@ import type { TypingDiagnosticRecord } from '../../../../apps/desktop/shared/bet
 let recorder: ReturnType<typeof createTypingDiagnosticsRecorder> | null = null
 afterEach(() => { recorder?.stop(); recorder = null; document.body.replaceChildren(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
-function setup() {
+function setup(claim = vi.fn(async () => ({ accepted: false }))) {
   vi.useFakeTimers()
   const sampling = vi.fn(() => { throw new Error('sampling must not start') })
   vi.stubGlobal('Profiler', sampling)
@@ -23,7 +23,7 @@ function setup() {
   vi.spyOn(window.performance, 'now').mockImplementation(() => clock)
   const rows: TypingDiagnosticRecord[] = []
   const send = vi.fn(async (records: TypingDiagnosticRecord[]) => { rows.push(...records); return { accepted: true } })
-  recorder = createTypingDiagnosticsRecorder(window, send)
+  recorder = createTypingDiagnosticsRecorder(window, send, claim)
   const input = document.createElement('input'); document.body.append(input)
   Object.defineProperty(input, 'value', { get() { throw new Error('value must never be read') } })
   const deliver = (type: string, event: object) => {
@@ -45,6 +45,19 @@ describe('main-window typing observations', () => {
     expect(t.rows.find(row => row.event === 'key-latency')).toMatchObject({ metric: 'event-timing-next-paint', latencyMs: 112, captureDelayMs: 85, processingDelayMs: 80, processingMs: 10, presentationDelayMs: 22, composing: true })
     expect(t.rows.find(row => row.event === 'start')).toMatchObject({ eventThresholdMs: 16, eventResolutionMs: 8 })
     expect(t.options.find(option => option.type === 'event')).toMatchObject({ durationThreshold: 16 })
+    expect(t.sampling).not.toHaveBeenCalled()
+  })
+
+  it('requests sampling only for a 100ms task associated with editable typing, including a delayed key', async () => {
+    const claim = vi.fn(async () => ({ accepted: false }))
+    const t = setup(claim)
+    t.callbacks.get('longtask')!([{ startTime: 0, duration: 150 }])
+    expect(claim).not.toHaveBeenCalled()
+    t.setClock(5000); t.deliver('keydown', {})
+    t.callbacks.get('longtask')!([{ startTime: 5010, duration: 99 }])
+    expect(claim).not.toHaveBeenCalled()
+    t.setClock(5300); t.callbacks.get('longtask')!([{ startTime: 5200, duration: 100 }])
+    await Promise.resolve(); expect(claim).toHaveBeenCalledOnce()
     expect(t.sampling).not.toHaveBeenCalled()
   })
 

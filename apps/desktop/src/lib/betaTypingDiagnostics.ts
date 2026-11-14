@@ -15,6 +15,9 @@ export async function installBetaTypingDiagnostics(): Promise<void> {
     current = createTypingDiagnosticsRecorder(window, async records => {
       const reply = await api.invoke(RENDERER_LOG_CHANNEL, { scope: TYPING_DIAGNOSTICS_SCOPE, fields: { operation: 'append', records } }) as TypingDiagnosticReply | undefined
       return reply?.accepted === true ? reply : { accepted: false, reason: reply?.reason }
+    }, async () => {
+      const reply = await api.invoke(RENDERER_LOG_CHANNEL, { scope: TYPING_DIAGNOSTICS_SCOPE, fields: { operation: 'claim-profile' } }) as { accepted?: boolean; capture?: number } | undefined
+      return { accepted: reply?.accepted === true, capture: reply?.capture }
     })
     window.addEventListener('pagehide', () => { current?.stop(true); current = null }, { once: true })
   } catch { current?.stop(); current = null }
