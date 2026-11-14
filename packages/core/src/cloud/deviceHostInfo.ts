@@ -123,7 +123,7 @@ export function parseServerRollback(text: string, nowMs: number, supervisorVersi
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null
   if (data.lastOutcome?.kind === 'rolledBack') data = { version: data.lastOutcome.bad, restored: data.lastOutcome.back, at: data.lastOutcome.at }
   if (typeof data.version !== 'string' || !data.version || typeof data.restored !== 'string' || !data.restored) return null
-  if (typeof data.at !== 'number' || nowMs - data.at > SERVER_ROLLBACK_REPORT_MS) return null
+  if (typeof data.at !== 'number' || !Number.isFinite(data.at) || nowMs - data.at > SERVER_ROLLBACK_REPORT_MS) return null
   // 守护进程后来已经升上去了(那个坏版本或更新的):这条记录说的已经不是现在的事。
   if (supervisorVersion && supervisorVersion !== data.restored) return null
   return { version: data.version, restored: data.restored }

@@ -12,3 +12,5 @@ it('rejects case-insensitive audio and video resource MIME', () => { expect(reso
 it('rejects backslashes in single-segment resource folder names', () => { expect(folderNameProblem('parent\\child')).toBe('slash'); expect(folderNameProblem('notes')).toBeNull() })
 
 it('decodes escaped quotes in os-release pretty names', () => { expect(linuxNameFromOsRelease("PRETTY_NAME=\"Example \\\"OS\\\"\"")).toBe('Example "OS"') })
+
+it('omits rollback records with nonfinite timestamps', () => { expect(parseServerRollback('{"version":"bad","restored":"good","at":1e400}', 1000, 'good')).toBeNull() })
