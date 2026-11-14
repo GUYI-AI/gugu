@@ -19,6 +19,7 @@
 //    CI 按平台矩阵各打各的(见 .github/workflows)。
 //
 // 用法:node scripts/build/build-gugu-server.mjs            (先确保主进程已构建:dist-electron/server.js 存在)
+//      (scripts/assistant-rules-seed.json 钉了助理 App 的版本时,也要先有主构建 pnpm build:assistant-rules 取好的那一份)
 //      GUGU_SERVER_SKIP_NODE_DOWNLOAD=1 …            (本机调试:用当前 node 代替下载)
 //      GUGU_SERVER_NODE_PREFIX=/usr/local …           (CI:从官方 node 镜像的安装前缀取,不下载;版本必须等于 .node-version)
 import { execFileSync } from 'node:child_process'
@@ -35,7 +36,9 @@ import {
   RUNTIME_PACKAGES,
 } from '../gugu-server/runtime-packages.mts'
 import { defaultMiseCacheDir, obtainMiseArchive } from './mise-archive-cache.mts'
+import { assistantRulesSeedToCarry } from '../gugu-server/assistant-rules-seed.mts'
 import { serverLauncher } from '../gugu-server/launcher.mjs'
+import { installVendorNodeDependencies } from './install-vendor-node-deps.mjs'
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const rootPackage = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -59,6 +62,10 @@ if (!existsSync(join(distElectron, 'server.js'))) {
 const serverIdentity = JSON.parse(readFileSync(join(distElectron, 'server-build.json'), 'utf8'))
 if (serverIdentity?.schema !== 1 || typeof serverIdentity.backendUrl !== 'string' || !serverIdentity.backendUrl
   || typeof serverIdentity.channel !== 'string' || !serverIdentity.channel) throw new Error('Compiled server has no environment identity')
+// #1931 助理 App 的规则:主构建(pnpm build:assistant-rules)按 scripts/assistant-rules-seed.json 钉的版本取好、校验过的那一份,
+// 与 dist-electron 一样只拿来装,❌ 这里再取一遍(另一个架构的打包容器里没有源码树和 node_modules)。
+// 没钉 = 不带;钉了却没有那一份 / 是别的版本的 ⇒ 在干任何活之前就停(见 scripts/gugu-server/assistant-rules-seed.mts)。
+const assistantRulesSeed = assistantRulesSeedToCarry(root)
 
 // GUGU_SERVER_NODE_PREFIX:一份官方 Node 发行包解开后的安装前缀(bin/node + LICENSE),包里的 node 从这里取。
 // CI 的两个构建容器都是官方 node:<.node-version>-bookworm 镜像,/usr/local 就是镜像构建时按 SHASUMS256 校验过、
@@ -119,7 +126,7 @@ writeFileSync(
   JSON.stringify({ name: 'gugu-server', version, private: true, dependencies: externalVersions }, null, 2),
 )
 // 按 Node ABI 装原生模块:在包目录里对着上面那份 package.json 装一次,预编译件由各包自己的 install 脚本按本机平台取。
-run('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--no-package-lock'], { cwd: join(stage, 'app') })
+installVendorNodeDependencies(join(stage, 'app'), ['--omit=dev', '--no-audit', '--no-fund', '--no-package-lock'])
 
 // 桌面包里这些包由 pnpm 装、pnpm-workspace.yaml 的 patchedDependencies 自动打上补丁;npm 不认那一段,
 // 这里照同一份补丁文件打一遍 —— 同一个版本号,桌面和 server 跑的必须是同一份代码。
@@ -155,6 +162,12 @@ run('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--no-package-lo
   }
   sweep(appModules)
 
+  // node-pty 发布时带着所有平台的预编译件(Windows 两份就 58MB):只留本包的平台,与桌面包 electron-builder 的 files 规则同一条。
+  const ptyPrebuilds = join(appModules, 'node-pty', 'prebuilds')
+  for (const platform of readdirSync(ptyPrebuilds)) {
+    if (platform !== `${osName}-${arch}`) rmSync(join(ptyPrebuilds, platform), { recursive: true, force: true })
+  }
+
   // 出包闸:dist-electron 里每一个按路径现解析的模块,都必须落在包自己的 node_modules 里。
   const resolved = assertRuntimeSpecifiersResolve(join(stage, 'app'))
   console.log(`[server-bundle] runtime modules resolve: ${resolved.join(', ')}`)
@@ -174,7 +187,7 @@ cpSync(join(root, 'mise-bundle', `${miseOs}-${arch}`), join(stage, 'app', 'mise-
   if (!pin) throw new Error(`tmux-release.json 里没有 ${osName}-${arch}`)
   const archive = obtainMiseArchive({
     cacheDir: defaultMiseCacheDir(),
-    downloadBase: 'https://github.com/tmux/tmux-builds/releases/download',
+    downloadBase: 'https://download.gugu.nextmind.space/releases/vendor/tmux',
     version: TMUX.version,
     asset: pin.asset,
     sha256: pin.sha256,
@@ -196,6 +209,14 @@ run(process.execPath, [join(root, 'scripts', 'build', 'build-frpc-bundle.mjs'), 
   cpSync(join(root, 'frpc-bundle', `${miseOs}-${arch}`, 'LICENSE'), join(frpcDir, 'LICENSE'))
 }
 
+// #1931 助理 App 的规则(上面核过的那一份):离线升级的机器先用它。放在 app/assistant-rules-seed,assistant-rules-root.ts 按应用路径找到。
+if (assistantRulesSeed) {
+  cpSync(assistantRulesSeed, join(stage, 'app', 'assistant-rules-seed'), { recursive: true })
+  console.log(`[server-bundle] assistant rules: ${JSON.parse(readFileSync(join(assistantRulesSeed, 'seed.json'), 'utf8')).version}`)
+} else {
+  console.log('[server-bundle] assistant rules: none pinned, this package carries no copy')
+}
+
 // 自带 Node:服务器上不要求装任何东西。
 const nodeDir = join(stage, 'node')
 if (process.env.GUGU_SERVER_SKIP_NODE_DOWNLOAD === '1') {
@@ -209,8 +230,11 @@ if (process.env.GUGU_SERVER_SKIP_NODE_DOWNLOAD === '1') {
   const nodeName = `node-v${nodeVersion}-${osName}-${arch}`
   const archive = join(releaseDir, `${nodeName}.tar.xz`)
   if (!existsSync(archive)) {
-    run('curl', ['-fsSL', '--retry', '3', '-o', archive, `https://nodejs.org/dist/v${nodeVersion}/${nodeName}.tar.xz`])
+    run('curl', ['-fsS', '--retry', '3', '-o', archive, `https://download.gugu.nextmind.space/releases/vendor/node-toolchain/v${nodeVersion}/${nodeName}.tar.xz`])
   }
+  const buildPins = JSON.parse(readFileSync(join(root, 'scripts/build/vendor-build-pins.json'), 'utf8'))
+  const nodePin = buildPins.artifacts.find(item => item.component === 'node-toolchain' && item.file === `${nodeName}.tar.xz`)
+  if (!nodePin || createHash('sha256').update(readFileSync(archive)).digest('hex') !== nodePin.sha256) throw new Error('Server Node archive SHA256 differs from the reviewed pin')
   mkdirSync(nodeDir, { recursive: true })
   run('tar', ['-xJf', archive, '-C', nodeDir, '--strip-components=1', `${nodeName}/bin/node`, `${nodeName}/LICENSE`])
 }

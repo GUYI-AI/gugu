@@ -60,14 +60,14 @@ export type LinkFolderResult =
  */
 export async function linkFolderOnMachine(
   deps: LinkFolderDeps,
-  input: { rowId: string; machine: string | null; path: string; existingProjectId?: string }
+  input: { rowId: string; machine: string | null; path: string }
 ): Promise<LinkFolderResult> {
   const { machine } = input;
   const group = await deps.ensureGroup(input.rowId);
   if (!group.success) return { ok: false, error: group.error };
-  const linked = input.existingProjectId
-    ? { projectId: input.existingProjectId, created: false }
-    : await deps.createProjectOn(machine, input.path);
+  // A folder that is already a project there (merged in, or detached from it earlier) goes through the same call:
+  // the host answers that project and re-attaches a detached root, so a re-bound folder is usable again.
+  const linked = await deps.createProjectOn(machine, input.path);
   if (!linked) return { ok: false, error: new Error(`could not add ${input.path} as a project`) };
   const { projectId, created } = linked;
   const dropIfCreated = async () => {

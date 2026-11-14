@@ -3,34 +3,36 @@ import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import type { AutomationTestId } from '../lib/automationDom'
 import type { MemberProfileCardModel } from './MemberProfileCard'
+import type { ActiveMemberProfile, MemberProfileHandle } from './memberProfileModels'
+import { Popover } from './ui/Popover'
 import { useTranslation } from 'react-i18next'
 
+/** An avatar that opens its member's profile card: the card's Trigger (a second press closes it; its open state is lit). */
 export function MemberProfileAvatarButton({
   member,
   testId,
   avatarSize = 'sm',
   buttonSize = 34,
-  active = false,
   isAgent = member.type === 'agent',
   messageSenderId,
-  onOpen,
+  profile,
 }: {
   member: MemberProfileCardModel
   testId: AutomationTestId
   avatarSize?: 'sm' | 'md'
   buttonSize?: number
-  active?: boolean
   isAgent?: boolean
   messageSenderId?: string
-  onOpen: (event: React.MouseEvent<HTMLButtonElement>) => void
+  profile: { handle: MemberProfileHandle; payload: ActiveMemberProfile }
 }) {
   const { t } = useTranslation('contacts')
   const identity = useAvatarIdentity(isAgent ? member.id : '')
   const name = useShownAgentName({ name: member.displayName, createdAt: isAgent ? identity?.created_at ?? undefined : undefined })
   return (
-    <button
-      type="button"
-      className="gg-pressable"
+    <Popover.Trigger
+      handle={profile.handle}
+      payload={profile.payload}
+      className="gg-pressable border border-transparent bg-transparent data-[popup-open]:border-[var(--accent)] data-[popup-open]:bg-[var(--accent-tint-row)]"
       data-testid={testId}
       data-group-member-id={member.id}
       data-group-member-type={member.type}
@@ -40,17 +42,12 @@ export function MemberProfileAvatarButton({
       data-profile-member-type={member.type}
       data-profile-member-role={member.role}
       aria-label={t('profile.viewProfile', { name })}
-      aria-expanded={active}
-      onClick={(event) => {
-        event.stopPropagation()
-        onOpen(event)
-      }}
+      // 只开这张卡,❌ 再冒泡成点了这一行 / 这条消息。
+      onClick={(event) => event.stopPropagation()}
       style={{
         width: buttonSize,
         height: buttonSize,
-        border: active ? '1px solid var(--accent)' : '1px solid transparent',
         borderRadius: avatarSize === 'md' ? 7 : 8,
-        background: active ? 'var(--accent-tint-row)' : 'transparent',
         color: 'inherit',
         display: 'inline-flex',
         alignItems: 'center',
@@ -68,6 +65,6 @@ export function MemberProfileAvatarButton({
         isAgent={isAgent}
         agentStatus={member.agentStatus}
       />
-    </button>
+    </Popover.Trigger>
   )
 }

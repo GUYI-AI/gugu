@@ -102,9 +102,11 @@ function receiptOf(id: string) {
   if (!row) throw new Error(`message ${id} is not in the topic line`)
   const seqs = surface!.splitLine.memberReadSeqs
   const messageReaders = row.readers?.length ? { [row.id]: new Set(row.readers) } : {}
+  // The mention woke agent-9 when it was written.
+  const facts = { agentIds: new Set(['agent-9']), wakes: new Map([['mine', new Set(['agent-9'])]]) }
   return {
-    receipt: deriveReadReceipt(row, seqs, { messageReaders }),
-    state: deriveMessageSendState(row, seqs, { memberIds: Object.keys(seqs), messageReaders }),
+    receipt: deriveReadReceipt(row, seqs, facts, { messageReaders })!,
+    state: deriveMessageSendState(row, seqs, facts, { memberIds: Object.keys(seqs), messageReaders }),
   }
 }
 

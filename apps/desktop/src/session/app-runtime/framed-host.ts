@@ -18,6 +18,14 @@ export function framedHost(): GuguHost & Record<string, unknown> {
   const inSession = window.name === APP_SESSION_FRAME_NAME;
   // This document's start, ahead of its first call: the outer page lets go of what the frame's previous document held.
   parent.postMessage({ m: APP_FRAME_MARKER, t: 'hello' } satisfies FrameToHost, '*');
+  if (PerformanceObserver.supportedEntryTypes.includes('paint')) {
+    const firstPaint = new PerformanceObserver((list) => {
+      if (!list.getEntries().some((entry) => entry.name === 'first-contentful-paint')) return;
+      parent.postMessage({ m: APP_FRAME_MARKER, t: 'painted' } satisfies FrameToHost, '*');
+      firstPaint.disconnect();
+    });
+    firstPaint.observe({ type: 'paint', buffered: true });
+  } else window.addEventListener('load', () => parent.postMessage({ m: APP_FRAME_MARKER, t: 'painted' } satisfies FrameToHost, '*'));
   return messageHost(
     {
       post: (message) => parent.postMessage(message, '*'),
@@ -36,28 +44,44 @@ export function framedHost(): GuguHost & Record<string, unknown> {
  * not there (an App tells the phone by `typeof gugu.callProgram`).
  */
 const PHONE: ReadonlySet<HostMember> = new Set<HostMember>([
-  'navigationGo', 'modal.open', 'modal.close', 'modal.key', 'onModalFocus',
+  'navigationGo', 'navigationClaimBack', 'onBack', 'modal.open', 'modal.close', 'modal.key', 'onModalFocus',
   'getContext', 'showContextMenu', 'getAppState', 'onAppStateChanged', 'onAgentsChanged', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', 'listAgents', 'messages.history', 'messages.search',
   'chats.list', 'chats.members', 'linkTo', 'openLink',
   'callProgram', 'sessions.index', 'sessions.read',
-  'forum.list', 'forum.read', 'forum.post', 'forum.reply', 'forum.react', 'forum.remove', 'forum.block', 'forum.assign', 'forum.award',
-  'forum.subscribe', 'forum.unsubscribe', 'onForumChanged',
-  'setTabTitle', 'setTabBadge', 'onCommand', 'onLink', 'showMessage', 'showSession', 'clipboard.writeText',
+  'cloud.read', 'cloud.write', 'cloud.subscribe', 'cloud.unsubscribe', 'onCloudHeard', 'pickAgent',
+  'setTabTitle', 'setTabBadge', 'setTabDirty', 'onCommand', 'onLink', 'showMessage', 'showSession', 'clipboard.writeText',
   'readData', 'writeData', 'listData',
-  'appFiles.open', 'appFiles.reopen', 'appFiles.close', 'appFiles.list', 'appFiles.read', 'appFiles.search', 'appFiles.recent', 'appFiles.create', 'appFiles.viewPreferences',
+  // API 49 The conversation binding, as the phone's binding host answers it (phoneAppBindings.ts).
+  'bindings.get', 'bindings.list', 'bindings.read', 'bindings.surface', 'bindings.setPanel', 'bindings.onSurface',
+  'bindings.resources', 'bindings.resource', 'bindings.watch', 'bindings.save', 'bindings.remove', 'onBindingResources',
+  'bindings.schedules', 'bindings.watchSchedules', 'bindings.controlSchedule', 'onSchedulesChanged',
+  'bindings.work', 'bindings.openWork', 'bindings.closeWork', 'bindings.onWork',
+  'assistant.status', 'assistant.open', 'assistant.advanceSetup', 'assistant.rename', 'assistant.figure', 'assistant.connect', 'onAssistantChanged', 'toast',
+  // 47 on a phone: answered `unsupported` (the phone's own 聊天 records), so an App hides its recorder there.
+  'voiceNote.start', 'voiceNote.pause', 'voiceNote.resume', 'voiceNote.stop', 'voiceNote.retry', 'voiceNote.openMicSettings',
+  'voiceNote.status', 'voiceNote.watch', 'onVoiceNote',
+  // 50 on a phone: answered `unsupported` (not managed from an App's page there).
+  'bindings.upload', 'bindings.createFolder', 'bindings.rename', 'bindings.removeFolder',
+  'bindings.transcribeVoiceNote', 'bindings.removeVoiceNote', 'bindings.exportVoiceNote',
+  'appFiles.open', 'appFiles.reopen', 'appFiles.close', 'appFiles.list', 'appFiles.read', 'appFiles.readText', 'appFiles.exists', 'appFiles.draft', 'appFiles.writeText', 'appFiles.search', 'appFiles.recent', 'appFiles.create', 'appFiles.viewPreferences',
   'appFiles.keep', 'appFiles.remove', 'appFiles.canDelete', 'appFiles.rename', 'appFiles.mkdir', 'appFiles.move', 'appFiles.watch', 'appFiles.replace',
-  'appFiles.versions', 'appFiles.readVersion', 'appFiles.upload', 'appFiles.openWith', 'appFiles.download', 'appFiles.forward',
+  'appFiles.versions', 'appFiles.readVersion', 'appFiles.upload', 'appFiles.writeChunk', 'appFiles.openWith', 'appFiles.download', 'appFiles.forward',
 ]);
 const IN_SESSION: ReadonlySet<HostMember> = new Set<HostMember>(['callProgram', 'onProgramNotification']);
 /** What main answers an App's MCP program (F16): its files and messages, an agent's word — no page, no data folder of a page. */
 const PROGRAM: ReadonlySet<HostMember> = new Set<HostMember>([
+  'pages.presentation',
+  'pages.filePayloads',
+  'showTaskPages',
+  'surfaces.open', 'surfaces.screen', 'surfaces.update', 'surfaces.close', 'onSurface',
+  'pages.acquire', 'pages.send', 'pages.maintain', 'pages.release', 'onTaskPage',
   'projection.create', 'projection.publish', 'projection.close', 'projection.closed', 'projection.inputResult', 'onProjectionSource',
   'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', 'messages.history', 'messages.search',
   'chats.list', 'chats.members', 'projects.list', 'linkTo',
-  'sessions.index', 'sessions.read',
-  'appFiles.open', 'appFiles.reopen', 'appFiles.close', 'appFiles.list', 'appFiles.read', 'appFiles.search', 'appFiles.recent', 'appFiles.create',
+  'sessions.index', 'sessions.read', 'cloud.read', 'cloud.programWrite', 'prompts.list', 'prompts.save', 'prompts.delete',
+  'appFiles.open', 'appFiles.reopen', 'appFiles.close', 'appFiles.list', 'appFiles.read', 'appFiles.readText', 'appFiles.exists', 'appFiles.draft', 'appFiles.writeText', 'appFiles.search', 'appFiles.recent', 'appFiles.create',
   'appFiles.remove', 'appFiles.canDelete', 'appFiles.rename', 'appFiles.mkdir', 'appFiles.move', 'appFiles.watch', 'appFiles.replace',
-  'appFiles.versions', 'appFiles.readVersion', 'appFiles.upload',
+  'appFiles.versions', 'appFiles.readVersion', 'appFiles.upload', 'appFiles.writeChunk',
 ]);
 
 /**

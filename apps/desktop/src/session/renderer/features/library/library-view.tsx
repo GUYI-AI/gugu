@@ -12,21 +12,24 @@ import { PageHeader } from '@renderer/lib/components/page-header';
 import { PageContent, PageLayout, PageSidebarMenu } from '@renderer/lib/components/page-layout';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { useParams } from '@renderer/lib/layout/navigation-provider';
+import type { SessionMessageKey } from '@renderer/localization/messages';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { createRemoteLibraryHost, LOCAL_LIBRARY_HOST, LibraryHostProvider, type LibraryHost } from './library-host';
 import { PromptLibraryView } from './prompts/prompt-library-view';
+import { ThemesLibraryPage } from './themes/themes-library-page';
+import { ConnectionRouteBoundary } from '@/components/connections/ConnectionRouteBoundary';
+import { OwnerConnectorsSettings } from '@/components/connections/OwnerConnectorsSettings';
+import { useDevicesStore } from '@/store/devicesContext';
+import { LIBRARY_TABS, type LibraryTab } from '@shared/library-tabs';
 
-/**
- * 资源库 = 给 agent 用的东西;咕咕这个 app 自己怎么表现归设置(owner 2026-09-15,#5688)。
- * 智能体、集成两页因此从设置搬到这里。App(原「扩展」)在这里待过一阵,10-01 起搬到最左栏自己的一格(apps 视图)。
- * MCP 那格 10-18 换了内容(owner 选的):原来只抄各家配置文件、不连 server;现在是咕咕自己管的列表(检测连接、
- * 新建任务时勾选),各家自己配的并排列出、只读。
- *
- * 唯一的一份清单,类型从它推出来;LibraryMainPanel 以它为键配页面,少配一格就编译不过。
- */
-export const LIBRARY_TABS = ['prompts', 'agents', 'integrations', 'mcp'] as const;
-
-export type LibraryTab = (typeof LIBRARY_TABS)[number];
+/** Each tab's name, one list: the Library's own menu and an App's `hostLinks` entry (app-settings-page.tsx) say it the same. */
+export const LIBRARY_TAB_LABELS = {
+  prompts: 'prompts.title',
+  agents: 'settings.agents',
+  integrations: 'settings.integrations',
+  mcp: 'mcpLibrary.title',
+  themes: 'themes.title',
+} as const satisfies Record<LibraryTab, SessionMessageKey>;
 
 const LibraryTabContext = createContext<{
   tab: LibraryTab;
@@ -116,6 +119,12 @@ function IntegrationsLibraryPage() {
   );
 }
 
+const RoutedIntegrationsLibraryPage = observer(function RoutedIntegrationsLibraryPage({ legacy,host }: { legacy: ReactNode; host: LibraryHost }) {
+  const devices = useDevicesStore();
+  const deviceId = host.remote?.deviceId ?? devices.devices.find(row => row.is_current_device)?.device_id ?? null;
+  return <ConnectionRouteBoundary owner={route => <OwnerConnectorsSettings route={route} deviceId={deviceId} />} legacy={legacy} />;
+});
+
 export const LibraryMainPanel = observer(function LibraryMainPanel() {
   const { tab, onTabChange } = useLibraryTab();
   const { params, setParams } = useParams('library');
@@ -126,12 +135,7 @@ export const LibraryMainPanel = observer(function LibraryMainPanel() {
    * 都换成那台机器的,长相不变。换机器 = 换一份页面(key 按机器):上一台机器的搜索词、刷新中的状态不带到下一台。
    */
   const host = useSelectedLibraryHost();
-  const tabs: Array<{ id: LibraryTab; label: string; badge?: number }> = [
-    { id: 'prompts', label: translate('prompts.title') },
-    { id: 'agents', label: translate('settings.agents') },
-    { id: 'integrations', label: translate('settings.integrations') },
-    { id: 'mcp', label: translate('mcpLibrary.title') },
-  ];
+  const tabs: Array<{ id: LibraryTab; label: string; badge?: number }> = LIBRARY_TABS.map((id) => ({ id, label: translate(LIBRARY_TAB_LABELS[id]) }));
   const tabContent: Record<LibraryTab, ReactNode> = {
     prompts: <PromptLibraryView />,
     agents: (
@@ -141,14 +145,15 @@ export const LibraryMainPanel = observer(function LibraryMainPanel() {
       />
     ),
     // 集成的数据放在一个 Provider 里(应用根上那份是本机的,聊天里的 @issue 用它);这里按所选机器另挂一份。
-    integrations: host.remote ? (
+    integrations: <RoutedIntegrationsLibraryPage host={host} legacy={host.remote ? (
       <IntegrationsProvider>
         <IntegrationsLibraryPage />
       </IntegrationsProvider>
     ) : (
       <IntegrationsLibraryPage />
-    ),
-    mcp: <McpLibraryView />,
+    )} />,
+    mcp: <McpLibraryView onOpenIntegrations={() => onTabChange('integrations')} />,
+    themes: <ThemesLibraryPage />,
   };
 
   return (

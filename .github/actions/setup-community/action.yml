@@ -28,8 +28,9 @@ runs:
         git clean -ffdx -e node_modules -e .ci-cache
     - uses: pnpm/action-setup@v4
     - id: node
-      uses: actions/setup-node@v4
+      uses: ./.github/actions/setup-vendor-node
       with:
+        save-cache: ${{ inputs.save-cache }}
         node-version-file: .node-version
     - id: cache-paths
       shell: bash

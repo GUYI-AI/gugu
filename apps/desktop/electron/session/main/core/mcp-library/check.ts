@@ -2,7 +2,7 @@ import { homedir } from 'node:os';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { LibraryMcpCheck, LibraryMcpFailure, LibraryMcpServer, LibraryMcpTool } from '@shared/mcp-library';
+import { libraryMcpToolOf, type LibraryMcpCheck, type LibraryMcpFailure, type LibraryMcpServer, type LibraryMcpTool } from '@shared/mcp-library';
 import { log } from '@main/lib/logger';
 import { OwnedStdioTransport, lastStderrLine } from '@main/core/mcp/owned-stdio-transport';
 
@@ -62,7 +62,7 @@ export async function checkLibraryMcp(server: LibraryMcpServer): Promise<Library
       let cursor: string | undefined;
       do {
         const page = await client.listTools(cursor ? { cursor } : undefined);
-        listed.push(...page.tools.map((tool) => ({ name: tool.name, ...(tool.description ? { description: tool.description } : {}) })));
+        listed.push(...page.tools.map(libraryMcpToolOf));
         cursor = page.nextCursor;
       } while (cursor);
       return listed;

@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process'
 import { createDesktopGuguMcpHost } from '../../../apps/desktop/electron/acp-engine-utils'
 import { assistantRecoveryHook, assistantResourceHook } from '../../../apps/desktop/electron/sessionpage/assistant-resource-hook'
 import { assistantRecoveryContext } from '@gugu/core/shared/assistantPolicy'
+import { NEUTRAL_ASSISTANT_RULES } from './assistantRules/neutralRules'
 
 const cleanup: Array<() => Promise<unknown>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
@@ -27,7 +28,7 @@ async function recoveryFixture() {
   cleanup.push(() => rm(root, { recursive: true, force: true }))
   const path = join(root, 'working-context.md')
   const script = join(root, 'recovery.cjs')
-  await writeFile(script, assistantRecoveryHook(assistantRecoveryContext(root), path))
+  await writeFile(script, assistantRecoveryHook(assistantRecoveryContext(root, NEUTRAL_ASSISTANT_RULES), path))
   await writeFile(join(root, 'MEMORY.md'), 'OTHER-MEMORY-MUST-STAY-ON-DEMAND')
   const hook = async (event = 'SessionStart', source = 'compact') => {
     const result = await runHook(script, event, source)
@@ -55,7 +56,7 @@ async function fixture() {
     if (action.action === 'device_actions') return { devices }
     if (action.action === 'project_list') return Array.from({ length: state.many ? 180 : 1 }, (_, i) => ({ project_id: `p-${i}`, name: state.name + i, path: '/work/' + i }))
     if (action.action === 'schedule_list') return { schedules: [] }
-    return { items: [{ id: 'note', name: 'Saved capability', description: 'Summary', group: null, modifiedAt: '2026-10-21T00:00:00Z', content: 'PRIVATE-BODY' }] }
+    return {}
   }
   await host.start()
   const grant = await host.grant('assistant', {
@@ -87,8 +88,7 @@ it.each(['startup', 'compact', 'clear'])('reads the current owner-scoped index a
   const output = JSON.parse(result.text).hookSpecificOutput
   expect(output.hookEventName).toBe('SessionStart')
   expect(output.additionalContext).toContain('Current project')
-  expect(output.additionalContext).toContain('Saved capability')
-  expect(result.text).not.toContain('PRIVATE-BODY')
+  expect(output.additionalContext).not.toContain('library_')
   expect(f.state.reads).toBeGreaterThan(0)
 }, 15000)
 
@@ -229,7 +229,6 @@ it('retains the complete bounded index inline so required applications do not de
   expect(projects.read.tool).toBe('project_list')
   expect(projects.omitted_items).toBeGreaterThan(0)
   expect(projects.items.length).toBeLessThan(180)
-  expect(index).not.toContain('PRIVATE-BODY')
 }, 15000)
 
 

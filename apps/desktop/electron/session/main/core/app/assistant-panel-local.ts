@@ -13,17 +13,18 @@ import { providerAccountRegistry } from '@main/core/provider-accounts/provider-a
 import { integrationPluginRegistry } from '@gugu/session-plugins/integrations'
 import { buildIntegrationListPayload } from '@main/core/integrations/integration-payload-builder'
 import { integrationConnectionService } from '@main/core/integrations/integration-connection-service'
+import { setOwnerConnectionControl } from '@main/core/integrations/owner-connection-control'
 import { platformCredentials } from '@main/core/integrations/platform-credentials-instance'
 import { listAgents } from '@gugu/core'
 import { agentsForOwner } from '@gugu/core/local/state/agentOwner'
 import type { AssistantPanelChange } from '@gugu/core/cloud/assistantPanel'
-import { readUserLibraryVolume, readUserLibraryEntry, writeUserLibraryEntry, removeUserLibraryEntry, onUserLibraryChanged } from './user-library'
 
 /** This bridge lives in the embedded module, beside the actual registries and
  * scheduler. The Electron host must not construct a second copy of either. */
 export const assistantPanelLocal = {
+  setOwnerConnectionControl,
   integrationIndex: configuredIntegrationIndex,
-  onLibraryChanged: onUserLibraryChanged,
+  integrationCustody(providerId: string) { return platformCredentials.custody(providerId) },
   onIntegrationsChanged(listener: () => void) { return providerAccountRegistry.onChanged(listener) },
   onSchedulesChanged(listener: () => void) {
     return tapMainEvents(channel => {
@@ -56,10 +57,6 @@ export const assistantPanelLocal = {
           lastRun: last ? { status: last.status,at: last.at,errorCode: last.error?.code ?? null } : null }
       })
   },
-  async library(kind: 'capabilities' | 'devices') {
-    const volume = await readUserLibraryVolume(kind)
-    return Promise.all(volume.items.map(item => readUserLibraryEntry(kind,item.id)))
-  },
   async integrations(ownerId: string,onVerified?: () => void) {
     // #921 credentials the platform keeps: what another device connected or disconnected shows here too.
     await platformCredentials.refresh({ maxAgeMs: 60_000 })
@@ -86,25 +83,25 @@ export const assistantPanelLocal = {
     const en = buildIntegrationListPayload('en-US',custodyOf), zh = buildIntegrationListPayload('zh-CN',custodyOf)
     return en.map(item => ({ id: item.id,en: item,zh: zh.find(row => row.id === item.id)! }))
   },
-  async apply(change: AssistantPanelChange, body: Uint8Array | null, sessionIds: readonly string[], ownerId: string) {
-    const removed = change.operation === 'remove'
-    const data = (change.payload[removed ? 'before' : 'data'] ?? {}) as Record<string, unknown>
-    if (change.domain === 'capabilities' || change.domain === 'device-notes') {
-      const kind = change.domain === 'capabilities' ? 'capabilities' : 'devices'
-      if (removed) return removeUserLibraryEntry(kind,change.resource_key,ownerId)
-      const current = await readUserLibraryEntry(kind,change.resource_key).catch((error: NodeJS.ErrnoException) => {
-        if (error.code === 'ENOENT') return null
-        throw error
-      })
-      if (!body || typeof data.name !== 'string' || typeof data.description !== 'string') throw new Error('PANEL_LIBRARY_DATA_INVALID')
-      const content = new TextDecoder('utf-8',{ fatal: true }).decode(body)
-      if (current && current.content === content && current.name === data.name && current.description === data.description && current.group === (data.group ?? null)) return
-      await writeUserLibraryEntry({ kind,id: change.resource_key,name: data.name,description: data.description,
-        group: typeof data.group === 'string' ? data.group : null,content,
-        ...(current ? { expectedModifiedAt: current.modifiedAt } : {}),
-      },undefined,'ui',ownerId)
+  /** Owner device-scope effects never revoke the separate platform credential.
+   * The runtime checks owner/device admission before entering this bridge. */
+  async applyConnection(input: { operation: string; data: Record<string, unknown> }) {
+    const { data,operation } = input
+    const refuse = (code: string): never => { throw Object.assign(new Error(code),{ code,knownNoEffect: true }) }
+    if (typeof data.providerId !== 'string' || typeof data.accountId !== 'string') refuse('CONNECTION_DATA_INVALID')
+    const providerId = data.providerId as string,accountId = data.accountId as string
+    if (!integrationPluginRegistry.get(providerId)) refuse('CONNECTION_PROVIDER_UNSUPPORTED')
+    if (operation === 'remove') { await integrationConnectionService.disconnectLocalAccount(providerId,accountId); return }
+    if (operation === 'save') {
+      if (!(await providerAccountRegistry.listAccounts(providerId)).some(row => row.accountId === accountId)) refuse('CONNECTION_AUTHORIZATION_REQUIRED')
+      if (data.isDefault === true) await providerAccountRegistry.setDefaultAccount(providerId,accountId)
       return
     }
+    refuse('CONNECTION_OPERATION_UNSUPPORTED')
+  },
+  async apply(change: AssistantPanelChange, sessionIds: readonly string[]) {
+    const removed = change.operation === 'remove'
+    const data = (change.payload[removed ? 'before' : 'data'] ?? {}) as Record<string, unknown>
     if (change.domain === 'schedules') {
       const current = (await automationsService.listAutomations()).find(row => row.id === change.resource_key)
       if (!current) {

@@ -1,6 +1,7 @@
 import { sessionLeaveDestination } from '@renderer/features/sessions/leave-session-view';
 import { getSessionManagerStore } from '@renderer/features/sessions/stores/session-selectors';
 import { projectPresence } from '@renderer/features/projects/project-presence';
+import { ASSISTANT_APP_ID, openAssistantEntry, readAssistantEntryTarget } from '@/lib/assistantEntry';
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge';
 import { isAssistantAgent } from '@renderer/features/assistant/assistant-lineage';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
@@ -40,9 +41,15 @@ export function sessionViewCanActivate(params: unknown): GuardResult {
       return { ok: false, redirect: destination.viewId, params: destination.params };
     }
   }
-  // Old task links and saved layouts must return the assistant to its own surface, without mounting its host.
+  // Old task links and saved layouts must return the assistant to its own surface without mounting its host: its App's page when
+  // the App is where the entry goes; when the App is not usable here (switched off, going in, failing) its chat as any chat,
+  // never the blank 新建任务 page (lib/assistantEntry.ts: the one decision every route to the assistant asks).
   if (isAssistantAgent(sessionAgentBindings.bindingFor(sessionId)?.agentUserId, readAssistantShellBridge()?.getSnapshot()?.assistant?.id)) {
-    return { ok: false, redirect: 'assistant' };
+    const target = readAssistantEntryTarget();
+    if (target.kind === 'app') return { ok: false, redirect: 'app', params: { appId: ASSISTANT_APP_ID } };
+    // Opened once this navigation has settled: a chat opened from inside the guard would navigate inside a navigation.
+    if (target.kind === 'chat') queueMicrotask(() => openAssistantEntry());
+    return { ok: false, redirect: 'home' };
   }
   return { ok: true };
 }

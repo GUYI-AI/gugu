@@ -12,7 +12,16 @@ export async function runActivityAction(action: ActivityAction) {
   const journal = activityJournal();
   if (action.action === 'activity_list') {
     const { action: _, ...query } = action;
-    return journal.list(query);
+    // Projects are named by their project group (project-public-id.ts): the filter is this machine's folders of it
+    // (none here: no events here), and every event answers with the project's id, never this machine's local one.
+    const { machineLocalProjectsOf, machineOutwardProjectIds } = await import('../projects/project-public-id');
+    const locals = query.project_id ? await machineLocalProjectsOf(query.project_id) : undefined;
+    const outward = await machineOutwardProjectIds();
+    const listed = journal.list(query, locals);
+    return { ...listed, events: listed.events.map(({ project_id, ...event }) => {
+      const id = project_id ? outward(project_id) : null;
+      return id ? { ...event, project_id: id } : event;
+    }) };
   }
   const event = journal.get(z.string().min(1).max(512).parse(action.event_id));
   const sessionId = event.session_id;

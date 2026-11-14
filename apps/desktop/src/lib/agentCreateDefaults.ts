@@ -3,6 +3,7 @@ import {
   readAgentCreateDefaults as readCoreAgentCreateDefaults,
   rememberAgentCreateDevice as rememberCoreAgentCreateDevice,
   rememberAgentCreateProject as rememberCoreAgentCreateProject,
+  rememberAgentCreateRunMachine as rememberCoreAgentCreateRunMachine,
 } from '@gugu/core/cloud/agentCreateDefaults'
 import type { SettingsTableClient } from '@gugu/core/cloud/userSettings'
 import type { AgentCreateDefaults } from '@gugu/core/shared/ui/agentCreateDefaultsModels'
@@ -27,4 +28,8 @@ export async function rememberAgentCreateProject(
   chatId?: string | null,
 ): Promise<AgentCreateDefaults> {
   return rememberCoreAgentCreateProject(settingsClient, await getCurrentAuthUserId(), deviceId, projectId, chatId)
+}
+
+export async function rememberAgentCreateRunMachine(projectKey: string, deviceId: string): Promise<AgentCreateDefaults> {
+  return rememberCoreAgentCreateRunMachine(settingsClient, await getCurrentAuthUserId(), projectKey, deviceId)
 }

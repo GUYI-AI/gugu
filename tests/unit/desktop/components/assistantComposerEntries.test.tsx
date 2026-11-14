@@ -1,18 +1,17 @@
 // @vitest-environment jsdom
-import { act } from 'react'
+import { act, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AssistantComposerEntries } from '../../../../apps/desktop/src/components/assistant/AssistantComposerEntries'
 import { offerCustomizeCard, useCustomizeCardOffered, customizeCardOffered } from '../../../../apps/desktop/src/lib/assistantSetupState'
-import { ideasEntryHidden, requestIdeas, setIdeasEntryHidden } from '../../../../apps/desktop/src/lib/assistantIdeas'
-import { useIdeasOpen } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-ideas'
+import { ideasEntryHidden, setIdeasEntryHidden } from '../../../../apps/desktop/src/lib/assistantIdeas'
 import { clickElement, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
 let harness: ReturnType<typeof createReactHarness>
 const openCustomize = vi.fn()
 function Entries({ busy = false }: { busy?: boolean }) {
   const offered = useCustomizeCardOffered('composer-owner')
-  const [ideasOpen] = useIdeasOpen()
-  return <><AssistantComposerEntries assistantId="composer-assistant" busy={busy} onOpen={requestIdeas}
+  const [ideasOpen, setIdeasOpen] = useState(false)
+  return <><AssistantComposerEntries assistantId="composer-assistant" busy={busy} onOpen={() => setIdeasOpen(true)}
     customize={offered ? { ownerUserId: 'composer-owner', name: '咕咕', onOpen: openCustomize } : undefined} /><output>{ideasOpen ? 'ideas opened' : ''}</output></>
 }
 beforeEach(() => { localStorage.clear(); openCustomize.mockReset(); harness = createReactHarness() })
@@ -21,7 +20,7 @@ const row = () => harness.container.querySelector('[data-testid="assistant-compo
 const byId = (id: string) => harness.container.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
 
 describe('assistant composer entry row', () => {
-  it('places both entries in one parent and opens ideas through the existing event', async () => {
+  it('places both entries in one parent and opens ideas through its callback', async () => {
     offerCustomizeCard('composer-owner')
     await renderWithAppProviders(harness, <Entries />)
     expect(row().children.length).toBe(2)

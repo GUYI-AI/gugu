@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { SubscriptionServiceRow } from './SubscriptionServiceRow';
 import './subscriptions.css';
 
-const APP_ICON_URL = publicAssetPath('/assets/app/gugu-icon-512.png');
+const APP_ICON_URL = publicAssetPath('/assets/app/gugu-icon-small.png');
 
 export function GuguSubscriptionRow() {
   const { translate, locale } = useSessionMessages();

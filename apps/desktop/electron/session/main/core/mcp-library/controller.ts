@@ -1,5 +1,8 @@
+import type { GuguToolsOff } from '@shared/gugu-tool-groups';
 import { createRPCController } from '@shared/lib/ipc/rpc';
-import type { LibraryMcpCheck, LibraryMcpHarnessServer, LibraryMcpServer } from '@shared/mcp-library';
+import { applyGuguToolsOff } from '../../../../acp-engine-utils';
+import type { LibraryMcpCheck, LibraryMcpHarnessServer, LibraryMcpProvided, LibraryMcpServer } from '@shared/mcp-library';
+import { libraryMcpProvided, libraryMcpProvidedTools } from './provided';
 import { mcpLibraryService } from './service';
 
 /** 资源库 → MCP 的读写。别的机器经 `rpcOn(机器).mcpLibrary.*` 问到它自己的这一个控制器。 */
@@ -11,6 +14,13 @@ export const mcpLibraryController = createRPCController({
   setEnabledByDefault: (name: string, enabledByDefault: boolean): Promise<void> =>
     mcpLibraryService.setEnabledByDefault(name, enabledByDefault),
   check: (name: string): Promise<LibraryMcpCheck> => mcpLibraryService.check(name),
+  provided: (): Promise<LibraryMcpProvided> => libraryMcpProvided(),
+  // 存下以后当场作用到已连上的会话(tools/list_changed),新会话连上时照读存着的那份。
+  setGuguToolsOff: async (off: GuguToolsOff): Promise<void> => {
+    await mcpLibraryService.setGuguToolsOff(off);
+    applyGuguToolsOff(off);
+  },
+  providedTools: (key: string): Promise<LibraryMcpCheck> => libraryMcpProvidedTools(key),
   harnessServers: (providerIds: string[]): Promise<LibraryMcpHarnessServer[]> =>
     mcpLibraryService.harnessServers(providerIds),
   checkHarnessServer: (providerId: string, name: string): Promise<LibraryMcpCheck> =>

@@ -10,6 +10,8 @@ import { SettingsNote } from '@/components/settings/SettingsPrimitives';
 export type PageScope = {
   /** 标题右边那一格(机器选择器)。 */
   control: ReactNode;
+  /** Inline status for this scope; the caller supplies the shared presentation. */
+  status?: ReactNode;
 };
 
 const PageScopeContext = createContext<PageScope | null>(null);
@@ -32,6 +34,7 @@ export function PageHeader({
   title,
   description,
   scope: scopeProp,
+  status: statusProp,
   children,
   sticky = false,
   aside,
@@ -41,6 +44,8 @@ export function PageHeader({
   description?: string;
   /** 直接给这一页一个范围;缺省读模块层挂的那一份。 */
   scope?: PageScope | null;
+  /** Override the inherited scope status; null hides it for this heading. */
+  status?: ReactNode;
   children?: ReactNode;
   sticky?: boolean;
   /** 标题与说明右边那一格(App 页的搜索框,#7059 原型「顶上『App』+ 一句话,右边搜索」)。 */
@@ -50,11 +55,22 @@ export function PageHeader({
 }) {
   const inherited = useContext(PageScopeContext);
   const scope = scopeProp === undefined ? inherited : scopeProp;
+  const status = statusProp === undefined ? scope?.status : statusProp;
+  const statusSlot = status ? (
+    <div className="flex min-w-0 items-center gap-2 [-webkit-app-region:no-drag]" data-slot="page-status">
+      {status}
+    </div>
+  ) : null;
   if (useContext(InSettingsPanelContext) && !showTitleInSettings) {
     if (!scope?.control && !description && !children) return null;
     return (
       <div className="flex flex-col gap-4">
-        {scope?.control ? <div className="flex min-w-0" data-slot="page-scope">{scope.control}</div> : null}
+        {scope?.control ? (
+          <div className="flex min-w-0" data-slot="page-scope">
+            {scope.control}
+            {statusSlot ? <div className="ml-2 flex min-w-0 items-center">{statusSlot}</div> : null}
+          </div>
+        ) : null}
         {description ? <SettingsNote>{description}</SettingsNote> : null}
         {children}
       </div>
@@ -71,6 +87,7 @@ export function PageHeader({
               {scope.control}
             </div>
           ) : null}
+          {statusSlot}
         </div>
         {description ? <p className="text-sm text-foreground-muted">{description}</p> : null}
       </div>

@@ -14,6 +14,28 @@ const pages = (kind: string) => [...store.residentPages.values()].filter((page) 
 afterEach(() => { for (const kind of used) store.forgetOpened(kind); used.clear(); });
 
 describe('each App navigation context owns its resident pages', () => {
+  it('one widget is one page across its slots: painted survives a handoff, and clears when its guest is replaced', () => {
+    const widget = { id: 'stable-widget', originMessageId: 'origin', messageId: 'first', senderId: 'author', data: {} };
+    const first = bind(take('counter.widget', { chatId: 'widget-chat', tabId: 'widget:stable-widget', widget }));
+    const page = key('counter.widget', { chatId: 'widget-chat', widget });
+    store.widgetPainted(page);
+    store.release('counter.widget', first);
+    take('counter.widget', { chatId: 'widget-chat', tabId: 'widget:stable-widget', widget: { ...widget, messageId: 'second' } });
+    expect(pages('counter.widget').map((p) => p.key)).toEqual([page]);
+    expect(store.paintedPages.has(page)).toBe(true);
+    store.widgetPainted(page, false);
+    expect(store.paintedPages.has(page)).toBe(false);
+  });
+  it('a task timeline showing the same widget has a page of its own (its own tab), the chat keeps one', () => {
+    const widget = { id: 'stable-widget', originMessageId: 'origin', messageId: 'origin', senderId: 'author', data: {} };
+    take('counter.timeline', { chatId: 'widget-chat', tabId: 'widget:stable-widget', widget });
+    take('counter.timeline', { chatId: 'widget-chat', tabId: 'widget:stable-widget:timeline', widget });
+    take('counter.timeline', { chatId: 'widget-chat', tabId: 'widget:stable-widget', widget: { ...widget, messageId: 'quote' } });
+    expect(pages('counter.timeline').map((p) => p.key)).toEqual([
+      key('counter.timeline', { chatId: 'widget-chat', widget }),
+      key('counter.timeline', { chatId: 'widget-chat', tabId: 'widget:stable-widget:timeline', widget }),
+    ]);
+  });
   it('does no work until claimed; an unbound release drops its page and ignores a late bind', () => {
     expect(pages('lazy.main')).toEqual([]);
     const token = take('lazy.main', { sessionId: 's', tabId: 'a' });

@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { olderTimelineTarget, sameOlderTarget } from './timeline-older-window'
+import { rendererLogger } from '@/lib/log'
+import { messageForUser } from '@/lib/userFacingError'
+import { recoverTimelineRead } from './timeline-read-recovery'
 import type {
   RecordCursor,
   SettlementResponse,
@@ -7,6 +11,7 @@ import type {
   TimelineAfterResult,
   TimelineOlderResult,
   TimelineSnapshot,
+  WindowCursor,
 } from '@gugu/session-core/session-record/contract'
 import type { ToolImage } from '@gugu/session-core/acp/client'
 import {
@@ -19,14 +24,16 @@ import {
   type AgentWatchTimeline,
 } from './agent-watch-store'
 import { settlePendingSends, userMessageIds, type PendingSend } from './pending-sends'
-import { loadRetryDelay, TRANSIENT_LOAD_CODES } from './record-wait'
+import { loadRetryDelay, LOAD_RETRY_DELAYS_MS } from './record-wait'
 import { hydrateCachedTimeline, readCachedTimeline, writeCachedTimeline } from './timeline-cache'
 
 /** 读写**另一台机器**上一条会话所需的那几问(手机用 sessionpage-rpc.ts 那一组;单测换成假的)。 */
 export type SessionpageTimelineClient = {
+  /** Desktop bounded source windows never hydrate the legacy aggregate history cache. */
+  boundedWindow?: true
   fetchSnapshot(deviceId: string, sessionId: string, limit?: number): Promise<TimelineSnapshot>
   fetchAfter(deviceId: string, sessionId: string, cursor: RecordCursor): Promise<TimelineAfterResult>
-  fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number): Promise<TimelineOlderResult>
+  fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number, cursor?: WindowCursor): Promise<TimelineOlderResult>
   /** 一张工具交回来的图(时间线里只有它的字数,见 transport-trim)。 */
   fetchToolImage(deviceId: string, sessionId: string, itemId: string, index: number): Promise<ToolImage>
   subscribeSession(deviceId: string, sessionId: string, subscriptionId: string, cursor: RecordCursor | null): Promise<unknown>
@@ -56,6 +63,9 @@ function rpcErrorCode(err: unknown): string | null {
   }
   return null
 }
+
+/** A new session's first prompt and the client message id its create request gave it. */
+export type FirstPrompt = { id: string; text: string; sentAt: number }
 
 export type AgentWatchPhase = 'loading' | 'ready' | 'error'
 
@@ -107,6 +117,7 @@ export type AgentWatchSession = {
 const HYDRATE_BUDGET_MS = 400
 
 const NO_SENDS: readonly PendingSend[] = []
+const timelineLog = rendererLogger('agent-watch/timeline')
 
 function newLocalId(): string {
   const randomUUID = globalThis.crypto?.randomUUID
@@ -138,8 +149,11 @@ export function useTimelineSession(
   deviceId: string | null,
   sessionId: string | null,
   enabled: boolean,
-  /** 刚建的会话:建它时带的那句,机器已受理。挂载时就是一句在路上的发送,记录里那一行到了照常让位。 */
-  firstPrompt?: string,
+  /**
+   * 刚建的会话:建它时带的那句,机器已受理。挂载时就是一句在路上的发送,记录里那一行到了照常让位。
+   * `id` 是建会话请求里给它铸的那个(宿主以它收下首句):乐观那一行、待发行、原生消息是同一个身份(#2296)。
+   */
+  firstPrompt?: FirstPrompt,
 ): AgentWatchSession {
   /*
    * 内存里有上次看到的那一份就拿它当**初值**:第一帧就是完整的时间线。❌ 先画一帧空线程、再在下面的 effect 里换上 ——
@@ -147,7 +161,7 @@ export function useTimelineSession(
    * owner 10-12「进运行中的任务页,一进去就颤两下」。下面 effect 里那次读照旧,换会话时靠它。
    */
   const [timeline, setTimeline] = useState<AgentWatchTimeline>(() =>
-    (deviceId && sessionId ? readCachedTimeline({ deviceId, sessionId }) : null) ?? emptyAgentWatchTimeline())
+    (!client.boundedWindow && deviceId && sessionId ? readCachedTimeline({ deviceId, sessionId }) : null) ?? emptyAgentWatchTimeline())
   const [phase, setPhase] = useState<AgentWatchPhase>(() => (timeline.cursor ? 'ready' : 'loading'))
   const [error, setError] = useState<string | null>(null)
   const [link, setLink] = useState<TimelineLink>('connecting')
@@ -159,7 +173,7 @@ export function useTimelineSession(
   const [sending, setSending] = useState(false)
   // 乐观发送按会话存(`key`):换了会话,上一条会话的那几句在渲染时就不认,❌ 靠 effect 事后清 —— 那样会在新会话里闪一帧。
   const [pendingState, setPendingState] = useState<{ key: string; sends: readonly PendingSend[] }>(() => (firstPrompt
-    ? { key: `${deviceId ?? ''}/${sessionId ?? ''}`, sends: [{ id: `pending:${newLocalId()}`, text: firstPrompt, baseline: new Set(), accepted: true }] }
+    ? { key: `${deviceId ?? ''}/${sessionId ?? ''}`, sends: [{ id: firstPrompt.id, text: firstPrompt.text, sentAt: firstPrompt.sentAt, baseline: new Set(), accepted: true }] }
     : { key: '', sends: NO_SENDS }))
   const [respondingItemId, setRespondingItemId] = useState<string | null>(null)
   const [reloadNonce, setReloadNonce] = useState(0)
@@ -175,13 +189,22 @@ export function useTimelineSession(
   // 依赖 timeline 会让每次时间线更新都换一个新函数,读 ref 才拿得到当下那份。
   const timelineRef = useRef(timeline)
   timelineRef.current = timeline
+  const olderIdentity = JSON.stringify([deviceId, sessionId, enabled])
+  const olderIdentityRef = useRef(olderIdentity)
+  olderIdentityRef.current = olderIdentity
+  const olderRequest = useRef<{ identity: string; generation: number; promise: Promise<void> } | null>(null)
+  const olderGeneration = useRef(0)
+  useEffect(() => () => { olderGeneration.current++ }, [client, deviceId, sessionId, enabled])
 
   const applyResult = useCallback((result: TimelineAfterResult) => {
+    // Invalidate before applying resolutions: no older promise can resurrect a ticket.
+    if (!result.ok || result.batch.resolvedPendingTickets?.length || result.batch.resolvedFragmentOwners?.length) olderGeneration.current++
     setTimeline((current) => {
       const next = applyTimelineResult(current, result)
       cursorRef.current = next.cursor
       return next
     })
+    if (!result.ok) timelineLog.info({ reason: result.reset }, 'Timeline snapshot reset')
   }, [])
 
   const reload = useCallback(() => setReloadNonce((n) => n + 1), [])
@@ -194,12 +217,13 @@ export function useTimelineSession(
       setError(null)
       setErrorCode(null)
       setLink('lost')
-      const cached = readCachedTimeline({ deviceId, sessionId })
+      const cached = client.boundedWindow ? null : readCachedTimeline({ deviceId, sessionId })
       setTimeline(cached ?? emptyAgentWatchTimeline())
-      if (!cached) void hydrateCachedTimeline({ deviceId, sessionId }).then((stored) => { if (!cancelled && stored) setTimeline(stored) })
+      if (!client.boundedWindow && !cached) void hydrateCachedTimeline({ deviceId, sessionId }).then((stored) => { if (!cancelled && stored) setTimeline(stored) })
       return () => { cancelled = true }
     }
     let cancelled = false
+    const recoveryAbort = new AbortController()
     const subscriptionId = newLocalId()
     const cacheKey = { deviceId, sessionId }
     readyRef.current = false
@@ -213,7 +237,7 @@ export function useTimelineSession(
      * owner 2026-09-08 拍板要这一层:以前每次进页都得等机器把整份快照送过来才有东西看,
      * 于是首屏永远是「正在读取时间线…」。底稿不是事实源 —— 它只活到下面第一次对账为止。
      */
-    const cached = readCachedTimeline(cacheKey)
+    const cached = client.boundedWindow ? null : readCachedTimeline(cacheKey)
     if (cached) {
       setTimeline(cached)
       cursorRef.current = cached.cursor
@@ -224,16 +248,18 @@ export function useTimelineSession(
     }
 
     /*
-     * 补缺口失败不清空已有的那一份:屏幕上那段仍然是真的,只是没有更新。会自己好的那类(与首读同一张
-     * `TRANSIENT_LOAD_CODES`)只把链路标成断开,❌ 报红(#6738);窗口重开、回前台都会再补。
-     * 机器明确拒绝的才如实报原文,补上了就收回这一条 —— 别的路报的错(比如订阅没订上)不归这里管。
+     * 补缺口失败不清空已有的那一份:屏幕上那段仍然是真的,只是没有更新。会自己好的读失败按既有退避自动补几次，
+     * 耗尽才交统一出口，期间不把重试按钮留给用户；窗口重开、回前台也能重新驱动。
+     * 失败耗尽后仍如实报原文，补上了就收回这一条 —— 别的路报的错(比如订阅没订上)不归这里管。
      * 补上一次就算和那台机器对过账了(syncedRef)。
      */
     let catchUpReported = false
+    let catchUpRunning = false
     const catchUp = () => {
       const cursor = cursorRef.current
-      if (!readyRef.current || !cursor) return
-      void client.fetchAfter(deviceId, sessionId, cursor)
+      if (cancelled || catchUpRunning || !readyRef.current || !cursor) return
+      catchUpRunning = true
+      void recoverTimelineRead(() => client.fetchAfter(deviceId, sessionId, cursor), recoveryAbort.signal)
         .then((result) => {
           if (cancelled) return
           setLink('ok')
@@ -249,11 +275,10 @@ export function useTimelineSession(
           if (cancelled) return
           setLink('lost')
           const code = rpcErrorCode(err)
-          if (code === null || TRANSIENT_LOAD_CODES.has(code)) return
           catchUpReported = true
-          setError(describe(err))
+          setError(messageForUser(err))
           setErrorCode(code)
-        })
+        }).finally(() => { catchUpRunning = false })
     }
 
     /*
@@ -265,7 +290,7 @@ export function useTimelineSession(
      * ⚠️ 但也不能无限等：本地库卡住（配额、被禁、另一个标签页占着升级）不该把打开会话拖死，
      * 所以给它一个上限，超时就当没有存档，照旧整份拉。
      */
-    const hydrated: Promise<void> = cached
+    const hydrated: Promise<void> = cached || client.boundedWindow
       ? Promise.resolve()
       : Promise.race([
           hydrateCachedTimeline(cacheKey),
@@ -283,13 +308,15 @@ export function useTimelineSession(
       if (cancelled || !readyRef.current) return
       applyResult(result)
     })
-    const stopErrors = client.subscribeSessionErrors?.(deviceId, subscriptionId, (err) => {
+    const stopErrors = client.subscribeSessionErrors?.(deviceId, subscriptionId, (failure) => {
       if (cancelled) return
+      // A bounded window ends when its stopped session starts again: open it afresh, which asks the host where to follow it.
+      if (client.boundedWindow && rpcErrorCode(failure) === 'scope_changed') {
+        reload()
+        return
+      }
       setLink('lost')
-      const code = rpcErrorCode(err)
-      if (code === null || TRANSIENT_LOAD_CODES.has(code)) return
-      setError(describe(err))
-      setErrorCode(code)
+      catchUp()
     })
     // 窗口断了:标断开;又通了:那台机器已经拆了这条订阅(订阅跟着窗口生灭),整个重来 —— 手里有游标就只重订 + 补差量。
     const stopLink = client.onLinkChange(deviceId, (open) => {
@@ -330,7 +357,7 @@ export function useTimelineSession(
         if (cancelled) return
         setWaitingForRecord(false)
         setError(null)
-        attempt = 0
+        olderGeneration.current++
         setTimeline((current) => applySnapshot(current, snapshot))
         cursorRef.current = snapshot.cursor
         readyRef.current = true
@@ -338,6 +365,7 @@ export function useTimelineSession(
         setPhase('ready')
         await client.subscribeSession(deviceId, sessionId, subscriptionId, snapshot.cursor)
         if (cancelled) return
+        attempt = 0
         setErrorCode(null)
         setLink('ok')
       } catch (err) {
@@ -349,7 +377,9 @@ export function useTimelineSession(
          * owner 2026-09-08:「不应该是先报一个红色的报错、等我刷新之后才显示出来」。
          * 判据在 record-wait.ts(纯函数),三类各有一条会红的用例。
          */
-        const delay = loadRetryDelay({ code, attempt, elapsedMs: Date.now() - startedAt })
+        const delay = client.boundedWindow && code === 'source_locating' ? 2_000
+          : readyRef.current ? LOAD_RETRY_DELAYS_MS[attempt - 1] ?? null
+          : loadRetryDelay({ code, attempt, elapsedMs: Date.now() - startedAt })
         if (delay !== null) {
           // That machine did not answer: still tried again, but the page can say so meanwhile (link), ❌ a silent spinner.
           if (code === 'timeout') setLink('lost')
@@ -360,7 +390,7 @@ export function useTimelineSession(
           return
         }
         setWaitingForRecord(false)
-        setError(describe(err))
+        setError(messageForUser(err))
         setErrorCode(code)
         setLink('lost')
         setPhase(readyRef.current ? 'ready' : 'error')
@@ -370,6 +400,7 @@ export function useTimelineSession(
 
     return () => {
       cancelled = true
+      recoveryAbort.abort()
       if (retryTimer) clearTimeout(retryTimer)
       stopLink()
       readyRef.current = false
@@ -378,7 +409,7 @@ export function useTimelineSession(
       stopErrors?.()
       // 走之前把手里这份存下来:下次进来第一帧就有东西。
       const current = timelineRef.current
-      if (current.cursor && current.turns.length > 0) writeCachedTimeline(cacheKey, current)
+      if (!client.boundedWindow && current.cursor && current.turns.length > 0) writeCachedTimeline(cacheKey, current)
       // 退订是尽力而为:页面已经走了,退订失败只会让宿主多推一会儿给没人听的 subscriptionId。
       void client.unsubscribeSession(deviceId, subscriptionId).catch(() => undefined)
     }
@@ -395,30 +426,48 @@ export function useTimelineSession(
    * 页面走掉时的最后一次存在上面那个 cleanup 里(不依赖这个定时器还没烧完)。
    */
   useEffect(() => {
-    if (!deviceId || !sessionId) return
+    if (client.boundedWindow || !deviceId || !sessionId) return
     if (!timeline.cursor || timeline.turns.length === 0) return
     const timer = setTimeout(() => {
       writeCachedTimeline({ deviceId, sessionId }, timeline)
     }, 1_500)
     return () => clearTimeout(timer)
-  }, [deviceId, sessionId, timeline])
+  }, [client, deviceId, sessionId, timeline])
 
   /**
    * 懒加载更早的轮。基准是手里**最早那一轮的 id**（❌ 不是下标：两次请求之间那一轮可能
    * 被分叉掉，下标会指到另一轮上去）。翻不动了由宿主报 hasOlder=false，界面据此收起入口。
    */
   const loadOlder = useCallback(async () => {
-    if (!deviceId || !sessionId) return
-    const oldest = timelineRef.current.turns[0]
-    if (!oldest || !timelineRef.current.hasOlder) return
-    try {
-      const older = await client.fetchOlder(deviceId, sessionId, oldest.id)
-      setTimeline((current) => prependOlder(current, older))
-    } catch (err) {
-      // 翻页失败不动手里那份：屏幕上那段仍然是真的。
-      setActionError(describe(err))
-    }
-  }, [client, deviceId, sessionId])
+    if (!deviceId || !sessionId || !enabled) return
+    const pinned = timelineRef.current
+    const target = olderTimelineTarget(pinned)
+    if (!target) return
+    const generation = olderGeneration.current
+    const identity = olderIdentityRef.current
+    if (olderRequest.current?.identity === identity && olderRequest.current.generation === generation) return olderRequest.current.promise
+    const reading = (async () => {
+      try {
+        const older = target.cursor
+          ? await client.fetchOlder(deviceId, sessionId, '', undefined, target.cursor)
+          : await client.fetchOlder(deviceId, sessionId, target.beforeTurnId)
+        if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return
+        setTimeline(current => {
+          if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return current
+          // A reset, or an After that moved the window's older end, owns the newer window facts (resolutions already
+          // advanced the generation). An After that only moved the tail does not: every delta of a streaming reply is
+          // one, and held to the same `seq` no older page could land while an agent was working.
+          if (current.cursor?.epoch !== pinned.cursor?.epoch || !sameOlderTarget(olderTimelineTarget(current), target)
+            || current.sourceLineage !== pinned.sourceLineage || current.snapshotRevision !== pinned.snapshotRevision) return current
+          return prependOlder(current, older)
+        })
+      } catch (err) {
+        if (generation === olderGeneration.current && identity === olderIdentityRef.current) setActionError(describe(err))
+      }
+    })()
+    olderRequest.current = { identity, generation, promise: reading }
+    try { await reading } finally { if (olderRequest.current?.promise === reading) olderRequest.current = null }
+  }, [client, deviceId, sessionId, enabled])
 
   /**
    * 一张工具图去机器上取一次:取到的写回条目,和时间线一起存在手机上(timeline-cache),重开不重取。

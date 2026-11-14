@@ -40,6 +40,17 @@
 .mk-bar [data-slot='toggle-group-item'][data-pressed] {
   background-color: color-mix(in oklab, var(--foreground) 6%, transparent);
 }
+.mk-views {
+  margin-top: 8px;
+}
+/* 第二层选中用下划线:第一层(市场/已安装)和类别用底色,三层不长一个样。 */
+.mk-views [data-slot='toggle-group-item'][data-pressed] {
+  background: none;
+  color: var(--foreground);
+  font-weight: 500;
+  text-decoration: underline 2px;
+  text-underline-offset: 6px;
+}
 .mk-seg-count {
   color: var(--foreground-passive);
   font-variant-numeric: tabular-nums;
@@ -57,6 +68,8 @@
   flex: none;
   display: grid;
   border-radius: 20%;
+  /* 深色图标放在深色底上也有边。 */
+  box-shadow: 0 0 0 1px var(--border);
 }
 .mk-icon > img,
 .mk-icon > span {
@@ -216,7 +229,7 @@
   overflow: hidden;
 }
 /* 暗底上用白线,外面那圈咕咕的描边色在暗底上看不见。 */
-.mk-hero-title:focus-visible {
+.mk-hero-title:focus-visible:not([data-pointer-focus]) {
   outline: 2px solid white;
   outline-offset: 2px;
   border-radius: 4px;
@@ -405,7 +418,7 @@
   right: -24px;
 }
 .mk-shelf:hover .mk-shelf-arrow,
-.mk-shelf-arrow:focus-visible {
+.mk-shelf-arrow:focus-visible:not([data-pointer-focus]) {
   opacity: 1;
 }
 /* 类别那一排(照 Google Play「手机 / 平板电脑…」那排筛选块):咕咕的分段控件,一块一块分开,选中的那块实底。 */
@@ -641,7 +654,7 @@ button.mk-name {
   text-align: left;
   cursor: default;
 }
-button.mk-name:focus-visible {
+button.mk-name:focus-visible:not([data-pointer-focus]) {
   outline: 1px solid var(--border-primary);
   outline-offset: 2px;
   border-radius: 4px;
@@ -787,7 +800,7 @@ button.mk-name:focus-visible {
 .mk-facts > div:first-child {
   padding-left: 0;
 }
-.mk-facts > div + div::before {
+.mk-facts > div:not(:first-child)::before {
   content: '';
   position: absolute;
   left: 0;
@@ -926,6 +939,7 @@ button.mk-name:focus-visible {
 .mk-about.is-clamped {
   max-height: 80px;
   overflow: hidden;
+  mask-image: linear-gradient(to bottom, var(--foreground) 55%, transparent);
 }
 /* 它给 agent 的那一行:原文照引,人看得到 agent 读的是哪句。 */
 .mk-instructions {
@@ -1227,6 +1241,20 @@ button.mk-name:focus-visible {
   }
 }
 @container (max-width: 600px) {
+  /* 窄了一行放不下名字、版本、按钮和开关:版本和开关让路,都还在 App 设置页和 ⋯ 里。 */
+  .mk-row .mk-tx em,
+  .mk-row .mk-switch-slot {
+    display: none;
+  }
+  /* 版本历史:一版两行,说明另起一行。 */
+  .mk .xp-history-row {
+    flex-wrap: wrap;
+  }
+  .mk .xp-history-note {
+    order: 3;
+    flex: 0 0 100%;
+    min-height: 0;
+  }
   .mk-dh {
     gap: 20px;
   }
@@ -1319,7 +1347,7 @@ button.mk-name:focus-visible {
   border: 0;
   background: none;
 }
-.mk-hero-open:focus-visible {
+.mk-hero-open:focus-visible:not([data-pointer-focus]) {
   outline: 2px solid white;
   outline-offset: -4px;
 }

@@ -13,7 +13,7 @@ import { remoteHostsStore } from './remote-hosts-store';
  */
 export function installRemoteHostSessionpageBridges(w: Window, openNewSessionPage: () => void): void {
   installSessionpageNewSessionBridge(w as unknown as NewSessionBridgeWindow, (deviceId) => {
-    remoteHostsStore.requestNewSession(deviceId, null);
+    remoteHostsStore.requestNewSession(deviceId);
     openNewSessionPage();
   });
   installSessionpageReconnectBridge(w as unknown as ReconnectBridgeWindow, (deviceId) => remoteHostsStore.reconnect(deviceId));

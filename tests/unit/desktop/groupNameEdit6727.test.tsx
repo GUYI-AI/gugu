@@ -11,7 +11,6 @@ vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   chatService: {
     getGroupChatSettings: vi.fn(),
     updateGroupChatSettings: vi.fn(),
-    listGroupJoinRequests: vi.fn(async () => []),
     decideGroupJoin: vi.fn(async () => {}),
     getGroupCollab: vi.fn(async () => ({ snapshot: { humans: [], agents: [] }, identities: [] })),
     uploadGroupAvatar: vi.fn(),
@@ -32,7 +31,7 @@ function settingsRow(overrides: Partial<GroupChatSettings> = {}): GroupChatSetti
   return {
     my_role: 'owner', can_manage: true, can_dissolve: true, can_archive_topic: false,
     id: 'chat-1', public_id: 7, creator_user_id: 'owner-1', name: '产品组', status: 'active',
-    group_prompt: null, default_agent_type: null, join_token: 'token', description: null,
+    group_prompt: null, default_agent_type: null, join_token: '0123456789abcdef0123456789abcdef', description: null,
     max_members: 100, allow_member_invite: false, invite_link_enabled: false, agent_join_approval: false,
     join_mode: 'approval', hide_history: false, avatar_url: null, is_discoverable: false,
     agent_flood_threshold: null, agent_flood_threshold_effective: 5,
@@ -63,7 +62,6 @@ async function renderSettings(viewerId: string) {
     currentUserId: viewerId,
     onReload: vi.fn(async () => {}),
     onClose: vi.fn(),
-    onOpenSearch: vi.fn(),
     onSetNotificationLevel: vi.fn(async () => {}),
     onTogglePinned: vi.fn(async () => {}),
     onClearMessages: vi.fn(async () => {}),

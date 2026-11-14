@@ -43,6 +43,7 @@ const EXPECTED: Record<string, Partial<Record<GuguPermissionMode, readonly strin
   kimi: { plan: ['--plan'], 'full-access': ['--yolo'] },
   hermes: { 'full-access': ['--yolo'] },
   opencode: { plan: ['--agent', 'plan'] },
+  kilocode: { plan: ['--agent', 'plan'], 'read-only': ['--agent', 'ask'], 'full-access': ['--agent', 'full-access'] },
   codex: {
     'read-only': ['-s', 'read-only'],
     'full-access': ['-c', 'approval_policy="never"', '-c', 'sandbox_mode="danger-full-access"'],
@@ -54,6 +55,7 @@ const EXPECTED: Record<string, Partial<Record<GuguPermissionMode, readonly strin
 const NOT_ON_ARGV: Record<string, { modes: readonly GuguPermissionMode[]; reason: string }> = {
   codex: { modes: ['edit'], reason: '终端腿走 app-server,三档由会话包写成 sandbox + approval(codex/session-bundle.ts)' },
   opencode: { modes: ['edit'], reason: '档位由会话包写进 OPENCODE 配置的 permission 规则' },
+  kilocode: { modes: ['edit'], reason: '编辑档就是默认的 code agent,规则在 KILO_CONFIG_CONTENT' },
   kimi: { modes: ['edit'], reason: 'kimi 0.40.1 --help 只有 --yolo/--auto/--plan,没有「每次都问」的旗标' },
   hermes: { modes: ['edit'], reason: 'hermes v0.21.0 --help 只有 --yolo,没有「每次都问」的旗标' },
 };
@@ -105,9 +107,9 @@ describe('终端腿:每一档的 argv 带的正是这一档的旗标', () => {
     expect(containsRun(args, expected), `${id}/${mode}: ${args.join(' ')}`).toBe(true);
   });
 
-  it('没有档位的记录(导入的会话)按编辑档,照样显式推旗标', () => {
-    expect(containsRun(argv('claude', undefined, false), ['--permission-mode', 'acceptEdits'])).toBe(true);
-    expect(containsRun(argv('claude', undefined, true), ['--permission-mode', 'acceptEdits'])).toBe(true);
+  it('没有档位的记录不起:读档报错,❌ 按默认档猜(每条会话都记着档,导入也写进记录)', () => {
+    expect(() => argv('claude', undefined, false)).toThrow('no permission tier');
+    expect(() => argv('claude', undefined, true)).toThrow('no permission tier');
   });
 
   it.runIf(ANTIGRAVITY_SESSION_TUI_ENABLED)('antigravity 的只读只在聊天面板腿:终端腿递进来就抛', () => {

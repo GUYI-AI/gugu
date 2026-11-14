@@ -12,10 +12,6 @@ import {
 } from '@shared/browser';
 import { tabNavigationShortcutChannel } from '@shared/events/appEvents';
 import { browserFocusedChannel } from '@shared/events/browserEvents';
-import { AgentBrowserOverlay } from './agent-browser-overlay';
-import { useAgentBrowserStateSync } from './agent-browser-state';
-import { AgentBrowserAssistant } from './agent-browser-assistant';
-import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { browserControlsRegistry } from './browser-controls-registry';
 import {
   browserLoadErrorCode,
@@ -49,8 +45,8 @@ export const BrowserPane = observer(function BrowserPane({
   const { pane, paneId } = usePaneContext();
   const surface = useWorkspaceSurface();
   const startPageActions = useSessionWorkspaceActions(
-    () => pane.open('browser', { intent: 'newTab' }),
-    (kind) => surface.paneLayout.open(kind, {}, { from: null, intent: 'newTab', target: { paneId } })
+    () => surface.paneLayout.openBeside('browser', {}, paneId),
+    (kind) => surface.paneLayout.openBeside(kind, {}, paneId)
   );
   return (
     <BrowserPaneContent
@@ -152,13 +148,6 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
       };
     });
   }, [resolveUrl, session, sessionBrowserId, sessionPartition]);
-
-  // Sync current activity when a pane becomes visible, even if its driving event was missed.
-  useAgentBrowserStateSync(
-    sessionBrowserId ?? '',
-    visible && isRegistered && Boolean(sessionBrowserId),
-    page?.element?.ownerDocument.defaultView ?? window
-  );
 
   // #7191 页签开在哪条会话里,一并告诉主进程:那条会话的 agent 只拿得到它自己会话的页签。
   const owningSessionId = session?.sessionId;
@@ -403,7 +392,8 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
           focusUrlRef.current = focus;
         }}
       />
-      <div className="emlight relative min-h-0 flex-1 bg-background">
+      {/* 网页区固定浅色:emlight 给会话页那套名字,data-theme="light" 让它们接到的咕咕 token 也是浅色那一套(宿主是深色时也一样)。 */}
+      <div data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
         {pageMount && isRegistered ? (
           // #7274 网页一直挂着(加载失败页、起始页都盖在它上面,❌ 代替它):换了位置、出错重试都接着用同一张,
           // 会话的 agent 也一直有页面可操作(#7191)。被这些盖住时网页自己让开(见 browser-page-occlusion.ts)。
@@ -438,11 +428,6 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
           <div className="absolute inset-0 bg-background">
             <BrowserStartPage actions={startPageActions} devServerUrls={devServerUrls} onOpenUrl={navigateTo} />
           </div>
-        ) : null}
-        {sessionBrowserId ? (
-          <AgentBrowserOverlay browserId={sessionBrowserId} hostElement={page?.element ?? null} visible={visible}
-            assistant={session.sessionId ? <AgentBrowserAssistant owner={session}
-              agentName={sessionRegistry.get(session.sessionId)?.sessions.get(session.sessionId)?.data.title ?? translate('browser.assistantNameFallback')} /> : null} />
         ) : null}
       </div>
     </div>

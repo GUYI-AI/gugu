@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { ASSISTANT_PANEL_APP, assistantAppChangeSchema, assistantAppChangeText } from '../../../apps/desktop/src/session/shared/extensions/assistant-app'
 import { isValidExtensionId } from '../../../apps/desktop/src/session/shared/extensions/manifest'
 
-const change = { operationId: '8297dab5-72b1-490a-9b38-1fa9dce83842', resource: 'capabilities', operation: 'edited', id: 'entry',
+const change = { operationId: '8297dab5-72b1-490a-9b38-1fa9dce83842', resource: 'projects', operation: 'edited', id: 'entry',
   deviceId: 'mac', before: { name: 'A' }, after: { name: 'B', description: 'Saved summary' } } as const
 it('carries committed operation identity, order and safe before/after facts as data', () => {
   const text = assistantAppChangeText(change)

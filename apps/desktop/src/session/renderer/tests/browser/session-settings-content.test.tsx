@@ -37,7 +37,8 @@ let root: Root;
 let host: HTMLDivElement;
 let layer: HTMLDivElement;
 const thrown: unknown[] = [];
-const onError = (event: ErrorEvent) => thrown.push(event.error);
+// 只收真抛出来的东西:ResizeObserver 循环提示也走 window error 但 error 为 null,不是异常(原委见 subscriptions-settings-page.test.tsx)。
+const onError = (event: ErrorEvent) => { if (event.error !== null) thrown.push(event.error); };
 
 beforeEach(() => {
   host = document.createElement('div');

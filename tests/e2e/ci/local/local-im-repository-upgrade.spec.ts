@@ -906,7 +906,7 @@ async function seedRelationallyMalformedCurrentVersion(page: Page, shape: Curren
     const messageStore = transaction.objectStore('message')
     const streamStore = transaction.objectStore('stream')
     if (shape === 'missing-message-field') {
-      const { reactions: _missing, ...missingField } = first
+      const { created_at: _missing, ...missingField } = first
       messageStore.put({ accountId: 'account-a', id: 'message-1', chatId: 'chat-1', streamId: 'main:chat-1', seq: 1, value: missingField })
       streamStore.put({ accountId: 'account-a', id: 'main:chat-1', chatId: 'chat-1', kind: 'main', rootMessageId: null })
     } else if (shape === 'message-stream-id') {

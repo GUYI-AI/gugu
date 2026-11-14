@@ -39,7 +39,6 @@ function deps(over: Partial<FamilyDeps> = {}): FamilyDeps {
     jxa: vi.fn(async () => ({})),
     exec: vi.fn(async () => ({ stdout: '', stderr: '', code: 0 })),
     macHelper: () => ({ available: () => ({ ok: true as const }), call: vi.fn(async () => ({})) as never, dispose: () => undefined }),
-    cua: () => ({ available: () => ({ ok: true as const }), callTool: vi.fn(async () => ({ content: [] })), stop: () => undefined, dispose: () => undefined }),
     ...over,
   }
 }
@@ -110,6 +109,21 @@ describe('设备动作 provider', () => {
     expect(p.capability()!.actions.every((a) => !a.available)).toBe(true)
     store.setDenyAll(false)
     expect(p.provider.permit('calendar.events.create')).toEqual({ ok: true })
+  })
+
+  it('能向人申请的只有「这一组没连上」:人自己的「不」(全部拒绝、单独关掉)和要挑位置的文件不申请', () => {
+    const { store, p } = setup()
+    expect(p.ungrantedGroup('calendar.events.create')).toBe('calendar')
+    expect(p.ungrantedGroup('fs.read')).toBeNull()
+    expect(p.ungrantedGroup('nope')).toBeNull()
+    store.setDenyAll(true)
+    expect(p.ungrantedGroup('calendar.events.create')).toBeNull()
+    store.setDenyAll(false)
+    store.setGroup('calendar', true)
+    expect(p.ungrantedGroup('calendar.events.create')).toBeNull()
+    store.setActionEnabled('calendar.events.delete', false)
+    store.setGroup('calendar', false)
+    expect(p.ungrantedGroup('calendar.events.delete')).toBeNull()
   })
 
   it('文件动作:四个根连上任何一个就能调(路径在动作里按根判);说明里写出连上了哪几处', async () => {

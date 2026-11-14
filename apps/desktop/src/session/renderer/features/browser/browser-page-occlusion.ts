@@ -36,6 +36,40 @@ export const PAGE_OCCLUDER_SELECTOR = [
   '[data-occludes-browser-page]',
 ].join(', ');
 
+/** 选择器里用到的属性:它们在已有元素上被打上 / 改掉,那个元素也要进集合。 */
+const OCCLUDER_ATTRIBUTES = ['data-slot', 'role', 'data-sonner-toast', 'data-occludes-browser-page', 'data-pane-edge-preview', 'data-block-drop-preview'];
+
+/**
+ * @@@occluder-set 文档里此刻带浮层标记的元素。❌ 每次检测都按选择器扫整个文档:页签每帧(跟随移动)和每 250ms 都要问一次,
+ * 长对话挂着十万级节点时一次扫描就是几十毫秒,开着 App 页签的长私聊连空闲都在扫。这里只在第一次扫一遍,之后由
+ * MutationObserver 只看新加进来的子树、被改了标记的元素;拆掉的、不再匹配的在用到时剔掉。代价跟 DOM 的变化量走,不跟文档大小走。
+ */
+const occluderSets = new WeakMap<Document, Set<Element>>();
+function trackedOccluders(doc: Document): Element[] {
+  let set = occluderSets.get(doc);
+  if (!set) {
+    const tracked = new Set<Element>(doc.querySelectorAll(PAGE_OCCLUDER_SELECTOR));
+    new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.type === 'attributes') {
+          if ((record.target as Element).matches(PAGE_OCCLUDER_SELECTOR)) tracked.add(record.target as Element);
+          continue;
+        }
+        for (const node of record.addedNodes) {
+          if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          const element = node as Element;
+          if (element.matches(PAGE_OCCLUDER_SELECTOR)) tracked.add(element);
+          for (const inner of element.querySelectorAll(PAGE_OCCLUDER_SELECTOR)) tracked.add(inner);
+        }
+      }
+    }).observe(doc, { subtree: true, childList: true, attributes: true, attributeFilter: OCCLUDER_ATTRIBUTES });
+    occluderSets.set(doc, tracked);
+    set = tracked;
+  }
+  for (const element of set) if (!element.isConnected || !element.matches(PAGE_OCCLUDER_SELECTOR)) set.delete(element);
+  return [...set];
+}
+
 /** 分栏拖动条(见 isBrowserPageOccluded 的采样那段)。 */
 const RESIZE_HANDLE_SELECTOR = '[role="separator"]';
 
@@ -70,7 +104,7 @@ export function isBrowserPageOccluded(placeholder: HTMLElement, rect: PageRect):
     if (top.closest(RESIZE_HANDLE_SELECTOR)) continue;
     return true;
   }
-  for (const element of doc.querySelectorAll<HTMLElement>(PAGE_OCCLUDER_SELECTOR)) {
+  for (const element of trackedOccluders(doc)) {
     // 自己里面的、以及把自己装在里面的(页签所在的那一层)都不算盖着。
     if (placeholder.contains(element) || element.contains(placeholder)) continue;
     const box = element.getBoundingClientRect();

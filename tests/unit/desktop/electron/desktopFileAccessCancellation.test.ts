@@ -14,7 +14,7 @@ vi.mock('@gugu/core/cloud/deviceRuntime', async original => ({
 beforeEach(() => { resolve.mockClear() })
 const access = () => createDesktopFileAccess({
   auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }),
-  root: async () => null, links: () => null, tempRoot: '/unused', downloads: '/unused',
+  root: async () => null, project: async () => undefined, links: () => null, tempRoot: '/unused', downloads: '/unused',
   deviceStore: '/unused', fetch: vi.fn() as never, rpc: vi.fn(), identityDb: vi.fn() as never,
 })
 

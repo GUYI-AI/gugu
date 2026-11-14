@@ -1,7 +1,7 @@
 import type { FileError, IFileSystem, IFileTree } from '@gugu/session-core/files';
+import type { CanonicalPath } from '@gugu/session-core/files';
 import type { Result } from '@gugu/session-shared';
 import type { IGitWorktree } from '@gugu/session-core/git';
-import type { FileTreeProjector } from '@main/core/files/file-tree/projector';
 import type { GitRepositoryFetchService } from '@main/core/git/repository/fetch-service';
 import type { GitRepositoryService } from '@main/core/git/repository/service';
 import type { ProjectSettingsProvider } from '@main/core/projects/settings/provider';
@@ -9,11 +9,11 @@ import type { LifecycleScriptService } from './workspace-lifecycle-service';
 
 export interface Workspace {
   readonly id: string;
-  readonly path: string;
+  /** The working copy, in its one spelling on this machine (`@@@canonical-path`). */
+  readonly path: CanonicalPath;
   readonly configPath: string;
   readonly fileSystem: IFileSystem;
   readonly fileTree: IFileTree;
-  readonly fileTreeProjector: FileTreeProjector;
   // gugu #2358: 非 git 项目的工作区没有 git 仓/worktree —— 三个 git 成员缺省,git 专属功能降级。
   readonly gitWorktree: IGitWorktree | undefined;
   readonly settings: ProjectSettingsProvider;

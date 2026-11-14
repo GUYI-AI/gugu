@@ -177,16 +177,6 @@ export default {
     "title": "Agent 模板库",
     "use": "使用"
   },
-  "public": {
-    "capabilities": "能力",
-    "disclaimer": "此 agent 由其所有者授权公开，请理性交流",
-    "loadFailed": "加载失败",
-    "loginToChat": "登录后对话",
-    "ownerCreatedPrefix": "由",
-    "ownerCreatedSuffix": "创建",
-    "startChat": "开始对话",
-    "unavailable": "该 Agent 不存在或未公开分享"
-  },
   "runtime": {
     "groupMine": "我的",
     "groupOthers": "其他人的",

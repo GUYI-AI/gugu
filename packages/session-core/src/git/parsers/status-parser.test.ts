@@ -2,6 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { MAX_STATUS_FILES, StatusParser } from './status-parser';
 
 describe('StatusParser', () => {
+  it('ignores later chunks after the cap until reset', () => {
+    const parser = new StatusParser();
+    parser.update(Array.from({ length: MAX_STATUS_FILES + 1 }, (_, i) => `? f${i}.md\0`).join(''));
+    const count = parser.status.length;
+    parser.update('? later.md\0');
+    expect(parser.status).toHaveLength(count);
+    parser.reset();
+    parser.update('? fresh.md\0');
+    expect(parser.status).toEqual([{ x: '?', y: '?', path: 'fresh.md' }]);
+  });
+  it('skips optional branch header records before file entries', () => {
+    const parser = new StatusParser();
+    parser.update('# branch.oid abc\0# branch.head main\0? note.md\0');
+    expect(parser.status).toEqual([{ x: '?', y: '?', path: 'note.md' }]);
+  });
   const headOid = '1111111111111111111111111111111111111111';
   const indexOid = '2222222222222222222222222222222222222222';
 

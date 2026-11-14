@@ -17,7 +17,7 @@ import { useChatConversation, type ChatConversation } from '@/store/useChatConve
 import { rendererLogger } from '@/lib/log'
 import { topicNameFromMessage } from '@/components/chat/topicAnchorModels'
 import { useTabsReading } from '@/components/appSlot/useTabsReading'
-import { closeTopicTab, focusedChatTab, hideTopicTab, openTopicTab, topicTabOf } from '@/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { closeTopicTab, focusedChatTab, hideTopicTab, openTopicTab, topicTabOf, updateTopicNames } from '@/session/renderer/features/chats/chat-tabs/chat-layouts'
 
 const topicSurfaceLog = rendererLogger('chat/topic-surface')
 
@@ -43,18 +43,6 @@ type UseTopicSurfaceArgs = {
   embedded: boolean
 }
 
-/** 事件载荷里的 chat_id —— 形状坏了就当没这条,❌ 不因为一条脏事件把整个订阅拆了。 */
-function revisionChatIds(operations: readonly { payload: unknown }[]): string[] {
-  const ids: string[] = []
-  for (const operation of operations) {
-    const payload = operation.payload
-    if (!payload || typeof payload !== 'object') continue
-    const chatId = (payload as { chat_id?: unknown }).chat_id
-    if (typeof chatId === 'string' && chatId) ids.push(chatId)
-  }
-  return ids
-}
-
 export type TopicSurface = {
   /** 这条线上长出来的话题,按来源消息分组 —— 锚点卡读它。 */
   anchorsByMessageId: Map<string, TopicSummary[]>
@@ -69,13 +57,13 @@ export type TopicSurface = {
   closeSplit: () => void
   /** @param toUserIds 正文里 @ 到的人 —— 被 @ 就是被拉进来(服务端触发器只认来源线成员)。 */
   /** @param replyToMessageId 引用的那条消息 —— 结构化回复,与主线同口径(group-routing:回复穿透档位)。 */
-  sendInSplit: (text: string, toUserIds?: readonly string[] | null, replyToMessageId?: string | null, isWhisper?: boolean, submittedAt?: number) => Promise<void>
+  sendInSplit: (text: string, toUserIds?: readonly string[] | null, replyToMessageId?: string | null, isWhisper?: boolean, submittedAt?: number, dependsOn?: string) => Promise<void>
   /**
    * 分栏里发附件。不接它不等于「分栏不支持附件」—— InputArea 的回形针/拖放/粘贴
    * 三条入队路径都是无条件的,而 handleSend 在没有这个回调时会先清空队列再跳过发送 ⇒
    * 文件凭空消失、一声不响。所以这一口必须接上。
    */
-  sendAttachmentsInSplit: (files: File[], opts?: { toUserIds?: string[] | null; replyToMessageId?: string | null; isWhisper?: boolean; caption?: string; onSent?: (file: File, index: number) => void }) => Promise<void>
+  sendAttachmentsInSplit: (files: File[], opts?: { toUserIds?: string[] | null; replyToMessageId?: string | null; isWhisper?: boolean; caption?: string }) => Promise<string | undefined | void>
   /** 从一条消息开一条话题:建完直接分栏打开,这就是 spec 的「建立是一步」。 */
   openTopicFromMessage: (sourceMessageId: string) => Promise<void>
 }
@@ -98,15 +86,11 @@ export function useTopicSurface({
   const onCreateFailedRef = useRef(onCreateFailed)
   onCreateFailedRef.current = onCreateFailed
   // 清单只有一个属主:useTopicsOfChat。锚点卡与顶栏话题面板读的是同一份,❌ 不各拉各的。
-  const subscribeChatChanged = useCallback(
-    (listener: (chatIds: readonly string[]) => void) =>
-      subscribeAccountRevision('chat_changed', (operations) => listener(revisionChatIds(operations))),
-    [subscribeAccountRevision],
-  )
   const { topics, bySourceMessageId, reload: reloadTopics } = useTopicsOfChat(
     topicsSourceChatId(chat),
-    subscribeChatChanged,
+    subscribeAccountRevision,
   )
+  useEffect(() => { if (chatId) updateTopicNames(chatId, topics) }, [chatId, topics])
   // 分栏是这条线页签条上的一枚(chat-tabs/chat-layouts):开着哪条话题、在不在屏上都由那里说,按来源线各记各的
   // (@@@3922 的 subject-scoped 由此而来:换了来源线读的就是另一条页签条)。
   const tab = useTabsReading(() => {
@@ -130,7 +114,7 @@ export function useTopicSurface({
   useEffect(() => { if (splitChatId) reloadTopics() }, [splitChatId, reloadTopics])
 
   // message_created for a topic row reaches only the topic's members; every source-line member gets the source
-  // chat_changed that reloads `topics`. So the open line catches up to its own summary whenever the summary is
+  // chat_changed that re-reads this topic in `topics`. So the open line catches up to its own summary whenever the summary is
   // newer than the line's tail -- one rule for whoever is reading, member or not.
   const summaryAt = Date.parse(topics.find((summary) => summary.chat_id === splitChatId)?.last_message_at ?? '')
   // The window is ordered by seq with unsent rows (seq < 1, local clock) last (compareMessageOrder), so the last
@@ -167,13 +151,13 @@ export function useTopicSurface({
   }, [])
 
   const sendInSplit = useCallback(
-    async (text: string, toUserIds?: readonly string[] | null, replyToMessageId?: string | null, isWhisper?: boolean, submittedAt?: number) => {
+    async (text: string, toUserIds?: readonly string[] | null, replyToMessageId?: string | null, isWhisper?: boolean, submittedAt?: number, dependsOn?: string) => {
       const body = text.trim()
       if (!body || !splitChatId || !userId) return
       await sendSplitMessage(body, {
         toUserIds: toUserIds?.length ? [...toUserIds] : null,
         replyToMessageId: replyToMessageId ?? null,
-        isWhisper, ...(submittedAt === undefined ? {} : { submittedAt }),
+        isWhisper, ...(submittedAt === undefined ? {} : { submittedAt }), ...(dependsOn ? { dependsOn } : {}),
       })
     },
     [splitChatId, userId, sendSplitMessage],
@@ -218,7 +202,7 @@ export function useTopicSurface({
     openSplit,
     closeSplit,
     sendInSplit,
-    sendAttachmentsInSplit: async (files, opts) => { await line.sendAttachments(files, opts) },
+    sendAttachmentsInSplit: (files, opts) => line.sendAttachments(files, opts),
     openTopicFromMessage,
   }
 }

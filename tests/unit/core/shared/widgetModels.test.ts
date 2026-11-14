@@ -1,8 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { parseWidgetMessage, serializeWidgetMessage, widgetMessageError, widgetMessagePreview } from '@gugu/core/shared/ui/widgetModels'
+import { parseWidgetMessage, serializeWidgetMessage, widgetIdOf, widgetMessageError, widgetMessagePreview } from '@gugu/core/shared/ui/widgetModels'
 
 const widget = { v: 2 as const, text: 'Build results', app: 'board', view: 'main', data: { count: 1 } }
 describe('widget messages', () => {
+  it('preserves a widget text id independently from its display message id', () => {
+    const original = { ...widget, wid: 'legacy:widget/界 #1' }
+    const content = serializeWidgetMessage(original)
+    expect(parseWidgetMessage(content)).toEqual(original)
+    expect(widgetIdOf({ id: 'reference-slot', content })).toBe(original.wid)
+    expect(widgetIdOf({ id: 'original-message', content: serializeWidgetMessage(widget) })).toBe('original-message')
+  })
+  it.each([undefined, null, '', 12, {}])('keeps the original v2 rendering when an old unknown wid is not a nonempty string: %j', wid => {
+    const content = JSON.stringify({ ...widget, wid })
+    expect(parseWidgetMessage(content)).toEqual(widget)
+    expect(widgetIdOf({ id: 'legacy-message', content })).toBe('legacy-message')
+  })
   it('keeps immutable input fields and ignores future v2 keys', () => {
     expect(parseWidgetMessage(JSON.stringify({ ...widget, future: true }))).toEqual(widget)
     expect(parseWidgetMessage(serializeWidgetMessage(widget))).toEqual(widget)
@@ -20,6 +32,11 @@ describe('widget messages', () => {
   it.each([64, 140, 480, 520])('round-trips the immutable message height %s', height => {
     const input = { ...widget, height }
     expect(parseWidgetMessage(serializeWidgetMessage(input))).toEqual(input)
+  })
+  it('preserves a stable widget identity together with the message height', () => {
+    const input = { ...widget, height: 480, wid: 'historical:counter' }
+    expect(parseWidgetMessage(serializeWidgetMessage(input))).toEqual(input)
+    expect(widgetIdOf({ id: 'display-slot', content: serializeWidgetMessage(input) })).toBe(input.wid)
   })
   it.each([20, 63, 521, 900, 300.5, null, '480', {}, []].map(height => ({ height })))('drops invalid height $height only when reading a message', ({ height }) => {
     const input = { ...widget, height }

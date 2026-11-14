@@ -1,0 +1,7 @@
+Starting Hermes login via Nous Portal...
+Portal: https://portal.nousresearch.com
+
+To continue:
+  1. Open: https://portal.nousresearch.com/manage-subscription?user_code=NF3L-YTKR
+  2. If prompted, enter code: NF3L-YTKR
+Waiting for approval (polling every 1s)...

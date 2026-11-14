@@ -25,7 +25,8 @@ vi.mock('@/lib/supabase', () => ({
     onAuthStateChange: (listener: typeof host.authListener) => { host.authListener = listener; return { data: { subscription: { unsubscribe() {} } } } },
     signOut: async () => ({ error: null }),
   } },
-  mainAuthSessionStorage: { getState: () => ({ bootCandidate: null, warning: null }), commit: async () => {}, remove: async () => {} },
+  MAIN_AUTH_STORAGE_KEY: 'gugu-auth',
+  mainAuthSessionStorage: { storage: { getItem: () => null }, getState: () => ({ bootCandidate: null, warning: null }), commit: async () => {}, remove: async () => {} },
 }))
 vi.mock('@/platform', () => ({ platform: { capabilities: { localHumanAuthSession: true }, writeHumanAuthSession: host.write,
   clearHumanAuthSession: host.clear, subscribeAppForeground: () => () => {} } }))

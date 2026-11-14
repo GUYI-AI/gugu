@@ -1,4 +1,8 @@
 export default {
+  "menu": {
+    "search": "搜索",
+    "noResults": "没有找到"
+  },
   "agentName": {
     "naming": "正在起名…"
   },
@@ -41,6 +45,13 @@ export default {
       "sleep_incomplete": "操作没完成，请稍后再试。",
       "close_incomplete": "关闭没完成，请重试。"
     }
+  },
+  "connection": {
+    "online": "在线",
+    "connecting": "连接中",
+    "deviceOffline": "设备离线",
+    "lastSeen": "最后在线 {{time}}",
+    "retry": "重新连接"
   },
   "agentStatus": {
     "running": "运行中",

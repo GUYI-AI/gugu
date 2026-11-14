@@ -23,7 +23,7 @@ import { refusedLine } from '../extensionBundle/installedHere'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { IconButton } from '../ui/IconButton'
-import { DropdownMenu, menuRowClassName } from '../ui/Menu'
+import { DropdownMenu, MenuItem } from '../ui/Menu'
 import { PaneHeader } from '../ui/Pane'
 import { useBackLayer } from '../ui/sheetStack'
 import { RightPanelBackButton } from '../chat/RightPanel'
@@ -107,7 +107,7 @@ export interface GroupTabContentProps {
 export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId, item, tabbed, inWindow = false, mobile, visible, onForward, onOpenWith }: GroupTabContentProps) {
   const { t } = useTranslation('messaging')
   const slot = groupPageSlot(chatId, tabId)
-  const folderName = useChatFolderName(chatId)
+  const folderName = useChatFolderName()
   const { chats } = useChatStore('chats')
   const chat = chats.find((row) => row.id === chatId)
   const resourceChat = chat?.kind === 'topic' ? chat.source_chat_id ?? undefined : chat?.id
@@ -322,7 +322,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
       if (panelFull(chatId, tabId)) setPanelFull(chatId, tabId, false)
     }
   }, [peekingSession, tabbed, mobile, chatId, tabId])
-  const heading = extensionTabTitle(shown, isFolderItem(item) ? folderName : kind ? installedExtensionsStore.tabTitle(kind) ?? item.title : item.title, item.itemId ? { name: item.title, path: item.fileName ?? item.title } : undefined)
+  const heading = extensionTabTitle(shown, isFolderItem(item) ? folderName : kind ? installedExtensionsStore.tabTitle(kind) ?? item.title : item.title, item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined)
   const badge = shown.badge
   const hasBadge = badge !== null && badge !== ''
   const fileHost = useFileHost(item.itemId && !isFolderItem(item) ? item.itemId : null)
@@ -347,11 +347,9 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
           </DropdownMenu.Trigger>
           <DropdownMenu.Content align="end">
             {folded.map((command) => (
-              <DropdownMenu.Item key={command.id} className={menuRowClassName} data-command={command.id} onClick={() => runCommand(command.id)}>
-                {command.title}
-              </DropdownMenu.Item>
+              <MenuItem key={command.id} onClick={() => runCommand(command.id)}>{command.title}</MenuItem>
             ))}
-            {fileHost ? <DropdownMenu.Item className={menuRowClassName} onClick={openFileStorageSettings}>{t('fileStoredOn.settings')}</DropdownMenu.Item> : null}
+            {fileHost ? <MenuItem onClick={openFileStorageSettings}>{t('fileStoredOn.settings')}</MenuItem> : null}
           </DropdownMenu.Content>
         </DropdownMenu.Root>
       ) : null}
@@ -367,7 +365,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   const history = pane?.navigationOf(tabId)
   const opener = pane?.openerOf(tabId)
   const backToConversation = (history?.index ?? 0) === 0 && !!opener && pane!.registry.has(opener.kind) && pane!.registry.get(opener.kind).conversation === true
-  const navigation = { canBack: (history?.index ?? 0) > 0 || backToConversation, canForward: !!history && history.index < history.pages.length - 1, backToConversation }
+  const navigation = { canBack: !!pane?.canGo(tabId, -1), canForward: !!history && history.index < history.pages.length - 1, backToConversation }
   const frames = (history?.pages ?? [{ kind: 'chat-panel', state: item }]).slice(0, (history?.index ?? 0) + 1).flatMap((page, index) => {
     const current = index === (history?.index ?? 0)
     const value = current ? item : page.state as PanelItem

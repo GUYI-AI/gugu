@@ -15,17 +15,19 @@ import { deviceSessionsOf, directoryRows, useLiveDeviceSessions } from '@/sessio
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
 import { usePhoneAssistantIdentity } from '../assistant/phoneAssistantIdentity'
 import { AgentWatchNote, AgentWatchScreen } from './AgentWatchChrome'
-import { OfflineNote } from './OfflineNote'
-import { SessionActions, SessionRow } from './SessionsPage'
-import { assistantGroupIds, locateSession, sessionSections, type SessionNode, type SessionSection } from './session-sections'
+import { ConnectionStatus } from '@/components/connection/ConnectionStatus'
+import { DropdownMenu } from '@/components/ui/Menu'
+import { type SessionMenuTarget, SessionActions, SessionRow } from './SessionsPage'
+import { assistantGroupIds, locateSession, projectSectionKey, sectionProjects, sessionSections, type SessionNode, type SessionSection } from './session-sections'
 import { useMachineLabel } from './useMachineLabel'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 import { directoryMachines, visibleMachines } from './machine-list'
 import { DeviceDirectoryRetry } from './DeviceDirectoryRetry'
 import { PhoneHostSetupEntry } from './PhoneHostSetupEntry'
 import { phoneAgentAvailable } from '../local-agent/nativeAgent'
 import './task-flow-catalog'
 
-// 折叠与「展开显示」只是本机的阅读偏好。键是格(`机器|项目`)与父会话 id,全局唯一,所以一份就够。
+// 折叠与「展开显示」只是本机的阅读偏好。键是格(`project|项目群`,没绑群的 `机器|项目`)与父会话 id,全局唯一,所以一份就够。
 const COLLAPSED_KEY = 'gugu.agent-watch.collapsed.projects'
 const MORE_KEY = 'gugu.agent-watch.more.projects'
 
@@ -61,18 +63,22 @@ function useStoredSet(key: string): [ReadonlySet<string>, (id: string) => void] 
 const ALL_OPEN = { has: () => true }
 
 /**
- * 一台离线的机器页顶原来那一行,现在跟在它名下每个分区的页头后面(只一行,收起的分区不画)。收回着 / 正在起来的云端宿主
- * ❌ 说(owner 10-17:Agent 没有休息这回事;点开它上面的会话就在连它,那一页自己说「正在连接」)。
+ * 一台机器连不上时,它名下每个分区的页头上说一句状态(owner 11-08:状态放页头,❌ 页头下另起一行 / 横幅,❌ 「未连接」)。
+ * 目录说它离线 = 「设备离线 · 最后在线 …」;目录说在线、此刻却读不到(读取在重试)= 「连接中」,下面画的是它上报过的那份。
+ * 收回着 / 正在起来的云端宿主 ❌ 说(owner 10-17:Agent 没有休息这回事;点开它上面的会话就在连它,那一页自己说)。
  */
-function MachineNote({ device, error }: { device: Device; error?: string | null }): ReactNode {
+function MachineState({ device, error }: { device: Device; error?: string | null }): ReactNode {
+  const { label } = useMachineLabel()
   if (device.cloud_computer === 'asleep' || device.cloud_computer === 'waking') return null
-  if (!device.is_online) return <OfflineNote device={device} />
-  // 在线却此刻读不到(那台机器一时连不上):下面画的是它上报过的那份,照实说一句,❌ 红框(红框留给一行都拿不出来)。
-  return error ? (
-    <div className="gg-aw-offline" data-testid="agent-watch-unreachable">
-      <div className="gg-aw-offline-line"><span className="gg-aw-offline-text">{error}</span></div>
-    </div>
-  ) : null
+  if (device.is_online && !error) return null
+  return (
+    <ConnectionStatus
+      state={device.is_online ? 'connecting' : 'device_offline'}
+      subject={label(device)}
+      lastSeenAt={device.last_seen_at}
+      testId="agent-watch-machine-state"
+    />
+  )
 }
 
 /**
@@ -90,7 +96,7 @@ export const ProjectsPage = observer(function ProjectsPage({
 }: {
   /** 交出行所在的机器,❌ 当成别的。 */
   onOpenSession: (deviceId: string, session: SessionpageSessionSummary) => void
-  /** 页头右上角的 +:去选在哪台机器上新建(建会话要在那台机器上起进程,选机器那一步照旧)。 */
+  /** 页头右上角的 +:进新建页(项目、机器两行带默认值)。 */
   onCreate?: () => void
   /** 点名定位只滚到可见的行或所属分区,不改变手动折叠状态。 */
   reveal?: { deviceId: string; sessionId: string } | { projectId: string }
@@ -115,9 +121,15 @@ export const ProjectsPage = observer(function ProjectsPage({
   const rows = useMemo(() => directoryRows(devices, live), [devices, live])
   const assistantId = assistant?.id ?? null
   const groupIds = useMemo(() => assistantGroupIds(rows, assistantId, homeIds), [rows, assistantId, homeIds])
+  // 一个本地项目属于账号上哪个项目,只读 accountProjectsStore(桌面侧栏同一份):同一个项目的各台机器并成一格,格名 = 项目名。
+  const accountList = accountProjectsStore.projects
   const sectionMachines = useMemo(
-    () => machines.map((device) => ({ deviceId: device.device_id, projects: deviceSessionsOf(device, live).projects })),
-    [machines, live],
+    () => machines.map((device) => ({
+      deviceId: device.device_id,
+      projects: sectionProjects(device.device_id, deviceSessionsOf(device, live).projects, accountProjectsStore),
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- projectOfLocal reads accountList (the store's list)
+    [machines, live, accountList],
   )
   const online = useCallback((deviceId: string) => {
     const device = deviceOf.get(deviceId)
@@ -133,8 +145,8 @@ export const ProjectsPage = observer(function ProjectsPage({
   const [collapsed, toggleCollapsed] = useStoredSet(COLLAPSED_KEY)
   /** 点了「展开显示」的分区(收起的闲置家族全露)。 */
   const [moreOpen, toggleMore] = useStoredSet(MORE_KEY)
-  /** 正在看管理动作的那条会话(行尾「…」打开的抽屉);null = 关着。 */
-  const [menuFor, setMenuFor] = useState<{ deviceId: string; session: SessionpageSessionSummary; anchor: Element } | null>(null)
+  /** 会话的管理菜单:一页一个,每行的 ⋯ 是它的 Trigger。 */
+  const [sessionMenu] = useState(() => DropdownMenu.createHandle<SessionMenuTarget>())
 
   // Read during every observer render: React's useMemo cannot track MobX presence dependencies.
   const sections = sessionSections(sectionMachines, rows, { assistantId, homeIds }, { expanded: moreOpen, online })
@@ -144,7 +156,7 @@ export const ProjectsPage = observer(function ProjectsPage({
   const located = useMemo(() => {
     if (!reveal) return null
     const all = sessionSections(sectionMachines, rows, { assistantId, homeIds }, { expanded: ALL_OPEN, online })
-    if ('projectId' in reveal) { const section = all.find((item) => item.project?.id === reveal.projectId); return section ? { section, ancestors: [] } : null }
+    if ('projectId' in reveal) { const section = all.find((item) => item.projectIds.includes(reveal.projectId)); return section ? { section, ancestors: [] } : null }
     return locateSession(all, reveal.sessionId)
   }, [reveal, sectionMachines, rows, assistantId, homeIds, online])
   const revealed = useRef<typeof reveal>(undefined)
@@ -153,7 +165,7 @@ export const ProjectsPage = observer(function ProjectsPage({
     if (!reveal || !located || revealed.current === reveal) return
     revealed.current = reveal
     const ancestor = located.ancestors.find((id) => collapsed.has(id))
-    if ('projectId' in reveal) setScrollTarget({ attribute: 'data-project-id', id: reveal.projectId })
+    if ('projectId' in reveal) setScrollTarget({ attribute: 'data-section-key', id: located.section.key })
     else if (collapsed.has(located.section.key) || !locateSession(sections, reveal.sessionId)) {
       setScrollTarget({ attribute: 'data-section-key', id: located.section.key })
     } else setScrollTarget({ attribute: 'data-session-id', id: ancestor ?? reveal.sessionId })
@@ -178,25 +190,32 @@ export const ProjectsPage = observer(function ProjectsPage({
   }, [scrollMemo, reveal])
 
   // ── 行与标记 ────────────────────────────────────────────────────────
+  const projectOf = (deviceId: string, projectId: string) =>
+    sectionMachines.find((machine) => machine.deviceId === deviceId)?.projects.find((project) => project.id === projectId && project.kind !== 'workspace')
+  // 个人助理住的那台(云端宿主)上的项目不标名(它的会话归「它派出的任务」那一组),与改之前同一条。
   const projectName = (deviceId: string, projectId: string): string | undefined => {
     const device = deviceOf.get(deviceId)
-    return device && !isHome(device) ? deviceSessionsOf(device, live).projects.find((project) => project.id === projectId && project.kind !== 'workspace')?.name : undefined
+    return device && !isHome(device) ? projectOf(deviceId, projectId)?.name : undefined
   }
+  const sectionKeyOf = (deviceId: string, projectId: string): string =>
+    projectSectionKey(deviceId, projectId, projectOf(deviceId, projectId)?.chatId)
   const launchedBy = translateSessionMessage('sidebar.launchedByAssistant', { name: assistant?.name ?? assistantName })
   const manyMachines = machines.length > 1
   const twins = nameTwinIds(sections.flatMap((section) => (section.project ? [{ id: section.key, name: section.project.name }] : [])))
   /**
-   * 行上的标记。❌ 标机器(owner 10-28:会话列表不标机器,机器只在会话里说)。分区页头已经说了项目的格里
-   * 不重复;置顶那格标自己的项目;挂在父会话下的行与父会话不在同一个项目里时标项目。
+   * 行上的标记。只在跨机器的项目格里标机器(那一格的页头说不出是哪台);一台机器的格不标(owner 10-28)。
+   * 分区页头已经说了项目的格里不重复;置顶那格标自己的项目;挂在父会话下的行与父会话不在同一个项目里时标项目。
    */
   const tagsOf = (node: SessionNode, section: SessionSection, parent?: { deviceId: string; projectId: string }): string[] => {
     const { deviceId } = node.item
     const { projectId, conversationId } = node.item.session
     if (parent) {
-      const project = parent.deviceId !== deviceId || projectId !== parent.projectId ? projectName(deviceId, projectId) : undefined
+      const project = sectionKeyOf(deviceId, projectId) !== sectionKeyOf(parent.deviceId, parent.projectId) ? projectName(deviceId, projectId) : undefined
       return project ? [project] : []
     }
     const tags: string[] = []
+    const rowDevice = deviceOf.get(deviceId)
+    if (section.project && section.deviceId === null && rowDevice) tags.push(machineLabel(rowDevice))
     if (groupIds.has(conversationId)) tags.push(launchedBy)
     if (section.pinned) {
       const project = projectName(deviceId, projectId)
@@ -230,7 +249,7 @@ export const ProjectsPage = observer(function ProjectsPage({
           statusAvailable={phone ? hostAvailable : undefined}
           phoneHost={phone}
           onOpen={(session) => onOpenSession(deviceId, session)}
-          onMenu={(phone ? hostAvailable && cancellable : rowDevice?.is_online) ? (session, anchor) => setMenuFor({ deviceId, session, anchor }) : undefined}
+          menu={(phone ? hostAvailable && cancellable : rowDevice?.is_online) ? { handle: sessionMenu, target: { deviceId, session: node.item.session, phoneHost: phone } } : undefined}
         />,
         ...(open ? renderTree(section, node.children, depth + 1, { deviceId, projectId }) : []),
       ]
@@ -244,7 +263,7 @@ export const ProjectsPage = observer(function ProjectsPage({
   const errorOf = new Map(listed.map(({ device, here }) => [device.device_id, here.error]))
   const nothingYet = sections.length === 0
   const waitingForMachines = devicesLoading && machines.length === 0
-  // 助理那一组的页头下说宿主真的离线 —— 只在这一组里确有住在它上面的会话时说。收回着 / 正在起来的云端宿主 ❌ 说(MachineNote)。
+  // 助理那一组的页头上说宿主真的离线 —— 只在这一组里确有住在它上面的会话时说。收回着 / 正在起来的云端宿主 ❌ 说(MachineState)。
   const homeDevice = devices.find((device) => isHome(device) && device.cloud_computer !== 'asleep' && device.cloud_computer !== 'waking' && !device.is_online)
   const onHome = (nodes: readonly SessionNode[]): boolean =>
     nodes.some((node) => homeIds.has(node.item.deviceId) || onHome(node.children))
@@ -342,14 +361,14 @@ export const ProjectsPage = observer(function ProjectsPage({
               aria-expanded={!isCollapsed}
               data-testid="agent-watch-session-group-toggle"
               leading={isCollapsed ? <ChevronRight /> : <ChevronDown />}
-              trailing={isCollapsed ? <span className="gg-aw-group-count">{section.count}</span> : null}
+              trailing={isCollapsed ? <span className="gg-aw-group-count">{section.count}</span>
+                : noteDevice ? <MachineState device={noteDevice} error={errorOf.get(noteDevice.device_id)} /> : null}
               onClick={() => toggleCollapsed(key)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCollapsed(key) } }}
             >
               {heading}
               {twinPath ? <span className="gg-aw-group-path" title={twinPath}>{` ${twinPath}`}</span> : null}
             </SectionLabel>
-            {!isCollapsed && noteDevice ? <MachineNote device={noteDevice} error={errorOf.get(noteDevice.device_id)} /> : null}
             {isCollapsed ? null : renderTree(section, section.roots)}
             {!isCollapsed && section.folded > 0 ? (
               <Button
@@ -367,13 +386,7 @@ export const ProjectsPage = observer(function ProjectsPage({
         )
       })}
 
-      <SessionActions
-          anchor={menuFor?.anchor ?? null}
-          session={menuFor?.session ?? null}
-          deviceId={menuFor?.deviceId ?? ''}
-          phoneHost={!!menuFor && !!deviceOf.get(menuFor.deviceId) && isPhoneDevice(deviceOf.get(menuFor.deviceId)!)}
-          onClose={() => setMenuFor(null)}
-        />
+      <SessionActions menu={sessionMenu} />
     </AgentWatchScreen>
   )
 })

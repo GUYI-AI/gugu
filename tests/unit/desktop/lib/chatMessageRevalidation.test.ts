@@ -151,9 +151,14 @@ describe('chatMessageRevalidation', () => {
     const overlay = (await loadMessageOverlays(['m1'], 'viewer')).get('m1')!
     expect(overlay.delivery_blocks).toEqual([{ agent_user_id: 'archived', reason: 'agent_archived' }])
     expect(overlay.readers).toEqual([]); expect(overlay.delivered).toBe(false); expect(overlay.delivery_status).toBeNull()
+  })
+  it('loads the wakes fixed at write time, with an entry for every queried message, and fails loudly', async () => {
     setResults('message_agent_wakes', { data: [{ message_id: 'm1', agent_user_id: 'archived' }, { message_id: 'm1', agent_user_id: 'active' }], error: null })
-    setResults('message_agent_delivery_blocks', { data: [{ message_id: 'm1', agent_user_id: 'archived', reason: 'agent_archived' }], error: null })
-    expect([...(await loadMessageAgentWakes(['m1'])).get('m1')!]).toEqual(['active'])
+    const wakes = await loadMessageAgentWakes(['m1', 'm2'])
+    expect([...wakes.get('m1')!]).toEqual(['archived', 'active'])
+    expect([...wakes.get('m2')!]).toEqual([])
+    setResults('message_agent_wakes', { data: null, error: { message: 'denied' } })
+    await expect(loadMessageAgentWakes(['m1'])).rejects.toThrow('Message recipients are unavailable: denied')
   })
   it('revalidates window body mutations and keeps deleted ids out of presentIds', async () => {
     setResults('message_reactions', { data: [], error: null })

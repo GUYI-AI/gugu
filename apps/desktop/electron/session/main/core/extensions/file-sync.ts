@@ -27,7 +27,22 @@ import { createLocalFileService } from '@main/core/extensions/local-files';
  */
 
 /** Task working copies' open files (`gugu.files` in a task). */
-export const localFileService = createLocalFileService({ warn: (message, data) => log.warn(message, data) });
+export const localFileService = createLocalFileService({
+  warn: (message, data) => log.warn(message, data),
+  watchFolder: async (folder) => {
+    const { runtimeManager } = await import('@main/core/runtime/runtime-manager');
+    const lease = await runtimeManager.acquire();
+    const watched = lease.value.files.watchDirectory(folder);
+    if (!watched.success) {
+      await lease.release();
+      throw new Error(`${folder} cannot be watched: ${watched.error.message}`);
+    }
+    return () => {
+      watched.data();
+      void lease.release();
+    };
+  },
+});
 // What it hears of the disk: each task working copy's change stream (workspace-factory's `watchChanges`, the file tree's
 // and search index's), as main sends it to the session page — one watch per working copy, not a second one of its own.
 tapMainEvents((channel, data) => {

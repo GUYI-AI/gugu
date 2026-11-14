@@ -11,6 +11,11 @@ const f = vi.hoisted(() => ({
   start: vi.fn(), status: vi.fn(), cancel: vi.fn(), preflight: vi.fn(),
   computer: vi.fn(), cloud: vi.fn(),
 }))
+// The rules main answers the window with (#1931): the built-in copy here.
+vi.mock('@/lib/assistantSetupRules', async () => {
+  const { NEUTRAL_ASSISTANT_RULES } = await import('../assistantRules/neutralRules')
+  return { assistantSetupRules: async () => NEUTRAL_ASSISTANT_RULES }
+})
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ assistantHome: f }) }))
 vi.mock('@/platform/desktopIpc', () => ({ desktopIpc: () => ({}) }))
 vi.mock('@/lib/supabase', () => ({ getCurrentAuthUserId: async () => {

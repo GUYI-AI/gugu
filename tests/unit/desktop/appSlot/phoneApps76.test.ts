@@ -7,6 +7,7 @@ import { appOrigin, gateOrigin } from '../../../../apps/desktop/src/components/a
 import { extensionContentSecurityPolicy } from '../../../../apps/desktop/src/session/shared/extensions/app-csp'
 import { APP_RUNTIME_FORGET_PAGE, APP_RUNTIME_GATE_PAGE, appRuntimeScriptTag, RUNTIME_SCRIPT_TAG } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { fileIconKey } from '../../../../apps/desktop/src/session/shared/extensions/app-icon'
+import { messageForUser } from '../../../../apps/desktop/src/lib/userFacingError'
 
 // L9 (摩擦单 F76): the phone's App store (phoneApps.ts) — install, update, uninstall, re-tag, where an App's page is,
 // and its data. The shell's plugin is played here by a map with the Java side's semantics (GuguAppStorePlugin: files
@@ -300,6 +301,19 @@ describe('U3 the phone App store: install, update, uninstall, re-tag', () => {
     expect(refused).toMatchObject({ success: false, error: expect.stringContaining('phone does not support notifications') })
     expect(shell.asked).toEqual([])
     expect(index().installed.vote).toBeUndefined()
+  })
+
+  it('refuses a manifest this build does not read with its reason in the one line the person is shown', async () => {
+    const messageId = await publish('vote', '1.0.0')
+    const zip = new JSZip()
+    zip.file('manifest.json', JSON.stringify({ ...manifest('vote', '1.0.0'), contributes: { tabs: [{ name: 'main', title: 'Main' }], instructions: 'x'.repeat(161) } }))
+    zip.file('index.html', '<!doctype html>')
+    shell.packages.set(cards.get(messageId)!.url, await zip.generateAsync({ type: 'uint8array' }))
+    const apps = await start()
+    const refused = await apps.installAttachment({ messageId })
+    expect(refused.success).toBe(false)
+    expect(messageForUser(refused.success ? '' : refused.error)).toContain('contributes.instructions')
+    expect(shell.asked).toEqual([])
   })
 
   it('asks in full when another publisher sends the same id, however little it asks for', async () => {
@@ -748,6 +762,32 @@ describe('the phone installs Apps from the market', () => {
     expect(JSON.parse(shell.index!).installed.notes).toMatchObject({ origin: 'market', manifest: { permissions: { capabilities: ['files:read'] } } })
     const again = await apps.installFromMarket({ ref: { extensionId: 'notes', version: '1.0.0' }, consent: { kind: 'gugu' } })
     expect(!again.success && again.error).toMatch(/installed here already/)
+  })
+
+  // #1931 D2: the ensure step's `over` — only gugu's own market copy, as it looked at it, switched on, and only a signed release.
+  it("`gugu` with `over`: never over the person's copy or one that changed, and only as a signed release", async () => {
+    await list('notes', '1.0.0', ['files:read'])
+    const apps = await start()
+    await apps.installFromMarket({ ref: { extensionId: 'notes', version: '1.0.0' }, consent: { kind: 'gugu' } })
+    const record = apps.installRecord('notes')!
+    expect(record).toMatchObject({ origin: 'market', version: '1.0.0', enabled: true })
+    const over = async (manifestDigest: string) => {
+      const result = await apps.installFromMarket({ ref: { extensionId: 'notes', version: '1.0.0' }, consent: { kind: 'gugu', over: { version: '1.0.0', manifestDigest } } })
+      return !result.success && result.error
+    }
+    expect(await over('0'.repeat(64))).toMatch(/installed here already; it changed since it was looked at/)
+    await apps.setEnabled('notes', false)
+    expect(apps.installRecord('notes')?.enabled).toBe(false)
+    expect(await over(record.manifestDigest)).toMatch(/installed here already; it is switched off/)
+    await apps.setEnabled('notes', true)
+    // The market here lists no signed release for it (its trust table names only the assistant App).
+    expect(await over(record.manifestDigest)).toMatch(/notes@1\.0\.0 is not a signed release; it does not go over the copy here/)
+    expect(installedDir('notes')).toBe('notes@1.0.0')
+    // From a chat: the person's.
+    await apps.uninstall('notes')
+    await apps.installAttachment({ messageId: await publish('notes', '1.0.0') })
+    expect(await over(apps.installRecord('notes')!.manifestDigest)).toMatch(/installed here already; it is not the market's copy/)
+    expect(apps.installRecord('notes')?.origin).toBe('attachment')
   })
 
   it("`gugu`: an App whose code is in someone else's repository is refused, nothing stored", async () => {

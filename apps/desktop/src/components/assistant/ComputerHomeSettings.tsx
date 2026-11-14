@@ -74,7 +74,7 @@ export function ComputerHomeGroups({
   )
 }
 
-/** 整页版(没有别的组时用)。设置里「咕咕」那一组是 AssistantSection,它直接嵌 ComputerHomeGroups。 */
+/** 整页版(没有别的组时用)。咕咕的设置页(AssistantSection,画在它 App 的面板上)直接嵌 ComputerHomeGroups。 */
 export function ComputerHomeSettings(props: Parameters<typeof ComputerHomeGroups>[0]) {
   return (
     <SettingsPage data-testid="assistant-settings-computer">

@@ -105,12 +105,16 @@ function disconnectCredentialLabel(auth: IntegrationAuthDescriptor, locale: stri
   return pick({ en: 'credentials', 'zh-CN': '凭据' }, locale);
 }
 
-export function buildIntegrationListPayload(locale?: string, custodyOf?: CustodyOf) {
+/** 连上以后 agent 能不能直接用它(见 session-integrations 的 `integrationReachesAgent`)。 */
+export type ReachesAgent = (integrationId: string) => boolean;
+
+export function buildIntegrationListPayload(locale?: string, custodyOf?: CustodyOf, reachesAgent?: ReachesAgent) {
   return integrationPluginRegistry.getAll().map((plugin) => ({
     id: plugin.metadata.id,
     name: plugin.metadata.name,
     description: pick(plugin.metadata.description, locale),
     websiteUrl: plugin.metadata.websiteUrl,
+    catalog: plugin.metadata.catalog,
     features: features(plugin.metadata.id),
     disconnectCredentialLabel: disconnectCredentialLabel(plugin.capabilities.auth, locale),
     capabilities: issueCapabilities(plugin.metadata.id),
@@ -123,5 +127,7 @@ export function buildIntegrationListPayload(locale?: string, custodyOf?: Custody
       prompt: pick(playbook.prompt, locale),
     })),
     multiAccount: plugin.metadata.multiAccount ?? false,
+    // 资源库分组用:false = 只在咕咕界面里用(issue 关联、GitHub 的项目与 PR),agent 调不到。没给判定 = 不说。
+    ...(reachesAgent ? { agentUse: reachesAgent(plugin.metadata.id) } : {}),
   }));
 }

@@ -27,7 +27,7 @@ export function boundedAssistantIndex(lines: string[], details?: string): string
   const omissions: Record<string, number> = {}
   let trimmed = false
   const footer = () => (trimmed && details ? `其余见 ${details}\n` : '') + (Object.keys(omissions).length ? json({ source: 'index_budget', omitted_records: omissions,
-    read: ['session_devices', 'project_list', 'library_read'], complete: false }) + '\n' : ''
+    read: ['session_devices', 'project_list'], complete: false }) + '\n' : ''
   )
   const render = () => rows.map(row => typeof row === 'string' ? row : json(row)).join('\n')
     .replace('</gugu_resource_index>', footer() + '</gugu_resource_index>')

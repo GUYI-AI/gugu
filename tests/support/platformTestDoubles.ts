@@ -13,6 +13,7 @@ export function createCapacitorPlatformTestDouble() {
       rendererCommandBridge: false,
       mobileApps: true,
       phoneDevice: true,
+      readingZoomMemory: false,
     },
   }
 }
@@ -29,6 +30,7 @@ export function createDesktopPlatformTestDouble() {
       clipboard: true,
       notifications: true,
       rendererCommandBridge: true,
+      readingZoomMemory: true,
     },
   }
 }

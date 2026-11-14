@@ -1,7 +1,9 @@
+import type { WindowCursor } from '@gugu/session-core/session-record/contract'
 import type { SessionpageTimelineClient } from '@/mobile/agent-watch/use-timeline-session'
 import * as remote from '@/mobile/agent-watch/sessionpage-rpc'
 import { rpcOn, events } from '@/session/renderer/lib/ipc'
-import { sessionpageSessionTimelineChannel } from '@/session/shared/core/session-timeline/sessionTimelineEvents'
+import { sessionpageSessionTimelineChannel, sessionpageSessionWindowStatusChannel } from '@/session/shared/core/session-timeline/sessionTimelineEvents'
+import { prepareAcpWindowHistory } from '@/session/renderer/features/sessions/acp/acp-window-client'
 
 async function value<T>(result: Promise<{ ok: true; value: T } | { ok: false; error: { code: string; message: string } }>): Promise<T> {
   const next = await result
@@ -16,7 +18,7 @@ function localClient(trim: boolean): SessionpageTimelineClient {
   return {
     fetchSnapshot: (_, sessionId, limit) => value(rpcOn(null).sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit: limit ?? 30, trim })),
     fetchAfter: (_, sessionId, cursor) => value(rpcOn(null).sessionTimeline.sessionAfter({ conversationId: sessionId, cursor, trim })),
-    fetchOlder: (_, sessionId, beforeTurnId, limit) => value(rpcOn(null).sessionTimeline.sessionOlder({ conversationId: sessionId, beforeTurnId, limit, trim })),
+    fetchOlder: (_, sessionId, beforeTurnId, limit, cursor) => value(rpcOn(null).sessionTimeline.sessionOlder({ conversationId: sessionId, ...(cursor ? { cursor } : { beforeTurnId }), limit, trim })),
     fetchToolImage: (_, sessionId, itemId, index) => value(rpcOn(null).sessionTimeline.sessionToolImage({ conversationId: sessionId, itemId, index })),
     subscribeSession: (_, sessionId, subscriptionId, cursor) => value(rpcOn(null).sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor, trim })),
     unsubscribeSession: (_, subscriptionId) => rpcOn(null).sessionTimeline.sessionUnsubscribe({ subscriptionId }),
@@ -35,8 +37,49 @@ const localUntrimmed = localClient(false)
 
 const remoteClient: SessionpageTimelineClient = { ...remote, fetchSnapshot: (device, session, limit) => remote.fetchSnapshot(device, session, limit ?? 30) }
 
+/**
+ * The first screen is the bounded window; what follows it is the host's word at subscription time (`sessionWindowPrepare`,
+ * shared with the session page's window history): a stopped session it can open as a window is followed there — its
+ * subscription is refused without that preparation, so a long record at the window's head would stay 「Loading…」 — and any
+ * other (running, or not a window format) through the ordinary timeline, which answers the window cursor with a fresh
+ * snapshot and then live. Reads after that follow the same source until the next subscription asks again.
+ */
+function windowClient(isLocal: boolean): SessionpageTimelineClient {
+  const target = (device: string) => isLocal ? rpcOn(null).sessionTimeline : remote.machineRpc(device).sessionTimeline
+  const ordinary = isLocal ? local : remoteClient
+  const followedOrdinary = new Set<string>()
+  const key = (device: string, sessionId: string) => `${device}\n${sessionId}`
+  return { ...ordinary, boundedWindow: true,
+    fetchSnapshot: (device, sessionId, limit) => value(target(device).sessionWindowSnapshot({ conversationId: sessionId, limit: limit ?? 30 })),
+    fetchAfter: (device, sessionId, cursor) => followedOrdinary.has(key(device, sessionId))
+      ? ordinary.fetchAfter(device, sessionId, cursor)
+      : value(target(device).sessionWindowAfter({ conversationId: sessionId, cursor })),
+    fetchOlder: (device, sessionId, beforeTurnId, limit, cursor?: WindowCursor) => {
+      if (!cursor && followedOrdinary.has(key(device, sessionId))) return ordinary.fetchOlder(device, sessionId, beforeTurnId, limit)
+      if (cursor) return value(target(device).sessionWindowOlder({ conversationId: sessionId, cursor, limit }))
+      if (beforeTurnId) return value(target(device).sessionWindowOlder({ conversationId: sessionId, beforeTurnId, limit }))
+      return Promise.reject(new Error('invalid_cursor'))
+    },
+    subscribeSession: async (device, sessionId, subscriptionId, cursor) => {
+      const opening = await prepareAcpWindowHistory(sessionId, subscriptionId, target(device))
+      if (opening.source === 'legacy') {
+        followedOrdinary.add(key(device, sessionId))
+        return ordinary.subscribeSession(device, sessionId, subscriptionId, cursor)
+      }
+      followedOrdinary.delete(key(device, sessionId))
+      return value(target(device).sessionWindowSubscribe({ conversationId: sessionId, subscriptionId, cursor }))
+    },
+    // This computer's window subscription says when it stops (the session started again, its source changed).
+    ...(isLocal ? { subscribeSessionErrors: (_device: string, subscriptionId: string, onError: (error: unknown) => void) =>
+      events.on(sessionpageSessionWindowStatusChannel, (status) => { if (status.state === 'failed') onError(status.error) }, subscriptionId) } : {}),
+  }
+}
+const localWindow = windowClient(true)
+const remoteWindow = windowClient(false)
+
 /** `trim: false` only changes the local client; another machine always trims what it sends over the wire. */
-export function assistantTimelineClient(isLocal: boolean, options?: { trim?: boolean }): SessionpageTimelineClient {
+export function assistantTimelineClient(isLocal: boolean, options?: { trim?: boolean; window?: boolean }): SessionpageTimelineClient {
+  if (options?.window) return isLocal ? localWindow : remoteWindow
   if (!isLocal) return remoteClient
   return options?.trim === false ? localUntrimmed : local
 }

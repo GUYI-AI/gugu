@@ -17,12 +17,12 @@ vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   chatService: {
     getGroupChatSettings: vi.fn(),
     updateGroupChatSettings: vi.fn(),
-    listGroupJoinRequests: vi.fn(async () => []),
     decideGroupJoin: vi.fn(async () => {}),
     getGroupCollab: vi.fn(async () => ({ snapshot: { humans: [], agents: [] }, identities: [] })),
     uploadGroupAvatar: vi.fn(),
     getAnnouncements: vi.fn(async () => []),
     leaveGroup: vi.fn(async () => {}),
+    listMyAgentJoinRequests: vi.fn(async () => new Map()),
   },
   GroupCollabEmptyError: class GroupCollabEmptyError extends Error {},
 }))
@@ -32,8 +32,12 @@ vi.mock('../../../apps/desktop/src/lib/topics', () => ({
   topicService: { listTopicsOfChat: vi.fn(async () => []) },
 }))
 
+const panels = vi.hoisted(() => ({ openPanelItem: vi.fn() }))
+vi.mock('../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts', async (original) => ({ ...(await original<Record<string, unknown>>()), openPanelItem: panels.openPanelItem }))
+
 const { chatService } = await import('../../../apps/desktop/src/lib/chat')
 const { GroupMembersSection } = await import('../../../apps/desktop/src/components/chat/GroupMembersSection')
+const { GroupAddMembersHost } = await import('../../../apps/desktop/src/components/chat/GroupAddMembersSheet')
 const { useGroupChatSettings } = await import('../../../apps/desktop/src/components/chat/useGroupChatSettings')
 const { NATIVE_BACK_EVENT } = await import('../../../apps/desktop/src/components/ui/sheetStack')
 const getSettings = vi.mocked(chatService.getGroupChatSettings)
@@ -43,7 +47,7 @@ function settingsRow(overrides: Partial<GroupChatSettings> = {}): GroupChatSetti
   return {
     my_role: 'owner', can_manage: true, can_dissolve: true, can_archive_topic: false,
     id: 'chat-1', public_id: 7, creator_user_id: 'owner-1', name: '产品组', status: 'active',
-    group_prompt: '先写 spec 再开工\n第二条', default_agent_type: null, join_token: 'token', description: null,
+    group_prompt: '先写 spec 再开工\n第二条', default_agent_type: null, join_token: '0123456789abcdef0123456789abcdef', description: null,
     max_members: 100, allow_member_invite: false, invite_link_enabled: false, agent_join_approval: false,
     join_mode: 'approval', hide_history: false, avatar_url: null, is_discoverable: false,
     agent_flood_threshold: null, agent_flood_threshold_effective: 5,
@@ -74,7 +78,6 @@ async function renderDrawer(viewerId: string, callbacks: Record<string, unknown>
     currentUserId: viewerId,
     onReload: vi.fn(async () => {}),
     onClose: vi.fn(),
-    onOpenSearch: vi.fn(),
     onSetNotificationLevel: vi.fn(async () => {}),
     onTogglePinned: vi.fn(async () => {}),
     onClearMessages: vi.fn(async () => {}),
@@ -198,7 +201,7 @@ describe('settings held above the panel (the chat area): opening the panel reads
   }
   const baseProps = {
     chat: chat({ id: 'chat-1', kind: 'group', name: '产品组' }), snapshot: SNAPSHOT, currentUserId: 'owner-1',
-    onReload: vi.fn(async () => {}), onClose: vi.fn(), onOpenSearch: vi.fn(), onSetNotificationLevel: vi.fn(async () => {}),
+    onReload: vi.fn(async () => {}), onClose: vi.fn(), onSetNotificationLevel: vi.fn(async () => {}),
     onTogglePinned: vi.fn(async () => {}), onClearMessages: vi.fn(async () => {}), onLeaveGroup: vi.fn(async () => {}),
   }
   const renderHost = (open: boolean) => renderWithAppProviders(harness, createNode(Host, { ...baseProps, open } as never), {
@@ -269,13 +272,9 @@ describe('settings held above the panel (the chat area): opening the panel reads
 })
 
 describe('#6418 群聊设置 —— 谁看得到什么', () => {
-  it('邀请链接开着时,普通成员在一级页也能复制链接 / 生成海报(改版前就能)', async () => {
+  // @@@group-share 链接 / 二维码只在「邀请」那张单里(群头部一步就到),群信息里不再放第二份。
+  it('邀请链接开着时,群信息里也不另放一份链接(成员和群主都一样)', async () => {
     await renderDrawer('member-1', {}, true, { invite_link_enabled: true })
-    expect(q('[data-testid="group-invite-link"]')).not.toBeNull()
-  })
-
-  it('反例:邀请链接关着时,普通成员看不到链接', async () => {
-    await renderDrawer('member-1')
     expect(q('[data-testid="group-invite-link"]')).toBeNull()
   })
 
@@ -381,5 +380,52 @@ describe('群信息页签直接开在某一页:那一页没有上一层', () => 
     await act(async () => { window.dispatchEvent(new CustomEvent(NATIVE_BACK_EVENT)) })
     expect(props.onClose).toHaveBeenCalledTimes(2)
     expect(page()).toBe(initialPage)
+  })
+})
+
+describe('the first page after the header cleanup', () => {
+  const text = () => q('[data-group-settings-page]')?.textContent ?? ''
+  const picker = () => [...document.querySelectorAll('[role="dialog"]')].find((dialog) => dialog.textContent?.includes('添加群成员')) ?? null
+
+  it('lists members, the folder, then the settings; search is not here; clearing sits with leaving at the bottom', async () => {
+    await renderDrawer('member-1')
+    expect(text()).not.toContain('查找聊天记录')
+    const order = ['群成员', '文件', '群公告', '协作规则', '群描述', '消息通知', '置顶对话', '危险操作', '清空聊天记录', '离开群组'].map((label) => [label, text().indexOf(label)] as const)
+    expect(order.filter(([, at]) => at < 0), 'every row is on the page').toEqual([])
+    expect(order.map(([, at]) => at)).toEqual([...order.map(([, at]) => at)].sort((a, b) => a - b))
+  })
+
+  it('the folder row opens this group\'s folder, the same action as the header menu\'s item', async () => {
+    await renderDrawer('member-1')
+    await click(q('[data-testid="group-settings-folder"]'))
+    expect(panels.openPanelItem).toHaveBeenCalledExactlyOnceWith('chat-1', expect.anything())
+    expect(page(), 'the info page stays where it was').toBe('main')
+  })
+
+  it('the 「+」 on the members row is the group add menu; 添加成员 opens the picker over this page and closing it comes back here', async () => {
+    // The shell draws the picker (GroupAddMembersHost, mounted once in MainLayout).
+    const shell = createReactHarness()
+    await renderWithAppProviders(shell, createNode(GroupAddMembersHost), { contacts: {} })
+    await renderDrawer('owner-1')
+    await click(q('[data-testid="group-settings-members"] [data-group-add-menu]'))
+    await waitForCondition(() => q('[data-testid="group-add-members"]') !== null, 'the menu is open')
+    expect(page(), 'opening the menu stays on the info page').toBe('main')
+    await click(q('[data-testid="group-add-members"]'))
+    await waitForCondition(() => picker() !== null, 'the picker is open')
+    expect(page(), 'the picker sits over the info page, never the members page').toBe('main')
+    await act(async () => { window.dispatchEvent(new CustomEvent(NATIVE_BACK_EVENT)) })
+    await waitForCondition(() => picker() === null, 'one back closes the picker')
+    expect(page()).toBe('main')
+    expect(panels.openPanelItem).not.toHaveBeenCalled()
+    shell.cleanup()
+  })
+
+  it('opened from the row, the members page has the add menu in its title row and no full-width invite button', async () => {
+    await renderDrawer('owner-1')
+    await click(q('[data-testid="group-settings-members"]'))
+    expect(page()).toBe('members')
+    expect(q('[data-testid="member-list-panel"] [data-group-add-menu]')).not.toBeNull()
+    expect(q('[data-testid="member-list-invite"]')).toBeNull()
+    expect(picker()).toBeNull()
   })
 })

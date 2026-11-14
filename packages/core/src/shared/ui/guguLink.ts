@@ -42,11 +42,12 @@ export const FILE_LINK_IN_TEXT = /gugu-file:\/\/[^\s()[\]<>"'`]+/gi
 export function parseGroupFileLink(href: string): GroupFileLink | null {
   const match = GROUP_FILE_LINK.exec(href.trim())
   if (!match) return null
-  const version = /(?:^|&)v=(\d+)(?:&|$)/.exec(match[2] ?? '')?.[1]
+  const versionText = /(?:^|&)v=(\d+)(?:&|$)/.exec(match[2] ?? '')?.[1]
+  const version = versionText === undefined ? undefined : Number(versionText)
   const at = match[3] === undefined ? null : placeOf(match[3])
   return {
     itemId: match[1]!.toLowerCase(),
-    ...(version === undefined ? {} : { version: Number(version) }),
+    ...(Number.isSafeInteger(version) && version! > 0 ? { version } : {}),
     ...(at && Object.keys(at).length > 0 ? { at } : {}),
   }
 }
@@ -85,7 +86,7 @@ function decoded(part: string): string {
 const NOT_BARE = /[&=%;#+\s<>\\()[\]{}"`|\u0000-\u001f\u007f]/g
 /** As `%XX`: encodeURIComponent leaves `(` and `)` as they are, and a bare one ends a markdown link. */
 const escaped = (c: string) => (c === '(' || c === ')' ? `%${c.charCodeAt(0).toString(16).toUpperCase()}` : encodeURIComponent(c))
-const part = (text: string) => text.replace(NOT_BARE, escaped)
+const part = (text: string) => text.replace(NOT_BARE, escaped).replace(/'/g, '%27')
 
 /**
  * The one way gugu writes such a link — the place's keys and values escaped one by one, in the App's order, so whatever
@@ -136,12 +137,12 @@ export function classifyFileLink(href: string): FileLinkClassification {
   const groupFile = parseGroupFileLink(candidate)
   if (groupFile) return { kind: 'group-file', ...groupFile }
 
-  const { path: raw, at } = workspacePlace(href)
+  const { path: raw, at } = workspacePlace(candidate)
   const placed = at && Object.keys(at).length > 0 ? { at } : {}
   let path = raw
   try {
-    // decodeURI keeps `%23` as it is: the one escape a name's own `#` needs, read back here.
-    path = decodeURI(raw).replace(/%23/gi, '#')
+    // 先还原原文里的 %23，再解码一次，保留 %25 解码后产生的字面 %23。
+    path = decodeURI(raw.replace(/%23/gi, '#'))
   } catch {
     // A literal '%' is valid in a filesystem name; preserve malformed URI text as a path.
   }
@@ -186,6 +187,26 @@ export function parseConversationLink(href: string): ConversationLink | null {
   return match ? { chatId: match[1]!.toLowerCase(), ...(match[2] ? { messageId: match[2].toLowerCase() } : {}) } : null
 }
 
+export type WidgetLink = { widgetId: string }
+const WIDGET_LINK = /^gugu-widget:\/\/([^/?#\s<>]+)\/?$/i
+
+/** Widget ids are database text ids, including historical message ids that are not UUIDs. */
+export function parseWidgetLink(href: string): WidgetLink | null {
+  const match = WIDGET_LINK.exec(href.trim())
+  if (!match) return null
+  try {
+    const widgetId = decodeURIComponent(match[1]!)
+    return widgetId && !widgetId.includes('\0') ? { widgetId } : null
+  } catch { return null }
+}
+
+export function widgetLink(widgetId: string): string {
+  if (!widgetId || widgetId.includes('\0')) throw new Error('A widget link requires a nonempty text id')
+  // URI-safe punctuation can still be Markdown syntax in a bare reference paragraph.
+  const component = encodeURIComponent(widgetId).replace(/[!'()*_~]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+  return `gugu-widget://${component}`
+}
+
 /** Beyond this a link stops being a link and starts being a payload. */
 const MAX_EXTENSION_LINK_LENGTH = 2048;
 
@@ -217,7 +238,7 @@ function buildAppLink(input: ParsedExtensionLink, scheme: string): string {
     const [kind, id] = 'chat' in input.place ? (['chat', input.place.chat] as const) : (['session', input.place.session] as const);
     search.append(PLACE_KEYS[kind], id);
   }
-  const tail = segments.map(encodeURIComponent).join('/');
+  const tail = segments.map(segment => encodeURIComponent(segment).replace(/[()]/g, escaped)).join('/');
   const query = search.toString();
   const link = `${scheme}://ext/${input.extensionId}/${tab}${tail ? `/${tail}` : ''}${query ? `?${query}` : ''}`;
   if (link.length > MAX_EXTENSION_LINK_LENGTH) {
@@ -228,7 +249,7 @@ function buildAppLink(input: ParsedExtensionLink, scheme: string): string {
 
 /** Stored chat/file links are independent of the build that writes or reads the message. */
 export const APP_VARIANT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
-export type AppDetailLink = { kind: 'app-detail'; extensionId: string; deviceId?: string; variant?: string }
+export type AppDetailLink = { kind: 'app-detail'; extensionId: string; deviceId?: string; variant?: string; /** Asked from inside the App: back returns there. Never in the URL. */ fromApp?: boolean }
 function validAppDetail(target: AppDetailLink): boolean {
   return /^[a-z0-9][a-z0-9-]{1,63}$/.test(target.extensionId)
     && (target.deviceId === undefined || (!!target.deviceId && target.deviceId.trim() === target.deviceId && !/\s/.test(target.deviceId)))
@@ -236,6 +257,7 @@ function validAppDetail(target: AppDetailLink): boolean {
 }
 export type GuguLinkTarget =
   | ({ kind: 'chat' } & ConversationLink)
+  | ({ kind: 'widget' } & WidgetLink)
   | ({ kind: 'file' } & GroupFileLink)
   | ({ kind: 'app' } & ParsedExtensionLink)
   | AppDetailLink
@@ -252,10 +274,35 @@ export type AgentSessionTarget = { kind: 'session'; agentId: string; deviceId?: 
 /** What a click may open: any link target, or an agent's session named by the agent. */
 export type OpenTarget = GuguLinkTarget | AgentSessionTarget
 
+/**
+ * A gugu URL read the same in every browser. Before Chromium 130 a custom scheme's URL has no host (`hostname` is empty and the
+ * authority stays in `pathname`), so every gugu://ext link read as no link at all on those phones. The authority is taken from
+ * the text, as a current browser reads it: case kept, an explicit port kept. The rest is read as https, with a backslash kept
+ * as written (https would turn it into a slash). No authority, or an invalid one, is no gugu URL.
+ */
+export function readGuguUrl(raw: string): { url: URL; host: string; port: string } | null {
+  let href: string
+  try {
+    const parsed = new URL(raw)
+    if (!/^gugu(?:-[a-z0-9-]+)?:$/.test(parsed.protocol)) return null
+    if (!parsed.href.startsWith(`${parsed.protocol}//`)) return null
+    href = parsed.href.slice(parsed.protocol.length + 2)
+  } catch { return null }
+  const end = href.search(/[/?#]/)
+  const authority = end === -1 ? href : href.slice(0, end)
+  const hostPort = /^(?:[^@]*@)?([^:@]*)(?::(\d*))?$/.exec(authority)
+  if (!hostPort?.[1] || authority.includes('\\')) return null
+  try {
+    return { url: new URL(`https://${href.replace(/\\/g, '%5C')}`), host: hostPort[1], port: hostPort[2] ?? '' }
+  } catch { return null }
+}
+
 /** One reader for stored references and OS links. Only external invocation binds a link to a build's scheme. */
 export function parseGuguLink(raw: string, options: { supabaseUrl?: string } = {}): GuguLinkTarget | null {
   const chat = parseConversationLink(raw)
   if (chat) return { kind: 'chat', ...chat }
+  const widget = parseWidgetLink(raw)
+  if (widget) return { kind: 'widget', ...widget }
   const file = parseGroupFileLink(raw)
   if (file) return { kind: 'file', ...file }
   let url: URL
@@ -268,17 +315,19 @@ export function parseGuguLink(raw: string, options: { supabaseUrl?: string } = {
       }
     } catch { /* An invalid database URL cannot name a login approval. */ }
   }
-  const scheme = url.protocol.slice(0, -1)
-  if (!/^gugu(?:-[a-z0-9-]+)?$/.test(scheme)) return null
-  if (url.hostname === 'app') {
-    if (url.username || url.password || url.port || url.hash || !/^\/[^/]+$/.test(url.pathname)
+  const read = readGuguUrl(raw)
+  if (!read) return null
+  const { host, port } = read
+  url = read.url
+  if (host === 'app') {
+    if (url.username || url.password || port || url.hash || !/^\/[^/]+$/.test(url.pathname)
       || [...url.searchParams.keys()].some((key) => !['device', 'variant'].includes(key) || url.searchParams.getAll(key).length !== 1)) return null
     const target: AppDetailLink = { kind: 'app-detail', extensionId: url.pathname.slice(1),
       ...(url.searchParams.has('device') ? { deviceId: url.searchParams.get('device')! } : {}),
       ...(url.searchParams.has('variant') ? { variant: url.searchParams.get('variant')! } : {}) }
     return validAppDetail(target) ? target : null
   }
-  if (url.hostname === 'ext') {
+  if (host === 'ext') {
     if (raw.length > MAX_EXTENSION_LINK_LENGTH) return null
     const [extensionId, tab, ...rest] = url.pathname.split('/').filter(Boolean)
     if (!extensionId || !tab) return null
@@ -286,23 +335,23 @@ export function parseGuguLink(raw: string, options: { supabaseUrl?: string } = {
     try { path = rest.map(decodeURIComponent).join('/') } catch { return null }
     const chat = url.searchParams.get(PLACE_KEYS.chat)
     const session = url.searchParams.get(PLACE_KEYS.session)
-    const query: Record<string, string> = {}
+    const query: Record<string, string> = Object.create(null) as Record<string, string>
     for (const [key, value] of url.searchParams) if (!key.startsWith('gugu.')) query[key] = value
     return { kind: 'app', extensionId, tab, path, query, place: session ? { session } : chat ? { chat } : null }
   }
-  if (url.hostname === 'chat') {
+  if (host === 'chat') {
     const match = new RegExp(`^/(${UUID})(?:/message/(${UUID}))?/?$`, 'i').exec(url.pathname)
     return match ? { kind: 'chat', chatId: match[1]!.toLowerCase(), ...(match[2] ? { messageId: match[2].toLowerCase() } : {}) } : null
   }
-  if (url.hostname === 'file') {
+  if (host === 'file') {
     const target = parseGroupFileLink(`gugu-file://${url.pathname.slice(1)}${url.search}${url.hash}`)
     return target ? { kind: 'file', ...target } : null
   }
   const id = url.pathname.slice(1)
   if (!id || id.includes('/') || url.search || url.hash) return null
   try {
-    if (url.hostname === 'session') return { kind: 'session', sessionId: decodeURIComponent(id) }
-    if (url.hostname === 'project') return { kind: 'project', projectId: decodeURIComponent(id) }
+    if (host === 'session') return { kind: 'session', sessionId: decodeURIComponent(id) }
+    if (host === 'project') return { kind: 'project', projectId: decodeURIComponent(id) }
   } catch { return null }
   return null
 }
@@ -310,6 +359,7 @@ export function parseGuguLink(raw: string, options: { supabaseUrl?: string } = {
 /** A stored reference by default; `scheme` asks for a link that invokes that installed build from outside. */
 export function guguLink(target: Exclude<GuguLinkTarget, { kind: 'server-login' }>, scheme?: string): string {
   switch (target.kind) {
+    case 'widget': return widgetLink(target.widgetId)
     case 'chat': {
       const stored = conversationLink(target.chatId, target.messageId)
       return scheme ? `${scheme}://chat/${target.chatId}${target.messageId ? `/message/${target.messageId}` : ''}` : stored
@@ -329,7 +379,7 @@ export function guguLink(target: Exclude<GuguLinkTarget, { kind: 'server-login' 
     case 'session':
     case 'project':
       if (!scheme) throw new Error('An external resource link needs the build scheme')
-      return `${scheme}://${target.kind}/${encodeURIComponent(target.kind === 'session' ? target.sessionId : target.projectId)}`
+      return `${scheme}://${target.kind}/${encodeURIComponent(target.kind === 'session' ? target.sessionId : target.projectId).replace(/[()]/g, escaped)}`
   }
 }
 
@@ -350,7 +400,8 @@ export function linkTargetOf(args: Record<string, unknown>, own: { id: string; c
     case 'chat': return { kind: 'chat', chatId: text(args.chat, 'chat'), ...(args.message ? { messageId: text(args.message, 'message') } : {}) }
     case 'file': {
       const file = typeof args.file === 'object' && args.file ? (args.file as { id?: unknown }).id : args.file
-      if (args.version !== undefined && (!Number.isInteger(args.version) || Number(args.version) < 1)) throw new Error('version must be a positive whole number')
+      if (typeof file === 'string' && !MESSAGE_UUID.test(file)) throw new Error("file is a chat file's entry or id: a working copy's file has no link, it goes by its path")
+      if (args.version !== undefined && (!Number.isSafeInteger(args.version) || Number(args.version) < 1)) throw new Error('version must be a positive whole number')
       const at = args.at == null ? undefined : Object.fromEntries(Object.entries(args.at as object).map(([key, value]) => {
         if (typeof value !== 'string' && typeof value !== 'number') throw new Error('A file place has string or number values')
         return [key, String(value)]

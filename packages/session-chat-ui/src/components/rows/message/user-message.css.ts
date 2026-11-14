@@ -25,8 +25,7 @@ export const userCardGroup = style({});
 // ── Runtime geometry contract ─────────────────────────────────────────────────
 // Set per-instance via assignInlineVars in message.def.tsx.
 
-export const cardVars = createVariableThemeContract<MessageStyleVars & { height: number }>({
-  height: null,
+export const cardVars = createVariableThemeContract<MessageStyleVars>({
   userCardPadX: null,
   userCardPadY: null,
   cardBorder: null,
@@ -36,7 +35,11 @@ export const cardVars = createVariableThemeContract<MessageStyleVars & { height:
   attachChipW: null,
 });
 
-// No class-level `overflow` here, deliberately — unlike every sibling row root
+// The card's engine height is a plain inline `height` (UserMessageCard), never one of these custom properties: a custom
+// property inherits, so changing it restyles every node of the body — per streamed chunk, O(reply). Measured
+// 2026-11-12 on a 15k-char LaTeX reply: style recalc grew 5.6 → 63 ms per chunk along the reply.
+//
+// No class-level `overflow` on the card, deliberately — unlike every sibling row root
 // that is handed an engine height. `UserMessageCard` writes `overflow-y` inline
 // on every render (`hidden` while collapsed or animating, `auto` when expanded
 // at rest, so long messages stay scrollable), and a non-visible `overflow-y`
@@ -44,7 +47,6 @@ export const cardVars = createVariableThemeContract<MessageStyleVars & { height:
 // therefore contain a height surplus; measured, not assumed — see the
 // "user card contains a transient surplus" contract, which also keeps the
 // inline style from being dropped silently.
-export const cardRoot = style({ height: cardVars.height });
 
 // ── UserMessageCard ───────────────────────────────────────────────────────────
 
@@ -140,7 +142,7 @@ export const stopButtonOverlay = style({
   transition: 'opacity 150ms ease',
   selectors: {
     [`${userCardGroup}:hover &`]: { opacity: 1 },
-    '&:focus-visible': { opacity: 1 },
+    '&:focus-visible:not([data-pointer-focus])': { opacity: 1 },
     '&:hover': { color: vars.fg },
   },
 });
@@ -207,7 +209,7 @@ export const userMessageActionButton = style({
   cursor: 'pointer',
   selectors: {
     '&:hover': { color: vars.fg, background: vars.bgHover },
-    '&:focus-visible': { outline: `2px solid ${vars.fgMuted}`, outlineOffset: '1px' },
+    '&:focus-visible:not([data-pointer-focus])': { outline: `2px solid ${vars.fgMuted}`, outlineOffset: '1px' },
   },
 });
 
@@ -220,7 +222,7 @@ export const userMessageExpand = style({
   padding: 0, border: 0, background: 'transparent', cursor: 'pointer',
   minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1, lineHeight: '16px',
   color: vars.fgMuted, fontFamily: vars.fontSans, fontSize: vars.typeChromeTinyFontSize, whiteSpace: 'nowrap',
-  selectors: { '&:hover': { color: vars.fg }, '&:focus-visible': { outline: `1px solid ${vars.fgMuted}`, outlineOffset: 2, borderRadius: 3 } },
+  selectors: { '&:hover': { color: vars.fg }, '&:focus-visible:not([data-pointer-focus])': { outline: `1px solid ${vars.fgMuted}`, outlineOffset: 2, borderRadius: 3 } },
 });
 
 export const userMessageTime = style({
@@ -287,7 +289,7 @@ globalStyle(`${attachChip}:hover ${attachChipTile}`, {
   background: vars.bgPress,
 });
 
-globalStyle(`${attachChip}:focus-visible ${attachChipTile}`, {
+globalStyle(`${attachChip}:focus-visible:not([data-pointer-focus]) ${attachChipTile}`, {
   background: vars.bgPress,
 });
 

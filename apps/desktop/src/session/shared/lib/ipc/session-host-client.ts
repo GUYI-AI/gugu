@@ -129,7 +129,7 @@ export function createSessionHostClient(open: SessionHostPipeOpener, options: Se
   const heartbeatMs = options.heartbeatMs ?? 0
   // 这边被冻住多久宿主就可能已经关窗:宿主一整拍(HOST_WS_HEARTBEAT_MS)没收到这边任何东西就关。冻住之前这边最后一次
   // 发东西最早在「一个心跳周期」之前(WebSocket 路由浏览器即时回 pong,算 0),所以这边冻住超过 一拍 − 心跳周期 时,
-  // 宿主可能已经数满一整拍了。
+  // 宿主可能已经数满一整拍了。可能 ≠ 已经:到这个数只探活,由管道裁决(见 @@@silent-window)。
   const frozenMs = HOST_WS_HEARTBEAT_MS - heartbeatMs
   if (frozenMs <= 0) throw new Error(`[session-host] heartbeatMs ${heartbeatMs} must be shorter than the host beat ${HOST_WS_HEARTBEAT_MS}`)
   const retryMaxMs = options.retryMaxMs ?? 5000
@@ -358,18 +358,26 @@ export function createSessionHostClient(open: SessionHostPipeOpener, options: Se
   }
 
   /**
-   * @@@silent-window - 窗口多半已死的判据,看门狗按拍判、发问前当场判,都走这里。两个信号,各按宿主的关窗规矩定门槛:
-   *  · 收帧:宿主每拍都发 hb,staleMs(两拍)一帧都没收到 = 线被中间设备掐死了。
-   *  · 看门狗上一次真的跑到:这边被冻住时它停着,冻住超过 frozenMs 时宿主可能已经关了窗(见 frozenMs)。只看收帧不够:
-   *    冻在后台醒来时,socket 里缓着的旧帧先交上来,收帧时刻一下子变新(安卓实测:冻 60 s,问被拒成「连不上」)。
+   * @@@silent-window - 窗口多半已死的判据,看门狗按拍判、发问前当场判,都走这里。只认对面的证据,❌ 把「这边自己忙」当成对面静默:
+   *  · 收帧:宿主每拍都发 hb,这边**醒着**的时候两拍(staleMs)一帧都没收到 = 线被中间设备掐死了。量到看门狗上一次真跑到的
+   *    那一刻为止:那之后这边可能一直被占着,对面发来的帧还排在队里没处理(2026-11-12 Chole:长回复把渲染进程占了约 20 s,
+   *    醒来那一拍把六台机器的窗口全判死,宿主那边一个都没关 —— 宿主日志只有 client close,没有 heartbeat lost)。
+   *  · 这边被冻住(看门狗停着)的那一段:
+   *    - 超过 staleMs:这边至少两拍什么都没发,宿主按它的关窗规矩(一整拍没收到就关)已经关了窗,先重开,
+   *      ❌ 拿醒来时缓着的旧帧当活着(安卓实测:冻 60 s,问被拒成「连不上」)。
+   *    - 超过 frozenMs 但不到 staleMs:宿主**可能**关了,也可能没关。当场发一次心跳探活,由管道裁决(设备连接上那一问有应答,
+   *      窗口被关了宿主回 frame rejected、管道当场关;WebSocket 被关了有 close)。❌ 自己猜死,把好好的窗口和在途的事一起扔掉。
    * 钟用 Date.now:设备深睡时它照走,与宿主那边的钟一致。
-   * 代价:WebSocket 路在后台计时器被节流时(浏览器照回 pong,宿主那边其实还活着)也会判死重开;重开走 onClosed → failAll,
-   * 这时还在路上的调用会被判成「连接断了」。
    */
   const dropIfSilent = (): boolean => {
     const t = now()
-    if (state !== 'open' || (t - lastSeenAt <= staleMs && t - lastTickAt <= frozenMs)) return false
-    warn('会话页宿主连接静默过久,主动断开重连', { staleMs, frozenMs })
+    if (state !== 'open') return false
+    const frozen = t - lastTickAt
+    if (frozen <= staleMs && lastTickAt - lastSeenAt <= staleMs) {
+      if (frozen > frozenMs) sendHeartbeat()
+      return false
+    }
+    warn('会话页宿主连接静默过久,主动断开重连', { staleMs, frozenForMs: frozen, silentForMs: lastTickAt - lastSeenAt })
     reopen('stale')
     return true
   }

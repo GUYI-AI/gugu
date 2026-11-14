@@ -15,6 +15,12 @@ vi.mock('@main/core/agent-status/agent-status-writer', () => ({ agentStatusWrite
     return () => { mocks.status = undefined; };
   },
 } }));
+// This machine's project bindings (project-public-id.ts): local project p1 is in project group chat-p1.
+vi.mock('../projects/project-public-id', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../projects/project-public-id')>();
+  const deps = { bindings: async () => [{ projectId: 'p1', chatId: 'chat-p1' }], get: async (id: string) => (id === 'p1' ? { name: 'P1' } : undefined) };
+  return { ...real, machineLocalProjectsOf: (id: string) => real.localProjectsOf(id, deps), machineOutwardProjectIds: async () => real.outwardProjectIds(await deps.bindings()) };
+});
 import { installActivityCollector, activityJournal } from './collector';
 import { sessionEvents } from '../sessions/session-events';
 import { rememberAgentQuestion, settleAgentQuestionRecord } from '../sessions/agent-question-store';
@@ -27,6 +33,7 @@ import { projectEvents } from '../projects/project-events';
 import { scaffoldExtension } from '../extensions/extension-authoring';
 import { ExtensionsService } from '../extensions/extensions-service';
 import { EXTENSION_API_VERSION } from '@shared/extensions/manifest';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 let fixture: Awaited<ReturnType<typeof openFixture>>;
 let stop: () => void;
@@ -41,7 +48,7 @@ const query = () => activityJournal().list({ since: '2020-01-01T00:00:00Z', unti
 
 describe('boot-installed collector and real committed producers', () => {
   it('records project identities without copying their name or directory', async () => {
-    projectEvents._emit('project:created', { type: 'local', id: 'p1', name: 'PRIVATE PROJECT', path: '/PRIVATE/DIRECTORY',
+    projectEvents._emit('project:created', { type: 'local', id: 'p1', name: 'PRIVATE PROJECT', path: '/PRIVATE/DIRECTORY' as CanonicalPath,
       createdAt: '2026-10-21 00:00:00', updatedAt: '2026-10-21 00:00:00', baseRef: null, repositoryWorkspaceId: null });
     projectEvents._emit('project:deleted', 'p1');
     await new Promise<void>(resolve => setImmediate(resolve));
@@ -108,6 +115,8 @@ describe('boot-installed collector and real committed producers', () => {
   });
   it('reads a committed activity through the real HTTP grant and catalog tool, without a preview call', async () => {
     sessionEvents._emit('session:renamed', 's1', 'p1', 'SECRET RENAMED TITLE');
+    projectEvents._emit('project:created', { type: 'local', id: 'p1', name: 'P1', path: '/p1' as CanonicalPath,
+      createdAt: '2026-10-21 00:00:00', updatedAt: '2026-10-21 00:00:00', baseRef: null, repositoryWorkspaceId: null });
     await new Promise<void>(resolve => setImmediate(resolve));
     const host = createDesktopGuguMcpHost();
     const client = new Client({ name: 'activity-product-path', version: '1' });
@@ -123,6 +132,17 @@ describe('boot-installed collector and real committed producers', () => {
       expect(result.isError).not.toBe(true);
       expect(result.content).toMatchObject([{ type: 'text', text: expect.stringContaining('session.renamed') }]);
       expect(JSON.stringify(result)).not.toContain('SECRET');
+      // Projects are named by their project group: the filter takes it, the answer gives it, a local id is refused.
+      const list = (project_id: string) => client.callTool({ name: 'catalog_call', arguments: { tool: 'activity_list',
+        args: { since: '2020-01-01T00:00:00Z', until: '2100-01-01T00:00:00Z', project_id } } });
+      const byProject = await list('project:chat-p1');
+      expect(byProject.isError).not.toBe(true);
+      const events = JSON.parse((byProject.content as Array<{ text: string }>)[0]!.text).events as Array<{ kind: string; project_id?: string }>;
+      expect(events.map(event => [event.kind, event.project_id])).toEqual([['project.created', 'project:chat-p1']]);
+      expect(JSON.parse((await list('project:chat-elsewhere') as { content: Array<{ text: string }> }).content[0]!.text).events).toEqual([]);
+      const local = await list('project:p1');
+      expect(local.isError).toBe(true);
+      expect(JSON.stringify(local.content)).toContain('use project:chat-p1');
     } finally { await client.close(); await host.dispose(); }
   });
 });

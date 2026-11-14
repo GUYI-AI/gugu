@@ -5,6 +5,9 @@ import type { ComposerAttachmentDraft } from './composer-attachment-draft';
 import { action, makeAutoObservable, observable } from 'mobx';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import type { SessionFailure } from './stores/session-failure';
+import type { GuguPermissionMode } from '@gugu/session-core/acp/client';
+import type { SessionView } from '@shared/core/sessions/sessions';
+import type { AgentProviderId } from '@gugu/session-plugins/agents';
 
 export interface PendingCreationMessage {
   projectId: string;
@@ -17,6 +20,26 @@ export interface PendingCreationMessage {
 
 export type SubmittedComposerDraft = ComposerAttachmentDraft & { prompt: string };
 
+/**
+ * #2569 A first turn handed over from another box: the person already pressed send there (the sample project's box, before
+ * the project existed). It carries context the agent gets and the person does not see, and what was picked in that box.
+ * Kept until the task exists, so a retry carries it too.
+ */
+export type ComposerHandoff = {
+  hiddenContext: string;
+  /** What that box had picked, so this one opens with the same (its provider is remembered the usual way). */
+  picked: {
+    provider: AgentProviderId;
+    model: string | null;
+    platformModel: string | null;
+    effort: string | null;
+    permissionMode: GuguPermissionMode;
+    sessionView: SessionView;
+  };
+  /** Send it as soon as this box can. Cleared on the first attempt and when the person edits the words. */
+  sendWhenReady: boolean;
+};
+
 /** The unsubmitted input and the existing creation lifecycle follow the draft, not its page. */
 export class ComposerDraft {
   prompt = '';
@@ -24,12 +47,14 @@ export class ComposerDraft {
   creating = false;
   pendingMessage: PendingCreationMessage | null = null;
   deliveryError: SessionFailure | null = null;
+  handoff: ComposerHandoff | null = null;
 
   constructor() {
     makeAutoObservable(this, {
       pending: observable.ref,
       pendingMessage: observable.ref,
       deliveryError: observable.ref,
+      handoff: observable.ref,
     }, { autoBind: true });
   }
 
@@ -40,6 +65,7 @@ export class ComposerDraft {
     if (next === this.prompt) return;
     this.prompt = next;
     this.deliveryError = null;
+    if (this.handoff?.sendWhenReady) this.handoff = { ...this.handoff, sendWhenReady: false };
     this.clearEmptyRetry();
   }
   setPending(pending: ComposerAttachmentDraft['pending']): void {
@@ -50,6 +76,9 @@ export class ComposerDraft {
   setCreating(creating: boolean): void { this.creating = creating; }
   setPendingMessage(message: PendingCreationMessage | null): void { this.pendingMessage = message; }
   setDeliveryError(error: SessionFailure | null): void { this.deliveryError = error; }
+  setHandoff(handoff: ComposerHandoff | null): void { this.handoff = handoff; }
+  /** The task this draft became exists: the handed-over turn is done. */
+  completeHandoff(): void { this.handoff = null; }
 
   private clearEmptyRetry(): void {
     if (!this.creating && !this.prompt && !this.pending.length) this.pendingMessage = null;

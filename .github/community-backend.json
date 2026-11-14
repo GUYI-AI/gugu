@@ -1,5 +1,5 @@
 {
   "repository": "OpenDCAI/gugu-supabase",
-  "ref": "6898b8ea196a1a0e602cb5e095a861061e3accd6",
-  "status": "merged backend preserving archived-agent DM deletion, Agent self-listen permissions and project-group invite metadata, and allowing agent type dsh"
+  "ref": "4b12c3c0fa79aaccfddfedd8d68711e0e7e34637",
+  "status": "gugu-supabase dev 4b12c3c0 (includes #262 send groups: files sent at once are one message, gugu#2581)"
 }

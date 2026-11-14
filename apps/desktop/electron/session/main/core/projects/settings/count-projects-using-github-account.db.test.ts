@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
 import { projectSettings, projects } from '@main/db/schema';
 import { countProjectsUsingGithubAccount } from './count-projects-using-github-account';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 const mocks = vi.hoisted(() => ({
   db: undefined as AppDb | undefined,
@@ -44,11 +45,11 @@ describe('countProjectsUsingGithubAccount', () => {
 
   it('counts only persisted projects pinned to the target account', async () => {
     await fixture.db.insert(projects).values([
-      { id: 'project-match-1', name: 'Match 1', path: '/repo/match-1' },
-      { id: 'project-match-2', name: 'Match 2', path: '/repo/match-2' },
-      { id: 'project-null', name: 'Null', path: '/repo/null' },
-      { id: 'project-other', name: 'Other', path: '/repo/other' },
-      { id: 'project-unconfigured', name: 'Unconfigured', path: '/repo/unconfigured' },
+      { id: 'project-match-1', name: 'Match 1', path: '/repo/match-1' as CanonicalPath },
+      { id: 'project-match-2', name: 'Match 2', path: '/repo/match-2' as CanonicalPath },
+      { id: 'project-null', name: 'Null', path: '/repo/null' as CanonicalPath },
+      { id: 'project-other', name: 'Other', path: '/repo/other' as CanonicalPath },
+      { id: 'project-unconfigured', name: 'Unconfigured', path: '/repo/unconfigured' as CanonicalPath },
     ]);
     await fixture.db.insert(projectSettings).values([
       {
@@ -80,8 +81,8 @@ describe('countProjectsUsingGithubAccount', () => {
 
   it('skips malformed base settings JSON', async () => {
     await fixture.db.insert(projects).values([
-      { id: 'project-malformed', name: 'Malformed', path: '/repo/malformed' },
-      { id: 'project-valid', name: 'Valid', path: '/repo/valid' },
+      { id: 'project-malformed', name: 'Malformed', path: '/repo/malformed' as CanonicalPath },
+      { id: 'project-valid', name: 'Valid', path: '/repo/valid' as CanonicalPath },
     ]);
     await fixture.db.insert(projectSettings).values([
       {

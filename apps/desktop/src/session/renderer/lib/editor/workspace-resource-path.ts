@@ -28,7 +28,8 @@ export function resolveWorkspaceResourcePath(args: WorkspaceResourcePathArgs): s
   // `file:` 指的就是本机上的一个文件,和 https:/data: 不是一类,别一起拒掉。
   const fromFileUrl = parseFileUrl(trimmed);
   const cleanSrc = fromFileUrl ?? trimmed;
-  if (fromFileUrl === null && /^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null;
+  const driveAbsolute = /^[A-Za-z]:[\\/]/.test(trimmed);
+  if (fromFileUrl === null && !driveAbsolute && /^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null;
   if (cleanSrc.startsWith('//') || cleanSrc.startsWith('#')) return null;
 
   // 工作区还没就位时一律解析失败 —— 这时判断不了文档在圈里还是圈外,不猜。
@@ -37,11 +38,11 @@ export function resolveWorkspaceResourcePath(args: WorkspaceResourcePathArgs): s
   const containing = splitAbsolutePath(containingFilePath);
   if (!containing) return null;
 
-  const root = splitAbsolutePath(workspacePath.replace(/\/+$/, ''));
+  const root = splitAbsolutePath(workspacePath);
   if (!root) return null;
 
   // `file:` 写的永远是本机绝对路径,不是「工作区根相对」。
-  const machineAbsolute = fromFileUrl !== null;
+  const machineAbsolute = fromFileUrl !== null || driveAbsolute;
 
   if (isUnderRoot(containing, root)) {
     return resolveInsideWorkspace(cleanSrc, containing, root, machineAbsolute);
@@ -121,7 +122,7 @@ export function isOutsideWorkspace(
 ): boolean {
   const containing = splitAbsolutePath(filePath);
   if (!containing) return false;
-  const root = workspacePath ? splitAbsolutePath(workspacePath.replace(/\/+$/, '')) : null;
+  const root = workspacePath ? splitAbsolutePath(workspacePath) : null;
   // 判断不了就按「在圈里」处理,走那条更保守的读取路径。
   if (!root) return false;
   return !isUnderRoot(containing, root);

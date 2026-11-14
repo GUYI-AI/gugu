@@ -1,3 +1,4 @@
+import { requireAgentFileAccess, requireAgentFileTreeAccess } from '@gugu/core/local/state/agentFileBoundary';
 import { execFile } from '@gugu/core/local/childProcess';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -5,9 +6,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
 import { variantNameSchema, type ExtensionVariant } from '@shared/extensions/variants';
-import { isGuguOwnApp } from '@shared/extensions/first-run';
 import { compareExtensionVersions } from '@shared/extensions/manifest';
-import { bundleEntryRejection, type MarketCodeSource } from '@shared/extensions/market';
+import { bundleEntryRejection, isOfficialMarketSource, type MarketCodeSource } from '@shared/extensions/market';
 import { getGitExecutable } from '../utils/exec';
 import { reviewGitEnv } from '../runtime/review-git-env';
 import { loginShellEnv } from '@main/utils/userEnv';
@@ -49,12 +49,12 @@ function checkedSource(source: MarketCodeSource): void {
 }
 
 /** The receipt lives in .git, outside the bundle. Merely copying an App with the same id is never a fork install. */
-export function forkOfDirectory(sourceDir: string): (ForkRecord & { root: string }) | null {
+export async function forkOfDirectory(sourceDir: string): Promise<(ForkRecord & { root: string }) | null> {
   const sources = path.resolve(appSourcesRoot());
   const relative = path.relative(sources, path.resolve(sourceDir));
   if (relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative) || relative === '..') return null;
   const root = path.join(sources, relative.split(path.sep)[0] ?? '');
-  const receipt = path.join(root, '.git', 'gugu-fork.json');
+  const receipt = await requireAgentFileAccess(path.join(root, '.git', 'gugu-fork.json'));
   if (!fs.existsSync(receipt)) return null;
   const record = forkRecordSchema.parse(JSON.parse(fs.readFileSync(receipt, 'utf8')));
   checkedSource(record.source);
@@ -83,7 +83,12 @@ export async function createAppFork(id: string, requestedName?: string) {
   checkedSource(source);
   const root = path.join(appSourcesRoot(), `${id}@${name}`);
   const sourceDir = path.join(root, source.path);
-  const branch = isGuguOwnApp(source) ? `fork/${id}/${name}` : `gugu-fork/${name}`;
+  await requireAgentFileTreeAccess(root);
+  await requireAgentFileAccess(path.join(root, '.git', 'gugu-fork.json'));
+  // An App built from the market repository's own `sources/<id>`: a sparse clone of that folder, on a branch named for the App.
+  // A compiled release there (`releases/<id>/<version>`) is cloned whole, like any other repository.
+  const marketSources = isOfficialMarketSource(source) && (source.path === `sources/${id}` || source.path.startsWith(`sources/${id}/`));
+  const branch = marketSources ? `fork/${id}/${name}` : `gugu-fork/${name}`;
   const [{ githubAccountService }, { githubApiAuthService }, { getOctokit }] = await Promise.all([
     import('../github/accounts/github-account-service-instance'), import('../github/services/github-api-auth-service-instance'), import('../github/services/octokit-provider'),
   ]);
@@ -92,17 +97,18 @@ export async function createAppFork(id: string, requestedName?: string) {
   if (auth && !auth.success) throw new Error(`Reconnect GitHub in Settings before forking: ${auth.error.message}`);
   const token = auth?.success ? auth.data : undefined;
   fs.mkdirSync(appSourcesRoot(), { recursive: true });
-  const existing = fs.existsSync(root) ? forkOfDirectory(sourceDir) : null;
+  const existing = fs.existsSync(root) ? await forkOfDirectory(sourceDir) : null;
   if (fs.existsSync(root) && (!existing || existing.id !== id || existing.name !== name)) {
     throw new Error(`The fork folder ${root} already exists; choose another name in app_create {fork_of, name}.`);
   }
   if (!existing) {
     try {
       await git(appSourcesRoot(), ['clone', '--no-checkout', '--origin', 'upstream',
-        ...(isGuguOwnApp(source) ? ['--filter=blob:none', '--sparse'] : []), `https://github.com/${source.repo}.git`, root], token);
-      if (isGuguOwnApp(source)) await git(root, ['sparse-checkout', 'set', '--', `sources/${id}`], token);
+        ...(marketSources ? ['--filter=blob:none', '--sparse'] : []), `https://github.com/${source.repo}.git`, root], token);
+      if (marketSources) await git(root, ['sparse-checkout', 'set', '--', `sources/${id}`], token);
       await git(root, ['fetch', 'upstream', source.commit], token);
       await git(root, ['checkout', '-b', branch, source.commit], token);
+      await requireAgentFileAccess(path.join(sourceDir, 'manifest.json'));
       const manifest = service.inspectDirectory(sourceDir).manifest;
       if (manifest.id !== id || manifest.version !== version) throw new Error(`The indexed source does not contain ${id}@${version}; ask the publisher to correct its source record.`);
       const record: ForkRecord = { id, name, base: version, source };
@@ -150,7 +156,8 @@ export async function createAppFork(id: string, requestedName?: string) {
 }
 
 export async function prepareForkVariant(sourceDir: string): Promise<ExtensionVariant | undefined> {
-  const fork = forkOfDirectory(sourceDir);
+  await requireAgentFileTreeAccess(sourceDir);
+  const fork = await forkOfDirectory(sourceDir);
   if (!fork) return undefined;
   const service = extensionsService();
   const { manifest, bytes, sha256 } = await packExtensionArchive(service, sourceDir);

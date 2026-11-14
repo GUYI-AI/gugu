@@ -10,15 +10,16 @@ import { ChatPickSheet, type ChatPickRow } from '../chat/ChatPickSheet'
 import { highlightText } from '../chat/highlightText'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
+import { SectionLabel } from '../ui/SectionLabel'
 import { Switch } from '../ui/Switch'
 
 /** This computer's two places, each drawn by its icon. */
 
-/** An agent as the chat list draws it (its own face); a group by its picture, else its members' faces. */
+/** An agent as the chat list draws it (its own face); a group by its picture, else the default group face. */
 const placeAvatar = (place: EnablePlace): AvatarProps =>
   place.kind === 'agent'
     ? { name: place.name ?? '', avatarUrl: place.avatar ?? null, seed: place.agentId ?? place.id, isAgent: true }
-    : { name: place.name ?? '', avatarUrl: place.avatar ?? null, seed: place.id, variant: 'group', memberAvatars: place.members ?? [] }
+    : { name: place.name ?? '', avatarUrl: place.avatar ?? null, seed: place.id, variant: 'group' }
 
 const CAPTION = 'flex items-center gap-1 px-1 pt-2 text-[length:var(--font-caption)] text-[var(--text-tertiary)]'
 const BOX = 'flex flex-col gap-px rounded-[var(--radius-document)] border border-[var(--border-color)] bg-[var(--modal-bg)] p-1'
@@ -162,7 +163,7 @@ function AppPlacesPicker({ places, chosen, onDone, onClose }: {
         name: highlightText(name, query.trim()),
         avatar: placeAvatar(place),
         badge: <PlaceMarks place={place} />,
-        trailing: place.kind === 'group' ? <span className="gg-list-row-meta">{t('chatArea.appEnable.members', { count: place.memberCount ?? 0 })}</span> : undefined,
+        trailing: place.kind === 'group' ? t('chatArea.appEnable.members', { count: place.memberCount ?? 0 }) : undefined,
         hint: topic === undefined ? undefined : <span className={QUIET}>{hintBefore}{highlightText(topic, query.trim())}{hintAfter}</span>,
       },
     ]
@@ -185,11 +186,10 @@ function AppPlacesPicker({ places, chosen, onDone, onClose }: {
       onQuery={setQuery}
       placeholder={t('chatArea.appEnable.search')}
       empty={t(places.length === 0 ? 'chatArea.appEnable.noPlaces' : 'chatArea.appEnable.noMatch')}
-      top={<div className={`${QUIET} px-4 pb-1 pt-3`}>{t('chatArea.appEnable.agents')} · {t('chatArea.appEnable.recent')}</div>}
+      top={<SectionLabel>{t('chatArea.appEnable.agents')} · {t('chatArea.appEnable.recent')}</SectionLabel>}
       picked={t('chatArea.appEnable.picked', { count: picked.size })}
       actionLabel={t('chatArea.appEnable.done')}
       onAction={() => onDone(picked)}
-      fullScreenMobile
     />
   )
 }
@@ -207,7 +207,6 @@ export function AppPlacesSummary({ places, machineName }: { places: readonly Ena
   const names = on.slice(0, 3).map(label).join(' · ')
   return (
     <span data-testid="app-places-summary" className="inline-flex min-w-0 items-center gap-1">
-      {t('chatArea.appEnable.used')}
       <span className="inline-flex items-center gap-px">
         {on.slice(0, 3).map((place) =>
           place.kind === 'here' ? (

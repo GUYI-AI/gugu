@@ -43,6 +43,16 @@ afterEach(() => {
 })
 
 describe('default agent avatars', () => {
+  it.each(['offline', 'archived'] as const)('#1987 retains the existing muted %s avatar dot', async (agentStatus) => {
+    await render({ agentStatus })
+    const badge = harness.container.querySelector(`.av-status--${agentStatus}`)
+    expect(badge?.getAttribute('role')).toBe('img')
+    const dot = badge?.querySelector<HTMLElement>('span')
+    expect(dot?.style.background).toBe('var(--agent-tone-muted)')
+    expect(dot?.style.borderRadius).toBe('var(--radius-circle)')
+    expect(dot?.textContent).toBe('')
+  })
+
   it('renders a static beam SVG with the full agent id and its palette, plus the existing status badge', async () => {
     await render({ agentStatus: 'working' })
     expect(svg()?.getAttribute('data-agent-avatar-boring')).toBe(ID)
@@ -152,21 +162,6 @@ describe('default agent avatars', () => {
     expect(harness.container.querySelector('canvas')).toBeNull()
     await render({ avatarUrl: UPLOAD })
     expect(harness.container.querySelector('img')?.getAttribute('src')).toBe(UPLOAD)
-  })
-
-  it('composites use the directory type, showing Boring only for agents and waiting for unknown members', async () => {
-    const ensure = vi.fn()
-    publishIdentityDirectory({}, ensure)
-    const member = { id: ID, name: 'Member', avatar: LOOK }
-    await render({ variant: 'group', memberAvatars: [member] })
-    expect(svg()).toBeNull()
-    expect(harness.container.querySelector('[data-avatar-empty]')).not.toBeNull()
-    expect(ensure).toHaveBeenCalledWith([ID])
-    await act(async () => publishIdentityDirectory({ [ID]: identity('agent') }, ensure))
-    expect(svg()).not.toBeNull()
-    await act(async () => publishIdentityDirectory({ [ID]: identity('human') }, ensure))
-    expect(svg()).toBeNull()
-    expect(harness.container.querySelector('img')).not.toBeNull()
   })
 
   it('phone rows use the same canonical id and upload, while an unavailable status stays unavailable', async () => {

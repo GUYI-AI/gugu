@@ -9,10 +9,11 @@ import { ProjectGroupsStore } from './project-groups-store';
 
 const mocks = vi.hoisted(() => ({
   answers: new Map<string, () => Promise<unknown>>(),
+  handlers: new Map<string, () => void>(),
 }));
 
 vi.mock('@renderer/lib/ipc', () => ({
-  events: { on: () => () => {} },
+  events: { on: (channel: { name: string }, handler: () => void) => { mocks.handlers.set(channel.name, handler); return () => {}; } },
   rpcOn: (machine: string | null) => ({
     projects: {
       listProjectGroupBindings: () => (mocks.answers.get(machine ?? 'local') ?? (() => Promise.reject(new Error('offline'))))(),
@@ -36,15 +37,18 @@ describe('ProjectGroupsStore', () => {
   it('a machine that is not connected takes its bindings from the account’s record', async () => {
     answer('local', [{ projectId: 'local-shop', chatId: 'chat-shop' }]);
     const store = new ProjectGroupsStore();
-    store.start(() => [], () => [], () => ['local-shop']);
+    let rows = ['local-shop'];
+    store.start(() => [], () => [], () => rows);
     await settle();
     store.applyBindings('d22', [{ projectId: 'd22-shop', chatId: 'chat-shop' }]);
-    expect(store.chatIdOf('local-shop')).toBe('chat-shop');
-    expect(store.chatIdOf('d22-shop')).toBe('chat-shop');
+    expect(store.rowProjectOfChat('chat-shop')).toBe('local-shop');
+    rows = ['d22-shop'];
+    expect(store.rowProjectOfChat('chat-shop')).toBe('d22-shop');
     // 账号上那份变了(在 d22 上撤销了并入):整份换掉。
     store.applyBindings('d22', []);
-    expect(store.chatIdOf('d22-shop')).toBeUndefined();
-    expect(store.chatIdOf('local-shop')).toBe('chat-shop');
+    expect(store.rowProjectOfChat('chat-shop')).toBeUndefined();
+    rows = ['local-shop'];
+    expect(store.rowProjectOfChat('chat-shop')).toBe('local-shop');
   });
 
   it('a machine that answers replaces what the account recorded for it — unbound there means unbound here', async () => {
@@ -54,7 +58,7 @@ describe('ProjectGroupsStore', () => {
     store.applyBindings('d22', [{ projectId: 'd22-shop', chatId: 'chat-shop' }]);
     store.start(() => ['d22'], () => [], () => ['d22-shop']);
     await settle();
-    expect(store.chatIdOf('d22-shop')).toBeUndefined();
+    expect(store.projectOfChat('chat-shop')).toBeUndefined();
   });
 
   it('nothing is remembered on this computer between runs (the account holds it)', async () => {

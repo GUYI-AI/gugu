@@ -15,7 +15,8 @@ import { SubscriptionSessionsBusyError } from './subscription-sessions-busy';
 import { sessionLife } from './session-life';
 import { runtimeForksOf } from './session-life-forks';
 
-type SubscriptionProvider = 'claude' | 'codex';
+/** Claude / Codex,以及有 API Key 连接的家(#2507)—— 能不能切由 `harness-connections` 判。 */
+type SubscriptionProvider = string;
 type LiveSession = { projectId: string; sessionId: string; busy: boolean; acp: boolean };
 
 /** 停一条会话等它的进程退出,一轮最多 10 s(`stop_pending` = 信号发了、还没退)。几轮都没退才报失败。 */
@@ -66,7 +67,7 @@ async function stopForSwitch(session: LiveSession): Promise<boolean> {
 }
 
 /**
- * 切换 Claude / Codex 默认订阅(#26,照 cockpit-tools「切号后重启客户端」):
+ * 切换默认订阅(#26,照 cockpit-tools「切号后重启客户端」;API Key 连接的家同一条,#2507):
  *
  * 1. 有会话正在干活就先不切 —— 停掉它会丢掉这一轮;用户看过提示仍要切(`stopBusySessions`)就连它们一起关掉。
  *    额度用完正是要切号的时候,这时手上的回合本来也跑不下去,所以拒绝必须带着一键关掉的出路;

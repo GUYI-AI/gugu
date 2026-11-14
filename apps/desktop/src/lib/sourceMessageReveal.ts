@@ -11,7 +11,9 @@ export async function revealSourceMessage(messageId: string, input: {
   try {
     if (!input.showLoaded(messageId)) await input.load(messageId)
     if (input.current()) input.flash(messageId)
-  } catch {
+  } catch (error) {
+    // Left before it was shown (another conversation opened): nothing went missing.
+    if (error instanceof DOMException && error.name === 'AbortError') return
     if (input.current()) input.missing()
   }
 }

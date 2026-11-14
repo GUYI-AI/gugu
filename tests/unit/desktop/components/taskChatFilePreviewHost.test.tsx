@@ -8,7 +8,7 @@ import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { Sheet } from '../../../../apps/desktop/src/components/ui/Sheet'
 import { NATIVE_BACK_EVENT } from '../../../../apps/desktop/src/components/ui/sheetStack'
 
-vi.mock('@/platform', () => ({ platform: { kind: 'electron' } }))
+vi.mock('@/platform', () => ({ platform: { kind: 'electron', capabilities: { readingZoomMemory: true } } }))
 vi.mock('@/lib/attachmentBytes', () => ({
   attachmentBytes: async () => ({ status: 'ready', blob: new Blob(['original text']) }),
   sourceKeyOf: () => 'session-file', attachmentPreview: vi.fn(), openAttachmentInSystemApp: vi.fn(),

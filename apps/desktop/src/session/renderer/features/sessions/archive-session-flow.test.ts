@@ -27,6 +27,7 @@ vi.mock('@renderer/localization/locale-store', () => ({
 }));
 vi.mock('@renderer/utils/logger', () => ({ log: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('./restore-session-flow', () => ({ restoreArchivedSession: mocks.restore }));
+vi.mock('./archived-toast-hint', () => ({ ArchivedToastHint: () => null }));
 
 const sessions = new Map([
   ['root', { data: {} }],
@@ -40,8 +41,9 @@ vi.mock('./stores/session-registry', () => ({
 }));
 
 import { requestArchiveSession } from './archive-session-flow';
+import { ArchivedToastHint } from './archived-toast-hint';
 
-type ToastArg = { title: string; description?: string; action?: { label: string; onClick: () => void } };
+type ToastArg = { title: string; description?: unknown; action?: { label: string; onClick: () => void } };
 
 const ref = (sessionId: string) => ({ projectId: 'p1', sessionId });
 const flush = async () => {
@@ -82,7 +84,8 @@ describe('归档提示与撤销', () => {
     await flush();
 
     const shown = undoToast();
-    expect(shown?.description).toBe('task.archivedToastHint');
+    // The sentence with its 会话历史 link (archived-toast-hint.test.tsx).
+    expect((shown?.description as { type?: unknown } | undefined)?.type).toBe(ArchivedToastHint);
     expect(shown?.action?.label).toBe('task.archiveUndo');
 
     shown!.action!.onClick();

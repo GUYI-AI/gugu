@@ -4,8 +4,6 @@ import { HEADER_ROW_EXTRA_H } from '@session-chat/components/engine/row-metrics'
 import type { MeasureCtx, RenderCtx } from '@session-chat/core/define';
 import type { SegmentCtx } from '@session-chat/core/units';
 import { defineUnit } from '@session-chat/core/units';
-import { pxTokens } from '@session-chat/styles/px-tokens';
-import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { createMemo, Show } from 'solid-js';
 import type { ChatSubagentToolCall, SubagentPhase, ToolNode } from '@session-chat/model';
 import { ToolPayloadPanel } from '../tool/Tool';
@@ -13,7 +11,7 @@ import { toolPayloadFor } from '../tool/tool.def';
 import { hasToolPayload } from '../tool/tool.layout';
 import { SubagentHeader } from './Subagent';
 import { toolFailureReason } from '../tool-failure-reason';
-import { subagentRoot, subagentVars } from './subagent.css';
+import { subagentRoot } from './subagent.css';
 
 type SpawnSubagentToolNode = Extract<ToolNode, { kind: 'spawn-subagent-tool-call' }>;
 
@@ -50,6 +48,11 @@ export function subagentFromItem(
   // 派活时给的那句描述。少了它,并行的几个子任务在行上无法区分(#4981)。
   // `title` 兜底是为了不丢信息:有的供应商只填 ACP title 不填 rawInput。
   const task = item.inputSummary || item.title || undefined;
+  // While it runs, its text is in the registry and reaches here through the roster; the card holds it once settled.
+  const live = item.agentStatus === 'running' ? ctx.liveSubagent?.(item.toolCallId) : undefined;
+  // A subagent that was started again begins with no text; what the card still holds is from its previous run.
+  const reasoning = live ? live.reasoning : item.reasoningText;
+  const result = live ? live.output : item.outputText ?? item.rawOutput;
   return {
     kind: 'subagent',
     id: item.id,
@@ -58,10 +61,9 @@ export function subagentFromItem(
     status,
     phase: subagentPhase({ status, agentId }),
     agentId,
-    ...(item.reasoningText ? { reasoning: item.reasoningText } : {}),
+    ...(reasoning ? { reasoning } : {}),
     ...(item.rawInput !== undefined ? { request: item.rawInput } : {}),
-    ...((item.outputText ?? item.rawOutput) !== undefined
-      ? { result: item.outputText ?? item.rawOutput } : {}),
+    ...(result !== undefined ? { result } : {}),
     ...(task !== undefined ? { task } : {}),
     background: item.background,
     awaitingPermission: ctx.pendingToolCallIds().has(item.toolCallId),
@@ -101,7 +103,7 @@ function SubagentUnitRender(props: {
   return (
     <div
       class={subagentRoot}
-      style={assignInlineVars(subagentVars, pxTokens({ height: height() + (payload()?.panelH ?? 0) }))}
+      style={{ height: `${height() + (payload()?.panelH ?? 0)}px` }}
     >
       <SubagentHeader
         item={props.data}

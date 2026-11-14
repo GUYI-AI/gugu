@@ -1,59 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { composeInstructions, joinPersona, splitInstructions, splitPersona } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-files'
 import {
   connectorDetail,
   connectorGroups,
-  customizePlan,
-  personaChipKey,
   thisDeviceView,
 } from '../../../apps/desktop/src/mobile/assistant/phoneProfileModel'
 
-// #7199 手机 <它的名字> 那一格:与桌面同一套说法,读不到时不冒充「没设置」,保存只写真动过、真读到的。
-describe('personaChipKey', () => {
-  it('读到了照桌面:预设名 / 自定义性格 / 设置性格', () => {
-    expect(personaChipKey({ preset: 'warm', rest: '' })).toBe('customize.preset.warm')
-    expect(personaChipKey({ preset: null, rest: '说话短一点' })).toBe('customize.custom')
-    expect(personaChipKey({ preset: null, rest: '' })).toBe('customize.setCharacter')
-  })
-
-  it('还没读到(在休息、读失败)只说「性格」,❌「设置性格」', () => {
-    expect(personaChipKey(null)).toBe('customize.character')
-  })
-})
-
-describe('customizePlan', () => {
-  const base = { draftName: '小咕', currentName: '小咕', personaTouched: false, personaReadable: true }
-
-  it('名字没变、性格没动:什么都不写,但能按保存', () => {
-    expect(customizePlan(base)).toEqual({ rename: null, writePersona: false, canSave: true })
-  })
-
-  it('名字前后空白去掉再比;变了才改名', () => {
-    expect(customizePlan({ ...base, draftName: '  小咕 ' }).rename).toBeNull()
-    expect(customizePlan({ ...base, draftName: ' 阿咕 ' }).rename).toBe('阿咕')
-  })
-
-  it('空名字不许存', () => {
-    expect(customizePlan({ ...base, draftName: '   ' })).toEqual({ rename: null, writePersona: false, canSave: false })
-  })
-
-  it('性格动过、且读到过原文才写;没读到就写 = 拿空白盖掉它原来的性格', () => {
-    expect(customizePlan({ ...base, personaTouched: true }).writePersona).toBe(true)
-    expect(customizePlan({ ...base, personaTouched: true, personaReadable: false }).writePersona).toBe(false)
-  })
-})
-
-describe('性格写回(手机与桌面同一套拼装)', () => {
-  it('宿主维护那段原样留着,人写的接在后面;清空 = 只剩维护那段', () => {
-    const managed = '<!-- 咕咕管家 -->\n你是谁\n<!-- /咕咕管家 -->'
-    const current = `${managed}\n\n性格：温暖\n旧描述\n`
-    const next = composeInstructions(current, joinPersona('direct', '少说废话'))
-    expect(next.startsWith(managed)).toBe(true)
-    expect(splitPersona(splitInstructions(next).user)).toEqual({ preset: 'direct', rest: '少说废话' })
-    expect(composeInstructions(current, joinPersona(null, ''))).toBe(`${managed}\n`)
-  })
-})
-
+// #7199 手机「资料」下连接应用那几页:与桌面同一套说法。
 describe('connectorGroups', () => {
   const items = [
     { id: 'github', description: 'Code' },

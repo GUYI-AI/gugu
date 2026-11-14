@@ -35,6 +35,11 @@ interface PlatformCapabilities {
   mobileApps: boolean
   /** This shell implements the native phone tools and installation identity. */
   phoneDevice: boolean
+  /**
+   * 记住看文件、看图时最后用的阅读缩放,下次打开照它。阅读缩放靠滚轮、缩放键、菜单设定,只有电脑上有;
+   * 手机上的捏合、双击只是看一眼,不留下比例,所以手机壳没有这一位(读写都不发生)。
+   */
+  readingZoomMemory: boolean
 }
 
 /** 交给系统分享面板的一份内容。附件只给地址,由宿主自己取字节,交出去的是文件本身。 */
@@ -89,10 +94,15 @@ export interface AppPlatform {
     ready: () => Promise<void>
     subscribe: (listener: (url: string) => void, onError: (error: unknown) => void) => () => void
   }
+  /** Every link the OS hands this app (system link handler, cold launch), as it arrives, before and after sign-in. */
+  watchOpenedLinks?: (listener: (url: string) => void, onError: (error: unknown) => void) => () => void
   oauthBrowser?: {
     openBrowser: (url: string) => Promise<void>
+    openLinkBrowser?: (url: string, redirectTo: string) => Promise<void>
     subscribeBrowserFinished?: (listener: () => void, onError: (error: unknown) => void) => Promise<() => void>
   }
+  /** Account management may be available before anonymous provider login is enabled. */
+  accountOAuthBrowser?: AppPlatform['oauthBrowser']
   /**
    * 这个宿主**读得到系统真值**的权限,顺序 = 「权限」页上的行序(product spec)。
    * 空数组 = 这台机器上一行都读不到,「权限」这一项连同整页都不出现。

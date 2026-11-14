@@ -92,6 +92,8 @@ export type ChatMessage = {
   at?: number;
   /** Parsed Gugu delivery metadata; populated by the message unit, never by ordinary transcript producers. */
   guguDelivery?: DeliveryReading;
+  /** Native input provenance survives presentation normalization, including non-owner steers. */
+  _meta?: import('@gugu/session-core/acp/client').TranscriptMessage['_meta'];
   /**
    * View-only reference to the message this one explicitly replies to. Only a real anchor counts
    * (the delivery's `reply_to`, or the `reply_to_message_id` the agent passed to message_send) —
@@ -115,12 +117,22 @@ export type ChatMessage = {
   conversationFull?: boolean;
   /** View-only: the closing reply of a finished turn — the only agent bubble with the time / copy row (design 0 `tail`). */
   conversationTail?: boolean;
+  /**
+   * View-only: the chat messages this bubble is (what the agent sent to people — a send into a chat, or a note to its
+   * owner). The host draws them with the chat's own MessageBody into a slot (`onMessageBodyMount`); this row keeps only
+   * its frame. Absent = drawn from `text` / `attachments` as before.
+   */
+  sentMessages?: import('@gugu/core/shared/types/chat').MessageItem[];
   /** Where this message_send output went (same reading as the session page's 「发到 …」 line, `agentSendOf`). */
   sentTo?: AgentSend['to'];
+  /** Original typed addresses, kept separate from transport display names. */
+  sentAddresses?: import('@gugu/session-core/session-record/send-addresses').SendAddresses;
   /** The `chat_id` that message_send went to — names the group when this row is itself quoted later. */
   sentChat?: string;
   /** View-only disclosure of the completed thinking/execution segment. */
-  conversationProcess?: { live?: boolean; starting?: 'starting' | 'restoring'; id: string; startedAt?: number; endedAt?: number; idleMs?: number; steps?: number; empty?: boolean };
+  conversationProcess?: { live?: boolean; starting?: 'starting' | 'restoring' | 'connecting'; id: string; startedAt?: number; endedAt?: number; idleMs?: number; steps?: number; empty?: boolean;
+    /** Opens and closes the line instead of `id` once a woken run has continued it (#2587): a key while it runs, a fresh one after. */
+    toggleId?: string };
   /**
    * View-only split of one agent-conversation reply (owner 0 号图): `head` draws the name and the
    * process line, each `body` only a bubble. The process steps go between them, so they never land
@@ -512,6 +524,8 @@ export type TurnProcessItem = {
   conversationPreviousSpeaker?: string;
   kind: 'turn-process';
   id: string;
+  /** Opens and closes the line instead of `id` once a woken run has continued it (#2587): a key while it runs, a fresh one after. */
+  toggleId?: string;
   turnId: string;
   /** This segment explicitly chose silence; a status label, never an assistant reply. */
   silent?: boolean;
@@ -537,8 +551,8 @@ export type TurnProcessItem = {
    * 下面没有可展开的东西,点了没反应的箭头比没有箭头更糟;过程一到,同一个 id 的头接手。
    */
   placeholder?: boolean;
-  /** The session is still starting (`PendingPrompt.starting`): the live label says that. */
-  starting?: 'starting' | 'restoring';
+  /** The session is still starting (`PendingPrompt.starting`): the live label says that, and says when it waits on the model service. */
+  starting?: 'starting' | 'restoring' | 'connecting';
   /**
    * 这一轮什么时候开始的（`TranscriptTurn.startedAt`）。缺席 = 不知道（回放来的），
    * 那就不写时间 —— 一个会少报的计时器比没有计时器更糟（`turn-process.def.tsx` 头注）。
@@ -583,6 +597,8 @@ export type ToolRunItem = {
   live?: boolean;
   /** 跑着的这一段此刻在做什么(`toolRunNow`):在跑的命令或在思考;只在活动层、只在有的时候写。 */
   now?: ToolRunNow;
+  /** Folded only: the last step that handed back pictures, so its strip shows without opening the line. */
+  pictureStep?: ToolNode;
 };
 
 /**
@@ -679,6 +695,8 @@ export type AgentSendItem = {
   id: string;
   turnId: string;
   send: AgentSend;
+  /** The chat message that send put there, drawn by the host's MessageBody (see `ChatMessage.sentMessages`). */
+  sentMessages?: import('@gugu/core/shared/types/chat').MessageItem[];
   /** 还在发 / 已发出(那次调用的状态;发失败的不造这一项,照常是一行工具)。 */
   status: 'running' | 'done';
 };

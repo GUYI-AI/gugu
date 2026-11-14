@@ -7,6 +7,8 @@ export const ASK_SOURCE_SPEC = {
   'harness-question': { waitKind: 'question', raisedBy: 'runtime' },
   'agent-question': { waitKind: 'question', raisedBy: 'host' },
   'app-install': { waitKind: 'approval', raisedBy: 'host', timeoutMs: INSTALL_CONSENT_HUMAN_WINDOW_MS },
+  // Asked inside the agent's device_call: the same human window, inside the harness's tool-call limit.
+  'device-capability': { waitKind: 'approval', raisedBy: 'host', timeoutMs: INSTALL_CONSENT_HUMAN_WINDOW_MS },
 } as const satisfies Record<AskSource, AskSourceSpec>;
 
 /** Archived records may name a source removed in a later release. */

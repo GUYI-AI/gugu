@@ -61,11 +61,13 @@ vi.mock('./read-folder-branch', () => ({
   readFolderBranch: async (folderPath: string) => mocks.branches.get(folderPath) ?? null,
 }));
 
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import {
   attachProjectFolder,
   detachProjectFolder,
   getProjectOwningAttachedFolder,
   listProjectFolders,
+  projectFolderOfWorkspace,
   resolveProjectFolder,
 } from './project-folders';
 
@@ -93,8 +95,8 @@ describe('project folders', () => {
     related = path.join(tmp, 'gugu-supabase');
     for (const dir of [rootA, rootB, worktree, related]) await mkdir(dir);
     fixture.sqlite.exec(`
-      INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-root-a', 'project-root', 'local', 'local', '${rootA}', '${computeWorkspaceKey(rootA)}');
-      INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-root-b', 'project-root', 'local', 'local', '${rootB}', '${computeWorkspaceKey(rootB)}');
+      INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-root-a', 'project-root', 'local', 'local', '${rootA}', '${computeWorkspaceKey(rootA as CanonicalPath)}');
+      INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-root-b', 'project-root', 'local', 'local', '${rootB}', '${computeWorkspaceKey(rootB as CanonicalPath)}');
       INSERT INTO projects (id, name, path, repository_workspace_id) VALUES ('project-a', 'gugu', '${rootA}', 'ws-root-a');
       INSERT INTO projects (id, name, path, repository_workspace_id) VALUES ('project-b', 'other', '${rootB}', 'ws-root-b');
     `);
@@ -106,6 +108,22 @@ describe('project folders', () => {
     fixture.close();
     mocks.db = undefined;
     await rm(tmp, { recursive: true, force: true });
+  });
+
+  it('a folder place names only a folder a project still holds', async () => {
+    const attached = await attachOk('project-a', related);
+    expect(await projectFolderOfWorkspace(attached.workspaceId)).toMatchObject({ projectId: 'project-a', path: related });
+    const listed = await listProjectFolders('project-a');
+    const root = listed.success ? listed.data.find((folder) => folder.kind === 'root')! : null;
+    expect(await projectFolderOfWorkspace(root!.workspaceId)).toMatchObject({ projectId: 'project-a' });
+    expect(await projectFolderOfWorkspace('no-such-workspace')).toBeUndefined();
+    await detachProjectFolder('project-a', root!.workspaceId);
+    expect(await projectFolderOfWorkspace(root!.workspaceId), 'a detached root').toBeUndefined();
+    const extra = path.join(tmp, 'extra');
+    await mkdir(extra);
+    await attachOk('project-a', extra);
+    await detachProjectFolder('project-a', attached.workspaceId);
+    expect(await projectFolderOfWorkspace(attached.workspaceId), 'a detached folder').toBeUndefined();
   });
 
   it('records real folder membership changes once, excluding repeats and refusals', async () => {
@@ -147,20 +165,20 @@ describe('project folders', () => {
     fixture.sqlite.exec("INSERT INTO sessions (id, project_id, workspace_id) VALUES ('source-session', 'project-b', 'ws-root-b')");
 
     const pending = await runProjectAgentAction({ projectId: 'project-a' }, { action: 'project_add_folder', path: rootB }) as { needs_confirmation: boolean; source_project_id: string; sessions: number };
-    expect(pending).toMatchObject({ needs_confirmation: true, source_project_id: 'project-b', sessions: 1 });
+    expect(pending).toMatchObject({ project_id: 'chat-a', needs_confirmation: true, source_project_id: 'chat-b', sessions: 1 });
     expect(groups.get('project-b')).toBe('chat-b');
     expect(workspaceRow('ws-root-b')?.project_id).toBeNull();
 
     const joined = await runProjectAgentAction({ projectId: 'project-a' }, {
       action: 'project_add_folder', path: rootB, merge_existing: true, source_project_id: pending.source_project_id,
-    }) as { undo: { tool: 'project_restore_device'; project_id: string; chat_id: string; expected_chat_id: string } };
+    }) as { undo: { tool: 'project_restore_device'; project_id: string; path: string; expected_chat_id: string } };
     expect(groups.get('project-b')).toBe('chat-a');
-    expect(joined.undo).toEqual({ tool: 'project_restore_device', project_id: 'project-b', chat_id: 'chat-b', expected_chat_id: 'chat-a' });
+    expect(joined.undo).toEqual({ tool: 'project_restore_device', project_id: 'chat-b', path: rootB, expected_chat_id: 'chat-a' });
     expect((await listProjectFolders('project-b')).success).toBe(true);
     expect((fixture.sqlite.prepare("SELECT project_id FROM sessions WHERE id = 'source-session'").get() as { project_id: string }).project_id).toBe('project-b');
     expect(await readFile(path.join(rootB, 'keep.txt'), 'utf8')).toBe('original');
 
-    await runProjectAgentAction({}, { action: joined.undo.tool, project_id: joined.undo.project_id, chat_id: joined.undo.chat_id, expected_chat_id: joined.undo.expected_chat_id });
+    await runProjectAgentAction({}, { action: joined.undo.tool, project_id: joined.undo.project_id, path: joined.undo.path, expected_chat_id: joined.undo.expected_chat_id });
     expect(groups.get('project-b')).toBe('chat-b');
   });
 
@@ -348,7 +366,7 @@ describe('project folders', () => {
       const rowPath = path.join(tmp, 'moved');
       await mkdir(rowPath);
       fixture.sqlite.exec(`
-        INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-root-d', 'project-root', 'local', 'local', '${rowPath}', '${computeWorkspaceKey(rowPath)}');
+        INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-root-d', 'project-root', 'local', 'local', '${rowPath}', '${computeWorkspaceKey(rowPath as CanonicalPath)}');
         INSERT INTO projects (id, name, path, repository_workspace_id) VALUES ('project-d', 'moved', '${path.join(tmp, 'elsewhere')}', 'ws-root-d');
       `);
 
@@ -378,7 +396,7 @@ describe('project folders', () => {
 
     it('同一路径已有一条无主的旧行:认领它(沿用 id,kind 改成 path),在里面的本项目会话算这个文件夹的', async () => {
       fixture.sqlite.exec(`
-        INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-old', 'worktree', 'local', 'local', '${worktree}', '${computeWorkspaceKey(worktree)}');
+        INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-old', 'worktree', 'local', 'local', '${worktree}', '${computeWorkspaceKey(worktree as CanonicalPath)}');
         INSERT INTO sessions (id, project_id, workspace_id) VALUES ('s-old', 'project-a', 'ws-old');
       `);
 
@@ -390,7 +408,7 @@ describe('project folders', () => {
 
     it('无主的旧行正被别的项目没归档的会话用着 ⇒ belongs-to-other-project,不认领', async () => {
       fixture.sqlite.exec(`
-        INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-old', 'worktree', 'local', 'local', '${worktree}', '${computeWorkspaceKey(worktree)}');
+        INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-old', 'worktree', 'local', 'local', '${worktree}', '${computeWorkspaceKey(worktree as CanonicalPath)}');
         INSERT INTO sessions (id, project_id, workspace_id) VALUES ('s-b', 'project-b', 'ws-old');
       `);
 

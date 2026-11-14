@@ -1,5 +1,6 @@
 import { Archive, Pin, PinOff } from '@/lib/icons'
 import React from 'react';
+import { Avatar } from '@/components/Avatar';
 import { AgentIcon } from '@renderer/lib/components/agent-icon';
 import { AgentStatusGlyph } from '@renderer/lib/components/agent-status-indicator';
 import { presentationAttention, type AgentStatusPresentation } from '@gugu/core/shared/agentStatusPresentation';
@@ -50,6 +51,11 @@ export type SessionRowShellProps = {
   title: string;
   /** 跑这条会话的 harness;拿不到就整个不渲染(不留占位方块)。 */
   harness: { id: string; name: string } | null;
+  /**
+   * #2548 内层侧栏:行首那一格画这个 agent 自己的头像(同聊天列表那只 Avatar,行首那一格的尺寸),顶替 harness 标;
+   * harness 名仍在 hover 上。null / 缺席 = 照旧画 harness 标。
+   */
+  agent?: { userId: string; name: string; avatarUrl: string | null } | null;
   /** 标题前的小图标(fork 谱系 / 扩展发起),hover 才出文字。 */
   badges?: React.ReactNode;
   /** The canonical presentation; this shell never derives running state. */
@@ -110,6 +116,7 @@ export function SessionRowShell({
   onToggle,
   title,
   harness,
+  agent = null,
   badges,
   presentation,
   statusUnavailable = false,
@@ -146,6 +153,12 @@ export function SessionRowShell({
     !needsAttention &&
     !statusUnavailable &&
     presentation?.tone !== 'running' && presentation?.tone !== 'parked';
+  const leadingClass = cn('flex shrink-0 items-center', disabled && 'opacity-60');
+  const leadingAvatar = agent ? (
+    <span className={leadingClass} data-row-agent-avatar={agent.userId}>
+      <Avatar name={agent.name} avatarUrl={agent.avatarUrl} seed={agent.userId} size={14} isAgent harnessBadge={false} still />
+    </span>
+  ) : null;
   const titleClass = cn(
     'text-left',
     disabled ? 'text-foreground-passive' : 'text-foreground',
@@ -204,14 +217,16 @@ export function SessionRowShell({
               <Tooltip>
                 <TooltipTrigger
                   render={
-                    <span className={cn('flex shrink-0 items-center', disabled && 'opacity-60')}>
-                      <AgentIcon id={harness.id} size={14} />
-                    </span>
+                    leadingAvatar ?? (
+                      <span className={leadingClass}>
+                        <AgentIcon id={harness.id} size={14} />
+                      </span>
+                    )
                   }
                 />
                 <TooltipContent className="whitespace-nowrap">{harness.name}</TooltipContent>
               </Tooltip>
-            ) : null}
+            ) : leadingAvatar}
             {badges}
             <SidebarSessionTitle title={title} className={titleClass} />
           </SidebarMenuAction>

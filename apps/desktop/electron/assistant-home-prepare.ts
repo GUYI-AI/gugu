@@ -2,7 +2,7 @@
 // 云上那一份由管家在那台机器上写(gugu-supabase services/cloud-computer),这里照同一份说明(@gugu/core/shared/assistantPolicy)写本机这份,
 // 只是位置不同:人自己的 ~/.claude 是他自己的 Claude Code 每个会话都读的,❌ 往里写 —— 一切都在它的工作目录里(项目级说明 / 设置 / 记忆),
 // Claude Code 认的那一夹记忆目录链到那里。不依赖 electron,可单测。
-import { lstat, mkdir, readdir, readFile, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readlink, rm, symlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { resolveGuguHome } from '@gugu/core/local/state/paths'
@@ -15,26 +15,11 @@ import {
 } from '@gugu/core/shared/assistantPolicy'
 import type { PrepareLocalHomeInput, PrepareLocalHomeResult, WipeLocalHomeResult } from '../src/lib/assistantHomeIpc'
 import { createLogger } from './lib/logger'
-import { refreshAssistantContext } from './sessionpage/assistant-instructions'
+import { refreshedAssistantRules } from './assistant-rules-resolver'
+import { adoptMemoryEntries, refreshAssistantContext } from './sessionpage/assistant-instructions'
+import { readAssistantFile, writeAssistantFile } from './sessionpage/assistant-files'
 
 const log = createLogger('assistant-home')
-
-async function readOrNull(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
-}
-
-/** 先写临时文件再换上去:写到一半崩了也不留半截说明 / 半截设置。 */
-async function writeAtomic(path: string, content: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const tmp = `${path}.${process.pid}.tmp`
-  await writeFile(tmp, content, 'utf8')
-  await rename(tmp, path)
-}
 
 /**
  * Claude Code 认的那一夹(`~/.claude/projects/<目录名>/memory`)链到它家里的 `.claude/memory`。
@@ -50,12 +35,7 @@ async function linkClaudeMemory(claudeMemoryDir: string, memoryDir: string): Pro
     if (resolve(dirname(claudeMemoryDir), await readlink(claudeMemoryDir)) === resolve(memoryDir)) return
     await rm(claudeMemoryDir)
   } else if (stat?.isDirectory()) {
-    for (const name of await readdir(claudeMemoryDir)) {
-      const target = join(memoryDir, name)
-      if (await lstat(target).then(() => true, () => false)) continue
-      await rename(join(claudeMemoryDir, name), target)
-    }
-    await rm(claudeMemoryDir, { recursive: true })
+    await adoptMemoryEntries(claudeMemoryDir, memoryDir)
   } else if (stat) {
     throw new Error(`${claudeMemoryDir} exists and is not a directory`)
   }
@@ -100,16 +80,19 @@ export async function prepareLocalAssistantHome(
   const paths = assistantHomePaths(home, workdir, 'computer')
   // 只问不写:搬家的预览与读旧家都走这里,人还没点确认之前不往它家里写任何东西。
   if (input.dryRun) return { workdir, home }
+  // Setup looks at the assistant App again (#1931); the handbook and the profile memory come from this one snapshot. With
+  // none here yet the setup waits for them (the ensure step is putting the App in; the entry shows it is preparing).
+  const { rules } = await refreshedAssistantRules()
   if (input.fresh) await wipeLocalAssistantHome(env)
   await mkdir(workdir, { recursive: true })
   await mkdir(paths.resourcesDir, { recursive: true })
   await mkdir(paths.memoryDir, { recursive: true })
   if (input.engine !== 'codex') await linkClaudeMemory(paths.claudeMemoryDir, paths.memoryDir)
-  await refreshAssistantContext(workdir, env.guguHome ?? resolveGuguHome(), 'computer', home, input.engine)
+  await refreshAssistantContext(workdir, env.guguHome ?? resolveGuguHome(), 'computer', home, input.engine, rules)
   const profile = input.ownerProfile?.trim()
   if (profile) {
-    await writeAtomic(join(paths.memoryDir, OWNER_PROFILE_MEMORY_FILE), ownerProfileMemoryFile(profile))
-    await writeAtomic(paths.memoryIndex, withOwnerProfileIndex(await readOrNull(paths.memoryIndex)))
+    await writeAssistantFile(join(paths.memoryDir, OWNER_PROFILE_MEMORY_FILE), ownerProfileMemoryFile(profile, rules))
+    await writeAssistantFile(paths.memoryIndex, withOwnerProfileIndex(await readAssistantFile(paths.memoryIndex), rules))
   }
   log.info({ workdir, wroteProfile: !!profile }, 'local assistant home prepared')
   return { workdir, home }

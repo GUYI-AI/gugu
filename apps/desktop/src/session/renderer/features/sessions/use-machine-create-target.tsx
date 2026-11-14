@@ -1,21 +1,15 @@
-// #6264 一套工作台:「在别的机器上新建」的那一截。新建页、项目页、对话里派任务共用这一份 ——
-// 那台机器上的项目就是项目表里那台机器名下的项目;选了一个还不是项目的文件夹,就在那台机器上把它加成
-// 项目(与本机「打开文件夹」同一步);没选文件夹 = 那台机器的主目录项目「~」(behavior gugu-server:别的机器上的
-// 会话一律属于那台机器上的某个项目;已有同路径项目就复用,没有就建)。输入框、agent 选择、
+// #6264 一套工作台:「在别的机器上新建」的那一截。新建页、项目页、对话里派任务共用这一份 —— 输入框、agent 选择、
 // 发送都是本机那一套,只是数据问那台机器(LibraryHost + rpc 按实体所在机器路由)。
-import { observer } from 'mobx-react-lite';
-import { useEffect, useState, type ReactElement } from 'react';
-import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
+// 项目与机器解耦:这里不再按路径找 / 建项目。选了项目时,那台机器上它绑的本地项目由项目块的文件夹选择定好了(projectId);
+// 没选项目 = 那台机器的任务工作区(#609)。
+import { useEffect, useState } from 'react';
 import { cloudWakeFailureText, TOO_OLD_CODES } from '@renderer/features/remote-hosts/connection-status';
 import { machineNotice, useMachineNotice } from '@renderer/features/remote-hosts/machine-notice';
 import { remoteErrorCode } from '@renderer/features/remote-hosts/remote-failure-copy';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { machineLibraryHost, type LibraryHost } from '@renderer/features/library/library-host';
-import { machineRegistry } from '@renderer/lib/machine-routing';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { ComposerRemoteProjectPicker } from './composer-context-tray';
 import { ImplicitSessionHomeProjectError } from './implicit-session-home-project';
-import { isWorkspaceProject } from './session-home-project-constants';
 
 type Translate = ReturnType<typeof useSessionMessages>['translate'];
 
@@ -56,22 +50,13 @@ export function describeMachineProjectFailure(failure: unknown, device: string, 
 
 export type MachineCreateTarget = {
   deviceId: string;
-  projectPath: string | null;
-  /** 已经知道是哪个项目(项目页):直接用它,不再按路径找。 */
+  /** 那台机器上这个项目的本地项目(项目块定好的);缺省 = 那台机器的任务工作区。 */
   projectId?: string;
 };
 
-/**
- * 那台机器上的这个文件夹对应的项目 id:已是项目就用它;还不是就在那台机器上把它加成项目;
- * 没选文件夹 = 那台机器的任务工作区(#609,会话列在「任务」里)。
- */
+/** 那台机器上要建进去的本地项目:给了就是它;没给 = 那台机器的任务工作区(#609,会话列在「任务」里)。 */
 export function resolveMachineProject(target: MachineCreateTarget): Promise<string> {
-  if (target.projectId) return Promise.resolve(target.projectId);
-  const existing = target.projectPath ? machineProjects(target.deviceId).find((p) => p.path === target.projectPath) : null;
-  if (existing) return Promise.resolve(existing.id);
-  return target.projectPath
-    ? remoteHostsStore.ensureProject(target.deviceId, target.projectPath)
-    : remoteHostsStore.ensureTaskWorkspace(target.deviceId);
+  return target.projectId ? Promise.resolve(target.projectId) : remoteHostsStore.ensureTaskWorkspace(target.deviceId);
 }
 
 export type MachineCreateContext = {
@@ -98,7 +83,7 @@ export function useMachineCreateContext(target: MachineCreateTarget | null): Mac
   // #7199 选了一台睡着的云电脑做目标 ❌ 当场叫醒:新建框里开始输入才叫(useWakeCloudOnInput,看一眼不该扣积分);
   // 醒了线自己连上、项目照常解析、发送键自己亮;草稿一直留着。
   const [resolved, setResolved] = useState<{ key: string; id: string | null; failure: unknown } | null>(null);
-  const key = target ? `${target.deviceId}|${target.projectPath ?? ''}|${target.projectId ?? ''}` : null;
+  const key = target ? `${target.deviceId}|${target.projectId ?? ''}` : null;
   useEffect(() => {
     if (!target || !key || !connected) return;
     let cancelled = false;
@@ -106,7 +91,6 @@ export function useMachineCreateContext(target: MachineCreateTarget | null): Mac
       (id) => {
         if (cancelled) return;
         setResolved({ key, id: id ?? null, failure: id ? null : new ImplicitSessionHomeProjectError('unavailable') });
-        if (id && target.projectPath) remoteHostsStore.rememberRecentFolder(target.deviceId, target.projectPath);
       },
       (failure: unknown) => {
         if (!cancelled) setResolved({ key, id: null, failure });
@@ -115,7 +99,7 @@ export function useMachineCreateContext(target: MachineCreateTarget | null): Mac
     return () => {
       cancelled = true;
     };
-    // 按「哪台机器、哪个文件夹、连没连上」重解。
+    // 按「哪台机器、哪个本地项目、连没连上」重解。
   }, [key, connected]);
   const label = device?.label ?? target?.deviceId ?? '';
   // 选着的机器掉线了:右下角那条提示说(重连第几次 → 离线 / 失败,或 → 已连上),输入框照旧可写、写好的内容留着(不重挂)。
@@ -176,35 +160,3 @@ export function machineComposerProps(
     machine: context?.machine ?? null,
   };
 }
-
-function machineProjects(deviceId: string): { id: string; name: string; path: string }[] {
-  return [...getProjectManagerStore().projects.values()]
-    .filter((project) => project.data && !isWorkspaceProject(project) && machineRegistry.machineOf(project.id) === deviceId)
-    .map((project) => ({ id: project.id, name: project.name ?? '', path: project.data?.path ?? '' }));
-}
-
-/** 那台机器上的项目 / 最近文件夹 / 浏览。 */
-export const MachineProjectPicker = observer(function MachineProjectPicker({
-  target,
-  onSelect,
-}: {
-  target: MachineCreateTarget;
-  onSelect: (path: string | null) => void;
-}): ReactElement {
-  const connected = remoteHostsStore.connectionState(target.deviceId) === 'connected';
-  return (
-    <ComposerRemoteProjectPicker
-      selectedPath={target.projectPath}
-      projects={machineProjects(target.deviceId)}
-      recentPaths={remoteHostsStore.recentFolders(target.deviceId)}
-      loading={false}
-      offline={!connected}
-      onSelect={onSelect}
-      machine={{
-        deviceId: target.deviceId,
-        label: remoteHostsStore.device(target.deviceId)?.label ?? target.deviceId,
-        browseFrom: target.projectPath ?? '~',
-      }}
-    />
-  );
-});

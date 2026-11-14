@@ -8,7 +8,6 @@ vi.mock('../../../apps/desktop/src/lib/auth', () => ({ authService: {} }))
 vi.mock('../../../apps/desktop/src/lib/authCallbacks', () => ({ authCallbacks: {} }))
 vi.mock('../../../apps/desktop/src/lib/sessionCoordinator', () => ({ sessionCoordinator: {} }))
 vi.mock('../../../apps/desktop/src/lib/supabase', () => ({ mainAuthTemporaryStorage: {}, supabase: { auth: {} } }))
-vi.mock('../../../apps/desktop/src/lib/referral', () => ({ clearPendingReferrer: vi.fn() }))
 vi.mock('@gugu/core/cloud/config', () => ({ getSupabaseUrl: () => 'https://auth.example.test', getSupabaseAnonKey: () => 'public-test-key' }))
 vi.mock('../../../apps/desktop/src/pages/login/AuthBrandMotion', () => ({ AuthBrandMotion: () => null }))
 vi.mock('../../../apps/desktop/src/hooks/usePrefersReducedMotion', () => ({ usePrefersReducedMotion: () => true }))
@@ -28,6 +27,9 @@ it.each(['capacitor', 'electron'] as const)('uses the actual %s platform to deci
   vi.stubGlobal('fetch', request)
   const { googleLogin } = await import('../../../apps/desktop/src/lib/googleLogin')
   expect(googleLogin.available).toBe(enabled)
+  // Authenticated account management does not enable the anonymous provider entry.
+  const accountBrowser = selected.platform.accountOAuthBrowser ?? selected.platform.oauthBrowser
+  expect(accountBrowser?.openLinkBrowser).toBeTypeOf('function')
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { LoginPage } = await import('../../../apps/desktop/src/pages/LoginPage')

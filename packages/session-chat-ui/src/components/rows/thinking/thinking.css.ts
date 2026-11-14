@@ -1,21 +1,13 @@
 import { style } from '@vanilla-extract/css';
 import { givesWayFirst } from '@session-chat/components/primitives/summary-chip.css';
-import { createVariableThemeContract } from '@session-chat/styles/variable-theme-contract.css';
 
-// ── Runtime geometry contract ─────────────────────────────────────────────────
-
-export type ThinkingStyleVars = {
-  height: number;
-};
-
-export const thinkingCardVars = createVariableThemeContract<ThinkingStyleVars>({
-  height: null,
-});
+// The engine height is a plain inline `height` on the root, never a custom property: a custom property inherits, so
+// changing it restyles the whole subtree — per streamed chunk, O(content) (see user-message.css.ts).
 
 // overflow: hidden ensures that any transient measure-vs-render height desync
 // (e.g. during a mid-tween frame or a stale virtualizer size) degrades to
 // clipped content rather than spilling over the following row.
-export const thinkingRoot = style({ height: thinkingCardVars.height, overflow: 'hidden' });
+export const thinkingRoot = style({ overflow: 'hidden' });
 
 /**
  * 这一段思考的要旨（#4981 #7）。

@@ -9,7 +9,7 @@ import { useShellTabIs } from '../../lib/shellTab'
 import { recentChatActivity, searchContacts, type ContactSearchHit } from '../../lib/contactSearch'
 import { displayName } from '../../lib/contactsListSort'
 import { graphemes, normalizeMentionKey } from '../../lib/mentionMatch'
-import { useChatStore } from '../../store/chatContext'
+import { useChatsWhile } from '../../store/chatContext'
 import { Avatar } from '../Avatar'
 import { ListRow } from '../ui/ListRow'
 import { SearchField } from '../ui/SearchField'
@@ -21,8 +21,7 @@ import { SectionLabel } from '../ui/SectionLabel'
 // 键盘留在输入框:↑↓ 移动当前行,回车打开;打字本身不打开任何东西。
 
 export function ContactGroupAvatar({ group, size }: { group: ContactGroupChat; size: 'sm' | 'md' | 'lg' | number }) {
-  const { identitiesById } = useChatStore('identitiesById')
-  return <Avatar name={groupDisplayName(group)} avatarUrl={group.avatar_url} variant="group" size={size} memberAvatars={group.member_user_ids?.flatMap((id) => identitiesById[id] ? [{ id, name: identitiesById[id].display_name, avatar: identitiesById[id].avatar }] : [])} />
+  return <Avatar name={groupDisplayName(group)} avatarUrl={group.avatar_url} seed={group.id} variant="group" size={size} />
 }
 
 export function SelectionCheckbox({ checked }: { checked: boolean }) {
@@ -30,7 +29,7 @@ export function SelectionCheckbox({ checked }: { checked: boolean }) {
     <span
       aria-hidden="true"
       className={cn(
-        'grid h-[var(--avatar-xs)] w-[var(--avatar-xs)] shrink-0 place-items-center rounded-full border !mr-2 text-[var(--primary-fg)]',
+        'grid h-[var(--avatar-xs)] w-[var(--avatar-xs)] shrink-0 self-center place-items-center rounded-full border !mr-2 text-[var(--primary-fg)]',
         checked ? 'border-[var(--primary)] bg-[var(--primary)]' : 'border-[var(--border-strong)] bg-transparent',
       )}
     >
@@ -83,7 +82,7 @@ export function ContactSearch({ query, onQuery, mobile = false, head, people, ag
   // 手机:这一页此刻在屏上(见 HeaderSearch)。Read here, not threaded from the panel (@@@shell-tab-store).
   const onScreen = useShellTabIs('contacts')
   const { t } = useTranslation('contacts')
-  const { chats } = useChatStore('chats')
+  const chats = useChatsWhile(query.trim().length > 0)
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
   const recentAt = useMemo(() => recentChatActivity(chats), [chats])

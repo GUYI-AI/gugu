@@ -1,5 +1,5 @@
-import { personalConversationPreview } from '@gugu/session-core/session-record/personal-conversation';
 import type { SessionCommandDefinition } from '@gugu/session-core/acp';
+import { isAcpAuthRequired } from '@gugu/session-core/acp';
 import type { AcpPermissionParams } from '@gugu/session-core/agents/plugins';
 import { findToolImage, trimItemsForTransport, type ToolImageLookup } from '@gugu/session-core/session-record';
 import { randomUUID } from 'node:crypto';
@@ -125,6 +125,8 @@ const TRANSCRIPT_TICK_MS = 100;
 
 interface SessionRecordBase {
   closing?: boolean;
+  /** Set while the record is still starting: `onProcessClosed` has no route to it yet. */
+  startupProcessExit?: AdapterExit;
   idleCompaction?: IdleCompaction;
   input: AcpStartInput;
   cell: SessionCell;
@@ -1081,6 +1083,14 @@ export class SessionManager implements InboundRouter {
           return modelResult;
         }
         if (modelResult.data) startupNotices.push(modelResult.data);
+        const opening = record.cell.config.modelOptions?.selected;
+        if (opening && this.deps.agentHost.resolveAcp(input.providerId)?.behavior.modelsLeakingToolCallMarkers?.includes(opening)) {
+          startupNotices.push({
+            code: 'model-leaks-tool-markers',
+            detail: `${opening} may show raw tool-call markers in its replies`,
+            effectiveValue: opening,
+          });
+        }
         const effortResult = await this.applyInitialEffort(record, input);
         if (!effortResult.success) {
           this.removeRecord(input.sessionId, false);
@@ -1130,17 +1140,10 @@ export class SessionManager implements InboundRouter {
   }
 
   async prompt(input: SendPromptInput): Promise<Result<{ queued: boolean }, AcpSendPromptError>> {
-    const record = this.cells.get(input.sessionId);
-    if (!record) return acpErr.sessionNotFound(input.sessionId);
-    if (record.closing) return acpErr.sessionBusy('Session is closing; resume it after teardown');
-    if (record.phase === 'lost') {
-      return acpErr.invalidState(
-        `Session '${input.sessionId}' lost its ACP adapter: ${record.loss.message}; reconnect before sending`
-      );
-    }
-    const dispatched = record.cell.promptDetached(input.prompt, input.steerIfBusy ? { steerIfBusy: true } : undefined);
-    void dispatched.completion.catch((error: unknown) => this.deps.logger.error('SessionManager: cycle completion failed', { sessionId: input.sessionId, error }));
-    return dispatched.admission;
+    const dispatched = this.promptDetached(input);
+    if (!dispatched.success) return dispatched;
+    void dispatched.data.completion.catch((error: unknown) => this.deps.logger.error('SessionManager: cycle completion failed', { sessionId: input.sessionId, error }));
+    return dispatched.data.admission;
   }
 
   /** Internal host path: resolve admission without waiting for the provider turn. */
@@ -1159,7 +1162,13 @@ export class SessionManager implements InboundRouter {
     const detached = record.cell.promptDetached(input.prompt, input.steerIfBusy ? { steerIfBusy: true } : undefined);
     return ok({
       admission: detached.admission,
-      completion: detached.completion,
+      completion: detached.completion.then(async result => {
+        if (!result.success && 'cause' in result.error && result.error.cause?.code === 'prompt_admission_timeout') {
+          // The abandoned native RPC still owns this transport. Retire it on every runtime entry.
+          await this.stop(input.sessionId);
+        }
+        return result;
+      }),
     });
   }
 
@@ -1269,7 +1278,7 @@ export class SessionManager implements InboundRouter {
     return record.cell.setPromptDraft(draft);
   }
 
-  async stop(sessionId: string, onlyIfIdle = false): Promise<Result<void, AcpStopSessionError>> {
+  async stop(sessionId: string, onlyIfIdle = false, forgetLost = false): Promise<Result<void, AcpStopSessionError>> {
     const pending = this.stoppingSessions.get(sessionId);
     if (pending) return pending;
     let record = this.cells.get(sessionId);
@@ -1280,6 +1289,20 @@ export class SessionManager implements InboundRouter {
         || state.backgroundAgentCount > 0 || state.backgroundCommandCount > 0) {
         return acpErr.stopFailed(toSerializedError(new Error('Session is no longer idle; reclamation declined')));
       }
+    }
+    // A lost record outlives an ordinary stop (a crash teardown stops it too): the next start reconnects through it.
+    // `forgetLost` is for an owner who replaced the engine session (it went missing): the next start must not load the
+    // lost one again. It only forgets: a starting or live record is not this call's to stop.
+    if (forgetLost) {
+      if (record?.phase === 'lost') {
+        record.live.dispose();
+        this.disposeLostRecord(record);
+        // Only the summary (the error dot): disposeLostRecord keeps the closed history for reads.
+        this.sessionsList.states.list.produce((draft) => {
+          delete draft[sessionId];
+        });
+      } else if (!record) this.deleteSessionSummary(sessionId);
+      return ok();
     }
     if (!record) {
       // 一次起不来的启动只留下摘要(`lost` + start-failed),没有 record。停止 / 删除这条会话时它也得走,
@@ -1358,11 +1381,39 @@ export class SessionManager implements InboundRouter {
   }
 
   /**
+   * A harness that publishes its model option after `session/new` (`catalogModelsInConfigUpdate`) is not ready for a
+   * model or a first prompt until then: Kiro waits 5s for its model registry and fails the turn past that (measured over
+   * a slow proxy, where the list took 7.6s). The bound only stops a harness that never publishes from holding the session
+   * shut; the session then opens and whatever is still wrong surfaces as that harness's own error on the first turn.
+   * A process that dies meanwhile fails the start at once, and a start abandoned meanwhile stops waiting.
+   */
+  private async awaitLateModelDimension(record: SessionRecord, input: AcpStartInput): Promise<void> {
+    if (!this.deps.agentHost.resolveAcp(input.providerId)?.behavior.catalogModelsInConfigUpdate) return;
+    const deadline = Date.now() + LATE_MODEL_DIMENSION_WAIT_MS;
+    while (!record.cell.hasConfigTarget('model')) {
+      if (record.startupProcessExit) {
+        throw new Error(`The agent process exited during startup (code ${String(record.startupProcessExit.exitCode)})`);
+      }
+      if (record.closing || this.cells.get(input.sessionId) !== record) return;
+      if (Date.now() >= deadline) {
+        this.deps.logger.warn('SessionManager: harness did not publish its model option in time', {
+          sessionId: input.sessionId,
+          providerId: input.providerId,
+        });
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  /**
    * Assert the model the conversation record names on this session (spec provider-blocker, #5047;
    * spec capability-bundle, #6196). This is the **one** place a start makes the provider run the
    * recorded model; the host hands both halves of the record in:
    *
-   * - `input.model` — a harness-native id (the user's own model).
+   * - `input.model` — a harness-native id (the user's own model), or, with an API key connection
+   *   that names its model through the process environment, the connection's model name — which
+   *   that spawn already runs (`runContext.apiKeyConnection.model`), so there is nothing to assert.
    * - `input.platformModel` — the Gugu platform model this start pinned (canonical id). Its wire
    *   form is taken from the list the live session itself advertises (`gugu-platform/<id>` on
    *   pi / opencode, the bare id where nothing is advertised — copilot), never spelled here.
@@ -1402,6 +1453,7 @@ export class SessionManager implements InboundRouter {
     /** provider 在 `session/new` / `session/load` 应答里报的那份目录,用来说出「现在跑的是什么」。 */
     providerConfigOptions?: readonly SessionConfigOption[] | null
   ): Promise<Result<StartupNotice | null, InvalidStateError | SetConfigFailedError>> {
+    await this.awaitLateModelDimension(record, input);
     record.startupSettingsSealed.add('model');
     const chosen = record.startupSettings.model;
     // 启动期间用户选过 ⇒ 断言他选的那个(渲染层递来的就是线上值,与活会话热切同一份)。
@@ -1532,7 +1584,13 @@ export class SessionManager implements InboundRouter {
     }
     // 自己的模型:只有这一步把它落进会话 —— 新会话与续接一律断言(spawn 不带它)。
     if (!platformModel) {
-      return input.model ? { kind: 'assert', requested: input.model, wireValue: input.model } : null;
+      if (!input.model) return null;
+      // #2507 例外:key 走环境变量的家(Qwen、Copilot、ZCode、Hermes、Antigravity),记录里是 API Key 连接的模型名,
+      // 而这次 spawn 的环境点名的正是它 ⇒ 进程起来就跑它。这一家的 id 是自己的写法(qwen `$runtime|openai|<名>(openai)`),
+      // 拿名字去设只会被拒、再报一条「模型不可用」的假警报。❌ 不按前缀拼它的 id —— 各家写法不同,同一条规则对五家都成立的
+      // 是「环境已经点名就不设」。续接同理:记录与环境点名同一个模型,这家记着的也是它。
+      if (input.runContext?.apiKeyConnection?.model === input.model) return null;
+      return { kind: 'assert', requested: input.model, wireValue: input.model };
     }
     // 平台模型:spawn 的注入已经带着它,只有续接一条带会话记忆的 provider 会话时才可能被顶掉。
     if (origin === 'new-session') return null;
@@ -1746,6 +1804,14 @@ export class SessionManager implements InboundRouter {
     return this.cells.get(sessionId)?.cell.turnEnvelope ?? null;
   }
 
+  windowActiveReference(sessionId: string, referenceId: string): boolean {
+    const record = this.cells.get(sessionId);
+    // record.replaying belongs to the actual replay caller, including the
+    // endReplay callback window where lifecycle phase has already changed.
+    return !!record && record.phase === 'ready' && !record.replaying && !record.input.sourceSessionId
+      && record.cell.transcript.activeTurn?.referenceId === referenceId;
+  }
+
   getChatHistory(sessionId: string): AcpChatHistory {
     const live = this.cells.get(sessionId);
     if (live) return live.cell.history();
@@ -1778,8 +1844,10 @@ export class SessionManager implements InboundRouter {
   /**
    * 一页已提交的回合(由旧到新),或者 `changedSince` 给了时:那个游标之后新增或改过的全部回合(不分页 —— 它们就是
    * 这段时间里新产生的内容)。只克隆交出去的那几轮,❌ 为了取一页把整份历史克隆一遍。
+   * `contentFrom`(只配 `changedSince`):seq 在它之前的改动轮只交身份(`items: []`、不带 terminals)—— 读者按 id 回库里
+   * 重读那一行,内容用不上;后台子智能体每走一步都改派它的那一轮,那一轮能有几 MB(#2493),❌ 每步克隆一遍再丢掉。
    */
-  getHistory(sessionId: string, before?: number, limit = 50, changedSince?: HistoryCursor): HistoryPage {
+  getHistory(sessionId: string, before?: number, limit = 50, changedSince?: HistoryCursor, contentFrom?: number): HistoryPage {
     const live = this.cells.get(sessionId);
     const turns: readonly TranscriptTurn[] = live ? live.cell.transcript.history : (this.closedSessionHistories.get(sessionId) ?? []);
     let tracker = this.historyRevs.get(sessionId);
@@ -1791,7 +1859,16 @@ export class SessionManager implements InboundRouter {
       if (changedSince.epoch !== tracker.epoch || changedSince.seq > tracker.rev) {
         return { turns: [], nextCursor: null, ...head, reset: true };
       }
-      return { turns: structuredClone(turns.filter((turn) => marks.get(turn)! > changedSince.seq)), nextCursor: null, ...head };
+      const changed = turns.filter((turn) => marks.get(turn)! > changedSince.seq);
+      return {
+        turns: changed.map((turn) => {
+          if (contentFrom === undefined || turn.seq >= contentFrom) return structuredClone(turn);
+          const { items: _items, terminals: _terminals, ...identity } = turn;
+          return { ...structuredClone(identity), items: [] };
+        }),
+        nextCursor: null,
+        ...head,
+      };
     }
     const filtered = before === undefined ? turns : turns.filter((turn) => turn.seq < before);
     const page = [...filtered].sort((a, b) => b.seq - a.seq).slice(0, limit);
@@ -2060,6 +2137,7 @@ export class SessionManager implements InboundRouter {
     this.intentionalProcessCloses.delete(processKey);
     const removed: string[] = [];
     for (const record of [...this.cells.values()]) {
+      if (record.phase === 'starting' && record.processKey === processKey) record.startupProcessExit = exit;
       if (record.phase !== 'ready' || record.processKey !== processKey) continue;
       const sessionId = record.input.sessionId;
       removed.push(sessionId);
@@ -2183,7 +2261,7 @@ export class SessionManager implements InboundRouter {
     const record = {} as SessionRecord;
     const provider = this.deps.agentHost.get(input.providerId);
     const assistant = input.sessionMeta?.guguAssistant;
-    const assistantOwnerId = input.providerId === 'claude' && isRecord(assistant)
+    const assistantOwnerId = isRecord(assistant)
       && typeof assistant.ownerId === 'string' && assistant.ownerId.trim() ? assistant.ownerId : null;
     const callbacks: SessionCellCallbacks = {
       onPromptSteered: () => this.deps.onPromptSteered?.(input.sessionId),
@@ -2276,7 +2354,7 @@ export class SessionManager implements InboundRouter {
       lastSynced: initialLastSynced(cell),
     });
     this.cells.set(input.sessionId, record);
-    if (input.providerId === 'claude' && isRecord(assistant) && assistant.idleCompaction === true) {
+    if (isRecord(assistant) && assistant.idleCompaction === true) {
       record.idleCompaction = new IdleCompaction(
         () => ({ ...cell.idleCompactionState, idle: record.phase === 'ready' && cell.idleCompactionState.idle }),
         async () => {
@@ -2624,13 +2702,13 @@ export class SessionManager implements InboundRouter {
   }
 
   private publishConversationActivity(record: SessionRecord, closed = false): void {
-    if (record.input.sourceSessionId || !this.deps.onConversationActivity) return;
+    if (record.input.sourceSessionId || !this.deps.conversationPreview) return;
     const turn = !closed && !record.replaying ? record.cell.transcript.activeTurn : null;
-    const preview = turn ? personalConversationPreview(turn) : null;
+    const preview = turn ? this.deps.conversationPreview.project(turn) : null;
     const value = JSON.stringify(preview);
     if ((this.conversationPreviews.get(record.cell) ?? 'null') === value) return;
     this.conversationPreviews.set(record.cell, value);
-    this.deps.onConversationActivity({ sessionId: record.input.sessionId, preview });
+    this.deps.conversationPreview.onChange({ sessionId: record.input.sessionId, preview });
   }
 
   private upsertSessionSummary(
@@ -2660,6 +2738,7 @@ export class SessionManager implements InboundRouter {
       isGenerating: state.isGenerating,
       lastStopReason: cell?.sessionState.lastStopReason ?? null,
       lastTurnOutcome: cell?.sessionState.lastTurnOutcome ?? 'none',
+      lastTurnError: cell?.lastTurnError ?? null,
       pendingPermissionCount: state.pendingPermissionCount ?? state.pendingPermissions?.length ?? 0,
       // 起动 / 起不来的占位摘要没有 cell、也就没有任何待决请求(`pendingPermissionCount: 0`)。
       pendingPermissionWaits: pendingPermissionWaits(state.pendingPermissions ?? []),
@@ -2955,10 +3034,12 @@ function sameQueuedPrompts(
   });
 }
 
+const LATE_MODEL_DIMENSION_WAIT_MS = 30_000;
+
 function isAuthRequiredError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
-  const value = error as { code?: unknown; cause?: unknown };
-  if (value.code === -32000) return true;
+  const value = error as { code?: unknown; data?: unknown; cause?: unknown };
+  if (isAcpAuthRequired(value)) return true;
   return isAuthRequiredError(value.cause);
 }
 

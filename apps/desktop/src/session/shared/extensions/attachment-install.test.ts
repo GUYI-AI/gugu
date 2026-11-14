@@ -39,12 +39,23 @@ describe('attachmentInstallPlan: what may be installed, and what is asked first'
     expect(plan(manifest('1.0.0', ['files:write']), undefined)).toEqual({ kind: 'ask', installed: undefined, revokedPermissions: [] });
   });
 
-  it('E-05: never replaces a folder, market or preinstalled App', () => {
-    for (const origin of ['folder', 'market', 'preinstalled', undefined] as const) {
-      expect(plan(manifest('2.0.0'), { ...installedBy({ id: ALICE, name: 'Alice' }), origin })).toMatchObject({
-        kind: 'refuse',
-        from: origin,
-        installedVersion: '1.0.0',
+  it('E-05: never replaces a preinstalled App', () => {
+    expect(plan(manifest('2.0.0'), { ...installedBy({ id: ALICE, name: 'Alice' }), origin: 'preinstalled' })).toMatchObject({
+      kind: 'refuse',
+      from: 'preinstalled',
+      installedVersion: '1.0.0',
+    });
+  });
+
+  // 11-12: a card of 0.10.0 over the market's 0.9.0 was refused, and the person could only uninstall first. One from the
+  // market, a folder or an unkept origin is another source's App: asked in full, saying what it replaces — never refused.
+  it('over a market, folder or unkept-origin App: asked in full, saying what it replaces — the same publisher too', () => {
+    for (const origin of ['folder', 'market', 'fork', undefined] as const) {
+      expect(plan(manifest('2.0.0'), { ...installedBy({ id: ALICE, name: 'Alice' }), origin })).toEqual({
+        kind: 'ask',
+        installed: undefined,
+        revokedPermissions: [],
+        over: { from: origin, version: '1.0.0' },
       });
     }
   });

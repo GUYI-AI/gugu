@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GroupChatSettings } from '../../../../packages/core/src/shared/types/chat'
 import { act } from 'react'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
-import { createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
+import { createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
 
 const projectGroups = new Set<string>()
 vi.mock('../../../../apps/desktop/src/session/renderer/features/projects/stores/project-groups-store', () => ({
@@ -23,10 +23,11 @@ afterEach(() => { harness.cleanup() })
 
 const settings = {
   max_members: 500, allow_member_invite: true, invite_link_enabled: true, agent_join_approval: false, join_mode: 'open',
+  name: 'Group', public_id: 9, join_token: '5f0c6a523a1e4f6e9a572d1b0c8e4f11',
 } as unknown as GroupChatSettings
 const REASON = '项目群只有你和你的 agent。要与其他人协作，请在对话中新建群聊。'
 const manage = (chatId: string) => createNode(GroupSettingsManagePage, {
-  chatId, settings, totalMembers: 1, inviteLink: 'https://gugu.test/g/1', onUpdate: vi.fn(async () => true), onOpenPoster: vi.fn(),
+  chatId, settings, totalMembers: 1, onUpdate: vi.fn(async () => true),
 })
 
 describe('a project group offers no way to bring people in', () => {
@@ -40,25 +41,39 @@ describe('a project group offers no way to bring people in', () => {
     projectGroups.add('pg')
     await renderWithAppProviders(harness, manage('pg'))
     expect(harness.container.textContent).toContain(REASON)
-    expect(harness.container.querySelector('[data-testid="group-invite-link"]')).toBeNull()
+    expect(harness.container.textContent).not.toContain('邀请链接')
     expect(harness.container.querySelector('select')).toBeNull()
   })
 
   it('positive control: an ordinary group keeps them', async () => {
     await renderWithAppProviders(harness, manage('ordinary'))
     expect(harness.container.textContent).not.toContain(REASON)
-    expect(harness.container.querySelector('[data-testid="group-invite-link"]')).not.toBeNull()
+    expect(harness.container.textContent).toContain('邀请链接')
     expect(harness.container.querySelector('select')).not.toBeNull()
   })
 
   it('the member picker says why its people page is empty', async () => {
+    projectGroups.add('pg')
     await renderWithAppProviders(harness, createNode(AddGroupMembers, {
-      chatId: 'pg', snapshot: { humans: [], agents: [] } as never, canInviteHumans: false, humanDeniedHint: REASON,
+      chatId: 'pg', snapshot: { humans: [], agents: [] } as never, settings, canInviteHumans: false, humanDeniedHint: REASON,
       onClose: vi.fn(), onReload: vi.fn(async () => {}),
     }))
     // It does not open on people (your own agents still join); the people source says why it is empty.
     expect(document.body.textContent).not.toContain(REASON)
     await act(async () => { document.querySelector<HTMLElement>('[data-picker-source="people"]')!.click() })
     expect(document.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.groupMembersPickerHumanDenied}"]`)?.textContent).toBe(REASON)
+    expect(document.querySelector('[data-testid="group-invite-link"]')).toBeNull()
+  })
+
+  it('positive control: an ordinary group\'s invite sheet carries the link and the QR', async () => {
+    await renderWithAppProviders(harness, createNode(AddGroupMembers, {
+      chatId: 'ordinary', snapshot: { humans: [], agents: [] } as never, settings, canInviteHumans: true,
+      onClose: vi.fn(), onReload: vi.fn(async () => {}),
+    }), { contacts: {} })
+    expect(document.querySelector('[data-testid="group-invite-copy-link"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="group-invite-qr"]')).not.toBeNull()
+    // Contacts loaded and nobody to pick: the picker folds away and the share is the sheet's body.
+    await waitForCondition(() => document.querySelector('[data-picker-empty]') !== null, 'the empty picker never folded away')
+    expect(document.querySelector('[data-testid="group-invite-link"]')?.getAttribute('data-layout')).toBe('main')
   })
 })

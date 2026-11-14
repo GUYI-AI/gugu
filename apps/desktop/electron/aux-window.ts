@@ -1,7 +1,8 @@
 import { BrowserWindow, shell, type BrowserWindowConstructorOptions } from 'electron'
-import { BUILD_TAG_WINDOW_NAME, isAgentOverlayWindowRequest, isAuxWindowRequest, isBuildTagWindowName } from '@shared/aux-window'
+import { BUILD_TAG_WINDOW_NAME, isAuxWindowRequest, isBuildTagWindowName } from '@shared/aux-window'
 import { TRAFFIC_LIGHT_POSITION } from '@shared/window-chrome-native'
 import { hardenWebPreferences } from './devtools-lock'
+import { PAGE_FULLSCREEN_PREFERENCES } from './page-fullscreen'
 import { openBuildTagLayer } from './build-tag-window'
 import { serveWindowLayers, windowLayerOptions, windowLayerResponse } from './window-layers'
 import { attachTabHistorySwipe } from './tab-history-swipe'
@@ -33,6 +34,7 @@ function auxWindowOptions(backgroundColor: string): BrowserWindowConstructorOpti
       webviewTag: true,
       // 同主窗:后台的窗也要照常跑(终端、App 页)。
       backgroundThrottling: false,
+      ...PAGE_FULLSCREEN_PREFERENCES,
     }),
   }
 }
@@ -48,7 +50,7 @@ export type SpecialAuxWindow = {
 }
 
 /**
- * 主窗能换到的页面：应用自己的页面(同一协议、同一 host 和端口：重载、AgentJoinRoute 回首页)。❌ 比 origin:
+ * 主窗能换到的页面：应用自己的页面(同一协议、同一 host 和端口：重载)。❌ 比 origin:
  * `blob:gugu-app://app/…` 的源就是应用的源;主进程的 URL 对 gugu-app: 这种非特殊协议又只给 'null'。
  */
 export function isOwnPage(target: string, current: string): boolean {
@@ -82,8 +84,6 @@ export function attachAuxWindows(main: BrowserWindow, backgroundColor: () => str
       const own = ownWindows.find((entry) => entry.name === frameName)
       return { action: 'allow', overrideBrowserWindowOptions: own ? own.options(backgroundColor()) : auxWindowOptions(backgroundColor()) }
     }
-    // agent 浮层由会话页主进程那边接;它还没加载时 ❌ 把 about:blank 交给系统浏览器。
-    if (isAgentOverlayWindowRequest(url, frameName)) return { action: 'deny' }
     void shell.openExternal(url)
     return { action: 'deny' }
   })
@@ -107,11 +107,10 @@ export function attachAuxWindows(main: BrowserWindow, backgroundColor: () => str
     // 「File Edit View Window」(2026-10-10 win-dev 实拍)。这扇窗不要菜单(Electron 文档:win.removeMenu 去掉单扇窗的菜单);
     // 顺带去掉它的快捷键 —— 「重新加载」会把这扇窗换成空白页,画在里面的那块跟着没了。
     if (process.platform !== 'darwin') child.removeMenu()
-    // 子窗里点到的外链同主窗:交给系统浏览器。挪进这扇窗的浏览器页签,agent 的鼠标 / 小条是这扇窗里的层。
+    // 子窗里点到的外链同主窗:交给系统浏览器。
     child.webContents.setWindowOpenHandler(({ url, frameName }) => {
       const layer = windowLayerResponse(child, url, frameName)
       if (layer) return layer
-      if (isAgentOverlayWindowRequest(url, frameName)) return { action: 'deny' }
       void shell.openExternal(url)
       return { action: 'deny' }
     })

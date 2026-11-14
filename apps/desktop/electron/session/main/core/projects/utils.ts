@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import type { CanonicalPath } from '@gugu/session-core/files';
 import { db } from '@main/db/client';
 import { workspaces } from '@main/db/schema';
 import { isRetiredRemoteWorkspace } from '@main/core/workspaces/resolve-workspace-kind';
@@ -10,8 +11,11 @@ export function resolveSession(_projectId: string, sessionId: string) {
   return sessionWorkspaceManager.getSession(sessionId) ?? null;
 }
 
-export function resolveWorkspace(_projectId: string, workspaceId: string) {
-  return workspaceRegistry.get(workspaceId) ?? null;
+export async function resolveWorkspace(projectId: string | undefined, workspaceId: string) {
+  const cached = workspaceRegistry.get(workspaceId);
+  if (cached) return cached;
+  const { workspaceBootstrapService } = await import('@main/core/workspaces/workspace-bootstrap-service');
+  return workspaceBootstrapService.ensureWorkspaceSetupForWorkspace(projectId, workspaceId);
 }
 
 /**
@@ -19,7 +23,7 @@ export function resolveWorkspace(_projectId: string, workspaceId: string) {
  * it. Null when there is none: the row is missing, has no path, or is a retired remote row (its stored path is not a
  * folder on this computer). How to fail on null is the caller's.
  */
-export function persistedWorkspacePath(workspaceId: string): string | null {
+export function persistedWorkspacePath(workspaceId: string): CanonicalPath | null {
   const row = db
     .select({ path: workspaces.path, kind: workspaces.kind, type: workspaces.type, location: workspaces.location })
     .from(workspaces)

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { browserStorage } from '@renderer/features/remote-hosts/remote-recent-folders'
+import { browserStorage } from '@renderer/features/remote-hosts/browser-storage'
 
 const key = (accountId: string, chatId: string) => `gugu:group-mention:${encodeURIComponent(accountId)}/${encodeURIComponent(chatId)}`
 const listeners = new Set<() => void>()

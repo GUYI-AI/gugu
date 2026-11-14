@@ -9,6 +9,7 @@ import {
   type SessionRuntime,
   type InitialQueuePrompt,
   type InterruptedBy,
+  sessionBornInChatId,
 } from '@shared/core/sessions/sessions';
 
 // #6823 Stored startup text without an origin (payloads from before #6823 — 2026-09-30: 246 rows on the Windows Beta
@@ -133,10 +134,12 @@ export function mapSessionRowToSession(
     ...(row.agentStatus === 'idle' || row.agentStatus === 'error' ? interruptedBy(row.id) : {}),
     runtime: (row.runtime as SessionRuntime | null) ?? 'pty',
     isPinned: row.isPinned === 1,
+    isPinnedToSidebar: row.isPinnedToSidebar === 1,
     archivedAt: row.archivedAt ?? null,
     parentSessionId: sessionParentId(row),
     spawnedBySessionId: sessionSpawnerId(row),
     spawnedByExtensionId: row.spawnedByExtensionId,
+    bornInChatId: sessionBornInChatId(config),
     // 谱系两种 runtime 都有(spec session-fork-share「任意会话可 fork」),
     // ❌ 别再只读 pty 那一支:ACP 分叉会因此在侧栏丢掉「fork 自 ×」。
     forkedFrom: config?.forkedFrom,

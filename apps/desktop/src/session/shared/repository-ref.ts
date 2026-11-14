@@ -65,7 +65,7 @@ export function parseRepositoryRef(
     if (scpMatch) return toRepositoryRef(scpMatch[1], scpMatch[2]);
   }
 
-  if (value.startsWith('ssh://')) {
+  if (/^ssh:\/\//i.test(value)) {
     const sshMatch = /^ssh:\/\/(?:[^@\s/]+@)?([^/:\s]+)(?::\d+)?\/(.+)$/i.exec(value);
     if (sshMatch) return toRepositoryRef(sshMatch[1], sshMatch[2]);
     try {
@@ -77,7 +77,7 @@ export function parseRepositoryRef(
     }
   }
 
-  if (value.startsWith('http://') || value.startsWith('https://')) {
+  if (/^https?:\/\//i.test(value)) {
     try {
       const parsed = new URL(value);
       if (!parsed.host) return null;

@@ -1,14 +1,14 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { ProjectMainPanel } from '@renderer/features/projects/components/main-panel/main-panel';
-import { ProjectMenuItems, ProjectTabMenu, projectHasMenu } from '@renderer/features/projects/components/project-menu';
 import { getProjectStore, projectDisplayName } from '@renderer/features/projects/stores/project-selectors';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
+import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { ChatEmptyContent, ChatPartSlot, ChatSlot } from '@renderer/lib/chat-slot';
 import { cancelComposerVerb, composerVerbLook } from '@renderer/features/sessions/composer-verb-tag';
 import { composerDrafts, projectDraftKey } from '@renderer/features/sessions/composer-drafts';
@@ -16,12 +16,14 @@ import { ProjectTaskComposer } from '@renderer/features/projects/components/main
 import { setComposerVerb, takeComposerCarry, useComposerVerb } from '@/lib/composerVerbBridge';
 import { useProjectFolderStage } from '@renderer/features/projects/components/main-panel/project-folder-stage';
 import { useFloatingCardKeys } from './floating-card-keys';
-import { chatTabHasActions } from '@renderer/features/chats/chat-tab-menu-items';
+import { ChatTabMenuItems, chatTabHasActions } from '@renderer/features/chats/chat-tab-menu-items';
 import { ChatPanes, ChatTabChip } from '@renderer/features/chats/chat-tabs/chat-panes';
 import { rpcOn } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { log } from '@renderer/utils/logger';
+import { readArchivedGroups, subscribeArchivedGroups } from '@/lib/archivedGroupsRead';
 import { screenLayout } from './screen-layout';
+import { leaveDissolvedProject } from './screen-layout-actions';
 
 /**
  * 一个项目占一块(gugu-dev#181「块与页签」):顶上一条页签条(和会话块同一套),第一枚是项目群,不能关;
@@ -40,12 +42,19 @@ export const ProjectBlock = observer(function ProjectBlock({
   blockActions?: ReactNode;
 }) {
   const { translate } = useSessionMessages();
-  const { isLeftOpen } = useWorkspaceLayoutContext();
+  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const corners = screenLayout.corners(blockId);
   const focused = screenLayout.focusedBlockId === blockId;
   const label = projectDisplayName(getProjectStore(projectId)) ?? translate('projects.fallbackName');
-  const chatId = projectGroupsStore.chatIdOf(projectId);
+  const account = accountProjectsStore.projectOfLocal(projectId);
+  const chatId = account?.chatId;
   const verb = useComposerVerb(chatId);
+  // #2548 这个项目的群解散了(这台解散它那一下答了、聊天列表读到它归档,或账号上那份读成归档):项目不在了,这一块收掉、正看着就回首页。
+  const archivedGroups = useSyncExternalStore(subscribeArchivedGroups, readArchivedGroups);
+  const dissolved = !!account && (account.archived || archivedGroups.has(account.chatId));
+  useEffect(() => {
+    if (dissolved) leaveDissolvedProject(projectId);
+  }, [dissolved, projectId]);
   // 项目就是群(gugu-dev#181):项目一摆上屏,它的群就该在 —— 新建的项目一进来就建好(只有自己一个人),
   // 老项目没有群的也在这时补上。幂等;建好了由绑定变更事件刷新各处。
   useEffect(() => {
@@ -55,23 +64,21 @@ export const ProjectBlock = observer(function ProjectBlock({
   }, [projectId]);
   const projectChip = (
     <TabSlot data-project-block-tab={projectId}>
-      <ProjectTabMenu projectId={projectId} chatId={null}>
-        <TabChip isActive isFocusedPane={focused} label={label} />
-      </ProjectTabMenu>
+      <TabChip isActive isFocusedPane={focused} label={label} />
     </TabSlot>
   );
-  // 项目群还没绑上(刚建、还在读):只有项目那一枚,正中是项目首页。
+  // 项目群还没绑上(刚建、账号上还没记上):只有项目那一枚,正中是项目首页;账号上的项目还在头一次读 = 先空着(gugu-dev#181)。
   if (!chatId) {
     return (
       <>
         <TabStripShell
-          reserveShellRestoreLane={corners.topLeft && !isLeftOpen}
+          reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
           actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{blockActions}</TabBarActionRow>}
         >
           {projectChip}
         </TabStripShell>
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-project-block={projectId}>
-          {projectGroupsStore.bindingKnown(projectId) ? <ProjectMainPanel projectId={projectId} /> : null}
+          {accountProjectsStore.status !== 'loading' ? <ProjectMainPanel projectId={projectId} /> : null}
         </div>
       </>
     );
@@ -80,14 +87,14 @@ export const ProjectBlock = observer(function ProjectBlock({
     <ChatPanes
       chatId={chatId}
       blockId={blockId}
-      reserveShellRestoreLane={corners.topLeft && !isLeftOpen}
+      reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
       actionsSlot={
         <TabBarActionRow atWindowEdge={corners.topRight}>
           <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />
           {blockActions}
         </TabBarActionRow>
       }
-      // 项目群那一枚写项目名;点它 = 看群(并排着的那一页照旧在旁边),右键是项目的菜单。
+      // 项目群那一枚写项目名;点它 = 看群(并排着的那一页照旧在旁边)。它和别的群页签一样没有右键菜单:项目的文件夹在「文件」的电脑文件里打开,移除项目在侧栏那一行的右键里。
       chip={({ tab, host }) => (
         <ChatTabChip
           tab={tab}
@@ -95,7 +102,7 @@ export const ProjectBlock = observer(function ProjectBlock({
           focused={focused}
           data-project-block-tab={projectId}
           label={label}
-          menu={projectHasMenu(projectId) || chatTabHasActions(chatId) ? <ProjectMenuItems projectId={projectId} chatId={chatId} /> : undefined}
+          menu={chatTabHasActions(chatId) ? <ChatTabMenuItems chatId={chatId} /> : undefined}
         />
       )}
       body={

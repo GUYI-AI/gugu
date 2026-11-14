@@ -37,13 +37,13 @@ export function projectSessionPendingInput(previous: PendingPrompt | null, sende
     id: input.id, text: input.text, sentAt: input.createdAt, baselineMessageIds: input.baseline, afterTurnId: input.afterTurnId,
     attachments: input.files?.map(file => ({ id: file.itemId, name: file.name, href: `gugu-file://${file.itemId}?v=${file.version}`, kind: file.mimeType.startsWith('image/') ? 'image' : 'file' })),
     held: true, delivery: input.failure ? { state: 'waiting', retryable: false, reason: sessionInputWaitingReason(input.failure), error: sessionInputFailureText(input.failure) } : { state: 'sending' },
-  } : previous?.delivery && !(previous.delivery.state === 'failed' && previous.delivery.retryable === true)
+  } : previous?.delivery && !(previous.delivery.state === 'failed' && previous.delivery.retryable === true && !host.some(row => row.messageId === previous.id))
     ? { ...previous, held: true, delivery: { state: 'receiving' } } : null
   if (!prompt) return null
   const promptId = prompt.id
   const receipt = host.find(row => row.messageId === promptId)
   if (receipt?.state === 'failed' || receipt?.state === 'unknown') {
-    prompt = { ...prompt, delivery: { state: receipt.state, retryable: false, error: receipt.failure ? messageForUser(receipt.failure)
+    prompt = { ...prompt, delivery: { state: receipt.state, retryable: receipt.resendable === true, error: receipt.failure ? messageForUser(receipt.failure)
       : i18n.t('message.sendStatus.unknownNotResent', { ns: 'messaging' }) } }
   } else if (!input || receipt?.state === 'accepted' || (receipt && !input.failure)) {
     prompt = { ...prompt, delivery: { state: 'receiving' } }

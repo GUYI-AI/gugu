@@ -4,23 +4,15 @@ import { AssistantPanelError } from '@gugu/core/cloud/assistantPanel';
 import { useEffect, useMemo } from 'react';
 import { assistantPanelAccountId } from '@/lib/assistantPanelBridge';
 import { ASSISTANT_PANEL_CHANGED, useCloudAssistantFiles } from '@/components/assistant/assistant-panel-files';
-import { rpc } from '@renderer/lib/ipc';
 import { appState } from '@renderer/lib/stores/app-state';
 import type { DirectoryEntry } from '@shared/core/fs/fs';
-import {
-  joinPath,
-  parseSkill,
-  splitInstructions,
-  type InstructionsParts,
-  type SkillInfo,
-} from './assistant-files';
+import { joinPath, parseSkill, type SkillInfo } from './assistant-files';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
 import { homeSessions } from './assistant-home-sessions';
 import { isAssistantSession } from './assistant-lineage';
-import { listDirectory, readMemoryNotes, readText, type AssistantMachine, type MemoryEntry } from './assistant-machine';
+import { listDirectory, readText, type AssistantMachine } from './assistant-machine';
 
 export type { MemoryEntry } from './assistant-machine';
-import { TODAY_FILE_NAME, TODAY_REFRESH_MS, TodayReadError, todayReadOf, type TodayRead } from './assistant-today-file';
 
 export type MachineReadiness =
   /** 线连着,可以读。 */
@@ -62,29 +54,6 @@ export function useAssistantMachine(assistantId: string | null, chatId: string |
   return { data,isLoading,error,refetch: () => data?.panel?.invalidate() };
 }
 
-export function useInstructions(machine: AssistantMachine | undefined) {
-  return useQuery<InstructionsParts & { raw: string; revision?: string }>({
-    queryKey: assistantQueryKey(machine?.deviceId ?? '', 'instructions'),
-    queryFn: async () => {
-      const raw = (await readText(machine!, machine!.paths.instructions)) ?? '';
-      return { ...splitInstructions(raw), raw, revision: machine?.panel?.revision(machine.paths.instructions) };
-    },
-    enabled: !!machine,
-    retry: retryAssistantPanelRead,
-    refetchOnWindowFocus: query => isAssistantPanelReadRetryable(query.state.error),
-  });
-}
-
-
-export function useMemoryNotes(machine: AssistantMachine | undefined) {
-  return useQuery<{ notes: MemoryEntry[]; index: string | null }>({
-    queryKey: assistantQueryKey(machine?.deviceId ?? '', 'memory'),
-    queryFn: () => readMemoryNotes(machine!),
-    enabled: !!machine,
-    retry: retryAssistantPanelRead,
-    refetchOnWindowFocus: query => isAssistantPanelReadRetryable(query.state.error),
-  });
-}
 
 export type SkillEntry = SkillInfo & { path: string; modifiedAt: string | null };
 
@@ -111,44 +80,10 @@ export function useOwnSkills(machine: AssistantMachine | undefined) {
   });
 }
 
-export function useDirectory(machine: AssistantMachine | undefined, dir: string | null) {
-  return useQuery<DirectoryEntry[]>({
-    queryKey: assistantQueryKey(machine?.deviceId ?? '', 'dir', dir),
-    queryFn: () => listDirectory(machine!, dir!),
-    enabled: !!machine && !!dir,
-    retry: retryAssistantPanelRead,
-    refetchOnWindowFocus: query => isAssistantPanelReadRetryable(query.state.error),
-  });
-}
-
-export function useInvalidateAssistant(deviceId: string | null) {
-  const client = useQueryClient();
-  return (...parts: unknown[]) => client.invalidateQueries({ queryKey: assistantQueryKey(deviceId ?? '', ...parts) });
-}
-
 function entryTime(entry: DirectoryEntry): string | null {
   const value = (entry as { modifiedAt?: unknown }).modifiedAt;
   if (value instanceof Date) return value.toISOString();
   if (typeof value === 'string') return value;
   if (typeof value === 'number') return new Date(value).toISOString();
   return null;
-}
-
-/**
- * 「今天」页那一份(today.json,在和它那条私聊的文件夹里;assistant-today-file.ts)。
- * 桌面在主进程读(chat-folder-text.ts),❌ 叫醒云电脑:它睡着也照样看得到。
- * 它早晚改这一份;此刻没有「文件夹变了」的推送到这棵树,每分钟再问一次(与「动态」页刷新信息流同一个节奏)。
- */
-export function useTodayFile(chatId: string | null) {
-  return useQuery<TodayRead>({
-    queryKey: ['assistant', 'today', chatId],
-    queryFn: async () => {
-      const result = await rpc.extensions.readChatFolderText({ chat: chatId!, name: TODAY_FILE_NAME });
-      if (!result.success) throw new TodayReadError(result.kind, result.error);
-      return todayReadOf(result.data);
-    },
-    enabled: !!chatId,
-    refetchInterval: TODAY_REFRESH_MS,
-    retry: 1,
-  });
 }

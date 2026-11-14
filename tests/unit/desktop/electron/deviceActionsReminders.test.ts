@@ -36,7 +36,6 @@ function setup(answer: Answer, connected = true) {
     jxa: vi.fn() as unknown as FamilyDeps['jxa'],
     exec: vi.fn(),
     macHelper: () => helper,
-    cua: () => ({ available: () => ({ ok: false, message: 'no cua-driver' }), callTool: vi.fn(), stop: () => undefined, dispose: () => undefined }),
   }
   const store = createDeviceActionGrantsStore(path.join(fs.mkdtempSync(path.join(dir, 'grants-')), 'grants.json'))
   if (connected) store.setGroup('reminders', true)

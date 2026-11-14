@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { FirstRunHintId } from '@/lib/firstRunHints'
+import type { FirstRunHintId, FirstRunHintsProgress } from '@/lib/firstRunHints'
 
 export type HintDevice = 'phone' | 'desktop'
 export type HintTarget = { id: FirstRunHintId; anchor: HTMLElement; space: Element | null }
-type HintEntry = { id: FirstRunHintId; anchor: string; use: string }
+/** `anchor` null: the device has no place to draw this hint, only a way to use what it is about. */
+type HintEntry = { id: FirstRunHintId; anchor: string | null; use: string }
 const marker = (device: HintDevice, id: FirstRunHintId) => `[data-first-run-hint="${id}"][data-first-run-device="${device}"]`
 
 // The main UI and embedded workspace have separate React roots in the same document.
@@ -15,8 +16,15 @@ export const HINT_ENTRIES: Record<HintDevice, readonly HintEntry[]> = {
   ],
   desktop: [
     { id: 'assistant', anchor: '.gg-sidebar-rail [data-rail="assistant"]', use: '.gg-sidebar-rail [data-rail="assistant"]' },
-    { id: 'collaboration', anchor: marker('desktop', 'collaboration'), use: `${marker('desktop', 'collaboration')} button, [data-project-row]` },
+    // GUYI-AI/gugu#2548 the one-list sidebar has no 「项目」 header to hang this note under, and its design (v33) draws
+    // none: the desktop never shows it. Opening a project still counts as using it, so the phone does not explain it later.
+    { id: 'collaboration', anchor: null, use: '[data-project-row]' },
   ],
+}
+
+/** Every hint this device draws is dismissed: nothing left for its watcher to wait for (a hint it cannot draw never ends it). */
+export function deviceHintsDismissed(device: HintDevice, progress: FirstRunHintsProgress): boolean {
+  return HINT_ENTRIES[device].every(({ id, anchor }) => anchor === null || progress.dismissed.includes(id))
 }
 
 function hintSpaceOf(device: HintDevice, id: FirstRunHintId, anchor: HTMLElement): Element | null {
@@ -39,7 +47,7 @@ export function useFirstRunHintTargets(device: HintDevice, enabled: boolean): re
       setTargets((current) => current.length ? [] : current)
       return
     }
-    const entries = HINT_ENTRIES[device]
+    const entries = HINT_ENTRIES[device].flatMap(({ id, anchor }) => anchor === null ? [] : [{ id, anchor }])
     const shown = new Map<HTMLElement, boolean>()
     const publish = () => {
       const next = entries.flatMap(({ id, anchor }) => {

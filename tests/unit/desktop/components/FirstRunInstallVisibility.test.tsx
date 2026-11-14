@@ -10,7 +10,7 @@ const io = vi.hoisted(() => ({
   readOccupation: vi.fn(async () => ({ key: 'research' })),
   writeOccupation: vi.fn(async () => undefined), writeFirstRunHarness: vi.fn(async () => undefined),
   writeFirstRunTerminalSeen: vi.fn(async () => undefined),
-  finishFirstRun: vi.fn(async () => '2026-10-28T00:00:00Z'), requestAssistantSetupHandoff: vi.fn(),
+  finishFirstRun: vi.fn(async () => '2026-10-28T00:00:00Z'),
 }))
 vi.mock('../../../../apps/desktop/src/lib/firstRun', () => io)
 vi.mock('../../../../apps/desktop/src/lib/firstRunHints', () => ({
@@ -84,13 +84,12 @@ async function startAndVisitSetup() {
   await waitForCondition(() => !!byId('first-run-terminal'), 'terminal again')
   expect(native.install).toHaveBeenCalledOnce()
   await clickElement(byId('first-run-terminal-continue')!)
-  expect(byId('first-run-intro')).not.toBeNull()
+  expect(byId('first-run-tour-choice')).not.toBeNull()
   expect(notice()).toBeNull()
 }
 
 describe('installation notices appear only after full-screen first-run pages', () => {
   async function enterWorkspace() {
-    await clickElement(byId('assistant-intro-later')!)
     expect(byId('first-run-tour-choice')).not.toBeNull()
     expect(notice()).toBeNull()
     await clickElement(byId('first-run-tour-skip')!)
@@ -129,7 +128,6 @@ describe('installation notices appear only after full-screen first-run pages', (
     tourRail.className = 'gg-sidebar-rail'
     tourRail.append(tourEntry)
     document.body.append(tourRail)
-    await clickElement(byId('assistant-intro-later')!)
     await clickElement(byId('first-run-tour-start')!)
     await waitForCondition(() => !!document.querySelector('[data-testid="product-tour-step-settings"]'), 'tour card shown')
     expect(notice()).toBeNull()
@@ -142,23 +140,37 @@ describe('installation notices appear only after full-screen first-run pages', (
     expect(native.install).toHaveBeenCalledOnce()
   })
 
+  // owner 11-12: no step about the assistant in the first run (it is an App; getting to know it happens in the App).
   it.each([
-    ['zh-CN', '咕咕和你的 agent 会用这些称呼你。', '咕咕是你的个人助理，帮你记安排、办事情。', '开通我的咕咕', '上一步', '先逛逛'],
-    ['en-US', 'Gugu and your agents will use these details to address you.', 'Gugu is your personal assistant for plans and everyday tasks.', 'Set up my Gugu', 'Back', 'Look around first'],
-  ])('%s keeps desktop setup descriptions to one sentence and preserves all intro actions', async (locale, profileCopy, introCopy, primary, back, later) => {
+    ['zh-CN', '咕咕和你的 agent 会用这些称呼你。'],
+    ['en-US', 'Gugu and your agents will use these details to address you.'],
+  ])('%s: the desktop first run is profile, agents, terminal, tour choice — four steps, none about the assistant', async (locale, profileCopy) => {
     await i18n.changeLanguage(locale)
     native.install.mockImplementation(() => new Promise(() => {}))
-    await startAndVisitSetup()
-    const intro = byId('first-run-intro')!
-    expect(intro.querySelector('.ta-onb-sub')?.textContent).toBe(introCopy)
-    expect(intro.querySelector('[data-intro-row]')).toBeNull()
-    expect(byId('assistant-intro-primary')?.textContent).toBe(primary)
-    expect(byId('assistant-intro-back')?.textContent).toBe(back)
-    expect(byId('assistant-intro-later')?.textContent).toBe(later)
-    await clickElement(byId('assistant-intro-back')!)
-    await clickElement(byId('first-run-terminal-back')!)
+    const counts: string[] = []
+    const count = () => byId('first-run-step-count')?.textContent ?? null
+    await renderWithAppProviders(harness, createNode(FirstRunGate, { user }, createNode('main', {}, 'Main workspace')), { auth: user })
+    await waitForCondition(() => !!byId('first-run-harness-continue') && !(byId('first-run-harness-continue') as HTMLButtonElement).disabled, 'agent selection ready')
     await clickElement(byId('first-run-harness-back')!)
-    await waitForCondition(() => !!byId('first-run-profile'), 'profile after intro back navigation')
+    await waitForCondition(() => !!byId('first-run-profile'), 'profile page')
     expect(byId('first-run-profile')!.querySelector('.ta-onb-sub')?.textContent).toBe(profileCopy)
+    counts.push(count()!)
+    await clickElement(byId('first-run-profile-continue')!)
+    await waitForCondition(() => !!byId('first-run-harness-continue'), 'agents page')
+    counts.push(count()!)
+    await clickElement(byId('first-run-harness-continue')!)
+    await waitForCondition(() => !!byId('first-run-terminal'), 'terminal page')
+    counts.push(count()!)
+    await clickElement(byId('first-run-terminal-continue')!)
+    await waitForCondition(() => !!byId('first-run-tour-choice'), 'tour choice')
+    counts.push(count()!)
+    expect(counts).toEqual(['1 / 4', '2 / 4', '3 / 4', '4 / 4'])
+    // Nothing on the way introduces or sets up the assistant.
+    expect(byId('first-run-intro')).toBeNull()
+    expect(harness.container.querySelector('[data-testid^="assistant-intro-"]')).toBeNull()
+    // Back from the last page is the terminal page.
+    await clickElement(byId('first-run-tour-back')!)
+    await waitForCondition(() => !!byId('first-run-terminal'), 'terminal again')
+    expect(count()).toBe('3 / 4')
   })
 })

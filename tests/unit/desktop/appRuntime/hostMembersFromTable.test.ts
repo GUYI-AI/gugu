@@ -12,19 +12,39 @@ const names = (host: Record<string, unknown>) =>
   Object.entries(host).flatMap(([key, value]) =>
     value && typeof value === 'object' ? Object.keys(value).map((inner) => `${key}.${inner}`) : typeof value === 'function' ? [key] : []).sort()
 
-const FILES = ['open', 'reopen', 'close', 'list', 'read', 'search', 'recent', 'create', 'remove', 'rename', 'mkdir', 'move', 'watch', 'replace', 'versions', 'readVersion', 'upload'].map((verb) => `appFiles.${verb}`)
+const FILES = ['open', 'reopen', 'close', 'list', 'read', 'readText', 'exists', 'draft', 'writeText', 'search', 'recent', 'create', 'remove', 'rename', 'mkdir', 'move', 'writeChunk', 'watch', 'replace', 'versions', 'readVersion', 'upload'].map((verb) => `appFiles.${verb}`)
 const MESSAGES = ['messages.history', 'messages.search', 'chats.list', 'chats.members']
 // L1 This computer's projects: the desktop's and an App's program's; a phone has none (no member).
 const PROJECTS = ['projects.list']
 const SESSIONS = ['sessions.index', 'sessions.read']
-// 论坛 (9): a page's, on the desktop and the phone alike; never a background page's or a program's.
-const FORUM = ['list', 'read', 'post', 'reply', 'react', 'remove', 'block', 'assign', 'award', 'subscribe', 'unsubscribe'].map((verb) => `forum.${verb}`).concat('onForumChanged')
-const EVERYONE = ['getContext', 'onContextChanged', 'onFilesChanged', 'getAppState', 'onAppStateChanged', 'onAgentsChanged', 'openBrowserTab', 'reportError', 'listAgents', 'readAgentHistory', 'stopAgent', 'dispatch', ...MESSAGES, ...PROJECTS, ...SESSIONS, 'readData', 'writeData', 'listData', 'callProgram', 'onProgramNotification', 'notify', 'onNotificationClicked', 'linkTo', 'onLink', ...FILES, 'appFiles.canDelete']
+// `gugu.prompts` (34): the person's own prompts, on the desktop's pages and programs; a phone has none.
+const PROMPTS = ['prompts.list', 'prompts.save', 'prompts.delete']
+// `gugu.cloud` (31): a read is anyone's; writing, hearing and picking an agent are a page's, on the desktop and the phone alike.
+const CLOUD_PAGE = ['cloud.write', 'cloud.subscribe', 'cloud.unsubscribe', 'onCloudHeard', 'pickAgent']
+const EVERYONE = ['cloud.read', 'getContext', 'onContextChanged', 'onFilesChanged', 'getAppState', 'onAppStateChanged', 'onAgentsChanged', 'openBrowserTab', 'reportError', 'listAgents', 'readAgentHistory', 'stopAgent', 'dispatch', ...MESSAGES, ...PROJECTS, ...SESSIONS, ...PROMPTS, 'readData', 'writeData', 'listData', 'callProgram', 'onProgramNotification', 'notify', 'onNotificationClicked', 'linkTo', 'onLink', ...FILES, 'appFiles.canDelete']
+// #1927 (42) The bound conversation's agent resources: a page's, on the desktop only; a phone and a program have none.
+const BINDING_RESOURCES = ['bindings.resources', 'bindings.resource', 'bindings.watch', 'bindings.save', 'bindings.remove', 'onBindingResources',
+  // 50: managing them, as the assistant's own pages do.
+  'bindings.upload', 'bindings.createFolder', 'bindings.rename', 'bindings.removeFolder', 'bindings.transcribeVoiceNote', 'bindings.removeVoiceNote', 'bindings.exportVoiceNote']
+const VOICE_NOTE = ['voiceNote.start', 'voiceNote.pause', 'voiceNote.resume', 'voiceNote.stop', 'voiceNote.retry', 'voiceNote.openMicSettings', 'voiceNote.status', 'voiceNote.watch', 'onVoiceNote']
 const MODAL = ['modal.open', 'modal.close', 'modal.key', 'onModalFocus']
 const PROJECTION_VIEWER = ['projection.watch', 'projection.unwatch', 'projection.send', 'onProjection']
 const PROJECTION_SOURCE = ['projection.create', 'projection.publish', 'projection.close', 'projection.closed', 'projection.inputResult', 'onProjectionSource']
-const PAGE_ONLY = ['navigationGo', 'showContextMenu', 'appFiles.viewPreferences', 'appFiles.keep', ...MODAL, ...FORUM, ...PROJECTION_VIEWER, 'openLink', 'onCommand', 'setTabTitle', 'setTabBadge', 'sendToBackground', 'onBackgroundMessage', 'showMessage', 'showSession', 'clipboard.writeText', 'appFiles.openWith', 'appFiles.download', 'appFiles.forward']
-const PHONE = ['navigationGo', 'showContextMenu', 'appFiles.viewPreferences', 'appFiles.keep', 'appFiles.canDelete', ...MODAL, 'getAppState', 'onAppStateChanged', 'onAgentsChanged', 'listAgents', 'linkTo', 'openLink', 'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', ...MESSAGES, ...SESSIONS, ...FORUM, 'setTabTitle', 'setTabBadge', 'onCommand', 'onLink', 'showMessage', 'showSession', 'clipboard.writeText', 'readData', 'writeData', 'listData', 'callProgram', ...FILES, 'appFiles.openWith', 'appFiles.download', 'appFiles.forward']
+// #1607 shared task resources (API 36): a page mounts a task page, views projection media and posts its surface; a
+// program leases task pages, opens surfaces and shows the task's pages.
+const TASK_PAGE_VIEWER = ['pages.mount', 'pages.unmount', 'projectionMedia.open', 'projectionMedia.answer', 'projectionMedia.sign', 'projectionMedia.close', 'surfaces.post', 'taskMessage']
+const TASK_PROGRAM = ['pages.acquire', 'pages.send', 'pages.maintain', 'pages.presentation', 'pages.filePayloads', 'pages.release', 'onTaskPage', 'surfaces.open', 'surfaces.update', 'surfaces.close', 'surfaces.screen', 'onSurface', 'showTaskPages']
+// #1925 (44) The bound conversation's assistant: a page's, on the desktop only (the phone frame has none).
+const ASSISTANT = ['assistant.status', 'assistant.open', 'assistant.advanceSetup', 'assistant.rename', 'assistant.figure', 'assistant.connect', 'onAssistantChanged']
+// #1925 (44) The host's own toast: a page's, while on screen and focused.
+const PAGE_ONLY = ['bindings.get', 'bindings.list', 'bindings.read', 'bindings.surface', 'bindings.setPanel', 'bindings.onSurface', ...BINDING_RESOURCES, 'bindings.schedules', 'bindings.watchSchedules', 'bindings.controlSchedule', 'onSchedulesChanged', ...ASSISTANT, 'toast', ...VOICE_NOTE, 'bindings.work', 'bindings.openWork', 'bindings.closeWork', 'bindings.onWork', 'navigationGo', 'navigationClaimBack', 'onBack', 'showContextMenu', 'appFiles.viewPreferences', 'appFiles.keep', 'appFiles.reveal', 'appFiles.openInApps', 'appFiles.openIn', 'appFiles.downloadStop', 'onDownloadProgress', ...MODAL, ...CLOUD_PAGE, ...PROJECTION_VIEWER, ...TASK_PAGE_VIEWER, 'openLink', 'onCommand', 'setTabTitle', 'setTabBadge', 'setTabDirty', 'sendToBackground', 'onBackgroundMessage', 'showMessage', 'showSession', 'clipboard.writeText', 'appFiles.openWith', 'appFiles.download', 'appFiles.forward']
+const PHONE = ['cloud.read', 'navigationGo', 'navigationClaimBack', 'onBack', 'showContextMenu', 'appFiles.viewPreferences', 'appFiles.keep', 'appFiles.canDelete', ...MODAL, 'getAppState', 'onAppStateChanged', 'onAgentsChanged', 'listAgents', 'linkTo', 'openLink', 'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', ...MESSAGES, ...SESSIONS, ...CLOUD_PAGE, 'setTabTitle', 'setTabBadge', 'setTabDirty', 'onCommand', 'onLink', 'showMessage', 'showSession', 'clipboard.writeText', 'readData', 'writeData', 'listData', 'callProgram', ...FILES, 'appFiles.openWith', 'appFiles.download', 'appFiles.forward',
+  // API 49: the conversation binding, answered by the phone's own binding host (the recorder's and 50's managing verbs:
+  // `unsupported`); the toast.
+  'bindings.get', 'bindings.list', 'bindings.read', 'bindings.surface', 'bindings.setPanel', 'bindings.onSurface',
+  ...BINDING_RESOURCES,
+  'bindings.schedules', 'bindings.watchSchedules', 'bindings.controlSchedule', 'onSchedulesChanged',
+  'bindings.work', 'bindings.openWork', 'bindings.closeWork', 'bindings.onWork', ...ASSISTANT, 'toast', ...VOICE_NOTE]
 
 const desktop = (caller: 'page' | 'background') => hostMembers(caller, () => true, vi.fn(), hostEventHub().on)
 const overMessages = (flags: { framed?: true; program?: true; session?: true }) => messageHost({ post: vi.fn(), listen: () => undefined }, flags) as Record<string, unknown>
@@ -38,7 +58,7 @@ describe('one table, the members each host had', () => {
   it('the phone exposes device calls everywhere and task notifications in task tabs; programs expose the shared index', () => {
     expect(names(overMessages({ framed: true }))).toEqual([...PHONE].sort())
     expect(names(overMessages({ framed: true, session: true }))).toEqual([...PHONE, 'onProgramNotification'].sort())
-    expect(names(overMessages({ program: true }))).toEqual(['getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', 'linkTo', ...MESSAGES, ...PROJECTS, ...SESSIONS, ...FILES, 'appFiles.canDelete', ...PROJECTION_SOURCE].sort())
+    expect(names(overMessages({ program: true }))).toEqual(['cloud.read', 'cloud.programWrite', 'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', 'linkTo', ...MESSAGES, ...PROJECTS, ...SESSIONS, ...PROMPTS, ...FILES, 'appFiles.canDelete', ...PROJECTION_SOURCE, ...TASK_PROGRAM].sort())
   })
 
   it('a member asks its verb with its arguments packed one way, on every host', () => {

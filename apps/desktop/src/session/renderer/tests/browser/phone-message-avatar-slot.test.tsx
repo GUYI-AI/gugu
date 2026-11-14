@@ -18,7 +18,8 @@ vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [d
   projects: [{ localProjectId: 'project', chatId: 'project-chat', name: 'task-project', rootPath: '/project', createdAt: '2026-11-02T00:00:00Z', folders: [] }],
 })] }) }))
 vi.mock('@/hooks/useAgentDisplayStatus', () => ({ useAgentDisplayStatuses: () => ({ codex: 'error' }) }))
-// The folder badge reads the project's tasks (the desktop project dot's count): one waits for approval.
+// The project group's badge reads the project's tasks (the desktop project dot's count): one waits for approval.
+// #2600 the row keeps the group's own avatar (here the group default) — no folder cover in its place.
 vi.mock('@/session/shared/remote-sessions/session-directory', async original => ({
   ...await original<typeof import('@/session/shared/remote-sessions/session-directory')>(),
   useLiveDeviceSessions: () => ({ host: { projects: [], cached: false, loading: false, error: null, sessions: [
@@ -35,7 +36,7 @@ beforeEach(() => { harness = createReactHarness() })
 afterEach(() => { harness.cleanup(); delete document.documentElement.dataset.theme })
 
 const waiting: NeedsYouTask = {
-  deviceId: 'host', machine: 'Test host', local: false, phoneHost: false,
+  deviceId: 'host', machine: 'Test host', local: false, phoneHost: false, handled: null,
   session: { conversationId: 'waiting', title: 'Codex 1', agent: { userId: 'codex' }, status: { status: 'needs_user', detail: 'approval' }, runtime: 'acp', supported: true } as NeedsYouTask['session'],
 }
 const assistant: PhoneAssistantState = { available: true, assistant: null, chatId: null, cloudDeviceId: null,
@@ -49,7 +50,7 @@ it.each(['light', 'dark'].flatMap(theme => [360, 390].map(width => ({ theme, wid
     await renderWithAppProviders(harness,
       <div data-phone-shell="" style={{ width, padding: 8 }}><div data-phone-root-list="chats"><div role="listbox">
         <PhoneAssistantRow state={assistant} onOpen={() => {}} />
-        <div data-needs-you-list-slot=""><NeedsYouTaskRow task={waiting} onClick={() => {}} onKeyDown={() => {}} /></div>
+        <div data-needs-you-list-slot=""><NeedsYouTaskRow task={waiting} emphasis onClick={() => {}} onKeyDown={() => {}} /></div>
         <ListRow mobile title="task-project" leading={<PhoneProjectChatAvatar chat={projectChat} mobile><Avatar name="group" variant="group" size={48} /></PhoneProjectChatAvatar>} />
         <ListRow mobile title="ordinary agent" leading={<Avatar name="ordinary agent" seed="codex" size={48} isAgent agentStatus="error" harnessBadge={false} />} />
       </div></div></div>,
@@ -62,20 +63,22 @@ it.each(['light', 'dark'].flatMap(theme => [360, 390].map(width => ({ theme, wid
     for (const row of rows) expect(row.getBoundingClientRect().width).toBeGreaterThan(300)
     for (const slot of slots) { expect(slot.width).toBe(48); expect(slot.height).toBe(48); expect(slot.x).toBe(slots[0].x) }
     for (const title of titles) expect(title.x).toBe(slots[0].right + 16)
-    const art = rows.map(row => row.querySelector<HTMLElement>('canvas, svg[viewBox="0 0 36 36"], svg.gg-project-avatar')!.getBoundingClientRect())
+    const art = rows.map(row => row.querySelector<HTMLElement>('canvas, svg[viewBox="0 0 36 36"], [data-avatar-empty]')!.getBoundingClientRect())
     art.forEach((rect, i) => {
       expect(rect.width).toBe(48); expect(rect.height).toBe(48)
       expect(rect.x + rect.width / 2).toBe(slots[i].x + slots[i].width / 2)
       expect(rect.y + rect.height / 2).toBe(slots[i].y + slots[i].height / 2)
     })
     const pending = rows[1].querySelector<HTMLElement>('.gg-phone-message-avatar-badge')!.getBoundingClientRect()
-    const folder = rows[2].querySelector<HTMLElement>('.gg-phone-message-avatar-badge')!.getBoundingClientRect()
+    const project = rows[2].querySelector<HTMLElement>('.gg-phone-message-avatar-badge')!.getBoundingClientRect()
     const ordinary = rows[3].querySelector<HTMLElement>('.av-status')!.getBoundingClientRect()
-    for (const [badge, index] of [[pending, 1], [folder, 2], [ordinary, 3]] as const) {
+    for (const [badge, index] of [[pending, 1], [project, 2], [ordinary, 3]] as const) {
       expect(badge.x + badge.width / 2 - slots[index].right).toBe(-5)
       expect(badge.y + badge.height / 2 - slots[index].top).toBe(5)
     }
-    expect(rows[1].querySelector('.gg-list-row-trailing')).toBeNull()
+    // The status mark lives in the avatar corner, never at the row's end; an unread row's end is its count badge.
+    expect(rows[1].querySelector('.gg-list-row-trailing [role="img"]')).toBeNull()
+    expect(rows[1].querySelector('.gg-list-row-trailing [data-shape="count"]')?.textContent).toBe('1')
   },
 )
 

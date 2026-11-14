@@ -64,7 +64,7 @@ const PROVIDER_RULES: readonly ProviderRule[] = [
     id: 'anthropic',
     name: 'Anthropic',
     iconKey: 'claude',
-    match: /\b(claude|opus|sonnet|haiku)(?![a-z])/,
+    match: /\b(claude|opus|sonnet|haiku|fable)(?![a-z])/,
   },
   { id: 'google', name: 'Google', iconKey: 'gemini', match: /\b(gemini|gemma)(?![a-z])/ },
   { id: 'xai', name: 'xAI', iconKey: 'xai', match: /\bgrok(?![a-z])/ },

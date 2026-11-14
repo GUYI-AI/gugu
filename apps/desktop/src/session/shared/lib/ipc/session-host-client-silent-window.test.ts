@@ -1,6 +1,8 @@
 // 窗口多半已死(dropIfSilent):发问前当场判,判中就先重开、这一问发在新窗口上;没到门槛就照用原窗口,❌ 白白重开。
-// 看门狗按拍判的是同一个判据。两个信号各有门槛,都从宿主的关窗规矩推出来(宿主一整拍没收到这边任何东西就关):
-//   收帧:两拍(HOST_WS_STALE_MS);这边被冻住(看门狗没跑到):一拍 − 这边的心跳周期。钟是注入的,不碰墙钟。
+// 看门狗按拍判的是同一个判据。只认对面的证据,门槛从宿主的关窗规矩推出来(宿主一整拍没收到这边任何东西就关):
+//   收帧:这边醒着时两拍(HOST_WS_STALE_MS)一帧都没有;这边被冻住超过两拍:宿主一定关了,先重开。
+//   冻住在「一拍 − 心跳周期」到两拍之间:宿主可能关了也可能没有 —— 当场发心跳探活,由管道裁决,❌ 自己判死。
+//   钟是注入的,不碰墙钟。
 import { describe, expect, it, vi } from 'vitest';
 import { decodeHostWsMessage, encodeHostWsMessage, HOST_WS_HEARTBEAT_MS, HOST_WS_STALE_MS } from './host-ws-protocol';
 import { createSessionHostClient, SESSION_HOST_CLIENT_HEARTBEAT_MS, type SessionHostPipeOpener } from './session-host-client';
@@ -23,6 +25,7 @@ function fakeOpener() {
   return { open, pipes };
 }
 
+const heartbeatsOn = (pipe: { sent: Array<{ t: string }> }) => pipe.sent.filter((m) => m.t === 'hb').length;
 const invokesOn = (pipe: { sent: Array<{ t: string; channel?: string }> }) => pipe.sent.filter((m) => m.t === 'invoke').map((m) => m.channel);
 const settle = async () => {
   for (let i = 0; i < 5; i += 1) await Promise.resolve();
@@ -63,26 +66,29 @@ describe('session host client: silent window judged when asking', () => {
 
   for (const path of PATHS) {
     describe(path.name, () => {
-      it(`冻住刚超过门槛(${path.frozenMs / 1000} s)醒来就问:缓着的旧帧不算数,先重开,这一问发在新窗口上`, async () => {
-        const pipe = await frozenThenAsk(path.heartbeatMs, path.frozenMs / 1000 + 1);
+      for (const frozenS of [path.frozenMs / 1000 + 1, 25, 35, HOST_WS_STALE_MS / 1000]) {
+        it(`冻住 ${frozenS} s(宿主可能关了也可能没关)醒来就问:照用原窗口,先发一次心跳探活,❌ 自己判死`, async () => {
+          const pipe = await frozenThenAsk(path.heartbeatMs, frozenS);
+          expect(pipe.pipes).toHaveLength(1);
+          expect(pipe.closedAtAsk).toEqual([false]);
+          expect(heartbeatsOn(pipe.pipes[0]!)).toBeGreaterThan(0);
+          expect(invokesOn(pipe.pipes[0]!)).toEqual(['sessionTimeline.sessionsSubscribe']);
+        });
+      }
+
+      it('冻住超过两拍(宿主一定已经关了窗)醒来就问:缓着的旧帧不算数,先重开,这一问发在新窗口上', async () => {
+        const pipe = await frozenThenAsk(path.heartbeatMs, HOST_WS_STALE_MS / 1000 + 1);
         expect(pipe.pipes).toHaveLength(2);
         expect(pipe.closedAtAsk).toEqual([true, false]);
         expect(invokesOn(pipe.pipes[0]!)).toEqual([]);
         expect(invokesOn(pipe.pipes[1]!)).toEqual(['sessionTimeline.sessionsSubscribe']);
       });
 
-      for (const frozenS of [25, 35]) {
-        it(`冻住 ${frozenS} s(宿主一拍到两拍之间)醒来就问:先重开`, async () => {
-          const pipe = await frozenThenAsk(path.heartbeatMs, frozenS);
-          expect(pipe.pipes).toHaveLength(2);
-          expect(invokesOn(pipe.pipes[1]!)).toEqual(['sessionTimeline.sessionsSubscribe']);
-        });
-      }
-
-      it(`冻住不到门槛(${path.frozenMs / 1000 - 2} s):照用原窗口,❌ 重开`, async () => {
+      it(`冻住不到门槛(${path.frozenMs / 1000 - 2} s):照用原窗口,不探活`, async () => {
         const pipe = await frozenThenAsk(path.heartbeatMs, path.frozenMs / 1000 - 2);
         expect(pipe.pipes).toHaveLength(1);
         expect(pipe.closedAtAsk).toEqual([false]);
+        expect(heartbeatsOn(pipe.pipes[0]!)).toBe(0);
         expect(invokesOn(pipe.pipes[0]!)).toEqual(['sessionTimeline.sessionsSubscribe']);
       });
 
@@ -121,7 +127,8 @@ describe('session host client: silent window judged when asking', () => {
       const pipe = fakeOpener();
       const client = createSessionHostClient(pipe.open, { now: () => t });
       await client.connect();
-      for (let i = 0; i < HOST_WS_STALE_MS / 1000 + 6; i += 1) {
+      // 静默量到看门狗上一拍为止(之后的帧可能还排在队里),所以最多晚一拍(HOST_WS_HEARTBEAT_MS / 4)才判。
+      for (let i = 0; i < (HOST_WS_STALE_MS + HOST_WS_HEARTBEAT_MS / 2) / 1000 + 1; i += 1) {
         t += 1000;
         await vi.advanceTimersByTimeAsync(1000);
       }
@@ -133,19 +140,54 @@ describe('session host client: silent window judged when asking', () => {
     }
   });
 
-  it('冻住醒来、还没人发问:看门狗那一拍先判再记,当场重开(先记再判就抹掉了这段空白)', async () => {
+  it('冻住超过两拍醒来、还没人发问:看门狗那一拍先判再记,当场重开(先记再判就抹掉了这段空白)', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'setTimeout'] });
     try {
       let t = 1_000_000;
       const pipe = fakeOpener();
       const client = createSessionHostClient(pipe.open, { now: () => t });
       await client.connect();
-      t += HOST_WS_HEARTBEAT_MS + 5000;
+      t += HOST_WS_STALE_MS + 5000;
       pipe.pipes[0]!.frame(hb());
       await vi.advanceTimersByTimeAsync(HOST_WS_HEARTBEAT_MS / 4);
       expect(pipe.pipes).toHaveLength(2);
       expect(pipe.pipes[0]!.closed).toBe(true);
       expect(client.state()).toBe('open');
+      client.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // 2026-11-12 Chole:长回复把渲染进程占了约 20 s。宿主的帧照常到了,只是排在队里还没处理;看门狗醒来那一拍
+  // 先跑到 —— 它看见的「多久没收到帧」量的是这边自己忙了多久。旧判据在这一拍把六台机器的窗口全关了。
+  it('这边忙了 20 s、宿主的帧还排在队里:看门狗醒来那一拍 ❌ 判死,探活;帧处理完以后照常', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'setTimeout'] });
+    try {
+      let t = 1_000_000;
+      const pipe = fakeOpener();
+      const client = createSessionHostClient(pipe.open, { now: () => t, heartbeatMs: SESSION_HOST_CLIENT_HEARTBEAT_MS });
+      await client.connect();
+      // 醒着跑了 25 s,最后一帧在 5 s 时到
+      for (let i = 0; i < 25; i += 1) {
+        t += 1000;
+        if (i === 4) pipe.pipes[0]!.frame(hb());
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      // 忙 20 s:钟往前走,计时器一拍都没跑,帧也没处理
+      t += 20_000;
+      // 醒来后头一拍(设备通道看门狗一拍 = frozenMs / 4)
+      await vi.advanceTimersByTimeAsync((HOST_WS_HEARTBEAT_MS - SESSION_HOST_CLIENT_HEARTBEAT_MS) / 4);
+      expect(pipe.pipes).toHaveLength(1);
+      expect(heartbeatsOn(pipe.pipes[0]!)).toBeGreaterThan(0);
+      // 排着的帧处理完,之后照常
+      pipe.pipes[0]!.frame(hb());
+      for (let i = 0; i < 10; i += 1) {
+        t += 1000;
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      expect(pipe.pipes).toHaveLength(1);
+      expect(pipe.pipes[0]!.closed).toBe(false);
       client.close();
     } finally {
       vi.useRealTimers();

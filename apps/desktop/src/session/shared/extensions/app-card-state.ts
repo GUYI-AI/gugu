@@ -25,11 +25,14 @@ export function newestPackageOf<P extends VersionedPackage>(packages: Iterable<P
 export type CardOffer =
   /** Not here: install this card's version — or the newer one around (`newer`), never an older one. */
   | { action: 'install'; version: string; newer: boolean }
-  /** An older version is here, from a chat: update it to the newest around. */
+  /**
+   * An older version is here: update it to the newest around — one from the market or a folder too, the install asking in
+   * full and saying what it replaces (E-05).
+   */
   | { action: 'update'; version: string }
   /**
-   * An older version is here that did not come from a chat (the market's, gugu's own, a folder's — E-05): a package from
-   * chat cannot replace it, so no update is offered — what is here is said (`from`, none when its origin was never kept).
+   * An older version is here that gugu ships (E-05): a package from chat cannot replace it, so no update is offered —
+   * what is here is said (`from`).
    */
   | { action: 'elsewhere'; installedVersion: string; from: ExtensionOrigin | undefined }
   /** This version or a later one is here: open it (`installedNewer`: the later one here, said — never a downgrade). */
@@ -52,8 +55,8 @@ export function cardOffer(args: {
 }
 
 /**
- * The group's newer package of an App installed here (the panel's banner, F66); null when what is here is as new, or did
- * not come from a chat — a package from chat cannot replace that one (E-05).
+ * The group's newer package of an App installed here (the panel's banner, F66); null when what is here is as new, or is
+ * one gugu ships — a package from chat cannot replace that one (E-05).
  */
 export function groupUpdateFor<P extends VersionedPackage>(
   installed: { version: string; origin: ExtensionOrigin | undefined } | null,

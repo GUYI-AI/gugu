@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { subscribeBackendRecovered } from '@gugu/core/cloud/backendReachability'
 import { useTranslation } from 'react-i18next'
 import { platform } from '../../platform'
 import { useToast } from '../toastContext'
@@ -28,6 +29,11 @@ export function MessageLoadFailure({ error, onRetry, inline }: { error: Error; o
       (cause) => toast(t('actions.copyFailed', { ns: 'common' }), 'error', safeFailureLine(String((cause as Error)?.message ?? cause))),
     )
   }
+  // While this read stands failed, the backend answering again (backendReachability) reads it again — the same edge
+  // that resends failed messages; ❌ the person has to notice the banner and press Retry.
+  const retryRef = useRef(onRetry)
+  retryRef.current = onRetry
+  useEffect(() => subscribeBackendRecovered(() => { void retryRef.current().catch(() => undefined) }), [])
   const retry = () => {
     setRetrying(true)
     // 重试的结果由线自己记(成了清掉、又失败换成新原因),这里只管按钮别连点。

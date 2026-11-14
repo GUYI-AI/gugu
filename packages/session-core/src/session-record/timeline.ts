@@ -10,7 +10,7 @@ import { AcpTranscriptParser } from '../acp/reducer';
 import { upstreamSaid } from '../acp/upstream-said';
 import { redactSecrets } from '@gugu/session-shared/logger';
 import type { ParserState } from '../acp/reducer/reducer';
-import type {
+import type { TurnStart,
   PendingRequest,
   RecordBoundary,
   RecordCursor,
@@ -26,11 +26,25 @@ import type {
   TimelineBatch,
   TimelineOlderResult,
   TimelineSnapshot,
+  TimelineSubagent,
   TurnPatch
 } from './contract';
-import { TOOL_IMAGE_FETCH_LIMIT } from './contract';
+import { TIMELINE_SUBAGENT_STEPS, TIMELINE_SUBAGENT_TEXT, TOOL_IMAGE_FETCH_LIMIT } from './contract';
+
+type PublishedSubagent = {
+  source: readonly ToolNode[];
+  steps: Map<string, { step: ToolNode; seq: number }>;
+  output: string | undefined;
+  reasoning: string | undefined;
+  /** The publish in which its text last changed. */
+  textSeq: number;
+};
+const NO_STEPS: readonly ToolNode[] = [];
 import { questionAnswered, readQuestion } from './sources/question-tools';
 import { findToolImage, findToolItem } from './tool-image';
+import { TIMELINE_ARCHIVE_MAX_SOURCE_BYTES } from './archive-budget';
+import { SESSION_PLAN_ID } from '../acp/models/plan';
+import type { ToolNode } from '../acp/models/turns/tool-calls';
 
 /**
  * 一条已经折算好的时间线的存档。
@@ -47,6 +61,8 @@ export const TIMELINE_ARCHIVE_VERSION = 7;
 
 export type TimelineArchive = {
   readonly version: number;
+  /** Total native transcript bytes consumed, including children; absent in legacy caches. */
+  readonly sourceBytes?: number;
   /** 记录源自己的续读点（含它的身份指纹）。 */
   readonly resume: SessionRecordResume;
   readonly epoch: string;
@@ -96,6 +112,14 @@ export type SessionTimelineDeps = {
    * 能 ⇒ 提问结算带上整份 `questions`(契约里「有 questions 就能代答」)。
    */
   answerableQuestions?: boolean;
+  /** Called after every applied batch, including the initial read (before `createSessionTimeline` returns). A fill drains here. */
+  onApplied?: (timeline: SessionTimeline) => void;
+  /** Where the source starts when no archive is restored (a fill from the tail, `SessionRecordSource.startingAt`). */
+  resume?: SessionRecordResume | null;
+  /** With `resume`: the index of the turn it starts at among the whole record's, so turn ids are the whole read's. */
+  turnIndexBase?: number;
+  /** With `resume`: the timeline state a whole read had where it starts (`TurnStart.timeline`). */
+  carried?: unknown;
 };
 
 /**
@@ -171,6 +195,9 @@ type PublishedTurn = {
 type RecentActionEntry = { id: string; name: string; at: number };
 type QueuedPromptText = Pick<QueuedPrompt, 'id' | 'text' | 'queueEdit' | 'clientMessageId'>;
 
+/** What a fill's turn start carries of the timeline (`TurnStart.timeline`): all but the turns, as before that turn. */
+type CarriedState = { parser: ParserState; lastBoundaryMessageId: string | null; lastAt: number | null };
+
 class RecordTimeline implements SessionTimeline {
   private readonly now: () => number;
   private readonly newEpoch: () => string;
@@ -183,6 +210,12 @@ class RecordTimeline implements SessionTimeline {
   private seenKeys = new Set<string>();
   /** 上一次发布出去的每一轮，按 id。用来判"这一轮到底变了没有"。 */
   private published = new Map<string, PublishedTurn>();
+  /**
+   * Running subagents' calls as last published, by launch card (#2500). `source` is the registry's step list the
+   * entry was built from: the reducer keeps the list and each untouched step by identity, so an unchanged subagent
+   * costs one comparison and a changed one marks only the steps that are new objects.
+   */
+  private publishedSteps = new Map<string, PublishedSubagent>();
   private removed = new Map<string, number>();
   private settlements = new Map<string, Settlement>();
   /**
@@ -227,6 +260,13 @@ class RecordTimeline implements SessionTimeline {
   private suspended = false;
   private resetTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+  /** Turns handed out by `drainSettled`, and the ids of what they own. */
+  private retainedFrom = 0;
+  /** Record position of each held turn's first entry (committed, then active), for a fill's cursor. */
+  private turnStarts: Array<TurnStart | null> = [];
+  private prunedOwners = new Set<string>();
+  private prunedDrops = 0;
+  private resets = 0;
 
   constructor(
     private readonly source: SessionRecordSource,
@@ -244,13 +284,23 @@ class RecordTimeline implements SessionTimeline {
     // 而那几十步没有任何订阅者看得到 —— 首轮统一算一次。
     this.suspended = true;
     const restored = this.restoreArchive(this.deps.archive ?? null);
+    if (!restored && this.deps.resume && this.deps.turnIndexBase) {
+      this.retainedFrom = this.deps.turnIndexBase;
+      this.parser.setTurnIndexBase(this.retainedFrom);
+    }
+    if (!restored && this.deps.resume && this.deps.carried) {
+      const carried = this.deps.carried as CarriedState;
+      this.parser.restoreState(carried.parser);
+      this.lastBoundaryMessageId = carried.lastBoundaryMessageId;
+      this.lastAt = carried.lastAt;
+    }
     try {
       await this.source.start(
         {
           onEntries: (entries) => this.apply(entries),
           onReset: (reason) => this.reset(reason)
         },
-        restored ? (this.deps.archive as TimelineArchive).resume : undefined
+        restored ? (this.deps.archive as TimelineArchive).resume : this.deps.resume ?? undefined
       );
     } finally {
       this.suspended = false;
@@ -281,6 +331,7 @@ class RecordTimeline implements SessionTimeline {
     // `published` 里那两串 JSON 是用来比对"这一轮变了没有"的，存下来纯属浪费（它就是整条会话）——
     // 装回来时按当前的轮重算一遍即可（一份 39MB 的记录实测 23ms）。seq 才是必须存的那一半。
     this.published = new Map();
+    this.publishedSteps = new Map();
     const byId = new Map(this.currentTurns().map((turn) => [turn.id, turn]));
     for (const entry of archive.published) {
       const turn = byId.get(entry.turnId);
@@ -317,8 +368,11 @@ class RecordTimeline implements SessionTimeline {
    */
   async archive(): Promise<TimelineArchive | null> {
     if (this.disposed) return null;
-    const resume = await this.source.resumePoint?.();
-    if (!resume) return null;
+    // Each source debits its already-known byte offset before copying resume
+    // state. No JSON-value walk, entry limit, or native-source-count limit.
+    const budget = { remainingBytes: TIMELINE_ARCHIVE_MAX_SOURCE_BYTES };
+    const resume = await this.source.resumePoint?.(budget);
+    if (!resume || budget.remainingBytes < 0) return null;
     const { parser, images } = this.parserForArchive();
     const published: TurnPublishArchive[] = [];
     for (const [turnId, entry] of this.published) {
@@ -332,6 +386,7 @@ class RecordTimeline implements SessionTimeline {
     }
     return {
       version: TIMELINE_ARCHIVE_VERSION,
+      sourceBytes: TIMELINE_ARCHIVE_MAX_SOURCE_BYTES - budget.remainingBytes,
       resume,
       epoch: this.epochValue,
       seq: this.seq,
@@ -432,8 +487,26 @@ class RecordTimeline implements SessionTimeline {
       ...this.recentActionsSnapshot(),
       queuedPrompts: [...this.queued],
       liveReply: this.liveReply,
-      terminals: this.terminals
+      terminals: this.terminals,
+      subagents: this.subagentSteps(null)
     };
+  }
+
+  /** Running subagents' calls: the newest ones for a snapshot (`after` null), the changed ones for a batch. */
+  private subagentSteps(after: number | null): TimelineSubagent[] {
+    return [...this.publishedSteps].map(([toolCallId, entry]) => {
+      const all = [...entry.steps.values()];
+      const steps = after === null ? all.slice(-TIMELINE_SUBAGENT_STEPS) : all.filter((step) => step.seq > after);
+      const text = after === null || entry.textSeq > after;
+      const newest = (value: string | undefined) => value === undefined ? undefined : value.slice(-TIMELINE_SUBAGENT_TEXT);
+      return {
+        toolCallId,
+        completedSteps: all.filter(({ step }) => step.status === 'done').length,
+        steps: steps.map(({ step }) => step),
+        ...(text && entry.output !== undefined ? { output: newest(entry.output) } : {}),
+        ...(text && entry.reasoning !== undefined ? { reasoning: newest(entry.reasoning) } : {}),
+      };
+    });
   }
 
   /**
@@ -670,6 +743,11 @@ class RecordTimeline implements SessionTimeline {
         // 没有活着的一轮时 reducer 自己 no-op，所以重复的边界是安全的。
         this.parser.settleTurn(outcomeOf(entry.boundary), at);
       } else {
+        // An event for a drained turn would otherwise land in the newest turn: drop it, as a settled stored row is never revised.
+        if (this.prunedOwners.size && eventOwnerIds(entry.event).some((id) => this.prunedOwners.has(id))) {
+          this.prunedDrops += 1;
+          continue;
+        }
         const origins = entry.imageOrigins;
         if (origins && entry.event.kind === 'tool_update' && entry.event.images) {
           entry.event.images.forEach((image, index) => {
@@ -677,13 +755,50 @@ class RecordTimeline implements SessionTimeline {
             if (origin) this.imageOrigins.set(image.data, origin);
           });
         }
+        const before = this.parser.snapshotState();
+        const boundaryBefore = this.lastBoundaryMessageId;
         this.parser.pushRecordEvent(entry.event, at, this.lastBoundaryMessageId);
+        const held = this.parser.history.length + (this.parser.activeTurn ? 1 : 0) - this.turnStarts.length;
+        if (held < 0) this.turnStarts.length += held;
+        // A fill's turn start keeps what a read from there needs to go on as this one does (the parser state is immutable).
+        const start: TurnStart | null = entry.position === undefined || held <= 0 ? null
+          : { position: entry.position, ...(entry.state !== undefined ? { state: entry.state } : {}),
+            timeline: { parser: { ...before, transcript: { committed: [], active: null } }, lastBoundaryMessageId: boundaryBefore, lastAt: at } satisfies CarriedState };
+        for (let one = 0; one < held; one += 1) this.turnStarts.push(start);
         this.recordRecentActions(this.parser.activeTurn?.items ?? [], at);
         this.trackSettlement(entry.event, at);
       }
       changed = true;
     }
     if (changed) this.publish();
+    this.deps.onApplied?.(this);
+  }
+
+  heldStarts(): ReadonlyArray<TurnStart | null> {
+    return this.turnStarts;
+  }
+
+  /**
+   * Hand out committed turns and forget them (resume-mem). The last committed turn stays: it can still be reopened,
+   * tailed or superseded. So does every turn from the first one with a running tool or subagent, whose card a later
+   * line (a background subagent's own file) still completes, unless that holds back more than `DRAIN_HOLD_TURNS`.
+   * Events that reach a turn already handed out are dropped by id (`prunedOwners`), as a settled stored row is never revised.
+   */
+  drainSettled(): { turns: TranscriptTurn[]; starts: Array<TurnStart | null>; prunedDrops: number; resets: number } {
+    const state = this.parser.snapshotState();
+    const { committed } = state.transcript;
+    const last = committed.length - 1;
+    const open = committed.findIndex((turn, index) => index < last && hasRunningItem(turn.items));
+    const cut = open >= 0 && last - open <= DRAIN_HOLD_TURNS ? open : Math.max(0, last);
+    const turns = committed.slice(0, cut);
+    if (turns.length) {
+      for (const turn of turns) collectOwnerIds(turn.items, this.prunedOwners, (image) => this.imageOrigins.delete(image));
+      this.retainedFrom += turns.length;
+      this.parser.restoreState({ ...state, transcript: { ...state.transcript, committed: committed.slice(cut) } });
+      this.parser.setTurnIndexBase(this.retainedFrom);
+      for (const turn of turns) this.published.delete(turn.id);
+    }
+    return { turns, starts: this.turnStarts.splice(0, turns.length), prunedDrops: this.prunedDrops, resets: this.resets };
   }
 
   /**
@@ -772,6 +887,7 @@ class RecordTimeline implements SessionTimeline {
     this.parser = new AcpTranscriptParser({ sessionId: this.deps.sessionId });
     this.seenKeys = new Set();
     this.published = new Map();
+    this.publishedSteps = new Map();
     this.removed = new Map();
     this.settlements = new Map();
     this.questionsAwaitingInput = new Map();
@@ -785,6 +901,10 @@ class RecordTimeline implements SessionTimeline {
     this.recentActionEntries = new Map();
     this.imageOrigins = new Map();
     this.archivedImages = new Map();
+    this.retainedFrom = 0;
+    this.turnStarts = [];
+    this.prunedOwners = new Set();
+    this.resets += 1;
     this.needsPublish = true;
     // 不当场发：源紧接着就会把重读的内容送进来，那时快照才是完整的。
     // 但也不能只等它 —— 一份被删掉的记录不会再有任何 onEntries，所以补一个兜底节拍。
@@ -867,6 +987,33 @@ class RecordTimeline implements SessionTimeline {
       });
       changed = true;
     }
+    const stagedSteps = new Map<string, PublishedSubagent>();
+    const running = new Set<string>();
+    for (const agent of this.parser.agents) {
+      if (agent.status !== 'running' || !agent.subagentSessionId) continue;
+      running.add(agent.toolCallId);
+      const source = agent.steps ?? NO_STEPS;
+      const prior = this.publishedSteps.get(agent.toolCallId);
+      if (prior && prior.source === source && prior.output === agent.output && prior.reasoning === agent.reasoning) continue;
+      let steps = prior?.steps;
+      if (!prior || prior.source !== source) {
+        steps = new Map<string, { step: ToolNode; seq: number }>();
+        for (const step of source) {
+          if (step.kind === 'tool-group') continue;
+          const was = prior?.steps.get(step.toolCallId);
+          steps.set(step.toolCallId, was && was.step === step ? was : { step, seq: nextSeq });
+          // A subagent's call is an action of this session, as it was when it sat inside the launching turn.
+          if (!was && (step.at ?? this.lastAt) !== null && (step.at ?? this.lastAt) !== undefined) {
+            this.recordRecentActions([step], (step.at ?? this.lastAt)!);
+          }
+        }
+      }
+      const textSeq = prior && prior.output === agent.output && prior.reasoning === agent.reasoning ? prior.textSeq : nextSeq;
+      stagedSteps.set(agent.toolCallId, { source, steps: steps!, output: agent.output, reasoning: agent.reasoning, textSeq });
+      changed = true;
+    }
+    const settledSubagents = [...this.publishedSteps.keys()].filter((id) => !running.has(id));
+    if (settledSubagents.length > 0) changed = true;
     const gone: string[] = [];
     for (const id of this.published.keys()) {
       if (!alive.has(id)) gone.push(id);
@@ -885,6 +1032,8 @@ class RecordTimeline implements SessionTimeline {
       this.published.delete(id);
       this.removed.set(id, nextSeq);
     }
+    for (const [id, entry] of stagedSteps) this.publishedSteps.set(id, entry);
+    for (const id of settledSubagents) this.publishedSteps.delete(id);
     for (const id of this.dirtySettlements) this.settlementSeq.set(id, nextSeq);
     this.dirtySettlements.clear();
     this.queuedDirty = false;
@@ -952,7 +1101,8 @@ class RecordTimeline implements SessionTimeline {
       ...this.recentActionsSnapshot(),
       queuedPrompts: [...this.queued],
       liveReply: this.liveReply,
-      terminals: this.terminals
+      terminals: this.terminals,
+      subagents: this.subagentSteps(seq)
     };
   }
 
@@ -1032,4 +1182,37 @@ function outcomeOf(boundary: RecordBoundary): TranscriptTurnOutcome {
     return { kind: 'error', reason: 'prompt_failed', ...(detail ? { detail } : {}), ...(said ? { said } : {}) };
   }
   return { kind: 'done', reason: boundary.stopReason ?? 'end_turn' };
+}
+
+/** The ids an event folds into: the same fields `findEntityOwner` and the tool lookups read. */
+function eventOwnerIds(event: NormalizedEvent): string[] {
+  const ids: string[] = [];
+  const one = event as { kind: string; messageId?: string | null; toolCallId?: string; parentToolCallId?: string | null; planId?: string };
+  if ((one.kind === 'message' || one.kind === 'thinking') && one.messageId) ids.push(`message:${one.messageId}`);
+  if (one.toolCallId) ids.push(`tool:${one.toolCallId}`);
+  if (one.parentToolCallId) ids.push(`tool:${one.parentToolCallId}`);
+  if (one.kind === 'plan' || one.kind === 'plan_remove') ids.push(`plan:${one.planId ?? SESSION_PLAN_ID}`);
+  return ids;
+}
+
+function collectOwnerIds(items: readonly TranscriptItem[], into: Set<string>, onImage: (data: string) => void): void {
+  for (const item of items) {
+    const node = item as unknown as { kind: string; id: string; toolCallId?: string; planId?: string; images?: ToolImage[]; children?: TranscriptItem[] };
+    const own = /:(?:message|thinking):(.+)$/.exec(node.id)?.[1];
+    if ((node.kind === 'message' || node.kind === 'thinking') && own) into.add(`message:${own}`);
+    if (node.toolCallId) into.add(`tool:${node.toolCallId}`);
+    if (node.kind === 'create-plan-tool-call' && node.planId) into.add(`plan:${node.planId}`);
+    for (const image of node.images ?? []) onImage(image.data);
+    if (node.children) collectOwnerIds(node.children, into, onImage);
+  }
+}
+
+/** A running card can still be completed by a later line; how many turns it may hold back before ingestion drains anyway. */
+const DRAIN_HOLD_TURNS = 64;
+
+function hasRunningItem(items: readonly TranscriptItem[]): boolean {
+  return items.some((item) => {
+    const node = item as unknown as { status?: string; agentStatus?: string; children?: TranscriptItem[] };
+    return node.status === 'running' || node.agentStatus === 'running' || (node.children ? hasRunningItem(node.children) : false);
+  });
 }

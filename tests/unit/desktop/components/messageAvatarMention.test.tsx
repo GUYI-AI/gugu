@@ -12,6 +12,8 @@ import type { MemberProfileCardModel } from '../../../../apps/desktop/src/compon
 import { MessageList, type ChatListRowItem, type MessageListRowProps } from '../../../../apps/desktop/src/components/chat/MessageList'
 import { TopicSplitPane } from '../../../../apps/desktop/src/components/chat/TopicSplitPane'
 import { createReactHarness, message, renderWithAppProviders } from '../../../support/testHarness'
+import { Popover } from '../../../../apps/desktop/src/components/ui/Popover'
+import type { ActiveMemberProfile } from '../../../../apps/desktop/src/components/memberProfileModels'
 
 vi.mock('../../../../apps/desktop/src/hooks/useAgentHarnessIdentity', () => ({ useAgentHarnessIdentity: () => 'codex' }))
 
@@ -42,10 +44,10 @@ async function renderList(overrides: Partial<MessageListRowProps> = {}) {
   const rows: ChatListRowItem[] = listMessages.map((msg) => ({ type: 'message', message: msg }))
   const onMentionMember = vi.fn()
   const rowProps: MessageListRowProps = {
-    rows, messages: listMessages, mobile: false, memberReadSeqs: {}, deliveryWaits: new Map(), isGroupChat: true, memberProfiles,
-    onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, onOpenMemberProfile: noop, onMentionMember,
-    flashMessageId: undefined, threeParty: undefined, onShowReadReceipt: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
-    agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined, onOpenLocalFileLink: undefined,
+    rows, messages: listMessages, mobile: false, memberReadSeqs: {}, deliveryWaits: new Map(), recipientFacts: { agentIds: new Set(), wakes: new Map() }, isGroupChat: true, memberProfiles,
+    onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, memberProfileOpener: profileOpener(), onMentionMember,
+    flashMessageId: undefined, threeParty: undefined, readReceiptHandle: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
+    agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined,
     selectMode: false, selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: noop, ...overrides,
   }
   await renderWithAppProviders(harness, createElement(MessageList, { rows, rowProps, resetKey: 'chat-1' }))
@@ -58,6 +60,7 @@ function avatarOf(messageId: string): Element {
   if (!button) throw new Error(`no sender avatar rendered for ${messageId}`)
   return button.firstElementChild ?? button
 }
+function profileOpener() { return { handle: Popover.createHandle<ActiveMemberProfile>(), openedFrom: 'main' as const } }
 function rightClick(target: Element): boolean {
   const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })
   act(() => { target.dispatchEvent(event) })
@@ -67,11 +70,11 @@ function rightClick(target: Element): boolean {
 describe('a deleted group sender keeps a visible neutral identity', () => {
   it('renders the shared Info glyph through the real message list while preserving human and Agent avatars', async () => {
     const erased = message({ id: 'm-erased', seq: 5, sender_user_id: null, content_type: 'text', content: 'sent before the account was erased' })
-    const onOpenMemberProfile = vi.fn()
+    const memberProfileOpener = profileOpener()
     const onMentionMember = await renderList({
       messages: [...messages, erased],
       memberProfiles: { ...memberProfiles, 'u-alice': profile('u-alice', 'Alice', { avatar: 'https://example.test/alice.png' }) },
-      onOpenMemberProfile,
+      memberProfileOpener,
     })
     const row = harness.container.querySelector('[data-msg-id="m-erased"]')!
     expect(row.textContent).toContain(erased.content)
@@ -86,7 +89,7 @@ describe('a deleted group sender keeps a visible neutral identity', () => {
     expect(row.querySelector('[data-message-sender-id]')).toBeNull()
     expect(rightClick(neutralGlyph!)).toBe(false)
     await act(async () => neutralGlyph!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    expect(onOpenMemberProfile).not.toHaveBeenCalled()
+    expect(memberProfileOpener.handle.isOpen, 'a removed sender opens no profile card').toBe(false)
     expect(onMentionMember).not.toHaveBeenCalled()
     expect(harness.container.querySelector<HTMLImageElement>('[data-msg-id="m-alice"] img')?.getAttribute('src')).toBe('https://example.test/alice.png')
     expect(harness.container.querySelector('[data-msg-id="m-claude"] [data-agent]')).not.toBeNull()
@@ -137,7 +140,7 @@ describe('右键群聊消息头像 → @ 他', () => {
     await renderWithAppProviders(harness, createElement(TopicSplitPane, {
       topic: { chatId: 'topic-1', name: '分片下载失败' }, messages, loading: false, memberProfiles, memberReadSeqs: {}, visibleChats: [],
       sourceMessagePreview: 'pending', onSend: async () => {}, onSendAttachments: async () => {},
-      onClose: noop, currentUserId: 'user-1', history: topicHistoryStub(), mentionMembers: [], onOpenMemberProfile: noop,
+      onClose: noop, currentUserId: 'user-1', history: topicHistoryStub(), mentionMembers: [], memberProfileOpener: profileOpener(),
     }))
     expect(rightClick(avatarOf('m-claude'))).toBe(true)
     const composer = harness.container.querySelector('[data-topic-split-composer] [contenteditable]')!
@@ -156,10 +159,10 @@ describe('group avatar sits on the last message of a run', () => {
     ]
     const rows: ChatListRowItem[] = run.map((msg) => ({ type: 'message', message: msg }))
     const rowProps: MessageListRowProps = {
-      rows, messages: run, mobile: false, memberReadSeqs: {}, deliveryWaits: new Map(), isGroupChat: true, memberProfiles,
-      onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, onOpenMemberProfile: noop, onMentionMember: noop,
-      flashMessageId: undefined, threeParty: undefined, onShowReadReceipt: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
-      agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined, onOpenLocalFileLink: undefined,
+      rows, messages: run, mobile: false, memberReadSeqs: {}, deliveryWaits: new Map(), recipientFacts: { agentIds: new Set(), wakes: new Map() }, isGroupChat: true, memberProfiles,
+      onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, memberProfileOpener: profileOpener(), onMentionMember: noop,
+      flashMessageId: undefined, threeParty: undefined, readReceiptHandle: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
+      agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined,
       selectMode: false, selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: noop,
     }
     await renderWithAppProviders(harness, createElement(MessageList, { rows, rowProps, resetKey: 'chat-run' }))

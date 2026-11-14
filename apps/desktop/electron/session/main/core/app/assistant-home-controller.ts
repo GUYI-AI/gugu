@@ -5,12 +5,14 @@ import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase'
 import { userIdFromSupabaseAccessToken } from '@gugu/core/cloud/runtimeAuthProvider'
 import { resolveGuguHome } from '@gugu/core/local/state/paths'
 import { platformModelsEnabled } from '@gugu/core/cloud/optionalServices'
-import { ASSISTANT_DEFAULT_MODEL } from '@gugu/core/shared/assistantPolicy'
+import { assistantHomeKind } from '@gugu/core/shared/assistantPolicy'
 import { ASSISTANT_PROVISION_SELECT, pickAssistant, provisionIdentityRemovedAt, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision'
 import { createRPCController } from '@shared/lib/ipc/rpc'
 import { currentAccountAccessToken } from '../extensions/account-token'
 import { createLogger } from '../../../../lib/logger'
 import { prepareLocalAssistantHome, wipeLocalAssistantHome } from '../../../../assistant-home-prepare'
+import { refreshedAssistantRules } from '../../../../assistant-rules-resolver'
+import { ensureAssistantApp } from '../../../../assistant-rules-root'
 import { createAssistantServerPreparation, type ServerPreparationRecord } from '../../../../assistant-server-preparation'
 import {
   AssistantServerSetupError, assistantServerFailure,
@@ -35,7 +37,7 @@ async function account(input: AssistantServerBinding) {
   const token = await currentAccountAccessToken()
   const owner = token ? userIdFromSupabaseAccessToken(token) : null
   if (!owner || owner !== input.ownerUserId) return fail('account_changed')
-  if (process.env.GUGU_SERVER_MODE !== '1' || process.env.GUGU_CLOUD_COMPUTER === '1' || process.platform !== 'linux') return fail('unsupported_platform')
+  if (process.env.GUGU_SERVER_MODE !== '1' || assistantHomeKind(process.env) === 'cloud' || process.platform !== 'linux') return fail('unsupported_platform')
   if (process.arch !== 'x64' && process.arch !== 'arm64') return fail('unsupported_arch')
   if (!deviceId || await deviceId() !== input.deviceId) return fail('target_not_owned')
   const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } })
@@ -127,7 +129,11 @@ export const assistantHomeController = createRPCController({
   preflight: (input: AssistantServerBinding) => reply(async (): Promise<AssistantServerPreflight> => {
     const parsed = binding.parse(input)
     await validate(parsed, true)
-    return { version: 1, deviceId: parsed.deviceId, modelSource: platformModelsEnabled() ? 'platform' : 'target', defaultModel: platformModelsEnabled() ? ASSISTANT_DEFAULT_MODEL : null }
+    // A setup of the assistant on this server starts here: from now on it needs the assistant App (#1931).
+    void ensureAssistantApp('setup')
+    // The default model is the product's (#1931): setup looks at the assistant App again, and waits for its rules.
+    const defaultModel = platformModelsEnabled() ? (await refreshedAssistantRules()).rules.defaults.defaultModel : null
+    return { version: 1, deviceId: parsed.deviceId, modelSource: platformModelsEnabled() ? 'platform' : 'target', defaultModel }
   }),
   start: (input: z.infer<typeof start>) => reply(() => preparation().start(start.parse(input))),
   status: (input: z.infer<typeof operation>) => reply(() => preparation().status(operation.parse(input))),

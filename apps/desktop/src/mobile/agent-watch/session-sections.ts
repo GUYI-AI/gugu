@@ -13,7 +13,9 @@ import {
 import { assistantDescendants, isAssistantSession } from '@/session/renderer/features/assistant/assistant-lineage'
 import { sidebarStateGroup } from '@/session/renderer/features/sidebar/session-groups'
 import { sessionPresentation } from './watch-status'
+import { groupRowOrder } from '@/session/renderer/features/projects/stores/project-group-layout'
 import type { SessionDirectoryRow } from '@/session/shared/remote-sessions/session-directory'
+import type { AccountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 
 export type SessionNode = SessionTreeNode<{
   id: string
@@ -26,7 +28,9 @@ export type SessionNode = SessionTreeNode<{
 /**
  * `pinned` = 顶部的「置顶」分区;`assistant` = 个人助理派出的那一组(组名是它,不按项目 / 机器分);
  * `project` 为 null 的另一格是「任务」:所有机器上不属于项目的会话(workspace 里的、项目没报上来的)平铺一张(#609)。
- * 其余是一台机器上的一个项目分区。`deviceId` = 项目分区所在的机器(其余几格不属于哪台机器,为 null)。
+ * 其余是一个账号项目的分区:绑着同一个项目群的各台机器上的本地项目并成一格(项目是账号上的,机器只是任务跑在哪);
+ * 还没绑群的本地项目各是一格。`project` = 这一格的代表(第一台机器上的那个);`projectIds` = 并进来的全部本地项目 id。
+ * `deviceId` = 这一格只在一台机器上时是那台;跨机器的项目格、其余几格为 null。
  * `key` = 这一格在本机折叠记录里的键;`folded` = 收进「展开显示」的闲置家族数(置顶分区不折,恒为 0);
  * `count` = 整格的会话数(含收起的),分区折起来时页头标它。
  */
@@ -34,6 +38,7 @@ export type SessionSection = {
   pinned: boolean
   assistant: boolean
   project: SessionpageProjectSummary | null
+  projectIds: string[]
   deviceId: string | null
   key: string
   roots: SessionNode[]
@@ -41,8 +46,26 @@ export type SessionSection = {
   count: number
 }
 
+/** 一台机器报上来的项目,带它属于的账号项目(accountProjectsStore.projectOfLocal 的项目群;不属于 = null / 缺席)。 */
+export type SectionProject = SessionpageProjectSummary & { chatId?: string | null }
+
+/**
+ * 一台机器报上来的项目,认成账号上的项目(accountProjectsStore.projectOfLocal,桌面侧栏同一份):属于同一个项目的
+ * 各台机器上的本地项目并成一格,格名 = 项目名。不属于账号上任何项目的照旧是它那台机器上的一格。
+ */
+export function sectionProjects(
+  deviceId: string,
+  projects: readonly SessionpageProjectSummary[],
+  accounts: Pick<AccountProjectsStore, 'projectOfLocal'>,
+): SectionProject[] {
+  return projects.map((project) => {
+    const account = accounts.projectOfLocal(project.id, deviceId)
+    return { ...project, name: account?.name || project.name, chatId: account?.chatId ?? null }
+  })
+}
+
 /** 页上列出的一台机器与它报上来的项目(次序 = 它们在页上的次序)。 */
-export type SectionMachine = { deviceId: string; projects: readonly SessionpageProjectSummary[] }
+export type SectionMachine = { deviceId: string; projects: readonly SectionProject[] }
 
 export type SectionFold = {
   /** 点了「展开显示」的格(收起的闲置家族全露)。 */
@@ -55,13 +78,16 @@ export const ASSISTANT_SECTION_KEY = '\u0000assistant'
 // 哨兵键用转义写法,❌ 把裸 NUL 字节敲进源码:git 会判整个文件是二进制。
 export const TASKS_SECTION_KEY = '\u0000tasks'
 
-/** 两台机器上可以有同名甚至同 id 的项目:格的键带机器,各是各的一格。 */
-export function projectSectionKey(deviceId: string, projectId: string): string {
-  return `${deviceId}|${projectId}`
+/**
+ * 一个项目的格键:绑了项目群 = 项目群(各台机器上的并成一格);没绑 = 那台机器上的那个本地项目
+ * (两台机器上可以有同名甚至同 id 的项目,各是各的一格)。
+ */
+export function projectSectionKey(deviceId: string, projectId: string, chatId?: string | null): string {
+  return chatId ? `project|${chatId}` : `${deviceId}|${projectId}`
 }
 
 /** #609 那台机器报上来的项目里真正是项目的(workspace 不成格,它的会话进「任务」)。 */
-const projectsOf = (machine: SectionMachine): readonly SessionpageProjectSummary[] =>
+const projectsOf = (machine: SectionMachine): readonly SectionProject[] =>
   machine.projects.filter((project) => project.kind !== 'workspace')
 
 const lastActive = (session: SessionpageSessionSummary): number =>
@@ -90,7 +116,7 @@ export function assistantGroupIds(
  * 手机「项目」页的分区,与桌面侧栏同一种结构:
  *   · 顶部「置顶」收拢置顶的子树(最近动静在前,不分机器);
  *   · 个人助理派出的会话是**一组**(组名是它),❌ 再按项目 / 机器散进别的分区;它自己那条不列;
- *   · 其余每台机器的每个项目一格(机器是这一格的属性,不是上一层):最近有动静的在前;workspace 里的、项目行没回来的
+ *   · 其余每个账号项目一格(绑同一个项目群的各台机器并成一格,机器是行的属性,不是上一层):最近有动静的在前;workspace 里的、项目行没回来的
  *     会话归最后那一格「任务」(所有机器平铺一张,#609),❌ 拿 projectId 当项目名冒充。
  * 树用所有机器的行一起建,一家子跟着根走(familiesByRoot,桌面同):画根所在的那一格,child 可以在别的项目、
  * 别的机器上(owner 2026-10-01 / 10-09)。项目分区按桌面同一条折法收起多出来的闲置家族(foldIdleFamilies),
@@ -114,23 +140,21 @@ export function sessionSections(
       deviceId,
       session,
     }))
-  const known = new Map(machines.map((machine) => [machine.deviceId, new Set(projectsOf(machine).map((project) => project.id))]))
+  const known = new Map(machines.map((machine) => [machine.deviceId, new Map(projectsOf(machine).map((project) => [project.id, projectSectionKey(machine.deviceId, project.id, project.chatId)]))]))
   // 助理那组的根与列出机器上的根才画;别的行(同一台电脑上旧实例的那条设备行)只作子会话出现,与从前一样。
   const roots = buildSessionTree(items).filter(({ item }) => group.has(item.id) || known.has(item.deviceId))
   const pinned = pinnedSubtreeRoots(roots)
   const cellOf = (root: SessionNode['item']): string =>
     group.has(root.id)
       ? ASSISTANT_SECTION_KEY
-      : known.get(root.deviceId)?.has(root.session.projectId)
-        ? projectSectionKey(root.deviceId, root.session.projectId)
-        : TASKS_SECTION_KEY
+      : known.get(root.deviceId)?.get(root.session.projectId) ?? TASKS_SECTION_KEY
   const families = familiesByRoot(withoutPinnedSubtrees(roots), cellOf)
   const isIdle = (item: SessionNode['item']): boolean =>
     sidebarStateGroup(sessionPresentation(item.session, fold.online(item.deviceId))) === null
 
   const cell = (
     key: string,
-    base: Pick<SessionSection, 'assistant' | 'project' | 'deviceId'>,
+    base: Pick<SessionSection, 'assistant' | 'project' | 'projectIds' | 'deviceId'>,
   ): { section: SessionSection; latest: number } | null => {
     const family = families.get(key)
     if (!family) return null
@@ -142,19 +166,31 @@ export function sessionSections(
   }
   type Cell = NonNullable<ReturnType<typeof cell>>
   const present = (list: (Cell | null)[]): Cell[] => list.filter((entry): entry is Cell => entry !== null)
-  const projectCells = present(machines.flatMap((machine) =>
-    projectsOf(machine).map((project) =>
-      cell(projectSectionKey(machine.deviceId, project.id), { assistant: false, project, deviceId: machine.deviceId }))))
-  const assistantCell = cell(ASSISTANT_SECTION_KEY, { assistant: true, project: null, deviceId: null })
+  // 一个项目一格:同一个格键的各台机器上的本地项目并进来,代表与桌面侧栏、手机项目页同一条 groupRowOrder(在线的在前,再按 id)。
+  const members = new Map<string, { project: SessionpageProjectSummary; deviceId: string; projectIds: string[]; deviceIds: Set<string> }>()
+  const order = (deviceId: string, id: string) => ({ id, machine: deviceId, online: fold.online(deviceId), createdAt: null })
+  for (const machine of machines) {
+    for (const project of projectsOf(machine)) {
+      const key = projectSectionKey(machine.deviceId, project.id, project.chatId)
+      const member = members.get(key) ?? { project, deviceId: machine.deviceId, projectIds: [], deviceIds: new Set<string>() }
+      if (groupRowOrder(order(machine.deviceId, project.id), order(member.deviceId, member.project.id)) < 0) Object.assign(member, { project, deviceId: machine.deviceId })
+      member.projectIds.push(project.id)
+      member.deviceIds.add(machine.deviceId)
+      members.set(key, member)
+    }
+  }
+  const projectCells = present([...members].map(([key, { project, projectIds, deviceIds }]) =>
+    cell(key, { assistant: false, project, projectIds, deviceId: deviceIds.size === 1 ? [...deviceIds][0]! : null })))
+  const assistantCell = cell(ASSISTANT_SECTION_KEY, { assistant: true, project: null, projectIds: [], deviceId: null })
   // 最近有动静的在前;同一刻的保持机器 / 宿主给的次序(Array.sort 稳定)。
   const ordered = present([...projectCells, assistantCell]).sort((a, b) => b.latest - a.latest)
   // 「任务」排最后,与桌面侧栏「项目」之后的「任务」同序;一格,❌ 按机器分。
-  const tasks = present([cell(TASKS_SECTION_KEY, { assistant: false, project: null, deviceId: null })])
+  const tasks = present([cell(TASKS_SECTION_KEY, { assistant: false, project: null, projectIds: [], deviceId: null })])
 
   const groups = [...ordered, ...tasks].map(({ section }) => section)
   pinned.sort((a, b) => lastActive(b.item.session) - lastActive(a.item.session))
   return pinned.length > 0
-    ? [{ pinned: true, assistant: false, project: null, deviceId: null, key: PINNED_SECTION_KEY, roots: pinned, folded: 0, count: countSessions(pinned) }, ...groups]
+    ? [{ pinned: true, assistant: false, project: null, projectIds: [], deviceId: null, key: PINNED_SECTION_KEY, roots: pinned, folded: 0, count: countSessions(pinned) }, ...groups]
     : groups
 }
 

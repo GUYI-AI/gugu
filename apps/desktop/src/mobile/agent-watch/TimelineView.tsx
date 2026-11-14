@@ -12,19 +12,14 @@ import { HelpCircle, ShieldCheck } from '@/lib/icons'
 import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
 import { useToast } from '@/components/toastContext'
-import { MOBILE_RESPONDER_ID } from './useAgentWatchSession'
+import { responderName } from './responder'
 import { appInstallAskOf } from '@/session/shared/extensions/host-actions'
+import { deviceCapabilityAskOf } from '@/session/shared/device-capability-ask'
 import { answerAppInstall, appInstallWords } from '@/session/renderer/features/extensions/app-install-approval'
+import { deviceCapabilityWords } from '@/session/renderer/features/extensions/device-capability-approval'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
 
 /** Settlement controls shared by the conversation adapters and Needs you. The host owns every answer. */
-
-function responderName(by: string | null, t: (key: string) => string): string | null {
-  if (!by) return null
-  if (by === MOBILE_RESPONDER_ID) return t('agentWatch.settlement.byMobile')
-  if (by === 'desktop') return t('agentWatch.settlement.byDesktop')
-  return by
-}
 
 export function SettlementCard({
   settlement,
@@ -56,7 +51,9 @@ export function SettlementCard({
   const multi = (questions?.length ?? 0) > 1
   // D-31 An App install the host asks for this agent: who asks for what; 「查看并安装」 opens this phone's own sheet first.
   const install = appInstallAskOf(settlement.origin)
-  const words = install ? appInstallWords(install, translateSessionMessage, machine) : null
+  const capability = deviceCapabilityAskOf(settlement.origin)
+  const words = install ? appInstallWords(install, translateSessionMessage, machine)
+    : capability ? deviceCapabilityWords(capability, translateSessionMessage, machine) : null
   const answer = (optionId: string) => {
     if (!install) {
       onRespond({ itemId: settlement.itemId, optionId, kind })

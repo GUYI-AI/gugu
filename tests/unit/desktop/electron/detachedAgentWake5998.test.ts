@@ -7,6 +7,7 @@ import {
   createSessionpageDeliveryBridge,
   SessionWakeError,
   SessionpageLocalDeliveryRouter,
+  WAKE_RETRY_FIRST_MS,
   type SessionpageDeliveryTarget,
 } from '../../../../apps/desktop/electron/sessionpage/session-injection'
 
@@ -89,12 +90,17 @@ describe('#5998 detached inbox wake', () => {
       .mockRejectedValueOnce(new Error('provider resume failed'))
       .mockResolvedValueOnce(undefined)
     const onWakeComplete = vi.fn()
+    let clock = 0
     const router = new SessionpageLocalDeliveryRouter([localSessionDeliveryTarget], {
-      wakeSession, onWakeComplete,
+      wakeSession, onWakeComplete, now: () => clock,
     })
     await expect(router.wakeAgentSession(AGENT)).rejects.toThrow('provider resume failed')
     expect(onWakeComplete).not.toHaveBeenCalled()
     expect(router.sessionIdForAgent(AGENT)).toBe(SESSION)
+    // Inside the back-off step the remembered failure answers; after it a real attempt runs.
+    await expect(router.wakeAgentSession(AGENT)).rejects.toThrow('provider resume failed')
+    expect(wakeSession).toHaveBeenCalledTimes(1)
+    clock += WAKE_RETRY_FIRST_MS
     await router.wakeAgentSession(AGENT)
     expect(wakeSession).toHaveBeenCalledTimes(2)
     expect(onWakeComplete).toHaveBeenCalledOnce()

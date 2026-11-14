@@ -3,6 +3,7 @@ import type { ComposerPermissionRequest } from '@gugu/session-ui/react/component
 import { settlementFromWire, type AskSource, type Settlement, type SessionpageSessionEvent, type TimelineAfterResult } from '@gugu/session-core/session-record/contract';
 import { sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { appInstallAskOf } from '@shared/extensions/host-actions';
+import { deviceCapabilityAskOf } from '@shared/device-capability-ask';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { events, rpc, rpcOn } from '@renderer/lib/ipc';
@@ -10,9 +11,12 @@ import { machineRegistry } from '@renderer/lib/machine-routing';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { log } from '@renderer/utils/logger';
 import { answerAppInstall, answeredTooLate, appInstallWords, sessionWaitsOnApproval } from './app-install-approval';
+import { deviceCapabilityWords } from './device-capability-approval';
 
-const pendingHostAsk = (settlements: ReadonlyMap<string, Settlement>, source: AskSource): Settlement | null =>
-  [...settlements.values()].find((settlement) => settlement.origin?.source === source && settlement.state === 'pending') ?? null;
+const pendingHostAsk = (settlements: ReadonlyMap<string, Settlement>, sources: readonly AskSource[]): Settlement | null =>
+  [...settlements.values()].find((settlement) => settlement.origin && sources.includes(settlement.origin.source) && settlement.state === 'pending') ?? null;
+/** The host's approvals the band answers (an agent's question has its own card). */
+const HOST_APPROVALS: readonly AskSource[] = ['app-install', 'device-capability'];
 
 /**
  * D-31 (L11 复核 67) The ask the host keeps pending on this session's timeline — an App install it asks for the agent — for
@@ -21,7 +25,7 @@ const pendingHostAsk = (settlements: ReadonlyMap<string, Settlement>, source: As
  */
 export function useSessionHostAsk(
   sessionId: string | null,
-  source: AskSource
+  sources: readonly AskSource[]
 ): Settlement | null {
   const [ask, setAsk] = useState<Settlement | null>(null);
   useEffect(() => {
@@ -31,7 +35,7 @@ export function useSessionHostAsk(
     const settlements = new Map<string, Settlement>();
     const take = (batch: readonly Settlement[]) => {
       for (const settlement of batch) settlements.set(settlement.itemId, settlementFromWire(settlement));
-      if (alive) setAsk(pendingHostAsk(settlements, source));
+      if (alive) setAsk(pendingHostAsk(settlements, sources));
     };
     const subscriptionId = crypto.randomUUID();
     const there = rpcOn(machineRegistry.machineOf(sessionId));
@@ -56,7 +60,7 @@ export function useSessionHostAsk(
       off();
       void there.sessionTimeline.sessionUnsubscribe({ subscriptionId }).catch(() => undefined);
     };
-  }, [sessionId, source]);
+  }, [sessionId, sources]);
   return ask;
 }
 
@@ -73,25 +77,21 @@ export function useHostAskBand(
   session: { status: string | null; detail: string | null } | null | undefined
 ): { request: ComposerPermissionRequest; resolve: (optionId: string | null) => void } | null {
   const { translate } = useSessionMessages();
-  const ask = useSessionHostAsk(sessionWaitsOnApproval(session) ? sessionId : null, 'app-install');
+  const ask = useSessionHostAsk(sessionWaitsOnApproval(session) ? sessionId : null, HOST_APPROVALS);
   const install = appInstallAskOf(ask?.origin);
+  const capability = deviceCapabilityAskOf(ask?.origin);
   const itemId = ask?.itemId;
   const machineId = sessionId ? machineRegistry.machineOf(sessionId) : null;
   const machine = machineId ? remoteHostsStore.device(machineId)?.label ?? machineId : undefined;
   const resolve = useCallback(
     (optionId: string | null) => {
-      if (!optionId || !sessionId || !itemId || !install) return;
-      void answerAppInstall({
-        itemId,
-        ask: install,
-        optionId,
-        machine,
-        respond: async (answer) => {
-          const result = await rpc.sessionTimeline.sessionRespond({ conversationId: sessionId, itemId, kind: 'permission', by: 'desktop', ...answer });
-          if (!result.ok) throw Object.assign(new Error(result.error.message), { code: result.error.code });
-          return result;
-        },
-      })
+      if (!optionId || !sessionId || !itemId || (!install && !capability)) return;
+      const respond = async (answer: { optionId: string; digest?: string }) => {
+        const result = await rpc.sessionTimeline.sessionRespond({ conversationId: sessionId, itemId, kind: 'permission', by: 'desktop', ...answer });
+        if (!result.ok) throw Object.assign(new Error(result.error.message), { code: result.error.code });
+        return result;
+      };
+      void (install ? answerAppInstall({ itemId, ask: install, optionId, machine, respond }) : respond({ optionId }))
         .then((result) => {
           if (answeredTooLate(result)) toast({ title: translate('extensions.consentNoLongerWaiting') });
         })
@@ -102,10 +102,10 @@ export function useHostAskBand(
           toast({ title, variant: 'destructive' });
         });
     },
-    [sessionId, itemId, install, machine, translate]
+    [sessionId, itemId, install, capability, machine, translate]
   );
-  if (!ask || !install) return null;
-  const words = appInstallWords(install, translate, machine);
+  if (!ask || (!install && !capability)) return null;
+  const words = install ? appInstallWords(install, translate, machine) : deviceCapabilityWords(capability!, translate, machine);
   return {
     request: {
       requestId: ask.itemId,

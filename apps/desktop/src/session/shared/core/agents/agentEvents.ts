@@ -38,6 +38,8 @@ export interface AgentEvent {
   payload: {
     notificationType?: NotificationType;
     message?: string;
+    /** Model that reported a failure; used only to scope its acknowledgement. */
+    modelId?: string;
     lastAssistantMessage?: string;
     /** `stop` / `background`: background tasks still doing work (see CanonicalHookEvent). */
     backgroundTasks?: number;

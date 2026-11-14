@@ -1,13 +1,16 @@
+import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { inferDroppedBlobExtension, normalizeDroppedImageBytes } from './session/main/core/pty/persist-dropped-blob'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { DEVICE_STORE, FILE_CHUNK_BYTES, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { imagePixelSize } from '@gugu/core/shared/imagePixelSize'
 import { isInside, readWorkspaceChunk } from './session/main/core/files/workspace-transfer'
-import { findProjectFileCopy, listProjectGroupIds, rememberProjectFile } from './sessionpage/sessionpage-project-groups'
+import { findProjectFileCopy, rememberProjectFile } from './sessionpage/sessionpage-project-groups'
 import { importProjectFile } from './projectFileImport'
 import { sanitizeRemoteFileName } from './remoteFileOpen'
+import { createLogger } from './lib/logger'
 import type { CommitArgs } from '@gugu/core/cloud/attachmentsApi'
 import type { FileStorage } from '@gugu/core/shared/fileStorage'
 import type { FilesPlatform } from '../src/session/shared/extensions/app-files-core'
@@ -37,16 +40,20 @@ export function createProjectFilePublisher(deps: {
   rpc: Rpc; env?: NodeJS.ProcessEnv
   /** This account's own file storage setting. */
   storage(): Promise<FileStorage>
-  /** Whether a device of this account binds the chat to a project: what makes it a project chat here. */
+  /** This device's project bound to the chat — the one the account records for it (device_projects), so the publication names a project the account knows. */
+  project(chatId: string): Promise<string | undefined>
+  /** Whether the chat is one of this account's projects (its project group), whatever folders its machines bind. */
   projectChat(chatId: string): Promise<boolean>
+  /** Ask for a version's temporary copy, as a reader's first open does. */
+  requestCopy?(itemId: string, version: number): Promise<unknown>
 }) {
   /** Null: not a project chat, so the ordinary upload decides. */
   const place = async (chatId: string, task = false) => {
     const identity = await deps.identity()
     if (task) return { identity, projectId: DEVICE_STORE, storage: null }
-    const bound = (await listProjectGroupIds(identity.accountId, deps.env)).find(row => row.chatId === chatId)
+    const bound = await deps.project(chatId)
     if (!bound && !await deps.projectChat(chatId)) return null
-    return { identity, projectId: bound?.projectId ?? DEVICE_STORE, storage: await deps.storage() }
+    return { identity, projectId: bound ?? DEVICE_STORE, storage: await deps.storage() }
   }
   const publishFile = async (chatId: string, file: SelectedProjectFile, parentId: string | null, actor: string,
     store?: Parameters<Publisher>[4], { message, next, task, itemId }: ProjectFilePublishOptions = {}, temporary = false): Promise<Awaited<ReturnType<Publisher>> & { message?: Record<string, unknown>; path?: string } | null> => {
@@ -63,15 +70,18 @@ export function createProjectFilePublisher(deps: {
     const path = relative(root, file.path).split(sep).join('/')
     const first = await readWorkspaceChunk(root, { path, offset: 0, length: 0 }), hash = createHash('sha256')
     if (first.size !== file.size) throw new Error('Selected file changed before it was sent')
+    let pixels: { width: number; height: number } | null = null
     for (let offset = 0; offset < first.size; offset += FILE_CHUNK_BYTES) {
       const length = Math.min(FILE_CHUNK_BYTES, first.size - offset), part = await readWorkspaceChunk(root, { path, offset, length })
       const bytes = Buffer.from(part.data, 'base64')
       if (part.etag !== first.etag || bytes.length !== length) throw new Error('Project file changed during publication')
+      if (offset === 0 && file.contentType.startsWith('image/')) pixels = imagePixelSize(bytes)
       hash.update(bytes)
     }
     const sha256 = hash.digest('hex')
     const receipt = await deps.rpc('file_device_publish', { p_item: next?.itemId ?? itemId ?? randomUUID(), p_chat: chatId, p_device: identity.deviceId,
       p_project: projectId, p_path: path, p_sha: sha256, p_size: first.size, p_filename: file.name.split('/').at(-1), p_type: file.contentType, p_parent: parentId,
+      ...(pixels ? { p_width: pixels.width, p_height: pixels.height } : {}),
       ...(next ? { p_expected: next.expectedVersion } : {}), ...(message ? { p_message: message } : {}) }) as { item_id: string; message?: Record<string, unknown> }
     const sent = receipt.message
     if (message && !sent) throw new Error('Project attachment was not committed')
@@ -82,6 +92,11 @@ export function createProjectFilePublisher(deps: {
       content_type: row.content_type, size_bytes: first.size, sha256, host_account_id: identity.accountId, host_device_id: identity.deviceId, host_project_id: projectId, relative_path: path,
       workspace: { path: row.path, parent_id: row.parent_id, created_at: row.created_at, updated_at: row.updated_at, created_by: row.created_by, source_message_ids: row.source_message_ids ?? [] } }
     await rememberProjectFile(revision, identity.accountId, deps.env)
+    // An image is read at a glance, often when this machine is off: its temporary copy goes up now instead of at the first read.
+    // Not when its owner turned copies off, nor for a read-once copy: the first reader would use it up, and the sender's own screen must not be that reader.
+    if (message && file.contentType.startsWith('image/') && here.storage?.temporary_transfer !== false && here.storage?.retention !== 'read-once') {
+      void deps.requestCopy?.(row.id, row.version).catch((error: unknown) => createLogger('project-file').warn({ item: row.id, error: String(error) }, 'image copy request failed'))
+    }
     const published = sent ? { ...row, message: sent } : row
     return task ? { ...published, path: handed } : published
   }
@@ -100,7 +115,7 @@ export function createProjectFilePublisher(deps: {
     const { data, ...selected } = file, bytes = new Uint8Array(data)
     const directory = await mkdtemp(join(tmpdir(), 'gugu-pasted-'))
     try {
-      const path = join(directory, sanitizeRemoteFileName(file.name))
+      const path = await requireAgentFileAccess(join(directory, sanitizeRemoteFileName(file.name)))
       await writeFile(path, bytes, { mode: 0o600 })
       // `temporary`: the temp copy is always imported, even when a bound root happens to contain the temp directory.
       return await publishFile(chatId, { ...selected, path }, parentId, actor, store, options, true)
@@ -119,9 +134,9 @@ export async function writeTaskCopy(directory: string, name: string, bytes: Uint
   const declared = inferDroppedBlobExtension(name, mimeType)
   const converted = !!normalized.ext && normalized.ext !== declared
   const named = converted ? `${name.replace(/\.[^.]+$/, '')}${normalized.ext}` : name
-  const target = join(directory, randomUUID())
+  const target = await requireAgentFileAccess(join(directory, randomUUID()))
   await mkdir(target, { recursive: true, mode: 0o700 })
-  const path = join(target, sanitizeRemoteFileName(named))
+  const path = await requireAgentFileAccess(join(target, sanitizeRemoteFileName(named)))
   await writeFile(path, normalized.bytes, { mode: 0o600 })
   return { path, name: named, size: normalized.bytes.byteLength, mimeType: converted ? 'image/png' : mimeType }
 }

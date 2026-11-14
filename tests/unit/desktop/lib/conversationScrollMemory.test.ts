@@ -13,6 +13,7 @@ import {
 import { publishActiveChatWillChange } from '../../../../apps/desktop/src/store/activeChatTransition'
 import { resetAuthSessionBoundary } from '../../../../apps/desktop/src/lib/authSessionLoss'
 
+const listRef = { current: null as import('../../../../apps/desktop/src/lib/flowList').FlowListHandle | null }
 beforeEach(() => resetAuthSessionBoundary())
 
 describe('conversation scroll memory', () => {
@@ -27,7 +28,7 @@ describe('conversation scroll memory', () => {
     const setFollowingTail = vi.fn()
     const isAtBottomRef = { current: true }
     function Harness() {
-      memory = useConversationScrollMemory({ viewportKey: 'test-slot', chatId: 'slot-chat', activationKey: 'slot-chat', enabled: true,
+      memory = useConversationScrollMemory({ listRef, viewportKey: 'test-slot', chatId: 'slot-chat', activationKey: 'slot-chat', enabled: true,
         messageIds: ['older', 'anchor', 'newer'], isAtBottomRef, setFollowingTail })
       return createPortal(createElement('div', { ref: memory.setScrollerRef },
         createElement('div', { 'data-msg-id': 'anchor' })), slot!)
@@ -44,7 +45,8 @@ describe('conversation scroll memory', () => {
       })
       vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({ top: 100, bottom: 900 } as DOMRect)
       vi.spyOn(row, 'getBoundingClientRect').mockReturnValue({ top: 84, bottom: 160 } as DOMRect)
-      await act(async () => { scroller.dispatchEvent(new Event('scroll')) })
+      // The scroll is read after the frame is painted (lib/afterPaint); the slot goes away in a later frame.
+      await act(async () => { scroller.dispatchEvent(new Event('scroll')); await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))) })
       await act(async () => { slotRoot.render(null) })
       expect(scroller.isConnected).toBe(false)
       expect(scroller.scrollHeight, 'the slot root has already removed the live geometry').toBe(0)
@@ -59,6 +61,47 @@ describe('conversation scroll memory', () => {
       carrier.remove(); host.remove(); vi.restoreAllMocks()
     }
   })
+  it('a viewport hidden and shown again (a topic tab pushed aside, then back) keeps the saved position', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    let memory: ReturnType<typeof useConversationScrollMemory> | null = null
+    let shown = true
+    function Harness({ enabled }: { enabled: boolean }) {
+      memory = useConversationScrollMemory({ listRef, viewportKey: 'topic-split', chatId: 'topic-1', activationKey: 'topic-1', enabled,
+        messageIds: ['older', 'anchor', 'newer'], isAtBottomRef: { current: true }, setFollowingTail: vi.fn() })
+      return createElement('div', { ref: memory.setScrollerRef, id: 'scroller' }, createElement('div', { 'data-msg-id': 'anchor' }))
+    }
+    try {
+      await act(async () => { root.render(createElement(Harness, { enabled: true })) })
+      const scroller = host.querySelector('#scroller') as HTMLElement
+      const row = scroller.firstElementChild as HTMLElement
+      // Hidden (display:none in a retained tab) = no geometry.
+      Object.defineProperties(scroller, {
+        scrollHeight: { configurable: true, get: () => shown ? 2_000 : 0 },
+        clientHeight: { configurable: true, get: () => shown ? 800 : 0 },
+        scrollTop: { configurable: true, writable: true, value: 700 },
+      })
+      vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({ top: 100, bottom: 900 } as DOMRect)
+      vi.spyOn(row, 'getBoundingClientRect').mockReturnValue({ top: 84, bottom: 160 } as DOMRect)
+      await act(async () => { scroller.dispatchEvent(new Event('scroll')); await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))) })
+      expect(memory!.hasSavedOffBottomPosition()).toBe(true)
+      // The list re-renders (leaving the tail does) and the restore settles on it, long before anyone hides the tab.
+      await act(async () => { root.render(createElement(Harness, { enabled: true })) })
+      for (let frame = 0; frame < 6; frame++) await act(async () => { await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))) })
+      expect(memory!.isPreservingPosition(), 'settled').toBe(false)
+      shown = false
+      await act(async () => { root.render(createElement(Harness, { enabled: false })) })
+      expect(memory!.hasSavedOffBottomPosition(), 'hidden: nothing to read, nothing forgotten').toBe(true)
+      shown = true
+      await act(async () => { root.render(createElement(Harness, { enabled: true })) })
+      expect(memory!.hasSavedOffBottomPosition(), 'shown again: the position is still there to come back to').toBe(true)
+    } finally {
+      await act(async () => { root.unmount() })
+      host.remove(); vi.restoreAllMocks()
+    }
+  })
+
   it('reads bottom state from the current viewport geometry', () => {
     expect(isConversationViewportAtBottom(
       { scrollHeight: 2_000, scrollTop: 1_120, clientHeight: 800 },
@@ -114,7 +157,7 @@ describe('conversation scroll memory', () => {
       messageIds: string[]
       rowId: string
     }) {
-      memory = useConversationScrollMemory({ viewportKey: 'test-slot',
+      memory = useConversationScrollMemory({ listRef, viewportKey: 'test-slot',
         chatId,
         activationKey: chatId,
         enabled: true,
@@ -188,7 +231,7 @@ describe('conversation scroll memory', () => {
       const view = { memory: null as ReturnType<typeof useConversationScrollMemory> | null, rowTop: 84, scrollTop: 700, renders: 0 }
       function Harness({ chatId, messageIds, rows }: { chatId: string; messageIds: string[]; rows: string[] }) {
         view.renders += 1
-        view.memory = useConversationScrollMemory({ viewportKey, chatId, activationKey: chatId, enabled: true, messageIds, isAtBottomRef: { current: true }, setFollowingTail: vi.fn() })
+        view.memory = useConversationScrollMemory({ listRef, viewportKey, chatId, activationKey: chatId, enabled: true, messageIds, isAtBottomRef: { current: true }, setFollowingTail: vi.fn() })
         return createElement('div', { ref: view.memory.setScrollerRef },
           createElement('div', null, ...rows.map((id) => createElement('div', { key: id, 'data-msg-id': id }))))
       }
@@ -344,13 +387,15 @@ describe('conversation scroll memory', () => {
         const root = createRoot(container)
         const view = { memory: null as ReturnType<typeof useConversationScrollMemory> | null, renders: 0, scrollTop: 0 }
         const setFollowingTail = vi.fn()
-        function Harness({ messageIds }: { messageIds: string[] }) {
+        const handle = { scrollToIndex: vi.fn(), autoscrollToBottom: vi.fn() }
+        const listRef = { current: handle }
+        function Harness({ messageIds, shownIds }: { messageIds: string[]; shownIds: string[] }) {
           view.renders += 1
-          view.memory = useConversationScrollMemory({ viewportKey: 'test-slot', chatId: 'chat-a', activationKey: 'chat-a', enabled: true, messageIds, isAtBottomRef: { current: true }, setFollowingTail, loadMessageAnchor })
+          view.memory = useConversationScrollMemory({ listRef, viewportKey: 'test-slot', chatId: 'chat-a', activationKey: 'chat-a', enabled: true, messageIds, isAtBottomRef: { current: true }, setFollowingTail, loadMessageAnchor })
           return createElement('div', { ref: view.memory.setScrollerRef },
-            createElement('div', null, ...messageIds.map((id) => createElement('div', { key: id, 'data-msg-id': id }))))
+            createElement('div', null, ...shownIds.map((id) => createElement('div', { key: id, 'data-msg-id': id }))))
         }
-        const render = (messageIds: string[]) => act(async () => { root.render(createElement(Harness, { messageIds })) })
+        const render = (messageIds: string[], shownIds = messageIds) => act(async () => { root.render(createElement(Harness, { messageIds, shownIds })) })
         // 视口顶 100、高 800;要看的那一行 m1 的上沿随 scrollTop 走,落位点是视口 35% 处(offset 280)。
         const geometry = () => {
           const scroller = container.firstElementChild as HTMLElement
@@ -368,7 +413,7 @@ describe('conversation scroll memory', () => {
           }
         }
         const cleanup = async () => { await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks() }
-        return { view, render, geometry, cleanup, setFollowingTail }
+        return { view, render, geometry, cleanup, setFollowingTail, handle }
       }
 
       it('loads the window around it, lands the remounted list on it, and resolves once it has settled', async () => {
@@ -391,6 +436,26 @@ describe('conversation scroll memory', () => {
           await act(async () => { await revealed })
           expect(settled).toBe(true)
           expect(rig.view.scrollTop).toBe(500)
+        } finally { await rig.cleanup() }
+      })
+
+      it('mounts an already loaded but omitted target through the existing list handle before settling', async () => {
+        const load = vi.fn(async () => {})
+        const rig = mountWithAnchor(load)
+        try {
+          await rig.render(['m0', 'm1', 'm2'], ['m2'])
+          rig.geometry()
+          let settled = false
+          let revealed: Promise<void> = Promise.resolve()
+          await act(async () => { revealed = rig.view.memory!.revealMessage('m1').then(() => { settled = true }) })
+          expect(load).not.toHaveBeenCalled()
+          expect(rig.handle.scrollToIndex).toHaveBeenCalledWith({ index: 1, align: 'start', offset: -280 })
+          expect(settled).toBe(false)
+          await rig.render(['m0', 'm1', 'm2'])
+          rig.geometry()
+          await frames(8)
+          await act(async () => { await revealed })
+          expect(settled).toBe(true)
         } finally { await rig.cleanup() }
       })
 

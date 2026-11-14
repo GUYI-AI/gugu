@@ -1,19 +1,20 @@
-import { expect, it } from 'vitest'
+import { beforeAll, expect, it } from 'vitest'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { assistantGuide, assistantHomePaths } from '@gugu/core/shared/assistantPolicy'
-import { ASSISTANT_CONTEXT_CORE, ASSISTANT_TASK_EXECUTION } from '@gugu/core/shared/assistantWorkflow'
+import { installAssistantRulesResolver } from '../../../apps/desktop/electron/assistant-rules-resolver'
+import { fixedAssistantRules } from './assistantRules/fixtureApp'
+import { NEUTRAL_ASSISTANT_RULES as rules } from './assistantRules/neutralRules'
 import { openingAssistantIndex } from '../../../apps/desktop/electron/sessionpage/assistant-index-cache'
 import { boundedAssistantIndex } from '../../../apps/desktop/electron/sessionpage/assistant-index-format'
 import { GUGU_ACKNOWLEDGEMENT, GUGU_PLATFORM_BLOCK } from '../../../apps/desktop/electron/product-platform-prompt'
 import type { Materialization } from '../../../apps/desktop/electron/capability-bundle'
 import { assistantHomeTaskContext, personalAssistantContext, preparePersonalAssistantContext, refreshAssistantContext } from '../../../apps/desktop/electron/sessionpage/assistant-context'
 
-it('keeps the resident coordination policy within 1300 characters', () => {
-  expect(ASSISTANT_CONTEXT_CORE.join('\n').length).toBeLessThanOrEqual(1_300)
-})
+// #1931 The words are the assistant App's (not in this repository): the host's mechanics run here on the neutral test rules.
+beforeAll(() => installAssistantRulesResolver(fixedAssistantRules()))
 
 it('gives Codex the assistant inventory and DM contract while retaining its native MCP and permissions', async () => {
   const root = await mkdtemp(join(tmpdir(), 'codex-assistant-context-'))
@@ -94,50 +95,24 @@ it.each(['computer', 'cloud'] as const)('keeps the complete %s handbook retrieva
     await mkdir(cwd)
     await mkdir(join(root, '.claude'))
     const instructions = assistantHomePaths(root, cwd, kind).instructions
-    const full = assistantGuide(kind)
-    const outdated = full.replaceAll('profile_rules: 6', 'profile_rules: 1').replaceAll('关于你v3', '关于你v1')
-      .replace('你是个人助理', '你是主人的个人代理，电脑睡了或关了以后再处理')
-    expect(outdated).toContain('profile_rules: 1')
+    const full = assistantGuide(kind, rules)
+    const outdated = full.replace('# Guide', '# An outdated guide')
     await writeFile(instructions, `Owner instructions before\n${outdated}\nOwner instructions after`)
     await writeFile(join(cwd, 'memory.md'), 'durable owner memory')
     await refreshAssistantContext(cwd, root, kind, root)
     const brief = await readFile(instructions, 'utf8')
     expect(brief).toContain('Owner instructions before')
     expect(brief).toContain('Owner instructions after')
-    expect(brief).toContain('明确要求当作任务')
-    expect(brief).toContain('宿主自动补齐执行约定')
-    expect(brief).toContain('关于你：按宿主整理要求处理，不自行重查版本。')
-    expect(full).toContain('不依赖模型碰巧读到索引')
-    // An upgrade must expose the version gate even after today's first conversation.
-    expect(brief).toContain('按宿主整理要求处理，不自行重查版本')
-    expect(brief).not.toContain('profile_rules: 1')
-    expect(brief).not.toContain('关于你v1')
-    expect(brief).toContain('同版寒暄直接回复')
-    expect(full).toContain('即使当天已聊过，缺失/不同仍在下一轮整理')
-    // Both the resident instructions and the on-demand handbook carry the owner-facing boundary.
-    for (const text of [brief, full]) {
-      expect(text).not.toMatch(/主人|用户|电脑睡|机器睡|叫醒/)
-      expect(text).toContain('不展示会话、work、设备、job 的内部编号')
-      expect(text).toContain('Pi 运行时、ACP')
-      expect(text).toContain('用任务标题、设备名和可点击链接')
-      expect(text).toContain('不说「我猜」')
-      expect(text).toContain('不要求核对完整 ID')
-      expect(text).toContain('先查原记录')
-      expect(text).toContain('仍查不到就说明已知事实与缺口')
-      expect(text).toContain('做好了但交不回')
-    }
-    expect(brief).toContain("Don't ask by default")
-    expect(brief).toContain('明确要求先问后做时照办')
-    expect(brief).toContain('缺授权的花钱、对外发送、删除或改动')
+    // The managed block now holds the resident brief; the full handbook is the reference file next to it.
+    expect(brief).not.toContain('An outdated guide')
+    expect(brief).toContain(`# Brief (${kind})`)
     expect(brief).toContain('.gugu-assistant-reference.md')
-    expect(brief).not.toContain('"batches"')
-    expect(brief.length).toBeLessThan(full.length / 2)
     expect(await readFile(join(cwd, '.gugu-assistant-reference.md'), 'utf8')).toBe(full)
-    expect(full).not.toContain(ASSISTANT_TASK_EXECUTION)
+    expect(full).not.toContain(rules.texts['task-execution'])
     const materialized = personalAssistantContext(fixture(), kind)
     const options = (materialized.sessionNewPatch!.meta!.claudeCode as { options: Record<string, unknown> }).options
     const effective = (options.systemPrompt as { prompt: string }).prompt + '\n' + brief
-    for (const rule of ASSISTANT_CONTEXT_CORE.slice(1)) expect(effective.split(rule)).toHaveLength(2)
+    expect(effective.split(`# Brief (${kind})`)).toHaveLength(2)
     expect(effective).not.toContain('Read the assistant handbook before delegation')
     expect(await readFile(join(cwd, 'memory.md'), 'utf8')).toBe('durable owner memory')
     if (kind === 'cloud') await expect(readFile(join(cwd, 'CLAUDE.md'))).rejects.toMatchObject({ code: 'ENOENT' })
@@ -165,22 +140,23 @@ it('loads the dedicated cloud home where the assistant guide and skills actually
   expect(options.strictMcpConfig).toBe(true)
 })
 
-it('enables host idle compaction only for a prepared personal assistant, never its home executors', () => {
+it('enables host idle compaction only for a prepared personal assistant, never its home executors', async () => {
   const prepared = personalAssistantContext(fixture(), 'cloud', { index: '<gugu_resource_index />', guguHome: '/gugu' })
   expect(prepared.sessionNewPatch!.meta!.guguAssistant).toEqual({ idleCompaction: true })
   expect(personalAssistantContext(fixture()).sessionNewPatch!.meta!.guguAssistant).toBeUndefined()
   const childSource = fixture()
   childSource.sessionNewPatch!.meta!.guguAssistant = { idleCompaction: true }
-  const child = assistantHomeTaskContext(childSource, '/gugu/assistant', '/gugu')
+  const child = await assistantHomeTaskContext(childSource, '/gugu/assistant', '/gugu')
   expect(child.sessionNewPatch!.meta!.guguAssistant).toBeUndefined()
 })
 
-it('keeps home executors isolated while the host supplies the contract in their work order, auto memory or recovery subscriptions', () => {
+it('keeps home executors isolated while the host supplies the contract in their work order, auto memory or recovery subscriptions', async () => {
   const before = fixture()
-  expect(assistantHomeTaskContext(before, '/business', '/gugu')).toBe(before)
-  const after = assistantHomeTaskContext(before, '/gugu/assistant', '/gugu')
+  expect(await assistantHomeTaskContext(before, '/business', '/gugu')).toBe(before)
+  const after = await assistantHomeTaskContext(before, '/gugu/assistant', '/gugu')
   const options = (after.sessionNewPatch!.meta!.claudeCode as { options: Record<string, unknown> }).options
-  expect(options.systemPrompt).not.toContain(ASSISTANT_TASK_EXECUTION)
+  expect(options.systemPrompt).not.toContain(rules.texts['task-execution'])
+  expect(options.systemPrompt).toContain(rules.texts['task-agent-identity'])
   expect(options.systemPrompt).toContain(before.sessionPrompt)
   expect(typeof options.systemPrompt).toBe('string')
   expect(options.settingSources).toEqual([])
@@ -195,12 +171,12 @@ it('keeps home executors isolated while the host supplies the contract in their 
   expect(JSON.stringify(after.artifacts)).not.toContain('recovery.cjs')
 })
 
-it('preserves executor tool-search choices without inheriting the assistant override', () => {
+it('preserves executor tool-search choices without inheriting the assistant override', async () => {
   for (const value of ['true', 'auto:5']) {
     const capabilities = fixture()
     const claude = capabilities.sessionNewPatch!.meta!.claudeCode as { options: { env: Record<string, string> } }
     claude.options.env.ENABLE_TOOL_SEARCH = value
-    const executor = assistantHomeTaskContext(capabilities, '/gugu/assistant', '/gugu')
+    const executor = await assistantHomeTaskContext(capabilities, '/gugu/assistant', '/gugu')
     const options = (executor.sessionNewPatch!.meta!.claudeCode as { options: { env: Record<string, string> } }).options
     expect(options.env.ENABLE_TOOL_SEARCH).toBe(value)
     for (const kind of ['cloud', 'computer'] as const) {
@@ -226,7 +202,7 @@ it('excludes ancestor coding instructions without changing the assistant setting
     expect(settings.claudeMdExcludes).toContain(join(root, '.claude/CLAUDE.md'))
     expect(settings.claudeMdExcludes).toContain(join(root, '.claude/rules/**'))
     expect(settings.claudeMdExcludes).not.toContain(join(cwd, 'CLAUDE.md'))
-    expect(await readFile(join(cwd, 'CLAUDE.md'), 'utf8')).toContain('超级个人代理')
+    expect(await readFile(join(cwd, 'CLAUDE.md'), 'utf8')).toContain('# Brief (computer)')
     await refreshAssistantContext(cwd, root, 'computer', root)
     expect(JSON.parse(await readFile(settingsPath, 'utf8'))).toEqual(settings)
     await writeFile(settingsPath, '{broken')
@@ -244,9 +220,7 @@ it('uses built-in Gugu indexes without requiring an external library installatio
     await refreshAssistantContext(cwd, root, 'computer', root)
     const brief = await readFile(join(cwd, 'CLAUDE.md'), 'utf8')
     expect(brief).not.toContain(config)
-    expect(brief).toContain('按当前账号独立保存')
-    expect(brief).toContain('project_list / project_get')
-    expect(brief).toContain('无需安装其他索引工具')
+    expect(brief).toContain('# Brief (computer)')
     expect(brief).not.toContain(join(root, 'ideas'))
   } finally { await rm(root, { recursive: true, force: true }) }
 })
@@ -259,8 +233,8 @@ it('serializes concurrent initialization without sharing temporary files or losi
     await Promise.all(Array.from({ length: 12 }, () => refreshAssistantContext(cwd, root, 'computer', root)))
     const instructions = await readFile(join(cwd, 'CLAUDE.md'), 'utf8')
     expect(instructions).toContain('Owner instructions stay intact')
-    expect(instructions.match(/# 超级个人代理/g)).toHaveLength(1)
-    expect(await readFile(join(cwd, '.gugu-assistant-reference.md'), 'utf8')).toBe(assistantGuide('computer'))
+    expect(instructions.match(/# Brief \(computer\)/g)).toHaveLength(1)
+    expect(await readFile(join(cwd, '.gugu-assistant-reference.md'), 'utf8')).toBe(assistantGuide('computer', rules))
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 

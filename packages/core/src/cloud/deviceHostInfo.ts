@@ -11,6 +11,7 @@ import { parseVersionRequestOutcome } from '../shared/serverVersionOutcome'
 import { readFileSync, statfsSync } from 'node:fs'
 import { arch as osArch, homedir as osHomedir, platform as osPlatform, release as osRelease } from 'node:os'
 import { join } from 'node:path'
+import { assistantHomeKind } from '../shared/assistantPolicy'
 import type { DeviceHostInfo, DeviceServerDisk, DeviceServerRollback, DeviceServerUpdate } from '../shared/types/deviceHost'
 import { MIN_CLIENT_PROTOCOL, REMOTE_PROTOCOL_VERSION, SERVER_ACTIVITY_STALE_MS } from './serverMachineHealth'
 import { readServerConnectVia } from './serverConnectVia'
@@ -86,6 +87,7 @@ export function parseServerUpdateState(text: string, nowMs: number, activityText
   } catch {
     return null
   }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
   if (data.state !== 'downloading' && data.state !== 'ready' && data.state !== 'switching' && data.state !== 'failed') return null
   if (typeof data.version !== 'string' || !data.version) return null
   if (typeof data.at !== 'number' || !Number.isFinite(data.at)) return null
@@ -118,6 +120,7 @@ export function parseServerRollback(text: string, nowMs: number, supervisorVersi
   } catch {
     return null
   }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
   if (data.lastOutcome?.kind === 'rolledBack') data = { version: data.lastOutcome.bad, restored: data.lastOutcome.back, at: data.lastOutcome.at }
   if (typeof data.version !== 'string' || !data.version || typeof data.restored !== 'string' || !data.restored) return null
   if (typeof data.at !== 'number' || nowMs - data.at > SERVER_ROLLBACK_REPORT_MS) return null
@@ -201,8 +204,8 @@ export function resolveDeviceHostInfo(env: NodeJS.ProcessEnv = process.env, deps
   // #6264 咕咕 server 以 root 跑 = 上面的智能体都以管理员身份跑、能改整台机器:设备列表如实标出来。
   if (isServer && (deps.uid ?? (() => process.getuid?.()))() === 0) info.runs_as_root = true
   // #7199 个人助理住的那台自己报一声:各端设备行一出现就认得它(❌ 等问到管家才知道,那之前会把机器名露给人)。
-  if (isServer && env.GUGU_CLOUD_COMPUTER === '1') info.assistant_home = true
-  if (isServer && env.GUGU_CLOUD_COMPUTER !== '1' && platform === 'linux' && (info.arch === 'x64' || info.arch === 'arm64')) info.assistant_home_setup = 1
+  if (isServer && assistantHomeKind(env) === 'cloud') info.assistant_home = true
+  if (isServer && assistantHomeKind(env) === 'computer' && platform === 'linux' && (info.arch === 'x64' || info.arch === 'arm64')) info.assistant_home_setup = 1
   const home = env.GUGU_SERVER_HOME?.trim()
   if (isServer && home) {
     const nowMs = (deps.nowMs ?? Date.now)()

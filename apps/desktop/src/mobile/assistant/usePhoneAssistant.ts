@@ -1,16 +1,24 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { usePhoneAssistantAppEnsure } from '@/components/appSlot/phoneAssistantAppEnsure'
+import { usePhoneAssistantEntry } from './phoneAssistantEntry'
 import { useAssistantDm } from '@/components/assistant/useAssistantDm'
 import { assistantHomePlace, type AssistantHomePlace } from '@/lib/assistantHome'
 import { readSetupStep, writeSetupStep } from '@/lib/assistantSetupState'
 import { useMyAssistantContact } from '@/lib/myAssistant'
 import { useAuth } from '@/store/auth'
-import { useContactsStore } from '@/store/contactsContext'
-import { useDevicesStore } from '@/store/devicesContext'
+import { useContactList } from '@/store/contactsContext'
+import { getCloudComputerState, subscribeCloudComputerState } from '@/lib/cloudComputerStore'
+import { directoryDevices, subscribeDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
+import type { Device } from '@gugu/core/shared/types/chat'
 import type { PhoneAssistant } from './MobileAssistantApp'
 import { publishPhoneAssistant } from './phoneAssistantIdentity'
 import { phoneAssistantStage, type PhoneAssistantStage } from './phoneAssistantStage'
 
 export type { PhoneAssistantStage } from './phoneAssistantStage'
+
+const noSubscription = () => () => {}
+const NO_DEVICES: readonly Device[] = []
+const noDevices = () => NO_DEVICES
 
 export type PhoneAssistantState = {
   /** 手机壳里有这一格:一直有(owner 10-16「没有咕咕的新用户那一格照样在」),没有它时那一格里是给它安家的引导。 */
@@ -34,8 +42,11 @@ export type PhoneAssistantState = {
  */
 export function usePhoneAssistant(enabled: boolean): PhoneAssistantState {
   const { user } = useAuth()
-  const { contacts } = useContactsStore()
-  const { cloudComputer, devices } = useDevicesStore()
+  const contacts = useContactList(enabled)
+  const cloudComputer = useSyncExternalStore(subscribeCloudComputerState, getCloudComputerState, getCloudComputerState)
+  // The shell calls this on the desktop too (disabled). Reading the contacts or the device context there re-rendered the whole
+  // shell on every contacts update and device heartbeat; both are only subscribed to where the phone assistant exists.
+  const devices = useSyncExternalStore(enabled ? subscribeDeviceSessions : noSubscription, enabled ? directoryDevices : noDevices, noDevices)
   const snapshot = enabled ? cloudComputer?.snapshot ?? null : null
   const cloudDeviceId = enabled ? snapshot?.deviceId ?? devices.find((device) => device.cloud_computer)?.device_id ?? null : null
   const mine = useMyAssistantContact(contacts)
@@ -44,6 +55,9 @@ export function usePhoneAssistant(enabled: boolean): PhoneAssistantState {
   const id = contact?.id ?? null
   const name = contact?.display_name ?? null
   useEffect(() => publishPhoneAssistant(id && name ? { id, name } : null), [id, name])
+  // #1931 The assistant App is its 动态 / 任务 / 记忆 / 资料 on this phone: put in by itself once the account's assistant is known.
+  const appEntry = usePhoneAssistantEntry()
+  usePhoneAssistantAppEnsure(enabled ? id : null, JSON.stringify(appEntry))
   const home = useMemo(() => (contact ? assistantHomePlace(mine.homeDeviceId, devices, cloudDeviceId) : null), [contact, mine.homeDeviceId, devices, cloudDeviceId])
   // 引导在手机上走到「安家」就够了(之后的「连应用 → 一切就绪」是桌面会话页画的):认出它了就把这一步的记录清掉,❌ 留着下次还停在引导里。
   const ownerUserId = user?.id ?? null

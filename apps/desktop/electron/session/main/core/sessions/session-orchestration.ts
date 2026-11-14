@@ -1,4 +1,7 @@
-import { taskName } from './task-name';
+import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary';
+import { taskName, taskNameFor } from './task-name';
+import { sessionHostLocale } from '@main/core/host-locale';
+import { cancelExtensionSessionCalls } from '@main/core/extensions/extension-program-access';
 import { assistantWorkIntentSchema,type AssistantWorkIntent } from '@gugu/core/shared/assistantWorkIntent';
 import { SessionArchivedError } from '@gugu/core/shared/sessionArchival';
 import { assistantWorkLedgerContext } from '../../../../sessionpage/assistant-work-ledger';
@@ -11,9 +14,8 @@ import { parseConversationLink } from '@gugu/core/shared/ui/guguLink';
 import { readCurrentActivitySource } from './session-activity-source';
 import { receiveAssistantWorkReport, workReportSchema, type WorkReport } from '../../../../sessionpage/assistant-work';
 import { isProjectAgentAction, runProjectAgentAction, type ProjectAgentAction } from '../projects/project-agent-actions';
-import { localProjectOfGroup } from '../projects/operations/project-groups';
+import { machineLocalProjectOf, machineLocalProjectsOf, machineOutwardProjectIds } from '../projects/project-public-id';
 import { getProjectById } from '../projects/operations/getProjects';
-import { isLibraryAgentAction, runLibraryAgentAction, type LibraryAgentAction } from '../app/user-library';
 import { randomUUID } from 'node:crypto';
 import { sessionDirectMessageId } from './session-direct-identity';
 import { parseGuguLink } from '@gugu/core/shared/ui/guguLink';
@@ -29,7 +31,9 @@ import {
 } from '@gugu/core/shared/agentStatus';
 import { readAcpSessionSummaries } from '@main/core/acp/session-summary-reader';
 import { resolveSession, resolveWorkspace } from '@main/core/projects/utils';
-import { containsMachinePath, isAbsoluteMachinePath, joinMachinePath } from '@main/core/files/path-utils';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { canonicalPath, inWorkingCopy } from '@gugu/session-core/files';
 import {
   localAgentForSession,
   sessionpageProjectGroupForSession,
@@ -159,7 +163,7 @@ export type SessionAction =
       prompt: string;
       source_link?: string;
       title?: string;
-      /** The `project` parameter, decoded at the host boundary: a project id, or a folder on this machine. */
+      /** The `project` parameter, decoded at the host boundary: a project id (its project group chat id), or a folder on this machine. */
       project_id?: string;
       project_path?: string;
       parent_session_id?: string | null;
@@ -212,7 +216,6 @@ export type SessionAction =
   /** #7221 schedule_*:建只给自己;看与取消可指名主人的另一条会话(agent-schedules.ts)。 */
   | AgentScheduleAction
   | ProjectAgentAction
-  | LibraryAgentAction
   | ActivityAction;
 
 // `SessionModel` 与它的取值规则搬去了 `./session-model-fact` —— 那一格的合同里有一条
@@ -230,7 +233,8 @@ export type SessionSnapshot = {
   parent_session_id: string | null;
   /** 父级的远端祖先暂时够不着,与 session_set_parent 同一条回执。 */
   not_reached?: string[];
-  project_id: string;
+  /** The project's id (its project group chat id); null for a session in no project group. */
+  project_id: string | null;
   /** 跨机省略 project 时,说明实际落点及推导或回落原因。 */
   project_note?: string;
   title: string;
@@ -427,6 +431,8 @@ function snapshot(
   row: SessionRow,
   summaries: Record<string, SessionSummary>,
   model: SessionModel,
+  /** Outward project ids (project-public-id.ts): a session in no project group has project_id null. */
+  outward: (localProjectId: string) => string | null,
 ): SessionSnapshot {
   const transport = transportOf(row);
   const runtime = transport === 'acp' ? (summaries[row.id] ?? null) : null;
@@ -438,7 +444,7 @@ function snapshot(
     spawned_by_session_id: sessionSpawnerId(row),
     ...(!row.spawnedBySessionId && remoteSpawner ? { spawned_by_device_id: remoteSpawner.deviceId } : {}),
     parent_session_id: sessionParentId(row),
-    project_id: row.projectId,
+    project_id: outward(row.projectId),
     title: taskName(row),
     provider_id: row.provider ?? 'unknown',
     model,
@@ -491,6 +497,9 @@ async function stopSessionTransport(target: SessionRow, reason: SessionStopReaso
     // 停这一端自己把「被打断」交给写入者(与终端腿 stopSession 同一个写口),桥随后那一次是空操作。
     await agentStatusWriter.settleSessionExited({ sessionId: target.id, projectId: target.projectId });
   } else {
+    // ACP cancels at its runtime stop/cancel entry. The terminal leg has no such
+    // client, so withdraw this task's App calls before stopping its process here.
+    cancelExtensionSessionCalls(target.id);
     // 终端挂在这条会话的挂载下:没挂着 ⇒ 本进程里没有这条会话的终端,没有东西可停。
     // ❌ 为了停去挂载:挂载(连已挂载的快路径在内)会广播 session:provisioned,渲染层据此把会话准备起来、
     // 复原标签、按原会话把进程拉起来 —— 停了等于重启(#4377 mac1 实测:停后 0.1 s 内 `--resume` 重生)。
@@ -843,11 +852,11 @@ async function spawnSession(
 
   // #5665 child 是一条独立会话,这里选的只是它的工作目录:缺省和调用者共用同一份工作副本;点名了项目就落那个
   // 项目的根工作区(与会话页新建会话同一步)。
-  const named = namedPlacement(action);
+  const named = await namedPlacement(action);
   let projectId = context.projectId;
   let workspaceId = caller.workspaceId;
   if (named) {
-    ({ projectId, workspaceId } = await projectRootPlacement(named, `project ${named.project_path ?? named.project_id}`));
+    ({ projectId, workspaceId } = await projectRootPlacement(named, `project ${action.project_path ?? action.project_id}`));
   }
   signal?.throwIfAborted();
 
@@ -926,7 +935,7 @@ async function spawnSession(
     signal,
   });
   return {
-    ...snapshot(row, {}, await sessionModel(row)),
+    ...snapshot(row, {}, await sessionModel(row), await machineOutwardProjectIds()),
     ...(not_reached.length ? { not_reached } : {}),
     ...(action.assistant_work ? {assistant_work_target:{session_id:row.id,device_id:(await assistantWorkLedgerContext()).deviceId}} : {}),
     // child 是本项目里生出来的，因此和 caller 同属这个群（[[agent-provisioning]] 的入群是它 session
@@ -947,9 +956,10 @@ async function spawnSession(
   };
 }
 
-function namedPlacement(action: { project_id?: string; project_path?: string }) {
-  if (!action.project_id && !action.project_path) return null;
-  return { project_id: action.project_id, project_path: action.project_path };
+/** The `project` an agent named: a project id (its group; this machine's folder for it, project-public-id.ts) or a folder here. */
+async function namedPlacement(action: { project_id?: string; project_path?: string }) {
+  if (action.project_id) return { project_id: await machineLocalProjectOf(action.project_id) };
+  return action.project_path ? { project_path: action.project_path } : null;
 }
 
 /**
@@ -1055,7 +1065,8 @@ async function createChildSession(input: {
   }
   const prompt = withActivitySource(input.prompt, input.sourceLink);
   const mark = (stage: string, extra?: Record<string, unknown>) => ledger.mark(stage, extra);
-  const title = input.title?.trim() || undefined;
+  // Binding the identity first binds the name the task carries, so it is named here, by the one rule (task-name.ts).
+  const title = input.bindIdentityFirst ? await taskNameFor(provider, input.title) : input.title?.trim() || undefined;
   // A gugu-spawned child is a chat member, not a session-page session with a person present to answer
   // permission prompts. Its autonomy is therefore decided here, once, before either transport sees it.
   // Keep the session-page composer's durable choice unchanged; only this delegated child is fully automatic.
@@ -1125,13 +1136,14 @@ async function createChildSession(input: {
     initialPrompt,
     initialQueue,
     ...(initialQueue ? { startupOrigin: 'session-page' as const, initialMessageId: messageId } : {}),
+    ...(input.birthGroup ? { birthChatId: input.birthGroup.chatId } : {}),
     runtime: transport,
     deferStart: true,
   }, db, input.relations);
   const created = input.bindIdentityFirst && transport === 'acp'
     ? bindIdentityThenCreate(
       async () => {
-        const cwd = resolveWorkspace(projectId, input.workspaceId)?.path;
+        const cwd = (await resolveWorkspace(projectId, input.workspaceId))?.path;
         if (!cwd) throw new Error(`workspace ${input.workspaceId} is unknown`);
         const identity = await provisionStartIdentity({ sessionId, providerId: provider, projectId, cwd }, 'fresh', { agentDisplayName: title || undefined });
         if (!identity) throw new Error(`session ${sessionId} could not be given an identity`);
@@ -1224,6 +1236,12 @@ async function newSessionMemory(): Promise<NewSessionMemory> {
  * agents listed here on the remembered shape's leg and which are installed. Nothing usable here: said, as the box's
  * empty state.
  */
+// Read by the person the App is working for, not an agent: what to do next, in the product's words and their language.
+const NO_AGENT_INSTALLED: Record<string, string> = {
+  'zh-CN': '这台电脑上还没有装 agent。先在「新建任务」里装一个，再试一次。',
+  'en-US': 'No agent is installed on this computer yet. Install one from New task, then try again.',
+};
+
 async function newSessionEngine(memory: NewSessionMemory): Promise<AgentProviderId> {
   const [{ agentsController }, { appSettingsService }] = await Promise.all([
     import('@main/core/agents/controller'),
@@ -1248,14 +1266,16 @@ async function newSessionEngine(memory: NewSessionMemory): Promise<AgentProvider
     availabilityKnown: true,
   });
   if (!selection.providerId || selection.createDisabled) {
-    throw new Error('no agent on this computer can start a session: install one, or pass harness (session_list_harnesses)');
+    throw new Error(NO_AGENT_INSTALLED[sessionHostLocale()] ?? NO_AGENT_INSTALLED['en-US']);
   }
   return selection.providerId;
 }
 
 /**
- * The model a spawn names, else — on the engine last started — the one it started with, as the box restores it; a
- * remembered model this computer no longer offers falls back to the engine's own default (the box drops it too).
+ * The model a spawn names, else — on the engine last started — the one it started with, as the box restores it; else the
+ * box's default for a new session (`defaultCreateModel`: the engine's factory Gugu model, so someone with no CLI sign-in
+ * is not sent to a sign-in wall). A remembered model this computer no longer offers falls back to the engine's own
+ * default (the box drops it too).
  */
 async function spawnModelSelection(
   provider: AgentProviderId,
@@ -1263,9 +1283,20 @@ async function spawnModelSelection(
   requestedModel: string | undefined,
   last: NewSessionMemory['lastStarted'],
 ): Promise<Awaited<ReturnType<typeof resolveSpawnModelSelection>>> {
-  const remembered = last ? (last.platformModel ? platformOptionId(last.platformModel) : last.model) : undefined;
-  if (requestedModel || !remembered) return await resolveSpawnModelSelection(provider, transport, requestedModel);
-  return await resolveSpawnModelSelection(provider, transport, remembered).catch(() => ({ kind: 'harness' as const, model: undefined }));
+  if (requestedModel) return await resolveSpawnModelSelection(provider, transport, requestedModel);
+  const fallback = last ? (last.platformModel ? platformOptionId(last.platformModel) : last.model) : await newSessionModel(provider, transport);
+  if (!fallback) return { kind: 'harness', model: undefined };
+  return await resolveSpawnModelSelection(provider, transport, fallback).catch(() => ({ kind: 'harness' as const, model: undefined }));
+}
+
+/** The new-session box's default model on this engine: the remote and phone create forms' one rule (`defaultCreateModel`). */
+async function newSessionModel(provider: AgentProviderId, transport: SessionRuntime): Promise<string | undefined> {
+  const [{ createModels }, { defaultCreateModel }] = await Promise.all([
+    import('../session-timeline/create-session'),
+    import('../../../../../src/lib/createModelDefault'),
+  ]);
+  const models = await createModels({ harness: provider, sessionView: transport === 'pty' ? 'code' : 'general' });
+  return (models.ok ? defaultCreateModel(models.value) : null) ?? undefined;
 }
 
 /**
@@ -1388,7 +1419,7 @@ async function requireCallerWorkspace(context: SessionCallerContext, signal?: Ab
   if (!caller.workspaceId || caller.workspaceId !== context.workspaceId) {
     throw new Error('current session workspace is not ready');
   }
-  const workspace = resolveWorkspace(context.projectId, caller.workspaceId);
+  const workspace = await resolveWorkspace(context.projectId, caller.workspaceId);
   if (!workspace) throw new Error('current session workspace is not mounted');
   return workspace;
 }
@@ -1402,6 +1433,18 @@ let remotePaneOpener: RemotePaneOpener | null = null;
 
 export function setRemotePaneOpener(opener: RemotePaneOpener | null): void {
   remotePaneOpener = opener;
+}
+
+/**
+ * #1607 On a desktop: the other computers showing a task that runs here (a task started on another computer to run on
+ * this one). Every machine records them (embedded-boot, device-pane-relay); an App's task page goes to them as well as to
+ * this window, so the person sees it where they are looking.
+ */
+type RemoteTaskViewers = Pick<RemotePaneRoute, 'open' | 'watching'>;
+let remoteTaskViewers: RemoteTaskViewers | null = null;
+
+export function setRemoteTaskViewers(viewers: RemoteTaskViewers | null): void {
+  remoteTaskViewers = viewers;
 }
 
 type OpenInTabIntent = 'preview' | 'pinned';
@@ -1462,9 +1505,10 @@ async function openFileInTab(
 
   const requestedPath = action.path.trim();
   if (!requestedPath) throw new Error('path is required');
-  const absolutePath = isAbsoluteMachinePath(requestedPath)
-    ? requestedPath
-    : joinMachinePath(workspace.path, requestedPath);
+  // Where the agent's path enters: one spelling from here on (`@@@canonical-path`), the one its tab, card and output carry.
+  const absolutePath = canonicalPath(path.isAbsolute(requestedPath) ? requestedPath : path.join(workspace.path, requestedPath));
+  const inWorkspace = inWorkingCopy(workspace.path, absolutePath) !== null;
+  await requireAgentFileAccess(absolutePath);
   const stat = await workspace.fileSystem.stat(absolutePath);
   signal?.throwIfAborted();
   if (!stat.success) {
@@ -1476,7 +1520,7 @@ async function openFileInTab(
   if (remotePaneOpener) {
     if (tabKind) throw new Error(REMOTE_PANE_NO_EXTENSIONS);
     // 桌面那一格只读得到会话工作目录里的文件(远端工作区的边界):目录外的当场说清,❌ 推过去再开出一个打不开的 tab。
-    if (!containsMachinePath(workspace.path, absolutePath)) throw new Error(describeOutsideWorkspace(workspace.path));
+    if (!inWorkspace) throw new Error(describeOutsideWorkspace(workspace.path));
     const outcome = await remotePaneOpener.open(
       context.sessionId,
       { kind: 'file', path: absolutePath },
@@ -1499,7 +1543,7 @@ async function openFileInTab(
       projectId: context.projectId,
       sessionId: context.sessionId,
       path: absolutePath,
-      external: !containsMachinePath(workspace.path, absolutePath),
+      external: !inWorkspace,
       intent: action.intent,
       ...(tabKind ? { tabKind } : {}),
     });
@@ -1554,7 +1598,7 @@ function claimingTab(requestedKind: string, absolutePath: string): string {
  * 与 `open_in_tab` 走同一条「请会话页打开、等它回话」的路,❌ 另起一条:开在哪、并排规则、
  * 会话页没挂着时先准备它,全都一样。没有窗口的咕咕 server 上没有页签可操作 —— 说出来,❌ 干等超时。
  */
-export async function openAgentBrowserPane(
+export async function openTaskBrowserPane(
   target: { projectId: string; sessionId: string },
   url: string | undefined,
   signal?: AbortSignal,
@@ -1584,6 +1628,25 @@ export async function openAgentBrowserPane(
   return ack.browserId;
 }
 
+/**
+ * #1607 node 5: on a Gugu server, a task's page (its headless Chromium's) is shown on the desktop watching this task, in
+ * that session's browser cell, where the person can take it over. Not on a computer with windows: there the page is in
+ * its own tab already. A desktop that is not watching gets it when it opens the task (the relay queues it).
+ */
+export async function showTaskPageOnDesktop(sessionId: string, signal?: AbortSignal): Promise<void> {
+  if (!remotePaneOpener) return;
+  await remotePaneOpener.open(sessionId, { kind: 'task-page' }, 'pinned', signal);
+}
+
+/** A `file:` page an agent names, in its one spelling (`@@@canonical-path`) — its card and output then match the file's. */
+function canonicalFileUrl(url: string): string {
+  if (!url.startsWith('file:')) return url;
+  const named = fileUrlToMachinePath(url);
+  if (!named) return url;
+  const parsed = new URL(url);
+  return `${pathToFileURL(canonicalPath(named)).href}${parsed.search}${parsed.hash}`;
+}
+
 async function openBrowserInTab(
   context: SessionCallerContext,
   action: Extract<SessionAction, { action: 'open_in_tab'; url: string }>,
@@ -1596,7 +1659,7 @@ async function openBrowserInTab(
   // the person is taken — the same as a click on that link in the chat. It goes the browser request's way there, with the
   // place a pill's link points at (`?v=`, `#…`) kept: the App that opens it is taken there too.
   const resource = parseGuguLink(action.url);
-  const url = resource ? action.url : normalizeOpenInTabUrl(action.url);
+  const url = resource ? action.url : canonicalFileUrl(normalizeOpenInTabUrl(action.url));
   if (remotePaneOpener) {
     // localhost 的端口由桌面那一格经 SSH 转过去(remote-browser-tab);公网地址直接加载;
     // `file:` 网页由桌面那一格经会话工作区的读文件动词取来渲染 —— 只认工作目录里的文件,先在这里核清楚。
@@ -1627,14 +1690,15 @@ async function openBrowserInTab(
  * 目录外的 / 不存在的 / 不是文件的当场说清,❌ 推过去再开出一个打不开的页。
  */
 async function requireRemotePageFile(
-  workspace: NonNullable<ReturnType<typeof resolveWorkspace>>,
+  workspace: NonNullable<Awaited<ReturnType<typeof resolveWorkspace>>>,
   url: string,
   signal?: AbortSignal
 ): Promise<void> {
-  const path = fileUrlToMachinePath(url);
-  if (!path) throw new Error(REMOTE_PANE_PAGE_NOT_FILE);
-  if (!containsMachinePath(workspace.path, path)) throw new Error(describePageOutsideWorkspace(workspace.path));
-  const stat = await workspace.fileSystem.stat(path);
+  const named = fileUrlToMachinePath(url);
+  if (!named) throw new Error(REMOTE_PANE_PAGE_NOT_FILE);
+  const file = canonicalPath(named);
+  if (inWorkingCopy(workspace.path, file) === null) throw new Error(describePageOutsideWorkspace(workspace.path));
+  const stat = await workspace.fileSystem.stat(file);
   signal?.throwIfAborted();
   if (!stat.success || stat.data.type !== 'file') throw new Error(REMOTE_PANE_PAGE_NOT_FILE);
 }
@@ -1643,10 +1707,8 @@ async function openExtensionInTab(
   context: SessionCallerContext,
   action: Extract<SessionAction, { action: 'open_in_tab'; app_tab: string }>,
   signal?: AbortSignal,
-): Promise<TabHygieneResult & { opened: true; app_tab: string; intent: OpenInTabIntent }> {
+): Promise<TabHygieneResult & ({ opened: true; app_tab: string; intent: OpenInTabIntent } | (QueuedOpen & { app_tab: string }))> {
   signal?.throwIfAborted();
-  // 咕咕 server 没有窗口,扩展在它上面跑不起来:当场说清,❌ 等 10 秒超时。
-  if (remotePaneOpener) throw new Error(REMOTE_PANE_NO_EXTENSIONS);
   await requireCallerWorkspace(context, signal);
 
   // Verified against what is actually installed, the way a path is verified against the
@@ -1675,6 +1737,13 @@ async function openExtensionInTab(
     );
     throw new Error(`${requestedKind} opens files and has no tab of its own; open the file instead — ${how.join('; ')}`);
   }
+  if (remotePaneOpener) {
+    // #1607 A Gugu server has no window: the desktop showing this task draws the App's page, its program runs here.
+    const outcome = await remotePaneOpener.open(context.sessionId, { kind: 'app-tab', tabKind: requestedKind }, action.intent, signal);
+    return 'queued' in outcome
+      ? { opened: false, queued: true, app_tab: requestedKind, intent: action.intent, note: remotePaneQueuedNote(outcome) }
+      : { opened: true, app_tab: requestedKind, intent: action.intent, ...tabHygiene(outcome.tabs) };
+  }
   const ack = await requestPaneOpen(sessionOpenExtensionInPaneResultChannel, 'App tab', (requestId) => {
     events.emit(sessionOpenExtensionInPaneChannel, {
       requestId,
@@ -1698,16 +1767,33 @@ export async function openTaskPagesOfApp(
   extensionId: string,
   signal?: AbortSignal,
 ): Promise<string[]> {
-  if (remotePaneOpener) throw new Error(REMOTE_PANE_NO_EXTENSIONS);
   const installed = extensionsService()
     .list()
     .extensions.find((entry) => entry.manifest.id === extensionId);
   if (!installed) throw new Error(`no installed App with id: ${extensionId}`);
   const kinds = installed.manifest.contributes.tabs.filter((tab) => tab.perSession).map((tab) => extensionTabKind(extensionId, tab.name));
   for (const tabKind of kinds) {
-    await requestPaneOpen(sessionOpenExtensionInPaneResultChannel, 'App tab', (requestId) => {
+    // #1607 On a Gugu server the desktop showing this task draws it (or gets it when it opens the task).
+    // Not bound to the program's call: once handed over, the desktop opens it whether or not that call is still running
+    // (a fast tool call ending first would only drop the reply, and the App would ask again on every call).
+    if (remotePaneOpener) {
+      await remotePaneOpener.open(target.sessionId, { kind: 'app-tab', tabKind, ifAbsent: true }, 'pinned');
+      continue;
+    }
+    const here = requestPaneOpen(sessionOpenExtensionInPaneResultChannel, 'App tab', (requestId) => {
       events.emit(sessionOpenExtensionInPaneChannel, { requestId, ...target, tabKind, intent: 'pinned', ifAbsent: true });
     }, signal);
+    // A desktop task watched from another computer: that computer draws it too (the same hand-over as a server's).
+    const elsewhere = remoteTaskViewers?.watching(target.sessionId)
+      ? remoteTaskViewers.open(target.sessionId, { kind: 'app-tab', tabKind, ifAbsent: true }, 'pinned')
+      : null;
+    if (!elsewhere) {
+      await here;
+      continue;
+    }
+    const opened = await Promise.allSettled([here, elsewhere]);
+    const failed = opened.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failed.length === opened.length) throw failed[0]!.reason;
   }
   return kinds;
 }
@@ -1957,7 +2043,6 @@ export async function runSessionAction(
 ): Promise<unknown> {
   signal?.throwIfAborted();
   if (isProjectAgentAction(action)) return runProjectAgentAction(context, action);
-  if (isLibraryAgentAction(action)) return runLibraryAgentAction(action);
   if (isActivityAction(action)) return runActivityAction(action);
   const caller = await callerRow(context);
   signal?.throwIfAborted();
@@ -2051,9 +2136,10 @@ function childrenOf(rows: SessionRow[], parentSessionId: string): SessionRow[] {
 
 async function listChildren(rows: SessionRow[], parentSessionId: string, signal?: AbortSignal): Promise<SessionSnapshot[]> {
   const summaries = await readAcpSessionSummaries();
+  const outward = await machineOutwardProjectIds();
   signal?.throwIfAborted();
   const children = await Promise.all(
-    childrenOf(rows, parentSessionId).map(async (row) => snapshot(row, summaries, await sessionModel(row))),
+    childrenOf(rows, parentSessionId).map(async (row) => snapshot(row, summaries, await sessionModel(row), outward)),
   );
   return children.sort(byLastActiveDesc);
 }
@@ -2090,7 +2176,7 @@ async function runTargetAction(
   if (action.action === 'get') {
     const summaries = await readAcpSessionSummaries();
     signal?.throwIfAborted();
-    return { ...snapshot(target, summaries, await sessionModel(target)), preview: await sessionPreview(target.id) };
+    return { ...snapshot(target, summaries, await sessionModel(target), await machineOutwardProjectIds()), preview: await sessionPreview(target.id) };
   }
 
   if (action.action === 'stop') {
@@ -2112,7 +2198,7 @@ async function runTargetAction(
     const refreshed = fresh.find((row) => row.id === target.id);
     signal?.throwIfAborted();
     if (!refreshed) throw new Error('session disappeared after stop');
-    return snapshot(refreshed, summaries, await sessionModel(refreshed));
+    return snapshot(refreshed, summaries, await sessionModel(refreshed), await machineOutwardProjectIds());
   }
 
   if (action.action === 'archive') {
@@ -2137,6 +2223,16 @@ async function runTargetAction(
 
   // 不认识的动作名当场拒绝:没有落空的默认分支(此前落空的是 wait,删掉以后不能让归档接手)。
   throw new Error(`${(action as { action: string }).action} is not a session action`);
+}
+
+/**
+ * A session action leaving this machine (the one exit, cross-machine-sessions.ts `call`). Project ids are already
+ * account-level (the project group, project-public-id.ts), so nothing is translated; a local project id of this machine
+ * is refused here, where its right id is known.
+ */
+export async function assertOutboundProjectIds(action: object): Promise<void> {
+  const { project_id, source_project_id } = action as { project_id?: unknown; source_project_id?: unknown };
+  for (const id of [project_id, source_project_id]) if (typeof id === 'string') await machineLocalProjectsOf(id);
 }
 
 /** 本机发起方在跨机器请求里的自述;机器与 Agent ID 由宿主补。 */
@@ -2170,7 +2266,6 @@ export async function runRemoteSessionAction(
 ): Promise<unknown> {
   signal?.throwIfAborted();
   if (isProjectAgentAction(action)) return runProjectAgentAction({}, action);
-  if (isLibraryAgentAction(action)) return runLibraryAgentAction(action);
   if (isActivityAction(action)) return runActivityAction(action);
 
 
@@ -2233,19 +2328,17 @@ async function spawnForRemoteCaller(
   const prompt = action.prompt.trim();
   if (!prompt) throw new Error('prompt is required');
   // 与本机同一条默认(spawnedBy):挂在发起会话下面(它在别的机器上,记在 config 里),点没点名项目都一样。
-  const named = namedPlacement(action);
+  const named = await namedPlacement(action);
 
   // 跨机默认与人在项目里选设备一样,按同一项目群找本机项目,落在根工作区。
   // 没有关联仍走原任务工作区,但回执要说清原因与关联入口。
   let matchedProjectId: string | undefined;
   if (!named && caller.groupChatId) {
-    const matched = await localProjectOfGroup(caller.groupChatId);
-    if (!matched.success) throw new Error(matched.error.message);
-    matchedProjectId = matched.data;
+    [matchedProjectId] = await machineLocalProjectsOf(caller.groupChatId);
   }
   const { projectId, workspaceId } = await projectRootPlacement(
     named ?? (matchedProjectId ? { project_id: matchedProjectId } : {}),
-    named ? `project ${named.project_path ?? named.project_id} on this machine` : 'default project on this machine',
+    named ? `project ${action.project_path ?? action.project_id} on this machine` : 'default project on this machine',
   );
   let projectNote: string | undefined;
   if (!named) {
@@ -2321,7 +2414,7 @@ async function spawnForRemoteCaller(
     signal,
   });
   return {
-    ...snapshot(row, {}, await sessionModel(row)),
+    ...snapshot(row, {}, await sessionModel(row), await machineOutwardProjectIds()),
     ...(projectNote ? { project_note: projectNote } : {}),
     ...(not_reached.length ? { not_reached } : {}),
     ...(action.assistant_work ? {assistant_work_target:{session_id:row.id,device_id:(await assistantWorkLedgerContext()).deviceId}} : {}),

@@ -11,11 +11,12 @@ import {
   type LibraryMcpHarnessServer,
   type LibraryMcpServer,
 } from '@shared/mcp-library';
+import { guguToolsOffFromStored, guguToolsOffSchema, type GuguToolsOff } from '@shared/gugu-tool-groups';
 import { GUGU_MCP_SERVER_NAME } from '../../../../mcp/gugu-mcp-name.mjs';
 import { mcpService } from '../mcp/services/McpService';
 import { checkLibraryMcp } from './check';
 
-const libraryKV = new KV<{ servers: LibraryMcpServer[] }>('mcp-library');
+const libraryKV = new KV<{ servers: LibraryMcpServer[]; guguToolsOff: GuguToolsOff }>('mcp-library');
 
 /**
  * 咕咕写进某家配置根的条目(独立 home 的家:`gugu` 那台,以及经 stdio 中继接进去的每一台)—— 不是用户配的,
@@ -86,6 +87,15 @@ export class McpLibraryService {
     const current = await this.list();
     if (!current.some((item) => item.name === name)) throw new Error(`MCP not in the library: ${name}`);
     await this.write(current.map((item) => (item.name === name ? { ...item, enabledByDefault } : item)));
+  }
+
+  /** 内置那台关掉的工具组;认不出的 id 丢掉(见 `guguToolsOffFromStored`)。 */
+  async guguToolsOff(): Promise<GuguToolsOff> {
+    return guguToolsOffFromStored(await libraryKV.get('guguToolsOff'));
+  }
+
+  async setGuguToolsOff(off: GuguToolsOff): Promise<void> {
+    await libraryKV.setOrThrow('guguToolsOff', guguToolsOffSchema.parse(off));
   }
 
   /** 手动检测一台,结果记回那条记录。 */

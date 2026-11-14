@@ -14,13 +14,9 @@ export function mirrorDocument(from: Document, to: Document): () => void {
   };
   // The shared getter installs visibility listeners for this portal document.
   isAnimationWindowVisible(to);
-  const copyRootAttributes = () => {
-    // Theme attributes belong to the opener; native window visibility belongs
-    // to this portal document. A minimized opener can have a visible child.
-    const paused = to.documentElement.style.getPropertyValue('--gugu-animation-window-paused');
-    copyAttributes(from.documentElement, to.documentElement);
-    to.documentElement.style.setProperty('--gugu-animation-window-paused', paused);
-  };
+  // Theme attributes belong to the opener. Native window visibility belongs to this portal document and is not an
+  // attribute: a minimized opener can have a visible child, each document holds its own animations.
+  const copyRootAttributes = () => copyAttributes(from.documentElement, to.documentElement);
   copyRootAttributes();
   const rootObserver = new Observer(copyRootAttributes);
   rootObserver.observe(from.documentElement, { attributes: true });

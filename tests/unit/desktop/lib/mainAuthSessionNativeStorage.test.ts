@@ -65,6 +65,7 @@ describe('mainAuthSessionStorage native state agent', () => {
       publishSession: vi.fn(),
       writeMirror: vi.fn(async () => {}),
       clearMirror: vi.fn(async () => {}),
+      loadPersistedSession: async () => mainAuthSessionStorage.storage.getItem(MAIN_AUTH_STORAGE_KEY),
       getPersistedSessionState: mainAuthSessionStorage.getState,
       commitPersistedSession: mainAuthSessionStorage.commit,
       clearPersistedSession: mainAuthSessionStorage.remove,

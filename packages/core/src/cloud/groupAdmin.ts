@@ -87,6 +87,10 @@ export function createGroupAdmin(client: GroupAdminRpcClient, actor: string) {
     async joinRequests(chatId: string, includeDecided = true) {
       return list('list_group_join_requests', client.rpc('list_group_join_requests', { p_chat_id: chatId, p_include_decided: includeDecided, p_as_user_id: actor }))
     },
+    /** Join requests of every group the actor manages, in one read (same rows and authority as `joinRequests`). */
+    async managedJoinRequests(includeDecided = true) {
+      return list('list_managed_group_join_requests', client.rpc('list_managed_group_join_requests', { p_include_decided: includeDecided, p_as_user_id: actor }))
+    },
     async decideJoin(requestId: string, accept: boolean) {
       return object('decide_group_join', client.rpc('decide_group_join', { p_request_id: requestId, p_accept: accept, p_as_user_id: actor }), { request_id: requestId, status: accept ? 'accepted' : 'rejected' })
     },
@@ -149,4 +153,10 @@ export async function setGroupAvatar(
   })
   if (row.avatar_url !== url) throw new Error('update_group_as: avatar was not confirmed')
   return url
+}
+
+/** Back to the default face: the picture's URL and both storage references are cleared together. */
+export async function clearGroupAvatar(admin: ReturnType<typeof createGroupAdmin>, chatId: string): Promise<void> {
+  const row = await admin.update(chatId, { avatar_url: null, avatar_storage_bucket_id: null, avatar_storage_object_name: null })
+  if (row.avatar_url) throw new Error('update_group_as: avatar was not cleared')
 }

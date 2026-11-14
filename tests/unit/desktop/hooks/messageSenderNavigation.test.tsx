@@ -14,7 +14,7 @@ describe('message sender-name navigation', () => {
   it('hands a real peer to the same shell action as contact/profile chat', async () => {
     const sender = { id: 'peer', display_name: 'Cleo', avatar: null, bio: null, type: 'agent' as const };
     const openSender = vi.fn();
-    function Navigation() { useLinkNavigation({ ownerId: 'owner', chats: [], contacts: [sender], openSender,
+    function Navigation() { useLinkNavigation({ ownerId: 'owner', chats: () => [], contacts: () => [sender], openSender,
       openChat: vi.fn(), openFile: vi.fn(), openApp: vi.fn(), openProject: vi.fn(), openOwnApp: vi.fn(), openAssistant: vi.fn() }); return null; }
     await harness.render(<Navigation />);
     await act(async () => { await openLinkTarget({ kind: 'sender', userId: 'peer' }); });
@@ -25,11 +25,18 @@ describe('message sender-name navigation', () => {
   it('preserves the source group when opening a participant conversation', async () => {
     const sender = { id: 'peer', display_name: 'Cleo', avatar: null, bio: null, type: 'agent' as const };
     const openSender = vi.fn();
-    function Navigation() { useLinkNavigation({ ownerId: 'owner', chats: [{ id: 'group-963', kind: 'group' } as import('@gugu/core/shared/types/chat').ChatItem], contacts: [sender], openSender,
+    function Navigation() { useLinkNavigation({ ownerId: 'owner', chats: () => [{ id: 'group-963', kind: 'group' } as import('@gugu/core/shared/types/chat').ChatItem], contacts: () => [sender], openSender,
       openChat: vi.fn(), openFile: vi.fn(), openApp: vi.fn(), openProject: vi.fn(), openOwnApp: vi.fn(), openAssistant: vi.fn() }); return null; }
     await harness.render(<Navigation />);
     await act(async () => { await openLinkTarget({ kind: 'sender', userId: sender.id, sourceChatId: 'group-963' }); });
     expect(openSender).toHaveBeenCalledExactlyOnceWith(sender, 'group-963');
   });
-
+  it('a path in a message from anyone but an agent of this person says so: it has no task to open in', async () => {
+    const openSender = vi.fn();
+    function Navigation() { useLinkNavigation({ ownerId: 'owner', chats: () => [], contacts: () => [], openSender,
+      openChat: vi.fn(), openFile: vi.fn(), openApp: vi.fn(), openProject: vi.fn(), openOwnApp: vi.fn(), openAssistant: vi.fn() }); return null; }
+    await harness.render(<Navigation />);
+    await expect(openLinkTarget({ kind: 'sender', userId: 'someone', file: { path: 'src/add.ts' } })).rejects.toThrow('links.fileOnSenderMachine');
+    expect(openSender).not.toHaveBeenCalled();
+  });
 });

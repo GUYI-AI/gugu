@@ -43,6 +43,12 @@ export interface DeviceActionsProvider {
   blocked(group: string): { reason: 'unsupported' | 'os_permission'; message: string } | null
   connect(group: string): Promise<ConnectResult>
   disconnect(group: string): void
+  /**
+   * The group a person could connect for this action right now, when that is the only thing missing: not connected, no
+   * "Deny all", not one action turned off on its own (those are the person's own no). Files has four locations to choose
+   * from, so it is not asked for here.
+   */
+  ungrantedGroup(action: string): string | null
 }
 
 /** 把一个错误统一成设备动作的结果(族里抛什么都行,这里收口)。 */
@@ -68,11 +74,6 @@ export function createDeviceActionsProvider(input: {
   deps: FamilyDeps
   /** 给人看的分组名(不可用说明里用):缺省用 id。 */
   groupTitle?(group: string): string
-  /**
-   * 开关在一个 App 上的分组(#7317:电脑控制的开关是 Computer Use):null = 不是;否则 on 就是连上了(❌ 设置里另有一个
-   * 「连接」),关着时这组的动作不登记(agent 看不到、不占 token),点名调用回 offMessage。
-   */
-  managedBy?(group: string): { on: boolean; offMessage: string } | null
 }): DeviceActionsProvider {
   const { store, deps } = input
   const platform = deps.platform
@@ -86,25 +87,11 @@ export function createDeviceActionsProvider(input: {
   const osBlocked = new Map<string, string>()
   const title = (group: string) => (group === 'files' ? 'Files' : input.groupTitle?.(group) ?? group)
 
-  const managed = (group: string) => input.managedBy?.(group) ?? null
-  /** 连上的分组:设置里连上的(原样,文件那几个根也在里面),开关在 App 上的则只看那个 App 开没开。 */
-  const grantedOf = (stored: Record<string, unknown>): ReadonlySet<string> => {
-    const granted = new Set(Object.keys(stored))
-    for (const g of groups) {
-      const m = managed(g.id)
-      if (m?.on) granted.add(g.id)
-      else if (m) granted.delete(g.id)
-    }
-    return granted
-  }
+  /** 连上的分组:设置里连上的(原样,文件那几个根也在里面)。 */
+  const grantedOf = (stored: Record<string, unknown>): ReadonlySet<string> => new Set(Object.keys(stored))
   const grantedSet = (): ReadonlySet<string> => grantedOf(store.read().groups)
   const groupGranted = (group: string, granted: ReadonlySet<string>) =>
     group === 'files' ? FILE_ROOTS.some((r) => granted.has(r)) : granted.has(group)
-  /** 这个动作的分组开关在 App 上、而 App 关着:这台电脑就没有它。 */
-  const switchedOff = (group: string) => {
-    const m = managed(group)
-    return m && !m.on ? m : null
-  }
   /** 动作所在的那几个分组(文件动作 = 四个根)。 */
   const groupsOf = (group: string) => (group === 'files' ? FILE_ROOTS.filter((r) => groupById.has(r)) : [group])
 
@@ -114,10 +101,6 @@ export function createDeviceActionsProvider(input: {
       const r = deps.macHelper().available()
       return r.ok ? null : r.message
     }
-    if (def?.needs === 'cua') {
-      const r = deps.cua().available()
-      return r.ok ? null : r.message
-    }
     return null
   }
 
@@ -125,8 +108,9 @@ export function createDeviceActionsProvider(input: {
     ? 'On that computer, open 咕咕 → Settings → Devices → What this computer can do, and connect the locations needed (Desktop / Documents / Downloads / Other locations).'
     : `On that computer, open 咕咕 → Settings → Devices → What this computer can do, and connect "${title(group)}".`
 
-  const markOs = (group: string, outcome: Outcome): Outcome => {
-    for (const g of groupsOf(group)) {
+  const permissionKeys = (def: ActionDef) => def.osPermissionScope === 'action' ? [def.name] : groupsOf(def.group)
+  const markOs = (keys: readonly string[], outcome: Outcome): Outcome => {
+    for (const g of keys) {
       if (outcome.ok) osBlocked.delete(g)
       else if (outcome.code === 'os_permission') osBlocked.set(g, outcome.message)
     }
@@ -136,8 +120,6 @@ export function createDeviceActionsProvider(input: {
   const permit = (action: string): DeviceActionPermit => {
     const def = byName.get(action)
     if (!def) return { ok: false, code: 'unknown_action', message: `This computer has no action ${action}` }
-    const off = switchedOff(def.group)
-    if (off) return { ok: false, code: 'not_granted', message: off.offMessage }
     const grants = store.read()
     if (grants.denyAll) return { ok: false, code: 'not_granted', message: 'This computer is set to "Deny all": no action may be called. It can be turned off in 咕咕 → Settings → Devices → What this computer can do.' }
     const granted = grantedOf(grants.groups)
@@ -152,25 +134,31 @@ export function createDeviceActionsProvider(input: {
 
   const familyContext = (signal: AbortSignal, note: (text: string) => void): FamilyContext => ({ deps, granted: grantedSet, signal, note })
 
-  const shrinkPictures = async (outcome: Outcome): Promise<Outcome> => {
+  const shrinkPictures = async (outcome: Outcome, singlePictureResult = false): Promise<Outcome> => {
     if (!outcome.ok || !outcome.data || typeof outcome.data !== 'object' || !Array.isArray((outcome.data as { pictures?: unknown }).pictures)) return outcome
     const data = outcome.data as { pictures: Array<{ label: string; mimeType: string; data: string }> } & Record<string, unknown>
     const pictures: typeof data.pictures = []
     const omitted: string[] = []
+    let deliveredSize: { width: number; height: number } | undefined
     for (const picture of data.pictures) {
       let current = picture
       for (const maxEdge of [1568, 1024]) {
         if (current.data.length <= PICTURE_MAX_BASE64 || !deps.shrinkImage) break
         const small = await deps.shrinkImage(picture, { maxEdge, quality: 72 })
         current = { label: picture.label, mimeType: small.mimeType, data: small.data }
+        if (singlePictureResult) deliveredSize = { width: small.width, height: small.height }
       }
       if (current.data.length <= PICTURE_MAX_BASE64) pictures.push(current)
       else omitted.push(picture.label)
+    }
+    if (singlePictureResult && pictures.length !== 1) {
+      return { ok: false, code: 'execution_failed', message: 'The picture is too large to return even after resizing' }
     }
     return {
       ok: true,
       data: {
         ...data,
+        ...(deliveredSize ?? {}),
         pictures,
         ...(omitted.length > 0 ? { pictures_omitted: `${omitted.join(', ')}: too large to send back even after shrinking` } : {}),
       },
@@ -181,8 +169,7 @@ export function createDeviceActionsProvider(input: {
     if (actions.length === 0) return null
     const grants = store.read()
     const granted = grantedOf(grants.groups)
-    // A group whose App is off is not this computer's at all: not listed, so no agent reads it (and no token is spent).
-    const entries: DeviceActionManifestEntry[] = actions.filter((def) => !switchedOff(def.group)).map((def) => {
+    const entries: DeviceActionManifestEntry[] = actions.map((def) => {
       const roots = grantedRootTitles(granted)
       const base = {
         name: def.name,
@@ -198,20 +185,15 @@ export function createDeviceActionsProvider(input: {
       if (grants.deniedActions.includes(def.name)) return { ...base, available: false, unavailable_reason: 'not_granted' as const, unavailable_detail: `Turned off on its own in 咕咕 → Settings → Devices → ${title(def.group)}.` }
       const missing = groupsOf(def.group).map(nativeMissing).find(Boolean) ?? def.unsupportedReason?.(deps)
       if (missing) return { ...base, available: false, unavailable_reason: 'unsupported' as const, unavailable_detail: missing }
-      const blockedMessage = groupsOf(def.group).filter((g) => granted.has(g)).map((g) => osBlocked.get(g)).find(Boolean)
+      const blockedKeys = def.osPermissionScope === 'action' ? [def.name] : groupsOf(def.group).filter((g) => granted.has(g))
+      const blockedMessage = blockedKeys.map((g) => osBlocked.get(g)).find(Boolean)
       if (blockedMessage) return { ...base, available: false, unavailable_reason: 'os_permission' as const, unavailable_detail: blockedMessage }
       return { ...base, available: true }
-    })
-    // …but a caller naming one of its actions is told the App is off, not "no such action".
-    const off = groups.flatMap((g) => {
-      const m = switchedOff(g.id)
-      return m ? [{ group: g.id, detail: m.offMessage }] : []
     })
     return {
       v: DEVICE_ACTION_PROTOCOL_VERSION,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       actions: entries,
-      ...(off.length > 0 ? { switched_off: off } : {}),
     }
   }
 
@@ -237,10 +219,10 @@ export function createDeviceActionsProvider(input: {
       const def = byName.get(action)
       if (!def) return { ok: false, code: 'unknown_action', message: `This computer has no action ${action}` }
       try {
-        const outcome = await shrinkPictures(await def.run(args, { ...familyContext(ctx.signal, ctx.note), callId: ctx.callId, ...(ctx.caller ? { caller: ctx.caller } : {}), ...(ctx.remainingMs ? { remainingMs: ctx.remainingMs } : {}) }))
-        return def.succeedsWithoutPermission && outcome.ok ? outcome : markOs(def.group, outcome)
+        const outcome = await shrinkPictures(await def.run(args, { ...familyContext(ctx.signal, ctx.note), callId: ctx.callId, ...(ctx.caller ? { caller: ctx.caller } : {}), ...(ctx.remainingMs ? { remainingMs: ctx.remainingMs } : {}) }), def.singlePictureResult)
+        return def.succeedsWithoutPermission && outcome.ok ? outcome : markOs(permissionKeys(def), outcome)
       } catch (error) {
-        return markOs(def.group, outcomeOfError(error, def.titleEn))
+        return markOs(permissionKeys(def), outcomeOfError(error, def.titleEn))
       }
     },
     record: (entry) => store.record(entry),
@@ -264,8 +246,6 @@ export function createDeviceActionsProvider(input: {
     async connect(group) {
       const def = groupById.get(group)
       if (!def) return { ok: false, code: 'unknown_group', message: `No such group: ${group}` }
-      const off = switchedOff(group)
-      if (off) return { ok: false, code: 'unsupported', message: off.offMessage }
       const missing = nativeMissing(group)
       if (missing) return { ok: false, code: 'unsupported', message: missing }
       if (def.probe) {
@@ -275,7 +255,7 @@ export function createDeviceActionsProvider(input: {
         } catch (error) {
           outcome = outcomeOfError(error, group)
         }
-        markOs(group, outcome)
+        markOs(groupsOf(group), outcome)
         if (!outcome.ok) {
           const code = outcome.code === 'os_permission' ? 'os_permission' : 'execution_failed'
           // The page of the permission that is missing (a group can need several), else the group's own.
@@ -289,12 +269,17 @@ export function createDeviceActionsProvider(input: {
           }
         }
       }
-      // A group switched by its App is connected by the App alone: this only asked the system for what it needs.
-      if (!managed(group)) store.setGroup(group, true)
+      store.setGroup(group, true)
       return { ok: true }
     },
     disconnect(group) {
       store.setGroup(group, false)
+    },
+    ungrantedGroup(action) {
+      const def = byName.get(action)
+      const grants = store.read()
+      if (!def || def.group === 'files' || grants.denyAll || grants.deniedActions.includes(action)) return null
+      return groupGranted(def.group, grantedOf(grants.groups)) ? null : def.group
     },
   }
 }

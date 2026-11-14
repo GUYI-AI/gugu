@@ -5,6 +5,7 @@ import { parseAttachmentContent, type AttachmentSource } from '@gugu/core/shared
 import { appIdentityOf, type Publisher } from './app-identity';
 import { declaredPermissions } from './catalog';
 import { compareExtensionVersions, type ExtensionCapability, type ExtensionManifest } from './manifest';
+import type { AttachmentSheetSource, InstalledOver } from './host-actions';
 import { replacesWithoutAsking, type ExtensionOrigin } from './upgrade';
 
 /**
@@ -88,7 +89,7 @@ export interface InstalledApp {
 
 export type AttachmentInstallPlan =
   /**
-   * E-05: what is installed under this id did not come from a chat, so this package may not replace it. `reason` is the
+   * E-05: what is installed under this id comes with gugu, so this package may not replace it. `reason` is the
    * install's own word (agents and logs read it); `from` and `installedVersion` are what the card and the panel tell the
    * person, both platforms the same.
    */
@@ -97,9 +98,10 @@ export type AttachmentInstallPlan =
   | { kind: 'install' }
   /**
    * Asked first, in the consent sheet both platforms draw: about everything when `installed` is absent (a first install,
-   * or another publisher's App — `replaces` names whom it would replace), else only about what it newly asks for.
+   * or another publisher's App — `replaces` names whom it would replace, `over` the market's or a folder's App it would),
+   * else only about what it newly asks for.
    */
-  | { kind: 'ask'; installed: ExtensionManifest | undefined; revokedPermissions: readonly string[]; replaces?: string | null }
+  | { kind: 'ask'; installed: ExtensionManifest | undefined; revokedPermissions: readonly string[]; replaces?: string | null; over?: InstalledOver }
   /** Nobody clicked (`unasked`) and it is not an update that may go in alone: left for the person, nothing asked. */
   | { kind: 'held' };
 
@@ -145,12 +147,13 @@ export function couldUpdateUnasked(publisher: string, installed: readonly Instal
 }
 
 /**
- * E-05: a package from chat may only replace an App that itself came from chat — never a market, folder or preinstalled
- * one, nor one whose origin was never kept. The install's own gate (`clickedPlan`), and what a card or a group's panel
- * offers (`cardOffer`, `groupUpdateFor`), so neither promises an update the install would refuse.
+ * E-05: a package from chat replaces whatever App of its id is here — a chat's, the market's, a folder's, one whose origin
+ * was never kept — except one gugu ships (`preinstalled`), which no other package replaces (extensions-service). The
+ * install's own gate (`clickedPlan`), and what a card or a group's panel offers (`cardOffer`, `groupUpdateFor`), so
+ * neither promises an update the install would refuse — nor stays silent about one it would make.
  */
 export function replaceableFromChat(origin: ExtensionOrigin | undefined): boolean {
-  return origin === 'attachment';
+  return origin !== 'preinstalled';
 }
 
 export function attachmentInstallPlan(args: AttachmentInstallRequest): AttachmentInstallPlan {
@@ -166,7 +169,7 @@ function clickedPlan({ candidate, publisher, installed }: AttachmentInstallReque
   if (installed && !replaceableFromChat(installed.origin)) {
     return {
       kind: 'refuse',
-      reason: `"${candidate.id}" is already installed from somewhere other than a chat attachment; a package from chat cannot replace it`,
+      reason: `"${candidate.id}" comes with gugu; a package from chat cannot replace it`,
       from: installed.origin,
       installedVersion: installed.manifest.version,
     };
@@ -194,12 +197,25 @@ function clickedPlan({ candidate, publisher, installed }: AttachmentInstallReque
   // From someone else than the one installed (摩擦单 F66, 统筹 06:16): not an update of what the person trusted but
   // another publisher's App under the same id — asked in full, saying who, however little it asks for (anyone could
   // otherwise replace a trusted App by sending a higher version). Its own publisher's asking for more: only that.
-  const otherPublisher = installed !== undefined && installedPublisher !== publisher;
+  // One that did not come from a chat (the market's, a folder's) is another source's: asked in full too, saying what
+  // it replaces (`over`) — the person's call, as a market install over a folder's is (upgrade.ts `installAsks`).
+  const fromChat = installed?.origin === 'attachment';
+  const otherPublisher = installed !== undefined && (!fromChat || installedPublisher !== publisher);
   return {
     kind: 'ask',
     // Another publisher's: everything it declares is shown, as for a first install.
     installed: otherPublisher ? undefined : installed?.manifest,
     revokedPermissions: installed?.revokedPermissions ?? [],
-    ...(otherPublisher ? { replaces: installed?.publisher?.name ?? null } : {}),
+    ...(installed && fromChat && otherPublisher ? { replaces: installed.publisher?.name ?? null } : {}),
+    ...(installed && !fromChat ? { over: { from: installed.origin, version: installed.manifest.version } } : {}),
+  };
+}
+
+/** What the consent sheet says of a chat package (both hosts): who sent it, and what installed here it would replace. */
+export function attachmentSheetSource(publisherName: string | null | undefined, plan: AttachmentInstallPlan): AttachmentSheetSource {
+  return {
+    from: publisherName ?? '',
+    ...(plan.kind === 'ask' && plan.replaces !== undefined ? { replaces: plan.replaces } : {}),
+    ...(plan.kind === 'ask' && plan.over ? { over: plan.over } : {}),
   };
 }

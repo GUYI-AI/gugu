@@ -14,7 +14,7 @@ import { publishIdentityDirectory, readIdentityDirectoryBridge, installIdentityD
 
 function identity(id: string): DisplayIdentity {
   return {
-    id, type: 'human', display_name: id, nameSerial: null, avatar: null, gugu_number: null, bio: null,
+    id, type: 'human', display_name: id, avatar: null, gugu_number: null, bio: null,
     owner_user_id: null, agent_public: null, desired_status: null, device_id: null,
     category: null, is_official: null, local_path: null,
     created_at: null, updated_at: '2026-09-14T00:00:00.000Z',
@@ -38,6 +38,18 @@ describe('publishMessageWindow', () => {
     expect(mocks.readDisplayIdentities).toHaveBeenCalledTimes(1)
     expect([...mocks.readDisplayIdentities.mock.calls[0][0]].sort()).toEqual(['former', 'quoted'])
     expect(Object.keys(imSelectors.identitiesById(repository.snapshot())).sort()).toEqual(['former', 'known', 'quoted'])
+  })
+
+  it('#2383 also commits identities for addressed recipients who never spoke (an @-ed member who has since left)', async () => {
+    const repository = await openImRepository('account-2383', { adapter: createMemoryLocalSyncDb(), storage: window.localStorage })
+    await repository.putIdentities([identity('known')])
+    mocks.readDisplayIdentities.mockImplementation(async (ids: string[]) => ids.map(identity))
+
+    await publishMessageWindow(repository, 'chat-1', [messageFixture({ id: 'm1', chat_id: 'chat-1', sender_user_id: 'known', seq: 1, content: 'hi', to_user_ids: ['left-agent', '*'] })])
+
+    // `*` 是「所有人」,不是人,不去读。
+    expect(mocks.readDisplayIdentities).toHaveBeenCalledExactlyOnceWith(['left-agent'])
+    expect(Object.keys(imSelectors.identitiesById(repository.snapshot())).sort()).toEqual(['known', 'left-agent'])
   })
 
   it('asks once for a sender the identity table does not have, logs it, and asks again only after the retry window', async () => {

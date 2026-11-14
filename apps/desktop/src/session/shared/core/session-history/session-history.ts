@@ -35,7 +35,7 @@ export const SESSION_HISTORY_STATUSES: readonly SessionHistoryStatus[] = [
 
 /**
  * 排序键。时间类倒序、字母正序;没有那个时间的行(本机行没有「加入时间」)排在最后。
- * 目录按同一组键排:时间取目录里最近的那条,字母按目录路径;节内的会话也按它排。
+ * 节按同一组键排:时间取节里最近的那条,字母按项目名(不是项目的按目录);节内的会话也按它排。
  */
 export type SessionHistorySort = 'updated' | 'lastPrompt' | 'title' | 'added';
 
@@ -50,8 +50,8 @@ export type SessionHistoryParams = {
   source?: SessionHistorySource;
   status?: SessionHistoryStatus;
   /**
-   * 只看这个目录(与行的 `directory` 逐字相等)。`null` = 只看**没有**目录的会话
-   * (独立任务、读不出 cwd 的原件)—— 它们在目录视图里拢成一节。
+   * 只看目录视图里的这一节(与目录行的 `directory` 逐字相等:`project:<群>`、任务那一节的 key、或目录)。
+   * `null` = 只看**没有**目录的会话(读不出 cwd 的原件)—— 它们在目录视图里拢成一节。
    */
   directory?: string | null;
   /** 只看这个时刻(epoch ms)之后更新过的。 */
@@ -83,6 +83,19 @@ export type SessionHistoryDirectoryParams = Omit<SessionHistoryParams, 'director
  * 自己的独立任务一起拢成这一节(owner 2026-09-24 拍板)。不是路径(没有 `/` 开头、没有盘符),与真目录不会撞。
  */
 export const SESSION_HOME_SECTION_KEY = 'gugu:task-home';
+
+/**
+ * 账号项目那一节的 key:`project:<项目群 chat id>`。项目是账号级的,一台机器上属于同一个项目群的本地项目(和落在它们
+ * 文件夹里的原件)归这一节;几台机器的目录页按这个 key 并成一节。不在任何项目群里的,节 key 照旧是目录。
+ */
+export function projectSectionKey(chatId: string): string {
+  return `project:${chatId}`;
+}
+
+/** 节 key 是不是一个账号项目的:是就给项目群 chat id。 */
+export function projectSectionChatId(key: string): string | null {
+  return key.startsWith('project:') ? key.slice('project:'.length) : null;
+}
 
 /** 这个目录是不是(或在)某个咕咕实例的 `task-home` 里。 */
 export function isSessionHomeDirectory(directory: string): boolean {
@@ -142,12 +155,17 @@ export type SessionHistoryPage = {
   local: { discovered: number; indexed: number; pending: number; stale: boolean } | null;
 };
 
-/** 目录视图的一节 = 一个目录(筛选之后)里的会话聚合 + 头几条会话。 */
+/**
+ * 目录视图的一节 = 这台机器上归进同一节的会话(筛选之后)的聚合 + 头几条会话。归节由主进程按每条会话的本地项目定:
+ * 在项目群里的 → `project:<群>`(`projectSectionKey`);独立任务 / 任务工作区 → `SESSION_HOME_SECTION_KEY`;
+ * 别的 → 它的项目路径或目录。渲染层只按 key 把几台机器的节并起来,❌ 再从节里的会话猜项目。
+ */
 export type SessionHistoryDirectoryRow = {
-  /** 稳定身份:目录路径;没有目录的那一节为 ''。 */
+  /** 稳定身份 = `directory`;没有目录的那一节为 ''。 */
   key: string;
+  /** 这一节的 key(展开时原样传回 `SessionHistoryParams.directory`);没有目录的那一节为 null。 */
   directory: string | null;
-  /** 目录所属的咕咕项目名:目录就是项目路径、或在项目路径之下(最长前缀优先);都不是为 null。 */
+  /** 这一节的项目在这台机器上的名字;不是项目的为 null。 */
   projectName: string | null;
   sessionCount: number;
   countsBySource: Record<SessionHistorySource, number>;
@@ -191,3 +209,68 @@ export type SessionHistoryDirectoryPage = {
   directories: SessionHistoryPage['directories'];
   local: SessionHistoryPage['local'];
 };
+
+export type HistorySortable = { updatedAt: number; lastPromptAt: number | null; addedAt: number | null };
+export type HistoryRowSortable = HistorySortable & { title: string };
+export type HistorySectionSortable = HistorySortable & Pick<SessionHistoryDirectoryRow, 'directory' | 'projectName'>;
+
+/** 时间倒序、没有那个时间的排最后、字母正序;并列按更新时间倒序。 */
+function compareBy<T extends HistorySortable>(sort: SessionHistorySort, nameOf: (row: T) => string) {
+  const byTime = (pick: (row: T) => number | null) => (a: T, b: T) => {
+    const av = pick(a);
+    const bv = pick(b);
+    if (av === null && bv === null) return b.updatedAt - a.updatedAt;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return bv - av || b.updatedAt - a.updatedAt;
+  };
+  switch (sort) {
+    case 'lastPrompt':
+      return byTime((row) => row.lastPromptAt);
+    case 'added':
+      return byTime((row) => row.addedAt);
+    case 'title':
+      return (a: T, b: T) => nameOf(a).localeCompare(nameOf(b)) || b.updatedAt - a.updatedAt;
+    case 'updated':
+      return byTime((row) => row.updatedAt);
+  }
+}
+
+/**
+ * 会话行的排序。主进程排每台机器的页,渲染层把几台的页按它归并 —— 同一个函数,归并的前提「各路同一把尺子」才成立。
+ */
+export function compareSessionHistoryRows(sort: SessionHistorySort): (a: HistoryRowSortable, b: HistoryRowSortable) => number {
+  return compareBy<HistoryRowSortable>(sort, (row) => row.title);
+}
+
+/**
+ * 节(目录行)的排序,两边共用同上。字母序按项目名,不是项目的按目录;「未关联目录」那一节永远排最后:
+ * 它是个杂物筐,不该因为里面刚好有一条最新的就顶到页首。
+ */
+export function compareSessionHistorySections(
+  sort: SessionHistorySort
+): (a: HistorySectionSortable, b: HistorySectionSortable) => number {
+  const byName = compareBy<HistorySectionSortable>(sort, (row) => row.projectName ?? row.directory ?? '');
+  return (a, b) => Number(a.directory === null) - Number(b.directory === null) || byName(a, b);
+}
+
+/**
+ * 会话行的筛选:来源 / 状态 / 时间范围 / 关键词(匹配标题、目录、项目名、session id / conversation id,空格分词全部命中;
+ * 设计同事 2026-09-23:「特色是支持基于 sessionid 的搜索」)。主进程筛它的行,渲染层用它筛离线机器的心跳摘要行。
+ */
+export function matchesSessionHistoryFilters(
+  row: SessionHistoryRow,
+  filters: Pick<SessionHistoryParams, 'source' | 'status' | 'since' | 'query'>
+): boolean {
+  if (filters.source && row.source !== filters.source) return false;
+  if (filters.status && row.status !== filters.status) return false;
+  if (filters.since !== undefined && row.updatedAt < filters.since) return false;
+  const haystack = [row.title, row.directory ?? '', row.projectName ?? '', row.providerSessionId ?? '', row.gugu?.sessionId ?? '']
+    .join('\n')
+    .toLowerCase();
+  return (filters.query ?? '')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((term) => term.length > 0)
+    .every((term) => haystack.includes(term));
+}

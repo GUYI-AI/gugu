@@ -9,6 +9,11 @@ const mocks = vi.hoisted(() => ({
   owner: 'owner', online: true, stored: [] as ProvisionResumeRecord[],
   start: vi.fn(), status: vi.fn(), cancel: vi.fn(), preflight: vi.fn(), provision: vi.fn(), resume: vi.fn(), models: vi.fn(), ipc: vi.fn(),
 }))
+// The rules main answers the window with (#1931): the built-in copy here.
+vi.mock('../../../../apps/desktop/src/lib/assistantSetupRules', async () => {
+  const { NEUTRAL_ASSISTANT_RULES } = await import('../assistantRules/neutralRules')
+  return { assistantSetupRules: async () => NEUTRAL_ASSISTANT_RULES }
+})
 vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: (deviceId: string) => {
   if (deviceId !== 'server') throw new Error('wrong target')
   return { assistantHome: { start: mocks.start, status: mocks.status, cancel: mocks.cancel, preflight: mocks.preflight } }
@@ -55,6 +60,16 @@ it('prepares and creates only on the chosen target, retaining draft/model and se
   expect(mocks.ipc).not.toHaveBeenCalled()
   expect(pendingServerAssistant('owner')).toBeNull()
   expect(progress.mock.calls.at(-1)?.[0].phase).toBe('ready')
+})
+it('reports a server policy refusal as a refusal, not as an outdated server', async () => {
+  mocks.preflight.mockRejectedValueOnce(Object.assign(new Error("'assistantHome.preflight' is not allowed for this caller on this machine"), { code: 'forbidden' }))
+  await expect(setUpAssistantOnServer(draft, 'server')).rejects.toMatchObject({ code: 'target_not_owned', next: 'sign_in' })
+  expect(mocks.start).not.toHaveBeenCalled()
+})
+it('asks to update the server only when it lacks the assistant home verb', async () => {
+  mocks.preflight.mockRejectedValueOnce(new Error("No handler registered for 'assistantHome.preflight'"))
+  await expect(setUpAssistantOnServer(draft, 'server')).rejects.toMatchObject({ code: 'server_update_required', next: 'update_server' })
+  expect(mocks.start).not.toHaveBeenCalled()
 })
 it('fast-fails an offline target before saving a record or sending any mutation', async () => {
   mocks.online = false

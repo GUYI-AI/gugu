@@ -14,7 +14,7 @@ function host() {
   return { projection, onProjection: (fn: typeof hear) => { hear = fn; return vi.fn(); }, emit: (packet: ProjectionHostPacket) => hear(watchId, packet) };
 }
 const frame = { sequence: 1, width: 1, height: 1, mime: 'image/png' as const, data: 'YQ==' };
-const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
+const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 
 describe('painted frame and reconnect input routing', () => {
   it('bounds a flood of release barriers by resetting the old generation instead of discarding releases', async () => {
@@ -112,6 +112,7 @@ describe('painted frame and reconnect input routing', () => {
     const moves = Array.from({ length: 100 }, (_, index) => client.input({ kind: 'pointer', action: 'move', button: 'left', x: index / 100, y: 0.5 }));
     const up = client.input({ kind: 'key', action: 'up', key: 'Shift' });
     const wheels = Array.from({ length: 100 }, () => client.input({ kind: 'wheel', x: 0.5, y: 0.5, deltaX: 0, deltaY: 1 }));
+    await flush();
     expect(h.projection.send).toHaveBeenCalledTimes(2); // painted ACK + the one executing input
     finish();
     await Promise.all([first, ...moves, up, ...wheels]);
@@ -126,4 +127,62 @@ describe('painted frame and reconnect input routing', () => {
     await client.close();
   });
 
+});
+
+it('over a slow link, input on a painted picture waits for its ACK, and the next ACK waits for that input', async () => {
+  const h = host();
+  const sent: string[] = [];
+  const replies = new Map<string, () => void>();
+  // Every call takes a round trip: it settles when the test says so.
+  vi.mocked(h.projection.send).mockImplementation(({ packet }) => {
+    const label = packet.type === 'ack' ? `ack ${packet.frame}` : `input ${packet.frame}`;
+    sent.push(label);
+    return new Promise<void>(resolve => replies.set(label, resolve));
+  });
+  const client = await projectionClient(h, 'source', { paint: async () => {} });
+  h.emit({ type: 'state', generation: 'a', state: 'connecting' });
+  h.emit({ type: 'frame', generation: 'a', frame });
+  await flush();
+  expect(sent).toEqual(['ack 1']);
+  // The person clicks the picture they see while its ACK is still on the way: held, not refused.
+  const click = client.input({ kind: 'pointer', action: 'down', button: 'left', x: 0.5, y: 0.5 });
+  await flush();
+  expect(sent).toEqual(['ack 1']);
+  replies.get('ack 1')!();
+  await flush();
+  expect(sent).toEqual(['ack 1', 'input 1']);
+  // The next picture arrives; its ACK waits until the input on picture 1 landed there.
+  h.emit({ type: 'frame', generation: 'a', frame: { ...frame, sequence: 2 } });
+  await flush();
+  expect(sent).toEqual(['ack 1', 'input 1']);
+  replies.get('input 1')!();
+  await flush();
+  expect(sent).toEqual(['ack 1', 'input 1', 'ack 2']);
+  expect(await click).toEqual({ status: 'applied' });
+  replies.get('ack 2')!();
+  await client.close();
+});
+
+it('reports only the painted generation and lets a new picture pass a stalled old ACK', async () => {
+  const h = host(), oldPaint = Promise.withResolvers<void>(), oldAck = Promise.withResolvers<void>();
+  const painted = vi.fn();
+  vi.mocked(h.projection.send).mockImplementation(async ({ packet }) => {
+    if (packet.type === 'ack' && packet.generation === 'a') await oldAck.promise;
+  });
+  const client = await projectionClient(h, 'source', { painted, paint: async next => {
+    if (next.sequence === 2) await oldPaint.promise;
+  } });
+  h.emit({ type: 'state', generation: 'a', state: 'connecting' });
+  h.emit({ type: 'frame', generation: 'a', frame }); await flush();
+  h.emit({ type: 'frame', generation: 'a', frame: { ...frame, sequence: 2 } }); await flush();
+  h.emit({ type: 'state', generation: 'b', state: 'connecting' });
+  h.emit({ type: 'frame', generation: 'b', frame: { ...frame, sequence: 3 } });
+  oldPaint.resolve(); await flush();
+  expect(painted.mock.calls.filter(([value]) => value !== null).map(([value]) => value.sequence)).toEqual([1, 3]);
+  await client.input({ kind: 'text', text: 'current' });
+  expect(h.projection.send).toHaveBeenLastCalledWith(expect.objectContaining({ packet: expect.objectContaining({ type: 'input', generation: 'b', frame: 3 }) }));
+  oldAck.resolve(); await flush();
+  expect(painted).toHaveBeenLastCalledWith({ sequence: 3, width: 1, height: 1 });
+  await client.close();
+  expect(painted).toHaveBeenLastCalledWith(null);
 });

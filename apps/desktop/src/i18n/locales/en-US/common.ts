@@ -1,4 +1,8 @@
 export default {
+  "menu": {
+    "search": "Search",
+    "noResults": "No results"
+  },
   "agentName": {
     "naming": "Naming the agent…"
   },
@@ -41,6 +45,13 @@ export default {
       "sleep_incomplete": "That didn't finish. Try again later.",
       "close_incomplete": "Closing didn't finish. Try again."
     }
+  },
+  "connection": {
+    "online": "Online",
+    "connecting": "Connecting",
+    "deviceOffline": "Device offline",
+    "lastSeen": "Last online {{time}}",
+    "retry": "Reconnect"
   },
   "agentStatus": {
     "running": "Running",

@@ -1,11 +1,12 @@
-import { agentSupportsConnectionManagement } from '@shared/core/agents/agent-payload';
+import { SettingsGroup, SettingsRow } from '@/components/settings/SettingsPrimitives';
+import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { observer } from 'mobx-react-lite';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useManagementAgent } from '@renderer/lib/stores/use-agents';
-import { Dialog, DialogContent, DialogContentArea, DialogHeader } from '@renderer/lib/ui/dialog';
+import { Dialog, DialogContent, DialogContentArea, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
 import { ModalLayout } from '@renderer/lib/ui/modal-layout';
 import { cn } from '@renderer/utils/utils';
-import { AgentAccountSection } from './AgentAccountSection';
+import { agentOffersConnections } from './agent-account';
 import { AgentModalHeaderSection } from './AgentModalHeaderSection';
 import { InstallSection } from './InstallSection';
 
@@ -34,8 +35,10 @@ const AgentDetailModalContent = observer(function AgentDetailModalContent({
   agentId: string;
   onClose: () => void;
 }) {
+  const { translate } = useSessionMessages();
   const { data: agentPayload } = useManagementAgent(agentId);
-  const compact = agentSupportsConnectionManagement(agentPayload);
+  // 有「连接」一节的家都是同一种样子(#2507):与 Claude / Codex 一样的卡头与固定高度的内容。
+  const compact = agentOffersConnections(agentPayload);
   /**
    * 资源库看的是一台离线的机器(#6264):照旧画它上次的样子,但一个动作都做不了 —— 那台机器此刻收不到。
    * 用一个 disabled 的 fieldset 把整块面板里的按钮、输入框一次关掉,❌ 每个控件各判一遍(总会漏一个)。
@@ -53,25 +56,22 @@ const AgentDetailModalContent = observer(function AgentDetailModalContent({
 
   const header = (
     <DialogHeader>
-      {agentPayload && <AgentModalHeaderSection agent={agentPayload} dimmed={dimmed} compact={compact} />}
+      {agentPayload ? <AgentModalHeaderSection agent={agentPayload} dimmed={dimmed} compact={compact} /> : <DialogTitle>{agentId}</DialogTitle>}
     </DialogHeader>
   );
   const content = (
-    <DialogContentArea className={cn('gap-0', CONTENT_MAX_HEIGHT)}>
-      {agentPayload && (
-        /* Claude/Codex 默认只问能否使用、怎么配置；安装来源收进高级。 */
+    <DialogContentArea className={cn('gap-6', CONTENT_MAX_HEIGHT)}>
+      {agentPayload ? (
+        /* Render cached installation immediately; probes refresh it in the background. */
         <fieldset disabled={readOnly} className="contents" data-read-only={readOnly || undefined}>
-          {compact && <AgentAccountSection agent={agentPayload} />}
           <InstallSection
-            advancedOnly={compact}
             agentId={agentId}
             agentPayload={agentPayload}
             installOptions={agentPayload.installOptions}
             installDocs={agentPayload.installDocs}
-            accountSlot={compact ? undefined : <AgentAccountSection agent={agentPayload} />}
           />
         </fieldset>
-      )}
+      ) : <SettingsGroup><SettingsRow title={translate('agentsPage.installation')} description={translate('agentsPage.checking')} /></SettingsGroup>}
     </DialogContentArea>
   );
   // Fixed credential rows do not use the installation content's height animation.

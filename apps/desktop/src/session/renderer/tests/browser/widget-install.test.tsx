@@ -13,6 +13,12 @@ vi.mock('react-i18next', async original => ({ ...(await original<object>()), use
 vi.mock('@/store/auth', async original => ({ ...(await original<object>()), useAuth: () => ({ user: { id: 'reader' } }) }));
 vi.mock('@/components/chat/useConversationVisibility', () => ({ useConversationVisibility: () => ({ ref: () => undefined, shown: true }) }));
 vi.mock('@/components/appSlot/appsHere', () => ({ appsHere: { ...state, runs: () => true } }));
+vi.mock('@/lib/widgetRegistry', async original => {
+  const { parseWidgetMessage } = await import('@gugu/core/shared/ui/widgetModels');
+  return { ...(await original<object>()), widgetForOriginal: async (message: import('@/lib/widgetRegistry').WidgetOriginMessage) => ({
+    id: message.id, widget: parseWidgetMessage(message.content), senderId: message.sender_user_id,
+  }) };
+});
 vi.mock('@/components/extensionBundle/sharedPackages', async original => ({
   ...(await original<object>()),
   sharedPackagesOf: async () => state.shared,

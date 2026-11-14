@@ -1,7 +1,7 @@
 import { taskNameFor } from './task-name';
 import { randomUUID } from 'node:crypto';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
-import type { GuguPermissionMode } from '@gugu/session-core/acp';
+import { NEW_SESSION_PERMISSION_MODE, type GuguPermissionMode } from '@gugu/session-core/acp';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import { events } from '@main/lib/events';
@@ -91,6 +91,8 @@ export type AttachAgentToSessionParams = {
   initialQueue?: InitialQueuePrompt[];
   startupOrigin?: 'chat-page' | 'session-page';
   initialMessageId?: string;
+  /** #2599 the group it is born in (BirthGroup.chatId), recorded on the row: where it lives. */
+  birthChatId?: string;
   /** Session-graph spawn uses this to persist (and mount) the child before starting its provider asynchronously. */
   deferStart?: boolean;
   runtime?: SessionRuntime;
@@ -158,13 +160,14 @@ export async function attachAgentToSession(
         provider: params.provider,
         runtime: sessionRuntime,
         origin: params.origin,
-        permissionMode: params.permissionMode,
+        permissionMode: params.permissionMode ?? NEW_SESSION_PERMISSION_MODE,
         model: params.model,
         effort: params.effort,
         initialPrompt: params.initialPrompt,
         initialQueue: params.initialQueue,
         startupOrigin: params.startupOrigin,
         initialMessageId: params.initialMessageId,
+        ...(params.birthChatId ? { birthChatId: params.birthChatId } : {}),
         agentDisplayName,
         forkFromProviderSessionId: params.forkFromProviderSessionId,
         parentSessionId: relations?.parentSessionId ?? null,

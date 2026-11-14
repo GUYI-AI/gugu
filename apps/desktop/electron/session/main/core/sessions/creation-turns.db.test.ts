@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   db: undefined as AppDb | undefined,
   started: [] as string[],
   provision: vi.fn(async (_sessionId: string) => ({ success: true as const, data: { path: '/repo', workspaceId: 'root' } })),
+  create: vi.fn(),
 }));
 vi.mock('@main/db/client', () => ({
   get db() {
@@ -25,7 +26,7 @@ vi.mock('./session-life', async () => {
     start: (sessionId: string) => { mocks.started.push(sessionId); },
   }) };
 });
-vi.mock('./session-service', () => ({ sessionService: { provisionWorkspace: mocks.provision } }));
+vi.mock('./session-service', () => ({ sessionService: { provisionWorkspace: mocks.provision, createSession: mocks.create } }));
 
 import { admitCreationTurns } from './session-life-creation';
 import { launchCreatedSession } from '../session-timeline/launch-created-session';
@@ -87,18 +88,31 @@ describe('creation turns: one row per creation entry, however often it is reache
     expect(rows('empty')).toEqual({ pending: [], messages: [] });
     expect(mocks.started).toEqual(['empty']);
   });
-  it('defers only an explicit attachment creation; default provision later admits files without a persistent wait', async () => {
+  it('#2558 files still being placed: the turn is queued at creation, an engine session id written meanwhile cannot drop it', async () => {
     const files = [{ itemId: 'brief', version: 1, name: 'brief.txt', mimeType: 'text/plain', sizeBytes: 3 }];
     insertSession('files', { initialQueue: [{ text: FIRST, origin: 'manual', files }] });
-    const { sessionCreateController } = await import('./create-controller');
-    await sessionCreateController.provisionWorkspace('files', { deferFirstTurn: true });
-    expect(rows('files')).toEqual({ pending: [], messages: [] });
-    await sessionCreateController.provisionWorkspace('files');
-    expect(rows('files')).toEqual({ pending: [{ id: 'files:creation:0' }], messages: [{ id: 'files:creation:0', content: FIRST }] });
+    mocks.create.mockResolvedValueOnce({ success: true, data: {} });
+    const { createAndProvision, sessionCreateController } = await import('./create-controller');
+    const { firstTurnPlacement } = await import('./first-turn-placement');
+    await createAndProvision({ projectId: 'p', sessionConfig: { initialSession: { id: 'files' } } } as never, { placingFiles: true, sender: 1_000_001 });
+    const queued = { pending: [{ id: 'files:creation:0' }], messages: [{ id: 'files:creation:0', content: FIRST }] };
+    expect(rows('files'), 'queued before any file landed: the page draws it, its queueing starts the agent').toEqual(queued);
     const message = fixture.sqlite.prepare("SELECT metadata FROM messages WHERE session_id = 'files'").get() as { metadata: string };
     expect(JSON.parse(message.metadata).delivery.files).toEqual(files);
-    await sessionCreateController.admitFirstMessages('files');
-    expect(rows('files').pending).toHaveLength(1);
-  });
 
+    // The agent starts and reports its engine session before the files land (the reproduced order).
+    fixture.sqlite.prepare("UPDATE sessions SET provider_session_id = 'engine-1' WHERE id = 'files'").run();
+    let dispatched = false;
+    const placing = firstTurnPlacement('files', new AbortController().signal);
+    expect(placing).not.toBeNull();
+    void placing!.then(() => { dispatched = true; });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(dispatched, 'its dispatch waits for the placement').toBe(false);
+
+    // The page says placement settled: the dispatch goes on; the turn is still the one queued row, never dropped or doubled.
+    await sessionCreateController.admitFirstMessages('files');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(dispatched).toBe(true);
+    expect(rows('files')).toEqual(queued);
+  });
 });

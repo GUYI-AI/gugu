@@ -11,9 +11,13 @@ import { MIN_PANE_HEIGHT_PX, MIN_PANE_WIDTH_PX, type PaneLayoutStore } from '@re
 import { minExtent, paneExtent, removePane } from '@renderer/features/tabs/pane-layout-tree';
 import { auxWindows, type TabWindowHome } from './aux-windows';
 import { readChatSummaries, subscribeChatSummaries } from '@/lib/chatSummariesBridge';
+import { isScreenView } from './screen-views';
 import { MAX_SCREEN_BLOCKS, screenLayout, type ScreenBlockContent, type ScreenLayoutSnapshot, type ScreenSession, type WindowableContent } from './screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
+import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
+
+export { isScreenView };
 
 /**
  * 这一屏(screen-layout)和导航之间的那两根线(spec session-page「一屏几块」):
@@ -228,12 +232,6 @@ export function returnToScreen(): void {
   if (!isScreenView(appState.navigation.currentViewId)) appState.navigation.navigate(screenLayout.layout ? 'screen' : 'home');
 }
 
-/** 这几个视图看的是这一屏:会话、项目、对话都是其中一块(gugu-dev#181)。⌘ 点「拼到旁边」也只在这些视图上才有「正看着那块」。 */
-const SCREEN_VIEWS: ReadonlySet<string> = new Set(['session', 'project', 'chat', 'screen']);
-export function isScreenView(viewId: string | null | undefined): boolean {
-  return !!viewId && SCREEN_VIEWS.has(viewId);
-}
-
 /** 在一块里按下 = 看这一块。 */
 export function focusScreenBlock(blockId: string): void {
   if (screenLayout.focusedBlockId === blockId) return;
@@ -300,6 +298,17 @@ export function showOnScreen(content: ScreenBlockContent): void {
   followFocus();
 }
 
+/**
+ * 回到群本身(群标题、已经在这个群的屏里再点它那一行):这个群名下记着的那一屏(从群里点开的私聊、智能体)不要了,
+ * 群单独一屏。项目群认它的项目块,同 openChatOnScreen。
+ */
+export function navigateToGroupRoot(chatId: string): void {
+  tabFullscreen.exit();
+  const projectId = projectGroupsStore.rowProjectOfChat(chatId);
+  screenLayout.showRoot(projectId ? { kind: 'project', projectId } : { kind: 'chat', chatId });
+  followFocus();
+}
+
 /** ⌘ 点左边一行(项目、对话、会话都一样):并排放在正看着那块右边;满了提示。 */
 export function showBesideOnScreen(content: ScreenBlockContent): void {
   tabFullscreen.exit();
@@ -347,6 +356,17 @@ export function forgetProjectOnScreen(projectId: string): void {
   screenLayout.forgetContent({ kind: 'project', projectId });
   refillScreen();
   followFocus();
+}
+
+/**
+ * #2548 这个项目的群解散了(读成归档):项目不在了,它那块收掉(同上);屏上没有别的可跟、还正看着它,就回首页(同项目行菜单「移除项目」),
+ * ❌ 留在一块空白上 —— 这一块的第一枚页签就是那个群,群已删掉。本地项目照旧在项目表里(解散只动账号上的项目群),项目页的守卫拦不到。
+ */
+export function leaveDissolvedProject(projectId: string): void {
+  forgetProjectOnScreen(projectId);
+  const navigation = appState.navigation;
+  const current = navigation.viewParamsStore.project as { projectId?: string } | undefined;
+  if (navigation.currentViewId === 'project' && !!current?.projectId && sidebarStore.rowProjectIdOf(current.projectId) === projectId) navigation.navigate('home');
 }
 
 /** 这个账号没有(或删了)示例项目:屏上那块收掉;屏上空了就摆回最近看过的会话。 */

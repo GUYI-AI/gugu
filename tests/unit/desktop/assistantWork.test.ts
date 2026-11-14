@@ -1,11 +1,16 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
+import { installAssistantRulesResolver } from '../../../apps/desktop/electron/assistant-rules-resolver'
+import { fixedAssistantRules } from './assistantRules/fixtureApp'
+import { NEUTRAL_ASSISTANT_RULES } from './assistantRules/neutralRules'
 import { AssistantWorkStore, assistantWorkBinding, coordinateAssistantAction,
   receiveAssistantWorkReport, registerAssistantQuestion, settleAssistantQuestion } from '../../../apps/desktop/electron/sessionpage/assistant-work'
 
 let root: string
+// Dispatch renders the executor report from the assistant App's rules (#1931): a fixed set here.
+beforeAll(() => installAssistantRulesResolver(fixedAssistantRules()))
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'assistant-work-')); vi.stubEnv('GUGU_HOME', root) })
 afterEach(async () => { vi.unstubAllEnvs(); await rm(root, { recursive: true, force: true }) })
 
@@ -126,7 +131,8 @@ it('does not register read actions and preserves an ordinary message result', as
   expect(new AssistantWorkStore(root).list()).toEqual([])
 })
 
-it.each(['spawn', 'message'] as const)('%s tells executors to escalate delivery failures before investigating the platform', async action => {
+// How executors escalate a failed delivery is the App's wording (#1931): the host hands it over verbatim.
+it.each(['spawn', 'message'] as const)('%s hands executors the App\'s executor report verbatim', async action => {
   const run = vi.fn<(action: unknown) => Promise<unknown>>(async () => action === 'spawn' ? { session_id: 'child' }
     : { recipients: [{ to: 'session:child', status: 'delivered', message_id: 'dispatch-receipt' }] })
   await coordinateAssistantAction({ sessionId: 'parent', memoryDir: root },
@@ -137,14 +143,7 @@ it.each(['spawn', 'message'] as const)('%s tells executors to escalate delivery 
   const contract = JSON.parse(text.split('<gugu_work>\n')[1].split('\n</gugu_work>')[0])
   expect(contract.coordinator).toBe('session:parent')
   expect(contract.work_id).toBe(new AssistantWorkStore(root).list()[0].id)
-  const report = contract.report as string
-  expect(report).toContain('verify result before completed; a failed delivery is progress, never completed')
-  expect(report).toContain('Gugu messaging/upload/reporting fails, immediately report progress')
-  expect(report).toContain('work done or partial, failed step, observed cause category')
-  expect(report).toContain('permission/network/validation/unknown')
-  expect(report).toContain('if done say "做好了但交不回"')
-  expect(report).toContain('If reporting also fails, preserve this notice in the task reply and stop')
-  expect(report).toContain('Never read Gugu program directories or debug/repair the platform')
+  expect(contract.report).toBe(NEUTRAL_ASSISTANT_RULES.texts['executor-report'])
 })
 
 it('implicitly continues open work of the same kind, never on a fresh or reply dispatch, and only ledgered work when asked (#615)', () => {

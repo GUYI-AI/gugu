@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // #1708 来源消息定位(群右栏工作区 App 的 gugu.showMessage → 壳的 app-show-message 事件):
-// 已加载的直接滚过去;没加载的交给会话滚动记忆的 revealMessage(载锚点、落位、核对),落稳了才闪;
+// 已加载的、没加载的都交给会话滚动记忆的 revealMessage(载锚点、落位、核对),落稳了才闪;
 // 载不到 / 等不来 → fail-loud,不滚去别处。
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,16 +12,9 @@ let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { harness = createReactHarness() })
 afterEach(() => { harness.cleanup() })
 
-const row = (id: string) => ({ type: 'message', message: { id } })
-
 async function setup(reveal: (id: string) => Promise<void> = () => Promise.resolve()) {
-  const scrollToIndex = vi.fn()
   const input = {
     activeChatId: 'g1', navigationTarget: true,
-    rows: [row('m40'), row('m41')],
-    listRef: { current: { scrollToIndex } } as never,
-    isAtBottomRef: { current: true },
-    setFollowingTail: vi.fn(),
     setFlashMessageId: vi.fn(),
     flashTimerRef: { current: null },
     revealMessage: vi.fn(reveal),
@@ -31,17 +24,15 @@ async function setup(reveal: (id: string) => Promise<void> = () => Promise.resol
   await harness.render(createNode(Probe))
   const show = (messageId: string, chatId = 'g1') =>
     act(async () => { askReveal(chatId, messageId); window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } })) })
-  return { input, scrollToIndex, show }
+  return { input, show }
 }
 
 describe('source message reveal', () => {
-  it('scrolls to a loaded message and flashes it, without loading anything', async () => {
+  it('hands a loaded message to revealMessage too, and flashes it once it has settled there', async () => {
     const c = await setup()
     await c.show('m41')
-    expect(c.scrollToIndex).toHaveBeenCalledWith({ index: 1, align: 'center' })
+    expect(c.input.revealMessage).toHaveBeenCalledWith('m41')
     expect(c.input.setFlashMessageId).toHaveBeenCalledWith('m41')
-    expect(c.input.isAtBottomRef.current).toBe(false)
-    expect(c.input.revealMessage).not.toHaveBeenCalled()
     expect(c.input.onMissing).not.toHaveBeenCalled()
   })
 
@@ -50,7 +41,6 @@ describe('source message reveal', () => {
     const c = await setup(() => new Promise<void>((resolve) => { settle = resolve }))
     await c.show('m1')
     expect(c.input.revealMessage).toHaveBeenCalledWith('m1')
-    expect(c.scrollToIndex).not.toHaveBeenCalled() // the list is not scrolled somewhere else meanwhile
     expect(c.input.setFlashMessageId).not.toHaveBeenCalled()
     await act(async () => { settle() })
     expect(c.input.setFlashMessageId).toHaveBeenCalledWith('m1')
@@ -61,7 +51,15 @@ describe('source message reveal', () => {
     const c = await setup(() => Promise.reject(new Error('Saved conversation message is no longer available')))
     await c.show('gone')
     await vi.waitFor(() => expect(c.input.onMissing).toHaveBeenCalledOnce())
-    expect(c.scrollToIndex).not.toHaveBeenCalled()
+    expect(c.input.setFlashMessageId).not.toHaveBeenCalled()
+  })
+
+  it('another conversation opened before it was shown: a cancellation, not 「not found」', async () => {
+    // The scroll memory rejects a pending reveal when its conversation changes; the reason travels with the rejection.
+    const c = await setup(() => Promise.reject(new DOMException('The conversation changed before the message was shown', 'AbortError')))
+    await c.show('m1')
+    await act(async () => {})
+    expect(c.input.onMissing).not.toHaveBeenCalled()
     expect(c.input.setFlashMessageId).not.toHaveBeenCalled()
   })
 
@@ -69,39 +67,36 @@ describe('source message reveal', () => {
     const pending: Array<{ resolve: () => void; reject: (e: Error) => void }> = []
     const c = await setup(() => new Promise<void>((resolve, reject) => { pending.push({ resolve, reject }) }))
     await c.show('m1')
-    await c.show('m41') // loaded: scrolls at once
-    await act(async () => { pending[0].reject(new Error('superseded')) })
+    await c.show('m41')
+    await act(async () => { pending[0].reject(new Error('superseded')); pending[1].resolve() })
     expect(c.input.onMissing).not.toHaveBeenCalled()
     expect(c.input.setFlashMessageId).toHaveBeenCalledTimes(1)
     expect(c.input.setFlashMessageId).toHaveBeenCalledWith('m41')
   })
 
   it('keeps local quote callbacks and routed App requests with their presentation target', async () => {
-    const a = { scrollToIndex: vi.fn(), flash: vi.fn(), show: null as ((id: string) => void) | null }
-    const b = { scrollToIndex: vi.fn(), flash: vi.fn(), show: null as ((id: string) => void) | null }
+    const a = { reveal: vi.fn(async () => {}), flash: vi.fn(), show: null as ((id: string) => void) | null }
+    const b = { reveal: vi.fn(async () => {}), flash: vi.fn(), show: null as ((id: string) => void) | null }
     function Pane({ view, viewportKey }: { view: typeof a; viewportKey: string }) {
-      view.show = useSourceMessageReveal({ activeChatId: 'g1', viewportKey, rows: [row('m40'), row('m41')],
-        listRef: { current: { scrollToIndex: view.scrollToIndex } } as never, isAtBottomRef: { current: true }, setFollowingTail: vi.fn(),
-        setFlashMessageId: view.flash, flashTimerRef: { current: null }, revealMessage: vi.fn(async () => {}), onMissing: vi.fn() })
+      view.show = useSourceMessageReveal({ activeChatId: 'g1', viewportKey,
+        setFlashMessageId: view.flash, flashTimerRef: { current: null }, revealMessage: view.reveal, onMissing: vi.fn() })
       return null
     }
     await harness.render(createNode('div', null, createNode(Pane, { view: a, viewportKey: 'slot-a' }), createNode(Pane, { view: b, viewportKey: 'slot-b' })))
     await act(async () => { a.show!('m40') })
-    expect(a.scrollToIndex).toHaveBeenCalledOnce()
-    expect(b.scrollToIndex).not.toHaveBeenCalled()
+    expect(a.reveal).toHaveBeenCalledOnce()
+    expect(b.reveal).not.toHaveBeenCalled()
     await act(async () => { askReveal('g1', 'm41', 'slot-b'); window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked)) })
-    expect(a.scrollToIndex).toHaveBeenCalledOnce()
-    expect(b.scrollToIndex).toHaveBeenCalledWith({ index: 1, align: 'center' })
+    expect(a.reveal).toHaveBeenCalledOnce()
+    expect(b.reveal).toHaveBeenCalledWith('m41')
   })
 
   it('lets only the target panel make way, then consumes its pending reveal after the list mounts', async () => {
-    const navigate = vi.fn(), scrollToIndex = vi.fn(), sibling = vi.fn()
+    const navigate = vi.fn(), reveal = vi.fn(async () => {}), sibling = vi.fn()
     function Pane({ ready }: { ready: boolean }) {
-      useSourceMessageReveal({ activeChatId: 'g1', viewportKey: 'target', ready, onNavigate: navigate, rows: [row('m41')],
-        listRef: { current: ready ? { scrollToIndex } : null } as never, isAtBottomRef: { current: true }, setFollowingTail: vi.fn(),
-        setFlashMessageId: vi.fn(), flashTimerRef: { current: null }, revealMessage: vi.fn(async () => {}), onMissing: vi.fn() })
-      useSourceMessageReveal({ activeChatId: 'g1', viewportKey: 'sibling', onNavigate: sibling, rows: [],
-        listRef: { current: null } as never, isAtBottomRef: { current: true }, setFollowingTail: vi.fn(),
+      useSourceMessageReveal({ activeChatId: 'g1', viewportKey: 'target', ready, onNavigate: navigate,
+        setFlashMessageId: vi.fn(), flashTimerRef: { current: null }, revealMessage: reveal, onMissing: vi.fn() })
+      useSourceMessageReveal({ activeChatId: 'g1', viewportKey: 'sibling', onNavigate: sibling,
         setFlashMessageId: vi.fn(), flashTimerRef: { current: null }, revealMessage: vi.fn(async () => {}), onMissing: vi.fn() })
       return null
     }
@@ -109,19 +104,17 @@ describe('source message reveal', () => {
     await act(async () => { askReveal('g1', 'm41', 'target'); window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked)) })
     expect(navigate).toHaveBeenCalledOnce()
     expect(sibling).not.toHaveBeenCalled()
-    expect(scrollToIndex).not.toHaveBeenCalled()
+    expect(reveal).not.toHaveBeenCalled()
     await harness.render(createNode(Pane, { ready: true }))
-    expect(scrollToIndex).toHaveBeenCalledWith({ index: 0, align: 'center' })
+    expect(reveal).toHaveBeenCalledWith('m41')
     expect(sibling).not.toHaveBeenCalled()
   })
 
   it('queues a filtered quote until the same viewport has exited search with current rows', async () => {
-    const navigate = vi.fn(), scrollToIndex = vi.fn(), reveal = vi.fn(async () => { throw Error('old disabled reveal') })
+    const navigate = vi.fn(), reveal = vi.fn(async () => {})
     let quote!: (id: string) => void
     function Pane({ ready }: { ready: boolean }) {
       quote = useSourceMessageReveal({ activeChatId: 'g1', viewportKey: 'filtered', ready, onNavigate: navigate,
-        rows: ready ? [row('old'), row('reply')] : [row('reply')],
-        listRef: { current: { scrollToIndex } } as never, isAtBottomRef: { current: true }, setFollowingTail: vi.fn(),
         setFlashMessageId: vi.fn(), flashTimerRef: { current: null }, revealMessage: reveal, onMissing: vi.fn() })
       return null
     }
@@ -129,16 +122,13 @@ describe('source message reveal', () => {
     await act(async () => { quote('old') })
     expect(navigate).toHaveBeenCalledOnce()
     expect(reveal).not.toHaveBeenCalled()
-    expect(scrollToIndex).not.toHaveBeenCalled()
     await harness.render(createNode(Pane, { ready: true }))
-    expect(scrollToIndex).toHaveBeenCalledWith({ index: 0, align: 'center' })
-    expect(reveal).not.toHaveBeenCalled()
+    expect(reveal).toHaveBeenCalledWith('old')
   })
 
   it('ignores a request for another group', async () => {
     const c = await setup()
     await c.show('m41', 'g2')
-    expect(c.scrollToIndex).not.toHaveBeenCalled()
     expect(c.input.revealMessage).not.toHaveBeenCalled()
   })
 })

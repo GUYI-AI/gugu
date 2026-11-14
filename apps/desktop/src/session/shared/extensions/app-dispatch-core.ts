@@ -1,6 +1,9 @@
 import type { AppSpawnAction } from '@gugu/session-core/session-record/contract';
 import type { ExtensionCapability } from './manifest';
 import { decodeTypedId } from '@gugu/core/shared/typedId.mjs';
+import { personId } from './app-runtime-protocol';
+import { BINDING_NAME } from './unread-binding';
+import { draftAttachmentsOf, type DraftAttachment } from './resources-management';
 
 /**
  * `gugu.dispatch(text, options)` (15): the one way an App hands something to someone — owner 10-25「全部统一」. Before it there
@@ -11,11 +14,13 @@ import { decodeTypedId } from '@gugu/core/shared/typedId.mjs';
  * - `{ agent }`: one of the person's agents, as `session_message` tells one;
  * - `{ new: true }`: a new agent, its first words the text;
  * - `{ chat }` with `draft`: only into that chat's composer (as `draft` into an agent's): the person sends it, or not.
+ * - `{ binding }` with `draft` (40, `chat:draft`): the same, into the one conversation the person chose for the App's
+ *   binding (#1927). The host finds the chat; the App never names or learns it.
  * No `to`: the person picks in the host's sheet (`DispatchSheet`), seeing the whole text, every pill and the target, and
- * only their press sends — so that call needs no capability, only their gesture (as compose's and forum.assign's did).
+ * only their press sends — so that call needs no capability, only their gesture (as compose's did).
  */
 
-export type DispatchTarget = { chat: string } | { chat: string; member: string } | { agent: string } | { new: true };
+export type DispatchTarget = { chat: string } | { chat: string; member: string } | { agent: string } | { new: true } | { binding: string };
 
 /** What the sheet offers, when the call does not say (`offer`): the rows it shows. */
 export const DISPATCH_OFFERS = ['chat', 'agent-in-chat', 'person-in-chat', 'my-agent', 'new-agent'] as const;
@@ -40,8 +45,13 @@ export const DISPATCH_GONE = {
 /** The target the call names, checked; absent: the person picks. */
 export function dispatchTargetOf(to: unknown): DispatchTarget | null {
   if (!named(to)) return null;
-  const shape = 'to is { chat }, { chat, member }, { agent } or { new: true }';
+  const shape = 'to is { chat }, { chat, member }, { agent }, { new: true } or { binding }';
   if (typeof to !== 'object' || Array.isArray(to)) return invalid(shape);
+  if (Object.hasOwn(to, 'binding')) {
+    const { binding } = to as { binding?: unknown };
+    if (Object.keys(to).length !== 1) return invalid('to.binding names the conversation alone: { binding }');
+    return typeof binding === 'string' && BINDING_NAME.test(binding) ? { binding } : invalid("to.binding is the name of the App's declared conversation binding");
+  }
   const { chat, member, agent } = to as { chat?: unknown; member?: unknown; agent?: unknown; new?: unknown };
   if ((to as { new?: unknown }).new === true) return Object.keys(to).length === 1 ? { new: true } : invalid(shape);
   if (named(agent)) {
@@ -60,6 +70,8 @@ export function dispatchTargetOf(to: unknown): DispatchTarget | null {
  */
 export function dispatchNeeds(args: { to?: unknown; draft?: unknown; spawn?: unknown }): ExtensionCapability | null {
   if (named((args.spawn as { device?: unknown } | null)?.device)) return 'agents:control:all-machines';
+  // Named by its binding (#1927): the conversation the person chose, which only `chat:draft` may put a draft into.
+  if (named(args.to) && typeof args.to === 'object' && Object.hasOwn(args.to, 'binding')) return 'chat:draft';
   if (args.draft === true || !named(args.to) || typeof args.to !== 'object') return null;
   const to = args.to as { member?: unknown; agent?: unknown; new?: unknown };
   if (named(to.member)) return 'chat:relay';
@@ -79,6 +91,8 @@ export interface DispatchCall {
   to: DispatchTarget | null;
   refs: unknown;
   images: unknown;
+  /** 50: files a binding draft carries, of its folder or the agent's resources (resources-management.ts). */
+  attach?: DraftAttachment[];
   visible: boolean;
   delivery?: 'queue' | 'defer';
   key?: string;
@@ -92,9 +106,13 @@ export function dispatchCallOf(args: Record<string, unknown>): DispatchCall {
   const draft = args.draft === true;
   if (named(args.draft) && typeof args.draft !== 'boolean') invalid('draft is true, or absent');
   const to = dispatchTargetOf(args.to);
-  if (!text && !named(args.refs)) invalid('Say something: text is empty');
+  if (!text && !named(args.refs) && !named(args.attach)) invalid('Say something: text is empty');
   if (named(args.images) && !draft) invalid('images go only into a chat\'s composer: { draft: true }');
-  if (draft && to && ('member' in to || 'new' in to)) invalid('A draft goes into a composer: to { chat } or { agent }');
+  if (draft && to && ('member' in to || 'new' in to)) invalid('A draft goes into a composer: to { chat }, { agent } or { binding }');
+  if (to && 'binding' in to && !draft) invalid('A binding\'s conversation takes only a draft the person sends: { draft: true, to: { binding } }');
+  if (to && 'binding' in to && (named(args.refs) || named(args.images))) invalid('A draft into a binding\'s conversation carries no refs or images: files of its folder or the agent\'s go in attach');
+  if (named(args.attach) && !(to && 'binding' in to && draft)) invalid('attach is for a draft into a binding\'s conversation: { draft: true, to: { binding }, attach }');
+  const attach = named(args.attach) ? draftAttachmentsOf(args.attach) : undefined;
   if (!draft && to && !('member' in to) && !('agent' in to) && !('new' in to)) invalid('A chat as such is told nothing: to { chat, member }, or { draft: true }');
   if (named(args.visible) && args.visible !== true) invalid('visible is true, or absent');
   if (args.visible === true && (draft || (to && !('member' in to)))) invalid('visible is for a member of a chat: to { chat, member }');
@@ -117,6 +135,7 @@ export function dispatchCallOf(args: Record<string, unknown>): DispatchCall {
     to,
     refs: args.refs,
     images: args.images,
+    ...(attach ? { attach } : {}),
     visible: args.visible === true,
     ...(args.delivery === 'queue' || args.delivery === 'defer' ? { delivery: args.delivery } : {}),
     ...(typeof args.key === 'string' ? { key: args.key } : {}),
@@ -191,10 +210,10 @@ export interface DispatchAsk {
   /** Phone only: the default computer for a new agent; the person can change it in the existing machine picker. */
   spawnOn?: string | null;
   /**
-   * Not a message but a forum assignment (`gugu.forum.assign`): the post's title is what is shown, read only, and only the
-   * person's own agents are offered; what follows the pick is the forum's (`forum_assign`), not a delivery.
+   * Not a message but a pick (`gugu.pickAgent`): only the person's own agents are offered, the App's words are what is shown,
+   * nothing is written to anyone; what follows the pick is the App's.
    */
-  assign?: { title: string };
+  pick?: AgentPickWords;
 }
 
 /**
@@ -204,3 +223,35 @@ export interface DispatchAsk {
 export type DispatchPicked =
   | { to: { chat: string } | { chat: string; member: string } | { agent: string } | { new: true; device?: string }; visible: boolean; text: string }
   | null;
+
+/** All of `gugu.pickAgent`'s sheet is the App's words: the host knows only that a person picks one of their agents. */
+export interface AgentPickWords { title: string; subject: string; body: string; action: string; search: string; empty: string }
+
+/** `gugu.pickAgent({ title, subject, body, action, search, empty, preselect?, write? })`, as the sheet is asked. */
+export function pickAgentAsk(args: Record<string, unknown>): DispatchAsk {
+  const word = (key: keyof AgentPickWords) => {
+    const value = args[key];
+    if (typeof value !== 'string' || !value.trim() || value.length > 1000) throw Object.assign(new Error(`pickAgent: ${key} is text of 1 to 1000 characters`), { code: 'invalid' as const });
+    return value;
+  };
+  const pick = { title: word('title'), subject: word('subject'), body: word('body'), action: word('action'), search: word('search'), empty: word('empty') };
+  const preselect = typeof args.preselect === 'string' ? personId(args.preselect.replace(/^user:/, '')) : null;
+  return { pick, draft: false, offers: ['my-agent'], text: '', pills: [], chat: null, preselect, visible: false };
+}
+
+/**
+ * What a pick answers. The person's press was in the host's sheet, not on the page, so what it is for goes with the ask:
+ * `write: { name, args, agent }` is done by that press (`gugu.cloud.write`'s, the picked agent's bare id as the argument `agent` names).
+ */
+export async function answerAgentPick(
+  args: Record<string, unknown>,
+  picked: DispatchPicked,
+  write: (name: unknown, given: Record<string, unknown>) => Promise<unknown>,
+): Promise<{ agent: string; written?: unknown } | { cancelled: true }> {
+  if (!picked || !('agent' in picked.to)) return { cancelled: true };
+  const agent = picked.to.agent;
+  const asked = args.write as { name?: unknown; args?: Record<string, unknown>; agent?: unknown } | undefined;
+  if (!asked) return { agent };
+  if (typeof asked.agent !== 'string' || !asked.agent) throw Object.assign(new Error('pickAgent: write.agent names the argument for the agent'), { code: 'invalid' as const });
+  return { agent, written: await write(asked.name, { ...asked.args, [asked.agent]: agent.replace(/^user:/, '') }) };
+}

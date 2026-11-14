@@ -40,12 +40,22 @@ export type FrameSocket = {
  */
 export type FrameInvokePolicy = (channel: string, args?: readonly unknown[]) => boolean;
 
+/**
+ * The policy refused this caller. Distinct from `No handler registered`, which only means this build lacks the
+ * channel (callers read that one as "the other side is older"); a refusal is never a version signal.
+ */
+export const REMOTE_CALL_REFUSED = 'forbidden';
+const refusedMessage = (channel: string) => `'${channel}' is not allowed for this caller on this machine`;
+
 const FIRST_SENDER_ID = 1_000_000;
 /**
  * sender id 全进程只发一次:几个宿主(设备连接、网页 WebSocket)的线共用一张会话页路由表,
  * 表里按 sender 记的东西(订阅归谁)不能被另一个宿主的同号线拆掉。
  */
 let nextSenderId = FIRST_SENDER_ID;
+
+/** Whether a sender is one of these lines (a device connection, a web socket) rather than a window of this app. */
+export const isFrameSender = (senderId: number): boolean => senderId >= FIRST_SENDER_ID;
 
 /** port1(宿主侧,PortLike):postMessage 走线,收到的 pm 帧以 {data} 事件派发给 portTransport。 */
 class HostPort implements MessagePortMainLike {
@@ -238,7 +248,8 @@ export class FrameSessionHost implements HostIpc {
    * 它名下若记了东西(订阅),当场按「线断了」收掉:推送只走窗口,❌ 留一条没人收的订阅。
    */
   async invokeOnce(channel: string, args: unknown[], policy?: FrameInvokePolicy): Promise<unknown> {
-    const handler = policy && !policy(channel, args) ? undefined : (this.handlers.get(channel) ?? this.fallback?.(channel));
+    if (policy && !policy(channel, args)) throw Object.assign(new Error(refusedMessage(channel)), { code: REMOTE_CALL_REFUSED });
+    const handler = this.handlers.get(channel) ?? this.fallback?.(channel);
     if (!handler) throw new Error(`No handler registered for '${channel}'`);
     const id = nextSenderId++;
     const sender: HostIpcInvokeEvent['sender'] = {
@@ -361,10 +372,16 @@ export class FrameSessionHost implements HostIpc {
   ): Promise<void> {
     switch (message.t) {
       case 'invoke': {
-        const handler =
-          policy && !policy(message.channel, message.args)
-            ? undefined
-            : (this.handlers.get(message.channel) ?? this.fallback?.(message.channel));
+        if (policy && !policy(message.channel, message.args)) {
+          connection.send({
+            t: 'result',
+            id: message.id,
+            ok: false,
+            error: { name: 'Error', message: refusedMessage(message.channel), code: REMOTE_CALL_REFUSED },
+          });
+          return;
+        }
+        const handler = this.handlers.get(message.channel) ?? this.fallback?.(message.channel);
         if (!handler) {
           connection.send({
             t: 'result',

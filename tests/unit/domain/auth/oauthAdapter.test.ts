@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createGuguSupabaseClient } from '../../../../packages/core/src/cloud/supabase'
 import { isOAuthCallback, parseOAuthCallback } from '../../../../apps/desktop/shared/oauth-callback'
 import { OpenedLinkInbox } from '../../../../apps/desktop/shared/opened-link-inbox'
-import { OAuthCallbackInbox } from '../../../../apps/desktop/electron/oauth-callback-inbox'
+import { OpenedLinkMailbox } from '../../../../apps/desktop/electron/opened-link-mailbox'
 
 const redirectTo = 'gugu-beta://auth/callback'
 const verifierKey = 'sb-main-code-verifier'
@@ -20,6 +20,20 @@ function memoryStorage() {
     setItem: (key: string, value: string) => { values.set(key, value) }, removeItem: (key: string) => { values.delete(key) } }
 }
 describe('OAuth callback boundary', () => {
+  it('reads the callback on a WebView that gives a custom scheme no host (before Chromium 130)', () => {
+    class OldWebViewUrl extends URL {
+      override get hostname() { return /^https?:$/.test(this.protocol) ? super.hostname : '' }
+    }
+    vi.stubGlobal('URL', OldWebViewUrl)
+    try {
+      expect(isOAuthCallback('gugu://auth/callback?code=c')).toBe(true)
+      expect(isOAuthCallback('gugu://chat/callback?code=c')).toBe(false)
+      expect(parseOAuthCallback('gugu://auth/callback?code=c', 'gugu://auth/callback')).toEqual({ kind: 'code', code: 'c' })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it.each(['gugu', 'gugu-beta', 'gugu-dev'])('parses only the originating %s channel', (scheme) => {
     expect(parseOAuthCallback(`${scheme}://auth/callback?code=opaque%2Bcode`, `${scheme}://auth/callback`)).toEqual({ kind: 'code', code: 'opaque+code' })
     const other = scheme === 'gugu' ? 'gugu-beta' : 'gugu'
@@ -53,7 +67,7 @@ describe('OAuth callback boundary', () => {
     expect(navigation).toHaveBeenCalledExactlyOnceWith('gugu-beta://ext/notes/main')
   })
   it('retains desktop callbacks until the renderer takes them, across cold/window reload boundaries', () => {
-    const notify = vi.fn(), inbox = new OAuthCallbackInbox(notify)
+    const notify = vi.fn(), inbox = new OpenedLinkMailbox(notify)
     inbox.push(`${redirectTo}?code=cold`)
     expect(notify).toHaveBeenCalledOnce()
     expect(inbox.take()).toEqual([`${redirectTo}?code=cold`])

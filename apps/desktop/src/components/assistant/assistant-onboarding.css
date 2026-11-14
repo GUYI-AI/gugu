@@ -17,7 +17,6 @@
   color: var(--fg);
   overflow-wrap: anywhere;
 }
-.ta-onb-wide { width: min(560px, 100%); max-height: 100%; }
 .ta-onb-title { margin: 0; font-size: var(--font-size-xl); line-height: var(--lh-page); font-weight: 600; }
 .ta-onb-sub { margin: 0; font-size: var(--font-prose); line-height: var(--lh-prose); color: var(--muted-fg); }
 .ta-onb-note { margin: 0; font-size: var(--font-body); line-height: var(--lh-body); color: var(--muted-fg); }
@@ -57,7 +56,7 @@
 /* 引导输入与其他页面使用同一档控件边界，不叠第二层阴影。 */
 .ta-onb .ta-input,
 .ta-onb .ta-pill-btn { border: 1px solid var(--border); border-radius: var(--radius-control); box-shadow: none; }
-.ta-onb .ta-input:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+.ta-onb .ta-input:focus-visible:not([data-pointer-focus]) { outline: 2px solid var(--fg); outline-offset: 2px; }
 
 /* 助理单独在上,下面两项对应这台设备的入口。 */
 .ta-onb-intro-gugu { display: flex; width: 100%; flex-direction: column; gap: 4px; text-align: left; }
@@ -67,6 +66,11 @@
 .ta-onb-intro-text { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .ta-onb-actions-stack { flex-direction: column; align-items: stretch; }
 .ta-onb-primary { width: 100%; }
+/* 「继续」下面那一行「帮助改进咕咕」勾选(owner 11-09 方案 B):小字、居中、不和称呼身份抢视线。 */
+.ta-onb-check { display: flex; align-items: flex-start; justify-content: center; gap: 8px; font-size: var(--font-caption); line-height: var(--lh-caption); color: var(--muted-fg); text-align: left; cursor: pointer; }
+.ta-onb-check input { flex: none; margin: 2px 0 0; accent-color: var(--fg); cursor: pointer; }
+/* 应用没有全局声明 color-scheme,原生复选框在深色下会画成亮白方块;只给这一个控件声明深色。 */
+[data-theme='dark'] .ta-onb-check input { color-scheme: dark; }
 /* 「认识你」(FirstRunProfile):身份一排胶囊单选(ui/Button 的 option 变体),这里只管换行与间距。 */
 .ta-onb-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 
@@ -99,9 +103,6 @@
 .ta-server-target.ta-server-target { width: 100%; flex-direction: column; align-items: flex-start; }
 .ta-server-target[aria-pressed='true'] { background: var(--muted); border-color: var(--border-strong); }
 .ta-server-target-name { font-size: var(--font-body); line-height: var(--lh-body); }
-
-/* The shell centers earlier onboarding steps; only the engine step fills its height. */
-.ta-centered:has(.ta-onb-slot-engine) { align-items: stretch; }
 
 /* Local engine choice: the approved v6b geometry is stable across auth states. */
 .ta-onb-slot-engine { align-self: stretch; align-items: flex-start; height: 100%; padding-top: 24px; }

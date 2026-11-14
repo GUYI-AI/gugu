@@ -1,8 +1,8 @@
-import { ASSISTANT_CHILD_HARNESS, ASSISTANT_FIRST_TASK } from '@gugu/core/shared/assistantPolicy'
 import type { CreateAgentOnDeviceResult } from '@gugu/core/shared/types/chat'
 import { machineRpc } from '../mobile/agent-watch/sessionpage-rpc'
 import { desktopIpc } from '../platform/desktopIpc'
 import { assistantResumeStore, cleanAssistantSetupDraft, completedAssistantSetup, type AssistantSetupDraft } from './assistantSetup'
+import { assistantSetupRules } from './assistantSetupRules'
 import { provisionSingleAgent, resumeSingleAgent, type ProvisionResumeRecord } from './agentProvision'
 import { fetchAgentHarnessModels } from './agentModelSelection'
 import { getCurrentAuthUserId } from './supabase'
@@ -79,7 +79,7 @@ export function setUpAssistantOnServer(draft: AssistantSetupDraft, deviceId: str
   return singleFlight(async () => {
     if (!desktopIpc()) return fail('unsupported_platform')
     if (options.signal?.aborted) throw aborted()
-    cleanAssistantSetupDraft(draft)
+    cleanAssistantSetupDraft(draft, await assistantSetupRules())
     const ownerUserId = await getCurrentAuthUserId()
     if (pendingServerAssistant(ownerUserId) || assistantResumeStore.list(ownerUserId).length) return fail('preparation_busy')
     const target = await targetAvailable(deviceId)
@@ -118,7 +118,7 @@ async function prepare(record: AssistantServerSetupRecord, options: AssistantSer
   } else {
     record.preparationStarted = true
     save(record)
-    state = unwrap(await api.start({ ...args, ownerProfile: cleanAssistantSetupDraft(record.draft).ownerProfile }))
+    state = unwrap(await api.start({ ...args, ownerProfile: cleanAssistantSetupDraft(record.draft, await assistantSetupRules()).ownerProfile }))
   }
   for (;;) {
     if (state.installationStarted) installing()
@@ -177,7 +177,8 @@ async function drive(record: AssistantServerSetupRecord, options: AssistantServe
     if (!model) return fail('model_unavailable')
     record.model = model
     save(record)
-    const clean = cleanAssistantSetupDraft(record.draft)
+    const rules = await assistantSetupRules()
+    const clean = cleanAssistantSetupDraft(record.draft, rules)
     options.onProgress?.({ phase: 'creating', cancellable: false })
     provisioning = true
     let operationIdUsed = false
@@ -187,7 +188,7 @@ async function drive(record: AssistantServerSetupRecord, options: AssistantServe
     }, {
       resumeStore: assistantResumeStore, model,
       newId: () => { if (operationIdUsed) return crypto.randomUUID(); operationIdUsed = true; return record.operationId },
-      assistant: { childHarness: ASSISTANT_CHILD_HARNESS, firstTask: ASSISTANT_FIRST_TASK },
+      assistant: { childHarness: rules.defaults.childHarness, firstTask: rules.texts['first-task'] },
       onAttemptRecorded: next => { record.provisionOperationId = next.operationId; record.provisionRecord = next; save(record) },
     })
     const result = completedAssistantSetup(provision)
@@ -196,8 +197,11 @@ async function drive(record: AssistantServerSetupRecord, options: AssistantServe
     return result
   } catch (cause) {
     if ((cause as Error)?.name === 'AbortError') throw cause
+    const code = (cause as { code?: string })?.code
+    // A missing verb means the server's build is older; a policy refusal means it refused this account, not its version.
     const failure = cause instanceof AssistantServerSetupError ? { code: cause.code, retryable: cause.retryable, next: cause.next }
-      : (cause as { code?: string })?.code === 'server_outdated' || (cause as { code?: string })?.code === 'unknown_method'
+      : code === 'forbidden' ? assistantServerFailure('target_not_owned')
+      : code === 'server_outdated' || code === 'unknown_method'
         || String((cause as Error)?.message).includes("No handler registered for 'assistantHome.") ? assistantServerFailure('server_update_required')
       : assistantServerFailure(provisioning ? 'provision_failed' : 'target_unreachable')
     options.onProgress?.({ phase: 'failed', cancellable: !record.installationStarted, error: failure })
@@ -216,9 +220,10 @@ async function resumeProvision(record: ProvisionResumeRecord): Promise<CreateAge
   const stored = pendingServerAssistant(record.ownerUserId)
   if (!stored || stored.deviceId !== record.deviceId || stored.provisionOperationId !== record.operationId) return fail('input_mismatch')
   if (!stored.model) return fail('model_unavailable')
+  const rules = await assistantSetupRules()
   const result = completedAssistantSetup(await resumeSingleAgent(record, {
     resumeStore: assistantResumeStore, model: stored.model,
-    assistant: { childHarness: ASSISTANT_CHILD_HARNESS, firstTask: ASSISTANT_FIRST_TASK },
+    assistant: { childHarness: rules.defaults.childHarness, firstTask: rules.texts['first-task'] },
   }))
   forget(stored)
   return result

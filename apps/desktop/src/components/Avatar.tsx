@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { pauseAnimationsOffscreen } from '@gugu/session-shared/animation-visibility'
 import { useTranslation } from 'react-i18next'
 import { colorOfDisplayStatus, labelOfDisplayStatus } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import type { AgentStatusLabel } from '@gugu/core/shared/agentStatusPresentation'
 import { normalizeAvatarUrl, reportInvalidAvatarUrl } from '@gugu/core/shared/ui/avatarUrl'
-import type { AgentDisplayStatus, GroupAvatarMember } from '@gugu/core/shared/types/chat'
+import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
+import { groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg, groupAvatarThemeColor } from '@gugu/core/shared/ui/groupAvatar'
 import { dicebearAvatarDataUri } from '../lib/dicebearAvatar'
 import { AgentNeedsUserGlyph } from './AgentNeedsUserGlyph'
 import { AgentHarnessBadge } from './AgentHarnessIdentity'
@@ -12,7 +13,7 @@ import { BoringAgentAvatar } from './BoringAgentAvatar'
 import { AssistantDefaultAvatar } from './assistant/AssistantDefaultAvatar'
 import { useAvatarIdentity, useIsAssistantAvatar } from '../lib/avatarIdentity'
 import { isBuiltinAgentAvatarUrl, parseAgentLook } from './agentAvatar/look'
-import { agentLookPoster, useAgentLookPostersVersion } from './agentAvatar/posters'
+import { agentLookPoster } from './agentAvatar/posters'
 
 export interface AvatarProps {
   name: string
@@ -36,145 +37,16 @@ export interface AvatarProps {
   canvasPaddingX?: number
   // The assistant can use its still poster in dense rows. Ordinary agents are always static SVGs.
   still?: boolean
+  // A group or a project: `seed` is its id (the project group's chat id; a project with no group yet, its own). With no
+  // picture of its own it shows the default face: that id's colour around the first characters of `name`.
   variant?: 'default' | 'group'
   imageMatteColor?: string
-  // @@@member-avatars - WeChat-style composite source. When provided + variant='group'
-  // + no avatarUrl, render members in a 1/2/3/4/3x3 layout. Up to 9 members shown.
-  memberAvatars?: GroupAvatarMember[]
 }
 
 const SIZE_MAP = { xs: 18, sm: 32, md: 40, lg: 64 } as const
 const AVATAR_STATUS_DOT_CLASS = 'av-status__dot relative motion-reduce:animate-none'
-const AVATAR_STATUS_PULSE_CLASS = 'av-status__pulse pointer-events-none absolute -inset-0.5 rounded-full border-2 border-solid animate-[av-status-pulse_1.4s_ease-out_infinite] motion-reduce:animate-none'
+const AVATAR_STATUS_PULSE_CLASS = 'av-status__pulse pointer-events-none absolute -inset-0.5 rounded-full border-2 border-solid animate-[av-status-pulse_1.4s_steps(14,end)_infinite] motion-reduce:animate-none'
 const AVATAR_STATUS_PULSE_DELAY_CLASS = `${AVATAR_STATUS_PULSE_CLASS} av-status__pulse--delay [animation-delay:0.7s]`
-
-// @@@ wechat-composite-layout — see git history for full context.
-interface TileRect { x: number; y: number; w: number; h: number }
-
-function compositeLayout(n: number): TileRect[] {
-  if (n <= 0) return []
-  if (n === 1) return [{ x: 0, y: 0, w: 1, h: 1 }]
-  if (n === 2) return [
-    { x: 0,   y: 0.25, w: 0.5, h: 0.5 },
-    { x: 0.5, y: 0.25, w: 0.5, h: 0.5 },
-  ]
-  if (n === 3) return [
-    { x: 0.25, y: 0,   w: 0.5, h: 0.5 },
-    { x: 0,    y: 0.5, w: 0.5, h: 0.5 },
-    { x: 0.5,  y: 0.5, w: 0.5, h: 0.5 },
-  ]
-  if (n === 4) return [
-    { x: 0,   y: 0,   w: 0.5, h: 0.5 },
-    { x: 0.5, y: 0,   w: 0.5, h: 0.5 },
-    { x: 0,   y: 0.5, w: 0.5, h: 0.5 },
-    { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
-  ]
-  // 5–9: 3×3 grid, filled BOTTOM-UP so partial top rows sit at the top, centered.
-  const cap = Math.min(n, 9)
-  const rows = Math.ceil(cap / 3)
-  const cells = cap
-  const cell = 1 / 3
-  const out: TileRect[] = []
-  let placed = 0
-  for (let r = 0; r < rows; r++) {
-    const remaining = cells - placed
-    const inThisRow = r === 0 ? (remaining - (rows - 1) * 3) : 3
-    // Centre this row horizontally inside the 3-column grid.
-    const leftOffset = (3 - inThisRow) * cell / 2
-    for (let c = 0; c < inThisRow; c++) {
-      out.push({
-        x: leftOffset + c * cell,
-        y: r * cell,
-        w: cell,
-        h: cell,
-      })
-      placed++
-    }
-  }
-  return out
-}
-
-function CompositeTile({
-  rect,
-  member,
-  canvasPx,
-  gapPx,
-  radius,
-}: {
-  rect: TileRect
-  member: GroupAvatarMember
-  canvasPx: number
-  gapPx: number
-  radius: number
-}) {
-  const [failed, setFailed] = useState(false)
-  const memberKey = (member.id ?? '').trim()
-  const identity = useAvatarIdentity(memberKey)
-  const assistant = useIsAssistantAvatar(memberKey)
-  const memberUrl = normalizeAvatarUrl(member.avatar)
-  // 成员的头像是形象地址(agent 的颜色 + 表情 + 装扮)→ 组合格里画这个形象的定格(引擎画的,画好前是同色那张),不去加载那张图。
-  useAgentLookPostersVersion()
-  const memberLook = parseAgentLook(memberUrl)
-  const boring = identity?.type === 'agent' && !assistant
-    && (member.avatar == null || isBuiltinAgentAvatarUrl(memberUrl))
-  const assistantDefault = identity?.type === 'agent' && assistant && (member.avatar == null || isBuiltinAgentAvatarUrl(memberUrl))
-  const customUrl = boring || assistantDefault || (!identity && isBuiltinAgentAvatarUrl(memberUrl)) ? null : memberLook ? agentLookPoster(memberLook) : memberUrl
-  // 脏哨兵串（给了值但归一后为空）是上游 bug，与主 Avatar 同口径 fail loud —— 留空槽，
-  // ❌ 不用生成脸盖掉（否则组合里显示一张正常的脸、本人自己的行却是错误态，必有一处在说谎）。
-  const invalidExplicit = member.avatar != null && memberUrl == null
-  useEffect(() => {
-    reportInvalidAvatarUrl(member.avatar, `composite member "${member.name || member.id}"`)
-  }, [member.avatar, member.id, member.name])
-  // @@@1482 canonical URL 变化时重置失败态，避免上一个坏 URL 的 failed 压住新有效头像（同 Avatar 主组件）。
-  useEffect(() => { setFailed(false) }, [customUrl])
-  const useCustom = !!customUrl && !failed
-  // 自定义头像加载失败 = 错误，留明确空槽而不是换成默认脸（#2383 的正确部分：不用另一张脸盖掉失败）。
-  // seed 只认 member.id：姓名永不入 seed（改名会变脸、同名会撞脸）。缺 id 同样进空槽。
-  // @@@2470 trim：纯空白 id 不是身份 key，必须留空槽而不是落到共用脸。
-  const generatedUrl = !customUrl && !invalidExplicit && memberKey && identity?.type === 'human' ? dicebearAvatarDataUri(memberKey) : null
-  // @@@composite-gap - shrink each tile by gapPx/2 on each side; the canvas background
-  const half = gapPx / 2
-  const w = Math.max(1, rect.w * canvasPx - gapPx)
-  const h = Math.max(1, rect.h * canvasPx - gapPx)
-  const tileStyle: React.CSSProperties = {
-    position: 'absolute',
-    left: rect.x * canvasPx + half,
-    top: rect.y * canvasPx + half,
-    width: w,
-    height: h,
-    borderRadius: Math.max(2, Math.round(radius * (rect.w + rect.h) / 2)),
-    overflow: 'hidden',
-    background: 'transparent',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: 'var(--color-white)',
-    fontSize: Math.max(8, Math.round(Math.min(w, h) * 0.5)),
-    fontWeight: 600,
-  }
-  return (
-    <span style={tileStyle}>
-      {assistantDefault ? <AssistantDefaultAvatar id={memberKey} avatar={memberUrl} name={member.name} size={Math.min(w, h)} still /> : boring && memberKey ? <BoringAgentAvatar id={memberKey} name={member.name} size={Math.min(w, h)} /> : useCustom ? (
-        <img
-          src={customUrl!}
-          alt={member.name}
-          draggable={false}
-          onError={() => { console.error(`[Avatar] failed to load custom member avatar for "${member.name || member.id}"`); setFailed(true) }}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-        />
-      ) : generatedUrl ? (
-        <img
-          src={generatedUrl}
-          alt={member.name}
-          draggable={false}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-        />
-      ) : (
-        <span data-avatar-empty aria-label={`${member.name} avatar unavailable`} style={{ width: '100%', height: '100%', display: 'block', background: 'var(--bg-elevated)' }} />
-      )}
-    </span>
-  )
-}
 
 // @@@avatar-status-badge - top-right status indicator. Color and words come from the shared presentation
 // (packages/core/src/shared/agentStatusPresentation.ts — one table for the session page, chat and phone). Motion uses
@@ -246,7 +118,6 @@ export function Avatar({
   still = false,
   variant = 'default',
   imageMatteColor,
-  memberAvatars,
 }: AvatarProps) {
   const [imgFailed, setImgFailed] = useState(false)
   const identityKey = (seed ?? '').trim()
@@ -269,9 +140,8 @@ export function Avatar({
     setImgFailed(false)
   }
   const px = typeof size === 'number' ? size : SIZE_MAP[size]
-  // 头像形状（设计稿）：真人/agent = 全圆（.av 默认 --r-pill）；群组 = 圆角方
-  // （设计稿 .av.gp{border-radius:10px} / .av.lg.gp{border-radius:20px}）。
-  const radius = variant === 'group' ? `${px >= 56 ? 20 : 10}px` : '50%'
+  // Every identity uses the same circular picture, matte and unavailable state.
+  const radius = '50%'
 
   // Missing/null and failed canonical URLs stay local explicit empty states; onError records the diagnostic.
   useEffect(() => {
@@ -322,41 +192,26 @@ export function Avatar({
     userSelect: 'none',
   }
 
-  const hasCustomAvatar = normalized != null
   const hasInvalidExplicit = avatarUrl != null && normalized == null
   const showImg = !!url && !imgFailed
   // 自定义头像坏掉（加载失败 / 非法串）才是错误；没设置头像不是错误。
   const avatarError = imgFailed || hasInvalidExplicit
-  const memberCount = memberAvatars?.length ?? 0
-  // A member composite represents an unset group avatar, never a replacement for an explicit failed identity.
-  const showComposite = variant === 'group' && !hasCustomAvatar && !hasInvalidExplicit && memberCount > 0
-  const wantsGeneratedFace = !showImg && !avatarError && variant !== 'group'
-  const agentDefault = agent === true && wantsGeneratedFace && !!identityKey
+  const wantsGeneratedFace = !showImg && !avatarError
+  // The default group face stands for an unset group picture, never for one that failed to load.
+  const groupFace = variant === 'group' && wantsGeneratedFace && !!identityKey
+  // One object per face: a new `__html` object makes React write the markup again, and a press that spans that write
+  // loses its click.
+  const groupFaceMarkup = useMemo(() => (groupFace ? { __html: groupAvatarSvg({ color: groupAvatarThemeColor(groupAvatarColorIndex(identityKey)), text: groupAvatarDefaultText(name), fill: 'var(--card)', px, label: name }) } : undefined), [groupFace, identityKey, name, px])
+  const agentDefault = variant !== 'group' && agent === true && wantsGeneratedFace && !!identityKey
   const animatedAssistant = agentDefault && assistant && !still
-  const generatedUrl = wantsGeneratedFace && agent === false && identityKey ? dicebearAvatarDataUri(identityKey) : null
+  const generatedUrl = variant !== 'group' && wantsGeneratedFace && agent === false && identityKey ? dicebearAvatarDataUri(identityKey) : null
   const missingIdentityKey = wantsGeneratedFace && !identityKey
   useEffect(() => {
     if (!missingIdentityKey) return
     console.error(`[Avatar] missing identity key for "${name}" — a generated default face needs a stable id; display name must never seed it`)
   }, [missingIdentityKey, name])
 
-  // 成员组合直接落在所在表面上,格间留透明空隙,不再垫一块白底。
-  const compositeGap = Math.max(1, Math.round(px * 0.06))
-  const compositeOuter: React.CSSProperties = {
-    width: px,
-    height: px,
-    borderRadius: radius,
-    background: 'transparent',
-    boxSizing: 'border-box',
-    position: 'relative',
-    overflow: 'hidden',
-    flexShrink: 0,
-  }
-
-
-  const tileRadius = size === 'sm' ? 0.05 : 0.08
-
-  // 脸(上传图 / 组合 / 默认脸 / 空态)一律不挂原生 title:头像常被放进别人的悬停浮层(账号 Hint、
+  // 脸(上传图 / 默认脸 / 空态)一律不挂原生 title:头像常被放进别人的悬停浮层(账号 Hint、
   // 运行中 agent 的预览卡),名字由外层自己说,挂了就是两个浮层叠在一起。读屏的名字在 alt / aria-label。
   return (
     <div style={base} data-agent={agent ? '' : undefined}>
@@ -378,19 +233,9 @@ export function Avatar({
             onError={() => { console.error(`[Avatar] failed to load canonical avatar for "${name || 'unknown'}"`); setImgFailed(true) }}
           />
         )
-      ) : showComposite ? (
-        <div style={compositeOuter} aria-label={name}>
-          {compositeLayout(memberCount).map((rect, idx) => (
-            <CompositeTile
-              key={memberAvatars![idx].id}
-              rect={rect}
-              member={memberAvatars![idx]}
-              canvasPx={px}
-              gapPx={compositeGap}
-              radius={tileRadius}
-            />
-          ))}
-        </div>
+      ) : groupFace ? (
+        <span data-group-face style={{ width: px, height: px, flexShrink: 0, display: 'block' }}
+          dangerouslySetInnerHTML={groupFaceMarkup} />
       ) : agentDefault ? (
         assistant ? (
           <AssistantDefaultAvatar id={identityKey} avatar={normalized} name={name} size={px} still={still} hoverPoke={hoverPoke} canvasPaddingX={canvasPaddingX}

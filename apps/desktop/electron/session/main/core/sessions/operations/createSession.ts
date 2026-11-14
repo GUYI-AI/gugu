@@ -1,3 +1,4 @@
+import { NEW_SESSION_PERMISSION_MODE } from '@gugu/session-core/acp';
 import { taskNameFor } from '../task-name';
 import { mcpLibraryService } from '@main/core/mcp-library/service';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
@@ -117,7 +118,7 @@ export async function prepareCreateSession(
     provider: ic.provider as AgentProviderId,
     runtime: ic.type ?? 'pty',
     origin: ic.origin,
-    permissionMode: ic.permissionMode,
+    permissionMode: ic.permissionMode ?? NEW_SESSION_PERMISSION_MODE,
     model: ic.model,
     effort: ic.effort,
     // 资源库 → MCP:每条新任务都带「默认启用」的那几台 —— 资源库的开关是唯一的控制点。
@@ -127,6 +128,7 @@ export async function prepareCreateSession(
     startupOrigin: ic.startupOrigin,
     initialMessageId: ic.initialMessageId,
     taskChatId: ic.taskChatId,
+    ...(params.birthGroup && { birthChatId: params.birthGroup.chatId }),
     // 首启由 hydrateSession 做(工作区要先 provision 完),所以这一行落库时**不**认领
     // session_id —— 那把尺子留给 hydrate 用。
     claimsFirstSpawn: false,

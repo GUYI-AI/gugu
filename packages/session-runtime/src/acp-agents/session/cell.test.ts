@@ -51,7 +51,7 @@ function makeCell(agent = new FakeAcpAgent(), extra: Record<string, unknown> = {
     ...extra,
   });
   const push = cell.push.bind(cell);
-  cell.push = event => { boundary.observe('session-1', event); push(event); };
+  cell.push = (event, submitted) => { boundary.observe('session-1', event); push(event, submitted); };
   cell.applySessionReady();
   return { cell, agent };
 }
@@ -772,12 +772,14 @@ describe('SessionCell prompts', () => {
       success: false,
       error: { type: 'prompt_failed', cause: { message: "You've hit your usage limit. Upgrade or try again later." } },
     });
+    expect(cell.lastTurnError).toContain("You've hit your usage limit");
     // Control: a turn that answered stays a success.
     agent.prompt = vi.fn(async () => {
       cell.push({ kind: 'message', role: 'assistant', messageId: null, text: 'ok' });
       return { stopReason: 'end_turn' };
     });
     expect((await cell.prompt({ text: 'again' })).success).toBe(true);
+    expect(cell.lastTurnError).toBeNull();
   });
 
   it('a stderr failure the provider marks as a credential failure settles with signInRequired (MiMo, 10-07)', async () => {

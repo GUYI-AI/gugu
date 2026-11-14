@@ -1,15 +1,15 @@
 import { ExtensionGuestBinding, type ExtensionGuestTarget } from './extension-guest-binding';
-import { projectWorkspace, sessionWorkspace } from '@shared/extensions/app-runtime-protocol';
-import { useTaskConversation } from '@/lib/taskConversation';
+import { sessionWorkspace, WORKSPACE_APP_ID } from '@shared/extensions/app-runtime-protocol';
+import { useTaskConversation, useTaskProjectChat } from '@/lib/taskConversation';
 import { useCallback, useMemo, useContext, useEffect, useRef, useState } from 'react';
-import { TabLayerShownContext } from '@renderer/features/tabs/retained-tab-content';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { rpc } from '@renderer/lib/ipc';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { log } from '@renderer/utils/logger';
 import type { BrowserWebviewElement } from '@renderer/features/browser/browser-webview-types';
 import { extensionSurfaceStore } from './extension-surface-store';
 import { ExtensionTabToolbar } from './extension-tab-toolbar';
+import { nativeAppSurfaceMetrics, observeNativeSurfaceOcclusion } from './native-app-surface';
 import { bindAppPageZoom } from '@/components/preview/file-content-zoom';
 
 /**
@@ -42,7 +42,8 @@ export function ExtensionTabPane({
   viewState,
   navigation,
   filePath,
-  projectId,
+  byHost,
+  workspace: fileWorkspace,
   chatId,
   resourceChat,
   itemId,
@@ -62,8 +63,10 @@ export function ExtensionTabPane({
    * never the surface.
    */
   filePath?: string;
-  /** G1 With `filePath` and no session: the project whose folder the file is in (a page opened beside another). */
-  projectId?: string;
+  /** `filePath` was opened by the host for an App (`files.openWith`), not by the person or an agent it works for. */
+  byHost?: boolean;
+  /** G1 With `filePath` and no session: the working copy (a project's folder, on any machine) the file is in (a page opened beside another). */
+  workspace?: string;
   /** Drawn for a chat (a chat's tab in a window of its own), and the chat file it was opened for. */
   chatId?: string;
   resourceChat?: string;
@@ -72,19 +75,18 @@ export function ExtensionTabPane({
   const { translate } = useSessionMessages();
   // Where it is (`AppWhere`): a chat's tab is in that chat, a session's in the person's private chat with its agent.
   const taskConversation = useTaskConversation(chatId ? null : sessionId);
+  const taskProjectChat = useTaskProjectChat(!chatId && extensionId === WORKSPACE_APP_ID ? sessionId : null);
   // Read when it binds (a ref: the chat list coming in later must not re-attach the webview).
   const conversationRef = useRef<string | null>(null);
-  conversationRef.current = chatId ?? taskConversation;
+  conversationRef.current = chatId ?? taskConversation ?? taskProjectChat;
   const resourceChatRef = useRef(resourceChat);
-  resourceChatRef.current = resourceChat;
-  const workspace = sessionId ? sessionWorkspace(sessionId) : projectId && filePath ? projectWorkspace(projectId) : null;
+  resourceChatRef.current = resourceChat ?? taskProjectChat ?? undefined;
+  const workspace = sessionId ? sessionWorkspace(sessionId) : fileWorkspace && filePath ? fileWorkspace : null;
   const [surface, setSurface] = useState<ExtensionSurface | null>(null);
   const [failure, setFailure] = useState<SurfaceFailure | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Not looked at while its retained session page is hidden (@@@retained-session-pages).
-  const pageShown = useContext(PageShownContext);
-  const layerShown = useContext(TabLayerShownContext);
-  const shown = pageShown && layerShown;
+  const shown = useContext(SurfaceShownContext);
   const shownRef = useRef(shown);
   shownRef.current = shown;
   const reportLayoutRef = useRef<(() => void) | null>(null);
@@ -150,7 +152,7 @@ export function ExtensionTabPane({
     const container = containerRef.current;
     if (!container) return;
     const report = () => {
-      const box = container.getBoundingClientRect();
+      const box = (webviewRef.current ?? container).getBoundingClientRect();
       const width = Math.round(box.width);
       const height = Math.round(box.height);
       void rpc.extensions
@@ -158,9 +160,8 @@ export function ExtensionTabPane({
           webContentsId,
           // Collapsed to nothing, or the window is not being shown at all: either
           // way the user is not looking at this surface.
-          visible: shownRef.current && document.visibilityState === 'visible' && width > 0 && height > 0,
-          width,
-          height,
+          ...nativeAppSurfaceMetrics(webviewRef.current ?? container, container,
+            shownRef.current && document.visibilityState === 'visible' && width > 0 && height > 0, width, height),
         })
         .catch((error: unknown) => {
           log.warn('Failed to report extension surface layout:', error);
@@ -171,10 +172,14 @@ export function ExtensionTabPane({
     const observer = new ResizeObserver(report);
     observer.observe(container);
     document.addEventListener('visibilitychange', report);
+    document.addEventListener('scroll', report, true);
+    const stopOcclusion = observeNativeSurfaceOcclusion(report);
     layoutTeardownRef.current = () => {
       reportLayoutRef.current = null;
       observer.disconnect();
+      stopOcclusion();
       document.removeEventListener('visibilitychange', report);
+      document.removeEventListener('scroll', report, true);
     };
   }, []);
 
@@ -188,7 +193,7 @@ export function ExtensionTabPane({
     retarget: (webContentsId, target) => rpc.extensions.retargetSurface({ webContentsId, ...target }),
   }), [extensionId, tabKind]);
   const targetRef = useRef<ExtensionGuestTarget>({ tabId, workspace, conversation: conversationRef.current });
-  targetRef.current = { workspace, conversation: conversationRef.current, resourceChat: resourceChatRef.current, tabId, itemId, filePath, viewState, navigation };
+  targetRef.current = { workspace, conversation: conversationRef.current, resourceChat: resourceChatRef.current, tabId, itemId, filePath, ...(byHost ? { byHost } : {}), viewState, navigation };
   // @@@one-guest-many-tabs - Tabs of one kind share this pane and its webview, so another tab is a retarget of the live
   // guest. Nothing the webview's ref depends on may change with the tab: a new ref forgets the guest, and dom-ready, the
   // only thing that hands it back, does not fire again on a page already loaded.
@@ -200,7 +205,7 @@ export function ExtensionTabPane({
     if (result?.success) extensionSurfaceStore.setWebContentsId(slotRef.current.sessionId, slotRef.current.tabId, result.webContentsId);
     return result;
   }, [guestBinding]);
-  useEffect(() => { void aim().catch((error: unknown) => log.warn('Extension surface binding failed:', error)); }, [aim, sessionId, tabId, filePath, itemId, viewState, navigation?.canBack, navigation?.canForward, navigation?.backToConversation]);
+  useEffect(() => { void aim().catch((error: unknown) => log.warn('Extension surface binding failed:', error)); }, [aim, sessionId, tabId, chatId, taskConversation, resourceChat, taskProjectChat, filePath, itemId, viewState, navigation?.canBack, navigation?.canForward, navigation?.backToConversation]);
 
   const attachWebview = useCallback(
     (element: BrowserWebviewElement | null) => {

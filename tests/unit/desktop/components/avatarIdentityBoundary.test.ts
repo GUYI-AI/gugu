@@ -3,7 +3,6 @@ import { act, createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness } from '../../../support/testHarness'
-import { AgentJoinPage } from '../../../../apps/desktop/src/pages/AgentJoinPage'
 import { displayAvatarUrl } from '../../../../apps/desktop/src/lib/dicebearAvatar'
 import { dicebearAvatarDataUri } from '../../../../apps/desktop/src/lib/dicebearAvatar'
 import { Avatar } from '../../../../apps/desktop/src/components/Avatar'
@@ -11,39 +10,6 @@ import { Avatar } from '../../../../apps/desktop/src/components/Avatar'
 //   身份投影 —— 自定义头像逐字，或按稳定 id 生成的默认脸；
 //   非身份 —— 署名文字、显式的模板标记。两者不得互相冒充。
 const GENERATED = 'data:image/svg+xml'
-/** 数整页里生成脸(默认脸 SVG)的总数,用来判断署名行有没有多出一张。agent 自己的头像位是小鸟 canvas,不在这个数里。 */
-function generatedFaceCount(html: string): number {
-  return html.split(GENERATED).length - 1
-}
-function joinPage(ownerAvatar: string | null) {
-  return renderToString(createElement(AgentJoinPage, {
-    agent: {
-      id: 'agent-1',
-      displayName: 'Codex 1',
-      avatar: null,
-      bio: null,
-      ownerDisplayName: '阿力',
-      ownerAvatar,
-    },
-    onStartChat: vi.fn(),
-    onRequireLogin: vi.fn(),
-    isLoggedIn: false,
-  }))
-}
-describe('公开加入页的 owner 行是署名，不是身份投影', () => {
-  it('owner 没有真上传头像时，头像位整个不渲染——不给空圈，也不生成脸', () => {
-    const html = joinPage(null)
-    expect(html, '署名文字仍在').toContain('阿力')
-    // agent 自己的头像位是身份投影:没上传 → 咕咕小鸟(canvas),一只;署名行不得再多出任何一张生成脸。
-    expect(html.split('data-agent-avatar-boring=').length - 1, 'the agent default SVG').toBe(1)
-    expect(generatedFaceCount(html), '署名行不得生成脸').toBe(0)
-    expect(html, '也不得留一个空头像位').not.toContain('data-avatar-empty')
-  })
-  it('owner 真上传过头像时逐字渲染', () => {
-    const uploaded = 'https://db.example/storage/v1/object/public/avatars/owner.png'
-    expect(joinPage(uploaded)).toContain(uploaded)
-  })
-})
 describe('displayAvatarUrl 的口径', () => {
   it('自定义头像原样返回', () => {
     const url = 'https://db.example/storage/v1/object/public/avatars/a.png'
@@ -66,15 +32,16 @@ describe('displayAvatarUrl 的口径', () => {
   })
 })
 describe('review3 回归钉', () => {
-  it('R3-3 群没有稳定 id 是正常的，不得被诊断成「缺身份 key 的人」', async () => {
+  it('R3-3 群按会话 id 画默认群头像，不拿人脸、不发诊断', async () => {
     const harness = createReactHarness()
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     errorSpy.mockClear()
     try {
-      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group' }))
+      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1' }))
       await act(async () => { await Promise.resolve() })
-      expect(errorSpy, '群不该触发 missing identity key 诊断').not.toHaveBeenCalled()
-      expect(harness.container.querySelector('img'), '群也不该拿到一张人脸').toBeNull()
+      expect(errorSpy).not.toHaveBeenCalled()
+      expect(harness.container.querySelector('img'), '群不该拿到一张人脸').toBeNull()
+      expect(harness.container.querySelector('[data-group-face] svg')).not.toBeNull()
     } finally {
       harness.cleanup()
       errorSpy.mockRestore()
@@ -99,20 +66,59 @@ describe('review3 回归钉', () => {
     expect(() => dicebearAvatarDataUri('')).toThrow(/stable identity key/)
     expect(() => dicebearAvatarDataUri('   ')).toThrow(/stable identity key/)
   })
-  it('R3-5 群组合里纯空白的成员 id 留空槽，而不是共用脸', () => {
-    const html = renderToString(createElement(Avatar, {
-      name: '群',
-      variant: 'group',
-      memberAvatars: [{ id: '   ', name: '空白 id', avatar: null }],
-    }))
-    expect(html).toContain('data-avatar-empty')
-    expect(html).not.toContain(GENERATED)
-  })
-  it('R3-4 脏哨兵串在署名行也要被诊断，不能因为不渲染头像位就吞掉', () => {
+  it('R3-5 群缺会话 id 时留空槽，而不是共用一张默认群头像', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    errorSpy.mockClear()
-    joinPage('undefined')
-    expect(errorSpy, '公开加入页的 owner 行必须走共享入口并 fail loud').toHaveBeenCalled()
-    errorSpy.mockRestore()
+    try {
+      const html = renderToString(createElement(Avatar, { name: '群', variant: 'group', seed: '   ' }))
+      expect(html).toContain('data-avatar-empty')
+      expect(html).not.toContain('data-group-face')
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+})
+
+describe('default group face', () => {
+  it('shows the first characters of the name, the same for a group and a project', async () => {
+    const harness = createReactHarness()
+    try {
+      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1' }))
+      expect(harness.container.querySelector('[data-group-face] text')?.textContent).toBe('协作')
+    } finally {
+      harness.cleanup()
+    }
+  })
+
+  it('keeps its drawn nodes across re-renders, so a press that spans one still clicks', async () => {
+    const harness = createReactHarness()
+    try {
+      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1' }))
+      const drawn = harness.container.querySelector('[data-group-face] svg')
+      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1', harnessBadge: false }))
+      expect(harness.container.querySelector('[data-group-face] svg')).toBe(drawn)
+    } finally {
+      harness.cleanup()
+    }
+  })
+})
+
+
+describe('circular group and project avatars', () => {
+  it.each([24, 32, 40, 64, 96])('keeps uploaded pictures, mattes and failed pictures circular at %spx', async (size) => {
+    const harness = createReactHarness()
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await harness.render(createNode(Avatar, { name: 'AI研发', variant: 'group', seed: 'chat-circle', size,
+        avatarUrl: 'https://example.com/group.png', imageMatteColor: '#fff' }))
+      const picture = harness.container.querySelector('img')!
+      expect(picture.style.borderRadius).toBe('50%')
+      expect(harness.container.querySelector<HTMLElement>('[data-avatar-matte]')!.style.borderRadius).toBe('50%')
+      await act(async () => { picture.dispatchEvent(new Event('error')) })
+      expect(harness.container.querySelector<HTMLElement>('[data-avatar-error]')!.style.borderRadius).toBe('50%')
+      expect(harness.container.querySelector('[data-group-face]')).toBeNull()
+    } finally {
+      harness.cleanup()
+      errors.mockRestore()
+    }
   })
 })

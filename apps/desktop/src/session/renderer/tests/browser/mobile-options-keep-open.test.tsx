@@ -50,11 +50,11 @@ const MODELS = {
 
 /** 新建页那一层:选择留在页面状态里,胶囊只回报。 */
 function CreatePage() {
-  const [selection, setSelection] = useState<CreateSelection>({ projectId: 'p1', harness: 'codex', model: null, permissionMode: null, effort: null });
+  const [selection, setSelection] = useState<CreateSelection>({ harness: 'codex', model: null, permissionMode: null, effort: null });
   return <CreateOptionsPill options={OPTIONS} selection={selection} onChange={setSelection} busy={false} models={MODELS} modelsState="ready" />;
 }
 
-it('create options: picking a model, then a thinking level, then a project keeps the sheet open; the summary shows each new value', async () => {
+it('create options: picking a model, then a thinking level keeps the sheet open; the summary shows each new value', async () => {
   mount(<CreatePage />);
   await click('[data-testid="agent-watch-create-options-open"]');
   const sheet = '[data-testid="agent-watch-create-options"]';
@@ -77,11 +77,6 @@ it('create options: picking a model, then a thinking level, then a project keeps
   expect(q(sheet), 'the sheet is still open').toBeTruthy();
   expect(summary('effort')).toBe('High');
   expect(summary('model'), 'the model picked before is kept').toBe('Model 2');
-
-  // 顶层那一档(项目):留在顶层,勾移过去。
-  await click(`${sheet} [data-testid="agent-watch-create-choice"][data-dimension="project"][data-option-id="p2"]`);
-  await until('the tick moves to project-2', () => q(`${sheet} [data-dimension="project"][data-option-id="p2"]`)?.getAttribute('aria-checked') === 'true');
-  expect(atRoot(), 'still on the root page').toBe(true);
 
   // 换 harness 会把模型、推理档重置成那一家的:回顶层后摘要读到的是重置后的值。
   await click(`${sheet} [data-testid="agent-watch-create-options-drill"][data-dimension="harness"]`);

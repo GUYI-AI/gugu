@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { remoteFailureKind, type SessionpageSessionCreateModels, type SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
 import { EngineIcon } from '@/components/AgentHarnessIdentity'
@@ -10,6 +10,9 @@ import { DropdownMenu, MenuItem } from '@/components/ui/Menu'
 import { Check, ChevronDown, Folder, X, Zap } from '@/lib/icons'
 import { rendererLogger } from '@/lib/log'
 import { useDevicesStore } from '@/store/devicesContext'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import { useMachineLabel } from '../agent-watch/useMachineLabel'
+import { UI_EVENTS } from '@/lib/uiEvents'
 import { ProjectFolderCard } from '@renderer/features/projects/components/main-panel/project-folder-card'
 import type { ProjectFoldersState, ShownFolder } from '@renderer/features/projects/components/main-panel/project-folders'
 import { TaskInGroupError, createTaskInGroup } from '../agent-watch/createTaskInGroup'
@@ -45,6 +48,8 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
 }): {
   action: ComposerAttachAction | null
   active: boolean
+  /** 文件夹卡正浮着。 */
+  picking: boolean
   placeholder: string | undefined
   /** 浮在输入框上面的文件夹卡。 */
   overlay: ReactNode
@@ -55,7 +60,12 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
   const { t } = useTranslation('messaging')
   const { toast } = useToast()
   const { devices, refresh } = useDevicesStore()
-  const accountProject = useMemo(() => (enabled && chatId ? taskFoldersOfChat(devices, chatId) : null), [enabled, chatId, devices])
+  const { label: machineLabel, isHome } = useMachineLabel()
+  const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
+  const accountProject = useMemo(
+    () => (enabled && chatId ? taskFoldersOfChat(accountList.find((one) => one.chatId === chatId), devices, { label: machineLabel, isHome }) : null),
+    [enabled, chatId, accountList, devices, machineLabel, isHome],
+  )
   const attach = usePhoneFolderAttach(accountProject, devices, refresh)
   const project = useMemo(() => accountProject ? {
     ...accountProject,
@@ -174,6 +184,7 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
         onAttach={attach.onAttach}
         onDropFolder={() => undefined}
         floating
+        touch
       />
     </div>
   ) : null}</>
@@ -193,11 +204,14 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
           ))}
         </DropdownMenu.Content>
       </DropdownMenu.Root>
-      <Button variant="ghost" className="gg-phone-task-where" data-blocked={blocked ? '' : undefined} data-testid="phone-task-where"
-        onClick={() => setStage({ kind: 'on', folder: chosen, picking: true })}>
-        <Folder size={14} aria-hidden />
-        <span>{blocked ?? t('composer.phoneTask.where', { folder: folderName(chosen!.path), machine })}</span>
-      </Button>
+      {/* 还没点文件夹时卡就浮在上面、卡上自带说明,这一行不重复。 */}
+      {chosen ? (
+        <Button variant="ghost" className="gg-phone-task-where" data-blocked={blocked ? '' : undefined} data-testid="phone-task-where"
+          onClick={() => setStage({ kind: 'on', folder: chosen, picking: true })}>
+          <Folder size={14} aria-hidden />
+          <span>{blocked ?? t('composer.phoneTask.where', { folder: folderName(chosen.path), machine })}</span>
+        </Button>
+      ) : null}
       <IconButton size="sm" aria-label={t('composer.phoneTask.cancel')} onClick={() => setStage({ kind: 'off' })}><X size={14} /></IconButton>
     </div>
   ) : null
@@ -230,10 +244,14 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
   }
 
   return {
-    action: project && stage.kind === 'off'
-      ? { id: 'phone-new-task', label: t('composer.phoneTask.action'), icon: <Zap size={16} />, onSelect: () => setStage({ kind: 'on', folder: null, picking: true }) }
+    // 项目群:浮起文件夹卡;别的群:同桌面输入框「新任务」那一个事件(MainLayout 在手机上进会话页选机器,任务卡落回这个群)。
+    action: enabled && chatId && stage.kind === 'off'
+      ? { id: 'phone-new-task', label: t('composer.phoneTask.action'), icon: <Zap size={16} />, onSelect: project
+        ? () => setStage({ kind: 'on', folder: null, picking: true })
+        : () => window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId } })) }
       : null,
     active: stage.kind !== 'off',
+    picking: stage.kind === 'on' && stage.picking && !!project && !!folderState,
     placeholder: stage.kind === 'on' && agentName ? t('composer.phoneTask.placeholder', { agent: agentName }) : undefined,
     overlay,
     band,

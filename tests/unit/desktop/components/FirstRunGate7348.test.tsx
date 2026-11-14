@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// #7348 新账号的第一次打开(product spec):认识你 → 认识咕咕 → 开通咕咕;老账号 / 走完的直接进主界面;
-// 进度读不到如实说 + 重试,❌ 当新账号重走,❌ 当走完放行。
+// #7348 新账号的第一次打开(product spec):手机只有「认识你」一页,「继续」即走完(owner 11-12:没有认识咕咕那一步,
+// 认识它在助理 App 里);老账号 / 走完的直接进主界面;进度读不到如实说 + 重试,❌ 当新账号重走,❌ 当走完放行。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders, typeInto, waitForCondition } from '../../../support/testHarness'
@@ -13,7 +13,6 @@ const io = vi.hoisted(() => ({
   readFirstRunProgress: vi.fn(),
   writeOccupation: vi.fn(async () => undefined),
   finishFirstRun: vi.fn(async () => '2026-10-16T00:00:00Z'),
-  requestAssistantSetupHandoff: vi.fn(),
   startFirstRunHints: vi.fn(async () => undefined),
   enrollSampleProject: vi.fn(async (_userId: string) => undefined),
 }))
@@ -191,11 +190,13 @@ describe('first run gate (#7348)', () => {
     }
   })
 
-  it('profile: name prefilled, occupation required ("other" needs its sentence), then the intro', async () => {
+  it('profile: name prefilled, occupation required ("other" needs its sentence); its 「continue」 finishes the first run', async () => {
     io.readFirstRunProgress.mockResolvedValue({ stage: 'profile', occupation: null })
     const harness = await renderGate()
     try {
       await waitForCondition(() => !!byTestId(harness.container, 'first-run-profile'), 'profile screen')
+      // The only page here: no 「1 / 1」.
+      expect(byTestId(harness.container, 'first-run-step-count')).toBeNull()
       const name = byTestId(harness.container, 'first-run-name') as HTMLInputElement
       expect(name.value).toBe('neo')
       const next = byTestId(harness.container, 'first-run-profile-continue') as HTMLButtonElement
@@ -206,73 +207,60 @@ describe('first run gate (#7348)', () => {
       await typeInto(name, 'Neo')
       expect(next.disabled).toBe(false)
       await clickElement(next)
-      await waitForCondition(() => !!byTestId(harness.container, 'first-run-intro'), 'intro screen')
+      await waitForCondition(() => !!byTestId(harness.container, 'main-product'), 'product after the profile')
       expect(auth.updateNickname).toHaveBeenCalledWith('u1', 'Neo')
       expect(io.writeOccupation).toHaveBeenCalledWith('u1', { key: 'other', text: '律师' })
+      // #709 the sample project is enrolled before the first run is recorded as finished.
+      expect(io.startFirstRunHints).toHaveBeenCalledWith('u1')
+      expect(io.enrollSampleProject).toHaveBeenCalledWith('u1')
+      expect(io.enrollSampleProject.mock.invocationCallOrder[0]).toBeLessThan(io.finishFirstRun.mock.invocationCallOrder[0]!)
+      expect(io.rememberFirstRunDone).toHaveBeenCalledWith('u1')
+      expect(byTestId(harness.container, 'first-run-intro')).toBeNull()
     } finally {
       harness.cleanup()
     }
   })
 
-  it('intro: "set up my Gugu" finishes the flow and hands off to the assistant setup; "look around" just finishes', async () => {
+  it('progress an older build saved on its 「认识咕咕」 page resumes on the filled-in profile, whose 「continue」 finishes', async () => {
     io.readFirstRunProgress.mockResolvedValue({ stage: 'intro', occupation: { key: 'research' } })
-    const first = await renderGate()
+    const harness = await renderGate()
     try {
-      await waitForCondition(() => !!byTestId(first.container, 'assistant-intro-primary'), 'intro buttons')
-      expect(first.container.querySelectorAll('[data-intro-row]')).toHaveLength(3)
-      await clickElement(byTestId(first.container, 'assistant-intro-primary')!)
-      await waitForCondition(() => !!byTestId(first.container, 'main-product'), 'product after start')
-      expect(io.finishFirstRun).toHaveBeenCalled()
-      // #709 走出认识咕咕就给新账号记上示例项目,在「走完」之前记;记不上它自己记日志、不拦人(lib/sampleProject)。
-      expect(io.enrollSampleProject).toHaveBeenCalledWith('u1')
-      expect(io.enrollSampleProject.mock.invocationCallOrder[0]).toBeLessThan(io.finishFirstRun.mock.invocationCallOrder[0]!)
-      expect(io.rememberFirstRunDone).toHaveBeenCalledWith('u1')
-      expect(io.requestAssistantSetupHandoff).toHaveBeenCalledWith('u1')
-    } finally {
-      first.cleanup()
-    }
-    vi.clearAllMocks()
-    io.readFirstRunProgress.mockResolvedValue({ stage: 'intro', occupation: { key: 'research' } })
-    const second = await renderGate()
-    try {
-      await waitForCondition(() => !!byTestId(second.container, 'assistant-intro-later'), 'later link')
-      await clickElement(byTestId(second.container, 'assistant-intro-later')!)
-      await waitForCondition(() => !!byTestId(second.container, 'main-product'), 'product after later')
-      expect(io.finishFirstRun).toHaveBeenCalled()
-      expect(io.enrollSampleProject).toHaveBeenCalledWith('u1')
-      expect(io.requestAssistantSetupHandoff).not.toHaveBeenCalled()
-    } finally {
-      second.cleanup()
-    }
+      await waitForCondition(() => !!byTestId(harness.container, 'first-run-profile'), 'profile again')
+      expect(byTestId(harness.container, 'first-run-occupation-research')?.getAttribute('aria-checked')).toBe('true')
+      expect(byTestId(harness.container, 'assistant-intro-primary')).toBeNull()
+      await clickElement(byTestId(harness.container, 'first-run-profile-continue')!)
+      await waitForCondition(() => !!byTestId(harness.container, 'main-product'), 'product after continue')
+      expect(io.finishFirstRun).toHaveBeenCalledOnce()
+    } finally { harness.cleanup() }
   })
 
-  it('does not finish the intro if enrolling account hint progress fails', async () => {
+  it('does not finish the first run if enrolling account hint progress fails; 「continue」 again does', async () => {
     io.readFirstRunProgress.mockResolvedValue({ stage: 'intro', occupation: { key: 'design' } })
     io.startFirstRunHints.mockRejectedValueOnce(new Error('hint progress unavailable'))
     const harness = await renderGate()
     try {
-      await waitForCondition(() => !!byTestId(harness.container, 'assistant-intro-later'), 'intro')
-      await clickElement(byTestId(harness.container, 'assistant-intro-later')!)
+      await waitForCondition(() => !!byTestId(harness.container, 'first-run-profile-continue'), 'profile')
+      await clickElement(byTestId(harness.container, 'first-run-profile-continue')!)
       await waitForCondition(() => !!harness.container.querySelector('[role="alert"]'), 'enrollment failure')
       expect(io.finishFirstRun).not.toHaveBeenCalled()
       expect(byTestId(harness.container, 'main-product')).toBeNull()
-      await clickElement(byTestId(harness.container, 'assistant-intro-later')!)
+      await clickElement(byTestId(harness.container, 'first-run-profile-continue')!)
       await waitForCondition(() => !!byTestId(harness.container, 'main-product'), 'enrollment retry')
       expect(io.finishFirstRun).toHaveBeenCalledOnce()
     } finally { harness.cleanup() }
   })
 
-  it('a failed finish keeps you on the intro and says it did not save (❌ silently entering the product)', async () => {
+  it('a failed finish keeps you on the profile and says it did not save (❌ silently entering the product)', async () => {
     io.readFirstRunProgress.mockResolvedValue({ stage: 'intro', occupation: { key: 'design' } })
     io.finishFirstRun.mockRejectedValueOnce(new Error('network down'))
     const harness = await renderGate()
     try {
-      await waitForCondition(() => !!byTestId(harness.container, 'assistant-intro-later'), 'later link')
-      await clickElement(byTestId(harness.container, 'assistant-intro-later')!)
+      await waitForCondition(() => !!byTestId(harness.container, 'first-run-profile-continue'), 'profile')
+      await clickElement(byTestId(harness.container, 'first-run-profile-continue')!)
       await waitForCondition(() => !!harness.container.querySelector('[role="alert"]'), 'error shown')
       expect(harness.container.textContent).toContain('network down')
       expect(byTestId(harness.container, 'main-product')).toBeNull()
-      expect(byTestId(harness.container, 'assistant-intro-later')).not.toBeNull()
+      expect(byTestId(harness.container, 'first-run-profile-continue')).not.toBeNull()
       expect(io.rememberFirstRunDone).not.toHaveBeenCalled()
     } finally {
       harness.cleanup()

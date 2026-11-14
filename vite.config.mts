@@ -20,6 +20,7 @@ import { deterministicModuleSideEffects } from './scripts/build/deterministic-mo
 import { devNodeExternals, type DependencyManifest } from './scripts/build/dev-node-externals.mjs'
 import { activateDbEnv, serverChannelForDb } from './scripts/build/build-env-preflight.mts'
 import { serverPackageIdentity } from './scripts/build/server-package-identity.mts'
+import { rendererNodeShimGuard } from './scripts/build/renderer-node-shim-guard.mts'
 import { vanillaExtractPlugin } from '@vanilla-extract/vite-plugin'
 import solid from 'vite-plugin-solid'
 import { emdashAliasEntries } from './apps/desktop/electron/sessionpage/emdash-aliases.mjs'
@@ -146,6 +147,7 @@ const sessionMainVite: ElectronOptions['vite'] = {
     ...bakedSupabaseDefine,
     __GUGU_TIER__: JSON.stringify(guguTier),
     __GUGU_BUILD_DISTRIBUTION__: JSON.stringify(guguBuildDistribution),
+    __GUGU_ERROR_REPORTING_ENDPOINT__: JSON.stringify(process.env.GUGU_ERROR_REPORTING_ENDPOINT ?? ''),
     // 给别的机器装哪条通道的 server:跟这次构建连的库走(scripts/build/build-env-preflight.mts serverChannelForDb)。
     __GUGU_SERVER_CHANNEL__: JSON.stringify(serverChannelForDb(process.env.VITE_SUPABASE_URL || bakedSupabaseUrl || null)),
   },
@@ -376,6 +378,9 @@ export const electronBuildEntries: ElectronOptions[] = [
       resolve: {
         alias: workspaceAliases,
       },
+      // The preload decides which trusted bridges exist (e.g. Settings → 密码 in Beta). Without the tier it reads
+      // `typeof __GUGU_TIER__` at runtime, gets undefined, and silently withholds every Beta-only bridge.
+      define: { __GUGU_TIER__: JSON.stringify(guguTier) },
       plugins: [deterministicModuleSideEffects()],
     },
     onstart(options) {
@@ -394,6 +399,7 @@ export const electronBuildEntries: ElectronOptions[] = [
       resolve: {
         alias: workspaceAliases,
       },
+      define: { __GUGU_TIER__: JSON.stringify(guguTier) },
       plugins: [deterministicModuleSideEffects()],
     },
     onstart(options) {
@@ -412,6 +418,11 @@ function appRuntimeVersion(): string {
   ).version
 }
 
+// App pages run in the phone's System WebView too, and one that never updated stays on Chrome 91, which rejects
+// class static blocks (`SyntaxError`; files.js / codemirror.js fail to load). esbuild's table lists them for
+// chrome91 (V8 9.1 had them behind a flag), so the floor is written as chrome90 to make esbuild lower them.
+const APP_PAGE_TARGET = ['es2022', 'chrome90']
+
 /**
  * The App runtime's bytes into `outDir`: `gugu.js`, the classic script the host puts first in an
  * App document, and files.js / codemirror.js / markdown.js, ES modules it imports on first use — split so they
@@ -427,7 +438,7 @@ async function buildAppRuntime(outDir: string): Promise<void> {
   const common = {
     bundle: true,
     platform: 'browser',
-    target: 'es2022',
+    target: APP_PAGE_TARGET,
     minify: true,
     legalComments: 'none',
     // Served by the host, never bundled: the entry imports the modules by URL.
@@ -541,7 +552,7 @@ function phoneAppsPlugin(outDir: string) {
           outfile: resolve(runtimeDir, `${name}.js`),
           bundle: true,
           platform: 'browser',
-          target: 'es2022',
+          target: APP_PAGE_TARGET,
           minify: true,
           legalComments: 'none',
           format: 'iife',
@@ -678,6 +689,8 @@ export default defineConfig(({ command }) => ({
     // 并入本体后它们不再各自 tsdown 出 dist,而是由这一次构建直接编 .css.ts —— 少一套构建。
     vanillaExtractPlugin(),
     rendererChunkCycleGuard(),
+    // #1931 A Node built-in imported by renderer code becomes a shim calling `require`, which the renderer lacks: no build.
+    rendererNodeShimGuard(fileURLToPath(new URL('.', import.meta.url))),
     // ⚠️ 必须在 rendererAsciiOutput() 之前:ASCII 转义要最后收尾(#6484),顺序由 obfuscateOwnChunks7195 测试钉住。
     ...(obfuscateRenderer ? [obfuscateOwnChunks({ version: appVersion })] : []),
     rendererAsciiOutput(),

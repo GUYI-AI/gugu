@@ -229,24 +229,33 @@ describe('installing an extension package from chat (#6646)', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('replaces only an extension that itself came from chat — never a market or folder one, nor one from before origins were kept (E-05)', async () => {
+  // 11-12: a card over the market's copy was refused, and the person could only uninstall it first. It is the person's
+  // call, as a market install over a folder's is: asked in full, saying what it replaces; declined, nothing changes.
+  it('over a market one, or one from before origins were kept: asked in full, saying what it replaces (E-05)', async () => {
     const { dir } = await sendInChat('share');
     const origins = path.join(state.userData, 'task-extensions', '.extension-origins.json');
     service.installFromDirectory(dir, service.inspectDirectory(dir).manifestDigest, 'market');
-    const install = () => installExtensionFromAttachment({ messageId: 'm-alice' }, quiet);
-    // Answered, not thrown: the card that was clicked says what is here (`refusedLine`); nothing is installed.
-    const refused = (from: string | undefined) => ({
-      installed: false,
-      outcome: 'refused',
-      id: 'share',
-      installedVersion: '1.0.0',
-      from,
-      reason: expect.stringContaining('a package from chat cannot replace it'),
-    });
-    await expect(install()).resolves.toMatchObject(refused('market'));
+    const declined = vi.fn().mockResolvedValue({ outcome: 'declined' });
+    await expect(installExtensionFromAttachment({ messageId: 'm-alice' }, { ...quiet, requestInstallConsent: declined }))
+      .resolves.toMatchObject({ installed: false });
+    expect(declined.mock.calls[0]![0]).toMatchObject({ installed: undefined, attachment: { from: 'Alice', over: { from: 'market', version: '1.0.0' } } });
+    expect(service.origins()).toEqual({ share: 'market' });
     writeFileSync(origins, '{}');
-    await expect(install()).resolves.toMatchObject(refused(undefined));
-    expect(service.get('share').manifest.version).toBe('1.0.0');
+    const unkept = vi.fn().mockResolvedValue({ outcome: 'declined' });
+    await installExtensionFromAttachment({ messageId: 'm-alice' }, { ...quiet, requestInstallConsent: unkept });
+    expect(unkept.mock.calls[0]![0].attachment).toEqual({ from: 'Alice', over: { from: undefined, version: '1.0.0' } });
+    writeFileSync(origins, JSON.stringify({ share: 'market' }));
+    const confirmed = vi.fn().mockResolvedValue({ outcome: 'confirmed' });
+    await expect(installExtensionFromAttachment({ messageId: 'm-alice' }, { ...quiet, requestInstallConsent: confirmed }))
+      .resolves.toMatchObject({ installed: true, updatedFrom: '1.0.0' });
+    expect(service.origins()).toEqual({ share: 'attachment' });
+    service.uninstall('share');
+  });
+
+  it('replaces one that itself came from chat (E-05)', async () => {
+    const { dir } = await sendInChat('share');
+    const origins = path.join(state.userData, 'task-extensions', '.extension-origins.json');
+    service.installFromDirectory(dir, service.inspectDirectory(dir).manifestDigest, 'market');
     // One that came from chat may be replaced. With no publisher on record (installed before they were kept), it is
     // asked in full — not taken as an update of the same App (摩擦单 F66).
     writeFileSync(origins, JSON.stringify({ share: 'attachment' }));

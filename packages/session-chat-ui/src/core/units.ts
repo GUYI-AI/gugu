@@ -1,5 +1,6 @@
 import type { TerminalState } from '@gugu/session-core/acp/client';
 import type { DeliveryMessagePresentation } from '../state/delivery-presentation';
+import type { AgentActivityEvent, AgentActivityGroup } from '../state/agent-activity';
 /**
  * Render-unit primitives — the flat virtualization model.
  *
@@ -78,6 +79,10 @@ export type RenderUnit<D = unknown> = {
   id: string;
   itemId: string;
   groupId: string;
+  /** Display-only source anchor, independent of the canonical item identity. */
+  sourceFragment?: import('@gugu/session-core/session-record/contract').SourceFragment;
+  sourceOwner?: { turnId: string; itemId: string };
+  anchorIds?: readonly string[];
   kind: string;
   data: D;
   groupRole: GroupRole;
@@ -89,6 +94,10 @@ export type RenderUnit<D = unknown> = {
   children?: readonly RenderUnit[];
   /** The fold toggles this unit is emitted behind, outermost first (set only under `revealAllFolds`). */
   folds?: readonly FoldGate[];
+  /** Flat children keep the original renderers/virtualization behind one activity header. */
+  activityFold?: string;
+  activityEvent?: AgentActivityEvent;
+  activityGroup?: AgentActivityGroup;
 };
 
 /** A ViewState toggle and the value that must be stored for what sits behind it to be emitted. */
@@ -127,16 +136,24 @@ export type SegmentItem = ChatItem | SyntheticItem;
  * cheap even if called on every tick.
  */
 export type SegmentCtx = {
+  actor?: import('../chat-context').ChatContext['actor'];
+  chatName?: import('../chat-context').ChatContext['chatName'];
+  chatKind?: import('../chat-context').ChatContext['chatKind'];
+  viewerId?: string;
   deliveredMessage?: (id: string) => DeliveryMessagePresentation | undefined;
   agentConversation?: boolean;
   caches: ChatCaches;
   expanded: (id: string) => boolean;
   active: boolean;
+  /** These turns will not change again (the committed tier): work that depends on one turn alone is kept by turn object. */
+  settled?: boolean;
   /** Latest logical turn across committed and active tiers; its empty acknowledgement remains visible. */
   latestTurnId?: string;
   plan: () => SessionPlans | null;
   translate: ChatTranslator;
   pendingToolCallIds: () => Set<string>;
+  /** A running subagent's text so far, by its launch call; the card itself gets it only when it settles (#2500). */
+  liveSubagent?: (toolCallId: string) => { output?: string; reasoning?: string } | undefined;
   /** 这次调用正在等的那条审批请求（计划审批卡拿它画选项）；没在等 ⇒ undefined。 */
   permissionFor?: (toolCallId: string) => AcpPermissionRequest | undefined;
   terminalSnapshot: (terminalId: string) => TerminalState | null;
@@ -194,7 +211,7 @@ export type SegmentCtx = {
  *              cur.top) and assigns the result to the lower unit's `gapBefore`.
  *              Falls back to `density.turnGap` when absent. Turn boundaries
  *              resolve to 8px via the user message's margin (top: 8, bottom: 8).
- * `estimate` — O(1) height heuristic for off-screen units at setCount/prepend.
+ * `estimate` — O(1) height heuristic for off-screen units at setCount.
  *              Falls back to `genericEstimate` when omitted.
  * `measure`  — exact height (px); called only for visible units.
  *              Returns a number — no Measured<L> tree.
@@ -313,12 +330,13 @@ export function stampGroupRoles(units: RenderUnit[]): void {
 
 /** Source-item lookup includes rows inside a native process viewport. */
 export function unitContainsItem(unit: RenderUnit | undefined, id: string): boolean {
-  return !!unit && (unit.itemId === id || !!unit.children?.some(child => unitContainsItem(child, id)));
+  return !!unit && (unit.itemId === id || !!unit.anchorIds?.includes(id) || !!unit.children?.some(child => unitContainsItem(child, id)));
 }
 
 /** Include nested leaf ids in the committed tier's source-navigation index. */
 export function* unitItemIds(unit: RenderUnit): IterableIterator<string> {
   yield unit.itemId;
+  yield* unit.anchorIds ?? [];
   for (const child of unit.children ?? []) yield* unitItemIds(child);
 }
 

@@ -382,3 +382,83 @@ describe('一屏几块(spec session-page,#7052)', () => {
     expect(screen.originOf(screen.blockOfSession('a')!)).toEqual({ neighborId: screen.blockOfSession('b'), edge: 'left' });
   });
 });
+
+describe('每个入口记着上次停在哪一屏(fe-continuity A16)', () => {
+  const chat = (chatId: string) => ({ kind: 'chat' as const, chatId });
+  const chatsOn = (screen: ScreenLayoutStore) => screen.order.map((blockId) => screen.blocks.get(blockId)).map((block) => (block?.kind === 'chat' ? block.chatId : block?.kind === 'session' ? block.sessionId : block?.kind));
+
+  it('群里点开的私聊(资料卡「发消息」)整屏换掉群;切到别的群再切回来 = 回到那个私聊', () => {
+    const screen = new ScreenLayoutStore();
+    screen.show(chat('g1'));
+    screen.withinEntry(() => screen.show(chat('dm')));
+    expect(chatsOn(screen)).toEqual(['dm']);
+    screen.show(chat('g2'));
+    expect(chatsOn(screen)).toEqual(['g2']);
+    screen.show(chat('g1'));
+    expect(chatsOn(screen), 'g1 comes back to where it was left').toEqual(['dm']);
+    expect(screen.entry).toBe(contentKey(chat('g1')));
+  });
+
+  it('内层侧栏点开的智能体会话也一样:切走再点群,回到那条会话', () => {
+    const screen = new ScreenLayoutStore();
+    screen.show(chat('g1'));
+    screen.withinEntry(() => screen.show(s('agent')));
+    screen.show(chat('g2'));
+    screen.show(chat('g1'));
+    expect(chatsOn(screen)).toEqual(['agent']);
+  });
+
+  it('回主群(群标题,或在这个群的屏里再点它那一行):回到群本身,记着的那一屏不要了', () => {
+    const screen = new ScreenLayoutStore();
+    screen.show(chat('g1'));
+    screen.withinEntry(() => screen.show(chat('dm')));
+    screen.show(chat('g1'));
+    expect(chatsOn(screen), 'the row of the group you are inside = the group').toEqual(['g1']);
+    screen.show(chat('g2'));
+    screen.show(chat('g1'));
+    expect(chatsOn(screen)).toEqual(['g1']);
+
+    screen.withinEntry(() => screen.show(chat('dm')));
+    screen.showRoot(chat('g1'));
+    expect(chatsOn(screen)).toEqual(['g1']);
+    screen.show(chat('g2'));
+    screen.show(chat('g1'));
+    expect(chatsOn(screen), 'after going back to the group, switching away and back shows the group').toEqual(['g1']);
+  });
+
+  it('从左边列表点的那一行就是它自己的入口:群 → 列表里的私聊 → 群 = 群', () => {
+    const screen = new ScreenLayoutStore();
+    screen.show(chat('g1'));
+    screen.show(chat('dm'));
+    screen.show(chat('g1'));
+    expect(chatsOn(screen)).toEqual(['g1']);
+    screen.show(chat('dm'));
+    expect(chatsOn(screen)).toEqual(['dm']);
+  });
+
+  it('记着的那一屏不是一组:左边列表不把它们并在一处;存下来再读回照旧记着', () => {
+    const screen = new ScreenLayoutStore();
+    screen.show(chat('g1'));
+    screen.withinEntry(() => screen.show(chat('dm')));
+    screen.show(chat('g2'));
+    expect(screen.joinedGroups).toEqual([]);
+    const again = new ScreenLayoutStore();
+    again.restore(screen.snapshot!);
+    again.show(chat('g1'));
+    expect(chatsOn(again)).toEqual(['dm']);
+  });
+
+  it('读回的旧摆法(没记入口)里只有一块:那一块就是入口', () => {
+    const before = new ScreenLayoutStore();
+    before.show(chat('g1'));
+    const { entry: _entry, ...saved } = before.snapshot!;
+    const screen = new ScreenLayoutStore();
+    screen.restore(saved);
+    expect(screen.entry).toBeNull();
+    screen.show(chat('g1'));
+    screen.withinEntry(() => screen.show(chat('dm')));
+    screen.show(chat('g2'));
+    screen.show(chat('g1'));
+    expect(chatsOn(screen)).toEqual(['dm']);
+  });
+});

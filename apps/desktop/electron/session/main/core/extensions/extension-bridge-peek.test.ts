@@ -23,7 +23,7 @@ vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), error: vi.fn(), info:
 
 const CHAT = '0b000000-0000-4000-8000-0000000000a1';
 const file = { document: false, contentType: 'application/pdf', version: 3, size: 1024 };
-const local = { kind: 'local', place: { workspace: 'project:p-1' }, projectId: 'p-1', workspaceId: 'w-1', path: 'docs/plan.html', absolutePath: '/repo/docs/plan.html', name: 'plan.html', ask: false };
+const local = { kind: 'folder', place: { workspace: 'project:p-1' }, projectId: 'p-1', workspaceId: 'w-1', path: 'docs/plan.html', absolutePath: '/repo/docs/plan.html', name: 'plan.html', ask: false };
 const pdfApp = { extensionId: 'pdf', tabKind: 'pdf.viewer', tabTitle: 'PDF', app: { name: 'PDF' }, onlyTab: true, suffix: '.pdf' };
 const chooser = vi.hoisted(() => ({ kind: 'none' as string }));
 // Where the file is and who opens it are app-files' (their own tests); here, what the bridge does with the answer.
@@ -49,7 +49,7 @@ const actions = () => deliver.mock.calls.map(([, action]) => action);
 beforeEach(async () => {
   deliver.mockClear();
   chooser.kind = 'none';
-  setExtensionBridgeHost({ deliver, presentation: () => ({ locale: 'en', themeMode: 'light' as const, fullscreen: false, windowFocused: true }) });
+  setExtensionBridgeHost({ deliver, selfGuguNumber: () => undefined, presentation: () => ({ locale: 'en', themeMode: 'light' as const, fullscreen: false, windowFocused: true }) });
   await bindExtensionSurface({ webContentsId: PAGE, extensionId: 'kanban', tabId: 'dock', tabKind: 'kanban.board' });
   vi.mocked(resourceChatOf).mockClear();
 });

@@ -1,18 +1,12 @@
 import { globalStyle, style } from '@vanilla-extract/css';
 import { vars } from '@session-chat/styles/theme.css';
-import { createVariableThemeContract } from '@session-chat/styles/variable-theme-contract.css';
 import { EXECUTE_SCROLLBAR_GUTTER_X } from './execute.layout';
 import { summaryChip } from '@session-chat/components/primitives/summary-chip.css';
 
 // ── Runtime geometry contract ─────────────────────────────────────────────────
 
-export type ExecuteStyleVars = {
-  height: number;
-};
-
-export const executeCardVars = createVariableThemeContract<ExecuteStyleVars>({
-  height: null,
-});
+// The engine height is a plain inline `height` on the root, never a custom property: a custom property inherits, so
+// changing it restyles the whole subtree — per streamed chunk, O(content) (see user-message.css.ts).
 
 // ── Row root ──────────────────────────────────────────────────────────────────
 //
@@ -33,7 +27,7 @@ export const executeCardVars = createVariableThemeContract<ExecuteStyleVars>({
 // overflow: hidden mirrors thinkingRoot / planRoot: any transient
 // measure-vs-render height desync degrades to clipped content rather than
 // spilling onto the following row.
-export const executeRoot = style({ height: executeCardVars.height, overflow: 'hidden' });
+export const executeRoot = style({ overflow: 'hidden' });
 
 // ── Exit status ───────────────────────────────────────────────────────────────
 

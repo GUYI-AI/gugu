@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { SidebarStore } from '@renderer/features/sidebar/sidebar-store';
+import { sidebarOf } from '@renderer/features/sidebar/mirror-account-projects.testing';
 
 vi.mock('@renderer/lib/modal/modal-store', () => ({
   modalStore: { closeModal: vi.fn() },
@@ -174,10 +174,10 @@ describe('NavigationStore transient params vs. history', () => {
 describe('NavigationStore preserves manual sidebar disclosure', () => {
   it('keeps collapsed and expanded choices through session/project navigation and restoration', () => {
     const original = appState.sidebar;
-    const sidebar = new SidebarStore({ projects: new Map() } as never);
+    const sidebar = sidebarOf({ projects: new Map() } as never);
     Object.assign(appState, { sidebar });
     try {
-      sidebar.toggleProjectExpanded('open-project');
+      sidebar.ensureProjectExpanded('open-project');
       sidebar.toggleSessionExpanded('open-parent');
       const before = structuredClone(sidebar.snapshot);
       const store = buildStore();

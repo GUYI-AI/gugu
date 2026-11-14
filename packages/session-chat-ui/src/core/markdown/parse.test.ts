@@ -193,6 +193,30 @@ describe('bare @token standard shapes', () => {
   });
 });
 
+describe('links retain their parsed inline meaning', () => {
+  it.each([
+    'someone@example.com',
+    'someone+tag@example.com',
+    '<someone@example.com>',
+    '[someone@example.com](mailto:someone@example.com)',
+    '[**someone@example.com**](mailto:someone@example.com)',
+    '[**someone@example.com**][mail]\n\n[mail]: mailto:someone@example.com',
+  ])('keeps %s as an email link without a file mention', text => {
+    const root = rendered(text);
+    const email = text.includes('+tag') ? 'someone+tag@example.com' : 'someone@example.com';
+    expect(chips(root)).toHaveLength(0);
+    expect(root.querySelector('a')?.getAttribute('href')).toBe(`mailto:${email}`);
+    expect(root.textContent).toContain(email);
+  });
+
+  it('keeps actual file mentions beside email and ordinary links', () => {
+    const root = rendered('someone@example.com and [@src/linked.ts](https://example.com) then @src/actual.ts');
+    expect(mentionIds(root)).toEqual(['src/actual.ts']);
+    expect(root.querySelector('a[href="mailto:someone@example.com"]')?.textContent).toBe('someone@example.com');
+    expect(root.querySelector('a[href="https://example.com"]')?.textContent).toBe('@src/linked.ts');
+  });
+});
+
 // ── /command slash tokens ─────────────────────────────────────────────────
 
 describe('/command slash tokens', () => {
@@ -283,7 +307,12 @@ describe('LaTeX reaches the document model as math, not as text', () => {
     const blocks = parseMarkdownToBlocks('t', 'Energy is $E = mc^2$ here.', nullProvider);
     const root = rendered('Energy is $E = mc^2$ here.', nullProvider);
     expect(root.querySelectorAll('.katex')).toHaveLength(1);
-    expect(root.querySelector('annotation')?.textContent).toBe('E = mc^2');
+    // The source stays for a reader, as the formula's accessible name and as hidden text for a copied selection,
+    // without a MathML element (@@@no-mathml in session-shared markdown/dialect.ts).
+    expect(root.querySelector('.katex')?.getAttribute('role')).toBe('math');
+    expect(root.querySelector('.katex')?.getAttribute('aria-label')).toBe('E = mc^2');
+    expect(root.querySelector('.katex-mathml')?.textContent).toBe('E = mc^2');
+    expect(root.querySelector('math, annotation')).toBeNull();
     expect(blocks.map(blockPlainText)).toEqual(['Energy is E = mc^2 here.']);
     // The state this replaced: a mention chip labelled '∑ math'. Reading for it
     // by name is what makes this a regression test rather than a smoke test.

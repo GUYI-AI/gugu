@@ -36,5 +36,15 @@ export const harnessPlatform = {
   },
 } as const satisfies HarnessPlatform
 
-/** pi `models.json` 里 provider 的 `api`(pi 自己的词表)由上面声明的协议查出来:改协议只改 `wireProtocol`,表里没有那一档就编译不过。 */
-export const PI_PROVIDER_API = ({ 'openai-responses': 'openai-responses' } as const)[harnessPlatform.wireProtocol];
+/**
+ * pi `models.json` 里 provider 的 `api`(pi 自己的词表,`docs/models.md`:`openai-completions` / `openai-responses`)由协议查出来:
+ * 平台会话按上面声明的 `wireProtocol`;一把 API Key 连接按建连接时探出来的那一种(很多中转只讲 Chat Completions,#2507)。
+ */
+const PI_API_BY_PROTOCOL = {
+  'openai-responses': 'openai-responses',
+  'openai-chat-completions': 'openai-completions',
+} as const;
+
+export function piProviderApi(protocol: keyof typeof PI_API_BY_PROTOCOL = harnessPlatform.wireProtocol) {
+  return PI_API_BY_PROTOCOL[protocol];
+}

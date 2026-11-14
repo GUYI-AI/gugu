@@ -9,7 +9,10 @@ import '@renderer/lib/stores/app-state'
 import { ChatListPanel, TopicSubRow } from '../../../apps/desktop/src/components/ChatListPanel'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import { SidebarStore } from '@renderer/features/sidebar/sidebar-store'
-import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders, typeInto } from '../../support/testHarness'
+import { needsYouCount } from '@renderer/features/sidebar/session-groups'
+import { AccountProjectsStore } from '@renderer/features/projects/stores/account-projects-store'
+import { runInAction } from 'mobx'
+import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../support/testHarness'
 
 const state = vi.hoisted(() => ({ canDissolve: true, sessions: [] as SessionpageSessionSummary[], statuses: {} as Record<string, AgentDisplayStatus>, read: vi.fn(async (_input: { chats: { id: string }[] }) => ({ failedChats: 0 })), select: vi.fn(), open: vi.fn(async () => {}) }))
 vi.mock('../../../apps/desktop/src/lib/chatUnreadLocator', async original => ({ ...await original<typeof import('../../../apps/desktop/src/lib/chatUnreadLocator')>(), markChatsReadAndRefresh: state.read }))
@@ -51,17 +54,13 @@ const orphan = chat({ id: 'orphan-topic', kind: 'topic', name: 'Older task', sou
 const render = (mobile: boolean, chats = [source, topic, orphan]) => renderWithAppProviders(h, createNode(ChatListPanel, { mobile, activeTab: 'chats', placement: mobile ? 'page' : 'sidebar' }), { chat: { chats, setActiveChatId: state.select, openUnreadChat: state.open }, contacts: {} })
 const row = () => h.container.querySelector<HTMLElement>('[data-chat-row="group"]')!
 
-it('phone shows one source row, aggregates topic unread before search, and updates after reading a topic', async () => {
+it('phone shows one source row, aggregates topic unread, and updates after reading a topic', async () => {
   await render(true)
   expect([...h.container.querySelectorAll<HTMLElement>('[data-chat-row]')].map(el => el.dataset.chatRow)).toEqual(['group'])
   expect(row().textContent).toContain('10')
   expect(row().querySelectorAll('.gg-list-row-line')).toHaveLength(1)
   expect(row().querySelector('.gg-list-row-line .gg-list-row-trailing')?.textContent).toContain('10')
   expect(h.container.querySelector('[data-topic-subrow]')).toBeNull()
-  await act(async () => { window.dispatchEvent(new CustomEvent('__open_phone_list_search', { detail: 'chats' })) })
-  const search = h.container.querySelector<HTMLInputElement>('[data-header-search-field] input')!
-  await typeInto(search, 'Planning')
-  expect(row().textContent).toContain('10')
   await render(true, [source, { ...topic, unread_count: 0 }, orphan])
   expect(row().textContent).not.toContain('10')
   expect(row().querySelectorAll('.gg-list-row-line')).toHaveLength(1)
@@ -81,12 +80,17 @@ const task = (id: string, status: 'needs_user' | 'error' | 'working' | 'idle', u
   conversationId: id, projectId, title: id, harness: 'codex', runtime: 'acp', supported: true, unseen, lastInteractedAt: null,
   agentStatus: status, status: { status, detail: status === 'needs_user' ? 'approval' : null },
 } as SessionpageSessionSummary)
-/** The desktop project dot for the same host listing (SidebarStore's remote route). */
+/** The desktop count for the same host listing: SidebarStore's remote route, read through the shared rule. */
 function desktopDot(sessions: readonly SessionpageSessionSummary[]): number {
   const project = { id: 'local', createdAt: '2026-10-01T00:00:00.000Z', mountedProject: { sessionManager: { sessions: new Map() } } }
-  const store = new SidebarStore({ projects: new Map([['local', project]]) } as unknown as ConstructorParameters<typeof SidebarStore>[0])
+  const projects = new Map([['local', project]])
+  // The project row comes from the account project list: this project is bound on mac.
+  const accounts = new AccountProjectsStore()
+  accounts.attach({ projects, machineOf: () => 'mac', connected: () => true })
+  runInAction(() => { accounts.list = [{ chatId: 'chat-local', name: 'local', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'mac', localProjectId: 'local' }] }] })
+  const store = new SidebarStore({ projects } as unknown as ConstructorParameters<typeof SidebarStore>[0], accounts)
   store.machines = { machineOf: () => 'mac', label: () => 'mac', homeDir: () => '/work', connected: () => true, sessionsOf: () => ({ live: true, sessions }), session: (_deviceId, id) => sessions.find(session => session.conversationId === id) ?? null }
-  return store.needsYouCountForProject('local')
+  return needsYouCount(store.placement.entries.get('local') ?? [])
 }
 
 it.each([
@@ -182,7 +186,8 @@ it('short tap and a cancelled scroll retain ordinary row behavior', async () => 
   expect(release.defaultPrevented).toBe(false)
   vi.useRealTimers()
   await clickElement(row())
-  expect(state.select).toHaveBeenCalledWith('group')
+  // A phone's list covers the chat it opens: a tap is always an opening, which selects the chat itself.
+  expect(state.open).toHaveBeenCalledWith('group', false)
   expect(state.read).not.toHaveBeenCalled()
 })
 

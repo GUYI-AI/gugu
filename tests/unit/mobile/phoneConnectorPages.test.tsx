@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+vi.mock('@/lib/connectionBridge',() => ({ connectionBridge: () => ({ routing: {
+  read: async () => ({ mode: 'legacy',epoch: '0',phase: 'stable',acceptingNewOperations: true }),assert: async () => {},
+} }) }))
 import { act } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { expectExit, frame, holdDialogExit } from '../../support/dialogExit'
@@ -10,7 +13,7 @@ import { PhoneConnectorDetail, PhoneConnectorsPage } from '../../../apps/desktop
 import { PhoneConnectorSetupPage } from '../../../apps/desktop/src/mobile/assistant/PhoneConnectorSetup'
 import { failureKey, type SetupFailure } from '../../../apps/desktop/src/mobile/assistant/phoneConnectorFlow'
 import type { PhoneIntegrations } from '../../../apps/desktop/src/mobile/assistant/usePhoneProfileData'
-import { clickElement, createNode, createReactHarness, deferred, waitForCondition } from '../../support/testHarness'
+import { clickElement, createNode, createReactHarness, deferred, renderWithAppProviders, waitForCondition } from '../../support/testHarness'
 
 // #7199 手机连接应用的详情页与连接页:真目录(二十家)+ 假的助理的家(rpc 记下调用),渲染出来点一遍。
 // 判据落在行为上:点了什么就发了什么调用、连上后重读状态、没断成就留在确认卡上。
@@ -107,7 +110,9 @@ async function enter(element: HTMLInputElement | HTMLTextAreaElement, value: str
 let harness: ReturnType<typeof createReactHarness>
 let rpc: FakeRpc
 let opened: string[]
+let accountSequence = 0
 beforeEach(() => {
+  accountSequence += 1
   setLocalePreference('zh-CN')
   harness = createReactHarness()
   rpc = makeRpc()
@@ -128,7 +133,7 @@ afterEach(() => {
   delete (HTMLElement.prototype as Partial<HTMLElement>).getAnimations
 })
 
-const render = (node: Parameters<typeof createNode>[0], props: Record<string, unknown>) => harness.render(createNode(I18nextProvider, { i18n }, createNode(node, props)))
+const render = (node: Parameters<typeof createNode>[0], props: Record<string, unknown>) => renderWithAppProviders(harness, createNode(I18nextProvider, { i18n }, createNode(node, props)), { auth: { id: `phone-connectors-test-${accountSequence}` } })
 
 describe('直接展开的连接列表', () => {
   it('应用行只有一个操作，先打开详情，不重复标记未连接或混入设备授权', async () => {
@@ -137,7 +142,7 @@ describe('直接展开的连接列表', () => {
     expect(q('assistant-connectors')!.querySelector('h1')).toBeNull()
     expect(q('assistant-connector-qq-mail')!.textContent).not.toContain('未连接')
     expect(q('assistant-connect-qq-mail')).toBeNull()
-    expect(q('assistant-connectors')!.querySelector('[role="tablist"]')).toBeNull()
+    expect([...q('assistant-connectors')!.querySelectorAll('[role="tab"]')].map(el => el.textContent)).toEqual(['全部应用', '我的连接'])
     await clickElement(q('assistant-connector-qq-mail')!)
     expect(page.go).toHaveBeenLastCalledWith('connector:qq-mail')
   })
@@ -150,8 +155,9 @@ describe('直接展开的连接列表', () => {
     const data = page.props.integrations as { data: PhoneIntegrations }
     data.data.statuses = { 'qq-mail': { connected: true, capabilities: { requiresRepositoryUrl: false, supportsIssueContext: false } } }
     await render(PhoneConnectorsPage, page.props)
+    await clickElement([...q('assistant-connectors')!.querySelectorAll<HTMLElement>('[role="tab"]')].find(el => el.textContent === '我的连接')!)
     expect(q('assistant-connectors')!.querySelector('section')).toBe(q('assistant-connectors-connected'))
-    expect(q('assistant-connectors-connected')!.querySelector('h2')!.textContent).toBe('已连接')
+    expect(q('assistant-connectors-connected')!.querySelector('h2')!.textContent).toBe('已连接1')
     expect(q('assistant-connectors-connected')!.contains(q('assistant-connector-qq-mail'))).toBe(true)
     data.data.statuses = { 'qq-mail': { connected: false, errorType: 'authorization_expired', capabilities: { requiresRepositoryUrl: false, supportsIssueContext: false } } }
     await render(PhoneConnectorsPage, page.props)

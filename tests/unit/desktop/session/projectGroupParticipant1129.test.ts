@@ -2,11 +2,12 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ rows: new Map<string, string>(), returned: vi.fn() }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ sidebarStore: { rowProjectIdOf: (id: string) => state.rows.get(id) ?? id } }));
 vi.mock('@renderer/app/screen-layout-actions', () => ({ returnToScreen: state.returned }));
+import { runInAction } from 'mobx';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
+import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import { showGroupParticipant } from '@renderer/features/chats/group-participant-actions';
-import { projectGroupLayout } from '@renderer/features/projects/stores/project-group-layout';
 const first = { kind: 'project', projectId: 'first-bound-project' } as const;
 const visible = { kind: 'project', projectId: 'visible-project' } as const;
 const target = { kind: 'session', projectId: visible.projectId, sessionId: 'project-session-agent' } as const;
@@ -17,10 +18,18 @@ beforeEach(() => {
     { projectId: first.projectId, chatId: 'shared-project-group' },
     { projectId: visible.projectId, chatId: 'shared-project-group' },
   ]);
+  // Which group a project on screen belongs to is the account's answer.
+  runInAction(() => {
+    accountProjectsStore.localDeviceId = 'this-computer';
+    accountProjectsStore.list = [{
+      chatId: 'shared-project-group', name: 'shared', archived: false, activeAt: '2026-01-01T00:00:00.000Z',
+      bindings: [first.projectId, visible.projectId].map((localProjectId) => ({ deviceId: 'this-computer', localProjectId })),
+    }];
+  });
 });
 afterEach(() => {
   for (const block of [...screenLayout.blocks.values(), ...screenLayout.parkedContents]) screenLayout.forgetContent(block);
-  groupParticipantPanes.useAccount(null); projectGroupsStore.applyBindings(null, []);
+  groupParticipantPanes.useAccount(null); projectGroupsStore.applyBindings(null, []); accountProjectsStore.clear();
 });
 it('opens beside a project group with one canonical visible project', () => {
   screenLayout.show(first);
@@ -43,19 +52,10 @@ it('also opens when both devices resolve to the same visible sidebar row', () =>
   expect(screenLayout.order.map(id => screenLayout.blocks.get(id))).toEqual([visible, target]);
 });
 it('keeps using the visible project after a newly available local project becomes the representative', () => {
-  const projects = [
-    { id: first.projectId, machine: 'other-device', online: false },
-    { id: visible.projectId, machine: 'visible-device', online: true },
-  ];
-  const before = projectGroupLayout(projects, id => projectGroupsStore.chatIdOf(id));
-  state.rows = new Map(before.rowOf);
-  expect(state.rows.get(first.projectId)).toBe(visible.projectId);
+  // Before: the visible project (on a connected machine) represents the project; after: the newly local one does.
+  state.rows = new Map([[first.projectId, visible.projectId]]);
   screenLayout.show(visible);
-  const after = projectGroupLayout([
-    { ...projects[0]!, machine: null }, projects[1]!,
-  ], id => projectGroupsStore.chatIdOf(id));
-  state.rows = new Map(after.rowOf);
-  expect(state.rows.get(visible.projectId)).toBe(first.projectId);
+  state.rows = new Map([[visible.projectId, first.projectId]]);
   showGroupParticipant('shared-project-group', target);
   expect(screenLayout.order.map(id => screenLayout.blocks.get(id))).toEqual([visible, target]);
 });

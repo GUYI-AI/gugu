@@ -2,8 +2,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { usePhoneToday } from '../../../apps/desktop/src/mobile/assistant/usePhoneToday'
-import type { TodayFeedView } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-today-feed'
-import { TODAY_REFRESH_MS } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-today-file'
+import { TODAY_REFRESH_MS, type TodayFeedView } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-today-file'
 import { createNode, createReactHarness, deferred } from '../../support/testHarness'
 
 const mocks = vi.hoisted(() => ({ read: vi.fn() }))

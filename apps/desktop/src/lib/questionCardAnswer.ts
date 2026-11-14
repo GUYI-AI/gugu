@@ -1,7 +1,7 @@
 import { composerCardPreview, parseComposerCard, type QuestionCard } from '@gugu/core/shared/ui/taskCardModels'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import type { QuestionAnswer, SessionpageSessionRespondResult } from '@gugu/session-core/session-record/contract'
-import { questionAnswerText } from '@gugu/session-core/session-record/question-answer'
+import { parseQuestionAnswers, questionAnswerText } from '@gugu/session-core/session-record/question-answer'
 import { platform } from '../platform'
 import { chatDb } from './supabase'
 
@@ -43,5 +43,6 @@ export async function answerIfQuestionReply(sent: MessageItem, senderUserId: str
 export function questionAnsweredText(optionId: string | null): string {
   let answers: unknown
   try { answers = optionId ? JSON.parse(optionId) : null } catch { return '' }
-  return Array.isArray(answers) ? questionAnswerText(answers as QuestionAnswer[]) : ''
+  const parsed = parseQuestionAnswers(answers)
+  return parsed ? questionAnswerText(parsed) : ''
 }

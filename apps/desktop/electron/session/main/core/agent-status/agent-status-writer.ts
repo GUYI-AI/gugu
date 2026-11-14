@@ -19,6 +19,7 @@ import { sessionsAliveInTmux } from '@main/core/sessions/session-process';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import { clearInterruptedTurn, recordInterruptedTurns } from './interrupted-turns';
+import { clearAnsweredAsk } from '../asks/answered-asks';
 import { events } from '@main/lib/events';
 import { HookCore, type Hookable } from '@main/lib/hookable';
 import { log } from '@main/lib/logger';
@@ -45,6 +46,7 @@ import {
   type AgentStatusLogState,
 } from './status-event-log';
 import { translateAgentEvent, type TranslationContext } from './status-event-translator';
+import { acknowledgeErrorNotice, clearErrorNotice, quotaErrorUnseen } from './error-notice';
 
 /**
  * spec agent-status-writer —— 会话页 agent 状态的唯一写入者。
@@ -159,6 +161,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
     if (raced) return raced;
     const status = parseAgentStatus(row.agentStatus);
     const detail = parseAgentStatusDetail(row.agentStatusDetail, status);
+    if (status === 'error' && row.agentStatusSeen === 1) acknowledgeErrorNotice(sessionId);
     const entry: SessionStatusLog = {
       projectId: row.projectId,
       state: restoreStatusLog(status, detail),
@@ -178,6 +181,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
     if (!entry) return;
     const { state } = entry;
     const before = readStatusLog(state);
+    const beforeError = state.error;
     const canonical = translate({
       running: state.running,
       waiting: waitsOnHarness(state),
@@ -194,6 +198,11 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
       });
     }
     if (canonical.length === 0) return;
+    // A new turn: what the person last answered is past, as a failure is (answered-asks.ts). Answering lets a running
+    // turn go on and is no `Started`.
+    if (!before.running && canonical.some(e => e.kind === 'Started') && clearAnsweredAsk(sessionId)) {
+      events.emit(sessionChangedChannel, { sessionId, projectId: entry.projectId, changes: { lastAnswered: true } });
+    }
     const reading = readStatusLog(state);
     const previous = entry.written;
     // 不是新事实的不发布:从没有状态的行(没有状态源)被「停下」;这一批事件没让读数动(同一句话再说一遍、
@@ -202,9 +211,12 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
     const unchanged = previous === null
       ? reading.status === 'idle'
       : before.status === reading.status && before.detail === reading.detail;
-    if (unchanged && !reading.finished) return;
+    const errorChanged = reading.status === 'error' && beforeError !== state.error && !!meta.event?.payload.message;
+    if (unchanged && !reading.finished && !errorChanged) return;
     // 做完、等人、出错写成未读;在跑、没做完的空闲(被打断)不是一句需要你看的话。
-    const unseen = !(reading.status === 'working' || (reading.status === 'idle' && !reading.finished));
+    if (reading.finished) clearErrorNotice(sessionId);
+    const unseen = reading.status === 'error' ? quotaErrorUnseen(sessionId, meta.event)
+      : !(reading.status === 'working' || (reading.status === 'idle' && !reading.finished));
     await this.publish(sessionId, entry, reading, unseen, meta, {
       persist: true,
       active: true,
@@ -225,7 +237,6 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
     meta: PublishMeta,
     options: { persist: boolean; active?: true },
   ): Promise<void> {
-    entry.written = { status: reading.status, detail: reading.detail, unseen };
     const lastInteractedAt = options.active ? new Date(meta.timestamp).toISOString() : undefined;
     if (options.persist) {
       await db
@@ -243,6 +254,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
         events.emit(sessionChangedChannel, { sessionId, projectId: entry.projectId, changes: { lastInteractedAt } });
       }
     }
+    entry.written = { status: reading.status, detail: reading.detail, unseen };
     const change: AgentStatusChange & { reading: AgentStatusReading } = {
       sessionId,
       projectId: entry.projectId,
@@ -282,9 +294,9 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
   }
 
   /**
-   * 重开 = 这一句重新跑:日志重新开始,写库、发布。会话行的其它列由调用方改,状态列只有这里写。
+   * 重开:日志重新开始,写库、发布;首轮重来时这一句在跑。会话行的其它列由调用方改,状态列只有这里写。
    */
-  restart(params: StatusWriteParams): Promise<void> {
+  restart(params: StatusWriteParams, running = true): Promise<void> {
     return this.inOrder(params.sessionId, async () => {
       const previous = await this.logFor(params.sessionId);
       if (!previous) return;
@@ -293,7 +305,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
         state: emptyStatusLogState(),
         written: previous.written,
       };
-      entry.state.running = true;
+      entry.state.running = running;
       this.logs.set(params.sessionId, entry);
       await this.publish(params.sessionId, entry, readStatusLog(entry.state), false, this.now(), { persist: true, active: true });
     });
@@ -396,6 +408,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
       }
       if (!entry.written.unseen) return;
       await this.publish(sessionId, entry, readStatusLog(entry.state), false, this.now(), { persist: true });
+      if (entry.written?.status === 'error') acknowledgeErrorNotice(sessionId);
     }, this.writeVersions.get(sessionId));
   }
 

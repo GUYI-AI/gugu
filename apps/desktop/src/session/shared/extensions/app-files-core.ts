@@ -2,13 +2,16 @@ import { readDocumentText, ChatFolderReadError } from './chat-folder-text';
 import { FILE_KEEPS, type FileKeep } from '@gugu/core/shared/fileStorage';
 import { AttachmentsError, configuredEndpoint, placeAttachment, uploadAttachmentBytes } from '@gugu/core/cloud/attachmentsApi';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
-import { FILE_CHUNK_BYTES, MissingFileObjectError, fileBlob, type FileHandle, type ResolvedFile } from '@gugu/core/shared/fileResolver';
+import { coreLogger } from '@gugu/core/log';
+import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels';
+import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileBlob, type FileHandle, type ResolvedFile } from '@gugu/core/shared/fileResolver';
 import { fetchInChunks } from '@gugu/core/shared/inChunks';
 import { mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
-import { opensAsStoredText, workspaceUploadKind } from '@gugu/core/shared/workspaceUpload.mjs';
-import type { ErrorDetail, ExtensionChat } from './bridge-protocol';
+import { opensAsStoredText, workspaceFileText, workspaceUploadKind } from '@gugu/core/shared/workspaceUpload.mjs';
+import type { ErrorDetail, ExtensionChat, ExtensionChatFolder } from './bridge-protocol';
 import type { Grant, PageSync } from './file-sync-core';
 import {
+  folderWorkspace,
   APP_FILE_MAX_BYTES,
   fileSuffixOf,
   fileTypeOf,
@@ -66,6 +69,12 @@ export class AppFileError extends Error {
   ) {
     super(message);
   }
+}
+
+/** The one answer to what a page may do to a working copy's file: the one handed to it needs nothing, any other one of `capabilities`. */
+export function requireHandedOr(handed: boolean, has: (capability: 'files:read' | 'files:write') => boolean, capabilities: readonly ('files:read' | 'files:write')[], what: string): void {
+  if (handed || capabilities.some(has)) return;
+  throw new AppFileError('denied', `Not permitted: ${what} a file other than the one this page was opened for needs ${capabilities.map((capability) => `"${capability}"`).join(' or ')}`);
 }
 
 /** Who is asking about files: the page, and the one chat file it may open without a capability. */
@@ -142,6 +151,10 @@ export type BesideDocument =
   | { kind: 'text'; text: string; contentType: string }
   | { kind: 'offline'; machine: string; deviceId: string };
 
+/** `readAtPath`'s answer (#1927): the file and its text, or which of the three ways it is not there to read. */
+export type PathText = { state: 'missing' | 'unprepared' | 'unavailable' }
+  | { state: 'ready'; entry: AppFileEntry; content: string; truncated: boolean; totalSize: number; binary?: true; exact?: boolean };
+
 /** What a download saves: bytes behind a short-lived signed URL, or a document's text. */
 export type DownloadSource = { name: string; kind: 'file'; file: FileHandle } | { name: string; kind: 'text'; text: string };
 
@@ -173,6 +186,10 @@ interface ItemRow {
    */
   expires_at?: string | null;
   is_mine?: boolean | null;
+  /** `workspace_list_as` only: when the group's cloud copy was cleared at its expiry and no live copy replaced it. */
+  copy_expired_at?: string | null;
+  /** `workspace_list_as` only (gugu-supabase 20261112030000): how many items are directly in a folder; null for a file. */
+  child_count?: number | string | null;
   /** `workspace_list_as` only: the device that keeps its current version, when that is not in the cloud. */
   host_device_id?: string | null;
 }
@@ -275,6 +292,9 @@ function entryOf(row: ItemRow, claimant: Claimant): AppFileEntry {
       : null,
     sourceMessageIds: row.source_message_ids ?? [],
     ...('is_mine' in row ? { keep: typeof row.is_mine === 'boolean' ? { expiresAt: row.expires_at ?? null, mine: row.is_mine } : null } : {}),
+    // A file its machine keeps opens from there (file_resolve_as answers it local), whatever became of a cloud copy.
+    ...(row.copy_expired_at && !row.host_device_id ? { expiredAt: row.copy_expired_at } : {}),
+    ...(folder && row.child_count != null ? { childCount: Number(row.child_count) } : {}),
   }, claimant);
 }
 
@@ -302,19 +322,25 @@ async function peopleOf(token: string, entries: readonly AppFileEntry[], identit
 /** Who is in a chat (摩擦单 F36), as `getContext().chat.members` and `gugu.chats.members` carry them. */
 type ChatMember = { id: string; name: string; kind: 'human' | 'agent'; avatar?: string };
 
-/** One row of a chat's members changed, as `chat_members_changed` says it (`readMemberRosterRevision`). */
-export type MemberChange = { memberId: string | null; left: boolean };
+/**
+ * One row of a chat's members changed, as `chat_members_changed` says it (`readMemberRosterRevision`); or `renamed`: a
+ * person's name or face changed, as `agent_changed` says it (`readRenamedMembers`) — kept on their account, not on a
+ * member row, so no `chat_members_changed` comes for it.
+ */
+export type MemberChange = { memberId: string | null; left: boolean; renamed?: boolean };
 
 /**
- * Whether these changes moved who is in the chat — someone left, or an id not among `members` came (or one not known):
- * only then are `getContext().chat.members` read again and pushed. Every update of a member row sends one too — a read mark,
- * a pin, mute, listen mode — and those change nobody: a 112-person group sent 224 in 38 s (统筹 10-05, 画廊车道 §6).
- * Not read yet (`null`): read.
+ * Whether these changes moved who is in the chat — someone left, or an id not among `members` came (or one not known), or
+ * one of `members` was renamed: only then are `getContext().chat.members` read again and pushed. Every update of a member
+ * row sends one too — a read mark, a pin, mute, listen mode — and those change nobody: a 112-person group sent 224 in 38 s
+ * (统筹 10-05, 画廊车道 §6); a rename of someone not in the chat changes nobody in it either. Not read yet (`null`): read.
  */
 export function rosterMoved(members: readonly { id: string }[] | null, changes: readonly MemberChange[]): boolean {
   if (!members) return true;
   const ids = new Set(members.map((member) => member.id));
-  return changes.some((change) => change.left || !change.memberId || !ids.has(personId(change.memberId)));
+  return changes.some((change) => change.renamed
+    ? !!change.memberId && ids.has(personId(change.memberId))
+    : change.left || !change.memberId || !ids.has(personId(change.memberId)));
 }
 
 /**
@@ -364,6 +390,42 @@ export type AppChat = Pick<ExtensionChat, 'id' | 'name' | 'kind'> & { lastMessag
  * they gave themselves — never the viewer's remark for them, which is the viewer's own, not the App's. Null for a chat
  * with no workspace ('ai').
  */
+/** What the account records of a project group's folders (identity.device_projects, the reader's own machines only). */
+async function projectFoldersOfChat(token: string, viewerId: string, chatId: string): Promise<ExtensionChatFolder[]> {
+  const identity = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
+  const { data, error } = await identity.from('device_projects').select('device_id, folders').eq('user_id', viewerId).eq('chat_id', chatId);
+  if (error) throw new AppFileError('failed', error.message);
+  const rows = (data ?? []) as { device_id: string; folders: { workspace_id: string; kind: string; path: string }[] }[];
+  if (!rows.length) return [];
+  const machines = await identity.from('gugu_devices').select('device_id, label, hostname, status').in('device_id', rows.map((row) => row.device_id));
+  if (machines.error) throw new AppFileError('failed', machines.error.message);
+  const machineOf = new Map(((machines.data ?? []) as { device_id: string; label: string | null; hostname: string | null; status: string }[]).map((device) => [device.device_id, device]));
+  return rows.flatMap((row) => {
+    const machine = machineOf.get(row.device_id);
+    return [...row.folders].sort((a, b) => Number(b.kind === 'root') - Number(a.kind === 'root')).map((folder) => ({
+      workspace: folderWorkspace(row.device_id, folder.workspace_id),
+      path: folder.path,
+      machine: machine?.label || machine?.hostname || row.device_id,
+      online: !!machine && isDeviceOnline(machine.status as Parameters<typeof isDeviceOnline>[0]),
+    }));
+  });
+}
+
+/**
+ * One project folder on one of the reader's machines, as the account records it (the same rows as above): the project it
+ * is in there and its path there (that machine's own path). Null when the account no longer records it.
+ */
+export async function recordedProjectFolder(token: string, viewerId: string, folder: { deviceId: string; workspaceId: string }): Promise<{ projectId: string; path: string } | null> {
+  const identity = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
+  const { data, error } = await identity.from('device_projects').select('local_project_id, folders').eq('user_id', viewerId).eq('device_id', folder.deviceId);
+  if (error) throw new AppFileError('failed', error.message);
+  for (const row of (data ?? []) as { local_project_id: string; folders: { workspace_id: string; path: string }[] }[]) {
+    const found = row.folders.find((each) => each.workspace_id === folder.workspaceId);
+    if (found) return { projectId: row.local_project_id, path: found.path };
+  }
+  return null;
+}
+
 export async function extensionChatOf(
   token: string,
   chatId: string,
@@ -379,7 +441,14 @@ export async function extensionChatOf(
   if (!row) throw new AppFileError('not-found', 'This chat could not be read');
   if (row.kind === 'topic') row = row.source_chat_id ? await read(row.source_chat_id) : null;
   if (!row) throw new AppFileError('not-found', 'This chat could not be read');
-  if (row.kind === 'group') return { id: row.id, name: row.name ?? '', kind: 'group', groupId: row.id };
+  if (row.kind === 'group') {
+    // A chat whose folders cannot be read now is still that chat: its own files must not go with them.
+    const folders = await projectFoldersOfChat(token, viewerId, row.id).catch((error: unknown) => {
+      coreLogger('app-files').warn({ chatId: row.id, error: error instanceof Error ? error.message : String(error) }, 'The folders of a project group could not be read');
+      return [];
+    });
+    return { id: row.id, name: row.name ?? '', kind: 'group', groupId: row.id, ...(folders.length ? { folders } : {}) };
+  }
   if (row.kind === 'dm') {
     const { data, error } = await chatClient(token).from('active_members').select('user_id').eq('chat_id', row.id);
     if (error) throw new AppFileError('failed', error.message);
@@ -451,20 +520,41 @@ export const LIST_PAGE = 1000;
 
 /**
  * Every row a `workspace_list_as` read names, page by page until its `total`: one answer stops at the gateway's row cap,
- * and a list cut there was shown as the whole folder (a 1416-item chat missed its oldest 416, folders among them).
+ * and a list cut there was shown as the whole folder (a 1416-item chat missed its oldest 416, folders among them). The
+ * first page says the total, so the rest are asked at once (a 7,800-item chat was eight reads one after another).
  */
 async function listedRows(token: string, args: Record<string, unknown>): Promise<ItemRow[]> {
-  const rows: ItemRow[] = [];
-  for (;;) {
-    const page = await agentRows(token, 'workspace_list_as', { ...args, p_offset: rows.length, p_limit: LIST_PAGE });
-    rows.push(...page);
-    const said = (page[0] as { total?: unknown } | undefined)?.total;
-    const total = typeof said === 'number' || (typeof said === 'string' && said !== '') ? Number(said) : NaN;
-    if (page.length === 0 || (Number.isFinite(total) ? rows.length >= total : page.length < LIST_PAGE)) {
-      // A file added between two pages moves the last row of the first onto the second.
-      return [...new Map(rows.map((row) => [row.id, row])).values()];
+  const page = (offset: number) => agentRows(token, 'workspace_list_as', { ...args, p_offset: offset, p_limit: LIST_PAGE });
+  const totalOf = (rows: readonly ItemRow[]) => {
+    const said = (rows[0] as { total?: unknown } | undefined)?.total;
+    return typeof said === 'number' || (typeof said === 'string' && said !== '') ? Number(said) : NaN;
+  };
+  const raised = (total: number, rows: readonly ItemRow[]) => {
+    const said = totalOf(rows);
+    return Number.isFinite(said) && !(said <= total) ? said : total;
+  };
+  let last = await page(0);
+  const rows = [...last];
+  // The largest total a page said: files added while the pages are read raise it.
+  let total = totalOf(last);
+  if (Number.isFinite(total) && last.length > 0 && last.length < total) {
+    const step = last.length;
+    const offsets: number[] = [];
+    for (let offset = step; offset < total; offset += step) offsets.push(offset);
+    for (const more of await Promise.all(offsets.map(page))) {
+      rows.push(...more);
+      total = raised(total, more);
+      last = more;
     }
   }
+  // One page at a time from where the rows end, as before: a page that said no total, or files added meanwhile.
+  while (last.length > 0 && (Number.isFinite(total) ? rows.length < total : last.length === LIST_PAGE)) {
+    last = await page(rows.length);
+    rows.push(...last);
+    total = raised(total, last);
+  }
+  // A file added between two pages moves the last row of one onto the next.
+  return [...new Map(rows.map((row) => [row.id, row])).values()];
 }
 
 /** Every row of a chat, newest first, as `actor` (the person, or the agent a program works for) sees them. */
@@ -540,6 +630,20 @@ async function itemById(token: string, itemId: string, actor: string): Promise<I
     throw new AppFileError(codeOf(error), error.message);
   }
   return ((Array.isArray(data) ? data[0] : data) as ItemRow | undefined) ?? null;
+}
+
+/**
+ * A file read by its id as its folder lists it: with how long its cloud copy is kept and the machine that keeps it
+ * (`workspace_list_as` only), so a page that hears it changed need not read its whole list again for that. Read by its
+ * name in its folder; one the list does not name (renamed or moved meanwhile, a folder) stays as it was read.
+ */
+async function asListed(token: string, row: ItemRow, actor: string): Promise<ItemRow> {
+  if (row.kind === 'folder') return row;
+  const found = await agentRows(token, 'workspace_list_as', { p_chat_id: row.chat_id, p_as_user_id: actor, p_folder: row.parent_id ?? '', p_name: row.filename, p_exact: true })
+    .catch(() => []);
+  const listed = found.find((one) => one.id === row.id);
+  // A list that does not say which machine holds it (undefined) leaves that to be resolved, as the row from get does.
+  return listed ? { ...row, expires_at: listed.expires_at ?? null, is_mine: listed.is_mine ?? null, copy_expired_at: listed.copy_expired_at ?? null, host_device_id: listed.host_device_id } : row;
 }
 
 /**
@@ -621,6 +725,22 @@ function insertDocument(
 ): Promise<ItemRow> {
   return agentRow(token, 'workspace_create_document_as', { p_chat_id: doc.chatId, p_as_user_id: actor, p_title: doc.name,
     p_content: doc.content, p_content_type: doc.contentType, p_source_message_ids: doc.sourceMessageIds, p_folder: doc.parentId });
+}
+
+/**
+ * The file at `name` in `folder` (a path, or the top), made by `make` when it is not there. Two making it at once: the folder
+ * names the later one apart (「 (2)」), which goes again, and both answer the first.
+ */
+async function madeOnce(token: string, chatId: string, folder: string | undefined, name: string, actor: string, make: () => Promise<ItemRow>): Promise<ItemRow> {
+  const first = async () => (await itemsByPath(token, chatId, folder ? `${folder}/${name}` : name, actor)).find((row) => row.kind !== 'folder');
+  const found = await first();
+  if (found) return found;
+  const made = await make();
+  if (made.filename === name) return made;
+  await agentRows(token, 'workspace_delete_as', { p_item_id: made.id, p_as_user_id: actor });
+  const row = await first();
+  if (!row) throw new AppFileError('failed', `${name} was made as ${made.filename}, and the one it gave way to is gone`);
+  return row;
 }
 
 /**
@@ -897,7 +1017,7 @@ export function createAppFiles(platform: FilesPlatform) {
     const { token, userId } = await platform.account();
     const rows = (await Promise.all(wanted.map((id) => itemById(token, id, as.asAgent ?? userId)))).filter((row): row is ItemRow => row !== null);
     if (rows.some((row) => row.chat_id !== chatId)) chatId = await resourceChatIdOf(token, chatId, as.asAgent ?? userId);
-    const here = rows.filter((row) => row.chat_id === chatId);
+    const here = await Promise.all(rows.filter((row) => row.chat_id === chatId).map((row) => asListed(token, row, as.asAgent ?? userId)));
     const found = new Set(here.map((row) => row.id));
     return { entries: await listedEntriesOf(token, here, platform, as.asAgent ?? userId), gone: wanted.filter((id) => !found.has(id)) };
   }
@@ -935,6 +1055,16 @@ export function createAppFiles(platform: FilesPlatform) {
     open,
     self,
     read,
+    /** Host-only metadata for a separately authorized, bounded file payload read. */
+    async payloadMetadata(surface: FileSurface, args: { ref: ChatFileRef }) {
+      surface.signal?.throwIfAborted();
+      const account = await platform.account();
+      surface.signal?.throwIfAborted();
+      const row = await readable(surface, account, args.ref, 'opening');
+      surface.signal?.throwIfAborted();
+      return { id: row.id, chat: row.chat_id, name: row.filename, contentType: row.content_type,
+        version: row.version, size: row.size_bytes ?? null };
+    },
     /** Diagnostic only; no bridge capability exposes this counter. */
     readHandleCount: () => [...snapshots.values()].filter(entry => entry.file !== undefined).length,
 
@@ -1041,7 +1171,7 @@ export function createAppFiles(platform: FilesPlatform) {
     /**
      * API 14 `chatFile`: the file an App names for a chat, as a file of it opened with that App — at the top of the chat's
      * folder, made empty for the person the first time (`{}` for JSON, a JSON file holding an object; the App fills it).
-     * Two making it at once: the folder names the later one apart, which goes again, and both open the first.
+     * Two making it at once: both open the first (`madeOnce`).
      */
     async appChatFile(chatId: string, manifest: ExtensionManifest | undefined): Promise<AppOpenWithDetail> {
       const tab = manifest?.contributes.tabs.find((candidate) => candidate.chatFile !== undefined);
@@ -1050,20 +1180,14 @@ export function createAppFiles(platform: FilesPlatform) {
       const candidate = fileOpenersFor(name, [manifest], 'chat').find((opener) => opener.tabKind === `${manifest.id}.${tab.name}`);
       if (!candidate) throw new AppFileError('invalid', `${manifest.id}.${tab.name} does not open ${name} in a chat`);
       const { token, userId } = await platform.account();
-      const first = async () => (await itemsByPath(token, chatId, name, userId)).find((row) => row.kind !== 'folder' && row.parent_id === null);
-      let row = await first();
-      if (!row) {
-        const contentType = contentTypeOf(name);
-        const made = await insertDocument(token, { chatId, name, contentType, content: /json/i.test(contentType) ? '{}' : '', sourceMessageIds: [], parentId: null }, userId);
-        if (made.filename !== name) await agentRows(token, 'workspace_delete_as', { p_item_id: made.id, p_as_user_id: userId });
-        row = made.filename === name ? made : await first();
-        if (!row) throw new AppFileError('failed', `${name} was made as ${made.filename}, and the one it gave way to is gone`);
-      }
+      const contentType = contentTypeOf(name);
+      const row = await madeOnce(token, chatId, undefined, name, userId, () =>
+        insertDocument(token, { chatId, name, contentType, content: /json/i.test(contentType) ? '{}' : '', sourceMessageIds: [], parentId: null }, userId));
       return { ...(await this.groupFile(chatId, row.id)), choice: { kind: 'one', candidate } };
     },
 
     /** `folder` (子文件夹): the folder it goes in, made all the way down when it is not there; not given, the top. */
-    async create(chatId: string, args: { name: string; content: string; contentType?: string; sourceMessageIds?: unknown; folder?: unknown },
+    async create(chatId: string, args: { name: string; content: string; contentType?: string; sourceMessageIds?: unknown; folder?: unknown; ifExists?: unknown },
       as: { asAgent?: string | null; extensionId?: string } = {}): Promise<AppFileEntry> {
       const { token, userId } = await platform.account();
       const name = String(args.name ?? '').trim();
@@ -1085,8 +1209,9 @@ export function createAppFiles(platform: FilesPlatform) {
         }
       }
       const actor = as.asAgent ?? userId;
-      const parentId = await folderIdFor(token, chatId, folder, actor);
-      return entryOne(token, await insertDocument(token, { chatId, name, contentType, content, sourceMessageIds, parentId }, actor), actor);
+      const make = async () => insertDocument(token, { chatId, name, contentType, content, sourceMessageIds, parentId: await folderIdFor(token, chatId, folder, actor) }, actor);
+      if (args.ifExists !== undefined && args.ifExists !== 'use') throw new AppFileError('invalid', "files.create: ifExists is 'use' or not given");
+      return entryOne(token, args.ifExists === 'use' ? await madeOnce(token, chatId, folder, name, actor, make) : await make(), actor);
     },
 
     /** 子文件夹: a chat's folder at `path`, made all the way down — one already there is answered as it is. */
@@ -1389,6 +1514,81 @@ export function createAppFiles(platform: FilesPlatform) {
         return { kind: 'offline', machine: revision.host_label?.trim() ?? '', deviceId: revision.host_device_id ?? '' };
       }
       return { kind: 'file', file, contentType: revision.content_type };
+    },
+
+    /**
+     * #1927 A file by its path from the top of one chat's folder, and its text, as the signed-in person — for the host's
+     * conversation binding only (`gugu.bindings.read`), which named the chat itself. Each outcome is said: no file there
+     * (`missing`), there without bytes yet (`unprepared`), not readable now (`unavailable`); a refusal of the folder's door
+     * (not a member any more) throws as it does. The entry goes out whole; the caller keeps what the App may see.
+     */
+    async readAtPath(chatId: string, filePath: string, maxBytes: number): Promise<PathText> {
+      const { token, userId } = await platform.account();
+      let rows: ItemRow[];
+      try {
+        rows = await itemsByPath(token, chatId, filePath, userId);
+      } catch (error) {
+        if (error instanceof AppFileError && error.code === 'failed') return { state: 'unavailable' };
+        throw error;
+      }
+      const found = rows.filter((row) => row.kind !== 'folder');
+      if (found.length === 0) {
+        if (rows.length > 0) throw notAFile(rows[0]!);
+        return { state: 'missing' };
+      }
+      if (found.length > 1) throw new AppFileError('ambiguous', `More than one file is at ${filePath}`);
+      const row = found[0]!;
+      // The door answers this chat's rows only; one of another chat is not this one's file, whatever answered it.
+      if (row.chat_id !== chatId) return { state: 'missing' };
+      const entry = entryOf(row, undefined);
+      // Over the limit: its size only, as `files.readText` says it (`binary` is not known without reading it).
+      const tooLarge = (size: number): PathText => ({ state: 'ready', entry: { ...entry, size }, content: '', truncated: true, totalSize: size });
+      const ready = (text: { text: string; exact?: boolean } | null, size: number): PathText => size > maxBytes ? tooLarge(size)
+        : { state: 'ready', entry: { ...entry, size }, content: text?.text ?? '', ...(text ? { exact: text.exact ?? true } : { binary: true as const }), truncated: false, totalSize: size };
+      const refused = () => new AppFileError('denied', 'This account may not read this file');
+      if (row.kind !== 'file') {
+        // A live document: its text as the file service has it now, as a download's and an agent's read are.
+        try {
+          const text = await readDocumentText({ filesUrl: platform.filesUrl, fetch }, token, row.id, null);
+          return ready({ text }, new TextEncoder().encode(text).byteLength);
+        } catch (error) {
+          if (error instanceof ChatFolderReadError && error.status === 404) return { state: 'missing' };
+          // The file service refusing this account is a refusal, never a read to try again.
+          if (error instanceof ChatFolderReadError && (error.status === 401 || error.status === 403)) throw refused();
+          return { state: 'unavailable' };
+        }
+      }
+      if ((row.size_bytes ?? 0) > maxBytes) return tooLarge(row.size_bytes ?? 0);
+      let file: ResolvedFile | null | undefined;
+      try {
+        file = await platform.resolveFile?.({ id: row.id }, null, {});
+      } catch (error) {
+        if (error instanceof AppFileError && error.code !== 'failed') throw error;
+        if (error instanceof FileReadRevokedError && error.reason === 'access') throw refused();
+        return { state: 'unavailable' };
+      }
+      if (!file) return { state: 'unavailable' };
+      // No bytes in the store for it yet (an upload not finished); deleted or a temporary copy cleared: no content any more.
+      if (file.status === 'missing') return { state: 'unprepared' };
+      if (file.status !== 'ready') return { state: 'missing' };
+      try {
+        if (file.revision.chat_id && file.revision.chat_id !== chatId) return { state: 'missing' };
+        if (file.revision.source === 'local' && file.revision.host_online === false) return { state: 'unavailable' };
+        // The row may not say its size: the revision does, before a byte is read.
+        if (file.revision.size_bytes > maxBytes) return tooLarge(file.revision.size_bytes);
+        const bytes = new Uint8Array(await (await fileBlob(file)).arrayBuffer());
+        return ready(workspaceFileText(row.filename, bytes), bytes.byteLength);
+      } catch (error) {
+        // Gone between asking and reading: as the metadata would have said. Access withdrawn meanwhile: refused.
+        if (error instanceof MissingFileObjectError) return { state: 'unprepared' };
+        if (error instanceof FileReadRevokedError) {
+          if (error.reason === 'access' || error.reason === 'revision') throw new AppFileError('denied', 'Access to this file changed while it was read');
+          return { state: 'missing' };
+        }
+        return { state: 'unavailable' };
+      } finally {
+        await file.dispose();
+      }
     },
 
     async downloadSource(surface: FileSurface, args: { ref: ChatFileRef }): Promise<DownloadSource> {

@@ -7,14 +7,14 @@ import { flattenTier as flattenTierWithViewports } from './flatten';
 const flattenTier = (...args: Parameters<typeof flattenTierWithViewports>) => flattenTierWithViewports(...args).flatMap(row => row.children ?? [row]);
 import { conversationOutput } from './conversation-process';
 import { conversationBackgroundOwner } from './conversation-background';
-import { planConversationSegments } from './conversation-segments';
+import { joinContinuedTurns, planConversationSegments, withContinuedActiveTurn } from './conversation-segments';
 import { messageQuoteLink, messageQuoteText } from '@gugu/core/shared/ui/messageQuote';
 
 const message = (id: string, role: 'user' | 'assistant', at?: number): ChatMessage => ({ kind: 'message', id, seq: 0, role, text: id, ...(at === undefined ? {} : { at }) });
 const call = (id: string): ChatItem => ({ kind: 'execute-tool-call', id, toolCallId: id, seq: 0, title: id, status: 'done' });
 const notice = (id: string, at: number): ChatItem => ({ kind: 'subagent-done-tool-call', id, toolCallId: id, seq: 0, title: id, status: 'done', name: id, agentId: id, launchToolCallId: id, outcome: 'completed', at });
 const turn = (items: ChatItem[]): TranscriptTurn => ({ id: 't', seq: 0, initiator: 'user', startedAt: 1000, endedAt: 9000, items: items as TranscriptTurn['items'] });
-const segmenters = Object.fromEntries(['day-separator', 'message', 'turn-process', 'tool-run', 'execute-tool-call', 'subagent-done-tool-call', 'background-command-done-tool-call', 'mcp-tool-call', 'agent-send'].map(kind => [kind, {
+const segmenters = Object.fromEntries(['day-separator', 'message', 'turn-process', 'tool-run', 'execute-tool-call', 'subagent-done-tool-call', 'background-command-done-tool-call', 'mcp-tool-call', 'agent-send', 'compaction'].map(kind => [kind, {
   kind, segment: item => [unit(item.kind, item, item, { key: 'self' })],
 } satisfies ItemSegmenter]));
 const context = (active: boolean, toggles: string[] = []): SegmentCtx => ({ caches: {}, expanded: () => false, active,
@@ -95,19 +95,23 @@ describe('replay conversation segment boundaries', () => {
     expect(rows.some(row => row.kind === 'background-tasks')).toBe(false);
   });
 
-  it('gives a notification-woken zero-tool reply its own process line and background owner', () => {
+  // #2587 (owner 2026-11-13):「三类消息之前是会创建新的气泡段落，现在是接续之前气泡段落」.
+  it('continues the segment across a notification: one process line, the earlier words fold, background owner stays', () => {
     const record = turn([message('u', 'user', 1000), message('before', 'assistant', 2000), notice('done', 5000), message('woken', 'assistant', 6000)]);
-    const rows = flattenTier([record], context(false), segmenters);
-    expect(rows.filter(row => (row.data as ChatMessage).conversationPart === 'head').map(row => row.itemId)).toEqual(['t:process:head', 't:process@done:head']);
-    const head = rows.find(row => row.itemId === 't:process@done:head')!.data as ChatMessage;
-    expect(head.conversationProcess).toMatchObject({ startedAt: 5000, endedAt: 9000, steps: 0 });
+    const rows = flattenTier([record], context(false, ['t:process']), segmenters);
+    expect(rows.filter(row => (row.data as ChatMessage).conversationPart === 'head').map(row => row.itemId)).toEqual(['t:process:head']);
+    const head = rows.find(row => row.itemId === 't:process:head')!.data as ChatMessage;
+    expect(head.conversationProcess).toMatchObject({ startedAt: 1000, endedAt: 9000, steps: 0 });
+    expect((rows.find(row => row.itemId === 'before')!.data as ChatMessage).conversationNarration).toBe(true);
+    expect(rows.find(row => row.itemId === 't:run:done')!.data).toMatchObject({ kind: 'tool-run', label: '1 subagent finished' });
+    expect((rows.find(row => row.itemId === 'woken')!.data as ChatMessage).conversationPart).toBe('body');
     expect(conversationBackgroundOwner(rows)).toBe(head.id);
     expect(rows.some(row => row.kind === 'background-tasks')).toBe(false);
   });
 
-  it('keeps a notification between the work before it and the following reply', () => {
+  it('folds a notification into the running segment between the work before it and the following reply', () => {
     const blocks = planConversationSegments(turn([message('u', 'user'), call('one'), notice('done', 3000), message('reply', 'assistant')]), true);
-    expect(blocks.map(block => block.kind === 'input' ? block.item.id : block.items.map(item => item.id))).toEqual(['u', ['one'], 'done', ['reply']]);
+    expect(blocks.map(block => block.kind === 'input' ? block.item.id : block.items.map(item => item.id))).toEqual(['u', ['one', 'done', 'reply']]);
   });
 
   it('seals a successful projected send and keeps later work in another segment', () => {
@@ -128,11 +132,11 @@ describe('replay conversation segment boundaries', () => {
     expect(closed[0]).toMatchObject({ startedAt: 1000 });
   });
 
-  it('keeps an active process after a standalone completion without turning it into a quote', () => {
+  it('keeps an active process after a lone completion, the completion folded into it, without a quote', () => {
     const source = notice('wake', 5000);
     const rows = flattenTier([turn([source])], context(true), segmenters);
-    expect(rows.map(row => row.itemId)).toEqual(['t:day', 'wake', 't:process@wake']);
-    expect(rows.at(-1)?.data).toMatchObject({ kind: 'turn-process', live: true, placeholder: true, startedAt: 1000 });
+    expect(rows.map(row => row.itemId)).toEqual(['t:day', 't:process', 't:run:wake']);
+    expect(rows[1]?.data).toMatchObject({ kind: 'turn-process', live: true, startedAt: 1000 });
     expect(rows.some(row => (row.data as ChatMessage).conversationReply)).toBe(false);
   });
 
@@ -144,12 +148,13 @@ describe('replay conversation segment boundaries', () => {
       for (const active of [false, true]) {
         for (const at of [undefined, 5000]) {
           const record = turn([message('input', 'user'), { ...source, at }, message('reply', 'assistant')]);
+          // The segment opened with the input; the completion inside it brings no clock of its own (#2587).
           const [segment] = planConversationSegments(record, active).filter(block => block.kind === 'segment');
-          expect(segment.startedAt).toBe(active ? 1000 : at);
+          expect(segment.startedAt).toBe(1000);
           const rows = flattenTier([record], context(active), segmenters);
           const head = rows.find(row => (row.data as ChatMessage).conversationPart === 'head')!.data as ChatMessage;
-          expect(head.conversationProcess).toMatchObject({ steps: 0, empty: true });
-          expect(head.conversationProcess?.startedAt).toBe(active ? 1000 : at);
+          expect(head.conversationProcess).toMatchObject({ steps: 0 });
+          expect(head.conversationProcess?.startedAt).toBe(1000);
         }
       }
     },
@@ -194,30 +199,33 @@ describe('replay conversation segment boundaries', () => {
     expect(old.conversationProcess).not.toHaveProperty('trigger');
   });
 
-  it('keeps a completion without a summary as its own row, without quoting it', () => {
+  it('folds a completion without a summary into the process, without quoting it', () => {
     const record = turn([message('before', 'assistant', 2000), notice('wake', 5000), message('after', 'assistant', 6000)]);
     const rows = flattenTier([record], context(true), segmenters);
-    const head = rows.find(row => row.itemId === 't:process@wake:head')!.data as ChatMessage;
+    expect(rows.filter(row => (row.data as ChatMessage).conversationPart === 'head').map(row => row.itemId)).toEqual(['t:process:head']);
+    const head = rows.find(row => row.itemId === 't:process:head')!.data as ChatMessage;
     expect(head.conversationReply).toBeUndefined();
-    expect(rows.filter(row => row.itemId === 'wake')).toHaveLength(1);
-    expect(rows.findIndex(row => row.itemId === 'wake')).toBeLessThan(rows.findIndex(row => row.itemId === head.id));
+    expect(rows.some(row => row.itemId === 'wake')).toBe(false);
+    expect(rows.find(row => row.itemId === 't:run:wake')?.data).toMatchObject({ kind: 'tool-run' });
     expect(head.conversationProcess).not.toHaveProperty('trigger');
   });
 
   it.each([
     ['command', 'completed'], ['command', 'failed'], ['command', 'stopped'],
     ['subagent', 'completed'], ['subagent', 'failed'], ['subagent', 'stopped'],
-  ] as const)('preserves the %s %s event independently of the following reply', (kind, outcome) => {
+  ] as const)('folds the %s %s event into the process above the following reply', (kind, outcome) => {
     const base = { id: 'wake', toolCallId: 'wake', seq: 1, title: 'cd /tmp/raw-command && export PATH=fixture; echo RAW-WAKE-991',
       name: 'RAW-WAKE-991', status: 'done' as const, launchToolCallId: 'launch', outcome, at: 5000 };
     const source: ChatItem = kind === 'command' ? { ...base, kind: 'background-command-done-tool-call' }
       : { ...base, kind: 'subagent-done-tool-call', agentId: 'child' };
     for (const active of [false, true]) {
-      const rows = flattenTier([turn([source, message('after', 'assistant', 6000)])], context(active), segmenters);
+      // Expanded down to the step (a live process is open by default): the event itself is still there, unchanged.
+      const rows = flattenTier([turn([source, message('after', 'assistant', 6000)])], context(active, active ? ['t:run:wake'] : ['t:process', 't:run:wake']), segmenters);
       const head = rows.find(row => (row.data as ChatMessage).conversationPart === 'head')!.data as ChatMessage;
       expect(head.conversationReply).toBeUndefined();
       expect(rows.find(row => row.itemId === 'wake')?.data).toEqual(source);
-      expect(rows.findIndex(row => row.itemId === 'wake')).toBeLessThan(rows.findIndex(row => row.itemId === head.id));
+      expect(rows.findIndex(row => row.itemId === head.id)).toBeLessThan(rows.findIndex(row => row.itemId === 'wake'));
+      expect(rows.findIndex(row => row.itemId === 'wake')).toBeLessThan(rows.findIndex(row => row.itemId === 'after'));
     }
   });
 
@@ -267,5 +275,103 @@ describe('replay conversation segment boundaries', () => {
     expect(rows.find(row => row.itemId === 't:run:pending')?.data).toMatchObject({ kind: 'tool-run', stepCount: 1, label: 'Called 1 MCP tool' });
     expect(rows.some(row => row.kind === 'mcp-tool-call')).toBe(false);
     expect(rows.filter(row => (row.data as ChatMessage).conversationPart === 'body').map(row => row.itemId)).toEqual(['ready']);
+  });
+});
+
+// #2587, owner 2026-11-13:「三类消息之前是会创建新的气泡段落，现在是接续之前气泡段落」
+// 「但是比如 A2A 消息或者用户消息造成的分割，还是会分割消息气泡」
+describe('subagent / background command completions and compaction continue the segment (#2587)', () => {
+  const DONE = { kind: 'done' } as TranscriptTurn['outcome'];
+  const answered: TranscriptTurn = { id: 'p', seq: 0, initiator: 'user', startedAt: 1000, endedAt: 4000, outcome: DONE,
+    items: [message('u', 'user', 1000), call('c1'), message('answer', 'assistant', 3000)] as TranscriptTurn['items'] };
+  const woken = (over: Partial<TranscriptTurn> = {}): TranscriptTurn => ({ id: 'w', seq: 1, initiator: 'agent', trigger: { kind: 'agent' },
+    startedAt: 60000, endedAt: 65000, outcome: DONE, items: [notice('n1', 60000), call('c2'), message('later', 'assistant', 64000)] as TranscriptTurn['items'], ...over });
+  const heads = (rows: ReturnType<typeof flattenTier>) => rows.filter(row => (row.data as ChatMessage).conversationPart === 'head');
+  const bodies = (rows: ReturnType<typeof flattenTier>) => rows.filter(row => (row.data as ChatMessage).conversationPart === 'body').map(row => row.itemId);
+  const compaction = (id: string, at: number, status: 'completed' | 'failed' = 'completed'): ChatItem =>
+    ({ kind: 'compaction', id, seq: 0, compactionId: id, status, summary: '', startedAt: at } as unknown as ChatItem);
+
+  it('joins an agent turn woken by a completion onto the answered turn: one line, idle time excluded, latest answer is the bubble', () => {
+    // Opened after the woken run is over: the finished line's own key (see the live case below).
+    const rows = flattenTier([answered, woken()], context(false, ['p:process~n1:ended']), segmenters);
+    expect(heads(rows).map(row => row.itemId)).toEqual(['p:process:head']);
+    // 3 s before the wake + 5 s after it; the 56 s it sat idle in between is not work.
+    expect((heads(rows)[0]!.data as ChatMessage).conversationProcess).toMatchObject({ startedAt: 1000, endedAt: 65000, idleMs: 56000, steps: 2 });
+    expect((rows.find(row => row.itemId === 'answer')!.data as ChatMessage).conversationNarration).toBe(true);
+    expect(bodies(rows)).toEqual(['later']);
+    expect(rows.some(row => row.itemId === 'n1')).toBe(false);
+  });
+
+  it('shows the joined turn live on the process line already on screen while the woken turn runs', () => {
+    const live = { ...woken(), endedAt: undefined, outcome: undefined };
+    const projected = withContinuedActiveTurn({ committed: [answered], active: live });
+    expect(projected.committed).toEqual([]);
+    expect(projected.active?.id).toBe('p');
+    const rows = flattenTier([projected.active!], context(true), segmenters);
+    expect(heads(rows).map(row => row.itemId)).toEqual(['p:process:head']);
+    // Opened and closed under a key of its own while it runs again, and under a fresh one once the run is over.
+    expect((heads(rows)[0]!.data as ChatMessage).conversationProcess).toMatchObject({ live: true, startedAt: 1000, idleMs: 56000, toggleId: 'p:process~n1' });
+    expect(bodies(rows)).toEqual(['later']);
+    const settled = flattenTier([answered, woken()], context(false), segmenters);
+    expect((heads(settled)[0]!.data as ChatMessage).conversationProcess?.toggleId).toBe('p:process~n1:ended');
+  });
+
+  it('gives a whole run of continued turns back to the live tier, and nothing when the last turn did not end cleanly', () => {
+    const second = woken({ id: 'w2', seq: 2, startedAt: 70000, endedAt: 71000, items: [notice('n2', 70000)] as TranscriptTurn['items'] });
+    const live = { ...woken({ id: 'w3', seq: 3, startedAt: 80000 }), endedAt: undefined, outcome: undefined };
+    expect(withContinuedActiveTurn({ committed: [answered, woken(), second], active: live }).committed).toEqual([]);
+    const stopped = { ...answered, outcome: { kind: 'cancelled', reason: 'cancelled' } as TranscriptTurn['outcome'] };
+    expect(withContinuedActiveTurn({ committed: [stopped], active: live }).committed).toEqual([stopped]);
+    expect(joinContinuedTurns([stopped, woken()])).toHaveLength(2);
+  });
+
+  it.each([
+    ['a user message', { initiator: 'user' as const, trigger: { kind: 'owner' as const } }],
+    ['an A2A / group delivery', { trigger: { kind: 'delivery' as const, chatIds: ['206258'] } }],
+    ['a schedule', { trigger: { kind: 'schedule' as const } }],
+  ])('still splits on a turn opened by %s', (_name, over) => {
+    const rows = flattenTier([answered, woken(over)], context(false), segmenters);
+    expect(heads(rows).map(row => row.itemId)).toEqual(['p:process:head', 'w:process:head']);
+    expect(bodies(rows)).toEqual(['answer', 'later']);
+  });
+
+  // A task that finished while the answered turn was still going is recorded in that turn; the turn the agent opens
+  // to answer it starts with its own work (mac1 real window 2026-11-13: a 3 s command inside a 12 s turn).
+  it('joins a wake whose completion landed in the turn before; an owner notification or nothing finished still splits', () => {
+    const midRun: TranscriptTurn = { ...answered, items: [message('u', 'user', 1000), call('c1'), notice('n0', 2000),
+      message('answer', 'assistant', 3000)] as TranscriptTurn['items'] };
+    const wake = woken({ items: [call('c2'), message('later', 'assistant', 64000)] as TranscriptTurn['items'] });
+    const rows = flattenTier([midRun, wake], context(false), segmenters);
+    expect(heads(rows).map(row => row.itemId)).toEqual(['p:process:head']);
+    expect(bodies(rows)).toEqual(['later']);
+    const live = { ...wake, endedAt: undefined, outcome: undefined };
+    expect(withContinuedActiveTurn({ committed: [midRun], active: live }).active?.id).toBe('p');
+
+    expect(joinContinuedTurns([answered, wake])).toHaveLength(2);
+    const notification = woken({ items: [{ kind: 'message', id: 'note', seq: 0, role: 'assistant', text: 'Done.', at: 64000,
+      ownerNotification: { requestId: 'r', requestHash: 'h' } }] as TranscriptTurn['items'] });
+    expect(joinContinuedTurns([midRun, notification])).toHaveLength(2);
+    expect(joinContinuedTurns([midRun, woken({ ...wake, trigger: { kind: 'delivery', chatIds: ['206258'] } })])).toHaveLength(2);
+  });
+
+  it('still splits on a user message inside the turn', () => {
+    const record = turn([message('u', 'user', 1000), call('one'), message('first', 'assistant', 2000), notice('n', 3000),
+      message('steer', 'user', 4000), call('two'), message('second', 'assistant', 6000)]);
+    const rows = flattenTier([record], context(false), segmenters);
+    expect(heads(rows)).toHaveLength(2);
+    expect(bodies(rows)).toEqual(['first', 'second']);
+  });
+
+  it('folds a mid-run compaction into the process line and says so; a failed one keeps its own row', () => {
+    const record = turn([message('u', 'user', 1000), call('c1'), message('mid', 'assistant', 2000), compaction('cp', 4000), call('c2'), message('end', 'assistant', 6000)]);
+    const rows = flattenTier([record], context(false, ['t:process']), segmenters);
+    expect(heads(rows)).toHaveLength(1);
+    expect(bodies(rows)).toEqual(['end']);
+    expect(rows.some(row => row.itemId === 'cp')).toBe(false);
+    expect(rows.find(row => row.itemId === 't:run:cp')?.data).toMatchObject({ label: 'Ran 1 shell command, compacted the context 1 time' });
+    const failed = turn([message('u', 'user', 1000), call('c1'), message('mid', 'assistant', 2000), compaction('cp', 4000, 'failed'), call('c2'), message('end', 'assistant', 6000)]);
+    const failedRows = flattenTier([failed], context(false), segmenters);
+    expect(heads(failedRows)).toHaveLength(2);
+    expect(failedRows.some(row => row.itemId === 'cp')).toBe(true);
   });
 });

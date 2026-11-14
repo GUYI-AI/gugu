@@ -175,11 +175,8 @@ describe('ProjectSessionsStore session lifecycle', () => {
   });
 
   // @@@5173 引擎此刻起不来 ⇒ 这一轮**什么都没落库**(闸在事务之前就返回了)。于是这条失败
-  // 既没有可留的侧栏行,也不该在 composer 下面挂一条常驻红字 —— owner 定的形态是右下角一条
-  // 瞬时通知(和「脚本失败」同一条 toast 通道)。这里守两件事:话说出来了,行没留下。
-  // ⚠️ 断言只比骨架:文案 owner 要雕琢,钉死原文这条用例会跟着文案红;判的是它成了句人话 ——
-  //    ❌ 不是 i18n 键名(缺键时 i18next 原样吐键),❌ 也不是 `harness-unavailable` 这种诊断串。
-  it('speaks an engine-unavailable failure through the toast channel and leaves no session row', async () => {
+  // The composer owns the notice; the typed failure must not leave an optimistic row.
+  it('returns a typed engine failure to the composer without a second toast or a session row', async () => {
     const manager = makeSessionManager();
     mocks.createAndProvisionSession.mockResolvedValue({ stage: 'create', result: {
       success: false,
@@ -204,11 +201,7 @@ describe('ProjectSessionsStore session lifecycle', () => {
       } as never)
     ).rejects.toThrow(/harness-unavailable/);
 
-    expect(toast.error).toHaveBeenCalledTimes(1);
-    const said = vi.mocked(toast.error).mock.calls[0]?.[0];
-    expect(typeof said).toBe('string');
-    expect(said as string).not.toContain('taskError.');
-    expect(said as string).not.toContain('harness-unavailable');
+    expect(toast.error).not.toHaveBeenCalled();
     // 侧栏那条乐观行必须被收回 —— 留着它就是本 issue 要消灭的「还得用户自己去删的东西」。
     expect(manager.sessions.has('session-blocked')).toBe(false);
 
@@ -281,6 +274,29 @@ describe('ProjectSessionsStore session lifecycle', () => {
 
     const optimistic = mocks.sessionAcquire.mock.calls[0]?.[2]?.[0];
     expect(optimistic).toEqual(expect.objectContaining({ effort: 'high' }));
+
+    manager.dispose();
+  });
+
+  // #2599 the optimistic object stays the session's data (the host's later session:created is ignored), so it must
+  // already say where the agent lives — else an agent just created in a group shows in no group until a restart.
+  it('says where an agent created in a group lives before the host answers, and keeps it', async () => {
+    const manager = makeSessionManager();
+    const create = (id: string, extra: object) =>
+      manager.createSession({
+        projectId: 'project-1',
+        sessionConfig: { version: '1', name: id, initialSession: { id, provider: 'claude', type: 'acp', initialQueue: [{ text: 'hi' }] } },
+        workspaceConfig: { workspace: { kind: 'worktree' } },
+        ...extra,
+      } as never);
+
+    await create('born-in-group', { birthGroup: { chatId: 'group-1', asTask: true } });
+    await create('from-nowhere', {});
+
+    expect(manager.sessions.get('born-in-group')?.data.bornInChatId).toBe('group-1');
+    expect(manager.sessions.get('from-nowhere')?.data.bornInChatId).toBeNull();
+    manager.acceptCreatedSession(makeSession({ id: 'born-in-group', projectId: 'project-1', bornInChatId: 'group-1' }));
+    expect(manager.sessions.get('born-in-group')?.data.bornInChatId).toBe('group-1');
 
     manager.dispose();
   });

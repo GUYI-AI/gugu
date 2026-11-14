@@ -1,3 +1,4 @@
+import { resolveSessionPermissionMode } from '@gugu/session-core/acp';
 import { randomUUID } from 'node:crypto';
 import type { Dirent } from 'node:fs';
 import { open, readdir, realpath, stat, type FileHandle } from 'node:fs/promises';
@@ -275,7 +276,7 @@ async function captureCodexForks(
           runtime: 'pty',
           origin: { kind: 'fork', forkedFrom: { sessionId: parent.id } },
           // 分叉照抄源会话的权限档、模型和推理档(同 fork-session.ts):缺了档位,只读的源会被补成「编辑」。
-          permissionMode: parentConfig?.permissionMode,
+          permissionMode: resolveSessionPermissionMode(parentConfig ?? {}),
           model: parentConfig?.model,
           effort: parentConfig?.effort,
           claimsFirstSpawn: false,
@@ -645,7 +646,7 @@ export async function captureExternalForks(projectId: string, sessionId: string)
           runtime: 'pty',
           origin: { kind: 'fork', forkedFrom: { sessionId: parent.sessionId } },
           // 分叉照抄源会话的权限档(同 fork-session.ts):缺了它,只读的源会被补成「编辑」。
-          permissionMode: parentConfig?.permissionMode,
+          permissionMode: resolveSessionPermissionMode(parentConfig ?? {}),
           model: parentConfig?.model,
           claimsFirstSpawn: false,
         }),

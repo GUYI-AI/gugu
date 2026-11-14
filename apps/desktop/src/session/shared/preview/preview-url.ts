@@ -88,7 +88,7 @@ export function previewRootFor(
   documentPath: string
 ): PreviewRoot {
   const doc = splitAbsolutePath(documentPath);
-  const root = workspacePath ? splitAbsolutePath(workspacePath.replace(/\/+$/, '')) : null;
+  const root = workspacePath ? splitAbsolutePath(workspacePath) : null;
   if (!doc || !root) return { kind: 'machine' };
   return isUnder(doc, root) ? { kind: 'workspace', prefix: root.prefix, segments: root.segments } : { kind: 'machine' };
 }

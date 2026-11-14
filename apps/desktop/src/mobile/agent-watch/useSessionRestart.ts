@@ -5,6 +5,7 @@ import { canStartFreshSession } from '@/session/shared/core/sessions/session-rec
 import { sessionInputBubbles } from '@/lib/sessionInputOutbox'
 import { messageForUser } from '@/lib/userFacingError'
 import { machineRpc } from './sessionpage-rpc'
+import { recoverTimelineRead } from './timeline-read-recovery'
 
 type RestartAttempt = { key: string; afterVersion: number }
 
@@ -20,6 +21,7 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
   ready.current = onReady
   const inFlight = useRef<RestartAttempt | null>(null)
   const observed = useRef<RestartAttempt | null>(null)
+  const restarted = useRef<RestartAttempt | null>(null)
   const baseline = useRef<{ key: string; version: number } | null>(null)
   const [eligible, setEligible] = useState<string | null>(null)
   const [attempt, setAttempt] = useState<RestartAttempt | null>(null)
@@ -43,10 +45,11 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
   useEffect(() => {
     if (attempt?.key !== key || !online) return
     let active = true
+    const recoveryAbort = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     const poll = async () => {
       try {
-        const next = await machineRpc(deviceId, local).sessions.lifeView(sessionId)
+        const next = await recoverTimelineRead(() => machineRpc(deviceId, local).sessions.lifeView(sessionId), recoveryAbort.signal)
         if (!active) return
         if (next.version > attempt.afterVersion) {
           observed.current = attempt
@@ -58,6 +61,12 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
             return
           }
           if (next.kind === 'dormant' && next.hold !== null) { setAttempt(null); return }
+          // A session whose first turn ran restarts with nothing to run: resting with nothing pending settles it.
+          if (next.kind === 'dormant' && !next.pending.count && restarted.current === attempt) {
+            try { await ready.current() } catch (cause) { if (active) setError({ key, message: messageForUser(cause) }) }
+            if (active) setAttempt(null)
+            return
+          }
         }
       } catch (cause) {
         if (!active) return
@@ -66,7 +75,7 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
       if (active) timer = setTimeout(() => { void poll() }, 500)
     }
     void poll()
-    return () => { active = false; clearTimeout(timer) }
+    return () => { active = false; recoveryAbort.abort(); clearTimeout(timer) }
   }, [attempt, key, deviceId, sessionId, online, local])
 
   const start = async (fresh: boolean) => {
@@ -78,8 +87,10 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
     setBusy(key); setError(null); setView(null)
     try {
       const host = machineRpc(deviceId, local)
-      if (fresh) await host.sessions.restartSession(projectId, sessionId)
-      else await host.sessions.lifeStart(sessionId)
+      if (fresh) {
+        await host.sessions.restartSession(projectId, sessionId)
+        restarted.current = request
+      } else await host.sessions.lifeStart(sessionId)
     } catch (cause) {
       // Once the host has progressed, its lifecycle settles this attempt even if the RPC acknowledgement is lost.
       if (current.current === key && inFlight.current === request && observed.current !== request) {

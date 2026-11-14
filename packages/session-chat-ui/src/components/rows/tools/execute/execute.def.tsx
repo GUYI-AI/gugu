@@ -3,8 +3,6 @@ import { ROW_H } from '@session-chat/components/engine/row-metrics';
 import { CollapseHeader } from '@session-chat/components/primitives/CollapseHeader';
 import type { MeasureCtx, RenderCtx } from '@session-chat/core/define';
 import { defineUnit } from '@session-chat/core/units';
-import { pxTokens } from '@session-chat/styles/px-tokens';
-import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { Show, createMemo } from 'solid-js';
 import type { ChatExecute } from '@session-chat/model';
 import { ExecuteBody } from './Execute';
@@ -12,12 +10,10 @@ import { ToolPayloadPanel } from '../tool/Tool';
 import { toolPayloadFor } from '../tool/tool.def';
 import { hasToolPayload } from '../tool/tool.layout';
 import {
-  executeCardVars,
   executeCommandChip,
   executeExitStatus,
   executeExitStatusFailed,
   executeRoot,
-  type ExecuteStyleVars,
 } from './execute.css';
 import { useChatTranslator } from '@session-chat/localization';
 import {
@@ -155,10 +151,8 @@ function ExecuteUnitRender(props: { data: ChatExecute; ctx: RenderCtx; vars: Exe
     executeHidesContent(lines(), codeLineH(), props.vars.collapsedMaxLines) || hasToolPayload(props.data),
   );
 
-  const styleVars = (): ExecuteStyleVars => ({ height: totalH() });
-
   return (
-    <div class={executeRoot} style={assignInlineVars(executeCardVars, pxTokens(styleVars()))}>
+    <div class={executeRoot} style={{ height: `${totalH()}px` }}>
       <CollapseHeader
         id={props.data.id}
         collapsible={collapsible()}

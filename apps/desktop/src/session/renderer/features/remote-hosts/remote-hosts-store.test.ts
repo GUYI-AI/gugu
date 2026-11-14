@@ -11,6 +11,10 @@ import {
   remoteSessionKey,
 } from './remote-hosts-store';
 
+// 账号上的项目(accountProjectsStore 的来源):各用例给定那一份。
+const accountList = vi.hoisted(() => ({ projects: [] as Array<{ chatId: string; name: string; archived: boolean; bindings: Array<{ deviceId: string; localProjectId: string }> }> }));
+vi.mock('@/lib/deviceProjects', () => ({ listMyAccountProjects: async () => accountList.projects, listMyDeviceProjects: async () => ({}) }));
+
 const device = (overrides: Partial<RemoteHostDevice> = {}): RemoteHostDevice => ({
   id: 'dev-1',
   label: 'Linux 3',
@@ -234,10 +238,15 @@ describe('没连着的机器照账号上记着的那份', () => {
   it('projects a legacy assistant host as Tasks by identity, including late identity and detached projects', async () => {
     const { appState, sidebarStore } = await import('@renderer/lib/stores/app-state');
     const { isWorkspaceProject } = await import('@renderer/features/sessions/session-home-project-constants');
+    const { accountProjectsStore } = await import('@renderer/features/projects/stores/account-projects-store');
     const store = new RemoteHostsStore();
-    store.start();
     const legacy = record({ localProjectId: 'legacy-assistant-project', name: 'renamed', folders: [] });
     const ordinary = record({ localProjectId: 'ordinary-project', name: '助理' });
+    // The assistant host's project is no account project; the ordinary one is.
+    accountList.projects = [{ chatId: 'chat-ordinary', name: '助理', archived: false, bindings: [{ deviceId: 'ordinary-machine', localProjectId: ordinary.localProjectId }] }];
+    store.start();
+    await accountProjectsStore.refresh();
+    await vi.waitFor(() => expect(accountProjectsStore.status).toBe('ready'));
     const summary = { conversationId: 'legacy-conversation', projectId: legacy.localProjectId, projectName: 'renamed', title: 'existing history', harness: 'codex', runtime: 'acp' as const, agentStatus: null, lastInteractedAt: null, supported: true };
     let listed = [device({ id: 'legacy-cloud', isOnline: false, directTerminal: false, projects: [legacy], sessionDigest: [summary] }),
       device({ id: 'ordinary-machine', isOnline: false, directTerminal: false, projects: [ordinary] })];
@@ -254,8 +263,9 @@ describe('没连着的机器照账号上记着的那份', () => {
       expect(appState.projects.projects.get(legacy.localProjectId)).toBe(original);
       expect(original.data).toMatchObject({ id: legacy.localProjectId, path: '/srv/repo', rootFolderDetached: true });
       expect(sidebarStore.orderedProjects.map(project => project.id)).not.toContain(legacy.localProjectId);
-      expect(sidebarStore.projectGroups.rowOf.has(legacy.localProjectId)).toBe(false);
-      expect(sidebarStore.standaloneSessionEntries.map(row => [row.projectId, row.sessionId])).toContainEqual([legacy.localProjectId, summary.conversationId]);
+      expect(sidebarStore.rowProjectIdOf(legacy.localProjectId)).toBe(legacy.localProjectId);
+      expect(sidebarStore.placement.nodeById.get(summary.conversationId)?.item.projectId).toBe(legacy.localProjectId);
+      expect(sidebarStore.rowOfSession(legacy.localProjectId, summary.conversationId)).toBeNull();
       expect(store.listedProject(summary.conversationId)).toBe(legacy.localProjectId);
       expect(isWorkspaceProject(appState.projects.projects.get(ordinary.localProjectId)!)).toBe(false);
       expect(sidebarStore.orderedProjects.map(project => project.id)).toContain(ordinary.localProjectId);
@@ -268,7 +278,8 @@ describe('没连着的机器照账号上记着的那份', () => {
     const { machineRegistry } = await import('@renderer/lib/machine-routing');
     const store = new RemoteHostsStore();
     store.start();
-    const offline = device({ id: 'dev-acct-1', isOnline: false, projects: [record()], homeDir: '/home/alice' });
+    // Its own group: earlier tests leave their projects bound to the default one in the shared group store.
+    const offline = device({ id: 'dev-acct-1', isOnline: false, projects: [record({ chatId: 'chat-acct-1' })], homeDir: '/home/alice' });
     let listed = [offline];
     const listeners = new Set<() => void>();
     const off = installRemoteHostsBridge({
@@ -281,7 +292,7 @@ describe('没连着的机器照账号上记着的那份', () => {
         id: 'acct-proj-1', name: 'repo', path: '/srv/repo', repositoryWorkspaceId: 'ws-acct-root', createdAt: '2026-10-01 08:00:00',
       });
       expect(machineRegistry.machineOf('acct-proj-1')).toBe('dev-acct-1');
-      expect(projectGroupsStore.chatIdOf('acct-proj-1')).toBe('chat-repo');
+      expect(projectGroupsStore.projectOfChat('chat-acct-1')).toBe('acct-proj-1');
       expect(store.homeDir('dev-acct-1')).toBe('/home/alice');
       expect(store.accountFolders('dev-acct-1', 'acct-proj-1')?.map((folder) => [folder.workspaceId, folder.kind, folder.branch])).toEqual([
         ['ws-acct-root', 'root', null],
@@ -292,7 +303,7 @@ describe('没连着的机器照账号上记着的那份', () => {
       listeners.forEach((listener) => listener());
       expect(appState.projects.projects.has('acct-proj-1')).toBe(false);
       expect(appState.projects.projects.get('acct-proj-2')?.data?.name).toBe('next');
-      expect(projectGroupsStore.chatIdOf('acct-proj-1')).toBeUndefined();
+      expect(projectGroupsStore.projectOfChat('chat-acct-1')).toBeUndefined();
 
       // 账号上那份这一端还没读到(设备行上没带):❌ 拿空清单把侧栏里它的项目清掉。
       listed = [{ ...offline, projects: undefined }];
@@ -320,9 +331,9 @@ describe('新建框用到的那几件(#6264)', () => {
     const stop = autorun(() => {
       seen.push(store.newSessionTarget?.deviceId ?? null);
     });
-    store.requestNewSession('dev-1', '/srv/app');
+    store.requestNewSession('dev-1');
     expect(seen.at(-1)).toBe('dev-1');
-    expect(store.takeNewSessionTarget()).toEqual({ deviceId: 'dev-1', projectPath: '/srv/app' });
+    expect(store.takeNewSessionTarget()).toEqual({ deviceId: 'dev-1' });
     expect(seen.at(-1)).toBeNull();
     stop();
   });
@@ -340,14 +351,6 @@ describe('新建框用到的那几件(#6264)', () => {
     store.openAddMachine();
     expect(openAddMachine).toHaveBeenCalledTimes(1);
     withAdd();
-  });
-
-  it('最近用过的文件夹按机器记,新的在前', () => {
-    const store = new RemoteHostsStore();
-    store.rememberRecentFolder('dev-1', '/srv/a');
-    store.rememberRecentFolder('dev-1', '/srv/b');
-    expect(store.recentFolders('dev-1')).toEqual(['/srv/b', '/srv/a']);
-    expect(store.recentFolders('dev-2')).toEqual([]);
   });
 });
 

@@ -1,7 +1,37 @@
 import { agentSendOf, replyItems, replySend, replySource, sentMessageId, successfulMessageSend, successfulSessionSend } from '@gugu/session-core/session-record/reply-process';
 import { sentAttachmentOf } from '@gugu/session-core/session-record/sent-attachment';
 import { sentFileGroups } from '@gugu/session-core/session-record/sent-file-groups';
-import type { TranscriptTurn } from '@session-chat/model';
+import { sendAddressesOf } from '@gugu/session-core/session-record/send-addresses';
+import { sentMessageOf } from '@gugu/session-core/session-record/sent-message';
+import type { TranscriptItem, TranscriptTurn } from '@session-chat/model';
+import type { MessageItem } from '@gugu/core/shared/types/chat';
+
+/** The chat message one send put there, for the host's MessageBody; nothing when the receipt predates it. */
+export function sentMessagesOf(item: TranscriptItem): { sentMessages?: MessageItem[] } {
+  const message = sentMessageOf(item);
+  return message ? { sentMessages: [message] } : {};
+}
+
+/** A group of file sends is one bubble: drawn by MessageBody only when every file in it can be. */
+function sentFileMessages(items: readonly TranscriptItem[], messageIds: readonly string[]): { sentMessages?: MessageItem[] } {
+  const byId = new Map(items.flatMap(item => { const message = sentMessageOf(item); return message ? [[message.id, message] as const] : []; }));
+  const messages = messageIds.map(id => byId.get(id));
+  return messages.every(Boolean) ? { sentMessages: messages as MessageItem[] } : {};
+}
+
+const settledReplies = [new WeakMap<TranscriptTurn, TranscriptTurn>(), new WeakMap<TranscriptTurn, TranscriptTurn>()] as const;
+
+/**
+ * `withSentReplies` for a turn that will not change again. A committed turn is replaced, never edited, so its
+ * projection is worked out once per turn object: a rebuild of a long transcript reads every send receipt of every
+ * loaded turn otherwise, each time a page lands.
+ */
+export function withSettledSentReplies(turn: TranscriptTurn, options: { allDestinations?: boolean } = {}): TranscriptTurn {
+  const cache = settledReplies[options.allDestinations ? 1 : 0];
+  let projected = cache.get(turn);
+  if (!projected) cache.set(turn, projected = withSentReplies(turn, options));
+  return projected;
+}
 
 /** Keep successfully delivered replies readable when their tool process is folded. */
 export function withSentReplies(turn: TranscriptTurn, options: { allDestinations?: boolean } = {}): TranscriptTurn {
@@ -30,11 +60,16 @@ export function withSentReplies(turn: TranscriptTurn, options: { allDestinations
     const replyTo = 'replyTo' in send ? send.replyTo : undefined;
     const chat = 'chat' in send ? send.chat : undefined;
     const reply = { kind: 'message' as const, id: `${item.id}:sent:${id}`, seq: item.seq, role: 'assistant' as const, text: send.text, ...(attachment ? { sentAttachment: attachment, sentAttachments: fileGroup!.attachments } : {}),
+      ...(fileGroup ? sentFileMessages(items, fileGroup.attachments.map(file => file.messageId)) : sentMessagesOf(item)),
       ...(item.completedAt !== undefined ? { at: item.completedAt } : {}),
-      ...(replyTo ? { sentReplyTo: replyTo } : {}), ...(chat ? { sentChat: chat } : {}) };
+      ...(replyTo ? { sentReplyTo: replyTo } : {}), ...(chat ? { sentChat: chat } : {}),
+      // A send its page held back (transport-trim `folded-form`): the bubble says so too, so that showing it reads the turn again.
+      ...(item.held ? { held: true as const } : {}) };
     // 对话布局:气泡下面常驻一小段「发到 群名」(管家 10-28),去向与会话页那一行同一个读法。
     const to = fileGroup?.to ?? (options.allDestinations ? agentSendOf(item, turn)?.to : undefined);
     if (to) Object.assign(reply, { sentTo: to });
+    const addresses = sendAddressesOf(item, turn);
+    if (addresses) Object.assign(reply, { sentAddresses: addresses });
     replies.push(reply);
     if (options.allDestinations || fileGroup) {
       const last = fileGroup?.last ?? item;

@@ -15,7 +15,7 @@ import { PhoneAppFrame } from './PhoneAppFrame'
 import { OpenWithPick } from './OpenWithPick'
 
 // Desktop-only and phone-only halves, loaded where they are drawn.
-const PeekLocalFile = lazy(() => import('../../session/renderer/features/extensions/peek-local-file').then((m) => ({ default: m.PeekLocalFile })))
+const PeekFolderFile = lazy(() => import('../../session/renderer/features/extensions/peek-folder-file').then((m) => ({ default: m.PeekFolderFile })))
 const PeekSessionTimeline = lazy(() => import('../../mobile/agent-watch/PeekSessionTimeline').then((m) => ({ default: m.PeekSessionTimeline })))
 
 export function AppPeek({ target, slotKey, beside, onClose }: { target: PeekTarget; slotKey: string; beside: boolean; onClose: () => void }) {
@@ -26,7 +26,7 @@ export function AppPeek({ target, slotKey, beside, onClose }: { target: PeekTarg
     const { detail } = target
     return <MessageFilePreview key={`${detail.itemId}:${detail.file.version}`} fill mobile={mobile} file={{ kind: 'file', document: detail.file.document, fileName: detail.name, mimeType: detail.file.contentType, sizeBytes: detail.file.size, source: { kind: 'item', itemId: detail.itemId, version: detail.file.version } }} onClose={onClose} />
   }
-  const title = target.kind === 'chat' ? target.detail.name : target.kind === 'local' ? target.name : t('chatArea.peek.session')
+  const title = target.kind === 'chat' ? target.detail.name : target.kind === 'folder' ? target.name : t('chatArea.peek.session')
   const full = openFull(target)
   return (
     <>
@@ -58,8 +58,8 @@ export function AppPeek({ target, slotKey, beside, onClose }: { target: PeekTarg
         <Suspense fallback={null}>
           {target.kind === 'chat' ? (
             <ChatFileOpener detail={target.detail} slotId={`${slotKey}#peek`} />
-          ) : target.kind === 'local' ? (
-            <PeekLocalFile target={target} tabId={`peek:${slotKey}`} />
+          ) : target.kind === 'folder' ? (
+            <PeekFolderFile target={target} tabId={`peek:${slotKey}`} />
           ) : platform.kind === 'electron' ? (
             <SessionPeekBox sessionId={target.sessionId} projectId={target.projectId} />
           ) : (

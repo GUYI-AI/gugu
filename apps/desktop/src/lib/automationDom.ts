@@ -29,9 +29,6 @@ export const AUTOMATION_TEST_IDS = {
   chatHeaderMembersButton: 'chat-header-members-button',
   chatHeaderMoreButton: 'chat-header-more-button',
   chatHeaderAppsButton: 'chat-header-apps-button',
-  chatHeaderInviteButton: 'chat-header-invite-button',
-  chatHeaderPinSwitch: 'chat-header-pin-switch',
-  chatHeaderMuteSwitch: 'chat-header-mute-switch',
   groupTopicsPopup: 'group-topics-popup',
   groupAppsPicker: 'group-apps-picker',
   // #4602 会话页会话启动(hydrate)失败在当前 DM 的显形:根因原文 + 真重试(同一 conversation 再 hydrate)。
@@ -39,7 +36,6 @@ export const AUTOMATION_TEST_IDS = {
   agentSessionpageStartupFailureRetry: 'agent-sessionpage-startup-failure-retry',
   chatMessageList: 'chat-message-list',
   chatMessageListAside: 'chat-message-list-aside',
-  chatDrawerSearchButton: 'chat-drawer-search-button',
   chatDrawerNotifyLevel: 'chat-drawer-notify-level',
   chatDrawerNotifyLevelAll: 'chat-drawer-notify-level-all',
   chatDrawerNotifyLevelImportant: 'chat-drawer-notify-level-important',
@@ -145,7 +141,6 @@ export const AUTOMATION_TEST_IDS = {
   plazaAuthorProfileButton: 'plaza-author-profile-button',
   plazaAuthorProfileMenu: 'plaza-author-profile-menu',
   // #855 group invite link copy + join confirm dialog
-  groupInviteLinkCopyButton: 'group-invite-link-copy-button',
   groupJoinConfirmDialog: 'group-join-confirm-dialog',
   groupJoinConfirmButton: 'group-join-confirm-button',
 } as const

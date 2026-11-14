@@ -25,7 +25,7 @@ vi.mock('@main/core/extensions/account-token', async (importOriginal) => ({ ...(
   currentAccountAccessToken: async () => `h.${Buffer.from(JSON.stringify({ sub: 'owner-1' })).toString('base64url')}.s`,
 }));
 vi.mock('./app-files', () => ({ folderPublisher: async () => ({ id: 'owner-1' }) }));
-vi.mock('../../../../sessionpage/sessionpage-project-groups', () => ({ listProjectGroupIds: async () => [] }));
+vi.mock('@main/core/projects/operations/device-project-records', () => ({ recordedProjectGroupBindings: async () => [] }));
 vi.mock('@shared/extensions/app-enablements-core', () => ({
   readEnablements: async (_token: string, userId: string, chatIds?: readonly string[]) => {
     if (state.unread) throw state.unread;

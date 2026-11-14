@@ -23,8 +23,6 @@ function fixture() {
       groups: [{ group: 'calendar', available: true, actions: ['calendar.read', 'calendar.create'] }],
     })) }
     if (action.action === 'project_list') return [{ project_id: `project-${action.device}`, name: action.device === 'mac' ? '主人的项目' : '助理项目', path: action.device === 'mac' ? '/Users/owner/work' : '/home/assistant' }]
-    if (action.action === 'library_read') return { items: [{ id: 'calendar-note', name: '日历说明', description: '日程安排', group: '生活', modifiedAt: '2026-10-20T12:00:00Z',
-      content: 'private entry body', path: '/private/path', credential: 'private-credential' }], content: 'private aggregate body' }
     throw new Error('Unexpected action')
   })
   return { run, accountId: async () => 'owner-a', now: () => new Date('2026-10-20T12:30:00Z') }
@@ -46,11 +44,9 @@ it('injects account devices and registered projects with unambiguous ownership a
   expect(rows.find(row => row.device === 'device:mac' && row.source === 'projects')).toMatchObject({ status: 'read', items: [{ name: '主人的项目', path: '/Users/owner/work',
     read: { tool: 'project_get', args: { project_id: 'project:project-mac', device_id: 'device:mac' } },
   }] })
-  const note = rows.find(row => row.device === 'device:mac' && row.source === 'library_capabilities')!.items![0]
-  expect(note).toEqual({ id: 'calendar-note', name: '日历说明', description: '日程安排', group: '生活', modifiedAt: '2026-10-20T12:00:00Z',
-    read: { tool: 'library_read', args: { kind: 'capabilities', entry: 'calendar-note', device_id: 'device:mac' } },
-  })
-  expect(index).not.toMatch(/private entry body|private aggregate body|private-credential|\/private\/path/)
+  // Capability and device notes are gone: the index neither reads nor names them.
+  expect(deps.run.mock.calls.map(([action]) => action.action).filter(action => action.startsWith('library_'))).toEqual([])
+  expect(index).not.toMatch(/library_/)
   expect(rows.find(row => row.device === 'device:offline')).toMatchObject({ status: 'offline', projects: '未读取' })
   expect(deps.run.mock.calls.some(([action]) => action.device === 'offline' || action.device === 'phone')).toBe(false)
 })
@@ -60,14 +56,12 @@ it('distinguishes unavailable/invalid sources from a successfully read empty col
   const original = deps.run.getMockImplementation()!
   deps.run.mockImplementation(async (action, signal) => {
     if (action.action === 'project_list' && action.device === 'mac') throw new Error('Remote device is outdated')
-    if (action.action === 'library_read' && action.kind === 'capabilities') return { error: 'Permission denied' }
-    if (action.action === 'library_read') return { items: [] }
+    if (action.action === 'project_list' && action.device === 'host') return []
     return original(action, signal)
   })
   const rows = records(await assistantStartupIndex(deps))
   expect(rows.find(row => row.device === 'device:mac' && row.source === 'projects')).toMatchObject({ status: 'unavailable' })
-  expect(rows.find(row => row.device === 'device:mac' && row.source === 'library_capabilities')).toMatchObject({ status: 'unavailable' })
-  expect(rows.find(row => row.device === 'device:mac' && row.source === 'library_devices')).toMatchObject({ status: 'read', items: [] })
+  expect(rows.find(row => row.device === 'device:host' && row.source === 'projects')).toMatchObject({ status: 'read', items: [] })
   expect(rows.filter(row => row.status === 'unavailable').every(row => !('items' in row))).toBe(true)
 })
 

@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {z} from 'zod'
 import {registerSessionpageTools} from '../../../apps/desktop/electron/mcp/sessionpage-tool-registrar'
-import { afterEach,beforeEach,expect,it,vi } from 'vitest'
+import { afterEach,beforeAll,beforeEach,expect,it,vi } from 'vitest'
+import { installAssistantRulesResolver } from '../../../apps/desktop/electron/assistant-rules-resolver'
+import { fixedAssistantRules } from './assistantRules/fixtureApp'
 import { coordinateAssistantAction,AssistantWorkStore } from '../../../apps/desktop/electron/sessionpage/assistant-work'
 import { installAssistantWorkLedgerHost,enqueueAssistantWorkMessage } from '../../../apps/desktop/electron/sessionpage/assistant-work-ledger'
 const assistant='10000000-0000-4000-8000-000000000001'
@@ -12,6 +14,8 @@ let root: string,stop: () => void
 const rpc=vi.fn(),kick=vi.fn()
 const commitCalls=()=>rpc.mock.calls.filter(([name])=>name==='assistant_work_commit')
 const accepted=async(name:string,args:Record<string,unknown>)=> name==='assistant_work_coordinator_bind'?{data:{bound_count:0},error:null}:{data:{work_id:args.p_work_id,event_ids:(args.p_events as Array<{message_id:string}>).map(e=>e.message_id),outcome:'active',terminal_version:'0'},error:null}
+// Dispatch renders the executor report from the assistant App's rules (#1931): a fixed set here.
+beforeAll(() => installAssistantRulesResolver(fixedAssistantRules()))
 beforeEach(async()=> { root=await mkdtemp(join(tmpdir(),'ledger-host-')); rpc.mockReset(); kick.mockReset();
   stop=installAssistantWorkLedgerHost({ context: async()=>({ client: { rpc },ownerId: owner,runtimeInstanceId: 'host-runtime',deviceId: 'home' }),kick }) })
 afterEach(async()=> { stop?.(); await rm(root,{ recursive: true,force: true }) })

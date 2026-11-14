@@ -3,9 +3,8 @@ import { act, useState, type ComponentProps } from 'react';
 import { page } from 'vitest/browser';
 import { SessionConversation } from '@/mobile/agent-watch/SessionConversation';
 import { emptyAgentWatchTimeline } from '@/mobile/agent-watch/agent-watch-store';
-import { finishRendererContentMenu, RENDERER_CONTENT_MENU_OPEN } from '@/lib/contentContextMenu';
+import { RENDERER_MESSAGE_MENU_OPEN, type RendererMessageMenu } from '@/lib/contentContextMenu';
 import { messageQuoteText } from '@gugu/core/shared/ui/messageQuote';
-import type { ContentContextMenu } from '@shared/content-context-menu';
 import type { TranscriptTurn } from '@gugu/session-chat-ui';
 import { createReactHarness, renderWithAppProviders, deferred, clickElement } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
@@ -61,16 +60,18 @@ async function quoteSource() {
     stable = geometry === previous ? stable + 1 : 0; previous = geometry;
     return stable >= 4;
   });
-  const requests: ContentContextMenu[] = [];
-  const capture = (event: Event) => requests.push((event as CustomEvent<ContentContextMenu>).detail);
-  window.addEventListener(RENDERER_CONTENT_MENU_OPEN, capture);
+  const requests: RendererMessageMenu[] = [];
+  const capture = (event: Event) => requests.push((event as CustomEvent<RendererMessageMenu>).detail);
+  window.addEventListener(RENDERER_MESSAGE_MENU_OPEN, capture);
   try {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     row.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', clientX: 20, clientY: 20, bubbles: true }));
     await vi.advanceTimersByTimeAsync(501);
     expect(requests).toHaveLength(1);
-    await act(async () => { expect(requests[0].items.some(item => 'id' in item && item.id === 'quote')).toBe(false); finishRendererContentMenu(requests[0].requestId); });
-  } finally { vi.useRealTimers(); window.removeEventListener(RENDERER_CONTENT_MENU_OPEN, capture); }
+    // The chat's menu: quoting writes markdown into the draft, never the structured composer quote; there is no reply to a source.
+    expect(requests[0].onReply).toBeUndefined();
+    expect(requests[0].lift).toBeDefined();
+  } finally { vi.useRealTimers(); window.removeEventListener(RENDERER_MESSAGE_MENU_OPEN, capture); }
 }
 
 it('does not expose whole-message quoting in the phone host or create a composer quote', async () => {

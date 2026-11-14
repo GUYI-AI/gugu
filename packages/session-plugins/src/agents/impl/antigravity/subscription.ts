@@ -16,7 +16,7 @@ import {
   usageWindows,
 } from '../../helpers/subscription';
 import { ANTIGRAVITY_CLI_SETTINGS_PATH, ANTIGRAVITY_HOME_ENV, antigravityCliAuthStatus } from './auth';
-import { ANTIGRAVITY_LAUNCH_SCRIPT } from './session-bundle';
+import { ANTIGRAVITY_PROBE_LAUNCH_SCRIPT } from './session-bundle';
 
 /**
  * Antigravity 的「订阅」读数(product spec)。读的是终端版 `agy` 那条登录(能力里声明
@@ -124,7 +124,7 @@ export async function readAntigravityUsage(
         `${ANTIGRAVITY_HOME_ENV}=${geminiHome}`,
         '/bin/sh',
         '-c',
-        ANTIGRAVITY_LAUNCH_SCRIPT,
+        ANTIGRAVITY_PROBE_LAUNCH_SCRIPT,
         ctx.cli,
         '-p',
         '/usage',

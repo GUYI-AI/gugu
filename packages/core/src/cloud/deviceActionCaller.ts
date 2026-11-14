@@ -58,6 +58,11 @@ export interface DeviceActionCallInput {
   timeoutMs?: number
   caller?: DeviceActionCallPayload['caller']
   signal?: AbortSignal
+  /**
+   * Before the call goes out: ask the person for what this device has not granted yet (the desktop asks in the calling
+   * agent's session). Null = send it; otherwise the call ends here with that result.
+   */
+  askGrant?(): Promise<{ code: DeviceActionErrorCode; message: string } | null>
 }
 
 export interface DeviceActionCaller {
@@ -242,6 +247,8 @@ export function createDeviceActionCaller(deps: DeviceActionCallerDeps): DeviceAc
         if (off) return fail(callId, 'not_granted', `「${device.label}」: ${off.detail}`)
         return fail(callId, 'unknown_action', `「${device.label}」没有登记动作 ${input.action};它能做的:${manifest.actions.map((a) => a.name).join(', ') || '无'}`)
       }
+      const refused = input.askGrant ? await input.askGrant() : null
+      if (refused) return fail(callId, refused.code, refused.message)
       const timeoutMs = clampDeviceActionTimeout(input.timeoutMs)
       const startedAt = now()
       const payload: DeviceActionCallPayload = {

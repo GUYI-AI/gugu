@@ -51,7 +51,10 @@ async function call(method: string, args?: unknown): Promise<unknown> {
     args,
     gesture,
   } satisfies ExtensionBridgeRequest)) as ExtensionBridgeResponse;
-  if (response.ok) return response.value;
+  if (response.ok) {
+    if (messageView && ['setTabTitle', 'setTabBadge'].includes(method)) ipcRenderer.sendToHost('gugu-widget-changed');
+    return response.value;
+  }
   // Carrying the code out means an extension can tell "the user said no" apart
   // from "that failed" and stop asking, instead of retrying against a wall.
   //
@@ -68,6 +71,20 @@ async function call(method: string, args?: unknown): Promise<unknown> {
  */
 const events = hostEventHub();
 let messageView = false;
+if (PerformanceObserver.supportedEntryTypes.includes('paint')) {
+  const firstPaint = new PerformanceObserver(list => {
+    if (list.getEntries().some(entry => entry.name === 'first-contentful-paint')) {
+      ipcRenderer.sendToHost('gugu-widget-painted');
+      firstPaint.disconnect();
+    }
+  });
+  firstPaint.observe({ type: 'paint', buffered: true });
+}
+const widgetInput = (event: Event) => {
+  if (messageView && event.isTrusted) ipcRenderer.sendToHost('gugu-widget-changed');
+};
+window.addEventListener('input', widgetInput, true);
+window.addEventListener('pointerup', widgetInput, true);
 const relayWidgetWheel = (event: WheelEvent) => {
   if (!event.isTrusted || event.ctrlKey) return;
   event.preventDefault();
@@ -101,7 +118,7 @@ const host = caller === 'background'
   : {
       apiVersion: EXTENSION_API_VERSION,
       ...members,
-      theme: readPageTheme(),
+      ...readPageTheme(),
       /** Only on the page `app_check` runs (摩擦单 F69): the runtime reports its counts here. */
       ...(process.argv.includes(CHECK_PAGE_ARG) ? { checkPage: { report: (counts: PageCounts): Promise<void> => call('checkCounts', counts) as Promise<void> } } : {}),
     };
@@ -135,10 +152,10 @@ window.addEventListener('message', (event) => {
  * `<html>` before the first paint. Main always answers; anything else is the wiring broken — loud, like the host's own
  * system languages (preload.ts), never a quiet fall back to the OS's colours (the very flash this is here to stop).
  */
-function readPageTheme(): 'light' | 'dark' {
-  const answer: unknown = ipcRenderer.sendSync(EXTENSION_THEME_CHANNEL);
-  if (answer !== 'light' && answer !== 'dark') throw new Error(`main did not answer ${EXTENSION_THEME_CHANNEL} (got ${String(answer)})`);
-  return answer;
+function readPageTheme(): { theme: 'light' | 'dark'; themeColors?: Record<string, string> } {
+  const answer = ipcRenderer.sendSync(EXTENSION_THEME_CHANNEL) as { theme?: unknown; themeColors?: Record<string, string> } | null;
+  if (answer?.theme !== 'light' && answer?.theme !== 'dark') throw new Error(`main did not answer ${EXTENSION_THEME_CHANNEL} (got ${JSON.stringify(answer)})`);
+  return { theme: answer.theme, ...(answer.themeColors ? { themeColors: answer.themeColors } : {}) };
 }
 
 contextBridge.exposeInMainWorld('__guguHost', host);

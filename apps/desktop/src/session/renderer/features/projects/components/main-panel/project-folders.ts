@@ -22,7 +22,7 @@ import { cachedDevicesAccount } from '@/store/devicesCache';
  * 机器在读的那一刻按「是哪台答的 / 账号上那份是哪台记的」盖上,用的地方都读它(机器标签、设备范围、在哪台上开工),
  * ❌ 再拿 folder.projectId 去反查 —— 同一个本地项目 id 可能先后登记在两条设备行下(同一台机器重新登记)。
  */
-export type ShownFolder = ProjectFolder & { offline: boolean; deviceId: string | null };
+export type ShownFolder = ProjectFolder & { offline: boolean; deviceId: string | null; stale?: boolean };
 
 /** 每个项目(按代表那一行的 id)「新会话从哪个文件夹开工」:切走再回来还在;没选过 = 代表行的根目录。 */
 const folderChoice = new Map<string, string>();
@@ -39,6 +39,12 @@ export const MAX_PROJECT_FOLDERS = 20;
 function accountFolders(projectId: string): ProjectFolder[] | null {
   const machine = machineRegistry.machineOf(projectId);
   return machine ? remoteHostsStore.accountFolders(machine, projectId) : null;
+}
+
+/** 账号上那份这一端上一次没读到(列着的是更早读到的):卡上标「上次的」。 */
+function accountUnread(projectId: string): boolean {
+  const machine = machineRegistry.machineOf(projectId);
+  return machine ? remoteHostsStore.accountUnread(machine) : false;
 }
 
 /** 账号上那份比这一端经连接读到的新(见 RemoteHostsStore.accountIsNewer);本机的项目 = false。 */
@@ -98,7 +104,7 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
   const membersKey = memberIds.join('\u0000');
   // 账号上记着的那几份变了(那台机器离线时挂 / 摘了文件夹之后记上来、这一端刚读到账号上的那份):重读一遍。
   // 读的是 mobx 里的设备行 —— 项目首页是 observer,那一份变了这里才重算。
-  const accountKey = JSON.stringify(memberIds.map((projectId) => [accountFolders(projectId), accountIsNewer(projectId)]));
+  const accountKey = JSON.stringify(memberIds.map((projectId) => [accountFolders(projectId), accountIsNewer(projectId), accountUnread(projectId)]));
   // A cloud host can wake without changing its recorded folder metadata. Read
   // again when its actual connection returns, rather than retaining an empty
   // pre-wake response and leaving the composer blocked indefinitely.
@@ -124,7 +130,9 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
     // 这一轮问的是哪台(rpc 按这同一张表选线):答回来的、账号上记着的,都盖上它。
     const deviceOf = new Map(ids.map((projectId) => [projectId, machineRegistry.machineOf(projectId) ?? null] as const));
     const fromAccount = (projectId: string): ShownFolder[] | null =>
-      accountFolders(projectId)?.map((folder): ShownFolder => ({ ...folder, offline: true, deviceId: deviceOf.get(projectId) ?? null })) ?? null;
+      accountFolders(projectId)?.map((folder): ShownFolder => ({
+        ...folder, offline: true, deviceId: deviceOf.get(projectId) ?? null, ...(accountUnread(projectId) ? { stale: true } : {}),
+      })) ?? null;
     // 每台各自回话:答了的(读到的,或读不到 = null)、过了时限还没答的。
     const answered = new Map<string, ShownFolder[] | null>();
     const late = new Set<string>();

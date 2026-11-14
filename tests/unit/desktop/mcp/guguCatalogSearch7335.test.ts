@@ -96,9 +96,9 @@ describe('catalog_list on a real host finds the App tools by what they do (#7335
     await client.close()
   })
 
-  // #7317 the owner's test: 「用我的电脑计算器按一个 6+6+6+6+6 的和」. Two agents searched the catalog for computer, screen,
-  // mouse, desktop, mac, "macos screen mouse control" and never met device_actions, already in their own list.
-  it('a search for the computer finds device_actions, marked native; the unsearched listing still leaves it out', async () => {
+  // #7317 Two agents searched the catalog for what the device can do and never met device_actions, already in their own
+  // list. Operating desktop apps is the Computer Use App's (app_search), no longer a device action.
+  it('a search for what a device can do finds device_actions, marked native; the unsearched listing still leaves it out', async () => {
     host = createDesktopGuguMcpHost()
     await host.start()
     const grant = await host.grant('catalog-computer', {
@@ -124,11 +124,13 @@ describe('catalog_list on a real host finds the App tools by what they do (#7335
       return (JSON.parse(body) as { items: Array<{ call?: string; native?: boolean; about?: string }> }).items
     }
     const named = (items: Array<{ call?: string }>) => items.map((item) => item.call?.slice(0, item.call.indexOf('(')))
-    for (const query of ['computer', 'screen', 'mouse', 'desktop', 'mac', 'macos screen mouse control', 'Computer Use']) {
+    for (const query of ['screen', 'screenshot', 'calendar', 'clipboard', 'native actions']) {
       const found = await rows(query)
       expect(named(found), query).toContain('device_actions')
-      expect(found.find((item) => item.call?.startsWith('device_actions('))).toMatchObject({ native: true, about: expect.stringContaining('Computer Use') })
+      expect(found.find((item) => item.call?.startsWith('device_actions('))).toMatchObject({ native: true, about: expect.stringContaining('native actions') })
     }
+    // Operating desktop apps is the Computer Use App's: device_actions no longer says it does.
+    expect(named(await rows('Computer Use'))).not.toContain('device_actions')
     // The listing without a query is what it was: tools not in the agent's own list.
     expect(named(await rows())).not.toContain('device_actions')
     // Control: a query about something else does not bring it.

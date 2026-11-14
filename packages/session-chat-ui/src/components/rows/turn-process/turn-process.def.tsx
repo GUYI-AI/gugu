@@ -72,7 +72,7 @@ export const turnProcessUnitDef = defineUnit<TurnProcessItem, { extraH: number }
     const rowHeight = () => theme().layout.agentConversation ? conversationHeight(props.data, props.ctx.measureCtx!()) : height();
     // ViewState keeps the inverted flag inherited from the original store:
     // `isCollapsed(id) === true` means "toggled" (see view-state.ts).
-    const expanded = () => turnProcessExpanded(props.data.live, props.ctx.viewState.isCollapsed(props.data.id));
+    const expanded = () => turnProcessExpanded(props.data.live, props.ctx.viewState.isCollapsed(props.data.toggleId ?? props.data.id));
 
     // 跑着的时候每秒数一次;落定后不再数。
     // effect 只跟「该不该数」这一个布尔(memo 去重):流式期间 `props.data` 一直在换,直接读它的 effect
@@ -115,7 +115,7 @@ export const turnProcessUnitDef = defineUnit<TurnProcessItem, { extraH: number }
             </div>
           </div>
         }>
-          <div class={conversationHeader} style={{ height: `${header().height}px` }}>
+          <div class={conversationHeader} style={{ height: `${header().height}px`, gap: `${header().gap}px` }}>
             <Show when={header().name}>{name => <SenderName class={conversationName} name={name().text}
               style={{ width: `${header().nameWidth}px` }} target={conversationAgentTarget({ sessionId: commands().conversationAgentSession?.(), userId: commands().conversationAgentUserId?.() })} />}</Show>
             <div class={conversationTime} data-slot="tool-timeline-line" style={{ width: `${header().processWidth}px`, height: `${processRowHeight(props.data.id, props.data, header().processCtx)}px` }}>

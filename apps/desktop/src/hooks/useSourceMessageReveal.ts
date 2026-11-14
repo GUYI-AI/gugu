@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from 'react'
-import type { FlowListHandle } from '../lib/flowList'
-import { resolveSourceMessageScroll, type ScrollableRow } from '../lib/sourceMessageScroll'
 import { UI_EVENTS } from '../lib/uiEvents'
-import { revealSourceMessage, SOURCE_MESSAGE_FLASH_MS } from '../lib/sourceMessageReveal'
+import { SOURCE_MESSAGE_FLASH_MS } from '../lib/sourceMessageReveal'
 
 /** `gugu.showMessage` in a chat not on screen (MainLayout brings it up): the message its list goes to when it shows it. */
 const askedReveals = new Map<string, string>()
@@ -24,9 +22,9 @@ export function takeTaskReveal(sessionId: string): string | undefined {
  * #1708 来源消息 → 主消息列表定位 + 高亮闪烁。入口是群右栏工作区 App 的「来源消息」(gugu.showMessage;主进程已核过
  * 是本群的消息)。
  *
- * 已在加载段里的消息直接滚过去。不在的(文档的来源消息多半是早先的消息,早于当前加载段)交给会话滚动记忆的
- * revealMessage:它把这条消息当作要恢复的位置,按锚点把那一段载进来(loadMessageAnchor),列表重挂时就落在它上面,
- * 再核对到稳定 —— 一次性的 scrollToIndex 扛不住那次重挂。落稳了才闪。载不到(话题里的、已删的)或等不来 →
+ * 一律交给会话滚动记忆的 revealMessage,已加载的也一样:它把这条消息当作要恢复的位置,不在加载段里就按锚点把那一段
+ * 载进来(loadMessageAnchor),再核对到稳定。一次性的 scrollToIndex 扛不住列表重挂,也扛不住刚切过来的会话恢复
+ * 自己记住的位置、贴底跟随(链接从别的会话跳过来时,目标闪了但列表停在原处)。落稳了才闪。载不到(话题里的、已删的)或等不来 →
  * fail-loud(onMissing 出 toast),❌ 不静默 noop,也不滚去别处。
  */
 export function useSourceMessageReveal(input: {
@@ -35,17 +33,13 @@ export function useSourceMessageReveal(input: {
   viewportKey?: string
   enabled?: boolean
   ready?: boolean
-  rows: ReadonlyArray<ScrollableRow>
-  listRef: MutableRefObject<FlowListHandle | null>
-  isAtBottomRef: MutableRefObject<boolean>
-  setFollowingTail: (following: boolean) => void
   setFlashMessageId: (id: string | null) => void
   flashTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>
   revealMessage: (messageId: string) => Promise<void>
   onMissing: () => void
   onNavigate?: () => void
 }): (messageId: string) => void {
-  const { activeChatId, viewportKey, navigationTarget = false, enabled = true, ready = true, rows, listRef, isAtBottomRef, setFollowingTail, setFlashMessageId, flashTimerRef, revealMessage, onMissing } = input
+  const { activeChatId, viewportKey, navigationTarget = false, enabled = true, ready = true, setFlashMessageId, flashTimerRef, revealMessage, onMissing } = input
   const onNavigateRef = useRef(input.onNavigate)
   onNavigateRef.current = input.onNavigate
   const tokenRef = useRef(0)
@@ -63,22 +57,15 @@ export function useSourceMessageReveal(input: {
   const reveal = useCallback((messageId: string) => {
     onNavigateRef.current?.()
     const token = ++tokenRef.current
-    void revealSourceMessage(messageId, {
-      showLoaded: (id) => {
-        const index = resolveSourceMessageScroll(rows, id)
-        if (index == null || !listRef.current) return false
-        // #1980 Leave tail-following before a source-message jump.
-        isAtBottomRef.current = false
-        setFollowingTail(false)
-        listRef.current.scrollToIndex({ index, align: 'center' })
-        return true
+    void revealMessage(messageId).then(
+      () => { if (tokenRef.current === token) flash(messageId) },
+      (error: unknown) => {
+        // Left before it was shown (another conversation opened): nothing went missing.
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        if (tokenRef.current === token) onMissingRef.current()
       },
-      load: revealMessage,
-      flash,
-      missing: () => onMissingRef.current(),
-      current: () => tokenRef.current === token,
-    })
-  }, [flash, isAtBottomRef, listRef, revealMessage, rows, setFollowingTail])
+    )
+  }, [flash, revealMessage])
 
   // 卸载时取消挂起的 flash 定时器(1.4s 内切 chat 会先卸载,避免 dangling timer)。定时器是和未读定位共用的那一个,
   // 这里一并清。

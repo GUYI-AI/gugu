@@ -27,11 +27,11 @@ import { translateSessionMessage } from '@renderer/localization/locale-store'
 import './task-flow-catalog'
 
 /**
- * 新建会话的「项目 · harness」胶囊:摆在输入框那一行、只写值、抽屉下钻(顶层 = 项目,摘要行进 harness)、
- * 填满圆点打勾 —— 「说这句话之前先定个调」。
+ * 新建会话的「harness · 模型」胶囊:摆在输入框那一行、只写值、抽屉下钻(顶层 = 摘要行,点进各维)、
+ * 填满圆点打勾 —— 「说这句话之前先定个调」。项目与机器不在这里:输入框上方那两行(CreateTarget)。
  *
  * 选完**不关**(owner 10-07「调完一个设置后还可以继续调另一个,而不是每次都要重新点开设置」):
- * 在下钻页选 → 回顶层,摘要行上就是刚改的值,接着点下一项;在顶层选(项目)→ 留在顶层、勾移过去。
+ * 在下钻页选 → 回顶层,摘要行上就是刚改的值,接着点下一项。
  * 关只靠 ✕ 和点遮罩。
  *
  * 这里的选择**只在手机上**,发送时才随请求带过去,❌ 不逐项下发到机器 ——
@@ -53,7 +53,7 @@ export function CreateOptionsPill({
   selection: CreateSelection
   /** 模型点选另报，区分“明确不指定”和尚未定默认；改项目/权限不算选过模型。 */
   onChange: (next: CreateSelection, modelPicked?: boolean) => void
-  /** 正在建 —— 发出去之后再改项目,请求已经带着旧值在路上了。 */
+  /** 正在建 —— 发出去之后再改,请求已经带着旧值在路上了。 */
   busy: boolean
   /** 选定 harness 的模型目录;还没到 / 探失败时 null,由 `modelsState` 说明是哪种。 */
   models: SessionpageSessionCreateModels | null
@@ -62,16 +62,18 @@ export function CreateOptionsPill({
 }) {
   const { t } = useTranslation('main')
   const { t: tFlow } = useTranslation('mobileTaskFlow')
-  const [view, setView] = useState<'project' | 'harness' | 'permission' | 'model' | 'effort' | null>(null)
+  const [view, setView] = useState<'root' | 'harness' | 'permission' | 'model' | 'effort' | null>(null)
   const harnessOption = options.harnesses.find((h) => h.id === selection.harness) ?? null
   const label = createPillLabel(options, selection, models, phoneHost ? tFlow('phoneAgent') : undefined)
 
-  // 一个值都没有就整个不画(与会话选项胶囊同一条):机器上没项目、也没 harness 的情形,
+  // 一个值都没有就整个不画(与会话选项胶囊同一条):机器上没有 harness 的情形,
   // 页面正文已经在说原因了,这里再摆一个空胶囊只会多一个「这是啥」。
   if (!label) return null
 
-  const atRoot = view === (phoneHost ? 'model' : 'project')
-  const backToRoot = () => setView(phoneHost ? 'model' : 'project')
+  const root = phoneHost ? 'model' : 'root'
+  const atRoot = view === root
+  const backToRoot = () => setView(root)
+  const viewName = view === 'root' || view === null ? t('agentWatch.options.title') : t(`agentWatch.create.${view === 'permission' ? 'permissionLabel' : view}`)
 
   return (
     <>
@@ -83,7 +85,7 @@ export function CreateOptionsPill({
         data-testid="agent-watch-create-options-open"
         aria-haspopup="dialog"
         aria-expanded={view !== null}
-        onClick={() => setView(phoneHost ? 'model' : 'project')}
+        onClick={() => setView(root)}
       >
         <span className="gg-aw-pill-text">{label}</span>
         <ChevronDown />
@@ -94,7 +96,7 @@ export function CreateOptionsPill({
           onClose={() => setView(null)}
           mobileFitContent
           testId="agent-watch-create-options"
-          ariaLabel={t(`agentWatch.create.${view === 'permission' ? 'permissionLabel' : view ?? 'project'}`)}
+          ariaLabel={viewName}
         >
           {view ? <div className="gg-aw gg-aw-sheet">
             <div className="gg-aw-sheet-head">
@@ -108,7 +110,7 @@ export function CreateOptionsPill({
                 {atRoot ? <X /> : <ChevronLeft />}
               </IconButton>
               <div className="gg-aw-sheet-title">
-                {t('agentWatch.options.pick', { name: t(`agentWatch.create.${view === 'permission' ? 'permissionLabel' : view ?? 'project'}`) })}
+                {view === 'root' ? viewName : t('agentWatch.options.pick', { name: viewName })}
               </div>
               <div className="gg-aw-sheet-side" />
             </div>
@@ -153,35 +155,7 @@ export function CreateOptionsPill({
                 }}
                 onLeave={() => setView(null)}
               />
-            ) : view === 'project' ? (
-              <div className="gg-aw-choice-group" role="radiogroup" data-dimension="project">
-                {options.projects.map((project) => {
-                  const selected = project.id === selection.projectId
-                  return (
-                    <Button
-                      key={project.id}
-                      variant="ghost"
-                      size="option"
-                      className="gg-aw-choice"
-                      role="radio"
-                      aria-checked={selected}
-                      data-testid="agent-watch-create-choice"
-                      data-dimension="project"
-                      data-option-id={project.id}
-                      onClick={() => onChange({ ...selection, projectId: project.id })}
-                    >
-                      <span className="gg-aw-choice-radio" data-on={selected ? 'true' : undefined}>
-                        {selected ? <Check /> : null}
-                      </span>
-                      <span className="gg-aw-choice-body">
-                        <span className="gg-aw-choice-label">{project.name}</span>
-                        {!harnessOption?.chatAvailable || harnessOption.watchable ? <span className="gg-aw-choice-desc">{project.path}</span> : null}
-                      </span>
-                    </Button>
-                  )
-                })}
-              </div>
-            ) : (
+            ) : view === 'harness' ? (
               <div className="gg-aw-choice-group" role="radiogroup" data-dimension="harness">
                 {options.harnesses.map((harness) => {
                   const selected = harness.id === selection.harness
@@ -221,7 +195,7 @@ export function CreateOptionsPill({
                   )
                 })}
               </div>
-            )}
+            ) : null}
 
             {atRoot ? (
               <div className="gg-aw-summary-group">

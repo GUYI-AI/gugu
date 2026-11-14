@@ -1,10 +1,12 @@
 import fs from 'node:fs/promises';
+import type { CanonicalPath } from '@gugu/session-core/files';
 import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import { persistedWorkspacePath } from '@main/core/projects/utils';
 import { sessionModelLabel, sessionPlatformModel } from '@main/core/sessions/platform-model-selection';
 import { sessionModelFromDecision } from '@main/core/sessions/session-model-fact';
+import { knownTaskName } from '@main/core/sessions/task-name';
 
 /**
  * #6615 问题 11 What an extension program is told about the agent session that called it, beyond who
@@ -24,7 +26,7 @@ export interface AgentSessionContext {
   projectId: string;
   /** The workspace it runs in (`sessions.workspaceId`): what the window reads its files through. */
   workspaceId: string | null;
-  workspaceRoot: string | null;
+  workspaceRoot: CanonicalPath | null;
   /**
    * The model gugu runs this session on, as `listAgents()` gives it (`spawn_model_id`: a Gugu model's `platform:<id>`,
    * else the harness's own id). Null when the session never chose one — not guessed. One switched inside the agent's
@@ -33,6 +35,10 @@ export interface AgentSessionContext {
   model: string | null;
   /** That model's name as the model menu shows it (`sessionModelLabel`, kept with the decision); null for an engine's own. */
   modelLabel: string | null;
+  /** The canonical task/agent name, never inferred from the model label. */
+  agentName?: string;
+  /** Compatibility alias for the same task name; there is no separate session title. */
+  taskTitle?: string;
 }
 
 const isFolder = (path: string) => fs.stat(path).then((found) => found.isDirectory(), () => false);
@@ -53,5 +59,7 @@ export async function agentSessionContext(agentId: string): Promise<AgentSession
   const decision = await sessionPlatformModel(agentId);
   const model = sessionModelFromDecision(decision, session.config?.model ?? null).spawn_model_id ?? null;
   const modelLabel = await sessionModelLabel(agentId, decision, session.provider, session.runtime);
-  return { sessionId: agentId, projectId: session.projectId, workspaceId: session.workspaceId ?? null, workspaceRoot, model, modelLabel };
+  const agentName = knownTaskName({ id: agentId, config: session.config });
+  return { sessionId: agentId, projectId: session.projectId, workspaceId: session.workspaceId ?? null, workspaceRoot, model, modelLabel,
+    ...(agentName ? { agentName, taskTitle: agentName } : {}) };
 }

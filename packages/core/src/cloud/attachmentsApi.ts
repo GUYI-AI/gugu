@@ -31,7 +31,8 @@ export function configuredEndpoint(token: string): AttachmentsEndpoint {
 
 /** A refusal from the function, with its code (upload_used, version_conflict, too_large, denied, …) — said, never swallowed. */
 export class AttachmentsError extends Error {
-  constructor(readonly route: string, readonly status: number, readonly code: string, message: string) {
+  /** `details`: only on recipient_not_member — the refused ids, comma-separated in to_user_ids order (gugu-supabase#242). */
+  constructor(readonly route: string, readonly status: number, readonly code: string, message: string, readonly details?: string) {
     super(`attachments/${route}: ${message}`)
   }
 }
@@ -50,9 +51,10 @@ async function call(endpoint: AttachmentsEndpoint, route: string, body: Record<s
     let json: unknown = null
     try { json = JSON.parse(text) } catch { /* not json: said below as it is */ }
     if (!response.ok) {
-      const said = (json ?? {}) as { error?: unknown; message?: unknown }
+      const said = (json ?? {}) as { error?: unknown; message?: unknown; details?: unknown }
       throw new AttachmentsError(route, response.status, typeof said.error === 'string' ? said.error : 'failed',
-        typeof said.message === 'string' ? said.message : `HTTP ${response.status} ${text.slice(0, 200)}`)
+        typeof said.message === 'string' ? said.message : `HTTP ${response.status} ${text.slice(0, 200)}`,
+        typeof said.details === 'string' ? said.details : undefined)
     }
     return json
   }
@@ -121,6 +123,9 @@ export interface CommitArgs {
   expected_version?: number
   /** How long this copy stays (temporary | permanent); not given, the chat's rule. Needs a backend with file_storage_mark_as. */
   keep?: FileKeep
+  /** #2581 Files sent at once: one id for the send and how many files it holds (2–10). Not given, a file sent on its own. */
+  send_group_id?: string
+  send_group_size?: number
 }
 
 /** Sends the upload as an attachment message: the message row as `messages_view` has it. */
@@ -167,6 +172,9 @@ export interface ForwardArgs {
   thread_root_id?: string | null
   is_thread_root?: boolean
   is_whisper?: boolean
+  /** #2581 Files forwarded together land as one send: the same group on each copy, and how many copies it holds. */
+  send_group_id?: string
+  send_group_size?: number
 }
 
 /** Forwards an attachment message of the new kind (its own item in the target's folder, the same bytes): the new message row. */

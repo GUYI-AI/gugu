@@ -1,5 +1,6 @@
 import { openRuntimeFork, runtimeFork, type RuntimeFork } from './session-life-forks';
-import { createRPCController } from '@shared/lib/ipc/rpc';
+import { createRPCController, withSender } from '@shared/lib/ipc/rpc';
+import { isFrameSender } from '@main/host-ws/frame-host';
 import { archiveSession, restoreSession } from './archiveSession';
 import { dehydrateSession } from './dehydrateSession';
 import { getSessions } from './getSessions';
@@ -8,17 +9,19 @@ import { getUnarchivedSession } from './getUnarchivedSession';
 import { convertAutomationSession } from './convert-automation-session';
 import { forkSession } from './fork-session';
 import { getStoredHistory, getStoredToolImage, getStoredSettledTurn } from './session-turn-store';
+import { getStoredOutline } from './session-outline';
 import { syncStoredHistoryFromRecord } from './record-backfill';
 import { hydrateSession } from './hydrateSession';
 import { markSessionSeen } from './markSessionSeen';
 import { renameSession } from './renameSession';
 import { restartSession } from './restart-session';
 import { setSessionPinned } from './setSessionPinned';
+import { setSessionPinnedToSidebar } from './setSessionPinnedToSidebar';
 import { setSessionParent } from './session-family';
 import { switchSessionRuntime } from './switch-session-runtime';
 import { sendMessage } from './sendMessage';
 import { sessionLife } from './session-life';
-import { storedPendingInputLookup } from './session-pending-history';
+import { nativePendingInputLookup } from './session-pending-history';
 import { stopSessionByPerson } from './session-orchestration';
 import { ensurePlatformSessionReady } from './platform-recovery-gate';
 import { recordLiveSessionSetting } from './record-live-session-setting';
@@ -37,9 +40,12 @@ import { setSessionsOnScreen } from './sessions-on-screen';
  */
 export const sessionController = createRPCController({
   getSessions,
-  getStoredHistory,
+  // A window of this app reads at the local page size; a device link or a web socket reads at the transport size.
+  getStoredHistory: withSender((sender: number, params: Parameters<typeof getStoredHistory>[0]) =>
+    getStoredHistory(params, { local: !isFrameSender(sender) })),
   getStoredSettledTurn,
   getStoredToolImage,
+  getStoredOutline,
   // #980 打开一条没在跑的会话时:把 agent 自己的记录里有、库里还没有的那几轮补进库,回补进了几轮。
   syncStoredHistoryFromRecord: (sessionId: string) => syncStoredHistoryFromRecord(sessionId),
   forkSession,
@@ -59,6 +65,7 @@ export const sessionController = createRPCController({
   dehydrateSession,
   renameSession,
   setSessionPinned,
+  setSessionPinnedToSidebar,
   // 人在侧栏把一条会话拖到另一条上 = 挂到它下面:与 agent 的 `session_set_parent` 同一个动作(校验、落库、事件都在
   // setSessionParent 里)。同样在 child 所在的机器上做 —— agent 那边由宿主按 child 的地址转,人这边由会话页按 child 的机器选线。
   setSessionParent,
@@ -79,11 +86,11 @@ export const sessionController = createRPCController({
   // session-life: the ACP lifecycle projection (later changes arrive on sessionLifeViewChannel) and the person's
   // explicit start — the only way a page brings an ACP session up.
   lifeView: async (sessionId: string) => {
-    await sessionLife().reconcileUnknownRows(sessionId, storedPendingInputLookup(sessionId));
+    await sessionLife().reconcileUnknownRows(sessionId, nativePendingInputLookup(sessionId));
     return sessionLife().read(sessionId);
   },
   lifeStart: async (sessionId: string) => { sessionLife().start(sessionId, 'user-open'); },
-  lifeRetryUnknown: (sessionId: string, messageId: string) => sessionLife().retryUnknownRow(sessionId, messageId, storedPendingInputLookup(sessionId)),
+  lifeRetryUnknown: (sessionId: string, messageId: string) => sessionLife().retryUnknownRow(sessionId, messageId, nativePendingInputLookup(sessionId)),
   lifeStop: (sessionId: string) => stopSessionByPerson(sessionId),
   lifeDiscard: async (sessionId: string, messageId: string) => { sessionLife().discardRow(sessionId, messageId); },
   // A side chat is a fork entry of Life: opened by its page, fed through the same custody send, ended when the

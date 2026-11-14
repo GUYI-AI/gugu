@@ -5,11 +5,13 @@ import { detectHostOs } from '@shared/host-os'
 import './lib/errorCaptureBootstrap'
 // 网页形态按 http://<ip> 直开时浏览器不给 crypto.randomUUID,全仓裸用 → 会话页启动即白;import 即装垫片。
 import './lib/insecure-context-shims'
+// 没更新过的老 Android WebView(Chrome 91)没有 structuredClone,首屏渲染即抛;同样 import 即装。
+import './lib/legacy-webview-shims'
 import React from 'react'
 import App from './App'
+import { notifyHostTheme } from '@renderer/lib/theme/host-theme'
 import { renderEntryRoot } from './lib/renderer-entry-root'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
-import { captureReferralFromUrl } from './lib/referral'
 import { installScrollbarAutoHide } from './lib/scrollbarAutoHide'
 import { installWindowMaterialAttribute } from './lib/windowMaterial'
 import {
@@ -23,6 +25,7 @@ import { getLocaleSnapshot, LocalizationProvider, subscribeLocale } from './i18n
 import { platform } from './platform'
 import { installPlatformLocaleSync } from './platform/locale-sync'
 import { startShellChromeTone } from './platform/capacitorShellChrome'
+import { installPageScale } from './mobile/pageScale'
 import { BuildTagBadge } from './components/BuildTagBadge'
 import { startFirstRunApps } from './components/appSlot/firstRunApps'
 import './i18n/registerMainCatalog'
@@ -38,8 +41,12 @@ import { AndroidStartupFrame } from './platform/AndroidStartupFrame'
 import '@gugu/session-shared/animation-visibility.css'
 import { isAnimationWindowVisible } from '@gugu/session-shared/animation-visibility'
 import { installPerfCounterResponder } from './lib/perfCounterResponder'
+import { installErrorSummaryConsent } from './lib/errorSummaryConsent'
 
+// Before the first render: the phone's system font size decides the width everything is laid out in.
+installPageScale()
 installPerfCounterResponder(window.electronAPI)
+installErrorSummaryConsent()
 // The shared getter also installs this document's native/DOM visibility listeners.
 isAnimationWindowVisible()
 
@@ -52,13 +59,11 @@ installPlatformLocaleSync(platform, {
 // 手机在这一页里自己装(firstRunApps.ts)。
 startFirstRunApps()
 
+
 // @@@scrollbar-autohide (#7641) 滚动条平时透明、滚动时浮出 —— 这里只负责在滚动的元素上打
 // `data-scrolling`,显隐规则在 styles/tokens.css。装在这里而不是某个组件的 effect 里:
 // 它是一条进程级的 DOM 监听,与任何一棵 React 子树的生死无关。
 installScrollbarAutoHide()
-
-// @@@1511 启动即捕获邀请链接 ?ref=<gugu_number>,暂存待注册时塞进 signup metadata(给双方发返利积分)。
-captureReferralFromUrl()
 
 // @@@1238-platform-attr / @@@822 — surface the OS to CSS so the frameless title bar can reserve the
 // right window-control inset only where it actually draws controls. Mac keeps native traffic lights
@@ -83,9 +88,7 @@ installWindowMaterialAttribute(document.documentElement, window.desktopWindow)
 // 但**开机那一次**属性是 index.html 的引导脚本直接落的,不经过它 —— 不补这一下,
 // 一个装完就选深色、之后再没切过的用户,主进程会一直按记住的浅色开窗。
 // 读属性而不是读偏好:属性就是真值(引导脚本已经把 `system` 解析完了)。
-window.electronAPI?.syncWindowTone?.(
-  document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
-)
+notifyHostTheme()
 // 安卓壳的系统栏同理(@@@mobile-shell-chrome),开机一次、之后跟属性走。
 startShellChromeTone()
 

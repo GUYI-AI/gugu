@@ -10,11 +10,10 @@ import { ChatBottomDock } from '../../../../apps/desktop/src/components/chat/Cha
 import { LeftSidebar } from '@renderer/features/sidebar/left-sidebar'
 import { ShellSidebarToggle } from '@renderer/lib/components/titlebar/shell-titlebar'
 import { installShellSlots } from '../../../../apps/desktop/src/lib/shellSlots'
+import { installAssistantShellBridge, publishAssistantShell } from '../../../../apps/desktop/src/lib/assistantShellBridge'
 import { chat, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
-const state = vi.hoisted(() => ({ sessions: [] as SessionpageSessionSummary[], mobile: false, readError: null as Error | null, sidebar: undefined as unknown as {
-  listLayout: string; listPage: string; setListLayout(value: string): void; setListPage(value: string): void
-} }))
+const state = vi.hoisted(() => ({ sessions: [] as SessionpageSessionSummary[], mobile: false, readError: null as Error | null }))
 const followLink = vi.hoisted(() => vi.fn())
 const markSeen = vi.hoisted(() => vi.fn(async (_id: string) => { if (state.readError) throw state.readError }))
 vi.mock('@/lib/guguLinks', () => ({ followLink }))
@@ -32,24 +31,25 @@ vi.mock('@renderer/features/assistant/assistant-shell', () => ({ useAssistantShe
 vi.mock('@renderer/features/assistant/assistant-home-sessions', () => ({ localHomeSessions: { sessions: [] } }))
 vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: {} }) }))
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: vi.fn() }), useWorkspaceSlots: () => ({ currentView: 'home' }), isCurrentView: (current: string, view: string) => current === view }))
-vi.mock('@renderer/lib/layout/layout-provider', () => ({ useWorkspaceLayoutContext: () => ({ isLeftOpen: true, isLeftPeeking: false, toggleLeft: vi.fn(), setTriggerHovered: vi.fn() }) }))
+vi.mock('@renderer/lib/layout/layout-provider', () => ({ SIDEBAR_PROGRESS_VAR: '--gg-sidebar-progress', useWorkspaceLayoutContext: () => ({ isLeftOpen: true, isLeftPeeking: false, toggleLeft: vi.fn(), setTriggerHovered: vi.fn(), setLeftRail: vi.fn() }), useLeftRailLayout: () => false }))
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }))
-vi.mock('@renderer/lib/stores/app-state', async () => {
-  const { observable } = await import('mobx')
-  state.sidebar = observable({ projectsCollapsed: false, listLayout: 'split', listPage: 'projects', sidebarProjects: [], joinedGroups: [],
-    setStateGroupsEnabled: () => {}, setAssistantAgentId: () => {}, setAgentNameOnHoverEnabled: () => {},
-    setListLayout(value: string) { this.listLayout = value }, setListPage(value: string) { this.listPage = value } })
-  return { appState: { projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {} } }, sidebarStore: state.sidebar }
-})
-vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: { chatIdOf: () => undefined } }))
+vi.mock('@renderer/lib/stores/app-state', () => ({
+  appState: { projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {} } },
+  sidebarStore: { sidebarProjects: [], joinedGroups: [], setAssistantAgentId: () => {}, setAgentNameOnHoverEnabled: () => {} },
+}))
+vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: {} }))
 vi.mock('@renderer/features/sidebar/session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: () => {} } }))
 vi.mock('@renderer/features/sidebar/use-sidebar-drop', () => ({ useSidebarDrop: () => ({ isDragOver: false }) }))
-vi.mock('@renderer/features/sidebar/pinned-session-list', () => ({ SidebarPinnedSessionList: () => null }))
-vi.mock('@renderer/features/sidebar/projects-group-label', () => ({ ProjectsGroupLabel: () => null }))
 vi.mock('@renderer/features/sidebar/sidebar-search-trigger', () => ({ SidebarSearchTrigger: () => <span>Search</span> }))
-vi.mock('@renderer/features/sidebar/sidebar-sessions-section', () => ({ SidebarSessionsSection: () => null }))
-vi.mock('@renderer/features/sidebar/sidebar-virtual-list', () => ({ SidebarVirtualList: () => <div data-original-project-list="">Original projects</div> }))
-vi.mock('@renderer/features/sidebar/sidebar-chats-section', () => ({ shellChatActions: [], openShellChatAction: vi.fn(), SidebarChatsSection: () => <div data-original-chat-list="">Original chats</div> }))
+vi.mock('@renderer/features/sidebar/sidebar-one-list', () => ({ SidebarOneList: () => <div data-original-list="">Original list</div> }))
+vi.mock('@renderer/features/sidebar/sidebar-one-list-empty', () => ({ SidebarOneListEmpty: () => null }))
+// The desktop bell is in the sidebar's head (#2548): the real head, with the row under it left out.
+vi.mock('@renderer/features/sidebar/sidebar-one-list-chrome', async original => ({ ...await original<object>(), SidebarOneListTop: () => null }))
+vi.mock('@renderer/lib/components/nav-buttons', () => ({ navigateBack: vi.fn() }))
+vi.mock('@renderer/features/sidebar/inner-sidebar', async () => {
+  const { observable } = await import('mobx')
+  return { innerSidebarChat: observable.box(null, { deep: false }), innerSidebarShownFor: observable.box(null) }
+})
 
 let shell: ReturnType<typeof createReactHarness>
 let workspace: ReturnType<typeof createReactHarness>
@@ -62,7 +62,6 @@ beforeEach(() => {
   vi.clearAllMocks(); state.mobile = false; state.readError = null
   state.sessions = [task('agent-a'), task('agent-b')]
   delete (window as unknown as Record<string, unknown>).__GUGU_SIDEBAR_NOTIFICATIONS_OPEN__
-  state.sidebar.setListLayout('split'); state.sidebar.setListPage('projects')
   installShellSlots(); observations.clear()
   vi.stubGlobal('IntersectionObserver', class {
     record: { callback: IntersectionObserverCallback; targets: Set<Element> }
@@ -98,7 +97,8 @@ async function see(id: string, ratio = 1) {
 it.each([false, true])('the actual list header toggles global notifications and back (phone=%s)', async mobile => {
   await mount(mobile)
   expect(document.querySelector('[data-testid="notification-count"]')?.textContent).toBe('2')
-  expect(document.querySelector('[data-testid="sidebar-list-layout"]')).toBeNull()
+  // #2548: on the desktop head the bell is drawn like the collapse and 会话历史 buttons beside it; the phone's stays as it was.
+  expect(toggle()?.dataset.tone).toBe(mobile ? undefined : 'strong')
   expect(list()).toBeNull()
   await open()
   expect(toggle()?.getAttribute('aria-pressed')).toBe('true')
@@ -108,21 +108,17 @@ it.each([false, true])('the actual list header toggles global notifications and 
   expect(toggle()?.getAttribute('aria-pressed')).toBe('false')
   expect(list()).toBeNull()
 })
-it('desktop toggling retains the original list nodes, scroll and split/merged choice', async () => {
+it('desktop toggling retains the original list nodes and scroll', async () => {
   await mount()
   const scroller = workspace.container.querySelector<HTMLElement>('[data-region="sidebar-scroll"]')!
   scroller.scrollTop = 87
-  const original = workspace.container.querySelector('[data-original-project-list]')
+  const original = workspace.container.querySelector('[data-original-list]')
+  expect(original, 'the one list is mounted').not.toBeNull()
   await open()
-  expect(workspace.container.querySelector('[data-original-project-list]')).toBe(original)
+  expect(workspace.container.querySelector('[data-original-list]')).toBe(original)
   expect(original?.closest('[data-notification-original-list]')?.getAttribute('style')).toContain('content-visibility: hidden')
   await act(async () => toggle()!.click())
   expect(scroller.scrollTop).toBe(87)
-  expect(state.sidebar.listLayout).toBe('split')
-  await act(async () => state.sidebar.setListLayout('merged'))
-  await open(); await act(async () => toggle()!.click())
-  expect(state.sidebar.listLayout).toBe('merged')
-  expect(workspace.container.querySelector('[data-original-chat-list]')).not.toBeNull()
 })
 it('the old composer has no floating Needs you entrance', async () => {
   await renderWithAppProviders(shell, <><ChatBottomDock reserve={false}><textarea /></ChatBottomDock><NeedsYouHost /></>)
@@ -132,19 +128,21 @@ it.each([false, true])('opening the bell reads nothing; a read failure stays lis
   const failure = { ...task('error-a', 'error'), lastInteractedAt: '2026-11-05T01:00:00.000Z' }
   const wait = { ...task('approval', 'needs_user', false), lastInteractedAt: '2026-11-05T00:00:00.000Z' }
   state.sessions = [failure, wait]
-  const marks = () => rows().map(row => ({ badge: row.querySelector('.gg-list-row-trailing [data-shape="count"]')?.textContent ?? null, muted: !!row.querySelector('.gg-list-row-title .text-\\[var\\(--muted-fg\\)\\]') }))
+  const marks = () => rows().map(row => ({ badge: row.querySelector('.gg-list-row-trailing [data-shape="count"]')?.textContent ?? null, muted: !!row.querySelector('.gg-list-row-title .text-\\[var\\(--muted-fg\\)\\]'), status: !!row.querySelector('.gg-phone-message-avatar-badge') }))
   await mount(mobile); await open()
   await see('error-a'); await see('approval')
   expect(markSeen, 'looking at the list is not reading the task').not.toHaveBeenCalled()
+  expect(rows().map(row => row.querySelector('.gg-list-row-subtitle')?.textContent), 'the second line says why, not the name again').toEqual(['出错了', '等你批准'])
   expect(document.querySelector('[data-testid="notification-count"]')?.textContent).toBe('2')
   expect(rows().map(row => row.dataset.emphasis)).toEqual(['true', 'true'])
-  expect(marks(), 'unread rows carry the chat list unread badge').toEqual([{ badge: '1', muted: false }, { badge: '1', muted: false }])
+  expect(marks(), 'unread rows carry the chat list unread badge').toEqual([{ badge: '1', muted: false, status: true }, { badge: '1', muted: false, status: true }])
   // The host read bit lands (the task was opened); the person closes the bell and opens it again.
   state.sessions = [{ ...failure, unseen: false }, wait]
   await mount(mobile); await act(async () => toggle()!.click()); await open()
   expect(rows().map(row => row.dataset.sessionLine), 'a read failure is still a failure: it stays listed').toEqual(['error-a', 'approval'])
   expect(rows().map(row => row.dataset.emphasis)).toEqual([undefined, 'true'])
-  expect(marks(), 'a read row is muted and has no badge').toEqual([{ badge: null, muted: true }, { badge: '1', muted: false }])
+  expect(marks(), 'a read row is muted, with no badge and no status mark: its state stays in words').toEqual([{ badge: null, muted: true, status: false }, { badge: '1', muted: false, status: true }])
+  expect(rows()[0].querySelector('.gg-list-row-subtitle')?.textContent).toBe('出错了')
   expect(document.querySelector('[data-testid="notification-count"]')?.textContent).toBe('1')
   expect(document.querySelector('[data-testid="notification-mark-all-read"]'), 'nothing unread left to mark').toBeNull()
   // Its state, not its read bit, takes it off the list.
@@ -157,6 +155,17 @@ it('mark all reads global unexpanded errors across groups and leaves pending act
   await mount(); await open()
   await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="notification-mark-all-read"]')!.click())
   expect(markSeen.mock.calls.map(([id]) => id).sort()).toEqual(['agent-a', 'agent-b'])
+})
+it.each([false, true])('clicking an error acknowledges its host before opening the exact task (phone=%s)', async mobile => {
+  state.sessions = [task('failed', 'error')]
+  await mount(mobile); await open()
+  await act(async () => rows()[0].click())
+  expect(markSeen).toHaveBeenCalledExactlyOnceWith('failed')
+  expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'failed', deviceId: 'server' })
+  state.sessions = [task('failed', 'error', false)]
+  await mount(mobile)
+  expect(rows().map(row => row.dataset.sessionLine), 'a read failure stays listed').toEqual(['failed'])
+  expect(document.querySelector('[data-testid="notification-count"]')).toBeNull()
 })
 it('failed reads retain their item and display the original error', async () => {
   state.sessions = [task('error-a', 'error')]; state.readError = new Error('host write failed')
@@ -181,6 +190,32 @@ it.each([false, true])('clicking a global item opens its exact host task (phone=
   await act(async () => rows()[1].click())
   expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'agent-b', deviceId: 'server' })
 })
+// The assistant's own session is the assistant, not a task of its: its row opens the assistant's chat — the link the one decision
+// routes (to the App, or, when the App is not usable here, as any chat; chat link tests in MainLayout.test.ts) — and reads it.
+// Opened as a session it landed on the blank new-task page with its unread left on (verify-pass1 D10).
+it.each([false, true])('clicking the assistant\'s own row opens its chat and reads it, not the task view (phone=%s)', async mobile => {
+  installAssistantShellBridge()
+  publishAssistantShell({ cloudAvailable: false, canHostHere: true, cloud: null, loadError: null, assistant: { id: 'agent-a', display_name: '咕咕', avatar: null, created_at: null },
+    assistantState: 'found', ownerName: 'U', ownerId: 'user-1', chatId: 'assistant-dm', home: null, setup: null, member: false, preparing: false })
+  try {
+    await mount(mobile); await open()
+    await act(async () => rows()[0].click())
+    expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'chat', chatId: 'assistant-dm' })
+    expect(markSeen.mock.calls.map(([id]) => id)).toEqual(['agent-a'])
+    followLink.mockClear(); markSeen.mockClear()
+    await act(async () => rows()[1].click())
+    expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'agent-b', deviceId: 'server' })
+    expect(markSeen).not.toHaveBeenCalled()
+    // Its chat not known yet: the session link, as before — nothing is guessed.
+    followLink.mockClear()
+    publishAssistantShell({ cloudAvailable: false, canHostHere: true, cloud: null, loadError: null, assistant: { id: 'agent-a', display_name: '咕咕', avatar: null, created_at: null },
+      assistantState: 'loading', ownerName: 'U', ownerId: 'user-1', chatId: null, home: null, setup: null, member: false, preparing: false })
+    await act(async () => rows()[0].click())
+    expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'agent-a', deviceId: 'server' })
+  } finally {
+    publishAssistantShell({ cloudAvailable: false, canHostHere: true, cloud: null, loadError: null, assistant: null, assistantState: 'none', ownerName: null, ownerId: null, chatId: null, home: null, setup: null, member: false, preparing: false })
+  }
+})
 it('phone and desktop show the same notifications for the same tasks: old read failures listed but uncounted, no ⚡, nothing above Messages', async () => {
   const at = (day: number) => new Date(Date.UTC(2026, 9, day)).toISOString()
   state.sessions = [
@@ -202,4 +237,18 @@ it('phone and desktop show the same notifications for the same tasks: old read f
   }
   expect(shown[0]).toEqual({ count: '3', rows: ['wait', 'newer-failure', 'older-failure'], listed: 43 })
   expect(shown[1]).toEqual(shown[0])
+})
+
+it.each([false, true])('an answered App install stays below the waits, muted, uncounted, saying its outcome and where (phone=%s)', async mobile => {
+  const installed = { ...task('installer'), agentStatus: 'working', status: { status: 'working', detail: 'running' }, unseen: false,
+    lastAnswered: { itemId: 'ask-1', kind: 'permission' as const, source: 'app-install' as const, optionId: 'allow',
+      option: { optionId: 'allow', name: 'Install', kind: 'allow_once' }, resolvedBy: 'mobile', resolvedAt: Date.UTC(2026, 10, 12) } }
+  const declined = { ...installed, conversationId: 'decliner', agent: { userId: 'decliner' }, title: 'decliner',
+    lastAnswered: { ...installed.lastAnswered, optionId: 'decline', option: { optionId: 'decline', name: 'Decline', kind: 'reject_once' }, resolvedBy: 'desktop', resolvedAt: Date.UTC(2026, 10, 11) } }
+  state.sessions = [installed, declined, task('approval')]
+  await mount(mobile); await open()
+  expect(document.querySelector('[data-testid="notification-count"]')?.textContent).toBe('1')
+  expect(rows().map(row => row.dataset.sessionLine)).toEqual(['approval', 'installer', 'decliner'])
+  expect(rows().map(row => row.querySelector('.gg-list-row-subtitle')?.textContent)).toEqual(['等你批准', '已在手机端同意', '已在桌面端拒绝'])
+  expect(rows().slice(1).every(row => !!row.querySelector('.gg-list-row-title .text-\\[var\\(--muted-fg\\)\\]') && !row.querySelector('.gg-list-row-trailing [data-shape="count"]'))).toBe(true)
 })

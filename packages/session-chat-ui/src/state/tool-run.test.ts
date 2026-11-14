@@ -41,6 +41,23 @@ describe('tool run summaries count calls, not layout wrappers', () => {
   })
 })
 
+describe('a failed completion says it failed (#2587 follow-up)', () => {
+  // Inside the process line the old standalone 「后台命令失败」 row is gone: the summary is the only place left that says so.
+  const done = (kind: 'subagent-done-tool-call' | 'background-command-done-tool-call', id: string, outcome: 'completed' | 'failed' | 'stopped'): ChatItem =>
+    ({ kind, id, toolCallId: id, title: id, name: id, status: 'done', outcome }) as unknown as ChatItem
+
+  it('counts failed background commands and subagents apart from finished and stopped ones', () => {
+    const items = [
+      done('background-command-done-tool-call', 'a', 'completed'), done('background-command-done-tool-call', 'b', 'failed'),
+      done('background-command-done-tool-call', 'c', 'failed'), done('background-command-done-tool-call', 'd', 'stopped'),
+      done('subagent-done-tool-call', 'e', 'failed'), done('subagent-done-tool-call', 'f', 'completed'),
+    ]
+    expect(tallyToolRun(items, true)).toEqual({ subagentDone: 1, subagentFailed: 1, commandDone: 1, commandStopped: 1, commandFailed: 2 })
+    expect(toolRunLabel(tallyToolRun(items, true), defaultChatTranslator)).toBe(
+      '1 subagent finished, 1 subagent failed, 1 background command finished, 1 background command stopped, 2 background commands failed')
+  })
+})
+
 describe('what a running run is doing right now (toolRunNow)', () => {
   const run = (id: string, command: string, status = 'running'): ChatItem =>
     ({ kind: 'execute-tool-call', id, command, status }) as unknown as ChatItem

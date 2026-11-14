@@ -8,8 +8,6 @@ import type { CommandId } from '@shared/commands';
  */
 
 export const SESSION_NAV_SHORTCUT_KEYS = [
-  'session.next',
-  'session.previous',
   'session.focusComposerFromSidebar',
   'session.projectHome',
   'session.backToList',
@@ -43,8 +41,6 @@ const ALLOWED: Record<SessionNavContext, readonly SessionNavShortcutKey[]> = {
   // share a default binding on purpose (disjoint layers, see behavior). Listed rather than derived
   // so which of the two wins is a decision in the table, not a consequence of declaration order.
   nav: [
-    'session.next',
-    'session.previous',
     'session.focusComposerFromSidebar',
     'session.projectHome',
     'session.leaveComposer',
@@ -53,10 +49,8 @@ const ALLOWED: Record<SessionNavContext, readonly SessionNavShortcutKey[]> = {
     'session.archiveHighlighted',
   ],
   // The composer is already focused, so "focus the composer" has nothing to do here. Bare arrows
-  // remain prompt-history keys, while the registered modified arrows explicitly switch sessions.
+  // remain prompt-history keys; ⌘↑/⌘↓ are the one list's (#2548: the chat list walks its rows).
   'composer-empty': [
-    'session.next',
-    'session.previous',
     'session.backToList',
     'session.leaveComposer',
     'session.rename',
@@ -64,11 +58,8 @@ const ALLOWED: Record<SessionNavContext, readonly SessionNavShortcutKey[]> = {
     'session.archiveHighlighted',
   ],
   // With text in the box ⌃X is the platform's cut. Rename and pin act on "the session you are in",
-  // which is unambiguous while typing — so they stay available. The registered modified arrows
-  // likewise switch sessions; the owner explicitly accepts replacing macOS document-boundary movement.
+  // which is unambiguous while typing — so they stay available.
   'composer-text': [
-    'session.next',
-    'session.previous',
     'session.backToList',
     'session.leaveComposer',
     'session.rename',

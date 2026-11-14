@@ -9,6 +9,7 @@ export function transientNetworkErrorCode(err: unknown): string | null {
 export function isTransientNetworkError(err: unknown): boolean {
   const code = transientNetworkErrorCode(err)
   if (code && /^(?:EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ECONNRESET|ECONNREFUSED|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT)$/i.test(code)) return true
-  const message = err instanceof Error ? err.message : String(err ?? '')
+  const rawMessage = (err as { message?: unknown } | null | undefined)?.message
+  const message = typeof rawMessage === 'string' ? rawMessage : String(err ?? '')
   return /\bfetch failed\b|\bnetwork error\b|\bsocket hang up\b|\bconnection (?:reset|refused|timed out)\b/i.test(message)
 }

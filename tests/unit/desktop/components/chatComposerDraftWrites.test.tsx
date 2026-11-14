@@ -11,8 +11,6 @@ import { setComposerVerb, takeComposerCarry } from '../../../../apps/desktop/src
 import { ChatLineScope } from '../../../../apps/desktop/src/store/chatLineScope'
 import { ShareIntakeContent } from '../../../../apps/desktop/src/mobile/share-intake/ShareIntakeSheet'
 import { landPendingStarters } from '../../../../apps/desktop/src/lib/starterContinuation'
-import { AssistantChatSlot } from '../../../../apps/desktop/src/components/assistant/AssistantChatSlot'
-import { installAssistantShellBridge, readAssistantShellBridge } from '../../../../apps/desktop/src/lib/assistantShellBridge'
 import { MobileAssistantApp } from '../../../../apps/desktop/src/mobile/assistant/MobileAssistantApp'
 import { i18n } from '../../../../apps/desktop/src/i18n'
 import { InChatSlot } from '../../../../apps/desktop/src/lib/shellSlots'
@@ -20,6 +18,15 @@ import { DevicesContext, useDevicesStore } from '../../../../apps/desktop/src/st
 import { startPhoneNewTask } from '../../../../apps/desktop/src/mobile/chat/PhoneNewTask'
 import * as taskDispatch from '../../../../apps/desktop/src/mobile/agent-watch/createTaskInGroup'
 import * as sessionRpc from '../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc'
+import { runInAction } from 'mobx'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+
+// The task folder card's project is the account project of this group (accountProjectsStore); 'machine' has its folder.
+beforeEach(() => runInAction(() => {
+  accountProjectsStore.list = [{ chatId: 'chat', name: 'Project', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'machine', localProjectId: 'project' }] }]
+  accountProjectsStore.status = 'ready'
+}))
+afterEach(() => accountProjectsStore.clear())
 
 let harness: ReturnType<typeof createReactHarness>
 const input = () => harness.container.querySelector<HTMLElement>('[data-testid="chat-composer"]')!
@@ -178,15 +185,6 @@ describe('chat editor draft writes', () => {
     await act(async () => { await landPendingStarters(store.writeDraft, async () => 'owner') })
     expect(readComposer(input())).toBe('  opening task  ')
     expect(window.localStorage.getItem(key)).toBeNull()
-  })
-
-  it('appends a desktop assistant request through the same writer used outside its chat scope', async () => {
-    installAssistantShellBridge()
-    readAssistantShellBridge()!.takeChatDraft()
-    await renderWithAppProviders(harness, <><ChatMessageComposer chatId="chat" onSend={async () => {}} />
-      <AssistantChatSlot dm={{ chatId: 'chat', failed: null, retry: () => {} }} assistantId="assistant" assistantName="Assistant" visible={false} /></>)
-    await act(async () => { writeComposer(input(), 'human draft'); readAssistantShellBridge()!.fillChatDraft('assistant request') })
-    expect(readComposer(input())).toBe('human draft\nassistant request')
   })
 
   it('appends the phone assistant health-report request without replacing live human text', async () => {

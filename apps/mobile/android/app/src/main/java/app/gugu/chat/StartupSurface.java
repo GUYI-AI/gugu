@@ -16,11 +16,14 @@ import java.util.UUID;
 
 /** The system surface is plain color; Web owns the single brand animation. UI-thread only. */
 final class StartupSurface {
+    // The system hands its splash over right after the Activity's first draw, well before a Web frame.
+    private static final long SPLASH_HANDOVER_GRACE_MS = 300;
     private final MainActivity activity;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final StartupDeadline deadline = new StartupDeadline(20_000);
     private final StartupHandoffState state = new StartupHandoffState();
     private final Runnable timeout = this::checkDeadline;
+    private final Runnable splashAbsent = this::revealWithoutSplash;
     private final List<PluginCall> frames = new ArrayList<>();
     private final String attemptId = UUID.randomUUID().toString();
     private final boolean enabled;
@@ -38,7 +41,8 @@ final class StartupSurface {
         if (enabled) SplashScreen.installSplashScreen(activity).setOnExitAnimationListener(provider -> {
             splash = provider;
             StartupTrace.mark("system_splash_exit_requested");
-            if (!state.active()) removeSplash();
+            // A late provider after a splash-less reveal must not stay over the content.
+            if (!state.active() || state.hasRevealed()) removeSplash();
             else completeHandoff();
         });
     }
@@ -94,12 +98,22 @@ final class StartupSurface {
         cancelDraw = StartupDraw.afterVisualFrame(view, () -> {
             if (!state.frameDrawn(generation)) return;
             completeHandoff();
+            if (splash == null && !state.hasRevealed()) {
+                handler.removeCallbacks(splashAbsent);
+                handler.postDelayed(splashAbsent, SPLASH_HANDOVER_GRACE_MS);
+            }
         });
+    }
+
+    private void revealWithoutSplash() {
+        if (splash != null || !state.markSurfaceAbsent()) return;
+        StartupTrace.mark("system_splash_absent");
+        completeHandoff();
     }
 
     /** Resolve only after BOTH a drawable Web frame and the real system provider's removal. */
     private void completeHandoff() {
-        if (!state.hasDrawn() || splash == null || !state.reveal()) return;
+        if (!state.hasDrawn() || (splash == null && !state.surfaceAbsent()) || !state.reveal()) return;
         if (!state.freezesTone()) applyQueuedTone();
         removeSplash();
         if (!state.needsDeadline()) handler.removeCallbacks(timeout);
@@ -154,6 +168,7 @@ final class StartupSurface {
     void fail(String reason) {
         if (!enabled || !state.fail() || activity.isFinishing() || activity.isDestroyed()) return;
         handler.removeCallbacks(timeout);
+        handler.removeCallbacks(splashAbsent);
         cancelDraw.run();
         rejectFrames("startup failed");
         StartupTrace.mark(reason);
@@ -187,6 +202,7 @@ final class StartupSurface {
     void destroy() {
         state.destroy();
         handler.removeCallbacks(timeout);
+        handler.removeCallbacks(splashAbsent);
         cancelDraw.run();
         rejectFrames("startup activity was destroyed");
         if (error != null) error.dismiss();

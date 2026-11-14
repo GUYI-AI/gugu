@@ -6,10 +6,10 @@ import { currentAccountAccessToken } from '@main/core/extensions/account-token';
 import { appIdentityOf, appKey, type AppIdentity } from '@shared/extensions/app-identity';
 import { enablementChatOf, readEnablements, setEnablement } from '@shared/extensions/app-enablements-core';
 import { log } from '@main/lib/logger';
-import { GROUP_FACES, givesAgentTools, hereGives, isHerePlace, placesOfChats, type PlaceChat, type PlaceIdentity } from '@shared/extensions/app-places';
+import { givesAgentTools, hereGives, isHerePlace, placesOfChats, type PlaceChat, type PlaceIdentity } from '@shared/extensions/app-places';
 import { HERE_ALL, type EnablePlace, type InstallGrant } from '@shared/extensions/host-actions';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
-import { listProjectGroupIds } from '../../../../sessionpage/sessionpage-project-groups';
+import { recordedProjectGroupBindings } from '@main/core/projects/operations/device-project-records';
 
 /**
  * D-30 「给哪些 agent」, two layers (App architecture §4, owner 10-27): this computer's half is kept with the install
@@ -27,8 +27,8 @@ async function me(): Promise<{ token: string; userId: string }> {
 }
 
 /**
- * The person's chats as the chat list draws them (their groups, their private chats, the topics grown out of them), the
- * faces of a group's first members and each private chat's other one — who is an agent of theirs among them (`agentOf`).
+ * The person's chats as the chat list draws them (their groups, their private chats, the topics grown out of them) and
+ * each private chat's other one — who is an agent of theirs among them (`agentOf`).
  */
 async function placeChats(token: string, userId: string): Promise<{ chats: PlaceChat[]; identities: Record<string, PlaceIdentity> }> {
   const chat = createGuguSupabaseClient({ schema: 'chat', headers: { Authorization: `Bearer ${token}` } });
@@ -60,7 +60,7 @@ async function placeChats(token: string, userId: string): Promise<{ chats: Place
     source_chat_id: row.source_chat_id,
     peer_user_id: row.kind === 'dm' ? (memberIds.get(row.id) ?? []).find((id) => id !== userId) ?? null : null,
   }));
-  const faces = [...new Set(chats.flatMap((one) => (one.kind === 'dm' ? [one.peer_user_id ?? ''] : (one.member_user_ids ?? []).slice(0, GROUP_FACES))).filter(Boolean))];
+  const faces = [...new Set(chats.flatMap((one) => (one.kind === 'dm' && one.peer_user_id ? [one.peer_user_id] : [])))];
   const identity = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
   const users = await fetchInChunks(faces, async (chunk) => {
     const { data, error } = await identity.from('users').select('id, display_name, avatar, type, owner_user_id').in('id', chunk);
@@ -80,7 +80,8 @@ export async function appPlaces(extensionId: string): Promise<EnablePlace[]> {
   const identity = extensionsService().identityOf(extensionId);
   const on = new Set<string>(identity ? hereGivenOf(identity) : [HERE_ALL]);
   if (identity) for (const row of await readEnablements(token, userId)) if (appKey(row.app) === appKey(identity)) on.add(row.chatId);
-  const projects = new Set((await listProjectGroupIds(userId)).map((entry) => entry.chatId));
+  // The project groups this machine records on the account: a workspace's or hidden project's old binding is not one.
+  const projects = new Set((await recordedProjectGroupBindings()).map((entry) => entry.chatId));
   const { chats, identities } = await placeChats(token, userId);
   return placesOfChats(chats, identities, { me: userId, enabled: on, projects, here: true });
 }

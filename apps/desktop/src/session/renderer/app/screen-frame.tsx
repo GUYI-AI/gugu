@@ -2,7 +2,7 @@ import { tabFullscreen, WORKSPACE_ANCHOR } from '@renderer/features/tabs/tab-ful
 import { observer } from 'mobx-react-lite';
 import { Fragment, useEffect, useRef, type CSSProperties, type DragEvent } from 'react';
 import { useGroupRef } from 'react-resizable-panels';
-import { X } from '@/lib/icons';
+import { Settings, X } from '@/lib/icons';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import { observeGroupParticipantWidth } from '@renderer/features/chats/group-participant-width';
 import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
@@ -14,9 +14,11 @@ import type { PaneLayoutNode } from '@renderer/features/tabs/pane-layout-tree';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
 import { ContextMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@renderer/lib/ui/resizable';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { followLink } from '@/lib/guguLinks';
 import { cn } from '@renderer/utils/utils';
 import {
   blockDropPreview,
@@ -196,14 +198,14 @@ const BlockSlot = observer(function BlockSlot({ blockId }: { blockId: string }) 
  */
 const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: string; chatId: string }) {
   const { translate } = useSessionMessages();
-  const { isLeftOpen } = useWorkspaceLayoutContext();
+  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const corners = screenLayout.corners(blockId);
   const focused = screenLayout.focusedBlockId === blockId;
   return (
     <ChatPanes
       chatId={chatId}
       blockId={blockId}
-      reserveShellRestoreLane={corners.topLeft && !isLeftOpen}
+      reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
       actionsSlot={
         <TabBarActionRow atWindowEdge={corners.topRight}>
           <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />
@@ -238,7 +240,7 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
  */
 const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: string; tabKind: string }) {
   const { translate } = useSessionMessages();
-  const { isLeftOpen } = useWorkspaceLayoutContext();
+  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const contribution = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === tabKind);
   const { label, tooltip } = extensionTabTitle(extensionSurfaceStore.said(null, `screen:${blockId}`), installedExtensionsStore.tabTitle(tabKind) ?? tabKind);
   const corners = screenLayout.corners(blockId);
@@ -248,7 +250,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
   return (
     <>
       <TabStripShell
-        reserveShellRestoreLane={corners.topLeft && !isLeftOpen}
+        reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
         leadingSlot={
           <ContextMenu.Root>
             <ContextMenu.Trigger className="flex h-full items-center">
@@ -262,6 +264,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
             </ContextMenu.Trigger>
             <ContextMenu.Content finalFocus={false}>
               <MenuItem onClick={() => openInWindow({ kind: 'app', tabKind })}>{translate('screen.openInWindow')}</MenuItem>
+              {contribution ? <MenuItem onClick={() => void followLink({ kind: 'app-detail', extensionId: contribution.extensionId })}>{translate('extensions.appSettings')}</MenuItem> : null}
               {multi ? (
                 <>
                   <MenuSeparator />
@@ -273,6 +276,13 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
         }
         actionsSlot={
           <TabBarActionRow atWindowEdge={corners.topRight}>
+            {contribution ? (
+              <button type="button" aria-label={translate('extensions.appSettings')} title={translate('extensions.appSettings')} data-testid="app-block-settings"
+                className="flex size-6 items-center justify-center rounded-md text-foreground-muted hover:bg-row-hover hover:text-foreground"
+                onClick={() => void followLink({ kind: 'app-detail', extensionId: contribution.extensionId })}>
+                <Settings className="size-3.5" />
+              </button>
+            ) : null}
             {multi ? <CloseBlockButton blockId={blockId} /> : null}
           </TabBarActionRow>
         }
@@ -302,11 +312,11 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
  */
 const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { blockId: string; content: Extract<ScreenBlockContent, { kind: 'chat-app' }> }) {
   const { translate } = useSessionMessages();
-  const { isLeftOpen } = useWorkspaceLayoutContext();
+  const { isLeftOpen, leftRail } = useWorkspaceLayoutContext();
   const { chatId, tabKind, itemId, title } = content;
   const contribution = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === tabKind);
   const slot = `screen:${blockId}`;
-  const { label, tooltip } = extensionTabTitle(extensionSurfaceStore.said(null, slot), itemId ? title : (installedExtensionsStore.tabTitle(tabKind) ?? title));
+  const { label, tooltip } = extensionTabTitle(extensionSurfaceStore.said(null, slot), itemId && !installedExtensionsStore.isChatFile(tabKind, title) ? title : (installedExtensionsStore.tabTitle(tabKind) ?? title));
   const corners = screenLayout.corners(blockId);
   const multi = screenLayout.order.length > 1;
   const putBack = () => {
@@ -316,7 +326,7 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
   return (
     <>
       <TabStripShell
-        reserveShellRestoreLane={corners.topLeft && !isLeftOpen}
+        reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken(isLeftOpen, leftRail)}
         leadingSlot={
           <BlockGrip
             label={translate('screen.gripApp')}

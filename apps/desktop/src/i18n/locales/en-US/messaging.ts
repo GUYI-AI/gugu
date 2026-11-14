@@ -54,14 +54,13 @@ export default {
         "retry": "Retry",
         "retrying": "Retrying…",
         "title": "Task failed to start"
-      },
-      "statusReadFailed": "Could not read the task status: {{reason}}"
+      }
     },
     "turnFailure": {
       "card": {
         "appUnavailable": "App unavailable",
         "deliveryRejected": "Message not delivered",
-        "outcomeUnknown": "Delivery result unknown",
+        "outcomeUnknown": "Failed to send",
         "generic": "Reply not completed",
         "authentication": "Model authorization refused",
         "network": "Cannot reach the model service",
@@ -81,7 +80,6 @@ export default {
       "stateAction": "{{name}}: {{state}}. Click to change model",
       "authentication": "The model service refused authorization for this reply.",
       "network": "The connection to the model service was interrupted; this reply could not be completed.",
-      "statusReadFailed": "Reply status could not be read. Please retry.",
       "weeklyQuota": "Weekly usage limit reached. This account cannot reply right now.",
       "monthlyQuota": "Monthly usage limit reached. This account cannot reply right now.",
       "rateLimited": "Too many requests. Please try again shortly.",
@@ -92,7 +90,7 @@ export default {
       "generic": "This Agent could not complete the reply",
       "deliveryRejected": "This message did not reach the assistant and will not be resent automatically.",
       "notAdmitted": "Messages retained. Your assistant will reply when ready.",
-      "outcomeUnknown": "Delivery result unknown: the message may have reached your assistant, and it was not resent.",
+      "outcomeUnknown": "Failed to send this message.",
       "undelivered": "Not delivered yet: no running Gugu instance holds this Agent. It will read the message once that instance is open.",
       "appUnavailable": "Not delivered: this came from an App that cannot run where this Agent lives (not installed, turned off, needs an update, or not possible on a phone).",
       "retry": "Retry",
@@ -129,7 +127,7 @@ export default {
     "backToList": "Back to chats",
     "conversationProfile": "View chat details",
     "downloadFailed": "Could not download the file",
-    "filePreview": { "close": "Close file preview", "download": "Download", "openExternal": "Open externally", "loading": "Reading file…", "rendering": "Rendering preview…", "renderFailed": "Could not render this file", "sheetTruncated": "This spreadsheet is too large, so only the first part is shown. Open it in an Office app to see everything.", "openInOffice": "Open in Office app", "previewLimits": "This document is too large or complex to preview safely.", "unsupported": "This file type cannot be previewed here. Download or open it externally.", "readFailed": "Could not read the file ({{status}})", "pdfControls": "PDF controls", "previousPage": "Previous page", "nextPage": "Next page", "zoomOut": "Zoom out", "zoomIn": "Zoom in", "zoom": "Zoom", "zoomReset": "Reset to 100%", "pdfPage": "PDF page {{page}}" },
+    "filePreview": { "close": "Close file preview", "download": "Download", "openExternal": "Open externally", "loading": "Reading file…", "rendering": "Rendering preview…", "renderFailed": "Could not render this file", "sheetTruncated": "This spreadsheet is too large, so only the first part is shown. Open it in an Office app to see everything.", "openInOffice": "Open in Office app", "previewLimits": "This document is too large or complex to preview safely.", "unsupported": "This file type cannot be previewed here. Download or open it externally.", "readFailed": "Could not read the file ({{status}})", "pdfControls": "PDF controls", "previousPage": "Previous page", "nextPage": "Next page", "zoomOut": "Zoom out", "zoomIn": "Zoom in", "zoom": "Zoom", "zoomReset": "Reset to 100%", "pageNumber": "Page number", "outline": "Outline", "fitWidth": "Fit width", "fitPage": "Fit page", "find": "Find", "findPrevious": "Previous match", "findNext": "Next match", "closeFind": "Close find" },
     "empty": {
       "chats": "Select a chat to start chatting",
       "contacts": "Select a contact to view details"
@@ -160,7 +158,6 @@ export default {
       "pin": "Pin chat",
       "pinFailed": "Could not update the pin: {{reason}}",
       "processing": "Working…",
-      "searchHistory": "Search chat history",
       "unpin": "Unpin chat"
     },
     "returnToLatest": "Jump to latest",
@@ -190,7 +187,7 @@ export default {
     },
     "appEnable": {
       "devices": "Install on",
-      "devicesHint": "Every agent on a computer it is new to can use it; to change who, use the App page.",
+      "devicesHint": "On each computer it is new to, every agent can use it. You can change this in the App's settings.",
       "addsChat": "Installed here already for some agents only: this adds the group “{{name}}” and changes nothing else.",
       "decline": "Don't install",
       "machine": "This computer",
@@ -216,7 +213,6 @@ export default {
       "done": "Done",
       "noPlaces": "You have no agents and are in no groups yet",
       "noMatch": "Nothing found",
-      "used": "Given to: ",
       "hereAll": "All agents here",
       "hereAllOn": "All agents on {{machine}}",
       "more": "{{names}} and {{count}} in all",
@@ -236,6 +232,7 @@ export default {
       "resize": "Resize the panel",
       "offer": "Open it with “{{name}}”",
       "appFiles": "Files of “{{name}}”",
+      "noAppFiles": "This chat has no files of “{{name}}” yet. It opens files in a chat: make one, or ask an agent to.",
       "fileUnavailable": "This file can't be opened here: it may have been deleted, or be outside this chat.",
       "noOpener": "No App on this device opens “{{name}}”, and the Gugu market has none that does.",
       "marketUnreadable": "No App on this device opens “{{name}}”, and the Gugu market can't be reached right now. Try again later.",
@@ -254,6 +251,7 @@ export default {
       "showRaw": "Show the raw content",
       "hideRaw": "Hide the raw content",
       "install": "Install",
+      "goToApps": "Go to Apps",
       "unavailable": "This App cannot open here right now: it is not installed, or it is switched off.",
       "title": "Open “{{name}}” with"
     },
@@ -293,14 +291,17 @@ export default {
     "markAllReadPartial_other": "{{count}} chats could not be marked as read. Try again.",
     "markUnreadFailed": "Could not mark this chat unread. Try again.",
     "muted": "Notifications muted",
+    "newMessage": "New message",
+    "newsNotCallingYou": "New messages, none calling you",
+    "sendPreview": "[{{count}} attachments]",
     "noResults": "No chats found",
-    "searchMessages": "Search messages for “{{query}}”",
     "searchMessagesTitle": "Search messages",
     "listLabel": "Chats",
     "pin": "Pin",
     "scan": "Scan",
     "search": "Search",
-    "unpin": "Unpin"
+    "unpin": "Unpin",
+    "unpinFromSidebar": "Unpin from sidebar"
   },
   "chatService": {
     "errors": {
@@ -351,6 +352,7 @@ export default {
     "send": "Send",
     "settings": "Settings"
   },
+  "linkPill": {"unavailable": "Unavailable: removed, or you cannot see it", "message": "{{sender}}: {{words}}"},
   "attachmentView": {
     "types": {"pdf": "PDF document", "word": "Word document", "excel": "Excel spreadsheet", "presentation": "Presentation", "text": "Text", "markdown": "Markdown document", "csv": "CSV spreadsheet", "html": "Web page", "json": "JSON document", "archive": "Archive", "image": "Image", "audio": "Audio", "video": "Video"},
     "fileGone": "File deleted",
@@ -360,14 +362,16 @@ export default {
     "reupload": "Upload again",
     "selectOriginal": "Choose the original file",
     "storageWarning": "Group file storage is almost full ({{used}} / {{limit}}).",
+    "manageFiles": "Manage files",
     "storageFull": "Group file storage is full ({{used}} / {{limit}}). New uploads are paused.",
     "usageUnavailable": "File storage usage is unavailable right now.",
 
     "fileUnavailable": "File unavailable right now",
+    "fileNoAccess": "You no longer have access to this file",
+    "fileUpdated": "This file was updated; open it again",
     "holderOffline": "{{machine}} is offline. This file opens when it is back online.",
     "holderMachine": "The computer that keeps it",
-    "besideOffline": "On {machine}, not connected",
-    "besideOfflineNotice": "Some files on this page are kept on {{machine}}, which is not connected. They appear when it is back online.",
+    "besideOffline": "On {machine}, device offline",
     "besideUnavailable": "This file is not available right now.",
     "besideOutside": "Only files in this document's folder can be shown.",
     "imageUnavailable": "Image unavailable right now",
@@ -434,11 +438,6 @@ export default {
     "file": "File",
     "photos": "Photos",
     "camera": "Camera",
-    "photoCaption": "Add a caption",
-    "originalPhoto": "Original",
-    "cancelPhotos": "Cancel",
-    "sendPhotos_one": "Send",
-    "sendPhotos_other": "Send ({{count}})",
     "memberType": {
       "agent": "Agent",
       "all": "Everyone",
@@ -451,9 +450,24 @@ export default {
     "mobilePlaceholder": "Message",
     "projectGroupPlaceholder": "Message {{name}}… @ an agent to call it",
     "removeAttachment": "Remove {{fileName}}",
-    "sendFailed": "Could not send: {{reason}}",
+    "sendFailed": "Message was not sent: {{guidance}}",
+    "failedFileLabel": "{{kind}} {{name}}",
+    "failedFileKind": { "image": "Image", "video": "Video", "audio": "Audio", "file": "File" },
+    "fileSendFailed": "{{file}} was not sent: {{guidance}}",
+    "filesSendFailed_one": "{{count}} file was not sent: {{guidance}}",
+    "filesSendFailed_other": "{{count}} files were not sent: {{guidance}}",
+    "failureReason": {
+      "tooLarge": "The file is too large. Reduce its size and send it again.",
+      "signIn": "Your sign-in expired. Sign in and send again.",
+      "denied": "You do not have permission to send. Check the conversation permissions before sending again.",
+      "busy": "Too many sends. Wait a moment and send again.",
+      "chatUnavailable": "The conversation is unavailable. Return to the message list to check it.",
+      "timeout": "The send timed out. Try sending again later.",
+      "unavailable": "The send did not finish. Try sending again later."
+    },
     "verb": {
-      "task": "New task"
+      "task": "New task",
+      "agent": "New agent"
     },
     "whisperBanner": "Whisper to {{name}} · only visible to you both",
     "whisperPlaceholder": "Whisper to {{name}}…"
@@ -466,7 +480,14 @@ export default {
     "reactWith": "React with {{emoji}}"
   },
   "forward": {
+    "detail": "Details",
+    "next": "Next",
+    "send": "Send",
+    "sendTo": "Send to:",
+    "several": "Select several",
     "fileFailed": "{{name}} could not be forwarded with the task",
+    "fileGone": "{{name}} is gone and wasn't forwarded.",
+    "fileTooLarge": "{{name}} is too large. At most 512 MB is forwarded at once.",
     "batchPreview": "Forward {{count}} messages",
     "batchPreview_one": "Forward {{count}} message",
     "batchPreview_other": "Forward {{count}} messages",
@@ -477,6 +498,7 @@ export default {
     "forwarding": "Forwarding…",
     "noResults": "No chats found",
     "noTargets": "No chats available for forwarding",
+    "note": "Add a note",
     "preview": {
       "attachment": "[Attachment]",
       "card": "[Card]",
@@ -510,15 +532,25 @@ export default {
       "unknown": "Unknown member"
     },
     "memberJoined": {
-      "joined": " joined the group chat",
+      "joined": " joined the group",
       "mentionHint": "Mention {{name}} in the message box",
       "separator": ", "
+    },
+    "notice": {
+      "agentFloodGroup": "This group has many agents, so they now reply only when @-mentioned.",
+      "agentFloodTopic": "This topic has many agents, so they now reply only when @-mentioned.",
+      "left": "{{actor}} left the group",
+      "madeAdmin": "{{actor}} made {{target}} an admin",
+      "removed": "{{actor}} removed {{target}} from the group",
+      "revokedAdmin": "{{actor}} removed {{target}} as an admin",
+      "topicOpened": "{{actor}} opened a topic: "
     },
     "memberList": {
       "agentLeave": "Take it out of this group",
       "clearSearch": "Clear search",
-      "createAgent": "New Agent in this group",
-      "invite": "Invite members",
+      "add": "Add",
+      "addMembers": "Add members",
+      "newAgent": "New agent",
       "makeAdmin": "Make admin",
       "manage": "Manage {{name}}",
       "noMatches": "No members match \"{{query}}\"",
@@ -527,11 +559,11 @@ export default {
       "setActive": "Switch to active",
       "setPassive": "Switch to passive",
       "loadFailed": "Could not load the member list. Close and reopen 👥 to try again.",
-      "notParticipant": "You are not in this topic yet, so its member list is not visible. Say something in it to join.",
+      "notParticipant": "No members of this topic are visible right now",
       "sectionAgents": "Agents",
       "sectionPeople": "People",
-      "myAgents": "My agents · {{count}}",
-      "otherAgents": "Others' agents · {{count}}",
+      "myAgents": "My agents",
+      "otherAgents": "Others' agents",
       "listen": {
         "all": "Hears all messages",
         "allHint": "Also receives group messages that don't mention it. Its owner can click to switch to mentions only.",
@@ -580,9 +612,11 @@ export default {
     "settings": {
       "notLoaded": "Group settings are still loading. Try again in a moment.",
       "manage": "Group management",
+      "qrCode": "QR code",
       "saveFailed": "Could not save. The previous setting has been restored; try again.",
       "sectionAgents": "Agent collaboration",
       "sectionChat": "Chat",
+      "sectionDanger": "Danger zone",
       "sectionInvite": "Invitations",
       "sectionJoin": "Joining",
       "sectionMembers": "Members",
@@ -603,9 +637,15 @@ export default {
       "allowMemberInvite": "Let members invite people",
       "allowMemberInviteAria": "Allow regular members to invite contacts",
       "allowMemberInviteDescription": "Regular members can invite their contacts",
+      "avatarEditor": {
+        "reset": "Restore default",
+        "title": "Edit avatar",
+        "upload": "Upload an image"
+      },
+      "avatarResetFailed": "Could not restore the default avatar. Try again.",
       "avatarUpdated": "Group avatar updated",
       "avatarUploadFailed": "Could not upload the group avatar: {{reason}}",
-      "changeAvatar": "Click or drop an image to change the group avatar",
+      "changeAvatar": "Click to edit the group avatar, or drop an image",
       "copyLink": "Copy link",
       "description": "Group description",
       "descriptionPlaceholder": "Describe this group in one sentence…",
@@ -664,19 +704,16 @@ export default {
       "rules": "Collaboration rules",
       "rulesPlaceholder": "Core principles, direction, and collaboration agreements…",
       "rulesUnset": "No collaboration rules",
-      "sharePoster": "Share group poster",
       "title": "Group settings",
       "unavailable": "Unavailable",
       "uploading": "Uploading"
     }
   },
   "header": {
+    "openApp": "Open an App",
     "groupApps": "Apps",
     "members_one": "{{count}} member",
     "members_other": "{{count}} members",
-    "invite": "Invite",
-    "mute": "Mute notifications",
-    "pinConversation": "Pin conversation",
     "searchHistory": "Search chat history",
     "groupInfoAndSettings": "Group info and settings",
     "noGroupApps": "No Apps available on this device.",
@@ -687,8 +724,7 @@ export default {
     "more": "More actions",
     "searchChat": "Search chat",
     "searchConversation": "Search this chat",
-    "groupFolder": "Group folder",
-    "folder": "Folder"
+    "folder": "Files"
   },
   "history": {
     "searchTopics": "Search topics",
@@ -743,7 +779,7 @@ export default {
       "keptTemporary": "Made temporary: the cloud copy is deleted when it expires",
       "keptPermanent": "Kept",
       "keepFailed": "Not changed",
-      "copy": "Copy text",
+      "copy": "Copy",
       "copyLink": "Copy link",
       "openLink": "Open link",
       "selectText": "Select text",
@@ -754,6 +790,11 @@ export default {
       "react": "React",
       "reply": "Reply",
       "quoteSelection": "Quote selection",
+      "quoteToComposer": "Comment",
+      "quoteSelectionToComposer": "Comment",
+      "openFile": "Open",
+      "editMessage": "Edit and resend",
+      "forkTask": "Fork this task",
       "select": "Select"
     },
     "attachment": "[Attachment]",
@@ -773,16 +814,21 @@ export default {
     "retracted": "Message retracted",
     "deliveredFrom": "From {{name}}",
     "sendStatus": {
+      "resend": "Resend",
       "unknown": "Awaiting confirmation",
       "unknownHint": "Waiting for the publication result. This message will update automatically; no need to resend.",
       "archived": "Recipient is archived. Not delivered.",
-      "failed": "Not delivered",
-      "failedActions": "Undelivered message actions",
-      "failedHint": "Not delivered. Click to retry or discard.",
+      "removed": "Recipient was removed. Not delivered.",
+      "refused": "Not delivered.",
+      "failed": "Failed to send",
+      "albumImagesFailed": "{{count}} not sent",
+      "albumFilesFailed": "{{count}} not sent",
+      "failedActions": "Failed message actions",
+      "failedHint": "Failed to send. View message actions.",
       "undelivered": "instance not running, not delivered",
       "sending": "Sending",
       "stopped": "Stopped. Sends with your next message.",
-      "unknownNotResent": "Result unknown; not resent",
+      "unknownNotResent": "Failed to send",
       "failure": {
         "hostOffline": "The computer running this task is offline. It will be sent automatically once that computer is back.",
         "hostNotReady": "The computer running this task is not ready for messages yet. Retry in a moment.",
@@ -825,16 +871,19 @@ export default {
     "whisperOnlyYou": "Whisper · only visible to you",
     "whisperTo": "Whisper to {{name}} · only visible to you both",
     "widget": "[Widget]",
+    "reference": { "loading": "Loading…", "unreadable": "A message you cannot see", "widgetUnreadable": "A widget you cannot see", "widgetRetracted": "This widget was retracted", "widgetElsewhere": "This widget is in another conversation", "locate": "Go to original", "locateActive": "Go to active widget", "previewQuote": "[Quote]", "previewMessage": "[Quoted message]" },
     "widgetUnavailable": { "missing": "App is not installed.", "disabled": "App is switched off.", "view": "This App view is unavailable.", "platform": "This App cannot run here." }
   },
   "searchTrail": {"position": "“{{query}}” {{index}}/{{total}}", "positionNoWords": "{{index}}/{{total}}", "previous": "Previous", "next": "Next (⌘G)", "results": "Results", "close": "Close search"},
   "outbox": {
     "selectFileAgain": "Upload interrupted. Select the file again.",
     "sourceNotSent": "The original message was not sent. Retry it before forwarding again.",
+    "followedNotSent": "The message this one follows was not sent. Resend that one first.",
     "sourceDiscarded": "The original message was discarded before it was sent",
     "deliveryTimeout": "Delivery timed out after {{seconds}}s because the network stopped responding",
     "discarded": "Discarded",
-    "offscreenFailure": "A message was not delivered. Return to its chat to retry or discard it.",
+    "offscreenFailure": "A message in “{{chatName}}” was not delivered. Return to that conversation to retry or discard it.",
+    "chatById": "Conversation {{id}}",
     "recipientMissing": "The recipient is no longer available. The message was not sent.",
     "sendFailed": "Could not send"
   },
@@ -854,6 +903,10 @@ export default {
     "title": "Send to"
   },
   "topic": {
+    "leave": "Leave topic",
+    "leaveHint": "You can still read it, but won't get notifications from this topic",
+    "removeHint": "They can still read it, but won't get notifications from this topic",
+    "calledYou": "Someone @ you",
     "pins": {
       "pin": "Pin {{name}} to group",
       "unpin": "Unpin {{name}}",
@@ -889,47 +942,6 @@ export default {
       "composerPlaceholder": "Say something in this topic…",
       "empty": "No one has spoken in this topic yet",
       "resize": "Drag to resize the topic pane"
-    }
-  },
-  "forum": {
-    "communityPoints": "{{count}} community points",
-    "communityPoints_one": "{{count}} community point",
-    "communityPoints_other": "{{count}} community points",
-    "consent": {
-      "cancel": "Cancel",
-      "postTitle": "Post a bounty",
-      "postBody": "{{count}} community points are taken from your balance now. They go to the answers you accept; if nobody ever answers by the deadline, they come back to you; if there were answers but you accept none, they are gone.",
-      "postBody_one": "{{count}} community point is taken from your balance now. It goes to the answer you accept; if nobody ever answers by the deadline, it comes back to you; if there were answers but you accept none, it is gone.",
-      "postBody_other": "{{count}} community points are taken from your balance now. They go to the answers you accept; if nobody ever answers by the deadline, they come back to you; if there were answers but you accept none, they are gone.",
-      "postConfirm": "Post",
-      "reward": "Bounty: {{count}} points", "reward_one": "Bounty: {{count}} point", "reward_other": "Bounty: {{count}} points",
-      "days": "Ends in {{count}} days", "days_one": "Ends in {{count}} day", "days_other": "Ends in {{count}} days",
-      "visibility": { "public": "Answers are public", "poster_only": "Answers seen by you only, public once it ends" },
-      "acceptTitle": "Accept answers",
-      "acceptBody": "The points go to the answerers, the bounty ends, and answers seen by you only become public. This cannot be undone.",
-      "acceptConfirm": "Accept",
-      "awardLine": "{{name}} · {{count}} points", "awardLine_one": "{{name}} · {{count}} point", "awardLine_other": "{{name}} · {{count}} points",
-      "endTitle": "End bounty",
-      "endBody": "End the bounty without accepting an answer. If nobody ever answered, the points come back to you; if someone did, they are gone.",
-      "endConfirm": "End bounty",
-      "assignTitle": "Assign an agent",
-      "assignBody": "Pick one of your agents to answer this post. It gets the post now, and what the poster or you say there later.",
-      "assignConfirm": "Assign",
-      "searchAgents": "Search agents",
-      "noAgents": "You have no agents yet.",
-      "failed": "That did not go through. Please try again.",
-      "error": {
-        "insufficient": "Not enough community points.",
-        "activeLimit": "You can have at most 3 open bounties.",
-        "tooEarly": "Answers can be accepted 24 hours after posting.",
-        "pastGrace": "More than 24 hours past the deadline: answers can no longer be accepted.",
-        "toSelf": "You cannot accept your own answer or your own agents'.",
-        "splitMismatch": "The points you give must add up to the bounty.",
-        "settled": "This bounty has already ended.",
-        "accountTooNew": "Posting, replying and assigning open 3 days after sign-up, once you have signed in on a device.",
-        "blocked": "The poster has blocked you: you and your agents cannot take part in this post.",
-        "identityLimit": "You and your agents can use at most 3 identities in one post."
-      }
     }
   },
   "resources": {

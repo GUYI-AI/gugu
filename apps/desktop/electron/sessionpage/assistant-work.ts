@@ -6,6 +6,8 @@ import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { z } from 'zod'
 import { assistantHomePaths, type AssistantHomeKind } from '@gugu/core/shared/assistantPolicy'
+import type { AssistantProductRules } from '@gugu/core/shared/assistantRulesFormat'
+import { assistantRules } from '../assistant-rules-resolver'
 import { resolveGuguHome } from '@gugu/core/local/state/paths'
 
 export { workReportSchema } from '../../src/session/shared/assistant-work'
@@ -221,20 +223,19 @@ export function registerAssistantQuestion(sessionId: string, questionId: string,
   store.confirm(id, [], [], questionId)
 }
 
-const EXECUTOR_REPORT = [
-  'session_message to=[coordinator] text=summary work_result={work_id,status:progress|question|completed|cancelled}; verify result before completed; a failed delivery is progress, never completed.',
-  'If Gugu messaging/upload/reporting fails, immediately report progress: work done or partial, failed step, observed cause category (permission/network/validation/unknown); if done say "做好了但交不回"; do not infer causes.',
-  'If reporting also fails, preserve this notice in the task reply and stop; retain artifacts. Never read Gugu program directories or debug/repair the platform to resolve these tool failures.',
-].join(' ')
-
-/** Wrap only an explicitly identified assistant's dispatcher, before either local or remote routing. */
+/**
+ * Wrap only an explicitly identified assistant's dispatcher, before either local or remote routing. The executor report
+ * is product wording (#1931): `rules` is the snapshot the caller rendered the rest of this dispatch with; none — the one
+ * in use now (assistant-rules-resolver.ts).
+ */
 export async function coordinateAssistantAction(binding: AssistantWorkBinding, action: unknown,
-  run: (action: unknown) => Promise<unknown>): Promise<unknown> {
+  run: (action: unknown) => Promise<unknown>, rules?: AssistantProductRules): Promise<unknown> {
   if (!action || typeof action !== 'object' || Array.isArray(action)) return run(action)
   const record = action as Record<string, unknown>
   if (record.work_result || record.client_message_id) return run(action)
   const field = record.action === 'spawn' ? 'prompt' : record.action === 'message' ? 'text' : null
   if (!field) return run(action)
+  const executorReport = (rules ?? (await assistantRules().available()).rules).texts['executor-report']
   const store = new AssistantWorkStore(binding.memoryDir)
   const source = await binding.currentInput?.()
   const dispatchKey = binding.agentId ? createHash('sha256').update(JSON.stringify([binding.sessionId,record,source])).digest('hex') : undefined
@@ -256,7 +257,7 @@ export async function coordinateAssistantAction(binding: AssistantWorkBinding, a
   // `purpose` is this host's classification, stored on the work; executors and older hosts never see the field.
   const forwarded={...record};delete forwarded.purpose
   const dispatched = field ? { ...forwarded,...(intent ? {assistant_work:intent} : {}), [field]: `${record[field]}\n\n<gugu_work>\n${JSON.stringify({ work_id: id,
-    coordinator: `session:${binding.sessionId}`,...(intent?{assistant_id:intent.assistant_id,purpose}:{}), report: EXECUTOR_REPORT })}\n</gugu_work>` } : action
+    coordinator: `session:${binding.sessionId}`,...(intent?{assistant_id:intent.assistant_id,purpose}:{}), report: executorReport })}\n</gugu_work>` } : action
   try {
     let result = await run(dispatched)
     if(intent && record.action==='spawn') {

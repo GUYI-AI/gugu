@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import { AddFriendSearch } from '@/components/AddFriendSearch'
@@ -28,13 +28,14 @@ import { deviceSessionsOf, useLiveDeviceSessions } from '@/session/shared/remote
 import type { AuthUser } from '@/store/auth'
 import { useContactsStore } from '@/store/contactsContext'
 import { useDevicesStore } from '@/store/devicesContext'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 import { useToast } from '@/components/toastContext'
 import { messageForUser } from '@/lib/userFacingError'
 import { projectRpcOn } from './projectRpc'
-import { matchesQuery, partnerFriends, partnerGroupAgents, partnerProjects, projectSessions, runningCount, type PartnerProject } from './partnersModel'
+import { matchesQuery, partnerFriends, partnerGroupAgents, partnerProjects, projectSessions, type PartnerProject } from './partnersModel'
 import { PhoneNewProjectPage, type CreatedProject } from './PhoneNewProjectPage'
 import { PhoneProjectContacts } from './PhoneProjectContacts'
-import { ProjectFolderAvatar } from './ProjectFolderAvatar'
+import { ChatGroupAvatar } from '@/components/chat/ChatGroupAvatar'
 import './partners.css'
 
 /** 推在「伙伴」首页上的一页:整屏、没有底栏,返回一步回到下面那一页。 */
@@ -128,7 +129,8 @@ export function PhonePartnersPage({
   }, [newProjectRequest])
 
   const machines = useMemo(() => directoryMachines(devices, isHome), [devices, isHome])
-  const projects = useMemo(() => partnerProjects(machines), [machines])
+  const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
+  const projects = useMemo(() => partnerProjects(accountList, machines, isHome), [accountList, machines, isHome])
   const sessionsOf = useCallback((deviceId: string) => {
     const device = machines.find((row) => row.device_id === deviceId)
     return device ? deviceSessionsOf(device, liveSessions) : { sessions: [], hostOnline: false }
@@ -184,7 +186,6 @@ export function PhonePartnersPage({
     return (
       <PhoneProjectContacts
         project={project}
-        running={runningCount(sessions)}
         sessions={sessions}
         active={active}
         onBack={pop}
@@ -238,7 +239,7 @@ export function PhonePartnersPage({
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden" data-testid="phone-partners">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col" style={top ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
         <Pane paneRole="nav" mobile className="gg-partners" data-phone-root-list="contacts">
-          <HeaderSearch mobile externalTrigger="contacts" active={active && !top} value={query} onChange={setQuery} placeholder={t('partners.search')} testId="phone-partners-search">
+          <HeaderSearch mobile active={active && !top} value={query} onChange={setQuery} placeholder={t('partners.search')} testId="phone-partners-search">
             {(searchButton) => (
               <PaneHeader mobile titleLevel="page" title={<span data-first-run-hint="collaboration" data-first-run-device="phone">{t('shell.partnersMobile')}</span>} leading={<PhoneMeButton user={user} onOpen={onOpenMe} />} actions={searchButton} />
             )}
@@ -257,7 +258,7 @@ export function PhonePartnersPage({
                 const open = () => push({ kind: 'project', key: project.key })
                 return (
                   <ListRow key={project.key} mobile role="button" tabIndex={0} data-testid="phone-partners-project"
-                    leading={<ProjectFolderAvatar coverId={project.coverId} running={runningCount(projectSessions(project, id => sessionsOf(id).sessions, id => sessionsOf(id).hostOnline))} />}
+                    leading={<ChatGroupAvatar chatId={project.chatId ?? project.coverId} name={project.name} size={40} />}
                     title={project.name} onClick={open} onKeyDown={rowKeyActivate(open)} />
                 )
               })}

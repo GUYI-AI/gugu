@@ -4,7 +4,7 @@ const { parseProductTourState, resumableStep, TOUR_STEPS, TOUR_FILMS } = await i
 
 describe('product tour account progress', () => {
   it('has the seven feature-bar steps in rail order and three films without the retired modes one', () => {
-    expect(TOUR_STEPS).toEqual(['assistant', 'tasks', 'chats', 'contacts', 'library', 'apps', 'settings'])
+    expect(TOUR_STEPS).toEqual(['tasks', 'chats', 'contacts', 'library', 'apps', 'assistant', 'settings'])
     expect(TOUR_FILMS).toEqual(['split', 'contacts', 'report'])
   })
   it('distinguishes never seen, valid progress and corrupt progress', () => {

@@ -67,7 +67,8 @@ export const SETTINGS_DEFAULTS = {
     hideContextBar: false,
     chatView: 'double' as const,
     confirmBeforeArchive: true,
-    confirmBeforeCancelAndSend: true
+    confirmBeforeCancelAndSend: true,
+    sidebarIntro: 'collapse' as const
   },
   browserPreview: {
     enabled: true
@@ -78,7 +79,8 @@ export const SETTINGS_DEFAULTS = {
     profiles: DEFAULT_BROWSER_PROFILES
   },
   resourceMonitor: {
-    enabled: false
+    enabled: false,
+    pageCounters: true
   },
   changesViewMode: {
     unstaged: 'flat' as const,

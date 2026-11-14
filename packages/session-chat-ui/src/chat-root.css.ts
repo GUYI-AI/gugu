@@ -6,15 +6,14 @@
  * should now pass a VE class or a raw CSS class string.
  */
 
-import { style } from '@vanilla-extract/css';
-import { fadeOverlayTop } from './styles/effects.css';
+import { globalStyle, keyframes, style } from '@vanilla-extract/css';
 import { vars } from './styles/theme.css';
 import {
   CHAT_CONTENT_GUTTER_PX,
   CHAT_CONTENT_MAX_WIDTH_REM,
   CHAT_CONTENT_MAX_WIDTH_WIDE_REM,
   CHAT_CONTENT_WIDE_BREAKPOINT_REM,
-  CHAT_PIN_FADE_HEIGHT_PX,
+  PIN_SUMMARY_GAP,
 } from './layout-geometry';
 
 /** Max-width of the centered content column — matches user message cards. */
@@ -81,6 +80,49 @@ export const canvas = style({
   position: 'relative',
 });
 
+// One dot lengthens while the one before it shortens, on the same curve: the three always add up to the same width,
+// so the group never shifts sideways.
+const olderPageFlow = keyframes({
+  '0%': { width: 5, opacity: 0.2, animationTimingFunction: 'cubic-bezier(0.45, 0, 0.55, 1)' },
+  '33.333%': { width: 13, opacity: 0.62, animationTimingFunction: 'cubic-bezier(0.45, 0, 0.55, 1)' },
+  '66.667%': { width: 5, opacity: 0.2 },
+  '100%': { width: 5, opacity: 0.2 },
+});
+
+/**
+ * An older page is on its way: three dots in the padding above the first row, the lit one handing its length on to
+ * the next. The box takes no layout space and contains its own layout, so showing, hiding and animating it never
+ * moves or re-measures a row.
+ */
+export const olderPageLoading = style({
+  position: 'absolute',
+  left: '50%',
+  width: 31,
+  height: 5,
+  marginLeft: -15.5,
+  display: 'flex',
+  justifyContent: 'center',
+  gap: 4,
+  contain: 'strict',
+  pointerEvents: 'none',
+});
+
+export const olderPageLoadingDot = style({
+  flex: 'none',
+  width: 5,
+  height: 5,
+  borderRadius: 2.5,
+  background: vars.fg,
+  opacity: 0.2,
+  animation: `${olderPageFlow} 1500ms infinite`,
+  selectors: {
+    '&:nth-child(1)': { animationDelay: '-1500ms' },
+    '&:nth-child(2)': { animationDelay: '-1000ms' },
+    '&:nth-child(3)': { animationDelay: '-500ms' },
+  },
+  '@media': { '(prefers-reduced-motion: reduce)': { animation: 'none', opacity: 0.34 } },
+});
+
 /**
  * Zero-height width probe — carries `contentClass` so it reports the capped
  * content-column width. The width ResizeObserver targets this instead of the
@@ -105,45 +147,71 @@ export const unitRowWrapper = style({
 });
 
 /**
- * A user message row's lane (@@@sticky-user-lanes in ChatRoot): spans its turn, so the row inside it
- * sticks to the top while the turn is on screen and is pushed off by the next lane. Above the rows of
- * its turn; clicks pass through everywhere but the row itself.
+ * A pin lane (@@@sticky-user-lanes in ChatRoot): spans its turn, so its sticky element stays at the top
+ * while the turn is on screen and is pushed off by the next lane. Clicks pass through everywhere but
+ * the row itself and a shown summary.
+ *
+ * Every row wrapper is its own stacking context at z-index auto (contain: paint, will-change), so
+ * nothing inside a reply (KaTeX struts, code blocks, positioned spans) can rise above a lane. A user
+ * lane sits above activity lanes, whose sticky headers reserve room below the user's summary.
  */
 export const pinLane = style({
   zIndex: 1,
   pointerEvents: 'none',
 });
+export const pinMessageLane = style({ zIndex: 2 });
+/** Whatever the message positions or raises inside itself stays under its own summary. */
+export const pinMessageRow = style({ isolation: 'isolate', marginTop: 'calc(-1 * var(--pin-layer-h))' });
 
-/** The user row inside its lane; its backdrop is opaque only while stuck. */
+/** The semantic strip reaches the scroller edges, outside the centered text column. */
+export const activityPinLane = style({ contain: 'layout style' });
+
+/** The sticking element inside a lane; its backdrop is opaque only while stuck. */
 export const pinSticky = style({
   // `top` is per row (ChatRoot): the card lands on the pin line whatever the row's collapsed top gap.
   position: 'sticky',
   pointerEvents: 'auto',
-  // `scroll-state` is newer than csstype's list; it lets pinFade show only while the row is stuck.
-  containerType: 'scroll-state' as 'normal',
+  '@media': { '(prefers-reduced-motion: reduce)': {
+    selectors: { '[data-pin-leaving="true"] &': { visibility: 'hidden' } },
+  } },
 });
+
 
 /** A normal bubble has no full-width card behind it. Protect the pinned row once it actually sticks. */
 export const pinBackdrop = style({
   position: 'absolute', inset: 0, zIndex: -1, pointerEvents: 'none',
   background: vars.bg, opacity: 0,
-  '@container': { 'scroll-state(stuck: top)': { opacity: 1 } },
+  // The frame scheduler supplies this state from existing lane geometry. Older
+  // Android WebViews cannot evaluate scroll-state container queries.
+  selectors: {
+    '[data-pin-stuck="true"] &': { opacity: 1 },
+  },
+  // A soft edge rather than a rule: says rows scroll beneath it without drawing a line across the page.
+  boxShadow: `0 8px 12px -10px color-mix(in srgb, ${vars.fg} 22%, transparent)`,
 });
 
-/** 16px fade under the stuck row: signals that rows scroll beneath it. Not drawn at rest. */
-export const pinFade = style([
-  fadeOverlayTop,
-  {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    height: `${CHAT_PIN_FADE_HEIGHT_PX}px`,
-    pointerEvents: 'none',
-    opacity: 0,
-    '@container': { 'scroll-state(stuck: top)': { opacity: 1 } },
-  },
-]);
+/**
+ * A user message's summary (@@@pin-cover in ChatRoot): it rests behind the bubble it repeats and comes in front of
+ * it once stuck, with its opaque backdrop, so the pinned strip never shows anything behind it.
+ */
+export const pinSummaryLayer = style({
+  // Takes no room: the message row after it moves up by its height (pinMessageRow). A negative margin here
+  // would instead let the sticky box run past its lane's end by that much before it is pushed off.
+  height: 'var(--pin-layer-h)',
+  boxSizing: 'border-box',
+  paddingBottom: PIN_SUMMARY_GAP,
+  zIndex: -1,
+  pointerEvents: 'none',
+  selectors: { '[data-pin-stuck="true"] > &': { zIndex: 1, pointerEvents: 'auto' } },
+});
+// A message without a bubble (attachments only, or being edited) has nothing to rest behind.
+globalStyle(`[data-pin-stuck="false"] > ${pinSummaryLayer} [data-pin-summary][data-pin-bare]`, { visibility: 'hidden' });
+
+/** Page-colored, square strip, including its seam so body text cannot peek between the two pins. */
+export const activityPinBackdrop = style({
+  right: 'auto', boxShadow: 'none',
+  borderBottom: `1px solid color-mix(in srgb, ${vars.fgMuted} 16%, transparent)`,
+});
 
 /**
  * Default content centering class.

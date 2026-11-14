@@ -27,7 +27,9 @@ import { createLogger } from '../../../../lib/logger';
 
 const log = createLogger('harness-model-catalog');
 
-const STORAGE_KEY = 'harnessModelCatalogs';
+// Old successful catalogs may have silently discarded every grouped choice.
+// Re-probe once instead of keeping those empty results for the ready-cache TTL.
+const STORAGE_KEY = 'harnessModelCatalogs.groupedSelect.v1';
 
 let wired = false;
 
@@ -120,11 +122,14 @@ export async function resolveHarnessSpawnIdentity(
 ): Promise<string | null> {
   try {
     const { resolveLocalAcpSpawnContext } = await import('../acp/transport/local-acp-process-host');
-    const { cli, agentEnv } = await resolveLocalAcpSpawnContext(pluginId);
+    const { cli, agentEnv, runContext } = await resolveLocalAcpSpawnContext(pluginId);
     // 键序不是语义:随手一个顺序变化不该被算成「换了一份东西」。
     const env = Object.entries({ ...agentEnv, ...legConfigRootEnv(pluginId, leg) })
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    return JSON.stringify({ cli, file: diskFileStamp(cli), env });
+    // 选中的是一把 API Key 连接(#2507):走模型注入的那几家,连接不进这份 env(它随宿主造的模型声明进进程),
+    // 但目录照它读 ⇒ 换一把连接就得作废。只在选了 API Key 连接时并进来,其余家的身份与改动前逐字相同。
+    const connection = runContext.apiKeyConnection ? { connection: runContext.connectionId ?? null } : {};
+    return JSON.stringify({ cli, file: diskFileStamp(cli), env, ...connection });
   } catch {
     return null;
   }
@@ -191,6 +196,8 @@ export async function resolveHarnessModelCatalogSpawn(
       hostInjections: [legConfigRootEnv(pluginId, leg)],
     }),
     ...(acp.catalogProbeSessionMeta ? { sessionMeta: acp.catalogProbeSessionMeta } : {}),
+    ...(acp.catalogModelsInConfigUpdate ? { modelsInConfigUpdate: true } : {}),
+    ...(acp.authenticateWhenAdvertised ? { authenticateWhenAdvertised: acp.authenticateWhenAdvertised } : {}),
   };
 }
 

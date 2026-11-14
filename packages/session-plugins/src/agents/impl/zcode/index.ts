@@ -1,3 +1,4 @@
+import { zcodeApiKeyConnection, zcodeApiKeyConnectionBehavior } from './api-key-connection';
 import { platformModel } from './platform-model';
 import {
   definePlugin,
@@ -11,6 +12,7 @@ import { resolveNodeInterpreter, type NodeVersionRequirement } from '../../helpe
 import { ZCODE_PERMISSION_MODES } from './permission-modes';
 import { icon } from './icon';
 import { materializeZcodeSessionBundle, zcodeSessionBundleDescriptor } from './session-bundle';
+import { zcodeMcpAdapter } from './mcp';
 
 /**
  * 跑桥与 ZCode 后端的 Node:ZCode 仓根 `package.json` 的 `engines.node` 是 `>=24.0.0`(mise 钉 24.14.0),
@@ -64,8 +66,10 @@ export const plugin = definePlugin(
   },
   {
     sessionBundle: zcodeSessionBundleDescriptor,
+    // 「API Key 连接」(#2507):一把 key 怎么进这一家的进程,见 ./api-key-connection.ts。
+    apiKeyConnection: zcodeApiKeyConnection,
     /**
-     * 思考档 = 桥报的 configOption `thought`(category `thought_level`)的取值,逐字:low / high / max
+     * 思考档 =桥报的 configOption `thought`(category `thought_level`)的取值,逐字:low / high / max
      * (`session/new` 实测;GLM-5.3 的推理档就是这三档,不能关)。
      */
     effort: {
@@ -123,6 +127,8 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
+  apiKeyConnection: zcodeApiKeyConnectionBehavior,
+  mcp: zcodeMcpAdapter(),
   sessionBundle: { materialize: materializeZcodeSessionBundle, platformModel },
   acp: {
     // 咕咕维护的构建 @gugu-acp/zcode-acp(上游 william0wang/zcode-acp + 补丁,shuxueshuxue/gugu-acp

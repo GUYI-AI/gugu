@@ -18,7 +18,7 @@ const { openImRepositoryMock, revisionListeners, revisionCoordinatorMock, coordi
   openImRepositoryMock: vi.fn(),
   revisionListeners: new Map<string, Set<(operations: readonly unknown[]) => void | Promise<void>>>(),
   revisionCoordinatorMock: {
-    start: vi.fn(), stop: vi.fn(), retryPending: vi.fn(), whenIdle: vi.fn().mockResolvedValue(undefined),
+    start: vi.fn(), stop: vi.fn(), wake: vi.fn(), retryPending: vi.fn(), whenIdle: vi.fn().mockResolvedValue(undefined),
     subscribe: vi.fn((events: string | readonly string[], listener: (operations: readonly unknown[]) => void | Promise<void>) => {
       const claimed = typeof events === 'string' ? [events] : [...events]
       for (const event of claimed) {
@@ -93,7 +93,7 @@ vi.mock('../../../../apps/desktop/src/lib/readWriter', async (original) => ({
 }))
 const uploads = vi.hoisted(() => ({ bytes: vi.fn(), commit: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/attachmentsEndpoint', async original => ({ ...await original<typeof import('../../../../apps/desktop/src/lib/attachmentsEndpoint')>(), attachmentsEndpoint: async () => ({}) }))
-vi.mock('@gugu/core/cloud/attachmentsApi', () => ({ uploadAttachmentBytes: uploads.bytes, commitAttachment: uploads.commit }))
+vi.mock('@gugu/core/cloud/attachmentsApi', async original => ({ ...await original<typeof import('@gugu/core/cloud/attachmentsApi')>(), uploadAttachmentBytes: uploads.bytes, commitAttachment: uploads.commit }))
 const { ChatProvider } = await import('../../../../apps/desktop/src/store/chat')
 const { useChatStore } = await import('../../../../apps/desktop/src/store/chatContext')
 const { useChatConversation } = await import('../../../../apps/desktop/src/store/useChatConversation')
@@ -434,7 +434,8 @@ describe('打开会话的第一帧', () => {
         scopedLines.get('chatA')!.setFollowingTail(false)
       })
       const before = scopedLines.get('chatA')!.messageWindow
-      expect(before.messages).toHaveLength(120)
+      // A window that followed the tail stays at the reset size; it is full at 40.
+      expect(before.messages).toHaveLength(40)
       vi.mocked(chatService.getMessages).mockClear()
       await act(async () => { await scopedLines.get('chatA')!.sendMessage('full-window-send') })
       const pending = scopedLines.get('chatA')!.messageWindow.messages.find((row) => row.content === 'full-window-send')!
@@ -448,7 +449,7 @@ describe('打开会话的第一帧', () => {
     } finally { harness.cleanup() }
   })
 
-  it('shows a topic attachment placeholder at the latest page and rolls uncommitted bytes back on upload failure', async () => {
+  it('shows a topic attachment placeholder at the latest page and keeps it, failed and resendable, when its upload fails', async () => {
     network.resolve()
     const all = Array.from({ length: 200 }, (_, index) => message({ id: `att-${index + 1}`, chat_id: 'chatA', seq: index + 1 }))
     vi.mocked(chatService.getMessages).mockImplementation(async (_chat, _user, way, limit = 40, before, after) =>
@@ -465,12 +466,14 @@ describe('打开会话的第一帧', () => {
       await vi.waitFor(() => expect(scopedLines.get('chatA')!.messageWindow.messages.at(-1)?.seq).toBe(200), WAIT)
       await act(async () => { await scopedLines.get('chatA')!.loadMessageAnchor('att-20') })
       expect(scopedLines.get('chatA')!.messageWindow.hasNewer).toBe(true)
-      await act(async () => { send = scopedLines.get('chatA')!.sendAttachments([new File(['body'], 'topic.txt')]).catch((error) => error) })
+      await act(async () => { send = scopedLines.get('chatA')!.sendAttachments([new File(['body'], 'topic.txt')]) })
       await vi.waitFor(() => expect(scopedLines.get('chatA')!.messageWindow.messages.some((row) => row.seq < 0 && row.content_type === 'attachment')).toBe(true), WAIT)
       expect(scopedLines.get('chatA')!.messageWindow.hasNewer).toBe(false)
-      await act(async () => { upload.reject(new Error('upload failed')); await send })
-      expect(scopedLines.get('chatA')!.messageWindow.messages.find((row) => row.seq < 0)).toBeUndefined()
-      expect(await send).toBeInstanceOf(Error)
+      // The file is a row once the send returns, before its bytes go up: the composer is free again.
+      const rowId = await send
+      expect(scopedLines.get('chatA')!.messageWindow.messages.find((row) => row.seq < 0)?.id).toBe(rowId)
+      await act(async () => { upload.reject(new Error('upload failed')) })
+      await vi.waitFor(() => expect(scopedLines.get('chatA')!.messageWindow.messages.find((row) => row.id === rowId)).toMatchObject({ local_send_state: 'failed', local_send_retryable: true }), WAIT)
       expect(uploads.commit).not.toHaveBeenCalled()
     } finally { upload.resolve('unused'); harness.cleanup() }
   })
@@ -595,7 +598,7 @@ describe('打开会话的第一帧', () => {
     } finally { network.resolve(); harness.cleanup() }
   })
 
-  it('bounds a visible secondary stream and does not crop it to forty on a fresh snapshot', async () => {
+  it('bounds a visible secondary stream to the tail window and keeps it on a fresh snapshot', async () => {
     network.resolve()
     const harness = await mount(createElement(ScopedProbe, { chatId: 'chatA' }))
     try {
@@ -609,16 +612,18 @@ describe('打开会话的第一帧', () => {
         } }])
       }
       await act(async () => { for (let seq = 2; seq <= 201; seq++) await emit(seq) })
-      const expected = Array.from({ length: 120 }, (_, index) => index + 82)
+      // The window stays at the tail size; the durable copy keeps the last 120 until a fresh snapshot replaces it with the window.
+      const expected = Array.from({ length: 40 }, (_, index) => index + 162)
+      const stored = Array.from({ length: 120 }, (_, index) => index + 82)
       expect(sharedAccess.read('chatA').messageWindow.messages.map((row) => row.seq)).toEqual(expected)
-      await vi.waitFor(() => expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA').map((row) => row.value.seq).sort((a, b) => a - b)).toEqual(expected), WAIT)
+      await vi.waitFor(() => expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA').map((row) => row.value.seq).sort((a, b) => a - b)).toEqual(stored), WAIT)
       messagesByChat.chatA = Array.from({ length: 40 }, (_, index) => message({ id: `stream-${index + 162}`, chat_id: 'chatA', seq: index + 162 }))
       await act(async () => { await sharedAccess.actions('chatA').refreshMessages() })
       expect(sharedAccess.read('chatA').messageWindow.messages.map((row) => row.seq)).toEqual(expected)
-      expect(scopedFrames.at(-1)?.ids).toHaveLength(120)
-      await vi.waitFor(() => expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA')).toHaveLength(120), WAIT)
+      expect(scopedFrames.at(-1)?.ids).toHaveLength(40)
+      await vi.waitFor(() => expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA')).toHaveLength(40), WAIT)
       await renderWithAppProviders(harness, createElement(ChatProvider, null, createElement(Probe)), { auth: { id: 'user1' } })
-      expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA')).toHaveLength(120)
+      expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA')).toHaveLength(40)
     } finally { harness.cleanup() }
   })
 

@@ -199,6 +199,7 @@ export function sessionListFromDigest(digest: readonly DeviceSessionSummary[] | 
       lastInteractedAt: entry.lastInteractedAt,
       supported: online && entry.supported,
       ...(entry.isPinned !== undefined ? { isPinned: entry.isPinned } : {}),
+      ...(entry.isPinnedToSidebar !== undefined ? { isPinnedToSidebar: entry.isPinnedToSidebar } : {}),
       ...(entry.unseen !== undefined ? { unseen: entry.unseen } : {}),
       ...(entry.parentConversationId !== undefined ? { parentConversationId: entry.parentConversationId } : {}),
       ...(entry.agentUserId !== undefined ? { agent: entry.agentUserId ? { userId: entry.agentUserId } : null } : {}),

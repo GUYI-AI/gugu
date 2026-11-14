@@ -1,3 +1,4 @@
+import '../../test-support/headless-electron';
 import { app, nativeImage } from 'electron';
 import assert from 'node:assert/strict';
 import { createProjectionImageDecoder } from '../projection-image';
@@ -9,7 +10,6 @@ const cases: Record<string, { passed: boolean; error?: string }> = {};
 
 if (!process.env.GUGU_HOME || !process.env.GUGU_USER_DATA_DIR) throw new Error('Image fixture needs isolated paths');
 app.setPath('userData', process.env.GUGU_USER_DATA_DIR);
-app.dock?.hide();
 void app.whenReady().then(async () => {
   assert.equal(app.getPath('userData'), process.env.GUGU_USER_DATA_DIR);
   const run = async (name: string, check: () => Promise<void>) => {

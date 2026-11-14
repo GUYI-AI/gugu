@@ -35,13 +35,13 @@ export type DeliveryRouteKind = GuguRoutedKind
  * 也**没有要回的人**。
  * `scheduled`（#7221）：这个 agent 自己排的「已安排」到点了，咕咕把它当初那句交代原样送回来 —— 是一件要做的事，
  * 不是通知；也没有发信人可回，要找人就照交代里写的去处发。
- * `forum`：论坛里一个帖子上的事(这个 agent 被指派到帖子上、楼主或主人后来的交代、悬赏结算):回程是 `forum_reply`,
- * 发在那个帖子里,❌ 进任何聊天。它在目录里(catalog_call),不原生列出:论坛的投递少,原生列出要每个会话都付它的字节(#7335)。
+ * `app`：一个 App 里的事(云端叫醒 agent,内容由 App 自己的程序给,`appInbox.ts`):回程是这个 App 的工具,怎么调由 App 写在 `arrival` 里,
+ * ❌ 进任何聊天。
  */
-export type GuguRoutedKind = 'chat' | 'session-direct' | 'extension' | 'system' | 'scheduled' | 'forum'
+export type GuguRoutedKind = 'chat' | 'session-direct' | 'extension' | 'system' | 'scheduled' | 'app'
 
 /** 每条渠道**真实存在**的回程工具名（#4191 原子工具面）；扩展、咕咕系统、到点的已安排那几条没有。 */
-const RETURN_TOOL_BY_ROUTE: Record<Exclude<GuguRoutedKind, 'extension' | 'system' | 'scheduled' | 'forum'>, string> = {
+const RETURN_TOOL_BY_ROUTE: Record<Exclude<GuguRoutedKind, 'extension' | 'system' | 'scheduled' | 'app'>, string> = {
   chat: 'message_send',
   'session-direct': 'session_message',
 }
@@ -73,7 +73,7 @@ const RETURN_TOOL_BY_ROUTE: Record<Exclude<GuguRoutedKind, 'extension' | 'system
  * ⚠️ 它点了工具名，与「信封只带现场事实、不复述工具」的洁癖冲突 —— 那是 #3802 那一轮自己加的
  * 棘轮，owner 的 A+B 设计明确要求 A 带上「用什么工具回」。实测优先于洁癖。
  */
-export function arrivalHint(route: DeliveryRouteKind, mode: DeliveryMode | null = null, chatKind?: ChatKind | null, ownDm = false): string {
+export function arrivalHint(route: DeliveryRouteKind, mode: DeliveryMode | null = null, chatKind?: ChatKind | null, ownDm = false, appArrival?: string | null): string {
   // #7199 咕咕自己交给这条会话去做的一件事(助理开通后的初始化):与通知相反,它**是**要做的事 —— 照做;
   // 没有人可回,结果按任务里写的去处发(与下面 #7221 的「到点」同一种回程)。
   if (route === 'system' && mode === 'task') {
@@ -90,10 +90,8 @@ export function arrivalHint(route: DeliveryRouteKind, mode: DeliveryMode | null 
   // 集体记忆对账第 12 条:原先还有「附带」一档(mode 'context'),两个产出方(extension-agents / extension-send)早就只传
   // 一种语义,F16 定了没有 mode:'context' ⇒ 那一档和它的类型、投递卡上那一支一起删了。
   if (route === 'extension') return "Sent through 咕咕 by an App on this computer, on the person's behalf; the person reads what you print here."
-  // 论坛:回程在目录里 —— 这一句把怎么调写全,不必先查。
-  if (route === 'forum') {
-    return 'Sent to you through 咕咕 from a forum post; what you print here does not reach it — reply with catalog_call { tool: "forum_reply", args: { post_id, text, reply_to? } } (forum_read the same way reads the whole post).'
-  }
+  // App 的事:回程是它自己的工具,只有它知道怎么调。
+  if (route === 'app') return appArrival ?? 'Sent to you through 咕咕 by an App; what you print here does not reach it.'
   // #6562 系统通知没有发信人可回:它告诉你一件事(比如有人给你的消息点了 reaction),不是请你做什么。
   // 与扩展「附带」那一档同一种写法:只陈述「不是请求」这件事实,不写义务;回程工具照写,要发言时不必再找路。
   if (mode === 'notice') {
@@ -126,6 +124,8 @@ type CommonEnvelopeFacts = {
   chat?: string | null
   /** Canonical source reference; unlike public chat numbers it is directly navigable. */
   sourceLink?: string | null
+  /** Identity of the valid v2 widget carried by this message, independent of its display slot. */
+  widgetId?: string | null
   /** DM 还是群 —— 从公开群号锚推不出来，所以单独一格。 */
   chatKind?: ChatKind | null
   /** The owner's own DM with this agent: that DM shows this session, so the reply is printed here. */
@@ -136,8 +136,10 @@ type CommonEnvelopeFacts = {
   viaApp?: string | null
   /** 已安排到点（route `scheduled`，#7221）：是它自己排的哪一条 —— 那条的标题。人看的投递卡上也写它。 */
   schedule?: string | null
-  /** 论坛(route `forum`):是哪个帖子(`post:<uuid>`),`forum_reply` / `forum_read` 认它。 */
-  post?: string | null
+  /** App 的事(route `app`):这件事在 App 工具里的名字。 */
+  ref?: string | null
+  /** App 的事(route `app`):怎么回,App 自己写。 */
+  arrival?: string | null
   thread?: string | null
   listenMode?: ListenMode | null
   replyTo?: { messageId: string; fromId: string; from: string | null; preview: string } | null
@@ -210,12 +212,13 @@ export function renderDeliveryEnvelope(facts: DeliveryEnvelopeFacts): string {
     attr('from_type', facts.fromType),
     attr('via_app', facts.viaApp),
     attr('schedule', facts.schedule),
-    attr('post', facts.post),
+    attr('ref', facts.ref),
     attr('chat', facts.chat),
     attr('chat_kind', facts.chatKind),
     attr('whisper_to', facts.whisperTo),
     attr('thread', facts.thread),
     attr('msg', facts.messageId),
+    attr('widget_id', facts.widgetId),
     attr('source_link', facts.sourceLink),
     attr('at', facts.at),
     attr('listen_mode', facts.listenMode),
@@ -251,7 +254,7 @@ export function renderDeliveryEnvelope(facts: DeliveryEnvelopeFacts): string {
   // ⚠️ 批量外框 `renderDeliveryEnvelopes` 的 arrival 位置**不在本次改动内**(归 delivery-routing 治理)。
   lines.push(
     `<![CDATA[${toCdata(facts.content)}]]>`,
-    `  <arrival>${escapeXmlText(arrivalHint(facts.route, facts.mode ?? null, facts.chatKind, facts.ownDm === true))}</arrival>`,
+    `  <arrival>${escapeXmlText(arrivalHint(facts.route, facts.mode ?? null, facts.chatKind, facts.ownDm === true, facts.arrival))}</arrival>`,
     '</gugu_delivery>',
   )
   return lines.join('\n')
@@ -282,6 +285,7 @@ export function mergeDeliveryEnvelopes(envelopes: readonly string[]): string {
 export type DeliveryReadFacts = {
   fromType?: string | null
   sourceLink?: string
+  widgetId?: string
   route: string
   from: string | null
   fromId: string | null
@@ -290,7 +294,7 @@ export type DeliveryReadFacts = {
   whisperTo: string | null
   viaApp: string | null
   schedule: string | null
-  post: string | null
+  ref: string | null
   thread: string | null
   messageId: string | null
   at: string | null
@@ -318,6 +322,45 @@ export type DeliveryReading = { body: string; segments: DeliverySegment[] }
  * 两行头、外框之前的方括号批。认不出 = `null`,调用方把原文当普通文字。
  */
 export function readDeliveryEnvelope(text: string): DeliveryReading | null {
+  // Ordinary text is most of what gets asked about; it is told apart by its first characters, without a lookup.
+  if (!MAY_BE_DELIVERY.test(text)) return null
+  const kept = readings.get(text)
+  if (kept !== undefined) {
+    // Asked again: move it to the young end.
+    readings.delete(text)
+    readings.set(text, kept)
+    return kept
+  }
+  const reading = deepFreeze(parseDeliveryEnvelope(text))
+  readings.set(text, reading)
+  readingChars += text.length
+  for (const oldest of readings.keys()) {
+    if (readingChars <= READINGS_KEPT_CHARS) break
+    readings.delete(oldest)
+    readingChars -= oldest.length
+  }
+  return reading
+}
+
+// @@@read-once — a transcript list is rebuilt from its messages again and again (an older page lands, a name
+// arrives), and every rebuild asked for every message's envelope: parsing them was the largest part of a rebuild,
+// and it grew with everything loaded. A reading depends on the text alone, so the texts read most recently keep
+// theirs. The readings are shared and frozen: a caller that wants to change one copies it.
+const READINGS_KEPT_CHARS = 24 * 1024 * 1024
+const readings = new Map<string, DeliveryReading | null>()
+let readingChars = 0
+/** Same texts as below can read as a delivery: what `trim` strips is what `\s` matches. */
+const MAY_BE_DELIVERY = /^\s*(?:<gugu_deliver(?:y|ies)[\s>]|\[)/
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value)
+    for (const child of Object.values(value)) deepFreeze(child)
+  }
+  return value
+}
+
+function parseDeliveryEnvelope(text: string): DeliveryReading | null {
   const source = text.trim()
   const segments = DELIVERY_ROOT.test(source)
     ? readXmlSegments(source)
@@ -358,6 +401,40 @@ export function recoverDeliveryEnvelopes(
       + ' possibly_received="true">\n  <redelivery>This message may already have been received.</redelivery>'
       + envelope.source.slice(envelope.openingEnd)
   }))
+}
+
+/**
+ * A delivery as a folded exchange carries it: every fact of its opening tag and which message it answered
+ * (`reply_to`, without the preview), with the body cut to `bodyChars` and without the contexts beside it (thread,
+ * message, group rules) or the arrival hint. Read back, the facts are the original's except `threadContext`,
+ * `messageContext` and `replyTo.preview`, and the body is the original's opening. For a reader that reads the
+ * message again, whole, when the exchange is opened.
+ * `null` for anything but the current envelope syntax (retired forms, text that only looks like one): those stay whole.
+ */
+export function foldDeliveryEnvelope(text: string, bodyChars: number): string | null {
+  const source = text.trim()
+  if (!DELIVERY_ROOT.test(source)) return null
+  let envelopes: XmlElement[] | null
+  try {
+    envelopes = envelopesOf(parseXml(source))
+  } catch (error) {
+    if (error !== NOT_ENVELOPE) throw error
+    return null
+  }
+  if (!envelopes?.length) return null
+  const folded: string[] = []
+  for (const envelope of envelopes) {
+    const segment = envelope.name === 'gugu_delivery' ? readSegment(envelope) : null
+    if (!segment?.facts) return null
+    const reply = childElement(envelope, 'reply_to')
+    folded.push([
+      envelope.source.slice(0, envelope.openingEnd),
+      ...(reply ? [`  ${reply.children.length ? `${reply.source.slice(0, reply.openingEnd - 1)}/>` : reply.source}`] : []),
+      `<![CDATA[${toCdata(segment.body.slice(0, bodyChars))}]]>`,
+      '</gugu_delivery>',
+    ].join('\n'))
+  }
+  return folded.length === 1 ? folded[0]! : [`<gugu_deliveries count="${folded.length}">`, ...folded, '</gugu_deliveries>'].join('\n')
 }
 
 /**
@@ -440,10 +517,11 @@ function readSegment(envelope: XmlElement): DeliverySegment | null {
       whisperTo: attr('whisper_to'),
       viaApp: attr('via_app'),
       schedule: attr('schedule'),
-      post: attr('post'),
+      ref: attr('ref'),
       thread: attr('thread'),
       messageId: attr('msg'),
       ...(attr('source_link') ? { sourceLink: attr('source_link')! } : {}),
+      ...(attr('widget_id') ? { widgetId: attr('widget_id')! } : {}),
       at: attr('at'),
       listenMode: attr('listen_mode'),
       mode: attr('mode'),
@@ -547,7 +625,7 @@ function retiredSessionDirectFacts(fields: { from: string | null; fromId: string
     whisperTo: null,
     viaApp: null,
     schedule: null,
-    post: null,
+    ref: null,
     thread: null,
     listenMode: null,
     mode: null,
@@ -606,6 +684,8 @@ export interface AgentDeliveryEnvelopeInput {
   senderUserId: string | null
   /** Only a system message may have no user sender. */
   contentType?: string | null
+  /** From the actor-scoped registry projection, never inferred from the message body. */
+  widgetId?: string | null
   content: string
   replyTo: { messageId: string; senderUserId: string; content: string } | null
   threadRootId: string | null
@@ -723,6 +803,8 @@ export function buildAgentDeliveryEnvelope(
     ...(!systemSender && guguIds.get(input.senderUserId!)?.isAgent !== undefined
       ? { fromType: guguIds.get(input.senderUserId!)!.isAgent ? 'agent' as const : 'human' as const } : {}),
     messageId: encodeTypedId('msg', input.messageId),
+    ...(!isSessionDirect && input.contentType === 'widget' && input.widgetId
+      ? { widgetId: input.widgetId } : {}),
     at: timestamp,
     chat: isSessionDirect ? null : chatAnchor,
     sourceLink: chatId ? storedMessageLink(chatId, input.messageId) : null,
@@ -877,28 +959,38 @@ export function buildScheduledEnvelope(input: { messageId: string; content: stri
 }
 
 /**
- * 论坛 adapter:帖子上该交给这个 agent 的一件事(forum_pull_agent_inbox 的一行)。`msg` 是这件事的稳定 id(帖子 + 帖内序号
- * 算出来的 uuid,重投时不变);`context` 是帖子与悬赏的现状,放在信封那一格,❌ 拼进正文。结算由到期触发时没有发信人:同系统通知。
+ * App adapter:一个 App 要交给这个 agent 的一件事(`appInbox.ts`)。`msg` 是这件事的稳定 id(重投时不变);`context` 放在信封那一格,
+ * ❌ 拼进正文。没有发信人的(到期结算之类)同系统通知。
  */
-export function buildForumEnvelope(input: {
+export function buildAppEnvelope(input: {
+  source: string
   eventId: string
-  postId: string
+  ref: string | null
   from: string | null
   fromId: string | null
   at: string
   context: string
+  arrival: string
   content: string
 }): string {
   return renderDeliveryEnvelope({
-    route: 'forum',
+    route: 'app',
     from: input.fromId ? input.from : '咕咕系统',
     fromId: input.fromId ?? 'system:gugu',
-    post: encodeTypedId('post', input.postId),
+    viaApp: input.source,
+    ref: input.ref,
     messageId: encodeTypedId('msg', input.eventId),
     at: input.at,
     messageContext: input.context,
+    arrival: input.arrival,
     content: input.content,
   })
+}
+
+/** Delivered by an App with no chat to answer in: `app`, and whatever such a route was called when an older transcript was written. */
+const NOT_APP_ROUTES: ReadonlySet<string> = new Set(['chat', 'session-direct', 'system', 'scheduled'])
+export function isAppRoute(route: string | null | undefined): boolean {
+  return Boolean(route) && !NOT_APP_ROUTES.has(route!)
 }
 
 // @@@envelope-names (#952/#4255) - the single renderer for how a user is SHOWN: "Name (咕咕号 N)",

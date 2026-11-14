@@ -6,8 +6,9 @@ import { clickElement, createNode, createReactHarness, waitForCondition } from '
 import { stubLayoutIntersection } from '../../../support/layoutIntersection'
 import type { FirstRunHintId, FirstRunHintsProgress } from '../../../../apps/desktop/src/lib/firstRunHints'
 
-const io = vi.hoisted(() => ({ read: vi.fn(), dismiss: vi.fn() }))
+const io = vi.hoisted(() => ({ read: vi.fn(), dismiss: vi.fn(), warn: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/firstRunHints', async (importOriginal) => ({ ...(await importOriginal<object>()), readFirstRunHints: io.read, dismissFirstRunHints: io.dismiss }))
+vi.mock('../../../../apps/desktop/src/lib/log', async (importOriginal) => ({ ...(await importOriginal<object>()), rendererLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: io.warn, error: vi.fn() }) }))
 const { FirstRunHints } = await import('../../../../apps/desktop/src/components/firstRun/FirstRunHints')
 const { AssistantIntro } = await import('../../../../apps/desktop/src/components/assistant/AssistantIntro')
 const { i18n } = await import('../../../../apps/desktop/src/i18n/runtime')
@@ -17,6 +18,7 @@ let account: FirstRunHintsProgress | null
 const cleanup: (() => void)[] = []
 beforeEach(async () => {
   account = { version: 1, dismissed: [] }
+  io.warn.mockReset()
   io.read.mockReset().mockImplementation(async () => account)
   io.dismiss.mockReset().mockImplementation(async (_owner, ids: FirstRunHintId[]) => {
     account = { version: 1, dismissed: [...new Set([...(account?.dismissed ?? []), ...ids])] }
@@ -29,6 +31,7 @@ beforeEach(async () => {
 })
 afterEach(() => {
   cleanup.splice(0).reverse().forEach((fn) => fn())
+  vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -60,9 +63,13 @@ async function mount(device: Device) {
   await h.render(createNode(QueryClientProvider, { client }, createNode(FirstRunHints, { userId: 'owner-1' })))
   const close = () => { h.cleanup(); client.clear() }
   cleanup.push(close)
-  return { ...h, close }
+  return { ...h, close, client }
 }
 const bubble = (id: FirstRunHintId) => document.querySelector<HTMLElement>(`[data-testid="first-run-hint-${id}"]`)
+async function advance(ms: number) {
+  await act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+  await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+}
 
 describe('device-specific one-page introduction', () => {
   it.each(['phone', 'desktop'] as const)('uses the approved %s entry names and copy', async (device) => {
@@ -71,14 +78,17 @@ describe('device-specific one-page introduction', () => {
     cleanup.push(h.cleanup)
     await h.render(createNode(AssistantIntro, { primaryLabel: '开通我的咕咕', onPrimary: vi.fn(), laterLabel: '先逛逛', onLater: vi.fn() }))
     expect([...h.container.querySelectorAll('[data-intro-row]')].map((row) => row.getAttribute('data-intro-row'))).toEqual(device === 'phone' ? ['gugu', 'messages', 'partners'] : ['gugu', 'projects', 'chats'])
-    expect(h.container.querySelector('.ta-onb-intro-gugu')?.textContent).toContain(device === 'phone' ? '打开「消息」，第一行就是咕咕。' : '在左栏最上面。')
+    expect(h.container.querySelector('.ta-onb-intro-gugu')?.textContent).toContain(device === 'phone' ? '打开「消息」，第一行就是咕咕。' : '你的个人助理，帮你记安排、办事情。')
+    // The desktop says nothing of where it is: it is the first App of the rail's App group, not the top of the rail.
+    if (device === 'desktop') expect(h.container.querySelector('.ta-onb-intro-gugu')?.textContent).not.toContain('左栏')
     expect(h.container.textContent).not.toContain('每件任务')
     expect(h.container.querySelector('.ta-onb-intro')?.children).toHaveLength(2)
   })
 })
 
-describe('contextual hints at all four entries', () => {
-  for (const device of ['phone', 'desktop'] as const) for (const id of ['assistant', 'collaboration'] as const) {
+describe('contextual hints at the entries each device draws', () => {
+  // GUYI-AI/gugu#2548 the desktop's one-list sidebar has no place for the collaboration note: three entries draw a hint.
+  for (const [device, id] of [['phone', 'assistant'], ['phone', 'collaboration'], ['desktop', 'assistant']] as const) {
     it(`${device} ${id}: dismisses once and does not reappear after remount`, async () => {
       setDevice(device)
       addEntry(device, id)
@@ -118,10 +128,35 @@ describe('contextual hints at all four entries', () => {
     expect(bubble('assistant')).toBeNull()
   })
 
-  it('shows one hint and does not run through other visible entries after dismissal', async () => {
-    addEntry('desktop', 'assistant')
-    const project = addEntry('desktop', 'collaboration')
+  it('desktop: draws no collaboration hint, and opening a project still retires it for the phone', async () => {
+    const old = addEntry('desktop', 'collaboration')
+    const project = document.createElement('button')
+    project.dataset.projectRow = 'p-1'
+    old.region.append(project)
     await mount('desktop')
+    await waitForCondition(() => io.read.mock.calls.length === 1, 'account read')
+    expect(bubble('collaboration')).toBeNull()
+    await clickElement(project)
+    await waitForCondition(() => account?.dismissed.includes('collaboration') === true, 'opened project saved')
+  })
+
+  // Only the collaboration hint is left: the phone still draws it, so its watcher runs; the desktop's has nothing to wait for.
+  it.each([['phone', true], ['desktop', false]] as const)('%s with only the collaboration hint left: watches the page = %s', async (device, watches) => {
+    account = { version: 1, dismissed: ['assistant'] }
+    const observed = vi.spyOn(MutationObserver.prototype, 'observe')
+    await mount(device)
+    await waitForCondition(() => io.read.mock.calls.length === 1, 'account read')
+    if (watches) await waitForCondition(() => observed.mock.calls.some(([target]) => target === document.body), 'watches for its entry')
+    else {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(observed.mock.calls.some(([target]) => target === document.body)).toBe(false)
+    }
+  })
+
+  it('shows one hint and does not run through other visible entries after dismissal', async () => {
+    addEntry('phone', 'assistant')
+    const project = addEntry('phone', 'collaboration')
+    await mount('phone')
     await waitForCondition(() => !!bubble('assistant'), 'assistant first')
     expect(bubble('collaboration')).toBeNull()
     await clickElement(bubble('assistant')!.querySelector('button')!)
@@ -151,28 +186,90 @@ describe('contextual hints at all four entries', () => {
     await waitForCondition(() => !!bubble('collaboration'), 'page becomes visible')
   })
 
-  it('reports unreadable progress and retries without pretending it is new or complete', async () => {
+  it('silently backs off a transient read failure and restores the Chinese hint', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     io.read.mockRejectedValueOnce(new Error('permission denied'))
     addEntry('phone', 'assistant')
     await mount('phone')
-    await waitForCondition(() => !!document.querySelector('[data-testid="first-run-hint-error"]'), 'read failure visible')
+    await advance(0)
+    expect(io.read).toHaveBeenCalledTimes(1)
     expect(bubble('assistant')).toBeNull()
-    expect(document.querySelector('[role="alert"]')?.textContent).toBe('读不到提示进度，请重试。')
-    await clickElement(document.querySelector('[data-testid="first-run-hint-error"] button')!)
-    await waitForCondition(() => !!bubble('assistant'), 'retry restores progress')
+    expect(document.querySelector('[role="alert"], [data-testid="first-run-hint-error"]')).toBeNull()
+    await advance(999)
+    expect(io.read).toHaveBeenCalledTimes(1)
+    await advance(1)
+    expect(io.read).toHaveBeenCalledTimes(2)
+    await advance(1) // TanStack publishes the successful retry on the next notification tick.
+    expect(bubble('assistant')?.textContent).toContain('咕咕是你的个人助理')
+    expect(bubble('assistant')?.textContent).toContain('知道了')
+    expect(document.body.textContent).not.toMatch(/permission denied|Retry|Could not read/)
     expect(io.dismiss).not.toHaveBeenCalled()
   })
 
-  it('keeps a failed write visible and retries the actual account save', async () => {
+  it.each(['phone', 'desktop'] as const)('%s: exhausts silent reads without inventing progress, then recovers on a real refetch', async (device) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    io.read.mockRejectedValue(new Error('local request failed: code=1'))
+    addEntry(device, 'assistant')
+    const h = await mount(device)
+    await advance(7000)
+    expect(io.read).toHaveBeenCalledTimes(4)
+    await advance(60_000)
+    expect(io.read).toHaveBeenCalledTimes(4)
+    expect(document.querySelector('[data-testid^="first-run-hint-"], [role="alert"], [data-sonner-toast]')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/code=1|Retry|提示进度/)
+    expect(h.client.getQueryData(['first-run-hints', 'owner-1'])).toBeUndefined()
+    expect(io.dismiss).not.toHaveBeenCalled()
+    expect(io.warn).toHaveBeenCalledWith({ error: 'Error: local request failed: code=1' }, 'First-run hint progress read failed')
+    io.read.mockResolvedValue(account)
+    await act(async () => { await h.client.invalidateQueries({ queryKey: ['first-run-hints', 'owner-1'] }) })
+    await advance(1)
+    expect(bubble('assistant')?.textContent).toContain('知道了')
+    expect(h.client.getQueryData(['first-run-hints', 'owner-1'])).toEqual({ version: 1, dismissed: [] })
+  })
+
+  it('cancels a pending read retry when its surface unmounts', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    io.read.mockRejectedValue(new Error('offline'))
+    addEntry('phone', 'assistant')
+    const h = await mount('phone')
+    await advance(0)
+    expect(io.read).toHaveBeenCalledTimes(1)
+    h.close()
+    await advance(60_000)
+    expect(io.read).toHaveBeenCalledTimes(1)
+  })
+
+  it('silently retries a dismissed hint save without asking the user to retry', async () => {
     io.dismiss.mockRejectedValueOnce(new Error('offline'))
     addEntry('phone', 'assistant')
     await mount('phone')
     await waitForCondition(() => !!bubble('assistant'), 'hint visible')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     await clickElement(bubble('assistant')!.querySelector('button')!)
-    await waitForCondition(() => !!document.querySelector('[role="alert"]'), 'write failure visible')
+    await advance(0)
     expect(account?.dismissed).toEqual([])
-    await clickElement(document.querySelector('[data-testid="first-run-hint-error"] button')!)
-    await waitForCondition(() => account?.dismissed.includes('assistant') === true, 'retry saves')
+    expect(bubble('assistant')).toBeNull()
+    expect(document.querySelector('[role="alert"]')).toBeNull()
+    await advance(1000)
+    expect(account?.dismissed).toEqual(['assistant'])
+    expect(io.dismiss).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps an exhausted save pending and silent without claiming account success', async () => {
+    io.dismiss.mockRejectedValue(new Error('permission denied'))
+    addEntry('phone', 'assistant')
+    const h = await mount('phone')
+    await waitForCondition(() => !!bubble('assistant'), 'hint visible')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    await clickElement(bubble('assistant')!.querySelector('button')!)
+    await advance(7000)
+    expect(io.dismiss).toHaveBeenCalledTimes(4)
+    await advance(60_000)
+    expect(io.dismiss).toHaveBeenCalledTimes(4)
+    expect(account?.dismissed).toEqual([])
+    expect(h.client.getQueryData(['first-run-hints', 'owner-1'])).toEqual({ version: 1, dismissed: [] })
+    expect(document.querySelector('[data-testid^="first-run-hint-"], [role="alert"], [data-sonner-toast]')).toBeNull()
+    expect(io.warn).toHaveBeenCalledWith({ error: 'Error: permission denied' }, 'First-run hint progress save failed')
   })
 
   it('remembers use while progress is loading and never flashes that hint afterwards', async () => {

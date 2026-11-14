@@ -27,6 +27,13 @@ export type ChatLayout = {
   userGutter: number;
   /** Agent-centered message bubbles, enabled by the session host. */
   agentConversation?: boolean;
+  /**
+   * Pictures a tool call's result handed back (tool-images.ts) are not drawn: no strip under a step or a folded
+   * line, no height reserved, nothing fetched. The host owns when — the phone shell (#2594: over the phone they
+   * mostly fail to load and cost bandwidth, and they are the agent's working pictures, not something it shows the
+   * person). Pictures the agent sends are messages and are unaffected.
+   */
+  hideToolPictures?: boolean;
 };
 
 export const DEFAULT_LAYOUT: ChatLayout = { preset: 'single', userGutter: 0 };
@@ -36,7 +43,8 @@ export function isDoubleColumnLayout(layout: ChatLayout | undefined): boolean {
 }
 
 export function sameLayout(a: ChatLayout, b: ChatLayout): boolean {
-  return a.preset === b.preset && a.userGutter === b.userGutter && a.agentConversation === b.agentConversation;
+  return a.preset === b.preset && a.userGutter === b.userGutter && a.agentConversation === b.agentConversation
+    && !!a.hideToolPictures === !!b.hideToolPictures;
 }
 
 /**

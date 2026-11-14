@@ -1,11 +1,12 @@
 import { useContext, useLayoutEffect, useRef } from 'react';
 import { PaneContext } from '@renderer/features/tabs/pane-context';
-import { TabLayerShownContext } from '@renderer/features/tabs/retained-tab-content';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { AppPeekSlot } from '@/components/appSlot/AppPeekSlot';
 import { ExtensionTabToolbar } from './extension-tab-toolbar';
 import { extensionViewStore } from './extension-view-store';
-import { useTaskConversation } from '@/lib/taskConversation';
+import { useTaskConversation, useTaskProjectChat } from '@/lib/taskConversation';
+import { parseExtensionTabKind } from '@shared/extensions/manifest';
+import { WORKSPACE_APP_ID } from '@shared/extensions/app-runtime-protocol';
 
 /**
  * 常驻扩展在一条会话页里的那一格:**只是一个位置**,页不在这里。
@@ -42,27 +43,27 @@ export function ExtensionSharedSlot({
   // A retained session page that is hidden keeps this slot mounted, but must not hold the App page: the
   // root layer only re-places it on a claim change, so a hidden claim would leave it drawn over the
   // session now shown. Claim while shown, release when hidden — the page itself stays in the root layer.
-  const pageShown = useContext(PageShownContext);
-  const layerShown = useContext(TabLayerShownContext);
-  const shown = pageShown && layerShown;
+  const shown = useContext(SurfaceShownContext);
   // A session's slot is in the person's private chat with its agent (`AppWhere`); a chat's slot is in its chat.
   const conversation = useTaskConversation(chatId ? null : sessionId) ?? undefined;
+  const resourceChat = useTaskProjectChat(!chatId && parseExtensionTabKind(tabKind)?.extensionId === WORKSPACE_APP_ID ? sessionId : null) ?? undefined;
 
   // Where it is, and nothing else: the session's own facts (its agent, project, working copy) are main's to read
   // (真源原则 13), and what is on screen is `getAppState()`'s.
   useLayoutEffect(() => {
     const element = slotRef.current;
     if (!element || !shown) return;
-    const token = extensionViewStore.claim(tabKind, { ...(sessionId ? { sessionId } : {}), ...(chatId ? { chatId } : {}), ...(conversation ? { conversation } : {}), ...(itemId ? { itemId } : {}), ...(perSession ? { perSession } : {}), tabId, viewState, navigation, element, focusContent: pane ? () => pane.focusActiveContent() : undefined });
+    const token = extensionViewStore.claim(tabKind, { ...(sessionId ? { sessionId } : {}), ...(chatId ? { chatId } : {}), ...(conversation ?? resourceChat ? { conversation: conversation ?? resourceChat } : {}), ...(resourceChat ? { resourceChat } : {}), ...(itemId ? { itemId } : {}), ...(perSession ? { perSession } : {}), tabId, viewState, navigation, element, focusContent: pane ? () => pane.focusActiveContent() : undefined });
     return () => extensionViewStore.release(tabKind, token);
-  }, [tabKind, sessionId, chatId, conversation, itemId, tabId, shown, perSession, viewState, pane, navigation?.canBack, navigation?.canForward, navigation?.backToConversation]);
+  }, [tabKind, sessionId, chatId, conversation, resourceChat, itemId, tabId, shown, perSession, viewState, pane, navigation?.canBack, navigation?.canForward, navigation?.backToConversation]);
 
   return (
     <div className="flex h-full w-full flex-col">
       <ExtensionTabToolbar tabKind={tabKind} sessionId={sessionId ?? null} tabId={tabId} />
       {/* What the page opens beside it (G1) goes in this slot too: side by side, or over it when narrow. */}
       <AppPeekSlot sessionId={sessionId ?? null} tabId={tabId}>
-        <div ref={slotRef} className="min-h-0 flex-1 bg-background" />
+        {/* The page takes this box's corners too (page-corners.ts): a place that rounds it rounds the page. */}
+        <div ref={slotRef} className="min-h-0 flex-1 bg-background" data-extension-slot="" />
       </AppPeekSlot>
     </div>
   );

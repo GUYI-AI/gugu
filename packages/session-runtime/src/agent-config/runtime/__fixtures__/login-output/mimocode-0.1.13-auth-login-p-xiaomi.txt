@@ -1,0 +1,8 @@
+Performing one time database migration, may take a few minutes...
+[?25l[?25hDatabase migration complete.
+[0m
+[90m┌[39m  Add credential
+[90m│[39m
+[34m●[39m  Browser didn't open? Use the url below to sign in:
+[90m│[39m  https://platform.xiaomimimo.com/authorize?pk=MCowBQYDK2VuAyEAzxzZYaDvZsUYa_LLSKQAPB_MEKPQcgxQBz6OTV6xnGg&redirect_uri=https%3A%2F%2Fplatform.xiaomimimo.com%2Fauthorize%2Fcode%2Fcallback&kn=mimocode&key_name=mimo-code-cli-key-bc7318d3
+[1G[0JPaste code here if prompted > [31G

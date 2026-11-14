@@ -5,9 +5,15 @@ import { act } from 'react'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import { clickElement, createReactHarness, renderWithAppProviders, device } from '../../../support/testHarness'
+import { UNAVAILABLE_APP_STATES, clearAssistantAppState, setAssistantAppState } from '../../../support/assistantAppStates'
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
 
 const mocks = vi.hoisted(() => ({ devices: [] as Device[], phones: [] as Device[], rows: [] as { deviceId: string; summary: SessionpageSessionSummary; live: boolean }[], localWorker: false, listed: true, identities: vi.fn(),work:vi.fn(),wake:vi.fn(),refresh:null as null|(()=>void) }))
+// Entry switch: on the desktop the task opens over the assistant App's panel (lib/assistantEntry.ts).
+const entry = vi.hoisted(() => ({ opened: vi.fn(), resolve: vi.fn(), follow: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/assistantEntry', async (original) => ({ ...await original<object>(), openAssistantTaskInApp: entry.opened }))
+vi.mock('../../../../apps/desktop/src/lib/guguLinks', async (original) => ({ ...await original<object>(), followLink: entry.follow }))
+vi.mock('../../../../apps/desktop/src/lib/assistantWorkTarget', async (original) => ({ ...await original<object>(), resolveAssistantWorkTarget: entry.resolve }))
 vi.mock('../../../../apps/desktop/src/hooks/useWakeCloudComputer',()=>({useCloudComputerWake:(target:unknown)=>{mocks.wake(target);return {issue:null,dropped:false,retry:vi.fn()}}}))
 vi.mock('../../../../apps/desktop/src/lib/assistantWork',()=>({assistantWorkCloud:{get:mocks.work},watchAssistantWork:(_o:string,_a:string,refresh:()=>void)=>{mocks.refresh=refresh;return ()=>{}}}))
 vi.mock('../../../../apps/desktop/src/components/assistant/TaskExchangeBubble',()=>({TaskExchangeBubble:({message}:{message:{content:string}})=><div>{message.content}</div>}))
@@ -23,7 +29,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assist
 
 import { AssistantTaskChatOpener } from '../../../../apps/desktop/src/components/assistant/AssistantTaskChatOpener'
 import { OPEN_ASSISTANT_TASK_CHAT,openAssistantTaskChat, readAssistantTaskChat, showAssistantTaskChat } from '../../../../apps/desktop/src/lib/assistantTaskChat'
-import { installAssistantShellBridge } from '../../../../apps/desktop/src/lib/assistantShellBridge'
+import { installAssistantShellBridge, publishAssistantShell } from '../../../../apps/desktop/src/lib/assistantShellBridge'
 import { installShellSlots, readShellSlots } from '../../../../apps/desktop/src/lib/shellSlots'
 import { publishDirectoryDevices, retainDeviceSessions, updateDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 
@@ -44,11 +50,53 @@ beforeEach(() => {
   mocks.rows = [{ deviceId: 'home', summary: summary('assistant-session', 'assistant'), live: true }, { deviceId: 'worker', summary: summary('task-session', 'task-agent', 'assistant-session'), live: false }]
   mocks.devices = [device('worker', [], { label: 'Worker', is_online: false, session_digest: [{ conversationId: 'task-session', projectId: 'p', projectName: 'Project', title: 'task-session', agentUserId: 'task-agent', parentConversationId: 'assistant-session', agentStatus: 'idle', lastInteractedAt: '2026-10-16T12:00:00Z', harness: 'codex', supported: false }] }), device('home', [], { label: 'Home' })]
   mocks.phones = []
+  entry.opened.mockReset().mockReturnValue('app-host-layer:gugu-assistant'); entry.resolve.mockReset(); entry.follow.mockReset()
+  // The window shows this account's assistant; the App is the entry's target unless a test says otherwise.
+  publishAssistantShell({ cloudAvailable: false, canHostHere: true, cloud: null, loadError: null, assistant, assistantState: 'found', ownerName: 'U', ownerId: 'user-1', chatId: 'assistant-dm', home: null, setup: null, member: false, preparing: false })
+  setAssistantAppState('usable', 'user-1')
   retainDeviceSessions([])
   publishDirectoryDevices(mocks.devices)
   for (const row of mocks.rows) updateDeviceSessions(row.deviceId, { sessions: [row.summary], cached: false, connected: true, loading: false, error: null })
 })
-afterEach(() => { harness.cleanup(); showAssistantTaskChat(null); retainDeviceSessions([]); publishDirectoryDevices([]) })
+afterEach(() => { harness.cleanup(); showAssistantTaskChat(null); retainDeviceSessions([]); publishDirectoryDevices([]); clearAssistantAppState() })
+
+describe('on the assistant App (entry switch), a task opens over the App\'s panel', () => {
+  const task = { workId: 'w1', title: 'T', assistantId: 'assistant', taskAgentId: 'task-agent', task: { sessionId: 'task-session', deviceId: 'worker' }, assistants: [] }
+  it('hands the task the shell found to the App\'s host layer, not the built-in pane', async () => {
+    await renderWithAppProviders(harness, <AssistantTaskChatOpener visible desktop />)
+    await act(async () => { window.dispatchEvent(new CustomEvent(OPEN_ASSISTANT_TASK_CHAT, { detail: task })) })
+    expect(entry.opened).toHaveBeenCalledWith('user-1', task)
+    expect(entry.resolve).not.toHaveBeenCalled()
+  })
+
+  it('finds a task named without its work id in the assistant\'s work first; one it cannot find is said once, nothing opened', async () => {
+    entry.resolve.mockResolvedValueOnce(task).mockResolvedValueOnce(null)
+    await renderWithAppProviders(harness, <AssistantTaskChatOpener visible desktop />)
+    const { workId: _none, ...legacy } = task
+    await act(async () => { window.dispatchEvent(new CustomEvent(OPEN_ASSISTANT_TASK_CHAT, { detail: legacy })) })
+    expect(entry.resolve).toHaveBeenLastCalledWith('assistant', { agentId: 'task-agent' })
+    expect(entry.opened).toHaveBeenCalledWith('user-1', task)
+    entry.opened.mockClear()
+    await act(async () => { window.dispatchEvent(new CustomEvent(OPEN_ASSISTANT_TASK_CHAT, { detail: { ...legacy, taskAgentId: 'other-agent' } })) })
+    expect(entry.opened).not.toHaveBeenCalled()
+  })
+})
+
+// The App not usable here (switched off by the person, still going in, failing to go in): the task the assistant started is an
+// ordinary session, opened as any session is — not an error about the App, and not asked of its panel.
+describe.each(UNAVAILABLE_APP_STATES)('the assistant App %s', (state) => {
+  const task = { workId: 'w1', title: 'T', assistantId: 'assistant', taskAgentId: 'task-agent', task: { sessionId: 'task-session', deviceId: 'worker' }, assistants: [] }
+  it('opens the task as an ordinary session, nothing said about the App, nothing asked of its panel', async () => {
+    setAssistantAppState(state, 'user-1')
+    const toast = vi.fn()
+    await renderWithAppProviders(harness, <AssistantTaskChatOpener visible desktop />, { toast })
+    await act(async () => { window.dispatchEvent(new CustomEvent(OPEN_ASSISTANT_TASK_CHAT, { detail: task })) })
+    expect(entry.follow).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'task-session', deviceId: 'worker' })
+    expect(entry.opened).not.toHaveBeenCalled()
+    expect(entry.resolve).not.toHaveBeenCalled()
+    expect(toast).not.toHaveBeenCalled()
+  })
+})
 
 describe('assistant task rows open the task chat on both shells', () => {
   it('retains a cloud task click while the assistant shell is still mounting its pane',async()=>{
