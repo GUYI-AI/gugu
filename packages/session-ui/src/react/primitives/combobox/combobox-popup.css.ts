@@ -38,10 +38,9 @@ export const popupHeader = style({
 
 export const popupList = style({
   maxHeight: '240px',
-  scrollPaddingTop: '0.25rem',
-  scrollPaddingBottom: '0.25rem',
   overflowY: 'auto',
-  padding: '0.25rem',
+  // The 0.25rem above the first and below the last item is the list's own padding (GrowingList `padding`).
+  padding: '0 0.25rem',
 });
 
 export const popupItem = style({

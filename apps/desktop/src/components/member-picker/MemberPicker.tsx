@@ -1,4 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { GrowingList, type GrowingListWindow } from '@gugu/session-ui/react/growing-list'
 import { useTranslation } from 'react-i18next'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { cn } from '@/lib/cn'
@@ -103,7 +104,8 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
   const [searchScope, setSearchScope] = useState('all')
   const [project, setProject] = useState<string | null>(null)
   const [active, setActive] = useState(0)
-  const listRef = useRef<HTMLDivElement>(null)
+  const [listEl, setListEl] = useState<HTMLDivElement | null>(null)
+  const lineWindowRef = useRef<GrowingListWindow | null>(null)
   const deferredQuery = useDeferredValue(query)
 
   const defaultSource = sources.find((source) => source.entries.length > 0 && !(source.kind === 'people' && peopleDenied))?.key ?? 'recent'
@@ -147,7 +149,7 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
     if (result) setSearchScope(key)
     else { setChosenSource(key); setProject(null) }
     setActive(0)
-    if (listRef.current) listRef.current.scrollTop = 0
+    if (listEl) listEl.scrollTop = 0
   }
   const changeQuery = (value: string) => {
     if (!value.trim()) setSearchScope('all')
@@ -168,7 +170,7 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
       event.preventDefault()
       const next = Math.max(0, Math.min(visibleRows.length - 1, activeIndex + (event.key === 'ArrowDown' ? 1 : -1)))
       setActive(next)
-      listRef.current?.querySelector(`[data-option-index="${next}"]`)?.scrollIntoView({ block: 'nearest' })
+      bring(next)
     } else if (event.key === 'Backspace' && !query && selected.length > 0) { event.preventDefault(); setSelected((prev) => prev.slice(0, -1)) }
   }
   const onRowKeyDown = (index: number) => (event: KeyboardEvent<HTMLDivElement>) => {
@@ -177,10 +179,13 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
       event.preventDefault()
       const next = Math.max(0, Math.min(visibleRows.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))
       setActive(next)
-      listRef.current?.querySelector<HTMLElement>(`[data-option-index="${next}"]`)?.focus()
+      bring(next, true)
     }
   }
-  const jump = (letter: string) => listRef.current?.querySelector(`[data-letter-section="${letter}"]`)?.scrollIntoView({ block: 'start' })
+  const jump = (letter: string) => {
+    const line = lines.findIndex((one) => one.kind === 'head' && one.letter === letter)
+    if (line >= 0) lineWindowRef.current?.scrollToIndex(line, { align: 'start' })
+  }
 
   // 左栏(手机:横滑分段)的一项;搜索时数的是命中数,另多一项「全部结果」。
   const sourceButton = (key: string, label: string, count: number) => {
@@ -204,18 +209,43 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
     </Button>
   )
 
+  // @@@growing-list: the candidates mount around the visible part of the list; a letter's head stays stuck at the top.
+  const lines: ({ kind: 'head'; letter: string } | { kind: 'option'; index: number })[] = []
+  const lineOfRow: number[] = []
   let lastLetter: string | null = null
-  const list = visibleRows.map((row, index) => {
-    const id = row.entry.contact.id
+  visibleRows.forEach((row, index) => {
     const letter = letters ? getPinyinInitial(displayName(row.entry.contact)) : null
-    const header = letter && letter !== lastLetter ? <SectionLabel key={`letter-${letter}`} data-letter-section={letter} className="sticky top-0 z-[var(--z-raised)] bg-[var(--modal-bg)]">{letter}</SectionLabel> : null
+    if (letter && letter !== lastLetter) lines.push({ kind: 'head', letter })
     lastLetter = letter ?? lastLetter
-    const option = (
-      <PickerOption key={id} row={row} index={index} mobile={mobile} active={index === activeIndex} checked={isLocked(id) || selected.includes(id)} locked={isLocked(id)}
-        where={showWhere ? deviceLabelOf(id) : null} note={agentNote?.(id)} onToggle={() => { setActive(index); activate(index) }} onKeyDown={onRowKeyDown(index)} />
-    )
-    return header ? [header, option] : option
+    lineOfRow.push(lines.length)
+    lines.push({ kind: 'option', index })
   })
+  /** Scroll a candidate into the window (it may not be mounted), then focus it once it is drawn. */
+  function bring(index: number, focus = false) {
+    lineWindowRef.current?.scrollToIndex(lineOfRow[index]!, { align: 'auto' })
+    if (focus) requestAnimationFrame(() => listEl?.querySelector<HTMLElement>(`[data-option-index="${index}"]`)?.focus())
+  }
+  const list = (
+    <GrowingList
+      scroller={listEl}
+      count={lines.length}
+      getKey={(line) => { const one = lines[line]!; return one.kind === 'head' ? `letter:${one.letter}` : visibleRows[one.index]!.entry.contact.id }}
+      estimateSize={(line) => (lines[line]!.kind === 'head' ? 28 : 56)}
+      isSticky={(line) => lines[line]!.kind === 'head'}
+      windowRef={(lineWindow) => { lineWindowRef.current = lineWindow }}
+      renderLine={(line) => {
+        const one = lines[line]!
+        if (one.kind === 'head') return <SectionLabel data-letter-section={one.letter} className="bg-[var(--modal-bg)]">{one.letter}</SectionLabel>
+        const { index } = one
+        const row = visibleRows[index]!
+        const id = row.entry.contact.id
+        return (
+          <PickerOption row={row} index={index} mobile={mobile} active={index === activeIndex} checked={isLocked(id) || selected.includes(id)} locked={isLocked(id)}
+            where={showWhere ? deviceLabelOf(id) : null} note={agentNote?.(id)} onToggle={() => { setActive(index); activate(index) }} onKeyDown={onRowKeyDown(index)} />
+        )
+      }}
+    />
+  )
   const loading = contacts.length === 0 && (refreshing || loadingContacts || contactsStatus === 'loading')
   const failed = contacts.length === 0 && !refreshing && !loadingContacts && contactsStatus === 'error'
   const emptyText = contacts.length === 0 ? t('createGroup.emptyContacts') : t('createGroup.noResults')
@@ -260,7 +290,7 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
               ))}
             </div>
           ) : null}
-          <div ref={listRef} id="member-picker-list" role="listbox" aria-multiselectable="true" className={cn('min-h-0 flex-1 overflow-y-auto !px-2 !pb-3', letters && !mobile && '!pr-6')}>
+          <div ref={setListEl} data-growing-list="" id="member-picker-list" role="listbox" aria-multiselectable="true" className={cn('min-h-0 flex-1 overflow-y-auto !px-2 !pb-3', letters && !mobile && '!pr-6')}>
             {loading ? <p className="!m-0 !p-8 text-center text-[length:var(--font-body)] text-[var(--muted-fg)]">{t('common.loading')}</p>
               : failed ? <div className="!p-8 text-center text-[length:var(--font-body)] text-[var(--muted-fg)]">{t('common.loadFailed')} <Button variant="ghost" size="sm" onClick={() => void reload()}>{t('common.retry')}</Button></div>
               : showPeopleDenied ? <p data-testid={AUTOMATION_TEST_IDS.groupMembersPickerHumanDenied} className="!m-0 !p-6 text-center text-[length:var(--font-body)] leading-relaxed text-[var(--muted-fg)]">{peopleDenied}</p>

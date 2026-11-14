@@ -24,6 +24,7 @@ import { GroupNameInlineEdit } from './GroupNameInlineEdit'
 import { Button } from '../ui/Button'
 import { Hint } from '../ui/Tooltip'
 import { SectionLabel } from '../ui/SectionLabel'
+import { GrowingList } from '@gugu/session-ui/react/growing-list'
 import { ListRowContent } from '../ui/ListRow'
 import { SearchField } from '../ui/SearchField'
 import { HeaderSearch } from '../ui/HeaderSearch'
@@ -99,6 +100,8 @@ const TOPIC_NAME_EDIT_STYLE: React.CSSProperties = { flex: 1, minWidth: 0 }
 const MEMBER_LIST_ERROR_STYLE: React.CSSProperties = { padding: 'var(--spacing-sm) var(--spacing-lg)', color: 'var(--danger-fg)', fontSize: 'var(--font-caption)' }
 // 档位没改成的原因:写在那一行的档位钮下面。
 const MEMBER_ROW_ERROR_STYLE: React.CSSProperties = { marginTop: 4, color: 'var(--danger-fg)', fontSize: 'var(--font-caption)' }
+// A member row with its meta line; every mounted row is measured, this only places the ones not mounted yet.
+const memberRowEstimate = () => 56
 const MEMBER_LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto' }
 
 /**
@@ -254,6 +257,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
 
   // @@@6418 搜索:名字、主人、引擎、模型、设备,与行上看得见的字一致(看不见的字段不参与匹配)。
   const [query, setQuery] = useState('')
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
   const [myAgentsExpanded, setMyAgentsExpanded] = useState(true)
   const mobile = useMobileShell()
   useEffect(() => { setQuery('') }, [chatId])
@@ -423,27 +427,30 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
           </div>
         ) : null}
 
-        <div data-member-list-scroll="" style={MEMBER_LIST_SCROLL_STYLE}>
+        <div ref={setScroller} data-growing-list="" data-member-list-scroll="" style={MEMBER_LIST_SCROLL_STYLE}>
           {nothingMatches ? (
             <div data-testid="member-list-no-match" style={MEMBER_LIST_EMPTY_STYLE}>{t('group.memberList.noMatches', { query: query.trim() })}</div>
           ) : null}
           {needle && shownPeople.length === 0 ? null : (
           <section data-member-section="human" style={MEMBER_LIST_ROWS_STYLE}>
             <SectionLabel trailing={<span aria-hidden="true" style={SECTION_COUNT_STYLE}>{shownPeople.length}</span>}>{t('group.memberList.sectionPeople')}</SectionLabel>
+            {/* @@@growing-list: a section mounts the rows around the visible part of the panel's one scroller. */}
             <div data-member-section-rows="human">
-              {shownPeople.map((member) => (
-                <MemberRow
-                  key={member.id}
-                  memberId={member.id}
-                  identity={identities[member.id]}
-                  isAgent={false}
-                  roleLabel={roleLabel((member.raw as GroupMemberItem).role)}
-                  // 在线态:人这一侧产品里没有真值 ⇒ 不给角标(❌ 不编一个「在线」出来)。
-                  statusBadge={undefined}
-                  profile={group.profileTrigger(member.id)}
-                  actions={group.rowActions(member.id)}
-                />
-              ))}
+              <GrowingList scroller={scroller} count={shownPeople.length} getKey={(index) => shownPeople[index]!.id} estimateSize={memberRowEstimate} renderLine={(index) => {
+                const member = shownPeople[index]!
+                return (
+                  <MemberRow
+                    memberId={member.id}
+                    identity={identities[member.id]}
+                    isAgent={false}
+                    roleLabel={roleLabel((member.raw as GroupMemberItem).role)}
+                    // 在线态:人这一侧产品里没有真值 ⇒ 不给角标(❌ 不编一个「在线」出来)。
+                    statusBadge={undefined}
+                    profile={group.profileTrigger(member.id)}
+                    actions={group.rowActions(member.id)}
+                  />
+                )
+              }} />
             </div>
           </section>
           )}
@@ -463,13 +470,13 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
                 >
                   {t('group.memberList.myAgents')}
                 </SectionLabel>
-                {myAgentsOpen ? myAgents.map(renderAgentRow) : null}
+                {myAgentsOpen ? <GrowingList scroller={scroller} count={myAgents.length} getKey={(index) => myAgents[index]!.id} estimateSize={memberRowEstimate} renderLine={(index) => renderAgentRow(myAgents[index]!)} /> : null}
               </section>
             ) : null}
             {otherAgents.length > 0 ? (
               <section data-member-section="agent" data-member-group="others" style={MEMBER_LIST_NEXT_SECTION_STYLE}>
                 <SectionLabel trailing={<span aria-hidden="true" style={SECTION_COUNT_STYLE}>{otherAgents.length}</span>}>{t(myAgents.length > 0 ? 'group.memberList.otherAgents' : 'group.memberList.sectionAgents')}</SectionLabel>
-                {otherAgents.map(renderAgentRow)}
+                <GrowingList scroller={scroller} count={otherAgents.length} getKey={(index) => otherAgents[index]!.id} estimateSize={memberRowEstimate} renderLine={(index) => renderAgentRow(otherAgents[index]!)} />
               </section>
             ) : null}
           </>
