@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { readModel, useReadModel } from '../../../lib/readModel'
 import { useTranslation } from 'react-i18next'
 
 import { SERVER_SSH_INSTALL_CHANNELS, type ServerSshInstallInfo } from '../../../lib/serverSshInstall'
@@ -26,6 +27,15 @@ const faint = 'text-[var(--faint-fg)]'
 
 /** 就地等时多久问一次「刚才是不是因为机器上限没登上」。 */
 export const MACHINE_LIMIT_CHECK_INTERVAL_MS = 5_000
+
+/** What the one-line install command needs from this desktop (its address, the package to fetch). */
+const sshInstallInfo = readModel({
+  name: 'sshInstallInfo',
+  scope: 'device',
+  read: async () => (await desktopIpc()!.invoke(SERVER_SSH_INSTALL_CHANNELS.info)) as ServerSshInstallInfo,
+  persist: true,
+})
+
 /** 起点往前放一点:库的钟与这台电脑的钟差个几十秒也不漏。 */
 const MACHINE_LIMIT_CHECK_SLACK_MS = 60_000
 
@@ -47,26 +57,18 @@ export function OneLineInstall({
   const [refusal, setRefusal] = useState<(MachineLimitRefusal & { hostname: string | null }) | null>(null)
   const since = useRef<string | null>(null)
   if (since.current === null) since.current = new Date(Date.now() - MACHINE_LIMIT_CHECK_SLACK_MS).toISOString()
-  const [info, setInfo] = useState<ServerSshInstallInfo | null>(null)
+  const infoReading = useReadModel(sshInstallInfo, desktopIpc() ? [] : null)
+  const info = infoReading.state === 'value' ? infoReading.value : null
   const [useWget, setUseWget] = useState(false)
   // 这一段出现时已有的机器:之后新出现、且在线的那台就是照这一行装上的。
   const known = useRef<Set<string> | null>(null)
   if (known.current === null) known.current = new Set(devices.map((d) => d.device_id))
 
-  useEffect(() => {
-    const electron = desktopIpc()
-    if (!electron) return
-    let live = true
-    void electron.invoke(SERVER_SSH_INSTALL_CHANNELS.info).then(
-      (value) => { if (live) setInfo(value as ServerSshInstallInfo) },
-      () => { if (live) setInfo(null) },
-    )
-    return () => { live = false }
-  }, [])
 
   const appeared = newlyAppearedDevices(known.current, devices)[0] ?? null
   const waiting = !appeared && !refusal
 
+  // @@@effect-flow - while waiting for the machine this line installs, ask every few seconds whether the account refused it.
   useEffect(() => {
     if (!waiting || !recentMachineLimitRefusal) return
     let live = true

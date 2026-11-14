@@ -31,7 +31,7 @@ import {
 import { canStartSideSession, startSideSession } from './start-side-session';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useAgents } from '@renderer/lib/stores/use-agents';
-import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
+import { terminalShown, useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
 import { folderItem, WORKSPACE_APP_KIND } from '@renderer/features/chats/chat-tabs/chat-panel-item';
 import { openPanelItem } from '@renderer/features/chats/chat-tabs/chat-layouts';
 import { useChatFolderName } from '@/components/chat/chatFolderName';
@@ -77,7 +77,7 @@ const TaskAddItems = observer(function TaskAddItems() {
   const { projectId, sessionId } = useSessionViewContext();
   const { data: agents } = useAgents();
   const canSideSession = canStartSideSession(projectId, sessionId, agents);
-  const terminalEnabled = useTerminalEnabled();
+  const terminalEnabled = terminalShown(useTerminalEnabled());
   const openTab = (kind: string) => sessionView.paneLayout.openBeside(kind, {});
   const folder = installedExtensionsStore.enabledTabContributions.find((entry) => entry.kind === WORKSPACE_APP_KIND);
   return (

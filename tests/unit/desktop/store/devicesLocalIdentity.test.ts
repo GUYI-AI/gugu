@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { notifyManager } from '@tanstack/react-query'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { DevicesProvider } from '../../../../apps/desktop/src/store/devices'
 import { useDevicesStore } from '../../../../apps/desktop/src/store/devicesContext'
 import { writeCachedDevices } from '../../../../apps/desktop/src/store/devicesCache'
 import { LocalDeviceUnidentifiedError } from '../../../../apps/desktop/src/lib/localDeviceIdentity'
 import { createNode, createReactHarness } from '../../../support/testHarness'
+// The read model reads for the signed-in account, as the product publishes it.
+;(await import('../../../../apps/desktop/src/lib/readModel')).followRendererSession('SIGNED_IN', 'account-a')
 
 const mocks = vi.hoisted(() => ({
   listDevices: vi.fn(),
@@ -59,6 +63,7 @@ describe('DevicesProvider before this computer is identified', () => {
   let consoleError: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
+  notifyManager.setScheduler((callback) => { callback() }); queryClient.clear(); followRendererSession('SIGNED_IN', 'account-a')
     localStorage.clear()
     seen = []
     mocks.identified.clear()
@@ -72,13 +77,11 @@ describe('DevicesProvider before this computer is identified', () => {
   })
 
   it('keeps the cached list with its own row marked, reports no failure, and reads again once identified', async () => {
-    writeCachedDevices('account-a', [device('this-mac', { is_current_device: true }), device('d22', { is_current_device: false })])
+    writeCachedDevices([device('this-mac', { is_current_device: true }), device('d22', { is_current_device: false })])
     mocks.listDevices.mockReset().mockRejectedValueOnce(new LocalDeviceUnidentifiedError())
 
     await harness.render(createNode(DevicesProvider, {}, createNode(Probe)))
-    await act(async () => { await Promise.resolve() })
-
-    expect(mocks.listDevices).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(mocks.listDevices).toHaveBeenCalledTimes(1))
     expect(seen.find((row) => row.device_id === 'this-mac')?.is_current_device).toBe(true)
     expect(consoleError).not.toHaveBeenCalled()
     if (mocks.identified.size === 0) throw new Error('the provider does not listen for the identification')
@@ -88,9 +91,7 @@ describe('DevicesProvider before this computer is identified', () => {
       device('d22', { is_current_device: false }),
     ])
     await act(async () => { mocks.identified.forEach((listener) => listener()); await Promise.resolve() })
-    await act(async () => { await Promise.resolve() })
-
-    expect(mocks.listDevices).toHaveBeenCalledTimes(2)
+    await vi.waitFor(() => expect(mocks.listDevices).toHaveBeenCalledTimes(2))
     expect(seen.find((row) => row.device_id === 'this-mac')).toMatchObject({ is_current_device: true, label: 'renamed-mac' })
   })
 })

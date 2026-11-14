@@ -6,6 +6,7 @@ import type { ChatItem, Device, MessageItem, NotificationLevel } from '@gugu/cor
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { ToastContext, type ToastContextValue } from '../../apps/desktop/src/components/toastContext'
 import { AuthContext, type AuthUser } from '../../apps/desktop/src/store/auth'
+import { followRendererSession } from '../../apps/desktop/src/lib/readModel'
 import { ChatStoreProvider, useDraftQuotesStore } from '../../apps/desktop/src/store/chatContext'
 import { createShellTabStore, ShellTabContext } from '../../apps/desktop/src/lib/shellTab'
 import type { SidebarTab } from '../../packages/core/src/shared/enums/sidebarTabModels'
@@ -77,6 +78,8 @@ export async function renderWithAppProviders(
     shellTab?: SidebarTab
   } = {},
 ) {
+  // The read model follows the published session as the product does: the same signed-in user as AuthContext below.
+  followRendererSession(options.auth === null ? 'SIGNED_OUT' : 'SIGNED_IN', options.auth === null ? null : authUser(options.auth).id)
   let tree = node
   tree = createElement(ShellTabContext.Provider, { value: createShellTabStore(options.shellTab ?? 'chats') }, tree)
   tree = createElement(TestChatStore, { value: chatStore({ ...chatWindowStub(options.auth?.id), ...options.chat }) }, tree)

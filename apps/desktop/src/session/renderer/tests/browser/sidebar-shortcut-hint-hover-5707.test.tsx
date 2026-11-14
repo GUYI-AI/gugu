@@ -22,6 +22,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { appSettingsModel, LOCAL_SETTINGS_HOST_KEY } from '@renderer/features/settings/app-settings-client'
 
 // 搜索行点下去打开 ⌘K 那个面板(弹窗注册表会把整棵 app-state 建起来,那些要 IPC)—— 这条测试只量键帽,给一个不开窗的替身。
 vi.mock('@renderer/lib/modal/modal-provider', () => ({ useShowModal: () => () => {} }))
@@ -44,6 +45,8 @@ let host: HTMLDivElement
 let pointerPark: HTMLElement
 
 beforeEach(async () => {
+  // This device's keyboard settings, read: no custom bindings (the shortcut labels are drawn only once they are read).
+  appSettingsModel.set(['keyboard', LOCAL_SETTINGS_HOST_KEY], { value: {}, defaults: {}, overrides: {} })
   host = document.createElement('div')
   // 主题变量挂在 emlight/emdark 上(lib/theme/host-theme.ts);少了它键帽的边框与底色算不出来。
   // 宽度取侧栏常规宽,行才按产品里的样子排。

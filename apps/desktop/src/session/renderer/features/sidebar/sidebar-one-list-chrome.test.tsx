@@ -58,12 +58,13 @@ vi.mock('@renderer/localization/use-session-messages', () => ({
 vi.mock('@renderer/features/settings/use-app-settings-key', () => ({
   useAppSettingsKey: (key: string) => {
     useSyncExternalStore(state.subscribe, state.version);
+    const read = (value: unknown) => value === undefined ? { state: 'unknown' as const } : { state: 'value' as const, value: { value, defaults: value, overrides: {} }, stale: false, error: null };
     return key === 'interface'
-      ? { value: state.intro === undefined ? undefined : { sidebarIntro: state.intro }, update: state.update }
-      : { value: undefined };
+      ? { settings: read(state.intro === undefined ? undefined : { sidebarIntro: state.intro }), update: state.update }
+      : { settings: read(undefined) };
   },
 }));
-vi.mock('@renderer/lib/hooks/useKeyboardShortcuts', () => ({ getEffectiveHotkey: (id: string) => (id === 'app.toggleLeftSidebar' ? 'Mod+Shift+S' : null) }));
+vi.mock('@renderer/lib/hooks/useKeyboardShortcuts', () => ({ getEffectiveHotkey: (id: string) => (id === 'app.toggleLeftSidebar' ? 'Mod+Shift+S' : null), useShortcutOverrides: () => ({}) }));
 vi.mock('@renderer/lib/ui/shortcut-format', () => ({ formatHotkeyText: (hotkey: string) => `[${hotkey}]` }));
 vi.mock('@renderer/lib/layout/layout-provider', () => ({
   SIDEBAR_PROGRESS_VAR: '--gg-sidebar-progress',

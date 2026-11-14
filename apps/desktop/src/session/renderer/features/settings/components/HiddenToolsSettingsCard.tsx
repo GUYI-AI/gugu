@@ -1,26 +1,43 @@
 import { useMemo } from 'react';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
-import { useOpenInApps } from '@renderer/lib/hooks/useOpenInApps';
+import { useOpenInApps, type OpenInApps } from '@renderer/lib/hooks/useOpenInApps';
+import { SettingValue } from './SettingControls';
 import { Switch } from '@/components/ui/Switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { OPEN_IN_APPS, TERMINAL_OPEN_IN_APP_IDS, type OpenInAppId } from '@shared/openInApps';
-import { useTerminalEnabled } from '../use-terminal-enabled';
+import { terminalShown, useTerminalEnabled } from '../use-terminal-enabled';
 import { SettingsRow } from '@/components/settings/SettingsPrimitives';
 
 export default function HiddenToolsSettingsCard() {
-  const { value: openIn, update, isLoading, isSaving } = useAppSettingsKey('openIn');
-  const { icons, labels, availability } = useOpenInApps();
-  const { translate } = useSessionMessages();
+  const openIn = useAppSettingsKey('openIn');
+  const tools = useOpenInApps();
+  // 工具清单(有没有装、叫什么、图标)和隐藏名单都读到了才排、才画:❌ 先按字母序画一列「未检测到」再重排。
+  return (
+    <SettingValue reading={openIn.settings} placeholder="h-48 w-full">
+      {({ value }) => (
+        <SettingValue reading={tools} placeholder="h-48 w-full">
+          {(apps) => <HiddenToolsRows hiddenApps={value.hidden} apps={apps} update={openIn.update} isSaving={openIn.isSaving} />}
+        </SettingValue>
+      )}
+    </SettingValue>
+  );
+}
 
-  const hiddenApps: OpenInAppId[] = openIn?.hidden ?? [];
+function HiddenToolsRows({ hiddenApps, apps: { icons, labels, availability }, update, isSaving }: {
+  hiddenApps: OpenInAppId[];
+  apps: OpenInApps;
+  update: (partial: { hidden: OpenInAppId[] }) => void;
+  isSaving: boolean;
+}) {
+  const { translate } = useSessionMessages();
 
   const toggle = (appId: OpenInAppId, visible: boolean) => {
     const next = visible ? hiddenApps.filter((id) => id !== appId) : [...hiddenApps, appId];
     update({ hidden: next });
   };
 
-  const terminalEnabled = useTerminalEnabled();
+  const terminalEnabled = terminalShown(useTerminalEnabled());
   const sortedApps = useMemo(() => {
     // 「终端」开关关着:终端类 App 在这里也不列(与「在…中打开」同一条)。
     return Object.values(OPEN_IN_APPS).filter((app) => terminalEnabled || !TERMINAL_OPEN_IN_APP_IDS.has(app.id)).sort((a, b) => {
@@ -59,7 +76,7 @@ export default function HiddenToolsSettingsCard() {
                     <span>
                       <Switch
                         checked={isVisible}
-                        disabled={isLoading || isSaving || !isDetected}
+                        disabled={isSaving || !isDetected}
                         onCheckedChange={(checked) => toggle(app.id, checked)}
                         aria-label={
                           isVisible

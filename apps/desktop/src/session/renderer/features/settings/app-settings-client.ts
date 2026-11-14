@@ -1,9 +1,7 @@
 import { reportHandledError } from '@/lib/errorSummaryReporting';
-import { rpc } from '@renderer/lib/ipc';
-import { queryClient } from '@renderer/lib/query-client';
+import { readModel } from '@/lib/readModel';
+import { rpc, rpcOn } from '@renderer/lib/ipc';
 import type { AppSettings, AppSettingsKey } from '@shared/core/app-settings';
-
-export const APP_SETTINGS_STALE_TIME_MS = 5 * 60_000;
 
 export type SettingsMeta<K extends AppSettingsKey> = {
   value: AppSettings[K];
@@ -11,14 +9,34 @@ export type SettingsMeta<K extends AppSettingsKey> = {
   overrides: Partial<AppSettings[K]>;
 };
 
-export function appSettingsMetaQueryKey<K extends AppSettingsKey>(key: K) {
-  return ['appSettings', key, 'meta'] as const;
+/** This device's host is `local`; another machine's settings (#6264, machine-scoped rows) are keyed by its device id. */
+export const LOCAL_SETTINGS_HOST_KEY = 'local';
+
+/**
+ * @@@app-settings-read-model — every settings key of every host is one entry of this model. The whole local set is
+ * read once at startup (`prefetchAllAppSettings`, one IPC) and kept as this device's snapshot, so a settings surface
+ * opened at any time — the first frame after a restart included — has the stored values, never the schema defaults.
+ */
+export const appSettingsModel = readModel({
+  name: 'appSettings',
+  scope: 'device',
+  read: async (_device, key: AppSettingsKey, host: string) => {
+    try {
+      return await (host === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host)).appSettings.getWithMeta(key) as SettingsMeta<AppSettingsKey>;
+    } catch (error) {
+      if (host === LOCAL_SETTINGS_HOST_KEY) reportHandledError(error, 'settings.read');
+      throw error;
+    }
+  },
+  fresh: 5 * 60_000,
+  persist: true,
+});
+
+/** Startup: the whole local set in one read, before the first frame of either entry. */
+export async function prefetchAllAppSettings(): Promise<void> {
+  const all = await rpc.appSettings.getAll() as { [K in AppSettingsKey]: SettingsMeta<K> };
+  for (const key of Object.keys(all) as AppSettingsKey[]) appSettingsModel.set([key, LOCAL_SETTINGS_HOST_KEY], all[key]);
 }
-
-const appSettingsGcTime = <K extends AppSettingsKey>(key: K) =>
-  key === 'interface' || key === 'browser' ? Infinity : undefined;
-
-const appSettingsAllQueryKey = ['appSettings', 'all'] as const;
 
 export function mergeAppSettingsValue<K extends AppSettingsKey>(
   current: AppSettings[K] | undefined,
@@ -38,86 +56,25 @@ export function mergeAppSettingsValue<K extends AppSettingsKey>(
   return partial as AppSettings[K];
 }
 
-export async function requestAppSettingsMeta<K extends AppSettingsKey>(key: K): Promise<SettingsMeta<K>> {
-  try { return await rpc.appSettings.getWithMeta(key) as SettingsMeta<K>; }
-  catch (error) { reportHandledError(error, 'settings.read'); throw error; }
+/** The stored value of a local key, for logic outside React; undefined = not read yet (each caller says what that means). */
+export function getAppSettingValueSnapshot<K extends AppSettingsKey>(key: K): AppSettings[K] | undefined {
+  const reading = appSettingsModel.peek(key, LOCAL_SETTINGS_HOST_KEY);
+  return reading.state === 'value' ? (reading.value as SettingsMeta<K>).value : undefined;
 }
 
-export function fetchAppSettingsMeta<K extends AppSettingsKey>(key: K): Promise<SettingsMeta<K>> {
-  return queryClient.fetchQuery({
-    queryKey: appSettingsMetaQueryKey(key),
-    queryFn: () => requestAppSettingsMeta(key),
-    staleTime: APP_SETTINGS_STALE_TIME_MS,
-    gcTime: appSettingsGcTime(key),
-  });
+/** The stored value of a local key, read if needed (logic that must act on the real value, e.g. a default directory). */
+export async function fetchAppSettingValue<K extends AppSettingsKey>(key: K): Promise<AppSettings[K]> {
+  return ((await appSettingsModel.fetch(key, LOCAL_SETTINGS_HOST_KEY)) as SettingsMeta<K>).value;
 }
 
-export function prefetchAppSettingsKey<K extends AppSettingsKey>(key: K) {
-  return queryClient.prefetchQuery({
-    queryKey: appSettingsMetaQueryKey(key),
-    queryFn: () => requestAppSettingsMeta(key),
-    staleTime: APP_SETTINGS_STALE_TIME_MS,
-    gcTime: appSettingsGcTime(key),
-  });
+export function setAppSettingsValueInCache<K extends AppSettingsKey>(key: K, value: AppSettings[K], host = LOCAL_SETTINGS_HOST_KEY): void {
+  appSettingsModel.set([key, host], (old) => old && { ...old, value } as SettingsMeta<AppSettingsKey>);
 }
 
-export function setAppSettingsValueInCache<K extends AppSettingsKey>(
-  key: K,
-  value: AppSettings[K]
-): void {
-  queryClient.setQueryData<SettingsMeta<K> | undefined>(appSettingsMetaQueryKey(key), (old) =>
-    old ? { ...old, value } : old
-  );
-  queryClient.setQueryData<AppSettings | undefined>(appSettingsAllQueryKey, (all) =>
-    all ? { ...all, [key]: value } : all
-  );
+export function updateAppSettingsRequest<K extends AppSettingsKey>(key: K, value: AppSettings[K], host = LOCAL_SETTINGS_HOST_KEY): Promise<void> {
+  return (host === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host)).appSettings.update(key, value as never) as Promise<void>;
 }
 
-export function getAppSettingsMetaFromCache<K extends AppSettingsKey>(
-  key: K
-): SettingsMeta<K> | undefined {
-  return queryClient.getQueryData<SettingsMeta<K>>(appSettingsMetaQueryKey(key));
-}
-
-/** Synchronous read of the cached settings value. Returns undefined if not yet fetched. */
-export function getAppSettingValueSnapshot<K extends AppSettingsKey>(
-  key: K
-): AppSettings[K] | undefined {
-  return getAppSettingsMetaFromCache(key)?.value;
-}
-
-export function getAllAppSettingsFromCache(): AppSettings | undefined {
-  return queryClient.getQueryData<AppSettings>(appSettingsAllQueryKey);
-}
-
-export function restoreAppSettingsCache<K extends AppSettingsKey>(
-  key: K,
-  meta: SettingsMeta<K> | undefined,
-  all: AppSettings | undefined
-): void {
-  queryClient.setQueryData(appSettingsMetaQueryKey(key), meta);
-  queryClient.setQueryData(appSettingsAllQueryKey, all);
-}
-
-export function updateAppSettingsRequest<K extends AppSettingsKey>(
-  key: K,
-  value: AppSettings[K]
-): Promise<void> {
-  return rpc.appSettings.update(key, value) as Promise<void>;
-}
-
-export function resetAppSettingsRequest<K extends AppSettingsKey>(key: K): Promise<void> {
-  return rpc.appSettings.reset(key) as Promise<void>;
-}
-
-export function resetAppSettingsFieldRequest<K extends AppSettingsKey>(
-  key: K,
-  field: keyof AppSettings[K]
-): Promise<void> {
-  return rpc.appSettings.resetField(key, field as string) as Promise<void>;
-}
-
-export function invalidateAppSettingsKey<K extends AppSettingsKey>(key: K): void {
-  void queryClient.invalidateQueries({ queryKey: appSettingsMetaQueryKey(key) });
-  void queryClient.invalidateQueries({ queryKey: appSettingsAllQueryKey });
+export function invalidateAppSettingsKey<K extends AppSettingsKey>(key: K, host = LOCAL_SETTINGS_HOST_KEY): void {
+  void appSettingsModel.refresh(key, host);
 }

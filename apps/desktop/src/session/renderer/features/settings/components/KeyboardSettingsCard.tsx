@@ -2,7 +2,9 @@ import { useHotkeyRecorder, type Hotkey } from '@tanstack/react-hotkeys';
 import { RotateCcw, X } from '@/lib/icons'
 import React, { useEffect, useState } from 'react';
 import { commandRegistry } from '@renderer/lib/commands/registry';
-import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
+import { useAppSettingsKey, type AppSettingsKeyApi } from '@renderer/features/settings/use-app-settings-key';
+import type { AppSettings } from '@shared/core/app-settings';
+import { SettingValue } from './SettingControls';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import {
   COMMANDS,
@@ -16,7 +18,7 @@ import { Shortcut } from '@renderer/lib/ui/shortcut';
 import { describeHotkey } from '@renderer/lib/ui/shortcut-format';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { useTerminalEnabled } from '../use-terminal-enabled';
+import { terminalShown, useTerminalEnabled } from '../use-terminal-enabled';
 
 const CONFIGURABLE_SHORTCUTS = (
   Object.entries(COMMANDS) as [
@@ -38,14 +40,17 @@ const SHORTCUTS_BY_CATEGORY = CONFIGURABLE_SHORTCUTS.reduce<
 const TERMINAL_SHORTCUTS: ReadonlySet<CommandId> = new Set<CommandId>(['session.newTerminal', 'session.viewTerminals']);
 
 const KeyboardSettingsCard: React.FC = () => {
-  const terminalEnabled = useTerminalEnabled();
-  const {
-    value: keyboard,
-    update,
-    isLoading: loading,
-    isSaving: saving,
-    resetField,
-  } = useAppSettingsKey('keyboard');
+  const api = useAppSettingsKey('keyboard');
+  return (
+    <SettingValue reading={api.settings} placeholder="h-64 w-full">
+      {({ value }) => <KeyboardSettingsForm keyboard={value} api={api} />}
+    </SettingValue>
+  );
+};
+
+const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: AppSettingsKeyApi<'keyboard'> }> = ({ keyboard, api }) => {
+  const terminalEnabled = terminalShown(useTerminalEnabled());
+  const { update, isSaving: saving, resetField } = api;
   const { translate } = useSessionMessages();
 
   const [editingKey, setEditingKey] = useState<CommandId | null>(null);
@@ -129,7 +134,7 @@ const KeyboardSettingsCard: React.FC = () => {
               {shortcuts.map(([key, def]) => {
                 const effectiveHotkey = getEffectiveHotkey(key, keyboard);
                 const capturing = editingKey === key && recorder.isRecording;
-                const cleared = keyboard?.[key] === null;
+                const cleared = keyboard[key] === null;
                 const showClear = !cleared;
                 const defaultHotkey = resolveDefaultHotkey(def);
                 const showReset = defaultHotkey != null && effectiveHotkey !== defaultHotkey;
@@ -184,7 +189,7 @@ const KeyboardSettingsCard: React.FC = () => {
                                         size="icon"
                                         className="text-foreground-muted hover:text-foreground"
                                         onClick={() => handleReset(key)}
-                                        disabled={loading || saving}
+                                        disabled={saving}
                                         aria-label={translate('reset.toDefault')}
                                       >
                                         <RotateCcw className="h-3.5 w-3.5" />
@@ -204,7 +209,7 @@ const KeyboardSettingsCard: React.FC = () => {
                                         size="icon"
                                         className="text-foreground-muted hover:text-foreground"
                                         onClick={() => handleClear(key)}
-                                        disabled={loading || saving}
+                                        disabled={saving}
                                         aria-label={translate('keyboard.removeShortcut')}
                                       >
                                         <X className="h-3.5 w-3.5" />
@@ -224,7 +229,7 @@ const KeyboardSettingsCard: React.FC = () => {
                             size="sm"
                             className="min-w-[80px] justify-end px-0 hover:bg-transparent dark:hover:bg-transparent"
                             onClick={() => startCapture(key)}
-                            disabled={loading || saving}
+                            disabled={saving}
                           >
                             <Shortcut hotkey={effectiveHotkey} variant="keycaps" />
                           </Button>

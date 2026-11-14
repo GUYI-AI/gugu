@@ -11,7 +11,7 @@ import type { ImageViewerItem } from '../../../../apps/desktop/src/lib/imageView
 const calls = vi.hoisted(() => ({ compose: vi.fn(), draft: vi.fn(), original: vi.fn(), session: vi.fn(), done: vi.fn(), output: vi.fn(), t: vi.fn() }))
 vi.mock('@/lib/chat', () => ({ chatService: { getMessageById: calls.original } }))
 vi.mock('react-i18next', async original => ({ ...await original<typeof import('react-i18next')>(), useTranslation: () => ({ t: calls.t }) }))
-vi.mock('@/lib/sessionPublication', () => ({ getRendererSession: calls.session }))
+vi.mock('@/lib/sessionPublication', () => ({ getRendererSession: calls.session, observeRendererSession: () => () => {} }))
 vi.mock('@/session/shared/extensions/app-send-core', () => ({ composeInChat: calls.compose }))
 vi.mock('@/lib/composeDraft', () => ({ composeChatDraft: calls.draft }))
 vi.mock('@/components/toastContext', () => ({ useToast: () => ({ toast: vi.fn() }) }))

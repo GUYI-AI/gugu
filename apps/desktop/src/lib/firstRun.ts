@@ -1,11 +1,10 @@
-import { readUserSettingsConfig, updateUserSettingsKey, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
+import { readOwnSettings, updateOwnSettingsKey } from './ownSettings'
 import { completedFirstRunHarness, firstRunStage, parseOccupation, withOccupation, type FirstRunStage, type FirstRunHarness, type Occupation } from '@gugu/core/shared/firstRun'
 import { identityDb } from './supabase'
 import { readOwnOnboardedAt } from './identityReadAdapter'
 
 // 新账号的第一次打开(product spec,#7348)的读写。规则在 @gugu/core/shared/firstRun。
 
-const settingsClient = identityDb as unknown as SettingsTableClient
 const USER_SCOPE = 'user'
 
 export type FirstRunProgress = { stage: FirstRunStage; occupation: Occupation | null; harness: FirstRunHarness[] | null; terminalSeen: boolean }
@@ -24,27 +23,27 @@ export function rememberFirstRunDone(userId: string): void { try { localStorage.
 export async function readFirstRunProgress(userId: string): Promise<FirstRunProgress> {
   const [onboardedAt, config] = await Promise.all([
     readOwnOnboardedAt(userId),
-    readUserSettingsConfig(settingsClient, userId, USER_SCOPE),
+    readOwnSettings(userId, USER_SCOPE),
   ])
   const occupation = parseOccupation(config)
   return { stage: firstRunStage({ onboardedAt, occupation }), occupation, harness: completedFirstRunHarness(config), terminalSeen: config[TERMINAL_SEEN] === true }
 }
 
 export async function readOccupation(userId: string): Promise<Occupation | null> {
-  return parseOccupation(await readUserSettingsConfig(settingsClient, userId, USER_SCOPE))
+  return parseOccupation(await readOwnSettings(userId, USER_SCOPE))
 }
 
 /** 读-改-写同一行:配置里别的键(建 agent 的默认值)原样留着。 */
 export async function writeOccupation(userId: string, occupation: Occupation): Promise<void> {
-  await updateUserSettingsKey(settingsClient, userId, USER_SCOPE, 'profile', (value) => withOccupation({ profile: value }, occupation).profile)
+  await updateOwnSettingsKey(userId, USER_SCOPE, 'profile', (value) => withOccupation({ profile: value }, occupation).profile)
 }
 
 export async function writeFirstRunHarness(userId: string, harness: FirstRunHarness[]): Promise<void> {
-  await updateUserSettingsKey(settingsClient, userId, USER_SCOPE, 'firstRunHarness', () => harness)
+  await updateOwnSettingsKey(userId, USER_SCOPE, 'firstRunHarness', () => harness)
 }
 
 export async function writeFirstRunTerminalSeen(userId: string): Promise<void> {
-  await updateUserSettingsKey(settingsClient, userId, USER_SCOPE, TERMINAL_SEEN, () => true)
+  await updateOwnSettingsKey(userId, USER_SCOPE, TERMINAL_SEEN, () => true)
 }
 
 /**

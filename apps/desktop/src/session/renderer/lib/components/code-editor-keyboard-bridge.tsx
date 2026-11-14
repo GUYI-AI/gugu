@@ -1,11 +1,9 @@
 import { detectPlatform, normalizeHotkey } from '@tanstack/hotkeys';
 import { useEffect, useMemo } from 'react';
-import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import {
   COMMANDS,
   getEffectiveHotkey,
-  type CommandId,
-} from '@renderer/lib/hooks/useKeyboardShortcuts';
+  type CommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { dispatchMatchingHotkeys } from '@renderer/lib/hotkeys/dispatch-matching-hotkeys';
 
 function isCodeEditorFocused(event: KeyboardEvent): boolean {
@@ -24,7 +22,7 @@ function isCodeEditorFocused(event: KeyboardEvent): boolean {
  * bubbling-phase handling takes over unchanged.
  */
 export function CodeEditorKeyboardBridge() {
-  const { value: keyboard } = useAppSettingsKey('keyboard');
+  const keyboard = useShortcutOverrides();
   const ignoredHotkeys = useMemo(() => {
     const platform = detectPlatform();
     const next = new Set<string>();

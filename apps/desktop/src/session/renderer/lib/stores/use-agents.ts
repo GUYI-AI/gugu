@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { events, rpc, rpcOn } from '@renderer/lib/ipc';
-import { queryClient } from '@renderer/lib/query-client';
+import { queryClient } from '@/lib/readModel';
 import { LOCAL_HOST_KEY, useLibraryHost } from '@renderer/features/library/library-host';
 import type { AgentIconAsset, AgentPayload } from '@shared/core/agents/agent-payload';
 import { agentCapabilitiesChangedChannel } from '@shared/core/agents/agentEvents';

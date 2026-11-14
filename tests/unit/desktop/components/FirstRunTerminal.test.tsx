@@ -5,7 +5,7 @@ import { createNode, createReactHarness, waitForCondition } from '../../../suppo
 
 vi.mock('../../../../apps/desktop/src/lib/firstRun', () => ({ writeFirstRunTerminalSeen: vi.fn(async () => undefined) }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ update: vi.fn() }) }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/settings/use-terminal-enabled', () => ({ useTerminalEnabled: () => false }))
+vi.mock('../../../../apps/desktop/src/session/renderer/features/settings/use-terminal-enabled', async (original) => { const { readValue } = await import('../../../support/appSettingsDouble'); return { ...await original<object>(), useTerminalEnabled: () => readValue(false) } })
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ identityDb: {} }))
 await import('../../../../apps/desktop/src/i18n/registerMainCatalog')
 const { i18n } = await import('../../../../apps/desktop/src/i18n/runtime')

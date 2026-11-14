@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore, useLayoutEffect } from 'react'
+import { useEffect, useCallback, useMemo, useRef, useSyncExternalStore, useLayoutEffect } from 'react'
 import { chatService } from '../lib/chat'
 import { recentMachineLimitRefusal } from '../lib/device-labels'
 import { isLifecycleCancellation } from '../lib/authBoundedFetch'
@@ -13,7 +13,8 @@ import { publishDirectoryDevices } from '@/session/shared/remote-sessions/sessio
 import type { Device } from '@gugu/core/shared/types/chat'
 import { readDeviceRevision } from '../lib/accountRevisionCoordinator'
 import type { AccountRevisionOperation } from '../lib/accountRevisionRuntime'
-import { cachedDevicesAccount, deviceCacheAction, readCachedDevices, writeCachedDevices } from './devicesCache'
+import { cachedDevicesAccount, devicesModel, readCachedDevices } from './devicesCache'
+import { useReadModel } from '../lib/readModel'
 import { withDeviceProjects } from '@gugu/core/cloud/deviceProjects'
 import { withProjectsRead } from './deviceProjectsRead'
 import { listMyDeviceProjects } from '../lib/deviceProjects'
@@ -46,59 +47,22 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   const userId = active ? authenticatedUser?.id ?? null : null
   const assistant = useMyAssistant(userId, null)
   const appMachine = useMemo(() => assistant.provisionDeviceId ? { rpc: machineRpc(assistant.provisionDeviceId) } : null, [assistant.provisionDeviceId])
-  // 第一帧就用上次那份铺开,❌ 不是空列表 + 转圈;下面的 refresh 一返回就换成此刻的事实。
-  const [devices, setDevices] = useState<Device[]>(() => sortDevices(readCachedDevices()))
-  // 上一份读到的(设备行上带着各台机器记在账号上的项目):这一次项目没读到,就沿用这一份。
-  const devicesRef = useRef(devices)
-  devicesRef.current = devices
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // 第一帧就用上次那份铺开(读模型的快照),❌ 不是空列表 + 转圈;重读一返回就换成此刻的事实。
+  // 界面还不活跃(active=false)时只画、不读。
+  const reading = useReadModel(devicesModel, [], { read: userId !== null })
+  const readError = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null
+  const error = readError ? String(readError.message ?? readError) : null
+  // 列着的(含快照)各台的项目这一次没读到:标成「上次的」。
+  const devices = useMemo(() => {
+    if (reading.state !== 'value') return []
+    const rows = sortDevices(reading.value)
+    return error ? withProjectsRead(rows, error, rows) : rows
+  }, [reading, error])
+  const loading = userId !== null && reading.state === 'unknown'
 
-  const refresh = useCallback(async (options: { throwOnError?: boolean } = {}) => {
+  const refresh = useCallback(async () => {
     if (!userId) return
-    setLoading(true)
-    setError(null)
-    try {
-      // #7199 一次读全(含手机):设置 → 设备要列出手机;「在哪跑」等只读下面拆出来的 devices(没有手机)。
-      // #113 同时读账号上记着的各台机器的项目:那份读不到不拖垮设备列表 —— 各台沿用上一份,但记下没读到(projects_error),
-      // 画项目文件夹的地方把它们标成「上次的」。
-      let projectsError: string | null = null
-      const [listed, projects] = await Promise.all([
-        chatService.listDevices({ includePhones: true }),
-        listMyDeviceProjects().catch((err: unknown) => {
-          if (isLifecycleCancellation(err)) throw err
-          projectsError = String((err as Error)?.message ?? err)
-          devicesLog.warn({ err: projectsError }, 'list device projects failed')
-          return null
-        }),
-      ])
-      const rows = withProjectsRead(withDeviceProjects(listed, projects, devicesRef.current), projectsError, devicesRef.current)
-      setDevices(sortDevices(rows))
-      writeCachedDevices(userId, rows)
-      // #6264 在别的电脑上被移除的远程 SSH 机器,这台电脑也忘掉它(只凭刚成功读到的完整名单对账)。
-      void desktopIpc()?.invoke(SERVER_SSH_MACHINES_CHANNELS.reconcile, { owner: userId, present: rows.map((row) => row.device_id) }).catch(() => undefined)
-    } catch (err) {
-      if (isLifecycleCancellation(err)) {
-        if (options.throwOnError) throw err
-        return
-      }
-      // Not a failure: this computer is not identified yet, so no row of this read can be told apart as its own.
-      // The list on screen (its own row marked) stays; the read is repeated the moment it is identified (below).
-      if (isLocalDeviceUnidentified(err)) {
-        devicesLog.info({}, 'device list kept until this computer is identified among the account devices')
-        return
-      }
-      // fail-loud：列表加载失败显式呈现，不静默留空列表。
-      // 原因只进日志，不拼进用户那句话（#4891）——用户拿到的是「怎么办」，排查的人拿到的是「为什么」。
-      // ❌ 别把这一行删了只留 setError：那样两边都看不到原因，比原样外泄更糟。
-      devicesLog.error({ err: String((err as Error)?.message ?? err) }, 'list devices failed')
-      setError(String((err as Error)?.message ?? err))
-      // 列着的(含首帧的缓存)各台项目这一次也没读到。
-      setDevices((rows) => withProjectsRead(rows, String((err as Error)?.message ?? err), rows))
-      if (options.throwOnError) throw err
-    } finally {
-      setLoading(false)
-    }
+    await devicesModel.refresh()
   }, [userId])
 
   // 这台电脑在账号的设备里认出自己的那一刻(本机宿主拿到登录、查到自己那一行)再读一次:之前那次读分不出哪行是本机。
@@ -108,21 +72,6 @@ export function DevicesProvider({ children, active = true }: { children: React.R
     return platform.subscribeLocalDeviceIdentified?.(() => { void refresh() })
   }, [userId, refresh])
 
-  useEffect(() => {
-    /*
-     * 三档的判据在 `deviceCacheAction`(纯函数,带用例)。
-     * ❌ 没有「清缓存」这一档 —— userId 为空有四种来由(会话没恢复完 / 界面不活跃 active=false /
-     * 断网刷不动 token / 真登出),清一次就把刚要用上的那份删干净,而界面看上去只是「又在读取」。
-     * 换账号那件事靠**对名字**解决:缓存写着别人的名字才丢。
-     */
-    const action = deviceCacheAction({ user: userId ? { id: userId } : null, authLoading, cachedAccountId: cachedDevicesAccount() })
-    if (action === 'hold') return
-    if (action === 'drop-foreign') {
-      setDevices([])
-      writeCachedDevices(userId, [])
-    }
-    refresh()
-  }, [userId, authLoading, refresh])
 
   // #7199 云电脑此刻怎样:管家的 /state 是事实源。换账号就清掉上一个账号的;登录后问一次。
   const cloudComputer = useSyncExternalStore(subscribeCloudComputerState, getCloudComputerState, getCloudComputerState)
@@ -154,6 +103,8 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   // 云电脑睡下 / 醒来,它那一行的在线与否就会翻 ⇒ 顺带再问一次管家(❌ 让它拖住设备列表的游标)。
   const applyDeviceRevisions = useCallback(async (operations: readonly AccountRevisionOperation[]) => {
     if (!userId) return
+    // Bound to the account asking: rows that answer after a switch do not land in the next account's list.
+    const cache = devicesModel.at()
     const changed = new Set<string>()
     const removed = new Set<string>()
     const projectsOf = new Set<string>()
@@ -178,16 +129,16 @@ export function DevicesProvider({ children, active = true }: { children: React.R
       if (!isLifecycleCancellation(err)) {
         devicesLog.error({ err: String((err as Error)?.message ?? err) }, 'read changed devices failed')
         // 重读那几台的项目没成(游标会重试):重试成功前它们列着的是上次的。
-        if (projectsOf.size > 0) setDevices((rows) => withProjectsRead(rows, String((err as Error)?.message ?? err), rows, projectsOf))
+        if (projectsOf.size > 0) cache.set(withProjectsRead(readCachedDevices(), String((err as Error)?.message ?? err), readCachedDevices(), projectsOf))
       }
       throw err
     }
     // 那几台此刻的样子(没读回来的 = 已经不在了);其余各台原样,项目没变就沿用。
     const fresh = listed.filter((row) => changed.has(row.device_id))
-    const kept = devicesRef.current.filter((row) => !changed.has(row.device_id) && !removed.has(row.device_id))
-    const rows = withProjectsRead(withDeviceProjects([...kept, ...fresh], projects, devicesRef.current, projectsOf), null, devicesRef.current, projectsOf)
-    setDevices(sortDevices(rows))
-    writeCachedDevices(userId, rows)
+    const previous = readCachedDevices()
+    const kept = previous.filter((row) => !changed.has(row.device_id) && !removed.has(row.device_id))
+    const rows = withProjectsRead(withDeviceProjects([...kept, ...fresh], projects, previous, projectsOf), null, previous, projectsOf)
+    cache.set(rows)
     if (removed.size > 0) void desktopIpc()?.invoke(SERVER_SSH_MACHINES_CHANNELS.reconcile, { owner: userId, present: rows.map((row) => row.device_id) }).catch(() => undefined)
   }, [userId])
   useEffect(() => {
@@ -196,7 +147,7 @@ export function DevicesProvider({ children, active = true }: { children: React.R
       // 只有可能牵动云电脑的那几条才去问管家:它自己那一行(睡下 / 醒来)、新出现或被移除的一台(开通 / 销毁)。
       // 别的电脑每 30 秒一次的心跳摘要 ❌ —— 忙账号六七台机器,每次心跳都多一发管家请求。
       const cloudDeviceId = getCloudComputerState().snapshot?.deviceId ?? null
-      const known = new Set(devicesRef.current.map((row) => row.device_id))
+      const known = new Set(readCachedDevices().map((row) => row.device_id))
       if (operations.some((operation) => {
         const key = readDeviceRevision(operation.payload)
         return key.removed || key.deviceId === cloudDeviceId || !known.has(key.deviceId)

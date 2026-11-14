@@ -7,9 +7,10 @@
 // 断言里带了修复前会渲染出的那句原话的反向断言,回归时会立刻响。
 import { act } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { queryClient } from '../../../../apps/desktop/src/session/renderer/lib/query-client'
+import { queryClient } from '../../../../apps/desktop/src/lib/readModel'
 import { GuguSubscriptionRow } from '../../../../apps/desktop/src/session/renderer/features/settings/subscriptions/GuguSubscriptionRow'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { notifyManager } from '@tanstack/react-query'
 import { UsageCredits } from '../../../../apps/desktop/src/components/usage/UsageCredits'
 import { createNode, createReactHarness, renderWithAppProviders, typeInto } from '../../../support/testHarness'
 
@@ -113,6 +114,7 @@ async function renderMembership() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  notifyManager.setScheduler((callback) => { callback() })
   queryClient.clear()
   // 余额不再由调用方以 prop 传进来:面板与侧栏、设置页读同一个共享订阅点。
   vi.mocked(readCreditV2Account).mockResolvedValue(account())
@@ -368,6 +370,7 @@ describe('#2503 用量与订阅积分的诚实性', () => {
     type Account = Awaited<ReturnType<typeof readCreditV2Account>>
     let release: (w: Account) => void = () => {}
     vi.mocked(readCreditV2Account).mockReturnValue(new Promise<Account>((resolve) => { release = resolve }))
+    notifyManager.setScheduler((callback) => { callback() })
     const harness = createReactHarness()
     try {
       await renderWithAppProviders(
@@ -376,11 +379,12 @@ describe('#2503 用量与订阅积分的诚实性', () => {
         { auth: { id: 'u1', email: 'u@e.com', nickname: 'U' } },
       )
       await flush()
-      expect(document.querySelector('[data-testid="subscription-credits-loading"]')).not.toBeNull()
+      // Not read yet: each figure is a neutral placeholder of its own size (❌ 「—」 or 0 dressed as the balance).
+      expect(document.querySelector('[data-testid="subscription-credits-balance"] [data-unknown]')).not.toBeNull()
 
       release(account())
       await flush()
-      expect(document.querySelector('[data-testid="subscription-credits-loading"]')).toBeNull()
+      expect(document.querySelector('[data-testid="subscription-credits-balance"] [data-unknown]')).toBeNull()
       expect(document.querySelectorAll('[role="meter"]')).toHaveLength(1)
       expect(document.querySelector('[data-testid="subscription-period-credits"]')).not.toBeNull()
     } finally {

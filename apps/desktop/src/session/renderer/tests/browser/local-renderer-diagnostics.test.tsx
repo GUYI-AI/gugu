@@ -11,7 +11,7 @@ import type { DiagnosticFields } from '../../../../../shared/local-renderer-diag
 import '@/styles/tokens.css';
 import '@renderer/index.css';
 
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: undefined }) }));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } });
 
 let root: Root;
 let host: HTMLDivElement;

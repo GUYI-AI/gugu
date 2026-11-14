@@ -47,7 +47,8 @@ export function resolveSessionChatLayout(
  * a real change.
  */
 export function useSessionChatLayout(): ChatLayout {
-  const { value: interfaceSettings } = useAppSettingsKey('interface');
+  const { settings: interfaceSettingsReading } = useAppSettingsKey('interface');
+  const interfaceSettings = interfaceSettingsReading.state === 'value' ? interfaceSettingsReading.value.value : undefined;
   const preset = interfaceSettings?.chatView;
   const narrow = useMediaQuery(`(max-width: ${SESSION_CHAT_NARROW_VIEWPORT_MAX_PX - 1}px)`);
   return useMemo(() => resolveSessionChatLayout(preset, narrow), [preset, narrow]);

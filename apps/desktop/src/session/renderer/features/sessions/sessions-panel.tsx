@@ -48,7 +48,8 @@ export const SessionsPanel = observer(function SessionsPanel() {
   const sessionView = useWorkspaceViewModel();
   const sessions = useSessions();
   const workspaceId = useWorkspaceId();
-  const { value: interfaceSettings } = useAppSettingsKey('interface');
+  const { settings: interfaceSettingsReading } = useAppSettingsKey('interface');
+  const interfaceSettings = interfaceSettingsReading.state === 'value' ? interfaceSettingsReading.value.value : undefined;
   const { pane } = usePaneContext();
   const isActive = useIsActiveSession(sessionId);
 

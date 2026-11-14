@@ -1,5 +1,6 @@
 import { reaction } from 'mobx'
-import { useEffect, useState } from 'react'
+import { readModel, useReadModel } from '../../lib/readModel'
+import { useEffect } from 'react'
 import { chatDb } from '@/lib/supabase'
 import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
 import { rendererLogger } from '@/lib/log'
@@ -102,20 +103,26 @@ async function offeredVersions(): Promise<{ updates: Record<string, string>; gon
     : null
 }
 
-/** What the market says of the Apps installed here. 161 10-15: else their fixes never reach the phone. */
-export function useOfferedVersions() {
-  const [updates, setUpdates] = useState<Record<string, string>>({})
-  const [gone, setGone] = useState<string[]>([])
+/** What the market says of the Apps installed here (an update, or delisted). 161 10-15: else their fixes never reach the phone. */
+const offeredVersionsModel = readModel({
+  name: 'offeredVersions',
+  scope: 'device',
+  read: async () => {
+    const offered = await phoneApps.ready().then(offeredVersions)
+    if (!offered) throw new Error('The market could not say which installed Apps have updates')
+    return offered
+  },
+  persist: true,
+})
+
+/** `known` false until the market was asked once on this device: the rows then say nothing about versions yet. The market
+ *  unreachable is an answer too: each row says the version it has, and offers nothing. */
+export function useOfferedVersions(): { updates: Record<string, string>; gone: readonly string[]; known: boolean } {
+  const reading = useReadModel(offeredVersionsModel, [])
   useEffect(() => {
     // 「更新到 vX」 from the index in hand at once; the download site is asked behind it, and when the index it brings is
-    // another, the buttons are read again from that one (market-snapshot.ts) — none, if nothing came.
-    const read = () =>
-      void phoneApps.ready().then(offeredVersions).then((offered) => {
-        if (!offered) return
-        setUpdates(offered.updates)
-        setGone(offered.gone)
-      }, () => undefined)
-    read()
+    // another, the buttons are read again from that one (market-snapshot.ts).
+    const read = () => void offeredVersionsModel.refresh()
     const offRefreshed = phoneApps.market.onRefreshed((refreshed) => refreshed.outcome === 'changed' && read())
     // What is installed changed (an App updated by itself, owner 10-19): what the market has to say about it is read again.
     const offInstalled = reaction(() => installedExtensionsStore.manifests.map((manifest) => `${manifest.id}@${manifest.version}`).join(' '), read)
@@ -125,5 +132,7 @@ export function useOfferedVersions() {
       offInstalled()
     }
   }, [])
-  return { updates, gone }
+  return reading.state === 'value'
+    ? { ...reading.value, known: true }
+    : { updates: {}, gone: [], known: reading.state === 'error' }
 }

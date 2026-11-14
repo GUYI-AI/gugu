@@ -4,7 +4,7 @@ import { createErrorSummaryErrorEventReader } from './errorSummaryErrorEvent'
 
 const OPERATIONS = {
   'settings.read': 'apps/desktop/src/session/renderer/features/settings/app-settings-client.ts',
-  'query.read': 'apps/desktop/src/session/renderer/lib/query-client.ts',
+  'query.read': 'apps/desktop/src/lib/readModel.ts',
 } as const
 
 let context: string | null = null

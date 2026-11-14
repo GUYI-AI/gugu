@@ -3,17 +3,9 @@
 // 同一个 `appSettingsController`(界面只把跟机器走的那几组画在机器选择之下);缓存另起一份键,❌ 盖本机的。
 // 自动批准、自动起名、界面、浏览器、通知跟着这个窗口,不在这里。
 import { createContext, useContext } from 'react';
-import { rpc, rpcOn } from '@renderer/lib/ipc';
-import type { AppSettingsKey } from '@shared/core/app-settings';
+import { LOCAL_SETTINGS_HOST_KEY } from './app-settings-client';
 
 export type RemoteSettingsKey = 'project' | 'localProject';
-
-export type SettingsApi = {
-  getWithMeta(key: AppSettingsKey): Promise<unknown>;
-  update(key: AppSettingsKey, value: unknown): Promise<void>;
-  reset(key: AppSettingsKey): Promise<void>;
-  resetField(key: AppSettingsKey, field: string): Promise<void>;
-};
 
 export type SettingsRemoteDevice = {
   deviceId: string;
@@ -23,36 +15,17 @@ export type SettingsRemoteDevice = {
 };
 
 export type SettingsHost = {
+  /** The app-settings read model's host argument: `local`, or the machine's device id (rpc goes there). */
   key: string;
-  /** null = 本机(走全局那份设置缓存)。 */
+  /** null = 本机。 */
   remote: SettingsRemoteDevice | null;
-  api: SettingsApi;
 };
 
-export const LOCAL_SETTINGS_HOST: SettingsHost = {
-  key: 'local',
-  remote: null,
-  api: {
-    getWithMeta: (key) => rpc.appSettings.getWithMeta(key),
-    update: (key, value) => rpc.appSettings.update(key, value as never),
-    reset: (key) => rpc.appSettings.reset(key),
-    resetField: (key, field) => rpc.appSettings.resetField(key, field),
-  },
-};
+export const LOCAL_SETTINGS_HOST: SettingsHost = { key: LOCAL_SETTINGS_HOST_KEY, remote: null };
 
-/** 别的机器:同一个 `appSettingsController`,rpc 送到那台机器;缓存另起一份键,❌ 盖本机的。 */
+/** 别的机器:同一个 `appSettingsController`,rpc 送到那台机器;读模型里另起一份(主机参数 = 设备 id),❌ 盖本机的。 */
 export function createMachineSettingsHost(device: SettingsRemoteDevice): SettingsHost {
-  const settings = rpcOn(device.deviceId).appSettings;
-  return {
-    key: `remote:${device.deviceId}`,
-    remote: device,
-    api: {
-      getWithMeta: (key) => settings.getWithMeta(key),
-      update: (key, value) => settings.update(key, value as never),
-      reset: (key) => settings.reset(key),
-      resetField: (key, field) => settings.resetField(key, field),
-    },
-  };
+  return { key: device.deviceId, remote: device };
 }
 
 const SettingsHostContext = createContext<SettingsHost>(LOCAL_SETTINGS_HOST);

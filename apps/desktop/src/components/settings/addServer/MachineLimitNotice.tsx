@@ -33,6 +33,7 @@ export function MachineLimitNotice({
   const [retry, setRetry] = useState(0)
   // Device removal already refreshes the store. Read the same enforcement RPC
   // after every change, including a partial removal of a multi-version machine.
+  // @@@effect-flow - checking again, after each removal, whether the refusal this notice is about still holds.
   useEffect(() => {
     if (!refusal?.machine_id || !refusal.via) return
     let live = true

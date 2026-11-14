@@ -34,7 +34,7 @@ import '@/mobile/phone-look.css'
 const fixture = vi.hoisted(() => ({ theme: 'light' as 'light' | 'dark' }))
 vi.mock('@/store/theme', async original => ({ ...await original<object>(),
   useTheme: () => ({ theme: fixture.theme, preference: fixture.theme, setTheme: vi.fn() }) }))
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: { chatView: 'double' } }) }))
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } })
 vi.mock('@/components/chat/useConversationOptions', () => ({ useConversationOptions: () => ({
   props: { permissionModeOptions: { full: { name: '完全访问' } }, selectedPermissionMode: 'full',
     modelOptions: { model: { name: '测试模型' } }, selectedModel: 'model' }, confirmation: null, steers: false,

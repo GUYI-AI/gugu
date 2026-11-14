@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { notifyManager as readModelNotify } from '@tanstack/react-query'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
 import { clickElement, createNode, createReactHarness, typeInto, waitForCondition } from '../../../support/testHarness'
 
 // #7056 设置「模型」页 = Cursor 的 Settings › Models:列出咕咕提供的全部模型,开关决定哪些出现在模型下拉里;
@@ -31,7 +33,7 @@ const model = (id: string, displayName: string, extra: Partial<{ requiresMembers
 })
 
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => {
+beforeEach(() => { readModelNotify.setScheduler((callback) => { callback() }); queryClient.clear(); followRendererSession('SIGNED_IN', 'user-1');
   harness = createReactHarness()
   fetchPlatformModelCatalog.mockReset().mockResolvedValue([
     model('glm-5.3-flash', 'GLM 5.3 Flash'),

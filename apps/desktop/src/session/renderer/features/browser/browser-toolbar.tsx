@@ -91,7 +91,8 @@ export function BrowserToolbar({
   const [failedFaviconUrl, setFailedFaviconUrl] = useState<string | null>(null);
   const urlInputRef = useRef<HTMLInputElement | null>(null);
   const { translate } = useSessionMessages();
-  const { value: browserSettings } = useAppSettingsKey('browser');
+  const { settings: browserSettingsReading } = useAppSettingsKey('browser');
+  const browserSettings = browserSettingsReading.state === 'value' ? browserSettingsReading.value.value : undefined;
   const profiles = browserSettings?.profiles ?? DEFAULT_BROWSER_PROFILES;
   const profileLabel = browserProfileLabel(session.profileId, profiles);
   const faviconUrl =

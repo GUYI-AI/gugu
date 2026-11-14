@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
 import { useChatPinSettings } from '../../../../../apps/desktop/src/components/chat/useChatPinSettings'
-import { queryClient } from '../../../../../apps/desktop/src/session/renderer/lib/query-client'
+import { queryClient } from '../../../../../apps/desktop/src/lib/readModel'
 
 const pins = vi.hoisted(() => ({ ids: ['t-1'], reads: 0 }))
 vi.mock('@/lib/chatPinSettings', () => ({

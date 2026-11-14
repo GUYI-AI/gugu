@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { readModel, useReadModel } from '../../lib/readModel'
+import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import type { ActiveSection } from '@gugu/core/shared/enums/settingsSectionModels'
 import { AssistantStatusGroups, OnboardingSlot } from '../assistant/AssistantShellHost'
@@ -155,27 +157,28 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
   )
 }
 
+/** Whether this computer can read a calendar for meeting reminders. */
+const meetingCalendar = readModel({
+  name: 'meetingCalendar',
+  scope: 'device',
+  read: async () => {
+    const result = await (invokeOnMachine(null, VOICE_NOTE_MEETINGS_CHANNEL) as Promise<VoiceNoteMeetingsResult>)
+    return result.ok ? 'ok' as const : result.code === 'not_granted' || result.code === 'unsupported' || result.code === 'os_permission' ? 'missing' as const : 'ok' as const
+  },
+  persist: true,
+})
+
 /** 入会提醒开关(语音笔记);日历没连上就照实说要先去连。偏好存在这台电脑上(lib/meetingReminderPref)。 */
 function MeetingReminderGroup() {
   const { t } = useTranslation('voiceNotes')
   const enabled = useSyncExternalStore(subscribeMeetingReminderPref, meetingReminderEnabled)
-  const [calendar, setCalendar] = useState<'ok' | 'missing' | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    void (invokeOnMachine(null, VOICE_NOTE_MEETINGS_CHANNEL) as Promise<VoiceNoteMeetingsResult>)
-      .then((result) => {
-        if (!cancelled) setCalendar(result.ok ? 'ok' : result.code === 'not_granted' || result.code === 'unsupported' || result.code === 'os_permission' ? 'missing' : 'ok')
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const reading = useReadModel(meetingCalendar, [])
   return (
     <SettingsGroup title={t('title')} data-testid="settings-assistant-voice">
       <SettingsRow
         title={t('meeting.setting')}
-        description={calendar === 'missing' ? t('meeting.needsCalendar') : t('meeting.settingDescription')}
+        description={reading.state === 'unknown' ? <Unknown className="w-56" />
+          : reading.state === 'value' && reading.value === 'missing' ? t('meeting.needsCalendar') : t('meeting.settingDescription')}
         control={<Switch checked={enabled} onCheckedChange={(on) => setMeetingReminderEnabled(on)} aria-label={t('meeting.setting')} data-testid="assistant-meeting-reminder-switch" />}
       />
     </SettingsGroup>

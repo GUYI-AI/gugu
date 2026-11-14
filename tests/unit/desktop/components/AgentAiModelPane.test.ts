@@ -59,6 +59,7 @@ vi.mock('../../../../apps/desktop/src/lib/chat', async () => {
 })
 
 import { AgentAiModelPane } from '../../../../apps/desktop/src/components/agentsettings/AgentAiModelPane'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
 
 let harness: ReturnType<typeof createReactHarness>
 
@@ -81,6 +82,8 @@ const catalog = [{
 
 beforeEach(() => {
   location.cloud = false
+  queryClient.clear()
+  followRendererSession('SIGNED_IN', 'owner-1')
   harness = createReactHarness()
   fetchPlatformModelCatalog.mockReset().mockResolvedValue(catalog)
   fetchAgentHarnessModels.mockReset().mockResolvedValue({ harness: 'claude', harnessState: 'ready', models: [], selected: null, efforts: [], selectedEffort: null, guguReason: null, harnessReason: null })

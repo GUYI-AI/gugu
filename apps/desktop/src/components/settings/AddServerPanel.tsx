@@ -1,4 +1,5 @@
 import { REMOTE_TUNNEL_OPEN } from '@gugu/core/cloud/remoteTunnel'
+import { readModel, useReadModel } from '../../lib/readModel'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -49,6 +50,17 @@ type InputProblem = { key: 'invalidTarget' | 'unsupportedOption' | 'targetHasCom
 /** 两种装法:远程 SSH / 远程隧道。 */
 export type AddServerMethod = 'ssh' | 'tunnel'
 
+/** The hosts of this desktop's SSH config, offered while typing where to install (a suggestion list: none read = none offered). */
+const sshConfigHosts = readModel({
+  name: 'sshConfigHosts',
+  scope: 'device',
+  read: async () => {
+    const value: unknown = await desktopIpc()!.invoke(SERVER_SSH_INSTALL_CHANNELS.listHosts)
+    return Array.isArray(value) ? (value as SshConfigHost[]) : []
+  },
+  persist: true,
+})
+
 /** 添加完成:哪台机器,以及要不要给它起名(只在从 ~/.ssh/config 挑了别名、且是这次新出现的机器时才有)。 */
 export type AddedServer = { deviceId: string | null; name: string | null }
 
@@ -75,7 +87,8 @@ export function AddServerPanel({
   const { t } = useTranslation('settings')
   const { devices } = useDevicesStore()
   const [target, setTarget] = useState(relogin?.address ?? '')
-  const [hosts, setHosts] = useState<SshConfigHost[]>([])
+  const hostsReading = useReadModel(sshConfigHosts, desktopIpc() ? [] : null)
+  const hosts = useMemo(() => (hostsReading.state === 'value' ? hostsReading.value : []), [hostsReading])
   const [runId, setRunId] = useState<string | null>(null)
   const [states, setStates] = useState<Record<string, ServerSshInstallState>>({})
   const [inputProblem, setInputProblem] = useState<InputProblem | null>(null)
@@ -102,10 +115,6 @@ export function AddServerPanel({
   useEffect(() => {
     const electron = desktopIpc()
     if (!electron) return
-    void electron.invoke(SERVER_SSH_INSTALL_CHANNELS.listHosts).then(
-      (value) => setHosts(Array.isArray(value) ? (value as SshConfigHost[]) : []),
-      () => setHosts([]),
-    )
     // 状态可能先于 start 的返回值到达:按 runId 全收着,展示时再按当前这次取。
     return electron.eventOn(SERVER_SSH_INSTALL_CHANNELS.state, (value) => {
       const state = value as ServerSshInstallState
@@ -179,6 +188,7 @@ export function AddServerPanel({
 
   // 「重新登录」:展开就开始,一次。
   const reloginStarted = useRef(false)
+  // @@@effect-flow - a re-login starts the install run once when the panel opens
   useEffect(() => {
     if (!relogin || reloginStarted.current) return
     reloginStarted.current = true

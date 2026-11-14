@@ -50,7 +50,8 @@ const CreateProjectNameForm = observer(function CreateProjectNameForm({
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const { value: settings } = useAppSettingsKey('localProject')
+  const { settings: settingsSettings } = useAppSettingsKey('localProject')
+  const settings = settingsSettings.state === 'value' ? settingsSettings.value.value : undefined
   const defaultDirectory = settings?.defaultProjectsDirectory ?? ''
 
   const create = async () => {

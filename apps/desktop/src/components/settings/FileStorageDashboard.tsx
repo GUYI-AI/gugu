@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { readModel, useReadModel } from '../../lib/readModel'
+import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '@gugu/core/cloud/serverMachineHealth'
 import { Archive, File, FileCode, FileImage, FileText, Monitor } from '@/lib/icons'
@@ -35,10 +37,21 @@ function fileIcon(name: string | null, kind: FileStorageClass) {
  * 每台机器一行。只算自己上传的,数据是 chat.file_storage_overview_as 一次读回来的。删除只删云端副本(file_storage_mark_as
  * release),和发送时的「临时 / 一直保留」是同一个标记。❌ 环形图、柱状图、每行一个大按钮。
  */
+/** What this account keeps in the cloud, by kind, and what expires soon (chat.file_storage_overview_as). */
+const fileStorageOverview = readModel({
+  name: 'fileStorageOverview',
+  scope: 'account',
+  read: () => readFileStorageOverview(),
+  persist: true,
+})
+
 export function FileStorageDashboard() {
   const { t } = useTranslation('settings')
-  const [overview, setOverview] = useState<FileStorageOverview | null>(null)
-  const [failed, setFailed] = useState('')
+  const reading = useReadModel(fileStorageOverview, [])
+  const overview = reading.state === 'value' ? reading.value : null
+  // 删除那一步的失败;读失败在 reading 里。
+  const [actionFailed, setFailed] = useState('')
+  const failed = actionFailed || (reading.state === 'error' ? messageForUser(reading.error) : '')
   const [cleaning, setCleaning] = useState(false)
   const [picked, setPicked] = useState<FileStorageClass[]>(['temporary'])
   const [busy, setBusy] = useState(false)
@@ -48,22 +61,14 @@ export function FileStorageDashboard() {
   // dashboard, inside the Settings dialog, as the session-page sections' do — not behind the dialog on <body>.
   const { theme } = useTheme()
 
-  const load = useCallback(() => {
-    let live = true
-    setFailed('')
-    readFileStorageOverview()
-      .then((next) => { if (live) setOverview(next) })
-      .catch((cause: unknown) => { if (live) setFailed(messageForUser(cause)) })
-    return () => { live = false }
-  }, [])
-  useEffect(load, [load])
+  const load = () => { setFailed(''); void fileStorageOverview.refresh() }
 
   if (!overview) {
     return failed
       ? <SettingsGroup title={t('fileStorage.dashboard.title')}>
           <SettingsRow description={failed} control={<Button variant="secondary" size="sm" onClick={load}>{t('fileStorage.retry')}</Button>} />
         </SettingsGroup>
-      : <SettingsNote>{t('fileStorage.loading')}</SettingsNote>
+      : <Unknown className="h-28 w-full" />
   }
   const size = (bytes: number) => formatBytes(Number(bytes))
   const classLabel = (name: FileStorageClass) => t(`fileStorage.dashboard.classes.${name}`)

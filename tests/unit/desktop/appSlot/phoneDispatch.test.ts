@@ -7,6 +7,8 @@ import { retainDeviceSessions, updateDeviceSessions, liveDeviceSessions } from '
 import { APP_SHOW_SESSION_EVENT } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { phoneDispatch } from '../../../../apps/desktop/src/components/appSlot/phoneDispatch'
 import { registerNativeComposer } from '../../../../apps/desktop/src/lib/nativeComposerHandoff'
+// The read model reads for the signed-in account, as the product publishes it.
+;(await import('../../../../apps/desktop/src/lib/readModel')).followRendererSession('SIGNED_IN', 'owner')
 const rpc = vi.hoisted(() => vi.fn())
 const lists = vi.hoisted(() => vi.fn())
 vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ appCallOn: rpc, fetchSessionsList: lists }))
@@ -18,7 +20,7 @@ const ready = (id: string, sessions: SessionpageSessionSummary[] = [session()]) 
 const dispatch = (context: { deviceId?: string; chatId?: string; agents?: string[] } = {}) => phoneDispatch(app, ['agents:control:all-machines'], context)
 beforeEach(() => {
   localStorage.clear(); retainDeviceSessions([]); rpc.mockReset(); lists.mockReset().mockImplementation(async (deviceId: string) => ({ projects: [], sessions: liveDeviceSessions()[deviceId]?.sessions ?? [] }))
-  writeCachedDevices('owner', [device('desktop')]); ready('desktop')
+  writeCachedDevices([device('desktop')]); ready('desktop')
 })
 
 describe('phone dispatch through the existing agent directory and App RPC', () => {
@@ -51,7 +53,7 @@ describe('phone dispatch through the existing agent directory and App RPC', () =
     await expect(dispatch().agents.tell({ agent: AGENT, named: true }, 'hi', {})).rejects.toMatchObject({ code: 'not-found' })
     lists.mockRejectedValueOnce(new Error('unreachable'))
     await expect(dispatch().agents.tell({ agent: AGENT, named: true }, 'hi', {})).rejects.toMatchObject({ code: 'failed' })
-    ready('desktop', []); writeCachedDevices('owner', [device('desktop'), device('offline', false)])
+    ready('desktop', []); writeCachedDevices([device('desktop'), device('offline', false)])
     await expect(dispatch().agents.tell({ agent: AGENT, named: true }, 'hi', {})).rejects.toMatchObject({ code: 'failed' })
     expect(rpc).not.toHaveBeenCalled()
   })
@@ -85,7 +87,7 @@ describe('phone dispatch through the existing agent directory and App RPC', () =
     expect(await phoneDispatch(app, ['agents:read:all-machines'], {}).listAgents()).toHaveLength(2)
   })
   it('starts through the App spawn route on the context, group, latest or person-picked computer', async () => {
-    writeCachedDevices('owner', [device('older'), { ...device('latest'), last_seen_at: '2026-10-26T01:01:00Z' }])
+    writeCachedDevices([device('older'), { ...device('latest'), last_seen_at: '2026-10-26T01:01:00Z' }])
     ready('older'); ready('latest', [])
     expect(dispatch().spawnOn).toBe('latest')
     expect(dispatch({ deviceId: 'older' }).spawnOn).toBe('older')
@@ -98,7 +100,7 @@ describe('phone dispatch through the existing agent directory and App RPC', () =
     await expect(dispatch().agents.spawn('work', {}, 'gone')).rejects.toMatchObject({ code: 'failed' })
   })
   it('reports zero-task computers from the same directory, only with all-machines read consent', async () => {
-    writeCachedDevices('owner', [device('desktop'), device('empty')])
+    writeCachedDevices([device('desktop'), device('empty')])
     ready('empty', [])
     const report = await phoneDispatch(app, ['agents:read:all-machines'], {}).listAgents(true)
     expect(report.devices).toEqual([

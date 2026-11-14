@@ -2,8 +2,7 @@ import { commandRegistry } from '@renderer/lib/commands/registry';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 import { detectPlatform } from '@tanstack/react-hotkeys';
 import { useEffect, useMemo } from 'react';
-import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
-import { getEffectiveHotkey } from '@renderer/lib/hooks/useKeyboardShortcuts';
+import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { modalStore } from '@renderer/lib/modal/modal-store';
 import { setTerminalKeyboardExitHandler } from '@renderer/lib/pty/terminal-keyboard-exit';
 import { caretAtStartOf } from './caret-at-start';
@@ -146,7 +145,7 @@ function runShortcut(key: SessionNavShortcutKey): boolean {
  * `deferToDefaultPrevented`.
  */
 export function SessionKeyboardNavListener() {
-  const { value: keyboard } = useAppSettingsKey('keyboard');
+  const keyboard = useShortcutOverrides();
   useCommandProvider({
     scopeId: 'app',
     getCommands: () => [{

@@ -10,7 +10,7 @@ import type { ExtensionCapability } from '../../../../apps/desktop/src/session/s
  */
 const ORIGIN = 'https://spexcode.acct.apps.gugu.invalid'
 const auth = vi.hoisted(() => ({ token: `h.${Buffer.from(JSON.stringify({ sub: '0a000000-0000-4000-8000-0000000000c1' })).toString('base64url')}.s` }))
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => auth.token }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => auth.token }))
 const sent = vi.hoisted(() => ({ calls: [] as unknown[][], answer: { content: [{ type: 'text', text: 'graph' }] } as unknown, refusal: null as null | { code: string; message: string } }))
 vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   appCallOn: async (...args: unknown[]) => {

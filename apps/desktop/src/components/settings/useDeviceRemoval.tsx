@@ -25,7 +25,8 @@ type DialogState =
   | { kind: 'versions'; machineKey: string }
 
 export function useDeviceRemoval(machines: readonly DeviceMachine[]): {
-  addressOf: (deviceId: string) => string | null
+  /** undefined = this desktop's SSH registry not read yet. */
+  addressOf: (deviceId: string) => string | null | undefined
   openRemove: (device: Device) => void
   canRemoveDevices: (deviceIds: readonly string[]) => boolean
   /**
@@ -44,7 +45,7 @@ export function useDeviceRemoval(machines: readonly DeviceMachine[]): {
   const { addresses, forget } = useSshMachines()
   const [dialog, setDialog] = useState<DialogState | null>(null)
   const [agents, setAgents] = useState<BoundAgentsState>({ agents: [], loading: false, cascadeChecked: false })
-  const addressOf = useCallback((deviceId: string) => addresses.get(deviceId) ?? null, [addresses])
+  const addressOf = useCallback((deviceId: string) => (addresses ? addresses.get(deviceId) ?? null : undefined), [addresses])
   const endpoints = useMemo(() => machines.flatMap(machine => machine.configurations), [machines])
   const removable = useMemo(() => endpoints.filter(device => !device.is_current_device), [endpoints])
   const canRemoveDevices = useCallback((deviceIds: readonly string[]) => (

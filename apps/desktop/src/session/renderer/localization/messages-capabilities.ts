@@ -11,6 +11,8 @@ export const enUSCapabilityMessages = {
   'reset.off': 'off',
   'reset.builtIn': 'built-in',
   'reset.always': 'always',
+  'settings.readFailed': 'Could not read this setting',
+  'settings.refreshFailed': 'Could not read the latest; showing what was read last',
 
   // ── settings · task defaults ───────────────────────────────────────────────
   'taskDefaults.autoGenerateName': 'Auto-generate task names',
@@ -52,7 +54,6 @@ export const enUSCapabilityMessages = {
   'terminal.defaultShell': 'Default terminal shell',
   'terminal.defaultShellDescription':
     'Used for new local terminals. Remote terminals use the remote system shell.',
-  'terminal.shellLoading': 'Loading...',
   'terminal.font': 'Terminal font',
   'terminal.fontDescription': 'Choose the font family for the terminal. The default keeps Chinese exactly two cells wide; other fonts can clip the end of Chinese lines.',
   'terminal.fontDefaultOption': 'Default ({fontFamily})',
@@ -957,6 +958,8 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'reset.off': '关闭',
   'reset.builtIn': '内置',
   'reset.always': '始终',
+  'settings.readFailed': '读不到这项设置',
+  'settings.refreshFailed': '没读到最新的，显示的是上次读到的',
 
   // ── 设置 · 任务默认值 ───────────────────────────────────────────────────────
   'taskDefaults.autoGenerateName': '自动生成会话名',
@@ -993,7 +996,6 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   // ── 设置 · 终端 ─────────────────────────────────────────────────────────────
   'terminal.defaultShell': '默认终端 shell',
   'terminal.defaultShellDescription': '用于新建本地终端。远程终端使用远端系统 shell。',
-  'terminal.shellLoading': '正在加载...',
   'terminal.font': '终端字体',
   'terminal.fontDescription': '选择终端使用的字体。默认字体让中文正好占两格,换成别的字体时中文行的行尾可能被截断。',
   'terminal.fontDefaultOption': '默认（{fontFamily}）',

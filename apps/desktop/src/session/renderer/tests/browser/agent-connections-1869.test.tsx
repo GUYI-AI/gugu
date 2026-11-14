@@ -1,4 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
+import { queryClient } from '@/lib/readModel'
 import { createRoot, type Root } from 'react-dom/client'
 import { beforeEach, afterEach, it, expect, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
@@ -28,9 +29,11 @@ vi.mock('@renderer/lib/modal/modal-provider', async (original) => ({
   ...(await original<typeof import('@renderer/lib/modal/modal-provider')>()),
   useShowModal: () => mocks.login
 }))
+// The CLI's own sign-in, read: not signed in (the status line waits for this reading before it is written).
+const notSignedIn = vi.hoisted(() => ({ status: { kind: 'unauthenticated' }, login: null }));
 vi.mock('@renderer/lib/stores/use-agent-auth-status', () => ({
-  useAgentAuthStatus: () => ({ auth: null, refresh: async () => {} }),
-  useAgentAuthStatuses: (_: string, programs: unknown[]) => ({ auths: programs.map(() => null), refresh: async () => {} }),
+  useAgentAuthStatus: () => ({ auth: notSignedIn, refresh: async () => {} }),
+  useAgentAuthStatuses: (_: string, programs: unknown[]) => ({ auths: programs.map(() => notSignedIn), refresh: async () => {} }),
   useExpiredAgentIds: () => new Set()
 }))
 vi.mock('@renderer/features/sessions/session-config/platform-model-catalog', () => ({
@@ -96,7 +99,8 @@ beforeEach(() => {
   host.style.width = '528px'
   document.body.appendChild(host)
   root = createRoot(host)
-  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // The connection readings are read models: they live in the one client (lib/readModel), cleared after each case.
+  client = queryClient
   root.render(
     <QueryClientProvider client={client}>
       <SessionLocalizationProvider>

@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
+import { notifyManager as readModelNotify } from '@tanstack/react-query'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { writeCachedDevices } from '../../../../apps/desktop/src/store/devicesCache'
 import { DevicesProvider } from '../../../../apps/desktop/src/store/devices'
 import { useDevicesStore } from '../../../../apps/desktop/src/store/devicesContext'
 import { createNode, createReactHarness } from '../../../support/testHarness'
@@ -32,7 +35,9 @@ function Probe() {
 }
 
 beforeEach(() => {
+  readModelNotify.setScheduler((callback) => { callback() })
   window.localStorage.clear()
+  queryClient.clear(); followRendererSession('SIGNED_IN', 'owner')
   mocks.seen = []
   mocks.listDevices.mockReset().mockResolvedValue([device('a', 'A'), device('b', 'B')])
   mocks.listProjects.mockReset().mockResolvedValue({ a: [{ local_project_id: 'p' }] })
@@ -41,7 +46,8 @@ beforeEach(() => {
 async function mount() {
   const harness = createReactHarness()
   await harness.render(createNode(DevicesProvider, {}, createNode(Probe)))
-  await act(async () => { await Promise.resolve() })
+  // The first full read lands (the devices read model's reader is loaded on demand).
+  await vi.waitFor(() => expect(mocks.seen.at(-1)?.length).toBe(2))
   mocks.listDevices.mockClear(); mocks.listProjects.mockClear()
   return harness
 }
@@ -115,7 +121,7 @@ it('a failed project read keeps the last projects and marks every machine unread
 
 it('a full read whose project list fails keeps each machine\'s cached projects, marked unread', async () => {
   // The first frame is the cached list (with the projects read last time); this start's project read fails.
-  window.localStorage.setItem('gugu.devices.v1', JSON.stringify({ accountId: 'owner', rows: [{ ...device('a', 'A'), projects: [{ local_project_id: 'p' }] }, device('b', 'B')] }))
+  writeCachedDevices([{ ...device('a', 'A'), projects: [{ local_project_id: 'p' }] }, device('b', 'B')] as never)
   mocks.listProjects.mockRejectedValueOnce(new Error('column folders does not exist'))
   const harness = createReactHarness()
   await harness.render(createNode(DevicesProvider, {}, createNode(ErrorProbe)))

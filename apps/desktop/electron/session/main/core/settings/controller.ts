@@ -2,7 +2,7 @@ import { setBrowserCorsRelaxationSettings } from '@main/core/browser/browser-pro
 import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry';
 import { reconcileResourceSampler } from '@main/core/resource-monitor/resource-sampler';
 import { createRPCController } from '@shared/lib/ipc/rpc';
-import { appSettingsService, type AppSettings, type AppSettingsKey } from './settings-service';
+import { AppSettingsKeys, appSettingsService, type AppSettings, type AppSettingsKey } from './settings-service';
 
 async function reconcileSettingsRuntimeState(key: AppSettingsKey): Promise<void> {
   if (key === 'resourceMonitor') await reconcileResourceSampler();
@@ -18,7 +18,11 @@ async function reconcileSettingsRuntimeState(key: AppSettingsKey): Promise<void>
 export const appSettingsController = createRPCController({
   get: <T extends AppSettingsKey>(key: T): Promise<AppSettings[T]> => appSettingsService.get(key),
 
-  getAll: (): Promise<AppSettings> => appSettingsService.getAll(),
+  /** Every key with its defaults and overrides: the renderer's startup read (one call instead of one per key). */
+  getAll: async (): Promise<{ [K in AppSettingsKey]: Awaited<ReturnType<typeof appSettingsService.getWithMeta<K>>> }> =>
+    Object.fromEntries(
+      await Promise.all(AppSettingsKeys.map(async (key) => [key, await appSettingsService.getWithMeta(key)] as const))
+    ) as never,
 
   getWithMeta: <T extends AppSettingsKey>(
     key: T

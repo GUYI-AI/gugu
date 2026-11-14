@@ -40,7 +40,8 @@ vi.mock('@renderer/features/settings/use-app-settings-key', async () => {
     useAppSettingsKey: () => {
       const host = useSettingsHost();
       return {
-        value: { defaultProjectsDirectory: host.remote ? `/home/${host.remote.deviceId}/Documents` : '/Users/me/Documents' },
+        settings: ((value: unknown) => ({ state: 'value', value: { value, defaults: value, overrides: {} }, stale: false, error: null }))(
+          { defaultProjectsDirectory: host.remote ? `/home/${host.remote.deviceId}/Documents` : '/Users/me/Documents' }),
       };
     },
   };

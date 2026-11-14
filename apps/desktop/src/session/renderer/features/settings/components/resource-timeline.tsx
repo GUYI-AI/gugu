@@ -1,8 +1,10 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { formatClock } from '@/i18n/format';
 import { observer } from 'mobx-react-lite';
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { rpc } from '@renderer/lib/ipc';
+import { Unknown } from '@/components/ui/Unknown';
+import { readModel, useReadModel } from '@/lib/readModel';
 import { appState } from '@renderer/lib/stores/app-state';
 import { formatBytes } from '@renderer/utils/formatBytes';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -24,6 +26,17 @@ type Metric = 'stall' | 'cpu' | 'memory';
 const CAPTURE_SECONDS = 10;
 const RANGE_MS: Record<Range, number> = { all: 0, '15m': 900_000, '1h': 3_600_000 };
 
+/** The stored samples of one range, up to now. Read again on every new sample while the page is open. */
+const resourceHistory = readModel({
+  name: 'resourceHistory',
+  scope: 'device',
+  read: async (_device, range: Range, _attempt: number) => {
+    const until = Date.now();
+    return (await rpc.resourceMonitor.history(RANGE_MS[range] ? until - RANGE_MS[range] : 0, until)).data;
+  },
+  keep: 5 * 60_000,
+});
+
 /**
  * The resource monitor page body (and, compact, the floating window): headline numbers, the two charts, and one
  * process table that shows live data until a moment on a chart is picked, then that moment until "Back to live".
@@ -32,12 +45,15 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
   const { translate: t } = useSessionMessages();
   const store = appState.resourceMonitor;
   const snapshot = store.snapshot;
-  const [history, setHistory] = useState<ResourceHistory | null>(null);
   const [selected, setSelected] = useState<ResourceSnapshot | null>(null);
   const [range, setRange] = useState<Range>('all');
   const tick = snapshot ? Math.floor(snapshot.timestamp / 5000) : null;
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const historyReading = useReadModel(resourceHistory, [range, revision]);
+  const history: ResourceHistory | null = historyReading.state === 'value' ? historyReading.value : null;
+  // ❌ 「还没有记录」 before the samples are read: the charts' place stays a placeholder until then.
+  const unread = historyReading.state === 'unknown';
   const last = history?.points.at(-1);
   const data = useMemo(() => timelineData(history?.points ?? []), [history]);
   const peak = useMemo(() => ({ cpu: peakOf(history?.points, 'cpu'), memory: peakOf(history?.points, 'memory') }), [history]);
@@ -53,18 +69,19 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
   const ranges = (['15m', '1h', 'all'] as const).map((value) => ({ value, label: t(value === 'all' ? 'resourceMonitor.all' : value === '1h' ? 'resourceMonitor.range1h' : 'resourceMonitor.range15m') }));
   const labels = { stall: t('resourceMonitor.stallChart'), cpu: t('resourceMonitor.cpuOneCore'), memory: t(footprint ? 'resourceMonitor.memoryFootprint' : 'resourceMonitor.memoryRss'), longFrames: t('resourceMonitor.longFrames'), slowInteractions: t('resourceMonitor.slowInteractions') };
   const fail = (e: unknown) => { log.error({ error: e }, 'resource history request failed'); setError(messageForUser(e)); };
+  // Each new sample reads the range again (the open itself already read it).
+  const seenTick = useRef(tick);
   useEffect(() => {
-    let active = true;
-    const until = Date.now();
-    void rpc.resourceMonitor.history(RANGE_MS[range] ? until - RANGE_MS[range] : 0, until).then((res) => {
-      if (active) { setHistory(res.data); setError(''); }
-    }).catch((e: unknown) => { if (active) fail(e); });
-    return () => { active = false; };
-  }, [tick, range, revision]);
+    if (tick === null || seenTick.current === tick) return;
+    seenTick.current = tick;
+    void resourceHistory.refresh(range);
+  }, [tick, range]);
+  useEffect(() => { if (historyReading.state === 'error') log.error({ error: historyReading.error }, 'resource history request failed'); }, [historyReading]);
+  const shownError = error || (historyReading.state === 'error' ? messageForUser(historyReading.error) : '');
   const action = async (kind: 'export' | 'clear') => {
     try {
       if (kind === 'export') await rpc.resourceMonitor.exportHistory(t('resourceMonitor.export'));
-      else { await rpc.resourceMonitor.clearHistory(); setHistory(null); setSelected(null); const res = await rpc.resourceMonitor.history(); setHistory(res.data); }
+      else { await rpc.resourceMonitor.clearHistory(); setSelected(null); await resourceHistory.refresh(); }
     } catch (e) { fail(e); }
   };
   const record = async () => {
@@ -96,7 +113,7 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
         <div className="text-base font-medium text-foreground tabular-nums">{countText(recent?.longFrames)} · {countText(recent?.slowInteractions)}</div>
         <div className="text-foreground-muted">{lastMinute}</div>
       </div>
-      {history?.points.length ? chart('stall', 48) : <span className="text-foreground-muted">{t('resourceMonitor.empty')}</span>}
+      {history?.points.length ? chart('stall', 48) : unread ? <Unknown className="h-12 w-full" /> : <span className="text-foreground-muted">{t('resourceMonitor.empty')}</span>}
     </div>
     {tiles.map((tile) => <div key={tile.key} className="grid grid-cols-[6.5rem_1fr] items-center gap-3">
       <div className="whitespace-nowrap">
@@ -104,7 +121,7 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
         <div className="text-base font-medium text-foreground tabular-nums">{tile.value}</div>
         <div className="text-foreground-muted tabular-nums">{t('resourceMonitor.peak', { value: tile.key === 'cpu' ? cpuText(peak.cpu) : memoryText(peak.memory) })}</div>
       </div>
-      {history?.points.length ? chart(tile.key, 48) : <span className="text-foreground-muted">{t('resourceMonitor.empty')}</span>}
+      {history?.points.length ? chart(tile.key, 48) : unread ? <Unknown className="h-12 w-full" /> : <span className="text-foreground-muted">{t('resourceMonitor.empty')}</span>}
     </div>)}
   </section>;
 
@@ -153,7 +170,7 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
       {capture && <CaptureSummary capture={capture} />}
       <p className="text-foreground-muted">{t('resourceMonitor.stored', { count: history?.count ?? 0, bytes: formatBytes(history?.bytes ?? 0), time: last ? formatClock(last.timestamp) : '–' })} {t('resourceMonitor.retention')}</p>
     </div>
-    {(error || snapshot?.recordingError) && <p role="alert">{error || t('resourceMonitor.writeFailed')} <Button size="sm" variant="ghost" onClick={() => setRevision((n) => n + 1)}>{t('resourceMonitor.retry')}</Button></p>}
+    {(shownError || snapshot?.recordingError) && <p role="alert">{shownError || t('resourceMonitor.writeFailed')} <Button size="sm" variant="ghost" onClick={() => setRevision((n) => n + 1)}>{t('resourceMonitor.retry')}</Button></p>}
     {selected || live
       ? <ResourceMonitorView snapshot={selected ?? snapshot} live={!selected} header={tableHeader} />
       : history?.points.length ? <p className="text-foreground-muted">{t('resourceMonitor.pickHint')}</p> : null}

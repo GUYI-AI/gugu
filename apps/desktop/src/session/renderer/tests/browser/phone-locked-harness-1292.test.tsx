@@ -31,9 +31,7 @@ vi.mock('@gugu/core/cloud/config', async (original) => ({
   getSupabaseUrl: () => 'http://supabase.test.local',
   getSupabaseAnonKey: () => 'test-anon-key'
 }))
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({
-  useAppSettingsKey: () => ({ value: { chatView: 'double' } })
-}))
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } })
 vi.mock('@/components/chat/useConversationOptions', () => ({
   useConversationOptions: () => {
     const models = composerModelOptions(

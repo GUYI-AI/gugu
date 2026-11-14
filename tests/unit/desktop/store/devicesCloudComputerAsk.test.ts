@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
+import { notifyManager } from '@tanstack/react-query'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { readCachedDevices } from '../../../../apps/desktop/src/store/devicesCache'
 import { DevicesProvider } from '../../../../apps/desktop/src/store/devices'
 import { createNode, createReactHarness } from '../../../support/testHarness'
 
@@ -32,7 +35,9 @@ const device = (id: string) => ({ device_id: id, label: id, hostname: id, platfo
 const op = (deviceId: string, tombstone = false) => ({ revision: '1', event: 'device_changed', payload: { device_id: deviceId, kind: 'row', tombstone } })
 
 beforeEach(() => {
+  notifyManager.setScheduler((callback) => { callback() })
   window.localStorage.clear()
+  queryClient.clear(); followRendererSession('SIGNED_IN', 'owner')
   mocks.listDevices.mockReset().mockResolvedValue([device('a'), device('b'), device('cloud')])
   mocks.refreshCloudComputer.mockReset().mockResolvedValue(null)
 })
@@ -40,7 +45,8 @@ beforeEach(() => {
 it('asks the cloud computer manager only for revisions that can move the cloud computer', async () => {
   const harness = createReactHarness()
   await harness.render(createNode(DevicesProvider, {}))
-  await act(async () => { await Promise.resolve() })
+  // The first full read lands: these three machines are known.
+  await vi.waitFor(() => expect(readCachedDevices()).toHaveLength(3))
   mocks.refreshCloudComputer.mockClear()
 
   mocks.listDevices.mockResolvedValue([device('a')])

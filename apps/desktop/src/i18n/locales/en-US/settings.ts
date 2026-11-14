@@ -29,7 +29,6 @@ export default {
     "linkGoogle": "Link Google",
     "unlinkGoogle": "Unlink Google",
     "sameEmailNote": "Your sign-in email matches Google. Change your email before unlinking Google.",
-    "loading": "Loading sign-in methods…",
     "working": "Working…",
     "retry": "Retry",
     "verifyTitle": "Verify again",
@@ -77,8 +76,8 @@ export default {
   "account": {
     "occupation": "Occupation",
     "occupationRequired": "If you pick Other, say in a few words what you do",
+    "occupationReadFailed": "Couldn't read your occupation. Check the connection and retry.",
     "occupationUnreadable": "Couldn't read your occupation. Reopen Settings to try again.",
-    "occupationLoading": "Loading…",
     "occupationNote": "Only you and your Gugu can see this.",
     "occupationUnset": "Not set",
     "intro": "Your avatar, name and bio are what others see of you in Gugu.",
@@ -939,7 +938,6 @@ export default {
     "ordinaryTitle": "Ordinary groups",
     "ordinary": "Files and images are uploaded to the cloud when sent and kept as shown beside “Kept” above. Nothing to adjust here.",
     "noMachine": "You have no machine bound to a project yet, so only the ordinary group rules apply to you.",
-    "loading": "Loading…",
     "retry": "Retry",
     "retentions": {
       "read-once": "Delete after reading",
@@ -1022,7 +1020,6 @@ export default {
   "model": {
     "description": "Choose which models appear in the model picker.",
     "loadFailed": "Couldn't load the model list",
-    "loading": "Loading models…",
     "membersOnly": "Available with a membership",
     "noMatch": "No matching models",
     "provided": "Models provided by Gugu",

@@ -13,7 +13,7 @@ import { ModalRenderer } from './lib/modal/modal-renderer';
 import { GithubContextProvider } from './lib/providers/github-context-provider';
 import { ThemeProvider } from './lib/providers/theme-provider';
 import { TerminalPoolProvider } from './lib/pty/pty-pool-provider';
-import { queryClient } from './lib/query-client';
+import { queryClient } from '@/lib/readModel';
 import { getEmbedView, subscribeEmbedView } from './lib/stores/embed-view';
 import { RightSidebarProvider } from './lib/ui/right-sidebar';
 import { TooltipProvider } from './lib/ui/tooltip';

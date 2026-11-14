@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
+import { readModel, useReadModel, type ReadModel } from '../../lib/readModel'
+import { Unknown } from '../ui/Unknown'
 import { publicAssetPath } from '@gugu/core/shared/ui/publicAssets'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { ChevronRight } from '@/lib/icons'
@@ -7,7 +9,6 @@ import { Button } from '../ui/Button'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
 import { Trans, useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { createUpdateStateReceiver } from '../../../shared/update-state'
 import { rendererLogger } from '../../lib/log'
 
 const APP_ICON_URL = publicAssetPath('/assets/app/gugu-icon-512.png')
@@ -33,41 +34,48 @@ function updateStatusMessage(t: TFunction<'settings'>, detail: UpdateStatusDetai
   return typeof detail?.message === 'string' ? detail.message : null
 }
 
+// @@@5837 推来的状态和问来的状态是同一个东西、走同一个读模型:包可能早在几小时前就下好了,而那条推送只发过一次 ——
+// 问来的那一份是「重启以安装」那个按钮的保底来源(横幅可以被关掉,这里不能没有)。宿主给推送和回答编同一串修订号:
+// 只认比手上这一份新的,❌ 让晚到的回答盖掉更新的推送。
+const revisionOf = (detail: UpdateStatusDetail | null | undefined) => {
+  const value = detail?.revision
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
+}
+const newer = (next: UpdateStatusDetail | null | undefined, current: UpdateStatusDetail | null | undefined) => {
+  const revision = revisionOf(next)
+  return revision !== null && revision > (revisionOf(current) ?? -1)
+}
+const appUpdateState: ReadModel<[], UpdateStatusDetail | null> = readModel({
+  name: 'appUpdateState',
+  scope: 'device',
+  read: async (): Promise<UpdateStatusDetail | null> => {
+    const state = (await platform.updateState?.()) as UpdateStatusDetail | null | undefined
+    const shown = appUpdateState.peek()
+    const current = shown.state === 'value' ? shown.value : null
+    return newer(state, current) || current === null ? state ?? null : current
+  },
+})
+const applyStatus = (detail: UpdateStatusDetail | null | undefined) => {
+  appUpdateState.set([], (current) => (newer(detail, current) ? detail ?? null : current ?? null))
+}
+window.addEventListener(UI_EVENTS.updateStatus, (event) => applyStatus((event as CustomEvent<UpdateStatusDetail>).detail))
+
+/** The running app's version (this device): the same for the whole run, read once. */
+const appVersion = readModel({ name: 'appVersion', scope: 'device', read: () => platform.getAppVersion(), fresh: Infinity })
+
 export function AboutSection() {
   const { t } = useTranslation('settings')
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatusDetail | null>(null)
+  const reading = useReadModel(appUpdateState, platform.capabilities.appUpdates ? [] : null)
+  const updateStatus = reading.state === 'value' ? reading.value : null
   const [queryFailed, setQueryFailed] = useState(false)
   const [checking, setChecking] = useState(false)
-  // Seed from the build-time version so it renders immediately on all platforms; Electron's IPC
-  // path below refines it to the live app.getVersion() (identical value in practice).
-  const [version, setVersion] = useState(__APP_VERSION__)
+  // The live app.getVersion() where the platform has it, else the build-time version (identical in practice).
+  const live = useReadModel(appVersion, platform.capabilities.appVersion ? [] : null)
+  const version = live.state === 'value' ? live.value : __APP_VERSION__
   const showAppCard = platform.capabilities.appVersion || platform.capabilities.appUpdates
   const updateReady = updateStatus?.status === 'downloaded'
   const updateMessage = updateStatusMessage(t, updateStatus) || ''
-  const receiveStatus = useRef(createUpdateStateReceiver())
-  const applyStatus = useCallback((detail: UpdateStatusDetail | null | undefined) => {
-    if (!receiveStatus.current(detail)) return
-    setUpdateStatus(detail ?? null)
-    setQueryFailed(false)
-  }, [])
 
-  useEffect(() => {
-    const statusHandler = (event: Event) => applyStatus((event as CustomEvent<UpdateStatusDetail>).detail)
-    window.addEventListener(UI_EVENTS.updateStatus, statusHandler)
-    // @@@5837 进设置页就**问一次**:包可能早在几小时前就下好了,而那条推送只发过一次。
-    // 这一行是「重启以安装」那个按钮的保底来源 —— 横幅可以被关掉,这里不能没有。
-    void Promise.resolve(platform.updateState?.())
-      .then((state) => applyStatus(state as UpdateStatusDetail | null))
-      .catch(() => {})
-    return () => {
-      window.removeEventListener(UI_EVENTS.updateStatus, statusHandler)
-    }
-  }, [applyStatus])
-
-  useEffect(() => {
-    if (!platform.capabilities.appVersion) return
-    platform.getAppVersion().then(setVersion)
-  }, [])
 
   async function handleCheckForUpdates() {
     setChecking(true)
@@ -75,6 +83,7 @@ export function AboutSection() {
     try {
       const result = await platform.checkForUpdates() as UpdateStatusDetail
       applyStatus(result)
+      setQueryFailed(false)
     } catch (err) {
       updateLog.warn({ error: err instanceof Error ? err.message : String(err) }, 'Update check request failed')
       setQueryFailed(true)
@@ -104,7 +113,9 @@ export function AboutSection() {
           />
           {platform.capabilities.appUpdates && (
             <SettingsRow>
-              {updateReady ? (
+              {reading.state === 'unknown' ? (
+                <Unknown className="h-9 w-full" />
+              ) : updateReady ? (
                 <Button variant="primary" size="md" onClick={() => { void platform.installUpdate() }} style={{ width: '100%' }}>
                   {t('about.restartToInstall')}
                 </Button>

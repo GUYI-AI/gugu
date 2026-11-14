@@ -4,7 +4,7 @@ import '../../apps/desktop/src/i18n/registerAssistantCatalog'
 const world = vi.hoisted(() => ({ owner: 'owner', online: false, wake: vi.fn(), authorize: vi.fn(), ready: vi.fn() }))
 vi.mock('../../apps/desktop/src/lib/cloudComputerStore', () => ({ wakeCloudComputer: world.wake }))
 vi.mock('../../apps/desktop/src/store/devicesCache', () => ({ readCachedDevices: () => world.online ? [{ device_id: 'home', is_online: true }] : [] }))
-vi.mock('../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererSession: () => ({ user: { id: world.owner } }) }))
+vi.mock('../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererSession: () => ({ user: { id: world.owner } }) }))
 vi.mock('@/lib/connectionBridge',() => ({ connectionBridge: () => ({ routing: {
   read: async () => ({ mode: 'legacy',epoch: '0',phase: 'stable',acceptingNewOperations: true }),assert: async () => {},
 } }) }))

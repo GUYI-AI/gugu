@@ -24,7 +24,7 @@ vi.mock('@renderer/lib/ipc', () => ({ rpc: {
     reportLayout: async () => ({ success: true }),
   },
 } }));
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: {} }) }));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } });
 vi.mock('@tanstack/react-hotkeys', async (original) => ({ ...await original<typeof import('@tanstack/react-hotkeys')>(), detectPlatform: () => 'mac' }));
 vi.mock('../extensions/installed-extensions-store', () => ({ installedExtensionsStore: { manifestFor: () => undefined } }));
 vi.mock('../extensions/extension-surface-store', () => ({ extensionSurfaceStore: { setWebContentsId() {}, forgetShared() {} } }));

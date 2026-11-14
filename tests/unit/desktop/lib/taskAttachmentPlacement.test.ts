@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), path: vi.fn(), prefetch: vi.fn(), push: vi.fn(), upload: vi.fn(), place: vi.fn() }))
-vi.mock('@/lib/sessionPublication', () => ({ getRendererAccessToken: () => 'test-token' }))
+vi.mock('@/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => 'test-token' }))
 vi.mock('@renderer/lib/pty/terminal-image-paths', () => ({ mustCopyRatherThanReference: () => false, isHeicLikeFile: (file: File) => file.type === 'image/heic' }))
 vi.mock('@/lib/taskAttachmentTarget', () => ({ prefetchTaskFiles: mocks.prefetch, pushTaskFiles: mocks.push, taskAttachmentUsesSsh: () => false }))
 vi.mock('@gugu/core/cloud/attachmentsApi', async original => ({ ...await original<object>(), configuredEndpoint: () => ({ supabaseUrl: 'https://files.invalid', anonKey: 'public', token: 'test' }), uploadAttachmentBytes: mocks.upload, placeAttachment: mocks.place }))

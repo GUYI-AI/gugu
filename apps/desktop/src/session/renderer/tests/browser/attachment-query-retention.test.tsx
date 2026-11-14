@@ -10,7 +10,7 @@ import { cdp } from '@vitest/browser/context';
 import { useState } from 'react';
 import { parseAttachmentContent, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels';
 import { MediaAttachmentBubble } from '@/components/chat/MediaAttachmentBubble';
-import { attachmentQueryClient } from '@/lib/attachmentQueryClient';
+import { queryClient as attachmentQueryClient } from '@/lib/readModel';
 
 let harness: ReturnType<typeof createReactHarness> | null = null;
 afterEach(() => { harness?.cleanup(); harness = null; attachmentQueryClient.clear(); });

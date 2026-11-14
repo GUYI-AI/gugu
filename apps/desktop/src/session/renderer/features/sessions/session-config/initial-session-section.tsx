@@ -64,7 +64,7 @@ import {
 import { UNATTENDED_SESSION_PERMISSION_MODE } from '@shared/core/sessions/unattended-session-autonomy';
 import type { SessionViewLockState } from './session-view-lock';
 import { SessionViewControl } from './session-view-control';
-import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
+import { terminalShown, useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
 import { DEFAULT_SESSION_VIEW } from '@shared/core/sessions/new-session-defaults';
 import { codexNeedsUpgrade } from '../session-input-failure-copy';
 import { useSessionInputNotice } from '../session-input-notice';
@@ -77,7 +77,7 @@ import {
 import { useHarnessModelOptions } from './use-harness-model-options';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
-import { queryClient } from '@renderer/lib/query-client';
+import { queryClient } from '@/lib/readModel';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useHarnessModelCredential } from '@renderer/lib/stores/use-harness-model-credential';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
@@ -488,13 +488,14 @@ export function useInitialSessionState(
   } = options;
   const { translate } = useSessionMessages();
   // 新建会话的记忆 —— 应用设置 `newSessionMemory`,这台设备一份;主进程的 spawnAgent 读的是同一份(L11 复核 58)。
-  const { value: memory, update: updateMemory, updateAsync: updateMemoryAsync } = useAppSettingsKey('newSessionMemory');
+  const { settings: memorySettings, update: updateMemory, updateAsync: updateMemoryAsync } = useAppSettingsKey('newSessionMemory');
+  const memory = memorySettings.state === 'value' ? memorySettings.value.value : undefined;
   const lastStartedConfiguration = memory?.lastStarted ?? null;
   /** 正在编辑一条已存记录(自动化)—— 它的 agent 是那条记录的属性,❌ 不写进全局的「我上次选的」。 */
   const editingStoredRecord = initialProvider !== undefined;
   // 新会话默认通用。设置里开着「允许以终端（TUI）模式启动 agent」时,框里给「终端 | 通用」由人选(owner 10-30);
   // 编辑一条已存的自动化时,先由那条记录自己的展示播种。两者都只覆盖这一个框(`setSessionView`,❌ 写回任何全局设置)。
-  const terminalEnabled = useTerminalEnabled();
+  const terminalEnabled = terminalShown(useTerminalEnabled());
   // #2569 a draft handed over from another box (the sample project's first message) opens with what was picked there.
   const handed = draft?.handoff?.picked;
   const [sessionViewOverride, setSessionViewOverride] = useState<SessionView | null>(() => handed?.sessionView ?? null);

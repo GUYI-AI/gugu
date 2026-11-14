@@ -10,7 +10,7 @@ import { APP_COMPOSE_EVENT } from '@/session/shared/extensions/app-runtime-proto
 
 vi.mock('electron', () => ({ BrowserWindow: {}, clipboard: {}, Menu: {} }))
 vi.mock('@/session/shared/extensions/app-send-core', () => ({ composeInChat: vi.fn() }))
-vi.mock('@/lib/sessionPublication', () => ({ getRendererSession: vi.fn() }))
+vi.mock('@/lib/sessionPublication', () => ({ getRendererSession: vi.fn(), observeRendererSession: () => () => {} }))
 
 const labels = { copy: 'Copy', selectAll: 'Select all', quoteSelection: 'Quote selection', quoteFile: 'Quote file', undo: 'Undo', redo: 'Redo', cut: 'Cut', paste: 'Paste' }
 const execute = (script: string) => Function(`return ${script}`)()

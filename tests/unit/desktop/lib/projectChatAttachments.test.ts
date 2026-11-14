@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { commitPreparedChatAttachment, prepareChatAttachment } from '../../../../apps/desktop/src/lib/attachmentsEndpoint'
 import { i18n } from '../../../../apps/desktop/src/i18n'
 const f = vi.hoisted(() => ({ upload: vi.fn(), commit: vi.fn() }))
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => 'published-test-token' }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => 'published-test-token', observeRendererSession: () => () => {} }))
 vi.mock('@gugu/core/cloud/attachmentsApi', () => ({ uploadAttachmentBytes: f.upload, commitAttachment: f.commit,
   configuredEndpoint: (token: string) => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token }) }))
 const endpoint = { supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'published-test-token' }

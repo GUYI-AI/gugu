@@ -6,7 +6,7 @@ import { MessageBubble } from '../../../../apps/desktop/src/components/chat/Mess
 import { chatService } from '../../../../apps/desktop/src/lib/chat'
 import { createNode, createReactHarness, message, renderWithAppProviders } from '../../../support/testHarness'
 import * as attachmentReader from '../../../../apps/desktop/src/lib/attachmentBytes'
-import { attachmentQueryClient } from '../../../../apps/desktop/src/lib/attachmentQueryClient'
+import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/readModel'
 vi.mock('../../../../apps/desktop/src/hooks/useAgentHarnessIdentity', () => ({ useAgentHarnessIdentity: () => 'codex' }))
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {

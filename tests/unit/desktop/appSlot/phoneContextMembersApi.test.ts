@@ -8,7 +8,7 @@ const fixture = vi.hoisted(() => ({ apiVersion: 27, routes: [] as string[] }))
 const CHAT = '0b000000-0000-4000-8000-000000000021'
 const PERSON = '0a000000-0000-4000-8000-000000000021'
 const ORIGIN = 'https://folder.acct.apps.gugu.invalid'
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => 'h.eyJzdWIiOiJwZXJzb24tMSJ9.s' }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => 'h.eyJzdWIiOiJwZXJzb24tMSJ9.s' }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({ readDisplayIdentities: async () => [{ id: PERSON, name: 'Reader', kind: 'human' }] }))
 vi.mock('../../../../apps/desktop/src/lib/memberFaces', () => ({ memberFaces: async () => ({}) }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({
