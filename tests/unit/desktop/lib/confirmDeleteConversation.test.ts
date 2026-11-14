@@ -37,7 +37,7 @@ describe('shared Agent delete confirmation', () => {
     await confirmDeleteConversation({ clear: hide, ownedAgent: { id: 'agent', remove } })
     const notice = state.notice.mock.calls[0][0]
     expect(notice.ongoing).toBe(true)
-    expect(notice.title).toBe('已从列表删除，但 Agent 删除失败')
+    expect(notice.title).toBe('聊天记录已删除，但 Agent 删除失败')
     notice.action.onClick()
     await vi.waitFor(() => expect(remove).toHaveBeenCalledTimes(2))
     expect(hide).toHaveBeenCalledTimes(1)
