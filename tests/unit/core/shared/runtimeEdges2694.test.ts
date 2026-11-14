@@ -18,3 +18,5 @@ it('rejects writes cancelled during cache storage', async () => {const gate=defe
 it('returns independent boot diagnostic records', () => {const tasks=new SessionBootTasks(()=>{});tasks.record('read','task',new Error('original'));const snapshot=tasks.snapshot();snapshot[0].message='changed';expect(tasks.snapshot()[0].message).toBe('original')})
 
 it('prepares circular arrays without recursing forever', () => {const array:unknown[]=[];array.push(array);expect(prepareFields(array)).toEqual(['[Circular]'])})
+
+it('prepares cyclic Error causes without recursion', () => {const error=new Error('failure');error.cause=error;expect((prepareFields(error) as {cause:unknown}).cause).toBe('[Circular]')})
