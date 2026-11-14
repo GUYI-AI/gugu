@@ -303,12 +303,13 @@
   line-height: 1.3;
   cursor: pointer;
 }
-.gg-md .gg-md-mention { max-width: 100%; vertical-align: bottom; }
+/* Not a chat bubble's `a.gg-file-pill`: that is an inline run with its own label cut (below), left as it was. */
+.gg-md .gg-md-mention:not(.gg-file-pill) { max-width: 100%; vertical-align: bottom; }
 /* One line, cut at the end: a long file name or a cited place never wraps the pill across the bubble. The name gives way
    (down to a few characters); the place after it (` · 第 4 行`) stays whole, up to most of the pill. */
 .gg-md .gg-md-mention-label, .gg-md .gg-md-mention-place { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
 .gg-md .gg-md-mention-label:not(:last-child) { min-width: 3em; }
-.gg-md .gg-md-mention-place { flex-shrink: 0; max-width: 60%; }
+.gg-md .gg-md-mention-place { flex-shrink: 0; max-width: 60%; margin-left: -4px; } /* its own leading space stands for the pill's 4px gap */
 .gg-md .gg-md-mention[data-mention-tone='command'] {
   background: var(--chat-mention-custom-bg, var(--md-fill-strong));
   color: var(--chat-mention-custom-fg, inherit);

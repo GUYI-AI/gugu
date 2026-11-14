@@ -13,7 +13,7 @@ export function resolveAttachmentDataUrl(store: AcpChatStore, id: string): Promi
   if (id.startsWith('gugu-message-file://')) return resolveDeliveredAttachment(id);
   const fixtureDataUrl = resolveVisualEvidenceAttachmentDataUrl(store, id);
   if (fixtureDataUrl) return Promise.resolve(fixtureDataUrl);
-  // 旧消息正文里那条绝对路径投影出来的附件(#5269):字节在盘上,不在 agent 的附件仓里 —— 照那条路径读。
+  // `path:` 附件(agent 给主人的通知里的文件、投递卡里人类工具交回的图):字节在盘上,不在 agent 的附件仓里 —— 照那条路径读。
   const path = pathAttachmentTarget(id);
   if (path) {
     const cachedPath = attachmentDataUrlCache.get(id);
