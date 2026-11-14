@@ -377,10 +377,10 @@ function useShallowShared<T>(next: T): T {
   if (!sameShallow(shared.current, next)) shared.current = next
   return shared.current
 }
-/** The row element and its place in the list (position, flash); only these primitives re-render it, not the list. */
-const MessageListSlot = memo(function MessageListSlot({ id, index, count, flash, seenRows }: { id: string; index: number; count: number; flash: boolean; seenRows: SeenRows }) {
+/** The row element and its flash; only these re-render it, not the list (its place in the list is written by the list). */
+const MessageListSlot = memo(function MessageListSlot({ id, flash, seenRows }: { id: string; flash: boolean; seenRows: SeenRows }) {
   return (
-    <MessageRow index={index} count={count} messageId={id} className={flash ? 'msg-src-flash' : undefined} style={ROW_STYLE}>
+    <MessageRow messageId={id} className={flash ? 'msg-src-flash' : undefined} style={ROW_STYLE}>
       <MessageListRow id={id} seenRows={seenRows} />
     </MessageRow>
   )
@@ -495,6 +495,9 @@ export function MessageList({
   const appActive = useAppActive()
   useEffect(() => { if (appActive) for (const report of [...seenRows.values()]) report() }, [appActive, rowProps.onVisible, seenRows])
   const { start, end } = useFlowList({ scrollerRef: ownScrollerRef, contentRef, resetKey, rowIds, landing: initialTopMostItemIndex, followTail, atBottomThreshold: 80, onAtBottomChange, onStartReached, handleRef: listRef })
+  // Each mounted row's place and the count are written here: as row props, every row element would re-render on each new
+  // message (the count grows, and a full loaded window slides by one, which moves every row's position).
+  useLayoutEffect(() => { contentRef.current?.querySelectorAll(':scope > [role="listitem"]').forEach((row, i) => { row.setAttribute('aria-posinset', String(start + i + 1)); row.setAttribute('aria-setsize', String(rows.length)) }) }, [rows, start, end, resetKey])
   // 未读行不在窗口里:比窗口最早一条还早 = 在上方(-1);否则是尾部对账还没回来,先不判(null)。
   const unreadIndex = unreadAbove ? rows.findIndex((row) => row.message.id === unreadAbove.messageId || !!albums.get(row.message.id)?.some(member => member.id === unreadAbove.messageId)) : -1
   const unreadAt = !unreadAbove ? null : unreadIndex >= 0 ? unreadIndex : rows.length > 0 && rows[0].message.seq > unreadAbove.messageSeq ? -1 : null
@@ -507,7 +510,7 @@ export function MessageList({
       {/* 每换一条线(resetKey)换一个滚动容器:落点、贴底电平、锚定都从这条线自己的第一帧开始。 */}
       <div key={resetKey} ref={handleScrollerRef} tabIndex={0} data-testid={SCROLLER_TEST_ID[surface]} data-unread-stream-surface={surface} data-chat-dock-reads="" data-message-avatars="true" data-image-gallery="" style={LIST_SCROLLER_STYLE}>
         <div ref={contentRef}>
-          {rows.slice(start, end).map((row, i) => <MessageListSlot key={row.message.id} id={row.message.id} index={start + i} count={rows.length} flash={row.message.id === rowProps.flashMessageId} seenRows={seenRows} />)}
+          {rows.slice(start, end).map((row) => <MessageListSlot key={row.message.id} id={row.message.id} flash={row.message.id === rowProps.flashMessageId} seenRows={seenRows} />)}
           {end >= rows.length ? footer : null}
           {/* 会话底部那一摞浮在消息流上(ChatBottomDock 写的 --chat-dock-h),滚到底的最后一条落在它上面;没有它就是 0。 */}
           <div aria-hidden data-chat-dock-reads="" className="h-[var(--chat-dock-h,0px)]" />
