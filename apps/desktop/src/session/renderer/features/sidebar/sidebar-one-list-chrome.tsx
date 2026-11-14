@@ -93,7 +93,9 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
       </Button>
       <DropdownMenu.Root open={menuOpen} modal={false} onOpenChange={setMenuOpen}>
         {/* The chat list header's 「+」 (ChatListPanel): the same trigger on the same icon-button skin. */}
-        <Hint label={menuOpen ? '' : menuLabel} side={collapsed ? 'right' : 'bottom'}>
+        {/* A constant label: an empty one renders the bare button (Hint), so blanking it while open remounted the 「+」 and Esc
+            had no trigger to give focus back to. The tooltip closes on the press by itself. */}
+        <Hint label={menuLabel} side={collapsed ? 'right' : 'bottom'}>
           <DropdownMenu.Trigger
             className="gg-icon-btn gg-ghost window-no-drag-region"
             data-size="md"

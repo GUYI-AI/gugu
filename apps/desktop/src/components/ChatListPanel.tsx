@@ -39,6 +39,7 @@ import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
+import { useHeldOrder, usePointerHold } from '../lib/heldOrder'
 import { isOneListProjectLine, oneListAgentRows, oneListShows, placeProjectLines, sidebarPinnedRows, useAgentHomes, useOneListProjectLines, type OneListProjectLine } from '../lib/sidebarOneList'
 import { usePublishOneListAgentRows } from '../lib/innerSidebarBridge'
 import { mobileListDiagnostics } from '@/mobile/mobileListDiagnostics'
@@ -123,6 +124,7 @@ const SIDEBAR_ENTRY_ESTIMATE = 58
 /** A mounted sidebar line, placed by the line window. */
 const lineStyle = (top: number): React.CSSProperties => ({ position: 'absolute', top, left: 0, width: '100%' })
 /** The chat a sidebar line stands for: a conversation's own, a project line's group chat (#2548). */
+const chatIdOf = (chat: ChatItem) => chat.id
 const lineChatId = (row: ChatItem | OneListProjectLine) => (isOneListProjectLine(row) ? row.projectChatId : row.id)
 
 /**
@@ -646,6 +648,7 @@ export function ChatListPanel({
   // `.focus()`,原来靠一张 chatId→node 的 Map;既然要不到逐行 ref,改为在滚动容器内按
   // `data-chat-row` 现查——容器本就有这个 ref,行元素也已经带着这个 data 属性,不必新增状态。
   const listboxRef = useRef<HTMLDivElement>(null)
+  const pointer = usePointerHold()
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // @@@2264 排序键 = canonical activity 投影(chatActivityAt:last_message_at ?? created_at)。
@@ -710,16 +713,18 @@ export function ChatListPanel({
   // #2548 one list: the pinned agents' DM rows sit at the very top, newest interaction first, above the pinned conversations.
   const sidebarPinned = agentHomes ? sidebarPinnedRows(chats, sidebarPins, isTopLevel) : []
   const pinOf = new Map(sidebarPinned.map(({ chat, pin }) => [chat.id, pin]))
-  const pinnedChats = sidebarPinned.map(({ chat }) => chat).concat(chats.filter((c) => c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime))
-  const normalChats = chats.filter((c) => !c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime)
+  // B3: while the pointer is over the list a row does not move out from under it; the newest-first order returns on leaving.
+  const pinnedChats = useHeldOrder(sidebarPinned.map(({ chat }) => chat).concat(chats.filter((c) => c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime)), chatIdOf, pointer.held)
+  const normalChats = useHeldOrder(chats.filter((c) => !c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime), chatIdOf, pointer.held)
   // The Chats tab contains conversations; projectless tasks live in the Projects tab.
   const joinedGroups = inSidebar ? sidebarView.groups : NO_JOINED_GROUPS
   const pinnedRows = joinRows(pinnedChats, (chat) => blockKey.chat(chat.id), joinedGroups)
   const normalLines = joinRows(normalChats, (chat) => blockKey.chat(chat.id), joinedGroups)
   // #2548 the sidebar draws the project lines among them too; the keyboard walks the conversations (normalLines).
   // A project line is its group's conversation row-to-be: same key, so a joined box holds it as it will hold that row.
+  const placedLines = useHeldOrder(placeProjectLines(normalChats, activityOf, projectLines), lineChatId, pointer.held)
   const oneListLines = projectLines.length === 0 ? normalLines : joinRows(
-    placeProjectLines(normalChats, activityOf, projectLines),
+    placedLines,
     (row) => blockKey.chat(lineChatId(row)),
     joinedGroups,
   )
@@ -1066,7 +1071,7 @@ export function ChatListPanel({
     sessionPage.openChat(chatId, false)
   }
   const list = (
-    <div ref={listboxRef} role="listbox" aria-label={t('chatList.listLabel')} style={inSidebar ? SIDEBAR_LIST_STYLE : mobile ? MOBILE_LIST_SCROLL_STYLE : LIST_SCROLL_STYLE}>
+    <div ref={listboxRef} role="listbox" aria-label={t('chatList.listLabel')} onPointerMove={pointer.onPointerMove} onPointerLeave={pointer.onPointerLeave} style={inSidebar ? SIDEBAR_LIST_STYLE : mobile ? MOBILE_LIST_SCROLL_STYLE : LIST_SCROLL_STYLE}>
       {/* #6158 列表行不再按 tab 卸载:聊天面在别的 tab 上由 MainLayout 隐藏而非卸载,行留着滚动位置才在。 */}
       {loadingChats && (
         <div style={LOADING_STATE_STYLE}>
