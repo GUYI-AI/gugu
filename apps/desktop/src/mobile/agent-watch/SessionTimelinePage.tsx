@@ -1,3 +1,4 @@
+import { PhoneTaskBrowser, PHONE_TASK_BROWSER } from './PhoneTaskBrowser'
 import type { FirstPrompt } from './use-timeline-session'
 import { observer } from 'mobx-react-lite'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
@@ -241,7 +242,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       {!phoneHost && !appPanel ? <SessionAppMenu
         appKind={appKind}
         onConversation={() => setAppKind(null)}
-        apps={apps}
+        apps={[{ kind: PHONE_TASK_BROWSER, name: translateSessionMessage('workspace.browser') }, ...apps]}
         onOpenApp={setAppKind}
       /> : null}
       {reachable && !hostSilent ? (
@@ -250,7 +251,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
     </>
   )
 
-  if (appKind) {
+  if (appKind && appKind !== PHONE_TASK_BROWSER) {
     return (
       <AgentWatchScreen {...taskHeader} onBack={() => setAppKind(null)} testId="agent-watch-session-app" actions={headerActions} bodyFill>
         <SessionAppFrame kind={appKind} device={device} session={{ id: session.conversationId, ...(session.projectId ? { projectId: session.projectId } : {}) }} />
@@ -261,7 +262,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   return (
     <AgentWatchScreen
       {...taskHeader}
-      onBack={onBack}
+      onBack={appKind === PHONE_TASK_BROWSER ? () => setAppKind(null) : onBack}
       testId="agent-watch-timeline-page"
       actions={headerActions}
       bodyFill
@@ -273,6 +274,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
 
       {/* ⚠️ 此前是 `phase !== 'error'`:首次拉取失败就把时间线**和输入框**一起藏掉。
           缓存里有东西时那是白藏；重试耗尽走统一出口，内容照常给。 */}
+      <div className={appKind === PHONE_TASK_BROWSER ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
       {(
         <SessionConversation
           agentName={shownName}
@@ -333,6 +335,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
         />
       )}
 
+      </div>
+      {appKind === PHONE_TASK_BROWSER && <PhoneTaskBrowser key={`${device.device_id}:${session.conversationId}`} deviceId={device.device_id} sessionId={session.conversationId} onSent={() => setAppKind(null)} />}
       <SessionActions menu={sessionMenu} onArchived={onBack} />
     </AgentWatchScreen>
   )

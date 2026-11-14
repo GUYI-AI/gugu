@@ -77,6 +77,21 @@ describe('an App projection watched from another computer (#1607 node 5)', () =>
     viewer.close();
   });
 
+  it('returns the selected page evidence and capture through the same authenticated watch', async () => {
+    const inspection = { target: { url: 'https://example.org/', selector: '#intro', targetPath: 'p#intro',
+      rect: { x: 40, y: 20, width: 120, height: 40 }, viewport: { width: 800, height: 600, scrollX: 0, scrollY: 0 }, text: 'Selected evidence' },
+      screenshot: 'data:image/png;base64,cGFnZQ==' };
+    const control = vi.fn(async () => inspection);
+    twoComputers({}, undefined, async () => ({ receive: async () => {}, control, close: () => {} }));
+    const viewer = await watchRemoteProjection('device-d22', { session: 'task-on-d22', page: true }, () => {});
+    const selection = { action: 'annotate' as const, query: { x: 0.25, y: 0.25, width: 0, height: 0 }, capture: true };
+    expect(await viewer.control(selection)).toEqual(inspection);
+    expect(control).toHaveBeenCalledWith(selection);
+    await expect(viewer.control({ ...selection, query: { x: -1, y: 0, width: 0, height: 0 } })).rejects.toMatchObject({ code: 'invalid_payload' });
+    expect(control).toHaveBeenCalledTimes(1);
+    viewer.close();
+  });
+
   it('pictures come back one at a time; acknowledged input reaches the source on that machine', async () => {
     const c = twoComputers();
     const packets: ProjectionHostPacket[] = [];

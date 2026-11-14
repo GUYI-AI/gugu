@@ -1,3 +1,4 @@
+import { browserAnnotationSpaceChannel } from '@shared/events/browserEvents';
 import { showContentContextMenu } from '../../../../content-context-menu';
 import { showEditableContextMenu } from '../../../../editable-context-menu';
 import type { ContentMenuEntry } from '@shared/content-context-menu';
@@ -99,6 +100,8 @@ export class BrowserWebContentsRegistry {
   /** The existing native guest shortcut path, shared by browser and App surfaces. */
   bindAppShortcuts(contents: WebContents, onCommand: (id: CommandId) => boolean, onTab?: (direction: 'next' | 'previous') => boolean): void {
     contents.on('before-input-event', (event, input) => {
+      const browserId = this.browserIdByWebContentsId.get(contents.id);
+      if (browserId && (input.code === 'Space' || input.key === ' ') && input.type === 'keyUp') events.emit(browserAnnotationSpaceChannel, { browserId, pressed: false });
       const direction = getElectronTabNavigationDirection(input);
       if (direction && onTab?.(direction)) { event.preventDefault(); return; }
       const command = getBrowserShortcutKey(input, this.browserShortcuts);
