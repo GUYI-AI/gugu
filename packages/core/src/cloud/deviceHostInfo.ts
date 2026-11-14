@@ -53,7 +53,7 @@ export function linuxNameFromOsRelease(text: string): string | null {
   for (const line of text.split(/\r?\n/)) {
     const match = line.match(/^([A-Z_]+)=(.*)$/)
     if (!match) continue
-    fields.set(match[1], match[2].trim().replace(/^(["'])(.*)\1$/, '$2'))
+    fields.set(match[1], match[2].trim().replace(/^(["'])(.*)\1$/, (_, quote: string, body: string) => quote === '"' ? body.replace(/\\([\\"$`])/g, '$1') : body))
   }
   const pretty = fields.get('PRETTY_NAME')
   if (pretty) return pretty

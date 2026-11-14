@@ -10,3 +10,5 @@ const summary = () => ({ v:1,timezone:'UTC',generated_at:'',range:{start_date:''
 it('rejects case-insensitive audio and video resource MIME', () => { expect(resourceRejection({ name:'unknown', size:1, type:' Audio/ogg; codecs=opus ' })).toBe('unsupported'); expect(resourceRejection({ name:'unknown', size:1, type:'Video/MP4' })).toBe('unsupported') })
 
 it('rejects backslashes in single-segment resource folder names', () => { expect(folderNameProblem('parent\\child')).toBe('slash'); expect(folderNameProblem('notes')).toBeNull() })
+
+it('decodes escaped quotes in os-release pretty names', () => { expect(linuxNameFromOsRelease("PRETTY_NAME=\"Example \\\"OS\\\"\"")).toBe('Example "OS"') })
