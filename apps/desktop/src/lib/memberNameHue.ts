@@ -10,7 +10,7 @@ export function memberNameHue({ id, avatar, isAgent, assistantLook }: {
   assistantLook?: AgentLook
 }): number {
   const identityHue = BODY_COLORS[resolveAgentLook(id, avatar).color].hue
-  if (!id?.trim() || (avatar != null && !isBuiltinAgentAvatarUrl(avatar))) return identityHue
+  if (!id?.trim() || (avatar != null && (!isAgent || !isBuiltinAgentAvatarUrl(avatar)))) return identityHue
   if (isAgent && assistantLook) return BODY_COLORS[assistantLook.color].hue
   return BODY_COLORS[avatarColorIndex(id)].hue
 }

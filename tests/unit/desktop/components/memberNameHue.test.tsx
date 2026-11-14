@@ -73,6 +73,10 @@ describe('sender-name avatar hue', () => {
     expect(hue()).toBe(BODY_COLORS[index].hue)
   })
 
+  it('keeps the hue of an explicitly selected built-in human poster', () => {
+    expect(memberNameHue({ id: agents[0], avatar: savedLook('sakura'), isAgent: false })).toBe(BODY_COLORS[9].hue)
+  })
+
   it('tracks the assistant saved look through the same directory subscription used by its avatar', async () => {
     const id = agents[0]
     publishAssistantShell({ assistant: { id } } as AssistantShellSnapshot)
