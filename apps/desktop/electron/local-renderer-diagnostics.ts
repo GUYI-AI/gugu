@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, renameSync, statSync, unlinkSync
 import { dirname, join } from 'node:path'
 import { LOCAL_DIAGNOSTICS_SCOPE, MEMORY_SAMPLE_INTERVAL, sanitizeDiagnosticFields } from '../shared/local-renderer-diagnostics'
 import { createLogger, currentLogFile, writeRendererLog } from './lib/logger'
+import { TYPING_DIAGNOSTICS_SCOPE } from '../shared/beta-typing-diagnostics'
 
 interface Sender { id: number; getOSProcessId(): number }
 interface Metric { pid: number; memory: { workingSetSize: number; peakWorkingSetSize?: number }; cpu?: { cumulativeCPUUsage?: number } }
@@ -11,16 +12,22 @@ interface Dependencies {
   regular?: typeof writeRendererLog
   maxBytes?: number
   onError?: () => void
+  typing?: (sender: Sender, fields: unknown) => unknown
 }
 
 /** Dedicated rotating file: never part of feedback:log-tail, stdout, or an upload path. */
 export function createRendererLogForwarder(deps: Dependencies) {
   const budgets = new WeakMap<Sender, { start: number; count: number; dropped: number; memoryAt: number }>()
   let reportedFailure = false
-  return (sender: Sender, payload: unknown): void => {
+  return (sender: Sender, payload: unknown, mainFrame = false): unknown => {
     try {
-      const source = { rendererPid: sender.getOSProcessId(), webContentsId: sender.id }
       const p = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {}
+      if (p.scope === TYPING_DIAGNOSTICS_SCOPE) {
+        if (!mainFrame) return { enabled: false, accepted: false }
+        try { return deps.typing?.(sender, p.fields) ?? { enabled: false, accepted: false } }
+        catch { return { accepted: false, reason: 'storage' } }
+      }
+      const source = { rendererPid: sender.getOSProcessId(), webContentsId: sender.id }
       if (p.scope !== LOCAL_DIAGNOSTICS_SCOPE) {
         (deps.regular ?? writeRendererLog)(payload, source)
         return
