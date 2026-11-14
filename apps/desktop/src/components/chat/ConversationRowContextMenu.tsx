@@ -1,9 +1,16 @@
 import { useTranslation } from 'react-i18next'
-import { BellOff, CheckCircle, EyeOff, MoreHorizontal, PanelLeftClose, Pin, Trash } from '@/lib/icons'
+import { BellOff, CheckCircle, Eye, MoreHorizontal, PanelLeftClose, Pin, Trash } from '@/lib/icons'
 import { Menu, MenuFold, MenuItem, MenuSeparator } from '../ui/Menu'
 import { conversationRowMenu, type ConversationRowAction, type ConversationRowMenuState } from '../../session/shared/conversation-row-menu'
 
-const icons = { read: CheckCircle, pin: Pin, sidebar: PanelLeftClose, notifications: BellOff, hide: EyeOff, trash: Trash }
+function HideIcon({ size }: { size: number }) {
+  return <span aria-hidden className="relative inline-flex">
+    <Eye size={size} />
+    <span className="pointer-events-none absolute inset-x-0 top-1/2 -rotate-45 border-t-[1.5px] border-current" />
+  </span>
+}
+
+const icons = { read: CheckCircle, pin: Pin, sidebar: PanelLeftClose, notifications: BellOff, hide: HideIcon, trash: Trash }
 
 export function ConversationRowContextMenu({ x, y, state, onClose, onAction, loadError }: {
   x: number
