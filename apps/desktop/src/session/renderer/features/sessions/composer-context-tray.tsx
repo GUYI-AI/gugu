@@ -15,7 +15,7 @@ import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
 import { ProjectCreationMenuItems } from '@renderer/features/projects/components/project-creation-menu-items';
 import { RemoteProjectMenuItems } from '@renderer/features/sidebar/remote-project-menu-items';
-import { FolderlessProjectItem } from '@renderer/features/projects/components/folderless-project-item';
+import { ProjectPickerItem } from '@renderer/features/projects/components/project-picker-item';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { AccountProjectsError } from '@renderer/features/projects/components/account-projects-error';
 import {
@@ -123,7 +123,7 @@ export const ComposerProjectPicker = observer(function ComposerProjectPicker({
                 </div>
               ) : null}
               {visibleProjects.map((p) => (
-                <AccountProjectItem key={p.chatId} project={p} twin={twins.has(p.chatId)} onSelect={onSelect} />
+                <ProjectPickerItem key={p.chatId} project={p} twin={twins.has(p.chatId)} onSelect={onSelect} />
               ))}
             </div>
             <NewProjectSubmenu onProjectReady={onSelect} />
@@ -131,31 +131,6 @@ export const ComposerProjectPicker = observer(function ComposerProjectPicker({
         )}
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-});
-
-/**
- * 选择器里的一个项目:这一端项目表里有它的本地项目 = 选它的代表(去项目块);一个都没有 = › 里给它挂第一个文件夹。
- */
-const AccountProjectItem = observer(function AccountProjectItem({
-  project,
-  twin,
-  onSelect,
-}: {
-  project: AccountProject;
-  twin: boolean;
-  onSelect: (projectId: string) => void;
-}) {
-  const representative = accountProjectsStore.representativeOf(project.chatId);
-  if (!representative) return <FolderlessProjectItem project={project} onProjectReady={onSelect} />;
-  // 同名的两个项目带上代表那一个的路径区分,与侧栏同一个判据;不同名不带。
-  const path = twin ? getProjectStore(representative)?.data?.path : undefined;
-  return (
-    <DropdownMenuItem onClick={() => onSelect(representative)} title={path} data-chat-id={project.chatId}>
-      <Folder className="size-3.5" />
-      <span className="truncate">{project.name || projectDisplayName(getProjectStore(representative)) || representative}</span>
-      {path ? <small className="ml-auto min-w-0 max-w-[55%] shrink truncate pl-3 text-foreground-passive">{path}</small> : null}
-    </DropdownMenuItem>
   );
 });
 

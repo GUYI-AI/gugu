@@ -230,6 +230,20 @@ vi.mock('@renderer/features/projects/stores/account-projects-store', async (impo
   return { ...actual, accountProjectsStore };
 });
 
+// 项目选择器 › 里列的文件夹来自 useProjectPickerFolders(要问各台机器):这里给每个项目一个它所在设备上的根文件夹,
+// `mocks.folderListFor` 想换成别的(没有文件夹 / 只在离线设备上)时覆盖。
+vi.mock('@renderer/features/projects/components/project-picker-folders', async () => {
+  const { machineRegistry } = await import('@renderer/lib/machine-routing');
+  return {
+    useProjectPickerFolders: (rowId: string) => {
+      const folders = (mocks as unknown as { folderListFor?: (id: string) => unknown[] }).folderListFor?.(rowId)
+        ?? [{ workspaceId: `ws-${rowId}`, projectId: rowId, kind: 'root', path: `/work/${rowId}`, branch: null, sessionIds: [], attachedAt: null,
+          offline: false, deviceId: machineRegistry.machineOf(rowId) ?? null }];
+      return { folders, readFailed: false, reading: false };
+    },
+  };
+});
+
 const runMachineCloud = vi.hoisted(() => ({ remember: vi.fn(async () => ({})) }));
 vi.mock('@/lib/agentCreateDefaults', () => ({
   readAgentCreateDefaults: async () => ({ deviceId: null, projectByDevice: {}, projectByChat: {}, machineByProject: {} }),
@@ -710,9 +724,9 @@ describe('NewSessionPage', () => {
     mocks.orderedProjects = [{ id: 'project-1', state: 'mounted' }];
     await renderPage();
 
-    const projectItem = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'project-1'
-    );
+    // 点 › 里这个项目的文件夹 = 选了项目(设备 · 文件夹)。
+    const projectItem = container.querySelector<HTMLButtonElement>('[data-workspace-id="ws-project-1"]');
+    expect(projectItem).not.toBeNull();
     await act(async () => projectItem?.click());
 
     expect(mocks.createSessionStateProjectId).toBe('project-1');
@@ -724,11 +738,9 @@ describe('NewSessionPage', () => {
     mocks.orderedProjects = [{ id: 'project-1', state: 'mounted' }];
     mocks.prompt = '继续实现这一段';
     await renderPage();
-    const projectItem = Array.from(container.querySelectorAll('[role="menuitem"]')).find(
-      (item) => item.textContent?.trim() === 'project-1'
-    ) as HTMLButtonElement;
-    expect(projectItem).toBeDefined();
-    await act(async () => projectItem.click());
+    const projectItem = container.querySelector<HTMLButtonElement>('[data-workspace-id="ws-project-1"]');
+    expect(projectItem).not.toBeNull();
+    await act(async () => projectItem!.click());
     expect(mocks.navigate).toHaveBeenCalledWith('project', { projectId: 'project-1' });
     await act(async () => root.render(localized()));
     mocks.prompt = null;
@@ -784,7 +796,7 @@ describe('NewSessionPage', () => {
     try {
       runMachineCloud.remember.mockClear();
       await renderPage();
-      const pick = (name: string) => Array.from(container.querySelectorAll('[role="menuitem"]')).find((item) => item.textContent?.trim() === name) as HTMLButtonElement;
+      const pick = (name: string) => container.querySelector<HTMLButtonElement>(`[data-workspace-id="ws-${name}"]`)!;
       await act(async () => pick('project-1').click());
       expect(await runMachineOf('project-1')).toBeNull();
       // The probe replaced the page in this root; the page opens again with the machine picked first.
@@ -800,8 +812,9 @@ describe('NewSessionPage', () => {
     }
   });
 
-  // 项目与机器解耦:账号上一个文件夹都没有的项目也列出来(identity.list_my_projects),› 里是给它挂第一个文件夹的机器。
-  it('lists an account project that has no folder on any machine, with machines to give it one', async () => {
+  // 项目与机器解耦:账号上一个文件夹都没有的项目也列出来(identity.list_my_projects)。每个项目都有 ›:有文件夹的列「设备 · 路径」,
+  // 没有能用文件夹的给「在某台设备上选文件夹」;绑在这一端没加载的设备上的,列成灰的「暂不可用」,而不是当成没有文件夹。
+  it('lists an account project that has no folder on any machine, with a way to give it one', async () => {
     const { accountProjectsStore } = await import('@renderer/features/projects/stores/account-projects-store');
     (accountProjectsStore as unknown as { extra: AccountProject[] }).extra = ([
       { chatId: 'chat-empty', name: 'paper', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [] },
@@ -811,10 +824,18 @@ describe('NewSessionPage', () => {
     try {
       mocks.orderedProjects = [{ id: 'project-1', state: 'mounted' }];
       await renderPage();
-      const folderless = Array.from(container.querySelectorAll('[data-testid="folderless-project"]'));
-      // No folder anywhere, or a folder only on a machine that is not loaded here: both bind a first folder (›); archived ones are not listed.
-      expect(folderless.map((item) => item.textContent?.trim())).toEqual(['paper', 'bound']);
-      expect(folderless[0]?.getAttribute('data-chat-id')).toBe('chat-empty');
+      const rows = Array.from(container.querySelectorAll('[data-testid="project-picker-item"]'));
+      // Archived ones are not listed; every listed project has a ›.
+      expect(rows.map((item) => item.getAttribute('data-chat-id'))).toEqual(['chat-project-1', 'chat-empty', 'chat-bound']);
+      // No binding anywhere says so; a folder only on a device that is not loaded here is not "no folder".
+      expect(rows[1]?.textContent).toContain('还没有文件夹');
+      expect(rows[2]?.textContent).not.toContain('还没有文件夹');
+      const unavailable = container.querySelector('[role="menuitem"][data-device-id="d"][disabled]');
+      expect(unavailable?.textContent).toContain('暂不可用');
+      // Neither has a usable folder, so each offers to pick one on a machine ("pick a folder", not just a machine name).
+      const pickOn = Array.from(container.querySelectorAll('[data-testid="project-pick-folder-on"]'));
+      expect(pickOn.length).toBeGreaterThanOrEqual(2);
+      expect(pickOn[0]?.textContent).toContain('选文件夹');
     } finally {
       (accountProjectsStore as unknown as { extra: AccountProject[] }).extra = [];
     }
@@ -825,9 +846,7 @@ describe('NewSessionPage', () => {
     mocks.orderedProjects = [{ id: 'project-1', state: 'mounted' }];
     mocks.prompt = '全局草稿';
     await renderPage();
-    const projectItem = Array.from(container.querySelectorAll('[role="menuitem"]')).find(
-      (item) => item.textContent?.trim() === 'project-1'
-    ) as HTMLButtonElement;
+    const projectItem = container.querySelector<HTMLButtonElement>('[data-workspace-id="ws-project-1"]')!;
     await act(async () => projectItem.click());
     expect(composerDrafts.get(projectDraftKey('project-1'))).toBe('项目原来的草稿');
     expect(composerDrafts.get(NEW_SESSION_DRAFT_KEY)).toBe('全局草稿');
@@ -864,9 +883,7 @@ describe('NewSessionPage', () => {
     expect(container.querySelector('[data-testid="active-task-composer"]')).not.toBeNull();
 
     // 换一个项目 = 去那个项目的页面。
-    const other = Array.from(container.querySelectorAll('[role="menuitem"]')).find(
-      (item) => item.textContent?.trim() === 'project-2'
-    ) as HTMLButtonElement;
+    const other = container.querySelector<HTMLButtonElement>('[data-workspace-id="ws-project-2"]')!;
     await act(async () => other.click());
     expect(mocks.navigate).toHaveBeenCalledWith('project', { projectId: 'project-2' });
   });
@@ -924,10 +941,13 @@ describe('NewSessionPage', () => {
       expect(listed.map((item) => [item.getAttribute('data-chat-id'), item.textContent?.trim()])).toEqual([
         ['chat-project-1', 'project-1'],
         ['chat-project-offline', 'project-offline'],
-        ['chat-empty', 'paper'],
+        ['chat-empty', 'paper还没有文件夹'],
       ]);
-      expect(listed[2]?.getAttribute('data-testid')).toBe('folderless-project');
-      await act(async () => (listed[1] as HTMLButtonElement).click());
+      expect(listed.map((item) => item.getAttribute('data-testid'))).toEqual(['project-picker-item', 'project-picker-item', 'project-picker-item']);
+      // Picking a folder in › selects the project (the folder's device and path are what the row says).
+      const folder = container.querySelector<HTMLButtonElement>('[data-workspace-id="ws-project-offline"]')!;
+      expect(folder.getAttribute('data-device-id')).toBe('device-off');
+      await act(async () => folder.click());
       expect(onSelect).toHaveBeenCalledWith('project-offline');
     } finally {
       act(() => {

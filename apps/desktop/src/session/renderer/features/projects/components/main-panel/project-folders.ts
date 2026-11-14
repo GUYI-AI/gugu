@@ -26,6 +26,11 @@ export type ShownFolder = ProjectFolder & { offline: boolean; deviceId: string |
 
 /** 每个项目(按代表那一行的 id)「新会话从哪个文件夹开工」:切走再回来还在;没选过 = 代表行的根目录。 */
 const folderChoice = new Map<string, string>();
+/** 在项目选择器里点中某个文件夹:新任务就从它开工(之后项目块读的是同一份选择)。 */
+export function rememberFolderChoice(rowId: string, workspaceId: string): void {
+  folderChoice.set(rowId, workspaceId);
+}
+
 /** 刚挂上的文件夹(这一页里标「刚挂上」、排在最前)。 */
 const freshFolders = new Map<string, string>();
 
@@ -232,14 +237,22 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
   useEffect(() => {
     const ids = new Set(membersKey.split('\u0000'));
     const machines = new Set([...ids].map((id) => machineRegistry.machineOf(id)));
-    const offs = [...machines].flatMap((machine) => [
-      onMachineEvent(machine, projectFoldersChangedChannel, ({ projectId: changed }) => {
-        if (ids.has(changed)) bump();
-      }),
-      onMachineEvent(machine, projectGroupBindingChangedChannel, () => bump()),
-    ]);
+    const offs = [...machines].flatMap((machine) => {
+      // 那台机器此刻没有连接(离线 / 还没连上):没有什么可订的,连上之后 connectionKey 变了会再订一次;❌ 让一台离线的机器把整页(项目选择器的 ›)画崩。
+      try {
+        return [
+          onMachineEvent(machine, projectFoldersChangedChannel, ({ projectId: changed }) => {
+            if (ids.has(changed)) bump();
+          }),
+          onMachineEvent(machine, projectGroupBindingChangedChannel, () => bump()),
+        ];
+      } catch (error) {
+        log.warn('[project-folders] 订不上这台机器的文件夹变动', { machine, error });
+        return [];
+      }
+    });
     return () => offs.forEach((off) => off());
-  }, [membersKey, bump]);
+  }, [membersKey, bump, connectionKey]);
 
   const choose = useCallback(
     (workspaceId: string) => {
