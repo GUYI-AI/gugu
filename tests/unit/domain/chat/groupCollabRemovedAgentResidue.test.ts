@@ -32,7 +32,7 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
   dataClient: {
     channel: vi.fn(),
     removeChannel: vi.fn(),
-    realtime: { setAuth: vi.fn() },
+    realtime: { isConnected: () => true, connect: () => undefined, setAuth: vi.fn() },
     schema: schemaMock,
   },
   chatDb: chatDbMock,

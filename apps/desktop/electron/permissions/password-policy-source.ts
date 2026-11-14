@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { anySignal } from '@gugu/core/shared/anySignal'
 import { isSubscribeFailure, subscribeStatusName } from '@gugu/core/cloud/deviceRpcProtocol'
-import { subscribeAuthenticatedElectronRealtimeChannel, type ElectronManagedRealtimeChannel } from '../realtime-channel'
+import { subscribeAuthenticatedElectronRealtimeChannel, type ElectronManagedRealtimeChannel, type ElectronRealtimeSocket } from '../realtime-channel'
 import { passwordUnavailable, type LivePasswordFact } from './password-facts'
 import type { PasswordPermissionCaller } from './password-policy'
 import type { ServicePermissionPolicyStore } from './policy-store'
@@ -12,7 +12,7 @@ type SettingsChannel = ElectronManagedRealtimeChannel & {
   on(kind: 'broadcast', filter: { event: string }, callback: (event: unknown) => void): unknown
 }
 type RealtimeClient<T> = {
-  realtime: { setAuth(): unknown | Promise<unknown> }
+  realtime: ElectronRealtimeSocket
   getChannels(): readonly { topic: string }[]
   channel(topic: string, options: { config: { private: boolean } }): T
   removeChannel(channel: T): unknown
@@ -31,7 +31,8 @@ export async function createPasswordPolicySource<T>({ ownerId, store, supabase, 
   if (!/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(ownerId)
     || !(lifetime instanceof AbortSignal) || lifetime.aborted || typeof supabase.getChannels !== 'function') throw passwordUnavailable()
   const read = store.read.bind(store), channel = supabase.channel.bind(supabase)
-  const removeChannel = supabase.removeChannel.bind(supabase), setAuth = supabase.realtime.setAuth.bind(supabase.realtime)
+  const removeChannel = supabase.removeChannel.bind(supabase), socket = supabase.realtime
+  const realtime: ElectronRealtimeSocket = { setAuth: socket.setAuth.bind(socket), isConnected: socket.isConnected.bind(socket), connect: socket.connect.bind(socket) }
   const getChannels = supabase.getChannels.bind(supabase), topic = `gugu:user:${ownerId}:events`
   let joined = false, writing = false, disposed = false, unreliable = false
   let generation = randomUUID(), revision = new AbortController(), physical = 0
@@ -76,7 +77,7 @@ export async function createPasswordPolicySource<T>({ ownerId, store, supabase, 
     return value
   }
   try {
-    unsubscribe = await subscribeAuthenticatedElectronRealtimeChannel({ realtime: { setAuth },
+    unsubscribe = await subscribeAuthenticatedElectronRealtimeChannel({ realtime,
       removeChannel: value => removeChannel(value as T) }, createChannel(), {
       label: `password-policy:${ownerId}`, createChannel,
       onUnavailable() { joined = false; invalidate() },

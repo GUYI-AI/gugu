@@ -28,7 +28,7 @@ import {
 } from '@gugu/core/cloud/deviceRpcProtocol'
 import type { DeviceRpcAskerContext, PublishDeviceRpcEvent, PublishDeviceRpcReply } from '@gugu/core/cloud/deviceRpcResponder'
 import { MIN_CLIENT_PROTOCOL, REMOTE_PROTOCOL_VERSION } from '@gugu/core/cloud/serverMachineHealth'
-import type { ElectronManagedRealtimeChannel } from './realtime-channel'
+import type { ElectronManagedRealtimeChannel, ElectronRealtimeSocket } from './realtime-channel'
 import { sendBroadcast, subscribeAuthenticatedElectronRealtimeChannel } from './realtime-channel'
 
 type RpcChannel = {
@@ -38,7 +38,7 @@ type RpcChannel = {
 }
 
 type RpcSupabaseClient<TChannel> = {
-  realtime: { setAuth: () => unknown | Promise<unknown> }
+  realtime: ElectronRealtimeSocket
   channel: (topic: string, options: { config: { private: boolean; broadcast: { self: boolean; ack: boolean } } }) => TChannel
   removeChannel: (channel: TChannel) => unknown
 }

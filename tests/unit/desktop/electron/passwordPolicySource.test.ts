@@ -23,7 +23,7 @@ async function fixture(ownerId = randomUUID()) {
     channels.push(value); return value
   })
   const store = { read }, source = await createPasswordPolicySource({ ownerId, store: store as unknown as ServicePermissionPolicyStore,
-    supabase: { channel, getChannels: () => channels, removeChannel: vi.fn(), realtime: { setAuth: vi.fn() } }, lifetime: lifetime.signal })
+    supabase: { channel, getChannels: () => channels, removeChannel: vi.fn(), realtime: { isConnected: () => true, connect: () => undefined, setAuth: vi.fn() } }, lifetime: lifetime.signal })
   sources.push(source)
   const caller = { ownerId, subjectId: 'agent', sessionId: 'session', installationId: 'install', deviceId: 'device', toolScope: 'gugu' }
   const status = (value: string) => options.onStatus!(value)
@@ -37,7 +37,7 @@ describe('live policy from the existing private settings bus', () => {
   it('refuses an already owned account bus before attaching, subscribing or removing it', async () => {
     const ownerId = randomUUID(), channel = vi.fn(), removeChannel = vi.fn(), before = transport.subscribe.mock.calls.length
     await expect(createPasswordPolicySource({ ownerId, store: { read: vi.fn() } as unknown as ServicePermissionPolicyStore,
-      supabase: { channel, getChannels: () => [{ topic: `realtime:gugu:user:${ownerId}:events` }], removeChannel, realtime: { setAuth: vi.fn() } },
+      supabase: { channel, getChannels: () => [{ topic: `realtime:gugu:user:${ownerId}:events` }], removeChannel, realtime: { isConnected: () => true, connect: () => undefined, setAuth: vi.fn() } },
       lifetime: new AbortController().signal })).rejects.toThrow('password_permission_unavailable')
     expect(channel).not.toHaveBeenCalled(); expect(removeChannel).not.toHaveBeenCalled()
     expect(transport.subscribe.mock.calls.length).toBe(before)

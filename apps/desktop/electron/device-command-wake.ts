@@ -1,5 +1,5 @@
 import type { SubscribeDeviceCommandWake } from '@gugu/core'
-import type { ElectronManagedRealtimeChannel } from './realtime-channel'
+import type { ElectronManagedRealtimeChannel, ElectronRealtimeSocket } from './realtime-channel'
 import { subscribeAuthenticatedElectronRealtimeChannel } from './realtime-channel'
 import { isSubscribeFailure, subscribeStatusName } from '@gugu/core/cloud/deviceRpcProtocol'
 
@@ -10,9 +10,7 @@ type WakeChannel = {
 }
 
 type WakeSupabaseClient<TChannel> = {
-  realtime: {
-    setAuth: () => unknown | Promise<unknown>
-  }
+  realtime: ElectronRealtimeSocket
   channel: (
     topic: string,
     options: { config: { private: boolean; broadcast: { self: boolean; ack: boolean } } }

@@ -24,7 +24,7 @@ function fakeSupabase() {
       return 'ok';
     },
   };
-  return { sent, supabase: { realtime: { setAuth: () => undefined }, channel: () => channel, removeChannel: () => undefined } };
+  return { sent, supabase: { realtime: { isConnected: () => true, connect: () => undefined, setAuth: () => undefined }, channel: () => channel, removeChannel: () => undefined } };
 }
 
 describe('device RPC subscription: host ready', () => {

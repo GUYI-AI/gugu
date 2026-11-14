@@ -18,7 +18,7 @@ vi.mock('../../../../supabase', () => ({
   createElectronRealtimeClient: (token: () => Promise<string | null>) => {
     const client = {
       token, channels: [] as (typeof state.clients)[number]['channels'], disconnect: vi.fn(), removeChannel: vi.fn(),
-      realtime: { disconnect: () => client.disconnect(), setAuth: vi.fn() },
+      realtime: { isConnected: () => true, connect: () => undefined, disconnect: () => client.disconnect(), setAuth: vi.fn() },
       channel(topic: string, options: unknown) {
         const channel = { topic, options, on: vi.fn(), fire: undefined as ((message: unknown) => void) | undefined };
         channel.on.mockImplementation((_kind: string, _filter: unknown, fn: (message: unknown) => void) => { channel.fire = fn; return channel; });

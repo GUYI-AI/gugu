@@ -11,7 +11,7 @@ function harness() {
     unsubscribe: ReturnType<typeof vi.fn>
   }> = []
   const supabase = {
-    realtime: { setAuth: vi.fn(async () => undefined) },
+    realtime: { isConnected: () => true, connect: () => undefined, setAuth: vi.fn(async () => undefined) },
     channel: vi.fn(() => {
       const channel: typeof channels[number] = {
         on: vi.fn((_kind, _filter, callback) => { channel.event = callback; return channel }),
