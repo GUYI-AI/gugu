@@ -25,7 +25,7 @@ import {
 import { publishPanelToggle } from '@/lib/panelToggles';
 import { readShellSlots } from '@/lib/shellSlots';
 import { chatBlockOnScreen } from '@renderer/features/chats/group-participant-actions';
-import { openChatOnScreen } from '@renderer/features/chats/open-chat';
+import { navigateToGroupRoot } from '@renderer/app/screen-layout-actions';
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
@@ -444,16 +444,16 @@ const InnerHeadRow = observer(function InnerHeadRow({
   const name = summary?.name ?? '';
   // 项目的代表本地项目(与侧栏那一行同一个);一个文件夹都没有的项目没有 —— 新智能体走群那一条,封面按群取色(同 partnerProjects)。
   const rowProjectId = anchor.kind === 'project' ? accountProjectsStore.representativeOf(chatId) : undefined;
-  // 同输入框「+」右边那个「新任务」:项目走项目行「+」那一条(prepareProjectTask),群把这个群的框换成新任务。
+  // 同输入框「+」右边那个「新任务」:项目走项目行「+」那一条(prepareProjectTask),群把这个群的框换成新任务;都回到群本身(navigateToGroupRoot)。
   const newAgent = () => {
     if (rowProjectId) prepareProjectTask(rowProjectId);
     else setComposerVerb(chatId, 'task', '', { name, joinable: true, inGroup: true });
-    openChatOnScreen(chatId, false);
+    navigateToGroupRoot(chatId);
   };
   // #2600 项目群和别的群一样戴群自己的头像(没设 = 成员拼图),❌ 文件夹封面。
   const avatar: ReactNode = <GroupHeadAvatar chatId={chatId} summary={summary} />;
   return (
-    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => openChatOnScreen(chatId, false)} trailingButtons={1}
+    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => navigateToGroupRoot(chatId)} trailingButtons={1}
       // 这一列只为看的人在的群画,在群里就能添加成员(groupInviteAccess.showInvite = 来源群的成员;项目群里那一页只加自己的 agent)。
       hoverButton={<GroupAddMenu chatId={chatId} canAddMembers onNewAgent={newAgent} size="sm" />}>
       <InnerSidebarFoldButton />
