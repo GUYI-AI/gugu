@@ -291,8 +291,8 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
     hasNewer: messageWindow.hasNewer, loading: !!messageWindow.loading, isPreservingPosition, isAtBottomRef, setFollowingTail })
   useChatHistoryPagination({ resetKey: chatResetKey, messages, enabled: visible !== false && !unreadNavigationPending,
     scroller: scrollerEl, atBottom: viewportAtBottom, loadOlder: history.loadOlderMessages, loadNewer: history.loadNewerMessages, window: messageWindow, onError: onHistoryError })
-  const { pinToBottom, onTotalListHeightChanged } = useTailPinning({ resetKey: chatResetKey, messages,
-    enabled: visible !== false && !unreadNavigationPending, messageWindow, scrollerEl, scrollerRef, listRef, isAtBottomRef,
+  const { pinToBottom } = useTailPinning({ resetKey: chatResetKey, messages,
+    enabled: visible !== false && !unreadNavigationPending, messageWindow, scrollerRef, listRef, isAtBottomRef,
     isPreservingPosition, prepareForSavedPosition, forgetSavedPosition, returnToLatest: history.returnToLatestMessages, onError: onHistoryError })
   const showMessage = useSourceMessageReveal({
     viewportKey, navigationTarget, enabled: visible !== false,
@@ -403,7 +403,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
               unreadAbove={history.unreadEntry ? { messageId: history.unreadEntry.locator.message_id, messageSeq: history.unreadEntry.locator.message_seq,
                 label: t('chatArea.unreadAbove', { count: unreadAboveCount(history.unreadEntry.locator, messages) }), onSeen: history.unreadEntry.onSeen, onJump: () => void history.jumpToUnreadEntry(scrollerRef.current).catch(onHistoryError) } : null}
               onAtBottomChange={onAtBottomChange}
-              onTotalListHeightChanged={onTotalListHeightChanged}
               style={MESSAGE_LIST_STYLE}
               surface="aside"
             />
