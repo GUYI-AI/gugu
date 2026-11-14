@@ -23,7 +23,7 @@ import { ComposerAttachButton } from './ComposerAttachButton'
 import { PhoneAttachPanel, type PhoneAttachEntry } from './PhoneAttachPanel'
 import { compressPhoto } from './compressPhoto'
 import { IconButton } from '../ui/IconButton'
-import { Camera, Image, Paperclip, Plus } from '@/lib/icons'
+import { Camera, Image, Paperclip } from '@/lib/icons'
 import { ComposerVerbs } from './ComposerVerbs'
 import { useComposerVerbTakeover } from './useComposerVerbTakeover'
 import { ChatComposerContextBands } from './ChatComposerContextBands'
@@ -76,7 +76,7 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
-  // 手机「+」面板开着没有。
+  // 手机附件面板。
   const [attachOpen, setAttachOpen] = useState(false)
   const isMain = surface === 'main'
   const inChatSlot = useInChatSlot()
@@ -189,14 +189,14 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
           onAttachmentQualityChange={(id) => setAttachments((pending) => pending.map((item) => item.id === id && item.photo ? { ...item, file: item.file === item.photo.compressed ? item.photo.original : item.photo.compressed } : item))}
           toolbarExtra={<>{mobile
             ? <IconButton shape="pill" size="md" title={t('composer.attach')} aria-label={t('composer.attach')} aria-expanded={attachOpen} disabled={disabled} data-testid="chat-composer-attach-menu"
-                onClick={() => { inputRef.current?.blur(); setAttachOpen((open) => !open) }}>{attachGlyph ?? <Plus />}</IconButton>
+                onClick={() => { inputRef.current?.blur(); setAttachOpen((open) => !open) }}><Paperclip /></IconButton>
             : <ComposerAttachButton glyph={attachGlyph} actions={attachMenu} disabled={disabled} mobile={mobile} onPickFile={() => fileInputRef.current?.click()} />}{isMain && !mobile && !props.conversation && <ComposerVerbs chatId={chatId} isGroupChat={!!isGroupChat} draft={() => editorApiRef.current?.getText() ?? ''} onCarried={() => writeDraft(chatId, '')} />}</>}
           className={inChatSlot ? sessionComposerDockedWidthClassName : undefined} />
         {mobile && attachOpen && <PhoneAttachPanel onClose={() => setAttachOpen(false)} entries={[
           { id: 'photos', label: t('composer.photos'), icon: <Image />, onSelect: () => photoInputRef.current?.click() },
           { id: 'camera', label: t('composer.camera'), icon: <Camera />, onSelect: () => cameraInputRef.current?.click() },
           { id: 'file', label: t('composer.file'), icon: <Paperclip />, onSelect: () => fileInputRef.current?.click() },
-          ...[...(attachMenu ?? []), ...(phoneTask.action ? [phoneTask.action] : [])].map((action): PhoneAttachEntry => ({ ...action, icon: action.icon ?? <Plus /> })),
+          ...[...(attachMenu ?? []), ...(phoneTask.action ? [phoneTask.action] : [])].map((action): PhoneAttachEntry => ({ ...action, icon: action.icon ?? <Paperclip /> })),
         ]} />}
       </div>
     </MessageProvider>
