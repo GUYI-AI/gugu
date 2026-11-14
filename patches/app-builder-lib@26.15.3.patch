@@ -132,7 +132,24 @@ index 053772f55ca6ece52f0a34c4fa0f05c9a5f07bd2..405e4b483a98045bd8b36044515e802e
 diff --git a/templates/nsis/include/installUtil.nsh b/templates/nsis/include/installUtil.nsh
 --- a/templates/nsis/include/installUtil.nsh
 +++ b/templates/nsis/include/installUtil.nsh
-@@ -105,6 +105,8 @@
+@@ -56,6 +56,8 @@
+   Pop "${Var}"
+ !macroend
+ 
++!ifmacrodef customInstallApplication
++!else
+ Function GetFileParent
+   Exch $R0
+   Push $R1
+@@ -80,6 +82,7 @@
+     Pop $R1
+     Exch $R0
+ FunctionEnd
++!endif
+ 
+ Var /GLOBAL isTryToKeepShortcuts
+ 
+@@ -105,6 +108,8 @@
    ${endif}
  !macroend
  
@@ -141,11 +158,8 @@ diff --git a/templates/nsis/include/installUtil.nsh b/templates/nsis/include/ins
  Function handleUninstallResult
    Var /GLOBAL rootKey_uninstallResult
    Exch $rootKey_uninstallResult
-@@ -137,6 +139,7 @@ FunctionEnd
+@@ -246,3 +251,4 @@
    Push "${ROOT_KEY}"
-   Call handleUninstallResult
+   Call uninstallOldVersion
  !macroend
 +!endif
- 
- # http://stackoverflow.com/questions/24595887/waiting-for-nsis-uninstaller-to-finish-in-nsis-installer-either-fails-or-the-uni
- Function uninstallOldVersion
