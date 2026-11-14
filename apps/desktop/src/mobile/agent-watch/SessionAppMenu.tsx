@@ -12,7 +12,7 @@ export function SessionAppMenu({ appKind, apps, onOpenApp, onConversation }: {
   if (!apps.length) return null
   const label = apps.find(app => app.kind === appKind)?.name ?? t('shell.chats')
   return <DropdownMenu.Root>
-    <DropdownMenu.Trigger render={<Button variant="ghost" size="sm">{appKind ? <AppWindow size={16} /> : <MessageCircle size={16} />}{label}</Button>} />
+    <DropdownMenu.Trigger render={<Button variant="ghost" size="sm" className="max-w-36" title={label}>{appKind ? <AppWindow size={16} /> : <MessageCircle size={16} />}<span className="min-w-0 truncate">{label}</span></Button>} />
     <DropdownMenu.Content align="end">
       <MenuItem icon={<MessageCircle size={16} />} checked={!appKind} onClick={onConversation}>{t('shell.chats')}</MenuItem>
       {apps.map(app => <MenuItem key={app.kind} icon={<AppWindow size={16} />} checked={appKind === app.kind} onClick={() => onOpenApp(app.kind)}>{app.name}</MenuItem>)}

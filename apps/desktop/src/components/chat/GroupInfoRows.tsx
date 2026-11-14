@@ -12,7 +12,9 @@ import { SettingsNavRow } from './groupSettingsUi'
 
 // 群信息主页上的两行:群成员(头像、「+」、人数)和这个群的文件夹。从 GroupMembersSection 拆出来,各自只做一件事。
 
-const memberStackStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', marginRight: 8 }
+// The faces give way on a narrow row: whole ones that do not fit wrap onto a second line this box does not show (paddingLeft
+// keeps the first face's -6px overlap inside it); 「+」 and the count keep their room.
+const memberStackStyle: CSSProperties = { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', minWidth: 0, height: 24, overflow: 'hidden', paddingLeft: 6, marginRight: 8 }
 const memberStackItemStyle: CSSProperties = { display: 'inline-flex', marginLeft: -6, borderRadius: 'var(--radius-circle)' }
 const inviteSlotStyle: CSSProperties = { display: 'inline-flex', marginRight: 8 }
 const MEMBER_PREVIEW_COUNT = 5
