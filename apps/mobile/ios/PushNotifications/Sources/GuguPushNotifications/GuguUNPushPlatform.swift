@@ -43,7 +43,11 @@ import UIKit
     }
 
     func didRegister(deviceToken: Data) {
-        guard let continuation = tokenContinuation else { onUnsolicitedCallback(); return }
+        guard let continuation = tokenContinuation else {
+            onUnsolicitedCallback()
+            NotificationCenter.default.post(name: Notification.Name("GuguAPNsTokenChanged"), object: nil)
+            return
+        }
         tokenContinuation = nil
         continuation.resume(returning: deviceToken)
     }

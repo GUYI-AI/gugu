@@ -369,6 +369,183 @@ final class DHostedRuntimeTests: XCTestCase {
         return try XCTUnwrap(envelope["data"] as? [String: Any])
     }
 }
+// Real EventKit acceptance; permission state is prepared externally on an owned simulator.
+extension DHostedRuntimeTests {
+    func testRealEventKitPermissionBoundary() throws {
+        let store = EventKitPhoneCalendarStore()
+        let expected = try XCTUnwrap(ProcessInfo.processInfo.environment["GUGU_E6_AUTHORIZATION"])
+        XCTAssertEqual(store.authorization.rawValue, expected)
+        let service = PhoneCalendarService(store: store)
+        let access = PhoneCalendarAccess(check: {}, beginWrite: { XCTFail("Denied write reached approval") }, finishWrite: { _ in XCTFail("Denied write committed") })
+        if store.authorization != .fullAccess {
+            for (method, args) in [("calendarList", ["start_ms": 1800000000000, "end_ms": 1800003600000] as [String: Any]),
+                ("calendarCreate", ["title": "Must not exist", "start_ms": 1800000000000]),
+                ("calendarUpdate", ["event_id": "missing", "title": "Must not change"]),
+                ("calendarDelete", ["event_id": "missing"])] {
+                XCTAssertThrowsError(try service.execute(method: method, arguments: args, access: access)) {
+                    XCTAssertEqual(($0 as? PhoneCalendarFailure)?.code, "os_permission")
+                }
+            }
+        }
+        let owner = "af6219fb-8c01-4a2e-891a-e76c6a904e69", installation = "c6607a9f-1b34-44a7-8b9d-16f8722edaee"
+        let binding = GuguIOSHostBinding(ownerId: owner, deviceId: "phone-\(installation)-\(owner)", installationId: installation)
+        let root = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["GUGU_HOME"]))
+            .appendingPathComponent("permission-lifecycle")
+        let ownerAccess = GuguIOSOwnerAccess(root: root, verifiedIdentity: { binding }, requireOwnerUI: {},
+            calendarHasFullAccess: { store.authorization == .fullAccess }, revokeCalendarAccess: { _ in })
+        // A system revocation retires persisted category consent. A later OS grant
+        // cannot reconnect the original owner without another explicit connect.
+        XCTAssertFalse(try ownerAccess.ownerSnapshot(expectedBinding: binding).calendarConnected)
+        let attempt = try ownerAccess.beginCalendarConnection(expectedBinding: binding)
+        if store.authorization == .fullAccess {
+            XCTAssertTrue(try ownerAccess.finishCalendarConnection(attempt: attempt).calendarConnected)
+        } else {
+            XCTAssertThrowsError(try ownerAccess.finishCalendarConnection(attempt: attempt)) {
+                XCTAssertEqual(($0 as? GuguHostFailure)?.code, "os_permission")
+            }
+            XCTAssertFalse(try ownerAccess.ownerSnapshot(expectedBinding: binding).calendarConnected)
+            let executor = GuguCalendarExecutor(service: service,
+                calendarEnabled: { try ownerAccess.calendarEnabled(expectedBinding: binding) })
+            for (action, arguments) in [
+                ("calendar.events.list", ["start_ms": 1800000000000, "end_ms": 1800003600000] as [String: Any]),
+                ("calendar.events.create", ["title": "Must not exist", "start_ms": 1800000000000]),
+                ("calendar.events.update", ["event_id": "missing", "title": "Must not change"]),
+                ("calendar.events.delete", ["event_id": "missing"]),
+            ] {
+                let bytes = try JSONSerialization.data(withJSONObject: arguments, options: [.sortedKeys])
+                let request = GuguNativeToolRequest(context: context(), requestId: UUID().uuidString, toolCallId: UUID().uuidString,
+                    actionName: action, argumentsJSON: String(decoding: bytes, as: UTF8.self),
+                    argumentsSHA256: SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(),
+                    deadlineAtMs: Int64(Date().timeIntervalSince1970 * 1000) + 30_000)
+                let control = GuguNativeToolControl(checkActive: {}, beginMutation: { XCTFail("Disconnected owner consumed approval") },
+                    finishMutation: { _ in XCTFail("Disconnected owner wrote") })
+                let done = expectation(description: action)
+                executor.execute(request, control: control) { envelope in
+                    XCTAssertEqual(envelope["ok"] as? Bool, false)
+                    // OwnerAccess observes OS revocation and retires category consent
+                    // before the executor can reach the OS-only service boundary.
+                    XCTAssertEqual(envelope["code"] as? String, "not_granted")
+                    done.fulfill()
+                }
+                wait(for: [done], timeout: 10)
+            }
+        }
+        try attach("E6-real-permission", ["authorization": store.authorization.rawValue,
+            "calendarConnected": try ownerAccess.calendarEnabled(), "modelCalls": 0])
+    }
+
+    func testRealEventKitCRUDRecurrenceAndOwnerRevocation() throws {
+        XCTAssertEqual(EventKitPhoneCalendarStore().authorization, .fullAccess)
+        let root = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["GUGU_HOME"]))
+            .appendingPathComponent("calendar-" + UUID().uuidString)
+        let manifestURL = root.appendingPathComponent("manifest.json")
+        let fixture = try PhoneCalendarSimulatorFixture.open(manifestURL: manifestURL)
+        defer {
+            do {
+                try fixture.remove(manifestURL: manifestURL)
+                XCTAssertNil(EKEventStore().calendar(withIdentifier: fixture.manifest.calendarIdentifier))
+                XCTAssertFalse(FileManager.default.fileExists(atPath: manifestURL.path))
+                try attach("E6-fixture-cleanup", ["calendarID": fixture.manifest.calendarIdentifier, "removed": true])
+                try FileManager.default.removeItem(at: root)
+            }
+            catch { XCTFail("Fixture cleanup failed: \(error)") }
+        }
+        let service = PhoneCalendarService(store: try fixture.makeStore())
+        let start: Int64 = 1800000000000, end = start + 3600000
+        let oracle = EKEventStore()
+        let calendar = try XCTUnwrap(oracle.calendar(withIdentifier: fixture.manifest.calendarIdentifier))
+        let control = EKEvent(eventStore: oracle)
+        control.calendar = calendar; control.title = "Original control"
+        control.startDate = Date(timeIntervalSince1970: Double(start) / 1000)
+        control.endDate = Date(timeIntervalSince1970: Double(end) / 1000)
+        try oracle.save(control, span: .thisEvent)
+        let controlID = try XCTUnwrap(control.eventIdentifier)
+        let access = PhoneCalendarAccess(check: {}, beginWrite: {}, finishWrite: { _ in })
+        let receipt = try service.execute(method: "calendarCreate", arguments: ["title": "Created", "start_ms": start,
+            "end_ms": end, "calendar_id": fixture.manifest.calendarIdentifier], access: access)
+        let id = try XCTUnwrap(receipt["event_id"] as? String)
+        XCTAssertNotEqual(id, controlID)
+        func readOracle() throws -> [DObservedCalendarEvent] {
+            try DCalendarSnapshotOracle.read(DCalendarOracleSpec(calendarIdentifier: fixture.manifest.calendarIdentifier,
+                expectedCalendarTitle: fixture.manifest.title, start_ms: start - 1, end_ms: end + 1, events: []))
+        }
+        XCTAssertEqual(try readOracle().count, 2)
+        let listed = try service.execute(method: "calendarList", arguments: ["start_ms": start - 1, "end_ms": end + 1], access: access)
+        XCTAssertEqual((listed["events"] as? [[String: Any]])?.count, 2)
+        _ = try service.execute(method: "calendarUpdate", arguments: ["event_id": id, "title": "Updated"], access: access)
+        XCTAssertEqual(try readOracle().first { $0.event_id == id }?.title, "Updated")
+        XCTAssertEqual(try readOracle().first { $0.event_id == controlID }?.title, "Original control")
+        _ = try service.execute(method: "calendarDelete", arguments: ["event_id": id], access: access)
+        XCTAssertEqual(try readOracle().map(\.event_id), [controlID])
+
+        let recurring = EKEvent(eventStore: oracle)
+        recurring.calendar = calendar; recurring.title = "Recurring control"
+        recurring.startDate = control.startDate; recurring.endDate = control.endDate
+        recurring.addRecurrenceRule(EKRecurrenceRule(recurrenceWith: .daily, interval: 1, end: EKRecurrenceEnd(occurrenceCount: 3)))
+        try oracle.save(recurring, span: .thisEvent)
+        let recurringID = try XCTUnwrap(recurring.eventIdentifier)
+        let noApproval = PhoneCalendarAccess(check: {}, beginWrite: { XCTFail("Recurrence consumed approval") }, finishWrite: { _ in XCTFail("Recurrence committed") })
+        for (method, args) in [("calendarUpdate", ["event_id": recurringID, "title": "Wrong"]), ("calendarDelete", ["event_id": recurringID])] {
+            XCTAssertThrowsError(try service.execute(method: method, arguments: args, access: noApproval)) {
+                XCTAssertEqual(($0 as? PhoneCalendarFailure)?.code, "unsupported_recurrence_scope")
+            }
+        }
+        let series = try service.execute(method: "calendarList", arguments: ["start_ms": start - 1, "end_ms": end + 3 * 86400000], access: access)
+        XCTAssertEqual((series["events"] as? [[String: Any]])?.count, 4)
+        XCTAssertEqual(try readOracle().first { $0.event_id == recurringID }?.title, "Recurring control")
+        XCTAssertThrowsError(try service.execute(method: "calendarCreate", arguments: ["title": "Wrong", "start_ms": start, "recurrence": "daily"], access: noApproval)) {
+            XCTAssertEqual(($0 as? PhoneCalendarFailure)?.code, "invalid_args")
+        }
+        let owner = UUID().uuidString.lowercased(), installation = UUID().uuidString.lowercased()
+        let binding = GuguIOSHostBinding(ownerId: owner, deviceId: "phone-\(installation)-\(owner)", installationId: installation)
+        let ownerAccess = GuguIOSOwnerAccess(root: root.appendingPathComponent("owner"), verifiedIdentity: { binding },
+            requireOwnerUI: {}, calendarHasFullAccess: { EventKitPhoneCalendarStore().authorization == .fullAccess }, revokeCalendarAccess: { revoked in XCTAssertEqual(revoked, binding) })
+        let attempt = try ownerAccess.beginCalendarConnection(expectedBinding: binding)
+        _ = try ownerAccess.finishCalendarConnection(attempt: attempt)
+        let checked = PhoneCalendarAccess(check: {
+            guard try ownerAccess.calendarEnabled(expectedBinding: binding) else { throw GuguHostFailure(code: "not_granted", message: "Disconnected") }
+        }, beginWrite: { XCTFail("Revoked owner reached write") }, finishWrite: { _ in XCTFail("Revoked owner committed") })
+        _ = try ownerAccess.disconnectCalendar(expectedBinding: binding)
+        for (method, args) in [("calendarCreate", ["title": "Wrong", "start_ms": start] as [String: Any]),
+            ("calendarUpdate", ["event_id": controlID, "title": "Wrong"]), ("calendarDelete", ["event_id": controlID])] {
+            XCTAssertThrowsError(try service.execute(method: method, arguments: args, access: checked)) {
+                XCTAssertEqual(($0 as? GuguHostFailure)?.code, "not_granted")
+            }
+        }
+        XCTAssertEqual(try readOracle().first { $0.event_id == controlID }?.title, "Original control")
+        try attach("E6-real-calendar", ["calendarID": fixture.manifest.calendarIdentifier, "calendarTitle": fixture.manifest.title,
+            "createdID": id, "controlID": controlID, "recurringID": recurringID, "modelCalls": 0])
+    }
+}
+/// Run separately on a freshly installed, owned simulator with no custom Gugu environment.
+/// This deliberately does not inherit DHostedRuntimeTests' injected-root setup.
+final class E6DefaultInstallationTests: XCTestCase {
+    func testFreshDefaultInstallationSurvivesRepeatedReads() throws {
+        XCTAssertEqual(Bundle.main.bundleIdentifier, "app.gugu.chat")
+        XCTAssertNil(ProcessInfo.processInfo.environment["GUGU_HOME"])
+        XCTAssertNil(ProcessInfo.processInfo.environment["GUGU_USER_DATA_DIR"])
+        _ = try GuguIOSAppRuntime.open()
+        XCTAssertNotNil(ProcessInfo.processInfo.environment["SIMULATOR_UDID"].flatMap(UUID.init(uuidString:)))
+        let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                  appropriateFor: nil, create: true)
+        let directory = support.appendingPathComponent("GuguNative", isDirectory: true)
+            .appendingPathComponent("installation", isDirectory: true)
+        let container = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath().path
+        XCTAssertTrue(directory.resolvingSymlinksInPath().path.hasPrefix(container + "/"))
+        guard !FileManager.default.fileExists(atPath: directory.path) else {
+            throw GuguHostFailure(code: "fixture_not_fresh", message: "Reinstall the test App before default-path validation")
+        }
+        let installation = GuguIOSInstallation(directory: directory)
+        let id = try installation.identifier()
+        XCTAssertEqual(try installation.identifier(), id, "A newly created directory must remain the same trusted path")
+        XCTAssertEqual(try GuguIOSInstallation(directory: directory).identifier(), id)
+        let data = try JSONSerialization.data(withJSONObject: ["defaultRoot": directory.path,
+            "homeEnvironmentInjected": false, "userDataEnvironmentInjected": false,
+            "repeatedReadAndReopen": true], options: [.sortedKeys])
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = "E6-default-installation"; attachment.lifetime = .keepAlways; add(attachment)
+    }
+}
 #else
 #error("DHostedRuntimeTests is restricted to Debug iOS Simulator App-hosted XCTest")
 #endif

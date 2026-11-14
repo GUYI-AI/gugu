@@ -152,6 +152,7 @@ struct GuguPushEnvelope {
     let eventId: String
     let kind: GuguPushKind
     let revision: String
+    var chatId: String? = nil
 }
 struct GuguPushReconciliationHint {
     let receipt: GuguPushRegistrationReceipt
@@ -159,6 +160,7 @@ struct GuguPushReconciliationHint {
     let kind: GuguPushEventKind
     let notificationKind: GuguPushKind
     let revision: String
+    var chatId: String? = nil
 }
 
 enum GuguPushPresentation { case none, alert, alertWithSound }

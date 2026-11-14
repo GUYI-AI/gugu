@@ -108,7 +108,7 @@ enum GuguPushPayload {
               validRevision(revision) else { return nil }
         return .init(binding: .init(ownerId: owner, deviceId: "phone-\(installation)-\(owner)", installationId: installation),
                      registrationId: registration, serverGeneration: UUID(uuidString: generation)!,
-                     eventId: event, kind: kind, revision: revision)
+                     eventId: event, kind: kind, revision: revision, chatId: uuid(object["chatId"]))
     }
     static func validRevision(_ value: String) -> Bool {
         !value.isEmpty && value.utf8.count <= 19 && value.utf8.allSatisfy { (48...57).contains($0) } &&
