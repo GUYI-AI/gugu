@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -21,7 +22,10 @@ vi.mock('@/lib/billing', () => ({
   quotaWindowViews: () => { throw new Error('No quota response supplied') },
   formatCredits: (value: number) => String(value),
 }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+vi.mock('react-i18next', async importOriginal => ({
+  ...await importOriginal<typeof import('react-i18next')>(),
+  useTranslation: () => ({ t: (key: string) => key }),
+}))
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ locale: 'en-US', translate: (key: string, values?: Record<string, string>) =>
     key + (values ? ' ' + Object.values(values).join(' ') : '') }),
