@@ -145,7 +145,7 @@ it('phone group long-press reuses all row actions and marks only the group and d
   await render(true)
   await hold(row())
   expect([...document.querySelectorAll('[role=menuitem]')].map(item => item.getAttribute('data-testid'))).toEqual([
-    'conversation-row-mark-read', 'conversation-row-pin', 'conversation-row-notifications', 'conversation-row-hide-chat', 'conversation-row-delete-chat', 'chat-row-mark-all-read',
+    'conversation-row-mark-read', 'chat-row-mark-all-read', 'conversation-row-pin', 'conversation-row-notifications', 'conversation-row-hide-chat', 'conversation-row-delete-chat',
   ])
   expect(state.select).not.toHaveBeenCalled()
   expect(state.open).not.toHaveBeenCalled()
