@@ -17,6 +17,8 @@ vi.mock('../../../../apps/desktop/src/lib/messageIngest', () => ({
   ingestMessages: async (_userId: string, batch: ImMessageBatch) => { ingested.push(batch) },
 }))
 const { useTopicsOfChat } = await import('../../../../apps/desktop/src/hooks/useTopics')
+// The topics are an account replica: it follows the published session, which the product signs in with the same user.
+const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
 
 const topic = (chatId: string, at: string | null, over: Partial<TopicSummary> = {}): TopicSummary => ({ chat_id: chatId, name: chatId,
   source_message_id: 'm1', creator_user_id: null, participant_count: 1, message_count: 1, last_message_at: at, is_participant: true, ...over })
@@ -50,7 +52,7 @@ async function open(rows: TopicSummary[]) {
   listTopicsOfChat.mockClear()
   ingested.length = 0
 }
-beforeEach(() => { harness = createReactHarness(); listeners = []; listTopicsOfChat.mockReset(); ingested.length = 0 })
+beforeEach(() => { followRendererSession('SIGNED_IN', USER.id); harness = createReactHarness(); listeners = []; listTopicsOfChat.mockReset(); ingested.length = 0 })
 afterEach(() => harness.cleanup())
 
 describe('useTopicsOfChat follows topic changes, not line messages', () => {
