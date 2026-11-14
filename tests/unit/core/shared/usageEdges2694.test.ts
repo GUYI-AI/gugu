@@ -11,3 +11,5 @@ it('orders textual prerelease identifiers lexically', () => {expect(compareServe
 
 
 it('orders numeric prerelease identifiers before textual identifiers', () => {expect(compareServerVersions('1.0.0-2','1.0.0-1alpha')).toBeLessThan(0);expect(compareServerVersions('1.0.0-1alpha','1.0.0-2')).toBeGreaterThan(0)})
+
+it('orders longer matching prereleases after their prefix', () => {expect(compareServerVersions('1.0.0-beta.0','1.0.0-beta')).toBeGreaterThan(0);expect(compareServerVersions('1.0.0-beta','1.0.0-beta.0')).toBeLessThan(0)})

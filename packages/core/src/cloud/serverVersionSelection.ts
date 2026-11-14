@@ -16,7 +16,9 @@ export function compareServerVersions(a: string, b: string): number {
   // 同一个主版本:正式版比预发版新(0.3.0 > 0.3.0-beta.9),预发版之间按后缀里的数字比。
   if (x.hasSuffix !== y.hasSuffix) return x.hasSuffix ? -1 : 1
   for (let i = 0; i < Math.max(x.suffix.length, y.suffix.length); i += 1) {
-    const left = x.suffix[i] ?? 0, right = y.suffix[i] ?? 0;
+    if (i >= x.suffix.length) return -1;
+    if (i >= y.suffix.length) return 1;
+    const left = x.suffix[i]!, right = y.suffix[i]!;
     const d = typeof left === 'number' && typeof right === 'number' ? left - right
       : typeof left === 'number' ? -1 : typeof right === 'number' ? 1 : left < right ? -1 : left > right ? 1 : 0;
     if (d !== 0) return d
