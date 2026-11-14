@@ -9,10 +9,6 @@ const mocks = vi.hoisted(() => ({
   stopped: vi.fn(async (_ownerId: string) => undefined),
   grants: vi.fn(async (_input: { ownerId: string; calendar: boolean; groups: Record<string, boolean> }) => undefined),
 }))
-vi.mock('react-i18next', async (importOriginal) => ({
-  ...await importOriginal<typeof import('react-i18next')>(),
-  useTranslation: () => ({ t: (key: string) => key }),
-}))
 vi.mock('../../../../apps/desktop/src/store/auth', async () => {
   const { createContext } = await import('react')
   return { AuthContext: createContext(null), useAuth: () => ({ user: { id: mocks.owner } }) }
