@@ -2,7 +2,7 @@ import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQueryClient } from '@tanstack/react-query'
+import { invalidateAppSettingsKey } from '@renderer/features/settings/app-settings-client'
 import { PREFERRED_SESSION_PROVIDERS } from '@shared/core/sessions/new-session-defaults'
 import { AppIcon } from '@renderer/lib/components/app-icon'
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
@@ -22,14 +22,13 @@ export function FirstRunHarness({ userId, initial, onBack, onDone }: {
   onDone: (selected: string[]) => void
 }) {
   const { t } = useTranslation('main')
-  const queryClient = useQueryClient()
   const memory = useAppSettingsKey('newSessionMemory')
   const installInBackground = useFirstRunInstaller()
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set(initial?.length ? initial : ['codex']))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const selected = PREFERRED_SESSION_PROVIDERS.filter((id) => picked.has(id))
-  const canContinue = selected.length > 0 && !memory.isLoading && !memory.error && !saving
+  const canContinue = selected.length > 0 && memory.settings.state === 'value' && !saving
 
   const toggle = (id: string) => setPicked((current) => {
     const next = new Set(current)
@@ -64,10 +63,10 @@ export function FirstRunHarness({ userId, initial, onBack, onDone }: {
             selected={picked.has(id)} disabled={saving} onToggle={() => toggle(id)} />
         ))}
       </div>
-      {memory.error ? (
+      {memory.settings.state === 'error' ? (
         <div role="alert">
           <p className="ta-onb-error">{t('firstRun.harnessReadFailed')}</p>
-          <Button variant="secondary" size="sm" onClick={() => { void queryClient.invalidateQueries({ queryKey: ['appSettings', 'newSessionMemory'] }) }}>{t('firstRun.retry')}</Button>
+          <Button variant="secondary" size="sm" onClick={() => invalidateAppSettingsKey('newSessionMemory')}>{t('firstRun.retry')}</Button>
         </div>
       ) : null}
       {error ? <p className="ta-onb-error" role="alert">{error}</p> : null}

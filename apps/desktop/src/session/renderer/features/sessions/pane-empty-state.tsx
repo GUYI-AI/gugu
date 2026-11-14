@@ -18,7 +18,7 @@ import type { CommandId } from '@shared/commands';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { workspaceBackend } from './workspace-backend/workspace-backend';
-import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
+import { terminalShown, useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { directToolsUnavailableText } from '@renderer/features/remote-hosts/workspace/remote-workspace-routing';
 
@@ -52,7 +52,7 @@ export function useSessionWorkspaceActions(
   // ❌ 不是点了没反应 —— 远程项目没有本地 ACP runtime，未声明 fork 的 provider 也不能冒充。
   const { data: agents } = useAgents();
   const canSideSession = canStartSideSession(projectId, sessionId, agents);
-  const terminalEnabled = useTerminalEnabled();
+  const terminalEnabled = terminalShown(useTerminalEnabled());
 
   const actions: Record<SessionWorkspaceActionId, WorkspacePanelAction> = {
     'side-session': {

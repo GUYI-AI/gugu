@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -25,13 +24,13 @@ vi.mock('@renderer/lib/ipc', () => ({
 
 const { createMachineSettingsHost, SettingsHostProvider } = await import('./settings-host');
 const { useAppSettingsKey } = await import('./use-app-settings-key');
+const { queryClient } = await import('@/lib/readModel');
 
 type Api = ReturnType<typeof useAppSettingsKey<'project'>>;
 
 describe('设置里跟机器走的那几组(默认 tmux、仓库)跟着所选机器(#6264)', () => {
   let dom: JSDOM;
   let root: Root;
-  let queryClient: QueryClient;
   let api: Api | undefined;
 
   function Probe() {
@@ -43,13 +42,9 @@ describe('设置里跟机器走的那几组(默认 tmux、仓库)跟着所选机
     await act(async () => {
       root.render(
         React.createElement(
-          QueryClientProvider,
-          { client: queryClient },
-          React.createElement(
-            SettingsHostProvider,
-            { value: host },
-            React.createElement(Probe)
-          )
+          SettingsHostProvider,
+          { value: host },
+          React.createElement(Probe)
         )
       );
     });
@@ -67,7 +62,6 @@ describe('设置里跟机器走的那几组(默认 tmux、仓库)跟着所选机
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);
-    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     root = createRoot(dom.window.document.getElementById('root') as HTMLDivElement);
   });
 
@@ -83,7 +77,7 @@ describe('设置里跟机器走的那几组(默认 tmux、仓库)跟着所选机
   it('选了 d22:读与写都是 d22 上的,本机的设置一问不发、一格不改', async () => {
     const { host } = remote();
     await mount(host);
-    expect(api?.value).toEqual({ tmuxByDefault: true });
+    expect(api?.settings.state === 'value' && api.settings.value.value).toEqual({ tmuxByDefault: true });
     await act(async () => {
       api!.update({ tmuxByDefault: false });
       await vi.advanceTimersByTimeAsync(50);
@@ -97,7 +91,8 @@ describe('设置里跟机器走的那几组(默认 tmux、仓库)跟着所选机
     const { host } = remote(false);
     await mount(host);
     expect(d22.getWithMeta).not.toHaveBeenCalled();
-    expect(api?.isLoading).toBe(true);
+    expect(api?.settings.state).toBe('unknown');
+    expect(api?.unavailable).toBe(true);
   });
 
 });

@@ -10,7 +10,7 @@ import { commandRegistry } from '@renderer/lib/commands/registry'
 
 const mocks = vi.hoisted(() => ({ image: vi.fn(), keyboard: {} as Record<string, string> }))
 vi.mock('react-i18next', async original => ({ ...await original<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => key }) }))
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: mocks.keyboard }) }))
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings(mocks.keyboard) } })
 vi.mock('@tanstack/react-hotkeys', async original => ({ ...await original<typeof import('@tanstack/react-hotkeys')>(), detectPlatform: () => 'linux' }))
 vi.mock('@/components/imageAnnotate/annotateRender', async original => ({ ...await original<typeof import('@/components/imageAnnotate/annotateRender')>(), loadAnnotationImage: mocks.image }))
 vi.mock('@/components/imageAnnotate/annotateSource', () => ({ annotationItem: async (item: unknown) => item }))

@@ -7,8 +7,7 @@ import { MoreHorizontal } from '@/lib/icons';
 import { ContextMenu, MenuFold, MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format';
-import { getEffectiveHotkey } from '@renderer/lib/hooks/useKeyboardShortcuts';
-import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
+import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { TabCommand } from './tab-commands';
 
@@ -42,7 +41,7 @@ export const TabContextMenu = observer(function TabContextMenu({
   children: ReactNode;
 }) {
   const { translate } = useSessionMessages();
-  const { value: keyboard } = useAppSettingsKey('keyboard');
+  const keyboard = useShortcutOverrides();
   const index = host.resolvedTabs.findIndex((t) => t.tabId === tab.tabId);
   const count = host.resolvedTabs.length;
   const engineCommands: TabCommand[] = [

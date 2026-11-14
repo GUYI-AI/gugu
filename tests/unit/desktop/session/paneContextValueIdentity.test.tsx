@@ -19,9 +19,7 @@ import { PaneProvider, usePaneContext } from '../../../../apps/desktop/src/sessi
 import type { Pane } from '../../../../apps/desktop/src/session/renderer/features/tabs/pane-layout-store'
 import { createReactHarness } from '../../../support/testHarness'
 
-vi.mock('../../../../apps/desktop/src/session/renderer/features/settings/use-app-settings-key', () => ({
-  useAppSettingsKey: () => ({ value: undefined }),
-}))
+vi.mock('../../../../apps/desktop/src/session/renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } })
 
 const counts = vi.hoisted(() => ({ paneId: 0, focused: 0 }))
 

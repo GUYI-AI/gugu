@@ -28,9 +28,7 @@ import '@/styles/tokens.css';
 import '@renderer/index.css';
 
 // 确认钮上的快捷键键帽来自设置里的 keyboard 覆盖;不给覆盖 = 出厂的 Mod+Enter,和新装的用户一样。
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({
-  useAppSettingsKey: () => ({ value: undefined }),
-}));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } });
 
 let root: Root | null = null;
 let host: HTMLElement | null = null;
