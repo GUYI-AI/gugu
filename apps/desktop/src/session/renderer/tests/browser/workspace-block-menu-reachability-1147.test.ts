@@ -649,7 +649,8 @@ it('leaves a reading selection with its own bar when it is pressed for a menu', 
   await pointer(x, y, 'mouseReleased', { button: 'right' });
   await new Promise((resolve) => requestAnimationFrame(resolve));
   expect(menuOpen()).toBe(false);
-  expect([...byId('sel-bar').querySelectorAll('button:not(.fmt)')].map((item) => item.textContent)).toEqual(['Copy', 'Cite']);
+  expect([...byId('sel-bar').querySelectorAll('button:not(.fmt):not([hidden])')].map((item) => item.textContent)).toEqual(['Copy', 'Cite']);
+  expect((byId('annotate-sel') as HTMLButtonElement).hidden, 'chat files have no session annotation draft').toBe(true);
 });
 
 it('keeps every side control hidden for a read-only document, with reading links still usable', async () => {
