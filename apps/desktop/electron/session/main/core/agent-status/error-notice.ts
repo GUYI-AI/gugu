@@ -6,14 +6,14 @@ import { kv, sessions, sessionTurns } from '@main/db/schema';
 import type { AgentEvent } from '@shared/core/agents/agentEvents';
 
 const keyFor = (sessionId: string) => `session-error-notice:${sessionId}`;
-type ErrorNotice = { fingerprint: string; seen: boolean };
+type ErrorNotice = { current: string | null; acknowledged: string[] };
 
 function read(sessionId: string): ErrorNotice | null {
   const row = db.select({ value: kv.value }).from(kv).where(eq(kv.key, keyFor(sessionId))).get();
   if (!row) return null;
   const value: unknown = JSON.parse(row.value);
-  return value && typeof value === 'object' && 'fingerprint' in value && typeof value.fingerprint === 'string'
-    && 'seen' in value && typeof value.seen === 'boolean' ? value as ErrorNotice : null;
+  return value && typeof value === 'object' && 'current' in value && (value.current === null || typeof value.current === 'string')
+    && 'acknowledged' in value && Array.isArray(value.acknowledged) && value.acknowledged.every(key => typeof key === 'string') ? value as ErrorNotice : null;
 }
 
 function write(sessionId: string, notice: ErrorNotice): void {
@@ -33,17 +33,16 @@ function fingerprint(message: string | undefined, providerId?: string, modelId?:
 /** Only persistent quota exhaustion is acknowledged across retries; transient/unknown failures still notify. */
 export function quotaErrorUnseen(sessionId: string, event: AgentEvent | undefined): boolean {
   const key = fingerprint(event?.payload.message, event?.providerId, event?.payload.modelId);
-  if (!key) { clearErrorNotice(sessionId); return true; }
   const previous = read(sessionId);
-  const seen = previous?.fingerprint === key && previous.seen;
-  write(sessionId, { fingerprint: key, seen });
-  return !seen;
+  const acknowledged = previous?.acknowledged ?? [];
+  if (key || previous) write(sessionId, { current: key, acknowledged });
+  return key === null || !acknowledged.includes(key);
 }
 
 export function acknowledgeErrorNotice(sessionId: string): void {
   const notice = read(sessionId);
   if (notice) {
-    if (!notice.seen) write(sessionId, { ...notice, seen: true });
+    if (notice.current && !notice.acknowledged.includes(notice.current)) write(sessionId, { ...notice, acknowledged: [...notice.acknowledged, notice.current] });
     return;
   }
   // Upgrading an existing failed session must not require one extra failed retry to learn its cause.
@@ -55,7 +54,7 @@ export function acknowledgeErrorNotice(sessionId: string): void {
   const row = db.select({ provider: sessions.provider, config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).get();
   const model = row?.config?.type === 'acp' ? row.config.model ?? row.config.contextUsage?.modelId ?? undefined : row?.config?.model;
   const key = fingerprint(tail.message, row?.provider ?? undefined, model);
-  if (key) write(sessionId, { fingerprint: key, seen: true });
+  if (key) write(sessionId, { current: key, acknowledged: [key] });
 }
 
 export function clearErrorNotice(sessionId: string): void {

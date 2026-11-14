@@ -91,6 +91,18 @@ describe('acknowledged persistent quota errors', () => {
     await fail(message); await agentStatusWriter.markSeen('c1'); await fail(message);
     expect(row()).toEqual({ status: 'error', seen: 0 });
   });
+  it('an intervening network failure does not forget a previously acknowledged quota', async () => {
+    await fail(); await agentStatusWriter.markSeen('c1');
+    await fail('ECONNRESET'); expect(row()).toEqual({ status: 'error', seen: 0 });
+    await agentStatusWriter.markSeen('c1');
+    await fail(); expect(row()).toEqual({ status: 'error', seen: 1 });
+  });
+  it('remembers each acknowledged model limit until a turn actually succeeds', async () => {
+    await fail(); await agentStatusWriter.markSeen('c1');
+    await fail(weekly, 'c1', 'model-b'); expect(row()).toEqual({ status: 'error', seen: 0 });
+    await agentStatusWriter.markSeen('c1');
+    await fail(); expect(row()).toEqual({ status: 'error', seen: 1 });
+  });
   it('notifies again for a different reset period, model, or successful intervening turn', async () => {
     await fail(); await agentStatusWriter.markSeen('c1');
     await fail(weekly.replace('Nov 15', 'Nov 22')); expect(row()).toEqual({ status: 'error', seen: 0 });
