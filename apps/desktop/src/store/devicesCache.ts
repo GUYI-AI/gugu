@@ -38,7 +38,7 @@ export function subscribeCachedDevices(listener: () => void): () => void {
   })
 }
 
-/** Put rows a write or a revision read produced. */
+/** Put rows for the account signed in now (a test or a synchronous writer; after an await use `devicesModel.at()`). */
 export function writeCachedDevices(rows: readonly Device[]): void {
   devicesModel.set([], [...rows])
 }
