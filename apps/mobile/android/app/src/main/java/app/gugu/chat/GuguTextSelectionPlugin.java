@@ -42,7 +42,7 @@ public class GuguTextSelectionPlugin extends Plugin {
         getActivity().runOnUiThread(() -> {
             if (dialog != null) { call.reject("Text selection is already open"); return; }
             boolean dark = Boolean.TRUE.equals(call.getBoolean("dark"));
-            Dialog page = new Dialog(getActivity(), android.R.style.Theme_Translucent_NoTitleBar);
+            Dialog page = new Dialog(getActivity(), dark ? R.style.GuguTextSelectionOverlayDark : R.style.GuguTextSelectionOverlay);
             dialog = page; pending = call; selectionId = id;
             FrameLayout root = new FrameLayout(page.getContext());
             root.setOnClickListener(view -> page.dismiss());
@@ -103,6 +103,8 @@ public class GuguTextSelectionPlugin extends Plugin {
                 window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
                 window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
                 window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS | android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
                 window.setWindowAnimations(0);
                 MobileShellChrome.applyTo(window, dark);
                 window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
