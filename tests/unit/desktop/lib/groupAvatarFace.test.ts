@@ -31,6 +31,8 @@ describe('default group face', () => {
     expect(sizeOf('WWWW')).toBe('80')
     expect(sizeOf('mmmm')).toBe('80')
     expect(sizeOf('AI研发')).toBe('80')
+    expect(sizeOf('🚀')).toBe('84')
+    expect(sizeOf('👩‍💻研发')).toBe('56')
     expect(groupAvatarSvg({ color: '#3370FF', text: '&<', fill: '#fff', px: 64 })).toContain('&#38;&#60;')
   })
 
@@ -47,13 +49,16 @@ describe('default group face', () => {
 
 describe('circular avatar text room', () => {
   it.each([24, 28, 32, 48, 96])('reserves room for single/double characters and wide WW at %spx', (px) => {
-    for (const text of ['团', '宣传', 'WW', '🚀发']) {
+    for (const text of ['团', '宣传', 'WW', '🚀', '👩‍💻研', '👩‍💻🚀', '🇨🇳研']) {
       const svg = groupAvatarSvg({ color: '#3370FF', text, fill: '#fff', px })
       const size = Number(/font-size="(\d+)"/.exec(svg)![1])
       const stroke = Number(/stroke-width="([\d.]+)"/.exec(svg)![1])
       const count = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].length
-      // Conservative em envelope: two full-width glyphs, with 1.25em vertical font room.
-      expect(Math.hypot(count * size / 2, size * 1.25 / 2)).toBeLessThan((208 - stroke) / 2)
+      const emoji = /[\p{Extended_Pictographic}\p{Regional_Indicator}]/u.test(text)
+      // Color-emoji fallback has wider/taller glyph boxes than the system text face.
+      const width = count * size * (emoji ? 1.5 : 1)
+      const height = size * (emoji ? 1.65 : 1.25)
+      expect(Math.hypot(width / 2, height / 2)).toBeLessThan((208 - stroke) / 2)
       expect(svg.match(/<text/g)).toHaveLength(1)
       expect(svg).toContain('x="104" y="104"')
     }

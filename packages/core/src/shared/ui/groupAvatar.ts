@@ -36,7 +36,9 @@ const SIZE = 208
 const STROKE = 6.5
 // Keep the existing text/mark threshold; two characters fit on one readable line at every text size.
 const TEXT_FROM_PX = 24
-const fontSizeFor = (count: number) => (count === 1 ? 116 : 80)
+// Color-emoji fallback fonts have wider advances and taller glyph boxes than the text face.
+const fontSizeFor = (text: string, count: number) => /[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u.test(text)
+  ? (count === 1 ? 84 : 56) : (count === 1 ? 116 : 80)
 const FONT = "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', 'Noto Sans CJK SC', sans-serif"
 const GROUP_MARK = '<circle cx="90" cy="82" r="21"/><path d="M52 146c0-21 17-34 38-34s38 13 38 34c0 4-3 7-7 7H59c-4 0-7-3-7-7z"/>'
   + '<circle cx="136" cy="92" r="15"/><path d="M137 116c13 2 23 12 23 28 0 4-3 7-7 7h-17c1-2 1-4 1-6 0-11-5-20-12-27 4-2 8-2 12-2z"/>'
@@ -51,7 +53,7 @@ const escapeXml = (value: string) => value.replace(/[&<>"']/g, (char) => `&#${ch
 export function groupAvatarSvg({ color, text = '', fill, px, label }: { color: string; text?: string; fill: string; px: number; label?: string }): string {
   const lines = px < TEXT_FROM_PX ? [] : groupAvatarTextLines(text)
   const count = lines.reduce((sum, line) => sum + Array.from(segmenter.segment(line)).length, 0)
-  const fontSize = fontSizeFor(count)
+  const fontSize = fontSizeFor(lines.join(''), count)
   const stroke = Math.max(STROKE, (SIZE / px) * 1.5)
   const inner = lines.length
     ? `<g fill="${color}" font-family="${FONT}" font-size="${fontSize}" font-weight="500" text-anchor="middle">${lines.map((line) =>
