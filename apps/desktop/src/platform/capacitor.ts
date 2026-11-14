@@ -1,3 +1,4 @@
+import { schedulePhoneNotification } from './phoneNotificationOutlet'
 import type { PermissionState } from '@capacitor/core'
 import { BackgroundMode } from '@anuradev/capacitor-background-mode'
 import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
@@ -183,8 +184,6 @@ function ensureNotificationChannels(): Promise<void> {
   return channelsReady
 }
 
-// 安卓通知 id 是 32 位 int;每条用一个新的,免得后一条把前一条顶掉。
-let notificationSeq = Math.floor(Date.now() / 1000) % 1_000_000_000
 
 export const capacitorPlatform: AppPlatform = {
   ...base,
@@ -274,22 +273,12 @@ export const capacitorPlatform: AppPlatform = {
       return { success: false, displayed: false, error: 'NOTIFICATIONS_NOT_GRANTED' }
     }
     await ensureNotificationChannels()
-    notificationSeq = (notificationSeq + 1) % 2_147_483_647
-    await LocalNotifications.schedule({
-      notifications: [{
-        id: notificationSeq,
-        title: payload.title,
-        body: payload.body ?? '',
-        channelId: payload.silent ? QUIET_CHANNEL_ID : ALERT_CHANNEL_ID,
-        // 安卓 8 以下没有渠道,弹不弹横幅看优先级。
-        foreground: !payload.silent,
-        // 立即发的也必须写 false:插件默认按「精确闹钟」处理,安卓 12+ 没有闹钟权限时会先把人甩进
-        // 「闹钟与提醒」设置页 —— 一次没人要的跳转;清单里也已移除这项权限。
-        isExactNotification: false,
-        extra: payload.chatId ? { chatId: payload.chatId } : undefined,
-      }],
+    return schedulePhoneNotification(payload, {
+      channelId: payload.silent ? QUIET_CHANNEL_ID : ALERT_CHANNEL_ID,
+      foreground: !payload.silent,
+      // Never request exact-alarm permission for an immediate notification.
+      isExactNotification: false,
     })
-    return { success: true, displayed: true }
   },
   setBackgroundWatch,
   // @@@share-with-apps 系统分享两个方向,见 capacitorShare.ts。

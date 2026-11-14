@@ -1,3 +1,4 @@
+import { schedulePhoneNotification } from './phoneNotificationOutlet'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import type { IOSOwnerBinding } from '../mobile/ios-runtime/iosOwnerClient'
@@ -11,7 +12,6 @@ import { iosCalendarPermissionsAvailable } from '../mobile/ios-calendar/iosCalen
 const push = registerPlugin<{
   requestAuthorization(input: { expectedBinding: IOSOwnerBinding }): Promise<{ visibleAlertsAllowed: boolean }>
 }>('GuguPushNotifications')
-let notificationId = Math.floor(Date.now() / 1000) % 1_000_000_000
 const base = createUnsupportedPlatform('capacitor', 'iOS')
 const lifecycleError = (error: unknown) => rendererLogger('ios/lifecycle').error({ error }, 'Cannot observe application lifecycle')
 
@@ -40,11 +40,7 @@ export const iosPlatform: AppPlatform = {
     if ((await LocalNotifications.checkPermissions()).display !== 'granted') {
       return { success: false, displayed: false, error: 'NOTIFICATIONS_NOT_GRANTED' }
     }
-    notificationId = (notificationId + 1) % 2_147_483_647
-    await LocalNotifications.schedule({ notifications: [{ id: notificationId,
-      title: payload.title, body: payload.body ?? '', sound: payload.silent ? undefined : 'default',
-      extra: payload.chatId ? { chatId: payload.chatId } : undefined }] })
-    return { success: true, displayed: true }
+    return schedulePhoneNotification(payload, { sound: payload.silent ? undefined : 'default' })
   },
   subscribeNotificationClicks(listener) {
     let active = true
