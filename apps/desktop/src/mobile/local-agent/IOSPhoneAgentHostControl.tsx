@@ -10,7 +10,8 @@ import { PhoneAgentHostView } from './PhoneAgentHostView'
 /** UI projection only: owner publication and the App-root runtime retain custody. */
 export function IOSPhoneAgentHostControl({ ownerId, setup, summary }: { ownerId: string; setup?: boolean; summary?: boolean }) {
   const { t } = useTranslation('settings')
-  const { binding } = usePhoneHostIdentity(ownerId)
+  const { binding, publication } = usePhoneHostIdentity(ownerId)
+  const identityFailed = publication.status === 'failed' || publication.status === 'unavailable'
   const snapshot = useIOSHostRuntimeSnapshot()
   const sequence = useRef(0)
   const [operation, setOperation] = useState<{ binding: IOSOwnerBinding; sequence: number; changing: 'stop' | 'restart' | null; failed: boolean } | null>(null)
@@ -22,7 +23,7 @@ export function IOSPhoneAgentHostControl({ ownerId, setup, summary }: { ownerId:
   const enabled = !!current && snapshot.phase !== 'stopped'
   const ready = !!current && snapshot.phase === 'configured' && host?.status === 'ready' && host.ready
   const failed = !!current && (snapshot.phase === 'failed' || host?.status === 'failed' || host?.status === 'interrupted' || host?.status === 'stopped')
-  const status = changing === 'stop' ? 'stopping' : changing === 'restart' ? 'starting' : !current ? 'waiting'
+  const status = changing === 'stop' ? 'stopping' : changing === 'restart' ? 'starting' : !current ? identityFailed ? 'operationFailed' : 'waiting'
     : error ? 'operationFailed' : snapshot.phase === 'stopped' ? 'stopped' : ready ? 'ready'
       : failed ? 'failed' : 'starting'
   const changeHost = async (kind: 'stop' | 'restart') => {
@@ -38,7 +39,7 @@ export function IOSPhoneAgentHostControl({ ownerId, setup, summary }: { ownerId:
     } finally { setOperation(previous => previous?.sequence === request ? { ...previous, changing: null } : previous) }
   }
   return <PhoneAgentHostView setup={setup} summary={summary} enabled={enabled} ready={!!ready} failed={!!failed}
-    changing={changing} error={current ? error : null} hostError={failed ? t('devices.phoneActions.host.retryHint') : null}
+    changing={changing} error={current ? error : null} hostError={identityFailed ? t('devices.phoneActions.host.operationFailed') : failed ? t('devices.phoneActions.host.retryHint') : null}
     statusText={t(`devices.phoneActions.host.${status}`)} changeHost={changeHost} unavailable={!current}
     enable={() => { void changeHost('restart') }} />
 }

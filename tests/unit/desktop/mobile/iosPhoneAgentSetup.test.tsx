@@ -126,6 +126,14 @@ describe('iOS reuses the phone setup and host controls', () => {
     await clickElement(element('agent-watch-setup-phone'))
     expect(element('phone-agent-setup-form')).not.toBeNull()
   })
+  it('shows an identity failure instead of claiming verification is still running', async () => {
+    setLocalePreference('en-US')
+    native.publication = { status: 'failed', binding: null, error: { code: 'auth_check_failed', message: 'native diagnostic' } }
+    await h.render(createNode(IOSPhoneAgentHostControl, { ownerId: native.owner, setup: true }))
+    expect(h.container.querySelector('[role="alert"]')?.textContent).toBe('Action could not be completed')
+    expect(element('phone-setup-enable-host')).toBeDisabled()
+    expect(native.retry).not.toHaveBeenCalled()
+  })
   it('keeps a completed installation quiet and hides the entry when the native host is unavailable', async () => {
     savePhoneAgentSetup(native.owner, 'install-a', { step: 'tools', dismissed: true, completed: true })
     await h.render(product()); expect(element('phone-agent-setup-form')).toBeNull()

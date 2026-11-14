@@ -111,7 +111,8 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
           ) : (
             <SettingsPage className="gg-phone-setup gg-phone-setup-unavailable">
               <h2 id="phone-agent-setup-heading" className="gg-phone-setup-heading">{t('devices.phoneActions.setupUnavailable')}</h2>
-              <SettingsNote role="alert">{error ?? t('devices.phoneActions.host.waiting')}</SettingsNote>
+              <SettingsNote role="alert">{error ?? t(identity.publication.status === 'failed' || identity.publication.status === 'unavailable'
+                ? 'devices.phoneActions.host.operationFailed' : 'devices.phoneActions.host.waiting')}</SettingsNote>
               <div className="flex gap-2">
                 <Button onClick={() => {
                   if (identity.ios && !binding) void retryPhoneHostPublication().catch(cause => {
