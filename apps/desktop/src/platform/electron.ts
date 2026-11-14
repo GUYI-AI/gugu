@@ -92,6 +92,7 @@ export const electronPlatform: AppPlatform = {
     shareToApps: false,
     mobileApps: false,
     phoneDevice: false,
+    phoneAgentHost: false,
     readingZoomMemory: true,
   },
   async relaunchApp() {

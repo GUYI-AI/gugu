@@ -7,6 +7,7 @@ import { Clipboard } from '@capacitor/clipboard'
 import type { AppPlatform } from './types'
 import { createUnsupportedPlatform } from './unsupported'
 import { rendererLogger } from '../lib/log'
+import { nativePhoneAgentHostAvailable } from './phoneAgentHostCapability'
 import { iosCalendarPermissionsAvailable } from '../mobile/ios-calendar/iosCalendarPermissionsAvailability'
 
 const push = registerPlugin<{
@@ -19,6 +20,7 @@ const lifecycleError = (error: unknown) => rendererLogger('ios/lifecycle').error
 export const iosPlatform: AppPlatform = {
   ...base,
   capabilities: { ...base.capabilities, appVersion: true, clipboard: true, get notifications() { return Capacitor.isPluginAvailable('GuguPushNotifications') },
+    get phoneAgentHost() { return nativePhoneAgentHostAvailable('ios') },
     get calendarSettings() { return iosCalendarPermissionsAvailable() },
   },
   get systemPermissions() { return Capacitor.isPluginAvailable('GuguPushNotifications') ? ['notifications'] as const : [] },
