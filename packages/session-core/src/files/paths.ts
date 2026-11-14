@@ -18,7 +18,7 @@ export function validateAbsolutePath(input: string): Result<AbsPath, FileError> 
 
 export function contains(parent: string, child: string): boolean {
   const rel = path.relative(parent, child);
-  return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+  return rel === '' || (rel !== '..' && !/^\.\.[\\/]/.test(rel) && !path.isAbsolute(rel));
 }
 
 const real = (p: string) => realpathSync.native(p);
