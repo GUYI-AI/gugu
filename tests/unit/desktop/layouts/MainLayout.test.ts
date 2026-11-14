@@ -353,7 +353,8 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', async (importOriginal)
 }))
 const chatListListeners = vi.hoisted(() => new Set<() => void>())
 const chatListSource = {
-  activeListed: () => chatStoreMock.chats.some((chat) => chat.id === chatStoreMock.activeChatId),
+  activeId: () => chatStoreMock.chats.some((chat) => chat.id === chatStoreMock.activeChatId) ? chatStoreMock.activeChatId : null,
+  listed: (chatId: string) => chatStoreMock.chats.some((chat) => chat.id === chatId),
   subscribe: (listener: () => void) => { chatListListeners.add(listener); return () => { chatListListeners.delete(listener) } },
 }
 // The chat store published a new list / selection: what the provider's layout-phase notification does.
@@ -1172,9 +1173,8 @@ describe('MainLayout', () => {
     await clickElement(harness.container.querySelector('[data-testid="mock-settings-pick-about"]') as HTMLElement)
     expect(settings().getAttribute('data-section'), 'positive control: the user moved on inside the panel').toBe('about')
     await nativeBack()
-    expect(layerOpen('mobile-settings-layer'), 'the first back only leaves the detail page').toBe(true)
-    await nativeBack()
-    expect(layerOpen('mobile-settings-layer')).toBe(false)
+    // Entered straight at a detail page: one back leaves 「我的」 for where the link was, ❌ first the settings home it never showed.
+    expect(layerOpen('mobile-settings-layer'), 'one back leaves the settings layer').toBe(false)
     expect(settings().getAttribute('data-section'), 'closing resets the controlled phone settings page').toBe('account')
     await recharge()
     expect(settings().getAttribute('data-section')).toBe('account')

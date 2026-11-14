@@ -6,6 +6,7 @@ import { RightPanelBackButton } from '../components/chat/RightPanel'
 import { SessionAppFrame } from '../components/appSlot/SessionAppFrame'
 import { installedExtensionsStore } from '../session/renderer/features/extensions/installed-extensions-store'
 import { ResourceMonitorHost } from '@/session/renderer/features/settings/components/resource-monitor-host'
+import { reopenGlobalSearch } from '@/session/renderer/features/global-search/search-session'
 import { reaction } from 'mobx'
 import { useCallback, useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import '@/styles/desktop-shell.css'
@@ -185,6 +186,8 @@ function InnerLayout({
   useBackgroundUsageSync(user?.id ?? null, effectsActive)
   // 手机上「我的」是推进来的一层(owner 10-26:页头左上角自己的头像进),nav / detail 两层都没有底栏;桌面走设置弹窗。
   const [settingsPane, setSettingsPane] = useState<'nav' | 'detail'>('nav')
+  // 手机上从别处直达设置的某一格(openSettingsSection):进来的是那一格,返回就退出「我的」,❌ 先落到没进过的设置首页。
+  const settingsLinkedRef = useRef(false)
   const [watchCreateRequest, setWatchCreateRequest] = useState(0)
   // 手机上非项目群输入框的「新任务」:与 watchCreateRequest 一起递进去,null = 不进群。
   const [watchTaskGroup, setWatchTaskGroup] = useState<{ chatId: string; name: string } | null>(null)
@@ -217,12 +220,16 @@ function InnerLayout({
     document.documentElement.toggleAttribute('data-phone-root', mobile)
     return () => document.documentElement.removeAttribute('data-phone-root')
   }, [mobile])
+  const activeChatIdRef = useRef(activeChatId)
+  activeChatIdRef.current = activeChatId
   // 进一条会话:桌面切到对话 tab;手机退掉推上来的层(咕咕 / 项目 / 我的),从底下的根 tab 推会话页,返回回到那个 tab。
-  const enterChat = useCallback(() => {
+  // 会话页开着时进另一条(资料卡「发消息」、消息里的群卡片、通知):压在屏上那条上面,返回先回到它;从搜索结果进的,返回回到搜索(@@@phone-chat-trail)。
+  const enterChat = useCallback((chatId: string) => {
     if (!mobile) return setActiveTab('chats')
+    const onPage = activeChatIdRef.current
     const from = shellTab.root()
     setActiveTab(from)
-    shellTab.setChatFrom(from)
+    shellTab.openChat(from, onPage !== chatId ? onPage : null)
   }, [mobile, setActiveTab, shellTab])
   const chatOpenNonce = useMobileChatOpenNonce(mobile, phoneChatShown ? 'chat' : 'list')
   const [sessionCreateOpen, setSessionCreateOpen] = useState(false)
@@ -295,7 +302,7 @@ function InnerLayout({
     const shownChatId = topic?.source_chat_id ?? chatId
     const viewportKey = openChatBlock(shownChatId, undefined, undefined, undefined, undefined, purpose)
     if (!viewportKey) {
-      enterChat()
+      enterChat(shownChatId)
       setActiveChatId(shownChatId)
     }
     if (topic) requestTopicSplit({ chatId: topic.id, name: topic.name ?? '', sourceChatId: topic.source_chat_id! })
@@ -345,7 +352,13 @@ function InnerLayout({
   }, 'push'), [setActiveTab])
   // 手机「伙伴」(#446):推进去的页没有底栏;「消息」右上「新项目」推进它的新项目页。
   const [partnersPushed, setPartnersPushed] = useState(false)
-  const backFromPhoneChat = useCallback(() => navigateMobile(() => shellTab.setChatFrom(null), 'pop'), [shellTab])
+  // 返回:会话页上压着别的会话时回到它(@@@phone-chat-trail),否则回到会话页的来处(根 tab)。
+  const backFromPhoneChat = useCallback(() => navigateMobile(() => {
+    const under = shellTab.popChat()
+    if (under && 'chatId' in under) return setActiveChatId(under.chatId)
+    shellTab.setChatFrom(null)
+    if (under) reopenGlobalSearch()
+  }, 'pop'), [shellTab, setActiveChatId])
   const [newProjectRequest, setNewProjectRequest] = useState(0)
   const openNewProject = useCallback(() => navigateMobile(() => {
     setActiveTab('contacts')
@@ -536,6 +549,7 @@ function InnerLayout({
     }
     setSettingsSection(section)
     if (mobile) {
+      settingsLinkedRef.current = true
       navigateMobile(() => { setSettingsPane('detail'); setActiveTab('settings') }, 'push')
       return
     }
@@ -567,6 +581,7 @@ function InnerLayout({
       setSettingsSection('account')
       // 手机上「我的」整屏推进来(owner 10-26,页头左上角自己的头像);桌面仍走设置弹窗
       if (mobile) {
+        settingsLinkedRef.current = false
         navigateMobile(() => {
           setSettingsPane('nav')
           setActiveTab('settings')
@@ -630,7 +645,7 @@ function InnerLayout({
     if (openChatBlock(chatId, 'notification-open')) return
 
     setActiveChatId(chatId)
-    enterChat()
+    enterChat(chatId)
     focusComposerForUserEntry('notification-open')
   }, [enterChat, focusComposerForUserEntry, openChatBlock, setActiveChatId])
   const openNotificationRef = useRef(openNotification)
@@ -664,8 +679,6 @@ function InnerLayout({
     window.addEventListener(UI_EVENTS.createAgentInGroup, onCreateInGroup)
     return () => window.removeEventListener(UI_EVENTS.createAgentInGroup, onCreateInGroup)
   }, [setActiveTab, mobile, openChatBlock, readChats, t])
-  const activeChatIdRef = useRef(activeChatId)
-  activeChatIdRef.current = activeChatId
   useEffect(() => {
     const bringUp = (chatId: string | null, ask: (chatId: string, viewportKey?: string) => void, resource = false): boolean => {
       const addressed = readChats().chats.find((candidate) => candidate.id === chatId)
@@ -765,7 +778,7 @@ function InnerLayout({
       }
 
       setActiveChatId(existing.id)
-      enterChat()
+      enterChat(existing.id)
       focusComposerForUserEntry('profile-chat')
       void refreshChats()
       return
@@ -791,7 +804,7 @@ function InnerLayout({
         return
       }
       setActiveChatId(chatId)
-      enterChat()
+      enterChat(chatId)
       focusComposerForUserEntry('profile-chat')
       void refreshChats()
     } catch (err) {
@@ -822,7 +835,7 @@ function InnerLayout({
   const handleReturnToGroup = (chatId: string) => {
     if (openChatBlock(chatId, 'group-chat')) return
     setActiveChatId(chatId)
-    enterChat()
+    enterChat(chatId)
     focusComposerForUserEntry('group-chat')
   }
 
@@ -834,7 +847,7 @@ function InnerLayout({
       return
     }
     setActiveChatId(group.id)
-    enterChat()
+    enterChat(group.id)
     focusComposerForUserEntry('group-chat')
     void refreshChats()
   }
@@ -1177,7 +1190,10 @@ function InnerLayout({
                 section={settingsSection}
                 onSectionChange={setSettingsSection}
                 pane={settingsPane}
-                onPaneChange={(next) => navigateMobile(() => setSettingsPane(next), next === 'nav' ? 'pop' : 'push')}
+                onPaneChange={(next) => {
+                  if (next === 'nav' && settingsLinkedRef.current) { settingsLinkedRef.current = false; return exitPhoneLayer() }
+                  navigateMobile(() => setSettingsPane(next), next === 'nav' ? 'pop' : 'push')
+                }}
                 onClose={exitPhoneLayer}
               />
             </PhoneLayer>

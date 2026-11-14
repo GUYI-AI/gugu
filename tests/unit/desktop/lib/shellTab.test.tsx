@@ -31,7 +31,7 @@ it('a tab switch re-renders only the surfaces whose "am I shown" answer changed'
 it('the phone chat page is not the shown surface from the frame its conversation leaves the list', async () => {
   let listed = true
   const listeners = new Set<() => void>()
-  const store = createShellTabStore('chats', { activeListed: () => listed, subscribe: (l) => { listeners.add(l); return () => { listeners.delete(l) } } })
+  const store = createShellTabStore('chats', { activeId: () => listed ? 'a' : null, listed: () => listed, subscribe: (l) => { listeners.add(l); return () => { listeners.delete(l) } } })
   function Surface({ tab }: { tab: SidebarTab }) {
     return createElement('div', { 'data-surface': tab, 'data-shown': String(useShellTabIs(tab)) })
   }
@@ -52,4 +52,43 @@ it('the phone chat page is not the shown surface from the frame its conversation
   expect([store.get(), store.chatShown()], 'another root tab drops it').toEqual(['chats', false])
   await act(async () => store.set('contacts'))
   expect(store.get(), 'and it does not come back').toBe('contacts')
+})
+
+it('back on the chat page returns to what it was entered over, one press each, and never to a conversation that is gone', () => {
+  let chats = ['group', 'dm', 'other']
+  let active: string | null = 'group'
+  const listeners = new Set<() => void>()
+  const store = createShellTabStore('chats', {
+    activeId: () => active && chats.includes(active) ? active : null,
+    listed: (chatId) => chats.includes(chatId),
+    subscribe: (l) => { listeners.add(l); return () => { listeners.delete(l) } },
+  })
+  const show = (chatId: string) => { active = chatId; for (const listener of [...listeners]) listener() }
+  // From the list: the chat page over 消息, nothing under it.
+  store.openChat('chats', null)
+  expect(store.popChat(), 'entered from the root: back goes to the root').toBeNull()
+  // A member's card → 发消息 while the group is on screen: the DM goes over it.
+  store.openChat('chats', 'group'); show('dm')
+  expect(store.popChat()).toEqual({ chatId: 'group' })
+  show('group')
+  expect(store.popChat(), 'one entry, one back press').toBeNull()
+  // Over the group again, then over the DM: back walks them in reverse.
+  store.openChat('chats', 'group'); show('dm')
+  store.openChat('chats', 'dm'); show('other')
+  // The group is deleted (or left) while it is under the others: it leaves the trail at once.
+  chats = ['dm', 'other']; show('other')
+  expect(store.popChat()).toEqual({ chatId: 'dm' })
+  show('dm')
+  expect(store.popChat(), 'the deleted group is not a place to go back to').toBeNull()
+  // A search result opens its conversation over the search panel.
+  store.setChatFrom(null)
+  store.searchLeft()
+  store.openChat('chats', null); show('other')
+  expect(store.popChat()).toEqual({ search: true })
+  // Leaving for another root tab drops the chat page and whatever was under it.
+  store.openChat('chats', null); store.openChat('chats', 'other'); show('dm')
+  store.set('contacts')
+  store.set('chats')
+  store.openChat('chats', null)
+  expect(store.popChat()).toBeNull()
 })

@@ -8,6 +8,7 @@ import { Sheet } from '../../../../apps/desktop/src/components/ui/Sheet'
 import { DropdownMenu, Menu, MenuItem } from '../../../../apps/desktop/src/components/ui/Menu'
 import { isSheetOpen, useBackLayer } from '../../../../apps/desktop/src/components/ui/sheetStack'
 import { SettingsPageHead } from '../../../../apps/desktop/src/components/chat/groupSettingsUi'
+import { SurfaceShown } from '../../../../apps/desktop/src/lib/retainedSurface'
 
 type BackState = Window & { __guguNativeBackHandled?: boolean }
 
@@ -136,5 +137,32 @@ describe('盖在页面上的每一层都进同一个栈', () => {
     expect(onBack).toHaveBeenCalledTimes(1)
     await harness.render(createElement(SettingsPageHead, { title: 'settings', onBack, mobile: false }))
     expect(isSheetOpen()).toBe(false)
+  })
+})
+
+describe('a back layer on a surface that is not shown does not take the back key', () => {
+  let harness: ReturnType<typeof createReactHarness> | null = null
+  afterEach(() => { harness?.cleanup(); harness = null })
+
+  // The phone: 伙伴's friend page (its own back layer) stays mounted under a conversation opened from it. Hidden, it must
+  // not answer back; the conversation's page under it does. Shown again, it answers again.
+  it('hidden: skipped; shown again: back on top', async () => {
+    harness = createReactHarness()
+    const page = vi.fn()
+    const friend = vi.fn()
+    function Layer({ onBack }: { onBack: () => void }) { useBackLayer(onBack); return null }
+    const tree = (friendShown: boolean) => createElement('div', null,
+      createElement(Layer, { onBack: page }),
+      createElement(SurfaceShown, { shown: friendShown }, createElement(Layer, { onBack: friend })))
+    await harness.render(tree(true))
+    const back = () => act(async () => { window.dispatchEvent(new CustomEvent('gugu:native-back')) })
+    await back()
+    expect([page.mock.calls.length, friend.mock.calls.length], 'shown: the friend page is on top').toEqual([0, 1])
+    await harness.render(tree(false))
+    await back()
+    expect([page.mock.calls.length, friend.mock.calls.length], 'hidden: the page under it takes back').toEqual([1, 1])
+    await harness.render(tree(true))
+    await back()
+    expect([page.mock.calls.length, friend.mock.calls.length], 'shown again: the friend page answers again').toEqual([1, 2])
   })
 })

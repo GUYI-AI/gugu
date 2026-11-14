@@ -1,4 +1,5 @@
-import { useCallback, useLayoutEffect, useRef } from 'react'
+import { useCallback, useContext, useLayoutEffect, useRef } from 'react'
+import { SurfaceShownContext } from '../../lib/retainedSurface'
 
 // 盖在页面上的层(Sheet、看图、菜单、手机整页、多选态),按打开顺序(挂载入栈、卸载出栈)。Escape 与安卓返回键
 // 都只交给栈顶那一层,所以子层不会在同一次按键里把父层也关掉。
@@ -24,13 +25,16 @@ export function pressBack(): void {
  * 在 `active` 期间进栈,栈顶时安卓返回键调 `onBack` 并告诉原生「已处理」。返回「此刻是不是栈顶」,
  * 给同一层的 Escape 用。`onBack` 取最新的那个,❌ 因为它换了引用就出栈再入栈(那会把它挪到栈顶)。
  * 提交时就进栈(layout effect):层一画出来就接得住返回键,没有「已提交、还没登记」的那一帧。
+ * 所在的面藏着时(SurfaceShownContext:分页器里没停着的那页、没打开的 PhoneLayer、藏着的保留面)不进栈:看不见的层
+ * ❌ 接返回键(手机从伙伴的好友页进会话时,伙伴那页留着它往下钻的层级,它的返回层曾挡在会话页前面)。面重新露出来时再进栈。
  */
 export function useBackLayer(onBack: (() => void) | undefined, active = true): () => boolean {
   const idRef = useRef<symbol>(undefined)
   if (!idRef.current) idRef.current = Symbol('back-layer')
   const onBackRef = useRef(onBack)
   onBackRef.current = onBack
-  const on = active && Boolean(onBack)
+  const shown = useContext(SurfaceShownContext)
+  const on = active && Boolean(onBack) && shown
   useLayoutEffect(() => {
     if (!on) return
     const id = idRef.current!
