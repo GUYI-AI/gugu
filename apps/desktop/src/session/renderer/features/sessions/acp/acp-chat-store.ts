@@ -182,7 +182,11 @@ export class AcpChatStore {
   transcriptPendingId: string | null = null;
   /** The row the person stopped before it went: drawn where it was until it goes. */
   stoppedRowId: string | null = null;
-  /** Failed-start inputs remain in host custody and are projected into the transcript, never stored as history. */
+  /**
+   * Failed-start inputs remain in host custody and are projected into the transcript, never stored as history.
+   * Compared by value (`observable.struct`): it is re-derived on every projection of the session, which a running turn
+   * makes with each streamed chunk, and an unchanged list must not re-render the panel and composer that read it.
+   */
   failedRowIds: string[] = [];
   /**
    * #6552 在飞的开场(`_runBootstrap`)数。>0 且还没挂上会话 = 引擎会话在起:这段里模型 / 强度照样能选 ——
@@ -382,7 +386,7 @@ export class AcpChatStore {
       _lifeRetriedVersion: observable,
       transcriptPendingId: observable,
       stoppedRowId: observable,
-      failedRowIds: observable.ref,
+      failedRowIds: observable.struct,
       loadError: computed,
       _bootstrapsInFlight: observable,
       starting: computed,
