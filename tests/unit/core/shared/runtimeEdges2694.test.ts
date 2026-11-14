@@ -16,3 +16,5 @@ it('rejects cached reads disposed during async cache access', async () => { cons
 it('rejects writes cancelled during cache storage', async () => {const gate=deferred<void>();const entered=deferred<void>();let clears=0;const cache:FileChunkCache={get:async()=>null,put:async()=>{entered.resolve();await gate.promise},clear:async()=>{clears++}};const sink=createCachedFileSink(cache,1);const writing=sink.write(new Uint8Array([1]));await entered.promise;await sink.abort();gate.resolve();await expect(writing).rejects.toThrow('closed');expect(clears).toBe(2)})
 
 it('returns independent boot diagnostic records', () => {const tasks=new SessionBootTasks(()=>{});tasks.record('read','task',new Error('original'));const snapshot=tasks.snapshot();snapshot[0].message='changed';expect(tasks.snapshot()[0].message).toBe('original')})
+
+it('prepares circular arrays without recursing forever', () => {const array:unknown[]=[];array.push(array);expect(prepareFields(array)).toEqual(['[Circular]'])})

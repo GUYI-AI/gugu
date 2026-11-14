@@ -42,7 +42,11 @@ export function serializeError(e: Error): Record<string, unknown> {
 export function prepareFields(value: unknown, seen = new WeakSet<object>()): unknown {
   if (isSecret(value)) return REDACTED;
   if (value instanceof Error) return serializeError(value);
-  if (Array.isArray(value)) return value.map((v) => prepareFields(v, seen));
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return '[Circular]';
+    seen.add(value);
+    return value.map((v) => prepareFields(v, seen));
+  }
   if (value && typeof value === 'object') {
     if (seen.has(value)) return '[Circular]';
     seen.add(value);
