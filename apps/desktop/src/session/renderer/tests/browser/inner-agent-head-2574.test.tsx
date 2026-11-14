@@ -40,7 +40,7 @@ it('the agent head row ends in the fold button and keeps the name\'s room on hov
             <InnerSidebarFoldButton />
           </InnerHeadRowLayout>
           <InnerHeadRowLayout headKey="room" name={LONG_NAME} avatar={avatar} active={false} onOpen={() => {}} trailingButtons={2}>
-            <span data-first-button="" className="block size-8" />
+            <span data-first-button="" className="block size-7" />
             <InnerSidebarFoldButton />
           </InnerHeadRowLayout>
         </div>
@@ -62,8 +62,8 @@ it('the agent head row ends in the fold button and keeps the name\'s room on hov
   expect(name('agent').getBoundingClientRect().right).toBeLessThanOrEqual(fold.left);
   const agentAtRest = nameWidth('agent');
   const roomAtRest = nameWidth('room');
-  // One more 32px button and the 4px between the two.
-  expect(agentAtRest - roomAtRest).toBeCloseTo(36, 0);
+  // One more 28px button and the 4px between the two.
+  expect(agentAtRest - roomAtRest).toBeCloseTo(32, 0);
   expect(name('room').getBoundingClientRect().right).toBeLessThanOrEqual(head('room').querySelector<HTMLElement>('[data-first-button]')!.getBoundingClientRect().left);
 
   // The pointer on a head row changes nothing: nothing appears on hover.
