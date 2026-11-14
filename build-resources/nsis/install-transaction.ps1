@@ -173,9 +173,16 @@ try {
   exit 0
 } catch {
   [Console]::Error.WriteLine($_.Exception.Message)
-  if ($Phase -eq 'finish' -and $s.completed) {
-    [Console]::Error.WriteLine('The new application is installed. Backup cleanup will be retried on the next installation.')
-    exit 0
+  if ($Phase -eq 'finish' -and (Test-Path -LiteralPath $statePath)) {
+    # Consult the persisted commit, not the in-memory flag: a full disk may have
+    # prevented Save-State itself, in which case backups are still for rollback.
+    try {
+      $persisted = Load-State
+      if ($persisted.completed) {
+        [Console]::Error.WriteLine('The new application is installed. Backup cleanup will be retried on the next installation.')
+        exit 0
+      }
+    } catch { [Console]::Error.WriteLine('Could not confirm the persisted installation commit') }
   }
   # Preserve the original failure. A rollback failure leaves the journal/backups
   # intact, and a later invocation retries instead of deleting uncertain data.
