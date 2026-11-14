@@ -14,3 +14,5 @@ it('rejects backslashes in single-segment resource folder names', () => { expect
 it('decodes escaped quotes in os-release pretty names', () => { expect(linuxNameFromOsRelease("PRETTY_NAME=\"Example \\\"OS\\\"\"")).toBe('Example "OS"') })
 
 it('omits rollback records with nonfinite timestamps', () => { expect(parseServerRollback('{"version":"bad","restored":"good","at":1e400}', 1000, 'good')).toBeNull() })
+
+it('reports malformed health background booleans', () => { expect(readHealthSummary({...summary(),background:{supported:'yes',granted:true}})).toEqual({ok:false,problem:'background.supported'}); expect(readHealthSummary({...summary(),background:{supported:true,granted:1}})).toEqual({ok:false,problem:'background.granted'}) })
