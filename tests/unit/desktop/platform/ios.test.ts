@@ -21,6 +21,12 @@ beforeEach(() => {
 })
 
 describe('iOS foreground client', () => {
+  it('exposes the phone Agent host only through its registered iOS plugin', () => {
+    expect(iosPlatform.capabilities.phoneAgentHost).toBe(false)
+    calendarPlugins.names.add('GuguAgent'); expect(iosPlatform.capabilities.phoneAgentHost).toBe(true)
+    expect(iosPlatform.capabilities.phoneDevice).toBe(false)
+    calendarPlugins.os = 'android'; expect(iosPlatform.capabilities.phoneAgentHost).toBe(false)
+  })
   it('exposes calendar settings only when both native calendar and owner plugins are registered', () => {
     expect(iosPlatform.capabilities.calendarSettings).toBe(false)
     calendarPlugins.names.add('GuguCalendarPermissions')

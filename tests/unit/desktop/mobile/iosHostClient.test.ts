@@ -32,6 +32,11 @@ describe('iOS-only GuguAgent wire', () => {
     native.hostState.mockResolvedValue(value)
     await expect(iosAgentClient.state(binding)).rejects.toMatchObject({ code: 'invalid_native_reply' })
   })
+  it.each(['sessionId', 'chatId', 'agentUserId', 'ownerId', 'deviceId', 'installationId'])('rejects malformed or foreign session %s', async field => {
+    const session = { agentUserId: id, sessionId: id, chatId: id, displayName: 'Phone', status: 'idle', modelId: 'model', [field]: 'foreign' }
+    native.hostState.mockResolvedValue({ ...state(), sessions: [session] })
+    await expect(iosAgentClient.state(binding)).rejects.toMatchObject({ code: 'invalid_native_reply' })
+  })
   it('retains original UUID and structured uncertain call failure', async () => {
     const error = { code: 'admission_uncertain', message: 'Keep original request', admission: 'uncertain' }
     native.hostCall.mockResolvedValue({ error })
