@@ -27,4 +27,27 @@ describe('flattenSelectOptions', () => {
     expect(flattenSelectOptions()).toEqual([]);
     expect(flattenSelectOptions([])).toEqual([]);
   });
+
+  it('treats non-array wire values as empty options', () => {
+    for (const malformed of [null, {}, 'not an array', 1]) {
+      expect(flattenSelectOptions(malformed as unknown as SessionConfigSelectOptions)).toEqual([]);
+    }
+  });
+
+  it('skips groups whose options are missing or are not arrays', () => {
+    const malformed = [
+      { group: 'missing', name: 'Missing' },
+      { group: 'null', name: 'Null', options: null },
+      { group: 'object', name: 'Object', options: {} },
+    ];
+    expect(flattenSelectOptions(malformed as unknown as SessionConfigSelectOptions)).toEqual([]);
+  });
+
+  it('skips null and primitive entries, including inside groups', () => {
+    const valid = { value: 'own', name: 'Own model' };
+    const malformed = [null, 'text', 1, [], {
+      group: 'provider', name: 'Provider', options: [null, 'text', 1, [], valid],
+    }];
+    expect(flattenSelectOptions(malformed as unknown as SessionConfigSelectOptions)).toEqual([valid]);
+  });
 });
