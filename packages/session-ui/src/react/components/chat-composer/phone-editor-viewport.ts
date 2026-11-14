@@ -1,16 +1,17 @@
-/** Temporarily let a fixed phone editor use the visual viewport without moving its DOM node. */
+/** Release viewport containers and WebKit ancestor clipping without moving the editor node. */
 export function releasePhoneEditorContainingBlocks(root: HTMLElement): () => void {
   const restored: Array<() => void> = [];
-  const viewportValues: Record<string, string> = {
+  const expandedValues: Record<string, string> = {
     'container-type': 'normal', contain: 'none', transform: 'none',
     translate: 'none', rotate: 'none', scale: 'none', perspective: 'none',
     filter: 'none', 'backdrop-filter': 'none', '-webkit-backdrop-filter': 'none',
     'content-visibility': 'visible', 'will-change': 'auto',
+    isolation: 'auto', 'z-index': 'auto', 'overflow-x': 'visible', 'overflow-y': 'visible',
   };
   for (let node: HTMLElement | null = root; node; node = node.parentElement) {
     const element = node;
     const computed = getComputedStyle(element);
-    for (const [name, value] of Object.entries(viewportValues)) {
+    for (const [name, value] of Object.entries(expandedValues)) {
       const current = computed.getPropertyValue(name);
       if (!current || current === value) continue;
       const previous = element.style.getPropertyValue(name);

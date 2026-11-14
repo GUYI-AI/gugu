@@ -60,6 +60,9 @@ it.each(['dark', 'light'] as const)('%s: expand/collapse preserves editor identi
   document.documentElement.dataset.theme = theme
   const { editor, send } = await mount()
   host!.style.transform = 'translateZ(0)'
+  host!.style.overflow = 'hidden'
+  host!.style.isolation = 'isolate'
+  host!.style.zIndex = '1'
   const originalTransform = getComputedStyle(host!).transform
   await page.getByTestId('chat-composer').fill('第一行\n第二行，继续输入中文')
   await until('expand control appears', () => !!host?.querySelector('[data-phone-editor-toggle]'))
@@ -78,6 +81,9 @@ it.each(['dark', 'light'] as const)('%s: expand/collapse preserves editor identi
   await page.getByRole('button', { name: translateSessionMessage('composer.expandEditor') }).click()
   await until('expanded layout', () => !!host?.querySelector('[data-phone-expanded]'))
   expect(getComputedStyle(host!).transform).toBe('none')
+  expect(getComputedStyle(host!).overflow).toBe('visible')
+  expect(getComputedStyle(host!).isolation).toBe('auto')
+  expect(getComputedStyle(host!).zIndex).toBe('auto')
   expect(host!.querySelector('[contenteditable]')).toBe(editor)
   expect(document.activeElement).toBe(editor)
   expect(selection.anchorNode).toBe(before.node)
@@ -92,6 +98,9 @@ it.each(['dark', 'light'] as const)('%s: expand/collapse preserves editor identi
   expect(expanded.right).toBe(390)
   expect(expanded.top).toBeLessThan(60)
   expect(expanded.bottom).toBeLessThanOrEqual(844)
+  const toggle = host!.querySelector<HTMLElement>('[data-phone-editor-toggle]')!
+  const control = toggle.getBoundingClientRect()
+  expect(toggle.contains(document.elementFromPoint(control.x + control.width / 2, control.y + control.height / 2))).toBe(true)
   await page.getByRole('button', { name: translateSessionMessage('composer.collapseEditor') }).click()
   await until('collapsed layout', () => !host?.querySelector('[data-phone-expanded]'))
   expect(host!.querySelector('[contenteditable]')).toBe(editor)
@@ -101,6 +110,9 @@ it.each(['dark', 'light'] as const)('%s: expand/collapse preserves editor identi
   expect(blur).not.toHaveBeenCalled()
   expect(compositionEnd).not.toHaveBeenCalled()
   expect(getComputedStyle(host!).transform).toBe(originalTransform)
+  expect(getComputedStyle(host!).overflow).toBe('hidden')
+  expect(getComputedStyle(host!).isolation).toBe('isolate')
+  expect(getComputedStyle(host!).zIndex).toBe('1')
   expect(send).not.toHaveBeenCalled()
   // A real completion is still delivered to the original node after both transitions.
   editor.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '中' }))
