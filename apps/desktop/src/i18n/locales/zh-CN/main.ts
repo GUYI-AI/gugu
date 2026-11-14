@@ -393,7 +393,7 @@ export default {
     "emailPlaceholder": "邮箱地址",
     "emailRequired": "请填写邮箱地址",
     "failed": "操作失败，请稍后重试",
-    "headline": "别自己做，<break />让 Agent 来。",
+    "headline": "别自己做，<break />让 AI 来。",
     "welcome": "欢迎来到咕咕",
     "subtitle": "登录你的账号，开始与 AI 协作",
     "brandSubtitle": "你想做的，咕咕帮你做到。",
