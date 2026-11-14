@@ -166,6 +166,33 @@ describe('approved A2A activity', () => {
     expect(row.top).toBeGreaterThanOrEqual(viewport.top);
     expect(row.top).toBeLessThan(viewport.bottom);
   });
+  it.each(['answered', 'withdrawn'] as const)('preserves an opened activity when a question is %s in the active and committed transcript', async state => {
+    const records = [turn('own', [ordinary('Owner question', 'user')]), turn('report', [delivery('incoming')])];
+    const t = await mount(800, records);
+    t.button().click();
+    await until('report opened', () => t.head()?.dataset.expanded === 'true');
+    const receipt = turn('receipt', [{ ...ordinary('receipt', 'user'), text: '<gugu_question_answer>\n'
+      + JSON.stringify({ question_id: 'question', state, answers: [{ selected: ['Keep it'] }] }) + '\n</gugu_question_answer>' }]);
+    t.state.transcript.activeTurn.set(receipt, 'generating');
+    await until('answer status row mounted', () => !!t.host.querySelector('[data-slot="question-answer"]'));
+    expect(t.head()?.dataset.expanded).toBe('true');
+    expect(t.host.querySelector('[data-user-card="incoming"]')).not.toBeNull();
+    batch(() => { t.state.transcript.history.seed([...records, receipt]); t.state.transcript.activeTurn.set(null); });
+    await untilStable('answer reconciled', () => t.scroll().scrollHeight);
+    expect(t.head()?.dataset.expanded).toBe('true');
+    expect(t.host.querySelector('[data-user-card="incoming"]')).not.toBeNull();
+    expect(t.host.textContent).not.toContain('<gugu_question_answer>');
+  });
+  it('preserves an opened activity when another report arrives', async () => {
+    const records = [turn('own', [ordinary('Owner question', 'user')]), turn('report', [delivery('incoming')])];
+    const t = await mount(800, records);
+    t.button().click();
+    await until('report opened', () => t.head()?.dataset.expanded === 'true');
+    t.state.transcript.history.seed([...records, turn('second', [delivery('second')])]);
+    await until('second report visible inside the activity', () => !!t.host.querySelector('[data-user-card="second"]'));
+    expect(t.head()?.dataset.expanded).toBe('true');
+    expect(t.host.querySelectorAll('[data-agent-activity]')).toHaveLength(1);
+  });
   it('preserves manual reading across remount and collapses old A2A while following a new owner input to bottom', async () => {
     const t = await mount(800, [turn('a', [delivery('incoming', 'Long agent content '.repeat(500))]), turn('p', [ordinary('Panel answer')])]);
     t.button().click();
