@@ -22,9 +22,16 @@ describe('effect-fetch-state ratchet', () => {
     expect(stale, `lower these in ${BASELINE} (node scripts/checks/effect-fetch-state.mts --write)`).toEqual([])
   })
 
+  // The App market and the assistant's connections are drawn inside Settings but belong to the App and assistant domains
+  // (PR 3 of open-flicker); they leave the baseline with those domains.
+  const OTHER_DOMAINS = new Set([
+    'apps/desktop/src/session/renderer/features/settings/components/ExtensionsSettingsCard.tsx',
+    'apps/desktop/src/components/settings/MobileAppsSection.tsx',
+    'apps/desktop/src/components/settings/channels/useChatChannels.ts',
+  ])
   it('the settings surfaces have none left', () => {
-    const settings = Object.keys(actual).filter((file) =>
-      /\/components\/(settings|usage|agentsettings|devices)\/|\/session\/renderer\/features\/settings\//.test(file))
+    const settings = Object.keys(actual).filter((file) => !OTHER_DOMAINS.has(file)
+      && /\/components\/(settings|usage|agentsettings|devices)\/|\/session\/renderer\/features\/settings\//.test(file))
     expect(settings).toEqual([])
   })
 })
@@ -42,7 +49,16 @@ describe('what counts', () => {
     expect(scanFile('a.tsx', component('read().then((v) => setValue(v))'))).toBe(1)
     expect(scanFile('a.tsx', component('void (async () => { setValue(await read()) })()'))).toBe(1)
   })
+  // The acceptance probe found these passing the first version of the check.
+  it('a setter handed to the continuation, and a function of the component that reads into state', () => {
+    expect(scanFile('a.tsx', component('read().then(setValue)'))).toBe(1)
+    expect(scanFile('a.tsx', component('void load()', 'const load = async () => setValue(await read())'))).toBe(1)
+    expect(scanFile('a.tsx', component('load()', 'const load = useCallback(async () => { setValue(await read()) }, [])'))).toBe(1)
+    expect(scanFile('a.tsx', component('load()', 'function load() { read().then(setValue) }'))).toBe(1)
+    expect(scanFile('a.tsx', component('outer()', 'const inner = async () => setValue(await read()); const outer = () => { void inner() }'))).toBe(1)
+  })
   it('not a synchronous update, nor an answer that goes elsewhere', () => {
+    expect(scanFile('a.tsx', component('reset()', 'const reset = () => setValue(null)'))).toBe(0)
     expect(scanFile('a.tsx', component('setValue(1)'))).toBe(0)
     expect(scanFile('a.tsx', component('read().then((v) => store.put(v))'))).toBe(0)
   })
