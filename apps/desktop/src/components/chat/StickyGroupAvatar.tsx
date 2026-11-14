@@ -4,19 +4,52 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react'
 const GROUP_TOP_ATTR = 'data-avatar-group-top'
 
 type AvatarBounds = { layer: HTMLDivElement; bottom: number; height: number }
-const avatarMeasures = new Map<Element, Set<() => AvatarBounds | undefined>>()
+type AvatarMeasure = { row: Element; read: () => AvatarBounds | undefined }
+const avatarMeasures = new Map<Element, Set<AvatarMeasure>>()
+// Rows are content-visibility:auto once laid out. Reading a bubble in a skipped row forces that row's layout, once per row,
+// and a skipped row paints nothing, so its layer waits for the row's unskip event instead. Unknown state counts as shown.
+const skippedRows = new WeakSet<Element>()
+const waitingRows = new Map<Element, Set<AvatarMeasure>>()
+const skipWatchedLists = new WeakSet<Element>()
 let avatarResize: ResizeObserver | undefined
-function avatarResizeObserver(): ResizeObserver {
+
+function applyAvatarMeasures(measures: Iterable<AvatarMeasure>) {
   // Like BubbleSender's owner-fit observer, read every affected row before writing any styles, including across lists.
+  const bounds = [...measures].map(measure => measure.read())
+  for (const box of bounds) {
+    if (!box) continue
+    box.layer.style.bottom = `${box.bottom}px`
+    box.layer.style.height = `${box.height}px`
+  }
+}
+
+function avatarResizeObserver(): ResizeObserver {
   return avatarResize ??= new ResizeObserver((entries) => {
-    const measures = new Set(entries.flatMap(({ target }) => [...(avatarMeasures.get(target) ?? [])]))
-    const bounds = [...measures].map(measure => measure())
-    for (const box of bounds) {
-      if (!box) continue
-      box.layer.style.bottom = `${box.bottom}px`
-      box.layer.style.height = `${box.height}px`
+    const measures = new Set<AvatarMeasure>()
+    for (const { target } of entries) {
+      for (const measure of avatarMeasures.get(target) ?? []) {
+        if (!skippedRows.has(measure.row)) { measures.add(measure); continue }
+        const waiting = waitingRows.get(measure.row) ?? new Set<AvatarMeasure>()
+        waitingRows.set(measure.row, waiting.add(measure))
+      }
     }
+    applyAvatarMeasures(measures)
   })
+}
+
+function watchRowSkips(list: Element) {
+  if (skipWatchedLists.has(list)) return
+  skipWatchedLists.add(list)
+  // The event does not bubble; a capture listener on the list sees every row's.
+  list.addEventListener('contentvisibilityautostatechange', (event) => {
+    const row = event.target as Element
+    if ((event as Event & { skipped?: boolean }).skipped) { skippedRows.add(row); return }
+    skippedRows.delete(row)
+    const waiting = waitingRows.get(row)
+    if (!waiting) return
+    waitingRows.delete(row)
+    applyAvatarMeasures(waiting)
+  }, true)
 }
 
 /**
@@ -39,7 +72,7 @@ function StickyGroupAvatar({ width, continuesGroup, children }: { width: string;
     const row = slot?.closest('[role="listitem"]')
     const list = row?.parentElement
     if (!slot || !layer || !row || !list) return
-    const measure = () => {
+    const read = () => {
       // 一条成组的消息,组首就是自己这一行 ⇒ 不往上找(往上找会落到上一组的组首,层伸进别的组)。
       let top: Element | null = null
       let firstMounted = row
@@ -53,16 +86,20 @@ function StickyGroupAvatar({ width, continuesGroup, children }: { width: string;
       if (!own || !first) return
       return { layer, bottom: box.bottom - own.bottom, height: own.bottom - first.top }
     }
+    const measure: AvatarMeasure = { row, read }
+    watchRowSkips(list)
     // The first delivery still measures after layout and before paint, without a synchronous mid-commit read.
     const observer = avatarResizeObserver()
     // A new tail row needs its first notification even when the list's dimensions stay unchanged.
     const targets = [list, row].map(target => {
-      const measures = avatarMeasures.get(target) ?? new Set<() => AvatarBounds | undefined>()
+      const measures = avatarMeasures.get(target) ?? new Set<AvatarMeasure>()
       if (!avatarMeasures.has(target)) { avatarMeasures.set(target, measures); observer.observe(target) }
       measures.add(measure)
       return { target, measures }
     })
     return () => {
+      const waiting = waitingRows.get(row)
+      if (waiting?.delete(measure) && !waiting.size) waitingRows.delete(row)
       for (const { target, measures } of targets) {
         measures.delete(measure)
         if (!measures.size) { avatarMeasures.delete(target); observer.unobserve(target) }
