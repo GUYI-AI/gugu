@@ -2,22 +2,23 @@ package app.gugu.chat;
 
 import android.app.Dialog;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
+import android.util.TypedValue;
+import android.view.ActionMode;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.accessibility.AccessibilityNodeInfo;
-import android.widget.Button;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
+import android.widget.FrameLayout;
 import android.widget.TextView;
-
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
+import androidx.core.widget.TextViewCompat;
 
 import com.getcapacitor.Plugin;
+import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
@@ -34,47 +35,54 @@ public class GuguTextSelectionPlugin extends Plugin {
         String id = call.getString("id"), text = call.getString("text");
         Integer start = call.getInt("start"), end = call.getInt("end");
         String title = call.getString("title"), closeLabel = call.getString("closeLabel");
+        JSObject appearance = call.getObject("appearance");
         if (id == null || id.isEmpty() || title == null || closeLabel == null || start == null || end == null
-                || !NativeTextRange.valid(text, start, end)) { call.reject("Invalid text selection"); return; }
+                || !NativeTextRange.valid(text, start, end) || appearance == null
+                || appearance.optDouble("viewportWidth", 0) <= 0 || appearance.optDouble("width", 0) <= 0) { call.reject("Invalid text selection"); return; }
         getActivity().runOnUiThread(() -> {
             if (dialog != null) { call.reject("Text selection is already open"); return; }
             boolean dark = Boolean.TRUE.equals(call.getBoolean("dark"));
-            Dialog page = new Dialog(getActivity(), dark ? android.R.style.Theme_Material_NoActionBar : android.R.style.Theme_Material_Light_NoActionBar);
+            Dialog page = new Dialog(getActivity(), android.R.style.Theme_Translucent_NoTitleBar);
             dialog = page; pending = call; selectionId = id;
-            LinearLayout root = new LinearLayout(page.getContext());
-            root.setOrientation(LinearLayout.VERTICAL);
-            root.setBackgroundColor(dark ? Color.rgb(24, 24, 24) : Color.WHITE);
-            LinearLayout header = new LinearLayout(page.getContext());
-            header.setGravity(android.view.Gravity.CENTER_VERTICAL);
-            header.setPadding(dp(16), 0, dp(8), 0);
-            TextView heading = new TextView(page.getContext());
-            heading.setText(title); heading.setTextSize(18);
-            header.addView(heading, new LinearLayout.LayoutParams(0, dp(56), 1));
-            heading.setGravity(android.view.Gravity.CENTER_VERTICAL);
-            Button back = new Button(page.getContext());
-            back.setText(closeLabel); back.setOnClickListener(view -> page.dismiss());
-            header.addView(back);
-            root.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            ScrollView scroll = new ScrollView(page.getContext());
-            scroll.setFillViewport(true);
+            FrameLayout root = new FrameLayout(page.getContext());
+            root.setOnClickListener(view -> page.dismiss());
+            float scale = getBridge().getWebView().getWidth() / (float) appearance.optDouble("viewportWidth");
             TextView body = new TextView(page.getContext());
             body.setTextIsSelectable(true);
             body.setText(text, TextView.BufferType.SPANNABLE);
-            body.setTextSize(16);
+            body.setTextSize(TypedValue.COMPLEX_UNIT_PX, (float) appearance.optDouble("fontSize", 16) * scale);
+            body.setTextColor(Color.parseColor(appearance.optString("color", dark ? "#ffffff" : "#181818")));
+            body.setIncludeFontPadding(false);
+            TextViewCompat.setLineHeight(body, Math.round((float) appearance.optDouble("lineHeight", 24) * scale));
             body.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG);
-            body.setPadding(dp(16), dp(16), dp(16), dp(24));
-            scroll.addView(body, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
-            ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
-                Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
-                return insets;
+            body.setPadding(0, 0, 0, 0);
+            body.setCustomSelectionActionModeCallback(new ActionMode.Callback() {
+                @Override public boolean onCreateActionMode(ActionMode mode, Menu menu) { return true; }
+                @Override public boolean onPrepareActionMode(ActionMode mode, Menu menu) { return false; }
+                @Override public boolean onActionItemClicked(ActionMode mode, MenuItem item) { return false; }
+                @Override public void onDestroyActionMode(ActionMode mode) { body.post(page::dismiss); }
             });
+            FrameLayout.LayoutParams placement = new FrameLayout.LayoutParams(
+                    Math.round((float) appearance.optDouble("width") * scale), ViewGroup.LayoutParams.WRAP_CONTENT);
+            placement.leftMargin = Math.round((float) appearance.optDouble("x") * scale);
+            placement.topMargin = Math.round((float) appearance.optDouble("y") * scale);
+            root.addView(body, placement);
             page.setContentView(root);
             page.setOnDismissListener(ignored -> finish(id));
             body.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+                private boolean positioned;
                 @Override public void onGlobalLayout() {
                     if (body.getLayout() == null || !page.isShowing()) return;
+                    if (!positioned) {
+                        int[] webOrigin = new int[2], nativeOrigin = new int[2];
+                        getBridge().getWebView().getLocationOnScreen(webOrigin);
+                        root.getLocationOnScreen(nativeOrigin);
+                        placement.leftMargin += webOrigin[0] - nativeOrigin[0];
+                        placement.topMargin += webOrigin[1] - nativeOrigin[1];
+                        positioned = true;
+                        body.setLayoutParams(placement);
+                        return;
+                    }
                     body.getViewTreeObserver().removeOnGlobalLayoutListener(this);
                     body.requestFocus();
                     body.bringPointIntoView(start);
@@ -93,9 +101,12 @@ public class GuguTextSelectionPlugin extends Plugin {
             Window window = page.getWindow();
             if (window != null) {
                 window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+                window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+                window.setWindowAnimations(0);
                 MobileShellChrome.applyTo(window, dark);
+                window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             }
-            ViewCompat.requestApplyInsets(root);
         });
     }
 
@@ -113,8 +124,6 @@ public class GuguTextSelectionPlugin extends Plugin {
         dialog = null; pending = null; selectionId = null;
         if (completion != null) completion.resolve();
     }
-
-    private int dp(int size) { return Math.round(size * getContext().getResources().getDisplayMetrics().density); }
 
     @Override protected void handleOnDestroy() {
         if (dialog != null) getActivity().runOnUiThread(() -> { if (dialog != null) dialog.dismiss(); });

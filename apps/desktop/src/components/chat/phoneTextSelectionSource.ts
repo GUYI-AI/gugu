@@ -5,6 +5,7 @@ export interface PhoneTextSelectionSource {
   start: number
   end: number
   browserRange: Range
+  element: HTMLElement
 }
 
 type CaretDocument = Document & {
@@ -107,7 +108,7 @@ export function capturePhoneTextSelection(bubble: HTMLElement | null, x: number,
     if (at < 0) return null
     const text = rendered.slice(0, at) + rendered.slice(at + marker.length)
     const word = phoneTextWordRange(text, at)
-    return word ? { text, ...word, browserRange: browserWordRange(root, node, offset, word.start - at, word.end - at) } : null
+    return word ? { text, ...word, browserRange: browserWordRange(root, node, offset, word.start - at, word.end - at), element: root } : null
   } finally {
     host.remove()
   }

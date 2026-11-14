@@ -173,10 +173,12 @@ describe('MessageBubble touch menu', () => {
     expect(window.getSelection()?.toString()).toBe('')
     expect(document.querySelector('[data-testid="message-selection-copy"]')).toBeNull()
     expect(messageBubble().style.visibility).toBe('')
+    expect(messageBubble().querySelector<HTMLElement>('.gg-md')?.style.visibility).toBe('hidden')
     const request = open.mock.calls[0][0]
     await act(async () => { finish() })
     expect(close).toHaveBeenCalledExactlyOnceWith({ id: request.id })
     expect(messageBubble().style.userSelect).toBe('none')
+    expect(messageBubble().querySelector<HTMLElement>('.gg-md')?.style.visibility).toBe('')
   })
   it('keeps the first press when Android delivers contextmenu after the message is lifted', async () => {
     const open = vi.fn<NativeTextSelection['open']>(() => new Promise<void>(() => {}))

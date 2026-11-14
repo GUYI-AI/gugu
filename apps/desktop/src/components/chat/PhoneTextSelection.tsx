@@ -6,6 +6,7 @@ import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reaso
 import { useToast } from '../toastContext'
 import { useBackLayer } from '../ui/sheetStack'
 import type { PhoneTextSelectionSource } from './phoneTextSelectionSource'
+import { phoneTextSelectionAppearance } from './phoneTextSelectionAppearance'
 
 /** The phone shell owns native selection; browsers keep their own selection UI. */
 export function PhoneTextSelection({ source, onDone }: {
@@ -24,13 +25,18 @@ export function PhoneTextSelection({ source, onDone }: {
     if (native) {
       let active = true
       let opened = false
+      const element = source.element
+      const previousVisibility = element.style.visibility
       // A development StrictMode cleanup must not leave a native page opening after its owner unmounts.
       void Promise.resolve().then(() => {
         if (!active) return
         opened = true
+        const appearance = phoneTextSelectionAppearance(element)
+        element.style.visibility = 'hidden'
         return native.open({ id, text: source.text, start: source.start, end: source.end,
           title: callbacks.current.t('message.actions.selectText'), closeLabel: callbacks.current.t('message.selectionClose'),
           dark: document.documentElement.dataset.theme === 'dark',
+          appearance,
         })
       }).then(() => { if (active && opened) callbacks.current.onDone() }, error => {
         if (!active) return
@@ -39,6 +45,7 @@ export function PhoneTextSelection({ source, onDone }: {
       })
       return () => {
         active = false
+        element.style.visibility = previousVisibility
         if (opened) void native.close({ id }).catch(error => rendererLogger('phone-text-selection').error({ error }, 'Cannot close native text selection'))
       }
     }
