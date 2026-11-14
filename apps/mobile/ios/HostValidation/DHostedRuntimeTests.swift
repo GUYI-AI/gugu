@@ -416,7 +416,13 @@ extension DHostedRuntimeTests {
         let manifestURL = root.appendingPathComponent("manifest.json")
         let fixture = try PhoneCalendarSimulatorFixture.open(manifestURL: manifestURL)
         defer {
-            do { try fixture.remove(manifestURL: manifestURL); try FileManager.default.removeItem(at: root) }
+            do {
+                try fixture.remove(manifestURL: manifestURL)
+                XCTAssertNil(EKEventStore().calendar(withIdentifier: fixture.manifest.calendarIdentifier))
+                XCTAssertFalse(FileManager.default.fileExists(atPath: manifestURL.path))
+                try attach("E6-fixture-cleanup", ["calendarID": fixture.manifest.calendarIdentifier, "removed": true])
+                try FileManager.default.removeItem(at: root)
+            }
             catch { XCTFail("Fixture cleanup failed: \(error)") }
         }
         let service = PhoneCalendarService(store: try fixture.makeStore())
