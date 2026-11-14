@@ -96,7 +96,7 @@ async function mount(
 describe('sticky user lanes', () => {
   it('preserves the attachment-name summary when a pure attachment row has no text bubble', async () => {
     const committed = longTurn('a', 0, 30);
-    committed.items[0] = { ...committed.items[0], text: '', attachments: [{ id: 'file', name: 'report.pdf', kind: 'file' }] } as ChatItem;
+    committed.items[0] = { ...committed.items[0], text: '', attachments: [{ id: 'file', name: 'report.pdf', kind: 'file' }] } as TranscriptTurn['items'][number];
     const t = await mount([committed], undefined, buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 72, agentConversation: true }));
     await until('attachment summary mounted', () => t.summary('a-user'), summary => summary != null);
     expect(t.card('a-user')).toBeNull();
