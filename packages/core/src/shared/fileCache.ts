@@ -32,6 +32,7 @@ export function createCachedFileSink(cache: FileChunkCache, size: number): FileS
           const start = Math.max(offset, entry.offset), end = Math.min(offset + length, entry.offset + entry.length)
           if (start >= end) continue
           const part = await cache.get(key, index)
+          if (disposed) throw new Error('File snapshot is disposed')
           if (!part || part.length !== entry.length) throw new Error('File staging was removed or changed')
           bytes.set(part.subarray(start - entry.offset, end - entry.offset), start - offset)
         }
