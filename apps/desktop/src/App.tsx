@@ -32,6 +32,7 @@ import { installAssistantPanelHost } from './components/assistant/assistant-pane
 import { installConnectionHost } from './components/connections/connection-host'
 import { usePhoneImeDismiss } from './mobile/usePhoneImeDismiss'
 import { iosOwnerAvailable } from './mobile/ios-runtime/iosOwnerClient'
+import { startIOSPush } from './mobile/ios-push/startIOSPush'
 import { startIOSOwnerPublication } from './mobile/ios-runtime/startIOSOwnerPublication'
 import { IOSHostRoot } from './mobile/ios-host/IOSHostRoot'
 
@@ -113,6 +114,7 @@ export default function App() {
   useEffect(() => {
     if (iosOwnerAvailable()) return startIOSOwnerPublication()
   }, [])
+  useEffect(startIOSPush, [])
   useEffect(startAuthCallbackRouting, [])
   useEffect(() => watchReferralLinks(platform.watchOpenedLinks, sessionCoordinator), [])
   useEffect(() => { authCallbacks.setAuthenticated(Boolean(session.session)) }, [session.session])

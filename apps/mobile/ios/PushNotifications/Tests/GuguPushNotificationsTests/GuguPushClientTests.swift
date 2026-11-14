@@ -123,6 +123,17 @@ private func proof(_ scope: GuguPushRetirementScope, kind: GuguPushCleanupKind =
 }
 
 @Suite @MainActor struct GuguPushClientTests {
+    @Test func bridgeCompositionPreservesExactCleanupLedgerAndWithdrawsOldAuthority() async throws {
+        let f = Fixture()
+        _ = try await f.client.register(expectedBinding: f.current)
+        let old = f.envelope()
+        f.client.connect(provider: f.provider, preferences: { f.preferences }, onHint: { f.hints.append($0) })
+        #expect(!(await f.client.handle(old, kind: .opened)))
+        _ = try await f.client.revoke(expectedBinding: f.current)
+        #expect(f.provider.revocations.count == 1)
+        #expect(f.provider.revocations.first?.receipt.serverGeneration == old.serverGeneration)
+    }
+
     @Test func discoveryReadsTruthWithoutPromptOrRegistration() async throws {
         let f = Fixture(); f.platform.value = pushSettings(.provisional)
         let state = try await f.client.status(expectedBinding: f.current)

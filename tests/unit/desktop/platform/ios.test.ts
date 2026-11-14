@@ -3,11 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const native = vi.hoisted(() => ({ addListener: vi.fn(), getState: vi.fn(), getInfo: vi.fn(), write: vi.fn() }))
 const calendarPlugins = vi.hoisted(() => ({ native: true, os: 'ios', names: new Set<string>() }))
-vi.mock('@capacitor/core', () => ({ Capacitor: {
+vi.mock('@capacitor/core', () => ({ registerPlugin: () => ({}), Capacitor: {
   isNativePlatform: () => calendarPlugins.native,
   getPlatform: () => calendarPlugins.os,
   isPluginAvailable: (name: string) => calendarPlugins.names.has(name),
 } }))
+vi.mock('../../../../apps/desktop/src/mobile/ios-runtime/startIOSOwnerPublication', () => ({ getIOSOwnerPublicationSnapshot: () => ({ status: 'waiting', binding: null }) }))
 vi.mock('@capacitor/app', () => ({ App: native }))
 vi.mock('@capacitor/clipboard', () => ({ Clipboard: { write: native.write } }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }))
@@ -39,6 +40,12 @@ describe('iOS foreground client', () => {
     expect(iosPlatform.authCallbacks).toBeUndefined()
     expect(iosPlatform.oauthBrowser).toBeUndefined()
     expect(iosPlatform.systemPermissions).toEqual([])
+  })
+
+  it('advertises visible notifications only with the native push plugin', () => {
+    calendarPlugins.names.add('GuguPushNotifications')
+    expect(iosPlatform.capabilities.notifications).toBe(true)
+    expect(iosPlatform.systemPermissions).toEqual(['notifications'])
   })
 
   it('preserves a native clipboard failure instead of reporting a successful copy', async () => {

@@ -8,8 +8,8 @@ const config: CapacitorConfig = {
   loggingBehavior: 'none',
   ios: {
     path: 'apps/mobile/ios',
-    // This foreground-only build does not ship Android host, market, or notification plugins.
-    includePlugins: ['@capacitor/app', '@capacitor/clipboard'],
+    // iOS uses one local foreground notification outlet plus native visible APNs.
+    includePlugins: ['@capacitor/app', '@capacitor/clipboard', '@capacitor/local-notifications'],
   },
   android: {
     path: 'apps/mobile/android',

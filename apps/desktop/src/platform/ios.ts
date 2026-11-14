@@ -1,3 +1,6 @@
+import { LocalNotifications } from '@capacitor/local-notifications'
+import { Capacitor, registerPlugin } from '@capacitor/core'
+import type { IOSOwnerBinding } from '../mobile/ios-runtime/iosOwnerClient'
 import { App } from '@capacitor/app'
 import { Clipboard } from '@capacitor/clipboard'
 import type { AppPlatform } from './types'
@@ -5,14 +8,50 @@ import { createUnsupportedPlatform } from './unsupported'
 import { rendererLogger } from '../lib/log'
 import { iosCalendarPermissionsAvailable } from '../mobile/ios-calendar/iosCalendarPermissionsAvailability'
 
+const push = registerPlugin<{
+  requestAuthorization(input: { expectedBinding: IOSOwnerBinding }): Promise<{ visibleAlertsAllowed: boolean }>
+}>('GuguPushNotifications')
+let notificationId = Math.floor(Date.now() / 1000) % 1_000_000_000
 const base = createUnsupportedPlatform('capacitor', 'iOS')
 const lifecycleError = (error: unknown) => rendererLogger('ios/lifecycle').error({ error }, 'Cannot observe application lifecycle')
 
 /** Foreground client only. Missing Android plugins never become advertised iOS capabilities. */
 export const iosPlatform: AppPlatform = {
   ...base,
-  capabilities: { ...base.capabilities, appVersion: true, clipboard: true,
+  capabilities: { ...base.capabilities, appVersion: true, clipboard: true, get notifications() { return Capacitor.isPluginAvailable('GuguPushNotifications') },
     get calendarSettings() { return iosCalendarPermissionsAvailable() },
+  },
+  get systemPermissions() { return Capacitor.isPluginAvailable('GuguPushNotifications') ? ['notifications'] as const : [] },
+  async checkSystemPermission(permission) {
+    if (permission !== 'notifications') return 'unreadable'
+    const value = (await LocalNotifications.checkPermissions()).display
+    return value === 'granted' ? 'granted' : value === 'prompt' || value === 'prompt-with-rationale' ? 'prompt' : 'blocked'
+  },
+  async requestSystemPermission(permission) {
+    if (permission !== 'notifications') return 'unreadable'
+    const { getIOSOwnerPublicationSnapshot } = await import('../mobile/ios-runtime/startIOSOwnerPublication')
+    const owner = getIOSOwnerPublicationSnapshot()
+    if (owner.status !== 'ready' || !owner.binding) throw new Error('Current native owner is unavailable')
+    const result = await push.requestAuthorization({ expectedBinding: owner.binding })
+    window.dispatchEvent(new Event('gugu:ios-push-permission'))
+    return result.visibleAlertsAllowed ? 'granted' : 'blocked'
+  },
+  async showNotification(payload) {
+    if ((await LocalNotifications.checkPermissions()).display !== 'granted') {
+      return { success: false, displayed: false, error: 'NOTIFICATIONS_NOT_GRANTED' }
+    }
+    notificationId = (notificationId + 1) % 2_147_483_647
+    await LocalNotifications.schedule({ notifications: [{ id: notificationId,
+      title: payload.title, body: payload.body ?? '', sound: payload.silent ? undefined : 'default',
+      extra: payload.chatId ? { chatId: payload.chatId } : undefined }] })
+    return { success: true, displayed: true }
+  },
+  subscribeNotificationClicks(listener) {
+    let active = true
+    const handle = LocalNotifications.addListener('localNotificationActionPerformed', (event) => {
+      if (active && event.actionId === 'tap') listener({ chatId: typeof event.notification.extra?.chatId === 'string' ? event.notification.extra.chatId : null })
+    })
+    return () => { active = false; void handle.then(value => value.remove()).catch(lifecycleError) }
   },
   getAppVersion: async () => (await App.getInfo()).version,
   writeClipboardText: async (string) => { await Clipboard.write({ string }) },
