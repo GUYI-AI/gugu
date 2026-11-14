@@ -15,8 +15,13 @@ $powershell = (Get-Process -Id $PID).Path
 $results = @()
 function Assert($condition, $message) { if (-not $condition) { throw $message } }
 function Invoke-Phase($phase, [int]$expected = 0) {
-  & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $Helper -Phase $phase -Target $target -AppId $app -Executable 'fixture.exe' -Version '0.3.5' -InstallKey $key -UninstallKey $uninstall -Mode CurrentUser
-  Assert ($LASTEXITCODE -eq $expected) "$phase returned $LASTEXITCODE, expected $expected"
+  $prior=$ErrorActionPreference
+  try {
+    $ErrorActionPreference='Continue' # Expected fault cases intentionally write native stderr.
+    & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $Helper -Phase $phase -Target $target -AppId $app -Executable 'fixture.exe' -Version '0.3.5' -InstallKey $key -UninstallKey $uninstall -Mode CurrentUser
+    $code=$LASTEXITCODE
+  } finally { $ErrorActionPreference=$prior }
+  Assert ($code -eq $expected) "$phase returned $code, expected $expected"
 }
 function Payload($dir, $text) {
   New-Item -ItemType Directory -Path (Join-Path $dir 'resources\app') -Force | Out-Null

@@ -11,6 +11,7 @@ param(
 # Runs from NSIS's private plugin directory, never from a directory being renamed.
 # No network, Node installation, profile, user-data deletion, or process termination.
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $Target = [IO.Path]::GetFullPath($Target).TrimEnd('\')
 if ($Target -eq [IO.Path]::GetPathRoot($Target).TrimEnd('\')) { throw 'Cannot install at a volume root' }
 $journal = "$Target.gugu-install-$AppId"
@@ -36,7 +37,9 @@ function Retry-Files([scriptblock]$operation) {
 function Save-State($s) {
   $temp = "$statePath.tmp"
   [IO.File]::WriteAllText($temp, ($s | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
-  if ([IO.File]::Exists($statePath)) { Retry-Files { [IO.File]::Replace($temp, $statePath, $null) } }
+  # Windows PowerShell converts $null to an empty string for string arguments;
+  # Replace requires a real null (no backup), not an invalid empty backup path.
+  if ([IO.File]::Exists($statePath)) { Retry-Files { [IO.File]::Replace($temp, $statePath, [NullString]::Value) } }
   else { Retry-Files { [IO.File]::Move($temp, $statePath) } }
 }
 function Load-State {
