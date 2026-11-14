@@ -220,7 +220,7 @@ it('a long model name gives way to the permission name, not the other way round'
 })
 
 it.each([false, true])(
-  '1292 ordinary phone composer preserves its three-column layout (group=%s)',
+  '1292 ordinary phone composer keeps attachment and send inside its capsule (group=%s)',
   async (group) => {
     await i18n.changeLanguage('zh-CN')
     await page.viewport(390, 844)
@@ -243,7 +243,7 @@ it.each([false, true])(
       () => !!harness.container.querySelector('[data-slot="composer-bar"]')
     )
     const bar = harness.container.querySelector('[data-slot="composer-bar"]')!
-    const editor = harness.container.querySelector('[data-slot="composer-input"]')!
+    const editor = harness.container.querySelector('[data-testid="chat-composer"]')!
     const send = harness.container.querySelector('button[aria-label="发送消息"]')!
     const attach = harness.container.querySelector('[data-slot="composer-actions-start"] > button')!
     expect(getComputedStyle(bar).gridTemplateColumns.split(' ')).toHaveLength(3)
