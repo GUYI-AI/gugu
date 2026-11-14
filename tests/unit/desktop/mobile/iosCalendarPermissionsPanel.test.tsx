@@ -25,7 +25,7 @@ function client(read = vi.fn(async () => status('fullAccess'))): IOSCalendarPerm
 }
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { vi.clearAllMocks(); native.foreground = null; native.failed = null; harness = createReactHarness() })
-afterEach(() => harness.cleanup())
+afterEach(() => { harness.cleanup(); vi.useRealTimers() })
 
 const permissionText = () => harness.container.querySelector('[role="status"]')?.textContent
 const reload = () => harness.container.querySelector<HTMLButtonElement>('button[aria-label="重新读取日历权限"]')!
@@ -166,6 +166,72 @@ describe('iOS calendar permission panel', () => {
     expect(harness.container.querySelector('[role="alert"]')?.textContent).toContain('连接日历需要完整日历权限')
     expect(transport.connect).toHaveBeenCalledOnce()
     expect(transport.read).toHaveBeenCalledTimes(2)
+  })
+
+  it('recovers a denied system sheet after a transient foreground refusal without manual refresh', async () => {
+    vi.useFakeTimers()
+    const transport = client(vi.fn().mockResolvedValueOnce(status('notDetermined'))
+      .mockRejectedValueOnce({ code: 'not_granted' }).mockResolvedValueOnce(status('denied')))
+    vi.mocked(transport.connect).mockRejectedValue({ code: 'not_granted' })
+    await render(transport)
+    await clickElement(action())
+    expect(permissionText()).toBe('正在连接')
+    expect(reload().disabled).toBe(true)
+    await act(async () => vi.advanceTimersByTimeAsync(250))
+    expect(permissionText()).toBe('未连接，未授权')
+    expect(harness.container.textContent).toContain('请在系统设置中为咕咕开启日历权限。')
+    expect(harness.container.querySelector('[role="alert"]')).toBeNull()
+    expect(transport.connect).toHaveBeenCalledExactlyOnceWith(binding)
+    expect(transport.read).toHaveBeenCalledTimes(3)
+  })
+
+  it('reads a successful allow result without another status read or permission request', async () => {
+    const transport = client(vi.fn(async () => status('notDetermined')))
+    await render(transport)
+    await clickElement(action())
+    expect(permissionText()).toBe('已连接')
+    expect(transport.read).toHaveBeenCalledOnce()
+    expect(transport.connect).toHaveBeenCalledExactlyOnceWith(binding)
+  })
+
+  it('keeps a persistent native refusal failed after one bounded read retry', async () => {
+    vi.useFakeTimers()
+    const transport = client(vi.fn().mockResolvedValueOnce(status('notDetermined')).mockRejectedValue({ code: 'not_granted' }))
+    vi.mocked(transport.connect).mockRejectedValue({ code: 'not_granted' })
+    await render(transport)
+    await clickElement(action())
+    await act(async () => vi.advanceTimersByTimeAsync(250))
+    expect(permissionText()).toBe('查不到')
+    expect(action()).toBeUndefined()
+    expect(transport.read).toHaveBeenCalledTimes(3)
+    expect(transport.connect).toHaveBeenCalledOnce()
+    await act(async () => vi.advanceTimersByTimeAsync(5000))
+    expect(transport.read).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not retry a stale native identity after the system sheet', async () => {
+    const transport = client(vi.fn().mockResolvedValueOnce(status('notDetermined')).mockRejectedValueOnce({ code: 'not_granted' }))
+    vi.mocked(transport.connect).mockRejectedValue({ code: 'stale_context' })
+    await render(transport)
+    await clickElement(action())
+    expect(permissionText()).toBe('查不到')
+    expect(transport.read).toHaveBeenCalledTimes(2)
+    expect(transport.connect).toHaveBeenCalledOnce()
+  })
+
+  it('cancels the delayed read when the owner changes during foreground recovery', async () => {
+    vi.useFakeTimers()
+    const transport = client(vi.fn().mockResolvedValueOnce(status('notDetermined'))
+      .mockRejectedValueOnce({ code: 'not_granted' }).mockResolvedValueOnce(status('restricted', false, 'owner-b')))
+    vi.mocked(transport.connect).mockRejectedValue({ code: 'not_granted' })
+    await render(transport)
+    await clickElement(action())
+    await render(transport, 'owner-b')
+    await act(async () => vi.advanceTimersByTimeAsync(250))
+    expect(permissionText()).toBe('未连接，系统限制')
+    expect(transport.read).toHaveBeenCalledTimes(3)
+    expect(transport.read).toHaveBeenLastCalledWith('owner-b')
+    expect(transport.connect).toHaveBeenCalledOnce()
   })
 
   it('reconciles a lost disconnect reply without falsely restoring connection or replaying it', async () => {

@@ -74,8 +74,22 @@ export function IOSCalendarPermissionsPanel({ ownerId, client = iosCalendarPermi
       // Read actual state once; never replay the connection operation here.
       if (latestRequest.current !== request) return
       try {
-        const status = await client.read(ownerId)
-        if (latestRequest.current === request) setSnapshot({ ownerId, kind: 'ready', status, message: failureMessage(cause) })
+        let status: IOSCalendarSnapshot
+        try {
+          status = await client.read(ownerId)
+        } catch (readFailure) {
+          // EventKit can answer before the dismissed sheet restores the native
+          // foreground guard. Retry only the read once, never the OS request.
+          if (operation !== 'connect' || (cause as { code?: unknown } | null)?.code !== 'not_granted'
+            || (readFailure as { code?: unknown } | null)?.code !== 'not_granted') throw readFailure
+          await new Promise(resolve => setTimeout(resolve, 250))
+          if (latestRequest.current !== request) return
+          status = await client.read(ownerId)
+        }
+        const denied = status.authorization === 'denied' || status.authorization === 'restricted'
+        const foregroundRefusal = (cause as { code?: unknown } | null)?.code === 'not_granted'
+        if (latestRequest.current === request) setSnapshot({ ownerId, kind: 'ready', status,
+          message: denied && foregroundRefusal ? undefined : failureMessage(cause) })
       } catch {
         if (latestRequest.current === request) setSnapshot({ ownerId, kind: 'failed', message: failureMessage(cause) })
       }
