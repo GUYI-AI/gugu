@@ -31,15 +31,3 @@ export function createBetaTypingDiagnosticsHandler(host: Host) {
     } catch { return { accepted: false, reason: 'storage' } }
   }
 }
-
-/** Profiling permission only belongs to the Beta application's entry document. */
-export function withTypingDiagnosticPolicy(response: Response, requestUrl: string, enabled: boolean): Response {
-  if (!enabled) return response
-  const url = new URL(requestUrl)
-  if (url.protocol !== 'gugu-app:' || url.hostname !== 'app' || url.pathname !== '/index.html') return response
-  const headers = new Headers(response.headers)
-  const policy = headers.get('Document-Policy')
-  if (policy && /(?:^|,)\s*js-profiling(?:\s|=|,|$)/.test(policy)) return response
-  headers.set('Document-Policy', [policy, 'js-profiling'].filter(Boolean).join(', '))
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
-}

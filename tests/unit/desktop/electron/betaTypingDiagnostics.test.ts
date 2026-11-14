@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTypingDiagnosticsFile } from '../../../../apps/desktop/electron/typing-diagnostics-file'
-import { createBetaTypingDiagnosticsHandler, withTypingDiagnosticPolicy } from '../../../../apps/desktop/electron/beta-typing-diagnostics'
+import { createBetaTypingDiagnosticsHandler } from '../../../../apps/desktop/electron/beta-typing-diagnostics'
 import { createRendererLogForwarder } from '../../../../apps/desktop/electron/local-renderer-diagnostics'
 import { TYPING_DIAGNOSTICS_SCOPE } from '../../../../apps/desktop/shared/beta-typing-diagnostics'
 
@@ -76,16 +76,4 @@ describe('local Beta typing sink', () => {
     expect(await bad(sender, { operation: 'config' })).toEqual({ enabled: false })
   })
 
-  it('adds policy only to the enabled application document and preserves existing response policy/body', async () => {
-    const make = () => new Response('fixture body', { status: 200, headers: { 'Content-Type': 'text/html', 'Content-Security-Policy': "default-src 'self'", 'Document-Policy': 'force-load-at-top' } })
-    const off = make(); expect(withTypingDiagnosticPolicy(off, 'gugu-app://app/index.html', false)).toBe(off)
-    const asset = make(); expect(withTypingDiagnosticPolicy(asset, 'gugu-app://app/assets/main.js', true)).toBe(asset)
-    const external = make(); expect(withTypingDiagnosticPolicy(external, 'https://external.invalid/index.html', true)).toBe(external)
-    const result = withTypingDiagnosticPolicy(make(), 'gugu-app://app/index.html', true)
-    expect(result.headers.get('Document-Policy')).toBe('force-load-at-top, js-profiling')
-    expect(result.headers.get('Content-Security-Policy')).toBe("default-src 'self'")
-    expect(await result.text()).toBe('fixture body')
-    const blocked = new Response('fixture', { headers: { 'Document-Policy': 'js-profiling=?0' } })
-    expect(withTypingDiagnosticPolicy(blocked, 'gugu-app://app/index.html', true)).toBe(blocked)
-  })
 })

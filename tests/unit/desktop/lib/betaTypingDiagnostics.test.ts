@@ -1,8 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { sanitizeTypingDiagnosticRecord, typingDiagnosticsEnabled } from '../../../../apps/desktop/shared/beta-typing-diagnostics'
-import { createTypingProfiler, profileNearTypingTasks, type TypingProfileTrace } from '../../../../apps/desktop/src/lib/typing-diagnostics-profile'
 
-afterEach(() => { vi.useRealTimers() })
 
 describe('Beta typing diagnostic metadata', () => {
   it('cannot enable a production build with the runtime control', () => {
@@ -22,44 +20,25 @@ describe('Beta typing diagnostic metadata', () => {
         { file: 'gugu-app://app/assets/chunk.js', functionName: 'private input sentence' }],
       samples: [{ timestampMs: 12, marker: Object.assign(Object('script'), { secret: 'PRIVATE_MARKER_CANARY' }), stack: [{ file: 'file:///Users/person/PRIVATE_PATH_CANARY.js', functionName: 'secret' }] }],
     })!
-    expect(out).toMatchObject({ durationMs: 55.12, attribution: [{ container: 'unknown', scope: 'self' }], scripts: [{ file: 'assets/main-abc.js', functionName: 'renderGroup', durationMs: 42 }, { file: 'assets/chunk.js', functionName: 'unknown' }], samples: [{ timestampMs: 12, stack: [] }] })
+    expect(out).toMatchObject({ durationMs: 55.12, attribution: [{ container: 'unknown', scope: 'self' }], scripts: [{ file: 'assets/main-abc.js', functionName: 'renderGroup', durationMs: 42 }, { file: 'assets/chunk.js', functionName: 'unknown' }] })
     expect(out).not.toHaveProperty('status')
     expect(JSON.stringify(out)).not.toMatch(/PRIVATE_|private input/)
     expect(sanitizeTypingDiagnosticRecord({ event: 'message', content: 'secret' })).toBeNull()
     expect(sanitizeTypingDiagnosticRecord({ event: 'key-latency', durationMs: NaN, startMs: -1 })).toEqual({ event: 'key-latency' })
   })
 
-  it('retains frame/stack/resource index zero and only samples near reported tasks', () => {
-    const trace: TypingProfileTrace = { resources: ['gugu-app://app/assets/main.js?private=yes'], frames: [{ resourceId: 0, name: 'busyTask', line: 4, column: 8 }], stacks: [{ frameId: 0 }], samples: [{ timestamp: 100, stackId: 0 }, { timestamp: 10_000, stackId: 0 }] }
-    const record = sanitizeTypingDiagnosticRecord(profileNearTypingTasks(trace, [{ sequence: 0, startMs: 90, durationMs: 60 }]))!
-    expect(record).toMatchObject({ event: 'profile', totalSamples: 2, samplesOmitted: 0, taskSequences: [0], samples: [{ timestampMs: 100, stack: [{ file: 'assets/main.js', functionName: 'busyTask', line: 4, column: 8 }] }] })
-    expect(JSON.stringify(record)).not.toContain('private')
-    expect(profileNearTypingTasks(trace, [])).toBeNull()
-  })
-
-  it('bounds trie cycles and nearby sample output with an explicit omitted count', () => {
-    const trace: TypingProfileTrace = { resources: ['https://external.invalid/secret.js'], frames: [{ resourceId: 0, name: 'secret' }], stacks: [{ frameId: 0, parentId: 0 }], samples: Array.from({ length: 24 }, (_, i) => ({ timestamp: 100 + i, stackId: 0 })) }
-    const record = profileNearTypingTasks(trace, [{ sequence: 1, startMs: 80, durationMs: 100 }])!
-    expect(record.samplesOmitted).toBe(16)
-    expect(record.samples).toHaveLength(8)
-    expect(JSON.stringify(record)).not.toContain('secret')
-  })
-
-  it('stops an allocated sampler if a partial browser API fails during setup', async () => {
-    vi.useFakeTimers()
-    const stopped = vi.fn(async () => ({ resources: [], frames: [], stacks: [], samples: [] }))
-    class PartialProfiler extends EventTarget {
-      sampleInterval = 100
-      addEventListener() { throw new Error('PRIVATE_BROWSER_ERROR') }
-      stop = stopped
-    }
-    const records: object[] = []
-    const profiler = createTypingProfiler({ Profiler: PartialProfiler } as unknown as Window & typeof globalThis, () => [], record => records.push(record))
-    await Promise.resolve()
-    expect(stopped).toHaveBeenCalledOnce()
-    expect(vi.getTimerCount()).toBe(0)
-    expect(records).toEqual([{ event: 'profile-status', status: 'failed' }])
-    profiler.stop()
-    expect(stopped).toHaveBeenCalledOnce()
+  it('bounds long-frame metadata and rejects retired sampling payloads', () => {
+    const out = sanitizeTypingDiagnosticRecord({ event: 'long-frame', scriptsTotal: 25,
+      scripts: Array.from({ length: 25 }, (_, index) => ({ file: 'gugu-app://app/assets/main.js', functionName: 'render', durationMs: index })),
+      samples: [{ stack: [{ functionName: 'PRIVATE_STACK_CANARY' }] }], taskSequences: [1], sampleIntervalMs: 500,
+    })!
+    expect(out.scripts).toHaveLength(12)
+    expect(out.scriptsTotal).toBe(25)
+    expect(out).not.toHaveProperty('samples')
+    expect(out).not.toHaveProperty('taskSequences')
+    expect(out).not.toHaveProperty('sampleIntervalMs')
+    expect(sanitizeTypingDiagnosticRecord({ event: 'profile', samples: [{ stack: ['PRIVATE_STACK_CANARY'] }] })).toBeNull()
+    expect(sanitizeTypingDiagnosticRecord({ event: 'observer-error', observer: 'event', error: 'PRIVATE_ERROR_CANARY' })).toEqual({ event: 'observer-error', observer: 'event' })
+    expect(sanitizeTypingDiagnosticRecord({ event: 'observer-error', observer: 'PRIVATE_OBSERVER_CANARY' })).toEqual({ event: 'observer-error' })
   })
 })

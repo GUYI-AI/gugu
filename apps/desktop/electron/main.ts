@@ -71,7 +71,7 @@ import {
   RENDERER_LOG_CHANNEL,
 } from './lib/logger'
 import { createRendererLogForwarder } from './local-renderer-diagnostics'
-import { createBetaTypingDiagnosticsHandler, withTypingDiagnosticPolicy } from './beta-typing-diagnostics'
+import { createBetaTypingDiagnosticsHandler } from './beta-typing-diagnostics'
 import { BETA_TYPING_DIAGNOSTICS_BUILD, typingDiagnosticsEnabled } from '../shared/beta-typing-diagnostics'
 import { registerErrorSummaryReporting } from './error-summary-reporting-host'
 import { registerErrorSummaryConsent } from './error-summary-consent-host'
@@ -4571,9 +4571,7 @@ app.whenReady().then(async () => {
     if (url.host !== 'app' || !filePath.startsWith(rendererRoot + sep)) {
       return new Response('forbidden', { status: 403 })
     }
-    const response = net.fetch(pathToFileURL(filePath).toString())
-    return betaTypingDiagnosticsEnabled && url.pathname === '/index.html'
-      ? response.then(value => withTypingDiagnosticPolicy(value, request.url, true)) : response
+    return net.fetch(pathToFileURL(filePath).toString())
   })
   // @@@deeplink-register - Packaged builds declare gugu:// via electron-builder `protocols`
   // #6387 前缀按版本区分(见 GUGU_LINK_SCHEME):同机的正式版、Beta、开发版各认各的链接。

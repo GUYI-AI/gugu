@@ -7,7 +7,9 @@ let recorder: ReturnType<typeof createTypingDiagnosticsRecorder> | null = null
 afterEach(() => { recorder?.stop(); recorder = null; document.body.replaceChildren(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 function setup() {
-  vi.useFakeTimers(); vi.stubGlobal('Profiler', undefined)
+  vi.useFakeTimers()
+  const sampling = vi.fn(() => { throw new Error('sampling must not start') })
+  vi.stubGlobal('Profiler', sampling)
   const callbacks = new Map<string, (entries: object[]) => void>(), disconnects: ReturnType<typeof vi.fn>[] = []
   const options: PerformanceObserverInit[] = []
   vi.stubGlobal('PerformanceObserver', class {
@@ -28,7 +30,7 @@ function setup() {
     const listener = add.mock.calls.find(call => call[0] === type)![1] as (event: Event) => void
     listener({ target: input, composedPath: () => [input], type, isTrusted: true, timeStamp: clock, get key() { throw new Error('key must never be read') }, get data() { throw new Error('data must never be read') }, ...event } as unknown as Event)
   }
-  return { callbacks, disconnects, options, rows, send, input, deliver, setClock: (value: number) => { clock = value } }
+  return { callbacks, disconnects, options, rows, send, input, deliver, sampling, setClock: (value: number) => { clock = value } }
 }
 
 describe('main-window typing observations', () => {
@@ -43,6 +45,7 @@ describe('main-window typing observations', () => {
     expect(t.rows.find(row => row.event === 'key-latency')).toMatchObject({ metric: 'event-timing-next-paint', latencyMs: 112, captureDelayMs: 85, processingDelayMs: 80, processingMs: 10, presentationDelayMs: 22, composing: true })
     expect(t.rows.find(row => row.event === 'start')).toMatchObject({ eventThresholdMs: 16, eventResolutionMs: 8 })
     expect(t.options.find(option => option.type === 'event')).toMatchObject({ durationThreshold: 16 })
+    expect(t.sampling).not.toHaveBeenCalled()
   })
 
   it('sanitizes script attribution and distinguishes an available presentation timestamp', async () => {
@@ -88,5 +91,15 @@ describe('main-window typing observations', () => {
     t.callbacks.get('longtask')!([{ startTime: 1, duration: 500 }])
     await recorder!.flush()
     expect(t.send).toHaveBeenCalledOnce()
+  })
+
+  it('disconnects a failing entry reader without retaining its exception', async () => {
+    const t = setup()
+    t.callbacks.get('longtask')!([{ get duration() { throw new Error('PRIVATE_BROWSER_ERROR') } }])
+    await recorder!.flush()
+    expect(t.rows.find(row => row.event === 'observer-error')).toMatchObject({ observer: 'longtask' })
+    expect(t.disconnects[0]).toHaveBeenCalledOnce()
+    expect(JSON.stringify(t.rows)).not.toContain('PRIVATE_BROWSER_ERROR')
+    expect(t.sampling).not.toHaveBeenCalled()
   })
 })
