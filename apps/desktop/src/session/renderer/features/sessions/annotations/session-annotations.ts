@@ -1,4 +1,4 @@
-import { makeAutoObservable, observable } from 'mobx';
+import { action, makeAutoObservable, observable } from 'mobx';
 
 export type FileAnnotationSelection = {
   kind: 'file';
@@ -63,7 +63,7 @@ export class SessionAnnotations {
 
   bindSend(sender: () => void): () => void {
     this.sender = sender;
-    return () => { if (this.sender === sender) this.sender = null; };
+    return action(() => { if (this.sender === sender) this.sender = null; });
   }
 
   get canSend(): boolean { return this.sender !== null && this.items.length > 0; }

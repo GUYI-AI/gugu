@@ -1,6 +1,6 @@
 import { AnnotationTray } from '../annotations/annotation-tray';
 import { annotationPrompt, sessionAnnotations } from '../annotations/session-annotations';
-import { isAnnotationImage, prepareAnnotationImages } from '../annotations/annotation-images';
+import { annotationImageId, currentAnnotationImages, isAnnotationImage, prepareAnnotationImages } from '../annotations/annotation-images';
 import { useSessionInputNotice, type SessionInputNotice } from '../session-input-notice';
 import { sessionStartupFailureCopy } from '../session-input-failure-copy';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
@@ -398,6 +398,9 @@ const ComposerForStore = observer(function ComposerForStore({
       sendingRef.current = true;
       const annotated = annotationDraft.items;
       try {
+        const retained = currentAnnotationImages(annotated, attachmentsRef.current);
+        fileUploads.keepOnly(new Set(retained.map(item => item.id)));
+        setAttachments(retained);
         prepareAnnotationImages(annotated, fileUploads);
         await sendComposerInput(annotationPrompt(value, annotated), {
           started: onScrollToBottom, unsettled: () => fileUploads.unsettled(),
@@ -568,7 +571,8 @@ const ComposerForStore = observer(function ComposerForStore({
   }, [store, composerShown, inputAccount, attachFiles]);
 
   const handleAttachmentsChange = useCallback(
-    (next: ComposerAttachment[]) => {
+    (visible: ComposerAttachment[]) => {
+      const next = [...visible, ...attachmentsRef.current.filter(item => isAnnotationImage(item.id) && item.state !== 'error' && !visible.some(kept => kept.id === item.id))];
       fileUploads.keepOnly(new Set(next.map((attachment) => attachment.id)));
       if (next.every((att) => att.state !== 'error')) setSendHold((hold) => (hold === 'blocked' ? null : hold));
       setAttachments(next);
@@ -1549,7 +1553,7 @@ const ComposerForStore = observer(function ComposerForStore({
           if (!isGuguClientCommand(item.id)) return;
           if (item.id === GUGU_CLIENT_COMMAND_MCP) void openMcpPanel();
         }}
-        attachmentExtra={<AnnotationTray sessionId={store.sessionId} onSend={() => { void handleSubmit(store.draftText); }} enabled={sendHold !== 'waiting' && membershipLockedModel === null && !store.messageEdit && !store.reverting} />}
+        attachmentExtra={<AnnotationTray sessionId={store.sessionId} onRemove={id => { if (!sendingRef.current) { const imageId = annotationImageId(id); fileUploads.forget(imageId); setAttachments(current => current.filter(item => item.id !== imageId)); } }} onSend={() => { void handleSubmit(store.draftText); }} enabled={sendHold !== 'waiting' && membershipLockedModel === null && !store.messageEdit && !store.reverting} />}
         attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')}
         onAttachmentsChange={handleAttachmentsChange}
         onAttach={handleAttach}

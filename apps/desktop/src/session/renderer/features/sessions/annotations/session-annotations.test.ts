@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { annotationPrompt, SessionAnnotations, sessionAnnotations, type FileAnnotationSelection } from './session-annotations';
 import { sendComposerInput } from '../acp/send-composer-input';
+import { annotationImageId, currentAnnotationImages } from './annotation-images';
 
 const file = (annotation = 'Revise this paragraph'): FileAnnotationSelection => ({
   kind: 'file', path: '/project/notes.md', startLine: 2, endLine: 4, text: 'First line\n\nSecond line', annotation,
@@ -59,5 +60,10 @@ describe('the conversation annotation draft', () => {
       draft.add(file('Added while sending'));
     } });
     expect(draft.items.map(item => item.annotation)).toEqual(['Edited while sending', 'Added while sending']);
+  });
+
+  it('drops the capture of a removed comment before retry while keeping ordinary files', () => {
+    expect(currentAnnotationImages([], [{ id: annotationImageId('deleted'), name: 'old.png', kind: 'image', state: 'error' },
+      { id: 'ordinary', name: 'notes.txt', kind: 'file' }]).map(item => item.id)).toEqual(['ordinary']);
   });
 });

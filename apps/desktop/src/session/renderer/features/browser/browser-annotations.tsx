@@ -124,7 +124,7 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
         <span key={item.id} className="pointer-events-none absolute flex size-6 items-center justify-center rounded-full bg-[var(--live-light)] text-xs text-white" style={{ left: `${Math.max(0, item.rect.x / item.viewport.width * 100)}%`, top: `${Math.max(0, item.rect.y / item.viewport.height * 100)}%` }}>{item.number}</span>)}
       {target && <div className="pointer-events-none absolute border-2 border-[var(--live-light)] bg-[color-mix(in_oklab,var(--live-light)_10%,transparent)]" style={box(target)} />}
       {drag && <div className="pointer-events-none absolute border-2 border-[var(--live-light)] bg-[color-mix(in_oklab,var(--live-light)_10%,transparent)]" style={{ left: `${drag.x * 100}%`, top: `${drag.y * 100}%`, width: `${drag.width * 100}%`, height: `${drag.height * 100}%` }} />}
-      {selection && <form data-browser-annotation-input className="absolute flex w-80 max-w-[calc(100%-32px)] cursor-auto flex-col gap-2 rounded-xl border border-border bg-background p-4 shadow-lift"
+      {selection && <form data-browser-annotation-input className="absolute flex w-80 max-w-[calc(100%_-_32px)] cursor-auto flex-col gap-2 rounded-xl border border-border bg-background p-4 shadow-lift"
         style={{ left: `clamp(16px, ${selection.target.rect.x / selection.target.viewport.width * 100}%, calc(100% - 336px))`, top: `clamp(16px, ${(selection.target.rect.y + selection.target.rect.height) / selection.target.viewport.height * 100}%, calc(100% - 176px))` }}
         onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
         onSubmit={event => { event.preventDefault(); void save(); }}>
@@ -135,8 +135,8 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
       </form>}
       {error && <p role="alert" className="absolute top-4 left-4 rounded-lg bg-background p-2 text-sm">{translate('annotations.failed')}</p>}
     </div>}
-    {!browsing && <div data-occludes-browser-page className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-32px)] -translate-x-1/2 items-center gap-2 rounded-xl border border-border bg-background px-4 py-2 text-xs shadow-lift">
-      <span className="whitespace-nowrap text-foreground-muted">{translate(browsing ? 'annotations.browse' : 'annotations.hint')}</span>
+    {!browsing && <div data-occludes-browser-page className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%_-_32px)] -translate-x-1/2 items-center gap-2 rounded-xl border border-border bg-background px-4 py-2 text-xs shadow-lift">
+      <span className="min-w-0 truncate text-foreground-muted">{translate(browsing ? 'annotations.browse' : 'annotations.hint')}</span>
       <Button type="button" size="sm" disabled={!draft.canSend || busy} onClick={draft.send}>{translate('annotations.send')}</Button>
       <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0" aria-label={translate('annotations.exit')} onClick={onExit}><X className="size-4" /></Button>
     </div>}

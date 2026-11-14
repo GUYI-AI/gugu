@@ -6,8 +6,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@renderer/lib/ui/popove
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { sessionAnnotations } from './session-annotations';
 
-export const AnnotationTray = observer(function AnnotationTray({ sessionId, onSend, enabled }: {
-  sessionId: string; onSend: () => void; enabled: boolean;
+export const AnnotationTray = observer(function AnnotationTray({ sessionId, onSend, enabled, onRemove }: {
+  sessionId: string; onSend: () => void; enabled: boolean; onRemove?: (id: string) => void;
 }) {
   const draft = sessionAnnotations.forSession(sessionId);
   const { translate } = useSessionMessages();
@@ -32,7 +32,7 @@ export const AnnotationTray = observer(function AnnotationTray({ sessionId, onSe
                 {item.kind === 'browser' && <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={translate('annotations.edit')}
                   onClick={() => { setEditing(item.id); setText(item.annotation); }}><Pencil className="size-3.5" /></Button>}
                 <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={translate('annotations.delete')}
-                  onClick={() => draft.remove(item.id)}><Trash2 className="size-3.5" /></Button>
+                  onClick={() => { draft.remove(item.id); onRemove?.(item.id); }}><Trash2 className="size-3.5" /></Button>
               </div>
               <blockquote className="line-clamp-3 whitespace-pre-wrap text-xs text-foreground-muted">{item.text}</blockquote>
               {editing === item.id ? (
