@@ -216,19 +216,22 @@ let makeLogoutSession = {
         retireExternal: { _, done in logoutCleanup += 1; done(.success(())) }, retirementStore: logoutStore, now: { now })
 }
 let logoutSession = makeLogoutSession()
+var logoutPublished: Result<GuguIOSHostBinding, Error>?
+logoutSession.publish(ownerId: owner, accessToken: token) { logoutPublished = $0 }
+check(succeeded(logoutPublished) && logoutVerifies == 1, "sign-in publishes through the same verifier used by sign-out")
 var prepared: Result<Void, Error>?
 logoutSession.prepareSignOut(expectedOwnerId: other) { prepared = $0 }
 check(try !succeeded(prepared) && logoutStore.snapshot() == nil && logoutStops == 0,
       "another renderer owner cannot prepare this login for logout")
 logoutSession.prepareSignOut(expectedOwnerId: owner) { prepared = $0 }
-check(try succeeded(prepared) && logoutVerifies == 1 && logoutCleanup == 1 && logoutStore.snapshot()?.cleanupComplete == true,
+check(try succeeded(prepared) && logoutVerifies == 2 && logoutCleanup == 1 && logoutStore.snapshot()?.cleanupComplete == true,
       "logout verifies and completes cleanup before SDK revocation")
 check(logoutStored?.accessToken == token, "preparation does not clear or replace the SDK saved login")
 revoked = true
 let restartedLogout = makeLogoutSession()
 var logoutPermit: Result<GuguIOSMainWritePermit, Error>?
 restartedLogout.prepareMainWrite(nextOwnerId: nil) { logoutPermit = $0 }
-check(succeeded(logoutPermit) && logoutVerifies == 1 && logoutCleanup == 1,
+check(succeeded(logoutPermit) && logoutVerifies == 2 && logoutCleanup == 1,
       "post-revocation storage write consumes completed exact cleanup without a rejected online recheck")
 var alteredWrite: Result<GuguIOSMainWritePermit, Error>?
 logoutStored = .init(ownerId: owner, accessToken: try jwt("changed"), expiresAt: Date(timeIntervalSince1970: 3000))
