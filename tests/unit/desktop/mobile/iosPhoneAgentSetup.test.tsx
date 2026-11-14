@@ -105,6 +105,14 @@ describe('iOS reuses the phone setup and host controls', () => {
     expect(h.container.querySelector('[role="alert"]')).toBeNull()
     expect(h.container.textContent).toContain('Ready for tasks')
   })
+  it('reopens a completed installation when the explicit request arrives before verification', async () => {
+    savePhoneAgentSetup(native.owner, 'install-a', { step: 'tools', dismissed: true, completed: true })
+    native.publication = { status: 'publishing', binding: null, error: null }
+    await h.render(product()); await clickElement(element('agent-watch-setup-phone'))
+    expect(element('phone-agent-setup-form')).toBeNull()
+    ready(); await publish()
+    expect(element('phone-agent-setup-form')).not.toBeNull()
+  })
   it('keeps a completed installation quiet and hides the entry when the native host is unavailable', async () => {
     savePhoneAgentSetup(native.owner, 'install-a', { step: 'tools', dismissed: true, completed: true })
     await h.render(product()); expect(element('phone-agent-setup-form')).toBeNull()

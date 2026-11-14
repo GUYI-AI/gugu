@@ -21,7 +21,7 @@ export function IOSPhoneAgentHostControl({ ownerId, setup, summary }: { ownerId:
   const host = current ? snapshot.host : null
   const enabled = !!current && snapshot.phase !== 'stopped'
   const ready = !!current && snapshot.phase === 'configured' && host?.status === 'ready' && host.ready
-  const failed = !!current && (snapshot.phase === 'failed' || host?.status === 'failed' || host?.status === 'interrupted')
+  const failed = !!current && (snapshot.phase === 'failed' || host?.status === 'failed' || host?.status === 'interrupted' || host?.status === 'stopped')
   const status = changing === 'stop' ? 'stopping' : changing === 'restart' ? 'starting' : !current ? 'waiting'
     : error ? 'operationFailed' : snapshot.phase === 'stopped' ? 'stopped' : ready ? 'ready'
       : failed ? 'failed' : 'starting'

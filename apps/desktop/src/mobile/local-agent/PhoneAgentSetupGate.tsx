@@ -19,21 +19,22 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
   const { t } = useTranslation('settings')
   const identity = usePhoneHostIdentity(ownerId)
   const binding = identity.binding
+  const iosInstallationId = binding?.installationId ?? null
   const [setup, setSetup] = useState<{ ownerId: string; request: number; installId: string; progress: PhoneAgentSetupProgress } | null>(null)
   const [visible, setVisible] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
   const requested = useSyncExternalStore(subscribePhoneAgentSetup, () => phoneAgentSetupRequest(ownerId), () => 0)
   const handled = useRef(new Map<string, number>())
-  const currentSetup = setup?.ownerId === ownerId && setup.request === retry && (!identity.ios || setup.installId === binding?.installationId) ? setup : null
+  const currentSetup = setup?.ownerId === ownerId && setup.request === retry && (!identity.ios || setup.installId === iosInstallationId) ? setup : null
 
   useEffect(() => {
     if (platform.kind !== 'capacitor' || !platform.capabilities.phoneAgentHost) return
     let alive = true
     setError(null)
     setVisible(false)
-    if (identity.ios && !binding) { setSetup(null); return }
-    const installation = identity.ios ? Promise.resolve(binding!.installationId)
+    if (identity.ios && !iosInstallationId) { setSetup(null); return }
+    const installation = identity.ios ? Promise.resolve(iosInstallationId!)
       : readPhoneInstallation(ownerId).then(info => phoneInstallId(info.install_key ?? '', info.registration_id ?? '', info.previous_install_key))
     void installation.then((installId) => {
       if (!alive) return
@@ -55,15 +56,16 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
       if (alive) { setError(messageForUser(error)); setVisible(true) }
     })
     return () => { alive = false }
-  }, [ownerId, retry, identity.ios, binding?.installationId])
+  }, [ownerId, retry, identity.ios, iosInstallationId])
 
   useEffect(() => {
     if (!requested || requested <= (handled.current.get(ownerId) ?? 0)) return
     if (identity.ios && !binding) { setVisible(true); return }
-    handled.current.set(ownerId, requested)
     setError(null)
-    if (currentSetup) setVisible(true)
-    else setRetry((value) => value + 1)
+    if (currentSetup) {
+      handled.current.set(ownerId, requested)
+      setVisible(true)
+    } else setRetry((value) => value + 1)
   }, [ownerId, requested, currentSetup, identity.ios, binding])
 
   const save = (progress: PhoneAgentSetupProgress) => {
