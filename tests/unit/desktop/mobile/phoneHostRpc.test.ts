@@ -114,7 +114,7 @@ describe('iOS local permission transport', () => {
     let publication = { status: 'ready', binding }
     const call = vi.fn().mockResolvedValue({ result: { accepted: true } })
     detach = installIOSLocalHostRoute({ getSnapshot: () => publication }, { available: () => true, call } as unknown as IOSAgentClient)
-    return { binding, call, retire() { publication = { status: 'publishing', binding } } }
+    return { binding, call, retire() { publication = { status: 'publishing', binding } }, republish() { publication = { status: 'ready', binding } } }
   }
   it('approves on this iOS installation with its exact binding and original request ID', async () => {
     const f = ios(), args = [{ requestId: 'one-use-calendar-request', option: 'approve' }]
@@ -145,5 +145,22 @@ describe('iOS local permission transport', () => {
     f.call.mockResolvedValue({ error: { code: 'not_granted', message: 'Wrong task', admission: 'rejected' } })
     await expect(invokePhoneHost(f.binding.deviceId, 'sessionTimeline.sessionRespond', [])).rejects.toMatchObject({ code: 'not_granted', admission: 'rejected' })
     expect(f.call).toHaveBeenCalledOnce(); expect(mocked.remote).not.toHaveBeenCalled()
+  })
+  it('rejects an old receipt after logging back into the same owner and installation', async () => {
+    const f = ios()
+    let resolve!: (value: unknown) => void
+    f.call.mockImplementation(() => new Promise(done => { resolve = done }))
+    const pending = invokePhoneHost(f.binding.deviceId, 'sessionTimeline.sessionSend', [{ text: 'original owner generation' }], 'original-aba-id')
+    const failed = expect(pending).rejects.toMatchObject({ code: 'stale_context', admission: 'uncertain' })
+    await vi.waitFor(() => expect(f.call).toHaveBeenCalledOnce())
+    f.retire(); f.republish(); resolve({ result: { accepted: true } }); await failed
+    expect(mocked.remote).not.toHaveBeenCalled(); expect(f.call).toHaveBeenCalledOnce()
+  })
+  it('keeps the replacement route when an older owner surface detaches late', async () => {
+    const first = ios(), detachFirst = detach, replacement = ios()
+    detachFirst()
+    await expect(invokePhoneHost(replacement.binding.deviceId, 'sessionTimeline.sessionsList', [])).resolves.toEqual({ accepted: true })
+    expect(replacement.call).toHaveBeenCalledOnce(); expect(first.call).not.toHaveBeenCalled()
+    expect(mocked.remote).not.toHaveBeenCalled()
   })
 })

@@ -82,6 +82,7 @@
 		28B8DBE4878FCB7A51B13FEB /* GuguIOSInboxPump.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85E0500DFAB4C7E7B6B5CBAF /* GuguIOSInboxPump.swift */; };
 		3350D986E85A52F98039DA13 /* GuguIOSDeliveryCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D729AA613F399393CE77F01 /* GuguIOSDeliveryCommand.swift */; };
 		2BABF54160516A5D66CD97E2 /* IOSHostLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A178ABF9996B332057BD74C9 /* IOSHostLoopTests.swift */; };
+		1204DEE9D4D4EE28CFD14B46 /* IOSHostRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C955986AA6FDB36033DA88B /* IOSHostRecoveryTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -173,6 +174,7 @@
 		85E0500DFAB4C7E7B6B5CBAF /* GuguIOSInboxPump.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSInboxPump.swift; sourceTree = "<group>"; };
 		2D729AA613F399393CE77F01 /* GuguIOSDeliveryCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSDeliveryCommand.swift; sourceTree = "<group>"; };
 		A178ABF9996B332057BD74C9 /* IOSHostLoopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSHostLoopTests.swift; sourceTree = "<group>"; };
+		4C955986AA6FDB36033DA88B /* IOSHostRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSHostRecoveryTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -306,6 +308,7 @@
 			children = (
 				E98E00000000000000000211 /* DHostedRuntimeTests.swift */,
 				A178ABF9996B332057BD74C9 /* IOSHostLoopTests.swift */,
+				4C955986AA6FDB36033DA88B /* IOSHostRecoveryTests.swift */,
 				E98E00000000000000000212 /* DCalendarSnapshotOracle.swift */,
 			);
 			path = ../HostValidation;
@@ -451,6 +454,7 @@
 			files = (
 				E98E00000000000000000201 /* DHostedRuntimeTests.swift in Sources */,
 				2BABF54160516A5D66CD97E2 /* IOSHostLoopTests.swift in Sources */,
+				1204DEE9D4D4EE28CFD14B46 /* IOSHostRecoveryTests.swift in Sources */,
 				E98E00000000000000000202 /* DCalendarSnapshotOracle.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

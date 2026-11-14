@@ -4,10 +4,10 @@ import Foundation
 import CryptoKit
 @testable import App
 
-private func loopRequire(_ condition: @autoclosure () throws -> Bool, _ message: String) throws {
+func loopRequire(_ condition: @autoclosure () throws -> Bool, _ message: String) throws {
     if try !condition() { throw GuguHostFailure(code: "loop_fixture_failed", message: message) }
 }
-private func loopWait<T>(_ work: (@escaping (T) -> Void) -> Void) throws -> T {
+func loopWait<T>(_ work: (@escaping (T) -> Void) -> Void) throws -> T {
     let signal = DispatchSemaphore(value: 0); var value: T?
     work { value = $0; signal.signal() }
     try loopRequire(signal.wait(timeout: .now() + 15) == .success, "Native loop callback timed out")
@@ -51,7 +51,7 @@ private final class LoopFixture {
     let chat = UUID().uuidString.lowercased(), sender = UUID().uuidString.lowercased(), source = UUID().uuidString.lowercased()
     let rules = "Preserve original source and recipient privacy."
     let lock = NSRecursiveLock(), changed = DispatchSemaphore(value: 0), calendar = LoopCalendar()
-    var allowed = true, loseReadACK = false, loseSendACK = false, toolMode = "none"
+    var allowed = true, offline = false, loseReadACK = false, loseSendACK = false, failSendBeforeWrite = false, toolMode = "none"
     var command: [String: Any]?, commandLeaseValid = true
     var pending: Set<String>, modelCalls: [String: Int] = [:], toolNames: [String] = [], ackAgents: [String] = [], sent: [[String: Any]] = [], effects: Set<String> = []
     var schedulerStorage: GuguIOSTaskScheduler?
@@ -89,6 +89,7 @@ private final class LoopFixture {
     }, send: { request, done in
         self.lock.lock(); defer { self.lock.unlock() }
         do {
+            if self.offline { done(nil, nil, URLError(.notConnectedToInternet)); return }
             let name = request.url!.lastPathComponent
             let body = request.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
             var result: Any = NSNull()
@@ -123,6 +124,7 @@ private final class LoopFixture {
                 if self.loseReadACK { self.loseReadACK = false; done(nil, nil, URLError(.networkConnectionLost)); return }
                 self.pending.remove(id)
             case "send_message_idempotent":
+                if self.failSendBeforeWrite { self.failSendBeforeWrite = false; done(nil, nil, URLError(.notConnectedToInternet)); return }
                 try loopRequire(body["p_reply_to_message_id"] as? String == self.source, "Chat result replied to a private execution ID")
                 self.sent.append(body); let id = body["p_message_id"] as! String; self.effects.insert(id)
                 if self.loseSendACK { self.loseSendACK = false; done(nil, nil, URLError(.networkConnectionLost)); return }
@@ -301,5 +303,30 @@ final class IOSHostLoopTests: XCTestCase {
         XCTAssertEqual(f.sent.count, 1); XCTAssertEqual(f.effects.count, 1); XCTAssertEqual(f.modelCalls[f.agentA], 1)
         XCTAssertEqual(try reopened.record("inputs", id: id)?["replyStatus"] as? String, "uncertain")
     }
+    func testOfflineInboxRecoversOnlyAfterConfirmedDurableAdmission() throws {
+        let f = try fixture("offline-inbox"), pump = try f.pump(); f.offline = true
+        guard case .failure = try f.pull(pump, f.agentA) else { return XCTFail("Offline inbox claimed delivery") }
+        XCTAssertTrue(f.ackAgents.isEmpty); XCTAssertTrue(f.modelCalls.isEmpty)
+        XCTAssertTrue((try f.store.snapshot()["inputs"] as? [String: Any])?.isEmpty == true)
+        f.offline = false; _ = try f.pull(pump, f.agentA).get()
+        let id = try f.store.inboxJobID(agentId: f.agentA, sourceMessageId: f.source); try f.wait(id, equals: "settled")
+        _ = try f.pull(pump, f.agentA).get()
+        XCTAssertEqual(f.modelCalls[f.agentA], 1); XCTAssertEqual(f.effects.count, 1)
+        XCTAssertEqual(f.ackAgents.filter { $0 == f.agentA }.count, 1)
+    }
+    func testUnknownSendBeforeWriteDoesNotReplayOnReconnect() throws {
+        let f = try fixture("unknown-before-write"); f.failSendBeforeWrite = true
+        _ = try f.pull(f.pump(), f.agentA).get()
+        let id = try f.store.inboxJobID(agentId: f.agentA, sourceMessageId: f.source); try f.wait(id, equals: "uncertain")
+        XCTAssertTrue(f.effects.isEmpty)
+        // The server did not commit in this fixture. The client has no receipt
+        // and cannot infer that absence, so reconnection must not replay it.
+        f.pending.insert(f.agentA); _ = try f.pull(f.pump(), f.agentA).get()
+        XCTAssertEqual(f.modelCalls[f.agentA], 1); XCTAssertTrue(f.effects.isEmpty)
+        let rows = try f.store.snapshot()["outbox"] as? [String: [String: Any]] ?? [:]
+        XCTAssertEqual(rows.count, 1); XCTAssertEqual(rows.values.first?["status"] as? String, "pending")
+        XCTAssertEqual(try f.store.record("inputs", id: id)?["replyStatus"] as? String, "uncertain")
+    }
+
 }
 #endif
