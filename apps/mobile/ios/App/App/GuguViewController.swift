@@ -5,7 +5,7 @@ final class GuguViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         do {
             let runtime = try GuguIOSAppRuntime.open()
-            for plugin in runtime.plugins() { bridge?.registerPluginInstance(plugin) }
+            for plugin in try runtime.plugins() { bridge?.registerPluginInstance(plugin) }
         } catch {
             // A shell without validated packaged configuration cannot publish a
             // native owner or expose calendar access. Keep shared login usable.

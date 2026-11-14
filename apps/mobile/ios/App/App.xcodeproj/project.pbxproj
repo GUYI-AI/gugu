@@ -79,6 +79,9 @@
 		3D1B9B625F53EE05176BDAF8 /* GuguIOSRealtimeHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AF7795C70E71BBC4D98DE5A /* GuguIOSRealtimeHost.swift */; };
 		4D637E986A532B1062FBD991 /* GuguIOSRealtimeTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3307B7F449BF52786CF1575 /* GuguIOSRealtimeTransport.swift */; };
 		CF947CBF9285262A3F298117 /* GuguIOSTaskScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 461EAD471BBBC0673C88C9F8 /* GuguIOSTaskScheduler.swift */; };
+		28B8DBE4878FCB7A51B13FEB /* GuguIOSInboxPump.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85E0500DFAB4C7E7B6B5CBAF /* GuguIOSInboxPump.swift */; };
+		3350D986E85A52F98039DA13 /* GuguIOSDeliveryCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D729AA613F399393CE77F01 /* GuguIOSDeliveryCommand.swift */; };
+		2BABF54160516A5D66CD97E2 /* IOSHostLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A178ABF9996B332057BD74C9 /* IOSHostLoopTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -167,6 +170,9 @@
 		0AF7795C70E71BBC4D98DE5A /* GuguIOSRealtimeHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSRealtimeHost.swift; sourceTree = "<group>"; };
 		B3307B7F449BF52786CF1575 /* GuguIOSRealtimeTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSRealtimeTransport.swift; sourceTree = "<group>"; };
 		461EAD471BBBC0673C88C9F8 /* GuguIOSTaskScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSTaskScheduler.swift; sourceTree = "<group>"; };
+		85E0500DFAB4C7E7B6B5CBAF /* GuguIOSInboxPump.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSInboxPump.swift; sourceTree = "<group>"; };
+		2D729AA613F399393CE77F01 /* GuguIOSDeliveryCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSDeliveryCommand.swift; sourceTree = "<group>"; };
+		A178ABF9996B332057BD74C9 /* IOSHostLoopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSHostLoopTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -240,6 +246,8 @@
 				81FAE6B62F71E8E595310DB4 /* GuguIOSSourceAccess.swift */,
 				06F121108113ED780BD8C9E0 /* GuguIOSMessageBridge.swift */,
 				CD46B8DFDDBA07A4FE3C341C /* GuguIOSInboxDelivery.swift */,
+				2D729AA613F399393CE77F01 /* GuguIOSDeliveryCommand.swift */,
+				85E0500DFAB4C7E7B6B5CBAF /* GuguIOSInboxPump.swift */,
 				0092F72670DB64A878302410 /* GuguAgentPlugin.swift */,
 				F1B8D5CD166D0BEB1316D3BB /* GuguIOSBackendNetwork.swift */,
 				A6B8954C7573825116DDC63F /* GuguIOSBackendSessions.swift */,
@@ -297,6 +305,7 @@
 			isa = PBXGroup;
 			children = (
 				E98E00000000000000000211 /* DHostedRuntimeTests.swift */,
+				A178ABF9996B332057BD74C9 /* IOSHostLoopTests.swift */,
 				E98E00000000000000000212 /* DCalendarSnapshotOracle.swift */,
 			);
 			path = ../HostValidation;
@@ -441,6 +450,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E98E00000000000000000201 /* DHostedRuntimeTests.swift in Sources */,
+				2BABF54160516A5D66CD97E2 /* IOSHostLoopTests.swift in Sources */,
 				E98E00000000000000000202 /* DCalendarSnapshotOracle.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -483,6 +493,8 @@
 				B57FB3E22BF7007E7FBDA0D6 /* GuguIOSSourceAccess.swift in Sources */,
 				59EAC6C35A8C5E5E93CC571C /* GuguIOSMessageBridge.swift in Sources */,
 				2EC63888A37A309CFC7DC685 /* GuguIOSInboxDelivery.swift in Sources */,
+				3350D986E85A52F98039DA13 /* GuguIOSDeliveryCommand.swift in Sources */,
+				28B8DBE4878FCB7A51B13FEB /* GuguIOSInboxPump.swift in Sources */,
 				E98E00000000000000000161 /* GuguIOSOwnerSession.swift in Sources */,
 				E98E00000000000000000162 /* GuguIOSInstallation.swift in Sources */,
 				E98E00000000000000000163 /* GuguIOSOwnerKeychain.swift in Sources */,

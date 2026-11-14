@@ -7,6 +7,7 @@ import { collapseSystemMessages, getCurrentTools } from '@earendil-works/pi-ai/u
 import { getSystemMessageText } from '@earendil-works/pi-ai'
 import { readNativeTimeline } from './timeline.mjs'
 import { nativeChatDelivery } from './delivery.mjs'
+import { communicationTools, communicationToolNames } from './communication-tools.mjs'
 
 // JSC has ECMAScript primitives, but no browser/Node host API. The native boundary
 // below is deliberately narrower than fetch/filesystem and never receives a token.
@@ -127,7 +128,10 @@ function streamFor(context) {
 async function run(command) {
   const { context } = command
   if (active.has(context.sessionId)) throw new Error('Session is already running')
-  const tools = calendarTools(command.tools, (toolCallId, actionName, args, signal) => native('tool.execute', { context, toolCallId, actionName, args }, signal))
+  const tools = [
+    ...calendarTools(command.tools, (toolCallId, actionName, args, signal) => native('tool.execute', { context, toolCallId, actionName, args }, signal)),
+    ...(command.communicationTools === true ? communicationTools((name, args, toolCallId, signal) => native('communication.invoke', { context, name, args, toolCallId }, signal)) : []),
+  ]
   const model = { id: command.modelId, api: 'openai-completions', provider: 'gugu' }
   const agent = new Agent({ initialState: { model, systemPrompt: command.systemPrompt, tools, messages: command.messages ?? [], thinkingLevel: 'off' },
     streamFn: streamFor(context), toolExecution: 'sequential', sessionId: context.sessionId })
@@ -151,7 +155,7 @@ async function run(command) {
 }
 
 globalThis.GuguIOSRuntime = Object.freeze({
-  diagnostics: () => JSON.stringify({ protocolVersion: 1, piVersion: '1.4.0', engine: 'JavaScriptCore', node: typeof process !== 'undefined' }),
+  diagnostics: () => JSON.stringify({ protocolVersion: 1, piVersion: '1.4.0', engine: 'JavaScriptCore', node: typeof process !== 'undefined', communicationTools: communicationToolNames }),
   timeline(id, json) {
     void Promise.resolve().then(() => readNativeTimeline(JSON.parse(json))).then(
       data => __guguNativeProjection(id, JSON.stringify({ ok: true, data })),

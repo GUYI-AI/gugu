@@ -4,6 +4,7 @@ import Foundation
 /// GuguAgent/Capacitor capability declaration; renderer/cloud admission is separate.
 final class GuguInProcessHost {
     typealias SourceAuthorization = (GuguHostContext, @escaping (Result<Void, Error>) -> Void) -> Void
+    typealias Communication = (GuguHostContext, String, [String: Any], @escaping () throws -> Void, @escaping ([String: Any]) -> Void) -> Void
     private struct Pending {
         let request: GuguNativeToolRequest
         let reply: GuguJavaScriptRuntime.Reply
@@ -14,6 +15,7 @@ final class GuguInProcessHost {
     private let currentIdentity: () -> (ownerId: String, installationId: String)
     private let emit: ([String: Any]) -> Void
     private let sourceAuthorization: SourceAuthorization?
+    private let communication: Communication?
     private let pendingLock = NSRecursiveLock()
     private var pending: [String: Pending] = [:]
     private var runningContexts: [String: GuguHostContext] = [:]
@@ -24,13 +26,15 @@ final class GuguInProcessHost {
     init(asset: Data, expectedSHA256: String, journal: GuguHostJournal,
          executor: GuguNativeToolExecutor, model: GuguModelCompleting?,
          currentIdentity: @escaping () -> (ownerId: String, installationId: String),
-         event: @escaping ([String: Any]) -> Void, sourceAuthorization: SourceAuthorization? = nil) throws {
+         event: @escaping ([String: Any]) -> Void, sourceAuthorization: SourceAuthorization? = nil,
+         communication: Communication? = nil) throws {
         self.journal = journal
         self.executor = executor
         self.model = model
         self.currentIdentity = currentIdentity
         emit = event
         self.sourceAuthorization = sourceAuthorization
+        self.communication = communication
         runtime = try GuguJavaScriptRuntime(asset: asset, expectedSHA256: expectedSHA256, request: { [weak self] request, reply in
             self?.handle(request, reply: reply)
         }, cancel: { [weak self] id in self?.cancelNative(id) }, event: { [weak self] event in self?.deliver(event) })
@@ -53,7 +57,8 @@ final class GuguInProcessHost {
         runningContexts[context.jobId] = context
         do {
             try runtime.start(["context": GuguHostJournal.object(context), "prompt": prompt,
-                "modelId": modelId, "systemPrompt": systemPrompt, "tools": tools, "messages": messages])
+                "modelId": modelId, "systemPrompt": systemPrompt, "tools": tools, "messages": messages,
+                "communicationTools": communication != nil])
         } catch {
             try journal.finish(context, result: ["status": "failed", "error": "Cannot start packaged runtime", "text": ""])
             throw error
@@ -227,6 +232,23 @@ final class GuguInProcessHost {
                     guard let self else { return }
                     do { _ = try authorized.get(); try self.checkDataAccess(context); try self.prepareTool(bridge, context: context, raw: raw, reply: reply) }
                     catch { reply(self.envelope(error)) }
+                }
+            case "communication.invoke":
+                try checkDataAccess(context)
+                guard let communication, let name = bridge.payload["name"] as? String,
+                      let args = bridge.payload["args"] as? [String: Any],
+                      let callId = bridge.payload["toolCallId"] as? String, !callId.isEmpty else {
+                    throw failure("unknown_method", "Native communication tool is unavailable")
+                }
+                authorizeSources(context) { [weak self] authorized in
+                    guard let self else { return }
+                    do {
+                        _ = try authorized.get(); try self.checkDataAccess(context)
+                        communication(context, name, args, { try self.checkDataAccess(context) }) { result in
+                            do { try self.checkDataAccess(context); reply(["ok": true, "data": result]) }
+                            catch { reply(self.envelope(error)) }
+                        }
+                    } catch { reply(self.envelope(error)) }
                 }
             default: throw failure("unknown_action", "Native bridge method is not available")
             }

@@ -142,11 +142,12 @@ final class GuguIOSAppRuntime {
             try self.lifecycle.revokeCalendarAccess(binding: binding)
         })
 
-    func plugins() -> [CAPPlugin] {
+    func plugins() throws -> [CAPPlugin] {
         // Construct on the bridge's App startup thread before publishing plugins.
         // No real model host, cloud Agent or tool execution is created here.
         [GuguAuthStoragePlugin(ownerSession: ownerSession), GuguIOSOwnerPlugin(ownerSession: ownerSession),
-         GuguCalendarPermissionsPlugin(store: calendarStore, ownerAccess: ownerAccess)]
+         GuguCalendarPermissionsPlugin(store: calendarStore, ownerAccess: ownerAccess),
+         GuguAgentPlugin(service: try nativeHostService())]
     }
 
     func currentBinding() throws -> GuguIOSHostBinding {

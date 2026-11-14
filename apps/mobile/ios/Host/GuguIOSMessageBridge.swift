@@ -17,6 +17,60 @@ final class GuguIOSMessageBridge {
         sources = GuguIOSSourceAccess(store: store, broker: broker, check: check)
     }
 
+    /// A plain final answer to an admitted chat source uses the same guarded
+    /// outbox as an explicit communication tool. Unknown sends are never replayed
+    /// or replaced by another final message when a task/process finishes again.
+    func finish(context: GuguHostContext, text: String, authorize: @escaping Authorize,
+                completion: @escaping ([String: Any]) -> Void) {
+        queue.async {
+            do {
+                try self.validate(context); try authorize()
+                guard let input = try self.store.record("inputs", id: context.jobId) else {
+                    throw Self.failure("stale_context", "Final answer has no original durable input")
+                }
+                guard let route = input["route"] as? [String: Any], route["kind"] as? String == "chat" else {
+                    completion(["ok": true, "data": ["chatDelivery": false]]); return
+                }
+                let rows = try self.store.snapshot()["outbox"] as? [String: [String: Any]] ?? [:]
+                var sent = false
+                for row in rows.values {
+                    guard let raw = row["context"] as? [String: Any] else { throw Self.failure("invalid_journal", "Outbound message context is missing") }
+                    let saved = try GuguHostJournal.context(raw)
+                    guard saved.jobId == context.jobId, saved.agentUserId == context.agentUserId,
+                          saved.sessionId == context.sessionId, saved.contextEpoch == context.contextEpoch else { continue }
+                    guard row["status"] as? String == "sent", row["receipt"] is [String: Any] else {
+                        throw Self.failure("delivery_uncertain", "An original outbound message has no confirmed delivery; it will not be replaced or automatically replayed")
+                    }
+                    let body = row["body"] as? [String: Any]
+                    if body?["p_chat_id"] as? String == route["chatId"] as? String,
+                       body?["p_reply_to_message_id"] as? String == route["sourceMessageId"] as? String,
+                       body?["p_is_whisper"] as? Bool == (route["whisper"] as? Bool == true) { sent = true }
+                }
+                let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if sent || text == "[NO_REPLY]" { completion(["ok": true, "data": ["chatDelivery": sent]]); return }
+                guard !text.isEmpty, let chat = route["chatId"] as? String, UUID(uuidString: chat) != nil,
+                      let source = route["sourceMessageId"] as? String, UUID(uuidString: source) != nil,
+                      let sender = route["senderUserId"] as? String, UUID(uuidString: sender) != nil else {
+                    throw Self.failure("delivery_missing", "A final chat answer requires its original source and recipient")
+                }
+                self.invoke(context: context, name: "message_send", args: ["chat_id": chat, "text": text,
+                    "to_user_ids": ["user:\(sender)"], "reply_to_message_id": "msg:\(source)",
+                    "whisper": route["whisper"] as? Bool == true], authorize: authorize) { result in self.queue.async {
+                        do {
+                            let outbox = try self.store.snapshot()["outbox"] as? [String: [String: Any]] ?? [:]
+                            let unknown = outbox.values.contains { row in
+                                (row["context"] as? [String: Any])?["jobId"] as? String == context.jobId && row["status"] as? String == "pending"
+                            }
+                            if result["ok"] as? Bool != true, unknown {
+                                throw Self.failure("delivery_uncertain", "Original chat result has no known delivery receipt; verify it before continuing")
+                            }
+                            completion(result)
+                        } catch { completion(Self.safe(error).envelope) }
+                    } }
+            } catch { completion(Self.safe(error).envelope) }
+        }
+    }
+
     func invoke(context: GuguHostContext, name: String, args: [String: Any], authorize: @escaping Authorize,
                 completion: @escaping ([String: Any]) -> Void) {
         queue.async {
