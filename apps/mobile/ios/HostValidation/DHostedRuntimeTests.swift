@@ -369,8 +369,6 @@ final class DHostedRuntimeTests: XCTestCase {
         return try XCTUnwrap(envelope["data"] as? [String: Any])
     }
 }
-#else
-#error("DHostedRuntimeTests is restricted to Debug iOS Simulator App-hosted XCTest")
 // Real EventKit acceptance; permission state is prepared externally on an owned simulator.
 extension DHostedRuntimeTests {
     func testRealEventKitPermissionBoundary() throws {
@@ -488,4 +486,6 @@ extension DHostedRuntimeTests {
             "createdID": id, "controlID": controlID, "recurringID": recurringID, "modelCalls": 0])
     }
 }
+#else
+#error("DHostedRuntimeTests is restricted to Debug iOS Simulator App-hosted XCTest")
 #endif
