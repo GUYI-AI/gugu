@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { readModel, useReadModel, type ReadModel } from '../../lib/readModel'
 import { Unknown } from '../ui/Unknown'
 import { publicAssetPath } from '@gugu/core/shared/ui/publicAssets'
@@ -60,23 +60,22 @@ const applyStatus = (detail: UpdateStatusDetail | null | undefined) => {
 }
 window.addEventListener(UI_EVENTS.updateStatus, (event) => applyStatus((event as CustomEvent<UpdateStatusDetail>).detail))
 
+/** The running app's version (this device): the same for the whole run, read once. */
+const appVersion = readModel({ name: 'appVersion', scope: 'device', read: () => platform.getAppVersion(), fresh: Infinity })
+
 export function AboutSection() {
   const { t } = useTranslation('settings')
   const reading = useReadModel(appUpdateState, platform.capabilities.appUpdates ? [] : null)
   const updateStatus = reading.state === 'value' ? reading.value : null
   const [queryFailed, setQueryFailed] = useState(false)
   const [checking, setChecking] = useState(false)
-  // Seed from the build-time version so it renders immediately on all platforms; Electron's IPC
-  // path below refines it to the live app.getVersion() (identical value in practice).
-  const [version, setVersion] = useState(__APP_VERSION__)
+  // The live app.getVersion() where the platform has it, else the build-time version (identical in practice).
+  const live = useReadModel(appVersion, platform.capabilities.appVersion ? [] : null)
+  const version = live.state === 'value' ? live.value : __APP_VERSION__
   const showAppCard = platform.capabilities.appVersion || platform.capabilities.appUpdates
   const updateReady = updateStatus?.status === 'downloaded'
   const updateMessage = updateStatusMessage(t, updateStatus) || ''
 
-  useEffect(() => {
-    if (!platform.capabilities.appVersion) return
-    platform.getAppVersion().then(setVersion)
-  }, [])
 
   async function handleCheckForUpdates() {
     setChecking(true)

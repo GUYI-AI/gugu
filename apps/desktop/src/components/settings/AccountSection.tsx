@@ -1,5 +1,5 @@
 import { messageForUser } from '@/lib/userFacingError';
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { authService } from '../../lib/auth'
 import type { AuthUser } from '../../store/auth'
 import { Avatar } from '../Avatar'
@@ -13,6 +13,7 @@ import { writeOccupation } from '../../lib/firstRun'
 import { ownSettings } from '../../lib/ownSettings'
 import { useReadModel } from '../../lib/readModel'
 import { Unknown } from '../ui/Unknown'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import '../../i18n/registerMainCatalog'
 import { rendererLogger } from '../../lib/log'
 import { officialServicesEnabled } from '@gugu/core/cloud/optionalServices'
@@ -52,13 +53,15 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
   // 读不到 = 这一行如实说读不到、不给改,❌ 当成没填让人覆盖掉原值。
   // 身份是自己那一行设置里的一个键:和首次引导、文件存储等读同一份(lib/ownSettings)。
   const settingsRow = useReadModel(ownSettings, user?.id ? ['user'] : null)
+  useEffect(() => { if (settingsRow.state === 'error') log.error({ error: settingsRow.error }, 'read own settings failed') }, [settingsRow])
   const occupationReading = settingsRow.state === 'value' ? { ...settingsRow, value: parseOccupation(settingsRow.value) } : settingsRow
   // 改了但还没存的那一份;null = 没动过,显示存着的。
   const [occupationEdit, setOccupationEdit] = useState<{ draft: Occupation | null } | null>(null)
   const occupation = occupationReading.state === 'value'
     ? { kind: 'ready' as const, saved: occupationReading.value, draft: occupationEdit ? occupationEdit.draft : occupationReading.value }
     : occupationReading.state === 'error'
-      ? { kind: 'error' as const, message: messageForUser(occupationReading.error) }
+      // Said in words with a retry (the reason goes to the log): ❌ a raw「TypeError: Failed to fetch」.
+      ? { kind: 'error' as const, message: t('account.occupationReadFailed') }
       : { kind: 'unknown' as const }
   const occupationDirty = occupation.kind === 'ready' && JSON.stringify(occupation.draft) !== JSON.stringify(occupation.saved)
   const occupationInvalid = occupation.kind === 'ready' && occupationDirty && !occupationComplete(occupation.draft)
@@ -196,10 +199,11 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
           stack
           layout="field"
           title={<label htmlFor="settings-account-occupation">{t('account.occupation')}</label>}
-          description={occupation.kind === 'ready' ? t('account.occupationNote') : undefined}
+          description={occupation.kind === 'ready' ? <>{t('account.occupationNote')}{settingsRow.state === 'value' ? <RefreshFailed error={settingsRow.error} onRetry={() => { void ownSettings.refresh('user') }} /> : null}</> : undefined}
           control={occupation.kind !== 'ready' ? (
             occupation.kind === 'unknown' ? <Unknown className="h-8 w-full max-w-xs" /> : (
-              <span className="gg-settings-row-value" role="alert">{occupation.message}</span>
+              <span className="gg-settings-row-value flex items-center gap-2" role="alert">{occupation.message}
+                <Button variant="secondary" size="sm" onClick={() => { void ownSettings.refresh('user') }}>{t('staleRead.retry', { ns: 'common' })}</Button></span>
             )
           ) : (
             <span className="flex w-full flex-col gap-2">

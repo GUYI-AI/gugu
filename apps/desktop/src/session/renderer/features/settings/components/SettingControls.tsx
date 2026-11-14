@@ -8,8 +8,8 @@ import type { AppSettingsKeyApi } from '../use-app-settings-key';
 import { ResetToDefaultButton } from './ResetToDefaultButton';
 
 /**
- * Where a settings value is drawn: the value once read, `<Unknown/>` (sized like the control) before that, and the read
- * error when it failed. The one gate every settings control goes through — no control draws a default as the stored value.
+ * Where a settings value is drawn: the value once read, `<Unknown/>` (sized like the control) before that, the read
+ * error when it failed, and the value with a note when only its latest read failed. The one gate every settings control goes through — no control draws a default as the stored value.
  */
 export function SettingValue<V>({ reading, placeholder, children }: {
   reading: Reading<V>;
@@ -18,7 +18,10 @@ export function SettingValue<V>({ reading, placeholder, children }: {
   children: (value: V) => ReactNode;
 }) {
   const { translate } = useSessionMessages();
-  if (reading.state === 'value') return <>{children(reading.value)}</>;
+  // A value whose latest read failed: drawn, and said so (❌ an old value drawn as if it were current).
+  if (reading.state === 'value') return reading.error
+    ? <>{children(reading.value)}<span role="alert" title={translate('settings.refreshFailed')} className="text-xs text-[var(--danger-fg)]">{translate('settings.refreshFailed')}</span></>
+    : <>{children(reading.value)}</>;
   if (reading.state === 'error') return <span role="alert" className="text-xs text-[var(--danger-fg)]">{translate('settings.readFailed')}</span>;
   return <Unknown className={placeholder} />;
 }

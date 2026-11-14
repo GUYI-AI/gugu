@@ -2,6 +2,10 @@ export default {
   "startup": {
     "slogan": "别自己做，让 AI 来。"
   },
+  "staleRead": {
+    "failed": "没读到最新的，显示的是上次读到的。",
+    "retry": "重试"
+  },
   "menu": {
     "search": "搜索",
     "noResults": "没有找到"

@@ -23,6 +23,8 @@ export const ownSettings = readModel({
   scope: 'account',
   read: (userId, scope: Scope) => readUserSettingsConfig(client, userId, scope),
   fresh: 10_000,
+  // Display values (an occupation, which hints were seen, pinned topics): their first frame after a restart.
+  persist: true,
 })
 
 const mine = (userId: string) => readModelAccount().id === userId

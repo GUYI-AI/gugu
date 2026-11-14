@@ -97,6 +97,13 @@ export function GuguSubscriptionRow() {
               <p>{translate('subscriptions.gugu.resets', { date: date(period.freesAt) })}</p>
             </>
           )}
+          {/* Not read yet: the meter's and the reset line's places are kept (❌ inserted later, pushing the row below down). */}
+          {unknown && (
+            <>
+              <Unknown className="mt-2 block h-[3px] w-full" />
+              <p><Unknown className="w-32" /></p>
+            </>
+          )}
         </div>
         <div className="subscription-quota" data-testid="subscription-wallet">
           <div className="subscription-quota-label subscription-wallet-label">

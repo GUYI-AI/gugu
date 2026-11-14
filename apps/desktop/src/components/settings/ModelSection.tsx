@@ -11,6 +11,7 @@ import { rendererLogger } from '../../lib/log'
 import { Button } from '../ui/Button'
 import { SearchField } from '../ui/SearchField'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
+import { RefreshFailed } from '../ui/RefreshFailed'
 
 /**
  * 模型 pane(#7056)—— 照 Cursor 的 Settings › Models:列出咕咕提供的全部模型,开关决定**哪些出现在模型下拉里**。
@@ -70,6 +71,7 @@ export function ModelSection() {
         <Unknown className="h-64 w-full" />
       ) : (
         <>
+          {catalog.state === 'value' ? <RefreshFailed error={catalog.error} onRetry={load} /> : null}
           <SearchField
             value={query}
             onChange={(event) => setQuery(event.target.value)}

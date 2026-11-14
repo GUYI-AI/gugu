@@ -2,15 +2,17 @@ import { useState } from 'react'
 import { readModel, useReadModel } from '../../lib/readModel'
 import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
-import { FILE_RETENTIONS, IMAGE_RETENTIONS, type FileStorage } from '@gugu/core/shared/fileStorage'
+import { FILE_RETENTIONS, IMAGE_RETENTIONS, parseFileStorage, type FileStorage } from '@gugu/core/shared/fileStorage'
 import { messageForUser } from '@/lib/userFacingError'
 import { listMyDeviceProjects } from '../../lib/deviceProjects'
-import { readFileStorage, writeFileStorage } from '../../lib/fileStorage'
+import { writeFileStorage } from '../../lib/fileStorage'
+import { ownSettings } from '../../lib/ownSettings'
 import { useAuth } from '../../store/auth'
 import { Button } from '../ui/Button'
 import { useSettingsDetail } from './SettingsDetailNavigation'
 import { FileStorageDashboard } from './FileStorageDashboard'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
+import { RefreshFailed } from '../ui/RefreshFailed'
 
 /**
  * 「文件存储与读取」(owner 10-27):全局设置里唯一的一处,一个人一份。owner 10-28 批的设计稿:上面是仪表盘
@@ -21,15 +23,14 @@ import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './Settin
  * 「图片和标了临时的文件」:数据层图片与临时文件各一格(image_retention / temporary_retention),设置上一个控件,
  * 改一次写两格(owner 10-28)。临时文件在普通群里也生效,所以这一行人人都有。
  */
-/** This account's file storage settings, and which of its machines carry a bound project group. */
-const fileStorageSettings = readModel({
-  name: 'fileStorageSettings',
+/**
+ * Which of this account's machines carry a bound project group. The file storage itself is a key of the account's own
+ * settings row (ownSettings, `user`): one copy of that row, ❌ a second reading of it here.
+ */
+const projectGroupMachines = readModel({
+  name: 'projectGroupMachines',
   scope: 'account',
-  read: async (userId) => {
-    const [storage, projects] = await Promise.all([readFileStorage(userId), listMyDeviceProjects()])
-    const machines = Object.entries(projects).filter(([, rows]) => rows.some((row) => row.chatId)).map(([deviceId]) => deviceId)
-    return { storage, machines }
-  },
+  read: async () => Object.entries(await listMyDeviceProjects()).filter(([, rows]) => rows.some((row) => row.chatId)).map(([deviceId]) => deviceId),
   persist: true,
 })
 
@@ -38,18 +39,19 @@ export function FileStorageSection({ onBack }: { onBack: () => void }) {
   useSettingsDetail('file-storage', t('fileStorage.title'), onBack)
   const { user } = useAuth()
   const userId = user?.id
-  const reading = useReadModel(fileStorageSettings, userId ? [] : null)
-  const state = reading.state === 'value' ? reading.value : null
-  const loadFailed = reading.state === 'error' ? messageForUser(reading.error) : ''
+  const row = useReadModel(ownSettings, userId ? ['user'] : null)
+  const machines = useReadModel(projectGroupMachines, userId ? [] : null)
+  const state = row.state === 'value' && machines.state === 'value' ? { storage: parseFileStorage(row.value), machines: machines.value } : null
+  const failure = row.state === 'error' ? row.error : machines.state === 'error' ? machines.error : null
+  const loadFailed = failure ? messageForUser(failure) : ''
   const [saveFailed, setSaveFailed] = useState('')
-  const load = () => { void fileStorageSettings.refresh() }
+  const load = () => { void ownSettings.refresh('user'); void projectGroupMachines.refresh() }
 
+  // A save puts the row the server kept into ownSettings: every reader of that row (this page among them) sees it.
   const update = (change: Partial<FileStorage>) => {
     if (!userId || !state) return
     setSaveFailed('')
-    writeFileStorage(userId, change)
-      .then((storage) => fileStorageSettings.set([], (current) => current && { ...current, storage }))
-      .catch((cause: unknown) => { setSaveFailed(messageForUser(cause)); load() })
+    writeFileStorage(userId, change).catch((cause: unknown) => { setSaveFailed(messageForUser(cause)); load() })
   }
 
   const ordinary = (
@@ -62,7 +64,10 @@ export function FileStorageSection({ onBack }: { onBack: () => void }) {
       <SettingsRow description={loadFailed} control={<Button variant="secondary" size="sm" onClick={load}>{t('fileStorage.retry')}</Button>} />
     </SettingsGroup></SettingsPage>
   }
-  if (!state) return <SettingsPage><FileStorageDashboard /><Unknown className="h-40 w-full" /></SettingsPage>
+  // Not read yet: the one row everybody has, its value a placeholder (the project rows come only with a bound machine).
+  if (!state) return <SettingsPage><FileStorageDashboard /><SettingsGroup title={t('fileStorage.settingsTitle')}>
+    <SettingsRow title={t('fileStorage.kept')} description={t('fileStorage.keptHint')} control={<Unknown className="h-[var(--control-h-md)] w-28" />} />
+  </SettingsGroup>{ordinary}</SettingsPage>
 
   const { storage } = state
   const cloud = storage.proactive_upload
@@ -74,6 +79,7 @@ export function FileStorageSection({ onBack }: { onBack: () => void }) {
         {storage.image_retention !== storage.temporary_retention && <SettingsNote>{t('fileStorage.keptDiffer', {
           images: t(`fileStorage.retentions.${storage.image_retention}`), temporary: t(`fileStorage.retentions.${storage.temporary_retention}`) })}</SettingsNote>}
         {saveFailed && <SettingsNote tone="danger">{saveFailed}</SettingsNote>}
+        <RefreshFailed error={(row.state === 'value' ? row.error : null) ?? (machines.state === 'value' ? machines.error : null)} onRetry={load} />
       </>}>
       {bound && <SettingsRow title={<label htmlFor="settings-file-mode">{t('fileStorage.files')}</label>}
         description={`${t(cloud ? 'fileStorage.filesCloudHint' : 'fileStorage.filesMachineHint')} ${t('fileStorage.machines')}`}

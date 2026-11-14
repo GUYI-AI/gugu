@@ -1,4 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
+import { queryClient } from '@/lib/readModel'
 import { createRoot, type Root } from 'react-dom/client'
 import { useState } from 'react'
 import { ComposerModelMenu } from '@gugu/session-ui/react/components'
@@ -8,7 +9,9 @@ import type { AgentPayload } from '@shared/core/agents/agent-payload'
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config'
 import { AgentDetailModal } from '@renderer/features/settings/agents-page/AgentDetailModal'
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel'
-import { subscriptionKey } from '@renderer/features/settings/subscriptions/subscription-queries'
+import { refreshSubscriptionReadings, subscriptionPlan } from '@renderer/features/settings/subscriptions/subscription-queries'
+// A provider's subscription readings on this machine (the read models' keys: [model, device, machine, provider, …]).
+const readingsOf = (id: string) => ({ predicate: (q: { queryKey: readonly unknown[] }) => q.queryKey[2] === null && q.queryKey[3] === id })
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
 import { setLocalePreference } from '@/i18n'
 import { modalStore } from '@renderer/lib/modal/modal-store'
@@ -216,7 +219,8 @@ beforeEach(() => {
   control.busy = false
   control.removed = []
   control.connections = [{ id: 'native', kind: 'native', name: 'CLI', current: true }]
-  client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+  // The subscription readings are read models: they live in the one client (lib/readModel), cleared after each case.
+  client = queryClient
   host = document.createElement('div')
   host.className = 'gugu-skin emlight'
   document.body.append(host)
@@ -284,7 +288,7 @@ it.each([1440, 390])(
       })
       const connection = detail.getByRole('combobox', { name: 'Current connection', exact: true })
       await expect.element(connection).toBeEnabled()
-      await until('the first readings settle', () => client.isFetching({ queryKey: subscriptionKey(null, id) }) === 0)
+      await until('the first readings settle', () => client.isFetching(readingsOf(id)) === 0)
       for (const advanced of [false, true]) {
         if (advanced)
           await userEvent.click(page.getByRole('button', { name: 'Advanced', exact: true }))
@@ -295,10 +299,10 @@ it.each([1440, 390])(
         control.hold = new Promise<void>((resolve) => {
           finish = resolve
         })
-        const pending = client.invalidateQueries({ queryKey: subscriptionKey(null, id) })
+        const pending = refreshSubscriptionReadings(null, id)
         await until(
           'background readings start',
-          () => client.isFetching({ queryKey: subscriptionKey(null, id) }) > 0
+          () => client.isFetching(readingsOf(id)) > 0
         )
         await expect.element(connection).toBeEnabled()
         expect(connection.element().textContent).toContain('Existing CLI configuration')
@@ -310,7 +314,7 @@ it.each([1440, 390])(
         // 状态那一行换了说法(谁在付钱):字数不同、窄屏可能多折一行,当前连接那一格不缩、不挪到别的列、一直能点。
         for (const payer of ['api-key', 'unknown', 'subscription']) {
           control.payer = payer
-          await client.invalidateQueries({ queryKey: [...subscriptionKey(null, id), 'plan'] })
+          await subscriptionPlan.refresh(null, id)
           await untilStable('payer layout settled', () => box(detail.element()))
           const { x, width } = box(connection.element())
           expect({ x, width }).toEqual({ x: connectionBox.x, width: connectionBox.width })

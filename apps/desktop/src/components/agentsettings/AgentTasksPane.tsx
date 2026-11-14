@@ -1,12 +1,20 @@
 // #987 定时任务 pane — data-pane="tasks"。设计稿只给空态；列表/建表单按 gg-as 设计系统补。
 // 给 agent 配周期 prompt（间隔 + 内容），到点经设备运行时 tick → ACP deliver 触发 agent 回合（owner↔agent 私聊里）。
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { readModel, useReadModel } from '../../lib/readModel'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { useAuth } from '../../store/auth'
 import { agentScheduledTaskService, type AgentScheduledTask } from '../../lib/agentScheduledTasks'
 import type { AgentSettingsPaneProps } from './types'
 import { agentSettingsPaneClass, asClass, profileInputClass } from './agentSettingsStyles'
+
+/** An agent's scheduled tasks (account read model, one reading per agent). */
+const agentScheduledTasks = readModel({
+  name: 'agentScheduledTasks',
+  scope: 'account',
+  read: (_owner: string, agentId: string) => agentScheduledTaskService.list(agentId),
+})
 
 const INTERVAL_PRESETS: { labelKey: string; seconds: number }[] = [
   { labelKey: 'preset30Minutes', seconds: 1800 },
@@ -41,29 +49,20 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
   const { t } = useTranslation('agents')
   const { user } = useAuth()
   const ownerUserId = user?.id ?? null
-  const [tasks, setTasks] = useState<AgentScheduledTask[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  // One reading per agent: reopening the pane shows its tasks at once while they are read again.
+  const reading = useReadModel(agentScheduledTasks, [agent.id])
+  const tasks = reading.state === 'value' ? reading.value : []
+  const loading = reading.state === 'unknown'
+  const [actionError, setError] = useState<string | null>(null)
+  const readError = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null
+  const error = actionError ?? (readError ? (readError.message || t('settings.tasks.loadFailed')) : null)
+  const setTasks = useCallback((edit: (tasks: AgentScheduledTask[]) => AgentScheduledTask[]) => agentScheduledTasks.set([agent.id], (now) => now && edit(now)), [agent.id])
   const [showForm, setShowForm] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [intervalSeconds, setIntervalSeconds] = useState(INTERVAL_PRESETS[1].seconds)
   const [busy, setBusy] = useState(false)
 
-  const reload = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      setTasks(await agentScheduledTaskService.list(agent.id))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t('settings.tasks.loadFailed'))
-    } finally {
-      setLoading(false)
-    }
-  }, [agent.id, t])
-
-  useEffect(() => {
-    void reload()
-  }, [reload])
+  const reload = useCallback(async () => { setError(null); await agentScheduledTasks.refresh(agent.id) }, [agent.id])
 
   const handleCreate = useCallback(async () => {
     if (!ownerUserId || !prompt.trim() || busy) return
@@ -93,7 +92,7 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
         setError(e instanceof Error ? e.message : t('settings.tasks.operationFailed'))
       }
     },
-    [reload, t],
+    [reload, setTasks, t],
   )
 
   const handleRemove = useCallback(async (task: AgentScheduledTask) => {
@@ -103,7 +102,7 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
     } catch (e) {
       setError(e instanceof Error ? e.message : t('settings.tasks.deleteFailed'))
     }
-  }, [t])
+  }, [setTasks, t])
 
   const canSubmit = useMemo(() => !!ownerUserId && prompt.trim().length > 0 && !busy, [ownerUserId, prompt, busy])
 
