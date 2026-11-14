@@ -71,6 +71,8 @@ import {
   RENDERER_LOG_CHANNEL,
 } from './lib/logger'
 import { createRendererLogForwarder } from './local-renderer-diagnostics'
+import { createBetaTypingDiagnosticsHandler, withTypingDiagnosticPolicy } from './beta-typing-diagnostics'
+import { BETA_TYPING_DIAGNOSTICS_BUILD, typingDiagnosticsEnabled } from '../shared/beta-typing-diagnostics'
 import { registerErrorSummaryReporting } from './error-summary-reporting-host'
 import { registerErrorSummaryConsent } from './error-summary-consent-host'
 import { resolveSessionPermissionMode, type GuguPermissionMode } from '@gugu/session-core/acp'
@@ -2361,8 +2363,15 @@ ipcMain.on(HOST_SYSTEM_LANGUAGES_CHANNEL, (event) => {
 })
 // @@@logging (#2382) - renderer 的日志回传到主进程,和主进程日志同流、同脱敏、同落盘:
 // 渲染侧崩在用户机器上时,`console` 只活在 devtools 里,拿不回来。
-const forwardRendererLog = createRendererLogForwarder({ getMetrics: () => app.getAppMetrics() })
-ipcMain.handle(RENDERER_LOG_CHANNEL, (event, payload: unknown) => forwardRendererLog(event.sender, payload))
+const betaTypingDiagnosticsEnabled = typingDiagnosticsEnabled(BETA_TYPING_DIAGNOSTICS_BUILD, process.env.GUGU_TYPING_DIAGNOSTICS)
+const typingDiagnostics = createBetaTypingDiagnosticsHandler({
+  enabled: betaTypingDiagnosticsEnabled,
+  directory: () => join(app.getPath('userData'), 'diagnostics', 'typing'),
+  mainWindowId: () => mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.id : undefined,
+  version: app.getVersion(),
+})
+const forwardRendererLog = createRendererLogForwarder({ getMetrics: () => app.getAppMetrics(), typing: typingDiagnostics })
+ipcMain.handle(RENDERER_LOG_CHANNEL, (event, payload: unknown) => forwardRendererLog(event.sender, payload, Boolean(event.senderFrame) && event.senderFrame === event.sender.mainFrame))
 
 // @@@4899 用户在反馈里勾了「附带日志」才走这条。读不到就让它抛到 renderer —— 界面当场取消
 // 勾选并说明,❌ 不许悄悄附一个空的(用户以为给了线索,排查方以为用户没日志)。
@@ -4562,7 +4571,9 @@ app.whenReady().then(async () => {
     if (url.host !== 'app' || !filePath.startsWith(rendererRoot + sep)) {
       return new Response('forbidden', { status: 403 })
     }
-    return net.fetch(pathToFileURL(filePath).toString())
+    const response = net.fetch(pathToFileURL(filePath).toString())
+    return betaTypingDiagnosticsEnabled && url.pathname === '/index.html'
+      ? response.then(value => withTypingDiagnosticPolicy(value, request.url, true)) : response
   })
   // @@@deeplink-register - Packaged builds declare gugu:// via electron-builder `protocols`
   // #6387 前缀按版本区分(见 GUGU_LINK_SCHEME):同机的正式版、Beta、开发版各认各的链接。
