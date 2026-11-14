@@ -4,7 +4,7 @@ import { notify } from '@/lib/notices'
 import { useSessionMentionDrop } from '../../session/renderer/lib/chat/use-session-mention-drop'
 import type { LocalSessionMentionProvider } from '../../session/renderer/lib/chat/local-session-mention-provider'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
-import { TaskDropGroupInvite } from './TaskDropGroupInvite'
+import { GroupAddMembersSheet } from './GroupAddMembersSheet'
 import type { ChatMessageComposerProps } from './chatComposerModels'
 
 // The title only: the description is a task's (about SSH machines), and a chat takes files, never a folder.
@@ -26,5 +26,5 @@ export function useChatTaskDrop({ chatId, isGroupChat, groupMembers = [], provid
     return false
   }, attachFiles: (files) => { if (enabled) attachFiles(files) }, dropFolder: folderNotice })
   return { ...drop, onDirectoriesDropped: folderNotice, invitation: invite && invite.chatId === chatId
-    ? <TaskDropGroupInvite key={`${invite.chatId}:${invite.item.id}`} chatId={invite.chatId} agentId={invite.item.label.slice('aid:'.length)} onClose={() => setInvite(null)} /> : null }
+    ? <GroupAddMembersSheet key={`${invite.chatId}:${invite.item.id}`} chatId={invite.chatId} initialSelectedIds={[invite.item.label.slice('aid:'.length)]} onClose={() => setInvite(null)} /> : null }
 }

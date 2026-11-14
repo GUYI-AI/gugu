@@ -431,7 +431,7 @@ describe('topic participant controls project server authority', () => {
   it('lets a source-group manager change a topic agent’s mode without a topic seat', async () => {
     await renderTopic('owner-1', true, { ...SNAPSHOT, humans: SNAPSHOT.humans.filter((human) => human.id !== 'owner-1') })
     expect(q('[data-testid="topic-name-edit"] [data-testid="group-name-edit"]')).not.toBeNull()
-    expect(q('[data-testid="member-list-invite"]')).toBeNull()
+    expect(q('[data-group-add-menu]')).toBeNull()
     await click(q('[data-member-row="codex"]'))
     expect(q('[data-profile-remove-button="codex"]')).not.toBeNull()
     expect(q('[data-profile-role-select="codex"]')).toBeNull()

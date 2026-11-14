@@ -548,7 +548,9 @@ export default {
     "memberList": {
       "agentLeave": "Take it out of this group",
       "clearSearch": "Clear search",
-      "invite": "Invite members",
+      "add": "Add",
+      "addMembers": "Add members",
+      "newAgent": "New agent",
       "makeAdmin": "Make admin",
       "manage": "Manage {{name}}",
       "noMatches": "No members match \"{{query}}\"",

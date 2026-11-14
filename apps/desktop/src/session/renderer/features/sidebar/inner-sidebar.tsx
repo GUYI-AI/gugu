@@ -1,11 +1,11 @@
-import { ChevronLeft, ChevronRight, SquarePen } from '@/lib/icons';
+import { ChevronLeft, ChevronRight } from '@/lib/icons';
 import { motion } from 'framer-motion';
 import { computed, observable, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import { Avatar } from '@/components/Avatar';
 import { ListColumnToggle } from '@/components/PanelToggleButtons';
-import { IconButton } from '@/components/ui/IconButton';
+import { GroupAddMenu } from '@/components/chat/GroupAddMenu';
 import { useShownAgentName } from '@/hooks/useShownAgentName';
 import { useChatSummaries, type ChatSummary } from '@/lib/chatSummariesBridge';
 import { setComposerVerb } from '@/lib/composerVerbBridge';
@@ -24,7 +24,6 @@ import {
 } from '@/lib/innerSidebarBridge';
 import { publishPanelToggle } from '@/lib/panelToggles';
 import { readShellSlots } from '@/lib/shellSlots';
-import { closeInfoTab, infoTabOf, openInfoTab } from '@renderer/features/chats/chat-tabs/chat-layouts';
 import { chatBlockOnScreen } from '@renderer/features/chats/group-participant-actions';
 import { openChatOnScreen } from '@renderer/features/chats/open-chat';
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
@@ -37,7 +36,6 @@ import { useInnerSidebarFrame } from '@renderer/lib/layout/layout-provider';
 import { ShellRestoreLane } from '@renderer/lib/components/titlebar/shell-restore-lane';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { Button } from '@renderer/lib/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import {
   agentFamilies,
@@ -427,9 +425,10 @@ function GroupHeadAvatar({ chatId, summary }: { chatId: string; summary: ChatSum
 }
 
 /**
- * 头一行就是这个群 / 项目自己:头像 + 名字,点它 = 它的信息与设置(回到群聊,信息摆在旁边;开着时再点一下收起)。
- * 行尾:新智能体、收起这一列(最右),都常显,是「对话」分区头上那种钮。❌「…」:信息与设置就是点这一行,成员与邀请在页头
- * (ChatHeaderActions,和手机、没有这一列时同一处),项目那份菜单在项目页签的右键里。
+ * 头一行就是这个群 / 项目自己:头像 + 名字,点它回到它的主群聊(owner 11-14;信息与设置在页头「成员 N」与「⋯」里)。
+ * 行尾:悬停才出的「+」(GroupAddMenu:添加成员、新建 Agent,同群信息页与成员页那一枚;新建 Agent 只从这里进,❌ 再一支常显的笔)、
+ * 收起这一列(最右,常显)。
+ * 项目那份菜单在项目页签的右键里。
  * ❌ 未读数(#2548 提议稿 state0):这个群的数挂在左边列表它那一行上(叫到你的才是红数,其余一颗灰点),这里再挂一份就是两处。
  */
 const InnerHeadRow = observer(function InnerHeadRow({
@@ -441,17 +440,10 @@ const InnerHeadRow = observer(function InnerHeadRow({
   summary: ChatSummary | null;
   active: boolean;
 }) {
-  const { translate } = useSessionMessages();
   const { chatId } = anchor;
   const name = summary?.name ?? '';
   // 项目的代表本地项目(与侧栏那一行同一个);一个文件夹都没有的项目没有 —— 新智能体走群那一条,封面按群取色(同 partnerProjects)。
   const rowProjectId = anchor.kind === 'project' ? accountProjectsStore.representativeOf(chatId) : undefined;
-  const newAgentLabel = translate(anchor.kind === 'project' ? 'sidebar.newAgentInProject' : 'sidebar.newAgentInGroup');
-  const toggleInfo = () => {
-    if (active && infoTabOf(chatId)?.shown) return closeInfoTab(chatId);
-    openChatOnScreen(chatId, false);
-    openInfoTab(chatId);
-  };
   // 同输入框「+」右边那个「新任务」:项目走项目行「+」那一条(prepareProjectTask),群把这个群的框换成新任务。
   const newAgent = () => {
     if (rowProjectId) prepareProjectTask(rowProjectId);
@@ -461,17 +453,9 @@ const InnerHeadRow = observer(function InnerHeadRow({
   // #2600 项目群和别的群一样戴群自己的头像(没设 = 成员拼图),❌ 文件夹封面。
   const avatar: ReactNode = <GroupHeadAvatar chatId={chatId} summary={summary} />;
   return (
-    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={toggleInfo} trailingButtons={2}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <IconButton size="md" tone="strong" aria-label={newAgentLabel} data-inner-head-new-agent="" onClick={newAgent}>
-              <SquarePen />
-            </IconButton>
-          }
-        />
-        <TooltipContent>{newAgentLabel}</TooltipContent>
-      </Tooltip>
+    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => openChatOnScreen(chatId, false)} trailingButtons={1}
+      // 这一列只为看的人在的群画,在群里就能添加成员(groupInviteAccess.showInvite = 来源群的成员;项目群里那一页只加自己的 agent)。
+      hoverButton={<GroupAddMenu chatId={chatId} canAddMembers onNewAgent={newAgent} />}>
       <InnerSidebarFoldButton />
     </InnerHeadRowLayout>
   );

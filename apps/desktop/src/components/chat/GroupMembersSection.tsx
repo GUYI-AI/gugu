@@ -113,8 +113,6 @@ export function GroupMembersSection({
   const [avatarEditing, setAvatarEditing] = useState(false)
   const [draft, setDraft] = useState('')
   // 成员行的「+」:进成员页时选人页已经开着(成员页自己那一个)。
-  const [inviting, setInviting] = useState(false)
-  const openMembers = (invite: boolean) => { setInviting(invite); push('members') }
 
   const unifiedMembers = useMemo(() => buildUnifiedMembers(snapshot), [snapshot])
   const totalMembers = snapshot.humans.length + snapshot.agents.length
@@ -170,7 +168,7 @@ export function GroupMembersSection({
   const subHead = (title: ReactNode, action?: ReactNode) => <SettingsPageHead title={title} action={action} onBack={canPop ? pop : undefined} onClose={mobileShell ? onClose : undefined} mobile={mobileShell} />
   let content: ReactNode
   if (page === 'members') {
-    content = <MemberListPanel settingsState={settingsState ?? ownSettings} chatId={chatId} chatKind="group" invite={inviting} snapshot={snapshot} error={snapshotError} onReload={onReload} onOpenUserChat={onOpenUserChat} onWhisper={onWhisper} head={subHead} />
+    content = <MemberListPanel settingsState={settingsState ?? ownSettings} chatId={chatId} chatKind="group" snapshot={snapshot} error={snapshotError} onReload={onReload} onOpenUserChat={onOpenUserChat} onWhisper={onWhisper} head={subHead} />
   } else if (page === 'announcement') {
     content = <AnnouncementDrawer chatId={chatId} isAdmin={viewerIsManager} head={subHead} />
   } else if (page === 'manage' && settings) {
@@ -242,7 +240,7 @@ export function GroupMembersSection({
             </div>
           </div>
 
-          <GroupMembersRow chatId={chatId} settings={settings} memberIds={unifiedMembers.map((member) => member.id)} total={totalMembers} onOpen={() => openMembers(false)} onInvite={() => openMembers(true)} />
+          <GroupMembersRow chatId={chatId} settings={settings} memberIds={unifiedMembers.map((member) => member.id)} total={totalMembers} onOpen={() => push('members')} />
           <GroupFolderRow chatId={chatId} />
           <SettingsNavRow title={t('header.announcement')} testId="group-settings-announcement" onClick={() => push('announcement')} />
           <SettingsNavRow title={t('group.settings.rules')} testId="group-settings-rules" value={settings ? firstLine(settings.group_prompt) ?? t('group.settings.rulesUnset') : undefined} onClick={() => openTextPage('rules')} />
