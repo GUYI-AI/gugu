@@ -3,12 +3,12 @@
 // jsdom 没有布局:这里给一个最小的几何模型 —— 视口高 300、行高各自给定,行的屏幕位置 = 累计高度 − scrollTop,
 // scrollTop 按浏览器那样夹在 [0, scrollHeight − clientHeight]。ResizeObserver 换成可手动触发的替身。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, createElement, useRef } from 'react'
+import { act, createElement, useLayoutEffect, useRef } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
 import { useFlowList, type FlowListHandle, type ListLanding } from '../../../../apps/desktop/src/lib/flowList'
 import { PREPARE_SELECT_ALL_EVENT } from '../../../../apps/desktop/shared/window-menu-commands'
 
-const VIEW = 300
+let VIEW = 300
 const scrollTops = new WeakMap<Element, number>()
 const heightsOf = (scroller: Element) => Array.from(scroller.firstElementChild?.children ?? []).map((row) => Number((row as HTMLElement).dataset.h))
 const total = (scroller: Element) => heightsOf(scroller).reduce((a, b) => a + b, 0)
@@ -77,6 +77,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
   for (const key of Object.keys(descriptors)) delete (HTMLElement.prototype as unknown as Record<string, unknown>)[key]
   observers.length = 0
+  VIEW = 300
 })
 
 describe('useFlowList 落点(第一次绘制之前放好)', () => {
@@ -130,6 +131,34 @@ describe('useFlowList 贴底', () => {
     await harness.render(createElement(List, { rows: rowsOf(14), landing: null }))
     await resize()
     expect(scroller().scrollTop, '读历史的人不被拽回底部').toBe(400)
+  })
+  it('从落下的那次提交起就看着自己的高度:落点之后、第一次绘制之前长出来的内容(代码块排好、底栏让位)在这次绘制前贴好', async () => {
+    // 同一次提交里排在列表后面的 layout effect 让最后一行长高,ResizeObserver 在绘制前回调:这时列表必须已经在看。
+    function LateLayout() {
+      useLayoutEffect(() => {
+        const rows = scroller().firstElementChild!.children
+        ;(rows[rows.length - 1] as HTMLElement).dataset.h = '300'
+        for (const callback of [...observers]) callback()
+      }, [])
+      return null
+    }
+    await harness.render(createElement('div', null, createElement(List, { rows: rowsOf(20), landing: { index: 'LAST', align: 'end' } }), createElement(LateLayout)))
+    expect(scroller().scrollTop).toBe(maxTop(scroller()))
+    expect(topOf('r19')).toBe(0)
+  })
+  it('视口变矮(输入框长高)时在底部就贴住;往上翻开之后不拽 —— 贴底只有列表这一处', async () => {
+    await harness.render(createElement(List, { rows: rowsOf(20), landing: { index: 'LAST', align: 'end' } }))
+    await nextFrames()
+    VIEW = 200
+    await resize()
+    expect(scroller().scrollTop).toBe(maxTop(scroller()))
+    expect(topOf('r19')).toBe(100)
+
+    await scrollTo(100)
+    const reading = scroller().scrollTop
+    VIEW = 150
+    await resize()
+    expect(scroller().scrollTop, '读历史的人不被拽回底部').toBe(reading)
   })
   it('调用方关掉跟随(还有更新的页没载、正在定位未读)时在底部也不贴', async () => {
     await harness.render(createElement(List, { rows: rowsOf(10), landing: { index: 'LAST', align: 'end' }, followTail: false }))

@@ -51,7 +51,7 @@ function firstSlice(key: Slice['key'], landing: ListLanding, ids: ReadonlyArray<
   return { key, fromId: ids[Math.min(ids.length - 1, Math.max(0, landing.index - 1))], toId: landing.index + FIRST_FRAME_ROWS >= ids.length - 1 ? undefined : ids[landing.index + FIRST_FRAME_ROWS] }
 }
 
-export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing, followTail, atBottomThreshold, onAtBottomChange, onTotalHeightChanged, onStartReached, handleRef }: {
+export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing, followTail, atBottomThreshold, onAtBottomChange, onStartReached, handleRef }: {
   scrollerRef: RefObject<HTMLElement | null>
   contentRef: RefObject<HTMLElement | null>
   resetKey: string | number | undefined
@@ -61,7 +61,6 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
   followTail: boolean
   atBottomThreshold: number
   onAtBottomChange?: (atBottom: boolean) => void
-  onTotalHeightChanged?: () => void
   onStartReached?: () => void
   handleRef?: Ref<FlowListHandle>
 }): { start: number; end: number } {
@@ -69,8 +68,8 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
   const reportedRef = useRef<boolean | null>(null)
   const followRef = useRef(followTail)
   followRef.current = followTail
-  const callbacksRef = useRef({ onAtBottomChange, onTotalHeightChanged, onStartReached })
-  callbacksRef.current = { onAtBottomChange, onTotalHeightChanged, onStartReached }
+  const callbacksRef = useRef({ onAtBottomChange, onStartReached })
+  callbacksRef.current = { onAtBottomChange, onStartReached }
 
   // 读者正看着的那一行与它离视口顶的距离;头部插行时按它放回原处。取上沿在视口里的第一行,且不取窗口第一行:
   // 前面接进消息后,原来的第一行会丢掉自己的日期/发言人头(矮三十多像素),钉它等于让它下面的内容整体上跳。
@@ -186,18 +185,20 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
     report(scroller)
   }, [resetKey, slice, rowIds, end, scrollerRef, contentRef, grow, report])
 
-  // 内容长高/变矮:在底部就贴住(新消息、最后一条长高、图片晚到);ResizeObserver 在布局之后、绘制之前回调。
+  // 内容长高/变矮、视口变高/变矮:在底部就贴住(新消息、最后一条长高、图片晚到、输入框长高);ResizeObserver 在布局之后、
+  // 绘制之前回调。挂在 layout effect 里:首帧之前就在看,落点之后、第一次绘制之前长出来的高度(代码块、公式排好)
+  // 在这同一次绘制前贴好 —— 挂在 effect 里时它第一次回调已在首帧之后,首帧差那一截、下一帧再跳(打开聊天跳 198 px)。
   // 不在底部时视口上方的变化交给浏览器的滚动锚定,这里不动。
-  useEffect(() => {
+  useLayoutEffect(() => {
     const scroller = scrollerRef.current, content = contentRef.current
     if (!scroller || !content || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => {
       if (followRef.current && atBottomRef.current) scroller.scrollTop = scroller.scrollHeight
-      callbacksRef.current.onTotalHeightChanged?.()
       report(scroller)
       grow(scroller)
     })
     observer.observe(content)
+    observer.observe(scroller)
     const scrolled = afterPaint(() => {
       report(scroller)
       if (!grow(scroller) && rangeRef.current.start === 0 && scroller.scrollTop <= 120) callbacksRef.current.onStartReached?.()
