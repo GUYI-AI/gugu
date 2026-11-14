@@ -39,6 +39,21 @@ FunctionEnd
   !ifndef ZIP_COMPRESSION
     !error "Gugu's transactional installer requires useZip:true and differentialPackage:false"
   !endif
+  # Keep NSIS's staging path identical to the helper's canonical target. A /D
+  # value ending in a slash must not turn the sibling journal into a child of
+  # the old application. Preserve drive roots for the helper's explicit refusal.
+  GetFullPathName $INSTDIR "$INSTDIR"
+  ${Do}
+    StrLen $R9 $INSTDIR
+    ${If} $R9 <= 3
+      ${Break}
+    ${EndIf}
+    StrCpy $R9 $INSTDIR 1 -1
+    ${If} $R9 != "\"
+      ${Break}
+    ${EndIf}
+    StrCpy $INSTDIR $INSTDIR -1
+  ${Loop}
   StrCpy $guguPowerShell "$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
   ${IfNot} ${FileExists} "$guguPowerShell"
     StrCpy $guguPowerShell "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"
