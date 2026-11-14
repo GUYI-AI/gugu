@@ -14,7 +14,8 @@ export interface SessionViewRequestBridge {
    * 摆不摆、摆在哪由这一页定。`beside` = ⌘ 点,并排放在正看着那块右边。
    */
   /** Resource requests follow the same conversation destination and are hosted beside the owned session. */
-  openChat(chatId: string, beside: boolean, purpose?: 'resource'): void;
+  /** `within`: opened from inside the screen (a profile card's 「发消息」), so it stays that screen's entry's. */
+  openChat(chatId: string, beside: boolean, purpose?: 'resource', within?: boolean): void;
   openChatResource?(target: { projectId: string; sessionId: string; chatId: string; sourceTabId: string }): Promise<void>;
   /** Desktop group-name entry: preserve the group and let the session page own the single auxiliary pane. */
   openGroupChat?(sourceChatId: string, chatId: string): void;

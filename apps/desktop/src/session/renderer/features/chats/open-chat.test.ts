@@ -48,3 +48,16 @@ it('opens a bound group with no project row as a chat', () => {
   expect(host.show).toHaveBeenCalledWith({ kind: 'chat', chatId: 'bound-without-row' });
   expect(host.focus).toHaveBeenCalledExactlyOnceWith('chat:bound-without-row');
 });
+it('a DM opened from a profile card inside a group (within) is where that group is left: switching away and back returns to it', async () => {
+  const { screenLayout } = await import('@renderer/app/screen-layout');
+  host.show.mockImplementation((content) => screenLayout.show(content));
+  const shown = () => screenLayout.order.map((id) => screenLayout.blocks.get(id)).map((block) => (block?.kind === 'chat' ? block.chatId : block?.kind));
+  openChatOnScreen('group-1', false);
+  openChatOnScreen('dm-from-card', false, undefined, true);
+  expect(shown()).toEqual(['dm-from-card']);
+  openChatOnScreen('group-2', false);
+  openChatOnScreen('group-1', false);
+  expect(shown(), 'group-1 comes back to the DM opened inside it').toEqual(['dm-from-card']);
+  openChatOnScreen('group-1', false);
+  expect(shown(), 'its row again = the group itself').toEqual(['group-1']);
+});
