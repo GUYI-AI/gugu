@@ -93,6 +93,7 @@ if (!t) {
 const fs = require('node:fs')
 const path = require('node:path')
 const { packNpmBundledDependencies, packedAppDir } = require('./scripts/build/pack-npm-bundled-deps.cjs')
+const { archivePackedNpm } = require('./scripts/build/archive-packed-npm.cjs')
 const { resolveElectronFuses } = require('./scripts/build/electron-fuses.cjs')
 const { verifyPackedClaudePayload } = require('./scripts/checks/verify-packed-claude-payload.cjs')
 const PACKED_APP_ENTRIES = new Set(['apps', 'build-resources', 'dist', 'node_modules', 'package.json'])
@@ -371,6 +372,9 @@ module.exports = {
     // 三个平台都要,所以在图标那段(只对 darwin)之前。
     const npmDeps = packNpmBundledDependencies({ appDir: packedAppDir(context), repoRoot: __dirname })
     console.log(`[npm-bundled-deps] npm 的 ${npmDeps} 个 bundled 依赖已进包`)
+    if (context.electronPlatformName === 'win32') {
+      await archivePackedNpm({ appDir: packedAppDir(context) })
+    }
     // @@@packed-app-allowlist - resources/app holds the build output and its runtime dependencies, nothing else.
     // The checkout around it is not product: in CD it also carries the private operations overlay.
     const appDir = packedAppDir(context)
@@ -533,6 +537,10 @@ module.exports = {
     target: [{ target: 'nsis', arch: ['x64'] }]
   },
   nsis: {
+    // ZIP extracts once onto the destination volume; our NSIS transaction publishes
+    // whole directories. Differential packaging forces the slower 7z/copy path.
+    useZip: true,
+    differentialPackage: false,
     // #2489: assisted mode exposes the directory page; one-click installers intentionally
     // ignore allowToChangeInstallationDirectory and install directly to the default path.
     oneClick: false,

@@ -2786,6 +2786,8 @@ ipcMain.handle('dialog:select-directory', async () => {
 // autoInstallOnAppQuit 也仍是 false:那是「退出时偷偷装」,owner 这次没有改这一条,安装动作
 // 必须由用户按下「重启更新」发起。
 autoUpdater.autoDownload = false
+// The Windows ZIP installer ships without blockmaps; download the full verified installer.
+if (process.platform === 'win32') autoUpdater.disableDifferentialDownload = true
 autoUpdater.autoInstallOnAppQuit = false
 // @@@5747 装完必须自己起来 —— 这是「按一次就完事」的后半截。库的默认值就是 true,但原来有**第二套**
 // 更新子系统(会话页那套,#5747 已删)也在设它,两处同时拨同一个单例的开关,谁最后跑谁说了算。
