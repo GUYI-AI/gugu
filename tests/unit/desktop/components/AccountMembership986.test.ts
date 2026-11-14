@@ -6,12 +6,14 @@ import { queryClient } from '../../../../apps/desktop/src/lib/readModel'
 import { AccountSection } from '../../../../apps/desktop/src/components/settings/AccountSection'
 
 const control = vi.hoisted(() => ({ failed: false }))
-vi.mock('../../../../apps/desktop/src/lib/firstRun', async () => {
+vi.mock('../../../../apps/desktop/src/lib/firstRun', () => ({
+  readOccupation: async () => null,
+  writeOccupation: vi.fn(),
+}))
+// The account's own settings row: nothing set yet.
+vi.mock('../../../../apps/desktop/src/lib/ownSettings', async () => {
   const { readModel } = await import('../../../../apps/desktop/src/lib/readModel')
-  return {
-    occupationModel: readModel({ name: 'occupation', scope: 'account', read: async () => null }),
-    writeOccupation: vi.fn(),
-  }
+  return { ownSettings: readModel({ name: 'ownSettings', scope: 'account', read: async () => ({}) }) }
 })
 vi.mock('../../../../apps/desktop/src/lib/billing', async importOriginal => ({
   ...(await importOriginal<typeof import('../../../../apps/desktop/src/lib/billing')>()),
