@@ -15,3 +15,5 @@ it('orders numeric prerelease identifiers before textual identifiers', () => {ex
 it('orders longer matching prereleases after their prefix', () => {expect(compareServerVersions('1.0.0-beta.0','1.0.0-beta')).toBeGreaterThan(0);expect(compareServerVersions('1.0.0-beta','1.0.0-beta.0')).toBeLessThan(0)})
 
 it('preserves four-digit early years in usage dates', () => {const date=new Date(0);date.setFullYear(42,0,2);expect(localDay(date)).toBe('0042-01-02');expect(parseDay('0042-01-02').getFullYear()).toBe(42);expect(addDays('0042-01-02',1)).toBe('0042-01-03')})
+
+it('keeps busiest day ties independent of incoming row order', () => {const rows=[{day:'2026-11-13',engine:'x',sessions:2},{day:'2026-11-14',engine:'x',sessions:2}] as UsageDay[];const range={from:'2026-11-13',to:'2026-11-14'};expect(busiestDay(rows,range)).toEqual(busiestDay([...rows].reverse(),range))})

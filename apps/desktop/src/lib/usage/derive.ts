@@ -162,7 +162,7 @@ export function busiestDay(days: readonly UsageDay[], range: { from: string; to:
   }
   let best: { day: string; sessions: number } | null = null
   for (const [day, sessions] of byDay) {
-    if (sessions > 0 && (!best || sessions > best.sessions)) best = { day, sessions }
+    if (sessions > 0 && (!best || sessions > best.sessions || sessions === best.sessions && day < best.day)) best = { day, sessions }
   }
   return best
 }
