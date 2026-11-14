@@ -31,6 +31,10 @@ import { publishSelfIdentity } from './lib/selfIdentityBridge'
 import { installAssistantPanelHost } from './components/assistant/assistant-panel-host'
 import { installConnectionHost } from './components/connections/connection-host'
 import { usePhoneImeDismiss } from './mobile/usePhoneImeDismiss'
+import { iosOwnerAvailable } from './mobile/ios-runtime/iosOwnerClient'
+import { startIOSPush } from './mobile/ios-push/startIOSPush'
+import { startIOSOwnerPublication } from './mobile/ios-runtime/startIOSOwnerPublication'
+import { IOSHostRoot } from './mobile/ios-host/IOSHostRoot'
 
 import { platform } from './platform'
 import { type RendererRpcHandlers, useRendererRpcHandlers } from './rpc-renderer/rendererRpc'
@@ -107,6 +111,10 @@ export default function App() {
   useEffect(() => {
     return sessionCoordinator.start()
   }, [])
+  useEffect(() => {
+    if (iosOwnerAvailable()) return startIOSOwnerPublication()
+  }, [])
+  useEffect(startIOSPush, [])
   useEffect(startAuthCallbackRouting, [])
   useEffect(() => watchReferralLinks(platform.watchOpenedLinks, sessionCoordinator), [])
   useEffect(() => { authCallbacks.setAuthenticated(Boolean(session.session)) }, [session.session])
@@ -150,6 +158,7 @@ export default function App() {
         <ToastProvider>
           <ContentContextMenuHost />
           <AuthContext.Provider value={authContextValue}>
+            <IOSHostRoot />
             {/* 新账号先走一遍首次引导(product spec,#7348);老账号 / 走完的直接进主界面 */}
             {/* 启动外壳期间那张候选证可能已过期:等协调器接受了会话再读,不另起刷新 */}
             {session.status === 'authenticated' && <LoginMethodChangeNotice key={`login-notice:${user.id}`} userId={user.id} />}

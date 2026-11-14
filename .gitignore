@@ -146,3 +146,6 @@ apps/desktop/session-tooling/fixtures/*.db-shm
 
 # Restored by CI; paths stay relative across hosted and isolated runner checkouts.
 /.ci-cache/
+
+# Generated packaged iOS JavaScriptCore runtime and license inventory.
+/apps/mobile/ios/App/App/HostRuntime/

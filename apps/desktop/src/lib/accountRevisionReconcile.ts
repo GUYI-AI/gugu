@@ -47,7 +47,11 @@ function rendererReconcileSignals(): RevisionReconcileSignals {
     },
     onOnline: (listener) => {
       window.addEventListener('online', listener)
-      return () => window.removeEventListener('online', listener)
+      window.addEventListener('gugu:ios-push-reconcile', listener)
+      return () => {
+        window.removeEventListener('online', listener)
+        window.removeEventListener('gugu:ios-push-reconcile', listener)
+      }
     },
     onForeground: (listener) => platform.subscribeAppForeground(listener, (error) => {
       reconcileLog.error({ error }, 'app foreground subscription failed')

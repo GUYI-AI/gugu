@@ -23,6 +23,7 @@
  */
 
 import { openCreditSettings } from '@/lib/billing/settingsDestination';
+import { billingLinksAvailable } from '@/lib/appLinks';
 import type {
   ChatCommands,
   ChatContext,
@@ -176,7 +177,8 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
         pinUserMessages: p.pinUserMessages,
         class: p.class,
         contentClass: p.contentClass,
-        commands: { onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, onRechargeCredits: openCreditSettings, ...p.commands, writeClipboardText },
+        commands: { onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, ...p.commands,
+          onRechargeCredits: billingLinksAvailable() ? p.commands?.onRechargeCredits ?? openCreditSettings : undefined, writeClipboardText },
         padTop: p.padTop,
         embedded: p.embedded,
         // Thread stable wrappers that read from propsRef at call time — never stale.
@@ -226,7 +228,8 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
 
   // Push command callbacks reactively so inline functions are never stale.
   useEffect(() => {
-    viewRef.current?.setCommands({ onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, onRechargeCredits: openCreditSettings, ...props.commands, writeClipboardText });
+    viewRef.current?.setCommands({ onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, ...props.commands,
+      onRechargeCredits: billingLinksAvailable() ? props.commands?.onRechargeCredits ?? openCreditSettings : undefined, writeClipboardText });
   }, [props.commands]);
 
   // Layout lives on the process-long context (measurement-coupled), not on the

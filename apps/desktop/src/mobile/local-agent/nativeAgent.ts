@@ -5,7 +5,7 @@ import type { PhoneDeviceInfo } from '../phone-device/nativePhoneActions'
 import type { PhoneGroupGrants } from '../phone-device/phoneActionCatalog'
 import type { phoneDeviceRow } from '../phone-device/phoneDeviceRow'
 
-export const phoneAgentAvailable = () => Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('GuguAgent')
+export const phoneAgentAvailable = () => Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android' && Capacitor.isPluginAvailable('GuguAgent')
 
 export interface PhoneAgentState {
   ownerId?: string

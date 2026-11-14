@@ -204,6 +204,8 @@ export default {
       "daysLater_other": "in {{count}} days",
       "exhausted": "Plan allowance and non-expiring credits are both used up; buy a top-up to resume now, or wait for the reset {{available}}",
       "exhaustedHeld": "Plan allowance and non-expiring credits are both used up ({{credits}} reserved for running tasks); buy a top-up to resume now, or wait for the reset {{available}}",
+      "exhaustedReadonly": "Plan allowance and non-expiring credits are both used up; the allowance resets {{available}}",
+      "exhaustedHeldReadonly": "Plan allowance and non-expiring credits are both used up ({{credits}} reserved for running tasks); the allowance resets {{available}}",
       "hoursLater": "in {{count}} hours",
       "hoursLater_one": "in {{count}} hour",
       "hoursLater_other": "in {{count}} hours",

@@ -19,7 +19,7 @@ import {
   type AgentModelSelectionState,
   type PlatformCatalogModel,
 } from '../../lib/agentModelSelection'
-import { GUGU_BILLING_URL } from '../../lib/appLinks'
+import { billingLinksAvailable, GUGU_BILLING_URL } from '../../lib/appLinks'
 import { AgentModelPicker } from './AgentModelPicker'
 import { Button } from '../ui/Button'
 import { fetchAgentHarnessModels } from '../../lib/agentModelSelection'
@@ -255,7 +255,7 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
         <div className={asClass.aiModelArd} data-testid="agent-model-device-error">{deviceError}</div>
       )}
       {/* 买会员只在网页面板(GUGU_BILLING_URL 抬头写了为什么);<a target="_blank"> 交给系统浏览器,与积分面板同一条路。 */}
-      {lockedSelection && (
+      {lockedSelection && billingLinksAvailable() && (
         <div className={asClass.aiModelArd} data-testid="agent-model-members-only">
           {t('settings.model.membersOnlyHint', { model: lockedSelection.label })}{' '}
           <a href={GUGU_BILLING_URL} target="_blank" rel="noreferrer" className="underline">

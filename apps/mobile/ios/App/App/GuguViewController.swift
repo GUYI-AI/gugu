@@ -17,7 +17,16 @@ final class GuguViewController: CAPBridgeViewController {
     }
 
     override func capacitorDidLoad() {
-        bridge?.registerPluginInstance(GuguAuthStoragePlugin())
+        do {
+            let runtime = try GuguIOSAppRuntime.open()
+            for plugin in try runtime.plugins() { bridge?.registerPluginInstance(plugin) }
+        } catch {
+            // A shell without validated packaged configuration cannot publish a
+            // native owner or expose calendar access. Keep shared login usable.
+            bridge?.registerPluginInstance(GuguAuthStoragePlugin())
+            let code = (error as? GuguHostFailure)?.code ?? "native_setup_failed"
+            NSLog("Gugu native identity unavailable (%@)", code)
+        }
         bridge?.registerPluginInstance(GuguImageViewerChromePlugin())
     }
 

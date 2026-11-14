@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/Button'
-import { openBillingPage } from '@/lib/appLinks'
+import { billingLinksAvailable, openBillingPage } from '@/lib/appLinks'
 import { openShellSettings } from '@renderer/lib/open-shell-settings'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 
@@ -32,13 +32,13 @@ export function ModelMenuFooter({
         >
           {translateSessionMessage('composer.manageModels')}
         </Button>
-        {lockedModels.length > 0 && (
+        {lockedModels.length > 0 && billingLinksAvailable() && (
           <Button variant="ghost" size="sm" data-testid="agent-watch-model-upgrade" onClick={openBillingPage}>
             {translateSessionMessage('composer.platformModelUpgrade')}
           </Button>
         )}
       </div>
-      {lockedModels.length > 0 && (
+      {lockedModels.length > 0 && billingLinksAvailable() && (
         <div className="gg-aw-choice-desc gg-aw-choice-note">
           {translateSessionMessage('composer.platformModelUpgradeList', { models: lockedModels.join(' · ') })}
         </div>
