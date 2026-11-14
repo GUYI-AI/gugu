@@ -1,8 +1,8 @@
 import type { Commit, GitChange, GitObjectRef } from '@gugu/session-core/git';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { GrowingList } from '@gugu/session-ui/react/growing-list';
 import { ChevronDown, ChevronRight } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { usePrefetchDiffModels } from '@renderer/features/sessions/diff-view/changes-panel/hooks/use-prefetch-diff-models';
 import { activeDiffResource } from '@renderer/features/sessions/diff-view/pane-selectors';
 import {
@@ -69,15 +69,7 @@ export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
   const commits = data?.pages.flatMap((page) => page.commits) ?? [];
   const expandedHashes =
     expanded.rangeIdentity === rangeIdentity ? expanded.hashes : EMPTY_EXPANDED_HASHES;
-  const parentRef = useRef<HTMLDivElement>(null);
-  const virtualizer = useVirtualizer({
-    count: commits.length,
-    estimateSize: () => ESTIMATED_COMMIT_ROW_HEIGHT,
-    gap: COMMIT_ROW_GAP,
-    getItemKey: (index) => commits[index]?.hash ?? index,
-    getScrollElement: () => parentRef.current,
-    overscan: 5,
-  });
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
 
   const toggleExpanded = (hash: string) => {
     setExpanded((current) => {
@@ -98,34 +90,27 @@ export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
   }
 
   return (
-    <div ref={parentRef} className="h-full overflow-x-hidden overflow-y-auto py-2">
-      <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-        {virtualizer.getVirtualItems().map((virtualItem) => {
-          const commit = commits[virtualItem.index]!;
+    <div ref={setScroller} className="h-full overflow-x-hidden overflow-y-auto py-2">
+      <GrowingList
+        scroller={scroller}
+        count={commits.length}
+        getKey={(index) => commits[index]?.hash ?? index}
+        gap={COMMIT_ROW_GAP}
+        estimateSize={() => ESTIMATED_COMMIT_ROW_HEIGHT}
+        overscan={5}
+        renderLine={(index) => {
+          const commit = commits[index]!;
           return (
-            <div
-              key={virtualItem.key}
-              data-index={virtualItem.index}
-              ref={virtualizer.measureElement}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${virtualItem.start}px)`,
-              }}
-            >
-              <CommitItem
-                commit={commit}
-                isExpanded={expandedHashes.has(commit.hash)}
-                isFirst={virtualItem.index === 0}
-                isLast={virtualItem.index === commits.length - 1}
-                onToggleExpanded={() => toggleExpanded(commit.hash)}
-              />
-            </div>
+            <CommitItem
+              commit={commit}
+              isExpanded={expandedHashes.has(commit.hash)}
+              isFirst={index === 0}
+              isLast={index === commits.length - 1}
+              onToggleExpanded={() => toggleExpanded(commit.hash)}
+            />
           );
-        })}
-      </div>
+        }}
+      />
       {hasNextPage && (
         <div className="flex justify-center py-2">
           <button
