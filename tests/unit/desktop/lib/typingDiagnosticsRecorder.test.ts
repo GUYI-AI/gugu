@@ -6,7 +6,7 @@ import type { TypingDiagnosticRecord } from '../../../../apps/desktop/shared/bet
 let recorder: ReturnType<typeof createTypingDiagnosticsRecorder> | null = null
 afterEach(() => { recorder?.stop(); recorder = null; document.body.replaceChildren(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
-function setup(claim = vi.fn(async () => ({ accepted: false }))) {
+function setup() {
   vi.useFakeTimers()
   const sampling = vi.fn(() => { throw new Error('sampling must not start') })
   vi.stubGlobal('Profiler', sampling)
@@ -23,7 +23,7 @@ function setup(claim = vi.fn(async () => ({ accepted: false }))) {
   vi.spyOn(window.performance, 'now').mockImplementation(() => clock)
   const rows: TypingDiagnosticRecord[] = []
   const send = vi.fn(async (records: TypingDiagnosticRecord[]) => { rows.push(...records); return { accepted: true } })
-  recorder = createTypingDiagnosticsRecorder(window, send, claim)
+  recorder = createTypingDiagnosticsRecorder(window, send)
   const input = document.createElement('input'); document.body.append(input)
   Object.defineProperty(input, 'value', { get() { throw new Error('value must never be read') } })
   const deliver = (type: string, event: object) => {
@@ -48,19 +48,6 @@ describe('main-window typing observations', () => {
     expect(t.sampling).not.toHaveBeenCalled()
   })
 
-  it('requests sampling only for a 100ms task associated with editable typing, including a delayed key', async () => {
-    const claim = vi.fn(async () => ({ accepted: false }))
-    const t = setup(claim)
-    t.callbacks.get('longtask')!([{ startTime: 0, duration: 150 }])
-    expect(claim).not.toHaveBeenCalled()
-    t.setClock(5000); t.deliver('keydown', {})
-    t.callbacks.get('longtask')!([{ startTime: 5010, duration: 99 }])
-    expect(claim).not.toHaveBeenCalled()
-    t.setClock(5300); t.callbacks.get('longtask')!([{ startTime: 5200, duration: 100 }])
-    await Promise.resolve(); expect(claim).toHaveBeenCalledOnce()
-    expect(t.sampling).not.toHaveBeenCalled()
-  })
-
   it('sanitizes script attribution and distinguishes an available presentation timestamp', async () => {
     const t = setup(); t.setClock(100); t.deliver('keydown', { timeStamp: 95 })
     t.callbacks.get('event')!([{ name: 'keydown', startTime: 95, duration: 48, processingStart: 100, processingEnd: 110, paintTime: 130, presentationTime: 143.5 }])
@@ -69,6 +56,15 @@ describe('main-window typing observations', () => {
     expect(t.rows.find(row => row.event === 'key-latency')).toMatchObject({ metric: 'event-timing-presentation', durationMs: 48, latencyMs: 48.5, paintTimeMs: 130, presentationTimeMs: 143.5 })
     expect(t.rows.find(row => row.event === 'long-frame')).toMatchObject({ scripts: [{ file: 'assets/main.js', functionName: 'render', durationMs: 60 }], typingActive: true })
     expect(JSON.stringify(t.rows)).not.toContain('PRIVATE_')
+  })
+
+  it('records available frame phase intervals without inventing script or paint durations', async () => {
+    const t = setup()
+    t.callbacks.get('long-animation-frame')!([{ startTime: 50, duration: 210, renderStart: 150, styleAndLayoutStart: 200, styleDuration: 22, layoutDuration: 24, paintTime: 260, presentationTime: 266, scripts: [] }])
+    await recorder!.flush()
+    expect(t.rows.find(row => row.event === 'long-frame')).toMatchObject({ preRenderMs: 100, renderCallbackMs: 50, styleLayoutRenderMs: 60, styleDurationMs: 22, layoutDurationMs: 24, paintTimeMs: 260, presentationTimeMs: 266, scripts: [] })
+    expect(t.rows.find(row => row.event === 'long-frame')).not.toHaveProperty('paintDurationMs')
+    expect(t.sampling).not.toHaveBeenCalled()
   })
 
   it('records composition/blur metadata without reading composition data or changing the event', async () => {
