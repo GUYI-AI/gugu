@@ -637,7 +637,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
 
   // #2569 the sample's first message is handed to the project's new-task box with context the person does not see.
   const handedOver = () => {
-    const draft = new ComposerDraft();
+    const draft = new ComposerDraft('test');
     draft.setHandoff({
       hiddenContext: 'the sample context',
       picked: { provider: 'codex', model: null, platformModel: null, effort: null, permissionMode: 'full-access', sessionView: 'general' },

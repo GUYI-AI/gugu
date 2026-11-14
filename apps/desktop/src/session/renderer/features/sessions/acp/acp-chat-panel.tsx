@@ -5,7 +5,6 @@ import { agentOffersConnections } from '@renderer/features/settings/agents-page/
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { isTranscriptDelivery } from '@/lib/pendingSessionDeliveries';
 import { resolveDeliveredAttachment } from '@renderer/lib/chat/delivered-message-presentation';
-import { readNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
 import { useSessionInputAccount } from '@/lib/sessionInputOutboxBridge';
 import { appendToDraft } from '@/store/chatContext';
 import { registerNativeComposer } from '@/lib/nativeComposerHandoff';
@@ -551,9 +550,7 @@ const ComposerForStore = observer(function ComposerForStore({
   const inputAccount = useSessionInputAccount();
   useEffect(() => {
     if (!composerShown) return;
-    const machine = machineRegistry.machineOf(store.runtimeSessionId);
-    const kept = readNativeOfflineDraft(machine, store.runtimeSessionId);
-    if (kept) { store.setDraftText(appendToDraft(store.draftText, kept)); writeNativeOfflineDraft(machine, store.runtimeSessionId, ''); }
+    store.restoreLocalDraft();
     return registerNativeComposer(store.runtimeSessionId, async draft => {
       await attachFiles(draft.files ?? []);
       store.setDraftText(appendToDraft(store.draftText, draft.text));

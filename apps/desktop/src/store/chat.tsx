@@ -75,7 +75,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   const { dropTextDraft, ...textDraftContext } = useTextDraftStore(userId)
   const draftMentionContext = useDraftMentionsStore(userId), draftQuoteContext = useDraftQuotesStore(), draftWhisperContext = useDraftWhispersStore()
   // @@@draft-attachment (#1872) - per-chat queued-attachment store (state/set/get/drop live in the hook).
-  const { dropDraftAttachments, ...draftAttachmentContext } = useDraftAttachmentsStore()
+  const { dropDraftAttachments, ...draftAttachmentContext } = useDraftAttachmentsStore(userId)
   const cancelChatOpenRef = useRef<(chatId: string, error: Error) => void>(() => undefined)
   const unreadNavigationRef = useRef<ReturnType<typeof useChatUnreadStreamNavigation> | null>(null)
   const activeThreadRootIdRef = useRef<string | null>(null)

@@ -36,6 +36,7 @@ import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { runInAction } from 'mobx';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { installAcpChatStoreHost, replica } from './acp-chat-store.test-host';
+import { readNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
 
 vi.mock('@renderer/lib/acp/runtime-client', () => ({
   getAcpRuntimeClient: async () => ({}),
@@ -386,6 +387,55 @@ describe('#7327 the runtime process restarted', () => {
     expect(store.session).toBeNull();
     expect(store.chatState.transcript.state.activeTurnSnapshot?.id).toBe('retained-frame');
     expect(storedHistory).not.toHaveBeenCalled();
+    store.dispose();
+  });
+});
+
+describe('a draft typed while the session is not attached survives a restart', () => {
+  const signIn = (accountId: string | null) => {
+    (window as unknown as Record<string, unknown>).__GUGU_NATIVE_INPUT_OUTBOX__ = { accountId, queue: null, rows: [], listeners: new Set(), valid: () => accountId !== null };
+  };
+  beforeEach(() => { localStorage.clear(); signIn('owner'); });
+
+  it.each(endings)('after %s: the next run of the page restores it, and the host taking it clears the local copy', async (_name, end) => {
+    vi.useFakeTimers();
+    try {
+      const { store, session } = attachedStore();
+      session.setPromptDraft.mockResolvedValue({ success: true, data: undefined });
+      end(session);
+      store.setDraftText('restart draft task');
+      store.dispose();
+      expect(readNativeOfflineDraft(null, store.sessionId), 'only in memory = a restart loses it').toBe('restart draft task');
+
+      // A restart: a new store for the same session, nothing in memory, the host has no draft.
+      const reopened = new AcpChatStore(store.sessionId, 'proj-1');
+      reopened.restoreLocalDraft();
+      expect(reopened.draftText).toBe('restart draft task');
+
+      const { session: live } = fakeSession();
+      live.setPromptDraft.mockResolvedValue({ success: true, data: undefined });
+      runInAction(() => {
+        reopened.session = live as unknown as Store['session'];
+        (reopened as unknown as Internal)._subscribeLiveSession(live);
+      });
+      live.reconnectDraft();
+      await vi.advanceTimersByTimeAsync(400);
+      expect(live.setPromptDraft).toHaveBeenLastCalledWith({ rev: expect.any(Number), input: { text: 'restart draft task' } });
+      const afterSync = new AcpChatStore(store.sessionId, 'proj-1');
+      afterSync.restoreLocalDraft();
+      expect(afterSync.draftText, 'the host holds it now; the local copy is gone').toBe('');
+      reopened.dispose();
+      afterSync.dispose();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('signed out: kept in memory only, nothing written', () => {
+    signIn(null);
+    const { store, session } = attachedStore();
+    session.sessionState.push(closedState);
+    store.setDraftText('no account');
+    expect(store.draftText).toBe('no account');
+    expect(localStorage.length).toBe(0);
     store.dispose();
   });
 });

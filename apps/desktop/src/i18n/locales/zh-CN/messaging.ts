@@ -429,6 +429,7 @@ export default {
     "attachmentContextMissing": "附件发送失败：当前对话已不可用",
     "attachmentSendTimedOut": "附件发送超时。",
     "attachmentPersistenceFailed": "附件 {{fileName}} 保存失败。",
+    "draftAttachmentUnavailable": "附件已不可用：{{fileNames}}（草稿里的附件没能恢复）",
     "attach": "添加",
     "cancelQuote": "取消引用",
     "disabled": "当前对话不可发送",

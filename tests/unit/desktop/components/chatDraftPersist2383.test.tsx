@@ -3,7 +3,10 @@
 import { act, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatMessageComposer } from '../../../../apps/desktop/src/components/chat/ChatMessageComposer'
-import { ChatStoreProvider, useDraftMentionsStore, useTextDraftStore } from '../../../../apps/desktop/src/store/chatContext'
+import { IDBFactory } from 'fake-indexeddb'
+import { File as NodeFile } from 'node:buffer'
+import { ChatStoreProvider, useDraftAttachmentsStore, useDraftMentionsStore, useTextDraftStore } from '../../../../apps/desktop/src/store/chatContext'
+import { ToastContext } from '../../../../apps/desktop/src/components/toastContext'
 import { chatStore, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { readComposer, writeComposer } from '../../../support/composerEditor'
 
@@ -75,5 +78,63 @@ describe('chat drafts across a full reload (#2383)', () => {
     await reload('account-a')
     expect(readComposer(composer())).toBe('')
     expect(Object.keys(localStorage).filter((key) => key.startsWith('gugu.chat-draft:'))).toEqual([])
+  })
+})
+
+describe('queued attachments across a full reload', () => {
+  let attachments: ReturnType<typeof useDraftAttachmentsStore>
+  const toast = vi.fn()
+  function Files({ accountId, composer = false }: { accountId: string | null; composer?: boolean }) {
+    attachments = useDraftAttachmentsStore(accountId)
+    const [base] = useState(chatStore)
+    return <ToastContext.Provider value={{ toast }}>
+      <ChatStoreProvider value={{ ...base, ...attachments }}>{composer ? <ChatMessageComposer chatId="group-1" onSend={async () => {}} /> : null}</ChatStoreProvider>
+    </ToastContext.Provider>
+  }
+  const mount = async (accountId: string | null, composer = false) => {
+    harness.cleanup()
+    harness = createReactHarness()
+    await renderWithAppProviders(harness, <Files accountId={accountId} composer={composer} />)
+  }
+  const settle = (done: () => boolean) => vi.waitFor(() => { if (!done()) throw new Error('not yet') })
+  // fake-indexeddb clones with Node's structuredClone, which keeps Node files (as Chromium keeps its own) but not jsdom's.
+  const picture = new NodeFile(['png bytes'], 'screenshot.png', { type: 'image/png' }) as unknown as File
+  beforeEach(async () => {
+    vi.useRealTimers()
+    Object.assign(globalThis, { indexedDB: new IDBFactory() })
+    toast.mockClear()
+    await mount('account-a')
+  })
+
+  it('restores a pasted file, bytes and all, and forgets it once removed', async () => {
+    await act(async () => { attachments.setDraftAttachments('group-1', [{ id: 'f1', file: picture, kind: 'image' }]) })
+    await new Promise(resolve => setTimeout(resolve, 50))
+    await mount('account-a')
+    await settle(() => attachments.draftAttachments['group-1']?.length === 1)
+    const restored = attachments.draftAttachments['group-1']![0]!
+    expect(restored.id).toBe('f1')
+    expect(restored.file.name).toBe('screenshot.png')
+    expect(await restored.file.text()).toBe('png bytes')
+    await mount('account-b')
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(attachments.draftAttachments['group-1'], 'another account does not see it').toBeUndefined()
+
+    await mount('account-a')
+    await settle(() => attachments.draftAttachments['group-1']?.length === 1)
+    await act(async () => { attachments.setDraftAttachments('group-1', []) })
+    await mount('account-a')
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(attachments.draftAttachments['group-1'] ?? []).toEqual([])
+    expect(Object.keys(localStorage).filter((key) => key.startsWith('gugu.chat-draft:'))).toEqual([])
+  })
+
+  it('names a file whose bytes are gone in that chat’s composer instead of dropping it silently', async () => {
+    localStorage.setItem('gugu.chat-draft:account-a/group-1', JSON.stringify({ text: '看这个', mentions: [], attachments: [{ id: 'lost', name: 'report.pdf' }] }))
+    await mount('account-a', true)
+    await settle(() => toast.mock.calls.length === 1)
+    expect(toast.mock.calls[0]![0]).toContain('report.pdf')
+    expect(toast.mock.calls[0]![1]).toBe('error')
+    expect(attachments.draftAttachmentsUnavailable, 'told once, then dismissed').toEqual({})
+    expect(JSON.parse(localStorage.getItem('gugu.chat-draft:account-a/group-1')!)).toMatchObject({ text: '看这个', attachments: [] })
   })
 })

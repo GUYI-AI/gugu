@@ -48,7 +48,8 @@ import { ACP_START_FAILED, lifeHoldIsFailure, lifeIsStarting, type LifeView } fr
 import { sendThroughCustody } from './queue-native-input';
 import { sendHeldInputNow } from './send-held-input-now';
 import { sessionInputBubbles } from '@/lib/sessionInputOutbox';
-import { changeRejectedSessionInput, deleteQueuedSessionInput, editQueuedSessionInput, queuedSessionInputs, reorderQueuedSessionInputs, retrySessionInput, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge';
+import { readNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
+import { changeRejectedSessionInput, deleteQueuedSessionInput, editQueuedSessionInput, queuedSessionInputs, reorderQueuedSessionInputs, retrySessionInput, state as sessionInputAccountState, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge';
 import type { SessionInput } from '@/lib/sessionInputOutbox';
 import { sessionSendQueueOrder } from '@/lib/sessionSendQueueOrder';
 import { projectSessionPendingInput } from '@/lib/pendingSessionInput';
@@ -1527,7 +1528,22 @@ export class AcpChatStore {
     this.draftText = text;
     this._draftRev += 1;
     this._pendingDraftRev = this._draftRev;
+    // Unattached (closed / lost / starting / replaying) the host cannot hold it: the edit lives in this session's local draft.
+    if (!this.session?.canSyncDraft()) this._writeLocalDraft(text);
     this._scheduleDraftWrite(text, this._draftRev);
+  }
+
+  /** The draft this session kept locally while the host could not take it (this store, the offline composer, a previous run). */
+  restoreLocalDraft(): void {
+    const kept = readNativeOfflineDraft(machineRegistry.machineOf(this.runtimeSessionId), this.runtimeSessionId);
+    // Like `_resumeDraftSync`: the unconfirmed local edit wins over whatever the host last had.
+    if (kept) this.setDraftText(kept);
+  }
+
+  private _writeLocalDraft(text: string): void {
+    // No account (signed out, tests) = in memory only, the same contract as the chat drafts.
+    if (!sessionInputAccountState().valid()) return;
+    writeNativeOfflineDraft(machineRegistry.machineOf(this.runtimeSessionId), this.runtimeSessionId, text);
   }
 
   stop(): void {
@@ -2756,7 +2772,7 @@ export class AcpChatStore {
     this._draftTimer = window.setTimeout(() => {
       this._draftTimer = null;
       const draft = { rev, input: text.trim().length > 0 ? { text } : null };
-      // Until the page attaches the draft is local to this store; there is no session to persist it through.
+      // Until the page attaches the draft is kept locally (`setDraftText`); there is no session to persist it through.
       const session = this.session;
       if (!session?.canSyncDraft()) return;
       const generation = session.draftConnectionGeneration;
@@ -2765,6 +2781,8 @@ export class AcpChatStore {
         .then((result) => {
           if (this._disposed || this.session !== session || generation !== session.draftConnectionGeneration) return;
           if (!result.success) this._toastError('acpFailure.syncDraft', result.error);
+          // The host holds the newest edit now; the local copy was only for while it could not.
+          else if (rev === this._draftRev && readNativeOfflineDraft(machineRegistry.machineOf(this.runtimeSessionId), this.runtimeSessionId)) this._writeLocalDraft('');
           if (result.success && draft.input === null && this._pendingDraftRev === rev) {
             runInAction(() => {
               this._pendingDraftRev = null;

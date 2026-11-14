@@ -1,8 +1,11 @@
-// 新建框(新建会话页、项目页)写了一半的首句,按创建目标暂存在渲染进程内存:
-// 页面卸载(切去某条会话、换机器整棵重挂)再回来还在;提交时交给请求,失败归还;不落盘。
+// 新建框(新建会话页、项目页、样例项目)写了一半的首句,按创建目标暂存:页面卸载(切去某条会话、换机器整棵重挂)再回来还在;
+// 提交时交给请求,失败归还。文字按账号落在本机,和没 attach 的会话草稿同一份存储(nativeOfflineDraft,槽位名就是创建目标),
+// 重启后还在;没登录时只在内存里。附件只在内存里。
 // 已开会话的草稿不在这里 —— 那一份跟着会话走(AcpChatStore → runtime 会话格)。
 import type { ComposerAttachmentDraft } from './composer-attachment-draft';
 import { action, makeAutoObservable, observable } from 'mobx';
+import { readNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
+import { state as sessionInputAccountState } from '@/lib/sessionInputOutboxBridge';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import type { SessionFailure } from './stores/session-failure';
 import type { GuguPermissionMode } from '@gugu/session-core/acp/client';
@@ -40,16 +43,21 @@ export type ComposerHandoff = {
   sendWhenReady: boolean;
 };
 
+const accountReady = (): boolean => sessionInputAccountState().valid();
+const keep = (key: string, text: string): void => { if (accountReady()) writeNativeOfflineDraft(null, key, text); };
+
 /** The unsubmitted input and the existing creation lifecycle follow the draft, not its page. */
 export class ComposerDraft {
   prompt = '';
+  /** Whether the stored words were read: not before the account is ready. */
+  private restored = false;
   pending: ComposerAttachmentDraft['pending'] = [];
   creating = false;
   pendingMessage: PendingCreationMessage | null = null;
   deliveryError: SessionFailure | null = null;
   handoff: ComposerHandoff | null = null;
 
-  constructor() {
+  constructor(private key: string) {
     makeAutoObservable(this, {
       pending: observable.ref,
       pendingMessage: observable.ref,
@@ -64,6 +72,7 @@ export class ComposerDraft {
     const next = text.trim() ? text : '';
     if (next === this.prompt) return;
     this.prompt = next;
+    keep(this.key, next);
     this.deliveryError = null;
     if (this.handoff?.sendWhenReady) this.handoff = { ...this.handoff, sendWhenReady: false };
     this.clearEmptyRetry();
@@ -80,6 +89,21 @@ export class ComposerDraft {
   /** The task this draft became exists: the handed-over turn is done. */
   completeHandoff(): void { this.handoff = null; }
 
+  /** Read the words this target kept from a previous run, once the account can say whose they are. */
+  restoreKept(): void {
+    if (this.restored || !accountReady()) return;
+    this.restored = true;
+    const kept = readNativeOfflineDraft(null, this.key);
+    if (kept && !this.prompt) this.prompt = kept;
+  }
+
+  /** The draft now belongs to another target: its stored words go with it. */
+  rekey(key: string): void {
+    keep(this.key, '');
+    this.key = key;
+    keep(key, this.prompt);
+  }
+
   private clearEmptyRetry(): void {
     if (!this.creating && !this.prompt && !this.pending.length) this.pendingMessage = null;
   }
@@ -88,11 +112,13 @@ export class ComposerDraft {
     const submitted = { prompt: this.prompt, pending: this.pending };
     this.prompt = '';
     this.pending = [];
+    keep(this.key, '');
     return submitted;
   }
 
   restore(submitted: SubmittedComposerDraft, withFiles: boolean): void {
     this.prompt = [submitted.prompt, this.prompt].filter(Boolean).join('\n');
+    keep(this.key, this.prompt);
     if (withFiles) this.pending = [...submitted.pending, ...this.pending];
   }
 }
@@ -108,7 +134,8 @@ export function projectDraftKey(projectId: string): string {
 
 const forKey = action((key: string): ComposerDraft => {
   let draft = drafts.get(key);
-  if (!draft) { draft = new ComposerDraft(); drafts.set(key, draft); }
+  if (!draft) { draft = new ComposerDraft(key); drafts.set(key, draft); }
+  draft.restoreKept();
   return draft;
 });
 
@@ -134,6 +161,7 @@ export const composerDrafts = {
     const source = drafts.get(from);
     const destination = drafts.get(to);
     if (!source || destination && (destination.prompt || destination.pending.length || destination.creating || destination.pendingMessage)) return;
+    source.rekey(to);
     drafts.set(to, source);
     drafts.delete(from);
   }),

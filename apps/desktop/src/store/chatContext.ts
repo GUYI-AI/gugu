@@ -3,7 +3,7 @@ import type { CreateTopicInput, CreatedTopic } from '../lib/topics'
 import type { UnreadLocatorCommit } from '../lib/chatUnreadLocatorWindow'
 import type { ChatConversationAccess } from './useChatConversation'
 import type { HistoryWindow } from './chatHistoryWindow'
-import { createContext, createElement, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { createContext, createElement, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import type { ChatItem, MessageItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import type { AttachmentKind } from '@gugu/core/shared/ui/attachmentModels'
 import type { ThreadScope } from './threadScope'
@@ -12,7 +12,7 @@ import type { DisplayIdentity } from '../lib/displayIdentity'
 import type { CapturedUnreadEntry } from '../lib/chatUnreadLocator'
 import type { AccountRevisionEvent, AccountRevisionListener } from '../lib/accountRevisionCoordinator'
 import { createDraftWriter } from './chatDraftWrites'
-import { readChatDrafts, removeChatDraft, writeChatDraft } from './chatDraftStorage'
+import { readChatDraftAttachments, readChatDrafts, removeChatDraft, writeChatDraft, writeChatDraftAttachments } from './chatDraftStorage'
 import type { ChatMessageComposerProps } from '../components/chat/chatComposerModels'
 export { appendToDraft } from './chatDraftWrites'
 
@@ -95,6 +95,8 @@ export interface ChatContextValue {
   draftMentions: Record<string, DraftMention[]>
   // @@@draft-attachment (#1872) - per-chat persisted queued attachments, parallel to `drafts`.
   draftAttachments: Record<string, DraftAttachment[]>
+  // Names of a chat's stored draft files whose bytes could not be read back; its composer says so, then dismisses them.
+  draftAttachmentsUnavailable: Record<string, string[]>
   draftQuotes: Record<string, DraftQuote>
   setDraftQuote: (chatId: string, quote: SetStateAction<DraftQuote | null | undefined>) => void
   // The peer a draft stays private to without a quote (an annotated whisper image); cleared on send or Exit whisper.
@@ -157,6 +159,7 @@ export interface ChatContextValue {
   setDraftMentions: (chatId: string, mentions: DraftMention[]) => void
   // @@@draft-attachment (#1872)
   setDraftAttachments: (chatId: string, attachments: DraftAttachment[]) => void
+  dismissUnavailableDraftAttachments: (chatId: string) => void
 }
 
 const EMPTY_CHAT_STORE: ChatContextValue = {
@@ -184,6 +187,7 @@ const EMPTY_CHAT_STORE: ChatContextValue = {
   drafts: {},
   draftMentions: {},
   draftAttachments: {},
+  draftAttachmentsUnavailable: {},
   draftQuotes: {},
   setDraftQuote: () => {},
   draftWhispers: {},
@@ -224,6 +228,7 @@ const EMPTY_CHAT_STORE: ChatContextValue = {
   setDraft: () => {},
   setDraftMentions: () => {},
   setDraftAttachments: () => {},
+  dismissUnavailableDraftAttachments: () => {},
 }
 
 // @@@chat-store-slices — 这份 value 身兼会话列表、当前会话消息、草稿、几十个动作;挂在普通 context 上时
@@ -396,17 +401,49 @@ export function useDraftMentionsStore(accountId: string | null = null): {
 // @@@draft-attachment (#1872) - the per-chat queued-attachment store, extracted here (chatContext = the
 // draft-plumbing home, and not on the god-file freeze list) so ChatProvider only wires it into context.
 // Mirrors the drafts/draftMentions shape: a per-chat record + set/get, plus a drop for delete/leave cleanup.
-export function useDraftAttachmentsStore(): {
+// Persisted per account like the text (chatDraftStorage); the bytes read back asynchronously, so a restored file
+// goes in front of anything queued meanwhile. A file that cannot be read back is listed for its chat until that
+// chat's composer has told the person (a notice at load time would be gone before the window is up).
+export function useDraftAttachmentsStore(accountId: string | null = null): {
   draftAttachments: Record<string, DraftAttachment[]>
+  draftAttachmentsUnavailable: Record<string, string[]>
   setDraftAttachments: (chatId: string, attachments: DraftAttachment[]) => void
+  dismissUnavailableDraftAttachments: (chatId: string) => void
   dropDraftAttachments: (chatId: string) => void
 } {
-  const [draftAttachments, setState] = useState<Record<string, DraftAttachment[]>>({})
+  const { value: draftAttachments, ref, replace } = useAccountDrafts<DraftAttachment[]>(accountId, () => ({}))
+  const { value: unavailable, ref: lostRef, replace: replaceLost } = useAccountDrafts<string[]>(accountId, () => ({}))
+  useEffect(() => {
+    let current = true
+    void readChatDraftAttachments(accountId).then(({ attachments, unavailable: lost }) => {
+      if (!current || ref.current.accountId !== accountId) return
+      const next = { ...ref.current.value }
+      for (const chatId of new Set([...Object.keys(attachments), ...Object.keys(lost)])) {
+        const queued = next[chatId] ?? []
+        next[chatId] = [...(attachments[chatId] ?? []).filter(({ id }) => !queued.some(item => item.id === id)), ...queued]
+        writeChatDraftAttachments(accountId, chatId, next[chatId])
+      }
+      replace(next)
+      if (Object.keys(lost).length) replaceLost({ ...lostRef.current.value, ...lost })
+    })
+    return () => { current = false }
+  }, [accountId, ref, replace, lostRef, replaceLost])
   const setDraftAttachments = useCallback((chatId: string, attachments: DraftAttachment[]) => {
-    setState((prev) => ({ ...prev, [chatId]: attachments }))
-  }, [])
+    replace({ ...ref.current.value, [chatId]: attachments })
+    writeChatDraftAttachments(ref.current.accountId, chatId, attachments)
+  }, [ref, replace])
+  const dismissUnavailableDraftAttachments = useCallback((chatId: string) => {
+    if (!(chatId in lostRef.current.value)) return
+    const next = { ...lostRef.current.value }
+    delete next[chatId]
+    replaceLost(next)
+  }, [lostRef, replaceLost])
   const dropDraftAttachments = useCallback((chatId: string) => {
-    dropChatKey(setState, chatId)
-  }, [])
-  return { draftAttachments, setDraftAttachments, dropDraftAttachments }
+    writeChatDraftAttachments(ref.current.accountId, chatId, [])
+    if (!(chatId in ref.current.value)) return
+    const next = { ...ref.current.value }
+    delete next[chatId]
+    replace(next)
+  }, [ref, replace])
+  return { draftAttachments, draftAttachmentsUnavailable: unavailable, setDraftAttachments, dismissUnavailableDraftAttachments, dropDraftAttachments }
 }

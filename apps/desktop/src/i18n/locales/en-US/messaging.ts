@@ -430,6 +430,7 @@ export default {
     "attachmentContextMissing": "Could not send the attachment because the chat is no longer available",
     "attachmentSendTimedOut": "Attachment send timed out.",
     "attachmentPersistenceFailed": "Could not save {{fileName}}",
+    "draftAttachmentUnavailable": "Attachment no longer available: {{fileNames}} (could not restore it from the draft)",
     "attach": "Add",
     "cancelQuote": "Cancel reply",
     "disabled": "You cannot send messages in this chat",

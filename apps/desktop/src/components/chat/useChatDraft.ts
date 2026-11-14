@@ -1,7 +1,9 @@
 // The editor owns live text; this hook mirrors edits for debounced per-chat persistence.
 // Mentions and queued files also retain their existing store synchronization and runtime previews.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type SetStateAction } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useChatStore, type DraftAttachment, type DraftMention } from '../../store/chatContext'
+import { useToast } from '../toastContext'
 import { inferAttachmentKind, type AttachmentKind } from '@gugu/core/shared/ui/attachmentModels'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 
@@ -55,6 +57,19 @@ export function makePendingAttachment(file: File, id: string = crypto.randomUUID
   return withPreviewUrl({ id, file, kind: inferAttachmentKind(file) })
 }
 
+// The stored draft listed files that could not be read back: say so where that draft is shown, once.
+function useUnavailableDraftAttachmentsNotice(chatId: string | null): void {
+  const { draftAttachmentsUnavailable, dismissUnavailableDraftAttachments } = useChatStore('draftAttachmentsUnavailable', 'dismissUnavailableDraftAttachments')
+  const { toast } = useToast()
+  const { t } = useTranslation('messaging')
+  const lost = chatId ? draftAttachmentsUnavailable[chatId] : undefined
+  useEffect(() => {
+    if (!chatId || !lost?.length) return
+    toast(t('composer.draftAttachmentUnavailable', { fileNames: lost.join('、') }), 'error')
+    dismissUnavailableDraftAttachments(chatId)
+  }, [chatId, lost, toast, t, dismissUnavailableDraftAttachments])
+}
+
 const applyUpdate = <T>(u: SetStateAction<T>, prev: T): T => (typeof u === 'function' ? (u as (p: T) => T)(prev) : u)
 
 export interface ChatDraft {
@@ -83,6 +98,7 @@ export function useChatDraft(chatId: string | null | undefined): ChatDraft {
     'drafts', 'draftMentions', 'draftAttachments', 'setDraft', 'writeDraft', 'setDraftMentions', 'setDraftAttachments',
   )
   const key = chatId ?? null
+  useUnavailableDraftAttachmentsNotice(key)
   const storeText = key ? drafts[key] ?? '' : ''
   const storeMentions = key ? draftMentions[key] ?? EMPTY_MENTIONS : EMPTY_MENTIONS
   const storeAtt = key ? draftAttachments[key] ?? EMPTY_ATTACHMENTS : EMPTY_ATTACHMENTS
