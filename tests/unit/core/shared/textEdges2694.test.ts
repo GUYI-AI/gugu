@@ -10,3 +10,5 @@ it('reads Windows file basenames in transcript rows', () => { expect(basename('C
 it('drops a cut Unicode pair from card previews', () => { expect(composerCardPreview('{"v":1,"type":"task","text":"Hello\\ud83d\\ude')).toEqual({ type: 'task', text: 'Hello' }); expect(composerCardPreview('{"v":1,"type":"task","text":"Hello\\ud83d\\ude42')).toEqual({ type: 'task', text: 'Hello🙂' }) })
 
 it('drops a cut Unicode pair from widget previews', () => { expect(widgetMessagePreview('{"v":2,"text":"Hello\\ud83d\\ude')).toBe('Hello'); expect(widgetMessagePreview('{"v":2,"text":"Hello\\ud83d\\ude42')).toBe('Hello🙂') })
+
+it('omits tilde fenced blocks from plain previews', () => { expect(markdownPlainText('Before\n~~~ts\nconst x = 1\n~~~\nAfter')).toBe('Before After') })

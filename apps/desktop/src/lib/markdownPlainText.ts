@@ -9,6 +9,7 @@ const INLINE_CODE = /(`[^`\n]+`)/
 export function markdownPlainText(text: string): string {
   return text
     .replace(/`{3}[\s\S]*?`{3}/g, '')
+    .replace(/^ {0,3}~{3,}[^\n]*\n[\s\S]*?^ {0,3}~{3,}[ \t]*(?:\n|$)/gm, '')
     .split(INLINE_CODE)
     .map((part, index) => (index % 2 === 1 ? part : plainSegment(part)))
     .join('')
