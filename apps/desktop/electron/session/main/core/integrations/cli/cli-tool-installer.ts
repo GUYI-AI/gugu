@@ -13,7 +13,8 @@ import { resolvesInside } from '../../extensions/path-containment';
 import { cliToolsRoot } from './cli-paths';
 import { preinstalledCliDirectory, preinstalledCliVersions } from './cli-preinstalled';
 import { DWS_LINUX_PRODUCT, installManagedProduct, managedProductRoot } from './cli-managed-products';
-import { FEISHU_BINARY_SHA256, FEISHU_CLI_VERSION, FEISHU_SKILLS_COMMIT, feishuArchiveName } from './feishu-cli';
+import { FEISHU_SKILLS_COMMIT, feishuArchiveName } from './feishu-cli';
+import { downloadFeishuBinary } from './feishu-download';
 import { TMEET_BINARY, TMEET_SKILLS_COMMIT } from './tmeet-cli';
 import {
   cliToolRecipe,
@@ -146,11 +147,7 @@ async function install(tool: IntegrationCliTool): Promise<InstalledCliTool> {
 async function installFeishu(platform: CliPlatform, staging: string, report: ReportProgress): Promise<void> {
   const archiveName = feishuArchiveName(platform);
   const archive = path.join(staging, 'download', archiveName);
-  const digest = await downloadTo(
-    `https://github.com/larksuite/cli/releases/download/v${FEISHU_CLI_VERSION}/${archiveName}`,
-    archive, 'sha256', 'hex', report
-  );
-  if (digest !== FEISHU_BINARY_SHA256[platform]) throw new Error(`${archiveName} integrity mismatch`);
+  await downloadFeishuBinary(platform, (url) => downloadTo(url, archive, 'sha256', 'hex', report));
   await execFileAsync('tar', ['-xzf', archive, '-C', path.join(staging, 'bin'), 'lark-cli']);
   const sourceArchive = path.join(staging, 'download', 'source.tgz');
   await downloadTo(`https://codeload.github.com/larksuite/cli/tar.gz/${FEISHU_SKILLS_COMMIT}`, sourceArchive, 'sha256', 'hex', report);
