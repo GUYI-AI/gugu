@@ -29,9 +29,12 @@ interface PanelResizeHandleProps {
   maxSize: () => number;
   /** 拖拽过程中每一帧的新宽度(已 clamp)。 */
   onSize: (size: number) => void;
-  /** 拖到收起阈值以下:调用方负责把面板收起。 */
-  onCollapse: () => void;
-  /** 松手。落在阈值以上时给出最终宽度,调用方负责持久化。 */
+  /**
+   * 拖到收起阈值以下:调用方负责把面板收起。不给 = 这块面板拖拽里不收起,拖到 minSize 就停住
+   * (GUYI-AI/gugu#2642 内层栏:它有自己的收起钮,❌ 在拖拽里再造一个半路收起)。
+   */
+  onCollapse?: () => void;
+  /** 松手。落在阈值以上(不收起的面板:总是)时给出最终宽度,调用方负责持久化。 */
   onSizeCommit: (size: number) => void;
   onDraggingChange?: (dragging: boolean) => void;
   /**
@@ -85,7 +88,7 @@ export function PanelResizeHandle({
     const raw = startSize + deltaPx * direction;
     // 收起阈值判在 clamp **之前**:clamp 会把小于 minSize 的值抬回 minSize,
     // 收起意图就再也读不出来了。
-    if (raw < minSize * PANEL_SNAP_RATIO) {
+    if (onCollapse && raw < minSize * PANEL_SNAP_RATIO) {
       onCollapse();
       return null;
     }
@@ -105,7 +108,7 @@ export function PanelResizeHandle({
       return;
     }
     const raw = drag.startSize + (event.clientX - drag.startX) * direction;
-    if (raw >= minSize * PANEL_SNAP_RATIO) onSizeCommit(clampSize(raw));
+    if (!onCollapse || raw >= minSize * PANEL_SNAP_RATIO) onSizeCommit(clampSize(raw));
   };
 
   return (

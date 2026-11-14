@@ -15,9 +15,13 @@ vi.mock('@main/db/client', () => ({
   },
 }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
+// The matcher runs on a thread of its own in the app (task-turn-search-worker.test.ts); here it reads the fixture.
+vi.mock('./task-turn-search', () => ({ searchTaskTurnMatches: async (query: string, limit?: number) => matchTaskTurns(fixtureRef.current!.sqlite, query, limit) }));
 
 const { backfillTurnText, initializeDatabase } = await import('@main/db/initialize');
-const { searchService, textCondition } = await import('./search-service');
+const { searchService } = await import('./search-service');
+const { matchTaskTurns } = await import('./task-turn-matches');
+const { textCondition } = await import('./text-condition');
 const { searchController } = await import('./controller');
 const { persistCommittedTurn, truncateStoredHistory, withStoredTurns, appendRecordTurnNow } = await import('../sessions/session-turn-store');
 const { resolveConversationMessageReference } = await import('../../../../../../../packages/session-chat-ui/src/state/conversation-messages');
@@ -30,7 +34,8 @@ const said = (id: string, role: 'user' | 'assistant', text: string) => ({ kind: 
 
 const fixture = () => fixtureRef.current!;
 const indexed = () => fixture().sqlite.prepare('SELECT session_id, seq, role, text FROM turn_text_rows ORDER BY session_id, seq, id').all();
-const found = (query: string) => searchService.searchTaskTurns(query).map((hit) => hit.excerpt);
+const matches = (query: string) => matchTaskTurns(fixture().sqlite, query);
+const found = (query: string) => matches(query).map((hit) => hit.excerpt);
 
 describe('textCondition', () => {
   it('matches pieces of three or more characters on the trigram index and shorter ones by LIKE, all required', () => {
@@ -77,10 +82,10 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
     searchService.initialize();
     expect(searchController.commandPalette({ query: 'Task' }).length).toBeGreaterThan(0);
     expect(searchController.taskTurnIndexStatus().state).toBe('preparing');
-    expect(searchController.taskTurns({ query: 'indexing' })).toHaveLength(1);
+    expect(await searchController.taskTurns({ query: 'indexing' })).toHaveLength(1);
     await backfillTurnText(fixture().sqlite);
     expect(searchController.taskTurnIndexStatus().state).toBe('ready');
-    expect(searchController.taskTurns({ query: 'indexing' })).toHaveLength(1);
+    expect(await searchController.taskTurns({ query: 'indexing' })).toHaveLength(1);
   });
 
   it('indexes only what the person and the agent said, from every live turn', async () => {
@@ -96,7 +101,7 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
     expect(found('登录')).toEqual(['请帮我修复登录页面的 crash']);
     expect(found('deployment')).toEqual(['The deployment script is fixed.']);
     expect(found('secret')).toEqual([]);
-    const [hit] = searchService.searchTaskTurns('crash');
+    const [hit] = await searchService.searchTaskTurns('crash');
     expect(hit).toMatchObject({ sessionId: 's1', projectId: 'p1', title: 'Task one', role: 'user', archived: false });
     const stored = JSON.parse((fixture().sqlite.prepare('SELECT data FROM session_turns').get() as { data: string }).data) as TranscriptTurn;
     expect(hit!.itemId).toBe(stored.items[0]!.id);
@@ -106,7 +111,7 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
     const sourced = (id: string, itemId: string, text: string) => ({ ...turn(id, [said(itemId, 'user', text)]), referenceId: 'source:real-turn' });
     /** What the task's reveal does with a hit: its one link, resolved against the transcript on screen. */
     const reveal = (query: string, transcript: TranscriptTurn) => {
-      const [hit] = searchService.searchTaskTurns(query);
+      const [hit] = matches(query);
       return resolveConversationMessageReference([transcript], messageQuoteLink({ kind: 'session', sessionId: 's1', itemId: hit!.itemId }), 's1');
     };
     const insertStored = (seq: number, data: unknown) => fixture().sqlite.prepare(
@@ -118,7 +123,7 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
       await persistCommittedTurn({ sessionId: 's1', source: 'live', turn: live });
       const stored = JSON.parse((fixture().sqlite.prepare('SELECT data FROM session_turns').get() as { data: string }).data) as TranscriptTurn;
       expect(stored.items[0]!.id).toBe('s1:turn:s0:message:0');
-      expect(searchService.searchTaskTurns('renumbered')[0]!.itemId).toBe('source:real-turn:message:0');
+      expect(matches('renumbered')[0]!.itemId).toBe('source:real-turn:message:0');
       expect(reveal('renumbered', live)).toBe('s1:turn:12:message:0');
       expect(reveal('renumbered', stored)).toBe('s1:turn:s0:message:0');
     });
@@ -129,7 +134,7 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
       expect(reveal('ninety', stored)).toBe('s1:turn:s90:message:0');
       expect(reveal('ninety', sourced('s1:turn:12', 's1:turn:12:message:0', 'ninety turns back'))).toBe('s1:turn:12:message:0');
       fixture().sqlite.prepare('UPDATE session_turns SET data = ? WHERE seq = 90').run(JSON.stringify(sourced('s1:turn:s90', 's1:turn:s90:message:0', 'revised, still ninety')));
-      expect(searchService.searchTaskTurns('revised')[0]!.itemId).toBe('source:real-turn:message:0');
+      expect(matches('revised')[0]!.itemId).toBe('source:real-turn:message:0');
     });
 
     it('a turn from before referenceId keeps its stored id, which is what the reveal compares', () => {
@@ -141,7 +146,7 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
     it('a numeric turn id has no durable source: searchable, never a guessed anchor', () => {
       const old = turn('s1:turn:5', [said('s1:turn:5:message:0', 'user', 'restarted counter')]);
       insertStored(5, old);
-      expect(searchService.searchTaskTurns('restarted')[0]!.itemId).toBe('s1:turn:5:message:0');
+      expect(matches('restarted')[0]!.itemId).toBe('s1:turn:5:message:0');
       expect(reveal('restarted', old)).toBeNull();
     });
 
@@ -158,7 +163,7 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
   it('retains activity source metadata and the original anchor without copying delivery text into that metadata', async () => {
     const text = '<gugu_delivery route="chat" from="Worker" from_id="user:worker" from_type="agent"><![CDATA[private folded body]]></gugu_delivery>';
     await persistCommittedTurn({ sessionId: 's1', source: 'live', turn: { ...turn('t0', [said('t0:u', 'user', text)]), referenceId: 'source' } });
-    const [hit] = searchService.searchTaskTurns('folded');
+    const [hit] = matches('folded');
     expect(hit!.activity).toMatchObject({ kind: 'received', facts: [{ fromType: 'agent', fromId: 'user:worker' }] });
     expect(JSON.stringify(hit!.activity)).not.toContain('private folded body');
     expect(hit!.itemId).toBe('source:u');
@@ -205,10 +210,10 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
       ('s1:0', 's1', 0, 't', '{"items":[{"kind":"message","id":"a","role":"user","text":"alpha one"},{"kind":"message","id":"b","role":"assistant","text":"alpha two"}]}'),
       ('s2:0', 's2', 0, 't', '{"items":[{"kind":"message","id":"c","role":"user","text":"alpha three"}]}')`);
     const prepare = vi.spyOn(fixture().sqlite, 'prepare');
-    const hits = searchService.searchTaskTurns('al');
+    const hits = matches('al');
     expect(hits.map((hit) => hit.excerpt)).toEqual(['alpha three', 'alpha two', 'alpha one']);
     expect(hits.map((hit) => [hit.at, hit.activity])).toEqual([[expect.any(String), null], [expect.any(String), { kind: 'sent', id: 'b', addresses: null }], [expect.any(String), null]]);
-    const ranking = String(prepare.mock.calls[0]![0]);
+    const ranking = String(prepare.mock.calls.find(([sql]) => String(sql).includes('hit AS MATERIALIZED'))![0]);
     prepare.mockRestore();
     // Reading a turn's created_at or data means walking its whole record; the ranking reaches turns only through their index.
     const plan = (fixture().sqlite.prepare(`EXPLAIN QUERY PLAN ${ranking}`).all('%al%', 30) as { detail: string }[]).map((row) => row.detail);

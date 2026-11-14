@@ -5,6 +5,7 @@ import { sessionRegistry } from '@renderer/features/sessions/stores/session-regi
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import { IMPLICIT_SESSION_HOME_PROJECT_ID } from '@renderer/features/sessions/session-home-project-constants';
 import { SidebarStore } from './sidebar-store';
+import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 import { THIS_COMPUTER, sidebarOf } from './mirror-account-projects.testing';
 import { AccountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects';
@@ -820,6 +821,17 @@ describe('SidebarStore keeps what the user folded folded', () => {
     expect(restored.expandedSessionIds.has('collapsed-parent')).toBe(false);
   });
 
+  it('keeps what the user folded away across a restart', () => {
+    const source = twoProjects();
+    setSidebarFold('left', true);
+    setSidebarFold('inner:topics', true);
+    const saved = structuredClone(source.snapshot);
+    sidebarFolds.clear();
+    twoProjects().restoreSnapshot(saved);
+    expect([...sidebarFolds].sort()).toEqual(['inner:topics', 'left']);
+    sidebarFolds.clear();
+  });
+
   it('does not open a parent or project when new descendants or activity arrive', () => {
     const page = 'task-manual';
     const manager = projectManagerWithSessions([
@@ -861,6 +873,7 @@ describe('SidebarStore keeps what the user folded folded', () => {
     expect(Object.keys(restored.snapshot).sort()).toEqual([
       'expandedProjectIds',
       'expandedSessionIds',
+      'folds',
       'idleExpandedProjectIds',
       'projectOrder',
       'sessionOrderByProject',

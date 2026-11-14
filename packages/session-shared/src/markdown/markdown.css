@@ -397,7 +397,7 @@
 .gg-md--comfortable .gg-md-table-scroll { overflow-y: hidden; border: 1px solid var(--md-rule-soft); border-radius: 6px; }
 .gg-md--comfortable .gg-md-table-scroll > table { margin: 0; }
 .gg-md--comfortable .gg-md-table-scroll :is(th, td) { padding: 0.5em 0.85em; }
-.gg-md--comfortable .gg-md-table-scroll :is(th, td) + :is(th, td) { border-left: 1px solid var(--md-rule-soft); }
+.gg-md--comfortable .gg-md-table-scroll :is(th, td):not(:first-child) { border-left: 1px solid var(--md-rule-soft); }
 .gg-md--comfortable .gg-md-table-scroll th { border-bottom-color: var(--md-rule-soft); background: var(--md-fill); color: inherit; font-weight: 600; }
 .gg-md .gg-md-code { margin: 0 0 var(--md-gap); overflow: hidden; border-radius: 8px; background: var(--md-fill); }
 .gg-md .gg-md-code > pre { margin: 0; padding: 4px 14px 12px; border: 0; border-radius: 0; background: transparent; }

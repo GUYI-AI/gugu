@@ -120,7 +120,7 @@ export const deliveryFactsToggle = style({
   whiteSpace: 'nowrap',
   flexShrink: 0,
   selectors: {
-    '&:hover, &:focus-visible:not([data-pointer-focus] *), &[aria-expanded="true"]': { color: vars.fg },
+    '&:hover, &:focus-visible:not([data-pointer-focus]), &[aria-expanded="true"]': { color: vars.fg },
     '&:not(button)': { cursor: 'default' },
     // Use the same layout gate as the right-aligned user bubble.
     '[data-chat-layout="double"] &:not(button)': { justifyContent: 'flex-end' },
@@ -136,7 +136,7 @@ export const deliveryReply = style({
   textAlign: 'left',
   fontFamily: 'inherit',
   cursor: 'pointer',
-  selectors: { '&:hover:not(:disabled)': { color: vars.fg }, '&:focus-visible:not([data-pointer-focus] *)': { outline: `1px solid ${vars.fgMuted}`, outlineOffset: 2 }, '&:disabled': { cursor: 'default' } },
+  selectors: { '&:hover:not(:disabled)': { color: vars.fg }, '&:focus-visible:not([data-pointer-focus])': { outline: `1px solid ${vars.fgMuted}`, outlineOffset: 2 }, '&:disabled': { cursor: 'default' } },
   height: deliveryVars.lineH,
   lineHeight: deliveryVars.lineH,
   marginTop: deliveryVars.gap,

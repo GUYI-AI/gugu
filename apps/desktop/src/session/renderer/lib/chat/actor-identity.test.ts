@@ -5,7 +5,7 @@ import { chatActor } from './actor-identity';
 
 const human = '11111111-1111-4111-8111-111111111111', agent = '22222222-2222-4222-8222-222222222222';
 const identity = (id: string, type: 'agent' | 'human', number: number): DisplayIdentity => ({
-  id, type, display_name: type, nameSerial: null, avatar: null, gugu_number: number, bio: null, owner_user_id: null,
+  id, type, display_name: type, avatar: null, gugu_number: number, bio: null, owner_user_id: null,
   agent_public: null, desired_status: null, device_id: null, category: null, is_official: null, local_path: null, created_at: null, updated_at: null,
 });
 const ensured: string[][] = [];

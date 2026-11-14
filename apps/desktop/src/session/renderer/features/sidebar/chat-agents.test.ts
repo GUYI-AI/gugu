@@ -7,6 +7,7 @@ import {
   chatAgentNeedsYou,
   chatAgentSection,
   myAgentsInChat,
+  openSessionAncestors,
   subAgentsOf,
   type ChatAgentEntry,
 } from './chat-agents';
@@ -211,6 +212,49 @@ describe('the agents section', () => {
 
   it('no agents: no rows', () => {
     expect(chatAgentSection([], disclosure)).toEqual({ rows: [], total: 0, overflow: 0 });
+  });
+
+  describe('#2630 the open session never folds away', () => {
+    const quiet = Array.from({ length: CHAT_AGENT_LIMIT + 3 }, (_, index) => entry(`quiet-${index}`, { time: 100 - index }));
+
+    it('past the cap, its family shows after the others and the fold counts one fewer', () => {
+      const list = chatAgentSection(quiet, { ...disclosure, open: 'quiet-11' });
+      expect(rowIds(list)).toEqual([...ids(quiet.slice(0, CHAT_AGENT_LIMIT)), 'quiet-11']);
+      expect(list.overflow).toBe(2);
+      // Opened: every family in its own order, and the fold row still counts the same.
+      const opened = chatAgentSection(quiet, { ...disclosure, open: 'quiet-11', showAll: true });
+      expect(rowIds(opened)).toEqual(ids(quiet));
+      expect(opened.overflow).toBe(2);
+    });
+
+    it('within the cap nothing changes', () => {
+      expect(chatAgentSection(quiet, { ...disclosure, open: 'quiet-2' })).toEqual(chatAgentSection(quiet, disclosure));
+    });
+
+    it('the only family past the cap being the open one leaves no fold row', () => {
+      const list = chatAgentSection(quiet.slice(0, CHAT_AGENT_LIMIT + 1), { ...disclosure, open: `quiet-${CHAT_AGENT_LIMIT}` });
+      expect(rowIds(list)).toHaveLength(CHAT_AGENT_LIMIT + 1);
+      expect(list.overflow).toBe(0);
+    });
+
+    it('an open fork keeps its whole family out of the fold, listed down to it once its parents are expanded', () => {
+      const agents = [...quiet, entry('parent', { time: 0 }), entry('fork', { parentSessionId: 'parent' })];
+      const folded = chatAgentSection(agents, { ...disclosure, open: 'fork' });
+      expect(rowIds(folded)).toEqual([...ids(quiet.slice(0, CHAT_AGENT_LIMIT)), 'parent']);
+      expect(rowIds(chatAgentSection(agents, { ...disclosure, open: 'fork', expanded: new Set(['parent']) })).slice(-2)).toEqual(['parent', 'fork']);
+    });
+
+    it('a session that is not in this chat changes nothing', () => {
+      expect(chatAgentSection(quiet, { ...disclosure, open: 'elsewhere' })).toEqual(chatAgentSection(quiet, disclosure));
+    });
+
+    it('the parents to expand: every level up that is in this chat, nearest first', () => {
+      const agents = [entry('root'), entry('mid', { parentSessionId: 'root' }), entry('leaf', { parentSessionId: 'mid' }), entry('orphan', { parentSessionId: 'gone' })];
+      expect(openSessionAncestors(agents, 'leaf')).toEqual(['mid', 'root']);
+      expect(openSessionAncestors(agents, 'root')).toEqual([]);
+      expect(openSessionAncestors(agents, 'orphan')).toEqual([]);
+      expect(openSessionAncestors(agents, null)).toEqual([]);
+    });
   });
 });
 

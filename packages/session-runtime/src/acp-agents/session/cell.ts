@@ -89,6 +89,8 @@ export class SessionCell {
   readonly machine: SessionMachine;
   readonly transcript: AcpTranscriptParser;
   readonly rawLog: RawAcpLog;
+  /** Kept with the settled outcome so the host can distinguish repeated provider failures. */
+  lastTurnError: string | null = null;
   private readonly permissions = new PermissionBroker();
   /**
    * 这条会话此刻是不是完全访问档 —— `session/request_permission` 该不该由咕咕当场作答的**唯一**判据。
@@ -405,6 +407,7 @@ export class SessionCell {
   }
 
   endReplay(at = Date.now(), outcome?: TranscriptTurnOutcome): void {
+    this.lastTurnError = outcome?.kind === 'error' ? outcome.detail ?? outcome.said ?? outcome.reason ?? null : null;
     this.replayingHistory = false;
     // 历史里最近一次送过的会话级背景与这次要送的一字不差 ⇒ agent 手上已经有了,❌ 不再追加一份
     // (每次重开都追加会让同一段 ~20KB 在历史里越堆越多)。内容变了(规则改过、平台块升级)才送新的。
@@ -442,8 +445,7 @@ export class SessionCell {
 
   private reconcileReplayedQueue(): void {
     const queued = this.machine.queuedPrompts.filter((prompt) => prompt.origin === 'communication');
-    const hasCanonicalReplay = this.deps.providerId === 'claude'
-      || this.deps.providerId === 'codex' || this.deps.historyRecovery?.canonicalReplay === true;
+    const hasCanonicalReplay = this.deps.historyRecovery?.canonicalReplay === true;
     const recorded = this.recordedDeliveryIds;
     const historyUnknown = this.replayHistoryUnknown || recorded === null;
     if (!queued.length || (!hasCanonicalReplay && !historyUnknown)) return;
@@ -1489,6 +1491,7 @@ export class SessionCell {
     this.lastFailureProvisional = false;
     const previousRunningAgentCount = this.lastRunningAgentCount;
     this.transcript.settleTurn(outcome, Date.now(), opts?.foreground);
+    this.lastTurnError = outcome.kind === 'error' ? outcome.detail ?? outcome.said ?? outcome.reason ?? null : null;
     this.settleRequests();
     this.dispatchAgentsChangedIfNeeded(previousRunningAgentCount);
     this.emitTranscriptChanged();

@@ -15,7 +15,6 @@ import type { AppSearchHit } from '../../../../apps/desktop/electron/mcp/gugu-ap
 import { GUIDE_TOPICS } from '../../../../apps/desktop/electron/mcp/gugu-guide-tool'
 import { ACTIVITY_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-activity-tool'
 import { PROJECT_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-project-tool'
-import { LIBRARY_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-library-tool'
 import { SESSION_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-session-tool'
 import { SCHEDULE_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-schedule-tool'
 import { EXTENSION_TOOL_DEFS, setExtensionCheckAvailable } from '../../../../apps/desktop/electron/mcp/gugu-extension-tool'
@@ -104,7 +103,6 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
       ...TOOL_DEFS.map((def: { name: string }) => def.name),
       ...SESSION_TOOL_DEFS.map((def) => def.name),
       ...PROJECT_TOOL_DEFS.map((def) => def.name),
-      ...LIBRARY_TOOL_DEFS.map((def) => def.name),
       ...ACTIVITY_TOOL_DEFS.map((def) => def.name),
       ...SCHEDULE_TOOL_DEFS.map((def) => def.name),
       ...EXTENSION_TOOL_DEFS.map((def) => def.name),
@@ -123,9 +121,10 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
     expect(catalog).toContain('group_create')
     expect(listed).not.toContain('project_add_device')
     expect(catalog).toContain('project_add_device')
-    for (const { name } of LIBRARY_TOOL_DEFS) {
+    // The assistant's capability/device notes are gone: no agent has them, listed or in the catalog.
+    for (const name of ['library_list', 'library_read', 'library_write']) {
       expect(listed).not.toContain(name)
-      expect(catalog).toContain(name)
+      expect(catalog).not.toContain(name)
     }
     expect(listed).toContain('message_send')
     expect(listed).toContain('message_send_as_owner')

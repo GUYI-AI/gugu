@@ -21,6 +21,11 @@ export const LEGACY_ASSISTANT_GUIDE_END = '<!-- /咕咕云电脑 -->'
 /** 运行位置:按需伸缩的云端 / 已连接的本机。身份说明与调度说明按位置区分。 */
 export type AssistantHomeKind = 'cloud' | 'computer'
 
+/** 这台是不是云电脑看身份(`GUGU_CLOUD_COMPUTER`),❌ 看启动方式:人自己的 Linux server 也是 server 模式,它上面的助理按「本机」布局住在工作目录里。 */
+export function assistantHomeKind(env: Readonly<Record<string, string | undefined>>): AssistantHomeKind {
+  return env.GUGU_CLOUD_COMPUTER === '1' ? 'cloud' : 'computer'
+}
+
 /** The host's values for the brief's and recovery notice's path slots. */
 function homeSlots(memoryDir: string): Record<string, string> {
   return { memoryIndex: join(memoryDir, 'MEMORY.md'), workingContext: join(memoryDir, 'working-context.md'), pendingWork: join(memoryDir, 'pending-work.json') }
@@ -54,19 +59,33 @@ export function assistantGuide(kind: AssistantHomeKind, rules: AssistantProductR
  * 把说明写进那份文件(Claude Code 的 CLAUDE.md、Pi 的 AGENTS.md)的全文:有标记(新 / 旧)就只换标记那一段,
  * 早期整份都是管家写的(以「# 你是谁」开头)就整份换,否则接在末尾。与管家 POLICY_PY 的 put() 同一规则。
  */
-export function upsertAssistantGuide(old: string, guide: string): string {
-  const marks: Array<[string, string]> = [
-    [ASSISTANT_GUIDE_BEGIN, ASSISTANT_GUIDE_END],
-    [LEGACY_ASSISTANT_GUIDE_BEGIN, LEGACY_ASSISTANT_GUIDE_END],
-  ]
-  const hit = marks.find(([begin, end]) => old.includes(begin) && old.includes(end))
-  if (hit) {
-    const start = old.indexOf(hit[0])
-    const end = old.indexOf(hit[1], start) + hit[1].length
-    return old.slice(0, start) + guide.replace(/\n+$/, '') + old.slice(end)
+const GUIDE_MARKS: ReadonlyArray<readonly [string, string]> = [
+  [ASSISTANT_GUIDE_BEGIN, ASSISTANT_GUIDE_END],
+  [LEGACY_ASSISTANT_GUIDE_BEGIN, LEGACY_ASSISTANT_GUIDE_END],
+]
+
+/** The host-maintained section in a text (current or legacy marks): where it starts and where it ends. */
+function guideSection(text: string): { start: number; end: number } | null {
+  for (const [begin, finish] of GUIDE_MARKS) {
+    const start = text.indexOf(begin)
+    const close = start < 0 ? -1 : text.indexOf(finish, start)
+    if (close >= 0) return { start, end: close + finish.length }
   }
+  return null
+}
+
+export function upsertAssistantGuide(old: string, guide: string): string {
+  const hit = guideSection(old)
+  if (hit) return old.slice(0, hit.start) + guide.replace(/\n+$/, '') + old.slice(hit.end)
   if (old.startsWith('# 你是谁')) return guide
   return (old.trim() ? `${old.replace(/\n+$/, '')}\n\n` : '') + guide
+}
+
+/** The text without the host-maintained section (the text around it kept, trimmed); null when it has none. */
+export function withoutAssistantGuide(text: string): string | null {
+  const hit = guideSection(text)
+  if (!hit) return null
+  return `${text.slice(0, hit.start).replace(/\n+$/, '')}\n\n${text.slice(hit.end).replace(/^\n+/, '')}`.trim()
 }
 
 /** 引导中填写的「称呼和基本信息」保存为记忆(Claude Code frontmatter + 正文),与管家写的同名同格式。 */

@@ -37,7 +37,7 @@ export const mobileQuality = style({
       backgroundColor: vars.surfaceBase, color: vars.foregroundMuted, borderRadius: tokenVars.radiusSm,
     },
     '&:disabled': { opacity: 0.5 },
-    '&:focus-visible:not([data-pointer-focus] *)': { outline: `1px solid ${vars.border1}` },
+    '&:focus-visible:not([data-pointer-focus])': { outline: `1px solid ${vars.border1}` },
   },
 });
 

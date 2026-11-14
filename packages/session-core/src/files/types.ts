@@ -1,4 +1,5 @@
 import type { Result } from '@gugu/session-shared';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import type {
   FileChangeSubscription,
   FileChangeUpdate,
@@ -12,7 +13,7 @@ import type { FileTreeLease } from './tree/types';
 export interface IFilesRuntime {
   openTree(rootPath: string): Promise<Result<FileTreeLease, FileTreeError>>;
   watchChanges(
-    rootPath: string,
+    rootPath: CanonicalPath,
     cb: (update: FileChangeUpdate) => void,
     options?: FileChangeWatchOptions
   ): Result<FileChangeSubscription, FileError>;

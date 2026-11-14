@@ -13,7 +13,7 @@ import { visibleMachines, workspaceDevices } from '@/mobile/agent-watch/machine-
 import { shortHome } from '@/session/shared/path-name'
 import { useDevicesStore } from '@/store/devicesContext'
 import { newProjectPath, projectNameProblem } from './partnersModel'
-import { ProjectFolderAvatar } from './ProjectFolderAvatar'
+import { Avatar } from '@/components/Avatar'
 import { projectRpcOn } from './projectRpc'
 
 export type CreatedProject = { chatId: string | null; deviceId: string; localProjectId: string; name: string; createdAt: string }
@@ -157,7 +157,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
       />
       <div className="gg-partners-scroll">
         <div className="gg-partners-new-hero">
-          <ProjectFolderAvatar coverId={projectId} size={64} />
+          <Avatar variant="group" name={trimmed} seed={projectId} size={64} />
           <input
             ref={nameInput}
             className="gg-partners-name-input"

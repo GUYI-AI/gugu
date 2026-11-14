@@ -67,10 +67,11 @@ import { createFrameScheduler } from './components/engine/frame-scheduler';
 import { createTweenRegistry } from './components/engine/tween-registry';
 import { createActivityGeometry } from './components/engine/activity-geometry';
 import { SEGMENTERS, UNIT_REGISTRY } from './components/engine/unit-registry';
+import { CONVERSATION_PREVIEW_MAX_H } from './components/engine/row-metrics';
 import { PinnedUserSummary, pinSummary } from './components/rows/message/PinnedUserSummary';
 import type { MessageVars } from './components/rows/message/metrics';
 import { UnitRow } from './components/engine/UnitRow';
-import { latestConversationBubbleId } from './components/rows/message/conversation-body';
+import { conversationBubbleKey, latestConversationBubbleId } from './components/rows/message/conversation-body';
 import type { ChatCaches } from './core/caches';
 import type { ThemeVarKey } from './core/config';
 import type { MeasureCtx } from './core/define';
@@ -1602,9 +1603,49 @@ export function ChatRoot(props: ChatRootProps) {
     if (delta !== 0) onHeightChanged(ui, delta);
   };
 
-  createEffect(on(latestConversationMessageId, (next, previous) => {
-    if (previous && previous !== next) pendingBubbleMeasures.add(previous.replace(/:batch-\d+$/, ''));
+  // @@@fold-out-of-view — a bubble that stops being the newest folds (#1012), but not under the reader's eyes: sending a
+  // line under a long reply you are reading folded it in that frame, and the tail pin then showed its head instead of
+  // the lines you were on (owner 11-14 「发出去之后…上漂一段距离,再往下」). So the one bubble that just lost "newest"
+  // while on screen, and is long enough to fold, keeps the reader's expansion; the frame it is out of view, the expansion
+  // is dropped and the fold lands as a size change there — above the view, where the above-row compensation keeps what is
+  // drawn still. Only that one: the next long bubble to take its place folds the held one, so history never piles up
+  // unfolded. Computed, not an effect: the hold must be in place before the rows render this change, or they draw one
+  // folded frame first.
+  let heldOpen: { key: string; bubbleId: string } | null = null;
+  // The bubble's own unit: the first unit holding its item can be the lane around it (the sticky own-message lane).
+  const bubbleUnitIndex = (bubbleId: string) => {
+    const us = units();
+    let index = unitIndexOf(bubbleId.replace(/:batch-\d+$/, ''));
+    while (index >= 0 && index < us.length && !(us.at(index)!.kind === 'message' && (us.at(index)!.data as ChatMessage).id === bubbleId)) index++;
+    return index < us.length ? index : -1;
+  };
+  const unitInView = (index: number) => {
+    if (!scrollEl || skipped || index < 0) return false;
+    const top = virt.top(index) + padTop(), st = scrollEl.scrollTop;
+    return top < st + viewHeight() && top + virt.size(index) > st;
+  };
+  const foldHeld = () => {
+    if (!heldOpen) return;
+    viewState().setCollapsed(heldOpen.key, false);
+    pendingBubbleMeasures.add(heldOpen.bubbleId.replace(/:batch-\d+$/, ''));
+    heldOpen = null;
+  };
+  createComputed(on(latestConversationMessageId, (next, previous) => {
+    if (!previous || previous === next) return;
+    untrack(() => {
+      const index = bubbleUnitIndex(previous);
+      const item = index >= 0 ? units().at(index)!.data as ChatMessage : undefined;
+      const key = item && conversationBubbleKey(item);
+      if (key && !viewState().isCollapsed(key) && virt.size(index) > CONVERSATION_PREVIEW_MAX_H && unitInView(index)) {
+        foldHeld();
+        viewState().setCollapsed(key, true);
+        heldOpen = { key, bubbleId: previous };
+        return;
+      }
+      pendingBubbleMeasures.add(previous.replace(/:batch-\d+$/, ''));
+    });
   }));
+  const foldHeldOutOfView = () => { if (heldOpen && !unitInView(bubbleUnitIndex(heldOpen.bubbleId))) foldHeld(); };
 
   const readPhase = () => {
     const el = scrollEl;
@@ -1621,6 +1662,7 @@ export function ChatRoot(props: ChatRootProps) {
       expectedScrollTop = el.scrollTop;
       needsProject = true;
     }
+    foldHeldOutOfView();
     for (const id of pendingBubbleMeasures) {
       const index = unitIndexOf(id);
       if (index >= 0) measureUnitAt(index);
@@ -1973,7 +2015,9 @@ export function ChatRoot(props: ChatRootProps) {
     if (!el) return;
     const target = maxScrollTop();
     setAnchor({ kind: 'tail' });
-    if (opts?.behavior === 'smooth') {
+    // Already there: no animation. A smooth scroll of zero length still opened the settle window, and the rows of the
+    // send that asked for it (the composer returns the reader to the end) waited it out below the view, ~120 ms.
+    if (opts?.behavior === 'smooth' && target - el.scrollTop > SCROLL_END_EPSILON_PX) {
       smoothScrolling = true;
       smoothScrollTarget = target;
       el.scrollTo({ top: target, behavior: 'smooth' });

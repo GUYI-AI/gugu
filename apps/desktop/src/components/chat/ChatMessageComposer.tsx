@@ -85,6 +85,16 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   const { identitiesById, writeDraft, registerDraftEditor } = useChatStore('identitiesById', 'writeDraft', 'registerDraftEditor')
   // 手机项目群的「新任务」(电脑上是 ComposerVerbs 换上会话页那一侧的框;手机就地换成新任务的框)。
   const phoneTask = usePhoneNewTask({ chatId, enabled: mobile && isMain && !!isGroupChat, clear: () => writeDraft(chatId, '') })
+  // 新任务的两件事要让这一面里别处的东西让位(运行条、空项目的「新任务」钮,phone-new-task.css):把状态记在这一面的根上。
+  // ❌ 写成 `[data-chat-surface]:has(…)`:那会让整面聊天每次增删节点都重算每一行里的一批元素(check-css-parses @@@wide-invalidation)。
+  const hostRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const surface = hostRef.current?.closest('[data-chat-surface]')
+    if (!surface) return
+    surface.toggleAttribute('data-phone-task-open', phoneTask.active)
+    surface.toggleAttribute('data-phone-task-picking', phoneTask.picking)
+    return () => { surface.removeAttribute('data-phone-task-open'); surface.removeAttribute('data-phone-task-picking') }
+  }, [phoneTask.active, phoneTask.picking])
   const { members, mentionProvider, renderMentionIcon, pickOf } = useGroupMentionProvider({ chatId, isGroupChat: !!isGroupChat, groupMembers, currentUserId: currentUserId ?? null,
     agentStatuses, messages, participantIds, replyToMessageId: quoteContent?.messageId, enabled: !whisperTarget })
   const activeTargets = activeMentionPicks(text, mentionTargets, members)
@@ -120,10 +130,9 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   useLayoutEffect(() => registerDraftEditor(chatId ?? null, () => editorApiRef.current), [chatId, registerDraftEditor])
   useEffect(() => {
     if (!mentionToInsert) return
-    const member = members.find(candidate => candidate.id === mentionToInsert.id)
-    editorApiRef.current?.insertMention({ id: mentionToInsert.id, label: member?.rawName ? `aid:${mentionToInsert.id}` : mentionToInsert.name, name: member?.rawName ?? member?.name ?? mentionToInsert.name, kind: 'custom' })
+    editorApiRef.current?.insertMention({ id: mentionToInsert.id, label: mentionToInsert.name, name: mentionToInsert.name, kind: 'custom' })
     onMentionInserted?.()
-  }, [mentionToInsert, onMentionInserted, members])
+  }, [mentionToInsert, onMentionInserted])
   useEffect(() => {
     if (quoteContent) scheduleComposerFocus('quote-attached', { target: () => inputRef.current })
   }, [quoteContent])
@@ -159,7 +168,7 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   const Composer = props.conversation ? AgentConversationComposer : ChatComposer
   return <SessionUiTheme theme={theme}>
     <MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
-      <div {...hintEvents} title={disabledReason} data-chat-composer-host="" data-mobile-group={mobile && isGroupChat || undefined} data-phone-task={phoneTask.active || undefined} data-sending={sending} hidden={hidden || takenOver}>
+      <div ref={hostRef} {...hintEvents} title={disabledReason} data-chat-composer-host="" data-mobile-group={mobile && isGroupChat || undefined} data-phone-task={phoneTask.active || undefined} data-sending={sending} hidden={hidden || takenOver}>
         <input ref={fileInputRef} type="file" multiple hidden onChange={(event) => { enqueueFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} />
         {mobile && <>
           {/* 照片 = 系统相册(只写 image/*:写多个类型时 Android 壳退回成文件选择器);拍摄 = 直接开相机。 */}

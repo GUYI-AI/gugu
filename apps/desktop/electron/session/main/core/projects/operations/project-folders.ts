@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { canonicalPath, type CanonicalPath } from '@gugu/session-core/files';
 import { activitySignal } from '../../activity/signals';
 import { err, ok, type Result } from '@gugu/session-shared';
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
@@ -14,7 +15,7 @@ import type {
 } from '@shared/core/projects/project-folders';
 import { projectFoldersChangedChannel } from '@shared/core/projects/projectEvents';
 import type { WorkspaceKind } from '@shared/core/workspaces/workspaces';
-import { getDirectoryStatus, projectPathKey } from '../path-utils';
+import { getDirectoryStatus } from '../path-utils';
 import { ensureRepositoryWorkspace } from './ensure-repository-workspace';
 import { getLocalProjectByPath, getProjectById } from './getProjects';
 import { readFolderBranch } from './read-folder-branch';
@@ -31,13 +32,13 @@ import { publishProjectVisibility } from './project-visibility';
 /** 新建会话 / 拿草稿工作区时,这个工作区算不算这个项目的文件夹。 */
 export type ProjectFolderTarget =
   | { kind: 'root' }
-  | { kind: 'attached'; path: string; workspaceKind: WorkspaceKind | null };
+  | { kind: 'attached'; path: CanonicalPath; workspaceKind: WorkspaceKind | null };
 
 /** 一个文件夹本身(不带此刻的分支与会话读数)。 */
 export type ProjectFolderRef = {
   workspaceId: string;
   kind: ProjectFolder['kind'];
-  path: string;
+  path: CanonicalPath;
   attachedAt: string | null;
 };
 
@@ -80,7 +81,7 @@ export async function getProjectOwningAttachedFolder(
 ): Promise<Awaited<ReturnType<typeof getProjectById>>> {
   let key: string;
   try {
-    key = computeWorkspaceKey(projectPathKey(folderPath));
+    key = computeWorkspaceKey(canonicalPath(folderPath));
   } catch {
     return undefined;
   }
@@ -96,7 +97,7 @@ export async function getProjectOwningAttachedFolder(
  * 项目的根目录:它那一行工作区记录和路径(会话在根目录那一行记着的路径里跑,workspace-bootstrap-service)。
  * 本机没有这个项目 = undefined。App 的 `{ project }` 文件位置也认这一个。
  */
-export async function projectRootFolder(projectId: string): Promise<{ workspaceId: string; path: string } | undefined> {
+export async function projectRootFolder(projectId: string): Promise<{ workspaceId: string; path: CanonicalPath } | undefined> {
   const project = await getProjectById(projectId);
   if (!project) return undefined;
   // 与打开项目(openProject)同一步:项目一定有根目录那一行,指空了也就地按原 id 修好。项目首页本来就先打开项目,
@@ -107,7 +108,7 @@ export async function projectRootFolder(projectId: string): Promise<{ workspaceI
 }
 
 /** 这条工作区记录属于哪个项目(挂上的,或是它的根目录);不是项目的文件夹 = undefined。App 的 `{ folder }` 文件位置只认这些。 */
-export async function projectFolderOfWorkspace(workspaceId: string): Promise<{ projectId: string; workspaceId: string; path: string } | undefined> {
+export async function projectFolderOfWorkspace(workspaceId: string): Promise<{ projectId: string; workspaceId: string; path: CanonicalPath } | undefined> {
   const [row] = await db.select({ path: workspaces.path, projectId: workspaces.projectId }).from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1);
   if (!row?.path) return undefined;
   if (row.projectId) return { projectId: row.projectId, workspaceId, path: row.path };
@@ -159,9 +160,9 @@ export async function attachProjectFolder(
   const project = await getProjectById(projectId);
   if (!project) return err(projectNotFound(projectId));
 
-  let path: string;
+  let path: CanonicalPath;
   try {
-    path = projectPathKey(folderPath);
+    path = canonicalPath(folderPath);
   } catch (error) {
     return err({ type: 'not-a-directory', message: error instanceof Error ? error.message : String(error) });
   }

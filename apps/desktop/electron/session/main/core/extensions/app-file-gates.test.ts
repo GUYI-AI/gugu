@@ -508,6 +508,14 @@ describe('reveal and Open in, to a program of this computer', () => {
     expect(f.openIn).toHaveBeenCalledWith({ app: 'vscode', path: path.join(f.root, 'a.txt') });
     await expect(openAppFileIn(page(), { ref: { workspace, id: 'a.txt' }, app: 'nope' })).rejects.toMatchObject({ code: 'invalid' });
   });
+
+  it("Open in takes `.` as the working copy's own folder; there is no folder above to reveal it in", async () => {
+    f.capabilities.add('files:read');
+    await openAppFileIn(page(), { ref: { workspace, id: '.' }, app: 'vscode' });
+    expect(f.openIn).toHaveBeenCalledWith({ app: 'vscode', path: f.root });
+    await expect(revealAppFile(page(), { ref: { workspace, id: '.' } })).rejects.toThrow(/No file/);
+    expect(f.shown).toEqual([]);
+  });
 });
 
 describe('reading a file outside the working copy', () => {

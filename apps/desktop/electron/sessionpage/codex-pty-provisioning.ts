@@ -26,7 +26,7 @@ import type {
   SessionAutonomyCapability,
   SessionModelCapability,
 } from '../capability-bundle'
-import type { GuguPermissionMode } from '@gugu/session-core/acp'
+import { resolveSessionPermissionMode, type GuguPermissionMode } from '@gugu/session-core/acp'
 import { createLogger } from '../lib/logger'
 import type { ProvisionedSessionpageAgent, SessionpageProvisionDeps } from './emdash-agent-provisioning'
 import {
@@ -309,10 +309,7 @@ async function provisionAndOverrideOnce(
         model: info.model ?? undefined,
         reasoningEffort: info.effort ?? undefined,
       },
-      {
-        mode: info.permissionMode === 'full-access' ? 'full-access' : 'approval-required',
-        ...(info.permissionMode ? { permissionMode: info.permissionMode } : {}),
-      },
+      { permissionMode: resolveSessionPermissionMode(info) },
       !resumeThreadId,
       provisioned.projectContext,
       provisioned.agentIdentityFacts,

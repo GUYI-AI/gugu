@@ -2,7 +2,7 @@ import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -18,9 +18,9 @@ const { ExtensionSharedSlot } = await import('./extension-shared-slot');
 
 let root: Root;
 const slot = (shown: boolean) => (
-  <PageShownContext.Provider value={shown}>
+  <SurfaceShownContext.Provider value={shown}>
     <ExtensionSharedSlot tabKind="omnisearch.settings" sessionId="s" tabId="t" />
-  </PageShownContext.Provider>
+  </SurfaceShownContext.Provider>
 );
 
 describe('ExtensionSharedSlot: the App page goes where the page on screen asks', () => {

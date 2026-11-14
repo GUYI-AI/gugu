@@ -8,6 +8,7 @@ import { ThemeContext } from '@session-chat/components/contexts/ThemeContext';
 import { CachesContext } from '@session-chat/components/contexts/CachesContext';
 import { SelfIdentityProvider } from '@session-chat/lib/self-identity';
 import { ConversationProcess } from './ConversationProcess';
+import { ViewShownContext } from '@session-chat/view-visibility';
 import { conversationBubbleKey } from './conversation-body';
 import { createChatCaches } from '@session-chat/core/caches';
 import { DEFAULT_CONFIG, buildChatTheme } from '@session-chat/core/config';
@@ -92,7 +93,49 @@ it('uses the same bounded Markdown preview in the standalone shared transcript',
   } finally { view.dispose(); }
 });
 
+it('draws the reader\'s own delivered message with a file and words once each, at its measured height (#2629)', async () => {
+  // The stored shape of a task started from a chat message: the words in a delivery envelope, the pasted text as a file.
+  const view = await mount({ kind: 'message', id: 'own-delivery', role: 'user',
+    text: '<gugu_delivery route="chat" msg="msg:own" from="Owner" from_id="user:owner" from_type="human" chat="1" chat_kind="group"><![CDATA[Are the results out?]]></gugu_delivery>',
+    files: [{ itemId: 'pasted', version: 1, name: 'pasted-text.txt', mimeType: 'text/plain', sizeBytes: 18407 }] });
+  try {
+    const row = view.host.querySelector<HTMLElement>('[data-agent-conversation-message]')!;
+    expect(row.offsetHeight).toBe(messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!));
+    expect(row.querySelectorAll('[data-attachment-chip]')).toHaveLength(1);
+    expect(row.querySelectorAll('[data-user-card]')).toHaveLength(1);
+    expect(row.textContent!.split('Are the results out?')).toHaveLength(2);
+    const label = row.querySelector('[data-attachment-chip] > span:last-child')!.getBoundingClientRect();
+    expect(label.bottom).toBeLessThanOrEqual(row.querySelector('[data-user-card]')!.getBoundingClientRect().top);
+  } finally { view.dispose(); }
+});
+
 describe('agent-centered conversation bubbles', () => {
+  it('stops the running process clock while its view is hidden and reads the time once when shown again', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const host = document.createElement('div');
+    document.body.append(host);
+    const [shown, setShown] = createSignal(true);
+    let reads = 0;
+    const measureCtx: MeasureCtx = { theme: buildChatTheme(DEFAULT_CONFIG), caches: createChatCaches(), width: 320, isCollapsed: () => false, expanded: () => false };
+    const dispose = render(() => <ViewShownContext.Provider value={shown}>
+      <CommandsContext.Provider value={() => ({ conversationClock: () => { reads += 1; return 60_000 + reads * 1000; } })}>
+        <ConversationProcess measureCtx={() => measureCtx} process={{ id: 'p', steps: 2, live: true, startedAt: 0 }} anchorId="p" expanded={false} />
+      </CommandsContext.Provider>
+    </ViewShownContext.Provider>, host);
+    try {
+      vi.advanceTimersByTime(3000);
+      const ticking = reads;
+      expect(ticking).toBeGreaterThanOrEqual(3);
+      setShown(false);
+      vi.advanceTimersByTime(10_000);
+      expect(reads - ticking, 'no ticks while hidden').toBe(0);
+      setShown(true);
+      expect(reads - ticking, 'one read on showing').toBe(1);
+      vi.advanceTimersByTime(1000);
+      expect(reads - ticking).toBe(2);
+    } finally { dispose(); host.remove(); vi.useRealTimers(); }
+  });
+
   it('keeps an authorized system notice visible in a closed zero-step process header', () => {
     const host = document.createElement('div');
     host.style.width = '320px';

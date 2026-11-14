@@ -2,8 +2,7 @@ import { ExtensionGuestBinding, type ExtensionGuestTarget } from './extension-gu
 import { sessionWorkspace, WORKSPACE_APP_ID } from '@shared/extensions/app-runtime-protocol';
 import { useTaskConversation, useTaskProjectChat } from '@/lib/taskConversation';
 import { useCallback, useMemo, useContext, useEffect, useRef, useState } from 'react';
-import { TabLayerShownContext } from '@renderer/features/tabs/retained-tab-content';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { rpc } from '@renderer/lib/ipc';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { log } from '@renderer/utils/logger';
@@ -87,9 +86,7 @@ export function ExtensionTabPane({
   const [failure, setFailure] = useState<SurfaceFailure | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Not looked at while its retained session page is hidden (@@@retained-session-pages).
-  const pageShown = useContext(PageShownContext);
-  const layerShown = useContext(TabLayerShownContext);
-  const shown = pageShown && layerShown;
+  const shown = useContext(SurfaceShownContext);
   const shownRef = useRef(shown);
   shownRef.current = shown;
   const reportLayoutRef = useRef<(() => void) | null>(null);

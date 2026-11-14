@@ -12,7 +12,8 @@
  *  · 网址只认 http / https;给的是文件(`$BROWSER report.html`)⇒ 只认会话工作目录里的文件,
  *    交给桌面的浏览器格渲染(与 open_in_tab 的 `file:` 网页同一道围栏)。
  */
-import { containsMachinePath, isAbsoluteMachinePath } from '@main/core/files/path-utils';
+import { isAbsoluteMachinePath } from '@main/core/files/path-utils';
+import { canonicalPath, inWorkingCopy, placeUnder, type CanonicalPath } from '@gugu/session-core/files';
 import { machinePathToFileUrl } from '@shared/preview/remote-page-url';
 import type { SessionpagePaneTarget } from '@gugu/session-core/session-record/contract';
 import { RemotePaneError, remotePaneQueuedNote, type RemotePaneRoute } from './remote-pane';
@@ -42,7 +43,7 @@ export class OpenExternalError extends Error {
   }
 }
 
-export type SessionRoot = { sessionId: string; root: string };
+export type SessionRoot = { sessionId: string; root: CanonicalPath };
 
 export type OpenExternalDeps = {
   route: Pick<RemotePaneRoute, 'open' | 'watching'>;
@@ -63,13 +64,13 @@ function trimSlash(dir: string): string {
 
 /** 当前目录落在哪条会话的工作目录里:最深的那个;一样深时优先有人正看着的,再按给的先后。 */
 export function pickSessionForCwd(
-  cwd: string,
+  cwd: CanonicalPath,
   roots: readonly SessionRoot[],
   watching: (sessionId: string) => boolean
 ): string | null {
   let best: SessionRoot | null = null;
   for (const candidate of roots) {
-    if (!candidate.root || !containsMachinePath(candidate.root, cwd)) continue;
+    if (!candidate.root || placeUnder(candidate.root, cwd) === null) continue;
     if (!best) {
       best = candidate;
       continue;
@@ -109,10 +110,13 @@ export function classifyOpenTarget(raw: string, cwd: string): { url: string } | 
 }
 
 export async function openExternalFromMachine(request: OpenExternalRequest, deps: OpenExternalDeps): Promise<OpenExternalReply> {
-  const classified = classifyOpenTarget(request.target, request.cwd);
+  // The shell's folder and the file it names, in their one spelling (`@@@canonical-path`) — as the session roots are.
+  const cwd = canonicalPath(request.cwd);
+  const named = classifyOpenTarget(request.target, cwd);
+  const classified: { url: string } | { path: CanonicalPath } = 'url' in named ? named : { path: canonicalPath(named.path) };
   const fromPty = request.ptyId ? deps.sessionFromPtyId(request.ptyId) : null;
   const roots = await deps.sessionRoots();
-  const sessionId = fromPty ?? pickSessionForCwd(request.cwd, roots, (id) => deps.route.watching(id)) ?? '';
+  const sessionId = fromPty ?? pickSessionForCwd(cwd, roots, (id) => deps.route.watching(id)) ?? '';
 
   let target: SessionpagePaneTarget;
   if ('url' in classified) {
@@ -123,7 +127,7 @@ export async function openExternalFromMachine(request: OpenExternalRequest, deps
     if (!root) {
       throw new OpenExternalError('no_session', `cannot tell which Gugu session this file belongs to: ${classified.path}`);
     }
-    if (!containsMachinePath(root, classified.path)) {
+    if (inWorkingCopy(root, classified.path) === null) {
       throw new OpenExternalError('outside_workspace', `only files inside the session folder (${root}) can be opened: ${classified.path}`);
     }
     if (!(await deps.isFile(classified.path))) {

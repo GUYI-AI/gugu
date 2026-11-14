@@ -2261,7 +2261,7 @@ export class SessionManager implements InboundRouter {
     const record = {} as SessionRecord;
     const provider = this.deps.agentHost.get(input.providerId);
     const assistant = input.sessionMeta?.guguAssistant;
-    const assistantOwnerId = input.providerId === 'claude' && isRecord(assistant)
+    const assistantOwnerId = isRecord(assistant)
       && typeof assistant.ownerId === 'string' && assistant.ownerId.trim() ? assistant.ownerId : null;
     const callbacks: SessionCellCallbacks = {
       onPromptSteered: () => this.deps.onPromptSteered?.(input.sessionId),
@@ -2354,7 +2354,7 @@ export class SessionManager implements InboundRouter {
       lastSynced: initialLastSynced(cell),
     });
     this.cells.set(input.sessionId, record);
-    if (input.providerId === 'claude' && isRecord(assistant) && assistant.idleCompaction === true) {
+    if (isRecord(assistant) && assistant.idleCompaction === true) {
       record.idleCompaction = new IdleCompaction(
         () => ({ ...cell.idleCompactionState, idle: record.phase === 'ready' && cell.idleCompactionState.idle }),
         async () => {
@@ -2738,6 +2738,7 @@ export class SessionManager implements InboundRouter {
       isGenerating: state.isGenerating,
       lastStopReason: cell?.sessionState.lastStopReason ?? null,
       lastTurnOutcome: cell?.sessionState.lastTurnOutcome ?? 'none',
+      lastTurnError: cell?.lastTurnError ?? null,
       pendingPermissionCount: state.pendingPermissionCount ?? state.pendingPermissions?.length ?? 0,
       // 起动 / 起不来的占位摘要没有 cell、也就没有任何待决请求(`pendingPermissionCount: 0`)。
       pendingPermissionWaits: pendingPermissionWaits(state.pendingPermissions ?? []),

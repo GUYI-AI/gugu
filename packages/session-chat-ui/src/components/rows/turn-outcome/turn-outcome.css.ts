@@ -175,7 +175,7 @@ export const outcomeAction = style({
   selectors: {
     // @@@state-ladder-mix 同上:走状态档而不是表面阶梯的某一级。
     '&:hover': { color: vars.fg, background: vars.bgHover },
-    '&:focus-visible:not([data-pointer-focus] *)': { color: vars.fg, background: vars.bgHover },
+    '&:focus-visible:not([data-pointer-focus])': { color: vars.fg, background: vars.bgHover },
     // 上游的 `active:scale-[0.96]`;按下再补上底色那一档(spec:桌面也要有按压)。
     '&:active': { transform: 'scale(0.96)', background: vars.bgPress },
   },
@@ -337,7 +337,7 @@ export const outcomeBadgeDisclosing = style({
   transition: 'background-color 150ms ease',
   selectors: {
     '&:hover': { background: vars.bgHover },
-    '&:focus-visible:not([data-pointer-focus] *)': { background: vars.bgHover },
+    '&:focus-visible:not([data-pointer-focus])': { background: vars.bgHover },
   },
   '@media': {
     '(prefers-reduced-motion: reduce)': { transition: 'none' },

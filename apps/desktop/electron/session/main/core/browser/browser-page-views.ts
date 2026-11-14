@@ -13,6 +13,7 @@ import {
 } from '@shared/events/browserEvents';
 import { BROWSER_PINCH_MAX_LEVEL } from '@shared/preview/pinch-zoom';
 import { hardenWebPreferences } from '../../../../devtools-lock';
+import { PAGE_FULLSCREEN_PREFERENCES } from '../../../../page-fullscreen';
 import { raiseWindowLayers } from '../../../../window-layers';
 import { wirePageDialogs, type PageDialogs } from './browser-page-dialogs';
 import { BrowserPageRuntime } from './browser-page-runtime';
@@ -225,6 +226,7 @@ function createBrowserPage(args: { browserId: string; partition: string; windowN
       webviewTag: false,
       // 网页换页时 ❌ 把焦点拉过去(人可能正在聊天框里打字)。
       focusOnNavigation: false,
+      ...PAGE_FULLSCREEN_PREFERENCES,
     }),
   });
   view.setBackgroundColor('#ffffff');

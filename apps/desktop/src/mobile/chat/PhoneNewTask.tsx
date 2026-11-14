@@ -48,6 +48,8 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
 }): {
   action: ComposerAttachAction | null
   active: boolean
+  /** 文件夹卡正浮着。 */
+  picking: boolean
   placeholder: string | undefined
   /** 浮在输入框上面的文件夹卡。 */
   overlay: ReactNode
@@ -249,6 +251,7 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
         : () => window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId } })) }
       : null,
     active: stage.kind !== 'off',
+    picking: stage.kind === 'on' && stage.picking && !!project && !!folderState,
     placeholder: stage.kind === 'on' && agentName ? t('composer.phoneTask.placeholder', { agent: agentName }) : undefined,
     overlay,
     band,

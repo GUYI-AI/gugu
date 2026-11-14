@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { CSSProperties, ReactNode } from 'react'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import type { ChatItem, GroupCollabSnapshot, NotificationLevel } from '@gugu/core/shared/types/chat'
+import { GroupFolderRow, GroupMembersRow } from './GroupInfoRows'
 import { GroupNameRow } from './GroupNameRow'
 import { Avatar } from '../Avatar'
 import { Button } from '../ui/Button'
-import { buildUnifiedMembers, GROUP_FACES } from './groupMemberModels'
+import { buildUnifiedMembers } from './groupMemberModels'
 import { chatService } from '../../lib/chat'
+import { GroupAvatarEditor } from './GroupAvatarEditor'
 import { useGroupAvatarUpload } from './useGroupAvatarUpload'
-import { useChatStore } from '../../store/chatContext'
 import { ChatManagementActions } from './ChatManagementActions'
 import { GroupSettingsManagePage } from './GroupSettingsManagePage'
 import { MemberListPanel, type MemberListPanelProps } from './MemberListPanel'
@@ -39,11 +40,8 @@ const avatarUploadingStyle: CSSProperties = {
   position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'var(--bg-overlay-modal)',
   color: 'var(--color-white)', fontSize: 'var(--font-caption)',
 }
-const hiddenStyle: CSSProperties = { display: 'none' }
 const profileTextStyle: CSSProperties = { flex: 1, minWidth: 0 }
 const memberCountStyle: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--muted-fg)', marginTop: 3 }
-const memberStackStyle: CSSProperties = { display: 'inline-flex', alignItems: 'center', marginRight: 8 }
-const memberStackItemStyle: CSSProperties = { display: 'inline-flex', marginLeft: -6, borderRadius: 'var(--radius-circle)' }
 const leaveStyle: CSSProperties = {
   marginTop: 20, textAlign: 'center', color: 'var(--danger-fg)', fontSize: 'var(--font-body)', fontWeight: 500,
   cursor: 'pointer', padding: 11, borderRadius: 'var(--radius-xl)', background: 'var(--danger-tint)',
@@ -52,7 +50,6 @@ const confirmStyle: CSSProperties = { marginTop: 20 }
 const confirmTextStyle: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--text-secondary)', margin: '0 0 8px' }
 const confirmActionsStyle: CSSProperties = { display: 'flex', gap: 8 }
 const confirmButtonStyle: CSSProperties = { flex: 1 }
-const MEMBER_PREVIEW_COUNT = 5
 
 function firstLine(text: string | null | undefined): string | null {
   const line = text?.split('\n').find((part) => part.trim())
@@ -72,7 +69,6 @@ export function GroupMembersSection({
   onDissolveGroup,
   onOpenUserChat,
   onWhisper,
-  onOpenSearch,
   onSetNotificationLevel,
   onTogglePinned,
   onClearMessages,
@@ -92,14 +88,12 @@ export function GroupMembersSection({
   onDissolveGroup?: () => void | Promise<void>
   onOpenUserChat?: MemberListPanelProps['onOpenUserChat']
   onWhisper?: MemberListPanelProps['onWhisper']
-  onOpenSearch: () => void
   onSetNotificationLevel: (level: NotificationLevel) => Promise<void>
   onTogglePinned: (pinned: boolean) => Promise<void>
   onClearMessages: () => Promise<void>
 }) {
   const chatId = chat.id
   const { t } = useTranslation('messaging')
-  const { identitiesById } = useChatStore('identitiesById')
   const mobileShell = useMobileShell()
   const { page, push, pop, canPop } = useSettingsPages(chatId, initialPage)
 
@@ -114,18 +108,14 @@ export function GroupMembersSection({
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [confirmExit, setConfirmExit] = useState(false)
-  const { avatarUploading, handleAvatarFile } = useGroupAvatarUpload({ chatId, viewerIsManager, setAvatarUrl, setActionError })
+  const { avatarUploading, handleAvatarFile, handleAvatarReset } = useGroupAvatarUpload({ chatId, viewerIsManager, setAvatarUrl, setActionError })
   const [avatarDragOver, setAvatarDragOver] = useState(false)
-  const avatarInputRef = useRef<HTMLInputElement>(null)
+  const [avatarEditing, setAvatarEditing] = useState(false)
   const [draft, setDraft] = useState('')
+  // 成员行的「+」:进成员页时选人页已经开着(成员页自己那一个)。
 
   const unifiedMembers = useMemo(() => buildUnifiedMembers(snapshot), [snapshot])
   const totalMembers = snapshot.humans.length + snapshot.agents.length
-  // @@@1461-gap3 群头像组合只用成员已有的 canonical URL,与聊天列表群项同口径。
-  const groupAvatarMembers = useMemo(
-    () => unifiedMembers.slice(0, GROUP_FACES).map((m) => ({ id: m.id, name: identitiesById[m.id]?.display_name ?? '', avatar: identitiesById[m.id]?.avatar ?? null })),
-    [identitiesById, unifiedMembers],
-  )
 
   // @@@2070 群名就地编辑:只写 name。写失败要抛给 GroupNameInlineEdit —— 它据此留在编辑态并标出失败,
   // ❌ 当作改好了把输入框关掉(原因已由 update 放进错误行)。
@@ -222,53 +212,36 @@ export function GroupMembersSection({
       </>
     )
   } else {
-    const preview = unifiedMembers.slice(0, MEMBER_PREVIEW_COUNT)
     content = (
       <>
         {/* 桌面上群信息是一枚页签:它自己就是标题和 ×,只有二级页画返回;手机整页照旧左上返回 = 关。 */}
         {mobileShell ? <SettingsPageHead title={t('group.settings.title')} onClose={onClose} mobile /> : null}
         <div style={bodyStyle}>
           <div style={profileRowStyle}>
-            {/* .gi 52px 群头像。@@@group-avatar (#1164 G1):manager 点击/拖入更换;非 manager 只读。 */}
+            {/* .gi 52px 群头像。@@@group-avatar (#1164 G1):manager 点击打开「修改头像」、拖入图片直接更换;非 manager 只读。 */}
             <div
               data-testid="group-avatar"
               title={viewerIsManager ? t('group.settings.changeAvatar') : undefined}
-              onClick={viewerIsManager && !avatarUploading ? () => avatarInputRef.current?.click() : undefined}
+              onClick={viewerIsManager && !avatarUploading ? () => setAvatarEditing(true) : undefined}
               onDragOver={viewerIsManager ? (event) => { event.preventDefault(); setAvatarDragOver(true) } : undefined}
               onDragLeave={viewerIsManager ? () => setAvatarDragOver(false) : undefined}
               onDrop={viewerIsManager ? (event) => { event.preventDefault(); setAvatarDragOver(false); void handleAvatarFile(event.dataTransfer.files?.[0]) } : undefined}
               style={avatarDragOver ? avatarFrameDragStyle : viewerIsManager && !avatarUploading ? avatarFrameEditableStyle : avatarFrameStyle}
             >
-              <Avatar variant="group" name={groupName ?? t('group.settings.groupFallback')} avatarUrl={settings?.avatar_url ?? null} memberAvatars={groupAvatarMembers} size={52} />
+              <Avatar variant="group" name={groupName ?? t('group.settings.groupFallback')} avatarUrl={settings?.avatar_url ?? null} seed={chatId} size={52} />
               {avatarUploading ? <div style={avatarUploadingStyle}>{t('group.settings.uploading')}</div> : null}
-              {viewerIsManager ? (
-                <input ref={avatarInputRef} type="file" accept="image/*" style={hiddenStyle}
-                  onChange={(event) => { void handleAvatarFile(event.target.files?.[0]); event.target.value = '' }} />
-              ) : null}
             </div>
+            {avatarEditing ? (
+              <GroupAvatarEditor chatId={chatId} groupName={groupName ?? ''} avatarUrl={settings?.avatar_url ?? null} busy={avatarUploading} onFile={handleAvatarFile} onReset={handleAvatarReset} onClose={() => setAvatarEditing(false)} />
+            ) : null}
             <div style={profileTextStyle}>
               <GroupNameRow chat={chat} name={groupName} canEdit={viewerIsManager && Boolean(settings)} onCommit={handleRename} />
               <div style={memberCountStyle}>{t('group.settings.memberCount', { count: totalMembers })}</div>
             </div>
           </div>
 
-          <SettingsNavRow
-            title={t('group.settings.members')}
-            testId="group-settings-members"
-            onClick={() => push('members')}
-            value={(
-              <>
-                <span style={memberStackStyle}>
-                  {preview.map((member) => (
-                    <span key={member.id} style={memberStackItemStyle}>
-                      <Avatar name={identitiesById[member.id]?.display_name ?? ''} avatarUrl={identitiesById[member.id]?.avatar ?? null} seed={member.id} size={24} />
-                    </span>
-                  ))}
-                </span>
-                {totalMembers}
-              </>
-            )}
-          />
+          <GroupMembersRow chatId={chatId} settings={settings} memberIds={unifiedMembers.map((member) => member.id)} total={totalMembers} onOpen={() => push('members')} />
+          <GroupFolderRow chatId={chatId} />
           <SettingsNavRow title={t('header.announcement')} testId="group-settings-announcement" onClick={() => push('announcement')} />
           <SettingsNavRow title={t('group.settings.rules')} testId="group-settings-rules" value={settings ? firstLine(settings.group_prompt) ?? t('group.settings.rulesUnset') : undefined} onClick={() => openTextPage('rules')} />
           <SettingsNavRow title={t('group.settings.description')} testId="group-settings-description" value={settings ? firstLine(settings.description) ?? t('group.settings.descriptionUnset') : undefined} onClick={() => openTextPage('description')} />
@@ -282,7 +255,7 @@ export function GroupMembersSection({
             appearance="settings"
             onClose={onClose}
             onClearMessages={onClearMessages}
-            onOpenSearch={onOpenSearch}
+            beforeClear={<div style={settingsSectionLabelStyle}>{t('group.settings.sectionDanger')}</div>}
             onSetNotificationLevel={onSetNotificationLevel}
             onTogglePinned={onTogglePinned}
           />

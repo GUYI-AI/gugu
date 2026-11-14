@@ -19,6 +19,7 @@ import { useShownAgentName } from '@/hooks/useShownAgentName'
 //     **人这一段没有在线态**:产品里压根没有「某个人在不在线」的真值(聊天列表、通讯录的绿点都只画 agent),
 //     所以这一格不显 —— ❌ 不拿 desired_status 这类 agent 字段冒充人的在线。
 import { ArchivedAgentLabel } from './ArchivedAgentLabel'
+import { GroupAddMenu } from './GroupAddMenu'
 import { GroupNameInlineEdit } from './GroupNameInlineEdit'
 import { Button } from '../ui/Button'
 import { Hint } from '../ui/Tooltip'
@@ -59,8 +60,6 @@ import { useContactsStore } from '../../store/contactsContext'
 import { useDevicesStore } from '../../store/devicesContext'
 import { agentOwnerDisplayName, toAgentProfile } from '../memberProfileModels'
 import { buildUnifiedMembers } from './groupMemberModels'
-import { groupClashNames, NO_CLASH_NAMES } from '../../lib/chatClashNames'
-import { ChatClashNames } from './ChatClashNames'
 import { useListenModeEditControls } from './useListenModeEditControls'
 import { ChevronRight } from '../../lib/icons'
 import type { UseGroupCollabLoaderResult } from '../../hooks/useGroupCollabLoader'
@@ -165,7 +164,7 @@ function MemberRow({
   // 名册里有这个 id、身份却没跟上来 —— 这是数据层该出而没出的值,照 GroupMemberAvatarRow 的做法喊出来,
   // ❌ 不静默补一个「未知用户」。
   const diagnostic = identity ? null : resolveOrLoud(undefined, `member list identity ${memberId}`)
-  const shownName = useShownAgentName({ id: memberId, name: identity?.display_name ?? diagnostic ?? '', createdAt: isAgent ? identity?.created_at ?? undefined : undefined })
+  const shownName = useShownAgentName({ name: identity?.display_name ?? diagnostic ?? '', createdAt: isAgent ? identity?.created_at ?? undefined : undefined })
   const rowData = { 'data-member-row': memberId, 'data-member-kind': isAgent ? 'agent' : 'human' }
   const content = (
     <ListRowContent
@@ -257,7 +256,6 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   const [query, setQuery] = useState('')
   const [myAgentsExpanded, setMyAgentsExpanded] = useState(true)
   const mobile = useMobileShell()
-  const nameScope = useMemo(() => ({ chatId, names: mobile || !snapshot ? NO_CLASH_NAMES : groupClashNames(snapshot, identities) }), [chatId, mobile, snapshot, identities])
   useEffect(() => { setQuery('') }, [chatId])
 
   // The row and profile use the same owner/source-group permission and mutation hook.
@@ -308,7 +306,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
     const agent = member.raw as GroupAgentItem
     const identity = identities[agent.id]
     return matchesQuery([
-      nameScope.names.get(agent.id) ?? identity?.display_name,
+      identity?.display_name,
       identity ? agentOwnerDisplayName(identity, identities) : null,
       engineLabel(agent),
       agent.model_source,
@@ -369,7 +367,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   }
 
   return (
-    <ChatClashNames.Provider value={nameScope}>
+    <>
       <div
         data-testid="member-list-panel"
         data-chat-kind={chatKind}
@@ -392,7 +390,8 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
               </div>
             </>
           ) : t('group.memberList.title'),
-          searchButton,
+          // 群的「+」在标题行最右(GroupAddMenu,同群信息页成员行、内栏头一行),❌ 标题下面一条通栏钮。
+          chatKind === 'group' ? <>{searchButton}<GroupAddMenu chatId={chatId} canAddMembers={group.showInvite} /></> : searchButton,
         )}</HeaderSearch>
 
         {snapshot && (!mobile || chatKind === 'group') ? (
@@ -406,7 +405,6 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
               clearLabel={t('group.memberList.clearSearch')}
               onClear={() => setQuery('')}
             />
-            {group.inviteAction}
           </div>
         ) : null}
 
@@ -479,6 +477,6 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
         </div>
       </div>
       {group.overlays}
-    </ChatClashNames.Provider>
+    </>
   )
 }

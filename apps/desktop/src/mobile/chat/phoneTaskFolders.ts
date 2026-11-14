@@ -1,4 +1,5 @@
 import type { Device } from '@gugu/core/shared/types/chat'
+import { receivedCanonicalPath } from '@gugu/session-shared/canonical-path';
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects'
 import type { AssistantHomeRow } from '@/lib/assistantHome'
 import type { FolderCardMachine } from '@renderer/features/projects/components/main-panel/project-folder-card'
@@ -46,7 +47,7 @@ export function taskFoldersOfChat(
         workspaceId: folder.workspaceId,
         projectId: localProjectId,
         kind: folder.kind,
-        path: folder.path,
+        path: receivedCanonicalPath(folder.path),
         branch: null,
         sessionIds: [],
         attachedAt: folder.attachedAt,

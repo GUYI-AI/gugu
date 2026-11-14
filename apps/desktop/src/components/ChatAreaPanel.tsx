@@ -22,8 +22,6 @@ import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { drainTopicSplitRequest, requestTopicSplit } from '../lib/topicSplitRequest'
 import { buildGroupRosterCandidates } from '../lib/mention'
-import { groupClashNames, topicClashNames, NO_CLASH_NAMES } from '../lib/chatClashNames'
-import { ChatClashNames } from './chat/ChatClashNames'
 import { topicMentionCandidates } from './chat/topicMentionModels'
 import { resolveGroupRunningIndicator } from '../lib/agentRunningStatusModels'
 import { groupRunningTokens, latestSpokeAt } from '../lib/groupRunningTokenModels'
@@ -367,7 +365,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const { rows: chatListRows, listedMessages, notice: taskChatNotice, threeParty } = useTaskChatRows(messages, user?.id, activeChat?.peer_user_id, surfaceVisible)
   const chatResetKey = `${activeChatId ?? ''}#${openNonce ?? 0}#${messageWindow?.viewVersion ?? 0}`
   const { scrollerEl, scrollerRef, setScrollerRef, prepareForSavedPosition, isPreservingPosition, forgetSavedPosition, openLocation, revealMessage } = useConversationScrollMemory({ listRef,
-    chatId: activeChatId, viewportKey, activationKey: activeChatId ?? '', enabled: true, discardSaved: !!unreadEntry,
+    chatId: activeChatId, viewportKey, activationKey: `${activeChatId ?? ''}#${openNonce ?? 0}`, enabled: true, discardSaved: !!unreadEntry,
     messageIds: chatListRows.map((row) => row.message.id), isAtBottomRef, setFollowingTail, loadMessageAnchor,
   })
   const onHistoryError = useCallback((error: unknown) => toast(error instanceof Error ? error.message : String(error), 'error'), [toast])
@@ -387,24 +385,22 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   }, [toggleReaction, toast, t])
 
   const groupAgentIds = useMemo(() => groupCollabSnapshot.agents.map((agent) => agent.id), [groupCollabSnapshot.agents])
-  const chatNameScope = useMemo(() => ({ chatId: activeChatId, names: mobile ? NO_CLASH_NAMES : groupClashNames(groupCollabSnapshot, identitiesById) }), [activeChatId, mobile, groupCollabSnapshot, identitiesById])
   // 主输入框能点名谁 = 这条线自己的名册。❌ 不许把来源线成员并进来 ——
   // 分栏开着时 activeChat **就是**来源线,并进去等于把 member_user_ids 原样灌进主线候选,
   // 而 buildGroupRosterCandidates 会滤掉 account_status==='removed' 的 agent、member_user_ids 不会 ⇒
   // 一开分栏,主线的 @ 候选里就多出已经被移除的 agent(找茬第十轮)。
   const composerGroupMembers = useMemo(
-    () => buildGroupRosterCandidates(groupCollabSnapshot, identitiesById, chatNameScope.names),
-    [groupCollabSnapshot, identitiesById, chatNameScope],
+    () => buildGroupRosterCandidates(groupCollabSnapshot, identitiesById),
+    [groupCollabSnapshot, identitiesById],
   )
   const splitChats = useChatsWhile(Boolean(splitTopicChatId))
-  // Topic addressing includes its source chat; display clashes use only actual topic members.
+  // Topic addressing includes its source chat.
   const splitTopicMemberIds = splitChats.find((chat) => chat.id === splitTopicChatId)?.member_user_ids
   const splitMentionMembers = useMemo(() => {
     if (!topicSplitOpen || !activeChat) return composerGroupMembers
-    const candidates = topicMentionCandidates(composerGroupMembers.map(member => ({ ...member, name: identitiesById[member.id]?.display_name ?? member.name })), activeChat.member_user_ids ?? (activeChat.peer_user_id ? [activeChat.peer_user_id] : []), splitTopicMemberIds, identitiesById)
-    const names = mobile || !splitTopicMemberIds ? NO_CLASH_NAMES : topicClashNames(splitTopicMemberIds, identitiesById)
-    return candidates.map(member => ({ ...member, name: names.get(member.id) ?? member.name, rawName: names.has(member.id) ? identitiesById[member.id]?.display_name : undefined }))
-  }, [composerGroupMembers, identitiesById, activeChat, topicSplitOpen, splitTopicMemberIds, mobile])
+    return topicMentionCandidates(composerGroupMembers,
+      activeChat.member_user_ids ?? (activeChat.peer_user_id ? [activeChat.peer_user_id] : []), splitTopicMemberIds, identitiesById)
+  }, [composerGroupMembers, identitiesById, activeChat, topicSplitOpen, splitTopicMemberIds])
   // One presence subscription per agent drives headers, roster and profile cards.
   const groupAgentStatuses = useAgentDisplayStatuses(groupAgentIds)
   const shownAgent = useShownAgentStatus() // #7199 画头像 / 状态字用的那一份;在跑、提醒照旧读原读数
@@ -434,7 +430,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   // @@@1577 phase3 — canonical (chat,thread) 键单一派生(消手拼 chatId:rootId)。
   // @@@acp-stream (#966)/@@@1577 — 流式首 chunk 引导 started activity（#2115 god-file 抽取,行为不变,详见 hook 头注）。
   const { recipientFacts, deliveryWaits } = useMessageDelivery(messages, memberReadSeqs, messageMemberProfiles)
-  const { readReceiptHandle, receiptOf } = useReadReceiptPanel({ chatId: activeChatId, messages, memberReadSeqs, memberProfiles: messageMemberProfiles, recipientFacts })
+  const { readReceiptHandle, receiptOf } = useReadReceiptPanel({ chatId: activeChatId, messages, memberReadSeqs, memberProfiles: messageMemberProfiles, recipientFacts, deliveryWaits })
   const groupSettings = useGroupChatSettings(isRoomChatSurface ? activeChatId : null, groupRoleRevision(groupCollabSnapshot), authorityRevision)
   const messageListenEditControlsFor = useListenModeEditControls({ chatId: isRoomChatSurface ? activeChatId : null, currentUserId: user?.id ?? null, settings: groupSettings.settings, onAuthorityReload: groupSettings.reload, onReload: loadGroupCollab })
   const drawerMemberProfiles = useMemo(() => Object.values(messageMemberProfiles).filter((profile) => profile.membership !== 'former'), [messageMemberProfiles])
@@ -564,7 +560,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       messages={messages}
       onClose={() => closeInfoTab(activeChatId)}
       onClearMessages={clearMessages}
-      onOpenSearch={() => searchInChat(activeChat.id)}
       onSetNotificationLevel={(level) => setChatNotificationLevel(activeChat.id, level)}
       onTogglePinned={(pinned) => pinChat(activeChat.id, pinned)}
       memberProfiles={drawerMemberProfiles}
@@ -614,7 +609,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   )
 
   return (
-    <ChatClashNames.Provider value={chatNameScope}><div ref={surfaceElement} data-chat-surface={activeChatId}
+    <div ref={surfaceElement} data-chat-surface={activeChatId}
       style={{
         flex: 1,
         // #1312 兜底: minWidth:0 让 ChatAreaPanel 能收缩到 flex basis 以下，避免内部右侧面板(工作区/历史,
@@ -630,7 +625,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     >
       {/* 会话头共用 PaneHeader 尺寸和窗控留白，与正文同色，只用 divider 分隔。
           ChatBlockHead 把同一份标题和动作放进块头。 */}
-      {blockHost && <ChatBlockHead host={blockHost} actions={headerActions} chat={activeChat} name={shownActiveChatName} avatar={activeChatAvatar} isAgent={peerIdentity?.type === 'agent'} identitiesById={identitiesById} />}
+      {blockHost && <ChatBlockHead host={blockHost} actions={headerActions} chat={activeChat} name={shownActiveChatName} avatar={activeChatAvatar} isAgent={peerIdentity?.type === 'agent'} />}
       {blockTabs}
       {!chrome && !blockHost && <PaneHeader
         divider={!(mobile && topicSurface.topics.length > 0)} data-chat-area-header=""
@@ -867,6 +862,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           onClose={() => setForwardMessages([])}
         />
       ) : null}
-    </div></ChatClashNames.Provider>
+    </div>
   )
 }

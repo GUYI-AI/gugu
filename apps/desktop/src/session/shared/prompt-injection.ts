@@ -1,5 +1,5 @@
+/** 多行怎么写进 TUI 只看这一家的声明(`promptInput.multiline`),❌ 按引擎名特判。 */
 export function buildPromptInjectionPayload(args: {
-  providerId: string | undefined;
   text: string;
   forceBracketedPaste?: boolean;
   multilineEncoding?: 'bracketed-paste' | 'plain';
@@ -7,7 +7,7 @@ export function buildPromptInjectionPayload(args: {
   const trimmed = args.text.trim();
   const hasMultilinePayload = trimmed.includes('\n');
   const shouldUseBracketedPaste = args.forceBracketedPaste
-    || (args.multilineEncoding !== 'plain' && args.providerId !== 'claude' && hasMultilinePayload);
+    || (args.multilineEncoding !== 'plain' && hasMultilinePayload);
   if (!shouldUseBracketedPaste) return trimmed;
   return `\x1b[200~${trimmed}\x1b[201~`;
 }

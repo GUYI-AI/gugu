@@ -28,7 +28,7 @@ const row = {
   selectors: {
     '&:hover': { background: vars.bgHover },
     '&:active': { background: vars.bgPress },
-    '&:focus-visible:not([data-pointer-focus] *)': { outline: `2px solid ${vars.link}`, outlineOffset: '-2px' },
+    '&:focus-visible:not([data-pointer-focus])': { outline: `2px solid ${vars.link}`, outlineOffset: '-2px' },
     '&:disabled': { cursor: 'default', background: 'transparent' }
   }
 } as const
@@ -37,7 +37,7 @@ export const head = style({ ...row, fontSize: vars.typeChromeFontSize, lineHeigh
 /** The head's words wrap where they must (measured), never hidden. */
 export const headLabel = style({ flex: '0 1 auto', minWidth: 0, whiteSpace: 'pre-wrap', overflowWrap: 'normal' })
 /** One file: the whole row is the button. Rows after the first (or after the head) get the output card's hairline. */
-export const file = style({ ...row, containerType: 'inline-size', selectors: { ...row.selectors, '&[aria-disabled]': { cursor: 'default', background: 'transparent' }, '& + &, button + &': { borderTop: `1px solid ${vars.border}` } } })
+export const file = style({ ...row, containerType: 'inline-size', selectors: { ...row.selectors, '&[aria-disabled]': { cursor: 'default', background: 'transparent' }, [`& + &, ${head} + &`]: { borderTop: `1px solid ${vars.border}` } } })
 export const stats = style({
   flex: '1 0 auto',
   fontSize: vars.typeChromeTinyFontSize,

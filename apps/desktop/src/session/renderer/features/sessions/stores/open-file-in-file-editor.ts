@@ -160,23 +160,27 @@ async function openSessionFile(
   const from = options?.from !== undefined ? options.from : target === 'beside' && viewModel ? sessionConversationTabId(viewModel.paneLayout, sessionId) : viewModel?.activePane.resolvedActiveTabId ?? null;
   const intent = options?.intent ?? 'navigate';
   const filePath = await expandHomeTildePath(rawFilePath);
-  const resolvedPath = resolveEditorFilePath(workspace.path, filePath);
-  if (resolvedPath === null) {
-    await openExternalFilePath(projectId, sessionId, filePath, { from, intent, byHost: options?.byHost });
-    return null;
-  }
-
-  // Agent output often points at paths that don't exist in the worktree
-  // (subdirectory-relative, deleted, etc.) — precheck so we can toast a
-  // useful error instead of opening an empty tab.
+  const namedInside = resolveEditorFilePath(workspace.path, filePath);
+  // The machine says whether the file is in this working copy and in which spelling (`@@@canonical-path`): an absolute
+  // path written through an alias (an old transcript's `accounts/<id>/…`) is inside although its letters are not, and
+  // the tab is keyed on the machine's spelling, never on the one this link happened to carry.
   const exists = await workspaceRpc(projectId).files.fileExists(
     projectId,
     provisioned.workspaceId,
-    resolvedPath
+    namedInside ?? filePath
   );
+  if (!exists.success && namedInside === null) {
+    await openExternalFilePath(projectId, sessionId, filePath, { from, intent, byHost: options?.byHost });
+    return null;
+  }
+  // Agent output often points at paths that don't exist in the worktree
+  // (subdirectory-relative, deleted, etc.) — precheck so we can toast a
+  // useful error instead of opening an empty tab.
   if (!exists.success || !exists.data.exists) {
     throw new Error(translateSessionMessage('taskError.fileNotFound', { path: filePath }));
   }
+  // A machine from before it said the spelling answers without it: the path as named, as that machine always took it.
+  const resolvedPath = exists.data.path ?? namedInside ?? filePath;
   // 目录交给系统文件管理器开它自己的窗口 —— 塞进编辑器只会开出永远 Loading 的页签。
   if (exists.data.isDirectory) {
     await openDirectoryInFileManager(resolvedPath);

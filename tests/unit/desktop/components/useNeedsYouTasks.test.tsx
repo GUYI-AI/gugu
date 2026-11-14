@@ -82,19 +82,19 @@ it('preserves native phone host identity from the existing device directory', as
   expect(sync).not.toHaveBeenCalled()
 })
 
-it('acknowledged errors (and errors from hosts without a read bit) stay listed but leave the count and attention; waits count whatever their read bit', async () => {
+it('acknowledged errors leave the notification list; waits remain regardless of their read bit', async () => {
   state.directory = { server: { cached: false, error: null, sessions: [
     { ...pending('read-failure'), status: { status: 'error', detail: null }, unseen: false },
     { ...pending('unknown-read-failure'), status: { status: 'error', detail: null } },
     { ...pending('approval'), unseen: false },
   ] } }
   await renderWithAppProviders(harness, <Probe />)
-  expect(harness.container.textContent).toBe('server:read-failure,server:unknown-read-failure,server:approval')
+  expect(harness.container.textContent).toBe('server:approval')
   expect(harness.container.querySelector('output')?.dataset.count).toBe('1')
   expect(harness.container.querySelector('output')?.dataset.attention).toBe('needs_user')
   state.directory = { server: { cached: false, error: null, sessions: [{ ...pending('read-failure'), status: { status: 'error', detail: null }, unseen: false }] } }
   await renderWithAppProviders(harness, <Probe />)
-  expect(harness.container.textContent).toBe('server:read-failure')
+  expect(harness.container.textContent).toBe('')
   expect(harness.container.querySelector('output')?.dataset.count).toBe('0')
   expect(harness.container.querySelector('output')?.dataset.attention).toBeUndefined()
 })
@@ -113,7 +113,7 @@ it('uses the phone host route and propagates its error without acknowledging a t
   expect(markSeen).not.toHaveBeenCalled()
 })
 
-it('a month of read failures does not inflate the count; everything lists newest first', async () => {
+it('a month of read failures stays out of notifications; unread items list newest first', async () => {
   const day = (n: number) => new Date(Date.UTC(2026, 9, n)).toISOString()
   const old = Array.from({ length: 40 }, (_, i) => failure(`old-${i}`, { unseen: false, lastInteractedAt: day(1 + (i % 28)) }))
   state.directory = { server: { cached: false, error: null, sessions: [
@@ -124,8 +124,7 @@ it('a month of read failures does not inflate the count; everything lists newest
   ] } }
   await renderWithAppProviders(harness, <Probe />)
   expect(harness.container.querySelector('output')?.dataset.count).toBe('3')
-  expect(harness.container.textContent?.split(',').slice(0, 2)).toEqual(['server:newest-wait', 'server:old-27'])
-  expect(harness.container.textContent?.split(',')).toHaveLength(43)
+  expect(harness.container.textContent?.split(',')).toEqual(['server:newest-wait', 'server:newer-unread', 'server:older-unread'])
 })
 
 it('an answered approval stays listed as handled below what still waits, never counted; older hosts list nothing new', async () => {
@@ -137,7 +136,7 @@ it('an answered approval stays listed as handled below what still waits, never c
     { ...answered('asks-again', 4), ...pending('asks-again') },
   ] } }
   await renderWithAppProviders(harness, <Probe />)
-  expect(harness.container.textContent).toBe('server:failed,server:asks-again,server:newer,server:installed')
+  expect(harness.container.textContent).toBe('server:asks-again,server:newer,server:installed')
   expect(harness.container.querySelector('output')?.dataset.count).toBe('1')
   expect(harness.container.querySelector('output')?.dataset.attention).toBe('needs_user')
 })

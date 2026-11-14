@@ -1,8 +1,6 @@
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
-import { parseAgentStatusView } from '@gugu/core/shared/agentStatus'
-import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation'
 import { displayName, groupContacts } from '@/lib/contactsListSort'
 import { contactAgents, peopleContacts } from '@/components/contacts/contactSelectors'
 import { safePathSegment } from '@/session/shared/path-name'
@@ -138,14 +136,6 @@ export function projectAgents(
 
 export function agentName(agent: ProjectAgent): string {
   return agent.contact ? displayName(agent.contact) : agent.work ?? agent.id
-}
-
-/** 封面的鲜灰:这个项目此刻有几个 agent 在干活。 */
-export function runningCount(sessions: readonly { session: SessionpageSessionSummary; hostOnline?: boolean }[]): number {
-  return sessions.filter(({ session, hostOnline }) => {
-    const status = presentAgentStatus({ reading: parseAgentStatusView(session.status ?? null), hostOnline: hostOnline !== false })
-    return status?.tone === 'running' || status?.tone === 'parked'
-  }).length
 }
 
 /** 新项目的文件夹:默认是那台机器默认项目目录下、跟项目同名的一个新的空文件夹。 */

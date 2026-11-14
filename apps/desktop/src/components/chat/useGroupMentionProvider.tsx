@@ -7,8 +7,6 @@ import type { ChatItem, GroupCollabSnapshot } from '@gugu/core/shared/types/chat
 import { isRoomChat } from '@gugu/core/shared/ui/chatModels'
 import { EMPTY_GROUP_COLLAB, useGroupCollabLoader } from '../../hooks/useGroupCollabLoader'
 import { useAgentDisplayStatuses } from '../../hooks/useAgentDisplayStatus'
-import { useMobileShell } from '../../hooks/useMobileShell'
-import { groupClashNames, NO_CLASH_NAMES } from '../../lib/chatClashNames'
 import { useAuth } from '../../store/auth'
 import { isMentionQueryActive } from '@/lib/mentionMatch'
 import { rankMentionCandidates } from '@/lib/mentionRanking'
@@ -41,6 +39,7 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
 }) {
   const { t } = useTranslation('messaging')
   const { contacts } = useContactsStore()
+  const groupAvatarUrl = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.avatar ?? null)
   const sourceChatId = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.source_chat_id ?? null)
   const projectMembers = useProjectGroupMembers()
   const projectMemberIds = projectMembers.get(sourceChatId ?? chatId ?? '')
@@ -50,10 +49,9 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
   ] : [], [isGroupChat, groupMembers, currentUserId, contacts, t])
   const { byEngine, renderMentionIcon: renderSessionMentionIcon } = useSessionAgentCreationTools()
   const renderMentionIcon = useCallback<NonNullable<Parameters<typeof ChatComposer>[0]['renderMentionIcon']>>((attrs) => {
-    if (attrs.id === MENTION_ALL_USER_ID) return <Avatar name={attrs.name ?? attrs.label} size={14} variant="group"
-      memberAvatars={members.filter((member) => member.type !== 'all').map((member) => ({ id: member.id, name: member.name, avatar: member.avatar ?? null }))} />
+    if (attrs.id === MENTION_ALL_USER_ID) return <Avatar name={attrs.name ?? attrs.label} size={14} variant="group" seed={chatId ?? undefined} avatarUrl={groupAvatarUrl} />
     return renderSessionMentionIcon(attrs)
-  }, [members, renderSessionMentionIcon])
+  }, [chatId, groupAvatarUrl, renderSessionMentionIcon])
   const localProvider = useMemo(() => createLocalSessionMentionProvider({ creationToolsByEngine: byEngine }), [byEngine])
   const decorate = useCallback((item: MentionItem): MentionItem => ({ ...item,
     annotation: isGroupChat && !members.some((member) => `aid:${member.id}` === item.label) ? t('composer.notInGroup') : item.annotation,
@@ -68,8 +66,7 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
       return rankMentionCandidates(members, query, { chatId, currentUserId, messages: messages ?? [], participantIds, projectMemberIds,
         replyToMessageId, now: Date.now() }).map((member): MentionItem => ({
         id: member.type === 'all' ? MENTION_ALL_USER_ID : member.id,
-        label: member.rawName ? `aid:${member.id}` : member.name, name: member.rawName ?? member.name, kind: 'custom', role: member.type === 'all' ? undefined : member.type,
-        annotation: member.rawName ? member.name.slice(member.rawName.length).trim() : undefined,
+        label: member.name, name: member.name, kind: 'custom', role: member.type === 'all' ? undefined : member.type,
         optionLabel: <span {...mentionOptionStatusProps(member, agentStatuses ?? {})}><AgentMentionOptionLabel member={member} status={agentStatuses?.[member.id]} /></span>,
       }))
     },
@@ -78,8 +75,7 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
       if (file) return { id: target, label: target, name: label, kind: 'file',
         description: file.version === undefined ? label : `${label} · ${t('filePill.picked', { version: file.version })}` }
       if (!target.startsWith('aid:')) return null
-      const member = members.find(candidate => `aid:${candidate.id}` === target)
-      return decorate({ id: target, label: target, name: member?.rawName ?? member?.name ?? label, role: member?.type === 'human' ? 'human' : 'agent', kind: 'custom', annotation: member?.rawName ? member.name.slice(member.rawName.length).trim() : undefined })
+      return decorate({ id: target, label: target, name: label, role: 'agent', kind: 'custom' })
     },
     async resolveSession(id: string) {
       const item = await localProvider.resolveSession(id)
@@ -99,7 +95,6 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
 export function useChatMentionRoster(chat: ChatItem | null) {
   const { getImRepository, identitiesById } = useChatStore('getImRepository', 'identitiesById')
   const { user } = useAuth()
-  const mobile = useMobileShell()
   const [snapshot, setSnapshot] = useState<GroupCollabSnapshot>(EMPTY_GROUP_COLLAB)
   const cache = useRef(new Map<string, GroupCollabSnapshot>())
   const room = !!chat && isRoomChat(chat.kind)
@@ -109,8 +104,8 @@ export function useChatMentionRoster(chat: ChatItem | null) {
     setSnapshot(EMPTY_GROUP_COLLAB)
     void loadGroupCollab()
   }, [loadGroupCollab])
-  const groupMembers = useMemo(() => buildGroupRosterCandidates(snapshot, identitiesById, mobile ? NO_CLASH_NAMES : groupClashNames(snapshot, identitiesById)),
-    [snapshot, identitiesById, mobile])
+  const groupMembers = useMemo(() => buildGroupRosterCandidates(snapshot, identitiesById),
+    [snapshot, identitiesById])
   const agentStatuses = useAgentDisplayStatuses(useMemo(() => snapshot.agents.map((agent) => agent.id), [snapshot.agents]))
   return { room, groupMembers, agentStatuses }
 }

@@ -185,7 +185,7 @@ export const inputGroupTextareaControl = style({
   paddingBottom: '0.5rem',
   boxShadow: 'none',
   selectors: {
-    '&:focus-visible:not([data-pointer-focus] *)': { boxShadow: 'none' },
+    '&:focus-visible:not([data-pointer-focus])': { boxShadow: 'none' },
     '&[aria-invalid="true"]': { boxShadow: 'none' },
   },
 });

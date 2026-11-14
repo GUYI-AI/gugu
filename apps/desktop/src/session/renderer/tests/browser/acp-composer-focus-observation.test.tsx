@@ -8,7 +8,7 @@ import { MessageProvider } from '@gugu/session-ui/react/components'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { registerSessionLocaleResources, translateSessionMessage } from '@renderer/localization/locale-store'
 import { sessionNavigationFocus } from '@renderer/features/sidebar/session-navigation-focus'
-import { PageShownContext } from '@renderer/app/recent-session-pages'
+import { SurfaceShownContext } from '@/lib/retainedSurface'
 import { requestComposerEntryFocus } from '@/lib/composerEntryFocus'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@renderer/index.css'
@@ -24,7 +24,7 @@ const active = vi.hoisted(() => ({ store: null as unknown }))
 vi.mock('@renderer/features/tabs/pane-context', () => ({
   PaneContext: React.createContext(null),
   PaneProvider: ({ children }: { children: React.ReactNode }) => children,
-  usePaneContext: () => ({ isFocusedPane: React.useContext(PageShownContext), pane: { resolvedTabs: [{ isActive: true, kind: 'acp-chat', resource: { store: active.store } }] } }),
+  usePaneContext: () => ({ isFocusedPane: React.useContext(SurfaceShownContext), pane: { resolvedTabs: [{ isActive: true, kind: 'acp-chat', resource: { store: active.store } }] } }),
 }))
 vi.mock('@renderer/lib/chat/use-session-chat-layout', () => ({ useSessionChatLayout: () => ({ preset: 'single', userGutter: 0 }) }))
 vi.mock('@renderer/features/integrations/use-connected-issue-providers', () => ({ useConnectedIssueProviders: () => ({ connectedProviders: [], isProviderUsable: () => false }) }))
@@ -92,7 +92,7 @@ async function mountChat() {
 }
 
 function renderChat(shown: boolean) {
-  root!.render(<PageShownContext.Provider value={shown}><LocalizationProvider><QueryClientProvider client={client!}><MessageProvider locale="en-US" translate={translateSessionMessage}><AcpChatPanel /></MessageProvider></QueryClientProvider></LocalizationProvider></PageShownContext.Provider>)
+  root!.render(<SurfaceShownContext.Provider value={shown}><LocalizationProvider><QueryClientProvider client={client!}><MessageProvider locale="en-US" translate={translateSessionMessage}><AcpChatPanel /></MessageProvider></QueryClientProvider></LocalizationProvider></SurfaceShownContext.Provider>)
 }
 
 /** Focus lands on `element`, then the layer leaves nav (what the focusin listener / a row click does). */

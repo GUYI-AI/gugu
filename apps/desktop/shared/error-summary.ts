@@ -62,7 +62,7 @@ export function sanitizeErrorSummary(input: unknown): ErrorSummary | null {
   return {
     type: rawType && ERROR_TYPES.has(rawType) ? rawType : 'Error',
     locations,
-    version: rawVersion && /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-(?:beta|alpha|rc)[.-]?\d{1,5})?$/.test(rawVersion) ? rawVersion : 'unknown',
+    version: rawVersion && /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-(?:beta|alpha|rc)[.-]?\d{1,5}(?:\.\d{1,3})?)?$/.test(rawVersion) ? rawVersion : 'unknown',
     system: rawSystem && SYSTEMS.has(rawSystem) ? rawSystem : 'unknown',
     time,
   }

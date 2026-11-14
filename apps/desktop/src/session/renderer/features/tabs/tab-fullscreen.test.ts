@@ -39,6 +39,27 @@ describe('tab full screen: Esc', () => {
     expect(tabFullscreen.isOn(pane)).toBe(false);
   });
 
+  it('a page in its own full screen (an App video) is the outer layer: the first Esc leaves only it', () => {
+    const pane = { entries: new Set(['t']), resolvedActiveTabId: 't', isFocused: true };
+    tabFullscreen.toggle(pane, 't');
+    const page = add('<div></div>');
+    let exits = 0;
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => (exits ? null : page) });
+    document.exitFullscreen = async () => { exits++; };
+    try {
+      const first = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      document.body.dispatchEvent(first);
+      expect(exits).toBe(1);
+      expect(first.defaultPrevented).toBe(true);
+      expect(tabFullscreen.isOn(pane, 't')).toBe(true);
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      expect(exits).toBe(1);
+      expect(tabFullscreen.isOn(pane)).toBe(false);
+    } finally {
+      delete (document as { fullscreenElement?: unknown }).fullscreenElement;
+    }
+  });
+
   it('a row of the persistent Chats list holding the focus does not own Esc', () => {
     const row = add('<div role="listbox" aria-label="Chats"><div role="option" tabindex="0">Chat</div></div>').firstElementChild;
     expect(escapeIsFree(row)).toBe(true);

@@ -206,6 +206,9 @@ it('applies viewport geometry through CSS without rerendering the retained page'
   await page.viewport(390, 500)
   await until('CSS receives the smaller native viewport', () => shell.getBoundingClientRect().height === 500)
   expect(renders).toBe(initialRenders)
+  // @@@shell-geometry-not-inherited: the page under the shell never sees the geometry, so a keyboard resize leaves its styles alone.
+  expect(getComputedStyle(shell).getPropertyValue('--phone-viewport-height')).toBe('500px')
+  expect(getComputedStyle(harness.container.querySelector('.gg-phone-viewport-shell > div')!).getPropertyValue('--phone-viewport-height')).toBe('')
   await page.viewport(390, 844)
   await until('CSS restores the full viewport', () => shell.getBoundingClientRect().height === 844)
   expect(renders).toBe(initialRenders)

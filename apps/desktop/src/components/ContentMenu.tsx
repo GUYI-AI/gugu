@@ -10,6 +10,11 @@ import type { ContentMenuItem } from '@/session/shared/content-context-menu'
 import { Avatar } from './Avatar'
 import { Menu, MenuItem, MenuSearch, MenuSeparator, MenuSubmenu, useMenuSearch } from './ui/Menu'
 import { useMobileShell } from '../hooks/useMobileShell'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { queryClient } from '@renderer/lib/query-client'
+import { useOpenInApps } from '@renderer/lib/hooks/useOpenInApps'
+import { OpenInAppIcon } from '@renderer/lib/components/titlebar/open-in-app-icon'
+import { getAppById } from '@shared/openInApps'
 import { SelectedTextMenu } from './SelectedTextMenu'
 
 type Row = Exclude<ContentMenuItem, { type: 'separator' }>
@@ -43,8 +48,8 @@ function useRowSearch(rows: readonly ContentMenuItem[]) {
 
 function Rows({ items, onAction, onOpen }: RowsProps & { onOpen?: (row: Row) => void }) {
   // Icons are all or none in one list: a row without one keeps the empty slot, so every label starts on one edge (「Any」 over members).
-  const slot = items.some(item => item.type !== 'separator' && (item.person || item.icon)) ? <span aria-hidden /> : undefined
-  const iconOf = (item: Row) => item.icon === 'quote' ? <Reply /> : item.icon === 'file' ? <FileText /> : slot
+  const slot = items.some(item => item.type !== 'separator' && (item.person || item.icon || item.program)) ? <span aria-hidden /> : undefined
+  const iconOf = (item: Row) => item.icon === 'quote' ? <Reply /> : item.icon === 'file' ? <FileText /> : item.program ? <ProgramIcon id={item.program} /> : slot
   return <>{items.map((item, index) => item.type === 'separator' ? <MenuSeparator key={index} />
     : item.items ? onOpen ? <MenuItem key={item.id} icon={iconOf(item)} submenu closeOnClick={false} onClick={() => onOpen(item)}>{item.label}</MenuItem>
       : <Submenu key={item.id} item={item} icon={iconOf(item)} onAction={onAction} />
@@ -77,11 +82,24 @@ function PhoneLevel({ items, onAction, onOpen, back }: RowsProps & { onOpen: (ro
   </>
 }
 
+/**
+ * A program of this computer as 「在…中打开」 draws it everywhere: its icon from the same table (useOpenInApps). This menu is
+ * outside the session page's QueryClientProvider, so it brings the same client; an id that is no program keeps the empty slot.
+ */
+function ProgramIcon({ id }: { id: string }) {
+  return <QueryClientProvider client={queryClient}><ProgramIconImage id={id} /></QueryClientProvider>
+}
+function ProgramIconImage({ id }: { id: string }) {
+  const { icons } = useOpenInApps()
+  const app = getAppById(id)
+  return app && icons[app.id] ? <OpenInAppIcon src={icons[app.id]} monochrome={app.monochrome} alt="" /> : <span aria-hidden />
+}
+
 /** A member as everywhere else: avatar and the shown name from the host's identity directory. */
 function PersonRow({ item, onAction }: { item: Row; onAction: (id: string) => void }) {
   const id = item.person!
   const identity = useAvatarIdentity(id)
-  const name = useShownAgentName({ name: identity?.display_name ?? item.label.trim(), createdAt: identity?.type === 'agent' ? identity.created_at ?? undefined : undefined, id })
+  const name = useShownAgentName({ name: identity?.display_name ?? item.label.trim(), createdAt: identity?.type === 'agent' ? identity.created_at ?? undefined : undefined })
   return <MenuItem checked={item.checked} disabled={item.enabled === false} title={item.title} onClick={() => onAction(item.id)}
     icon={<Avatar name={name} avatarUrl={identity?.avatar} seed={id} size={20} isAgent={identity ? identity.type === 'agent' : undefined} harnessBadge={false} still />}>
     {name}

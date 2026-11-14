@@ -2,7 +2,7 @@
 // #7238: the 群文件夹 App cites a markdown file's places as pills to their lines, and a pill opens the file there. Judged on
 // the real app.js and the real CodeMirror (bound by a stand-in that puts the file's text in): Cite hands
 // `gugu.dispatch('', { draft: true, refs })` — each range of the selection a pill with `at: { lines, h }` and its words, no quote; a
-// selection in the preview is cited by the lines its blocks were written on; ＋ Keep gathers places for one Cite; a
+// selection in the preview is cited by the lines its blocks were written on; a
 // pill's link marks its lines in the source and the preview, found again when the file changed above them (and said),
 // and only said when the lines themselves changed. A place is the file's it came for; a JSON file's cite stays a quote.
 // The preview is a stand-in that marks lines as gugu.markdown's `sourceLines` does (judged in markdown-entry.test.ts).
@@ -194,22 +194,6 @@ describe('Cite: pills to the picked lines, no quote', () => {
     expect(gugu.dispatch).toHaveBeenCalledOnce()
     const [ref] = refsOfLastCompose() as { at: { lines: string; h: string } }[]
     expect(ref!.at).toEqual({ lines: '3-7', h: fingerprint(TEXT.split('\n').slice(2, 7).join('\n')) })
-  })
-
-  test('＋ Keep gathers places — marked where they are — for one Cite with the selection, then lets them go', async () => {
-    select([line(1).from, line(1).to])
-    $('hold-sel').click()
-    expect($('held-bar').hidden).toBe(false)
-    expect($('held-count').textContent).toBe('1 spot')
-    expect(marked('cm-held')).toEqual([1])
-    expect(previewMarked('md-held')).toEqual(['1-1'])
-    select([line(3).from, line(3).to])
-    $('held-cite').click()
-    await until('Cite has composed', () => gugu.dispatch.mock.calls.length > 0)
-    expect(gugu.dispatch).toHaveBeenCalledOnce()
-    expect((refsOfLastCompose() as { at: { lines: string } }[]).map((ref) => ref.at.lines)).toEqual(['1', '3'])
-    expect($('held-bar').hidden).toBe(true)
-    expect(marked('cm-held')).toEqual([])
   })
 })
 

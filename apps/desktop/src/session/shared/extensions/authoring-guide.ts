@@ -602,7 +602,7 @@ The place is \`{ workspace: ctx.workspace.id }\`. An entry's \`id\` is its path 
 - With \`files:write\`: \`gugu.files.create\`, \`gugu.files.rename\` (a path moves it), \`gugu.files.mkdir({ workspace, path })\`, \`gugu.files.move(entry, { folder, name })\`, \`gugu.files.remove\` (a folder with all in it; a link, not what it points at). A name already there: \`name-taken\`, nothing changed.
 - \`gugu.files.upload({ workspace, folder }, file, { replace, onProgress, signal })\`: a File or a list of them, in parts, of any size, folders made as needed. A name already there is \`name-taken\` until \`replace: true\`. \`onProgress\` is told the bytes sent and the total; an aborted \`signal\` leaves nothing.
 - \`gugu.files.download(entry, { onProgress, signal })\` (a click or key): a file, or a folder with all in it (\`{ skipped }\`: its links that were left out); \`onProgress\` is told the bytes saved and the total; an aborted \`signal\` leaves nothing.
-- \`gugu.files.reveal(entry)\` / \`gugu.files.openInApps()\` / \`gugu.files.openIn(entry, id)\` (a page, this computer's working copy): the file manager; the programs it opens in.
+- \`gugu.files.reveal(entry)\` / \`gugu.files.openInApps()\` / \`gugu.files.openIn(entry, id)\` (a page, this computer's working copy): the file manager; the programs it opens in. \`gugu.files.openIn({ workspace, id: '.' }, id)\`: the working copy's own folder. A \`showContextMenu\` row's \`program: id\` (API 51) draws that program's icon.
 
 A text no live document holds (over 1 MiB, JSON that is no object, on another machine, outside the working copy) is read and saved whole. Nothing is needed for \`ctx.file\`, which may be an absolute path; any other file needs \`files:read\` / \`files:write\`, and no capability opens another absolute path (\`denied\`).
 - \`gugu.files.readText(file, { maxBytes, onProgress })\` (\`onProgress\`, a page's: told the bytes done and the total) → \`{ entry, content, truncated, totalSize, binary?, exact? }\`. Up to 20 MiB unless told, at most 100 MiB; over that, \`truncated\` and no content. \`binary\`: it is not text. \`exact: false\`: another encoding, which saving would change: show it read-only.
@@ -967,13 +967,13 @@ API 44, only when that conversation is the person's private chat with their own 
   \`gugu.assistant.onChanged(fn)\` hears each new one. \`status\`: \`{ assistant: "found"|"loading"|"none"|"unreadable", name, avatar
   (data: image), tint (hue 0–360|null), home: { kind: "cloud"|"this-computer"|"other-computer"|"server", online, label } | null,
   setup: "shell"|"connect"|"ready"|null, preparing, cloudAvailable, member: boolean|null, loadError, ownerName, nameMax (30),
-  counts: { devices, connectedApps (value { saved, connected }), projects, capabilities }, connectors }\` — no id. Each count and
+  counts: { devices, connectedApps (value { saved, connected }), projects }, connectors }\` — no id. Each count and
   \`connectors\` is \`{ state: "ready", value }\` | \`{ state: "loading" }\` | \`{ state: "unreadable" }\` (say gugu's "can't read it now");
   \`connectors\` value: the connect step's rows \`{ id, name, icon: { light, dark, invertInDark } | null (data: images), connected }\`.
 - With no assistant yet (\`none\`, \`loading\`, \`unreadable\`): \`ready\` with any or no conversation, \`name\`, \`avatar\`, \`tint\`, \`home\`,
   \`counts\`, \`connectors\` null, and \`gugu.assistant.open("main", "setup")\` works. Once one appears, unchosen: \`onChanged\` hears \`{ state: "unbound" }\` once.
 - In a click: \`gugu.assistant.open("main", screen)\` — gugu's screens \`close\`, \`look\`, \`model\`, \`devices\`, or the assistant's
-  own pages \`setup\`, \`move\`, \`settings\`, \`connected-apps\`, \`projects\`, \`capabilities\` drawn over your page with gugu's back control
+  own pages \`setup\`, \`move\`, \`settings\`, \`connected-apps\`, \`projects\` drawn over your page with gugu's back control
   (\`hostPage\` true until closed: hide yours; \`setup\` starts at the name, your intro being its first screen, and closes once the
   assistant is there). None of these is in gugu's Settings. \`gugu.assistant.advanceSetup("main", "ready" | "done")\`: from \`connect\`, or \`ready\` to done; else \`invalid\`.
   \`gugu.assistant.rename("main", text)\` → \`"renamed"|"unchanged"|"empty"|"too-long"|"failed"\` (trimmed, ≤ \`nameMax\`).
@@ -1049,7 +1049,7 @@ person signed in on that phone, checked again after every wait.
 - \`onSurface\` also brings \`intent\` there, once: \`{ kind: "voice-note" }\` when the person opens the note the recording bar shows
   (the layer is on \`memory\`; read it through \`voice-notes\`), \`{ kind: "profile" }\` from the assistant's 自定义 card (on \`profile\`).
 - \`gugu.assistant.open\` opens the phone's own screens: \`setup\` and \`settings\` its settings page, \`look\` its 换形象 page,
-  \`model\`, \`devices\`, \`connected-apps\`, \`projects\`, \`capabilities\` theirs under 资料, \`health\` its 健康 page under 记忆,
+  \`model\`, \`devices\`, \`connected-apps\`, \`projects\` theirs under 资料, \`health\` its 健康 page under 记忆,
   \`close\` the one confirmation. \`gugu.assistant.rename\` works as on a computer. \`gugu.bindings.openWork\` draws the task's
   conversation over 任务, with its own back. A \`{ binding }\` draft lands in 聊天 and the layer goes there.
 - Health: read on the phone and never handed to you. Draw a 健康 row or card with no figures; on a click,
@@ -1259,6 +1259,10 @@ Optional top-level \`settings\` declares up to 32 fields: \`{ "key":"mode", "tit
 \`options:[{"value":"local","title":"Local"}]\`; \`description\` and a typed \`default\` are optional.
 Programs read \`JSON.parse(process.env.GUGU_APP_SETTINGS)\`. Values survive upgrades; after a change,
 new calls start with the new values. Uninstall clears them.
+\`contributes.hostLinks\` (API 52): up to 4 of gugu's own pages where what your tools manage is shown, e.g.
+\`["library:prompts"]\` for an App whose tools edit the person's prompts. The host page draws each as one entry, titled with
+that page's own name; you write no text. Values: \`library:prompts\`, \`library:agents\`, \`library:integrations\`,
+\`library:mcp\`, \`library:themes\`.
 Switching the App off, withdrawing \`agents:tools\`, or uninstalling cancels pending calls (agent/page,
 including startup), closes program IPC authority and stops its process tree. Other Apps are unaffected.
 Single-call cancellation does not stop other sessions sharing the program. Upgrades/settings drain already-running

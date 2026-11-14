@@ -148,13 +148,17 @@ export function permissionModeFromAutoApprove(autoApprove: boolean): GuguPermiss
   return autoApprove ? 'full-access' : 'edit';
 }
 
+/** 新建 / 导入一条会话时,请求没指定档就记这一档(写进记录,之后读的是记录)。 */
+export const NEW_SESSION_PERMISSION_MODE: GuguPermissionMode = 'edit';
+
 /**
- * 一条会话记录的有效档位 —— 界面、聊天面板腿、终端腿**同一个答案**。没有档位的记录(导入的)按编辑档,
- * 补出来的档照样显式传给 harness:「不加旗标」不是任何一档,是 harness 自己挑(claude 读用户的
- * defaultMode,再没有就是账号默认档,#7366)。
+ * 一条会话记录的有效档位 —— 界面、聊天面板腿、终端腿**同一个答案**。每条会话都记着档(新建、导入、分叉写进记录;
+ * 更早的存量由迁移 0052 补成它们一直实际在用的 'edit')。缺档 = 记录坏了,抛 —— ❌ 按默认值猜:猜出来的档照样会
+ * 显式传给 harness(「不加旗标」不是任何一档,是 harness 自己挑,#7366)。
  */
 export function resolveSessionPermissionMode(session: { permissionMode?: GuguPermissionMode }): GuguPermissionMode {
-  return session.permissionMode ?? 'edit';
+  if (!session.permissionMode) throw new Error('This session has no permission tier recorded');
+  return session.permissionMode;
 }
 
 /** 给只认布尔的通道(TUI 的 autoApproveFlag、harness 的「全部放行」环境变量)。 */

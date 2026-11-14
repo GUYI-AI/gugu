@@ -33,6 +33,7 @@ import { projectEvents } from '../projects/project-events';
 import { scaffoldExtension } from '../extensions/extension-authoring';
 import { ExtensionsService } from '../extensions/extensions-service';
 import { EXTENSION_API_VERSION } from '@shared/extensions/manifest';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 let fixture: Awaited<ReturnType<typeof openFixture>>;
 let stop: () => void;
@@ -47,7 +48,7 @@ const query = () => activityJournal().list({ since: '2020-01-01T00:00:00Z', unti
 
 describe('boot-installed collector and real committed producers', () => {
   it('records project identities without copying their name or directory', async () => {
-    projectEvents._emit('project:created', { type: 'local', id: 'p1', name: 'PRIVATE PROJECT', path: '/PRIVATE/DIRECTORY',
+    projectEvents._emit('project:created', { type: 'local', id: 'p1', name: 'PRIVATE PROJECT', path: '/PRIVATE/DIRECTORY' as CanonicalPath,
       createdAt: '2026-10-21 00:00:00', updatedAt: '2026-10-21 00:00:00', baseRef: null, repositoryWorkspaceId: null });
     projectEvents._emit('project:deleted', 'p1');
     await new Promise<void>(resolve => setImmediate(resolve));
@@ -114,7 +115,7 @@ describe('boot-installed collector and real committed producers', () => {
   });
   it('reads a committed activity through the real HTTP grant and catalog tool, without a preview call', async () => {
     sessionEvents._emit('session:renamed', 's1', 'p1', 'SECRET RENAMED TITLE');
-    projectEvents._emit('project:created', { type: 'local', id: 'p1', name: 'P1', path: '/p1',
+    projectEvents._emit('project:created', { type: 'local', id: 'p1', name: 'P1', path: '/p1' as CanonicalPath,
       createdAt: '2026-10-21 00:00:00', updatedAt: '2026-10-21 00:00:00', baseRef: null, repositoryWorkspaceId: null });
     await new Promise<void>(resolve => setImmediate(resolve));
     const host = createDesktopGuguMcpHost();

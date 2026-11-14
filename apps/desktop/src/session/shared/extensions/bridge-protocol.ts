@@ -115,7 +115,7 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 44 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
 // `assistant-status` (`assistant:status`: `gugu.assistant.status` / `onChanged`) and `assistant-open` (`assistant:open`:
 // `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`), and
-// `assistant-rename` (`assistant:rename`: `gugu.assistant.rename`). The panel's own pages (settings, projects, capabilities)
+// `assistant-rename` (`assistant:rename`: `gugu.assistant.rename`). The panel's own pages (settings, projects)
 // open as one host layer over the App's panel (`app-host-layer.ts`). Any page: `gugu.toast(text)`, the host's toast.
 // 45 (#1931): `contributes.assistantRules`, the personal assistant's product rules as text/data files the host reads at its
 // own read points (assistantRulesFormat.ts); never run, and honoured only for the App the host trusts as their provider.
@@ -144,7 +144,11 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // `resources:write` listing `files`; `voice-notes:manage` (`chat:voice-notes:manage`): `transcribeVoiceNote`,
 // `removeVoiceNote` (asked first), `exportVoiceNote` (the host's save dialog); a binding draft's `attach` (files of its
 // folder or the agent's resources, by the path or key the App holds).
-export const EXTENSION_API_VERSION = 50;
+// 51: `showContextMenu` rows say `program` (an id of `files.openInApps`): the row is drawn with that program's icon.
+// Presentation only, as 38's hints: an older host draws the label alone.
+// 52 (host-links.ts): `contributes.hostLinks`, gugu's own pages an App points at (`library:prompts`, …), drawn by the host
+// as entries on the App's host page with the page's own name. Nothing reaches the App and nothing of it runs.
+export const EXTENSION_API_VERSION = 52;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;

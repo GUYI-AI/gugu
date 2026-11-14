@@ -15,11 +15,11 @@ import { Switch } from '../ui/Switch'
 
 /** This computer's two places, each drawn by its icon. */
 
-/** An agent as the chat list draws it (its own face); a group by its picture, else its members' faces. */
+/** An agent as the chat list draws it (its own face); a group by its picture, else the default group face. */
 const placeAvatar = (place: EnablePlace): AvatarProps =>
   place.kind === 'agent'
     ? { name: place.name ?? '', avatarUrl: place.avatar ?? null, seed: place.agentId ?? place.id, isAgent: true }
-    : { name: place.name ?? '', avatarUrl: place.avatar ?? null, seed: place.id, variant: 'group', memberAvatars: place.members ?? [] }
+    : { name: place.name ?? '', avatarUrl: place.avatar ?? null, seed: place.id, variant: 'group' }
 
 const CAPTION = 'flex items-center gap-1 px-1 pt-2 text-[length:var(--font-caption)] text-[var(--text-tertiary)]'
 const BOX = 'flex flex-col gap-px rounded-[var(--radius-document)] border border-[var(--border-color)] bg-[var(--modal-bg)] p-1'

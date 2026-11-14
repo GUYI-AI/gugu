@@ -48,6 +48,8 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 .file .file-open { padding-block: 0; padding-inline-end: var(--em-spacing-xs); grid-template-columns: var(--em-icon-xl) minmax(0, 1fr); align-content: center; }
 .file .file-mark { width: var(--em-icon-xl); height: var(--em-icon-xl); }
 .file[data-folder] .file-mark { width: 28px; height: 28px; justify-self: center; }
+/* A folder not read yet has no count under its name: one line, not a two-line row's height. */
+.file[data-folder]:not(:has(.file-cell)) { min-height: 0; }
 .file-cell[data-cell='size'] { display: none; }
 .file[data-folder] .file-cell[data-cell='size'] { display: block; }
 .file-marks { flex: none; display: flex; align-items: center; gap: var(--em-spacing-xs); max-width: 35%; min-width: 0; }
@@ -75,7 +77,7 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 
 /* A picture where there is one (an image with a cloud copy): the suffix square becomes it. */
 .file-badge.has-thumb { background-size: cover; background-position: center; color: transparent; }
-.file[data-offline] { opacity: .6; }
+.file[data-offline], .file[data-expired] { opacity: .6; }
 .file-host[data-online='false']::after { content: ''; flex: none; width: 6px; height: 6px; border-radius: 3px; background: var(--em-foreground-muted); }
 
 /* The grid (images and videos): square pictures, the name under them; sections and folders across the whole width. */
@@ -177,6 +179,8 @@ img.details-picture { object-fit: contain; }
 .section-toggle gugu-icon { width: 14px; height: 14px; flex: none; }
 .section-count { font-weight: 400; color: var(--em-foreground-subtle, var(--em-foreground-muted)); margin-left: 2px; }
 .list-section-toggle:first-child .section-toggle { padding-top: 0; }
+/* A block (the files placed here, the ones sent in the chat, the expired ones): a hairline above its heading. */
+.list-section[data-block]:not(:first-child, .table-head + *) { margin-top: var(--em-spacing-sm); border-top: 1px solid var(--em-border); }
 /* 「再显示 N 条」: under the section's last row shown, quiet, the width of its words. */
 .section-more { border: 0; background: none; font: inherit; font-weight: 400; color: var(--em-foreground-muted); padding: 4px var(--em-spacing-sm) var(--em-spacing-sm); cursor: pointer; border-radius: var(--em-radius-control); }
 .section-more:hover { color: var(--em-foreground); text-decoration: underline; }
@@ -248,21 +252,13 @@ img.details-picture { object-fit: contain; }
 body:not(.has-selection) .sel-bar, body:not([data-state='doc']) .sel-bar { display: none; }
 .sel-bar button { border: 0; }
 .sel-bar button + button { border-left: 1px solid var(--em-border); }
-/* The marks a selection in the source can be wrapped in, before Copy · Cite · ＋ (not for the reading page's or a JSON file's). */
+/* The marks a selection in the source can be wrapped in, before Copy · Cite (not for the reading page's or a JSON file's). */
 .fmt-bar { display: flex; border-right: 1px solid var(--em-border); }
 .sel-bar .fmt { min-width: 0; padding-inline: var(--em-spacing-sm); color: var(--em-foreground-muted); }
 .sel-bar .fmt gugu-icon { width: var(--em-icon-sm); height: var(--em-icon-sm); }
 .sel-bar .fmt + .fmt { border-left: 0; }
 body.picks-in-preview .fmt-bar, body[data-kind='json'] .fmt-bar { display: none; }
-body[data-kind='json'] #hold-sel { display: none; }
-.held-bar { position: fixed; z-index: 10; left: 50%; bottom: var(--em-spacing-lg); transform: translateX(-50%); display: flex; align-items: center; gap: var(--em-spacing-xs); padding: var(--em-spacing-xs) var(--em-spacing-xs) var(--em-spacing-xs) var(--em-spacing-md); border-radius: var(--em-radius-capsule); background: var(--em-foreground); color: var(--em-background); box-shadow: var(--em-shadow-lift); }
-body:not([data-state='doc']) .held-bar { display: none; }
-.held-count { font-weight: 600; font-variant-numeric: tabular-nums; }
-.held-cite { background: var(--em-background); color: var(--em-foreground); }
-.held-clear { border: 0; color: inherit; }
-.cm-held { background: color-mix(in srgb, var(--em-accent-11) 10%, transparent); }
 .cm-found { background: color-mix(in srgb, var(--em-accent-11) 16%, transparent); box-shadow: inset 2px 0 var(--em-accent-11); }
-.preview .md-held { background: color-mix(in srgb, var(--em-accent-11) 10%, transparent); }
 .preview .md-found { outline: 2px solid var(--em-accent-11); outline-offset: 3px; border-radius: var(--em-radius-document); }
 .cm-found-text, ::highlight(found) { background-color: color-mix(in srgb, var(--em-accent-11) 36%, transparent); }
 .banner { flex: none; margin: 0; border-radius: 0; }
@@ -352,6 +348,11 @@ body[data-state='doc'] .doc-message, body.gone .modes { display: none; }
 .files-toolbar > #search-toggle gugu-icon { width: 16px; height: 16px; }
 .files-toolbar > .sort { margin-inline-start: 0; }
 .files-toolbar > button { flex: none; min-height: 28px; padding: 2px 5px; }
+/* fitTools (app.js): the place switch by its icons where its words do not fit; then the order's words end in an ellipsis. */
+.files-toolbar.places-icons .place-switch button > span { display: none; }
+.files-toolbar.places-icons .place-switch gugu-icon { margin-inline-end: 0; }
+.files-toolbar > .sort { flex: 0 1 auto; min-width: 0; }
+#sort-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @container (min-width: 720px) {
   .files-toolbar:has(~ .file-list:not(.as-grid)) > .sort { display: none; }
 }

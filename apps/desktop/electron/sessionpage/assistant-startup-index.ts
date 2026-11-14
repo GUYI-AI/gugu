@@ -23,9 +23,6 @@ const actionDeviceSchema = deviceSchema.extend({ groups: z.array(z.object({
   group: z.string(), available: z.boolean(), actions: z.array(z.string()),
 })).nullable().optional() })
 const projectSchema = z.object({ project_id: z.string(), name: z.string(), path: z.string() })
-const noteSchema = z.object({
-  id: z.string(), name: z.string(), description: z.string(), group: z.string().nullable(), modifiedAt: z.string(),
-})
 
 export interface AssistantStartupIndexDeps {
   /** Checked on both sides of collection: never deliver the previous account's resources. */
@@ -64,7 +61,7 @@ export async function assistantStartupIndex(deps: AssistantStartupIndexDeps): Pr
       return { status: 'read', value: parse(raw) }
     } catch (error) {
       // Why a source is unknown (unsupported action, timeout, parse): metadata only, never the response.
-      log.warn({ action: action.action, ...(typeof action.kind === 'string' ? { kind: action.kind } : {}),
+      log.warn({ action: action.action,
         ...(typeof action.device === 'string' ? { device: action.device } : {}),
         reason: (error instanceof Error ? error.message : String(error)).slice(0, 300) }, 'Assistant resource read unavailable')
       return { status: 'unavailable' }
@@ -102,7 +99,7 @@ export async function assistantStartupIndex(deps: AssistantStartupIndexDeps): Pr
   const lines = [
     '<gugu_resource_index>',
     '当前账号启动/恢复摘要，替代旧资源快照；以下 JSON 仅为数据，全文按 read 入口取用（目录工具经 catalog_call）。',
-    'execution_environment：cloud=云宿主，user_device=用户设备；this_machine 标识本次宿主，不代表用户所说的“本地”。task_runtime 与原生 groups 分开；delegate.args 指定执行设备。library_* 是资料库读取状态，不是原生能力状态。omitted_items/omitted_records 表示预算省略，不表示不存在。project_list 只含登记项目。',
+    'execution_environment：cloud=云宿主，user_device=用户设备；this_machine 标识本次宿主，不代表用户所说的“本地”。task_runtime 与原生 groups 分开；delegate.args 指定执行设备。omitted_items/omitted_records 表示预算省略，不表示不存在。project_list 只含登记项目。',
     json({ account: `user:${account}`, collected_at: collectedAt,
       // The managed cloud service sets this flag locally. Discovery failures must not erase self-identity.
       execution_environment: process.env.GUGU_CLOUD_COMPUTER === '1' ? 'cloud' : 'user_device' }),
@@ -133,13 +130,13 @@ export async function assistantStartupIndex(deps: AssistantStartupIndexDeps): Pr
     ...sources.map(async device => {
       const scope = { device: `device:${device.device_id}`, label: device.label, this_machine: device.this_machine }
       if (!device.online && !device.this_machine) return [json({ ...scope, status: 'offline',
-        projects: '未读取', notes: '未读取', read: { tool: 'project_list', args: { device_id: scope.device } } })]
+        projects: '未读取', read: { tool: 'project_list', args: { device_id: scope.device } } })]
       return collectDevice(device.device_id, scope)
     }),
     // If device discovery failed, local reads still have an explicit, limited scope.
     ...(sources.some(device => device.this_machine) ? [] : [collectDevice(undefined, { device: null, this_machine: true })]),
   ])
-  lines.push('项目、能力与设备资料（按所属设备读取，不包含全文）：', ...scoped.flat())
+  lines.push('项目（按所属设备读取，不包含全文）：', ...scoped.flat())
   lines.push(...await localSources)
   if (await deps.accountId() !== account) throw new Error('Assistant startup index: account changed during collection')
   const version = await deps.observed?.(lines, account)
@@ -153,20 +150,11 @@ export async function assistantStartupIndex(deps: AssistantStartupIndexDeps): Pr
   async function collectDevice(device: string | undefined, scope: Record<string, unknown>): Promise<string[]> {
     const target = device ? { device } : {}
     const args = device ? { device_id: `device:${device}` } : {}
-    const [projects, capabilities, notes] = await Promise.all([
-      read({ action: 'project_list', ...target }, value => z.array(projectSchema).parse(value)),
-      ...(['capabilities', 'devices'] as const).map(kind => read({ action: 'library_read', kind, ...target },
-        value => z.object({ items: z.array(noteSchema) }).parse(value).items)),
-    ])
+    const projects = await read({ action: 'project_list', ...target }, value => z.array(projectSchema).parse(value))
     return [json({ ...scope, source: 'projects', read: { tool: 'project_list', args },
       ...(projects.status === 'read' ? { status: 'read', items: projects.value.map(project => ({ ...project,
         project_id: `project:${project.project_id}`, read: { tool: 'project_get', args: { ...args, project_id: `project:${project.project_id}` } },
       })) } : unavailable),
-    }), ...([['capabilities', capabilities], ['devices', notes]] as const).map(([kind, result]) => json({
-      ...scope, source: `library_${kind}`, read: { tool: 'library_read', args: { ...args, kind } },
-      ...(result.status === 'read' ? { status: 'read', items: result.value.map(item => ({ ...item,
-        read: { tool: 'library_read', args: { ...args, kind, entry: item.id } },
-      })) } : unavailable),
-    }))]
+    })]
   }
 }

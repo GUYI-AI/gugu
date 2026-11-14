@@ -56,7 +56,7 @@
 /* 引导输入与其他页面使用同一档控件边界，不叠第二层阴影。 */
 .ta-onb .ta-input,
 .ta-onb .ta-pill-btn { border: 1px solid var(--border); border-radius: var(--radius-control); box-shadow: none; }
-.ta-onb .ta-input:focus-visible:not([data-pointer-focus] *) { outline: 2px solid var(--fg); outline-offset: 2px; }
+.ta-onb .ta-input:focus-visible:not([data-pointer-focus]) { outline: 2px solid var(--fg); outline-offset: 2px; }
 
 /* 助理单独在上,下面两项对应这台设备的入口。 */
 .ta-onb-intro-gugu { display: flex; width: 100%; flex-direction: column; gap: 4px; text-align: left; }

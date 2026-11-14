@@ -10,6 +10,7 @@ import { createFileChunkCache, createFileSink } from '@gugu/core/local/files/fil
 import { privatePasswordVaultDirectory } from '@gugu/core/local/state/protectedPrivateStorage';
 import { packExtensionArchive } from './extension-archive';
 import { importProjectFile } from '../../../../projectFileImport';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 const fixture = vi.hoisted(() => ({ root: '' }));
 vi.mock('./app-files', () => ({ localRootOf: async () => ({ workspaceRoot: fixture.root, recordedRoot: fixture.root }) }));
@@ -29,8 +30,8 @@ beforeEach(() => {
   fs.mkdirSync(privatePasswordVaultDirectory(), { recursive: true });
   secret = path.join(privatePasswordVaultDirectory(), 'vault.png');
   fs.writeFileSync(secret, privateBytes);
-  surface = { pageId: 1, extensionId: 'file-app', place: { workspace: 'session:private-test' }, workspaceRoot: root, filePath: null };
-  service = createLocalFileService({ warn: vi.fn() });
+  surface = { pageId: 1, extensionId: 'file-app', place: { workspace: 'session:private-test' }, workspaceRoot: root as CanonicalPath, filePath: null };
+  service = createLocalFileService({ warn: vi.fn(), watchFolder: async () => () => undefined });
   files = createLocalAppFiles({
     service, hasCapability: () => true, self: async () => ({ userId: 'owner', name: 'Owner' }),
     sync: { ensureFor: vi.fn(), pageFor: vi.fn(), grant: vi.fn(), ungrant: vi.fn(), revoke: vi.fn() },
@@ -77,7 +78,7 @@ it('refuses hard-link aliases in an otherwise ordinary App working copy', async 
   const ordinary = path.join(root, 'ordinary');
   fs.mkdirSync(ordinary);
   fs.linkSync(secret, path.join(ordinary, 'alias.bin'));
-  const fileSurface = { ...surface, workspaceRoot: ordinary };
+  const fileSurface = { ...surface, workspaceRoot: ordinary as CanonicalPath };
   await expect(files.openTarget(fileSurface, { ref: { workspace: surface.place.workspace, id: 'alias.bin' } })).rejects.toThrow(PROTECTED);
   await expect(readWorkspaceChunk(ordinary, { path: 'alias.bin', offset: 0, length: 100 })).rejects.toThrow(PROTECTED);
 });
@@ -103,7 +104,7 @@ it('refuses an archive source containing protected storage before inspecting or 
 it('preserves ordinary App file creation and chunk reads', async () => {
   const ordinary = path.join(root, 'ordinary');
   fs.mkdirSync(ordinary);
-  const opened = await files.create({ ...surface, workspaceRoot: ordinary }, { name: 'allowed.txt', content: 'ordinary' });
+  const opened = await files.create({ ...surface, workspaceRoot: ordinary as CanonicalPath }, { name: 'allowed.txt', content: 'ordinary' });
   expect(opened.id).toBe('allowed.txt');
   const chunk = await readWorkspaceChunk(ordinary, { path: 'allowed.txt', offset: 0, length: 100 });
   expect(Buffer.from(chunk.data, 'base64').toString()).toBe('ordinary');

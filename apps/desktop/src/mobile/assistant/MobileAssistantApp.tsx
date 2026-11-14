@@ -335,7 +335,7 @@ function MobileAssistantAppContent({
         </div>
       ) : null}
       {app ? <PhoneAssistantWorkLedger ownerId={ownerId} assistantId={assistant.id} /> : null}
-      {app && ownerId ? <PhoneAssistantCountsSource ownerId={ownerId} assistantId={assistant.id} machine={machine} cloudDeviceId={cloudDeviceId} /> : null}
+      {app && ownerId ? <PhoneAssistantCountsSource ownerId={ownerId} machine={machine} cloudDeviceId={cloudDeviceId} /> : null}
       {tab === 'chat' || (app && !hostScreen) ? null : (
         <main id={`assistant-${assistant.id}-${tab}`} role="tabpanel" aria-label={labels[tab]} className="ta-phone-body" ref={pageBody} onScroll={(event) => pageScroll.current.set(pageKey, event.currentTarget.scrollTop)} data-testid={`mobile-assistant-${tab}`} hidden={taskChat}>
           {/* The App's page fills each section; under it only the phone's own screens it opens (PHONE_ASSISTANT_SCREENS). */}

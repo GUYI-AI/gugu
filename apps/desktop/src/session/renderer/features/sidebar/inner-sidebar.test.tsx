@@ -48,11 +48,14 @@ const state = vi.hoisted(() => ({
   projectChats: new Map<string, string>(),
   placementReads: 0,
   openChatOnScreen: vi.fn(),
+  openInfoTab: vi.fn(),
+  closeInfoTab: vi.fn(),
+  infoShown: false,
   openSessionWhenReady: vi.fn(),
   prepareProjectTask: vi.fn(),
   toggleIdleExpanded: vi.fn(),
 }));
-vi.mock('@renderer/lib/layout/layout-provider', () => ({ SIDEBAR_DEFAULT_WIDTH_PX: 260 }));
+vi.mock('@renderer/lib/layout/layout-provider', () => ({ useInnerSidebarFrame: () => 260 }));
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ translate: (key: string, params?: Record<string, unknown>) => (params ? `${key}:${Object.values(params).join(',')}` : key) }),
 }));
@@ -72,12 +75,17 @@ vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: (...arg
 vi.mock('@renderer/features/sessions/open-session-in-session', () => ({
   openSessionInSessionWhenReady: (...args: unknown[]) => state.openSessionWhenReady(...args),
 }));
-vi.mock('@renderer/features/chats/chat-tabs/chat-layouts', () => ({ openInfoTab: vi.fn() }));
+vi.mock('@renderer/features/chats/chat-tabs/chat-layouts', () => ({
+  openInfoTab: (...args: unknown[]) => state.openInfoTab(...args),
+  closeInfoTab: (...args: unknown[]) => state.closeInfoTab(...args),
+  infoTabOf: () => (state.infoShown ? { shown: true } : null),
+}));
 vi.mock('@renderer/features/projects/project-task-entry', () => ({ prepareProjectTask: (...args: unknown[]) => state.prepareProjectTask(...args) }));
-vi.mock('@renderer/features/projects/components/project-menu', () => ({ ProjectMenuItems: () => null }));
 // The sample project's column has its own file (sample-inner-sidebar.test.tsx); here no account shows the sample.
 vi.mock('@renderer/features/sample-project/use-sample-project', () => ({ useSampleProject: () => ({ shown: false, settled: true, owner: null }) }));
 vi.mock('./sample-inner-sidebar', () => ({ SampleInnerSidebar: () => null }));
+// The 「+」's picker loads the group from the backend; this column's tests only open the menu.
+vi.mock('@/components/chat/GroupAddMembersSheet', () => ({ GroupAddMembersSheet: () => null }));
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { get navigation() { return state.live; } },
   sidebarStore: {
@@ -94,6 +102,7 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
     expandedSessionIds: new Set<string>(),
     get idleExpandedProjectIds() { return state.live.shownMore; },
     toggleSessionExpanded: vi.fn(),
+    expandSessions: vi.fn(),
     toggleIdleExpanded: (key: string) => state.toggleIdleExpanded(key),
   },
 }));
@@ -131,8 +140,10 @@ const { readComposerVerb, setComposerVerb } = await import('@/lib/composerVerbBr
 const { setInnerSidebarTopicsAll, publishInnerSidebarTopicsView, publishOneListAgentRows, useInnerSidebarChat } = await import('@/lib/innerSidebarBridge');
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
 const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
-const { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
+const { innerSidebarFolded, innerSidebarFoldedAway, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
+const { sidebarFolds } = await import('./sidebar-folds');
 const { readPanelToggle } = await import('@/lib/panelToggles');
+const { sidebarStore } = await import('@renderer/lib/stores/app-state');
 
 let host: HTMLDivElement;
 let root: Root;
@@ -141,6 +152,13 @@ const sections = () => [...host.querySelectorAll<HTMLElement>('[data-inner-sideb
 const sessionRows = () => [...host.querySelectorAll<HTMLElement>('[data-session-row]')].map((row) => row.dataset.sessionRow);
 const moreRows = () => [...host.querySelectorAll<HTMLElement>('[data-more-row]')].map((row) => row.textContent);
 const render = () => act(async () => root.render(<InnerSidebar />));
+// The head row's 「+」 → 新建 Agent (GroupAddMenu); the menu is portalled, so its item is looked up in the document.
+const pickNewAgent = async (chatId: string) => {
+  await act(async () => host.querySelector<HTMLElement>(`[data-inner-head="${chatId}"] [data-group-add-menu]`)!.click());
+  const item = document.querySelector<HTMLElement>('[data-testid="group-add-new-agent"]');
+  expect(item, 'the 「+」 menu offers 新建 Agent').not.toBeNull();
+  await act(async () => item!.click());
+};
 const agentsCount = () => host.querySelector('[data-inner-sidebar-section="agents"] [data-inner-agents-count]')?.textContent;
 const topicsView = (chatId: string, fields: { total: number; hidden: number; calling?: number }) =>
   act(() => publishInnerSidebarTopicsView({ chatId, calling: 0, ...fields }));
@@ -156,6 +174,9 @@ beforeEach(() => {
     state.live.shownMore.clear();
   });
   state.openChatOnScreen.mockClear();
+  state.openInfoTab.mockClear();
+  state.closeInfoTab.mockClear();
+  state.infoShown = false;
   state.prepareProjectTask.mockClear();
   // #2599 where each lives: `mine-in-group` was created in Planning; `mine-elsewhere` in a DM; `member-only` in a DM too, though
   // it is a member of both groups; `shop-chat-agent` in the shop project's group with no project chosen (so in the project).
@@ -183,7 +204,7 @@ afterEach(() => {
   host.remove();
   act(() => setInnerSidebarTopicsAll(null));
   setComposerVerb('group', null);
-  setInnerSidebarFolded(false);
+  sidebarFolds.clear(); // the folds are stored state now: one test's fold must not be the next test's start
 });
 
 const go = (currentViewId: string, viewParamsStore: Record<string, unknown>) =>
@@ -224,7 +245,7 @@ describe('inner sidebar', () => {
     expect(rows.every((row) => row.dataset.agentAvatar === 'true')).toBe(true);
   });
 
-  it('the head row is the chat itself: current (never a selected fill) while its chat is open, a click goes back to it, the pen starts a new agent there', async () => {
+  it('the head row is the chat itself: current (never a selected fill) while its chat is open, a click goes back to the main chat (never its info), its hover 「+」 adds members or starts a new agent there (no pen)', async () => {
     publishChatSummaries([{ id: 'group', kind: 'group', name: 'Planning', unread_count: 5, member_user_ids: ['agent-a'] }, { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a'] }]);
     openChat('group');
     await render();
@@ -237,16 +258,31 @@ describe('inner sidebar', () => {
     openSession('mine-in-group');
     await render();
     expect(head().getAttribute('aria-current')).toBeNull();
+    // From one of its agents: back to the main chat, and only that (owner 11-14: the title is the way home, not the info).
     await act(async () => head().click());
     expect(state.openChatOnScreen).toHaveBeenCalledWith('group', false);
+    // With the info shown, the same click still only shows the chat.
+    openChat('group');
+    state.infoShown = true;
+    await render();
+    await act(async () => head().click());
+    expect(state.openChatOnScreen).toHaveBeenCalledTimes(2);
+    expect(state.openInfoTab).not.toHaveBeenCalled();
+    expect(state.closeInfoTab).not.toHaveBeenCalled();
+    state.infoShown = false;
+    // The hover 「+」 is the group's add menu, the first of the trailing buttons.
+    const add = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-hover] [data-group-add-menu]');
+    expect(add, 'the 「+」 sits in the hover slot').not.toBeNull();
 
-    await act(async () => host.querySelector<HTMLElement>('[data-inner-head-new-agent]')!.click());
+    // No pen beside it: 新建 Agent only comes through the 「+」.
+    const trailing = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!.parentElement!;
+    expect([...trailing.children].map((child) => (child as HTMLElement).dataset.innerHeadHover !== undefined ? 'plus' : 'fold')).toEqual(['plus', 'fold']);
+    await pickNewAgent('group');
     expect(readComposerVerb('group')).toBe('task');
-    expect(host.querySelector('[data-inner-head-actions]')).not.toBeNull();
 
     openProject('p-shop');
     await render();
-    await act(async () => host.querySelector<HTMLElement>('[data-inner-head-new-agent]')!.click());
+    await pickNewAgent('shop-chat');
     expect(state.prepareProjectTask).toHaveBeenCalledWith('p-shop');
     expect(state.openChatOnScreen).toHaveBeenLastCalledWith('shop-chat', false);
   });
@@ -296,6 +332,30 @@ describe('inner sidebar', () => {
     expect(moreRows()).toEqual(['sidebar.showLess']);
   });
 
+  it('#2630 the session open in the main area never folds away; an open fork expands its parent once', async () => {
+    state.items = [
+      ...Array.from({ length: 12 }, (_, index) => item(`idle-${index}`, 'p-shop', idle, 100 - index)),
+      item('parent', 'p-shop', idle, 0),
+      item('fork', 'p-shop', idle, 0, 'parent'),
+    ];
+    openProject('p-shop');
+    await render();
+    expect(sessionRows()).toEqual(Array.from({ length: 10 }, (_, index) => `idle-${index}`));
+    expect(moreRows()).toEqual(['sidebar.showMore:3']);
+
+    openSession('idle-11');
+    await render();
+    expect(sessionRows()).toEqual([...Array.from({ length: 10 }, (_, index) => `idle-${index}`), 'idle-11']);
+    expect(moreRows()).toEqual(['sidebar.showMore:2']);
+    expect(sidebarStore.expandSessions).not.toHaveBeenCalled();
+
+    openSession('fork');
+    await render();
+    expect(sessionRows()).toContain('parent');
+    expect(moreRows()).toEqual(['sidebar.showMore:2']);
+    expect(sidebarStore.expandSessions).toHaveBeenCalledWith(['parent']);
+  });
+
   it('a collapsed Agents keeps its count and shows how many need me next to the title', async () => {
     state.items = [item('mine-in-group', 'p-x', waiting, 0, null, 'group'), item('also-mine', 'p-x', running, 0, null, 'group')];
     state.agents = new Map([['mine-in-group', 'agent-a'], ['also-mine', 'agent-a']]);
@@ -325,10 +385,10 @@ describe('inner sidebar', () => {
     expect(restore.querySelector('button')).toBeNull();
     const fold = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!;
     expect(fold.getAttribute('aria-label')).toBe('sidebar.collapseInner');
-    // The fold button sits at the row's far end, right of the new-agent pen (proposal v1).
+    // The fold button sits at the row's far end, right of the hover 「+」.
     const ends = [...fold.parentElement!.children];
     expect(ends.at(-1)).toBe(fold);
-    expect(ends.at(-2)?.matches('[data-inner-head-new-agent]')).toBe(true);
+    expect(ends.at(-2)?.matches('[data-inner-head-hover]')).toBe(true);
 
     await act(async () => fold.click());
     expect(host.querySelector('[data-region="inner-sidebar"]'), 'folded: the column is gone, the content is the card alone').toBeNull();
@@ -445,9 +505,8 @@ describe('a standalone agent with sub-agents', () => {
     expect(column.dataset.innerSidebarChat).toBe('dm-solo');
     expect(host.querySelector('[data-inner-head="dm-solo"]')?.textContent).toContain('Solo');
     expect(head()!.getAttribute('aria-current'), 'its own conversation is open').toBe('page');
-    // No pen (its sub-agents are its own to spawn) and no 「…」 (its header gives nothing up to the column).
-    expect(host.querySelector('[data-inner-head-new-agent]')).toBeNull();
-    expect(host.querySelector('[data-inner-head-actions]')).toBeNull();
+    // No 「+」: its sub-agents are its own to spawn, and it is nobody's group.
+    expect(host.querySelector('[data-inner-head="dm-solo"] [data-group-add-menu]'), 'an agent column has no group add menu').toBeNull();
     const fold = host.querySelector<HTMLElement>('[data-inner-head="dm-solo"] [data-inner-head-fold]')!;
     expect([...fold.parentElement!.children].at(-1)).toBe(fold);
     // No 话题: the agent's conversation is its session.

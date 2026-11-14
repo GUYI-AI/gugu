@@ -367,6 +367,45 @@ function rehypeHeadingIds() {
   };
 }
 
+const classesOf = (node: HastNode): unknown[] => (Array.isArray(node.properties?.className) ? (node.properties.className as unknown[]) : []);
+
+/**
+ * @@@no-mathml — a formula keeps its meaning for a reader without a single MathML element reaching the page.
+ *
+ * KaTeX adds a visually hidden `<math>` copy of every formula. Chromium loads its MathML stylesheet for the whole
+ * renderer process the first time one MathML element is styled, wherever it sits, and a rule in it
+ * (`mmultiscripts > mprescripts ~ :nth-child(…)`) then makes every element insertion or removal anywhere re-style the
+ * full subtree of each following sibling: one formula on screen and from then on a new message re-styles the whole
+ * chat (measured: the same insertion re-styles 1 element before the first `<math>` exists, 5005 after).
+ *
+ * What that copy was for stays, as plain HTML: the formula is `role="math"` named by its TeX source (assistive
+ * technology reads the source), and the hidden span holds the source as text, so a copied selection still carries it.
+ */
+function rehypeMathWithoutMathml() {
+  return (tree: HastNode) => {
+    const visit = (node: HastNode): void => {
+      const copy = classesOf(node).includes('katex') ? node.children?.find((child) => classesOf(child).includes('katex-mathml')) : undefined;
+      if (copy) {
+        const source = (function find(inside: HastNode): HastNode | undefined {
+          if (inside.tagName === 'annotation') return inside;
+          for (const child of inside.children ?? []) { const found = find(child); if (found) return found; }
+          return undefined;
+        })(copy);
+        if (!source) throw new Error('KaTeX output carries no TeX annotation to keep as the formula\'s accessible name');
+        const tex = hastText(source);
+        node.properties = { ...node.properties, role: 'math', ariaLabel: tex };
+        // Zero-size text: selected and copied with the formula, but it draws no line boxes of its own (in KaTeX's
+        // one-pixel hidden box the source would otherwise wrap into a column of them).
+        copy.properties = { ...copy.properties, style: 'font-size:0' };
+        copy.children = [{ type: 'text', value: tex }];
+        return;
+      }
+      node.children?.forEach(visit);
+    };
+    visit(tree);
+  };
+}
+
 /**
  * `afterSanitize` is where a surface projects its own interactive pieces (the transcript's mention and image
  * chips) — after the one sanitize pass, so they never need an exception in the shared schema.
@@ -381,5 +420,6 @@ export function markdownRehypePlugins(
     [rehypeSanitize, MARKDOWN_SANITIZE_SCHEMA],
     ...afterSanitize,
     [rehypeKatex, KATEX_OPTIONS],
+    rehypeMathWithoutMathml,
   ];
 }

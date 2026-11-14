@@ -38,6 +38,7 @@ let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
   harness = createReactHarness()
   platformMock.platform.kind = 'desktop'
+  platformMock.platform.capabilities.readingZoomMemory = true
   // 桌面的 saveFile 就是这一份 a[download](安卓壳的另走原生,见 shareWithApps.test)。
   Object.assign(platformMock.platform, { saveFile: anchorDownload })
   // jsdom 没有 matchMedia;按「减少动态效果」回答,PhotoSwipe 的开合就不走动画,开关立即落定。
@@ -149,6 +150,25 @@ describe('ImagePreviewProvider', () => {
     await act(async () => pswp.destroy())
     thumb.remove()
     writeFileZoom('image', 1)
+  })
+
+  it('the phone keeps no reading zoom: an image opens whole over a ratio stored earlier, which zooming leaves alone', async () => {
+    localStorage.setItem('gugu.file-content-zoom.image', '2')
+    platformMock.platform.kind = 'capacitor'
+    platformMock.platform.capabilities.readingZoomMemory = false
+    // Where memory exists this writes 2 again; here it stores nothing and the earlier 2 stays.
+    const { pswp, thumb } = await openAt(2, true)
+    const slide = pswp.currSlide!
+    await act(async () => {
+      await waitForCondition(() => !pswp.opener.isOpening, 'opening never ended')
+    })
+    expect(slide.zoomLevels.initial).toBe(1)
+    expect(slide.currZoomLevel).toBe(slide.zoomLevels.initial)
+    await act(async () => slide.zoomTo(1.5, undefined, 0))
+    expect(localStorage.getItem('gugu.file-content-zoom.image')).toBe('2')
+    await act(async () => pswp.destroy())
+    thumb.remove()
+    localStorage.removeItem('gugu.file-content-zoom.image')
   })
 
   it('waits for the opening zoom before fetching the original, which lands in the box its recorded size already set', async () => {

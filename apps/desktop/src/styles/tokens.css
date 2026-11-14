@@ -665,6 +665,15 @@
   --bg:       #181818; /* 内容表面 */
   --page:     #121212; /* 窗口底层:rail、会话列表 */
   --card:     #212121; /* 局部表面:分组卡、浮层(gray-fixed-800) */
+  /* 群和项目默认头像的 8 个描边色:墨色里带一点色相,暗色这一组提亮,在深底上读得清(core 的 groupAvatar.ts 按 id 取第几个)。 */
+  --group-face-1: #a3b3c8;
+  --group-face-2: #b2adc6;
+  --group-face-3: #98b8b8;
+  --group-face-4: #a2b8a6;
+  --group-face-5: #b0b49b;
+  --group-face-6: #bdaf99;
+  --group-face-7: #c5ab9f;
+  --group-face-8: #c4a8b2;
   --popover:  #212121;
   --sidebar:  var(--page);
   --fg:       #dfdfdf; /* gray-fixed-150 */
@@ -887,6 +896,15 @@
   --bg:       #ffffff; /* 内容表面 */
   --page:     #f9f9f9; /* 窗口底层:rail、会话列表(gray-fixed-50) */
   --card:     #ffffff;
+  /* 群和项目默认头像的 8 个描边色:墨色里带一点色相,亮色这一组(core 的 groupAvatar.ts 按 id 取第几个)。 */
+  --group-face-1: #54657a;
+  --group-face-2: #655f78;
+  --group-face-3: #486b6a;
+  --group-face-4: #536a57;
+  --group-face-5: #62664c;
+  --group-face-6: #6f6149;
+  --group-face-7: #775c50;
+  --group-face-8: #765a64;
   --popover:  #ffffff;
   --menu-bg: var(--popover);
   --sidebar:  var(--page);
@@ -1118,14 +1136,14 @@ button, [role="button"] {
    - 鼠标/触摸聚焦(:focus 但不 :focus-visible):不画。
    - 键盘聚焦:2px live 色环,外偏 2px,跟着元素圆角走。放在 @layer base:组件要换自己的焦点表达时用工具类覆盖得了。
    - 文字输入(input / textarea / contenteditable)以光标为焦点指示,不画环 —— 浏览器对它们鼠标点击也报 :focus-visible。
-   - 指针模态(根上 data-pointer-focus,见 lib/focus-modality.ts):点过之后单按修饰键,Chromium 也报 :focus-visible —— 不画。
-     自己写焦点样式的组件一律用 `:focus-visible:not([data-pointer-focus] *)`;Tailwind 的 focus-visible: 变体已是这个选择器。 */
+   - 指针模态(焦点元素自己带 data-pointer-focus,见 lib/focus-modality.ts):点过之后单按修饰键,Chromium 也报 :focus-visible —— 不画。
+     自己写焦点样式的组件一律用 `:focus-visible:not([data-pointer-focus])`;Tailwind 的 focus-visible: 变体已是这个选择器。 */
 :focus:not(:focus-visible) { outline: none; }
 @layer base {
-  :focus-visible:not([data-pointer-focus] *) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  :focus-visible:not([data-pointer-focus]) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   /* 指针模态下浏览器自带的 :focus-visible 轮廓也不要。 */
-  [data-pointer-focus] :focus-visible { outline: none; }
-  :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='button'], [type='submit']), textarea, [contenteditable]):focus-visible:not([data-pointer-focus] *) { outline: none; }
+  [data-pointer-focus]:focus-visible { outline: none; }
+  :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='button'], [type='submit']), textarea, [contenteditable]):focus-visible:not([data-pointer-focus]) { outline: none; }
 }
 
 /* ───────────── theme batch D(宿主组件:二维码、形象工坊、看图 / 文档预览)───────────── */
@@ -1158,6 +1176,11 @@ button, [role="button"] {
 textarea::placeholder,
 input::placeholder {
   color: var(--color-text-placeholder);
+}
+
+/* A one-line field narrower than its words (a long placeholder on a phone) ends them with an ellipsis, not mid-letter. */
+input {
+  text-overflow: ellipsis;
 }
 
 /* Themed scrollbar —— 只给鼠标指针的宿主。
@@ -1425,6 +1448,14 @@ body.barcode-scanner-active #root {
   border-radius: var(--radius-control);
   animation: msg-src-flash 1.4s ease-out;
 }
+
+/* @@@chat-offscreen-rows 消息流里的行(MessageRow):屏幕外的跳过样式、布局与绘制,同通讯录行(@@@contacts-offscreen-rows)一套机制。
+   主区宽度一变(收放侧栏的每一帧、拖窗口、开关右栏),要重排的只是看得见的那几行,不随翻过的历史和公式量变多;页内查找照样搜得到。
+   行挂上后先按真实内容排一次、画一帧,auto 记下真实高度,MessageRow 再打 data-laid-out 才允许跳过:跳过的行占着记下的真高,
+   落点、恢复阅读位置、往上翻都不会先按占位排再跳。宽度变过之后再露出来的行按新宽度重排,视口上方的差由滚动锚定吸收(flowList)。
+   paint containment 会裁到框外的东西:来源消息闪烁的 2px 环画在框外,用 overflow-clip-margin 让出来。 */
+.gg-msg-row { contain-intrinsic-size: auto 160px; }
+.gg-msg-row[data-laid-out] { content-visibility: auto; overflow-clip-margin: 4px; }
 
 /* ── theme batch A:助理 App(.ta-*)的颜色取值 ───────────────────────────────────────────────
    从 assistant-today.css 原样搬来(owner 10-28 批的 token 方案:颜色只在 tokens.css 里写),
@@ -2255,7 +2286,7 @@ body.barcode-scanner-active #root {
 }
 .gg-member-join-name { font-size: inherit; line-height: inherit; cursor: pointer; }
 .gg-member-join-name:hover,
-.gg-member-join-name:focus-visible:not([data-pointer-focus] *) { background: transparent; color: var(--primary); text-decoration: underline; }
+.gg-member-join-name:focus-visible:not([data-pointer-focus]) { background: transparent; color: var(--primary); text-decoration: underline; }
 
 .gg-topic-anchor { position: relative; }
 .gg-topic-anchor::before {

@@ -1,4 +1,5 @@
 import { createContext, useLayoutEffect, useState } from 'react'
+import { pageZoom } from './pageScale'
 
 export interface PhoneViewport {
   /** null leaves sizing to CSS (disabled, hidden, or temporarily unmeasurable). Never zero. */
@@ -32,7 +33,8 @@ function readViewport(keyboardVisible: boolean | null = null): PhoneViewport {
   if (document.visibilityState === 'hidden') return INACTIVE
   const viewport = window.visualViewport
   // Pinch zoom belongs to the browser. Reflowing the shell to the zoomed rectangle would zoom it twice.
-  const useVisual = viewport && viewport.scale === 1 && positive(viewport.height)
+  // At rest the scale is the page's own zoom (the system font size, pageScale.ts), not 1.
+  const useVisual = viewport && Math.abs(viewport.scale - pageZoom()) < 0.01 && positive(viewport.height)
   const height = useVisual ? viewport.height : window.innerHeight
   const offset = useVisual ? viewport.offsetTop : 0
   return {

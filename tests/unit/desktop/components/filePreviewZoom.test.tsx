@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement, act } from 'react'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import { MessageFilePreviewPanel } from '../../../../apps/desktop/src/components/chat/MessageFilePreviewPanel'
 import { HtmlPreviewSurface } from '../../../../apps/desktop/src/components/preview/HtmlPreviewSurface'
@@ -9,6 +9,7 @@ import { DocumentPreviewContent } from '../../../../apps/desktop/src/components/
 import { runWindowMenuCommand, type WindowMenuCommandTarget } from '../../../../apps/desktop/electron/window-menu-commands'
 import { bindAppPageZoom, createFileZoomView } from '../../../../apps/desktop/src/components/preview/file-content-zoom'
 import { ZoomMenuRow } from '../../../../apps/desktop/src/components/preview/ZoomMenuRow'
+import { platform } from '../../../../apps/desktop/src/platform'
 
 let harness: ReturnType<typeof createReactHarness>
 const originalVisibility = HTMLElement.prototype.checkVisibility
@@ -42,6 +43,30 @@ it('zooms the actual workspace image using its fitted geometry and retains the i
   expect(parseFloat(image.style.width)).toBeGreaterThan(before)
   expect(n.contents.setZoomLevel).not.toHaveBeenCalled()
   expect(parseFloat((await draw('second.png')).style.width)).toBeCloseTo(before * 1.2)
+})
+
+it('a platform without reading zoom memory (the phone) zooms an image preview on double tap, opens the next one whole and stores nothing', async () => {
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1000)
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600)
+  platform.capabilities.readingZoomMemory = false
+  onTestFinished(() => { platform.capabilities.readingZoomMemory = true })
+  localStorage.setItem('gugu.file-content-zoom.image', '2')
+  const draw = async (path: string) => {
+    await harness.render(createElement(ImageRenderer, { file: { path, content: `data:image/png,${path}` } }))
+    const image = harness.container.querySelector('img')!
+    Object.defineProperties(image, { naturalWidth: { configurable: true, value: 2000 }, naturalHeight: { configurable: true, value: 1000 } })
+    await act(async () => image.dispatchEvent(new Event('load')))
+    return image
+  }
+  const image = await draw('first.png')
+  const whole = parseFloat(image.style.width)
+  expect(whole).toBeCloseTo(2000 * (1000 - 32) / 2000)
+  const viewport = harness.container.firstElementChild as HTMLElement
+  await act(async () => viewport.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 100, clientY: 100 })))
+  expect(parseFloat(image.style.width)).toBeGreaterThan(whole)
+  expect(localStorage.getItem('gugu.file-content-zoom.image')).toBe('2')
+  await harness.render(createElement('div'))
+  expect(parseFloat((await draw('second.png')).style.width)).toBeCloseTo(whole)
 })
 
 // Installed only under apps/desktop: the bare name does not resolve from tests/, so a mock under it misses the product import.

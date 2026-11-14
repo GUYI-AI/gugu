@@ -101,6 +101,13 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   private readonly _sideShares = observable.map<string, number>({}, { deep: false });
 
   setNarrow(narrow: boolean): void { this.narrow = narrow; }
+
+  /** The narrowest this pane is drawn: what the page in front of it asks for (`minWidth`), else MIN_PANE_WIDTH_PX. */
+  paneMinWidth = (paneId: string): number => {
+    const pane = this.groups.find((group) => group.paneId === paneId)?.pane;
+    const entry = pane?.resolvedActiveTabId ? pane.entries.get(pane.resolvedActiveTabId) : undefined;
+    return (entry && this._registry.has(entry.kind) ? this._registry.get(entry.kind).minWidth : undefined) ?? MIN_PANE_WIDTH_PX;
+  };
   /** How the panes are cut. Replaced whole on every change (pane-layout-tree.ts is pure). */
   layout: PaneLayoutNode;
 

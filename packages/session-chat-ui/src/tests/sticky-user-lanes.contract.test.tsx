@@ -16,6 +16,7 @@ import { PIN_SUMMARY_GAP } from '@session-chat/layout-geometry';
 import { DEFAULT_CONFIG, buildChatTheme } from '@session-chat/core/config';
 import type { ChatItem, TranscriptTurn } from '@session-chat/model';
 import { createChatState } from '@session-chat/state/chat-state';
+import type { SelfIdentity } from '@session-chat/lib/self-identity';
 import { afterEach, describe, expect, it } from 'vitest';
 import { page } from 'vitest/browser';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
@@ -47,11 +48,12 @@ function longTurn(id: string, seq: number, replies: number, inserted: string[] =
 async function mount(
   committed: TranscriptTurn[] = [longTurn('a', 0, 150), longTurn('b', 1, 150)],
   active?: TranscriptTurn,
-  theme = DEFAULT_THEME
+  theme = DEFAULT_THEME,
+  self?: SelfIdentity
 ) {
   // The host is 800 px wide; hit-testing a right-aligned card needs the whole host inside the viewport.
   await page.viewport(800, 600);
-  const context = createChatContext({ locale: () => 'en-US', theme });
+  const context = createChatContext({ locale: () => 'en-US', theme, ...(self ? { selfIdentity: () => self } : {}) });
   const state = createChatState(context);
   state.transcript.history.seed(committed);
   if (active) state.transcript.activeTurn.set(active, 'generating');
@@ -86,12 +88,55 @@ async function mount(
     scrollEl.scrollTop = st;
     await untilStable('transcript geometry settles', () => [scrollEl.scrollHeight, scrollEl.scrollTop]);
   };
-  await until('transcript mounted', () => card('a-user') != null);
+  await until('transcript mounted', () => mounted('a-user'));
   await scrollTo(0);
   return { host, scrollEl, card, cardTop, summary, pinTop, pinBottom, mounted, scrollTo, view };
 }
 
 describe('sticky user lanes', () => {
+  it('preserves the attachment-name summary when a pure attachment row has no text bubble', async () => {
+    const committed = longTurn('a', 0, 1);
+    committed.items = [{ kind: 'message', id: 'a-user', seq: 0, role: 'user', text: '',
+      attachments: [{ id: 'file', name: 'report.pdf', kind: 'file' }] },
+      { kind: 'message', id: 'a-r0', seq: 1, role: 'assistant', text: Array.from({ length: 40 }, (_, i) => `Paragraph ${i}. Lorem ipsum dolor sit amet.`).join('\n\n') },
+    ] as TranscriptTurn['items'];
+    const t = await mount([committed], undefined, buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 72, agentConversation: true }));
+    await until('attachment summary mounted', () => t.summary('a-user'), summary => summary != null);
+    expect(t.card('a-user')).toBeNull();
+    expect(t.summary('a-user')!.hasAttribute('data-pin-bare')).toBe(true);
+    expect(t.summary('a-user')!.textContent).toBe('report.pdf');
+    await t.scrollTo(900);
+    expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
+  });
+
+  it('keeps active and committed answer rows out of pin lanes while ordinary user text still sticks', async () => {
+    const answered = (id: string): ChatItem => ({ kind: 'message', id, seq: 1, role: 'user',
+      text: '<gugu_question_answer>\n' + JSON.stringify({ question_id: id, state: 'answered', answers: [{ selected: ['Keep it'] }] })
+        + '\n</gugu_question_answer>' });
+    const committed = longTurn('a', 0, 1);
+    committed.items = [committed.items[0], answered('answer-done'),
+      { kind: 'message', id: 'a-r0', seq: 2, role: 'assistant', text: Array.from({ length: 40 }, (_, i) => `Paragraph ${i}. Lorem ipsum dolor sit amet.`).join('\n\n') },
+    ] as TranscriptTurn['items'];
+    const active = { id: 'active', seq: 1, initiator: 'user', items: [answered('answer-live'),
+      { kind: 'message', id: 'active-reply', seq: 2, role: 'assistant', text: 'Reply after the answer.' }] } as TranscriptTurn;
+    const t = await mount([committed], active, buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 72, agentConversation: true }));
+    await until('long committed reply can expand', () => t.host.querySelector<HTMLButtonElement>('[data-expand-user-card]'), button => button != null);
+    t.host.querySelector<HTMLButtonElement>('[data-expand-user-card]')!.click();
+    await untilStable('expanded reply measured', () => t.scrollEl.scrollHeight);
+    for (const id of ['answer-done', 'answer-live']) {
+      await t.view.scrollToItem(id, { align: 'center' });
+      await until(`${id} visible`, () => t.host.querySelector(`[data-item-id="${id}"] [data-slot="question-answer"]`), row => row != null);
+      expect(t.summary(id), `${id} is a status line, not a sticky text bubble`).toBeNull();
+      expect(t.card(id)).toBeNull();
+      expect(t.host.textContent).not.toContain('<gugu_question_answer>');
+    }
+    t.view.scrollToTop();
+    await untilStable('owner position restored after answer navigation', () => [t.scrollEl.scrollTop, t.scrollEl.scrollHeight]);
+    await until('ordinary user summary exists', () => t.summary('a-user'), summary => summary != null);
+    await t.scrollTo(900);
+    expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
+  });
+
   it('never shows the lines its summary repeats, in the same frame as any scroll write', async () => {
     const t = await mount();
     const lane = t.card('a-user')!.closest<HTMLElement>('[data-index]')!;
@@ -285,6 +330,50 @@ describe('sticky user lanes', () => {
       t.scrollEl.scrollTop = st + i * 6;
       const a = t.pinBottom('a-user');
       if (a !== null) expect(a, `step ${i}`).toBeLessThanOrEqual(deliveredRow()!.getBoundingClientRect().top + 1);
+    }
+  });
+
+  // #2629: the reader's own message that came in as a delivery (a task started from a chat message) is drawn below its
+  // sender's name (agent conversation) or the delivery card's padding (classic). Its summary rested as if neither were
+  // there: over the attached file's name and above the bubble's top edge, a clipped second copy of its words.
+  it.each([
+    ['agent conversation', { preset: 'double', userGutter: 72, agentConversation: true }],
+    ['classic', { preset: 'double', userGutter: 72 }],
+  ] as const)('rests behind its own bubble, below the sender and the attachment of a delivered message (%s)', async (_, layout) => {
+    const file = { itemId: 'pasted', version: 1, name: 'pasted-text.txt', mimeType: 'text/plain', sizeBytes: 18407 };
+    const turn = (id: string, seq: number, text: string): TranscriptTurn => ({ id, seq, initiator: 'user', items: [
+      { kind: 'message', id: `${id}-user`, seq: 0, role: 'user', text, files: [file] },
+      { kind: 'message', id: `${id}-final`, seq: 1, role: 'assistant',
+        text: Array.from({ length: 12 }, (_, i) => `${id} reply ${i}. Lorem ipsum dolor sit amet.`).join('\n\n') },
+    ] as TranscriptTurn['items'] });
+    const t = await mount([
+      turn('a', 0, '<gugu_delivery route="chat" msg="msg:a" from="Me" from_id="user:me" from_type="human" chat="1" chat_kind="group"><![CDATA[Are the results out?]]></gugu_delivery>'),
+      // Positive control: the same words and file sent from this session's composer.
+      turn('b', 1, 'Are the results out?'),
+    ], undefined, buildChatTheme(DEFAULT_CONFIG, layout), { userId: 'me', displayName: 'Me', guguNumber: 1 });
+    for (const id of ['a-user', 'b-user']) {
+      await t.view.scrollToItem(id, { align: 'start', offset: -100 });
+      await until(`${id} on screen`, () => t.card(id), el => el != null);
+      await untilStable(`${id} settled`, () => t.cardTop(id));
+      expect(t.cardTop(id)!, `${id} rests below the pin line`).toBeGreaterThan(PIN_LINE);
+      const card = t.card(id)!.getBoundingClientRect(), pin = t.summary(id)!.getBoundingClientRect();
+      const label = t.card(id)!.closest('[data-index]')!.querySelector('[data-attachment-chip] > span:last-child')!.getBoundingClientRect();
+      expect(pin.bottom, `${id}: the summary ends where its bubble ends`).toBeCloseTo(card.bottom, 1);
+      expect(pin.top, `${id}: no part of the summary is above its bubble`).toBeGreaterThanOrEqual(card.top - 0.5);
+      expect(pin.top, `${id}: the summary leaves the attachment's name uncovered`).toBeGreaterThanOrEqual(label.bottom - 0.5);
+    }
+    // Scrolled through, the delivered message is placed by the same rule as any other: T = min(max(P, b - h), e - h - gap).
+    await t.view.scrollToItem('a-user', { align: 'start', offset: -100 });
+    await untilStable('a settled', () => t.cardTop('a-user'));
+    const edge = () => t.scrollEl.getBoundingClientRect().top;
+    const lane = t.card('a-user')!.closest<HTMLElement>('[data-index]')!, summary = t.summary('a-user')!;
+    const h = summary.getBoundingClientRect().height, from = Math.round(t.scrollEl.scrollTop);
+    for (let st = from; st <= from + Math.round(lane.getBoundingClientRect().bottom - edge()); st += 3) {
+      t.scrollEl.scrollTop = st;
+      const card = t.card('a-user')!.getBoundingClientRect(), pin = summary.getBoundingClientRect();
+      const b = card.bottom - edge(), e = lane.getBoundingClientRect().bottom - edge();
+      expect(pin.top - edge(), `scrollTop=${st}`).toBeCloseTo(Math.min(Math.max(PIN_LINE, b - h), e - h - PIN_SUMMARY_GAP), 1);
+      expect(card.bottom, `scrollTop=${st}: nothing of the bubble shows below its summary`).toBeLessThanOrEqual(pin.bottom + 0.01);
     }
   });
 

@@ -30,7 +30,7 @@ vi.mock('@renderer/localization/use-session-messages', () => ({
   }),
 }));
 vi.mock('@renderer/lib/layout/layout-provider', () => ({
-  SIDEBAR_DEFAULT_WIDTH_PX: 260,
+  useInnerSidebarFrame: () => 260,
   useWorkspaceLayoutContext: () => ({ isLeftOpen: true, leftRail: 0 }),
 }));
 vi.mock('@renderer/lib/stores/app-state', () => ({
@@ -61,7 +61,6 @@ vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({
 vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: vi.fn() }));
 vi.mock('@renderer/features/chats/chat-tabs/chat-layouts', () => ({ openInfoTab: vi.fn() }));
 vi.mock('@renderer/features/projects/project-task-entry', () => ({ prepareProjectTask: vi.fn() }));
-vi.mock('@renderer/features/projects/components/project-menu', () => ({ ProjectMenuItems: () => null }));
 vi.mock('./sidebar-session-title', () => ({ SidebarSessionTitle: ({ title }: { title: string }) => <span data-row-title="">{title}</span> }));
 // The sample block around the pane, without its tab strip, transcript and file preview (unchanged, drawn elsewhere).
 vi.mock('@renderer/features/tabs/tab-bar', () => ({ TabStripShell: () => null }));
@@ -90,7 +89,8 @@ state.live = observable(
 );
 const { publishChatSummaries } = await import('@/lib/chatSummariesBridge');
 const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
-const { innerSidebarFoldedAway, setInnerSidebarFolded } = await import('./inner-sidebar-fold');
+const { innerSidebarFoldedAway } = await import('./inner-sidebar-fold');
+const { sidebarFolds } = await import('./sidebar-folds');
 const { SampleProjectBlock } = await import('@renderer/features/sample-project/sample-project-block');
 const { openSamplePane } = await import('@renderer/features/sample-project/sample-project-view');
 const { SAMPLE_AGENT_SEED } = await import('@renderer/features/sample-project/sample-project-transcript');
@@ -136,7 +136,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   openSamplePane(null);
-  setInnerSidebarFolded(false);
+  sidebarFolds.clear(); // the folds are stored state now: one test's fold must not be the next test's start
 });
 
 describe('the inner column for the sample project', () => {
@@ -147,10 +147,10 @@ describe('the inner column for the sample project', () => {
     expect(innerSidebarChat.get(), 'the sample is no chat: the list keeps lighting the sample row by itself').toBeNull();
 
     const headRow = host.querySelector<HTMLElement>('[data-inner-head="sample-project"]')!;
-    expect(headRow.querySelector('svg.gg-project-avatar')).not.toBeNull();
+    expect(headRow.querySelector('[data-group-face]')).not.toBeNull();
     expect(headRow.textContent).toContain('projects.sample.name');
     expect(headRow.querySelector('[data-slot="chip"]')?.textContent).toBe('projects.sample.tag');
-    expect(headRow.querySelector('[data-inner-head-actions]')?.getAttribute('aria-label')).toBe('projects.sample.actions');
+    expect(headRow.querySelector('[aria-haspopup]'), 'no 「…」: removing it is in its row menu in the list').toBeNull();
     expect(host.querySelector('[data-inner-head-new-agent]'), 'no project yet: nobody to send a new agent to').toBeNull();
     expect(head().getAttribute('aria-current')).toBe('page');
     expect(head().dataset.active, 'the head row is a title, never a selected row').toBeUndefined();
@@ -204,20 +204,6 @@ describe('the inner column for the sample project', () => {
     await act(async () => host.querySelector<HTMLElement>('[data-close-pane]')!.click());
     expect(taskPane()).toBeNull();
     expect(agentRows()[0].dataset.active).toBeUndefined();
-  });
-
-  it('removing the sample from the head row 「…」 saves the account key and takes the column away', async () => {
-    await render();
-    await act(async () => host.querySelector<HTMLElement>('[data-inner-head-actions]')!.click());
-    const remove = () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === 'projects.sample.remove');
-    await until(() => !!remove(), 'the head menu opened');
-    expect(document.querySelectorAll('[role="menuitem"]'), 'only what the sample row menu offers').toHaveLength(1);
-    await act(async () => remove()!.click());
-    await until(() => column() === null, 'the column left with the sample');
-    expect(io.rows.get('u/user')?.config).toEqual({ sampleProject: { version: 1, dismissed: true } });
-    expect(io.toast).not.toHaveBeenCalled();
-    await flush();
-    expect(host.querySelector('[data-inner-sidebar-section]')).toBeNull();
   });
 
   it('only while its block is the one looked at: a group swaps it out, closing the sample or leaving the screen removes it', async () => {

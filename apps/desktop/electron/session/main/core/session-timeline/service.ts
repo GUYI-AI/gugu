@@ -957,37 +957,28 @@ export async function windowSubscribe(input: SessionpageSessionSubscribeRequest,
   return result;
 }
 
-/** 读这条会话此刻可改的选项。 */
 /**
  * 这条聊天腿会话**从没开起来过**:没有 provider 会话 id,运行时里也没有它(正在起的那一刻不算 —— 那时
  * 运行时里有一份 `starting`)。建会话时 agent 没起来的就是这种,不论当时有没有记下原因码
- * (装这版之前建的那些没有)。对它 ❌ 走「唤醒」:唤醒不带第一句话。
+ * (装这版之前建的那些没有)。对它 ❌ 走「唤醒」:唤醒不带第一句话。运行时问不到 = 抛(调用方报错),❌ 猜。
  */
 async function neverStarted(row: SessionRow): Promise<boolean> {
   if (row.providerSessionId?.trim() || row.runtime !== 'acp') return false;
-  try {
-    return !(await acpSessionLive(row.id));
-  } catch {
-    return readStartFailure(row.id) !== null;
-  }
+  return !(await acpSessionLive(row.id));
 }
 
-/** 那台机器上这家的模型目录里的显示名;读不到就空(胶囊上退回模型 id)。 */
+/** 那台机器上这家的模型目录里的显示名。目录读不到 = 抛,❌ 当空(胶囊上冒出引擎自己的模型 id)。 */
 async function modelNames(provider: string | null): Promise<Map<string, string>> {
   if (!provider) return new Map();
-  try {
-    const { listLocalModels } = await import('@main/core/agents/session-discovery');
-    const catalog = await listLocalModels(provider, { transport: 'acp' });
-    return new Map(catalog.models.map((m) => [m.id, m.name]));
-  } catch {
-    return new Map();
-  }
+  const { listLocalModels } = await import('@main/core/agents/session-discovery');
+  const catalog = await listLocalModels(provider, { transport: 'acp' });
+  return new Map(catalog.models.map((m) => [m.id, m.name]));
 }
 
 /** 会话记录里那一档模型(建会话 / 上次换模型时记下的),没有运行时也报得出来。 */
 async function recordedSessionOptions(row: SessionRow) {
   const { sessionPlatformModel } = await import('@main/core/sessions/platform-model-selection');
-  const platform = await sessionPlatformModel(row.id).catch(() => undefined);
+  const platform = await sessionPlatformModel(row.id);
   return notStartedSessionOptions({
     model: row.config?.model,
     platformModelId: platform?.modelId,
@@ -995,28 +986,21 @@ async function recordedSessionOptions(row: SessionRow) {
   });
 }
 
-/** 聊天腿的 agent 此刻在不在跑;问不到(运行时连不上)按不在跑算 —— 只读,❌ 为了问一句把它拉起来。 */
-async function acpRunning(row: SessionRow): Promise<boolean> {
-  try {
-    return await acpSessionLive(row.id);
-  } catch {
-    return false;
-  }
-}
-
+/** 读这条会话此刻可改的选项。哪一步读不到都报 `options_failed`,❌ 给一份「没在跑」的选项充数。 */
 export async function sessionOptions(input: {
   conversationId: string;
 }): Promise<SessionTimelineResult<SessionpageSessionOptionsWithMenu>> {
   const row = readSessionRow(input.conversationId);
   if (!row) return fail('session_not_found', '这台机器上没有这条会话');
-  if (await neverStarted(row)) return { ok: true, value: await recordedSessionOptions(row) };
-  // #980 打开会话不叫醒 agent,手机上也一样(behavior session-page;owner 2026-10-30 取代 09-15「读选项先唤醒」):
-  // 手机打开会话就来读这一份,而参数(权限档 / 推理档)住在活运行时里。没在跑就报记录里那一档模型(带模型菜单,换得了),
-  // 权限档 / 推理档等它跑起来再报 —— 它们的 id 是各家运行时自己的。改一档是人点的,那一刻再起(`setSessionOptionValue`)。
-  if (row.runtime === 'acp' && !(await acpRunning(row))) {
-    return { ok: true, value: await withModelMenu(row, await recordedSessionOptions(row)) };
-  }
   try {
+    if (await neverStarted(row)) return { ok: true, value: await recordedSessionOptions(row) };
+    // #980 打开会话不叫醒 agent,手机上也一样(behavior session-page;owner 2026-10-30 取代 09-15「读选项先唤醒」):
+    // 手机打开会话就来读这一份,而参数(权限档 / 推理档)住在活运行时里。没在跑就报记录里那一档模型(带模型菜单,换得了),
+    // 权限档 / 推理档等它跑起来再报 —— 它们的 id 是各家运行时自己的。改一档是人点的,那一刻再起(`setSessionOptionValue`)。
+    // 只读,❌ 为了问一句把它拉起来。
+    if (row.runtime === 'acp' && !(await acpSessionLive(row.id))) {
+      return { ok: true, value: await withModelMenu(row, await recordedSessionOptions(row)) };
+    }
     return { ok: true, value: await withModelMenu(row, await readSessionOptions(input.conversationId)) };
   } catch (error) {
     return optionsFailure(error);
@@ -1031,13 +1015,11 @@ export async function setSessionOptionValue(
   if (!row) return fail('session_not_found', '这台机器上没有这条会话');
   // #980 打开时没叫醒它;改一档是人点的,参数又只有活运行时收得下 ⇒ 这一刻按桌面同一条「唤醒」拉起来。
   // 从没开起来的 ❌:唤醒不带第一句话(见 not-started-options),它只报记下的那一档,本来就没有可改的。
-  if (row.runtime === 'acp' && !(await neverStarted(row))) {
-    try {
-      await ensureAcpSessionLive(row.id);
-    } catch (error) {
-      if (error instanceof SessionWriteError) return fail(error.code, error.message);
-      return fail('session_wake_failed', (error as Error)?.message ?? String(error));
-    }
+  try {
+    if (row.runtime === 'acp' && !(await neverStarted(row))) await ensureAcpSessionLive(row.id);
+  } catch (error) {
+    if (error instanceof SessionWriteError) return fail(error.code, error.message);
+    return fail('session_wake_failed', (error as Error)?.message ?? String(error));
   }
   try {
     return { ok: true, value: await withModelMenu(row, await setSessionOption(input)) };

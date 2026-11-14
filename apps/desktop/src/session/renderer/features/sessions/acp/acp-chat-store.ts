@@ -18,7 +18,6 @@ import {
   type HistoryCursor,
   type GuguPermissionMode,
   isDestructivePermissionMode,
-  resolveSessionPermissionMode,
   type PromptAttachment,
   type PromptDraft,
   type PromptInput,
@@ -496,9 +495,7 @@ export class AcpChatStore {
    */
   get detachedPermissionTier(): GuguPermissionMode | null {
     if (this.session || this.starting || this.isTransient) return null;
-    const record = this._sessionRecord();
-    if (!record) return null;
-    return resolveSessionPermissionMode(record);
+    return this._sessionRecord()?.permissionMode ?? null;
   }
 
   /**
@@ -507,8 +504,9 @@ export class AcpChatStore {
    */
   get recordedPermissionTier(): GuguPermissionMode | null {
     if (this.isTransient) return null;
-    const record = this._sessionRecord();
-    return record ? resolveSessionPermissionMode(record) : null;
+    // Only the recorded tier is shown. A record without one (a host from before migration 0052) shows none: the
+    // start path reads it through resolveSessionPermissionMode and fails loudly; the view ❌ guesses a tier.
+    return this._sessionRecord()?.permissionMode ?? null;
   }
 
   get permissionModeChangeNotice(): ComposerNotice | null {

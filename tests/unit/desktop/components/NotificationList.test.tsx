@@ -124,7 +124,7 @@ it('the old composer has no floating Needs you entrance', async () => {
   await renderWithAppProviders(shell, <><ChatBottomDock reserve={false}><textarea /></ChatBottomDock><NeedsYouHost /></>)
   expect(document.querySelector('[data-testid="needs-you-trigger"]')).toBeNull()
 })
-it.each([false, true])('opening the bell reads nothing; a read failure stays listed, unemphasized and uncounted (phone=%s)', async mobile => {
+it.each([false, true])('opening the bell reads nothing; an acknowledged failure disappears (phone=%s)', async mobile => {
   const failure = { ...task('error-a', 'error'), lastInteractedAt: '2026-11-05T01:00:00.000Z' }
   const wait = { ...task('approval', 'needs_user', false), lastInteractedAt: '2026-11-05T00:00:00.000Z' }
   state.sessions = [failure, wait]
@@ -139,9 +139,9 @@ it.each([false, true])('opening the bell reads nothing; a read failure stays lis
   // The host read bit lands (the task was opened); the person closes the bell and opens it again.
   state.sessions = [{ ...failure, unseen: false }, wait]
   await mount(mobile); await act(async () => toggle()!.click()); await open()
-  expect(rows().map(row => row.dataset.sessionLine), 'a read failure is still a failure: it stays listed').toEqual(['error-a', 'approval'])
-  expect(rows().map(row => row.dataset.emphasis)).toEqual([undefined, 'true'])
-  expect(marks(), 'a read row is muted and has no badge').toEqual([{ badge: null, muted: true }, { badge: '1', muted: false }])
+  expect(rows().map(row => row.dataset.sessionLine), 'acknowledgement removes the error notification').toEqual(['approval'])
+  expect(rows().map(row => row.dataset.emphasis)).toEqual(['true'])
+  expect(marks()).toEqual([{ badge: '1', muted: false }])
   expect(document.querySelector('[data-testid="notification-count"]')?.textContent).toBe('1')
   expect(document.querySelector('[data-testid="notification-mark-all-read"]'), 'nothing unread left to mark').toBeNull()
   // Its state, not its read bit, takes it off the list.
@@ -154,6 +154,17 @@ it('mark all reads global unexpanded errors across groups and leaves pending act
   await mount(); await open()
   await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="notification-mark-all-read"]')!.click())
   expect(markSeen.mock.calls.map(([id]) => id).sort()).toEqual(['agent-a', 'agent-b'])
+})
+it.each([false, true])('clicking an error acknowledges its host before opening the exact task (phone=%s)', async mobile => {
+  state.sessions = [task('failed', 'error')]
+  await mount(mobile); await open()
+  await act(async () => rows()[0].click())
+  expect(markSeen).toHaveBeenCalledExactlyOnceWith('failed')
+  expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'failed', deviceId: 'server' })
+  state.sessions = [task('failed', 'error', false)]
+  await mount(mobile)
+  expect(rows()).toHaveLength(0)
+  expect(document.querySelector('[data-testid="notification-count"]')).toBeNull()
 })
 it('failed reads retain their item and display the original error', async () => {
   state.sessions = [task('error-a', 'error')]; state.readError = new Error('host write failed')
@@ -204,7 +215,7 @@ it.each([false, true])('clicking the assistant\'s own row opens its chat and rea
     publishAssistantShell({ cloudAvailable: false, canHostHere: true, cloud: null, loadError: null, assistant: null, assistantState: 'none', ownerName: null, ownerId: null, chatId: null, home: null, setup: null, member: false, preparing: false })
   }
 })
-it('phone and desktop show the same notifications for the same tasks: old read failures listed but uncounted, no ⚡, nothing above Messages', async () => {
+it('phone and desktop omit read errors and show the same unread notifications', async () => {
   const at = (day: number) => new Date(Date.UTC(2026, 9, day)).toISOString()
   state.sessions = [
     ...Array.from({ length: 40 }, (_, i) => ({ ...task(`old-${i}`, 'error', false), lastInteractedAt: at(1 + (i % 28)) })),
@@ -223,7 +234,7 @@ it('phone and desktop show the same notifications for the same tasks: old read f
     await act(async () => toggle()!.click())
     shell.cleanup(); workspace.cleanup(); shell = createReactHarness(); workspace = createReactHarness(); installShellSlots()
   }
-  expect(shown[0]).toEqual({ count: '3', rows: ['wait', 'newer-failure', 'older-failure'], listed: 43 })
+  expect(shown[0]).toEqual({ count: '3', rows: ['wait', 'newer-failure', 'older-failure'], listed: 3 })
   expect(shown[1]).toEqual(shown[0])
 })
 

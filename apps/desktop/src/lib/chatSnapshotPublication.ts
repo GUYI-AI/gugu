@@ -35,8 +35,9 @@ function splitCachedChats(repository: AccountImRepository): { chats: ChatItem[];
   return { chats, incomplete }
 }
 
-// @@@local-first-frame — the list and its people paint from the local store as soon as it is read. Whatever the account
-// initialization still waits on (a snapshot rebuild after an update, message alignment) runs behind this frame.
+// @@@local-first-frame — the list and its people paint from the local store as soon as it is read, and the list counts as
+// loaded from then on: names, topics and the open conversation draw from these rows. Whatever the account initialization
+// still waits on (a snapshot rebuild after an update, message alignment) runs behind this frame.
 export function paintLocalChats(repository: AccountImRepository, list: {
   chatsRef: { current: ChatItem[] }
   projection: { seedFromCache(chats: readonly ChatItem[]): void }
@@ -49,6 +50,7 @@ export function paintLocalChats(repository: AccountImRepository, list: {
   list.chatsRef.current = cached
   list.projection.seedFromCache(cached) // durable snapshot = 上一次会话的服务端投影 (#4314)
   list.setChats(cached)
+  list.setChatsLoad((state) => state === 'unread' ? 'idle' : state)
 }
 
 /** openImRepository's `loaded` hook: local rows are readable, so unless this open was superseded, publish them. */

@@ -1,5 +1,7 @@
+import { canonicalPath } from '@gugu/session-core/files';
+import os from 'node:os';
+import fs from 'node:fs';
 // 同一个文件夹换一种写法,不能被认成另一个项目(owner 10-10 在 Windows 上撞到两个同名项目)。
-// 主机是 Windows 时的规则用 path.win32 跑,与测试机的平台无关。
 import path from 'node:path';
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,16 +16,15 @@ vi.mock('@main/db/client', () => ({
     return mocks.db;
   },
 }));
-vi.mock('../path-utils', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../path-utils')>();
-  return { ...actual, projectPathKey: (value: string) => actual.projectPathKey(value, path.win32) };
-});
-
 import { getLocalProjectByPath, getProjectPathOccupant } from './getProjects';
 
-const MIXED = 'C:\\Users\\Jeffry\\Documents/gugu coordination 2';
-const BACKSLASH = 'C:\\Users\\Jeffry\\Documents\\gugu coordination 2';
-const FORWARD = 'C:/Users/Jeffry/Documents/gugu coordination 2';
+/**
+ * Rows hold the one spelling of their folder (`@@@canonical-path`): written so, old ones migrated at start. A lookup puts
+ * whatever it is given in that spelling first — an alias, a trailing separator, `..` — and then compares by value.
+ */
+let base: string;
+let real: string;
+let alias: string;
 
 describe('getLocalProjectByPath', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>;
@@ -31,42 +32,41 @@ describe('getLocalProjectByPath', () => {
   beforeEach(async () => {
     fixture = await openFixture('empty');
     mocks.db = fixture.db;
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'project-path-')));
+    real = path.join(base, 'account', 'gugu coordination 2');
+    fs.mkdirSync(real, { recursive: true });
+    fs.symlinkSync(path.join(base, 'account'), path.join(base, 'alias'));
+    alias = path.join(base, 'alias', 'gugu coordination 2');
   });
 
   afterEach(() => {
     fixture.close();
     mocks.db = undefined;
+    fs.rmSync(base, { recursive: true, force: true });
   });
 
   async function insert(id: string, projectPath: string, extra: Partial<typeof projects.$inferInsert> = {}) {
-    await fixture.db.insert(projects).values({ id, name: 'gugu coordination 2', path: projectPath, ...extra });
+    await fixture.db.insert(projects).values({ id, name: 'gugu coordination 2', path: canonicalPath(projectPath), ...extra });
   }
 
-  it('库里那行是混合分隔符:全反斜杠、全正斜杠、带尾斜杠都认得出它', async () => {
-    await insert('p-mixed', MIXED);
-    for (const spelling of [MIXED, BACKSLASH, FORWARD, `${BACKSLASH}\\`, `${FORWARD}/`]) {
-      expect((await getLocalProjectByPath(spelling))?.id, spelling).toBe('p-mixed');
+  it('finds its row however the folder is named: through an alias, with a trailing separator, with `..`', async () => {
+    await insert('p-real', alias);
+    for (const spelling of [real, alias, `${alias}${path.sep}`, path.join(alias, 'sub', '..')]) {
+      expect((await getLocalProjectByPath(spelling))?.id, spelling).toBe('p-real');
     }
   });
 
-  it('同一文件夹已有两行:取最早的那行', async () => {
-    await insert('p-later', BACKSLASH, { createdAt: '2026-10-09 07:49:00' });
-    await insert('p-earlier', MIXED, { createdAt: '2026-09-25 02:00:00' });
-    expect((await getLocalProjectByPath(FORWARD))?.id).toBe('p-earlier');
+  it('an SSH project is another machine’s folder: never compared', async () => {
+    await insert('p-ssh', real, { workspaceProvider: 'ssh' });
+    expect(await getLocalProjectByPath(real)).toBeUndefined();
   });
 
-  it('SSH 远端项目的路径是别的机器上的,不参与比较', async () => {
-    await insert('p-ssh', MIXED, { workspaceProvider: 'ssh' });
-    expect(await getLocalProjectByPath(MIXED)).toBeUndefined();
-    expect(await getLocalProjectByPath(BACKSLASH)).toBeUndefined();
+  it('a relative path fails loudly, never joined to the process cwd', async () => {
+    await expect(getLocalProjectByPath('gugu coordination 2')).rejects.toThrow(/absolute/);
   });
 
-  it('相对路径响亮报错,不拿进程 cwd 去拼', async () => {
-    await expect(getLocalProjectByPath('gugu coordination 2')).rejects.toThrow('绝对路径');
-  });
-
-  it('冲突诊断按写库的那一种写法查', async () => {
-    await insert('p-ssh', BACKSLASH, { workspaceProvider: 'ssh' });
-    expect((await getProjectPathOccupant(`${FORWARD}/`))?.id).toBe('p-ssh');
+  it('the conflict lookup asks in the spelling rows are written in', async () => {
+    await insert('p-ssh', real, { workspaceProvider: 'ssh' });
+    expect((await getProjectPathOccupant(`${alias}${path.sep}`))?.id).toBe('p-ssh');
   });
 });

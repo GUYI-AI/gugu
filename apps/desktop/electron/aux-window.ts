@@ -2,6 +2,7 @@ import { BrowserWindow, shell, type BrowserWindowConstructorOptions } from 'elec
 import { BUILD_TAG_WINDOW_NAME, isAuxWindowRequest, isBuildTagWindowName } from '@shared/aux-window'
 import { TRAFFIC_LIGHT_POSITION } from '@shared/window-chrome-native'
 import { hardenWebPreferences } from './devtools-lock'
+import { PAGE_FULLSCREEN_PREFERENCES } from './page-fullscreen'
 import { openBuildTagLayer } from './build-tag-window'
 import { serveWindowLayers, windowLayerOptions, windowLayerResponse } from './window-layers'
 import { attachTabHistorySwipe } from './tab-history-swipe'
@@ -33,6 +34,7 @@ function auxWindowOptions(backgroundColor: string): BrowserWindowConstructorOpti
       webviewTag: true,
       // 同主窗:后台的窗也要照常跑(终端、App 页)。
       backgroundThrottling: false,
+      ...PAGE_FULLSCREEN_PREFERENCES,
     }),
   }
 }

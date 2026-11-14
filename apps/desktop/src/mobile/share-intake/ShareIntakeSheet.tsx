@@ -129,11 +129,10 @@ export function ShareIntakeContent({ share, onDone }: { share: IncomingShare; on
                     <Avatar
                       name={displayName(chat)}
                       avatarUrl={isRoomChat(chat.kind) ? chat.avatar : identity?.avatar}
-                      seed={chat.peer_user_id ?? undefined}
+                      seed={isRoomChat(chat.kind) ? chat.id : chat.peer_user_id ?? undefined}
                       size="sm"
                       isAgent={identity?.type === 'agent'}
                       variant={isRoomChat(chat.kind) ? 'group' : 'default'}
-                      memberAvatars={chat.member_user_ids?.flatMap((id) => identitiesById[id] ? [{ id, name: identitiesById[id].display_name, avatar: identitiesById[id].avatar }] : [])}
                     />
                   }
                   title={displayName(chat)}

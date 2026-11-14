@@ -1,18 +1,19 @@
-import { observable, runInAction } from 'mobx';
+import { observable } from 'mobx';
+import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 
 // #2548 ⑤ 内层栏可以收起(刘威提议稿 v1)。收钮在这一列头一行(笔的右边);收起后这一列让开,正文左上角浮出「展开内层栏」,
 // 最左那条页签条给它让出车道 —— 和左边列表整列让开时那枚「展开侧栏」同一条车道(TabStripShell reserveShellRestoreLane)。
-// 收起是一个全局的开关:换到别的群、项目、示例也收着,直到再展开(提议稿「全局记住」)。只记这一次运行:每次启动都是展开的,
-// 同左边那个列表(layout-provider「默认展开」),所以 ❌ 进任何存储。展开钮上 ❌ 挂数:话题里叫到你的,记在左边群那一行的红数上。
+// 收起是一个全局的开关:换到别的群、项目、示例也收着,直到再展开(提议稿「全局记住」)。重启、更新后照样收着(owner 11-14),
+// 同左边那个列表:都记在侧栏那份快照里(sidebar-folds)。展开钮上 ❌ 挂数:话题里叫到你的,记在左边群那一行的红数上。
 
 /** 用户把内层栏收起来了。 */
-export const innerSidebarFolded = observable.box(false);
+export const innerSidebarFolded = { get: (): boolean => sidebarFolds.has('inner') };
 
 /** 收起着,而此刻本该有这一列(挂在一个群 / 项目 / 示例上):展开钮这时才在。InnerSidebar 写。 */
 export const innerSidebarFoldedAway = observable.box(false);
 
 export function setInnerSidebarFolded(folded: boolean): void {
-  runInAction(() => innerSidebarFolded.set(folded));
+  setSidebarFold('inner', folded);
 }
 
 /**

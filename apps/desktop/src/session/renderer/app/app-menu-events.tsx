@@ -1,4 +1,5 @@
 import { followMovedFiles } from '@renderer/features/sessions/file-view/follow-moved-files';
+import { receivedCanonicalPath } from '@gugu/session-shared/canonical-path';
 import { findSessionAnywhere } from '@renderer/features/sessions/stores/session-selectors';
 import { workspaceSession } from '@shared/extensions/app-runtime-protocol';
 import { useEffect } from 'react';
@@ -198,7 +199,7 @@ export function AppMenuEvents() {
           for (const projectId of getProjectManagerStore().projects.keys()) {
             const workspaceId = getSessionPageStore(projectId, sessionId)?.workspaceId;
             const workspace = getWorkspaceForSession(projectId, sessionId);
-            if (workspaceId && workspace) return { projectId, workspaceId, root: workspace.path };
+            if (workspaceId && workspace) return { projectId, workspaceId, root: receivedCanonicalPath(workspace.path) };
           }
           return null;
         },

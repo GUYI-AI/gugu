@@ -19,8 +19,8 @@ export function PairSeparator({ label, onSeparate }: { label: string; onSeparate
         onSeparate();
       }}
     >
-      <span className="h-4 w-px bg-foreground opacity-[0.18] transition-opacity group-hover/sep:opacity-0 group-focus-visible/sep:opacity-0" />
-      <span className="absolute flex size-5 items-center justify-center rounded-full bg-tab-face text-foreground-muted opacity-0 ring-1 ring-foreground/15 transition-opacity group-hover/sep:opacity-100 group-hover/sep:text-foreground group-focus-visible/sep:opacity-100">
+      <span className="h-4 w-px bg-foreground opacity-[0.18] transition-opacity group-hover/sep:opacity-0 group-sep-kbd-focus:opacity-0" />
+      <span className="absolute flex size-5 items-center justify-center rounded-full bg-tab-face text-foreground-muted opacity-0 ring-1 ring-foreground/15 transition-opacity group-hover/sep:opacity-100 group-hover/sep:text-foreground group-sep-kbd-focus:opacity-100">
         <Unlink className="size-3.5" />
       </span>
     </button>

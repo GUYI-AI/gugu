@@ -9,6 +9,7 @@ import type { ProjectManagerStore } from '@renderer/features/projects/stores/pro
 import { pageSessions } from '@renderer/features/sessions/stores/session-selectors';
 import { isWorkspaceProject } from '@renderer/features/sessions/session-home-project-constants';
 import type { Snapshottable } from '@renderer/lib/stores/snapshottable';
+import { sidebarFolds, type SidebarFold } from './sidebar-folds';
 import type { SidebarSnapshot, SidebarSessionSortBy } from '@shared/view-state';
 import type { JoinedGroup } from '@/lib/sidebarJoinedGroups';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
@@ -436,6 +437,11 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     }
   }
 
+  /** 把这些父会话展开(已展开的不动)。打开一个子会话时用,侧栏里看得见它(#2630)。 */
+  expandSessions(sessionIds: readonly string[]): void {
+    for (const sessionId of sessionIds) this.expandedSessionIds.add(sessionId);
+  }
+
   /** 独立会话及助理家里的执行者。隐藏家目录项目行时,不能连同其中的任务一起摘掉。 */
   private standaloneOwnEntries(): SidebarSessionEntry[] {
     return [...this.projectManager.projects.values()]
@@ -469,6 +475,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
       expandedProjectIds: [...this.expandedProjectIds],
       expandedSessionIds: [...this.expandedSessionIds],
       idleExpandedProjectIds: [...this.idleExpandedProjectIds],
+      folds: [...sidebarFolds],
       projectOrder: [...this.projectOrder],
       sessionOrderByProject: { ...this.sessionOrderByProject },
       sessionSortBy: this.sessionSortBy,
@@ -484,6 +491,9 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     }
     if (snapshot.idleExpandedProjectIds !== undefined) {
       this.idleExpandedProjectIds.replace(snapshot.idleExpandedProjectIds);
+    }
+    if (snapshot.folds !== undefined) {
+      sidebarFolds.replace(snapshot.folds as SidebarFold[]);
     }
     if (snapshot.projectOrder !== undefined) {
       this.projectOrder = [...snapshot.projectOrder];

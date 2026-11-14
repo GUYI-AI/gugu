@@ -713,6 +713,8 @@ export function makeStartInput(
     cwd: '/tmp/workspace',
     providerSessionId: null,
     model: null,
+    // The host always resolves the recorded tier before the runtime sees the input (runtime-process/host.ts).
+    permissionMode: 'edit',
     runContext: {
       cli: { kind: 'resolved', path: '/usr/local/bin/claude' },
       env: { HOME: '/home/test', PATH: '/bin' },

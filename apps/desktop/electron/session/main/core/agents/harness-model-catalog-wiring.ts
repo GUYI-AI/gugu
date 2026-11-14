@@ -27,7 +27,9 @@ import { createLogger } from '../../../../lib/logger';
 
 const log = createLogger('harness-model-catalog');
 
-const STORAGE_KEY = 'harnessModelCatalogs';
+// Old successful catalogs may have silently discarded every grouped choice.
+// Re-probe once instead of keeping those empty results for the ready-cache TTL.
+const STORAGE_KEY = 'harnessModelCatalogs.groupedSelect.v1';
 
 let wired = false;
 

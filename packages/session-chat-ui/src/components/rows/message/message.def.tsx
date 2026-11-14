@@ -46,7 +46,7 @@ import { DELIVERY_VARS, DeliveryCard, estimateDelivery, measureDelivery } from '
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { taskProtocolText } from '@gugu/core/shared/ui/taskProtocolText';
 import { parseHookNotice } from '@session-chat/lib/hook-notice';
-import { readQuestionAnswerDelivery } from '@gugu/session-core/session-record/question-answer';
+import { messageQuestionAnswer } from '@session-chat/state/message-presentation';
 import {
   HOOK_NOTICE_VARS,
   HookNoticeCard,
@@ -84,7 +84,7 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
   // 形状是他引用的原文，❌ 不能拿它当钩子说话。
   const hookNotice =
     item.hookNotice ?? (item.role === 'assistant' ? (parseHookNotice(item.text) ?? undefined) : undefined);
-  const questionAnswer = item.questionAnswer ?? (item.role === 'user' ? readQuestionAnswerDelivery(item.text) : undefined);
+  const questionAnswer = messageQuestionAnswer(item);
   if (questionAnswer) return { ...item, questionAnswer };
   const normalized = {
     ...item,
@@ -139,7 +139,7 @@ export function measureMessage(item: ChatMessage, ctx: MeasureCtx, baseVars: Mes
   if (scheduled.length) return scheduled.reduce((height, part) => height + (isScheduledPrompt(part)
     ? scheduledPromptHeight([part], ctx) : measureMessage(part, ctx, baseVars)), 0);
   if (isConversationMessage(item, ctx)) return conversationMessageHeight(item, ctx, baseVars);
-  if (item.questionAnswer) return QUESTION_ANSWER_H;
+  if (messageQuestionAnswer(item)) return QUESTION_ANSWER_H;
   const vars = effectiveMessageVars(baseVars, ctx.theme.layout);
   const blocks = item.streaming
     ? ctx.caches.parseBlocksStreaming(item.id, item.text)
@@ -299,7 +299,7 @@ function MessageUnitRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Mes
 function LegacyMessageUnitRender(props: { data: ChatMessage; ctx: RenderCtx; vars: MessageVars }) {
   const translate = useChatTranslator();
   return (
-    <Show when={props.data.questionAnswer} fallback={<MessageBodyRender data={props.data} ctx={props.ctx} vars={props.vars} />}>
+    <Show when={messageQuestionAnswer(props.data)} fallback={<MessageBodyRender data={props.data} ctx={props.ctx} vars={props.vars} />}>
       {(reading) => (
         <div class={questionAnswerRow} data-slot="question-answer" style={{ height: `${QUESTION_ANSWER_H}px` }}>
           {reading().answer === null
@@ -361,7 +361,7 @@ export const messageUnitDef = defineUnit<ChatMessage, MessageVars>({
     if (scheduled.length) return measureMessage(item, ctx, baseVars);
     if (isConversationMessage(item, ctx)) return conversationMessageHeight(item, ctx, baseVars);
     const vars = effectiveMessageVars(baseVars, ctx.theme.layout);
-    if (item.questionAnswer) return QUESTION_ANSWER_H;
+    if (messageQuestionAnswer(item)) return QUESTION_ANSWER_H;
     if (item.role === 'user' && item.guguDelivery) {
       return estimateDelivery(item, ctx, DELIVERY_VARS, baseVars);
     }

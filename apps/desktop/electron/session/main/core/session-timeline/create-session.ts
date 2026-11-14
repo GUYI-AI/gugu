@@ -6,6 +6,7 @@ import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { DEFAULT_SESSION_VIEW } from '@shared/core/sessions/new-session-defaults';
 import {
   GUGU_PERMISSION_MODES,
+  NEW_SESSION_PERMISSION_MODE,
   type GuguPermissionMode,
 } from '@gugu/session-core/acp';
 import {
@@ -418,7 +419,7 @@ async function createSessionSteps(
   }
   // 桌面 composer 的默认档由它的状态 hook 定(上次用过的 / 该面的默认);手机不给就按「可改文件」——
   // 与 permissionModeFromAutoApprove(false) 同一个答案:那是「改之前问我」,不是只读。
-  const permissionMode: GuguPermissionMode = request.permissionMode ?? 'edit';
+  const permissionMode: GuguPermissionMode = request.permissionMode ?? NEW_SESSION_PERMISSION_MODE;
 
   /*
    * 这台机器上还没装这家:当场装上再往下走(#6264 product spec 第 6 条 —— 刚装好的咕咕 server

@@ -161,14 +161,14 @@ export function MessagePreviewCard({
     && state.preview.entries.every(entry => entry.kind === 'tool' || hasPreviewActivity(entry)) ? state.preview : null
   const activityText = useActivityPreviewText()
   const { messages, threadMessages, identitiesById } = useChatStore()
-  const displayName = useShownAgentName({ id: token.id, chatId, name: rawDisplayName, createdAt: identitiesById[token.id]?.created_at ?? undefined })
+  const displayName = useShownAgentName({ name: rawDisplayName, createdAt: identitiesById[token.id]?.created_at ?? undefined })
   const promptIds = (preview?.entries ?? []).flatMap((entry) =>
     entry.kind === 'prompt' && entry.messageId && activityText(entry.activity) === null ? [promptIdOf(entry.messageId)] : [],
   )
   const lookupPrompt = usePromptMessages(promptIds, [...messages, ...threadMessages])
   const blocks = preview ? toBlocks(preview.entries, lookupPrompt, activityText) : []
   const senderIds = [...new Set(blocks.flatMap(block => block.kind === 'prompt' && block.message?.sender_user_id ? [block.message.sender_user_id] : []))]
-  const senderNames = useShownAgentName(senderIds.map(id => ({ id, chatId, name: identitiesById[id]?.display_name ?? '', createdAt: identitiesById[id]?.type === 'agent' ? identitiesById[id]?.created_at ?? undefined : undefined })))
+  const senderNames = useShownAgentName(senderIds.map(id => ({ name: identitiesById[id]?.display_name ?? '', createdAt: identitiesById[id]?.type === 'agent' ? identitiesById[id]?.created_at ?? undefined : undefined })))
   const senderName = (id: string | null) => id ? senderNames[senderIds.indexOf(id)] ?? '' : ''
   const rel = formatRelativeTime(token.lastActiveAt) ?? t('runtime.justNow')
   const meta = [

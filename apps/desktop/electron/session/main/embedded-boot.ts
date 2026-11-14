@@ -106,8 +106,11 @@ import {
 } from '@main/core/extensions/extension-background'
 import { rpcRouter } from '@main/rpc' // ← the complete router, every controller
 import { initializeDatabase } from '@main/db/initialize'
+import { stopTaskTurnSearch } from '@main/core/search/task-turn-search'
 import { startTurnTextBackfillWorker, stopTurnTextBackfillWorker, type SearchBackfillLogger } from '@main/db/turn-text-backfill-runner'
 import { migrateProjectKind } from '@main/core/projects/operations/migrate-project-kind'
+import { copyClaudeHistoryForMovedFolders, migrateCanonicalPaths, migrateSessionOutputPaths } from '@main/core/projects/operations/migrate-canonical-paths'
+import { knownHarnessConfigRoots, loadHarnessConfigRoots } from '@main/core/agent-hooks/harness-config-roots'
 import { closeDatabase, db, sqlite } from '@main/db/client'
 import { resolveDatabasePath } from '@main/db/path'
 import { backupBeforeTaskToSession, runTaskToSessionOnce } from '../../migrations/task-to-session'
@@ -233,7 +236,7 @@ import {
   setConnectionConfigRootResolver,
   setSessionStatusFeed,
 } from '@main/core/session-timeline/service'
-import { connectionConfigRoot } from '@main/core/agents/harness-connections'
+import { connectionConfigRoot, nativeConfigRoot } from '@main/core/agents/harness-connections'
 import { setSessionCancel, setSessionWake } from '@main/core/session-timeline/write-bridge'
 import { setOtherMachines } from '@main/core/sessions/session-family'
 import { loadAcpForkHandshakes } from '@main/core/agents/fork-legs'
@@ -250,7 +253,6 @@ import { setSessionMessageOutboxReady } from '@main/core/sessions/session-messag
 import { sessionProcess } from '@main/core/sessions/session-process'
 import { ptyRecordResumeSet, startPtyRecordSync } from '@main/core/sessions/pty-record-sync'
 export { sessionProcess }
-export { setUserLibraryOwner } from '@main/core/app/user-library'
 // #7341 第二步 项目跨设备:`projects.*` 的项目群四件事由宿主接上实现(对照 / 登录态 / 云端都在宿主那边);
 // 宿主那份对照的唯一写口每写一次就经这里让渲染层重读。
 export {
@@ -568,6 +570,18 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   } catch (error) {
     log.error('project-kind: migration failed; retrying next start', { error: String(error) })
   }
+  // @@@canonical-path 记录里的路径只留一种写法(别名 `accounts/<id>` → `account` 等);幂等,失败不拦启动、下次重试。
+  try {
+    const { moved, conflicts } = migrateCanonicalPaths(path.join(app.getPath('userData'), 'canonical-path-migration.json'))
+    if (moved.length > 0 || conflicts.length > 0) {
+      const outputs = await migrateSessionOutputPaths(moved)
+      await loadHarnessConfigRoots()
+      const claude = await copyClaudeHistoryForMovedFolders([nativeConfigRoot('claude'), ...knownHarnessConfigRoots('claude')], moved)
+      log.info('canonical paths: records now in their one spelling', { moved: moved.length, conflicts: conflicts.length, outputs, claude })
+    }
+  } catch (error) {
+    log.error('canonical paths: migration failed; retrying next start', { error: String(error) })
+  }
   await tmuxBackendStartupSweepSettled()
   await runTaskToSessionOnce({ db: sqlite, userData: app.getPath('userData') }).then(
     (summary) => { if (summary) log.info('task-to-session: segment 2 done', { summary }) },
@@ -846,6 +860,7 @@ let stopPtyRecordSync: () => void = () => {}
 
 async function disposeEmdashModuleOnce(): Promise<void> {
   stopTurnTextBackfillWorker()
+  stopTaskTurnSearch()
   const failures: unknown[] = []
   const runPhase = async (phase: string, action: () => void | Promise<void>): Promise<void> => {
     const startedAt = performance.now()

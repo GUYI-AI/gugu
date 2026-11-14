@@ -2,6 +2,8 @@ import { observable } from 'mobx';
 
 // #2548 内层侧栏挂在哪个对话上。打开一个用户群或一个项目(它的项目群)就出现;从这一列里点开一个智能体,
 // 正看着的是那条会话,这一列照旧留着(点别的、开私聊、开不在这个群里的会话就收起)。
+// 一屏几块时这一列是这一屏的,不是焦点那一块的:它挂的群 / 项目还在屏上,焦点去了旁边没有这一列的一块(私聊、别的会话),
+// 它照旧挂着 —— 在哪一块里按下不挪动任何一块。
 // #2574 这一列说的是「这个对话里还有谁在干活」:有子智能体的独立智能体也有这一列(开它就是开它的会话)。
 
 /** 群,或项目(项目群的 chat id)。 */
@@ -40,18 +42,24 @@ export function viewAnchor(view: InnerSidebarView): InnerSidebarRoomAnchor | nul
 
 /**
  * 换了视图之后内层侧栏挂在哪:视图自己是群 / 项目就挂它;看的是一条会话、且它列在上一次那一列里,就还挂着上一次的;
- * 不然它是一个有子智能体的独立智能体的会话,就挂那个智能体(#2574);其余收起。
- * `listedIn(anchor, sessionId)` = 这条会话列在那一列的「智能体」里;`agentAnchorOf(sessionId)` = 这条会话开出来的那个智能体的一列,没有 = null。
+ * 不然它是一个有子智能体的独立智能体的会话,就挂那个智能体(#2574);再不然上一次挂的那个对话还在这屏上,就还挂着它;其余收起。
+ * `listedIn(anchor, sessionId)` = 这条会话列在那一列的「智能体」里;`agentAnchorOf(sessionId)` = 这条会话开出来的那个智能体的一列,没有 = null;
+ * `onScreen(anchor)` = 那个对话此刻是这屏的一块。
  */
 export function followInnerSidebar(
   previous: InnerSidebarAnchor | null,
   view: InnerSidebarView,
   listedIn: (anchor: InnerSidebarAnchor, sessionId: string) => boolean,
-  agentAnchorOf: (sessionId: string) => InnerSidebarAnchor | null
+  agentAnchorOf: (sessionId: string) => InnerSidebarAnchor | null,
+  onScreen: (anchor: InnerSidebarAnchor) => boolean
 ): InnerSidebarAnchor | null {
   const own = viewAnchor(view);
   if (own) return own;
-  if (view.kind !== 'session') return null;
-  if (previous && listedIn(previous, view.sessionId)) return previous;
-  return agentAnchorOf(view.sessionId);
+  if (view.kind === 'other') return null;
+  if (view.kind === 'session') {
+    if (previous && listedIn(previous, view.sessionId)) return previous;
+    const agent = agentAnchorOf(view.sessionId);
+    if (agent) return agent;
+  }
+  return previous && onScreen(previous) ? previous : null;
 }

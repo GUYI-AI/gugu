@@ -22,6 +22,10 @@ const GROUP_AGENT_STATUS_RANK: Record<AgentDisplayStatus, number> = {
   needs_user: 8,
 }
 
+export function groupAgentStatusRank(status: AgentDisplayStatus): number {
+  return GROUP_AGENT_STATUS_RANK[status]
+}
+
 export function groupAgentDisplayStatus(
   member: GroupAgentStatusMember,
   statuses: Readonly<Record<string, AgentDisplayStatus>>,

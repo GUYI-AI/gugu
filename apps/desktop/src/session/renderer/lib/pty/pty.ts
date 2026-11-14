@@ -598,7 +598,7 @@ export class FrontendPty {
   }
 
   /**
-   * 所在的页还在不在屏幕上。任务页会把最近开过的几页留着不卸(recent-session-pages,藏起来时 PageShownContext 为 false)。
+   * 所在的页还在不在屏幕上。任务页会把最近开过的几页留着不卸(recent-session-pages,藏起来时 SurfaceShownContext 为 false)。
    * 藏起来时 GL 上下文留着:切回来不必重建字形贴图(mac1 实测,两个任务来回切,每次都拆了重建时点击到上屏 p50
    * 115ms,DOM 渲染器 80ms,留着 70ms)。留着的个数由 @@@webgl-hot-terminals 封顶。
    */

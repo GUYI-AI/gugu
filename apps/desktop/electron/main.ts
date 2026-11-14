@@ -71,9 +71,11 @@ import {
   RENDERER_LOG_CHANNEL,
 } from './lib/logger'
 import { createRendererLogForwarder } from './local-renderer-diagnostics'
+import { createBetaTypingDiagnosticsHandler } from './beta-typing-diagnostics'
+import { BETA_TYPING_DIAGNOSTICS_BUILD, typingDiagnosticsEnabled } from '../shared/beta-typing-diagnostics'
 import { registerErrorSummaryReporting } from './error-summary-reporting-host'
 import { registerErrorSummaryConsent } from './error-summary-consent-host'
-import { autoApproveFromPermissionMode, type GuguPermissionMode } from '@gugu/session-core/acp'
+import { resolveSessionPermissionMode, type GuguPermissionMode } from '@gugu/session-core/acp'
 import { classifyFatal, recordFatalSync } from './lib/fatal-triage'
 import { pathToFileURL } from 'node:url'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
@@ -242,6 +244,7 @@ import { createDesktopAssistantWorkReconciler } from './assistant-work-reconcili
 import { enqueueAssistantWorkReport } from '@gugu/core/cloud/assistantWorkReports'
 import {withAssistantWorkReply} from '@gugu/core/shared/assistantWorkReply'
 import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision'
+import { assistantHomeKind } from '@gugu/core/shared/assistantPolicy'
 import { landTaskCardFirstTurn } from './sessionpage/task-card-first-turn'
 import { withQuestionCard } from './sessionpage/question-card'
 import {
@@ -552,6 +555,7 @@ import {
   installDevtoolsLock,
   isDevtoolsLocked,
 } from './devtools-lock'
+import { installPageFullscreen, PAGE_FULLSCREEN_PREFERENCES } from './page-fullscreen'
 import { applyApplicationMenu } from './app-menu'
 import { createMainRendererGoneHandler, createMainRendererResponsivenessLog, type CrashDialogChoice } from './renderer-crash-recovery'
 import { menuOpenSettingsChannel } from '@shared/events/appEvents'
@@ -702,6 +706,7 @@ installDevtoolsLock((url) => {
   // 走到这里说明前面几层漏了 —— 这是要查的 bug,不是正常态,所以留证不静默。
   devtoolsLockLogger.error({ url }, 'DevTools 在锁定态下被打开,已强制关闭')
 })
+installPageFullscreen()
 registerContentContextMenus(ipcMain)
 registerFileViewerMenus(app, () => currentHostCatalog().fileViewerMenu, (error) => {
   processGoneLogger.error({ error: String(error) }, 'Content context menu failed')
@@ -1377,7 +1382,7 @@ function tellHostPresentationChanged(): void {
 }
 // App 页的 `operator.guguNumber`:登录账号自己的咕咕号,按信封同一张身份表查,一个账号查一次。
 const selfGuguNumber = createSelfGuguNumber({
-  userId: () => SERVER_MODE ? serverAuth?.signedInUserId() ?? null : humanAuthUserId(),
+  userId: () => signedInAccountId(),
   lookup: async (userId) => {
     const auth = await (authProvider ?? desktopAuthProvider()).getAuth()
     if (auth?.userId !== userId) throw new Error('the account changed while its 咕咕号 was looked up')
@@ -1632,7 +1637,8 @@ function createWindow(loadContents = true): void {
       // 2026-07-21 owner 改把它当生产力工具用，要更高信息密度 → 收到 100%（默认 1.0）。
       // 应用级缩放，不动逐像素核对过的设计稿 px；Cmd/Ctrl +/- 仍可临时调（菜单自带 zoom roles）。
       // 注:已装机用户若之前 Cmd+ 调过、Chromium 会按 origin 持久化那个值 → 需 Cmd+0 归位到此默认。
-      zoomFactor: 1.0
+      zoomFactor: 1.0,
+      ...PAGE_FULLSCREEN_PREFERENCES,
     })
   })
 
@@ -2357,8 +2363,16 @@ ipcMain.on(HOST_SYSTEM_LANGUAGES_CHANNEL, (event) => {
 })
 // @@@logging (#2382) - renderer 的日志回传到主进程,和主进程日志同流、同脱敏、同落盘:
 // 渲染侧崩在用户机器上时,`console` 只活在 devtools 里,拿不回来。
-const forwardRendererLog = createRendererLogForwarder({ getMetrics: () => app.getAppMetrics() })
-ipcMain.handle(RENDERER_LOG_CHANNEL, (event, payload: unknown) => forwardRendererLog(event.sender, payload))
+const betaTypingDiagnosticsEnabled = typingDiagnosticsEnabled(BETA_TYPING_DIAGNOSTICS_BUILD, process.env.GUGU_TYPING_DIAGNOSTICS)
+const typingDiagnostics = createBetaTypingDiagnosticsHandler({
+  enabled: betaTypingDiagnosticsEnabled,
+  directory: () => join(app.getPath('userData'), 'diagnostics', 'typing'),
+  mainWindowId: () => mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.id : undefined,
+  version: app.getVersion(),
+  captureTarget: () => mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null,
+})
+const forwardRendererLog = createRendererLogForwarder({ getMetrics: () => app.getAppMetrics(), typing: typingDiagnostics })
+ipcMain.handle(RENDERER_LOG_CHANNEL, (event, payload: unknown) => forwardRendererLog(event.sender, payload, Boolean(event.senderFrame) && event.senderFrame === event.sender.mainFrame))
 
 // @@@4899 用户在反馈里勾了「附带日志」才走这条。读不到就让它抛到 renderer —— 界面当场取消
 // 勾选并说明,❌ 不许悄悄附一个空的(用户以为给了线索,排查方以为用户没日志)。
@@ -2607,12 +2621,17 @@ function humanAuthUserId(): string | null {
   return typeof pushedHumanAuth === 'object' ? pushedHumanAuth?.userId ?? null : null
 }
 
+/** 这个进程此刻登着的账号:server 的登录态由主进程自己持有(server-auth),桌面是渲染层推来的那份。属主一律问它。 */
+function signedInAccountId(): string | null {
+  return SERVER_MODE ? serverAuth?.signedInUserId() ?? null : humanAuthUserId()
+}
+
 function onHumanAuthSessionChanged(): void {
   projectionDeviceRuntime.invalidate()
-  void emdashBridgeModule?.setTaskNameOwner(humanAuthUserId())
+  void emdashBridgeModule?.setTaskNameOwner(signedInAccountId())
     .then(() => adoptCloudTaskNames?.())
     .catch(error => createLogger('sessionpage/names').error({ error: String(error) }, 'Task name owner change failed'))
-  void nativeFiles.ownerChanged(humanAuthUserId()).catch(error => createLogger('files').warn({ error: String(error) }, 'File handle cleanup failed'))
+  void nativeFiles.ownerChanged(signedInAccountId()).catch(error => createLogger('files').warn({ error: String(error) }, 'File handle cleanup failed'))
   void refreshElectronSupabaseAuth().catch((error: unknown) => {
     createLogger('device-runtime/auth').warn({ error: String(error) }, 'Realtime account auth update failed')
   })
@@ -2668,25 +2687,22 @@ function bootedSessionLife() {
   if (!bridge) throw new Error('session-life: the session page module is not loaded')
   return bridge.sessionLife()
 }
-function pushedUserId(): string | null {
-  return typeof pushedHumanAuth === 'object' ? pushedHumanAuth?.userId ?? null : null
-}
 async function sessionLifeLeaveIfChanging(nextUserId: string | null): Promise<void> {
-  const current = pushedUserId()
+  const current = humanAuthUserId()
   if (sessionLifeBooted && current && current !== nextUserId) await bootedSessionLife().signOut()
 }
 async function sessionLifeEnter(): Promise<void> {
-  const userId = pushedUserId()
+  const userId = humanAuthUserId()
   if (sessionLifeBooted && userId) await bootedSessionLife().signIn(userId)
 }
 // 「帮助改进咕咕」开关在所有桌面版上都记;真正发送仍只在配好接收地址的已发布 Beta 上(下一段)。
 const errorSummaryConsent = registerErrorSummaryConsent({
   eligible: !SERVER_MODE,
-  owner: () => pushedHumanAuth === undefined ? undefined : pushedUserId(),
+  owner: () => pushedHumanAuth === undefined ? undefined : humanAuthUserId(),
 })
 registerErrorSummaryReporting({
   eligible: !SERVER_MODE && __GUGU_TIER__ === 'beta' && __GUGU_BUILD_DISTRIBUTION__ === 'published',
-  owner: () => pushedHumanAuth === undefined ? undefined : pushedUserId(),
+  owner: () => pushedHumanAuth === undefined ? undefined : humanAuthUserId(),
 })
 const humanAuthSessionIpc = createHumanAuthSessionIpc({
   toAuth: runtimeAuthFromSupabaseTokens,
@@ -5139,7 +5155,7 @@ app.whenReady().then(async () => {
         sendUiEvent(MAIN_UI_EVENTS.ownedAgentRenamed, { agentUserId, displayName: name })
       },
     })
-    await emdash.setTaskNameOwner(humanAuthUserId())
+    await emdash.setTaskNameOwner(signedInAccountId())
     // A name renamed offline is published once the backend answers this process again (no timer).
     let publishing: Promise<void> | null = null
     const publishPendingTaskNames = () => {
@@ -5161,13 +5177,12 @@ app.whenReady().then(async () => {
     })
     app.once('will-quit', () => { nativeInbox.dispose(); assistantPanelRuntime?.dispose() })
     // 项目的跨设备身份由宿主的群对照维护；每次写入后通知渲染层重读。
-    emdash.setUserLibraryOwner(async () => (await getSessionpageAuth())?.userId ?? null)
     const assistantPanel = assistantPanelRuntime = createPanelConnectionRuntime({
       locale: currentHostLocale,
       getAuth: getSessionpageAuth,
       instanceId: () => deviceRuntimeHost?.instanceId ?? null,
       deviceId: async () => { const id = await localDeviceId(); if (!id) throw new Error('PANEL_DEVICE_UNAVAILABLE'); return id },
-      local: emdash.assistantPanelLocal,guguHome: resolveGuguHome(process.env),kind: SERVER_MODE ? 'cloud' : 'computer',env: process.env,
+      local: emdash.assistantPanelLocal,guguHome: resolveGuguHome(process.env),kind: assistantHomeKind(process.env),env: process.env,
       failed: domain => createLogger('assistant-panel').warn({ domain },'Panel publication will retry during host activity'),
     })
     emdash.setSessionAdmissionPreparation((sessionId,text) => assistantPanel.prepare(sessionId,text))
@@ -5503,14 +5518,7 @@ app.whenReady().then(async () => {
             ...(info.sourceSessionId ? { libraryFrom: info.sourceSessionId } : {}),
             // 运行时分叉(侧边聊天)沿用启动输入解析出的同一权限档；ACP adapter 的进程参数
             // 与普通 app-server 由同一 session bundle 物化，不能在桥里另猜一档。
-            autonomy: info.permissionMode
-              ? {
-                  mode: autoApproveFromPermissionMode(info.permissionMode)
-                    ? ('full-access' as const)
-                    : ('approval-required' as const),
-                  ...(info.permissionMode ? { permissionMode: info.permissionMode } : {}),
-                }
-            : null,
+            autonomy: { permissionMode: resolveSessionPermissionMode(info) },
             model: sessionBundleModelFor(info.providerId, 'acp', forkPlatform),
           // spec `mcp-session-toggle`:用户为这条会话关掉的那几台。
           // ⚠️ 原样递,`[]` 也递 —— 归一成 undefined 会让「决定过但一台没关」
@@ -5609,14 +5617,7 @@ app.whenReady().then(async () => {
           extensionApps: [],
           extensionServerOrigins: [],
           model: null,
-          autonomy: info.permissionMode
-            ? {
-                mode: autoApproveFromPermissionMode(info.permissionMode)
-                  ? ('full-access' as const)
-                  : ('approval-required' as const),
-                ...(info.permissionMode ? { permissionMode: info.permissionMode } : {}),
-              }
-            : null,
+          autonomy: { permissionMode: resolveSessionPermissionMode(info) },
           // ❌ 运行时分叉(侧边聊天)**不得**在这里多加一格。owner 2026-08-21 定调:分叉会话的
           // harness 自己就带系统提示,分叉又继承了来源会话那一份,再追加一块就是第三份。
           // promptBlocks 走系统提示通道(见 @@@system-prompt-channel),而系统提示在前缀最前面:
@@ -5761,7 +5762,7 @@ app.whenReady().then(async () => {
         const readAssistantResources = assistantRole ? async () => {
           if (!assistantResourceOwner || (await getSessionpageAuth())?.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
           const { assistantLocalIndex } = await import('./sessionpage/assistant-local-index')
-          const resources = await assistantLocalIndex(info.cwd, SERVER_MODE ? 'cloud' : 'computer', undefined,
+          const resources = await assistantLocalIndex(info.cwd, assistantHomeKind(process.env), undefined,
             () => emdash.assistantPanelLocal.integrationIndex())
           if ((await getSessionpageAuth())?.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
           return resources
@@ -5785,14 +5786,7 @@ app.whenReady().then(async () => {
           // 它那段注释逐字写着这一格不递就会「变成一条永远不被喂的死代码」—— 这里补上那根线。
           // ⚠️ 解析式与运行时 `applyConfiguredPermissionMode` 同源(都从 permissionMode 来),
           //    ❌ 别在这里另写一套映射:两条路对同一个用户选择解释出不同档 = 界面与实际不一致。
-          autonomy: info.permissionMode
-            ? {
-                mode: autoApproveFromPermissionMode(info.permissionMode)
-                  ? ('full-access' as const)
-                  : ('approval-required' as const),
-                ...(info.permissionMode ? { permissionMode: info.permissionMode } : {}),
-              }
-            : null,
+          autonomy: { permissionMode: resolveSessionPermissionMode(info) },
           promptBlocks: { platform: `${GUGU_PLATFORM_BLOCK}${projectContextBlock}`, identity: identityBlock },
           ...(processConfigPlatform
             ? {
@@ -5816,7 +5810,7 @@ app.whenReady().then(async () => {
             grantKey: sessionpageSurfaceKey(info.sessionId),
             nativeSessionId: info.sessionId,
             ...(assistantRole ? { personalAssistant: true as const, assistantWork: {
-              ...assistantWorkBinding(persistedSessionId, info.cwd, SERVER_MODE ? 'cloud' : 'computer', provisioned.guguAgentUserId),
+              ...assistantWorkBinding(persistedSessionId, info.cwd, assistantHomeKind(process.env), provisioned.guguAgentUserId),
               currentInput: () => emdashBridge?.readCurrentActivityInput(persistedSessionId) ?? Promise.resolve(undefined),
             } } : {}),
             ...(readAssistantResources ? { readAssistantResources } : {}),
@@ -5839,7 +5833,7 @@ app.whenReady().then(async () => {
           sessionId: persistedSessionId,assistantId: provisioned.guguAgentUserId,ownerId: assistantResourceOwner,cwd: info.cwd,
         }) : undefined
         const capabilities = assistantRole && (info.providerId === 'claude' || info.providerId === 'codex') ? await preparePersonalAssistantContext(
-          loaded, info.cwd, resolveGuguHome(process.env), SERVER_MODE ? 'cloud' : 'computer', {
+          loaded, info.cwd, resolveGuguHome(process.env), assistantHomeKind(process.env), {
             accountId: async () => {
               const owner = (await getSessionpageAuth())?.userId
               return owner && owner === assistantResourceOwner ? owner : null
@@ -5851,7 +5845,7 @@ app.whenReady().then(async () => {
               return runAction(action, auth, signal)
             },
           }, undefined, info.providerId === 'codex' ? 'codex' : 'claude',
-        ) : info.providerId === 'claude' && !SERVER_MODE
+        ) : info.providerId === 'claude'
           ? await assistantHomeTaskContext(loaded, info.cwd, resolveGuguHome(process.env)) : loaded
         injectMark('capabilities-loaded')
         await applySessionMaterialization({

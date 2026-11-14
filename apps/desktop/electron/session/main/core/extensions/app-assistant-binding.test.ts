@@ -433,7 +433,7 @@ describe('an account with no assistant: the first setup can start from the App',
 
 describe('counts and the connect list: what the panel and the connect step read, with the bound assistant\'s snapshot', () => {
   const ready = <T,>(value: T) => ({ state: 'ready' as const, value });
-  const COUNTS = { devices: ready(3), connectedApps: ready({ saved: 4, connected: 2 }), projects: ready(7), capabilities: ready(5) };
+  const COUNTS = { devices: ready(3), connectedApps: ready({ saved: 4, connected: 2 }), projects: ready(7) };
   const ICON = 'data:image/svg+xml;base64,PHN2Zy8+';
   const CONNECTORS = ready([
     { id: 'feishu', name: 'Feishu', icon: { light: ICON, dark: null, invertInDark: false }, connected: true },
@@ -457,7 +457,7 @@ describe('counts and the connect list: what the panel and the connect step read,
 
   it('each says how its read is: ready with it, loading, or unreadable — never 0 for those', async () => {
     await show();
-    const partly = { devices: { state: 'loading' }, connectedApps: { state: 'unreadable' }, projects: ready(0), capabilities: { state: 'unreadable' } };
+    const partly = { devices: { state: 'loading' }, connectedApps: { state: 'unreadable' }, projects: ready(0) };
     await push(partly, { state: 'loading' });
     expect(await read()).toMatchObject({ status: { counts: partly, connectors: { state: 'loading' } } });
   });
@@ -483,7 +483,7 @@ describe('counts and the connect list: what the panel and the connect step read,
   it('takes read states of numbers alone: an id, a path, a URL, a name, a negative, a fraction, a bare number or another field is refused, nothing kept', async () => {
     await show();
     for (const bad of [
-      { ...COUNTS, devices: ready(DEVICE) }, { ...COUNTS, projects: ready('/Users/me/project') }, { ...COUNTS, capabilities: ready('https://example.com/x') },
+      { ...COUNTS, devices: ready(DEVICE) }, { ...COUNTS, projects: ready('/Users/me/project') },
       { ...COUNTS, connectedApps: ready({ saved: 1, connected: 1, names: ['Mail'] }) }, { ...COUNTS, projects: ready(['Docs']) },
       { ...COUNTS, devices: ready(-1) }, { ...COUNTS, projects: ready(1.5) }, { ...COUNTS, chatId: CHAT }, { devices: ready(1) },
       { ...COUNTS, devices: 3 }, { ...COUNTS, devices: null }, { ...COUNTS, devices: { state: 'loading', value: 3 } }, { ...COUNTS, devices: { state: 'failed' } },
@@ -506,7 +506,7 @@ describe('counts and the connect list: what the panel and the connect step read,
 
 describe('gugu.assistant.connect: the connect step\'s click, the window\'s own connect dialog', () => {
   const ready = <T,>(value: T) => ({ state: 'ready' as const, value });
-  const COUNTS = { devices: ready(1), connectedApps: ready({ saved: 0, connected: 0 }), projects: ready(0), capabilities: ready(0) };
+  const COUNTS = { devices: ready(1), connectedApps: ready({ saved: 0, connected: 0 }), projects: ready(0) };
   const LIST = ready([{ id: 'feishu', name: 'Feishu', icon: null, connected: false }]);
   const connect = (id: unknown, act = vi.fn(async (_action: ExtensionHostAction) => undefined)) => appAssistantConnect(APP, { name: 'main', id }, act);
 
@@ -568,8 +568,8 @@ describe('gugu.assistant.connect: the connect step\'s click, the window\'s own c
   });
 });
 
-describe('the panel\'s own pages over the App\'s panel: settings, projects, capabilities', () => {
-  const LAYERS = ['settings', 'projects', 'capabilities'] as const;
+describe('the panel\'s own pages over the App\'s panel: settings, projects', () => {
+  const LAYERS = ['settings', 'projects'] as const;
 
   it.each(LAYERS)('%s: the window is asked to draw it, for the account checked', async (screen) => {
     const act = vi.fn(async (_action: ExtensionHostAction) => undefined);

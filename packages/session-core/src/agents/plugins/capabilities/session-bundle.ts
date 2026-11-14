@@ -1229,12 +1229,8 @@ export interface SessionModelCapability {
 }
 
 export interface SessionAutonomyCapability {
-  mode: 'approval-required' | 'full-access';
-  /**
-   * Exact product tier, authoritative when present. `mode` is the legacy coarse channel derived from
-   * this value; old boolean-only callers omit it and retain their historical behavior.
-   */
-  permissionMode?: GuguPermissionMode;
+  /** The exact product tier: the one channel every materializer reads (full access = `full-access`). */
+  permissionMode: GuguPermissionMode;
 }
 
 export interface SessionPromptBlocks {

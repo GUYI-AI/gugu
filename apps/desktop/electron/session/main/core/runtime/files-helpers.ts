@@ -1,9 +1,5 @@
 import { type FileError, type FileStat, type IFileSystem } from '@gugu/session-core/files';
 import { err, type Result } from '@gugu/session-shared';
-import {
-  isRealPathContained as isRealPathContainedByRealPath,
-  realPathNearestExisting as realPathNearestExistingByRealPath,
-} from '../files/realpath-containment';
 import type { IFilesRuntime } from './types';
 
 export type AbsoluteDirectoryFileSystem = {
@@ -66,47 +62,4 @@ export async function statAbsolute(
   const opened = openFileSystem(files);
   if (!opened.success) return opened;
   return opened.data.stat(absPath);
-}
-
-export async function realPathNearestExisting(
-  files: IFilesRuntime,
-  absPath: string
-): Promise<Result<string, FileError>> {
-  if (!files.path.isAbsolute(absPath)) {
-    return err({
-      type: 'invalid-path',
-      path: absPath,
-      message: `Expected absolute path: ${absPath}`,
-    });
-  }
-
-  const opened = openFileSystem(files);
-  if (!opened.success) return opened;
-  return realPathNearestExistingByRealPath(opened.data, files.path, absPath);
-}
-
-export async function isRealPathContained(
-  files: IFilesRuntime,
-  rootPath: string,
-  candidatePath: string,
-  options: { candidateMustExist?: boolean } = {}
-): Promise<Result<boolean, FileError>> {
-  if (!files.path.isAbsolute(rootPath)) {
-    return err({
-      type: 'invalid-path',
-      path: rootPath,
-      message: `Expected absolute path: ${rootPath}`,
-    });
-  }
-  if (!files.path.isAbsolute(candidatePath)) {
-    return err({
-      type: 'invalid-path',
-      path: candidatePath,
-      message: `Expected absolute path: ${candidatePath}`,
-    });
-  }
-
-  const opened = openFileSystem(files);
-  if (!opened.success) return opened;
-  return isRealPathContainedByRealPath(opened.data, files.path, rootPath, candidatePath, options);
 }

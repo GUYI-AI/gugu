@@ -27,8 +27,8 @@ function openSampleProject(beside: boolean): void {
 }
 
 /**
- * #2548 the sample in the one list, as any project group's row: the project cover, its name, then 「示例」 and the
- * transcript's last message (`<sender>: <text>`) with its time. The cover's colour is keyed by the sample's block kind:
+ * #2548 the sample in the one list, as any project group's row: a project's face, its name, then 「示例」 and the
+ * transcript's last message (`<sender>: <text>`) with its time. The face's colour is keyed by the sample's block kind:
  * the sample is no local project, so it has no project id of its own.
  */
 const OneListSampleRow = observer(function OneListSampleRow({ ownerName }: { ownerName: string }) {
@@ -38,7 +38,7 @@ const OneListSampleRow = observer(function OneListSampleRow({ ownerName }: { own
   return (
     <OneListProjectRow
       name={name}
-      coverId="sample-project"
+      faceId="sample-project"
       tag={translate('projects.sample.tag')}
       time={time}
       preview={preview}

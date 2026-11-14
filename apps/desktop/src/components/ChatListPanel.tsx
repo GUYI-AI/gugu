@@ -1,6 +1,6 @@
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useNativeAgentChats } from '@/hooks/useNativeAgentChats'
-import { createChatMembershipProjection } from '@/lib/chatRowDerivations'
+import { createChatMembershipProjection, isArchivedOwnedAgentChat } from '@/lib/chatRowDerivations'
 import { memoizeByReference } from '@/lib/memoizeByReference'
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type KeyboardEventHandler, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
@@ -24,6 +24,7 @@ import { isDuplicateAssistantChat } from '../lib/assistantChatList'
 import { useProjectGroupChats } from '../lib/projectGroupChatsBridge'
 import { useAssistantWorkrooms } from './assistant/useAssistantWorkrooms'
 import { useChatStore } from '../store/chatContext'
+import { useAuth } from '../store/auth'
 import { ChatRowContextMenu } from './chat/ChatRowContextMenu'
 import { chatPreviewText } from '../lib/systemNoticeText'
 import { formatCalendarDay } from '@/i18n/format'
@@ -38,6 +39,7 @@ import { UI_EVENTS } from '../lib/uiEvents'
 import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
+import { useHeldOrder, usePointerHold } from '../lib/heldOrder'
 import { isOneListProjectLine, oneListAgentRows, oneListShows, placeProjectLines, sidebarPinnedRows, useAgentHomes, useOneListProjectLines, type OneListProjectLine } from '../lib/sidebarOneList'
 import { usePublishOneListAgentRows } from '../lib/innerSidebarBridge'
 import { mobileListDiagnostics } from '@/mobile/mobileListDiagnostics'
@@ -53,7 +55,6 @@ import { useAgentDisplayStatuses } from '../hooks/useAgentDisplayStatus'
 import { useShellTabIs } from '../lib/shellTab'
 import { useShownAgentStatus, type ShownAgentStatus } from './chat/useAgentsOnCloudComputer'
 import { AgentHostStaleBadge } from './AgentHostStaleBadge'
-import { aggregateGroupAgentStatus } from '../lib/groupAgentStatus'
 import { chatActivityAt, chatDisplayName, isChatListed, isRoomChat, isSunkTopic, TOPIC_SINK_AFTER_DAYS } from '@gugu/core/shared/ui/chatModels'
 import { platform } from '../platform'
 import type { AgentDisplayStatus, ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
@@ -68,25 +69,16 @@ function chatIsAgent(chat: ChatItem, identity?: { type: 'human' | 'agent' }): bo
   return chat.kind === 'ai' || identity?.type === 'agent'
 }
 
-// @@@group-agent-status (#33) - aggregate helper lives in its own module (pure, unit-tested) so this
-// component file only exports components (keeps fast-refresh happy). This wrapper stays local.
-// 一行的状态点就是那张 agent 表里那个 agent 的态 —— agent 行取它自己的,群行取成员的聚合(任一成员在跑
-// 即群在跑)。❌ 没有「按本行会话再收口一次」:同一个 agent 的两行不许给出两个答案。
+// 一行头像上的状态点只属于 agent 行:就是那张 agent 表里那个 agent 的态。群和话题的头像不画状态点 ——
+// 头像右上角在群上只说未读(红数字 / 小灰点),群里在跑几个由右下角那枚数说(PhoneProjectChatAvatar)。
 function rowAgentStatus(
   chat: ChatItem,
   identities: Readonly<Record<string, { type: 'human' | 'agent' }>>,
   statuses: Record<string, AgentDisplayStatus>,
   shown: ShownAgentStatus,
-  agentIds: readonly string[],
 ): AgentDisplayStatus | undefined {
-  if (chatIsAgent(chat, identities[chat.peer_user_id ?? ''])) {
-    return shown.status(chat.peer_user_id, statuses[chat.peer_user_id ?? ''] ?? 'pending')
-  }
-  // 场所(群 + 话题)都有成员名单,聚合判据同形 —— ❌ 不是只有群才聚合。
-  if (isRoomChat(chat.kind)) {
-    return aggregateGroupAgentStatus(shown.members(agentIds, statuses), statuses)
-  }
-  return undefined
+  if (!chatIsAgent(chat, identities[chat.peer_user_id ?? ''])) return undefined
+  return shown.status(chat.peer_user_id, statuses[chat.peer_user_id ?? ''] ?? 'pending')
 }
 
 interface ChatListPanelProps {
@@ -132,6 +124,7 @@ const SIDEBAR_ENTRY_ESTIMATE = 58
 /** A mounted sidebar line, placed by the line window. */
 const lineStyle = (top: number): React.CSSProperties => ({ position: 'absolute', top, left: 0, width: '100%' })
 /** The chat a sidebar line stands for: a conversation's own, a project line's group chat (#2548). */
+const chatIdOf = (chat: ChatItem) => chat.id
 const lineChatId = (row: ChatItem | OneListProjectLine) => (isOneListProjectLine(row) ? row.projectChatId : row.id)
 
 /**
@@ -375,13 +368,12 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
           <PhoneProjectChatAvatar chat={chat} mobile={mobile}><Avatar
             name={shownName}
             avatarUrl={isRoom ? chat.avatar : peerIdentity?.avatar}
-            seed={chat.peer_user_id ?? undefined}
+            seed={isRoom ? chat.id : chat.peer_user_id ?? undefined}
             size={mobile ? 48 : 'sm'}
             isAgent={isAgentChat}
             harnessBadge={!mobile}
             agentStatus={agentStatus}
             variant={isRoom ? 'group' : 'default'}
-            memberAvatars={chat.member_user_ids?.flatMap((id) => identitiesById[id] ? [{ id, name: identitiesById[id].display_name, avatar: identitiesById[id].avatar }] : [])}
           /></PhoneProjectChatAvatar>
         }
         title={
@@ -599,6 +591,7 @@ export function ChatListPanel({
   const { t } = useTranslation('messaging')
   const { t: tMain } = useTranslation('main')
   const assistantShell = useAssistantShell()
+  const { user } = useAuth()
   const { chats: imChats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, chatsLoadFailed, refreshChats, pinChat, deleteChat, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'chatsLoadFailed', 'refreshChats', 'pinChat', 'deleteChat', 'setChatNotificationLevel', 'drafts')
   // The list read failed with nothing to show: that is a failure, not "no conversations" (same rule as the contacts sections).
   const listReadFailed = chatsLoadFailed && imChats.length === 0
@@ -617,8 +610,8 @@ export function ChatListPanel({
   const agentHomes = useAgentHomes(oneList, homeChats, sidebarPins)
   // An account project whose project group is not in this list yet stands among the conversations at its time (#2548).
   const projectLines = useOneListProjectLines(oneList, chats)
-  // @@@chat-list-agent-status (#437/#33) - one batched presence subscription for every agent shown in
-  // the list: DM-with-agent peers + all group agent members (so the group dot can aggregate).
+  // @@@chat-list-agent-status (#437) - one batched presence subscription for the agents the list draws a status for:
+  // the peers of the private chats. A group row draws none, so its agent members are not followed here.
   const agentStatuses = useAgentDisplayStatuses(membership.agentIds)
   const shownAgent = useShownAgentStatus() // #7199 宿主闲时收回着的自己的 agent:不画睡团 / 「不在线」
   const [showGroupModal, setShowGroupModal] = useState<boolean | string>(false)
@@ -655,6 +648,7 @@ export function ChatListPanel({
   // `.focus()`,原来靠一张 chatId→node 的 Map;既然要不到逐行 ref,改为在滚动容器内按
   // `data-chat-row` 现查——容器本就有这个 ref,行元素也已经带着这个 data 属性,不必新增状态。
   const listboxRef = useRef<HTMLDivElement>(null)
+  const pointer = usePointerHold()
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // @@@2264 排序键 = canonical activity 投影(chatActivityAt:last_message_at ?? created_at)。
@@ -688,6 +682,7 @@ export function ChatListPanel({
   const listedByActivity = (chat: ChatItem) => hasSearchQuery || isChatListed(chat, { activeChatId: selectedChatId, hasDraft: Boolean(drafts[chat.id]?.trim()) })
   const isListed = (chat: ChatItem) =>
     !isDuplicateAssistantChat(chat, assistantShell, workrooms)
+      && !(inSidebar && !mobile && !hasSearchQuery && isArchivedOwnedAgentChat(chat, user?.id, identitiesById[chat.peer_user_id ?? ''], agentStatuses[chat.peer_user_id ?? '']))
       && chat.id !== shownAsLead
       && (agentHomes ? oneListShows(chat, listedByActivity(chat), agentHomes, isOwnedAgentPeer)
         : (!mobile || chat.kind !== 'topic') && (mobile || !isProjectGroupLine(chat)) && listedByActivity(chat))
@@ -713,21 +708,23 @@ export function ChatListPanel({
     // isListed / matchesSearch 都是每次渲染新建的闭包,进依赖数组等于不缓存;
     // 它们的输入(chats / 搜索词 / 草稿 / 当前会话)已经在下面列全了。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chats, listQuery, selectedChatId, drafts, assistantShell, workrooms, projectGroupChats, shownAsLead, mobile, agentHomes])
+  }, [chats, listQuery, selectedChatId, drafts, assistantShell, workrooms, projectGroupChats, shownAsLead, mobile, agentHomes, inSidebar, user?.id, identitiesById, agentStatuses])
   const isTopLevel = (c: ChatItem) => isTopLevelChatRow(c, topicNesting, isListed, matchesSearch)
   // #2548 one list: the pinned agents' DM rows sit at the very top, newest interaction first, above the pinned conversations.
   const sidebarPinned = agentHomes ? sidebarPinnedRows(chats, sidebarPins, isTopLevel) : []
   const pinOf = new Map(sidebarPinned.map(({ chat, pin }) => [chat.id, pin]))
-  const pinnedChats = sidebarPinned.map(({ chat }) => chat).concat(chats.filter((c) => c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime))
-  const normalChats = chats.filter((c) => !c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime)
+  // B3: while the pointer is over the list a row does not move out from under it; the newest-first order returns on leaving.
+  const pinnedChats = useHeldOrder(sidebarPinned.map(({ chat }) => chat).concat(chats.filter((c) => c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime)), chatIdOf, pointer.held)
+  const normalChats = useHeldOrder(chats.filter((c) => !c.is_pinned && isTopLevel(c) && !pinOf.has(c.id)).sort(byTime), chatIdOf, pointer.held)
   // The Chats tab contains conversations; projectless tasks live in the Projects tab.
   const joinedGroups = inSidebar ? sidebarView.groups : NO_JOINED_GROUPS
   const pinnedRows = joinRows(pinnedChats, (chat) => blockKey.chat(chat.id), joinedGroups)
   const normalLines = joinRows(normalChats, (chat) => blockKey.chat(chat.id), joinedGroups)
   // #2548 the sidebar draws the project lines among them too; the keyboard walks the conversations (normalLines).
   // A project line is its group's conversation row-to-be: same key, so a joined box holds it as it will hold that row.
+  const placedLines = useHeldOrder(placeProjectLines(normalChats, activityOf, projectLines), lineChatId, pointer.held)
   const oneListLines = projectLines.length === 0 ? normalLines : joinRows(
-    placeProjectLines(normalChats, activityOf, projectLines),
+    placedLines,
     (row) => blockKey.chat(lineChatId(row)),
     joinedGroups,
   )
@@ -801,7 +798,7 @@ export function ChatListPanel({
         callsOnly={oneList}
         joinPos={hasTopics ? undefined : join?.pos}
         joinOnScreen={hasTopics ? undefined : join?.onScreen}
-        agentStatus={rowAgentStatus(chat, identitiesById, agentStatuses, shownAgent, membership.parts.get(chat.id)!.agents)}
+        agentStatus={rowAgentStatus(chat, identitiesById, agentStatuses, shownAgent)}
         isActive={chat.id === selectedChatId}
         topicsExpanded={hasTopics ? topicsExpanded : undefined}
         mobile={mobile}
@@ -1074,7 +1071,7 @@ export function ChatListPanel({
     sessionPage.openChat(chatId, false)
   }
   const list = (
-    <div ref={listboxRef} role="listbox" aria-label={t('chatList.listLabel')} style={inSidebar ? SIDEBAR_LIST_STYLE : mobile ? MOBILE_LIST_SCROLL_STYLE : LIST_SCROLL_STYLE}>
+    <div ref={listboxRef} role="listbox" aria-label={t('chatList.listLabel')} onPointerMove={pointer.onPointerMove} onPointerLeave={pointer.onPointerLeave} style={inSidebar ? SIDEBAR_LIST_STYLE : mobile ? MOBILE_LIST_SCROLL_STYLE : LIST_SCROLL_STYLE}>
       {/* #6158 列表行不再按 tab 卸载:聊天面在别的 tab 上由 MainLayout 隐藏而非卸载,行留着滚动位置才在。 */}
       {loadingChats && (
         <div style={LOADING_STATE_STYLE}>

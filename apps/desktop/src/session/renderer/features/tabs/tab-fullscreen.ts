@@ -41,6 +41,15 @@ class TabFullscreen {
 
   constructor() {
     makeObservable(this, { target: observable.ref, toggle: action, exit: action });
+    // 页面自己的全屏(App 里的视频)是最外一层,Esc 先退它,再轮到页签全屏(下面那条,晚注册所以排在后面)。
+    // macOS 上这一下 Esc 落在咕咕自己的页上,不在 App 的页里(实机量到),Chromium 也不替咕咕的页退:只能这里接。
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || !document.fullscreenElement) return;
+        event.preventDefault();
+        void document.exitFullscreen();
+      }, true);
+    }
     // 这一枚关掉了、这一格换成别的页签了、或焦点去了别的格(「返回对话」、侧栏点任务、别处打开了东西)⇒ 自己退出:
     // 全屏盖着整个工作区,被亮起的那一页就在它下面。
     reaction(
