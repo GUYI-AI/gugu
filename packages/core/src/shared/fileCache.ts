@@ -19,6 +19,7 @@ export function createCachedFileSink(cache: FileChunkCache, size: number): FileS
       requireFileRange(size, written, bytes.length)
       if (committed || disposed) throw new Error('File staging is closed')
       await cache.put(key, entries.length, bytes)
+      if (disposed) { await cache.clear(key); throw new Error('File staging is closed') }
       entries.push({ offset: written, length: bytes.length }); written += bytes.length
     },
     async commit() {
