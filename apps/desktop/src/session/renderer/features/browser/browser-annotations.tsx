@@ -48,6 +48,7 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
   const [page, setPage] = useState<BrowserAnnotationTarget | null>(null);
   const enteredAtSubmission = useRef(draft.submissionVersion);
   useEffect(() => { if (draft.submissionVersion !== enteredAtSubmission.current) onExit(); }, [draft.submissionVersion, onExit]);
+  useEffect(() => { if (!browsing) root.current?.focus({ preventScroll: true }); }, [browsing]);
 
   useEffect(() => {
     const win = root.current?.ownerDocument.defaultView;
@@ -62,7 +63,9 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
     const stop = events.on(browserAnnotationSpaceChannel, event => {
       if (event.browserId !== browserId || event.pressed) return;
       setBrowsing(false);
-      void rpc.browser.focusHost(win.name ?? '');
+      void rpc.browser.focusHost(win.name ?? '').then(() => {
+        win.requestAnimationFrame(() => root.current?.focus({ preventScroll: true }));
+      });
     });
     win.addEventListener('keydown', down); win.addEventListener('keyup', up); win.addEventListener('blur', blur);
     return () => { request.current++; stop(); win.removeEventListener('keydown', down); win.removeEventListener('keyup', up); win.removeEventListener('blur', blur); };
@@ -99,7 +102,7 @@ const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ se
   const box = (target: BrowserAnnotationTarget) => ({ left: `${target.rect.x / target.viewport.width * 100}%`, top: `${target.rect.y / target.viewport.height * 100}%`,
     width: `${target.rect.width / target.viewport.width * 100}%`, height: `${target.rect.height / target.viewport.height * 100}%` });
   return <>
-    {!browsing && <div ref={root} data-occludes-browser-page data-browser-annotation-layer className="absolute inset-0 z-10 touch-none cursor-crosshair overflow-hidden"
+    {!browsing && <div ref={root} tabIndex={-1} data-occludes-browser-page data-browser-annotation-layer className="absolute inset-0 z-10 touch-none cursor-crosshair overflow-hidden outline-none"
       onPointerDown={event => { if (selection || busy || event.button !== 0) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); start.current = point(event); setDrag(null); setHover(null); }}
       onPointerMove={event => {
         if (selection || busy) return;
