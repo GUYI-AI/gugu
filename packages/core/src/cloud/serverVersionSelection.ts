@@ -5,7 +5,7 @@
 export function compareServerVersions(a: string, b: string): number {
   const split = (v: string) => {
     const [main = '', suffix = ''] = v.split('+')[0]!.split(/-(.*)/s)
-    return { main: main.split('.').map((n) => Number(n) || 0), suffix: suffix.split(/[.-]/).map((n) => Number(n) || 0), hasSuffix: suffix !== '' }
+    return { main: main.split('.').map((n) => Number(n) || 0), suffix: suffix.split('.').map((n) => /^\d+$/.test(n) ? Number(n) : n), hasSuffix: suffix !== '' }
   }
   const x = split(a)
   const y = split(b)
@@ -16,7 +16,8 @@ export function compareServerVersions(a: string, b: string): number {
   // 同一个主版本:正式版比预发版新(0.3.0 > 0.3.0-beta.9),预发版之间按后缀里的数字比。
   if (x.hasSuffix !== y.hasSuffix) return x.hasSuffix ? -1 : 1
   for (let i = 0; i < Math.max(x.suffix.length, y.suffix.length); i += 1) {
-    const d = (x.suffix[i] ?? 0) - (y.suffix[i] ?? 0)
+    const left = x.suffix[i] ?? 0, right = y.suffix[i] ?? 0;
+    const d = typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right));
     if (d !== 0) return d
   }
   return 0
