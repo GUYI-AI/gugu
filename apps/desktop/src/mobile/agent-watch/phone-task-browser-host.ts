@@ -1,3 +1,5 @@
+import { rendererLogger } from '@/lib/log';
+import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { unwrapPayload } from '@gugu/core/cloud/payload';
 import { callDeviceRpc, subscribeDeviceRpcEvents } from '@/lib/deviceRpc';
 import type { TaskPageControl, TaskPageControlResult, TaskPageState } from '@shared/browser-task-page';
@@ -12,7 +14,10 @@ export function phoneTaskBrowserHost(deviceId: string, sessionId: string, page: 
   let switching = false;
   const ask = async (type: string, payload: unknown) => {
     const response = await callDeviceRpc<Record<string, unknown>>(deviceId, type, payload, { timeoutMs: 30_000 });
-    if (response.error) throw Object.assign(new Error(response.error.message), { code: response.error.code });
+    if (response.error) {
+      rendererLogger('mobile/task-browser').warn({ error: response.error, method: type }, 'Task browser request failed');
+      throw Object.assign(new Error(translateSessionMessage('browser.sessionUnavailable')), { code: response.error.code });
+    }
     return response.result ?? {};
   };
   const host: ProjectionHost = {
@@ -35,7 +40,8 @@ export function phoneTaskBrowserHost(deviceId: string, sessionId: string, page: 
         if ((!rejoin && !switching) || !watch) return;
         switching = false; const current = watch;
         void ask(PROJECTION_REMOTE_RPC.watch, { watch: current, session: sessionId, page: true }).catch(error => {
-          if (watch === current) handler(current, { type: 'state', generation, state: 'closed', reason: error instanceof Error ? error.message : String(error) });
+          rendererLogger('mobile/task-browser').warn({ error }, 'Could not reconnect the task browser');
+          if (watch === current) handler(current, { type: 'state', generation, state: 'closed', reason: translateSessionMessage('browser.sessionUnavailable') });
         });
       },
     }),

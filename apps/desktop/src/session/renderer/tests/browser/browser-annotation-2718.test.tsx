@@ -1,3 +1,4 @@
+import '@/styles/tokens.css';
 import { afterEach, expect, it } from 'vitest';
 import { page } from 'vitest/browser';
 import { browserAnnotationScript, type BrowserAnnotationTarget } from '@shared/browser-annotation';
