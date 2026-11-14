@@ -10,6 +10,7 @@ import type { SessionMessageLookupKey } from './messages';
 export type ProjectsTranslate = (key: SessionMessageLookupKey, values?: SessionMessageValues) => string;
 
 export const enUSProjectMessages = {
+
   // ── browser: toolbar ────────────────────────────────────────────────────
   'browser.back': 'Back',
   'browser.forward': 'Forward',
@@ -253,6 +254,7 @@ export const enUSProjectMessages = {
 type ProjectMessageKey = keyof typeof enUSProjectMessages;
 
 export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
+
   // ── browser: toolbar ────────────────────────────────────────────────────
   'browser.back': '后退',
   'browser.forward': '前进',

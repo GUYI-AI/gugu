@@ -1,3 +1,4 @@
+import { browserAnnotationScript, type BrowserAnnotationTarget } from '@shared/browser-annotation';
 import { type ChildProcess } from 'node:child_process';
 import { spawn, execFile } from '@gugu/core/local/childProcess';
 import { EventEmitter } from 'node:events';
@@ -5,7 +6,7 @@ import { onErrorEvents } from '@gugu/session-shared';
 import { mkdir } from 'node:fs/promises';
 import type { Readable, Writable } from 'node:stream';
 import { promisify } from 'node:util';
-import type { TaskPageControl, TaskPageState } from '@shared/browser-task-page';
+import type { TaskPageControl, TaskPageControlResult, TaskPageState } from '@shared/browser-task-page';
 import { runPrivateLogin, type PrivateLoginInput, type PrivateLoginStatus } from './server-private-login';
 
 /**
@@ -271,10 +272,19 @@ class PageTarget extends EventEmitter implements TaskPageContents {
    * The person's toolbar on another computer: what the same toolbar does to a page on their own (go to an address, back,
    * forward, reload, stop), and the size of the tab it fills there.
    */
-  async control(control: TaskPageControl): Promise<void> {
+  async control(control: TaskPageControl): Promise<TaskPageControlResult> {
     const session = this.watchSession;
     if (!session || this.destroyed) throw new Error('the task page was closed');
     switch (control.action) {
+      case 'annotate': {
+        const read = await this.connection.send('Runtime.evaluate', { expression: browserAnnotationScript(control.query), returnByValue: true }, session) as { result?: { value?: BrowserAnnotationTarget }; exceptionDetails?: unknown };
+        const target = read.result?.value;
+        if (read.exceptionDetails || !target) throw new Error('The selected page could not be read');
+        if (!control.capture) return { target };
+        const capture = await this.connection.send('Page.captureScreenshot', { format: 'png' }, session) as { data?: string };
+        if (!capture.data || this.url !== target.url) throw new Error('The page changed during selection');
+        return { target, screenshot: `data:image/png;base64,${capture.data}` };
+      }
       case 'navigate': {
         // The same pages the agent's lease may load: web pages, not this machine's own documents.
         const protocol = (() => { try { return new URL(control.url).protocol; } catch { return ''; } })();
@@ -341,7 +351,7 @@ export interface TaskPageScreenTarget {
   stopScreen(): Promise<void>;
   input(method: 'Input.dispatchMouseEvent' | 'Input.dispatchKeyEvent' | 'Input.insertText', params: Record<string, unknown>): Promise<unknown>;
   state(): TaskPageState;
-  control(control: TaskPageControl): Promise<void>;
+  control(control: TaskPageControl): Promise<TaskPageControlResult>;
   isDestroyed(): boolean;
   once(event: 'destroyed', listener: () => void): unknown;
   on(event: 'state', listener: () => void): unknown;

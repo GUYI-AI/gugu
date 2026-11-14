@@ -303,6 +303,8 @@ export interface ChatComposerProps {
    * Hosts can override image handling with `onImageFilesDropped`.
    */
   attachments?: ComposerAttachment[];
+  /** Host-owned context attachments, displayed beside the regular attachment strip. */
+  attachmentExtra?: React.ReactNode;
   /** Automatic-send waiting hint, displayed beside the attachment chips. */
   attachmentStatus?: string;
   onAttachmentsChange?: (next: ComposerAttachment[]) => void;
@@ -456,6 +458,7 @@ export function ChatComposer({
   contextUsage,
   attachments = [],
   attachmentStatus,
+  attachmentExtra,
   onAttachmentsChange,
   onImageFilesDropped,
   onAttachmentQualityChange,
@@ -829,7 +832,7 @@ export function ChatComposer({
           onDrop={queueEdit ? undefined : handleDrop}
         >
           {/* Attachment chips — anatomy vendored from assistant-ui (#5269), see composer-attachment-chip.tsx */}
-          {!queueEdit && <ComposerAttachmentStrip attachments={attachments} status={attachmentStatus}
+          {!queueEdit && <ComposerAttachmentStrip attachments={attachments} status={attachmentStatus} extra={attachmentExtra}
             onView={onViewAttachment} onRemove={onAttachmentsChange ? removeAttachment : undefined} onRetry={onRetryAttachment} onQualityChange={onAttachmentQualityChange} qualityLocked={disabled || attachmentQualityLocked} />}
 
           {/* Editor area */}

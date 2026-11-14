@@ -1,3 +1,7 @@
+import { useObserver } from 'mobx-react-lite'
+import { AnnotationTray } from '@renderer/features/sessions/annotations/annotation-tray'
+import { annotationPrompt, sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
+import { annotationImageId, currentAnnotationImages, isAnnotationImage, prepareAnnotationImages } from '@renderer/features/sessions/annotations/annotation-images'
 import { hasPendingWindow } from './timeline-window-fields'
 import { boundedWindowReady } from './desktop-window-history'
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection'
@@ -127,7 +131,14 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   const mobile = useMobileShell()
   const composerDraft = useSessionConversationDraft(deviceId, sessionId, !mobile && nativeRecord && !local && !phoneHost, editor)
   const { text: draftText, setText: setDraftText } = composerDraft
-  const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
+  const annotationDraft = sessionAnnotations.forSession(sessionId)
+  const annotationItems = useObserver(() => annotationDraft.items)
+  const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([])
+  const attachmentsRef = useRef(attachments)
+  const setAttachments = useCallback((update: ComposerAttachment[] | ((current: ComposerAttachment[]) => ComposerAttachment[])) => {
+    const next = typeof update === 'function' ? update(attachmentsRef.current) : update
+    attachmentsRef.current = next; setAttachmentState(next)
+  }, [])
   const fileSelection = useAttachmentFileSelection(attachments, `${deviceId}/${sessionId}`)
   const [attachmentWaiting, setAttachmentWaiting] = useState(false)
   const applied = useRef<typeof draft>(undefined)
@@ -182,7 +193,8 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       void uploads.add({ id, name: file.name, kind: file.type.startsWith('image/') ? 'image' : 'file', mimeType: file.type }, file)
     }
   }
-  const changeAttachments = (next: ComposerAttachment[]) => {
+  const changeAttachments = (visible: ComposerAttachment[]) => {
+    const next = [...visible, ...attachmentsRef.current.filter(item => isAnnotationImage(item.id) && item.state !== 'error' && !visible.some(kept => kept.id === item.id))]
     const kept = new Set(next.map(file => file.id))
     const submission = inFlight.current
     if (submission?.waiting && [...submission.attachments].some(id => !kept.has(id))) {
@@ -217,6 +229,10 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   }
   const submit = async (value: string) => {
     if (sending || stopping || inFlight.current) return
+    const annotated = annotationDraft.items
+    const retained = currentAnnotationImages(annotated, attachmentsRef.current)
+    uploads.keepOnly(new Set(retained.map(item => item.id))); setAttachments(retained)
+    prepareAnnotationImages(annotated, uploads)
     const ownerId = getRendererSession()?.user.id
     const scope = JSON.stringify([ownerId, deviceId, sessionId])
     const revision = composerDraft.revisionOf()
@@ -230,16 +246,16 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     if (!checkBeforeSend(attempt)) return
     let cancelWait!: () => void
     const cancelled = new Promise<false>(resolve => { cancelWait = () => resolve(false) })
-    const submission = { attachments: new Set(attachments.map(file => file.id)), waiting: uploads.unsettled(), cancelWait }
+    const submission = { attachments: new Set(attachmentsRef.current.map(file => file.id)), waiting: uploads.unsettled(), cancelWait }
     inFlight.current = submission
     try {
       setAttachmentWaiting(submission.waiting)
       if (!await Promise.race([uploads.waitForUploads(), cancelled]) || inFlight.current !== submission) return
       submission.waiting = false
       setAttachmentWaiting(false)
-      const sentAttachments = attachments
+      const sentAttachments = attachmentsRef.current.filter(file => submission.attachments.has(file.id))
       const files = uploads.files(sentAttachments.map(file => file.id))
-      const text = value.trim()
+      const text = annotationPrompt(value, annotated)
       if ((!text && !files.length) || !checkBeforeSend(attempt)) return
       try {
         // A later reader gesture supersedes this local send, including while its commit waits.
@@ -247,6 +263,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
         await currentSendTarget().onSend(text, files)
         if (getRendererSession()?.user.id !== ownerId) return
         if (attempt.succeeded() && submissionFailures.current.get(scope) === failure) submissionFailures.current.delete(scope)
+        annotationDraft.submitted(annotated)
         composerDraft.committed(value)
         setAttachments(current => current.filter(file => !sentAttachments.some(sent => sent.id === file.id)))
         for (const file of sentAttachments) uploads.forget(file.id)
@@ -366,12 +383,14 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     <input ref={input} type="file" hidden multiple onChange={event => { addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} />
     <AgentConversationComposer {...(appPanel ? panelComposerOptions(options.props) : options.props)} {...queue.props} {...(appPanel ? {} : lockedHarness(harness))}
       placeholder={appPanel ? ta('chat.placeholder', { name: agentName }) : undefined} queuedPrompts={[...queue.props.queuedPrompts, ...localInputs.filter(input => !input.failure).map(input => ({ id: input.id, text: input.text, origin: 'manual' as const, locked: true })),
-      ...[...waitingInputs].filter(([id]) => !queue.props.queuedPrompts.some(prompt => prompt.id === id) && !localInputs.some(input => input.id === id)).map(([id, input]) => ({ id, text: input.text, origin: 'manual' as const, locked: true }))]} mobile phoneActions={mobile} isWorking={agentWorking} canSubmit={!sending && !stopping && (!!composerDraft.text.trim() || attachments.length > 0)}
+      ...[...waitingInputs].filter(([id]) => !queue.props.queuedPrompts.some(prompt => prompt.id === id) && !localInputs.some(input => input.id === id)).map(([id, input]) => ({ id, text: input.text, origin: 'manual' as const, locked: true }))]} mobile phoneActions={mobile} isWorking={agentWorking} canSubmit={!sending && !stopping && (!!composerDraft.text.trim() || attachments.length > 0 || annotationItems.length > 0)}
       onStop={agentWorking ? onStop : undefined} editorApiRef={receiveEditor} editorOptions={{ clearOnSubmit: false, enterBehavior: 'newline' }}
       queuedPromptEdit={quotes.composer.queuedPromptEdit} onChangeQueuedPromptEdit={quotes.composer.changeQueuedPromptEdit} onFinishQueuedPromptEdit={quotes.composer.finishQueuedPromptEdit} renderQueuedPromptText={quotes.composer.renderQueuedPromptText}
       onInputChange={composerDraft.setText} onSubmit={submit} onSubmitWhileWorking={submit}
       attachmentStatus={attachmentWaiting ? translateSessionMessage('composer.attachmentWaiting') : undefined}
-      attachments={attachments} onAttachmentsChange={changeAttachments}
+      attachmentExtra={annotationItems.length ? <AnnotationTray sessionId={sessionId} onSend={() => { void submit(editor.current?.getText() ?? composerDraft.text) }} enabled={!sending && !stopping && !attachmentWaiting && !quotes.composer.queuedPromptEdit}
+        onRemove={id => { if (!inFlight.current) { const imageId = annotationImageId(id); uploads.forget(imageId); setAttachments(current => current.filter(file => file.id !== imageId)) } }} /> : null}
+      attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')} onAttachmentsChange={changeAttachments}
       onRetryAttachment={uploads.retry} onFilesDropped={addFiles} onImageFilesDropped={addFiles}
       toolbarExtra={<><ComposerAttachButton disabled={sending} mobile glyph={appPanel ? <Plus /> : undefined} onPickFile={() => input.current?.click()} /></>} />
   </>

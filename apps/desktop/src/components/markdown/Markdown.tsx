@@ -20,6 +20,7 @@ import {
   markdownRehypePlugins,
   markdownRemarkPlugins,
   normalizeMarkdownSource,
+  normalizeMarkdownSourceWithLines,
   type MarkdownDialectOptions,
   type MarkdownTrust,
 } from '@gugu/session-shared/markdown/dialect'
@@ -43,6 +44,8 @@ const LinkPill = lazy(() => import('./LinkPill').then(module => ({ default: modu
 import { GroupFileName } from './GroupFileName'
 import { revealMarkdownAnchor } from './revealAnchor'
 import { followLink } from '../../lib/guguLinks'
+import { rehypeSourceLines } from './sourceLines'
+import type { PluggableList } from 'unified'
 
 export type MarkdownDensity = 'compact' | 'comfortable'
 
@@ -64,6 +67,8 @@ export interface MarkdownProps {
   /** `document` trust: draws an image (a workspace-relative source must be resolved by the host). */
   renderImage?: (image: { src?: string; alt: string }) => ReactNode
   className?: string
+  /** File previews only: project a selected DOM range back to its original source lines. */
+  sourceLines?: boolean
 }
 
 const DensityContext = createContext<MarkdownDensity>('compact')
@@ -157,6 +162,7 @@ export const Markdown = memo(function Markdown({
   onOpenLink,
   renderImage,
   className,
+  sourceLines = false,
 }: MarkdownProps) {
   // Streamdown's memo ignores `components` and plugin arrays: callbacks are read through refs, and anything
   // that changes the element mapping is part of the key below.
@@ -173,6 +179,7 @@ export const Markdown = memo(function Markdown({
 
   const plugins = pluginsFor({ trust, hardBreaks, frontmatter })
   const source = useMemo(() => normalizeMarkdownSource(displayAgentReferences(content)), [content])
+  const sourcePlugins = useMemo<PluggableList>(() => sourceLines ? [...plugins.rehype, [rehypeSourceLines, { source, lineOf: normalizeMarkdownSourceWithLines(displayAgentReferences(content)).lineOf }]] : plugins.rehype, [content, plugins, source, sourceLines])
   const mobile = useMobileShell()
   const phoneTable = mobile && trust === 'document'
   const copyCode = trust === 'document' || codeCopy
@@ -246,14 +253,14 @@ export const Markdown = memo(function Markdown({
   return (
     <DensityContext.Provider value={density}>
       <Streamdown
-        key={`${trust}|${hardBreaks}|${frontmatter}|${mentionMarker ?? ''}|${hasImageRenderer}|${copyCode}|${phoneTable}`}
+        key={`${trust}|${hardBreaks}|${frontmatter}|${mentionMarker ?? ''}|${hasImageRenderer}|${copyCode}|${phoneTable}|${sourceLines}`}
         mode="static"
         parseIncompleteMarkdown={false}
         lineNumbers={false}
         controls={trust === 'document' ? { code: { copy: false, download: false } } : false}
         linkSafety={{ enabled: false }}
         remarkPlugins={plugins.remark}
-        rehypePlugins={plugins.rehype}
+        rehypePlugins={sourcePlugins}
         plugins={PLUGINS}
         components={components}
         className={['gg-md', `gg-md--${density}`, onAccent && 'gg-md--on-accent', className].filter(Boolean).join(' ')}

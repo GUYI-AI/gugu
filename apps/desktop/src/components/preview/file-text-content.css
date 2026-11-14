@@ -1,0 +1,18 @@
+.gg-file-source { font-family: var(--font-mono); font-size: var(--font-body); line-height: 1.65; }
+::highlight(gugu-file-comment) { background: var(--text-selection); color: var(--text-primary); }
+.gg-file-source-row { display: flex; align-items: flex-start; min-height: 1lh; }
+.gg-file-source-row > [data-file-line] { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; flex: 1; }
+.gg-file-line-number { flex: none; width: 40px; height: auto; min-height: 0; padding: 0 8px 0 0; border: 0; border-radius: 0; font: inherit; line-height: inherit; color: var(--text-tertiary); justify-content: flex-end; }
+.gg-file-line-number::before { content: attr(data-line); }
+@media (max-width: 719px) { .gg-file-line-number { display: none; } }
+.gg-file-annotation-popup { max-width: calc(100vw - 16px); padding: 4px; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--bg-primary); color: var(--text-primary); box-shadow: var(--shadow-popover); }
+.gg-file-annotation-popup[data-editing] { border-radius: 999px; }
+.gg-file-annotation-popup[data-failed] { border-radius: var(--radius-lg); }
+.gg-file-annotation-form { display: flex; align-items: center; gap: 8px; width: min(288px, calc(100vw - 32px)); padding: 4px; }
+.gg-file-annotation-form input { flex: 1; min-width: 0; padding: 4px 8px; background: transparent; border: 0; outline: 0; color: var(--text-primary); font: inherit; font-size: var(--font-body); }
+.gg-file-annotation-form .gg-file-annotation-submit { flex: none; width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: 50%; }
+.gg-file-annotation-error { padding: 4px 8px 8px; color: var(--danger-fg); font-size: var(--font-caption); }
+@media (max-width: 719px) {
+  .gg-file-annotation-form input { font-size: 16px; }
+  .gg-file-annotation-form .gg-file-annotation-submit { width: 44px; height: 44px; min-height: 44px; }
+}

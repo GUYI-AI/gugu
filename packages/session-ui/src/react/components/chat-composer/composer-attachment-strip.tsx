@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useMessages } from '../../localization/message-provider';
 import { ComposerAttachmentChip, type ComposerAttachmentChipProps } from './composer-attachment-chip';
 import type { ComposerAttachment } from './composer-options';
@@ -7,13 +8,15 @@ import * as stripStyles from './composer-attachment-strip.css';
 type Props = Pick<ComposerAttachmentChipProps, 'onView' | 'onRemove' | 'onRetry' | 'onQualityChange' | 'qualityLocked'> & {
   attachments: ComposerAttachment[];
   status?: string;
+  extra?: ReactNode;
 };
 
 /** Routine waiting belongs with the files being prepared, inside the composer. */
-export function ComposerAttachmentStrip({ attachments, status, ...actions }: Props) {
+export function ComposerAttachmentStrip({ attachments, status, extra, ...actions }: Props) {
   const { translate } = useMessages();
-  if (attachments.length === 0) return null;
+  if (attachments.length === 0 && !extra) return null;
   return <div data-slot="composer-attachments" className={styles.attachmentStrip}>
+    {extra}
     {attachments.map(attachment => <ComposerAttachmentChip key={attachment.id} attachment={attachment} {...actions} />)}
     {attachments.filter(attachment => attachment.state === 'error').map(attachment =>
       <div key={`error-${attachment.id}`} data-slot="composer-attachment-error" role="status" className={stripStyles.mobileError}>
