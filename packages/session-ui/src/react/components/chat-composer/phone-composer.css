@@ -34,7 +34,7 @@
 [data-slot='composer'][data-mobile] [data-slot='composer-attachments'] {
   grid-column: 1 / -1;
   grid-row: 2;
-  padding: 4px 8px;
+  padding: 4px 8px 4px 48px;
 }
 [data-slot='composer'][data-mobile] [data-slot='composer-actions-start'] > button:not(:has([data-slot='composer-permission-mode'])) {
   grid-column: 1;
