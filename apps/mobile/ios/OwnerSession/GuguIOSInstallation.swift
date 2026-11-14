@@ -11,7 +11,11 @@ final class GuguIOSInstallation {
 
     func identifier() throws -> String {
         lock.lock(); defer { lock.unlock() }
-        guard directory.isFileURL, directory.resolvingSymlinksInPath() == directory else { throw invalid() }
+        // Resolving a nonexistent directory can produce a file URL without a trailing
+        // slash; once created, Foundation returns a directory URL with one. Compare
+        // canonical filesystem paths so that metadata change cannot retire this handle.
+        // A later symlink substitution still changes the resolved path and is rejected.
+        guard directory.isFileURL, directory.resolvingSymlinksInPath().path == directory.path else { throw invalid() }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         var root = directory, values = URLResourceValues(); values.isExcludedFromBackup = true
@@ -21,7 +25,7 @@ final class GuguIOSInstallation {
             let attributes = try FileManager.default.attributesOfItem(atPath: path.path)
             guard attributes[.type] as? FileAttributeType == .typeRegular,
                   let length = attributes[.size] as? NSNumber, length.intValue <= 256,
-                  path.resolvingSymlinksInPath() == path,
+                  path.resolvingSymlinksInPath().path == path.path,
                   let record = try JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any],
                   record["version"] as? Int == 1, let id = record["id"] as? String,
                   UUID(uuidString: id)?.uuidString.lowercased() == id else { throw invalid() }

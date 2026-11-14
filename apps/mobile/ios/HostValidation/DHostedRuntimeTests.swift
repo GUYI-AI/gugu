@@ -517,6 +517,35 @@ extension DHostedRuntimeTests {
             "createdID": id, "controlID": controlID, "recurringID": recurringID, "modelCalls": 0])
     }
 }
+/// Run separately on a freshly installed, owned simulator with no custom Gugu environment.
+/// This deliberately does not inherit DHostedRuntimeTests' injected-root setup.
+final class E6DefaultInstallationTests: XCTestCase {
+    func testFreshDefaultInstallationSurvivesRepeatedReads() throws {
+        XCTAssertEqual(Bundle.main.bundleIdentifier, "app.gugu.chat")
+        XCTAssertNil(ProcessInfo.processInfo.environment["GUGU_HOME"])
+        XCTAssertNil(ProcessInfo.processInfo.environment["GUGU_USER_DATA_DIR"])
+        _ = try GuguIOSAppRuntime.open()
+        XCTAssertNotNil(ProcessInfo.processInfo.environment["SIMULATOR_UDID"].flatMap(UUID.init(uuidString:)))
+        let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                  appropriateFor: nil, create: true)
+        let directory = support.appendingPathComponent("GuguNative", isDirectory: true)
+            .appendingPathComponent("installation", isDirectory: true)
+        let container = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath().path
+        XCTAssertTrue(directory.resolvingSymlinksInPath().path.hasPrefix(container + "/"))
+        guard !FileManager.default.fileExists(atPath: directory.path) else {
+            throw GuguHostFailure(code: "fixture_not_fresh", message: "Reinstall the test App before default-path validation")
+        }
+        let installation = GuguIOSInstallation(directory: directory)
+        let id = try installation.identifier()
+        XCTAssertEqual(try installation.identifier(), id, "A newly created directory must remain the same trusted path")
+        XCTAssertEqual(try GuguIOSInstallation(directory: directory).identifier(), id)
+        let data = try JSONSerialization.data(withJSONObject: ["defaultRoot": directory.path,
+            "homeEnvironmentInjected": false, "userDataEnvironmentInjected": false,
+            "repeatedReadAndReopen": true], options: [.sortedKeys])
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = "E6-default-installation"; attachment.lifetime = .keepAlways; add(attachment)
+    }
+}
 #else
 #error("DHostedRuntimeTests is restricted to Debug iOS Simulator App-hosted XCTest")
 #endif

@@ -65,3 +65,12 @@ fields); recurring/detached edits and deletes return
 These native tests do not prove the renderer permission page, authenticated
 chat-to-calendar delivery, or model execution. Those require separate App UI
 acceptance; native authorization assertions must not be reported as UI evidence.
+
+`E6DefaultInstallationTests/testFreshDefaultInstallationSurvivesRepeatedReads`
+runs separately after reinstalling the test App. Remove all custom `GUGU_*`
+environment entries for this launch. It opens the real App runtime and its
+default Application Support installation path, then checks a fresh identity
+through repeated reads on the same handle and a new handle. The calendar matrix
+continues to select only `DHostedRuntimeTests`, whose isolation setup requires
+explicit environment roots. This separate default-path test prevents injected
+test roots from hiding installation bootstrap failures.
