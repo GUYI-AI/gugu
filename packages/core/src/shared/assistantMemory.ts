@@ -12,7 +12,7 @@ export function readFrontmatter(text: string): { fields: Record<string, string>;
     const match = /^\s*([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
     if (!match) continue;
     const [, key, raw] = match;
-    const value = raw.trim().replace(/^(['"])(.*)\1$/, (_, quote: string, body: string) => quote === "'" ? body.replace(/''/g, "'") : body);
+    const value = raw.trim().replace(/^(['"])(.*)\1$/, (_, quote: string, body: string) => quote === "'" ? body.replace(/''/g, "'") : body.replace(/\\([\\"])/g, '$1'));
     if (value && !(key in fields)) fields[key] = value;
   }
   return { fields, body: normalized.slice(offset + close.index + close[0].length).trim() };

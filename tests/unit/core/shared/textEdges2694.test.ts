@@ -16,3 +16,5 @@ it('omits tilde fenced blocks from plain previews', () => { expect(markdownPlain
 it('omits closing ATX header markers', () => { expect(markdownPlainText('## Title ##')).toBe('Title'); expect(markdownPlainText('## C#')).toBe('C#') })
 
 it('omits parenthesized ordered list markers', () => { expect(markdownPlainText('1) First\n2) Second')).toBe('First Second') })
+
+it('decodes double quoted memory scalars', () => { expect(readFrontmatter("---\nname: \"Quoted \\\"name\\\"\"\n---\nBody").fields.name).toBe('Quoted "name"') })
