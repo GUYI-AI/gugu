@@ -178,6 +178,18 @@ describe('MessageBubble touch menu', () => {
     expect(close).toHaveBeenCalledExactlyOnceWith({ id: request.id })
     expect(messageBubble().style.userSelect).toBe('none')
   })
+  it('keeps the first press when Android delivers contextmenu after the message is lifted', async () => {
+    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<void>(() => {}))
+    platform.textSelection = { open, close: vi.fn(async () => {}) }
+    await renderMessage()
+    pressInsideWord('from')
+    await longPress()
+    expect(messageBubble().style.visibility).toBe('hidden')
+    Object.defineProperty(document, 'caretRangeFromPoint', { value: () => null, configurable: true })
+    await act(async () => { messageBubble().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 240 })) })
+    await clickElement(document.querySelector('[data-testid="message-action-selectText"]')!)
+    expect(open).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ text: 'hello from mobile', start: 6, end: 10 }))
+  })
   it('closes only its native selection request when the selection layer receives Back', async () => {
     const open = vi.fn<NativeTextSelection['open']>(() => new Promise<void>(() => {}))
     const close = vi.fn(async () => {})

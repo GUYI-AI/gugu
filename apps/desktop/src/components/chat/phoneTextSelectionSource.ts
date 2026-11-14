@@ -48,8 +48,19 @@ export function capturePhoneTextSelection(bubble: HTMLElement | null, x: number,
   if (!bubble) return null
   const root = bubble.querySelector<HTMLElement>('.gg-md') ?? bubble
   const document = root.ownerDocument as CaretDocument
-  const position = document.caretPositionFromPoint?.(x, y)
-  let caret = document.caretRangeFromPoint?.(x, y)
+  // WebView hit testing can skip text with user-select:none. Only enable hit testing while reading it.
+  const previousStyle = root.getAttribute('style')
+  root.style.setProperty('user-select', 'text', 'important')
+  root.style.setProperty('-webkit-user-select', 'text', 'important')
+  let position: ReturnType<NonNullable<CaretDocument['caretPositionFromPoint']>> | undefined
+  let caret: Range | null | undefined
+  try {
+    position = document.caretPositionFromPoint?.(x, y)
+    caret = document.caretRangeFromPoint?.(x, y)
+  } finally {
+    if (previousStyle === null) root.removeAttribute('style')
+    else root.setAttribute('style', previousStyle)
+  }
   if (position) {
     caret = document.createRange()
     caret.setStart(position.offsetNode, position.offset)

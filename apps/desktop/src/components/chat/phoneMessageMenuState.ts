@@ -10,7 +10,11 @@ export function usePhoneMessageMenu(open: boolean) {
   const [selecting, setSelecting] = useState(false)
   const source = useRef<PhoneTextSelectionSource | null>(null)
   if (open && !mounted) setMounted(true)
-  const captureAt = (bubble: HTMLElement | null, x: number, y: number) => { source.current = capturePhoneTextSelection(bubble, x, y) }
+  const captureAt = (bubble: HTMLElement | null, x: number, y: number) => {
+    // Android may deliver contextmenu after the touch timer has already lifted the message.
+    if (bubble?.style.visibility === 'hidden') return
+    source.current = capturePhoneTextSelection(bubble, x, y)
+  }
   return { mounted, selecting, setSelecting, captureAt, source: source.current }
 }
 

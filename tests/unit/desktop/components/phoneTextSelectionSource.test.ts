@@ -22,6 +22,20 @@ function message(html: string, selector: string, offset: number) {
 }
 
 describe('the original message press', () => {
+  it('allows WebView caret hit testing without leaving the message selectable', () => {
+    const { bubble, readCaret } = message('<p>The harbor opens.</p>', 'p', 7)
+    const root = bubble.querySelector<HTMLElement>('.gg-md')!
+    root.style.userSelect = 'none'
+    const before = bubble.outerHTML
+    const caret = readCaret()
+    readCaret.mockImplementation(() => {
+      expect(root.style.userSelect).toBe('text')
+      return caret
+    })
+    const source = capturePhoneTextSelection(bubble, 103, 121)!
+    expect(source.text.slice(source.start, source.end)).toBe('harbor')
+    expect(bubble.outerHTML).toBe(before)
+  })
   it('captures the visible word and UTF-16 offsets before the menu lifts the message', () => {
     const { bubble, readCaret } = message('<p>The <strong>harbor</strong> opens.</p>', 'strong', 2)
     const before = bubble.outerHTML
