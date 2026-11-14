@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
+import { readModel, useReadModel } from '../../lib/readModel'
+import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import { FILE_RETENTIONS, IMAGE_RETENTIONS, type FileStorage } from '@gugu/core/shared/fileStorage'
 import { messageForUser } from '@/lib/userFacingError'
@@ -19,34 +21,34 @@ import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './Settin
  * 「图片和标了临时的文件」:数据层图片与临时文件各一格(image_retention / temporary_retention),设置上一个控件,
  * 改一次写两格(owner 10-28)。临时文件在普通群里也生效,所以这一行人人都有。
  */
+/** This account's file storage settings, and which of its machines carry a bound project group. */
+const fileStorageSettings = readModel({
+  name: 'fileStorageSettings',
+  scope: 'account',
+  read: async (userId) => {
+    const [storage, projects] = await Promise.all([readFileStorage(userId), listMyDeviceProjects()])
+    const machines = Object.entries(projects).filter(([, rows]) => rows.some((row) => row.chatId)).map(([deviceId]) => deviceId)
+    return { storage, machines }
+  },
+  persist: true,
+})
+
 export function FileStorageSection({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation('settings')
   useSettingsDetail('file-storage', t('fileStorage.title'), onBack)
   const { user } = useAuth()
-  const [state, setState] = useState<{ storage: FileStorage; machines: string[] } | null>(null)
-  const [loadFailed, setLoadFailed] = useState('')
-  const [saveFailed, setSaveFailed] = useState('')
   const userId = user?.id
-
-  const load = useCallback(() => {
-    if (!userId) return
-    let live = true
-    setLoadFailed('')
-    Promise.all([readFileStorage(userId), listMyDeviceProjects()])
-      .then(([storage, projects]) => {
-        const machines = Object.entries(projects).filter(([, rows]) => rows.some((row) => row.chatId)).map(([deviceId]) => deviceId)
-        if (live) setState({ storage, machines })
-      })
-      .catch((cause: unknown) => { if (live) setLoadFailed(messageForUser(cause)) })
-    return () => { live = false }
-  }, [userId])
-  useEffect(load, [load])
+  const reading = useReadModel(fileStorageSettings, userId ? [] : null)
+  const state = reading.state === 'value' ? reading.value : null
+  const loadFailed = reading.state === 'error' ? messageForUser(reading.error) : ''
+  const [saveFailed, setSaveFailed] = useState('')
+  const load = () => { void fileStorageSettings.refresh() }
 
   const update = (change: Partial<FileStorage>) => {
     if (!userId || !state) return
     setSaveFailed('')
     writeFileStorage(userId, change)
-      .then((storage) => setState((current) => current && { ...current, storage }))
+      .then((storage) => fileStorageSettings.set([], (current) => current && { ...current, storage }))
       .catch((cause: unknown) => { setSaveFailed(messageForUser(cause)); load() })
   }
 
@@ -60,7 +62,7 @@ export function FileStorageSection({ onBack }: { onBack: () => void }) {
       <SettingsRow description={loadFailed} control={<Button variant="secondary" size="sm" onClick={load}>{t('fileStorage.retry')}</Button>} />
     </SettingsGroup></SettingsPage>
   }
-  if (!state) return <SettingsPage><SettingsNote>{t('fileStorage.loading')}</SettingsNote></SettingsPage>
+  if (!state) return <SettingsPage><FileStorageDashboard /><Unknown className="h-40 w-full" /></SettingsPage>
 
   const { storage } = state
   const cloud = storage.proactive_upload

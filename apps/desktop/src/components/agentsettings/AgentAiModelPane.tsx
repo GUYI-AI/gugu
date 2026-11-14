@@ -8,10 +8,8 @@ import {
   type ModelAccessProtocol,
 } from '@gugu/core/shared/agentModelSelection'
 import type { AgentSettingsPaneProps } from './types'
-import { rendererLogger } from '../../lib/log'
 import { agentSettingsPaneClass, asClass } from './agentSettingsStyles'
 import {
-  fetchPlatformModelCatalog,
   platformProtocolForAgentType,
   readAgentModelSelection,
   setAgentModelSelection,
@@ -22,7 +20,9 @@ import {
 import { GUGU_BILLING_URL } from '../../lib/appLinks'
 import { AgentModelPicker } from './AgentModelPicker'
 import { Button } from '../ui/Button'
-import { fetchAgentHarnessModels } from '../../lib/agentModelSelection'
+import { agentHarnessModels, agentModelSelection, platformModels } from '../../lib/agentModelReadModels'
+import { useReadModel } from '../../lib/readModel'
+import { Unknown } from '../ui/Unknown'
 import { useDevicesStore } from '../../store/devicesContext'
 import { platform } from '../../platform'
 import type { SessionpageSessionCreateModels } from '@gugu/session-core/session-record/contract'
@@ -62,7 +62,6 @@ function sameSelection(a: AgentModelSelection, b: AgentModelSelection | null): b
  * 自己走得通,手机上恒禁用。desired 与 applied 分开显示:设备还没落下就说「待设备生效」,
  * 设备拒了就把原话摆出来,❌ 不把「写进云里了」说成「已生效」。
  */
-const paneLog = rendererLogger('agents/model-pane')
 
 export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
   const { t } = useTranslation('agents')
@@ -73,14 +72,19 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
       || cloudComputer?.snapshot?.deviceId === agent.device_id))
   const isLocal = platform.capabilities.agentRuntime && devices.some((device) => device.device_id === agent.device_id && device.is_current_device)
   const engine = agent.agent_type ? engineIdForAgentType(agent.agent_type) : null
-  const [harness, setHarness] = useState<SessionpageSessionCreateModels | null>(null)
-  const [harnessFailed, setHarnessFailed] = useState('')
-  const [harnessAttempt, setHarnessAttempt] = useState(0)
+  const harnessReading = useReadModel(agentHarnessModels, agent.device_id && engine && !cloudOnly ? [agent.device_id, engine, isLocal] : null)
+  const harness: SessionpageSessionCreateModels | null = harnessReading.state === 'value' ? harnessReading.value : null
+  const harnessFailed = harnessReading.state === 'error' ? messageForUser(harnessReading.error) : ''
   const protocol: ModelAccessProtocol | null = platformProtocolForAgentType(agent.agent_type)
-  const [catalog, setCatalog] = useState<PlatformCatalogModel[] | null>(null)
-  const [catalogError, setCatalogError] = useState<string | null>(null)
-  const [state, setState] = useState<AgentModelSelectionState | null>(null)
-  const [value, setValue] = useState('default')
+  // 引擎说不了平台协议就不问目录:问回来也一条都列不出,还会把「目录拉不到」误报成这个 Agent 的问题。
+  const catalogReading = useReadModel(platformModels, protocol ? [] : null)
+  const catalog = useMemo((): PlatformCatalogModel[] | null => (!protocol ? [] : catalogReading.state === 'value' ? catalogReading.value : null), [protocol, catalogReading])
+  const catalogError = catalogReading.state === 'error' ? messageForUser(catalogReading.error) : null
+  const selection = useReadModel(agentModelSelection, [agent.id])
+  const state: AgentModelSelectionState | null = selection.state === 'value' ? selection.value : null
+  // 选了、还在等写完的那一项;null = 没在改,显示存着的。
+  const [picked, setValue] = useState<string | null>(null)
+  const value = picked ?? (state ? selectionValue(state.desired) : null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [outcome, setOutcome] = useState<AgentModelSelectionOutcome | null>(null)
@@ -88,50 +92,15 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
   const applying = useRef(false)
 
   useEffect(() => {
-    let live = true
+    // 换了一个 Agent:上一个的写入结果作废。
     requestEpoch.current += 1
     applying.current = false
     setSaving(false)
-    setState(null)
-    setCatalog(null)
-    setCatalogError(null)
+    setValue(null)
     setError(null)
     setOutcome(null)
-    readAgentModelSelection(agent.id)
-      .then((next) => {
-        if (!live) return
-        setState(next)
-        setValue(selectionValue(next.desired))
-      })
-      .catch((cause: unknown) => { if (live) setError(messageForUser(cause)) })
-    // 引擎说不了平台协议就不问目录:问回来也一条都列不出,还会把「目录拉不到」误报成这个 Agent 的问题。
-    if (protocol) {
-      fetchPlatformModelCatalog()
-        .then((models) => { if (live) setCatalog(models) })
-        .catch((cause: unknown) => {
-          paneLog.error({ agentId: agent.id, error: String(cause) }, 'platform model catalog unavailable')
-          if (live) setCatalogError(messageForUser(cause))
-        })
-    } else {
-      setCatalog([])
-    }
-    return () => { live = false; requestEpoch.current += 1 }
-  }, [agent.id, protocol])
-
-  useEffect(() => {
-    let live = true
-    setHarness(null)
-    setHarnessFailed('')
-    if (agent.device_id && engine && !cloudOnly) {
-      fetchAgentHarnessModels(agent.device_id, engine, isLocal)
-        .then((models) => { if (live) setHarness(models) })
-        .catch((cause: unknown) => {
-          paneLog.error({ agentId: agent.id, error: String(cause) }, 'agent device model catalog unavailable')
-          if (live) setHarnessFailed(messageForUser(cause))
-        })
-    }
-    return () => { live = false }
-  }, [agent.id, agent.device_id, engine, isLocal, harnessAttempt, cloudOnly])
+    return () => { requestEpoch.current += 1 }
+  }, [agent.id])
 
   // 存着的那一项:它要会员了(会员到期)、或被他在设置「模型」页关掉了,也照列 —— 下拉显示的就是它。
   const savedValue = state ? selectionValue(state.desired) : null
@@ -159,7 +128,7 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
     model.enabled && protocol !== null && model.protocols.includes(protocol)).map((model) => ({
       ...model, creditMultiplier: model.creditMultiplier ?? null, contextWindow: model.contextWindow ?? null,
     })), engine ?? '', undefined, state?.desired.source === 'platform' ? state.desired.modelId : null) ?? ownOptions
-  const current = parseSelection(value)
+  const current = parseSelection(value ?? 'default')
   const selectedOption = current.source === 'default' ? originalOption
     : current.source === 'byok' ? current.modelId : platformOptionId(current.modelId)
   if (current.source !== 'default' && !options[selectedOption]) options[selectedOption] = { name: current.modelId }
@@ -168,7 +137,7 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
 
   // 能改的前提:Agent 绑了设备(没有谁能把选择变成事实,RPC 会拒)且当前值已读到。
   const canEdit = Boolean(agent.device_id) && state !== null && !saving
-  const usingPlatform = value.startsWith('platform:')
+  const usingPlatform = value?.startsWith('platform:') === true
   const pendingOnDevice = state !== null
     && state.applyError === null
     && !sameSelection(state.desired, state.applied)
@@ -190,8 +159,8 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
       // 写完重读:desired / applied / apply_error 都以云端为准,❌ 不用本地猜一份「应该已经变成这样」。
       const next = await readAgentModelSelection(agent.id)
       if (epoch !== requestEpoch.current) return
-      setState(next)
-      if (result.ok) setValue(selectionValue(next.desired))
+      agentModelSelection.set([agent.id], next)
+      if (result.ok) setValue(null)
     } catch (cause) {
       if (epoch === requestEpoch.current) setError(messageForUser(cause))
     } finally {
@@ -227,18 +196,19 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
   return (
     <div className={agentSettingsPaneClass(true)}>
       <div className={asClass.aiModelLabel}>{t('settings.model.label')}</div>
-      <AgentModelPicker items={items} value={selectedOption} disabled={!canEdit} onChange={(optionId) => {
+      {value === null ? <Unknown className="h-9 w-full" /> : <AgentModelPicker items={items} value={selectedOption} disabled={!canEdit} onChange={(optionId) => {
         const chosen = composerModelSelection(optionId)
         if (cloudOnly && (optionId === originalOption || chosen.source === 'own')) return
         const next = optionId === originalOption ? 'default' : selectionValue(chosen.source === 'own'
           ? { source: 'byok', modelId: chosen.modelId }
           : { source: 'platform', protocol: protocol!, modelId: chosen.modelId })
         if (next !== value) void save(next)
-      }} />
-      {!usingPlatform && (harnessFailed ? <div className={asClass.aiModelArd} role="status">{harnessFailed} <Button variant="ghost" size="sm" onClick={() => setHarnessAttempt((attempt) => attempt + 1)}>{t('settings.model.retryCatalog')}</Button></div>
+      }} />}
+      {!usingPlatform && (harnessFailed ? <div className={asClass.aiModelArd} role="status">{harnessFailed} <Button variant="ghost" size="sm" onClick={() => { void agentHarnessModels.refresh() }}>{t('settings.model.retryCatalog')}</Button></div>
         : harness?.harnessState === 'auth-required' ? <div className={asClass.aiModelArd}>{t('settings.model.deviceSubscriptionMissing')}</div> : null)}
       <div className={asClass.aiModelArd} role="status">
-        {saving ? t('settings.model.applying') : error
+        {saving ? t('settings.model.applying') : value === null && selection.state !== 'error' ? <Unknown className="w-48" /> : error
+          || (selection.state === 'error' && messageForUser(selection.error))
           || outcomeText
           || catalogError
           || (!agent.device_id && t('settings.model.noDevice'))
@@ -265,7 +235,7 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
       )}
       {/* 手机上拿不到活会话的清单,判不出热切还是重开 —— 如实说两种可能,而不是假装知道。 */}
       <div className={asClass.aiModelArd}>{t('settings.model.liveSessionHint')}</div>
-      {(error || deviceError) && <Button variant="ghost" size="sm" disabled={!canEdit} onClick={() => void save(value)}>{t('settings.model.retryApply')}</Button>}
+      {(error || deviceError) && <Button variant="ghost" size="sm" disabled={!canEdit} onClick={() => { if (value !== null) void save(value) }}>{t('settings.model.retryApply')}</Button>}
     </div>
   )
 }

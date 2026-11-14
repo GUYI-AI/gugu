@@ -1,7 +1,8 @@
 import { officialServicesEnabled } from '@gugu/core/cloud/optionalServices';
-import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { observer } from 'mobx-react-lite';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { Unknown } from '@/components/ui/Unknown';
 import type { SubscriptionUsageReading, SubscriptionUsageWindow } from '@gugu/session-core/agents/plugins';
 import { SettingsGroup, SettingsNote, SettingsPage } from '@/components/settings/SettingsPrimitives';
 import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/library/library-host';
@@ -52,7 +53,7 @@ export const SubscriptionsSettingsPage = observer(function SubscriptionsSettings
       <PageHeader
         title={translate('subscriptions.title')}
         showTitleInSettings
-        aside={<SubscriptionRefresh machine={deviceId} />}
+        aside={<SubscriptionRefresh />}
       />
       <LibraryHostProvider value={host} key={host.key}>
         <SubscriptionList machine={deviceId} />
@@ -61,13 +62,15 @@ export const SubscriptionsSettingsPage = observer(function SubscriptionsSettings
   );
 });
 
-function SubscriptionRefresh({ machine }: { machine: string | null }) {
+function SubscriptionRefresh() {
   const { translate } = useSessionMessages();
   const queryClient = useQueryClient();
-  const refreshing = useIsFetching({ queryKey: subscriptionKey(machine) }) > 0;
+  // 只有人按了才写「查询中…」:打开页面时的后台对账 ❌ 把按钮换来换去。
+  const [refreshing, setRefreshing] = useState(false);
   return <Button variant="outline" size="sm" disabled={refreshing} data-testid="subscriptions-refresh" onClick={() => {
+    setRefreshing(true);
     refreshSpendingPower();
-    void queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
+    void queryClient.invalidateQueries({ queryKey: ['subscriptions'] }).finally(() => setRefreshing(false));
   }}>{refreshing ? translate('subscriptions.checking') : translate('subscriptions.refresh')}</Button>;
 }
 
@@ -120,11 +123,13 @@ function SubscriptionRow({ agent, machine }: { agent: AgentPayload; machine: str
       testId={`subscription-row-${agent.id}`}
       logo={<AppIcon id={agent.id} size={24} />}
       name={agent.name}
-      {...(offered ? {} : { badge, identity })}
+      {...(offered ? {} : { badge, identity: identity ?? <Unknown className="w-32" /> })}
       scope={
-        offered && listed
-          ? translate('subscriptions.connections.count', { count: listed.length })
-          : translate('subscriptions.connections.device')
+        !offered
+          ? translate('subscriptions.connections.device')
+          : listed
+            ? translate('subscriptions.connections.count', { count: listed.length })
+            : <Unknown className="w-20" />
       }
     >
       {offered && <AgentConnectionDetails agent={agent} machine={machine} embedded />}
@@ -158,8 +163,7 @@ function UsageBlock({
   formatDateTime: (epochMs: number) => string;
 }) {
   const { translate } = useSessionMessages();
-  if (pending)
-    return <div className="mt-1 text-xs text-foreground-passive">{translate('subscriptions.checking')}</div>;
+  if (pending) return <Unknown className="mt-1 h-3 w-40" />;
   if (error) {
     return (
       <div className="mt-1 text-xs text-foreground-warning">

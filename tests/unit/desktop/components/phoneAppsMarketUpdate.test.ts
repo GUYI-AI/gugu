@@ -63,6 +63,8 @@ const { followLink } = vi.hoisted(() => ({ followLink: vi.fn(() => true) }))
 vi.mock('../../../../apps/desktop/src/lib/guguLinks', () => ({ followLink }))
 const { AppsSection } = await import('../../../../apps/desktop/src/components/settings/AppsSection')
 const { useOfferedVersions } = await import('../../../../apps/desktop/src/components/settings/phoneMarketPage')
+const { queryClient } = await import('../../../../apps/desktop/src/lib/readModel')
+const { notifyManager } = await import('@tanstack/react-query')
 const { PhoneAppManage } = await import('../../../../apps/desktop/src/components/settings/PhoneAppManage')
 const { installedExtensionsStore: store } = (await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')) as unknown as {
   installedExtensionsStore: { disabled: string[]; autoUpdateOff: string[] }
@@ -70,6 +72,9 @@ const { installedExtensionsStore: store } = (await import('../../../../apps/desk
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
+  // What the market says is a read model: each case starts without an answer, delivered in the act() that brought it.
+  notifyManager.setScheduler((callback) => { callback() })
+  queryClient.clear()
   harness = createReactHarness()
   followLink.mockClear()
   // Nothing newer unless a case says so (an answer set in one case is not left for the next).
@@ -99,7 +104,7 @@ function Apps() {
   const offered = useOfferedVersions()
   const [manage, setManage] = useState<string | null>(null)
   return createElement(Fragment, null,
-    createElement(AppsSection, { updates: offered.updates, gone: offered.gone, onManage: setManage }),
+    createElement(AppsSection, { updates: offered.updates, gone: offered.gone, known: offered.known, onManage: setManage }),
     manage ? createElement(PhoneAppManage, { extensionId: manage, updateVersion: offered.updates[manage], gone: offered.gone.includes(manage), onClose: () => setManage(null), onViewInMarket: () => setManage(null) }) : null)
 }
 const open = async (id: string) => {

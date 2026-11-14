@@ -54,6 +54,7 @@ export function AcpAuthenticateSignIn({
   const onSuccessRef = useRef(onSuccess);
   onSuccessRef.current = onSuccess;
 
+  // @@@effect-flow - starting the sign-in this panel runs.
   useEffect(() => {
     let disposed = false;
     let stopReaction: (() => void) | null = null;

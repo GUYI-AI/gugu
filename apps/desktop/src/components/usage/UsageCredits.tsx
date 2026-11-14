@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { readModel, useReadModel } from '../../lib/readModel'
 import { useTranslation } from 'react-i18next'
 import type { CreditUsageDay } from '@gugu/core/shared/usage/dailyUsage'
 import { formatNumber } from '@/i18n'
@@ -55,13 +56,27 @@ const DEFAULT_PAGE_SIZE = 20
  * 使用日志表 —— 时间 / 模型 / Tokens / 费用,顶上是「模型名称」筛选,底下是分页器
  * (❌ 一路往下滚的长列表)。总数是库里精确计数,翻页按页码取。
  */
+const ledgerPage = readModel({
+  name: 'usageLedgerPage',
+  scope: 'account',
+  read: (_userId, page: number, pageSize: number, model: string | null, from: string, to: string, _creditVersion: string | null) =>
+    fetchLedgerPage({ page, pageSize, model, range: { from, to } }),
+  keep: 5 * 60_000,
+})
+
 function Ledger({ range }: { range: DayRange }) {
   const { user } = useAuth()
   const { creditVersion, activityRevision } = useSpendingPower(user)
-  return user ? <LedgerRows key={JSON.stringify([user.id, creditVersion])} range={range} revision={activityRevision} /> : null
+  // 新扣了一笔、回到前台:当前这页就地重读,❌ 整张表退回骨架。积分单位换了:那是另一份读数。
+  const seen = useRef<number | null>(null)
+  useEffect(() => {
+    if (seen.current !== null && seen.current !== activityRevision) void ledgerPage.refresh()
+    seen.current = activityRevision
+  }, [activityRevision])
+  return user ? <LedgerRows key={user.id} range={range} creditVersion={creditVersion} /> : null
 }
 
-function LedgerRows({ range, revision }: { range: DayRange; revision: number }) {
+function LedgerRows({ range, creditVersion }: { range: DayRange; creditVersion: string | null }) {
   const { t } = useTranslation('settings')
   const [draft, setDraft] = useState('')
   const [model, setModel] = useState<string | null>(null)
@@ -73,26 +88,17 @@ function LedgerRows({ range, revision }: { range: DayRange; revision: number }) 
     setPage(1)
   }
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
-  const [rows, setRows] = useState<LedgerRow[] | null>(null)
-  const [total, setTotal] = useState(0)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  useEffect(() => {
-    let alive = true
-    setBusy(true)
-    fetchLedgerPage({ page, pageSize, model, range: { from: range.from, to: range.to } })
-      .then((result) => {
-        if (!alive) return
-        // 翻到了已经不存在的页(别处刚删过数据、或换了每页行数)→ 退到最后一页。
-        const last = Math.max(1, Math.ceil(result.total / pageSize))
-        if (page > last) { setPage(last); return }
-        setRows(result.rows); setTotal(result.total); setError(null)
-      })
-      .catch((e: unknown) => { if (alive) setError(message(e)) })
-      .finally(() => { if (alive) setBusy(false) })
-    return () => { alive = false }
-  }, [page, pageSize, model, range.from, range.to, revision])
+  const reading = useReadModel(ledgerPage, [page, pageSize, model, range.from, range.to, creditVersion])
+  // 翻页时上一页先留在表里(半透明),新的一页到了再换,❌ 每翻一页闪一次骨架。
+  const [shown, setShown] = useState<{ rows: LedgerRow[]; total: number } | null>(null)
+  const result = reading.state === 'value' ? reading.value : null
+  if (result && result !== shown) setShown(result)
+  const rows = (result ?? shown)?.rows ?? null
+  const total = (result ?? shown)?.total ?? 0
+  const error = reading.state === 'error' ? message(reading.error) : null
+  const busy = reading.state === 'unknown'
+  // 翻到了已经不存在的页(别处刚删过数据、或换了每页行数)→ 退到最后一页。
+  if (result && page > Math.max(1, Math.ceil(result.total / pageSize))) setPage(Math.max(1, Math.ceil(result.total / pageSize)))
 
   const search = () => { setModel(draft.trim() || null); setPage(1) }
   const reset = () => { setDraft(''); setModel(null); setPage(1) }

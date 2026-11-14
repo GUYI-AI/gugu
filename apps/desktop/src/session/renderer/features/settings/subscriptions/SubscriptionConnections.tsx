@@ -1,3 +1,4 @@
+import { Unknown } from '@/components/ui/Unknown';
 import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { ChevronDown, MoreHorizontal, Plus } from '@/lib/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -485,9 +486,7 @@ export function SubscriptionConnections({
                 />
               </div>
             )}
-            {listed === undefined && !connections.error && (
-              <p className="p-2 text-xs">{translate('subscriptions.checking')}</p>
-            )}
+            {listed === undefined && !connections.error && <Unknown className="m-2 h-3 w-40" />}
             {connections.error && (
               <p className="subscription-error p-2" role="alert">
                 {errorText(connections.error)}
@@ -716,7 +715,7 @@ function ConnectionOption({
                 : 'subscriptions.connections.signedOut'
             )
           : details.isPending
-            ? translate('subscriptions.checking')
+            ? <Unknown className="w-28" />
             : translate('subscriptions.connections.account')
   const Choice = selectItem ? SelectItem : DropdownMenuRadioItem
   const options = (

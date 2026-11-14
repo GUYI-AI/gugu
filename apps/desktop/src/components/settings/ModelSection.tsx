@@ -1,9 +1,12 @@
 import { messageForUser } from '@/lib/userFacingError';
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useReadModel } from '../../lib/readModel'
+import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { openBillingPage } from '../../lib/appLinks'
-import { fetchPlatformModelCatalog, setPlatformModelHidden, type PlatformCatalogModel } from '../../lib/agentModelSelection'
+import { setPlatformModelHidden, type PlatformCatalogModel } from '../../lib/agentModelSelection'
+import { platformModels } from '../../lib/agentModelReadModels'
 import { rendererLogger } from '../../lib/log'
 import { Button } from '../ui/Button'
 import { SearchField } from '../ui/SearchField'
@@ -26,36 +29,24 @@ const paneLog = rendererLogger('settings/model-pane')
 
 export function ModelSection() {
   const { t } = useTranslation('settings')
-  const [models, setModels] = useState<PlatformCatalogModel[] | null>(null)
-  const [loadFailed, setLoadFailed] = useState('')
+  const catalog = useReadModel(platformModels, [])
+  const models = catalog.state === 'value' ? catalog.value.filter((model) => model.enabled) : null
+  const loadFailed = catalog.state === 'error' ? messageForUser(catalog.error) : ''
   const [saveFailed, setSaveFailed] = useState('')
   // 列表顶上一格搜索(Cursor 那页同款):按名字或 id 筛,两组一起筛。
   const [query, setQuery] = useState('')
 
-  const load = useCallback(() => {
-    let live = true
-    setLoadFailed('')
-    fetchPlatformModelCatalog()
-      .then((next) => { if (live) setModels(next.filter((model) => model.enabled)) })
-      .catch((cause: unknown) => {
-        paneLog.error({ error: String(cause) }, 'platform model catalog unavailable')
-        if (live) setLoadFailed(messageForUser(cause))
-      })
-    return () => { live = false }
-  }, [])
-  useEffect(load, [load])
+  const load = () => { void platformModels.refresh() }
 
   const toggle = (model: PlatformCatalogModel, shown: boolean) => {
     setSaveFailed('')
     // 先拨过去再存:开关的手感不该等一趟网络。存失败就说一句,并以服务端为准重读一遍 ——
     // ❌ 手动拨回点击那一刻的值:连拨几下时那个值早就旧了;模型刚好下架(404)时重读也让它从列表里消失。
-    setModels((current) => current?.map((entry) => (entry.id === model.id ? { ...entry, hidden: !shown } : entry)) ?? current)
+    platformModels.set([], (current) => current?.map((entry) => (entry.id === model.id ? { ...entry, hidden: !shown } : entry)))
     setPlatformModelHidden(model.id, !shown).catch((cause: unknown) => {
       paneLog.error({ modelId: model.id, error: String(cause) }, 'saving model visibility failed')
       setSaveFailed(messageForUser(cause))
-      fetchPlatformModelCatalog()
-        .then((next) => setModels(next.filter((entry) => entry.enabled)))
-        .catch((reloadCause: unknown) => paneLog.error({ error: String(reloadCause) }, 'reloading models after a failed save failed'))
+      void platformModels.refresh()
     })
   }
 
@@ -76,7 +67,7 @@ export function ModelSection() {
           />
         </SettingsGroup>
       ) : models === null ? (
-        <SettingsNote>{t('model.loading')}</SettingsNote>
+        <Unknown className="h-64 w-full" />
       ) : (
         <>
           <SearchField

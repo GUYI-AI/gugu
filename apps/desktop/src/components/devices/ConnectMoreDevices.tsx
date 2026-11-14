@@ -5,9 +5,9 @@
  * 只列已经能连接的平台,未实现的功能不放占位行。
  * 另加一项咕咕自己有的「添加一台服务器」(经 SSH 装咕咕 server),只在能这么装的桌面上出现,走设置里现成的那一步。
  */
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import QRCode from 'qrcode'
+import { useQrCode } from '../../lib/qrCode'
 import { GUGU_DOWNLOAD_URLS } from '../../lib/appLinks'
 import { requestAddServerOnOpen } from '../../lib/addServerIntent'
 import { UI_EVENTS } from '../../lib/uiEvents'
@@ -19,7 +19,6 @@ import { ArrowDownToLine, ChevronDown, ChevronRight, Monitor, Server } from '@/l
 import { Button } from '../ui/Button'
 import { SettingsGroup, SettingsRow } from '../settings/SettingsPrimitives'
 import { PhoneGlyph } from './assistantDeviceUi'
-import { qrColors } from '../../lib/qrColors'
 
 type Platform = 'mac' | 'windows' | 'linux' | 'android'
 
@@ -141,15 +140,8 @@ function Guide({ platform: key }: { platform: Platform }) {
 
 function DownloadQr({ url }: { url: string }) {
   const { t } = useTranslation('settings')
-  const [dataUrl, setDataUrl] = useState<string | null>(null)
-  useEffect(() => {
-    let alive = true
-    QRCode.toDataURL(url, { width: 112, margin: 1, color: qrColors() }).then(
-      (value) => { if (alive) setDataUrl(value) },
-      () => { if (alive) setDataUrl(null) },
-    )
-    return () => { alive = false }
-  }, [url])
+  const qr = useQrCode(url, 112)
+  const dataUrl = qr.state === 'value' ? qr.value : null
   // 生成失败就不画这一块(下载按钮还在),❌ 画一个空框。
   if (!dataUrl) return null
   return (

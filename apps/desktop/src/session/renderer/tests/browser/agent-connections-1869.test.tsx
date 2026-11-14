@@ -28,9 +28,11 @@ vi.mock('@renderer/lib/modal/modal-provider', async (original) => ({
   ...(await original<typeof import('@renderer/lib/modal/modal-provider')>()),
   useShowModal: () => mocks.login
 }))
+// The CLI's own sign-in, read: not signed in (the status line waits for this reading before it is written).
+const notSignedIn = vi.hoisted(() => ({ status: { kind: 'unauthenticated' }, login: null }));
 vi.mock('@renderer/lib/stores/use-agent-auth-status', () => ({
-  useAgentAuthStatus: () => ({ auth: null, refresh: async () => {} }),
-  useAgentAuthStatuses: (_: string, programs: unknown[]) => ({ auths: programs.map(() => null), refresh: async () => {} }),
+  useAgentAuthStatus: () => ({ auth: notSignedIn, refresh: async () => {} }),
+  useAgentAuthStatuses: (_: string, programs: unknown[]) => ({ auths: programs.map(() => notSignedIn), refresh: async () => {} }),
   useExpiredAgentIds: () => new Set()
 }))
 vi.mock('@renderer/features/sessions/session-config/platform-model-catalog', () => ({

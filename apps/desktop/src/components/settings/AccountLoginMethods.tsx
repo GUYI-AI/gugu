@@ -1,22 +1,45 @@
 import { useEffect, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
+import { readModel, useReadModel } from '../../lib/readModel'
+import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
-import { AccountLinking, AccountLinkingError, loginMethodNotice, loginMethods } from '../../lib/accountLinking'
+import { AccountLinking, AccountLinkingError, loginMethodNotice, loginMethods, type LoginMethodNotice } from '../../lib/accountLinking'
 import { accountGoogleAvailable, cancelAccountGoogle, createAccountLinking } from '../../lib/accountLinkingAdapter'
 import { userVisibleAuthError } from '../../lib/authErrors'
 import { Button } from '../ui/Button'
 import { SettingsGroup, SettingsNote, SettingsRow } from './SettingsPrimitives'
 
 type Action = 'email' | 'link' | 'unlink'
+
+/** What the settings rows show of the account's sign-in methods: addresses and which methods are linked, nothing more. */
+type LoginMethodsView = { email: string; emailIdentity: boolean; google: boolean; googleEmail: string; provider: string | null; notice: LoginMethodNotice | null }
+
+function viewOf(user: User): LoginMethodsView {
+  const methods = loginMethods(user)
+  return { email: methods.email, emailIdentity: !!methods.emailIdentity, google: !!methods.google, googleEmail: methods.googleEmail,
+    provider: typeof user.app_metadata.provider === 'string' ? user.app_metadata.provider : null, notice: loginMethodNotice(user) }
+}
+
+const loginMethodsModel = readModel({
+  name: 'loginMethods',
+  scope: 'account',
+  read: async (userId) => {
+    const controller = createAccountLinking(userId)
+    try { return viewOf(await controller.read()) } finally { controller.dispose() }
+  },
+  persist: true,
+})
 type Stage = 'idle' | 'verify' | 'email' | 'email-code' | 'unlink' | 'signout'
 
 export function AccountLoginMethods({ userId, onEmailChanged }: { userId: string; onEmailChanged(email: string): void }) {
   const { t } = useTranslation('settings')
   const service = useRef<AccountLinking | null>(null)
-  const [user, setUser] = useState<User | null>(null)
+  const reading = useReadModel(loginMethodsModel, [])
+  const methods = reading.state === 'value' ? reading.value : null
   const [stage, setStage] = useState<Stage>('idle')
   const [action, setAction] = useState<Action>('email')
-  const [method, setMethod] = useState<'email' | 'google'>('email')
+  const [methodChoice, setMethod] = useState<'email' | 'google' | null>(null)
+  const method = methodChoice ?? (methods?.google && (!methods.emailIdentity || methods.provider === 'google') ? 'google' : 'email')
   const [code, setCode] = useState('')
   const [email, setEmail] = useState('')
   const [confirmation, setConfirmation] = useState<'new' | 'current'>('new')
@@ -30,15 +53,8 @@ export function AccountLoginMethods({ userId, onEmailChanged }: { userId: string
     const controller = createAccountLinking(userId)
     service.current = controller
     setStage(controller.hasPendingUnlink() ? 'signout' : 'idle')
-    let alive = true
-    void controller.read().then(value => {
-      if (!alive) return
-      setUser(value)
-      const available = loginMethods(value)
-      setMethod(available.google && (!available.emailIdentity || value.app_metadata.provider === 'google') ? 'google' : 'email')
-    }).catch((reason: unknown) => { if (alive) setError(reason instanceof AccountLinkingError ? t(`loginMethods.errors.${reason.code}`) : userVisibleAuthError(reason)) })
-    return () => { alive = false; controller.dispose(); service.current = null; void cancelAccountGoogle() }
-  }, [userId, t])
+    return () => { controller.dispose(); service.current = null; void cancelAccountGoogle() }
+  }, [userId])
 
   async function run(work: (controller: AccountLinking) => Promise<void>) {
     const controller = service.current
@@ -49,12 +65,12 @@ export function AccountLoginMethods({ userId, onEmailChanged }: { userId: string
       setError(reason instanceof AccountLinkingError ? t(`loginMethods.errors.${reason.code}`) : userVisibleAuthError(reason))
       if (reason instanceof AccountLinkingError && reason.code === 'verifyRequired') { setStage('verify'); setSent(false); setCode('') }
       // A successful server mutation followed by a failed notice/sign-out must remain visible.
-      try { setUser(await controller.read()) } catch { /* Preserve the operation's actionable error. */ }
+      try { loginMethodsModel.set([], viewOf(await controller.read())) } catch { /* Preserve the operation's actionable error. */ }
     } finally { setBusy(false) }
   }
   async function refreshed(controller: AccountLinking, noticeSaved = true) {
     const latest = await controller.read()
-    setUser(latest); onEmailChanged(latest.email ?? '')
+    loginMethodsModel.set([], viewOf(latest)); onEmailChanged(latest.email ?? '')
     setStage('idle'); setCode('')
     setMessage(t(noticeSaved ? 'loginMethods.saved' : 'loginMethods.noticeFailed'))
   }
@@ -67,21 +83,28 @@ export function AccountLoginMethods({ userId, onEmailChanged }: { userId: string
     }
     else setStage(action === 'email' ? 'email' : 'unlink')
   }
-  const methods = user ? loginMethods(user) : null
   const verificationMethod = methods?.google && (method === 'google' || !methods.emailIdentity) ? 'google' : 'email'
   const sameEmail = methods && methods.googleEmail && methods.email.toLowerCase() === methods.googleEmail.toLowerCase()
   const cannotUnlink = !methods?.emailIdentity || !methods.email || !methods.googleEmail || Boolean(sameEmail)
-  const notice = user ? loginMethodNotice(user) : null
+  const notice = methods?.notice ?? null
+  const readError = reading.state === 'error'
+    ? (reading.error instanceof AccountLinkingError ? t(`loginMethods.errors.${reading.error.code}`) : userVisibleAuthError(reading.error))
+    : ''
   const button = (label: string, onClick: () => void, disabled = false) => <Button type="button" variant="ghost" size="sm" disabled={busy || disabled} onClick={onClick}>{label}</Button>
 
   return <SettingsGroup className="gg-account-login-methods" title={t('loginMethods.title')} note={t('loginMethods.intro')}
     footer={<>
-      {error && <SettingsNote role="alert" tone="danger">{error}</SettingsNote>}
+      {(error || readError) && <SettingsNote role="alert" tone="danger">{error || readError}</SettingsNote>}
       {message && <SettingsNote role="status">{message}</SettingsNote>}
       {notice && <SettingsNote>{t(`loginMethods.notices.${notice.kind}`)}</SettingsNote>}
       {busy && <SettingsNote role="status">{t('loginMethods.working')}</SettingsNote>}
     </>}>
-    {!methods ? <SettingsRow title={t('loginMethods.loading')} control={error ? button(t('loginMethods.retry'), () => { void run(refreshed) }) : undefined} /> : <>
+    {!methods ? (reading.state === 'error'
+      ? <SettingsRow title={t('loginMethods.email')} control={button(t('loginMethods.retry'), () => { void loginMethodsModel.refresh() })} />
+      : <>
+        <SettingsRow title={t('loginMethods.email')} description={<Unknown className="w-40" />} />
+        <SettingsRow title="Google" description={<Unknown className="w-40" />} />
+      </>) : <>
       <SettingsRow title={t('loginMethods.email')} description={methods.email} control={button(t('loginMethods.changeEmail'), () => begin('email'), stage !== 'idle')} />
       <SettingsRow title="Google" description={methods.google ? methods.googleEmail || t('loginMethods.errors.googleEmailUnavailable') : t('loginMethods.unlinked')}
         control={methods.google ? button(t('loginMethods.unlinkGoogle'), () => begin('unlink'), cannotUnlink || stage !== 'idle')

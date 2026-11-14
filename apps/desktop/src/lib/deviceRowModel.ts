@@ -25,6 +25,8 @@ export type DeviceConnection =
   | { via: 'ssh'; address: string }
   | { via: 'sshElsewhere' }
   | { via: 'cloud' }
+  /** This desktop's SSH registry is not read yet: the row draws a placeholder, ❌ a guessed route. */
+  | { via: 'unknown' }
 
 export type DeviceRowModel = {
   kind: DeviceRowKind
@@ -76,7 +78,8 @@ export function deviceSystem(device: Device): string | null {
   return os ?? arch
 }
 
-export function deviceRowModel(device: Device, sshAddress: string | null, cloudComputerId?: string | null): DeviceRowModel {
+/** `sshAddress`: the address this desktop reaches it by, null = none, undefined = this desktop's SSH registry not read yet. */
+export function deviceRowModel(device: Device, sshAddress: string | null | undefined, cloudComputerId?: string | null): DeviceRowModel {
   const kind = deviceKind(device, cloudComputerId)
   // 云电脑里跑的就是咕咕 server:版本、升级、要人知道的事照 server 说。
   const isServer = kind === 'server' || kind === 'cloudComputer'
@@ -88,7 +91,9 @@ export function deviceRowModel(device: Device, sshAddress: string | null, cloudC
     notices: serverMachineNotices(device.capabilities),
     connection: kind === 'this'
       ? { via: 'this' }
-      : sshAddress
+      : sshAddress === undefined
+        ? { via: 'unknown' }
+        : sshAddress
         ? { via: 'ssh', address: sshAddress }
         : kind === 'server' && device.capabilities.connect_via === 'ssh'
           ? { via: 'sshElsewhere' }
@@ -104,7 +109,7 @@ export type DeviceFilter = 'all' | 'online' | 'offline'
  */
 export function filterDevices(
   devices: readonly Device[],
-  options: { query: string; filter: DeviceFilter; sshAddress: (deviceId: string) => string | null },
+  options: { query: string; filter: DeviceFilter; sshAddress: (deviceId: string) => string | null | undefined },
 ): Device[] {
   const query = options.query.trim().toLowerCase()
   return devices.filter((device) => {

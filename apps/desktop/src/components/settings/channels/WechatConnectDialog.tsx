@@ -1,7 +1,7 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { rendererLogger } from '@/lib/log';
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import QRCode from 'qrcode'
+import { useQrCode } from '../../../lib/qrCode'
 import { useTranslation } from 'react-i18next'
 import type { ChatChannelList, ChatChannelLogin, ChatChannelsClient } from '@gugu/core/cloud/chatChannels'
 import { CheckCircle } from '@/lib/icons'
@@ -11,7 +11,6 @@ import { ChannelAgentPicker } from './ChannelAgentPicker'
 import { useOwnedAgents } from './channelAgents'
 import { platform } from '../../../platform'
 import { ChannelBrandIcon } from './ChannelBrandIcon'
-import { qrColors } from '../../../lib/qrColors'
 
 const body = 'text-[length:var(--font-body)] leading-[1.5]'
 
@@ -25,16 +24,8 @@ function Spinner() {
 }
 
 function QrImage({ text, alt }: { text: string; alt: string }) {
-  const [dataUrl, setDataUrl] = useState<string | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    void QRCode.toDataURL(text, { width: 200, margin: 1, color: qrColors() }).then((url) => {
-      if (!cancelled) setDataUrl(url)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [text])
+  const qr = useQrCode(text, 200)
+  const dataUrl = qr.state === 'value' ? qr.value : null
   return (
     <div className="flex size-[200px] items-center justify-center overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--color-white)]">
       {dataUrl ? <img src={dataUrl} alt={alt} width={200} height={200} data-testid="wechat-connect-qr" /> : <Spinner />}
@@ -131,6 +122,7 @@ export function WechatConnectDialog({
   const connected = view?.phase === 'connected'
   const channel = list.channels.find((c) => c.kind === 'wechat') ?? null
 
+  // @@@effect-flow - starting the WeChat sign-in this dialog is for.
   useEffect(() => {
     let alive = true
     setView(null)
@@ -144,6 +136,7 @@ export function WechatConnectDialog({
     }
   }, [client, attempt])
 
+  // @@@effect-flow - polling the sign-in in progress until it finishes.
   useEffect(() => {
     if (requestFailed || !inProgress(view) || view === null) return
     const timer = setTimeout(() => {

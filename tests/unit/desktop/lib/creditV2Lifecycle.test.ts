@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react'
+import { notifyManager } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import { creditDecimal } from '@gugu/core/billing/creditAmount'
@@ -8,6 +9,7 @@ import { useCreditData } from '../../../../apps/desktop/src/components/usage/use
 import { fetchCreditDays } from '../../../../apps/desktop/src/lib/usage/cloud'
 import type { CreditUsageDay } from '@gugu/core/shared/usage/dailyUsage'
 import { readCreditV2Account } from '../../../../apps/desktop/src/lib/billing/v2/runtime'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
 vi.mock('../../../../apps/desktop/src/lib/billing/v2/runtime', () => ({ readCreditV2Account: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/usage/cloud', async original => ({ ...(await original<typeof import('../../../../apps/desktop/src/lib/usage/cloud')>()), fetchCreditDays: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/realtimeChannel', () => ({ subscribePrivateUserEventBus: vi.fn(() => ({})), unsubscribePrivateUserEventBus: vi.fn() }))
@@ -29,6 +31,7 @@ function deferred<T>() {
   const promise = new Promise<T>(done => { resolve = done })
   return { promise, resolve }
 }
+/** The account is the published session's (the read model follows it), as in the product. */
 function Probe({ userId }: { userId: string | null }) {
   const state = useSpendingPower(userId ? { id: userId } : null)
   return createElement('pre', null, JSON.stringify(state))
@@ -36,12 +39,17 @@ function Probe({ userId }: { userId: string | null }) {
 let harness: ReturnType<typeof createReactHarness>
 const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve() })
 const state = () => JSON.parse(harness.container.querySelector('pre')!.textContent!)
-beforeEach(() => { vi.clearAllMocks(); harness = createReactHarness(); vi.mocked(readCreditV2Account).mockResolvedValue(account()) })
+beforeEach(() => {
+  // The read model publishes through react-query: deliver its notifications in the act() that caused them.
+  notifyManager.setScheduler((callback) => { callback() })
+  vi.clearAllMocks(); queryClient.clear(); followRendererSession('SIGNED_OUT', null)
+  harness = createReactHarness(); vi.mocked(readCreditV2Account).mockResolvedValue(account())
+})
 afterEach(() => { harness.cleanup() })
 
 describe('shared v2 account ownership and invalidation', () => {
   it('shares one exact account snapshot across subscribers', async () => {
-    await harness.render(createElement('div', null, createElement(Probe, { userId: 'u1' }), createElement(Probe, { userId: 'u1' })))
+    followRendererSession('SIGNED_IN', 'u1'); await harness.render(createElement('div', null, createElement(Probe, { userId: 'u1' }), createElement(Probe, { userId: 'u1' })))
     await flush()
     expect(readCreditV2Account).toHaveBeenCalledOnce()
     const states = [...harness.container.querySelectorAll('pre')].map(el => JSON.parse(el.textContent!))
@@ -49,36 +57,35 @@ describe('shared v2 account ownership and invalidation', () => {
     expect(states[0].power.spendable).toBe('15')
   })
   it('clears a failed pool instead of combining a new balance with cached quota', async () => {
-    await harness.render(createElement(Probe, { userId: 'u1' })); await flush()
+    followRendererSession('SIGNED_IN', 'u1'); await harness.render(createElement(Probe, { userId: 'u1' })); await flush()
     vi.mocked(readCreditV2Account).mockResolvedValue({ ...account('9007199254740993.00000001'), windows: null, windowsError: new Error('quota permission denied') })
     await act(async () => { refreshSpendingPower() }); await flush()
     expect(state()).toMatchObject({ balance: '9007199254740993.00000001', windows: null, power: null, windowsError: 'quota permission denied' })
   })
   it('a failed account read drops the whole account and says why, instead of keeping the last balance', async () => {
-    await harness.render(createElement(Probe, { userId: 'u1' })); await flush()
+    followRendererSession('SIGNED_IN', 'u1'); await harness.render(createElement(Probe, { userId: 'u1' })); await flush()
     expect(state().balance).toBe('7.5')
     vi.mocked(readCreditV2Account).mockRejectedValue(new Error('permission denied'))
     await act(async () => { refreshSpendingPower() }); await flush()
     expect(state()).toMatchObject({ balance: null, windows: null, membership: null, creditVersion: null, power: null,
       balanceError: 'permission denied', windowsError: 'permission denied' })
   })
-  it('starts a fresh request after an unmounted pending subscriber returns with the same user', async () => {
-    const pending = deferred<Account>()
-    vi.mocked(readCreditV2Account).mockReturnValueOnce(pending.promise)
-    await harness.render(createElement(Probe, { userId: 'u1' }))
+  it('a surface opened again shows the last reading at once and reads again behind it (the account keeps it, not the subscriber)', async () => {
+    followRendererSession('SIGNED_IN', 'u1'); await harness.render(createElement(Probe, { userId: 'u1' })); await flush()
     await harness.render(null)
-    await harness.render(createElement(Probe, { userId: 'u1' })); await flush()
-    expect(readCreditV2Account).toHaveBeenCalledTimes(2)
-    expect(state().balance).toBe('7.5')
-    await act(async () => { pending.resolve(account('999')) }); await flush()
-    expect(state().balance).toBe('7.5')
+    const next = deferred<Account>()
+    vi.mocked(readCreditV2Account).mockReturnValueOnce(next.promise)
+    followRendererSession('SIGNED_IN', 'u1'); await harness.render(createElement(Probe, { userId: 'u1' }))
+    expect(state()).toMatchObject({ state: 'value', balance: '7.5' })
+    await act(async () => { next.resolve(account('9')) }); await flush()
+    expect(state().balance).toBe('9')
   })
   it('does not accept an old request after account A to B to A', async () => {
     const oldA = deferred<Account>(), oldB = deferred<Account>()
     vi.mocked(readCreditV2Account).mockReturnValueOnce(oldA.promise).mockReturnValueOnce(oldB.promise).mockResolvedValueOnce(account('3'))
-    await harness.render(createElement(Probe, { userId: 'a' }))
-    await harness.render(createElement(Probe, { userId: 'b' }))
-    await harness.render(createElement(Probe, { userId: 'a' })); await flush()
+    followRendererSession('SIGNED_IN', 'a'); await harness.render(createElement(Probe, { userId: 'a' }))
+    followRendererSession('SIGNED_IN', 'b'); await harness.render(createElement(Probe, { userId: 'b' }))
+    followRendererSession('SIGNED_IN', 'a'); await harness.render(createElement(Probe, { userId: 'a' })); await flush()
     expect(state().balance).toBe('3')
     await act(async () => { oldA.resolve(account('111')); oldB.resolve(account('222')) }); await flush()
     expect(state().balance).toBe('3')
@@ -86,7 +93,8 @@ describe('shared v2 account ownership and invalidation', () => {
   it('coalesces invalidations during a request and publishes only the fresh batch', async () => {
     const pending = deferred<Account>()
     vi.mocked(readCreditV2Account).mockReturnValueOnce(pending.promise).mockResolvedValueOnce(account('2'))
-    await harness.render(createElement(Probe, { userId: 'u1' }))
+    followRendererSession('SIGNED_IN', 'u1'); await harness.render(createElement(Probe, { userId: 'u1' })); await flush()
+    // The first read is on its way when the invalidations come.
     await act(async () => { refreshSpendingPower(); refreshSpendingPower() })
     await act(async () => { pending.resolve(account('111')) }); await flush()
     expect(readCreditV2Account).toHaveBeenCalledTimes(2)
@@ -104,15 +112,15 @@ it('does not publish an earlier account usage request after switching accounts',
   const old = deferred<CreditUsageDay[]>()
   vi.mocked(readCreditV2Account).mockReturnValue(new Promise(() => {}))
   vi.mocked(fetchCreditDays).mockReturnValueOnce(old.promise).mockResolvedValue(usage('2'))
-  await harness.render(createElement(CreditProbe, { userId: 'a' }))
-  await harness.render(createElement(CreditProbe, { userId: 'b' })); await flush()
+  followRendererSession('SIGNED_IN', 'a'); await harness.render(createElement(CreditProbe, { userId: 'a' }))
+  followRendererSession('SIGNED_IN', 'b'); await harness.render(createElement(CreditProbe, { userId: 'b' })); await flush()
   expect(state().credits.value[0].credits).toBe('2')
   await act(async () => { old.resolve(usage('111')) }); await flush()
   expect(state().credits.value[0].credits).toBe('2')
 })
 it('hides a cached usage total when account metadata changes and waits for the new version', async () => {
   vi.mocked(fetchCreditDays).mockResolvedValue(usage('1'))
-  await harness.render(createElement(CreditProbe, { userId: 'u1' })); await flush()
+  followRendererSession('SIGNED_IN', 'u1'); await harness.render(createElement(CreditProbe, { userId: 'u1' })); await flush()
   expect(state().credits.value[0].credits).toBe('1')
   const next = deferred<CreditUsageDay[]>()
   vi.mocked(fetchCreditDays).mockReturnValue(next.promise)
@@ -125,6 +133,6 @@ it('hides a cached usage total when account metadata changes and waits for the n
 })
 it('keeps an actual usage read failure explicit instead of rendering an empty total', async () => {
   vi.mocked(fetchCreditDays).mockRejectedValue(new Error('RLS denied'))
-  await harness.render(createElement(CreditProbe, { userId: 'u1' })); await flush()
+  followRendererSession('SIGNED_IN', 'u1'); await harness.render(createElement(CreditProbe, { userId: 'u1' })); await flush()
   expect(state().credits).toEqual({ status: 'error', error: 'RLS denied' })
 })

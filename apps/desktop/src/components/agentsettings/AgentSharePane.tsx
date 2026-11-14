@@ -18,9 +18,9 @@ import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reaso
  *   - 链接与 QR 都是这只 agent 的个人短码 /j/?<咕咕号>(qrPayload.ts createGuguQrUrl),与名片海报同一个码。
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import QRCode from 'qrcode'
+import { useQrCode } from '../../lib/qrCode'
 import type { AgentSettingsPaneProps } from './types'
 import { useContactsStore } from '../../store/contactsContext'
 import { useAuth } from '../../store/auth'
@@ -31,7 +31,6 @@ import { asClass, cx, shareSegmentButtonClass } from './agentSettingsStyles'
 import { Avatar } from '../Avatar'
 import { SearchField } from '../ui/SearchField'
 import { Button } from '../ui/Button'
-import { qrColors } from '../../lib/qrColors'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -138,20 +137,13 @@ export function ExtPanel({ agent }: { agent: ContactUser }) {
   const shareUrl = typeof number === 'number' && Number.isInteger(number) && number > 0
     ? createGuguQrUrl(createContactQrPayload(number))
     : null
-  const [qr, setQr] = useState<string | null>(null)
   const [isPublic, setIsPublic] = useState(agent.agent_public === true)
   const [enabling, setEnabling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  useEffect(() => {
-    if (!shareUrl || !isPublic) { setQr(null); return }
-    let cancelled = false
-    QRCode.toDataURL(shareUrl, { width: 132, margin: 1, color: qrColors() })
-      .then((url) => { if (!cancelled) setQr(url) })
-      .catch(() => { if (!cancelled) setQr(null) })
-    return () => { cancelled = true }
-  }, [shareUrl, isPublic])
+  const qrReading = useQrCode(shareUrl && isPublic ? shareUrl : null, 132)
+  const qr = qrReading.state === 'value' ? qrReading.value : null
 
   const handleEnable = useCallback(async () => {
     if (enabling) return

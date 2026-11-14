@@ -29,7 +29,6 @@ export default {
     "linkGoogle": "绑定 Google",
     "unlinkGoogle": "解绑 Google",
     "sameEmailNote": "登录邮箱与 Google 地址相同，请先更换邮箱再解绑。",
-    "loading": "正在读取登录方式…",
     "working": "正在处理…",
     "retry": "重试",
     "verifyTitle": "再次验证",
@@ -78,7 +77,6 @@ export default {
     "occupation": "身份",
     "occupationRequired": "选了「其他」要写一句你是做什么的",
     "occupationUnreadable": "读不到你的身份，稍后重新打开设置再试",
-    "occupationLoading": "正在读…",
     "occupationNote": "只有你和你的咕咕看得到，别人看不到。",
     "occupationUnset": "还没选",
     "intro": "头像、名称和简介是别人在咕咕里看到的你。",
@@ -939,7 +937,6 @@ export default {
     "ordinaryTitle": "普通群",
     "ordinary": "文件和图片在发送时上传到云端，按上方「持续保存」旁说明的规则保留。这里没有可调的。",
     "noMachine": "你还没有绑定项目的机器，所以这里只有普通群的规则。",
-    "loading": "读取中…",
     "retry": "重试",
     "retentions": {
       "read-once": "读完即删",
@@ -1022,7 +1019,6 @@ export default {
   "model": {
     "description": "选择哪些模型出现在模型下拉里。",
     "loadFailed": "暂时读不到模型列表",
-    "loading": "正在读取模型列表…",
     "membersOnly": "开通会员后可用",
     "noMatch": "没有匹配的模型",
     "provided": "咕咕提供的模型",

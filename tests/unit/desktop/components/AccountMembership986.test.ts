@@ -2,14 +2,17 @@
 import { act } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
-import { queryClient } from '../../../../apps/desktop/src/session/renderer/lib/query-client'
+import { queryClient } from '../../../../apps/desktop/src/lib/readModel'
 import { AccountSection } from '../../../../apps/desktop/src/components/settings/AccountSection'
 
 const control = vi.hoisted(() => ({ failed: false }))
-vi.mock('../../../../apps/desktop/src/lib/firstRun', () => ({
-  readOccupation: async () => null,
-  writeOccupation: vi.fn(),
-}))
+vi.mock('../../../../apps/desktop/src/lib/firstRun', async () => {
+  const { readModel } = await import('../../../../apps/desktop/src/lib/readModel')
+  return {
+    occupationModel: readModel({ name: 'occupation', scope: 'account', read: async () => null }),
+    writeOccupation: vi.fn(),
+  }
+})
 vi.mock('../../../../apps/desktop/src/lib/billing', async importOriginal => ({
   ...(await importOriginal<typeof import('../../../../apps/desktop/src/lib/billing')>()),
   useSpendingPower: () => ({

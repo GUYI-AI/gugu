@@ -37,7 +37,7 @@ export function LinkPill(props: DrawProps & { accountId: string }) {
   return <>{props.children}</>
 }
 
-function FilePill({ href, onClick, children, rest, accountId, itemId, version }: DrawProps & { accountId: string; itemId: string; version?: number }) {
+function FilePill({ href, onClick, children, rest, itemId, version }: DrawProps & { accountId: string; itemId: string; version?: number }) {
   const { t } = useTranslation('messaging')
   const reading = useReadModel(linkedFile, [itemId, version ?? null])
   const file = reading.state === 'value' ? reading.value : null
@@ -52,7 +52,7 @@ function FilePill({ href, onClick, children, rest, accountId, itemId, version }:
   </MentionPill>
 }
 
-function ChatPill({ href, onClick, children, rest, accountId, chatId, messageId }: DrawProps & { accountId: string; chatId: string; messageId?: string }) {
+function ChatPill({ href, onClick, children, rest, chatId, messageId }: DrawProps & { accountId: string; chatId: string; messageId?: string }) {
   const { t } = useTranslation('messaging')
   const { chats, identitiesById } = useChatStore('chats', 'identitiesById')
   const reading = useReadModel(linkedMessage, messageId ? [messageId] : null)
