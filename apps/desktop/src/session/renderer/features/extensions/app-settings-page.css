@@ -8,6 +8,7 @@
 .tool-app-title h1 { font-size: var(--font-size-xl); font-weight: var(--font-weight-semibold); line-height: var(--lh-page); letter-spacing: -.4px; }
 .tool-app-title span { font-size: var(--font-size-xs); color: var(--foreground-muted); }
 .tool-app-heading > p { margin-top: 5px; color: var(--foreground-muted); text-wrap: pretty; }
+.tool-app-links { margin: -6px 0 28px; }
 .tool-app-tabs { display: flex; gap: 28px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
 .tool-app-tabs > button { height: 38px; padding: 0 1px; border-bottom: 2px solid transparent; color: var(--foreground-muted); font: inherit; cursor: pointer; }
 .tool-app-tabs > button[aria-selected=true] { border-bottom-color: var(--foreground); color: var(--foreground); }

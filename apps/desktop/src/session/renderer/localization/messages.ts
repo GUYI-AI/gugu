@@ -555,6 +555,8 @@ const enUSCoreMessages = {
   'extensions.addsInstructions': 'Instructions for every agent',
   'extensions.preview': 'Preview',
   'extensions.askAgent': 'Ask an agent',
+  // An App's `hostLinks` entry (host-links.ts): {page} is the Library tab's own name.
+  'extensions.hostLinkLibrary': 'Open in Library · {page}',
   'extensions.askAgentHint': 'Start a new task with this',
   'extensions.more': 'More',
   'extensions.whatItAdds': 'What it adds',
@@ -1731,6 +1733,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.addsInstructions': '给所有 agent 的说明',
   'extensions.preview': '预览',
   'extensions.askAgent': '对 agent 说',
+  'extensions.hostLinkLibrary': '在资源库里查看 · {page}',
   'extensions.askAgentHint': '用这句新建一个会话',
   'extensions.more': '更多',
   'extensions.whatItAdds': '装上后多了什么',

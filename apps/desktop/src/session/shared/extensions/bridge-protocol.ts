@@ -146,7 +146,9 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // folder or the agent's resources, by the path or key the App holds).
 // 51: `showContextMenu` rows say `program` (an id of `files.openInApps`): the row is drawn with that program's icon.
 // Presentation only, as 38's hints: an older host draws the label alone.
-export const EXTENSION_API_VERSION = 51;
+// 52 (host-links.ts): `contributes.hostLinks`, gugu's own pages an App points at (`library:prompts`, …), drawn by the host
+// as entries on the App's host page with the page's own name. Nothing reaches the App and nothing of it runs.
+export const EXTENSION_API_VERSION = 52;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
