@@ -90,6 +90,8 @@ export const electronPlatform: AppPlatform = {
     logTail: true,
     appRelaunch: true,
     shareToApps: false,
+    mobileApps: false,
+    phoneDevice: false,
     readingZoomMemory: true,
   },
   async relaunchApp() {

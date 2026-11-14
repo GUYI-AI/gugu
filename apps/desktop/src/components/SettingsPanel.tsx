@@ -51,8 +51,8 @@ const sectionsFor = (mobile: boolean): ActiveSection[] =>
     (section) =>
       (section !== 'passwords' || (PASSWORD_BETA_ENABLED && platform.kind === 'electron' && !mobile)) &&
       (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0) &&
-      (section !== 'apps' || platform.kind === 'capacitor') &&
-      (section !== 'phone' || platform.kind === 'capacitor') &&
+      (section !== 'apps' || platform.capabilities.mobileApps) &&
+      (section !== 'phone' || platform.capabilities.phoneDevice) &&
       (section !== 'connectors' || mobile) &&
       (!SESSION_HOST_SETTINGS_SECTIONS.includes(section) || (!mobile && platform.capabilities.sessionHost)),
   )
@@ -99,7 +99,9 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
   // The assistant's pages are in its App (MainLayout sends their routes there): never drawn here. On the phone a route to
   // connected apps (or its chat tools, part of them) is the person's own row, where it is shown.
   const ownConnections = sections.includes('connectors') && (requestedSection === 'connectors' || requestedSection === 'channels')
-  const activeSection = ownConnections ? 'connectors' : isAssistantSettingsSection(requestedSection) ? 'account' : requestedSection
+  const unsupportedPhoneSection = (requestedSection === 'apps' && !platform.capabilities.mobileApps)
+    || (requestedSection === 'phone' && !platform.capabilities.phoneDevice)
+  const activeSection = unsupportedPhoneSection ? 'account' : ownConnections ? 'connectors' : isAssistantSettingsSection(requestedSection) ? 'account' : requestedSection
   const setActiveSection = onSectionChange ?? setInternalSection
   const [internalPane, setInternalPane] = useState<'nav' | 'detail'>(mobile ? 'nav' : 'detail')
   const mobilePane = pane ?? internalPane

@@ -31,6 +31,10 @@ interface PlatformCapabilities {
    * 附件来不及下载;电脑上没有能把内容直接发进微信的系统分享。
    */
   shareToApps: boolean
+  /** This shell can install and run phone Apps. */
+  mobileApps: boolean
+  /** This shell implements the native phone tools and installation identity. */
+  phoneDevice: boolean
   /**
    * 记住看文件、看图时最后用的阅读缩放,下次打开照它。阅读缩放靠滚轮、缩放键、菜单设定,只有电脑上有;
    * 手机上的捏合、双击只是看一眼,不留下比例,所以手机壳没有这一位(读写都不发生)。
