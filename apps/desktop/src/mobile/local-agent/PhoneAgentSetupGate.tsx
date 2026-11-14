@@ -1,3 +1,4 @@
+import '@/i18n/registerSettingsCatalog'
 import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
@@ -111,7 +112,7 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
                   })
                   setRetry((value) => value + 1)
                 }}>{t('devices.retry')}</Button>
-                <Button variant="ghost" onClick={dismiss}>{t('devices.phoneActions.setupBack')}</Button>
+                <Button variant="ghost" onClick={dismiss}>{t('devices.phoneActions.setupLater')}</Button>
               </div>
             </SettingsPage>
           )}

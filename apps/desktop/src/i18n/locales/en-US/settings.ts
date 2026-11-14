@@ -282,6 +282,7 @@ export default {
     "configurationCount": "{{count}} versions",
     "versionNames": { "production": "Gugu", "beta": "Gugu Beta" },
     "phoneActions": {
+      "setupLater": "Use Gugu first",
       "setupUnavailable": "Could not open phone settings",
       "host": {
         "title": "Phone Agent",

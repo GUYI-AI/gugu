@@ -282,6 +282,7 @@ export default {
     "configurationCount": "{{count}} 个版本",
     "versionNames": { "production": "咕咕", "beta": "咕咕 Beta" },
     "phoneActions": {
+      "setupLater": "先使用咕咕",
       "setupUnavailable": "暂时无法打开手机设置",
       "host": {
         "title": "手机 Agent",

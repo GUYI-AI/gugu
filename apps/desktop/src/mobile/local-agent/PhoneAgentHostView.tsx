@@ -1,3 +1,4 @@
+import '@/i18n/registerSettingsCatalog'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { SettingsGroup, SettingsNote, SettingsRow } from '@/components/settings/SettingsPrimitives'
