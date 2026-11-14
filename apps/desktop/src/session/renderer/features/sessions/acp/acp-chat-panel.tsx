@@ -320,7 +320,7 @@ const ComposerForStore = observer(function ComposerForStore({
   /** Keep a newly sent prompt or stop result visible in the transcript. */
   onScrollToBottom?: () => void;
 }) {
-  const { translate } = useSessionMessages();
+  const { locale, translate } = useSessionMessages();
   const life = sessionLifeView(store.runtimeSessionId);
   // 这个任务给自己排的定时:有就在输入框上沿挂一条托盘放那颗芯片,输入框往上压住它的下沿(与芯片读同一份缓存)。
   const scheduleMachine = machineRegistry.machineOf(store.projectId);
@@ -402,7 +402,7 @@ const ComposerForStore = observer(function ComposerForStore({
         fileUploads.keepOnly(new Set(retained.map(item => item.id)));
         setAttachments(retained);
         prepareAnnotationImages(annotated, fileUploads);
-        await sendComposerInput(annotationPrompt(value, annotated), {
+        await sendComposerInput(annotationPrompt(value, annotated, locale), {
           started: onScrollToBottom, unsettled: () => fileUploads.unsettled(),
           waitForUploads: async () => { await fileUploads.waitForUploads(); },
           hasFailedAttachments: () => attachmentsRef.current.some(att => att.state === 'error'),
@@ -421,7 +421,7 @@ const ComposerForStore = observer(function ComposerForStore({
         sendingRef.current = false;
       }
     },
-    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments, annotationDraft]
+    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments, annotationDraft, locale]
   );
 
   const handleSubmit = useCallback(
