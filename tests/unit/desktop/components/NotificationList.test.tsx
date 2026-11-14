@@ -124,24 +124,25 @@ it('the old composer has no floating Needs you entrance', async () => {
   await renderWithAppProviders(shell, <><ChatBottomDock reserve={false}><textarea /></ChatBottomDock><NeedsYouHost /></>)
   expect(document.querySelector('[data-testid="needs-you-trigger"]')).toBeNull()
 })
-it.each([false, true])('opening the bell reads nothing; an acknowledged failure disappears (phone=%s)', async mobile => {
+it.each([false, true])('opening the bell reads nothing; a read failure stays listed, unemphasized and uncounted (phone=%s)', async mobile => {
   const failure = { ...task('error-a', 'error'), lastInteractedAt: '2026-11-05T01:00:00.000Z' }
   const wait = { ...task('approval', 'needs_user', false), lastInteractedAt: '2026-11-05T00:00:00.000Z' }
   state.sessions = [failure, wait]
-  const marks = () => rows().map(row => ({ badge: row.querySelector('.gg-list-row-trailing [data-shape="count"]')?.textContent ?? null, muted: !!row.querySelector('.gg-list-row-title .text-\\[var\\(--muted-fg\\)\\]') }))
+  const marks = () => rows().map(row => ({ badge: row.querySelector('.gg-list-row-trailing [data-shape="count"]')?.textContent ?? null, muted: !!row.querySelector('.gg-list-row-title .text-\\[var\\(--muted-fg\\)\\]'), status: !!row.querySelector('.gg-phone-message-avatar-badge') }))
   await mount(mobile); await open()
   await see('error-a'); await see('approval')
   expect(markSeen, 'looking at the list is not reading the task').not.toHaveBeenCalled()
   expect(rows().map(row => row.querySelector('.gg-list-row-subtitle')?.textContent), 'the second line says why, not the name again').toEqual(['出错了', '等你批准'])
   expect(document.querySelector('[data-testid="notification-count"]')?.textContent).toBe('2')
   expect(rows().map(row => row.dataset.emphasis)).toEqual(['true', 'true'])
-  expect(marks(), 'unread rows carry the chat list unread badge').toEqual([{ badge: '1', muted: false }, { badge: '1', muted: false }])
+  expect(marks(), 'unread rows carry the chat list unread badge').toEqual([{ badge: '1', muted: false, status: true }, { badge: '1', muted: false, status: true }])
   // The host read bit lands (the task was opened); the person closes the bell and opens it again.
   state.sessions = [{ ...failure, unseen: false }, wait]
   await mount(mobile); await act(async () => toggle()!.click()); await open()
-  expect(rows().map(row => row.dataset.sessionLine), 'acknowledgement removes the error notification').toEqual(['approval'])
-  expect(rows().map(row => row.dataset.emphasis)).toEqual(['true'])
-  expect(marks()).toEqual([{ badge: '1', muted: false }])
+  expect(rows().map(row => row.dataset.sessionLine), 'a read failure is still a failure: it stays listed').toEqual(['error-a', 'approval'])
+  expect(rows().map(row => row.dataset.emphasis)).toEqual([undefined, 'true'])
+  expect(marks(), 'a read row is muted, with no badge and no status mark: its state stays in words').toEqual([{ badge: null, muted: true, status: false }, { badge: '1', muted: false, status: true }])
+  expect(rows()[0].querySelector('.gg-list-row-subtitle')?.textContent).toBe('出错了')
   expect(document.querySelector('[data-testid="notification-count"]')?.textContent).toBe('1')
   expect(document.querySelector('[data-testid="notification-mark-all-read"]'), 'nothing unread left to mark').toBeNull()
   // Its state, not its read bit, takes it off the list.
@@ -163,7 +164,7 @@ it.each([false, true])('clicking an error acknowledges its host before opening t
   expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'failed', deviceId: 'server' })
   state.sessions = [task('failed', 'error', false)]
   await mount(mobile)
-  expect(rows()).toHaveLength(0)
+  expect(rows().map(row => row.dataset.sessionLine), 'a read failure stays listed').toEqual(['failed'])
   expect(document.querySelector('[data-testid="notification-count"]')).toBeNull()
 })
 it('failed reads retain their item and display the original error', async () => {
@@ -215,7 +216,7 @@ it.each([false, true])('clicking the assistant\'s own row opens its chat and rea
     publishAssistantShell({ cloudAvailable: false, canHostHere: true, cloud: null, loadError: null, assistant: null, assistantState: 'none', ownerName: null, ownerId: null, chatId: null, home: null, setup: null, member: false, preparing: false })
   }
 })
-it('phone and desktop omit read errors and show the same unread notifications', async () => {
+it('phone and desktop show the same notifications for the same tasks: old read failures listed but uncounted, no ⚡, nothing above Messages', async () => {
   const at = (day: number) => new Date(Date.UTC(2026, 9, day)).toISOString()
   state.sessions = [
     ...Array.from({ length: 40 }, (_, i) => ({ ...task(`old-${i}`, 'error', false), lastInteractedAt: at(1 + (i % 28)) })),
@@ -234,7 +235,7 @@ it('phone and desktop omit read errors and show the same unread notifications', 
     await act(async () => toggle()!.click())
     shell.cleanup(); workspace.cleanup(); shell = createReactHarness(); workspace = createReactHarness(); installShellSlots()
   }
-  expect(shown[0]).toEqual({ count: '3', rows: ['wait', 'newer-failure', 'older-failure'], listed: 3 })
+  expect(shown[0]).toEqual({ count: '3', rows: ['wait', 'newer-failure', 'older-failure'], listed: 43 })
   expect(shown[1]).toEqual(shown[0])
 })
 
