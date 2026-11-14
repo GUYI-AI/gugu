@@ -35,7 +35,7 @@ private final class ModelFixture: GuguModelCompleting {
 private final class Fixture {
     let binding: GuguIOSHostBinding, store: GuguIOSBackendStore, lifecycle: GuguIOSHostLifecycle, runtime: GuguPackagedRuntime
     let agentId = UUID().uuidString.lowercased(), sessionId = UUID().uuidString.lowercased(), calendar = CalendarFixture(), model = ModelFixture(), changed = DispatchSemaphore(value: 0)
-    var actions: [String] = [], allowed = true
+    var actions: [String] = [], allowed = true, inboxSender: String?, inboxRules = ""
     init(_ root: URL, asset: Data) throws {
         let owner = UUID().uuidString.lowercased(), install = UUID().uuidString.lowercased()
         binding = .init(ownerId: owner, deviceId: "phone-\(install)-\(owner)", installationId: install)
@@ -52,8 +52,18 @@ private final class Fixture {
         guard self.allowed else { throw GuguHostFailure(code: "stale_context", message: "Synthetic owner retired") }
         return .init(binding: expected, accessToken: "synthetic-human", expiresAt: Date().addingTimeInterval(3600))
     }, send: { request, done in
-        let body = try! JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any], action = body["action"] as! String; self.actions.append(action)
-        let reply: [String: Any] = action == "issue" ? ["session_id": UUID().uuidString.lowercased(), "protocol": "openai-chat-completions", "relay_url": "https://model.invalid", "token": "synthetic-short-token", "model": "wire-model", "expires_at": ISO8601DateFormatter().string(from: Date().addingTimeInterval(3600))] : ["ok": true]
+        let body = request.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        var reply: Any
+        switch request.url!.lastPathComponent {
+        case "active_users": reply = [["id": self.agentId, "type": "agent", "owner_user_id": self.binding.ownerId, "device_id": self.binding.deviceId]]
+        case "list_member_ids": reply = ([self.agentId] + (self.inboxSender.map { [$0] } ?? [])).map { ["user_id": $0] }
+        case "chat_facts": reply = [["kind": "group", "group_prompt": self.inboxRules]]
+        case "send_message_idempotent": reply = [["id": body["p_message_id"]!]]
+        case "model-access":
+            let action = body["action"] as! String; self.actions.append(action)
+            reply = action == "issue" ? ["session_id": UUID().uuidString.lowercased(), "protocol": "openai-chat-completions", "relay_url": "https://model.invalid", "token": "synthetic-short-token", "model": "wire-model", "expires_at": ISO8601DateFormatter().string(from: Date().addingTimeInterval(3600))] : ["ok": true]
+        default: done(nil, nil, GuguHostFailure(code: "fixture", message: "Unexpected scheduler cloud operation")); return
+        }
         done(try! JSONSerialization.data(withJSONObject: reply), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil), nil)
     })
     func scheduler() throws -> GuguIOSTaskScheduler {
@@ -97,6 +107,7 @@ private final class Fixture {
         cases.append("next_explicit_input_continues_durable_Pi_transcript")
         let source = UUID().uuidString.lowercased(), chat = UUID().uuidString.lowercased(), sender = UUID().uuidString.lowercased()
         let rulesText = "Original inbox privacy rule"
+        f.inboxSender = sender; f.inboxRules = rulesText
         let rulesVersion = String(SHA256.hash(data: Data(rulesText.utf8)).map { String(format: "%02x", $0) }.joined().prefix(16))
         var sourceRow: [String: Any] = ["id": source, "chat_id": chat, "chat_kind": "group", "chat_name": "Original group", "seq": 42, "content": "Synthetic inbox input", "content_type": "text", "sender_user_id": sender, "sender_type": "human", "sender_display_name": "Original sender", "to_user_ids": [f.agentId], "is_thread_root": true, "created_at": "2026-11-08T00:00:00Z", "group_rules": rulesText, "named_identities": [:], "file_item_id": NSNull(), "file_version": NSNull(), "file_blob_id": NSNull()]
         let projectionRuntime = try GuguJavaScriptRuntime(asset: asset, expectedSHA256: f.runtime.sha256, request: { _, done in done(["ok": false, "code": "unexpected", "message": "Projection has no tools"]) }, cancel: { _ in }, event: { _ in })
@@ -107,29 +118,30 @@ private final class Fixture {
             return try GuguIOSInboxDelivery(row: row, projection: result)
         }
         let delivery = try project(sourceRow, rulesText, rulesVersion)
+        let inboxJob = try f.store.inboxJobID(agentId: f.agentId, sourceMessageId: source)
         var allPartsBeforeReceipt = false
-        let inbox: Result<Void, Error> = try awaitResult { done in scheduler.admit(agent: try! f.agent, text: delivery.prompt, id: source, delivery: delivery) { result in
+        let inbox: Result<Void, Error> = try awaitResult { done in scheduler.admit(agent: try! f.agent, text: delivery.prompt, id: inboxJob, delivery: delivery) { result in
             let disk = try! GuguIOSBackendStore(root: root.appendingPathComponent("normal/backend"), binding: f.binding)
-            let input = try! disk.record("inputs", id: source)!, savedAgent = try! disk.record("agents", id: f.agentId)!
+            let input = try! disk.record("inputs", id: inboxJob)!, savedAgent = try! disk.record("agents", id: f.agentId)!
             let key = "rules:\(f.agentId):\(chat):\(savedAgent["contextEpoch"] as! String)"
             allPartsBeforeReceipt = input["status"] as? String == "queued" && (input["route"] as? [String: Any])?["threadRootId"] as? String == source
                 && (input["usedChatIds"] as? [String]) == [chat] && (savedAgent["usedChatIds"] as? [String]) == [chat]
                 && (try! disk.record("requests", id: key))?["version"] as? String == rulesVersion && f.model.calls == 2
             done(result)
-        } }; _ = try inbox.get(); try f.waitStatus(source, "done")
+        } }; _ = try inbox.get(); try f.waitStatus(inboxJob, "done")
         try require(allPartsBeforeReceipt && f.model.calls == 3, "Inbox receipt preceded durable input/route/source/rules or ran another source identity")
-        cases.append("actual_shared_inbox_projection_atomically_admits_original_ID_route_sources_and_rules_before_receipt")
+        cases.append("shared_inbox_projection_atomically_admits_recipient_execution_with_original_source_route_and_rules_before_receipt")
         sourceRow["sender_display_name"] = "Renamed sender"; sourceRow["chat_name"] = "Renamed group"
         let changedRules = "Changed rule after original delivery", changedVersion = String(SHA256.hash(data: Data(changedRules.utf8)).map { String(format: "%02x", $0) }.joined().prefix(16))
         sourceRow["group_rules"] = changedRules
         let renamed = try project(sourceRow, changedRules, changedVersion)
         try require(renamed.prompt != delivery.prompt, "Duplicate-projection negative control did not change rendered facts")
-        let duplicateInbox: Result<Void, Error> = try awaitResult { scheduler.admit(agent: try! f.agent, text: renamed.prompt, id: source, delivery: renamed, completion: $0) }; _ = try duplicateInbox.get()
+        let duplicateInbox: Result<Void, Error> = try awaitResult { scheduler.admit(agent: try! f.agent, text: renamed.prompt, id: inboxJob, delivery: renamed, completion: $0) }; _ = try duplicateInbox.get()
         let ruleKey = "rules:\(f.agentId):\(chat):\(try f.agent["contextEpoch"] as! String)"
-        try require(f.model.calls == 3 && (try f.store.record("inputs", id: source))?["prompt"] as? String == delivery.prompt && (try f.store.record("requests", id: ruleKey))?["version"] as? String == rulesVersion, "Same original inbox ID replayed Pi or rewrote its original projection/rule receipt")
+        try require(f.model.calls == 3 && (try f.store.record("inputs", id: inboxJob))?["prompt"] as? String == delivery.prompt && (try f.store.record("requests", id: ruleKey))?["version"] as? String == rulesVersion, "Same original inbox ID replayed Pi or rewrote its original projection/rule receipt")
         cases.append("same_source_ID_after_rename_or_rule_change_retains_original_input_without_execution_or_new_rules_credit")
         var stale = try f.agent; stale["contextEpoch"] = UUID().uuidString.lowercased()
-        let staleInbox: Result<Void, Error> = try awaitResult { scheduler.admit(agent: stale, text: renamed.prompt, id: source, delivery: renamed, completion: $0) }
+        let staleInbox: Result<Void, Error> = try awaitResult { scheduler.admit(agent: stale, text: renamed.prompt, id: inboxJob, delivery: renamed, completion: $0) }
         guard case .failure(let staleError as GuguHostFailure) = staleInbox, staleError.code == "stale_context" else { throw GuguHostFailure(code: "scheduler_test_failed", message: "Stale inbox target reused native source custody") }
         try require(f.model.calls == 3, "Stale inbox admission dispatched a model")
         cases.append("changed_native_context_rejects_inbox_custody_without_model_dispatch")

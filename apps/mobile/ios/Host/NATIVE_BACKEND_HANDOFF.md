@@ -13,20 +13,27 @@ private Realtime protocol, device heartbeat, timeline and local notification
 settings. Construction sends no request. HTTP and WebSocket transports use the
 packaged public backend configuration and native access-only credential provider.
 
-Agent inbox/outbox and private attachment delivery are still unconnected. The
-backend explicitly reports `delivery_not_connected`, `ready: false`,
-`taskTimeline: false`; device registration publishes no runtime capability.
-Private subscription/heartbeat success cannot turn this into ready. Unsupported
-device commands and attachment methods fail explicitly. Keep the product flag
-off. No actual cloud/model/EventKit/iOS App result is claimed by author tests.
+The App registers `GuguAgent` through its existing App-owned runtime. Text chat
+delivery now uses the authoritative inbox, Agent-as source authorization, shared
+envelope projection, durable per-recipient admission, then an original-source
+read ACK. The six named communication tools are installed in Pi; a plain final
+answer uses the same stable-ID outbox to reply to the original chat. A known
+explicit reply suppresses a duplicate final answer; an uncertain send blocks
+automatic replacement or replay.
 
-The following message-core slice adds `GuguIOSMessageBridge` and named existing
-chat operations. It is not yet installed into the Pi bridge or an inbox pump.
-Its agent-as reads, current group-rule ledger, source-membership checks and
-stable-ID outbox are separately exercised on APFS. Reopening the store sends
-nothing; an explicit retry after a lost ACK reuses the same message ID. Native context lineage and atomic shared-envelope input admission are now present;
-the inbox scan/mark-read pump, Pi communication-tool installation, private attachments
-and full command/session-direct integration still block availability.
+Readiness requires the packaged communication tools, private subscription,
+heartbeat, successful inbox reconciliation and a healthy scheduler/command
+adapter. HTTP/WebSocket success alone does not advertise a runtime. Private
+attachments and App-source/session-direct delivery remain unsupported and fail
+explicitly without acknowledging the source. Real cloud/model/EventKit results
+must be verified separately from deterministic App-hosted fixtures.
+
+Execution IDs use the Android `phone-inbox` namespace with recipient and source.
+An original-source-keyed legacy input is reused only for its matching recipient;
+route, replies and ACKs keep the original source UUID. Cold reconstruction marks
+unfinished custody interrupted and never automatically replays old inputs or
+unknown writes. Device `agent.deliver` is a claimed/rechecked wake only: its
+payload never becomes executable input, and settlement follows inbox custody/ACK.
 
 ## App construction
 

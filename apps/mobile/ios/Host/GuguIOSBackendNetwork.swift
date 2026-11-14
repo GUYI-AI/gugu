@@ -8,7 +8,7 @@ extension GuguIOSNativeBackend {
             heartbeatRunning = false
             if generation == epoch, !stopped {
                 heartbeatError = error; heartbeatHealthy = error == nil
-                if error == nil { heartbeatAt = Date(); commandTick() }
+                if error == nil { heartbeatAt = Date(); commandTick(); inboxTick() }
                 publish()
             }
             let waiters = heartbeatWaiters; heartbeatWaiters.removeAll(); for waiter in waiters { waiter() }
@@ -20,6 +20,7 @@ extension GuguIOSNativeBackend {
                 guard !self.stopped, self.generation == epoch else { finish(nil); return }
                 let now = ISO8601DateFormatter().string(from: Date())
                 let available = self.startupComplete && self.remoteConnected && self.missingDelivery == nil
+                    && self.healthError == nil && self.commandError == nil && self.scheduler?.healthFailure() == nil
                 var capabilities: [String: Any] = ["terminals": [], "runtimes": available ? ["pi"] : [], "host_runtime_capability": available ? 1 : 0,
                     "host_kind": "phone", "os_name": self.metadata["osName"]!, "remote_protocol": self.remoteProtocol, "min_client_protocol": self.minimumClientProtocol,
                     "actions": ["v": 1, "actions": []]]
@@ -77,7 +78,11 @@ extension GuguIOSNativeBackend {
     func commandTick() {
         guard !stopped, !commandRunning, let expected = binding else { return }
         commandRunning = true; let epoch = generation
-        func finish(_ error: Error?) { commandRunning = false; if generation == epoch, !stopped { commandError = error; publish() } }
+        func finish(_ error: Error?) {
+            guard generation == epoch else { return }
+            commandRunning = false
+            if !stopped { commandError = error; publish() }
+        }
         func fetch() {
             broker.perform(.pendingCommands(perAgent: 5), binding: expected) { result in self.queue.async {
                 do {
@@ -85,12 +90,19 @@ extension GuguIOSNativeBackend {
                     guard let rows = try result.get() as? [[String: Any]] else { throw Self.failure("cloud_protocol_error", "Pending native commands are not an array") }
                     func next(_ index: Int) {
                         guard index < rows.count else { finish(nil); return }
-                        guard rows[index]["type"] as? String == "agent.create", let id = rows[index]["id"] as? String, let create = self.createCommand else {
+                        guard let id = rows[index]["id"] as? String else {
+                            finish(Self.failure("cloud_protocol_error", "Native command has no original ID")); return
+                        }
+                        let completed: (Result<Void, Error>) -> Void = { result in self.queue.async {
+                            do { _ = try result.get(); self.inboxTick(); next(index + 1) } catch { finish(error) }
+                        } }
+                        if rows[index]["type"] as? String == "agent.create", let create = self.createCommand {
+                            create.execute(id: id, completion: completed)
+                        } else if rows[index]["type"] as? String == "agent.deliver", let delivery = self.deliveryCommand {
+                            delivery.execute(id: id, completion: completed)
+                        } else {
                             finish(Self.failure("unsupported", "Native device command requires its delivery adapter")); return
                         }
-                        create.execute(id: id) { result in self.queue.async {
-                            do { _ = try result.get(); next(index + 1) } catch { finish(error) }
-                        } }
                     }
                     next(0)
                 } catch { finish(error) }
@@ -106,5 +118,30 @@ extension GuguIOSNativeBackend {
                 } catch { finish(error) }
             } }
         }
+    }
+    func inboxTick() {
+        guard !stopped, !inboxRunning, let expected = binding, let inbox else { return }
+        inboxRunning = true; let epoch = generation
+        do {
+            let agents = try records().filter { $0["status"] as? String != "archived" }.compactMap { $0["agentUserId"] as? String }.sorted()
+            var first: Error?
+            func next(_ index: Int) {
+                guard generation == epoch, !stopped else { return }
+                guard index < agents.count else {
+                    let changed = self.inboxHealthy != (first == nil)
+                    self.inboxRunning = false; self.inboxHealthy = first == nil; self.inboxError = first
+                    self.publish()
+                    // Publish/withdraw the actual capability after reconciliation.
+                    if changed { self.heartbeat() }
+                    return
+                }
+                inbox.pull(agentId: agents[index]) { result in self.queue.async {
+                    guard self.generation == epoch, !self.stopped else { return }
+                    do { _ = try result.get(); try self.check(expected) } catch { if first == nil { first = error } }
+                    next(index + 1)
+                } }
+            }
+            next(0)
+        } catch { inboxRunning = false; inboxHealthy = false; inboxError = error; publish() }
     }
 }

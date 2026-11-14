@@ -3,11 +3,12 @@ import { SessionInputAdmissionError, sessionInputAdmission } from '@gugu/core/sh
 import { getCurrentAuthUserId } from '@/lib/supabase'
 import { thisPhoneDeviceId } from '../phone-device/phoneDeviceSettings'
 import { nativeAgent, phoneAgentAvailable } from './nativeAgent'
+import { bindIOSLocalHostRoute } from '../ios-host/iosLocalHostRoute'
 
 const STARTUP_READS = new Set(['sessionTimeline.sessionCreateOptions', 'sessionTimeline.sessionCreateModels'])
 
 /** A cached online device may reach the page while its new Node process is still starting. */
-function localCall(ownerId: string, deviceId: string, id: string, channel: string, args: unknown[], timeout?: number, signal?: AbortSignal): Promise<unknown> {
+function localCall(ownerId: string, deviceId: string, id: string, channel: string, args: unknown[], timeout?: number, signal?: AbortSignal, invoke: typeof nativeAgent.hostCall = input => nativeAgent.hostCall(input)): Promise<unknown> {
   signal?.throwIfAborted()
   const timeoutMs = timeout ?? (channel === 'sessionTimeline.sessionCreate' ? 180_000 : 12_000)
   return new Promise((resolve, reject) => {
@@ -35,7 +36,7 @@ function localCall(ownerId: string, deviceId: string, id: string, channel: strin
       let delayMs = 100
       while (!settled) {
         try {
-          const reply = await nativeAgent.hostCall({ ownerId, id, channel, args })
+          const reply = await invoke({ ownerId, id, channel, args })
           if (settled) return
           if (reply.error?.code === 'host_not_ready' && STARTUP_READS.has(channel)) {
             await new Promise((done) => setTimeout(done, delayMs))
@@ -55,6 +56,8 @@ function localCall(ownerId: string, deviceId: string, id: string, channel: strin
 export async function invokePhoneHost<T>(deviceId: string, channel: string, args: unknown[], requestId: string = crypto.randomUUID(), timeoutMs?: number, signal?: AbortSignal): Promise<T> {
   signal?.throwIfAborted()
   const ownerId = await getCurrentAuthUserId()
+  const ios = bindIOSLocalHostRoute(ownerId, deviceId)
+  if (ios) return localCall(ownerId, deviceId, requestId, channel, args, timeoutMs, signal, ios) as Promise<T>
   if (phoneAgentAvailable() && thisPhoneDeviceId(ownerId) === deviceId) {
     return localCall(ownerId, deviceId, requestId, channel, args, timeoutMs, signal) as Promise<T>
   }

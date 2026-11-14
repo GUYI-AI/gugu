@@ -44,6 +44,21 @@ final class GuguIOSBackendStore {
         try collectionAllowed(collection)
         return (try snapshot()[collection] as? [String: [String: Any]])?[id]
     }
+    /// Reuse only this recipient's legacy chat input. A different recipient of
+    /// the same source gets independent custody without changing the source UUID.
+    func inboxJobID(agentId: String, sourceMessageId: String) throws -> String {
+        try Self.inboxJobID(state: snapshot(), agentId: agentId, sourceMessageId: sourceMessageId)
+    }
+    static func inboxJobID(state: [String: Any], agentId: String, sourceMessageId: String) throws -> String {
+        guard UUID(uuidString: agentId) != nil, UUID(uuidString: sourceMessageId) != nil else {
+            throw failure("invalid_args", "Inbox recipient and source must be UUIDs")
+        }
+        let inputs = state["inputs"] as? [String: [String: Any]] ?? [:]
+        if let legacy = inputs[sourceMessageId], legacy["agentId"] as? String == agentId,
+           let route = legacy["route"] as? [String: Any], route["kind"] as? String == "chat",
+           route["sourceMessageId"] as? String == sourceMessageId { return sourceMessageId }
+        return try GuguIOSStableID.strings("phone-inbox", agentId, sourceMessageId)
+    }
     @discardableResult func admit(_ collection: String, id: String, fingerprint: String,
                                  create: () throws -> [String: Any]) throws -> [String: Any] {
         try collectionAllowed(collection)

@@ -39,6 +39,8 @@ final class GuguIOSNativeBackend: GuguIOSHostBackend {
     var scheduler: GuguIOSTaskScheduler?
     var provisioner: GuguIOSProvisioner?
     var createCommand: GuguIOSCreateCommand?
+    var deliveryCommand: GuguIOSDeliveryCommand?
+    var inbox: GuguIOSInboxPump?
     var remote: GuguIOSRealtimeHost?
     var proof: GuguJavaScriptRuntime?
     var metadata: [String: Any] = [:]
@@ -48,10 +50,15 @@ final class GuguIOSNativeBackend: GuguIOSHostBackend {
     var heartbeatRunning = false, heartbeatWaiters: [() -> Void] = []
     var heartbeatTimer: DispatchWorkItem?
     var commandRunning = false, recoveredCommands = false
+    var inboxRunning = false, inboxHealthy = false
+    var inboxError: Error?
     var stopping: [(Error?) -> Void] = []
-    // Agent inbox/outbox delivery is a required host service. Until its concrete
-    // adapter exists, successful HTTP/Realtime probes must not advertise a host.
-    var missingDelivery: Error? { Self.failure("delivery_not_connected", "Native inbox, outbox and private attachment delivery are not connected") }
+    // Readiness requires the installed text-delivery adapter and an actual
+    // successful inbox reconciliation, independently of HTTP/Realtime probes.
+    var missingDelivery: Error? {
+        guard inbox != nil else { return Self.failure("delivery_not_connected", "Native inbox delivery is not configured") }
+        return inboxHealthy ? nil : inboxError ?? Self.failure("delivery_reconciling", "Native inbox delivery has not reconciled")
+    }
 
     init(root: URL, runtime: GuguPackagedRuntime, lifecycle: GuguIOSHostLifecycle, ownerAccess: GuguIOSOwnerAccess,
          configuration: GuguIOSBackendConfiguration, credentials: @escaping GuguIOSCloudBroker.Credentials,
@@ -82,17 +89,22 @@ final class GuguIOSNativeBackend: GuguIOSHostBackend {
                 self.gate.set(epoch, active: true)
                 self.binding = configuration.binding; self.metadata = configuration.deviceMetadata
                 self.stopped = false; self.startupComplete = false; self.remoteConnected = false; self.heartbeatHealthy = false; self.healthError = nil; self.heartbeatError = nil; self.commandError = nil; self.recoveredCommands = false
+                self.inboxHealthy = false; self.inboxError = nil; self.inboxRunning = false; self.commandRunning = false
                 try self.lifecycle.activate(binding: configuration.binding)
                 let store = try GuguIOSBackendStore(root: self.root.appendingPathComponent("backend"), binding: configuration.binding); self.store = store
                 let proof = try GuguJavaScriptRuntime(asset: self.runtime.asset, expectedSHA256: self.runtime.sha256,
                     request: { _, reply in reply(Self.failure("unknown_method", "Runtime proof does not execute tasks").envelope) }, cancel: { _ in }, event: { _ in })
                 let diagnostics = try proof.diagnostics()
-                guard diagnostics["piVersion"] as? String == "1.4.0", diagnostics["engine"] as? String == "JavaScriptCore", diagnostics["node"] as? Bool == false else { throw Self.failure("runtime_not_ready", "Packaged native Pi did not verify") }
+                guard diagnostics["piVersion"] as? String == "1.4.0", diagnostics["engine"] as? String == "JavaScriptCore", diagnostics["node"] as? Bool == false,
+                      diagnostics["communicationTools"] as? [String] == ["profile_whoami", "message_conversations", "message_rules", "message_members", "message_history", "message_send"] else { throw Self.failure("runtime_not_ready", "Packaged native Pi and communication tools did not verify") }
                 self.proof = proof
                 let check = { try self.gate.require(epoch); try self.check(configuration.binding); try self.gate.require(epoch) }
                 let sources = GuguIOSSourceAccess(store: store, broker: self.broker, check: check); self.sources = sources
                 let scheduler = try GuguIOSTaskScheduler.open(store: store, lifecycle: self.lifecycle, runtime: self.runtime, broker: self.broker, check: check,
                     executor: { self.executorFactory(configuration.binding) }, changed: { self.queue.async { self.publish() } }, sourceAuthorization: { context, done in sources.authorize(context, completion: done) }, modelTransport: self.modelTransport); self.scheduler = scheduler
+                let inbox = GuguIOSInboxPump(store: store, broker: self.broker, sources: sources, runtime: proof, scheduler: scheduler, check: check)
+                self.inbox = inbox
+                self.deliveryCommand = GuguIOSDeliveryCommand(store: store, broker: self.broker, pump: inbox, instanceId: self.instanceId, check: check)
                 let create = GuguIOSCreateCommand(broker: self.broker, store: store, instanceId: self.instanceId, projectPath: self.workspacePath,
                     check: check, start: { agent, done in scheduler.establish(agent, completion: done) }); self.createCommand = create
                 self.provisioner = try GuguIOSProvisioner(store: store, broker: self.broker, projectPath: self.workspacePath, check: check,
