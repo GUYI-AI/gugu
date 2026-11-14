@@ -26,6 +26,7 @@ it('subscribes to the real coordinator commit/publication barrier while the coor
     hydrateUser: async user => ({ id: user.id, email: '', nickname: 'Owner' }),
     publishSession: () => {}, writeMirror: async () => {}, clearMirror: async () => {},
     getPersistedSessionState: () => ({ bootCandidate: null, warning: null }),
+    loadPersistedSession: async () => {},
     commitPersistedSession: async value => {
       const rotated = value.access_token.endsWith('rotated')
       events.push(rotated ? 'rotated-commit-begin' : 'initial-commit-begin')
