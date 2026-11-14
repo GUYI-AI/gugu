@@ -31,8 +31,8 @@ describe('default group face', () => {
     expect(sizeOf('WWWW')).toBe('80')
     expect(sizeOf('mmmm')).toBe('80')
     expect(sizeOf('AI研发')).toBe('80')
-    expect(sizeOf('🚀')).toBe('84')
-    expect(sizeOf('👩‍💻研发')).toBe('56')
+    expect(sizeOf('🚀')).toBe('76')
+    expect(sizeOf('👩‍💻研发')).toBe('50')
     expect(groupAvatarSvg({ color: '#3370FF', text: '&<', fill: '#fff', px: 64 })).toContain('&#38;&#60;')
   })
 

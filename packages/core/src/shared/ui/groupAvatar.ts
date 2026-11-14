@@ -38,7 +38,7 @@ const STROKE = 6.5
 const TEXT_FROM_PX = 24
 // Color-emoji fallback fonts have wider advances and taller glyph boxes than the text face.
 const fontSizeFor = (text: string, count: number) => /[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u.test(text)
-  ? (count === 1 ? 84 : 56) : (count === 1 ? 116 : 80)
+  ? (count === 1 ? 76 : 50) : (count === 1 ? 116 : 80)
 const FONT = "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', 'Noto Sans CJK SC', sans-serif"
 const GROUP_MARK = '<circle cx="90" cy="82" r="21"/><path d="M52 146c0-21 17-34 38-34s38 13 38 34c0 4-3 7-7 7H59c-4 0-7-3-7-7z"/>'
   + '<circle cx="136" cy="92" r="15"/><path d="M137 116c13 2 23 12 23 28 0 4-3 7-7 7h-17c1-2 1-4 1-6 0-11-5-20-12-27 4-2 8-2 12-2z"/>'
