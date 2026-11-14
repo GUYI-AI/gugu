@@ -3,7 +3,7 @@ import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { PaneProvider } from './pane-context';
 import type { Pane } from './pane-layout-store';
 
@@ -46,16 +46,16 @@ describe('PaneProvider: tab shortcuts listen on the document, so only the page o
       root.render(
         <>
           <CommandShortcutBinder />
-          <PageShownContext.Provider value={false}>
+          <SurfaceShownContext.Provider value={false}>
             <PaneProvider group={hidden.group} isFocusedPane>
               <div />
             </PaneProvider>
-          </PageShownContext.Provider>
-          <PageShownContext.Provider value>
+          </SurfaceShownContext.Provider>
+          <SurfaceShownContext.Provider value>
             <PaneProvider group={shown.group} isFocusedPane>
               <div />
             </PaneProvider>
-          </PageShownContext.Provider>
+          </SurfaceShownContext.Provider>
         </>
       )
     );

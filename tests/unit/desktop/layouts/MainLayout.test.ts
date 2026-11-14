@@ -742,6 +742,26 @@ describe('MainLayout', () => {
     expect(chatAreaProbe.mounts, 'exactly one mount across boot → contacts → chats').toBe(1)
   })
 
+  it('keeps the session frame its last drawn box while another tab hides its slot, so its scroll offsets survive (A1)', async () => {
+    // The slot measures 0×0 once display:none (jsdom has no layout: the rect follows the slot's own display).
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const hidden = this.style.display === 'none'
+      return { x: 0, y: 0, top: hidden ? 0 : 40, left: hidden ? 0 : 300, right: 0, bottom: 0, width: hidden ? 0 : 900, height: hidden ? 0 : 700, toJSON: () => ({}) } as DOMRect
+    })
+    try {
+      await renderMainLayoutWithToast()
+      await clickElement(harness.container.querySelector('[data-testid="mock-open-tasks"]') as HTMLElement)
+      const frame = harness.container.querySelector<HTMLElement>('[data-emdash-slot]')!
+      expect([frame.style.width, frame.style.height, frame.style.contentVisibility]).toEqual(['900px', '700px', 'visible'])
+      await clickElement(harness.container.querySelector('[data-testid="mock-open-contacts"]') as HTMLElement)
+      expect(frame.style.contentVisibility, 'hidden the retained-surface way').toBe('hidden')
+      expect(frame.style.transform).toBe('scale(0)')
+      expect([frame.style.width, frame.style.height], 'shrunk to 0×0, every scroller inside is clamped to 0').toEqual(['900px', '700px'])
+      await clickElement(harness.container.querySelector('[data-testid="mock-open-tasks"]') as HTMLElement)
+      expect([frame.style.width, frame.style.height, frame.style.contentVisibility]).toEqual(['900px', '700px', 'visible'])
+    } finally { rect.mockRestore() }
+  })
+
   it('has no separate chat page on the desktop with a session page (gugu-dev#181)', async () => {
     await renderMainLayoutWithToast()
     await clickElement(harness.container.querySelector('[data-testid="mock-open-chats"]') as HTMLElement)

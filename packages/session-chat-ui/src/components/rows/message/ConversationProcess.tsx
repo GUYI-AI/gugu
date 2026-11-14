@@ -3,6 +3,7 @@ import { Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-j
 import { useChatTranslator } from '@session-chat/localization';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { formatElapsed } from '@session-chat/lib/format-elapsed';
+import { useViewShown } from '@session-chat/view-visibility';
 import type { ChatMessage } from '@session-chat/model';
 import { GridLoader } from '@session-chat/components/primitives/GridLoader';
 import { ShimmerText } from '@session-chat/components/primitives/ShimmerText';
@@ -22,7 +23,9 @@ export function ConversationProcess(props: {
   const commands = useCommands();
   const clock = () => commands().conversationClock?.() ?? Date.now();
   const [now, setNow] = createSignal(clock());
-  const ticking = createMemo(() => !!props.process.live && props.process.startedAt !== undefined);
+  // Off screen the clock stops; shown again it reads the time once and goes on (the hidden-surface contract).
+  const shown = useViewShown();
+  const ticking = createMemo(() => !!props.process.live && props.process.startedAt !== undefined && shown());
   createEffect(() => {
     if (!ticking()) return;
     setNow(clock());

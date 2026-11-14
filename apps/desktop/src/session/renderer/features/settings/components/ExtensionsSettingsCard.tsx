@@ -7,7 +7,7 @@ import { UI_EVENTS } from '@/lib/uiEvents';
 import { observer } from 'mobx-react-lite';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import type { ExtensionAgentStatus } from '@shared/extensions/agent-status';
 import { useDebounce } from '@renderer/lib/hooks/useDebounce';
 import { useLibraryHost } from '@renderer/features/library/library-host';
@@ -495,7 +495,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   onMarketRefreshedRef.current = onMarketRefreshed;
   useEffect(() => host.onEvent(marketRefreshedChannel, (refreshed) => onMarketRefreshedRef.current(refreshed)), []);
 
-  const shown = useContext(PageShownContext);
+  const shown = useContext(SurfaceShownContext);
   const openedAt = useRef<number | null>(null);
   useEffect(() => {
     // 那台机器离线:一问都不发(问不到只会挂满超时),照旧画上次读到的那份、只读。

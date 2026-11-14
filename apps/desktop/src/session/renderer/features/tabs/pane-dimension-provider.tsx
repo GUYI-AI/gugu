@@ -1,5 +1,5 @@
 import { action, makeObservable, observable } from 'mobx';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { createContext, useContext, useLayoutEffect, useRef, type ReactNode } from 'react';
 
 // ── Sink ──────────────────────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ export function PaneDimensionProvider({
   // A retained session page that is not on screen keeps the size its own layout last gave it: the area it
   // sits in changes with whatever is shown instead (an App page has no task list), and measuring that would
   // resize this page's terminals for a layout nobody sees. It measures again the moment it is shown.
-  const shown = useContext(PageShownContext);
+  const shown = useContext(SurfaceShownContext);
 
   useLayoutEffect(() => {
     const el = containerRef.current;
