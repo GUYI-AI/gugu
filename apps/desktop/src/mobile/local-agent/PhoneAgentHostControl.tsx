@@ -53,7 +53,7 @@ function AndroidPhoneAgentHostControl({ ownerId, setup, summary }: { ownerId: st
 }
 
 export function PhoneAgentHostControl(props: { ownerId: string; setup?: boolean; summary?: boolean }) {
-  if (!platform.capabilities.phoneAgentHost) return null
+  if (!platform.capabilities?.phoneAgentHost) return null
   return Capacitor.getPlatform() === 'ios'
     ? <Suspense fallback={null}><IOSPhoneAgentHostControl {...props} /></Suspense>
     : <AndroidPhoneAgentHostControl {...props} />

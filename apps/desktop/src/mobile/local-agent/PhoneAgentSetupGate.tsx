@@ -29,7 +29,7 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
   const currentSetup = setup?.ownerId === ownerId && setup.request === retry && (!identity.ios || setup.installId === iosInstallationId) ? setup : null
 
   useEffect(() => {
-    if (platform.kind !== 'capacitor' || !platform.capabilities.phoneAgentHost) return
+    if (platform.kind !== 'capacitor' || !platform.capabilities?.phoneAgentHost) return
     let alive = true
     setError(null)
     setVisible(false)
@@ -89,7 +89,7 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
   return (
     <PhoneInstallationContext.Provider value={currentSetup ? ownerId : null}>
       {children}
-      {platform.capabilities.phoneAgentHost && visible && (
+      {platform.capabilities?.phoneAgentHost && visible && (
         <Sheet onClose={dismiss} ariaLabel={t('devices.phoneActions.setupTitle')} titleId="phone-agent-setup-heading" fullScreenMobile testId="phone-agent-setup">
           {currentSetup ? (
             <PhoneAgentSetup

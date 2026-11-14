@@ -71,7 +71,7 @@ export function MachinesPage({
 
       {devices.length === 0 && !loading && !error ? (
         <div className="gg-aw-placeholder">
-          <div>{platform.capabilities.phoneAgentHost ? tFlow('noHost') : t('agentWatch.machines.empty')}</div>
+          <div>{platform.capabilities?.phoneAgentHost ? tFlow('noHost') : t('agentWatch.machines.empty')}</div>
           <PhoneHostSetupEntry />
         </div>
       ) : null}

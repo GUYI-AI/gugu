@@ -9,7 +9,7 @@ import './task-flow-catalog'
 export function PhoneHostSetupEntry() {
   const { t } = useTranslation('mobileTaskFlow')
   const ownerId = useAuth().user?.id
-  if (!ownerId || !platform.capabilities.phoneAgentHost) return null
+  if (!ownerId || !platform.capabilities?.phoneAgentHost) return null
   return (
     <Button variant="secondary" size="lg" data-testid="agent-watch-setup-phone" onClick={() => openPhoneAgentSetup(ownerId)}>
       {t('setupPhone')}
