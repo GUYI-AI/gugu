@@ -53,9 +53,12 @@ public class GuguTextSelectionPlugin extends Plugin {
             body.setTextSize(TypedValue.COMPLEX_UNIT_PX, (float) appearance.optDouble("fontSize", 16) * scale);
             body.setTextColor(Color.parseColor(appearance.optString("color", dark ? "#ffffff" : "#181818")));
             body.setIncludeFontPadding(false);
-            TextViewCompat.setLineHeight(body, Math.round((float) appearance.optDouble("lineHeight", 24) * scale));
+            int lineHeight = Math.round((float) appearance.optDouble("lineHeight", 24) * scale);
+            TextViewCompat.setLineHeight(body, lineHeight);
             body.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG);
-            body.setPadding(0, 0, 0, 0);
+            android.graphics.Paint.FontMetrics metrics = body.getPaint().getFontMetrics();
+            int leading = Math.max(0, Math.round((lineHeight - (metrics.descent - metrics.ascent)) / 2));
+            body.setPadding(0, leading, 0, 0);
             body.setCustomSelectionActionModeCallback(new ActionMode.Callback() {
                 @Override public boolean onCreateActionMode(ActionMode mode, Menu menu) { return true; }
                 @Override public boolean onPrepareActionMode(ActionMode mode, Menu menu) { return false; }

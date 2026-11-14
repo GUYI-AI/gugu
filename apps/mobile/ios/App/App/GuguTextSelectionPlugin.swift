@@ -36,7 +36,7 @@ public final class GuguTextSelectionPlugin: CAPPlugin, CAPBridgedPlugin {
             let page = NativeTextSelectionController(text: text, range: range, title: title, closeLabel: closeLabel, appearance: appearance)
             page.modalPresentationStyle = .overFullScreen
             page.overrideUserInterfaceStyle = call.getBool("dark") == true ? .dark : .light
-            page.onClose = { [weak self, weak page] in page?.dismiss(animated: false) { self?.finish(id) } }
+            page.onClose = { [weak self] in self?.finish(id) }
             self.active = (id, page, call)
             presenter.present(page, animated: false)
         }
@@ -105,7 +105,7 @@ private final class NativeTextSelectionController: UIViewController, UIGestureRe
         body.backgroundColor = .clear
         body.textContainerInset = .zero
         body.textContainer.lineFragmentPadding = 0
-        body.onCopy = { [weak self] in self?.onClose?() }
+        body.onCopy = { [weak self] in _ = self?.closePage() }
         body.accessibilityCustomActions = [UIAccessibilityCustomAction(name: closeLabel, target: self, selector: #selector(closePage))]
         body.accessibilityIdentifier = "message-native-text-selection"
         view.addSubview(body)
@@ -148,7 +148,10 @@ private final class NativeTextSelectionController: UIViewController, UIGestureRe
         return !target.isDescendant(of: body)
     }
 
-    @objc private func closePage() -> Bool { onClose?(); return true }
+    @objc private func closePage() -> Bool {
+        dismiss(animated: false) { self.onClose?() }
+        return true
+    }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
