@@ -17,6 +17,7 @@ public final class GuguTextSelectionPlugin: CAPPlugin, CAPBridgedPlugin {
               let title = call.getString("title"), let closeLabel = call.getString("closeLabel"),
               let appearance = call.getObject("appearance"),
               let width = appearance["width"] as? Double, width > 0,
+              let height = appearance["height"] as? Double, height > 0,
               let viewportWidth = appearance["viewportWidth"] as? Double, viewportWidth > 0,
               start >= 0, start < end, end <= (text as NSString).length else {
             call.reject("Invalid text selection")
@@ -115,10 +116,10 @@ private final class NativeTextSelectionController: UIViewController, UIGestureRe
         super.viewDidLayoutSubviews()
         let scale = view.bounds.width / (appearance["viewportWidth"] as? Double ?? view.bounds.width)
         let width = (appearance["width"] as? Double ?? view.bounds.width) * scale
-        let contentHeight = body.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        let height = max(1, (appearance["height"] as? Double ?? view.bounds.height) * scale)
         body.frame = CGRect(x: (appearance["x"] as? Double ?? 0) * scale,
                             y: view.safeAreaInsets.top + (appearance["y"] as? Double ?? 0) * scale,
-                            width: width, height: contentHeight)
+                            width: width, height: height)
     }
 
     override func viewDidAppear(_ animated: Bool) {

@@ -38,7 +38,8 @@ public class GuguTextSelectionPlugin extends Plugin {
         JSObject appearance = call.getObject("appearance");
         if (id == null || id.isEmpty() || title == null || closeLabel == null || start == null || end == null
                 || !NativeTextRange.valid(text, start, end) || appearance == null
-                || appearance.optDouble("viewportWidth", 0) <= 0 || appearance.optDouble("width", 0) <= 0) { call.reject("Invalid text selection"); return; }
+                || appearance.optDouble("viewportWidth", 0) <= 0 || appearance.optDouble("width", 0) <= 0
+                || appearance.optDouble("height", 0) <= 0) { call.reject("Invalid text selection"); return; }
         getActivity().runOnUiThread(() -> {
             if (dialog != null) { call.reject("Text selection is already open"); return; }
             boolean dark = Boolean.TRUE.equals(call.getBoolean("dark"));
@@ -66,7 +67,9 @@ public class GuguTextSelectionPlugin extends Plugin {
                 @Override public void onDestroyActionMode(ActionMode mode) { body.post(page::dismiss); }
             });
             FrameLayout.LayoutParams placement = new FrameLayout.LayoutParams(
-                    Math.round((float) appearance.optDouble("width") * scale), ViewGroup.LayoutParams.WRAP_CONTENT);
+                    Math.round((float) appearance.optDouble("width") * scale),
+                    Math.max(1, Math.round((float) appearance.optDouble("height") * scale)));
+            body.setVerticalScrollBarEnabled(true);
             placement.leftMargin = Math.round((float) appearance.optDouble("x") * scale);
             placement.topMargin = Math.round((float) appearance.optDouble("y") * scale);
             root.addView(body, placement);
