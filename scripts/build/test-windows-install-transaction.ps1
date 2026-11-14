@@ -1,4 +1,4 @@
-param([string]$Helper = (Join-Path $PSScriptRoot '..\..\build-resources\nsis\install-transaction.ps1'))
+﻿param([string]$Helper = (Join-Path $PSScriptRoot '..\..\build-resources\nsis\install-transaction.ps1'))
 # Run explicitly on Windows. Every registry key and directory belongs to this
 # fixture; it does not install an application or touch a real user's registration.
 $ErrorActionPreference = 'Stop'
