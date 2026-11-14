@@ -35,7 +35,9 @@ export function pinSummary(item: ChatMessage, ctx: MeasureCtx, baseVars: Message
   // Never taller than the bubble it rests behind: a cite pill is one cut line in the bubble but its whole label here.
   const height = Math.min(Math.min(Math.max(lines, 1), 2) * lineHeight + 2 * vars.userCardPadY + 2 * vars.cardBorder, bubble.height ?? Infinity);
   const shown = Math.max(1, Math.min(2, Math.floor((height - 2 * vars.userCardPadY - 2 * vars.cardBorder) / lineHeight)));
-  return { text, vars, conversation, height, shown, clipped: lines > 2 || (bubble.height !== undefined && lines > 1 && bubble.height < 2 * lineHeight + 2 * vars.userCardPadY + 2 * vars.cardBorder), rest: Math.max(0, above + bubble.bottom - height), width: bubble.width, bare: !bubble.drawn };
+  // More lines than the summary shows: its last shown line fades out.
+  const clipped = lines > shown;
+  return { text, vars, conversation, height, shown, clipped, rest: Math.max(0, above + bubble.bottom - height), width: bubble.width, bare: !bubble.drawn };
 }
 
 // @@@summary-lines-once — the list asks for every anchor's summary each time it is rebuilt (an older page lands, a
