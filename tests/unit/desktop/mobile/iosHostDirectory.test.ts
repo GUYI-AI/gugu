@@ -28,7 +28,7 @@ afterEach(() => { stops.splice(0).forEach(stop => stop()); retainDeviceSessions(
 
 describe('the App-owned iOS host session directory', () => {
   it('opens an Agent conversation through the real shared directory, using the native session and chat ids', async () => {
-    const f = fixture(); publishDirectoryDevices([device(binding.deviceId, [], { is_online: true, capabilities: { host_kind: 'phone' } })])
+    const f = fixture(); publishDirectoryDevices([device(binding.deviceId, [], { is_online: true, capabilities: { host_kind: 'phone', terminals: [], runtimes: ['pi'] } })])
     stops.push(startIOSHostDirectory(f.runtime, f.owner, () => true))
     const rows = directoryRows(directoryDevices(), liveDeviceSessions())
     expect(rows).toHaveLength(1)
