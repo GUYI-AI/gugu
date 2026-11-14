@@ -27,7 +27,9 @@ const MINE_FG = 'var(--conversation-bubble-mine-fg, var(--chat-bubble-user-fg))'
 const MINE_SCHEME = 'var(--conversation-bubble-mine-color-scheme, var(--chat-bubble-user-color-scheme))';
 // The pinned summary (PinnedUserSummary) is the same bubble.
 globalStyle(`${conversationRoot} :is([data-user-card], [data-pin-summary])`, { background: MINE_BG, color: vars.fgBody, borderColor: 'transparent' });
-globalStyle(`${conversationRoot}[data-side="right"] :is([data-user-card], [data-pin-summary])`, { colorScheme: MINE_SCHEME, vars: { [vars.fgBody]: MINE_FG, [vars.link]: MINE_FG } });
+globalStyle(`${conversationRoot}[data-side="right"] :is([data-user-card], [data-pin-summary])`, { colorScheme: MINE_SCHEME, vars: { [vars.fgBody]: MINE_FG, [vars.link]: MINE_FG, [vars.mentionChipBg]: `color-mix(in srgb, ${MINE_FG} 16%, transparent)`, [vars.mentionChipFg]: MINE_FG } });
+// A cite in my own bubble is tinted from the bubble's text colour, not a light chip pasted on a dark bubble.
+globalStyle(`${conversationRoot}[data-side="right"] [data-user-card] .gg-md-mention`, { boxShadow: 'none' });
 globalStyle(`${conversationRoot}[data-side="left"] [data-user-card]`, { background: 'var(--bubble-other, var(--chat-bg-2))', colorScheme: 'inherit' });
 
 

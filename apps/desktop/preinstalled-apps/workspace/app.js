@@ -3254,27 +3254,25 @@ document.addEventListener('selectionchange', () => {
 })
 document.addEventListener('scroll', () => placeSelectionBar(), true)
 
-// A place as the pill a cite makes (#7238): its lines (`at`: `{ lines, h }` — h finds them again once the file changes)
-// and their words as a reader sees them (picked in the source or the preview alike); the file's name before them is gugu's. A
-// preview block without lines names none: it points at the file, with its words.
-function refOf(current, { text, lines }) {
-  const words = plainWords(text)
-  if (!lines) return { file: current.entry, label: words }
+// A place as the pill a cite makes (#7238): its lines (`at`: `{ lines, h }` — h finds them again once the file changes),
+// named by them; the file's name before them is gugu's. A preview block without lines names none: it points at the file.
+function refOf(current, { lines }) {
+  if (!lines) return { file: current.entry }
   const [first, last] = lines
-  const label = `${fmt(first === last ? state.t.line : state.t.lines, { first, last })} · ${words}`
-  return { file: current.entry, at: placeOf(current.file.text, first, last), label }
+  return { file: current.entry, at: placeOf(current.file.text, first, last), label: fmt(first === last ? state.t.line : state.t.lines, { first, last }) }
 }
 
-// Cite: the selection's places, each a pill into this chat's composer (a gugu.dispatch draft with refs) — the person
-// says what to do with them, @s whom they like and sends it. A JSON file's view is not its text: its cite stays as it was,
-// each range quoted with the lines it is shown on, and a pill to the file. Called inside the click, as a draft needs.
+// Cite: the selection's places, each a pill into this chat's composer (a gugu.dispatch draft with refs), the words picked
+// quoted above them as a reader sees them (a block cited whole has none) — the person says what to do with them, @s whom
+// they like and sends it. A JSON file's view is not its text: its cite stays as it was, each range quoted with the lines
+// it is shown on, and a pill to the file. Called inside the click, as a draft needs.
 async function cite(current = state.current, picks = state.picks, whole = false) {
   if (!current || (!whole && !picks.length)) return
   const quoted = ({ text, lines: [first, last] }) =>
     `${fmt(first === last ? state.t.line : state.t.lines, { first, last })}\n${text.replace(/\s+$/, '').split('\n').map((line) => `> ${line}`).join('\n')}`
   try {
     if (whole) await gugu.dispatch('', { draft: true, refs: [{ file: current.entry }] })
-    else if (current.file.type === 'text') await gugu.dispatch('', { draft: true, refs: picks.map((pick) => refOf(current, pick)) })
+    else if (current.file.type === 'text') await gugu.dispatch(picks.flatMap(({ text }) => (text ? [`> ${plainWords(text)}`] : [])).join('\n\n'), { draft: true, refs: picks.map((pick) => refOf(current, pick)) })
     else await gugu.dispatch(picks.map(quoted).join('\n\n'), { draft: true, refs: [{ file: current.entry }] })
   } catch (error) {
     showBanner(failureText(error), 'error')
@@ -3741,7 +3739,7 @@ function blockMenu(box) {
 function blockLinks(current, pick) {
   return [
     ...(inCopy(current.entry) ? [] : [[state.t.copyBlockLink, blockAction(() => { const p = pick(); return copyLink(current.entry, placeOf(current.file.text, p.lines[0], p.lines[1])) })]]),
-    [state.t.cite, blockAction(() => cite(current, [pick()]))],
+    [state.t.cite, blockAction(() => cite(current, [{ lines: pick().lines, text: '' }]))],
   ]
 }
 

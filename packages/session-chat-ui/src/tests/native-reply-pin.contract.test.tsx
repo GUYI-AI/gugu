@@ -8,7 +8,8 @@ import { until, untilStable } from '../../../../tests/support/awaitCondition';
 
 describe('native reply after a file input', () => {
   it.each([390, 1280])('positions a native reply below its pinned input at width %i, including remount', async width => {
-    const context = createChatContext({ locale: () => 'en-US', layout: { agentConversation: true, preset: 'double', userGutter: 0 } });
+    const context = createChatContext({ locale: () => 'en-US', layout: { agentConversation: true, preset: 'double', userGutter: 0 },
+      mentionProvider: { resolve: token => ({ id: token, label: token, kind: 'file' }) } });
     const state = createChatState(context);
     const turn: TranscriptTurn = {
       id: 'native-file-turn', seq: 0, initiator: 'user', outcome: { kind: 'done' },
@@ -31,7 +32,7 @@ describe('native reply after a file input', () => {
     try {
       for (let pass = 0; pass < 2; pass++) {
         await until('the file reply is mounted', () => !!host.querySelector('[data-agent-conversation-message="native-file-turn:process:head"]'));
-        expect(host.querySelector('[data-agent-conversation-message="file-input"] [data-kind="file"]')).not.toBeNull();
+        expect(host.querySelector('[data-agent-conversation-message="file-input"] .gg-md-mention')).not.toBeNull();
         await untilStable('the input and its viewport are measured before the source jump', () => [
           host.querySelector('[data-agent-conversation-message="file-input"]')?.getBoundingClientRect().height,
           host.querySelector('[data-chat-scroll]')?.scrollHeight,

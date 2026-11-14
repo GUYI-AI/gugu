@@ -101,6 +101,7 @@ import { useToast } from '../components/toastContext'
 import { askChat, askChatFile, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { openOwnedAgentResource } from '../lib/ownedAgentConversation'
 import { filePillText } from '../components/markdown/filePills'
+import { draftWithPills } from '@gugu/session-shared/markdown'
 import { APP_COMPOSE_EVENT, APP_OPEN_IN_CHAT_EVENT, APP_OPEN_WITH_EVENT, type AppComposeDetail, type AppOpenInChatDetail, type AppOpenWithDetail } from '../session/shared/extensions/app-runtime-protocol'
 import { chatSlotKey } from '../lib/shellSlots'
 import { assistantSlotKey } from '../lib/assistantShellBridge'
@@ -686,13 +687,13 @@ function InnerLayout({
       if (!detail) return
       // #1925 Drawn beside an App's page right now: its composer there takes the draft, nothing else comes up.
       const besideApp = appConversationSurfaceShows(detail.chatId)
+      const text = draftWithPills(detail.text, (detail.refs ?? []).map(filePillText).join('\n'))
       if (!besideApp && openOwnedAgent(detail.chatId, undefined, {
-        text: [detail.text, ...(detail.refs ?? []).map(filePillText)].filter(Boolean).join('\n'),
+        text,
         files: detail.images?.map(image => new File([image.bytes], image.name, { type: image.type })), append: true,
       })) { setDraftQuote(detail.chatId, null); return }
       const placed = (chatId: string) => {
         if (detail.whisperTo) setDraftWhisper(chatId, detail.whisperTo)
-        const text = [detail.text, ...(detail.refs ?? []).map(filePillText)].filter(Boolean).join('\n')
         if (text) writeDraft(chatId, { at: 'end', text })
         if (detail.images?.length) {
           const images = detail.images.map((image) => ({
