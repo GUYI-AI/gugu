@@ -135,7 +135,7 @@ See the [community setup guide](docs/guides/self-hosting.md) for configuration a
 
 ## Community
 
-<p><img src="docs/assets/gugu-group-qr.svg" width="240" alt="Gugu group QR code, opens the gugu app or its download page">&nbsp;&nbsp;<img src="docs/assets/gugu-wechat-qr.svg" width="240" alt="gugu WeChat group QR code, opens gugu.nextmind.space"></p>
+<p><img src="docs/assets/gugu-group-qr.svg" width="240" alt="Gugu group QR code, opens gugu.nextmind.space to join in the gugu app or download it">&nbsp;&nbsp;<img src="docs/assets/gugu-wechat-qr.svg" width="240" alt="gugu WeChat group QR code, opens gugu.nextmind.space"></p>
 
 ## Contributing
 
