@@ -95,14 +95,17 @@ async function mount(
 
 describe('sticky user lanes', () => {
   it('preserves the attachment-name summary when a pure attachment row has no text bubble', async () => {
-    const committed = longTurn('a', 0, 30);
-    committed.items[0] = { ...committed.items[0], text: '', attachments: [{ id: 'file', name: 'report.pdf', kind: 'file' }] } as TranscriptTurn['items'][number];
+    const committed = longTurn('a', 0, 1);
+    committed.items = [{ kind: 'message', id: 'a-user', seq: 0, role: 'user', text: '',
+      attachments: [{ id: 'file', name: 'report.pdf', kind: 'file' }] },
+      { kind: 'message', id: 'a-r0', seq: 1, role: 'assistant', text: Array.from({ length: 40 }, (_, i) => `Paragraph ${i}. Lorem ipsum dolor sit amet.`).join('\n\n') },
+    ] as TranscriptTurn['items'];
     const t = await mount([committed], undefined, buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 72, agentConversation: true }));
     await until('attachment summary mounted', () => t.summary('a-user'), summary => summary != null);
     expect(t.card('a-user')).toBeNull();
     expect(t.summary('a-user')!.hasAttribute('data-pin-bare')).toBe(true);
     expect(t.summary('a-user')!.textContent).toBe('report.pdf');
-    await t.scrollTo(250);
+    await t.scrollTo(900);
     expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
   });
 
@@ -110,11 +113,16 @@ describe('sticky user lanes', () => {
     const answered = (id: string): ChatItem => ({ kind: 'message', id, seq: 1, role: 'user',
       text: '<gugu_question_answer>\n' + JSON.stringify({ question_id: id, state: 'answered', answers: [{ selected: ['Keep it'] }] })
         + '\n</gugu_question_answer>' });
-    const committed = longTurn('a', 0, 30);
-    committed.items = [committed.items[0], answered('answer-done'), ...committed.items.slice(1)] as TranscriptTurn['items'];
+    const committed = longTurn('a', 0, 1);
+    committed.items = [committed.items[0], answered('answer-done'),
+      { kind: 'message', id: 'a-r0', seq: 2, role: 'assistant', text: Array.from({ length: 40 }, (_, i) => `Paragraph ${i}. Lorem ipsum dolor sit amet.`).join('\n\n') },
+    ] as TranscriptTurn['items'];
     const active = { id: 'active', seq: 1, initiator: 'user', items: [answered('answer-live'),
       { kind: 'message', id: 'active-reply', seq: 2, role: 'assistant', text: 'Reply after the answer.' }] } as TranscriptTurn;
     const t = await mount([committed], active, buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 72, agentConversation: true }));
+    await until('long committed reply can expand', () => t.host.querySelector<HTMLButtonElement>('[data-expand-user-card]'), button => button != null);
+    t.host.querySelector<HTMLButtonElement>('[data-expand-user-card]')!.click();
+    await untilStable('expanded reply measured', () => t.scrollEl.scrollHeight);
     for (const id of ['answer-done', 'answer-live']) {
       await t.view.scrollToItem(id, { align: 'center' });
       await until(`${id} visible`, () => t.host.querySelector(`[data-item-id="${id}"] [data-slot="question-answer"]`), row => row != null);
@@ -122,9 +130,10 @@ describe('sticky user lanes', () => {
       expect(t.card(id)).toBeNull();
       expect(t.host.textContent).not.toContain('<gugu_question_answer>');
     }
-    await t.view.scrollToItem('a-user', { align: 'start', offset: -100 });
+    t.view.scrollToTop();
+    await untilStable('owner position restored after answer navigation', () => [t.scrollEl.scrollTop, t.scrollEl.scrollHeight]);
     await until('ordinary user summary exists', () => t.summary('a-user'), summary => summary != null);
-    await t.scrollTo(t.scrollEl.scrollTop + 250);
+    await t.scrollTo(900);
     expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
   });
 
