@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   host: { binding: { ownerId: 'owner', installationId: 'install' }, settings: { status: 'ready', meta: { value: { enabled: true, sound: false } } } },
   chat: { chatMessages: true, sound: true },
   native: { configure: vi.fn(), suspend: vi.fn(), status: vi.fn(), register: vi.fn(), addListener: vi.fn() },
+  lookup: vi.fn(),
   changed: [] as (() => void)[], foreground: null as (() => void) | null,
 }))
 vi.mock('@capacitor/core', () => ({ Capacitor: { getPlatform: () => 'ios', isPluginAvailable: () => true }, registerPlugin: () => state.native }))
@@ -12,7 +13,7 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { subscribeA
 vi.mock('../../../../apps/desktop/src/lib/notificationSettings', () => ({ readNotificationSettings: () => state.chat,
   subscribeNotificationSettings: (fn: () => void) => { state.changed.push(fn); return () => {} } }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }))
-vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: {} }))
+vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: state.lookup }) }) }) } }))
 vi.mock('../../../../apps/desktop/src/mobile/ios-runtime/startIOSOwnerPublication', () => ({
   getIOSOwnerPublicationSnapshot: () => state.owner,
   subscribeIOSOwnerPublication: (fn: () => void) => { state.changed.push(fn); return () => {} },
@@ -20,6 +21,7 @@ vi.mock('../../../../apps/desktop/src/mobile/ios-runtime/startIOSOwnerPublicatio
 vi.mock('../../../../apps/desktop/src/mobile/ios-host/iosHostRuntime', () => ({ iosHostRuntime: {
   getSnapshot: () => state.host, subscribe: (fn: () => void) => { state.changed.push(fn); return () => {} },
 } }))
+import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 import { startIOSPush } from '../../../../apps/desktop/src/mobile/ios-push/startIOSPush'
 const settle = async () => { for (let i = 0; i < 15; i++) await Promise.resolve() }
 beforeEach(() => {
@@ -57,4 +59,33 @@ it('foreground reconciles canonical state and refreshes registration independent
   const stop = startIOSPush(); await settle(); state.foreground?.(); await settle()
   expect(wake).toHaveBeenCalledTimes(2); expect(state.native.register).toHaveBeenCalledTimes(2)
   stop(); window.removeEventListener('gugu:ios-push-reconcile', wake)
+})
+
+it('opens only a canonical destination visible to the current owner', async () => {
+  state.lookup.mockResolvedValue({ data: { id: 'canonical-chat' }, error: null })
+  const opened = vi.fn(); window.addEventListener(UI_EVENTS.notificationClicked, opened)
+  const stop = startIOSPush(); await settle()
+  const hint = state.native.addListener.mock.calls.find(([event]) => event === 'reconcile')![1]
+  hint({ ownerId: 'owner', kind: 'opened', chatId: 'canonical-chat' }); await settle()
+  expect(opened).toHaveBeenCalledOnce()
+  expect((opened.mock.calls[0][0] as CustomEvent).detail.chatId).toBe('canonical-chat')
+  stop(); window.removeEventListener(UI_EVENTS.notificationClicked, opened)
+})
+it('does not navigate when canonical visibility is absent', async () => {
+  state.lookup.mockResolvedValue({ data: null, error: null })
+  const opened = vi.fn(); window.addEventListener(UI_EVENTS.notificationClicked, opened)
+  const stop = startIOSPush(); await settle()
+  const hint = state.native.addListener.mock.calls.find(([event]) => event === 'reconcile')![1]
+  hint({ ownerId: 'owner', kind: 'opened', chatId: 'hidden-chat' }); await settle()
+  expect(opened).not.toHaveBeenCalled(); stop(); window.removeEventListener(UI_EVENTS.notificationClicked, opened)
+})
+it('rejects a destination read completing after owner withdrawal', async () => {
+  let finish!: (value: unknown) => void
+  state.lookup.mockReturnValue(new Promise(resolve => { finish = resolve }))
+  const opened = vi.fn(); window.addEventListener(UI_EVENTS.notificationClicked, opened)
+  const stop = startIOSPush(); await settle()
+  const hint = state.native.addListener.mock.calls.find(([event]) => event === 'reconcile')![1]
+  hint({ ownerId: 'owner', kind: 'opened', chatId: 'old-chat' })
+  state.owner.status = 'waiting'; state.changed[0](); finish({ data: { id: 'old-chat' }, error: null }); await settle()
+  expect(opened).not.toHaveBeenCalled(); stop(); window.removeEventListener(UI_EVENTS.notificationClicked, opened)
 })
