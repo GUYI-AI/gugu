@@ -30,9 +30,16 @@ export function createSelectStore<T>(initial: T): SelectStore<T> {
 export function sameShallow(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null || Array.isArray(a) !== Array.isArray(b)) return false
+  // Only plain objects and arrays compare by their fields; a Map or a Set has none, so two different ones are different.
+  if (!plainOrArray(a) || !plainOrArray(b)) return false
   const keys = Object.keys(a)
   if (keys.length !== Object.keys(b).length) return false
   return keys.every((key) => Object.prototype.hasOwnProperty.call(b, key) && Object.is((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]))
+}
+
+function plainOrArray(value: object): boolean {
+  const proto = Object.getPrototypeOf(value)
+  return Array.isArray(value) || proto === Object.prototype || proto === null
 }
 
 /** What a reader needs of a store: another module's store (one kept on the document, say) can be read the same way. */
