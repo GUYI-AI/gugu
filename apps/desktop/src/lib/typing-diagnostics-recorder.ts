@@ -1,4 +1,4 @@
-import { sanitizeTypingDiagnosticRecord, TYPING_DIAGNOSTICS_BATCH, TYPING_DIAGNOSTICS_TYPING_WINDOW, type TypingDiagnosticRecord } from '../../shared/beta-typing-diagnostics'
+import { sanitizeTypingDiagnosticRecord, TYPING_DIAGNOSTICS_BATCH, TYPING_DIAGNOSTICS_PROFILE_INTERVAL, TYPING_DIAGNOSTICS_TYPING_WINDOW, type TypingDiagnosticRecord } from '../../shared/beta-typing-diagnostics'
 import { createTypingProfiler, type TypingTaskRange } from './typing-diagnostics-profile'
 
 interface TaskEntry extends PerformanceEntry { attribution?: Array<{ name?: string; containerType?: string }> }
@@ -123,7 +123,7 @@ export function createTypingDiagnosticsRecorder(win: Window & typeof globalThis,
   win.addEventListener('compositionend', composition, true)
   win.addEventListener('blur', blur, true)
   const profiler = createTypingProfiler(win, () => ranges, emit)
-  emit({ event: 'start', timeOrigin: win.performance.timeOrigin, startMs: now(), longTaskSupported, longFrameSupported, eventTimingSupported, profilerSupported: profiler.supported, sampleIntervalMs: 100, eventThresholdMs: 16, eventResolutionMs: 8, typingWindowMs: TYPING_DIAGNOSTICS_TYPING_WINDOW, visible: win.document.visibilityState === 'visible' })
+  emit({ event: 'start', timeOrigin: win.performance.timeOrigin, startMs: now(), longTaskSupported, longFrameSupported, eventTimingSupported, profilerSupported: profiler.supported, sampleIntervalMs: TYPING_DIAGNOSTICS_PROFILE_INTERVAL, eventThresholdMs: 16, eventResolutionMs: 8, typingWindowMs: TYPING_DIAGNOSTICS_TYPING_WINDOW, visible: win.document.visibilityState === 'visible' })
   function stop(finalFlush = false) {
     if (stopped) return
     if (finalFlush && !inFlight && (queue.length || dropped || keysObserved !== writtenKeys || eventEntriesObserved !== writtenEntries)) { try { void send(take()).catch(() => undefined) } catch { /* App teardown never waits for the recorder. */ } }
