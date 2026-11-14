@@ -65,6 +65,7 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
     setBusy(true)
     try { return await invoke(command) } catch { setError(errorText('')); return undefined } finally { setBusy(false) }
   }, [invoke])
+  // @@@effect-flow - the local password vault answers and pushes its own state; it is never kept outside the vault
   useEffect(() => {
     if (!PASSWORD_BETA_ENABLED) return
     void invoke({ type: 'snapshot' })
