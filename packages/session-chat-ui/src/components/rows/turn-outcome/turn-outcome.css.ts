@@ -36,7 +36,9 @@ export const outcomeShell = style({
   flexDirection: 'column',
   alignItems: 'stretch',
   // 与 lane 同一层 surface:虚拟化重排时,收尾单元整块都不该让底下的流式正文透出来。
-  background: vars.bg1,
+  // 那层 surface 就是 transcript 自己的底(`vars.bg`),不是卡片那一档 `bg1`:宿主的这两档不一定相等
+  // (手机深色页面 #181818、卡片档 #212121),取 bg1 就会在页面上画出一块比底亮的框。
+  background: vars.bg,
 });
 
 export const outcomeRow = style([
@@ -51,7 +53,7 @@ export const outcomeRow = style([
     lineHeight: '20px',
     // Keep a settled outcome on its own transcript surface if a virtualized
     // row is briefly painted over the streaming message during reconciliation.
-    background: vars.bg1,
+    background: vars.bg,
   },
 ]);
 
@@ -138,9 +140,20 @@ globalStyle(`${outcomeBadgeGlyph} svg`, {
   height: '10px',
 });
 
-/** 徽章里「说辞 · 原因」之间那个间隔点。 */
+/**
+ * 徽章里「说辞 · 原因」之间那个间隔点。
+ *
+ * 盒子宽度写死,点在里面居中:离屏测量只能按常量给它留位置。「·」是中西文共用的字符,DOM 按页面语言
+ * 选字体(zh-CN 的手机上落到中文字体,6px 宽),离屏测量的 canvas 不看语言(落到西文字体,约 3px)——
+ * 两边量出来的宽度天生对不上,徽章就会比内容窄,原因被挤到第二行。点是装饰(aria-hidden),溢出盒子的
+ * 那点字形空白落在两侧 6px 的间距里,看不出来。
+ */
+export const BADGE_SEPARATOR_PX = 4;
 export const outcomeBadgeSeparator = style({
   flex: 'none',
+  display: 'flex',
+  justifyContent: 'center',
+  width: `${BADGE_SEPARATOR_PX}px`,
   opacity: 0.5,
 });
 
@@ -204,7 +217,9 @@ export const outcomeActionPrimary = style([
 export const outcomeReason = style({
   color: vars.fgMuted,
   minWidth: 0,
-  whiteSpace: 'pre-wrap',
+  // 折行只在离屏测量里定一次(`readableLabel` 把断点写成 \n),DOM 照画、❌ 自己再折:测量与排版差的那零点几像素
+  // (字形宽度在 DOM 里按 1/64px 进位)会让 pre-wrap 把原因的最后一个字/词挤到第二行,而行高是按一行量的。
+  whiteSpace: 'pre',
   overflowWrap: 'normal',
 });
 

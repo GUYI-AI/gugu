@@ -136,6 +136,7 @@ import {
   outcomeBadgeGlyph,
   outcomeBadgeLabel,
   outcomeBadgeSeparator,
+  BADGE_SEPARATOR_PX,
   outcomeReason,
   outcomeRow,
   outcomeRuleTrail,
@@ -257,9 +258,11 @@ function outcomeLaneLayout(data: TurnOutcomeItem, ctx: import('@session-chat/cor
   const reason = refused?.text ?? parts.reason;
   const glyph = outcome.kind === 'cancelled' ? 16 : 0;
   const label = readableLabel(parts.label, ctx, ctx.width - 20 - glyph, 12, 18);
-  const natural = label.width + (reason ? readableLabel(reason, ctx).width + 16 : 0) + 20 + glyph;
+  // Between label and reason: the badge's two 6px gaps around the separator's fixed-width box.
+  const separator = reason ? BADGE_SEPARATOR_PX + 12 : 0;
+  const natural = label.width + (reason ? readableLabel(reason, ctx).width + separator : 0) + 20 + glyph;
   const badgeWidth = Math.min(ctx.width, natural);
-  const description = reason ? readableLabel(reason, ctx, badgeWidth - 20 - glyph - label.width - 16) : null;
+  const description = reason ? readableLabel(reason, ctx, badgeWidth - 20 - glyph - label.width - separator) : null;
   const badgeHeight = Math.max(24, label.height + 6, (description?.height ?? 0) + 6);
   const actions: number[] = [];
   const actionWidth = (text: string, icon = false) => readableLabel(text, ctx, ctx.width, 14, 20, 500).width + 20 + (icon ? 18 : 0);
@@ -418,9 +421,7 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
             <Show when={parts().reason}>
               {(text) => (
                 <>
-                  <span aria-hidden="true" class={outcomeBadgeSeparator}>
-                    ·
-                  </span>
+                  <span aria-hidden="true" class={outcomeBadgeSeparator}>·</span>
                   <span data-slot="turn-outcome-reason" class={outcomeReason}>
                     {lane().reason?.text ?? text()}
                   </span>
