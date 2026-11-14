@@ -165,6 +165,7 @@ try {
     Save-State $s
   } else {
     $s = Load-State
+    if ($s.completed) { Finish-State $s; exit 0 }
     if (-not (Test-Path -LiteralPath (Join-Path $Target $Executable))) { throw 'Published application is missing' }
     if ([IO.File]::ReadAllText((Join-Path $Target '.gugu-install-transaction')) -ne $s.token) { throw 'Published application ownership changed' }
     $hive = if ($Mode -eq 'all') { 'HKLM' } else { 'HKCU' }

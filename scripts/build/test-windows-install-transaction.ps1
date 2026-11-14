@@ -82,6 +82,19 @@ try {
   try { Invoke-Phase commit 2 } finally { $locked.Dispose() }
   Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'upgrade') 'Locked old application was changed'
   $results += 'locked old executable fails without losing installation'
+
+  Invoke-Phase prepare
+  Payload $stage 'committed'
+  Invoke-Phase commit
+  Registration '0.3.5'
+  $persisted = Get-Content -LiteralPath (Join-Path $journal 'transaction.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  $persisted.completed = $true
+  [IO.File]::WriteAllText((Join-Path $journal 'transaction.json'), ($persisted | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
+  Remove-Item -LiteralPath (Join-Path $target '.gugu-install-transaction')
+  Invoke-Phase finish
+  Assert (-not (Test-Path -LiteralPath $journal)) 'Committed cleanup retry left its journal'
+  Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'committed') 'Committed cleanup retry rolled back the new application'
+  $results += 'committed cleanup resumes after marker deletion'
   Assert (([IO.File]::ReadAllText($data)) -eq 'preserved') 'User data changed'
   $results += 'user data remains intact'
   $results | ConvertTo-Json
