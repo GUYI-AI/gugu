@@ -4,7 +4,7 @@ import type { UnreadLocatorCommit } from '../lib/chatUnreadLocatorWindow'
 import type { ChatConversationAccess } from './useChatConversation'
 import type { HistoryWindow } from './chatHistoryWindow'
 import type { ShellChatList } from '../lib/shellTab'
-import { createContext, createElement, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { createContext, createElement, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import type { ChatItem, MessageItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import type { AttachmentKind } from '@gugu/core/shared/ui/attachmentModels'
 import type { ThreadScope } from './threadScope'
@@ -16,6 +16,8 @@ import { createDraftWriter } from './chatDraftWrites'
 import { readChatDrafts, removeChatDraft, writeChatDraft } from './chatDraftStorage'
 import type { ChatMessageComposerProps } from '../components/chat/chatComposerModels'
 export { appendToDraft } from './chatDraftWrites'
+import { isDeepEqual } from '@gugu/session-shared'
+import { createSelectStore, sameShallow, useSelect, type SelectStore } from '../lib/selectStore'
 
 export type RefreshChatsOptions = {
   acceptEmpty?: boolean
@@ -232,69 +234,56 @@ const EMPTY_CHAT_STORE: ChatContextValue = {
 // 其中包括每条气泡里的元指示行。现在 context 里只放一个身份稳定的句柄,消费者按**自己读的那几格**订阅:
 // `useChatStore('chats', 'identitiesById')` 只在这两格换身份时重渲。不传键 = 订阅整份(与从前等价)。
 type ChatStoreValue = ChatContextValue & ReturnType<typeof createDraftWriter>
-type ChatStoreHandle = { get: () => ChatStoreValue; subscribe: (listener: () => void) => () => void; value: ChatStoreValue; writer: ReturnType<typeof createDraftWriter>; listeners: Set<() => void> }
+type ChatStoreHandle = { store: SelectStore<ChatStoreValue>; writer: ReturnType<typeof createDraftWriter> }
 
 function createChatStoreHandle(value: ChatContextValue, inheritedWriter?: ReturnType<typeof createDraftWriter>): ChatStoreHandle {
-  const { writeDraft, registerDraftEditor } = inheritedWriter ?? createDraftWriter(() => handle.value)
+  const { writeDraft, registerDraftEditor } = inheritedWriter ?? createDraftWriter(() => handle.store.get())
   const writer = { writeDraft, registerDraftEditor }
-  const handle: ChatStoreHandle = {
-    value: { ...value, ...writer }, writer, listeners: new Set(),
-    get: () => handle.value,
-    subscribe: (listener) => { handle.listeners.add(listener); return () => { handle.listeners.delete(listener) } },
-  }
+  const handle: ChatStoreHandle = { store: createSelectStore<ChatStoreValue>({ ...value, ...writer }), writer }
   return handle
 }
 
 const ChatContext = createContext<ChatStoreHandle>(createChatStoreHandle(EMPTY_CHAT_STORE))
 
-/** 把 provider 这一轮算出的整份 value 交给句柄。渲染期写入:同一轮里往下渲染的消费者读到的就是这一份,
+/** 把 provider 这一轮算出的整份 value 交给句柄(@@@select-store):同一轮里往下渲染的消费者读到的就是这一份,
  * 不会出现「父组件已是新值、子组件还是旧 store」的混合帧;没在这一轮渲染的订阅者在 layout 阶段收到通知。 */
 export function ChatStoreProvider({ value, draftWriter, children }: { value: ChatContextValue; draftWriter?: ReturnType<typeof createDraftWriter>; children?: ReactNode }) {
   const [handle] = useState(() => createChatStoreHandle(value, draftWriter))
-  handle.value = { ...value, ...handle.writer }
-  useLayoutEffect(() => { for (const listener of [...handle.listeners]) listener() }, [handle, value])
+  handle.store.publish({ ...value, ...handle.writer })
+  useLayoutEffect(() => { handle.store.notify() }, [handle, value])
   return createElement(ChatContext.Provider, { value: handle }, children)
 }
 
 export function useChatStore(): ChatStoreValue
 export function useChatStore<K extends keyof ChatStoreValue>(...keys: K[]): Pick<ChatStoreValue, K>
 export function useChatStore(...keys: (keyof ChatStoreValue)[]): Partial<ChatStoreValue> {
-  const handle = useContext(ChatContext)
-  const picked = useRef<Partial<ChatStoreValue> | null>(null)
-  const getSnapshot = () => {
-    const value = handle.get()
-    if (keys.length === 0) return value
-    const previous = picked.current
-    if (previous && keys.every((key) => Object.is(previous[key], value[key]))) return previous
-    return (picked.current = Object.fromEntries(keys.map((key) => [key, value[key]])) as Partial<ChatStoreValue>)
-  }
-  return useSyncExternalStore(handle.subscribe, getSnapshot)
+  const { store } = useContext(ChatContext)
+  return useSelect(store, (value) => keys.length === 0 ? value : Object.fromEntries(keys.map((key) => [key, value[key]])) as Partial<ChatStoreValue>, keys.length === 0 ? Object.is : sameShallow)
 }
 
 /** 只在回调里读、不订阅(读的那一刻的整份值):外壳和点开时才要会话列表的 hook 用它,每条消息就不必把整棵壳重渲一遍。 */
 export function useChatStoreReader(): () => ChatStoreValue {
-  return useContext(ChatContext).get
+  return useContext(ChatContext).store.get
 }
 
 /** 当前会话还在不在会话列表里,给外壳的手机会话层直接读(lib/shellTab @@@phone-chat-layer),不经谁转手。 */
 export function useActiveChatListedSource(): ShellChatList {
-  const handle = useContext(ChatContext)
-  return useMemo(() => ({ activeListed: () => handle.get().activeChat !== null, subscribe: handle.subscribe }), [handle])
+  const { store } = useContext(ChatContext)
+  return useMemo(() => ({ activeListed: () => store.get().activeChat !== null, subscribe: store.subscribe }), [store])
 }
 
-/** 只订阅从 store 里算出来的一个值(select 要返回原始值或稳定引用):值不变,别的会话来消息也不重渲。 */
+/** 只订阅从 store 里算出来的一个值:值不变(浅比较),别的会话来消息也不重渲。 */
 export function useChatStoreSelect<T>(select: (store: ChatStoreValue) => T): T {
-  const handle = useContext(ChatContext)
-  return useSyncExternalStore(handle.subscribe, () => select(handle.get()))
+  return useSelect(useContext(ChatContext).store, select)
 }
 
 /**
- * 从 store 读一个值,只有 signature 变了才换一份。一条消息会把会话列表换好几次,多数订阅者只读其中几个字段:
+ * 从 store 读一个值,只有 signature 的内容变了才换一份。一条消息会把会话列表换好几次,多数订阅者只读其中几个字段:
  * 它们写清自己读什么,别的字段变了不重渲。
  */
 export function useStoreValueBy<T>(read: (store: ChatStoreValue) => T, signature: (store: ChatStoreValue) => unknown): T {
   const get = useChatStoreReader()
-  const current = useChatStoreSelect((store) => JSON.stringify(signature(store)))
+  const current = useSelect(useContext(ChatContext).store, signature, isDeepEqual)
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the signature is the dependency
   return useMemo(() => read(get()), [current])
 }
