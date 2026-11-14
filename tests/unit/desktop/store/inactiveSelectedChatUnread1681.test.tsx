@@ -11,7 +11,7 @@
  * 所以这里用确定性次序把两种排列都钉住（刷新早于导航发出 / 晚于导航发出），
  * 并保留一条真正该撤销的对照，证明断言能判假。
  */
-import { act, useEffect, useMemo } from 'react'
+import { act, useMemo } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { chat, createNode, createReactHarness, displayIdentity, message } from '../../../support/testHarness'
@@ -191,14 +191,13 @@ const snapshotWithoutNewChat = (): ChatsSnapshot => ({
   chats: [existingChat()],
   identities: [displayIdentity('peer-1')],
 })
-let reportVisible = false, useRealList = false
+let useRealList = false
 const measuredIds = new Set<string>()
 function Probe() {
   latestStore = useChatStore()
   useReportChatOnScreen(latestStore.activeChatId)
   const { messages, markMessageVisible } = latestStore
-  // Same dependency boundary as MessageList's measured visibility observer.
-  useEffect(() => { if (reportVisible) for (const row of messages) markMessageVisible(row) }, [messages, markMessageVisible])
+  // Foregrounding re-reports the seen rows in MessageList itself (useRealList), not through a new markMessageVisible.
   const rows = useMemo(() => messages.map(message => ({ type: 'message' as const, message })), [messages])
   const noop = () => undefined
   const rowProps: MessageListRowProps = { rows, messages, mobile: false,
@@ -226,7 +225,7 @@ async function renderStore(): Promise<void> {
 }
 beforeEach(async () => {
   authUser.id = 'user-1'
-  host.active = false; host.listener = null; reportVisible = false; useRealList = false; measuredIds.clear()
+  host.active = false; host.listener = null; useRealList = false; measuredIds.clear()
   vi.stubGlobal('IntersectionObserver', class {
     constructor(private callback: IntersectionObserverCallback) {}
     observe(target: Element) {
@@ -344,17 +343,6 @@ it('a previously active callback cannot acknowledge after the native host loses 
   await act(async () => { host.listener?.(false); stale(visible()) })
   expect(latestStore!.chats[0]).toMatchObject(tuple)
   expect(readMock).not.toHaveBeenCalled()
-})
-it('foregrounding remeasures current visible rows once without a new message or list refresh', async () => {
-  await open('group')
-  reportVisible = true
-  await act(async () => { await latestStore!.refreshMessages('chat-1') })
-  expect(readMock).not.toHaveBeenCalled()
-  await activity(true)
-  expect(latestStore!.chats[0]).toMatchObject({ ...tuple, last_read_seq: 5, read_state_version: 9 })
-  expect(readMock).toHaveBeenCalledTimes(2)
-  await activity(true)
-  expect(readMock).toHaveBeenCalledTimes(2)
 })
 it('an unopened chat and a previously selected chat are never acknowledged on foregrounding', async () => {
   await open('group')
