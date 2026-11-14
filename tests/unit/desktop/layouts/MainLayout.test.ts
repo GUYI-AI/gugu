@@ -1543,7 +1543,8 @@ describe('MainLayout: agent sender-name entry', () => {
       expect(openNativeConversation).toHaveBeenCalledWith({ kind: 'session', sessionId: 'native-session', projectId: 'native-project' })
       expect(chatServiceMock.getOrCreateDM).toHaveBeenCalledWith('user-1', peer.id)
     } else {
-      expect(sessionPageViewRequests.openChat).toHaveBeenCalledWith('sender-dm', false)
+      // A sender's name is clicked inside a conversation on the screen: the DM opens within that screen's entry.
+      expect(sessionPageViewRequests.openChat).toHaveBeenCalledWith('sender-dm', false, undefined, true)
       expect(chatServiceMock.getOrCreateDM).not.toHaveBeenCalled()
     }
   })

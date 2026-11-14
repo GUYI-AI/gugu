@@ -14,6 +14,7 @@ import { readChatSummaries, subscribeChatSummaries } from '@/lib/chatSummariesBr
 import { isScreenView } from './screen-views';
 import { MAX_SCREEN_BLOCKS, screenLayout, type ScreenBlockContent, type ScreenLayoutSnapshot, type ScreenSession, type WindowableContent } from './screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
+import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 
 export { isScreenView };
@@ -294,6 +295,17 @@ export function showSessionBeside(target: ScreenSession): void {
 export function showOnScreen(content: ScreenBlockContent): void {
   tabFullscreen.exit();
   screenLayout.show(content);
+  followFocus();
+}
+
+/**
+ * 回到群本身(群标题、已经在这个群的屏里再点它那一行):这个群名下记着的那一屏(从群里点开的私聊、智能体)不要了,
+ * 群单独一屏。项目群认它的项目块,同 openChatOnScreen。
+ */
+export function navigateToGroupRoot(chatId: string): void {
+  tabFullscreen.exit();
+  const projectId = projectGroupsStore.rowProjectOfChat(chatId);
+  screenLayout.showRoot(projectId ? { kind: 'project', projectId } : { kind: 'chat', chatId });
   followFocus();
 }
 

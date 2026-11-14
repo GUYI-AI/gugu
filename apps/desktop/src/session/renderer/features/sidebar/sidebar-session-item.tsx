@@ -4,6 +4,7 @@ import { platform } from '@/platform';
 import { safeFailureLine } from '../sessions/gugu-reason';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { dissolveScreenGroup, isScreenView, showSessionBeside, takeSessionOutOfGroup } from '@renderer/app/screen-layout-actions';
+import { screenLayout } from '@renderer/app/screen-layout';
 import { AlertTriangle, Archive, Copy, LayoutGrid, MoreHorizontal, PanelLeft, PanelLeftClose, Pencil, Pin, PinOff, Scissors, Sparkles, SquareMinus } from '@/lib/icons'
 import { GitFork } from '@/lib/icons'
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
@@ -197,7 +198,9 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
     manifestsLoaded: installedExtensionsStore.isLoaded,
   });
 
-  const openSession = ({ beside = false }: { beside?: boolean } = {}) => openSidebarSession(projectId, sessionId, beside);
+  // A row of the inner column (a group's agents) opens inside that group: the screen stays the group's (screen-layout `entry`).
+  const openSession = ({ beside = false }: { beside?: boolean } = {}) =>
+    rowVariant === 'section' ? screenLayout.withinEntry(() => openSidebarSession(projectId, sessionId, beside)) : openSidebarSession(projectId, sessionId, beside);
 
   const cursor = sessionKeyboardNav.cursor;
   const isCursor = cursor?.kind === 'conversation' && cursor.sessionId === sessionId;

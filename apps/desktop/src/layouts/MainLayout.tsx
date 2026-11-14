@@ -259,7 +259,7 @@ function InnerLayout({
   }, [mobile])
   useEffect(() => () => composerFocusCleanupRef.current?.(), [])
   const openOwnedAgent = useOwnedAgentConversationEntry({ ownerId: user.id, chats: () => readChats().chats, contacts: () => readContacts().contacts, mobile, onOpen: () => { if (!mobile) setActiveTab('tasks') } })
-  const openChatBlock = useCallback((chatId: string, focus?: ComposerFocusReason, peerId?: string, draft?: string, sourceChatId?: string, purpose?: 'resource'): string | null => {
+  const openChatBlock = useCallback((chatId: string, focus?: ComposerFocusReason, peerId?: string, draft?: string, sourceChatId?: string, purpose?: 'resource', within = false): string | null => {
     const assistantViewport = sourceChatId ? null : openAssistantChat(chatId)
     if (assistantViewport) return assistantViewport
     if (openOwnedAgent(chatId, peerId, draft, sourceChatId, purpose)) return 'tasks'
@@ -272,6 +272,8 @@ function InnerLayout({
       if (!sessionPage.openGroupChat) throw new Error(t('shell.errors.taskBridgeUnavailable'))
       sessionPage.openGroupChat(sourceChatId, chatId)
     } else if (purpose) sessionPage.openChat(chatId, false, purpose)
+    // `within`: opened from inside a conversation on the screen (its profile card, a sender's name): that screen's entry keeps it.
+    else if (within) sessionPage.openChat(chatId, false, undefined, true)
     else sessionPage.openChat(chatId, false)
     if (focus) focusComposerForUserEntry(focus, chatId)
     return chatSlotKey(chatId)
@@ -292,7 +294,7 @@ function InnerLayout({
   }, [setActiveTab, openChatBlock, setActiveChatId, readChats])
   const [appDetail, setAppDetail] = useState<import('@gugu/core/shared/ui/guguLink').AppDetailLink>()
   useLinkNavigation({ ownerId: user.id, chats: () => readChats().chats, contacts: () => readContacts().contacts,
-    openSender: (target, sourceChatId) => handleSwitchToChat(target, undefined, sourceChatId),
+    openSender: (target, sourceChatId) => handleSwitchToChat(target, undefined, sourceChatId, true),
     openAppDetail: target => {
       if (target.deviceId || target.variant) throw new Error(translateSessionMessage('extensions.appLinkOnPhone'))
       setAppDetail(target)
@@ -751,7 +753,7 @@ function InnerLayout({
   }, [activeChatId])
 
   const switchingRef = useRef(false)
-  const handleSwitchToChat = async (target: ContactUser, draft?: string, sourceChatId?: string) => {
+  const handleSwitchToChat = async (target: ContactUser, draft?: string, sourceChatId?: string, within = false) => {
     const existing = readChats().chats.find((chat) => (
       (chat.kind === 'dm' || chat.kind === 'ai') && chat.peer_user_id === target.id
     ))
@@ -759,7 +761,7 @@ function InnerLayout({
     if (!existing && sourceChatId && openOwnedAgent(undefined, target.id, draft, sourceChatId)) return
     if (existing) {
       if (draft) writeDraft(existing.id, draft)
-      if (openChatBlock(existing.id, 'profile-chat', target.id, draft, sourceChatId)) {
+      if (openChatBlock(existing.id, 'profile-chat', target.id, draft, sourceChatId, undefined, within)) {
         void refreshChats()
         return
       }
@@ -787,7 +789,7 @@ function InnerLayout({
       const chatId = await chatService.getOrCreateDM(user.id, target.id)
       upsertChat(createOptimisticDmChat(chatId, target.id))
       if (draft) writeDraft(chatId, draft)
-      if (openChatBlock(chatId, 'profile-chat', target.id, draft, sourceChatId)) {
+      if (openChatBlock(chatId, 'profile-chat', target.id, draft, sourceChatId, undefined, within)) {
         void refreshChats()
         return
       }
@@ -817,7 +819,7 @@ function InnerLayout({
       bio: target.bio,
       type: target.type,
       alias: contact?.alias ?? null,
-    })
+    }, undefined, undefined, true)
   }
 
   // 手机上从群成员里建好 agent:回到那个群。
