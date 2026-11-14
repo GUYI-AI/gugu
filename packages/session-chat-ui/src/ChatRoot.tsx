@@ -2015,7 +2015,9 @@ export function ChatRoot(props: ChatRootProps) {
     if (!el) return;
     const target = maxScrollTop();
     setAnchor({ kind: 'tail' });
-    if (opts?.behavior === 'smooth') {
+    // Already there: no animation. A smooth scroll of zero length still opened the settle window, and the rows of the
+    // send that asked for it (the composer returns the reader to the end) waited it out below the view, ~120 ms.
+    if (opts?.behavior === 'smooth' && target - el.scrollTop > SCROLL_END_EPSILON_PX) {
       smoothScrolling = true;
       smoothScrollTarget = target;
       el.scrollTo({ top: target, behavior: 'smooth' });
