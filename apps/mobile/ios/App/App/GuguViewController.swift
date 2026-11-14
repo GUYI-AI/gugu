@@ -45,7 +45,7 @@ final class GuguViewController: CAPBridgeViewController {
 public final class GuguImageViewerChromePlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "GuguImageViewerChromePlugin"
     public let jsName = "GuguImageViewerChrome"
-    public let pluginMethods = [CAPPluginMethod(name: "setActive", returnType: CAPPluginReturnPromise)]
+    public let pluginMethods: [CAPPluginMethod] = [CAPPluginMethod(name: "setActive", returnType: CAPPluginReturnPromise)]
 
     @objc public func setActive(_ call: CAPPluginCall) {
         guard let active = call.getBool("active") else { call.reject("Missing active state"); return }
