@@ -186,6 +186,9 @@ effect. The executor reports actual native startup, rechecks the command claim,
 and settles the existing command. A lost settlement response reconciles cloud
 `done` against the original local session; another live runtime claim is left
 alone. Known validation failures use the existing error CAS. Routed startup
+Concurrent provision/pump observers in the same native executor await the same
+claim and terminal result, including an uncertain settlement response; joining
+does not claim again or construct another native session.
 text/first-task envelopes remain explicitly unsupported until the shared inbox
 adapter is connected; text is not silently accepted as a different source.
 
