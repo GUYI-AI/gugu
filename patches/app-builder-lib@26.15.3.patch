@@ -132,13 +132,13 @@ index 053772f55ca6ece52f0a34c4fa0f05c9a5f07bd2..405e4b483a98045bd8b36044515e802e
 diff --git a/templates/nsis/include/installUtil.nsh b/templates/nsis/include/installUtil.nsh
 --- a/templates/nsis/include/installUtil.nsh
 +++ b/templates/nsis/include/installUtil.nsh
-@@ -56,6 +56,8 @@
-   Pop "${Var}"
+@@ -16,6 +16,8 @@
+   CopyFiles /SILENT `${FROM}` `${TO}`
  !macroend
  
 +!ifmacrodef customInstallApplication
 +!else
- Function GetFileParent
+ Function GetInQuotes
    Exch $R0
    Push $R1
 @@ -80,6 +82,7 @@
