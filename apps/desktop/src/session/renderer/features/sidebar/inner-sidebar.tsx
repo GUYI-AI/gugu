@@ -455,7 +455,7 @@ const InnerHeadRow = observer(function InnerHeadRow({
   return (
     <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => openChatOnScreen(chatId, false)} trailingButtons={1}
       // 这一列只为看的人在的群画,在群里就能添加成员(groupInviteAccess.showInvite = 来源群的成员;项目群里那一页只加自己的 agent)。
-      hoverButton={<GroupAddMenu chatId={chatId} canAddMembers onNewAgent={newAgent} />}>
+      hoverButton={<GroupAddMenu chatId={chatId} canAddMembers onNewAgent={newAgent} size="sm" />}>
       <InnerSidebarFoldButton />
     </InnerHeadRowLayout>
   );
