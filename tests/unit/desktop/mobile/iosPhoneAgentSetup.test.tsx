@@ -50,11 +50,12 @@ function ready(installationId = 'install-a') {
     sessions: [], project: null, lastHeartbeatAt: 1, error: null, errorCode: null }, settings: { status: 'unknown', meta: null, error: null }, error: null }
 }
 let h: ReturnType<typeof createReactHarness>
+let ownerSequence = 0
 const element = (id: string) => h.container.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
 const publish = async () => act(async () => native.listeners.forEach(changed => changed()))
 const product = () => createNode(PhoneAgentSetupGate, { ownerId: native.owner, children: createNode(PhoneHostSetupEntry) })
 beforeEach(() => {
-  vi.clearAllMocks(); localStorage.clear(); native.owner = 'owner-a'; native.available = true; native.listeners.clear()
+  vi.clearAllMocks(); localStorage.clear(); native.owner = `owner-${++ownerSequence}`; native.available = true; native.listeners.clear()
   ready(); native.retry.mockResolvedValue(undefined); native.stop.mockResolvedValue(undefined)
   native.androidInstallation.mockRejectedValue(new Error('Android installation must not run on iOS'))
   native.androidHost.mockImplementation(() => { throw new Error('Android host must not run on iOS') })
