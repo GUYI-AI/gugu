@@ -75,6 +75,7 @@ import { hasToolPictures, tallyToolRun, toolRunCategory, toolRunLabel, toolRunNo
 import { completedTurnResult, itemIsUser, pendingTurnHeader, placeholderTurnHeader, planTurnFoldRuns, turnFoldView, turnProcessExpanded } from '@session-chat/state/turn-fold';
 import { isEmptyAgentTurn } from './turn-visibility';
 import { processHookNotice } from '@session-chat/lib/hook-notice';
+import { messagePresentation } from './message-presentation';
 
 export { lastConversationMessage } from './conversation-density';
 export { planTurnFold, turnProcessId } from '@session-chat/state/turn-fold';
@@ -800,7 +801,8 @@ export function collectUserTurnUnits(
   const seen = new Set<string>();
   for (let i = 0; i < units.length; i++) {
     const u = units.at(i);
-    if (u && userItemIds.has(u.itemId) && !seen.has(u.itemId)) {
+    if (u && userItemIds.has(u.itemId) && !seen.has(u.itemId)
+      && (u.kind !== 'message' || messagePresentation(u.data as ChatMessage).pinSummary)) {
       seen.add(u.itemId);
       result.push(i);
     }

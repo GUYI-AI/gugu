@@ -88,12 +88,46 @@ async function mount(
     scrollEl.scrollTop = st;
     await untilStable('transcript geometry settles', () => [scrollEl.scrollHeight, scrollEl.scrollTop]);
   };
-  await until('transcript mounted', () => card('a-user') != null);
+  await until('transcript mounted', () => mounted('a-user'));
   await scrollTo(0);
   return { host, scrollEl, card, cardTop, summary, pinTop, pinBottom, mounted, scrollTo, view };
 }
 
 describe('sticky user lanes', () => {
+  it('preserves the attachment-name summary when a pure attachment row has no text bubble', async () => {
+    const committed = longTurn('a', 0, 30);
+    committed.items[0] = { ...committed.items[0], text: '', attachments: [{ id: 'file', name: 'report.pdf', kind: 'file' }] } as ChatItem;
+    const t = await mount([committed], undefined, buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 72, agentConversation: true }));
+    await until('attachment summary mounted', () => t.summary('a-user'), summary => summary != null);
+    expect(t.card('a-user')).toBeNull();
+    expect(t.summary('a-user')!.hasAttribute('data-pin-bare')).toBe(true);
+    expect(t.summary('a-user')!.textContent).toBe('report.pdf');
+    await t.scrollTo(250);
+    expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
+  });
+
+  it('keeps active and committed answer rows out of pin lanes while ordinary user text still sticks', async () => {
+    const answered = (id: string): ChatItem => ({ kind: 'message', id, seq: 1, role: 'user',
+      text: '<gugu_question_answer>\n' + JSON.stringify({ question_id: id, state: 'answered', answers: [{ selected: ['Keep it'] }] })
+        + '\n</gugu_question_answer>' });
+    const committed = longTurn('a', 0, 30);
+    committed.items = [committed.items[0], answered('answer-done'), ...committed.items.slice(1)] as TranscriptTurn['items'];
+    const active = { id: 'active', seq: 1, initiator: 'user', items: [answered('answer-live'),
+      { kind: 'message', id: 'active-reply', seq: 2, role: 'assistant', text: 'Reply after the answer.' }] } as TranscriptTurn;
+    const t = await mount([committed], active, buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 72, agentConversation: true }));
+    for (const id of ['answer-done', 'answer-live']) {
+      await t.view.scrollToItem(id, { align: 'center' });
+      await until(`${id} visible`, () => t.host.querySelector(`[data-item-id="${id}"] [data-slot="question-answer"]`), row => row != null);
+      expect(t.summary(id), `${id} is a status line, not a sticky text bubble`).toBeNull();
+      expect(t.card(id)).toBeNull();
+      expect(t.host.textContent).not.toContain('<gugu_question_answer>');
+    }
+    await t.view.scrollToItem('a-user', { align: 'start', offset: -100 });
+    await until('ordinary user summary exists', () => t.summary('a-user'), summary => summary != null);
+    await t.scrollTo(t.scrollEl.scrollTop + 250);
+    expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
+  });
+
   it('never shows the lines its summary repeats, in the same frame as any scroll write', async () => {
     const t = await mount();
     const lane = t.card('a-user')!.closest<HTMLElement>('[data-index]')!;
