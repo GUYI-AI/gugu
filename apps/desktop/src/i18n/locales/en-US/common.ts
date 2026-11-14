@@ -1,4 +1,7 @@
 export default {
+  "startup": {
+    "slogan": "Don't do it yourself. Let AI."
+  },
   "menu": {
     "search": "Search",
     "noResults": "No results"

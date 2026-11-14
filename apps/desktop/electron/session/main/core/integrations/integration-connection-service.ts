@@ -11,11 +11,14 @@ import { shell } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { cliMethodOf, publishCliLauncher, removeCliLauncher } from './cli/cli-integrations';
-import { outputTail, readCliLoginStatus, startCliLogin, type CliLoginRun } from './cli/cli-login';
+import { readCliLoginStatus, startCliLogin, type CliLoginRun } from './cli/cli-login';
+import { cliFailureMessage } from './cli/cli-errors';
 import { cliToolsRoot } from './cli/cli-paths';
 import { startFeishuLogin, verifyFeishuLogin, setFeishuUserIdentity } from './cli/feishu-login';
 import { cliInstallProgress, ensureCliTool, installedCliTool, isCliToolInstalled, isCliToolInstalling, type InstalledCliTool } from './cli/cli-tool-installer';
 import { cliToolRecipe, type CliLoginPrompt, type CliToolRecipe } from './cli/cli-tools';
+import { removeCliCredentials } from './cli/cli-credentials';
+import { cliToolSupportsHost } from '@shared/integration-cli-platform';
 import {
   DEFAULT_INTEGRATION_ACCOUNT_ID,
   type IntegrationAccountRecord,
@@ -239,7 +242,10 @@ export class IntegrationConnectionService {
     const plugin = integrationPluginRegistry.get(integrationId);
     const method = cliMethodOf(integrationId);
     if (!plugin || !method) {
-      return { status: 'failed', error: `${plugin?.metadata.name ?? integrationId} does not connect through a command-line tool.` };
+      return { status: 'failed', error: '这个应用不使用命令行连接。' };
+    }
+    if (!cliToolSupportsHost(method.tool, { platform: process.platform, arch: process.arch })) {
+      return { status: 'failed', error: '这个集成尚未在这台设备上实现，请选择其他设备。' };
     }
     if (isCliToolInstalled(method.tool)) return { status: 'ready' };
     // 上一次在后台装失败了、还没人来取:先把失败交出去(❌ 悄悄再装一遍,让界面永远停在「还在装」)。
@@ -256,7 +262,7 @@ export class IntegrationConnectionService {
         () => this.cliInstallFailures.delete(method.tool),
         (error: unknown) => {
           log.warn('Integration command-line tool could not be installed', { integrationId, error });
-          this.cliInstallFailures.set(method.tool, error instanceof Error ? error.message : String(error));
+          this.cliInstallFailures.set(method.tool, cliFailureMessage(error, 'install'));
         }
       );
     }
@@ -266,7 +272,7 @@ export class IntegrationConnectionService {
       new Promise<'installing'>((resolve) => (timer = setTimeout(() => resolve('installing'), CLI_LOGIN_WAIT_SLICE_MS))),
     ]).finally(() => clearTimeout(timer));
     if (outcome !== 'failed') return { status: outcome };
-    const error = this.cliInstallFailures.get(method.tool) ?? 'The command-line tool could not be installed.';
+    const error = this.cliInstallFailures.get(method.tool) ?? '集成工具安装失败，请重试。';
     this.cliInstallFailures.delete(method.tool);
     return { status: 'failed', error };
   }
@@ -275,14 +281,17 @@ export class IntegrationConnectionService {
     const plugin = integrationPluginRegistry.get(integrationId);
     const method = cliMethodOf(integrationId);
     if (!plugin || !method) {
-      return { success: false, error: `${plugin?.metadata.name ?? integrationId} does not connect through a command-line tool.` };
+      return { success: false, error: '这个应用不使用命令行连接。' };
+    }
+    if (!cliToolSupportsHost(method.tool, { platform: process.platform, arch: process.arch })) {
+      return { success: false, error: '这个集成尚未在这台设备上实现，请选择其他设备。' };
     }
     this.cancelAuthorization(integrationId);
     const attempt = Symbol(integrationId);
     this.cliStarts.set(integrationId, attempt);
     this.startAuthorizationActivity(attempt);
     const current = () => this.cliStarts.get(integrationId) === attempt;
-    const superseded = { success: false as const, error: 'This connection attempt was cancelled.' };
+    const superseded = { success: false as const, error: '本次连接已取消。' };
     const recipe = cliToolRecipe(method.tool);
     let entry: PendingCliLogin | undefined;
     try {
@@ -298,7 +307,7 @@ export class IntegrationConnectionService {
         await setFeishuUserIdentity(installed);
         if (!current()) return superseded;
         const connected = await this.connect(integrationId, { tool: recipe.tool, connectedAt: Date.now() }, undefined, includeAccountId);
-        if (!connected.success) return connected;
+        if (!connected.success) return { success: false, error: cliFailureMessage(connected.error, 'verify') };
         try {
           await publishCliLauncher(recipe, installed);
         } catch (error) {
@@ -333,7 +342,7 @@ export class IntegrationConnectionService {
         entry.run.cancel();
         if (this.cliLogins.get(integrationId) === entry) this.cliLogins.delete(integrationId);
       }
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
+      return { success: false, error: cliFailureMessage(error, 'login') };
     } finally {
       if (this.cliStarts.get(integrationId) === attempt) this.cliStarts.delete(integrationId);
       if (!entry) this.stopAuthorizationActivity(attempt);
@@ -343,7 +352,7 @@ export class IntegrationConnectionService {
   /** 第二半:登录进程结束了没有;结束了就问工具「登上了吗」,登上了才记成已连接、把命令放上 agent 的 PATH。 */
   async cliLoginWait(integrationId: string): Promise<CliLoginWaitResult> {
     const pending = this.cliLogins.get(integrationId);
-    if (!pending) return { status: 'failed', error: 'No login is in progress. Start again.' };
+    if (!pending) return { status: 'failed', error: '没有正在进行的授权，请重新连接。' };
     pending.result ??= this.finishCliLogin(integrationId, pending);
     let timer: NodeJS.Timeout | undefined;
     const result = await Promise.race([
@@ -361,25 +370,26 @@ export class IntegrationConnectionService {
   ): Promise<Exclude<CliLoginWaitResult, { status: 'pending' }>> {
     const { recipe, installed, run } = pending;
     const outcome = await run.done;
-    if (outcome.kind === 'cancelled') return { status: 'failed', error: 'Login was cancelled.' };
+    if (outcome.kind === 'cancelled') return { status: 'failed', error: '授权已取消。' };
     if (outcome.kind === 'timed-out') {
-      return { status: 'failed', error: 'The login expired before it was confirmed. Start again.' };
+      return { status: 'failed', error: '授权已过期，请重新连接。' };
     }
     if (outcome.code !== 0) {
-      return { status: 'failed', error: outputTail(outcome.output) || `${recipe.bin} login exited with ${outcome.code}.` };
+      log.warn('Integration command-line login exited before authorization', { integrationId, code: outcome.code });
+      return { status: 'failed', error: cliFailureMessage(outcome.output, 'login') };
     }
     try {
       if (!(await readCliLoginStatus(recipe, installed))) {
-        return { status: 'failed', error: `${recipe.bin} finished, but says it is not logged in.` };
+        return { status: 'failed', error: '尚未完成授权，请重新连接。' };
       }
       if (recipe.tool === 'lark-cli' && !(await verifyFeishuLogin(installed))) {
-        return { status: 'failed', error: 'Feishu could not verify your personal account. Connect again.' };
+        return { status: 'failed', error: '飞书未能确认个人账号的授权，请重新连接。' };
       }
       // 网络验证期间也可能取消或重试，旧的一次不能再记成已连接。
-      if (this.cliLogins.get(integrationId) !== pending) return { status: 'failed', error: 'Login was cancelled.' };
+      if (this.cliLogins.get(integrationId) !== pending) return { status: 'failed', error: '授权已取消。' };
       // 先记连接、再放命令:「agent 的 PATH 上有它」必须意味着「记着连着」。放命令失败就撤回记录。
       const connected = await this.connect(integrationId, { tool: recipe.tool, connectedAt: Date.now() }, undefined, pending.includeAccountId);
-      if (!connected.success) return { status: 'failed', error: connected.error };
+      if (!connected.success) return { status: 'failed', error: cliFailureMessage(connected.error, 'verify') };
       try {
         await publishCliLauncher(recipe, installed);
       } catch (error) {
@@ -389,7 +399,7 @@ export class IntegrationConnectionService {
       return { status: 'connected', ...(pending.includeAccountId ? { accountId: connected.accountId } : {}) };
     } catch (error) {
       log.warn('Integration command-line login could not finish', { integrationId, error });
-      return { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+      return { status: 'failed', error: cliFailureMessage(error, 'verify') };
     }
   }
 
@@ -573,9 +583,11 @@ export class IntegrationConnectionService {
       if (accountId !== DEFAULT_INTEGRATION_ACCOUNT_ID) throw Object.assign(new Error('CONNECTION_ACCOUNT_MISMATCH'),{ code: 'CONNECTION_ACCOUNT_MISMATCH',knownNoEffect: true });
       // CLI login state and the agent launcher belong to this installation.
       // Leaving either behind would keep the removed credential usable.
+      const pending = this.cliLogins.get(integrationId)?.run;
       this.cancelAuthorization(integrationId);
+      await pending?.done;
       await removeCliLauncher(cliToolRecipe(method.tool));
-      await fs.rm(installedCliTool(method.tool).homeDir, { recursive: true, force: true });
+      await removeCliCredentials(method.tool);
     }
     if (integrationId === 'github') {
       const { githubAccountService } = await import('../github/accounts/github-account-service-instance');
@@ -589,7 +601,8 @@ export class IntegrationConnectionService {
     if (accountId) {
       // #7240 多账号里断开一个:只删这一个(提示「只会断开 %s」)。
       try {
-        await integrationCredentialStore.delete(integrationId, accountId);
+        if (cliMethodOf(integrationId)) await this.disconnectLocalAccount(integrationId, accountId);
+        else await integrationCredentialStore.delete(integrationId, accountId);
         return { success: true };
       } catch (error) {
         log.error('Failed to disconnect integration account', { integrationId, accountId, error });
@@ -601,9 +614,11 @@ export class IntegrationConnectionService {
       // 断开 = 先把命令从 agent 的 PATH 上拿掉、删掉工具在咕咕里的登录态(装好的程序留着,重连不用再下),
       // 再删记录:哪一步失败,卡片都还在「已连接」、还能再点断开,并说出真实原因。
       try {
+        const pending = this.cliLogins.get(integrationId)?.run;
         this.cancelAuthorization(integrationId);
+        await pending?.done;
         await removeCliLauncher(cliToolRecipe(method.tool));
-        await fs.rm(installedCliTool(method.tool).homeDir, { recursive: true, force: true });
+        await removeCliCredentials(method.tool);
       } catch (error) {
         log.error('Failed to remove a command-line integration from this machine', { integrationId, error });
         return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -674,7 +689,7 @@ export class IntegrationConnectionService {
         if (!loggedIn) {
           return {
             connected: false,
-            error: `${recipe.bin} is not logged in any more.`,
+            error: '授权已失效，请重新连接。',
             errorType: 'authorization_expired',
             capabilities,
           };
