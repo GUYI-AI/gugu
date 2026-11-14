@@ -1,4 +1,4 @@
-!include "${BUILD_RESOURCES_DIR}/nsis/zip-transaction.nsh"
+!include "${BUILD_RESOURCES_DIR}\nsis\zip-transaction.nsh"
 
 !macro customInit
   # Older clients invoke the new installer with --stage before the user confirms installation.

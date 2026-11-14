@@ -61,7 +61,7 @@ FunctionEnd
   # .onInit selected INSTDIR as NSIS's current directory. Release that handle
   # before prepare removes an empty target or recovers a previous transaction.
   SetOutPath "$PLUGINSDIR"
-  File /oname=$PLUGINSDIR\install-transaction.ps1 "${BUILD_RESOURCES_DIR}/nsis/install-transaction.ps1"
+  File /oname=$PLUGINSDIR\install-transaction.ps1 "${BUILD_RESOURCES_DIR}\nsis\install-transaction.ps1"
   StrCpy $guguStage "$INSTDIR.gugu-install-${APP_ID}\stage"
   !insertmacro guguTransaction prepare
   !insertmacro guguRequireTransactionSuccess
