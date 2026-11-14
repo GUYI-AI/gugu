@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { releasePhoneEditorContainingBlocks } from './phone-editor-viewport';
 
 /** Layout changes keep the mounted ProseMirror view, DOM selection and IME session intact. */
 export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement | null>) {
@@ -51,17 +52,8 @@ export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement
   }, [mobile, expanded, root]);
 
   useLayoutEffect(() => {
-    if (!mobile || !expanded) return;
-    const panel = root.current?.querySelector<HTMLElement>('[data-slot="composer-bar"]');
-    if (!panel || typeof panel.showPopover !== 'function') return;
-    // The top layer escapes container-query/transform containing blocks on phone WebViews.
-    // The editor stays in this same DOM subtree; manual popovers neither autofocus nor dismiss on outside taps.
-    panel.setAttribute('popover', 'manual');
-    panel.showPopover();
-    return () => {
-      panel.hidePopover();
-      panel.removeAttribute('popover');
-    };
+    if (!mobile || !expanded || !root.current) return;
+    return releasePhoneEditorContainingBlocks(root.current);
   }, [mobile, expanded, root]);
 
   const collapse = () => {

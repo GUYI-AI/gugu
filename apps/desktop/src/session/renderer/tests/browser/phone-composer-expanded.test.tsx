@@ -12,7 +12,6 @@ import '@/mobile/phone-look.css'
 
 let root: Root | null = null
 let host: HTMLDivElement | null = null
-const panelIsTopLayer = () => !!host?.querySelector('[data-slot="composer-bar"]:popover-open')
 afterEach(() => { root?.unmount(); host?.remove(); document.documentElement.removeAttribute('data-theme'); root = null; host = null })
 
 async function mount(width = 390) {
@@ -61,6 +60,7 @@ it.each(['dark', 'light'] as const)('%s: expand/collapse preserves editor identi
   document.documentElement.dataset.theme = theme
   const { editor, send } = await mount()
   host!.style.transform = 'translateZ(0)'
+  const originalTransform = getComputedStyle(host!).transform
   await page.getByTestId('chat-composer').fill('第一行\n第二行，继续输入中文')
   await until('expand control appears', () => !!host?.querySelector('[data-phone-editor-toggle]'))
   const selection = window.getSelection()!
@@ -77,7 +77,7 @@ it.each(['dark', 'light'] as const)('%s: expand/collapse preserves editor identi
   // Browser pointer input exercises preventDefault instead of programmatic .click().
   await page.getByRole('button', { name: translateSessionMessage('composer.expandEditor') }).click()
   await until('expanded layout', () => !!host?.querySelector('[data-phone-expanded]'))
-  expect(panelIsTopLayer()).toBe(true)
+  expect(getComputedStyle(host!).transform).toBe('none')
   expect(host!.querySelector('[contenteditable]')).toBe(editor)
   expect(document.activeElement).toBe(editor)
   expect(selection.anchorNode).toBe(before.node)
@@ -100,6 +100,7 @@ it.each(['dark', 'light'] as const)('%s: expand/collapse preserves editor identi
   expect(selection.anchorOffset).toBe(before.offset)
   expect(blur).not.toHaveBeenCalled()
   expect(compositionEnd).not.toHaveBeenCalled()
+  expect(getComputedStyle(host!).transform).toBe(originalTransform)
   expect(send).not.toHaveBeenCalled()
   // A real completion is still delivered to the original node after both transitions.
   editor.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '中' }))
@@ -118,15 +119,15 @@ it('sending from the expanded editor collapses it and dismisses keyboard focus',
   expect(document.activeElement).toBe(document.body)
 })
 
-it('leaving the phone layout closes its top layer without replacing the editor', async () => {
+it('leaving the phone layout closes expanded editing without replacing the editor', async () => {
   const { editor } = await mount()
   await page.getByTestId('chat-composer').fill('第一行\n第二行')
   await until('expand control appears', () => !!host?.querySelector('[data-phone-editor-toggle]'))
   await page.getByRole('button', { name: translateSessionMessage('composer.expandEditor') }).click()
-  expect(panelIsTopLayer()).toBe(true)
+  expect(host!.querySelector('[data-phone-expanded]')).not.toBeNull()
   await page.viewport(1280, 900)
   await until('desktop layout removes the phone overlay', () => !host?.querySelector('[data-phone-capsule]'))
   expect(host!.querySelector('[contenteditable]')).toBe(editor)
-  expect(host!.querySelector(':popover-open')).toBeNull()
+  expect(host!.querySelector('[data-phone-expanded]')).toBeNull()
   expect(host!.querySelector<HTMLElement>('[data-slot="composer"]')!.style.minHeight).toBe('')
 })
