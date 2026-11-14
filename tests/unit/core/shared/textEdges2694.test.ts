@@ -14,3 +14,5 @@ it('drops a cut Unicode pair from widget previews', () => { expect(widgetMessage
 it('omits tilde fenced blocks from plain previews', () => { expect(markdownPlainText('Before\n~~~ts\nconst x = 1\n~~~\nAfter')).toBe('Before After') })
 
 it('omits closing ATX header markers', () => { expect(markdownPlainText('## Title ##')).toBe('Title'); expect(markdownPlainText('## C#')).toBe('C#') })
+
+it('omits parenthesized ordered list markers', () => { expect(markdownPlainText('1) First\n2) Second')).toBe('First Second') })
