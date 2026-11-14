@@ -1,3 +1,4 @@
+/* global __guguUTF8Encode */
 // This bootstrap must precede the bundled modules (TypeBox constructs an encoder
 // during module initialization). UTF-8 conversion is provided by Foundation.
 if (!globalThis.TextEncoder) {
