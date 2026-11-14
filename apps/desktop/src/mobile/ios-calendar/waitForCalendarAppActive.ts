@@ -5,7 +5,8 @@ export function waitForCalendarAppActive(signal: AbortSignal): Promise<boolean> 
   return new Promise(resolve => {
     let settled = false
     let unsubscribe: (() => void) | undefined
-    let timeout: ReturnType<typeof setTimeout> | undefined
+    // A missing lifecycle signal never turns into assumed foreground access.
+    const timeout = setTimeout(() => finish(false), 5000)
     const finish = (active: boolean) => {
       if (settled) return
       settled = true
@@ -17,8 +18,6 @@ export function waitForCalendarAppActive(signal: AbortSignal): Promise<boolean> 
     const cancel = () => finish(false)
     if (signal.aborted || !platform.subscribeAppActive) { finish(false); return }
     signal.addEventListener('abort', cancel, { once: true })
-    // A missing lifecycle signal never turns into assumed foreground access.
-    timeout = setTimeout(() => finish(false), 5000)
     try {
       unsubscribe = platform.subscribeAppActive(active => { if (active) finish(true) })
       // Native adapters may report their current state synchronously.
