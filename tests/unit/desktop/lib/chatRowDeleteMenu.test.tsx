@@ -2,17 +2,17 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness, chat, clickElement, displayIdentity } from '../../../support/testHarness'
 import { ChatRowContextMenu } from '../../../../apps/desktop/src/components/chat/ChatRowContextMenu'
+import { ConversationDeleteConfirmationHost } from '../../../../apps/desktop/src/components/chat/ConversationDeleteConfirmationHost'
 const scope = vi.hoisted(() => ({ identitiesById: {} as Record<string, ReturnType<typeof displayIdentity>>, settings: vi.fn(), clear: vi.fn(async () => {}) }))
 vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => ({ chats: [], identitiesById: scope.identitiesById, clearConversation: scope.clear }) }))
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'owner' } }) }))
 vi.mock('../../../../apps/desktop/src/hooks/useMarkChatsRead', () => ({ useMarkChatsRead: () => vi.fn() }))
 vi.mock('../../../../apps/desktop/src/components/toastContext', () => ({ useToast: () => ({ toast: vi.fn() }) }))
 vi.mock('../../../../apps/desktop/src/components/chat/useGroupChatSettings', () => ({ useGroupChatSettings: scope.settings }))
-vi.mock('@renderer/lib/modal/modal-provider', () => ({ showModal: (_kind: string, options: { option: { defaultChecked: boolean }; onSuccess: (result: { optionChecked: boolean }) => void }) => options.onSuccess({ optionChecked: options.option?.defaultChecked ?? false }) }))
 let harness: ReturnType<typeof createReactHarness>
 const onHide = vi.fn(async () => {})
 const removal = () => document.querySelector<HTMLElement>('[data-testid="conversation-row-hide-chat"]')
-const render = (kind: 'dm' | 'ai' | 'group' | 'topic' = 'dm') => harness.render(<ChatRowContextMenu chat={chat({ id: 'chat', kind, peer_user_id: 'agent' })} x={40} y={40} onClose={vi.fn()} onPin={vi.fn()} onSetNotificationLevel={vi.fn()} onHide={onHide} />)
+const render = (kind: 'dm' | 'ai' | 'group' | 'topic' = 'dm') => harness.render(<><ChatRowContextMenu chat={chat({ id: 'chat', kind, peer_user_id: 'agent' })} x={40} y={40} onClose={vi.fn()} onPin={vi.fn()} onSetNotificationLevel={vi.fn()} onHide={onHide} /><ConversationDeleteConfirmationHost /></>)
 beforeEach(() => {
   harness = createReactHarness(); onHide.mockClear(); scope.clear.mockClear(); scope.settings.mockClear()
   scope.identitiesById = { agent: displayIdentity('agent', { type: 'agent', owner_user_id: 'owner', session_archived_at: null, removed_at: null }) }
@@ -36,6 +36,9 @@ it('offers a distinct confirmed history deletion while hiding remains immediate'
   const deletion = document.querySelector<HTMLElement>('[data-testid="conversation-row-delete-chat"]')
   expect(deletion?.textContent).toBe('删除')
   await clickElement(deletion!)
+  expect(scope.clear).not.toHaveBeenCalled()
+  expect(document.querySelector('[role=dialog] [role=checkbox]')?.getAttribute('aria-checked')).toBe('false')
+  await clickElement(document.querySelector<HTMLElement>('[data-testid=conversation-delete-submit]')!)
   await vi.waitFor(() => expect(scope.clear).toHaveBeenCalledWith('chat'))
   expect(onHide).not.toHaveBeenCalled()
 })

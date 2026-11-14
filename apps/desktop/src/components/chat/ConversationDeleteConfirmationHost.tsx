@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/ui/Dialog'
-import { Button } from '@renderer/lib/ui/button'
+import { Button } from '@/components/ui/Button'
 import { Checkbox } from '@renderer/lib/ui/checkbox'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { useBackLayer } from '@/components/ui/sheetStack'
@@ -22,20 +22,20 @@ function Choice({ request }: { request: NonNullable<ReturnType<typeof readConver
   useBackLayer(cancel, true)
   return <Dialog.Root open onOpenChange={open => { if (!open) cancel() }}>
     <Dialog.Portal>
-      <Dialog.Backdrop className="z-[var(--z-modal)]" />
-      <Dialog.Viewport className="gg-window-layer pointer-events-none z-[var(--z-modal)] flex items-center justify-center p-6">
-        <Dialog.Popup data-testid="conversation-delete-confirm" className="pointer-events-auto flex w-full max-w-xs flex-col overflow-hidden rounded-xl bg-background-quaternary text-sm shadow-lift outline-none">
+      <Dialog.Backdrop className="fixed inset-0 z-[var(--z-modal)] bg-[var(--bg-overlay-soft)]" />
+      <Dialog.Viewport className="pointer-events-none fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-6">
+        <Dialog.Popup data-testid="conversation-delete-confirm" className="pointer-events-auto flex w-full max-w-xs flex-col overflow-hidden rounded-[var(--radius-dialog)] border border-[var(--border)] bg-[var(--card)] text-[length:var(--font-body)] text-[var(--text-primary)] shadow-[var(--shadow-dialog)] outline-none">
           <div className="flex flex-col gap-3 p-6">
-            <Dialog.Title>{t('chatList.delete')}</Dialog.Title>
-            <Dialog.Description>{t('chatList.deleteHistoryDescription')}</Dialog.Description>
-            {request.agentOption ? <label className="flex items-start gap-2 text-sm text-foreground">
-              <Checkbox checked={checked} onCheckedChange={value => setChecked(Boolean(value))} />
+            <Dialog.Title className="text-[length:var(--font-title)] font-medium">{t('chatList.delete')}</Dialog.Title>
+            <Dialog.Description className="leading-relaxed text-[var(--text-secondary)]">{t('chatList.deleteHistoryDescription')}</Dialog.Description>
+            {request.agentOption ? <label className="flex items-start gap-2">
+              <Checkbox className="border-[var(--border-strong)] bg-[var(--card)] data-checked:border-[var(--primary)] data-checked:bg-[var(--primary)] data-checked:text-[var(--primary-fg)]" checked={checked} onCheckedChange={value => setChecked(Boolean(value))} />
               <span>{t('chatList.alsoRemoveAgent')}</span>
             </label> : null}
           </div>
-          <div className="flex justify-end gap-2 border-t border-border bg-background-quaternary-1 p-3">
-            <Button variant="outline" onClick={cancel}>{translate('common.cancel')}</Button>
-            <Button variant="destructive" data-testid="conversation-delete-submit" onClick={() => request.finish(checked)}>{t('chatList.delete')}</Button>
+          <div className="flex justify-end gap-2 border-t border-[var(--border)] p-3">
+            <Button variant="secondary" onClick={cancel}>{translate('common.cancel')}</Button>
+            <Button variant="danger" data-testid="conversation-delete-submit" onClick={() => request.finish(checked)}>{t('chatList.delete')}</Button>
           </div>
         </Dialog.Popup>
       </Dialog.Viewport>
