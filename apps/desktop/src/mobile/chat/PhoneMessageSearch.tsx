@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useShellTabStore } from '@/lib/shellTab'
 import { useTranslation } from 'react-i18next'
 import { Sheet } from '@/components/ui/Sheet'
 import { sessionSkinClassName } from '@/components/sessionpage/sessionSkin'
@@ -18,9 +19,12 @@ export function PhoneMessageSearch() {
   const [open, setOpen] = useState(false)
   useCommandProvider({ scopeId: 'app', getCommands: () => [{ id: 'app.globalSearch', hideFromPalette: true, execute: () => setOpen(true) }] })
   const close = () => setOpen(false)
+  const shellTab = useShellTabStore()
+  // A result opens its conversation over this panel: back from there reopens it as it was left (@@@phone-chat-trail).
+  const leave = () => { shellTab.searchLeft(); close() }
   return (
     <Sheet open={open} onClose={close} fullScreenMobile testId="phone-message-search" ariaLabel={t('chatList.searchMessagesTitle')}>
-      {open ? <div className={`${sessionSkinClassName(theme)} h-full`}><GlobalSearch tasks={false} names onClose={close} onOpen={close} /></div> : null}
+      {open ? <div className={`${sessionSkinClassName(theme)} h-full`}><GlobalSearch tasks={false} names onClose={close} onOpen={leave} /></div> : null}
     </Sheet>
   )
 }
