@@ -27,6 +27,13 @@ describe('local Beta typing sink', () => {
     expect(regular).not.toHaveBeenCalled()
   })
 
+  it('rejects renderer attempts to write main-only profile/status records', async () => {
+    const directory = await fresh(), file = vi.fn()
+    const handler = createBetaTypingDiagnosticsHandler({ enabled: true, directory: () => directory, mainWindowId: () => 17, file })
+    expect(await handler(sender, { operation: 'append', records: [{ event: 'profile', samples: [{ offsetMs: 1, stack: [{ file: 'assets/main.js', functionName: 'PRIVATE_CANARY' }] }] }, { event: 'capture-status', status: 'started' }] })).toEqual({ accepted: true, records: 0 })
+    expect(file).not.toHaveBeenCalled()
+  })
+
   it('disables production and non-main windows without creating directories or forwarding data', async () => {
     const file = vi.fn(), directory = vi.fn(() => '/unused')
     const off = createBetaTypingDiagnosticsHandler({ enabled: false, directory, mainWindowId: () => 17, file })

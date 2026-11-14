@@ -6,20 +6,19 @@ export const TYPING_DIAGNOSTICS_SCOPE = 'beta-typing-diagnostics'
 export const TYPING_DIAGNOSTICS_BYTES = 20_000_000
 export const TYPING_DIAGNOSTICS_FILES = 5
 export const TYPING_DIAGNOSTICS_BATCH = 64
-export const TYPING_DIAGNOSTICS_EVENT_THRESHOLD = 48
 export const TYPING_DIAGNOSTICS_TYPING_WINDOW = 1_000
 
 export function typingDiagnosticsEnabled(betaBuild: boolean, control: string | undefined): boolean {
   return betaBuild && control !== '0'
 }
 
-const EVENTS = ['start', 'long-task', 'long-frame', 'key-latency', 'typing-summary', 'composition-start', 'composition-end', 'input-blur', 'observer-error', 'suppressed'] as const
+const EVENTS = ['start', 'long-task', 'typing-summary', 'observer-error', 'suppressed', 'callback-accounting'] as const
 export type TypingDiagnosticEvent = typeof EVENTS[number]
 export type TypingDiagnosticRecord = Record<string, unknown> & { event: TypingDiagnosticEvent }
 export interface TypingScriptFrame { file: string; functionName: string; line?: number; column?: number }
-const NUMBERS = ['timeOrigin', 'sequence', 'startMs', 'durationMs', 'latencyMs', 'paintTimeMs', 'presentationTimeMs', 'captureDelayMs', 'processingDelayMs', 'processingMs', 'presentationDelayMs', 'renderStartMs', 'styleAndLayoutStartMs', 'blockingMs', 'firstUIEventMs', 'eventThresholdMs', 'eventResolutionMs', 'typingWindowMs', 'scriptsTotal', 'recordsDropped', 'keysObserved', 'eventEntriesObserved', 'keyHistoryDropped', 'preRenderMs', 'renderCallbackMs', 'styleLayoutRenderMs', 'styleDurationMs', 'layoutDurationMs'] as const
-const BOOLEANS = ['typingActive', 'typingOverlap', 'typingContextComplete', 'composing', 'trusted', 'longTaskSupported', 'longFrameSupported', 'eventTimingSupported', 'visible'] as const
-const OBSERVERS = ['longtask', 'long-animation-frame', 'event']
+const NUMBERS = ['timeOrigin', 'sequence', 'startMs', 'durationMs', 'typingWindowMs', 'recordsDropped', 'keysObserved', 'keyHistoryDropped', 'keyCallbacks', 'taskCallbacks', 'taskEntries', 'keyCallbackMs', 'taskCallbackMs', 'flushCallbacks', 'flushCallbackMs', 'accountingCallbacks', 'accountingCallbackMs', 'totalOwnCallbackMs'] as const
+const BOOLEANS = ['typingActive', 'typingOverlap', 'typingContextComplete', 'longTaskSupported', 'visible', 'partial'] as const
+const OBSERVERS = ['longtask']
 const CONTAINERS = ['window', 'iframe', 'embed', 'object']
 const SCOPES = ['self', 'unknown', 'same-origin-descendant', 'cross-origin-descendant', 'same-origin-ancestor', 'cross-origin-ancestor', 'multiple-contexts']
 const number = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= Number.MAX_SAFE_INTEGER
@@ -49,17 +48,9 @@ export function sanitizeTypingDiagnosticRecord(value: unknown): TypingDiagnostic
   for (const key of BOOLEANS) if (typeof input[key] === 'boolean') out[key] = input[key]
   if (typeof input.pageId === 'string' && /^[a-f0-9-]{36}$/.test(input.pageId)) out.pageId = input.pageId
   if (stringIn(input.observer, OBSERVERS)) out.observer = input.observer
-  if (input.metric === 'event-timing-next-paint' || input.metric === 'event-timing-presentation') out.metric = input.metric
   if (Array.isArray(input.attribution)) out.attribution = input.attribution.slice(0, 4).map(value => {
     const entry = object(value)
     return { container: stringIn(entry?.container, CONTAINERS) ? entry!.container : 'unknown', scope: stringIn(entry?.scope, SCOPES) ? entry!.scope : 'unknown' }
-  })
-  if (Array.isArray(input.scripts)) out.scripts = input.scripts.slice(0, 12).flatMap(value => {
-    const frame = typingScriptFrame(value), item = object(value)
-    if (!frame || !item) return []
-    const script: Record<string, unknown> = { ...frame }
-    for (const key of ['startMs', 'durationMs', 'executionStartMs', 'forcedStyleAndLayoutMs', 'pauseMs', 'sourceOffset'] as const) if (number(item[key])) script[key] = rounded(item[key])
-    return [script]
   })
   return out
 }

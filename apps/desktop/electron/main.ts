@@ -2369,6 +2369,7 @@ const typingDiagnostics = createBetaTypingDiagnosticsHandler({
   directory: () => join(app.getPath('userData'), 'diagnostics', 'typing'),
   mainWindowId: () => mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.id : undefined,
   version: app.getVersion(),
+  captureTarget: () => mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null,
 })
 const forwardRendererLog = createRendererLogForwarder({ getMetrics: () => app.getAppMetrics(), typing: typingDiagnostics })
 ipcMain.handle(RENDERER_LOG_CHANNEL, (event, payload: unknown) => forwardRendererLog(event.sender, payload, Boolean(event.senderFrame) && event.senderFrame === event.sender.mainFrame))
