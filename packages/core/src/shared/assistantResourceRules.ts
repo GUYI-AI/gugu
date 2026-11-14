@@ -19,6 +19,6 @@ export function resourceRejection(file: { name: string; size: number; type?: str
 /** 名字只能是一段(新建文件夹、重命名):非空、不含 `/`。 */
 export function folderNameProblem(name: string): 'required' | 'slash' | null {
   if (!name.trim()) return 'required';
-  if (name.includes('/')) return 'slash';
+  if (name.includes('/') || name.includes('\\')) return 'slash';
   return null;
 }
