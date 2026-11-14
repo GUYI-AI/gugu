@@ -156,6 +156,7 @@ export const HOST_CALLS = {
   'appFiles.list': { verb: 'filesList' },
   'appFiles.read': { verb: 'filesRead' },
   'appFiles.readText': { verb: 'filesReadText' },
+  'appFiles.annotateSelection': { verb: 'filesAnnotateSelection' },
   'appFiles.exists': { verb: 'filesExists' },
   'appFiles.draft': { verb: 'filesDraft' },
   'appFiles.writeText': { verb: 'filesWriteText' },

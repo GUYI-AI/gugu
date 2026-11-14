@@ -17,6 +17,8 @@ const MESSAGES = ['messages.history', 'messages.search', 'chats.list', 'chats.me
 // L1 This computer's projects: the desktop's and an App's program's; a phone has none (no member).
 const PROJECTS = ['projects.list']
 const SESSIONS = ['sessions.index', 'sessions.read']
+// API 53: page transport only; the answering host additionally checks preinstalled Files identity and gesture.
+const FILE_SELECTION = ['appFiles.annotateSelection']
 // `gugu.prompts` (34): the person's own prompts, on the desktop's pages and programs; a phone has none.
 const PROMPTS = ['prompts.list', 'prompts.save', 'prompts.delete']
 // `gugu.cloud` (31): a read is anyone's; writing, hearing and picking an agent are a page's, on the desktop and the phone alike.
@@ -51,13 +53,13 @@ const overMessages = (flags: { framed?: true; program?: true; session?: true }) 
 
 describe('one table, the members each host had', () => {
   it('the desktop: a page has every verb but the background\'s; the background page, every verb but a page\'s', () => {
-    expect(names(desktop('page'))).toEqual([...EVERYONE, ...PAGE_ONLY].sort())
+    expect(names(desktop('page'))).toEqual([...EVERYONE, ...PAGE_ONLY, ...FILE_SELECTION].sort())
     expect(names(desktop('background'))).toEqual([...EVERYONE, 'broadcastToViews', 'onViewMessage'].sort())
   })
 
   it('the phone exposes device calls everywhere and task notifications in task tabs; programs expose the shared index', () => {
-    expect(names(overMessages({ framed: true }))).toEqual([...PHONE].sort())
-    expect(names(overMessages({ framed: true, session: true }))).toEqual([...PHONE, 'onProgramNotification'].sort())
+    expect(names(overMessages({ framed: true }))).toEqual([...PHONE, ...FILE_SELECTION].sort())
+    expect(names(overMessages({ framed: true, session: true }))).toEqual([...PHONE, ...FILE_SELECTION, 'onProgramNotification'].sort())
     expect(names(overMessages({ program: true }))).toEqual(['cloud.read', 'cloud.programWrite', 'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', 'linkTo', ...MESSAGES, ...PROJECTS, ...SESSIONS, ...PROMPTS, ...FILES, 'appFiles.canDelete', ...PROJECTION_SOURCE, ...TASK_PROGRAM].sort())
   })
 

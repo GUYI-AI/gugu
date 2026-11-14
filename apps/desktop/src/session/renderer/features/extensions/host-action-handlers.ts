@@ -56,6 +56,7 @@ import { askInShell, closeInShell, installConsentPrompt } from './install-consen
 import { revealSessionpage } from '@/hooks/useSessionpageReveal';
 import { closeAppModal, focusAppModalClose, showAppModal } from '@/components/appModal/appModal';
 import { groupPageSlot } from '@renderer/features/chats/chat-tabs/chat-panel-item';
+import { sessionAnnotations } from '../sessions/annotations/session-annotations';
 
 /**
  * Performs the actions main has already decided an extension is allowed to take.
@@ -137,6 +138,11 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
 }
 
 function perform(sessionId: string | null, tabId: string, action: ExtensionHostAction, extensionId: string): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
+  if (action.kind === 'annotateFile') {
+    if (!sessionId) throw new Error('File annotations require their source session');
+    sessionAnnotations.forSession(sessionId).add({ kind: 'file', ...action.selection });
+    return;
+  }
   // What a page says about itself: a task's tab or a group's slot (sessionId null), kept by page (extensionSurfaceStore.say).
   switch (action.kind) {
     case 'taskMessage': {

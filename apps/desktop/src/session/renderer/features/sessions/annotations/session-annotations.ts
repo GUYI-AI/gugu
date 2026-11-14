@@ -1,4 +1,5 @@
 import { action, makeAutoObservable, observable } from 'mobx';
+import { fileAnnotationFields } from '@shared/extensions/file-annotation';
 
 export type FileAnnotationSelection = {
   kind: 'file';
@@ -41,6 +42,7 @@ export class SessionAnnotations {
   reserveNumber(kind: 'browser' | 'file' = 'browser'): number { return kind === 'file' ? this.nextFileNumber++ : this.nextNumber++; }
 
   add(selection: AnnotationSelection, number = this.reserveNumber(selection.kind)): SessionAnnotation {
+    if (selection.kind === 'file') selection = { ...selection, ...fileAnnotationFields(selection) };
     const item = { ...selection, id: crypto.randomUUID(), number };
     this.items = [...this.items, item];
     return item;
