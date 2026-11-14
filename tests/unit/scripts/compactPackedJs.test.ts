@@ -101,4 +101,11 @@ describe('packed Windows JavaScript', () => {
     put(root, 'node_modules/zcode-acp-server/package.json', JSON.stringify({ name: 'zcode-acp-server', dependencies: { 'missing-raw-dependency': '1' } }))
     await expect(compactPackedJs({ appDir: root })).rejects.toThrow('missing-raw-dependency')
   })
+
+  it('rejects an unparseable emitted file instead of treating it as having no runtime imports', async () => {
+    const root = fixture()
+    put(root, 'apps/desktop/dist-electron/worker.js', 'if (')
+    await expect(compactPackedJs({ appDir: root })).rejects.toThrow('cannot trace JavaScript')
+    expect(fs.existsSync(path.join(root, 'node_modules/unused-pure'))).toBe(true)
+  })
 })

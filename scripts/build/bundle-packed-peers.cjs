@@ -20,6 +20,7 @@ async function bundlePackedPeers({ appDir, packages, build, packageName, resolve
     for (const file of ownFiles(owner)) {
       const content = fs.readFileSync(file, 'utf8')
       const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, false, ts.ScriptKind.JS)
+      if (source.parseDiagnostics.length) throw new Error(`[packed-js] cannot parse SDK file ${file}: ${ts.flattenDiagnosticMessageText(source.parseDiagnostics[0].messageText, ' ')}`)
       const replacements = []
       for (const statement of source.statements) {
         if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) continue

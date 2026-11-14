@@ -106,6 +106,7 @@ function importsInFiles(files) {
   const references = []
   for (const file of files) {
     const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, false, ts.ScriptKind.JS)
+    if (source.parseDiagnostics.length) throw new Error(`[packed-js] cannot trace JavaScript ${file}: ${ts.flattenDiagnosticMessageText(source.parseDiagnostics[0].messageText, ' ')}`)
     const aliases = new Set(['require', '__require', '_require', 'require_'])
     const factories = new Set(['createRequire'])
     for (const statement of source.statements) {
