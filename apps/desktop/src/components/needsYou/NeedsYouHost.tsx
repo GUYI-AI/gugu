@@ -87,6 +87,7 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
           // task view, which has no place for it. The task view's read bit is not set by a chat, so this click sets it.
           // Read at the click: the list does not follow the assistant's snapshot.
           const openTask = () => {
+            if (sessionPresentation(task.session, true)?.tone === 'error') void markRead([task])
             const assistant = readAssistantShellBridge()?.getSnapshot()
             if (!assistant?.chatId || !isAssistantAgent(task.session.agent?.userId, assistant.assistant?.id)) return followLink({ kind: 'session', sessionId: task.session.conversationId, deviceId: task.deviceId })
             void markRead([task])

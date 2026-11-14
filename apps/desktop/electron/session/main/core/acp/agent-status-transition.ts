@@ -40,6 +40,10 @@ function eventBase(summary: SessionSummary): Omit<AgentEvent, 'type' | 'payload'
   };
 }
 
+function errorPayload(summary: SessionSummary): AgentEvent['payload'] {
+  return { message: summary.lastTurnError ?? summary.failure?.message, modelId: summary.modelId ?? undefined };
+}
+
 type StopKind = 'stop' | 'error' | 'reset';
 
 /**
@@ -81,7 +85,7 @@ export function deriveAcpAgentStatusActions(
       return [
         {
           kind: 'event',
-          event: { ...eventBase(previous), type: 'error', payload: {} },
+          event: { ...eventBase(previous), type: 'error', payload: errorPayload(previous) },
         },
       ];
     }
@@ -110,7 +114,7 @@ export function deriveAcpAgentStatusActions(
     return [
       {
         kind: 'event',
-        event: { ...eventBase(next), type: 'error', payload: {} },
+        event: { ...eventBase(next), type: 'error', payload: errorPayload(next) },
       },
     ];
   }
@@ -122,7 +126,7 @@ export function deriveAcpAgentStatusActions(
       return [
         {
           kind: 'event',
-          event: { ...eventBase(next), type: 'error', payload: {} },
+          event: { ...eventBase(next), type: 'error', payload: errorPayload(next) },
         },
       ];
     }
@@ -158,7 +162,7 @@ export function deriveAcpAgentStatusActions(
     // 结束边带上此刻的后台快照:还有后台在跑就是 park。
     event('stop', { backgroundTasks: backgroundWork(next) });
   } else if (end === 'error') {
-    event('error');
+    event('error', errorPayload(next));
   } else if (end === 'reset') {
     actions.push({
       kind: 'reset',

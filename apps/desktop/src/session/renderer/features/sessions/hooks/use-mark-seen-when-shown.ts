@@ -6,11 +6,19 @@ import { useEffect } from 'react';
  * being seen — callers pass whether this session is on screen.
  */
 export function useMarkSeenWhenShown(
-  session: { seen: boolean; markSeen: () => void } | null | undefined,
+  session: { seen: boolean; markSeen: () => void | Promise<boolean> } | null | undefined,
   shown: boolean
 ): void {
   const seen = session?.seen;
   useEffect(() => {
-    if (shown && session && !session.seen) session.markSeen();
+    if (!shown || !session || session.seen) return;
+    let active = true;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const mark = async () => {
+      const accepted = await session.markSeen();
+      if (active && (accepted === false || accepted === true && !session.seen)) retry = setTimeout(() => { void mark(); }, 1000);
+    };
+    void mark();
+    return () => { active = false; clearTimeout(retry); };
   }, [shown, session, seen]);
 }

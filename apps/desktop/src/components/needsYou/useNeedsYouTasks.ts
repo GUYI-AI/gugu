@@ -33,7 +33,7 @@ export async function markNeedsYouTaskSeen(task: Pick<NeedsYouTask, 'deviceId' |
 /**
  * The existing sidebar state and machine directory, including a desktop's own host. No per-task polling.
  * Like the sidebar's Needs you group, a task is listed while its state asks for attention (presentationAttention) and
- * counted only while it needs you (isNeedsYou): reading a failure drops it from `count`, never from `tasks`.
+ * counted only while it needs you (isNeedsYou): reading a failure removes its notification, preserving the session error.
  * An answered approval stays listed as handled for as long as a failure would (`lastAnswered`), below what still waits, never counted.
  */
 export function useNeedsYouTasks(): { tasks: NeedsYouTask[]; count: number; attention: AgentAttention; error: string | null } {
@@ -68,6 +68,7 @@ export function useNeedsYouTasks(): { tasks: NeedsYouTask[]; count: number; atte
     for (const session of sessions) {
       // 列出的只有连得上的宿主;有身份的 agent 读共享 presence,与侧栏同一个判据。
       const presentation = sessionPresentation(session, true)
+      if (presentation?.tone === 'error' && session.unseen !== true) continue
       const handled = presentationAttention(presentation) === null ? session.lastAnswered ?? null : null
       if (presentationAttention(presentation) === null && !handled) continue
       if (isNeedsYou(presentation, session.unseen === true)) statuses.push(presentationAttention(presentation))

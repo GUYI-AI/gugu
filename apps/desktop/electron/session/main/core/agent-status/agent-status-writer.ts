@@ -46,6 +46,7 @@ import {
   type AgentStatusLogState,
 } from './status-event-log';
 import { translateAgentEvent, type TranslationContext } from './status-event-translator';
+import { acknowledgeErrorNotice, clearErrorNotice, quotaErrorUnseen } from './error-notice';
 
 /**
  * spec agent-status-writer —— 会话页 agent 状态的唯一写入者。
@@ -179,6 +180,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
     if (!entry) return;
     const { state } = entry;
     const before = readStatusLog(state);
+    const beforeError = state.error;
     const canonical = translate({
       running: state.running,
       waiting: waitsOnHarness(state),
@@ -208,9 +210,12 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
     const unchanged = previous === null
       ? reading.status === 'idle'
       : before.status === reading.status && before.detail === reading.detail;
-    if (unchanged && !reading.finished) return;
+    const errorChanged = reading.status === 'error' && beforeError !== state.error && !!meta.event?.payload.message;
+    if (unchanged && !reading.finished && !errorChanged) return;
     // 做完、等人、出错写成未读;在跑、没做完的空闲(被打断)不是一句需要你看的话。
-    const unseen = !(reading.status === 'working' || (reading.status === 'idle' && !reading.finished));
+    if (reading.finished) clearErrorNotice(sessionId);
+    const unseen = reading.status === 'error' ? quotaErrorUnseen(sessionId, meta.event)
+      : !(reading.status === 'working' || (reading.status === 'idle' && !reading.finished));
     await this.publish(sessionId, entry, reading, unseen, meta, {
       persist: true,
       active: true,
@@ -231,7 +236,6 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
     meta: PublishMeta,
     options: { persist: boolean; active?: true },
   ): Promise<void> {
-    entry.written = { status: reading.status, detail: reading.detail, unseen };
     const lastInteractedAt = options.active ? new Date(meta.timestamp).toISOString() : undefined;
     if (options.persist) {
       await db
@@ -249,6 +253,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
         events.emit(sessionChangedChannel, { sessionId, projectId: entry.projectId, changes: { lastInteractedAt } });
       }
     }
+    entry.written = { status: reading.status, detail: reading.detail, unseen };
     const change: AgentStatusChange & { reading: AgentStatusReading } = {
       sessionId,
       projectId: entry.projectId,
@@ -402,6 +407,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
       }
       if (!entry.written.unseen) return;
       await this.publish(sessionId, entry, readStatusLog(entry.state), false, this.now(), { persist: true });
+      if (entry.written?.status === 'error') acknowledgeErrorNotice(sessionId);
     }, this.writeVersions.get(sessionId));
   }
 
