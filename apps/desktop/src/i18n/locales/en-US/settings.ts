@@ -41,7 +41,7 @@ export default {
     "unknown": "Unavailable",
     "connected": "Connected",
     "revoked": "Access revoked",
-    "disconnected": "Not connected · {{authorization}}",
+    "disconnected": "Not connected, {{authorization}}",
     "fullAccessRequired": "Reading and managing events requires full Calendar access.",
     "enableInSettings": "Allow Gugu to access Calendar in system settings.",
     "connect": "Connect",

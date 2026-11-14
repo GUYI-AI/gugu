@@ -41,7 +41,7 @@ export default {
     "unknown": "查不到",
     "connected": "已连接",
     "revoked": "权限已撤销",
-    "disconnected": "未连接 · {{authorization}}",
+    "disconnected": "未连接，{{authorization}}",
     "fullAccessRequired": "读取和管理日程需要完整日历权限。",
     "enableInSettings": "请在系统设置中为咕咕开启日历权限。",
     "connect": "连接日历",
