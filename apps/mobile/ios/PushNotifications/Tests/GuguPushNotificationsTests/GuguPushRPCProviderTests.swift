@@ -153,6 +153,12 @@ import Testing
         let decoded = GuguPushPayload.decode(payload())
         #expect(decoded?.binding == binding && decoded?.kind == .chatMessage)
         #expect(decoded?.revision == "9223372036854775807")
+        #expect(decoded?.chatId == nil)
+    }
+    @Test func onlyCanonicalChatIdentifiersBecomeRoutingHints() {
+        var value = payload(), object = value["gugu"] as! [String: Any]
+        object["chatId"] = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"; value["gugu"] = object
+        #expect(GuguPushPayload.decode(value)?.chatId == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
     }
     @Test(arguments: ["booleanVersion", "stringVersion", "owner", "registration", "generation", "kind", "numericRevision", "overflow", "negative", "leadingZero"])
     func malformedPayloadIsRejected(field: String) {

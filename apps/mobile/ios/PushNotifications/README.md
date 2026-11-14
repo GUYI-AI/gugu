@@ -40,3 +40,39 @@ The App must reconcile independently when foreground/cold owner readiness comple
 macOS tests inject identity/OS/provider/transport. They do not prove iOS SDK compilation, UN permission UI, APNs issuance, real RPC/Keychain/HTTP, lock-screen delivery or TestFlight. iOS-only source needs actual SDK validation by the integrator.
 
 Apple references: [permission](https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications), [APNs registration](https://developer.apple.com/documentation/usernotifications/registering-your-app-with-apns), [callbacks](https://developer.apple.com/documentation/usernotifications/handling-notifications-and-notification-related-actions).
+
+## App wiring
+
+The App now registers this plugin against the **same** client retained by the
+native credential retirement barrier. Only the Runtime plugin registration list
+changes. AppDelegate forwards APNs success/failure without logging token bytes.
+Ordinary HTTP uses native OwnerSession credentials and validates admitted receipts;
+logout/account replacement still closes the original session installation through
+the restricted retirement capability. Unknown outcomes remain unverified.
+
+The renderer mirrors chat enable/sound and this installation's saved task
+notifications enable/sound independently. Missing task settings suspends local
+registration authority. It never starts a phone Agent merely to register push.
+Permission is requested only through the existing notification settings action.
+Foreground/owner readiness always wakes canonical revision reconciliation even
+without APNs. Received pushes only wake that path; default taps additionally check
+canonical chat visibility before using the normal notification route. Remote
+foreground banners are suppressed in favor of the existing local message outlet.
+The iOS local outlet reads the native active state before scheduling; background
+alerts use APNs so a briefly live WebView does not schedule a second OS alert.
+Token changes, preferences and foreground readiness request a fresh acknowledgement;
+stale asynchronous callbacks cannot publish the old owner or generation.
+
+`APS_ENVIRONMENT` is `development` for Debug and **production** for Release in the
+Xcode target. Both `App.entitlements` and `Info.plist:GuguAPNsEnvironment` expand
+that same build setting. Native code maps development to sandbox and production to
+production, rejects missing/unknown values, and never uses the business DB name.
+TestFlight must archive Release with production. The signing/export pipeline must
+compare the **exported IPA's signed aps-environment** with the expanded Info.plist
+value and require production; source settings alone are not evidence of a correctly
+signed archive. This change does not manage signing identities or profiles.
+
+Verification boundaries: RPC mocks and simulator-visible injected alerts are
+separate from actual APNs delivery. Staging register/revoke round trips remain
+UNVERIFIED until the matching server migration is deployed. Physical-device
+remote delivery, lock-screen display and TestFlight remain UNVERIFIED.

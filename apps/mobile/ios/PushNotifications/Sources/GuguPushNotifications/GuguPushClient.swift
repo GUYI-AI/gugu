@@ -3,12 +3,12 @@ import Foundation
 /// App-lifetime custody. Epoch is local; registration generation comes from RPC.
 @MainActor final class GuguPushClient {
     private let platform: GuguPushPlatform
-    private let provider: GuguPushProvider?
+    private var provider: GuguPushProvider?
     private let currentBinding: () throws -> GuguPushBinding
     private let requireOwnerUI: () throws -> Void
-    private let preferences: () -> GuguPushPreferences
-    private let foregroundPresentation: (GuguPushEnvelope) -> Bool
-    private let onHint: (GuguPushReconciliationHint) -> Void
+    private var preferences: () -> GuguPushPreferences
+    private var foregroundPresentation: (GuguPushEnvelope) -> Bool
+    private var onHint: (GuguPushReconciliationHint) -> Void
     private var generation = UUID()
     private var receipt: GuguPushRegistrationReceipt?
     private var activeBinding: GuguPushBinding?
@@ -33,6 +33,15 @@ import Foundation
         self.platform = platform; self.provider = provider
         self.currentBinding = currentBinding; self.requireOwnerUI = requireOwnerUI
         self.preferences = preferences; self.foregroundPresentation = foregroundPresentation; self.onHint = onHint
+    }
+
+    /// Bridge composition reuses the native retirement client's side-effect ledger.
+    func connect(provider: GuguPushProvider, preferences: @escaping () -> GuguPushPreferences,
+                 onHint: @escaping (GuguPushReconciliationHint) -> Void) {
+        invalidate()
+        self.provider = provider; self.preferences = preferences; self.onHint = onHint
+        // The existing local consumer owns the single foreground OS outlet.
+        self.foregroundPresentation = { _ in false }
     }
 
     func status(expectedBinding: GuguPushBinding) async throws -> GuguPushSnapshot {
@@ -294,7 +303,7 @@ import Foundation
             seenOrder.append(key)
             if seenOrder.count > 512 { seen.remove(seenOrder.removeFirst()) }
             onHint(.init(receipt: receipt, eventId: envelope.eventId, kind: kind,
-                         notificationKind: envelope.kind, revision: envelope.revision))
+                         notificationKind: envelope.kind, revision: envelope.revision, chatId: envelope.chatId))
             return true
         } catch { return false }
     }

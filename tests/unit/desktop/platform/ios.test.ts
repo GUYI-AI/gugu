@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const native = vi.hoisted(() => ({ addListener: vi.fn(), getState: vi.fn(), getInfo: vi.fn(), write: vi.fn() }))
+const native = vi.hoisted(() => ({ addListener: vi.fn(), getState: vi.fn(), getInfo: vi.fn(), write: vi.fn(), checkPermissions: vi.fn(), schedule: vi.fn() }))
 const calendarPlugins = vi.hoisted(() => ({ native: true, os: 'ios', names: new Set<string>() }))
-vi.mock('@capacitor/core', () => ({ Capacitor: {
+vi.mock('@capacitor/core', () => ({ registerPlugin: () => ({}), Capacitor: {
   isNativePlatform: () => calendarPlugins.native,
   getPlatform: () => calendarPlugins.os,
   isPluginAvailable: (name: string) => calendarPlugins.names.has(name),
 } }))
+vi.mock('../../../../apps/desktop/src/mobile/ios-runtime/startIOSOwnerPublication', () => ({ getIOSOwnerPublicationSnapshot: () => ({ status: 'waiting', binding: null }) }))
+vi.mock('@capacitor/local-notifications', () => ({ LocalNotifications: { checkPermissions: native.checkPermissions, schedule: native.schedule, addListener: native.addListener } }))
 vi.mock('@capacitor/app', () => ({ App: native }))
 vi.mock('@capacitor/clipboard', () => ({ Clipboard: { write: native.write } }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }))
@@ -39,6 +41,33 @@ describe('iOS foreground client', () => {
     expect(iosPlatform.authCallbacks).toBeUndefined()
     expect(iosPlatform.oauthBrowser).toBeUndefined()
     expect(iosPlatform.systemPermissions).toEqual([])
+  })
+
+  it('advertises visible notifications only with the native push plugin', () => {
+    calendarPlugins.names.add('GuguPushNotifications')
+    expect(iosPlatform.capabilities.notifications).toBe(true)
+    expect(iosPlatform.systemPermissions).toEqual(['notifications'])
+  })
+
+  it('does not duplicate background APNs through the local outlet', async () => {
+    native.checkPermissions.mockResolvedValue({ display: 'granted' })
+    native.getState.mockResolvedValue({ isActive: false })
+    await expect(iosPlatform.showNotification({ title: 'chat' })).resolves.toMatchObject({ displayed: false, error: 'APP_NOT_ACTIVE' })
+    expect(native.schedule).not.toHaveBeenCalled()
+  })
+  it.each([false, true])('uses the one local outlet in foreground with silent=%s', async (silent) => {
+    native.checkPermissions.mockResolvedValue({ display: 'granted' })
+    native.getState.mockResolvedValue({ isActive: true })
+    native.schedule.mockResolvedValue(undefined)
+    await expect(iosPlatform.showNotification({ title: 'chat', silent })).resolves.toMatchObject({ displayed: true })
+    expect(native.schedule).toHaveBeenCalledOnce()
+    expect(native.schedule.mock.calls[0][0].notifications[0].sound).toBe(silent ? undefined : 'default')
+  })
+  it('does not assume foreground when the host state read fails', async () => {
+    native.checkPermissions.mockResolvedValue({ display: 'granted' })
+    native.getState.mockRejectedValue(new Error('state unavailable'))
+    await expect(iosPlatform.showNotification({ title: 'chat' })).rejects.toThrow('state unavailable')
+    expect(native.schedule).not.toHaveBeenCalled()
   })
 
   it('preserves a native clipboard failure instead of reporting a successful copy', async () => {
