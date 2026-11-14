@@ -605,7 +605,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
       <div className={cx(styles.editorWrapper, className)}>
         <EditorContent editor={editor} className={styles.editorContent} aria-disabled={disabled} />
         {isEmpty && (
-          <span aria-hidden={emptyHint ? undefined : true} className={styles.editorPlaceholder} style={emptyHint ? { right: 0 } : undefined}>
+          <span aria-hidden={emptyHint ? undefined : true} className={styles.editorPlaceholder}>
             {emptyHint ?? placeholder}
           </span>
         )}

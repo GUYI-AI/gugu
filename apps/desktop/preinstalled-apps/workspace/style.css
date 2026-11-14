@@ -348,6 +348,11 @@ body[data-state='doc'] .doc-message, body.gone .modes { display: none; }
 .files-toolbar > #search-toggle gugu-icon { width: 16px; height: 16px; }
 .files-toolbar > .sort { margin-inline-start: 0; }
 .files-toolbar > button { flex: none; min-height: 28px; padding: 2px 5px; }
+/* fitTools (app.js): the place switch by its icons where its words do not fit; then the order's words end in an ellipsis. */
+.files-toolbar.places-icons .place-switch button > span { display: none; }
+.files-toolbar.places-icons .place-switch gugu-icon { margin-inline-end: 0; }
+.files-toolbar > .sort { flex: 0 1 auto; min-width: 0; }
+#sort-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @container (min-width: 720px) {
   .files-toolbar:has(~ .file-list:not(.as-grid)) > .sort { display: none; }
 }
