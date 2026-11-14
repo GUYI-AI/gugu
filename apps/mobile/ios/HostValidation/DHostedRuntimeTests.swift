@@ -404,6 +404,31 @@ extension DHostedRuntimeTests {
                 XCTAssertEqual(($0 as? GuguHostFailure)?.code, "os_permission")
             }
             XCTAssertFalse(try ownerAccess.ownerSnapshot(expectedBinding: binding).calendarConnected)
+            let executor = GuguCalendarExecutor(service: service,
+                calendarEnabled: { try ownerAccess.calendarEnabled(expectedBinding: binding) })
+            for (action, arguments) in [
+                ("calendar.events.list", ["start_ms": 1800000000000, "end_ms": 1800003600000] as [String: Any]),
+                ("calendar.events.create", ["title": "Must not exist", "start_ms": 1800000000000]),
+                ("calendar.events.update", ["event_id": "missing", "title": "Must not change"]),
+                ("calendar.events.delete", ["event_id": "missing"]),
+            ] {
+                let bytes = try JSONSerialization.data(withJSONObject: arguments, options: [.sortedKeys])
+                let request = GuguNativeToolRequest(context: context(), requestId: UUID().uuidString, toolCallId: UUID().uuidString,
+                    actionName: action, argumentsJSON: String(decoding: bytes, as: UTF8.self),
+                    argumentsSHA256: SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(),
+                    deadlineAtMs: Int64(Date().timeIntervalSince1970 * 1000) + 30_000)
+                let control = GuguNativeToolControl(checkActive: {}, beginMutation: { XCTFail("Disconnected owner consumed approval") },
+                    finishMutation: { _ in XCTFail("Disconnected owner wrote") })
+                let done = expectation(description: action)
+                executor.execute(request, control: control) { envelope in
+                    XCTAssertEqual(envelope["ok"] as? Bool, false)
+                    // OwnerAccess observes OS revocation and retires category consent
+                    // before the executor can reach the OS-only service boundary.
+                    XCTAssertEqual(envelope["code"] as? String, "not_granted")
+                    done.fulfill()
+                }
+                wait(for: [done], timeout: 10)
+            }
         }
         try attach("E6-real-permission", ["authorization": store.authorization.rawValue,
             "calendarConnected": try ownerAccess.calendarEnabled(), "modelCalls": 0])
