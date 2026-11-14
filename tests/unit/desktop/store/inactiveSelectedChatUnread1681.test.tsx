@@ -344,6 +344,20 @@ it('a previously active callback cannot acknowledge after the native host loses 
   expect(latestStore!.chats[0]).toMatchObject(tuple)
   expect(readMock).not.toHaveBeenCalled()
 })
+it('foregrounding remeasures current visible rows once without a new message or list refresh', async () => {
+  useRealList = true; measuredIds.add('peer-5')
+  await open('group', [visible(5), visible(7)])
+  const loaded = latestStore!.messages, fetches = chatServiceMock.getMessages.mock.calls.length
+  expect(readMock).not.toHaveBeenCalled()
+  await activity(true)
+  expect(latestStore!.messages).toBe(loaded)
+  expect(chatServiceMock.getMessages).toHaveBeenCalledTimes(fetches)
+  expect(latestStore!.chats[0]).toMatchObject({ ...tuple, last_read_seq: 5, read_state_version: 9 })
+  expect(readMock).toHaveBeenCalledTimes(2)
+  await activity(true)
+  await activity(false); await activity(true)
+  expect(readMock).toHaveBeenCalledTimes(2)
+})
 it('an unopened chat and a previously selected chat are never acknowledged on foregrounding', async () => {
   await open('group')
   await act(async () => { latestStore!.setActiveChatId(null) })
