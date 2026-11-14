@@ -170,6 +170,34 @@ export const imSelectors = {
   syncState: (key: string) => (snapshot: ImRepositorySnapshot) => snapshot.sync_state.find((row) => row.key === key)?.value,
 }
 
+// The account's repository once the chat provider has opened it, for readers that live outside the provider (read
+// models). The provider still opens and closes it; this only hands out the one that is open.
+type OpenedSlot = { promise: Promise<AccountImRepository>; resolve: (repository: AccountImRepository) => void; repository: AccountImRepository | null }
+const openedRepositories = new Map<string, OpenedSlot>()
+
+function openedSlot(accountId: string): OpenedSlot {
+  let slot = openedRepositories.get(accountId)
+  if (!slot) {
+    let resolve!: (repository: AccountImRepository) => void
+    const promise = new Promise<AccountImRepository>((done) => { resolve = done })
+    slot = { promise, resolve, repository: null }
+    openedRepositories.set(accountId, slot)
+  }
+  return slot
+}
+
+/** The account's open repository; waits while the provider is still opening it. */
+export function openedImRepository(accountId: string): Promise<AccountImRepository> {
+  return openedSlot(accountId).promise
+}
+
+function publishOpened(repository: AccountImRepository): void {
+  if (openedRepositories.get(repository.accountId)?.repository) openedRepositories.delete(repository.accountId)
+  const slot = openedSlot(repository.accountId)
+  slot.repository = repository
+  slot.resolve(repository)
+}
+
 export async function openImRepository(
   accountId: string,
   options: {
@@ -198,6 +226,7 @@ export async function openImRepository(
     const repository = createAccountRepository(accountId, adapter, rows, options.adapter === undefined)
     options.loaded?.(repository)
     await options.initialize?.(repository)
+    publishOpened(repository)
     return repository
   } catch (error) {
     if (options.adapter === undefined) adapter.close()
@@ -231,7 +260,7 @@ function createAccountRepository(
   }
   const publish = () => { for (const subscription of subscriptions) notify(subscription) }
 
-  return {
+  const repository: AccountImRepository = {
     accountId,
     snapshot() {
       ensureOpen()
@@ -278,9 +307,11 @@ function createAccountRepository(
       if (closed) return
       closed = true
       subscriptions.clear()
+      if (openedRepositories.get(accountId)?.repository === repository) openedRepositories.delete(accountId)
       if (ownsAdapter) void writeChain.finally(() => adapter.close())
     },
   }
+  return repository
 }
 
 function createTransaction(accountId: string, operations: LocalImDbOperation[], stored: ImRepositorySnapshot): ImRepositoryTransaction {

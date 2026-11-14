@@ -25,7 +25,8 @@ function pick(source: GroupChatSettings, keys: readonly SettingsKey[]): Partial<
  *   同一字段被连写两次时,只有最后一次发出的那次有资格改它(per-field 序号)。
  */
 /** Settings carry the viewer's authority: re-read them when a projected role changes, not on every roster refresh. */
-export function groupRoleRevision(snapshot: GroupCollabSnapshot): string {
+export function groupRoleRevision(snapshot: GroupCollabSnapshot | null): string | undefined {
+  if (!snapshot) return undefined
   return [...snapshot.humans, ...snapshot.agents].map((member) => `${member.id}:${member.role}`).sort().join(',')
 }
 

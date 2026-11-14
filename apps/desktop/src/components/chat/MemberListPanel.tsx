@@ -9,7 +9,7 @@ import { useShownAgentName } from '@/hooks/useShownAgentName'
 //   · 「每个 agent 一行显示引擎、模型、跑在哪,以及响应档位」→ AgentRow。
 //
 // 数据与 fail-loud(❌ 不写死、❌ 不编占位值):
-//   · 名单由宿主的 useGroupCollabLoader 提供:已有快照先画,权威刷新不清空字段。
+//   · 名单由宿主的 groupRoster 读模型提供(hooks/useRoomCollab):已有快照先画,权威刷新不清空字段。
 //   · 引擎:权威快照的 group_agent_states.client 目前全产品没有写者(永远 null),所以引擎退回**联系人档**
 //     的 agent_type —— 与单聊头栏取引擎的来源是同一个(ChatAreaPanel「单聊 Agent 的联系人档」)。
 //     这条来源**只覆盖主人自己的 agent**:别人的 agent 不在主人通讯录里,那一格就空着。
@@ -64,7 +64,7 @@ import { agentOwnerDisplayName, toAgentProfile } from '../memberProfileModels'
 import { buildUnifiedMembers } from './groupMemberModels'
 import { useListenModeEditControls } from './useListenModeEditControls'
 import { ChevronRight } from '../../lib/icons'
-import type { UseGroupCollabLoaderResult } from '../../hooks/useGroupCollabLoader'
+import type { RoomCollabError } from '../../hooks/useRoomCollab'
 // gugu-dev#181「我的 agent」那一行的折叠箭头:放在计数后面,分区名留在和行、搜索、标题同一条左边线上。
 const myAgentsChevronStyle = (open: boolean): React.CSSProperties => ({
   width: 14, height: 14, flexShrink: 0, transform: open ? 'rotate(90deg)' : undefined,
@@ -215,7 +215,7 @@ export type MemberListPanelProps = {
   /** @@@6418 群:名册被这里改动(邀请/移出/改角色/审批)后通知外层重读它自己的那份快照。 */
   settingsState?: GroupChatSettingsState
   snapshot: GroupCollabSnapshot | null
-  error?: UseGroupCollabLoaderResult['error']
+  error?: RoomCollabError
   onReload: () => Promise<void>
   onOpenUserChat?: (target: MemberProfileChatTarget) => void
   onWhisper?: (target: MemberProfileChatTarget) => void

@@ -60,6 +60,13 @@ type Definition<A extends unknown[], V> = {
   /** How many times a failed read is retried before the reading is an error. Default 0: fail loud. */
   retry?: number | true
   retryDelay?: (attempt: number) => number
+  /**
+   * A first source on this device (the IM library's own copy): asked once when a key is first wanted, its answer shows
+   * (stale) until the read lands. ❌ A second snapshot of `persist`: this is data the app keeps anyway.
+   */
+  local?: (owner: string, ...args: A) => Promise<V | undefined>
+  /** How a new answer joins the shown one (keep the order rows were drawn in); default: the new answer replaces it. */
+  merge?: (shown: V, next: V) => V
 }
 
 const definitions = new Map<string, Definition<unknown[], unknown>>()
@@ -78,6 +85,7 @@ queryClient.getQueryCache().subscribe((event) => {
   if (event.type === 'added' && definitions.has(name) && event.query.options.queryFn !== readFromKey) {
     throw new Error(`Replica query ${JSON.stringify(event.query.queryKey)} brings its own queryFn`)
   }
+  if (event.type === 'added') seedFromLocal(event.query.queryKey)
   const persist = definitions.get(name)?.persist
   if (event.type === 'updated' && event.action.type === 'success' && persist) {
     writeSnapshotEntry(event.query.queryKey, event.query.state.data, event.query.state.dataUpdatedAt, persist)
@@ -98,6 +106,16 @@ function putEntry(key: QueryKey, value: unknown, updatedAt?: number): void {
   const keep = definitions.get(String(key[0]))?.keep ?? Infinity
   queryClient.getQueryCache().build(queryClient, { queryKey: key, gcTime: keep })
   queryClient.setQueryData(key, value, updatedAt === undefined ? undefined : { updatedAt })
+}
+
+function seedFromLocal(key: QueryKey): void {
+  const [name, owner, ...args] = key as [string, string, ...unknown[]]
+  const local = definitions.get(name)?.local
+  if (!local || queryClient.getQueryData(key) !== undefined) return
+  local(owner, ...args).then((value) => {
+    // Dated 0: shown as stale, and the read already on its way (or the next mount) replaces it.
+    if (value !== undefined && queryClient.getQueryData(key) === undefined) putEntry(key, value, 0)
+  }, (error: unknown) => { replicaLog.error({ model: name, error }, `${name}: the local copy could not be read`) })
 }
 
 // ── account lifecycle ────────────────────────────────────────────────────────────────────────────────────────────
@@ -260,6 +278,7 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     ...(definition.retryDelay ? { retryDelay: definition.retryDelay } : {}),
     ...(definition.refreshEvery ? { refetchInterval: definition.refreshEvery } : {}),
     refetchOnWindowFocus: definition.refreshOnFocus ?? false,
+    ...(definition.merge ? { structuralSharing: (shown: unknown, next: unknown) => shown === undefined ? next : definition.merge!(shown as V, next as V) } : {}),
   })
   const key = (...args: A): QueryKey | null => {
     const owner = ownerOf(definition.scope)
@@ -276,7 +295,8 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     options,
     peek: (...args) => {
       const k = key(...args)
-      return k ? readingOfState(queryClient.getQueryState(k), queryClient.getQueryCache().find({ queryKey: k, exact: true })?.isStale() ?? true) : UNKNOWN
+      // Judged by `fresh`, not by react-query's observers: a value nobody shows is not fresh because nobody watches it.
+      return k ? readingOfState(queryClient.getQueryState(k), queryClient.getQueryCache().find({ queryKey: k, exact: true })?.isStaleByTime(definition.fresh ?? 0) ?? true) : UNKNOWN
     },
     prefetch: (...args) => {
       const k = key(...args)
