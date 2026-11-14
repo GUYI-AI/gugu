@@ -399,7 +399,7 @@ export default {
     "emailPlaceholder": "Email address",
     "emailRequired": "Enter your email address",
     "failed": "The operation failed. Try again later.",
-    "headline": "Let an Agent<break />do it for you.",
+    "headline": "Don't do it yourself.<break />Let AI.",
     "welcome": "Welcome to Gugu",
     "subtitle": "Sign in and start working with AI",
     "brandSubtitle": "What you want to do, Gugu helps you get done.",
