@@ -13,12 +13,15 @@ $stage = Join-Path $journal 'stage'
 $backup = "$target.gugu-backup-$app"
 $powershell = (Get-Process -Id $PID).Path
 $results = @()
+$links = Join-Path $root 'links.ini'
+$oldLink = Join-Path $root 'old.lnk'
+$newLink = Join-Path $root 'new-menu\new.lnk'
 function Assert($condition, $message) { if (-not $condition) { throw $message } }
 function Invoke-Phase($phase, [int]$expected = 0) {
   $prior=$ErrorActionPreference
   try {
     $ErrorActionPreference='Continue' # Expected fault cases intentionally write native stderr.
-    & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $Helper -Phase $phase -Target $target -AppId $app -Executable 'fixture.exe' -Version '0.3.5' -InstallKey $key -UninstallKey $uninstall -Mode CurrentUser
+    & $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $Helper -Phase $phase -Target $target -AppId $app -Executable 'fixture.exe' -Version '0.3.5' -InstallKey $key -UninstallKey $uninstall -Mode CurrentUser -LinkManifest $links
     $code=$LASTEXITCODE
   } finally { $ErrorActionPreference=$prior }
   Assert ($code -eq $expected) "$phase returned $code, expected $expected"
@@ -36,6 +39,7 @@ function Registration($version) {
 }
 try {
   New-Item -ItemType Directory -Path $root | Out-Null
+  [IO.File]::WriteAllText($links, "[links]`r`nold=$oldLink`r`nnew=$newLink`r`n", [Text.Encoding]::Unicode)
   $data = Join-Path $root 'user-data-must-survive'
   [IO.File]::WriteAllText($data, 'preserved')
   Invoke-Phase prepare
@@ -65,13 +69,21 @@ try {
   Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'upgrade') 'Extraction failure changed old application'
   $results += 'extraction failure cleanup'
 
+  [IO.File]::WriteAllText($oldLink, 'original shortcut bytes')
   Invoke-Phase prepare
   Payload $stage 'not-registered'
   Invoke-Phase commit
+  [IO.File]::WriteAllText($oldLink, 'new target')
+  New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($newLink)) | Out-Null
+  [IO.File]::WriteAllText($newLink, 'new shortcut')
   Invoke-Phase finish 2
   Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'upgrade') 'Registration failure lost old application'
   Assert ((Get-ItemProperty -LiteralPath "HKCU:\$uninstall").DisplayVersion -eq '0.3.4') 'Registration rollback failed'
   $results += 'failed registration restores old tree and registry'
+  Assert (([IO.File]::ReadAllText($oldLink)) -eq 'original shortcut bytes') 'Original shortcut was not restored'
+  Assert (-not(Test-Path $newLink)) 'Failed install left a new shortcut'
+  Assert (-not(Test-Path ([IO.Path]::GetDirectoryName($newLink)))) 'Failed install left a new shortcut directory'
+  $results += 'failed registration restores shortcut bytes and removes new links/directories'
 
   Invoke-Phase prepare
   Payload $stage 'interrupted'

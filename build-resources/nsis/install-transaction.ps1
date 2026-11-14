@@ -6,7 +6,8 @@ param(
   [Parameter(Mandatory=$true)][string]$Version,
   [Parameter(Mandatory=$true)][string]$InstallKey,
   [Parameter(Mandatory=$true)][string]$UninstallKey,
-  [Parameter(Mandatory=$true)][ValidateSet('all','CurrentUser')][string]$Mode
+  [Parameter(Mandatory=$true)][ValidateSet('all','CurrentUser')][string]$Mode,
+  [string]$LinkManifest
 )
 # Runs from NSIS's private plugin directory, never from a directory being renamed.
 # No network, Node installation, profile, user-data deletion, or process termination.
@@ -53,6 +54,38 @@ function Load-State {
 function Remove-OwnedStage {
   if (Test-Path -LiteralPath $stage) { Retry-Files { Remove-Item -LiteralPath $stage -Recurse -Force } }
 }
+function Snapshot-Shortcuts {
+  $files = @(); $missing = @()
+  if (-not $LinkManifest) { return @{ files=@(); missing=@() } }
+  foreach ($line in Get-Content -LiteralPath $LinkManifest -Encoding Unicode) {
+    if ($line -notmatch '^[^=]+=(.+)$') { continue }
+    $path = [IO.Path]::GetFullPath($Matches[1])
+    if ([IO.Path]::GetExtension($path) -ne '.lnk') { throw 'Invalid shortcut snapshot path' }
+    if (@($files | Where-Object { $_.path -eq $path }).Count) { continue }
+    $file = "shortcut-$($files.Count).lnk"
+    $exists = [IO.File]::Exists($path)
+    if ($exists) { Copy-Item -LiteralPath $path -Destination (Join-Path $journal $file) }
+    $files += @{ path=$path; file=$file; existed=$exists }
+    $parent = [IO.Path]::GetDirectoryName($path)
+    while ($parent -and -not [IO.Directory]::Exists($parent)) {
+      $missing += $parent; $parent = [IO.Path]::GetDirectoryName($parent)
+    }
+  }
+  return @{ files=@($files); missing=@($missing | Select-Object -Unique) }
+}
+function Restore-Shortcuts($s) {
+  if (-not $s.shortcuts) { return }
+  foreach ($link in $s.shortcuts.files) {
+    if ($link.file -notmatch '^shortcut-\d+\.lnk$' -or [IO.Path]::GetExtension($link.path) -ne '.lnk') { throw 'Invalid shortcut journal; preserved' }
+    if ($link.existed) {
+      [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($link.path)) | Out-Null
+      Copy-Item -LiteralPath (Join-Path $journal $link.file) -Destination $link.path -Force
+    } elseif ([IO.File]::Exists($link.path)) { Remove-Item -LiteralPath $link.path -Force }
+  }
+  foreach ($parent in @($s.shortcuts.missing | Sort-Object Length -Descending)) {
+    if ([IO.Directory]::Exists($parent) -and @(Get-ChildItem -LiteralPath $parent -Force).Count -eq 0) { [IO.Directory]::Delete($parent) }
+  }
+}
 function Restore-State($s) {
   # A marker proves that the new target belongs to this transaction. Never remove an
   # unrelated replacement directory, including one created after a crash.
@@ -82,6 +115,7 @@ function Restore-State($s) {
       }
     }
   }
+  Restore-Shortcuts $s
   Remove-OwnedStage
   Remove-Item -LiteralPath $journal -Recurse -Force
 }
@@ -151,6 +185,7 @@ try {
       }
     }
     $s.registry = @($snapshots)
+    $s.shortcuts = Snapshot-Shortcuts
     Save-State $s
     New-Item -ItemType Directory -Path $stage | Out-Null
   } elseif ($Phase -eq 'rollback') {

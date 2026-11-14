@@ -5,7 +5,7 @@ Var guguTransactionActive
 Var guguTransactionResult
 
 !macro guguTransaction PHASE
-  nsExec::ExecToLog '"$guguPowerShell" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\install-transaction.ps1" -Phase ${PHASE} -Target "$INSTDIR" -AppId "${APP_ID}" -Executable "${APP_EXECUTABLE_FILENAME}" -Version "${VERSION}" -InstallKey "${INSTALL_REGISTRY_KEY}" -UninstallKey "${UNINSTALL_REGISTRY_KEY}" -Mode "$installMode"'
+  nsExec::ExecToLog '"$guguPowerShell" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\install-transaction.ps1" -Phase ${PHASE} -Target "$INSTDIR" -AppId "${APP_ID}" -Executable "${APP_EXECUTABLE_FILENAME}" -Version "${VERSION}" -InstallKey "${INSTALL_REGISTRY_KEY}" -UninstallKey "${UNINSTALL_REGISTRY_KEY}" -Mode "$installMode" -LinkManifest "$PLUGINSDIR\installer-links.ini"'
   Pop $guguTransactionResult
 !macroend
 
@@ -62,6 +62,14 @@ FunctionEnd
   # before prepare removes an empty target or recovers a previous transaction.
   SetOutPath "$PLUGINSDIR"
   File /oname=$PLUGINSDIR\install-transaction.ps1 "${BUILD_RESOURCES_DIR}\nsis\install-transaction.ps1"
+  # Write a Unicode INI so names and paths never pass through a shell/code page.
+  FileOpen $R9 "$PLUGINSDIR\installer-links.ini" w
+  FileWriteWord $R9 0xFEFF
+  FileClose $R9
+  WriteINIStr "$PLUGINSDIR\installer-links.ini" "links" "newStart" "$newStartMenuLink"
+  WriteINIStr "$PLUGINSDIR\installer-links.ini" "links" "oldStart" "$oldStartMenuLink"
+  WriteINIStr "$PLUGINSDIR\installer-links.ini" "links" "newDesktop" "$newDesktopLink"
+  WriteINIStr "$PLUGINSDIR\installer-links.ini" "links" "oldDesktop" "$oldDesktopLink"
   StrCpy $guguStage "$INSTDIR.gugu-install-${APP_ID}\stage"
   !insertmacro guguTransaction prepare
   !insertmacro guguRequireTransactionSuccess
@@ -95,11 +103,13 @@ FunctionEnd
   SetOutPath "$PLUGINSDIR"
   !insertmacro guguTransaction commit
   !insertmacro guguRequireTransactionSuccess
+  SetOutPath "$INSTDIR" # stock CreateShortCut takes its working directory from OUTDIR
   !insertmacro custom_files_post_decompression
   # Full downloads do not need an old installer/blockmap in the updater cache.
 !macroend
 
 !macro customInstallApplicationComplete
+  SetOutPath "$PLUGINSDIR" # release the published directory before failure recovery
   !insertmacro guguTransaction finish
   !insertmacro guguRequireTransactionSuccess
   StrCpy $guguTransactionActive "false"
