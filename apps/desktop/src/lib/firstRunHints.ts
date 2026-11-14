@@ -1,5 +1,4 @@
-import { readUserSettingsConfig, updateUserSettingsKey, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
-import { identityDb } from './supabase'
+import { readOwnSettings, updateOwnSettingsKey } from './ownSettings'
 
 // Same account row as the profile and first-run engine choice. Device-specific copy shares
 // these three meanings, so using an entry on one device also retires its hint elsewhere.
@@ -9,7 +8,6 @@ const RETIRED_HINTS: readonly unknown[] = ['topics']
 export type FirstRunHintId = (typeof FIRST_RUN_HINTS)[number]
 export type FirstRunHintsProgress = { version: 1; dismissed: FirstRunHintId[] }
 const KEY = 'firstRunHints'
-const client = identityDb as unknown as SettingsTableClient
 
 /** Every live hint is dismissed. ❌ A hard-coded count: it stayed at 3 after 'topics' retired, so the watchers never stood down. */
 export function allFirstRunHintsDismissed(progress: FirstRunHintsProgress): boolean {
@@ -29,20 +27,20 @@ export function parseFirstRunHints(config: Record<string, unknown>): FirstRunHin
 }
 
 export async function readFirstRunHints(userId: string): Promise<FirstRunHintsProgress | null> {
-  return parseFirstRunHints(await readUserSettingsConfig(client, userId, 'user'))
+  return parseFirstRunHints(await readOwnSettings(userId, 'user'))
 }
 
 /** Enroll before finish_first_run: a failed completion remains at the intro, with progress intact. */
 export async function startFirstRunHints(userId: string): Promise<void> {
-  const config = await readUserSettingsConfig(client, userId, 'user')
+  const config = await readOwnSettings(userId, 'user')
   const progress = parseFirstRunHints(config)
   if (progress) return
-  await updateUserSettingsKey(client, userId, 'user', KEY, (value) => parseFirstRunHints({ [KEY]: value }) ? value : { version: 1, dismissed: [] })
+  await updateOwnSettingsKey(userId, 'user', KEY, (value) => parseFirstRunHints({ [KEY]: value }) ? value : { version: 1, dismissed: [] })
 }
 
 /** Re-read before merging, preserving the other settings and previously retired hints. */
 export async function dismissFirstRunHints(userId: string, ids: readonly FirstRunHintId[]): Promise<FirstRunHintsProgress> {
-  const saved = await updateUserSettingsKey(client, userId, 'user', KEY, (value) => {
+  const saved = await updateOwnSettingsKey(userId, 'user', KEY, (value) => {
     const progress = parseFirstRunHints({ [KEY]: value })
     if (!progress) throw new Error('First-run hint progress is missing')
     return { version: 1, dismissed: [...new Set([...progress.dismissed, ...ids])] }

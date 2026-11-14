@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
 import type { SettingsTableClient } from '@gugu/core/cloud/userSettings'
 import { updateUserSettingsConfig } from '@gugu/core/cloud/userSettings'
 import { rememberAgentCreateDevice, rememberAgentCreateProject } from '@gugu/core/cloud/agentCreateDefaults'
