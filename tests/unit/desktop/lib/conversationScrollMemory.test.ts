@@ -229,9 +229,11 @@ describe('conversation scroll memory', () => {
       document.body.appendChild(container)
       const root = createRoot(container)
       const view = { memory: null as ReturnType<typeof useConversationScrollMemory> | null, rowTop: 84, scrollTop: 700, renders: 0 }
+      // As in the chat panel: the ref and the callback keep their identity across renders, the id array does not.
+      const isAtBottomRef = { current: true }, setFollowingTail = vi.fn()
       function Harness({ chatId, messageIds, rows }: { chatId: string; messageIds: string[]; rows: string[] }) {
         view.renders += 1
-        view.memory = useConversationScrollMemory({ listRef, viewportKey, chatId, activationKey: chatId, enabled: true, messageIds, isAtBottomRef: { current: true }, setFollowingTail: vi.fn() })
+        view.memory = useConversationScrollMemory({ listRef, viewportKey, chatId, activationKey: chatId, enabled: true, messageIds, isAtBottomRef, setFollowingTail })
         return createElement('div', { ref: view.memory.setScrollerRef },
           createElement('div', null, ...rows.map((id) => createElement('div', { key: id, 'data-msg-id': id }))))
       }
@@ -277,6 +279,34 @@ describe('conversation scroll memory', () => {
         expect(rig.view.scrollTop).toBe(700)
         expect(rig.view.memory!.isPreservingPosition()).toBe(false)
         expect(rig.view.memory!.openLocation(), '恢复完成后同一次激活里的重挂回到最新处').toEqual({ index: 'LAST', align: 'end' })
+      } finally { await rig.cleanup() }
+    })
+
+    it('completes while the panel re-renders every frame with the same rows', async () => {
+      const rig = mount()
+      try {
+        await leaveAndReturn(rig, ['first', 'anchor', 'last'])
+        rig.view.scrollTop = 700
+        // A busy panel hands over a new array of the same ids on every render.
+        for (let i = 0; i < 8; i += 1) {
+          await rig.render({ chatId: 'chat-a', messageIds: ['first', 'anchor', 'last'], rows: ['first', 'anchor', 'last'] })
+          await frames(1)
+        }
+        expect(rig.view.memory!.isPreservingPosition(), 'the restore is over').toBe(false)
+      } finally { await rig.cleanup() }
+    })
+
+    it('yields to the reader: a wheel during the restore is not undone', async () => {
+      const rig = mount()
+      try {
+        await leaveAndReturn(rig, ['first', 'anchor', 'last'])
+        rig.view.scrollTop = 700
+        const scroller = document.body.lastElementChild!.firstElementChild as HTMLElement
+        act(() => { scroller.dispatchEvent(new Event('wheel')) })
+        rig.view.scrollTop = 600
+        await frames(5)
+        expect(rig.view.scrollTop, 'the reader stays where they scrolled to').toBe(600)
+        expect(rig.view.memory!.isPreservingPosition()).toBe(false)
       } finally { await rig.cleanup() }
     })
 
