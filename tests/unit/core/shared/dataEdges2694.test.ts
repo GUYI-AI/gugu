@@ -20,3 +20,5 @@ it('reports malformed health background booleans', () => { expect(readHealthSumm
 it('uses generic panel text for inherited category and error names', () => { const actual=panelApplicationFailure('constructor','item','constructor','en-US'); expect(actual).toContain('Panel resource'); expect(actual).toContain('The resource update could not complete'); expect(actual).not.toContain('undefined') })
 
 it('uses needsAction for inherited wait detail labels', () => { expect(presentAgentStatus({reading:{status:'needs_user',detail:'constructor'} as never,reachability:'online'}).label).toBe('needsAction') })
+
+it('keeps invalid stored sizes out of whole-text reads', () => { expect(opensAsStoredText('a.md',null,-1)).toBe(false); expect(opensAsStoredText('a.md',null,0)).toBe(true) })
