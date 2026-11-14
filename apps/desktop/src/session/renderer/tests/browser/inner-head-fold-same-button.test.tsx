@@ -13,8 +13,8 @@ import '@/components/sessionpage/EmdashSessionFrame.css';
 import '@renderer/index.css';
 
 /**
- * The inner column's head and the content's tab strip are one band: same top, same height, same ground, and the band's
- * bottom edge runs on under the head. Folding the column swaps its fold button for the restore lane's expand button —
+ * The inner column's head and the content's tab strip share one line: same top, same height. Folding the column swaps
+ * its fold button for the restore lane's expand button —
  * the same 28px button with the same 16px icon, so a click does not make it shrink (owner 11-14).
  */
 
