@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
+import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, deferred } from '../../../support/testHarness'
 
@@ -11,6 +12,7 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {
 } }))
 
 import { IOSCalendarPermissionsPanel } from '../../../../apps/desktop/src/mobile/ios-calendar/IOSCalendarPermissionsPanel'
+import { IOSCalendarPermissionError } from '../../../../apps/desktop/src/mobile/ios-calendar/iosCalendarPermissions'
 import type { IOSCalendarPermissionClient, IOSCalendarPermissionStatus, IOSCalendarSnapshot } from '../../../../apps/desktop/src/mobile/ios-calendar/iosCalendarPermissions'
 
 const binding = { ownerId: 'owner-a', deviceId: 'device-a', installationId: 'installation-a' }
@@ -31,6 +33,32 @@ const action = () => Array.from(harness.container.querySelectorAll<HTMLButtonEle
 const render = (transport: IOSCalendarPermissionClient, ownerId = 'owner-a') => harness.render(createNode(IOSCalendarPermissionsPanel, { ownerId, client: transport }))
 
 describe('iOS calendar permission panel', () => {
+  it('updates a settled native failure when the user changes language without replaying the read', async () => {
+    const transport = client(vi.fn().mockRejectedValue(new IOSCalendarPermissionError('invalid_native_status', 'native diagnostic')))
+    await render(transport)
+    expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('未读到有效的日历权限状态，请重新读取。')
+    await act(async () => setLocalePreference('en-US'))
+    expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('Could not read a valid Calendar status. Refresh to try again.')
+    expect(harness.container.querySelector('button')?.getAttribute('aria-label')).toBe('Refresh Calendar access')
+    expect(harness.container.textContent).not.toMatch(/[\u3400-\u9fff]/)
+    expect(transport.read).toHaveBeenCalledOnce()
+    expect(transport.connect).not.toHaveBeenCalled()
+  })
+
+  it('keeps the English system permission refusal and recovered native status localized', async () => {
+    setLocalePreference('en-US')
+    const transport = client(vi.fn(async () => status('denied')))
+    vi.mocked(transport.connect).mockRejectedValue({ code: 'os_permission', message: 'private native diagnostic' })
+    await render(transport)
+    const connect = Array.from(harness.container.querySelectorAll('button')).find(button => button.textContent === 'Connect')!
+    await clickElement(connect)
+    expect(permissionText()).toBe('Not connected · Not authorized')
+    expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('Connecting Calendar requires full access. Check system settings.')
+    expect(harness.container.textContent).not.toMatch(/[\u3400-\u9fff]/)
+    expect(transport.connect).toHaveBeenCalledExactlyOnceWith(binding)
+    expect(transport.read).toHaveBeenCalledTimes(2)
+  })
+
   it('shows full OS access separately from the unconnected native category and never prompts on discovery', async () => {
     const transport = client()
     await render(transport)
