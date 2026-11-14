@@ -10,7 +10,7 @@ const env = vi.hoisted(() => ({
   unavailable: null as string | null,
   read: vi.fn(), write: vi.fn(), warn: vi.fn(),
 }));
-vi.mock('@/hooks/useConversationSessionSummary', () => ({ useConversationSessionSummary: () => ({ nativeInputVersion: env.version }) }));
+vi.mock('@/hooks/useConversationSessionSummary', () => ({ useConversationSessionSummary: (_id: unknown, _device: unknown, pick: (summary: { nativeInputVersion: unknown }) => unknown) => pick({ nativeInputVersion: env.version }) }));
 vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => env.deviceId } }));
 vi.mock('../machine-unavailable-label', () => ({ machineUnavailableLabel: () => env.unavailable }));
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: (deviceId: string) => ({

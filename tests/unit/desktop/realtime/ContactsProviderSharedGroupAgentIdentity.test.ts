@@ -31,8 +31,8 @@ const { authUser, contactsServiceMock, identitiesById, putIdentitiesMock, getImR
 })
 
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: authUser, loading: false }) }))
-vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
-  useChatStore: () => ({
+vi.mock('../../../../apps/desktop/src/store/chatContext', () => {
+  const store = () => ({
     refreshChats: refreshChatsMock,
     chats: chatState.chats,
     loadingChats: false,
@@ -42,8 +42,9 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
     identitiesById,
     getImRepository: getImRepositoryMock,
     subscribeAccountRevision: () => () => undefined,
-  }),
-}))
+  })
+  return { useChatStore: store, useChatStoreReader: () => store, useStoreValueBy: <T>(read: (value: ReturnType<typeof store>) => T) => read(store()) }
+})
 vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({ contactsService: contactsServiceMock }))
 
 const { renameLocal, notify } = vi.hoisted(() => ({ renameLocal: vi.fn(), notify: vi.fn() }))

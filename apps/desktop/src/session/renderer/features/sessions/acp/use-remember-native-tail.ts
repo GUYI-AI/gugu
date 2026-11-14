@@ -51,9 +51,9 @@ export function rememberNativeTail(deviceId: string, sessionId: string, availabl
 /** One hook in the live conversation panel shared by the main page, peek and screen blocks. */
 export function useRememberNativeTail(projectId: string | undefined, sessionId: string | undefined, generating: boolean, shown: boolean) {
   const deviceId = projectId ? machineRegistry.machineOf(projectId) : null;
-  const summary = useConversationSessionSummary(sessionId, deviceId);
+  const nativeInputVersion = useConversationSessionSummary(sessionId, deviceId, (summary) => summary?.nativeInputVersion);
   const ready = Boolean(shown && deviceId && projectId && sessionId
-    && (summary?.nativeInputVersion === 1 || summary?.nativeInputVersion === 2)
+    && (nativeInputVersion === 1 || nativeInputVersion === 2)
     && !machineUnavailableLabel(projectId));
   const previous = useRef<{ deviceId: string | null; sessionId: string | undefined; ready: boolean; generating: boolean } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);

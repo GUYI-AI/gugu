@@ -1,7 +1,8 @@
 import type { GroupInvitation } from '../lib/groupInvitations'
 import type { ManagedGroupJoinRequest } from '../lib/groupJoinRequests'
 import type { FriendRequestEntry } from '../lib/requestHistory'
-import { createContext, useContext, useSyncExternalStore } from 'react'
+import { createContext, useContext } from 'react'
+import { createSelectStore, useSelect, type SelectStore } from '../lib/selectStore'
 import type { AcceptFriendRequestResult, ContactGroup, ContactGroupChat, ContactUser, FriendRequest } from '@gugu/core/shared/types/contacts'
 import type { AgentLook } from '../components/agentAvatar/look'
 
@@ -104,25 +105,20 @@ export function useContactsStore(): ContactsContextValue {
   return useContext(ContactsContext)
 }
 
-/** 通讯录的读取句柄:回调里读整份(不订阅),或只订阅一格;外壳不随通讯录的每次更新整棵重渲。 */
-export type ContactsHandle = { get: () => ContactsContextValue; subscribe: (listener: () => void) => () => void }
-export const ContactsHandleContext = createContext<ContactsHandle>({ get: () => EMPTY_CONTACTS, subscribe: () => () => {} })
+/** 通讯录的读取句柄(@@@select-store):回调里读整份(不订阅),或只订阅一格;外壳不随通讯录的每次更新整棵重渲。 */
+export const ContactsHandleContext = createContext<SelectStore<ContactsContextValue>>(createSelectStore(EMPTY_CONTACTS))
 
 export function useContactsReader(): () => ContactsContextValue {
   return useContext(ContactsHandleContext).get
 }
 
 const NO_CONTACTS: ContactsContextValue['contacts'] = []
-const noContacts = () => NO_CONTACTS
-const noSubscription = () => () => {}
 
-/** 只订阅通讯录名单;enabled 为假时不订阅(桌面壳也调手机壳的 hook,那时名单用不上,❌ 跟着每次通讯录更新整棵重渲)。 */
+/** 只订阅通讯录名单;enabled 为假时不读名单(桌面壳也调手机壳的 hook,那时名单用不上,❌ 跟着每次通讯录更新整棵重渲)。 */
 export function useContactList(enabled = true): ContactsContextValue['contacts'] {
-  const handle = useContext(ContactsHandleContext)
-  return useSyncExternalStore(enabled ? handle.subscribe : noSubscription, enabled ? () => handle.get().contacts : noContacts)
+  return useSelect(useContext(ContactsHandleContext), (value) => (enabled ? value.contacts : NO_CONTACTS), Object.is)
 }
 
 export function usePendingRequestCount(): number {
-  const handle = useContext(ContactsHandleContext)
-  return useSyncExternalStore(handle.subscribe, () => handle.get().pendingRequestCount)
+  return useSelect(useContext(ContactsHandleContext), (value) => value.pendingRequestCount)
 }

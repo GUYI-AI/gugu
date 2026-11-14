@@ -19,7 +19,7 @@ import type { AssistantHomePlace } from '@/lib/assistantHome'
 import { assistantTintHue, assistantTintStyle } from '@/lib/assistantTint'
 import { scheduleComposerFocus } from '@/lib/focusComposer'
 import { ArrowUpToLine, ChevronLeft, Mic, Paperclip, Search, Sparkles } from '@/lib/icons'
-import { useReportChatOnScreen } from '@/lib/onScreenChat'
+import { useAppActive, useReportChatOnScreen } from '@/lib/onScreenChat'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { searchInChat } from '@renderer/features/global-search/search-session'
 import { showAssistantTaskChat, useOpenedAssistantTaskChat } from '@/lib/assistantTaskChat'
@@ -191,7 +191,9 @@ function MobileAssistantAppContent({
   attachmentsRef.current = draftAttachments
   const [ideasOpen, setIdeasOpen] = useState(false)
   const [chatColumn, setChatColumn] = useState<HTMLDivElement | null>(null)
-  const chatShown = useReportChatOnScreen(visible && tab === 'chat' ? chatId : null) === chatId
+  const shownChat = visible && tab === 'chat' ? chatId : null
+  useReportChatOnScreen(shownChat)
+  const chatShown = useAppActive() && shownChat === chatId
   const machine = usePhoneMachine(homeDeviceId, assistant.id, chatId)
   // 「+」里的「录制语音笔记」:手机只录和传到它家里(phoneVoiceRuntime),转写在电脑上点「开始转写」;上传失败时录音保留在手机上。
   const { t: tVoice } = useTranslation('voiceNotes')

@@ -14,18 +14,26 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({
   },
 }))
 
-const { chatOnScreen, isChatOnScreen, useReportChatOnScreen } = await import('../../../../apps/desktop/src/lib/onScreenChat')
+const { chatOnScreen, isChatOnScreen, useAppActive, useReportChatOnScreen } = await import('../../../../apps/desktop/src/lib/onScreenChat')
 
 let harness: ReturnType<typeof createReactHarness>
 const seen: Array<string | null> = []
+let shellRenders = 0
+// The shell reports what it shows and does not re-render on window activity; a reader that needs it subscribes itself.
 function Shell({ shown }: { shown: string | null }) {
-  seen.push(useReportChatOnScreen(shown))
+  shellRenders++
+  useReportChatOnScreen(shown)
+  return null
+}
+function Reader({ shown }: { shown: string | null }) {
+  seen.push(useAppActive() ? shown : null)
   return null
 }
 
 beforeEach(() => {
   harness = createReactHarness()
   seen.length = 0
+  shellRenders = 0
   host.listener = null
   host.subscribeAppActive = (listener) => {
     host.listener = listener
@@ -38,13 +46,15 @@ afterEach(() => { harness.cleanup() })
 
 describe('#6610 chat on screen', () => {
   it('is the chat the shell shows, and nothing once the app goes to the background', async () => {
-    await harness.render(createNode(Shell, { shown: 'chat-1' }))
+    await harness.render(createNode('div', null, createNode(Shell, { shown: 'chat-1' }), createNode(Reader, { shown: 'chat-1' })))
     expect(chatOnScreen()).toBe('chat-1')
     expect(seen.at(-1)).toBe('chat-1')
+    const rendersBefore = shellRenders
 
     await act(async () => { host.listener?.(false) })
     expect(chatOnScreen(), 'backgrounded while the page still says visible').toBeNull()
-    expect(seen.at(-1), 'the shell re-renders with the chat no longer on screen').toBeNull()
+    expect(seen.at(-1), 'a reader of activity re-renders with the chat no longer on screen').toBeNull()
+    expect(shellRenders, 'the shell itself does not re-render').toBe(rendersBefore)
 
     await act(async () => { host.listener?.(true) })
     expect(chatOnScreen()).toBe('chat-1')
@@ -53,10 +63,7 @@ describe('#6610 chat on screen', () => {
 
   it('follows the shell synchronously and clears when the shell goes away', async () => {
     await harness.render(createNode(Shell, { shown: 'chat-1' }))
-    const rendersBefore = seen.length
     await harness.render(createNode(Shell, { shown: 'chat-2' }))
-    // 切会话的那一次渲染就给出新值,不先渲染一帧「没在看」。
-    expect(seen.slice(rendersBefore)).not.toContain(null)
     expect(chatOnScreen()).toBe('chat-2')
     await harness.render(createNode(Shell, { shown: null }))
     expect(chatOnScreen(), 'back to the list').toBeNull()
@@ -86,7 +93,6 @@ describe('#6610 chat on screen', () => {
     }
     await harness.render(createNode(Shell, { shown: 'chat-2' }))
     expect(chatOnScreen()).toBeNull()
-    expect(seen.at(-1)).toBeNull()
     await act(async () => { previousAnswer?.(true) })
     expect(chatOnScreen()).toBeNull()
     await act(async () => { host.listener?.(false) })

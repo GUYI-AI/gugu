@@ -32,10 +32,9 @@ function ReadViewport({ chat, entry, readerKey }: { chat: ChatItem; entry: Nativ
   return null
 }
 function ReadConversation({ entry, readerKey }: { entry: NativeConversationVisibility; readerKey: string }) {
-  const session = useConversationSessionSummary(entry.sessionId)
+  const agentId = useConversationSessionSummary(entry.sessionId, undefined, (summary) => summary?.agent?.userId)
   const { chats } = useChatStore('chats')
   useOwnedAgentEntries()
-  const agentId = session?.agent?.userId
   const chat = agentId && isOwnedAgentPeer(agentId) ? chats.find(chat => chat.peer_user_id === agentId && (chat.kind === 'dm' || chat.kind === 'ai')) : null
   return chat ? <ReadViewport key={chat.id} chat={chat} entry={entry} readerKey={readerKey} /> : null
 }

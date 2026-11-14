@@ -15,7 +15,7 @@ vi.mock('../../../apps/desktop/src/components/assistant/AssistantComposerEntries
 vi.mock('../../../apps/desktop/src/components/assistant/useAssistantTyping', () => ({ useAssistantTyping: () => null }))
 vi.mock('../../../apps/desktop/src/components/ChatAreaPanel', () => ({ ChatAreaPanel: () => <div data-testid="retained-chat"><input defaultValue="draft" /></div> }))
 vi.mock('../../../apps/desktop/src/components/chat/filePreviewHost', () => ({ FilePreviewHost: { Provider: ({ children }: { children: React.ReactNode }) => children } }))
-vi.mock('../../../apps/desktop/src/lib/onScreenChat', () => ({ useReportChatOnScreen: (id: string | null) => id }))
+vi.mock('../../../apps/desktop/src/lib/onScreenChat', () => ({ useReportChatOnScreen: () => {}, useAppActive: () => true }))
 vi.mock('../../../apps/desktop/src/lib/assistantSetupState', () => ({ useCustomizeCardOffered: () => false }))
 vi.mock('../../../apps/desktop/src/lib/assistantTaskChat', () => ({ useOpenedAssistantTaskChat: () => null, showAssistantTaskChat: vi.fn() }))
 vi.mock('../../../apps/desktop/src/components/ui/sheetStack', () => ({ useBackLayer: () => {} }))
