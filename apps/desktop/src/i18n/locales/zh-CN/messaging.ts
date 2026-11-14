@@ -264,11 +264,11 @@ export default {
   },
   "chatList": {
     "hide": "不显示",
-    "deleteHistoryDescription": "删除后，你自己的已有聊天记录将无法恢复。其他成员的记录和群关系会保留。",
+    "deleteHistoryDescription": "清空你这边的聊天记录，其他成员不受影响",
     "hideFailed": "无法从列表删除这条对话",
     "removeFromList": "从列表删除",
     "hideAgentDescription": "这条对话会从你的列表移除，有新消息时会重新出现。",
-    "alsoRemoveAgent": "同时删除这个 Agent",
+    "alsoRemoveAgent": "同时删除这个智能体",
     "hiddenAgentDeleteFailed": "聊天记录已删除，但 Agent 删除失败",
     "retryAgentDelete": "重试删除 Agent",
     "agentDeleted": "Agent 已删除",

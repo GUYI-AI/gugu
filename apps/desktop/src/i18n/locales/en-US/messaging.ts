@@ -265,7 +265,7 @@ export default {
   },
   "chatList": {
     "hide": "Hide",
-    "deleteHistoryDescription": "Your existing conversation history will be permanently cleared for you. Other members keep their history and membership.",
+    "deleteHistoryDescription": "Clear your chat history. Other members are not affected.",
     "hideFailed": "Could not remove this conversation from the list",
     "removeFromList": "Remove from list",
     "hideAgentDescription": "This conversation will leave your list and return when a new message arrives.",

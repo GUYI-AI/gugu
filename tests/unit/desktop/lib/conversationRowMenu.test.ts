@@ -10,7 +10,7 @@ describe('conversation row actions', () => {
     const chat = conversationRowMenu({ kind: 'chat', canDelete: true, hasUnread: true, hasAnyUnread: true })
     const project = conversationRowMenu({ kind: 'project', hasUnread: true })
     expect(chat[0]).toEqual(project[0])
-    expect(chat.map((item) => item.id)).toEqual(['mark-read', 'pin', 'notifications', 'mark-all-read', 'delete-chat'])
+    expect(chat.map((item) => item.id)).toEqual(['mark-read', 'mark-all-read', 'pin', 'notifications', 'delete-chat'])
     expect(project.map((item) => item.id)).toEqual(['mark-read', 'remove-project'])
     const topic = conversationRowMenu({ kind: 'topic', hasUnread: false, hasAnyUnread: true })
     expect(topic.map((item) => [item.id, item.disabled])).toEqual([['mark-read', true], ['mark-all-read', false]])
@@ -18,7 +18,7 @@ describe('conversation row actions', () => {
 
   it('keeps personal actions when the server denies topic management', () => {
     const items = conversationRowMenu({ kind: 'chat', canDelete: false, hasUnread: true, hasAnyUnread: true })
-    expect(items.map((item) => item.id)).toEqual(['mark-read', 'pin', 'notifications', 'mark-all-read'])
+    expect(items.map((item) => item.id)).toEqual(['mark-read', 'mark-all-read', 'pin', 'notifications'])
   })
 
   it('keeps scoped availability independent from unread conversations elsewhere', () => {
@@ -31,7 +31,7 @@ describe('conversation row actions', () => {
 
   it('offers 取消固定到左侧栏 right after 置顶 only for a row pinned to the sidebar (#2548)', () => {
     const pinned = conversationRowMenu({ kind: 'chat', canDelete: false, hasUnread: false, pinnedToSidebar: true })
-    expect(pinned.map((item) => item.id)).toEqual(['mark-read', 'pin', 'unpin-from-sidebar', 'notifications', 'mark-all-read'])
+    expect(pinned.map((item) => item.id)).toEqual(['mark-read', 'mark-all-read', 'pin', 'unpin-from-sidebar', 'notifications'])
     expect(pinned.find((item) => item.id === 'unpin-from-sidebar')).toMatchObject({ label: 'unpinFromSidebar', icon: 'sidebar' })
     expect(conversationRowMenu({ kind: 'chat', canDelete: false, hasUnread: false }).some((item) => item.id === 'unpin-from-sidebar')).toBe(false)
   })
