@@ -1,3 +1,4 @@
+import { holdIOSImageViewerChrome } from '../platform/capacitorShellChrome'
 import { messageForUser } from '@/lib/userFacingError';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -439,7 +440,9 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
             bindMenu()
             setViewer((open) => (open?.pswp === pswp ? { ...open, index: pswp.currIndex } : open))
           })
+          let releaseSystemChrome = () => {}
           pswp.on('destroy', () => {
+            releaseSystemChrome()
             unbindMenu?.()
             request.items.forEach(item => item.release?.())
             active = null
@@ -450,6 +453,7 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
           active = pswp
           pswp.init()
           if (!pswp.element) throw new Error('PhotoSwipe did not create its root element')
+          releaseSystemChrome = holdIOSImageViewerChrome()
           bindMenu()
           setViewer({ pswp, root: pswp.element, items: request.items, index: pswp.currIndex })
         })
