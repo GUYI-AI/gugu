@@ -50,6 +50,14 @@ describe('the original message press', () => {
     expect(source.text.slice(source.start, source.end)).toBe('harbor')
   })
 
+  it('keeps one native word across inline formatting boundaries', () => {
+    const { bubble } = message('<p>The har<strong>bor</strong> opens.</p>', 'strong', 1)
+    const source = capturePhoneTextSelection(bubble, 10, 20)!
+    expect(source.text.slice(source.start, source.end)).toBe('harbor')
+    expect(source.start).toBe(4)
+    expect(source.browserRange.toString()).toBe('harbor')
+  })
+
   it('has no selection action for a missing or empty body', () => {
     expect(capturePhoneTextSelection(null, 10, 20)).toBeNull()
     expect(capturePhoneTextSelection(document.createElement('div'), 10, 20)).toBeNull()

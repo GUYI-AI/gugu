@@ -108,6 +108,7 @@ private final class NativeTextSelectionController: UIViewController {
         body.select(nil)
         body.selectedRange = initialRange
         body.scrollRangeToVisible(initialRange)
+        body.layoutIfNeeded()
         guard let selection = body.selectedTextRange else { return }
         let rect = body.firstRect(for: selection)
         if #available(iOS 16.0, *) {

@@ -10,6 +10,38 @@ export interface PhoneTextSelectionSource {
 type CaretDocument = Document & {
   caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null
 }
+const EXCLUDED = 'button, svg, script, style, img, video, audio, iframe, object, embed, link, [aria-hidden="true"]'
+
+function textNodes(root: HTMLElement) {
+  return root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: node => node.parentElement?.closest(EXCLUDED) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  })
+}
+
+/** A word can cross emphasis/link nodes. Move its UTF-16 endpoints through the original text nodes. */
+function browserWordRange(root: HTMLElement, node: Node, offset: number, startDelta: number, endDelta: number): Range {
+  const move = (delta: number): [Node, number] => {
+    const walker = textNodes(root)
+    walker.currentNode = node
+    let current = node
+    let at = offset
+    let remaining = Math.abs(delta)
+    while (remaining > 0) {
+      const available = delta < 0 ? at : (current.textContent?.length ?? 0) - at
+      if (remaining <= available) { at += delta < 0 ? -remaining : remaining; break }
+      remaining -= available
+      const next = delta < 0 ? walker.previousNode() : walker.nextNode()
+      if (!next) { at = delta < 0 ? 0 : current.textContent?.length ?? 0; break }
+      current = next
+      at = delta < 0 ? current.textContent?.length ?? 0 : 0
+    }
+    return [current, at]
+  }
+  const range = root.ownerDocument.createRange()
+  range.setStart(...move(startDelta))
+  range.setEnd(...move(endDelta))
+  return range
+}
 
 /** Read the word before the lifted menu hides the original message. */
 export function capturePhoneTextSelection(bubble: HTMLElement | null, x: number, y: number): PhoneTextSelectionSource | null {
@@ -24,7 +56,7 @@ export function capturePhoneTextSelection(bubble: HTMLElement | null, x: number,
     caret.collapse(true)
   }
   if (!caret || !root.contains(caret.startContainer) || caret.startContainer.nodeType !== Node.TEXT_NODE) {
-    const first = document.createTreeWalker(root, NodeFilter.SHOW_TEXT).nextNode()
+    const first = textNodes(root).nextNode()
     if (!first) return null
     caret = document.createRange()
     caret.setStart(first, 0)
@@ -32,12 +64,6 @@ export function capturePhoneTextSelection(bubble: HTMLElement | null, x: number,
   }
   const node = caret.startContainer
   const offset = caret.startOffset
-  const local = phoneTextWordRange(node.textContent ?? '', offset)
-  if (!local) return null
-  const browserRange = document.createRange()
-  browserRange.setStart(node, local.start)
-  browserRange.setEnd(node, local.end)
-
   // An offscreen clone preserves innerText's line breaks without touching React's DOM.
   const path: number[] = []
   for (let current: Node = node; current !== root;) {
@@ -53,7 +79,7 @@ export function capturePhoneTextSelection(bubble: HTMLElement | null, x: number,
   while (root.textContent?.includes(marker)) marker += '_'
   const value = copyNode.textContent ?? ''
   copyNode.textContent = value.slice(0, offset) + marker + value.slice(offset)
-  for (const control of clone.querySelectorAll('button, svg, script, style, [aria-hidden="true"]')) control.remove()
+  for (const control of clone.querySelectorAll(EXCLUDED)) control.remove()
   for (const element of [clone, ...clone.querySelectorAll('[id], [data-testid]')]) {
     element.removeAttribute('id')
     element.removeAttribute('data-testid')
@@ -70,7 +96,7 @@ export function capturePhoneTextSelection(bubble: HTMLElement | null, x: number,
     if (at < 0) return null
     const text = rendered.slice(0, at) + rendered.slice(at + marker.length)
     const word = phoneTextWordRange(text, at)
-    return word ? { text, ...word, browserRange } : null
+    return word ? { text, ...word, browserRange: browserWordRange(root, node, offset, word.start - at, word.end - at) } : null
   } finally {
     host.remove()
   }
