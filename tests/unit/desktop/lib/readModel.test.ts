@@ -136,3 +136,42 @@ describe('the account owns the cache and the snapshot', () => {
     expect(Object.values(JSON.parse(stored) as Record<string, { value: unknown }>).map((entry) => entry.value)).toEqual([{ label: "alice's" }])
   })
 })
+
+describe('acceptance fixes', () => {
+  // Acceptance 1.3: entries restored at start or put by a write were collected after react-query's five minutes when no
+  // surface watched them, so Settings opened a while after launch drew placeholders again.
+  it('an entry restored at start or put by a write outlives five minutes with nobody watching', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    rm.readModel({ name: 'test-restored', scope: 'account', read: async () => 'read', persist: true }).set([], 'kept')
+    rm = await freshStart()
+    vi.useFakeTimers()
+    try {
+      const restored = rm.readModel({ name: 'test-restored', scope: 'account', read: async () => 'read', persist: true })
+      const written = rm.readModel({ name: 'test-written', scope: 'account', read: async () => 'read' })
+      written.set([], 'saved')
+      vi.advanceTimersByTime(6 * 60_000)
+      expect(restored.peek()).toMatchObject({ state: 'value', value: 'kept' })
+      expect(written.peek()).toMatchObject({ state: 'value', value: 'saved' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a value bound before an await does not land in the account signed in after it', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const name = rm.readModel({ name: 'test-bound', scope: 'account', read: async () => 'read' })
+    const alices = name.at()
+    rm.followRendererSession('SIGNED_IN', 'bob')
+    alices.set('alice saved')
+    expect(name.peek()).toEqual({ state: 'unknown' })
+  })
+
+  it('a refresh that leaves an argument out matches any value there, without shifting the ones after it', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const model = rm.readModel({ name: 'test-args', scope: 'device', read: async (_d: string, machine: string | null, provider: string) => `${machine}:${provider}` })
+    await model.prefetch('mac', 'codex'); await model.prefetch('mac', 'claude'); await model.prefetch(null, 'codex')
+    await model.refresh(undefined, 'codex')
+    const invalidated = (machine: string | null, provider: string) => rm.queryClient.getQueryState(model.key(machine, provider)!)?.isInvalidated
+    expect([invalidated('mac', 'codex'), invalidated(null, 'codex'), invalidated('mac', 'claude')]).toEqual([true, true, false])
+  })
+})

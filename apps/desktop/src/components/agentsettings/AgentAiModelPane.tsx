@@ -153,13 +153,14 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
     setOutcome(null)
     try {
       const selection = parseSelection(nextValue)
+      const shown = agentModelSelection.at(agent.id) // bound before the awaits: a switch meanwhile does not receive it
       const result = await setAgentModelSelection(agent.id, selection)
       if (epoch !== requestEpoch.current) return
       setOutcome(result)
       // 写完重读:desired / applied / apply_error 都以云端为准,❌ 不用本地猜一份「应该已经变成这样」。
       const next = await readAgentModelSelection(agent.id)
       if (epoch !== requestEpoch.current) return
-      agentModelSelection.set([agent.id], next)
+      shown.set(next)
       if (result.ok) setValue(null)
     } catch (cause) {
       if (epoch === requestEpoch.current) setError(messageForUser(cause))

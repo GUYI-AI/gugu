@@ -13,7 +13,7 @@ import { publishDirectoryDevices } from '@/session/shared/remote-sessions/sessio
 import type { Device } from '@gugu/core/shared/types/chat'
 import { readDeviceRevision } from '../lib/accountRevisionCoordinator'
 import type { AccountRevisionOperation } from '../lib/accountRevisionRuntime'
-import { cachedDevicesAccount, devicesModel, readCachedDevices, writeCachedDevices } from './devicesCache'
+import { cachedDevicesAccount, devicesModel, readCachedDevices } from './devicesCache'
 import { useReadModel } from '../lib/readModel'
 import { withDeviceProjects } from '@gugu/core/cloud/deviceProjects'
 import { withProjectsRead } from './deviceProjectsRead'
@@ -103,6 +103,8 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   // 云电脑睡下 / 醒来,它那一行的在线与否就会翻 ⇒ 顺带再问一次管家(❌ 让它拖住设备列表的游标)。
   const applyDeviceRevisions = useCallback(async (operations: readonly AccountRevisionOperation[]) => {
     if (!userId) return
+    // Bound to the account asking: rows that answer after a switch do not land in the next account's list.
+    const cache = devicesModel.at()
     const changed = new Set<string>()
     const removed = new Set<string>()
     const projectsOf = new Set<string>()
@@ -127,7 +129,7 @@ export function DevicesProvider({ children, active = true }: { children: React.R
       if (!isLifecycleCancellation(err)) {
         devicesLog.error({ err: String((err as Error)?.message ?? err) }, 'read changed devices failed')
         // 重读那几台的项目没成(游标会重试):重试成功前它们列着的是上次的。
-        if (projectsOf.size > 0) writeCachedDevices(withProjectsRead(readCachedDevices(), String((err as Error)?.message ?? err), readCachedDevices(), projectsOf))
+        if (projectsOf.size > 0) cache.set(withProjectsRead(readCachedDevices(), String((err as Error)?.message ?? err), readCachedDevices(), projectsOf))
       }
       throw err
     }
@@ -136,7 +138,7 @@ export function DevicesProvider({ children, active = true }: { children: React.R
     const previous = readCachedDevices()
     const kept = previous.filter((row) => !changed.has(row.device_id) && !removed.has(row.device_id))
     const rows = withProjectsRead(withDeviceProjects([...kept, ...fresh], projects, previous, projectsOf), null, previous, projectsOf)
-    writeCachedDevices(rows)
+    cache.set(rows)
     if (removed.size > 0) void desktopIpc()?.invoke(SERVER_SSH_MACHINES_CHANNELS.reconcile, { owner: userId, present: rows.map((row) => row.device_id) }).catch(() => undefined)
   }, [userId])
   useEffect(() => {

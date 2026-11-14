@@ -74,6 +74,22 @@ queryClient.getQueryCache().subscribe((event) => {
   }
 })
 
+/**
+ * Put a value under a key, the entry living as long as its model keeps it (the account's lifetime by default) — ❌
+ * react-query's five minutes for an entry nobody watches yet: a snapshot restored at start, or a value a write returned,
+ * must still be there when a surface opens later. A model not registered yet (its chunk loads later) is kept likewise.
+ */
+function putValue(key: QueryKey, value: unknown): void {
+  const next = typeof value === 'function' ? (value as (old: unknown) => unknown)(queryClient.getQueryData(key)) : value
+  if (next !== undefined) putEntry(key, next)
+}
+
+function putEntry(key: QueryKey, value: unknown, updatedAt?: number): void {
+  const keep = definitions.get(String(key[0]))?.keep ?? Infinity
+  queryClient.getQueryCache().build(queryClient, { queryKey: key, gcTime: keep })
+  queryClient.setQueryData(key, value, updatedAt === undefined ? undefined : { updatedAt })
+}
+
 // ── account lifecycle ────────────────────────────────────────────────────────────────────────────────────────────
 
 const SNAPSHOT_PREFIX = 'gugu.readModel.v1:'
@@ -166,7 +182,7 @@ function hydrateSnapshot(owner: string): void {
   for (const entry of Object.values(readSnapshot(owner))) {
     if (!Array.isArray(entry?.key) || entry.key[1] !== owner) continue
     if (queryClient.getQueryData(entry.key) !== undefined) continue
-    queryClient.setQueryData(entry.key, entry.value, { updatedAt: entry.at })
+    putEntry(entry.key, entry.value, entry.at)
   }
 }
 
@@ -185,8 +201,10 @@ export type ReadModel<A extends unknown[], V> = {
   prefetch(...args: A): Promise<void>
   /** Read now unless fresh, and return the value. */
   fetch(...args: A): Promise<V>
-  /** Put a value a write returned. */
+  /** Put a value a write returned (synchronously, for the account signed in now). */
   set(args: A, value: V | ((old: V | undefined) => V | undefined)): void
+  /** The entry for these arguments, bound to the account signed in now: for a value that arrives after an await. */
+  at(...args: A): { set(value: V | ((old: V | undefined) => V | undefined)): void }
   /** Mark stale and read again where shown; without arguments, every entry of this model. */
   refresh(...args: Partial<A>): Promise<void>
   /** @internal */ options(key: QueryKey): object
@@ -199,6 +217,7 @@ function ownerOf(scope: Scope): string | null {
 export function readModel<A extends unknown[], V>(definition: Definition<A, V>): ReadModel<A, V> {
   // A module evaluated again (hot reload, a test's module reset) defines its model again: the latest reader serves.
   definitions.set(definition.name, definition as Definition<unknown[], unknown>)
+  queryClient.setQueryDefaults([definition.name], { gcTime: definition.keep ?? Infinity })
   const options = (key: QueryKey) => ({
     queryKey: key,
     staleTime: definition.fresh ?? 0,
@@ -230,13 +249,20 @@ export function readModel<A extends unknown[], V>(definition: Definition<A, V>):
       return k ? queryClient.prefetchQuery(options(k)) : Promise.resolve()
     },
     fetch: (...args) => queryClient.fetchQuery(options(requireKey(args))) as Promise<V>,
-    set: (args, value) => {
-      queryClient.setQueryData<V>(requireKey(args), value as V | ((old: V | undefined) => V | undefined))
+    set: (args, value) => { putValue(requireKey(args), value) },
+    at: (...args) => {
+      // Bound now: a write that answers after the account changed lands in the account that asked, ❌ in the next one.
+      const k = requireKey(args)
+      return { set: (value) => { if (k[1] === ownerOf(definition.scope)) putValue(k, value) } }
     },
     refresh: async (...args) => {
       const owner = ownerOf(definition.scope)
       if (!owner) return
-      const filters = { queryKey: [definition.name, owner, ...args.filter((arg) => arg !== undefined)] }
+      // An argument left out matches any value in its place (❌ dropped, which would shift the ones after it left).
+      const filters = {
+        queryKey: [definition.name, owner],
+        predicate: (query: { queryKey: QueryKey }) => args.every((arg, index) => arg === undefined || hashKey([query.queryKey[index + 2]]) === hashKey([arg])),
+      }
       // A first read already on its way began before what this refresh announces, and react-query folds the refresh into
       // it (there is no value to keep meanwhile): read once more when it lands. A later read is cancelled and read again.
       const firstReads = queryClient.getQueryCache().findAll(filters)
