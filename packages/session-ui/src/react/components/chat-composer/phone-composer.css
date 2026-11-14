@@ -71,13 +71,14 @@
   align-self: end;
   margin-bottom: 6px;
   color: var(--color-white);
-  border: 8px solid transparent;
+  border: 9px solid transparent;
   background: var(--live-light);
   background-clip: padding-box;
 }
 [data-slot='composer'][data-phone-capsule] [data-phone-send]:is(:disabled, [data-disabled]) { opacity: 0.45; }
 [data-slot='composer'][data-phone-capsule] [data-phone-send][data-composer-action='stop'] { background-color: var(--danger-solid); }
-[data-slot='composer'][data-phone-capsule] :is([data-phone-send], [data-phone-editor-toggle]) > svg { width: 20px; height: 20px; }
+[data-slot='composer'][data-phone-capsule] [data-phone-send] > svg { width: 16px; height: 16px; }
+[data-slot='composer'][data-phone-capsule] [data-phone-editor-toggle] > svg { width: 20px; height: 20px; }
 /* Metadata belongs above the input; it never competes with the attachment or send target. */
 [data-slot='composer'][data-phone-capsule] [data-slot='composer-actions-start'] > button:has([data-slot='composer-permission-mode']) {
   grid-column: 1;

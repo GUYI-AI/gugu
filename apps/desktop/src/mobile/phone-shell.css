@@ -1,7 +1,6 @@
 /* Shared phone composer geometry lives with ChatComposer in session-ui. */
 /* The reference capsule has a ~12px screen gutter; remove the nested desktop inset. */
-[data-phone-shell] [data-chat-bottom-dock] { padding-inline: 12px; }
-[data-phone-shell] [data-chat-bottom-dock] [data-chat-composer] { padding-inline: 0; }
+[data-phone-shell] [data-chat-bottom-dock] { padding-inline: 12px; --phone-composer-inline-pad: 0px; }
 [data-phone-shell] {
   --phone-font-caption: calc((var(--font-caption) + var(--font-body)) / 2);
   --pane-pad-x: var(--spacing-lg);

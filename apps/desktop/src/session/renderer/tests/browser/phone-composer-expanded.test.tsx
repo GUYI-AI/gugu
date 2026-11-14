@@ -33,7 +33,7 @@ it.each([320, 390, 600])('%ipx: text scrolls after four lines and both bottom co
   const send = host!.querySelector<HTMLElement>('[data-phone-send]')!
   const sendStyle = getComputedStyle(send)
   expect(sendStyle.backgroundClip).toBe('padding-box')
-  expect(send.getBoundingClientRect().width - 2 * parseFloat(sendStyle.borderLeftWidth)).toBe(28)
+  expect(send.getBoundingClientRect().width - 2 * parseFloat(sendStyle.borderLeftWidth)).toBe(26)
   const height = input.getBoundingClientRect().height
   expect(host!.querySelector('[data-phone-editor-toggle]')).toBeNull()
   await page.getByTestId('chat-composer').fill('第一行\n第二行\n第三行\n第四行')

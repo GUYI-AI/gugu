@@ -97,7 +97,7 @@
  */
 import { Button } from '@session-ui/react/primitives/button';
 import { cx } from '@session-ui/styles/utilities/cx';
-import { ArrowUp, CircleAlert, Maximize2, Minimize2, Paperclip, Plus, Search, ShieldCheck } from '../../../icons'
+import { ArrowUp, CircleAlert, Expand, Minimize, Paperclip, Plus, Search, ShieldCheck } from '../../../icons'
 import { ToolbarDisclosureProvider, useToolbarDisclosure } from './use-toolbar-disclosure'
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ComboboxPopover } from '../combobox-popover';
@@ -869,7 +869,7 @@ export function ChatComposer({
             data-phone-editor-toggle="" aria-expanded={phoneEditor.expanded}
             aria-label={translate(phoneEditor.expanded ? 'composer.collapseEditor' : 'composer.expandEditor')}
             onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()}
-            onClick={phoneEditor.toggle}>{phoneEditor.expanded ? <Minimize2 /> : <Maximize2 />}</Button>}
+            onClick={phoneEditor.toggle}>{phoneEditor.expanded ? <Minimize /> : <Expand />}</Button>}
 
           {/* Toolbar */}
           <div
