@@ -1,4 +1,5 @@
 import { useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react'
+import { GrowingList, type GrowingListWindow } from '@gugu/session-ui/react/growing-list'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { ChevronLeft } from '@/lib/icons'
 import { cn } from '@/lib/cn'
@@ -123,7 +124,6 @@ export function ContactsIndex({ title, subtitle, summaryLabel, headerActions, mo
   getContactRemoveLabel: (contact: ContactUser) => string
 }) {
   const { t } = useTranslation('contacts')
-  const listRef = useRef<HTMLDivElement>(null)
   useBackLayer(onBack, mobile) // 手机整页:安卓返回键 = 左上返回
   // #7199 个人助理住的那台那一段,段名是它的名字(用户看不到它住在哪)。
   const devices = useDisplayDevices(useDevicesStore().devices)
@@ -142,7 +142,16 @@ export function ContactsIndex({ title, subtitle, summaryLabel, headerActions, mo
   }, [contacts, contactPinned, sectionBy, devices, currentUserId, t])
   const presentLetters = useMemo(() => new Set(groups.map((group) => group.letter)), [groups])
   const showAzRail = sectionBy !== 'device' && contacts.length >= 12
-  const jump = (letter: string) => listRef.current?.querySelector(`[data-letter-section="${letter}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  // @@@growing-list: the contacts mount around the visible part of the list; a letter's head stays stuck at the top.
+  const lines = useMemo(() => groups.flatMap(({ letter, items }) => [
+    ...(letter !== PINNED_CONTACTS_SECTION ? [{ kind: 'head' as const, letter }] : []),
+    ...items.map((contact) => ({ kind: 'contact' as const, contact })),
+  ]), [groups])
+  const lineWindowRef = useRef<GrowingListWindow | null>(null)
+  const jump = (letter: string) => {
+    const index = lines.findIndex((line) => line.kind === 'head' && line.letter === letter)
+    if (index >= 0) lineWindowRef.current?.scrollToIndex(index, { align: 'start', behavior: 'smooth' })
+  }
   return (
     <Pane paneRole="nav" mobile={mobile}>
       <PaneHeader
@@ -155,12 +164,20 @@ export function ContactsIndex({ title, subtitle, summaryLabel, headerActions, mo
       />
       {loading ? <div className="grid flex-1 place-items-center"><LoadingIndicator ariaLabel={t('common.loading')} /></div> : contacts.length === 0 ? <div className="grid flex-1 place-items-center">{sectionBy === 'device' ? <ContactsAgentSectionState isEmpty onCreateAgent={onCreateAgent} align="center" /> : <ContactsPersonSectionState isEmpty onAddContact={onAddContact} align="center" />}</div> : (
         <div className="relative min-h-0 flex-1">
-          <div ref={listRef} className={cn('h-full overflow-y-auto', showAzRail && !mobile && '!pr-6')}>
-            {groups.map(({ letter, items }) => <div key={letter} data-letter-section={letter}>
-              {letter !== PINNED_CONTACTS_SECTION ? <SectionLabel className="sticky top-0 z-[var(--z-raised)] bg-[var(--sidebar)]">{letter}</SectionLabel> : null}
-              {items.map((contact) => <ContactRow key={contact.id} contact={contact} currentUserId={currentUserId} selected={!mobile && !selectionMode && contact.id === selectedContactId} multiSelected={selectedContactIds.has(contact.id)} selectionMode={selectionMode} onSelect={() => onSelect(contact)} onToggleSelection={() => onToggleContact(contact)} onRemove={onRemoveContact} onStartChat={onStartChat} onPin={onPin} onMarkUnread={onMarkUnread} onToggleNotif={onToggleNotif} isPinned={contactPinned?.get(contact.id) ?? false} notifMuted={contactNotifMuted?.get(contact.id) ?? false} removeLabel={getContactRemoveLabel(contact)} mobile={mobile} />)}
-            </div>)}
-          </div>
+          <GrowingList
+            className={cn('h-full overflow-y-auto', showAzRail && !mobile && '!pr-6')}
+            count={lines.length}
+            getKey={(index) => { const line = lines[index]!; return line.kind === 'head' ? `letter:${line.letter}` : line.contact.id }}
+            estimateSize={(index) => (lines[index]!.kind === 'head' ? 28 : 56)}
+            isSticky={(index) => lines[index]!.kind === 'head'}
+            windowRef={(lineWindow) => { lineWindowRef.current = lineWindow }}
+            renderLine={(index) => {
+              const line = lines[index]!
+              if (line.kind === 'head') return <SectionLabel data-letter-section={line.letter} className="bg-[var(--sidebar)]">{line.letter}</SectionLabel>
+              const { contact } = line
+              return <ContactRow contact={contact} currentUserId={currentUserId} selected={!mobile && !selectionMode && contact.id === selectedContactId} multiSelected={selectedContactIds.has(contact.id)} selectionMode={selectionMode} onSelect={() => onSelect(contact)} onToggleSelection={() => onToggleContact(contact)} onRemove={onRemoveContact} onStartChat={onStartChat} onPin={onPin} onMarkUnread={onMarkUnread} onToggleNotif={onToggleNotif} isPinned={contactPinned?.get(contact.id) ?? false} notifMuted={contactNotifMuted?.get(contact.id) ?? false} removeLabel={getContactRemoveLabel(contact)} mobile={mobile} />
+            }}
+          />
           {showAzRail ? <ContactsAzIndex mobile={mobile} present={presentLetters} onPick={jump} /> : null}
         </div>
       )}

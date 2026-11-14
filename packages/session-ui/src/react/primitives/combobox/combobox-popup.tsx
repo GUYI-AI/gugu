@@ -20,6 +20,7 @@ import { XIcon } from '../../../icons'
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import * as styles from './combobox-popup.css';
+import { GrowingList, type GrowingListWindow } from '../growing-list/growing-list';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -144,7 +145,6 @@ export const ComboboxPopup = React.forwardRef<ComboboxPopupHandle, ComboboxPopup
     // 调用方给了就用它的,好让输入框那一侧能先于弹层写出 `aria-controls`。
     const fallbackId = React.useId();
     const listboxId = id ?? fallbackId;
-    const listRef = React.useRef<HTMLUListElement>(null);
     const portalContainer = useUiPortalContainerOrBody();
 
     /**
@@ -200,12 +200,10 @@ export const ComboboxPopup = React.forwardRef<ComboboxPopupHandle, ComboboxPopup
       []
     );
 
-    // Scroll the highlighted item into view.
+    // Bring the highlighted item into view (it may not be mounted: the list mounts its visible window, @@@growing-list).
+    const lineWindowRef = React.useRef<GrowingListWindow | null>(null);
     React.useEffect(() => {
-      const el = listRef.current?.querySelector<HTMLElement>(
-        `[data-popup-item-index="${selectedIndex}"]`
-      );
-      el?.scrollIntoView({ block: 'nearest' });
+      if (selectedIndex >= 0) lineWindowRef.current?.scrollToIndex(selectedIndex, { align: 'auto' });
     }, [selectedIndex]);
 
     React.useImperativeHandle(ref, () => ({
@@ -268,11 +266,21 @@ export const ComboboxPopup = React.forwardRef<ComboboxPopupHandle, ComboboxPopup
         className={cx('surface-elevated', styles.popupRoot, className)}
       >
         {header && <div className={styles.popupHeader}>{header}</div>}
-        <ul ref={listRef} className={styles.popupList}>
-          {items.length === 0 && emptyLabel ? (
-            <li className={cx(styles.popupItem, styles.popupItemDefault)}>{emptyLabel}</li>
-          ) : (
-            items.map((item, index) => {
+        {items.length === 0 && emptyLabel ? (
+          <div role="presentation" className={styles.popupList} style={{ paddingBlock: 4 }}>
+            <div className={cx(styles.popupItem, styles.popupItemDefault)}>{emptyLabel}</div>
+          </div>
+        ) : (
+          <GrowingList
+            className={styles.popupList}
+            count={items.length}
+            getKey={(index) => items[index]!.id}
+            estimateSize={(index) => (stacked || items[index]!.stacked ? 48 : 32) + (items[index]!.section && items[index]!.section !== items[index - 1]?.section ? 24 : 0)}
+            overscan={6}
+            padding={4}
+            windowRef={(lineWindow) => { lineWindowRef.current = lineWindow; }}
+            renderLine={(index) => {
+              const item = items[index]!;
               const showSection = item.section && item.section !== items[index - 1]?.section;
               const itemStacked = stacked || item.stacked;
               const descriptionClass = item.descriptionMono
@@ -281,13 +289,13 @@ export const ComboboxPopup = React.forwardRef<ComboboxPopupHandle, ComboboxPopup
                   ? styles.popupItemRole
                   : styles.popupItemDescription;
               return (
-                <React.Fragment key={item.id}>
+                <>
                   {showSection && (
-                    <li className={styles.popupSectionHeader} role="presentation">
+                    <div className={styles.popupSectionHeader} role="presentation">
                       {item.section}
-                    </li>
+                    </div>
                   )}
-                  <li
+                  <div
                     role="option"
                     id={`${listboxId}-opt-${index}`}
                     aria-selected={index === selectedIndex}
@@ -358,12 +366,12 @@ export const ComboboxPopup = React.forwardRef<ComboboxPopupHandle, ComboboxPopup
                         ↵
                       </span>
                     )}
-                  </li>
-                </React.Fragment>
+                  </div>
+                </>
               );
-            })
-          )}
-        </ul>
+            }}
+          />
+        )}
       </div>
     );
 
