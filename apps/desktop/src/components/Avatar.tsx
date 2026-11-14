@@ -5,7 +5,7 @@ import { colorOfDisplayStatus, labelOfDisplayStatus } from '@gugu/core/shared/ui
 import type { AgentStatusLabel } from '@gugu/core/shared/agentStatusPresentation'
 import { normalizeAvatarUrl, reportInvalidAvatarUrl } from '@gugu/core/shared/ui/avatarUrl'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
-import { GROUP_AVATAR_CORNER, groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg, groupAvatarThemeColor } from '@gugu/core/shared/ui/groupAvatar'
+import { groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg, groupAvatarThemeColor } from '@gugu/core/shared/ui/groupAvatar'
 import { dicebearAvatarDataUri } from '../lib/dicebearAvatar'
 import { AgentNeedsUserGlyph } from './AgentNeedsUserGlyph'
 import { AgentHarnessBadge } from './AgentHarnessIdentity'
@@ -140,8 +140,8 @@ export function Avatar({
     setImgFailed(false)
   }
   const px = typeof size === 'number' ? size : SIZE_MAP[size]
-  // A person or an agent is round; a group is a rounded square, whether it shows its default face or its own picture.
-  const radius = variant === 'group' ? `${Math.round(px * GROUP_AVATAR_CORNER)}px` : '50%'
+  // Every identity uses the same circular picture, matte and unavailable state.
+  const radius = '50%'
 
   // Missing/null and failed canonical URLs stay local explicit empty states; onError records the diagnostic.
   useEffect(() => {

@@ -101,3 +101,24 @@ describe('default group face', () => {
     }
   })
 })
+
+
+describe('circular group and project avatars', () => {
+  it.each([24, 32, 40, 64, 96])('keeps uploaded pictures, mattes and failed pictures circular at %spx', async (size) => {
+    const harness = createReactHarness()
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await harness.render(createNode(Avatar, { name: 'AI研发', variant: 'group', seed: 'chat-circle', size,
+        avatarUrl: 'https://example.com/group.png', imageMatteColor: '#fff' }))
+      const picture = harness.container.querySelector('img')!
+      expect(picture.style.borderRadius).toBe('50%')
+      expect(harness.container.querySelector<HTMLElement>('[data-avatar-matte]')!.style.borderRadius).toBe('50%')
+      await act(async () => { picture.dispatchEvent(new Event('error')) })
+      expect(harness.container.querySelector<HTMLElement>('[data-avatar-error]')!.style.borderRadius).toBe('50%')
+      expect(harness.container.querySelector('[data-group-face]')).toBeNull()
+    } finally {
+      harness.cleanup()
+      errors.mockRestore()
+    }
+  })
+})

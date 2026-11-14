@@ -30,12 +30,14 @@ describe('default group face', () => {
     expect(groupAvatarDefaultText('')).toBe('')
   })
 
-  it('draws a rounded square outline around the text, or around the group mark when there is none', () => {
+  it('draws a circular outline around the text, or around the group mark when there is none', () => {
     const mark = groupAvatarSvg({ color: '#3370FF', fill: '#fff', px: 64 })
     expect(mark).not.toContain('<text')
-    expect(mark).toMatch(/<rect [^>]*rx="[\d.]+"[^>]*stroke="#3370FF"/)
+    expect(mark).toMatch(/<circle cx="104" cy="104" r="[\d.]+"[^>]*stroke="#3370FF"/)
     const sizeOf = (text: string) => /font-size="(\d+)"/.exec(groupAvatarSvg({ color: '#3370FF', text, fill: '#fff', px: 64 }))?.[1]
-    expect([sizeOf('团'), sizeOf('团队'), sizeOf('MKT'), sizeOf('产品设计'), sizeOf('Branding')]).toEqual(['116', '92', '72', '72', '60'])
+    expect([sizeOf('团'), sizeOf('团队'), sizeOf('MKT'), sizeOf('产品设计'), sizeOf('Branding')]).toEqual(['104', '70', '53', '60', '43'])
+    expect(sizeOf('WWWW')).toBe('35')
+    expect(sizeOf('AI研发')).toBe('53')
     expect(groupAvatarSvg({ color: '#3370FF', text: '<b>&', fill: '#fff', px: 64 })).toContain('&#60;b&#62;&#38;')
   })
 
@@ -45,6 +47,6 @@ describe('default group face', () => {
     expect(strokeOf(32) * 32 / 208).toBeCloseTo(1.5)
     const texts = (px: number) => groupAvatarSvg({ color: '#3370FF', text: '产品讨论', fill: '#fff', px }).match(/<text/g)?.length
     expect([texts(20), texts(24), texts(32), texts(40)]).toEqual([undefined, 1, 1, 2])
-    expect(/font-size="(\d+)"/.exec(groupAvatarSvg({ color: '#3370FF', text: '产品讨论', fill: '#fff', px: 32 }))?.[1], 'sized for the one line shown').toBe('92')
+    expect(/font-size="(\d+)"/.exec(groupAvatarSvg({ color: '#3370FF', text: '产品讨论', fill: '#fff', px: 32 }))?.[1], 'sized for the one line shown').toBe('70')
   })
 })
