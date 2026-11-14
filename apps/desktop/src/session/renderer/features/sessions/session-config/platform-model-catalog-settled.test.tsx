@@ -8,7 +8,7 @@ vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: 
 vi.mock('@renderer/features/library/library-host', () => ({ useLibraryHost: () => ({ remote: null }) }));
 import { PLATFORM_MODEL_CATALOG_QUERY_KEY, SESSION_CATALOG_GC_MS, usePlatformModelCatalog, type PlatformModelCatalogState } from './platform-model-catalog';
 import { unavailablePlatformModelId } from './platform-model-selection';
-import { queryClient } from '@renderer/lib/query-client';
+import { queryClient } from '@/lib/readModel';
 import { notifyManager } from '@tanstack/react-query';
 // Deliver query results in the same task they resolve in, so a test's flush sees them.
 notifyManager.setScheduler((callback) => callback());

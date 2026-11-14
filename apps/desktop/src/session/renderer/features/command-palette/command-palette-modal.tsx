@@ -4,11 +4,10 @@ import { FolderOpen, MessageSquare, Search } from '@/lib/icons';
 import { useObserver } from 'mobx-react-lite';
 import { useState } from 'react';
 import { i18n } from '@/i18n';
-import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { getSessionPageStore } from '@renderer/features/sessions/stores/session-selectors';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { useDebounce } from '@renderer/lib/hooks/useDebounce';
-import { getEffectiveHotkey, isHostCommandId } from '@renderer/lib/hooks/useKeyboardShortcuts';
+import { getEffectiveHotkey, isHostCommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { rpc } from '@renderer/lib/ipc';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
@@ -52,7 +51,7 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
   const search = commandsMode ? query.slice(1).trim() : query.trim();
   const debouncedQuery = useDebounce(search, 100);
   const { navigate } = useNavigate();
-  const { value: keyboard } = useAppSettingsKey('keyboard');
+  const keyboard = useShortcutOverrides();
   const { translate } = useSessionMessages();
   const { data: results = [] } = useQuery({
     queryKey: ['cmdk-search', debouncedQuery],

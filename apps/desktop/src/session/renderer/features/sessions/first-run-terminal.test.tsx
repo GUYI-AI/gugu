@@ -6,7 +6,7 @@ import { FirstRunTerminal } from '@/components/firstRun/FirstRunTerminal';
 
 const f = vi.hoisted(() => ({ enabled: false, update: vi.fn(), done: vi.fn(), back: vi.fn(), seen: vi.fn() }));
 vi.mock('react-i18next', async (importOriginal) => ({ ...(await importOriginal<typeof import('react-i18next')>()), useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('@renderer/features/settings/use-terminal-enabled', () => ({ useTerminalEnabled: () => f.enabled }));
+vi.mock('@renderer/features/settings/use-terminal-enabled', async (original) => { const { readValue } = await import('../../../../../../../tests/support/appSettingsDouble'); return { ...await original<object>(), useTerminalEnabled: () => readValue(f.enabled) } });
 vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ update: f.update }) }));
 vi.mock('@/lib/firstRun', () => ({ writeFirstRunTerminalSeen: f.seen }));
 

@@ -48,7 +48,7 @@ const TIMELINE: AgentWatchTimeline = { ...emptyAgentWatchTimeline(), turns: Arra
 } as TranscriptTurn)) };
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: { chatView: 'double' } }) }));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } });
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', async (original) => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: vi.fn() } }) }));
 vi.mock('@/mobile/agent-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: null, error: null, current: () => null }) }));
 vi.mock('@/mobile/agent-watch/useSessionRestart', () => ({ useSessionRestart: () => ({ canStartFresh: false, busy: false, refreshing: false, pendingPrompt: null, error: null, startFresh: async () => undefined, retry: null }) }));

@@ -7,7 +7,7 @@ import { HotkeyRecorder } from '@tanstack/hotkeys';
 import { commandRegistry } from './registry';
 
 const settings = vi.hoisted(() => ({ platform: 'windows' as 'windows' | 'linux' | 'mac', keyboard: {} as Record<string, string | null> }));
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: settings.keyboard }) }));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings(settings.keyboard) } });
 vi.mock('@tanstack/react-hotkeys', async (original) => ({
   ...await original<typeof import('@tanstack/react-hotkeys')>(), detectPlatform: () => settings.platform,
 }));
