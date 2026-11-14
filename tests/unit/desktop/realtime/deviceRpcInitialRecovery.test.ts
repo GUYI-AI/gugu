@@ -24,7 +24,7 @@ function cloud() {
   return { channels, auths, rotate: () => { token = 'current' }, supabase: {
     channel: (topic: string) => { const channel = make(topic); channels.push(channel); return channel },
     removeChannel: vi.fn(async () => {}),
-    realtime: { setAuth: vi.fn(async () => { auths.push(token) }) },
+    realtime: { isConnected: () => true, connect: () => undefined, setAuth: vi.fn(async () => { auths.push(token) }) },
   } }
 }
 

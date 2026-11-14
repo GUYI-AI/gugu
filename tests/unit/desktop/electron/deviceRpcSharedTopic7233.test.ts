@@ -18,7 +18,7 @@ function fakeSupabase() {
   subs.list.length = 0
   const channels = new Map<string, { sent: unknown[]; listeners: { event: string; receive(payload: unknown): void }[] }>()
   const supabase = {
-    realtime: { setAuth: () => undefined },
+    realtime: { isConnected: () => true, connect: () => undefined, setAuth: () => undefined },
     removeChannel: () => undefined,
     channel: (topic: string) => {
       const record = channels.get(topic) ?? { sent: [], listeners: [] }

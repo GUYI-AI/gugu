@@ -13,6 +13,7 @@ import {
 import {
   subscribeAuthenticatedElectronRealtimeChannel,
   type ElectronManagedRealtimeChannel,
+  type ElectronRealtimeSocket,
 } from './realtime-channel'
 
 /** 窗口那一个 link manager 里,主进程要用的那几样(ssh-link-ipc.ts 的返回值)。 */
@@ -50,7 +51,7 @@ export function attachSshDeviceRpcPipe(links: Pick<SharedSshLinks, 'tap' | 'send
 }
 
 type RealtimeClient<TChannel> = {
-  realtime: { setAuth: () => unknown | Promise<unknown> }
+  realtime: ElectronRealtimeSocket
   channel: (topic: string, options: { config: { private: boolean; broadcast: { self: boolean; ack: boolean } } }) => TChannel
   removeChannel: (channel: TChannel) => unknown
 }
