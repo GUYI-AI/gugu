@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { SettingsGroup, SettingsNote, SettingsRow } from '@/components/settings/SettingsPrimitives'
 import { platform } from '@/platform'
 import { IOSCalendarPermissionError, iosCalendarPermissions, type IOSCalendarPermissionClient, type IOSCalendarSnapshot } from './iosCalendarPermissions'
+import { waitForCalendarAppActive } from './waitForCalendarAppActive'
 
 type PermissionRead =
   | { ownerId: string; kind: 'loading' }
@@ -44,6 +45,7 @@ export function IOSCalendarPermissionsPanel({ ownerId, client = iosCalendarPermi
   const [snapshot, setSnapshot] = useState<PermissionRead>({ ownerId, kind: 'loading' })
   const latestRequest = useRef<symbol | null>(null)
   const mutation = useRef<symbol | null>(null)
+  const recovery = useRef<AbortController | null>(null)
   const current = snapshot.ownerId === ownerId ? snapshot : { ownerId, kind: 'loading' as const }
 
   const refresh = useCallback(async () => {
@@ -66,6 +68,7 @@ export function IOSCalendarPermissionsPanel({ ownerId, client = iosCalendarPermi
     latestRequest.current = request
     mutation.current = request
     setSnapshot({ ownerId, kind: 'changing', operation })
+    let recoveryController: AbortController | undefined
     try {
       const status = await client[operation](current.status.binding)
       if (latestRequest.current === request) setSnapshot({ ownerId, kind: 'ready', status })
@@ -82,8 +85,12 @@ export function IOSCalendarPermissionsPanel({ ownerId, client = iosCalendarPermi
           // foreground guard. Retry only the read once, never the OS request.
           if (operation !== 'connect' || (cause as { code?: unknown } | null)?.code !== 'not_granted'
             || (readFailure as { code?: unknown } | null)?.code !== 'not_granted') throw readFailure
-          await new Promise(resolve => setTimeout(resolve, 250))
+          const controller = new AbortController()
+          recoveryController = controller
+          recovery.current = controller
+          const active = await waitForCalendarAppActive(controller.signal)
           if (latestRequest.current !== request) return
+          if (!active) throw readFailure
           status = await client.read(ownerId)
         }
         const denied = status.authorization === 'denied' || status.authorization === 'restricted'
@@ -94,6 +101,8 @@ export function IOSCalendarPermissionsPanel({ ownerId, client = iosCalendarPermi
         if (latestRequest.current === request) setSnapshot({ ownerId, kind: 'failed', message: failureMessage(cause) })
       }
     } finally {
+      recoveryController?.abort()
+      if (recovery.current === recoveryController) recovery.current = null
       if (mutation.current === request) mutation.current = null
     }
   }
@@ -103,11 +112,12 @@ export function IOSCalendarPermissionsPanel({ ownerId, client = iosCalendarPermi
     void refresh()
     const unsubscribe = platform.subscribeAppForeground(() => { if (alive) void refresh() }, cause => {
       if (!alive) return
+      recovery.current?.abort()
       latestRequest.current = null
       mutation.current = null
       setSnapshot({ ownerId, kind: 'failed', message: failureMessage(cause) })
     })
-    return () => { alive = false; latestRequest.current = null; mutation.current = null; unsubscribe() }
+    return () => { alive = false; latestRequest.current = null; mutation.current = null; recovery.current?.abort(); unsubscribe() }
   }, [ownerId, refresh])
 
   const authorization = current.kind === 'ready' ? current.status.authorization : null

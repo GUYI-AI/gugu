@@ -4,8 +4,10 @@ import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, deferred } from '../../../support/testHarness'
 
-const native = vi.hoisted(() => ({ foreground: null as (() => void) | null, failed: null as ((error: unknown) => void) | null, unsubscribe: vi.fn() }))
+const native = vi.hoisted(() => ({ foreground: null as (() => void) | null, failed: null as ((error: unknown) => void) | null,
+  active: null as ((active: boolean) => void) | null, activeInitially: false, stopActive: vi.fn(), unsubscribe: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {
+  subscribeAppActive: (listener: (active: boolean) => void) => { native.active = listener; listener(native.activeInitially); return native.stopActive },
   subscribeAppForeground: (listener: () => void, failed: (error: unknown) => void) => {
     native.foreground = listener; native.failed = failed; return native.unsubscribe
   },
@@ -24,7 +26,7 @@ function client(read = vi.fn(async () => status('fullAccess'))): IOSCalendarPerm
   return { read, connect: vi.fn(async () => status('fullAccess', true)), disconnect: vi.fn(async () => status('fullAccess')) }
 }
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { vi.clearAllMocks(); native.foreground = null; native.failed = null; harness = createReactHarness() })
+beforeEach(() => { vi.clearAllMocks(); native.foreground = null; native.failed = null; native.active = null; native.activeInitially = false; harness = createReactHarness() })
 afterEach(() => { harness.cleanup(); vi.useRealTimers() })
 
 const permissionText = () => harness.container.querySelector('[role="status"]')?.textContent
@@ -177,12 +179,16 @@ describe('iOS calendar permission panel', () => {
     await clickElement(action())
     expect(permissionText()).toBe('正在连接')
     expect(reload().disabled).toBe(true)
-    await act(async () => vi.advanceTimersByTimeAsync(250))
+    await act(async () => vi.advanceTimersByTimeAsync(1000))
+    expect(transport.read).toHaveBeenCalledTimes(2)
+    expect(permissionText()).toBe('正在连接')
+    await act(async () => native.active?.(true))
     expect(permissionText()).toBe('未连接，未授权')
     expect(harness.container.textContent).toContain('请在系统设置中为咕咕开启日历权限。')
     expect(harness.container.querySelector('[role="alert"]')).toBeNull()
     expect(transport.connect).toHaveBeenCalledExactlyOnceWith(binding)
     expect(transport.read).toHaveBeenCalledTimes(3)
+    expect(native.stopActive).toHaveBeenCalledOnce()
   })
 
   it('reads a successful allow result without another status read or permission request', async () => {
@@ -194,13 +200,26 @@ describe('iOS calendar permission panel', () => {
     expect(transport.connect).toHaveBeenCalledExactlyOnceWith(binding)
   })
 
+  it('recovers when the app is already active before the lifecycle subscription starts', async () => {
+    native.activeInitially = true
+    const transport = client(vi.fn().mockResolvedValueOnce(status('notDetermined'))
+      .mockRejectedValueOnce({ code: 'not_granted' }).mockResolvedValueOnce(status('denied')))
+    vi.mocked(transport.connect).mockRejectedValue({ code: 'not_granted' })
+    await render(transport)
+    await clickElement(action())
+    expect(permissionText()).toBe('未连接，未授权')
+    expect(transport.read).toHaveBeenCalledTimes(3)
+    expect(transport.connect).toHaveBeenCalledOnce()
+    expect(native.stopActive).toHaveBeenCalledOnce()
+  })
+
   it('keeps a persistent native refusal failed after one bounded read retry', async () => {
     vi.useFakeTimers()
     const transport = client(vi.fn().mockResolvedValueOnce(status('notDetermined')).mockRejectedValue({ code: 'not_granted' }))
     vi.mocked(transport.connect).mockRejectedValue({ code: 'not_granted' })
     await render(transport)
     await clickElement(action())
-    await act(async () => vi.advanceTimersByTimeAsync(250))
+    await act(async () => native.active?.(true))
     expect(permissionText()).toBe('查不到')
     expect(action()).toBeUndefined()
     expect(transport.read).toHaveBeenCalledTimes(3)
@@ -219,7 +238,7 @@ describe('iOS calendar permission panel', () => {
     expect(transport.connect).toHaveBeenCalledOnce()
   })
 
-  it('cancels the delayed read when the owner changes during foreground recovery', async () => {
+  it('cancels the active-state wait when the owner changes during foreground recovery', async () => {
     vi.useFakeTimers()
     const transport = client(vi.fn().mockResolvedValueOnce(status('notDetermined'))
       .mockRejectedValueOnce({ code: 'not_granted' }).mockResolvedValueOnce(status('restricted', false, 'owner-b')))
@@ -227,11 +246,25 @@ describe('iOS calendar permission panel', () => {
     await render(transport)
     await clickElement(action())
     await render(transport, 'owner-b')
-    await act(async () => vi.advanceTimersByTimeAsync(250))
+    await act(async () => native.active?.(true))
     expect(permissionText()).toBe('未连接，系统限制')
     expect(transport.read).toHaveBeenCalledTimes(3)
     expect(transport.read).toHaveBeenLastCalledWith('owner-b')
     expect(transport.connect).toHaveBeenCalledOnce()
+    expect(native.stopActive).toHaveBeenCalledOnce()
+  })
+
+  it('does not read again when the app never becomes active', async () => {
+    vi.useFakeTimers()
+    const transport = client(vi.fn().mockResolvedValueOnce(status('notDetermined')).mockRejectedValue({ code: 'not_granted' }))
+    vi.mocked(transport.connect).mockRejectedValue({ code: 'not_granted' })
+    await render(transport)
+    await clickElement(action())
+    await act(async () => vi.advanceTimersByTimeAsync(5000))
+    expect(permissionText()).toBe('查不到')
+    expect(transport.read).toHaveBeenCalledTimes(2)
+    expect(transport.connect).toHaveBeenCalledOnce()
+    expect(native.stopActive).toHaveBeenCalledOnce()
   })
 
   it('reconciles a lost disconnect reply without falsely restoring connection or replaying it', async () => {
