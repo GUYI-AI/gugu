@@ -34,7 +34,7 @@ import { bindOutboxActions, createOutboxWiring, forwardingDeviceFiles, type Outb
 import { markLatestThreadRead, markManualUnreadAndRefresh } from '../lib/chatUnreadLocator'
 import { useChatUnreadStreamNavigation } from '../lib/chatUnreadStreamNavigation'
 import { ChatStoreProvider, type SendMessageOptions, type SendAttachmentOptions, useDraftAttachmentsStore, useDraftMentionsStore, useTextDraftStore, useDraftQuotesStore, useDraftWhispersStore } from './chatContext'
-import { advanceReadWatermark, advanceSeenReadWatermark, chatReadsWhole, wholeReadSeq, applyThreadSnapshot, fetchOpenThreadSnapshot, patchChatRows, reconcileMemberReadSeqs, type PatchChat } from './chatRealtimeMutations'; import { subscribeChatLineRevisions } from '../lib/accountRevisionListeners'; import { chatOnScreen, isChatOnScreen, isChatShown, isAppActive } from '../lib/onScreenChat'
+import { advanceReadWatermark, advanceSeenReadWatermark, chatReadsWhole, wholeReadSeq, applyThreadSnapshot, fetchOpenThreadSnapshot, patchChatRows, reconcileMemberReadSeqs, type PatchChat } from './chatRealtimeMutations'; import { subscribeChatLineRevisions } from '../lib/accountRevisionListeners'; import { chatOnScreen, isChatOnScreen, isChatShown, isAppActive, useWatchAppActive } from '../lib/onScreenChat'
 import { useMessageReadFailures, useMessageSnapshotEpochs } from './chatMessageReads'
 import { useChatConversation, type ChatConversationAccess } from './useChatConversation'
 import { useActiveChatTransitionState } from './activeChatTransition'; import { fetchChatHistoryPage, restoreChatHistoryAnchor, fetchThreadMessages, openCachedChatWindow, useChatWindowCache, type WindowObserver } from './chatWindowPublication'
@@ -66,7 +66,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   const { toast } = useToast()
   const userId = user?.id ?? null
   const catchupPriority = useChatCatchupPriority(userId)
-  const notificationSettings = useNotificationSettings()
+  const notificationSettings = useNotificationSettings(); useWatchAppActive() // reads are taken only while the app is active
   const [chats, setChats, chatsRef] = useChatListState()
   const [identitiesById, setIdentitiesById] = useState<ReturnType<typeof imSelectors.identitiesById>>({})
   const [activeChatId, setActiveChatIdState] = useActiveChatTransitionState()

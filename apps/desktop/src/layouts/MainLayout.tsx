@@ -7,7 +7,7 @@ import { SessionAppFrame } from '../components/appSlot/SessionAppFrame'
 import { installedExtensionsStore } from '../session/renderer/features/extensions/installed-extensions-store'
 import { ResourceMonitorHost } from '@/session/renderer/features/settings/components/resource-monitor-host'
 import { reaction } from 'mobx'
-import { useCallback, useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ComponentProps } from 'react'
 import '@/styles/desktop-shell.css'
 import '@/session/renderer/features/assistant/assistant-today.css'
 import '@/mobile/phone-shell.css'
@@ -30,7 +30,7 @@ import { navigateMobile } from '@/mobile/navigateMobile'
 import { PhoneLayer } from '@/mobile/PhoneLayer'
 import { PhoneMeButton } from '@/mobile/PhoneMeButton'
 import { PhonePartnersPage } from '@/mobile/partners/PhonePartnersPage'
-import { useReportChatOnScreen } from '@/lib/onScreenChat'
+import { useAppActive, useReportChatOnScreen } from '@/lib/onScreenChat'
 import { useLinkNavigation } from '../hooks/useLinkNavigation'
 import { readAssistantShellBridge } from '../lib/assistantShellBridge'
 import { ChatListPanel } from '../components/ChatListPanel'
@@ -141,6 +141,12 @@ interface MainLayoutProps {
 const ignoreShellCommit = () => {}
 
 // ── InnerLayout ────────────────────────────────────────────────────────────────
+
+/** The chat page counts as hidden while the window is not in front: only this reads window activity, not the shell. */
+function ActiveChatArea({ hidden, ...props }: ComponentProps<typeof ChatAreaPanel>) {
+  const active = useAppActive()
+  return <ChatAreaPanel {...props} hidden={hidden || !active} />
+}
 
 function InnerLayout({
   user,
@@ -351,7 +357,8 @@ function InnerLayout({
     setActiveTab('contacts')
     setNewProjectRequest((n) => n + 1)
   }, 'push'), [setActiveTab])
-  const onScreenChatId = useReportChatOnScreen(activeTab === 'chats' && !showCreateSurface && (!mobile || phoneChatShown) && !assistantOnPhone ? activeChatId : null)
+  const shownChatId = activeTab === 'chats' && !showCreateSurface && (!mobile || phoneChatShown) && !assistantOnPhone ? activeChatId : null
+  useReportChatOnScreen(shownChatId)
   // showSessionCreate already derives "closed" the instant activeTab leaves 'chats', but the underlying state must
   // reset too — otherwise switching back to chats later silently resurrects a create page the user never reopened.
   useEffect(() => {
@@ -1077,11 +1084,11 @@ function InnerLayout({
                     {/* 创建面打开时聊天区只隐藏不卸载(同 #6158 的常驻面):从前条件卸载,关掉创建面回来 = 整个面板重挂,
                         消息列表、滚动位置、分栏、群协作状态全部重来一遍,就是那一下白闪。 */}
                     <div className="flex min-h-0 min-w-0 flex-[1_1_auto]" style={showCreateSurface || assistantOnPhone ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
-                      <ChatAreaPanel
+                      <ActiveChatArea
                         imPage
                         chatId={activeChatId}
                         navigationTarget={unreadNavigationTarget === 'chat'}
-                        hidden={showCreateSurface || onScreenChatId !== activeChatId}
+                        hidden={showCreateSurface || shownChatId !== activeChatId}
                         mobile={mobile}
                         openNonce={chatOpenNonce}
                         onBack={mobile ? pressBack : undefined}
