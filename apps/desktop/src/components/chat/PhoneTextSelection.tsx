@@ -29,8 +29,8 @@ export function PhoneTextSelection({ source, onDone }: {
         if (!active) return
         opened = true
         return native.open({ id, text: source.text, start: source.start, end: source.end,
-        title: callbacks.current.t('message.actions.selectText'), closeLabel: callbacks.current.t('message.selectionClose'),
-        dark: document.documentElement.dataset.theme === 'dark',
+          title: callbacks.current.t('message.actions.selectText'), closeLabel: callbacks.current.t('message.selectionClose'),
+          dark: document.documentElement.dataset.theme === 'dark',
         })
       }).then(() => { if (active && opened) callbacks.current.onDone() }, error => {
         if (!active) return

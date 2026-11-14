@@ -16,7 +16,6 @@ import android.widget.TextView;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
-import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -94,9 +93,7 @@ public class GuguTextSelectionPlugin extends Plugin {
             Window window = page.getWindow();
             if (window != null) {
                 window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-                WindowInsetsControllerCompat bars = new WindowInsetsControllerCompat(window, root);
-                bars.setAppearanceLightStatusBars(!dark);
-                bars.setAppearanceLightNavigationBars(!dark);
+                MobileShellChrome.applyTo(window, dark);
             }
             ViewCompat.requestApplyInsets(root);
         });
