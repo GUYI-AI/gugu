@@ -374,7 +374,6 @@ export function contactsStore(overrides: Partial<ContactsContextValue> = {}): Co
     setAgentLook: vi.fn(async () => {}),
     removeOwnedAgent: vi.fn(async () => {}),
     removeContact: vi.fn(async () => {}),
-    getCommonGroupChats: vi.fn(async () => []),
     ...overrides,
   }
 }

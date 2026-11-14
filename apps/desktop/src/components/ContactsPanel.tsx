@@ -54,12 +54,12 @@ import { useToast } from './toastContext'
 import type { ContactGroup, ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import { isCloudAgentMarked } from '@gugu/core/shared/enums/agentTypeModels'
 import { chatService } from '../lib/chat'
-import { persistableGroupRoster, replaceGroupRoster } from '../lib/imRepository'
-import { rendererLogger } from '../lib/log'
+import { groupRoster } from '../hooks/useRoomCollab'
+import { useReplica } from '../lib/replica'
 import { closeIfMyAssistant } from '../lib/assistantClose'
 import { normalizeGroupRole } from '@gugu/core/shared/enums/groupRoleModels'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
-import type { GroupMemberItem } from '@gugu/core/shared/types/chat'
+import { Unknown } from './ui/Unknown'
 import type { QrScanRoute } from '../lib/qrScanRoute'
 import { AgentContactProfileCard, PersonContactProfileCard } from './contacts/ContactProfileCard'
 import { commonGroupForAgent, requestStateForAgent } from './contacts/agentContactRequest'
@@ -735,32 +735,11 @@ function GroupChatDetailPane({
   onBack?: () => void
   onOpenGroupChat?: (group: ContactGroupChat) => void
 }) {
-  const { identitiesById, getImRepository } = useChatStore('identitiesById', 'getImRepository')
-  const [members, setMembers] = useState<GroupMemberItem[]>([])
-  const [loadingMembers, setLoadingMembers] = useState(false)
+  const { identitiesById } = useChatStore('identitiesById')
   const groupId = group?.id ?? null
-  useEffect(() => {
-    if (!groupId) { setMembers([]); return }
-    let cancelled = false
-    setLoadingMembers(true)
-    chatService
-      .getGroupCollab(groupId)
-      .then(async ({ snapshot, identities }) => {
-        // 与聊天面板同一条写路径(名册 + 身份同事务),先落库再渲染成员;本地写失败只记日志,不否决远端读到的名册 (#5610)
-        await getImRepository().then((repository) => replaceGroupRoster(repository, groupId, persistableGroupRoster(groupId, snapshot, identities), identities)).catch((err: unknown) => rendererLogger('contacts/group-detail').error({ err }, 'write group roster failed'))
-        if (!cancelled) setMembers([...snapshot.humans, ...snapshot.agents])
-      })
-      .catch((err) => {
-        console.error('[ContactsPanel] load group members error', err)
-        if (!cancelled) setMembers([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingMembers(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [groupId, getImRepository])
+  // The chat's roster replica (the IM library's copy first, the same write path): ❌ a loader of its own (open-flicker CH22).
+  const roster = useReplica(groupRoster, groupId ? [groupId, 'group'] : null)
+  const members = roster.state === 'value' ? [...roster.value.humans, ...roster.value.agents] : []
   const visibleMembers = members.slice(0, 12)
   const memberNames = useShownAgentName(visibleMembers.map(member => ({ name: identitiesById[member.id]?.display_name ?? '', createdAt: member.type === 'agent' ? identitiesById[member.id]?.created_at ?? undefined : undefined })))
 
@@ -838,9 +817,9 @@ function GroupChatDetailPane({
           <div className={cn(detailCaptionClass, '!mb-3')}>
             {ct('groupDetail.overview')}
           </div>
-          {loadingMembers || visibleMembers.length === 0 ? (
-            <div className="text-sm text-[var(--muted-fg)]">
-              {loadingMembers ? ct('groupDetail.loadingMembers') : ct('groupDetail.emptyMembers')}
+          {roster.state !== 'value' || visibleMembers.length === 0 ? (
+            <div className="text-sm text-[var(--muted-fg)]" role={roster.state === 'error' ? 'alert' : undefined}>
+              {roster.state === 'unknown' ? <Unknown className="w-40" /> : roster.state === 'error' ? roster.error.message : ct('groupDetail.emptyMembers')}
             </div>
           ) : (
             <div className="grid max-w-[720px] grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-3">
@@ -1039,7 +1018,6 @@ export const ContactsPanel = memo(function ContactsPanel({
     setAgentDesiredStatus,
     removeOwnedAgent,
     removeContact,
-    getCommonGroupChats,
   } = useContactsStore()
   const { user } = useAuth()
   const { toast } = useToast()
@@ -1630,7 +1608,6 @@ export const ContactsPanel = memo(function ContactsPanel({
                 onRequestAgent={requestAgent}
                 onSetAgentPublic={setAgentPublic}
                 onSetAgentDesiredStatus={setAgentDesiredStatus}
-                getCommonGroupChats={getCommonGroupChats}
               />
             ) : null
           ) : showDetail ? (
@@ -1647,7 +1624,6 @@ export const ContactsPanel = memo(function ContactsPanel({
               onRequestAgent={requestAgent}
               onSetAgentPublic={setAgentPublic}
               onSetAgentDesiredStatus={setAgentDesiredStatus}
-              getCommonGroupChats={getCommonGroupChats}
             />
           ) : null}
         </>

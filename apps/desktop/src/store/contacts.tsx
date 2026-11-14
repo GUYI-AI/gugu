@@ -5,7 +5,7 @@ import { contactsService } from '../lib/contacts'
 import { contactGroupChatsOf, sharedGroupAgentsOf } from '../lib/contactGroupChats'
 import { isLifecycleCancellation } from '../lib/authBoundedFetch'
 import { useAuth } from './auth'
-import { useChatStore, useChatStoreReader, useStoreValueBy } from './chatContext'
+import { useChatStore, useStoreValueBy } from './chatContext'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { ContactsContext, ContactsHandleContext, type ContactsContextValue, type ContactsLoadStatus } from './contactsContext'
 import { createSelectStore } from '../lib/selectStore'
@@ -45,7 +45,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
   const { user: authenticatedUser } = useAuth()
   const userId = active ? authenticatedUser?.id ?? null : null
   const { identitiesById, getImRepository, subscribeAccountRevision, refreshChats, loadingChats, chatsLoadFailed } = useChatStore('identitiesById', 'getImRepository', 'subscribeAccountRevision', 'refreshChats', 'loadingChats', 'chatsLoadFailed')
-  const readChatStore = useChatStoreReader()
   const [contacts, setContacts] = useState<ContactRelation[]>([])
   const [groups, setGroups] = useState<ContactGroup[]>([])
   // 「我在哪些群」只有一份:会话投影(chat store 的 chats)。从前这里另拉一张整表(探针 + 全部成员 + 分块 chats + 共享 agent),
@@ -451,16 +450,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
     [getImRepository, loadContacts, loadGroups, refreshChats],
   )
 
-  const getCommonGroupChats = useCallback(
-    async (contactId: string) => {
-      if (!userId) return []
-      const rows = await contactsService.getCommonGroupChats(userId, contactId)
-      const aliases = new Map(readChatStore().chats.map((chat) => [chat.id, chat.alias]))
-      return rows.map((row) => ({ ...row, alias: aliases.get(row.id) ?? null }))
-    },
-    [readChatStore, userId],
-  )
-
   // 值只在它自己的输入变了时才换:从前每次渲染新建一份(连同按身份投影的几百个联系人),每个读通讯录的组件跟着重渲染。
   const value = useMemo(() => {
     recordContactsRender()
@@ -507,7 +496,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
       setAgentLook,
       removeOwnedAgent,
       removeContact,
-      getCommonGroupChats,
     }
   }, [
     contacts, searchResults, identitiesById, sharedGroupAgents, groups, groupChats, receivedRequests, sentRequests,
@@ -515,7 +503,7 @@ export function ContactsProvider({ children, active = true }: { children: React.
     loadingGroups, contactsStatus, groupChatsStatus, isSearching, searchUsers, clearSearch, sendRequest, acceptRequest,
     rejectRequest, loadContacts, loadGroups, refreshAllRequests, loadGroupJoinRequests, createGroup, renameGroup,
     deleteGroup, updateContactAlias, setAgentPublic, setAgentDesiredStatus, renameAgent,
-    updateAgentProfile, uploadAgentAvatar, setAgentLook, removeOwnedAgent, removeContact, getCommonGroupChats,
+    updateAgentProfile, uploadAgentAvatar, setAgentLook, removeOwnedAgent, removeContact,
   ])
   const [store] = useState(() => createSelectStore<ContactsContextValue>(value))
   store.publish(value)
