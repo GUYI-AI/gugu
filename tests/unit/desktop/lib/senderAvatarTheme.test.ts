@@ -1,10 +1,20 @@
-// @vitest-environment jsdom
-import { expect, it } from 'vitest'
+// @vitest-environment node
+import { JSDOM } from 'jsdom'
+import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import { subscribeSenderAvatars, senderAvatarUrl } from '../../../../apps/desktop/src/session/renderer/lib/chat/sender-avatar'
 import { installIdentityDirectoryBridge, publishIdentityDirectory } from '../../../../apps/desktop/src/lib/identityDirectoryBridge'
 import type { DisplayIdentity } from '../../../../apps/desktop/src/lib/displayIdentity'
 
-it('refreshes existing session, scheduled-agent and project image subscribers on theme changes', async () => {
+let dom: JSDOM
+beforeEach(() => {
+  dom = new JSDOM('<!doctype html><html><body></body></html>')
+  vi.stubGlobal('window', dom.window)
+  vi.stubGlobal('document', dom.window.document)
+  vi.stubGlobal('MutationObserver', undefined)
+})
+afterEach(() => { vi.unstubAllGlobals(); dom.window.close() })
+
+it('refreshes session, scheduled-agent and project image subscribers using the host document DOM realm', async () => {
   const id = '11111111-1111-4111-8111-111111111111'
   document.documentElement.dataset.theme = 'light'
   installIdentityDirectoryBridge()
