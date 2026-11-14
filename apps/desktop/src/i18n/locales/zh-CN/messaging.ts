@@ -546,7 +546,9 @@ export default {
     "memberList": {
       "agentLeave": "让它退出群聊",
       "clearSearch": "清除搜索",
-      "invite": "邀请成员",
+      "add": "添加",
+      "addMembers": "添加成员",
+      "newAgent": "新建 Agent",
       "makeAdmin": "设为管理员",
       "manage": "管理 {{name}}",
       "noMatches": "没有匹配「{{query}}」的成员",

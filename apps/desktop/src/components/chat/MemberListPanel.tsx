@@ -19,6 +19,7 @@ import { useShownAgentName } from '@/hooks/useShownAgentName'
 //     **人这一段没有在线态**:产品里压根没有「某个人在不在线」的真值(聊天列表、通讯录的绿点都只画 agent),
 //     所以这一格不显 —— ❌ 不拿 desired_status 这类 agent 字段冒充人的在线。
 import { ArchivedAgentLabel } from './ArchivedAgentLabel'
+import { GroupAddMenu } from './GroupAddMenu'
 import { GroupNameInlineEdit } from './GroupNameInlineEdit'
 import { Button } from '../ui/Button'
 import { Hint } from '../ui/Tooltip'
@@ -212,11 +213,9 @@ export type MemberListPanelProps = {
   onReload: () => Promise<void>
   onOpenUserChat?: (target: MemberProfileChatTarget) => void
   onWhisper?: (target: MemberProfileChatTarget) => void
-  /** 群:进来时选人页已经开着(群信息页成员行的「+」)。 */
-  invite?: boolean
 }
 
-export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, settingsState, error, onReload: load, onOpenUserChat, onWhisper, invite }: MemberListPanelProps) {
+export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, settingsState, error, onReload: load, onOpenUserChat, onWhisper }: MemberListPanelProps) {
   const { t } = useTranslation('messaging')
   const { t: tContacts } = useTranslation('contacts')
   const { user } = useAuth()
@@ -251,7 +250,6 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
     onReload: reload,
     onOpenUserChat,
     onWhisper,
-    invite,
   })
 
   // @@@6418 搜索:名字、主人、引擎、模型、设备,与行上看得见的字一致(看不见的字段不参与匹配)。
@@ -392,10 +390,10 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
               </div>
             </>
           ) : t('group.memberList.title'),
-          searchButton,
+          // 群的「+」在标题行最右(GroupAddMenu,同群信息页成员行、内栏头一行),❌ 标题下面一条通栏钮。
+          chatKind === 'group' ? <>{searchButton}<GroupAddMenu chatId={chatId} canAddMembers={group.showInvite} /></> : searchButton,
         )}</HeaderSearch>
 
-        {group.inviteAction ? <div style={MEMBER_LIST_SEARCH_STYLE}>{group.inviteAction}</div> : null}
         {snapshot && (!mobile || chatKind === 'group') ? (
           <div style={MEMBER_LIST_SEARCH_STYLE}>
             <SearchField

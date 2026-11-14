@@ -401,19 +401,26 @@ describe('the first page after the header cleanup', () => {
     expect(page(), 'the info page stays where it was').toBe('main')
   })
 
-  it('the 「+」 on the members row goes to the members page with its picker already open; the row itself opens the list without it', async () => {
+  it('the 「+」 on the members row is the group add menu; 添加成员 opens the picker over this page and closing it comes back here', async () => {
     await renderDrawer('owner-1')
-    await click(q('[data-testid="group-settings-invite"]'))
-    expect(page()).toBe('members')
+    await click(q('[data-testid="group-settings-members"] [data-group-add-menu]'))
+    await waitForCondition(() => q('[data-testid="group-add-members"]') !== null, 'the menu is open')
+    expect(page(), 'opening the menu stays on the info page').toBe('main')
+    await click(q('[data-testid="group-add-members"]'))
     await waitForCondition(() => picker() !== null, 'the picker is open')
+    expect(page(), 'the picker sits over the info page, never the members page').toBe('main')
+    await act(async () => { window.dispatchEvent(new CustomEvent(NATIVE_BACK_EVENT)) })
+    await waitForCondition(() => picker() === null, 'one back closes the picker')
+    expect(page()).toBe('main')
     expect(panels.openPanelItem).not.toHaveBeenCalled()
   })
 
-  it('opened from the row, the members page shows its list and the invite row, no picker', async () => {
+  it('opened from the row, the members page has the add menu in its title row and no full-width invite button', async () => {
     await renderDrawer('owner-1')
     await click(q('[data-testid="group-settings-members"]'))
     expect(page()).toBe('members')
-    expect(q('[data-testid="member-list-invite"]')).not.toBeNull()
+    expect(q('[data-testid="member-list-panel"] [data-group-add-menu]')).not.toBeNull()
+    expect(q('[data-testid="member-list-invite"]')).toBeNull()
     expect(picker()).toBeNull()
   })
 })

@@ -9,8 +9,9 @@ import { Sheet } from '../ui/Sheet'
 import { Button } from '../ui/Button'
 import { AddGroupMembers } from './AddGroupMembers'
 
-export function TaskDropGroupInvite({ chatId, agentId, onClose }: {
-  chatId: string; agentId: string; onClose: () => void
+/** The group's 「添加成员」 picker, loading the group itself: the add menu (GroupAddMenu) and a task dropped on a group's composer. */
+export function GroupAddMembersSheet({ chatId, initialSelectedIds, onClose }: {
+  chatId: string; initialSelectedIds?: readonly string[]; onClose: () => void
 }) {
   const { t } = useTranslation('messaging')
   const [group, setGroup] = useState<{ snapshot: GroupCollabSnapshot; settings: GroupChatSettings; canInviteHumans: boolean } | null>(null)
@@ -33,7 +34,7 @@ export function TaskDropGroupInvite({ chatId, agentId, onClose }: {
     </div>
   </Sheet>
   return <AddGroupMembers chatId={chatId} snapshot={group.snapshot} settings={group.settings} canInviteHumans={group.canInviteHumans}
-    humanDeniedHint={projectGroup ? t('group.projectGroupNoInvite') : undefined} initialSelectedIds={[agentId]} onClose={onClose}
+    humanDeniedHint={projectGroup ? t('group.projectGroupNoInvite') : undefined} initialSelectedIds={initialSelectedIds} onClose={onClose}
     onReload={async () => {
       const { snapshot } = await chatService.getGroupCollab(chatId)
       setGroup((held) => held && { ...held, snapshot })

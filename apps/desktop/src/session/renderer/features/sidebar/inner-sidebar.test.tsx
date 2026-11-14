@@ -84,6 +84,8 @@ vi.mock('@renderer/features/projects/project-task-entry', () => ({ prepareProjec
 // The sample project's column has its own file (sample-inner-sidebar.test.tsx); here no account shows the sample.
 vi.mock('@renderer/features/sample-project/use-sample-project', () => ({ useSampleProject: () => ({ shown: false, settled: true, owner: null }) }));
 vi.mock('./sample-inner-sidebar', () => ({ SampleInnerSidebar: () => null }));
+// The 「+」's picker loads the group from the backend; this column's tests only open the menu.
+vi.mock('@/components/chat/GroupAddMembersSheet', () => ({ GroupAddMembersSheet: () => null }));
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { get navigation() { return state.live; } },
   sidebarStore: {
@@ -150,6 +152,13 @@ const sections = () => [...host.querySelectorAll<HTMLElement>('[data-inner-sideb
 const sessionRows = () => [...host.querySelectorAll<HTMLElement>('[data-session-row]')].map((row) => row.dataset.sessionRow);
 const moreRows = () => [...host.querySelectorAll<HTMLElement>('[data-more-row]')].map((row) => row.textContent);
 const render = () => act(async () => root.render(<InnerSidebar />));
+// The head row's 「+」 → 新建 Agent (GroupAddMenu); the menu is portalled, so its item is looked up in the document.
+const pickNewAgent = async (chatId: string) => {
+  await act(async () => host.querySelector<HTMLElement>(`[data-inner-head="${chatId}"] [data-group-add-menu]`)!.click());
+  const item = document.querySelector<HTMLElement>('[data-testid="group-add-new-agent"]');
+  expect(item, 'the 「+」 menu offers 新建 Agent').not.toBeNull();
+  await act(async () => item!.click());
+};
 const agentsCount = () => host.querySelector('[data-inner-sidebar-section="agents"] [data-inner-agents-count]')?.textContent;
 const topicsView = (chatId: string, fields: { total: number; hidden: number; calling?: number }) =>
   act(() => publishInnerSidebarTopicsView({ chatId, calling: 0, ...fields }));
@@ -236,7 +245,7 @@ describe('inner sidebar', () => {
     expect(rows.every((row) => row.dataset.agentAvatar === 'true')).toBe(true);
   });
 
-  it('the head row is the chat itself: current (never a selected fill) while its chat is open, a click opens its info beside it (again: puts it away), the pen starts a new agent there', async () => {
+  it('the head row is the chat itself: current (never a selected fill) while its chat is open, a click goes back to the main chat (never its info), its hover 「+」 adds members or starts a new agent there (no pen)', async () => {
     publishChatSummaries([{ id: 'group', kind: 'group', name: 'Planning', unread_count: 5, member_user_ids: ['agent-a'] }, { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a'] }]);
     openChat('group');
     await render();
@@ -249,27 +258,31 @@ describe('inner sidebar', () => {
     openSession('mine-in-group');
     await render();
     expect(head().getAttribute('aria-current')).toBeNull();
-    // From one of its agents: back to the chat, with its info beside it.
+    // From one of its agents: back to the main chat, and only that (owner 11-14: the title is the way home, not the info).
     await act(async () => head().click());
     expect(state.openChatOnScreen).toHaveBeenCalledWith('group', false);
-    expect(state.openInfoTab).toHaveBeenCalledWith('group');
-    // On the chat with the info shown: the same click puts the info away.
+    // With the info shown, the same click still only shows the chat.
     openChat('group');
     state.infoShown = true;
     await render();
     await act(async () => head().click());
-    expect(state.closeInfoTab).toHaveBeenCalledWith('group');
-    expect(state.openInfoTab).toHaveBeenCalledTimes(1);
+    expect(state.openChatOnScreen).toHaveBeenCalledTimes(2);
+    expect(state.openInfoTab).not.toHaveBeenCalled();
+    expect(state.closeInfoTab).not.toHaveBeenCalled();
     state.infoShown = false;
+    // The hover 「+」 is the group's add menu, the first of the trailing buttons.
+    const add = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-hover] [data-group-add-menu]');
+    expect(add, 'the 「+」 sits in the hover slot').not.toBeNull();
 
-    await act(async () => host.querySelector<HTMLElement>('[data-inner-head-new-agent]')!.click());
+    // No pen beside it: 新建 Agent only comes through the 「+」.
+    const trailing = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!.parentElement!;
+    expect([...trailing.children].map((child) => (child as HTMLElement).dataset.innerHeadHover !== undefined ? 'plus' : 'fold')).toEqual(['plus', 'fold']);
+    await pickNewAgent('group');
     expect(readComposerVerb('group')).toBe('task');
-    // No 「…」: the row itself is the way into the info; members and invitation are in the chat's header.
-    expect(host.querySelector('[data-inner-head] [aria-haspopup]')).toBeNull();
 
     openProject('p-shop');
     await render();
-    await act(async () => host.querySelector<HTMLElement>('[data-inner-head-new-agent]')!.click());
+    await pickNewAgent('shop-chat');
     expect(state.prepareProjectTask).toHaveBeenCalledWith('p-shop');
     expect(state.openChatOnScreen).toHaveBeenLastCalledWith('shop-chat', false);
   });
@@ -372,10 +385,10 @@ describe('inner sidebar', () => {
     expect(restore.querySelector('button')).toBeNull();
     const fold = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!;
     expect(fold.getAttribute('aria-label')).toBe('sidebar.collapseInner');
-    // The fold button sits at the row's far end, right of the new-agent pen (proposal v1).
+    // The fold button sits at the row's far end, right of the hover 「+」.
     const ends = [...fold.parentElement!.children];
     expect(ends.at(-1)).toBe(fold);
-    expect(ends.at(-2)?.matches('[data-inner-head-new-agent]')).toBe(true);
+    expect(ends.at(-2)?.matches('[data-inner-head-hover]')).toBe(true);
 
     await act(async () => fold.click());
     expect(host.querySelector('[data-region="inner-sidebar"]'), 'folded: the column is gone, the content is the card alone').toBeNull();
@@ -492,8 +505,8 @@ describe('a standalone agent with sub-agents', () => {
     expect(column.dataset.innerSidebarChat).toBe('dm-solo');
     expect(host.querySelector('[data-inner-head="dm-solo"]')?.textContent).toContain('Solo');
     expect(head()!.getAttribute('aria-current'), 'its own conversation is open').toBe('page');
-    // No pen: its sub-agents are its own to spawn.
-    expect(host.querySelector('[data-inner-head-new-agent]')).toBeNull();
+    // No 「+」: its sub-agents are its own to spawn, and it is nobody's group.
+    expect(host.querySelector('[data-inner-head="dm-solo"] [data-group-add-menu]'), 'an agent column has no group add menu').toBeNull();
     const fold = host.querySelector<HTMLElement>('[data-inner-head="dm-solo"] [data-inner-head-fold]')!;
     expect([...fold.parentElement!.children].at(-1)).toBe(fold);
     // No 话题: the agent's conversation is its session.

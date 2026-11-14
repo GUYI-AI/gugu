@@ -98,7 +98,7 @@ it.each([[false, false], [false, true], [true, false], [true, true]])('topic inf
   expect(harness.container.querySelector('[data-testid="member-list-panel"]')?.getAttribute('data-chat-kind')).toBe('topic')
   expect(harness.container.querySelector('[data-testid="topic-name-edit"]')?.textContent).toContain('Current topic')
   expect(harness.container.querySelector('[data-testid="group-name-edit"]') !== null).toBe(manageable)
-  expect(harness.container.querySelector('[data-testid="member-list-invite"]')).toBeNull()
+  expect(harness.container.querySelector('[data-group-add-menu]')).toBeNull()
   if (mobile) {
     await act(async () => { window.dispatchEvent(new Event(NATIVE_BACK_EVENT)) })
     expect(close).toHaveBeenCalledOnce()

@@ -75,8 +75,6 @@ const enUSCoreMessages = {
   'sidebar.agentsRunning': '{count} running',
   'sidebar.collapseInner': 'Collapse inner sidebar',
   'sidebar.expandInner': 'Expand inner sidebar',
-  'sidebar.newAgentInGroup': 'Send a new agent into the group',
-  'sidebar.newAgentInProject': 'Start a new agent in the project',
   'sidebar.alsoPinnedToSidebar': 'Also pinned to the sidebar',
   // #2548 the one-list sidebar's collapse button (tooltip) and its two-step intro (C9); the intro's 「n / N」 and its
   // Skip / Back / Next / Done are the feature tour's (productTour), whose card it is drawn in.
@@ -1298,8 +1296,6 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'sidebar.agentsRunning': '{count} 个在运行',
   'sidebar.collapseInner': '收起内层栏',
   'sidebar.expandInner': '展开内层栏',
-  'sidebar.newAgentInGroup': '派一个新智能体进群',
-  'sidebar.newAgentInProject': '在项目里新开一个智能体',
   'sidebar.alsoPinnedToSidebar': '也固定在左侧栏',
   'sidebar.collapseSidebar': '收起侧栏',
   'sidebar.expandSidebar': '展开侧栏',
