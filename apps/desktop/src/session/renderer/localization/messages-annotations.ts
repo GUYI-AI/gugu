@@ -1,0 +1,31 @@
+export const enUSAnnotationMessages = {
+  'annotations.active': 'Annotating · {count}',
+  'annotations.count': '{count} annotations',
+  'annotations.comment': 'Comment',
+  'annotations.placeholder': 'Add a comment…',
+  'annotations.edit': 'Edit annotation',
+  'annotations.delete': 'Delete annotation',
+  'annotations.cancel': 'Cancel',
+  'annotations.send': 'Send',
+  'annotations.annotate': 'Annotate this page',
+  'annotations.exit': 'Exit annotation mode',
+  'annotations.hint': 'Click an element or drag an area',
+  'annotations.browse': 'Hold Space to browse',
+  'annotations.failed': 'Could not select this page',
+} as const;
+
+export const zhCNAnnotationMessages: Record<keyof typeof enUSAnnotationMessages, string> = {
+  'annotations.active': '批注中 · {count}',
+  'annotations.count': '{count} 条批注',
+  'annotations.comment': '评论',
+  'annotations.placeholder': '添加评论…',
+  'annotations.edit': '修改批注',
+  'annotations.delete': '删除批注',
+  'annotations.cancel': '取消',
+  'annotations.send': '发送',
+  'annotations.annotate': '批注此页',
+  'annotations.exit': '退出批注',
+  'annotations.hint': '点击元素或拖选区域',
+  'annotations.browse': '按住空格浏览',
+  'annotations.failed': '无法选取此页',
+};

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { i18n } from '@/i18n';
 import { enUSMessages, type SessionMessageLookupKey, zhCNMessages } from './messages';
 import { enUSProjectMessages } from './messages-projects';
+import { enUSAnnotationMessages } from './messages-annotations';
 import { registerSessionLocaleResources, translateSessionMessage } from './locale-store';
 
 const pluralSuffix = /_(zero|one|two|few|many|other)$/;
@@ -243,6 +244,22 @@ describe('task locale resources', () => {
 
   it('keeps every project catalog lookup key connected to production code', () => {
     expect(projectConsumerKeys()).toEqual(projectCatalogLookupKeys());
+  });
+
+  it('keeps the shared annotation catalog connected to browser, composer and phone consumers', () => {
+    const roots = ['../features/browser/', '../features/sessions/annotations/', '../../../mobile/agent-watch/']
+      .map(root => fileURLToPath(new URL(root, import.meta.url)));
+    const keys = new Set<string>();
+    for (const path of roots.flatMap(projectSourceFiles)) {
+      const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true,
+        path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+      const visit = (node: ts.Node): void => {
+        if (ts.isStringLiteralLike(node) && node.text.startsWith('annotations.')) keys.add(node.text);
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+    }
+    expect([...keys].sort()).toEqual(Object.keys(enUSAnnotationMessages).sort());
   });
 
   it('keeps every tabs catalog key connected to production code', () => {

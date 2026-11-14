@@ -35,6 +35,7 @@ it('places one annotation attachment above the phone input and offers edit only 
   await until('the annotation attachment has layout', () => attachment?.getBoundingClientRect().height > 0);
   expect(attachment.getBoundingClientRect().bottom).toBeLessThanOrEqual(editor.getBoundingClientRect().top);
   expect(attachment.getBoundingClientRect().right).toBeLessThanOrEqual(390);
+  expect(attachment.textContent).not.toMatch(/[{}]/);
   await act(async () => {
     await userEvent.click(attachment.querySelector('button')!);
     await until('the annotation list is open', () => document.querySelectorAll('button[aria-label="Edit annotation"],button[aria-label="修改批注"]').length === 1);

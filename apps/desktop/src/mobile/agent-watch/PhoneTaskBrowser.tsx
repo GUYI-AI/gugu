@@ -1,3 +1,4 @@
+import { BrowserPictureFrame } from '@renderer/features/browser/browser-picture-frame';
 import { messageForUser } from '@/lib/userFacingError';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
 import { observer } from 'mobx-react-lite';
@@ -57,16 +58,14 @@ export const PhoneTaskBrowser = observer(function PhoneTaskBrowser({ deviceId, s
       if (!result) throw new Error('The page selection is unavailable');
       return result;
     } });
-  const ratio = frame ? frame.width / frame.height : size.width / (size.height || 1);
-  const width = Math.min(size.width, size.height * ratio);
   return <div ref={visibility.ref} data-phone-task-browser className="flex min-h-0 flex-1 flex-col bg-background">
     {resource.session && <BrowserToolbar session={resource.session} adapter={null} remote annotationAction={annotations.toolbar}
       onNavigate={url => { control({ action: 'navigate', url }); return true; }} onGoBack={() => control({ action: 'back' })}
       onGoForward={() => control({ action: 'forward' })} onReload={() => control({ action: resource.page?.isLoading ? 'stop' : 'reload' })} />}
     <div ref={viewport} data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ width, height: ratio > 0 ? width / ratio : size.height }}>
+      <BrowserPictureFrame viewport={size} frame={frame}>
         <div ref={picture} className="absolute inset-0" />{annotations.overlay}
-      </div>
+      </BrowserPictureFrame>
       {state === 'live' && error && <p role="alert" className="absolute bottom-4 left-4 rounded-lg bg-background p-2 text-sm">{error}</p>}
       {state !== 'live' && <div role={error ? 'alert' : 'status'} className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-foreground-muted">
         {error ?? translate(state === 'closed' ? 'browser.sessionUnavailable' : 'browser.preparingSession')}

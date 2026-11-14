@@ -1,3 +1,4 @@
+import { BrowserPictureFrame } from './browser-picture-frame';
 import { useBrowserAnnotations } from './browser-annotations';
 import { observer } from 'mobx-react-lite';
 import { useContext, useEffect, useRef, useState } from 'react';
@@ -99,8 +100,6 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
       if (!result.inspection) throw new Error('The page annotation could not be read');
       return result.inspection;
     } });
-  const ratio = frame ? frame.width / frame.height : pictureSize.width / (pictureSize.height || 1);
-  const pictureWidth = Math.min(pictureSize.width, pictureSize.height * ratio);
   const session = resource.session;
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -118,10 +117,10 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
         />
       )}
       <div ref={viewport} data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ width: pictureWidth, height: ratio > 0 ? pictureWidth / ratio : pictureSize.height }}>
+        <BrowserPictureFrame viewport={pictureSize} frame={frame}>
           <div ref={root} className="absolute inset-0" />
           {annotations.overlay}
-        </div>
+        </BrowserPictureFrame>
         {state !== 'live' && state !== 'input-paused' && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-foreground-muted">
             {translate(state === 'closed' ? 'browser.sessionUnavailable' : 'browser.preparingSession')}

@@ -1,3 +1,4 @@
+import { enUSAnnotationMessages, zhCNAnnotationMessages } from './messages-annotations';
 import { enUSCapabilityMessages, zhCNCapabilityMessages } from './messages-capabilities';
 import { enUSProjectMessages, zhCNProjectMessages } from './messages-projects';
 import { enUSSharedMessages, zhCNSharedMessages } from './messages-shared';
@@ -2379,6 +2380,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
 
 export const enUSMessages = {
   ...enUSCoreMessages,
+  ...enUSAnnotationMessages,
   ...enUSSessionWorkflowMessages,
   ...enUSLegacyDmMessages,
   ...enUSProjectMessages,
@@ -2404,6 +2406,7 @@ export type SessionMessageLookupKey<Key extends string = SessionMessageKey> =
 
 export const zhCNMessages: Record<SessionMessageKey, string> = {
   ...zhCNCoreMessages,
+  ...zhCNAnnotationMessages,
   ...zhCNSessionWorkflowMessages,
   ...zhCNLegacyDmMessages,
   ...zhCNProjectMessages,
