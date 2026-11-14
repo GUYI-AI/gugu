@@ -1,7 +1,7 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { formatClock } from '@/i18n/format';
 import { observer } from 'mobx-react-lite';
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { rpc } from '@renderer/lib/ipc';
 import { Unknown } from '@/components/ui/Unknown';
 import { readModel, useReadModel } from '@/lib/readModel';
@@ -69,7 +69,13 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
   const ranges = (['15m', '1h', 'all'] as const).map((value) => ({ value, label: t(value === 'all' ? 'resourceMonitor.all' : value === '1h' ? 'resourceMonitor.range1h' : 'resourceMonitor.range15m') }));
   const labels = { stall: t('resourceMonitor.stallChart'), cpu: t('resourceMonitor.cpuOneCore'), memory: t(footprint ? 'resourceMonitor.memoryFootprint' : 'resourceMonitor.memoryRss'), longFrames: t('resourceMonitor.longFrames'), slowInteractions: t('resourceMonitor.slowInteractions') };
   const fail = (e: unknown) => { log.error({ error: e }, 'resource history request failed'); setError(messageForUser(e)); };
-  useEffect(() => { if (tick !== null) void resourceHistory.refresh(range); }, [tick, range]);
+  // Each new sample reads the range again (the open itself already read it).
+  const seenTick = useRef(tick);
+  useEffect(() => {
+    if (tick === null || seenTick.current === tick) return;
+    seenTick.current = tick;
+    void resourceHistory.refresh(range);
+  }, [tick, range]);
   useEffect(() => { if (historyReading.state === 'error') log.error({ error: historyReading.error }, 'resource history request failed'); }, [historyReading]);
   const shownError = error || (historyReading.state === 'error' ? messageForUser(historyReading.error) : '');
   const action = async (kind: 'export' | 'clear') => {

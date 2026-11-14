@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { notifyManager as readModelNotify } from '@tanstack/react-query'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
 import { createReactHarness } from '../../../support/testHarness'
 import { DEFAULT_FILE_STORAGE, type FileStorage } from '../../../../packages/core/src/shared/fileStorage'
 import { FileStorageSection } from '../../../../apps/desktop/src/components/settings/FileStorageSection'
@@ -18,7 +20,7 @@ vi.mock('react-i18next', async (importOriginal) => ({ ...await importOriginal<ob
 
 describe('the one 「文件存储与读取」: other files are one choice', () => {
   let harness: ReturnType<typeof createReactHarness>
-  beforeEach(() => {
+  beforeEach(() => { readModelNotify.setScheduler((callback) => { callback() }); queryClient.clear(); followRendererSession('SIGNED_IN', 'owner');
     harness = createReactHarness(); vi.clearAllMocks(); f.stored = { ...DEFAULT_FILE_STORAGE }
     f.projects.mockResolvedValue({ mac: [{ localProjectId: 'p', chatId: 'group' }] })
   })

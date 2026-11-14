@@ -2,6 +2,8 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import type { CloudComputerSnapshot } from '@gugu/core/cloud/cloudComputer'
 import type { Device } from '@gugu/core/shared/types/chat'
+// The read model reads for the signed-in account, as the product publishes it.
+;(await import('../../../../apps/desktop/src/lib/readModel')).followRendererSession('SIGNED_IN', 'owner')
 
 const network = vi.hoisted(() => ({ open: vi.fn(), close: vi.fn(), warn: vi.fn(), snapshot: { state: 'asleep', deviceId: 'cloud', error: null, since: null } as CloudComputerSnapshot }))
 vi.mock('@/lib/remoteSessionHost', () => ({ openPhoneSessionHostPipe: () => network.open }))
@@ -19,7 +21,7 @@ it('the real mobile session-host client never attaches during sleep and resumes 
   const { writeCachedDevices } = await import('@/store/devicesCache')
   const { resetCloudComputerState, refreshCloudComputer } = await import('@/lib/cloudComputerStore')
   const { fetchCreateOptions, fetchSessionsList } = await import('@/mobile/agent-watch/sessionpage-rpc')
-  writeCachedDevices('owner', [{ device_id: 'cloud', is_online: true, label: 'cloud' } as Device])
+  writeCachedDevices([{ device_id: 'cloud', is_online: true, label: 'cloud' } as Device])
   resetCloudComputerState()
   await refreshCloudComputer()
   await expect(fetchCreateOptions('cloud')).rejects.toMatchObject({ code: 'unreachable' })
@@ -39,11 +41,11 @@ it('the real mobile session-host client never attaches during sleep and resumes 
   expect(network.open).toHaveBeenCalledTimes(1)
   expect(network.warn).not.toHaveBeenCalled()
   network.snapshot = { ...network.snapshot, state: 'awake' }
-  writeCachedDevices('owner', [{ device_id: 'cloud', is_online: false, label: 'cloud' } as Device])
+  writeCachedDevices([{ device_id: 'cloud', is_online: false, label: 'cloud' } as Device])
   await refreshCloudComputer()
   await flush()
   expect(network.open).toHaveBeenCalledTimes(1)
-  writeCachedDevices('owner', [{ device_id: 'cloud', is_online: true, label: 'cloud' } as Device])
+  writeCachedDevices([{ device_id: 'cloud', is_online: true, label: 'cloud' } as Device])
   await flush()
   expect(network.open).toHaveBeenCalledTimes(2)
 })

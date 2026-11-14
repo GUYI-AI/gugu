@@ -1,5 +1,5 @@
 import { messageForUser } from '@/lib/userFacingError';
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { authService } from '../../lib/auth'
 import type { AuthUser } from '../../store/auth'
 import { Avatar } from '../Avatar'
@@ -9,7 +9,9 @@ import { LogOut } from '@/lib/icons'
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import { useTranslation } from 'react-i18next'
 import { OCCUPATION_KEYS, OCCUPATION_OTHER_MAX, occupationComplete, type Occupation } from '@gugu/core/shared/firstRun'
-import { readOccupation, writeOccupation } from '../../lib/firstRun'
+import { occupationModel, writeOccupation } from '../../lib/firstRun'
+import { useReadModel } from '../../lib/readModel'
+import { Unknown } from '../ui/Unknown'
 import '../../i18n/registerMainCatalog'
 import { rendererLogger } from '../../lib/log'
 import { officialServicesEnabled } from '@gugu/core/cloud/optionalServices'
@@ -47,15 +49,14 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
 
   // 身份(product spec:新账号在「认识你」里填,这里能改)。存在账号设置里、只有本人读得到,不进名片。
   // 读不到 = 这一行如实说读不到、不给改,❌ 当成没填让人覆盖掉原值。
-  const [occupation, setOccupation] = useState<{ kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; saved: Occupation | null; draft: Occupation | null }>({ kind: 'loading' })
-  useEffect(() => {
-    if (!user?.id) return
-    let cancelled = false
-    readOccupation(user.id)
-      .then((saved) => { if (!cancelled) setOccupation({ kind: 'ready', saved, draft: saved }) })
-      .catch((e: unknown) => { log.error({ error: e }, 'read occupation failed'); if (!cancelled) setOccupation({ kind: 'error', message: messageForUser(e) }) })
-    return () => { cancelled = true }
-  }, [user?.id])
+  const occupationReading = useReadModel(occupationModel, user?.id ? [] : null)
+  // 改了但还没存的那一份;null = 没动过,显示存着的。
+  const [occupationEdit, setOccupationEdit] = useState<{ draft: Occupation | null } | null>(null)
+  const occupation = occupationReading.state === 'value'
+    ? { kind: 'ready' as const, saved: occupationReading.value, draft: occupationEdit ? occupationEdit.draft : occupationReading.value }
+    : occupationReading.state === 'error'
+      ? { kind: 'error' as const, message: messageForUser(occupationReading.error) }
+      : { kind: 'unknown' as const }
   const occupationDirty = occupation.kind === 'ready' && JSON.stringify(occupation.draft) !== JSON.stringify(occupation.saved)
   const occupationInvalid = occupation.kind === 'ready' && occupationDirty && !occupationComplete(occupation.draft)
 
@@ -89,7 +90,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
         log.error({ error: e }, 'write occupation failed')
         setSaving(false); setSaveError(messageForUser(e)); return
       }
-      setOccupation({ kind: 'ready', saved: occupation.draft, draft: occupation.draft })
+      setOccupationEdit(null)
     }
     updateUser(next)
     // 同步本地输入到持久值(去空白)→ dirty 归零、显示「已保存」、避免空格 bio 残留脏态
@@ -194,9 +195,9 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
           title={<label htmlFor="settings-account-occupation">{t('account.occupation')}</label>}
           description={occupation.kind === 'ready' ? t('account.occupationNote') : undefined}
           control={occupation.kind !== 'ready' ? (
-            <span className="gg-settings-row-value" role={occupation.kind === 'error' ? 'alert' : undefined}>
-              {occupation.kind === 'loading' ? t('account.occupationLoading') : occupation.message}
-            </span>
+            occupation.kind === 'unknown' ? <Unknown className="h-8 w-full max-w-xs" /> : (
+              <span className="gg-settings-row-value" role="alert">{occupation.message}</span>
+            )
           ) : (
             <span className="flex w-full flex-col gap-2">
               <select
@@ -209,7 +210,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
                   const draft: Occupation | null = !key ? null : key === 'other'
                     ? { key: 'other', text: occupation.draft?.key === 'other' ? occupation.draft.text : '' }
                     : { key: key as (typeof OCCUPATION_KEYS)[number] }
-                  setOccupation({ ...occupation, draft }); setSaved(false)
+                  setOccupationEdit({ draft }); setSaved(false)
                 }}
               >
                 {occupation.saved ? null : <option value="">{t('account.occupationUnset')}</option>}
@@ -226,7 +227,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
                   aria-invalid={occupationInvalid || undefined}
                   value={occupation.draft.text}
                   placeholder={tMain('firstRun.otherPlaceholder')}
-                  onChange={(e) => { setOccupation({ ...occupation, draft: { key: 'other', text: e.target.value } }); setSaved(false) }}
+                  onChange={(e) => { setOccupationEdit({ draft: { key: 'other', text: e.target.value } }); setSaved(false) }}
                   onKeyDown={e => { if (e.key === 'Enter') void handleSave() }}
                 />
               ) : null}

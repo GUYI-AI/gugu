@@ -1,3 +1,4 @@
+import { readModel, readModelAccount } from './readModel'
 import { readUserSettingsConfig, updateUserSettingsKey, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
 import { completedFirstRunHarness, firstRunStage, parseOccupation, withOccupation, type FirstRunStage, type FirstRunHarness, type Occupation } from '@gugu/core/shared/firstRun'
 import { identityDb } from './supabase'
@@ -34,9 +35,18 @@ export async function readOccupation(userId: string): Promise<Occupation | null>
   return parseOccupation(await readUserSettingsConfig(settingsClient, userId, USER_SCOPE))
 }
 
+/** 这个账号填的身份(设置 → 账户、助理开通、首次引导读同一份);只有本人读得到,不进名片。 */
+export const occupationModel = readModel({
+  name: 'occupation',
+  scope: 'account',
+  read: (userId) => readOccupation(userId),
+  persist: true,
+})
+
 /** 读-改-写同一行:配置里别的键(建 agent 的默认值)原样留着。 */
 export async function writeOccupation(userId: string, occupation: Occupation): Promise<void> {
   await updateUserSettingsKey(settingsClient, userId, USER_SCOPE, 'profile', (value) => withOccupation({ profile: value }, occupation).profile)
+  if (readModelAccount().id === userId) occupationModel.set([], occupation)
 }
 
 export async function writeFirstRunHarness(userId: string, harness: FirstRunHarness[]): Promise<void> {

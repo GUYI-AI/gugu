@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { Unknown } from '@/components/ui/Unknown';
+import { readModel, useReadModel } from '@/lib/readModel';
 import { useTranslation } from 'react-i18next';
 import { publicAssetPath } from '@gugu/core/shared/ui/publicAssets';
 import { ArrowUpRight } from '@/lib/icons';
@@ -15,19 +16,24 @@ import './subscriptions.css';
 
 const APP_ICON_URL = publicAssetPath('/assets/app/gugu-icon-small.png');
 
+/** Whether this device already used its free credits for this account (desktop host only). */
+const deviceFreeCredits = readModel({
+  name: 'deviceFreeCreditsStatus',
+  scope: 'account',
+  read: async () => (await platform.readDeviceFreeCreditsStatus?.()) ?? null,
+  persist: true,
+});
+
 export function GuguSubscriptionRow() {
   const { translate, locale } = useSessionMessages();
   const { t } = useTranslation('settings');
   const { user } = useAuth();
-  const [deviceFull, setDeviceFull] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    setDeviceFull(false);
-    void platform.readDeviceFreeCreditsStatus?.()
-      .then(status => { if (alive) setDeviceFull(status === 'device_full'); }, () => undefined);
-    return () => { alive = false; };
-  }, [user?.id]);
-  const { power, windows, balanceError, windowsError, membership: plan } = useSpendingPower(user);
+  const freeCredits = useReadModel(deviceFreeCredits, user ? [] : null);
+  const deviceFull = freeCredits.state === 'value' && freeCredits.value === 'device_full';
+  const { state, power, windows, balanceError, windowsError, membership: plan } = useSpendingPower(user);
+  const unknown = state === 'unknown';
+  // 读到之前每个数位画同尺寸的占位;只有读到而这一项取不到时才写「—」。
+  const amount = (value: string | null) => (unknown ? <Unknown className="w-12" /> : value ?? '—');
   const accountError = balanceError || windowsError;
   const date = (value: Date) =>
     new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric' }).format(value);
@@ -37,8 +43,8 @@ export function GuguSubscriptionRow() {
     ? translate('subscriptions.gugu.signIn')
     : accountError
       ? translate('subscriptions.unavailable.error', { message: accountError })
-      : !plan && !accountError
-        ? translate('subscriptions.checking')
+      : unknown
+        ? <Unknown className="w-32" />
         : plan
           ? plan.expiresAt
             ? translate('subscriptions.gugu.expires', { date: date(plan.expiresAt) })
@@ -62,11 +68,8 @@ export function GuguSubscriptionRow() {
       <div className="subscription-credit-summary">
         <span className="subscription-credit-label">{translate('subscriptions.gugu.available')}</span>
         <strong className="subscription-credit-value" data-testid="subscription-credits-balance">
-          {power ? formatCredits(power.spendable) : '—'}
+          {amount(power && formatCredits(power.spendable))}
         </strong>
-        {!power && !balanceError && !windowsError && (
-          <p className="subscription-note" data-testid="subscription-credits-loading">{t('credits.loading')}</p>
-        )}
         {power && compareCreditAmounts(power.held, 0) > 0 && <p className="subscription-note">{translate('subscriptions.gugu.reserved', { credits: formatCredits(power.held) })}</p>}
       </div>
       <div className="subscription-quota-grid">
@@ -74,7 +77,7 @@ export function GuguSubscriptionRow() {
           <div className="subscription-quota-label">
             <span>{translate('subscriptions.gugu.period')}</span>
             <strong>
-              <span data-testid="subscription-period-credits">{period ? formatCredits(period.remaining) : '—'}</span>
+              <span data-testid="subscription-period-credits">{amount(period && formatCredits(period.remaining))}</span>
               {period && <small> / {formatCredits(period.limit)}</small>}
             </strong>
           </div>
@@ -98,7 +101,7 @@ export function GuguSubscriptionRow() {
         <div className="subscription-quota" data-testid="subscription-wallet">
           <div className="subscription-quota-label subscription-wallet-label">
             <span>{translate('subscriptions.gugu.wallet')}</span>
-            <strong data-testid="subscription-wallet-credits">{power ? formatCredits(power.walletCredits) : '—'}</strong>
+            <strong data-testid="subscription-wallet-credits">{amount(power && formatCredits(power.walletCredits))}</strong>
           </div>
         </div>
       </div>

@@ -71,6 +71,7 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
     return window.passwordVaultBeta?.subscribe(() => { void invoke({ type: 'snapshot' }) })
   }, [invoke])
   // 「去填写」 from an Agent's request in chat: open the same add/edit form, pre-filled with what the Agent proposed.
+  // @@@effect-flow - opening the form an Agent's save request asks for, once per request.
   useEffect(() => {
     if (!PASSWORD_BETA_ENABLED) return
     const open = () => {
