@@ -29,7 +29,7 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
   const currentSetup = setup?.ownerId === ownerId && setup.request === retry && (!identity.ios || setup.installId === iosInstallationId) ? setup : null
 
   useEffect(() => {
-    if (platform.kind !== 'capacitor' || !platform.capabilities?.phoneAgentHost) return
+    if (platform.kind !== 'capacitor' || !(platform.capabilities?.phoneDevice || platform.capabilities?.phoneAgentHost)) return
     let alive = true
     setError(null)
     setVisible(false)
