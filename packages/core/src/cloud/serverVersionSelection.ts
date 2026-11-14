@@ -4,7 +4,7 @@
  */
 export function compareServerVersions(a: string, b: string): number {
   const split = (v: string) => {
-    const [main = '', suffix = ''] = v.split(/-(.*)/s)
+    const [main = '', suffix = ''] = v.split('+')[0]!.split(/-(.*)/s)
     return { main: main.split('.').map((n) => Number(n) || 0), suffix: suffix.split(/[.-]/).map((n) => Number(n) || 0), hasSuffix: suffix !== '' }
   }
   const x = split(a)
