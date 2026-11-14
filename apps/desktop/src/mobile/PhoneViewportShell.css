@@ -1,3 +1,9 @@
+/* @@@shell-geometry-not-inherited 输入法每开合一次,壳的这两个值就改一次。只有壳自己读它们:注册成不继承,改一次只重算壳这一个
+   元素(同 @@@dock-height-rule)。继承的话,壳下面整页每个元素都要重算样式,开销跟着挂着的消息量涨。
+   语法写 '*' 不给 initial-value:没设时 var() 照旧落到下面的回退值(100dvh 是视口相对值,当不了 initial-value)。 */
+@property --phone-viewport-height { syntax: '*'; inherits: false; }
+@property --phone-viewport-top { syntax: '*'; inherits: false; }
+
 .gg-phone-viewport-shell {
   height: var(--phone-viewport-height, 100dvh);
   top: var(--phone-viewport-top, 0px);
