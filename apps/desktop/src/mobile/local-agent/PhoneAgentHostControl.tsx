@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { restartPhoneAgentHost, stopPhoneAgentHost, usePhoneDevice } from '../phone-device/phoneDeviceRuntime'
 import { setPhoneAgentHostEnabled, usePhoneDeviceSettings } from '../phone-device/phoneDeviceSettings'
@@ -6,7 +6,7 @@ import { phoneAgentAvailable } from './nativeAgent'
 import { Capacitor } from '@capacitor/core'
 import { platform } from '@/platform'
 import { PhoneAgentHostView } from './PhoneAgentHostView'
-import { IOSPhoneAgentHostControl } from './IOSPhoneAgentHostControl'
+const IOSPhoneAgentHostControl = lazy(() => import('./IOSPhoneAgentHostControl').then(module => ({ default: module.IOSPhoneAgentHostControl })))
 
 /** Hosting is a device setting; Agent creation and conversations stay in their existing flows. */
 function AndroidPhoneAgentHostControl({ ownerId, setup, summary }: { ownerId: string; setup?: boolean; summary?: boolean }) {
@@ -54,5 +54,7 @@ function AndroidPhoneAgentHostControl({ ownerId, setup, summary }: { ownerId: st
 
 export function PhoneAgentHostControl(props: { ownerId: string; setup?: boolean; summary?: boolean }) {
   if (!platform.capabilities.phoneAgentHost) return null
-  return Capacitor.getPlatform() === 'ios' ? <IOSPhoneAgentHostControl {...props} /> : <AndroidPhoneAgentHostControl {...props} />
+  return Capacitor.getPlatform() === 'ios'
+    ? <Suspense fallback={null}><IOSPhoneAgentHostControl {...props} /></Suspense>
+    : <AndroidPhoneAgentHostControl {...props} />
 }

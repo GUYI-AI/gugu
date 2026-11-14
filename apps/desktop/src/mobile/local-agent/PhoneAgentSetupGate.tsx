@@ -9,7 +9,7 @@ import { readPhoneInstallation } from '../phone-device/phoneInstallation'
 import { phoneInstallId } from '../phone-device/phoneDeviceSettings'
 import { useTranslation } from 'react-i18next'
 import { usePhoneHostIdentity } from './usePhoneHostIdentity'
-import { retryIOSOwnerPublication } from '../ios-runtime/startIOSOwnerPublication'
+import { retryPhoneHostPublication } from './phoneHostPublication'
 import { PhoneAgentSetup } from './PhoneAgentSetup'
 import { PhoneInstallationContext } from './PhoneInstallationContext'
 import { phoneAgentSetupRequest, readPhoneAgentSetup, savePhoneAgentSetup, subscribePhoneAgentSetup, type PhoneAgentSetupProgress } from './PhoneAgentSetupState'
@@ -105,7 +105,7 @@ export function PhoneAgentSetupGate({ ownerId, children }: { ownerId: string; ch
               <SettingsNote role="alert">{error ?? t('devices.phoneActions.host.waiting')}</SettingsNote>
               <div className="flex gap-2">
                 <Button onClick={() => {
-                  if (identity.ios && !binding) void retryIOSOwnerPublication().catch(cause => {
+                  if (identity.ios && !binding) void retryPhoneHostPublication().catch(cause => {
                     rendererLogger('actions/PhoneAgentSetupGate').error({ error: cause }, 'action failed')
                     setError(t('devices.phoneActions.host.operationFailed'))
                   })

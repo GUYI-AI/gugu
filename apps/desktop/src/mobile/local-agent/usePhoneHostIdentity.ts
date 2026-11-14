@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { platform } from '@/platform'
 import type { IOSOwnerPublicationState } from '../ios-runtime/iosOwnerPublication'
-import { getIOSOwnerPublicationSnapshot, subscribeIOSOwnerPublication } from '../ios-runtime/startIOSOwnerPublication'
+import { getPhoneHostPublication, subscribePhoneHostPublication } from './phoneHostPublication'
 import { thisPhoneDeviceId } from '../phone-device/phoneDeviceSettings'
 
 const empty: IOSOwnerPublicationState = { status: 'waiting', binding: null, error: null }
@@ -18,8 +18,8 @@ export function verifiedPhoneHostBinding(ownerId: string | null, publication: IO
 
 export function usePhoneHostIdentity(ownerId: string | null) {
   const ios = platform.kind === 'capacitor' && Capacitor.getPlatform() === 'ios'
-  const publication = useSyncExternalStore(ios ? subscribeIOSOwnerPublication : noSubscribe,
-    ios ? getIOSOwnerPublicationSnapshot : noSnapshot, noSnapshot)
+  const publication = useSyncExternalStore(ios ? subscribePhoneHostPublication : noSubscribe,
+    ios ? getPhoneHostPublication : noSnapshot, noSnapshot)
   const binding = ios ? verifiedPhoneHostBinding(ownerId, publication) : null
   const deviceId = ios ? binding?.deviceId ?? null
     : platform.kind === 'capacitor' && platform.capabilities.phoneDevice && ownerId ? thisPhoneDeviceId(ownerId) : null
