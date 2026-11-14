@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openFixture } from '@tooling/utils/db';
@@ -29,7 +29,7 @@ describe('assistant project registration removal', () => {
   beforeEach(async () => {
     fixture = await openFixture('empty'); state.db = fixture.db;
     setAssistantProjectCleanupOwner(async () => 'owner-own', async () => 'device-own');
-    state.home = mkdtempSync(join(tmpdir(), 'gugu-assistant-project-'));
+    state.home = realpathSync(mkdtempSync(join(tmpdir(), 'gugu-assistant-project-')));
     path = join(state.home, 'assistant');
     // An existing, ordinary directory with real content, not a fake Git repository.
     const { mkdirSync } = await import('node:fs'); mkdirSync(path); writeFileSync(join(path, 'memory.md'), 'keep this memory\n');
