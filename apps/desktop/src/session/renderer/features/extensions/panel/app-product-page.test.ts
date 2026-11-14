@@ -267,4 +267,12 @@ describe('产品页的语言与去重', () => {
     expect(text.split('extensions.addsSkills').length - 1).toBe(1);
     expect(text).toContain('extensions.addsSkillsText');
   });
+
+  it('宿主自己画的页(纯工具 App 默认的那一格)不算「装上后多了什么」里的页签', async () => {
+    const toolOnly = { ...(pomodoro as object), contributes: { ...(pomodoro as { contributes: object }).contributes, tabs: [{ name: 'settings', title: 'Settings', hostPage: 'settings' }] } } as never;
+    const { text } = await render(subject(toolOnly));
+    expect(text).not.toContain('extensions.addsTabTitle');
+    expect(text).not.toContain('extensions.addsTabPlain');
+    expect(text).toContain('extensions.addsTools');
+  });
 });
