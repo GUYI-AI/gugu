@@ -1,0 +1,118 @@
+/* Approved phone reference: 136px / 943px single line, 295px / 943px four lines,
+   and a 60px / 943px visible send circle. Existing 16/24 typography is retained. */
+[data-slot='composer'][data-mobile] [data-slot='composer-bar'] {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  align-items: end;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  position: relative;
+}
+[data-slot='composer'][data-mobile] :is([data-slot='composer-toolbar'], [data-slot='composer-actions-start'], [data-slot='composer-actions-end']) { display: contents; }
+[data-slot='composer'][data-mobile] [data-slot='composer-input'] {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  min-width: 0;
+  min-height: 56px;
+  max-height: 128px;
+  padding: 16px 48px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  border-radius: 28px;
+  background: var(--muted);
+  box-shadow: none;
+}
+[data-slot='composer'][data-mobile][data-phone-multiline] [data-slot='composer-input'] { min-height: 104px; border-radius: 20px; }
+[data-slot='composer'][data-mobile] [data-slot='composer-input'] [contenteditable] { color: var(--text-primary); }
+[data-slot='composer'][data-mobile] [data-slot='composer-attachments'] {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  padding: 4px 48px;
+}
+[data-slot='composer'][data-mobile] [data-slot='composer-actions-start'] > button:not(:has([data-slot='composer-permission-mode'])) {
+  grid-column: 1;
+  grid-row: 3;
+  justify-self: center;
+  align-self: end;
+  margin-bottom: 6px;
+  z-index: 1;
+}
+[data-slot='composer'][data-mobile] :is([data-phone-editor-toggle], [data-phone-send]) {
+  grid-column: 3;
+  grid-row: 3;
+  justify-self: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  position: relative;
+  z-index: 1;
+}
+[data-slot='composer'][data-mobile] [data-phone-editor-toggle] {
+  align-self: start;
+  margin-top: 4px;
+  color: var(--text-secondary);
+}
+[data-slot='composer'][data-mobile] [data-phone-send] {
+  align-self: end;
+  margin-bottom: 6px;
+  color: var(--color-white);
+  isolation: isolate;
+}
+[data-slot='composer'][data-mobile] [data-phone-send]::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  z-index: -1;
+  border-radius: 50%;
+  background: var(--live-light);
+}
+[data-slot='composer'][data-mobile] [data-phone-send]:is(:disabled, [data-disabled]) { opacity: 0.45; }
+[data-slot='composer'][data-mobile] [data-phone-send][data-composer-action='stop']::before { background: var(--danger-solid); }
+[data-slot='composer'][data-mobile] :is([data-phone-send], [data-phone-editor-toggle]) > svg { width: 20px; height: 20px; }
+/* Metadata belongs above the input; it never competes with the attachment or send target. */
+[data-slot='composer'][data-mobile] [data-slot='composer-actions-start'] > button:has([data-slot='composer-permission-mode']) {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  justify-self: start;
+  max-width: 45%;
+}
+[data-slot='composer'][data-mobile] [data-slot='composer-model'] > button {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  justify-self: end;
+  max-width: 45%;
+}
+[data-slot='composer'][data-mobile] [data-composer-locked-agent] { grid-column: 2; grid-row: 1; justify-self: center; }
+[data-slot='composer'][data-mobile][data-phone-expanded] [data-slot='composer-bar'] {
+  position: fixed;
+  z-index: 100;
+  left: var(--phone-editor-viewport-left);
+  top: calc(var(--phone-editor-viewport-top) + max(16px, env(safe-area-inset-top)));
+  width: var(--phone-editor-viewport-width);
+  height: calc(var(--phone-editor-viewport-height) - max(16px, env(safe-area-inset-top)));
+  grid-template-rows: auto auto minmax(0, 1fr);
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+  border-radius: 20px 20px 0 0;
+  background: var(--muted);
+  animation: phone-editor-rise 180ms ease-out;
+}
+[data-slot='composer'][data-mobile][data-phone-expanded] [data-slot='composer-input'] {
+  align-self: stretch;
+  min-height: 0;
+  max-height: none;
+  padding: 56px 24px 60px 48px;
+  border-radius: 20px 20px 0 0;
+}
+[data-slot='composer'][data-mobile][data-phone-expanded] [data-phone-editor-toggle] { margin-top: 8px; }
+[data-slot='composer'][data-mobile][data-phone-expanded] [data-phone-send] { margin-bottom: 8px; }
+@keyframes phone-editor-rise { from { translate: 0 24px; opacity: 0; } to { translate: 0 0; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { [data-slot='composer'][data-mobile][data-phone-expanded] [data-slot='composer-bar'] { animation: none; } }
