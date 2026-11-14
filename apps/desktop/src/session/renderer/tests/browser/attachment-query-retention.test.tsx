@@ -38,6 +38,9 @@ it('a left conversation is collected even though its attachment state stays cach
     await renderWithAppProviders(harness, createNode(Pane, { key: n, n, onList: (element: HTMLElement) => { if (!seen.has(element)) { seen.add(element); lists.push(new WeakRef(element)) } } }));
   }
   await renderWithAppProviders(harness, createNode('div', null));
+  // Give the browser a rendering opportunity after the old panes unmount, before
+  // testing GC. Queued layout work may still hold transient DOM references under load.
+  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
   // The cache still holds a query per attachment shown (that is its job) ...
   expect(attachmentQueryClient.getQueryCache().findAll({ queryKey: ['attachment-state'] }).length).toBeGreaterThanOrEqual(12);
   // ... but none of the panes that showed them. React keeps the last two committed trees (current and alternate fibers),
