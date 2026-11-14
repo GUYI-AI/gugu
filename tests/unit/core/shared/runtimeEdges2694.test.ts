@@ -20,3 +20,5 @@ it('returns independent boot diagnostic records', () => {const tasks=new Session
 it('prepares circular arrays without recursing forever', () => {const array:unknown[]=[];array.push(array);expect(prepareFields(array)).toEqual(['[Circular]'])})
 
 it('prepares cyclic Error causes without recursion', () => {const error=new Error('failure');error.cause=error;expect((prepareFields(error) as {cause:unknown}).cause).toBe('[Circular]')})
+
+it('retains falsy Error cause values in diagnostics', () => {for(const cause of [false,0,'',null])expect(serializeError(new Error('failure',{cause}))).toHaveProperty('cause',cause)})

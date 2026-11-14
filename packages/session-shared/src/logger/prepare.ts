@@ -28,7 +28,7 @@ export function serializeError(e: Error, seen = new WeakSet<object>()): Record<s
     name: e.name,
     message: e.message,
     stack: e.stack ? normalizePaths(e.stack) : undefined,
-    ...(e.cause ? { cause: prepareFields(e.cause, seen) } : {}),
+    ...('cause' in e ? { cause: prepareFields(e.cause, seen) } : {}),
   };
 }
 
