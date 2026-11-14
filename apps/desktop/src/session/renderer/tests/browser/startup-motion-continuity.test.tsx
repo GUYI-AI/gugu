@@ -100,6 +100,7 @@ for (const theme of ['light', 'dark']) it(`retains one real iframe from HTML thr
   release(Response.json({ external: { google: true } }))
   await until('real email control is committed', () => !!rootHost!.querySelector('input[type=email]'))
   await until('the same frame has moved visually into the brand slot', () => document.querySelector<HTMLElement>('[data-gugu-boot]')?.style.zIndex === '1')
+  expect(boot.querySelector('[data-startup-slogan]')).toBeNull()
   expect(document.querySelectorAll('iframe[title=gugu]')).toHaveLength(1)
   expect(frame.contentWindow).toBe(context)
   const brandRect = rootHost!.querySelector('.gugu-auth-motion')!.getBoundingClientRect()
