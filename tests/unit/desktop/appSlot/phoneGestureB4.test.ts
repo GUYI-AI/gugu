@@ -114,6 +114,7 @@ async function call(method: string, args: Record<string, unknown>): Promise<Reco
 
 /** Each verb that needs a gesture, with the arguments a page gives it. */
 const gestureCalls: Record<string, Record<string, unknown>> = {
+  filesAnnotateSelection: { ref: { workspace: 'session:s', id: 'notes.md' }, startLine: 3, endLine: 4, text: 'Selected text', annotation: 'Revise' },
   filesOpenWith: { ref: { name: 'a.md' } },
   filesUpload: { pick: true },
   filesDownload: { ref: { name: 'a.md' } },
