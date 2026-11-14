@@ -40,6 +40,8 @@ export const iosPlatform: AppPlatform = {
     if ((await LocalNotifications.checkPermissions()).display !== 'granted') {
       return { success: false, displayed: false, error: 'NOTIFICATIONS_NOT_GRANTED' }
     }
+    // Background alerts belong to APNs; a briefly live WebView must not add a duplicate.
+    if (!(await App.getState()).isActive) return { success: false, displayed: false, error: 'APP_NOT_ACTIVE' }
     return schedulePhoneNotification(payload, { sound: payload.silent ? undefined : 'default' })
   },
   subscribeNotificationClicks(listener) {

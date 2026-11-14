@@ -58,6 +58,8 @@ Foreground/owner readiness always wakes canonical revision reconciliation even
 without APNs. Received pushes only wake that path; default taps additionally check
 canonical chat visibility before using the normal notification route. Remote
 foreground banners are suppressed in favor of the existing local message outlet.
+The iOS local outlet reads the native active state before scheduling; background
+alerts use APNs so a briefly live WebView does not schedule a second OS alert.
 Token changes, preferences and foreground readiness request a fresh acknowledgement;
 stale asynchronous callbacks cannot publish the old owner or generation.
 
