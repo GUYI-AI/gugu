@@ -80,7 +80,7 @@ describe('问工具「还登着吗」的读法', () => {
 
   it('登录态关进咕咕给的目录:dws 用 HOME + 关钥匙串,wecom-cli 用它的配置目录变量', () => {
     expect(dws.env('/g/home')).toEqual({ HOME: '/g/home', DWS_DISABLE_KEYCHAIN: '1' });
-    expect(wecom.env('/g/home')).toEqual({ WECOM_CLI_CONFIG_DIR: '/g/home/config' });
+    expect(wecom.env('/g/home')).toEqual({ WECOM_CLI_CONFIG_DIR: '/g/home/config', WECOM_CLI_ACCESS_TOKEN: '' });
   });
 });
 

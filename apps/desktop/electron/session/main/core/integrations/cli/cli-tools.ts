@@ -119,7 +119,7 @@ const wecom: CliToolRecipe = {
     version: WECOM_VERSION,
     integrity: WECOM_INTEGRITY[platform],
   }),
-  env: (home) => ({ WECOM_CLI_CONFIG_DIR: path.join(home, 'config') }),
+  env: (home) => ({ WECOM_CLI_CONFIG_DIR: path.join(home, 'config'), WECOM_CLI_ACCESS_TOKEN: '' }),
   loginArgs: (work) => ['auth', 'init', '--noninteractive', '--no-browser', '--output-qrcode', wecomQrPath(work)],
   // wecom-cli 自己的扫码等待是 5 分钟。
   loginTimeoutMs: 5 * 60_000 + 15_000,
