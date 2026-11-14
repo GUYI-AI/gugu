@@ -1,7 +1,8 @@
-import { splitAttachmentMentions } from '../core/markdown/attachment-mentions';
+/** `@[label](target)`, the shape `stringifyMention` writes (a target with spaces sits in angle brackets). */
+const MENTION = /@\[([^\]\n]+)\]\((<[^>\n]+>|[^)\s]+)\)/g;
+const ABSOLUTE_PATH = /^<?(?:\/|[A-Za-z]:[\\/])/;
 
-/** Reply headers show the human caption and file labels, never attachment transport paths. */
+/** Reply headers never show a path from this computer: a mention of one reads as its label, where it stands. */
 export function conversationQuoteText(text: string): string {
-  const split = splitAttachmentMentions(text);
-  return split.attachments.length ? [split.text, ...split.attachments.map(file => file.name)].filter(Boolean).join('\n') : text;
+  return text.replace(MENTION, (whole, label: string, target: string) => ABSOLUTE_PATH.test(target) ? label : whole);
 }

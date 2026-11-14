@@ -6,7 +6,7 @@ import { AppSendError, dispatchFromApp, type DispatchHere } from '@shared/extens
 import { createAppMessages } from '@shared/extensions/app-messages-core';
 import { createAppCloud, type CloudChannel } from '@shared/extensions/app-cloud-core';
 import { subscribeStatusName } from '@gugu/core/cloud/deviceRpcProtocol';
-import { stringifyMention } from '@gugu/session-shared/markdown';
+import { draftWithPills, stringifyMention } from '@gugu/session-shared/markdown';
 import { workspaceSession } from '@shared/extensions/app-runtime-protocol';
 import { log } from '@main/lib/logger';
 import { supabase } from '../../../../supabase';
@@ -105,8 +105,7 @@ async function draftOfWorkingCopyRefs(args: Record<string, unknown>): Promise<{ 
     const name = target.replace(/\\/g, '/').split('/').pop() ?? target;
     return stringifyMention({ label: typeof label === 'string' && label ? `${name} · ${label}` : name, target, kind: 'file' });
   });
-  const text = typeof args.text === 'string' && args.text.trim() ? `${args.text.trim()}\n` : '';
-  return { session: { id, projectId }, text: `${text}${mentions.join(' ')}\n` };
+  return { session: { id, projectId }, text: `${draftWithPills(typeof args.text === 'string' ? args.text.trim() : '', mentions.join(' '))}\n` };
 }
 
 export async function dispatchForApp(

@@ -10,7 +10,6 @@ import type { StackLayout } from '@session-chat/core/compose';
 import type { MeasureCtx, Measured, RenderCtx } from '@session-chat/core/define';
 import { layoutBlockStack } from '@session-chat/core/layout/block-stack';
 import type { Block } from '@session-chat/core/markdown/document';
-import { splitAttachmentMentions } from '@session-chat/core/markdown/attachment-mentions';
 import { blockPlainText } from '@session-chat/core/markdown/plain-text';
 import type { SegmentCtx } from '@session-chat/core/units';
 import { defineUnit } from '@session-chat/core/units';
@@ -100,29 +99,15 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
       ...(attachment.dataUrl ? { dataUrl: attachment.dataUrl } : {}),
     })),
   };
-  // 正文里指着附件的 mention 投影到附件条上(#5269)。首轮附件只能以「正文里一条绝对路径」
-  // 送达,那是**传输方式**;用户看的是「我附了这个」,两条路该长成同一个样子。只对用户消息做
-  // —— 附件条本来就只长在用户卡上(measureMessage 的 `aH` 也只在那一支)。
+  // 用户消息上的附件条只画结构化附件(上传的、发出的文件)。正文里的 `@[name](path)` 是引用,
+  // 不论路径是不是绝对的,都留在正文里画成胶囊 —— 引用不是「我附了它」。
   if (normalized.role !== 'user') return normalized;
   const imageNames = new Set(normalized.attachments?.map(file => file.name) ?? []);
   const files = (item.files ?? []).filter(file => !imageNames.has(file.name)).map(file => file.mimeType.startsWith('image/')
     ? { id: `gugu-file://${file.itemId}?v=${file.version}`, href: `gugu-file://${file.itemId}?v=${file.version}`, name: file.name, kind: 'image' as const }
     : { id: `${file.itemId}:${file.version}`, name: file.name, kind: 'file' as const });
   if (files.length) normalized.attachments = [...(normalized.attachments ?? []), ...files];
-  const split = splitAttachmentMentions(normalized.text);
-  if (split.attachments.length === 0) return normalized;
-  // ⚠️ 刚发出去的那一轮**两样都有**:上传那条路给的附件(带着现成的 previewUrl),以及正文里
-  // 那条指向我们自己副本的引用。两个都画就是同一张图出现两次。按名字去重,**已有的那份优先**
-  // —— 它手上就有字节,不必再去读盘。重启之后上传那份 replay 不回来,引用还在,于是同一张图
-  // 由引用接着画:live 与重启后都恰好一张(#5269)。
-  const already = new Set((normalized.attachments ?? []).map((attachment) => attachment.name));
-  const projected = split.attachments.filter((attachment) => !already.has(attachment.name));
-  return {
-    ...normalized,
-    // 正文里那枚 pill 无论如何都要摘掉:附件已经画在上面了,留着就是把传输方式摆回用户脸上。
-    text: split.text,
-    attachments: [...(normalized.attachments ?? []), ...projected],
-  };
+  return normalized;
 }
 
 export function messageFromItem(item: ChatMessage, ctx: SegmentCtx): ChatMessage {

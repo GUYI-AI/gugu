@@ -151,6 +151,15 @@ const NEEDS_ANGLE = /[\s()]/;
 const bracketLabel = (label: string) => label.replace(/[\\[\]]/g, (c) => `\\${c}`);
 
 /**
+ * A draft's words, then its pills: a line apart, or a blank line when the words end in a `> ` quote — a quote's
+ * last line would otherwise run on into the pills and take them in.
+ */
+export function draftWithPills(text: string, pills: string): string {
+  if (!text || !pills) return text || pills;
+  return `${text}${/(^|\n)>[^\n]*$/.test(text) ? '\n\n' : '\n'}${pills}`;
+}
+
+/**
  * Produce the canonical text form of a mention for use as the serialized
  * submit/clipboard text.
  *

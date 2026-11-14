@@ -57,7 +57,11 @@ function mentionLabel(mention: MdastMention): string {
 
 function mentionChip(mention: MdastMention): Element {
   const id = mention.target ?? mention.label;
-  const label: ElementContent = { type: 'text', value: mentionLabel(mention) };
+  const text = mentionLabel(mention);
+  // A file's place (` · 第 4 行`) stays whole: the name is what gets cut when the pill is too wide.
+  const cut = mention.mentionKind === 'file' ? text.indexOf(' · ') : -1;
+  const span = (className: string, value: string): Element => ({ type: 'element', tagName: 'span', properties: { className: [className] }, children: [{ type: 'text', value }] });
+  const label = cut > 0 ? [span('gg-md-mention-label', text.slice(0, cut)), span('gg-md-mention-place', text.slice(cut))] : [span('gg-md-mention-label', text)];
   const icon: Element = {
     type: 'element',
     tagName: 'span',
@@ -80,9 +84,10 @@ function mentionChip(mention: MdastMention): Element {
       dataMentionEngine: mention.engine,
       dataMentionTitle: mention.title,
       dataMentionTone: mention.tone,
-      title: mention.title ? `${id} · ${mention.title}` : id,
+      // The label is cut to one line: the whole of it, then where it points.
+      title: [text, ...(text === id ? [] : [id]), ...(mention.title ? [mention.title] : [])].join('\n'),
     },
-    children: mention.mentionKind ? [icon, label] : [label],
+    children: mention.mentionKind ? [icon, ...label] : label,
   };
 }
 
