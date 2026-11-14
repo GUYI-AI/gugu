@@ -5,8 +5,9 @@ import { colorOfDisplayStatus, labelOfDisplayStatus } from '@gugu/core/shared/ui
 import type { AgentStatusLabel } from '@gugu/core/shared/agentStatusPresentation'
 import { normalizeAvatarUrl, reportInvalidAvatarUrl } from '@gugu/core/shared/ui/avatarUrl'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
-import { groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg, groupAvatarThemeColor } from '@gugu/core/shared/ui/groupAvatar'
+import { groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg, groupAvatarThemeColors } from '@gugu/core/shared/ui/groupAvatar'
 import { dicebearAvatarDataUri } from '../lib/dicebearAvatar'
+import { useAvatarTheme } from '../lib/avatarTheme'
 import { AgentNeedsUserGlyph } from './AgentNeedsUserGlyph'
 import { AgentHarnessBadge } from './AgentHarnessIdentity'
 import { BoringAgentAvatar } from './BoringAgentAvatar'
@@ -119,6 +120,7 @@ export function Avatar({
   variant = 'default',
   imageMatteColor,
 }: AvatarProps) {
+  const theme = useAvatarTheme()
   const [imgFailed, setImgFailed] = useState(false)
   const identityKey = (seed ?? '').trim()
   const identity = useAvatarIdentity(isAgent === undefined && variant !== 'group' ? identityKey : '')
@@ -201,10 +203,10 @@ export function Avatar({
   const groupFace = variant === 'group' && wantsGeneratedFace && !!identityKey
   // One object per face: a new `__html` object makes React write the markup again, and a press that spans that write
   // loses its click.
-  const groupFaceMarkup = useMemo(() => (groupFace ? { __html: groupAvatarSvg({ color: groupAvatarThemeColor(groupAvatarColorIndex(identityKey)), text: groupAvatarDefaultText(name), fill: 'var(--card)', px, label: name }) } : undefined), [groupFace, identityKey, name, px])
+  const groupFaceMarkup = useMemo(() => (groupFace ? { __html: groupAvatarSvg({ ...groupAvatarThemeColors(groupAvatarColorIndex(identityKey)), text: groupAvatarDefaultText(name), px, label: name }) } : undefined), [groupFace, identityKey, name, px])
   const agentDefault = variant !== 'group' && agent === true && wantsGeneratedFace && !!identityKey
   const animatedAssistant = agentDefault && assistant && !still
-  const generatedUrl = variant !== 'group' && wantsGeneratedFace && agent === false && identityKey ? dicebearAvatarDataUri(identityKey) : null
+  const generatedUrl = variant !== 'group' && wantsGeneratedFace && agent === false && identityKey ? dicebearAvatarDataUri(identityKey, theme) : null
   const missingIdentityKey = wantsGeneratedFace && !identityKey
   useEffect(() => {
     if (!missingIdentityKey) return

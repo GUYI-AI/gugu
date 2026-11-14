@@ -9,10 +9,11 @@ import { settledAgentLookPoster } from '../components/agentAvatar/posters'
 import { readIdentityDirectoryBridge } from './identityDirectoryBridge'
 import { isAssistantAvatar } from './avatarIdentity'
 import { redrawImage } from './redrawImage'
+import { readAvatarTheme } from './avatarTheme'
 
 const SIZE = 128
 
-// By id and avatar: a new upload is a new URL, so the URL is the avatar's version; a default face is the id's for good.
+// By id and avatar: a new upload is a new URL, so the URL is the avatar's version; default faces also vary by theme.
 const drawn = new Map<string, Promise<string | null>>()
 
 /**
@@ -25,7 +26,7 @@ export function memberFace(id: string, avatar: string | null): Promise<string | 
   const identity = directory?.getSnapshot()?.[id]
   if (!identity) { directory?.ensure([id]); return Promise.resolve(null) }
   const assistant = isAssistantAvatar(id)
-  const key = `${id} ${avatar ?? ''} ${identity.type} ${assistant}`
+  const key = `${id} ${avatar ?? ''} ${identity.type} ${assistant} ${readAvatarTheme()}`
   if (identity.type === 'agent' && !assistant && (avatar == null || isBuiltinAgentAvatarUrl(avatar))) {
     return Promise.resolve(displayAvatarUrl(avatar, id, 'App member face', 'agent'))
   }

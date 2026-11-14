@@ -24,6 +24,7 @@ const drawImage = vi.fn()
 const createElement = document.createElement.bind(document)
 
 beforeEach(() => {
+  document.documentElement.dataset.theme = 'light'
   installIdentityDirectoryBridge()
   publishIdentityDirectory({ [ID]: { id: ID, type: 'human', avatar: null } as DisplayIdentity }, () => {})
   drawnFrom.length = 0
@@ -37,6 +38,7 @@ beforeEach(() => {
   vi.resetModules()
 })
 afterEach(() => {
+  delete document.documentElement.dataset.theme
   publishIdentityDirectory(null, null)
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
@@ -53,6 +55,19 @@ describe('members[].avatar: the face the host draws, small', () => {
     expect(drawnFrom).toEqual([dicebearAvatarDataUri(ID)])
     // The middle square of the image, into 128 × 128.
     expect(drawImage).toHaveBeenCalledWith(expect.any(FakeImage), 80, 0, 300, 300, 0, 0, 128, 128)
+  })
+
+  it('redraws a cached human default when the host theme changes and reuses it when switched back', async () => {
+    const { memberFace } = await load()
+    await memberFace(ID, null)
+    document.documentElement.dataset.theme = 'dark'
+    await memberFace(ID, null)
+    expect(drawnFrom).toHaveLength(2)
+    expect(drawnFrom[0]).not.toBe(drawnFrom[1])
+    expect(drawnFrom[1]).toBe(dicebearAvatarDataUri(ID))
+    document.documentElement.dataset.theme = 'light'
+    await memberFace(ID, null)
+    expect(drawnFrom).toHaveLength(2)
   })
 
   it('an upload is drawn from the upload, once per id and upload — a new upload is drawn again', async () => {

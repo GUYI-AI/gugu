@@ -5,13 +5,13 @@
 // DiceBear 只装在 apps/desktop 这个包里(根目录没有),测试从 tests/ 出发解析不到,所以按包路径引。
 import { createAvatar } from '../../../../apps/desktop/node_modules/@dicebear/core'
 import { notionists } from '../../../../apps/desktop/node_modules/@dicebear/collection'
+import { AVATAR_PALETTE, avatarColorIndex } from '@gugu/core/shared/ui/avatarPalette'
 import { describe, expect, it } from 'vitest'
 import { dicebearAvatarDataUri } from '../../../../apps/desktop/src/lib/dicebearAvatar'
 
-const BACKGROUND = ['b6e3f4', 'c0aede', 'd1d4f9', 'ffd5dc', 'ffdfbf']
 const SEEDS = Array.from({ length: 300 }, (_, i) => `seed-6278-${i}`)
 const svgOf = (uri: string) => decodeURIComponent(uri.slice('data:image/svg+xml;utf8,'.length))
-const raw = (seed: string) => createAvatar(notionists, { seed, backgroundColor: BACKGROUND }).toJson()
+const raw = (seed: string) => createAvatar(notionists, { seed, backgroundColor: [AVATAR_PALETTE[avatarColorIndex(seed)].light.human.slice(1)] }).toJson()
 /** 衣服图标那一层:原生写法带 style,改写后不带;两边都把整层抽掉再比。 */
 const ICON_LAYER = /<g transform="translate\(396 278\)"( style="mix-blend-mode:difference")?>(?:<g[^>]*>[\s\S]*?<\/g>|[\s\S])*?<\/g>/
 

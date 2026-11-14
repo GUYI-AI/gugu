@@ -134,7 +134,8 @@ export function readHostTheme(): EffectiveTheme {
 
 export function subscribeToHostTheme(onChange: () => void): () => void {
   if (typeof document === 'undefined') return () => {};
-  const observer = new MutationObserver(onChange);
+  // Use the document's own DOM realm (also valid when embedded/test roots do not export browser globals).
+  const observer = new document.defaultView!.MutationObserver(onChange);
   observer.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ['data-theme'],

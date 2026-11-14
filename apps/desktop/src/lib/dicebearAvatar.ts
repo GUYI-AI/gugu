@@ -2,6 +2,8 @@
 // 首字母/渐变色块是设计稿点名的「AI 第一破绽」(D6/D7)；Notionists 是有脸、记得住、可商用、可离线的开源头像。
 // 见 issue #961。同一 seed 永远同一张脸（千人千面、IM 规模零撞脸）；按 seed 缓存避免重复生成。
 import { createAvatar } from '@dicebear/core'
+import { AVATAR_PALETTE, avatarColorIndex, type AvatarTheme } from '@gugu/core/shared/ui/avatarPalette'
+import { readAvatarTheme } from './avatarTheme'
 import { notionists } from '@dicebear/collection'
 import { normalizeAvatarUrl, reportInvalidAvatarUrl } from '@gugu/core/shared/ui/avatarUrl'
 import { boringAgentAvatarDataUri } from './boringAgentAvatar'
@@ -11,9 +13,6 @@ import { agentLookPoster } from '../components/agentAvatar/posters'
 import { agentIdentity } from '../components/agentAvatar/engine/identity'
 import { isBuiltinAgentAvatarUrl, parseAgentLook } from '../components/agentAvatar/look'
 
-// DiceBear 标准柔和背景色板：让深色线稿头像在明/暗主题下都清晰（自带浅底，不依赖容器背景）。
-const BACKGROUND = ['b6e3f4', 'c0aede', 'd1d4f9', 'ffd5dc', 'ffdfbf']
-
 const cache = new Map<string, { uri: string; mainColor: string }>()
 
 /**
@@ -21,24 +20,25 @@ const cache = new Map<string, { uri: string; mainColor: string }>()
  * @@@2470 空 key 直接抛：以前回落成一个共用的 '?' 脸，会让多个无 key 的身份**静默撞成同一张脸**，
  * 与「缺 key 就 fail loud」的契约相反。调用方必须先自己判空并进空态。
  */
-function dicebearAvatar(seed: string): { uri: string; mainColor: string } {
+function dicebearAvatar(seed: string, theme: AvatarTheme): { uri: string; mainColor: string } {
   const key = (seed || '').trim()
   if (!key) throw new Error('[Avatar] dicebearAvatarDataUri requires a stable identity key')
-  const cached = cache.get(key)
+  const cacheKey = `${theme}:${key}`
+  const cached = cache.get(cacheKey)
   if (cached) return cached
-  const { svg, extra } = createAvatar(notionists, { seed: key, backgroundColor: BACKGROUND }).toJson()
+  const { svg, extra } = createAvatar(notionists, { seed: key, backgroundColor: [AVATAR_PALETTE[avatarColorIndex(key)][theme].human.slice(1)] }).toJson()
   const mainColor = extra.primaryBackgroundColor
   if (typeof mainColor !== 'string' || !mainColor) throw new Error('[Avatar] DiceBear supplied no primary background color')
   const uri = `data:image/svg+xml;utf8,${encodeURIComponent(withoutBlend(svg, String(extra.body)))}`
   const avatar = { uri, mainColor }
-  cache.set(key, avatar)
+  cache.set(cacheKey, avatar)
   return avatar
 }
 
-export function dicebearAvatarDataUri(seed: string): string { return dicebearAvatar(seed).uri }
+export function dicebearAvatarDataUri(seed: string, theme: AvatarTheme = readAvatarTheme()): string { return dicebearAvatar(seed, theme).uri }
 
 /** The background selected by the same DiceBear generation used for the visible default avatar. */
-export function dicebearAvatarMainColor(seed: string): string { return dicebearAvatar(seed).mainColor }
+export function dicebearAvatarMainColor(seed: string, theme: AvatarTheme = readAvatarTheme()): string { return dicebearAvatar(seed, theme).mainColor }
 
 // @@@2470 头像投影的单一口径，供不走 React `Avatar` 的消费者用（分享海报 canvas 等）。
 // 与 Avatar 组件同源，所以同一身份各 surface 逐字同一张脸。三条分支与组件严格一致：

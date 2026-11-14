@@ -1,16 +1,15 @@
-// A group's default face (a project's too: a project is its group): a circle outlined in one of eight quiet
-// colours around the first characters of its name, or around a group mark when it has no name. Every surface draws it
-// from this one description; a picture the group uploaded replaces it whole.
+import { BODY_COLORS } from './avatarPalette'
 
-/** Eight colours, each a theme token (tokens.css `--group-face-1` … `--group-face-8`): ink with a little hue, lighter on the dark theme. */
-const COLOR_COUNT = 8
-export const groupAvatarThemeColor = (index: number) => `var(--group-face-${index + 1})`
+// Groups and projects use the same twelve hue families as human and agent defaults.
+export function groupAvatarThemeColors(index: number) {
+  return { color: `var(--avatar-group-text-${index + 1})`, strokeColor: `var(--avatar-group-stroke-${index + 1})`, fill: `var(--avatar-group-fill-${index + 1})` }
+}
 
 /** Which of the colours a group gets: fixed by its id, so every member and surface sees the same. */
 export function groupAvatarColorIndex(chatId: string): number {
   let hash = 0x811c9dc5
   for (let i = 0; i < chatId.length; i++) hash = Math.imul(hash ^ chatId.charCodeAt(i), 0x01000193)
-  return (hash >>> 0) % COLOR_COUNT
+  return (hash >>> 0) % BODY_COLORS.length
 }
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
@@ -50,7 +49,7 @@ const escapeXml = (value: string) => value.replace(/[&<>"']/g, (char) => `&#${ch
  * `px` keeps the outline at least a pixel and a half wide, and uses the group mark below the text threshold.
  * `label` names it for a screen reader.
  */
-export function groupAvatarSvg({ color, text = '', fill, px, label }: { color: string; text?: string; fill: string; px: number; label?: string }): string {
+export function groupAvatarSvg({ color, strokeColor = color, text = '', fill, px, label }: { color: string; strokeColor?: string; text?: string; fill: string; px: number; label?: string }): string {
   const lines = px < TEXT_FROM_PX ? [] : groupAvatarTextLines(text)
   const count = lines.reduce((sum, line) => sum + Array.from(segmenter.segment(line)).length, 0)
   const fontSize = fontSizeFor(lines.join(''), count)
@@ -60,5 +59,5 @@ export function groupAvatarSvg({ color, text = '', fill, px, label }: { color: s
       `<text x="${SIZE / 2}" y="${SIZE / 2}" dominant-baseline="central">${escapeXml(line)}</text>`).join('')}</g>`
     : `<g fill="${color}">${GROUP_MARK}</g>`
   return `<svg xmlns="http://www.w3.org/2000/svg" role="img"${label ? ` aria-label="${escapeXml(label)}"` : ''} viewBox="0 0 ${SIZE} ${SIZE}" width="100%" height="100%">`
-    + `<circle cx="${SIZE / 2}" cy="${SIZE / 2}" r="${(SIZE - stroke) / 2}" fill="${fill}" stroke="${color}" stroke-width="${stroke}"/>${inner}</svg>`
+    + `<circle cx="${SIZE / 2}" cy="${SIZE / 2}" r="${(SIZE - stroke) / 2}" fill="${fill}" stroke="${strokeColor}" stroke-width="${stroke}"/>${inner}</svg>`
 }
