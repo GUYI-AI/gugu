@@ -32,8 +32,10 @@ export function pinSummary(item: ChatMessage, ctx: MeasureCtx, baseVars: Message
   const above = conversation ? conversationBubbleTop(item, ctx) : item.role === 'user' && item.guguDelivery ? deliveryBodyTop(item, ctx, DELIVERY_VARS) : 0;
   const lineHeight = ctx.theme.fonts.body.lineHeight;
   const lines = summaryLineCount(text, ctx.theme.fonts.body.font, userInnerWidth(bubble.width, vars), lineHeight, ctx.measureEpoch ?? 0);
-  const height = Math.min(Math.max(lines, 1), 2) * lineHeight + 2 * vars.userCardPadY + 2 * vars.cardBorder;
-  return { text, vars, conversation, height, clipped: lines > 2, rest: Math.max(0, above + bubble.bottom - height), width: bubble.width, bare: !bubble.drawn };
+  // Never taller than the bubble it rests behind: a cite pill is one cut line in the bubble but its whole label here.
+  const height = Math.min(Math.min(Math.max(lines, 1), 2) * lineHeight + 2 * vars.userCardPadY + 2 * vars.cardBorder, bubble.height ?? Infinity);
+  const shown = Math.max(1, Math.min(2, Math.floor((height - 2 * vars.userCardPadY - 2 * vars.cardBorder) / lineHeight)));
+  return { text, vars, conversation, height, shown, clipped: lines > 2 || (bubble.height !== undefined && lines > 1 && bubble.height < 2 * lineHeight + 2 * vars.userCardPadY + 2 * vars.cardBorder), rest: Math.max(0, above + bubble.bottom - height), width: bubble.width, bare: !bubble.drawn };
 }
 
 // @@@summary-lines-once — the list asks for every anchor's summary each time it is rebuilt (an older page lands, a
@@ -66,9 +68,9 @@ export function PinnedUserSummary(props: { item: ChatMessage; ctx: MeasureCtx; v
         padding: `${s().vars.userCardPadY}px ${s().vars.userCardPadX}px`, 'border-width': `${s().vars.cardBorder}px`,
         font: props.ctx.theme.fonts.body.font, 'line-height': `${props.ctx.theme.fonts.body.lineHeight}px`, cursor: 'pointer',
       }}>
-        <span style={{ display: '-webkit-box', 'white-space': 'pre-wrap', '-webkit-box-orient': 'vertical', '-webkit-line-clamp': 2, overflow: 'hidden', 'overflow-wrap': 'anywhere',
+        <span style={{ display: '-webkit-box', 'white-space': 'pre-wrap', '-webkit-box-orient': 'vertical', '-webkit-line-clamp': s().shown, overflow: 'hidden', 'overflow-wrap': 'anywhere',
           // Cut off: the first line whole, the second fading out over its last third.
-          ...(s().clipped ? { 'mask-image': 'linear-gradient(black, black), linear-gradient(to right, black 67%, transparent)',
+          ...(s().clipped ? { 'mask-image': s().shown > 1 ? 'linear-gradient(black, black), linear-gradient(to right, black 67%, transparent)' : 'linear-gradient(to right, black 67%, transparent)',
             'mask-size': `100% ${props.ctx.theme.fonts.body.lineHeight}px`, 'mask-position': 'top, bottom', 'mask-repeat': 'no-repeat' } : {}) }}>{s().text}</span>
       </div>
     </div>
