@@ -6,6 +6,7 @@ import {
 } from '@gugu/session-core/session-record/message-preview'
 import { SUBSCRIPTION_KEEPALIVE_MS } from '@gugu/session-core/session-record/contract'
 import { dataClient } from '../lib/supabase'
+import { getAgentPresenceSnapshot } from '../lib/agentPresenceStore'
 import {
   subscribeAuthenticatedRealtimeChannel,
   unsubscribeAuthenticatedRealtimeChannel,
@@ -19,10 +20,22 @@ export type AgentMessagePreviewState =
   | { status: 'idle' }
   | { status: 'connecting' }
   | { status: 'live'; preview: MessagePreviewPayload }
-  | { status: 'unavailable'; error: string }
+  /** hostDeviceId:等不到宿主时,是哪台机器没应答 / 离线。 */
+  | { status: 'unavailable'; error: string; hostDeviceId?: string }
 
 /** 中转是广播,宿主不在线库那步也成功;等不到第一份就如实报「拿不到」。 */
 export const FIRST_PAYLOAD_TIMEOUT_MS = 10_000
+
+/**
+ * 等不到第一份时说是哪一种:设备行在线 = 那台宿主没应答(`host_silent`),离线 = `host_offline`;
+ * presence 里没有这台宿主就只能说「拿不到」(`host_unreachable`)。
+ */
+function silentHost(agentId: string): { error: string; hostDeviceId?: string } {
+  const presence = getAgentPresenceSnapshot(agentId)
+  const hostDeviceId = presence?.payload?.deviceId
+  if (!presence || !hostDeviceId) return { error: 'host_unreachable' }
+  return { error: presence.deviceOnline ? 'host_silent' : 'host_offline', hostDeviceId }
+}
 
 function newSubscriptionId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -81,7 +94,10 @@ export function useAgentMessagePreview(
     let requested = false
     setState({ status: 'connecting' })
     const firstPayloadTimer = setTimeout(() => {
-      if (!latest) fail('host_unreachable')
+      if (!latest) {
+        const host = silentHost(agentId)
+        fail(host.error, host.hostDeviceId)
+      }
     }, FIRST_PAYLOAD_TIMEOUT_MS)
 
     const accept = (payload: MessagePreviewPayload) => {
@@ -92,9 +108,9 @@ export function useAgentMessagePreview(
       if (active) setState(payload.error ? { status: 'unavailable', error: payload.error.code } : { status: 'live', preview: payload })
     }
 
-    const fail = (error: string) => {
+    const fail = (error: string, hostDeviceId?: string) => {
       if (!active) return
-      setState((current) => (current.status === 'live' ? current : { status: 'unavailable', error }))
+      setState((current) => (current.status === 'live' ? current : { status: 'unavailable', error, ...(hostDeviceId ? { hostDeviceId } : {}) }))
     }
 
     // 请求串行:退订必须排在订阅之后,否则宿主会留一张没人续的租约。
