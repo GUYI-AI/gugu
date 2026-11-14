@@ -80,11 +80,12 @@ export function sectionOf(iso, now) {
 export const SORTS = ['recent', 'name', 'size']
 
 /** The file service says whether a chat file can be read; legacy hosts only say when its cloud copy expired. */
-export function fileUnavailable(entry) {
-  if (entry.type === 'folder' || entry.workspace) return false
-  if (entry.availability === 'available') return false
-  return entry.availability === 'expired' || entry.availability === 'deleted' || !!entry.expiredAt
+export function unavailableState(entry) {
+  if (entry.type === 'folder' || entry.workspace || entry.availability === 'available') return null
+  if (['expired', 'deleted', 'unavailable'].includes(entry.availability)) return entry.availability
+  return entry.expiredAt ? 'expired' : null
 }
+export const fileUnavailable = (entry) => unavailableState(entry) !== null
 
 /** Display names, then unique ids: a refreshed list or an unchanged event must not move tied entries. */
 export function compareNames(a, b, nameOf, locale, numeric = false) {

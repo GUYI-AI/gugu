@@ -15,7 +15,7 @@ import { selectionComment, annotationLineNumbers, previewSelectionLines } from '
 import { findIn, linesText, placeOf, plainWords, relocate, spanOf } from './lines.js'
 import { INSERT_BLOCKS, isFrontmatter, listInsertion, moveBlock, previewBlock, sourceBlocks, turnBlockChanges } from './blocks.js'
 import { HARD_MAX_BYTES, bufferAnchors, firstBytes, sourceFile } from './source-file.js'
-import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, wantsThumb } from './list.js'
+import { KINDS, SORTS, compareNames, fitTools, comparer, defaultView, fileUnavailable, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, unavailableState, wantsThumb } from './list.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -198,6 +198,10 @@ const STRINGS = {
     clearsAt: '{time} 清除云端副本',
     sent: '聊天附件',
     expired: '已过期',
+    deleted: '已删除',
+    unavailable: '暂不可用',
+    unavailableReason: '暂时无法读取，可以联系上传的人',
+    d_status: '状态',
     cloudDeleted: '云端已删除，可以让上传的人重新发',
     expiredAt: '{time} 到期，云端副本已清除',
     keep: '保留方式',
@@ -438,6 +442,10 @@ const STRINGS = {
     clearsAt: 'Cloud copy cleared {time}',
     sent: 'Chat attachments',
     expired: 'Expired',
+    deleted: 'Deleted',
+    unavailable: 'Unavailable',
+    unavailableReason: 'Temporarily unreadable. Contact the uploader.',
+    d_status: 'Status',
     cloudDeleted: 'The cloud copy was deleted. Ask the uploader to send it again.',
     expiredAt: 'Expired {time}: the cloud copy was cleared',
     keep: 'Keep',
@@ -1168,7 +1176,7 @@ function renderList() {
   const filtering = Object.values(state.filters).some(Boolean)
   const folders = state.kind === 'all' && !filtering ? shown.filter(isFolder).sort(folderOrder) : []
   const picked = ofKind.filter((e) => matches(e, state.filters, machineOf, now)).sort(comparer(state.sort, shownName, changedAt, state.ctx?.locale))
-  // Files whose cloud copy expired no longer open (owner 11-12): one folded section under the rest, closed until pressed.
+  // Unreadable files stay in folded sections under the rest, each named by the service's evidenced reason.
   const files = picked.filter((e) => !fileUnavailable(e))
   const expired = picked.filter(fileUnavailable)
   // At the top, the files placed there and the ones sent in the chat (「附件」) are two blocks under their own headings (owner 11-12).
@@ -1214,11 +1222,12 @@ function renderList() {
     if (folders.length && files.length) rows.push(sectionRow(t.files))
     draw(files)
   }
-  // The only block that folds: closed until pressed.
-  if (expired.length) {
-    const open = state.openSections.has(EXPIRED.key)
-    rows.push(sectionToggle(EXPIRED, expired.length, !open, state.openSections))
-    if (open) draw(expired)
+  for (const block of UNAVAILABLE_BLOCKS) {
+    const entries = expired.filter((entry) => unavailableState(entry) === block.key)
+    if (!entries.length) continue
+    const open = state.openSections.has(block.key)
+    rows.push(sectionToggle(block, entries.length, !open, state.openSections))
+    if (open) draw(entries)
   }
   list.replaceChildren(...rows)
   // 多选: what is picked stays picked while it is on screen; the order a range runs along is the order drawn (a folded
@@ -1253,7 +1262,7 @@ const SECTION_ROWS = 20
  */
 const HERE = { key: 'here', kind: 'files' }
 const SENT = { key: 'sent', kind: 'sent' }
-const EXPIRED = { key: 'expired', kind: 'expired' }
+const UNAVAILABLE_BLOCKS = ['expired', 'deleted', 'unavailable'].map((key) => ({ key, kind: key }))
 
 /** A block's heading: its name and how many files are in it, with a hairline above. */
 function blockRow(block, count) {
@@ -1270,7 +1279,7 @@ function blockRow(block, count) {
 function sectionToggle(section, count, closed, flips = state.closedSections) {
   const li = sectionRow('')
   li.classList.add('list-section-toggle')
-  if (section === EXPIRED) li.dataset.block = section.key
+  if (UNAVAILABLE_BLOCKS.includes(section)) li.dataset.block = section.key
   const button = Object.assign(document.createElement('button'), { type: 'button', className: 'section-toggle' })
   button.setAttribute('aria-expanded', String(!closed))
   const chevron = document.createElement('gugu-icon')
@@ -1958,14 +1967,16 @@ function keepMark(entry, now) {
   return mark
 }
 
-// A file whose cloud copy expired: said on its row, the day it was cleared on hover.
+const unavailableReason = (entry) => unavailableState(entry) === 'unavailable' ? state.t.unavailableReason : state.t.cloudDeleted
+
+// Say only the reason the service established. An unknown missing source is never called deleted or expired.
 function expiredMark(entry) {
   if (!fileUnavailable(entry)) return null
-  const mark = Object.assign(document.createElement('span'), { className: 'file-keep', textContent: state.t.expired })
+  const mark = Object.assign(document.createElement('span'), { className: 'file-keep', textContent: state.t[unavailableState(entry)] })
   mark.dataset.expired = ''
-  mark.title = Number.isFinite(Date.parse(entry.expiredAt ?? '')) && entry.availability !== 'deleted'
+  mark.title = Number.isFinite(Date.parse(entry.expiredAt ?? '')) && unavailableState(entry) === 'expired'
     ? fmt(state.t.expiredAt, { time: new Intl.DateTimeFormat(state.ctx?.locale || 'en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(entry.expiredAt)) })
-    : state.t.cloudDeleted
+    : unavailableReason(entry)
   return mark
 }
 
@@ -2013,7 +2024,7 @@ function readAgain(entry, into) {
   return into !== undefined && state.listed.has(into) ? listFolder(into, true) : undefined
 }
 
-const fileTip = (entry) => fileUnavailable(entry) ? `${pathOf(entry)}\n${state.t.cloudDeleted}` : [
+const fileTip = (entry) => fileUnavailable(entry) ? `${pathOf(entry)}\n${unavailableReason(entry)}` : [
   pathOf(entry), ...activityOf(entry), sizeOf(entry.size), entry.storedOn ? machineOf(entry.storedOn) : '',
   entry.keep ? entry.keep.expiresAt ? state.t.keepTemporary : state.t.keepPermanent : '',
 ].filter(Boolean).join(' · ')
@@ -2057,7 +2068,7 @@ function listItem(entry, now = new Date(Date.now())) {
     span.dataset.cell = cell
     meta.append(span)
   }
-  if (!folder) meta.title = fileUnavailable(entry) ? state.t.cloudDeleted : activityOf(entry).join(' · ')
+  if (!folder) meta.title = fileUnavailable(entry) ? unavailableReason(entry) : activityOf(entry).join(' · ')
   open.append(title)
   const where = state.filter.trim() && entry.parentId ? pathOf(entry).split('/').slice(0, -1).join('/') : ''
   if (where) meta.prepend(Object.assign(document.createElement('span'), { className: 'file-path', textContent: where }))
@@ -2367,6 +2378,7 @@ async function forwardEntries(entries, then) {
 }
 
 async function downloadEntry(entry) {
+  if (fileUnavailable(entry)) return showBanner(unavailableReason(entry), 'info')
   hideBanner()
   const row = inCopy(entry) ? transferRow(state.t.downloading, entry.name) : null
   try {
@@ -2424,7 +2436,7 @@ async function copyLink(entry, at) {
 // the host hands the file back as context.file and applyContext opens it; nothing opens inline on a click.
 // `ask`: "Open with another App" — the host's picker, every App that opens this file, this one included.
 async function openInHost(entry, ask = false, intent = 'navigate') {
-  if (fileUnavailable(entry)) return showBanner(state.t.cloudDeleted, 'info')
+  if (fileUnavailable(entry)) return showBanner(unavailableReason(entry), 'info')
   try {
     const viewState = { root: state.root, folder: state.folder, filter: state.filter, kind: state.kind, sort: state.sort, filters: state.filters, picked: [...state.picked], selecting: state.selecting, pickFrom: state.pickFrom, scrollTop: $('file-list').scrollTop }
     await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}) })
@@ -4374,6 +4386,7 @@ function showDetails(entry) {
     facts.append(Object.assign(document.createElement('dt'), { textContent: term }), Object.assign(document.createElement('dd'), { textContent: text, ...(title ? { title } : {}) }))
   }
   const dated = (iso) => (iso ? new Intl.DateTimeFormat(state.ctx?.locale || 'en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)) : '')
+  if (fileUnavailable(entry)) fact(t.d_status, t[unavailableState(entry)], unavailableReason(entry))
   fact(t.d_size, [sizeOf(entry.size), entry.suffix ? entry.suffix.slice(1).toUpperCase() : ''].filter(Boolean).join(' · '))
   // A working copy's file was made there, not uploaded.
   fact(inCopy(entry) ? t.d_created : t.d_by, [entry.createdBy && entry.createdBy.kind !== 'system' ? who(entry.createdBy) : '', dated(entry.createdAt)].filter(Boolean).join(' · '))
@@ -4385,7 +4398,7 @@ function showDetails(entry) {
   fact(t.d_where, [inCopy(entry) ? t.workingCopy : t.chatFolder, ...folders].join(' / '))
   if (entry.storedOn) fact(t.d_stored, `${machineOf(entry.storedOn)}${entry.storedOn.online === undefined ? '' : ` · ${entry.storedOn.online ? t.machineOnline : t.machineOffline}`}`, storedOnText(entry.storedOn))
   const left = entry.keep?.expiresAt ? fmt(t.clearsAt, { time: dated(entry.keep.expiresAt) }) : null
-  if (entry.keep !== undefined) fact(t.d_keep, !entry.keep ? t.noCopy : left ? `${t.keepTemporary} · ${left}` : t.keepPermanent, entry.keep && !entry.keep.mine ? t.keepNotMine : undefined)
+  if (!fileUnavailable(entry) && entry.keep !== undefined) fact(t.d_keep, !entry.keep ? t.noCopy : left ? `${t.keepTemporary} · ${left}` : t.keepPermanent, entry.keep && !entry.keep.mine ? t.keepNotMine : undefined)
   const versions = document.createElement('ol')
   versions.className = 'details-versions'
   const versionsHead = Object.assign(document.createElement('h3'), { className: 'details-sub', textContent: t.d_versions, hidden: true })
@@ -4407,9 +4420,13 @@ function showDetails(entry) {
     gugu.files.versions(entry).then((kept) => {
       if (state.details?.id !== entry.id) return
       versionsHead.hidden = kept.length === 0
-      versions.replaceChildren(...kept.map((v) => Object.assign(document.createElement('li'), {
-        textContent: [fmt(t.d_version, { n: v.n }), v.by ? who(v.by) : '', dated(v.at), sizeOf(v.size)].filter(Boolean).join(' · '),
-      })))
+      versions.replaceChildren(...kept.map((v) => {
+        const li = document.createElement('li')
+        const status = unavailableState(v)
+        li.textContent = [fmt(t.d_version, { n: v.n }), v.by ? who(v.by) : '', dated(v.at), sizeOf(v.size), status ? t[status] : ''].filter(Boolean).join(status ? ' ' : ' · ')
+        if (status) { li.dataset.expired = ''; li.title = unavailableReason(v) }
+        return li
+      }))
     }, () => {})
   }
 }

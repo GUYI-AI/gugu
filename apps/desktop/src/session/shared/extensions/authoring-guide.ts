@@ -673,7 +673,7 @@ Each call names a file: an entry, \`ctx.file\`, or \`{ chat | workspace, name }\
   createdAt,updatedAt,createdBy,updatedBy,sourceMessageIds,metadata}\`. \`gugu.files.canDelete(entry|[…])\` → [bool]: as its menu opens, or before a program deletes several.
   23: \`savedName\`: save name. Authors: \`{id,name,kind:human|agent|system}\` or null.
 - API 19: \`keep: {expiresAt,mine}|null\`; \`gugu.files.keep(entry, 'temporary'|'permanent')\`; 20: [], as download.
-- List/search: optional \`availability: available|expired|deleted\`, \`expiredAt\`. Older services omit them; \`available\` includes device-held copies.
+- Entries/versions: optional \`availability: available|expired|deleted|unavailable\`, \`expiredAt: ISO|null\`. Old services omit; offline devices stay available.
 
 ## Every opened handle
 
