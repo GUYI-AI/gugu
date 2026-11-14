@@ -108,6 +108,18 @@ export function previewSelectionLines(range) {
     const prefix = block.ownerDocument.createRange()
     prefix.selectNodeContents(block)
     prefix.setEnd(node, offset)
+    // Chromium's paragraph selection can end at the next block's first text node, before any of its characters.
+    if (end && !prefix.toString()) {
+      const root = block.closest('.gg-md') ?? block.parentElement
+      let before = block
+      while (before && before !== root) {
+        if (!before.previousElementSibling) { before = before.parentElement; continue }
+        before = before.previousElementSibling
+        const last = [...before.querySelectorAll('[data-line]')].at(-1) ?? before
+        const previous = /^(\d+)-(\d+)$/.exec(last.dataset.line ?? '')
+        if (previous) return Number(previous[2])
+      }
+    }
     const text = end ? prefix.toString().replace(/\r?\n$/, '') : prefix.toString()
     return Math.min(Number(span[2]), Number(span[1]) + (text.match(/\n/g)?.length ?? 0))
   }

@@ -389,6 +389,19 @@ describe('the default Files App annotation toolbar', () => {
     document.querySelector('form.file-comment-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await until('a partial paragraph keeps its physical source line', () => annotationDraft.items.length === 2)
     expect(annotationDraft.items[1]).toMatchObject({ path: 'notes.md', startLine: 4, endLine: 4, text: 'Second line' })
+    // A native paragraph selection may end at the next paragraph's first text node, before it selects any of it.
+    const next = document.querySelector('#preview [data-line="6-6"]')!
+    const throughBreak = document.createRange()
+    throughBreak.setStart(paragraph.firstChild!, 0)
+    throughBreak.setEnd(next.firstChild!, 0)
+    document.getSelection()?.removeAllRanges()
+    document.getSelection()?.addRange(throughBreak)
+    document.dispatchEvent(new Event('selectionchange'))
+    $('annotate-sel').click()
+    document.querySelector('form.file-comment-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await until('the exclusive end stays out of the next paragraph', () => annotationDraft.items.length === 3)
+    expect(annotationDraft.items[2]).toMatchObject({ path: 'notes.md', startLine: 3, endLine: 4 })
+    expect(JSON.parse(annotationPrompt('', [annotationDraft.items[2]!]).split(' (file)\n')[1]!)).toMatchObject({ path: 'notes.md', startLine: 3, endLine: 4 })
   })
   test('the default code editor toolbar queues original selected source lines for the same payload', async () => {
     annotationDraft = new SessionAnnotations()
