@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
+import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, deferred } from '../../../support/testHarness'
 import type { IOSOwnerPublicationState } from '../../../../apps/desktop/src/mobile/ios-runtime/iosOwnerPublication'
@@ -70,6 +71,18 @@ describe('iOS-only calendar navigation availability', () => {
 })
 
 describe('iOS calendar page owner gate', () => {
+  it('localizes the failed owner gate and retry label as the user changes language', async () => {
+    native.publication = failed(); await render()
+    await act(async () => setLocalePreference('en-US'))
+    expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('The previous phone connection has not ended. Try again.')
+    const retry = harness.container.querySelector<HTMLButtonElement>('button[aria-label="Verify this phone again"]')!
+    expect(retry.textContent).toBe('Retry')
+    expect(harness.container.textContent).not.toMatch(/[\u3400-\u9fff]/)
+    expect(native.status).not.toHaveBeenCalled()
+    await clickElement(retry)
+    expect(native.retry).toHaveBeenCalledOnce()
+  })
+
   it('mounts the real calendar panel only for ready/current owner, without prompting', async () => {
     native.publication = ready(); await render()
     expect(calendarButton()?.textContent).toBe('断开日历')

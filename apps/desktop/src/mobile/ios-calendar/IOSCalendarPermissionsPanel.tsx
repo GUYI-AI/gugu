@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { SettingsGroup, SettingsNote, SettingsRow } from '@/components/settings/SettingsPrimitives'
@@ -11,26 +13,26 @@ type PermissionRead =
   | { ownerId: string; kind: 'failed'; message: string }
 
 const STATUS_TEXT = {
-  notDetermined: '未授权', denied: '未授权', restricted: '系统限制',
-  writeOnly: '仅允许写入', fullAccess: '系统已允许',
+  notDetermined: 'iosCalendar.notAuthorized', denied: 'iosCalendar.notAuthorized', restricted: 'iosCalendar.restricted',
+  writeOnly: 'iosCalendar.writeOnly', fullAccess: 'iosCalendar.fullAccess',
 } as const
 
 function failureMessage(cause: unknown): string {
   const code = (cause as { code?: unknown } | null)?.code
-  if (code === 'stale_context') return '账号或这台手机的身份已变化，请重新打开权限页。'
-  if (code === 'not_granted') return '请在当前账号的权限页查看日历权限。'
-  if (code === 'os_permission') return '连接日历需要完整日历权限，请在系统设置中查看。'
-  if (code === 'execution_unknown') return '刚才的操作未收到确认，请查看当前状态。'
-  if (cause instanceof IOSCalendarPermissionError) return cause.message
-  return '未读到日历连接状态，请重新读取。'
+  if (code === 'stale_context') return 'iosCalendar.staleContext'
+  if (code === 'not_granted') return 'iosCalendar.notGranted'
+  if (code === 'os_permission') return 'iosCalendar.osPermission'
+  if (code === 'execution_unknown') return 'iosCalendar.executionUnknown'
+  if (cause instanceof IOSCalendarPermissionError) return cause.code === 'unavailable' ? 'iosCalendar.unsupported' : 'iosCalendar.invalidStatus'
+  return 'iosCalendar.readFailed'
 }
 
-function statusText(current: PermissionRead): string {
-  if (current.kind === 'loading') return '正在读取'
-  if (current.kind === 'changing') return current.operation === 'connect' ? '正在连接' : '正在断开'
-  if (current.kind === 'failed') return '查不到'
-  if (current.status.calendarConnected) return current.status.authorization === 'fullAccess' ? '已连接' : '权限已撤销'
-  return `未连接 · ${STATUS_TEXT[current.status.authorization]}`
+function statusText(current: PermissionRead, t: TFunction<'settings'>): string {
+  if (current.kind === 'loading') return t('iosCalendar.loading')
+  if (current.kind === 'changing') return t(current.operation === 'connect' ? 'iosCalendar.connecting' : 'iosCalendar.disconnecting')
+  if (current.kind === 'failed') return t('iosCalendar.unknown')
+  if (current.status.calendarConnected) return t(current.status.authorization === 'fullAccess' ? 'iosCalendar.connected' : 'iosCalendar.revoked')
+  return t('iosCalendar.disconnected', { authorization: t(STATUS_TEXT[current.status.authorization]) })
 }
 
 /** Native owner/category truth is required before displaying or changing a connection. */
@@ -38,6 +40,7 @@ export function IOSCalendarPermissionsPanel({ ownerId, client = iosCalendarPermi
   ownerId: string
   client?: IOSCalendarPermissionClient
 }) {
+  const { t } = useTranslation('settings')
   const [snapshot, setSnapshot] = useState<PermissionRead>({ ownerId, kind: 'loading' })
   const latestRequest = useRef<symbol | null>(null)
   const mutation = useRef<symbol | null>(null)
@@ -94,22 +97,24 @@ export function IOSCalendarPermissionsPanel({ ownerId, client = iosCalendarPermi
   }, [ownerId, refresh])
 
   const authorization = current.kind === 'ready' ? current.status.authorization : null
-  const detail = authorization === 'writeOnly' ? '读取和管理日程需要完整日历权限。'
-    : authorization === 'denied' || authorization === 'restricted' ? '请在系统设置中为咕咕开启日历权限。'
+  const detail = authorization === 'writeOnly' ? 'iosCalendar.fullAccessRequired'
+    : authorization === 'denied' || authorization === 'restricted' ? 'iosCalendar.enableInSettings'
       : null
   const message = current.kind === 'failed' || current.kind === 'ready' ? current.message : undefined
   const busy = current.kind === 'loading' || current.kind === 'changing'
 
-  return <SettingsGroup title="这台手机上的任务 Agent 能用" presentation="navigation"
-    footer={message ? <SettingsNote tone="danger" role="alert">{message}</SettingsNote>
-      : detail ? <SettingsNote>{detail}</SettingsNote> : undefined}>
-    <SettingsRow title="日历" description="读取和管理日程" stack control={<div className="flex items-center gap-2">
-      <span className="gg-settings-row-value" role="status">{statusText(current)}</span>
-      {current.kind === 'ready' && <Button size="sm" variant="ghost"
+  return <SettingsGroup title={t('iosCalendar.groupTitle')} presentation="navigation"
+    footer={message ? <SettingsNote tone="danger" role="alert">{t(message)}</SettingsNote>
+      : detail ? <SettingsNote>{t(detail)}</SettingsNote> : undefined}>
+    <SettingsRow title={t('iosCalendar.calendar')} description={t('iosCalendar.description')} stack control={<div className="flex flex-wrap items-center gap-2">
+      <span className="gg-settings-row-value" role="status">{statusText(current, t)}</span>
+      <div className="flex flex-wrap gap-2">
+      {current.kind === 'ready' && <Button size="sm" variant="secondary"
         onClick={() => void changeConnection(current.status.calendarConnected ? 'disconnect' : 'connect')}>
-        {current.status.calendarConnected ? '断开日历' : '连接日历'}
+        {t(current.status.calendarConnected ? 'iosCalendar.disconnect' : 'iosCalendar.connect')}
       </Button>}
-      <Button size="sm" variant="ghost" disabled={busy} aria-label="重新读取日历权限" onClick={() => void refresh()}>重新读取</Button>
+      <Button size="sm" variant="secondary" disabled={busy} aria-label={t('iosCalendar.refreshLabel')} onClick={() => void refresh()}>{t('iosCalendar.refresh')}</Button>
+      </div>
     </div>} />
   </SettingsGroup>
 }
