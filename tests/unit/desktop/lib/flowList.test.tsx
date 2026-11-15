@@ -190,6 +190,36 @@ describe('useFlowList 贴底', () => {
     await resize()
     expect(topOf('r20')).toBe(200)
   })
+  it('停在贴底阈值以内的读者,什么都没变的一次重渲染不拽(行数组换了身份,内容和高度都没变)', async () => {
+    await harness.render(createElement(List, { rows: rowsOf(20), landing: { index: 'LAST', align: 'end' } }))
+    await nextFrames()
+    await scrollTo(maxTop(scroller()) - 40)
+    await nextFrames()
+    await harness.render(createElement(List, { rows: rowsOf(20), landing: null }))
+    await resize()
+    expect(maxTop(scroller()) - scroller().scrollTop).toBe(40)
+  })
+  it('停在贴底阈值以内的读者,视口上方一行晚到真实高度(锚定把位置抬高同样多)不拽:离底距离没变', async () => {
+    await harness.render(createElement(List, { rows: rowsOf(20), landing: { index: 'LAST', align: 'end' } }))
+    await nextFrames()
+    await scrollTo(maxTop(scroller()) - 40)
+    await nextFrames()
+    const above = harness.container.querySelector<HTMLElement>(`[data-id="${rendered()[0]}"]`)!
+    const reading = topOf('r18')
+    // 浏览器在同一次排版里做的:视口上方的行变高,滚动锚定把 scrollTop 抬高同样多,画面不动。
+    above.dataset.h = '300'
+    scroller().scrollTop += 200
+    await resize()
+    expect(maxTop(scroller()) - scroller().scrollTop).toBe(40)
+    expect(topOf('r18')).toBe(reading)
+  })
+  it('在真底部跟随的读者,视口上方一行变高而没有滚动锚定(WebKit)时照旧贴住:那一行被推下去了,但不是读者走的', async () => {
+    await harness.render(createElement(List, { rows: rowsOf(20), landing: { index: 'LAST', align: 'end' } }))
+    await nextFrames()
+    ;(harness.container.querySelector<HTMLElement>(`[data-id="${rendered()[0]}"]`)!).dataset.h = '300'
+    await resize()
+    expect(maxTop(scroller()) - scroller().scrollTop).toBe(0)
+  })
   it('调用方关掉跟随(还有更新的页没载、正在定位未读)时在底部也不贴', async () => {
     await harness.render(createElement(List, { rows: rowsOf(10), landing: { index: 'LAST', align: 'end' }, followTail: false }))
     await nextFrames()

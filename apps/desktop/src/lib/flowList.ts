@@ -83,13 +83,14 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
   }, [contentRef])
 
   const rangeRef = useRef({ key: resetKey, rowIds, start: 0, end: rowIds.length })
-  // 上一帧画出来时读者在哪(绘制之后读,不占这一帧的布局);每次重算电平都约下一次读数。
-  const lastFrameRef = useRef<{ key: Slice['key']; top: number; head?: string; from?: string }>({ key: resetKey, top: 0 })
-  if (lastFrameRef.current.key !== resetKey) lastFrameRef.current = { key: resetKey, top: 0 }
+  // 上一帧画出来时离底多远、scrollTop、视口顶上那一行在哪(绘制之后读;那一行在底部附近才找,从最后一行往上几行就到;橡皮筋回弹按回弹之后记)。
+  const lastFrameRef = useRef<{ key: Slice['key']; gap: number; top: number; at?: { row: Element; top: number } }>({ key: resetKey, gap: 0, top: 0 })
+  if (lastFrameRef.current.key !== resetKey) lastFrameRef.current = { key: resetKey, gap: 0, top: 0 }
   const [lastFrame] = useState(() => afterPaint(() => {
-    const scroller = scrollerRef.current, range = rangeRef.current
-    // 橡皮筋回弹(scrollTop 一度超过最大值)不算往上走。
-    if (scroller) lastFrameRef.current = { key: range.key, top: Math.min(scroller.scrollTop, scroller.scrollHeight - scroller.clientHeight), head: range.rowIds[0], from: range.rowIds[range.start] }
+    const scroller = scrollerRef.current, view = scroller?.getBoundingClientRect().top ?? 0, gap = scroller ? scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop : 0
+    let row = scroller && atBottomRef.current ? contentRef.current?.lastElementChild : null
+    while (row?.previousElementSibling && row.getBoundingClientRect().top > view) row = row.previousElementSibling
+    if (scroller) lastFrameRef.current = { key: rangeRef.current.key, gap: Math.max(0, gap), top: scroller.scrollTop + Math.min(0, gap), at: row ? { row, top: row.getBoundingClientRect().top - view - Math.min(0, gap) } : undefined }
   }))
   const report = useCallback((scroller: HTMLElement) => {
     lastFrame.schedule()
@@ -101,15 +102,14 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
       callbacksRef.current.onAtBottomChange?.(atBottom)
     }
   }, [atBottomThreshold, lastFrame])
-  // 贴底只拽停着的读者。「在不在底部」离底一个阈值以内都算,而且要等这一帧画完才重算:读者正从底部往上滚的那几帧里,
-  // 每来一次重渲染或高度变化就把他写回底部,滚不出去。所以写之前和上一帧画出来的位置比:scrollTop 变小了 = 他这一帧
-  // 自己在往上走,不拽;上方刚补挂了行 = 位置是锚定挪的,尾部没有东西要跟。窗口头换了(头部裁行)照旧贴。
-  // 停在阈值以内不动的读者照旧跟随。
-  const followsTail = useCallback((scroller: HTMLElement) => {
-    if (!followRef.current || !atBottomRef.current) return false
-    const range = rangeRef.current, last = lastFrameRef.current
-    return last.head !== range.rowIds[0] || (last.from === range.rowIds[range.start] && scroller.scrollTop >= last.top - 1)
+  // 底部离读者变远了(新消息、最后一条长高、视口变矮)且不是读者自己走的,才贴底。离底没比上一帧变大 = 什么都没变的重渲染,或上方变高、补挂被锚定
+  // 吸收了(代码块空闲时才高亮,被 content-visibility 跳过的行滚到附近才排出来:「底部有一个范围会被不断吸」)。变大了,谁动的由视口顶上那一行回答:
+  // 它往下挪了是读者往上走;scrollTop 只用来排除没有锚定时(WebKit)上方变高把它推下去 —— 那时 scrollTop 没变,照旧贴。那一行被裁掉了也贴。
+  const endMovedAway = useCallback((scroller: HTMLElement) => {
+    const last = lastFrameRef.current, at = last.at?.row.isConnected ? last.at : null
+    return scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop > last.gap + 1 && !(at && at.row.getBoundingClientRect().top - scroller.getBoundingClientRect().top > at.top + 1 && Math.abs(scroller.scrollTop - last.top) > 1)
   }, [])
+  const followsTail = useCallback((scroller: HTMLElement) => followRef.current && atBottomRef.current && endMovedAway(scroller), [endMovedAway])
 
   // 落点按挂载读一次 —— 调用方的落点在恢复落定后会变。
   const landingRef = useRef({ key: resetKey, landing })
