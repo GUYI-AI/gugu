@@ -10,21 +10,13 @@ private func wait<T>(_ work: (@escaping (T) -> Void) -> Void) throws -> T {
     try require(semaphore.wait(timeout: .now() + 10) == .success, "Native service callback timed out"); return result!
 }
 private final class Socket: GuguIOSRealtimeSocket {
-    private let lock = NSLock()
-    private var queued: [String] = []
-    private var receiver: ((Result<String, Error>) -> Void)?
     func resume() {}
     func send(_ text: String, completion: @escaping (Error?) -> Void) {
-        let frame = try! JSONSerialization.jsonObject(with: Data(text.utf8)) as! [String: Any]
         completion(nil)
-        let reply: [String: Any] = ["topic": frame["topic"]!, "event": "phx_reply", "ref": frame["ref"]!, "join_ref": frame["join_ref"] ?? NSNull(), "payload": ["status": "ok", "response": [:]]]
-        let text = String(decoding: try! JSONSerialization.data(withJSONObject: reply), as: UTF8.self)
-        lock.lock(); if let receiver { self.receiver = nil; lock.unlock(); receiver(.success(text)) } else { queued.append(text); lock.unlock() }
+        // Hold private-join ACKs so this test actually exercises an unready host.
     }
-    func receive(completion: @escaping (Result<String, Error>) -> Void) {
-        lock.lock(); if queued.isEmpty { receiver = completion; lock.unlock() } else { let value = queued.removeFirst(); lock.unlock(); completion(.success(value)) }
-    }
-    func close() { lock.lock(); receiver = nil; lock.unlock() }
+    func receive(completion: @escaping (Result<String, Error>) -> Void) {}
+    func close() {}
 }
 private final class Executor: GuguNativeToolExecutor {
     func validateAccess(_ control: GuguNativeToolControl) throws { try control.checkActive() }
@@ -90,7 +82,7 @@ private final class Executor: GuguNativeToolExecutor {
         cases.append("owner_only_and_incomplete_binding_wire_reject_before_HTTP")
 
         let configured: [String: Any] = try wait { service.configure(["expectedBinding": raw], completion: $0) }
-        try require(configured["ownerId"] as? String == owner && configured["ready"] as? Bool == false && configured["errorCode"] as? String == "delivery_not_connected", "Partial delivery claimed ready")
+        try require(configured["ownerId"] as? String == owner && configured["ready"] as? Bool == false && configured["errorCode"] as? String == "delivery_reconciling", "Unreconciled delivery claimed ready")
         let read: (String, [Any]) throws -> [String: Any] = { channel, args in try wait { service.hostCall(["expectedBinding": raw, "id": UUID().uuidString.lowercased(), "channel": channel, "args": args], completion: $0) } }
         let absent = try read("appSettings.get", ["notifications"])
         try require((absent["error"] as? [String: Any])?["code"] as? String == "settings_unavailable", "Absent preference was inferred enabled")
@@ -132,7 +124,7 @@ private final class Executor: GuguNativeToolExecutor {
         let afterRetirement: [String: Any] = try wait { service.hostState(["expectedBinding": raw], completion: $0) }
         try require((afterRetirement["error"] as? [String: Any])?["code"] as? String == "host_not_ready", "Retired same-binding hostState returned a configured stopped host")
         let reopened: [String: Any] = try wait { service.configure(["expectedBinding": raw], completion: $0) }
-        try require(reopened["ownerId"] as? String == owner && reopened["errorCode"] as? String == "delivery_not_connected", "Explicit same-binding configuration did not reopen the native host")
+        try require(reopened["ownerId"] as? String == owner && reopened["ready"] as? Bool == false && reopened["errorCode"] as? String == "delivery_reconciling", "Explicit same-binding configuration did not reopen the native host")
         cases.append("sealed_service_retirement_requires_same_binding_reconfigure_without_ordinary_credentials")
         let stopped: [String: Any] = try wait { service.stopHost(["expectedBinding": raw], completion: $0) }
         try require(stopped.isEmpty, "Known clean local stop failed")
@@ -141,7 +133,7 @@ private final class Executor: GuguNativeToolExecutor {
             let caps = $0["capabilities"] as? [String: Any]
             return caps?["host_runtime_capability"] as? Int == 1 && (caps?["runtimes"] as? [String])?.isEmpty == true
         }, "Partial delivery advertised a runtime or misreported the verified version")
-        cases.append("missing_delivery_withholds_runtimes_without_claiming_an_outdated_host")
+        cases.append("unready_connection_withholds_runtimes_without_claiming_an_outdated_host")
         print(String(decoding: try JSONSerialization.data(withJSONObject: ["result": "pass", "kind": "actual_Pi_JSC_native_service_APFS_with_synthetic_HTTP_and_sockets", "cases": cases, "realCloudHTTPCalls": 0, "realModelCalls": 0, "iosAppRuns": 0], options: [.sortedKeys, .prettyPrinted]), as: UTF8.self))
     }
 }
