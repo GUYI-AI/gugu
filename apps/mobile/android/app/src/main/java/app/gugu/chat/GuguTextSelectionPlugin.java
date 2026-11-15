@@ -14,8 +14,7 @@ import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.FrameLayout;
-import android.widget.TextView;
-import androidx.core.widget.TextViewCompat;
+import org.json.JSONException;
 
 import com.getcapacitor.Plugin;
 import com.getcapacitor.JSObject;
@@ -36,6 +35,9 @@ public class GuguTextSelectionPlugin extends Plugin {
         Integer start = call.getInt("start"), end = call.getInt("end");
         String title = call.getString("title"), closeLabel = call.getString("closeLabel");
         JSObject appearance = call.getObject("appearance");
+        final NativeRichText rich;
+        try { rich = new NativeRichText(text, call.getArray("runs"), call.getArray("paragraphs"), call.getArray("blocks")); }
+        catch (JSONException error) { call.reject("Invalid rich text selection", error); return; }
         if (id == null || id.isEmpty() || title == null || closeLabel == null || start == null || end == null
                 || !NativeTextRange.valid(text, start, end) || appearance == null
                 || appearance.optDouble("viewportWidth", 0) <= 0 || appearance.optDouble("width", 0) <= 0
@@ -48,18 +50,18 @@ public class GuguTextSelectionPlugin extends Plugin {
             FrameLayout root = new FrameLayout(page.getContext());
             root.setOnClickListener(view -> page.dismiss());
             float scale = getBridge().getWebView().getWidth() / (float) appearance.optDouble("viewportWidth");
-            TextView body = new TextView(page.getContext());
+            NativeRichTextView body = new NativeRichTextView(page.getContext());
             body.setTextIsSelectable(true);
-            body.setText(text, TextView.BufferType.SPANNABLE);
             body.setTextSize(TypedValue.COMPLEX_UNIT_PX, (float) appearance.optDouble("fontSize", 16) * scale);
             body.setTextColor(Color.parseColor(appearance.optString("color", dark ? "#ffffff" : "#181818")));
             body.setIncludeFontPadding(false);
-            int lineHeight = Math.round((float) appearance.optDouble("lineHeight", 24) * scale);
-            TextViewCompat.setLineHeight(body, lineHeight);
             body.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG);
-            android.graphics.Paint.FontMetrics metrics = body.getPaint().getFontMetrics();
-            int leading = Math.max(0, Math.round((lineHeight - (metrics.descent - metrics.ascent)) / 2));
-            body.setPadding(0, leading, 0, 0);
+            body.setPadding(0, 0, 0, 0);
+            try { rich.apply(body, scale); }
+            catch (JSONException error) {
+                dialog = null; pending = null; selectionId = null;
+                call.reject("Cannot style native text selection", error); return;
+            }
             body.setCustomSelectionActionModeCallback(new ActionMode.Callback() {
                 @Override public boolean onCreateActionMode(ActionMode mode, Menu menu) { return true; }
                 @Override public boolean onPrepareActionMode(ActionMode mode, Menu menu) { return false; }

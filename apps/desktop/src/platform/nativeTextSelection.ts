@@ -1,10 +1,8 @@
 import { registerPlugin } from '@capacitor/core'
+import type { NativeRichText } from './nativeRichText'
 
-export interface NativeTextSelectionRequest {
+export interface NativeTextSelectionRequest extends NativeRichText {
   id: string
-  text: string
-  start: number
-  end: number
   title: string
   closeLabel: string
   dark: boolean

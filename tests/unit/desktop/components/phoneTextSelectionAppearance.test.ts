@@ -17,6 +17,7 @@ it('keeps the message position, width, computed type size and color for the nati
 
 it('retains a negative top for a message already scrolled partway offscreen', () => {
   const body = document.createElement('div')
+  body.style.cssText = 'font:16px/24px sans-serif;color:rgb(24,24,24)'
   document.body.append(body)
   vi.spyOn(body, 'getBoundingClientRect').mockReturnValue(new DOMRect(16, -80, 270, 800))
   expect(phoneTextSelectionAppearance(body)).toMatchObject({ y: -80, height: 800 })

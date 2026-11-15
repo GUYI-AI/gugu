@@ -19,6 +19,9 @@ public final class GuguTextSelectionPlugin: CAPPlugin, CAPBridgedPlugin {
               let width = appearance["width"] as? Double, width > 0,
               let height = appearance["height"] as? Double, height > 0,
               let viewportWidth = appearance["viewportWidth"] as? Double, viewportWidth > 0,
+              let runs = call.getArray("runs") as? [[String: Any]],
+              let paragraphs = call.getArray("paragraphs") as? [[String: Any]],
+              let blocks = call.getArray("blocks") as? [[String: Any]],
               start >= 0, start < end, end <= (text as NSString).length else {
             call.reject("Invalid text selection")
             return
@@ -34,7 +37,15 @@ public final class GuguTextSelectionPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("Text selection is already open or unavailable")
                 return
             }
-            let page = NativeTextSelectionController(text: text, range: range, title: title, closeLabel: closeLabel, appearance: appearance)
+            let rich: NativeRichText
+            let attributed: NSAttributedString
+            do {
+                rich = try NativeRichText(text: text, runs: runs, paragraphs: paragraphs, blocks: blocks)
+                let scale = presenter.view.bounds.width / CGFloat(viewportWidth)
+                guard scale.isFinite, scale > 0 else { call.reject("Native text selection unavailable"); return }
+                attributed = try rich.attributed(appearance: appearance, scale: scale)
+            } catch { call.reject("Invalid rich text selection"); return }
+            let page = NativeTextSelectionController(rich: rich, attributed: attributed, range: range, title: title, closeLabel: closeLabel, appearance: appearance)
             page.modalPresentationStyle = .overFullScreen
             page.overrideUserInterfaceStyle = call.getBool("dark") == true ? .dark : .light
             page.onClose = { [weak self] in self?.finish(id) }
@@ -67,16 +78,29 @@ private final class NativeSelectionTextView: UITextView {
 }
 
 private final class NativeTextSelectionController: UIViewController, UIGestureRecognizerDelegate {
-    private let body = NativeSelectionTextView()
-    private let initialText: String
+    private let body: NativeSelectionTextView
+    private let storage: NSTextStorage
+    private let richLayout: NativeRichLayoutManager
+    private let initialAttributed: NSAttributedString
     private let initialRange: NSRange
     private let closeLabel: String
     private let appearance: [String: Any]
     private var selected = false
     var onClose: (() -> Void)?
 
-    init(text: String, range: NSRange, title: String, closeLabel: String, appearance: [String: Any]) {
-        initialText = text
+    init(rich: NativeRichText, attributed: NSAttributedString, range: NSRange, title: String, closeLabel: String, appearance: [String: Any]) {
+        let storage = NSTextStorage()
+        let layout = NativeRichLayoutManager()
+        layout.blocks = rich.blocks
+        let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        container.heightTracksTextView = false
+        layout.addTextContainer(container)
+        storage.addLayoutManager(layout)
+        self.storage = storage
+        richLayout = layout
+        body = NativeSelectionTextView(frame: .zero, textContainer: container)
+        initialAttributed = attributed
         initialRange = range
         self.closeLabel = closeLabel
         self.appearance = appearance
@@ -93,16 +117,7 @@ private final class NativeTextSelectionController: UIViewController, UIGestureRe
         view.addGestureRecognizer(outside)
         body.isEditable = false
         body.isSelectable = true
-        let fontSize = appearance["fontSize"] as? Double ?? 16
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = appearance["lineHeight"] as? Double ?? 24
-        paragraph.maximumLineHeight = paragraph.minimumLineHeight
-        let hex = (appearance["color"] as? String ?? "#181818").dropFirst()
-        let rgb = UInt32(hex, radix: 16) ?? 0x181818
-        body.attributedText = NSAttributedString(string: initialText, attributes: [
-            .font: UIFont.systemFont(ofSize: fontSize), .paragraphStyle: paragraph,
-            .foregroundColor: UIColor(red: CGFloat((rgb >> 16) & 255) / 255, green: CGFloat((rgb >> 8) & 255) / 255, blue: CGFloat(rgb & 255) / 255, alpha: 1),
-        ])
+        body.attributedText = initialAttributed
         body.backgroundColor = .clear
         body.textContainerInset = .zero
         body.textContainer.lineFragmentPadding = 0
@@ -115,6 +130,7 @@ private final class NativeTextSelectionController: UIViewController, UIGestureRe
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         let scale = view.bounds.width / (appearance["viewportWidth"] as? Double ?? view.bounds.width)
+        richLayout.scale = scale
         let width = (appearance["width"] as? Double ?? view.bounds.width) * scale
         let height = max(1, (appearance["height"] as? Double ?? view.bounds.height) * scale)
         body.frame = CGRect(x: (appearance["x"] as? Double ?? 0) * scale,

@@ -7,6 +7,7 @@ import { useToast } from '../toastContext'
 import { useBackLayer } from '../ui/sheetStack'
 import type { PhoneTextSelectionSource } from './phoneTextSelectionSource'
 import { phoneTextSelectionAppearance } from './phoneTextSelectionAppearance'
+import { phoneTextSelectionRichText } from './phoneTextSelectionRichText'
 
 /** The phone shell owns native selection; browsers keep their own selection UI. */
 export function PhoneTextSelection({ source, onDone }: {
@@ -32,8 +33,9 @@ export function PhoneTextSelection({ source, onDone }: {
         if (!active) return
         opened = true
         const appearance = phoneTextSelectionAppearance(element)
+        const rich = phoneTextSelectionRichText(source)
         element.style.visibility = 'hidden'
-        return native.open({ id, text: source.text, start: source.start, end: source.end,
+        return native.open({ id, ...rich,
           title: callbacks.current.t('message.actions.selectText'), closeLabel: callbacks.current.t('message.selectionClose'),
           dark: document.documentElement.dataset.theme === 'dark',
           appearance,

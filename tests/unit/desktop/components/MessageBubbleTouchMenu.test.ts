@@ -19,6 +19,7 @@ import { clickElement, createNode, createReactHarness, message, renderWithAppPro
 vi.mock('../../../../apps/desktop/src/hooks/useAgentHarnessIdentity', () => ({ useAgentHarnessIdentity: () => 'codex' }))
 vi.mock('@/lib/copyFeedback', () => ({ notifyCopied: vi.fn() }))
 let harness: ReturnType<typeof createReactHarness>
+let textStyle: HTMLStyleElement
 const originalPlatformKind = platform.kind
 const originalNativeSelection = platform.textSelection
 const originalCaretRange = Object.getOwnPropertyDescriptor(document, 'caretRangeFromPoint')
@@ -28,11 +29,16 @@ beforeEach(() => {
   for (const key of ['gugu.reaction-frequency', 'emoji-mart.frequently', 'emoji-mart.last']) localStorage.removeItem(key)
   vi.stubGlobal('IntersectionObserver', class { observe() {} unobserve() {} disconnect() {} })
   harness = createReactHarness()
+  // jsdom has no user-agent font inheritance; the native handoff reads real computed text properties.
+  textStyle = document.createElement('style')
+  textStyle.textContent = '.gg-md,.gg-md *{font:16px/24px sans-serif;color:rgb(24,24,24)}'
+  document.head.append(textStyle)
 })
 afterEach(() => {
   platform.kind = originalPlatformKind
   platform.textSelection = originalNativeSelection
   harness.cleanup()
+  textStyle.remove()
   if (originalCaretRange) Object.defineProperty(document, 'caretRangeFromPoint', originalCaretRange)
   else Reflect.deleteProperty(document, 'caretRangeFromPoint')
   vi.useRealTimers()
