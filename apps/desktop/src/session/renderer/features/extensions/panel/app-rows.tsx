@@ -7,6 +7,7 @@ import type { SessionTranslate } from '../extension-consent';
 import { AppLifecycleButton, type AppLifecycle } from './app-lifecycle-button';
 import { AppMoreMenu } from './app-more-menu';
 import { ExtensionMonogram } from './extension-monogram';
+import { Unknown } from '@/components/ui/Unknown';
 import type { ExtensionPendingAction } from './extension-pending';
 
 /**
@@ -27,12 +28,15 @@ export function MarketAppRow({
   onOpen,
   onAction,
   resource,
+  actionUnknown = false,
 }: {
   id: string;
   name: string;
   subtitle: string;
   iconUrl?: string | null;
   deprecated?: boolean;
+  /** What its button says is not known yet (the first screen kept across restarts): a placeholder of its size. */
+  actionUnknown?: boolean;
   lifecycle: AppLifecycle;
   pending?: ExtensionPendingAction;
   pendingPercent?: number;
@@ -60,14 +64,16 @@ export function MarketAppRow({
           </button>
           <span className="mk-lockup-sub">{subtitle}</span>
         </span>
-        <AppLifecycleButton
-          state={lifecycle}
-          pending={pending}
-          percent={pendingPercent}
-          translate={translate}
-          onClick={onAction}
-          testId={`market-row-action-${id}`}
-        />
+        {actionUnknown ? <Unknown className="h-7 w-16 shrink-0" /> : (
+          <AppLifecycleButton
+            state={lifecycle}
+            pending={pending}
+            percent={pendingPercent}
+            translate={translate}
+            onClick={onAction}
+            testId={`market-row-action-${id}`}
+          />
+        )}
       </span>
     </div></ResourceMenu>
   );

@@ -10,13 +10,5 @@
   "apps/desktop/src/components/extensionBundle/ExtensionBundleCard.tsx": 1,
   "apps/desktop/src/components/settings/channels/useChatChannels.ts": 1,
   "apps/desktop/src/lib/connectionBridge.ts": 1,
-  "apps/desktop/src/session/renderer/features/extensions/app-settings-form.tsx": 1,
-  "apps/desktop/src/session/renderer/features/extensions/extension-tab-pane.tsx": 1,
-  "apps/desktop/src/session/renderer/features/extensions/extension-view-layer.tsx": 1,
-  "apps/desktop/src/session/renderer/features/extensions/panel/app-featured.tsx": 1,
-  "apps/desktop/src/session/renderer/features/extensions/panel/app-given-section.tsx": 1,
-  "apps/desktop/src/session/renderer/features/extensions/panel/app-manage-page.tsx": 4,
-  "apps/desktop/src/session/renderer/features/extensions/panel/app-product-page.tsx": 2,
-  "apps/desktop/src/session/renderer/features/extensions/peek-folder-file.tsx": 2,
-  "apps/desktop/src/session/renderer/features/settings/components/ExtensionsSettingsCard.tsx": 2
+  "apps/desktop/src/session/renderer/features/extensions/extension-view-layer.tsx": 1
 }

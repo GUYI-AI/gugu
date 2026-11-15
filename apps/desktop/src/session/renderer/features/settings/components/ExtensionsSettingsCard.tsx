@@ -5,10 +5,8 @@ import { messageForUser } from '@/lib/userFacingError';
 import { CircleAlert, Trash2Icon } from '@/lib/icons';
 import { UI_EVENTS } from '@/lib/uiEvents';
 import { observer } from 'mobx-react-lite';
-import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
-import type { ExtensionAgentStatus } from '@shared/extensions/agent-status';
 import { useDebounce } from '@renderer/lib/hooks/useDebounce';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { DeviceScopeNoticeLine } from '@renderer/features/remote-hosts/device-scope-picker';
@@ -25,7 +23,7 @@ import {
   useInstalledApps,
   type ExtensionDisclosureLevel,
 } from '@renderer/features/extensions/installed-extensions';
-import { useReplica } from '@/lib/replica';
+import { useReplica, type Reading } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import { NEW_SESSION_DRAFT_KEY, composerDrafts } from '@renderer/features/sessions/composer-drafts';
 import { toast } from '@renderer/lib/hooks/use-toast';
@@ -41,9 +39,9 @@ import { askInShell, installConsentPrompt, type InstallConsentAsk } from '@rende
 import { alsoOnMachines, INSTALL_CONSENT_HUMAN_WINDOW_MS, type InstallGrant, type InstallAlsoOnMachine } from '@shared/extensions/host-actions';
 import { findRemoteHostsBridge } from '@shared/remote-hosts';
 import { installedElsewhere } from '@renderer/features/extensions/installed-elsewhere';
-import { AppMarketContent, type AppMarketState, type MarketBrowsePage } from '@renderer/features/extensions/panel/app-market-content';
-import { featuredShotsReady } from '@renderer/features/extensions/panel/app-featured';
-import { keepShelf, keptShelf } from '@renderer/features/extensions/panel/kept-shelf';
+import { AppMarketContent, AppMarketFirstScreen, type AppMarketState, type MarketBrowsePage } from '@renderer/features/extensions/panel/app-market-content';
+import { extensionAgentStatus, extensionDataBytes, marketChanged, marketEntry, marketSearch, marketShelf } from '@renderer/features/extensions/market-replicas';
+import { revokedPermissions } from './NotificationSettingsCard';
 import { appLifecycle } from '@renderer/features/extensions/panel/app-lifecycle';
 import type { AppLifecycle } from '@renderer/features/extensions/panel/app-lifecycle-button';
 import { AppManagePage } from '@renderer/features/extensions/panel/app-manage-page';
@@ -85,8 +83,6 @@ import type {
 } from '@shared/extensions/market';
 import { marketDownloadProgressChannel, marketRefreshedChannel } from '@shared/extensions/marketEvents';
 import type { MarketRefreshed } from '@shared/extensions/market-snapshot';
-import { marketHome } from '@shared/extensions/market-home';
-import { chatDb } from '@/lib/supabase';
 import { declaredContexts, type ExtensionManifest } from '@shared/extensions/manifest';
 import { readCachedDevices } from '@/store/devicesCache';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
@@ -109,28 +105,15 @@ type ShelfItem = MarketListItem;
 type ShelfState = AppMarketState;
 
 /**
- * 每台机器的市场那一块,这一页上次画出来的样子(不带搜索词那一份,按 `host.key`):再打开、换机器再换回来,先画它,
- * 同时照常从那台机器手上的目录读一遍、原地换上(owner 10-16「本地有缓存啊」)。重启后的第一帧也是它(kept-shelf.ts)。
- */
-const lastShelf = new Map<string, Extract<ShelfState, { status: 'ready' }>>();
-type KeptExtra = Pick<Extract<ShelfState, { status: 'ready' }>, 'invalid' | 'total' | 'page'>;
-
-function shelfOf(hostKey: string): Extract<ShelfState, { status: 'ready' }> | undefined {
-  const inRun = lastShelf.get(hostKey);
-  if (inRun) return inRun;
-  const kept = keptShelf<ShelfItem, KeptExtra>(hostKey);
-  if (!kept) return undefined;
-  const { featured, ...home } = kept.home;
-  const shelf = { status: 'ready' as const, query: '', errorKind: null, items: kept.items, hasMore: false, loadingMore: false, featured, home, ...kept.extra };
-  lastShelf.set(hostKey, shelf);
-  return shelf;
-}
-
-/**
  * 常驻的 App 页(apps-views `retained`)切走再回来不重挂,所以「打开这一页」= 每次重新看见。两次之间至少隔这么久:目录自己
  * `max-age=60`,隔不到一分钟再取,Chromium 的 HTTP 缓存答的还是同一份。
  */
 export const MARKET_REOPEN_MIN_MS = 60_000;
+
+/** The permissions taken back from one App, in a list read (an App it names none for has none taken back). */
+function takenBack(byApp: Record<string, string[]>, extensionId: string): string[] {
+  return byApp[extensionId] ?? [];
+}
 
 /** 「上次更新于」的那个时刻:今天的只写几点几分,不是今天的带上日期。 */
 function marketStaleTime(iso: string, locale: string): string {
@@ -164,7 +147,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const library = useLibraryHost();
   const host = library.extensions;
   const api = host.api;
-  const queryClient = useQueryClient();
   const remote = library.remote;
   // 看的是另一台机器、它此刻连不上:市场清单问不了(问了只会挂满超时)。
   const machineOffline = Boolean(remote && !remote.online);
@@ -180,9 +162,18 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const updatesReading = useReplica(marketUpdates, machineOffline ? null : [host.key]);
   const updates = updatesReading.state === 'value' ? updatesReading.value.summary ?? null : null;
   // 别的机器读清单没读到(离线 / server 太旧 / 问不通):页面上说一句人话,❌ 弹一条带原文的失败 toast。
-  const [inventoryError, setInventoryError] = useState<unknown>(null);
+  // Which declared permissions the owner has taken back, per extension (`revokedPermissions(host)`; this desktop's is kept
+  // across restarts): unknown until read, then the switches draw it.
+  const revokedReading = useReplica(revokedPermissions, machineOffline ? null : [host.key]);
+  const revoked = revokedReading.state === 'value' ? revokedReading.value : null;
+  // #6387 各扩展给 agent 的程序:几个会话在用、最近一次没起来的原因(`extensionAgentStatus(host)`)。
+  const agentStatusReading = useReplica(extensionAgentStatus, machineOffline ? null : [host.key]);
+  const agentStatus = agentStatusReading.state === 'value' ? agentStatusReading.value : null;
+  // The inventory's reads, failed (the last read or the refresh after it): said in place, and in the header for another machine.
+  const failureOf = (reading: Reading<unknown>): Error | null => (reading.state === 'unknown' ? null : reading.error);
+  const inventoryError = failureOf(installed) ?? failureOf(revokedReading) ?? failureOf(agentStatusReading);
   const notice = deviceScopeNotice(
-    { remote, error: inventoryError ?? (installed.state === 'error' ? installed.error : null), hasData: installed.state === 'value', now: Date.now(), cloud: remoteHostsStore.cloudScope(remote?.deviceId) },
+    { remote, error: inventoryError, hasData: installed.state === 'value', now: Date.now(), cloud: remoteHostsStore.cloudScope(remote?.deviceId) },
     translate
   );
   const showConfirm = useShowModal('confirmActionModal');
@@ -213,13 +204,36 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const [query, setQuery] = useState('');
   // 搜索词打到服务端去,所以敲字要缓一拍 —— 每个字符一趟请求是在替用户刷自己的清单接口。
   const debouncedQuery = useDebounce(query.trim(), 250);
-  const [shelf, setShelf] = useState<ShelfState>(() => shelfOf(host.key) ?? { status: 'loading' });
-  const shelfRef = useRef(shelf);
-  shelfRef.current = shelf;
+  // The shelf (`marketShelf(host, locale)`: every page, no search word; its first screen kept across restarts) and a search
+  // (`marketSearch(host, word, pages)`: loading more is one page more, a new key; the pages already drawn stay drawn
+  // from the previous key's reading until it lands). A machine that is offline is not asked (args null).
+  const [paging, setPaging] = useState({ query: '', pages: 1 });
+  const pages = paging.query === debouncedQuery ? paging.pages : 1;
+  const shelfReading = useReplica(marketShelf, machineOffline ? null : [host.key, locale]);
+  const searchArgs: [string, string, number] | null = machineOffline || debouncedQuery === '' ? null : [host.key, debouncedQuery, pages];
+  const searchReading = useReplica(marketSearch, searchArgs);
+  const searchBefore = useReplica(marketSearch, searchArgs && pages > 1 ? [host.key, debouncedQuery, pages - 1] : null, { read: false });
+  const fullShelf = shelfReading.state === 'value' ? shelfReading.value.full ?? null : null;
+  // Restored from the snapshot (a cold start): only the first screen is known until the shelf is read.
+  const firstScreen = shelfReading.state === 'value' && !shelfReading.value.full ? shelfReading.value.first ?? null : null;
+  const shelf: ShelfState = useMemo((): ShelfState => {
+    if (debouncedQuery === '') {
+      if (fullShelf) return { status: 'ready', query: '', errorKind: fullShelf.errorKind, items: fullShelf.items, invalid: fullShelf.invalid, total: fullShelf.total, page: fullShelf.page, hasMore: false, featured: fullShelf.featured, home: fullShelf.home, loadingMore: false };
+      return shelfReading.state === 'error' ? { status: 'error' } : { status: 'loading' };
+    }
+    const read = searchReading.state === 'value' ? { found: searchReading.value, loadingMore: false }
+      : searchReading.state === 'unknown' && searchBefore.state === 'value' ? { found: searchBefore.value, loadingMore: true } : null;
+    if (!read) return searchReading.state === 'error' ? { status: 'error' } : { status: 'loading' };
+    const { found } = read;
+    return { status: 'ready', query: debouncedQuery, errorKind: found.errorKind, items: found.items, invalid: found.invalid, total: found.total, page: found.page, hasMore: found.hasMore,
+      featured: [], home: { remaining: [], newest: [], popular: [] }, loadingMore: read.loadingMore };
+  }, [debouncedQuery, fullShelf, shelfReading.state, searchReading, searchBefore]);
+  const retryShelf = () => {
+    if (debouncedQuery === '') void marketShelf.refresh(host.key, locale);
+    else void marketSearch.refresh(host.key, debouncedQuery, pages);
+  };
   // 后台那趟没取到:手上那份照旧画,页头安静写一句「上次更新于 …」(那份的时刻)。❌ 弹错、❌ 错误面板。
   const [marketStale, setMarketStale] = useState<string | null>(null);
-  // 页面画着的那份目录是哪一刻的:同一刻的「变了」(推送和 marketRefresh 的回答各报一次)只重读一回。
-  const shelfFetchedAt = useRef<string | null>(null);
   const [detail, setDetail] = useState<AppDetail | null>(null);
   const detailRef = useRef(detail);
   detailRef.current = detail;
@@ -264,12 +278,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const permissionsInFlight = useRef<Record<string, true>>({});
   // On/off switches in flight, by extension id.
   const [switching, setSwitching] = useState<Record<string, true>>({});
-  const [dataCleared, setDataCleared] = useState(0);
 
-  // Which declared hosts the user has taken back, per extension. Held here
-  // rather than in the tab store: it is what this screen manages, and no other
-  // surface asks the question.
-  const [revoked, setRevoked] = useState<Record<string, string[]>>({});
 
   // `useSessionMessages` hands back a fresh closure every render, so keying an
   // effect on it turns "read once on mount" into "read on every render" — and
@@ -279,8 +288,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   const translateRef = useRef(translate);
   translateRef.current = translate;
 
-  // #6387 各扩展给 agent 的程序:几个会话在用、最近一次没起来的原因。随清单一起读。
-  const [agentStatus, setAgentStatus] = useState<Record<string, ExtensionAgentStatus>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -293,34 +300,22 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       // enforced a host as off.) The screen that manages this inventory reads
       // it; one list call is not worth a stale one.
       const hostKey = hostKeyRef.current;
-      // Not read yet: the read the page's mount began is the one (❌ a second); read already: read again now.
-      if (installedExtensions.peek(hostKey).state === 'unknown') await installedExtensions.fetch(hostKey);
-      else await installedExtensions.refresh(hostKey);
-      const read = installedExtensions.peek(hostKey);
-      if (read.state === 'error') throw read.error;
-      if (read.state === 'value' && read.error) throw read.error;
-      const permissions = await api.revoked();
-      // Swallowing this would draw every switch ON while the main process is
-      // hard-failing on the same read — the screen would claim a permission is
-      // granted that activation refuses to honour.
-      if (!permissions.success || !permissions.data) {
-        throw new Error(permissions.error ?? 'permissions unreadable');
-      }
-      setRevoked(permissions.data);
-      const agents = await api.agentStatus();
-      if (!agents.success || !agents.data) throw new Error(agents.error ?? 'agent status unreadable');
-      setAgentStatus(agents.data);
-      setInventoryError(null);
+      // Not read yet: the read this page's mount began is the one (❌ a second); read already: read again now. A read that
+      // fails is thrown (❌ every switch drawn on while main enforces one off).
+      const readNow = async (model: { peek(hostKey: string): Reading<unknown>; fetch(hostKey: string): Promise<unknown>; refresh(hostKey: string): Promise<void> }) => {
+        if (model.peek(hostKey).state === 'unknown') { await model.fetch(hostKey); return; }
+        await model.refresh(hostKey);
+        const read = model.peek(hostKey);
+        if (read.state === 'error') throw read.error;
+        if (read.state === 'value' && read.error) throw read.error;
+      };
+      await Promise.all([readNow(installedExtensions), readNow(revokedPermissions), readNow(extensionAgentStatus)]);
     } catch (error) {
       log.error('extension inventory unreadable:', error);
-      if (remoteRef.current) {
-        // 别的机器:那一句话在页头(deviceScopeNotice),不弹 toast。
-        setInventoryError(error);
-        return;
-      }
-      // The tab shows the failure in place with a way back (below); the toast
-      // reaches whoever is on the other tab.
-      setInventoryError(error);
+      // 别的机器:那一句话在页头(deviceScopeNotice,从读数来),不弹 toast。
+      if (remoteRef.current) return;
+      // The tab shows the failure in place with a way back (below, from the readings); the toast reaches whoever is on the
+      // other tab.
       toast({
         title: translateRef.current('extensions.loadFailed'),
         description: messageForUser(error),
@@ -330,123 +325,10 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     }
   }, []);
 
-  // The shelf is read separately from the inventory: it does not change when
-  // something is installed, and its failure has its own face (an error panel on
-  // the market tab) rather than a toast over the whole screen.
-  //
-  // 分页:`readShelf` 从第 0 页取起(换搜索词、打开、重试都从这儿起),`loadMore` 取下一页拼在后面。
-  // 一个自增的序号挡住乱序:慢的旧请求回来时,如果搜索词已经换了,它的结果直接丢掉。
-  // 读的是那台机器手上的目录(market-snapshot.ts),❌ 等下载站。同一个搜索词再读一遍(打开时、目录变了、重试)时
-  // 画着的那份留着、读回来原地换上 —— ❌ 骨架、❌ 回到顶上;`pages` = 已经翻到的那几页一起重读,下面的不会少掉一截。
-  const shelfRequest = useRef(0);
-  const readShelf = useCallback(async (search = '', pages = 1) => {
-    const ticket = (shelfRequest.current += 1);
-    const keeps = (current: ShelfState) => current.status === 'ready' && current.query === search && !current.errorKind;
-    const painted = keeps(shelfRef.current);
-    setShelf((current) => (keeps(current) ? current : { status: 'loading' }));
-    try {
-      const ranking = search === ''
-        ? Promise.resolve(chatDb.rpc('market_install_ranking')).then(({ data, error }) => {
-            if (error) throw error;
-            return new Map(((data ?? []) as { app_id: string; score: number }[]).map((row) => [row.app_id, row.score]));
-          }).catch((error: unknown) => {
-            log.warn('market install ranking unreadable:', error);
-            return null;
-          })
-        : Promise.resolve(new Map<string, number>());
-      const [result, scores] = await Promise.all([api.market({ page: 0, query: search }), ranking]);
-      if (ticket !== shelfRequest.current) return;
-      // The market answers every call (unreachable is `errorKind`); only a call that did not get there lands here.
-      if (!result.success || !result.data) throw new Error('market unreadable');
-      for (const entry of result.data.invalid) {
-        // The reason is for whoever fixes the bundle, not for the person browsing;
-        // the row on screen says only that it could not be listed.
-        log.warn(`extension catalog: ${entry.dirName} could not be listed: ${entry.reason}`);
-      }
-      if (result.data.error) {
-        // 连不上这件事本身要留痕:界面上有那一句,日志里有原话。
-        log.warn(`extension market unreachable: ${result.data.error}`);
-      }
-      let items = result.data.extensions;
-      let last = result.data;
-      for (let page = 1; last.hasMore && (search === '' || page < pages); page += 1) {
-        const next = await api.market({ page, query: search });
-        if (ticket !== shelfRequest.current) return;
-        // 推荐与完整排序页必须读齐;搜索保留分页重试。
-        if (!next.success || !next.data || next.data.errorKind) {
-          if (search === '') throw new Error('The complete market catalog could not be read');
-          break;
-        }
-        const seen = new Set(items.map((item) => item.manifest.id));
-        items = [...items, ...next.data.extensions.filter((item) => !seen.has(item.manifest.id))];
-        last = next.data;
-      }
-      const { featured, ...home } = marketHome(items.map((item) => ({ ...item, ...item.cloud })), scores);
-      // 画着一份时,新的那份等精选底图解码好再整份换上;取不到就留着画着的那份(下面 catch)。第一次读不等:没有可留的,卡片自己取。
-      if (painted) await featuredShotsReady(queryClient, api, host.key, featured);
-      if (ticket !== shelfRequest.current) return;
-      shelfFetchedAt.current = result.data.fetchedAt;
-      const ready: Extract<ShelfState, { status: 'ready' }> = {
-        status: 'ready',
-        query: search,
-        errorKind: result.data.errorKind,
-        items,
-        invalid: result.data.invalid,
-        total: last.total,
-        page: last.page,
-        hasMore: last.hasMore,
-        featured,
-        home,
-        loadingMore: false,
-      };
-      setShelf(ready);
-      // 下次打开先画这份完整目录与编排。
-      if (search === '' && !ready.errorKind) {
-        lastShelf.set(host.key, ready);
-        keepShelf<ShelfItem, KeptExtra>(host.key, items, { featured, ...home }, { invalid: ready.invalid, total: ready.total, page: ready.page });
-      }
-    } catch (error) {
-      if (ticket !== shelfRequest.current) return;
-      // Not an empty shelf. A missing or unreadable catalog is a packaging
-      // fault: the tab says so, and the path goes to the log. 画着同一个词的那份时照旧画它(重读没读到,不是读不到)。
-      log.error('extension catalog unreadable:', error);
-      setShelf((current) =>
-        current.status === 'ready' && current.query === search && !current.errorKind ? current : { status: 'error' }
-      );
-    }
-  }, []);
-
-  const loadMore = useCallback(async () => {
-    if (shelf.status !== 'ready' || !shelf.hasMore || shelf.loadingMore) return;
-    const ticket = shelfRequest.current;
-    const nextPage = shelf.page + 1;
-    setShelf({ ...shelf, loadingMore: true });
-    try {
-      const result = await api.market({ page: nextPage, query: debouncedQuery });
-      if (ticket !== shelfRequest.current) return;
-      // The market answers every call (unreachable is `errorKind`); only a call that did not get there lands here.
-      if (!result.success || !result.data) throw new Error('market unreadable');
-      const data = result.data;
-      setShelf((current) => {
-        if (current.status !== 'ready') return current;
-        // 同一个 id 不画两次:两页之间清单若被改动(发布了新扩展),边界会挪一格。
-        const seen = new Set(current.items.map((item) => item.manifest.id));
-        return {
-          ...current,
-          items: [...current.items, ...data.extensions.filter((item) => !seen.has(item.manifest.id))],
-          total: data.total,
-          page: data.page,
-          hasMore: data.hasMore,
-          loadingMore: false,
-        };
-      });
-    } catch (error) {
-      if (ticket !== shelfRequest.current) return;
-      // 下一页没取到:已经画出来的留着,底部的「加载更多」还在,用户可以再点。
-      log.warn('extension catalog next page unreadable:', error);
-      setShelf((current) => (current.status === 'ready' ? { ...current, loadingMore: false } : current));
-    }
-  }, [shelf, debouncedQuery]);
+  const loadMore = () => {
+    if (shelf.status !== 'ready' || !shelf.hasMore || shelf.loadingMore || debouncedQuery === '') return;
+    setPaging({ query: debouncedQuery, pages: pages + 1 });
+  };
 
   // 底部哨兵:滚到它就取下一页 —— 往下滚本身就是「我还要看」,❌ 不再要一次点击
   // (owner 2026-09-14:「我不要手动点才能加载更多,下滚不就可以加载更多了吗」)。
@@ -478,29 +360,30 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
    */
   const shelfItemFor = useCallback(
     async (extensionId: string): Promise<ShelfItem | undefined> => {
-      const loaded =
-        shelf.status === 'ready' ? shelf.items.find((item) => item.manifest.id === extensionId) : undefined;
+      const loaded = fullShelf?.items.find((item) => item.manifest.id === extensionId);
       if (loaded) return loaded;
-      const result = await api.marketEntry({ extensionId }).catch(() => null);
-      return result?.success && result.data ? result.data : undefined;
+      // @@@reading-default - one action's moment (a reinstall offer, 「在市场查看」): the market not reachable is said as not in it
+      return marketEntry.fetch(hostKeyRef.current, extensionId).then((item) => item ?? undefined, (error: unknown) => {
+        log.warn('market entry unreadable:', error);
+        return undefined;
+      });
     },
-    [shelf]
+    [fullShelf]
   );
 
   // 下载站那一趟回来了(打开这一页时去的那趟,或者别处 —— 启动、安装 —— 去的):变了,市场这一块和「有新版 / 被撤回」
   // 一起从新的那份重读(两边永远是同一刻,10-08 的一致性);没变什么都不重画;没取到,照旧画手上那份、页头写「上次更新于 …」。
-  const debouncedQueryRef = useRef(debouncedQuery);
-  debouncedQueryRef.current = debouncedQuery;
+  const fullShelfRef = useRef(fullShelf);
+  fullShelfRef.current = fullShelf;
   const onMarketRefreshed = (refreshed: MarketRefreshed) => {
     if (refreshed.outcome === 'failed') {
       setMarketStale(refreshed.fetchedAt);
       return;
     }
     setMarketStale(null);
-    if (refreshed.outcome !== 'changed' || refreshed.fetchedAt === shelfFetchedAt.current) return;
-    shelfFetchedAt.current = refreshed.fetchedAt;
-    const current = shelfRef.current;
-    void readShelf(debouncedQueryRef.current, current.status === 'ready' ? current.page + 1 : 1);
+    // 变了:这台机器的市场那几份重读(推送和回答报的同一刻只读一回,marketChanged 按那一刻去重);画着的那份就是这一刻的也不读。
+    if (refreshed.outcome !== 'changed' || refreshed.fetchedAt === fullShelfRef.current?.fetchedAt) return;
+    if (!marketChanged(host.key, refreshed.fetchedAt)) return;
     // 本机那份「有新版」由 wireMarketRefresh 跟着推送重查;别的机器的推送未必转得过来,这里查。
     if (!host.local) void marketUpdates.refresh(host.key);
   };
@@ -529,13 +412,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       })
       .catch((error: unknown) => log.warn('App market refresh not asked:', error));
   }, [refresh, shown]);
-
-  // 首次与每次搜索词变化:从第 0 页重来。读的是手上那份目录,和上面那趟更新检查同一份;
-  // 下载站那趟取回来变了,两边由 onMarketRefreshed 一起重读。
-  useEffect(() => {
-    if (remote && !remote.online) return;
-    void readShelf(debouncedQuery);
-  }, [readShelf, debouncedQuery, remote?.online]);
 
   /**
    * 从市场装:装法只有一条 —— main 的 installExtensionFromMarket(群里的「用 X 打开」、首启那一页、agent 的 app_install 走的
@@ -820,10 +696,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     setPendingPermissions(permissionsInFlight.current);
     const apply = (list: readonly string[], on: boolean) =>
       on ? list.filter((entry) => entry !== permission) : [...new Set([...list, permission])];
-    setRevoked((current) => ({
-      ...current,
-      [manifest.id]: apply(current[manifest.id] ?? [], granted),
-    }));
+    const entry = revokedPermissions.at(host.key);
+    entry.set((current) => current && { ...current, [manifest.id]: apply(current[manifest.id] ?? [], granted) });
     try {
       const result = await api.setPermissionGranted({
         extensionId: manifest.id,
@@ -834,14 +708,11 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         throw new Error(result.error ?? '');
       }
       // What main enforces wins over what was assumed.
-      setRevoked((current) => ({ ...current, [manifest.id]: result.data.revoked }));
+      const { revoked: settled } = result.data;
+      entry.set((current) => current && { ...current, [manifest.id]: settled });
     } catch (error) {
-      // Roll back this one switch only: another switch on the same extension may
-      // have landed meanwhile, and it keeps its own result.
-      setRevoked((current) => ({
-        ...current,
-        [manifest.id]: apply(current[manifest.id] ?? [], !granted),
-      }));
+      // Not kept: what main enforces is read again (I4), ❌ a guess at what was there before.
+      void revokedPermissions.refresh(host.key);
       toast({
         title: translateRef.current('extensions.permissionChangeFailed'),
         description: messageForUser(error),
@@ -1163,7 +1034,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           if (host.local) await quitApp(manifest.id);
           const result = await api.clearAppData({ extensionId: manifest.id });
           if (!result.success) throw new Error(result.error ?? '');
-          setDataCleared((count) => count + 1);
+          void extensionDataBytes.refresh(host.key, manifest.id);
           toast({ title: translate('extensions.manageDataCleared', { name }), tier: 'success' });
         } catch (error) {
           log.error('App data not cleared:', error);
@@ -1204,6 +1075,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
         </span>
       );
     }
+    // What its program and its permissions say is not known yet: the line waits for them (❌ the subtitle, then a warning).
+    if (!agentStatus || !revoked) return <Unknown className="w-40" />;
     const failure = agentStatus[manifest.id]?.lastFailure;
     if (failure) {
       // 程序在 stderr 上的原话可能是一整段栈,不进文案(仓规 copy-leaks-internal-detail),放在悬停里给要追的人看。
@@ -1214,7 +1087,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       );
     }
     const declared = declaredPermissions(manifest);
-    const withdrawn = declared.filter((permission) => (revoked[manifest.id] ?? []).includes(permission.key)).length;
+    const withdrawn = declared.filter((permission) => takenBack(revoked, manifest.id).includes(permission.key)).length;
     if (withdrawn > 0) return <span>{translate('extensions.rowRevoked', { count: withdrawn })}</span>;
     const text = localizedManifestText(manifest, locale);
     return <span>{text.subtitle}</span>;
@@ -1258,7 +1131,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
             locale={locale}
             translate={translate}
             machine={remote?.deviceLabel}
-            api={api}
+            hostKey={host.key}
             readOnly={!!notice?.readOnly}
             justInstalled={justInstalled === manifest.id && Boolean(installedHere)}
             backLabel={detail.from ? translate('extensions.appSettings') : undefined}
@@ -1281,7 +1154,21 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
 
   // ── App 设置页:只管装着的这一份。别处把它卸了就回清单 ──
   const managed = detail?.page === 'manage' ? installedById?.get(detail.extensionId) : undefined;
-  if (detail?.page === 'manage' && managed && apps) {
+  // Its permissions not read yet (or unreadable): the page waits for them, ❌ every switch drawn on (AP2).
+  if (detail?.page === 'manage' && managed && apps && !revoked) {
+    return (
+      <div className="mk" data-testid="extensions-manage" ref={rootRef}>
+        {revokedReading.state === 'error' ? (
+          <div className="mk-status" role="alert">
+            <CircleAlert className="size-4 shrink-0" />
+            <span className="min-w-0">{translate('extensions.loadFailed')}</span>
+            <Button type="button" variant="ghost" size="sm" onClick={() => void refresh()}>{translate('extensions.retry')}</Button>
+          </div>
+        ) : <InstalledRowsSkeleton label={translate('extensions.loading')} />}
+      </div>
+    );
+  }
+  if (detail?.page === 'manage' && managed && apps && revoked) {
     const origin = apps.origins[managed.id];
     // 「在市场查看」 and the versions: a market App not said to be gone (the market's word not known yet: not gone).
     const inMarket = (origin === 'market' || origin === 'fork') && !updates?.gone?.includes(managed.id);
@@ -1311,21 +1198,18 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           notice={noticeOf(managed)}
           origin={origin}
           variants={apps.variants[managed.id]}
-          revoked={revoked[managed.id] ?? []}
+          revoked={takenBack(revoked, managed.id)}
+          hostKey={host.key}
           pendingPermissions={pendingPermissionsOf(managed.id)}
-          agentStatus={agentStatus[managed.id]}
+          agentStatus={agentStatus?.[managed.id]}
           permissionsNote={builtIn ? translate('extensions.permissionsNoteBuiltIn') : undefined}
           disclosure={builtIn ? undefined : apps.disclosure[managed.id]}
           givenApi={builtIn ? undefined : api}
           docked={apps.dock.includes(managed.id)}
           hiddenTabs={hiddenTabs}
           prompts={enabled && managed.contributes.prompts?.length ? <AppPromptsSection extensionId={managed.id} store={apps} /> : undefined}
-          settingsApi={{
-            read: () => api.settings({ extensionId: managed.id }),
-            save: (settings) => api.setSettings({ extensionId: managed.id, settings }),
-          }}
+          settingsApi={{ save: (settings) => api.setSettings({ extensionId: managed.id, settings }) }}
           autoUpdate={inMarket ? menu.autoUpdate : undefined}
-          dataBytesKey={dataCleared}
           resource={menu.resource}
           onBack={() => {
             if (detail.fromApp) {
@@ -1426,17 +1310,20 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 <span>{translate('extensions.marketOfflineUnreachable')}</span>
               </div>
             ) : null}
-            {!machineOffline && shelf.status === 'loading' && (
+            {/* A cold start: the first screen kept from the last run, card for card where the shelf will draw them. */}
+            {!machineOffline && shelf.status === 'loading' && firstScreen && view === 'market' && chip === 'all' && debouncedQuery === '' ? (
+              <AppMarketFirstScreen first={firstScreen} hostKey={host.key} chip={chip} onChipChange={setChip} />
+            ) : !machineOffline && shelf.status === 'loading' ? (
               <div className="mk-sec">
                 <ShelfSkeleton label={translate('extensions.loading')} />
               </div>
-            )}
+            ) : null}
 
             {!machineOffline && shelf.status === 'error' && (
               <div className="mk-status" role="alert">
                 <CircleAlert className="size-4 shrink-0" />
                 <span className="min-w-0">{translate('extensions.marketUnavailable')}</span>
-                <Button type="button" variant="ghost" size="sm" onClick={() => void readShelf(debouncedQuery)}>
+                <Button type="button" variant="ghost" size="sm" onClick={retryShelf}>
                   {translate('extensions.retry')}
                 </Button>
               </div>
@@ -1449,20 +1336,19 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                 // ❌ 再画「这里还没有 App」:读不到清单和清单是空的是两件事。
                 <div className="mk-status" role="status" data-testid="extension-market-offline">
                   <span>{translate('extensions.marketOfflineUnreachable')}</span>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => void readShelf(debouncedQuery)}>
+                  <Button type="button" variant="ghost" size="sm" onClick={retryShelf}>
                     {translate('extensions.retry')}
                   </Button>
                 </div>
               ) : (
                 <AppMarketContent
                   resourceOf={resourceOf}
-                    view={view} onRetry={() => void readShelf(debouncedQuery)}
+                    view={view} onRetry={retryShelf}
                   shelf={shelf}
                   chip={chip}
                   onChipChange={setChip}
                   query={debouncedQuery}
                   hostKey={host.key}
-                  api={api}
                   lifecycleOf={lifecycleOf}
                   installedIds={installedById ? new Set(installedById.keys()) : null}
                   pending={pending}
@@ -1478,7 +1364,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
 
         {tab === 'installed' && (
           <div className="pb-14" data-testid="extensions-installed-panel">
-            {(installed.state === 'error' || inventoryError !== null) && !notice && (
+            {inventoryError !== null && !notice && (
               <div className="mk-status" role="alert">
                 <CircleAlert className="size-4 shrink-0" />
                 <span className="min-w-0">{translate('extensions.loadFailed')}</span>

@@ -3,8 +3,10 @@ import type { Ref } from 'react';
 import { AppFeaturedCard } from './app-featured';
 import { AppShelfRow } from './app-shelf';
 import { MarketAppRow } from './app-rows';
+import { Unknown } from '@/components/ui/Unknown';
+import type { MarketFirstScreen } from '../market-replicas';
 import type { AppLifecycle } from './app-lifecycle-button';
-import { screenshotsLanguage, type ProductPageApi } from './app-product-page';
+import { screenshotsLanguage } from './app-product-page';
 import type { ExtensionPendingAction } from './extension-pending';
 import { ShelfMoreSkeleton } from './extension-skeletons';
 import { Button } from '@renderer/lib/ui/button';
@@ -42,14 +44,13 @@ export type AppMarketState =
 
 
 /** The market's browsing surface, shared by desktop and the phone's App page. */
-export function AppMarketContent({ shelf, query, hostKey, api, lifecycleOf, pending, downloadPercent, onOpen, onAction, sentinelRef, marketStale, installedIds, chip, onChipChange: setChip, view, onRetry, resourceOf }: {
+export function AppMarketContent({ shelf, query, hostKey, lifecycleOf, pending, downloadPercent, onOpen, onAction, sentinelRef, marketStale, installedIds, chip, onChipChange: setChip, view, onRetry, resourceOf }: {
   shelf: Extract<AppMarketState, { status: 'ready' }>;
   view: MarketBrowsePage;
   onRetry: () => void;
   resourceOf?: (id: string) => ResourceContext;
   query: string;
   hostKey: string;
-  api: Pick<ProductPageApi, 'marketListing' | 'marketRead'>;
   lifecycleOf: (id: string, item: ShelfItem) => AppLifecycle;
   pending: Record<string, ExtensionPendingAction>;
   downloadPercent: Record<string, number>;
@@ -103,7 +104,6 @@ export function AppMarketContent({ shelf, query, hostKey, api, lifecycleOf, pend
         lifecycle={lifecycleOf(item.manifest.id, item)}
         pending={pending[item.manifest.id]}
         pendingPercent={downloadPercent[item.manifest.id]}
-        api={api}
         translate={translate}
         onOpen={() => onOpen(item)}
         onAction={() => onAction(item)}
@@ -237,5 +237,67 @@ export function AppMarketContent({ shelf, query, hostKey, api, lifecycleOf, pend
                     </ul>
                   )}
                 </>
+  );
+}
+
+/**
+ * The market's first screen as kept across restarts (`marketShelf`'s carried value, C2/D5): drawn on a cold open until
+ * the shelf is read, card for card where the shelf will draw them, so nothing moves when it lands. A card left out (its
+ * fields too long to keep) and every grid row past the kept ones draw a placeholder of a row's size; buttons are not known
+ * yet (placeholders). Only the home page with no category picked has a first screen; any other view waits for the shelf.
+ */
+export function AppMarketFirstScreen({ first, hostKey, chip, onChipChange: setChip }: {
+  first: MarketFirstScreen;
+  hostKey: string;
+  chip: 'all' | MarketCategory;
+  onChipChange: (chip: 'all' | MarketCategory) => void;
+}) {
+  const { translate, locale } = useSessionMessages();
+  const chipKeys: ('all' | MarketCategory)[] = ['all', ...first.categories];
+  const chipLabel = (key: 'all' | MarketCategory) => translate(key === 'all' ? 'extensions.chipAll' : `extensions.category.${key}`);
+  const nothing = () => undefined;
+  const slot = (index: number) => (
+    <div key={`slot-${index}`} role="listitem" className="mk-lockup" aria-busy="true"><Unknown className="h-16 w-full" /></div>
+  );
+  const rows = Array.from({ length: first.remainingCount }, (_, index) => {
+    const card = first.grid[index];
+    return card ? (
+      <MarketAppRow key={card.id} id={card.id} name={card.name} subtitle={card.subtitle} iconUrl={card.iconUrl} deprecated={card.deprecated}
+        lifecycle={null} actionUnknown translate={translate} onOpen={nothing} onAction={nothing} />
+    ) : slot(index);
+  });
+  return (
+    <div data-testid="extensions-market-first-screen">
+      {chipKeys.length > 2 ? (
+        <ToggleGroup size="sm" spacing={2} variant="outline" className="mk-chipbar" aria-label={translate('extensions.infoCategory')} value={[chip]}
+          onValueChange={([value]) => { if (value) setChip(value as 'all' | MarketCategory); }}>
+          {chipKeys.map((key) => (
+            <ToggleGroupItem key={key} value={key} data-testid={`extensions-market-chip-${key}`}>{chipLabel(key)}</ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      ) : null}
+      {first.featuredCount > 0 ? (
+        <AppShelfRow label={translate('extensions.featured')} prevLabel={translate('extensions.shelfPrev')} nextLabel={translate('extensions.shelfNext')}
+          className={cn('mk-hero', first.featuredCount > 1 && 'is-multi')} dots>
+          {Array.from({ length: first.featuredCount }, (_, index) => {
+            const card = first.featured[index];
+            if (!card) return <div key={`featured-${index}`} role="listitem" className="mk-hero-card" aria-busy="true"><Unknown className="h-full w-full" /></div>;
+            const language = screenshotsLanguage(card, locale);
+            return (
+              <AppFeaturedCard key={card.id} variant="hero" hostKey={hostKey} id={card.id} version={card.version} name={card.name} subtitle={card.subtitle}
+                meta={[translate(`extensions.category.${card.category}`), translate('extensions.official'),
+                  ...(language ? [translate('extensions.screenshotsIn', { language })] : [])].join(metadataSeparator())}
+                iconUrl={card.iconUrl} lifecycle={null} actionUnknown translate={translate} onOpen={nothing} onAction={nothing} />
+            );
+          })}
+        </AppShelfRow>
+      ) : null}
+      {first.remainingCount > 0 ? (
+        <section className="mk-sec" data-testid="extensions-market-section-remaining">
+          <h3>{translate('extensions.moreApps')}<span className="mk-count">{first.remainingCount}</span></h3>
+          <div className="mk-lockups" role="list" aria-label={translate('extensions.moreApps')}>{rows}</div>
+        </section>
+      ) : null}
+    </div>
   );
 }

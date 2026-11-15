@@ -85,6 +85,7 @@ export function PhoneAppManage({ extensionId, updateVersion, gone, onClose, onVi
             locale={locale}
             translate={translate}
             api={phoneProductApi}
+            hostKey={PHONE_HOST}
             readOnly={busy}
             backLabel={translate('extensions.tabInstalled')}
             permissionsNote={translate(builtIn ? 'extensions.permissionsNoteBuiltIn' : 'extensions.permissionsNotePhone')}

@@ -2,7 +2,6 @@ import { onMachineEvent, rpc } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
 import { marketRefreshedChannel } from '@shared/extensions/marketEvents';
 import { LOCAL_HOST, marketUpdates } from './installed-extensions';
-import { warmKeptShots } from './panel/kept-shelf';
 
 /**
  * 本机的「有新版 / 被撤回 / 已弃用」(`marketUpdates('local')`)跟着手上那份市场目录走(market-snapshot.ts):启动时先从手上那份
@@ -10,7 +9,6 @@ import { warmKeptShots } from './panel/kept-shelf';
  * 读失败落在读数上(角标不画),不吞成「没有更新」。
  */
 export function wireMarketRefresh(): void {
-  warmKeptShots();
   onMachineEvent(null, marketRefreshedChannel, (refreshed) => {
     if (refreshed.outcome === 'changed') void marketUpdates.refresh(LOCAL_HOST);
   });

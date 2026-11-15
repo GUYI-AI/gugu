@@ -1,4 +1,5 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
+import { log } from '@renderer/utils/logger';
 import { ArrowRight, ArrowUp, ChevronLeft, Monitor } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
 import { NEW_SESSION_DRAFT_KEY, composerDrafts } from '@renderer/features/sessions/composer-drafts';
@@ -32,6 +33,13 @@ export function AppSettingsPage({ manifest, active }: { manifest: ExtensionManif
   const fields = manifest.settings ?? [];
   const tabs = [...(text.examples.length > 0 ? ['overview' as const] : []), ...(fields.length > 0 ? ['settings' as const] : [])];
   const [tab, setTab] = useState<Tab>(tabs[0] ?? 'overview');
+  // @@@effect-flow - opening this page tells main the App was opened (it un-quits it, controller.ts openSettings); its settings are read through the form's replica
+  useEffect(() => {
+    if (!active) return;
+    void rpc.extensions.openSettings({ extensionId: manifest.id }).then((result) => {
+      if (!result.success) log.warn('The App was not told it was opened:', result.error);
+    }, (error: unknown) => log.warn('The App was not told it was opened:', error));
+  }, [active, manifest.id]);
   /** Same as 「对 agent 说」 on the App page: a new task with this sentence already in its box. */
   const ask = (example: string) => {
     composerDrafts.set(NEW_SESSION_DRAFT_KEY, example);
@@ -85,7 +93,7 @@ export function AppSettingsPage({ manifest, active }: { manifest: ExtensionManif
 
       {tabs.includes('settings') ? <AppSettingsForm manifest={manifest} active={active} id={`${prefix}-settings`} role={tabs.length > 1 ? 'tabpanel' : undefined}
         labelledBy={tabs.length > 1 ? `${prefix}-settings-tab` : undefined} hidden={tab !== 'settings'}
-        read={() => rpc.extensions.openSettings({ extensionId: manifest.id })}
+        hostKey={LOCAL_HOST}
         save={(settings) => rpc.extensions.setSettings({ extensionId: manifest.id, settings })} /> : null}
     </div>
   </main>;

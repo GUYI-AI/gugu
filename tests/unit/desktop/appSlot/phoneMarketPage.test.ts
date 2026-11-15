@@ -53,9 +53,15 @@ const page = vi.hoisted(() => ({
   entries: vi.fn<() => Promise<CloudMarketEntry[]>>(),
   ranking: vi.fn<() => Promise<{ data: { app_id: string; score: number }[] | null; error: { message: string } | null }>>(),
 }))
-vi.mock('../../../../apps/desktop/src/components/appSlot/phoneApps', () => ({ phoneApps: { market: { entries: page.entries } } }))
+vi.mock('../../../../apps/desktop/src/components/appSlot/phoneApps', () => ({ phoneApps: { market: { entries: page.entries, listing: async () => ({ about: {}, screenshots: [] }) } } }))
 vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: page.ranking } }))
-const { readPhoneMarketPage, phoneMarketRows, keptPhoneMarketPage } = await import('../../../../apps/desktop/src/components/settings/phoneMarketPage')
+const { phoneMarketRows } = await import('../../../../apps/desktop/src/components/settings/phoneMarketPage')
+const { marketShelf } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/market-replicas')
+/** The phone's shelf as the market replica reads it (read again each time). */
+async function readPhoneShelf() {
+  await marketShelf.refresh('phone', 'en')
+  return (await marketShelf.fetch('phone', 'en')).full!
+}
 
 describe('the phone calls the shared home selection with its catalog and ranking', () => {
   const ids = (items: { manifest: { id: string } }[]) => items.map((item) => item.manifest.id)
@@ -69,7 +75,7 @@ describe('the phone calls the shared home selection with its catalog and ranking
   it('keeps all Apps in complete browse results and shows each once in recommendations', async () => {
     const all = await entries()
     page.ranking.mockResolvedValue({ data: [{ app_id: 'other', score: 4 }], error: null })
-    const result = await readPhoneMarketPage()
+    const result = await readPhoneShelf()
     expect(ids(result.featured)).toEqual(['other', 'notes'])
     expect(result.home.remaining).toEqual([])
     expect(ids(result.home.newest)).toEqual(['other', 'notes'])
@@ -80,35 +86,17 @@ describe('the phone calls the shared home selection with its catalog and ranking
   it('retains a failed ranking as unavailable, distinct from a successful empty ranking', async () => {
     await entries()
     page.ranking.mockResolvedValue({ data: null, error: { message: 'denied' } })
-    const failed = await readPhoneMarketPage()
+    const failed = await readPhoneShelf()
     expect(failed.home.popular).toBeNull()
     expect(ids(failed.featured)).toEqual(['notes'])
     expect(ids(failed.home.remaining)).toEqual(['other'])
     page.ranking.mockResolvedValue({ data: [], error: null })
-    expect((await readPhoneMarketPage()).home.popular).toEqual([])
+    expect((await readPhoneShelf()).home.popular).toEqual([])
   })
 
   it('preserves a transport failure as unavailable too', async () => {
     await entries()
     page.ranking.mockRejectedValueOnce(new Error('offline'))
-    expect((await readPhoneMarketPage()).home.popular).toBeNull()
-  })
-
-  // 重启后第一帧(owner 10-30):上次画出来的那一页从 localStorage 同步读回来,❌ 先等排名那一趟网络、画骨架。
-  it('keeps the page it drew for the next start, each App stored once', async () => {
-    const stored = new Map<string, string>()
-    vi.stubGlobal('localStorage', { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => void stored.set(key, value) })
-    try {
-      expect(keptPhoneMarketPage()).toBeUndefined()
-      await entries()
-      page.ranking.mockResolvedValue({ data: [{ app_id: 'other', score: 4 }], error: null })
-      const drawn = await readPhoneMarketPage()
-      expect(keptPhoneMarketPage()).toEqual(drawn)
-      // 推荐那几排只记 id:每个 App 的 manifest 在存下的那一份里只出现一次。
-      const [kept] = [...stored.values()]
-      expect(kept!.split('"name":"Other"').length - 1).toBe(1)
-    } finally {
-      vi.unstubAllGlobals()
-    }
+    expect((await readPhoneShelf()).home.popular).toBeNull()
   })
 })

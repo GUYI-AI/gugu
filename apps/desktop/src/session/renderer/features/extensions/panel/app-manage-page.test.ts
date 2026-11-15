@@ -5,7 +5,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: {} }, events: { on: () => () => {} } }));
+// Each render is another host (`remote:<n>`): the page reads its tools, skills, data and settings through that host's API.
+const apis = vi.hoisted(() => new Map<string, unknown>());
+vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: {} }, rpcOn: (id: string) => ({ extensions: apis.get(id) }), events: { on: () => () => {} }, onMachineEvent: () => () => {} }));
+let hosts = 0;
 // The 「给哪些 agent」 section reaches the window-bound platform layer; these pages are about the page's own words.
 vi.mock('./app-given-section', () => ({ AppGivenSection: () => React.createElement('div', { 'data-testid': 'given' }) }));
 
@@ -44,6 +47,10 @@ const api = {
 };
 
 async function render(props: Record<string, unknown>, then?: (document: Document) => Promise<void>) {
+  const device = `manage-${++hosts}`;
+  const given = (props.api ?? api) as Record<string, unknown>;
+  const settings = (props.settingsApi as { read?: unknown } | undefined)?.read;
+  apis.set(device, settings ? { ...given, settings } : given);
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
   for (const key of ['window', 'document', 'HTMLElement', 'Element', 'Node', 'navigator', 'getComputedStyle'] as const) {
     vi.stubGlobal(key, key === 'getComputedStyle' ? dom.window.getComputedStyle.bind(dom.window) : dom.window[key]);
@@ -61,9 +68,12 @@ async function render(props: Record<string, unknown>, then?: (document: Document
       onBack: () => undefined,
       onLifecycle: () => undefined,
       onOpenExternal: () => undefined,
+      hostKey: `remote:${device}`,
       ...props,
     } as never));
   });
+  // Its reads are replicas: their answers land after a task boundary (react-query's notify), ❌ a clock.
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   const document = dom.window.document;
   const text = document.body.textContent ?? '';
   if (then) await then(document);

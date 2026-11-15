@@ -70,10 +70,13 @@ const { toast } = await import('@renderer/lib/hooks/use-toast');
 const { ExtensionsSettingsCard } = await import('./ExtensionsSettingsCard');
 const { queryClient: replicas } = await import('@/lib/replica');
 
-// What is installed and what the market says of it are replicas (fresh until pushed): each cell reads them anew.
+// What is installed, the market and an App's pages are replicas (kept for the run): each cell reads them anew, as a new
+// renderer process would.
+const MODELS = ['installedExtensions', 'marketUpdates', 'marketShelf', 'marketSearch', 'marketEntry', 'marketListing', 'featuredShot',
+  'marketVersionHistory', 'extensionRevokedPermissions', 'extensionAgentStatus', 'extensionSettings', 'appPlaces', 'extensionAgentTools',
+  'extensionAgentSkills', 'extensionDataBytes'];
 beforeEach(() => {
-  replicas.removeQueries({ queryKey: ['installedExtensions'] });
-  replicas.removeQueries({ queryKey: ['marketUpdates'] });
+  for (const name of MODELS) replicas.removeQueries({ queryKey: [name] });
 });
 
 // How this build refuses an App written for apiVersion 2, as list() hands it over (#6934).
@@ -469,9 +472,11 @@ describe('市场页 (#7059)', () => {
     vi.mocked(dom.window.HTMLImageElement.prototype.decode).mockResolvedValue(undefined);
     const before = readme.mock.calls.length;
     await press('[data-testid="app-featured-pomo"] [role="alert"] button');
-    expect(readme).toHaveBeenCalledTimes(before + 1);
+    // A listing that could not be read is read again; one that was read is that version's for good (only its picture is
+    // decoded again).
+    expect(readme).toHaveBeenCalledTimes(failure === 'listing' ? before + 1 : before);
     expect(card()?.querySelector('[role="alert"]')).toBeNull();
-    expect(card()?.querySelector('.mk-hero-art img')?.getAttribute('src')).toBe('https://dl.example/pomo/retried.png');
+    expect(card()?.querySelector('.mk-hero-art img')?.getAttribute('src')).toBe(failure === 'listing' ? 'https://dl.example/pomo/retried.png' : 'https://dl.example/pomo/unreadable.png');
     expect(dom.window.document.querySelector('[data-testid="app-product-page"]')).toBeNull();
   });
 
@@ -583,46 +588,40 @@ describe('市场页 (#7059)', () => {
     expect(heroArt()?.querySelector('img')?.getAttribute('src')).toBe(shotOf('1.0.0'));
   });
 
-  // 重启:渲染进程是新的(这一页的进程内缓存、查询缓存都是空的),上次画的那份在 localStorage(kept-shelf.ts)。
-  it('重启后第一帧:画上次那份清单,精选卡先画占位图、大图解码好再换上;❌ 骨架,❌ 空着的图', async () => {
+  // 重启:渲染进程是新的(查询缓存是空的),手上只有快照里的那份第一屏(`marketShelf` 的 carry,C2/D5)。
+  it('重启后第一帧:画快照里的第一屏(卡片原位、按钮和精选图是同尺寸占位);读到以后原位换上', async () => {
     const stored = new Map<string, string>();
     vi.stubGlobal('localStorage', {
       getItem: (key: string) => stored.get(key) ?? null,
       setItem: (key: string, value: string) => void stored.set(key, value),
+      removeItem: (key: string) => void stored.delete(key),
     });
-    // 占位图:经 marketRead 读到图的字节,缩成一张小 JPEG(jsdom 没有画布,这里只判走的是这条路、存下的是它)。
-    const placeholder = 'data:image/jpeg;base64,c21hbGw=';
-    const marketRead = vi.fn(async () => ({ success: true, data: { base64: btoa('png bytes') } }));
-    (h.api as Record<string, unknown>).marketRead = marketRead;
-    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 1600, height: 900, close: () => undefined })));
-    vi.spyOn(dom.window.HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: () => undefined } as never);
-    vi.spyOn(dom.window.HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(placeholder);
     (h.api as Record<string, unknown>).marketListing = vi.fn(async ({ version }: { version: string }) => readmeOf(version));
     await render(false);
     expect(heroArt()?.querySelector('img')?.getAttribute('src')).toBe(shotOf('1.0.0'));
-    expect(marketRead).toHaveBeenCalledWith({ path: 'media/pomo/1.0.0.png' });
     await act(async () => root.render(null));
 
-    // 新的渲染进程:模块里的缓存、解码过的图都没有了,手上只有 localStorage 那份。
+    // 新的渲染进程:模块里的缓存、解码过的图都没有了,手上只有快照那份。
     vi.resetModules();
     const { ExtensionsSettingsCard: FreshCard } = await import('./ExtensionsSettingsCard');
     const { SessionLocalizationProvider: FreshLocalization } = await import('@renderer/localization/localization-provider');
-    // 下载站那一趟没回来之前:第一帧全靠手上那份。
-    h.api.market.mockImplementation(() => new Promise(() => undefined));
-    let decoded!: () => void;
-    vi.mocked(dom.window.HTMLImageElement.prototype.decode).mockReturnValueOnce(new Promise<void>((resolve) => { decoded = resolve; }));
+    // 读回来之前:第一帧全靠快照那份。
+    let answer!: () => void;
+    h.api.market.mockImplementation(() => new Promise((resolve) => { answer = () => resolve({ success: true, data: { extensions: listing, invalid: [], errorKind: null, error: null, total: 3, page: 0, hasMore: false, fetchedAt: null } } as never); }));
     act(() => root.render(React.createElement(QueryClientProvider, { client: new QueryClient() },
       React.createElement(FreshLocalization, null, React.createElement(FreshCard)))));
     const document = dom.window.document;
-    const img = () => heroArt()?.querySelector('img') as HTMLImageElement | null;
-    // The shelf draws no skeleton (what is installed is unknown in a fresh process: only the 已安装 count is a placeholder).
-    expect(document.querySelector('[data-testid="extensions-market-panel"] [aria-busy="true"]')).toBeNull();
-    expect(document.querySelector('[data-testid="extension-card-arxiv"]')).not.toBeNull();
-    expect(img()?.getAttribute('src')).toBe(placeholder);
-    expect(img()?.style.visibility).toBe('');
-    await act(async () => decoded());
-    expect(img()?.getAttribute('src')).toBe(shotOf('1.0.0'));
-    expect(img()?.style.visibility).toBe('');
+    expect(document.querySelector('[data-testid="extensions-market-first-screen"]')).not.toBeNull();
+    const rows = () => [...document.querySelectorAll('[data-testid^="extension-card-"]')].map((node) => node.getAttribute('data-testid'));
+    expect(rows()).toEqual(['extension-card-arxiv', 'extension-card-trace']);
+    // The featured picture is not kept: a placeholder of its size, ❌ the icon card.
+    expect(heroArt()?.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(heroArt()?.querySelector('.mk-hero-big')).toBeNull();
+    await act(async () => answer());
+    await settle();
+    expect(document.querySelector('[data-testid="extensions-market-first-screen"]')).toBeNull();
+    expect(rows()).toEqual(['extension-card-arxiv', 'extension-card-trace']);
+    expect(heroArt()?.querySelector('img')?.getAttribute('src')).toBe(shotOf('1.0.0'));
   });
 
   // 全新安装、什么都没存:骨架第一次换成图时,新挂上的 <img> 自己解码好才露出来(真机 DPR3 上先画了约 6 帧空的)。
@@ -643,14 +642,14 @@ describe('市场页 (#7059)', () => {
     expect(heroArt()?.querySelector('[aria-busy="true"]')).toBeNull();
   });
 
-  it('老版本的机器没有 marketRead:没有占位图就是没有,❌ 重试、❌ 报错', async () => {
-    const marketRead = vi.fn(async () => {
-      throw new Error('No handler registered for extensions.marketRead');
-    });
+  // The featured picture is not kept across restarts any more (PLAN: HTTP cache + a same-size placeholder): the page never
+  // asks a machine for the picture's bytes.
+  it('精选卡不再去读图的字节(marketRead):冷开画同尺寸占位,❌ 存缩略图', async () => {
+    const marketRead = vi.fn();
     (h.api as Record<string, unknown>).marketRead = marketRead;
     (h.api as Record<string, unknown>).marketListing = vi.fn(async () => readmeOf('1.0.0'));
     await render(false);
-    expect(marketRead).toHaveBeenCalledTimes(1);
+    expect(marketRead).not.toHaveBeenCalled();
     expect(heroArt()?.querySelector('[role="alert"]')).toBeNull();
     expect(heroArt()?.querySelector('img')?.getAttribute('src')).toBe(shotOf('1.0.0'));
   });

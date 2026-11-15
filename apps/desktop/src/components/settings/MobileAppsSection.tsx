@@ -2,15 +2,15 @@ import { messageForUser } from '@/lib/userFacingError';
 import { followLink } from '../../lib/guguLinks'
 import type { AppDetailLink } from '@gugu/core/shared/ui/guguLink'
 import { useEffect, useRef, useState } from 'react'
-import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { rendererLogger } from '@/lib/log'
 import { useTheme } from '@/store/theme'
 import { sessionSkinClassName } from '../sessionpage/sessionSkin'
 import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
-import { queryClient } from '@/lib/replica'
+import { queryClient, useReplica } from '@/lib/replica'
 import { useSessionMessages } from '@/session/renderer/localization/use-session-messages'
-import { AppMarketContent, type MarketBrowsePage } from '@/session/renderer/features/extensions/panel/app-market-content'
-import { featuredShotsReady } from '@/session/renderer/features/extensions/panel/app-featured'
+import { AppMarketContent, AppMarketFirstScreen, type MarketBrowsePage } from '@/session/renderer/features/extensions/panel/app-market-content'
+import { marketShelf, useMarketRefreshed } from '@/session/renderer/features/extensions/market-replicas'
 import { AppProductPage } from '@/session/renderer/features/extensions/panel/app-product-page'
 import { appLifecycle } from '@/session/renderer/features/extensions/panel/app-lifecycle'
 import type { AppLifecycle } from '@/session/renderer/features/extensions/panel/app-lifecycle-button'
@@ -30,11 +30,10 @@ import { Sheet } from '../ui/Sheet'
 import { SettingsNote } from './SettingsPrimitives'
 import { AppsSection } from './AppsSection'
 import { PhoneAppManage } from './PhoneAppManage'
-import { PHONE_HOST, keptPhoneMarketPage, phoneMarketRows, phoneProductApi, readPhoneMarketPage, useOfferedVersions } from './phoneMarketPage'
+import { PHONE_HOST, phoneSearchRows, useOfferedVersions } from './phoneMarketPage'
 import '@/session/renderer/index.css'
 import './mobile-app-market.css'
 
-const MARKET_KEY = ['phone-app-market']
 const log = rendererLogger('settings/mobile-apps')
 
 /** The phone supplies storage and actions; browsing and product pages are the desktop's components. */
@@ -46,20 +45,13 @@ function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
   const { translate, locale } = useSessionMessages()
   const { theme } = useTheme()
   const skin = sessionSkinClassName(theme)
-  const client = useQueryClient()
-  // 这次运行里一直留着(桌面的 lastShelf),重启后第一帧是上次画的那一页:先画它、挂上就重读。画着一份时,新的那份等精选底图解码好再换上;
-  // 取不到就留着画着的那份。
-  const catalog = useQuery({
-    initialData: keptPhoneMarketPage,
-    initialDataUpdatedAt: 0,
-    queryKey: MARKET_KEY,
-    queryFn: async () => {
-      const page = await readPhoneMarketPage()
-      if (client.getQueryData(MARKET_KEY)) await featuredShotsReady(client, phoneProductApi, PHONE_HOST, page.featured)
-      return page
-    },
-    gcTime: Infinity,
-  })
+  // `marketShelf('phone', locale)`: kept in memory for the run; on a cold start its first screen is kept (the snapshot), drawn
+  // until the shelf is read. A shelf drawn is replaced only once its featured pictures are decoded; one that cannot be read
+  // keeps the drawn shelf (the reading says so).
+  const shelfReading = useReplica(marketShelf, [PHONE_HOST, locale])
+  const full = shelfReading.state === 'value' ? shelfReading.value.full ?? null : null
+  const first = shelfReading.state === 'value' && !shelfReading.value.full ? shelfReading.value.first ?? null : null
+  useMarketRefreshed(PHONE_HOST)
   const [tab, setTab] = useState<'market' | 'installed'>('market')
   const [view, setView] = useState<MarketBrowsePage>('market')
   const [manage, setManage] = useState<string | null>(null)
@@ -83,20 +75,22 @@ function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
   const [failed, setFailed] = useState<{ title: string; cause: string } | null>(null)
   const openedLink = useRef<AppDetailLink | undefined>(undefined)
   useEffect(() => {
-    if (!appDetail || !catalog.data || !store || openedLink.current === appDetail) return
+    if (!appDetail || !full || !store || openedLink.current === appDetail) return
     openedLink.current = appDetail
     if (store.manifests.some((manifest) => manifest.id === appDetail.extensionId)) {
       setManage(appDetail.extensionId)
       return
     }
-    const item = phoneMarketRows(catalog.data.entries, '').find(item => item.manifest.id === appDetail.extensionId)
+    const item = full.items.find(item => item.manifest.id === appDetail.extensionId)
     if (item) setDetail(item)
     else setFailed({ title: translate('extensions.marketUnavailable'), cause: appDetail.extensionId })
-  }, [appDetail, catalog.data, store, translate])
+  }, [appDetail, full, store, translate])
 
   const sentinel = useRef<HTMLDivElement | null>(null)
-  const rows = phoneMarketRows(catalog.data?.entries ?? [], query.trim())
-  const hasMore = pages * MARKET_PAGE_SIZE < rows.length
+  const retryShelf = () => void marketShelf.refresh(PHONE_HOST, locale)
+  // Searched in the shelf as read (the phone has no search on a server); nothing to search while it is not read.
+  const rows = full ? (query.trim() === '' ? full.items : phoneSearchRows(full.items, query.trim())) : null
+  const hasMore = rows !== null && pages * MARKET_PAGE_SIZE < rows.length
 
   // The index could not be read whole (what can be read is drawn, nothing is changed), or the list could not be read at all.
   const unreadable = installedReading.state === 'error' || (installedReading.state === 'value' && installedReading.value.unreadable !== null)
@@ -106,10 +100,6 @@ function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
       setFailed({ title: translate('extensions.loadFailed'), cause: messageForUser(error) })
     })
   }
-  // The market index asked for by `useOfferedVersions` (its one `market.refresh`) came back another: the page reads again.
-  useEffect(() => phoneApps.market.onRefreshed((result) => {
-    if (result.outcome === 'changed') void client.invalidateQueries({ queryKey: MARKET_KEY })
-  }), [client])
 
   useEffect(() => {
     const node = sentinel.current
@@ -119,7 +109,7 @@ function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
     })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [hasMore, pages, rows.length, tab, view, query, chip])
+  }, [hasMore, pages, rows?.length, tab, view, query, chip])
 
   const lifecycleOf = (id: string, item: MarketListItem): AppLifecycle => {
     // The existing phone host decides whether it has a page; desktop-only host pages cannot be installed here.
@@ -190,21 +180,23 @@ function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
           <SearchField value={query} placeholder={translate('extensions.searchPlaceholder')} onChange={(event) => { setQuery(event.target.value); setPages(1) }} />
           {error}
           {/* 画着一份就一直画它:重读没读到(下载站连不上、精选底图取不到)不换成错误面板。 */}
-          {catalog.data ? (
+          {full && rows ? (
             <AppMarketContent
-              view={view} onRetry={() => void catalog.refetch()}
-              shelf={{ status: 'ready', query, errorKind: null, items: rows.slice(0, pages * MARKET_PAGE_SIZE), total: rows.length, page: pages - 1, hasMore, loadingMore: false, invalid: [], featured: catalog.data.featured, home: catalog.data.home }}
+              view={view} onRetry={retryShelf}
+              shelf={{ status: 'ready', query, errorKind: null, items: rows.slice(0, pages * MARKET_PAGE_SIZE), total: rows.length, page: pages - 1, hasMore, loadingMore: false, invalid: [], featured: full.featured, home: full.home }}
               chip={chip} onChipChange={setChip}
-              query={query.trim()} hostKey={PHONE_HOST} api={phoneProductApi}
+              query={query.trim()} hostKey={PHONE_HOST}
               lifecycleOf={lifecycleOf} installedIds={store ? new Set(store.manifests.map((manifest) => manifest.id)) : null}
               pending={pending} downloadPercent={{}} onOpen={setDetail} onAction={act} sentinelRef={sentinel}
             />
-          ) : catalog.isPending ? <ShelfSkeleton label={translate('extensions.loading')} /> : (
+          ) : first && view === 'market' && chip === 'all' && query.trim() === '' ? (
+            <AppMarketFirstScreen first={first} hostKey={PHONE_HOST} chip={chip} onChipChange={setChip} />
+          ) : shelfReading.state === 'error' ? (
             <div className="mk-status" role="alert">
               {translate('extensions.marketUnavailable')}
-              <Button onClick={() => void catalog.refetch()}>{translate('extensions.retry')}</Button>
+              <Button onClick={retryShelf}>{translate('extensions.retry')}</Button>
             </div>
-          )}
+          ) : <ShelfSkeleton label={translate('extensions.loading')} />}
         </div>
       )}
       {detail ? (
@@ -216,7 +208,7 @@ function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
                 key={detail.manifest.id}
                 subject={{ manifest: grantableBy(detail.manifest, PHONE_CAPABILITIES), installedVersion: installed?.version, cloud: detail.cloud, installRef: detail.ref }}
                 lifecycle={lifecycleOf(detail.manifest.id, detail)} pending={pending[detail.manifest.id]}
-                locale={locale} translate={translate} api={phoneProductApi} onOpenExternal={(url) => { window.open(url, '_blank', 'noopener,noreferrer') }}
+                locale={locale} translate={translate} hostKey={PHONE_HOST} onOpenExternal={(url) => { window.open(url, '_blank', 'noopener,noreferrer') }}
                 backLabel={marketFrom ? translate('extensions.appSettings') : undefined}
                 onBack={closeDetail} onLifecycle={() => act(detail)} onInstallVersion={install}
                 onManage={installed && store && !store.isPreinstalled(installed.id) ? () => { setMarketFrom(null); setManage(installed.id) } : undefined}
@@ -234,7 +226,7 @@ function MobileAppsContent({ appDetail }: { appDetail?: AppDetailLink }) {
           gone={offered.state === 'value' && offered.value.gone.includes(manage)}
           onClose={() => setManage(null)}
           onViewInMarket={() => {
-            const item = phoneMarketRows(catalog.data?.entries ?? [], '').find((row) => row.manifest.id === manage)
+            const item = full?.items.find((row) => row.manifest.id === manage)
             if (item) {
               setMarketFrom(manage)
               setDetail(item)

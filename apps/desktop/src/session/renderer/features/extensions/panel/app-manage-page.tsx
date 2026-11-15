@@ -10,7 +10,6 @@ import { Button } from '@renderer/lib/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@renderer/lib/ui/collapsible';
 import { InfoTooltip } from '@renderer/lib/ui/info-tooltip';
 import { Switch } from '@renderer/lib/ui/switch';
-import { log } from '@renderer/utils/logger';
 import { cn } from '@renderer/utils/utils';
 import type { ExtensionAgentStatus } from '@shared/extensions/agent-status';
 import { givesAgentTools } from '@shared/extensions/app-places';
@@ -21,6 +20,9 @@ import type { MarketVersionHistoryEntry, MarketSourceRef } from '@shared/extensi
 import type { ExtensionOrigin } from '@shared/extensions/upgrade';
 import type { ResourceContext } from '@shared/resource-actions';
 import { AppSettingsForm } from '../app-settings-form';
+import { useReplica } from '@/lib/replica';
+import { Unknown } from '@/components/ui/Unknown';
+import { extensionAgentSkills, extensionAgentTools, extensionDataBytes, marketVersionHistory, useMarketRefreshed } from '../market-replicas';
 import { describeCapability, programDetails, type SessionTranslate } from '../extension-consent';
 import type { ExtensionsApi } from '../extensions-host';
 import type { ExtensionDisclosureLevel } from '../installed-extensions';
@@ -69,7 +71,7 @@ export function AppManagePage({
   prompts,
   settingsApi,
   autoUpdate,
-  dataBytesKey = 0,
+  hostKey,
   resource,
   permissionsNote,
   onBack,
@@ -117,10 +119,11 @@ export function AppManagePage({
   hiddenTabs?: readonly string[];
   /** This App's prompts, as the library page draws them. */
   prompts?: ReactNode;
-  settingsApi?: { read: () => Promise<{ success: boolean; data?: AppSettings; error?: string }>; save: (settings: AppSettings) => Promise<{ success: boolean; data?: AppSettings; error?: string }> };
+  /** Where its declared settings are saved (they are read through `extensionSettings(hostKey, id)`). */
+  settingsApi?: { save: (settings: AppSettings) => Promise<{ success: boolean; data?: AppSettings; error?: string }> };
   autoUpdate?: { on: boolean; onToggle: (on: boolean) => void };
-  /** Changes when the App's data was cleared, so its size is read again. */
-  dataBytesKey?: number;
+  /** Which host's App this is (`local`, `remote:<deviceId>`, `phone`): the key its reads go by. */
+  hostKey: string;
   resource?: ResourceContext;
   /** Replaces the words above the permissions: the phone lists only what it can use. */
   permissionsNote?: string;
@@ -151,79 +154,21 @@ export function AppManagePage({
   const disclosureSwitchId = useId();
   const programs = (manifest.contributes.mcpServers ?? []).map((server) => ('name' in server ? server.name : server.tools));
 
-  // ── 版本历史:点开才读 ──
+  // ── 版本历史:点开才读(`marketVersionHistory`,市场目录变了由推送重读)──
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [history, setHistory] = useState<Loadable<MarketVersionHistoryEntry[]>>({ status: 'idle' });
-  useEffect(() => {
-    if (!historyOpen) return;
-    let cancelled = false;
-    setHistory({ status: 'loading' });
-    void api.marketHistory({ extensionId: manifest.id }).then((result) => {
-      if (cancelled) return;
-      if (!result.success || !result.data) throw new Error(result.error ?? 'history unreadable');
-      setHistory({ status: 'ready', data: result.data });
-    }).catch((error: unknown) => {
-      if (cancelled) return;
-      log.warn('extension version history unreadable:', error);
-      setHistory({ status: 'error' });
-    });
-    return () => { cancelled = true; };
-  }, [api, manifest.id, historyOpen]);
+  const historyReading = useReplica(marketVersionHistory, historyOpen ? [hostKey, manifest.id] : null);
+  const history: Loadable<MarketVersionHistoryEntry[]> = !historyOpen ? { status: 'idle' } : historyReading.state === 'unknown' ? { status: 'loading' }
+    : historyReading.state === 'error' ? { status: 'error' } : { status: 'ready', data: historyReading.value };
+  useMarketRefreshed(historyOpen ? hostKey : null);
 
-  // ── 给 agent 的工具:装着、启用、没收回那一项的,问它的程序要清单 ──
+  // ── 给 agent 的工具:装着、启用、没收回那一项的,问它的程序要清单(按装着的版本)──
   const toolsLive = enabled && givesAgentTools(manifest) && !revoked.includes('agents:tools');
-  const [tools, setTools] = useState<Loadable<{ name: string; about: string | null }[] | null>>({ status: 'idle' });
-  useEffect(() => {
-    if (!toolsLive || !api.agentTools) {
-      setTools({ status: 'idle' });
-      return;
-    }
-    let cancelled = false;
-    setTools({ status: 'loading' });
-    void api.agentTools({ extensionId: manifest.id }).then((result) => {
-      if (cancelled) return;
-      if (!result.success) throw new Error(result.error ?? 'tools unreadable');
-      setTools({ status: 'ready', data: result.data ?? null });
-    }).catch((error: unknown) => {
-      if (cancelled) return;
-      log.warn('App agent tools unreadable:', error);
-      setTools({ status: 'error' });
-    });
-    return () => { cancelled = true; };
-  }, [api, manifest.id, manifest.version, toolsLive]);
-  const toolList = tools.status === 'ready' ? (tools.data ?? []) : [];
+  const tools = useReplica(extensionAgentTools, toolsLive && api.agentTools ? [hostKey, manifest.id, manifest.version] : null);
 
-  const [skills, setSkills] = useState<string[]>([]);
-  useEffect(() => {
-    if (!manifest.contributes.skills || !api.agentSkills) {
-      setSkills([]);
-      return;
-    }
-    let cancelled = false;
-    void api.agentSkills({ extensionId: manifest.id }).then((result) => {
-      if (cancelled) return;
-      if (!result.success) throw new Error(result.error ?? 'skills unreadable');
-      setSkills(result.data ?? []);
-    }).catch((error: unknown) => log.warn('App skills unreadable:', error));
-    return () => { cancelled = true; };
-  }, [api, manifest.id, manifest.version, manifest.contributes.skills]);
+  const skills = useReplica(extensionAgentSkills, manifest.contributes.skills && api.agentSkills ? [hostKey, manifest.id, manifest.version] : null);
 
-  // ── 这台设备上的数据 ──
-  const [dataBytes, setDataBytes] = useState<Loadable<number>>({ status: 'idle' });
-  useEffect(() => {
-    if (!api.appData) return;
-    let cancelled = false;
-    void api.appData({ extensionId: manifest.id }).then((result) => {
-      if (cancelled) return;
-      if (!result.success || result.data === undefined) throw new Error(result.error ?? 'App data unreadable');
-      setDataBytes({ status: 'ready', data: result.data.bytes });
-    }).catch((error: unknown) => {
-      if (cancelled) return;
-      log.warn('App data unreadable:', error);
-      setDataBytes({ status: 'error' });
-    });
-    return () => { cancelled = true; };
-  }, [api, manifest.id, dataBytesKey]);
+  // ── 这台设备上的数据(清掉以后调用方 refresh)──
+  const dataBytes = useReplica(extensionDataBytes, api.appData ? [hostKey, manifest.id] : null);
 
   // ── 页面:能关的一页一行;打开文件的和消息卡片关不了,各并成一行,不重复 App 的名字 ──
   const pageTabs = manifest.contributes.tabs.filter((tab) => !tab.hostPage);
@@ -335,7 +280,7 @@ export function AppManagePage({
   </> });
   if ((manifest.settings?.length && settingsApi) || (settingsTab && onOpenTab)) {
     sections.push({ id: 'settings', label: translate('extensions.manageSettings'), body: <>
-      {manifest.settings?.length && settingsApi ? <div className="mg-row is-block" data-testid="app-manage-fields"><AppSettingsForm manifest={manifest} active read={settingsApi.read} save={settingsApi.save} /></div> : null}
+      {manifest.settings?.length && settingsApi ? <div className="mg-row is-block" data-testid="app-manage-fields"><AppSettingsForm manifest={manifest} active hostKey={hostKey} save={settingsApi.save} /></div> : null}
       {settingsTab && onOpenTab ? (
         <Row title={localizedTabText(manifest, settingsTab, locale).title} note={translate('extensions.manageOwnSettingsNote')} testId="app-manage-own-settings">
           <Button type="button" variant="outline" size="sm" disabled={!enabled} onClick={() => onOpenTab(settingsTab.name)}>{translate('extensions.open')}</Button>
@@ -352,7 +297,7 @@ export function AppManagePage({
       ) : null}
       {givenApi ? (
         <div className="mg-row is-block" data-testid="app-manage-given">
-          <AppGivenSection extensionId={manifest.id} api={givenApi} machineName={machine} blocked={!enabled ? 'off' : revoked.includes('agents:tools') ? 'revoked' : undefined} />
+          <AppGivenSection hostKey={hostKey} extensionId={manifest.id} api={givenApi} machineName={machine} blocked={!enabled ? 'off' : revoked.includes('agents:tools') ? 'revoked' : undefined} />
         </div>
       ) : null}
       {disclosure && onDisclosureChange ? (
@@ -365,15 +310,15 @@ export function AppManagePage({
         </div>
       ) : null}
       {programs.length > 0 ? (
-        toolList.length > 0 ? (
+        tools.state === 'value' && tools.value && tools.value.length > 0 ? (
           <Collapsible className="mg-row is-block" data-testid="app-manage-tools">
             <CollapsibleTrigger className="mg-row-toggle">
-              <span>{translate('extensions.manageTools', { n: String(toolList.length) })}</span>
+              <span>{translate('extensions.manageTools', { n: String(tools.value.length) })}</span>
               <ChevronRight className="size-4" />
             </CollapsibleTrigger>
             <CollapsibleContent>
               <span className="mk-tools">
-                {toolList.map((tool) => (
+                {tools.value.map((tool) => (
                   <span className="contents" key={tool.name}>
                     <code title={tool.about ?? undefined}>{tool.name}</code>
                     <i>{tool.about ?? ''}</i>
@@ -383,10 +328,18 @@ export function AppManagePage({
             </CollapsibleContent>
           </Collapsible>
         ) : (
-          <Row title={translate('extensions.addsTools')} note={tools.status === 'loading' ? translate('extensions.inspecting') : translate('extensions.addsToolsWhenOn', { programs: listOf(programs, locale) })} testId="app-manage-tools" />
+          // Live and not read yet: being asked (❌ 「开着时这里列出工具」, AP3); not live, or it says none: what it adds when on.
+          <Row title={translate('extensions.addsTools')} note={toolsLive && tools.state === 'unknown' && api.agentTools ? translate('extensions.inspecting')
+            : tools.state === 'error' ? translate('extensions.loadFailed') : translate('extensions.addsToolsWhenOn', { programs: listOf(programs, locale) })} testId="app-manage-tools" />
         )
       ) : null}
-      {manifest.contributes.skills ? <Row title={translate('extensions.manageSkills')} note={skills.length > 0 ? translate('extensions.manageSkillsNote', { skills: skills.join(listJoin) }) : translate('extensions.addsSkillsText')} testId="app-manage-skills" /> : null}
+      {manifest.contributes.skills ? (
+        <Row title={translate('extensions.manageSkills')} testId="app-manage-skills"
+          note={!api.agentSkills ? translate('extensions.addsSkillsText')
+            : skills.state === 'unknown' ? <Unknown className="w-40" />
+            : skills.state === 'error' ? translate('extensions.loadFailed')
+            : skills.value.length > 0 ? translate('extensions.manageSkillsNote', { skills: skills.value.join(listJoin) }) : translate('extensions.addsSkillsText')} />
+      ) : null}
       {manifest.contributes.instructions ? (
         <Collapsible className="mg-row is-block" data-testid="app-product-instructions">
           <CollapsibleTrigger className="mg-row-toggle">
@@ -407,7 +360,8 @@ export function AppManagePage({
   if (api.appData && onClearData) {
     sections.push({ id: 'data', label: translate('extensions.manageData'), body: (
       <Row title={translate('extensions.manageDataRow')} note={translate('extensions.manageDataNote')} testId="app-manage-data">
-        <span className="mg-value">{dataBytes.status === 'ready' ? (dataBytes.data === 0 ? translate('extensions.manageDataNone') : formatSize(dataBytes.data)) : dataBytes.status === 'error' ? translate('extensions.manageDataUnreadable') : ''}</span>
+        <span className="mg-value">{dataBytes.state === 'value' ? (dataBytes.value === 0 ? translate('extensions.manageDataNone') : formatSize(dataBytes.value))
+          : dataBytes.state === 'error' ? translate('extensions.manageDataUnreadable') : <Unknown className="w-12" />}</span>
         <Button type="button" variant="outline" size="sm" disabled={readOnly} onClick={onClearData} data-testid="app-manage-data-clear">{translate('extensions.manageDataClear')}</Button>
       </Row>
     ) });
@@ -533,7 +487,7 @@ function scrollParent(node: HTMLElement | null): HTMLElement | null {
 }
 
 /** 一行:左边名目和一句说明,右边它的控件。 */
-function Row({ title, note, testId, children }: { title: ReactNode; note?: string; testId?: string; children?: ReactNode }) {
+function Row({ title, note, testId, children }: { title: ReactNode; note?: ReactNode; testId?: string; children?: ReactNode }) {
   return (
     <div className="mg-row" data-testid={testId}>
       <div className="mg-row-tx">

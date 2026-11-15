@@ -20,10 +20,8 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/insta
 }))
 vi.mock('../../../../apps/desktop/src/components/settings/phoneMarketPage', () => ({
   PHONE_HOST: 'phone',
-  keptPhoneMarketPage: market,
   phoneProductApi: {},
-  readPhoneMarketPage: async () => market,
-  phoneMarketRows: (entries: unknown[]) => entries,
+  phoneSearchRows: (items: unknown[]) => items,
   useOfferedVersions: () => ({ state: 'value', stale: false, error: null, value: { offered: {}, gone: [] } }),
 }))
 vi.mock('../../../../apps/desktop/src/components/settings/AppsSection', () => ({
@@ -35,8 +33,16 @@ vi.mock('../../../../apps/desktop/src/components/settings/PhoneAppManage', () =>
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/panel/app-product-page', () => ({
   AppProductPage: ({ onBack, backLabel }: { onBack: () => void; backLabel?: string }) => createElement('button', { 'data-testid': 'product', onClick: onBack }, backLabel ?? 'market'),
 }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/panel/app-market-content', () => ({ AppMarketContent: () => null }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/panel/app-featured', () => ({ featuredShotsReady: async () => {} }))
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/panel/app-market-content', () => ({ AppMarketContent: () => null, AppMarketFirstScreen: () => null }))
+// The phone's shelf as read: the one App, as the market lists it.
+vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/market-replicas', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../apps/desktop/src/session/renderer/features/extensions/market-replicas')>()
+  actual.definePhoneMarket({
+    shelf: async () => ({ errorKind: null, items: market.entries as never, invalid: [], total: 1, page: 0, hasMore: false, featured: [], home: { remaining: [], newest: [], popular: [] }, rankingError: null, fetchedAt: null }),
+    marketListing: async () => ({ success: false, error: 'none' }), marketHistory: async () => ({ success: true, data: [] }), onRefreshed: () => () => {},
+  })
+  return actual
+})
 
 const { MobileAppsSection } = await import('../../../../apps/desktop/src/components/settings/MobileAppsSection')
 
