@@ -1,13 +1,12 @@
 /*
- * 消息里的文件行只在这里配色;尺寸、排法和字形在 session-shared 的 file-row。
- * 行在灰气泡里,底色取页面底(`--bg`),不描边:一块比气泡亮(暗色下比气泡深)的面,就是「一个文件」。
+ * 消息里的文件行只在这里配色;尺寸、排法、字号和字形在 session-shared 的 file-row。
+ * 半透明的描边和底叠在哪种气泡上都成立(描边版用 `-ring`,浅底版用 `-fill`)。
  */
 .gg-hfile {
   --gg-file-row-fg: inherit;
   --gg-file-row-muted: var(--text-tertiary);
-  --gg-file-row-fill: var(--bg);
-  --gg-file-row-fill-hover: linear-gradient(var(--hover), var(--hover)), var(--bg);
-  --gg-file-row-font-size: var(--font-caption);
+  --gg-file-row-ring: var(--border);
+  --gg-file-row-fill: var(--hover);
 }
 
 .gg-hfile[data-mine] {

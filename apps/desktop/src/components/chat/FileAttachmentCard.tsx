@@ -53,7 +53,7 @@ export function FileAttachmentCard({ file, isMine = false, details, versionLabel
             aria-label={downloadLabel ?? `Download ${file.fileName}`}
             onClick={(event) => { event.stopPropagation(); onDownload() }}
           >
-            <Download size={15} aria-hidden="true" />
+            <Download size={16} aria-hidden="true" />
           </IconButton>
         )}
       </div>
