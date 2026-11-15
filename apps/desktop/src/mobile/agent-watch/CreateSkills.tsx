@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { Check, Search, Sparkles, X } from '@/lib/icons'
-import { useReadModel } from '@/lib/readModel'
+import { useReplica } from '@/lib/replica'
 import { creationSkills } from './create-skills-read'
 import { preserveComposerFocus } from '../composer/composer-focus'
 import { filterCreationSkills, type CreationSkill } from './create-skills'
@@ -24,7 +24,7 @@ export function CreateSkillsList({ deviceId, phone, harness, projectId, search, 
   selected: readonly CreationSkill[]; onChange: (skills: CreationSkill[]) => void
 }) {
   const { t } = useTranslation('mobileCreateControls')
-  const state = useReadModel(creationSkills, deviceId && harness && !phone ? [deviceId, harness, projectId] : null)
+  const state = useReplica(creationSkills, deviceId && harness && !phone ? [deviceId, harness, projectId] : null)
   if (phone) return null
   if (!deviceId || !harness || state.state === 'unknown') return <p role="status" className="gg-phone-composer-sheet-status">{t('loadingSkills')}</p>
   const retry = <div className="gg-phone-composer-sheet-status" role="alert">{t('failedSkills')}
