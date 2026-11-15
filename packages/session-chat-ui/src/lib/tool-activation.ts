@@ -8,6 +8,7 @@ export function liveToolNames(names: readonly string[]): string[] {
 export function toolActivationNames(item: ToolNode): string[] {
   if (item.kind === 'tool-group') return item.children.flatMap(toolActivationNames);
   const declared = item.kind === 'mcp-tool-call' ? item.tool : toolCallName(item);
+  if (typeof declared !== 'string') return [];
   const name = declared.replace(/^mcp__.+?__/, '');
   return liveToolNames([catalogCall(name, item.rawInput)?.tool ?? name]);
 }

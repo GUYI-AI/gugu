@@ -8,4 +8,5 @@ it('uses provider tool identity and unwraps a real catalog call rather than matc
   expect(toolActivationNames(call({ kind: 'mcp-tool-call', tool: 'computer-use__click' }))).toEqual(['computer-use__click']);
   expect(toolActivationNames(call({ title: 'Browser Use', toolName: 'Read', rawInput: 'browser-use__click' }))).toEqual([]);
   expect(toolActivationNames(call({ toolName: 'mcp__gugu__catalog_call', rawInput: '{bad' }))).toEqual([]);
+  expect(toolActivationNames(call({ title: undefined, toolName: undefined }))).toEqual([]);
 });

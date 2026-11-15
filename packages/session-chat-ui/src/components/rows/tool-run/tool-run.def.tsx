@@ -73,8 +73,7 @@ export const toolRunUnitDef = defineUnit<ToolRunItem, { extraH: number }>({
         style={{ height: `${row().height}px` }}
       >
         <div class={turnProcessLine} data-slot="tool-timeline-line">
-          <div class={turnProcessHeaderSlot}>
-            <div onClick={event => activateToolRow(event, props.data.toolNames)}>
+          <div class={turnProcessHeaderSlot} onClick={event => activateToolRow(event, props.data.toolNames)}>
             <CollapseHeader
               id={props.data.id}
               collapsible
@@ -85,7 +84,6 @@ export const toolRunUnitDef = defineUnit<ToolRunItem, { extraH: number }>({
             >
               {layout().text}
             </CollapseHeader>
-            </div>
           </div>
         </div>
         <Show when={pictures()}>{(value) => <div style={{ 'padding-left': `${value().inset}px` }}><ToolThumbs item={value().item} strip={value().strip} /></div>}</Show>
