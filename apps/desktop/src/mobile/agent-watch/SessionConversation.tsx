@@ -255,7 +255,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       setAttachmentWaiting(false)
       const sentAttachments = attachmentsRef.current.filter(file => submission.attachments.has(file.id))
       const files = uploads.files(sentAttachments.map(file => file.id))
-      const text = annotationPrompt(value, annotated)
+      const text = annotationPrompt(value, annotated, resolvedLocale)
       if ((!text && !files.length) || !checkBeforeSend(attempt)) return
       try {
         // A later reader gesture supersedes this local send, including while its commit waits.
