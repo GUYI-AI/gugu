@@ -1298,7 +1298,9 @@ test('RPC connectivity cannot publish ready before the initial heartbeat and sta
       onConnectivity(true)
       assert.equal(events.some((event) => event.type === 'host_state' && event.ready), false)
       assert.equal(calls.some(([name]) => name === 'runtime_instance_heartbeat'), true)
-      assert.equal(calls.filter(([name]) => name === 'upsert_device').at(-1)[1].capabilities.host_runtime_capability, 0)
+      const capability = calls.filter(([name]) => name === 'upsert_device').at(-1)[1].capabilities
+      assert.equal(capability.host_runtime_capability, 1)
+      assert.deepEqual(capability.runtimes, [])
     },
   })
   try { assert.equal(fx.host.state().ready, true) } finally { await fx.close() }
