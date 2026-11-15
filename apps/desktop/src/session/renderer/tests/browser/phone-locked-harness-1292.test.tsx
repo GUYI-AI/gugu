@@ -298,9 +298,11 @@ it('1292 phone project attachment menu uses the real new-task action lightning',
 })
 
 it('keeps the existing model menu in the phone sidebar row and omits the old harness row', async () => {
+  await page.viewport(390, 960)
   await i18n.changeLanguage('zh-CN')
   harness = createReactHarness()
   harness.container.setAttribute('data-phone-shell', '')
+  harness.container.style.cssText = 'height:800px;width:390px;display:flex;flex-direction:column'
   await renderWithAppProviders(harness, <SessionConversation
     timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="single-row" agentName="Pi" harness="pi"
     nativeRecord sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()}

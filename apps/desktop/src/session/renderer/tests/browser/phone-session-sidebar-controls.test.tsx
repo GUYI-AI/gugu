@@ -1,5 +1,7 @@
 import { afterEach, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
+import { observer } from 'mobx-react-lite'
+import { usePhoneSessionSidebar } from '@/mobile/chat/usePhoneSessionSidebar'
 import { PhoneSessionSidebarControls } from '@/mobile/chat/PhoneSessionSidebarControls'
 import { PhoneComposerControlRow } from '@/mobile/composer/PhoneComposerControls'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
@@ -23,13 +25,14 @@ const sessions=[
  {conversationId:'child',title:'排版子智能体',agent:{userId:'child-agent'},parentConversationId:'solo'},
  {conversationId:'other',title:'别处的任务',agent:{userId:'other-agent'}},
 ].map(session=>({...session,projectId:'workspace',harness:'codex',runtime:'acp',agentStatus:'idle'} as SessionpageSessionSummary))
+const Controls = observer((props: { sessionId: string; entry: string | null }) => <PhoneSessionSidebarControls sidebar={usePhoneSessionSidebar(props)} />)
 async function mount(sessionId:string,entry:string|null){
  await page.viewport(390,844);document.documentElement.dataset.theme='dark';document.documentElement.setAttribute('data-phone-shell','');setLocalePreference('zh-CN')
  const chats=[chat({id:'room',kind:'group',name:'手机验收群'}),chat({id:'solo-chat',kind:'dm',peer_user_id:'solo-agent',name:'独立智能体'})]
  publishChatSummaries(chats);dispose=installOwnedAgentEntry({open:()=>false,owns:()=>true})
  publishDirectoryDevices([device('qa-device',[],{is_online:true})]);updateDeviceSessions('qa-device',{projects:[{id:'workspace',name:'Tasks',path:'',kind:'workspace'}],sessions,cached:false,loading:false,error:null})
  harness=createReactHarness();Object.assign(harness.container.style,{position:'fixed',inset:'0',display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:'8px'})
- await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme="dark"><PhoneSessionSidebarControls sessionId={sessionId} entry={entry}/><PhoneComposerControlRow><span>输入消息</span></PhoneComposerControlRow></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats},contacts:{contacts:[]}})
+ await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme="dark"><Controls sessionId={sessionId} entry={entry}/><PhoneComposerControlRow><span>输入消息</span></PhoneComposerControlRow></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats},contacts:{contacts:[]}})
 }
 afterEach(()=>{harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);document.documentElement.removeAttribute('data-phone-shell')})
 it('a group-entered task lists the same resident sessions and preserves the group entry when switching',async()=>{
