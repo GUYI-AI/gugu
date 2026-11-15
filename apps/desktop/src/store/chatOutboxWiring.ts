@@ -19,6 +19,7 @@ import type { ChatItem, MessageContentType, MessageItem } from '@gugu/core/share
 import { upsertMessageById } from '@gugu/core/shared/ui/messageListModels'
 import { attachmentSendTiming, type AttachmentSendTiming } from '../lib/attachmentSendTiming'
 import { settleAttachmentSend, type ObserveAttachmentMessage } from '../lib/attachmentSendRecovery'
+import { dropAttachmentUpload, resumeAttachmentUploads } from '../lib/attachmentUploads'
 import { chatService } from '../lib/chat'
 import {
   ackOutboxRecord,
@@ -250,6 +251,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     attachmentTimings.delete(record.clientMessageId)
     uploadRetries.delete(record.clientMessageId)
     dropSentFile(record.clientMessageId)
+    dropAttachmentUpload(record.clientMessageId)
     if (!active) return
     if (record.payload.threadRootId) {
       io.setThreadMessages((prev) => prev.filter((m) => m.id !== record.clientMessageId), record.chatId)
@@ -398,7 +400,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     async commitAttachment(message, prepared, commit, timing = attachmentSendTiming(message.id, message.chat_id), dependsOn) {
       attachmentTimings.set(message.id, timing)
       const operation: OutboxOperation = 'staging_key' in prepared
-        ? { kind: 'attachment', commit: { ...commit, staging_key: prepared.staging_key } }
+        ? { kind: 'attachment', commit: { ...commit, staging_key: prepared.staging_key, sha256: prepared.sha256, size_bytes: prepared.size_bytes, ...message.image_dimensions } }
         : { kind: 'nativeAttachment', commit }
       if ('local' in prepared) nativeCommits.set(message.id, async () => {
         const source = outboxRecordForMessage(message, operation, dependsOn).dependsOn
@@ -462,7 +464,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
           await stageAttachment(row.message, message.id)
           io.appendMessage(row.message)
           const prepared = await prepareChatAttachment(await attachmentsEndpoint(), attachment, {
-            chat_id: targetChatId, as: senderUserId, request_id: row.message.id,
+            chat_id: targetChatId, as: senderUserId, message_id: row.message.id,
           })
           await commitAttachment(row.message, prepared, {
             message_id: row.message.id, chat_id: targetChatId, sender_user_id: senderUserId,
@@ -543,8 +545,11 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     },
     restoreAndWatch() {
       if (!active) return () => {}
+      const resumeUploads = () => void resumeAttachmentUploads().catch((err) => rendererLogger('chat/outbox').error({ error: String(err) }, 'attachment upload resume failed'))
       void outbox.restore().then((records) => {
         if (!active) return
+        // Sent files whose bytes have not reached the server go up now from this device's copy, behind their delivered messages.
+        resumeUploads()
         const user = io.user()
         if (!user) return
         for (const record of records) {
@@ -564,7 +569,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
         }
       }).catch((err) => { if (active) console.error('[chatOutbox] restore failed', err) })
       // 后端恢复(同步节拍失败过又拉通)→ 全部 failed 自动重投;网络通而后端不通时 window online 不会响。
-      return subscribeBackendRecovered(() => { if (active) void outbox.retryAllFailed() })
+      return subscribeBackendRecovered(() => { if (active) { void outbox.retryAllFailed(); resumeUploads() } })
     },
     injectThreadOutboxRows(chatId, rootId) {
       const user = io.user()

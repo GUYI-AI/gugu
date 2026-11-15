@@ -34,7 +34,9 @@ import {
   isSaidInChat,
   agentSpokeAfterViaRpc,
   postDeliveryDisclosureRow,
+  ATTACHMENT_PENDING_WAIT_MS,
 } from '@gugu/core/local/agent/agentInboxReader'
+import { AttachmentUploadPendingError } from '@gugu/core/shared/fileResolver'
 import { resolveListenModeDefault } from '@gugu/core/cloud/listenMode'
 import { memoryGroupRulesLedger } from '@gugu/core/local/agent/groupRulesDelivery'
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope'
@@ -1124,6 +1126,38 @@ describe('P-E4 离线追赶:未读行逐条受理,由队列 drain 合批', () =>
     expect(text).toContain('[附件] deck.pptx')
     expect(text).toContain('[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:10000000-0000-4000-8000-000000000003"}]')
     expect(text).toContain('after the file')
+  })
+
+  // Owner 11-15: a file its sender is still uploading — the delivery waits a bounded time, names the file and says the
+  // sender is still uploading; several files of one batch are read at once, not one after another.
+  it('a file still being uploaded: bounded wait, its name and 发送方仍在上传; the batch\'s files are read in parallel', async () => {
+    const cloud = new FakeCloud()
+    cloud.addChat('00000000-0000-4000-8000-000000000009', 'group')
+    cloud.join('00000000-0000-4000-8000-000000000009', AGENT, { listenMode: 'active' })
+    cloud.join('00000000-0000-4000-8000-000000000009', HUMAN)
+    const file = (name: string) => `[附件] ${name} (application/pdf)\n[Size] 9\n[Kind] file`
+    cloud.post({ chatId: '00000000-0000-4000-8000-000000000009', id: '10000000-0000-4000-8000-000000000011', seq: 1, senderUserId: HUMAN, senderType: 'human', content: file('a.pdf'), fileItemId: 'item-a', fileVersion: 1 })
+    cloud.post({ chatId: '00000000-0000-4000-8000-000000000009', id: '10000000-0000-4000-8000-000000000012', seq: 2, senderUserId: HUMAN, senderType: 'human', content: file('b.pdf'), fileItemId: 'item-b', fileVersion: 1 })
+    const waits: Array<number | undefined> = []
+    let open = 0, overlapped = 0
+    const { deps, injections } = makeDeps(cloud, {
+      downloadAttachment: async (source, _name, _actor, options) => {
+        waits.push(options?.pendingWaitMs)
+        open += 1; overlapped = Math.max(overlapped, open)
+        await new Promise(resolve => setTimeout(resolve, 5))
+        open -= 1
+        if ('message_id' in source && source.message_id === '10000000-0000-4000-8000-000000000011') throw new AttachmentUploadPendingError('a.pdf')
+        return { bytes: Uint8Array.from([1]), localPath: '/tmp/gugu-home/chat-media/b.pdf' }
+      },
+    })
+    await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 2 })
+    expect(waits).toEqual([ATTACHMENT_PENDING_WAIT_MS, ATTACHMENT_PENDING_WAIT_MS])
+    expect(ATTACHMENT_PENDING_WAIT_MS).toBeLessThanOrEqual(10_000)
+    expect(overlapped, 'both files were being read at once').toBe(2)
+    const text = injections.map((entry) => entry.text).join('\n')
+    expect(text).toContain('a.pdf：发送方仍在上传')
+    expect(text).toContain('message_download_file')
+    expect(text).toContain('[File at local path: /tmp/gugu-home/chat-media/b.pdf]')
   })
 
   // #7290 复核 X2:签链接以 agent 自己的身份(`as` = agent),不是令牌的主人 —— 主人读得到的,agent 不一定读得到。

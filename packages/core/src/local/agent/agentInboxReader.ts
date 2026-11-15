@@ -18,7 +18,7 @@
  */
 import { createHash } from 'node:crypto'
 import { isSqliteBusy } from '../../shared/sqliteBusy'
-import type { FileRef } from '../../shared/fileResolver'
+import { AttachmentUploadPendingError, type FileRef } from '../../shared/fileResolver'
 import { getSupabaseAnonKey, getSupabaseUrl } from '../../cloud/config'
 import { resolveListenModeDefault } from '../../cloud/listenMode'
 import type { ChatKind } from '../../shared/types/chat'
@@ -220,6 +220,7 @@ export interface AgentInboxReaderDeps {
     ref: FileRef,
     fileName: string,
     agentUserId: string,
+    options?: { pendingWaitMs?: number },
   ) => Promise<SavedAttachment>
   nowIso?: () => string
 }
@@ -763,7 +764,7 @@ async function injectBatch(
       const groupRules = planned && (planned.version !== 'none' || planned.text !== null)
         ? { version: planned.version, text: planned.text }
         : null
-      const message = await prepareMessage(agentUserId, row, deps, toolNames, env, threadSeeds, groupRules, threadSeedCache)
+      const message = await prepareMessage(agentUserId, row, deps, toolNames, env, threadSeeds, groupRules, threadSeedCache, reads)
       if (planned && !queueBacked) planned.text = null
       if (groupRules && groupRules.text !== null) {
         message.rulesDelivered = { chatId: row.chatId, entry: { version: groupRules.version, contextKey: planned!.contextKey } }
@@ -775,6 +776,9 @@ async function injectBatch(
   }
   // A rejected queued item must not consume the group rules or thread seed its next sibling needs.
   const prepared: PreparedMessage[] = []
+  // Every attachment of the batch is read at once: one sender still uploading must not hold up the next file.
+  const reads = new Map<string, Promise<SavedAttachment>>()
+  if (!queueBacked) for (const row of rows) { const read = readAttachment(agentUserId, row, deps); if (read) reads.set(row.id, read) }
   for (const row of rows) prepared.push(queueBacked ? { row, envelope: '' } : await prepare(row))
   // Queue-backed rows stay one per admission so a rejection is isolated and the queue can merge at drain. A
   // next-tool-call transport has no queue boundary: the admission itself is the delivery boundary,
@@ -935,6 +939,24 @@ function holdIncompleteSends(agentUserId: string, rows: AgentInboxUnreadRow[], d
   return rows.filter((row) => row.localSessionDirect || row.app || !(row.seq >= (heldFrom.get(row.chatId) ?? Number.POSITIVE_INFINITY)))
 }
 
+/** How long a delivery waits for a file its sender is still uploading; after that it says so and goes on. */
+export const ATTACHMENT_PENDING_WAIT_MS = 8_000
+
+const rowAttachment = (row: AgentInboxUnreadRow) => parseAttachmentContent(row.content, { id: row.id, file_item_id: row.fileItemId, file_version: row.fileVersion, file_blob_id: row.fileBlobId })
+
+/** The attachment's bytes as this agent's local copy; null when the row has none to read (gone, an old URL attachment). */
+function readAttachment(agentUserId: string, row: AgentInboxUnreadRow, deps: AgentInboxReaderDeps): Promise<SavedAttachment> | null {
+  if (row.localSessionDirect || row.app) return null
+  const attachment = rowAttachment(row)
+  if (!attachment || attachment.source.kind === 'gone' || attachment.kind === 'file' && attachment.source.kind === 'url' || attachment.kind !== 'image' && attachment.kind !== 'file') return null
+  const read = attachmentStage({ agentUserId, chatId: row.chatId, messageId: row.id }, 'download', async () => {
+    if (!deps.downloadAttachment) throw new Error('Verified attachment reader is not installed')
+    return deps.downloadAttachment({ message_id: row.id }, attachment.fileName, agentUserId, { pendingWaitMs: ATTACHMENT_PENDING_WAIT_MS })
+  })
+  read.catch(() => undefined) // said on its own row
+  return read
+}
+
 async function prepareMessage(
   agentUserId: string,
   row: AgentInboxUnreadRow,
@@ -944,6 +966,7 @@ async function prepareMessage(
   threadSeeds: Map<string, Promise<string | null>>,
   groupRules: { version: string; text: string | null } | null = null,
   threadSeedCache: Map<string, Promise<string | null>> = threadSeeds,
+  reads?: ReadonlyMap<string, Promise<SavedAttachment>>,
 ): Promise<PreparedMessage> {
   if (row.localSessionDirect) {
     return { row, envelope: row.localSessionDirect.envelope }
@@ -1004,32 +1027,31 @@ async function prepareMessage(
       if (threadContext !== null) bootstrapKey = key
     }
   }
-  const attachment = parseAttachmentContent(row.content, { id: row.id, file_item_id: row.fileItemId, file_version: row.fileVersion, file_blob_id: row.fileBlobId })
-  const download = (fileName: string) => attachmentStage({ agentUserId, chatId: row.chatId, messageId: row.id }, 'download', async () => {
-    if (!deps.downloadAttachment) throw new Error('Verified attachment reader is not installed')
-    return deps.downloadAttachment({ message_id: row.id }, fileName, agentUserId)
-  })
+  const attachment = rowAttachment(row)
+  const download = () => reads?.get(row.id) ?? readAttachment(agentUserId, row, deps)!
   // 条目已删(gone):没有字节可给,正文(名字、大小)照原样交下去,外加一行「已删」。
   // 下不下来(签不到、CDN 回错、超时)就给取它的那一步 —— 原因由 message_download_file 自己说;这一行和同一批的别的行照样交,不卡住收件。
+  // 发送方还在上传(owner 11-15):那一步前面说清是哪个文件、发送方仍在上传。
   let attachments: InlineImage[] | undefined
   const fetch = { fetch: { source_message_id: `msg:${row.id}` } }
+  const later = (error: unknown, fileName: string): AttachmentWhere => error instanceof AttachmentUploadPendingError ? { ...fetch, uploading: fileName } : fetch
   let where: AttachmentWhere | null = attachment?.source.kind === 'gone' ? 'gone' : null
   if (attachment?.kind === 'image' && attachment.source.kind !== 'gone') {
     try {
-      const image = await download(attachment.fileName)
+      const image = await download()
       attachments = [{ data: Buffer.from(image.bytes).toString('base64'), mimeType: attachment.mimeType, fileName: attachment.fileName, localPath: image.localPath }]
       where = { localPath: image.localPath, readOnly: image.readOnly }
-    } catch {
-      where = fetch
+    } catch (error) {
+      where = later(error, attachment.fileName)
     }
   }
   // 新式附件的文件(不是图):正文里没有链接(老附件靠正文里的 [URL] 去取),字节和图片一样下到本机,交本地路径。
   if (attachment?.kind === 'file' && attachment.source.kind !== 'gone' && attachment.source.kind !== 'url') {
     try {
-      const file = await download(attachment.fileName)
+      const file = await download()
       where = { localPath: file.localPath, readOnly: file.readOnly }
-    } catch {
-      where = fetch
+    } catch (error) {
+      where = later(error, attachment.fileName)
     }
   }
   // 那几行与任务输入框的附件同一个格式(attachmentLocationLines,P3)。

@@ -189,8 +189,10 @@ export function createChatOutbox(deps: OutboxDeps): ChatOutbox {
     drainingLanes.add(chatId)
     try {
       for (;;) {
-        const next = [...records.values()].find((r) => r.chatId === chatId && r.state === 'pending')
-        if (!next || !isActive(operationEpoch)) return
+        // A file still being declared (hashed, planned: its bytes go up after its message) keeps its place: what was sent
+        // after it waits for its commit, which kicks the lane again.
+        const next = [...records.values()].find((r) => r.chatId === chatId && (r.state === 'pending' || r.state === 'uploading' && r.operation?.kind === 'upload'))
+        if (!next || next.state !== 'pending' || !isActive(operationEpoch)) return
         // Keep creation order. Uploading sources are skipped, but a dependency
         // waiting on one must not claim the lane: its earlier source may become
         // ready there. Source settlement kicks the same drainer again.

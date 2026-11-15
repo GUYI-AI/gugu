@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { receivePhoneDeviceFile } from '../../desktop/electron/phone-device-file.ts'
-import { uploadAttachmentBytes, commitAttachment } from '../../../packages/core/src/cloud/attachmentsApi.ts'
+import { commitAttachment, declareAttachment, finishDeclaredAttachment } from '../../../packages/core/src/cloud/attachmentsApi.ts'
 import { parseAttachmentContent } from '../../../packages/core/src/shared/ui/attachmentModels.ts'
 import { parseGroupFileLink } from '../../../packages/core/src/shared/ui/guguLink.ts'
 import { turnAttachmentText } from '../../../packages/core/src/shared/attachmentFolderLine.ts'
@@ -129,19 +129,30 @@ export function phoneFileTools({ agent, job, cloud, store, env, authorize, emit 
         await store.save()
         let endpoint = await cloud.attachmentEndpoint()
         const contentType = resolveAttachmentMimeType(name, args.mime_type ?? file.mime_type)
-        if (!entry.stagingKey) {
-          entry.stagingKey = await uploadAttachmentBytes(endpoint, { bytes, name, contentType }, { chat_id: id, as: agent.agentUserId })
+        // The message goes with the file's index; its bytes follow it (one path for every sender). A restart that finds the
+        // message committed only uploads them, under a new plan.
+        let declared = entry.stagingKey ? { staging_key: entry.stagingKey, sha256: entry.sha256, size_bytes: entry.sizeBytes } : null
+        if (!declared) {
+          declared = await declareAttachment(endpoint, { bytes, contentType }, { chat_id: id, as: agent.agentUserId })
+          Object.assign(entry, { stagingKey: declared.staging_key, sha256: declared.sha256, sizeBytes: declared.size_bytes })
           await store.save()
         }
-        // Upload is not delivery. Recheck after uploading and refresh the short owner token before commit.
+        if (entry.status === 'committed') return await finishSend()
+        // Declaring is not delivery. Recheck and refresh the short owner token before commit.
         await authorize(groups, file); await access.beforeWrite(id, recipients)
         endpoint = await cloud.attachmentEndpoint()
-        const message = await commitAttachment(endpoint, { staging_key: entry.stagingKey, message_id: messageId, chat_id: id, sender_user_id: agent.agentUserId, file_name: name, content_type: contentType, to_user_ids: recipients, reply_to_message_id: args.reply_to_message_id ? uuid(args.reply_to_message_id.replace(/^msg:/, ''), 'reply source') : null, thread_root_id: job.route?.chatId === id ? job.route.threadRootId ?? null : null, is_thread_root: false, is_whisper: false, caption: args.caption })
+        const message = await commitAttachment(endpoint, { staging_key: entry.stagingKey, sha256: entry.sha256, size_bytes: entry.sizeBytes, message_id: messageId, chat_id: id, sender_user_id: agent.agentUserId, file_name: name, content_type: contentType, to_user_ids: recipients, reply_to_message_id: args.reply_to_message_id ? uuid(args.reply_to_message_id.replace(/^msg:/, ''), 'reply source') : null, thread_root_id: job.route?.chatId === id ? job.route.threadRootId ?? null : null, is_thread_root: false, is_whisper: false, caption: args.caption })
         if (message.id !== messageId) throw new Error('文件发送回执与请求不一致，请先查看消息历史再重试')
-        entry.status = 'sent'; entry.sentAt = new Date().toISOString()
+        entry.status = 'committed'; entry.sentAt = new Date().toISOString()
         job.sent = [...new Set([...(job.sent ?? []), messageId])]
         await store.save(); emit({ type: 'file_sent', sessionId: agent.sessionId, agentUserId: agent.agentUserId, messageId, chatId: id })
-        return result({ ok: true, message_id: `msg:${messageId}`, chat_id: id, file_name: name, size: file.size })
+        return await finishSend()
+        async function finishSend() {
+          // An entry kept from before declarations uploaded its bytes first: there is nothing to finish.
+          if (entry.sha256) await finishDeclaredAttachment(await cloud.attachmentEndpoint(), declared, { bytes, name, contentType }, { id: messageId, chat_id: id, as: agent.agentUserId })
+          entry.status = 'sent'; await store.save()
+          return result({ ok: true, message_id: `msg:${messageId}`, chat_id: id, file_name: name, size: file.size })
+        }
       },
     },
     {

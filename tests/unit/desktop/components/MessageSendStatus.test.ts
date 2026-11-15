@@ -22,33 +22,20 @@ describe('MessageSendStatus', () => {
       expect(document.body.querySelector('[data-testid="message-send-failed"]') !== null).toBe(state === 'failed')
     }
   })
-  it('keeps zero-byte upload events indeterminate, including a retry reset', async () => {
+  it('owner 11-15: a file\'s bytes going up are never the message\'s state — no percent, no sending once it is sent', async () => {
     await renderWithAppProviders(harness, createNode(MessageSendStatus, { state: 'sending', messageId: 'progress-message' }),
       { chat: { retrySend: vi.fn(), discardSend: vi.fn() } })
-    for (const attempt of [1, 2]) {
-      await act(async () => setAttachmentUploadProgress('progress-message', { loaded: 0, total: 1024, attempt }))
-      expect(document.body.querySelector('[role="progressbar"]')).toBeNull()
-      expect(document.body.querySelector('.gg-ring-march')).not.toBeNull()
-      await act(async () => setAttachmentUploadProgress('progress-message', { loaded: 256, total: 1024, attempt }))
-      expect(document.body.querySelector('[role="progressbar"]')?.textContent).toBe('25%')
-      expect(document.body.querySelector('.gg-ring-march')).toBeNull()
+    await act(async () => setAttachmentUploadProgress('progress-message', { loaded: 256, total: 1024, attempt: 1 }))
+    expect(document.body.querySelector('[role="progressbar"]'), 'the receipt slot shows no upload percent').toBeNull()
+    expect(document.body.textContent).not.toMatch(/%/)
+    expect(document.body.querySelector('.gg-ring-march'), 'the message itself is still being sent').not.toBeNull()
+    for (const state of ['sent', 'delivered', 'read'] as const) {
+      await renderWithAppProviders(harness, createNode(MessageSendStatus, { state, messageId: 'progress-message' }),
+        { chat: { retrySend: vi.fn(), discardSend: vi.fn() } })
+      expect(document.body.querySelector('[data-send-state]'), `${state} while its bytes still go up`).toBeNull()
     }
-  })
-  it('shows the measured upload percentage in the existing sending indicator', async () => {
-    setAttachmentUploadProgress('progress-message', { loaded: 512, total: 1024, attempt: 1 })
-    await renderWithAppProviders(harness, createNode(MessageSendStatus, { state: 'sending', messageId: 'progress-message' }),
-      { chat: { retrySend: vi.fn(), discardSend: vi.fn() } })
-    const progress = document.body.querySelector('[role="progressbar"]')!
-    expect(progress.getAttribute('aria-valuenow')).toBe('50')
-    expect(progress.textContent).toBe('50%')
-    expect(document.body.querySelector('.gg-ring-march')).toBeNull()
-  })
-  it('keeps the sending ring when the transport cannot measure the total', async () => {
-    setAttachmentUploadProgress('progress-message', { loaded: 512, attempt: 1 })
-    await renderWithAppProviders(harness, createNode(MessageSendStatus, { state: 'sending', messageId: 'progress-message' }),
-      { chat: { retrySend: vi.fn(), discardSend: vi.fn() } })
-    expect(document.body.querySelector('[role="progressbar"]')).toBeNull()
-    expect(document.body.querySelector('.gg-ring-march')).not.toBeNull()
+    await act(async () => setAttachmentUploadProgress('progress-message', { failed: true, retry: vi.fn() }))
+    expect(document.body.querySelector('[data-testid="message-send-failed"]'), 'a failed upload is not a failed send').toBeNull()
   })
   it('keeps an ambiguous attachment visibly unknown without a sending spinner or resend action', async () => {
     const state = deriveMessageSendState({ seq: -1, local_send_state: 'unknown' } as MessageItem, {}, { agentIds: new Set(), wakes: new Map() })

@@ -7,7 +7,7 @@ import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
 import { createFileChunkCache, createFileSink, createFileSaver, saveFileHandle } from '@gugu/core/local/files/fileSnapshots'
 import { attachmentStage } from '@gugu/core/local/files/attachmentDiagnostics'
-import { DEVICE_STORE, createFileResolver, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { AttachmentUploadPendingError, DEVICE_STORE, createFileResolver, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { parseFileStorage } from '@gugu/core/shared/fileStorage'
 import { readUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
 import { PROJECT_FILE_READ, createProjectFileReader, localProjectFileProvider } from './projectFileHost'
@@ -109,13 +109,20 @@ export function createDesktopFileAccess(deps: {
   })
   return { providers, resolve, resolveAccount, read, drain, publish,
     handlers: (transport: 'ssh' | 'realtime'): DeviceRpcHandlers => transport === 'ssh' ? sshHandlers : {},
-    async download(ref: FileRef, name: string, actorId: string) {
+    /** `pendingWaitMs`: how long to wait for bytes their sender is still uploading before saying so (none by default). */
+    async download(ref: FileRef, name: string, actorId: string, options: { pendingWaitMs?: number } = {}) {
       const step = <T>(stage: string, action: () => Promise<T>) => attachmentStage({ actorId, ref }, stage, action)
       const { accountId } = await step('identity', identity)
       const file = await step('resolve', async () => {
-        const resolved = await resolve(ref, { accountId, actorId })
-        if (resolved.status !== 'ready') throw new Error('File is no longer available')
-        return resolved
+        const until = Date.now() + (options.pendingWaitMs ?? 0)
+        for (;;) {
+          const resolved = await resolve(ref, { accountId, actorId })
+          if (resolved.status === 'ready') return resolved
+          if (resolved.status === 'failed') throw new Error('Its sender\'s upload of this file did not complete')
+          if (resolved.status !== 'pending') throw new Error('File is no longer available')
+          if (Date.now() >= until) throw new AttachmentUploadPendingError(name)
+          await new Promise(resolve => setTimeout(resolve, Math.min(1000, Math.max(0, until - Date.now()))))
+        }
       })
       const saved = await step('save', () => saveFileHandle(file, deps.downloads, name, true))
       const bytes = saved.content_type.startsWith('image/')
