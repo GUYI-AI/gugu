@@ -65,10 +65,15 @@ async function fileFailureMessage(target: Extract<GuguLinkTarget, { kind: 'file'
   return i18n.t(`assistant:links.${key}`)
 }
 
-/** DOM callers claim synchronously; the one promise reports a failure through the existing notice host. */
+let followed = 0
+/**
+ * DOM callers claim synchronously; the one promise reports a failure through the existing notice host. A link followed
+ * since took its place (a second tap supersedes the first): only the latest one speaks.
+ */
 export function followLink(raw: string | OpenTarget): boolean {
   const opened = openLink(raw)
   if (!opened) return false
-  void opened.catch((error: unknown) => notify({ tier: 'error', title: error instanceof Error ? error.message : String(error) }))
+  const asked = ++followed
+  void opened.catch((error: unknown) => { if (asked === followed) notify({ tier: 'error', title: error instanceof Error ? error.message : String(error) }) })
   return true
 }

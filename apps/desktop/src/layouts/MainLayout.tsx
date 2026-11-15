@@ -323,7 +323,7 @@ function InnerLayout({
       openSettingsSection('apps')
     },
     openFile: async (chatId, target, source) => {
-      if (mobile || !await openOwnedAgentResource(chatId)) openChatTarget(chatId, 'resource')
+      if (!await openOwnedAgentResource(chatId)) openChatTarget(chatId, 'resource')
       await askChatFile(chatId, { itemId: target.itemId, ...(target.at ? { at: target.at } : {}), ...(source.message ? { message: source.message } : {}), ...(source.restore ? { restore: source.restore } : {}) })
     },
     openApp: (chatId, extensionId, tab) => { openChatTarget(chatId, 'resource'); askChat(chatId, { app: extensionId, ...(tab ? { tab } : {}) }) },
@@ -1303,12 +1303,13 @@ function InnerLayout({
         <AssistantShellHost />
       )}
       {/* gugu-dev#181 项目块、对话块里的对话:会话页留格子(lib/shellSlots.ts 的 chat:<id>),这里画进去。 */}
+      {(mobile || sessionHostAvailable) && <OwnedAgentResourcesHost ownerId={user.id} mobile={mobile} />}
       {!mobile && sessionHostAvailable && (
-        <><OwnedAgentResourcesHost ownerId={user.id} /><ChatSlotHost
+        <ChatSlotHost
           onOpenUserChat={slotOpenProfileChat}
          
           onOpenSessionpageAgentFile={handleOpenSessionpageAgentFile}
-        /></>
+        />
       )}
       {!mobile && sessionHostAvailable && <OfflineSessionSlotHost />}
       {/* #1925 An App's main page beside its bound conversation: the session page leaves the column, the native conversation is drawn here. */}
