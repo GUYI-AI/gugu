@@ -674,7 +674,7 @@ it.each([220, 320, 600])('puts a repeated speaker message reference before its p
     const quote = view.host.querySelector<HTMLButtonElement>('[data-slot="conversation-quote"]')!;
     const process = view.host.querySelector<HTMLElement>('[data-conversation-process]')!;
     expect(quote.textContent).toBe(''); expect(view.host.textContent).not.toContain('旧消息');
-    expect(view.host.querySelector('[data-slot="conversation-reference-separator"]')?.textContent).toBe('·');
+    expect(view.host.querySelector('[data-slot="conversation-reference-separator"]')?.textContent).toBe(' ');
     expect(quote.getBoundingClientRect().right).toBeLessThan(process.getBoundingClientRect().left);
     expect(process.getBoundingClientRect().right).toBeLessThanOrEqual(view.host.getBoundingClientRect().right + 1);
     expect(Math.abs(view.host.getBoundingClientRect().height - messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!))).toBeLessThanOrEqual(1);
