@@ -29,8 +29,8 @@ const FALLBACK_GLYPHS: Readonly<Record<string, IconComponent>> = {
   'gugu-cloud': Cloud,
 }
 
-function sizeStyle(size: number): CSSProperties {
-  return { '--agent-harness-size': `${size}px` } as CSSProperties
+function sizeStyle(size: number, piMask?: string): CSSProperties {
+  return { '--agent-harness-size': `${size}px`, ...(piMask ? { '--agent-harness-pi-mask': `url("${piMask}")` } : {}) } as CSSProperties
 }
 
 function useHarness(agentId: string | undefined) {
@@ -75,12 +75,12 @@ function HarnessGlyph({ type, icon, label, size }: { type: string; icon: (typeof
   // 两个浮层会叠在一起。引擎名给读屏走 aria-label,给眼睛由外层自己说。
   return (
     <span className="agent-harness-icon" data-agent-harness={type} role="img" aria-label={label}
-      style={sizeStyle(size)}>
+      style={sizeStyle(size, type === 'pi' ? content : undefined)}>
       {icon && content ? (
         <span aria-hidden="true" className={theme === 'dark' && icon.invertInDark ? 'agent-harness-artwork--inverted' : undefined}>
           {icon.kind === 'image' ? <>
             <img src={content} alt="" />
-            {type === 'pi' && <span className="agent-harness-pi-mark" style={{ maskImage: `url("${content}")`, WebkitMaskImage: `url("${content}")` }} />}
+            {type === 'pi' && <span className="agent-harness-pi-mark" />}
           </> : <span dangerouslySetInnerHTML={htmlProp(content)} />}
         </span>
       ) : Glyph ? <Glyph size={size} /> : null}

@@ -77,6 +77,8 @@
 [data-phone-shell] .agent-harness-icon .agent-harness-pi-mark {
   display: block;
   background: var(--text-primary);
+  mask-image: var(--agent-harness-pi-mask);
+  -webkit-mask-image: var(--agent-harness-pi-mask);
   mask-mode: luminance;
   mask-size: 125%;
   mask-position: center;
