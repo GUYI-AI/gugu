@@ -78,7 +78,10 @@ function HarnessGlyph({ type, icon, label, size }: { type: string; icon: (typeof
       style={sizeStyle(size)}>
       {icon && content ? (
         <span aria-hidden="true" className={theme === 'dark' && icon.invertInDark ? 'agent-harness-artwork--inverted' : undefined}>
-          {icon.kind === 'image' ? <img src={content} alt="" /> : <span dangerouslySetInnerHTML={htmlProp(content)} />}
+          {icon.kind === 'image' ? <>
+            <img src={content} alt="" />
+            {type === 'pi' && <span className="agent-harness-pi-mark" style={{ maskImage: `url("${content}")`, WebkitMaskImage: `url("${content}")` }} />}
+          </> : <span dangerouslySetInnerHTML={htmlProp(content)} />}
         </span>
       ) : Glyph ? <Glyph size={size} /> : null}
     </span>
