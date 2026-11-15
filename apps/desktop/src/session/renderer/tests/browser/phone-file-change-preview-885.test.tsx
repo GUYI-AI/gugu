@@ -18,7 +18,7 @@ import '@renderer/index.css';
 // files the task opened itself — that ledger said 「这条会话还没打开过这个文件」 for a file the Files App opened fine.
 const m = vi.hoisted(() => ({ call: vi.fn(), ledger: vi.fn() }));
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: { chatView: 'double' } }) }));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } });
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => ({
   ...(await original<object>()),
   fetchSessionOptions: vi.fn(() => new Promise(() => {})), setSessionOption: vi.fn(),

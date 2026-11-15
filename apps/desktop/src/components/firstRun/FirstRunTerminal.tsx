@@ -8,6 +8,7 @@ import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-
 import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled'
 import { Toggle } from '../settings/SettingsPrimitives'
 import { Button } from '../ui/Button'
+import { Unknown } from '../ui/Unknown'
 import { Hint } from '../ui/Tooltip'
 import film from '../../assets/first-run/session-terminal.webm'
 import poster from '../../assets/first-run/session-terminal.webp'
@@ -47,7 +48,9 @@ export function FirstRunTerminal({ userId, onBack, onDone }: { userId: string; o
       <div className="first-run-terminal-choice">
         <label className="first-run-terminal-switch">
           <span>{t('firstRun.terminalToggle')}</span>
-          <Toggle checked={enabled} onChange={(next) => update({ enabled: next })} ariaLabel={t('firstRun.terminalToggle')} />
+          {enabled.state === 'value'
+            ? <Toggle checked={enabled.value} onChange={(next) => update({ enabled: next })} ariaLabel={t('firstRun.terminalToggle')} />
+            : <Unknown className="h-5 w-8 flex-none rounded-[var(--radius-capsule)]" />}
         </label>
         <span className="first-run-terminal-later">{t('firstRun.terminalLater')}</span>
       </div>

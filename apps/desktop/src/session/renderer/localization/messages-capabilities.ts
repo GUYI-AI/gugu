@@ -11,6 +11,8 @@ export const enUSCapabilityMessages = {
   'reset.off': 'off',
   'reset.builtIn': 'built-in',
   'reset.always': 'always',
+  'settings.readFailed': 'Could not read this setting',
+  'settings.refreshFailed': 'Could not read the latest; showing what was read last',
 
   // ── settings · task defaults ───────────────────────────────────────────────
   'taskDefaults.autoGenerateName': 'Auto-generate task names',
@@ -52,7 +54,6 @@ export const enUSCapabilityMessages = {
   'terminal.defaultShell': 'Default terminal shell',
   'terminal.defaultShellDescription':
     'Used for new local terminals. Remote terminals use the remote system shell.',
-  'terminal.shellLoading': 'Loading...',
   'terminal.font': 'Terminal font',
   'terminal.fontDescription': 'Choose the font family for the terminal. The default keeps Chinese exactly two cells wide; other fonts can clip the end of Chinese lines.',
   'terminal.fontDefaultOption': 'Default ({fontFamily})',
@@ -946,9 +947,11 @@ export const enUSCapabilityMessages = {
   'guguCatalog.reason.service-unavailable': "Something went wrong on Gugu's side.",
   'guguCatalog.reason.unreachable': "Can't reach Gugu's models; check the network",
   'guguCatalog.reason.membership-required': 'This Gugu model needs a membership. Switch models, or get a membership, then resend.',
+  'guguCatalog.reason.membership-required-readonly': 'This Gugu model is unavailable to the current account. Choose another available model.',
   'guguCatalog.reason.model-unavailable': 'This Gugu model is unavailable now. Switch to another model, then resend.',
   'guguCatalog.reason.unknown': "Something went wrong on Gugu's side.",
   'guguCatalog.namedReason.membership-required': '{model} needs a membership. Switch models, or get a membership, then resend.',
+  'guguCatalog.namedReason.membership-required-readonly': '{model} is unavailable to the current account. Choose another available model.',
   'guguCatalog.namedReason.model-unavailable': '{model} is unavailable now. Switch to another model, then resend.',
   // 未登录但**咕咕的模型可用**时那一句。措辞刻意不催人去登录:不登录一样能干活,
   // 登录只是为了用 {name} 自己的模型。⇒ 陈述选择,❌ 不推销其中一个。
@@ -976,6 +979,8 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'reset.off': '关闭',
   'reset.builtIn': '内置',
   'reset.always': '始终',
+  'settings.readFailed': '读不到这项设置',
+  'settings.refreshFailed': '没读到最新的，显示的是上次读到的',
 
   // ── 设置 · 任务默认值 ───────────────────────────────────────────────────────
   'taskDefaults.autoGenerateName': '自动生成会话名',
@@ -1012,7 +1017,6 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   // ── 设置 · 终端 ─────────────────────────────────────────────────────────────
   'terminal.defaultShell': '默认终端 shell',
   'terminal.defaultShellDescription': '用于新建本地终端。远程终端使用远端系统 shell。',
-  'terminal.shellLoading': '正在加载...',
   'terminal.font': '终端字体',
   'terminal.fontDescription': '选择终端使用的字体。默认字体让中文正好占两格,换成别的字体时中文行的行尾可能被截断。',
   'terminal.fontDefaultOption': '默认（{fontFamily}）',
@@ -1859,9 +1863,11 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'guguCatalog.reason.service-unavailable': '咕咕这边出错了。',
   'guguCatalog.reason.unreachable': '无法连接咕咕模型服务，请检查网络',
   'guguCatalog.reason.membership-required': '这个咕咕模型要开会员才能用。换个模型，或开通会员后再发一次。',
+  'guguCatalog.reason.membership-required-readonly': '当前账号无法使用这个咕咕模型，请选择其他可用模型。',
   'guguCatalog.reason.model-unavailable': '这个咕咕模型现在用不了。换个模型再发一次。',
   'guguCatalog.reason.unknown': '咕咕这边出错了。',
   'guguCatalog.namedReason.membership-required': '{model} 要开会员才能用。换个模型，或开通会员后再发一次。',
+  'guguCatalog.namedReason.membership-required-readonly': '当前账号无法使用 {model}，请选择其他可用模型。',
   'guguCatalog.namedReason.model-unavailable': '{model} 现在用不了。换个模型再发一次。',
   'harnessCatalog.ownModelsGroup': '你的 {name} 模型',
   'harnessCatalog.unlockModels': '登录以使用 {name} 模型',

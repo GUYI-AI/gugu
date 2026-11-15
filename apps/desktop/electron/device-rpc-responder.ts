@@ -18,7 +18,7 @@ import {
 import { MIN_CLIENT_PROTOCOL } from '@gugu/core/cloud/serverMachineHealth'
 import { SESSION_HOST_READY_EVENT } from '@shared/lib/ipc/session-host-device-frames'
 import { createDeviceRpcAskers, type DeviceRpcAskerLimits } from './device-rpc-askers'
-import type { ElectronManagedRealtimeChannel } from './realtime-channel'
+import type { ElectronManagedRealtimeChannel, ElectronRealtimeSocket } from './realtime-channel'
 import { sendBroadcast, subscribeAuthenticatedElectronRealtimeChannel } from './realtime-channel'
 
 /**
@@ -38,9 +38,7 @@ type RpcChannel = {
 }
 
 type RpcSupabaseClient<TChannel> = {
-  realtime: {
-    setAuth: () => unknown | Promise<unknown>
-  }
+  realtime: ElectronRealtimeSocket
   channel: (
     topic: string,
     options: { config: { private: boolean; broadcast: { self: boolean; ack: boolean } } }

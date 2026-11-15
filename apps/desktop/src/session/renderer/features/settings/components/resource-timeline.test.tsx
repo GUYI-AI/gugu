@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { notifyManager } from '@tanstack/react-query';
+import { queryClient } from '@/lib/readModel';
 import { act, type ReactNode } from 'react';
 import { CartesianTimeAxis } from '@visactor/vchart/cjs/component/axis/cartesian/time-axis';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -39,6 +41,8 @@ let previousLocale: ReturnType<typeof getLocaleSnapshot>['preference'];
 beforeEach(() => {
   previousLocale = getLocaleSnapshot().preference;
   vi.clearAllMocks(); rig.charts.length = 0; rig.snapshot = snapshot(1); rig.failure = null;
+  // The history is a read model: each case starts without it, and its answers land in the act() that brought them.
+  notifyManager.setScheduler((callback) => { callback(); }); queryClient.clear();
   document.documentElement.dataset.theme = 'light';
   rig.history.mockResolvedValue(history(points)); rig.point.mockResolvedValue({ success: true, data: snapshot(2000) });
   harness = createReactHarness();

@@ -36,6 +36,10 @@ import { hasTeamAccountMarker } from './features/team/accountKind'
 import './features/team/team.css'
 import { teamInvitation } from './features/team/invitation'
 import { TeamInvitationHandoff } from './features/team/TeamInvitationHandoff'
+import { iosOwnerAvailable } from './mobile/ios-runtime/iosOwnerClient'
+import { startIOSPush } from './mobile/ios-push/startIOSPush'
+import { startIOSOwnerPublication } from './mobile/ios-runtime/startIOSOwnerPublication'
+import { IOSHostRoot } from './mobile/ios-host/IOSHostRoot'
 
 import { platform } from './platform'
 import { type RendererRpcHandlers, useRendererRpcHandlers } from './rpc-renderer/rendererRpc'
@@ -112,6 +116,10 @@ export default function App() {
   useEffect(() => {
     return sessionCoordinator.start()
   }, [])
+  useEffect(() => {
+    if (iosOwnerAvailable()) return startIOSOwnerPublication()
+  }, [])
+  useEffect(startIOSPush, [])
   useEffect(startAuthCallbackRouting, [])
   useEffect(() => watchReferralLinks(platform.watchOpenedLinks, sessionCoordinator), [])
   useEffect(() => teamInvitation.start(), [])
@@ -157,6 +165,7 @@ export default function App() {
           <ContentContextMenuHost />
           <AuthContext.Provider value={authContextValue}>
             <TeamInvitationHandoff />
+            <IOSHostRoot />
             {/* 新账号先走一遍首次引导(product spec,#7348);老账号 / 走完的直接进主界面 */}
             {/* 启动外壳期间那张候选证可能已过期:等协调器接受了会话再读,不另起刷新 */}
             {session.status === 'authenticated' && !hasTeamAccountMarker(user) && <LoginMethodChangeNotice key={`login-notice:${user.id}`} userId={user.id} />}

@@ -1,111 +1,72 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
+import { queryClient, useReadModel, type Reading } from '@/lib/readModel';
 import type { AppSettings, AppSettingsKey } from '@shared/core/app-settings';
 import {
-  APP_SETTINGS_STALE_TIME_MS,
-  appSettingsMetaQueryKey,
-  getAllAppSettingsFromCache,
+  appSettingsModel,
   getAppSettingValueSnapshot,
   invalidateAppSettingsKey,
   mergeAppSettingsValue,
-  prefetchAppSettingsKey,
-  requestAppSettingsMeta,
-  resetAppSettingsFieldRequest,
-  resetAppSettingsRequest,
-  restoreAppSettingsCache,
   setAppSettingsValueInCache,
   updateAppSettingsRequest,
+  LOCAL_SETTINGS_HOST_KEY,
   type SettingsMeta,
 } from './app-settings-client';
+import { rpc, rpcOn } from '@renderer/lib/ipc';
 import { useSettingsHost } from './settings-host';
 
-export { getAppSettingValueSnapshot, prefetchAppSettingsKey };
+export { getAppSettingValueSnapshot };
 
+export type AppSettingsKeyApi<K extends AppSettingsKey> = ReturnType<typeof useAppSettingsKey<K>>;
+
+/**
+ * One settings key as the read model has it. `settings` is unknown only before this device ever read it (startup reads
+ * the whole set once); a surface draws `<Unknown/>` then — never the schema default dressed as the stored value.
+ */
 export function useAppSettingsKey<K extends AppSettingsKey>(key: K) {
-  const queryClient = useQueryClient();
-  // #6264 跟机器走的那几组(默认 tmux、仓库)在「选了别的机器」时读写那台机器;缓存另起一份键,
-  // ❌ 动本机的全局设置缓存(那一份整个窗口都在读)。
+  // #6264 跟机器走的那几组(默认 tmux、仓库)在「选了别的机器」时读写那台机器;读模型里另起一份(主机参数),
+  // ❌ 动本机那一份(整个窗口都在读)。那台机器离线就不问(问不到,只会挂满超时)。
   const host = useSettingsHost();
   const remote = host.remote;
-  const metaKey = remote ? [...appSettingsMetaQueryKey(key), host.key] : appSettingsMetaQueryKey(key);
+  const settings = useReadModel(appSettingsModel, !remote || remote.online ? [key, host.key] : null) as Reading<SettingsMeta<K>>;
+  const current = settings.state === 'value' ? settings.value : undefined;
+  const api = (host.key === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host.key)).appSettings;
 
-  const { data, isLoading, error } = useQuery<SettingsMeta<K>>({
-    queryKey: metaKey,
-    queryFn: () =>
-      remote ? (host.api.getWithMeta(key) as Promise<SettingsMeta<K>>) : requestAppSettingsMeta(key),
-    staleTime: APP_SETTINGS_STALE_TIME_MS,
-    // 那台机器离线就不问(问不到,只会挂满超时)。
-    enabled: remote ? remote.online : true,
-    ...(remote ? { retry: false } : {}),
-  });
-
-  const invalidate = () => {
-    if (remote) void queryClient.invalidateQueries({ queryKey: metaKey });
-    else invalidateAppSettingsKey(key);
-  };
-
-  const updateMutation = useMutation<
-    void,
-    Error,
-    Partial<AppSettings[K]>,
-    { prev: SettingsMeta<K> | undefined; prevAll: AppSettings | undefined }
-  >({
+  const updateMutation = useMutation<void, Error, Partial<AppSettings[K]>, { prev: AppSettings[K] }>({
     mutationFn: (partial) => {
-      const current = queryClient.getQueryData<SettingsMeta<K>>(metaKey);
-      const merged = mergeAppSettingsValue(current?.value, partial);
-      return remote ? host.api.update(key, merged) : updateAppSettingsRequest(key, merged);
+      const reading = appSettingsModel.peek(key, host.key);
+      if (reading.state !== 'value') throw new Error(`settings ${key}: not read yet`);
+      return updateAppSettingsRequest(key, mergeAppSettingsValue<K>((reading.value as SettingsMeta<K>).value, partial), host.key);
     },
-    onMutate: async (partial) => {
-      await queryClient.cancelQueries({ queryKey: metaKey });
-      const prev = queryClient.getQueryData<SettingsMeta<K>>(metaKey);
-      const merged = mergeAppSettingsValue(prev?.value, partial);
-      if (remote) {
-        if (prev) queryClient.setQueryData<SettingsMeta<K>>(metaKey, { ...prev, value: merged });
-        return { prev, prevAll: undefined };
-      }
-      const prevAll = getAllAppSettingsFromCache();
-      setAppSettingsValueInCache(key, merged);
-      return { prev, prevAll };
+    onMutate: (partial) => {
+      const reading = appSettingsModel.peek(key, host.key);
+      if (reading.state !== 'value') throw new Error(`settings ${key}: not read yet`);
+      const prev = (reading.value as SettingsMeta<K>).value;
+      setAppSettingsValueInCache(key, mergeAppSettingsValue<K>(prev, partial), host.key);
+      return { prev };
     },
     onError: (_err, _partial, ctx) => {
-      if (remote) {
-        if (ctx?.prev) queryClient.setQueryData(metaKey, ctx.prev);
-      } else if (ctx) restoreAppSettingsCache(key, ctx.prev, ctx.prevAll);
-      invalidate();
+      if (ctx) setAppSettingsValueInCache(key, ctx.prev, host.key);
     },
-    onSettled: () => {
-      invalidate();
-    },
-  });
+    onSettled: () => invalidateAppSettingsKey(key, host.key),
+  }, queryClient);
 
   const resetMutation = useMutation<void, Error, void>({
-    mutationFn: () => (remote ? host.api.reset(key) : resetAppSettingsRequest(key)),
-    onSuccess: () => {
-      invalidate();
-    },
-  });
+    mutationFn: () => api.reset(key) as Promise<void>,
+    onSuccess: () => invalidateAppSettingsKey(key, host.key),
+  }, queryClient);
 
   const resetFieldMutation = useMutation<void, Error, keyof AppSettings[K]>({
-    mutationFn: (field) =>
-      remote ? host.api.resetField(key, String(field)) : resetAppSettingsFieldRequest(key, field),
-    onSuccess: () => {
-      invalidate();
-    },
-  });
-
-  // 别的机器此刻做不了事:离线,或读都没读到(server 太旧 / 问不通)—— 行照旧画,开关一起灰。
-  const unavailable = !!remote && (!remote.online || (!!error && !data));
+    mutationFn: (field) => api.resetField(key, field as string) as Promise<void>,
+    onSuccess: () => invalidateAppSettingsKey(key, host.key),
+  }, queryClient);
 
   return {
-    value: data?.value,
-    defaults: data?.defaults,
-    overrides: data?.overrides,
-    // 在读 / 读不到都当作「还不能动」,开关灰着(与本机读的时候同一个样子)。
-    isLoading: isLoading || unavailable,
-    error,
+    settings,
+    /** Another machine cannot act now: offline, or its read failed (server too old / unreachable). Rows stay, controls grey. */
+    unavailable: !!remote && (!remote.online || settings.state === 'error'),
     isSaving: updateMutation.isPending || resetMutation.isPending || resetFieldMutation.isPending,
-    isOverridden: !!(data?.overrides && Object.keys(data.overrides).length > 0),
-    isFieldOverridden: (field: keyof AppSettings[K]) =>
-      !!(data?.overrides && field in data.overrides),
+    isOverridden: !!current && Object.keys(current.overrides).length > 0,
+    isFieldOverridden: (field: keyof AppSettings[K]) => !!current && field in current.overrides,
     update: updateMutation.mutate,
     updateAsync: updateMutation.mutateAsync,
     reset: resetMutation.mutate,

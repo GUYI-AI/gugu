@@ -42,7 +42,7 @@ import { useTranslation } from 'react-i18next'
  * ❌ 桌面手机各写一个判断:
  * - 「权限」只在读得到系统权限真值的宿主上(product spec);
  * - 「App」只在手机壳上:那里的 App 由这一页自己的 App 仓管(L9);桌面在最左栏的「App」里管,网页不装 App;
- * - 「这台手机」只在手机壳上(#7199 手机当设备:那几个动作要安卓的系统接口;桌面的「这台电脑能做的事」在「设备」里);
+ * - 「这台手机」由原生动作或 Agent 宿主能力开放；平台各自保管动作协议与宿主生命周期;
  * - 会话页那几格只在有会话页宿主的桌面形态上(它们是会话页的组件);手机「我的」不画。
  * 咕咕的资料、连接应用不在这里:它们在它的 App 里(owner 11-12)。
  * - 「连接应用」(人自己连的应用,不是咕咕的)只在手机壳上、「通用」那组:手机没有资源库;电脑上它们在资源库「集成」。
@@ -52,9 +52,9 @@ const sectionsFor = (mobile: boolean): ActiveSection[] =>
   SETTINGS_SECTIONS.filter(
     (section) =>
       (section !== 'passwords' || (PASSWORD_BETA_ENABLED && platform.kind === 'electron' && !mobile)) &&
-      (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0) &&
+      (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0 || platform.capabilities.calendarSettings) &&
       (section !== 'apps' || platform.capabilities.mobileApps) &&
-      (section !== 'phone' || platform.capabilities.phoneDevice) &&
+      (section !== 'phone' || platform.capabilities.phoneDevice || platform.capabilities.phoneAgentHost) &&
       (section !== 'connectors' || mobile) &&
       (!SESSION_HOST_SETTINGS_SECTIONS.includes(section) || (!mobile && platform.capabilities.sessionHost)),
   )
@@ -104,7 +104,7 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
   // connected apps (or its chat tools, part of them) is the person's own row, where it is shown.
   const ownConnections = sections.includes('connectors') && (requestedSection === 'connectors' || requestedSection === 'channels')
   const unsupportedPhoneSection = (requestedSection === 'apps' && !platform.capabilities.mobileApps)
-    || (requestedSection === 'phone' && !platform.capabilities.phoneDevice)
+    || (requestedSection === 'phone' && !platform.capabilities.phoneDevice && !platform.capabilities.phoneAgentHost)
   const activeSection = unsupportedPhoneSection || (teamAccount && requestedSection === 'subscriptions') ? 'account' : ownConnections ? 'connectors' : isAssistantSettingsSection(requestedSection) ? 'account' : requestedSection
   const setActiveSection = onSectionChange ?? setInternalSection
   const [internalPane, setInternalPane] = useState<'nav' | 'detail'>(mobile ? 'nav' : 'detail')

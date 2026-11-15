@@ -23,7 +23,7 @@ describe('desktop device command wake subscription', () => {
       unsubscribe: vi.fn(async () => undefined)
     }
     const supabase = {
-      realtime: { setAuth: vi.fn(async () => undefined) },
+      realtime: { isConnected: () => true, connect: () => undefined, setAuth: vi.fn(async () => undefined) },
       channel: vi.fn(() => channel),
       removeChannel: vi.fn()
     }
@@ -50,7 +50,7 @@ describe('desktop device command wake subscription', () => {
       unsubscribe: ReturnType<typeof vi.fn>
     }> = []
     const supabase = {
-      realtime: { setAuth: vi.fn(async () => undefined) },
+      realtime: { isConnected: () => true, connect: () => undefined, setAuth: vi.fn(async () => undefined) },
       channel: vi.fn(() => {
         const index = channels.length
         const channel = {

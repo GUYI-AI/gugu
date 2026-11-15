@@ -48,6 +48,7 @@ const state = vi.hoisted(() => ({
   projectChats: new Map<string, string>(),
   placementReads: 0,
   openChatOnScreen: vi.fn(),
+  navigateToGroupRoot: vi.fn(),
   openInfoTab: vi.fn(),
   closeInfoTab: vi.fn(),
   infoShown: false,
@@ -72,6 +73,8 @@ vi.mock('@renderer/features/projects/stores/account-projects-store', () => ({
   },
 }));
 vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: (...args: unknown[]) => state.openChatOnScreen(...args) }));
+// The group head goes back to the group itself (#2709): whatever was opened from it and parked on its screen goes.
+vi.mock('@renderer/app/screen-layout-actions', async (original) => ({ ...(await original<Record<string, unknown>>()), navigateToGroupRoot: (...args: unknown[]) => state.navigateToGroupRoot(...args) }));
 vi.mock('@renderer/features/sessions/open-session-in-session', () => ({
   openSessionInSessionWhenReady: (...args: unknown[]) => state.openSessionWhenReady(...args),
 }));
@@ -138,10 +141,12 @@ const { readComposerVerb, setComposerVerb } = await import('@/lib/composerVerbBr
 const { setInnerSidebarTopicsAll, publishInnerSidebarTopicsView, publishOneListAgentRows, useInnerSidebarChat } = await import('@/lib/innerSidebarBridge');
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
 const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
-const { innerSidebarFolded, innerSidebarFoldedAway, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
+const { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
 const { sidebarFolds } = await import('./sidebar-folds');
 const { readPanelToggle } = await import('@/lib/panelToggles');
 const { sidebarStore } = await import('@renderer/lib/stores/app-state');
+const { screenLayout } = await import('@renderer/app/screen-layout');
+type ScreenBlockContent = import('@renderer/app/screen-layout').ScreenBlockContent;
 
 let host: HTMLDivElement;
 let root: Root;
@@ -172,6 +177,7 @@ beforeEach(() => {
     state.live.shownMore.clear();
   });
   state.openChatOnScreen.mockClear();
+  state.navigateToGroupRoot.mockClear();
   state.openInfoTab.mockClear();
   state.closeInfoTab.mockClear();
   state.infoShown = false;
@@ -203,13 +209,27 @@ afterEach(() => {
   act(() => setInnerSidebarTopicsAll(null));
   setComposerVerb('group', null);
   sidebarFolds.clear(); // the folds are stored state now: one test's fold must not be the next test's start
+  runInAction(() => { for (const content of [...screenLayout.blocks.values(), ...screenLayout.parkedContents]) screenLayout.forgetContent(content); });
 });
 
-const go = (currentViewId: string, viewParamsStore: Record<string, unknown>) =>
-  act(() => runInAction(() => Object.assign(state.live, { currentViewId, viewParamsStore })));
+// Navigation puts what it points at on the screen (screen-layout-actions in the app): the screen's entry is what the column hangs on.
+// `fromColumn` = one of the column's rows opened it (sidebar-session-item: inside the screen, which stays the entry's).
+const screenContent = (view: string, params: Record<string, unknown>): ScreenBlockContent | undefined => {
+  const { chat, project, session } = params as { chat?: { chatId: string }; project?: { projectId: string }; session?: { sessionId: string } };
+  if (view === 'chat' && chat) return { kind: 'chat', chatId: chat.chatId };
+  if (view === 'project' && project) return { kind: 'project', projectId: project.projectId };
+  if (view === 'session' && session) return { kind: 'session', projectId: '', sessionId: session.sessionId };
+};
+const go = (currentViewId: string, viewParamsStore: Record<string, unknown>, fromColumn = false) =>
+  act(() => runInAction(() => {
+    const content = screenContent(currentViewId, viewParamsStore);
+    if (content && fromColumn) screenLayout.withinEntry(() => screenLayout.show(content));
+    else if (content) screenLayout.show(content);
+    Object.assign(state.live, { currentViewId, viewParamsStore });
+  }));
 const openChat = (chatId: string) => go('chat', { chat: { chatId } });
 const openProject = (projectId: string) => go('project', { project: { projectId } });
-const openSession = (sessionId: string) => go('session', { session: { sessionId } });
+const openSession = (sessionId: string, fromColumn = false) => go('session', { session: { sessionId } }, fromColumn);
 
 describe('inner sidebar', () => {
   it('a group: its own head row on top (no spacer above it), then Topics, then Agents with only my agents that live there (#2599: created there, not members) and a plain count', async () => {
@@ -253,18 +273,18 @@ describe('inner sidebar', () => {
     expect(head().dataset.active).toBeUndefined();
     // No unread number on the head row: the group's row in the list carries it (proposal v1 state0).
     expect(host.querySelector('[data-inner-head="group"] [aria-label^="sidebar.unreadCount"]')).toBeNull();
-    openSession('mine-in-group');
+    openSession('mine-in-group', true);
     await render();
     expect(head().getAttribute('aria-current')).toBeNull();
     // From one of its agents: back to the main chat, and only that (owner 11-14: the title is the way home, not the info).
     await act(async () => head().click());
-    expect(state.openChatOnScreen).toHaveBeenCalledWith('group', false);
+    expect(state.navigateToGroupRoot).toHaveBeenCalledWith('group');
     // With the info shown, the same click still only shows the chat.
     openChat('group');
     state.infoShown = true;
     await render();
     await act(async () => head().click());
-    expect(state.openChatOnScreen).toHaveBeenCalledTimes(2);
+    expect(state.navigateToGroupRoot).toHaveBeenCalledTimes(2);
     expect(state.openInfoTab).not.toHaveBeenCalled();
     expect(state.closeInfoTab).not.toHaveBeenCalled();
     state.infoShown = false;
@@ -282,7 +302,7 @@ describe('inner sidebar', () => {
     await render();
     await pickNewAgent('shop-chat');
     expect(state.prepareProjectTask).toHaveBeenCalledWith('p-shop');
-    expect(state.openChatOnScreen).toHaveBeenLastCalledWith('shop-chat', false);
+    expect(state.navigateToGroupRoot).toHaveBeenLastCalledWith('shop-chat');
   });
 
   it('All › (the only way to every topic: no 「All N topics」 row under them) keeps what sits above Topics and hides what sits below; ‹ Back brings it back', async () => {
@@ -341,13 +361,13 @@ describe('inner sidebar', () => {
     expect(sessionRows()).toEqual(Array.from({ length: 10 }, (_, index) => `idle-${index}`));
     expect(moreRows()).toEqual(['sidebar.showMore:3']);
 
-    openSession('idle-11');
+    openSession('idle-11', true);
     await render();
     expect(sessionRows()).toEqual([...Array.from({ length: 10 }, (_, index) => `idle-${index}`), 'idle-11']);
     expect(moreRows()).toEqual(['sidebar.showMore:2']);
     expect(sidebarStore.expandSessions).not.toHaveBeenCalled();
 
-    openSession('fork');
+    openSession('fork', true);
     await render();
     expect(sessionRows()).toContain('parent');
     expect(moreRows()).toEqual(['sidebar.showMore:2']);
@@ -431,7 +451,7 @@ describe('inner sidebar', () => {
     openChat('group');
     await render();
     expect(shellColumnChat).toBe('group');
-    openSession('mine-in-group');
+    openSession('mine-in-group', true);
     await render();
     expect(host.querySelector('[data-inner-sidebar-chat="group"]')).not.toBeNull();
     // The list keeps the group's row selected while one of its agents is open.
@@ -445,6 +465,44 @@ describe('inner sidebar', () => {
     await render();
     expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
     act(() => shell.unmount());
+  });
+
+  it('back to a project after another group: its agent screen comes back with the project, lit and with its fold button; contacts in between change nothing', async () => {
+    const restore = document.body.appendChild(document.createElement('div'));
+    const restoreRoot = createRoot(restore);
+    await act(async () => restoreRoot.render(<InnerSidebarRestore />));
+    const project = { kind: 'project', chatId: 'shop-chat' };
+    const foldButton = () => restore.querySelector('button[aria-label="sidebar.expandInner"]');
+    // In the project, one of its agents opened from the column, the column folded.
+    openProject('p-shop');
+    await render();
+    openSession('shop-task', true);
+    act(() => setInnerSidebarFolded(true));
+    await render();
+    expect(innerSidebarChat.get()).toEqual(project);
+    expect(foldButton()).not.toBeNull();
+    // Contacts and back (the screen stays as it was): unchanged.
+    go('contacts', {});
+    await render();
+    openSession('shop-task');
+    await render();
+    expect(innerSidebarChat.get()).toEqual(project);
+    expect(foldButton()).not.toBeNull();
+    // Another group, then the project again: its agent screen comes back (#2709) …
+    openChat('group');
+    await render();
+    openProject('p-shop');
+    expect(screenLayout.focusedSession?.sessionId, 'the agent screen parked under the project comes back').toBe('shop-task');
+    openSession('shop-task');
+    await render();
+    // … and with it the project: its row stays lit, the fold button is there, the column unfolds onto it.
+    expect(innerSidebarChat.get()).toEqual(project);
+    expect(foldButton()).not.toBeNull();
+    act(() => setInnerSidebarFolded(false));
+    await render();
+    expect(host.querySelector('[data-inner-sidebar-chat="shop-chat"]')).not.toBeNull();
+    act(() => restoreRoot.unmount());
+    restore.remove();
   });
 
   it('publishes my agents per project group and per group for the row badge: only those living there', async () => {
@@ -521,12 +579,12 @@ describe('a standalone agent with sub-agents', () => {
   it('a sub-agent opened from it keeps the column and the agent lit in the list; the head goes back to the agent; anything else closes it', async () => {
     openSession('solo-task');
     await render();
-    openSession('sub-busy');
+    openSession('sub-busy', true);
     await render();
     expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
     expect(innerSidebarChat.get()).toEqual(solo);
     expect(head()!.getAttribute('aria-current')).toBeNull();
-    openSession('grandchild');
+    openSession('grandchild', true);
     await render();
     expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
     await act(async () => head()!.click());
@@ -573,7 +631,7 @@ describe('a standalone agent with sub-agents', () => {
     listRows({ 'agent-solo': soloRow });
     await render();
     expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
-    openSession('sub-busy');
+    openSession('sub-busy', true);
     await render();
     listRows({});
     await render();
@@ -593,7 +651,7 @@ describe('a standalone agent with sub-agents', () => {
     state.openChatOnScreen.mockImplementation((chatId: string) => runInAction(() => state.live.navigate('chat', { chatId })));
     openSession('solo-task');
     await render();
-    openSession('sub-busy');
+    openSession('sub-busy', true);
     await render();
     await act(async () => head()!.click());
     await render();
@@ -621,7 +679,7 @@ describe('a standalone agent with sub-agents', () => {
     await render();
     const reads = state.placementReads;
     for (const session of ['sub-busy', 'grandchild', 'sub-asks', 'solo-task']) {
-      openSession(session);
+      openSession(session, true);
       await render();
     }
     expect(state.placementReads).toBe(reads);

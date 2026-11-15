@@ -1,4 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
+import { queryClient } from '@/lib/readModel';
 import { createRoot, type Root } from 'react-dom/client';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -7,7 +8,7 @@ import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { AssistantEngineChoice } from '@/components/assistant/AssistantEngineChoice';
 import type { AssistantEngine } from '@/lib/assistantHomeIpc';
 import { DEFAULT_ASSISTANT_LOOK } from '@/components/agentAvatar/look';
-import { subscriptionKey } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { connectionAvailability } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { setLocalePreference } from '@/i18n';
 import '@/i18n/registerAssistantCatalog';
@@ -77,7 +78,8 @@ beforeEach(() => {
   setLocalePreference('en-US');
   f.states = { claude: 'authenticated', codex: 'authenticated' }; f.hold = null; f.missingProgram = false; f.saved = false; f.selected = '';
   f.continued.mockClear(); f.back.mockClear();
-  client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  // The connection readings are read models: they live in the one client (lib/readModel), cleared after each case.
+  client = queryClient;
   host = document.createElement('div'); host.className = 'gugu-skin emlight'; host.style.cssText = 'height:100vh';
   document.body.append(host); root = createRoot(host);
 });
@@ -101,7 +103,7 @@ function boxes() {
   return ['engine-frame', 'assistant-engine-claude', 'assistant-engine-codex', 'assistant-engine-continue']
     .map(id => rect(page.getByTestId(id).element()));
 }
-async function refresh(id: string) { await client.invalidateQueries({ queryKey: [...subscriptionKey(null, id), 'availability'] }); }
+async function refresh(id: string) { await connectionAvailability.refresh(null, id); }
 
 it.each([1440, 390])('keeps both 74px cards, the frame and single action fixed through every state at %ipx', async width => {
   await page.viewport(width, 900); render();

@@ -3,7 +3,7 @@ import { annotationItem } from '../../../../apps/desktop/src/components/imageAnn
 import type { ImageViewerItem } from '../../../../apps/desktop/src/lib/imageViewer'
 
 const calls = vi.hoisted(() => ({ session: vi.fn(), compose: vi.fn() }))
-vi.mock('@/lib/sessionPublication', () => ({ getRendererSession: calls.session }))
+vi.mock('@/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererSession: calls.session }))
 vi.mock('@/session/shared/extensions/app-send-core', () => ({ composeInChat: calls.compose }))
 beforeEach(() => { vi.clearAllMocks(); calls.session.mockReturnValue({ access_token: 'test-token', user: { id: 'person' } }) })
 describe('annotation origin', () => {

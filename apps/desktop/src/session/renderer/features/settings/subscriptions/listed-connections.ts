@@ -1,60 +1,18 @@
-import { useQuery } from '@tanstack/react-query'
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config'
 import type { SubscriptionPayer } from '@gugu/session-core/agents/plugins'
 import { agentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload'
-import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { resolveAccountTargets } from '../agents-page/agent-account'
-import { errorText } from './subscription-queries'
-
-export function connectionsKey(machine: string | null, providerId: string) {
-  return ['subscriptions', machine ?? 'local', providerId, 'connections']
-}
+import { connectionDetails, harnessConnections, queryView } from './subscription-queries'
+import { useReadModel } from '@/lib/readModel'
 
 /** 有连接的家:Claude / Codex(账号 + API Key),以及声明了 API Key 连接的家(#2507)。 */
-export function useSubscriptionConnections(
-  machine: string | null,
-  agent: Pick<AgentPayload, 'id' | 'capabilities'>,
-  background = false
-) {
-  const providerId = agent.id
-  return useQuery({
-    queryKey: connectionsKey(machine, providerId),
-    queryFn: async () => {
-      const result = await (
-        await getAgentConfigRuntimeClient(machine)
-      ).listConnections({ providerId })
-      if (!result.success) throw new Error(errorText(result.error))
-      return result.data
-    },
-    enabled: agentConnectionForm(agent) !== null,
-    staleTime: 30_000,
-    retry: background,
-    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30_000)
-  })
+export function useSubscriptionConnections(machine: string | null, agent: Pick<AgentPayload, 'id' | 'capabilities'>) {
+  return queryView(useReadModel(harnessConnections, agentConnectionForm(agent) !== null ? [machine, agent.id] : null))
 }
 
-/** 一个连接的登录读数与套餐。菜单里的行、菜单外的「重新登录」与「现有 CLI 配置」列不列,读的是同一份(同一把键)。 */
-export function useConnectionDetails(
-  machine: string | null,
-  providerId: string,
-  connectionId: string | undefined
-) {
-  return useQuery({
-    queryKey: [...connectionsKey(machine, providerId), connectionId],
-    queryFn: async () => {
-      const client = await getAgentConfigRuntimeClient(machine)
-      const input = { providerId, connectionId: connectionId! }
-      const [status, plan] = await Promise.all([
-        client.refreshAuthStatus(input),
-        client.readSubscription(input)
-      ])
-      if (!status.success) throw new Error(errorText(status.error))
-      return { status: status.data, plan: plan.success ? plan.data : null }
-    },
-    enabled: connectionId !== undefined,
-    staleTime: 30_000,
-    retry: false
-  })
+/** 一个连接的登录读数与套餐。菜单里的行、菜单外的「重新登录」与「现有 CLI 配置」列不列,读的是同一份。 */
+export function useConnectionDetails(machine: string | null, providerId: string, connectionId: string | undefined) {
+  return queryView(useReadModel(connectionDetails, connectionId !== undefined ? [machine, providerId, connectionId] : null))
 }
 
 export type ConnectionDetails = NonNullable<ReturnType<typeof useConnectionDetails>['data']>
@@ -87,14 +45,13 @@ const CLI_CONFIGURATION: HarnessConnection = { id: 'native', kind: 'native', nam
  */
 export function useListedConnections(
   machine: string | null,
-  agent: Pick<AgentPayload, 'id' | 'capabilities' | 'programs' | 'status'>,
-  background = false
+  agent: Pick<AgentPayload, 'id' | 'capabilities' | 'programs' | 'status'>
 ) {
   const form = agentConnectionForm(agent)
   // 账号就是它 CLI 自己那一份(OpenCode、MiMo、Kilo、Copilot、Hermes…):Claude / Codex 的多账号不算在这里。
   const cliSignIn = !form?.accounts && resolveAccountTargets(agent).length > 0
   const offered = form !== null || cliSignIn
-  const connections = useSubscriptionConnections(machine, agent, background)
+  const connections = useSubscriptionConnections(machine, agent)
   const native = useConnectionDetails(machine, agent.id, offered ? 'native' : undefined)
   const configured = nativeConfigured(native.data)
   const nativeRead = native.isSuccess || native.isError

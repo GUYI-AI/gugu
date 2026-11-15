@@ -538,6 +538,7 @@ export default {
       "separator": ", "
     },
     "notice": {
+      "migrationPlaceholder": "This message was not migrated.",
       "agentFloodGroup": "This group has many agents, so they now reply only when @-mentioned.",
       "agentFloodTopic": "This topic has many agents, so they now reply only when @-mentioned.",
       "left": "{{actor}} left the group",

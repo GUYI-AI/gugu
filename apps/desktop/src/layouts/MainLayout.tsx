@@ -6,8 +6,9 @@ import { RightPanelBackButton } from '../components/chat/RightPanel'
 import { SessionAppFrame } from '../components/appSlot/SessionAppFrame'
 import { installedExtensionsStore } from '../session/renderer/features/extensions/installed-extensions-store'
 import { ResourceMonitorHost } from '@/session/renderer/features/settings/components/resource-monitor-host'
+import { reopenGlobalSearch } from '@/session/renderer/features/global-search/search-session'
 import { reaction } from 'mobx'
-import { useCallback, useMemo, useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ComponentProps } from 'react'
 import '@/styles/desktop-shell.css'
 import '@/session/renderer/features/assistant/assistant-today.css'
 import '@/mobile/phone-shell.css'
@@ -35,7 +36,7 @@ import { navigateMobile } from '@/mobile/navigateMobile'
 import { PhoneLayer } from '@/mobile/PhoneLayer'
 import { PhoneMeButton } from '@/mobile/PhoneMeButton'
 import { PhonePartnersPage } from '@/mobile/partners/PhonePartnersPage'
-import { useReportChatOnScreen } from '@/lib/onScreenChat'
+import { useAppActive, useReportChatOnScreen } from '@/lib/onScreenChat'
 import { useLinkNavigation } from '../hooks/useLinkNavigation'
 import { readAssistantShellBridge } from '../lib/assistantShellBridge'
 import { ChatListPanel } from '../components/ChatListPanel'
@@ -106,6 +107,7 @@ import { useToast } from '../components/toastContext'
 import { askChat, askChatFile, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { openOwnedAgentResource } from '../lib/ownedAgentConversation'
 import { filePillText } from '../components/markdown/filePills'
+import { draftWithPills } from '@gugu/session-shared/markdown'
 import { APP_COMPOSE_EVENT, APP_OPEN_IN_CHAT_EVENT, APP_OPEN_WITH_EVENT, type AppComposeDetail, type AppOpenInChatDetail, type AppOpenWithDetail } from '../session/shared/extensions/app-runtime-protocol'
 import { chatSlotKey } from '../lib/shellSlots'
 import { assistantSlotKey } from '../lib/assistantShellBridge'
@@ -146,6 +148,12 @@ interface MainLayoutProps {
 const ignoreShellCommit = () => {}
 
 // ── InnerLayout ────────────────────────────────────────────────────────────────
+
+/** The chat page counts as hidden while the window is not in front: only this reads window activity, not the shell. */
+function ActiveChatArea({ hidden, ...props }: ComponentProps<typeof ChatAreaPanel>) {
+  const active = useAppActive()
+  return <ChatAreaPanel {...props} hidden={hidden || !active} />
+}
 
 function InnerLayout({
   user,
@@ -190,6 +198,8 @@ function InnerLayout({
   useBackgroundUsageSync(hasTeamAccountMarker(user) ? null : user?.id ?? null, effectsActive)
   // 手机上「我的」是推进来的一层(owner 10-26:页头左上角自己的头像进),nav / detail 两层都没有底栏;桌面走设置弹窗。
   const [settingsPane, setSettingsPane] = useState<'nav' | 'detail'>('nav')
+  // 手机上从别处直达设置的某一格(openSettingsSection):进来的是那一格,返回就退出「我的」,❌ 先落到没进过的设置首页。
+  const settingsLinkedRef = useRef(false)
   const [watchCreateRequest, setWatchCreateRequest] = useState(0)
   // 手机上非项目群输入框的「新任务」:与 watchCreateRequest 一起递进去,null = 不进群。
   const [watchTaskGroup, setWatchTaskGroup] = useState<{ chatId: string; name: string } | null>(null)
@@ -222,12 +232,16 @@ function InnerLayout({
     document.documentElement.toggleAttribute('data-phone-root', mobile)
     return () => document.documentElement.removeAttribute('data-phone-root')
   }, [mobile])
+  const activeChatIdRef = useRef(activeChatId)
+  activeChatIdRef.current = activeChatId
   // 进一条会话:桌面切到对话 tab;手机退掉推上来的层(咕咕 / 项目 / 我的),从底下的根 tab 推会话页,返回回到那个 tab。
-  const enterChat = useCallback(() => {
+  // 会话页开着时进另一条(资料卡「发消息」、消息里的群卡片、通知):压在屏上那条上面,返回先回到它;从搜索结果进的,返回回到搜索(@@@phone-chat-trail)。
+  const enterChat = useCallback((chatId: string) => {
     if (!mobile) return setActiveTab('chats')
+    const onPage = activeChatIdRef.current
     const from = shellTab.root()
     setActiveTab(from)
-    shellTab.setChatFrom(from)
+    shellTab.openChat(from, onPage !== chatId ? onPage : null)
   }, [mobile, setActiveTab, shellTab])
   const chatOpenNonce = useMobileChatOpenNonce(mobile, phoneChatShown ? 'chat' : 'list')
   const [sessionCreateOpen, setSessionCreateOpen] = useState(false)
@@ -300,7 +314,7 @@ function InnerLayout({
     const shownChatId = topic?.source_chat_id ?? chatId
     const viewportKey = openChatBlock(shownChatId, undefined, undefined, undefined, undefined, purpose)
     if (!viewportKey) {
-      enterChat()
+      enterChat(shownChatId)
       setActiveChatId(shownChatId)
     }
     if (topic) requestTopicSplit({ chatId: topic.id, name: topic.name ?? '', sourceChatId: topic.source_chat_id! })
@@ -315,7 +329,7 @@ function InnerLayout({
       openSettingsSection('apps')
     },
     openFile: async (chatId, target, source) => {
-      if (mobile || !await openOwnedAgentResource(chatId)) openChatTarget(chatId, 'resource')
+      if (!await openOwnedAgentResource(chatId)) openChatTarget(chatId, 'resource')
       await askChatFile(chatId, { itemId: target.itemId, ...(target.at ? { at: target.at } : {}), ...(source.message ? { message: source.message } : {}), ...(source.restore ? { restore: source.restore } : {}) })
     },
     openApp: (chatId, extensionId, tab) => { openChatTarget(chatId, 'resource'); askChat(chatId, { app: extensionId, ...(tab ? { tab } : {}) }) },
@@ -352,13 +366,20 @@ function InnerLayout({
   }, 'push'), [setActiveTab])
   // 手机「伙伴」(#446):推进去的页没有底栏;「消息」右上「新项目」推进它的新项目页。
   const [partnersPushed, setPartnersPushed] = useState(false)
-  const backFromPhoneChat = useCallback(() => navigateMobile(() => shellTab.setChatFrom(null), 'pop'), [shellTab])
+  // 返回:会话页上压着别的会话时回到它(@@@phone-chat-trail),否则回到会话页的来处(根 tab)。
+  const backFromPhoneChat = useCallback(() => navigateMobile(() => {
+    const under = shellTab.popChat()
+    if (under && 'chatId' in under) return setActiveChatId(under.chatId)
+    shellTab.setChatFrom(null)
+    if (under) reopenGlobalSearch()
+  }, 'pop'), [shellTab, setActiveChatId])
   const [newProjectRequest, setNewProjectRequest] = useState(0)
   const openNewProject = useCallback(() => navigateMobile(() => {
     setActiveTab('contacts')
     setNewProjectRequest((n) => n + 1)
   }, 'push'), [setActiveTab])
-  const onScreenChatId = useReportChatOnScreen(activeTab === 'chats' && !showCreateSurface && (!mobile || phoneChatShown) && !assistantOnPhone ? activeChatId : null)
+  const shownChatId = activeTab === 'chats' && !showCreateSurface && (!mobile || phoneChatShown) && !assistantOnPhone ? activeChatId : null
+  useReportChatOnScreen(shownChatId)
   // showSessionCreate already derives "closed" the instant activeTab leaves 'chats', but the underlying state must
   // reset too — otherwise switching back to chats later silently resurrects a create page the user never reopened.
   useEffect(() => {
@@ -543,6 +564,7 @@ function InnerLayout({
     }
     setSettingsSection(section)
     if (mobile) {
+      settingsLinkedRef.current = true
       navigateMobile(() => { setSettingsPane('detail'); setActiveTab('settings') }, 'push')
       return
     }
@@ -574,6 +596,7 @@ function InnerLayout({
       setSettingsSection('account')
       // 手机上「我的」整屏推进来(owner 10-26,页头左上角自己的头像);桌面仍走设置弹窗
       if (mobile) {
+        settingsLinkedRef.current = false
         navigateMobile(() => {
           setSettingsPane('nav')
           setActiveTab('settings')
@@ -640,7 +663,7 @@ function InnerLayout({
     if (openChatBlock(chatId, 'notification-open')) return
 
     setActiveChatId(chatId)
-    enterChat()
+    enterChat(chatId)
     focusComposerForUserEntry('notification-open')
   }, [enterChat, focusComposerForUserEntry, openChatBlock, setActiveChatId])
   const openNotificationRef = useRef(openNotification)
@@ -674,8 +697,6 @@ function InnerLayout({
     window.addEventListener(UI_EVENTS.createAgentInGroup, onCreateInGroup)
     return () => window.removeEventListener(UI_EVENTS.createAgentInGroup, onCreateInGroup)
   }, [setActiveTab, mobile, openChatBlock, readChats, t])
-  const activeChatIdRef = useRef(activeChatId)
-  activeChatIdRef.current = activeChatId
   useEffect(() => {
     const bringUp = (chatId: string | null, ask: (chatId: string, viewportKey?: string) => void, resource = false): boolean => {
       const addressed = readChats().chats.find((candidate) => candidate.id === chatId)
@@ -696,13 +717,13 @@ function InnerLayout({
       if (!detail) return
       // #1925 Drawn beside an App's page right now: its composer there takes the draft, nothing else comes up.
       const besideApp = appConversationSurfaceShows(detail.chatId)
+      const text = draftWithPills(detail.text, (detail.refs ?? []).map(filePillText).join('\n'))
       if (!besideApp && openOwnedAgent(detail.chatId, undefined, {
-        text: [detail.text, ...(detail.refs ?? []).map(filePillText)].filter(Boolean).join('\n'),
+        text,
         files: detail.images?.map(image => new File([image.bytes], image.name, { type: image.type })), append: true,
       })) { setDraftQuote(detail.chatId, null); return }
       const placed = (chatId: string) => {
         if (detail.whisperTo) setDraftWhisper(chatId, detail.whisperTo)
-        const text = [detail.text, ...(detail.refs ?? []).map(filePillText)].filter(Boolean).join('\n')
         if (text) writeDraft(chatId, { at: 'end', text })
         if (detail.images?.length) {
           const images = detail.images.map((image) => ({
@@ -775,7 +796,7 @@ function InnerLayout({
       }
 
       setActiveChatId(existing.id)
-      enterChat()
+      enterChat(existing.id)
       focusComposerForUserEntry('profile-chat')
       void refreshChats()
       return
@@ -801,7 +822,7 @@ function InnerLayout({
         return
       }
       setActiveChatId(chatId)
-      enterChat()
+      enterChat(chatId)
       focusComposerForUserEntry('profile-chat')
       void refreshChats()
     } catch (err) {
@@ -832,7 +853,7 @@ function InnerLayout({
   const handleReturnToGroup = (chatId: string) => {
     if (openChatBlock(chatId, 'group-chat')) return
     setActiveChatId(chatId)
-    enterChat()
+    enterChat(chatId)
     focusComposerForUserEntry('group-chat')
   }
 
@@ -844,7 +865,7 @@ function InnerLayout({
       return
     }
     setActiveChatId(group.id)
-    enterChat()
+    enterChat(group.id)
     focusComposerForUserEntry('group-chat')
     void refreshChats()
   }
@@ -1091,11 +1112,11 @@ function InnerLayout({
                     {/* 创建面打开时聊天区只隐藏不卸载(同 #6158 的常驻面):从前条件卸载,关掉创建面回来 = 整个面板重挂,
                         消息列表、滚动位置、分栏、群协作状态全部重来一遍,就是那一下白闪。 */}
                     <div className="flex min-h-0 min-w-0 flex-[1_1_auto]" style={showCreateSurface || assistantOnPhone ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
-                      <ChatAreaPanel
+                      <ActiveChatArea
                         imPage
                         chatId={activeChatId}
                         navigationTarget={unreadNavigationTarget === 'chat'}
-                        hidden={showCreateSurface || onScreenChatId !== activeChatId}
+                        hidden={showCreateSurface || shownChatId !== activeChatId}
                         mobile={mobile}
                         openNonce={chatOpenNonce}
                         onBack={mobile ? pressBack : undefined}
@@ -1191,7 +1212,10 @@ function InnerLayout({
                 section={settingsSection}
                 onSectionChange={setSettingsSection}
                 pane={settingsPane}
-                onPaneChange={(next) => navigateMobile(() => setSettingsPane(next), next === 'nav' ? 'pop' : 'push')}
+                onPaneChange={(next) => {
+                  if (next === 'nav' && settingsLinkedRef.current) { settingsLinkedRef.current = false; return exitPhoneLayer() }
+                  navigateMobile(() => setSettingsPane(next), next === 'nav' ? 'pop' : 'push')
+                }}
                 onClose={exitPhoneLayer}
               />
             </PhoneLayer>
@@ -1294,12 +1318,13 @@ function InnerLayout({
         <AssistantShellHost />
       )}
       {/* gugu-dev#181 项目块、对话块里的对话:会话页留格子(lib/shellSlots.ts 的 chat:<id>),这里画进去。 */}
+      {(mobile || sessionHostAvailable) && <OwnedAgentResourcesHost ownerId={user.id} mobile={mobile} />}
       {!mobile && sessionHostAvailable && (
-        <><OwnedAgentResourcesHost ownerId={user.id} /><ChatSlotHost
+        <ChatSlotHost
           onOpenUserChat={slotOpenProfileChat}
          
           onOpenSessionpageAgentFile={handleOpenSessionpageAgentFile}
-        /></>
+        />
       )}
       {!mobile && sessionHostAvailable && <OfflineSessionSlotHost />}
       {/* #1925 An App's main page beside its bound conversation: the session page leaves the column, the native conversation is drawn here. */}

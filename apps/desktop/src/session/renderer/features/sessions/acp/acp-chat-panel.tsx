@@ -7,7 +7,6 @@ import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { isTranscriptDelivery } from '@/lib/pendingSessionDeliveries';
-import { resolveDeliveredAttachment } from '@renderer/lib/chat/delivered-message-presentation';
 import { readNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
 import { useSessionInputAccount } from '@/lib/sessionInputOutboxBridge';
 import { appendToDraft } from '@/store/chatContext';
@@ -101,7 +100,7 @@ import type { SessionCondition as ChatSessionCondition } from '@gugu/session-cha
 type PanelCondition = Omit<ChatSessionCondition, 'actions'> & {
   actions?: readonly { label: string; pending?: boolean; run: (anchor?: HTMLElement) => void }[];
 };
-import { rpc, rpcOn } from '@renderer/lib/ipc';
+import { rpc } from '@renderer/lib/ipc';
 import { nudgeWorkspace } from '@renderer/features/sessions/stores/workspace-nudges';
 import { machineLabel } from '@renderer/lib/machine-clients';
 import { machineRegistry } from '@renderer/lib/machine-routing';
@@ -112,6 +111,7 @@ import { resolveSignInTarget } from '@renderer/features/settings/agents-page/age
 import { pushTaskDirectory, taskAttachmentUsesSsh } from '@/lib/taskAttachmentTarget';
 import { droppedDirectoryMention, pathMention } from '@renderer/lib/drag-files';
 import { pathAttachmentTarget } from '@gugu/session-chat-ui/markdown-attachment-mentions';
+import { resolveAttachmentDataUrl } from './acp-attachment-image';
 import { readMermaidTheme } from '@gugu/session-chat-ui/mermaid';
 import { SessionScheduleChip } from '../session-schedule-chip';
 import { sessionComposerFrameLiftClassName, sessionComposerTrayClassName, sessionComposerTrayStyle } from '../session-composer-styles';
@@ -141,7 +141,6 @@ import {
   sessionPermissionModeOptions,
   selectedPermissionModeId,
 } from './permission-mode-options';
-import { resolveVisualEvidenceAttachmentDataUrl } from './acp-chat-resource-manager';
 import { useOpenedOutputMenu } from './opened-output-menu';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
 import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
@@ -208,7 +207,6 @@ import { getDraggedScreenContent } from '@renderer/lib/drag-screen-content';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const attachmentDataUrlCache = new Map<string, Promise<string | null>>();
 /** `/mcp` 这条自有命令的匹配 —— 与 agent 命令同一口径:空查询全列,否则按名字包含。 */
 function commandMatchesClientQuery(normalized: string): boolean {
   return normalized.length === 0 || 'mcp'.includes(normalized);
@@ -246,52 +244,6 @@ function issueMatchesQuery(issue: LinkedIssue, query: string): boolean {
     .some((value) => value.toLowerCase().includes(normalized));
 }
 
-function resolveAttachmentDataUrl(store: AcpChatStore, id: string): Promise<string | null> {
-  if (id.startsWith('gugu-message-file://')) return resolveDeliveredAttachment(id);
-  const fixtureDataUrl = resolveVisualEvidenceAttachmentDataUrl(store, id);
-  if (fixtureDataUrl) return Promise.resolve(fixtureDataUrl);
-  // 旧消息正文里那条绝对路径投影出来的附件(#5269):字节在盘上,不在 agent 的附件仓里 —— 照那条路径读。
-  const path = pathAttachmentTarget(id);
-  if (path) {
-    const cachedPath = attachmentDataUrlCache.get(id);
-    if (cachedPath) return cachedPath;
-    // 字节在会话所在的那台机器上(别的机器上的会话 = 问那台机器)。
-    const promise = rpcOn(machineRegistry.machineOf(store.projectId)).app.readUserImageDataUrl(path)
-      .then((result) => (result.success ? result.dataUrl : null))
-      .catch((error: unknown) => {
-        // 读不到就退回中性占位块(旧消息里那些指着临时目录的路径就是这种)——❌ 不弹错。
-        log.warn('Failed to read attachment image', { path, error });
-        return null;
-      });
-    attachmentDataUrlCache.set(id, promise);
-    return promise;
-  }
-  if (!store.session) return Promise.resolve(null);
-  const cached = attachmentDataUrlCache.get(id);
-  if (cached) return cached;
-  const promise = store.session
-    .downloadAttachment(id)
-    .then((result) => {
-      if (!result.success) return null;
-      return `data:${result.data.ref.mimeType};base64,${bytesToBase64(result.data.data)}`;
-    })
-    .catch((error: unknown) => {
-      log.warn('Failed to resolve ACP attachment', { id, error });
-      return null;
-    });
-  attachmentDataUrlCache.set(id, promise);
-  return promise;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
-}
-
 // ── Composer for a single store ────────────────────────────────────────────────
 //
 // Keyed by conversationId in the parent so that drafts, focus, and editor state
@@ -320,7 +272,7 @@ const ComposerForStore = observer(function ComposerForStore({
   /** Keep a newly sent prompt or stop result visible in the transcript. */
   onScrollToBottom?: () => void;
 }) {
-  const { translate } = useSessionMessages();
+  const { locale, translate } = useSessionMessages();
   const life = sessionLifeView(store.runtimeSessionId);
   // 这个任务给自己排的定时:有就在输入框上沿挂一条托盘放那颗芯片,输入框往上压住它的下沿(与芯片读同一份缓存)。
   const scheduleMachine = machineRegistry.machineOf(store.projectId);
@@ -402,7 +354,7 @@ const ComposerForStore = observer(function ComposerForStore({
         fileUploads.keepOnly(new Set(retained.map(item => item.id)));
         setAttachments(retained);
         prepareAnnotationImages(annotated, fileUploads);
-        await sendComposerInput(annotationPrompt(value, annotated), {
+        await sendComposerInput(annotationPrompt(value, annotated, locale), {
           started: onScrollToBottom, unsettled: () => fileUploads.unsettled(),
           waitForUploads: async () => { await fileUploads.waitForUploads(); },
           hasFailedAttachments: () => attachmentsRef.current.some(att => att.state === 'error'),
@@ -421,7 +373,7 @@ const ComposerForStore = observer(function ComposerForStore({
         sendingRef.current = false;
       }
     },
-    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments, annotationDraft]
+    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments, annotationDraft, locale]
   );
 
   const handleSubmit = useCallback(
@@ -2159,7 +2111,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           if (!path || !store) return;
           // ⚠️ 走 `onOpenExternal`,❌ 不是 `onOpenFile`:后者先要一个**工作区**
           // (`workspaceRegistry.get` 空就静默 return),而「未选择项目」建出来的任务根本没有
-          // ——附件不是工作区文件,它自己就带着一条绝对路径(#5269)。
+          // ——`path:` 附件不是工作区文件,它自己就带着一条绝对路径。
           makeFileLinkHandlers(store.projectId, store.sessionId, { beside: true }).onOpenExternal(path);
           return;
         }

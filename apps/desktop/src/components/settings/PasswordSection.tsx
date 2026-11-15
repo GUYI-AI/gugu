@@ -65,12 +65,14 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
     setBusy(true)
     try { return await invoke(command) } catch { setError(errorText('')); return undefined } finally { setBusy(false) }
   }, [invoke])
+  // @@@effect-flow - the local password vault answers and pushes its own state; it is never kept outside the vault
   useEffect(() => {
     if (!PASSWORD_BETA_ENABLED) return
     void invoke({ type: 'snapshot' })
     return window.passwordVaultBeta?.subscribe(() => { void invoke({ type: 'snapshot' }) })
   }, [invoke])
   // 「去填写」 from an Agent's request in chat: open the same add/edit form, pre-filled with what the Agent proposed.
+  // @@@effect-flow - opening the form an Agent's save request asks for, once per request.
   useEffect(() => {
     if (!PASSWORD_BETA_ENABLED) return
     const open = () => {

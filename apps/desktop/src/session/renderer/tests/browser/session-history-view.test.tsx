@@ -19,7 +19,7 @@ import { isMacHost } from '@shared/host-os';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
 
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: {} }) }));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } });
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),

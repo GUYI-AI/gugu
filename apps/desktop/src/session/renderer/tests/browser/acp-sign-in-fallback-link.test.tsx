@@ -24,9 +24,7 @@ const mocks = vi.hoisted(() => ({
   openExternal: vi.fn(async () => undefined),
 }));
 
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({
-  useAppSettingsKey: () => ({ value: undefined }),
-}));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } });
 // 这一家只声明了一种登录方法:不出「选哪种」那一屏,直接进协议登录。
 vi.mock('@renderer/lib/stores/use-agents', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@renderer/lib/stores/use-agents')>()),

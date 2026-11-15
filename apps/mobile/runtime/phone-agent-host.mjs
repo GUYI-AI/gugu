@@ -698,7 +698,8 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
       // This successful probe can restore heartbeat health; the other startup/auth/RPC gates
       // still have to be true before the device advertises a task runtime.
       const available = startupComplete && authenticated && rpcConnected
-      const { error } = await cloud.identity.from('gugu_devices').upsert({ ...row, status: 'online', last_seen_at: now, updated_at: now, capabilities: { ...row.capabilities, runtimes: available ? ['pi'] : [], host_runtime_capability: available ? 1 : 0, host_kind: 'phone', remote_protocol: REMOTE_PROTOCOL_VERSION, min_client_protocol: MIN_CLIENT_PROTOCOL } }, { onConflict: 'device_id' })
+      // This host's version is known even while startup/auth/RPC readiness is pending.
+      const { error } = await cloud.identity.from('gugu_devices').upsert({ ...row, status: 'online', last_seen_at: now, updated_at: now, capabilities: { ...row.capabilities, runtimes: available ? ['pi'] : [], host_runtime_capability: 1, host_kind: 'phone', remote_protocol: REMOTE_PROTOCOL_VERSION, min_client_protocol: MIN_CLIENT_PROTOCOL } }, { onConflict: 'device_id' })
       if (error) throw new Error(error.message)
       if (stopped || signingOut) return
       if (available && store.state.preparationBackoff) {
@@ -724,7 +725,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     if (!data) return
     if (data.capabilities?.host_kind !== 'phone') throw new Error('手机设备登记信息与当前宿主不一致')
     // Stopping task execution does not stop the phone's independently enabled action endpoint.
-    const updated = await cloud.identity.from('gugu_devices').update({ capabilities: { ...data.capabilities, runtimes: [], host_runtime_capability: 0 }, updated_at: new Date().toISOString() }).eq('device_id', deviceId).eq('user_id', ownerId)
+    const updated = await cloud.identity.from('gugu_devices').update({ capabilities: { ...data.capabilities, runtimes: [] }, updated_at: new Date().toISOString() }).eq('device_id', deviceId).eq('user_id', ownerId)
     if (updated.error) throw new Error(updated.error.message)
   }
 

@@ -132,7 +132,8 @@ vi.mock('@renderer/lib/hooks/use-toast', () => ({
 }));
 
 // 归档命令走 archive-session-flow(与侧栏那一行、会话页 ⋯ 菜单同一条),它读设置、发文案、打日志。
-vi.mock('@renderer/features/settings/app-settings-client', () => ({
+vi.mock('@renderer/features/settings/app-settings-client', async (original) => ({
+  ...await original<object>(),
   getAppSettingValueSnapshot: mocks.getAppSettingValueSnapshot,
   setAppSettingsValueInCache: vi.fn(),
   updateAppSettingsRequest: vi.fn(() => Promise.resolve()),

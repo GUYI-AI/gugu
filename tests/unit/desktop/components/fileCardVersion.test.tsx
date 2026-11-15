@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
 import { MediaAttachmentBubble } from '../../../../apps/desktop/src/components/chat/MediaAttachmentBubble'
 import * as attachmentReader from '../../../../apps/desktop/src/lib/attachmentBytes'
-import { attachmentQueryClient } from '../../../../apps/desktop/src/lib/attachmentQueryClient'
+import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/readModel'
 import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { createNode, createReactHarness } from '../../../support/testHarness'
 

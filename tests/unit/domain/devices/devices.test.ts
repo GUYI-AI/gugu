@@ -7,10 +7,25 @@ import {
   isDeviceHasAgentsError,
   adoptDeviceName,
   isDerivedDeviceLabel,
+  isAgentHostDevice,
   type DeviceLabelClient,
 } from '@gugu/core/cloud/devices'
 
 describe('device cloud helpers', () => {
+  it.each([
+    [1, [], false],
+    [null, [], false],
+    [0, ['pi'], false],
+    [1, ['pi'], true],
+  ] as const)('keeps phone dispatch gated by capability %s and runtimes %j', (capability, runtimes, expected) => {
+    const device = normalizeDeviceRow({
+      device_id: 'phone-1', label: 'Phone', hostname: 'phone', platform: 'ios', status: 'online',
+      last_seen_at: '2026-11-15T00:00:00Z',
+      capabilities: { host_kind: 'phone', terminals: [], runtimes, host_runtime_capability: capability },
+    })
+    expect(isAgentHostDevice(device)).toBe(expected)
+  })
+
   it('normalizes device rows and reads online state straight off the row', () => {
     expect(
       normalizeDeviceRow(

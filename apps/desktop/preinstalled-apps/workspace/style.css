@@ -125,6 +125,7 @@ img.details-picture { object-fit: contain; }
 .details-facts dd { margin: 0; overflow-wrap: anywhere; }
 .details-sub { margin: var(--em-spacing-xs) 0 0; font-size: var(--em-font-caption); color: var(--em-foreground-muted); }
 .details-versions { margin: 0; padding-inline-start: 0; list-style: none; font-size: var(--em-font-caption); }
+.details-versions li[data-expired] { opacity: .6; }
 
 /* Wide (an expanded tab): the rows line up as a table, and the details sit beside the list. */
 .files { container-type: inline-size; }

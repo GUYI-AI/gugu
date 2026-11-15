@@ -1,14 +1,21 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { notifyManager as readModelNotify } from '@tanstack/react-query'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
 import { createReactHarness } from '../../../support/testHarness'
 import { DEFAULT_FILE_STORAGE, type FileStorage } from '../../../../packages/core/src/shared/fileStorage'
 import { FileStorageSection } from '../../../../apps/desktop/src/components/settings/FileStorageSection'
 
 const f = vi.hoisted(() => ({ stored: {} as Record<string, unknown>, write: vi.fn(), projects: vi.fn() }))
+// The page reads file storage from the account's own settings row (lib/ownSettings); a write puts the saved row back.
+vi.mock('@gugu/core/cloud/userSettings', async (original) => ({ ...await original<object>(), readUserSettingsConfig: async () => ({ file_storage: f.stored }) }))
 vi.mock('../../../../apps/desktop/src/lib/fileStorage', () => ({
-  readFileStorage: async () => f.stored,
-  writeFileStorage: async (_user: string, change: Partial<FileStorage>) => { f.write(change); f.stored = { ...f.stored, ...change }; return f.stored },
+  writeFileStorage: async (_user: string, change: Partial<FileStorage>) => {
+    f.write(change); f.stored = { ...f.stored, ...change }
+    ;(await import('../../../../apps/desktop/src/lib/ownSettings')).ownSettings.set(['user'], { file_storage: f.stored })
+    return f.stored
+  },
 }))
 vi.mock('../../../../apps/desktop/src/components/settings/FileStorageDashboard', () => ({ FileStorageDashboard: () => null }))
 vi.mock('../../../../apps/desktop/src/lib/deviceProjects', () => ({ listMyDeviceProjects: f.projects }))
@@ -18,7 +25,7 @@ vi.mock('react-i18next', async (importOriginal) => ({ ...await importOriginal<ob
 
 describe('the one 「文件存储与读取」: other files are one choice', () => {
   let harness: ReturnType<typeof createReactHarness>
-  beforeEach(() => {
+  beforeEach(() => { readModelNotify.setScheduler((callback) => { callback() }); queryClient.clear(); followRendererSession('SIGNED_IN', 'owner');
     harness = createReactHarness(); vi.clearAllMocks(); f.stored = { ...DEFAULT_FILE_STORAGE }
     f.projects.mockResolvedValue({ mac: [{ localProjectId: 'p', chatId: 'group' }] })
   })

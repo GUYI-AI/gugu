@@ -1,7 +1,6 @@
 import { SettingsGroup, SettingsRow } from '@/components/settings/SettingsPrimitives';
 import React from 'react';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
-import { DEFAULT_CHAT_VIEW } from '@renderer/lib/chat/use-session-chat-layout';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
 /**
@@ -39,16 +38,10 @@ const DoublePreview: React.FC = () => (
 
 const ChatViewCard: React.FC<Props> = ({ disabled }) => {
   const { translate } = useSessionMessages();
-  const {
-    value: interfaceSettings,
-    update,
-    isLoading: loading,
-    isSaving: saving,
-  } = useAppSettingsKey('interface');
-  // 兜底走同一个常量，不写字面量 —— 见 DEFAULT_CHAT_VIEW 的注释（#4981 D10）：
-  // 这张卡片高亮哪一档，必须和 transcript 那一刻真正渲染的档一致。
-  const chatView: ChatView = interfaceSettings?.chatView ?? DEFAULT_CHAT_VIEW;
-  const busy = disabled || loading || saving;
+  const { settings, update, isSaving: saving } = useAppSettingsKey('interface');
+  // 读到之前两档都不高亮,❌ 先亮默认档再跳。
+  const chatView: ChatView | null = settings.state === 'value' ? settings.value.value.chatView : null;
+  const busy = disabled || chatView === null || saving;
 
   const choose = (next: ChatView) => {
     if (chatView !== next) update({ chatView: next });

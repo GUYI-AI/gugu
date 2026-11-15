@@ -10,8 +10,9 @@ export function conversationSpeaker(item: ChatMessage): string | undefined {
   return delivery ? delivery.segments.at(-1)?.facts?.fromId ?? undefined : item.role === 'user' ? '$owner' : undefined;
 }
 
-export function lastConversationMessage(units: readonly RenderUnit[]): ChatMessage | undefined {
-  for (let i = units.length - 1; i >= 0; i--) {
+/** The last message a reader would take as the previous speaker, among `units` before `end`. */
+export function lastConversationMessage(units: readonly RenderUnit[], end = units.length): ChatMessage | undefined {
+  for (let i = end - 1; i >= 0; i--) {
     const item = units[i]?.data as ChatMessage;
     if (units[i]?.kind === 'message' && item.conversationPart !== 'head' && !item.conversationNarration
       && !item.hookNotice && !item.questionAnswer && (item.role === 'user' || item.role === 'assistant')) return item;
@@ -24,6 +25,23 @@ export function messageReplyReference(item: ChatMessage): ChatMessage['conversat
   const delivered = item.guguDelivery ?? readDeliveryEnvelope(item.text);
   const quotedInput = item.role === 'user' && parseMessageQuoteLink(item.conversationReply.itemId);
   return item.sentReplyTo || item.sentTo || item.sentChat || delivered || quotedInput ? item.conversationReply : null;
+}
+
+const speaker = (key: string | undefined, selfUserId: string | undefined) => key === '$owner' && selfUserId ? `user:${selfUserId}` : key;
+/** `previousSpeaker` is the one `decorateConversationDensity` stamps; flatten asks before that stamp, so it passes it in. */
+export function conversationShowsName(item: ChatMessage, previousSpeaker: string | undefined, selfUserId: string | undefined): boolean {
+  // What the reader typed here is theirs without saying so; a delivered message keeps its sender (owner 2026-11-07).
+  if (conversationSpeaker(item) === '$owner') return false;
+  const current = speaker(conversationSpeaker(item), selfUserId), previous = speaker(previousSpeaker, selfUserId);
+  return !current || !previous || current !== previous;
+}
+
+/**
+ * The quote moves to the footer when the header has neither a name nor a process row to sit beside. Measure and paint
+ * (through `conversationHeaderLayout`) and flatten (the gap below this message) all ask here.
+ */
+export function conversationReferenceInFooter(item: ChatMessage, namePainted: boolean): boolean {
+  return Boolean(messageReplyReference(item)) && !namePainted && !(item.role === 'assistant' && item.conversationProcess);
 }
 
 export function decorateConversationDensity(units: RenderUnit[], previous?: ChatMessage): RenderUnit[] {
