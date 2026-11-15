@@ -13,7 +13,9 @@ const TEXT = 'A bubble long enough to wrap onto more lines when its column gets 
 // The shape MessageList + MessageBubble give a row: the avatar slot beside the message column, which holds the bubble.
 // A laid-out row's message column is content-visibility:auto (tokens.css); the avatar slot is outside it.
 // groupSize rows per group; the last row of each group is its tail, with the avatar layer.
-function Scene({ rows, groupSize = 2 }: { rows: number; groupSize?: number }) {
+// codeBlockRow: that row's bubble also holds what streamdown renders for a fenced code block (content-visibility:auto inline),
+// below a tall paragraph, so the bubble is in view while the code block is not.
+function Scene({ rows, groupSize = 2, codeBlockRow }: { rows: number; groupSize?: number; codeBlockRow?: number }) {
   const [width, setState] = useState(500)
   setWidth = setState
   return <div data-scroller="" style={{ height: 300, width, overflowY: 'auto' }}>
@@ -21,7 +23,10 @@ function Scene({ rows, groupSize = 2 }: { rows: number; groupSize?: number }) {
       <div key={index} data-row={index} role="listitem" data-laid-out="" className="gg-msg-row">
         <div style={{ display: 'flex' }}>
           <GroupAvatarSlot wide={false} groupedWithPrev={index % groupSize !== 0} groupedWithNext={index % groupSize !== groupSize - 1}><button>Avatar</button></GroupAvatarSlot>
-          <div data-message-bubble-column="" style={{ flex: 1, minWidth: 0 }}><div data-message-bubble-row="">{TEXT}</div></div>
+          <div data-message-bubble-column="" style={{ flex: 1, minWidth: 0 }}><div data-message-bubble-row="">{TEXT}{index === codeBlockRow && <>
+            <div style={{ height: 4000 }} />
+            <div data-streamdown="code-block" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 200px' }}><pre data-code="">{'const x = 1\n'.repeat(8)}</pre></div>
+          </>}</div></div>
         </div>
       </div>)}</div>
   </div>
@@ -90,4 +95,16 @@ it('paints a group avatar at the bottom of the view while its tail is below it, 
   expect(avatar.bottom).toBeGreaterThan(view.bottom - 40)
   // Painted there: the hit test lands on this group's avatar, not on what is under it.
   expect(document.elementFromPoint(avatar.left + avatar.width / 2, avatar.top + avatar.height / 2)).toBe(row(19).querySelector('button'))
+})
+
+it('keeps measuring a shown row when content inside its bubble is skipped', async () => {
+  // One row per group, so a row taken for skipped parks its own group's measure.
+  await act(async () => root.render(<Scene rows={3} groupSize={1} codeBlockRow={0} />))
+  // Row 0's column is in view; the code block 4000 px down its bubble is not, and is skipped.
+  await until('code block skipped', () => !row(0).querySelector('[data-code]')!.checkVisibility({ contentVisibilityAuto: true }))
+  await frames(3)
+  await act(async () => setWidth(320))
+  await frames(3)
+  // The paragraph wraps onto more lines, so the bubble grew; the layer follows it.
+  expect(Number.parseFloat(layer(0).style.height)).toBeCloseTo(bubble(0).height, 0)
 })

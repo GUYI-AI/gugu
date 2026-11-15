@@ -53,8 +53,10 @@ function unparkAvatarMeasure(measure: AvatarMeasure) {
 function watchRowSkips(list: Element) {
   if (skipWatchedLists.has(list)) return
   skipWatchedLists.add(list)
-  // The event does not bubble; a capture listener on the list sees every message column's.
+  // The event does not bubble; a capture listener on the list sees every message column's. Only the column's own state counts:
+  // content inside a bubble can be content-visibility:auto too (streamdown's code block), and its skip says nothing about the row.
   list.addEventListener('contentvisibilityautostatechange', (event) => {
+    if (!(event.target as Element).matches('[data-message-bubble-column]')) return
     const row = (event.target as Element).closest('[role="listitem"]')
     if (!row) return
     if ((event as Event & { skipped?: boolean }).skipped) { skippedRows.add(row); return }
