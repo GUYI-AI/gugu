@@ -207,8 +207,7 @@ const PaneCell = observer(function PaneCell({
 
 /** 一格此刻画出来多大:主窗里,或单独成窗的那扇窗里(格子 id 全局不重)。量不到(没画出来)= null。 */
 function paneCellSize(paneId: string): { width: number; height: number } | null {
-  const documents = [document, ...[...auxWindows.windows.values()].flatMap((w) => (w.handle && !w.handle.closed ? [w.handle.document] : []))];
-  for (const doc of documents) {
+  for (const doc of auxWindows.documents()) {
     const rect = doc.querySelector(`[data-pane-cell="${CSS.escape(paneId)}"]`)?.getBoundingClientRect();
     if (rect && rect.width > 0) return { width: rect.width, height: rect.height };
   }

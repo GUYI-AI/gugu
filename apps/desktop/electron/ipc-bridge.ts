@@ -13,6 +13,7 @@ import {
   EXTENSION_EXPORT_VOICE_NOTE_METHOD,
   INSTALL_CONSENT_HUMAN_WINDOW_MS,
 } from '../src/session/shared/extensions/host-actions'
+import { rendererDrawingId } from './window-drawer'
 
 let _window: BrowserWindow | null = null
 
@@ -261,25 +262,26 @@ function notifyFocusChange(): void {
 const rawInvokeRendererExtensions = makeInvoker('extensions')
 
 /**
- * Sends one extension host action to the renderer that embeds the surface.
+ * Sends one extension host action to the renderer that draws the surface's window.
  *
- * `embedderId` is checked rather than used to address: this channel can only
- * reach the window it was set up for, so a surface embedded anywhere else is
- * refused instead of having its action delivered to a renderer that draws a
- * *different* tab strip. ❌ 不做「反正大概率是主窗口」的假设——那会在多窗口出现的
- * 第一天悄悄改错 tab。Refs #2374.
+ * `embedderId` is checked rather than used to address: this channel reaches one renderer, so a surface is served only
+ * when that renderer is the one drawing its window — the main window, or a child window it paints into
+ * (`rendererDrawing`: an App or a tab opened in its own window). A surface drawn by anything else is refused instead
+ * of having its action delivered to a renderer that draws a *different* tab strip. ❌ 不做「反正大概率是主窗口」的假设。
+ * Refs #2374.
  */
 export function invokeRendererExtensions(
   method: string,
   params: unknown,
   embedderId: number,
 ): Promise<unknown> {
+  // `unavailable`: the App tells the person in its own words that gugu could not take it now, not this English.
   if (!_window || _window.isDestroyed()) {
-    return Promise.reject(new Error('Renderer not ready'))
+    return Promise.reject(Object.assign(new Error('Renderer not ready'), { code: 'unavailable' }))
   }
-  if (_window.webContents.id !== embedderId) {
+  if (rendererDrawingId(embedderId) !== _window.webContents.id) {
     return Promise.reject(
-      new Error('This surface is embedded in a window that has no App command channel'),
+      Object.assign(new Error('This surface is drawn by a window that has no App command channel'), { code: 'unavailable' }),
     )
   }
   return rawInvokeRendererExtensions(method, params)

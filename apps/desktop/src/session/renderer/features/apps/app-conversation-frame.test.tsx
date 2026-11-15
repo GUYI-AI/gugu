@@ -126,11 +126,11 @@ describe('an App\'s main page beside its bound conversation', () => {
     expect(find('app-conversation-panel-expand')).toBeNull();
     expect(lastReport()).toMatchObject({ shown: { chatId: CHAT, collapsed: false } });
     // The App's `gugu.bindings.setPanel`, main having checked the page is drawn there: the window's host action.
-    await act(async () => { await applyExtensionHostAction({ origin: { extensionId: 'today', sessionId: null, tabId: 'dock' }, action: { kind: 'conversationPanel', collapsed: true } }); });
+    await act(async () => { await applyExtensionHostAction({ origin: { pageId: null, extensionId: 'today', sessionId: null, tabId: 'dock' }, action: { kind: 'conversationPanel', collapsed: true } }); });
     expect(find('app-conversation-panel')).toBeNull();
     expect(lastReport()).toMatchObject({ shown: { collapsed: true } });
     // Another App's action is that App's panel, not this one's.
-    await act(async () => { await applyExtensionHostAction({ origin: { extensionId: 'other', sessionId: null, tabId: 'dock' }, action: { kind: 'conversationPanel', collapsed: false } }); });
+    await act(async () => { await applyExtensionHostAction({ origin: { pageId: null, extensionId: 'other', sessionId: null, tabId: 'dock' }, action: { kind: 'conversationPanel', collapsed: false } }); });
     expect(find('app-conversation-panel')).toBeNull();
     // Opened again later: as it was left.
     await act(async () => root.unmount());

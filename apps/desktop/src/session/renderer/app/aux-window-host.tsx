@@ -88,7 +88,7 @@ const AuxWindowFrame = observer(function AuxWindowFrame({ window: aux }: { windo
     };
     win.addEventListener('focus', onFocus);
     win.addEventListener('pagehide', onGone);
-    auxWindows.setHandle(id, win);
+    auxWindows.setHandle(id, win, layer);
     setMounted({ win, root, layer });
     win.focus();
 

@@ -49,6 +49,7 @@ import { isAssistantLayerScreen } from '@shared/extensions/assistant-binding';
 import { extensionSurfaceStore } from './extension-surface-store';
 import { peekStore } from './peek-store';
 import { screenLayout } from '@renderer/app/screen-layout';
+import { auxWindows } from '@renderer/app/aux-windows';
 import { focusScreenBlock } from '@renderer/app/screen-layout-actions';
 import { appState } from '@renderer/lib/stores/app-state';
 import { isEmbedVisible } from '@renderer/lib/portal-container';
@@ -83,6 +84,21 @@ function findSessionView(sessionId: string): WorkspaceViewModel | undefined {
 }
 
 
+/** The document a page (by webContents id) is drawn in: the main window's, or that of the window of its own it is in. */
+function pageDocument(webContentsId: number | null): Document {
+  if (webContentsId === null) return document;
+  for (const doc of auxWindows.documents()) {
+    for (const view of doc.querySelectorAll<BrowserWebviewElement>('webview')) {
+      try {
+        if (view.getWebContentsId() === webContentsId) return doc;
+      } catch {
+        // Not attached yet: not the page that asked.
+      }
+    }
+  }
+  return document;
+}
+
 function requireSessionView(sessionId: string | null): WorkspaceViewModel {
   const view = sessionId === null ? null : findSessionView(sessionId);
   if (!view) throw new Error('This session is no longer open');
@@ -99,7 +115,7 @@ export function applyExtensionHostAction(command: ExtensionHostActionCommand): E
   const { origin, action } = command;
   // A link's or a banner's click has no page behind it: only what names its own target is done for it.
   if (!origin) return runInAction(() => openForClick(action));
-  return runInAction(() => perform(origin.sessionId, origin.tabId, action, origin.extensionId));
+  return runInAction(() => perform(origin.sessionId, origin.tabId, action, origin.extensionId, origin.pageId));
 }
 
 function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
@@ -137,7 +153,7 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
   }
 }
 
-function perform(sessionId: string | null, tabId: string, action: ExtensionHostAction, extensionId: string): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
+function perform(sessionId: string | null, tabId: string, action: ExtensionHostAction, extensionId: string, pageId: number | null): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
   if (action.kind === 'annotateFile') {
     if (!sessionId) throw new Error('File annotations require their source session');
     sessionAnnotations.forSession(sessionId).add({ kind: 'file', ...action.selection });
@@ -172,7 +188,9 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       })();
     case 'openAppModal': {
       let guest: BrowserWebviewElement | null = null;
-      let previous = document.activeElement;
+      // The window the asking page is drawn in: the main window, or a window of its own (aux-window-host.tsx).
+      const at = pageDocument(pageId);
+      let previous = at.activeElement;
       while (previous?.shadowRoot?.activeElement) previous = previous.shadowRoot.activeElement;
       const control = async (action: AppModalHostAction) => {
         const response = await desktopIpc()!.invoke(EXTENSION_BRIDGE_CHANNEL, { method: 'modalHost', args: action }) as ExtensionBridgeResponse;
@@ -187,7 +205,8 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       showAppModal({
         id: action.page.id, title: action.page.title, appName: action.page.appName, size: action.page.size,
         url: action.page.entryUrl, partition: action.page.partition,
-        opener: previous instanceof HTMLElement ? previous : document.body,
+        opener: previous instanceof at.defaultView!.HTMLElement ? previous as HTMLElement : at.body,
+        container: auxWindows.layerOf(at),
         focus, dismiss,
         attach(element) {
           guest = element as BrowserWebviewElement;
