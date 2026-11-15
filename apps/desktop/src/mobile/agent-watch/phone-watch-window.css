@@ -1,0 +1,27 @@
+[data-phone-watch-layout] { display: flex; position: relative; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+[data-phone-watch-layout] [data-phone-watch-chat] { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+[data-phone-watch-layout] [data-phone-watch-window] { position: absolute; z-index: 10; overflow: hidden; border-radius: var(--radius-xl); box-shadow: var(--shadow-lift); background: var(--bg); isolation: isolate; }
+[data-phone-watch-layout] [data-phone-watch-window][hidden], [data-phone-watch-layout] [data-phone-watch-source][hidden] { display: none; }
+[data-phone-watch-layout] [data-phone-watch-picture] { position: absolute; inset: 0; overflow: hidden; }
+[data-phone-watch-layout] [data-phone-watch-source] { width: 100%; height: 100%; }
+[data-phone-watch-layout] [data-phone-watch-gesture] { position: absolute; inset: 0; touch-action: none; cursor: grab; }
+[data-phone-watch-layout] [data-phone-watch-small-actions] { position: absolute; inset: 4px; display: flex; justify-content: flex-end; pointer-events: none; opacity: 0; visibility: hidden; }
+[data-phone-watch-layout] [data-revealed] [data-phone-watch-small-actions] { opacity: 1; visibility: visible; }
+[data-phone-watch-layout] [data-phone-watch-small-actions] > button { pointer-events: auto; width: 24px; height: 24px; min-height: 24px; padding: 4px; border: 1px solid rgb(70 70 70 / .28); border-radius: var(--radius-control); background: rgb(255 255 255 / .6); color: #484848; }
+[data-phone-watch-layout] [data-phone-watch-small-actions] > button svg { width: 14px; height: 14px; }
+[data-phone-watch-layout] [data-phone-watch-small-actions] > .phone-watch-enlarge { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; min-height: 40px; padding: 10px; border: 0; border-radius: var(--radius-circle); background: rgb(0 0 0 / .55); color: white; }
+[data-phone-watch-layout] [data-phone-watch-small-actions] > .phone-watch-enlarge svg { width: 20px; height: 20px; }
+[data-phone-watch-layout] [data-phone-watch-window][data-mode='enlarged'] { position: relative; left: auto; top: auto; width: 100%; flex: none; margin-bottom: var(--spacing-sm); }
+[data-phone-watch-layout] [data-mode='enlarged'] [data-phone-watch-picture] { top: 48px; bottom: 0; }
+[data-phone-watch-layout] [data-mode='enlarged']:has([data-phone-watch-switch]) [data-phone-watch-picture] { bottom: 32px; }
+[data-phone-watch-layout] [data-phone-watch-toolbar] { position: absolute; inset: 0 0 auto; display: flex; justify-content: flex-end; align-items: center; height: 48px; padding: 4px 8px; background: var(--bg); }
+[data-phone-watch-layout] [data-phone-watch-toolbar] > button { width: 40px; height: 40px; min-height: 40px; padding: 10px; }
+[data-phone-watch-layout] [data-phone-watch-switch] { position: absolute; inset: auto 0 0; height: 32px; display: flex; justify-content: center; align-items: center; gap: 24px; background: var(--bg); }
+[data-phone-watch-layout] [data-phone-watch-switch] button { height: 100%; padding: 0 4px; border: 0; background: transparent; color: var(--muted-fg); font-size: 12px; font-weight: 400; }
+[data-phone-watch-layout] [data-phone-watch-switch] [aria-selected='true'] { color: var(--fg); font-weight: 500; }
+[data-phone-watch-layout] [data-phone-watch-handle] { position: absolute; z-index: 11; width: 44px; height: 72px; padding: 0; border: 0; background: transparent; color: var(--fg); touch-action: none; display: flex; align-items: center; }
+[data-phone-watch-layout] [data-phone-watch-handle][data-edge='right'] { justify-content: flex-end; }
+[data-phone-watch-layout] [data-phone-watch-capsule] { display: flex; position: relative; align-items: center; justify-content: center; width: 20px; height: 48px; border-radius: var(--radius-capsule); background: var(--bg); box-shadow: var(--shadow-lift); }
+[data-phone-watch-layout] [data-phone-watch-grip] { display: block; width: 4px; height: 24px; border-radius: 2px; background: currentColor; opacity: .5; }
+[data-phone-watch-layout] [data-phone-watch-active] { position: absolute; top: 6px; width: 3px; height: 3px; border-radius: var(--radius-circle); background: var(--live); }
+[data-phone-watch-layout][data-landscape] [data-phone-watch-window] { position: fixed; inset: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); width: auto; height: auto; margin: 0; border-radius: 0; z-index: 30; }

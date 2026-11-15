@@ -40,6 +40,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(GuguPhoneDataPlugin.class);
         registerPlugin(GuguAudioPermissionsPlugin.class);
         registerPlugin(MobileShellChrome.class);
+        registerPlugin(GuguWatchOrientation.class);
         registerPlugin(GuguPageScale.class);
         super.onCreate(savedInstanceState);
         StartupTrace.mark("bridge_created");

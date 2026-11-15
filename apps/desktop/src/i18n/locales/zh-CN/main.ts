@@ -1,4 +1,17 @@
 export default {
+  "controlWatch": {
+    "picture": "操作画面",
+    "enlarge": "放大",
+    "shrink": "缩小",
+    "landscape": "横屏",
+    "portrait": "转回竖屏",
+    "dock": "收到边上",
+    "restore": "展开画面，可拖动吸附两侧",
+    "close": "关闭最后画面",
+    "sources": "画面来源",
+    "web": "网页",
+    "computer": "电脑"
+  },
   "referralPreview": {
     "contactCaption": "扫码加我为联系人",
     "contactFooter": "用咕咕连接你的 AI 协作网络",
