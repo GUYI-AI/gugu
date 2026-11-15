@@ -178,7 +178,7 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
       </div>
       {!large && <div data-phone-watch-gesture onPointerDown={event => begin(event, false)} onPointerMove={move} onPointerUp={end}
         onPointerCancel={() => { drag.current = null; setMoving(null) }}>
-        <div data-phone-watch-small-actions onPointerDownCapture={smallAction.down} onPointerCancelCapture={smallAction.reset}>
+        <div data-phone-watch-small-actions onPointerDownCapture={smallAction.down} onPointerCancelCapture={smallAction.reset} onKeyDownCapture={smallAction.keyDown}>
           {ended ? <IconButton aria-label={t('controlWatch.close')} onClick={event => smallAction.run(event, () => dispatch({ type: 'close' }))}><X /></IconButton>
             : <IconButton aria-label={t('controlWatch.dock')} onClick={event => smallAction.run(event, () => dispatch({ type: 'dock', ...presentation.dock }))}><PanelRightClose /></IconButton>}
           <IconButton className="phone-watch-enlarge" aria-label={t('controlWatch.enlarge')} onClick={event => smallAction.run(event, () => { setRevealed(false); dispatch({ type: 'set-orientation', orientation: 'portrait' }); dispatch({ type: 'enlarge' }) })}><Expand /></IconButton>

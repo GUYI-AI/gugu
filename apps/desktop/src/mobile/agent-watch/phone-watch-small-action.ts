@@ -1,4 +1,4 @@
-import { useRef, type MouseEvent, type PointerEvent } from 'react'
+import { useRef, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 
 /** A touch that reveals controls can retarget its compatibility click to a newly visible button. */
 export function usePhoneWatchSmallAction() {
@@ -9,8 +9,14 @@ export function usePhoneWatchSmallAction() {
     down: (event: PointerEvent<HTMLDivElement>) => {
       pressed.current = event.target instanceof Element ? event.target.closest('button') : null
     },
+    keyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        pressed.current = event.target instanceof Element ? event.target.closest('button') : null
+      }
+    },
     run: (event: MouseEvent<HTMLButtonElement>, action: () => void) => {
-      const intended = event.detail === 0 || pressed.current === event.currentTarget
+      // Android's first touch compatibility click may also have detail=0.
+      const intended = pressed.current !== null && pressed.current === event.currentTarget
       reset()
       if (!intended) { event.preventDefault(); event.stopPropagation(); return }
       action()

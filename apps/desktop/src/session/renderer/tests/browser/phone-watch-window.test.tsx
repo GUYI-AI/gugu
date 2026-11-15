@@ -1,7 +1,7 @@
 import { act, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import { cdp, page } from 'vitest/browser'
+import { cdp, page, userEvent } from 'vitest/browser'
 import { PhoneWatchWindow } from '@/mobile/agent-watch/PhoneWatchWindow'
 import { LiveWindowModel } from '@renderer/features/live-window/model'
 import type { LiveWindowContext, LiveWindowSource } from '@renderer/features/live-window/types'
@@ -141,4 +141,20 @@ it('uses two real touch points to view a computer picture proportionally and res
   expect(picture.style.transform).toContain('scale(2')
   await act(async () => model.dispatch({ type: 'enlarge' }))
   expect(picture.style.transform).toContain('scale(2')
+})
+
+it('does not treat a zero-detail compatibility click as keyboard activation', async () => {
+  const { host, model } = await mount()
+  const bounds = host.querySelector('[data-phone-watch-gesture]')!.getBoundingClientRect()
+  const session = cdp() as unknown as { send(method: string, params: object): Promise<unknown> }
+  await act(async () => {
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...topPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2), id: 1 }] })
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  })
+  const enlarge = host.querySelector<HTMLButtonElement>('[aria-label="controlWatch.enlarge"]')!
+  await act(async () => enlarge.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 })))
+  expect(model.getSnapshot().presentation!.mode).toBe('floating')
+  enlarge.focus()
+  await userEvent.keyboard('{Enter}')
+  expect(model.getSnapshot().presentation!.mode).toBe('enlarged')
 })
