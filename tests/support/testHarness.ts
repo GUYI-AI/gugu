@@ -290,6 +290,7 @@ export function chatStore(overrides: Partial<ChatContextValue> = {}): ChatContex
     setChatNotificationLevel: vi.fn(),
     patchChat: vi.fn(),
     setDraft: vi.fn(),
+    keepDraft: vi.fn(),
     setDraftMentions: vi.fn(),
     setDraftAttachments: vi.fn(),
     ...overrides,
