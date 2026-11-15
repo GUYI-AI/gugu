@@ -411,9 +411,9 @@ it('redacts an invalid direct thumbnail URL without reading the original', async
   expect(String('error' in result && result.error)).not.toContain('do-not-log')
   expect(full).not.toHaveBeenCalled(); expect(f.object).toHaveBeenCalledTimes(1)
 })
-it.each(['missing', 'null', 'empty'] as const)('fails a %s direct thumbnail explicitly instead of reading the original', async missing => {
+it.each(['missing', 'null', 'empty'] as const)('tries one CDN thumbnail for a %s direct thumbnail without reading the original', async missing => {
   const f = fixture({ origin: true, thumbnail: true }), api = f.api.getMockImplementation()!
-  f.object.mockRejectedValueOnce(network())
+  f.object.mockRejectedValueOnce(network()).mockImplementation(async () => imageResponse())
   f.api.mockImplementation(async (url, init) => {
     const response = await api(url, init), body = JSON.parse(String(init?.body))
     if (!body.origin) return response
@@ -423,8 +423,73 @@ it.each(['missing', 'null', 'empty'] as const)('fails a %s direct thumbnail expl
     return Response.json(row)
   })
   const full = vi.fn(async () => { throw new Error('Must not read the original') })
+  const preview = value(await finish(f.cloud.preview!(imageRevision, context, full))) as Blob
+  expect(sha(new Uint8Array(await preview.arrayBuffer()))).toBe(sha(pixels))
+  expect(f.requests).toHaveLength(3)
+  expect(f.requests.map(request => request.origin === true)).toEqual([false, true, false])
+  expect(new Set(f.requests.map(request => request.request_id)).size).toBe(1)
+  expect(f.object.mock.calls.map(([url]) => [new URL(String(url)).host, new URL(String(url)).pathname])).toEqual([
+    ['cdn.invalid', '/thumb.png'], ['cdn.invalid', '/thumb.png'],
+  ])
+  expect(full).not.toHaveBeenCalled()
+  const next = fixture({ origin: true, session: f.session })
+  value(await finish(next.cloud.managed(revision, context)))
+  expect(next.requests).toEqual([expect.objectContaining({ origin: true })])
+})
+it('recovers a direct-first thumbnail from an older signer with one CDN attempt on the same reservation', async () => {
+  const original = fixture({ origin: true }); original.object.mockRejectedValueOnce(network())
+  value(await finish(original.cloud.managed(revision, context)))
+  const f = fixture({ origin: true, thumbnail: true, session: original.session }), api = f.api.getMockImplementation()!
+  f.api.mockImplementation(async (url, init) => {
+    const response = await api(url, init), body = JSON.parse(String(init?.body)), row = await response.json()
+    if (body.origin) { row.thumb_url = null; row.expires_at = new Date(Date.parse(row.expires_at) - 500).toISOString() }
+    return Response.json(row)
+  })
+  f.object.mockImplementation(async () => imageResponse())
+  const full = vi.fn(async () => { throw new Error('Must not read the original') })
+  const preview = value(await finish(f.cloud.preview!(imageRevision, context, full))) as Blob
+  expect(sha(new Uint8Array(await preview.arrayBuffer()))).toBe(sha(pixels))
+  expect(f.requests.map(request => request.origin === true)).toEqual([true, false])
+  expect(new Set(f.requests.map(request => request.request_id)).size).toBe(1)
+  expect(f.requests[0]!.request_id).not.toBe(original.requests[0]!.request_id)
+  expect(f.object.mock.calls.map(([url]) => [new URL(String(url)).host, new URL(String(url)).pathname])).toEqual([['cdn.invalid', '/thumb.png']])
+  expect(full).not.toHaveBeenCalled()
+})
+it('stops after one compatibility CDN timeout without looping back to origin or reading the original', async () => {
+  const f = fixture({ origin: true, thumbnail: true }), api = f.api.getMockImplementation()!, started = Date.now()
+  f.api.mockImplementation(async (url, init) => {
+    const response = await api(url, init), body = JSON.parse(String(init?.body))
+    return body.origin ? Response.json({ ...await response.json(), thumb_url: null }) : response
+  })
+  f.object.mockRejectedValueOnce(network()).mockImplementation(() => new Promise(() => {}))
+  const full = vi.fn(async () => { throw new Error('Must not read the original') })
+  expect(await finish(f.cloud.preview!(imageRevision, context, full))).toHaveProperty('error', expect.objectContaining({ stage: 'cdn', code: 'ETIMEDOUT' }))
+  expect(Date.now() - started).toBe(3_500)
+  expect(f.requests.map(request => request.origin === true)).toEqual([false, true, false])
+  expect(f.object).toHaveBeenCalledTimes(2); expect(full).not.toHaveBeenCalled()
+})
+it('fails explicitly when neither the direct signer nor the CDN signer has a thumbnail', async () => {
+  const original = fixture({ origin: true }); original.object.mockRejectedValueOnce(network())
+  value(await finish(original.cloud.managed(revision, context)))
+  const f = fixture({ origin: true, session: original.session })
+  const full = vi.fn(async () => { throw new Error('Must not read the original') })
   expect(await finish(f.cloud.preview!(imageRevision, context, full))).toHaveProperty('error', expect.objectContaining({ message: 'Direct file thumbnail is unavailable' }))
-  expect(f.requests).toHaveLength(2); expect(f.object).toHaveBeenCalledTimes(1); expect(full).not.toHaveBeenCalled()
+  expect(f.requests.map(request => request.origin === true)).toEqual([true, false])
+  expect(f.object).not.toHaveBeenCalled(); expect(full).not.toHaveBeenCalled()
+})
+it('does not bypass a compatibility CDN permission refusal', async () => {
+  const original = fixture({ origin: true }); original.object.mockRejectedValueOnce(network())
+  value(await finish(original.cloud.managed(revision, context)))
+  const f = fixture({ origin: true, thumbnail: true, session: original.session }), api = f.api.getMockImplementation()!
+  f.api.mockImplementation(async (url, init) => {
+    const response = await api(url, init), body = JSON.parse(String(init?.body))
+    return body.origin ? Response.json({ ...await response.json(), thumb_url: null }) : response
+  })
+  f.object.mockResolvedValue(new Response(null, { status: 403 }))
+  const full = vi.fn(async () => { throw new Error('Must not read the original') })
+  expect(await finish(f.cloud.preview!(imageRevision, context, full))).toHaveProperty('error', expect.objectContaining({ status: 403 }))
+  expect(f.requests.map(request => request.origin === true)).toEqual([true, false])
+  expect(f.object).toHaveBeenCalledTimes(1); expect(full).not.toHaveBeenCalled()
 })
 it.each(['reservation', 'expiry', 'revision'] as const)('rejects a changed %s in the thumbnail origin response', async changed => {
   const f = fixture({ origin: true, thumbnail: true }), api = f.api.getMockImplementation()!

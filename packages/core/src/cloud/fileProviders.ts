@@ -258,16 +258,18 @@ export function cloudFileProviders(deps: {
           return { url: lease.url, expiresAt } // Every renewal goes through the same ACL and quota signer.
         }
         if (signed.direct || lease.thumb_url) {
-          const blob = await readFileThumbnail(signed, async (renew, origin) => {
-            if (origin && !renew && (typeof signed.lease.download_id !== 'string' || !signed.lease.download_id)) throw new Error('Invalid thumbnail reservation')
+          const blob = await readFileThumbnail(signed, async (renew, route) => {
+            const origin = route === 'origin'
+            if (!renew && (typeof signed.lease.download_id !== 'string' || !signed.lease.download_id)) throw new Error('Invalid thumbnail reservation')
             const next = await download(context, { ref, as: context.actor.actorId,
-              request_id: origin && !renew ? signed.lease.download_id : crypto.randomUUID(), ...(origin ? { origin: true } : {}) },
-            revision.legacy_object ? false : 'thumbnail')
+              request_id: !renew ? signed.lease.download_id : crypto.randomUUID(), ...(origin ? { origin: true } : {}) }, false)
             acceptPreview(next.lease)
-            if (origin && !renew) {
+            if (!renew) {
               const expires = Date.parse(next.lease.expires_at ?? ''), previous = Date.parse(signed.lease.expires_at ?? '')
               if (next.lease.download_id !== signed.lease.download_id || !Number.isFinite(expires) || !Number.isFinite(previous)
-                || expires > previous || expires <= Date.now()) throw new Error('File thumbnail reservation changed')
+                || origin && expires > previous || expires <= Date.now() || previous <= Date.now()) throw new Error('File thumbnail reservation changed')
+              // CDN expiry may retain subsecond precision omitted by an OSS V4 signature.
+              next.lease.expires_at = new Date(Math.min(expires, previous)).toISOString()
             }
             advertised(next); signed = next
             return next
