@@ -1,6 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { useState, type ReactElement } from 'react';
 import { Unknown } from '@/components/ui/Unknown';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import { replica, useReplica } from '@/lib/replica';
 import { devicesModel } from '@/store/devicesCache';
 import { readComposerVerbChat, setComposerVerb, takeComposerCarry, useComposerVerb } from '@/lib/composerVerbBridge';
@@ -88,12 +89,20 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   const memory = useReplica(chatTaskProject, remembers && localDeviceId ? [chatId, localDeviceId] : null);
   // The project shown: the one picked; else (outside a group) the remembered one, unknown until it is read — ❌ "no
   // project" first and the remembered one popping in. 在 observer 的渲染里认:账号上的项目列表变了,跟着重认。
-  const selection: { known: true; projectId: string | undefined } | { known: false } = picked
+  // A memory that could not be read is said where the project picker goes, with a retry, and nothing is sent until it is
+  // known: ❌ "no project" drawn and the task sent to the implicit directory instead of the project used last (review 4
+  // Q3). A device with no row of its own has no memory to read (nothing was ever remembered for it here).
+  const selection: { known: true; projectId: string | undefined } | { known: false; failed: Error | null } = picked
     ? { known: true, projectId: picked.projectId }
     : !remembers ? { known: true, projectId: undefined }
-    : devices.state === 'unknown' || (localDeviceId !== null && memory.state === 'unknown') ? { known: false }
-    // @@@reading-default - a chat's remembered project that could not be read (logged by the read) or a device with no row of its own: the picker starts empty and the person picks
+    : devices.state === 'error' ? { known: false, failed: devices.error }
+    : memory.state === 'error' ? { known: false, failed: memory.error }
+    : devices.state === 'unknown' || (localDeviceId !== null && memory.state === 'unknown') ? { known: false, failed: null }
     : { known: true, projectId: memory.state === 'value' && memory.value ? rememberedTaskRow(memory.value, accountProjectsStore) : undefined };
+  const retryMemory = () => {
+    if (devices.state === 'error') void devicesModel.refresh();
+    else if (localDeviceId) void chatTaskProject.refresh(chatId, localDeviceId);
+  };
   const selectedId = selection.known ? selection.projectId : undefined;
   // 没选项目:与新建会话页同一个隐式工作目录(「未选择项目」是真状态,不是列表第一个)。
   const implicitProject = useReplica(implicitSessionHome, selection.known && !selectedId ? [] : null);
@@ -133,7 +142,14 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   return (
     <div data-testid="task-dispatch-composer" data-chat-id={chatId}>
       {/* The remembered project not read yet: the box's place is held (❌ the machine box first, then the project's). */}
-      {!selection.known ? <Unknown className="h-[132px] w-full" /> : selectedId ? (
+      {!selection.known ? (
+        selection.failed ? (
+          // Its place, saying why; no composer, so nothing is sent before the project is known.
+          <div className="flex h-[132px] w-full items-start p-3" data-testid="task-dispatch-project-failed">
+            <ReadFailedLine message={translate('taskDispatch.projectMemoryFailed')} onRetry={retryMemory} />
+          </div>
+        ) : <Unknown className="h-[132px] w-full" />
+      ) : selectedId ? (
         <ProjectDispatch key={selectedId} projectId={selectedId} projectPicker={projectPicker} {...tray} />
       ) : (
         <MachineDispatch projectPicker={projectPicker} implicitProjectId={implicitProjectId} {...tray} />

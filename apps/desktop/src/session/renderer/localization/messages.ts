@@ -1238,6 +1238,7 @@ const enUSCoreMessages = {
   'taskDispatch.cancel': 'Back to messages',
   'taskDispatch.placeholder': 'What should {agent} do?',
   'taskDispatch.placeholderAgent': 'What should the new agent do?',
+  'taskDispatch.projectMemoryFailed': 'Could not read the project this chat used last. Try again to pick up where you left off.',
 } as const;
 
 type CoreSessionMessageKey = keyof typeof enUSCoreMessages;
@@ -2388,6 +2389,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'taskDispatch.cancel': '回到发消息',
   'taskDispatch.placeholder': '想让 {agent} 做点什么？',
   'taskDispatch.placeholderAgent': '想让新智能体做点什么？',
+  'taskDispatch.projectMemoryFailed': '读不到这个对话上次用的项目，请重试。',
 };
 
 export const enUSMessages = {

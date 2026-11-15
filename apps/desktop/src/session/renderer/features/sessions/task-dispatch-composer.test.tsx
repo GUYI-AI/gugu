@@ -120,4 +120,22 @@ describe('the remembered project is a reading', () => {
     expect(host.querySelector('[data-composer-placeholder]')).toBeNull();
     expect(host.querySelector('[data-unknown]')).not.toBeNull();
   });
+
+  it('a remembered project that could not be read is said with a retry, and nothing can be sent (❌ "no project" and the implicit directory)', async () => {
+    messageHost.rememberedTaskProject.mockRejectedValueOnce(new Error('host gone'));
+    await act(async () => root.render(<TaskDispatchComposer chatId="dm-3" />));
+    await act(async () => {});
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    const failed = host.querySelector('[data-testid="task-dispatch-project-failed"]');
+    expect(failed?.textContent).toContain('读不到这个对话上次用的项目');
+    // No composer: the task cannot be sent anywhere until the project is known.
+    expect(host.querySelector('[data-composer-placeholder]')).toBeNull();
+
+    messageHost.rememberedTaskProject.mockResolvedValueOnce(null);
+    await act(async () => { failed!.querySelector('button')!.click(); });
+    // react-query hands the answer over on its next notify tick.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(host.querySelector('[data-testid="task-dispatch-project-failed"]')).toBeNull();
+    expect(host.querySelector('[data-composer-placeholder]')).not.toBeNull();
+  });
 });
