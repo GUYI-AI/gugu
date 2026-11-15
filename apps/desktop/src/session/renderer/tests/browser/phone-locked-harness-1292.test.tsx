@@ -116,6 +116,13 @@ it.each([false, true])(
       'button[disabled][aria-label*="Codex"]'
     )!
     const model = harness.container.querySelector('[data-testid="composer-model-trigger"]')!
+    const attachment = harness.container.querySelector<HTMLButtonElement>('[data-phone-attachment]')!
+    const editor = harness.container.querySelector<HTMLElement>('[contenteditable]')!
+    expect(attachment).not.toBeNull()
+    expect(attachment.getBoundingClientRect().right).toBeLessThanOrEqual(editor.getBoundingClientRect().left)
+    const chooseFile = vi.spyOn(harness.container.querySelector<HTMLInputElement>('input[type="file"]')!, 'click').mockImplementation(() => {})
+    await userEvent.click(attachment)
+    expect(chooseFile).toHaveBeenCalledOnce()
     expect(locked).not.toBeNull()
     expect(locked.getBoundingClientRect().width).toBeGreaterThan(0)
     expect(getComputedStyle(locked).opacity).toBe('1')
