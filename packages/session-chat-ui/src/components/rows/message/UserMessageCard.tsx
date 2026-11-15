@@ -3,7 +3,7 @@ import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { useTurnState } from '@session-chat/components/contexts/TurnStateContext';
 import { BlockStackView } from '@session-chat/components/primitives/BlockStackView';
 import { clipTrackedHeight, isCardAnimating } from '@session-chat/components/primitives/card-clip';
-import { GenericFileIcon, IconStop, ImageOffIcon } from '@session-chat/components/primitives/icons';
+import { FileMark, IconStop } from '@session-chat/components/primitives/icons';
 import type { StackLayout } from '@session-chat/core/compose';
 import type { Measured, MeasureCtx, RenderCtx } from '@session-chat/core/define';
 import { layoutBlockStack } from '@session-chat/core/layout/block-stack';
@@ -337,7 +337,7 @@ function AttachmentChip(props: { attachment: ChatAttachment; itemId: string }) {
           {/* 图片读不回来时给「图裂了」那个字形,❌ 不要跟文件用同一个 —— 那会把
               「这张图没读到」说成「这是个文件」。 */}
           <span class="gg-file-row-icon">
-            <Show when={isImage()} fallback={<GenericFileIcon />}><ImageOffIcon /></Show>
+            <FileMark name={props.attachment.name} off={isImage()} />
           </span>
           <Show when={!isImage()}>
             <span class="gg-file-row-text">

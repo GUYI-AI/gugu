@@ -3,7 +3,8 @@ import { metadataSeparator } from '@/i18n/format'
 import { Download } from '@/lib/icons'
 import { formatAttachmentSize, type AttachmentMeta } from '@gugu/core/shared/ui/attachmentModels'
 import { attachmentTypeKey } from '@gugu/core/shared/ui/attachmentType'
-import { FILE_ROW_GLYPHS, fileRowStyle } from '@gugu/session-shared/file-row'
+import { fileRowStyle } from '@gugu/session-shared/file-row'
+import { FileMark } from '@gugu/session-ui/file-mark'
 import '@gugu/session-shared/file-row.css'
 import type { ResourceContext } from '@/session/shared/resource-actions'
 import { ResourceMenu } from '../ResourceMenu'
@@ -36,9 +37,7 @@ export function FileAttachmentCard({ file, isMine = false, details, versionLabel
       <div className="gg-file-row" data-kind="file">
         <button type="button" className="gg-file-row-main" onClick={onOpen} disabled={!onOpen} aria-label={file.fileName} title={file.fileName}>
           <span className="gg-file-row-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              {FILE_ROW_GLYPHS[file.kind === 'image' ? 'imageOff' : 'file'].map((d) => <path key={d} d={d} />)}
-            </svg>
+            <FileMark name={file.fileName} mime={file.mimeType} off={file.kind === 'image'} />
           </span>
           <span className="gg-file-row-text">
             <span className="gg-file-row-name">{file.fileName}</span>
