@@ -1,10 +1,14 @@
 import { setBrowserCorsRelaxationSettings } from '@main/core/browser/browser-profile-session';
 import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry';
 import { reconcileResourceSampler } from '@main/core/resource-monitor/resource-sampler';
+import { events } from '@main/lib/events';
+import { appSettingsChangedChannel } from '@shared/events/appEvents';
 import { createRPCController } from '@shared/lib/ipc/rpc';
 import { AppSettingsKeys, appSettingsService, type AppSettings, type AppSettingsKey } from './settings-service';
 
 async function reconcileSettingsRuntimeState(key: AppSettingsKey): Promise<void> {
+  // Every window keeps this device's settings in its replica: say which key changed, each reads it again.
+  events.emit(appSettingsChangedChannel, { key });
   if (key === 'resourceMonitor') await reconcileResourceSampler();
   if (key === 'keyboard') {
     // Re-read the effective settings so runtime state observes service-side defaults or merges.

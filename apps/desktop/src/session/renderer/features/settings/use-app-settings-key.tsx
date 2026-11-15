@@ -2,13 +2,14 @@ import { useMutation } from '@tanstack/react-query';
 import { queryClient, useReplica, type Reading } from '@/lib/replica';
 import type { AppSettings, AppSettingsKey } from '@shared/core/app-settings';
 import {
-  appSettingsModel,
+  beginAppSettingsWrite,
   getAppSettingValueSnapshot,
   invalidateAppSettingsKey,
   mergeAppSettingsValue,
   setAppSettingsValueInCache,
   updateAppSettingsRequest,
   LOCAL_SETTINGS_HOST_KEY,
+  settingsModelOf,
   type SettingsMeta,
 } from './app-settings-client';
 import { rpc, rpcOn } from '@renderer/lib/ipc';
@@ -27,27 +28,32 @@ export function useAppSettingsKey<K extends AppSettingsKey>(key: K) {
   // ❌ 动本机那一份(整个窗口都在读)。那台机器离线就不问(问不到,只会挂满超时)。
   const host = useSettingsHost();
   const remote = host.remote;
-  const settings = useReplica(appSettingsModel, !remote || remote.online ? [key, host.key] : null) as Reading<SettingsMeta<K>>;
+  const model = settingsModelOf(host.key);
+  const settings = useReplica(model, !remote || remote.online ? [key, host.key] : null) as Reading<SettingsMeta<K>>;
   const current = settings.state === 'value' ? settings.value : undefined;
   const api = (host.key === LOCAL_SETTINGS_HOST_KEY ? rpc : rpcOn(host.key)).appSettings;
 
-  const updateMutation = useMutation<void, Error, Partial<AppSettings[K]>, { prev: AppSettings[K] }>({
+  const updateMutation = useMutation<void, Error, Partial<AppSettings[K]>, { prev: AppSettings[K]; done: () => void }>({
     mutationFn: (partial) => {
-      const reading = appSettingsModel.peek(key, host.key);
+      const reading = model.peek(key, host.key);
       if (reading.state !== 'value') throw new Error(`settings ${key}: not read yet`);
       return updateAppSettingsRequest(key, mergeAppSettingsValue<K>((reading.value as SettingsMeta<K>).value, partial), host.key);
     },
     onMutate: (partial) => {
-      const reading = appSettingsModel.peek(key, host.key);
+      const reading = model.peek(key, host.key);
       if (reading.state !== 'value') throw new Error(`settings ${key}: not read yet`);
       const prev = (reading.value as SettingsMeta<K>).value;
+      const done = host.key === LOCAL_SETTINGS_HOST_KEY ? beginAppSettingsWrite(key) : () => {};
       setAppSettingsValueInCache(key, mergeAppSettingsValue<K>(prev, partial), host.key);
-      return { prev };
+      return { prev, done };
     },
     onError: (_err, _partial, ctx) => {
       if (ctx) setAppSettingsValueInCache(key, ctx.prev, host.key);
     },
-    onSettled: () => invalidateAppSettingsKey(key, host.key),
+    onSettled: (_data, _err, _partial, ctx) => {
+      ctx?.done();
+      invalidateAppSettingsKey(key, host.key);
+    },
   }, queryClient);
 
   const resetMutation = useMutation<void, Error, void>({

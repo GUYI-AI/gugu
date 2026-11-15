@@ -21,7 +21,7 @@ const deviceFreeCredits = replica({
   name: 'deviceFreeCreditsStatus',
   scope: 'account',
   read: async () => (await platform.readDeviceFreeCreditsStatus?.()) ?? null,
-  persist: { maxBytes: 512, maxEntries: 1 },
+  persist: { maxBytes: 256, maxEntries: 1 },
 });
 
 export function GuguSubscriptionRow() {

@@ -165,7 +165,7 @@ const meetingCalendar = replica({
     const result = await (invokeOnMachine(null, VOICE_NOTE_MEETINGS_CHANNEL) as Promise<VoiceNoteMeetingsResult>)
     return result.ok ? 'ok' as const : result.code === 'not_granted' || result.code === 'unsupported' || result.code === 'os_permission' ? 'missing' as const : 'ok' as const
   },
-  persist: { maxBytes: 2048, maxEntries: 1 },
+  persist: { maxBytes: 128, maxEntries: 1 },
 })
 
 /** 入会提醒开关(语音笔记);日历没连上就照实说要先去连。偏好存在这台电脑上(lib/meetingReminderPref)。 */
