@@ -102,6 +102,23 @@ describe('the dock kept across restarts (PLAN v2 C4)', () => {
 });
 
 describe('writeInstalled', () => {
+  // Fable's condition for writes without a layer: the unwritten value is never left standing as if it were true.
+  it('refused, and the read that follows fails too: back to the list read before the click', async () => {
+    tellInstalled('local', listOf([], { dock: ['a'] }));
+    api.list.mockRejectedValue(new Error('offline'));
+    await expect(writeInstalled('local', (list) => ({ ...list, dock: ['b'] }), async () => { throw new Error('refused'); }, () => (list) => list))
+      .rejects.toThrow('refused');
+    expect(peekInstalledApps('local')?.dock).toEqual(['a']);
+  });
+
+  it('refused, and the read that follows lands: what the host says now', async () => {
+    tellInstalled('local', listOf([], { dock: ['a'] }));
+    api.list.mockResolvedValue({ success: true, data: listOf([], { dock: ['c'] }) });
+    await expect(writeInstalled('local', (list) => ({ ...list, dock: ['b'] }), async () => { throw new Error('refused'); }, () => (list) => list))
+      .rejects.toThrow('refused');
+    expect(peekInstalledApps('local')?.dock).toEqual(['c']);
+  });
+
   it('puts the host\'s answer over what was drawn at once', async () => {
     tellInstalled('local', listOf([], { dock: ['a'] }));
     await writeInstalled('local', (list) => ({ ...list, dock: ['b'] }), async () => ['c'], (dock) => (list) => ({ ...list, dock }));

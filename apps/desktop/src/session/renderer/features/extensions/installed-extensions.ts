@@ -412,8 +412,10 @@ export function tellInstalled(hostKey: string, list: InstalledExtensionsList): v
 }
 
 /**
- * A write shown at once: `optimistic` is drawn on the click, `write` asks the host, `settled` puts its answer. A refused
- * write drops the optimistic part by reading the list again, and the refusal reaches the caller.
+ * A write shown at once: `optimistic` is drawn on the click, `write` asks the host, `settled` puts its answer (all through
+ * the entry bound when it began, `at`). A refused write drops the optimistic part by reading the list again (I4: the
+ * truth may have moved meanwhile); if that read fails too, the list goes back to what was read before the click — never
+ * the unwritten value shown as if it were true. The refusal reaches the caller, which tells the person.
  */
 export async function writeInstalled<R>(
   hostKey: string,
@@ -422,13 +424,22 @@ export async function writeInstalled<R>(
   settled: (answer: R) => (list: InstalledExtensionsList) => InstalledExtensionsList
 ): Promise<R> {
   const entry = installedExtensions.at(hostKey);
+  const before = installedExtensions.peek(hostKey);
   if (optimistic) entry.set(patchList(hostKey, optimistic));
   try {
     const answer = await write();
     entry.set(patchList(hostKey, settled(answer)));
     return answer;
   } catch (error) {
-    if (optimistic) void installedExtensions.refresh(hostKey);
+    if (optimistic) {
+      try {
+        // Marked stale, then read whether or not a surface shows it (a refresh alone reads only where shown).
+        await installedExtensions.refresh(hostKey);
+        await installedExtensions.fetch(hostKey);
+      } catch {
+        if (before.state === 'value') entry.set(before.value);
+      }
+    }
     throw error;
   }
 }
