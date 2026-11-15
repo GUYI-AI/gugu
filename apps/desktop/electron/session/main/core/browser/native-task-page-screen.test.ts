@@ -47,7 +47,7 @@ it('recovers a live tab after its first native capture rejects and stops retryin
     snapshot: vi.fn().mockRejectedValueOnce(new Error('UnknownVizError')).mockResolvedValue(image) };
   mocks.pages.mockReturnValue([{ browserId: 'page', webContents: page }]); mocks.acquire.mockReturnValue(lease);
   const screen = nativeTaskPageForScreen('owned')!, publish = vi.fn(), destroyed = vi.fn();
-  screen.on('destroyed', destroyed);
+  screen.once('destroyed', destroyed);
   await screen.startScreen(publish);
   expect(publish).not.toHaveBeenCalled(); expect(destroyed).not.toHaveBeenCalled();
   expect(mocks.warn).toHaveBeenCalledExactlyOnceWith('Could not watch the task browser tab', { error: 'Error: UnknownVizError' });
