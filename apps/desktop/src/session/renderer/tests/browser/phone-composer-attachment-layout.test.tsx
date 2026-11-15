@@ -26,6 +26,7 @@ it('keeps empty attachments left, hides them on one text line, and returns witho
   const { editor, composer, attach, input, blur } = await mount()
   const emptyLeft = editor.getBoundingClientRect().left
   expect(getComputedStyle(attach).display).not.toBe('none')
+  expect(getComputedStyle(input).paddingLeft).toBe('48px')
   await page.getByTestId('chat-composer').fill('一行文字')
   await until('one-line attachment hidden', () => composer.hasAttribute('data-phone-has-text') && getComputedStyle(attach).display === 'none')
   expect(editor.getBoundingClientRect().left).toBeLessThan(emptyLeft)

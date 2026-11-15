@@ -84,6 +84,18 @@ it('search is intentional, filters the real catalog and keeps a narrow sheet in 
   const box = panel.getBoundingClientRect(); expect(box.left).toBeGreaterThanOrEqual(12); expect(box.right).toBeLessThanOrEqual(308); expect(box.bottom).toBeLessThanOrEqual(640)
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320)
 })
+it('does not reserve an attachment gutter when creation has no attachment adapter', async () => {
+  const editor = await mount()
+  const input = editor.closest<HTMLElement>('[data-slot="composer-input"]')!
+  expect(host!.querySelector('[data-phone-attachment]')).toBeNull()
+  expect(getComputedStyle(input).paddingLeft).toBe('16px')
+  const left = editor.getBoundingClientRect().left
+  await page.getByTestId('chat-composer').fill('一行文字')
+  expect(editor.getBoundingClientRect().left).toBe(left)
+  await page.getByTestId('chat-composer').fill('')
+  expect(editor.getBoundingClientRect().left).toBe(left)
+  expect(host!.querySelector('[contenteditable]')).toBe(editor)
+})
 it('hides the skills entry for a phone target and restores it for a computer without replacing the input', async () => {
   const editor = await mount()
   await page.getByTestId('chat-composer').fill('保留这段草稿')

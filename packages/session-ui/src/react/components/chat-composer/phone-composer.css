@@ -1,5 +1,7 @@
 /* Approved phone reference: 136px / 943px single line, 295px / 943px four lines,
    and a 60px / 943px visible send circle. Existing 16/24 typography is retained. */
+[data-slot='composer'][data-phone-capsule] { --phone-composer-empty-gutter: 48px; }
+[data-slot='composer'][data-phone-capsule]:not(:has([data-phone-attachment])) { --phone-composer-empty-gutter: 16px; }
 [data-slot='composer'][data-phone-capsule] [data-slot='composer-bar'] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -18,7 +20,7 @@
   min-width: 0;
   min-height: 56px;
   max-height: 128px;
-  padding: 16px 48px;
+  padding: 16px 48px 16px var(--phone-composer-empty-gutter);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
