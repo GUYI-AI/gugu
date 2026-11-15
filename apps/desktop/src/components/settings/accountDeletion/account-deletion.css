@@ -1,0 +1,32 @@
+.gg-account-deletion-title {
+  margin: 0;
+  font-size: var(--font-title);
+  line-height: var(--lh-title);
+  font-weight: var(--font-weight-semibold);
+}
+
+.gg-account-deletion-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gg-account-deletion-form > [data-slot="field"] {
+  width: 100%;
+}
+
+.gg-account-deletion-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--font-body);
+  line-height: var(--lh-body);
+}
+
+.gg-account-deletion-consent input {
+  margin-top: 4px;
+}
+
+@media (min-width: 720px) {
+  .gg-account-deletion-form > [data-slot="field"] { max-width: 320px; }
+}
