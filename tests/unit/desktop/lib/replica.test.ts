@@ -61,9 +61,10 @@ describe('readings', () => {
     try {
       const local = rm.replica({ name: 'test-offline-local', scope: 'account', networkMode: 'always', read: async () => 'here' })
       const remote = rm.replica({ name: 'test-offline-remote', scope: 'account', read: async () => 'there' })
-      await local.prefetch()
+      // Neither is awaited: a read that waits for the network never settles while offline.
+      void local.prefetch()
       void remote.prefetch()
-      await Promise.resolve()
+      for (let i = 0; i < 5; i += 1) await Promise.resolve()
       expect(local.peek()).toMatchObject({ state: 'value', value: 'here' })
       expect(remote.peek()).toEqual({ state: 'unknown' })
     } finally {
