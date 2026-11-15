@@ -41,13 +41,14 @@ export function viewAnchor(view: InnerSidebarView): InnerSidebarRoomAnchor | nul
 }
 
 /**
- * 换了视图之后内层侧栏挂在哪:视图自己是群 / 项目就挂它;看的是一条会话、且它列在上一次那一列里,就还挂着上一次的;
- * 不然它是一个有子智能体的独立智能体的会话,就挂那个智能体(#2574);再不然上一次挂的那个对话还在这屏上,就还挂着它;其余收起。
+ * 内层侧栏挂在哪:视图自己是群 / 项目就挂它;不然认这一屏的入口那一列(`entry`,screen-layout 记着的、和这一屏一起收起摆回的那个群 /
+ * 项目 / 独立智能体):看的会话列在那一列里就挂它;不然它是一个有子智能体的独立智能体的会话,就挂那个智能体(#2574);
+ * 再不然入口那个对话还在这屏上,就还挂着它;其余收起。❌ 记「上一次挂在哪」:切走再回来,摆回来的是哪一屏,挂的就是它的入口。
  * `listedIn(anchor, sessionId)` = 这条会话列在那一列的「智能体」里;`agentAnchorOf(sessionId)` = 这条会话开出来的那个智能体的一列,没有 = null;
  * `onScreen(anchor)` = 那个对话此刻是这屏的一块。
  */
 export function followInnerSidebar(
-  previous: InnerSidebarAnchor | null,
+  entry: InnerSidebarAnchor | null,
   view: InnerSidebarView,
   listedIn: (anchor: InnerSidebarAnchor, sessionId: string) => boolean,
   agentAnchorOf: (sessionId: string) => InnerSidebarAnchor | null,
@@ -57,9 +58,9 @@ export function followInnerSidebar(
   if (own) return own;
   if (view.kind === 'other') return null;
   if (view.kind === 'session') {
-    if (previous && listedIn(previous, view.sessionId)) return previous;
+    if (entry && listedIn(entry, view.sessionId)) return entry;
     const agent = agentAnchorOf(view.sessionId);
     if (agent) return agent;
   }
-  return previous && onScreen(previous) ? previous : null;
+  return entry && onScreen(entry) ? entry : null;
 }

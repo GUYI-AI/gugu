@@ -14,7 +14,7 @@ import {
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useLibraryHost, type LibraryAgentsRpc } from '@renderer/features/library/library-host';
-import { subscriptionKey } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
 import type {
   AgentInstallationStatus,
   AgentInstallError,
@@ -225,14 +225,12 @@ export function useAgentInstallationStatuses() {
    */
   const invalidateDerived = (opts?: { keepStatus?: boolean; providerId?: string }) => {
     void queryClient.invalidateQueries({
-      // Auth/connection readings share the subscription cache. Re-read them on the host
-      // that completed the operation, including when the library has since switched hosts.
       predicate: (q) =>
-        (matchQuery({ queryKey: AGENT_DERIVED_QUERY_PREFIX }, q) &&
-          (!opts?.keepStatus || q.queryKey[1] !== 'status')) ||
-        (!opts?.keepStatus &&
-          matchQuery({ queryKey: subscriptionKey(host.remote?.deviceId ?? null, opts?.providerId) }, q)),
+        matchQuery({ queryKey: AGENT_DERIVED_QUERY_PREFIX }, q) && (!opts?.keepStatus || q.queryKey[1] !== 'status'),
     });
+    // Auth/connection readings are the subscription read models: re-read them on the host that completed the
+    // operation, including when the library has since switched hosts.
+    if (!opts?.keepStatus) void refreshSubscriptionReadings(host.remote?.deviceId ?? null, opts?.providerId);
   };
 
   // Live-patch cache from background events — the event is already a full DTO

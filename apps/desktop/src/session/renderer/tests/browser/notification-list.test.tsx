@@ -23,7 +23,7 @@ vi.mock('@/platform', async original => {
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [] }) }))
 vi.mock('@/hooks/useAgentDisplayStatus', async original => ({ ...await original<object>(), useAgentDisplayStatuses: () => ({}) }))
 vi.mock('@/components/AddFriendSearch', () => ({ AddFriendSearch: () => null }))
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: {} }) }))
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } })
 vi.mock('@renderer/lib/layout/layout-provider', () => ({ SIDEBAR_PROGRESS_VAR: '--gg-sidebar-progress', useWorkspaceLayoutContext: () => ({ isLeftOpen: true, isLeftPeeking: false, toggleLeft: vi.fn(), setTriggerHovered: vi.fn() }) }))
 // The one list's head (the desktop bell's place) reads where the task page is; the search box beside the bell is not this case's.
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: () => {} }), useWorkspaceSlots: () => ({ currentView: 'home' }), isCurrentView: (current: string, view: string) => current === view }))

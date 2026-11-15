@@ -209,7 +209,7 @@ test('phone presence budget closing an already idle host withdraws capability wi
     const status = device.status
     await fx.host.close()
     assert.equal(fx.host.state().status, 'stopped')
-    assert.equal(device.capabilities.host_runtime_capability, 0)
+    assert.equal(device.capabilities.host_runtime_capability, 1)
     assert.deepEqual(device.capabilities.runtimes, [])
     assert.equal(device.status, status)
     for (const [, args] of reports()) assert.equal(Object.hasOwn(args, 'p_runtime_status'), false)
@@ -729,7 +729,8 @@ test('real phone device IDs register honestly, and remote spawn completes the ca
     assert.equal(fx.sessionReplies.length, 1)
     const registrations = fx.calls.filter(([name]) => name === 'upsert_device').map(([, row]) => row)
     assert.equal(registrations[0].device_id, deviceId)
-    assert.equal(registrations[0].capabilities.host_runtime_capability, 0)
+    assert.equal(registrations[0].capabilities.host_runtime_capability, 1)
+    assert.deepEqual(registrations[0].capabilities.runtimes, [])
     assert.equal(registrations.at(-1).capabilities.host_runtime_capability, 1)
     assert.equal(fx.host.state().lastHeartbeatAt > 0, true)
     assert.deepEqual(await fx.host.invoke('agentSession.locate', [caller, { action: 'locate', session_ids: [result.session_id, randomUUID()] }], randomUUID()), { session_ids: [result.session_id] })
@@ -1297,7 +1298,9 @@ test('RPC connectivity cannot publish ready before the initial heartbeat and sta
       onConnectivity(true)
       assert.equal(events.some((event) => event.type === 'host_state' && event.ready), false)
       assert.equal(calls.some(([name]) => name === 'runtime_instance_heartbeat'), true)
-      assert.equal(calls.filter(([name]) => name === 'upsert_device').at(-1)[1].capabilities.host_runtime_capability, 0)
+      const capability = calls.filter(([name]) => name === 'upsert_device').at(-1)[1].capabilities
+      assert.equal(capability.host_runtime_capability, 1)
+      assert.deepEqual(capability.runtimes, [])
     },
   })
   try { assert.equal(fx.host.state().ready, true) } finally { await fx.close() }
@@ -1535,7 +1538,7 @@ test('a failed heartbeat changes admission state and other healthy signals canno
   } finally { await fx.close() }
 })
 
-test('closing the task host withdraws only runtime capability on its owner-scoped device row', async () => {
+test('closing the task host withdraws runtimes and preserves its owner-scoped device version', async () => {
   const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }))
   try {
     const device = fx.devices.find((row) => row.device_id === deviceId)
@@ -1547,9 +1550,21 @@ test('closing the task host withdraws only runtime capability on its owner-scope
     assert.equal(device.last_seen_at, before.last_seen_at)
     assert.deepEqual(device.capabilities.actions, before.capabilities.actions)
     assert.equal(device.capabilities.futureCapability, 'preserve')
-    assert.equal(device.capabilities.host_runtime_capability, 0)
+    assert.equal(device.capabilities.host_runtime_capability, before.capabilities.host_runtime_capability)
     assert.deepEqual(device.capabilities.runtimes, [])
     assert.deepEqual(fx.calls.find(([name]) => name === 'update_device')[1].filters, [['device_id', deviceId], ['user_id', ownerId]])
+  } finally { await fx.close() }
+})
+
+for (const capability of [3, null, undefined]) test(`closing preserves an existing runtime version value (${capability})`, async () => {
+  const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }))
+  try {
+    const device = fx.devices.find((row) => row.device_id === deviceId)
+    if (capability === undefined) delete device.capabilities.host_runtime_capability
+    else device.capabilities.host_runtime_capability = capability
+    const before = structuredClone(device.capabilities)
+    await fx.host.close()
+    assert.deepEqual(device.capabilities, { ...before, runtimes: [] })
   } finally { await fx.close() }
 })
 

@@ -12,9 +12,10 @@ import { installedExtensionsStore } from '@renderer/features/extensions/installe
 
 const log = createLogger('test/notification-settings-card');
 const h = vi.hoisted(() => ({ service: null as unknown as ExtensionsService, setPermission: vi.fn() }));
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({
-  value: { enabled: true, sound: true }, update: vi.fn(), isLoading: false, isFieldOverridden: () => false, resetField: vi.fn(),
-}) }));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => {
+  const { fakeAppSettings } = await import('../../../../../../../../tests/support/appSettingsDouble');
+  return { useAppSettingsKey: () => fakeAppSettings({ enabled: true, sound: true }) };
+});
 vi.mock('@renderer/lib/ipc', () => ({ events: { on: () => () => {} }, rpc: { extensions: {
   list: async () => ({ success: true, data: { extensions: h.service.list().extensions.map((entry) => entry.manifest), invalid: [] } }),
   revoked: async () => ({ success: true, data: Object.fromEntries(h.service.list().extensions.map(({ manifest }) => [manifest.id, h.service.revokedPermissions(manifest.id)])) }),

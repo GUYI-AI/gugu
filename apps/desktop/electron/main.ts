@@ -2786,6 +2786,8 @@ ipcMain.handle('dialog:select-directory', async () => {
 // autoInstallOnAppQuit 也仍是 false:那是「退出时偷偷装」,owner 这次没有改这一条,安装动作
 // 必须由用户按下「重启更新」发起。
 autoUpdater.autoDownload = false
+// The Windows ZIP installer ships without blockmaps; download the full verified installer.
+if (process.platform === 'win32') autoUpdater.disableDifferentialDownload = true
 autoUpdater.autoInstallOnAppQuit = false
 // @@@5747 装完必须自己起来 —— 这是「按一次就完事」的后半截。库的默认值就是 true,但原来有**第二套**
 // 更新子系统(会话页那套,#5747 已删)也在设它,两处同时拨同一个单例的开关,谁最后跑谁说了算。
@@ -4755,6 +4757,12 @@ app.whenReady().then(async () => {
       const facts = await emdash.sessionCallerFacts(context)
       return { deviceId: machine.deviceId, deviceLabel: machine.label, agentUserId, ...facts }
     }
+    // Owner 2026-11-15: a session id / Agent ID written as its first 8+ characters — every addressing entry resolves it
+    // through crossMachine().resolveIdPrefixes, with this machine's session list as the local half.
+    const localAddressRows = async () => (await emdash.listLocalSessions()).sessions
+      .map((session) => ({ sessionId: session.conversationId, agentUserId: session.agent?.userId ?? null, title: session.title }))
+    const resolvePrefixes = (input: { sessionIds: string[]; agentIds: string[] }, signal?: AbortSignal) =>
+      crossMachine().resolveIdPrefixes(input, localAddressRows, signal)
     // #4562 —— 本机直投唯一入口 session_message 的宿主收敛点。寻址解析在 unified-session-message.ts(可单测);
     // 投递只有一条:会话页后端编排的 message 动作(身份写法先换成它那条会话)。
     const unifiedSessionMessage = async (
@@ -4850,6 +4858,7 @@ app.whenReady().then(async () => {
           }
           return byNumber
         },
+        resolvePrefixes: (input) => resolvePrefixes(input, signal),
         localSessionIds: (sessionIds) => emdash.localSessionIds(sessionIds),
         remote: crossMachine().messageDeps(() => remoteCaller(auth, context), signal),
       })
@@ -4954,6 +4963,11 @@ app.whenReady().then(async () => {
             ? crossMachine().runOnDevice(device, caller, step as { action: string }, signal)
             : emdash.runSessionAction(context, step as SessionAction, signal)
         return projectResult(await linkProjectDevice(record as unknown as Parameters<typeof linkProjectDevice>[0], onDevice))
+      }
+      // A session named by a prefix is its full id before anything routes on it (a full id returns at once, unlisted).
+      for (const field of ['session_id', 'parent_session_id'] as const) {
+        const id = record[field]
+        if (typeof id === 'string') record = { ...record, [field]: (await resolvePrefixes({ sessionIds: [id], agentIds: [] }, signal)).sessions.get(id) ?? id }
       }
       // `device`:还没有地址的动作在那台机器上做。
       if (typeof record.device === 'string') {

@@ -86,6 +86,23 @@ private final class Fixture {
         done(try! JSONSerialization.data(withJSONObject: raw), HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil), nil)
     }
     func cleanup() throws -> GuguIOSRetirementCleanup { try .init(root: root, configuration: configuration, authorize: authorize, send: send) }
+    func seedDeviceCAS(_ cas: [String: Any]) throws {
+        try store.transaction { state in
+            var requests = state["requests"] as? [String: [String: Any]] ?? [:]
+            requests["retirement:\(retirementId)"] = ["status": "pending", "scopeKeys": [String](), "leases": [[String: String]](),
+                "unknownKeys": [String](), "progress": [String: [String: Bool]](), "deviceConfirmed": false, "deviceCAS": cas]
+            state["requests"] = requests
+        }
+    }
+    func legacyDeviceCAS(applied: Bool) throws -> [String: Any] {
+        let original = device!["capabilities"] as! [String: Any], before = device!["updated_at"] as! String
+        let after = "2026-11-08T00:00:01.000+00:00"
+        var wanted = original; wanted["runtimes"] = []; wanted["host_runtime_capability"] = 0
+        let cas: [String: Any] = ["before": before, "after": after, "originalCapabilities": original, "capabilities": wanted]
+        try seedDeviceCAS(cas)
+        if applied { device?["capabilities"] = wanted; device?["updated_at"] = after }
+        return cas
+    }
     func run(_ cleanup: GuguIOSRetirementCleanup) throws -> Result<Void, Error> { try wait { cleanup.retire(expectedBinding: binding, retirementId: retirementId, completion: $0) } }
     func service() throws -> GuguIOSHostService {
         let lifecycle = GuguIOSHostLifecycle(root: root.appendingPathComponent("host"), verifiedIdentity: {
@@ -108,7 +125,7 @@ private final class Fixture {
         try require(cold.normalCredentialCalls == 0 && cold.sent == ["checkpoint", "revoke", "readDevice", "withdrawDevice"], "Cold sealed cleanup borrowed ordinary publication or performed another operation")
         try require(try cold.store.record("leases", id: "issue:\(job)")?["status"] as? String == "settled", "Known cold lease receipt was not settled")
         let caps = cold.device?["capabilities"] as? [String: Any]
-        try require(caps?["host_runtime_capability"] as? Int == 0 && caps?["unrelated"] as? String == "survives", "Device withdrawal changed unrelated capabilities")
+        try require(caps?["host_runtime_capability"] as? Int == 1 && (caps?["runtimes"] as? [String])?.isEmpty == true && caps?["unrelated"] as? String == "survives", "Device withdrawal changed the version or unrelated capabilities")
         let before = cold.sent
         let repeated: Result<Void, Error> = try wait { service.retireOwner(expectedBinding: cold.binding, retirementId: cold.retirementId, completion: $0) }; _ = try repeated.get()
         try require(cold.sent == before, "Completed original retirement replayed HTTP")
@@ -149,6 +166,47 @@ private final class Fixture {
         guard case .failure = try lost.run(lost.cleanup()) else { throw GuguHostFailure(code: "retirement_test_failed", message: "Lost write ACK was marked clean") }
         _ = try lost.run(lost.cleanup()).get(); try require(lost.patches == 1, "Lost device ACK caused another PATCH instead of original-version reconciliation")
         cases.append("lost_device_ACK_reconciles_original_CAS_receipt_without_a_new_PATCH")
+
+        for applied in [false, true] {
+            let f = try Fixture(root.appendingPathComponent("legacy-CAS-\(applied)"))
+            let captured = try f.legacyDeviceCAS(applied: applied)
+            _ = try f.run(f.cleanup()).get()
+            let plan = try f.store.record("requests", id: "retirement:\(f.retirementId)")!
+            try require(try GuguHostJournal.digest(plan["deviceCAS"] as! [String: Any]) == GuguHostJournal.digest(captured), "Legacy device CAS was rewritten")
+            try require(f.patches == (applied ? 0 : 1) && (f.device?["capabilities"] as? [String: Any])?["host_runtime_capability"] as? Int == 0, "Legacy device receipt was not resumed exactly")
+        }
+        cases.append("unapplied_and_already_applied_legacy_device_CAS_resume_without_rewriting_the_captured_receipt")
+        for kind in ["higher", "null", "absent"] {
+            let f = try Fixture(root.appendingPathComponent("preserve-version-\(kind)"))
+            var original = f.device!["capabilities"] as! [String: Any]
+            if kind == "higher" { original["host_runtime_capability"] = 3 }
+            else if kind == "null" { original["host_runtime_capability"] = NSNull() }
+            else { original.removeValue(forKey: "host_runtime_capability") }
+            f.device?["capabilities"] = original
+            _ = try f.run(f.cleanup()).get()
+            var wanted = original; wanted["runtimes"] = []
+            try require(try GuguHostJournal.digest(f.device!["capabilities"] as! [String: Any]) == GuguHostJournal.digest(wanted), "Cleanup fabricated or changed a runtime version")
+            let plan = try f.store.record("requests", id: "retirement:\(f.retirementId)")!
+            try require((plan["deviceCAS"] as? [String: Any])?["capabilityPolicy"] as? String == "preserve-version", "New cleanup journal did not record its version-preserving policy")
+        }
+        cases.append("new_device_CAS_preserves_known_null_and_absent_versions_and_marks_its_policy")
+        for kind in ["version", "unrelated", "runtimes", "policy", "already-applied-unrelated"] {
+            let f = try Fixture(root.appendingPathComponent("tampered-device-CAS-\(kind)"))
+            var cas = try f.legacyDeviceCAS(applied: false)
+            var wanted = cas["originalCapabilities"] as! [String: Any]; wanted["runtimes"] = []
+            cas["capabilityPolicy"] = kind == "policy" ? "unknown-policy" : "preserve-version"
+            if kind == "version" { wanted["host_runtime_capability"] = 0 }
+            if kind.contains("unrelated") { wanted["unrelated"] = "changed" }
+            if kind == "runtimes" { wanted["runtimes"] = ["pi"] }
+            cas["capabilities"] = wanted; try f.seedDeviceCAS(cas)
+            if kind == "already-applied-unrelated" { f.device?["capabilities"] = wanted; f.device?["updated_at"] = cas["after"] }
+            guard case .failure(let error as GuguHostFailure) = try f.run(f.cleanup()), error.code == "invalid_journal" else {
+                throw GuguHostFailure(code: "retirement_test_failed", message: "Tampered device CAS was accepted")
+            }
+            let plan = try f.store.record("requests", id: "retirement:\(f.retirementId)")!
+            try require(f.patches == 0 && plan["deviceConfirmed"] as? Bool == false, "Tampered cleanup sent a PATCH or confirmed an invalid receipt")
+        }
+        cases.append("new_policy_rejects_version_unrelated_runtime_and_policy_tampering_including_lost_ACK_reconciliation")
         let checkpoint = try Fixture(root.appendingPathComponent("checkpoint")); _ = try checkpoint.lease(); checkpoint.failCheckpoint = true
         guard case .failure = try checkpoint.run(checkpoint.cleanup()) else { throw GuguHostFailure(code: "retirement_test_failed", message: "Checkpoint failure was hidden") }
         try require(checkpoint.sent.contains("revoke"), "Checkpoint failure prevented known revoke attempt")

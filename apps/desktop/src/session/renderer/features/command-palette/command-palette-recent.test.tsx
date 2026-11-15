@@ -65,7 +65,7 @@ vi.mock('@renderer/localization/locale-store', () => ({ translateSessionMessage:
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ translate: (key: string) => key }),
 }));
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: {} }) }));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } });
 vi.mock('@renderer/lib/commands/registry', () => ({ commandRegistry: { activeCommands: [] } }));
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: vi.fn() }) }));
 vi.mock('@renderer/lib/ui/shortcut', () => ({ Shortcut: () => null }));

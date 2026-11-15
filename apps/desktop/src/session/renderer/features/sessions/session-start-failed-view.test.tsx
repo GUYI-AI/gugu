@@ -21,7 +21,7 @@ vi.mock('@renderer/features/sessions/session-config/use-composer-model-options',
 import { SessionStartFailedView } from './session-start-failed-view';
 import type { SessionStartupFailure } from './stores/session-startup-failures';
 import { notifyManager } from '@tanstack/react-query';
-import { queryClient } from '@renderer/lib/query-client';
+import { queryClient } from '@/lib/readModel';
 // Deliver query results in the same task they resolve in, so a test's flush sees them.
 notifyManager.setScheduler((callback) => callback());
 

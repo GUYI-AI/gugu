@@ -11,7 +11,7 @@ import { chatListRestored } from '@/lib/chatSummariesBridge';
 import { installRemoteHostSessionpageBridges } from './features/remote-hosts/install-sessionpage-bridges';
 import './lib/install-sessionpage-history-bridge';
 import { setupNavigationGuards } from '@renderer/app/view-registry';
-import { prefetchAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
+import { prefetchAllAppSettings } from '@renderer/features/settings/app-settings-client';
 // @@@task-fusion (#2802) — session-ui 的 CSS 栈按它自己文档的契约显式引一次。
 // 从前这里是一行 `@gugu/session-ui/style.css`,那是 tsdown/vite lib 把下面这些打成的
 // 产物;并入本体后包按源码消费,VE 桶(layers/tokens/surfaces/reset/sprinkles/
@@ -258,8 +258,7 @@ async function bootstrap() {
     settleOptional(rpc.viewState.get('navigation') as Promise<NavigationSnapshot> | null),
     settleOptional(rpc.viewState.get('sidebar')),
     settleOptional(rpcOn(null).viewState.getForRestore(savedScreenSessionIds())),
-    settleOptional(prefetchAppSettingsKey('interface')),
-    settleOptional(prefetchAppSettingsKey('browser')),
+    settleOptional(prefetchAllAppSettings()),
     // The account's stored conversations (local rows, never the network): the list, the inner head and the open
     // conversation are in the first frame instead of arriving after it.
     chatListRestored(),

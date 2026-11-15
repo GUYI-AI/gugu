@@ -39,7 +39,7 @@ export function phoneDeviceRow(input: {
     capabilities: {
       terminals: [],
       runtimes: [],
-      host_runtime_capability: 0,
+      // The action endpoint has no task-host version proof yet; keep it unknown.
       host_kind: 'phone',
       os_name: info.rom ? `Android ${info.android} · ${info.rom}` : `Android ${info.android}`,
       ...(info.app_version ? { app_version: info.app_version } : {}),

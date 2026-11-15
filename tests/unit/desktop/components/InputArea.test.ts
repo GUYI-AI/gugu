@@ -767,16 +767,7 @@ describe('ChatMessageComposer', () => {
     }))
     await flush()
     await typeInComposer('@')
-
-    const options = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'))
-    expect(options).toHaveLength(13)
-    const scrollIntoView = options.map(() => vi.fn())
-    options.forEach((option, index) => {
-      Object.defineProperty(option, 'scrollIntoView', {
-        configurable: true,
-        value: scrollIntoView[index],
-      })
-    })
+    // Scrolling the highlighted line into the popup's view needs layout: growing-list-window.test.tsx (Chromium).
 
     const textarea = container.querySelector('[contenteditable]') as HTMLElement
     await act(async () => {
@@ -790,8 +781,7 @@ describe('ChatMessageComposer', () => {
     })
     await flush()
 
-    expect(options[11].getAttribute('aria-selected')).toBe('true')
-    expect(scrollIntoView[11]).toHaveBeenCalledWith({ block: 'nearest' })
+    expect(document.body.querySelector('[role="option"][aria-selected="true"]')?.textContent).toContain('Agent 11')
 
     await pressEnter()
     await flush()

@@ -36,6 +36,12 @@ import { DeviceRpcChannelError, DeviceRpcTimeoutError, type DeviceRpcRequester }
 import type { UnifiedRecipientResult, UnifiedSessionMessageDeps } from './unified-session-message'
 
 /** 跨机器这一格的失败,带机器可读的码(与 session_message 逐收件人结果里的 `error.code` 同一套)。 */
+const FULL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** The shortest id prefix a session or Agent ID is looked up by (owner 2026-11-15: 8 characters are enough). */
+const MIN_ID_PREFIX = 8
+/** One session a prefix may name: its id, its agent (null: no identity) and title, for the candidates list. */
+type AddressRow = { sessionId: string; agentUserId: string | null; title?: string }
+
 export class CrossMachineError extends Error {
   constructor(readonly code: string, message: string) {
     super(message)
@@ -333,19 +339,73 @@ export function createCrossMachineSessions(deps: CrossMachineDeps) {
     return { found, unasked }
   }
 
-  const notFoundMessage = (ids: string[], unasked: Device[]) => {
-    const list = ids.map((id) => `session:${id}`).join(', ')
-    const tail = unasked.length
-      ? ` — could not check: ${unasked.map((device) => !isAgentHostDevice(device) ? noTaskRuntime(device).message : `${describe(device)} (${device.is_online ? 'no answer' : `offline, last seen ${ago(device.last_seen_at, now())}`})`).join(', ')}`
-      : ''
-    return `${list} is not a session on this machine or on any of this account's online machines${tail}. session_peers (with device for another machine) lists what is addressable; nothing was sent`
+  /** What could not be asked, one phrase per machine — said after the not-found headline, never as it. */
+  const notChecked = (unasked: Device[]) => unasked.map((device) => !isAgentHostDevice(device) ? noTaskRuntime(device).message
+    : `${describe(device)} (${device.is_online ? 'no answer' : `offline, last seen ${ago(device.last_seen_at, now())}`})`)
+
+  /** Owner 2026-11-15: that no session matches comes first; machines that could not be asked are a footnote. */
+  const notFoundMessage = (addresses: string[], unchecked: string[]) =>
+    `No session matches ${addresses.join(', ')} on this machine or on any of this account's online machines. `
+    + 'session_peers (with device for another machine) lists what is addressable; nothing was sent'
+    + (unchecked.length ? `. Not checked: ${unchecked.join(', ')}.` : '')
+
+  /**
+   * Owner 2026-11-15: a session id or Agent ID may be written as its first 8 or more characters. Every addressing entry
+   * (session_message, session_get / stop / archive / children / set_parent / spawn's parent; `session:` and `aid:`)
+   * resolves here first. A full UUID, or anything under 8 characters, passes untouched (the exact paths judge it).
+   * Otherwise the id is matched against this account's sessions — `local` (this machine) and each online machine's list:
+   * one match is used, several are refused with the candidates, none says so first and names the machines not checked after.
+   */
+  const resolveIdPrefixes = async (
+    wanted: { sessionIds: string[]; agentIds: string[] },
+    local: () => Promise<AddressRow[]>,
+    signal?: AbortSignal,
+  ): Promise<{ sessions: Map<string, string>; agents: Map<string, string> }> => {
+    const prefix = (id: string) => id.length >= MIN_ID_PREFIX && !FULL_ID.test(id)
+    const sessionIds = [...new Set(wanted.sessionIds.filter(prefix))]
+    const agentIds = [...new Set(wanted.agentIds.filter(prefix))]
+    const resolved = { sessions: new Map<string, string>(), agents: new Map<string, string>() }
+    if (!sessionIds.length && !agentIds.length) return resolved
+    const rows: Array<AddressRow & { where: string }> = (await local()).map((row) => ({ ...row, where: 'this machine' }))
+    let unreached: UnreachedMachine[] = []
+    try {
+      unreached = await eachMachine(null, undefined, (device, listed) => {
+        for (const session of listed.sessions) {
+          known.set(session.conversationId, device.device_id)
+          rows.push({ sessionId: session.conversationId, agentUserId: session.agent?.userId ?? null, title: session.title, where: describe(device) })
+        }
+      })
+    } catch (error) {
+      // No machine list (offline, signed out): this machine's sessions are all that can be matched.
+      if (signal?.aborted) throw error
+    }
+    signal?.throwIfAborted()
+    const pick = (kind: 'session' | 'aid', id: string, keyOf: (row: AddressRow) => string | null) => {
+      const address = `${kind}:${id}`
+      const wantedKey = id.toLowerCase()
+      const exact = rows.find((row) => keyOf(row)?.toLowerCase() === wantedKey)
+      if (exact) return keyOf(exact)!
+      const matches = [...new Map(rows.flatMap((row) => {
+        const key = keyOf(row)
+        return key && key.toLowerCase().startsWith(wantedKey) ? [[key, row] as const] : []
+      })).values()]
+      if (matches.length === 1) return keyOf(matches[0])!
+      if (matches.length > 1) {
+        const shown = matches.slice(0, 10).map((row) => `${kind}:${keyOf(row)} ("${row.title ?? ''}", ${row.where})`).join(', ')
+        throw new Error(`${address} matches ${matches.length} sessions: ${shown}${matches.length > 10 ? ', …' : ''}. Pass a longer prefix or the full id; nothing was sent`)
+      }
+      throw new Error(notFoundMessage([address], unreached.map((machine) => machine.detail)))
+    }
+    for (const id of sessionIds) resolved.sessions.set(id, pick('session', id, (row) => row.sessionId))
+    for (const id of agentIds) resolved.agents.set(id, pick('aid', id, (row) => row.agentUserId))
+    return resolved
   }
 
   /** 一条不在本机库里的会话在哪台机器上;哪儿都没有就当场说。 */
   const deviceOfSession = async (sessionId: string, caller: RemoteSessionCaller, signal?: AbortSignal) => {
     const { found, unasked } = await locateSessions([sessionId], caller, signal)
     const deviceId = found.get(sessionId)
-    if (!deviceId) throw new Error(notFoundMessage([sessionId], unasked))
+    if (!deviceId) throw new Error(notFoundMessage([`session:${sessionId}`], notChecked(unasked)))
     return deviceId
   }
 
@@ -429,7 +489,7 @@ export function createCrossMachineSessions(deps: CrossMachineDeps) {
     locateSessions: async (sessionIds) => {
       const { found, unasked } = await locateSessions(sessionIds, await callerOf(), signal)
       const missing = sessionIds.filter((id) => !found.has(id))
-      return { found, missingMessage: missing.length ? notFoundMessage(missing, unasked) : null }
+      return { found, missingMessage: missing.length ? notFoundMessage(missing.map((id) => `session:${id}`), notChecked(unasked)) : null }
     },
     locateAgents: async (input) => {
       const rows = await deps.lookupAgents(input)
@@ -601,6 +661,7 @@ export function createCrossMachineSessions(deps: CrossMachineDeps) {
     call,
     locateSessions,
     notFoundMessage,
+    resolveIdPrefixes,
     deviceOfSession,
     runOnSession,
     runOnDevice,

@@ -8,7 +8,7 @@ import { rendererLogger } from '@/lib/log'
 import { useTheme } from '@/store/theme'
 import { sessionSkinClassName } from '../sessionpage/sessionSkin'
 import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
-import { queryClient } from '@/session/renderer/lib/query-client'
+import { queryClient } from '@/lib/readModel'
 import { useSessionMessages } from '@/session/renderer/localization/use-session-messages'
 import { AppMarketContent, type MarketBrowsePage } from '@/session/renderer/features/extensions/panel/app-market-content'
 import { featuredShotsReady } from '@/session/renderer/features/extensions/panel/app-featured'
@@ -184,7 +184,7 @@ const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { a
           <Button onClick={() => read(phoneApps.reload)}>{translate('extensions.retry')}</Button>
         </SettingsNote>
       ) : null}
-      {tab === 'installed' ? <AppsSection updates={offered.updates} gone={offered.gone} onManage={setManage} /> : (
+      {tab === 'installed' ? <AppsSection updates={offered.updates} gone={offered.gone} known={offered.known} onManage={setManage} /> : (
         <div className={`${skin} mk phone-app-market`} data-testid="phone-app-market">
           <SearchField value={query} placeholder={translate('extensions.searchPlaceholder')} onChange={(event) => { setQuery(event.target.value); setPages(1) }} />
           {error}

@@ -14,9 +14,7 @@ const state = vi.hoisted(() => ({
   setSessionPinnedToSidebar: vi.fn((_sessionId: string, _pinned: boolean) => Promise.resolve()),
 }))
 
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({
-  useAppSettingsKey: () => ({ value: {} }),
-}))
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } })
 vi.mock('@renderer/features/sessions/stores/session-registry', () => ({
   sessionRegistry: {
     get: () => ({

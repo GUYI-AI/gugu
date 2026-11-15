@@ -15,16 +15,17 @@ extension GuguIOSRetirementCleanup {
                     if let rawCAS = plan["deviceCAS"] {
                         guard let cas = rawCAS as? [String: Any], let before = cas["before"] as? String, let after = cas["after"] as? String,
                               let original = cas["originalCapabilities"] as? [String: Any], let wanted = cas["capabilities"] as? [String: Any] else { throw Self.failure("invalid_journal", "Original device cleanup CAS is unreadable") }
+                        _ = try GuguIOSRetirementHTTP.withdrawalCapabilities(cas)
                         if Self.sameTimestamp(version, after), try GuguHostJournal.digest(existing) == GuguHostJournal.digest(wanted) {
                             try self.confirmDevice(store, id); completion(nil); return
                         }
                         guard Self.sameTimestamp(version, before), try GuguHostJournal.digest(existing) == GuguHostJournal.digest(original) else { throw Self.failure("cleanup_device_conflict", "Original device registration was replaced; it was not withdrawn") }
                     } else {
-                        var capabilities = existing; capabilities["runtimes"] = []; capabilities["host_runtime_capability"] = 0
+                        var capabilities = existing; capabilities["runtimes"] = []
                         let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
                         var after = formatter.string(from: Date())
                         if Self.sameTimestamp(version, after) { after = formatter.string(from: Date().addingTimeInterval(0.001)) }
-                        plan["deviceCAS"] = ["before": version, "after": after, "originalCapabilities": existing, "capabilities": capabilities]
+                        plan["deviceCAS"] = ["before": version, "after": after, "originalCapabilities": existing, "capabilities": capabilities, "capabilityPolicy": "preserve-version"]
                         try store.update("requests", id: "retirement:\(id)") { $0 = plan }
                     }
                     http.perform(.withdrawOwnedDevice, known: { raw in

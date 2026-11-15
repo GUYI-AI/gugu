@@ -10,8 +10,6 @@ import type { ContentMenuItem } from '@/session/shared/content-context-menu'
 import { Avatar } from './Avatar'
 import { Menu, MenuItem, MenuSearch, MenuSeparator, MenuSubmenu, useMenuSearch } from './ui/Menu'
 import { useMobileShell } from '../hooks/useMobileShell'
-import { QueryClientProvider } from '@tanstack/react-query'
-import { queryClient } from '@renderer/lib/query-client'
 import { useOpenInApps } from '@renderer/lib/hooks/useOpenInApps'
 import { OpenInAppIcon } from '@renderer/lib/components/titlebar/open-in-app-icon'
 import { getAppById } from '@shared/openInApps'
@@ -83,16 +81,14 @@ function PhoneLevel({ items, onAction, onOpen, back }: RowsProps & { onOpen: (ro
 }
 
 /**
- * A program of this computer as 「在…中打开」 draws it everywhere: its icon from the same table (useOpenInApps). This menu is
- * outside the session page's QueryClientProvider, so it brings the same client; an id that is no program keeps the empty slot.
+ * A program of this computer as 「在…中打开」 draws it everywhere: its icon from the same read model (useOpenInApps);
+ * until that is read, and for an id that is no program, the slot stays empty.
  */
 function ProgramIcon({ id }: { id: string }) {
-  return <QueryClientProvider client={queryClient}><ProgramIconImage id={id} /></QueryClientProvider>
-}
-function ProgramIconImage({ id }: { id: string }) {
-  const { icons } = useOpenInApps()
+  const tools = useOpenInApps()
   const app = getAppById(id)
-  return app && icons[app.id] ? <OpenInAppIcon src={icons[app.id]} monochrome={app.monochrome} alt="" /> : <span aria-hidden />
+  const icon = app && tools.state === 'value' ? tools.value.icons[app.id] : undefined
+  return app && icon ? <OpenInAppIcon src={icon} monochrome={app.monochrome} alt="" /> : <span aria-hidden />
 }
 
 /** A member as everywhere else: avatar and the shown name from the host's identity directory. */

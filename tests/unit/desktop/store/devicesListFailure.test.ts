@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
 import { DevicesProvider } from '../../../../apps/desktop/src/store/devices'
 import { createNode, createReactHarness } from '../../../support/testHarness'
 
@@ -39,7 +40,8 @@ describe('DevicesProvider list failure disclosure', () => {
   let consoleError: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
-    mocks.authUser = { id: 'account-a' }
+    queryClient.clear()
+    mocks.authUser = { id: 'account-a' }; followRendererSession('SIGNED_IN', 'account-a')
     harness = createReactHarness()
     mocks.listDevices.mockReset().mockResolvedValue([])
     mocks.listProjects.mockReset().mockResolvedValue([])
@@ -58,9 +60,10 @@ describe('DevicesProvider list failure disclosure', () => {
 
   it('keeps device reads and the revision listener stable across same-account hydration', async () => {
     await harness.render(createNode(DevicesProvider, {}, createNode('div')))
+    await vi.waitFor(() => expect(mocks.listDevices).toHaveBeenCalledTimes(1))
     const listener = mocks.revisionListener
     const subscriptions = mocks.subscribeAccountRevision.mock.calls.length
-    mocks.authUser = { id: 'account-a' }
+    mocks.authUser = { id: 'account-a' }; followRendererSession('SIGNED_IN', 'account-a')
     await harness.render(createNode(DevicesProvider, {}, createNode('div')))
 
     expect(mocks.listDevices).toHaveBeenCalledTimes(1)
@@ -75,13 +78,14 @@ describe('DevicesProvider list failure disclosure', () => {
 
   it('initializes the new account and refreshes after shell reactivation', async () => {
     await harness.render(createNode(DevicesProvider, {}, createNode('div')))
-    mocks.authUser = { id: 'account-b' }
+    await vi.waitFor(() => expect(mocks.listDevices).toHaveBeenCalledTimes(1))
+    mocks.authUser = { id: 'account-b' }; followRendererSession('SIGNED_IN', 'account-b')
     await harness.render(createNode(DevicesProvider, {}, createNode('div')))
-    expect(mocks.listDevices).toHaveBeenCalledTimes(2)
+    await vi.waitFor(() => expect(mocks.listDevices).toHaveBeenCalledTimes(2))
     await harness.render(createNode(DevicesProvider, { active: false }, createNode('div')))
     expect(mocks.listDevices).toHaveBeenCalledTimes(2)
     await harness.render(createNode(DevicesProvider, { active: true }, createNode('div')))
-    expect(mocks.listDevices).toHaveBeenCalledTimes(3)
+    await vi.waitFor(() => expect(mocks.listDevices).toHaveBeenCalledTimes(3))
   })
 
   it('writes the raw list failure reason to the log', async () => {

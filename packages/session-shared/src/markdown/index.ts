@@ -1,5 +1,6 @@
 export {
   stringifyMention,
+  draftWithPills,
   normalizeWindowsMarkdownFileLinks,
   AT_BARE_PATTERN,
   SLASH_PATTERN

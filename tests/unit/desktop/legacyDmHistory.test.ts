@@ -22,7 +22,7 @@ vi.mock('@/lib/supabase', () => {
   };
   return { chatDb: { from, rpc: (fn: string, args: unknown) => { world.calls.push({ table: fn, method: 'rpc', args: [args] }); return from(fn); } }, identityDb: { from } };
 });
-vi.mock('@/lib/sessionPublication', () => ({ getRendererSession: () => ({ user: { id: world.owner } }) }));
+vi.mock('@/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererSession: () => ({ user: { id: world.owner } }) }));
 vi.mock('@/lib/authSessionLoss', () => ({ currentAuthSessionSignal: () => new AbortController().signal }));
 vi.mock('@/lib/identityReadAdapter', () => ({ readDisplayIdentities: async () => world.identities }));
 const { readLegacyDmList, readLegacyDmMessages, mergeLegacyMessages } = await import('../../../apps/desktop/src/components/legacy-dm-history/data');

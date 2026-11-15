@@ -379,6 +379,7 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
           spawned_by_session_id: 'session:agent-session',
           device_id: 'device:dev-b',
           spawned_by_device_id: 'device:dev-a',
+          session_link: 'gugu://session/remote-child',
         })
       }
       if (tool === 'session_get') {

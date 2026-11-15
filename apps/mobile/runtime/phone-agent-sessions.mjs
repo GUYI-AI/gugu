@@ -31,6 +31,8 @@ export function createPhoneSessionTools({ agent, job, cloud, store, deviceId, wo
   }
   // A phone keeps no local projects, so nothing it sends can name one (outbound: the desktop's local-id check).
   const cross = createCrossMachineSessions({ thisDeviceId: async () => deviceId, listDevices: () => listDevices(cloud.identity, store.state.ownerId), lookupAgents, requester, outbound: async () => {} })
+  // Session ids / Agent IDs written as their first 8+ characters: the same resolver as desktop, this phone's agents as the local half.
+  const resolvePrefixes = (input, signal) => cross.resolveIdPrefixes(input, async () => local().map((row) => ({ sessionId: row.sessionId, agentUserId: row.agentUserId, title: row.displayName })), signal)
   // This source is supplied by the host-owned tool closure, never by model arguments or RPC.
   const here = (action, callId) => invoke(`agentSession.${action.action}`, [caller(), action], stableId('phone-session-tool', job.id, callId, action), { kind: 'phone-agent', agentUserId: agent.agentUserId, jobId: job.id })
   const prepareFiles = async (files, targets, callId, signal) => {
@@ -93,6 +95,7 @@ export function createPhoneSessionTools({ agent, job, cloud, store, deviceId, wo
       graphMessage: (ids, text, said) => here({ action: 'message', session_ids: ids, text, ...said }, callId),
       localSessionsOfAgents: async (ids) => ({ sessions: new Map(local().filter((row) => ids.includes(row.agentUserId)).map((row) => [row.agentUserId, row.sessionId])), deletedRecipients: [] }),
       resolveLocalGuguNumbers: async (numbers) => new Map(local().filter((row) => numbers.includes(row.guguNumber)).map((row) => [row.guguNumber, row.agentUserId])),
+      resolvePrefixes: (input) => resolvePrefixes(input, signal),
       localSessionIds: async (ids) => ids.filter((id) => local().some((row) => row.sessionId === id)),
       remote: cross.messageDeps(async () => caller(), signal),
     })
@@ -105,6 +108,7 @@ export function createPhoneSessionTools({ agent, job, cloud, store, deviceId, wo
     if (action.action === 'devices') return cross.listDeviceRows()
     if (action.action === 'message') return send(action, callId, signal)
     if (action.action === 'spawn') await authorize(job.usedGroups ?? [])
+    if (typeof action.session_id === 'string') action = { ...action, session_id: (await resolvePrefixes({ sessionIds: [action.session_id], agentIds: [] }, signal)).sessions.get(action.session_id) ?? action.session_id }
     if (action.device && action.device !== deviceId) return cross.runOnDevice(action.device, caller(), action, signal)
     if (action.action === 'get' || action.action === 'stop') {
       const id = action.session_id ?? agent.sessionId

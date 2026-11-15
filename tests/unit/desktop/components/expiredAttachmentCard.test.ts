@@ -8,7 +8,7 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { ExpiredAttachmentCard } from '../../../../apps/desktop/src/components/chat/ExpiredAttachmentCard'
 import { MediaAttachmentBubble } from '../../../../apps/desktop/src/components/chat/MediaAttachmentBubble'
 import type { ToastContextValue } from '../../../../apps/desktop/src/components/toastContext'
-import { attachmentQueryClient } from '../../../../apps/desktop/src/lib/attachmentQueryClient'
+import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/readModel'
 import { holdSentFile } from '../../../../apps/desktop/src/lib/sentFileCopies'
 
 const f = vi.hoisted(() => ({ message: vi.fn(), metadata: vi.fn(), cached: vi.fn(), send: vi.fn(), forget: vi.fn(), signed: vi.fn(), view: vi.fn() }))

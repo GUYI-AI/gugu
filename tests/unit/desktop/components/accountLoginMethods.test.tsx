@@ -2,6 +2,8 @@
 import { act, createElement } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { afterEach, expect, it, vi } from 'vitest'
+import { notifyManager as readModelNotify } from '@tanstack/react-query'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
 import { createReactHarness } from '../../../support/testHarness'
 import { AccountLoginMethods } from '../../../../apps/desktop/src/components/settings/AccountLoginMethods'
 
@@ -29,6 +31,7 @@ it.each([
       created_at: '', updated_at: '', identity_data: { email: provider === 'google' ? 'google@example.test' : 'alice@example.test' } })),
   }
   harness = createReactHarness()
+  readModelNotify.setScheduler((callback) => { callback() }); queryClient.clear(); followRendererSession('SIGNED_IN', 'alice')
   await harness.render(createElement(AccountLoginMethods, { userId: 'alice', onEmailChanged: vi.fn() }))
   const buttons = () => Array.from(harness!.container.querySelectorAll('button'))
   const changeEmail = buttons().find(button => button.textContent === 'loginMethods.changeEmail')!
@@ -40,7 +43,8 @@ it.each([
     harness.cleanup()
     state.pending = true
     harness = createReactHarness()
-    await harness.render(createElement(AccountLoginMethods, { userId: 'alice', onEmailChanged: vi.fn() }))
+    readModelNotify.setScheduler((callback) => { callback() }); queryClient.clear(); followRendererSession('SIGNED_IN', 'alice')
+  await harness.render(createElement(AccountLoginMethods, { userId: 'alice', onEmailChanged: vi.fn() }))
     const retry = buttons().find(button => button.textContent === 'loginMethods.retrySignOut')!
     expect(retry).toBeDefined()
     await act(async () => { retry.click() })

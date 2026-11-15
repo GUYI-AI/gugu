@@ -12,6 +12,7 @@ import { quoteSummary } from './quoteSummary'
 import { ChatReplyQuote, type ReplyQuoteDisclosure } from './ChatReplyQuote'
 import { SourcePreview } from '@/components/markdown/SourcePreview'
 import { imSourcePreview } from './messageQuote.css'
+import { useQuotedSystemNoticeText } from './messageQuoteSource'
 
 /**
  * 气泡里引的那一条:谁说的 + 原话,点一下跳到被引用的消息。
@@ -25,7 +26,8 @@ export function MessageQuote({ msg, quoterIsAgent, memberProfiles, onShowMessage
   quoterIsAgent: boolean
   memberProfiles?: Record<string, MemberProfileCardModel>
 }) {
-  const { card: quotedCard, text: quotedText } = quotedContentView(partialQuotedContent(msg)?.quoteText ?? widgetMessagePreview(msg.reply_to_content) ?? msg.reply_to_content)
+  const noticeText = useQuotedSystemNoticeText(msg)
+  const { card: quotedCard, text: quotedText } = quotedContentView(noticeText ?? partialQuotedContent(msg)?.quoteText ?? widgetMessagePreview(msg.reply_to_content) ?? msg.reply_to_content)
   const showQuoted = (event: MouseEvent) => {
     event.stopPropagation()
     if (msg.reply_to_message_id) onShowMessage?.(msg.reply_to_message_id)
@@ -35,7 +37,7 @@ export function MessageQuote({ msg, quoterIsAgent, memberProfiles, onShowMessage
       mine={msg.is_mine}
       onClick={onShowMessage ? showQuoted : undefined}
       head={quotedCard ? <ComposerCardHead type={quotedCard.type} agentUserId={quoterIsAgent ? msg.sender_user_id : null} />
-        : resolveOrLoud(memberProfiles?.[msg.reply_to_sender_user_id ?? '']?.displayName, `reply sender ${msg.reply_to_message_id ?? msg.id}`)}
+        : msg.reply_to_sender_user_id ? resolveOrLoud(memberProfiles?.[msg.reply_to_sender_user_id]?.displayName, `reply sender ${msg.reply_to_message_id ?? msg.id}`) : null}
       text={quotedText}
       preview={Boolean(disclosure)}
     />
@@ -66,9 +68,9 @@ export function MessageQuoteFrame({ mine, head, text, onClick, preview }: {
       // 气泡比 180 窄时跟着气泡收(窄格里冲出气泡边)。
       maxWidth: 'min(180px, 100%)',
     }}>
-      <div style={{ fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', fontWeight: 600, opacity: 0.6, marginBottom: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      {head && <div style={{ fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', fontWeight: 600, opacity: 0.6, marginBottom: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {head}
-      </div>
+      </div>}
       {preview ? <SourcePreview text={text} lines={2} className={imSourcePreview} /> : <div style={{ fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', opacity: 0.55, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {text}
       </div>}
@@ -90,9 +92,10 @@ export function DirectMessageQuote({ msg, quoterIsAgent, memberProfiles, onShowM
   onShowMessage?: (id: string) => void
 }) {
   const { t } = useTranslation('messaging')
-  const { card: quotedCard, text: quotedText } = quotedContentView(partialQuotedContent(msg)?.quoteText ?? widgetMessagePreview(msg.reply_to_content) ?? msg.reply_to_content)
+  const noticeText = useQuotedSystemNoticeText(msg)
+  const { card: quotedCard, text: quotedText } = quotedContentView(noticeText ?? partialQuotedContent(msg)?.quoteText ?? widgetMessagePreview(msg.reply_to_content) ?? msg.reply_to_content)
   const sender = quotedCard ? <ComposerCardHead type={quotedCard.type} agentUserId={quoterIsAgent ? msg.sender_user_id : null} />
-    : resolveOrLoud(memberProfiles?.[msg.reply_to_sender_user_id ?? '']?.displayName, `reply sender ${msg.reply_to_message_id ?? msg.id}`)
+    : msg.reply_to_sender_user_id ? resolveOrLoud(memberProfiles?.[msg.reply_to_sender_user_id]?.displayName, `reply sender ${msg.reply_to_message_id ?? msg.id}`) : null
   const source = quotedText
   const summary = quoteSummary(source)
   const showQuoted = (event: MouseEvent) => {
@@ -103,7 +106,7 @@ export function DirectMessageQuote({ msg, quoterIsAgent, memberProfiles, onShowM
     <div data-testid="direct-message-quote" role={onShowMessage ? 'button' : undefined} title={t('message.showQuoted')} onClick={onShowMessage ? showQuoted : undefined}
       className={`flex max-w-full min-w-0 items-center gap-[5px] overflow-hidden whitespace-nowrap px-[2px] text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--muted-fg)] ${onShowMessage ? 'cursor-pointer' : ''}`}>
       {!disclosure && <Reply className="size-3 shrink-0" aria-hidden />}
-      <span className="max-w-[60%] shrink-0 truncate font-semibold">{sender} ·</span>
+      {sender && <span className="max-w-[60%] shrink-0 truncate font-semibold">{sender} ·</span>}
       <span className="min-w-0 truncate">{summary}</span>
     </div>
   )

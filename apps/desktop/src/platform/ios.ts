@@ -1,3 +1,4 @@
+import { saveToDevice } from './capacitorShare'
 import { schedulePhoneNotification } from './phoneNotificationOutlet'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { Capacitor, registerPlugin } from '@capacitor/core'
@@ -53,6 +54,7 @@ export const iosPlatform: AppPlatform = {
     })
     return () => { active = false; void handle.then(value => value.remove()).catch(lifecycleError) }
   },
+  saveFile: saveToDevice,
   getAppVersion: async () => (await App.getInfo()).version,
   writeClipboardText: async (string) => { await Clipboard.write({ string }) },
   subscribeAppForeground(listener, onError) {

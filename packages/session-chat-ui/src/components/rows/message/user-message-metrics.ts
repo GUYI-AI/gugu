@@ -23,10 +23,10 @@ export function measureUserMessage(item: ChatMessage, ctx: MeasureCtx, baseVars:
  * The row's height and the pinned summary's rest position both read it, so they cannot disagree. What a row draws above
  * the card (a delivered message's sender line) is added by each of them from one helper of that row (#2629).
  */
-export function userBubbleBox(item: ChatMessage, ctx: MeasureCtx, baseVars: MessageVars): { bottom: number; width: number; drawn: boolean } {
+export function userBubbleBox(item: ChatMessage, ctx: MeasureCtx, baseVars: MessageVars): { bottom: number; width: number; drawn: boolean; height?: number } {
   const vars = effectiveMessageVars(baseVars, ctx.theme.layout);
   const available = userAvailableWidth(ctx.width, ctx.theme.layout);
-  const strip = attachStripHeight(item.attachments?.length ?? 0, available, vars);
+  const strip = attachStripHeight(item.attachments, available, vars);
   if (!item.guguDelivery && isMessageEditing(item.id, ctx)) return { bottom: strip + messageEditorMetrics(ctx.editingMessage!.text, ctx).height, width: available, drawn: false };
   const inner = userInnerWidth(available, vars);
   const destination = conversationDestinationLayout(item, ctx, inner);
@@ -34,7 +34,8 @@ export function userBubbleBox(item: ChatMessage, ctx: MeasureCtx, baseVars: Mess
   // 没有正文就没有气泡(UserMessageCard);还在流、一个字没到的除外,那时先占一行。
   if (!body) return { bottom: strip + (item.attachments?.length ? destination?.height ?? 0 : 0), width: available, drawn: false };
   const cap = ctx.expandedId === item.id ? vars.expandedMaxH : vars.collapsedMaxH;
-  return { bottom: strip + Math.min(body.height + 2 * vars.userCardPadY + 2 * vars.cardBorder, cap) + (destination?.height ?? 0),
+  const height = Math.min(body.height + 2 * vars.userCardPadY + 2 * vars.cardBorder, cap);
+  return { bottom: strip + height + (destination?.height ?? 0), height,
     width: userPillWidth(available, Math.max(body.width, destination?.width ?? 0), vars, ctx.theme.layout), drawn: true };
 }
 
@@ -49,7 +50,7 @@ function userBubbleBody(item: ChatMessage, ctx: MeasureCtx, inner: number): { wi
 export function estimateUserMessage(item: ChatMessage, ctx: MeasureCtx, baseVars: MessageVars): number {
   const vars = effectiveMessageVars(baseVars, ctx.theme.layout);
   const available = userAvailableWidth(ctx.width, ctx.theme.layout);
-  const attachments = attachStripHeight(item.attachments?.length ?? 0, available, vars) + inputSendStatusHeight(item);
+  const attachments = attachStripHeight(item.attachments, available, vars) + inputSendStatusHeight(item);
   if (!item.guguDelivery && isMessageEditing(item.id, ctx)) {
     return attachments + messageEditorMetrics(ctx.editingMessage!.text, ctx).height;
   }

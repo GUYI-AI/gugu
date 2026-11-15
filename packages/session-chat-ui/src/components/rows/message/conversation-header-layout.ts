@@ -1,6 +1,6 @@
 import type { ChatMessage } from '@session-chat/model';
 import type { MeasureCtx } from '@session-chat/core/define';
-import { conversationSpeaker, messageReplyReference } from '@session-chat/state/conversation-density';
+import { conversationReferenceInFooter, conversationShowsName, messageReplyReference } from '@session-chat/state/conversation-density';
 import { readableLabel } from '../readable-label';
 import { processButtonLayout, processRowHeight, backgroundPillLayout } from './process-row-layout';
 
@@ -20,17 +20,9 @@ function senderLabel(text: string, ctx: MeasureCtx): ReturnType<typeof readableL
   return label;
 }
 
-const speaker = (key: string | undefined, ctx: MeasureCtx) => key === '$owner' && ctx.selfIdentity?.userId ? `user:${ctx.selfIdentity.userId}` : key;
-export function conversationShowsName(item: ChatMessage, ctx: MeasureCtx): boolean {
-  // What the reader typed here is theirs without saying so; a delivered message keeps its sender (owner 2026-11-07).
-  if (conversationSpeaker(item) === '$owner') return false;
-  const current = speaker(conversationSpeaker(item), ctx), previous = speaker(item.conversationPreviousSpeaker, ctx);
-  return !current || !previous || current !== previous;
-}
-
 /** Hover only changes paint. The inline metadata has the same measured geometry at rest. */
 export function conversationHeaderLayout(item: ChatMessage, ctx: MeasureCtx, senderName: string) {
-  const showName = conversationShowsName(item, ctx);
+  const showName = conversationShowsName(item, item.conversationPreviousSpeaker, ctx.selfIdentity?.userId);
   const quote = Boolean(messageReplyReference(item));
   const process = item.role === 'assistant' ? item.conversationProcess : undefined;
   const separator = quote && process;
@@ -47,7 +39,7 @@ export function conversationHeaderLayout(item: ChatMessage, ctx: MeasureCtx, sen
   const nameBudget = Math.max(0, ctx.width - naturalProcess - metadataWidth - namedGap);
   const name = showName && nameBudget > 0 ? senderLabel(senderName, ctx) : null;
   const nameWidth = name ? Math.min(nameBudget, name.width) : 0;
-  const referenceInFooter = quote && !name && !process;
+  const referenceInFooter = conversationReferenceInFooter(item, Boolean(name));
   const gapWidth = Math.max(0, Number(Boolean(name)) + Number(quote) + Number(Boolean(process)) + Number(Boolean(separator)) - 1) * gap;
   const processCtx = { ...ctx, width: Math.max(40, ctx.width - nameWidth - metadataWidth - gapWidth) };
   const button = process && processButtonLayout(process, processCtx);

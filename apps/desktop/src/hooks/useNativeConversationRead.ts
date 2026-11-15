@@ -12,7 +12,10 @@ import { useOwnerNotificationRead } from './useOwnerNotificationRead'
 
 /** Desktop and phone share one journal; explicit owner notifications also acknowledge the opening snapshot. */
 export function useNativeConversationRead(deviceId: string | null, sessionId: string | undefined, shown: boolean, turns: () => readonly TranscriptTurn[]) {
-  const summary = useConversationSessionSummary(sessionId, deviceId)
+  const summary = useConversationSessionSummary(sessionId, deviceId, (summary) => summary && {
+    nativeOwnerNotificationUnreadCount: summary.nativeOwnerNotificationUnreadCount, agent: summary.agent, nativeInputVersion: summary.nativeInputVersion,
+    nativeUnreadKeys: summary.nativeUnreadKeys, nativeUnreadAliases: summary.nativeUnreadAliases,
+  })
   useOwnerNotificationRead(deviceId, sessionId, shown, summary?.nativeOwnerNotificationUnreadCount !== undefined)
   const readTurns = useRef(turns)
   readTurns.current = turns

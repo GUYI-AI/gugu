@@ -23,7 +23,7 @@ import { segmentItem } from './DeliveryCard';
 import { isMessageEditing } from './message-editor-metrics';
 import { UserMessageCard } from './UserMessageCard';
 import { ConversationReplyReference } from './ConversationReplyReference';
-import { CONVERSATION_EXPAND_H, CONVERSATION_FOOTER_H, conversationBubbleKey, hasConversationActions } from './conversation-body';
+import { CONVERSATION_EXPAND_H, CONVERSATION_FOOTER_H, conversationBubbleKey, conversationCanCollapse, conversationTailLane } from './conversation-body';
 export { isConversationMessage } from './conversation-body';
 import { ConversationNarration, conversationNarrationHeight } from './ConversationNarration';
 import { measureUserMessage } from './user-message-metrics';
@@ -107,9 +107,8 @@ function singleHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): nu
   const body = measureUserMessage(item, bodyCtx, bodyVars);
   // 折着 ⇔ 展开量出来比现在高;那时气泡下面多一行「展开全文」。
   const folded = bodyCtx.expandedId !== item.id && !isMessageEditing(item.id, ctx) && measureUserMessage(item, { ...bodyCtx, expandedId: item.id }, bodyVars) > body;
-  const canCollapse = ctx.expanded(conversationBubbleKey(item)) && ctx.latestConversationMessageId !== item.id
-    && measureUserMessage(item, { ...bodyCtx, expandedId: null }, bodyVars) < body;
-  const actions = hasConversationActions(item) || headerLayout(item, ctx).referenceInFooter || isMessageEditing(item.id, ctx) || canCollapse ? 0 : userMessageActionsHeight(bodyVars);
+  const lane = conversationTailLane(item, conversationCanCollapse(item, ctx), headerLayout(item, ctx).referenceInFooter);
+  const actions = lane !== 'none' || isMessageEditing(item.id, ctx) ? 0 : userMessageActionsHeight(bodyVars);
   return header + body - actions + (folded ? CONVERSATION_EXPAND_H : 0) + (item.role === 'assistant' && item.conversationProcess ? backgroundHeight(item, ctx) : 0);
 }
 

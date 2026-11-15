@@ -1,14 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
-import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
+import { readModel, useReadModel, type Reading } from '@/lib/readModel';
 import { rpc } from '@renderer/lib/ipc';
 import {
   getResolvedIconPath,
   getResolvedLabel,
   OPEN_IN_APPS,
-  openInMenuApps,
-  type OpenInAppConfig,
   type OpenInAppId,
   type PlatformKey,
 } from '@shared/openInApps';
@@ -23,60 +19,43 @@ function getIconUrl(iconPath: string): string | undefined {
   return iconModules[`../../../assets/images/${iconPath}`];
 }
 
-export interface UseOpenInAppsResult {
+export interface OpenInApps {
   icons: Partial<Record<OpenInAppId, string>>;
   labels: Partial<Record<OpenInAppId, string>>;
+  /** Which tools this device has (absent = not detected). */
   availability: Record<string, boolean>;
-  menuApps: OpenInAppConfig[];
-  platform?: PlatformKey;
-  loading: boolean;
 }
 
-export function useOpenInApps(): UseOpenInAppsResult {
-  const { value: openIn, isLoading: settingsLoading } = useAppSettingsKey('openIn');
-  const terminalEnabled = useTerminalEnabled();
+const platformModel = readModel({
+  name: 'appPlatform',
+  scope: 'device',
+  read: () => rpc.app.getPlatform() as Promise<PlatformKey>,
+  fresh: Infinity,
+  persist: true,
+});
 
-  const { data: platform, isLoading: platformLoading } = useQuery({
-    queryKey: ['app', 'platform'],
-    queryFn: () => rpc.app.getPlatform() as Promise<PlatformKey>,
-    staleTime: Infinity,
-  });
+const installedAppsModel = readModel({
+  name: 'openInInstalledApps',
+  scope: 'device',
+  read: async () => (await rpc.app.checkInstalledApps()) as Record<string, boolean>,
+  fresh: 5 * 60 * 1000,
+  persist: true,
+});
 
-  const { data: availability = {}, isLoading: availabilityLoading } = useQuery({
-    queryKey: ['app', 'installedApps'],
-    queryFn: async () => {
-      const apps = await rpc.app.checkInstalledApps();
-      return (apps ?? {}) as Record<string, boolean>;
-    },
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const loading = settingsLoading || platformLoading || availabilityLoading;
-
-  const labels = useMemo(() => {
-    const result: Partial<Record<OpenInAppId, string>> = {};
-    if (!platform) return result;
+/** The "Open in" tools of this device: names and icons for its platform, and which ones are installed. */
+export function useOpenInApps(): Reading<OpenInApps> {
+  const platform = useReadModel(platformModel, []);
+  const installed = useReadModel(installedAppsModel, []);
+  return useMemo((): Reading<OpenInApps> => {
+    if (platform.state !== 'value') return platform;
+    if (installed.state !== 'value') return installed;
+    const labels: Partial<Record<OpenInAppId, string>> = {};
+    const icons: Partial<Record<OpenInAppId, string>> = {};
     for (const app of Object.values(OPEN_IN_APPS)) {
-      result[app.id] = getResolvedLabel(app, platform);
+      labels[app.id] = getResolvedLabel(app, platform.value);
+      const url = getIconUrl(getResolvedIconPath(app, platform.value));
+      if (url) icons[app.id] = url;
     }
-    return result;
-  }, [platform]);
-
-  const icons = useMemo(() => {
-    const result: Partial<Record<OpenInAppId, string>> = {};
-    if (!platform) return result;
-    for (const app of Object.values(OPEN_IN_APPS)) {
-      const iconPath = getResolvedIconPath(app, platform);
-      const url = getIconUrl(iconPath);
-      if (url) result[app.id] = url;
-    }
-    return result;
-  }, [platform]);
-
-  const menuApps = useMemo(
-    () => (loading ? [] : openInMenuApps({ installed: availability, hidden: openIn?.hidden, terminalEnabled, defaultApp: openIn?.default })),
-    [availability, loading, openIn?.default, openIn?.hidden, terminalEnabled]
-  );
-
-  return { icons, labels, availability, menuApps, platform, loading };
+    return { state: 'value', value: { icons, labels, availability: installed.value }, stale: platform.stale || installed.stale, error: installed.error };
+  }, [platform, installed]);
 }

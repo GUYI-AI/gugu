@@ -26,7 +26,7 @@ import {
   waitForCondition,
 } from '../../../support/testHarness'
 vi.mock('../../../../apps/desktop/src/platform', () => import('../../../support/capacitorPlatformTestDouble'))
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: undefined }) }))
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } })
 
 const IMAGES = [
   { url: 'https://example.test/one.png', alt: 'one' },
