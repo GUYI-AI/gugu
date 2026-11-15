@@ -18,6 +18,7 @@ vi.mock('../../../../apps/desktop/src/lib/realtimeChannel', () => ({
   unsubscribePrivateUserEventBus: bus.off,
 }))
 import { useStoredAgentTurnFailure } from '../../../../apps/desktop/src/hooks/useStoredAgentTurnFailure'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
 const empty = { failures: [], recovered: [] }
 const failure = { agentUserId: 'agent', commandId: 'cmd', revision: 'one', at: 1, reason: 'weeklyQuota' }
@@ -29,7 +30,9 @@ let ui: ReturnType<typeof createReactHarness>
 const current = () => ui.container.querySelector('[data-failure]')?.textContent
 const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 const reconnect = () => act(async () => bus.subscribed?.())
-beforeEach(() => {
+beforeEach(async () => {
+  await freshReplicaAccount('owner')
+
   vi.useFakeTimers()
   ui = createReactHarness()
   read.mockReset().mockResolvedValue(empty)
@@ -90,25 +93,29 @@ describe('automatic reply-status read recovery (#1896)', () => {
     expect(current()).toBe('')
   })
 
-  it('an event refresh replaces a scheduled retry instead of leaving an extra read behind', async () => {
+  it('an event during a retry is answered by one read after that retry, and nothing more', async () => {
     read.mockRejectedValueOnce(new Error('offline'))
     await ui.render(createNode(Probe, {}))
     await advance(500)
     await reconnect()
-    expect(read).toHaveBeenCalledTimes(2)
+    // The first read (retrying) began before the event: it lands, then one more read (I2), then the reading is settled.
     await advance(30_000)
-    expect(read).toHaveBeenCalledTimes(2)
+    expect(read).toHaveBeenCalledTimes(3)
+    await advance(60_000)
+    expect(read).toHaveBeenCalledTimes(3)
   })
 
-  it('does not let a late failed request overwrite a newer success or schedule a retry', async () => {
+  it('a late failed first read is retried and then read once more for the event; the settled reading is the newer one', async () => {
     const old = deferred<typeof empty>()
-    read.mockReturnValueOnce(old.promise)
+    read.mockReturnValueOnce(old.promise).mockResolvedValueOnce(empty).mockResolvedValue({ failures: [failure], recovered: [] })
     await ui.render(createNode(Probe, {}))
     await reconnect()
     await act(async () => old.reject(new Error('old timeout')))
     await advance(30_000)
-    expect(read).toHaveBeenCalledTimes(2)
-    expect(log.error).not.toHaveBeenCalled()
+    expect(read).toHaveBeenCalledTimes(3)
+    expect(current()).toBe('cmd')
+    await advance(60_000)
+    expect(read).toHaveBeenCalledTimes(3)
   })
 
   it('cancels scheduled recovery on unmount', async () => {

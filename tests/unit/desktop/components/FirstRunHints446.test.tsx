@@ -1,17 +1,25 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, waitForCondition } from '../../../support/testHarness'
 import { stubLayoutIntersection } from '../../../support/layoutIntersection'
 import type { FirstRunHintId, FirstRunHintsProgress } from '../../../../apps/desktop/src/lib/firstRunHints'
 
 const io = vi.hoisted(() => ({ read: vi.fn(), dismiss: vi.fn(), warn: vi.fn() }))
-vi.mock('../../../../apps/desktop/src/lib/firstRunHints', async (importOriginal) => ({ ...(await importOriginal<object>()), readFirstRunHints: io.read, dismissFirstRunHints: io.dismiss }))
+vi.mock('../../../../apps/desktop/src/lib/firstRunHints', async (importOriginal) => ({ ...(await importOriginal<object>()), dismissFirstRunHints: io.dismiss }))
+// The hints are a key of the account's own `user` settings row (the ownSettings replica): its read is the account read.
+vi.mock('@gugu/core/cloud/userSettings', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  readUserSettingsConfig: async () => { const progress = await io.read(); return progress ? { firstRunHints: progress } : {} },
+}))
 vi.mock('../../../../apps/desktop/src/lib/log', async (importOriginal) => ({ ...(await importOriginal<object>()), rendererLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: io.warn, error: vi.fn() }) }))
 const { FirstRunHints } = await import('../../../../apps/desktop/src/components/firstRun/FirstRunHints')
 const { AssistantIntro } = await import('../../../../apps/desktop/src/components/assistant/AssistantIntro')
 const { i18n } = await import('../../../../apps/desktop/src/i18n/runtime')
+const replica = await import('../../../../apps/desktop/src/lib/replica')
+const { ownSettings } = await import('../../../../apps/desktop/src/lib/ownSettings')
+const shownProgress = () => { const reading = ownSettings.peek('user'); return reading.state === 'value' ? reading.value.firstRunHints : undefined }
 
 type Device = 'phone' | 'desktop'
 let account: FirstRunHintsProgress | null
@@ -22,6 +30,8 @@ beforeEach(async () => {
   io.read.mockReset().mockImplementation(async () => account)
   io.dismiss.mockReset().mockImplementation(async (_owner, ids: FirstRunHintId[]) => {
     account = { version: 1, dismissed: [...new Set([...(account?.dismissed ?? []), ...ids])] }
+    // The save puts the saved row into the replica (updateOwnSettingsKey does that in the product).
+    ownSettings.set(['user'], { firstRunHints: account })
     return account
   })
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
@@ -59,11 +69,13 @@ function addEntry(device: Device, id: FirstRunHintId) {
 async function mount(device: Device) {
   setDevice(device)
   const h = createReactHarness()
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } })
-  await h.render(createNode(QueryClientProvider, { client }, createNode(FirstRunHints, { userId: 'owner-1' })))
-  const close = () => { h.cleanup(); client.clear() }
+  // Each mount is a fresh renderer (another device, or the app opened again): nothing read yet.
+  replica.queryClient.clear()
+  replica.followRendererSession('SIGNED_IN', 'owner-1')
+  await h.render(createNode(QueryClientProvider, { client: replica.queryClient }, createNode(FirstRunHints, { userId: 'owner-1' })))
+  const close = () => { h.cleanup(); replica.queryClient.clear() }
   cleanup.push(close)
-  return { ...h, close, client }
+  return { ...h, close }
 }
 const bubble = (id: FirstRunHintId) => document.querySelector<HTMLElement>(`[data-testid="first-run-hint-${id}"]`)
 async function advance(ms: number) {
@@ -186,57 +198,18 @@ describe('contextual hints at the entries each device draws', () => {
     await waitForCondition(() => !!bubble('collaboration'), 'page becomes visible')
   })
 
-  it('silently backs off a transient read failure and restores the Chinese hint', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  it('a failed read shows no hint and says nothing; reading the row again shows it', async () => {
     io.read.mockRejectedValueOnce(new Error('permission denied'))
     addEntry('phone', 'assistant')
     await mount('phone')
-    await advance(0)
-    expect(io.read).toHaveBeenCalledTimes(1)
+    await waitForCondition(() => ownSettings.peek('user').state === 'error', 'read failed')
     expect(bubble('assistant')).toBeNull()
     expect(document.querySelector('[role="alert"], [data-testid="first-run-hint-error"]')).toBeNull()
-    await advance(999)
-    expect(io.read).toHaveBeenCalledTimes(1)
-    await advance(1)
-    expect(io.read).toHaveBeenCalledTimes(2)
-    await advance(1) // TanStack publishes the successful retry on the next notification tick.
-    expect(bubble('assistant')?.textContent).toContain('咕咕是你的个人助理')
-    expect(bubble('assistant')?.textContent).toContain('知道了')
     expect(document.body.textContent).not.toMatch(/permission denied|Retry|Could not read/)
+    await act(async () => { await ownSettings.refresh('user') })
+    await waitForCondition(() => !!bubble('assistant'), 'hint after a read')
+    expect(bubble('assistant')?.textContent).toContain('咕咕是你的个人助理')
     expect(io.dismiss).not.toHaveBeenCalled()
-  })
-
-  it.each(['phone', 'desktop'] as const)('%s: exhausts silent reads without inventing progress, then recovers on a real refetch', async (device) => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-    io.read.mockRejectedValue(new Error('local request failed: code=1'))
-    addEntry(device, 'assistant')
-    const h = await mount(device)
-    await advance(7000)
-    expect(io.read).toHaveBeenCalledTimes(4)
-    await advance(60_000)
-    expect(io.read).toHaveBeenCalledTimes(4)
-    expect(document.querySelector('[data-testid^="first-run-hint-"], [role="alert"], [data-sonner-toast]')).toBeNull()
-    expect(document.body.textContent).not.toMatch(/code=1|Retry|提示进度/)
-    expect(h.client.getQueryData(['first-run-hints', 'owner-1'])).toBeUndefined()
-    expect(io.dismiss).not.toHaveBeenCalled()
-    expect(io.warn).toHaveBeenCalledWith({ error: 'Error: local request failed: code=1' }, 'First-run hint progress read failed')
-    io.read.mockResolvedValue(account)
-    await act(async () => { await h.client.invalidateQueries({ queryKey: ['first-run-hints', 'owner-1'] }) })
-    await advance(1)
-    expect(bubble('assistant')?.textContent).toContain('知道了')
-    expect(h.client.getQueryData(['first-run-hints', 'owner-1'])).toEqual({ version: 1, dismissed: [] })
-  })
-
-  it('cancels a pending read retry when its surface unmounts', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-    io.read.mockRejectedValue(new Error('offline'))
-    addEntry('phone', 'assistant')
-    const h = await mount('phone')
-    await advance(0)
-    expect(io.read).toHaveBeenCalledTimes(1)
-    h.close()
-    await advance(60_000)
-    expect(io.read).toHaveBeenCalledTimes(1)
   })
 
   it('silently retries a dismissed hint save without asking the user to retry', async () => {
@@ -258,7 +231,7 @@ describe('contextual hints at the entries each device draws', () => {
   it('keeps an exhausted save pending and silent without claiming account success', async () => {
     io.dismiss.mockRejectedValue(new Error('permission denied'))
     addEntry('phone', 'assistant')
-    const h = await mount('phone')
+    await mount('phone')
     await waitForCondition(() => !!bubble('assistant'), 'hint visible')
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     await clickElement(bubble('assistant')!.querySelector('button')!)
@@ -267,7 +240,7 @@ describe('contextual hints at the entries each device draws', () => {
     await advance(60_000)
     expect(io.dismiss).toHaveBeenCalledTimes(4)
     expect(account?.dismissed).toEqual([])
-    expect(h.client.getQueryData(['first-run-hints', 'owner-1'])).toEqual({ version: 1, dismissed: [] })
+    expect(shownProgress()).toEqual({ version: 1, dismissed: [] })
     expect(document.querySelector('[data-testid^="first-run-hint-"], [role="alert"], [data-sonner-toast]')).toBeNull()
     expect(io.warn).toHaveBeenCalledWith({ error: 'Error: permission denied' }, 'First-run hint progress save failed')
   })

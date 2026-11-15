@@ -190,6 +190,7 @@ export function AddFriendSearch({
   }
 
   // @@@scan-seed (#537-A) - 扫码得到的咕咕号路由到这里：填入搜索框并跑搜索，命中的人带「添加」按钮。
+  // @@@effect-flow - runs the search a scanned code asked for (once per seed token); the results are that search's outcome
   useEffect(() => {
     if (!seed) return
     setQuery(seed.query)

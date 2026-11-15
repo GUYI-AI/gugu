@@ -5,8 +5,7 @@
 //
 // 可见继承来源、参与靠说话:这个 hook 只负责把服务端算好的 is_participant 端上来,
 // ❌ 不在客户端二次判断谁看得见谁被通知(那归 RLS 与数据库触发器,客户端再判一遍就是第二个属主)。
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useIsFetching } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo } from 'react'
 import { queryClient, replica, useReplica } from '../lib/replica'
 import type { ChatItem, TopicSummary } from '@gugu/core/shared/types/chat'
 import { topicService } from '../lib/topics'
@@ -85,6 +84,26 @@ export const topicsOfChat = replica({
 })
 
 /**
+ * Where a topic was opened from, for its split header (@@@5856): `readable` with the source line's preview, `gone`
+ * (deleted), or `unreadable` (the source is there but not for this reader — ❌ said as deleted). No push: read on open,
+ * kept a while for switching back. A failed read is an error reading (❌ "deleted").
+ */
+export const topicSource = replica({
+  name: 'topicSource',
+  scope: 'account',
+  read: async (_owner: string, topicChatId: string) => {
+    try {
+      return await topicService.getSourceState(topicChatId)
+    } catch (error) {
+      topicsLog.error({ error, topicChatId }, 'topic source message preview failed')
+      throw error
+    }
+  },
+  fresh: 0,
+  keep: 30 * 60_000,
+})
+
+/**
  * @param subscribeAccountRevision 订阅 chat_changed。话题的新建、改名、归档、成员变化和新消息,服务端都会给来源线的
  *   每个成员发一条 chat_changed,entity_id 是那条话题(gugu-supabase 20261106120000)。这里只重读那一条 ——
  *   否则对端要重开这条线才看得见新话题(#1588)。来源线自己的 chat_changed(每条消息一次)没有 entity_id,与这份清单无关。
@@ -97,22 +116,13 @@ export function useTopicsOfChat(
   // Keyed by the line: switching lines never hands out the previous line's topics, and a line seen before has its topics
   // on the first frame (#6519) while it is read again.
   const reading = useReplica(topicsOfChat, sourceChatId ? [sourceChatId] : null)
-  const key = sourceChatId ? topicsOfChat.key(sourceChatId) : null
-  const fetching = useIsFetching({ queryKey: key ?? ['topicsOfChat:none'], exact: true }, queryClient) > 0
   // null until the line's topics are read: no anchor card and no topic list yet, ❌ an empty list that says「没有话题」.
   const topics = reading.state === 'value' ? reading.value : null
   const failure = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null
-  const loading = !!sourceChatId && (reading.state === 'unknown' || fetching)
-  // One topic's failed read: said on this line until the line's topics are updated after it (that topic read again, or
-  // the whole line).
-  const [topicError, setTopicError] = useState<{ chatId: string; message: string; at: number } | null>(null)
-  const updatedAt = key ? queryClient.getQueryState(key)?.dataUpdatedAt ?? 0 : 0
-  const shownTopicError = topicError && topicError.chatId === sourceChatId && topicError.at >= updatedAt ? topicError.message : null
+  const loading = !!sourceChatId && reading.state === 'unknown'
 
   const reload = useCallback(() => { if (sourceChatId) void topicsOfChat.refresh(sourceChatId) }, [sourceChatId])
 
-  const loadingRef = useRef(loading)
-  loadingRef.current = loading
   useEffect(() => {
     if (!sourceChatId || !subscribeAccountRevision) return
     let active = true
@@ -131,16 +141,19 @@ export function useTopicsOfChat(
         topicsOfChat.set([sourceChatId], (shown) => shown ? withTopic(shown, topicChatId, rows[0]) : shown)
       } catch (err) {
         if (!current()) return
-        topicsLog.error({ error: err, sourceChatId, topicChatId }, 'read topic failed')
-        setTopicError({ chatId: sourceChatId, message: (err as Error)?.message ?? String(err), at: Date.now() })
+        // One topic could not be read: read the whole line again (I1), its failure is the line's reading.
+        topicsLog.error({ error: err, sourceChatId, topicChatId }, 'read topic failed; reading the line again')
+        reload()
       }
     }
     const unsubscribe = subscribeAccountRevision('chat_changed', (operations) => {
       for (const operation of operations) {
         const { chatId, entityId } = readRevisionResourceKey(operation.payload, 'chat_changed')
         if (chatId !== sourceChatId || !entityId) continue
-        // The whole-line read still in flight may predate this change: read the line again instead.
-        if (loadingRef.current) reload()
+        // The whole-line read still in flight may predate this change: read the line again instead (a one-moment look
+        // at the replica's own entry, outside rendering).
+        const key = topicsOfChat.key(sourceChatId)
+        if (key && queryClient.getQueryState(key)?.fetchStatus === 'fetching') reload()
         else void refresh(entityId)
       }
     })
@@ -161,5 +174,5 @@ export function useTopicsOfChat(
     return index
   }, [topics])
 
-  return { topics, bySourceMessageId, loading, error: shownTopicError ?? (failure ? failure.message ?? String(failure) : null), reload }
+  return { topics, bySourceMessageId, loading, error: failure ? failure.message ?? String(failure) : null, reload }
 }

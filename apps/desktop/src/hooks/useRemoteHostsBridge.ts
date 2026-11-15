@@ -7,15 +7,16 @@ import type { SshSignInState } from '../lib/serverSshMachines'
 import { useSshSignInStates } from './useSshSignInStates'
 import {
   canOpenTunnels,
+  isSshMachine,
   requestSshServerUpgrade,
   signInSshMachine,
   tunnelLinks,
   wantTunnels,
 } from '../lib/sshLinkChannel'
 import { tunnelFacts, wantsTunnel } from '../lib/tunnelMachines'
-import { sshMachineAddresses } from './useSshMachines'
-import { sshLinkFacts } from '../lib/sshLinkOnline'
+import { remoteLinkFacts } from '../lib/sshLinkOnline'
 import { useSshLinkProblems } from './useSshLinkProblems'
+import { useSshMachineIds } from './useSshMachines'
 import { useDevicesStore } from '../store/devicesContext'
 import { openMachineSessionHostPipe } from '../lib/remoteSessionHost'
 import { retryServerVersionMatch } from '../lib/serverVersionRetry'
@@ -32,6 +33,7 @@ import {
   type RemoteHostDevice,
   type RemoteHostsBridge,
 } from '../session/shared/remote-hosts'
+
 
 /**
  * #6264 把「名下别的机器」和「到那台机器会话页宿主的线」交给会话页(见 session/shared/remote-hosts.ts)。
@@ -56,16 +58,11 @@ export function useRemoteHostsBridge(
     return () => window.removeEventListener('gugu:cloud-version-matched', ready)
   }, [])
   const homeName = useAssistantName()
-  // This desktop's SSH machines (the registry main keeps; kept across restarts). Not read yet: none claimed (the rows
-  // say what the cloud says until then), ❌ a machine reported as down.
-  const sshReading = useReplica(sshMachineAddresses, [])
-  // @@@reading-default - not read yet: no SSH route is claimed for any machine (each row shows the cloud's facts)
-  const sshMachines = useMemo<ReadonlySet<string>>(
-    () => new Set(sshReading.state === 'value' ? sshReading.value.map(([deviceId]) => deviceId) : NO_SSH_MACHINES),
-    [sshReading],
-  )
+  // This desktop's SSH machines; null = not read yet (kept across restarts, so only a first run or a refused snapshot):
+  // then each machine's link is drawn as not known (remoteLinkFacts), no tunnel is asked for and no sign-in is asked.
+  const sshMachines = useSshMachineIds()
   // 离线的 SSH 机器:这个账号在那台机器上的登录还在不在(侧栏与会话里说「登录已失效」而不只是「离线」)。
-  const sshAddress = useCallback((deviceId: string) => (sshMachines.has(deviceId) ? deviceId : null), [sshMachines])
+  const sshAddress = useCallback((deviceId: string) => (sshMachines?.has(deviceId) ? deviceId : null), [sshMachines])
   const signIns = useSshSignInStates(devices, sshAddress)
   const linkProblems = useSshLinkProblems()
   // Main's tunnel links; not read yet = none known linked (a wanted machine shows "connecting"), ❌ "down".
@@ -73,6 +70,7 @@ export function useRemoteHostsBridge(
   const tunnels = tunnelReading.state === 'value' ? tunnelReading.value : null
   // 远程隧道:在线、中转通着、这台电脑没有它的 SSH 映射的那几台,交给主进程经中转连过去(连通了就有终端 / 浏览器 / 端口)。
   useEffect(() => {
+    if (!sshMachines) return
     wantTunnels(
       devices
         .filter((device) => wantsTunnel(device, sshMachines))
@@ -87,20 +85,21 @@ export function useRemoteHostsBridge(
           machineId: device.machine_id,
           ...(machineKeyOf(device) === currentMachineKey ? { isCurrentMachine: true as const } : {}),
           label: isAssistantHome(device, homeId) ? homeName : device.label,
-          ...sshLinkFacts(sshMachines.has(device.device_id), linkProblems.get(device.device_id) ?? null, device.is_online),
+          ...remoteLinkFacts(device.device_id, sshMachines, linkProblems.get(device.device_id) ?? null, device.is_online),
           platform: device.platform,
           lastSeenAt: device.last_seen_at || null,
           sessionDigest: device.session_digest ?? null,
-          directTerminal: sshMachines.has(device.device_id) || tunnelLinked(tunnels, device.device_id),
-          ...(!sshMachines.has(device.device_id) && tunnelLinked(tunnels, device.device_id) ? { viaTunnel: true as const } : {}),
-          ...tunnelFacts(device, sshMachines, tunnels, canOpenTunnels()),
+          directTerminal: sshMachines !== null && (sshMachines.has(device.device_id) || tunnelLinked(tunnels, device.device_id)),
+          ...(sshMachines !== null && !sshMachines.has(device.device_id) && tunnelLinked(tunnels, device.device_id) ? { viaTunnel: true as const } : {}),
+          ...(sshMachines !== null ? tunnelFacts(device, sshMachines, tunnels, canOpenTunnels()) : {}),
           hostKind: device.capabilities?.host_kind === 'phone' ? undefined : device.capabilities?.host_kind,
           connectVia: device.capabilities?.connect_via,
           version: device.capabilities?.app_version ?? null,
           signInExpiredAt:
-            sshMachines.has(device.device_id) && linkProblems.get(device.device_id) === 'notSignedIn'
-              ? null
-              : signInExpiredAt(signIns.get(device.device_id)),
+            sshMachines === null ? undefined
+              : sshMachines.has(device.device_id) && linkProblems.get(device.device_id) === 'notSignedIn'
+                ? null
+                : signInExpiredAt(signIns.get(device.device_id)),
           notices: serverMachineNotices(device.capabilities),
           ...(device.capabilities?.server_update ? { serverUpdate: device.capabilities.server_update } : {}),
           ...(device.cloud_computer ? { cloudComputer: device.cloud_computer } : {}),
@@ -163,7 +162,7 @@ export function useRemoteHostsBridge(
       },
       // #7403 那台的咕咕太旧、不认这一问:远程 SSH 由这台桌面替它升级;远程隧道 / 云电脑请它自己当场换(设备行「重试」同一条)。
       matchServerVersion: (deviceId, options) =>
-        isSshMachineNow(deviceId)
+        isSshMachine(deviceId)
           ? requestSshServerUpgrade(deviceId, { force: options?.retry === true })
           : homeIdRef.current === deviceId ? requestCloudVersionMatch(deviceId, options?.retry === true) : retryServerVersionMatch(deviceId),
     }
@@ -171,17 +170,9 @@ export function useRemoteHostsBridge(
   }, [enabled])
 }
 
-const NO_SSH_MACHINES: readonly string[] = []
-
 /** Linked over a tunnel per main's state; not read yet = not known linked. */
 function tunnelLinked(tunnels: { ready: readonly string[] } | null, deviceId: string): boolean {
   return tunnels !== null && tunnels.ready.includes(deviceId)
-}
-
-/** A command deciding where to send an upgrade request now (a one-moment decision): the registry as read. */
-function isSshMachineNow(deviceId: string): boolean {
-  const reading = sshMachineAddresses.peek()
-  return reading.state === 'value' && reading.value.some(([id]) => id === deviceId)
 }
 
 /** 登录没了(失效 / 那台机器上登出 / 被移除)的时刻;还登着或问不到 = null。 */

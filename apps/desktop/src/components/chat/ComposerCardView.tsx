@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation'
 import type { ComposerCard, QuestionCard, TaskCard } from '@gugu/core/shared/ui/taskCardModels'
@@ -14,8 +14,8 @@ import { useShownAgentName } from '../../hooks/useShownAgentName'
 import { useAvatarIdentity } from '../../lib/avatarIdentity'
 import { myAgentJoinRequests } from '../../lib/agentJoinRequests'
 import { useReplica } from '../../lib/replica'
+import { devicesModel } from '../../store/devicesCache'
 import { rendererLogger } from '../../lib/log'
-import { platform } from '../../platform'
 import { useChatStore } from '../../store/chatContext'
 import { useAuth } from '../../store/auth'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
@@ -201,25 +201,19 @@ export function TaskStatusMark({ status }: { status: AgentDisplayStatus | undefi
   return <AgentStatusGlyph presentation={presentation} label={t(`agentStatus.${presentation.label}`)} variant="2" />
 }
 
-function localDeviceId(): Promise<string | null> {
-  return Promise.resolve(platform.getLocalDeviceSelfSnapshot?.()).then((self) => self?.device_id ?? null, () => null)
-}
-
 /**
  * 卡上「在哪」:我的卡、会话就在这台电脑上 = 不写(点卡打开;卡就在它的项目群或对话里,原型里卡上只有三行);
  * 我在别的电脑上派的 = 那台电脑;同事的卡 = 在他的电脑上(过程看不到,结果看群里)。
  */
 function useTaskCardPlace(task: TaskCard | null, isMine: boolean, senderName: string): { local: boolean; label: string | null } {
   const { t } = useTranslation('messaging')
-  const [here, setHere] = useState<string | null>(null)
-  useEffect(() => {
-    if (!task || !isMine) return
-    let live = true
-    void localDeviceId().then((id) => { if (live) setHere(id) })
-    return () => { live = false }
-  }, [task, isMine])
+  // 这台电脑是哪一台:设备表里标着 is_current_device 的那一行(与 AssistantShellHost 同一个说法)。
+  const devices = useReplica(devicesModel, task && isMine ? [] : null)
   if (!task) return { local: false, label: null }
   if (!isMine) return { local: false, label: t('message.taskCard.onColleagueComputer', { name: senderName }) }
+  // 设备表还没读到:卡上先不写「在哪」(❌ 猜成别的电脑)。
+  if (devices.state !== 'value') return { local: false, label: null }
+  const here = devices.value.find((device) => device.is_current_device)?.device_id ?? null
   if (here !== task.deviceId) return { local: false, label: here ? t('message.taskCard.onMachine', { machine: task.machineLabel }) : null }
   return { local: true, label: null }
 }

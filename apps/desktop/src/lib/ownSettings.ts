@@ -6,7 +6,7 @@ import {
   type VersionedSettingsTableClient,
 } from '@gugu/core/cloud/userSettings'
 import type { GuguSettingsRow, GuguSettingsScope } from '@gugu/core/shared/types/chat'
-import { replica, replicaAccount } from './replica'
+import { replica, replicaAccount, useReplica, type Reading } from './replica'
 import { identityDb } from './supabase'
 
 const client = identityDb as unknown as SettingsTableClient & VersionedSettingsTableClient
@@ -63,4 +63,18 @@ export async function updateOwnSettings(userId: string, scope: Scope, edit: (con
 /** Edit one key of the latest row, then keep the saved row. */
 export async function updateOwnSettingsKey(userId: string, scope: Scope, key: string, edit: (value: unknown) => unknown) {
   return saved(userId, await updateUserSettingsKey(client, userId, scope, key, edit))
+}
+
+/**
+ * One key family of the signed-in account's `user` row, parsed: the row's reading with `parse` applied to its value. A
+ * value `parse` rejects is an error reading (❌ read as "never set"). `userId` null = no account to read for (unknown).
+ */
+export function useOwnUserSetting<T>(userId: string | null, parse: (config: Record<string, unknown>) => T): Reading<T> {
+  const row = useReplica(ownSettings, userId ? ['user'] : null)
+  if (row.state !== 'value') return row
+  try {
+    return { ...row, value: parse(row.value) }
+  } catch (error) {
+    return { state: 'error', error: error as Error }
+  }
 }

@@ -56,7 +56,7 @@ beforeEach(async () => {
       minimize: () => undefined,
       maximize: () => undefined,
       close: () => undefined,
-      isMaximized: async () => false,
+      isMaximizedSync: () => false,
       onMaximizedChange: () => () => undefined,
       getChromeLabels: () => ({ minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore', close: 'Close' }),
     },

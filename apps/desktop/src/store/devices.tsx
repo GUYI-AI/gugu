@@ -194,7 +194,8 @@ export function DevicesProvider({ children, active = true }: { children: React.R
     () =>
       sortDevices(
         withCloudComputerPresence(
-          withSshLinkOnline(devices, sshMachineIds, linkProblems),
+          // @@@reading-default - SSH list not read yet (first run only: it is kept across restarts): rows keep the cloud heartbeat they carry
+          sshMachineIds ? withSshLinkOnline(devices, sshMachineIds, linkProblems) : devices,
           cloudComputer.snapshot,
           Date.now(),
           cloudComputer.wakeRefused?.deviceId ?? null,

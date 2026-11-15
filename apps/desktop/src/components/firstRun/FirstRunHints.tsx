@@ -2,54 +2,44 @@ import './first-run-hints.css'
 import '../../i18n/registerAssistantCatalog'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useMobileShell } from '@/hooks/useMobileShell'
-import { allFirstRunHintsDismissed, dismissFirstRunHints, readFirstRunHints, type FirstRunHintId } from '@/lib/firstRunHints'
+import { allFirstRunHintsDismissed, dismissFirstRunHints, parseFirstRunHints, type FirstRunHintId } from '@/lib/firstRunHints'
+import { useOwnUserSetting } from '@/lib/ownSettings'
+import { queryClient } from '@/lib/replica'
 import { rendererLogger } from '@/lib/log'
 import { Button } from '../ui/Button'
 import { Popover } from '../ui/Popover'
 import { HINT_ENTRIES, deviceHintsDismissed, useFirstRunHintTargets } from './firstRunHintTargets'
 
 const log = rendererLogger('first-run/hints')
-const backgroundRetry = { retry: 3, retryDelay: (attempt: number) => Math.min(1000 * 2 ** attempt, 30_000) }
+const saveRetry = { retry: 3, retryDelay: (attempt: number) => Math.min(1000 * 2 ** attempt, 30_000) }
 
 /** One quiet, contextual hint at a time. Account reads/writes must succeed before claiming progress. */
 export function FirstRunHints({ userId }: { userId: string }) {
   const { t } = useTranslation('assistant')
   const device = useMobileShell() ? 'phone' : 'desktop'
-  const client = useQueryClient()
-  const queryKey = ['first-run-hints', userId]
-  const progress = useQuery({
-    queryKey,
-    queryFn: async () => {
-      try { return await readFirstRunHints(userId) }
-      catch (error) {
-        log.warn({ error: String(error) }, 'First-run hint progress read failed')
-        throw error
-      }
-    },
-    ...backgroundRetry,
-  })
-  const targets = useFirstRunHintTargets(device, !progress.isError && progress.data != null && !deviceHintsDismissed(device, progress.data))
+  // The account's `user` row (shared with the product tour). A failed read shows no hint this time (an error reading).
+  const progress = useOwnUserSetting(userId, parseFirstRunHints)
+  const read = progress.state === 'value' ? progress.value : null
+  const targets = useFirstRunHintTargets(device, read !== null && !deviceHintsDismissed(device, read))
   const [pending, setPending] = useState<FirstRunHintId[]>([])
   // Retire the current encounter, not every hint currently on screen in a chain.
   // Another hint can appear when its entry is encountered on a later page/visit.
   const suppressed = useRef(new Set<HTMLElement>())
   for (const anchor of suppressed.current) if (!targets.some((target) => target.anchor === anchor)) suppressed.current.delete(anchor)
   const save = useMutation({
+    // The saved row lands in the replica (updateOwnSettingsKey), so the progress reading follows by itself.
     mutationFn: (ids: readonly FirstRunHintId[]) => dismissFirstRunHints(userId, ids),
-    ...backgroundRetry,
+    ...saveRetry,
     onError: (error) => log.warn({ error: String(error) }, 'First-run hint progress save failed'),
-    onSuccess: (next) => {
-      client.setQueryData(queryKey, next)
-      setPending((ids) => ids.filter((id) => !next.dismissed.includes(id)))
-    },
-  })
-  const unsaved = pending.filter((id) => !progress.data?.dismissed.includes(id))
+    onSuccess: (next) => setPending((ids) => ids.filter((id) => !next.dismissed.includes(id))),
+  }, queryClient)
+  const unsaved = pending.filter((id) => !read?.dismissed.includes(id))
   useEffect(() => {
-    if (progress.isSuccess && progress.data && unsaved.length && !save.isPending && !save.isError) save.mutate(unsaved)
-  }, [progress.isSuccess, progress.data, unsaved, save])
+    if (read && unsaved.length && !save.isPending && !save.isError) save.mutate(unsaved)
+  }, [read, unsaved, save])
 
   const retire = (id: FirstRunHintId) => {
     targets.forEach((target) => suppressed.current.add(target.anchor))
@@ -57,7 +47,7 @@ export function FirstRunHints({ userId }: { userId: string }) {
   }
   // Capture use even while the account read is pending, and before a pushed page removes its entry.
   useEffect(() => {
-    if (progress.isSuccess && (!progress.data || allFirstRunHintsDismissed(progress.data))) return
+    if (progress.state === 'value' && (!progress.value || allFirstRunHintsDismissed(progress.value))) return
     const used = (event: Event) => {
       const element = event.target instanceof Element ? event.target : null
       if (!element || element.closest('[disabled], [aria-disabled="true"]')) return
@@ -73,13 +63,13 @@ export function FirstRunHints({ userId }: { userId: string }) {
     }
   })
 
-  const confirmed = progress.data
-  const target = !progress.isError && confirmed ? targets.find((item) => !confirmed.dismissed.includes(item.id) && !pending.includes(item.id) && !suppressed.current.has(item.anchor)) : null
+  const confirmed = read
+  const target = confirmed ? targets.find((item) => !confirmed.dismissed.includes(item.id) && !pending.includes(item.id) && !suppressed.current.has(item.anchor)) : null
   if (!target) return null
   const label = t(`hints.${device}.${target.id}`)
   const note = <>
     <p>{label}</p>
-    <Button variant="ghost" size="sm" onClick={() => retire(target.id)} disabled={progress.isFetching || save.isPending}>
+    <Button variant="ghost" size="sm" onClick={() => retire(target.id)} disabled={save.isPending}>
       {t('hints.dismiss')}
     </Button>
   </>

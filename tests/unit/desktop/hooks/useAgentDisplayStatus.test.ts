@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   subscribeAgentPresence: vi.fn(),
   getAgentPresenceSnapshot: vi.fn(),
   listeners: [] as Array<(state: AgentPresenceState) => void>,
+  neverObserved: null as AgentPresenceState | null,
   unsubscribes: [] as Array<() => void>,
 }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({
@@ -24,6 +25,11 @@ vi.mock('../../../../apps/desktop/src/lib/agentPresenceStore', () => ({
   getAgentPresenceSnapshot: mocks.getAgentPresenceSnapshot,
   // #3839 「从未观测过长什么样」由 store 单点定义,hook 从那里取 —— 所以 mock 也得给出这一条,
   // ❌ 不在判据里另写一份中性态字面量(那正是被删掉的 emptyState 副本)。
+  // The hook reads the store through its `useSelect` adapter: the same get / subscribe as the mocked store.
+  agentPresenceReadable: (agentUserId: string) => ({
+    get: () => mocks.getAgentPresenceSnapshot(agentUserId) ?? mocks.neverObserved,
+    subscribe: (listener: () => void) => (agentUserId ? mocks.subscribeAgentPresence(agentUserId, () => listener()) : () => undefined),
+  }),
   neverObservedAgentPresence: (agentUserId: string) => presenceState({
     agentUserId,
     status: 'pending',
@@ -59,8 +65,10 @@ beforeEach(() => {
   mocks.subscribeAgentPresence.mockReset()
   mocks.getAgentPresenceSnapshot.mockReset()
   mocks.getAgentPresenceSnapshot.mockReturnValue(presenceState())
+  mocks.neverObserved = presenceState({ agentUserId: '', status: 'pending', deviceOnline: false, source: 'pending', lastSnapshotAt: null })
   mocks.subscribeAgentPresence.mockImplementation((_id: string, listener: (s: AgentPresenceState) => void) => {
-    mocks.listeners.push(listener)
+    // A push is the store's state changing: what `get` answers from now on.
+    mocks.listeners.push((state) => { mocks.getAgentPresenceSnapshot.mockReturnValue(state); listener(state) })
     const unsubscribe = vi.fn()
     mocks.unsubscribes.push(unsubscribe)
     return unsubscribe
@@ -72,7 +80,7 @@ afterEach(() => {
 })
 describe('useAgentDisplayStatus', () => {
   it('reads the store snapshot for the initial status', async () => {
-    mocks.getAgentPresenceSnapshot.mockReturnValueOnce(presenceState({ status: 'working' }))
+    mocks.getAgentPresenceSnapshot.mockReturnValue(presenceState({ status: 'working' }))
     await harness.render(createNode(StatusProbe, { agentUserId: 'agent-1' }))
     await flush()
     expect(statusText()).toBe('working')
@@ -95,6 +103,7 @@ describe('useAgentDisplayStatus', () => {
     expect(mocks.unsubscribes[0]).toHaveBeenCalled()
   })
   it('does not subscribe when agentUserId is missing', async () => {
+    mocks.getAgentPresenceSnapshot.mockReturnValue(null)
     await harness.render(createNode(StatusProbe, { agentUserId: null }))
     await flush()
     expect(mocks.subscribeAgentPresence).not.toHaveBeenCalled()

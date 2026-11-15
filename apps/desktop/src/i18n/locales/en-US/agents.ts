@@ -189,6 +189,7 @@ export default {
       "hostOffline": "{{machine}} is offline, so its activity can't be read",
       "hostSilent": "{{machine}} didn't answer, so its activity can't be read",
       "promptElsewhere": "A message from somewhere else",
+      "promptFailed": "This message could not be read",
       "recordNotFound": "This machine can't read this task's record",
       "toolCount": "{{state}} ×{{count}}",
       "unavailable": "Can't reach its activity right now"

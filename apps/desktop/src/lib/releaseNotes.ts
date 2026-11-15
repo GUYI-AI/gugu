@@ -11,6 +11,7 @@
 // 这里还取一次那一页的 feed,但**不是为了拿内容**,是为了回答两个问题:
 // 这一版有没有说明(没有就别带他去),以及它的锚点是哪个。
 import { platform } from '../platform'
+import { replica } from './replica'
 
 declare const __GUGU_CHANGELOG_URL__: string
 
@@ -145,10 +146,10 @@ export function parseChangelog(raw: unknown): ChangelogEntry[] {
 }
 
 /**
- * 去官网取一次那一页的 feed。取不到就返回 null —— 调用方据此这次什么都不做,
- * ❌ 不把「这次没取到」当成「没有更新说明」。
+ * 去官网取一次那一页的 feed。取不到就抛错 —— 调用方据此这次什么都不做,
+ * ❌ 不把「这次没取到」当成「没有更新说明」(❌ 吞成 null / 空表)。
  */
-export async function fetchChangelog(signal?: AbortSignal): Promise<ChangelogEntry[] | null> {
+export async function fetchChangelog(): Promise<ChangelogEntry[]> {
   // @@@5758 桌面端**必须由主进程去取**:渲染层的 origin 是 gugu-app://app,对站点是跨源。
   // (2026-09-18 在同一个 scheme 下起了一个最小 Electron 实测复现:渲染层失败,主进程 net.fetch 200;
   //  当时下载站一个 Access-Control-Allow-Origin 都不发,失败表现为 TypeError: Failed to fetch。)
@@ -156,24 +157,25 @@ export async function fetchChangelog(signal?: AbortSignal): Promise<ChangelogEnt
   // gugu-app:// 这种自定义 scheme 在跨源请求里本就是个不稳的前提,而主进程那条路不依赖任何前提。
   const viaHost = platform.fetchChangelog
   if (viaHost) {
-    try {
-      const raw = await viaHost()
-      return raw === null || raw === undefined ? null : parseChangelog(raw)
-    } catch {
-      return null
-    }
+    const raw = await viaHost()
+    if (raw === null || raw === undefined) throw new Error('The host could not fetch the release notes feed')
+    return parseChangelog(raw)
   }
   // 没有宿主桥 = web / 移动端,它们的 origin 是普通 https,照旧自己取(烘的是 android 那一份)。
   const url = typeof __GUGU_CHANGELOG_URL__ === 'string' ? __GUGU_CHANGELOG_URL__ : ''
-  if (!url) return null
-  try {
-    const res = await fetch(url, { cache: 'no-cache', signal })
-    if (!res.ok) return null
-    return parseChangelog(await res.json())
-  } catch {
-    return null
-  }
+  if (!url) throw new Error('This build has no release notes feed')
+  const res = await fetch(url, { cache: 'no-cache' })
+  if (!res.ok) throw new Error(`Release notes feed: HTTP ${res.status}`)
+  return parseChangelog(await res.json())
 }
+
+/** The release notes feed (this device): read once in a while, only to know whether this version has notes and where. */
+export const releaseNotesFeed = replica({
+  name: 'releaseNotesFeed',
+  scope: 'device',
+  read: () => fetchChangelog(),
+  fresh: 6 * 3600_000,
+})
 
 /**
  * 把人带到网页上去。Electron 里 window.open 被 main.ts 的 setWindowOpenHandler 接走

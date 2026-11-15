@@ -14,6 +14,7 @@ vi.mock('../../../../apps/desktop/src/lib/realtimeChannel', () => ({
   unsubscribePrivateUserEventBus: bus.off,
 }))
 import { useStoredAgentTurnFailure } from '../../../../apps/desktop/src/hooks/useStoredAgentTurnFailure'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
 const failure = (revision = 'one', commandId = 'cmd') => ({ agentUserId: 'agent', commandId, revision, at: 1, reason: 'weeklyQuota' })
 function Probe({ chatId = 'chat', thread = null, anyChat = false }: { chatId?: string; thread?: string | null; anyChat?: boolean }) {
@@ -23,7 +24,9 @@ function Probe({ chatId = 'chat', thread = null, anyChat = false }: { chatId?: s
 let ui: ReturnType<typeof createReactHarness>
 const current = () => ui.container.querySelector('[data-failure]')?.textContent
 const emit = (extra = {}) => act(async () => { bus.listener?.({ id: 'cmd', agent_user_id: 'agent', chat_id: 'chat', thread_root_id: null, status: 'error', ...extra }) })
-beforeEach(() => { ui = createReactHarness(); read.mockReset().mockResolvedValue([]); bus.off.mockClear(); recover.agents = []; window.localStorage.clear() })
+beforeEach(async () => {
+  await freshReplicaAccount('owner')
+ ui = createReactHarness(); read.mockReset().mockResolvedValue([]); bus.off.mockClear(); recover.agents = []; window.localStorage.clear() })
 afterEach(() => ui.cleanup())
 
 describe('其他设备的额度通知由命令结果驱动', () => {
@@ -82,8 +85,11 @@ describe('其他设备的额度通知由命令结果驱动', () => {
 
   it('迟到的旧读数不能盖掉新事件的结果', async () => {
     const old = deferred<ReturnType<typeof failure>[]>(); read.mockReturnValueOnce(old.promise).mockResolvedValue([failure('two', 'new')])
-    await ui.render(createNode(Probe, {})); await emit(); expect(current()).toBe('new')
-    await act(async () => old.resolve([failure('one', 'old')])); expect(current()).toBe('new')
+    // The event came while the first read was out: that read lands, then the replica reads once more (I2) — the old
+    // answer is never the one left shown.
+    await ui.render(createNode(Probe, {})); await emit()
+    await act(async () => old.resolve([failure('one', 'old')]))
+    await vi.waitFor(() => expect(current()).toBe('new'))
   })
   it('切聊天立即清掉前一个主体，旧请求失败也不能把错误挂到新聊天', async () => {
     const old = deferred<ReturnType<typeof failure>[]>(); read.mockReturnValueOnce(old.promise).mockResolvedValue([])

@@ -835,6 +835,7 @@ export function machineConnectionState(
     sshLink: state.device.sshLink ?? null,
     cloudComputer: state.device.cloudComputer ?? null,
     wake: state.device.cloudComputer ? wake : null,
+    linkUnknown: state.device.linkUnknown === true,
   });
 }
 

@@ -6,8 +6,8 @@
 //  · 一台机器的设备连接,形状与 Realtime 频道对齐(ready / send / 收到一条 / 断了),deviceRpc.ts 直接换用。
 // 手机与网页里没有主进程 ⇒ 清单恒为空、没有设备连接:远程 SSH 的机器在那里经咕咕云用(owner 2026-10-08 选 B)。
 
-import { SERVER_SSH_MACHINES_CHANNELS } from './serverSshMachines'
-import { rendererLogger } from './log'
+import { sshMachineAddresses, sshMachineIdsOf, subscribeSshMachineAddresses, watchSshMachineAddresses } from './sshMachineAddresses'
+import { createSelectStore, type Readable } from './selectStore'
 import { replica } from './replica'
 import { TUNNEL_MACHINES_CHANNELS, type TunnelState, type TunnelWant } from './tunnelMachines'
 import {
@@ -34,88 +34,53 @@ function bridge(): ElectronBridge | null {
 
 // ── 这台桌面上的远程 SSH 机器 ──────────────────────────────────────────────────
 
-let machineIds: ReadonlySet<string> = new Set()
-const machineListeners = new Set<(ids: ReadonlySet<string>) => void>()
-let registryReady: Promise<void> | null = null
-let registryListening = false
-let registryVersion = 0
-const registryLog = rendererLogger('ssh-registry')
+// 清单只有一份:sshMachineAddresses(lib/sshMachineAddresses.ts,主进程 `describe` 那一读)。这里只是给设备 RPC 的
+// 同步判定读它此刻的值。
+const NO_MACHINES: ReadonlySet<string> = new Set()
 
-function applyIds(value: unknown): void {
-  if (!Array.isArray(value)) return
-  const next = new Set(value.filter((v): v is string => typeof v === 'string'))
-  if (next.size === machineIds.size && [...next].every((id) => machineIds.has(id))) return
-  machineIds = next
-  for (const listener of [...machineListeners]) listener(machineIds)
-}
-
-function listenForRegistryChanges(electron: ElectronBridge): void {
-  if (registryListening) return
-  registryListening = true
-  electron.eventOn(SERVER_SSH_MACHINES_CHANNELS.changed, value => {
-    registryVersion += 1
-    applyIds(value)
-    registryReady = Promise.resolve()
-  })
-}
-
-function readSshMachines(electron: ElectronBridge): void {
-  const version = ++registryVersion
-  registryReady = Promise.resolve().then(() => electron.invoke(SERVER_SSH_MACHINES_CHANNELS.list)).then(value => {
-    if (version !== registryVersion) return
-    if (!Array.isArray(value)) throw new Error('Invalid SSH machine registry response')
-    applyIds(value)
-    registryLog.info({ count: machineIds.size }, 'SSH machine registry refreshed')
-  }).catch((error: unknown) => {
-    if (version === registryVersion) registryReady = null
-    registryLog.warn({ error: error instanceof Error ? error.message : String(error) }, 'SSH machine registry read failed; the next request will retry')
-    throw error
-  })
-}
-
-/** Failed IPC reads reject and remain retryable; a pre-login empty result is refreshed after the host accepts auth. */
+/** Waits for the list to be read (a read already on its way is joined); a failed read rejects and stays retryable. */
 export async function sshMachinesReady(): Promise<void> {
-  if (!registryReady) {
-    const electron = bridge()
-    if (!electron) return
-    listenForRegistryChanges(electron)
-    readSshMachines(electron)
-  }
-  const ready = registryReady
-  await ready
-  if (registryReady && registryReady !== ready) await sshMachinesReady()
+  if (!bridge() || !sshMachineAddresses.key()) return
+  watchSshMachineAddresses()
+  await sshMachineAddresses.fetch()
 }
 
-/** Called after main acknowledges an auth mirror, including startup restore and token renewal. */
-export function refreshSshMachines(): Promise<void> {
-  const electron = bridge()
-  if (!electron) return Promise.resolve()
-  listenForRegistryChanges(electron)
-  readSshMachines(electron)
-  return sshMachinesReady()
+/** Called after main acknowledges an auth mirror, including startup restore and token renewal: main filters by that owner. */
+export async function refreshSshMachines(): Promise<void> {
+  if (!bridge()) return
+  watchSshMachineAddresses()
+  await sshMachineAddresses.refresh()
+  // Shown nowhere right now, the refresh only marked it stale: read it now (a read already done by the refresh is not
+  // repeated). A failed read rejects; the list shown stays the last one main gave and the next ask reads again.
+  if (!sshMachineAddresses.key()) return
+  await sshMachineAddresses.fetch()
 }
 
 export function isSshMachine(deviceId: string): boolean {
-  return machineIds.has(deviceId)
+  return currentSshMachineIds().has(deviceId)
 }
 
+/** The list as it is right now, for a one-moment routing decision outside rendering (surfaces read `useSshMachineIds`). */
 export function currentSshMachineIds(): ReadonlySet<string> {
-  return machineIds
+  const reading = sshMachineAddresses.peek()
+  // @@@reading-default - routing decision of this moment (not drawn): a list not read yet routes through the cloud, as before it is read; `sshMachinesReady` is awaited first where it matters
+  return reading.state === 'value' ? sshMachineIdsOf(reading.value) : NO_MACHINES
 }
 
 export function subscribeSshMachineIds(listener: (ids: ReadonlySet<string>) => void): () => void {
   void sshMachinesReady().catch(() => undefined)
-  machineListeners.add(listener)
-  return () => {
-    machineListeners.delete(listener)
-  }
+  let last = currentSshMachineIds()
+  return subscribeSshMachineAddresses(() => {
+    const next = currentSshMachineIds()
+    if (next === last) return
+    last = next
+    listener(next)
+  })
 }
 
 /** 测试用:换一份清单(并通知订阅者)。 */
 export function _setSshMachineIdsForTesting(ids: readonly string[]): void {
-  registryVersion += 1
-  registryReady = Promise.resolve()
-  applyIds([...ids])
+  sshMachineAddresses.set([], ids.map((id) => [id, id]))
 }
 
 // ── 远程隧道:经中转连通了的机器(主进程 electron/server/tunnel-machines.ts) ─────────────────
@@ -254,24 +219,25 @@ export function _setTunnelStateForTesting(state: TunnelState): void {
  * 每台远程 SSH 机器的设备连接此刻怎样(接上了 = null;接不上 / 断了 = 原因)。全局那张「要先登录」的
  * 浮卡(components/SshLinkSignIn.tsx)读它 —— 各个模块各自报错,「怎么修」只在一处给。
  */
-const linkProblems = new Map<string, SshLinkFailure>()
-const problemListeners = new Set<(problems: ReadonlyMap<string, SshLinkFailure>) => void>()
+// ④ 跨组件的瞬时状态:这个渲染层自己的连接结果,属于这台设备(不随换号清:清单本身跟账号走,别人的机器不在里面)。
+const linkProblems = createSelectStore<ReadonlyMap<string, SshLinkFailure>>(new Map())
+/** For `useSelect`: each SSH machine's link problem right now. */
+export const sshLinkProblems: Readable<ReadonlyMap<string, SshLinkFailure>> = linkProblems
 
 function setLinkProblem(deviceId: string, problem: SshLinkFailure | null): void {
-  const before = linkProblems.get(deviceId) ?? null
+  const current = linkProblems.get()
+  const before = current.get(deviceId) ?? null
   if (before === problem) return
-  if (problem) linkProblems.set(deviceId, problem)
-  else linkProblems.delete(deviceId)
-  const snapshot = new Map(linkProblems)
-  for (const listener of [...problemListeners]) listener(snapshot)
+  const next = new Map(current)
+  if (problem) next.set(deviceId, problem)
+  else next.delete(deviceId)
+  linkProblems.publish(next)
+  linkProblems.notify()
 }
 
 export function subscribeSshLinkProblems(listener: (problems: ReadonlyMap<string, SshLinkFailure>) => void): () => void {
-  problemListeners.add(listener)
-  listener(new Map(linkProblems))
-  return () => {
-    problemListeners.delete(listener)
-  }
+  listener(linkProblems.get())
+  return linkProblems.subscribe(() => listener(linkProblems.get()))
 }
 
 export type SshLinkHandle = {
@@ -372,14 +338,13 @@ const signedInListeners = new Set<(deviceId: string) => void>()
 // ── 太旧时替它升级(主进程在做,这里只记进度、升完叫重连)─────────────────────────────
 
 /** 正在替它升级的那几台:deviceId → 进度百分比(不知道总量 = null)。 */
-const upgrades = new Map<string, number | null>()
+const upgrades = createSelectStore<ReadonlyMap<string, number | null>>(new Map())
 /** 老到没法自动更新的那几台:deviceId → 请人在那台机器上跑的安装命令(随「没升成」一起来)。 */
 const reinstallCommands = new Map<string, string>()
 
 export function sshReinstallCommand(deviceId: string): string | null {
   return reinstallCommands.get(deviceId) ?? null
 }
-const upgradeListeners = new Set<(upgrades: ReadonlyMap<string, number | null>) => void>()
 const upgradeEventListeners = new Set<(event: SshUpgradeEvent) => void>()
 
 /** Presentation of one update event; this does not start an observer or send requests. */
@@ -388,9 +353,14 @@ export function subscribeSshUpgradeEvents(listener: (event: SshUpgradeEvent) => 
   return () => { upgradeEventListeners.delete(listener) }
 }
 
-function publishUpgrades(): void {
-  const snapshot = new Map(upgrades)
-  for (const listener of [...upgradeListeners]) listener(snapshot)
+function setUpgrade(deviceId: string, percent: number | null | undefined): void {
+  const current = upgrades.get()
+  if (current.get(deviceId) === percent && (percent !== undefined || !current.has(deviceId))) return
+  const next = new Map(current)
+  if (percent === undefined) next.delete(deviceId)
+  else next.set(deviceId, percent)
+  upgrades.publish(next)
+  upgrades.notify()
 }
 
 /** 主进程报来的一步:在升 → 「正在更新」;升好 → 清掉问题并当场重连(与刚登上同一条路);没升成 → 停在「版本太旧」。 */
@@ -401,31 +371,36 @@ export function applyUpgradeEvent(event: SshUpgradeEvent | null): void {
   if (event.phase === 'failed' && event.reinstall) reinstallCommands.set(deviceId, event.reinstall)
   else reinstallCommands.delete(deviceId)
   if (event.phase === 'updating') {
-    upgrades.set(deviceId, typeof event.percent === 'number' ? event.percent : null)
+    setUpgrade(deviceId, typeof event.percent === 'number' ? event.percent : null)
     setLinkProblem(deviceId, 'updating')
   } else if (event.phase === 'waitingIdle') {
-    upgrades.delete(deviceId)
+    setUpgrade(deviceId, undefined)
     setLinkProblem(deviceId, 'waitingIdle')
   } else if (event.phase === 'desktopTooOld' || event.phase === 'unconfirmed') {
     // 连接本身没毛病;「请更新这台电脑上的咕咕」由那台机器报的协议窗口说(serverMachineNotices)。
-    upgrades.delete(deviceId)
+    setUpgrade(deviceId, undefined)
     setLinkProblem(deviceId, null)
   } else {
-    upgrades.delete(deviceId)
+    setUpgrade(deviceId, undefined)
     setLinkProblem(deviceId, event.phase === 'done' ? null : 'outdated')
     if (event.phase === 'done') for (const listener of [...signedInListeners]) listener(deviceId)
   }
-  publishUpgrades()
+}
+
+/** For `useSelect`: the machines being upgraded (deviceId → percent, null = total unknown); subscribing wires main's events. */
+export const sshUpgrades: Readable<ReadonlyMap<string, number | null>> = {
+  get: upgrades.get,
+  subscribe: (listener) => {
+    const electron = bridge()
+    if (electron) wireEvents(electron)
+    return upgrades.subscribe(listener)
+  },
 }
 
 export function subscribeSshUpgrades(listener: (upgrades: ReadonlyMap<string, number | null>) => void): () => void {
-  const electron = bridge()
-  if (electron) wireEvents(electron)
-  upgradeListeners.add(listener)
-  listener(new Map(upgrades))
-  return () => {
-    upgradeListeners.delete(listener)
-  }
+  const off = sshUpgrades.subscribe(() => listener(upgrades.get()))
+  listener(upgrades.get())
+  return off
 }
 
 /**
@@ -482,10 +457,7 @@ export function subscribeSshSignInPrompts(listener: (event: SshLinkPromptEvent) 
 export async function ensureSshMachineUsable(deviceId: string): Promise<boolean> {
   await sshMachinesReady()
   if (!isSshMachine(deviceId)) return false
-  let problem: string | null = null
-  subscribeSshLinkProblems((problems) => {
-    problem = problems.get(deviceId) ?? null
-  })()
+  const problem = linkProblems.get().get(deviceId) ?? null
   if (problem === 'signInRequired' || problem === 'hostKeyChanged' || problem === 'notSignedIn') {
     throw new SshLinkError(problem, deviceId)
   }

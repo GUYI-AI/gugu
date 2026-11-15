@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { ComponentProps } from 'react'
 import type { SessionOptionDimension } from '@gugu/session-core/session-record/contract'
 import type { SessionpageSessionOptionsWithMenu } from '@main/core/session-timeline/session-model-menu'
@@ -10,31 +10,45 @@ import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { AgentConversationComposer } from '@renderer/lib/chat/agent-conversation-view'
 import { messageForUser } from '@/lib/userFacingError'
+import { replica, useReplica } from '@/lib/replica'
 
 export type ConversationTarget = { deviceId: string; sessionId: string; local: boolean; phoneHost?: boolean; /** false while that machine is away: nothing to ask; asked again once it is back. */ reachable?: boolean }
+
+/**
+ * A conversation's model / effort / permission options, as its host answers them (this machine or another). No push
+ * wired: read when a composer opens it (`fresh: 0`); a pick or a reload puts the options the host answered.
+ */
+const conversationOptions = replica({
+  name: 'conversationOptions',
+  scope: 'account',
+  read: (_owner: string, deviceId: string, sessionId: string, local: boolean, phoneHost: boolean): Promise<SessionpageSessionOptionsWithMenu> =>
+    conversationOptionClient({ deviceId, sessionId, local, phoneHost }).read(),
+  fresh: 0,
+})
 
 /** Adapts the host facts through the project page's model, effort and permission assemblers. */
 export function useConversationOptions(target: ConversationTarget | null, agentName: string) {
   const deviceId = target?.deviceId, sessionId = target?.sessionId, local = target?.local, phoneHost = target?.phoneHost, reachable = target?.reachable !== false
-  const key = target ? `${deviceId}/${sessionId}/${local}/${phoneHost}` : ''
-  const [read, setRead] = useState<{ key: string; options: SessionpageSessionOptionsWithMenu } | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // While that machine is away there is nothing to ask: unknown, read once it is back.
+  const args: [string, string, boolean, boolean] | null = deviceId && sessionId && local !== undefined && reachable ? [deviceId, sessionId, local, phoneHost === true] : null
+  const reading = useReplica(conversationOptions, args)
+  // A write's failure (pick / reload): said until dismissed or the next write.
+  const [writeError, setWriteError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [restart, setRestart] = useState<{ modelId: string; label: string; source: 'platform' | 'own' } | null>(null)
-  const options = read?.key === key ? read.options : null
-  useEffect(() => {
-    setError(null)
-    if (!deviceId || !sessionId || local === undefined || !reachable) return
-    let live = true
-    void conversationOptionClient({ deviceId, sessionId, local, phoneHost }).read().then(options => { if (live) setRead({ key, options }) }, cause => { if (live) setError(messageForUser(cause)) })
-    return () => { live = false }
-  }, [key, deviceId, sessionId, local, phoneHost, reachable])
+  const options = reading.state === 'value' ? reading.value : null
+  const readError = reading.state === 'error' ? messageForUser(reading.error) : null
+  const write = async (send: () => Promise<SessionpageSessionOptionsWithMenu>) => {
+    if (!args) return false
+    const entry = conversationOptions.at(...args)
+    setPending(true)
+    try { entry.set(await send()); setWriteError(null); return true }
+    catch (cause) { setWriteError(messageForUser(cause)); return false }
+    finally { setPending(false) }
+  }
   const pick = async (dimension: SessionOptionDimension, value: string) => {
     if (!target || options?.[dimension]?.selected === value) return
-    setPending(true)
-    try { setRead({ key, options: await conversationOptionClient(target).set(dimension, value) }); setError(null) }
-    catch (cause) { setError(messageForUser(cause)) }
-    finally { setPending(false) }
+    await write(() => conversationOptionClient(target).set(dimension, value))
   }
   const model = options?.modelMenu && options.model ? sessionModelView(options.modelMenu, options.model) : null
   const permissions = options?.mode ? Object.fromEntries(options.mode.available.map(item => [item.id, { name: item.name, description: item.description }])) : null
@@ -52,15 +66,14 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
     permissionModeOptions: localizePermissionModeOptions(permissions, translateSessionMessage, options?.permissionAgentName ?? options?.modelMenu?.agentName ?? agentName, options?.modeMap),
     selectedPermissionMode: selectedPermissionModeId(options?.mode?.selected ?? undefined, permissions, options?.modeMap),
     onPermissionModeChange: id => { void pick('mode', id) },
-    ...(error ? { notice: { variant: 'error', message: error, onDismiss: () => setError(null) } } : {}),
+    ...(writeError ? { notice: { variant: 'error', message: writeError, onDismiss: () => setWriteError(null) } }
+      // A failed read: dismissing it reads again.
+      : readError && args ? { notice: { variant: 'error', message: readError, onDismiss: () => { void conversationOptions.refresh(...args) } } } : {}),
   }
   const confirmation = <SessionReloadConfirm open={!!restart} onOpenChange={open => { if (!open) setRestart(null) }}
     reason="model-switch" target={restart?.label ?? ''} isReloading={pending} onConfirm={async () => {
       if (!target || !restart) return
-      setPending(true)
-      try { setRead({ key, options: await conversationOptionClient(target).reload(restart) }); setRestart(null); setError(null) }
-      catch (cause) { setError(messageForUser(cause)) }
-      finally { setPending(false) }
+      if (await write(() => conversationOptionClient(target).reload(restart))) setRestart(null)
     }} />
   return { props, confirmation, steers: options?.modelMenu?.steers === true }
 }

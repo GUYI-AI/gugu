@@ -64,6 +64,11 @@ export type RemoteHostDevice = {
    */
   sshLink?: 'signInRequired' | 'unreachable' | 'outdated' | 'updating' | null;
   /**
+   * This desktop's SSH machine list is not read yet, so whether this machine is reached over SSH (and so whether its
+   * cloud heartbeat says anything about it) is not known: its link state is drawn as pending, ❌ offline or signed out.
+   */
+  linkUnknown?: true;
+  /**
    * The existing heartbeat update, including its target and scope. Ready is awaiting restart,
    * downloading is in progress, failed is an unsuccessful update. Absent means no reported update.
    */

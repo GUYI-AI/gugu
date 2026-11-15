@@ -1,6 +1,7 @@
-import { reaction } from 'mobx'
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import { displayNameOf } from '@shared/extensions/file-openers'
+import { mobxReadable } from '@/lib/mobxReadable'
+import { useSelect } from '@/lib/selectStore'
 import { chatClaimantHere } from './chatClaimant'
 
 /**
@@ -11,18 +12,11 @@ import { chatClaimantHere } from './chatClaimant'
  * list is — so two people may read one message differently.
  */
 export function GroupFileName({ name }: { name: string }) {
-  const [shown, setShown] = useState<string | null>(null)
-  useEffect(
-    () =>
-      reaction(
-        () => {
-          const claim = chatClaimantHere(name)
-          return claim ? displayNameOf(name, claim.suffix) : null
-        },
-        setShown,
-        { fireImmediately: true },
-      ),
-    [name],
-  )
+  // The installed Apps' claims (a MobX store until it becomes a replica), read through the MobX adapter.
+  const claims = useMemo(() => mobxReadable(() => {
+    const claim = chatClaimantHere(name)
+    return claim ? displayNameOf(name, claim.suffix) : null
+  }), [name])
+  const shown = useSelect(claims, (value) => value, Object.is)
   return shown !== null && shown !== name ? <span title={name}>{shown}</span> : <>{name}</>
 }

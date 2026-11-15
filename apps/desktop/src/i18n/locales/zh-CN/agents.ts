@@ -189,6 +189,7 @@ export default {
       "hostOffline": "{{machine}} 离线，读不到它的近况",
       "hostSilent": "{{machine}} 没有应答，读不到它的近况",
       "promptElsewhere": "来自别处的一条消息",
+      "promptFailed": "这条消息没读到",
       "recordNotFound": "这台机器读不到这条任务的记录",
       "toolCount": "{{state}} ×{{count}}",
       "unavailable": "暂时拿不到它的近况"

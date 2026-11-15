@@ -17,7 +17,7 @@ const io = vi.hoisted(() => ({
   enrollSampleProject: vi.fn(async (_userId: string) => undefined),
 }))
 vi.mock('../../../../apps/desktop/src/lib/firstRun', () => io)
-vi.mock('../../../../apps/desktop/src/lib/firstRunHints', () => ({ startFirstRunHints: vi.fn(async () => undefined), readFirstRunHints: vi.fn(async () => null), dismissFirstRunHints: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/firstRunHints', () => ({ startFirstRunHints: vi.fn(async () => undefined), readFirstRunHints: vi.fn(async () => null), parseFirstRunHints: () => null, allFirstRunHintsDismissed: () => true, dismissFirstRunHints: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/sampleProject', () => ({ enrollSampleProject: io.enrollSampleProject }))
 vi.mock('../../../../apps/desktop/src/lib/auth', () => ({ authService: {} }))
 vi.mock('../../../../apps/desktop/src/components/firstRun/FirstRunTerminal', () => ({

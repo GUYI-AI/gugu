@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useReplica } from '@/lib/replica';
 import { useLegacyDmOwner } from './useLegacyDmOwner';
+import { legacyDmHistoryAvailable } from './legacyDmReplicas';
 
 /**
  * Whether a session's menu offers its old chats. Reading takes a walk over the account's chats, so only a menu
@@ -9,12 +10,6 @@ import { useLegacyDmOwner } from './useLegacyDmOwner';
 export function useLegacyDmHistoryEntry(sessionId: string | undefined) {
   const ownerUserId = useLegacyDmOwner();
   const [asked, setAsked] = useState(false);
-  const reading = useQuery({
-    queryKey: ['legacy-dm-history', ownerUserId, sessionId],
-    queryFn: () => import('./data').then(({ hasLegacyDmHistory }) => hasLegacyDmHistory(ownerUserId!, sessionId!)),
-    enabled: asked && Boolean(ownerUserId && sessionId),
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-  });
-  return { isAvailable: () => reading.data === true || reading.isError, onMenuOpen: () => setAsked(true) };
+  const reading = useReplica(legacyDmHistoryAvailable, asked && ownerUserId && sessionId ? [sessionId] : null);
+  return { isAvailable: () => (reading.state === 'value' && reading.value) || reading.state === 'error', onMenuOpen: () => setAsked(true) };
 }

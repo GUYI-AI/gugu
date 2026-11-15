@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
+import { rendererLogger } from './log'
+import { replica, useReplicas } from './replica'
 import { platform } from '../platform'
 import type { SystemPermission, SystemPermissionState } from '../platform/types'
 
@@ -72,9 +74,34 @@ export async function changeSystemPermission(permission: SystemPermission, state
 export type SystemPermissionStates = Partial<Record<SystemPermission, SystemPermissionState>>
 
 /**
- * 读系统真值:挂上时读一次,App 每次回到前台再读 —— 用户从系统设置改完回来,这里立刻是新的。
- * ❌ 缓存 / 持久化:显示的永远是刚问过系统的那一份,否则就会「界面说开了、其实没开」。
- * 没有 `systemPermissions` 能力位的宿主上什么都不读,`states` 恒为空。
+ * 一项系统权限此刻的真值(device):挂上时读,App 每次回到前台再读(信号档:用户从系统设置改完回来,这里立刻重读)。
+ * 留一份跨重启的值只为首帧有东西画(标成 stale,同时重读),❌ 拿它冒充当下:挂上就重读(`fresh: 0`)。
+ */
+export const systemPermission = replica({
+  name: 'systemPermission',
+  scope: 'device',
+  read: (_device: string, permission: SystemPermission): Promise<SystemPermissionState> => platform.checkSystemPermission(permission),
+  persist: { maxBytes: 160, maxEntries: 8 },
+})
+
+const permissionLog = rendererLogger('system-permissions')
+// The foreground watch is shared: on while any surface shows a permission.
+let foregroundWatchers = 0
+let stopForeground: (() => void) | null = null
+function watchForeground(): () => void {
+  if (foregroundWatchers++ === 0) {
+    stopForeground = platform.subscribeAppForeground(() => { void systemPermission.refresh() }, (error) => {
+      permissionLog.error({ error: String(error) }, 'could not watch the app coming back to the foreground; permissions are read on open only')
+    })
+  }
+  return () => {
+    if (--foregroundWatchers === 0) { stopForeground?.(); stopForeground = null }
+  }
+}
+
+/**
+ * 读系统真值(见 `systemPermission`)。没有 `systemPermissions` 能力位的宿主上什么都不读,`states` 恒为空。
+ * `states` 里只有读到了的那几项:还没读到的那一行由调用方画占位(❌ 画成某个状态)。
  */
 export function useSystemPermissionStates(permissions: readonly SystemPermission[]): {
   states: SystemPermissionStates
@@ -85,34 +112,17 @@ export function useSystemPermissionStates(permissions: readonly SystemPermission
   // 读不到就是读不到,❌ 不去试一把再吞掉异常。
   const key = permissions.filter((permission) => platform.systemPermissions.includes(permission)).join(',')
   const enabled = key !== ''
-  const [read, setRead] = useState<{ key: string; states: SystemPermissionStates; failed: boolean }>({ key, states: {}, failed: false })
-  const revision = useRef(0)
-
+  const wanted = useMemo(() => (key ? key.split(',') as SystemPermission[] : []), [key])
+  const readings = useReplicas(systemPermission, wanted.map((permission) => [permission] as [SystemPermission]))
+  useEffect(() => (enabled ? watchForeground() : undefined), [enabled])
   const refresh = useCallback(async () => {
-    if (!enabled || key === '') return
-    const request = ++revision.current
-    setRead({ key, states: {}, failed: false })
-    try {
-      const wanted = key.split(',') as SystemPermission[]
-      const entries = await Promise.all(
-        wanted.map(async (permission) => [permission, await platform.checkSystemPermission(permission)] as const),
-      )
-      if (request === revision.current) setRead({ key, states: Object.fromEntries(entries), failed: false })
-    } catch {
-      // 读不到就明说读不到(调用方渲染提示),❌ 留着上一次的值冒充当下。
-      if (request === revision.current) setRead({ key, states: {}, failed: true })
-    }
-  }, [enabled, key])
-
-  useEffect(() => {
-    if (!enabled) return
-    void refresh()
-    const unsubscribe = platform.subscribeAppForeground(() => { void refresh() }, () => {
-      revision.current += 1
-      setRead({ key, states: {}, failed: true })
-    })
-    return () => { revision.current += 1; unsubscribe() }
-  }, [enabled, key, refresh])
-
-  return { states: read.key === key ? read.states : {}, refresh, failed: read.key === key && read.failed }
+    await Promise.all(wanted.map((permission) => systemPermission.refresh(permission)))
+  }, [wanted])
+  const states: SystemPermissionStates = {}
+  wanted.forEach((permission, index) => {
+    const reading = readings[index]!
+    if (reading.state === 'value') states[permission] = reading.value
+  })
+  // 读不到就明说读不到(调用方渲染提示)。
+  return { states, refresh, failed: readings.some((reading) => reading.state === 'error') }
 }

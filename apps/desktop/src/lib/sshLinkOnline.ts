@@ -25,6 +25,21 @@ export function sshLinkFacts(
   return { isOnline: true, sshLink: null }
 }
 
+/**
+ * A machine's link facts on this desktop when the SSH machine list may not be read yet (`sshMachines` null): then
+ * whether it is an SSH machine is not known, and neither is its link — `linkUnknown`, ❌ the cloud's offline (an
+ * offline SSH machine would first say "offline", then "signed out").
+ */
+export function remoteLinkFacts(
+  deviceId: string,
+  sshMachines: ReadonlySet<string> | null,
+  problem: SshLinkFailure | null,
+  cloudOnline: boolean,
+): { isOnline: boolean; sshLink?: SshLinkState | null; linkUnknown?: true } {
+  if (sshMachines === null) return { isOnline: cloudOnline, linkUnknown: true }
+  return sshLinkFacts(sshMachines.has(deviceId), problem, cloudOnline)
+}
+
 /** 设备列表里远程 SSH 的那几行:在线与否换成设备连接的读数(所有读 useDevicesStore 的面同一个说法)。 */
 export function withSshLinkOnline<T extends Pick<Device, 'device_id' | 'is_online'>>(
   devices: readonly T[],

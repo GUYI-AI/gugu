@@ -53,7 +53,7 @@ describe('one refresher per session (#6723)', () => {
     const { publishRendererSession } = await import('../../../../apps/desktop/src/lib/sessionPublication')
     publishRendererSession('SIGNED_IN', nearExpirySession())
     const { getQuotaWindows } = await import('../../../../apps/desktop/src/lib/billing/quota')
-    const { fetchMinCriticalCapability } = await import('../../../../apps/desktop/src/lib/runtimeCapabilityPolicy')
+    const { runtimeCapabilityPolicy } = await import('../../../../apps/desktop/src/lib/runtimeCapabilityPolicy')
     // auth 客户端构造期的 INITIAL_SESSION 加载属于 auth 面(#6731),不是本用例要锁的数据路径:
     // 排在它后面的 getSession 返回时它已做完,之后才开始记账。
     const { supabase } = await import('../../../../apps/desktop/src/lib/supabase')
@@ -61,7 +61,9 @@ describe('one refresher per session (#6723)', () => {
     sent.length = 0
 
     await getQuotaWindows().catch(() => undefined)
-    await fetchMinCriticalCapability()
+    // The stub answers `[]`, which the policy read rejects; only the request it sent matters here.
+    ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'user-a')
+    await runtimeCapabilityPolicy.fetch().catch(() => undefined)
 
     // 整张出站清单一起比:修前这里会多出一条 /auth/v1/token,数据请求带的也不再是已发布的令牌。
     expect(sent.map((request) => `${new URL(request.url).pathname} ${request.authorization}`)).toEqual([

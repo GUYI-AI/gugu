@@ -491,7 +491,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       .catch((err) => console.error('[ChatStore] persist repository chats failed', err))
   }, [chats, userId])
 
-  // ── Subscribe to durable account revisions ─────────────────────────────────
+  // @@@effect-flow - registers this account's revision listeners (the log channel itself, kept per §3)
   useEffect(() => {
     if (!userId) return
     const unsubscribes = [
@@ -503,11 +503,12 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       // Closed surfaces fetch on open; this owner prevents inbox blocking and shares dispatch with open listeners.
       subscribeAccountRevision('group_collab_changed', () => undefined),
       subscribeAccountRevision('workspace_changed', () => undefined),
+      subscribeAccountRevision('gugu_decision_event', () => loadChats({ acceptEmpty: true, throwOnError: true })),
     ]
     return () => {
       for (const unsubscribe of unsubscribes) unsubscribe()
     }
-  }, [userId, chatProjection, subscribeAccountRevision])
+  }, [userId, chatProjection, subscribeAccountRevision, loadChats])
 
   const readChatWindow = useCallback((chatId: string) => {
     if (imRepositoryRef.current?.accountId === userId) seedCacheFromDisk(cache, imRepositoryRef.current, chatId)
@@ -570,8 +571,6 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       unreadNavigationRef.current?.cancelChatOpen(chatId, new Error(`Chat ${chatId} is no longer observed`))
     }
   }
-  useEffect(() => userId ? subscribeAccountRevision('gugu_decision_event', () => loadChats({ acceptEmpty: true, throwOnError: true })) : undefined,
-    [userId, loadChats, subscribeAccountRevision])
   // ── Actions ────────────────────────────────────────────────────────────────
   const setActiveChatId = useCallback((id: string | null) => {
     if (activeChatIdRef.current === id) return

@@ -171,7 +171,7 @@ export function DevicesSection({
       onUninstall={() => openUninstall(device)}
       onOpenActions={() => setActionsFor(device.device_id)}
       signIn={signIns.get(device.device_id) ?? null}
-      sshLink={sshMachineIds.has(device.device_id) ? (linkProblems.get(device.device_id) ?? null) : undefined}
+      sshLink={sshMachineIds?.has(device.device_id) ? (linkProblems.get(device.device_id) ?? null) : undefined}
       onSshSignIn={() => void signInSshMachine(device.device_id)}
       upgradePercent={upgrades.get(device.device_id) ?? null}
       onRetryUpdate={() => void requestSshServerUpgrade(device.device_id, { force: true })}

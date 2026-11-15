@@ -162,7 +162,8 @@ function HelpOnRail() {
   const { t } = useTranslation('productTour')
   const { user } = useAuth()
   const tour = useProductTourState(user?.id ?? null)
-  const resume = resumableStep(tour.data)
+  // Progress not read yet (or unreadable): no 「继续」 entry and no dot until it is.
+  const resume = resumableStep(tour.state === 'value' ? tour.value : null)
   const [open, setOpen] = useState(false)
   const request = (detail: ProductTourRequest) => {
     window.dispatchEvent(new CustomEvent(UI_EVENTS.reopenProductTour, { detail }))

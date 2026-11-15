@@ -2,9 +2,9 @@ import type { ComponentPropsWithoutRef, MouseEvent, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
 import { widgetMessagePreview } from '@gugu/core/shared/ui/widgetModels'
-import { replica, useReplica } from '../../lib/replica'
-import { fileMetadata } from '../../lib/fileAccess'
-import { chatService } from '../../lib/chat'
+import { useReplica } from '../../lib/replica'
+import { fileMetadata } from '../../lib/fileMetadataReplica'
+import { messageById } from '../../lib/messageById'
 import { useChatStore } from '../../store/chatContext'
 import { quotedContentView } from '../chat/quotedContent'
 import { quoteSummary } from '../chat/quoteSummary'
@@ -12,11 +12,6 @@ import { GroupFileName } from './GroupFileName'
 import { MentionPill } from './MentionPill'
 import { linkPillTarget } from './linkPills'
 
-// Reads are key-only replicas (lib/replica).
-const linkedFile = replica({ name: 'link-pill-file', scope: 'account', keep: 5 * 60_000,
-  read: (_accountId, itemId: string, version: number | null) => fileMetadata(itemId, version ?? undefined) })
-const linkedMessage = replica({ name: 'link-pill-message', scope: 'account', keep: 5 * 60_000,
-  read: (accountId, messageId: string) => chatService.getMessageById(messageId, accountId) })
 
 type DrawProps = {
   href: string
@@ -39,7 +34,7 @@ export function LinkPill(props: DrawProps & { accountId: string }) {
 
 function FilePill({ href, onClick, children, rest, itemId, version }: DrawProps & { accountId: string; itemId: string; version?: number }) {
   const { t } = useTranslation('messaging')
-  const reading = useReplica(linkedFile, [itemId, version ?? null])
+  const reading = useReplica(fileMetadata, [itemId, version ?? null])
   const file = reading.state === 'value' ? reading.value : null
   const ready = file?.status === 'ready' ? file.revision : null
   const reason = reading.state === 'error' ? t('attachmentView.fileUnavailable')
@@ -55,7 +50,7 @@ function FilePill({ href, onClick, children, rest, itemId, version }: DrawProps 
 function ChatPill({ href, onClick, children, rest, chatId, messageId }: DrawProps & { accountId: string; chatId: string; messageId?: string }) {
   const { t } = useTranslation('messaging')
   const { chats, identitiesById } = useChatStore('chats', 'identitiesById')
-  const reading = useReplica(linkedMessage, messageId ? [messageId] : null)
+  const reading = useReplica(messageById, messageId ? [messageId] : null)
   const message = { data: reading.state === 'value' ? reading.value : undefined, isError: reading.state === 'error', isSuccess: reading.state === 'value' }
   let label: ReactNode = children
   let unavailable = false

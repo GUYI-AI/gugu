@@ -57,11 +57,11 @@ import { GroupTabContent } from './appSlot/GroupTabContent'; import { useChatOpe
 import { folderItem } from '../session/renderer/features/chats/chat-tabs/chat-panel-item'; import { closeInfoTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, showChatOnly, type ChatPanelTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { useTopicSurface } from '@/hooks/useTopicSurface'
 import { chatDisplayName, isRoomChat } from '@gugu/core/shared/ui/chatModels'
-import { topicService } from '@/lib/topics'
+import { topicSource } from '@/hooks/useTopics'
+import { useReplica } from '@/lib/replica'
 import { useAgentFloodNotice } from '@/hooks/useAgentFloodNotice'
 import { TopicSplitPane } from './chat/TopicSplitPane'
 import { useToast } from './toastContext'
-import { rendererLogger } from '../lib/log'
 import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
 import { PaneEmptyState } from './ui/PaneEmptyState'
 import { PaneHeader } from './ui/Pane'
@@ -105,7 +105,6 @@ interface ChatAreaPanelProps {
 // #2186 删掉了它上面的 StreamingAgentBubble 纯转发壳)。
 
 
-const chatAreaLog = rendererLogger('chat/area-panel')
 
 export function ChatAreaPanel({ chatId, ...surface }: ChatAreaPanelProps) {
   return chatId === undefined ? <ChatAreaSurface {...surface} /> : <ChatLineScope chatId={chatId}><ChatAreaSurface {...surface} /></ChatLineScope>
@@ -229,36 +228,13 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const topicSplitOpen = Boolean(topicSurface.splitTopic)
   // @@@5856 分栏标题块要说清「引自哪一句」。三态必须分开(pending 还没读到 / null 读到了「没这条」/
   // 有字 = 预览),合并任意两种都会让它说假话:首帧闪「已删除」、读取失败也渲染成「已删除」。
-  // @@@3922 另把它 subject-scope(渲染期比对),否则从话题 A 切到 B 时 B 会顶着 A 的预览一个往返。
+  // @@@3922 按话题分键(topicSource),从话题 A 切到 B 时 B 不会顶着 A 的预览。
   const splitTopicChatIdForPreview = mobile ? null : topicSurface.topic?.chatId ?? null // 手机的话题页没有标题块,不读
-  const [sourcePreviewState, setSourcePreviewState] = useState<{
-    forTopicChatId: string | null
-    preview: string | null | 'pending' | 'unreadable'
-  }>({ forTopicChatId: null, preview: 'pending' })
-  useEffect(() => {
-    const topicChatId = splitTopicChatIdForPreview
-    if (!topicChatId) { setSourcePreviewState({ forTopicChatId: null, preview: 'pending' }); return }
-    setSourcePreviewState({ forTopicChatId: topicChatId, preview: 'pending' })
-    let cancelled = false
-    // @@@5856 三态如实转述:'readable' → 预览;'gone' → null(说「已删除」);
-    // 'unreadable' → 那一行什么都不说。❌ 不许把后者并进「已删除」——消息没被删,别人都看得见。
-    void topicService.getSourceState(topicChatId)
-      .then((state) => {
-        if (cancelled) return
-        const preview = state.kind === 'readable' ? state.preview : state.kind === 'gone' ? null : 'unreadable'
-        setSourcePreviewState({ forTopicChatId: topicChatId, preview })
-      })
-      .catch((error: unknown) => {
-        // 读失败 ≠ 消息被删。留在 pending:那一行什么都不说,❌ 不谎报「已删除」。
-        chatAreaLog.error({ error, topicChatId }, 'topic source message preview failed')
-        if (!cancelled) setSourcePreviewState({ forTopicChatId: topicChatId, preview: 'pending' })
-      })
-    return () => { cancelled = true }
-  }, [splitTopicChatIdForPreview])
-  const topicSourceMessagePreview: string | null | 'pending' | 'unreadable' =
-    sourcePreviewState.forTopicChatId === splitTopicChatIdForPreview
-      ? sourcePreviewState.preview
-      : 'pending'
+  // 'readable' → 预览;'gone' → null(「已删除」);'unreadable' → 不说。未知或读失败 = pending(❌ 谎报「已删除」)。
+  const source = useReplica(topicSource, splitTopicChatIdForPreview ? [splitTopicChatIdForPreview] : null)
+  // @@@reading-default - 'pending' is the split header's own "not known yet" (it draws nothing there), not a value
+  const topicSourceMessagePreview: string | null | 'pending' | 'unreadable' = source.state !== 'value' ? 'pending'
+    : source.value.kind === 'readable' ? source.value.preview : source.value.kind === 'gone' ? null : 'unreadable'
 
   // @@@5856 **话题不整屏打开** —— owner 2026-09-19:「怎么还有把一个 topic 当做群的形式表达」。
   // 会话列表点话题走的是「切到来源线 + 往盒子里放一条请求」,聊天区在这里把它取出来开成分栏。

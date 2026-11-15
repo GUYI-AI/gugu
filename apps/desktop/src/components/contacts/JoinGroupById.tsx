@@ -8,6 +8,7 @@ import { messageForUser } from '../../lib/userFacingError'
 import { Button } from '../ui/Button'
 import { SearchField } from '../ui/SearchField'
 import { useToast } from '../toastContext'
+import { publicGroupInvite } from '../../lib/publicGroupInvite'
 
 const joinGroupLog = rendererLogger('contacts/join-group-by-id')
 
@@ -71,7 +72,7 @@ export function JoinGroupById({ headless }: { headless?: boolean }) {
     setJoinError(null)
     setGroup(null)
     try {
-      const res = await contactsService.lookupPublicGroupInvite(parsedId)
+      const res = await publicGroupInvite.fetch(parsedId)
       if (res.group) setGroup(res.group)
       else setNotFound(true)
     } catch (err) {

@@ -1,5 +1,5 @@
 import { metadataSeparator } from '@/i18n/format'
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useDeferredValue, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { GrowingList, type GrowingListWindow } from '@gugu/session-ui/react/growing-list'
 import { useTranslation } from 'react-i18next'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
@@ -14,6 +14,8 @@ import { formatCalendarDay } from '@/i18n/format'
 import { recentChatActivity, searchContacts, type ContactSearchHit } from '../../lib/contactSearch'
 import { displayName, getPinyinInitial } from '../../lib/contactsListSort'
 import { rendererLogger } from '../../lib/log'
+import { contactRelations } from '../../lib/contactsReplicas'
+import { useReplica } from '../../lib/replica'
 import { useAuth } from '../../store/auth'
 import { useChatStore } from '../../store/chatContext'
 import { useContactsStore } from '../../store/contactsContext'
@@ -72,13 +74,10 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
   const live = useLiveDeviceSessions()
   const [openedAt] = useState(() => Date.now())
 
-  // 选成员要新鲜的候选:通讯录 revision 与弹窗开关可能同一帧到,打开时再取一次权威快照。
-  const [refreshing, setRefreshing] = useState(true)
-  const reload = useCallback(() => {
-    setRefreshing(true)
-    return refreshContacts().catch((error: unknown) => log.error({ error: String(error) }, 'refresh contacts failed')).finally(() => setRefreshing(false))
-  }, [refreshContacts])
-  useEffect(() => { void reload() }, [reload])
+  // 选成员要新鲜的候选:通讯录 revision 与弹窗开关可能同一帧到,打开时再取一次权威快照 —— 这一读就是 replica 的挂载重读
+  // (contactRelations 没有 fresh),在途期间 loadingContacts 为真,确认按钮等它。
+  useReplica(contactRelations, [])
+  const reload = useCallback(() => refreshContacts().catch((error: unknown) => log.error({ error: String(error) }, 'refresh contacts failed')), [refreshContacts])
 
   const model = useMemo(
     () => pickerModel({ contacts, currentUserId, devices, live, recentChats: recentChatActivity(chats), now: openedAt, withPeople: !peopleDenied }),
@@ -122,7 +121,7 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
 
   const entryOf = useMemo(() => new Map([...model.people, ...model.agents].map((entry) => [entry.contact.id, entry])), [model])
   const unavailableSelection = selected.some((id) => !entryOf.has(id))
-  const canConfirm = !busy && !refreshing && !loadingContacts && contactsStatus === 'ready' && selected.length > 0 && !unavailableSelection
+  const canConfirm = !busy && !loadingContacts && contactsStatus === 'ready' && selected.length > 0 && !unavailableSelection
   const searchRows: Row[] = result ? [...result.people, ...result.agents].map((hit) => ({ entry: entryOf.get(hit.item.id)!, hit })) : []
   const scopeCounts = new Map<string, number>()
   for (const row of searchRows) for (const key of model.sourcesOf(row.entry.contact.id)) scopeCounts.set(key, (scopeCounts.get(key) ?? 0) + 1)
@@ -247,12 +246,12 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
       }}
     />
   )
-  const loading = contacts.length === 0 && (refreshing || loadingContacts || contactsStatus === 'loading')
-  const failed = contacts.length === 0 && !refreshing && !loadingContacts && contactsStatus === 'error'
+  const loading = contacts.length === 0 && (loadingContacts || contactsStatus === 'loading')
+  const failed = contacts.length === 0 && !loadingContacts && contactsStatus === 'error'
   const emptyText = contacts.length === 0 ? t('createGroup.emptyContacts') : t('createGroup.noResults')
 
   const closeButton = <IconButton aria-label={t('common.close')} onClick={onClose}><X size={18} /></IconButton>
-  const showEmpty = empty != null && !refreshing && !loadingContacts && contactsStatus === 'ready' && !query && selected.length === 0 && sources.every((s) => s.entries.length === 0)
+  const showEmpty = empty != null && !loadingContacts && contactsStatus === 'ready' && !query && selected.length === 0 && sources.every((s) => s.entries.length === 0)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="member-picker" data-picker-empty={showEmpty ? '' : undefined}>
@@ -301,7 +300,7 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
           {letters ? <ContactsAzIndex mobile={mobile} present={new Set(visibleRows.map((row) => getPinyinInitial(displayName(row.entry.contact))))} onPick={jump} /> : null}
         </div>
       </div>
-      {!refreshing && contactsStatus === 'ready' && unavailableSelection ? <p role="alert" className="!m-0 !px-5 !py-2 text-[length:var(--font-caption)] text-[var(--danger-fg)]">{t('memberPicker.selectionUnavailable')}</p> : null}
+      {!loadingContacts && contactsStatus === 'ready' && unavailableSelection ? <p role="alert" className="!m-0 !px-5 !py-2 text-[length:var(--font-caption)] text-[var(--danger-fg)]">{t('memberPicker.selectionUnavailable')}</p> : null}
       </>}
       {footer}
       {!mobile && !showEmpty ? <div className="flex shrink-0 items-center justify-end gap-2 border-t border-[var(--border-subtle)] !px-5 !py-3">{actions ? <div className="me-auto min-w-0">{actions}</div> : null}{confirmButton}</div> : null}

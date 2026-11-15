@@ -93,15 +93,16 @@ describe('useTopicsOfChat follows topic changes, not line messages', () => {
     expect(seen.map((row) => row.name)).toEqual(['new'])
   })
 
-  it('clears a failed topic read when a later revision refresh succeeds', async () => {
+  it('a failed topic read reads the whole line again (I1); the line\'s answer is what shows, its failure the line\'s', async () => {
     await open([topic('t1', null)])
-    listTopicsOfChat.mockRejectedValueOnce(new Error('topic read failed'))
+    listTopicsOfChat.mockRejectedValueOnce(new Error('topic read failed')).mockResolvedValueOnce([topic('t1', null, { name: 'recovered' })])
     await changed({ chat_id: 'line', entity_id: 't1' })
-    expect(seenError).toBe('topic read failed')
-    listTopicsOfChat.mockResolvedValueOnce([topic('t1', null, { name: 'recovered' })])
-    await changed({ chat_id: 'line', entity_id: 't1' })
-    expect(seen.map(row => row.name)).toEqual(['recovered'])
+    await vi.waitFor(() => expect(seen.map(row => row.name)).toEqual(['recovered']))
     expect(seenError).toBeNull()
+    listTopicsOfChat.mockRejectedValueOnce(new Error('topic read failed')).mockRejectedValueOnce(new Error('line read failed'))
+    await changed({ chat_id: 'line', entity_id: 't1' })
+    await vi.waitFor(() => expect(seenError).toBe('line read failed'))
+    expect(seen.map(row => row.name)).toEqual(['recovered'])
   })
 
   it('a topic change while the whole line is still loading reads the line again', async () => {
