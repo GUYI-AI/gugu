@@ -386,7 +386,11 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     {queue.error ? <div role="alert">{queue.error}</div> : null}
     <input ref={input} type="file" hidden multiple onChange={event => { addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} />
     <AgentConversationComposer {...(appPanel ? panelComposerOptions(options.props) : options.props)} {...queue.props} {...(appPanel || composerControls ? {} : lockedHarness(harness))}
-      renderPhoneHeader={composerControls ? modelControl => composerControls(modelControl, { options: options.props.modelOptions, selected: options.props.selectedModel, onPick: options.props.onModelChange }, skillDraft) : undefined}
+      renderPhoneHeader={composerControls ? modelControl => composerControls(modelControl, {
+        options: options.props.modelOptions, selected: options.props.selectedModel, onPick: options.props.onModelChange,
+        effortOptions: options.props.effortOptions, selectedEffort: options.props.selectedEffort, defaultEffort: options.props.defaultEffort,
+        onEffortChange: options.props.onEffortChange, fastMode: options.props.fastMode, onFastModeChange: options.props.onFastModeChange,
+      }, skillDraft) : undefined}
       inputHeader={composerControls ? <SelectedCreationSkills skills={skillDraft.skills} onChange={skillDraft.update} /> : undefined}
       placeholder={appPanel ? ta('chat.placeholder', { name: agentName }) : undefined} queuedPrompts={[...queue.props.queuedPrompts, ...localInputs.filter(input => !input.failure).map(input => ({ id: input.id, text: input.text, origin: 'manual' as const, locked: true })),
       ...[...waitingInputs].filter(([id]) => !queue.props.queuedPrompts.some(prompt => prompt.id === id) && !localInputs.some(input => input.id === id)).map(([id, input]) => ({ id, text: input.text, origin: 'manual' as const, locked: true }))]} mobile phoneActions={mobile} isWorking={agentWorking} canSubmit={!sending && !stopping && (!!composerDraft.text.trim() || attachments.length > 0 || annotationItems.length > 0)}

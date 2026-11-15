@@ -800,6 +800,7 @@ export function ChatComposer({
                 fastMode={fastMode}
                 onFastModeChange={onFastModeChange}
                 renderFastModeHint={phoneActions ? undefined : renderFastModeHint}
+                phoneActions={phoneActions}
               />
   );
   const promptEditor = (
