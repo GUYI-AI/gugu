@@ -4,6 +4,7 @@ import { page } from 'vitest/browser';
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat';
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
+import { GROW_CAP } from '@gugu/session-ui/react/growing-list';
 import { i18n } from '@/i18n';
 import '@/i18n/registerMessagingCatalog';
 import '@/i18n/registerContactsCatalog';
@@ -81,12 +82,12 @@ describe('read receipt list', () => {
     expect(more()).toEqual(['还有 980 位']);
     expect(heads().at(-1)).toBe('未读1000');
 
-    // 展开以后还是只挂一窗;滚到底,吸在顶上的是「未读」。
+    // 展开以后不会把 1000 位全挂上(每组空闲时最多长到 GROW_CAP 行);滚到底,吸在顶上的是「未读」。
     panel()!.querySelector<HTMLButtonElement>('button')!.click();
     await until('unread group expanded', () => !more().includes('还有 980 位'));
     scroller().scrollTop = 1e6;
     await until('last unread member mounted', () => names().includes('成员 2000'));
-    expect(panel()!.querySelectorAll('.gg-list-row').length).toBeLessThan(30);
+    expect(panel()!.querySelectorAll('.gg-list-row').length).toBeLessThanOrEqual(2 * GROW_CAP);
     const top = scroller().getBoundingClientRect().top;
     const stuck = [...panel()!.querySelectorAll<HTMLElement>('[data-slot="section-label"]')].find((h) => Math.abs(h.getBoundingClientRect().top - top) < 1);
     expect(stuck?.textContent).toBe('未读1000');

@@ -1,10 +1,10 @@
 /**
- * @@@growing-list — a list whose length grows with the user's data mounts the lines around its visible part, whatever its
- * length: the @ candidates of a 400-member group, a member page with sections in one scroller. Counted in Chromium, where
- * the lines have real heights.
+ * @@@growing-list — a list whose length grows with the user's data first mounts the lines around its visible part,
+ * whatever its length (the @ candidates of a 400-member group, a member page with sections in one scroller), then grows
+ * while the page is idle, up to GROW_CAP lines. Counted in Chromium, where the lines have real heights.
  */
 import { ComboboxPopup, type ComboboxPopupHandle, type ComboboxPopupItem } from '@gugu/session-ui/react/primitives'
-import { GrowingList } from '@gugu/session-ui/react/growing-list'
+import { GROW_CAP, GrowingList, growSpan } from '@gugu/session-ui/react/growing-list'
 import { act, createRef, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it } from 'vitest'
@@ -34,7 +34,8 @@ it('400 @ candidates mount the window around the view, and the keyboard keeps th
   const ref = createRef<ComboboxPopupHandle>()
   const r = mountHost()
   act(() => r.render(<ComboboxPopup ref={ref} items={candidates(400)} anchorRect={new DOMRect(100, 100, 10, 20)} onSelect={() => {}} />))
-  await until('the popup is up', () => highlighted()?.textContent?.includes('Member 0') === true)
+  // The first frame, before any idle time: the lines around the view only.
+  expect(highlighted()?.textContent).toContain('Member 0')
   expect(document.querySelectorAll('[role="option"]').length).toBeLessThan(40)
 
   for (let i = 0; i < 120; i++) act(() => void ref.current?.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowDown' })))
@@ -44,7 +45,6 @@ it('400 @ candidates mount the window around the view, and the keyboard keeps th
     const box = highlighted()!.getBoundingClientRect(), view = scroller.getBoundingClientRect()
     return box.top >= view.top - 1 && box.bottom <= view.bottom + 1
   })
-  expect(document.querySelectorAll('[role="option"]').length).toBeLessThan(40)
 })
 
 it('sections sharing one scroller each mount only their part in view, and scrolling brings the next one in', async () => {
@@ -63,7 +63,7 @@ it('sections sharing one scroller each mount only their part in view, and scroll
     )
   }
   act(() => mountHost().render(<Panel />))
-  await until('people lines are drawn', () => document.querySelector('[data-line="people-0"]') != null)
+  expect(document.querySelector('[data-line="people-0"]')).not.toBeNull()
   expect(document.querySelectorAll('[data-line^="people-"]').length).toBeLessThan(40)
   // A list below the view still mounts its first few lines (the window always starts somewhere): far fewer than 400.
   expect(document.querySelectorAll('[data-line^="agents-"]').length).toBeLessThan(20)
@@ -75,17 +75,15 @@ it('sections sharing one scroller each mount only their part in view, and scroll
     const line = document.querySelector<HTMLElement>('[data-line="agents-0"]')
     return line != null && Math.abs(line.getBoundingClientRect().top - scroller.getBoundingClientRect().top) < 2
   })
-  expect(document.querySelectorAll('[data-line^="agents-"]').length).toBeLessThan(40)
-  expect(document.querySelectorAll('[data-line^="people-"]').length).toBeLessThan(20)
 })
 
-it('a scroll renders only the lines that enter the window, not the ones already mounted', async () => {
+function counted(count: number) {
   const renders = new Map<number, number>()
   function Panel() {
     const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
     return (
       <div ref={setScroller} data-testid="scroller" style={{ height: 400, overflowY: 'auto' }}>
-        <GrowingList scroller={scroller} count={400} getKey={(i) => i} estimateSize={() => 40} renderLine={(i) => {
+        <GrowingList scroller={scroller} count={count} getKey={(i) => i} estimateSize={() => 40} renderLine={(i) => {
           renders.set(i, (renders.get(i) ?? 0) + 1)
           return <div data-line={i} style={{ height: 40 }}>line {i}</div>
         }} />
@@ -93,15 +91,41 @@ it('a scroll renders only the lines that enter the window, not the ones already 
     )
   }
   act(() => mountHost().render(<Panel />))
-  await until('line 0 is drawn', () => document.querySelector('[data-line="0"]') != null)
-  const scroller = document.querySelector<HTMLElement>('[data-testid="scroller"]')!
+  return { renders, scroller: document.querySelector<HTMLElement>('[data-testid="scroller"]')!, mounted: () => document.querySelectorAll('[data-line]').length }
+}
+
+it('an idle list grows to all its lines, each rendered once, and a scroll through them renders none', async () => {
+  const { renders, scroller, mounted } = counted(400)
+  expect(mounted()).toBeLessThan(40)
+  await until('all 400 lines are mounted', () => mounted() === 400)
+  expect(Math.max(...renders.values())).toBe(1)
   for (let step = 1; step <= 5; step++) {
     renders.clear()
-    act(() => { scroller.scrollTop = step * 200 })
-    // 200 px = 5 more lines at the bottom of the window (10 in view + 8 overscan): those render, the mounted ones do not.
-    const last = step * 5 + 17
-    await until(`line ${last} is drawn`, () => document.querySelector(`[data-line="${last}"]`) != null)
-    expect([...renders.keys()].sort((a, b) => a - b)).toEqual([last - 4, last - 3, last - 2, last - 1, last])
-    expect(Math.max(...renders.values())).toBe(1)
+    act(() => { scroller.scrollTop = step * 2000 })
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    expect(renders.size).toBe(0)
   }
+})
+
+it(`a list longer than GROW_CAP grows to GROW_CAP lines, and grows again around where a long scroll ends`, async () => {
+  const { scroller, mounted } = counted(2000)
+  await until(`${GROW_CAP} lines are mounted`, () => mounted() === GROW_CAP)
+  await new Promise((resolve) => setTimeout(resolve, 1500))
+  expect(mounted()).toBe(GROW_CAP)
+  act(() => { scroller.scrollTop = 1900 * 40 })
+  await until('the lines around the end are mounted, the far ones dropped', () => {
+    const line = document.querySelector('[data-line="1999"]')
+    return line != null && document.querySelector('[data-line="0"]') == null && mounted() === GROW_CAP
+  })
+})
+
+it('the grown span joins the view, fills a gap towards it, and stops at the ends and at the cap', () => {
+  expect(growSpan(null, { start: 0, end: 17 }, 400, 8)).toEqual({ start: 0, end: 25 })
+  expect(growSpan({ start: 0, end: 25 }, { start: 0, end: 17 }, 400, 8)).toEqual({ start: 0, end: 33 })
+  expect(growSpan({ start: 0, end: 399 }, { start: 100, end: 117 }, 400, 8)).toBeNull()
+  expect(growSpan({ start: 10, end: 50 }, { start: 30, end: 47 }, 400, 8)).toEqual({ start: 6, end: 54 })
+  expect(growSpan({ start: 0, end: 50 }, { start: 100, end: 117 }, 400, 8)).toEqual({ start: 0, end: 58 })
+  expect(growSpan({ start: 0, end: 95 }, { start: 100, end: 117 }, 400, 8)).toEqual({ start: 0, end: 117 })
+  expect(growSpan({ start: 0, end: GROW_CAP - 1 }, { start: 1000, end: 1017 }, 2000, 8)).toEqual({ start: 996, end: 1021 })
+  expect(growSpan({ start: 0, end: GROW_CAP - 1 }, { start: 0, end: 17 }, 2000, 8)).toBeNull()
 })
