@@ -6,6 +6,7 @@ import { assertSameTeamFunding, assertTeamTaskActor, parseTeamTaskFunding, teamI
 import { teamAccountTokenHint } from '../shared/team-account-claims'
 import { teamCreditStopReason, type TeamCreditStopReason } from '@gugu/session-core/session-record/team-credits'
 import { createTaskPayerStore } from './task-payer-store'
+import { createTeamIssueIntentStore, type TeamIssueBody, type TeamIssueSlot } from './team-issue-intents'
 import {
   agentModelSelectionForProtocol,
   atomicWriteText,
@@ -307,15 +308,21 @@ export async function issuePlatformModelAccess(input: {
 }): Promise<IssuedModelAccess> {
   const auth = await requireRuntimeAuth(input.authProvider, 'platform model token')
   const prior = input.keepFromAccessSessionId ? await readAccessLedgerEntry(accessLedgerPath(input.keepFromAccessSessionId)) : null
-  const taskId = prior?.teamTask?.funding.task_id ?? input.sessionId ?? randomUUID()
+  const localTaskId = prior?.teamTask?.funding.task_id ?? input.sessionId ?? null
+  const issueSlot: TeamIssueSlot = { actorUserId: auth.userId, localTaskId, agentUserId: input.agentUserId,
+    engineId: input.engineId, modelId: input.modelId, protocol: input.protocol, providerSessionId: input.providerSessionId ?? null,
+    keepFromAccessSessionId: input.keepFromAccessSessionId ?? null }
+  const intents = createTeamIssueIntentStore(resolveGuguHome(process.env))
+  const pending = teamAccountTokenHint(auth.accessToken) === 'team' ? await intents.read(issueSlot) : null
+  let taskId = pending?.body.task_id ?? localTaskId ?? randomUUID()
   if (prior?.teamTask && input.sessionId && input.sessionId !== taskId) throw new Error('A replacement cannot change the team task')
   const payers = createTaskPayerStore(resolveGuguHome(process.env)), existing = await payers.read(taskId)
   if (existing && existing.actorUserId !== auth.userId) throw new Error('The task belongs to another account')
-  const expected = prior?.teamTask ?? existing?.teamTask
-  const team = await teamIssueContext(auth, taskId, modelAccessFetch, expected)
-  await payers.reserve({ version: 1, taskId, actorUserId: auth.userId, kind: team ? 'team' : 'personal',
-    ...(team ? { teamId: team.teamId, memberIdentityId: team.memberIdentityId } : {}) })
-  const payload = await invokeModelAccessAs(auth, {
+  let expected = prior?.teamTask ?? existing?.teamTask
+  const team = await teamIssueContext(auth, taskId, modelAccessFetch, expected, pending ? {
+    teamId: pending.body.team_id, memberIdentityId: pending.body.member_identity_id,
+  } : undefined)
+  const body = {
     action: 'issue',
     agent_user_id: input.agentUserId,
     engine_id: input.engineId,
@@ -324,7 +331,23 @@ export async function issuePlatformModelAccess(input: {
     provider_session_id: input.providerSessionId ?? null,
     ...(input.keepFromAccessSessionId ? { keep_from_session_id: input.keepFromAccessSessionId } : {}),
     ...(team ? { team_id: team.teamId, member_identity_id: team.memberIdentityId, task_id: taskId, expected_membership_revision: team.membershipRevision } : {}),
-  })
+  }
+  const intent = team ? await intents.prepare(issueSlot, body as TeamIssueBody) : null
+  if (intent && intent.body.task_id !== taskId) {
+    // Concurrent utility callers adopt the first persisted intent, including its generated task ID.
+    taskId = intent.body.task_id
+    const bound = await payers.read(taskId)
+    if (bound && bound.actorUserId !== auth.userId) throw new TeamFundingError('team_identity_required')
+    expected = prior?.teamTask ?? bound?.teamTask
+  }
+  await payers.reserve({ version: 1, taskId, actorUserId: auth.userId, kind: team ? 'team' : 'personal',
+    ...(team ? { teamId: team.teamId, memberIdentityId: team.memberIdentityId } : {}) })
+  let payload: Record<string, unknown>
+  try { payload = await invokeModelAccessAs(auth, intent ? { ...intent.body, idempotency_key: intent.idempotency_key } : body) }
+  catch (cause) {
+    if (intent && cause instanceof ModelAccessHttpError && ['issue_intent_ended', 'issue_revision_conflict'].includes(cause.code ?? '')) await intents.finish(issueSlot, intent)
+    throw cause
+  }
   const protocol = payload.protocol
   if (!isModelAccessProtocol(protocol)) {
     throw new Error('model access response has an invalid protocol')
@@ -346,7 +369,7 @@ export async function issuePlatformModelAccess(input: {
     throw cause
   }
   await recordIssuedAccess(auth, accessSessionId, input.sessionId, teamTask)
-  return {
+  const issued: IssuedModelAccess = {
     ...(teamTask ? { teamTask } : {}),
     accessSessionId,
     relayUrl: required(payload.relay_url, 'relay_url').replace(/\/$/, ''),
@@ -365,6 +388,8 @@ export async function issuePlatformModelAccess(input: {
       ? { modelId: payload.model_id.trim() }
       : {}),
   }
+  if (intent) await intents.finish(issueSlot, intent)
+  return issued
 }
 
 /**

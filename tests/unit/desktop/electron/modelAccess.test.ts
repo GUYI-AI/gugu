@@ -405,6 +405,8 @@ describe('fixed team model funding', () => {
     await renewPlatformModelAccess(request.authProvider, next.accessSessionId)
     expect(calls[0]).toMatchObject({ action: 'issue', team_id: 'team-a', member_identity_id: teamAuth.userId, task_id: taskId, expected_membership_revision: 9 })
     expect(calls[1]).toMatchObject({ action: 'issue', keep_from_session_id: first.accessSessionId, task_id: taskId })
+    expect(calls[0].idempotency_key).toMatch(/^[0-9a-f-]{36}$/)
+    expect(calls[1].idempotency_key).not.toBe(calls[0].idempotency_key)
     expect(calls[2]).toEqual({ action: 'renew', session_id: next.accessSessionId })
     expect(next.teamTask).toEqual(first.teamTask)
   })
@@ -431,5 +433,70 @@ describe('fixed team model funding', () => {
     expect(error.reason).toBe('session_ended')
     expect(error.reason_code).toBeUndefined()
     expect(modelAccessFailureReason(error)).not.toMatch(/team-.*(?:cap|exhausted)/)
+  })
+  it('replays the exact persisted issue after response loss, even if the latest context revision and stop reason changed', async () => {
+    const calls: Record<string, unknown>[] = []
+    let latest: Record<string, unknown> = { ...context }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: latest }))
+      calls.push(JSON.parse(String(init?.body)))
+      if (calls.length === 1) throw new TypeError('Synthetic lost response')
+      return new Response(JSON.stringify(issueReply(`ticket-${calls.length}`)))
+    })
+    await expect(issuePlatformModelAccess(request)).rejects.toThrow()
+    latest = { ...context, membership_revision: 10, stop_reason: 'team_credits_exhausted' }
+    await issuePlatformModelAccess(request)
+    expect(calls[1]).toEqual(calls[0])
+    expect(calls[1].expected_membership_revision).toBe(9)
+    latest = { ...context }
+    await issuePlatformModelAccess(request)
+    expect(calls[2].idempotency_key).not.toBe(calls[1].idempotency_key)
+  })
+  it.each(['issue_intent_ended', 'issue_revision_conflict'])('ends the persisted issue only on authoritative terminal code %s', async code => {
+    const calls: Record<string, unknown>[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: { ...context, membership_revision: calls.length ? 10 : 9 } }))
+      calls.push(JSON.parse(String(init?.body)))
+      return calls.length === 1 ? new Response(JSON.stringify({ error: { code } }), { status: 409 }) : new Response(JSON.stringify(issueReply('new-ticket')))
+    })
+    await expect(issuePlatformModelAccess(request)).rejects.toMatchObject({ code })
+    await issuePlatformModelAccess(request)
+    expect(calls[1].idempotency_key).not.toBe(calls[0].idempotency_key)
+    expect(calls[1].expected_membership_revision).toBe(10)
+  })
+  it.each(['billing_unavailable', 'version_conflict'])('retains the pending UUID for a nonterminal %s response', async code => {
+    const calls: Record<string, unknown>[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: context }))
+      calls.push(JSON.parse(String(init?.body)))
+      return calls.length === 1 ? new Response(JSON.stringify({ error: { code } }), { status: code === 'billing_unavailable' ? 503 : 409 }) : new Response(JSON.stringify(issueReply('same-intent-ticket')))
+    })
+    await expect(issuePlatformModelAccess(request)).rejects.toMatchObject({ code })
+    await issuePlatformModelAccess(request)
+    expect(calls[1]).toEqual(calls[0])
+  })
+  it('retains the generated utility task ID along with the key across response loss', async () => {
+    const calls: Record<string, unknown>[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: context }))
+      const body = JSON.parse(String(init?.body)); calls.push(body)
+      if (calls.length === 1) throw new TypeError('Synthetic lost response')
+      return new Response(JSON.stringify({ ...issueReply('utility-ticket'), funding: { ...funding, task_id: body.task_id } }))
+    })
+    const utility = { ...request, sessionId: undefined }
+    await expect(issuePlatformModelAccess(utility)).rejects.toThrow()
+    const issued = await issuePlatformModelAccess(utility)
+    expect(calls[1]).toEqual(calls[0])
+    expect(issued.teamTask?.funding.task_id).toBe(calls[0].task_id)
+  })
+  it('does not use a pending issue receipt to bypass a currently disabled membership', async () => {
+    let issueCalls = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async url => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: { ...context, member_state: issueCalls ? 'disabled' : 'active' } }))
+      issueCalls++; throw new TypeError('Synthetic lost response')
+    })
+    await expect(issuePlatformModelAccess(request)).rejects.toThrow()
+    await expect(issuePlatformModelAccess(request)).rejects.toMatchObject({ code: 'membership_disabled' })
+    expect(issueCalls).toBe(1)
   })
 })

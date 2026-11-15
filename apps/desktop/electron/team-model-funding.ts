@@ -64,7 +64,7 @@ export async function readTeamModelContext(auth: RuntimeAuth, fetchImpl: TeamFet
     membershipRevision: row.membership_revision as number, stopReason: teamCreditStopReason(row.stop_reason) }
 }
 
-export async function teamIssueContext(auth: RuntimeAuth, taskId: string, fetchImpl: TeamFetch, expected?: TeamTaskIdentity) {
+export async function teamIssueContext(auth: RuntimeAuth, taskId: string, fetchImpl: TeamFetch, expected?: TeamTaskIdentity, replay?: { teamId: string; memberIdentityId: string }) {
   assertTeamTaskActor(auth, expected)
   const hint = teamAccountTokenHint(auth.accessToken)
   if (hint === 'personal') return null
@@ -72,6 +72,8 @@ export async function teamIssueContext(auth: RuntimeAuth, taskId: string, fetchI
   const context = await readTeamModelContext(auth, fetchImpl)
   if (expected && (context.teamId !== expected.funding.team_id || context.memberId !== expected.funding.member_id
     || context.memberIdentityId !== expected.memberIdentityId || taskId !== expected.funding.task_id)) throw new TeamFundingError('team_identity_required')
-  if (context.stopReason) throw new TeamFundingError('credits_exhausted', context.stopReason)
+  if (replay && (context.teamId !== replay.teamId || context.memberIdentityId !== replay.memberIdentityId)) throw new TeamFundingError('team_identity_required')
+  // The authoritative issue endpoint must resolve a persisted receipt before a new reservation is attempted.
+  if (context.stopReason && !replay) throw new TeamFundingError('credits_exhausted', context.stopReason)
   return context
 }
