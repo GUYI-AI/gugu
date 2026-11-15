@@ -28,7 +28,8 @@ import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
-const actions = vi.hoisted(() => ({ pickModel: vi.fn(), send: vi.fn() }))
+const actions = vi.hoisted(() => ({ pickModel: vi.fn(), send: vi.fn(), reloadTopics: vi.fn(), topicError: null as string | null }))
+vi.mock('@/hooks/useTopics', async original => ({ ...(await original<object>()), useTopicsOfChat: () => ({ topics: null, loading: actions.topicError === null, error: actions.topicError, reload: actions.reloadTopics }) }))
 vi.mock('@/components/chat/useConversationOptions', () => ({ useConversationOptions: () => ({ props: {
   modelOptions: { glm: { name: '咕咕 GLM-5.3' }, luna: { name: '咕咕 GPT-6 Luna' } }, selectedModel: 'glm', onModelChange: actions.pickModel,
 }, confirmation: null, steers: false }) }))
@@ -65,7 +66,7 @@ async function mount(sessionId:string,entry:string|null,full=false){
  harness=createReactHarness();Object.assign(harness.container.style,{position:'fixed',inset:'0',display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:'16px'})
  await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme="dark"><>{full ? <Conversation sessionId={sessionId} entry={entry}/> : <><Controls sessionId={sessionId} entry={entry}/><PhoneComposerControlRow><span>输入消息</span></PhoneComposerControlRow></>}</></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats},contacts:{contacts:[]}})
 }
-afterEach(()=>{actions.pickModel.mockClear();actions.send.mockClear();harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);document.documentElement.removeAttribute('data-phone-shell')})
+afterEach(()=>{actions.pickModel.mockClear();actions.send.mockClear();actions.reloadTopics.mockClear();actions.topicError=null;harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);document.documentElement.removeAttribute('data-phone-shell')})
 it('a group-entered task lists the same resident sessions and preserves the group entry when switching',async()=>{
  await mount('room-task','chat:room');await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByTestId('phone-sidebar-agent')).toHaveTextContent('群里的验收任务')
@@ -127,4 +128,14 @@ it('the selected native skill is visible inside the input and accompanies the ac
  await until('actual message sent',()=>actions.send.mock.calls.length===1)
  expect(actions.send.mock.calls[0]![0]).toContain('请使用以下技能：代码检查。')
  expect(actions.send.mock.calls[0]![0]).toContain('检查这一段')
+})
+
+
+it.each([null, '话题读取失败'])('an unread topic list stays explicit and retryable: %s', async error=>{
+ actions.topicError=error
+ await mount('room-task','chat:room',true)
+ await page.getByTestId('phone-room-topics').click()
+ const panel=document.querySelector('[data-testid="phone-room-controls-sheet"]')!
+ expect(panel.textContent).toContain(error ?? '正在读取话题')
+ if(error){await page.getByRole('button',{name:'重试',exact:true}).click();expect(actions.reloadTopics).toHaveBeenCalledOnce()}
 })
