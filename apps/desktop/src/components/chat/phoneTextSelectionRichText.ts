@@ -117,14 +117,13 @@ export function phoneTextSelectionRichText(source: PhoneTextSelectionSource): Na
         ...(marker ? { marker } : {}),
       }
     })
-    // Keep copied paragraph breaks while assigning their extra blank line the measured visual gap.
+    // Preserve copied breaks; paragraph metrics handle blank spacing without introducing another font size.
     for (let index = 0; index < entries.length - 1; index++) {
       const previousEnd = entries[index][1].end
       const start = previousEnd + (source.text[previousEnd - 1] === '\n' ? 0 : 1)
       const end = entries[index + 1][1].start
       if (start < end && /^\n+$/.test(source.text.slice(start, end))) {
         result.push({ start, end, lineHeight: 0.5, before: 0, after: 0, indent: 0, firstLineIndent: 0 })
-        runs.push({ start, end, fontSize: 0.5, weight: 400, italic: false, monospace: false, color: color(rootStyle.color) })
       }
     }
     const codeContainers = new Map<HTMLElement, { start: number; end: number; first: HTMLElement; last: HTMLElement }>()

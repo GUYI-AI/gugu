@@ -31,6 +31,7 @@ it.each(['strong', '.code-harbor'])('keeps rich styles, all code and the pressed
   expect(rich.text).toContain('3.\tBring a notebook')
   expect(rich.text).toContain('4.\tSecond 😀')
   expect(rich.runs.some(run => run.fontSize === 28 && run.weight === 600)).toBe(true)
+  expect(new Set(rich.runs.map(run => run.fontSize))).toEqual(new Set([12, 14, 16, 28]))
   expect(rich.runs.some(run => run.weight === 700 && rich.text.slice(run.start, run.end) === 'harbor')).toBe(true)
   expect(rich.runs.some(run => run.monospace && run.fontSize === 14 && run.color.red === 180 && run.color.green === 35)).toBe(true)
   expect(rich.runs.some(run => run.color.red >= 127 && run.color.red <= 128 && run.color.blue >= 127 && run.color.blue <= 128)).toBe(true)
