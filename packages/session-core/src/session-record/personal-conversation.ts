@@ -29,7 +29,7 @@ export function personalConversationPreview(turn: TranscriptTurn, activitySource
     const at = item.at ?? (item.role === 'assistant' ? turn.endedAt : turn.startedAt);
     if (!item.text.trim() || item.text.trim() === '[NO_REPLY]' || at === undefined || !Number.isFinite(at) || !Number.isFinite(new Date(at).getTime())) continue;
     // Attachment instructions can contain private local paths.
-    const text = item.attachments?.length || /\[(?:Folder file|Image attached at local path:)/.test(item.text) || /@\[[^\]]+\]\(/.test(item.text)
+    const text = item.attachments?.length || /\[(?:Folder file|Image attached at local path:|File at local path:)/.test(item.text) || /@\[[^\]]+\]\(/.test(item.text)
       ? '' : item.text.trim().replace(/\s+/g, ' ').slice(0, 180);
     if (text) latest = { text, at, ...(sources ? { activityVersion: 1 as const, activity: sources.get(messageReferenceId(turn, item.id) ?? item.id) ?? null } : {}) };
   }

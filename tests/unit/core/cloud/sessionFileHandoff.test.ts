@@ -3,7 +3,9 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, expect, it, vi } from 'vitest'
-import { downloadSessionFile, uploadSessionFile, uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
+import { uploadSessionFile, uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
+import { createNodeFileResolver, saveFileHandle } from '@gugu/core/local/files/fileSnapshots'
+import type { AttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
 import { withSessionAttachments } from '@gugu/core/cloud/sessionAttachments'
 
 const dirs: string[] = []
@@ -11,6 +13,12 @@ afterEach(async () => { for (const dir of dirs.splice(0)) await rm(dir, { recurs
 const directory = async () => { const dir=await mkdtemp(join(tmpdir(),'session-file-test-'));dirs.push(dir);return dir }
 const original = new Uint8Array([0,255,12,45,0,128,17])
 const ref={attachment_id:randomUUID(),file_name:'original.bin',sha256:createHash('sha256').update(original).digest('hex'),size_bytes:original.length,content_type:'application/octet-stream'}
+// A session attachment is read like any file: the resolver as the reader, saved into the reader's directory.
+async function downloadSessionFile(endpoint: AttachmentsEndpoint, id: string, actor: string, target: string) {
+ const file=await createNodeFileResolver(await directory(),async()=>endpoint)({attachment_id:id},{accountId:'owner',actorId:actor})
+ if(file.status!=='ready')throw new Error(file.status)
+ return saveFileHandle(file,target)
+}
 function fixture(options: { denied?: boolean; corrupt?: boolean; revokeAfterDownload?: boolean } = {}) {
  let resolutions=0
  const fetcher=vi.fn(async (url: string | URL | Request, init?: RequestInit) => {

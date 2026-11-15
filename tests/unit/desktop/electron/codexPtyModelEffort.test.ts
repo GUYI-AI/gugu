@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@gugu/core/cloud/agentIdentityReconcile', () => ({
 }))
 import {
+  guguAppsBlock,
   guguSessionSurfaceBlock,
   loadCodexAppServerCapabilities,
   PRODUCT_CAPABILITY_PACKAGES,
@@ -305,7 +306,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       expect.arrayContaining(['model="gpt-5.6-sol"', 'model_reasoning_effort="high"']),
     )
     expect(started[0]?.developerInstructions).toBe(
-      PLATFORM + guguSessionSurfaceBlock('app-server', 'codex', false) + IDENTITY,
+      PLATFORM + guguSessionSurfaceBlock('app-server', 'codex', false) + guguAppsBlock([], []) + IDENTITY,
     )
     expect(registeredAgents).toEqual(['agent-1'])
     expect(emittedProvisionEvents).toHaveLength(1)
@@ -618,7 +619,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
     expect(started).toEqual([
       expect.objectContaining({
         agentUserId: 'agent-1:fork-scratch',
-        developerInstructions: PLATFORM + guguSessionSurfaceBlock('app-server', 'codex', false) + IDENTITY,
+        developerInstructions: PLATFORM + guguSessionSurfaceBlock('app-server', 'codex', false) + guguAppsBlock([], []) + IDENTITY,
         forkFromThreadId: 'parent-thread-1',
         threadStart: { approvalPolicy: 'never', sandbox: 'read-only' },
         extraArgs: expect.arrayContaining(['model="gpt-5.6-sol"', 'model_reasoning_effort="high"']),
