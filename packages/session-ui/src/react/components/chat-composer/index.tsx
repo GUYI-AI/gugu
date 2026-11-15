@@ -1034,7 +1034,7 @@ export function ChatComposer({
                 defaultEffort={defaultEffort}
                 fastMode={fastMode}
                 onFastModeChange={onFastModeChange}
-                renderFastModeHint={mobile ? undefined : renderFastModeHint}
+                renderFastModeHint={phoneActions ? undefined : renderFastModeHint}
               />
 
               {queueEdit ? (

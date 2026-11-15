@@ -23,7 +23,10 @@ export function ComposerFastMode({
       aria-label="Fast"
       aria-pressed={enabled}
       disabled={disabled || !onChange}
-      onPointerDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
