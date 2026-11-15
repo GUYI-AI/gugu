@@ -27,7 +27,7 @@ async function mount(sessionId:string,entry:string|null){
  await page.viewport(390,844);document.documentElement.dataset.theme='dark';document.documentElement.setAttribute('data-phone-shell','');setLocalePreference('zh-CN')
  const chats=[chat({id:'room',kind:'group',name:'手机验收群'}),chat({id:'solo-chat',kind:'dm',peer_user_id:'solo-agent',name:'独立智能体'})]
  publishChatSummaries(chats);dispose=installOwnedAgentEntry({open:()=>false,owns:()=>true})
- publishDirectoryDevices([device({device_id:'qa-device',is_online:true})]);updateDeviceSessions('qa-device',{projects:[{id:'workspace',name:'Tasks',path:'',kind:'workspace'}],sessions,cached:false,loading:false,error:null})
+ publishDirectoryDevices([device('qa-device',[],{is_online:true})]);updateDeviceSessions('qa-device',{projects:[{id:'workspace',name:'Tasks',path:'',kind:'workspace'}],sessions,cached:false,loading:false,error:null})
  harness=createReactHarness();Object.assign(harness.container.style,{position:'fixed',inset:'0',display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:'8px'})
  await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme="dark"><PhoneSessionSidebarControls sessionId={sessionId} entry={entry}/><PhoneComposerControlRow><span>输入消息</span></PhoneComposerControlRow></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats},contacts:{contacts:[]}})
 }
