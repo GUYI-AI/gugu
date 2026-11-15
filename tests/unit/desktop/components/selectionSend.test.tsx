@@ -28,7 +28,7 @@ describe('what Send sends', () => {
   it('is the cite exactly as fileCiteDraft writes it, a blank line, then the person\'s words', () => {
     const { draft, quote, pills } = selectionSendOf({ text, refs, ...place }, 'session:task-1')
     expect(draft).toBe(fileCiteDraft(text, refs))
-    expect({ quote, pills }).toEqual({ quote: text, pills: ['proof.md · Lines 3–4'] })
+    expect({ quote, pills }).toEqual({ quote: text, pills: ['proof.md (Lines 3–4)'] })
     expect(selectionSendBody(draft, '  怎么证明？ @Claude  ')).toBe(`${fileCiteDraft(text, refs)}\n\n怎么证明？ @Claude`)
     expect(selectionSendBody(draft, ' \n ')).toBe(fileCiteDraft(text, refs))
   })
@@ -39,7 +39,7 @@ describe('what Send sends', () => {
     const blocks = [...host.querySelectorAll('blockquote, p')].filter(block => !block.parentElement?.closest('blockquote'))
     expect(blocks.map(block => block.tagName)).toEqual(['BLOCKQUOTE', 'P', 'P'])
     expect(blocks[0]!.textContent?.trim()).toBe('设 a 为偶数 则 a² 为偶数')
-    expect(blocks[1]!.querySelector('a, [data-mention], .gg-md-mention')?.textContent).toContain('proof.md · Lines 3–4')
+    expect(blocks[1]!.querySelector('a, [data-mention], .gg-md-mention')?.textContent).toContain('proof.md (Lines 3–4)')
     expect(blocks[2]!.textContent).toBe('怎么证明？')
     expect(host.textContent).not.toMatch(/[{}]|# /)
   })

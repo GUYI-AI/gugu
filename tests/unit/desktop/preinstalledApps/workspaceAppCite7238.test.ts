@@ -379,8 +379,8 @@ describe("a session file's selection reaches the chat one way: Cite", () => {
     const draft = appendToDraft(appendToDraft(drafts[0]!, drafts[1]!), '怎么证明？')
     const sent = annotationPrompt(draft, [], 'en-US')
     expect(sent).toBe([
-      '> 设 a 为偶数 则 a² 为偶数', '', '@[proof.md · Lines 3–4](docs/proof.md)', '',
-      '> 引理一', '', '@[proof.md · Line 6](docs/proof.md)', '', '怎么证明？',
+      '> 设 a 为偶数 则 a² 为偶数', '', '@[proof.md (Lines 3–4)](docs/proof.md)', '',
+      '> 引理一', '', '@[proof.md (Line 6)](docs/proof.md)', '', '怎么证明？',
     ].join('\n'))
     expect(sent).not.toMatch(/^#|\{\s*"path"|"startLine"|"annotation"/m)
     // The user bubble's own parse (a session page says a path is a file) draws it as two quotes and two pills, each
@@ -391,7 +391,7 @@ describe("a session file's selection reaches the chat one way: Cite", () => {
     const quotes = [...bubble.querySelectorAll('blockquote')]
     expect(quotes.map((quote) => quote.textContent!.trim())).toEqual(['设 a 为偶数 则 a² 为偶数', '引理一'])
     expect(quotes.every((quote) => !quote.querySelector('.gg-md-mention'))).toBe(true)
-    expect([...bubble.querySelectorAll('.gg-md-mention')].map((pill) => pill.textContent)).toEqual(['proof.md · Lines 3–4', 'proof.md · Line 6'])
+    expect([...bubble.querySelectorAll('.gg-md-mention')].map((pill) => pill.textContent)).toEqual(['proof.md (Lines 3–4)', 'proof.md (Line 6)'])
     expect(bubble.textContent).not.toMatch(/@\[|\]\(|\{|Selected text|Selection 1/)
     expect(bubble.textContent).toContain('怎么证明？')
   })
@@ -406,12 +406,12 @@ describe("a session file's selection reaches the chat one way: Cite", () => {
     const [text, options] = gugu.dispatch.mock.calls[0]! as [string, { refs: { file: { id: string }; label?: unknown }[] }]
     expect(options.refs.map(({ label }) => label)).toEqual(['Lines 3–4'])
     const sent = fileCiteDraft(text, options.refs)
-    expect(sent).toBe(['> ```', '>     n = first_index_within(seq, limit, eps=1)', '>     head = max(abs(x) for x in seq[:n])  # *the* head', '> ```', '', '@[bound.py · Lines 3–4](src/bound.py)'].join('\n'))
+    expect(sent).toBe(['> ```', '>     n = first_index_within(seq, limit, eps=1)', '>     head = max(abs(x) for x in seq[:n])  # *the* head', '> ```', '', '@[bound.py (Lines 3–4)](src/bound.py)'].join('\n'))
     const bubble = document.createElement('div')
     bubble.innerHTML = parseMarkdownToBlocks('sent', sent, { resolve: (token) => ({ id: token, label: token, kind: 'file' }) })
       .map((block) => (block.kind === 'html' ? block.html : '')).join('')
     expect(bubble.querySelector('blockquote code')?.textContent).toContain('    head = max(abs(x) for x in seq[:n])  # *the* head')
     expect(bubble.querySelector('blockquote .gg-md-mention')).toBeNull()
-    expect([...bubble.querySelectorAll('.gg-md-mention')].map((pill) => pill.textContent)).toEqual(['bound.py · Lines 3–4'])
+    expect([...bubble.querySelectorAll('.gg-md-mention')].map((pill) => pill.textContent)).toEqual(['bound.py (Lines 3–4)'])
   })
 })

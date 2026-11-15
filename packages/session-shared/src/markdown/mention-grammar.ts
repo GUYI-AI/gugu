@@ -161,7 +161,7 @@ export function draftWithPills(text: string, pills: string): string {
 
 /**
  * A cite of working-copy files, as an App's draft names them (`refs`): its words (the selection's `> ` quote), then one
- * @file pill per ref, named by the file and its place (`a.md · Lines 3–4`). The Files App's cite and the host's file
+ * @file pill per ref, named by the file and its place (`a.md (Lines 3–4)`). The Files App's cite and the host's file
  * preview both come here.
  */
 export function fileCiteDraft(words: string, refs: readonly { file: { id: string }; label?: unknown }[]): string {
@@ -173,7 +173,7 @@ export function fileCite(words: string, refs: readonly { file: { id: string }; l
   const quote = words.trim();
   const pills = refs.map(({ file, label }) => {
     const name = file.id.replace(/\\/g, '/').split('/').pop() ?? file.id;
-    return { label: typeof label === 'string' && label ? `${name} · ${label}` : name, target: file.id };
+    return { label: typeof label === 'string' && label ? `${name} (${label})` : name, target: file.id };
   });
   return { draft: draftWithPills(quote, pills.map(pill => stringifyMention({ ...pill, kind: 'file' })).join(' ')), quote, pills: pills.map(pill => pill.label) };
 }
