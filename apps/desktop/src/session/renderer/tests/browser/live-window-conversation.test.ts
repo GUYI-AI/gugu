@@ -12,11 +12,12 @@ function setup() {
   let emit: (watch: string, packet: ProjectionHostPacket) => void = () => {};
   let watch = '';
   const unwatch = vi.fn(async () => {}), report = vi.fn(), send = vi.fn(async () => {});
+  const watched = vi.fn(async (args: { watchId: string }) => { watch = args.watchId; });
   const transport: LiveWindowTransport = {
     list: vi.fn(async () => [source]), observe: vi.fn(async () => () => {}),
     picture: () => ({ projection: {
       create: vi.fn(), publish: vi.fn(), close: vi.fn(), closed: vi.fn(), inputResult: vi.fn(), send, unwatch,
-      watch: async args => { watch = args.watchId; },
+      watch: watched,
     }, onProjection: next => { emit = next; return () => { emit = () => {}; }; } }),
   };
   conversation = new LiveWindowConversation(context, 'desktop', transport, report);
@@ -28,10 +29,22 @@ function setup() {
     emit(watch, { type: 'frame', generation: 'g', frame: { sequence, width: 640, height: 480, mime: 'image/png', data: canvas.toDataURL().split(',')[1]! } });
     await vi.waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({ packet: expect.objectContaining({ type: 'ack', frame: sequence }) })));
   };
-  return { current, transport, paint, unwatch, report };
+  return { current, transport, paint, unwatch, report, watched };
 }
 
 describe('live conversation picture lifetime', () => {
+  it('ends picture watches on true close and uses a fresh watch when the tool row reopens it', async () => {
+    const s = setup(); s.current.setOperating(true); s.current.setVisible('chat', true);
+    await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(1));
+    await s.paint(1); const first = s.watched.mock.calls[0]![0].watchId;
+    s.current.model.dispatch({ type: 'close' });
+    await vi.waitFor(() => expect(s.unwatch).toHaveBeenCalledTimes(1));
+    expect(s.current.model.getSnapshot().visible).toBe(false);
+    s.current.model.dispatch({ type: 'show-from-tool', kind: 'browser' });
+    await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(2));
+    expect(s.watched.mock.calls[1]![0].watchId).not.toBe(first);
+    expect(s.report).not.toHaveBeenCalled();
+  });
   it('retains the last decoded frame after the real turn ends and disposes it with the conversation', async () => {
     const s = setup(); s.current.setOperating(true); s.current.setVisible('chat', true);
     await vi.waitFor(() => expect(s.current.picture('page')?.querySelector('img') ?? null).not.toBeNull());
