@@ -7,7 +7,7 @@ import { renderFirstTurn } from '../../../../packages/core/src/local/agent/first
 
 const roster = [{ name: 'Claude 7', gugu_user_id: 'agent-7', agent_type: 'claude-code', path: '', prompt: '', created_at: 0 }]
 const LOOK = 'https://storage.test/avatars/agent-look/v1/agent-7.json'
-const chats = new Map<string, { kind: string; public_id: number | null; name: string | null; members: string[] }>()
+const chats = new Map<string, { kind: string; public_id: number | null; name: string | null; members: string[]; source_chat_id?: string }>()
 const writes: Array<Record<string, unknown>> = []
 const awaited: string[] = []
 const rpcs: Array<{ name: string; args: Record<string, unknown> }> = []
@@ -38,7 +38,7 @@ vi.mock('../../../../apps/desktop/electron/supabase', () => ({
         maybeSingle: async () => {
           if (table === 'chats') {
             const chat = chats.get(filters.id ?? '')
-            return { data: chat ? { id: filters.id, kind: chat.kind, public_id: chat.public_id, name: chat.name } : null, error: null }
+            return { data: chat ? { id: filters.id, kind: chat.kind, public_id: chat.public_id, name: chat.name, source_chat_id: chat.source_chat_id ?? null } : null, error: null }
           }
           if (table === 'group_join_requests') {
             return { data: pendingRequests.has(filters.chat_id ?? '') ? { status: 'pending' } : null, error: null }
@@ -138,6 +138,43 @@ describe('task card first turn (gugu-dev#181)', () => {
     expect(writes).toHaveLength(1)
     expect(turn).toEqual({ chatId: '00000000-0000-4000-8000-000000000003', render: { kind: 'plain' } })
     expect(renderFirstTurn('登录页闪一下，看看为什么', turn.render)).toEqual({ text: '登录页闪一下，看看为什么', origin: 'manual' })
+  })
+
+  it('delivers a topic card as a topic envelope when the agent belongs to its source group only', async () => {
+    chats.set('00000000-0000-4000-8000-000000000007', { kind: 'group', public_id: 42, name: '来源群', members: ['owner-1', 'agent-7'] })
+    chats.set('00000000-0000-4000-8000-000000000006', { kind: 'topic', public_id: 43, name: '任务话题', members: ['owner-1'], source_chat_id: '00000000-0000-4000-8000-000000000007' })
+    const turn = await land('00000000-0000-4000-8000-000000000006')
+    expect(writes[0]).toMatchObject({ p_chat_id: '00000000-0000-4000-8000-000000000006', p_to_user_ids: [] })
+    expect(turn).toMatchObject({ chatId: '00000000-0000-4000-8000-000000000006', render: {
+      kind: 'envelope',
+      envelope: { chatId: '00000000-0000-4000-8000-000000000006', messageId: '00000000-0000-4000-8000-000000000004' },
+      chat: { kind: 'topic', publicId: 43, name: '任务话题' },
+    } })
+    const rendered = renderFirstTurn('在话题里完成它', turn.render)
+    expect(rendered.origin).toBe('communication')
+    expect(rendered.text).toContain('chat="43"')
+    expect(rendered.text).toContain('chat_kind="topic"')
+    expect(rendered.text).not.toContain('你现在还不是')
+    expect(rpcs).toEqual([])
+  })
+
+  it('uses the source group join state when a topic task is waiting for approval', async () => {
+    chats.set('00000000-0000-4000-8000-000000000007', { kind: 'group', public_id: 42, name: '来源群', members: ['owner-1'] })
+    chats.set('00000000-0000-4000-8000-000000000006', { kind: 'topic', public_id: 43, name: '任务话题', members: ['owner-1'], source_chat_id: '00000000-0000-4000-8000-000000000007' })
+    pendingRequests.add('00000000-0000-4000-8000-000000000007')
+    const turn = await land('00000000-0000-4000-8000-000000000006')
+    const rendered = renderFirstTurn('在话题里完成它', turn.render)
+    expect(rendered.origin).toBe('communication')
+    expect(rendered.text).toContain('00000000-0000-4000-8000-000000000007')
+    expect(rendered.text).toContain('你的入群申请正在等待群管理员同意。')
+    expect(rendered.text).toContain('回在你自己的会话里')
+    expect(writes).toHaveLength(1)
+  })
+
+  it('rejects a topic without its authoritative source before writing a card', async () => {
+    chats.set('00000000-0000-4000-8000-000000000006', { kind: 'topic', public_id: 43, name: '坏的话题', members: ['owner-1'] })
+    await expect(land('00000000-0000-4000-8000-000000000006')).rejects.toThrow(/source/i)
+    expect(writes).toHaveLength(0)
   })
 
   it('fails loud when the chat is not visible to the owner, before writing anything', async () => {

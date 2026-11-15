@@ -60,9 +60,14 @@ export function createPhoneChatAccess({ agent, cloud, store, env }) {
   const rules = (id) => effectiveGroupRules(id, facts)
   const ledger = groupRulesLedgerFor(env)
   const beforeWrite = async (id, recipients = null) => {
-    const membersHere = await members(id)
-    if (!membersHere.some((member) => member.user_id === agent.agentUserId)) throw new Error('你不是这条聊天的成员；请用 message_conversations 确认可用聊天')
-    const missing = (recipients ?? []).filter((uid) => !membersHere.some((member) => member.user_id === uid))
+    const currentFacts = await facts(id)
+    if (!currentFacts) throw new Error('这条聊天对你不可见，无法确认发言权限')
+    if (currentFacts.kind === 'topic' && !currentFacts.source_chat_id) throw new Error('话题没有来源对话，无法确认发言权限')
+    // Visibility and the right to speak inherit from the source. The topic roster contains
+    // participants only; requiring a seat there prevents the first post that creates it.
+    const eligible = await members(currentFacts.kind === 'topic' ? currentFacts.source_chat_id : id)
+    if (!eligible.some((member) => member.user_id === agent.agentUserId)) throw new Error('你不是这条聊天的成员；请用 message_conversations 确认可用聊天')
+    const missing = (recipients ?? []).filter((uid) => !eligible.some((member) => member.user_id === uid))
     if (missing.length) throw new Error(`收件人不在这条聊天中：${missing.map((uid) => `user:${uid}`).join('、')}。请调用 message_members 查有效成员。`)
     const current = await rules(id)
     if (current.trim() && (await ledger.read(agent.agentUserId, id))?.version !== groupRulesVersion(current)) throw new Error('发送前必须先调用 message_rules 阅读当前群规')
