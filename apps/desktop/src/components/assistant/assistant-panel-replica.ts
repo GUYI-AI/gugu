@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { assistantPanelCollection, type AssistantPanelDomain, type AssistantPanelSnapshot } from '@gugu/core/cloud/assistantPanel'
 import type { AssistantPanelReadCache } from '@gugu/core/cloud/assistantPanelCache'
 import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead'
-import { queryClient, replica, useReplica, type Reading } from '@/lib/replica'
+import { replica, useReplica, type Reading } from '@/lib/replica'
 import { assistantPanelBodies, readAssistantPanelSnapshotCopy, writeAssistantPanelSnapshotCopy } from '@/lib/assistantPanelBodies'
 import { rendererLogger } from '@/lib/log'
 import { requireAssistantPanelBridge } from '@/lib/assistantPanelBridge'
@@ -43,9 +43,7 @@ export function useAssistantPanel(ownerId: string | null, assistantId: string | 
 
 /** Any entry of the panel changed (a read, a write, an account switch): for listeners outside a known assistant. */
 export function subscribeAssistantPanels(listener: () => void): () => void {
-  return queryClient.getQueryCache().subscribe((event) => {
-    if (event.query.queryKey[0] === assistantPanel.name && (event.type === 'updated' || event.type === 'removed')) listener()
-  })
+  return assistantPanel.subscribe([], () => listener())
 }
 
 /** A collection the home has not prepared yet is announced as a burst of changes while it fills: read once it settles. */

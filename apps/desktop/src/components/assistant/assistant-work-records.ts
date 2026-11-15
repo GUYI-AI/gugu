@@ -2,7 +2,7 @@ import {useEffect,useMemo} from 'react'
 import type {AssistantWorkTask} from '@gugu/core/cloud/assistantWork'
 import type {Device} from '@gugu/core/shared/types/chat'
 import {assistantWorkCloud,watchAssistantWork} from '../../lib/assistantWork'
-import {queryClient,replica,useReplica,type Reading} from '../../lib/replica'
+import {replica,useReplica,type Reading} from '../../lib/replica'
 import {rendererLogger} from '../../lib/log'
 import {assistantWorkTitleOf} from '../../lib/assistantWorkTitle'
 import {devicesModel} from '../../store/devicesCache'
@@ -83,28 +83,28 @@ export function watchAssistantWorkReplicas(owner:string,assistantId:string):()=>
  */
 function retryFailedReads(assistantId:string):()=>void {
  const pending=new Map<string,{failures:number;timer?:ReturnType<typeof setTimeout>}>()
- const mine=(queryKey:readonly unknown[])=>(queryKey[0]===assistantWorkRecords.name||queryKey[0]===assistantWork.name)&&queryKey[2]===assistantId
- const check=(queryKey:readonly unknown[],failed:boolean)=>{
-  const id=JSON.stringify(queryKey)
+ const failedOf=(reading:{state:string;error?:Error|null})=>reading.state==='error'||(reading.state==='value'&&!!reading.error)
+ const check=(id:string,failed:boolean,readAgain:()=>void)=>{
   const entry=pending.get(id)??{failures:0}
   if(!failed){clearTimeout(entry.timer);pending.delete(id);return}
   if(entry.timer!==undefined)return
   const delay=WORK_RETRY_MS[Math.min(entry.failures,WORK_RETRY_MS.length-1)]!
   entry.failures+=1
-  entry.timer=setTimeout(()=>{
-   entry.timer=undefined
-   if(queryKey[0]===assistantWorkRecords.name)void assistantWorkRecords.refresh(assistantId)
-   else void assistantWork.refresh(assistantId,queryKey[3] as string)
-  },delay)
+  entry.timer=setTimeout(()=>{entry.timer=undefined;readAgain()},delay)
   pending.set(id,entry)
  }
- const stop=queryClient.getQueryCache().subscribe(event=>{
-  const {queryKey,state}=event.query
-  if(event.type!=='updated'||!mine(queryKey)||state.fetchStatus!=='idle')return
-  check(queryKey,state.error!==null)
- })
- for(const query of queryClient.getQueryCache().getAll())if(mine(query.queryKey))check(query.queryKey,query.state.error!==null)
- return()=>{stop();for(const entry of pending.values())clearTimeout(entry.timer)}
+ // A read that has landed (not one on its way) decides: failed → read again later; answered → the count starts over.
+ const ledger=(entry:{reading:{state:string;error?:Error|null};fetching:boolean})=>{
+  if(!entry.fetching)check('ledger',failedOf(entry.reading),()=>void assistantWorkRecords.refresh(assistantId))
+ }
+ const work=(entry:{args:[string,string];reading:{state:string;error?:Error|null};fetching:boolean})=>{
+  const workId=entry.args[1]
+  if(!entry.fetching)check(`work:${workId}`,failedOf(entry.reading),()=>void assistantWork.refresh(assistantId,workId))
+ }
+ const stops=[assistantWorkRecords.subscribe([assistantId],ledger),assistantWork.subscribe([assistantId],work)]
+ for(const entry of assistantWorkRecords.entries(assistantId))ledger(entry)
+ for(const entry of assistantWork.entries(assistantId))work(entry)
+ return()=>{for(const stop of stops)stop();for(const entry of pending.values())clearTimeout(entry.timer)}
 }
 
 export function useAssistantWorkWatch(owner:string|null|undefined,assistantId:string|null|undefined):void {

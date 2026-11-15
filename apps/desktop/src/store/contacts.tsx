@@ -1,11 +1,10 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
-import { useIsFetching } from '@tanstack/react-query'
 import type { GroupInvitation } from '../lib/groupInvitations'
 import { rendererLogger } from '../lib/log'
 import { contactsService } from '../lib/contacts'
 import { contactGroupChatsOf, sharedGroupAgentsOf } from '../lib/contactGroupChats'
 import { contactGroups, contactRelations, contactRequests, groupJoinRequests, refreshStrictly, type ContactRelation } from '../lib/contactsReplicas'
-import { queryClient, useReplica } from '../lib/replica'
+import { useReplica, useReplicaFetching } from '../lib/replica'
 import { useAuth } from './auth'
 import { useChatStore, useStoreValueBy } from './chatContext'
 import { UI_EVENTS } from '../lib/uiEvents'
@@ -67,8 +66,8 @@ export function ContactsProvider({ children, active = true }: { children: React.
   // The revision listeners below read the managed groups of the moment they run, ❌ resubscribe when they change.
   const managedGroupKeyRef = useRef(managedGroupKey)
   managedGroupKeyRef.current = managedGroupKey
-  const loadingContacts = useIsFetching({ queryKey: [contactRelations.name] }, queryClient) > 0
-  const loadingGroups = useIsFetching({ queryKey: [contactGroups.name] }, queryClient) > 0
+  const loadingContacts = useReplicaFetching(contactRelations, [])
+  const loadingGroups = useReplicaFetching(contactGroups, [])
   // #2118 — contacts / groupChats 各自的加载三态(见 ContactsLoadStatus)。空态 CTA 只在 ready 且为空时出现;一次刷新失败 = error,
   // 旧列表照常画(空列表 + error 显失败与重试,❌ 冒充「没有联系人」)。
   const contactsStatus: ContactsLoadStatus = !userId ? 'idle' : relationsReading.state === 'unknown' ? 'loading'

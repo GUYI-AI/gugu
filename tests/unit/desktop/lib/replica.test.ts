@@ -363,4 +363,35 @@ describe('PR 3 additions', () => {
     model.set(['a'], 'x')
     expect(heard.length).toBe(before)
   })
+
+  it('subscribe with an argument left out hears every matching entry, with its arguments and reading', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const model = rm.replica({ name: 'test-sub-all', scope: 'account', read: async (_owner: string, chat: string, topic: string) => `${chat}/${topic}` })
+    const heard: string[] = []
+    const off = model.subscribe(['c1', undefined], (entry) => { if (entry.reading.state === 'value') heard.push(entry.args.join('/')) })
+    await model.prefetch('c1', 't1'); await model.prefetch('c2', 't1'); await model.prefetch('c1', 't2')
+    off()
+    expect([...new Set(heard)]).toEqual(['c1/t1', 'c1/t2'])
+    expect(model.entries('c1').map((entry) => entry.args.join('/')).sort()).toEqual(['c1/t1', 'c1/t2'])
+  })
+
+  it('isFetching and reset: a read on its way is seen; a reset drops the value and reads again', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    let release: (value: string) => void = () => {}
+    let n = 0
+    const model = rm.replica({ name: 'test-reset', scope: 'account', read: () => (++n === 1 ? Promise.resolve('first') : new Promise<string>((resolve) => { release = resolve })) })
+    await model.prefetch()
+    expect(model.isFetching()).toBe(false)
+    function Probe() { rm.useReplica(model, []); return null }
+    const harness = createReactHarness()
+    await harness.render(createElement(Probe))
+    const reset = model.reset()
+    await tick(1)
+    expect(model.peek()).toEqual({ state: 'unknown' })
+    expect(model.isFetching()).toBe(true)
+    release('second'); await reset
+    expect(model.peek()).toMatchObject({ state: 'value', value: 'second' })
+    harness.cleanup()
+  })
 })
+

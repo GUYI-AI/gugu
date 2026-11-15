@@ -6,7 +6,7 @@
 // 可见继承来源、参与靠说话:这个 hook 只负责把服务端算好的 is_participant 端上来,
 // ❌ 不在客户端二次判断谁看得见谁被通知(那归 RLS 与数据库触发器,客户端再判一遍就是第二个属主)。
 import { useCallback, useEffect, useMemo } from 'react'
-import { queryClient, replica, useReplica } from '../lib/replica'
+import { replica, useReplica } from '../lib/replica'
 import type { ChatItem, TopicSummary } from '@gugu/core/shared/types/chat'
 import { topicService } from '../lib/topics'
 import { rendererLogger } from '../lib/log'
@@ -152,8 +152,7 @@ export function useTopicsOfChat(
         if (chatId !== sourceChatId || !entityId) continue
         // The whole-line read still in flight may predate this change: read the line again instead (a one-moment look
         // at the replica's own entry, outside rendering).
-        const key = topicsOfChat.key(sourceChatId)
-        if (key && queryClient.getQueryState(key)?.fetchStatus === 'fetching') reload()
+        if (topicsOfChat.isFetching(sourceChatId)) reload()
         else void refresh(entityId)
       }
     })

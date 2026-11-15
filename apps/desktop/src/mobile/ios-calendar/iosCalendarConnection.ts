@@ -1,4 +1,4 @@
-import { queryClient, replica } from '@/lib/replica'
+import { replica } from '@/lib/replica'
 import { iosCalendarPermissions, type IOSCalendarPermissionClient, type IOSCalendarSnapshot } from './iosCalendarPermissions'
 
 /** The native calendar client the replica and the connection commands use; a test sets its own (`setIOSCalendarClientForTesting`). */
@@ -30,6 +30,5 @@ export const iosCalendarConnection = replica({
 
 /** Read again from scratch: what was shown is dropped (unknown) until the native answer lands; a read on its way is replaced. */
 export function recheckIOSCalendarConnection(): Promise<void> {
-  const key = iosCalendarConnection.key()
-  return key ? queryClient.resetQueries({ queryKey: key, exact: true }) : Promise.resolve()
+  return iosCalendarConnection.reset()
 }

@@ -1,4 +1,4 @@
-import { QueryClient, hashKey, useQueries, useQuery, type QueryFunctionContext, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
+import { QueryClient, hashKey, useIsFetching, useQueries, useQuery, type Query, type QueryFunctionContext, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
 import { observeRendererSession } from './sessionPublication'
 import { recordSnapshotRefusal } from './perfCounters'
@@ -426,12 +426,22 @@ export type Replica<A extends unknown[], V> = {
   /** Mark stale and read again where shown; without arguments, every entry of this model. */
   refresh(...args: Partial<A>): Promise<void>
   /**
-   * Hear when the entry for these arguments changes (a read, a write, a removal), for code outside React that keeps a
-   * derived value; React subscribes with `useReplica`. The key follows the account signed in when it fires.
+   * Hear when an entry of this model changes (a read starting or landing, a write, a removal), for code outside React
+   * that keeps a derived value or follows a read; React subscribes with `useReplica`. An argument left out matches any
+   * value in its place (as `refresh`); only entries of the account signed in when it fires are heard.
    */
-  subscribe(args: A, listener: () => void): () => void
+  subscribe(args: Partial<A>, listener: (entry: Entry<A, V>) => void): () => void
+  /** The entries of this model now held for the account signed in (arguments left out match any): a one-moment look. */
+  entries(...args: Partial<A>): Entry<A, V>[]
+  /** Whether a read of this entry is on its way now (a one-moment decision, e.g. whether a change predates it). */
+  isFetching(...args: A): boolean
+  /** Drop what is shown for these arguments (unknown again) and read again where it is shown; never throws. */
+  reset(...args: A): Promise<void>
   /** @internal */ options(key: QueryKey): object
 }
+
+/** One entry as `subscribe` / `entries` report it: its arguments, its reading, and whether a read is on its way. */
+export type Entry<A extends unknown[], V> = { args: A; reading: Reading<V>; fetching: boolean }
 
 function ownerOf(scope: Scope): string | null {
   return scope === DEVICE ? DEVICE : account.id
@@ -458,6 +468,16 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     const owner = ownerOf(definition.scope)
     return owner ? [definition.name, owner, ...args] : null
   }
+  const matches = (queryKey: QueryKey, args: Partial<A>) => {
+    const owner = ownerOf(definition.scope)
+    return queryKey[0] === definition.name && !!owner && queryKey[1] === owner
+      && args.every((arg, index) => arg === undefined || hashKey([queryKey[index + 2]]) === hashKey([arg]))
+  }
+  const entryOf = (query: Query): Entry<A, V> => ({
+    args: query.queryKey.slice(2) as A,
+    reading: readingOfState(query.state, query.isStaleByTime(definition.fresh ?? 0)) as Reading<V>,
+    fetching: query.state.fetchStatus === 'fetching',
+  })
   const requireKey = (args: A): QueryKey => {
     const k = key(...args)
     if (!k) throw new Error(`${definition.name}: no signed-in account to read for`)
@@ -484,10 +504,20 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
       return { set: (value) => { if (k[1] === ownerOf(definition.scope)) putValue(k, value) } }
     },
     subscribe: (args, listener) => queryClient.getQueryCache().subscribe((event) => {
-      if (event.type !== 'added' && event.type !== 'updated' && event.type !== 'removed') return
-      const k = key(...args)
-      if (k && hashKey(event.query.queryKey) === hashKey(k)) listener()
+      // An entry being created holds nothing yet: the `updated` that puts its value (or starts its read) is the change.
+      if (event.type !== 'updated' && event.type !== 'removed') return
+      if (matches(event.query.queryKey, args)) listener(entryOf(event.query))
     }),
+    entries: (...args) => queryClient.getQueryCache().findAll({ queryKey: [definition.name] })
+      .filter((query) => matches(query.queryKey, args)).map(entryOf),
+    isFetching: (...args) => {
+      const k = key(...args)
+      return !!k && queryClient.getQueryState(k)?.fetchStatus === 'fetching'
+    },
+    reset: async (...args) => {
+      const k = key(...args)
+      if (k) await queryClient.resetQueries({ queryKey: k, exact: true }).catch(() => undefined)
+    },
     refresh: async (...args) => {
       const owner = ownerOf(definition.scope)
       if (!owner) return
@@ -557,3 +587,14 @@ export function useReplicas<A extends unknown[], V>(model: Replica<A, V>, argsLi
 /** Test seam: the live session as the replica sees it. */
 export function replicaAccount(): AccountState { return account }
 
+/** Whether a read of this model's entry (arguments left out match any) is on its way now: e.g. a check running. */
+export function useReplicaFetching<A extends unknown[], V>(model: Replica<A, V>, args: Partial<A> | null): boolean {
+  useSyncExternalStore(subscribeAccount, accountSnapshot)
+  // The model's owner now (the account, or this device): its key without arguments is [name, owner].
+  const owner = model.key(...([] as unknown as A))?.[1] ?? null
+  return useIsFetching({
+    queryKey: [model.name],
+    predicate: (query) => args !== null && owner !== null && query.queryKey[1] === owner
+      && args.every((arg, index) => arg === undefined || hashKey([query.queryKey[index + 2]]) === hashKey([arg])),
+  }, queryClient) > 0
+}

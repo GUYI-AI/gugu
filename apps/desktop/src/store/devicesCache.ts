@@ -1,5 +1,5 @@
 import type { Device } from '@gugu/core/shared/types/chat'
-import { queryClient, replica, replicaAccount } from '../lib/replica'
+import { replica, replicaAccount } from '../lib/replica'
 /**
  * 这个账号的机器(含手机)—— 读模型(lib/replica)的一项。
  *
@@ -45,9 +45,7 @@ export function cachedDevicesAccount(): string | null {
 
 /** The machines changed (a read, a heartbeat flip folded in, an account switch). */
 export function subscribeCachedDevices(listener: () => void): () => void {
-  return queryClient.getQueryCache().subscribe((event) => {
-    if (event.query.queryKey[0] === devicesModel.name && (event.type === 'updated' || event.type === 'removed')) listener()
-  })
+  return devicesModel.subscribe([], () => listener())
 }
 
 /** Put rows for the account signed in now (a test or a synchronous writer; after an await use `devicesModel.at()`). */
