@@ -1,3 +1,4 @@
+import { Unknown } from '@/components/ui/Unknown';
 import type { ReactNode } from 'react'
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config'
 import { SettingsGroup, SettingsRow } from '@/components/settings/SettingsPrimitives'
@@ -89,8 +90,7 @@ export function ConnectionSettingsRows({
                   data-testid={`subscription-switch-${agentId}`}
                 >
                   <SelectValue>
-                    {name ??
-                      translate(connections ? 'agentsPage.noConnection' : 'subscriptions.checking')}
+                    {name ?? (connections ? translate('agentsPage.noConnection') : <Unknown className="w-20" />)}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent align="end" className="min-w-[300px]">

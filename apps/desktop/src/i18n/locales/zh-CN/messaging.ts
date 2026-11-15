@@ -536,6 +536,7 @@ export default {
       "separator": "、"
     },
     "notice": {
+      "migrationPlaceholder": "这条消息没有迁移",
       "agentFloodGroup": "这个群里 agent 较多，已把它们都转为被动模式，@ 它们才会回。",
       "agentFloodTopic": "这条话题里 agent 较多，已把它们都转为被动模式，@ 它们才会回。",
       "left": "{{actor}} 退出了群聊",

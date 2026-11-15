@@ -1,42 +1,21 @@
-import { useQuery } from '@tanstack/react-query'
-import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
-import { subscriptionKey } from './subscription-queries'
+import { useIsFetching } from '@tanstack/react-query'
+import { queryClient, useReadModel } from '@/lib/readModel'
+import { connectionAvailability } from './subscription-queries'
 
 /** Same auth reading used by the harness model-credential predicate; payer is not a credential. */
-export function useConnectionAvailability(
-  providerId: string,
-  machine: string | null,
-  missingProgram = false,
-  background = false
-) {
-  const query = useQuery({
-    queryKey: [...subscriptionKey(machine, providerId), 'availability'],
-    staleTime: 30_000,
-    retry: background,
-    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30_000),
-    refetchOnWindowFocus: false,
-    queryFn: async () => {
-      const result = await (
-        await getAgentConfigRuntimeClient(machine)
-      ).refreshAuthStatus({ providerId })
-      if (!result.success)
-        throw new Error('message' in result.error ? result.error.message : result.error.type)
-      return result.data
-    }
-  })
+export function useConnectionAvailability(providerId: string, machine: string | null, missingProgram = false) {
+  const reading = useReadModel(connectionAvailability, [machine, providerId])
+  const auth = reading.state === 'value' ? reading.value : undefined
+  const error = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null
   const credentialState =
-    query.data?.kind === 'authenticated'
+    auth?.kind === 'authenticated'
       ? 'usable'
-      : query.data?.kind === 'unauthenticated' || missingProgram
+      : auth?.kind === 'unauthenticated' || missingProgram
         ? 'unusable'
         : 'failed'
-  const state =
-    background && query.data
-      ? credentialState
-      : query.isFetching || query.isPending
-        ? 'checking'
-        : query.error
-          ? 'failed'
-          : credentialState
-  return { auth: query.data, state, refresh: query.refetch, error: query.error } as const
+  // A check in flight says so (the person asked for it, or the card opened): what was read before is not this answer.
+  const checking = useIsFetching({ queryKey: connectionAvailability.key(machine, providerId)!, exact: true }, queryClient) > 0
+  const state = reading.state === 'unknown' || checking ? 'checking' : error ? 'failed' : credentialState
+  const refresh = () => connectionAvailability.refresh(machine, providerId)
+  return { auth, state, refresh, error } as const
 }

@@ -5,7 +5,7 @@ import { useLayoutEffect, type ReactNode } from 'react';
 import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives';
 import { InSettingsPanelProvider, PageHeader } from '@renderer/lib/components/page-header';
 import { modalStore } from '@renderer/lib/modal/modal-store';
-import { queryClient } from '@renderer/lib/query-client';
+import { queryClient } from '@/lib/readModel';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { BrowserSettingsCard } from './BrowserSettingsCard';
 import HiddenToolsSettingsCard from './HiddenToolsSettingsCard';
@@ -25,7 +25,7 @@ import {
 } from './SessionSettingsRows';
 import { SidebarTintRow } from './SidebarTintRow';
 import TerminalSettingsCard from './TerminalSettingsCard';
-import { useTerminalEnabled } from '../use-terminal-enabled';
+import { terminalShown, useTerminalEnabled } from '../use-terminal-enabled';
 import ChatViewCard from './ChatViewCard';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { DeviceScopeProvider } from '@renderer/features/remote-hosts/device-scope-picker';
@@ -69,7 +69,7 @@ function GeneralSettingsPage() {
 function InterfaceSettingsPage() {
   const { translate } = useSessionMessages();
   // 「终端」开关关着:终端那张卡不出现(开关在设置 → 通用)。
-  const terminalEnabled = useTerminalEnabled();
+  const terminalEnabled = terminalShown(useTerminalEnabled());
   return (
     <SettingsPage>
       <PageHeader

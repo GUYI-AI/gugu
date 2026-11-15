@@ -3,7 +3,7 @@ import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, 
 import { fileSha256 } from '@gugu/core/shared/fileCipher'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
 import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment } from './fileAccess'
-import { attachmentQuery, attachmentQueryClient } from './attachmentQueryClient'
+import { readModel } from './readModel'
 import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
 import { openImageViewer, type ImageViewerItem } from './imageViewer'
@@ -23,6 +23,7 @@ export async function attachmentMetadata(source: AttachmentSource): Promise<File
   if (file.status !== 'ready') return file
   await file.dispose(); return { status: 'ready', revision: file.revision }
 }
+
 export async function attachmentPreview(source: AttachmentSource, metadata?: FileMetadata) {
   const ref = attachmentFileRef(source)
   return ref ? resolveFile(ref, fileReader(), { purpose: 'preview', metadata, signal: fileReadSignal() }) : { status: 'gone' as const, sha256: null }
@@ -104,17 +105,14 @@ const THUMB_GC_MS = 30 * 60_000
 const immutableSource = (source: AttachmentSource) => source.kind === 'message' || source.kind === 'attachment' || source.kind === 'item' || source.kind === 'session-file'
 
 /**
- * 缩略图按来源记在 attachmentQueryClient 里。本地缓存(Cache Storage)按内容哈希存,优先使用消息的固定版本元数据;旧行才需要先问 file-resolve:
+ * 缩略图按来源记在读模型里(只在本次运行的内存里,不进快照)。本地缓存(Cache Storage)按内容哈希存,优先使用消息的固定版本元数据;旧行才需要先问 file-resolve:
  * 不记的话,每次重新挂载(切会话回来、120 行窗口换回来)都先等一个网络来回(实测 0.9–1.4 s 空占位)才画得出本地已有的图。
  * 不可变来源在本次运行里不再重问:被删 / 过期的文件这次运行内仍显示旧缩略图,打开原图照旧完整校验(attachmentBytes 'full')。
  */
 async function sessionThumb(source: AttachmentSource, metadata?: FileMetadata): Promise<AttachmentBytes> {
   const sourceKey = sourceKeyOf(source)
-  return attachmentQueryClient.fetchQuery({
-    ...thumbQuery(fileReader().accountId, sourceKey, metadata?.status === 'ready' ? metadata.revision.sha256 : metadata?.status ?? null, source, metadata ?? null),
-    staleTime: immutableSource(source) ? Infinity : 0,
-    gcTime: THUMB_GC_MS,
-  })
+  return (immutableSource(source) ? immutableThumb : liveThumb)
+    .fetch(sourceKey, metadata?.status === 'ready' ? metadata.revision.sha256 : metadata?.status ?? null, source, metadata ?? null)
 }
 /** A thumbnail's link (its size) arrives before its bytes: bubbles showing that source listen while they are mounted. */
 const linkListeners = new Map<string, Set<(link: FileRevision) => void>>()
@@ -124,9 +122,10 @@ function listenForLink(sourceKey: string, listener: (link: FileRevision) => void
   set.add(listener)
   return () => { set.delete(listener); if (!set.size) linkListeners.delete(sourceKey) }
 }
-const thumbQuery = attachmentQuery('attachment-thumb', (_accountId: string, sourceKey: string, _metadataKey: string | null,
-  source: AttachmentSource, metadata: FileMetadata | null) =>
-  attachmentBytes(source, 'thumb', (link) => linkListeners.get(sourceKey)?.forEach((listener) => listener(link)), metadata ?? undefined))
+const readThumb = (_accountId: string, sourceKey: string, _metadataKey: string | null, source: AttachmentSource, metadata: FileMetadata | null) =>
+  attachmentBytes(source, 'thumb', (link) => linkListeners.get(sourceKey)?.forEach((listener) => listener(link)), metadata ?? undefined)
+const immutableThumb = readModel({ name: 'attachment-thumb', scope: 'account', read: readThumb, fresh: Infinity, keep: THUMB_GC_MS })
+const liveThumb = readModel({ name: 'attachment-thumb-live', scope: 'account', read: readThumb, keep: THUMB_GC_MS })
 
 /**
  * 气泡 / 预览用:给一个 object URL;failed 时 retry() 丢掉记着的链接重新签、重新下。

@@ -308,6 +308,7 @@ describe('设备行', () => {
     const row = phoneDeviceRow({ deviceId: 'phone-i-u', userId: 'u', installId: 'i', info, actions, nowIso: '2026-10-15T04:00:00.000Z' })
     expect(row).toMatchObject({ device_id: 'phone-i-u', platform: 'android', tier: 'cloudtest', status: 'online', machine_id: 'i' })
     expect(row.capabilities).toMatchObject({ host_kind: 'phone', os_name: 'Android 15 · HyperOS OS2.0', app_version: '0.2.55', actions })
+    expect(row.capabilities).not.toHaveProperty('host_runtime_capability')
   })
 
   it('「在哪跑」读的设备列表默认不含手机;要手机的显式带 includePhones', async () => {

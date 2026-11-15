@@ -29,7 +29,7 @@ const auth = vi.hoisted(() => ({ token: `h.${Buffer.from(JSON.stringify({ sub: '
 const machines = vi.hoisted(() => ({ devices: [] as Device[] }))
 vi.mock('../../../../apps/desktop/src/store/devicesCache', () => ({ readCachedDevices: () => machines.devices }))
 vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ fetchSessionsList: vi.fn() }))
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => auth.token }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => auth.token }))
 vi.mock('@gugu/core/cloud/supabase', () => ({
   createGuguSupabaseClient: () => {
     const query = {

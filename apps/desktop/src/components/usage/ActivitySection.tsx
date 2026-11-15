@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
+import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import type { UsageDay } from '@gugu/core/shared/usage/dailyUsage'
 import { formatDate, useLocale } from '@/i18n'
@@ -52,7 +53,7 @@ export function ActivitySection({ preset }: { preset: RangePreset }) {
   const { current, previous } = useMemo(() => rangeFor(preset, data.today), [preset, data.today])
   const usage = data.usage.status === 'ready' ? data.usage.value : null
 
-  const deviceOptions = useMemo(() => data.devices.map((d) => {
+  const deviceOptions = useMemo(() => (data.devices ?? []).map((d) => {
     const known = knownDevices.find((k) => k.device_id === d.deviceId)
     return { id: d.deviceId, label: known ? `${known.label}${known.is_current_device ? t('usage.thisDevice') : ''}` : t('usage.unknownDevice') }
   }), [data.devices, knownDevices, t])
@@ -61,7 +62,7 @@ export function ActivitySection({ preset }: { preset: RangePreset }) {
     <div className="gg-usage" data-testid="activity-section">
       <div className="gg-usage-toolbar">
         <SectionLabel id="usage-activity">{t('usage.activity')}</SectionLabel>
-        {deviceOptions.length > 1 || deviceId ? (
+        {data.devices === null ? <Unknown className="gg-usage-caption w-20" /> : deviceOptions.length > 1 || deviceId ? (
           <select
             // @@@6436 与设置里其它下拉(语言)同一种:手机上 44px 触控高度,桌面 32。
             className="gg-settings-select"
@@ -133,7 +134,7 @@ function Summary({ data, usage, current, previous, preset }: {
     <div className="gg-usage-tile" data-testid={`usage-tile-${key}`} title={detail}>
       <div className="gg-usage-caption">{label}</div>
       <div className="gg-usage-tile-value">{failed ? '—' : value ?? <span className="gg-usage-skeleton">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>}</div>
-      <div className="gg-usage-caption">{failed ? t('usage.unavailable') : sub}</div>
+      <div className="gg-usage-caption">{failed ? t('usage.unavailable') : value === null ? <span className="gg-usage-skeleton">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> : sub}</div>
     </div>
   )
   const change = (current: number, previousValue: number | null) =>

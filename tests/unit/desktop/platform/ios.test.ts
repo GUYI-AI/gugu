@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
+import { Blob as NodeBlob } from 'node:buffer'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const native = vi.hoisted(() => ({ addListener: vi.fn(), getState: vi.fn(), getInfo: vi.fn(), write: vi.fn(), checkPermissions: vi.fn(), schedule: vi.fn() }))
+const native = vi.hoisted(() => ({ addListener: vi.fn(), getState: vi.fn(), getInfo: vi.fn(), write: vi.fn(), checkPermissions: vi.fn(), schedule: vi.fn(), stage: vi.fn(), save: vi.fn() }))
 const calendarPlugins = vi.hoisted(() => ({ native: true, os: 'ios', names: new Set<string>() }))
-vi.mock('@capacitor/core', () => ({ registerPlugin: () => ({}), Capacitor: {
+vi.mock('@capacitor/core', () => ({ registerPlugin: (name: string) => name === 'GuguShare' ? { stage: native.stage, save: native.save } : ({}), Capacitor: {
   isNativePlatform: () => calendarPlugins.native,
   getPlatform: () => calendarPlugins.os,
   isPluginAvailable: (name: string) => calendarPlugins.names.has(name),
@@ -21,6 +22,22 @@ beforeEach(() => {
 })
 
 describe('iOS foreground client', () => {
+  it('stages verified bytes before saving and preserves the native cancel result', async () => {
+    native.stage.mockResolvedValueOnce({ id: 'save-token' }).mockResolvedValue(undefined)
+    native.save.mockResolvedValue({ saved: false })
+    const blob = new NodeBlob(['abc'], { type: 'application/pdf' }) as unknown as Blob
+    await expect(iosPlatform.saveFile(blob, 'report.pdf')).resolves.toEqual({ saved: false })
+    expect(native.stage.mock.calls.map(([command]) => command.op)).toEqual(['begin', 'chunk', 'commit'])
+    expect(native.stage.mock.calls[0][0].revision).toEqual({ size_bytes: 3, sha256: 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', content_type: 'application/pdf' })
+    expect(native.save).toHaveBeenCalledWith({ id: 'save-token', name: 'report.pdf', mimeType: 'application/pdf' })
+  })
+  it('propagates a native save failure to the existing caller error outlet', async () => {
+    native.stage.mockResolvedValueOnce({ id: 'save-token' }).mockResolvedValue(undefined)
+    native.save.mockRejectedValue(new Error('save_failed'))
+    const blob = new NodeBlob(['abc']) as unknown as Blob
+    await expect(iosPlatform.saveFile(blob, 'report.pdf')).rejects.toThrow('save_failed')
+  })
+
   it('exposes the phone Agent host only through its registered iOS plugin', () => {
     expect(iosPlatform.capabilities.phoneAgentHost).toBe(false)
     calendarPlugins.names.add('GuguAgent'); expect(iosPlatform.capabilities.phoneAgentHost).toBe(true)

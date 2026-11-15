@@ -29,7 +29,7 @@ vi.mock('@renderer/features/sessions/stores/session-agent-bindings', () => ({ se
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: { start: () => {} } }))
 vi.mock('@renderer/features/assistant/assistant-shell', () => ({ useAssistantShell: () => null }))
 vi.mock('@renderer/features/assistant/assistant-home-sessions', () => ({ localHomeSessions: { sessions: [] } }))
-vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: {} }) }))
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } })
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: vi.fn() }), useWorkspaceSlots: () => ({ currentView: 'home' }), isCurrentView: (current: string, view: string) => current === view }))
 vi.mock('@renderer/lib/layout/layout-provider', () => ({ SIDEBAR_PROGRESS_VAR: '--gg-sidebar-progress', useWorkspaceLayoutContext: () => ({ isLeftOpen: true, isLeftPeeking: false, toggleLeft: vi.fn(), setTriggerHovered: vi.fn(), setLeftRail: vi.fn() }), useLeftRailLayout: () => false }))
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }))

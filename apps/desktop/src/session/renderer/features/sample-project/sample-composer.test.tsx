@@ -103,7 +103,7 @@ vi.mock('@renderer/features/projects/stores/project-selectors', () => {
   };
 });
 vi.mock('@renderer/features/settings/app-settings-client', () => ({
-  fetchAppSettingsMeta: async () => ({ value: { defaultProjectsDirectory: io.directory } }),
+  fetchAppSettingValue: async () => ({ defaultProjectsDirectory: io.directory }),
 }));
 vi.mock('@renderer/lib/ipc', () => ({
   rpc: {

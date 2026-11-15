@@ -12,7 +12,7 @@ import { composerSlotClass, composerSlotInnerClass } from '@gugu/session-chat-ui
 import { act, createElement, useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as attachmentReader from '../../../apps/desktop/src/lib/attachmentBytes'
-import { attachmentQueryClient } from '../../../apps/desktop/src/lib/attachmentQueryClient'
+import { queryClient as attachmentQueryClient } from '../../../apps/desktop/src/lib/readModel'
 
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
 import { createNode, createReactHarness, clickElement, deferred, message, renderWithAppProviders } from '../../support/testHarness'

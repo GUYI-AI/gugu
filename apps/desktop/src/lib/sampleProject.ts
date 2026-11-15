@@ -1,6 +1,5 @@
-import { readUserSettingsConfig, updateUserSettingsConfig, type VersionedSettingsTableClient } from '@gugu/core/cloud/userSettings'
+import { readOwnSettings, updateOwnSettings } from './ownSettings'
 import { rendererLogger } from './log'
-import { identityDb } from './supabase'
 
 // The sample project (#709) is bundled content: no project, folder, group, message or agent rows exist
 // for it. This one account key is the only thing that decides whether it is shown. Only the new
@@ -13,7 +12,6 @@ export type SampleProjectState =
   | { version: 1; dismissed: boolean }
   | { version: 2; dismissed: boolean; projectId: string; chatId?: string }
 const KEY = 'sampleProject'
-const client = identityDb as unknown as VersionedSettingsTableClient
 const log = rendererLogger('sample-project')
 const listeners = new Set<(userId: string) => void>()
 
@@ -32,7 +30,7 @@ export function parseSampleProject(config: Record<string, unknown>): SampleProje
 
 /** Read failures propagate: the caller shows no sample and logs, ❌ guesses either way. */
 export async function readSampleProject(userId: string): Promise<SampleProjectState | null> {
-  return parseSampleProject(await readUserSettingsConfig(client, userId, 'user'))
+  return parseSampleProject(await readOwnSettings(userId, 'user'))
 }
 
 export async function readSampleProjectShown(userId: string): Promise<boolean> {
@@ -58,7 +56,7 @@ function notifySampleProject(userId: string): void {
 
 /** Keep the key as a tombstone. Only acknowledge removal after the account save succeeds. */
 export async function dismissSampleProject(userId: string): Promise<void> {
-  await updateUserSettingsConfig(client, userId, 'user', (config) => {
+  await updateOwnSettings(userId, 'user', (config) => {
     const state = parseSampleProject(config)
     return { ...config, [KEY]: state?.version === 2 ? { ...state, dismissed: true } : { version: 1, dismissed: true } }
   })
@@ -70,7 +68,7 @@ export async function dismissSampleProject(userId: string): Promise<void> {
  * A key that is gone or malformed is not guessed over: the save fails and says so.
  */
 export async function recordSampleProjectConversion(userId: string, became: { projectId: string; chatId?: string }): Promise<void> {
-  await updateUserSettingsConfig(client, userId, 'user', (config) => {
+  await updateOwnSettings(userId, 'user', (config) => {
     const state = parseSampleProject(config)
     if (!state) throw new Error('This account has no sample project to turn into a project')
     return { ...config, [KEY]: { version: 2, dismissed: state.dismissed, projectId: became.projectId, ...(became.chatId ? { chatId: became.chatId } : {}) } }
@@ -85,11 +83,11 @@ export async function recordSampleProjectConversion(userId: string, became: { pr
  */
 export async function enrollSampleProject(userId: string): Promise<void> {
   try {
-    const config = await readUserSettingsConfig(client, userId, 'user')
+    const config = await readOwnSettings(userId, 'user')
     if (parseSampleProject(config)) return
     // The first read may predate a removal on another window/device. Recheck the
     // latest row on every conditional-write attempt instead of replacing its key.
-    await updateUserSettingsConfig(client, userId, 'user', (latest) => parseSampleProject(latest)
+    await updateOwnSettings(userId, 'user', (latest) => parseSampleProject(latest)
       ? latest : { ...latest, [KEY]: { version: 1, dismissed: false } })
   } catch (error) {
     log.error({ error: String(error) }, 'enroll sample project failed')

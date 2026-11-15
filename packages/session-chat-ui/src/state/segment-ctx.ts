@@ -29,6 +29,7 @@ export function segmentCtxFor(context: ChatContext, state: ChatState, caches: Ch
     // 「工作中」标签 —— 与上游 tool-timeline 的 activeLabel / restingLabel 一致。
     foldTurnProcess: isDoubleColumnLayout(context.theme.layout),
     isTurnProcessExpanded: (id: string) => state.viewState.isCollapsed(id),
+    isBubbleExpanded: (key: string) => state.viewState.isCollapsed(key),
     // 「丢弃」与折叠共用同一套 per-id 开关，只是换一个 id 命名空间 —— 收尾行那颗按钮身上挂的是
     // `data-collapse-id`，于是它走的就是 ChatRoot 既有的那条点击委派，❌ 不新开一条通路。
     isTurnDiscarded: (id: string) => state.viewState.isCollapsed(turnDiscardedId(id)),

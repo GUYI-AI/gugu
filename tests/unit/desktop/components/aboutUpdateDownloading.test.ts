@@ -5,6 +5,8 @@
 // 文案沿用横幅那一句「下载新版本中…」,不另加词条。
 import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { notifyManager as readModelNotify } from '@tanstack/react-query'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
 import { createReactHarness } from '../../../support/testHarness'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 
@@ -25,7 +27,7 @@ const { UpdateBanner } = await import('../../../../apps/desktop/src/components/U
 
 let hostRevision = 0
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => {
+beforeEach(() => { readModelNotify.setScheduler((callback) => { callback() }); queryClient.clear(); followRendererSession('SIGNED_IN', 'user-1');
   hostRevision = 0
   harness = createReactHarness()
   checkForUpdates.mockReset()

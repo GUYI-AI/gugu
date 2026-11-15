@@ -8,7 +8,7 @@ import { ChatAreaPanel } from '../../../../apps/desktop/src/components/ChatAreaP
 import { chat, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { openImRepository, type AccountImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
-import { queryClient } from '../../../../apps/desktop/src/session/renderer/lib/query-client'
+import { queryClient } from '../../../../apps/desktop/src/lib/readModel'
 
 const { getImRepositoryMock, TOPICS, pinPrefs, openings } = vi.hoisted(() => ({
   getImRepositoryMock: vi.fn(),

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { attachmentQueryClient } from '@/lib/attachmentQueryClient'
+import { queryClient as attachmentQueryClient } from '@/lib/readModel'
 import { openAttachmentImage } from '@/lib/attachmentBytes'
 import { registerImageViewerHost, type ImageViewerRequest } from '@/lib/imageViewer'
+// The read model reads for the signed-in account, as the product publishes it.
+;(await import('../../../../apps/desktop/src/lib/readModel')).followRendererSession('SIGNED_IN', 'owner')
 
 const io = vi.hoisted(() => ({ resolve: vi.fn(), original: vi.fn(), put: vi.fn(), url: vi.fn(), revoke: vi.fn() }))
 vi.mock('@/lib/fileAccess', () => ({ fileMetadata: async () => ({ status: 'gone' }),

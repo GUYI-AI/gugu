@@ -326,12 +326,9 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     ...send, held: true, baselineMessageIds: [...send.baseline], delivery: { state: 'sending' as const },
   }))], [settledInputs, projectedInputs, receiptHistory.visible, pendingSends, senderInputs, nativeTurns])
   const rejectedInputCommands = useRejectedSessionInputCommands(sessionId)
-  const attachmentTurns = useRef(turns)
-  attachmentTurns.current = turns
   const userAttachments = useMemo(() => nativeUserAttachmentCommands({
-    turns: () => attachmentTurns.current,
-    readImage: async (itemId, attachmentId) => {
-      const result = await machineRpc(deviceId, local).sessionTimeline.sessionNativeAttachment({ conversationId: sessionId, itemId, attachmentId })
+    readImage: async attachmentId => {
+      const result = await machineRpc(deviceId, local).sessionTimeline.sessionNativeAttachment({ attachmentId })
       if (!result.ok) throw new Error(result.error.message)
       return result.value
     },
@@ -344,7 +341,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     openFile: outputs.openFile,
     unavailable: () => translateSessionMessage('attachmentViewer.unavailable'),
     onError: error => setBackgroundError(messageForUser(error)),
-  }), [deviceId, sessionId, local, outputs.openFile])
+  }), [deviceId, local, outputs.openFile])
   // Publishing new commands remeasures every Solid transcript row. Editing a
   // phone draft must not rebuild the history before its outbox commit can run.
   const commands = useMemo<ChatCommands>(() => ({

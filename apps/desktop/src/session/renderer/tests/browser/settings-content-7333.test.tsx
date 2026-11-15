@@ -14,6 +14,11 @@ import '@/styles/tokens.css';
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@/lib/useAssistantHome', () => ({ useAssistantHome: () => ({ mine: { loading: false }, contact: { id: 'assistant-content', display_name: '小咕', avatar: null }, home: null, localDeviceId: null, snapshot: null, cloudDeviceId: null, cloudComputer: null, devices: [] }) }));
 vi.mock('@/lib/firstRun', async (original) => ({ ...(await original<object>()), readOccupation: async () => null, writeOccupation: vi.fn() }));
+// The account's own settings row (occupation is a key of it): nothing set yet.
+vi.mock('@/lib/ownSettings', async (original) => {
+  const { readModel } = await import('@/lib/readModel');
+  return { ...(await original<object>()), ownSettings: readModel({ name: 'ownSettings', scope: 'account', read: async () => ({}) }) };
+});
 const { nicknameUpdate } = vi.hoisted(() => ({ nicknameUpdate: vi.fn(async () => ({ success: true })) }));
 vi.mock('@/lib/auth', async (original) => {
   const actual = await original<typeof import('@/lib/auth')>();

@@ -21,9 +21,11 @@ extension GuguIOSNativeBackend {
                 let now = ISO8601DateFormatter().string(from: Date())
                 let available = self.startupComplete && self.remoteConnected && self.missingDelivery == nil
                     && self.healthError == nil && self.commandError == nil && self.scheduler?.healthFailure() == nil
-                var capabilities: [String: Any] = ["terminals": [], "runtimes": available ? ["pi"] : [], "host_runtime_capability": available ? 1 : 0,
+                var capabilities: [String: Any] = ["terminals": [], "runtimes": available ? ["pi"] : [],
                     "host_kind": "phone", "os_name": self.metadata["osName"]!, "remote_protocol": self.remoteProtocol, "min_client_protocol": self.minimumClientProtocol,
                     "actions": ["v": 1, "actions": []]]
+                // Version proof is independent of temporary connection/inbox readiness.
+                if self.proof != nil { capabilities["host_runtime_capability"] = 1 }
                 if let version = self.metadata["appVersion"] as? String { capabilities["app_version"] = version }
                 let row: [String: Any] = ["device_id": expected.deviceId, "user_id": expected.ownerId, "label": self.metadata["label"]!, "hostname": self.metadata["hostname"]!,
                     "machine_id": expected.installationId, "platform": "ios", "tier": self.metadata["tier"]!, "status": "online", "last_seen_at": now, "updated_at": now, "capabilities": capabilities]
@@ -45,7 +47,7 @@ extension GuguIOSNativeBackend {
                 guard let row = rows.first else { completion(.success(())); return }
                 guard row["device_id"] as? String == expected.deviceId, row["user_id"] as? String == expected.ownerId,
                       var capabilities = row["capabilities"] as? [String: Any], capabilities["host_kind"] as? String == "phone" else { throw Self.failure("stale_context", "Device capability belongs to another native host") }
-                capabilities["runtimes"] = []; capabilities["host_runtime_capability"] = 0
+                capabilities["runtimes"] = []
                 self.broker.perform(.withdrawDevice(capabilities), binding: expected) { result in
                     completion(result.flatMap { raw in Result {
                         guard let rows = raw as? [[String: Any]], rows.count == 1, rows[0]["device_id"] as? String == expected.deviceId else { throw Self.failure("cloud_protocol_error", "Device did not confirm native capability withdrawal") }
