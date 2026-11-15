@@ -150,6 +150,7 @@ describe('creation keeps its navigation and draft ownership', () => {
     rpc.create.mockResolvedValue(result)
     await harness.render(pageOn(device, { onCreated: vi.fn() }))
     await act(async () => { harness.container.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-skills"]')!.click() })
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="agent-watch-create-skill"]')).not.toBeNull())
     await act(async () => { document.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-skill"]')!.click() })
     await act(async () => { state.composer!.setText('整理今天的会议'); state.composer!.send() })
     expect(rpc.create).toHaveBeenCalledWith(device.device_id, expect.objectContaining({ prompt: '请使用以下技能：meeting-notes。\n\n整理今天的会议' }))
