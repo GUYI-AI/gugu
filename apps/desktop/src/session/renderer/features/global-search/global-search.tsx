@@ -18,6 +18,7 @@ import { matchRanges } from '@shared/core/search'
 import { Shortcut } from '@renderer/lib/ui/shortcut'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { cn } from '@renderer/utils/utils'
+import { Unknown } from '@/components/ui/Unknown'
 import { EVERYWHERE, forgetSearches, recentSearches, rememberSearch, updateSearchSession, useSearchSession, type SearchChip, type SearchFacet, type SearchKind } from './search-session'
 import { firstMessageOn, instant, SEARCH_LIMIT, useGlobalSearch, type SearchHit } from './use-global-search'
 import { sessionAgentBindings } from '../sessions/stores/session-agent-bindings'
@@ -110,7 +111,8 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
   const chatName = (chatId: string) => summaries.get(chatId)?.alias || summaries.get(chatId)?.name || translate('globalSearch.unknownChat')
   const chipLabel = (chip: SearchChip) => chip.kind === 'in' ? chatName(chip.chatId) : chip.kind === 'in-task' ? chip.title : chip.kind === 'type' ? translate(`globalSearch.kind.${chip.type}`) : chip.name
   const groups: { key: string; label: string; task: boolean; scope: SearchChip; hits: SearchHit[] }[] = []
-  for (const hit of view.hits) {
+  // Unknown results draw no rows (placeholders below), ❌ an empty list.
+  if (view.hits) for (const hit of view.hits) {
     let group = groups.find((existing) => existing.key === hit.group)
     if (!group) {
       group = hit.kind === 'task'
@@ -207,14 +209,14 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
         <div className="relative flex h-9 shrink-0 items-end gap-5 overflow-x-auto border-b border-foreground/[0.08] px-4 [scrollbar-width:none]" role="tablist">
           {facets.map((value) => {
             const on = facet === value
-            const count = view.counts[value]
+            const count = view.counts ? view.counts[value] : null
             return (
               <button type="button" role="tab" aria-selected={on} key={value} tabIndex={-1}
                 onClick={() => updateSearchSession({ facet: value, selectedId: null })}
                 className={cn('relative flex h-full shrink-0 items-center gap-2 text-[length:var(--font-body)] transition-colors',
                   on ? 'text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-[2px] after:rounded-full after:bg-foreground' : 'text-foreground/50 hover:text-foreground/80')}>
                 {translate(`globalSearch.facet.${value}`)}
-                {count ? <span className="tabular-nums text-foreground/35">{countLabel(count)}</span> : null}
+                {view.counts === null ? <Unknown className="w-6" /> : count ? <span className="tabular-nums text-foreground/35">{countLabel(count)}</span> : null}
               </button>
             )
           })}
@@ -275,7 +277,17 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
             {nameRows.map((row) => <NameRow key={row.id} id={row.id} userId={row.userId} groupAvatar={row.groupAvatar} name={row.name} query={view.query} onOpen={() => { rememberSearch(recentScope, view.query); onOpen(); row.open() }} />)}
           </div>
         )}
-        {hasQuery && !view.unresolved && !view.loading && !view.error && ordered.length === 0 && nameRows.length === 0 && (
+        {hasQuery && !view.unresolved && view.hits === null && !view.error && (
+          <div data-testid="global-search-pending">
+            {[0, 1, 2].map((row) => (
+              <div key={row} className="flex w-full items-start gap-[var(--row-gap)] px-2 py-2">
+                <Unknown className="mt-1 h-5 w-5 shrink-0 rounded-full" />
+                <span className="min-w-0 flex-1 text-sm leading-5"><Unknown className="w-3/4" /><span className="mt-1 block text-xs"><Unknown className="w-24" /></span></span>
+              </div>
+            ))}
+          </div>
+        )}
+        {hasQuery && !view.unresolved && !view.loading && !view.error && view.hits !== null && ordered.length === 0 && nameRows.length === 0 && (
           <div className="flex flex-col items-center gap-2 px-3 py-10 text-center text-sm text-foreground/45">
             <span>{view.query ? translate('globalSearch.emptyFor', { text: view.query }) : translate('globalSearch.typeWords')}</span>
             {view.query && (facet !== 'all' || chips.length > 0) && (

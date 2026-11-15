@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
-import { QueryClient, QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query'
+import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query'
+import type { Session as RendererSession } from '@supabase/supabase-js'
+import { publishRendererSession } from '@/lib/sessionPublication'
+import { queryClient as replicaClient } from '@/lib/replica'
 import React, { act } from 'react'
 import { runInAction } from 'mobx'
 import { createRoot, type Root } from 'react-dom/client'
@@ -59,12 +62,13 @@ const systemRow = { ...rows[0]!, id: 'system-row', sender_user_id: null, sender_
 let host: HTMLDivElement
 let root: Root
 let closed = 0
-let queryClient: QueryClient | undefined
 function setNetwork(online: boolean) {
   Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => online })
   window.dispatchEvent(new Event(online ? 'online' : 'offline'))
   onlineManager.setOnline(online)
 }
+// Synthetic identity only: no token, network, real account or profile.
+const signIn = (id: string) => publishRendererSession('SIGNED_IN', { user: { id } } as RendererSession)
 const ensureIdentity = vi.fn()
 beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -78,10 +82,10 @@ beforeEach(() => {
   remote.indexStatus.mockReset().mockResolvedValue({ state: 'ready' })
   focusManager.setFocused(true)
   onlineManager.setOnline(true)
-  queryClient = undefined
   remote.messages.mockReset().mockResolvedValue({ data: rows, error: null })
   remote.firstOfDay.mockReset(); remote.viewFilters = []
   publishSelfIdentity({ userId: 'me-1', displayName: null, guguNumber: null })
+  signIn('me-1')
   localStorage.clear(); viewStateCache.forget('view:')
   installIdentityDirectoryBridge()
   publishIdentityDirectory({}, ensureIdentity.mockReset())
@@ -99,7 +103,8 @@ afterEach(async () => {
   try {
     focusManager.setFocused(undefined)
     await act(async () => root.unmount())
-    queryClient?.clear()
+    publishRendererSession('SIGNED_OUT', null)
+    replicaClient.removeQueries({ queryKey: ['taskTurnSearch'] })
     setNetwork(true)
     publishSelfIdentity(null)
     host.remove()
@@ -114,9 +119,7 @@ afterEach(async () => {
 // The typed text settles after the panel's debounce; the two queries answer on the next turns.
 const settle = async () => { for (let round = 0; round < 3; round++) await act(async () => { await vi.advanceTimersByTimeAsync(120) }) }
 async function render(text: string, tasks = true, names = false) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  queryClient = client
-  await act(async () => root.render(<QueryClientProvider client={client}><GlobalSearch tasks={tasks} names={names} onClose={() => {}} onOpen={() => { closed++ }} /><SessionProbe /></QueryClientProvider>))
+  await act(async () => root.render(<QueryClientProvider client={replicaClient}><GlobalSearch tasks={tasks} names={names} onClose={() => {}} onOpen={() => { closed++ }} /><SessionProbe /></QueryClientProvider>))
   await act(async () => updateSearchSession({ text }))
   await settle()
 }
@@ -292,16 +295,37 @@ describe('global search panel', () => {
     expect(remote.turns).not.toHaveBeenCalled()
   })
 
+  it('holds the results while a search is on its way: no "nothing found", no 0 beside a filter', async () => {
+    let answer!: (value: { data: typeof rows; error: null }) => void
+    remote.messages.mockImplementation(() => new Promise((resolve) => { answer = resolve }))
+    await render('回滚')
+    expect(host.querySelector('[data-testid="global-search-pending"]')).not.toBeNull()
+    expect(host.textContent).not.toContain('globalSearch.emptyFor')
+    expect(host.querySelector('[role=tablist] [data-unknown]')).not.toBeNull()
+    await act(async () => answer({ data: rows, error: null }))
+    await settle()
+    expect(host.querySelector('[data-testid="global-search-pending"]')).toBeNull()
+    expect(options()).toHaveLength(3)
+  })
+
+  it('a failed message search says so and lists what the tasks found, ❌ "nothing found"', async () => {
+    remote.messages.mockResolvedValue({ data: null, error: { message: 'search is down' } })
+    await render('回滚')
+    expect(host.querySelector('[role=alert]')?.textContent).toContain('search is down')
+    expect(host.querySelector('[data-testid="global-search-pending"]')).toBeNull()
+    expect(options().map((option) => option.textContent)).toEqual([expect.stringContaining('已经把回滚开关打开了')])
+  })
+
   it('keeps unscoped cloud search paused while offline', async () => {
     remote.desktop = true
     setNetwork(false)
     await render('orchid', false)
-    expect(queryClient?.getQueryCache().find({ queryKey: ['global-search-messages', 'orchid', null] })?.state.fetchStatus).toBe('paused')
+    expect(replicaClient.getQueryCache().find({ queryKey: ['messageSearch', 'me-1', 'orchid', null] })?.state.fetchStatus).toBe('paused')
     expect(remote.messages).not.toHaveBeenCalled()
     expect(remote.local).not.toHaveBeenCalled()
   })
 
-  it('uses the shell identity outside AuthContext and changes query ownership when the shell account changes', async () => {
+  it('searches the stored messages of the signed-in account and changes ownership when the account changes', async () => {
     remote.desktop = true
     setNetwork(false)
     remote.local.mockImplementation(async (_method, account) => account === 'me-1'
@@ -309,20 +333,21 @@ describe('global search panel', () => {
     resetSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] })
     await render('orchid')
     expect(options().map(option => option.textContent)).toEqual([expect.stringContaining('only account A')])
-    await act(async () => publishSelfIdentity({ userId: 'account-b', displayName: null, guguNumber: null }))
+    await act(async () => { publishSelfIdentity({ userId: 'account-b', displayName: null, guguNumber: null }); signIn('account-b') })
     await settle()
     expect(remote.local).toHaveBeenLastCalledWith('imMessages.search', 'account-b', GROUP, 'orchid', 100, undefined)
     expect(options()).toHaveLength(0)
     expect(remote.messages).not.toHaveBeenCalledWith('message_search_as', expect.objectContaining({ p_chat_id: GROUP }))
   })
 
-  it('reports missing shell identity instead of presenting an unexecuted local query as no results', async () => {
+  it('without a signed-in account nothing is searched and an unexecuted local query is not drawn as no results', async () => {
     remote.desktop = true
     setNetwork(false)
     publishSelfIdentity(null)
+    publishRendererSession('SIGNED_OUT', null)
     resetSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] })
     await render('orchid')
-    expect(host.querySelector('[role=alert]')?.textContent).toContain('Sign in to search messages stored on this device.')
+    expect(host.querySelector('[data-testid="global-search-pending"]')).not.toBeNull()
     expect(host.textContent).not.toContain('globalSearch.emptyFor')
     expect(remote.local).not.toHaveBeenCalled()
     expect(remote.messages).not.toHaveBeenCalledWith('message_search_as', expect.objectContaining({ p_chat_id: GROUP }))
