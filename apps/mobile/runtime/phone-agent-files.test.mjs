@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { openPhoneAgentStore } from './phone-agent-store.mjs'
-import { receivePhoneArtifact, phoneFileTools, phoneInboxAttachmentRow, phoneTurnFiles, registerArtifact } from './phone-agent-files.mjs'
+import { receivePhoneArtifact, phoneFileTools, phoneTurnFiles, registerArtifact } from './phone-agent-files.mjs'
 
 const ownerId = '68a158dd-1832-4671-ac02-ebde330d3d7a'
 const agent = { agentUserId: '558fcc98-9d61-4054-8a18-900d969b1849', sessionId: '13226587-813a-4e58-a023-dc419aeab890' }
@@ -57,20 +57,6 @@ test('turn prefetch registers the canonical artifact path and sends the same ver
     assert.equal(root.startsWith(join(tmpdir(), 'gugu-phone-turn-')), true)
     await rm(root, { recursive: true, force: true })
   }
-})
-
-test('inbox attachment metadata retains the authoritative message reference without image bytes, URLs or unregistered paths', () => {
-  const row = { id: '4f6dac4f-a3f2-48da-9876-d3a4567d8b64', contentType: 'attachment', content: '[附件] calendar.png (image/png)\n[URL] https://files.invalid/storage/v1/object/public/chat-media/calendar.png\n[Size] 42\n[Kind] image\n[Caption]\n请把这个图片转发给我', fileItemId: null, fileVersion: null, fileBlobId: null }
-  const prepared = phoneInboxAttachmentRow(row)
-  assert.match(prepared.content, /message_download_file/)
-  assert.match(prepared.content, new RegExp(`msg:${row.id}`))
-  assert.match(prepared.content, /calendar\.png/)
-  assert.match(prepared.content, /请把这个图片转发给我/)
-  assert.equal(prepared.content.includes('https://'), false)
-  assert.equal(prepared.content.startsWith('[附件]'), false)
-  assert.equal(row.content.startsWith('[附件]'), true)
-  const gone = phoneInboxAttachmentRow({ ...row, content: '[附件] deleted.png (image/png)\n[Size] 42\n[Kind] image' })
-  assert.match(gone.content, /"available":false/)
 })
 
 async function fixture() {

@@ -174,7 +174,6 @@ export interface ClearLocalAgentRuntimesOptions {
 export interface AgentRuntimeBridge {
   sessionArchival?: AgentInboxReaderDeps['sessionArchival']
   sessionMessageRefused?: AgentInboxReaderDeps['sessionMessageRefused']
-  downloadAttachment?: AgentInboxReaderDeps['downloadAttachment']
   /**
    * 这台机器上还没装这个 agent 时先装上(#6264)。从手机 / 另一台电脑往一台机器上建 agent,
    * 发起方看不到、也替不了那台机器点「安装」;刚装好的咕咕 server 上一个 agent 都没有。
@@ -731,7 +730,6 @@ export function agentInboxDepsFromBridge(input: {
     recipientIsRegistered: async (id) => agentsForOwner(await listAgents(input.env), input.ownerUserId).some((agent) => agent.gugu_user_id === id),
     ...(bridge.sessionArchival ? { sessionArchival: bridge.sessionArchival } : {}),
     ...(bridge.sessionMessageRefused ? { sessionMessageRefused: bridge.sessionMessageRefused } : {}),
-    ...(bridge.downloadAttachment ? { downloadAttachment: bridge.downloadAttachment } : {}),
     ...(input.ownerUserId ? { ownerUserId: input.ownerUserId } : {}),
     ...(input.env ? { env: input.env } : {}),
     inject: (injection) => bridge.injectAgentInbox!(injection),
