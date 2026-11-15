@@ -7,10 +7,12 @@ export function liveToolNames(names: readonly string[]): string[] {
 }
 export function toolActivationNames(item: ToolNode): string[] {
   if (item.kind === 'tool-group') return item.children.flatMap(toolActivationNames);
-  const declared = item.kind === 'mcp-tool-call' ? item.tool : toolCallName(item);
+  const declared = item.kind === 'mcp-tool-call'
+    ? item.toolName ?? (item.server ? `${item.server}__${item.tool}` : item.tool)
+    : toolCallName(item);
   if (typeof declared !== 'string') return [];
-  const name = declared.replace(/^mcp__.+?__/, '');
-  return liveToolNames([catalogCall(name, item.rawInput)?.tool ?? name]);
+  const name = (item.kind === 'mcp-tool-call' && typeof item.tool === 'string' ? item.tool : declared).replace(/^mcp__.+?__/, '');
+  return liveToolNames([catalogCall(name, item.rawInput)?.tool ?? declared.replace(/^mcp__/, '')]);
 }
 export function activateToolRow(event: MouseEvent, toolNames: readonly string[] | undefined): void {
   if (!toolNames?.length) return;
