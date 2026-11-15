@@ -1,3 +1,4 @@
+import { codeQuote } from './code-quote.js'
 import { lineNumberSelection, previewSelectionLines, previewSelectionText } from './selection-lines.js'
 /* global gugu */ // window.gugu: the platform runtime puts it on the page before this module runs.
 // 文件 (code: workspace) — the built-in App for chat and computer files: the file list, a
@@ -3324,12 +3325,7 @@ async function send(current = state.current, picks = state.picks) {
 function citeOf(current, picks, whole = false) {
   if (!current || (!whole && !picks.length)) return null
   if (whole) return { text: '', refs: [{ file: current.entry }] }
-  const quote = (text) => {
-    if (current.file.type === 'text') return `> ${plainWords(text)}`
-    const body = text.replace(/\s+$/, '')
-    const fence = '`'.repeat(Math.max(3, ...(body.match(/`+/g) ?? []).map((run) => run.length + 1)))
-    return [fence, ...body.split('\n'), fence].map((line) => `> ${line}`).join('\n')
-  }
+  const quote = (text) => (current.file.type === 'text' ? `> ${plainWords(text)}` : codeQuote(text))
   const quoted = ({ text, lines: [first, last] }) =>
     `${fmt(first === last ? state.t.line : state.t.lines, { first, last })}\n${text.replace(/\s+$/, '').split('\n').map((line) => `> ${line}`).join('\n')}`
   if (current.file.type === 'text' || current.file.type === 'source') return { text: picks.flatMap(({ text }) => (text ? [quote(text)] : [])).join('\n\n'), refs: picks.map((pick) => refOf(current, pick)) }
