@@ -1,4 +1,5 @@
 import { PhoneSessionSidebarControls } from '../chat/PhoneSessionSidebarControls'
+import { usePhoneSessionSidebar } from '../chat/usePhoneSessionSidebar'
 import { PhoneTaskBrowser, PHONE_TASK_BROWSER } from './PhoneTaskBrowser'
 import type { FirstPrompt } from './use-timeline-session'
 import { observer } from 'mobx-react-lite'
@@ -100,6 +101,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const { t } = useTranslation('main')
   const { t: tc } = useTranslation('common')
   const mobile = useMobileShell()
+  const sidebar = usePhoneSessionSidebar({ sessionId: session.conversationId, entry: innerSidebarEntry ?? null })
   const { label: machineLabel } = useMachineLabel()
   const phoneHost = isPhoneDevice(device)
   const networkOnline = useNetworkOnline()
@@ -280,7 +282,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       <div className={appKind === PHONE_TASK_BROWSER ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
       {(
         <SessionConversation
-          composerControls={mobile && !appPanel ? <PhoneSessionSidebarControls key={`${session.conversationId}:${innerSidebarEntry ?? ""}`} sessionId={session.conversationId} entry={innerSidebarEntry ?? null} /> : null}
+          composerControls={mobile && !appPanel && sidebar.anchor ? modelControl => <PhoneSessionSidebarControls key={`${session.conversationId}:${innerSidebarEntry ?? ""}`} sidebar={sidebar} modelControl={modelControl} /> : undefined}
           agentName={shownName}
           agentUserId={agentUserId}
           harness={session.harness}

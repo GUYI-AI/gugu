@@ -15,3 +15,6 @@
 .gg-phone-room-sheet[data-ending-style] { animation-name: gg-phone-room-sheet-out; }
 @keyframes gg-phone-room-sheet-in { from { translate: 0 16px; } to { translate: 0 0; } }
 @keyframes gg-phone-room-sheet-out { from { translate: 0 0; } to { translate: 0 16px; } }
+
+.gg-phone-room-model { margin-left: auto; min-width: 0; flex: 0 1 auto; }
+.gg-phone-room-model [data-slot="composer-model"] > button { max-width: 100%; min-width: 0; }
