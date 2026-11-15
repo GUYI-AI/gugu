@@ -2,7 +2,7 @@ import { createConnectionClient, ConnectionError } from '@gugu/core/cloud/connec
 import { getRendererSession, observeRendererSession } from '@/lib/sessionPublication'
 import { identityDb } from '@/lib/supabase'
 import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from '@/lib/realtimeChannel'
-import type { ConnectionBridge, ConnectionWindow } from '@/lib/connectionBridge'
+import { routeCache, type ConnectionBridge, type ConnectionWindow } from '@/lib/connectionBridge'
 import { createOwnerConnectionStore } from './owner-connection-store'
 import type { ConnectionMetadataSnapshot, ConnectionMetadataStore } from './connection-metadata'
 import { ownerConnections } from './connection-replicas'
@@ -22,8 +22,9 @@ export const ownerConnectionClient = createConnectionClient(async (name,args) =>
   return { data,error,status }
 },accountId)
 const stores = new Map<string,ConnectionMetadataStore>()
+// The last route is kept in the `connectionRoute` replica (routeCache): one copy for routing's checks and the readers.
 const routing = createConnectionRouting({ accountId,read: () => ownerConnectionClient.authority(),
-  changed: ownerId => announce(ownerId) })
+  changed: ownerId => announce(ownerId),cache: routeCache })
 async function executePlatformOperation(operationId: string,route: ConnectionRoute) {
   await routing.assert(route,true)
   const owner = accountId()

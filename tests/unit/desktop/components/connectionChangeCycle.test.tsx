@@ -50,6 +50,9 @@ const { connectionBridge, useConnectionAuthority, useOwnerConnectionStore } = aw
 const { CONNECTIONS_CHANGED } = await import('@/components/connections/owner-connection-metadata')
 const { ownerConnectionResourceKey } = await import('@/components/connections/owner-connection-store')
 installConnectionHost(window)
+// The route's one copy is the account's `connectionRoute` entry: the replica follows the same signed-in owner.
+const { followRendererSession } = await import('@/lib/replica')
+followRendererSession('SIGNED_IN', OWNER)
 
 let root: Root
 let container: HTMLDivElement

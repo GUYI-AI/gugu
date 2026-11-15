@@ -1,11 +1,10 @@
-import { useEffect,useMemo,useSyncExternalStore,useCallback,useRef,useState } from 'react'
+import { useEffect,useMemo,useSyncExternalStore,useCallback } from 'react'
 import { connectionReadDelay } from '@/components/connections/connection-read-policy'
 import { useConnectionReadNotice } from '@/components/connections/useConnectionReadNotice'
-import { rendererLogger } from '@/lib/log'
+import { replica,replicaAccount,useReplica } from '@/lib/replica'
 import type { ConnectionClient } from '@gugu/core/cloud/connections'
 import { ConnectionError } from '@gugu/core/cloud/connections'
 import type { ConnectionMetadataStore } from '@/components/connections/connection-metadata'
-import { CONNECTIONS_CHANGED } from '@/components/connections/owner-connection-metadata'
 import type { ConnectionRoute,createConnectionRouting } from '@gugu/core/cloud/connectionRouting'
 
 /** Installed by the authenticated shell, before either settings bundle mounts. */
@@ -30,57 +29,68 @@ export function connectionBridge(): ConnectionBridge {
   return bridge
 }
 const accountId = () => typeof window === 'undefined' ? null : (window as ConnectionWindow)[KEY]?.accountId() ?? null
-/** The routing layer's last answer for the signed-in owner: a remount draws the right page at once instead of waiting a read. */
-const peekRoute = () => typeof window === 'undefined' ? undefined : (window as ConnectionWindow)[KEY]?.routing.peek()
 const subscribeAccount = (listener: () => void) => typeof window === 'undefined' ? () => {} : (window as ConnectionWindow)[KEY]?.subscribeAccount(listener) ?? (() => {})
+
+/**
+ * @@@connection-route — which source this account's connections live in (legacy assistant panel or owner service), at
+ * which epoch (@@@client-state-model, PR 3). The one copy: core's routing keeps its last route here (`routeCache`,
+ * handed to `createConnectionRouting` by connection-host.ts), so its epoch check, `peek` and this reading are the same
+ * value. Server-head versioned: a lower epoch never replaces a higher one (`merge`). Signal tier: the owner's change bus
+ * (`subscribeChanges`) and focus refresh it, and it is read every 15 s while shown; a failed read is retried with the
+ * connections' backoff, then said. This window's announcements (`CONNECTIONS_CHANGED`) are not a source: a route
+ * another reader here found changed is already in this entry (routing wrote it before announcing), and reading again on
+ * an announcement would announce again when the route moved (the cycle #1922 D8 removed).
+ */
+export const connectionRoute = replica({
+  name: 'connectionRoute',
+  scope: 'account',
+  read: (_owner: string): Promise<ConnectionRoute> => connectionBridge().routing.read(),
+  merge: (shown: ConnectionRoute, next: ConnectionRoute) => (BigInt(next.epoch) < BigInt(shown.epoch) ? shown : next),
+  refreshOnFocus: true,
+  refreshEvery: 15_000,
+  retry: 3,
+  retryDelay: connectionReadDelay,
+})
+
+/** Core routing's cache of the last route, as this replica's entry for the signed-in account (one copy, not two). */
+export const routeCache = {
+  get(ownerId: string): ConnectionRoute | undefined {
+    if (replicaAccount().id !== ownerId) return undefined
+    const reading = connectionRoute.peek()
+    return reading.state === 'value' ? reading.value : undefined
+  },
+  set(ownerId: string,route: ConnectionRoute): void {
+    if (replicaAccount().id === ownerId) connectionRoute.at().set(route)
+  },
+}
+
+// Subscription ownership only: the route lives in the replica.
+const routeWatches = new Map<string,{ users: number; stop: () => void }>()
+function watchRoute(owner: string): () => void {
+  let entry = routeWatches.get(owner)
+  if (!entry) {
+    const refresh = () => { void connectionRoute.refresh() }
+    const stopChanges = connectionBridge().subscribeChanges(owner,refresh)
+    // A route kept from earlier in this run: changes made while nobody watched are read again now.
+    if (connectionRoute.peek().state === 'value') refresh()
+    entry = { users: 0,stop: stopChanges }
+    routeWatches.set(owner,entry)
+  }
+  const active = entry
+  active.users++
+  return () => { if (--active.users === 0) { active.stop(); routeWatches.delete(owner) } }
+}
 
 export function useConnectionAuthority() {
   const owner = useSyncExternalStore(subscribeAccount,accountId,() => null)
-  const [result,setResult] = useState<{ owner: string; route?: ConnectionRoute; error?: unknown; failures?: number }>(),request = useRef(0)
-  const invalidate = useCallback(() => { request.current++ },[])
-  const reload = useCallback(async () => {
-    const current = ++request.current
-    if (!owner) return
-    try {
-      const route = await connectionBridge().routing.read()
-      if (request.current === current && accountId() === owner) setResult({ owner,route }); return true
-    } catch (error) {
-      rendererLogger('connections').warn({ code: (error as { code?: string } | null)?.code },'Authority read will retry')
-      if (request.current === current && accountId() === owner) setResult(previous => ({ owner,error,
-        route: previous?.owner === owner ? previous.route : undefined,failures: (previous?.owner === owner ? previous.failures ?? 0 : 0)+1 }))
-      return false
-    }
-  },[owner])
-  const current = result?.owner === owner ? result : undefined
-  const route = current?.route ?? (owner ? peekRoute() : undefined)
-  useConnectionReadNotice(`authority:${owner}`,!!route,current?.failures ?? 0)
-  useEffect(() => {
-    if (!owner) return
-    let stopped = false,timer: ReturnType<typeof setTimeout> | undefined,failures = 0,running = false
-    const refresh = async () => {
-      if (running || stopped) return
-      running = true
-      clearTimeout(timer)
-      try {
-        const success = await reload()
-        failures = success ? 0 : failures + 1
-      } finally {
-        running = false
-        if (!stopped) timer = setTimeout(() => void refresh(),failures ? connectionReadDelay(failures-1) : 15_000)
-      }
-    }
-    const stop = connectionBridge().subscribeChanges(owner,() => { void refresh() })
-    const focus = () => { void refresh() }
-    // A route another reader in this window found changed: taken as the routing layer holds it, not read again — a
-    // read can announce, and this listens to announcements.
-    const announced = () => {
-      const route = peekRoute()
-      if (route && accountId() === owner) setResult(previous => previous?.owner === owner && previous.route === route ? previous : { owner,route })
-    }
-    window.addEventListener('focus',focus); window.addEventListener(CONNECTIONS_CHANGED,announced); void refresh()
-    return () => { stopped = true; invalidate(); stop(); clearTimeout(timer); window.removeEventListener('focus',focus); window.removeEventListener(CONNECTIONS_CHANGED,announced) }
-  },[owner,reload,invalidate])
-  return { owner,route,error: current?.error,reload,loading: !current && !route }
+  const reading = useReplica(connectionRoute,owner ? [] : null)
+  useEffect(() => owner ? watchRoute(owner) : undefined,[owner])
+  const route = reading.state === 'value' ? reading.value : undefined
+  const error = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error ?? undefined : undefined
+  // The notice is for an empty read episode: said once the retries are spent and nothing was ever read.
+  useConnectionReadNotice(`authority:${owner}`,!!route,reading.state === 'error' ? Infinity : 0)
+  const reload = useCallback(() => connectionRoute.refresh(),[])
+  return { owner,route,error,reload,loading: reading.state === 'unknown' }
 }
 
 export function useOwnerConnectionStore(deviceId: string | null = null,route?: ConnectionRoute,enabled = true) {
