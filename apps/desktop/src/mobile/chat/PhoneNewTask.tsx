@@ -1,22 +1,24 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { remoteFailureKind, type SessionpageSessionCreateModels, type SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
-import { EngineIcon } from '@/components/AgentHarnessIdentity'
 import type { ComposerAttachAction } from '@/components/chat/ComposerAttachButton'
 import { useToast } from '@/components/toastContext'
 import { IconButton } from '@/components/ui/IconButton'
-import { Button } from '@/components/ui/Button'
-import { DropdownMenu, MenuItem } from '@/components/ui/Menu'
-import { Check, ChevronDown, Folder, X, Zap } from '@/lib/icons'
+import { X, Zap } from '@/lib/icons'
 import { rendererLogger } from '@/lib/log'
 import { useDevicesStore } from '@/store/devicesContext'
+import { useAuth } from '@/store/auth'
+import { CreateTarget } from '../agent-watch/CreateTarget'
+import { SelectedCreationSkills } from '../agent-watch/CreateSkills'
+import { useCreationSkillDraft } from '../agent-watch/create-skill-draft'
+import { preserveComposerFocus, preservePanelComposerFocus } from '../composer/composer-focus'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 import { useMachineLabel } from '../agent-watch/useMachineLabel'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { ProjectFolderCard } from '@renderer/features/projects/components/main-panel/project-folder-card'
 import type { ProjectFoldersState, ShownFolder } from '@renderer/features/projects/components/main-panel/project-folders'
 import { TaskInGroupError, createTaskInGroup } from '../agent-watch/createTaskInGroup'
-import { createModelNeedsSignIn, harnessUsable, initialSelection, reconcileModel, selectHarness } from '../agent-watch/create-session-form'
+import { createModelNeedsSignIn, harnessUsable, initialSelection, reconcileModel, selectHarness, type CreateSelection } from '../agent-watch/create-session-form'
 import { SessionpageRpcError, fetchCreateModels, fetchCreateOptions } from '../agent-watch/sessionpage-rpc'
 import { taskFoldersOfChat } from './phoneTaskFolders'
 import { usePhoneFolderAttach } from './usePhoneFolderAttach'
@@ -34,7 +36,7 @@ type Stage = { kind: 'off' } | { kind: 'on'; folder: ShownFolder | null; picking
 
 /**
  * 手机在项目群里派「新任务」(spec mobile-session-view「新任务照电脑」,OpenDCAI/gugu#446):
- * 回形针菜单「新任务」→ 框换成新任务的框(上沿一枚「新任务 · agent ▾」),这个项目的文件夹卡(电脑上那一张,
+ * 回形针菜单「新任务」→ 框上方显示工作、智能体、文件夹和技能,这个项目的文件夹卡(电脑上那一张,
  * ProjectFolderCard)浮在群上 → 点一张文件夹,标签旁写明它在哪台机器上(spec:新建任务的地方写明在哪台机器上运行;点它重新挑)→
  * 发出去 = 那台机器那个文件夹里开工,卡落进群,agent 在群里回(同普通群)。
  * 打字不收卡(spec projects「项目首页」);收卡只有点一张文件夹,或标签上的 × 连新任务一起收。
@@ -55,9 +57,12 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
   overlay: ReactNode
   /** 框上沿那一枚任务标签。 */
   band: ReactNode
+  inputHeader: ReactNode
   send: (text: string) => Promise<void>
 } {
   const { t } = useTranslation('messaging')
+  const { t: tControls } = useTranslation('mobileCreateControls')
+  const ownerId = useAuth().user?.id ?? null
   const { toast } = useToast()
   const { devices, refresh } = useDevicesStore()
   const { label: machineLabel, isHome } = useMachineLabel()
@@ -76,6 +81,8 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
   const [stage, setStage] = useState<Stage>({ kind: 'off' })
   const [options, setOptions] = useState<{ deviceId: string; value: SessionpageSessionCreateOptions | null; failed: boolean } | null>(null)
   const [harness, setHarness] = useState<string | null>(null)
+  const [chosenOptions, setChosenOptions] = useState<CreateSelection | null>(null)
+  const [modelTouched, setModelTouched] = useState(false)
   const [modelRead, setModelRead] = useState<{ deviceId: string; harness: string; models: SessionpageSessionCreateModels | null; failed: boolean } | null>(null)
   const [sending, setSending] = useState(false)
   const [optionsRead, setOptionsRead] = useState(0)
@@ -96,6 +103,8 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
     if (!deviceId || !online) { setOptions(null); return }
     let live = true
     setOptions({ deviceId, value: null, failed: false })
+    setChosenOptions(null)
+    setModelTouched(false)
     fetchCreateOptions(deviceId).then(
       (value) => {
         if (!live) return
@@ -113,13 +122,15 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
   const usable = options?.value?.harnesses.filter(harnessUsable) ?? []
   const picked = usable.find((option) => option.id === harness) ?? null
   const selectedHarness = picked?.id ?? null
+  const skillDraft = useCreationSkillDraft(ownerId, deviceId ?? '', chatId ?? null, selectedHarness)
+  const selectedModel = chosenOptions?.harness === selectedHarness ? chosenOptions.model : null
   // 同创建页读宿主现有目录；不把「能运行 Codex」当作「已登录自有订阅」。
   useEffect(() => {
     if (!deviceId || !online || !selectedHarness || !options?.value) { setModelRead(null); return }
     let live = true
     const initial = selectHarness(initialSelection(options.value), selectedHarness, options.value)
     setModelRead({ deviceId, harness: selectedHarness, models: null, failed: false })
-    fetchCreateModels(deviceId, selectedHarness, null, initial.model).then(
+    fetchCreateModels(deviceId, selectedHarness, null, selectedModel ?? initial.model).then(
       (models) => { if (live) setModelRead({ deviceId, harness: selectedHarness, models, failed: false }) },
       (error: unknown) => {
         log.warn({ error: String(error), deviceId, harness: selectedHarness }, 'read the models on that machine failed')
@@ -127,10 +138,10 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
       },
     )
     return () => { live = false }
-  }, [deviceId, online, selectedHarness, options])
+  }, [deviceId, online, selectedHarness, selectedModel, options])
   const read = modelRead?.deviceId === deviceId && modelRead.harness === selectedHarness ? modelRead : null
   const selection = options?.value && selectedHarness
-    ? reconcileModel(selectHarness(initialSelection(options.value), selectedHarness, options.value), read?.models ?? null, false, options.value.lastUsed)
+    ? reconcileModel(chosenOptions?.harness === selectedHarness ? chosenOptions : selectHarness(initialSelection(options.value), selectedHarness, options.value), read?.models ?? null, modelTouched, options.value.lastUsed)
     : null
   const machine = home?.machine.label ?? ''
   const blocked = !chosen ? t('composer.phoneTask.pickFolder')
@@ -172,7 +183,8 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
   } : null
 
   const overlay = <>{attach.picker}{stage.kind === 'on' && stage.picking && project && folderState ? (
-    <div className="gg-phone-task-card" data-testid="phone-task-folder-card">
+    <div className="gg-phone-task-card" data-testid="phone-task-folder-card"
+      onPointerDownCapture={preservePanelComposerFocus} onMouseDownCapture={preservePanelComposerFocus}>
       <ProjectFolderCard
         projectId={project.rowId}
         projectName={project.name}
@@ -190,35 +202,33 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
   ) : null}</>
 
   const agentName = picked?.name ?? ''
-  const band = stage.kind === 'on' ? (
-    <div className="gg-phone-task-tag" data-testid="phone-task-tag">
-      <DropdownMenu.Root modal={false}>
-        <DropdownMenu.Trigger className="gg-phone-task-chip" aria-label={t('composer.phoneTask.pickAgent')} disabled={usable.length === 0 || sending}>
-          {picked ? <EngineIcon engine={picked.id} size={14} /> : null}
-          <span>{picked ? t('composer.phoneTask.chip', { agent: picked.name }) : t('composer.phoneTask.action')}</span>
-          {usable.length > 1 ? <ChevronDown size={14} /> : null}
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Content side="top" align="start" sideOffset={8}>
-          {usable.map((option) => (
-            <MenuItem key={option.id} icon={option.id === harness ? <Check size={16} /> : <EngineIcon engine={option.id} size={16} />} onClick={() => setHarness(option.id)}>{option.name}</MenuItem>
-          ))}
-        </DropdownMenu.Content>
-      </DropdownMenu.Root>
-      {/* 还没点文件夹时卡就浮在上面、卡上自带说明,这一行不重复。 */}
-      {chosen ? (
-        <Button variant="ghost" className="gg-phone-task-where" data-blocked={blocked ? '' : undefined} data-testid="phone-task-where"
-          onClick={() => setStage({ kind: 'on', folder: chosen, picking: true })}>
-          <Folder size={14} aria-hidden />
-          <span>{blocked ?? t('composer.phoneTask.where', { folder: folderName(chosen.path), machine })}</span>
-        </Button>
-      ) : null}
-      <IconButton size="sm" aria-label={t('composer.phoneTask.cancel')} onClick={() => setStage({ kind: 'off' })}><X size={14} /></IconButton>
-    </div>
-  ) : null
+  const runDevice = devices.find(device => device.device_id === deviceId)
+  const creationMachine = runDevice && home && chosen
+    ? { device: runDevice, localProjectId: home.localProjectId, path: chosen.path, available: online } : undefined
+  const band = stage.kind === 'on' ? <div data-testid="phone-task-tag"><div className="gg-phone-task-controls">
+    <CreateTarget projects={[]} project={null} onProject={() => undefined}
+      machines={creationMachine ? [creationMachine] : []} machine={creationMachine}
+      onMachine={() => undefined} machineLabel={machineLabel} busy={sending}
+      projectTask={{ onFolder: () => setStage({ kind: 'on', folder: chosen, picking: true }) }}
+      configuration={{ options: options?.value ?? null,
+        selection: selection ?? { harness: null, model: null, permissionMode: null, effort: null },
+        onChange: (next, modelPicked) => {
+          if (next.harness !== harness) setModelTouched(false)
+          else if (modelPicked) setModelTouched(true)
+          setHarness(next.harness); setChosenOptions(next)
+        },
+        models: read?.models ?? null, modelsState: read?.failed ? 'failed' : read?.models ? 'ready' : 'loading',
+        skills: skillDraft.skills, onSkills: skillDraft.update }} />
+    <IconButton size="sm" aria-label={t('composer.phoneTask.cancel')}
+      onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus}
+      onClick={() => setStage({ kind: 'off' })}><X size={14} /></IconButton>
+  </div>{blocked && !stage.picking && <p className="gg-phone-task-blocker" data-testid="phone-task-blocker">{blocked}</p>}</div> : null
 
   const send = async (text: string) => {
-    const prompt = text.trim()
-    if (stage.kind !== 'on' || !chatId || !prompt || sending) return
+    const typed = text.trim()
+    const prompt = skillDraft.skills.length
+      ? `${tControls('useSkills', { names: skillDraft.skills.map(skill => skill.name).join(', ') })}\n\n${typed}` : typed
+    if (stage.kind !== 'on' || !chatId || !typed || sending) return
     if (blocked || !home || !chosen || !picked || !selection || !read?.models) { toast(blocked ?? t('composer.phoneTask.loading', { machine }), 'error'); return }
     setSending(true)
     try {
@@ -228,6 +238,7 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
         permissionMode: selection.permissionMode ?? undefined, effort: selection.effort ?? undefined,
       })
       clear()
+      skillDraft.update([])
       setStage({ kind: 'off' })
     } catch (error) {
       log.warn({ error: String(error), chatId, deviceId: home.deviceId }, 'dispatch a task from the phone failed')
@@ -255,6 +266,7 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
     placeholder: stage.kind === 'on' && agentName ? t('composer.phoneTask.placeholder', { agent: agentName }) : undefined,
     overlay,
     band,
+    inputHeader: stage.kind === 'on' ? <SelectedCreationSkills skills={skillDraft.skills} onChange={skillDraft.update} /> : null,
     send,
   }
 }

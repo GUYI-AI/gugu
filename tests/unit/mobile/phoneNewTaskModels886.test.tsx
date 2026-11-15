@@ -41,7 +41,7 @@ beforeEach(() => {
   vi.spyOn(tasks, 'createTaskInGroup').mockResolvedValue({ sessionId: 'session' })
 })
 afterEach(() => { harness.cleanup(); Object.defineProperty(window, 'innerWidth', width); vi.restoreAllMocks() })
-async function mount() {
+async function mount(chooseFolder = true) {
   function Host() {
     const base = useDevicesStore()
     return <DevicesContext.Provider value={{ ...base, devices: [device('machine', [], { projects: [{
@@ -51,11 +51,17 @@ async function mount() {
   }
   await renderWithAppProviders(harness, <Host />)
   await act(async () => { startPhoneNewTask('chat'); writeComposer(input(), 'Keep this task draft') })
-  await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="project-folder-paper"]')!)
+  if (chooseFolder) await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="project-folder-paper"]')!)
 }
+it('does not repeat the folder instruction beneath an open folder card', async () => {
+  await mount(false)
+  expect(harness.container.querySelector('[data-testid="phone-task-folder-card"]')).not.toBeNull()
+  expect(harness.container.querySelector('[data-testid="phone-task-blocker"]')).toBeNull()
+  expect(readComposer(input())).toBe('Keep this task draft')
+})
 async function pickCodex() {
-  await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="phone-task-tag"] button[aria-haspopup="menu"]')!)
-  await clickElement([...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === 'Codex')!)
+  await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="agent-watch-create-agent"]')!)
+  await clickElement([...document.querySelectorAll<HTMLElement>('[role="radio"]')].find((item) => item.textContent === 'Codex')!)
 }
 
 it('dispatches the original group new-task route with the shared available model after switching Claude to unsigned-in Codex', async () => {
@@ -113,4 +119,17 @@ it('does not dispatch an engine default when the catalogue read fails', async ()
   expect(tasks.createTaskInGroup).not.toHaveBeenCalled()
   expect(readComposer(input())).toBe('Keep this task draft')
   expect(harness.container.querySelector('[data-testid="phone-task-tag"]')?.textContent).toContain('读不到')
+})
+
+it('carries an explicitly chosen Work model through the project task send', async () => {
+  vi.mocked(rpc.fetchCreateModels).mockImplementation(async (_device, harness) => catalogue(harness, true))
+  await mount()
+  await pickCodex()
+  await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="agent-watch-create-model-device"]')!)
+  await clickElement(document.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="model"]')!)
+  const own = [...document.querySelectorAll<HTMLElement>('button')].find(item => item.textContent?.includes('Own model'))!
+  await clickElement(own)
+  await clickElement(document.querySelector<HTMLElement>('button[aria-label="关闭"]')!)
+  await send()
+  expect(tasks.createTaskInGroup).toHaveBeenCalledWith(expect.objectContaining({ harness: 'codex', model: 'own-model', chatId: 'chat', cwd: '/project' }))
 })

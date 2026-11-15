@@ -26,26 +26,27 @@ const machines: CreateMachine[] = ['Mac', 'Cloud'].map((name) => ({ device: { de
 machines.push({ ...machines[0]!, device: { ...machines[0]!.device, device_id: 'Phone', label: 'Phone', platform: 'ios', capabilities: { terminals: [], runtimes: ['pi'], host_kind: 'phone', host_runtime_capability: 1 } } })
 const options: SessionpageSessionCreateOptions = { projects: [], lastUsed: null, harnesses: ['codex', 'claude', 'pi'].map((id) => ({ id, name: id === 'codex' ? 'Codex' : id === 'claude' ? 'Claude Code' : 'Pi', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] })) }
 let root: Root | null = null, host: HTMLDivElement | null = null
-function Harness() {
+function Harness({ projectTask = false }: { projectTask?: boolean }) {
   const [machineId, setMachine] = useState('Mac'), [projectId, setProject] = useState<string | null>(null)
   const [selection, setSelection] = useState<CreateSelection>({ harness: 'codex', model: null, effort: null, permissionMode: null })
   const [skills, setSkills] = useState<CreationSkill[]>([])
   const projects = [{ chatId: 'project', name: '一个用于窄屏验收的长项目名称', homes: new Map<string, string>() }]
   return <><CreateTarget machines={machines} machine={machines.find((m) => m.device.device_id === machineId)} machineLabel={(d) => d.label}
     onMachine={setMachine} projects={projects} project={projects.find((p) => p.chatId === projectId) ?? null} onProject={setProject} busy={false}
+    projectTask={projectTask ? { onFolder: () => undefined } : undefined}
     configuration={{ options, selection, onChange: setSelection, models: null, modelsState: 'ready', skills, onSkills: setSkills }} />
     <div style={{ flex: '0 0 auto' }}><ChatComposer mobile editorOptions={{ inputTestId: 'chat-composer' }} onSubmit={vi.fn()} inputHeader={<SelectedCreationSkills skills={skills} onChange={setSkills} />} /></div>
   </>
 }
 afterEach(() => { root?.unmount(); host?.remove(); root = null; host = null; document.documentElement.removeAttribute('data-theme') })
-async function mount(theme: 'light' | 'dark' = 'dark', locale: 'zh-CN' | 'en-US' = 'zh-CN') {
+async function mount(theme: 'light' | 'dark' = 'dark', locale: 'zh-CN' | 'en-US' = 'zh-CN', projectTask = false) {
   followRendererSession('SIGNED_IN', 'phone-controls-browser')
   await page.viewport(390, 844)
   setLocalePreference(locale)
   document.documentElement.dataset.theme = theme
   host = document.body.appendChild(document.createElement('div')); host.dataset.phoneShell = ''
   host.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column;justify-content:flex-end;padding:12px'
-  root = createRoot(host); root.render(<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale={locale} translate={translateSessionMessage}><Harness /></MessageProvider></SessionUiTheme></LocalizationProvider>)
+  root = createRoot(host); root.render(<LocalizationProvider><SessionUiTheme theme={theme}><MessageProvider locale={locale} translate={translateSessionMessage}><Harness projectTask={projectTask} /></MessageProvider></SessionUiTheme></LocalizationProvider>)
   await until('composer', () => !!host?.querySelector('[contenteditable]'))
   return host.querySelector<HTMLElement>('[contenteditable]')!
 }
@@ -114,13 +115,35 @@ it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'li
   }
 })
 
-it('keeps every complete English control reachable on a 320px phone by wrapping the row', async () => {
+it('keeps narrow English controls on one horizontal scrolling line', async () => {
   await mount('dark', 'en-US')
   await page.viewport(320, 640)
   const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
-  expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
-  for (const button of row.querySelectorAll('button')) expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(320)
+  const buttons = [...row.querySelectorAll('button')]
+  expect(row.scrollWidth).toBeGreaterThan(row.clientWidth)
+  for (const button of buttons) expect(Math.abs(button.getBoundingClientRect().top - buttons[0]!.getBoundingClientRect().top)).toBeLessThan(1)
+  row.scrollLeft = row.scrollWidth
+  await until('last control visible', () => buttons.at(-1)!.getBoundingClientRect().right <= row.getBoundingClientRect().right + 1)
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320)
+})
+
+it('project tasks promote the harness and folder to the row without duplicating the harness in Work', async () => {
+  const editor = await mount('dark', 'zh-CN', true)
+  const blur = vi.fn(), end = vi.fn()
+  editor.focus(); editor.addEventListener('blur', blur); editor.addEventListener('compositionend', end)
+  editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+  expect(host!.querySelector('[data-testid="agent-watch-create-project"]')).toBeNull()
+  const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
+  expect([...row.querySelectorAll('button')].map(button => button.textContent)).toEqual(['工作', '智能体', '文件夹', '技能'])
+  await page.getByTestId('agent-watch-create-agent').click()
+  expect(host!.querySelector('[data-testid="agent-watch-create-model-device"]')!.hasAttribute('data-active')).toBe(false)
+  await expect.element(page.getByRole('radio', { name: 'Claude Code', exact: true })).toBeVisible()
+  await page.getByRole('radio', { name: 'Claude Code', exact: true }).click()
+  await until('harness menu closed', () => !document.querySelector('[data-testid="agent-watch-create-controls-sheet"]'))
+  await page.getByTestId('agent-watch-create-model-device').click()
+  expect(document.querySelector('[data-dimension="harness"]')).toBeNull()
+  expect(document.activeElement).toBe(editor); expect(blur).not.toHaveBeenCalled(); expect(end).not.toHaveBeenCalled()
+  expect(host!.querySelector('[contenteditable]')).toBe(editor)
 })
 
 it('omits search only for an actually empty skill catalog', async () => {
