@@ -40,6 +40,10 @@ describe('live conversation picture lifetime', () => {
     s.current.model.dispatch({ type: 'close' });
     await vi.waitFor(() => expect(s.unwatch).toHaveBeenCalledTimes(1));
     expect(s.current.model.getSnapshot().visible).toBe(false);
+    await s.current.refresh();
+    s.current.setOperating(false); s.current.setOperating(true); await s.current.refresh();
+    expect(s.watched).toHaveBeenCalledTimes(1);
+    expect(s.current.model.getSnapshot().visible).toBe(false);
     s.current.model.dispatch({ type: 'show-from-tool', kind: 'browser' });
     await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(2));
     expect(s.watched.mock.calls[1]![0].watchId).not.toBe(first);

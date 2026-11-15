@@ -53,7 +53,8 @@ export class LiveWindowModel {
     for (const previous of entry.sources) {
       if (!next.some(source => source.id === previous.id || source.kind === previous.kind)) next.push({ ...previous, status: 'finished' });
     }
-    const newcomers = next.filter(source => source.status === 'operating' && !entry!.sources.some(old => old.id === source.id && old.status === 'operating'));
+    const newcomers = next.filter(source => source.status === 'operating' && !entry!.presentation.dismissedSourceIds.includes(source.id)
+      && !entry!.sources.some(old => old.id === source.id && old.status === 'operating'));
     if (!sameSources(entry.sources, next)) entry.sources = next;
     if (context.privateAgentChat && newcomers.length && entry.presentation.mode === 'closed') {
       const selected = newcomers[0]!;
