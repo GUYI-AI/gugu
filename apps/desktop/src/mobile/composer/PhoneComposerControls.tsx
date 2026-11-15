@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
-import { ChevronRight, X } from '@/lib/icons'
+import { X } from '@/lib/icons'
 import { useBackLayer } from '@/components/ui/sheetStack'
 import { preserveComposerFocus, preservePanelComposerFocus } from './composer-focus'
 import './phone-composer-controls.css'
@@ -20,7 +20,7 @@ export function PhoneComposerControl({ label, icon, active, dot, disabled, onCli
     data-testid={testId} data-active={active || undefined} onPointerDown={preserveComposerFocus}
     onMouseDown={preserveComposerFocus} onClick={onClick}>
     {icon}<span className="gg-phone-composer-control-label">{label}</span>
-    {dot && <span className="gg-phone-composer-control-dot" />}<ChevronRight />
+    {dot && <span className="gg-phone-composer-control-dot" />}
   </Button>
 }
 
