@@ -10,9 +10,10 @@ vi.mock('../../../../apps/desktop/src/lib/chat',()=>import('../../../support/con
 vi.mock('../../../../apps/desktop/src/hooks/useAgentDisplayStatus',()=>import('../../../support/agentDisplayStatusTestDouble'))
 
 let ui: ReturnType<typeof createReactHarness>
-let previousScan: boolean
-beforeEach(()=>{ui=createReactHarness();previousScan=platform.capabilities.barcodeScan;platform.capabilities.barcodeScan=true})
-afterEach(()=>{ui.cleanup();platform.capabilities.barcodeScan=previousScan})
+const scanCapabilities=platform.capabilities as typeof platform.capabilities & {barcodeScan?:boolean}
+let previousScan: boolean | undefined
+beforeEach(()=>{ui=createReactHarness();previousScan=scanCapabilities.barcodeScan;scanCapabilities.barcodeScan=true})
+afterEach(()=>{ui.cleanup();if(previousScan===undefined)delete scanCapabilities.barcodeScan;else scanCapabilities.barcodeScan=previousScan})
 const find=(id:string)=>document.querySelector<HTMLElement>(`[data-testid="${id}"]`)
 
 it('phone: the pen opens creation directly, before the separate rightmost More button',async()=>{
