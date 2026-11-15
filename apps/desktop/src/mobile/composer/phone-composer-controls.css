@@ -33,7 +33,7 @@
 .gg-phone-skill-icon { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; color: var(--live-light); }
 .gg-phone-skill-icon > img { width: 24px; height: 24px; object-fit: contain; }
 .gg-phone-skill-icon > svg { width: 22px; height: 22px; }
-.gg-phone-selected-skills { display: flex; flex-wrap: wrap; gap: 4px; max-height: 64px; overflow-y: auto; margin-bottom: 8px; }
+.gg-phone-selected-skills { display: flex; flex-wrap: wrap; width: 100%; gap: 4px; max-height: 64px; overflow-y: auto; margin-bottom: 8px; }
 .gg-phone-selected-skill { display: inline-flex; align-items: center; max-width: 100%; gap: 4px; padding: 3px 6px; border-radius: 8px; background: var(--hover); font-size: var(--font-caption); }
 .gg-phone-selected-skill > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gg-phone-selected-skill > button { flex: 0 0 24px; width: 24px; height: 24px; min-height: 24px; padding: 0; }

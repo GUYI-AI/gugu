@@ -13,7 +13,7 @@ import { runInAction } from 'mobx'
 
 type ComposerClient = ReturnType<typeof useAui>['composer']
 const state = vi.hoisted(() => ({ owner: 'creation-navigation', composer: null as ComposerClient | null }))
-const rpc = vi.hoisted(() => ({ options: vi.fn(), models: vi.fn(), create: vi.fn() }))
+const rpc = vi.hoisted(() => ({ options: vi.fn(), models: vi.fn(), create: vi.fn(), machine: vi.fn() }))
 vi.mock('../../../apps/desktop/src/store/auth', async (original) => ({
   ...(await original<typeof import('../../../apps/desktop/src/store/auth')>()),
   useAuth: () => ({ user: { id: state.owner } }),
@@ -41,11 +41,12 @@ vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   fetchPhoneCreateModels: rpc.models,
   createSession: rpc.create,
   createPhoneSession: rpc.create,
-  machineRpc: () => ({ extensions: {
+  machineRpc: (...args: unknown[]) => { rpc.machine(...args); return { extensions: {
+    revoked: async () => ({ success: true, data: {} }),
     list: async () => ({ success: true, data: { extensions: [{ id: 'meeting-app', name: 'Meeting App', permissions: { capabilities: ['agents:tools'] }, contributes: { skills: 'skills' } }], disabled: [], appIcons: {} } }),
     appPlaces: async () => ({ success: true, data: [{ id: 'here:all', enabled: true }] }),
     agentSkills: async () => ({ success: true, data: ['meeting-notes'], entries: [{ name: 'meeting-notes', description: 'Record decisions and next steps' }] }),
-  } }),
+  } } },
 }))
 vi.mock('../../../apps/desktop/src/components/assistant-ui/thread.aui', async () => {
   const { useAui } = await import('../../../apps/desktop/node_modules/@assistant-ui/react')
@@ -76,6 +77,7 @@ beforeEach(() => {
   rpc.options.mockReset().mockResolvedValue(options)
   rpc.models.mockReset().mockResolvedValue({ harness: 'codex', models: [], efforts: [], selected: null, selectedEffort: null })
   rpc.create.mockReset()
+  rpc.machine.mockReset()
 })
 afterEach(() => { harness.cleanup(); accountProjectsStore.clear() })
 
@@ -113,6 +115,16 @@ describe('creation keeps its navigation and draft ownership', () => {
     expect(rpc.options).not.toHaveBeenCalled()
     await act(async () => { harness.container.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-model-device"]')!.click() })
     expect(document.querySelector('[data-dimension="machine"][data-option-id]')).toBeNull()
+  })
+
+  it('keeps an offline draft typeable without trying to read skills from the offline computer', async () => {
+    await harness.render(pageOn({ ...device, is_online: false, status: 'offline' }, { onCreated: vi.fn() }))
+    const skills = harness.container.querySelector<HTMLButtonElement>('[data-testid="agent-watch-create-skills"]')!
+    expect(skills.disabled).toBe(true)
+    await act(async () => { state.composer!.setText('离线时也能写草稿'); skills.click() })
+    expect(state.composer!.getState().text).toBe('离线时也能写草稿')
+    expect(rpc.machine).not.toHaveBeenCalled()
+    expect(rpc.options).not.toHaveBeenCalled()
   })
 
   it('keeps the composing draft while replacing device catalogs, without exposing or submitting old options', async () => {

@@ -3,15 +3,17 @@ import { HERE_ALL } from '@/session/shared/extensions/host-actions'
 import { givesAgentTools } from '@/session/shared/extensions/app-places'
 
 export type CreationSkill = { id: string; name: string; description: string; app: string; icon?: string }
-type SkillSource = Pick<ExtensionsApi, 'list' | 'appPlaces' | 'agentSkills'>
+type SkillSource = Pick<ExtensionsApi, 'list' | 'revoked' | 'appPlaces' | 'agentSkills'>
 
 /** Read the selected computer's existing App catalog and its existing delivery grants. */
 export async function loadCreationSkills(api: SkillSource, scopeChatId: string | null): Promise<{ skills: CreationSkill[]; partial: boolean }> {
-  const inventory = await api.list()
+  const [inventory, permissions] = await Promise.all([api.list(), api.revoked()])
   if (!inventory.success || !inventory.data) throw new Error(String(inventory.error ?? 'App inventory is unavailable'))
+  if (!permissions.success || !permissions.data) throw new Error(String(permissions.error ?? 'App permissions are unavailable'))
   const { extensions, disabled, appIcons } = inventory.data
+  const revoked = permissions.data
   let partial = false
-  const groups = await Promise.all(extensions.filter((app) => app.contributes.skills && givesAgentTools(app) && !disabled.includes(app.id)).map(async (app) => {
+  const groups = await Promise.all(extensions.filter((app) => app.contributes.skills && givesAgentTools(app) && !disabled.includes(app.id) && !(revoked[app.id] ?? []).includes('agents:tools')).map(async (app) => {
     const places = await api.appPlaces({ extensionId: app.id })
     if (!places.success) throw new Error(places.error)
     if (!places.data.some((place) => place.enabled && (place.id === HERE_ALL || place.id === scopeChatId))) return []

@@ -49,7 +49,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
         testId="agent-watch-create-model-device" buttonRef={modelButton} onClick={() => setView('device')} />
       <PhoneComposerControl label={project?.name ?? t('project')} icon={<Folder />} active={view === 'project'} disabled={busy}
         testId="agent-watch-create-project" onClick={() => setView('project')} />
-      <PhoneComposerControl label={t('skills')} icon={<Sparkles />} active={view === 'skills'} disabled={busy}
+      <PhoneComposerControl label={t('skills')} icon={<Sparkles />} active={view === 'skills'} disabled={busy || !machine?.available}
         testId="agent-watch-create-skills" onClick={() => { setSearch(''); setView('skills') }} />
     </PhoneComposerControlRow></div>
     <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={title}

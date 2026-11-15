@@ -6,6 +6,7 @@ const app = (id: string) => ({ id, name: id, permissions: { capabilities: ['agen
 function source() {
   return {
     list: vi.fn(async () => ({ success: true, data: { extensions: [app('notes'), app('off'), app('private')], disabled: ['off'], appIcons: { notes: 'data:image/png;base64,AA==' } } })),
+    revoked: vi.fn(async () => ({ success: true, data: {} as Record<string, string[]> })),
     appPlaces: vi.fn(async ({ extensionId }: { extensionId: string }) => ({ success: true, data: [{ id: 'here:all', enabled: extensionId !== 'private' }] })),
     agentSkills: vi.fn(async () => ({ success: true, data: ['capture'], entries: [{ name: 'capture', description: 'Capture a note' }], problems: [] as string[] })),
   }
@@ -23,6 +24,17 @@ describe('creation skills use the existing selected-device App catalog', () => {
     api.appPlaces.mockResolvedValue({ success: true, data: [{ id: 'group', enabled: true }] })
     expect((await loadCreationSkills(api as unknown as Api, 'group')).skills).toHaveLength(2)
     expect((await loadCreationSkills(api as unknown as Api, 'other')).skills).toHaveLength(0)
+  })
+  it('does not offer skills from an App whose agent-tools permission was withdrawn', async () => {
+    const api = source()
+    api.revoked.mockResolvedValue({ success: true, data: { notes: ['agents:tools'] } })
+    expect((await loadCreationSkills(api as unknown as Api, null)).skills).toEqual([])
+    expect(api.agentSkills).not.toHaveBeenCalled()
+  })
+  it('does not treat an unreadable permission record as permission to offer skills', async () => {
+    const api = source()
+    api.revoked.mockRejectedValue(new Error('permissions unavailable'))
+    await expect(loadCreationSkills(api as unknown as Api, null)).rejects.toThrow('permissions unavailable')
   })
   it('does not disguise a delivery-grant or inventory failure as an empty list', async () => {
     const api = source()

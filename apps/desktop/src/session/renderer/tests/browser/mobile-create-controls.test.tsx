@@ -19,6 +19,7 @@ import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ extensions: {
+  revoked: async () => ({ success: true, data: {} }),
   list: async () => ({ success: true, data: { extensions: [{ id: 'test-app', name: '验收 App', permissions: { capabilities: ['agents:tools'] }, contributes: { skills: 'skills', tabs: [] } }], disabled: [], appIcons: {} } }),
   appPlaces: async () => ({ success: true, data: [{ id: 'here:all', enabled: true }] }),
   agentSkills: async () => ({ success: true, data: ['会议记录', '代码检查'], entries: [{ name: '会议记录', description: '整理会议记录与待办事项' }, { name: '代码检查', description: '检查代码中的问题' }], problems: [] }),
