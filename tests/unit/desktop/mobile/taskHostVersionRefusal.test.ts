@@ -10,7 +10,7 @@ vi.mock('@/lib/remoteSessionHost', () => ({ openPhoneSessionHostPipe: () => Obje
 }) }))
 vi.mock('@/mobile/local-agent/phoneHostRpc', () => ({ invokePhoneHost: vi.fn() }))
 vi.mock('@/lib/deviceRpc', () => ({ callDeviceRpc: vi.fn() }))
-vi.mock('@/lib/cloudComputerStore', () => ({ getCloudComputerState: () => ({ snapshot: null }), subscribeCloudComputerState: () => () => undefined }))
+vi.mock('@/lib/cloudComputer', async (original) => ({ ...await original<object>() }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ debug() {}, info() {}, warn: network.warn, error() {} }) }))
 
 const flush = async () => { for (let i = 0; i < 20; i += 1) await Promise.resolve() }

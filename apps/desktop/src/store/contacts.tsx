@@ -20,7 +20,7 @@ import { useIdentityLifecycle } from '../hooks/useIdentityLifecycle'
 import { friendRequestEntries } from '../lib/requestHistory'
 import { type AgentLook } from '../components/agentAvatar/look'
 import { recordContactsRender } from '../lib/perfCounters'
-import { isMyAssistant } from '../lib/myAssistant'
+import { myAssistant } from '../lib/myAssistant'
 import { reportAssistantAppChange } from '../components/assistant/assistant-app-client'
 import { machineRpc } from '../mobile/agent-watch/sessionpage-rpc'
 
@@ -122,7 +122,8 @@ export function ContactsProvider({ children, active = true }: { children: React.
 
     // @@@owned-agents-realtime (#671) - reload the owned-agent list when an agent is created/changed,
     // including from another device. 那条新 agent 私聊由投影按键补齐,不再靠整表重拉。
-    const refreshAgentSurfaces = () => refreshStrictly(contactRelations)
+    // agent_provisions writes no revision; a new assistant adds a users row, so `agent_changed` is a hint to read it again.
+    const refreshAgentSurfaces = () => { void myAssistant.refresh(); return refreshStrictly(contactRelations) }
     // #6091 会话页「重命名 Agent」改名落在主进程 / 宿主(不经过这里的 updateAgentProfile),通讯录缓存着
     // display_name —— 收到广播就按 agent_changed 同一条路重拉,❌ 挂着旧名等 realtime 兜底。
     const handleOwnedAgentRenamed = () => { void contactRelations.refresh() }
@@ -253,7 +254,8 @@ export function ContactsProvider({ children, active = true }: { children: React.
   // #1228: update an owned agent's name + bio together (真接 bio — was dropped before).
   const updateAgentProfile = useCallback(async (agentId: string, fields: { name?: string; bio?: string; avatar?: string | null }) => {
     const ownerId = userId
-    const personal = isMyAssistant(ownerId, agentId)
+    // A write deciding whether to tell the assistant App: ask the replica now (❌ guess from what may not be read yet).
+    const personal = !!ownerId && (await myAssistant.fetch()).agentId === agentId
     const updated = await contactsService.updateOwnedAgentProfile(agentId, {
       ...(fields.name !== undefined ? { display_name: fields.name } : {}),
       ...(fields.bio !== undefined ? { bio: fields.bio } : {}),

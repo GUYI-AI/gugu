@@ -2,31 +2,52 @@
 // shows it preparing meanwhile, and once getting them is truly stuck, one failure notice says so — through the app's one
 // notice outlet, never a strip above the composer. Main decides both (electron/assistant-rules-root.ts); a phone or a
 // web page hosts no assistant, so it never waits.
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { desktopIpc } from '../platform/desktopIpc'
 import { ASSISTANT_HOME_CHANNELS, type AssistantRulesState } from './assistantHomeIpc'
 import { notify } from './notices'
-import { rendererLogger } from './log'
+import { replica, useReplica, type Reading } from './replica'
 import '../i18n/registerMainCatalog'
 
-const log = rendererLogger('assistant-rules')
-const NOT_WAITING: AssistantRulesState = { pending: false, stuck: false }
-
-export function useAssistantRulesState(): AssistantRulesState {
-  const [state, setState] = useState<AssistantRulesState>(NOT_WAITING)
-  useEffect(() => {
+/**
+ * Main's answer (device scope). With no desktop IPC (a phone, a web page) nothing hosts an assistant here, so it truly does
+ * not wait: `{pending: false, stuck: false}` is the value, ❌ a placeholder. Main pushes every change with its value
+ * (`rulesStateChanged`), so a read value stays current (`fresh: Infinity`). Not kept across restarts (a restored `pending`
+ * would flash "preparing").
+ */
+export const assistantRulesState = replica({
+  name: 'assistantRulesState',
+  scope: 'device',
+  read: async (): Promise<AssistantRulesState> => {
     const ipc = desktopIpc()
-    if (!ipc) return
-    let live = true
-    ipc.invoke(ASSISTANT_HOME_CHANNELS.rulesState).then(
-      (value) => { if (live) setState(value as AssistantRulesState) },
-      (error: unknown) => log.warn({ error: String(error) }, 'assistant rules state not read; the entry shows as it is'),
-    )
-    const off = ipc.eventOn(ASSISTANT_HOME_CHANNELS.rulesStateChanged, (value) => setState(value as AssistantRulesState))
-    return () => { live = false; off() }
-  }, [])
-  return state
+    if (!ipc) return { pending: false, stuck: false }
+    return (await ipc.invoke(ASSISTANT_HOME_CHANNELS.rulesState)) as AssistantRulesState
+  },
+  fresh: Infinity,
+})
+
+// Subscription ownership only (the value lives in the replica).
+let watch: { users: number; stop: () => void } | null = null
+function watchRules(): () => void {
+  const ipc = desktopIpc()
+  if (!ipc) return () => undefined
+  if (!watch) {
+    const stop = ipc.eventOn(ASSISTANT_HOME_CHANNELS.rulesStateChanged, (value) => assistantRulesState.set([], value as AssistantRulesState))
+    // A value read while an earlier watch ran may have moved since: read again now.
+    if (assistantRulesState.peek().state === 'value') void assistantRulesState.refresh()
+    watch = { users: 0, stop }
+  }
+  const active = watch
+  active.users++
+  return () => { if (--active.users === 0 && watch === active) { active.stop(); watch = null } }
+}
+
+/** Unknown until main answers: the entry is not drawn as preparing meanwhile (❌ a literal "not waiting" either). */
+export function useAssistantRulesState(): Reading<AssistantRulesState> {
+  const reading = useReplica(assistantRulesState, [])
+  useEffect(() => watchRules(), [])
+  return reading
 }
 
 /** The one notice for a truly stuck wait: shown when it becomes stuck, in place (by key) if it is shown already. */

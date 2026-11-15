@@ -11,7 +11,7 @@ import {
   cloudComputerProvisionSteps,
   deviceNeedsWake,
   withCloudComputerPresence,
-} from '@/lib/cloudComputerStore'
+} from '@/lib/cloudComputer'
 import { deviceRowModel } from '@/lib/deviceRowModel'
 import { isDeviceSelectable, sortDevices } from '@/lib/devicesSort'
 

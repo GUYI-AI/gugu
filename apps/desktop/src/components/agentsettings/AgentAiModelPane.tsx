@@ -31,6 +31,8 @@ import { platformOptionId } from '@/session/shared/platform-model-id'
 import type { ComposerModelOption } from '@gugu/session-ui/react/components'
 import { offeredInModelPicker } from '@/session/shared/core/agents/platform-model'
 import { useMyAssistant } from '@/lib/myAssistant'
+import { useAuth } from '@/store/auth'
+import { cloudSnapshotOf, useCloudComputer } from '@/lib/cloudComputer'
 
 function selectionValue(selection: AgentModelSelection): string {
   if (selection.source === 'default') return 'default'
@@ -65,11 +67,15 @@ function sameSelection(a: AgentModelSelection, b: AgentModelSelection | null): b
 
 export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
   const { t } = useTranslation('agents')
-  const { devices, cloudComputer } = useDevicesStore()
-  const mine = useMyAssistant(agent.owner_user_id, agent.id)
-  const cloudOnly = (mine.agentId === agent.id || mine.loading) && Boolean(agent.device_id
+  const { devices } = useDevicesStore()
+  const cloudComputer = useCloudComputer()
+  // The assistant of the account signed in only (another owner's agent is never it); not read yet = treated as it, the safe side.
+  const ownerId = useAuth().user?.id ?? null
+  const mine = useMyAssistant()
+  const maybeAssistant = agent.owner_user_id === ownerId && (mine.state === 'unknown' || (mine.state === 'value' && mine.value.agentId === agent.id))
+  const cloudOnly = maybeAssistant && Boolean(agent.device_id
     && (devices.some(device => device.device_id === agent.device_id && device.cloud_computer !== undefined)
-      || cloudComputer?.snapshot?.deviceId === agent.device_id))
+      || cloudSnapshotOf(cloudComputer)?.deviceId === agent.device_id))
   const isLocal = platform.capabilities.agentRuntime && devices.some((device) => device.device_id === agent.device_id && device.is_current_device)
   const engine = agent.agent_type ? engineIdForAgentType(agent.agent_type) : null
   const harnessReading = useReplica(sessionCreateModels, agent.device_id && engine && !cloudOnly ? [agent.device_id, engine, 'general', null, isLocal ? 'local' : 'machine'] : null)

@@ -20,7 +20,9 @@ vi.mock('../../../../apps/desktop/src/platform', async (importOriginal) => {
     }),
   }
 })
-vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ useMyAssistantContact: () => ({ homeDeviceId: 'cloud-1',...mine.value }) }))
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ useMyAssistantContact: () => ({ homeDeviceId: (mine.value as { homeDeviceId?: string }).homeDeviceId ?? 'cloud-1', contact: mine.value.contact,
+  reading: mine.value.loading ? { state: 'unknown' } : mine.value.error ? { state: 'error', error: new Error(mine.value.error) }
+    : { state: 'value', value: { agentId: mine.value.agentId, provisionDeviceId: 'cloud-1' }, stale: false, error: null } }) }))
 
 vi.mock('../../../../apps/desktop/src/components/assistant/AssistantShellHost', () => ({
   AssistantStatusGroups: ({ assistantName }: { assistantName: string }) => createElement('div', { 'data-testid': 'status-groups' }, assistantName),
@@ -50,8 +52,11 @@ vi.mock('../../../../apps/desktop/src/components/sessionpage/SessionSettingsSect
   },
 }))
 const wake = vi.hoisted(() => vi.fn(async () => {}))
-vi.mock('../../../../apps/desktop/src/lib/cloudComputerStore', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../../apps/desktop/src/lib/cloudComputerStore')>()),
+// The cloud computer reading the page is drawn with (the replica's three states; here always read).
+const shownCloud = vi.hoisted(() => ({ reading: { state: 'unknown' } as unknown }))
+vi.mock('../../../../apps/desktop/src/lib/cloudComputer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../apps/desktop/src/lib/cloudComputer')>()),
+  useCloudComputer: () => shownCloud.reading,
   wakeCloudComputer: wake,
 }))
 
@@ -61,8 +66,9 @@ const { ConnectorsSection } = await import('../../../../apps/desktop/src/compone
 const { DevicesContext } = await import('../../../../apps/desktop/src/store/devicesContext')
 
 const CONTACT = { id: 'a1', display_name: '小咕', avatar: null }
-const awake = { available: true, snapshot: { state: 'awake', deviceId: 'cloud-1', error: null, since: null }, loadError: null }
-const asleep = { available: true, snapshot: { state: 'asleep', deviceId: 'cloud-1', error: null, since: null }, loadError: null }
+const cloudValue = (value: unknown) => ({ state: 'value', value, stale: false, error: null })
+const awake = cloudValue({ available: true, snapshot: { state: 'awake', deviceId: 'cloud-1', error: null, since: null } })
+const asleep = cloudValue({ available: true, snapshot: { state: 'asleep', deviceId: 'cloud-1', error: null, since: null } })
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { harness = createReactHarness() })
@@ -77,9 +83,10 @@ afterEach(() => {
 })
 
 async function render(node: ReactNode, cloud: typeof awake | typeof asleep, updateAgentProfile = vi.fn(async () => {}), devices: unknown[] = []) {
+  shownCloud.reading = cloud
   const value = {
     devices, loading: false, error: null, refresh: async () => {}, rename: async () => {}, remove: async () => {},
-    listBoundAgents: async () => [], cloudComputer: cloud,
+    listBoundAgents: async () => [],
   }
   await renderWithAppProviders(harness, createElement(DevicesContext.Provider, { value: value as never }, node), {
     auth: { id: 'u1', email: 'u@e.com', nickname: 'U' },
@@ -150,7 +157,7 @@ describe('咕咕的设置页(资料,画在它 App 的面板上)', () => {
 
   it('管家说没开放云电脑、但它住在这台电脑上:页面照样画(不整页空)', async () => {
     mine.value = { contact: CONTACT, agentId: 'a1', loading: false, error: null, homeDeviceId: 'mac-1' } as never
-    await render(createNode(AssistantSection, { available: [], onOpenSection: vi.fn() }), { available: false, snapshot: null, loadError: null } as never, vi.fn(async () => {}), [
+    await render(createNode(AssistantSection, { available: [], onOpenSection: vi.fn() }), cloudValue({ available: false }) as never, vi.fn(async () => {}), [
       { device_id: 'mac-1', label: 'MacBook', is_online: true, is_current_device: true },
     ])
     expect(q('settings-assistant-who')).not.toBeNull()
@@ -174,7 +181,7 @@ describe('咕咕的设置页(资料,画在它 App 的面板上)', () => {
   })
 
   it('还没开通:这一页只说开通(流程在引导格里),不画名字 / 状态那些', async () => {
-    await render(createNode(AssistantSection, { available: [], onOpenSection: vi.fn() }), { available: true, snapshot: { state: 'none', deviceId: null, error: null, since: null }, loadError: null } as never)
+    await render(createNode(AssistantSection, { available: [], onOpenSection: vi.fn() }), cloudValue({ available: true, snapshot: { state: 'none', deviceId: null, error: null, since: null } }) as never)
     expect(q('onboarding-slot')).not.toBeNull()
     expect(q('settings-assistant-who')).toBeNull()
     expect(q('status-groups')).toBeNull()
@@ -214,7 +221,7 @@ describe('咕咕的连接应用(画在它 App 的面板上)', () => {
   })
   it('does not prepare a host after a previous wake failure', async () => {
     mine.value = { contact: CONTACT,agentId: 'a1',loading: false,error: null }
-    await render(createNode(ConnectorsSection,{}),{ ...asleep,loadError: 'unavailable' } as never)
+    await render(createNode(ConnectorsSection,{}),{ ...asleep, error: new Error('unavailable') } as never)
     expect(sessionSection.props).not.toBeNull()
     expect(wake).not.toHaveBeenCalled()
   })

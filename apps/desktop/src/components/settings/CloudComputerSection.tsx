@@ -7,13 +7,14 @@ import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { cn } from '../../lib/cn'
 import { rendererLogger } from '../../lib/log'
 import {
+  cloudComputer,
   destroyCloudComputer,
   provisionCloudComputer,
-  refreshCloudComputer,
+  readCloudSnapshotNow,
   wakeCloudComputer,
-} from '../../lib/cloudComputerStore'
+} from '../../lib/cloudComputer'
 import type { BoundAgentsState } from '../../lib/deviceRowModel'
-import { cloudComputerProvisionSteps, type CloudComputerStepStatus } from '../../lib/cloudComputerStore'
+import { cloudComputerProvisionSteps, type CloudComputerStepStatus } from '../../lib/cloudComputer'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 import { InlineAction } from './addServer/InlineAction'
@@ -328,7 +329,7 @@ export function CloudComputerCloseDialog({
     setFailure(null)
     try {
       // DELETE / 删的是管家此刻那一台:先核对还是这一行(❌ 别处关掉又开了一台新的,这里一点就把新的删了)。
-      const current = await refreshCloudComputer()
+      const current = await readCloudSnapshotNow()
       if (current?.deviceId !== device.device_id) {
         log.warn({ deviceId: device.device_id, current: current?.deviceId ?? null }, 'close dialog is stale; not destroying')
         setFailure({ kind: 'gone' })
@@ -398,7 +399,7 @@ export function CloudComputerLoadError({ kind }: { kind: CloudComputerFailureKin
   return (
     <div className={cn(caption, 'text-[var(--danger-fg)]')} data-testid="settings-cloud-computer-load-error" data-kind={kind}>
       {t('devices.cloud.stateFailed')}{tc(`cloudComputer.reason.${kind}`)}{' '}
-      <InlineAction onClick={() => void refreshCloudComputer().catch(() => undefined)}>{t('devices.retry')}</InlineAction>
+      <InlineAction onClick={() => void cloudComputer.refresh()}>{t('devices.retry')}</InlineAction>
     </div>
   )
 }

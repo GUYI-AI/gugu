@@ -17,15 +17,21 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(async () => [{ id: 'notion', name: 'Notion' }]),
 }))
 
-vi.mock('../../../../apps/desktop/src/lib/billing/membership', () => ({
-  getMembership: async () => ({ tier: mocks.tier }),
+vi.mock('../../../../apps/desktop/src/lib/billing/useSpendingPower', () => ({
+  refreshSpendingPower: () => undefined,
+  useSpendingPower: (user: unknown) => (user ? { state: 'value', membership: { tier: mocks.tier } } : { state: 'unknown', membership: null }),
 }))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-wire', () => ({
-  pendingMove: () => mocks.pending,
-  recoverPendingMove: async () => {
-    if (mocks.recoveryError) throw mocks.recoveryError
-    return mocks.nativePending ?? mocks.pending
-  },
+vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-wire', async () => ({
+  // The real replica's shape: the local journal copy first, main's journal as the read.
+  moveRecovery: (await import('../../../../apps/desktop/src/lib/replica')).replica({
+    name: 'moveRecovery',
+    scope: 'account',
+    read: async () => {
+      if (mocks.recoveryError) throw mocks.recoveryError
+      return mocks.nativePending ?? mocks.pending
+    },
+    local: () => mocks.pending ?? undefined,
+  }),
   previewMove: (...args: unknown[]) => mocks.previewMove(...args),
   runAssistantMove: (...args: unknown[]) => mocks.runAssistantMove(...args),
 }))
@@ -44,12 +50,14 @@ import { AssistantMoveGroup } from '../../../../apps/desktop/src/components/assi
 import { AssistantMoveDialog } from '../../../../apps/desktop/src/components/assistant/AssistantMoveDialog'
 import { resetMoveForTests, startMove } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-controller'
 import { MoveError } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move'
-import { queryClient } from '../../../../apps/desktop/src/lib/replica'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { MoveCopyError } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-copy'
 import type { AssistantHomePlace } from '../../../../apps/desktop/src/lib/assistantHome'
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
+  queryClient.clear()
+  followRendererSession('SIGNED_IN', 'owner-1')
   harness = createReactHarness()
   mocks.tier = 'plus'
   mocks.pending = null
@@ -76,7 +84,8 @@ const groupProps = (home: AssistantHomePlace, over: Record<string, unknown> = {}
 // 弹窗挂在壳上(不在搬家那一组里):测试里把两者并排画,与生产一致。
 const render = async (home: AssistantHomePlace, over: Record<string, unknown> = {}) => {
   await harness.render(createElement(Fragment, null, createNode(AssistantMoveGroup, groupProps(home, over)), createElement(AssistantMoveDialog)))
-  // getMembership 是异步读:等一拍
+  // 搬家恢复记录是异步读:等它落定
+  await act(async () => {})
   await act(async () => {})
 }
 const q = (id: string) => harness.container.querySelector(`[data-testid="${id}"]`)

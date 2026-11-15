@@ -3,8 +3,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CloseSession } from '../../../../apps/desktop/src/lib/assistantClose'
 
-const mine = vi.hoisted(() => ({ isMyAssistant: vi.fn(() => false) }))
-vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => mine)
+const mine = vi.hoisted(() => ({ agentId: null as string | null }))
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({
+  myAssistant: { peek: () => (mine.agentId === undefined ? { state: 'unknown' } : { state: 'value', value: { agentId: mine.agentId, provisionDeviceId: null }, stale: false, error: null }) },
+}))
 
 const {
   AssistantCloseError,
@@ -126,13 +128,15 @@ describe('close the assistant that lives on this computer (#7350)', () => {
     const heard = vi.fn()
     window.addEventListener(UI_EVENTS.closeAssistant, heard)
     try {
-      mine.isMyAssistant.mockReturnValueOnce(false)
+      mine.agentId = GUGU
       expect(closeIfMyAssistant('owner-1', 'agent-other')).toBe(false)
       expect(heard).not.toHaveBeenCalled()
-      mine.isMyAssistant.mockReturnValueOnce(true)
       expect(closeIfMyAssistant('owner-1', GUGU)).toBe(true)
       expect(heard).toHaveBeenCalledTimes(1)
-      expect(mine.isMyAssistant).toHaveBeenLastCalledWith('owner-1', GUGU)
+      // Not read yet: not known to be the assistant, the general delete runs (a one-moment decision).
+      mine.agentId = undefined as never
+      expect(closeIfMyAssistant('owner-1', GUGU)).toBe(false)
+      expect(heard).toHaveBeenCalledTimes(1)
     } finally {
       window.removeEventListener(UI_EVENTS.closeAssistant, heard)
     }

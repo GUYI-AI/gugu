@@ -17,6 +17,9 @@ vi.mock('../../../../apps/desktop/src/lib/assistantWorkTarget', async (original)
 vi.mock('../../../../apps/desktop/src/hooks/useWakeCloudComputer',()=>({useCloudComputerWake:(target:unknown)=>{mocks.wake(target);return {issue:null,dropped:false,retry:vi.fn()}}}))
 vi.mock('../../../../apps/desktop/src/lib/assistantWork',()=>({assistantWorkCloud:{get:mocks.work},watchAssistantWork:(_o:string,_a:string,refresh:()=>void)=>{mocks.refresh=refresh;return ()=>{}}}))
 vi.mock('../../../../apps/desktop/src/components/assistant/TaskExchangeBubble',()=>({TaskExchangeBubble:({message}:{message:{content:string}})=><div>{message.content}</div>}))
+// The identity directory (the IM library's identities, pushed): what a task window reads for an agent not in contacts.
+const directory = vi.hoisted(() => ({ rows: {} as Record<string, unknown> }))
+vi.mock('../../../../apps/desktop/src/lib/avatarIdentity', async original => ({ ...await original<object>(), useAvatarIdentity: (id: string) => directory.rows[id] ?? null }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', async original => ({ ...await original<object>(), readRequiredDisplayIdentities: mocks.identities }))
 // The window shows the task's session through the phone task page (PeekSessionTimeline); its own reads are covered there.
 vi.mock('../../../../apps/desktop/src/mobile/agent-watch/PeekSessionTimeline', () => ({ PeekSessionTimeline: ({ sessionId, local, onBack, fallback }: { sessionId: string; local?: boolean; onBack: () => void; fallback?: React.ReactNode }) =>
@@ -46,6 +49,7 @@ beforeEach(() => {
   mocks.localWorker = false
   mocks.listed = true
   mocks.identities.mockReset()
+  directory.rows = {}
   mocks.work.mockReset();mocks.wake.mockReset();mocks.refresh=null
   mocks.rows = [{ deviceId: 'home', summary: summary('assistant-session', 'assistant'), live: true }, { deviceId: 'worker', summary: summary('task-session', 'task-agent', 'assistant-session'), live: false }]
   mocks.devices = [device('worker', [], { label: 'Worker', is_online: false, session_digest: [{ conversationId: 'task-session', projectId: 'p', projectName: 'Project', title: 'task-session', agentUserId: 'task-agent', parentConversationId: 'assistant-session', agentStatus: 'idle', lastInteractedAt: '2026-10-16T12:00:00Z', harness: 'codex', supported: false }] }), device('home', [], { label: 'Home' })]
@@ -143,6 +147,7 @@ describe('assistant task rows open the task chat on both shells', () => {
     const work={work_id:'new-work',title:'Preparing task',assistant_user_id:'assistant',owner_user_id:'user-1',outcome:'active',executor_outcomes:{},executors:[{session_id:'prepared',device_id:'sleeping',agent_user_id:null}],coordinator_session_id:'main',coordinator_device_id:'home'}
     await act(async()=>finish({work,events:[]}))
     mocks.work.mockResolvedValue({work:{...work,executors:[{session_id:'prepared',device_id:'sleeping',agent_user_id:'task-agent'}]},events:[]})
+    directory.rows['task-agent']={id:'task-agent',display_name:'New agent',type:'agent',owner_user_id:'user-1',avatar:null}
     await act(async()=>{mocks.refresh?.()})
     await vi.waitFor(()=>expect(document.querySelector('[data-testid="task-chat-panel"]')?.getAttribute('data-session-id')).toBe('prepared'))
     expect(toast).not.toHaveBeenCalled()

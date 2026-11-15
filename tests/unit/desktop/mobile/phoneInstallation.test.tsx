@@ -18,7 +18,7 @@ vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({
   getRendererSession: () => ({ user: { id: mocks.owner } }), observeRendererSession: () => () => {},
 }))
 vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({
-  useMyAssistant: () => ({ agentId: null, provisionDeviceId: null, loading: false, error: null }),
+  useMyAssistant: () => ({ state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null }),
 }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn(), warn: vi.fn() }) }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {

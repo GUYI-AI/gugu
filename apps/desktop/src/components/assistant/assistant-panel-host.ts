@@ -6,7 +6,7 @@ import { getRendererSession, observeRendererSession } from '@/lib/sessionPublica
 import { chatDb } from '@/lib/supabase'
 import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from '@/lib/realtimeChannel'
 import type { AssistantPanelBridge, AssistantPanelWindow } from '@/lib/assistantPanelBridge'
-import { assistantPanelCloud, assistantPrivateChat, assertAssistantPanelOwner, personalAssistant, queueAssistantAppChange } from './assistant-panel-cloud'
+import { assistantPanelCloud, assertAssistantPanelOwner, queueAssistantAppChange } from './assistant-panel-cloud'
 import { ASSISTANT_PANEL_CHANGED } from './assistant-panel-events'
 import { assistantPanelCacheStore } from './assistant-panel-cache'
 
@@ -43,8 +43,6 @@ const bridge: AssistantPanelBridge = {
       : subscribePrivateUserEventBus(ownerId,'assistant_panel_changed',listener,{onSubscribed:()=>listener()})
     return () => unsubscribePrivateUserEventBus(handle)
   },
-  personalAssistant,
-  privateChat: assistantPrivateChat,
   queueNotice: queueAssistantAppChange,
 }
 

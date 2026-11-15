@@ -12,6 +12,7 @@ import { Chip } from '@/components/ui/Chip'
 import { TaskStatusMark } from '@/components/chat/ComposerCardView'
 import { partnerProjects, type PartnerProject } from './partnersModel'
 import { PhoneMessageAvatar } from '../chat/PhoneMessageAvatar'
+import { cloudSnapshotOf, useCloudComputer } from '@/lib/cloudComputer'
 
 /**
  * 消息中的项目群和别的群一样用群自己的头像(#2600 owner 11-13:没要过文件夹封面,群头像换了就该看得见);
@@ -50,9 +51,10 @@ function ProjectRunningCount({ chatId, children }: { chatId: string; children: R
 
 /** 这个群是哪个项目(手机与桌面同一个推导 partnerProjects,读账号上的项目);不是项目群 / chatId null = undefined。 */
 function useChatProject(chatId: string | null): PartnerProject | undefined {
-  const { devices, cloudComputer } = useDevicesStore()
+  const { devices } = useDevicesStore()
+  const cloudComputer = useCloudComputer()
   // 个人助理宿主:与 useMachineLabel 同一个判据(只读设备 store,头像不依赖登录态)。
-  const homeId = cloudComputer?.snapshot?.deviceId ?? null
+  const homeId = cloudSnapshotOf(cloudComputer)?.deviceId ?? null
   const isHome = useCallback((row: AssistantHomeRow) => isAssistantHome(row, homeId), [homeId])
   const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
   return useMemo(() => (chatId === null ? undefined : partnerProjects(accountList, devices, isHome).find((row) => row.chatId === chatId)), [accountList, devices, isHome, chatId])

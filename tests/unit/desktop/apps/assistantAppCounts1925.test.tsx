@@ -33,7 +33,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assist
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-home-integrations', () => ({
   useOpenConnector: () => (id: string) => { reads.opened.push(id); },
 }));
-vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ isMyAssistant: () => false }));
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ myAssistant: { peek: () => ({ state: 'unknown' }), fetch: async () => ({ agentId: null, provisionDeviceId: null }), refresh: async () => undefined }, refreshMyAssistant: async () => undefined, useMyAssistant: () => ({ state: 'unknown' }) }));
 
 const { installAssistantShellBridge, publishAssistantShell } = await import(`${D}/lib/assistantShellBridge`);
 const { AssistantAppCountsSource, connectorIconOf, openAssistantConnector, resetAssistantAppCountsForTest } = await import(`${D}/session/renderer/features/apps/assistant-app-counts`);

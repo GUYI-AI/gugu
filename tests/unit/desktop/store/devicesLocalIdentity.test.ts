@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'account-a' } }) }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { listDevices: mocks.listDevices } }))
+// The assistant marker's resubscription watch (myAssistant, signal tier) rides the account's private bus: no socket in a unit test.
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ useMyAssistant: () => ({ state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null }) }))
 vi.mock('../../../../apps/desktop/src/lib/deviceProjects', () => ({ listMyDeviceProjects: async () => [], listMyAccountProjects: async () => [] }))
 vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
   useChatStore: () => ({ subscribeAccountRevision: () => () => undefined }),

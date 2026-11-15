@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { usePhoneToday } from '../../../apps/desktop/src/mobile/assistant/usePhoneToday'
 import { TODAY_REFRESH_MS, type TodayFeedView } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-today-file'
 import { createNode, createReactHarness, deferred } from '../../support/testHarness'
+import { followRendererSession, queryClient } from '../../../apps/desktop/src/lib/replica'
 
 const mocks = vi.hoisted(() => ({ read: vi.fn() }))
 vi.mock('../../../apps/desktop/src/lib/chatFolder', () => ({ readChatFolderText: mocks.read }))
@@ -19,6 +20,8 @@ describe('phone Today reads', () => {
   let harness: ReturnType<typeof createReactHarness>
   beforeEach(() => {
     vi.useFakeTimers()
+    queryClient.clear()
+    followRendererSession('SIGNED_IN', 'owner')
     mocks.read.mockReset()
     harness = createReactHarness()
     latest = null

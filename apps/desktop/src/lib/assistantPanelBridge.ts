@@ -12,8 +12,6 @@ export interface AssistantPanelBridge {
   subscribeAccount(listener: () => void): () => void
   files(input: { ownerId: string; assistantId: string; chatId: string; deviceId: string }): AssistantPanelFiles
   subscribeChanges(ownerId: string, listener: (payload?: unknown) => void, domain?: 'panel' | 'work'): () => void
-  personalAssistant(ownerId: string): Promise<string | null>
-  privateChat(ownerId: string, assistantId: string): Promise<string>
   queueNotice(change: AssistantAppChange, assistantId: string | undefined, ownerId: string | null): Promise<AssistantPanelReceipt | null>
 }
 const KEY = '__GUGU_ASSISTANT_PANEL__' as const

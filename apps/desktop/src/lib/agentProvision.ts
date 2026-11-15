@@ -25,7 +25,7 @@ import type {
 } from '@gugu/core/shared/types/agentProvision'
 import { AGENT_PROVISION_TERMINAL_OPERATION_PHASES } from '@gugu/core/shared/types/agentProvision'
 import type { CreateAgentOnDeviceResult } from '@gugu/core/shared/types/chat'
-import { refreshCloudComputer, wakeCloudComputer } from './cloudComputerStore'
+import { readCloudSnapshotNow, wakeCloudComputer } from './cloudComputer'
 
 // #2260 — shared single-member provision PRIMITIVE. Single-agent create and every team member ride ONE
 // idempotent chain: start operation → DB-authoritative claim → prepare (server-side create agent+DM+command)
@@ -871,11 +871,11 @@ export async function defaultEnsureDeviceOnline(deviceId: string): Promise<void>
  * 问不到管家 = 不知道它是不是云电脑 ⇒ false,照普通离线说(❌ 把一台离线的笔记本说成「云电脑醒不来」)。
  */
 async function wakeIfCloudComputer(deviceId: string): Promise<boolean> {
-  let snapshot: Awaited<ReturnType<typeof refreshCloudComputer>>
+  let snapshot: Awaited<ReturnType<typeof readCloudSnapshotNow>>
   try {
-    snapshot = await refreshCloudComputer()
+    snapshot = await readCloudSnapshotNow()
   } catch {
-    // refreshCloudComputer 已记过日志。
+    // 读的那一段已记过日志。
     return false
   }
   if (!snapshot || snapshot.deviceId !== deviceId) return false

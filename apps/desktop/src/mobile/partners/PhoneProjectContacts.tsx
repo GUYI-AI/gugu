@@ -8,7 +8,8 @@ import { HeaderSearch } from '@/components/ui/HeaderSearch'
 import { ListRow } from '@/components/ui/ListRow'
 import { Pane, PaneHeader } from '@/components/ui/Pane'
 import { SectionLabel } from '@/components/ui/SectionLabel'
-import { isMyAssistant } from '@/lib/myAssistant'
+import { useMyAssistant } from '@/lib/myAssistant'
+import { Unknown } from '@/components/ui/Unknown'
 import { useAuth } from '@/store/auth'
 import { useContactsStore } from '@/store/contactsContext'
 import { followLink } from '@/lib/guguLinks'
@@ -39,6 +40,8 @@ export function PhoneProjectContacts({
   const { t } = useTranslation('main')
   const { user } = useAuth()
   const myId = user?.id ?? null
+  // 哪一位是我的个人助理:没读到时那一行的副标题画占位(同高),❌ 先当普通智能体画、读到再变。
+  const assistant = useMyAssistant()
   const { contacts, groupChats } = useContactsStore()
   const [query, setQuery] = useState('')
 
@@ -91,7 +94,7 @@ export function PhoneProjectContacts({
                 tabIndex={0}
                 leading={<Avatar name={name} avatarUrl={agent.contact?.avatar} seed={agent.id} size="md" isAgent harnessBadge={false} />}
                 title={name}
-                subtitle={isMyAssistant(myId, agent.id) ? t('partners.assistant') : agent.work ?? undefined}
+                subtitle={assistant.state === 'unknown' ? <Unknown className="w-20" /> : assistant.state === 'value' && assistant.value.agentId === agent.id ? t('partners.assistant') : agent.work ?? undefined}
                 onClick={() => openAgent(agent)}
                 onKeyDown={rowKeyActivate(() => openAgent(agent))}
               />

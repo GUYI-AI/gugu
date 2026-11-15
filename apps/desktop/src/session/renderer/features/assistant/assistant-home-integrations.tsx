@@ -1,5 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
-import { requireAssistantPanelBridge, useAssistantPanelAccountId } from '@/lib/assistantPanelBridge';
+import { useAssistantPanelAccountId } from '@/lib/assistantPanelBridge';
+import { useReplica } from '@/lib/replica';
+import { myAssistant } from '@/lib/myAssistant';
+import { assistantDm } from '@/lib/assistantDm';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -12,12 +14,11 @@ import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { connectorOrder } from './assistant-connector-order';
 import { homeTarget } from './assistant-home-sessions';
 import { useAssistantReadError, useReadFailure } from './assistant-read-failure';
-import { retryAssistantPanelRead } from '@gugu/core/cloud/assistantPanelRead';
 import { useAssistantShell } from './assistant-shell';
 import { useCloudAssistantFiles } from '@/components/assistant/assistant-panel-files';
 import { assistantPanelLibraryHost } from '@/components/assistant/assistant-panel-library-host';
 import { AssistantEmpty, AssistantRow, AssistantSection } from './assistant-ui';
-import { wakeAndWaitOnline } from '@/lib/cloudComputerStore';
+import { wakeAndWaitOnline } from '@/lib/cloudComputer';
 import { listDevicesOnceIdentified } from '@/lib/listDevicesOnceIdentified';
 import { useConnectionAuthority } from '@/lib/connectionBridge';
 import { useOwnerLibraryHost } from '@/components/connections/useOwnerLibraryHost';
@@ -55,16 +56,13 @@ export function useHomeLibraryHost(home: AssistantHomePlace): LibraryHost {
   const ownerDevice = useDevicesStore().devices.find(row => row.device_id === deviceId) ?? null;
   const ownerHost = useOwnerLibraryHost(ownerDevice,authority.route);
   const guard = useMemo(() => createLegacyConnectionGuard(),[owner,authority.route?.mode,authority.route?.epoch,deviceId]);
-  const identity = useQuery({ queryKey: ['assistant-panel-identity',owner],enabled: legacy && !!owner && !shell?.assistant?.id,
-    queryFn: () => requireAssistantPanelBridge().personalAssistant(owner!),staleTime: Infinity,retry: retryAssistantPanelRead });
-  const assistantId = legacy ? shell?.assistant?.id ?? identity.data ?? null : null;
-  const folder = useQuery({
-    queryKey: ['assistant-panel-folder',owner,assistantId],enabled: legacy && !!owner && !!assistantId && !shell?.chatId,
-    queryFn: async () => {
-      return requireAssistantPanelBridge().privateChat(owner!,assistantId!);
-    },staleTime: Infinity,retry: retryAssistantPanelRead,
-  });
-  const machine = useCloudAssistantFiles(assistantId,shell?.chatId ?? folder.data ?? null,home.deviceId);
+  // Who the assistant is and its private chat, when the shell has not said them yet: the same replicas the shell reads.
+  const identity = useReplica(myAssistant, legacy && owner && !shell?.assistant?.id ? [] : null);
+  const assistantId = legacy ? shell?.assistant?.id ?? (identity.state === 'value' ? identity.value.agentId : null) : null;
+  const folder = useReplica(assistantDm, legacy && owner && assistantId && !shell?.chatId ? [assistantId] : null);
+  const machine = useCloudAssistantFiles(assistantId,shell?.chatId ?? (folder.state === 'value' ? folder.value : null),home.deviceId);
+  const identityError = identity.state === 'error' ? identity.error : null;
+  const folderError = folder.state === 'error' ? folder.error : null;
   const prepare = useCallback(async (signal?: AbortSignal) => {
     signal?.throwIfAborted();
     await guard(true);
@@ -89,8 +87,8 @@ export function useHomeLibraryHost(home: AssistantHomePlace): LibraryHost {
     // Waiting only for `connected` here hides an already known `outdated` state.
   },[local,home.kind,deviceId,t,guard]);
   const legacyHost = useMemo(() => assistantPanelLibraryHost(base,legacy && machine?.panel
-    ? { ...legacyConnectionMetadata(machine.panel,guard),authorityEpoch: authority.route?.epoch } : undefined,prepare,authority.error ?? folder.error ?? identity.error),
-  [base,legacy,machine,guard,prepare,authority.route?.epoch,authority.error,folder.error,identity.error]);
+    ? { ...legacyConnectionMetadata(machine.panel,guard),authorityEpoch: authority.route?.epoch } : undefined,prepare,authority.error ?? folderError ?? identityError),
+  [base,legacy,machine,guard,prepare,authority.route?.epoch,authority.error,folderError,identityError]);
   return authority.route?.mode === 'owner' ? ownerHost : legacyHost;
 }
 

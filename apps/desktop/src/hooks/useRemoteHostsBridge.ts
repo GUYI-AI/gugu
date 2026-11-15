@@ -1,3 +1,4 @@
+import { cloudSnapshotOf, useCloudComputer } from '../lib/cloudComputer'
 import { remoteWorkspaceDevices } from './remoteWorkspaceDevices'
 import { useReplica, type Reading } from '../lib/replica'
 import { machineKeyOf } from '@gugu/core/shared/deviceMachines'
@@ -23,7 +24,7 @@ import { retryServerVersionMatch } from '../lib/serverVersionRetry'
 import { requestCloudVersionMatch } from '../lib/cloudVersionMatch'
 import { listDevicesOnceIdentified } from '../lib/listDevicesOnceIdentified'
 import { CloudComputerWakeError } from '@gugu/core/cloud/cloudComputer'
-import { wakeAndWaitOnline } from '../lib/cloudComputerStore'
+import { wakeAndWaitOnline } from '../lib/cloudComputer'
 import { reconnectMachine } from '../session/renderer/lib/machine-clients'
 import { isAssistantHome } from '../lib/assistantHome'
 import { useAssistantName } from './useAssistantHomeLabel'
@@ -45,11 +46,12 @@ export function useRemoteHostsBridge(
   pickFolder: (deviceId: string, initialPath: string) => Promise<string | null>,
   openAddMachine?: () => void,
 ): void {
-  const { devices, cloudComputer } = useDevicesStore()
+  const { devices } = useDevicesStore()
+  const cloudComputer = useCloudComputer()
   const currentDevice = devices.find(device => device.is_current_device)
   const currentMachineKey = currentDevice ? machineKeyOf(currentDevice) : null
   // #7199 个人助理住的那台:会话页里说到它,说的是它本人(名字由「助理」App 的壳认出来;还没认出 = 「个人助理」)。
-  const homeId = cloudComputer?.snapshot?.deviceId ?? null
+  const homeId = cloudSnapshotOf(cloudComputer)?.deviceId ?? null
   const homeIdRef = useRef(homeId)
   homeIdRef.current = homeId
   useEffect(() => {

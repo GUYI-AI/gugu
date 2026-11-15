@@ -55,6 +55,7 @@ import { useDeviceMachineSections } from '../../lib/deviceMachines'
 import { DeviceMachineArchive } from '../devices/DeviceMachineArchive'
 import { DeviceRenameField } from '../devices/DeviceRenameField'
 import { useDeviceRename } from '../../hooks/useDeviceRename'
+import { cloudSnapshotOf, useCloudComputer } from '../../lib/cloudComputer'
 
 // #1749 设备管理 → #6264 做成能上线的「设置 → 设备」:
 //  · 每行:名字、是台什么机器(本机 / 电脑 / 服务器)、系统与架构、咕咕版本 + 升级状态、在线或「上次在线」、
@@ -84,12 +85,13 @@ export function DevicesSection({
 } = {}) {
   const { t } = useTranslation('settings')
   const { toast } = useToast()
-  const { devices: deviceRows, phones, loading, error, refresh, rename, cloudComputer } = useDevicesStore()
+  const { devices: deviceRows, phones, loading, error, refresh, rename } = useDevicesStore()
+  const cloudComputer = useCloudComputer()
   // Disk bytes are on-demand state; the revision journal only announces warning transitions.
   useEffect(() => { void refresh() }, [refresh])
   const allDevices = useMemo(() => [...deviceRows, ...(phones ?? [])], [deviceRows, phones])
   // #7199 个人助理住的那台云端宿主不在这一页(owner 10-15:用户看不到它住在哪);开通、叫醒、关闭都在「助理」App 里。
-  const cloudDeviceId = cloudComputer?.snapshot?.deviceId ?? null
+  const cloudDeviceId = cloudSnapshotOf(cloudComputer)?.deviceId ?? null
   const machines = useMemo(() => deviceMachines(withoutAssistantHome(allDevices, cloudDeviceId)), [allDevices, cloudDeviceId])
   const devices = useMemo(() => machines.map(machine => machine.device), [machines])
   // A reinstall or a new data directory leaves the old row behind: the online row that may have replaced it (a hint only).

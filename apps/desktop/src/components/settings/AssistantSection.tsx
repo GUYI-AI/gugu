@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { replica, useReplica } from '../../lib/replica'
+import { useReplica } from '../../lib/replica'
+import { deviceMeetings } from '../../lib/deviceMeetings'
 import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import type { ActiveSection } from '@gugu/core/shared/enums/settingsSectionModels'
@@ -16,8 +17,6 @@ import { useAssistantHome } from '../../lib/useAssistantHome'
 import { platform } from '../../platform'
 import { useAuth } from '../../store/auth'
 import { setMeetingReminderEnabled, useMeetingReminderPref } from '../../lib/meetingReminderPref'
-import { invokeOnMachine } from '../../session/renderer/lib/ipc'
-import { VOICE_NOTE_MEETINGS_CHANNEL, type VoiceNoteMeetingsResult } from '../../session/shared/core/voice-notes'
 import { useContactsStore } from '../../store/contactsContext'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
 import '../../i18n/registerAssistantCatalog'
@@ -48,20 +47,20 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
   const name = contact?.display_name ?? t('rail')
   const move: AssistantMoveGroupProps | null =
     user?.id && contact && home && platform.capabilities.agentRuntime
-      ? { ownerUserId: user.id, assistantId: contact.id, assistantName: contact.display_name, home, localDeviceId, cloudAvailable: !!cloudComputer?.available }
+      ? { ownerUserId: user.id, assistantId: contact.id, assistantName: contact.display_name, home, localDeviceId, cloudAvailable: cloudComputer.state === 'value' && cloudComputer.value.available }
       : null
 
   const [lookOpen, setLookOpen] = useState(false)
 
   // 还没有咕咕:一页只画「安家」的流程(会员一键领取、非会员装在这台电脑上)。认它是谁还在读 / 读不到时照实说,❌ 当成没有。
   if (!contact) {
-    if (mine.loading || mine.agentId)
+    if (mine.reading.state === 'unknown' || (mine.reading.state === 'value' && mine.reading.value.agentId))
       return (
         <SettingsPage data-testid="settings-assistant">
           <SettingsNote>{t('identity.loading')}</SettingsNote>
         </SettingsPage>
       )
-    if (mine.error)
+    if (mine.reading.state === 'error')
       return (
         <SettingsPage data-testid="settings-assistant">
           <SettingsNote tone="danger">{t('identity.unreadable')}</SettingsNote>
@@ -156,28 +155,19 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
   )
 }
 
-/** Whether this computer can read a calendar for meeting reminders. */
-const meetingCalendar = replica({
-  name: 'meetingCalendar',
-  scope: 'device',
-  read: async () => {
-    const result = await (invokeOnMachine(null, VOICE_NOTE_MEETINGS_CHANNEL) as Promise<VoiceNoteMeetingsResult>)
-    return result.ok ? 'ok' as const : result.code === 'not_granted' || result.code === 'unsupported' || result.code === 'os_permission' ? 'missing' as const : 'ok' as const
-  },
-  persist: { maxBytes: 128, maxEntries: 1 },
-})
 
 /** 入会提醒开关(语音笔记);日历没连上就照实说要先去连。偏好存在这台电脑上(lib/meetingReminderPref)。 */
 function MeetingReminderGroup() {
   const { t } = useTranslation('voiceNotes')
   const enabled = useMeetingReminderPref()
-  const reading = useReplica(meetingCalendar, [])
+  // Whether this computer has a calendar to read (the reminder's own read of it).
+  const reading = useReplica(deviceMeetings, [])
   return (
     <SettingsGroup title={t('title')} data-testid="settings-assistant-voice">
       <SettingsRow
         title={t('meeting.setting')}
         description={reading.state === 'unknown' ? <Unknown className="w-56" />
-          : reading.state === 'value' && reading.value === 'missing' ? t('meeting.needsCalendar') : t('meeting.settingDescription')}
+          : reading.state === 'value' && reading.value.status === 'missing' ? t('meeting.needsCalendar') : t('meeting.settingDescription')}
         control={enabled.state === 'value'
           ? <Switch checked={enabled.value} onCheckedChange={(on) => setMeetingReminderEnabled(on)} aria-label={t('meeting.setting')} data-testid="assistant-meeting-reminder-switch" />
           : <Unknown className="h-5 w-8 flex-none rounded-[var(--radius-capsule)]" />}

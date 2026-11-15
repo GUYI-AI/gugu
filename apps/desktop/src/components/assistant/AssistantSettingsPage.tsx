@@ -36,8 +36,8 @@ export function AssistantSetupPage() {
   const { t } = useTranslation('assistant')
   const { user } = useAuth()
   const { mine, contact } = useAssistantHome()
-  const unreadable = !contact && !mine.loading && !mine.agentId && !!mine.error
-  if (!contact && !mine.loading && !mine.agentId && !unreadable) return user?.id ? <SetupAfterAppIntro key={user.id} ownerId={user.id} /> : null
+  const unreadable = !contact && mine.reading.state === 'error'
+  if (!contact && mine.reading.state === 'value' && !mine.reading.value.agentId) return user?.id ? <SetupAfterAppIntro key={user.id} ownerId={user.id} /> : null
   return (
     <div data-testid="assistant-setup-page">
       <SettingsNote tone={unreadable ? 'danger' : undefined}>{t(unreadable ? 'identity.unreadable' : 'identity.loading')}</SettingsNote>

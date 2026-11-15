@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   runtimeRequest: vi.fn(), dataRequest: vi.fn(), healthRequest: vi.fn(), nativeSettings: vi.fn(),
   check: vi.fn(), request: vi.fn(), settings: vi.fn(), foreground: [] as Array<() => void>, os: null as PhoneOsState | null, osError: null as Error | null, refresh: vi.fn(),
 }))
-vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ useMyAssistant: () => ({ agentId: null, provisionDeviceId: null, loading: false, error: null }) }))
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ useMyAssistant: () => ({ state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null }) }))
 vi.mock('../../../../apps/desktop/src/mobile/local-agent/nativeAgent', () => ({ phoneAgentAvailable: () => mocks.available }))
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/nativePhoneActions', () => ({
   HEALTH_TYPES: ['steps', 'sleep'], nativePhoneActions: { deviceInfo: async () => ({ install_key: mocks.installKey, registration_id: `registration-${mocks.installKey}` }), requestPermissions: mocks.runtimeRequest, healthRequest: mocks.healthRequest, openSettings: mocks.nativeSettings },

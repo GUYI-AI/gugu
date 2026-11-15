@@ -13,8 +13,13 @@ import {
 // 桌面与手机同一条路,所以这里 mock 的是那条云端 lib,不是 window.electronAPI。
 const fetchAgentHarnessModels = vi.fn()
 const location = vi.hoisted(() => ({ cloud: false }))
-vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ useMyAssistant: () => ({ agentId: location.cloud ? 'agent-model-test' : null, loading: false }) }))
-vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [{ device_id: 'device-1', is_current_device: !location.cloud }], cloudComputer: location.cloud ? { snapshot: { deviceId: 'device-1' } } : undefined }) }))
+vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'owner-model-test' } }) }))
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ useMyAssistant: () => ({ state: 'value', value: { agentId: location.cloud ? 'agent-model-test' : null, provisionDeviceId: null }, stale: false, error: null }) }))
+vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [{ device_id: 'device-1', is_current_device: !location.cloud }] }) }))
+vi.mock('../../../../apps/desktop/src/lib/cloudComputer', () => ({
+  useCloudComputer: () => (location.cloud ? { state: 'value', value: { available: true, snapshot: { deviceId: 'device-1' } }, stale: false, error: null } : { state: 'value', value: { available: false }, stale: false, error: null }),
+  cloudSnapshotOf: (reading: { state: string; value?: { available: boolean; snapshot?: unknown } }) => (reading.state === 'value' && reading.value?.available ? reading.value.snapshot : null),
+}))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { capabilities: { agentRuntime: true } } }))
 // 本文件只测配置读写和计费来源，菜单本体复用已有ComposerModelMenu。
 vi.mock('../../../../apps/desktop/src/components/agentsettings/AgentModelPicker', () => ({
@@ -66,6 +71,7 @@ let harness: ReturnType<typeof createReactHarness>
 
 const agent = {
   id: 'agent-model-test',
+  owner_user_id: 'owner-model-test',
   display_name: 'Model Test',
   avatar: null,
   bio: null,

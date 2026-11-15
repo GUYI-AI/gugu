@@ -12,7 +12,7 @@ vi.mock('@/lib/connectionBridge',() => ({ useConnectionAuthority: () => ({ route
   } }),
 }))
 vi.mock('@/store/devicesContext',() => ({ useDevicesStore: () => ({ devices: [] }) }))
-vi.mock('@/lib/cloudComputerStore',()=>({wakeAndWaitOnline:fixture.wake}))
+vi.mock('@/lib/cloudComputer', async (original) => ({ ...await original<object>(), wakeAndWaitOnline: fixture.wake }))
 vi.mock('@/lib/listDevicesOnceIdentified',()=>({listDevicesOnceIdentified:vi.fn(async()=>[])}))
 vi.mock('@/lib/assistantPanelBridge',()=>({useAssistantPanelAccountId:()=> 'owner',requireAssistantPanelBridge:vi.fn()}))
 vi.mock('@/components/assistant/assistant-panel-files',()=>({ASSISTANT_PANEL_CHANGED:'panel-changed',useCloudAssistantFiles:()=>({panel:{ownerId:'owner',assistantId:'assistant',assertCurrent:async()=>{}}})}))

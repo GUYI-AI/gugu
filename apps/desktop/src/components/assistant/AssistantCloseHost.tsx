@@ -13,9 +13,9 @@ import { cn } from '../../lib/cn'
 import { notify } from '../../lib/notices'
 import { listDevicesOnceIdentified } from '../../lib/listDevicesOnceIdentified'
 import { wakeCloudComputerUntilOnline } from '@gugu/core/cloud/cloudComputer'
-import { rendererCloudComputerClient } from '../../lib/cloudComputer'
+import { rendererCloudComputerClient } from '../../lib/cloudComputerClient'
 import { useAssistantHome } from '../../lib/useAssistantHome'
-import { reloadMyAssistant } from '../../lib/myAssistant'
+import { refreshMyAssistant } from '../../lib/myAssistant'
 import { assistantResumeStore } from '../../lib/assistantSetup'
 import { retireCustomizeCard, writeSetupStep } from '../../lib/assistantSetupState'
 import { ASSISTANT_HOME_CHANNELS } from '../../lib/assistantHomeIpc'
@@ -127,7 +127,7 @@ export function AssistantCloseHost() {
         retireCustomizeCard(ownerUserId)
         for (const record of assistantResumeStore.list(ownerUserId)) assistantResumeStore.forget(ownerUserId, record.operationId)
         moveJournalStore(ownerUserId).clear()
-        reloadMyAssistant(ownerUserId)
+        void refreshMyAssistant()
       },
     }
   }, [ownerUserId, removeOwnedAgent, open, refresh])
@@ -161,6 +161,7 @@ function LocalCloseDialog({ assistantId, name, deps, onClose }: { assistantId: s
   const [closing, setClosing] = useState(false)
   const [failure, setFailure] = useState<AssistantCloseError | null>(null)
 
+  // @@@effect-flow - close preflight: wakes / checks the home and snapshots the sessions the close command will act on (the confirm acts on this exact plan; 'loading' is drawn until it answers)
   useEffect(() => {
     let cancelled = false
     planLocalClose(assistantId, deps)

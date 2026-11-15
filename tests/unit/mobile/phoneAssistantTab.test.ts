@@ -19,7 +19,7 @@ describe('MOBILE_TABS', () => {
   })
 })
 
-const NONE = { loading: false, agentId: null, error: null }
+const NONE = { state: 'value' as const, value: { agentId: null, provisionDeviceId: null }, stale: false, error: null }
 const base = { found: false, chatId: null, chatFailed: null, retryChat: () => {}, snapshot: null, cloudKnown: false, cloudLoadFailed: false, identity: NONE }
 const snapshot = (state: CloudComputerSnapshot['state'], deviceId: string | null = 'cloud-1') => ({ state, deviceId }) as CloudComputerSnapshot
 
@@ -51,11 +51,11 @@ describe('phoneAssistantStage', () => {
 
   it('tells reading who it is apart from it not being there and from not being able to read', () => {
     const open = { ...base, cloudKnown: true, snapshot: snapshot('awake') }
-    expect(phoneAssistantStage({ ...open, identity: { loading: true, agentId: null, error: null } })).toEqual({ stage: 'identity', state: 'loading' })
+    expect(phoneAssistantStage({ ...open, identity: { state: 'unknown' as const } })).toEqual({ stage: 'identity', state: 'loading' })
     // 标记读到了、通讯录里还没有那一位:还在读,❌「没有」。
-    expect(phoneAssistantStage({ ...open, identity: { loading: false, agentId: 'agent-1', error: null } })).toEqual({ stage: 'identity', state: 'loading' })
+    expect(phoneAssistantStage({ ...open, identity: { state: 'value' as const, value: { agentId: 'agent-1', provisionDeviceId: null }, stale: false, error: null } })).toEqual({ stage: 'identity', state: 'loading' })
     // 读不到 ≠ 没有:❌ 送进引导再建一个。
-    expect(phoneAssistantStage({ ...open, identity: { loading: false, agentId: null, error: 'network' } })).toEqual({ stage: 'identity', state: 'unreadable' })
-    expect(phoneAssistantStage({ ...base, identity: { loading: false, agentId: null, error: 'network' } })).toEqual({ stage: 'identity', state: 'unreadable' })
+    expect(phoneAssistantStage({ ...open, identity: { state: 'error' as const, error: new Error('network') } })).toEqual({ stage: 'identity', state: 'unreadable' })
+    expect(phoneAssistantStage({ ...base, identity: { state: 'error' as const, error: new Error('network') } })).toEqual({ stage: 'identity', state: 'unreadable' })
   })
 })

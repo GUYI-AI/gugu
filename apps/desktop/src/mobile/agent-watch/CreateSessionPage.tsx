@@ -1,3 +1,4 @@
+import { cloudSnapshotOf, useCloudComputer } from '@/lib/cloudComputer'
 import type { FirstPrompt } from './use-timeline-session'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -99,13 +100,14 @@ export function CreateSessionPage({
   onCreated: (device: Device, ...created: Parameters<CreatedHandler>) => void
 }) {
   const { t } = useTranslation('main')
-  const { devices: hosts, phones, cloudComputer } = useDevicesStore()
+  const { devices: hosts, phones } = useDevicesStore()
+  const cloudComputer = useCloudComputer()
   const { isHome, label: machineLabel } = useMachineLabel()
   const devices = useMemo(() => [...new Map([...hosts, ...(phones ?? [])].map((one) => [one.device_id, one])).values()], [hosts, phones])
   const machines = useMemo(() => visibleMachines(devices, isHome), [devices, isHome])
   // 账号上的项目(accountProjectsStore,桌面项目选择器同一份)。
   const accountList = useSyncExternalStore(accountProjectsStore.subscribe, () => accountProjectsStore.projects)
-  const projects = useMemo(() => accountProjects(accountList, devices, cloudComputer?.snapshot?.deviceId ?? null), [accountList, devices, cloudComputer])
+  const projects = useMemo(() => accountProjects(accountList, devices, cloudSnapshotOf(cloudComputer)?.deviceId ?? null), [accountList, devices, cloudComputer])
   // 默认不选项目(桌面 New task 同:`No project · 默认机器`)。
   const [projectKey, setProjectKey] = useState<string | null>(null)
   const project = projects.find((one) => one.chatId === projectKey) ?? null

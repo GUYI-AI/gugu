@@ -21,6 +21,9 @@ vi.mock('@/store/chatContext', () => ({
   // The project's group avatar (#2600) reads its chat through a selector.
   useChatStoreSelect: <T,>(select: (store: typeof chatStore) => T) => select(chatStore),
 }))
+// Whose assistant is which agent (the myAssistant replica's reading): read, and none of these agents (or not read yet).
+const mine = vi.hoisted(() => ({ reading: { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null } as unknown }))
+vi.mock('@/lib/myAssistant', () => ({ useMyAssistant: () => mine.reading }))
 vi.mock('@/store/contactsContext', () => ({
   useContactsStore: () => ({
     contacts: [{ id: 'agent-a', display_name: 'Coder', avatar: null, bio: null, type: 'agent', owner_user_id: 'me' }],
@@ -62,5 +65,21 @@ describe('phone project contacts', () => {
     expect(onOpenGroup).not.toHaveBeenCalled()
     // The one way a session is opened, with the machine it is on.
     expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'new', deviceId: 'mac' })
+  })
+
+  it('while who the assistant is is not read yet, the subtitle is a placeholder of its height (❌ drawn as an ordinary agent first)', async () => {
+    mine.reading = { state: 'unknown' }
+    try {
+      await harness.render(createElement(PhoneProjectContacts, { project, sessions, active: true, onBack: vi.fn(), onOpenGroup: vi.fn() }))
+      const row = [...harness.container.querySelectorAll('[role="button"]')].find((node) => node.textContent?.includes('Coder')) as HTMLElement
+      expect(row.querySelector('[data-unknown]')).not.toBeNull()
+      expect(row.textContent).not.toContain('fix login')
+      expect(row.textContent).not.toContain('partners.assistant')
+      mine.reading = { state: 'value', value: { agentId: 'agent-a', provisionDeviceId: null }, stale: false, error: null }
+      await harness.render(createElement(PhoneProjectContacts, { project, sessions, active: true, onBack: vi.fn(), onOpenGroup: vi.fn() }))
+      expect(row.isConnected ? row.textContent : '').toContain('partners.assistant')
+    } finally {
+      mine.reading = { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null }
+    }
   })
 })

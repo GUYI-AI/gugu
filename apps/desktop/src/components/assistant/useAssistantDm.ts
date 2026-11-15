@@ -1,47 +1,24 @@
 import { messageForUser } from '@/lib/userFacingError';
-import { useEffect, useState } from 'react'
-import { createOptimisticDmChat } from '@gugu/core/shared/ui/chatModels'
-import { chatService } from '../../lib/chat'
-import { rendererLogger } from '../../lib/log'
-import { useAuth } from '../../store/auth'
-import { useChatStore, useChatStoreSelect } from '../../store/chatContext'
-
-const dmLog = rendererLogger('assistant/chat')
+import { useReplica } from '../../lib/replica'
+import { assistantDm } from '../../lib/assistantDm'
+import { useChatStoreSelect } from '../../store/chatContext'
 
 export type AssistantDm = { chatId: string | null; failed: { error: string } | null; retry: () => void }
 
 /**
- * #7199 和个人助理的那条私聊;还没有就建一条(与通讯录「发消息」同一个 getOrCreateDM)。
- * 壳挂着就认出来(AssistantShellHost):聊天格子画它,「今天」页读它的文件夹(today.json),同一条。
+ * 壳挂着就认出来(AssistantShellHost、手机):聊天格子画它,「今天」页读它的文件夹(today.json),同一条。
+ * 会话列表里已经有这一条就用那一行(❌ 再问一次)。
  */
 export function useAssistantDm(assistantId: string | null): AssistantDm {
-  const { user } = useAuth()
-  const { upsertChat, refreshChats } = useChatStore('upsertChat', 'refreshChats')
   // 只订阅这条私聊的 id:会话列表每来一条消息都换一份,❌ 订阅整份会让挂着它的壳(桌面外壳也调手机壳的 hook)跟着整棵重渲。
   const existing = useChatStoreSelect((store) => assistantId
     ? store.chats.find((chat) => (chat.kind === 'dm' || chat.kind === 'ai') && chat.peer_user_id === assistantId)?.id ?? null
     : null)
-  const [created, setCreated] = useState<{ agentId: string; chatId: string } | null>(null)
-  const [attempt, setAttempt] = useState(0)
-  const [failedAttempt, setFailedAttempt] = useState<{ attempt: number; error: string } | null>(null)
-  const userId = user?.id ?? null
-  useEffect(() => {
-    if (existing || !userId || !assistantId) return
-    let cancelled = false
-    chatService.getOrCreateDM(userId, assistantId)
-      .then((chatId) => {
-        if (cancelled) return
-        upsertChat(createOptimisticDmChat(chatId, assistantId))
-        setCreated({ agentId: assistantId, chatId })
-        void refreshChats()
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return
-        dmLog.error({ error: String(error), assistantId }, 'open assistant dm failed')
-        setFailedAttempt({ attempt, error: messageForUser(error) })
-      })
-    return () => { cancelled = true }
-  }, [existing, userId, assistantId, attempt, upsertChat, refreshChats])
-  const chatId = existing ?? (assistantId && created?.agentId === assistantId ? created.chatId : null)
-  return { chatId, failed: chatId === null && failedAttempt?.attempt === attempt ? failedAttempt : null, retry: () => setAttempt((n) => n + 1) }
+  const reading = useReplica(assistantDm, assistantId && !existing ? [assistantId] : null)
+  const chatId = existing ?? (reading.state === 'value' ? reading.value : null)
+  return {
+    chatId,
+    failed: chatId === null && reading.state === 'error' ? { error: messageForUser(reading.error) } : null,
+    retry: () => { if (assistantId) void assistantDm.refresh(assistantId) },
+  }
 }

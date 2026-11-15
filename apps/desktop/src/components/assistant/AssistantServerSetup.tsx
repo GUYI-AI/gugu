@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   AssistantServerSetupError,
-  listAssistantServerTargets,
   pendingServerAssistant,
   resumeServerAssistant,
   setUpAssistantOnServer,
@@ -11,13 +9,17 @@ import {
 } from '../../lib/assistantServerSetup'
 import type { AssistantSetupDraft } from '../../lib/assistantSetup'
 import { offerCustomizeCard, writeSetupStep } from '../../lib/assistantSetupState'
-import { reloadMyAssistant } from '../../lib/myAssistant'
+import { refreshMyAssistant } from '../../lib/myAssistant'
 import { rendererLogger } from '../../lib/log'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { requestAddServerOnOpen } from '../../lib/addServerIntent'
 import { clearAssistantOnboardingNavigation } from '../../lib/assistantOnboardingNavigation'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Button } from '../ui/Button'
+import { Unknown } from '../ui/Unknown'
+import { useReplica } from '../../lib/replica'
+import { devicesModel } from '../../store/devicesCache'
+import { assistantServerTargets } from '../../lib/assistantServerTargets'
 
 const log = rendererLogger('assistant/server-setup')
 
@@ -39,13 +41,10 @@ export function AssistantServerSetup({ ownerUserId, name, createDraft, onBack, o
   const [failure, setFailure] = useState<unknown>(null)
   const attempt = useRef<AbortController | null>(null)
   const resumed = useRef(false)
-  const targets = useQuery({
-    queryKey: ['assistant-server-targets', ownerUserId],
-    queryFn: listAssistantServerTargets,
-    enabled: !pending && !busy,
-    refetchOnMount: 'always',
-  })
-  const selected = targets.data?.find(target => target.deviceId === selectedId)
+  // The servers to choose from: derived from the account's machines (pushed by `device_changed`), ❌ a read of their own.
+  const devices = useReplica(devicesModel, [])
+  const targets = useMemo(() => (devices.state === 'value' ? assistantServerTargets(devices.value) : null), [devices])
+  const selected = targets?.find(target => target.deviceId === selectedId)
   const errorCode = failure instanceof AssistantServerSetupError ? failure.code : 'unknown'
   const fixedTarget = pending !== null || installing
 
@@ -77,7 +76,7 @@ export function AssistantServerSetup({ ownerUserId, name, createDraft, onBack, o
         await setUpAssistantOnServer(await createDraft(), selected.deviceId, options)
       }
       writeSetupStep(ownerUserId, 'connect')
-      reloadMyAssistant(ownerUserId)
+      void refreshMyAssistant()
     } catch (error) {
       const record = pendingServerAssistant(ownerUserId)
       setPending(record)
@@ -92,6 +91,7 @@ export function AssistantServerSetup({ ownerUserId, name, createDraft, onBack, o
     }
   }
 
+  // @@@effect-flow - resumes the persisted server-setup operation once on entry (a setup step)
   useEffect(() => {
     let active = true
     // StrictMode's discarded mount must not start and immediately cancel the persisted operation.
@@ -120,13 +120,13 @@ export function AssistantServerSetup({ ownerUserId, name, createDraft, onBack, o
         <LoadingIndicator size="inline" />{cancelling ? t('setup.cancelling') : progress ? t(`server.progress.${progress.phase}`) : t('server.resuming')}
       </p> : null}
     </div> : <div className="ta-onb-field">
-      {targets.isPending ? <p className="ta-onb-note inline-flex items-center gap-2" role="status"><LoadingIndicator size="inline" />{t('server.loading')}</p>
-        : targets.isError ? <>
+      {devices.state === 'unknown' ? <Unknown className="h-10 w-full" />
+        : devices.state === 'error' || !targets ? <>
           <p className="ta-onb-error" role="alert">{t('server.listFailed')}</p>
-          <Button onClick={() => void targets.refetch()}>{t('setup.retry')}</Button>
+          <Button onClick={() => void devicesModel.refresh()}>{t('setup.retry')}</Button>
         </> : <>
-          {targets.data.length ? <div className="ta-onb-list ta-server-targets" aria-label={t('server.choose')}>
-            {targets.data.map(target => <Button key={target.deviceId} variant="option" size="option" disabled={!target.selectable}
+          {targets.length ? <div className="ta-onb-list ta-server-targets" aria-label={t('server.choose')}>
+            {targets.map(target => <Button key={target.deviceId} variant="option" size="option" disabled={!target.selectable}
               aria-pressed={target.deviceId === selectedId} className="ta-server-target" onClick={() => setSelectedId(target.deviceId)} data-testid="assistant-server-target">
               <span className="ta-server-target-name">{target.label}</span>
               {!target.selectable && target.reason ? <span className="ta-onb-note">{t(`server.targetReason.${target.reason}`)}</span> : null}
@@ -135,7 +135,7 @@ export function AssistantServerSetup({ ownerUserId, name, createDraft, onBack, o
           <p className="ta-onb-note">{t('server.addNote')}</p>
           <div className="ta-onb-row">
             <Button onClick={openDevices} data-testid="assistant-server-add">{t('server.add')}</Button>
-            <Button variant="ghost" disabled={targets.isFetching} onClick={() => void targets.refetch()}>{t('server.refresh')}</Button>
+            <Button variant="ghost" onClick={() => void devicesModel.refresh()}>{t('server.refresh')}</Button>
           </div>
         </>}
     </div>}
@@ -144,8 +144,8 @@ export function AssistantServerSetup({ ownerUserId, name, createDraft, onBack, o
       {!busy && !fixedTarget ? <Button variant="secondary" className="rounded-full" onClick={onBack}>{t('setup.back')}</Button> : null}
       {!installing && progress?.cancellable ? <Button variant="secondary" className="rounded-full" disabled={cancelling}
         onClick={() => { if (busy) { setCancelling(true); attempt.current?.abort() } else void run(true) }}>{t(cancelling ? 'setup.cancelling' : 'setup.back')}</Button> : null}
-      {failure && errorCode === 'assistant_exists' ? <Button onClick={() => reloadMyAssistant(ownerUserId)}>{t('server.openAssistant')}</Button>
-        : !busy && (pending || targets.data?.some(target => target.selectable)) ? <Button variant="primary" className="rounded-full" disabled={!pending && (!selected?.selectable || targets.isError)}
+      {failure && errorCode === 'assistant_exists' ? <Button onClick={() => void refreshMyAssistant()}>{t('server.openAssistant')}</Button>
+        : !busy && (pending || targets?.some(target => target.selectable)) ? <Button variant="primary" className="rounded-full" disabled={!pending && (!selected?.selectable || devices.state === 'error')}
           onClick={() => void run()} data-testid="assistant-server-install">{t(pending ? 'setup.retry' : 'server.install', { name })}</Button> : null}
     </div>
   </>
