@@ -6,7 +6,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { PaneEmptyState } from '@/components/ui/PaneEmptyState'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Check, X } from '@/lib/icons'
-import { UiPortalContainerProvider, useUiPopupZIndex } from '@gugu/session-ui/react/primitives'
+import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
 import { teamErrorCopy } from './copy'
 
 export function TeamAsyncState({ pending, error, retry }: { pending?: boolean; error?: unknown; retry: () => void }) {
@@ -21,10 +21,9 @@ export function TeamAsyncState({ pending, error, retry }: { pending?: boolean; e
 
 export function TeamDialog({ title, children, actions, onClose }: { title: string; children: ReactNode; actions?: ReactNode; onClose: () => void }) {
   const { t } = useTranslation('team')
-  const zIndex = useUiPopupZIndex() ?? 'var(--z-modal)'
   return <Dialog.Root open onOpenChange={open => { if (!open) onClose() }}>
-    <Dialog.Portal><Dialog.Backdrop className="gg-team-dialog-backdrop" style={{ zIndex }} /><Dialog.Viewport className="gg-team-dialog-viewport" style={{ zIndex }}><Dialog.Popup className="gg-team-dialog">
-      <UiPortalContainerProvider zIndex={zIndex}>
+    <Dialog.Portal><Dialog.Backdrop className="gg-team-dialog-backdrop" /><Dialog.Viewport className="gg-team-dialog-viewport"><Dialog.Popup className="gg-team-dialog">
+      <UiPortalContainerProvider zIndex="var(--z-settings-modal)">
       <div className="gg-team-dialog-heading"><Dialog.Title>{title}</Dialog.Title>
         <IconButton aria-label={t('close')} onClick={onClose}><X size={18} /></IconButton>
       </div>

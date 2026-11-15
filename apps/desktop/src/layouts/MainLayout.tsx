@@ -1051,7 +1051,7 @@ function InnerLayout({
           onSettle={selectTab}
           tabBarRef={tabBarRef}
           pages={{
-            team: !mobile && team.status === 'ready' && <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', ...(activeTab === 'team' ? undefined : RETAINED_SURFACE_HIDDEN_STYLE) }}>
+            team: !mobile && team.status === 'ready' && <div className="gg-team-retained-surface" style={activeTab === 'team' ? undefined : RETAINED_SURFACE_HIDDEN_STYLE}>
               <TeamPage onMessage={member => { void handleOpenProfileChat({ id: member.identity_id, displayName: member.name,
                 avatar: member.avatar, email: null, bio: null, type: 'human' }) }} onTopUp={() => { window.open(`${GUGU_BILLING_URL}#topup`, '_blank', 'noopener,noreferrer') }} />
             </div>,

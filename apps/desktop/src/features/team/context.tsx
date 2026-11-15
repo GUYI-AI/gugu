@@ -12,6 +12,7 @@ import { hasTeamAccountMarker } from './accountKind'
 import { teamErrorCopy } from './copy'
 import type { CurrentTeamContext, TeamApi, TeamProfile } from './types'
 import './catalog'
+import './team.css'
 
 const ApiContext = createContext<TeamApi>(teamApi)
 export function TeamApiProvider({ api, children }: { api: TeamApi; children: ReactNode }) {
@@ -89,7 +90,7 @@ export function TeamAccessGate({ children }: { children: ReactNode }) {
     </>}
   </div>
   // A read/revocation failure blocks new interaction without aborting an accepted upstream turn.
-  return <><div style={{ display: 'contents' }} inert={!allowed} aria-hidden={!allowed || undefined}>
+  return <><div className="gg-team-preserved-product" inert={!allowed} aria-hidden={!allowed || undefined}>
     {(allowed || entered.current) && children}
   </div>{!allowed && blocked}</>
 }
