@@ -13,10 +13,14 @@ import { teamErrorCopy, teamRoleLabel } from './copy'
 import { createTeamGoogleProof } from './googleProof'
 import { useTeamCommandKey } from './operations'
 import type { TeamChallenge, TeamChoice, TeamInvitationInfo, TeamSignInResult } from './types'
+import type { TeamInvitationLink } from '../../../shared/team-invitation-link'
+import { readRegionalInvitation } from './invitation-region'
 import '@/pages/login/login.css'
 
-export function TeamAuthPane({ onPersonal, googleEnabled, invitationToken }: { onPersonal: () => void; googleEnabled: boolean; invitationToken?: string | null }) {
+export function TeamAuthPane({ onPersonal, googleEnabled, invitationLink }: { onPersonal: () => void; googleEnabled: boolean; invitationLink?: TeamInvitationLink | null }) {
   const { t } = useTranslation('team'), api = useTeamApi(), key = useTeamCommandKey()
+  const invitationToken = invitationLink?.token
+  const verifiedLink = useRef<TeamInvitationLink | null>(null)
   const [mode, setMode] = useState<'sign_in' | 'create'>('sign_in'), [step, setStep] = useState<'email' | 'otp' | 'choice'>('email')
   const [email, setEmail] = useState(''), [name, setName] = useState(''), [code, setCode] = useState('')
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [choices, setChoices] = useState<TeamChoice[]>([])
@@ -38,13 +42,15 @@ export function TeamAuthPane({ onPersonal, googleEnabled, invitationToken }: { o
     return () => clearInterval(timer)
   }, [clockActive])
   useEffect(() => {
-    if (!invitationToken) return
+    verifiedLink.current = null; setInvitation(null)
+    if (!invitationLink) { setInvitationLoading(false); return }
+    setInvitationLoading(true)
     let current = true
-    void api.invitationInfo(invitationToken).then(info => { if (current) setInvitation(info) })
+    void readRegionalInvitation(api, invitationLink).then(info => { if (current) { verifiedLink.current = invitationLink; setInvitation(info) } })
       .catch(cause => { if (current) setError(teamErrorCopy(cause, t)) })
       .finally(() => { if (current) setInvitationLoading(false) })
     return () => { current = false }
-  }, [api, invitationToken, t])
+  }, [api, invitationLink, t])
   async function accept(result: TeamSignInResult) {
     if (!alive.current) return
     receipt.current = null
@@ -62,6 +68,7 @@ export function TeamAuthPane({ onPersonal, googleEnabled, invitationToken }: { o
     }
   }
   async function send() {
+    if (invitationLink && (verifiedLink.current !== invitationLink || !invitation)) return
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError(t('emailRequired')); return }
     if (!invitationToken && mode === 'create' && !name.trim()) { setError(t('nameRequired')); return }
     if (seconds || retrySeconds || busy) return
@@ -75,6 +82,7 @@ export function TeamAuthPane({ onPersonal, googleEnabled, invitationToken }: { o
     finally { if (alive.current) setBusy(false) }
   }
   async function verify() {
+    if (invitationLink && (verifiedLink.current !== invitationLink || !invitation)) return
     if (busy || retrySeconds) return
     if (!/^\d{6}$/.test(code) || !challenge.current) { setError(t('codeRequired')); return }
     setBusy(true); setError(''); attempt.current = sessionCoordinator.beginInteractiveLogin(); googleChoice.current = false

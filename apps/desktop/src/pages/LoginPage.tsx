@@ -115,7 +115,7 @@ export function LoginPage() {
         </div>
       </aside>
       <div className="gugu-auth-pane">{teamMode || (invitation.pending && !google.busy && !loading && !otpRequestPending) ? <TeamAuthPane key={invitation.version} googleEnabled={googleEnabled === true}
-        invitationToken={teamInvitation.readToken()} onPersonal={() => { teamInvitation.clear(); setTeamMode(false) }} />
+        invitationLink={teamInvitation.readLink()} onPersonal={() => { teamInvitation.clear(); setTeamMode(false) }} />
         : googleEnabled === null ? <div className="gugu-auth-placeholder" role="status" aria-label={t('auth.loadingMethods')} /> : <div className="gugu-auth-login">
         <header className="gugu-auth-heading">
           <img className="gugu-auth-logo" src={APP_LOGO_URL} alt={t('brand.name')} draggable={false} />

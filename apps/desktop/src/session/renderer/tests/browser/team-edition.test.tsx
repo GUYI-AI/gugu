@@ -203,7 +203,7 @@ it('accepts an invitation only after verifying the invited email while keeping i
   const api = mockTeamApi(), challenge = vi.fn(api.challenge), acceptInvitation = vi.fn(api.acceptInvitation)
   harness = createReactHarness()
   await renderWithAppProviders(harness, <TeamApiProvider api={{ ...api, challenge, acceptInvitation }}>
-    <TeamAuthPane googleEnabled={false} onPersonal={vi.fn()} invitationToken="synthetic-invitation-secret" />
+    <TeamAuthPane googleEnabled={false} onPersonal={vi.fn()} invitationLink={{ token: 'synthetic-invitation-secret', region: 'cn' }} />
   </TeamApiProvider>, { auth: null })
   await until('the safe invitation summary is shown', () => document.body.textContent?.includes('明川研究院') === true)
   expect(harness.container.textContent).not.toContain('synthetic-invitation-secret')

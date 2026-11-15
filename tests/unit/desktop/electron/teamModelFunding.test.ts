@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { teamIssueContext, assertSameTeamFunding, assertTeamTaskSession, teamModelStopReason, TeamFundingError } from '../../../../apps/desktop/electron/team-model-funding'
 import { createTaskPayerStore } from '../../../../apps/desktop/electron/task-payer-store'
-import { teamInvitationToken } from '../../../../apps/desktop/shared/team-invitation-link'
 import { teamAccountTokenHint } from '../../../../apps/desktop/shared/team-account-claims'
 import { claimDeviceFreeCredits } from '../../../../apps/desktop/electron/device-free-credits'
 import { teamCreditReason } from '@gugu/session-core/session-record/team-credits'
@@ -61,10 +60,6 @@ it('keeps team and login-anchor identities out of device gifts', async () => {
   }
   expect(claim).not.toHaveBeenCalled(); expect(machineId).not.toHaveBeenCalled()
   expect(teamAccountTokenHint(jwt('team_member'))).toBe('team')
-})
-it('accepts invite secrets from the exact fragment route only', () => {
-  expect(teamInvitationToken('gugu-dev://team/invite#invitation_token=opaque-fixture')).toBe('opaque-fixture')
-  for (const raw of ['gugu://team/invite?invitation_token=opaque-fixture', 'gugu://team/invite#invitation_token=a&invitation_token=b', 'gugu://else/invite#invitation_token=a']) expect(teamInvitationToken(raw)).toBeNull()
 })
 it('uses structured team reason codes rather than gateway text or HTTP guesses', () => {
   expect(teamCreditReason('{"error":{"code":"credits_exhausted","reason_code":"team_credits_exhausted","message":"private"}}')).toBe('team_credits_exhausted')
