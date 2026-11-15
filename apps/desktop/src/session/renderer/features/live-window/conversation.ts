@@ -146,6 +146,11 @@ export class LiveWindowConversation {
   }
   private inputState(): void {
     const snapshot = this.model.getSnapshot(), state = snapshot.presentation;
+    if (state?.mode === 'closed') {
+      for (const picture of this.pictures.values()) this.freeze(picture);
+      return;
+    }
+    this.startPictures();
     const interactive = snapshot.visible && snapshot.operating && (state?.mode === 'enlarged'
       || state?.mode === 'tabbed' && state.selectedTab === 'screen');
     for (const picture of this.pictures.values()) picture.view?.setInteractive(interactive && snapshot.source?.id === picture.source.id);
