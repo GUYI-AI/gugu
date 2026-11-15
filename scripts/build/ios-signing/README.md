@@ -19,6 +19,14 @@ node scripts/build/ios-signing/pipeline.mjs dry-run
 
 The output parent must exist; the run directory must not. Rehearsal uses **Release**, a generic iOS Simulator archive and local `-` signing, then verifies the signature. It stops before device signing/export. It cannot produce a TestFlight IPA or verify distribution profiles. A successful rehearsal is not proof that Apple's upload service accepts this Xcode.
 
+## Checks before the first real signing run
+
+Dedicated-keychain identity discovery is **unverified**. Release mode passes `OTHER_CODE_SIGN_FLAGS=--keychain ...` to codesign, but this does not establish that xcodebuild's own SHA-1 identity lookup or `xcodebuild -exportArchive` can discover that identity. An unlocked identity outside the user's keychain search list may still be reported as missing. Verify both archive and export with the actual Apple certificate, its matching intermediate chain and distribution profile before considering the release path validated.
+
+If discovery requires a temporary user search-list entry, prepare an operator wrapper before the first attempt: reserve an exclusive signing window with no other signing jobs or search-list writers, snapshot the exact original user search list in a protected recovery receipt, and add only the dedicated keychain for the duration of archive/export. Install cleanup traps for normal exit, errors and catchable interruption signals; restore the exact original list and verify it by reading it back. Preserve recovery instructions for interruptions that traps cannot catch, and reconcile them before another signing attempt. Do not change the default keychain, system trust settings or global toolchain selection.
+
+This wrapper is a proposed operational safeguard, not implemented by this script or proven by the simulator rehearsal. Wait for the separately supplied signing assets and the approved toolchain before changing the search list or running the first real archive/export. Record discovery, noninteractive signing, export and restoration results together.
+
 ## Device archive and manual export (requires separately authorized assets)
 
 After the owner has installed and unlocked the matching identity in a dedicated keychain and installed the matching distribution profile, set:
