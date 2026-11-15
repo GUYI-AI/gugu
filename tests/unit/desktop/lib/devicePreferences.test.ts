@@ -188,3 +188,18 @@ describe('web / phone shell: localStorage', () => {
     expect(ipc.update).not.toHaveBeenCalled()
   })
 })
+
+describe('desktop: choosing a theme pack', () => {
+  // P1 on Electron: the light / dark switch landed at once and the pack's colours one IPC round trip later (2–3 frames of
+  // new mode, old colours). The stylesheet is derived in the renderer and applied in the same moment as the mode.
+  it('applies the pack\'s stylesheet in the same moment as the light / dark switch, before main answers', async () => {
+    window.guguDeviceSettings = { handover: handover({ theme: 'light' }) }
+    const store = await import('../../../../apps/desktop/src/session/renderer/lib/theme/theme-pack-store')
+    const style = () => document.getElementById(store.THEME_PACK_STYLE_ID)?.textContent ?? ''
+    expect(style()).toBe('')
+    store.chooseThemePack('dracula')
+    // Synchronously: no await between the click and both changes.
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(style()).toContain("[data-theme='dark']")
+  })
+})

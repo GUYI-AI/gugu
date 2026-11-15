@@ -12,7 +12,7 @@
  *   - web / 手机:槽位与导入的主题在 localStorage;样式表在页里算,顺手缓存一份给引导脚本首帧前插(它没有主进程可问)。
  * 只作用于这台电脑上的咕咕 —— 资源库别的格是分机器的,这一格不是。
  */
-import { queryClient, replica, useReplica, type Reading } from '@/lib/replica';
+import { replica, useReplica, type Reading } from '@/lib/replica';
 import { useMemo } from 'react';
 import { createSelectStore, useSelect } from '@/lib/selectStore';
 import { devicePreferences, documentStorage, useDevicePreference } from '@/lib/devicePreferences';
@@ -89,9 +89,7 @@ function mainPackStore(): PackStore {
     applyStylesheet(reading.value);
     changed();
   };
-  queryClient.getQueryCache().subscribe((event) => {
-    if (event.query.queryKey[0] === themePackStylesheetModel.name && (event.type === 'added' || event.type === 'updated')) follow();
-  });
+  themePackStylesheetModel.subscribe([], follow);
   // Seeds from the handover at once (`local`) and asks main once more in the background.
   void themePackStylesheetModel.prefetch();
   return {
@@ -105,8 +103,20 @@ function mainPackStore(): PackStore {
       importedThemePacksModel.at().set(await rpc.themePacks.removeImported(id) as ThemePack[]);
       changed();
     },
-    // Main tells every window the slots changed (`appSettingsChangedChannel`, above): the stylesheet follows from there.
-    slotsChanged: () => {},
+    // A choice in this window: the stylesheet is derived here at once (the same pure derivation main runs) and laid over
+    // the stored one (I4), so it lands in the same frame as the light / dark switch — ❌ "new mode, old colours" until main
+    // answers. Main's answer (asked again on its broadcast, above) confirms it. Only when the slots name an imported pack
+    // this window has not read yet does it wait for main.
+    slotsChanged: () => {
+      const slots = devicePreferences.read('themePackSlots');
+      const imported = importedThemePacksModel.peek();
+      if (slots.state !== 'value') return;
+      const named = [slots.value.light, slots.value.dark].filter((id): id is string => !!id);
+      const builtinOnly = named.every((id) => BUILTIN_THEME_PACKS.some((pack) => pack.id === id));
+      if (!builtinOnly && imported.state !== 'value') return;
+      const packs = [...BUILTIN_THEME_PACKS, ...(imported.state === 'value' ? imported.value : [])];
+      themePackStylesheetModel.set([], slotsStylesheet(validThemePackSlots(slots.value, packs), packs));
+    },
     subscribe: changes.subscribe,
   };
 }
