@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { provider } from './index';
 import { platformModel } from './platform-model';
+import { materializeClaudeSessionBundle } from './session-bundle';
 
 describe('Claude session Fast settings', () => {
   it('declares native acknowledged updates queued for the next turn', () => {
@@ -21,6 +22,27 @@ describe('Claude session Fast settings', () => {
   it('carries explicit off even when the native model is left to the CLI', () => {
     const model = { dialect: 'provider-env' as const, fastMode: false };
     expect(platformModel.load(model)).toEqual({ settingsOverride: { fastMode: false } });
+  });
+
+  it.each([true, false])('delivers explicit %s in native ACP startup without a platform model', (fastMode) => {
+    const materialized = materializeClaudeSessionBundle({ surface: 'acp', lifecycle: 'fresh', cwd: '/fixture' }, {
+      mcpServers: [], env: {}, model: { dialect: 'provider-env', fastMode },
+      autonomy: null, promptBlocks: {}, packages: [],
+    });
+    expect(materialized.acp?.meta).toMatchObject({ claudeCode: { options: { settings: { fastMode } } } });
+    expect(materialized.argsAppend).toEqual([]);
+    expect(materialized.env).toEqual({});
+  });
+
+  it('keeps ACP Fast and UltraCode together without copying protected credentials into settings', () => {
+    const materialized = materializeClaudeSessionBundle({ surface: 'acp', lifecycle: 'fresh', cwd: '/fixture' }, {
+      mcpServers: [], env: {}, model: {
+        dialect: 'provider-env', fastMode: false, reasoningEffort: 'ultracode',
+        platformSettingsEnv: { ANTHROPIC_AUTH_TOKEN: 'fixture-token' },
+      }, autonomy: null, promptBlocks: {}, packages: [],
+    });
+    expect(materialized.acp?.meta).toMatchObject({ claudeCode: { options: { settings: { fastMode: false, ultracode: true } } } });
+    expect(JSON.stringify(materialized)).not.toContain('fixture-token');
   });
 
   it('preserves legacy materialization when no session Fast intent is supplied', () => {

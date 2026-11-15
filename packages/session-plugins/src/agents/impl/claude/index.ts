@@ -1,5 +1,5 @@
 import { CLAUDE_AUTH_CONNECTIONS } from '../../connection-capabilities';
-import { platformModel } from './platform-model';
+import { claudeSessionFlagSettings, platformModel } from './platform-model';
 import {
   definePlugin,
   registerPluginBehavior,
@@ -434,11 +434,7 @@ export const provider = registerPluginBehavior(plugin, {
   prompt: {
     buildCommand: (ctx) => {
       const ultracode = ctx.effort === CLAUDE_ULTRACODE_EFFORT_ID;
-      const fastMode = ctx.fastMode;
-      const settings = {
-        ...(ultracode ? { ultracode: true } : {}),
-        ...(typeof fastMode === 'boolean' ? { fastMode } : {}),
-      };
+      const settings = claudeSessionFlagSettings({ fastMode: ctx.fastMode, reasoningEffort: ctx.effort });
       // Claude uses only the last --settings value. A caller-owned document must be
       // composed by its lifetime owner; never overwrite it or copy its credentials to argv.
       const hasSettingsDocument = (ctx.extraArgs ?? []).some((arg) => arg === '--settings' || arg.startsWith('--settings='));
