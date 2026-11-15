@@ -321,10 +321,10 @@ describe('附件 mention → 附件条 (#5269)', () => {
   });
 });
 
-it('projects task file references into existing name chips without changing the raw caption', () => {
+it('projects a task file reference as a file row that opens through its folder link, without changing the raw caption', () => {
   const item = normalizeMessage({ ...SHORT, files: [{ itemId: 'brief', version: 1, name: 'brief.txt', mimeType: 'text/plain', sizeBytes: 3 }] });
   expect(item.text).toBe(SHORT.text);
-  expect(item.attachments).toEqual([{ id: 'brief:1', name: 'brief.txt', kind: 'file' }]);
+  expect(item.attachments).toEqual([{ id: 'gugu-file://brief?v=1', href: 'gugu-file://brief?v=1', name: 'brief.txt', kind: 'file' }]);
 });
 
 it('projects a task image reference as an image the host can resolve', () => {

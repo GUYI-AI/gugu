@@ -41,7 +41,6 @@ const VARS: MessageVars = {
   expandedMaxH: 360,
   userCardPadX: 16,
   userCardPadY: 16,
-  attachThumb: 32,
   attachGap: 8,
   footerH: 24,
 };

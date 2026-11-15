@@ -1,0 +1,93 @@
+/*
+ * 文件行(assistant-ui `message-attachment`)。尺寸只读 `fileRowStyle()` 给的变量(真源在 file-row.ts);
+ * 颜色和字号读宿主给的 `--gg-file-row-fg / -muted / -fill / -fill-hover / -font-size`(字号是宿主的标注档,
+ * 行高在 file-row.ts 里,所以字号不改高度),描边 `-ring` 可选(缺席不画)。
+ */
+.gg-file-rows {
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gg-file-row-gap);
+}
+
+.gg-file-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--gg-file-row-column-gap);
+  width: var(--gg-file-row-width);
+  max-width: 100%;
+  height: var(--gg-file-row-height);
+  margin: 0;
+  padding: 0 var(--gg-file-row-pad-end) 0 var(--gg-file-row-pad-start);
+  border: none;
+  border-radius: var(--gg-file-row-radius);
+  background: var(--gg-file-row-fill);
+  box-shadow: inset 0 0 0 1px var(--gg-file-row-ring, transparent);
+  color: var(--gg-file-row-fg);
+  font: inherit;
+  font-size: var(--gg-file-row-font-size, 12px);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  transition: background 120ms ease;
+}
+
+.gg-file-row:hover,
+.gg-file-row:focus-visible:not([data-pointer-focus]) {
+  background: var(--gg-file-row-fill-hover);
+}
+
+.gg-file-row-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: var(--gg-file-row-icon);
+  height: var(--gg-file-row-icon);
+  border-radius: var(--gg-file-row-icon-radius);
+  color: var(--gg-file-row-muted);
+}
+
+.gg-file-row-icon svg {
+  width: var(--gg-file-row-glyph);
+  height: var(--gg-file-row-glyph);
+}
+
+/* 名字一行,下面可选一行说明(宿主给:任务页是扩展名,群聊卡片可以是「版本 · 大小 · 类型」);没有说明时名字居中。 */
+.gg-file-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.gg-file-row-name,
+.gg-file-row-detail {
+  min-width: 0;
+  line-height: var(--gg-file-row-line);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gg-file-row-detail {
+  color: var(--gg-file-row-muted);
+}
+
+/* 图片:同高的方形缩略图,不带名字和说明(名字在 title / aria-label 里)。 */
+.gg-file-row[data-kind='image'] {
+  display: block;
+  width: var(--gg-file-row-height);
+  padding: 0;
+}
+
+.gg-file-row[data-kind='image'] > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gg-file-row[data-kind='image'] > .gg-file-row-icon {
+  width: 100%;
+  height: 100%;
+}
