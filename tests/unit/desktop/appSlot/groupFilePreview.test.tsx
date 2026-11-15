@@ -32,9 +32,10 @@ vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({
 vi.mock('@/lib/chatFolder', () => ({ readChatFolderText: boundary.document, rendererFileServiceUrl: () => 'https://files.test' }))
 vi.mock('@/lib/download', () => ({ downloadBlob: boundary.save }))
 vi.mock('@/components/appSlot/appsHere', () => ({
-  appsHere: { runs: () => true, marketOffers: async () => ({ success: true, data: [] }), groupFileOpener: vi.fn(), setOpenWithDefault: vi.fn() },
+  appsHere: { runs: () => true, marketOffers: async () => ({ success: true, data: [] }), onMarketChanged: () => () => {}, groupFileOpener: vi.fn(), setOpenWithDefault: vi.fn() },
 }))
-vi.mock('@/components/extensionBundle/sharedPackages', () => ({ sharedPackagesOf: async () => new Map(), subscribeSharedPackages: () => () => {} }))
+vi.mock('@/components/extensionBundle/sharedPackages', async (original) => ({
+  ...(await original<object>()), chatPackageCards: async () => [] }))
 
 const { AppPeek } = await import('@/components/appSlot/AppPeek')
 const { ask, chatTabs, shownItem } = await import('./chatTabsHarness')

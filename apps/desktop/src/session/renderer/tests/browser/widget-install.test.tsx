@@ -2,17 +2,18 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { WidgetBubble } from '@/components/chat/WidgetBubble';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
+import { followRendererSession } from '@/lib/replica';
+import { sharedAppPackages } from '@/components/extensionBundle/packageReplicas';
 
 const state = vi.hoisted(() => ({
   manifests: [] as { id: string; version: string; contributes: { tabs: { name: string; widget?: { height: number } }[] } }[],
   shared: new Map(),
-  notify: null as null | ((chat: string) => void),
   installAttachment: vi.fn(), installFromMarket: vi.fn(), marketOffers: vi.fn(),
 }));
 vi.mock('react-i18next', async original => ({ ...(await original<object>()), useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@/store/auth', async original => ({ ...(await original<object>()), useAuth: () => ({ user: { id: 'reader' } }) }));
 vi.mock('@/components/chat/useConversationVisibility', () => ({ useConversationVisibility: () => ({ ref: () => undefined, shown: true }) }));
-vi.mock('@/components/appSlot/appsHere', () => ({ appsHere: { ...state, runs: () => true } }));
+vi.mock('@/components/appSlot/appsHere', () => ({ appsHere: { ...state, runs: () => true, onMarketChanged: () => () => {} } }));
 vi.mock('@/lib/widgetRegistry', async original => {
   const { parseWidgetMessage } = await import('@gugu/core/shared/ui/widgetModels');
   return { ...(await original<object>()), widgetForOriginal: async (message: import('@/lib/widgetRegistry').WidgetOriginMessage) => ({
@@ -21,8 +22,9 @@ vi.mock('@/lib/widgetRegistry', async original => {
 });
 vi.mock('@/components/extensionBundle/sharedPackages', async original => ({
   ...(await original<object>()),
-  sharedPackagesOf: async () => state.shared,
-  subscribeSharedPackages: (fn: (chat: string) => void) => { state.notify = fn; return () => { state.notify = null; }; },
+  // The chat's attachments: one card per package shared, read for its manifest (sharedAppPackages' read).
+  chatPackageCards: async () => [...state.shared.values()].map((shared: ReturnType<typeof pkg>) => shared.card),
+  readPackageSummary: async () => ({ ok: true, manifest: [...state.shared.values()][0].manifest }),
 }));
 vi.mock('@renderer/features/extensions/extension-view-layer', () => ({ ExtensionPage: () => <div>Widget view</div> }));
 vi.mock('@/components/appSlot/PhoneAppFrame', () => ({ PhoneAppFrame: () => <div>Widget view</div> }));
@@ -37,8 +39,10 @@ vi.mock('@renderer/features/extensions/installed-extensions', async original => 
 const pkg = () => ({ manifest: { id: 'vote', name: 'Vote', version: '2.0.0', contributes: { tabs: [{ name: 'main', widget: { height: 200 } }] } }, card: { source: { kind: 'message', messageId: 'package-message' }, messageId: 'package-message' } });
 const message = { id: 'widget', chat_id: 'chat', sender_user_id: 'agent', content: JSON.stringify({ v: 2, app: 'vote', view: 'main', text: 'Vote here' }) };
 let harness: ReturnType<typeof createReactHarness>;
+// The chat's shared packages are an account replica: read for a signed-in account.
+followRendererSession('SIGNED_IN', 'reader');
 beforeEach(() => {
-  state.manifests = []; state.shared = new Map(); state.notify = null;
+  state.manifests = []; state.shared = new Map();
   state.installAttachment.mockReset().mockResolvedValue({ success: true, data: { installed: false, outcome: 'cancelled' } });
   state.installFromMarket.mockReset(); state.marketOffers.mockReset().mockResolvedValue({ success: true, data: [] });
 });
@@ -74,10 +78,11 @@ it('offers an unlisted package from this chat through the same attachment consen
 });
 it('offers a later chat package without reloading the widget', async () => {
   await mount();
-  await until('the shared package subscription is active', () => state.notify !== null);
+  await until('the chat\'s packages were read: none yet', () => sharedAppPackages.peek('chat').state === 'value');
   expect(button()).toBeUndefined();
   state.shared = new Map([['vote', pkg()]]);
-  state.notify!('chat');
+  // A package sent in the chat (the account revision's log push, ExtensionForwardHost): the chat is read again.
+  void sharedAppPackages.refresh('chat');
   await until('the newly shared App is offered', () => !!button());
 });
 it('offers a newer package when the installed App lacks the widget view', async () => {

@@ -7,6 +7,7 @@ const readyModules = new Map<() => Promise<unknown>, unknown>()
 function useMessageActionModule<T>(load: () => Promise<T>) {
   const ready = readyModules.get(load) as T | undefined
   const [result, setResult] = useState<{ module: T } | { error: unknown }>()
+  // @@@effect-flow - loads a code chunk for a secondary surface, not data
   useEffect(() => {
     if (ready) return
     let mounted = true

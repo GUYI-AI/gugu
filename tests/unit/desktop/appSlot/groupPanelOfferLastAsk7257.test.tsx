@@ -22,14 +22,15 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
     installAttachment: vi.fn(),
     installFromMarket: vi.fn(),
     marketOffers: vi.fn(async () => ({ success: true, data: [{ manifest: slides('1.2.0'), version: '1.2.0' }] })),
+    onMarketChanged: () => () => {},
     groupFileOpener: vi.fn(),
     groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })),
     setOpenWithDefault: vi.fn(),
   },
 }))
-vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
-  sharedPackagesOf: async () => new Map(),
-  subscribeSharedPackages: () => () => {},
+vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', async (original) => ({
+  ...(await original<object>()),
+  chatPackageCards: async () => [],
 }))
 const { appsHere } = await import('../../../../apps/desktop/src/components/appSlot/appsHere')
 
@@ -39,6 +40,11 @@ function slides(version: string) {
 const workspace = { id: 'workspace', name: 'Workspace', version: '1.0.0', apiVersion: 4, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: 'Workspace', opensFiles: { chat: ['.json'] } }] } }
 const install = (manifests: unknown[]) =>
   act(() => tellInstalled('local', { extensions: manifests, invalid: [] } as unknown as InstalledExtensionsList))
+
+const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
+// The chat's shared packages are an account replica: read for a signed-in account, as in the product.
+beforeEach(() => followRendererSession('SIGNED_IN', 'user-1'))
+afterEach(() => followRendererSession('SIGNED_OUT', null))
 
 let harness: ReturnType<typeof createReactHarness>
 const originalCheckVisibility = HTMLElement.prototype.checkVisibility

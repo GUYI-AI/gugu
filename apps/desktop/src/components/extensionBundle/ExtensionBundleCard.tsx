@@ -1,7 +1,7 @@
 import { metadataSeparator } from '@/i18n/format'
 import { marketCompatText } from '@shared/extensions/market'
 import { observer } from 'mobx-react-lite'
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronDown, Shield } from '@/lib/icons'
 import { formatAttachmentSize, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { extensionMonogram, localizedManifestText } from '@shared/extensions/catalog'
@@ -31,8 +31,10 @@ import { Button } from '../ui/Button'
 import { Progress } from '../ui/Progress'
 import { ConsentLines } from './ConsentDetails'
 import { installedHereLine, refusedLine } from './installedHere'
-import { installPackageOf, newestShownPackage, packageKey, showPackage, shownPackagesVersion, subscribeShownPackages, summaryOf, watchReading, type PackageCard } from './sharedPackages'
-import type { ExtensionBundleSummary } from './summarizeExtensionBundle'
+import { installPackageOf, packageKey, type PackageCard } from './sharedPackages'
+import { extensionPackageSummary, newestShownPackage, packageProgress, showPackage, shownPackages } from './packageReplicas'
+import { useReplica } from '../../lib/replica'
+import { useSelect } from '../../lib/selectStore'
 import type { HandedConsent } from '@/session/shared/extensions/install-consent-flow'
 
 const log = rendererLogger('chat/extension-bundle')
@@ -93,9 +95,9 @@ function PermissionsFold({ text, strong, muted }: { text: string; strong: string
  * size — the permissions row says it is reading, the button row shows how far the bytes have come.
  */
 function PackageReading({ card, muted }: { card: PackageCard; muted: string }) {
-  const [read, setRead] = useState<{ done: number; total: number } | null>(null)
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- key is the card's identity
-  useEffect(() => watchReading(card, (done, total) => setRead({ done, total })), [packageKey(card)])
+  const key = packageKey(card)
+  // Nothing reported yet: the bar is indeterminate and no byte count is said.
+  const read = useSelect(packageProgress, (progress) => progress[key] ?? null)
   const t = translateSessionMessage
   return (
     <>
@@ -121,16 +123,8 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
 }) {
   const { sizeBytes } = meta
   const key = packageKey(card)
-  const [summary, setSummary] = useState<ExtensionBundleSummary | null>(null)
-  useEffect(() => {
-    let live = true
-    setSummary(null)
-    void summaryOf(card, meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision.sha256 : null).then((next) => live && setSummary(next))
-    return () => {
-      live = false
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- key is the card's identity
-  }, [key])
+  const reading = useReplica(extensionPackageSummary, [key, meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision.sha256 : null])
+  const summary = reading.state === 'value' ? reading.value : null
   // On screen, it counts among the packages an older card of the same App points to (摩擦单 F21).
   // eslint-disable-next-line react-hooks/exhaustive-deps -- key is the card's identity
   useEffect(() => (summary?.ok ? showPackage({ manifest: summary.manifest, card }) : undefined), [summary, key])
@@ -267,8 +261,7 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
   const here = hereManifest && installedHere.state === 'value' ? { version: hereManifest.version, origin: installedHere.value.origins[hereManifest.id] } : null
   const installedVersion = here ? here.version : null
   // A newer package of the same App is on screen too: this card says so, and installs that one (摩擦单 F21).
-  useSyncExternalStore(subscribeShownPackages, shownPackagesVersion)
-  const newest = manifest ? newestShownPackage(manifest.id) : undefined
+  const newest = useSelect(shownPackages, (shown) => (manifest ? newestShownPackage(shown, manifest.id) : undefined))
   const newer = manifest && newest && compareExtensionVersions(newest.manifest.version, manifest.version) > 0 ? newest : null
   // What the card offers follows what is installed here, always — installed, updated, uninstalled (摩擦单 F66): the one
   // answer the desktop and the phone share (`cardOffer`).
@@ -309,7 +302,8 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
           </span>
         </div>
       </div>
-      {!summary && <PackageReading card={card} muted={muted} />}
+      {reading.state === 'unknown' && <PackageReading card={card} muted={muted} />}
+      {reading.state === 'error' && <RefreshFailed error={reading.error} onRetry={() => void extensionPackageSummary.refresh(key)} />}
       {summary && !summary.ok && (
         <span data-testid="extension-bundle-card-problem" className="text-[var(--font-body)] text-[var(--text-error)]">
           {summary.compat ? marketCompatText(summary.compat, t) : t('extensions.bundleCardUnreadable')}

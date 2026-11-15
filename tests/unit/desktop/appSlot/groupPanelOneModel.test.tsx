@@ -15,12 +15,16 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({
 }))
 // No App runtime under jsdom: this device's Apps answer nothing; the group's shared packages are the test's.
 vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
-  appsHere: { runs: () => true, grantable: (manifest: unknown) => manifest, installAttachment: vi.fn(), marketOffers: vi.fn(async () => ({ success: true, data: [] })), groupFileOpener: vi.fn(), groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })), appChatFile: vi.fn(), setOpenWithDefault: vi.fn() },
+  appsHere: { runs: () => true, grantable: (manifest: unknown) => manifest, installAttachment: vi.fn(), marketOffers: vi.fn(async () => ({ success: true, data: [] })), onMarketChanged: () => () => {}, groupFileOpener: vi.fn(), groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })), appChatFile: vi.fn(), setOpenWithDefault: vi.fn() },
 }))
 const sharedHere = vi.hoisted(() => ({ packages: new Map<string, unknown>() }))
-vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
-  sharedPackagesOf: async () => sharedHere.packages,
-  subscribeSharedPackages: () => () => {},
+/** The packages shared in the chat, as the chat's attachments say them. */
+const sharedList = () => [...sharedHere.packages.values()] as { card: { source: { kind: string; url?: string }; messageId: string }; manifest: unknown }[]
+vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', async (original) => ({
+  ...(await original<object>()),
+  chatPackageCards: async () => sharedList().map((pkg) => pkg.card),
+  readPackageSummary: async (key: string) => ({ ok: true, manifest: sharedList().find((pkg) => (pkg.card.source.kind === 'url' ? `url:${pkg.card.source.url}` : `msg:${pkg.card.messageId}`) === key)!.manifest }),
+  newestSharedPackages: <P,>(packages: P[]) => packages,
   packageKey: (card: { source: { kind: string; url?: string }; messageId: string }) => (card.source.kind === 'url' ? `url:${card.source.url}` : `msg:${card.messageId}`),
   installPackageOf: (card: { messageId: string }) => ({ messageId: card.messageId }),
 }))
@@ -30,6 +34,8 @@ vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages'
  * a page says about itself kept by page in the one store the session page reads, the toolbar and menu read as the session
  * page reads them. Only where each is drawn differs.
  */
+
+const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
 
 let harness: ReturnType<typeof createReactHarness>
 const originalCheckVisibility = HTMLElement.prototype.checkVisibility
@@ -53,6 +59,9 @@ const fullSwitch = () => harness.container.querySelector<HTMLButtonElement>('[da
 const NONE: { id: string; title: string }[] = []
 
 describe('the slot header', () => {
+  // The chat's shared packages are an account replica: read for a signed-in account, as in the product.
+  beforeEach(() => followRendererSession('SIGNED_IN', 'user-1'))
+  afterEach(() => followRendererSession('SIGNED_OUT', null))
   // owner 10-26 选 A:页签就是标题、× 和「最大化 / 还原」(TabHost.tabFill),页里不再横一行;没有页签条(手机)照旧一个页头。
   it('in a block draws no row of its own; its tab fills the block and back; outside a block no full switch either', async () => {
     const tab = openPanelItem('full-switch', boardPage())!

@@ -1,16 +1,17 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ComposerAttachAction } from '../chat/ComposerAttachButton'
 import { useVoiceNoteHandler } from '../assistant/useVoiceNoteHandler'
 import { ArrowUpToLine, BookOpen, FileText, Heart, Image, Lightbulb, ListChecks, MessageSquare, Mic, Pencil, Sparkles } from '../../lib/icons'
 import { rendererLogger } from '../../lib/log'
 import { useChatStore } from '../../store/chatContext'
-import { events, rpc } from '@/session/renderer/lib/ipc'
+import { rpc } from '@/session/renderer/lib/ipc'
+import { useReplica } from '@/lib/replica'
+import { appComposerActions, useAppBindingPush } from './appBindingReplicas'
 import type { ComposerActionIcon, ComposerActionView } from '@/session/shared/extensions/composer-actions'
-import { extensionsInventoryChangedChannel } from '@/session/shared/extensions/marketEvents'
 
 const log = rendererLogger('app-composer-actions')
-// One empty list, so a menu not yet read (or read for another App) keeps one identity across renders.
+// One empty list, so a menu not yet read (or not readable) keeps one identity across renders.
 const NO_VIEWS: ComposerActionView[] = []
 
 /** The host's icons an App's entry may name (composer-actions.ts), the same glyphs as the built-in entries. */
@@ -60,29 +61,11 @@ export function useAppComposerEntries({ ownerId, extensionId, authority, chatId 
   const { i18n } = useTranslation()
   const { writeDraft } = useChatStore('writeDraft')
   const { recording } = useVoiceNoteHandler()
-  const asked = `${ownerId}\n${extensionId}\n${authority}`
-  const [read, setRead] = useState<{ asked: string; views: ComposerActionView[] } | null>(null)
-  const [serial, setSerial] = useState(0)
   // The language when the draft lands, not when the menu was drawn.
   const zhNow = useCallback(() => i18n.language.startsWith('zh'), [i18n])
-  // A grant of this App changed (its draft or recorder withdrawn, say): read again.
-  useEffect(() => events.on(extensionsInventoryChangedChannel, (note) => {
-    if (!note?.extensionId || note.extensionId === extensionId) setSerial((value) => value + 1)
-  }), [extensionId])
-  useEffect(() => {
-    let disposed = false
-    void rpc.extensions.conversationComposerActions({ ownerId, extensionId, authority }).then((result) => {
-      if (disposed) return
-      if (!result.success) throw new Error(result.error)
-      setRead({ asked, views: result.data.actions })
-    }).catch((error: unknown) => {
-      // What could not be read is not drawn.
-      if (disposed) return
-      log.warn({ error }, 'Could not read the App\'s composer actions')
-      setRead({ asked, views: [] })
-    })
-    return () => { disposed = true }
-  }, [ownerId, extensionId, authority, asked, serial])
+  // Read for this column's App and authority; main's notes (a grant withdrawn, say) read it again.
+  const reading = useReplica(appComposerActions, [extensionId, authority])
+  useAppBindingPush(true)
   const run = useCallback((actionId: string) => {
     void rpc.extensions.runConversationComposerAction({ ownerId, extensionId, authority, actionId }).then((result) => {
       if (!result.success) {
@@ -93,7 +76,8 @@ export function useAppComposerEntries({ ownerId, extensionId, authority, chatId 
       if (result.data.kind === 'draft') writeDraft(chatId, { at: 'end', text: zhNow() ? result.data.text.zh : result.data.text.en })
     }, (error: unknown) => log.warn({ error }, 'App composer action failed'))
   }, [ownerId, extensionId, authority, chatId, writeDraft, zhNow])
-  const views = read?.asked === asked ? read.views : NO_VIEWS
+  // @@@reading-default - the 「+」 menu has no slot to hold: not read yet, or unreadable, it lists no App entry (the built-in ones stay); they join when read
+  const views = reading.state === 'value' ? reading.value : NO_VIEWS
   const zh = i18n.language.startsWith('zh')
   const menu = useMemo(() => composerMenu(views, { zh, recording, run }), [views, zh, recording, run])
   const chip = useMemo(() => composerChip(views, { zh, run }), [views, zh, run])

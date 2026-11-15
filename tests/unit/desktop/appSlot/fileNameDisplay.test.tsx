@@ -5,9 +5,10 @@ import { createReactHarness } from '../../../support/testHarness';
 
 vi.mock('@/platform', () => ({ platform: { kind: 'electron', capabilities: { appUpdates: false, notifications: false, rendererCommandBridge: false } } }));
 vi.mock('@/components/appSlot/appsHere', () => ({
-  appsHere: { runs: () => true, marketOffers: async () => ({ success: true, data: [] }), groupFileOpener: vi.fn(), setOpenWithDefault: vi.fn() },
+  appsHere: { runs: () => true, marketOffers: async () => ({ success: true, data: [] }), onMarketChanged: () => () => {}, groupFileOpener: vi.fn(), setOpenWithDefault: vi.fn() },
 }));
-vi.mock('@/components/extensionBundle/sharedPackages', () => ({ sharedPackagesOf: async () => new Map(), subscribeSharedPackages: () => () => {} }));
+vi.mock('@/components/extensionBundle/sharedPackages', async (original) => ({
+  ...(await original<object>()), chatPackageCards: async () => [] }));
 vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: vi.fn(async () => ({ error: null })) } }));
 vi.mock('@/lib/fileAccess', async importOriginal => ({
   ...await importOriginal<typeof import('@/lib/fileAccess')>(),

@@ -33,6 +33,7 @@ vi.mock('@/session/renderer/lib/ipc', () => ({
 }));
 
 const { useAppComposerActions } = await import('../../../../apps/desktop/src/components/appSlot/appComposerActions');
+const { followRendererSession, queryClient } = await import('../../../../apps/desktop/src/lib/replica');
 type Menu = ReturnType<typeof useAppComposerActions>;
 
 const VIEWS = [
@@ -59,6 +60,9 @@ beforeEach(() => {
   state.notes.clear();
   list.mockReset().mockResolvedValue({ success: true, data: { actions: VIEWS } });
   run.mockReset();
+  // The entries are an account replica (appComposerActions): read for the account signed in, which owns the column.
+  followRendererSession('SIGNED_IN', 'owner-a');
+  queryClient.clear();
   root = createRoot(document.createElement('div'));
 });
 afterEach(() => act(async () => root.unmount()));
@@ -128,6 +132,7 @@ describe('the 「+」 entries of an App beside the person\'s own assistant chat'
     await render({ ...column, authority: 'stamp-2' });
     expect(menu).toBeUndefined();
     await act(async () => answer({ success: true, data: { actions: VIEWS.slice(0, 1) } }));
+    await settle();
     expect(menu?.map((entry) => entry.id)).toEqual(['app-ideas']);
   });
 });

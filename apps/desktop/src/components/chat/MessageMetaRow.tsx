@@ -7,7 +7,9 @@ import { useTranslation } from 'react-i18next'
 import { useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
 import { HERE_HOST } from '../appSlot/hereHost'
 import { Unknown } from '../ui/Unknown'
-import { useForwardedSource } from '../../hooks/useForwardedSource'
+import { useReplica } from '../../lib/replica'
+import { forwardedSource } from '../../lib/forwardedSource'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { useChatStore } from '../../store/chatContext'
 import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 
@@ -88,7 +90,11 @@ function ViaAppBadge({ appId, sender }: { appId: string; sender: string | null }
 function ForwardedBadge({ forwardedFromMessageId }: { forwardedFromMessageId: string }) {
   const { t } = useTranslation('messaging')
   const { chats, identitiesById } = useChatStore('chats', 'identitiesById')
-  const source = useForwardedSource(forwardedFromMessageId)
+  // Unknown until read: a placeholder the size of the 「引自 …」 pill, ❌ 「转发」 that turns into 「引自 …」 when it lands.
+  const reading = useReplica(forwardedSource, [forwardedFromMessageId])
+  if (reading.state === 'unknown') return <Unknown className="h-[var(--lh-caption)] w-24" />
+  if (reading.state === 'error') return <RefreshFailed error={reading.error} onRetry={() => void forwardedSource.refresh(forwardedFromMessageId)} />
+  const source = reading.value
   // 来源是私聊时 chats.name 是空的 —— 服务端只回它存的那个字段,「这条线叫什么」是渲染层的事。
   // ❌ 不在服务端 join identity 去拼名字:forwarded_source 是 SECURITY INVOKER,能读到这一行
   // 就说明读者本来就在那条线里 ⇒ 它一定在自己的会话列表里,本地就叫得出名字。

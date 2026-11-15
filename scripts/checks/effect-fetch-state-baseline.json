@@ -1,14 +1,4 @@
 {
-  "apps/desktop/src/components/appSlot/AppConversationSurfaceHost.tsx": 1,
-  "apps/desktop/src/components/appSlot/GroupTabContent.tsx": 3,
-  "apps/desktop/src/components/appSlot/appComposerActions.tsx": 1,
-  "apps/desktop/src/components/appSlot/useTabsReading.ts": 1,
-  "apps/desktop/src/components/chat/WidgetBubble.tsx": 1,
-  "apps/desktop/src/components/chat/WidgetSnapshot.tsx": 1,
-  "apps/desktop/src/components/chat/messageActionModules.tsx": 1,
-  "apps/desktop/src/components/extensionBundle/AppConversationUnread.tsx": 1,
-  "apps/desktop/src/components/extensionBundle/ExtensionBundleCard.tsx": 1,
   "apps/desktop/src/components/settings/channels/useChatChannels.ts": 1,
-  "apps/desktop/src/lib/connectionBridge.ts": 1,
-  "apps/desktop/src/session/renderer/features/extensions/extension-view-layer.tsx": 1
+  "apps/desktop/src/lib/connectionBridge.ts": 1
 }

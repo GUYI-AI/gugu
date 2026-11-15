@@ -72,14 +72,11 @@ vi.mock('../../../../apps/desktop/src/session/renderer/lib/ui/dropdown-menu', ()
   DropdownMenuTrigger: ({ render }: { render?: ReactNode }) => render ?? null,
 }))
 vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
-  summaryOf: async () => ({ ok: true, manifest }),
-  watchReading: () => () => undefined,
+  readPackageSummary: async () => ({ ok: true, manifest: manifest }),
   packageKey: (card: { source: { kind: string; url?: string }; messageId: string }) => (card.source.kind === 'url' ? `url:${card.source.url}` : `msg:${card.messageId}`),
   installPackageOf: (card: { messageId: string }) => ({ messageId: card.messageId }),
-  showPackage: () => () => undefined,
-  newestShownPackage: () => undefined,
-  subscribeShownPackages: () => () => undefined,
-  shownPackagesVersion: () => 0,
+  chatPackageCards: async () => [],
+  newestSharedPackages: <P,>(packages: P[]) => packages,
 }))
 // Read: nothing installed here.
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', () => ({
@@ -96,6 +93,9 @@ vi.mock('../../../../apps/desktop/src/session/renderer/localization/locale-store
 
 const { ExtensionBundleCard } = await import('../../../../apps/desktop/src/components/extensionBundle/ExtensionBundleCard')
 const { createReactHarness } = await import('../../../support/testHarness')
+const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
+// The package summary is the account's replica: a signed-in account reads it.
+followRendererSession('SIGNED_IN', 'me')
 
 const URL_ = 'https://db.example/storage/v1/object/public/chat-media/u1/reader-1.0.0.guguext'
 const ASK = { sourceDir: '/there/x', manifest, manifestDigest: 'digest-r', revokedPermissions: [], given: { first: true } }
@@ -116,8 +116,8 @@ async function card(pkg: { source: unknown; messageId: string } = OLD_CARD) {
   const harness = createReactHarness()
   harnesses.push(harness)
   await harness.render(createElement(ExtensionBundleCard, { meta: { sizeBytes: 1024, fileName: 'reader-1.0.0.guguext' }, card: pkg as never, isMine: false, chatId: 'g1' }))
-  // The summary arrives a tick later (summaryOf).
-  await act(async () => undefined)
+  // The summary arrives a tick later (the package's replica read, then react-query's notify).
+  await act(async () => { await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="extension-bundle-card-reading"]')).toBeNull()) })
   const q = (selector: string) => harness.container.querySelector<HTMLElement>(selector)
   const pick = async (id: string) => {
     await act(async () => q(`[data-testid="menu"] [data-device-id="${id}"]`)!.click())

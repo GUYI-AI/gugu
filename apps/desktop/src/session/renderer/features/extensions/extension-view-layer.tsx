@@ -17,7 +17,8 @@ import { bindAppPageZoom } from '@/components/preview/file-content-zoom';
 import { clippedElementBox, elementBox, type ElementBox as Box } from '@/lib/elementVisibility';
 import { readSelfIdentityBridge } from '@/lib/selfIdentityBridge';
 import { useTheme } from '@/store/theme';
-import { widgetSnapshotWebP, widgetSnapshots } from '@/lib/widgetSnapshots';
+import { widgetSnapshotWebP, widgetSnapshots, widgetWidthBucket } from '@/lib/widgetSnapshots';
+import { widgetSnapshot, widgetSnapshotDataUrl } from '@/lib/widgetSnapshot';
 
 /**
  * 常驻扩展的页都住在这一层:每个 App 在每个地方(一个群、一个任务)一张,一生不换地方(摩擦单 F48,
@@ -215,10 +216,14 @@ export const ExtensionPage = observer(function ExtensionPage({
     lastCaptureRef.current = performance.now();
     capturingRef.current = true;
     const theme = themeRef.current;
-    void rpc.extensions.captureWidget({ webContentsId, widgetId: claim.widget.id }).then(async reply => {
+    const widgetId = claim.widget.id;
+    // Bound to the account now: a picture that lands after a switch goes nowhere (no account the replica follows: none shown).
+    const shown = widgetSnapshot.key(widgetId, theme, widgetWidthBucket(width)) ? widgetSnapshot.at(widgetId, theme, widgetWidthBucket(width)) : null;
+    void rpc.extensions.captureWidget({ webContentsId, widgetId }).then(async reply => {
       if (!reply.success || !reply.data) return;
       const blob = await widgetSnapshotWebP(reply.data, width);
-      if (blob) await widgetSnapshots.put(account, claim.widget!.id!, theme, width, blob);
+      // The one writer of the picture store puts what it stored into the replica the slots read.
+      if (blob && await widgetSnapshots.put(account, widgetId, theme, width, blob)) shown?.set(await widgetSnapshotDataUrl(blob));
     }).catch(error => log.warn('Widget picture could not be saved:', error))
       .finally(() => {
         capturingRef.current = false;
@@ -227,6 +232,7 @@ export const ExtensionPage = observer(function ExtensionPage({
   }, [claimOf, guestBinding]);
   useEffect(() => () => { clearTimeout(captureTimerRef.current); pendingCaptureRef.current = false; }, [capture]);
 
+  // @@@effect-flow - activates the App's page in main (starts its guest) and binds the webview to the surface it returns
   useEffect(() => {
     if (managed) return;
     let disposed = false;

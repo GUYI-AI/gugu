@@ -22,16 +22,11 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
 }))
 const card = vi.hoisted(() => ({ manifest: null as unknown }))
 vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
-  summaryOf: async () => ({ ok: true, manifest: card.manifest }),
-  watchReading: () => () => {},
+  readPackageSummary: async () => ({ ok: true, manifest: card.manifest }),
   packageKey: (card: { source: { kind: string; url?: string }; messageId: string }) => (card.source.kind === 'url' ? `url:${card.source.url}` : `msg:${card.messageId}`),
   installPackageOf: (card: { messageId: string }) => ({ messageId: card.messageId }),
-  showPackage: () => () => {},
-  newestShownPackage: () => undefined,
-  shownPackagesVersion: () => 0,
-  subscribeShownPackages: () => () => {},
-  sharedPackagesOf: async () => new Map(),
-  subscribeSharedPackages: () => () => {},
+  chatPackageCards: async () => [],
+  newestSharedPackages: <P,>(packages: P[]) => packages,
 }))
 
 const { phoneRuns } = await import('../../../../apps/desktop/src/components/appSlot/phoneAppHost')
@@ -54,8 +49,12 @@ const SESSION_FILES: Tab = { name: 'main', title: 'Board', opensFiles: { session
 const install = (manifest: unknown) =>
   act(() => tellInstalled('local', { extensions: manifest ? [manifest] : [], invalid: [] } as never))
 
+const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
+
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
+  // A card's package summary is the account's replica: a signed-in account reads it.
+  followRendererSession('SIGNED_IN', 'me')
   harness = createReactHarness()
   host.kind = 'electron'
   host.runs = true
@@ -189,7 +188,8 @@ describe("a card's 「打开」 is 「在本群打开」", () => {
         chatId: chat.id,
       })),
     )
-    await act(async () => {})
+    // The package's summary lands (its replica read, then react-query's notify).
+    await act(async () => { await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="extension-bundle-card-reading"]')).toBeNull()) })
   }
   const button = () => harness.container.querySelector<HTMLButtonElement>('[data-testid="extension-bundle-card-install"]')
 

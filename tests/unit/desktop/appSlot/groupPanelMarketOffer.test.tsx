@@ -22,7 +22,7 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
     grantable: (manifest: unknown) => manifest,
     installAttachment: vi.fn(),
     installFromMarket: vi.fn(),
-    marketOffers: vi.fn(async () => here.market),
+    marketOffers: vi.fn(async () => here.market), onMarketChanged: () => () => {},
     groupFileOpener: vi.fn(),
     groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })),
     setOpenWithDefault: vi.fn(),
@@ -30,9 +30,13 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
   },
 }))
 const sharedHere = vi.hoisted(() => ({ packages: new Map<string, unknown>() }))
-vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
-  sharedPackagesOf: async () => sharedHere.packages,
-  subscribeSharedPackages: () => () => {},
+/** The packages shared in the chat, as the chat's attachments say them. */
+const sharedList = () => [...sharedHere.packages.values()] as { card: { source: { kind: string; url?: string }; messageId: string }; manifest: unknown }[]
+vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', async (original) => ({
+  ...(await original<object>()),
+  chatPackageCards: async () => sharedList().map((pkg) => pkg.card),
+  readPackageSummary: async (key: string) => ({ ok: true, manifest: sharedList().find((pkg) => (pkg.card.source.kind === 'url' ? `url:${pkg.card.source.url}` : `msg:${pkg.card.messageId}`) === key)!.manifest }),
+  newestSharedPackages: <P,>(packages: P[]) => packages,
   packageKey: (card: { source: { kind: string; url?: string }; messageId: string }) => (card.source.kind === 'url' ? `url:${card.source.url}` : `msg:${card.messageId}`),
   installPackageOf: (card: { messageId: string }) => ({ messageId: card.messageId }),
 }))
@@ -49,6 +53,11 @@ const slides = (version: string) => ({
 const file = { chatId: 'group-1', itemId: 'item-1', name: 'deck.pptx', typedName: 'deck.pptx', file: { document: false, contentType: 'application/json', version: 1, size: 10 } }
 const install = (manifests: unknown[], origins?: InstalledExtensionsList['origins']) =>
   act(() => tellInstalled('local', { extensions: manifests, invalid: [], origins } as unknown as InstalledExtensionsList))
+
+const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
+// The chat's shared packages are an account replica: read for a signed-in account, as in the product.
+beforeEach(() => followRendererSession('SIGNED_IN', 'user-1'))
+afterEach(() => followRendererSession('SIGNED_OUT', null))
 
 let harness: ReturnType<typeof createReactHarness>
 const originalCheckVisibility = HTMLElement.prototype.checkVisibility
