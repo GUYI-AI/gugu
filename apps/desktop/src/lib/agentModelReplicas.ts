@@ -76,7 +76,8 @@ export const agentModelSelection = replica({
   name: 'agentModelSelection',
   scope: 'account',
   read: (_owner, agentUserId: string) => readAgentModelSelection(agentUserId),
-  persist: { maxBytes: 1024, maxEntries: 4 },
+  // The two agents opened last (2 of 4 before: the account block made room for the connections' first frame).
+  persist: { maxBytes: 1024, maxEntries: 2 },
 })
 
 /**

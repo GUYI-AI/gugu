@@ -2,7 +2,7 @@ import { isCloudComputerNotOpen } from '@gugu/core/cloud/cloudComputer'
 import type { ChatChannelList } from '@gugu/core/cloud/chatChannels'
 import { ConnectionError } from '@gugu/core/cloud/connections'
 import { rendererChatChannelsClient } from '@/lib/chatChannels'
-import { connectionBridge } from '@/lib/connectionBridge'
+import { connectionBridge, connectionRoute } from '@/lib/connectionBridge'
 import { replica, useReplica, type Reading } from '@/lib/replica'
 import { subscribeAssistantPanels } from '@/components/assistant/assistant-panel-replica'
 import { isTooOld, libraryHostOf, peekLibraryHost } from '@/session/renderer/features/library/library-host'
@@ -48,7 +48,20 @@ export const chatChannels = replica({
   refreshOnFocus: true,
   // The channel's health moves on the cloud computer (starting → running, a login lapsing); nothing pushes it here.
   refreshEvery: 10_000,
+  // Kept for the WeChat row's and the connections page's first frame. Bounded by construction: one channel per kind
+  // (`ChatChannelKind`, 4) of fixed fields (kind, agent id, flags, ISO date, health, two times ≈ 260) plus the account
+  // label; with every label ≤ 128 that is ≤ 4 × 388 + the list's fields and the entry ≈ 300 = 1,852 ≤ 2,048. A list
+  // outside that bound (a longer label, a kind this build does not know) is not kept, by definition (❌ refused, ❌ cut).
+  persist: { maxBytes: 2048, maxEntries: 1, carry: (value: ChatChannelsValue) => (fitsKept(value) ? value : undefined) },
 })
+
+/** Whether a channel list is within the bound the snapshot keeps (see `chatChannels.persist`). */
+function fitsKept(value: ChatChannelsValue): boolean {
+  if ('absent' in value) return true
+  return value.channels.length <= CHAT_CHANNEL_KINDS && value.kinds.length <= CHAT_CHANNEL_KINDS
+    && value.channels.every((channel) => (channel.accountLabel ?? '').length <= 128)
+}
+const CHAT_CHANNEL_KINDS = 4
 
 /** The route epoch a key was read under is still the owner's route now (else the key is stale: refused). */
 function ownerRoute(epoch: string) {
@@ -72,6 +85,19 @@ export const ownerConnections = replica({
   retry: 3,
   retryDelay: connectionReadDelay,
 })
+
+/**
+ * Warm the connections after the session is restored (signed in, or the shell starting signed in), as the assistant
+ * panel is: a page opened later draws its first frame from the value. The channels (also kept across restarts) and,
+ * when the route is the owner's, its snapshot for all devices (the connections page's store). A failure is the
+ * reading's (said where shown), not here.
+ */
+export function prefetchConnections(): void {
+  void chatChannels.prefetch()
+  void connectionRoute.fetch().then((route) => {
+    if (route.mode === 'owner') void ownerConnections.prefetch(route.epoch, null)
+  }, () => {})
+}
 
 /** The owner snapshot an owner-connection store (its route epoch and device) reads into; unknown for any other store. */
 export function useOwnerConnectionsReading(store: ConnectionMetadataStore | undefined): Reading<ConnectionMetadataSnapshot> {

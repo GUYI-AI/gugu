@@ -5,7 +5,7 @@ import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from '@/
 import { routeCache, type ConnectionBridge, type ConnectionWindow } from '@/lib/connectionBridge'
 import { createOwnerConnectionStore } from './owner-connection-store'
 import type { ConnectionMetadataSnapshot, ConnectionMetadataStore } from './connection-metadata'
-import { ownerConnections } from './connection-replicas'
+import { ownerConnections,prefetchConnections } from './connection-replicas'
 import { CONNECTIONS_CHANGED } from './owner-connection-metadata'
 import { rendererPlatformIntegrationsClient } from '@/lib/platformIntegrations'
 import { createConnectionRouting,connectionClientForRoute,type ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
@@ -92,6 +92,20 @@ const bridge: ConnectionBridge = {
   },
 }
 
+let warming: (() => void) | null = null
+let warmedFor: string | null = null
+
+/** Once per signed-in account (restored at start, or signed in later): the connections are read before a page asks. */
+function warmConnections(): void {
+  const owner = accountId()
+  if (!owner || owner === warmedFor) return
+  warmedFor = owner
+  // After the replica has followed the same session change (its observer runs in this same publication).
+  queueMicrotask(prefetchConnections)
+}
+
 export function installConnectionHost(w: Window = window) {
   (w as ConnectionWindow).__GUGU_CONNECTIONS__ = bridge
+  warming ??= observeRendererSession(warmConnections)
+  warmConnections()
 }
