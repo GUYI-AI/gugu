@@ -1509,7 +1509,13 @@ export function sessionBundleModelFor(
   providerId: string,
   surface: HarnessSessionSurface,
   platform: Pick<SessionpagePlatformModel, 'modelCapability'> | null,
+  fastMode?: boolean,
 ): SessionModelCapability | null {
+  // Claude receives a single native flag-settings object, even without a pinned model.
+  // Its existing platform document remains the authority for credentials and model/env keys.
+  if (providerId === 'claude' && fastMode !== undefined) {
+    return { ...(platform?.modelCapability ?? { dialect: 'provider-env' as const }), fastMode };
+  }
   if (!providerDeliversModelViaConfigFile(providerId, surface)) return null
   return platform?.modelCapability ?? null
 }
