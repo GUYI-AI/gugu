@@ -11,6 +11,7 @@ import { CollapseHeader } from '@session-chat/components/primitives/CollapseHead
 import { defineUnit } from '@session-chat/core/units';
 import { Show } from 'solid-js';
 import type { ToolRunItem } from '@session-chat/model';
+import { activateToolRow } from '@session-chat/lib/tool-activation';
 import { toolRunNowLabel } from '@session-chat/state/tool-run';
 import { readableLabel, rowTranslator } from '../readable-label';
 import { ToolThumbs } from '../tools/tool/Tool';
@@ -73,6 +74,7 @@ export const toolRunUnitDef = defineUnit<ToolRunItem, { extraH: number }>({
       >
         <div class={turnProcessLine} data-slot="tool-timeline-line">
           <div class={turnProcessHeaderSlot}>
+            <div onClick={event => activateToolRow(event, props.data.toolNames)}>
             <CollapseHeader
               id={props.data.id}
               collapsible
@@ -83,6 +85,7 @@ export const toolRunUnitDef = defineUnit<ToolRunItem, { extraH: number }>({
             >
               {layout().text}
             </CollapseHeader>
+            </div>
           </div>
         </div>
         <Show when={pictures()}>{(value) => <div style={{ 'padding-left': `${value().inset}px` }}><ToolThumbs item={value().item} strip={value().strip} /></div>}</Show>

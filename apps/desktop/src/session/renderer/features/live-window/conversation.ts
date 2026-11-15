@@ -27,6 +27,7 @@ export class LiveWindowConversation {
   private readAgain = false;
   private disposed = false;
   private offModel: () => void;
+  private cleanups = new Set<() => void>();
 
   constructor(context: LiveWindowContext, platform: 'desktop' | 'phone', private transport: LiveWindowTransport, private report: (error: unknown) => void) {
     this.context = { ...context, shown: false };
@@ -34,6 +35,7 @@ export class LiveWindowConversation {
     this.offModel = this.model.subscribe(() => this.inputState());
   }
   getContext() { return this.context; }
+  addCleanup(cleanup: () => void): void { if (this.disposed) cleanup(); else this.cleanups.add(cleanup); }
   picture(id: string): HTMLElement | null { return this.pictures.get(id)?.element ?? null; }
   setOperating(value: boolean): void {
     if (this.operating === value || this.disposed) return;
@@ -114,7 +116,7 @@ export class LiveWindowConversation {
     this.model.observe(this.context, sources);
   }
   private startPictures(): void {
-    if (!this.context.shown || !this.operating || this.disposed) return;
+    if (!this.context.shown || !this.operating || this.disposed || this.model.getSnapshot().presentation?.mode === 'closed') return;
     const displayed = new Set(this.model.getSnapshot().sources.map(source => source.id));
     for (const picture of this.pictures.values()) {
       if (!picture.present || !displayed.has(picture.source.id) || picture.view || picture.opening) continue;
@@ -167,6 +169,7 @@ export class LiveWindowConversation {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true; this.generation++; this.offSources?.(); this.offSources = null; this.offModel();
+    for (const cleanup of this.cleanups) cleanup(); this.cleanups.clear();
     for (const picture of this.pictures.values()) { this.freeze(picture); void picture.frozenView?.close().catch(this.report); picture.element.remove(); }
     this.pictures.clear(); this.model.clear();
   }

@@ -47,6 +47,9 @@ describe('approved live-window presentation', () => {
     expect(model.getSnapshot().presentation?.mode).toBe('closed');
     model.observe(context, [source()]);
     expect(model.getSnapshot().visible).toBe(false);
+    model.observe(context, [{ ...source(), status: 'finished' }]);
+    model.observe(context, [source()]);
+    expect(model.getSnapshot().visible).toBe(false);
     model.dispatch({ type: 'show-from-tool', kind: 'browser' });
     expect(model.getSnapshot()).toMatchObject({ visible: true, presentation: { mode: 'floating' } });
   });
