@@ -353,7 +353,9 @@ export class RemoteHostsStore {
 
   /** 没有对过账的目录时读的那份:机器心跳摘要里的会话,换名后的;设备读数换了时派生一次。 */
   private get digestSessions(): ReadonlyMap<string, MachineSessions> {
-    return new Map([...this.hosts].map(([deviceId, { device }]) => [deviceId, machineSessions(deviceId, sessionListFromDigest(device.sessionDigest, device.isOnline).sessions)]));
+    // A machine without a digest (a row restored from the last run) has no entry: not known, ❌ no sessions.
+    return new Map([...this.hosts].flatMap(([deviceId, { device }]) => device.sessionDigest === null ? []
+      : [[deviceId, machineSessions(deviceId, sessionListFromDigest(device.sessionDigest, device.isOnline).sessions)] as const]));
   }
 
   private listedOn(deviceId: string): { listed: MachineSessions | undefined; live: boolean } {
