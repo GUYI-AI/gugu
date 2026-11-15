@@ -62,6 +62,13 @@ describe('shared projection surface in Chromium', () => {
     await touch('touchMove', [{ x: 80, y: 130, id: 1 }, { x: 290, y: 280, id: 2 }]);
     await touch('touchEnd', []);
     expect(s.packets.filter(packet => packet.type === 'input')).toEqual([]);
+    // A second finger in the letterbox still belongs to the same local gesture, in either order.
+    for (const outsideFirst of [false, true]) {
+      const first = { x: 130, y: outsideFirst ? 20 : 150, id: 1 };
+      const second = { x: 260, y: outsideFirst ? 150 : 20, id: 2 };
+      await touch('touchStart', [first]); await touch('touchStart', [first, second]); await touch('touchEnd', []);
+      expect(s.packets.filter(packet => packet.type === 'input')).toEqual([]);
+    }
     await touch('touchStart', [{ x: 130, y: 150, id: 1 }]);
     await touch('touchMove', [{ x: 160, y: 190, id: 1 }]); await touch('touchEnd', []);
     expect(s.packets.filter(packet => packet.type === 'input')).toEqual([]);

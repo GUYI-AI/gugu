@@ -5,14 +5,15 @@ export function installLocalTouchViewing(surface: HTMLElement, options: {
   point(event: PointerEvent): { x: number; y: number } | null;
   send(input: ProjectionInput): void; focus(): void; signal: AbortSignal;
 }) {
-  const pointers = new Map<number, { x: number; y: number }>();
+  const pointers = new Map<number, { x: number; y: number; eligible: boolean }>();
   let cancelled = false;
   const clear = () => { pointers.clear(); cancelled = false; };
   surface.addEventListener('pointerdown', event => {
-    if (event.pointerType !== 'touch' || !options.point(event)) return;
-    event.preventDefault();
+    if (event.pointerType !== 'touch') return;
     if (pointers.size) cancelled = true;
-    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const eligible = !!options.point(event);
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY, eligible });
+    if (eligible) event.preventDefault();
   }, { signal: options.signal });
   window.addEventListener('pointermove', event => {
     const start = pointers.get(event.pointerId);
@@ -21,7 +22,7 @@ export function installLocalTouchViewing(surface: HTMLElement, options: {
   window.addEventListener('pointerup', event => {
     const start = pointers.get(event.pointerId);
     if (!start) return;
-    const tap = !cancelled && pointers.size === 1 && Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 8;
+    const tap = start.eligible && !cancelled && pointers.size === 1 && Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 8;
     pointers.delete(event.pointerId);
     if (!pointers.size) cancelled = false;
     const point = tap ? options.point(event) : null;
