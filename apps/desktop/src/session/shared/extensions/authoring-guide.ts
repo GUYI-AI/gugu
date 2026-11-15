@@ -609,6 +609,7 @@ A text no live document holds (over 1 MiB, JSON that is no object, on another ma
 - \`gugu.files.writeText(file, text)\` saves over the version \`readText\` read: \`content-changed\` if the disk moved on, so read it, merge, save. A file deleted since is made again. \`unavailable\`: its machine cannot be reached; \`machine-outdated\`: it is too old for this call, and the host offers to update it. \`error.detail.machine\` names it in both.
 - \`gugu.files.exists(file)\`: whether it is there now.
 - \`gugu.files.onChanged({ workspace, id }, fn)\`: one file, by the name you gave. \`resync\`: anything may have changed (its machine is back). A file outside the working copy on another machine sends nothing.
+- API 53, preinstalled Files App only: \`gugu.files.annotateSelection(file, { startLine, endLine, text, annotation })\`, inside a real click/key, queues exactly one selected-text comment in this page's session. Both line numbers are positive integers, \`text\`/\`annotation\` are strings. The host checks the installed identity and working-copy binding; third-party Apps, other workspaces and calls without a gesture are refused. Nothing is sent; the session's shared annotation draft sends the JSON-encoded \`# Selected text:\` with the person's next message.
 - After \`rename\`, \`move\` or \`remove\`, the host's panes that show the file follow it.
 - \`gugu.files.draft(file, text)\`: keep a file's unsaved edits on its machine for after a crash: without \`text\` it reads them, with \`null\` it drops them.
 - \`opensFiles.session: ["*"]\`: any file, behind every other claim.
@@ -672,6 +673,7 @@ Each call names a file: an entry, \`ctx.file\`, or \`{ chat | workspace, name }\
   createdAt,updatedAt,createdBy,updatedBy,sourceMessageIds,metadata}\`. \`gugu.files.canDelete(entry|[…])\` → [bool]: as its menu opens, or before a program deletes several.
   23: \`savedName\`: save name. Authors: \`{id,name,kind:human|agent|system}\` or null.
 - API 19: \`keep: {expiresAt,mine}|null\`; \`gugu.files.keep(entry, 'temporary'|'permanent')\`; 20: [], as download.
+- Entries/versions: optional \`availability: available|expired|deleted|unavailable\`, \`expiredAt: ISO|null\`. Old services omit; offline devices stay available.
 
 ## Every opened handle
 

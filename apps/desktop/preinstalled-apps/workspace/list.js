@@ -79,6 +79,14 @@ export function sectionOf(iso, now) {
 /** The orders the person picks: the newest change first (with sections), by name, the largest first. */
 export const SORTS = ['recent', 'name', 'size']
 
+/** The file service says whether a chat file can be read; legacy hosts only say when its cloud copy expired. */
+export function unavailableState(entry) {
+  if (entry.type === 'folder' || entry.workspace || entry.availability === 'available') return null
+  if (['expired', 'deleted', 'unavailable'].includes(entry.availability)) return entry.availability
+  return entry.expiredAt ? 'expired' : null
+}
+export const fileUnavailable = (entry) => unavailableState(entry) !== null
+
 /** Display names, then unique ids: a refreshed list or an unchanged event must not move tied entries. */
 export function compareNames(a, b, nameOf, locale, numeric = false) {
   return nameOf(a).localeCompare(nameOf(b), locale || undefined, { numeric })

@@ -188,6 +188,9 @@ interface ItemRow {
   is_mine?: boolean | null;
   /** `workspace_list_as` only: when the group's cloud copy was cleared at its expiry and no live copy replaced it. */
   copy_expired_at?: string | null;
+  /** Whole-file availability across authorized sources; omitted by older services. */
+  availability?: AppFileEntry['availability'];
+  expired_at?: string | null;
   /** `workspace_list_as` only (gugu-supabase 20261112030000): how many items are directly in a folder; null for a file. */
   child_count?: number | string | null;
   /** `workspace_list_as` only: the device that keeps its current version, when that is not in the cloud. */
@@ -262,9 +265,17 @@ function storageClient(token: string) {
 
 type Claimant = FilesPlatform['claimant'];
 
+/** Authoritative status clears stale cloud-only expiry; unknown/missing fields retain the old response shape. */
+function availabilityOf(row: { availability?: AppFileEntry['availability']; expired_at?: string | null }): Pick<AppFileEntry, 'availability' | 'expiredAt'> {
+  if (!['available', 'expired', 'deleted', 'unavailable'].includes(row.availability ?? '')) return {};
+  return { availability: row.availability, expiredAt: row.availability === 'expired' ? row.expired_at ?? null : null };
+}
+
 function entryOf(row: ItemRow, claimant: Claimant): AppFileEntry {
   const file = { name: row.filename, contentType: row.content_type };
   const folder = row.kind === 'folder';
+  const availability = availabilityOf(row);
+  const legacyExpiry = !availability.availability && !row.host_device_id ? row.copy_expired_at : null;
   return claimEntry({
     id: row.id,
     chat: row.chat_id,
@@ -293,7 +304,8 @@ function entryOf(row: ItemRow, claimant: Claimant): AppFileEntry {
     sourceMessageIds: row.source_message_ids ?? [],
     ...('is_mine' in row ? { keep: typeof row.is_mine === 'boolean' ? { expiresAt: row.expires_at ?? null, mine: row.is_mine } : null } : {}),
     // A file its machine keeps opens from there (file_resolve_as answers it local), whatever became of a cloud copy.
-    ...(row.copy_expired_at && !row.host_device_id ? { expiredAt: row.copy_expired_at } : {}),
+    ...availability,
+    ...(!folder && legacyExpiry ? { expiredAt: legacyExpiry } : {}),
     ...(folder && row.child_count != null ? { childCount: Number(row.child_count) } : {}),
   }, claimant);
 }
@@ -623,13 +635,18 @@ export type ChatFileRef = Exclude<AppFileRef, WorkspacePlace>;
 async function itemById(token: string, itemId: string, actor: string): Promise<ItemRow | null> {
   if (!UUID.test(itemId)) return null;
   // This reader uses metadata only. The live document is read by file sync, never from inline_text.
-  const { data, error } = await chatClient(token).rpc('workspace_get_as', { p_item_id: itemId, p_as_user_id: actor })
-    .select('id,chat_id,kind,filename,content_type,size_bytes,pointer,source_message_ids,created_by,updated_by,version,created_at,updated_at,epoch,parent_id,system_role,path,metadata');
+  const columns = 'id,chat_id,kind,filename,content_type,size_bytes,pointer,source_message_ids,created_by,updated_by,version,created_at,updated_at,epoch,parent_id,system_role,path,metadata';
+  const read = (fields: string) => chatClient(token).rpc('workspace_get_as', { p_item_id: itemId, p_as_user_id: actor }).select(fields);
+  let { data, error } = await read(`${columns},availability,expired_at`);
+  // Rolling deployments: retry metadata only when the older RPC lacks these two new columns. Never retry a denial.
+  if (error && ['42703', 'PGRST204'].includes(error.code) && /availability|expired_at/.test(error.message)) {
+    ({ data, error } = await read(columns));
+  }
   if (error) {
     if (codeOf(error) === 'not-found') return null;
     throw new AppFileError(codeOf(error), error.message);
   }
-  return ((Array.isArray(data) ? data[0] : data) as ItemRow | undefined) ?? null;
+  return ((Array.isArray(data) ? data[0] : data) as unknown as ItemRow | undefined) ?? null;
 }
 
 /**
@@ -643,7 +660,7 @@ async function asListed(token: string, row: ItemRow, actor: string): Promise<Ite
     .catch(() => []);
   const listed = found.find((one) => one.id === row.id);
   // A list that does not say which machine holds it (undefined) leaves that to be resolved, as the row from get does.
-  return listed ? { ...row, expires_at: listed.expires_at ?? null, is_mine: listed.is_mine ?? null, copy_expired_at: listed.copy_expired_at ?? null, host_device_id: listed.host_device_id } : row;
+  return listed ? { ...row, expires_at: listed.expires_at ?? null, is_mine: listed.is_mine ?? null, copy_expired_at: listed.copy_expired_at ?? null, availability: listed.availability, expired_at: listed.expired_at, host_device_id: listed.host_device_id } : row;
 }
 
 /**
@@ -1311,7 +1328,7 @@ export function createAppFiles(platform: FilesPlatform) {
       const row = await readable(surface, { token, userId }, args.ref, 'opening');
       const { data, error } = await chatClient(token).rpc('workspace_versions_as', { p_item_id: row.id, p_as_user_id: surface.asAgent ?? userId });
       if (error) throw new AppFileError('failed', `${row.filename}: its versions could not be read: ${error.message}`);
-      const kept = (data as { n: number; made_by: string | null; made_at: string; size_bytes: number | null }[] | null) ?? [];
+      const kept = (data as { n: number; made_by: string | null; made_at: string; size_bytes: number | null; availability?: AppFileEntry['availability']; expired_at?: string | null }[] | null) ?? [];
       const ids = [...new Set(kept.flatMap((version) => (version.made_by ? [version.made_by] : [])))];
       const people = new Map((ids.length ? await platform.identities(token, ids) : []).map((who) => [who.id, who]));
       return kept.map((version) => {
@@ -1321,6 +1338,7 @@ export function createAppFiles(platform: FilesPlatform) {
           by: version.made_by ? { id: personId(version.made_by), name: who?.name ?? version.made_by.slice(0, 8), kind: who?.kind ?? 'human' } : null,
           at: version.made_at,
           size: version.size_bytes ?? null,
+          ...availabilityOf(version),
         };
       });
     },

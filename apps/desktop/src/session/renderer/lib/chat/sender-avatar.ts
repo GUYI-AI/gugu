@@ -1,6 +1,7 @@
 import { subscribePhoneAssistantIdentity } from '@/mobile/assistant/phoneAssistantIdentity';
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge';
 import { observe } from 'mobx';
+import { subscribeToHostTheme } from '../theme/host-theme';
 import { decodeTypedId } from '@gugu/core/shared/typedId.mjs';
 import { displayAvatarUrl } from '@/lib/dicebearAvatar';
 import { subscribeAgentLookPosters } from '@/components/agentAvatar/posters';
@@ -64,6 +65,7 @@ export function subscribeSenderAvatars(listener: () => void): () => void {
   const offIdentities = readIdentityDirectoryBridge()?.subscribe(listener) ?? (() => {});
   const offOwners = observe(sessionAgentBindings.bindings, () => listener());
   const offPosters = subscribeAgentLookPosters(listener);
+  const offTheme = subscribeToHostTheme(listener);
   const offAssistant = readAssistantShellBridge()?.subscribe(listener) ?? (() => {});
   const offPhoneAssistant = subscribePhoneAssistantIdentity(listener);
   return () => {
@@ -71,6 +73,7 @@ export function subscribeSenderAvatars(listener: () => void): () => void {
     offIdentities();
     offOwners();
     offPosters();
+    offTheme();
     offAssistant();
   };
 }
