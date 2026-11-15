@@ -1,3 +1,5 @@
+import { catalogCall, toolCallName, type ToolNode } from '@gugu/session-core/acp/client';
+
 /** Framework-neutral activation of a real tool row. The host may show its already admitted picture. */
 export const TOOL_ACTIVATION_EVENT = 'session-tool-activation';
 export function liveToolNames(names: readonly string[]): string[] {
@@ -15,5 +17,3 @@ export function activateToolRow(event: MouseEvent, toolNames: readonly string[] 
   const activation = new CustomEvent(TOOL_ACTIVATION_EVENT, { bubbles: true, cancelable: true, detail: { toolNames } });
   if (!root.dispatchEvent(activation)) event.stopPropagation();
 }
-import { catalogCall, toolCallName, type ToolNode } from '@gugu/session-core/acp/client';
-
