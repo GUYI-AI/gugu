@@ -1,27 +1,31 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
+import { useExternalMenuTrigger } from '@/components/ui/externalMenuTrigger';
 import { SubscriptionConnections } from './SubscriptionConnections';
 
-type Request = { agent: AgentPayload; machine: string | null; open: boolean; bounds: DOMRect };
-
-/** Keep the task mounted: the connection menu overlays its caller and never changes its route. */
+/**
+ * Keep the task mounted: the connection menu overlays its caller and never changes its route.
+ * Its buttons are in several places, some in the Solid transcript rows, so it follows the Trigger rule through
+ * `useExternalMenuTrigger`: pressing the same button again closes it, and the menu stays attached to that button.
+ */
 export function useConnectionPanel() {
-  const [request, setRequest] = useState<Request | null>(null);
+  const trigger = useExternalMenuTrigger<{ agent: AgentPayload; machine: string | null }>();
+  const { press } = trigger;
   const show = useCallback((agent: AgentPayload, machine: string | null, anchor?: HTMLElement) => {
     const origin = anchor ?? document.activeElement;
     if (!(origin instanceof HTMLElement)) throw new Error('Connection configuration requires a focused origin');
-    setRequest({ agent, machine, open: true, bounds: origin.getBoundingClientRect() });
-  }, []);
-  const changeOpen = useCallback((open: boolean) => setRequest(value => value ? { ...value, open } : null), []);
+    press(origin, { agent, machine });
+  }, [press]);
+  const request = trigger.last;
   return {
     show,
-    // Keep the closed menu mounted while its add/login dialog finishes.
+    // The last request stays mounted after the menu closes, while its add/login dialog finishes.
     panel: request && (
       <SubscriptionConnections
-        key={`${request.machine ?? 'local'}:${request.agent.id}`}
-        agent={request.agent} machine={request.machine} trigger={null}
-        open={request.open} onOpenChange={changeOpen}
-        anchor={{ getBoundingClientRect: () => request.bounds }}
+        key={`${request.value.machine ?? 'local'}:${request.value.agent.id}`}
+        agent={request.value.agent} machine={request.value.machine} trigger={null}
+        open={request.open} onOpenChange={trigger.onOpenChange}
+        anchor={request.anchor}
       />
     ),
   };

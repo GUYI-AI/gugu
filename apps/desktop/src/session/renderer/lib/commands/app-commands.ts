@@ -5,7 +5,7 @@ import { openShellSettings } from '@renderer/lib/open-shell-settings';
 import { appState } from '@renderer/lib/stores/app-state';
 import { toggleHostTheme } from '@renderer/lib/theme/host-theme';
 import { COMMANDS, type CommandId } from '@shared/commands';
-import { openShellChatAction } from '@renderer/features/sidebar/sidebar-chats-section';
+import { requestShellChatAction } from '@/lib/sidebarChatsBridge';
 import { commandRegistry } from './registry';
 import type { AppCommand, CommandProvider } from './types';
 
@@ -89,13 +89,13 @@ function createAppCommandProvider(): CommandProvider {
         {
           ...newGroupChatDef,
           execute() {
-            openShellChatAction('create-group');
+            requestShellChatAction('create-group');
           },
         },
         {
           ...addContactDef,
           execute() {
-            openShellChatAction('add-contact');
+            requestShellChatAction('add-contact');
           },
         },
       );

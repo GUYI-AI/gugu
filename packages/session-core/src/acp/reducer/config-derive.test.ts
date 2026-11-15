@@ -29,4 +29,22 @@ describe('deriveConfigGroups', () => {
     } as unknown as SessionConfigOption;
     expect(deriveConfigGroups([effort]).efforts?.available.map((option) => option.id)).toEqual(['low', 'high']);
   });
+
+  it.each(['dsh', 'kimi', 'qwen', 'zcode'])('keeps flat and grouped live model options equivalent for %s', (providerId) => {
+    const first = { value: JSON.stringify([providerId, 'first']), name: 'First' };
+    const second = { value: JSON.stringify([providerId, 'second']), name: 'Second', description: 'More capable' };
+    const base = {
+      id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: first.value,
+    } as const;
+    const flat = { ...base, options: [first, second] } satisfies SessionConfigOption;
+    const grouped = {
+      ...base, options: [{ group: providerId, name: providerId, options: [first, second] }],
+    } satisfies SessionConfigOption;
+    const expected = {
+      configId: 'model', selected: first.value,
+      available: [{ id: first.value, name: first.name }, { id: second.value, name: second.name, description: second.description }],
+    };
+    expect(deriveConfigGroups([flat]).modelOptions).toEqual(expected);
+    expect(deriveConfigGroups([grouped]).modelOptions).toEqual(expected);
+  });
 });

@@ -90,16 +90,35 @@ it('saves API metadata without secrets and runs Codex sessions on the user root 
     expect(context.extraArgs).toContain('model_providers.gugu_connection.base_url="https://gateway.example/v1"');
     expect(JSON.stringify(context.extraArgs)).not.toContain('test-secret');
   }
-  await expect(removeHarnessConnection('codex', connection.id)).rejects.toThrow('Select another');
-  await selectHarnessConnection('codex', 'native');
+  // #2507 删当前连接不必先切走:落回原生,默认连接 ❌ 停在一条已删的上。
   await removeHarnessConnection('codex', connection.id);
   expect(await listHarnessConnections('codex')).toEqual([
     { id: 'native', kind: 'native', name: '', current: true, endpoint: undefined },
   ]);
+  expect(await resolveHarnessConnection('codex')).toEqual({ connectionId: 'native' });
   expect((await resolveHarnessConnection('codex', { sessionId: 'old' })).connectionId).toBe('native');
   expect(state.fixture!.sqlite.prepare("SELECT config FROM sessions WHERE id = 'old'").get()).toEqual({
     config: '{"version":"1","type":"pty"}',
   });
+});
+
+// #2507 删掉正在用的账号 = 一次切回原生:用户根里换回原来那份登录,删掉的那个号的登录留在它自己的保管目录里。
+it('removing the current Codex account falls back to the existing CLI sign-in and leaves the removed one in its vault', async () => {
+  await writeAuthAt(state.codexRoot, chatgptAuth('original'));
+  const work = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'Work' });
+  await writeAuthAt(vault(work.id), chatgptAuth('work'));
+  await selectHarnessConnection('codex', work.id);
+  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('work'));
+
+  await removeHarnessConnection('codex', work.id);
+  expect(await listHarnessConnections('codex')).toEqual([
+    { id: 'native', kind: 'native', name: '', current: true, endpoint: undefined },
+  ]);
+  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('original'));
+  expect(await readFile(join(vault(work.id), 'auth.json'), 'utf8')).toBe(chatgptAuth('work'));
+  expect(await sessionHarnessConnectionId('old')).toBe('native');
+  // 原生那一份删不掉:它是 CLI 自己的配置。
+  await expect(removeHarnessConnection('codex', 'native')).rejects.toThrow('cannot be removed');
 });
 
 it('switches Codex by moving credentials through the user root, keeping rotated tokens with their owner', async () => {

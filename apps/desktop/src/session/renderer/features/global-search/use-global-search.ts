@@ -1,3 +1,8 @@
+import { activityPreviewLabel } from '@gugu/session-chat-ui/activity-preview'
+import { chatActor } from '@renderer/lib/chat/actor-identity'
+import { chatDisplayName } from '@renderer/lib/chat/chat-name'
+import { readChatSummary, resolveChatId } from '@/lib/chatSummariesBridge'
+import { translateSessionMessage } from '../../localization/locale-store'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useChatSummaries } from '@/lib/chatSummariesBridge'
@@ -22,7 +27,7 @@ type MessageRow = { id: string; chat_id: string; sender_user_id: string | null; 
 
 export type SearchHit =
   | { kind: 'message'; id: string; group: string; chatId: string; messageId: string; senderId: string | null; sender: string | null; text: string; at: string; file: boolean }
-  | { kind: 'task'; id: string; group: string; taskId: string; projectId: string; title: string; itemId: string; role: 'user' | 'assistant'; text: string; at: string }
+  | { kind: 'task'; id: string; group: string; taskId: string; projectId: string; title: string; itemId: string; role: 'user' | 'assistant'; text: string; at: string; activity?: boolean }
 
 export interface SearchView {
   /** What is searched for once in: / from: are taken out of the typed text. */
@@ -170,8 +175,11 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
       text: excerpt(parseAttachmentContent(row.content)?.fileName ?? renderMentionTokens(row.content ?? ''), query), at: row.created_at, file: row.file_item_id !== null }))
   const taskHits: SearchHit[] = !tasks || inChat || from || kinds.length > 0 || !query ? [] : (turns.data?.hits ?? [])
     .filter((hit) => !inTask || hit.sessionId === inTask.taskId)
-    .map((hit) => ({ kind: 'task', id: `t:${hit.sessionId}:${hit.itemId}`, group: `task:${hit.sessionId}`, taskId: hit.sessionId, projectId: hit.projectId,
-      title: hit.title, itemId: hit.itemId, role: hit.role, text: hit.excerpt, at: hit.at }))
+    .map((hit) => {
+      const activity = activityPreviewLabel(hit.activity, { actor: chatActor, viewerId: me ?? undefined, chatName: chatDisplayName,
+      chatKind: id => readChatSummary(resolveChatId(id) ?? id)?.kind ?? null, translate: translateSessionMessage });
+      return { kind: 'task', id: `t:${hit.sessionId}:${hit.itemId}`, group: `task:${hit.sessionId}`, taskId: hit.sessionId, projectId: hit.projectId,
+      title: hit.title, itemId: hit.itemId, role: hit.role, text: activity ?? hit.excerpt, activity: activity !== null, at: hit.at } })
   // `instant` 是正则 + Date.parse:放进比较器里等于每次排序都付 O(n log n) 遍解析的费用。
   const all = [...messageHits, ...taskHits]
     .map((hit) => ({ hit, at: instant(hit.at) }))

@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 import { createElement, act } from 'react'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import { MessageFilePreviewPanel } from '../../../../apps/desktop/src/components/chat/MessageFilePreviewPanel'
 import { HtmlPreviewSurface } from '../../../../apps/desktop/src/components/preview/HtmlPreviewSurface'
 import { ImageRenderer } from '../../../../apps/desktop/src/session/renderer/lib/editor/image-renderer'
 import { DocumentPreviewContent } from '../../../../apps/desktop/src/components/chat/DocumentPreviewContent'
 import { runWindowMenuCommand, type WindowMenuCommandTarget } from '../../../../apps/desktop/electron/window-menu-commands'
-import { bindAppPageZoom } from '../../../../apps/desktop/src/components/preview/file-content-zoom'
+import { bindAppPageZoom, createFileZoomView } from '../../../../apps/desktop/src/components/preview/file-content-zoom'
 import { ZoomMenuRow } from '../../../../apps/desktop/src/components/preview/ZoomMenuRow'
+import { platform } from '../../../../apps/desktop/src/platform'
 
 let harness: ReturnType<typeof createReactHarness>
 const originalVisibility = HTMLElement.prototype.checkVisibility
@@ -42,6 +43,30 @@ it('zooms the actual workspace image using its fitted geometry and retains the i
   expect(parseFloat(image.style.width)).toBeGreaterThan(before)
   expect(n.contents.setZoomLevel).not.toHaveBeenCalled()
   expect(parseFloat((await draw('second.png')).style.width)).toBeCloseTo(before * 1.2)
+})
+
+it('a platform without reading zoom memory (the phone) zooms an image preview on double tap, opens the next one whole and stores nothing', async () => {
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1000)
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600)
+  platform.capabilities.readingZoomMemory = false
+  onTestFinished(() => { platform.capabilities.readingZoomMemory = true })
+  localStorage.setItem('gugu.file-content-zoom.image', '2')
+  const draw = async (path: string) => {
+    await harness.render(createElement(ImageRenderer, { file: { path, content: `data:image/png,${path}` } }))
+    const image = harness.container.querySelector('img')!
+    Object.defineProperties(image, { naturalWidth: { configurable: true, value: 2000 }, naturalHeight: { configurable: true, value: 1000 } })
+    await act(async () => image.dispatchEvent(new Event('load')))
+    return image
+  }
+  const image = await draw('first.png')
+  const whole = parseFloat(image.style.width)
+  expect(whole).toBeCloseTo(2000 * (1000 - 32) / 2000)
+  const viewport = harness.container.firstElementChild as HTMLElement
+  await act(async () => viewport.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 100, clientY: 100 })))
+  expect(parseFloat(image.style.width)).toBeGreaterThan(whole)
+  expect(localStorage.getItem('gugu.file-content-zoom.image')).toBe('2')
+  await harness.render(createElement('div'))
+  expect(parseFloat((await draw('second.png')).style.width)).toBeCloseTo(whole)
 })
 
 // Installed only under apps/desktop: the bare name does not resolve from tests/, so a mock under it misses the product import.
@@ -147,15 +172,47 @@ it('zooms an App page as a whole from the window keys while it has focus, rememb
   off(); box.remove()
 })
 
-it('the ⋯ menu row steps the same preference as the keys and resets it from its ratio', async () => {
-  await harness.render(createElement(ZoomMenuRow, { kind: 'markdown' }))
+it('the ⋯ menu row steps the zoom of its view like the keys, remembers it for the next view, and resets it from its ratio', async () => {
+  const view = createFileZoomView()
+  await harness.render(createElement(ZoomMenuRow, { kind: 'markdown', view }))
   const [out, ratio, into] = Array.from(harness.container.querySelectorAll('button'))
   expect(ratio!.textContent).toBe('100%')
   await act(async () => into!.click())
   expect(ratio!.textContent).toBe('120%')
+  expect(view.get('markdown')).toBeCloseTo(1.2)
   expect(Number(localStorage.getItem('gugu.file-content-zoom.markdown'))).toBeCloseTo(1.2)
   await act(async () => out!.click())
   expect(Number(localStorage.getItem('gugu.file-content-zoom.markdown'))).toBeCloseTo(1)
   await act(async () => { into!.click(); ratio!.click() })
   expect(ratio!.textContent).toBe('100%')
+})
+
+// #2567: two files of one kind open side by side (a split) — zooming one left the other following it.
+it('zooming one of two previews of a kind leaves the other at its ratio; a preview opened next starts from the last one', async () => {
+  const zoomOf = (panel: Element) => Number(((panel.querySelector('[data-file-selection]')!.firstElementChild) as HTMLElement).style.zoom)
+  const split = (third: boolean) => createElement('div', null, preview('markdown'), preview('markdown'), third ? preview('markdown') : null)
+  await harness.render(split(false))
+  const [left, right] = Array.from(harness.container.querySelectorAll('[data-testid="message-file-preview-panel"]'))
+  const viewport = right!.querySelector<HTMLElement>('[data-file-selection]')!
+  viewport.tabIndex = -1; viewport.focus()
+  await act(async () => viewport.dispatchEvent(new KeyboardEvent('keydown', { key: '-', metaKey: true, bubbles: true, cancelable: true })))
+  expect(zoomOf(right!)).toBeCloseTo(1 / 1.2)
+  expect(zoomOf(left!)).toBe(1)
+  await harness.render(split(true))
+  const panels = Array.from(harness.container.querySelectorAll('[data-testid="message-file-preview-panel"]'))
+  expect(panels.map(zoomOf).map((zoom) => Number(zoom.toFixed(3)))).toEqual([1, Number((1 / 1.2).toFixed(3)), Number((1 / 1.2).toFixed(3))])
+})
+
+it('zooming one of two HTML pages side by side sends the new ratio to that page only', async () => {
+  await harness.render(createElement('div', null,
+    createElement(HtmlPreviewSurface, { fileName: 'left.html', url: 'blob:left', onLink() {} }),
+    createElement(HtmlPreviewSurface, { fileName: 'right.html', url: 'blob:right', onLink() {} })))
+  const [left, right] = Array.from(harness.container.querySelectorAll('iframe'))
+  const sent = (frame: HTMLIFrameElement) => vi.spyOn(frame.contentWindow!, 'postMessage')
+  const toLeft = sent(left!)
+  const toRight = sent(right!)
+  await act(async () => window.dispatchEvent(new MessageEvent('message', { source: right!.contentWindow, data: { type: 'gugu-preview-zoom', command: 'zoomOut' } })))
+  const zooms = (spy: typeof toLeft) => spy.mock.calls.map(([data]) => data as { type?: string; zoom?: number }).filter((data) => data.type === 'gugu-preview-set-zoom').map((data) => Number(data.zoom!.toFixed(3)))
+  expect(zooms(toRight)).toEqual([Number((1 / 1.2).toFixed(3))])
+  expect(zooms(toLeft)).toEqual([])
 })

@@ -103,7 +103,7 @@ it.each([800, 480])('actual account editors stay together at %ipx and retain exp
 
 it('a rejected assistant rename retains the edited name and exposes the original error feedback', async () => {
   const update = vi.fn(async () => { throw new Error('fixture rename rejected'); });
-  await renderWithAppProviders(harness, <Frame><AssistantSection available={[]} onOpenSection={vi.fn()} /></Frame>, { auth: user, contacts: { updateAgentProfile: update } });
+  await renderWithAppProviders(harness, <Frame><AssistantSection available={[]} onOpenSection={vi.fn()} onOpenModel={vi.fn()} /></Frame>, { auth: user, contacts: { updateAgentProfile: update } });
   await userEvent.click(harness.container.querySelector('[data-testid="assistant-name-edit"]')!);
   const name = harness.container.querySelector<HTMLInputElement>('[data-testid="assistant-name-input"]')!;
   await userEvent.fill(name, '保留这份草稿');
@@ -115,7 +115,7 @@ it('a rejected assistant rename retains the edited name and exposes the original
 
 it('phone composition retains its original card boundary and full-width rows', async () => {
   harness.container.style.width = '412px';
-  await renderWithAppProviders(harness, <Frame mobile><AssistantSection available={['devices']} onOpenSection={vi.fn()} /></Frame>, { auth: user });
+  await renderWithAppProviders(harness, <Frame mobile><AssistantSection available={['devices']} onOpenSection={vi.fn()} onOpenModel={vi.fn()} /></Frame>, { auth: user });
   const card = harness.container.querySelector<HTMLElement>('.gg-settings-card')!;
   expect(getComputedStyle(card).borderWidth).toBe('1px');
   expect(card.getBoundingClientRect().width).toBeGreaterThan(300);
@@ -125,7 +125,7 @@ it('title rename requires double click or pencil, cancels without closing settin
   let finish!: () => void;
   const update = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
   const outerEscape = vi.fn();
-  await renderWithAppProviders(harness, <div style={{ display: 'contents' }} onKeyDown={(event) => { if (event.key === 'Escape') outerEscape(); }}><Frame><AssistantSection available={[]} onOpenSection={vi.fn()} /></Frame></div>, { auth: user, contacts: { updateAgentProfile: update } });
+  await renderWithAppProviders(harness, <div style={{ display: 'contents' }} onKeyDown={(event) => { if (event.key === 'Escape') outerEscape(); }}><Frame><AssistantSection available={[]} onOpenSection={vi.fn()} onOpenModel={vi.fn()} /></Frame></div>, { auth: user, contacts: { updateAgentProfile: update } });
   await userEvent.click(harness.container.querySelector('[data-testid="assistant-name-display"]')!);
   expect(harness.container.querySelector('input')).toBeNull();
   await userEvent.dblClick(harness.container.querySelector('[data-testid="assistant-name-display"]')!);

@@ -1,3 +1,5 @@
+import type { ActivityPreviewSource } from '@gugu/session-chat-ui/activity-preview';
+
 export type SearchItemKind = 'project' | 'session';
 
 export interface SearchItem {
@@ -19,6 +21,7 @@ export interface TaskTurnHit {
   itemId: string;
   role: 'user' | 'assistant';
   excerpt: string;
+  activity?: ActivityPreviewSource | null;
   at: string;
 }
 

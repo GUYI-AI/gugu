@@ -261,6 +261,8 @@ export interface ComposerModelMenuProps {
    */
   openRequest?: number;
   settingNotice?: string | null;
+  /** See `modelMenuNotice` on the composer. */
+  menuNotice?: string;
   onOpen?: () => void;
   modelUnlock?: ComposerModelUnlock | null;
   onModelUnlock?: (anchor?: HTMLElement) => void;
@@ -284,6 +286,7 @@ export function ComposerModelMenu({
   onModelChange,
   openRequest,
   settingNotice,
+  menuNotice,
   onOpen,
   modelUnlock,
   onModelUnlock,
@@ -305,6 +308,7 @@ export function ComposerModelMenu({
   const [modelProviderFilter, setModelProviderFilter] = useState<ReadonlySet<string>>(new Set());
   const [modelPanelOpen, setModelPanelOpen] = useState(false);
   const onOpenRef = useRef(onOpen);
+  const modelTrigger = useRef<HTMLButtonElement>(null);
   onOpenRef.current = onOpen;
   const openModelPanel = useCallback(() => {
     onOpenRef.current?.();
@@ -513,6 +517,7 @@ export function ComposerModelMenu({
         autoHighlight
       >
         <Combobox.Trigger
+          ref={modelTrigger}
           className={styles.agentTrigger}
           disabled={disabled}
           title={settingNotice ?? triggerTitle}
@@ -568,9 +573,9 @@ export function ComposerModelMenu({
             而上游那版就是省略号(`truncate`)。owner 2026-09-06 在实机上看过这一版并认可。
             ⇒ 换了机制、没丢那条修复;要回到「按内容撑宽」,改这一个 className 即可。 */}
         <Combobox.Content ref={setPanelEl} className={styles.modelPanelContent}>
-          {settingNotice && (
+          {(settingNotice || menuNotice) && (
             <div role="status" className={styles.modelSettingNotice} data-testid="composer-model-setting-notice">
-              {settingNotice}
+              {settingNotice || menuNotice}
             </div>
           )}
           {panel.modelRow === 'list' ? (
@@ -644,7 +649,8 @@ export function ComposerModelMenu({
                     type="button"
                     className={styles.settingRowUnlock}
                     title={modelUnlock.title}
-                    onClick={event => { onModelUnlock?.(event.currentTarget); setModelPanelOpen(false); }}
+                    // 这颗钮跟着清单一起收走;登录菜单贴在常驻的模型触发器上,❌ 贴在一个马上离开页面的元素上。
+                    onClick={event => { onModelUnlock?.(modelTrigger.current ?? event.currentTarget); setModelPanelOpen(false); }}
                     data-testid="composer-model-unlock"
                   >
                     {modelUnlock.label}

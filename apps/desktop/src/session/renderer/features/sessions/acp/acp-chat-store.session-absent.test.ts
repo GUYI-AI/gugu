@@ -9,10 +9,10 @@
  * 没收下时还字、报错的是 `sendThroughCustody` 自己。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { setLocalePreference } from '@/i18n';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { reaction, runInAction } from 'mobx';
 import { WireError } from '@gugu/session-wire';
-import { log } from '@renderer/utils/logger';
 import type { SessionInput } from '@/lib/sessionInputOutbox';
 import { installAcpChatStoreHost } from './acp-chat-store.test-host';
 
@@ -25,11 +25,13 @@ vi.mock('@/lib/sessionInputOutboxBridge', async (importOriginal) => ({
 }));
 
 const toasts: Array<{ title: string; description?: string; variant?: string }> = [];
-vi.mock('@renderer/lib/hooks/use-toast', () => ({
-  toast: (arg: { title: string; description?: string; variant?: string }) => {
-    toasts.push(arg);
-  },
-}));
+vi.mock('@/lib/loading/LoadingIndicator', () => ({ LoadingIndicator: () => null }));
+vi.mock('@/lib/notices', async original => {
+  const notices = await original<typeof import('@/lib/notices')>();
+  return { ...notices, notify: (notice: import('@/lib/notices').Notice) => { toasts.push(notice as typeof toasts[number]); return notices.notify(notice); } };
+});
+vi.mock('@renderer/lib/hooks/use-toast', async () => ({ toast: (await import('@/lib/notices')).notify }));
+
 
 type StoreModule = typeof import('./acp-chat-store');
 type StoreCtor = StoreModule['AcpChatStore'];
@@ -86,6 +88,7 @@ describe('#3500 发送只走 custody', () => {
 });
 
 describe('#3507 会话不在时的其余副作用', () => {
+  setLocalePreference('zh-CN');
   const absentSessionActions: Array<[
     label: string,
     title: string,
@@ -113,7 +116,8 @@ describe('#3507 会话不在时的其余副作用', () => {
     const store = makeStore();
     await invoke(store);
     expect(toasts.some((entry) => entry.title === title), `${title} was silently skipped`).toBe(true);
-    expect(toasts.at(-1)?.description).toBe('ACP session is not connected');
+    expect(toasts.at(-1)?.description).toBe(translateSessionMessage('taskError.settingFailedRetry'));
+    expect(JSON.stringify(toasts)).not.toContain('ACP session is not connected');
     expect(toasts.at(-1)?.variant).toBe('destructive');
   });
 
@@ -148,24 +152,17 @@ describe('#3507 会话不在时的其余副作用', () => {
     expect(toasts.some((entry) => entry.title === translateSessionMessage('acpFailure.refreshHistory'))).toBe(true);
   });
 
-  it('explains a disconnected history refresh and persists its cause at error level', async () => {
+  // A lost link is not a failed reconciliation: the turn stays on screen, the transcript says the connection
+  // is down (reconcileAwaitingLink), and the same reconciliation runs again on the next connection.
+  it('waits for the connection instead of toasting a disconnected history refresh', async () => {
     const store = makeStore();
-    store.session = { getHistory: async () => { throw new WireError('DISCONNECTED', 'Wire transport disconnected'); } } as never;
-    const logged = vi.spyOn(log, 'error').mockImplementation(() => {});
-    try {
-      await (store as unknown as { _refreshHistory: () => Promise<void> })._refreshHistory();
-      expect(toasts.at(-1)).toMatchObject({
-        title: translateSessionMessage('acpFailure.refreshHistory'),
-        description: translateSessionMessage('taskError.connectionLost'),
-      });
-      expect(logged).toHaveBeenCalledWith('ACP chat action failed', {
-        sessionId: store.sessionId,
-        title: 'acpFailure.refreshHistory',
-        error: 'Wire transport disconnected\ncode=DISCONNECTED',
-      });
-    } finally {
-      logged.mockRestore();
-    }
+    const whenConnected = vi.fn(() => new Promise<number>(() => {}));
+    store.session = { getHistory: async () => { throw new WireError('DISCONNECTED', 'Wire transport disconnected'); }, whenConnected } as never;
+    const before = toasts.length;
+    await (store as unknown as { _refreshHistory: () => Promise<void> })._refreshHistory();
+    expect(toasts.length).toBe(before);
+    expect(whenConnected).toHaveBeenCalledTimes(1);
+    expect(store.reconcileAwaitingLink).toBe(true);
   });
 
   it('history reconciliation does not erase a newer active turn', async () => {

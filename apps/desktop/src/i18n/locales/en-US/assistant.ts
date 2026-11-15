@@ -1,30 +1,27 @@
 export default {
-  "resourceKinds": {"memory": "Memory", "personality": "Personality", "files": "Files", "skills": "Skills", "schedules": "Scheduled task", "integrations": "Application", "voice-notes": "Voice note", "capabilities": "Capability", "device-notes": "Device note", "tasks": "Task"},
+  "resourceKinds": {"memory": "Memory", "personality": "Personality", "files": "Files", "skills": "Skills", "schedules": "Scheduled task", "integrations": "Application", "voice-notes": "Voice note", "tasks": "Task"},
   "library": {
-    "saveFailed": "Could not save. Your input is preserved. If the entry changed elsewhere, reopen it before editing.",
     "emptyContent": "No instructions yet.",
-    "noCredentials": "Keep passwords and tokens in their existing authorization settings.",
-    "entryContent": "Instructions and conventions",
-    "entryDescription": "Description",
-    "entryGroup": "Group",
-    "entryName": "Name",
-    "add": "Add entry",
-    "edit": "Edit entry",
-    "memory": "Memory", "workspace": "Projects", "capabilities": "Capabilities", "devices": "Devices",
+    "memory": "Memory", "workspace": "Projects", "devices": "Devices",
     "loading": "Reading…", "failed": "Resources could not be read. Please retry.", "items_one": "{{count}} entry", "items_other": "{{count}} entries",
     "notConfigured": "Not configured yet", "setup": "Set up together", "organize": "Organize in chat", "backToIndex": "Back to index",
-    "setupNote": "Group entries by purpose, with a separate description and index for each.", "emptyIndex": "No notes yet. Add an entry or organize them in chat.",
-    "setupPrompt": "Read Gugu’s existing {{kind}} entries and actual connection status, then organize their descriptions and indexes by purpose. Reuse entries. Add what I need. Never save credentials or treat notes as proof of authorization.",
+    "setupNote": "Group entries by purpose, with a separate description and index for each.",
     "useFolder": "Use this folder as a project", "projectPrompt": "Associate the existing folder {{path}} with a project. Check the actual device, folder and registered projects first; reuse existing files without duplication. Ask me for any decisions or missing information.",
     "deviceAccess": "Device connections and permissions",
     "onThisComputer": "Stored on this computer", "onAssistantDevice": "Stored on the assistant’s device",
-    "ungrouped": "Other", "hasIndex": "View instructions and index", "missingIndex": "No entry instructions yet", "longTerm": "Long-term knowledge and preferences",
-    "guguProjects": "The same projects as the Gugu projects page.", "noGuguProjects": "No Gugu projects yet.",
+    "missingIndex": "No entry instructions yet", "longTerm": "Long-term knowledge and preferences",
+    "guguProjects": "The same projects as the Gugu projects page.", "noGuguProjects": "No Gugu projects yet.", "stale": "Stale",
     "projectOrganizePrompt": "Read existing Gugu projects and help organize their documents and indexes. Do not create a separate project registry. Reuse Gugu project and folder attachment operations and check ownership before linking an existing folder.",
     "projectFolderSessions_one": "{{count}} conversation",
     "projectFolderSessions_other": "{{count}} conversations"
   },
-  "links": { "task": "View work: {{title}}", "unavailable": "This reference was removed or is not accessible" },
+  "links": {
+    "task": "View work: {{title}}", "unavailable": "This reference was removed or is not accessible",
+    "fileOnSenderMachine": "This path is on the sender's computer, so it can't be opened here.",
+    "fileHostOffline": "The computer storing this file is offline. Try again when it is online.",
+    "fileMissing": "This file was deleted or is not accessible.",
+    "fileOpenFailed": "This file could not be opened. Please try again later."
+  },
   "question": {
     "title": "Your input", "other": "Write an answer", "later": "Answer later", "resume": "Continue answering",
     "previous": "Previous", "next": "Next", "submit": "Submit answers", "submitting": "Sending…",
@@ -45,9 +42,9 @@ export default {
       "partnersBody": "Find projects and friends here. Each project is a group."
     },
     "desktop": {
-      "guguBody": "Your personal assistant for plans and everyday tasks. At the top of the left rail.",
-      "projectsBody": "Work with Agents in a group for each project. Find Projects in Messages.",
-      "chatsBody": "Talk and collaborate with friends and each other’s Agents. Find Chats in Messages."
+      "guguBody": "Your personal assistant for plans and everyday tasks.",
+      "projectsBody": "Work with Agents in a group for each project. Find them in the Messages list.",
+      "chatsBody": "Talk and collaborate with friends and each other’s Agents. Also in the Messages list."
     }
   },
   "hints": {
@@ -56,13 +53,9 @@ export default {
       "collaboration": "Find projects and friends here. Open one to start collaborating."
     },
     "desktop": {
-      "assistant": "Your personal assistant is here. Tell it your plans and tasks.",
-      "collaboration": "Each project is a group. Work with Agents to move it forward."
+      "assistant": "Your personal assistant is here. Tell it your plans and tasks."
     },
-    "dismiss": "Got it",
-    "unreadable": "Could not read hint progress. Please retry.",
-    "saveFailed": "Hint progress was not saved. Please retry.",
-    "retry": "Retry"
+    "dismiss": "Got it"
   },
   "rail": "Gugu",
   "nav": {
@@ -88,7 +81,6 @@ export default {
     "save": "Save",
     "saving": "Saving…",
     "delete": "Delete",
-    "more": "More actions"
   },
   "machine": {
     "stale": "This resource has not been updated to its current version.",
@@ -130,7 +122,6 @@ export default {
     "ownerOccupation": "- Occupation: {{occupation}}",
     "back": "Back",
     "continue": "Continue",
-    "skip": "Skip for now",
     "defaultName": "Gugu",
     "namePlaceholder": "Gugu",
     "homeCloudUpgrade": "Upgrade to Plus",
@@ -161,12 +152,7 @@ export default {
     "ended": "The previous setup has ended. You can start a new one.",
     "startNew": "Start a new setup",
     "resuming": "The last setup didn't finish; continuing with {{name}}…",
-    "connectTitle": "Connect a few apps",
     "connectBody": "Once connected, {{name}} can read your calendar and send messages for you. You can also do it later under Connected apps.",
-    "readyTitle": "All set, {{name}}.",
-    "readyTitleNoName": "All set.",
-    "readySub": "{{name}} has settled in and will say hello first.",
-    "go": "Let's go"
   },
   "server": {
     "title": "Choose your server",
@@ -261,11 +247,9 @@ export default {
     "confirmCloudModel": "The cloud uses Gugu-provided models. Your local model subscription won't be transferred.",
     "confirmSize_one": "{{count}} file, {{size}} in all.",
     "confirmSize_other": "{{count}} files, {{size}} in all.",
-    "confirmAccounts": "These accounts move with {{name}} (the old copy is removed, only one is kept):",
-    "confirmAccountsNoteComputer": "Other sessions on this computer that need them will have to connect again.",
-    "confirmAccountsNoteCloud": "Other sessions in the cloud that need them will have to connect again.",
+    "confirmAccounts": "These accounts go with {{name}} (the old home keeps its copy):",
     "confirmNoAccounts": "No connected accounts to move.",
-    "confirmAccountsUnsupported": "The other side's Gugu is too old to move accounts: only files move this time and accounts stay where they are. Update it and move them then.",
+    "confirmAccountsUnsupported": "Couldn't read which integrations the other side has connected: only files move this time and integrations stay where they are. Reconnect what you need in the new home's library afterwards.",
     "confirmReconnect": "These can't be carried over; connect them again afterwards:",
     "confirmKept": "Files in the old home aren't deleted, they just stop running.",
     "confirmStart": "Start moving",
@@ -277,25 +261,27 @@ export default {
       "files": "Copying memory, skills and files",
       "accounts": "Moving accounts",
       "schedules": "Setting its schedules again",
-      "restart": "Letting {{name}} read the new home",
-      "revoke": "Finishing up"
+      "restart": "Letting {{name}} read the new home"
     },
     "movingTitle": "Moving…",
     "movingNote": "Keep Gugu open until it's done.",
     "doneTitle": "All moved",
-    "doneAccounts_one": "{{count}} account moved.",
-    "doneAccounts_other": "{{count}} accounts moved.",
+    "doneAccounts_one": "{{count}} account moved (the old home keeps its copy).",
+    "doneAccounts_other": "{{count}} accounts moved (the old home keeps its copy).",
     "doneSchedules_one": "{{count}} schedule set again.",
     "doneSchedules_other": "{{count}} schedules set again.",
     "doneFiles_one": "{{count}} file copied.",
     "doneFiles_other": "{{count}} files copied.",
     "doneNotMoved": "These didn't come along:",
-    "doneNotMovedCli": "{{name}}: connect it again in the new home.",
-    "doneNotMovedExists": "{{name}}: the new home already has a different account under the same name, so this one wasn't overwritten and stays where it was.",
-    "doneNotMovedKept": "{{name}}: couldn't confirm it moved, so the account stays where it was — nothing lost.",
     "doneNotMovedFile": "{{rel}} (a link, not followed)",
     "doneNotMovedSchedule": "Schedule \"{{name}}\" wasn't set again (its time had passed).",
-    "doneAccountsUnsupported": "The other side's Gugu is too old to move accounts: they're all still where they were, nothing is lost. Update it and move them then.",
+    "doneReconnect": "These didn't come along; reconnect them in the new home (the old home keeps its copy):",
+    "doneReconnectNoKeyring": "The new home has no system keyring, so account credentials can't be stored there safely. Install and unlock one (GNOME Keyring or KWallet on Linux), restart Gugu, then connect them.",
+    "doneReconnectExists": "The new home already has an account with the same name but different credentials, so it wasn't overwritten. If it doesn't connect, reconnect it.",
+    "doneReconnectWhereCloud": "Open Library → Integrations, pick the cloud machine, and connect each one below.",
+    "doneReconnectWhereComputer": "Open Library → Integrations, pick this computer, and connect each one below.",
+    "doneReconnectAction": "Open Library to reconnect",
+    "doneAccountsUnsupported": "Couldn't read which integrations the other side has connected: they're all still where they were, nothing is lost. Reconnect what you need in the new home's library.",
     "doneSchedulesUnsupported": "The other side's Gugu can't set schedules again yet: {{names}}. After updating, ask it to set them again.",
     "doneSchedulesUnreadable": "Couldn't tell whether {{name}} had any scheduled tasks (its old session couldn't be read), so none were carried. If it had, ask it to schedule them again.",
     "doneWarn": "One thing wasn't fully tidied up; it doesn't affect use.",
@@ -443,138 +429,31 @@ export default {
       "delete": "Delete widget",
       "deletePrompt": "Delete the \"{{title}}\" widget and stop the scheduled task that updates it."
     },
-    "discover": {
-      "title": "Discover widgets",
-      "sub": "Pick a starting point, or write what you want to follow. Once added, {{name}} keeps it up to date.",
-      "close": "Close",
-      "placeholder": "Describe what you want to follow...",
-      "startingPoint": "A starting point, not a fixed template",
-      "request": "I'd like a widget on Activity that keeps an eye on: {{want}}\nAsk me up to three questions first (what to watch, how often to update, when it should be ready), then add it to Activity and keep it updated on schedule.",
-      "group": {
-        "day": "Daily rhythm",
-        "watch": "Watch for changes",
-        "life": "Life and health"
-      },
-      "template": {
-        "weather": {
-          "title": "Weather before you go",
-          "body": "Today and tomorrow, umbrella or not, what to wear",
-          "starter": "Every morning, tell me today's weather, whether to bring an umbrella and what to wear. City: "
-        },
-        "todos": {
-          "title": "Today's to-dos",
-          "body": "What to do today, from chats and your calendar",
-          "starter": "Every day, list what I need to do today, most important first"
-        },
-        "news": {
-          "title": "Daily headlines",
-          "body": "The few stories worth reading in fields I care about",
-          "starter": "Every day, pick the three most worthwhile stories in these fields: "
-        },
-        "stocks": {
-          "title": "Stocks and holdings",
-          "body": "Prices, moves and news for a few tickers",
-          "starter": "Keep an eye on the price, moves and news for these stocks: "
-        },
-        "competitors": {
-          "title": "Competitor moves",
-          "body": "New releases, pricing changes and news",
-          "starter": "Keep an eye on new releases, pricing changes and news from these competitors: "
-        },
-        "industry": {
-          "title": "Industry pulse",
-          "body": "Funding, launches and big news in one industry",
-          "starter": "Every week, sum up funding, launches and big news in this industry: "
-        },
-        "spending": {
-          "title": "Monthly spending",
-          "body": "How much, on what, compared with last month",
-          "starter": "Keep an eye on my spending this month: how much, on what, compared with last month"
-        },
-        "flights": {
-          "title": "Flight price drops",
-          "body": "Fares on one route; tell me when they drop",
-          "starter": "Watch fares on this route and tell me when they drop: "
-        },
-        "learning": {
-          "title": "Learning progress",
-          "body": "A course or goal: weekly progress and next steps",
-          "starter": "Keep track of my progress and next steps on this learning goal: "
-        }
-      }
-    }
   },
   "tasks": {
     "closeChat": "Close task chat",
     "agent": "Agent",
     "chatUnavailable": "This task is currently unavailable.",
     "starting": "Starting",
-    "liveWaking": "Waking the device. Live records will connect automatically.",
-    "liveUnavailable": "Live records are unavailable",
-    "liveTimedOut": "The execution device did not connect in time.",
-    "liveDisconnected": "The execution device disconnected.",
-    "liveDeviceOffline": "The execution device is offline.",
     "workState": { "active": "In progress", "completed": "Completed", "cancelled": "Cancelled", "failed": "Not completed" },
     "collaborationLoading": "Loading the assistant’s collaboration with this task agent…",
     "collaborationUnavailable": "The complete collaboration history is currently unavailable.",
     "collaborationReady": "Includes assistant collaboration history",
     "collaborationOlder": "Load earlier collaboration",
     "title": "Tasks",
-    "segment": "Tasks",
-    "create": "Create task",
-    "createPrompt": "Please do this for me: ",
     "day": {
       "today": "Today",
       "yesterday": "Yesterday",
       "week": "Last 7 days",
       "earlier": "Earlier"
     },
-    "unseen": "Has unseen results",
-    "emptyTitle": "No tasks yet",
-    "loadFailed": "Couldn't load tasks",
-  },
-  "routines": {
-    "loadFailed": "Couldn't load scheduled tasks. Try again shortly.",
-    "title": "Scheduled",
-    "by": "Scheduled by {{name}}",
-    "active": "Active",
-    "inactive": "Paused",
-    "next": "Next {{time}}",
-    "nextUnavailable": "Couldn't read the next run time",
-    "ended": "Ended",
-    "enabled": "On",
-    "everyDay": "Daily at {{time}}",
-    "everyWeekday": "Mon–Fri at {{time}}",
-    "everyWeek": "Every {{day}} at {{time}}",
-    "schedule": "Schedule",
-    "instructions": "Instructions",
-    "editPrompt": "Please change when “{{name}}” runs.",
-    "changeTime": "Change time",
-    "delete": "Delete",
-    "deleteTitle": "Delete scheduled task",
-    "deleteBody": "“{{name}}” will be deleted. This can't be undone.",
-    "deleted": "Scheduled task deleted",
-    "deleteFailed": "Couldn't delete the scheduled task",
-    "enabledToast": "Scheduled task turned on",
-    "disabledToast": "Scheduled task turned off",
-    "updateFailed": "Couldn't update the scheduled task",
-    "emptyTitle": "No scheduled tasks",
-    "empty": "Tell {{name}} “remind me at 8 tomorrow morning…” and it will schedule it.",
-    "create": "Create scheduled task",
-    "createPrompt": "Please schedule this for me: ",
-    "goneTitle": "This scheduled task isn't available",
-    "gone": "It may have been deleted."
   },
   "memory": {
     "loadFailed": "Couldn't load memories. Try again shortly.",
     "aboutUserTitle": "What I know about {{owner}}",
     "updated": "Updated {{time}}",
-    "faster": "Set up memory faster",
-    "fasterPrompt": "Please help me set up memory faster.",
     "all": "All",
     "voiceNotes": "Voice notes",
-    "voiceNotesEmptyTitle": "No voice notes yet",
-    "voiceLoadFailed": "Couldn't load voice notes",
     "items_one": "{{count}} item",
     "items_other": "{{count}} items",
     "createdBy": "Noted by {{name}}",
@@ -593,13 +472,11 @@ export default {
     "editAboutMePrompt": "About what you've noted about me, I'd like to change: ",
     "deleteTitle": "Delete this memory?",
     "deleteBody": "“{{name}}” will be removed permanently. This can't be undone.",
-    "deleted": "Deleted",
     "deleteFailed": "Couldn't delete it. Try again.",
     "goneTitle": "This memory is gone",
     "gone": "It may have been deleted or renamed."
   },
   "health": {
-    "desktopEmpty": "No health data yet",
     "title": "Health",
     "tileSub_one": "{{count}} metric",
     "tileSub_other": "{{count}} metrics",
@@ -610,26 +487,26 @@ export default {
     "emptyStateTitle": "Your health at a glance",
     "emptyStateSubtitle": "Connect your health data to see sleep, recovery, activity and more in one place.",
     "state": {
-      "noPhone": "Allow health data access in My → Permissions.",
-      "oldApp": "咕咕 on {{device}} is too old to read health data. Update it and try again.",
-      "offline": "{{device}} is offline (last seen {{time}}). Open 咕咕 on the phone and try again.",
-      "offlineNever": "{{device}} is offline. Open 咕咕 on the phone and try again.",
-      "notGranted": "On {{device}}, open My → Permissions and allow health data access.",
+      "noPhone": "Allow health data access in Me → Device control.",
+      "oldApp": "Gugu on {{device}} is too old to read health data. Update it and try again.",
+      "offline": "{{device}} is offline (last seen {{time}}). Open Gugu on the phone and try again.",
+      "offlineNever": "{{device}} is offline. Open Gugu on the phone and try again.",
+      "notGranted": "On {{device}}, open Me → Device control and allow health data access.",
       "osPermission": "{{device}} hasn't allowed 咕咕 to read health data in Health Connect yet.",
       "unsupported": "{{device}} has no Health Connect (built in from Android 14), so health data can't be read.",
       "failed": "Couldn't read it this time: {{message}}",
       "errorTitle": "Couldn't load your health data",
       "errorBody": "Check your connection and try again.",
       "unreadableTitle": "Couldn't read this data",
-      "unreadable": "The \"{{problem}}\" field from the phone is wrong. Update 咕咕 on the phone and try again."
+      "unreadable": "The \"{{problem}}\" field from the phone is wrong. Update Gugu on the phone and try again."
     },
     "phone": {
       "thisPhone": "this phone",
-      "notAndroid": "Health data can only be read in the 咕咕 Android app.",
-      "oldApp": "咕咕 on this phone is too old to read health data. Update it and try again.",
+      "notAndroid": "Health data can only be read in the Gugu Android app.",
+      "oldApp": "Gugu on this phone is too old to read health data. Update it and try again.",
       "unsupported": "This phone has no Health Connect (built in from Android 14), so health data can't be read.",
-      "notGranted": "Allow health data access in My → Permissions.",
-      "osPermission": "System access is not granted. Manage it in My → Permissions.",
+      "notGranted": "Allow health data access in Me → Device control.",
+      "osPermission": "System access is not granted. Manage it in Me → Device control.",
       "grant": "Manage permissions"
     },
     "retry": "Try again",
@@ -690,7 +567,7 @@ export default {
       "body_fat": "body fat"
     },
     "unreadableTypes": "Couldn't read this time: {{names}}.",
-    "backgroundHint": "Can't read while 咕咕 is in the background on the phone: turn on \"Read in background\" for 咕咕 in Health Connect.",
+    "backgroundHint": "Can't read while Gugu is in the background on the phone: turn on \"Read in background\" for 咕咕 in Health Connect.",
     "analysisTitle": "Your health analysis",
     "analysisEmpty": "Let {{name}} look at your recent data. Its take will be kept here.",
     "analyze": "Ask {{name}} to interpret",
@@ -700,7 +577,6 @@ export default {
     "analyzeReport": "Analyze a health report",
     "analyzeReportDescription": "Upload a health report for a personal analysis.",
     "healthReportMessage": "Here is my health report. Record what's worth keeping in my health information, and if it's worth analyzing, write an analysis report.",
-    "reportPicked": "Added to your chat with {{name}}. Review it, then send.",
     "unit": {
       "bpm": "bpm",
       "ms": "ms",
@@ -714,91 +590,34 @@ export default {
       "perMinute": "/min"
     }
   },
-  "files": {
-    "saveFailed": "Some files could not be saved.",
-    "note": "Add files about you. They go into {{name}}'s “{{folder}}”, where it can read them anytime.",
-    "upload": "Upload files",
-    "uploading": "Uploading {{name}}…",
-    "uploaded_one": "Uploaded {{count}} file",
-    "uploaded_other": "Uploaded {{count}} files",
-    "uploadFailed": "Couldn't upload {{name}}: {{message}}",
-    "uploadedBanner": "Uploaded {{files}}",
-    "analyze": "Have {{name}} look",
-    "analyzePrompt": "I put {{files}} in your “{{path}}”. Please take a look and remember what helps you know me.",
-    "tooLarge": "Each file must be under 50MB",
-    "unsupported": "Video, audio and archive files aren't supported",
-    "newFolder": "New folder",
-    "folderName": "Folder name",
-    "create": "Create",
-    "folderCreated": "Folder created",
-    "folderCreateFailed": "Couldn't create the folder",
-    "rename": "Rename",
-    "renamed": "Renamed",
-    "renameFailed": "Couldn't rename it. Try again.",
-    "nameRequired": "Name can't be empty",
-    "nameSlash": "Name can't contain “/”.",
-    "deleteFileTitle": "Delete file?",
-    "deleteFolderTitle": "Delete folder?",
-    "deleteFileBody": "“{{name}}” will be removed permanently. This can't be undone.",
-    "deleteFolderBody": "“{{name}}” and everything in it will be removed permanently. This can't be undone.",
-    "fileDeleted": "File deleted",
-    "folderDeleted": "Folder deleted",
-    "deleteFailed": "Couldn't delete it. Try again.",
-    "folderEmpty": "This folder is empty",
-    "empty": "No files yet. Upload yours to help {{name}} know you better.",
-    "loadFailed": "Couldn't load the files",
-    "goneTitle": "This item is gone",
-    "gone": "It may have been deleted or renamed.",
-    "notText": "This isn't a text file, so it can't be shown on the phone.",
-    "tooBigToView": "This file is {{size}}; the phone only shows files up to 1 MB."
-  },
   "customize": {
-    "title": "Customize",
-    "name": "Name",
     "look": "Change look",
-    "character": "Personality",
-    "setCharacter": "Set personality",
-    "custom": "Custom personality",
-    "describe": "Describe how you want the assistant to talk and behave. Leave empty to clear.",
-    "preset": {
-      "balanced": "Balanced",
-      "warm": "Warm",
-      "direct": "Direct",
-      "concise": "Concise",
-      "playful": "Playful",
-      "sassy": "Sassy"
-    },
-    "saved": "Changes saved",
-    "saveFailed": "Couldn't save: {{message}}",
-    "shellMissing": "Gugu's main window isn't ready yet. Try again shortly.",
-    "loadFailed": "Couldn't read the personality"
-  },
-  "diary": {
-    "title": "Diary",
-    "emptyTitle": "No diary yet",
-    "ask": "Ask {{name}} how today went",
-    "prompt": "How did today go? Write me today's diary entry in your own voice.",
-    "loading": "Reading the diary…",
-    "unreadable": "Can't read the diary right now. Try again shortly.",
-    "all": "All entries ({{count}})",
-    "listSub": "Written by {{name}} every night, in its own words",
-    "of": "{{name}}'s diary",
-    "goneTitle": "This entry is gone",
-    "gone": "{{name}} may have tidied up its diary. Go back and look at the others.",
-    "talk": "Talk with {{name}} about this entry",
-    "talkPrompt": "About the diary entry you wrote on {{date}}: "
   },
   "capabilities": {
     "title": "Capabilities and connections"
   },
   "connectors": {
+    "catalog": {
+      "search": "Search apps",
+      "all": "All apps",
+      "mine": "My connections",
+      "featured": "Featured",
+      "viewApp": "View app",
+      "viewAll": "View all ({{count}})",
+      "attention": "Needs attention",
+      "noConnections": "No apps connected yet",
+      "browse": "Browse all apps",
+      "noResults": "No apps found",
+      "clearSearch": "Clear search",
+      "searchAll": "Search all apps",
+      "results": "Search results",
+      "backToAll": "Back to all apps"
+    },
     "wechatDescription": "Talk to Gugu in WeChat",
     "paused": "Paused",
     "retrying": "Reconnecting",
     "savedCount": "{{count}} added",
     "connectedCount": "{{count}} connected",
-    "deviceCount_one": "{{count}} device",
-    "deviceCount_other": "{{count}} devices",
     "unverified": "Not yet verified",
     "prepareFailed": "Authorization preparation is unavailable.",
     "authorizationUnavailable": "The cloud service needed for authorization is unavailable.",
@@ -814,7 +633,6 @@ export default {
       "device": "This device",
       "other": "Other devices"
     },
-    "cloudNote": "Authorizations are stored on {{name}}'s cloud device and work even with your computers off.",
     "connectedGroup": "Connected",
     "savedGroup": "Added",
     "manage": "Manage connection",
@@ -832,8 +650,6 @@ export default {
     "cloudWhereNote": "Kept in the cloud, so {{name}} can use it any time without any device being on",
     "goneTitle": "This app isn't available",
     "gone": "This connected app isn't in the cloud.",
-    "accountNoteHere": "Authorizations are stored on {{device}} (this device), shared with Library → Integrations. {{name}} can use them from any device while this computer is on.",
-    "accountNoteThere": "Authorizations are stored on {{device}}. {{name}} can use them from any device while that computer is on.",
     "accountWhereNote": "Stored in {{name}}'s home; usable while {{device}} is on",
     "thisComputer": "This computer",
     "goneHome": "{{device}} doesn't have this app.",
@@ -935,15 +751,10 @@ export default {
   "channels": {
     "title": "Connect chat apps",
     "note": "Reach {{name}} from WeChat and other chat apps too",
-    "desktopOnly": "Chat apps are kept connected by the 咕咕 cloud, so {{name}} gets them even with your computer off."
+    "desktopOnly": "Chat apps are kept connected by the Gugu cloud, so {{name}} gets them even with your computer off."
   },
   "railEntry": {
-    "claim": "Claim your Gugu",
-    "create": "Create your Gugu",
-    "set": "Set up your Gugu",
-    "preparing": "Getting your Gugu ready…",
-    "loading": "Reading your Gugu…",
-    "unreadable": "Can't read your Gugu right now; open it to look"
+    "preparing": "Getting your Gugu ready…"
   },
   "settingsPage": {
     "editName": "Edit {{name}}’s name",
@@ -1005,7 +816,7 @@ export default {
       "home": "It has been deleted, but its home wasn't fully cleared; it will be cleared again when you set up a new one."
     },
     "elsewhereTitle": "Close it on the computer it lives on",
-    "elsewhereBody": "{{name}} lives on “{{device}}”, and its home and scheduled tasks are there. Close it from Settings → Gugu on that computer.",
+    "elsewhereBody": "{{name}} lives on “{{device}}”, and its home and scheduled tasks are there. Close it from its settings on that computer.",
     "elsewhereOk": "OK"
   },
   "ideas": {

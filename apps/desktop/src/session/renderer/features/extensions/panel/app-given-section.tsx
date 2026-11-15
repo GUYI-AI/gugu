@@ -46,7 +46,7 @@ export function AppGivenSection({
   useEffect(() => {
     void load();
   }, [load]);
-  if (!places && !failed) return null;
+  if (!places && !failed) return <p className="text-sm text-foreground-passive" data-testid="extension-given-loading">{translate('extensions.manageGivenLoading')}</p>;
   const change = async (changes: readonly PlaceChange[]) => {
     setBusy(true);
     try {
@@ -69,10 +69,13 @@ export function AppGivenSection({
     // Read again when opened: the person may have changed it from another computer, or an install chose it since.
     <Collapsible className="xp-row-details" data-testid={`extension-given-${extensionId}`} onOpenChange={(open) => { if (open) void load(); }}>
       <CollapsibleTrigger className="xp-row-details-toggle">
-        <ChevronRight className="size-3" />
-        {blocked
-          ? <span data-testid="extension-given-blocked">{translate(blocked === 'off' ? 'extensions.givenBlockedOff' : 'extensions.givenBlockedRevoked')}</span>
-          : <AppPlacesSummary places={places} machineName={machineName} />}
+        <span>{translate('extensions.manageGivenTitle')}</span>
+        <span className="mg-given-to">
+          {blocked
+            ? <span data-testid="extension-given-blocked">{translate(blocked === 'off' ? 'extensions.givenBlockedOff' : 'extensions.givenBlockedRevoked')}</span>
+            : <AppPlacesSummary places={places} machineName={machineName} />}
+        </span>
+        <ChevronRight className="size-4" />
       </CollapsibleTrigger>
       <CollapsibleContent className="xp-row-details-body">
         <AppPlacesEditor places={places} machineName={machineName} enabled={new Set((places ?? []).filter((place) => place.enabled).map((place) => place.id))} onChange={(changes) => void change(changes)} disabled={busy} />

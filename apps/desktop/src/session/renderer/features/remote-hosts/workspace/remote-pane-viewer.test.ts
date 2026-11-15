@@ -85,7 +85,7 @@ describe('看着别的机器上的一条会话:那台机器上的 open_in_tab �
     const { open } = start({ link: fake.link });
     await flush();
     expect(fake.order).toEqual(['events', 'subscribe']);
-    expect(fake.subscribes()).toEqual([{ subscriptionId: 'pane-1', sessionId: 'conv-1', browser: true, pages: true, external: true, tabs: true }]);
+    expect(fake.subscribes()).toEqual([{ subscriptionId: 'pane-1', sessionId: 'conv-1', browser: true, pages: true, external: true, tabs: true, apps: true }]);
     expect(open).toHaveBeenCalledTimes(2);
     expect(fake.acks()).toEqual([
       { requestId: 'q-1', subscriptionId: 'pane-1', ok: true },
@@ -162,8 +162,8 @@ describe('看着别的机器上的一条会话:那台机器上的 open_in_tab �
     viewer.setBrowser(true);
     await flush();
     expect(fake.subscribes()).toEqual([
-      { subscriptionId: 'pane-1', sessionId: 'conv-1', browser: false, pages: false, external: true, tabs: true },
-      { subscriptionId: 'pane-1', sessionId: 'conv-1', browser: true, pages: true, external: true, tabs: true },
+      { subscriptionId: 'pane-1', sessionId: 'conv-1', browser: false, pages: false, external: true, tabs: true, apps: true },
+      { subscriptionId: 'pane-1', sessionId: 'conv-1', browser: true, pages: true, external: true, tabs: true, apps: true },
     ]);
     expect(fake.calls.some(([channel]) => channel === SESSION_HOST_PANE.unsubscribe)).toBe(false);
     // Both answers carry the queued page; it opens once.

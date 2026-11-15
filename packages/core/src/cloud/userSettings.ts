@@ -9,31 +9,30 @@ type SettingsQueryResult = {
   data: unknown
   error: { message: string; code?: string } | null
 }
+type SettingsRead = {
+  maybeSingle(): PromiseLike<SettingsQueryResult>
+  abortSignal?(signal: AbortSignal): SettingsRead
+}
 
 type SettingsConditionalUpdate = {
   eq(column: 'user_id' | 'scope' | 'updated_at', value: string): SettingsConditionalUpdate
   select(columns: string): { maybeSingle(): PromiseLike<SettingsQueryResult> }
 }
 
-export interface VersionedSettingsTableClient extends SettingsTableClient {
-  from(table: 'user_settings'): ReturnType<SettingsTableClient['from']> & {
+export type VersionedSettingsTableClient = SettingsTableClient
+
+export interface SettingsTableClient {
+  from(table: 'user_settings'): {
     update(values: Record<string, unknown>): SettingsConditionalUpdate
     insert(values: Record<string, unknown>): {
       select(columns: string): { maybeSingle(): PromiseLike<SettingsQueryResult> }
     }
-  }
-}
-
-export interface SettingsTableClient {
-  from(table: 'user_settings'): {
     select(columns: string): {
       eq(
         column: 'user_id',
         value: string
       ): {
-        eq(column: 'scope', value: string): {
-          maybeSingle(): PromiseLike<SettingsQueryResult>
-        }
+        eq(column: 'scope', value: string): SettingsRead
       }
     }
     upsert(
@@ -65,18 +64,19 @@ export function normalizeSettingsRow(value: unknown): GuguSettingsRow | null {
 export async function readUserSettingsConfig(
   client: SettingsTableClient,
   userId: string,
-  scope: GuguSettingsScope
+  scope: GuguSettingsScope,
+  signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
-  return (await readUserSettingsRow(client, userId, scope))?.config ?? {}
+  return (await readUserSettingsRow(client, userId, scope, signal))?.config ?? {}
 }
 
-async function readUserSettingsRow(client: SettingsTableClient, userId: string, scope: GuguSettingsScope): Promise<GuguSettingsRow | null> {
-  const { data, error } = await client
+async function readUserSettingsRow(client: SettingsTableClient, userId: string, scope: GuguSettingsScope, signal?: AbortSignal): Promise<GuguSettingsRow | null> {
+  const query = client
     .from('user_settings')
     .select(SETTINGS_COLUMNS)
     .eq('user_id', userId)
     .eq('scope', scope)
-    .maybeSingle()
+  const { data, error } = await (signal && query.abortSignal ? query.abortSignal(signal) : query).maybeSingle()
   if (error) throw new Error(error.message)
   return normalizeSettingsRow(data)
 }
@@ -108,6 +108,18 @@ export async function updateUserSettingsConfig(
   throw new Error('Settings changed on another device; try again')
 }
 
+/** Edit only one key; recompute its value from the latest row on every version retry. */
+export function updateUserSettingsKey(
+  client: SettingsTableClient,
+  userId: string,
+  scope: GuguSettingsScope,
+  key: string,
+  edit: (value: unknown) => unknown,
+): Promise<GuguSettingsRow> {
+  return updateUserSettingsConfig(client, userId, scope, (config) => ({ ...config, [key]: edit(config[key]) }))
+}
+
+/** Legacy whole-config replacement. Preference edits must use updateUserSettingsKey instead. */
 export async function writeUserSettingsConfig(
   client: SettingsTableClient,
   userId: string,

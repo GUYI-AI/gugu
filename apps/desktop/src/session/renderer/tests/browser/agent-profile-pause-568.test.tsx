@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { AgentSettingsModal } from '@/components/agentsettings/AgentSettingsModal'
 import { contact, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
+import { until } from '../../../../../../../tests/support/awaitCondition'
 import { i18n } from '@/i18n'
 import '@/i18n/registerAgentsCatalog'
 import '@/styles/tokens.css'
@@ -16,12 +17,12 @@ for (const [width, height] of [[1100, 800], [390, 620], [390, 844]]) it(`keeps o
   await page.viewport(width, height)
   await i18n.changeLanguage('zh-CN')
   await renderWithAppProviders(h, <AgentSettingsModal agent={contact({ id: 'a1', type: 'agent', owner_user_id: 'u1' })} />, { auth: { id: 'u1' } })
-  await Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished))
+  await until('the profile sheet entrance settles', () => document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).every(animation => animation.playState === 'finished'))
   if (mobile) {
     await page.getByRole('button', { name: '资料', exact: true }).click()
     await expect.element(page.getByTestId('agent-profile-content')).toBeVisible()
   }
-  await Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished))
+  await until('the profile tab transition settles', () => document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).every(animation => animation.playState === 'finished'))
   const modal = document.querySelector('[data-testid="agent-settings-modal"]')!.getBoundingClientRect()
   const actions = document.querySelector<HTMLElement>('[data-testid="agent-profile-actions"]')!
   const content = document.querySelector<HTMLElement>('[data-testid="agent-profile-content"]')!

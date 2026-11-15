@@ -14,7 +14,7 @@
 **App 的家在它自己的仓库里**(App 市场方案,维护者 2026-10-07):市场只收录「仓 @ 提交 @ 目录」打出来的那一份字节。
 例:抽卡台在 `shuxueshuxue/promo-skills`。详情页和同意框据此写「代码在哪」。
 
-**预装的只剩群文件夹(工作区),它不进市场。** 咕咕办公、全能搜索 2026-10-16 起是市场 App(索引仓 `sources/office`、
+**预装的只剩群文件夹(工作区),它不进市场。** 咕咕办公、进阶搜索(Omnisearch,原名全能搜索) 2026-10-16 起是市场 App(索引仓 `sources/office`、
 `sources/omnisearch`):老用户手里预装的那份,升级后第一次启动由 `releasePreinstalled` 改成市场来源，数据不动。
 预装的 App 不会被问「有没有新版」(controller 的 `marketUpdates`):别的来源本来就顶不掉预装的那份(`extensions-service.ts` 的
 `installFromDirectory`),问了只会在它身上挂一个点了就报错的「更新」。

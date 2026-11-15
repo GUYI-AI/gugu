@@ -69,4 +69,31 @@ describe('observable conversation process', () => {
     expect(v.host.textContent).not.toContain(nativeName);
     expect(v.host.querySelector('[data-row-kind="mcp-tool-call"]')).toBeNull();
   });
+
+  // #2587: the completion is a step of the live process (one phrase in it), and opens down to the same row.
+  it.each(['completed', 'failed', 'stopped'] as const)('keeps a %s background completion semantic until explicitly opened', async outcome => {
+    const command = 'cd /tmp && (which pnpm >/dev/null && pnpm --version)';
+    const v = mount([{ kind: 'background-command-done-tool-call', id: 'completed-command', seq: 1,
+      toolCallId: 'done', launchToolCallId: 'launch', title: command, name: command, status: 'done', outcome, summary: 'Original completion details' }]);
+    const row = () => v.host.querySelector<HTMLElement>('[data-conversation-step="completed-command"]');
+    // A failed one says so in the summary too: inside the process line it has no row of its own to say it (#2587).
+    const phrase = `1 background command ${outcome === 'completed' ? 'finished' : outcome}`;
+    await until('the live process says the completion', () => v.host.querySelector('[data-slot="conversation-process-steps"]')?.textContent?.includes(phrase) === true);
+    expect(row()).toBeNull();
+    expect(v.host.textContent).not.toContain(command);
+    v.state.viewState.setCollapsed('live:run:completed-command', true);
+    await until('the completion row opens inside the process', () => !!row());
+    expect(row()!.closest('[data-slot="conversation-process-steps"]')).not.toBeNull();
+    const button = () => row()!.querySelector<HTMLButtonElement>('[data-collapse-id]')!;
+    expect(row()!.textContent).toBe(`background command ${outcome === 'completed' ? 'finished' : outcome}›`);
+    expect(row()!.textContent).not.toContain(command);
+    expect(button().getAttribute('aria-expanded')).toBe('false');
+    button().click();
+    await until('completion command can be read', () => row()!.textContent!.includes(command));
+    expect(row()!.textContent).toContain('Original completion details');
+    expect(button().getAttribute('aria-expanded')).toBe('true');
+    button().click();
+    await until('completion command closes', () => !row()!.textContent!.includes(command));
+    expect(row()!.getBoundingClientRect().height).toBe(32);
+  });
 });

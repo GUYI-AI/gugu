@@ -40,6 +40,11 @@ export interface GroupCreationResult {
   invitation_errors: Array<{ invitee_user_id: string; error: string }>
 }
 
+// The note sent with an invitation the inviter wrote nothing for (the server requires one). It is for agents and older
+// clients: the invitation card says the same in the reader's language and hides this note (isGroupInvitationNote).
+export const groupInvitationNote = (groupName: string) => `邀请你加入群聊「${groupName}」。`
+export const isGroupInvitationNote = (note: string) => /^邀请你加入群聊「.*」。$/s.test(note)
+
 /** Related agents enter initially; every external identity uses the common invitation door. */
 export async function createGroupWithInvitations(
   client: GroupChatRpcClient,
@@ -58,7 +63,7 @@ export async function createGroupWithInvitations(
   const result: GroupCreationResult = { chat_id: chatId, name: name.trim(), member_user_ids: [owner, ...direct], invitations: [], invitation_errors: [] }
   for (const target of selected.filter((row) => !direct.includes(row.id))) {
     try {
-      result.invitations.push(await admin.invite(chatId, target.id, `邀请你加入群聊「${name.trim()}」。`))
+      result.invitations.push(await admin.invite(chatId, target.id, groupInvitationNote(name.trim())))
     } catch (error) {
       // The group is committed. Retrying creation would duplicate it; retain its
       // id and each failure so both callers can report the real outcome.

@@ -1,4 +1,5 @@
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
+import { openPhysicalDatabase } from './physical-connection';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { resolveDatabasePath } from './path';
 import * as schema from './schema';
@@ -16,7 +17,7 @@ let sqliteInstance: Database.Database | undefined;
 function getSqlite(): Database.Database {
   if (sqliteInstance) return sqliteInstance;
 
-  const connection = new Database(resolveDatabasePath());
+  const connection = openPhysicalDatabase(resolveDatabasePath());
   connection.pragma('journal_mode = WAL');
   connection.pragma('busy_timeout = 5000');
   sqliteInstance = connection;
@@ -38,6 +39,10 @@ export const sqlite = new Proxy({} as Database.Database, {
 }) as Database.Database;
 
 export const db = drizzle(sqlite, { schema });
+
+/** Host lifetime proofs need this exact connection, not the stable proxy which
+ * can resolve to a new incarnation after closeDatabase(). Opens no second DB. */
+export function sessionDatabaseConnection(): Database.Database { return getSqlite(); }
 
 export function closeDatabase(): void {
   if (!sqliteInstance) return;

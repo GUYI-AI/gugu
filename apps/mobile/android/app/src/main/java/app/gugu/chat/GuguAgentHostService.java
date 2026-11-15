@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.os.IBinder;
 import com.getcapacitor.JSObject;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -19,7 +20,6 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.List;
@@ -127,8 +127,12 @@ public class GuguAgentHostService extends Service {
             JSObject saved = STATES.get(owner);
             if (saved == null) {
                 File file = stateFile(context, owner);
-                saved = file.exists() ? new JSObject(new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8))
-                    : new JSObject().put("ownerId", owner).put("status", "stopped").put("sessions", new JSONArray());
+                try {
+                    saved = file.exists() ? new JSObject(new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8))
+                        : new JSObject().put("ownerId", owner).put("status", "stopped").put("sessions", new JSONArray());
+                } catch (JSONException error) {
+                    throw new IllegalStateException("手机宿主状态文件损坏，请在「这台手机」中重新启动手机 Agent", error);
+                }
             }
             JSObject out = new JSObject(saved.toString());
             HostRun run = active == null ? null : active.current;
@@ -616,9 +620,7 @@ public class GuguAgentHostService extends Service {
                 try {
                     File target = stateFile(GuguAgentHostService.this, owner);
                     target.getParentFile().mkdirs();
-                    File temp = new File(target.getPath() + ".tmp");
-                    Files.write(temp.toPath(), next.toString().getBytes(StandardCharsets.UTF_8));
-                    Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    DurableFile.write(target, next.toString().getBytes(StandardCharsets.UTF_8));
                 } catch (Exception error) { android.util.Log.e("GuguAgentHost", "Cannot persist phone host state"); }
             }
         }

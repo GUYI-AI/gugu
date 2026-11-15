@@ -1,6 +1,6 @@
 import type { ExtensionInstallConsentRequest, ExtensionInstallConsentResult } from '@shared/extensions/host-actions';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
-import { isGuguOwnApp } from '@shared/extensions/first-run';
+import { isOfficialMarketSource } from '@shared/extensions/market';
 import { pinsAutoUpdate } from '@shared/extensions/market-entries';
 import { marketDownloadProgressChannel } from '@shared/extensions/marketEvents';
 import { events } from '@main/lib/events';
@@ -10,6 +10,7 @@ import { extensionsService } from './extensions-root';
 import { installPlan } from './install-plan';
 import { installPrepared, notGivenNoteOf, type InstallDependencies } from './install-prepared';
 import type { CloudExtensionMarket, MarketPrepared } from './market-catalog';
+import { marketInstallRecord } from './release/market-release';
 import type { HandedConsent } from '@shared/extensions/install-consent-flow';
 
 export interface MarketInstall {
@@ -26,9 +27,22 @@ export interface MarketInstall {
    * - `given`: installs what the person agreed to — these bytes only (`digest`), what it gives there being the install's own rule (InstallGrant);
    * - `gugu`: gugu's own App put in by gugu itself (the first-run set, @shared/extensions/first-run.ts): asks nobody — agreed
    *   to as gugu reviewed it, as a preinstalled App was; its capabilities recorded as its manifest says, every agent here (as
-   *   an App nobody chose for). Only for an App whose code is in gugu's own repository, and only as a first install.
+   *   an App nobody chose for). Only for an App whose code is in gugu's own repository, and only as a first install — or,
+   *   with `over`, as its signed release put over gugu's own market copy the host does not trust (#1931 ensure step), named
+   *   as the caller looked at it: still that copy, from the market, its original in use and switched on. Never over the
+   *   person's (a folder, a chat, a fork switched on, switched off).
    */
-  consent?: HandedConsent | { kind: 'gugu' };
+  consent?: HandedConsent | { kind: 'gugu'; over?: { version: string; manifestDigest: string } };
+}
+
+/** Why gugu does not put its signed release over the copy here without asking, or null when `over` names gugu's market copy. */
+function notOverGugusCopy(service: ReturnType<typeof extensionsService>, id: string, over: { manifestDigest: string } | undefined): string | null {
+  if (!over) return 'it is not put in again without asking';
+  if (service.origins()[id] !== 'market') return 'it is not the market\'s copy';
+  if (service.variants(id).active !== 'upstream') return 'a fork of it is switched on';
+  if (!service.isEnabled(id)) return 'it is switched off';
+  if (service.get(id).manifestDigest !== over.manifestDigest) return 'it changed since it was looked at';
+  return null;
 }
 
 export interface MarketInstallDependencies extends InstallDependencies {
@@ -99,13 +113,16 @@ export async function installExtensionFromMarket(
       // Nobody asked: so only gugu's own — the code in its own repository (the bytes were checked against what the market
       // published from there) — and never over an App installed here, whose update asks as any update does. Files with no
       // record of where they came from are an install a start cut off between landing and its record: put in again.
-      if (!isGuguOwnApp(prepared.source)) {
+      if (!isOfficialMarketSource(prepared.source)) {
         throw new Error(`${manifest.id} is not gugu's own App (its code is at ${prepared.source.repo}); only gugu's own go in without asking`);
       }
       if (plan.displaced && service.origins()[manifest.id] !== undefined) {
-        throw new Error(`${manifest.id} is installed here already; it is not put in again without asking`);
+        const refused = notOverGugusCopy(service, manifest.id, install.consent.over);
+        if (refused) throw new Error(`${manifest.id} is installed here already; ${refused}`);
+        // Over a copy here: only a signed release, the one thing the host trusts more than what is there.
+        if (!prepared.release) throw new Error(`${manifest.id}@${manifest.version} is not a signed release; it does not go over the copy here`);
       }
-      const installed = service.installFromDirectory(prepared.sourceDir, manifestDigest, 'market');
+      const installed = service.installFromDirectory(prepared.sourceDir, manifestDigest, 'market', undefined, variant, marketInstallRecord(prepared));
       (dependencies.afterInstall ?? applyInstalledExtension)(installed);
       const announced = await announceInstalledChanged(dependencies.notifyInstalledChanged);
       return { installed: true, outcome: 'confirmed', ...summary, manifest: installed.manifest, rootDir: installed.rootDir, asked: false, announced };
@@ -113,6 +130,8 @@ export async function installExtensionFromMarket(
     const consent = install.consent ?? { kind: 'here' as const };
     const done = await installPrepared({
       dir: prepared.sourceDir,
+      // Where these bytes came from, with their verified release when they had one (#1931): what the install keeps.
+      marketRecord: marketInstallRecord(prepared),
       manifest,
       manifestDigest,
       origin: 'market',

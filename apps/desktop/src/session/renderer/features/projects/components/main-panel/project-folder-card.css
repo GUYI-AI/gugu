@@ -36,7 +36,7 @@
   background: transparent;
   color: inherit;
 }
-.gg-folder-card__toggle:focus-visible {
+.gg-folder-card__toggle:focus-visible:not([data-pointer-focus]) {
   outline: 2px solid var(--live);
   outline-offset: 2px;
   border-radius: 6px;
@@ -171,13 +171,13 @@
   color: var(--muted-fg);
 }
 .gg-folder-paper__meta.is-running {
-  color: var(--live);
+  color: var(--live-fg);
 }
 .gg-folder-paper__check,
 .gg-folder-paper__fresh {
   margin-left: auto;
   flex: none;
-  color: var(--live);
+  color: var(--live-fg);
 }
 .gg-folder-paper__fresh {
   /* 窄栏里纸跟着收窄:「刚挂上」让位给机器标签和勾,挤不下就省略。 */
@@ -189,6 +189,10 @@
   font-size: var(--font-size-xs);
   line-height: 16px;
   font-weight: 600;
+}
+/* 那台机器的项目这一端没读到:列的是上次的。 */
+.gg-folder-paper__stale {
+  color: var(--danger-fg);
 }
 .gg-folder-paper__check {
   display: inline-flex;
@@ -296,7 +300,7 @@
   text-overflow: ellipsis;
 }
 .gg-folder-card__meta .is-running {
-  color: var(--live);
+  color: var(--live-fg);
 }
 .gg-folder-card__foot {
   margin-top: auto;
@@ -376,7 +380,7 @@
   transform: translate(-50%, -100%);
   font-size: var(--font-size-sm);
   line-height: 18px;
-  color: var(--live);
+  color: var(--live-fg);
   max-width: 100%;
   overflow: hidden;
   white-space: nowrap;

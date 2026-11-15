@@ -1,7 +1,9 @@
 import { isDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import type { TranscriptMessage, TranscriptTurn } from '../acp/client';
+import { messageReferenceId } from '../acp/client';
+import type { PreviewActivity, PreviewActivitySources } from './preview-activity';
 
-export type PersonalConversationPreview = { text: string; at: number };
+export type PersonalConversationPreview = { text: string; at: number } & PreviewActivity;
 
 /** Owner steering can open a personal segment inside a delivery-started turn. */
 export function personalConversationMessages(turn: TranscriptTurn): TranscriptMessage[] {
@@ -20,15 +22,16 @@ export function personalConversationMessages(turn: TranscriptTurn): TranscriptMe
 }
 
 /** Message time is authoritative; reading/replaying a transcript must never make it new. */
-export function personalConversationPreview(turn: TranscriptTurn): PersonalConversationPreview | null {
+export function personalConversationPreview(turn: TranscriptTurn, activitySources?: PreviewActivitySources): PersonalConversationPreview | null {
   let latest: PersonalConversationPreview | null = null;
+  const sources = activitySources?.(turn);
   for (const item of personalConversationMessages(turn)) {
     const at = item.at ?? (item.role === 'assistant' ? turn.endedAt : turn.startedAt);
     if (!item.text.trim() || item.text.trim() === '[NO_REPLY]' || at === undefined || !Number.isFinite(at) || !Number.isFinite(new Date(at).getTime())) continue;
     // Attachment instructions can contain private local paths.
     const text = item.attachments?.length || /\[(?:Folder file|Image attached at local path:)/.test(item.text) || /@\[[^\]]+\]\(/.test(item.text)
       ? '' : item.text.trim().replace(/\s+/g, ' ').slice(0, 180);
-    if (text) latest = { text, at };
+    if (text) latest = { text, at, ...(sources ? { activityVersion: 1 as const, activity: sources.get(messageReferenceId(turn, item.id) ?? item.id) ?? null } : {}) };
   }
   return latest;
 }

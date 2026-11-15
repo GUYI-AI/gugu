@@ -15,8 +15,17 @@ export function nativeOpenedLinksReady(): Promise<void> {
 /** One native listener for the lifetime of the app. AppPlugin retains the initial appUrlOpen
  * intent; subsequent component subscriptions drain the matching inbox, including before login. */
 export function subscribeNativeOpenedLinks(kind: 'auth' | 'navigation', listener: (url: string) => void, onError: (error: unknown) => void): () => void {
+  return fromNativeSource(() => inbox.subscribe(kind, listener), onError)
+}
+
+/** Every link the OS hands the App, as it arrives (before and after sign-in). */
+export function watchNativeOpenedLinks(listener: (url: string) => void, onError: (error: unknown) => void): () => void {
+  return fromNativeSource(() => inbox.watch(listener), onError)
+}
+
+function fromNativeSource(attach: () => () => void, onError: (error: unknown) => void): () => void {
   let active = true
-  const unsubscribe = inbox.subscribe(kind, listener)
+  const detach = attach()
   void nativeOpenedLinksReady().catch((error: unknown) => { if (active) onError(error) })
-  return () => { active = false; unsubscribe() }
+  return () => { active = false; detach() }
 }

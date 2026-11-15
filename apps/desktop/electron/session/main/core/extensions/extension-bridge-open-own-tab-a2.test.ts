@@ -86,7 +86,7 @@ beforeEach(async () => {
   vi.mocked(openWithTarget).mockClear();
   state.defaults = {};
   state.rememberedReads = 0;
-  setExtensionBridgeHost({ deliver, presentation: () => ({ locale: 'en', themeMode: 'light' as const, fullscreen: false, windowFocused: true }) });
+  setExtensionBridgeHost({ deliver, selfGuguNumber: () => undefined, presentation: () => ({ locale: 'en', themeMode: 'light' as const, fullscreen: false, windowFocused: true }) });
   await bindExtensionSurface({ webContentsId: PAGE, extensionId: 'data-lens', tabId: 'card-1', tabKind: 'data-lens.card', conversation: CHAT });
 });
 

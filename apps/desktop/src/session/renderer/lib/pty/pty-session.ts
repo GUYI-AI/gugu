@@ -7,6 +7,7 @@ export type PtySessionStatus = 'disconnected' | 'connecting' | 'ready';
 
 export type PtySessionOptions = {
   clearOnBackendStart?: boolean;
+  onGridMeasured?: (dims?: { cols: number; rows: number }) => void;
 };
 
 type PtySessionPrepareResult = void | false;
@@ -25,6 +26,7 @@ export class PtySession {
   private hasSeenBackendStart = false;
   private offPtyStarted: (() => void) | null = null;
   private readonly clearOnBackendStart: boolean;
+  private readonly onGridMeasured?: (dims?: { cols: number; rows: number }) => void;
 
   constructor(
     readonly ptySessionId: string,
@@ -34,6 +36,7 @@ export class PtySession {
     options: PtySessionOptions = {}
   ) {
     this.clearOnBackendStart = options.clearOnBackendStart ?? false;
+    this.onGridMeasured = options.onGridMeasured;
     makeAutoObservable(this, {
       pty: false,
     });
@@ -65,6 +68,7 @@ export class PtySession {
       if (version !== this.version) return;
       if (this.pty) return;
       const pty = new FrontendPty(this.ptySessionId, undefined, this.onOpenFile, this.onOpenExternal);
+      pty.onGridMeasured = this.onGridMeasured ?? null;
       pty.onFirstOutput = () => {
         if (this.pty !== pty) return;
         runInAction(() => {

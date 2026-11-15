@@ -12,7 +12,7 @@
   {
     "rule": "copy-leaks-internal-detail",
     "file": "apps/desktop/src/i18n/locales/en-US/messaging.ts",
-    "count": 11
+    "count": 9
   },
   {
     "rule": "copy-leaks-internal-detail",
@@ -32,7 +32,7 @@
   {
     "rule": "copy-leaks-internal-detail",
     "file": "apps/desktop/src/i18n/locales/zh-CN/messaging.ts",
-    "count": 11
+    "count": 9
   },
   {
     "rule": "copy-leaks-internal-detail",
@@ -147,11 +147,6 @@
   {
     "rule": "copy-leaks-raw-error-slot",
     "file": "apps/desktop/src/session/renderer/features/browser/browser-toolbar-actions.ts",
-    "count": 1
-  },
-  {
-    "rule": "copy-leaks-raw-error-slot",
-    "file": "apps/desktop/src/session/renderer/features/sessions/acp/acp-chat-store.ts",
     "count": 1
   },
   {

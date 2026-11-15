@@ -128,7 +128,7 @@ export interface IntegrationBridgeEntry {
   upstream: IntegrationUpstream
 }
 
-async function listConnectedTools(entries: readonly IntegrationBridgeEntry[], signal: AbortSignal,
+export async function listConnectedTools(entries: readonly IntegrationBridgeEntry[], signal: AbortSignal,
   request: { sessionId?: string; requestId: string | number }): Promise<Tool[]> {
   const tools: Tool[] = []
   const unavailable: string[] = []

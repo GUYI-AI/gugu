@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { ok } from '@gugu/session-shared';
 
@@ -40,5 +43,33 @@ describe('workspace.files.getAbsolutePath', () => {
   it('工作区不在 = not_found', async () => {
     const result = await getAbsolutePath('p', 'gone', '.');
     expect(result.success).toBe(false);
+  });
+});
+
+describe('workspace.files.readChunk: what a page reads (a preview\'s resources) stays in the workspace', () => {
+  it('a link out of the workspace and an absolute path outside it are refused; a file inside reads', async () => {
+    const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'read-chunk-')));
+    const root = path.join(base, 'repo');
+    const key = path.join(base, 'home', '.ssh', 'id_ed25519');
+    mkdirSync(root);
+    mkdirSync(path.dirname(key), { recursive: true });
+    writeFileSync(key, 'canary');
+    writeFileSync(path.join(root, 'page.css'), 'body{}');
+    symlinkSync(key, path.join(root, 'keys.css'));
+    const before = workspace.path;
+    workspace.path = root;
+    try {
+      const { readChunk } = workspaceFileSystemController;
+      // A preview names its resources by absolute path under its root; the link is followed only to be refused.
+      for (const named of [path.join(root, 'keys.css'), 'keys.css', key]) {
+        const read = await readChunk('p', 'ws', { path: named, offset: 0, length: 100 });
+        expect(read).toMatchObject({ success: false, error: { type: 'outside_workspace' } });
+      }
+      const inside = await readChunk('p', 'ws', { path: path.join(root, 'page.css'), offset: 0, length: 100 });
+      expect(inside.success && Buffer.from(inside.data.data, 'base64').toString()).toBe('body{}');
+    } finally {
+      workspace.path = before;
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 });

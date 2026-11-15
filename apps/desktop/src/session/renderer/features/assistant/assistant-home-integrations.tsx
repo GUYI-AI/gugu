@@ -1,15 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { requireAssistantPanelBridge, useAssistantPanelAccountId } from '@/lib/assistantPanelBridge';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useMemo, type ReactNode } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
 import { IntegrationIcon } from '@renderer/features/integrations/integration-icon';
-import { IntegrationsProvider, useIntegrationsContext } from '@renderer/features/integrations/integrations-provider';
-import { createRemoteLibraryHost, LibraryHostProvider, LOCAL_LIBRARY_HOST, useLibraryHost, type LibraryHost } from '@renderer/features/library/library-host';
+import { useIntegrationsContext } from '@renderer/features/integrations/integrations-provider';
+import { createRemoteLibraryHost, LOCAL_LIBRARY_HOST, useLibraryHost, type LibraryHost } from '@renderer/features/library/library-host';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
-import type { AssistantContext } from './assistant-context';
 import { connectorOrder } from './assistant-connector-order';
 import { homeTarget } from './assistant-home-sessions';
 import { useAssistantReadError, useReadFailure } from './assistant-read-failure';
@@ -17,9 +16,13 @@ import { retryAssistantPanelRead } from '@gugu/core/cloud/assistantPanelRead';
 import { useAssistantShell } from './assistant-shell';
 import { useCloudAssistantFiles } from '@/components/assistant/assistant-panel-files';
 import { assistantPanelLibraryHost } from '@/components/assistant/assistant-panel-library-host';
-import { AssistantEmpty, AssistantRow, AssistantSection, MachineGate } from './assistant-ui';
+import { AssistantEmpty, AssistantRow, AssistantSection } from './assistant-ui';
 import { wakeAndWaitOnline } from '@/lib/cloudComputerStore';
 import { listDevicesOnceIdentified } from '@/lib/listDevicesOnceIdentified';
+import { useConnectionAuthority } from '@/lib/connectionBridge';
+import { useOwnerLibraryHost } from '@/components/connections/useOwnerLibraryHost';
+import { useDevicesStore } from '@/store/devicesContext';
+import { createLegacyConnectionGuard,legacyConnectionMetadata } from '@/components/connections/legacy-connection-routing';
 
 /**
  * 「有账号的服务」(飞书、GitHub…)读写的那一份集成:存在它的家里(资源库「集成」同一份逻辑,机器钉死在它家那台),
@@ -48,11 +51,15 @@ export function useHomeLibraryHost(home: AssistantHomePlace): LibraryHost {
   );
   const shell = useAssistantShell();
   const owner = useAssistantPanelAccountId();
-  const identity = useQuery({ queryKey: ['assistant-panel-identity',owner],enabled: !!owner && !shell?.assistant?.id,
+  const authority = useConnectionAuthority(),legacy = authority.route?.mode === 'legacy';
+  const ownerDevice = useDevicesStore().devices.find(row => row.device_id === deviceId) ?? null;
+  const ownerHost = useOwnerLibraryHost(ownerDevice,authority.route);
+  const guard = useMemo(() => createLegacyConnectionGuard(),[owner,authority.route?.mode,authority.route?.epoch,deviceId]);
+  const identity = useQuery({ queryKey: ['assistant-panel-identity',owner],enabled: legacy && !!owner && !shell?.assistant?.id,
     queryFn: () => requireAssistantPanelBridge().personalAssistant(owner!),staleTime: Infinity,retry: retryAssistantPanelRead });
-  const assistantId = shell?.assistant?.id ?? identity.data ?? null;
+  const assistantId = legacy ? shell?.assistant?.id ?? identity.data ?? null : null;
   const folder = useQuery({
-    queryKey: ['assistant-panel-folder',owner,assistantId],enabled: !!owner && !!assistantId && !shell?.chatId,
+    queryKey: ['assistant-panel-folder',owner,assistantId],enabled: legacy && !!owner && !!assistantId && !shell?.chatId,
     queryFn: async () => {
       return requireAssistantPanelBridge().privateChat(owner!,assistantId!);
     },staleTime: Infinity,retry: retryAssistantPanelRead,
@@ -60,6 +67,7 @@ export function useHomeLibraryHost(home: AssistantHomePlace): LibraryHost {
   const machine = useCloudAssistantFiles(assistantId,shell?.chatId ?? folder.data ?? null,home.deviceId);
   const prepare = useCallback(async (signal?: AbortSignal) => {
     signal?.throwIfAborted();
+    await guard(true);
     if (local) return;
     remoteHostsStore.start();
     if (home.kind === 'cloud') try {
@@ -79,11 +87,14 @@ export function useHomeLibraryHost(home: AssistantHomePlace): LibraryHost {
     remoteHostsStore.reconnect(deviceId);
     // The following control read owns readiness and preserves a protocol refusal.
     // Waiting only for `connected` here hides an already known `outdated` state.
-  },[local,home.kind,deviceId,t]);
-  return useMemo(() => assistantPanelLibraryHost(base,machine?.panel,prepare,folder.error ?? identity.error),[base,machine,prepare,folder.error,identity.error]);
+  },[local,home.kind,deviceId,t,guard]);
+  const legacyHost = useMemo(() => assistantPanelLibraryHost(base,legacy && machine?.panel
+    ? { ...legacyConnectionMetadata(machine.panel,guard),authorityEpoch: authority.route?.epoch } : undefined,prepare,authority.error ?? folder.error ?? identity.error),
+  [base,legacy,machine,guard,prepare,authority.route?.epoch,authority.error,folder.error,identity.error]);
+  return authority.route?.mode === 'owner' ? ownerHost : legacyHost;
 }
 
-/** 点一家直接弹它的连接框(引导里那一步:不往下钻详情页)。要在 HomeIntegrations 里头用。 */
+/** 点一家直接弹它的连接框(引导里那一步:不往下钻详情页)。 */
 export function useOpenConnector(home: AssistantHomePlace): (id: string) => void {
   const showIntegrationSetup = useShowModal('integrationSetupModal');
   const showConnectGitHub = useShowModal('githubConnectModal');
@@ -96,29 +107,6 @@ export function homeWhere(home: AssistantHomePlace, t: (key: string) => string):
   if (home.kind === 'cloud') return t('connectors.cloudWhere');
   return homeTarget(home) === null ? t('connectors.thisComputer') : home.label ?? t('connectors.thisComputer');
 }
-
-/** 「账号」那一段的一句话:按它实际住哪说(❌ 住在电脑上还说「存在云上」)。 */
-export function accountNoteFor(home: AssistantHomePlace, name: string, t: (key: string, values?: Record<string, string>) => string): string {
-  if (home.kind === 'cloud') return t('connectors.cloudNote', { name });
-  if (homeTarget(home) === null) return t('connectors.accountNoteHere', { name, device: home.label ?? t('connectors.thisComputer') });
-  return t('connectors.accountNoteThere', { name, device: home.label ?? t('connectors.thisComputer') });
-}
-
-export function accountNote(context: AssistantContext, t: (key: string, values?: Record<string, string>) => string): string {
-  return accountNoteFor(context.home, context.assistant.display_name, t);
-}
-
-/** 它家那台的集成(资源库「集成」同一套 provider)。机器还没读到时由 MachineGate 说明白。 */
-export const HomeIntegrations = observer(function HomeIntegrations({ context, children }: { context: AssistantContext; children: ReactNode }) {
-  const host = useHomeLibraryHost(context.home);
-  return (
-    <MachineGate readiness={context.readiness} loading={context.machineLoading} error={context.machineError} onRetry={context.retryMachine}>
-      <LibraryHostProvider value={host} key={host.key}>
-        <IntegrationsProvider>{children}</IntegrationsProvider>
-      </LibraryHostProvider>
-    </MachineGate>
-  );
-});
 
 /** 已连接 / 可用 两组;点一行做什么由调用方定(引导里直接弹连接框)。 */
 export const ConnectorLists = observer(function ConnectorLists({ onOpen }: { onOpen: (id: string) => void }) {

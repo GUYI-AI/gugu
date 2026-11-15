@@ -1,5 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import { buildIntegrationListPayload } from './integration-payload-builder';
+import { builtinConnectionCatalog } from '@/components/connections/builtin-connection-catalog';
+import { integrationListCopy } from '@/components/assistant/assistant-panel-integrations';
+
+it('uses the execution host to hide unsupported CLI entries while retaining working applications', () => {
+  const catalog = (platform: string, arch: string) => buildIntegrationListPayload('zh-CN', undefined, undefined, { platform, arch });
+  const cliIds = (entries: ReturnType<typeof catalog>) => entries.filter(item => item.auth.methods.some(method => method.kind === 'cli')).map(item => item.id).sort();
+  expect(cliIds(catalog('win32', 'x64'))).toEqual(['dingtalk', 'wecom']);
+  expect(cliIds(catalog('win32', 'arm64'))).toEqual([]);
+  for (const platform of ['darwin', 'linux']) for (const arch of ['x64', 'arm64']) {
+    expect(cliIds(catalog(platform, arch))).toEqual(['dingtalk', 'feishu', 'tencent-meeting', 'wecom']);
+  }
+  expect(catalog('win32', 'x64').some(item => item.id === 'github')).toBe(true);
+  expect(buildIntegrationListPayload('zh-CN', undefined, undefined, null)).toHaveLength(23);
+});
+
+it('publishes one public category and maintained aliases for every built-in integration', () => {
+  const entries = buildIntegrationListPayload('en-US');
+  expect(entries).toHaveLength(23);
+  const counts: Record<string, number> = {};
+  for (const entry of entries) {
+    expect(entry.catalog?.categoryId).toBeTruthy();
+    expect(entry.catalog?.aliases?.length).toBeGreaterThan(0);
+    counts[entry.catalog!.categoryId] = (counts[entry.catalog!.categoryId] ?? 0) + 1;
+  }
+  expect(counts).toEqual({ work: 4, docs: 3, tasks: 7, dev: 3, mail: 3, support: 2, life: 1 });
+});
 
 /**
  * 插件自带中英两份,线上只走字符串(复核 93 ①):老桌面把描述、字段名、说明直接当文本画 ——
@@ -70,3 +96,17 @@ describe('#921 where a credential the person types is kept', () => {
   });
 });
 
+describe('bundled owner connection catalog', () => {
+  for (const locale of ['en-US', 'zh-CN']) it(`matches the registry public payload without a running host (${locale})`, () => {
+    const expected = buildIntegrationListPayload(locale).map(item => ({ ...item,
+      ...integrationListCopy(item.id, item.name, item.description, locale),
+    }));
+    const actual = builtinConnectionCatalog(locale).map(({ catalogVersion, ...item }) => {
+      expect(catalogVersion).toMatch(/^[0-9a-f]{64}$/);
+      return item;
+    });
+    expect(actual).toEqual(expected);
+    expect(actual.length).toBeGreaterThan(0);
+    expect(actual.find(item => item.id === 'github')?.auth.methods.length).toBeGreaterThan(0);
+  });
+});

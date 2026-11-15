@@ -57,7 +57,7 @@ export function recordProjection(entries: readonly RecordEntry[]) {
         : boundary.kind === 'turn_failed'
           ? { kind: 'error', reason: 'prompt_failed' }
           : { kind: 'done', reason: boundary.stopReason ?? 'end_turn' }, at);
-      return JSON.stringify(entry);
+      return JSON.stringify({ key: entry.key, at: entry.at, boundary });
     }
     const event = entry.event;
     parser.pushEvent(event, at);

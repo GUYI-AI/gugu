@@ -2,11 +2,13 @@ import type { NativeComposerDraft } from './nativeComposerHandoff'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import type { SessionDirectoryRow } from '@/session/shared/remote-sessions/session-directory'
 import type { SessionpageAgentContext } from './sessionpageAgentProjection'
+import type { SenderFile } from './guguLinks'
 import { useSyncExternalStore } from 'react'
 
 const ENTRY = '__GUGU_OWNED_AGENT_ENTRY__'
 const CHANGED = 'gugu:owned-agent-entries'
-type Entry = { open(chatId: string, peerId?: string, draft?: string | NativeComposerDraft, sourceChatId?: string, purpose?: 'resource'): boolean; owns(peerId: string): boolean }
+export type OwnedAgentOpenReceipt = { resolve(): void; reject(error: unknown): void }
+type Entry = { open(chatId: string | undefined, peerId?: string, draft?: string | NativeComposerDraft, sourceChatId?: string, purpose?: 'resource', receipt?: OwnedAgentOpenReceipt, file?: SenderFile): boolean; owns(peerId: string): boolean }
 export function installOwnedAgentEntry(entry: Entry): () => void {
   const host = window as unknown as Record<string, unknown>
   host[ENTRY] = entry
@@ -15,6 +17,14 @@ export function installOwnedAgentEntry(entry: Entry): () => void {
 }
 function entry(): Entry | undefined { return typeof window === 'undefined' ? undefined : (window as unknown as Record<string, Entry>)[ENTRY] }
 export function openOwnedAgentEntry(chatId: string, peerId?: string, draft?: string | NativeComposerDraft, sourceChatId?: string, purpose?: 'resource'): boolean { return entry()?.open(chatId, peerId, draft, sourceChatId, purpose) ?? false }
+/** A file must wait for the existing native conversation, including its failure. */
+export function openOwnedAgentResource(chatId: string): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    if (!entry()?.open(chatId, undefined, undefined, undefined, 'resource', { resolve: () => resolve(true), reject })) resolve(false)
+  })
+}
+/** False: not an agent of this person's. */
+export function openOwnedAgentFile(agentId: string, sourceChatId: string | undefined, file: SenderFile): boolean { return entry()?.open(undefined, agentId, undefined, sourceChatId, undefined, undefined, file) ?? false }
 export function isOwnedAgentPeer(peerId: string | null | undefined): boolean { return Boolean(peerId && entry()?.owns(peerId)) }
 export function useOwnedAgentEntries(): boolean {
   return Boolean(useSyncExternalStore(listener => { window.addEventListener(CHANGED, listener); return () => window.removeEventListener(CHANGED, listener) }, entry, () => undefined))

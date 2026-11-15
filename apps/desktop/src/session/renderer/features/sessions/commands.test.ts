@@ -211,18 +211,12 @@ describe('createSessionCommandProvider', () => {
     });
     mocks.getSessionView.mockReturnValue({
       isSidebarCollapsed: false,
-      isTerminalDrawerOpen: false,
-      openNewTerminal: vi.fn(),
       setFocusedRegion: vi.fn(),
       setSidebarCollapsed: vi.fn(),
       setSidebarTab: vi.fn(),
-      setTerminalDrawerOpen: vi.fn(),
       paneLayout: {
-        open: vi.fn(),
+        openBeside: vi.fn(),
         focusedPane: { id: 'pane-1' },
-      },
-      terminalTabs: {
-        tabs: [],
       },
       activePane: {
         resolvedTabs: [{ id: 'tab-1' }],
@@ -269,12 +263,12 @@ describe('createSessionCommandProvider', () => {
 
   // #6780 旧侧栏两个页签的接班人:走空态 /「+」菜单同一个开页签入口,开在这个会话自己的页签条里。
   it.each([
-    ['session.sidebarChanges', 'sidebarChanges', ['review', {}, { from: null, intent: 'newTab' }]],
-    ['session.sidebarFiles', 'sidebarFiles', ['workspace.main', {}, { from: null, intent: 'newTab' }]],
+    ['session.sidebarChanges', 'sidebarChanges', ['review', {}]],
+    ['session.sidebarFiles', 'sidebarFiles', ['workspace.main', {}]],
   ] as const)('%s 打开对应页签', (id, _shortcutKey, openArgs) => {
     const view = {
       ...mocks.getSessionView(),
-      paneLayout: { open: vi.fn() },
+      paneLayout: { openBeside: vi.fn() },
     };
     mocks.getSessionView.mockReturnValue(view);
     const command = createSessionCommandProvider('project-1', 'conversation-1')
@@ -283,7 +277,7 @@ describe('createSessionCommandProvider', () => {
 
     command?.execute();
 
-    expect(view.paneLayout.open).toHaveBeenCalledWith(...openArgs);
+    expect(view.paneLayout.openBeside).toHaveBeenCalledWith(...openArgs);
     expect(view.setSidebarTab).not.toHaveBeenCalled();
     expect(view.setSidebarCollapsed).not.toHaveBeenCalled();
   });
@@ -308,7 +302,7 @@ describe('createSessionCommandProvider', () => {
 
     command?.execute();
 
-    expect(sessionView.paneLayout.open).toHaveBeenCalledWith('browser', {}, { from: null, intent: 'newTab' });
+    expect(sessionView.paneLayout.openBeside).toHaveBeenCalledWith('browser', {});
     expect(sessionView.setFocusedRegion).toHaveBeenCalledWith('main');
   });
 

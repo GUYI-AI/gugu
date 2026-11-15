@@ -7,6 +7,7 @@ import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { Label } from '@renderer/lib/ui/label';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { AgentDetailModal } from './AgentDetailModal';
+import { compareAgents, isInstalledAgent } from './agent-order';
 import { AgentTile } from './AgentTile';
 import { resolveHarnessState } from './harness-state';
 import { isManagedInstallOption } from './installation-sources';
@@ -35,9 +36,6 @@ const EmptyState: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     <p className="m-0 text-sm text-foreground-muted">{children}</p>
   </div>
 );
-
-/** 推荐的三家在各自组里排最前 —— 只影响顺序,组头不再说「推荐」(owner 2026-09-22)。 */
-const RECOMMENDED_IDS = new Set(['claude', 'codex', 'pi']);
 
 type CliAgentsListProps = {
   searchQuery?: string;
@@ -104,11 +102,7 @@ export const CliAgentsList: React.FC<CliAgentsListProps> = ({
     () =>
       (agentPayloads ?? [])
         .filter((a) => !normalizedQuery || a.name.toLowerCase().includes(normalizedQuery))
-        .sort(
-          (a, b) =>
-            Number(RECOMMENDED_IDS.has(b.id)) - Number(RECOMMENDED_IDS.has(a.id)) ||
-            a.name.localeCompare(b.name),
-        ),
+        .sort(compareAgents),
     [agentPayloads, normalizedQuery]
   );
 
@@ -119,8 +113,8 @@ export const CliAgentsList: React.FC<CliAgentsListProps> = ({
    * ❌ 从前是 `status !== 'available'` 一刀切,它被并进「未安装」,用户照着去装第二份,而第一份
    * 还在 PATH 前面。
    */
-  const installed = useMemo(() => visible.filter((a) => a.reading !== 'not-detected'), [visible]);
-  const notInstalled = useMemo(() => visible.filter((a) => a.reading === 'not-detected'), [visible]);
+  const installed = useMemo(() => visible.filter(isInstalledAgent), [visible]);
+  const notInstalled = useMemo(() => visible.filter((a) => !isInstalledAgent(a)), [visible]);
 
   const query = searchQuery.trim();
   const emptyMessage =

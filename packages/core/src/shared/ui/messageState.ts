@@ -34,7 +34,8 @@ export function mergeMessageState(existing: MessageItem | undefined, incoming: M
 
   return {
     ...incoming,
-    // Body-only message_created revisions carry no overlay snapshot.
+    // Body-only rows (page reads, message_created revisions) carry no overlay snapshot.
+    reactions: incoming.reactions ?? existing.reactions,
     delivery_blocks: incoming.delivery_blocks ?? existing.delivery_blocks,
     delivered,
     delivery_status: deliveryStatus,
@@ -95,18 +96,35 @@ export function applyDeliveryReceipt(
 // upstream, where the map is built with `.neq('user_id', self)`).
 export type MemberReadSeqs = Record<string, number>
 
-// Match delivery: mentions ∪ resolved reply sender; no targets or '*' means broadcast.
-// The reply preview already excludes whisper/deleted targets. Only current OTHER members count.
-function messageRecipientIds(message: MessageItem, memberIds: readonly string[]): string[] {
+/** Agents each message wakes (chat.message_agent_wakes), decided by the server when the message was written. */
+export type MessageAgentWakes = ReadonlyMap<string, ReadonlySet<string>>
+
+/**
+ * Who a message is for. People: its mentions ∪ resolved reply sender, or everyone when it names no one or '*'.
+ * Agents: exactly the ones delivery chose when the message was written (wakes), plus ones refused there
+ * (delivery_blocks) — so a passive agent counts only when named, @all'd or whispered to, and a later listen-mode
+ * change does not move an old message. Only current OTHER members count. null = this message's wakes are not
+ * loaded yet while the chat has agents.
+ */
+export interface MessageRecipientFacts {
+  agentIds: ReadonlySet<string>
+  wakes: MessageAgentWakes
+}
+
+function messageRecipientIds(message: MessageItem, memberIds: readonly string[], facts: MessageRecipientFacts): string[] | null {
+  const woken = facts.wakes.get(message.id)
+  if (!woken && memberIds.some((id) => facts.agentIds.has(id))) return null
   const ids = new Set(message.to_user_ids)
   if (message.reply_to_sender_user_id) ids.add(message.reply_to_sender_user_id)
-  return memberIds.filter((id) => ids.size === 0 || ids.has('*') || ids.has(id))
+  return memberIds.filter((id) => facts.agentIds.has(id)
+    ? woken!.has(id) || !!message.delivery_blocks?.some((block) => block.agent_user_id === id)
+    : ids.size === 0 || ids.has('*') || ids.has(id))
 }
 
 // @@@recipient-read (#521) - a message is read once every one of ITS recipients has read it (their
-export function isReadByRecipients(message: MessageItem, memberReadSeqs: MemberReadSeqs): boolean {
-  const recipients = messageRecipientIds(message, Object.keys(memberReadSeqs))
-  if (recipients.length === 0) return false
+export function isReadByRecipients(message: MessageItem, memberReadSeqs: MemberReadSeqs, facts: MessageRecipientFacts): boolean {
+  const recipients = messageRecipientIds(message, Object.keys(memberReadSeqs), facts)
+  if (!recipients?.length) return false
   return recipients.every((id) => memberReadSeqs[id] >= message.seq)
 }
 
@@ -131,17 +149,19 @@ export function isReadByRecipientsPrecise(
   message: MessageItem,
   memberIds: readonly string[],
   messageReaders: MessageReaders,
+  facts: MessageRecipientFacts,
 ): boolean {
   const readers = messageReaders[message.id]
   if (!readers || readers.size === 0) return false
-  const recipients = messageRecipientIds(message, memberIds)
-  if (recipients.length === 0) return false
+  const recipients = messageRecipientIds(message, memberIds, facts)
+  if (!recipients?.length) return false
   return recipients.every((id) => readers.has(id))
 }
 
 export function deriveMessageSendState(
   message: MessageItem,
   memberReadSeqs: MemberReadSeqs,
+  facts: MessageRecipientFacts,
   // @@@per-message-read (#598) - optional precise read source; when present it can flip 已读 independently
   // of the watermark (fixes agent directed-message receipts). Falls back to the watermark path otherwise.
   precise?: { memberIds: readonly string[]; messageReaders: MessageReaders },
@@ -150,9 +170,9 @@ export function deriveMessageSendState(
   if (message.local_send_state === 'failed') return 'failed'
   if (message.local_send_state === 'sending' || message.seq < 0) return 'sending'
   const preciseRead = precise
-    ? isReadByRecipientsPrecise(message, precise.memberIds, precise.messageReaders)
+    ? isReadByRecipientsPrecise(message, precise.memberIds, precise.messageReaders, facts)
     : false
-  if (message.delivery_status === 'read' || preciseRead || isReadByRecipients(message, memberReadSeqs)) return 'read'
+  if (message.delivery_status === 'read' || preciseRead || isReadByRecipients(message, memberReadSeqs, facts)) return 'read'
   if (message.delivered || message.delivery_status === 'delivered') return 'delivered'
   return 'sent'
 }
@@ -175,12 +195,15 @@ export interface MessageReadReceipt {
 
 // 派生某消息的逐成员读回执。memberReadSeqs = per-OTHER-member 水位（viewer 已在上游排除）。
 // precise（可选）= agent 的 message_deliveries 'read' 行，与水位并集（与 deriveMessageSendState 一致口径）。
+// null = recipients not known yet (see MessageRecipientFacts).
 export function deriveReadReceipt(
   message: MessageItem,
   memberReadSeqs: MemberReadSeqs,
+  facts: MessageRecipientFacts,
   precise?: { messageReaders: MessageReaders },
-): MessageReadReceipt {
-  const recipients = messageRecipientIds(message, Object.keys(memberReadSeqs))
+): MessageReadReceipt | null {
+  const recipients = messageRecipientIds(message, Object.keys(memberReadSeqs), facts)
+  if (!recipients) return null
 
   const preciseReaders = precise?.messageReaders[message.id]
   const readerIds = recipients.filter(

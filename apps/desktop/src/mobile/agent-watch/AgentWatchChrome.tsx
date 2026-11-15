@@ -27,6 +27,7 @@ export function AgentWatchScreen({
   headerTestId,
   bodyFill,
   bodyRef,
+  panelLayer = false,
 }: {
   title: ReactNode
   onBack?: () => void
@@ -48,10 +49,15 @@ export function AgentWatchScreen({
   bodyFill?: boolean
   /** 滚动体的节点:列表页要读 / 还原滚动位置、滚到某一行。 */
   bodyRef?: Ref<HTMLDivElement>
+  /**
+   * owner 11-12 Over an App's panel: the header is that panel's top row (assistant-task-chat.css), its back the panel's
+   * round back control (`ta-circle`, as the panel's own pages draw it).
+   */
+  panelLayer?: boolean
 }) {
   const { t } = useTranslation('main')
   return (
-    <div className="gg-aw" data-testid={testId}>
+    <div className="gg-aw" data-testid={testId} data-panel-layer={panelLayer || undefined}>
       <PaneHeader
         mobile
         divider={Boolean(onBack)}
@@ -61,7 +67,11 @@ export function AgentWatchScreen({
         titleLevel={onBack ? 'panel' : 'page'}
         data-testid={headerTestId}
         actions={actions}
-        leading={onBack ? (
+        leading={onBack && panelLayer ? (
+          <IconButton className="ta-circle gg-aw-panel-back" aria-label={t('settings.back')} title={t('settings.back')} onClick={onBack}>
+            <ChevronLeft />
+          </IconButton>
+        ) : onBack ? (
           <IconButton
             size="md"
             aria-label={t('settings.back')}

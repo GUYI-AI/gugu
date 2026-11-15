@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { observeAnimationViewport } from '@gugu/session-shared/animation-visibility';
-import { PageShownContext } from '@renderer/app/recent-session-pages';
+import { joinSharedBeat, observeAnimationViewport } from '@gugu/session-shared/animation-visibility';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import './cliSpinner.css';
 
 const FRAMES_1 = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -54,7 +54,7 @@ export function CLISpinner({
   animate?: boolean;
 }) {
   const element = useRef<HTMLSpanElement>(null);
-  const shown = useContext(PageShownContext);
+  const shown = useContext(SurfaceShownContext);
   const [inView, setInView] = useState(true);
 
   useEffect(() => {
@@ -62,6 +62,9 @@ export function CLISpinner({
     if (!animate || !host) return;
     return observeAnimationViewport(host, setInView);
   }, [animate]);
+  useEffect(() => {
+    if (animate && shown && inView && element.current) joinSharedBeat(element.current);
+  }, [animate, shown, inView]);
 
   if (!animate) {
     return <span className="text-foreground/60" data-animate="false">{CLI_SPINNER_PAUSED_FRAME}</span>;

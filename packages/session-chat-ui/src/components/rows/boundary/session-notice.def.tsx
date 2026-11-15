@@ -42,6 +42,9 @@ function noticeLabel(data: TranscriptSessionNotice, translate: import('@session-
       if (data.code === 'effort-unavailable') {
         return translate('transcript.sessionNotice.effortUnavailable', { running: running ?? '' });
       }
+      if (data.code === 'model-leaks-tool-markers') {
+        return translate('transcript.sessionNotice.modelLeaksToolMarkers', { running: running ?? '' });
+      }
       // ⚠️ provider 不报 model 维度时（#5047 那个 codex 桥**正是**这种）我们说不出「现在跑的是什么」。
       //    那时 ❌ 不许把空串插进句子 —— 行上会写成「现在跑的是 」，断在那里。
       if (running === undefined) {

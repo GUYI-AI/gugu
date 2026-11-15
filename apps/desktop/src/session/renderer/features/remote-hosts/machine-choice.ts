@@ -42,6 +42,14 @@ export function machineAcceptsWork(machine: Pick<MachineChoice, 'isLocal' | 'isO
   return machine.isLocal || machine.isOnline || machine.cloudComputer !== undefined;
 }
 
+/**
+ * An App install can go on it now: it takes work and is awake — a cloud computer still asleep or waking installs nothing
+ * yet (picked, it is woken). The install sheet's ticks and the App card's Install read this one answer.
+ */
+export function machineTakesInstall(machine: Pick<MachineChoice, 'isLocal' | 'isOnline' | 'cloudComputer'>): boolean {
+  return machineAcceptsWork(machine) && machine.cloudComputer === undefined;
+}
+
 /** 「本机」那一行。系统取这台电脑自己的。 */
 export function localMachineChoice(id: string, label: string): MachineChoice {
   return { id, label, isLocal: true, isOnline: true, kind: 'computer', platform: localPlatform() };

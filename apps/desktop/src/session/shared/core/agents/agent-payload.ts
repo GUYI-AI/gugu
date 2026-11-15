@@ -1,8 +1,10 @@
 import { normalizeAgentAuthCapabilities } from '@gugu/session-plugins/agents/connection-capabilities';
 import type { GuguPermissionMode, ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
-import { declaredInjectionTiming } from '@gugu/session-core/agents/plugins';
+import { ACCOUNT_PROVIDER_OFFICIAL_ENDPOINTS, declaredInjectionTiming } from '@gugu/session-core/agents/plugins';
 import type {
   AgentAuthDescriptor,
+  ApiKeyConnectionDescriptor,
+  ApiKeyConnectionFields,
   LiveSettingsCapability,
   SessionBundleDescriptor,
 } from '@gugu/session-core/agents/plugins';
@@ -133,6 +135,11 @@ export type AgentCapabilities = {
     startup?: { noticeKey: string };
   };
   auth: AgentAuthDescriptor;
+  /**
+   * 「API Key 连接」(#2507):订阅页的连接表单按它摆格(地址 / 模型 / 协议提示)。缺席 = 旧宿主或没声明,
+   * 当作 `none`。Claude / Codex 不在这里 —— 它们的连接走 `auth.connections`。
+   */
+  apiKeyConnection?: ApiKeyConnectionDescriptor;
   hostDependency: AgentHostDependencyInfo;
   models: AgentModelsCapability;
   effort: AgentEffortCapability;
@@ -167,6 +174,33 @@ export type AgentCapabilities = {
 
 export function agentSupportsAcp(capabilities: AgentCapabilities | undefined | null): boolean {
   return capabilities?.acp.kind === 'supported';
+}
+
+/**
+ * 订阅页的连接表单要摆哪几格(#2507)。Claude / Codex:有「账号」,API Key 的地址可选、没有模型格、不写协议提示
+ * (与之前逐字一样);声明了 `apiKeyConnection` 的家:只有 API Key,格子照声明;其余家:没有连接(null)。
+ */
+export type AgentConnectionForm = {
+  accounts: boolean;
+  /** 地址讲哪种接口由宿主按地址探(这家讲得了不止一种):表单 ❌ 再写「地址须支持某某接口」那一行。 */
+  protocolDetected: boolean;
+} & Pick<ApiKeyConnectionFields, 'endpoint' | 'model' | 'protocol' | 'officialEndpoint'>;
+
+export function agentConnectionForm(agent: Pick<AgentPayload, 'id' | 'capabilities'> | undefined | null): AgentConnectionForm | null {
+  if (agentSupportsConnectionManagement(agent)) {
+    const officialEndpoint = agent ? ACCOUNT_PROVIDER_OFFICIAL_ENDPOINTS[agent.id] : undefined;
+    return { accounts: true, endpoint: 'optional', model: 'none', protocolDetected: false, ...(officialEndpoint ? { officialEndpoint } : {}) };
+  }
+  const declared = agent?.capabilities.apiKeyConnection;
+  if (declared?.kind !== 'supported') return null;
+  return {
+    accounts: false,
+    endpoint: declared.endpoint,
+    model: declared.model,
+    protocolDetected: (declared.protocols?.length ?? 0) > 1,
+    ...(declared.protocol ? { protocol: declared.protocol } : {}),
+    ...(declared.officialEndpoint ? { officialEndpoint: declared.officialEndpoint } : {}),
+  };
 }
 
 /** Normalize legacy payloads with the adapter's own default before reading this optional capability. */

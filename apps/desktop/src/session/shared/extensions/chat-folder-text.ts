@@ -51,7 +51,9 @@ export async function readChatFolderTextWith(platform: ChatFolderReadPlatform, r
 
 /** The file service's current text: the same read used by App download, previews and folder reads. */
 export async function readDocumentText(platform: Pick<ChatFolderReadPlatform, 'filesUrl' | 'fetch'>, token: string, itemId: string, asAgent?: string | null): Promise<string> {
-  const res = await platform.fetch(`${platform.filesUrl()}/${encodeURIComponent(itemId)}`, {
+  // Called on its own: a browser's fetch called as a method of another object throws "Illegal invocation" (the phone).
+  const send = platform.fetch
+  const res = await send(`${platform.filesUrl()}/${encodeURIComponent(itemId)}`, {
     headers: { Authorization: `Bearer ${token}`, ...(asAgent ? { 'X-Gugu-As-Agent': asAgent } : {}) },
   }).catch((cause: unknown) => {
     throw new ChatFolderReadError('file-service', cause instanceof Error ? cause.message : String(cause));

@@ -179,7 +179,7 @@ export function WechatConnectDialog({
   } else if (connected) {
     content = (
       <div className="flex w-full flex-col items-center gap-3" data-testid="wechat-connect-success">
-        <CheckCircle aria-hidden className="size-10 text-[var(--ok)]" />
+        <CheckCircle aria-hidden className="size-10 text-[var(--ok-fg)]" />
         <div className={`${body} text-center text-[var(--muted-fg)]`}>{t('channels.dialog.connectedBody')}</div>
         <div className="flex w-full items-center justify-between gap-3 rounded-[var(--radius-control)] bg-foreground/[0.03] px-3 py-2">
           <span className={`${body} text-[var(--fg)]`}>{t('channels.agentLabel')}</span>

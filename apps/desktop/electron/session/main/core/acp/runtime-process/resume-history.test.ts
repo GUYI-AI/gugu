@@ -25,19 +25,34 @@ describe('resuming without replay (#980)', () => {
     const order: string[] = [];
     await resumeHistoryFacts(input(), {
       recordedDeliveryIds: async () => [],
-      fillFromRecord: async () => { order.push('fill'); },
+      fillFromRecord: async () => { order.push('fill'); return undefined; },
       turnIndexBase: async () => { order.push('base'); return 0; },
     });
     expect(order).toEqual(['fill', 'base']);
   });
 
-  it('starts anyway when filling from the record fails', async () => {
+  it('replays when the record cannot be read: the agent holds the only history left', async () => {
+    const recordedDeliveryIds = vi.fn(async () => []);
+    const facts = await resumeHistoryFacts(input(), {
+      recordedDeliveryIds,
+      fillFromRecord: async () => ({ status: 'unavailable' }),
+      turnIndexBase: async () => 7,
+    });
+    expect(facts).toEqual({ replayHistory: undefined, recordedDeliveryIds: undefined, turnIndexBase: undefined });
+    expect(recordedDeliveryIds).not.toHaveBeenCalled();
+  });
+
+  it('starts with replay and logs it when filling from the record fails: the missing turns are neither stored nor skipped silently', async () => {
+    const { log } = await import('@main/lib/logger');
+    vi.mocked(log.warn).mockClear();
     const facts = await resumeHistoryFacts(input(), {
       recordedDeliveryIds: async () => [],
       fillFromRecord: async () => { throw new Error('record unreadable'); },
       turnIndexBase: async () => 4,
     });
-    expect(facts).toEqual({ replayHistory: false, recordedDeliveryIds: [], turnIndexBase: 4 });
+    expect(facts).toEqual({ replayHistory: undefined, recordedDeliveryIds: undefined, turnIndexBase: undefined });
+    expect(log.warn).toHaveBeenCalledWith('[acp-start] resume facts unavailable; resuming with replay',
+      { sessionId: 's1', error: 'Error: record unreadable' });
   });
 
   it('always reads the record for deliveries: a reconnecting runtime redelivers from a queue the host cannot see', async () => {

@@ -13,7 +13,6 @@ import type { GroupChatSettings, GroupAgentItem, GroupCollabSnapshot, GroupMembe
 import type { DisplayIdentity } from '../../../apps/desktop/src/lib/displayIdentity'
 import { createNode, createReactHarness, device, displayIdentity, renderWithAppProviders, typeInto, waitForCondition } from '../../support/testHarness'
 import { closeInfoTab, infoTabOf, openInfoTab } from '../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
-import { UI_EVENTS } from '../../../apps/desktop/src/lib/uiEvents'
 import { publishProjectGroupChats } from '../../../apps/desktop/src/session/renderer/features/projects/stores/project-group-chats-bridge'
 import type { MemberProfileChatTarget } from '../../../apps/desktop/src/components/MemberProfileCard'
 import { DevicesContext } from '../../../apps/desktop/src/store/devicesContext'
@@ -26,7 +25,7 @@ vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   chatService: {
     getGroupCollab: vi.fn(),
     getGroupChatSettings: vi.fn(),
-    listGroupJoinRequests: vi.fn(),
+    listManagedGroupJoinRequests: vi.fn(),
     decideGroupJoin: vi.fn(async () => {}),
     setAgentListenMode: vi.fn(async () => {}),
     setGroupMemberRole: vi.fn(async () => {}),
@@ -37,7 +36,6 @@ vi.mock('../../../apps/desktop/src/lib/chat', () => ({
 vi.mock('../../../apps/desktop/src/hooks/useAgentDisplayStatus', () => import('../../support/agentDisplayStatusTestDouble'))
 vi.mock('../../../apps/desktop/src/lib/identityReadAdapter', () => ({
   readRequiredDisplayIdentities: vi.fn(async (ids: string[]) => ids.map((id) => ({ id, type: 'human', display_name: `申请人-${id}` }))),
-  readCommunityPoints: vi.fn(async () => 0),
 }))
 
 const { chatService } = await import('../../../apps/desktop/src/lib/chat')
@@ -45,7 +43,7 @@ const { MemberListPanelFixture: MemberListPanel } = await import('../../support/
 const { MemberListPanel: ControlledMemberListPanel } = await import('../../../apps/desktop/src/components/chat/MemberListPanel')
 
 const getGroupCollab = vi.mocked(chatService.getGroupCollab)
-const listJoinRequests = vi.mocked(chatService.listGroupJoinRequests)
+const listJoinRequests = vi.mocked(chatService.listManagedGroupJoinRequests)
 const removeMember = vi.mocked(chatService.removeGroupMember)
 const setListenMode = vi.mocked(chatService.setAgentListenMode)
 const getSettings = vi.mocked(chatService.getGroupChatSettings)
@@ -195,28 +193,15 @@ describe('#969 leaving the group info page', () => {
     expect(infoTabOf('other-group-navigation')).not.toBeNull()
   })
 
-  it('New Agent closes only the source info before asking the shell to open the group-bound creation page', async () => {
+  it('the phone members page has no New Agent of its own: the group composer New task is the one entry', async () => {
     shell.mobile = true
     await renderMembers()
-    const sourceAtNavigation: Array<ReturnType<typeof infoTabOf>> = []
-    const create = vi.fn((event: Event) => {
-      sourceAtNavigation.push(infoTabOf('group-navigation'))
-      expect((event as CustomEvent).detail).toEqual({ chatId: 'group-navigation' })
-    })
-    window.addEventListener(UI_EVENTS.createAgentInGroup, create)
-    try {
-      await click(q('[data-testid="member-list-create-agent"]'))
-      expect(create).toHaveBeenCalledOnce()
-      expect(sourceAtNavigation).toEqual([null])
-      expect(infoTabOf('other-group-navigation')).not.toBeNull()
-    } finally {
-      window.removeEventListener(UI_EVENTS.createAgentInGroup, create)
-    }
+    expect(document.querySelector('[data-testid="member-list-create-agent"]')).toBeNull()
   })
 })
 
 describe('gugu-dev#181 我的 agent 收成一组', () => {
-  it('「我的 agent · N」与「其他人的 agent · N」是两组同级的:我的默认展开,收起后别人的 agent 仍在自己那一组里', async () => {
+  it('「我的 agent」与「其他人的 agent」是两组同级的分区(计数在分区标签右端):我的默认展开,收起后别人的 agent 仍在自己那一组里', async () => {
     revisionListeners = []
     await renderWithAppProviders(
       harness,
@@ -232,7 +217,7 @@ describe('gugu-dev#181 我的 agent 收成一组', () => {
     expect(toggle?.textContent).toContain('1')
     expect(rowIds()).toContain('claude')
     const others = q('[data-member-group="others"]')
-    expect(others?.textContent).toContain('其他人的 agent · 1')
+    expect(others?.querySelector('[data-slot="section-label"]')?.textContent).toBe('其他人的 agent1')
     expect(others?.querySelector('[data-member-row="codex"]')).not.toBeNull()
     await click(toggle)
     expect(rowIds()).not.toContain('claude')
@@ -347,6 +332,7 @@ describe('Agent owner and source-group listen-mode controls', () => {
     expect(setListenMode.mock.calls).toEqual([['chat-1', 'codex', 'active']])
     expect(q('[data-testid="group-member-profile-menu"] select')).not.toBeNull()
     expect(q('[data-profile-remove-button="codex"]')?.textContent).toBe('移出群聊')
+    expect(q('[data-profile-remove-hint="codex"]')).toBeNull()
     // 阳控:同一张卡、同一个分段,换成群主自己的 agent 就真的改了。
     await click(q('[data-member-row="claude"]'))
     await click(segment('主动') ?? null)
@@ -424,6 +410,7 @@ describe('topic participant controls project server authority', () => {
     expect(setListenMode).toHaveBeenCalledWith('topic-1', 'codex', 'active')
     await click(q('[data-member-row="codex"]'))
     await waitForCondition(() => q('[data-profile-remove-button="codex"]') !== null, 'owned topic Agent profile')
+    expect(q('[data-profile-remove-button="codex"]')?.textContent).toBe('移除 写代码的')
     expect(q('[data-profile-role-select="codex"]')).toBeNull()
     await click(q('[data-profile-remove-button="codex"]'))
     expect(removeMember).toHaveBeenCalledWith('topic-1', 'codex')
@@ -444,7 +431,7 @@ describe('topic participant controls project server authority', () => {
   it('lets a source-group manager change a topic agent’s mode without a topic seat', async () => {
     await renderTopic('owner-1', true, { ...SNAPSHOT, humans: SNAPSHOT.humans.filter((human) => human.id !== 'owner-1') })
     expect(q('[data-testid="topic-name-edit"] [data-testid="group-name-edit"]')).not.toBeNull()
-    expect(q('[data-testid="member-list-invite"]')).toBeNull()
+    expect(q('[data-group-add-menu]')).toBeNull()
     await click(q('[data-member-row="codex"]'))
     expect(q('[data-profile-remove-button="codex"]')).not.toBeNull()
     expect(q('[data-profile-role-select="codex"]')).toBeNull()
@@ -469,8 +456,26 @@ describe('topic participant controls project server authority', () => {
     await renderTopic('member-2', false)
     await click(q('[data-member-row="member-2"]'))
     const leave = q('[data-profile-remove-button="member-2"]')
-    expect(leave?.textContent).toBe('离开群组')
+    expect(leave?.textContent).toBe('退出话题')
+    expect(q('[data-profile-remove-hint="member-2"]')?.textContent).toBe('你仍可阅读，只是不再收到这个话题的通知')
     await click(leave)
+    expect(removeMember).toHaveBeenCalledWith('topic-1', 'member-2')
+  })
+  it.each(['profile', 'menu'])('topic removal uses a neutral label and the topic scope through %s', async (surface) => {
+    await renderTopic('owner-1', true)
+    const hint = '对方仍可阅读，只是不再收到这个话题的通知'
+    let remove: HTMLElement | null
+    if (surface === 'profile') {
+      await click(q('[data-member-row="member-2"]'))
+      remove = q('[data-profile-remove-button="member-2"]')
+      expect(remove?.textContent).toBe('移除 成员丙')
+      expect(q('[data-profile-remove-hint="member-2"]')?.textContent).toBe(hint)
+    } else {
+      await click(q('[data-member-row="member-2"] button[aria-label^="管理"]'))
+      remove = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent?.startsWith('移除 成员丙')) ?? null
+      expect(remove?.textContent).toBe(`移除 成员丙${hint}`)
+    }
+    await click(remove)
     expect(removeMember).toHaveBeenCalledWith('topic-1', 'member-2')
   })
 })
@@ -508,8 +513,10 @@ describe('source-group listen-mode authority boundaries', () => {
     await renderWithAppProviders(harness, createNode(ControlledMemberListPanel, {
       chatId: 'chat-1', chatKind: kind, head, snapshot: SNAPSHOT, onReload: vi.fn(async () => {}),
     }), { auth: { id: 'member-2' }, chat: { identitiesById: Object.fromEntries(IDENTITIES.map((identity) => [identity.id, identity])) }, contacts: { contacts: [] } })
+    // Without authority the listen toggle is inert: its press is the row's, which opens the card (the row is its Trigger;
+    // pressing the row again would close it).
     await click(q('[data-member-row="claude"] [data-listen-mode-toggle]'))
-    await click(q('[data-member-row="claude"]'))
+    expect(setListenMode).not.toHaveBeenCalled()
     const active = [...document.querySelectorAll<HTMLElement>('.gg-pop-lmseg-btn')].find((element) => element.textContent === '主动')
     expect(active).toBeDefined()
     await click(active!)

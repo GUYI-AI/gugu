@@ -6,7 +6,8 @@
  *
  * Behaviors (determined per-item):
  *  - 'insert'  → inserts a slashCommand atom node serialized as its command
- *                token (`/name`, or `$name` when the name carries its own sigil).
+ *                token (`/name`, or `$name` when the name carries its own sigil);
+ *                with kind 'prompt', a folded prompt whose token is its text.
  *  - 'insert-text' → inserts the item's raw text directly into the editor.
  *  - 'execute' → calls onCommand(item) and removes the trigger range without
  *                inserting any node.
@@ -16,7 +17,7 @@ import { Mention as TipTapMention } from '@tiptap/extension-mention';
 import { PluginKey } from '@tiptap/pm/state';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import type { SuggestionOptions } from '@tiptap/suggestion';
-import { SlashCommandPill } from '../slash-command-pill';
+import { plainTextInsertContent, SlashCommandPill } from '../slash-command-pill';
 import { fallbackToken } from '../command-token';
 import type { CommandItem } from '../types';
 
@@ -27,14 +28,6 @@ function nodeToken(attrs: Record<string, unknown>): string {
   const token = attrs.token as string | null;
   if (token) return token;
   return fallbackToken((attrs.name as string | null) ?? (attrs.id as string | null) ?? '');
-}
-
-function plainTextInsertContent(text: string) {
-  const lines = text.length > 0 ? text.split(/\r?\n/) : [''];
-  return lines.map((line) => ({
-    type: 'paragraph',
-    ...(line.length > 0 ? { content: [{ type: 'text', text: line }] } : {}),
-  }));
 }
 
 export function buildSlashCommandExtension(
@@ -49,6 +42,8 @@ export function buildSlashCommandExtension(
         name: { default: null },
         // 宿主算好的原文。芯片显示与序列化都只读它 —— 见 `CommandItem.token`。
         token: { default: null },
+        // `prompt`: a folded prompt (`CommandItem.kind`); none: a command chip.
+        kind: { default: null },
       };
     },
     addNodeView() {
@@ -105,6 +100,7 @@ export function buildSlashCommandExtension(
                   id: item.id,
                   name: item.name ?? item.id,
                   token: item.token ?? fallbackToken(item.name ?? item.id),
+                  kind: item.kind ?? null,
                 },
               },
               { type: 'text', text: ' ' },

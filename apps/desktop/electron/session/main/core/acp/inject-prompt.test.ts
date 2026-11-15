@@ -40,9 +40,10 @@ describe('shared ACP prompt admission', () => {
     await vi.waitFor(() => {
       const history = runtime.getHistory('conv-1');
       if (!history.success) throw new Error('History unavailable');
-      expect(history.data.turns.flatMap(turn => turn.items.flatMap(item => item.kind === 'message' && item.role === 'user'
-        && item._meta?.guguClientMessageId ? [item._meta.guguClientMessageId] : [])))
-        .toEqual(['client-single', 'client-triple']);
+      const clientIds = history.data.turns.flatMap(turn => turn.items.flatMap(item => item.kind === 'message' && item.role === 'user'
+        && item._meta?.guguClientMessageId ? [item._meta.guguClientMessageId] : []));
+      expect(clientIds).toEqual([expect.any(String), 'client-single', 'client-triple']);
+      expect(new Set(clientIds).size).toBe(3);
     });
   });
 

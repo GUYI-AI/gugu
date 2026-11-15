@@ -34,7 +34,7 @@ const call = (page: number, method: string, args: Record<string, unknown> = {}) 
 const open = () => call(1, 'modalOpen', { id: 'one', entry: 'new.html', title: 'New card', data: { column: 'todo' } });
 
 beforeEach(async () => {
-  setExtensionBridgeHost({ deliver: async (origin, action) => { actions.push({ window: origin.embedderId, action }); }, presentation: () => ({ locale: 'en', themeMode: 'dark', fullscreen: false, windowFocused: true }) });
+  setExtensionBridgeHost({ deliver: async (origin, action) => { actions.push({ window: origin.embedderId, action }); }, selfGuguNumber: () => undefined, presentation: () => ({ locale: 'en', themeMode: 'dark', fullscreen: false, windowFocused: true }) });
   await bindExtensionSurface({ webContentsId: 1, extensionId: 'board', tabId: 'slot', tabKind: 'board.main', conversation: 'chat-one', itemId: 'board-file' });
   await bindExtensionSurface({ webContentsId: 3, extensionId: 'other-app', tabId: 'other', tabKind: 'other-app.main' });
   received.length = 0; actions.length = 0;

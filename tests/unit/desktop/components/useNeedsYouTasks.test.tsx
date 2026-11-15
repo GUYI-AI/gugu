@@ -127,3 +127,17 @@ it('a month of read failures does not inflate the count; everything lists newest
   expect(harness.container.textContent?.split(',').slice(0, 2)).toEqual(['server:newest-wait', 'server:old-27'])
   expect(harness.container.textContent?.split(',')).toHaveLength(43)
 })
+
+it('an answered approval stays listed as handled below what still waits, never counted; older hosts list nothing new', async () => {
+  const answered = (id: string, at: number) => ({ conversationId: id, agentStatus: 'working', status: { status: 'working', detail: null }, unseen: false,
+    lastAnswered: { itemId: `ask-${id}`, kind: 'permission', source: 'app-install', optionId: 'allow', option: { optionId: 'allow', name: 'Install' }, resolvedBy: 'mobile', resolvedAt: at } })
+  state.directory = { server: { cached: false, error: null, sessions: [
+    answered('installed', 2), answered('newer', 3), failure('failed', { unseen: false }),
+    { ...pending('old-host'), status: { status: 'working', detail: null } },
+    { ...answered('asks-again', 4), ...pending('asks-again') },
+  ] } }
+  await renderWithAppProviders(harness, <Probe />)
+  expect(harness.container.textContent).toBe('server:failed,server:asks-again,server:newer,server:installed')
+  expect(harness.container.querySelector('output')?.dataset.count).toBe('1')
+  expect(harness.container.querySelector('output')?.dataset.attention).toBe('needs_user')
+})

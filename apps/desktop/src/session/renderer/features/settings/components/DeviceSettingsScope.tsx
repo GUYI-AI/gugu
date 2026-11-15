@@ -48,5 +48,5 @@ export function DeviceSettingsNotice({
   const { translate } = useSessionMessages();
   const { remote } = useSettingsHost();
   const notice = deviceScopeNotice({ remote, error, hasData, now: Date.now(), cloud: remoteHostsStore.cloudScope(remote?.deviceId) }, translate);
-  return notice ? <DeviceScopeNoticeLine notice={notice} onRetry={onRetry} /> : null;
+  return notice ? <DeviceScopeNoticeLine notice={notice} onRetry={onRetry} store={settingsDeviceStore} /> : null;
 }

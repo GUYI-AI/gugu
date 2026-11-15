@@ -7,13 +7,14 @@ import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNav
 import { openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
 import type { GuguLinkTarget } from '@gugu/core/shared/ui/guguLink'
 import { until } from '../../../support/awaitCondition'
+import { UNAVAILABLE_APP_STATES, clearAssistantAppState, setAssistantAppState } from '../../../support/assistantAppStates'
 
 const mocked = vi.hoisted(() => ({ lookup: vi.fn(), file: vi.fn(), local: vi.fn(), reveal: vi.fn(), work: vi.fn(), task: null as unknown }))
 vi.mock('react-i18next', async (original) => ({ ...await original<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => key }) }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', async original => ({ ...await original<typeof import('../../../../apps/desktop/src/lib/fileAccess')>(), localFileRevision: mocked.local }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { getMessageById: mocked.lookup } }))
 vi.mock('../../../../apps/desktop/src/hooks/useSourceMessageReveal', () => ({ askReveal: mocked.reveal }))
-vi.mock('../../../../apps/desktop/src/lib/assistantShellBridge', () => ({ readAssistantShellBridge: () => ({ getSnapshot: () => ({ assistant: { id: 'assistant' }, chatId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' }) }) }))
+vi.mock('../../../../apps/desktop/src/lib/assistantShellBridge', () => ({ readAssistantShellBridge: () => ({ getSnapshot: () => ({ assistant: { id: 'assistant' }, assistantState: 'found', ownerId: 'owner', chatId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' }), subscribe: () => () => undefined }) }))
 vi.mock('../../../../apps/desktop/src/lib/assistantTaskChat', () => ({ OPEN_ASSISTANT_TASK_CHAT: '__open_assistant_task_chat', readAssistantTaskChat: () => mocked.task }))
 vi.mock('../../../../apps/desktop/src/lib/assistantWork', () => ({ assistantWorkCloud: { listAll: mocked.work } }))
 
@@ -31,7 +32,7 @@ const chats = [{ id: assistantChat, peer_user_id: 'assistant' }, { id: taskChat,
 const openChat = vi.fn(), openAssistant = vi.fn(), openFile = vi.fn(), openApp = vi.fn(), openOwnApp = vi.fn(), openProject = vi.fn()
 let root: Root, container: HTMLDivElement
 function Hook({ owner = 'owner' }: { owner?: string }) {
-  useLinkNavigation({ ownerId: owner, chats, contacts: [{ id: 'task', type: 'agent', owner_user_id: 'owner' }] as never, openChat, openAssistant, openFile, openApp, openOwnApp, openProject })
+  useLinkNavigation({ ownerId: owner, chats: () => chats, contacts: () => [{ id: 'task', type: 'agent', owner_user_id: 'owner' }] as never, openChat, openAssistant, openFile, openApp, openOwnApp, openProject })
   return null
 }
 function request(target: GuguLinkTarget) {
@@ -47,10 +48,12 @@ beforeEach(async () => {
   openAssistant.mockImplementation((tasks: boolean) => tasks ? 'assistant:task-chat' : 'assistant:chat')
   mocked.task = { assistantId: 'assistant', taskAgentId: 'task', task: { deviceId: 'device', sessionId: 'session' }, assistants: [] }
   mocked.lookup.mockResolvedValue({ chat_id: assistantChat })
+  // The assistant's tasks have their place over its App's panel while the App is the entry's target (lib/assistantEntry.ts).
+  setAssistantAppState('usable', 'owner')
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
   await act(async () => { root.render(<Hook />) })
 })
-afterEach(async () => { await act(async () => root.unmount()); container.remove() })
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); clearAssistantAppState() })
 
 describe('conversation source navigation', () => {
   it('reveals a valid assistant source on the left without replacing the task pane', async () => {
@@ -121,6 +124,32 @@ describe('conversation source navigation', () => {
     expect(mocked.reveal).not.toHaveBeenCalled()
   })
 
+  // The App not usable here (switched off by the person, still going in, failing to go in): a task the assistant started is an
+  // ordinary one — its conversation opens as any conversation does, with the exact message, and nothing reads the assistant's
+  // ledger or asks for the App's panel. The assistant's own chat is still its chat, opened by the one decision.
+  describe.each(UNAVAILABLE_APP_STATES)('the App %s', (state) => {
+    beforeEach(() => setAssistantAppState(state, 'owner'))
+    it('opens a task chat link as the ordinary chat it is, the message revealed there', async () => {
+      mocked.lookup.mockResolvedValue({ chat_id: taskChat })
+      openChat.mockReturnValue('tasks:chat')
+      const listener = vi.fn(); window.addEventListener('__open_assistant_task_chat', listener)
+      try {
+        await act(async () => { await click(taskChat) })
+        expect(openChat).toHaveBeenCalledExactlyOnceWith(taskChat)
+        expect(mocked.reveal).toHaveBeenCalledWith(taskChat, messageId, 'tasks:chat')
+        expect(openAssistant).not.toHaveBeenCalled()
+        expect(listener).not.toHaveBeenCalled()
+        expect(mocked.work).not.toHaveBeenCalled()
+      } finally { window.removeEventListener('__open_assistant_task_chat', listener) }
+    })
+    it('still opens the assistant\'s own chat through the one decision', async () => {
+      await act(async () => { await click(assistantChat) })
+      expect(openAssistant).toHaveBeenCalledExactlyOnceWith(false)
+      expect(mocked.reveal).toHaveBeenCalledWith(assistantChat, messageId, 'assistant:chat')
+      expect(openChat).not.toHaveBeenCalled()
+    })
+  })
+
   it('does not navigate or show an old error after changing accounts', async () => {
     let reject!: (error: Error) => void
     mocked.lookup.mockReturnValue(new Promise((_resolve, fail) => { reject = fail }))
@@ -143,8 +172,13 @@ describe('file links use the same shell request', () => {
     await until('first file lookup started', () => held.has(a))
     await act(async () => { openedB = request({ kind: 'file', itemId: b }) })
     await until('second file lookup started', () => held.has(b))
-    await act(async () => { held.get(first)!(); await (first === a ? openedA : openedB) })
-    await act(async () => { held.get(second)!(); await (second === a ? openedA : openedB) })
+    const complete = async (id: string) => {
+      held.get(id)!()
+      if (id === a) await expect(openedA).rejects.toThrow('links.unavailable')
+      else await openedB
+    }
+    await act(async () => { await complete(first) })
+    await act(async () => { await complete(second) })
     expect(openFile).toHaveBeenCalledOnce()
     expect(openFile).toHaveBeenCalledWith(assistantChat, { kind: 'file', itemId: b }, expect.anything())
   })
@@ -174,8 +208,27 @@ describe('file links use the same shell request', () => {
     let opened!: ReturnType<typeof request>
     await act(async () => { opened = request({ kind: 'file', itemId: a }) })
     await until('file lookup started', () => mocked.file.mock.calls.length > 0)
-    await act(async () => { await click(assistantChat); finish(); await opened })
+    await act(async () => { await click(assistantChat); finish(); await expect(opened).rejects.toThrow('links.unavailable') })
     expect(openFile).not.toHaveBeenCalled()
     expect(mocked.reveal).toHaveBeenCalledWith(assistantChat, messageId, 'assistant:chat')
+  })
+  it('waits for the file destination receipt before acknowledging the link', async () => {
+    mocked.file.mockResolvedValue({ data: { chat_id: assistantChat } })
+    let accept!: () => void
+    openFile.mockImplementation(() => new Promise<void>(resolve => { accept = resolve }))
+    let result = 'pending'
+    const opened = request({ kind: 'file', itemId: a }).then(() => { result = 'opened' })
+    await act(async () => { await until('the file destination received the request', () => openFile.mock.calls.length === 1) })
+    expect(result).toBe('pending')
+    await act(async () => { accept(); await opened })
+    expect(result).toBe('opened')
+  })
+  it('returns the destination failure instead of acknowledging a queued file', async () => {
+    mocked.file.mockResolvedValue({ data: { chat_id: assistantChat } })
+    let refuse!: (error: Error) => void
+    openFile.mockImplementation(() => new Promise<void>((_resolve, reject) => { refuse = reject }))
+    const opened = request({ kind: 'file', itemId: a })
+    await act(async () => { await until('the file destination received the request', () => openFile.mock.calls.length === 1) })
+    await act(async () => { refuse(new Error('native file host unavailable')); await expect(opened).rejects.toThrow('links.unavailable') })
   })
 })

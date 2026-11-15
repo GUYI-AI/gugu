@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import type { TabHandle } from './core/tab-provider';
 import { createTabProvider, createTabRegistry } from './core/tab-provider-registry';
 import { PaneLayoutStore } from './pane-layout-store';
 import { accountTabPlacementMemory, type TabPlacementMemory } from './tab-placement-memory';
@@ -22,12 +23,13 @@ function setup(memory: TabPlacementMemory = { read: () => undefined, write() {} 
     TabBarItemDragPreview: () => null,
     TabContent: () => null,
   });
-  const layout = new PaneLayoutStore(createTabRegistry(['conversation', 'topic', 'file', 'folder'].map(provider)), { viewId: 'pair' }, undefined, { placementMemory: memory });
+  const registry = createTabRegistry(['conversation', 'topic', 'file', 'folder'].map(provider));
+  const layout = new PaneLayoutStore(registry, { viewId: 'pair' }, undefined, { placementMemory: memory });
   layouts.push(layout);
   const conversation = layout.open('conversation', { path: 'conversation' }, { from: null, intent: 'newTab' })!;
   const open = (path: string, from = conversation, intent: 'navigate' | 'newTab' | 'beside' = 'navigate', kind = 'file') =>
     layout.open(kind, { path }, { from, intent })!;
-  return { layout, conversation, open };
+  return { layout, conversation, open, registry };
 }
 
 const pathOf = (layout: Layout, tabId: string) =>
@@ -107,6 +109,46 @@ describe('every side-by-side entry ends in one strip with one pair', () => {
     expectOneStrip(layout);
   });
 
+  it("back and forth between a tab's own pages stays in that tab, though one is remembered beside", () => {
+    const memory = new Map<string, 'separate' | 'beside'>();
+    const { layout, open } = setup({ read: (id) => memory.get(id), write: (id, placement) => void memory.set(id, placement) });
+    const side = open('a.csv');
+    expect(open('a.csv', side, 'navigate', 'folder')).toBe(side);
+    // Control: the page going back is one the memory would otherwise move.
+    expect([...memory.values()]).toContain('beside');
+    expect(open('a.csv', side, 'navigate', 'file')).toBe(side);
+    expect(layout.pair?.side).toBe(side);
+    expect(paths(layout)).toEqual(['conversation', 'a.csv']);
+    expect(layout.mainGroup.pane.entries.get(side)?.kind ?? layout.groups[1]?.pane.entries.get(side)?.kind).toBe('file');
+    expectOneStrip(layout);
+  });
+
+  it("a folder in a file's path stays in that tab, though it was last closed beside; any other page stays beside", () => {
+    const memory = new Map<string, 'separate' | 'beside'>();
+    const { layout, open } = setup({ read: (id) => memory.get(id), write: (id, placement) => void memory.set(id, placement) });
+    const folder = open('src', undefined, 'navigate', 'folder');
+    close(layout, folder);
+    expect([...memory.values()]).toEqual(['beside']);
+    const file = open('a.ts');
+    expect(layout.open('folder', { path: 'src' }, { from: file, intent: 'navigate', inPlace: true })).toBe(file);
+    expect(paths(layout)).toEqual(['conversation', 'src']);
+    expectOneStrip(layout);
+    // Control (owner 11-03): beside stays beside for a page asked for without `inPlace`.
+    memory.set([...memory.keys()][0]!.replace('src', 'other'), 'beside');
+    const other = open('other', file, 'navigate', 'folder');
+    expect(other).not.toBe(file);
+    expect(layout.pair?.side).toBe(other);
+  });
+
+  it('a page opened at a place keeps it, on the page it opened and not the one left', () => {
+    const { layout, open } = setup();
+    const file = open('a.ts');
+    const place = { folder: 'src' };
+    expect(layout.open('folder', { path: 'src' }, { from: file, intent: 'navigate', viewState: place })).toBe(file);
+    const pane = layout.groups.find(({ pane }) => pane.entries.has(file))!.pane;
+    expect(pane.navigationOf(file)!.pages.map((page) => page.viewState)).toEqual([undefined, place]);
+  });
+
   it('narrow: the pair stays (only what is shown changes), widening shows it again', () => {
     const { layout, open } = setup();
     open('A.md');
@@ -141,19 +183,28 @@ describe('every side-by-side entry ends in one strip with one pair', () => {
 });
 
 describe('separate wins when anything says so (owner 11-05 §6.3)', () => {
-  it('leaves another page in front for a background request; recording a hidden pair is deferred', () => {
+  it('records a background pair while another page stays in front', () => {
     const { layout, conversation, open } = setup();
     const other = open('terminal', conversation, 'newTab');
-    layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false });
-    expect(layout.pair).toBeNull();
+    const output = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false });
+    expect(layout.pair).toEqual({ pinned: conversation, side: output });
+    expect(layout.isPairVisible).toBe(false);
+    expect(layout.groups).toHaveLength(1);
+    expect(layout.stripTabIds.slice(0, 2)).toEqual([conversation, output]);
     expect(layout.focusedPane.resolvedActiveTabId).toBe(other);
   });
 
   it('keeps the viewed side of an existing pair when a background request arrives', () => {
     const { layout, conversation, open } = setup();
     const viewed = open('terminal');
-    layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false });
-    expect(layout.pair).toEqual({ pinned: conversation, side: viewed });
+    const side = layout.sideGroup!;
+    const tree = layout.layout;
+    const output = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false });
+    expect(layout.pair).toEqual({ pinned: conversation, side: output });
+    expect(layout.sideGroup).toBe(side);
+    expect(layout.sideGroup!.pane.resolvedActiveTabId).toBe(viewed);
+    expect(side.pane.resolvedTabs.find((tab) => tab.tabId === viewed)?.pairRole).toBeUndefined();
+    expect(layout.layout).toBe(tree);
     expect(layout.focusedPane.resolvedActiveTabId).toBe(viewed);
   });
 
@@ -191,6 +242,198 @@ describe('separate wins when anything says so (owner 11-05 §6.3)', () => {
     layout.open('file', { path: 'B.md' }, { from: conversation, intent: 'beside', activate: false });
     expect(layout.pair).toBeNull();
     expect(layout.focusedPane.resolvedActiveTabId).toBe(conversation);
+  });
+});
+
+describe('recorded pairs have their own identity and lifecycle', () => {
+  it('a second background pair makes both previous members ordinary tabs without selecting either pair', () => {
+    const { layout, conversation, open } = setup();
+    const otherConversation = open('other-conversation', conversation, 'newTab', 'topic');
+    const terminal = open('terminal', conversation, 'newTab');
+    const first = layout.open('file', { path: 'first.md' }, { from: conversation, intent: 'beside', activate: false })!;
+    expect(layout.pair).toEqual({ pinned: conversation, side: first });
+    const before = layout.layout;
+    const second = layout.open('file', { path: 'second.md' }, { from: otherConversation, intent: 'beside', activate: false })!;
+    expect(layout.pair).toEqual({ pinned: otherConversation, side: second });
+    expect(layout.mainGroup.pane.resolvedTabs.filter((tab) => tab.pairRole).map((tab) => tab.tabId)).toEqual([otherConversation, second]);
+    for (const id of [conversation, first]) {
+      expect(layout.mainGroup.pane.resolvedTabs.find((tab) => tab.tabId === id)?.pairRole).toBeUndefined();
+      expect(layout.stripTabIds).toContain(id);
+    }
+    expect(layout.layout).toBe(before);
+    expect(layout.focusedPane.resolvedActiveTabId).toBe(terminal);
+    expect(layout.sidePaneId).toBeNull();
+  });
+
+  it.each(['pinned', 'side'] as const)('selecting the %s member reveals the pair and focuses that pane', (member) => {
+    const { layout, conversation, open } = setup();
+    open('terminal', conversation, 'newTab');
+    const output = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false })!;
+    const selected = member === 'pinned' ? conversation : output;
+    activate(layout, selected);
+    expect(layout.pair).toEqual({ pinned: conversation, side: output });
+    expect(layout.isPairVisible).toBe(true);
+    expect(layout.focusedPane.resolvedActiveTabId).toBe(selected);
+    expectOneStrip(layout);
+  });
+
+  it('replaces the recorded pair without moving the old displayed pages, then reveals the new pair', () => {
+    const { layout, conversation, open } = setup();
+    const old = open('terminal');
+    const side = layout.sideGroup!;
+    const oldEntry = side.pane.entries.get(old);
+    const next = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false })!;
+    expect(layout.pair).toEqual({ pinned: conversation, side: next });
+    expect(side.pane.entries.get(old)).toBe(oldEntry);
+    expect(side.pane.resolvedActiveTabId).toBe(old);
+    expect(layout.focusedPane).toBe(side.pane);
+    expect(layout.mainGroup.pane.resolvedTabs.filter((tab) => tab.pairRole).map((tab) => tab.tabId)).toEqual([conversation, next]);
+    activate(layout, next);
+    expect(layout.isPairVisible).toBe(true);
+    expect(layout.focusedPane.resolvedActiveTabId).toBe(next);
+    expect(layout.stripTabIds).toContain(old);
+  });
+
+  it('a recorded pair that is not displayed is not on screen: going back to its member is offered', () => {
+    const { layout, conversation, open } = setup();
+    const old = open('terminal');
+    const next = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false })!;
+    const child = layout.open('file', { path: 'child.md' }, { from: next, intent: 'newTab', activate: false })!;
+    const pane = layout.groups.find((group) => group.pane.entries.has(child))!.pane;
+    expect(layout.sideGroup!.pane.resolvedActiveTabId).toBe(old);
+    expect(pane.openerOf(child)?.tabId).toBe(next);
+    expect(pane.canGo(child, -1)).toBe(true);
+  });
+
+  it('closing a newer background output restores its displaced pair without selecting it', () => {
+    const { layout, conversation, open } = setup();
+    const terminal = open('terminal', conversation, 'newTab');
+    const a = layout.open('file', { path: 'A.md' }, { from: conversation, intent: 'beside', activate: false })!;
+    const b = layout.open('file', { path: 'B.md' }, { from: conversation, intent: 'beside', activate: false })!;
+    close(layout, b);
+    expect(layout.pair).toEqual({ pinned: conversation, side: a });
+    expect(layout.focusedPane.resolvedActiveTabId).toBe(terminal);
+    expect(layout.sidePaneId).toBeNull();
+  });
+
+  it.each(['pinned', 'side'] as const)('closing a hidden %s member clears the recorded pair', (member) => {
+    const { layout, conversation, open } = setup();
+    const terminal = open('terminal', conversation, 'newTab');
+    const output = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false })!;
+    close(layout, member === 'pinned' ? conversation : output);
+    expect(layout.pair).toBeNull();
+    expect(layout.snapshot.pair).toBeNull();
+    expect(layout.focusedPane.resolvedActiveTabId).toBe(terminal);
+  });
+
+  it.each(['pinned', 'side'] as const)('windowing a hidden %s member clears the recorded pair', (member) => {
+    const { layout, conversation, open } = setup();
+    const terminal = open('terminal', conversation, 'newTab');
+    const output = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false })!;
+    const windowId = layout.detachToWindow(member === 'pinned' ? conversation : output)!;
+    expect(layout.pair).toBeNull();
+    expect(layout.snapshot.pair).toBeNull();
+    expect(layout.focusedPane.resolvedActiveTabId).toBe(terminal);
+    layout.returnFromWindow(windowId, { activate: false });
+    expect(layout.pair).toBeNull();
+  });
+
+  it('separating a hidden pair retains the current page and prevents another automatic pair', () => {
+    const { layout, conversation, open } = setup();
+    const terminal = open('terminal', conversation, 'newTab');
+    layout.open('file', { path: 'A.md' }, { from: conversation, intent: 'beside', activate: false });
+    layout.unpair({ declined: true });
+    layout.open('file', { path: 'B.md' }, { from: conversation, intent: 'beside', activate: false });
+    expect(layout.pair).toBeNull();
+    expect(layout.focusedPane.resolvedActiveTabId).toBe(terminal);
+  });
+
+  it('closing a background pair member remembers beside, not a user request to separate', () => {
+    const placements = new Map<string, 'beside' | 'separate'>();
+    const { layout, conversation, open } = setup({ read: (key) => placements.get(key), write: (key, value) => { placements.set(key, value); } });
+    const terminal = open('terminal', conversation, 'newTab');
+    const output = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false })!;
+    close(layout, output);
+    const reopened = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false })!;
+    expect(layout.pair).toEqual({ pinned: conversation, side: reopened });
+    expect(layout.focusedPane.resolvedActiveTabId).toBe(terminal);
+  });
+
+  it('restores an old paired snapshot without a pair field, preserving direction, sizes and active pane', () => {
+    const { layout, conversation, open } = setup();
+    const output = open('A.md');
+    layout.pairWith(conversation, output, { edge: 'left' });
+    layout.setPaneSizes([35, 65]);
+    const { pair: _pair, ...legacy } = layout.snapshot;
+    const { layout: restored } = setup();
+    restored.restoreSnapshot(legacy);
+    expect(restored.pair).toEqual({ pinned: conversation, side: output });
+    expect(restored.paneSizes).toEqual([35, 65]);
+    expect(restored.groups.map((group) => group.paneId)).toEqual(layout.groups.map((group) => group.paneId));
+    expect(restored.focusedPane.resolvedActiveTabId).toBe(output);
+  });
+
+  it('restores a new background pair without switching the saved page', () => {
+    const { layout, conversation, open } = setup();
+    const terminal = open('terminal', conversation, 'newTab');
+    const output = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false })!;
+    const { layout: restored } = setup();
+    restored.restoreSnapshot(layout.snapshot);
+    expect(restored.pair).toEqual({ pinned: conversation, side: output });
+    expect(restored.focusedPane.resolvedActiveTabId).toBe(terminal);
+    expect(restored.groups).toHaveLength(1);
+    activate(restored, output);
+    expect(restored.isPairVisible).toBe(true);
+  });
+
+  it('restores a pending pair while retaining the old split and focused terminal', () => {
+    const { layout, conversation, open } = setup();
+    const terminal = open('terminal');
+    const output = layout.open('file', { path: 'output.md' }, { from: conversation, intent: 'beside', activate: false })!;
+    const snapshot = layout.snapshot;
+    const { layout: restored } = setup();
+    restored.restoreSnapshot(snapshot);
+    expect(restored.pair).toEqual({ pinned: conversation, side: output });
+    expect(restored.focusedPane.resolvedActiveTabId).toBe(terminal);
+    expect(restored.snapshot.layout).toEqual(snapshot.layout);
+    expect(restored.isPairVisible).toBe(false);
+  });
+
+  it.each(['close', 'window'] as const)('clears a different hidden conversation on %s without changing the displayed split', (operation) => {
+    const { layout, conversation, open } = setup();
+    const otherChat = open('topic', conversation, 'newTab', 'topic');
+    activate(layout, conversation);
+    const terminal = open('terminal');
+    layout.open('file', { path: 'output.md' }, { from: otherChat, intent: 'beside', activate: false });
+    const tree = layout.layout;
+    const active = layout.focusedPane;
+    if (operation === 'close') close(layout, otherChat);
+    else layout.detachToWindow(otherChat);
+    expect(layout.pair).toBeNull();
+    expect(layout.layout).toBe(tree);
+    expect(layout.focusedPane).toBe(active);
+    expect(active.resolvedActiveTabId).toBe(terminal);
+  });
+
+  it('preserves an old separate snapshot and its existing placement-memory keys', () => {
+    const { layout, conversation, open } = setup();
+    open('A.md', conversation, 'newTab');
+    const { pair: _pair, ...legacy } = layout.snapshot;
+    const { layout: restored } = setup({ read: () => 'separate', write() {} });
+    restored.restoreSnapshot(legacy);
+    restored.open('file', { path: 'A.md' }, { from: conversation, intent: 'beside', activate: false });
+    expect(restored.pair).toBeNull();
+    expect(restored.groups).toHaveLength(1);
+  });
+
+  it.each([null, { pinnedTabId: 'missing', sideTabId: 'missing-too' }])('never infers a different pair from an explicit cleared or invalid new snapshot', (pair) => {
+    const { layout, open } = setup();
+    const output = open('A.md');
+    const { layout: restored } = setup();
+    restored.restoreSnapshot({ ...layout.snapshot, pair });
+    expect(restored.pair).toBeNull();
+    expect(restored.snapshot.pair).toBeNull();
+    expect(restored.focusedPane.resolvedActiveTabId).toBe(output);
   });
 });
 
@@ -402,4 +645,268 @@ it('persists only the shape, isolates accounts and does no storage work during c
   const restarted = accountTabPlacementMemory(() => account, () => storage);
   expect(restarted.read('folder:/docs')).toBe('separate');
   expect([...values.values()].map((value) => JSON.parse(value))).toEqual([{ 'folder:/docs': 'separate' }, { 'folder:/docs': 'beside' }]);
+});
+
+describe('a resource keeps a working handle when its tab moves', () => {
+  it('closes itself from the side of a pair, and from a window', async () => {
+    const handles = new Map<string, TabHandle>();
+    const provider = (kind: string) => createTabProvider({
+      kind,
+      conversation: kind === 'conversation',
+      resourceKey: (state: { path: string }) => state.path,
+      initialize: (entry: { tabId: string }, handle: TabHandle) => { handles.set(entry.tabId, handle); return { dispose() {} }; },
+      dispose() {},
+      TabBarItem: () => null,
+      TabBarItemDragPreview: () => null,
+      TabContent: () => null,
+    });
+    const layout = new PaneLayoutStore(createTabRegistry([provider('conversation'), provider('file')]), { viewId: 'handles' }, undefined, { placementMemory: { read: () => undefined, write() {} } });
+    layouts.push(layout);
+    layout.open('conversation', { path: 'c' }, { from: null, intent: 'newTab' });
+    const side = layout.openBeside('file', { path: 'a' })!;
+    expect(layout.sideGroup!.pane.entries.has(side)).toBe(true);
+    await expect(handles.get(side)!.close({ force: true })).resolves.toBe(true);
+    expect(layout.groups.flatMap(({ pane }) => pane.tabOrder)).toHaveLength(1);
+
+    const windowed = layout.openBeside('file', { path: 'b' })!;
+    layout.detachToWindow(windowed);
+    await expect(handles.get(windowed)!.close({ force: true })).resolves.toBe(true);
+    expect(layout.windowPanes.size).toBe(0);
+    await expect(handles.get(windowed)!.close({ force: true })).resolves.toBe(false);
+  });
+});
+
+describe('the person asks for a page (「+」, an empty pane, a command): openBeside', () => {
+  it('asked from a window: stays in that window, with a way back, whatever was remembered', async () => {
+    const saved = new Map<string, 'separate' | 'beside'>();
+    const { layout, conversation } = setup({ read: (id) => saved.get(id), write: (id, value) => { saved.set(id, value); } });
+    const page = layout.openBeside('file', { path: 'start' })!;
+    const review = layout.openBeside('folder', { path: 'review' })!;
+    close(layout, review);
+    expect([...saved.values()]).toContain('beside');
+    const windowPane = layout.detachToWindow(page)!;
+    expect(layout.openBeside('folder', { path: 'review' }, windowPane)).toBe(page);
+    const inWindow = layout.windowPanes.get(windowPane)!.pane;
+    expect(inWindow.entries.get(page)?.state).toEqual({ path: 'review' });
+    expect(inWindow.canGo(page, -1)).toBe(true);
+    expect(layout.groups.flatMap(({ pane }) => pane.tabOrder)).toEqual([conversation]);
+  });
+
+  it('asked from the main pane: the id of that pane changes nothing', () => {
+    const { layout, conversation } = setup();
+    const folder = layout.openBeside('folder', { path: '/' }, layout.mainGroup.paneId)!;
+    expect(layout.pair).toEqual({ pinned: conversation, side: folder });
+  });
+
+  it('beside the conversation, and in the same place when it is already open', () => {
+    const { layout, conversation } = setup();
+    const folder = layout.openBeside('folder', { path: '/' })!;
+    expect(layout.pair).toEqual({ pinned: conversation, side: folder });
+    expect(layout.openBeside('folder', { path: '/' })).toBe(folder);
+    expect(layout.groups.flatMap(({ pane }) => pane.tabOrder)).toHaveLength(2);
+  });
+
+  it('while paired it takes the side; closing it brings back what it replaced', () => {
+    const { layout, conversation, open } = setup();
+    const a = open('A.md');
+    const folder = layout.openBeside('folder', { path: '/' })!;
+    expect(layout.pair).toEqual({ pinned: conversation, side: folder });
+    close(layout, folder);
+    expect(layout.pair).toEqual({ pinned: conversation, side: a });
+  });
+
+  it('the page in front stays: a file reading alone is what it goes beside, not the conversation', () => {
+    const { layout, open } = setup();
+    const file = open('A.md', undefined, 'newTab');
+    activate(layout, file);
+    const folder = layout.openBeside('folder', { path: '/' })!;
+    expect(layout.pair).toEqual({ pinned: file, side: folder });
+  });
+
+  it('this session separated: an ordinary tab in front', () => {
+    const { layout, open } = setup();
+    open('A.md');
+    layout.splitRight();
+    const folder = layout.openBeside('folder', { path: '/' })!;
+    expect(layout.pair).toBeNull();
+    expect(layout.mainGroup.pane.resolvedActiveTabId).toBe(folder);
+  });
+
+  it('remembers split-then-close and separate-then-close, restart included', () => {
+    const saved = new Map<string, 'separate' | 'beside'>();
+    const memory: TabPlacementMemory = { read: (id) => saved.get(id), write: (id, value) => { saved.set(id, value); } };
+    const first = setup(memory);
+    first.layout.openBeside('folder', { path: '/' });
+    first.layout.splitRight();
+    close(first.layout, first.layout.mainGroup.pane.resolvedActiveTabId!);
+    expect([...saved.values()]).toContain('separate');
+
+    const second = setup(memory);
+    const reopened = second.layout.openBeside('folder', { path: '/' })!;
+    expect(second.layout.pair).toBeNull();
+    expect(second.layout.mainGroup.pane.resolvedActiveTabId).toBe(reopened);
+    second.layout.splitRight();
+    expect(second.layout.pair).toEqual({ pinned: second.conversation, side: reopened });
+    close(second.layout, reopened);
+
+    const third = setup(memory);
+    const again = third.layout.openBeside('folder', { path: '/' })!;
+    expect(third.layout.pair).toEqual({ pinned: third.conversation, side: again });
+  });
+});
+
+describe('a kind whose every open is a new resource (a terminal)', () => {
+  function terminalSetup(saved = new Map<string, 'separate' | 'beside'>()) {
+    const provider = (kind: string, extra: object = {}) => createTabProvider({
+      kind,
+      conversation: kind === 'conversation',
+      resourceKey: (state: { path: string }) => state.path,
+      initialize: () => ({ dispose() {} }),
+      dispose() {},
+      TabBarItem: () => null,
+      TabBarItemDragPreview: () => null,
+      TabContent: () => null,
+      ...extra,
+    });
+    const memory: TabPlacementMemory = { read: (id) => saved.get(id), write: (id, value) => { saved.set(id, value); } };
+    const layout = new PaneLayoutStore(createTabRegistry([provider('conversation'), provider('term', { placementKey: () => 'term' })]), { viewId: 'term' }, undefined, { placementMemory: memory });
+    layouts.push(layout);
+    const conversation = layout.open('conversation', { path: 'conversation' }, { from: null, intent: 'newTab' })!;
+    let serial = 0;
+    const openTerm = () => layout.openBeside('term', { path: `term-${serial++}` })!;
+    return { layout, conversation, openTerm, saved };
+  }
+
+  it('opens beside the conversation by default', () => {
+    const { layout, conversation, openTerm } = terminalSetup();
+    const term = openTerm();
+    expect(layout.pair).toEqual({ pinned: conversation, side: term });
+  });
+
+  it('closed beside, the next one opens beside', () => {
+    const { layout, conversation, openTerm } = terminalSetup();
+    close(layout, openTerm());
+    expect(layout.pair).toBeNull();
+    const next = openTerm();
+    expect(layout.pair).toEqual({ pinned: conversation, side: next });
+  });
+
+  it('separated and closed, the next one is an ordinary tab, after a restart too', () => {
+    const { layout, openTerm, saved } = terminalSetup();
+    openTerm();
+    layout.splitRight();
+    close(layout, layout.mainGroup.pane.resolvedActiveTabId!);
+    expect(layout.pairDeclined).toBe(true);
+
+    const restarted = terminalSetup(saved);
+    const next = restarted.openTerm();
+    expect(restarted.layout.pair).toBeNull();
+    expect(restarted.layout.mainGroup.pane.resolvedActiveTabId).toBe(next);
+    expectOneStrip(restarted.layout);
+  });
+
+  it('split again by hand, closed, the next one opens beside', () => {
+    const { layout, conversation, openTerm, saved } = terminalSetup(new Map([['term\u0000term\u0000term', 'separate']]));
+    const term = openTerm();
+    expect(layout.pair).toBeNull();
+    layout.splitRight();
+    expect(layout.pair).toEqual({ pinned: conversation, side: term });
+    close(layout, term);
+    expect([...saved.values()]).toEqual(['beside']);
+    const next = openTerm();
+    expect(layout.pair).toEqual({ pinned: conversation, side: next });
+  });
+
+  it('a link inside a page still goes in place, though the kind was last shown beside', () => {
+    const { layout, conversation, openTerm } = terminalSetup();
+    const term = openTerm();
+    expect(layout.pair).toEqual({ pinned: conversation, side: term });
+    expect(layout.open('term', { path: 'in-place' }, { from: term, intent: 'navigate' })).toBe(term);
+    expect(layout.pair).toEqual({ pinned: conversation, side: term });
+  });
+
+  it('remembers one row for the kind, however many terminals were opened', () => {
+    const { layout, openTerm, saved } = terminalSetup();
+    close(layout, openTerm());
+    close(layout, openTerm());
+    openTerm();
+    expect(saved.size).toBe(1);
+  });
+});
+
+// The removal says where the closed page stood (the pane's front has already moved on to a neighbour by then).
+describe('the pinned page leaving: the side takes its place in the strip', () => {
+  const strip = (layout: Layout) => layout.stripTabIds.map((id) => pathOf(layout, id));
+  function pairedInMiddle() {
+    const { layout, conversation, open } = setup();
+    const a = open('A.md', conversation, 'newTab');
+    const p = open('P.md', a, 'newTab');
+    open('B.md', p, 'newTab');
+    activate(layout, p);
+    open('S.md', p, 'beside');
+    expect(strip(layout)).toEqual(['conversation', 'A.md', 'P.md', 'S.md', 'B.md']);
+    return { layout, conversation, p };
+  }
+
+  it('closed', () => {
+    const { layout, p } = pairedInMiddle();
+    close(layout, p);
+    expect(strip(layout)).toEqual(['conversation', 'A.md', 'S.md', 'B.md']);
+    expectOneStrip(layout);
+  });
+
+  it('closed while first in the strip', () => {
+    const { layout, conversation, open } = setup();
+    const p = open('P.md', conversation, 'newTab');
+    const main = layout.mainGroup.pane;
+    main.reorderTabs(main.tabOrder.indexOf(p), 0);
+    expect(main.tabOrder[0]).toBe(p);
+    activate(layout, p);
+    open('S.md', p, 'beside');
+    close(layout, p);
+    expect(strip(layout)[0]).toBe('S.md');
+  });
+
+  it('put in a window of its own', () => {
+    const { layout, p } = pairedInMiddle();
+    layout.detachToWindow(p);
+    expect(strip(layout)).toEqual(['conversation', 'A.md', 'S.md', 'B.md']);
+  });
+});
+
+// A close of several tabs fixes its targets, by tab id, when it starts: closing one may collapse the pair and move the
+// others to the other pane, which must not let them escape.
+describe('closing several tabs closes exactly the ones named when it started', () => {
+  const strip = (layout: Layout) => layout.stripTabIds.map((id) => pathOf(layout, id));
+  async function settle() { await new Promise((resolve) => setTimeout(resolve, 0)); }
+
+  it('an App disabled while two of its pages are paired with each other: both close', () => {
+    const { layout, conversation, open, registry } = setup();
+    const x1 = open('X1', conversation, 'newTab', 'folder');
+    const x2 = open('X2', conversation, 'newTab', 'folder');
+    layout.pairWith(x1, x2, { by: 'user' });
+    expect(layout.pair).toEqual({ pinned: x1, side: x2 });
+    // The main pane closes X1 first; the pair collapses and X2 moves into the main pane, whose turn is over.
+    registry.closeKind('folder');
+    expect(strip(layout)).toEqual(['conversation']);
+  });
+
+  it('close all, from the strip: the side closes too', async () => {
+    const { layout, conversation, open } = setup();
+    open('A.md', conversation, 'newTab');
+    open('S.md');
+    expect(layout.pair).not.toBeNull();
+    layout.mainGroup.pane.closeAll();
+    await settle();
+    expect(strip(layout)).toEqual([]);
+  });
+
+  it('close the others: only the one asked for stays', async () => {
+    const { layout, conversation, open } = setup();
+    const a = open('A.md', conversation, 'newTab');
+    open('S.md');
+    layout.mainGroup.pane.closeOthers(a);
+    await settle();
+    expect(strip(layout)).toEqual(['A.md']);
+  });
 });

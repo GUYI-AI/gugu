@@ -12,16 +12,19 @@ import {
   type EffectiveTheme,
   type ThemePreference,
 } from '@renderer/lib/theme/host-theme';
+import { subscribeToThemePacks } from '@renderer/lib/theme/theme-pack-store';
 import type { Theme } from '@shared/core/app-settings';
 import { ThemeContext } from './theme-context';
 
 /**
  * 会话页自身的 CSS(session-ui 的 theme registry、chat-ui 的 theme.css.ts、代码高亮器)按
- * `.emlight` / `.emdark` 取色阶,所以根上仍要打这个类 —— 但它现在是咕咕主题的投影,不是
- * 另一份独立状态。真值与理由见 `lib/theme/host-theme.ts`。
+ * `.emlight` / `.emdark` 取色阶 —— 这个类是咕咕主题的投影,不是另一份独立状态。真值与理由见
+ * `lib/theme/host-theme.ts`。
+ * 嵌在咕咕里时,类在会话页自己的挂载元素上(EmdashSessionFrame 随咕咕主题同步),❌ 打到 `<html>`:
+ * 那样会话页的 `--border` 等同名变量会落到整个咕咕,谁赢只看样式表先后。只有独立打开时才挂在根上。
  */
 function applyTheme(effective: EffectiveTheme) {
-  if (typeof document === 'undefined') return;
+  if (typeof document === 'undefined' || window.__EMDASH_MOUNT__) return;
   const root = document.documentElement;
   root.classList.remove('emlight', 'emdark');
   root.classList.add(effective);
@@ -45,6 +48,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     applyThemeToAll();
   }, [effectiveTheme]);
+
+  // 资源库「主题」换了配色:终端读的是计算样式里的 --xterm-ansi-* 与底色,同样要重读一遍。
+  useEffect(() => subscribeToThemePacks(applyThemeToAll), []);
 
   // @@@5293 会话页可以自己开着(独立 React 根),所以它也要认领一份「跟随系统」的同步;
   // host-theme 里按引用计数做成幂等,与咕咕那份不会重复挂监听。

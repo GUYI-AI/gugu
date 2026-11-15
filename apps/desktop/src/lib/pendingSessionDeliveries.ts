@@ -11,6 +11,11 @@ export function isTranscriptDelivery(input: Pick<LifeView['pending']['items'][nu
   return input.kind === 'inbox-batch' || input.kind === 'session-direct'
 }
 
+/** A failed or unknown row the host lets a person discard (it is settled: nothing sends it again). */
+export function settledHostRow(view: LifeView | null | undefined, messageId: string): boolean {
+  return !!view?.pending.items.some(row => row.messageId === messageId && row.discardable && (row.state === 'failed' || row.state === 'unknown'))
+}
+
 /** The receiver's host queue and native transcript share one incoming-delivery projection on every surface. */
 export function projectSessionPendingDeliveries(previous: readonly PendingPrompt[], view: LifeView | null,
   turns: readonly TranscriptTurn[], starting?: PendingPrompt['starting']): PendingPrompt[] {
@@ -22,8 +27,8 @@ export function projectSessionPendingDeliveries(previous: readonly PendingPrompt
     const prior = previous.find(input => input.id === id)
     const row = rows.find(input => input.messageId === id)
     if (!prior && !row) return []
-    // The host settled this unknown input from durable history outside the UI window.
-    if (prior?.delivery?.state === 'unknown' && !row) return []
+    // A settled input left the host: it was discarded, or its unknown outcome was settled from durable history.
+    if ((prior?.delivery?.state === 'unknown' || prior?.delivery?.state === 'failed') && !row) return []
     const input: PendingPrompt = prior ?? { id, text: row!.text, sentAt: row!.sentAt, received: readDeliveryEnvelope(row!.text) !== null,
       hostSequence: row!.seq, baselineMessageIds: sessionInputBaseline(turns).baseline,
       afterTurnId: turns.at(-1)?.id, held: true,
@@ -33,7 +38,7 @@ export function projectSessionPendingDeliveries(previous: readonly PendingPrompt
     const delivery: NonNullable<PendingPrompt['delivery']> = row?.state === 'unknown'
       ? { state: 'unknown', retryable: row.resendable === true, error: row.failure ? messageForUser(row.failure) : undefined }
       : row?.state === 'failed' || failedStart
-        ? { state: 'failed', retryable: failedStart, error: messageForUser(row?.failure ?? view?.failure?.message ?? '') }
+        ? { state: 'failed', retryable: failedStart || row?.resendable === true, error: messageForUser(row?.failure ?? view?.failure?.message ?? '') }
         : row?.state === 'accepted' || (!row && view) ? { state: 'receiving' }
           : stopped ? { state: 'accepted' }
           : prior?.delivery?.state === 'accepted' ? prior.delivery : { state: 'receiving' }

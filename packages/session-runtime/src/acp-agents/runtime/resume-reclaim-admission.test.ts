@@ -51,6 +51,33 @@ describe('resume and reclaim admission', () => {
     expect(rt.sessionsListLiveModel().states.list.snapshot().data['conv-1']?.closing).toBeUndefined();
   });
 
+  // A failed live setting blocks the next input. The host must hear a definite refusal with the reason
+  // (shown as a rejected input with retry / discard), not an exception it can only report as "result unknown".
+  it('declines an input refused by a failed live setting, with the setting reason', async () => {
+    const h = makeAcpHarness();
+    const provider = h.deps.agentHost.get('claude');
+    if (!provider?.capabilities.acp.liveSettings) throw new Error('Missing test capability');
+    provider.capabilities.acp.liveSettings.model = {
+      channel: 'acp-config-option', ack: 'ack-read-back', busy: 'queue-next-turn', reloadRequired: false, recovery: 'none',
+    };
+    h.agent.newSession.mockResolvedValueOnce({ sessionId: 'session-1', configOptions: [{
+      id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'gpt-6-luna',
+      options: [{ value: 'gpt-6-luna', name: 'GPT-6 Luna' }],
+    }] });
+    const rt = new AcpRuntime(h.deps);
+    runtimes.push(rt);
+    expect((await rt.startSession(makeStartInput())).success).toBe(true);
+    // The adapter's real shape: a JSON-RPC envelope ("Internal error") with the sentence in `data.details`.
+    h.agent.setSessionConfigOption.mockRejectedValueOnce(Object.assign(new Error('Internal error'), {
+      code: -32603, data: { details: 'Invalid value for config option model: claude-haiku-5-5' },
+    }));
+    expect((await rt.setModelOption('conv-1', 'model', 'claude-haiku-5-5')).success).toBe(false);
+
+    await expect(createAcpProcedures(rt).promptDetached({ sessionId: 'conv-1', prompt: { text: 'hi', origin: 'typed' } }))
+      .resolves.toMatchObject({ declined: true, reason: 'Invalid value for config option model: claude-haiku-5-5' });
+    expect(h.agent.prompt).not.toHaveBeenCalled();
+  });
+
   it('declines a native Session not found before admission and accepts the same message after recovery', async () => {
     const { h, rt, api } = await setup();
     h.agent.prompt.mockRejectedValueOnce(Object.assign(new Error('Internal error'), {

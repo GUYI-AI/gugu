@@ -23,6 +23,7 @@ export function AppMoreMenu({
   docked,
   disabled = false,
   translate,
+  onSettings,
   onToggleDock,
   onOpenInWindow,
   onForward,
@@ -37,6 +38,8 @@ export function AppMoreMenu({
   docked: boolean;
   disabled?: boolean;
   translate: SessionTranslate;
+  /** The App's settings page, where a row of the list goes too. */
+  onSettings?: () => void;
   onToggleDock?: () => void;
   onOpenInWindow?: () => void;
   onForward?: () => void;
@@ -49,6 +52,11 @@ export function AppMoreMenu({
   const label = translate('extensions.moreActions', { name });
   const share = resource ? resourceMenuItems(resource).map(item => <DropdownMenuItem key={item.id} onClick={() => void item.click()}>{item.label}</DropdownMenuItem>) : [];
   const top = [
+    onSettings && (
+      <DropdownMenuItem key="settings" onClick={onSettings}>
+        {translate('extensions.appSettings')}
+      </DropdownMenuItem>
+    ),
     onToggleDock && (
       <DropdownMenuItem key="dock" onClick={onToggleDock}>
         {translate(docked ? 'extensions.unpinFromRail' : 'extensions.pinToRail')}

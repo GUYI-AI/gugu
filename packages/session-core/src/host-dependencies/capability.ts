@@ -150,6 +150,12 @@ export const installOptionSchema = z.object({
             kind: z.literal('acp-registry'),
             /** 注册表里的 agent id(`antigravity-acp`)—— 平台、归档、cmd 都从这一条里取。 */
             agentId: z.string().regex(ACP_REGISTRY_AGENT_ID),
+            /**
+             * `omit`: the launcher does not bake the entry's `args` in front of `"$@"`. For a vendor whose one
+             * binary is both the ACP server and its CLI (kiro-cli: `acp`, `chat`, `login`, `--version`), the
+             * plugin's ACP leg passes those arguments itself. Absent = the registry's launch command as written.
+             */
+            registryArgs: z.literal('omit').optional(),
           }),
           /**
            * · `vendor-manifest`:厂商自己发一份按平台的版本清单(`{version,url,sha512}`),

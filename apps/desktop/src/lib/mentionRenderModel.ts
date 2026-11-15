@@ -2,8 +2,8 @@
 // 气泡兜底徽标,绝不两头落空)。背书唯一真源 = 结构化 `to_user_ids`,**不是**用户可手打的 markdown 串。
 //
 // 机制(治两条破口):
-//  · 破口①(伪造):把被路由的 @token 就地包成 `[@Name](marker)`,marker = **接收端渲染时生成的每次挂载唯一 nonce**
-//    (见 useMentionRender)。发消息者写正文时无从预知 nonce → 无法伪造 data-mention;`components.a` 仅当 href===本次
+//  · 破口①(伪造):把被路由的 @token 就地包成 `[@Name](marker)`，marker为接收端随机nonce。
+//    缓存按完整正文/路由/名字/引用/语言区分；改正文会换nonce。`components.a` 仅当 href===本次
 //    marker 才渲 mention。用户手打 `[@X](#gg-mention)` / 猜的 nonce → 不匹配 → 中和成纯文本。
 //  · 破口②(静默丢):高亮名单**不看注入前 span**,而是把**注入后的最终内容**再解析一遍(survivingMarkedNames),
 //    收集真正存活为本次 marker link 的名字 = 渲染真相。`\@X` 注入成 `\[@X](marker)` → 再解析 `\[` 转义 → 无 link →
@@ -11,7 +11,7 @@
 //  fallback = 路由对象 − 存活高亮;excludeIds(reply 被回复者)未高亮时不挂徽标(其表达归引用条)。
 
 import { MENTION_ALL_USER_ID, mentionAllName, mentionAllBadge } from './mention'
-import { displayAgentReferences, escapeMentionText, injectBackedMentions, survivingMarkedNames } from './mentionMdast'
+import { displayAgentReferences, escapeMentionText, injectBackedMentions, survivingMarkedNames, MENTION_MARKER_PREFIX } from './mentionMdast'
 
 /** 一条消息的渲染模型:注入 nonce marker 后的正文 + 兜底徽标名单。 */
 export interface MentionRenderModel {
@@ -46,7 +46,9 @@ export function buildMentionRender(
 
   const content = displayAgentReferences(injectBackedMentions(body, candidateNames, opts.marker), (id, label) =>
     ids.includes(id) ? `[${escapeMentionText(`@${nameOfId(id)}`)}](${opts.marker})` : escapeMentionText(`@${label}`))
-  const surviving = survivingMarkedNames(content, opts.marker) // 真正会渲成高亮的名字集(= 渲染真相)
+  const surviving = candidateNames.length === 0 || (content === body && !body.includes('#'))
+    ? new Set<string>()
+    : survivingMarkedNames(content, opts.marker)
 
   const fallbackLabels: string[] = []
   const exclude = new Set(opts.excludeIds ?? [])
@@ -60,4 +62,35 @@ export function buildMentionRender(
   }
 
   return { content, fallbackLabels }
+}
+
+// A cache hit reuses its random nonce only for the exact content, routes, names,
+// reply exclusion and locale. Editing a forged marker into the body changes the
+// key and receives a fresh unpredictable nonce. Streamdown therefore also keeps
+// different addressing models apart, without reparsing them on each revisit.
+const mentionRenders = new Map<string, MentionRenderModel & { marker: string }>()
+const MENTION_CACHE_ENTRIES = 512
+const MENTION_CACHE_ENTRY_CHARS = 16_384
+
+export function cachedMentionRender(
+  body: string,
+  toUserIds: string[] | null | undefined,
+  opts: { nameOf: (id: string) => string | undefined; excludeIds?: readonly string[]; locale: string },
+): MentionRenderModel & { marker: string } {
+  const names = new Map((toUserIds ?? []).map(id => [id, opts.nameOf(id)]))
+  const key = JSON.stringify([body, [...names], opts.excludeIds ?? [], opts.locale])
+  const cached = mentionRenders.get(key)
+  if (cached) {
+    mentionRenders.delete(key)
+    mentionRenders.set(key, cached)
+    return cached
+  }
+  const marker = `${MENTION_MARKER_PREFIX}${crypto.randomUUID()}`
+  const model = { ...buildMentionRender(body, toUserIds, { ...opts, nameOf: id => names.get(id), marker }), marker }
+  // Bound both retained entry count and each key/result's combined string size.
+  if (key.length + model.content.length <= MENTION_CACHE_ENTRY_CHARS) {
+    if (mentionRenders.size >= MENTION_CACHE_ENTRIES) mentionRenders.delete(mentionRenders.keys().next().value!)
+    mentionRenders.set(key, model)
+  }
+  return model
 }

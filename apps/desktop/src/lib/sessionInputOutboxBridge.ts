@@ -35,6 +35,11 @@ export async function retrySessionInputs(): Promise<void> {
   await (await own.queue).flush(true)
 }
 
+/** The clicked message owns this manual retry; unrelated account rows are not part of it. */
+export async function retrySessionInput(id: string): Promise<void> {
+  await (await currentQueue()).retry(id)
+}
+
 export async function changeRejectedSessionInput(id: string, action: { kind: 'retry' } | { kind: 'edit'; text: string } | { kind: 'discard' }): Promise<void> {
   const own = state()
   if (!own.queue || !own.valid()) throw new Error('Session input outbox is not available for this account')

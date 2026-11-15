@@ -3,17 +3,17 @@ import { act, type ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness, device, renderWithAppProviders } from '../../support/testHarness'
 import { SessionTimelinePage } from '../../../apps/desktop/src/mobile/agent-watch/SessionTimelinePage'
-import { emptyAgentWatchTimeline } from '../../../apps/desktop/src/mobile/agent-watch/agent-watch-store'
+import { applySnapshot, applyTimelineResult, emptyAgentWatchTimeline } from '../../../apps/desktop/src/mobile/agent-watch/agent-watch-store'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import type { SessionInput } from '../../../apps/desktop/src/lib/sessionInputOutbox'
 import { translateSessionMessage } from '../../../apps/desktop/src/session/renderer/localization/locale-store'
 const scope = vi.hoisted(() => ({ enqueue: vi.fn(async () => undefined), pending: [] as SessionInput[], timeline: null as ReturnType<typeof emptyAgentWatchTimeline> | null,
-  composer: null as null | { agentWorking?: boolean; onBeforeSend?: () => void; onSend: (text: string) => Promise<void> },
+  composer: null as null | { timeline?: ReturnType<typeof emptyAgentWatchTimeline>; agentWorking?: boolean; onBeforeSend?: () => void; onSend: (text: string) => Promise<void> },
   nativeRecord: null as { turns: ReturnType<typeof emptyAgentWatchTimeline>['turns']; activeTurn: ReturnType<typeof emptyAgentWatchTimeline>['turns'][number] | null; nextCursor: null } | null }))
 vi.mock('../../../apps/desktop/src/lib/sessionInputOutboxBridge', () => ({ enqueueSessionInput: scope.enqueue, retrySessionInputs: vi.fn(), useQueuedSessionInputs: (sessionId: string) => scope.pending.filter(input => input.sessionId === sessionId) }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/useAgentWatchSession', () => ({ useAgentWatchSession: () => ({ timeline: scope.timeline ?? emptyAgentWatchTimeline(), phase: 'error', error: 'Host unreachable', pendingSends: [], reload() {}, loadOlder: async () => undefined, cancel() {}, respond() {} }) }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/useNativeSessionRecord', () => ({ useNativeSessionRecord: () => ({ record: scope.nativeRecord, error: null, followTail() {}, loadNewer() {}, loadOlder: async () => undefined }) }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/SessionConversation', () => ({ SessionConversation: (props: { onBeforeSend?: () => void; onSend: (text: string) => Promise<void>; footerNotice?: ReactNode }) => { scope.composer = props; return <>{props.footerNotice}<button data-cold-native-composer="" onClick={() => { void props.onSend('Cold native input') }}>Send</button></> } }))
+vi.mock('../../../apps/desktop/src/mobile/agent-watch/SessionConversation', () => ({ SessionConversation: (props: { timeline: ReturnType<typeof emptyAgentWatchTimeline>; onBeforeSend?: () => void; onSend: (text: string) => Promise<void>; footerNotice?: ReactNode }) => { scope.composer = props; return <>{props.footerNotice}<button data-cold-native-composer="" onClick={() => { void props.onSend('Cold native input') }}>Send</button></> } }))
 vi.mock('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { enabledTabContributions: [] } }))
 vi.mock('../../../apps/desktop/src/components/ui/sheetStack', async original => ({ ...await original<object>(), useBackLayer() {} }))
 let harness: ReturnType<typeof createReactHarness>
@@ -36,7 +36,9 @@ it('keeps the same native task composer when the phone is cold and offline, with
   const session = { conversationId: 'session', projectId: 'project', title: 'Task', runtime: 'acp', nativeInputVersion: 1, agentStatus: 'idle', status: { status: 'idle', detail: null } } as SessionpageSessionSummary
   await renderWithAppProviders(harness, <SessionTimelinePage device={device('host', [], { is_online: true })} session={session} onBack={() => undefined} />)
   expect(harness.container.querySelector('[data-cold-native-composer]')).not.toBeNull()
-  expect(harness.container.querySelector('[data-testid="agent-watch-local-offline"]')).not.toBeNull()
+  // owner 11-08: this phone's own network being down is 「连接中」 in the header — ❌ a note under it, ❌ 「设备离线」 for a host the directory lists online.
+  expect(harness.container.querySelector('[data-testid="agent-watch-hero"] [data-testid="agent-watch-connection-status"]')?.getAttribute('data-state')).toBe('connecting')
+  expect(harness.container.querySelector('[data-testid="agent-watch-connection-status-detail"]')).toBeNull()
   expect(harness.container.textContent).not.toContain('Host unreachable')
   expect(harness.container.querySelector('[data-testid="agent-watch-session-status"]')).toBeNull()
   await act(async () => { harness.container.querySelector<HTMLButtonElement>('[data-cold-native-composer]')!.click() })
@@ -98,4 +100,26 @@ it.each([false, true])('uses the native foreground instead of the provider bound
   expect(scope.composer!.agentWorking).toBe(busy)
   await scope.composer!.onSend('whole input')
   expect(scope.enqueue).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ text: 'whole input', queued: busy }))
+})
+
+
+it.each(['epoch_changed', 'cursor_ahead', 'source_replaced', 'source_unreadable', 'gap', 'gap_too_large'] as const)('keeps a recovered %s timeline available without a persistent reload notice', async reason => {
+  vi.stubGlobal('innerWidth', 390)
+  const turns = [{ id: 'recovered-turn', seq: 1, initiator: 'user' as const, outcome: { kind: 'done' as const }, items: [
+    { kind: 'message' as const, id: 'retained-message', role: 'user' as const, seq: 0, text: 'Retained record content' },
+  ] }]
+  const old = applySnapshot(emptyAgentWatchTimeline(), { cursor: { epoch: 'before-restart', seq: 1 }, turns: [], settlements: [], hasOlder: false })
+  scope.timeline = applyTimelineResult(old, { ok: false, reset: reason, snapshot: { cursor: { epoch: 'after-restart', seq: 1 }, turns, settlements: [], hasOlder: false } })
+  scope.nativeRecord = { turns, activeTurn: null, nextCursor: null }
+  const session = { conversationId: 'session', projectId: 'project', title: 'Task', runtime: 'acp', nativeInputVersion: 2, nativeInputIdentity: true, agentStatus: 'idle' } as SessionpageSessionSummary
+  const toast = vi.fn()
+  const page = <SessionTimelinePage device={device('host', [], { is_online: true })} session={session} onBack={() => undefined} />
+  await renderWithAppProviders(harness, page, { toast })
+  await renderWithAppProviders(harness, page, { toast })
+  expect(toast).toHaveBeenCalledExactlyOnceWith('Host unreachable', 'error')
+  expect(harness.container.querySelector('[data-testid="agent-watch-reset-note"]')).toBeNull()
+  expect(harness.container.querySelector('[data-testid="agent-watch-timeline-error"]')).toBeNull()
+  expect(scope.composer?.timeline?.turns).toEqual(turns)
+  expect(scope.timeline.cursor).toEqual({ epoch: 'after-restart', seq: 1 })
+  expect(scope.timeline.needsSnapshot).toBeNull()
 })

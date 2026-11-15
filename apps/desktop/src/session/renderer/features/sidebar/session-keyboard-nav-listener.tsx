@@ -121,10 +121,6 @@ function isPrintable(event: KeyboardEvent): boolean {
 
 function runShortcut(key: SessionNavShortcutKey): boolean {
   switch (key) {
-    case 'session.next':
-      return sessionKeyboardNav.move(1);
-    case 'session.previous':
-      return sessionKeyboardNav.move(-1);
     case 'session.focusComposerFromSidebar':
       return sessionKeyboardNav.expandProjectOrFocusComposer();
     case 'session.projectHome':
@@ -197,9 +193,9 @@ export function SessionKeyboardNavListener() {
       const where = sessionNavContextFor(event);
       if (!where) return;
       const { context, editor } = where;
-      // TipTap prevents ArrowUp/ArrowDown in an empty editor for its own history handling. The
-      // registered Mod+Arrow session bindings are the explicit owner of those modified arrows;
-      // overlays have already been filtered above, so only unmodified arrows defer here.
+      // TipTap prevents ArrowUp/ArrowDown in an empty editor for its own history handling. A chord
+      // with ⌘ / ⌃ is never the editor's to claim here; overlays have already been filtered above,
+      // so only unmodified keys defer.
       if (
         event.defaultPrevented &&
         !(event.metaKey || event.ctrlKey) &&

@@ -1,31 +1,29 @@
-import type { AgentPayload } from '@shared/core/agents/agent-payload';
-import { Button } from '@/components/ui/Button';
-import { SubscriptionConnections } from '../subscriptions/SubscriptionConnections';
-import { useConnectionAvailability } from '../subscriptions/use-connection-availability';
-import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import type { AgentPayload } from '@shared/core/agents/agent-payload'
+import { SubscriptionConnections } from '../subscriptions/SubscriptionConnections'
+import { ConnectionStatusLine, useConnectionStatus } from '../subscriptions/connection-status'
 
-export function AgentConnectionDetails({ agent, machine }: { agent: AgentPayload; machine: string | null }) {
-  const { translate } = useSessionMessages();
-  const { state, refresh, error } = useConnectionAvailability(agent.id, machine, agent.reading === 'not-detected');
-  const checking = state === 'checking';
-  const statusKey = checking ? 'agentsPage.checking'
-    : state === 'failed' ? 'subscriptions.payer.unknown'
-    : state === 'usable' ? 'agentsPage.usable' : 'agentsPage.unusable';
+/**
+ * 一家的「连接」那一块:状态那一行、当前连接、添加连接。资源库详情与设置「订阅」页那一行渲染的都是它
+ * (owner 2026-11-12:「统一成『添加连接』和『当前连接』，在这儿都能管」)—— ❌ 两处各写一套判断。
+ * `embedded`:嵌在订阅页那一行里,不另起「连接」组头。
+ */
+export function AgentConnectionDetails({
+  agent,
+  machine,
+  embedded = false
+}: {
+  agent: AgentPayload
+  machine: string | null
+  embedded?: boolean
+}) {
+  const { identity, badge } = useConnectionStatus(machine, agent)
   return (
-    <div className="pb-6">
-      <div className="flex h-16 items-start pt-4 pb-6 text-sm text-foreground-muted" role="status" title={error?.message}>
-        {translate(statusKey)}
-      </div>
-      {checking || state === 'failed' ? (
-        <Button variant="primary" size="xl" className="h-12 w-full" disabled={checking} onClick={() => void refresh()}>
-          {translate(checking ? 'agentsPage.checking' : 'agentsPage.checkAgain')}
-        </Button>
-      ) : (
-        <SubscriptionConnections agent={agent} machine={machine}
-          trigger={<Button variant="primary" size="xl" className="h-12 w-full" data-testid="agent-account-configure">{translate('agentsPage.configure')}</Button>}
-          label={translate('agentsPage.configure')}
-        />
-      )}
-    </div>
-  );
+    <SubscriptionConnections
+      agent={agent}
+      machine={machine}
+      settingsRows
+      embedded={embedded}
+      description={<ConnectionStatusLine agentId={agent.id} identity={identity} badge={badge} />}
+    />
+  )
 }

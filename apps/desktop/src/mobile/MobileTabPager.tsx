@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type CSSProperties, type ReactNode, type RefObject, type UIEvent } from 'react'
 import type { SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
 import { TAB_POSITION_VAR, settledTab, tabPosition } from './settledTab'
+import { SurfaceShown } from '@/lib/retainedSurface'
 
 // @@@mobile-tab-pager (#6730) — 手机壳的四个 tab 页并排放进一个原生横向 scroll-snap 容器,一页一屏:
 // 跟手、惯性、吸附、方向(手指往左 = 露出右边那页)、首尾页不越界(平台自己的 overscroll 效果)、
@@ -81,7 +82,8 @@ export function MobileTabPager({ mobile, tabs, activeTab, covered = false, swipe
     >
       {tabs.map((tab) => (
         <div key={tab} data-mobile-tab-page={mobile ? tab : undefined} inert={mobile && (covered || activeTab !== tab)} style={mobile ? PAGE : CONTENTS}>
-          {pages[tab]}
+          {/* 手机上没停着的那页(或被推上来的一层盖着)不在屏上:它的返回层、计时器、动效据此停着(sheetStack、retainedSurface)。 */}
+          <SurfaceShown shown={!mobile || (!covered && activeTab === tab)}>{pages[tab]}</SurfaceShown>
         </div>
       ))}
     </div>

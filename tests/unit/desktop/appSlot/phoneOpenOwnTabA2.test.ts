@@ -124,6 +124,39 @@ it('the phone page accepts only a valid delta into an available own history', as
   expect(navigate).toHaveBeenCalledExactlyOnceWith(-1)
 })
 
+it('a phone page holds the back key while it has a step of its own, and gets each press as an event', async () => {
+  host?.dispose()
+  const claimBack = vi.fn()
+  host = hostAppFrame(frame, {
+    extensionId: 'data-lens', tabId: 'own-page', tabName: 'explore', chatId: CHAT,
+    capabilities: ['files:read'], locale: 'en-US', themeMode: 'light',
+  }, { showMessage: vi.fn(), showSession: vi.fn(), openWith: opened, peek: peeked, chrome: vi.fn(), claimBack } as never)
+  expect(await call('navigationClaimBack', { claimed: true })).toMatchObject({ ok: true, value: true })
+  expect(claimBack).toHaveBeenLastCalledWith(true)
+  host.back()
+  expect(posted.mock.calls.map(([message]) => message)).toContainEqual(expect.objectContaining({ t: 'event', event: { type: 'back' } }))
+  expect(await call('navigationClaimBack', { claimed: false })).toMatchObject({ ok: true, value: true })
+  expect(claimBack).toHaveBeenLastCalledWith(false)
+  // A new document in the frame lets go of what the old one held.
+  claimBack.mockClear()
+  window.dispatchEvent(new MessageEvent('message', { data: { m: APP_FRAME_MARKER, t: 'hello' }, source: frame.contentWindow, origin: ORIGIN }))
+  await vi.waitFor(() => expect(claimBack).toHaveBeenCalledWith(false))
+})
+
+it('a card in a message and a modal page never hold the back key, nor let go of their opener\'s', async () => {
+  // The default host here draws a card in a message (binding.widget).
+  const claimBack = vi.fn()
+  host?.dispose()
+  host = hostAppFrame(frame, { extensionId: 'data-lens', tabId: 'card-1', tabName: 'card', chatId: CHAT, capabilities: ['files:read'], locale: 'en-US', themeMode: 'light', widget: { messageId: 'message-1', data: {}, senderId: 'sender-1' } },
+    { showMessage: vi.fn(), showSession: vi.fn(), openWith: opened, peek: peeked, chrome: vi.fn(), claimBack } as never)
+  expect(await call('navigationClaimBack', { claimed: true })).toMatchObject({ ok: true, value: false })
+  host.dispose()
+  host = hostAppFrame(frame, { extensionId: 'data-lens', tabId: 'own-page', tabName: 'explore', chatId: CHAT, capabilities: ['files:read'], locale: 'en-US', themeMode: 'light', modal: { id: 'modal-1', data: null } } as never,
+    { showMessage: vi.fn(), showSession: vi.fn(), openWith: opened, peek: peeked, chrome: vi.fn(), claimBack } as never)
+  expect(await call('navigationClaimBack', { claimed: true })).toMatchObject({ ok: true, value: false })
+  expect(claimBack).not.toHaveBeenCalledWith(true)
+})
+
 describe('the phone: openWith(file, { tab }) opens its own tab (A2 T9)', () => {
   it.each(['navigate', 'newTab', 'beside'] as const)('folder redesign carries %s through the real phone host', async (intent) => {
     expect(await call('filesOpenWith', { ref, tab: 'explore', intent })).toMatchObject({ ok: true })

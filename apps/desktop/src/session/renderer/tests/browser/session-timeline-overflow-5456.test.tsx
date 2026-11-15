@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SessionTimelineRail } from '@renderer/features/sessions/view/session-timeline-rail';
 import type { TimelineTurn } from '@renderer/features/sessions/view/session-timeline-turns';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
+import '@/styles/tokens.css';
 import '@renderer/index.css';
 
 /** owner 报这个 bug 时的窗口:1280×900,减掉 40px 顶栏 = 聊天栏这一列的高度。 */

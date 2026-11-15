@@ -4,27 +4,28 @@ import { useTranslation } from 'react-i18next'
 import type { GroupChatSettings, GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
 import { useChatStore } from '../../store/chatContext'
 import { useChatFolderName } from './chatFolderName'
-import { Folder, LayoutGrid, MessageSquare, MoreHorizontal, Search, UserPlus, Users } from '@/lib/icons'
+import { Folder, LayoutGrid, MessageSquare, MoreHorizontal, Search, Users } from '@/lib/icons'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
-import { groupInviteAccess } from '../../lib/groupMemberPermissions'
 import type { groupAgentStatusIndicatorProps } from '../../lib/groupAgentStatus'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { Popover } from '../ui/Popover'
-import { DropdownMenu, MenuItem, MenuSeparator } from '../ui/Menu'
+import { DropdownMenu, MenuItem } from '../ui/Menu'
 import { OpenAppMenuItems } from './OpenAppMenuItems'
 import { GroupAppsPicker } from './GroupAppsPicker'
-import { AddGroupMembers } from './AddGroupMembers'
 import { ChatDetailsMenuItems } from './ChatDetailsMenuItems'
-import { ChatHeaderSwitches } from './ChatHeaderSwitches'
-import { GroupTopicsRows, TopicUnreadChip } from './GroupTopicsRows'
+import { GroupTopicsRows, TopicCallChip, TopicUnreadChip } from './GroupTopicsRows'
 import { useChatTopicPins } from './useChatTopicPins'
-import { topicUnreadTotal } from './topicPinsModel'
+import { topicCallTotal, topicUnreadTotal } from './topicPinsModel'
 import { useStripNarrow } from '../../session/renderer/features/tabs/tab-strip-narrow'
+import type { ChatTopicState } from '../../session/renderer/features/chats/chat-tabs/chat-tab-providers'
+import { useInnerSidebarChat } from '../../lib/innerSidebarBridge'
 
 interface ChatHeaderActionsProps {
   isGroupChat: boolean
   isRoomChat: boolean
+  memberTopic?: ChatTopicState | null
+  memberTopicCount?: number
   infoShown: boolean
   showHeaderMenu: boolean
   mobile?: boolean
@@ -44,25 +45,28 @@ interface ChatHeaderActionsProps {
 }
 
 export const ChatHeaderActions = observer(function ChatHeaderActions({
-  isGroupChat, isRoomChat, infoShown, showHeaderMenu, mobile, room, moreButtonRef,
+  isGroupChat, isRoomChat, memberTopic, memberTopicCount, infoShown, showHeaderMenu, mobile, room, moreButtonRef,
   onSearch, onOpenFolder, onOpenInfo, onCloseInfo, onToggleHeaderMenu, onCloseHeaderMenu,
 }: ChatHeaderActionsProps) {
   const { t } = useTranslation('messaging')
   const { activeChatId } = useChatStore('activeChatId')
-  const folderName = useChatFolderName(activeChatId)
+  const folderName = useChatFolderName()
   const narrow = useHeaderNarrow(moreButtonRef, Boolean(mobile))
   const groupId = isGroupChat ? activeChatId : null
   const topics = useChatTopicPins(mobile ? null : groupId)
-  const invite = groupInviteAccess(activeChatId ?? '', isGroupChat ? 'group' : 'topic', room?.settings ?? null)
   const appsButton = useRef<HTMLButtonElement>(null)
-  const [popup, setPopup] = useState<{ chatId: string | null; kind: 'apps' | 'invite' | null }>({ chatId: activeChatId, kind: null })
+  const [popup, setPopup] = useState<{ chatId: string | null; kind: 'apps' | null }>({ chatId: activeChatId, kind: null })
   if (popup.chatId !== activeChatId) setPopup({ chatId: activeChatId, kind: null })
-  const openPopup = (kind: 'apps' | 'invite') => { onCloseHeaderMenu(); setPopup({ chatId: activeChatId, kind }) }
+  const openPopup = (kind: 'apps') => { onCloseHeaderMenu(); setPopup({ chatId: activeChatId, kind }) }
   const closePopup = () => setPopup({ chatId: activeChatId, kind: null })
-  const memberCount = room ? room.snapshot.humans.length + room.snapshot.agents.length : 0
+  const memberCount = memberTopic ? memberTopicCount : room ? room.snapshot.humans.length + room.snapshot.agents.length : 0
   const wideGroup = isGroupChat && !narrow
+  // #2548 桌面内层侧栏挂着这个对话时,话题那一枚与那一列重复(话题就列在那里),收起来。成员那一枚每种宽度、每个端都在;
+  // 邀请是成员页的第一行(GroupMemberPanelControls),页头 ❌ 再放一枚。
+  const innerChat = useInnerSidebarChat()
+  const innerColumn = !mobile && activeChatId !== null && innerChat === activeChatId
   return <Popover.Root open={popup.kind === 'apps' && !mobile} modal={false} onOpenChange={(open) => open ? openPopup('apps') : closePopup()}>
-    {isRoomChat ? <>
+    {isRoomChat || memberTopic ? <>
       <Button variant="ghost" size="md" className={mobile ? 'min-h-[var(--control-h-touch)]' : undefined} data-testid={AUTOMATION_TEST_IDS.chatHeaderMembersButton} aria-label={t('header.memberList')} title={t('header.memberList')} aria-pressed={infoShown}
         onClick={() => infoShown ? onCloseInfo() : onOpenInfo('members')}>
         <Users className="text-[var(--faint-fg)]" />{memberCount}
@@ -70,15 +74,14 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
       {wideGroup && <span aria-hidden className="mx-1 h-4 border-s border-[var(--border)]" />}
     </> : null}
     {groupId && <>
-      {!mobile && <DropdownMenu.Root key={groupId} modal={false} onOpenChange={(open) => { if (open) { onCloseHeaderMenu(); closePopup() } }}>
+      {!mobile && !innerColumn && <DropdownMenu.Root key={groupId} modal={false} onOpenChange={(open) => { if (open) { onCloseHeaderMenu(); closePopup() } }}>
         <DropdownMenu.Trigger data-testid={AUTOMATION_TEST_IDS.groupMenuTopics} aria-label={t('history.tabs.topics')}
-          render={<Button variant="ghost" size="md" title={narrow ? t('history.tabs.topics') : undefined}><MessageSquare />{!narrow && t('history.tabs.topics')}<TopicUnreadChip count={topicUnreadTotal(topics.topics)} /></Button>} />
-        <DropdownMenu.Content data-testid={AUTOMATION_TEST_IDS.groupTopicsPopup} style={{ width: 320, maxWidth: 'min(320px, var(--available-width))', maxHeight: 'min(360px, var(--available-height))', overflowY: 'auto', overscrollBehavior: 'contain' }} align="end">
+          render={<Button variant="ghost" size="md" title={narrow ? t('history.tabs.topics') : undefined}><MessageSquare />{!narrow && t('history.tabs.topics')}{topicCallTotal(topics.topics) > 0 ? <TopicCallChip count={topicCallTotal(topics.topics)} at /> : <TopicUnreadChip count={topicUnreadTotal(topics.topics)} />}</Button>} />
+        <DropdownMenu.Content data-testid={AUTOMATION_TEST_IDS.groupTopicsPopup} style={{ width: 320, maxWidth: 'min(320px, var(--available-width))' }} align="end">
           <GroupTopicsRows chatId={groupId} />
         </DropdownMenu.Content>
       </DropdownMenu.Root>}
       {wideGroup && <>
-        {invite.showInvite && <Button variant="ghost" size="md" data-testid={AUTOMATION_TEST_IDS.chatHeaderInviteButton} aria-label={t('header.invite')} onClick={() => openPopup('invite')}><UserPlus />{t('header.invite')}</Button>}
         <Popover.Trigger ref={appsButton} data-testid={AUTOMATION_TEST_IDS.chatHeaderAppsButton} onClick={onCloseHeaderMenu}
           render={<Button variant="ghost" size="md" aria-label={t('header.groupApps')}><LayoutGrid />{t('header.groupApps')}</Button>} />
         <span aria-hidden className="mx-1 h-4 border-s border-[var(--border)]" />
@@ -87,26 +90,17 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
     <DropdownMenu.Root open={showHeaderMenu} modal={false} onOpenChange={(open) => open ? onToggleHeaderMenu() : onCloseHeaderMenu()}>
       <DropdownMenu.Trigger ref={moreButtonRef} data-testid={AUTOMATION_TEST_IDS.chatHeaderMoreButton} title={t('header.more')} aria-pressed={showHeaderMenu}
         render={<IconButton on={showHeaderMenu || undefined} aria-label={t('header.more')}><MoreHorizontal /></IconButton>} />
-      {showHeaderMenu && <DropdownMenu.Content data-testid={AUTOMATION_TEST_IDS.groupHeaderMenu} side="bottom" align="end" sideOffset={4} style={{ minWidth: 220, maxHeight: 'var(--available-height)', overflowY: 'auto' }}>
-        {groupId && narrow && <>
-          {invite.showInvite && <MenuItem data-testid={AUTOMATION_TEST_IDS.chatHeaderInviteButton} onClick={() => openPopup('invite')} icon={<UserPlus size={16} />}>{t('header.invite')}</MenuItem>}
-          <MenuItem onClick={() => openPopup('apps')} icon={<LayoutGrid size={16} />}>{t('header.groupApps')}</MenuItem>
-          <MenuSeparator />
-        </>}
+      {showHeaderMenu && <DropdownMenu.Content data-testid={AUTOMATION_TEST_IDS.groupHeaderMenu} side="bottom" align="end" sideOffset={4} style={{ minWidth: 220 }}>
+        {groupId && narrow && <MenuItem onClick={() => openPopup('apps')} icon={<LayoutGrid size={16} />}>{t('header.groupApps')}</MenuItem>}
         <MenuItem data-testid={AUTOMATION_TEST_IDS.chatHeaderSearchButton} onClick={onSearch} icon={<Search size={16} />} shortcut={isRoomChat ? '⌘F' : undefined}>
           {t(isRoomChat ? 'header.searchHistory' : 'header.searchChat')}
         </MenuItem>
         <MenuItem onClick={onOpenFolder} icon={<Folder size={16} />}>{folderName}</MenuItem>
-        <MenuSeparator />
         <ChatDetailsMenuItems isGroupChat={isGroupChat} onOpenInfo={() => isGroupChat ? onOpenInfo('main') : onOpenInfo()} />
-        <MenuSeparator />
-        <ChatHeaderSwitches />
         {activeChatId && !wideGroup && <OpenAppMenuItems chatId={activeChatId} separated />}
       </DropdownMenu.Content>}
     </DropdownMenu.Root>
     {groupId && popup.kind === 'apps' && <GroupAppsPicker chatId={groupId} mobile={mobile} anchor={narrow ? moreButtonRef : appsButton} onClose={closePopup} />}
-    {groupId && popup.kind === 'invite' && room && <AddGroupMembers chatId={groupId} snapshot={room.snapshot} canInviteHumans={invite.canInviteHumans}
-      humanDeniedHint={invite.projectGroup ? t('group.projectGroupNoInvite') : undefined} onReload={room.onReload} onClose={closePopup} />}
   </Popover.Root>
 })
 

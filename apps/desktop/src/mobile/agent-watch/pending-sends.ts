@@ -25,6 +25,8 @@ export type PendingSend = {
   baseline: ReadonlySet<string>
   /** 那台机器已受理(RPC 成功返回)。受理前 ❌ 按「第一条新出现的用户消息」认领 —— 那可能是别处发的。 */
   accepted: boolean
+  /** When it was sent: its turn is dated like the native turn it becomes (same date row above it). */
+  sentAt?: number
 }
 
 type UserLine = { id: string; text: string }

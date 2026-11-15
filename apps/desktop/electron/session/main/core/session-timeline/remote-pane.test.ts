@@ -26,6 +26,19 @@ function setup(options: Parameters<typeof createRemotePaneRoute>[0] = {}) {
 afterEach(() => vi.useRealTimers());
 
 describe('remote pane route', () => {
+  it('#1607 asks only a desktop that draws App tabs for an App page; an older one is told to update, nobody watching queues it', async () => {
+    const { route, published } = setup();
+    const app = { kind: 'app-tab' as const, tabKind: 'computer-use.preview', ifAbsent: true };
+    route.subscribe({ subscriptionId: 'old', sessionId: 's', browser: true, tabs: true }, (event) => published.push(event));
+    await expect(route.open('s', app, 'pinned')).rejects.toMatchObject({ code: 'viewer_outdated' });
+    route.subscribe({ subscriptionId: 'new', sessionId: 's', browser: true, tabs: true, apps: true }, (event) => published.push(event));
+    const opening = route.open('s', app, 'pinned');
+    expect(published.map((event) => [event.subscriptionId, event.request.target])).toEqual([['new', app]]);
+    route.ack({ requestId: 'req-2', subscriptionId: 'new', ok: true });
+    await expect(opening).resolves.toEqual({ opened: true });
+    await expect(route.open('other', app, 'pinned')).resolves.toEqual({ queued: true });
+    expect(route.subscribe({ subscriptionId: 'later', sessionId: 'other', browser: false, apps: true }, () => {}).pending.map((request) => request.target)).toEqual([app]);
+  });
   it('carries live tabs on open and uses just the newest capable viewer for list and close', async () => {
     const { route, published, advance } = setup();
     const tabs = [{ tab_id: 'report', title: 'Report', kind: 'file', closable: true }];

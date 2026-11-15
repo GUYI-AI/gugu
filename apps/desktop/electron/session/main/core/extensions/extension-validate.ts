@@ -44,7 +44,7 @@ export function validateExtensionBundle(
 export function assertConfinedProgramBundle(root: string, manifest: ExtensionManifest): void {
   if (!manifest.contributes.mcpServers?.some((server) => isConfinedToolProgram(manifest.apiVersion, server))) return;
   const problems = packageProblems(root, true);
-  if (problems.length) throw new Error(problems.join('\n'));
+  if (problems.length) throw new Error(problems.join('; '));
 }
 
 function packageProblems(root: string, linksOnly = false): string[] {

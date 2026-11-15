@@ -6,6 +6,7 @@ import { until } from '../../../../../../../tests/support/awaitCondition';
 import { NAV_COLUMN_WIDTH } from '@/lib/uiRuler';
 import { WorkspaceLayout, WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
 import { WorkspaceLayoutContextProvider, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
+import { sidebarFolds } from '@renderer/features/sidebar/sidebar-folds';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import '@/styles/tokens.css';
@@ -33,6 +34,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   harness?.cleanup();
+  sidebarFolds.clear(); // a fold is stored state: it must not be the next test's start
   delete document.documentElement.dataset.platform;
   delete document.documentElement.dataset.theme;
   delete document.documentElement.dataset.windowMaterial;

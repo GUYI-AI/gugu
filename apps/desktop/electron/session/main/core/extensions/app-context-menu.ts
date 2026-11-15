@@ -18,7 +18,9 @@ export async function showAppContextMenu(pageId: number, args: Record<string, un
   if (!offset) throw new Error('App menu page is no longer attached');
   return new Promise(resolve => {
     const entries = (items: ContentMenuItem[]): ContentMenuEntry[] => items.map(item => item.type === 'separator' ? item
-      : item.items ? { ...item, items: entries(item.items) } : { ...item, click: () => resolve(item.id) });
+      // A pick is the person's gesture on the page, as a command is (`invokeExtensionCommand`): what needs one — the
+      // clipboard, compose, a picker — works from what the page does with it.
+      : item.items ? { ...item, items: entries(item.items) } : { ...item, click: () => resolve(page.executeJavaScript('0', true).then(() => item.id)) });
     showContentContextMenu(entries(menu.items), { window, x: offset.x + menu.x, y: offset.y + menu.y }, () => resolve(null));
   });
 }

@@ -43,12 +43,13 @@ import {
   type GroupRulesLedger,
 } from './groupRulesDelivery'
 import { encodeTypedId } from '../../shared/typedId.mjs'
-import { ackForumViaRpc, recordForumFailureViaRpc, type ForumDeliveryFailure } from './forumInbox'
+import type { AppInboxFailure } from './appInbox'
 import { coreLogger } from '../../log'
 import { agentFailureNeedsModelChoice, agentFailureReason, type AgentFailureReason } from '../../shared/agentQuotaReason'
 import { turnFailureMarker } from '../../shared/ui/systemNotice'
 import { sessionArchiveRefusesMessage, type SessionArchivalState } from '../../shared/sessionArchival'
-import { beginInboxAttempt, clearInboxRetry, resetInboxRetries, retryInboxFailure } from './inboxRetry'
+import { beginInboxAttempt, clearInboxReceiptRetry, clearInboxRetry, resetInboxRetries, retryInboxFailure, retryInboxReceipt } from './inboxRetry'
+import { isTransientNetworkError } from '../../shared/networkError'
 import { attachmentFailureReason, attachmentStage } from '../files/attachmentDiagnostics'
 
 const log = coreLogger('agent-inbox-reader')
@@ -71,6 +72,8 @@ export interface AgentInboxUnreadRow {
   senderGuguNumber: number | null
   content: string
   contentType: string | null
+  /** Authoritative registry id returned beside this actor-visible message. */
+  widgetId?: string | null
   toUserIds: string[] | null
   isWhisper: boolean
   /** App 以人的名义送来的那一行(`gugu.dispatch`,#6835):App 的 extension id。 */
@@ -83,6 +86,9 @@ export interface AgentInboxUnreadRow {
   fileVersion?: number | null
   /** 悄悄话的附件:消息直接指字节(不进群文件夹)。 */
   fileBlobId?: string | null
+  /** #2581 Files sent at once share a send: each of its rows carries it and how many files it holds. */
+  sendGroupId?: string | null
+  sendGroupSize?: number | null
   /**
    * The rules in force on a group or topic line ('' when none; a topic without its own takes its source group's), read
    * with the message by pull_agent_inbox_v2. null off rooms.
@@ -104,8 +110,8 @@ export interface AgentInboxUnreadRow {
   scanFence?: number
   /** Local session-direct rows are fed into this same reader without inventing a cloud chat. */
   localSessionDirect?: { sessionId: string; envelope: string }
-  /** 论坛来源的一行(forumInbox.ts):帖子上该交给它的一件事,信封已做好;受理后按帖子确认 seq。 */
-  forum?: { postId: string; seq: number; envelope: string }
+  /** App 来源的一行(appInbox.ts):信封已做好;受理后按 key 确认 seq。 */
+  app?: { source: string; key: string; seq: number; envelope: string }
 }
 
 /**
@@ -182,13 +188,10 @@ export interface AgentInboxReaderDeps {
    * whether the source is still open (queued / dispatching); a terminal failure is never an assistant read.
    */
   claimedSources?: (agentUserId: string, messageIds: readonly string[]) => ReadonlyMap<string, boolean> | Promise<ReadonlyMap<string, boolean>>
-  /**
-   * 论坛来源(forumInbox.ts):有它才拉论坛(宿主的装配 agentInboxDepsFromBridge 接上 forum_pull_agent_inbox);确认与失败记录
-   * 默认 forum_ack / forum_record_delivery_failure。
-   */
-  fetchForumUnread?: (agentUserId: string) => Promise<AgentInboxUnreadRow[]>
-  ackForum?: (input: { agentUserId: string; postId: string; seq: number }) => Promise<void>
-  recordForumFailure?: (input: { agentUserId: string; postId: string; state: ForumDeliveryFailure; error: string }) => Promise<void>
+  /** App 来源(appInbox.ts):有它才拉;确认与失败记录也归那个 App。 */
+  fetchAppUnread?: (agentUserId: string) => Promise<AgentInboxUnreadRow[]>
+  ackApp?: (input: { source: string; agentUserId: string; key: string; seq: number }) => Promise<void>
+  recordAppFailure?: (input: { source: string; agentUserId: string; key: string; state: AppInboxFailure; error: string }) => Promise<void>
   fetchThreadMessages?: (chatId: string, threadRootId: string) => Promise<ThreadMessageRow[]>
   resolveGuguIds?: (
     userIds: Array<string | undefined>,
@@ -242,6 +245,8 @@ export function resetAgentInboxReaderStateForTests(): void {
   resetInboxRetries()
   inFlightByAgent.clear()
   threadBootstrapped.clear()
+  for (const wait of sendWaits.values()) if (wait.timer) clearTimeout(wait.timer)
+  sendWaits.clear()
   batchAudit.length = 0
 }
 
@@ -317,12 +322,15 @@ export function unreadRowFromRpc(raw: Record<string, unknown>): AgentInboxUnread
     senderGuguNumber: num(raw.sender_gugu_number),
     content: String(raw.content ?? ''),
     contentType: text(raw.content_type),
+    widgetId: text(raw.widget_id),
     toUserIds: Array.isArray(raw.to_user_ids)
       ? raw.to_user_ids.filter((value): value is string => typeof value === 'string')
       : null,
     isWhisper: raw.is_whisper === true,
     viaApp: text(raw.via_app) || null,
     ...fileRefOf(raw),
+    sendGroupId: text(raw.send_group_id),
+    sendGroupSize: num(raw.send_group_size),
     replyToMessageId: text(raw.reply_to_message_id),
     replyToSenderUserId: text(raw.reply_to_sender_user_id),
     replyToContent: text(raw.reply_to_content),
@@ -353,7 +361,7 @@ function deliveryContextOf(raw: Record<string, unknown>): { groupRules: string |
 }
 
 type InlineImage = { data: string; mimeType: string; fileName: string; localPath: string }
-type SavedAttachment = { bytes: Uint8Array; localPath: string }
+type SavedAttachment = { bytes: Uint8Array; localPath: string; readOnly?: boolean }
 
 export type DisclosureRow = { agentUserId: string; chatId: string; threadRootId: string | null; key: string; reason: AgentFailureReason }
 
@@ -374,7 +382,7 @@ const FAILURE_CONTENT: Record<AgentFailureReason, string> = {
   generic: 'This reply could not be completed. Please try again later.',
   notAdmitted: '消息已保留，助理就绪后回复。',
   deliveryRejected: 'This message did not reach the assistant and will not be resent automatically.',
-  outcomeUnknown: 'Delivery result unknown: the message may have reached the assistant, and it was not resent.',
+  outcomeUnknown: 'Failed to send this message.',
   undelivered: 'Not delivered yet: no running Gugu instance on this device holds this agent. The message stays unread until that instance is open.',
   appUnavailable: 'Not delivered: this came from an App that cannot run where this agent lives.',
 }
@@ -610,14 +618,14 @@ async function pullOnce(agentUserId: string, deps: AgentInboxReaderDeps): Promis
     }
     scanAfter = { chatId: tail.chatId, seq: tail.seq }
   }
-  // 论坛来源:聊天这一轮受理完(或本来就没有)才拉 —— 会话不 live / 此刻不收时它也不收,等下一个触发。
-  if (deps.fetchForumUnread && (verdict === 'idle' || verdict === 'accepted' || verdict === 'enqueued')) {
-    const forumRows = await deps.fetchForumUnread(agentUserId)
-    pulled += forumRows.length
-    if (forumRows.length > 0) {
+  // App 来源:聊天这一轮受理完(或本来就没有)才拉 —— 会话不 live / 此刻不收时它也不收,等下一个触发。
+  if (deps.fetchAppUnread && (verdict === 'idle' || verdict === 'accepted' || verdict === 'enqueued')) {
+    const appRows = await deps.fetchAppUnread(agentUserId)
+    pulled += appRows.length
+    if (appRows.length > 0) {
       const archival = await deps.sessionArchival?.(agentUserId) ?? null
       if (archival?.archivedAt) return { pulled, injected: injectedTotal, verdict: 'not-now' }
-      const unclaimed = await unclaimedRows(agentUserId, await filterArchivedRows(agentUserId, forumRows, archival, deps), deps)
+      const unclaimed = await unclaimedRows(agentUserId, await filterArchivedRows(agentUserId, appRows, archival, deps), deps)
       const batchResult = await injectBatch(agentUserId, unclaimed, deps)
       injectedTotal += batchResult.injected
       verdict = batchResult.verdict
@@ -688,7 +696,7 @@ type PreparedUnit = {
  * recorded as failed independently; it cannot prevent later rows from reaching admission.
  */
 function undeliverableRowReason(row: AgentInboxUnreadRow): string | null {
-  if (row.localSessionDirect || row.forum) return null
+  if (row.localSessionDirect || row.app) return null
   try {
     encodeTypedId('msg', row.id)
     encodeTypedId('chat', row.chatId)
@@ -740,7 +748,7 @@ async function injectBatch(
     catch (discloseError) { log.error({ agentUserId, err: errorText(discloseError) }, 'rejected inbox item disclosure or acknowledgement failed') }
     failures.push(new DisclosedFailure(error, disclosure))
   }
-  const rows = pulledRows
+  const rows = holdIncompleteSends(agentUserId, pulledRows, deps)
   if (rows.length === 0) {
     return { injected: 0, verdict: 'accepted' }
   }
@@ -772,12 +780,24 @@ async function injectBatch(
   // next-tool-call transport has no queue boundary: the admission itself is the delivery boundary,
   // so merge the rows there with the same core producer. Attachments remain one admission each.
   const timing = await deps.deliveryTiming?.(agentUserId)
-  const framed = prepared.filter((entry) => !entry.attachments && !('preparationError' in entry))
+  // #2581 The files of one send are one message: one admission, one turn, all their images on it.
+  const sends = new Map<string, PreparedMessage[]>()
+  for (const entry of prepared) {
+    const key = sendKeyOf(entry.row)
+    if (key) sends.set(key, [...(sends.get(key) ?? []), entry])
+  }
+  const sendOf = (entry: PreparedMessage) => {
+    const members = sends.get(sendKeyOf(entry.row) ?? '')
+    return members && members.length > 1 ? members : null
+  }
+  const framed = prepared.filter((entry) => !entry.attachments && !('preparationError' in entry) && !sendOf(entry))
   const mergedText = !queueBacked && timing === 'next-tool-call' && framed.length > 0
     ? mergeDeliveryEnvelopes(framed.map((entry) => entry.envelope))
     : null
   let merged = false
   const units: PreparedUnit[] = prepared.flatMap((entry): PreparedUnit[] => {
+    const send = sendOf(entry)
+    if (send) return send[0] === entry ? [sendUnit(send)] : []
     if ('preparationError' in entry) return [{ text: entry.envelope, members: [entry], preparationError: entry.preparationError }]
     if (entry.attachments) {
       return [{ text: entry.envelope, attachments: entry.attachments, members: [entry] }]
@@ -800,9 +820,9 @@ async function injectBatch(
   for (let unitIndex = 0; unitIndex < units.length; unitIndex += 1) {
     let unit = units[unitIndex]!
     if (queueBacked) {
-      const entry = await prepare(unit.members[0]!.row)
-      unit = { text: entry.envelope, members: [entry], ...(entry.attachments ? { attachments: entry.attachments } : {}),
-        ...('preparationError' in entry ? { preparationError: entry.preparationError } : {}) }
+      const entries: PreparedMessage[] = []
+      for (const member of unit.members) entries.push(await prepare(member.row))
+      unit = sendUnit(entries)
     }
     const archival = await deps.sessionArchival?.(agentUserId) ?? null
     if (archival?.archivedAt || (await Promise.all(unit.members.map(({ row }) => refusesArchivedRow(agentUserId, row, archival, deps)))).some(Boolean)) {
@@ -865,6 +885,56 @@ async function injectBatch(
   }
 }
 
+/** #2581 Which send a chat row belongs to; none for a row sent on its own. */
+function sendKeyOf(row: AgentInboxUnreadRow): string | null {
+  return row.sendGroupId && row.sendGroupSize && row.sendGroupSize > 1 && !row.localSessionDirect && !row.app ? `${row.chatId}\u0000${row.sendGroupId}` : null
+}
+
+/** Prepared rows handed over as one: one row as itself, a send's rows as one delivery carrying every image. */
+function sendUnit(entries: PreparedMessage[]): PreparedUnit {
+  const failed = entries.find((entry) => 'preparationError' in entry)
+  if (failed) return { text: failed.envelope, members: entries, preparationError: failed.preparationError }
+  const attachments = entries.flatMap((entry) => entry.attachments ?? [])
+  return { text: mergeDeliveryEnvelopes(entries.map((entry) => entry.envelope)), members: entries, ...(attachments.length ? { attachments } : {}) }
+}
+
+/** How long a send whose other files have not reached the conversation is held back, counted from its last arrival. */
+export const SEND_GROUP_WAIT_MS = 60_000
+const sendWaits = new Map<string, { seen: number; changedAt: number; timer?: ReturnType<typeof setTimeout> }>()
+
+/**
+ * #2581 The files of a send commit one after another. Until all of them are here (or none has arrived for SEND_GROUP_WAIT_MS),
+ * the send and what came after it in its conversation wait; a later pull hands them over together. What waited longest
+ * goes as it is: a file that never arrives does not hold the conversation.
+ */
+function holdIncompleteSends(agentUserId: string, rows: AgentInboxUnreadRow[], deps: AgentInboxReaderDeps): AgentInboxUnreadRow[] {
+  const sends = new Map<string, AgentInboxUnreadRow[]>()
+  for (const row of rows) {
+    const key = sendKeyOf(row)
+    if (key) sends.set(key, [...(sends.get(key) ?? []), row])
+  }
+  const heldFrom = new Map<string, number>()
+  const now = Date.now()
+  for (const [key, members] of sends) {
+    const waitKey = `${agentUserId}\u0000${key}`
+    const wait = sendWaits.get(waitKey)
+    if (members.length >= members[0]!.sendGroupSize!) { if (wait?.timer) clearTimeout(wait.timer); sendWaits.delete(waitKey); continue }
+    const changedAt = wait && wait.seen === members.length ? wait.changedAt : now
+    if (now - changedAt >= SEND_GROUP_WAIT_MS) { sendWaits.delete(waitKey); continue }
+    if (wait?.timer) clearTimeout(wait.timer)
+    const timer = setTimeout(() => {
+      sendWaits.get(waitKey)?.timer === timer && kickAgentInboxPull(agentUserId, deps, 'send-group-wait')
+    }, changedAt + SEND_GROUP_WAIT_MS - now + 50)
+    timer.unref?.()
+    sendWaits.set(waitKey, { seen: members.length, changedAt, timer })
+    const first = Math.min(...members.map((row) => row.seq))
+    heldFrom.set(members[0]!.chatId, Math.min(heldFrom.get(members[0]!.chatId) ?? Number.POSITIVE_INFINITY, first))
+  }
+  if (heldFrom.size === 0) return rows
+  log.info({ agentUserId, chats: heldFrom.size }, 'agent inbox waits for the rest of a send')
+  return rows.filter((row) => row.localSessionDirect || row.app || !(row.seq >= (heldFrom.get(row.chatId) ?? Number.POSITIVE_INFINITY)))
+}
+
 async function prepareMessage(
   agentUserId: string,
   row: AgentInboxUnreadRow,
@@ -878,7 +948,7 @@ async function prepareMessage(
   if (row.localSessionDirect) {
     return { row, envelope: row.localSessionDirect.envelope }
   }
-  if (row.forum) return { row, envelope: row.forum.envelope }
+  if (row.app) return { row, envelope: row.app.envelope }
   const identities = new Map<string, GuguIdentity>()
   if (row.senderUserId) {
     identities.set(row.senderUserId, {
@@ -946,7 +1016,7 @@ async function prepareMessage(
     try {
       const image = await download(attachment.fileName)
       attachments = [{ data: Buffer.from(image.bytes).toString('base64'), mimeType: attachment.mimeType, fileName: attachment.fileName, localPath: image.localPath }]
-      saved = { localPath: image.localPath }
+      saved = { localPath: image.localPath, readOnly: image.readOnly }
     } catch (error) {
       saved = { failure: attachmentFailureReason(error) }
     }
@@ -955,7 +1025,8 @@ async function prepareMessage(
   // 下不下来(签不到、CDN 回错、超时)就照实说没存下和原因 —— 这一行和同一批的别的行照样交,不卡住收件。
   if (attachment?.kind === 'file' && attachment.source.kind !== 'gone' && attachment.source.kind !== 'url') {
     try {
-      saved = { localPath: (await download(attachment.fileName)).localPath }
+      const file = await download(attachment.fileName)
+      saved = { localPath: file.localPath, readOnly: file.readOnly }
     } catch (error) {
       saved = { failure: attachmentFailureReason(error) }
     }
@@ -976,6 +1047,7 @@ async function prepareMessage(
       messageId: row.id,
       senderUserId: row.senderUserId,
       contentType: row.contentType,
+      widgetId: row.widgetId,
       content,
       replyTo: row.replyToMessageId && row.replyToSenderUserId
         ? { messageId: row.replyToMessageId, senderUserId: row.replyToSenderUserId, content: row.replyToContent ?? '' }
@@ -1019,6 +1091,7 @@ function rebuildEnvelopeWithThreadContext(
       messageId: row.id,
       senderUserId: row.senderUserId,
       contentType: row.contentType,
+      widgetId: row.widgetId,
       content,
       replyTo: row.replyToMessageId && row.replyToSenderUserId
         ? { messageId: row.replyToMessageId, senderUserId: row.replyToSenderUserId, content: row.replyToContent ?? '' }
@@ -1050,9 +1123,22 @@ async function settleAccepted(agentUserId: string, sources: readonly AgentInboxS
   }
 }
 
-/** An enqueuing host's agent accepted these rows: settle them exactly as an accepted injection does. */
-export function markInboxRowsRead(agentUserId: string, sources: readonly AgentInboxSource[], deps: AgentInboxReaderDeps): Promise<void> {
-  return settleAccepted(agentUserId, sources, deps)
+/**
+ * An enqueuing host's agent accepted these rows: settle them exactly as an accepted injection does. This runs outside
+ * any pull, so a receipt that failed on the network or a 5xx schedules its own bounded re-pull (`retryInboxReceipt`)
+ * — ❌ waiting for the next message to re-pull it. Any other refusal is not retried.
+ */
+export async function markInboxRowsRead(agentUserId: string, sources: readonly AgentInboxSource[], deps: AgentInboxReaderDeps): Promise<void> {
+  try {
+    await settleAccepted(agentUserId, sources, deps)
+    clearInboxReceiptRetry(agentUserId)
+  } catch (error) {
+    const status = (error as { status?: unknown } | null)?.status
+    if ((typeof status === 'number' && status >= 500) || isTransientNetworkError(error)) {
+      retryInboxReceipt(agentUserId, error, () => kickAgentInboxPull(agentUserId, deps, 'receipt-retry'))
+    }
+    throw error
+  }
 }
 
 /**
@@ -1093,26 +1179,27 @@ async function advanceCursor(
   const markRead = deps.markRead
     ?? ((input: AgentDeliveredMessageRead) => markAgentDeliveredMessageRead(input, { accessToken: deps.accessToken }))
   const byChat = new Map<string, PreparedMessage[]>()
-  const forumSeqs = new Map<string, number>()
+  const appSeqs = new Map<string, number>()
+  const appKey = (app: NonNullable<AgentInboxUnreadRow['app']>) => `${app.source}\n${app.key}`
   for (const member of members) {
     const list = byChat.get(member.row.chatId) ?? []
     list.push(member)
     byChat.set(member.row.chatId, list)
-    if (member.row.forum) {
-      const { postId, seq } = member.row.forum
-      forumSeqs.set(postId, Math.max(forumSeqs.get(postId) ?? seq, seq))
+    if (member.row.app) {
+      const key = appKey(member.row.app)
+      appSeqs.set(key, Math.max(appSeqs.get(key) ?? member.row.app.seq, member.row.app.seq))
     }
   }
   for (const [chatId, chatMembers] of byChat) {
     const ordered = [...chatMembers].sort((a, b) => a.row.seq - b.row.seq)
     for (const member of ordered) {
       try {
-        if (member.row.forum) {
-          const seq = forumSeqs.get(member.row.forum.postId)
+        if (member.row.app) {
+          const seq = appSeqs.get(appKey(member.row.app))
           if (seq === undefined) continue
-          forumSeqs.delete(member.row.forum.postId)
-          const ack = deps.ackForum ?? ((input: { agentUserId: string; postId: string; seq: number }) => ackForumViaRpc(input, deps.accessToken))
-          await ack({ agentUserId, postId: member.row.forum.postId, seq })
+          appSeqs.delete(appKey(member.row.app))
+          if (!deps.ackApp) throw new Error('an App inbox row has no ackApp handler')
+          await deps.ackApp({ source: member.row.app.source, agentUserId, key: member.row.app.key, seq })
         } else if (member.row.localSessionDirect) {
           if (!deps.markLocalRead) throw new Error('local session-direct row has no markLocalRead handler')
           await deps.markLocalRead({
@@ -1156,10 +1243,11 @@ async function discloseBatchFailure(
 ): Promise<Disclosure> {
   const post = deps.postDisclosure ?? ((input: DisclosureRow) => postDeliveryDisclosureRow(input, deps.accessToken))
   const byChat = new Map<string, Pick<PreparedMessage, 'row'>[]>()
-  const byPost = new Set<string>()
+  const byApp = new Map<string, { source: string; key: string }>()
   for (const member of members) {
-    if (member.row.forum) {
-      byPost.add(member.row.forum.postId)
+    if (member.row.app) {
+      const { source, key } = member.row.app
+      byApp.set(`${source}\n${key}`, { source, key })
       continue
     }
     if (member.row.localSessionDirect) {
@@ -1175,20 +1263,19 @@ async function discloseBatchFailure(
     list.push(member)
     byChat.set(member.row.chatId, list)
   }
-  // Said only when every chat (and every post) got its row: a batch of local rows alone, or a post that failed, leaves it unsaid.
-  let said = byChat.size + byPost.size > 0
-  // 论坛来源:失败记在那条指派上(主人在帖子里看到),❌ 写成一条回复。没受理(游标没动、会重投)与受理了但那一轮失败分开记。
-  const recordForum = deps.recordForumFailure
-    ?? ((input: { agentUserId: string; postId: string; state: ForumDeliveryFailure; error: string }) => recordForumFailureViaRpc(input, deps.accessToken))
-  for (const postId of byPost) {
-    const state: ForumDeliveryFailure = completionError === undefined || beforeAdmission ? 'undelivered' : 'turn_failed'
+  // Said only when every chat (and every App's) got its row: a batch of local rows alone, or an App that failed, leaves it unsaid.
+  let said = byChat.size + byApp.size > 0
+  // App 来源:失败交给那个 App 记(它自己的界面上给主人看),❌ 写成一条回复。没受理(游标没动、会重投)与受理了但那一轮失败分开记。
+  for (const { source, key } of byApp.values()) {
+    const state: AppInboxFailure = completionError === undefined || beforeAdmission ? 'undelivered' : 'turn_failed'
     try {
-      await recordForum({ agentUserId, postId, state, error: reason })
+      if (!deps.recordAppFailure) throw new Error('an App inbox row has no recordAppFailure handler')
+      await deps.recordAppFailure({ source, agentUserId, key, state, error: reason })
     } catch (error) {
       said = false
       log.error(
-        { agentUserId, postId, state, err: error instanceof Error ? error.message : String(error) },
-        'forum delivery failure could not be recorded on the assignment; this failure remains undisclosed',
+        { agentUserId, source, key, state, err: error instanceof Error ? error.message : String(error) },
+        'an App could not record a delivery failure; the command row carries it',
       )
     }
   }

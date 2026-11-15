@@ -1,4 +1,3 @@
-import { setUserLibraryOwner } from '../session/main/core/app/user-library'
 import { startNativeConversationInboxHost } from '../session/main/core/sessions/native-conversation-inbox'
 // @@@task-shell-port (#5012) — 网页版无头宿主的会话身份接线:浏览器交登录态 → 宿主开账号并绑到会话。
 //
@@ -152,7 +151,6 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
     hostIpc.broadcast(definition.name, data)
   }
   // #7341 第二步 项目跨设备:`projects.*` 的项目群四件事与桌面主进程同一份实现,只喂它这个宿主的登录态。
-  setUserLibraryOwner(async () => (await auth.get())?.userId ?? null)
   setProjectGroupHost(createSessionpageProjectGroupHost({ getAuth: auth.get }))
   const unsubscribeGroupMapping = onProjectGroupMappingChanged(({ projectId }) => notifyProjectGroupBindingChanged(projectId))
   const unsubscribeProvisioned = onSessionpageAgentProvisioned((event) => {
@@ -207,7 +205,6 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
       setTaskNamer(null)
       unsubscribeProvisioned()
       unsubscribeGroupMapping()
-      setUserLibraryOwner(null)
       setProjectGroupHost(null)
       setSessionIdentityHost(null)
       setEmdashMcpInjector(null)

@@ -8,7 +8,7 @@ import { groupFileLink } from './ui/guguLink'
  */
 export function attachmentFolderLine(itemId: string, version: number): string {
   const file = groupFileLink(itemId, { version })
-  return `[Folder file ${file} — show it again: message_send_file {file: "${file}"}; changed it: message_send_file {file: "${file}", file_path} sends your copy as its next version, never as a new attachment]`
+  return `[Folder file ${file} — show it again: message_send_file {file: "${file}"}; changed it: message_send_file {file: "${file}", file_path} sends your file as its next version, never as a new attachment]`
 }
 
 /**
@@ -17,16 +17,17 @@ export function attachmentFolderLine(itemId: string, version: number): string {
  * cannot tell which door a file came through. `saved` null: nothing to save (the item is gone, or an old URL attachment).
  */
 export function attachmentLocationLines(item: { itemId: string; version: number } | null, image: boolean,
-  saved: { localPath: string } | { failure: string } | null): string {
+  saved: { localPath: string; readOnly?: boolean } | { failure: string } | null): string {
   const folder = item ? `\n${attachmentFolderLine(item.itemId, item.version)}` : ''
   if (!saved) return folder
   if ('failure' in saved) return `${folder}\n[${image ? 'Image' : 'File'} not saved: ${saved.failure}]`
-  return `${folder}\n[${image ? 'Image attached at' : 'File saved at'} local path: ${saved.localPath}]`
+  const shared = saved.readOnly ? ' (shared and read-only: do not change this file or its permissions. To change it, write your version to a new file of your own and send that; a plain copy stays read-only)' : ''
+  return `${folder}\n[${image ? 'Image attached at' : 'File saved at'} local path: ${saved.localPath}${shared}]`
 }
 
 /** A task turn's attachment as its agent reads it (P3) — head, folder file and local path, as a delivered attachment reads. */
 export function turnAttachmentText(file: { itemId: string; version: number; name: string; mimeType: string; sizeBytes: number },
-  saved: { localPath: string } | { failure: string }): string {
+  saved: { localPath: string; readOnly?: boolean } | { failure: string }): string {
   const image = file.mimeType.startsWith('image/')
   const head = image ? `[Image attached: ${file.name}]` : attachmentEnvelope(file.name, file.sizeBytes, file.mimeType)
   return `${head}${attachmentLocationLines({ itemId: file.itemId, version: file.version }, image, saved)}`

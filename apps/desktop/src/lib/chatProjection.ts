@@ -7,27 +7,37 @@
 // 快照与增量走**同一条**取数路径,区别只在这一轮的键从哪来(spec「输入」):
 // - **快照**(`hydrate`)= 一次「哪些会话属于我」的读拿到键集合(那不是某个实体的值,是键集合本身),
 //   然后走同一套族读与 assemble ⇒ 2 波。
-// - **增量**(`advance`)= journal 命名哪个实体就只读那个实体 ⇒ ≤2 波(I5)。
+// - **增量**(`advance`)= journal 命名哪个实体就只读那个实体 ⇒ ≤2 波实体读(I5)。
+//   预览里有块引用时,另读一次引用说明(有上界,走看的人自己的 RLS),发数与波数照记进同一本账。
 // 会话列表的云端取数只有这一条路(I7):从前冷启另走 `chatListLoader` 的 8 波串行链,
 // 那就是第二个属主在原地 —— #3271 的病只治了增量那一半。
 
 import type { ChatItem, ChatUnreadLocator, GroupMemberRole, NotificationLevel } from '@gugu/core/shared/types/chat'
-import { isPendingDelivery, turnFailureReason } from '@gugu/core/shared/ui/systemNotice'
+import { isPendingDelivery, parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import {
   assemble,
+  compareListRows,
+  reassemble,
+  sortMembers,
+  touchedChats,
+  type AssembleSource,
+  type EntityValue,
+  type MembershipValue,
   assertRevision,
   compareStamp,
   entityKey,
   foldBatch,
   EMPTY_PLANNER,
   membershipId,
-  mergeCells,
+  joinCell,
   missingDependencies,
   observe,
   observeKeys,
   planWave,
   releaseWave,
   settleWave,
+  shareRows,
+  shareObject,
   splitKey,
   splitMembershipId,
   type Cell,
@@ -35,7 +45,6 @@ import {
   type EntityKey,
   type PlannerState,
   type ProjectionBatch,
-  type ProjectionCache,
   type ProjectionOperation,
 } from './chatProjectionAlgebra'
 import { ACCOUNT_REVISION_CURSOR_KEY, type AccountRevisionOperation } from './accountRevisionRuntime'
@@ -54,15 +63,20 @@ import { chatDb, identityDb } from './supabase'
 import { composerCardLine } from './composerCardCopy'
 import { ingestMessages } from './messageIngest'
 import { messageAccessWrites } from './messageRevisionWrites'
+import { forgetArchivedGroups, noteGroupArchived } from './archivedGroupsRead'
+import { messagePreviewLines } from './messagePreviews'
+import { sendGroupPreview } from './sendGroupPreview'
 
 const log = rendererLogger('chat/projection')
+/** A stored value adopted at warm start: known, freshness unknown — older than any revision, so an operation naming it reads it. */
+const STORED_VALUE_STAMP = '0'
 
 /**
  * 一族一批的读函数:`ids` 已经是 `planWave` 切好的**有界批**(`FAMILY_BATCH_KEYS`),
  * 所以这里 ❌ 不再自己分批 —— 请求形状的上界只有一个属主,读函数只管把一批发出去。
  * 批间与族间都并行 ⇒ 波数仍是串行深度,发数是 `Σ ⌈键/K⌉`。
  */
-type FamilyReader = (ids: readonly string[], signal: AbortSignal) => Promise<Map<string, unknown>>
+type FamilyReader = (ids: readonly string[], signal: AbortSignal, onReferenceRead: () => void) => Promise<Map<string, unknown>>
 
 export type ChatProjectionLedgerEntry = {
   trigger: string[]
@@ -87,7 +101,8 @@ export type ChatProjection = {
   /** RPC receipt has no revision stamp; retain this monotonic list fact until account reset. */
   confirmPersonalDeletion: (receipt: import('./deleteListedConversation').PersonalConversationDeletion) => void
   /**
-   * 冷启快照:一次「哪些会话属于我」的读 → 键集合 → **与增量同一套**族读与 assemble ⇒ 2 波。
+   * 快照:先采用本地已存的列表(@@@durable-snapshot,零发);本地没有完整列表时才一次「哪些会话属于我」的读
+   * → 键集合 → **与增量同一套**族读与 assemble ⇒ 2 波。快照成立之后再调只返回当前行,追新是 journal 的事。
    * 没有第二条拉取路(I7),也没有第二份装配逻辑。
    */
   hydrate: (cursor: string, signal: AbortSignal) => Promise<ChatItem[]>
@@ -95,8 +110,6 @@ export type ChatProjection = {
   advance: (operations: readonly ProjectionOperation[], cursor: string, signal: AbortSignal) => Promise<ChatItem[] | null>
   /** 接到 revision 派发上:认领哪些 event、payload 怎么变成键、批怎么合成,全在本域(I7)。 */
   attach: (attachment: ChatProjectionAttachment) => () => void
-  /** 本地写的权威回执:按它发布的 revision 作戳进 C ⇒ 回声零发(spec I6)。 */
-  ingestLocalWrite: (cells: Iterable<readonly [EntityKey, Cell]>) => ChatItem[]
   current: () => ChatItem[]
   /** 已投影出的身份 —— 交给 applyFetchedChatList,与行**一起**登记(#4314)。 */
   identities: () => DisplayIdentity[]
@@ -107,6 +120,8 @@ export type ChatProjection = {
    * 沉默是仪器还没读到,不是阴性读数。
    */
   isMembershipRevoked: (chatId: string) => boolean
+  /** Every other member's read position this projection already holds; undefined until it has read the conversation. */
+  memberReadSeqs: (chatId: string) => Record<string, number> | undefined
   /** Personal list deletion is authoritative without revoking the retained membership. */
   isConversationDeleted: (chatId: string) => boolean
   ledger: () => readonly ChatProjectionLedgerEntry[]
@@ -161,12 +176,71 @@ export function readProjectionCursor(repository: AccountImRepository | null): st
   return typeof revision === 'string' && /^(0|[1-9]\d*)$/.test(revision) ? revision : '0'
 }
 
-export function createChatProjection(viewerId: string): ChatProjection {
+/**
+ * What memory already holds: the chat list's rows and the repository's identities (see @@@one-row-object).
+ * `durable`: the list and its people as the repository stored them at the committed cursor, or null when they are not a
+ * complete list (nothing stored, or a row whose people are missing locally).
+ */
+export type HeldObjects = {
+  rows: () => readonly ChatItem[]
+  identity: (id: string) => DisplayIdentity | undefined
+  durable?: () => { rows: readonly ChatItem[]; identities: readonly DisplayIdentity[] } | null
+}
+
+/**
+ * `held`: an assembled row or a read identity equal to a held one IS that held object — the projection's snapshot
+ * and cache never become a second set of equal rows or identities.
+ */
+export function createChatProjection(viewerId: string, held?: HeldObjects): ChatProjection {
   if (!viewerId) throw new Error('chat projection requires the viewer id')
 
-  let cache: ProjectionCache = new Map()
+  let cache = new Map<EntityKey, Cell>()
   let planner: PlannerState = EMPTY_PLANNER
   let rows: ChatItem[] = []
+  // @@@incremental-list: members by conversation and conversations by person, kept current as cells merge — the
+  // incremental republish reads these instead of scanning the cache.
+  const membersByChat = new Map<string, Map<string, MembershipValue>>()
+  const chatsByUser = new Map<string, Set<string>>()
+  const unpublished = new Set<EntityKey>()
+  const identitiesById = new Map<string, DisplayIdentity>()
+  let identities: DisplayIdentity[] | undefined
+  const merge = (cells: Iterable<readonly [EntityKey, Cell]>): void => {
+    const merged = [...cells]
+    // The cache belongs only to this owner. Validate before mutating, then join the settled keys in place;
+    // immutable copies are needed for published rows, not for this private cache.
+    for (const [key, cell] of merged) { splitKey(key); assertRevision(cell.stamp, `cell stamp for ${key}`) }
+    for (const [key, incoming] of merged) {
+      const previous = cache.get(key)
+      const cell = joinCell(previous, incoming)
+      if (cell === previous) continue
+      cache.set(key, cell)
+      unpublished.add(key)
+      const { family, id } = splitKey(key)
+      if (family === 'identity') {
+        if (cell.value) identitiesById.set(id, cell.value as unknown as DisplayIdentity)
+        else identitiesById.delete(id)
+        identities = undefined
+      }
+      if (family !== 'membership') continue
+      const { chatId, userId } = splitMembershipId(id)
+      const value = cell.value as MembershipValue | null
+      let members = membersByChat.get(chatId)
+      let chats = chatsByUser.get(userId)
+      if (value) {
+        if (!members) membersByChat.set(chatId, members = new Map())
+        if (!chats) chatsByUser.set(userId, chats = new Set())
+        members.set(userId, value)
+        chats.add(chatId)
+      } else {
+        members?.delete(userId)
+        chats?.delete(chatId)
+      }
+    }
+  }
+  const source: AssembleSource = {
+    value: <T extends EntityValue>(family: EntityFamily, id: string) => (cache.get(entityKey(family, id))?.value ?? undefined) as T | undefined,
+    members: chatId => sortMembers([...(membersByChat.get(chatId)?.values() ?? [])]),
+  }
   const confirmedDeletions = new Map<string, string>()
   const ledger: ChatProjectionLedgerEntry[] = []
   // 调度:`open` = 已折进、还没开跑的那一批(开跑即关批);`inflight` = 在跑/已排队那次的结果;
@@ -180,6 +254,47 @@ export function createChatProjection(viewerId: string): ChatProjection {
    * 那时任何一次 wake 都要顺带把快照重建起来 —— 增量只认识 journal 命名的键,建不出整张列表。
    */
   let snapshotAt: string | null = null
+
+  /**
+   * @@@durable-snapshot — the stored list IS a snapshot at the committed cursor: every operation up to it was either
+   * published into those rows before the inbox acknowledged it, or still waits in the inbox and is replayed into
+   * `advance`. So the warm start adopts it and only drains `sync_since`; the keyset read is for a list that was never
+   * stored. Its rows are published rows, not cells: a conversation the journal touches is read whole before it is
+   * re-assembled (`incompleteTouched`). Stored people enter as cells stamped STORED_VALUE_STAMP — a known value whose
+   * freshness is unknown, so any operation naming one still reads it.
+   */
+  const adoptDurable = (cursor: string): void => {
+    if (snapshotAt !== null || cursor === '0') return
+    const durable = held?.durable?.()
+    if (!durable) return
+    const people = durable.identities.map(identity => [entityKey('identity', identity.id), { value: identity as unknown as EntityValue, stamp: STORED_VALUE_STAMP }] as const)
+    merge(people)
+    for (const [key] of people) unpublished.delete(key)
+    for (const row of durable.rows) {
+      for (const userId of [row.peer_user_id, ...(row.member_user_ids ?? [])]) {
+        if (!userId) continue
+        let chats = chatsByUser.get(userId)
+        if (!chats) chatsByUser.set(userId, chats = new Set())
+        chats.add(row.id)
+      }
+    }
+    rows = shareRows(held?.rows() ?? [], [...durable.rows].sort(compareListRows))
+    snapshotAt = cursor
+    log.info({ head: cursor, chats: rows.length }, 'chat projection adopted the stored list')
+  }
+
+  /** Conversations a settled key re-assembles whose own cells were never read: read whichever of their chat, my seat,
+   * preview and unread is missing — each on its own, so an operation that read the chat and my seat does not leave the
+   * row without its preview. */
+  const incompleteTouched = (settled: readonly EntityKey[]): EntityKey[] => {
+    const missing: EntityKey[] = []
+    for (const chatId of touchedChats(settled, userId => chatsByUser.get(userId) ?? [])) {
+      for (const key of [entityKey('chat', chatId), entityKey('membership', membershipId(chatId, viewerId)), entityKey('preview', chatId), entityKey('unread', chatId)]) {
+        if (!cache.has(key)) missing.push(key)
+      }
+    }
+    return missing
+  }
 
   const readers: Record<EntityFamily, FamilyReader> = {
     chat: async (ids, signal) => {
@@ -211,7 +326,9 @@ export function createChatProjection(viewerId: string): ChatProjection {
       // 消费的是那整行;只存 {id,name} 会让「有身份」与「能显示」错开(#4314 的 name='' 陷阱)。
       const found = await readDisplayIdentities([...ids], signal)
       const byId = new Map<string, unknown>()
-      for (const identity of found) byId.set(identity.id, identity)
+      for (const identity of found) {
+        byId.set(identity.id, shareObject(held?.identity(identity.id), identity))
+      }
       return indexExact(ids, byId)
     },
     unread: async (ids, signal) => {
@@ -233,26 +350,34 @@ export function createChatProjection(viewerId: string): ChatProjection {
       // presence 缺行 = 不在线,不是「读不到」⇒ 显式投影成 offline,❌ 留 undefined 让 UI 猜。
       return new Map([...ids].map((id) => [id, byId.get(id) ?? { id, online: false }]))
     },
-    preview: async (ids, signal) => {
+    preview: async (ids, signal, onReferenceRead) => {
       // @@@chat-list-visibility — list_chat_previews 是 security invoker 的函数 ⇒ 走 `messages` 那套 RLS
       // (成员门 + `hide_history_before` 门 + whisper 门),列表 preview 与 transcript 消费同一成员可见性。
       // 每条会话各取最后一条可见、非私语、非待接走的消息,不算回复投影 —— 从前 messages_view 按 ids×4 行
-      // 一起截,忙会话会把安静会话的那一行挤掉。
+      // 一起截,忙会话会把安静会话的那一行挤掉。带引用的那几条另带原文(preview_source),供摘要换掉引用块。
       const { data, error } = await chatDb.rpc('list_chat_previews', { p_chat_ids: [...ids] }).abortSignal(signal)
       if (error) throw new Error(error.message)
-      const found = (data ?? []) as Array<Record<string, unknown> & { chat_id: string } & Parameters<typeof turnFailureReason>[0]>
+      const found = (data ?? []) as Array<Record<string, unknown> & { chat_id: string } & Parameters<typeof parseSystemNotice>[0]>
       const byChat = new Map<string, unknown>()
+      const latest = new Map<string, typeof found[number]>()
       for (const row of found) {
         // 还在等 agent 接走的那种行不画(气泡上说),也不当预览;与 sync_snapshot 的 chat.is_pending_delivery 同一判据。
-        if (byChat.has(row.chat_id) || isPendingDelivery(row)) continue
+        if (latest.has(row.chat_id) || isPendingDelivery(row)) continue
+        latest.set(row.chat_id, row)
+      }
+      const selected = [...latest.values()]
+      const previews = await messagePreviewLines(selected.map(row => ({
+        preview: typeof row.preview === 'string' ? row.preview : null,
+        source: typeof row.preview_source === 'string' ? row.preview_source : null,
+      })), signal, onReferenceRead)
+      for (const [index, row] of selected.entries()) {
         byChat.set(row.chat_id, {
           chat_id: row.chat_id,
           created_at: String(row.created_at),
-          // 预览在库里算好(messages_view 的计算列 preview:附件给文件名、其它截 100 字),这里原样用;
-          // 任务卡截出来是半截 JSON,读回成一行原话(gugu-dev#181,serializeComposerCard 让原话排在前面)。
-          preview: typeof row.preview === 'string' ? composerCardLine(row.preview) : null,
-          // 最后一条是 agent 的失败行:列表按看的人的语言说它的原因(systemNotice.ts),❌ 显示那句给 agent 读的英文。
-          failure: turnFailureReason(row),
+          // 只有带引用的行才有原文:先按同一份 AST 把引用块换成摘要再截;其它行照用库里截好的 preview。
+          preview: sendGroupPreview(row.send_group_size) ?? (previews[index] == null ? null : composerCardLine(previews[index])),
+          // 最后一条是系统行:列表按看的人的语言说(systemNotice.ts),❌ 显示那句写进库里的原文。
+          notice: parseSystemNotice(row),
         })
       }
       return indexExact(ids, byChat)
@@ -269,15 +394,7 @@ export function createChatProjection(viewerId: string): ChatProjection {
     },
   }
 
-  const identitySnapshot = (): DisplayIdentity[] => {
-    const out: DisplayIdentity[] = []
-    for (const [key, cell] of cache) {
-      const parsed = splitKey(key)
-      if (parsed.family !== 'identity' || !cell.value) continue
-      out.push(cell.value as unknown as DisplayIdentity)
-    }
-    return out
-  }
+  const identitySnapshot = (): DisplayIdentity[] => identities ??= Object.freeze([...identitiesById.values()]) as DisplayIdentity[]
 
   const record = (entry: ChatProjectionLedgerEntry): void => {
     ledger.push(entry)
@@ -289,10 +406,11 @@ export function createChatProjection(viewerId: string): ChatProjection {
   }
 
   /**
-   * 波循环:一波 = 这一轮的**全部批**并行取数(族间并行、同族的批之间也并行)。
+   * 实体波循环:一波 = 这一轮的**全部批**并行取数(族间并行、同族的批之间也并行)。
    * 闭包深度 ≤ 1 ⇒ 最多两波实体读;超出预算即响亮失败,❌ 不循环补拉(那正是 #5394 的病)。
    * 返回这次花掉的发数 —— 数的是**真发出去的请求**(批数),不是族数:
    * N=200 时 `chat` 一族是 2 发,账本写 1 就是把自己的代价瞒掉了(判据要能看见它)。
+   * 引用说明那一发也记进 requests/reference 和 waves;没有引用的会话不多发、不多一波。
    *
    * 失败:把这一波在途的键退回脏位(`releaseWave`)、写一行失败账本、原样抛出。
    * ❌ 不吞、❌ 不重试 —— 重读由下一次 wake 的 `planWave` 自己做到(spec I1/I4 的失败支)。
@@ -301,7 +419,7 @@ export function createChatProjection(viewerId: string): ChatProjection {
     cursor: string,
     signal: AbortSignal,
     context: { trigger: string[]; from: string; requests?: number },
-  ): Promise<number> => {
+  ): Promise<{ requests: number; keys: EntityKey[] }> => {
     const startedAt = Date.now()
     const requestsByFamily: Record<string, number> = { ...(context.requests ? { keyset: context.requests } : {}) }
     let requests = context.requests ?? 0
@@ -338,13 +456,18 @@ export function createChatProjection(viewerId: string): ChatProjection {
       }
       const issued = [...planned.groups.entries()].flatMap(([family, batches]) =>
         batches.map((batch) => [family, batch] as const))
+      let referenceReadWave = false
       planner = planned.next
       let results: ReadonlyArray<readonly [EntityFamily, Map<string, unknown>]>
       try {
         results = await Promise.all(issued.map(async ([family, batch]) => {
           requests += 1
           requestsByFamily[family] = (requestsByFamily[family] ?? 0) + 1
-          return [family, await readers[family](batch, signal)] as const
+          return [family, await readers[family](batch, signal, () => {
+            requests += 1
+            requestsByFamily.reference = (requestsByFamily.reference ?? 0) + 1
+            if (!referenceReadWave) { referenceReadWave = true; waves += 1 }
+          })] as const
         }))
         signal.throwIfAborted()
       } catch (err) {
@@ -360,11 +483,11 @@ export function createChatProjection(viewerId: string): ChatProjection {
           settled.push(key)
         }
       }
-      cache = mergeCells(cache, cells)
+      merge(cells)
       // 请求过但一个批都没提到的键(理论上不该有)也要出在途表,否则它会被永久扣住。
       planner = settleWave(planner, [...settled, ...claimed])
 
-      const missing = missingDependencies(cache, viewerId)
+      const missing = [...missingDependencies(cache, viewerId, settled, source.members), ...incompleteTouched(settled)]
       if (missing.length === 0) continue
       const dirty = new Map(planner.dirty)
       for (const key of missing) dirty.set(key, cursor)
@@ -380,7 +503,7 @@ export function createChatProjection(viewerId: string): ChatProjection {
       ms: Date.now() - startedAt,
       ok: true,
     })
-    return requests
+    return { requests, keys: [...unpublished] }
   }
 
   /** 列表不显示的事实:回应、设备回执、别人的读位。它们不改预览、不改我的未读 ⇒ 不读。 */
@@ -389,8 +512,13 @@ export function createChatProjection(viewerId: string): ChatProjection {
     || ((operation.event === 'member_read_changed' || operation.event === 'member_stream_read_changed')
       && operation.entityId !== null && operation.entityId !== viewerId)
 
-  const republish = (): ChatItem[] => {
-    rows = assemble(cache, viewerId).filter(row => !confirmedDeletions.has(row.id))
+  /** Settled cells remain pending across superseded/failed batches until a successful publication. */
+  const republish = (snapshot = false): ChatItem[] => {
+    const next = snapshot
+      ? assemble(cache, viewerId).filter(row => !confirmedDeletions.has(row.id))
+      : reassemble(rows, touchedChats(unpublished, userId => chatsByUser.get(userId) ?? []), source, viewerId, chatId => !confirmedDeletions.has(chatId))
+    rows = snapshot ? shareRows(held?.rows() ?? rows, next) : next
+    unpublished.clear()
     return rows
   }
 
@@ -431,37 +559,40 @@ export function createChatProjection(viewerId: string): ChatProjection {
     // 脏位空 ⇒ 这批命名的键都已被一次更新的读覆盖:一发都不打(head 去重)。在途时交回在途那发 ——
     // 它成功之前这一批不该被确认。「0 发」写自己那一行,不混进推进行的计数里(沉默不是读数)。
     // ⚠️ 快照不能走这个判据:它的键还没读到,脏位空只说明「还不知道要读什么」。
-    if (!snapshot && planner.dirty.size === 0) {
+    if (!snapshot && planner.dirty.size === 0 && unpublished.size === 0) {
       if (inflight) return inflight
       log.info({ trigger: arrival.trigger, head: arrival.head }, 'chat projection wake covered')
       return Promise.resolve(null)
     }
     const startBatch = async (): Promise<ChatItem[] | null> => {
-      const { batch, snapshot: isSnapshot, signal: batchSignal } = open!
+      const { batch, snapshot: wantsSnapshot, signal: batchSignal } = open!
       open = null // 开跑即关批
+      // 排队期间前一批已经建好了快照 ⇒ 这一批只剩它折进来的增量,连键集合那一读都不必发。
+      const isSnapshot = wantsSnapshot && snapshotAt === null
       const trigger = isSnapshot ? [...new Set(['hydrate', ...batch.trigger])] : [...batch.trigger]
       let keysetRequests = 0
-      if (isSnapshot && snapshotAt === batch.head) {
-        // 排队期间前一批已经在这个游标上建好了完整快照 ⇒ 这一批是重放,连键集合那一读都不必发。
-        log.info({ trigger, head: batch.head }, 'chat projection snapshot covered')
-        return null
-      }
       if (isSnapshot) {
         await observeSnapshotKeys(batch.head, batchSignal)
         keysetRequests = 1
-      } else if (planner.dirty.size === 0) {
+      } else if (planner.dirty.size === 0 && unpublished.size === 0) {
         // 排队期间上一批把这些键一起排掉了(共享脏位)⇒ 这一批无事可做。
         log.info({ trigger, head: batch.head }, 'chat projection wake covered')
         return null
       }
-      const spent = await runWaves(batch.head, batchSignal, { trigger, from: batch.from, requests: keysetRequests })
-      await ingestMessages(viewerId, { writes: messageAccessWrites(cache, viewerId), revisions: [] })
+      const { keys } = await runWaves(batch.head, batchSignal, { trigger, from: batch.from, requests: keysetRequests })
+      // #2548 a group read as archived leaves the list below; say so first, for whoever lists it from another source.
+      for (const key of keys) {
+        if (!key.startsWith('chat:')) continue
+        const chat = cache.get(key)?.value as { kind?: unknown; status?: unknown } | null | undefined
+        if (chat?.kind === 'group') noteGroupArchived(key.slice('chat:'.length), chat.status === 'archived')
+      }
+      await ingestMessages(viewerId, { writes: messageAccessWrites(cache, viewerId, keys), revisions: [] })
       // A newer queued batch owns these unread keys. Publishing this older snapshot
       // would mistake an unobserved conversation for a removed one.
       if ([...planner.dirty.values()].some((stamp) => compareStamp(stamp, batch.head) > 0)) return null
       // 快照成功 ⇒ 这个游标上有了完整快照;失败时 runWaves 已经抛出,这行不会执行(戳不前进)。
       if (isSnapshot) snapshotAt = batch.head
-      return isSnapshot || spent > 0 ? republish() : null
+      return isSnapshot ? republish(true) : keys.length > 0 ? republish() : null
     }
     const settled = tail.then(startBatch, startBatch)
     open = { batch: arrival, snapshot, signal, settled }
@@ -475,14 +606,15 @@ export function createChatProjection(viewerId: string): ChatProjection {
   const owner: ChatProjection = {
     confirmPersonalDeletion({ chat_id, deleted_at }) {
       confirmedDeletions.set(chat_id, deleted_at)
-      republish()
+      rows = rows.filter(row => row.id !== chat_id)
     },
     async hydrate(cursor, signal) {
       assertRevision(cursor, 'projection cursor')
-      // 同一游标上已经有完整快照 ⇒ 这是一次重放,一发都不打(spec I3:重放不是无害,是免费)。
-      // 从前每次 `loadChats()` 都无条件整轮重读一遍,同一游标两行 `hydrate` 就是这么来的。
-      if (snapshotAt === cursor) {
-        log.info({ trigger: ['hydrate'], head: cursor }, 'chat projection snapshot covered')
+      adoptDurable(cursor)
+      // A snapshot exists ⇒ the journal keeps it current (`advance`); a refresh reads nothing, at any cursor.
+      // 从前游标一动,每次 `loadChats()` 都整轮重读一遍(O(会话+成员)),而那一段正是 journal 已经在追的。
+      if (snapshotAt !== null) {
+        log.info({ trigger: ['hydrate'], head: cursor, snapshotAt }, 'chat projection snapshot covered')
         return rows
       }
       let next = await schedule({ head: cursor, from: cursor, trigger: ['hydrate'] }, true, signal)
@@ -493,6 +625,7 @@ export function createChatProjection(viewerId: string): ChatProjection {
 
     async advance(operations, cursor, signal) {
       assertRevision(cursor, 'projection cursor')
+      adoptDurable(cursor)
       // observe 是幂等的:已新鲜的键、以及在途那发的戳已 ≥ 本 operation 的键,都**不入脏**。
       planner = observe(planner, cache, operations.filter(operation => !notShownInList(operation)))
       const arrival: ProjectionBatch = {
@@ -505,17 +638,17 @@ export function createChatProjection(viewerId: string): ChatProjection {
       return schedule(arrival, snapshotAt === null, signal)
     },
 
-    ingestLocalWrite(cells) {
-      cache = mergeCells(cache, cells)
-      return republish()
-    },
-
     current: () => rows,
     identities: identitySnapshot,
     isMembershipRevoked(chatId) {
       const cell = cache.get(entityKey('membership', membershipId(chatId, viewerId)))
       // 从没读过这个键 ⇒ false。沉默是仪器还没读到,不是阴性读数(铁律 2)。
       return !!cell && cell.value === null
+    },
+    memberReadSeqs(chatId) {
+      const members = membersByChat.get(chatId)
+      if (!members) return undefined
+      return Object.fromEntries([...members].filter(([userId]) => userId !== viewerId).map(([userId, member]) => [userId, member.last_read_seq]))
     },
     isConversationDeleted(chatId) {
       if (confirmedDeletions.has(chatId)) return true
@@ -531,8 +664,14 @@ export function createChatProjection(viewerId: string): ChatProjection {
       })
     },
     reset() {
+      forgetArchivedGroups()
       confirmedDeletions.clear()
       cache = new Map()
+      membersByChat.clear()
+      chatsByUser.clear()
+      unpublished.clear()
+      identitiesById.clear()
+      identities = undefined
       planner = EMPTY_PLANNER
       rows = []
       ledger.length = 0
@@ -577,15 +716,21 @@ export function mergeUnreadRows(
       message_seq: Number.isFinite(Number(row.message_seq)) ? Number(row.message_seq) : null,
       unread_count: Number(row.unread_count),
       addressed_count: addressedCount(row),
+      first_addressed_message_id: typeof row.first_addressed_message_id === 'string' ? row.first_addressed_message_id : null,
+      first_addressed_seq: row.first_addressed_seq == null ? null : Number(row.first_addressed_seq),
       cursor_seq: Number(row.cursor_seq),
       version: Number(row.version),
       is_marked_unread: row.is_marked_unread === true,
     }
     const previous = byChat.get(row.chat_id)
-    if (!previous) { byChat.set(row.chat_id, locator); continue }
+    if (!previous) { byChat.set(row.chat_id, locator.stream_kind === 'main' ? locator : { ...locator, first_addressed_message_id: null, first_addressed_seq: null }); continue }
     const first = (locator.message_seq ?? Number.MAX_SAFE_INTEGER) < (previous.message_seq ?? Number.MAX_SAFE_INTEGER)
       ? locator : previous
-    byChat.set(row.chat_id, { ...first, unread_count: previous.unread_count + locator.unread_count, addressed_count: previous.addressed_count + locator.addressed_count })
+    // A topic lands on its first addressed message, and only the main stream has a view to land in: a mention
+    // inside a reply thread still counts, but it is never where an opening lands.
+    const addressed = locator.stream_kind === 'main' && (locator.first_addressed_seq ?? Number.MAX_SAFE_INTEGER) < (previous.first_addressed_seq ?? Number.MAX_SAFE_INTEGER) ? locator : previous
+    byChat.set(row.chat_id, { ...first, unread_count: previous.unread_count + locator.unread_count, addressed_count: previous.addressed_count + locator.addressed_count,
+      first_addressed_message_id: addressed.first_addressed_message_id, first_addressed_seq: addressed.first_addressed_seq })
   }
   return byChat
 }

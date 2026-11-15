@@ -85,6 +85,8 @@ export type OpencodeFamilyBrand = {
    * (与 kimi auth 的 guard 同构,理由见 `AgentAuthContext.fsFollowsConfigRoot`)。
    */
   homeEnvVar?: string;
+  /** The brand's own provider when models.dev does not list it: its credential variables are known here. */
+  builtinProvider?: { id: string; envVars: readonly string[] };
 };
 
 async function readJson(ctx: AgentAuthContext, path: string): Promise<
@@ -130,16 +132,21 @@ export function opencodeFamilyModelCredential(
     }
 
     // 2. 环境变量 —— 变量名单来自引擎自己缓存的 models.dev 快照,❌ 不手抄。
-    const models = await readJson(ctx, `.cache/${brand.dataDirName}/models.json`);
-    if (models.kind !== 'ok' || !isRecord(models.value)) return 'unknown';
-    // 同样 Object.hasOwn:方括号取值也会摸到原型(`['constructor']`)。
-    const providerEntry = Object.hasOwn(models.value, providerId)
-      ? models.value[providerId]
-      : undefined;
-    if (!isRecord(providerEntry)) return 'unknown';
-    const envNames = Array.isArray(providerEntry.env)
-      ? providerEntry.env.filter((name): name is string => typeof name === 'string')
-      : [];
+    let envNames: readonly string[];
+    if (brand.builtinProvider?.id === providerId) {
+      envNames = brand.builtinProvider.envVars;
+    } else {
+      const models = await readJson(ctx, `.cache/${brand.dataDirName}/models.json`);
+      if (models.kind !== 'ok' || !isRecord(models.value)) return 'unknown';
+      // 同样 Object.hasOwn:方括号取值也会摸到原型(`['constructor']`)。
+      const providerEntry = Object.hasOwn(models.value, providerId)
+        ? models.value[providerId]
+        : undefined;
+      if (!isRecord(providerEntry)) return 'unknown';
+      envNames = Array.isArray(providerEntry.env)
+        ? providerEntry.env.filter((name): name is string => typeof name === 'string')
+        : [];
+    }
     if (envNames.some((name) => Boolean(ctx.env?.[name]?.trim()))) return 'credentialed';
 
     // 3. 用户全局配置里自定义过这个 provider ⇒ 咕咕判不了它的凭据形态。

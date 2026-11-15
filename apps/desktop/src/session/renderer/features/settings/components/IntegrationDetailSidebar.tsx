@@ -188,8 +188,25 @@ function InfoRow({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function StatusDot({ ok }: { ok: boolean }) {
-  return <span aria-hidden className={`size-2 shrink-0 rounded-full ${ok ? 'bg-foreground-success' : 'bg-foreground-destructive'}`} />;
+/**
+ * 绿 = 连着;红 = 存着却用不了(要重连);灰 = 这台没连。
+ * ❌ 没连画成红点:从没连过不是出了错(11-07 资源库盘点:「未连接」配红点,看着像坏了)。
+ */
+export type StatusDotTone = 'connected' | 'failed' | 'notConnected';
+
+export const STATUS_DOT_CLASS: Record<StatusDotTone, string> = {
+  connected: 'bg-foreground-success',
+  failed: 'bg-foreground-destructive',
+  notConnected: 'bg-foreground-muted/40',
+};
+
+/** 「可用于以下设备」那一行的点:那台连没连(问得到时)。 */
+export function deviceStatusTone(isConfigured: boolean): StatusDotTone {
+  return isConfigured ? 'connected' : 'notConnected';
+}
+
+function StatusDot({ tone }: { tone: StatusDotTone }) {
+  return <span aria-hidden className={`size-2 shrink-0 rounded-full ${STATUS_DOT_CLASS[tone]}`} />;
 }
 
 /** 一个账号的那一家(状态 / 连接时间 / 账号三行);连接时间读得到才列。 */
@@ -203,7 +220,7 @@ function SingleAccountConnection({ integration }: { integration: IntegrationItem
     <div className="space-y-2">
       <div className="divide-y divide-border rounded-lg bg-background-2" data-testid="integration-connection-rows">
         <InfoRow label={translate('integrations.statusLabel')}>
-          <StatusDot ok={!failed} />
+          <StatusDot tone={failed ? 'failed' : 'connected'} />
           <span
             className={failed ? 'truncate text-foreground-warning' : 'truncate'}
             title={failed ? integration.connectionErrorDetail : undefined}
@@ -423,7 +440,7 @@ const DeviceAvailability = observer(function DeviceAvailability({ integration }:
                   : translate('integrations.deviceNotConnected');
           return (
             <InfoRow key={machine.key} label={machine.label}>
-              {machine.online && known && <StatusDot ok={isConfigured} />}
+              {machine.online && known && <StatusDot tone={deviceStatusTone(isConfigured)} />}
               <span className="text-foreground-muted" title={query?.isError ? String(query.error) : undefined}>
                 {state}
               </span>

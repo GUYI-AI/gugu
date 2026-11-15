@@ -5,6 +5,7 @@ import { cloudReadTarget, writeRead } from '../lib/readWriter'
 import { mergeMemberReadSeqs } from '@gugu/core/shared/ui/messageState'
 import { readsWholeChat } from '@gugu/core/shared/ui/chatModels'
 import { i18n } from '@/i18n'
+import { shareRows } from '../lib/chatProjectionAlgebra'
 
 // @@@realtime-single-msg-mutations — 从 store/chat.tsx 抽出的「实时事件只改动单条消息」处理：全局删除
 // (#1729) 与表情回应变更 (#1873)。二者都对「当前打开会话窗口 + 话题视图 + L2」按 message_id 就地改一条，
@@ -95,11 +96,12 @@ export function patchChatRows(
   partial: Partial<ChatItem>,
   expectedReadStateVersion?: number,
 ): ChatItem[] {
-  return chats.map((chat) => {
+  // A patch often writes what the row already says: that must not count as a new list for everyone subscribed to it.
+  return shareRows(chats, chats.map((chat) => {
     if (chat.id !== chatId) return chat
     if (expectedReadStateVersion !== undefined && (chat.read_state_version ?? 0) !== expectedReadStateVersion) return chat
     return { ...chat, ...partial }
-  })
+  }))
 }
 
 export async function persistManualUnread(
@@ -155,19 +157,18 @@ export function advanceReadWatermark(
   const next = projectedReadWatermark(current, seq, extraPatch)
   if (!next) return
   if (next.shouldPersist) {
-    markChatReadUpTo(chatId, seq, patchChat, next.optimisticVersion, next.previousReadState)
+    markChatReadUpTo(chatId, seq)
   }
   patchChat(chatId, next.partial)
 }
 
 /**
- * 会话列表投影刚带回「当前正在看的群有新消息」时，先推进可见水位，确认到尾部才清红点；调用方落地后再写入，
- * 失败回滚因此一定排在乐观状态之后，也不会盖掉之后更新的读状态。
+ * 会话列表投影刚带回「当前正在看的群有新消息」时，先推进可见水位，确认到尾部才清红点；调用方落地后再写入。
+ * 写不上时本地读位不回滚,由写入口在后端恢复时推上去(readWriter @@@read-reconcile)。
  */
 export function prepareProjectedReadWatermark(
   chat: ChatItem,
   seq: number,
-  patchChat: PatchChat,
 ): { chat: ChatItem; persist: () => void } {
   const next = projectedReadWatermark(chat, seq)
   if (!next) return { chat, persist: () => undefined }
@@ -175,7 +176,7 @@ export function prepareProjectedReadWatermark(
     chat: { ...chat, ...next.partial },
     persist: () => {
       if (next.shouldPersist) {
-        markChatReadUpTo(chat.id, seq, patchChat, next.optimisticVersion, next.previousReadState)
+        markChatReadUpTo(chat.id, seq)
       }
     },
   }
@@ -188,26 +189,14 @@ function projectedReadWatermark(
 ): {
   partial: Partial<ChatItem>
   shouldPersist: boolean
-  optimisticVersion: number
-  previousReadState: Pick<ChatItem, 'unread_count' | 'unread_locator' | 'last_read_seq' | 'is_marked_unread' | 'read_state_version'>
 } | null {
   if (seq < 0) return null
   const known = current?.last_read_seq ?? 0
   if (seq < known) return null
   const shouldPersist = seq > known || current?.is_marked_unread === true
-  const previousReadState = {
-    unread_count: current?.unread_count ?? 0,
-    // 读失败回滚连定位一起还:话题算进项目行的是定位里的 addressed_count,只还 unread_count 会少算。
-    unread_locator: current?.unread_locator ?? null,
-    last_read_seq: known,
-    is_marked_unread: current?.is_marked_unread ?? false,
-    read_state_version: current?.read_state_version ?? 0,
-  }
-  const optimisticVersion = previousReadState.read_state_version + (shouldPersist ? 1 : 0)
+  const optimisticVersion = (current?.read_state_version ?? 0) + (shouldPersist ? 1 : 0)
   return {
     shouldPersist,
-    optimisticVersion,
-    previousReadState,
     partial: {
       ...unreadAfterConfirm(current, seq),
       last_read_seq: seq,
@@ -233,16 +222,10 @@ function unreadAfterConfirm(current: ChatItem | undefined, seq: number): Partial
 
 // @@@1884 服务端水位推进（chat.mark_read,服务端单调只增）。模块私有:守卫在 advanceReadWatermark,
 // 这里只管发 RPC——导出即给新代码留绕过守卫的后门(#1888 收口的全部意义就在堵死它)。
-function markChatReadUpTo(
-  chatId: string,
-  seq: number,
-  patchChat: PatchChat,
-  optimisticVersion: number,
-  previousReadState: Pick<ChatItem, 'unread_count' | 'unread_locator' | 'last_read_seq' | 'is_marked_unread' | 'read_state_version'>,
-): void {
+// 写不上 ❌ 回滚本地:本地读位是事实,写入口记下这条流,后端恢复时推上去(readWriter @@@read-reconcile)。
+function markChatReadUpTo(chatId: string, seq: number): void {
   writeRead(cloudReadTarget(chatId, null, seq)).catch((err) => {
     console.error('[ChatStore] markRead failed', err)
-    patchChat(chatId, previousReadState, optimisticVersion)
   })
 }
 

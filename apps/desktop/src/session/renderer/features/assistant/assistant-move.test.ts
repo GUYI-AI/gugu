@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { IntegrationCredentials } from '@gugu/session-plugins/integrations';
-import type { MovableIntegrationAccount } from '@shared/core/integrations/integration-move';
+import type { MovableIntegrationAccount, MoveSkipped } from '@shared/core/integrations/integration-move';
 import { COPY_MAX_FILE_BYTES, type FsEntry, type HomeFs } from './assistant-move-copy';
-import { MoveError, planMove, runMove, summarizeAccounts, type MoveDeps, type MoveJournal, type MoveSchedule, type MoveSide } from './assistant-move';
+import { MoveError, planMove, runMove, type MoveDeps, type MoveJournal, type MoveSchedule, type MoveSide } from './assistant-move';
 import { durableMoveJournal } from './assistant-move-journal';
 
 type Node = { kind: 'dir' } | { kind: 'file'; bytes: Uint8Array } | { kind: 'symlink' };
@@ -80,7 +80,7 @@ function side(opts: {
   cli?: string[];
   schedules?: MoveSchedule[];
   events: string[];
-  dropOnImport?: string[];
+  refuseOnImport?: Record<string, 'no-keyring' | 'import-failed'>;
   memoryDir: string;
   skillsDir: string;
   resourcesDir: string;
@@ -110,20 +110,17 @@ function side(opts: {
       },
       async importFromMove(accounts) {
         opts.events.push(`${opts.label}:import`);
+        const skipped: MoveSkipped[] = [];
         for (const a of accounts) {
-          // dropOnImport:模拟「写进去了但读不回来」(对面悄悄没落库)。
-          if (opts.dropOnImport?.includes(a.accountId)) continue;
+          // refuseOnImport:模拟新家存不进这一条(没有钥匙串、中途失败)。
+          const refused = opts.refuseOnImport?.[a.accountId];
+          if (refused) {
+            skipped.push({ integrationId: a.integrationId, accountId: a.accountId, reason: refused });
+            continue;
+          }
           stored.push({ integrationId: a.integrationId, accountId: a.accountId, displayName: a.displayName, credentials: a.credentials });
         }
-        return { imported: accounts.length, skipped: [] };
-      },
-      async accountIds(integrationId) {
-        return stored.filter((a) => a.integrationId === integrationId).map((a) => a.accountId);
-      },
-      async disconnect(integrationId, accountId) {
-        opts.events.push(`${opts.label}:disconnect ${integrationId}/${accountId}`);
-        const i = stored.findIndex((a) => a.integrationId === integrationId && a.accountId === accountId);
-        if (i >= 0) stored.splice(i, 1);
+        return { imported: accounts.length - skipped.length, skipped };
       },
     },
     schedules: {
@@ -235,7 +232,6 @@ describe('助理搬家编排 (#7199)', () => {
     source.fs.readText = unavailable;
     source.integrations.exportForMove = unavailable;
     source.schedules.list = unavailable;
-    source.integrations.disconnect = async () => { throw new Error('retired source offline'); };
     deps.openTarget = async () => { throw new Error('do not reopen a completed target'); };
     let activations = 0;
     Object.assign(deps, { restoreOnline: async () => { activations++; desired = 'online'; } });
@@ -245,8 +241,8 @@ describe('助理搬家编排 (#7199)', () => {
     expect(sourceReads).toBe(0);
     expect(target.sched).toEqual(schedulesBefore);
     expect(target.d.text(target.paths.instructions)).toBe('NEW-AT-TARGET');
-    expect(result.accounts.kept).toContainEqual({ integrationId: 'notion', accountId: 'default' });
-    expect(result.warnings.some(warning => warning.startsWith('revoke '))).toBe(true);
+    expect(result.accounts.moved).toContainEqual({ integrationId: 'notion', accountId: 'default' });
+    expect(source.stored).toHaveLength(1);
   });
   it.each(['to-cloud', 'to-computer'] as const)('preserves target edits made during an interrupted move (%s)', async (direction) => {
     const events: string[] = [];
@@ -330,7 +326,7 @@ describe('助理搬家编排 (#7199)', () => {
     expect(events).not.toContain('restart');
     expect(deps.journal.load()?.done).not.toContain('adopt');
   });
-  it('本机→云上:先接过再拷;新家账号读回核对后才撤旧家那份;已安排用接过之前读到的', async () => {
+  it('本机→云上:先接过再拷;账号复制到新家、旧家那份留着;报告和日志里没有凭据;已安排用接过之前读到的', async () => {
     const events: string[] = [];
     const local = localSide(events, {
       files: {
@@ -366,10 +362,9 @@ describe('助理搬家编排 (#7199)', () => {
 
     expect(events.indexOf('adopt')).toBeGreaterThan(events.indexOf('这台电脑:schedules.list'));
     expect(events.indexOf('云上:import')).toBeGreaterThan(events.indexOf('adopt'));
-    expect(events.indexOf('这台电脑:disconnect notion/default')).toBeGreaterThan(events.indexOf('云上:import'));
-    expect(events.indexOf('这台电脑:disconnect notion/default')).toBeGreaterThan(events.indexOf('restart'));
     expect(cloud.stored.map((a) => a.accountId)).toEqual(['default']);
-    expect(local.stored).toEqual([]);
+    expect(local.stored.map((a) => a.accountId)).toEqual(['default']);
+    expect(JSON.stringify(report)).not.toContain('accessToken');
     expect(cloud.sched).toEqual([SCHEDULE]);
     expect(report.accounts.moved).toEqual([{ integrationId: 'notion', accountId: 'default', displayName: '阿满的 Notion' }]);
     expect(report.schedules.restored).toBe(1);
@@ -410,26 +405,28 @@ describe('助理搬家编排 (#7199)', () => {
     expect((failure as MoveError).sourceIntact).toBe(false);
     expect(events.indexOf('adopt')).toBeGreaterThan(events.indexOf('这台电脑:import'));
     expect(cloud.stored.map((a) => a.accountId)).toEqual(['f1']);
-    expect(events.some((e) => e.includes('disconnect'))).toBe(false);
     expect(cloud.d.log).toEqual([]);
     expect(local.d.text('/gh/assistant/.claude/memory/a.md')).toBe('记一笔');
   });
 
-  it('核对:写进新家却读不回来的账号不撤旧家那份,并记在 kept', async () => {
+  it('新家存不进的账号(没有钥匙串、中途失败)逐条列出来手动重连,搬家照常做完,两边都不丢', async () => {
     const events: string[] = [];
     const local = localSide(events, {
       files: { '/gh/assistant': 'dir', '/gh/assistant/.claude': 'dir' },
       accounts: [
         { integrationId: 'notion', accountId: 'n1', credentials: { t: 1 } },
         { integrationId: 'feishu', accountId: 'f1', credentials: { t: 2 } },
+        { integrationId: 'qq-mail', accountId: 'q1', credentials: { t: 3 } },
       ],
     });
-    const cloud = cloudSide(events, { dropOnImport: ['f1'] });
+    const cloud = cloudSide(events, { refuseOnImport: { f1: 'no-keyring', q1: 'import-failed' } });
     const report = await runMove(baseDeps({ direction: 'to-cloud', source: local, openTarget: async () => cloud }, events));
 
     expect(report.accounts.moved.map((a) => a.accountId)).toEqual(['n1']);
-    expect(report.accounts.kept).toEqual([{ integrationId: 'feishu', accountId: 'f1' }]);
-    expect(local.stored.map((a) => a.accountId)).toEqual(['f1']);
+    expect(report.accounts.skipped.map((s) => [s.accountId, s.reason])).toEqual([['f1', 'no-keyring'], ['q1', 'import-failed']]);
+    expect(local.stored.map((a) => a.accountId)).toEqual(['n1', 'f1', 'q1']);
+    expect(cloud.stored.map((a) => a.accountId)).toEqual(['n1']);
+    expect(events).toContain('restart');
   });
 
   it('命令行那几家不带走也不撤,列进 skipped(搬完在新家重新连)', async () => {
@@ -501,7 +498,7 @@ describe('助理搬家编排 (#7199)', () => {
     await runMove(deps);
     expect(desired).toBe('online');
     expect(deps.journal.load()).toBeNull();
-    expect(local.stored).toEqual([]);
+    expect(local.stored).toHaveLength(1);
   });
 
   it('retains schedules and recovery until an older target supports schedule restoration', async () => {
@@ -513,7 +510,7 @@ describe('助理搬家编排 (#7199)', () => {
     });
     const cloud = cloudSide(events);
     const tooOld = Object.assign(new Error('unknown method'), { code: 'unknown_method' });
-    cloud.integrations.importFromMove = async () => {
+    local.integrations.exportForMove = async () => {
       throw tooOld;
     };
     cloud.schedules.restore = async () => {
@@ -536,19 +533,42 @@ describe('助理搬家编排 (#7199)', () => {
     expect(events).toContain('restart');
   });
 
-  it('别的错照常当失败抛(不被 unknown_method 的兜底吞掉)', async () => {
+  it('导入这一步整个失败(新家掉线、老新家抛错):全部列出来手动重连,错误文案 ❌ 进报告和日志,搬家照常做完', async () => {
+    const events: string[] = [];
+    const local = localSide(events, {
+      files: { '/gh/assistant': 'dir', '/gh/assistant/.claude': 'dir' },
+      accounts: [{ integrationId: 'notion', accountId: 'default', displayName: '阿满的 Notion', credentials: { accessToken: 'SECRET' } }],
+    });
+    const cloud = cloudSide(events);
+    cloud.integrations.importFromMove = async () => {
+      throw new Error('insert failed with params SECRET');
+    };
+    const deps = baseDeps({ direction: 'to-cloud', source: local, openTarget: async () => cloud }, events);
+    const saved: string[] = [];
+    const save = deps.journal.save;
+    deps.journal.save = (journal) => { saved.push(JSON.stringify(journal)); return save(journal); };
+    const report = await runMove(deps);
+    expect(report.accounts.moved).toEqual([]);
+    expect(report.accounts.skipped).toEqual([{ integrationId: 'notion', accountId: 'default', displayName: '阿满的 Notion', reason: 'import-failed' }]);
+    expect(JSON.stringify(report)).not.toContain('SECRET');
+    expect(saved.join('')).not.toContain('SECRET');
+    expect(local.stored).toHaveLength(1);
+    expect(events).toContain('restart');
+  });
+
+  it('读旧家账号出别的错(旧家钥匙串打不开):账号都在原处,降成警告,搬家照常做完', async () => {
     const events: string[] = [];
     const local = localSide(events, {
       files: { '/gh/assistant': 'dir', '/gh/assistant/.claude': 'dir' },
       accounts: [{ integrationId: 'notion', accountId: 'default', credentials: { t: 1 } }],
     });
-    const cloud = cloudSide(events);
-    cloud.integrations.importFromMove = async () => {
-      throw new Error('disk full');
+    local.integrations.exportForMove = async () => {
+      throw Object.assign(new Error('keyring locked'), { name: 'SecureStorageUnavailableError' });
     };
-    const failure = await runMove(baseDeps({ direction: 'to-cloud', source: local, openTarget: async () => cloud }, events)).catch((e) => e);
-    expect(failure).toBeInstanceOf(MoveError);
-    expect((failure as MoveError).step).toBe('accounts');
+    const report = await runMove(baseDeps({ direction: 'to-cloud', source: local, openTarget: async () => cloudSide(events) }, events));
+    expect(report.accounts).toEqual({ moved: [], skipped: [], unsupported: true });
+    expect(report.warnings).toEqual(['integrations export failed: SecureStorageUnavailableError']);
+    expect(events).toContain('restart');
     expect(local.stored).toHaveLength(1);
   });
 
@@ -586,14 +606,14 @@ describe('助理搬家编排 (#7199)', () => {
     expect(events).toEqual([]);
   });
 
-  it('旧家与新家是同一处(接过之后把新家当旧家读了):拦下,不撤任何账号', async () => {
+  it('旧家与新家是同一处(接过之后把新家当旧家读了):拦下,不写任何账号', async () => {
     const events: string[] = [];
     const cloud = cloudSide(events, { accounts: [{ integrationId: 'notion', accountId: 'default', credentials: { t: 1 } }] });
     const failure = await runMove(
       baseDeps({ direction: 'to-cloud', source: cloud, sourceHome: CLOUD_HOME, openTarget: async () => cloudSide(events) }, events)
     ).catch((e) => e);
     expect(failure).toBeInstanceOf(MoveError);
-    expect(events.some((e) => e.includes('disconnect'))).toBe(false);
+    expect(events.some((e) => e.includes(':import'))).toBe(false);
     expect(cloud.stored).toHaveLength(1);
   });
 
@@ -725,15 +745,5 @@ describe('助理搬家编排 (#7199)', () => {
     await expect(runMove(baseDeps({ direction: 'to-cloud', source: local, openTarget: async () => cloud2 }, events)))
       .rejects.toMatchObject({ step: 'schedules' });
     expect(cloud2.sched).toEqual([]);
-  });
-
-  it('确认框清单:只含名字,不含任何凭据字段', () => {
-    const summary = summarizeAccounts({
-      accounts: [{ integrationId: 'notion', accountId: 'default', displayName: '阿满的 Notion', isDefault: true, credentials: { accessToken: 'SECRET' } }],
-      skipped: [{ integrationId: 'dingtalk', reason: 'cli' }],
-    });
-    expect(JSON.stringify(summary)).not.toContain('SECRET');
-    expect(summary.moving).toEqual([{ integrationId: 'notion', accountId: 'default', displayName: '阿满的 Notion' }]);
-    expect(summary.reconnect).toEqual([{ integrationId: 'dingtalk', reason: 'cli' }]);
   });
 });

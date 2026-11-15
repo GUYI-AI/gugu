@@ -80,6 +80,9 @@ const remoteSent: Array<{ app: unknown; deviceId: string; sessionId: string; tex
 let remoteFailure: Error | null = null;
 vi.mock('@main/core/sessions/session-family', () => ({
   otherMachines: () => ({
+    sessionHome: async (id: string) => (id === 'conv-remote'
+      ? { found: { deviceId: 'd1', label: 'ThinkPad', session: { conversationId: 'conv-remote', agent: { userId: REMOTE } }, listsAgents: true }, unreached: [] }
+      : { found: null, unreached: elsewhereUnreached }),
     appMessage: async (app: unknown, deviceId: string, sessionId: string, text: string, how: Record<string, unknown>) => {
       if (remoteFailure) throw remoteFailure;
       remoteSent.push({ app, deviceId, sessionId, text, how });
@@ -115,6 +118,15 @@ vi.mock('@main/core/sessions/session-orchestration', () => ({
   },
 }));
 
+/** #1927 The host's binding resolution: what a `{ binding }` draft is handed to, and with which composer. */
+const boundDrafts = vi.hoisted(() => [] as Array<{ extensionId: string; args: Record<string, unknown> }>);
+vi.mock('./app-unread-bindings', () => ({
+  draftIntoBoundConversation: async (extensionId: string, args: Record<string, unknown>, draftInChat: (detail: unknown) => Promise<void>) => {
+    boundDrafts.push({ extensionId, args });
+    await draftInChat({ chatId: GROUP, text: 'bound\n' });
+    return { to: { binding: 'main' } };
+  },
+}));
 vi.mock('@main/core/extensions/extension-agent-context', () => ({
   agentSessionContext: async (sessionId: string) => (sessionId === 'conv-agent' ? { sessionId, projectId: 'p-1', workspaceRoot: null } : null),
 }));
@@ -166,6 +178,12 @@ describe('to a member of a chat: a whisper in the person\'s name, from this App 
       }),
     }]);
     expect(toldSessions).toEqual([]);
+  });
+
+  it('a draft citing a working copy goes into that session as @file mentions: no chat pill points at such a file', async () => {
+    const workspace = 'session:conv-agent';
+    await draft({ text: '', refs: [{ file: { workspace, id: 'src/a.py' } }, { file: { workspace, id: 'b.md' }, label: 'L3' }] });
+    expect(sessionDrafts.at(-1)).toEqual({ session: { id: 'conv-agent', projectId: 'p-1' }, text: '@[a.py](src/a.py) @[b.md · L3](b.md)\n' });
   });
 
   it('refs: each goes under the text as a pill the agent can open (App 引用 pill)', async () => {
@@ -387,5 +405,15 @@ describe('a draft: only into a composer — nothing sent, nothing asked', () => 
     await expect(draft({ text: '   ', to: { chat: GROUP } })).rejects.toMatchObject({ code: 'invalid' });
     await expect(draft({ text: 'x', to: { chat: OTHER_GROUP } })).rejects.toMatchObject({ code: 'not-found' });
     await expect(draft({ text: 'x', to: { agent: `user:${PERSON}` } })).rejects.toMatchObject({ code: 'not-found' });
+  });
+
+  it('#1927 `{ binding }`: handed to the host\'s binding with the chat composer alone — no sheet, no agent, nothing sent', async () => {
+    granted.clear();
+    drafts.length = 0; sessionDrafts.length = 0; boundDrafts.length = 0; picked = { to: { chat: GROUP }, visible: false, text: 'picked' };
+    expect(await draft({ text: 'Ask about today', to: { binding: 'main' } })).toEqual({ to: { binding: 'main' } });
+    expect(boundDrafts).toEqual([{ extensionId: 'notes', args: { draft: true, text: 'Ask about today', to: { binding: 'main' } } }]);
+    expect(drafts).toEqual([{ chatId: GROUP, text: 'bound\n' }]);
+    expect([sessionDrafts, rpcs, toldSessions, remoteSent, spawned, scopes]).toEqual([[], [], [], [], [], []]);
+    picked = null;
   });
 });

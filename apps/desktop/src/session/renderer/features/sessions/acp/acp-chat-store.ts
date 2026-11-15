@@ -1,5 +1,7 @@
 import { withTranscriptTurnIdentity } from '@shared/core/sessions/transcript-turn-identity';
 import { projectRejectedSessionInputs } from '@/lib/pendingSessionInput';
+import { messageFailureNotice, type MessageFailureAttempt } from '@/lib/messageFailureNotice';
+import { runNativeInputAction } from '@/lib/nativeInputFailureNotice';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import type {
   ChatContext,
@@ -16,7 +18,6 @@ import {
   type HistoryCursor,
   type GuguPermissionMode,
   isDestructivePermissionMode,
-  resolveSessionPermissionMode,
   type PromptAttachment,
   type PromptDraft,
   type PromptInput,
@@ -33,23 +34,25 @@ import type {
   ComposerQueuedPrompt,
 } from '@gugu/session-ui/react/components';
 import { findToolItem } from '@gugu/session-core/session-record/tool-image';
+import { turnHeld } from '@gugu/session-core/session-record/held-turn';
 import { toolImageUrl } from '@gugu/session-core/acp/client';
 import { commandToken } from '@gugu/session-core/acp/commands';
 import { permissionWaitKind } from '@gugu/session-core/acp/models/permissions';
 import type { AgentState, LiveSettingResult, PermissionWaitKind } from '@gugu/session-core/acp';
 import { errorDetail, isDeepEqual } from '@gugu/session-shared';
 import { action, computed, makeObservable, observable, reaction, runInAction, when } from 'mobx';
+import { HistoryWindow } from './history-window';
 import { flushSync } from 'react-dom';
 import { discardSessionLifeRow, endSessionLife, forkSessionLife, readSessionLife, retryUnknownSessionInput, sessionLifeView, startSessionLife, stopSessionLife } from '../stores/session-life-views';
 import { ACP_START_FAILED, lifeHoldIsFailure, lifeIsStarting, type LifeView } from '@shared/core/sessions/session-life';
 import { sendThroughCustody } from './queue-native-input';
 import { sendHeldInputNow } from './send-held-input-now';
 import { sessionInputBubbles } from '@/lib/sessionInputOutbox';
-import { changeRejectedSessionInput, deleteQueuedSessionInput, editQueuedSessionInput, queuedSessionInputs, reorderQueuedSessionInputs, retrySessionInputs, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge';
+import { changeRejectedSessionInput, deleteQueuedSessionInput, editQueuedSessionInput, queuedSessionInputs, reorderQueuedSessionInputs, retrySessionInput, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge';
 import type { SessionInput } from '@/lib/sessionInputOutbox';
 import { sessionSendQueueOrder } from '@/lib/sessionSendQueueOrder';
 import { projectSessionPendingInput } from '@/lib/pendingSessionInput';
-import { isTranscriptDelivery, loadPendingDeliveryHistory, projectSessionPendingDeliveries } from '@/lib/pendingSessionDeliveries';
+import { isTranscriptDelivery, loadPendingDeliveryHistory, projectSessionPendingDeliveries, settledHostRow } from '@/lib/pendingSessionDeliveries';
 import { batch } from 'solid-js';
 import { AcpLiveSession, AcpStartError, asValueSource } from '@renderer/lib/acp/acp-live-session';
 import { attachAcpSessionWhenReady } from '@renderer/lib/acp/acp-session-attachment';
@@ -68,7 +71,7 @@ import { projectOwnerNotifications } from '@gugu/session-core/session-record/own
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import type { SessionMessageKey } from '@renderer/localization/messages';
-import { failureText } from '../gugu-reason';
+import { failureReason, failureText } from '../gugu-reason';
 import { modelSettingRejection, type ModelSettingRejection } from '../session-config/model-setting-rejection';
 import { rpc, rpcOn, onMachineEvent } from '@renderer/lib/ipc';
 import { sessionTurnSettledChannel, type StoredSettledTurn } from '@shared/core/sessions/sessionEvents';
@@ -77,7 +80,7 @@ import { log } from '@renderer/utils/logger';
 import { sessionHasPriorContext } from '@shared/core/sessions/prior-context';
 import type { Session } from '@shared/core/sessions/sessions';
 import { sessionRegistry } from '../stores/session-registry';
-import { type AcpLoadError, isTerminalLoadError, resultError, toLoadError } from './acp-load-error';
+import { type AcpLoadError, isConnectionLostError, isTerminalLoadError, resultError, toLoadError } from './acp-load-error';
 import { bindSessionTerminalOutputs } from './acp-terminal-output-binding';
 import { recordedContextUsage } from './recorded-context-usage';
 import { notifyCommittedTurn } from '@renderer/lib/session-output-observers';
@@ -154,8 +157,16 @@ export class AcpChatStore {
 
   session: AcpLiveSession | null = null;
   historyLoading = true;
+  /**
+   * 一轮讲完后的对账撞上断线:那一轮原样留在屏上,等线回来再对一次账(`_refreshHistory`)。true 时消息列表末尾说
+   * 「连接断了,连上后补全这一轮」。
+   */
+  reconcileAwaitingLink = false;
   /** A failure of opening / attaching this page; a failed session-life view says its own (`loadError`). */
   private _loadError: AcpLoadError | null = null;
+  private _draftSubmissionId = crypto.randomUUID();
+  get draftSubmissionId(): string { return this._draftSubmissionId; }
+  renewDraftSubmission(): void { this._draftSubmissionId = crypto.randomUUID(); }
   /** Life views up to this version answered an earlier attempt: a retry does not show them again. */
   private _lifeRetriedVersion = 0;
   private _unwatchLife: (() => void) | null = null;
@@ -171,7 +182,11 @@ export class AcpChatStore {
   transcriptPendingId: string | null = null;
   /** The row the person stopped before it went: drawn where it was until it goes. */
   stoppedRowId: string | null = null;
-  /** Failed-start inputs remain in host custody and are projected into the transcript, never stored as history. */
+  /**
+   * Failed-start inputs remain in host custody and are projected into the transcript, never stored as history.
+   * Compared by value (`observable.struct`): it is re-derived on every projection of the session, which a running turn
+   * makes with each streamed chunk, and an unchanged list must not re-render the panel and composer that read it.
+   */
   failedRowIds: string[] = [];
   /**
    * #6552 在飞的开场(`_runBootstrap`)数。>0 且还没挂上会话 = 引擎会话在起:这段里模型 / 强度照样能选 ——
@@ -204,8 +219,16 @@ export class AcpChatStore {
    * 库里读出来的旧轮可能是上一个进程派的,随进程没了、永远等不来完成通知 —— 后台列表只留这里有的(与后台命令同一条,#6582)。
    */
   private _runtimeLiveSubagentIds: readonly string[] = [];
+  /** Subagents as the runtime's registry has them, each with the calls it has made so far (#2500). */
+  private _runtimeLiveSubagents: readonly AgentState[] = [];
 
   private _view: ChatView | null = null;
+  /**
+   * A stretch of stored history shown in place of the live transcript (`HistoryWindow`), while the reader is at a
+   * turn too far up to reach by loading everything between. `chatState` goes on receiving the conversation underneath.
+   */
+  historyWindow: HistoryWindow | null = null;
+  private _historyWindowRequest = 0;
   private _bootstrapped = false;
   private _incomingHistoryResolved = new Set<string>();
   private _incomingHistoryReading = false;
@@ -309,6 +332,10 @@ export class AcpChatStore {
    * 发一句话就被打回原点。
    */
   private _olderHistoryTurns: TranscriptTurn[] = [];
+  /** Held turns waiting to be read whole (`fillHeldTurn`), by sequence; and those being read. */
+  private readonly _heldWanted = new Set<number>();
+  private readonly _heldReading = new Set<number>();
+  private _heldTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * 下一页更早历史的游标。`undefined` = 还没定下来从哪儿翻;`null` = 已经到头了。
    *
@@ -340,28 +367,34 @@ export class AcpChatStore {
       this.commands.map((command) => command.name)
     );
 
-    makeObservable<this, '_bootstrapped' | '_bootstrapsInFlight' | '_runtimeBackgroundTaskIds' | '_runtimeLiveSubagentIds' | '_storedQueue' | '_loadError' | '_lifeRetriedVersion' | '_senderInputs'>(this, {
+    makeObservable<this, '_bootstrapped' | '_bootstrapsInFlight' | '_runtimeBackgroundTaskIds' | '_runtimeLiveSubagentIds' | '_runtimeLiveSubagents' | '_storedQueue' | '_loadError' | '_lifeRetriedVersion' | '_senderInputs'>(this, {
       _senderInputs: observable.ref,
       _bootstrapped: observable,
       _storedQueue: observable.ref,
       _runtimeBackgroundTaskIds: observable.ref,
       runningBackgroundTaskIds: computed,
       _runtimeLiveSubagentIds: observable.ref,
+      _runtimeLiveSubagents: observable.ref,
       liveSubagentIds: computed,
+      liveSubagents: computed,
       session: observable.ref,
       pendingPermissionMode: observable.ref,
       modelSettingError: observable,
       historyLoading: observable,
+      reconcileAwaitingLink: observable,
       _loadError: observable.ref,
       _lifeRetriedVersion: observable,
       transcriptPendingId: observable,
       stoppedRowId: observable,
-      failedRowIds: observable.ref,
+      failedRowIds: observable.struct,
       loadError: computed,
       _bootstrapsInFlight: observable,
       starting: computed,
       startupChoice: observable.ref,
       messageCount: observable,
+      historyWindow: observable.ref,
+      shownChatState: computed,
+      closeHistoryWindow: action,
       transcriptRevision: observable,
       draftText: observable,
       queuedEditDraft: observable.ref,
@@ -466,9 +499,7 @@ export class AcpChatStore {
    */
   get detachedPermissionTier(): GuguPermissionMode | null {
     if (this.session || this.starting || this.isTransient) return null;
-    const record = this._sessionRecord();
-    if (!record) return null;
-    return resolveSessionPermissionMode(record);
+    return this._sessionRecord()?.permissionMode ?? null;
   }
 
   /**
@@ -477,8 +508,9 @@ export class AcpChatStore {
    */
   get recordedPermissionTier(): GuguPermissionMode | null {
     if (this.isTransient) return null;
-    const record = this._sessionRecord();
-    return record ? resolveSessionPermissionMode(record) : null;
+    // Only the recorded tier is shown. A record without one (a host from before migration 0052) shows none: the
+    // start path reads it through resolveSessionPermissionMode and fails loudly; the view ❌ guesses a tier.
+    return this._sessionRecord()?.permissionMode ?? null;
   }
 
   get permissionModeChangeNotice(): ComposerNotice | null {
@@ -654,7 +686,16 @@ export class AcpChatStore {
     return this.session ? this._runtimeLiveSubagentIds : [];
   }
 
+  /** The panel draws a running subagent's calls from here; they are not in the transcript (#2500). */
+  get liveSubagents(): readonly AgentState[] {
+    return this.session ? this._runtimeLiveSubagents : [];
+  }
+
   private _syncLiveSubagentIds(agents: readonly AgentState[]): void {
+    // Settled ones stay: a command a subagent started in the background can outlive it, and hangs on its step.
+    const running = agents.filter((agent) => agent.status === 'running' || (agent.steps?.length ?? 0) > 0);
+    const shown = this._runtimeLiveSubagents;
+    if (running.length !== shown.length || running.some((agent, index) => agent !== shown[index])) this._runtimeLiveSubagents = running;
     const next = agents
       .filter((agent) => agent.status === 'running')
       .flatMap((agent) => (agent.agentToolUseId ? [agent.toolCallId, agent.agentToolUseId] : [agent.toolCallId]));
@@ -692,8 +733,15 @@ export class AcpChatStore {
     return queuedSessionInputs(this.runtimeSessionId).some(input => input.id === itemId && input.admission === 'rejected');
   }
 
+  /** A failed send, the sender's refusal or the host's settled row, can be let go. */
+  canDiscardSend(itemId: string): boolean {
+    return this.isRejectedInput(itemId) || settledHostRow(sessionLifeView(this.runtimeSessionId), itemId);
+  }
+
   discardRejectedInput(itemId: string): void {
-    void changeRejectedSessionInput(itemId, { kind: 'discard' }).catch(error => this._toastError('acpFailure.sendMessage', error));
+    void this._messageAction(itemId, () => this.isRejectedInput(itemId)
+      ? changeRejectedSessionInput(itemId, { kind: 'discard' })
+      : discardSessionLifeRow(this.runtimeSessionId, itemId));
   }
 
   beginMessageEdit(itemId: string): void {
@@ -717,11 +765,12 @@ export class AcpChatStore {
     if (edit?.itemId === itemId && edit.text.trim() && this.isRejectedInput(itemId) && !this.reverting) {
       this.reverting = true;
       try {
-        await changeRejectedSessionInput(itemId, { kind: 'edit', text: edit.text });
-        runInAction(() => { this.messageEdit = null; });
-        await changeRejectedSessionInput(itemId, { kind: 'retry' });
-      } catch (error) { this._toastError('acpFailure.sendMessage', error); }
-      finally { runInAction(() => { this.reverting = false; }); }
+        await this._messageAction(itemId, async () => {
+          await changeRejectedSessionInput(itemId, { kind: 'edit', text: edit.text });
+          runInAction(() => { this.messageEdit = null; });
+          await changeRejectedSessionInput(itemId, { kind: 'retry' });
+        });
+      } finally { runInAction(() => { this.reverting = false; }); }
       return;
     }
     const item = this.revertMessageItem(itemId);
@@ -763,7 +812,7 @@ export class AcpChatStore {
 
   /** A confirmed revert invalidates both the loaded window and every cursor that used its old sequences. */
   private async _readRevertedHistory(generation: number, session: AcpLiveSession | null, current: () => boolean = () => true): Promise<boolean> {
-    const stored = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, limit: 100 });
+    const stored = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, limit: 100, lean: true });
     const history = session ? await session.getHistory(undefined, stored.turns.length ? 1 : 100) : null;
     if (history && !history.success) throw history.error;
     if (this._disposed || this.session !== session || generation !== this._historyGeneration || !current()) return false;
@@ -789,6 +838,11 @@ export class AcpChatStore {
       this._syncMessageCount();
     }));
     return true;
+  }
+
+  /** A harness that refuses a model change mid-turn. A background agent is not a turn: the host accepts the change then. */
+  modelLockedForTurn(setting: { busy?: string } | undefined): boolean {
+    return setting?.busy === 'reject' && this.affordances.isWorking;
   }
 
   get affordances(): AgentAffordances {
@@ -887,6 +941,16 @@ export class AcpChatStore {
     }
   }
 
+  /** How a start in progress is said — the pending row and the loading overlay read this one answer. The platform stage is
+   * the model-access request (ticket): said as it is, so a slow or stuck one is visible and stoppable. */
+  startPhaseOf(view: LifeView | null): PendingPrompt['starting'] {
+    if (view === null || !lifeIsStarting(view)) return undefined;
+    if (view.stage?.at === 'platform') return 'connecting';
+    const record = this._sessionRecord();
+    const resumes = !!(record?.providerSessionId || record?.forkFromProviderSessionId || this.runtimeView?.forkFromProviderSessionId);
+    return resumes ? 'restoring' : 'starting';
+  }
+
   private _projectLifeHead(view: LifeView | null, sender: readonly SessionInput[]): void {
     const session = this.chatState.session;
     const prior = session.state.pendingPrompt;
@@ -905,9 +969,7 @@ export class AcpChatStore {
         })),
       ] },
     } : view;
-    const record = this._sessionRecord();
-    const resumes = !!(record?.providerSessionId || record?.forkFromProviderSessionId || this.runtimeView?.forkFromProviderSessionId);
-    const starting: PendingPrompt['starting'] = view !== null && lifeIsStarting(view) ? (resumes ? 'restoring' : 'starting') : undefined;
+    const starting = this.startPhaseOf(view);
     const transcriptState = this.chatState.transcript.state;
     const turns = [...transcriptState.committedTurns, ...(transcriptState.activeTurnSnapshot ? [transcriptState.activeTurnSnapshot] : [])];
     const projections = new Set([...(this.stoppedRowId ? [stoppedTurnId(this.stoppedRowId)] : []), ...this.failedRowIds.map(failedTurnId)]);
@@ -1073,7 +1135,8 @@ export class AcpChatStore {
 
   /** 「继续」 on a message stopped before it went: the host starts and sends it, once, ❌ with a prompt about continuing. */
   continueStoppedRow(): void {
-    void startSessionLife(this.runtimeSessionId).catch((error: unknown) => this._toastError('acpFailure.sendMessage', error));
+    const id = this.stoppedRowId ?? this.chatState.session.state.pendingMessages.find(input => input.stopped)?.id;
+    if (id) void this._messageAction(id, () => startSessionLife(this.runtimeSessionId));
   }
 
   /** What the host says can be taken back (`discardable`): an older host says nothing, so it offers no discard. */
@@ -1091,14 +1154,17 @@ export class AcpChatStore {
     const id = incoming?.id ?? this.stoppedRowId;
     if (!id || (!incoming && turnId !== stoppedTurnId(id))) return;
     const row = sessionLifeView(this.runtimeSessionId)?.pending.items.find(item => item.messageId === id);
-    void discardSessionLifeRow(this.runtimeSessionId, id).then(() => runInAction(() => {
-      if (incoming) this.chatState.session.setPendingMessages(this.chatState.session.state.pendingMessages.filter(input => input.id !== id));
-      if (row) this.setDraftText([row.text, this.draftText.trim()].filter(Boolean).join('\n'));
-    })).catch((error: unknown) => {
+    void this._messageAction(id, async () => {
+      await discardSessionLifeRow(this.runtimeSessionId, id);
+      runInAction(() => {
+        if (incoming) this.chatState.session.setPendingMessages(this.chatState.session.state.pendingMessages.filter(input => input.id !== id));
+        if (row) this.setDraftText([row.text, this.draftText.trim()].filter(Boolean).join('\n'));
+      });
+    }).then(success => {
+      if (success) return;
       // The click already folded the turn away: it did not go, so it comes back into view.
       const folded = turnDiscardedId(turnId);
       if (this.chatState.viewState.isCollapsed(folded)) this.chatState.viewState.toggleCollapsed(folded);
-      this._toastError('acpFailure.sendMessage', error);
     });
   }
 
@@ -1128,20 +1194,20 @@ export class AcpChatStore {
     void this._open();
   }
 
-  retryPendingInput(itemId?: string): void {
-    if (itemId && this.chatState.session.state.pendingMessages.some(input => input.id === itemId && input.delivery?.state === 'unknown')) {
-      if (sessionLifeView(this.runtimeSessionId)?.pending.items.some(row => row.messageId === itemId && row.resendable)) void retryUnknownSessionInput(this.runtimeSessionId, itemId).catch(error => this._toastError('acpFailure.sendMessage', error));
+  retryPendingInput(itemId: string): void {
+    if (sessionLifeView(this.runtimeSessionId)?.pending.items.some(row => row.messageId === itemId && row.resendable)) {
+      void this._messageAction(itemId, () => retryUnknownSessionInput(this.runtimeSessionId, itemId));
       return;
     }
-    if (itemId && this.isRejectedInput(itemId)) {
-      void changeRejectedSessionInput(itemId, { kind: 'retry' }).catch(error => this._toastError('acpFailure.sendMessage', error));
+    if (this.chatState.session.state.pendingMessages.some(input => input.id === itemId && input.delivery?.state === 'unknown')) return;
+    if (this.isRejectedInput(itemId)) {
+      void this._messageAction(itemId, () => changeRejectedSessionInput(itemId, { kind: 'retry' }));
       return;
     }
-    void retrySessionInputs().then(() => {
-      if (sessionLifeView(this.runtimeSessionId)?.kind === 'failed') {
-        return startSessionLife(this.runtimeSessionId);
-      }
-    }).catch((error: unknown) => this._toastError('acpFailure.sendMessage', error));
+    void this._messageAction(itemId, async () => {
+      await retrySessionInput(itemId);
+      if (sessionLifeView(this.runtimeSessionId)?.kind === 'failed') await startSessionLife(this.runtimeSessionId);
+    });
   }
 
   /**
@@ -1310,10 +1376,48 @@ export class AcpChatStore {
     this.messageCount = turns.reduce((count, turn) => count + turn.items.length, 0);
   }
 
+  /**
+   * A row has come on screen from behind a fold. An older page read over a device link carries a turn as its folded
+   * form (`lean: 'folded'`): read that turn again and put it in its place. Only pages gone back for are sent that
+   * way and they are not read again behind the reader, so a turn stays whole once it is.
+   * Opening an exchange brings many rows on screen at once: their turns are read together and land as one change.
+   */
+  fillHeldTurn(itemId: string): void {
+    const held = (turn: TranscriptTurn) => itemId.startsWith(`${turn.id}:`) && turnHeld(turn);
+    const turn = (this._olderSource === 'stored' ? this._olderHistoryTurns.find(held) : undefined) ?? this.historyWindow?.turns.find(held);
+    if (!turn || this._heldReading.has(turn.seq)) return;
+    this._heldWanted.add(turn.seq);
+    this._heldTimer ??= setTimeout(() => { this._heldTimer = null; void this._readHeldTurns(); }, 30);
+  }
+
+  private async _readHeldTurns(): Promise<void> {
+    const wanted = [...this._heldWanted];
+    this._heldWanted.clear();
+    for (const seq of wanted) this._heldReading.add(seq);
+    const generation = this._historyGeneration;
+    try {
+      const pages = await Promise.all(wanted.map(seq =>
+        rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before: seq + 1, limit: 1, lean: true }).catch(() => null)));
+      const whole = new Map<number, TranscriptTurn>();
+      pages.forEach((page, index) => { const turn = page?.turns[0]; if (turn?.seq === wanted[index]) whole.set(turn.seq, turn); });
+      if (!whole.size || this._disposed || generation !== this._historyGeneration) return;
+      runInAction(() => {
+        if (this._olderSource === 'stored' && this._olderHistoryTurns.some(one => whole.has(one.seq) && turnHeld(one))) {
+          this._olderHistoryTurns = this._olderHistoryTurns.map(one => turnHeld(one) ? whole.get(one.seq) ?? one : one);
+          this.chatState.transcript.history.seed(this._composedHistory());
+        }
+        this.historyWindow?.fill(whole);
+      });
+    } finally {
+      for (const seq of wanted) this._heldReading.delete(seq);
+    }
+  }
+
   async resolveToolImage(itemId: string, index: number): Promise<string | null> {
     const generation = this._historyGeneration;
     const stored = findToolItem(this._storedHistoryTurns, itemId)
-      ?? (this._olderSource === 'stored' ? findToolItem(this._olderHistoryTurns, itemId) : null);
+      ?? (this._olderSource === 'stored' ? findToolItem(this._olderHistoryTurns, itemId) : null)
+      ?? (this.historyWindow ? findToolItem([...this.historyWindow.turns], itemId) : null);
     const runtime = !stored ? findToolItem(this._runtimeTurns, itemId)
       ?? (this._olderSource === 'runtime' ? findToolItem(this._olderHistoryTurns, itemId) : null) : null;
     try {
@@ -1346,8 +1450,15 @@ export class AcpChatStore {
    */
   scrollToItem(itemId: string): void {
     const pinMode = pinTopMode(itemId);
+    const holds = (state: ChatState) => state.transcript.history.get().some(turn => turn.items.some(item => item.id === itemId));
+    // A row of the live transcript, asked for while a history window is shown: the live transcript comes back, at it.
+    if (this.historyWindow && !holds(this.historyWindow.state)) {
+      this.chatState.scroll.set(pinMode);
+      this.closeHistoryWindow({ keepPosition: true });
+      return;
+    }
     this._view?.setScrollMode(pinMode);
-    this.chatState.scroll.set(pinMode);
+    this.shownChatState.scroll.set(pinMode);
   }
 
   /**
@@ -1400,18 +1511,22 @@ export class AcpChatStore {
    * Both sends take the one custody path (sender outbox → host session_pending), persisted session or side chat;
    * the host decides whether the input runs now or queues.
    */
-  async submitPrompt(text: string, attachments: AcpPromptAttachment[] = [], files: TurnFileRef[] = []): Promise<void> {
+  async submitPrompt(text: string, attachments: AcpPromptAttachment[] = [], files: TurnFileRef[] = [], submissionId: string = crypto.randomUUID()): Promise<void> {
+    const failure = messageFailureNotice(['acp', machineRegistry.machineOf(this.runtimeSessionId) ?? 'local', this.runtimeSessionId, submissionId]);
+    const attempt = failure.begin();
     try {
       if (this.reverting || this.messageEdit) throw new Error('A message is being edited; send or cancel the edit first');
       await sendThroughCustody(this, text, attachments, files);
+      attempt.succeeded();
     } catch (error) {
       // The one toast of a failed send; the caller keeps its words.
-      this._toastError('acpFailure.sendMessage', error);
+      this._toastError('acpFailure.sendMessage', error, undefined, attempt);
       throw error;
     }
   }
 
   setDraftText(text: string): void {
+    this.renewDraftSubmission();
     if (text === this.draftText) return;
     this.draftText = text;
     this._draftRev += 1;
@@ -1526,12 +1641,20 @@ export class AcpChatStore {
     try {
       this._modelSettingRecovery = false;
       const result = await session.setModelOption('model', model);
+      // The menu locks during a turn; this is the turn that started while it was open. Nothing is wrong with the
+      // model or the session, so nothing stays on the picker.
+      if (!result.success && (result.error as { cause?: { name?: unknown } }).cause?.name === 'LiveSettingBusy') {
+        toast({ title: translateSessionMessage('composer.modelBusy') });
+        return null;
+      }
       const rejection = result.success ? null : modelSettingRejection(result.error);
       const reason = result.success ? undefined : describeFailureCause(result.error);
       const displayReason = rejection ? reason?.split('\n')[0] : reason;
       runInAction(() => {
         if (!result.success) {
-          this.modelSettingError = failureText(displayReason ?? '', translateSessionMessage);
+          this.modelSettingError = failureReason(displayReason ?? '')
+            ? failureText(displayReason ?? '', translateSessionMessage)
+            : translateSessionMessage('taskError.settingFailedRetry');
         } else if (result.data.status === 'applied') {
           this.modelSettingError = null;
         }
@@ -1546,7 +1669,9 @@ export class AcpChatStore {
       const reason = describeFailureCause(error);
       const displayReason = rejection ? reason?.split('\n')[0] : reason;
       runInAction(() => {
-        this.modelSettingError = failureText(displayReason ?? '', translateSessionMessage);
+        this.modelSettingError = failureReason(displayReason ?? '')
+            ? failureText(displayReason ?? '', translateSessionMessage)
+            : translateSessionMessage('taskError.settingFailedRetry');
       });
       this._toastError('acpFailure.changeModel', error, displayReason);
       return rejection;
@@ -1758,7 +1883,7 @@ export class AcpChatStore {
 
   /** `steers`:这家能插话(#6574)⇒ 交给运行时插进当前回合;否则挪到队首,在跑就取消当前回合。 */
   sendQueuedPromptNow(id: string, opts: { steers: boolean }): void {
-    void this._sendQueuedPromptNow(id, opts.steers).catch(error => this._toastError('acpFailure.sendMessage', error));
+    void this._messageAction(id, () => this._sendQueuedPromptNow(id, opts.steers));
   }
 
   exportTranscript(kind: 'parsed' | 'raw'): void {
@@ -1771,6 +1896,7 @@ export class AcpChatStore {
     if (this._disposed) return;
     this._disposed = true;
     this._attachmentAbort?.abort();
+    this.historyWindow?.dispose();
     unregisterSessionCommands(this.runtimeSessionId);
     if (this._draftTimer !== null) {
       window.clearTimeout(this._draftTimer);
@@ -2002,16 +2128,18 @@ export class AcpChatStore {
   /**
    * 打开时照旧走原来那条开场(请宿主起它)的几种:
    *  · 侧边聊天:它就是为这一问开出来的运行时分叉;
-   *  · 新建会话带着第一句、还没认领首启:那句话是人已经发出去的,当场起;
    *  · 持久分叉还没分出去:分叉这一步就发生在首启;
    *  · provider 那侧的会话已失效:那条路不起,只画库里那份并说原因。
+   *
+   * ❌ 新建会话带着第一句:那句话在建的那一刻就进了它的待发队列,是**入队**把它起起来的(宿主,同一次建任务调用里);
+   * 页面照常停着、跟着会话表挂上去,队首那句由待发队列画。#2558:页面曾在这里替它起一次 —— 那次起不带那句话,
+   * 附件还没放完时它先拿到引擎会话号,晚到的入队就被读成「跑过了」而丢掉,页面一片空白。
    */
   private _opensThroughStartup(): boolean {
     if (this.isTransient) return true;
     const record = this._sessionRecord();
     if (!record) return false;
     return record.providerSessionState === 'missing'
-      || pendingInitialQueue(record) !== undefined
       || pendingPersistentFork(record) !== undefined;
   }
 
@@ -2105,7 +2233,7 @@ export class AcpChatStore {
   private async _reloadStoredInPlace(generation: number, inserted: number): Promise<void> {
     const shown = this._storedHistoryTurns.length + (this._olderSource === 'stored' ? this._olderHistoryTurns.length : 0);
     try {
-      const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, limit: Math.max(100, shown + inserted) });
+      const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, limit: Math.max(100, shown + inserted), lean: true });
       if (!this._stillParkedIn(generation)) return;
       runInAction(() => {
         this._storedHistoryTurns = page.turns;
@@ -2408,30 +2536,25 @@ export class AcpChatStore {
       await sendHeldInputNow(this, id, steers);
       return;
     }
-    const session = this._requireSession('acpFailure.sendMessage');
-    if (!session) return;
+    const session = this.session;
+    if (!session) throw new Error('ACP session is not connected');
     const current = session.sessionState.current().queuedPrompts;
     if (!current.some((prompt) => prompt.id === id)) return;
 
     if (steers) {
       // 在不在跑由运行时当场判:这里读到的「在跑」可能已经过时,插不进就留在队首。
       const steerResult = await session.steerQueuedPrompt(id);
-      if (!steerResult.success) this._toastError('acpFailure.sendMessage', steerResult.error);
+      if (!steerResult.success) throw steerResult.error;
       return;
     }
 
     const ids = [id, ...current.map((prompt) => prompt.id).filter((promptId) => promptId !== id)];
     const reorderResult = await session.changeQueuePromptOrder(ids);
-    if (!reorderResult.success) {
-      this._toastError('acpFailure.sendMessage', reorderResult.error);
-      return;
-    }
+    if (!reorderResult.success) throw reorderResult.error;
 
     if (!this.affordances.isWorking) return;
     const cancelResult = await session.cancelTurn();
-    if (!cancelResult.success) {
-      this._toastError('acpFailure.sendMessage', cancelResult.error);
-    }
+    if (!cancelResult.success) throw cancelResult.error;
   }
 
   private async _exportTranscript(kind: 'parsed' | 'raw'): Promise<void> {
@@ -2522,11 +2645,18 @@ export class AcpChatStore {
         while (childrenChanged && !unsubscribed) { childrenChanged = false; await this._refreshHistory({ preserveLiveTurn: true }); }
       } finally { refreshingChildren = false; }
     };
+    // A subagent's calls and its running text stay in the registry (#2500). The turn that launched it is revised
+    // only when what its card shows changes, so that is the only time its history is read again.
+    const cardFacts = (agents: readonly AgentState[]): string => agents
+      .filter((agent) => agent.subagentSessionId && agent.launchTurnId !== session.activeTurn.current()?.id)
+      .map((agent) => [agent.agentId, agent.status, agent.startedAt, agent.canCancel === true, agent.model ?? ''].join('\u0001')).join('\u0002');
+    let shownCardFacts = cardFacts(session.agents.current());
     this._unsubs.push(() => { unsubscribed = true; }, session.agents.onChange((agents) => {
       runInAction(() => this._syncLiveSubagentIds(agents));
-      if (agents.some((agent) => agent.subagentSessionId && agent.launchTurnId !== session.activeTurn.current()?.id)) {
-        void refreshChildHistory();
-      }
+      const facts = cardFacts(agents);
+      if (facts === shownCardFacts) return;
+      shownCardFacts = facts;
+      void refreshChildHistory();
     }));
     this._lastQueuedPrompts = [...initialState.queuedPrompts];
     this._lastActiveTurnId = initialState.activeTurnId;
@@ -2691,7 +2821,7 @@ export class AcpChatStore {
   /** Read the newest stored page. Only a live bootstrap can replace a failed read with replay; idle opens must report it. */
   private _loadStoredFirstPage(generation: number, failOnError = false): Promise<void> {
     return rpc.sessions
-      .getStoredHistory({ sessionId: this.sessionId, limit: 100 })
+      .getStoredHistory({ sessionId: this.sessionId, limit: 100, lean: true })
       .then(async (stored) => {
         if (stored.turns.length === 0 || this._disposed) return;
         if (generation !== this._historyGeneration) return;
@@ -2736,7 +2866,7 @@ export class AcpChatStore {
         this.chatState.scroll.set({ kind: 'tail' });
         break;
       }
-      const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before: cursor, limit: 100 }).catch(() => null);
+      const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before: cursor, limit: 100, lean: 'folded' }).catch(() => null);
       if (!page || this._disposed) break;
       turns = [...page.turns, ...turns];
       cursor = page.nextCursor;
@@ -2807,9 +2937,58 @@ export class AcpChatStore {
     return read;
   }
 
+  /** What the transcript shows: the history window while one is open, the live conversation otherwise. */
+  get shownChatState(): ChatState {
+    return this.historyWindow?.state ?? this.chatState;
+  }
+
+  /** The oldest stored turn the live transcript holds: what lies before it is reached by paging, or by a window. */
+  get oldestLoadedSeq(): number | undefined {
+    return this._olderSource === 'stored' ? this.chatState.transcript.state.committedTurns[0]?.seq : undefined;
+  }
+
+  /**
+   * Show the stored history around the turn at `seq` in place of the live transcript (@@@history-window). False when
+   * it cannot be (history that is not read from the store, a turn that is gone): the caller pages to it instead.
+   */
+  async openHistoryWindow(seq: number, anchor?: (turns: readonly TranscriptTurn[]) => string | null): Promise<boolean> {
+    if (this._disposed || this._olderSource !== 'stored') return false;
+    const request = ++this._historyWindowRequest;
+    const opened = await HistoryWindow.open({
+      context: this.chatContext, uri: this.runtimeSessionId, seq,
+      read: before => rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before, limit: 100, lean: 'folded' }).catch(() => null),
+      newestStored: () => this._storedHistoryTurns.at(-1)?.seq ?? -1,
+    }).catch(() => null);
+    if (!opened) return false;
+    if (this._disposed || request !== this._historyWindowRequest) { opened.dispose(); return false; }
+    // The window opens at the message asked for: the list reads this when it is handed the state.
+    const itemId = anchor?.(opened.turns) ?? opened.turns.find(turn => turn.seq === seq)?.items[0]?.id;
+    if (itemId) opened.state.scroll.set(pinTopMode(itemId));
+    const previous = this.historyWindow;
+    runInAction(() => { this.historyWindow = opened; });
+    // The list lets go of the outgoing state when it is handed the new one, a render later.
+    if (previous) setTimeout(() => previous.dispose(), 0);
+    return true;
+  }
+
+  /** Back to the live transcript, at its newest turn unless `keepPosition` (the caller is about to scroll it). */
+  closeHistoryWindow(opts: { keepPosition?: boolean } = {}): void {
+    this._historyWindowRequest += 1;
+    const open = this.historyWindow;
+    if (!open) return;
+    if (!opts.keepPosition) this.chatState.scroll.set({ kind: 'tail' });
+    this.historyWindow = null;
+    setTimeout(() => open.dispose(), 0);
+  }
+
   /** 还能不能往上翻。到头(游标为 null)或还没定下来来源时都是 false。 */
   get canLoadOlderHistory(): boolean {
     return typeof this._olderCursor === 'number';
+  }
+
+  /** Changes each time this store starts its history over; a reader holding pages across awaits compares it. */
+  get historyEpoch(): number {
+    return this._historyGeneration;
   }
 
   /**
@@ -2833,6 +3012,7 @@ export class AcpChatStore {
               sessionId: this.sessionId,
               before,
               limit: 100,
+              lean: 'folded',
             })
           : await this._runtimeOlderPage(before);
       if (!page || this._disposed || generation !== this._historyGeneration) return [];
@@ -2895,15 +3075,78 @@ export class AcpChatStore {
   }
 
   /**
+   * #2493 引擎还是同一代、只是这段改动一包装不下(子智能体每走一步都改派它的那一轮,那一轮裁完仍有几 MB,
+   * 超过单包上限),它回了 `reset`。作废的只是改动游标,❌ 不是会话:活会话照挂着 —— 权限档位、强度、
+   * 上下文读数、后台任务那一行都读它。从前这里整条重挂(`reattachAfterHostReload` 先把 `session` 置空),
+   * 子智能体每走一步,输入框和后台那一行就跟着闪一下(owner 11-11 实拍,0.3~0.6 秒一次)。
+   *
+   * 这里只把历史对回来,与开场沿用库里那页时同一个做法:向这个活会话要新的分界和游标,再把库里从分界起的行
+   * 整段重读一遍。被改过的旧轮次在库里已是新的,开场之后新落库的那几轮也由库里那份出。
+   * 读到的是旧状态(另一次对账已经走到更新的游标、会话换了、转录放掉了)就什么都不改。
+   *
+   * @returns `unsupported`:库里没有这条会话的行(历史只在引擎那侧)或者是侧边聊天,只能照旧重挂。
+   */
+  private async _resyncHistoryInPlace(session: AcpLiveSession): Promise<'applied' | 'unsupported' | 'stale'> {
+    const base = this._storedBaseSeq;
+    if (base === null || this.isTransient) return 'unsupported';
+    const generation = this._historyGeneration;
+    const stale = () => this._disposed || generation !== this._historyGeneration
+      || this.session !== session || this._transcriptReleased;
+    // 先定分界再读库(同开场):分界那一刻已经提交的轮,读库时一定已经在库里。
+    const head = await session.getHistory(undefined, 1);
+    if (!head.success) throw resultError(head.error);
+    if (stale()) return 'stale';
+    let stored: Awaited<ReturnType<typeof rpc.sessions.getStoredHistory>> | null = null;
+    try {
+      stored = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, fromSeq: base });
+    } catch (error) {
+      log.warn('stored session history reread after a cursor reset failed; keeping the previous read', {
+        sessionId: this.sessionId,
+        error,
+      });
+    }
+    if (stale()) return 'stale';
+    // 另一次对账已经走到这个分界之后:它手里的更新。
+    const current = this._runtimeCursor;
+    if (current && current.epoch === head.data.cursor.epoch && current.seq > head.data.cursor.seq) return 'stale';
+    runInAction(() => {
+      if (stored && stored.turns.length > 0) {
+        this._storedHistoryTurns = stored.turns;
+        this._storedOrigins = stored.originTurnIds;
+        this._storedBootstrapMaxSeq = stored.turns.at(-1)!.seq;
+        this._persistedRuntimeTurnIds = new Set([...this._persistedRuntimeTurnIds, ...stored.originTurnIds]);
+      }
+      this._resetRuntimeHistoryState();
+      const lastRuntimeSeq = head.data.turns.at(-1)?.seq;
+      this._runtimeReplayEndSeq = lastRuntimeSeq === undefined ? 0 : lastRuntimeSeq + 1;
+      this._runtimeCursor = head.data.cursor;
+      this._runtimeCount = head.data.count;
+    });
+    return 'applied';
+  }
+
+  /**
    * 按改动游标并进引擎那侧新增 / 改过的回合(@@@history-change-cursor)。分界之后的直接并进手里那份;更早的那一轮
    * 被改了(后台命令的终态、子智能体的进展改的是起它的那一轮),它画的是库里那一行 —— 只重读那一行。
    * @returns 读失败时的那个结果(调用方弹错),成功为 null。
    */
-  private async _mergeRuntimeChanges(session: AcpLiveSession, generation: number): Promise<{ error: unknown } | { reset: true } | null> {
-    const changes = await session.getHistory(undefined, 100, this._runtimeCursor ?? undefined);
+  private async _mergeRuntimeChanges(
+    session: AcpLiveSession,
+    generation: number,
+  ): Promise<{ error: unknown } | { reset: true; sameRun: boolean } | null> {
+    const asked = this._runtimeCursor;
+    // 库里有这条会话:分界之前改过的轮按 id 回库里重读(下面的 `olderRevised`),引擎那侧只交身份就够(#2493)。
+    // 库里没有时那几轮的内容要拿来换掉往上翻出来的引擎页,照旧整轮要。
+    const contentFrom = this._storedBaseSeq !== null ? this._runtimeReplayEndSeq : undefined;
+    const changes = await session.getHistory(undefined, 100, asked ?? undefined, contentFrom);
     if (!changes.success) return { error: changes.error };
     if (generation !== this._historyGeneration) return null;
-    if (changes.data.reset) return { reset: true };
+    // `sameRun`: the runtime kept its epoch and is not behind the cursor, so the reset only means the
+    // changes did not fit one page (#2493). A different epoch is a restarted runtime.
+    if (changes.data.reset) {
+      const head = changes.data.cursor;
+      return { reset: true, sameRun: asked !== null && asked.epoch === head.epoch && asked.seq <= head.seq };
+    }
     const floor = this._storedBaseSeq !== null ? this._runtimeReplayEndSeq : this._runtimeWindowStartSeq;
     const bySeq = new Map(this._runtimeTurns.map((turn) => [turn.seq, turn]));
     const olderRevised: TranscriptTurn[] = [];
@@ -3088,24 +3331,54 @@ export class AcpChatStore {
     const retainedFrameId = retainedFrame?.id ?? null;
     const retainedPending = this.chatState.session.state.pendingPrompt;
     let merged = false;
+    let linkLost: unknown = null;
     const session = this._requireSession('acpFailure.refreshHistory');
     if (session) {
       try {
         const failed = await this._mergeRuntimeChanges(session, refreshGeneration);
         if (failed && 'reset' in failed) {
-          this._runtimeCursor = null;
-          this.reattachAfterHostReload();
-        } else if (failed) this._toastError('acpFailure.refreshHistory', failed.error);
+          const resynced = failed.sameRun ? await this._resyncHistoryInPlace(session) : 'unsupported';
+          if (resynced === 'applied') merged = true;
+          else if (resynced === 'unsupported') {
+            this._runtimeCursor = null;
+            this.reattachAfterHostReload();
+          }
+        } else if (failed && isConnectionLostError(failed.error)) linkLost = failed.error;
+        else if (failed) this._toastError('acpFailure.refreshHistory', failed.error);
         else merged = true;
       } catch (error) {
-        // 对账本身失败也要把帧交还，否则它会一直压在最新内容上面；❌ 静默吞掉这次失败。
-        log.warn('Failed to reconcile transcript after a committed turn', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        this._toastError('acpFailure.refreshHistory', error);
+        if (isConnectionLostError(error)) linkLost = error;
+        else {
+          // 对账本身失败也要把帧交还，否则它会一直压在最新内容上面；❌ 静默吞掉这次失败。
+          log.warn('Failed to reconcile transcript after a committed turn', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          this._toastError('acpFailure.refreshHistory', error);
+        }
       }
     }
     if (refreshGeneration !== this._historyGeneration) return;
+    if (linkLost && session) {
+      // @@@reconcile-across-link-loss - 对账的那一问随断线没了:宿主那边这一轮好好的,只是这边还没读到。
+      // 刚讲完的那一帧原样留着(❌ 交还 —— 交还 = 整条从屏上消失,已提交列表里又还没有它),线回来再对一次账。
+      // 等的是这条会话自己那条线(同 session-attachment),❌ 定时器重试。
+      log.warn('Transcript reconciliation waits for the connection', {
+        sessionId: this.sessionId,
+        error: linkLost instanceof Error ? linkLost.message : String(linkLost),
+      });
+      runInAction(() => { this.reconcileAwaitingLink = true; });
+      const wait = new AbortController();
+      this._unsubs.push(() => {
+        wait.abort();
+        runInAction(() => { this.reconcileAwaitingLink = false; });
+      });
+      void session.whenConnected(wait.signal).then(() => {
+        if (this._disposed || this.session !== session || refreshGeneration !== this._historyGeneration) return;
+        runInAction(() => { this.reconcileAwaitingLink = false; });
+        void this._refreshHistory(options);
+      }, () => undefined);
+      return;
+    }
     // seed 先把活动轮清掉、下面再放回去:两步必须是转录的同一次更新(Solid `batch`)。分成两次的话,
     // 活动轮的每一行都会被卸掉重挂 —— 正在流式的那几段话淡入从头再放一遍,整段一闪(owner 10-27 录像:
     // 前一轮派出的后台 agent 每报一次进度,这一轮已经写出的话就闪一下)。
@@ -3152,18 +3425,27 @@ export class AcpChatStore {
     this.transcriptRevision += 1;
   }
 
-  /** Keep the failure reason visible through the existing one-line sanitizer, and persist its full detail. */
-  private _toastError(title: AcpFailureTitle, error: unknown, displayReason?: string): void {
+  /** Every failed message action has the native row's identity, including a later retry from another view. */
+  private async _messageAction(id: string, action: () => Promise<unknown>): Promise<boolean> {
+    return runNativeInputAction(this.runtimeSessionId, id, machineRegistry.machineOf(this.runtimeSessionId), action,
+      (error, attempt) => this._toastError('acpFailure.sendMessage', error, undefined, attempt));
+  }
+
+  /** Input actions show repair copy; their complete causes stay in the existing diagnostic log. */
+  private _toastError(title: AcpFailureTitle, error: unknown, displayReason?: string, attempt?: MessageFailureAttempt): void {
     const cause = describeFailureCause(error);
     const errorType = error && typeof error === 'object' && 'type' in error ? error.type : undefined;
     log.error('ACP chat action failed', { sessionId: this.sessionId, title, errorType, error: cause });
-    toast({
-      title: translateSessionMessage(title),
-      description: errorType === 'conversation_not_found'
-        ? translateSessionMessage('acpFailure.sessionUnavailable')
-        : failureText(displayReason ?? cause ?? '', translateSessionMessage),
-      variant: 'destructive',
-    });
+    // Export/history/revert feedback is outside this input-surface batch.
+    const inputAction = title !== 'acpFailure.exportTranscript' && title !== 'acpFailure.refreshHistory' && title !== 'acpFailure.revert';
+    const description = errorType === 'conversation_not_found'
+      ? translateSessionMessage('acpFailure.sessionUnavailable')
+      : !inputAction || failureReason(displayReason ?? cause ?? '')
+        ? failureText(displayReason ?? cause ?? '', translateSessionMessage)
+        : translateSessionMessage('taskError.settingFailedRetry');
+    const notice = { title: translateSessionMessage(title), description, variant: 'destructive' as const };
+    if (attempt) attempt.failed(notice);
+    else toast({ ...notice, key: inputAction ? `session-action:${this.sessionId}:${title}` : undefined });
   }
 }
 
@@ -3216,12 +3498,7 @@ function containsUserPrompt(turn: TranscriptTurn | null, prompt: QueuedPrompt): 
   );
 }
 
-type StartRecord = Pick<Session, 'providerSessionId' | 'initialQueue' | 'forkFromProviderSessionId'>;
-
-/** 新建会话还没认领首启时带着的那几句(第一句在队首):有就打开它就当场请宿主起(#980 照旧)。 */
-function pendingInitialQueue(record: StartRecord): Session['initialQueue'] {
-  return record.providerSessionId === undefined && record.initialQueue?.length ? record.initialQueue : undefined;
-}
+type StartRecord = Pick<Session, 'providerSessionId' | 'forkFromProviderSessionId'>;
 
 /**
  * 持久分叉还没分出去时的来源 provider 会话。⚠️ 只在**还没认领首启**时发起:`providerSessionId` 一旦有值,

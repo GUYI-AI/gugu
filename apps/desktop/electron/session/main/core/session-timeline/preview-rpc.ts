@@ -9,6 +9,7 @@ import {
   type MessagePreviewProjection,
 } from '@gugu/session-core/session-record/message-preview';
 import { randomUUID } from 'node:crypto';
+import { activityPreviewSources } from '@gugu/session-chat-ui/activity-preview';
 import * as service from './service';
 
 /**
@@ -43,10 +44,10 @@ export async function readSessionPreview(
     if (!record.ok) return record;
     const turns = [...record.value.turns, ...(record.value.activeTurn ? [record.value.activeTurn] : [])];
     // 库内 seq 与活回合的运行时 seq 各自计数;原生读口给出的顺序才是这里的先后。
-    return { ok: true, value: projectMessagePreview(turns.map((turn, seq) => ({ ...turn, seq }))) };
+    return { ok: true, value: projectMessagePreview(turns.map((turn, seq) => ({ ...turn, seq })), activityPreviewSources) };
   }
   const snapshot = await service.snapshot({ conversationId: sessionId, limit: turnLimit });
-  return snapshot.ok ? { ok: true, value: projectMessagePreview(snapshot.value.turns) } : snapshot;
+  return snapshot.ok ? { ok: true, value: projectMessagePreview(snapshot.value.turns, activityPreviewSources) } : snapshot;
 }
 
 /** 请求来自别人,同时开着的预览必须有上限。 */

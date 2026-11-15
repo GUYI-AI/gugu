@@ -196,6 +196,19 @@ describe('admission results arriving after the sender deadline', () => {
     expect((await queue.list())[0].admission).toBe('uncertain')
   }
 
+  it('accepts the original late receipt after an unchanged explicit retry loses its transport', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const original = delayed(), send = vi.fn().mockImplementationOnce(() => original.promise).mockRejectedValue(new Error('retry transport lost'))
+      const queue = setup(send), input = await queue.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'one unchanged input' })
+      await deadline(queue); await queue.retry(input.id)
+      expect((await queue.list())[0].admission).toBe('uncertain')
+      original.resolve(); await vi.advanceTimersByTimeAsync(0)
+      expect(await queue.list()).toEqual([])
+      expect(send).toHaveBeenCalledTimes(2)
+    } finally { vi.useRealTimers() }
+  })
+
   it.each(['accepted', 'rejected'] as const)('reconciles a late %s decision without another automatic send', async admission => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {

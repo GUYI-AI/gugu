@@ -1,14 +1,17 @@
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { Avatar } from '@/components/Avatar';
 import { RunningTokenBar } from '@/components/RunningTokenBar';
 import { ANIMATION_WINDOW_SEEN_EVENT, isAnimationWindowVisible } from '@gugu/session-shared/animation-visibility';
 import { mirrorDocument } from '@renderer/lib/aux-document';
 import { until } from '../../../../../../../tests/support/awaitCondition';
+import { restyledElements } from '../../../../../../../tests/support/styleRecalc';
 import '@/styles/tokens.css';
 import '@gugu/session-shared/animation-visibility.css';
 import animationVisibilityCSS from '@gugu/session-shared/animation-visibility.css?inline';
 
+/** Held by a hidden window: playback rate 0, its clock standing still. */
+const held = (animation: Animation) => animation.playbackRate === 0;
 const roots: Root[] = [];
 const cleanup: Array<() => void> = [];
 const avatar = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="20" height="20"%3E%3Crect width="20" height="20" fill="gray"/%3E%3C/svg%3E';
@@ -54,7 +57,12 @@ it('keeps one semantic running label and stationary glyphs throughout the compos
   const animations = label.getAnimations({ subtree: true });
   for (const animation of animations) {
     expect(animation.effect!.getTiming()).toMatchObject({ duration: 2000, iterations: Infinity });
-    for (const frame of (animation.effect as KeyframeEffect).getKeyframes()) {
+    const frames = (animation.effect as KeyframeEffect).getKeyframes();
+    // The transcript's rhythm as one loop: 20 steps in the first second, then still until the next cycle.
+    expect(frames.map((frame) => frame.computedOffset)).toEqual([0, 0.5, 1]);
+    expect(frames[0]!.easing).toBe('steps(20)');
+    expect(frames[1]!.transform).toBe(frames[2]!.transform);
+    for (const frame of frames) {
       expect(Object.keys(frame).filter((key) => !['offset', 'computedOffset', 'easing', 'composite'].includes(key))).toEqual(['transform']);
     }
     animation.pause();
@@ -73,12 +81,18 @@ it('keeps one semantic running label and stationary glyphs throughout the compos
 it('pauses and resumes the running highlight and avatar pulses on the shared native signal', async () => {
   const { host, animations } = await mount();
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false }));
-  await until('all four CSS animation clocks pause', () => animations.every((animation) => animation.playState === 'paused'));
+  // A hidden window holds its animations at rate 0: time stands still, and nothing is written on <html>.
+  expect(animations.every(held)).toBe(true);
   expect(document.hidden).toBe(false);
-  expect(getComputedStyle(host.querySelector('.rtb-state')!).animationPlayState).toBe('paused');
+  expect(document.documentElement.style.getPropertyValue('--gugu-animation-window-paused')).toBe('');
+  const frozen = animations.map((animation) => animation.currentTime);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  expect(animations.map((animation) => animation.currentTime)).toEqual(frozen);
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: true }));
-  await until('the same CSS animation clocks resume', () => animations.every((animation) => animation.playState === 'running'));
+  await until('the same animations run again at their own rate', () => animations.every((animation) => animation.playbackRate === 1 && animation.playState === 'running'));
+  await until('the same clocks move on from where they stood', () => animations.every((animation, index) => animation.currentTime !== frozen[index]));
   expect(host.getAnimations({ subtree: true })).toEqual(animations);
+  // The surface pause still reaches animations that went through a hidden window (pause() / play() would cut it off).
   host.inert = true;
   await until('a retained inert surface pauses the same clocks', () => animations.every((animation) => animation.playState === 'paused'));
   host.inert = false;
@@ -88,11 +102,34 @@ it('pauses and resumes the running highlight and avatar pulses on the shared nat
 it('pauses avatar pulses scrolled out of view and resumes the same clocks when they return', async () => {
   const { host, animations } = await mount();
   const pulses = animations.filter((animation) => (animation as CSSAnimation).animationName === 'av-status-pulse');
+  // 14 steps while the ring is visible, then still: the second ring's 0.7 s delay lands on the same 70 ms grid.
+  const frames = (pulses[0]!.effect as KeyframeEffect).getKeyframes();
+  expect(frames.map((frame) => frame.computedOffset)).toEqual([0, 0.7, 1]);
+  expect(frames[0]!.easing).toBe('steps(14)');
+  expect(frames[1]!.transform).toBe(frames[2]!.transform);
   host.style.cssText = 'position:fixed;left:0;top:-2000px';
   await until('the off-screen pulses pause', () => pulses.every((animation) => animation.playState === 'paused'));
+  // Knock the clocks far off the document's; coming back has to bring them home, whatever the machine's speed.
+  for (const animation of pulses) animation.currentTime = Number(animation.timeline!.currentTime) - 60_000;
   host.style.cssText = '';
   await until('the pulses resume on screen', () => pulses.every((animation) => animation.playState === 'running'));
   expect(host.getAnimations({ subtree: true })).toEqual(animations);
+  // Back on the shared beat, and still paused by the shared stylesheet afterwards.
+  for (const animation of pulses) expect(Math.abs(Number(animation.currentTime) - Number(animation.timeline!.currentTime))).toBeLessThan(30_000);
+  window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false }));
+  await until('the window pause still reaches the pulses', () => pulses.every((animation) => held(animation) || animation.playState === 'paused'));
+  window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: true }));
+  await until('they resume', () => pulses.every((animation) => animation.playState === 'running' && animation.playbackRate === 1));
+});
+
+it('leaves the style pass alone when watched motion goes away', async () => {
+  await mount();
+  // getAnimations({ subtree: true }) resolves the whole document's pending style on the spot.
+  const getAnimations = vi.spyOn(Element.prototype, 'getAnimations');
+  roots.splice(0).forEach((root) => root.unmount());
+  await new Promise(requestAnimationFrame);
+  expect(getAnimations).not.toHaveBeenCalled();
+  getAnimations.mockRestore();
 });
 
 it('keeps a visible portal animated while the opener hides and stops it when its own window hides', async () => {
@@ -108,14 +145,14 @@ it('keeps a visible portal animated while the opener hides and stops it when its
   document.documentElement.dataset.animationTest = 'mirrored';
   await until('the opener theme mirror has run', () => doc.documentElement.dataset.animationTest === 'mirrored');
   expect(isAnimationWindowVisible()).toBe(false);
-  expect(animations.every((animation) => animation.playState === 'running')).toBe(true);
+  expect(animations.every((animation) => animation.playState === 'running' && animation.playbackRate === 1)).toBe(true);
   doc.defaultView!.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false }));
-  await until('the portal own native signal pauses its animations', () => animations.every((animation) => animation.playState === 'paused'));
+  expect(animations.every(held), 'the portal own native signal holds its animations').toBe(true);
   doc.defaultView!.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: true }));
-  await until('the portal own restore resumes its animations', () => animations.every((animation) => animation.playState === 'running'));
+  await until('the portal own restore resumes them', () => animations.every((animation) => animation.playState === 'running' && animation.playbackRate === 1));
 });
 
-it('pauses and resumes an infinite animation inside a CSS-isolated shadow root', async () => {
+it('pauses and resumes an infinite animation inside a CSS-isolated shadow root with its retained surface', async () => {
   isAnimationWindowVisible();
   const host = document.createElement('div');
   document.body.append(host);
@@ -130,10 +167,43 @@ it('pauses and resumes an infinite animation inside a CSS-isolated shadow root',
   glyph.style.animation = 'shadow-spin 1s linear infinite';
   shadow.append(sheet, glyph);
   await until('the shadow animation runs', () => getComputedStyle(glyph).animationPlayState === 'running' && glyph.getAnimations().length === 1);
+  // The surface pause is inherited, so it crosses the shadow boundary. (The hidden-window hold works on the
+  // document's own animations, which by the Web Animations definition leave shadow trees out; no host document
+  // of ours has one.)
+  host.inert = true;
+  await until('the retained surface pauses it', () => getComputedStyle(glyph).animationPlayState === 'paused' && glyph.getAnimations()[0]!.playState === 'paused');
+  host.inert = false;
+  await until('and lets it run again', () => glyph.getAnimations()[0]!.playState === 'running');
+});
+
+it('holds motion that begins while the window is not seen, and lets it go with the rest', async () => {
+  const { animations } = await mount();
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false }));
-  await until('the shadow animation pauses through the inherited window state', () => getComputedStyle(glyph).animationPlayState === 'paused');
-  expect(glyph.getAnimations()[0].playState).toBe('paused');
+  const style = document.createElement('style');
+  style.textContent = '@keyframes late-spin { to { transform: rotate(360deg); } }';
+  const late = document.createElement('span');
+  late.textContent = 'Late';
+  late.style.animation = 'late-spin 1s linear infinite';
+  document.body.append(style, late);
+  cleanup.push(() => { style.remove(); late.remove(); });
+  await until('an animation started in a hidden window is held', () => late.getAnimations().length === 1 && held(late.getAnimations()[0]!));
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: true }));
-  await until('the shadow animation resumes', () => getComputedStyle(glyph).animationPlayState === 'running');
-  expect(glyph.getAnimations()[0].playState).toBe('running');
+  await until('everything runs again', () => [...animations, late.getAnimations()[0]!].every((animation) => animation.playState === 'running' && animation.playbackRate === 1));
+});
+
+// @@@window-pause-by-animation — the flag used to be an inherited custom property on <html>: hiding and showing the
+// window each re-styled every element of the document (22k elements on an 18k-node page).
+it('hiding and showing the window re-styles nothing but what moves', async () => {
+  await mount();
+  const bystanders = document.createElement('div');
+  bystanders.innerHTML = '<p><span><b>bystander</b></span></p>'.repeat(500);
+  document.body.append(bystanders);
+  cleanup.push(() => bystanders.remove());
+  const all = await restyledElements(() => { document.documentElement.style.setProperty('--ruler-control', '1'); });
+  document.documentElement.style.removeProperty('--ruler-control');
+  expect(all).toBeGreaterThanOrEqual(1500);
+  const hide = await restyledElements(() => { window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false })); });
+  const show = await restyledElements(() => { window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: true })); });
+  expect(hide).toBeLessThan(100);
+  expect(show).toBeLessThan(100);
 });

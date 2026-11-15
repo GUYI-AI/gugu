@@ -18,6 +18,9 @@ export const WINDOW_MENU_COMMANDS = [
 
 export type WindowMenuCommand = (typeof WINDOW_MENU_COMMANDS)[number]
 
+/** 原生全选前让聚焦的消息流补齐已加载行;选区和剪贴板仍归原生编辑命令。 */
+export const PREPARE_SELECT_ALL_EVENT = 'gugu:prepare-select-all'
+
 export function isWindowMenuCommand(value: unknown): value is WindowMenuCommand {
   return typeof value === 'string' && (WINDOW_MENU_COMMANDS as readonly string[]).includes(value)
 }

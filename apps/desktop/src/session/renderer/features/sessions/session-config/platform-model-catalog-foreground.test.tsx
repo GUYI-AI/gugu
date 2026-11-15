@@ -11,6 +11,10 @@ vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: 
 vi.mock('@renderer/features/library/library-host', () => ({ useLibraryHost: () => ({ remote: null }) }));
 
 import { usePlatformModelCatalog } from './platform-model-catalog';
+import { queryClient } from '@renderer/lib/query-client';
+import { notifyManager } from '@tanstack/react-query';
+// Deliver query results in the same task they resolve in, so a test's flush sees them.
+notifyManager.setScheduler((callback) => callback());
 
 const FREE = { models: [{ id: 'glm-5.3-flash', protocol: 'anthropic-messages' }] };
 const MEMBER = {
@@ -34,6 +38,8 @@ async function flush() {
   await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
+    // The shared catalog query notifies on the next macrotask.
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
@@ -45,6 +51,7 @@ function foreground(kind: 'focus' | 'visibilitychange') {
 }
 
 beforeEach(async () => {
+  queryClient.clear();
   vi.useFakeTimers({ toFake: ['Date'] });
   visibility = 'visible';
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });

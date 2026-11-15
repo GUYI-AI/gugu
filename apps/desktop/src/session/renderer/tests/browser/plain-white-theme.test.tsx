@@ -36,10 +36,10 @@ afterEach(() => {
 })
 
 it.each([
-  ['zh-CN', '主题', 390],
-  ['zh-CN', '主题', 1280],
-  ['en-US', 'Theme', 390],
-  ['en-US', 'Theme', 1280],
+  ['zh-CN', '外观', 390],
+  ['zh-CN', '外观', 1280],
+  ['en-US', 'Appearance', 390],
+  ['en-US', 'Appearance', 1280],
 ] as const)('%s settings (%s, %spx): offers only light, dark and system', async (locale, label, width) => {
   await page.viewport(width, 844)
   await i18n.changeLanguage(locale)

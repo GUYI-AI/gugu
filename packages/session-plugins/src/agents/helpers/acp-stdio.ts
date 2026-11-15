@@ -2,7 +2,7 @@ import { Writable } from 'node:stream';
 import { createAcpWorkSlice } from './acp-work-slice';
 import { ClientSideConnection, ndJsonStream } from '@agentclientprotocol/sdk';
 import { decodePermissionRequest, decodeSessionUpdate } from '@gugu/session-core/acp';
-import type { SessionNotification } from '@agentclientprotocol/sdk';
+import type { RequestPermissionRequest, SessionNotification } from '@agentclientprotocol/sdk';
 import { createRequestActivity } from '@gugu/session-core/acp';
 import type {
   AcpAgentApi,
@@ -24,6 +24,17 @@ const LEGACY_SESSION_UPDATES = new Set([
   'async_task_progress', 'async_task_state_update', 'compaction_update',
   'compaction_summary_chunk', 'notice',
 ]);
+
+export type NativeAcpOptions = {
+  interruptAtToolBoundary?: boolean;
+  /** Do not offer the ACP client terminal: this harness runs its own commands (see the plugin for why). */
+  ownTerminal?: boolean;
+  /**
+   * Answers a vendor permission request that needs no person: Gugu's own tools, for a harness with no way to declare
+   * them approved up front (Claude's `allowedTools`, Codex's `default_tools_approval_mode`). Returns the option to select.
+   */
+  preApprove?: (request: RequestPermissionRequest) => string | undefined;
+};
 
 export function routeSessionUpdates(
   source: ReadableStream<Uint8Array>,
@@ -72,7 +83,7 @@ export function routeSessionUpdates(
   }));
 }
 
-export function connectStdioAcp(io: AcpProcessIo, toClient: AcpClientFactory, options: { interruptAtToolBoundary?: boolean } = {}): AcpAgentApi {
+export function connectStdioAcp(io: AcpProcessIo, toClient: AcpClientFactory, options: NativeAcpOptions = {}): AcpAgentApi {
   let client: ReturnType<AcpClientFactory>;
   let boundary: ReturnType<typeof createRequestActivity>;
   const deliver = (params: SessionNotification): void => {
@@ -88,7 +99,10 @@ export function connectStdioAcp(io: AcpProcessIo, toClient: AcpClientFactory, op
   new ClientSideConnection((agent) => {
     boundary = createRequestActivity(agent as ClientSideConnection, params => client.sessionEvent(params), options);
     client = toClient(boundary.agent);
-    return { ...client, sessionUpdate: () => { throw new Error('Session update bypassed ingress decoding'); }, requestPermission: params => client.requestPermission(decodePermissionRequest(params)) };
+    return { ...client, sessionUpdate: () => { throw new Error('Session update bypassed ingress decoding'); }, requestPermission: async params => {
+      const optionId = options.preApprove?.(params);
+      return optionId ? { outcome: { outcome: 'selected', optionId } } : client.requestPermission(decodePermissionRequest(params));
+    } };
   }, stream);
   const api = boundary!.agent;
   const initialize = api.initialize;
@@ -96,7 +110,7 @@ export function connectStdioAcp(io: AcpProcessIo, toClient: AcpClientFactory, op
   return new Proxy(api, { get(target, property) {
     if (property === 'initialize') return (params: Parameters<AcpAgentApi['initialize']>[0]) => initialize({
       ...params,
-      clientCapabilities: { ...params.clientCapabilities, _meta: {
+      clientCapabilities: { ...params.clientCapabilities, ...(options.ownTerminal ? { terminal: false } : {}), _meta: {
         ...params.clientCapabilities?._meta,
         jetbrains: { air: { version: 1, capabilities: ['nativeSubagentSessions', 'asyncTasks'] } },
       } },
@@ -156,7 +170,7 @@ export function nodeReadableToWeb(source: NodeJS.ReadableStream): ReadableStream
 
 export function createNativeAcpBehavior(
   buildSpawn: (ctx: AcpSpawnContext) => NativeAcpSpawnResult,
-  options: { interruptAtToolBoundary?: boolean } = {},
+  options: NativeAcpOptions = {},
 ): IAcpBehavior {
   return {
     buildSpawn: (ctx) => {

@@ -2,6 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 import { AppMenuEvents } from './app/app-menu-events';
 import { AuxWindowHost } from './app/aux-window-host';
+import { AppVoiceNotesHost } from './features/assistant/voice-notes/app-voice-notes-host';
 import { SessionCreateEmbedRoot } from './app/session-create-embed-root';
 import { Workspace } from './app/workspace';
 import { ExtensionViewLayer } from './features/extensions/extension-view-layer';
@@ -44,6 +45,7 @@ function AppContent() {
                     <ModalRenderer />
                     <ExtensionViewLayer />
                     <AuxWindowHost />
+                    <AppVoiceNotesHost />
                     {renderContent()}
                   </ThemeProvider>
                 </RightSidebarProvider>

@@ -1,7 +1,8 @@
 import { ingestMessages } from './messageIngest'
 import { ingestFetchedMessagePage } from './chatMessagePages'
 import { dbPayload } from '@gugu/core/cloud/supabase'
-import { createGroupWithInvitations } from '@gugu/core/cloud/groupChat'
+import { createGroupWithInvitations, groupInvitationNote } from '@gugu/core/cloud/groupChat'
+import { managedJoinRequestFromRow, type ManagedGroupJoinRequest } from './groupJoinRequestRow'
 import {
   getDeviceCommand as getCoreDeviceCommand,
   pollDeviceCommandUntilDone,
@@ -50,7 +51,6 @@ import type {
   ListenMode,
   GroupChatSettings,
   GroupJoinMode,
-  GroupJoinRequest,
   GroupCollabSnapshot,
   GroupMemberItem,
   GroupMemberRoleInput,
@@ -283,8 +283,8 @@ export type DeviceBoundAgent = { id: string; display_name: string; avatar: strin
 export type GroupCollabLoad = { snapshot: GroupCollabSnapshot; identities: DisplayIdentity[] }
 
 /**
- * 名册读到 0 行。@@@5856 这**不是**「没权限」:话题里它的正常含义是「你看得见这条话题,但还不是
- * 它的参与者」(spec:参与靠说话或被 @ 进来)。调用方据此给一句能照做的话,❌ 不是「关掉再打开一次」。
+ * 名册读到 0 行。@@@5856 这**不是**加载故障:来源会话成员读得到话题参与者,0 行只在话题里已经没有在册的
+ * 参与者,或读的人不在来源会话时出现。调用方如实说「暂时看不到成员」,❌ 不是「关掉再打开一次」。
  */
 export class GroupCollabEmptyError extends Error { constructor() { super('Group collab roster is empty for this viewer') } }
 
@@ -715,31 +715,9 @@ export const chatService = {
     return data === 'joined' ? 'joined' : 'pending'
   },
 
-  // 列出某群的加入请求,含已处理的（仅管理员，RPC 内 can_manage_group_members 校验）。
-  async listGroupJoinRequests(chatId: string): Promise<GroupJoinRequest[]> {
-    const data = await (await currentGroupAdmin()).joinRequests(chatId)
-    const rows = data as Array<{
-      id: string
-      chat_id: string
-      requester_user_id: string
-      requester_name: string | null
-      requester_avatar: string | null
-      message: string | null
-      status: string
-      created_at: string | null
-      requester_type?: string | null; requested_by_user_id?: string | null
-    }>
-    return rows.map((r) => ({
-      id: r.id,
-      chat_id: r.chat_id,
-      requester_user_id: r.requester_user_id,
-      requester_type: r.requester_type === 'agent' ? 'agent' as const : 'human' as const, requested_by_user_id: r.requested_by_user_id ?? null,
-      requester_name: resolveOrLoud(r.requester_name, `friend-request requester ${r.requester_user_id ?? r.chat_id}`),
-      requester_avatar: r.requester_avatar ?? null,
-      message: r.message ?? null,
-      status: r.status === 'accepted' || r.status === 'rejected' ? r.status : 'pending',
-      created_at: r.created_at ?? null,
-    }))
+  /** 我管理的全部群的加入请求,含已处理的,一次读(与逐群那份同权限),每行带上它的群。 */
+  async listManagedGroupJoinRequests(): Promise<ManagedGroupJoinRequest[]> {
+    return (await (await currentGroupAdmin()).managedJoinRequests()).map(managedJoinRequestFromRow)
   },
 
   // 审批一条加入请求（仅管理员）：accept→入群+标 accepted，reject→标 rejected。
@@ -852,7 +830,7 @@ export const chatService = {
   async inviteGroupMember(chatId: string, userId: string) {
     const admin = await currentGroupAdmin()
     const group = await admin.info(chatId)
-    return admin.invite(chatId, userId, `邀请你加入群聊「${String(group.name)}」。`)
+    return admin.invite(chatId, userId, groupInvitationNote(String(group.name)))
   },
 
   // @@@remove-member - Generic remove (manager removing a member, or an owner taking their own agent out); for agents this also cleans up group_agent_states.

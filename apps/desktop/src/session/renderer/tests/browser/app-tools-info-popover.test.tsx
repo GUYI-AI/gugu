@@ -6,7 +6,7 @@
  * click。评审(2026-10-14)量到:同一处改动在 jsdom 里全绿,
  * 在真浏览器里「悬停打开后点一下反而收起」。开关的无障碍名字也只有真浏览器算得出来(getByRole 按 accname)。
  *
- * 渲染的是真的 AppProductPage,只挡掉 IPC 和「给哪些 agent」那一节。
+ * 渲染的是真的 AppManagePage,只挡掉 IPC 和「给哪些 agent」那一节。
  */
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -28,7 +28,7 @@ vi.mock('@renderer/lib/ipc', () => {
 });
 vi.mock('@renderer/features/extensions/panel/app-given-section', () => ({ AppGivenSection: () => null }));
 
-const { AppProductPage } = await import('@renderer/features/extensions/panel/app-product-page');
+const { AppManagePage } = await import('@renderer/features/extensions/panel/app-manage-page');
 const { InfoTooltip } = await import('@renderer/lib/ui/info-tooltip');
 const { UiPortalContainerProvider } = await import('@gugu/session-ui/react/primitives');
 await import('@renderer/index.css');
@@ -54,28 +54,27 @@ const changes: string[] = [];
 function Page() {
   const [disclosure, setDisclosure] = useState<'full' | 'progressive'>('progressive');
   const props = {
-    subject: { manifest: app, installed: app, installRef: undefined, cloud: null },
+    manifest: app,
     enabled: true,
     lifecycle: null,
     locale: 'en',
     translate,
     api: {
-      marketReadme: async () => ({ success: true, data: { readme: null } }),
       marketHistory: async () => ({ success: true, data: [] }),
     },
     onBack: () => undefined,
     onLifecycle: () => undefined,
-    onInstallVersion: () => undefined,
-    menu: {},
+    backLabel: 'back',
+    onOpenExternal: () => undefined,
     disclosure,
     onDisclosureChange: (next: 'full' | 'progressive') => {
       changes.push(next);
       setDisclosure(next);
     },
-  } as unknown as Parameters<typeof AppProductPage>[0];
+  } as unknown as Parameters<typeof AppManagePage>[0];
   return (
     <>
-      <AppProductPage {...props} />
+      <AppManagePage {...props} />
       <button type="button" data-testid="elsewhere">
         elsewhere
       </button>

@@ -53,6 +53,12 @@ globalStyle(`${nativeChatAppearance} [data-composer-action="stop"]`, {
 globalStyle(`${nativeChatAppearance} [data-slot="day-separator"]`, { justifyContent: 'center' });
 globalStyle(`${nativeChatAppearance} [data-slot="day-separator-rule"]`, { display: 'none' });
 
+// --chat-bg is the surface the transcript is drawn on. The desktop panel paints it itself; on the phone the
+// transcript has no surface of its own and sits on the phone page (--ta-panel-bg), so its page color is that one.
+// Otherwise the fades below paint a lighter strip wherever the session palette's page step differs from the
+// phone's (dark: --background-secondary-1 = --card over a --bg page).
+globalStyle(`${nativeChatAppearance}:is([data-phone-shell] *)`, { vars: { '--chat-bg': 'var(--ta-panel-bg)' } });
+
 // Viewport-bound fades soften both scrolling messages and the pinned user card.
 // They do not intercept input or change measured row heights. The lower fade
 // follows the actual composer layer as drafts and attachments change its height.

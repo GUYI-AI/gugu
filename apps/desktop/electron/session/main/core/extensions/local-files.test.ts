@@ -13,6 +13,8 @@ import type { WatchSink } from '../../../../../../../packages/session-core/src/s
 import { createWatchService } from '../../../../../../../packages/session-core/src/services/fs-watch/impl/watch-service';
 import { awaitFact } from '../../../../../../../tests/support/awaitFact';
 import { createLocalAppFiles, createLocalFileService, workingCopyEntry, type LocalSurface } from './local-files';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
+import { canonicalPath } from '@gugu/session-core/files';
 
 /**
  * `gugu.files` on a task's working copy, end to end in one process: the real relay (`file-sync-core.ts`) with the local
@@ -41,13 +43,15 @@ const pages: Page[] = [];
  * deterministic: fseventsd under load is minutes late, or never sends (#7371). The service's own writes are echoed only
  * in the cell about that echo.
  */
-const sinks = new Map<string, WatchSink>();
+// One sink per subscription, as the OS keeps one per watch: a folder watched on its own (an open file's) beside the tree.
+const sinks = new Map<string, { root: string; sink: WatchSink }>();
 const watcher = createWatchService({
   backend: {
     async subscribe(key, sink, scope) {
-      sinks.set(key.root, sink);
+      const id = JSON.stringify(key);
+      sinks.set(id, { root: key.root, sink });
       scope.add(() => {
-        sinks.delete(key.root);
+        sinks.delete(id);
       });
     },
   },
@@ -56,7 +60,7 @@ const runtime = new FilesRuntime({ watcher });
 /** One batch from the OS, a moment after the change (never inside the call that made it). */
 function reported(events: WatchEvent[]) {
   setTimeout(() => {
-    for (const [watched, sink] of sinks) {
+    for (const { root: watched, sink } of sinks.values()) {
       const mine = events.filter((event) => event.path === watched || event.path.startsWith(watched + path.sep));
       if (mine.length > 0) sink.events(mine);
     }
@@ -65,6 +69,8 @@ function reported(events: WatchEvent[]) {
 let feed: { unsubscribe(): void } | null = null;
 /** Every update the change stream handed the service, in order. */
 let heard: FileChangeUpdate[] = [];
+/** The folders the service watches now, for the files open in it. */
+const watchedFolders: string[] = [];
 /** The file service side, per test: by default there is none (a working copy never reaches it) and nobody is signed in. */
 const remote: { token: string | null; connect: FileSyncPlatform['connect'] } = { token: null, connect: noFileService };
 function noFileService(): never {
@@ -118,7 +124,7 @@ class Page {
     readonly id: number,
     filePath: string | null,
   ) {
-    this.surface = { pageId: id, extensionId: 'ext', place: { workspace: WS }, workspaceRoot: root, filePath };
+    this.surface = { pageId: id, extensionId: 'ext', place: { workspace: WS }, workspaceRoot: root as CanonicalPath, filePath };
     this.sync = relay.attachPage(id, 'ext', {
       // A MessagePort delivers later, and a copy.
       post: (message) => setTimeout(() => this.fromMain(message instanceof ArrayBuffer ? message.slice(0) : message), 0),
@@ -237,11 +243,22 @@ beforeEach(async () => {
  * This test's local file service, `gugu.files` over it, and the working copy's change stream feeding it — as main feeds
  * it from workspace-factory's `watchChanges`.
  */
-async function localService() {
+async function localService(feedRoot = root) {
   feed?.unsubscribe();
-  service = createLocalFileService({ warn: (message) => warnings.push(message) });
+  service = createLocalFileService({
+    warn: (message) => warnings.push(message),
+    watchFolder: async (folder) => {
+      watchedFolders.push(folder);
+      const watched = runtime.watchDirectory(folder);
+      if (!watched.success) throw new Error(watched.error.message);
+      return () => {
+        watchedFolders.splice(watchedFolders.indexOf(folder), 1);
+        watched.data();
+      };
+    },
+  });
   heard = [];
-  const started = runtime.watchChanges(root, (update) => {
+  const started = runtime.watchChanges(canonicalPath(feedRoot), (update) => {
     heard.push(update);
     service.heard(update);
   });
@@ -315,6 +332,33 @@ describe('gugu.files on a working copy', () => {
     expect(read('plan.md')).toBe('one\nTWO\nthree\nfour\n');
   });
 
+  it('a working copy named through a link (a server account link): its stream is its one spelling, and an edit on the disk reaches the page', async () => {
+    const holder = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-local-files-link-'));
+    const linked = path.join(holder, 'task-home');
+    fs.symlinkSync(root, linked);
+    try {
+      expect(canonicalPath(linked)).toBe(root);
+      await localService(linked);
+      write('plan.md', 'one\n');
+      const fa = await new Page(nextId++, 'plan.md').open();
+      write('plan.md', 'ONE\n');
+      await until(() => fa.text().toString() === 'ONE\n');
+      expect(heard.some((update) => update.kind === 'changes' && update.changes.some((change) => change.path === path.join(root, 'plan.md')))).toBe(true);
+    } finally {
+      fs.rmSync(holder, { recursive: true, force: true });
+    }
+  });
+
+  it("an open file's folder is watched while it is open (Linux watches a tree one folder at a time), and let go after", async () => {
+    fs.mkdirSync(path.join(root, 'notes'));
+    write('notes/a.md', 'one\n');
+    const a = new Page(nextId++, 'notes/a.md');
+    await a.open();
+    await until(() => watchedFolders.includes(path.join(root, 'notes')));
+    a.gone();
+    await until(() => !watchedFolders.includes(path.join(root, 'notes')));
+  });
+
   it('a write from outside is never written over: merged first, whatever the page had not saved yet', async () => {
     write('list.md', 'a\nb\n');
     const a = new Page(nextId++, 'list.md');
@@ -370,10 +414,50 @@ describe('gugu.files on a working copy', () => {
     fs.symlinkSync(outside, path.join(root, 'out'));
     const sibling = `r22-${path.basename(root)}`;
     const a = new Page(nextId++, null);
-    expect(() => files.create(a.surface, { name: `../${sibling}/x.md`, content: '' })).toThrow();
-    expect(() => files.create(a.surface, { name: 'out/made/x.md', content: '' })).toThrow();
-    expect(() => files.rename(a.surface, { ref: { workspace: WS, id: 'mine.md' }, name: 'out/moved/mine.md' })).toThrow();
+    // Refused as not in the working copy, not by any other error on the way.
+    const notInside = /^No file ".+" in this working copy$/;
+    await expect(files.create(a.surface, { name: `../${sibling}/x.md`, content: '' })).rejects.toThrow(notInside);
+    await expect(files.create(a.surface, { name: 'out/made/x.md', content: '' })).rejects.toThrow(notInside);
+    await expect(files.rename(a.surface, { ref: { workspace: WS, id: 'mine.md' }, name: 'out/moved/mine.md' })).rejects.toThrow(notInside);
     expect([fs.existsSync(path.join(root, '..', sibling)), fs.readdirSync(outside)]).toEqual([false, []]);
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+
+  it('a file named by its absolute path inside the working copy is that file; outside it, refused', async () => {
+    write('handed.md', 'x');
+    const a = new Page(nextId++, null);
+    await expect(files.rename(a.surface, { ref: { workspace: WS, id: path.join(root, 'handed.md') }, name: 'renamed.md' })).resolves.toMatchObject({ id: 'renamed.md' });
+    await files.remove(a.surface, { ref: { workspace: WS, id: path.join(root, 'renamed.md') } });
+    expect(fs.existsSync(path.join(root, 'renamed.md'))).toBe(false);
+    await expect(files.remove(a.surface, { ref: { workspace: WS, id: path.join(root, '..', 'elsewhere.md') } })).rejects.toThrow(expect.objectContaining({ code: 'invalid' }));
+  });
+
+  it('a file tree\'s writes: folders made and moved, a name taken said, nothing goes inside itself', async () => {
+    const a = new Page(nextId++, null);
+    await expect(files.mkdir(a.surface, { path: 'docs/old' })).resolves.toMatchObject({ id: 'docs/old', type: 'folder' });
+    await expect(files.mkdir(a.surface, { path: 'docs/old' })).rejects.toThrow(expect.objectContaining({ code: 'name-taken' }));
+    write('docs/old/a.md', 'a');
+    await expect(files.move(a.surface, { ref: { workspace: WS, id: 'docs/old' }, folder: '' })).resolves.toMatchObject({ id: 'old', type: 'folder' });
+    expect(fs.readFileSync(path.join(root, 'old/a.md'), 'utf8')).toBe('a');
+    await expect(files.move(a.surface, { ref: { workspace: WS, id: 'old' }, folder: 'old' })).rejects.toThrow(expect.objectContaining({ code: 'invalid' }));
+    write('b.md', 'b');
+    await expect(files.rename(a.surface, { ref: { workspace: WS, id: 'b.md' }, name: 'old' })).rejects.toThrow(expect.objectContaining({ code: 'name-taken' }));
+    await expect(files.rename(a.surface, { ref: { workspace: WS, id: 'b.md' }, name: 'c.md' })).resolves.toMatchObject({ id: 'c.md' });
+  });
+
+  it('deleting takes a folder with all in it, and a link only the link', async () => {
+    const a = new Page(nextId++, null);
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-outside-'));
+    fs.writeFileSync(path.join(outside, 'kept.md'), 'kept');
+    fs.symlinkSync(outside, path.join(root, 'linked'));
+    fs.symlinkSync(path.join(outside, 'gone-target'), path.join(root, 'dangling'));
+    fs.mkdirSync(path.join(root, 'dir/sub'), { recursive: true });
+    write('dir/sub/x.md', 'x');
+    await files.remove(a.surface, { ref: { workspace: WS, id: 'linked' } });
+    await files.remove(a.surface, { ref: { workspace: WS, id: 'dangling' } });
+    await files.remove(a.surface, { ref: { workspace: WS, id: 'dir' } });
+    expect([fs.existsSync(path.join(root, 'linked')), fs.existsSync(path.join(root, 'dir')), fs.readFileSync(path.join(outside, 'kept.md'), 'utf8')]).toEqual([false, false, 'kept']);
+    await expect(files.remove(a.surface, { ref: { workspace: WS, id: 'dir' } })).rejects.toThrow(expect.objectContaining({ code: 'not-found' }));
     fs.rmSync(outside, { recursive: true, force: true });
   });
 
@@ -692,7 +776,7 @@ describe('the relay with a working copy', () => {
 /** A page running the real runtime (`files-entry` → OpenFile), its sync port on the relay, as main wires a page's port. */
 async function runtimePage(filePath: string) {
   const id = nextId++;
-  const surface: LocalSurface = { pageId: id, extensionId: 'ext', place: { workspace: WS }, workspaceRoot: root, filePath };
+  const surface: LocalSurface = { pageId: id, extensionId: 'ext', place: { workspace: WS }, workspaceRoot: root as CanonicalPath, filePath };
   vi.resetModules();
   const { setSyncPortSource } = await import('../../../../../src/session/app-runtime/sync-link');
   const told: SyncToPage[] = [];

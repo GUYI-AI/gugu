@@ -9,7 +9,7 @@ vi.mock('electron', () => ({
   ipcRenderer: {
     // The real preload handles the response; structured clone models its IPC boundary here.
     invoke: async (_channel: string, request: { args: unknown }) => structuredClone({ ok: true, value: await wire.answer(request.args) }),
-    on: vi.fn(), send: vi.fn(), sendSync: () => 'light',
+    on: vi.fn(), send: vi.fn(), sendSync: () => ({ theme: 'light' }),
   },
 }))
 vi.mock('../../../../apps/desktop/electron/process-metrics-responder', () => ({ installProcessMetricsResponder: vi.fn() }))

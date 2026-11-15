@@ -113,7 +113,7 @@ beforeEach(async () => {
   granted = ['agents:read'];
   setExtensionBridgeHost({
     deliver: () => Promise.resolve(),
-    presentation: () => ({
+    selfGuguNumber: () => undefined, presentation: () => ({
       locale: 'en',
       themeMode: 'dark' as const,
       fullscreen: false,

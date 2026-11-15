@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useMessageQuote } from '../../../../apps/desktop/src/hooks/useMessageQuote'
 import { contentWithQuote } from '../../../../apps/desktop/src/components/chat/messageQuoteContent'
 import { createReactHarness, message, renderWithAppProviders } from '../../../support/testHarness'
+import { attachmentEnvelope } from '@gugu/core/shared/ui/attachmentModels'
 import { useChatStore } from '../../../../apps/desktop/src/store/chatContext'
 
 // Opt-in contract for the follow-up rollout; production defaults are covered separately.
@@ -30,6 +31,13 @@ it('retains a quote placed for a different chat through that chat mounting in St
 it('keeps an attachment display label out of the transmitted reply body', async () => {
   await act(async () => state.onQuote(message({ content_type: 'attachment', content: '[附件] notes.txt (text/plain)\n[Kind] file' })))
   expect(state.quote?.content).toBe('[附件]')
+  expect(state.quote?.originalContent).toBeUndefined()
+  expect(contentWithQuote('看看', state.quote)).toBe('看看')
+})
+
+it('quotes an attachment by its file name and keeps the image for the preview, still out of the reply body', async () => {
+  await act(async () => state.onQuote(message({ id: 'img', content_type: 'attachment', content: attachmentEnvelope('shot.png', 2048, 'image/png'), file_item_id: 'item-1', file_version: 1 })))
+  expect(state.quote).toMatchObject({ messageId: 'img', content: 'shot.png', attachment: { kind: 'image', fileName: 'shot.png' } })
   expect(state.quote?.originalContent).toBeUndefined()
   expect(contentWithQuote('看看', state.quote)).toBe('看看')
 })

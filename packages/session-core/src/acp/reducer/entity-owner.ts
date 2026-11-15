@@ -1,5 +1,5 @@
 import type { TranscriptItem, TranscriptTurn } from '../models/turns';
-import { makeMessageId, makeThinkingId } from './ids';
+import { messageEntityId, makeThinkingId } from './ids';
 import { SESSION_PLAN_ID } from '../models/plan';
 import type { NormalizedEvent } from './normalized-event';
 
@@ -14,7 +14,7 @@ export function findEntityOwner(
     // ⇒ 在遍历外算一次。原先它写在 `some` 里,于是每个条目都重建一个字符串再比 —— 而这条路是
     // 「每来一个流式片段、每个条目走一次」(见 `reduce`,#1181)。
     const wanted = event.kind === 'message'
-      ? event.messageId === null ? null : makeMessageId(turn.id, event.messageId, event.role)
+      ? event.messageId === null ? null : messageEntityId(turn.id, { ...event, messageId: event.messageId })
       : event.kind === 'thinking'
         ? event.messageId === null ? null : makeThinkingId(turn.id, event.messageId)
         : null;

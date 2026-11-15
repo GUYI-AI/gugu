@@ -963,6 +963,17 @@ export interface SessionBundleDescriptor {
    * 不声明 = 咕咕还没核过这一家。形状与判据见 `HarnessSelfUpdateControl`。
    */
   selfUpdate?: HarnessSelfUpdateControl;
+  /**
+   * Turn off what this harness sends to its vendor by itself (telemetry, transcript upload): sessions
+   * carry Gugu chat content and identity. Read through `harnessPinnedEnv`, so every process Gugu starts
+   * for this harness gets it, not just the session. Not declared = not checked for this harness.
+   */
+  vendorDataOff?: { env: Readonly<Record<string, string>>; evidence: string };
+  /**
+   * The variable that stops a serve process reading workspace config. The serve/attach adapter sets it when
+   * the cwd is Gugu's own task home. Named per harness: a fork ignores another brand's variable silently.
+   */
+  projectConfigDisableEnv?: string;
 }
 
 /**
@@ -993,6 +1004,13 @@ export function harnessSelfUpdateLaunch(
   if (control?.kind === 'session-env') return { env: control.env, args: [] };
   if (control?.kind === 'session-argv') return { env: {}, args: control.args };
   return { env: {}, args: [] };
+}
+
+/** Env Gugu pins for every process of this harness; it beats the user's own values (see `composeAgentSpawnEnv`). */
+export function harnessPinnedEnv(
+  descriptor: Pick<SessionBundleDescriptor, 'selfUpdate' | 'vendorDataOff'>
+): Readonly<Record<string, string>> {
+  return { ...harnessSelfUpdateLaunch(descriptor).env, ...descriptor.vendorDataOff?.env };
 }
 
 /**
@@ -1091,6 +1109,7 @@ export const MODEL_CONFIG_DIALECTS = [
   'kimi-model-env',
   'qoder-byok-settings',
   'mimocode-config-content',
+  'kilocode-config-content',
   'copilot-provider-env',
   'zcode-provider-table',
   'codebuddy-settings-env',
@@ -1099,7 +1118,7 @@ export const MODEL_CONFIG_DIALECTS = [
 
 export type ModelConfigDialect = (typeof MODEL_CONFIG_DIALECTS)[number];
 
-export const MODEL_CONFIG_DIALECT = { requiresContextWindow: new Set<ModelConfigDialect>(['opencode-config-content', 'mimocode-config-content']) };
+export const MODEL_CONFIG_DIALECT = { requiresContextWindow: new Set<ModelConfigDialect>(['opencode-config-content', 'mimocode-config-content', 'kilocode-config-content']) };
 
 /**
  * 签发响应的 `callable_routes`(#6921):网关路由原文(`/v1/images/generations`)→ 这枚会话令牌在那条路由上能调的模型。
@@ -1126,6 +1145,23 @@ export interface SessionModelCapability {
    * and leak a user key into a Gugu-authored provider block.
    */
   platformProvider?: { baseUrl: string; apiKey: string }
+  /**
+   * Who provides the model, in the name the harness's own UI shows for the provider block Gugu writes.
+   *
+   * Set only for an API key connection (#2507): the connection's name — the user's note, or the generated
+   * one ("Pi 1"). The endpoint and key there are the user's, so the harness must not call that provider
+   * "Gugu 平台额度" / `gugu-platform`. Absent = a Gugu-model session: each writer keeps its platform id and
+   * name byte-for-byte. Each writer decides where the name goes (pi shows the provider id, opencode its name).
+   */
+  providerName?: string
+  /**
+   * The interface the provider block speaks, when it is not the harness's declared platform `wireProtocol`.
+   *
+   * Set only for an API key connection (#2507) whose address was probed at creation: many relays speak Chat
+   * Completions but not Responses, and pi (`api`) / opencode (provider package) can write either. Absent = the
+   * harness's platform protocol, byte-for-byte as before.
+   */
+  wireProtocol?: 'openai-responses' | 'openai-chat-completions'
   /**
    * Every Gugu model this session may run on, for harnesses whose own model picker we
    * populate.
@@ -1163,9 +1199,9 @@ export interface SessionModelCapability {
    * inside its config document. Each harness emits it in its own shape (see each plugin's `platform-model.ts`).
    *
    * Null/absent = unknown. Dialects that can keep their own conservative default may omit it;
-   * OpenCode-family config documents omit the field during generic materialization, while the
-   * platform launch path rejects an unknown window before spawning (their provider schema requires
-   * `limit.context`).
+   * OpenCode-family config documents omit the whole `limit` block when the window is unknown (generic
+   * materialization, an API key connection — their schema requires `limit.context` once `limit` is
+   * present), while the platform launch path rejects an unknown window before spawning.
    * ❌ Never substitute a guess: too large turns "compacts early" into "overflows the gateway",
    * which is the worse failure.
    */
@@ -1193,12 +1229,8 @@ export interface SessionModelCapability {
 }
 
 export interface SessionAutonomyCapability {
-  mode: 'approval-required' | 'full-access';
-  /**
-   * Exact product tier, authoritative when present. `mode` is the legacy coarse channel derived from
-   * this value; old boolean-only callers omit it and retain their historical behavior.
-   */
-  permissionMode?: GuguPermissionMode;
+  /** The exact product tier: the one channel every materializer reads (full access = `full-access`). */
+  permissionMode: GuguPermissionMode;
 }
 
 export interface SessionPromptBlocks {
@@ -1986,6 +2018,14 @@ const sessionBundleDescriptorSchema: z.ZodType<SessionBundleDescriptor> = z.obje
     .optional(),
   /** ⚠️ 同上:少了这一条,`selfUpdate` 会被 zod 静默剥掉,宿主读到 undefined,会话照旧自更新。 */
   selfUpdate: harnessSelfUpdateControlSchema.optional(),
+  /** Same as above: not in the schema = stripped by zod, and the vendor keeps receiving data. */
+  vendorDataOff: z.object({
+    env: z.record(z.string().min(1), z.string()).refine((env) => Object.keys(env).length > 0, {
+      message: 'vendorDataOff must name at least one variable',
+    }),
+    evidence: citedEvidenceSchema('vendor-data'),
+  }).strict().optional(),
+  projectConfigDisableEnv: z.string().min(1).optional(),
   /**
    * 必答项 —— ❌ **不给** `.optional()`：没有默认值就是这条规则的全部力气所在（#4834）。
    * ⚠️ 同上:漏进 schema 会被 zod 静默剥掉,于是内核读到 `undefined`、退回「有 configRoot

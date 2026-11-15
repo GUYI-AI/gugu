@@ -102,6 +102,9 @@ export function SessionHistoryRow({
   onAction,
   previewSource,
   describePreviewError,
+  machineLabel,
+  offline,
+  actionDisabled,
 }: {
   row: SessionHistoryRowData;
   /** 光标:键盘上下移动的那一行。 */
@@ -115,6 +118,12 @@ export function SessionHistoryRow({
   /** #6264 原件在哪台机器上:预览问那一台。 */
   previewSource: SessionImportSource;
   describePreviewError: (error: unknown) => string;
+  /** 这一行在哪台机器上;列表只有一台机器时为 null(不标)。 */
+  machineLabel: string | null;
+  /** 那台机器离线:这一行来自它的心跳摘要。 */
+  offline: boolean;
+  /** 离线机器上点不开的那几行(rowOpens 为假)。 */
+  actionDisabled: boolean;
 }) {
   const { translate, locale } = useSessionMessages();
   const title = row.title || translate('sessionHistory.untitled');
@@ -139,19 +148,29 @@ export function SessionHistoryRow({
           <div className={cn('truncate text-sm leading-5', row.title ? 'text-foreground' : 'text-foreground-muted')} title={title}>
             {title}
           </div>
-          <time
-            className="block truncate text-sm leading-5 text-foreground-muted tabular-nums"
-            dateTime={new Date(row.updatedAt).toISOString()}
-          >
-            {/* 绝对时间、年份总写:列表里一眼要能比先后。 */}
-            {formatCalendarDate(row.updatedAt, locale, { includeYear: true })}
-          </time>
+          <div className="flex min-w-0 items-center gap-2 text-sm leading-5 text-foreground-muted">
+            <time className="truncate tabular-nums" dateTime={new Date(row.updatedAt).toISOString()}>
+              {/* 绝对时间、年份总写:列表里一眼要能比先后。 */}
+              {formatCalendarDate(row.updatedAt, locale, { includeYear: true })}
+            </time>
+            {machineLabel ? (
+              <span className="min-w-0 shrink truncate" data-testid="session-history-row-machine">
+                {machineLabel}
+              </span>
+            ) : null}
+            {offline ? (
+              <span className="shrink-0 text-foreground-passive" data-testid="session-history-row-offline">
+                {translate('machinePicker.offline')}
+              </span>
+            ) : null}
+          </div>
         </div>
         <Button
           size="sm"
           variant="secondary"
           className="bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] active:bg-foreground/[0.14]"
           data-testid="session-history-action"
+          disabled={actionDisabled}
           onClick={(event) => {
             event.stopPropagation();
             onAction();

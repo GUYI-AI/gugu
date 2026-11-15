@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 
 import { claudeFilePatch } from '../../acp/transport/claude-file-patch';
@@ -9,6 +9,7 @@ import { readClaudeRecord, type ClaudeRecordItem } from '@gugu/core/local/agent/
 
 import {
   type RecordEntry,
+  type RecordArchiveBudget,
   type RecordLineageNode,
   type RecordImageRef,
   type SessionRecordLocator,
@@ -17,7 +18,7 @@ import {
   type SessionRecordSourceEvents
 } from '../contract';
 import { findUnder, isFile } from './find-file';
-import { locateImages, readRecordImage } from './record-images';
+import { jsonlCheckAt, locateImages, readRecordImage } from './record-images';
 import {
   SessionRecordNotFoundError,
   SessionRecordForkDivergedError,
@@ -50,6 +51,8 @@ type ClaudeResumeData = {
   lastUuid: string | null;
   launches: Record<string, Launch>;
   childRoots: Record<string, string[]>;
+  /** Includes earlier files in a continuation chain, not just the live tail. */
+  consumedFiles?: Array<[string, number]>;
 };
 
 /** 分叉扫描的候选上限。超了就报出去 —— ❌ 不许静默截断后当作"没有分叉"。 */
@@ -69,11 +72,15 @@ export function createClaudeJsonlSource(
   const root = new ClaudeJsonlSource(locator, options, nativeChild);
   return withSubagentSources(
     root,
-    (id) => createClaudeJsonlSource({ ...locator, providerSessionId: id, roots: root.childRoots[id] }, options, true),
+    // A child's pictures are in its own file: a place kept for them would point into the root record.
+    (id) => createClaudeJsonlSource({ ...locator, providerSessionId: id, roots: root.childRoots[id] }, options && { ...options, fill: undefined }, true),
     () => createClaudeJsonlSource(locator, options, nativeChild),
     options,
   );
 }
+
+/** The decoder state a fill read notes before each line (`RecordEntry.state`) and a fill from there restores. */
+type ClaudeFillState = Pick<ClaudeResumeData, 'lastUuid' | 'launches' | 'childRoots'>;
 
 class ClaudeJsonlSource implements SessionRecordSource {
   private readonly warn: RecordSourceWarn;
@@ -98,6 +105,13 @@ class ClaudeJsonlSource implements SessionRecordSource {
   private lineageValid = true;
   private inherited = 0;
   private ownIncrement = false;
+  private consumedFiles = new Map<string, number>();
+  private consumedBytes = 0;
+
+  private rememberConsumed(path: string, bytes: number): void {
+    this.consumedBytes += bytes - (this.consumedFiles.get(path) ?? 0);
+    this.consumedFiles.set(path, bytes);
+  }
 
   constructor(
     readonly locator: SessionRecordLocator,
@@ -124,10 +138,13 @@ class ClaudeJsonlSource implements SessionRecordSource {
           this.seenUuids = new Set();
           this.lastUuid = null;
           this.anchors = new Set();
+          this.consumedFiles.clear();
+          this.consumedBytes = 0;
           events.onReset(reason);
         }
       },
-      this.warn
+      this.warn,
+      this.options?.fill
     );
     const resumed = this.options?.readMode !== 'snapshot' && resume ? await this.resumeRead(path, resume) : false;
     if (!resumed) {
@@ -153,6 +170,14 @@ class ClaudeJsonlSource implements SessionRecordSource {
     const data = resume?.data as ClaudeResumeData | undefined;
     if (!data || data.version !== CLAUDE_RESUME_VERSION) return false;
     if (data.primaryPath !== path) return false;
+    // Legacy single-file cursors already carry the consumed offset. A legacy
+    // fork cursor lacks the earlier file offsets, so rebuild it once.
+    if (!data.consumedFiles && data.tailPath !== path) return false;
+    this.consumedFiles.clear();
+    this.consumedBytes = 0;
+    for (const [file, bytes] of data.consumedFiles ?? [[path, data.tail.lineOffset]]) {
+      this.rememberConsumed(file, bytes);
+    }
     // 链末先自己走一遍：它要是变了，说明中间出现过新的分叉文件。
     const tailPath = await this.chainForks(path).catch(() => null);
     if (tailPath === null || tailPath !== data.tailPath) return false;
@@ -172,13 +197,18 @@ class ClaudeJsonlSource implements SessionRecordSource {
     return true;
   }
 
-  async resumePoint(): Promise<SessionRecordResume | null> {
+  async resumePoint(budget?: RecordArchiveBudget): Promise<SessionRecordResume | null> {
     if (this.options?.readMode === 'snapshot') return null;
     // 存档在拆除时取,紧接着同步 stop() 把 this.reader 置空 —— await 之后只认这一刻的 reader。
     const reader = this.reader;
     if (!reader || !this.primaryPath) return null;
+    this.rememberConsumed(reader.currentPath, Math.max(this.consumedFiles.get(reader.currentPath) ?? 0, reader.consumedBytes));
+    const consumedBytes = this.consumedBytes;
+    if (budget && (budget.remainingBytes -= consumedBytes) < 0) return null;
     const tail = await reader.resumePoint();
     if (!tail) return null;
+    this.rememberConsumed(reader.currentPath, Math.max(this.consumedFiles.get(reader.currentPath) ?? 0, tail.lineOffset));
+    if (budget && (budget.remainingBytes -= this.consumedBytes - consumedBytes) < 0) return null;
     const data: ClaudeResumeData = {
       version: CLAUDE_RESUME_VERSION,
       primaryPath: this.primaryPath,
@@ -188,6 +218,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
       lastUuid: this.lastUuid,
       launches: this.launches,
       childRoots: this.childRoots,
+      consumedFiles: [...this.consumedFiles],
     };
     return {
       data,
@@ -197,6 +228,47 @@ class ClaudeJsonlSource implements SessionRecordSource {
 
   async catchUp(): Promise<void> {
     if (this.options?.readMode !== 'snapshot') await this.reader?.catchUp();
+  }
+
+  /**
+   * resume-tail: `position` is a place in the primary record (`RecordEntry.position`), `at` the decoder state there
+   * (`ClaudeFillState`). A uuid is written once in a primary record, so a read from there needs no earlier uuids.
+   */
+  async startingAt(position: number, at?: unknown): Promise<SessionRecordResume | null> {
+    const path = position > 0 ? await resolveSessionFile(this.locator, this.nativeChild).catch(() => null) : null;
+    if (!path) return null;
+    const info = await stat(path);
+    const tail: TailResume = { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs, lineOffset: position };
+    const data: ClaudeResumeData = { version: CLAUDE_RESUME_VERSION, primaryPath: path, tailPath: path, tail,
+      seenUuids: [], lastUuid: null, launches: {}, childRoots: {}, ...(at as ClaudeFillState | undefined), consumedFiles: [[path, position]] };
+    return { data, fingerprint: `claude:${path}:${tail.ino}:${tail.size}:${tail.mtimeMs}` };
+  }
+
+  childIdsAt(at: unknown): string[] {
+    return Object.keys((at as ClaudeFillState | undefined)?.childRoots ?? {});
+  }
+
+  async checkAt(position: number): Promise<string | null> {
+    const path = await resolveSessionFile(this.locator, this.nativeChild).catch(() => null);
+    return path ? jsonlCheckAt(path, position) : null;
+  }
+
+  recordPath(): Promise<string | null> {
+    return resolveSessionFile(this.locator, this.nativeChild).catch(() => null);
+  }
+
+  async stamp(): Promise<string | null> {
+    const path = await resolveSessionFile(this.locator, this.nativeChild).catch(() => null);
+    if (!path) return null;
+    const info = await stat(path);
+    // Subagents write their own files (one per subagent): a change there must also reach the fill.
+    const folder = join(dirname(path), basename(path, '.jsonl'), 'subagents');
+    let children = '';
+    for (const name of (await readdir(folder).catch(() => [] as string[])).sort()) {
+      const child = await stat(join(folder, name)).catch(() => null);
+      if (child) children += `|${name}:${child.size}:${child.mtimeMs}`;
+    }
+    return `${path}:${info.ino}:${info.size}:${info.mtimeMs}${children}`;
   }
 
   getLineage(): readonly RecordLineageNode[] | null { return this.lineageValid ? this.lineage : null; }
@@ -213,6 +285,8 @@ class ClaudeJsonlSource implements SessionRecordSource {
   }
 
   private async fullRead(path: string): Promise<void> {
+    this.consumedFiles.clear();
+    this.consumedBytes = 0;
     this.launches = {};
     this.backgroundTasks = new Set();
     this.childRoots = {};
@@ -224,6 +298,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
     this.inherited = 0;
     this.ownIncrement = false;
     await this.reader!.readFromStart((lines, offsets) => this.emitLines(lines, offsets));
+    this.rememberConsumed(path, this.reader!.consumedBytes);
     // A storage snapshot belongs to this task's primary record, not a descendant's continuation.
     if (this.options?.readMode === 'snapshot') return;
     // 分叉串联接在整份读之后：串上来的那份也是"已有内容"，尾读要交接到链条最后一份上。
@@ -234,10 +309,20 @@ class ClaudeJsonlSource implements SessionRecordSource {
   /** `offsets` 只有尾读器读的行才有(分叉文件整份读进来的没有):有它才给工具图记原文位置。 */
   private emitLines(lines: string[], offsets?: number[]): void {
     if (this.stopped || !this.events) return;
+    if (offsets && this.reader) this.rememberConsumed(this.reader.currentPath,
+      Math.max(this.consumedFiles.get(this.reader.currentPath) ?? 0, this.reader.consumedBytes));
     const events = this.events;
     const path = this.reader?.currentPath;
-    emitJsonLines(lines, 'claude', this.warn, (entries) => events.onEntries(entries), (record) => this.decodeRecord(record),
-      offsets && path ? (entries, index) => locateImages(entries, lines[index], offsets[index], path) : undefined);
+    emitJsonLines(lines, 'claude', this.warn, (entries) => events.onEntries(entries), this.options?.fill ? (record) => {
+      // A fill read: every entry carries the state its line was decoded from, so a later read can start at that line.
+      const before: ClaudeFillState = { lastUuid: this.lastUuid, launches: this.launches, childRoots: this.childRoots };
+      const entries = this.decodeRecord(record);
+      for (const entry of entries) entry.state = before;
+      return entries;
+    } : (record) => this.decodeRecord(record),
+      offsets && path ? (entries, index) => locateImages(entries, lines[index], offsets[index], path) : undefined,
+      // Positions are places in the primary record (`startingAt`); a continuation file's lines have none.
+      path === this.primaryPath ? offsets : undefined);
   }
 
   private decodeRecord(record: Record<string, unknown>): RecordEntry[] {
@@ -270,7 +355,8 @@ class ClaudeJsonlSource implements SessionRecordSource {
     const blocks = Array.isArray(message?.content) ? message.content.map(asRecord) : [];
     for (const block of blocks) {
       if (block?.type === 'tool_use' && typeof block.id === 'string' && (block.name === 'Agent' || block.name === 'Task')) {
-        this.launches[block.id] = { name: block.name, input: block.input };
+        // Replaced, never changed in place: a fill read's per-line state shares it.
+        this.launches = { ...this.launches, [block.id]: { name: block.name, input: block.input } };
       }
     }
     // The launch result supplies the native identity; keep its call paired until then,
@@ -289,8 +375,8 @@ class ClaudeJsonlSource implements SessionRecordSource {
         entry,
       ];
       const input = asRecord(launch.input);
-      this.childRoots[id] = this.nativeChild ? this.locator.roots : [join(dirname(this.primaryPath!),
-        typeof record.sessionId === 'string' ? record.sessionId : this.locator.providerSessionId, 'subagents')];
+      this.childRoots = { ...this.childRoots, [id]: this.nativeChild ? this.locator.roots : [join(dirname(this.primaryPath!),
+        typeof record.sessionId === 'string' ? record.sessionId : this.locator.providerSessionId, 'subagents')] };
       const title = [input?.name, input?.description, launch.name].find((value): value is string => typeof value === 'string' && value !== '');
       const task = [input?.description, input?.prompt].find((value): value is string => typeof value === 'string' && value !== '');
       return [
@@ -306,6 +392,9 @@ class ClaudeJsonlSource implements SessionRecordSource {
           ...(typeof input?.prompt === 'string' && input.prompt ? { rawInput: input.prompt } : {}),
         } },
         { ...entry, event: { kind: 'tool_update', toolCallId: id, status: event.status } },
+        // A foreground agent's result is its finish: the row saying it finished is this line, with its reply.
+        ...(result.isAsync !== true && result.status === 'completed' ? [{ ...entry, key: `${entry.key}#done`, event: {
+          kind: 'subagent_done', parentRecord: true, toolCallId: id, agentId: id, status: 'completed', ...replyOf(result.content) } } satisfies RecordEntry] : []),
       ];
     }), ...this.backgroundTaskEntries(record, message, uuid)];
   }
@@ -335,9 +424,15 @@ class ClaudeJsonlSource implements SessionRecordSource {
     if (!text?.includes('<task-notification>')) return [];
     const tag = (name: string) => new RegExp(`<${name}>([^<]*)</${name}>`).exec(text)?.[1]?.trim();
     const id = tag('task-id');
-    if (!id || !this.backgroundTasks.has(id)) return [];
     const status = tag('status');
     const state = status === 'failed' ? 'failed' : status === 'killed' || status === 'stopped' ? 'stopped' : 'completed';
+    // A background agent's notification is the row saying it finished, with its reply (`<result>`).
+    if (id && this.childRoots[id]) {
+      const result = /<result>([\s\S]*?)<\/result>/.exec(text)?.[1];
+      return [{ key: `claude:${uuid}#agent-done`, ...stamp, event: {
+        kind: 'subagent_done', parentRecord: true, toolCallId: id, agentId: id, status: state, ...(result !== undefined ? { outputText: result.trim() } : {}) } }];
+    }
+    if (!id || !this.backgroundTasks.has(id)) return [];
     const toolCallId = tag('tool-use-id');
     return [{ key: `claude:${uuid}#bg-done`, ...stamp,
       event: { kind: 'async_task_state', asyncTaskId: id, state, ...(toolCallId ? { toolCallId } : {}) } }];
@@ -361,6 +456,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
       const next = await this.findContinuation(currentPath, leaf, visited);
       if (!next) return currentPath;
       visited.add(next.path);
+      this.rememberConsumed(next.path, next.bytes);
       this.emitLines(next.lines);
       const newLeaf = this.lastUuid;
       if (newLeaf === leaf) return currentPath; // 没带来新记录，别在原地打转
@@ -375,7 +471,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
     fromPath: string,
     leaf: string,
     visited: Set<string>
-  ): Promise<{ path: string; lines: string[] } | null> {
+  ): Promise<{ path: string; lines: string[]; bytes: number } | null> {
     const dir = dirname(fromPath);
     const fromInfo = await stat(fromPath).catch(() => null);
     if (!fromInfo) return null;
@@ -414,8 +510,11 @@ class ClaudeJsonlSource implements SessionRecordSource {
       const head = await readFirstMessageUuid(candidate.path);
       if (!head || !this.anchors.has(head)) continue;
       let text: string;
+      let bytes: number;
       try {
-        text = await readFile(candidate.path, 'utf8');
+        const buffer = await readFile(candidate.path);
+        bytes = buffer.length;
+        text = buffer.toString('utf8');
       } catch {
         continue;
       }
@@ -423,7 +522,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
       if (!text.includes(leaf)) continue;
       const lines = text.split('\n').filter((line) => line.trim().length > 0);
       if (!lines.some((line) => parseJson(line)?.uuid === leaf)) continue;
-      return { path: candidate.path, lines };
+      return { path: candidate.path, lines, bytes };
     }
     return null;
   }
@@ -455,7 +554,7 @@ async function readFirstMessageUuid(path: string): Promise<string | null> {
  * 项目目录名是 cwd 的转义，locator 只给根 —— 与其在这里再造一套转义规则（它随 claude 版本变），
  * 不如把根下的目录列一遍去 stat：一次 readdir + 若干 stat，几十毫秒，而且转义规则怎么变都不会错。
  */
-async function resolveSessionFile(locator: SessionRecordLocator, nativeChild = false): Promise<string> {
+export async function resolveSessionFile(locator: SessionRecordLocator, nativeChild = false): Promise<string> {
   const name = `${nativeChild ? 'agent-' : ''}${locator.providerSessionId}.jsonl`;
   for (const root of locator.roots) {
     if (await isFile(join(root, name))) return join(root, name);
@@ -560,3 +659,10 @@ function toolResultText(content: unknown): string | null {
  * 也❌不要为了让 UI 好看去塞一个语义不对的 kind：那会让子 agent 显示成一次文件读取。
  */
 const claudeToolKind = toolKindTable({ read: ['Read', 'NotebookRead'], edit: ['Edit', 'MultiEdit', 'Write', 'NotebookEdit'], execute: ['Bash', 'BashOutput', 'KillShell'], search: ['Grep', 'Glob'], fetch: ['WebFetch', 'WebSearch'] });
+
+/** The text a foreground agent's result hands back (`toolUseResult.content`). */
+function replyOf(content: unknown): { outputText?: string } {
+  if (!Array.isArray(content)) return {};
+  const text = content.map((part) => asRecord(part)?.text).filter((part): part is string => typeof part === 'string').join('\n');
+  return text ? { outputText: text } : {};
+}

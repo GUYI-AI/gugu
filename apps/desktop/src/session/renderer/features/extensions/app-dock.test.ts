@@ -154,7 +154,8 @@ describe('点左栏一个 App', () => {
     install([app('clock')]);
     screenLayout.show({ kind: 'app', tabKind: 'clock.main' });
     const saved = screenLayout.snapshot;
-    appState.navigation.navigate('assistant');
+    // Somewhere else on the session page first (the built-in assistant page this once was is gone).
+    appState.navigation.navigate('library');
     openApp('clock');
     expect(appState.navigation.currentViewId).toBe('screen');
     expect(screenLayout.snapshot).toEqual(saved);

@@ -1,8 +1,8 @@
 import { createChatContext } from '@session-chat/chat-context';
 import { createChatState } from '@session-chat/state/chat-state';
 import { createChatView } from '@session-chat/chat-view';
-import { pinSticky } from '@session-chat/chat-root.css';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
+import { pinnedSummaryShown } from '../../../../tests/support/pinnedSummaryShown';
 import { describe, expect, it } from 'vitest';
 import { turnProcessUnitDef } from '@session-chat/components/rows/turn-process/turn-process.def';
 import { DEFAULT_THEME } from '@session-chat/core/theme';
@@ -74,15 +74,26 @@ describe('readable process rows at real split-column widths (#1036)', () => {
     expect(result.dom).toBe(result.computed);
   });
 
-  it('shows a long background command and reserves its wrapped height', async () => {
-    const result = await renderAndMeasureUnit(backgroundTasksUnitDef, {
-      kind: 'background-tasks', id: 'background', expanded: true,
-      commands: [{ id: 'c', launchToolCallId: 'c', taskId: 'task', name: "sleep 150; printf '%s\\n' 'T1036-BACKGROUND-WITH-A-LONG-OBSERVABLE-COMMAND-END'" }],
+  // owner 2026-11-12 改了这一条:长后台命令收着时只一行、省略号收尾(「不渐进披露吗,这样也太长了」);
+  // 「字不能只活在 title 里」照旧成立 —— 收着的那一行必须是能就地点开的开关,点开后一个字都不裁、高度照量。
+  it('folds a long background command to one line that opens in place to the whole command', async () => {
+    const name = "sleep 150; printf '%s\\n' 'T1036-BACKGROUND-WITH-A-LONG-OBSERVABLE-COMMAND-END'";
+    const data = (open: boolean) => ({
+      kind: 'background-tasks' as const, id: 'background', expanded: true,
+      commands: [{ id: 'c', launchToolCallId: 'c', taskId: 'task', name, ...(open ? { open: true } : {}) }],
       subagents: [],
-    }, makeContractCtx({ width: 198 }), textBounds);
-    expect(result.inspected.hidden).toBeLessThanOrEqual(1);
-    expect(result.dom).toBe(result.computed);
-    expect(result.spill).toBeLessThanOrEqual(1);
+    });
+    const folded = await renderAndMeasureUnit(backgroundTasksUnitDef, data(false), makeContractCtx({ width: 198 }), (host) => {
+      const toggle = host.querySelector<HTMLElement>('[data-slot="background-task-toggle"]');
+      return { toggles: toggle?.getAttribute('aria-expanded') === 'false' ? 1 : 0, lines: toggle ? Math.round(toggle.offsetHeight / 20) : 0 };
+    });
+    expect(folded.inspected).toEqual({ toggles: 1, lines: 1 });
+    expect(folded.dom).toBe(folded.computed);
+
+    const open = await renderAndMeasureUnit(backgroundTasksUnitDef, data(true), makeContractCtx({ width: 198 }), textBounds);
+    expect(open.inspected.hidden).toBeLessThanOrEqual(1);
+    expect(open.dom).toBe(open.computed);
+    expect(open.spill).toBeLessThanOrEqual(1);
   });
 
   it('wraps a static output title and unavailable explanation', async () => {
@@ -124,7 +135,7 @@ describe('readable process rows at real split-column widths (#1036)', () => {
 });
 
 
-it('unpins a tall question when the column narrows, restores short pins, and rechecks viewport height', async () => {
+it('pins a long question as two lines in any column, with the reply readable below it', async () => {
   const context = createChatContext({ locale: () => 'en-US' });
   context.setLayout({ preset: 'double', userGutter: 32, agentConversation: true });
   const state = createChatState(context);
@@ -137,24 +148,21 @@ it('unpins a tall question when the column narrows, restores short pins, and rec
       { kind: 'message', id: 'question', seq: 0, role: 'user', text: 'Read the three local files and run the verified local commands. '.repeat(10) },
       { kind: 'message', id: 'answer', seq: 1, role: 'assistant', text: 'FIRST-REPLY-LINE\n\n' + 'The reply stays readable below the question.\n\n'.repeat(20) },
     ] }]);
-    const question = () => host.querySelector<HTMLElement>('[data-item-id="question"]');
-    const pinned = () => !!question()?.closest(`.${pinSticky}`);
     const scroll = () => host.querySelector<HTMLElement>('[data-chat-scroll]')!;
-    await until('the wide question is pinned', pinned);
-    host.style.width = '222px';
-    await until('the narrow question leaves the pin lane', () => !!question() && !pinned());
-    view.scrollToItem('answer', { align: 'start' });
-    await until('the answer is rendered', () => !!host.querySelector('[data-agent-conversation-message="answer"]'));
-    await untilStable('narrow reply geometry', () => [scroll().scrollTop, scroll().scrollHeight]);
-    const reply = host.querySelector<HTMLElement>('[data-agent-conversation-message="answer"]')!;
-    const line = reply.querySelector<HTMLElement>('p')!.getBoundingClientRect();
-    expect(reply.contains(document.elementFromPoint(line.left + 8, Math.max(line.top + 8, 12)))).toBe(true);
-    host.style.width = '748px';
-    view.scrollToTop();
-    await until('widening restores the pin', pinned);
-    host.style.height = '140px';
-    await until('shortening the viewport removes the tall pin', () => !pinned());
-    host.style.height = '850px';
-    await until('growing the viewport restores the pin', pinned);
+    for (const width of ['748px', '222px']) {
+      host.style.width = width;
+      view.scrollToItem('answer', { align: 'start' });
+      await until('the answer is rendered', () => !!host.querySelector('[data-agent-conversation-message="answer"]'));
+      await untilStable(`reply geometry at ${width}`, () => [scroll().scrollTop, scroll().scrollHeight]);
+      const summaryEl = host.querySelector<HTMLElement>('[data-pin-summary="question"]')!, summary = summaryEl.getBoundingClientRect();
+      expect(summary.height, `two lines at ${width}`).toBeLessThanOrEqual(2 * context.theme.fonts.body.lineHeight + 24 + 1);
+      // Above the reply sits the summary once the question has gone by, else the question's own end.
+      const stuck = pinnedSummaryShown(summaryEl);
+      const above = stuck ? summary : host.querySelector<HTMLElement>('[data-user-card="question"]')!.getBoundingClientRect();
+      const reply = host.querySelector<HTMLElement>('[data-agent-conversation-message="answer"]')!;
+      const line = reply.querySelector<HTMLElement>('p')!.getBoundingClientRect();
+      expect(line.top, `the first reply line clears the question at ${width}`).toBeGreaterThanOrEqual(above.bottom);
+      expect(reply.contains(document.elementFromPoint(line.left + 8, line.top + 8))).toBe(true);
+    }
   } finally { view.dispose(); state.dispose(); context.dispose(); host.remove(); }
 });

@@ -2,6 +2,8 @@ import { useGroupDisplayName } from '../hooks/useGroupDisplayName'
 import { GroupInvitationsPanel } from './contacts/GroupInvitationsPanel'
 import { messageForUser } from '../lib/userFacingError'
 import { Button } from './ui/Button'
+import { ListRowContent } from './ui/ListRow'
+import { SectionLabel } from './ui/SectionLabel'
 import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import { useContactsStore } from '../store/contactsContext'
@@ -11,7 +13,6 @@ import { Avatar } from './Avatar'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { SegmentedTabs } from './ui/SegmentedTabs'
 import { useTranslation } from 'react-i18next'
-import { cn } from '@/lib/cn'
 import { useChatStore } from '../store/chatContext'
 import { chatService } from '../lib/chat'
 import { rendererLogger } from '../lib/log'
@@ -32,35 +33,14 @@ const requestHeadClass = 'nfp-head window-drag-region flex shrink-0 items-center
 // @@@1944 该按钮只在移动端渲染（onBack-gated）且是页面唯一出口 → 按 #1787 触控规范:
 // ≥44px 触控目标（size-11）+ .gg-pressable 按压反馈（hover 在触屏无效）；负 margin 保持头部视觉密度。
 const requestBackButtonClass = 'nfp-back-btn gg-pressable -my-2.5 -ml-2.5 inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-control)] border-none bg-transparent p-0 text-[var(--text-primary)]'
-const requestBodyClass = 'nfp-reqbody flex-1 overflow-y-auto px-3 py-0.5'
-const requestRowClass = 'nfp-reqrow gg-row flex cursor-pointer items-center gap-2.5 rounded-[var(--radius-control)] px-1.5 py-[9px]'
-const requestMetaClass = 'nfp-meta min-w-0 flex-1'
-const requestNameClass = 'nfp-name overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-[var(--text-primary)]'
-const requestSubClass = 'nfp-sub mt-px overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-secondary)]'
-const requestActionsClass = 'nfp-reqacts flex shrink-0 gap-1.5'
-const requestStatusClass = 'nfp-status shrink-0 text-[length:var(--font-body)] text-[var(--text-tertiary)]'
-const requestButtonBaseClass = 'rounded-[var(--radius-control)] border-none px-[11px] py-[5px] font-[inherit] text-xs font-medium !transition-opacity !duration-[var(--dur-fast)] !ease-[var(--ease)]'
-const requestButtonEnabledClass = 'cursor-pointer'
-const requestButtonDisabledClass = 'cursor-default opacity-60'
-const requestOkClass = 'nfp-btn-ok bg-[var(--text-primary)] text-[var(--bg-primary)] enabled:hover:opacity-[0.88]'
-const requestNoClass = "nfp-btn-no bg-[var(--bg-elevated)] text-[var(--text-secondary)] enabled:hover:bg-[var(--hover)] [[data-theme='light']_&]:bg-[var(--muted)]"
+const requestBodyClass = 'nfp-reqbody flex-1 overflow-y-auto px-2 py-0.5'
 const requestEmptyClass = 'nfp-req-empty !py-[54px] text-center text-[length:var(--font-body)] text-[var(--text-secondary)]'
-// @@@1944 tab 内待处理计数小圆标（bucket 级；入口行角标只有总数）
-
-function requestActionButtonClass(kind: 'ok' | 'no', disabled: boolean): string {
-  return cn(
-    requestButtonBaseClass,
-    disabled ? requestButtonDisabledClass : requestButtonEnabledClass,
-    kind === 'ok' ? requestOkClass : requestNoClass,
-  )
-}
 
 // ── Shared inline styles ──────────────────────────────────────────────────────
 
-// 与请求行(px 6)同一条左边线。
-const styleSectionLabel: CSSProperties = { padding: '12px 6px 4px', fontSize: 'var(--font-caption)', fontWeight: 600, color: 'var(--text-tertiary)' }
-const styleRowError: CSSProperties = { padding: '0 6px 8px', fontSize: 'var(--font-caption)', color: 'var(--danger-fg)' }
-const stylePlaceholderAvatar: CSSProperties = { width: 34, height: 34, borderRadius: 'var(--radius-circle)', background: 'var(--bg-elevated)', flexShrink: 0 }
+// 与请求行(容器 8 + 行 8)同一条左边线。
+const styleRowError: CSSProperties = { padding: '0 8px 8px', fontSize: 'var(--font-caption)', color: 'var(--danger-fg)' }
+const stylePlaceholderAvatar: CSSProperties = { width: 'var(--avatar-sm)', height: 'var(--avatar-sm)', borderRadius: 'var(--radius-circle)', background: 'var(--bg-elevated)' }
 const openOnKey = (open: () => void) => (event: KeyboardEvent<HTMLDivElement>) => {
   if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); open() }
 }
@@ -97,28 +77,11 @@ function RequestRow({
   rowData?: Record<string, string | undefined>
 }) {
   return (
-    <div className={requestRowClass} role="button" tabIndex={0} onClick={onOpen} onKeyDown={openOnKey(onOpen)} {...rowData}>
-      {avatar}
-      <div className={requestMetaClass}>
-        <div className={requestNameClass}>{name}</div>
-        <div className={requestSubClass}>{sub}</div>
-      </div>
-      {status ? <div className={requestStatusClass}>{status}</div> : <div className={requestActionsClass} onClick={(event) => event.stopPropagation()}>
-        <button
-          className={requestActionButtonClass('ok', loading)}
-          {...acceptData}
-          onClick={onAccept}
-          disabled={loading}
-        >
-          {acceptLabel}
-        </button>
-        <button
-          className={requestActionButtonClass('no', loading)}
-          onClick={onReject}
-          disabled={loading}
-        >
-          {rejectLabel}
-        </button>
+    <div className="nfp-reqrow gg-list-row gg-row" role="button" tabIndex={0} onClick={onOpen} onKeyDown={openOnKey(onOpen)} {...rowData}>
+      <ListRowContent leading={avatar} title={<span className="nfp-name">{name}</span>} meta={status ?? undefined} subtitle={sub} />
+      {status ? null : <div className="flex shrink-0 gap-2" onClick={(event) => event.stopPropagation()}>
+        <Button variant="primary" size="sm" {...acceptData} onClick={onAccept} disabled={loading}>{acceptLabel}</Button>
+        <Button variant="secondary" size="sm" onClick={onReject} disabled={loading}>{rejectLabel}</Button>
       </div>}
     </div>
   )
@@ -184,7 +147,7 @@ function FriendRequestItem({
     <>
       <RequestRow
         avatar={peer ? (
-          <Avatar name={peer.display_name} avatarUrl={peer.avatar} seed={peer.id} size="md" isAgent={peer.type === 'agent'} />
+          <Avatar name={peer.display_name} avatarUrl={peer.avatar} seed={peer.id} size="sm" isAgent={peer.type === 'agent'} />
         ) : (
           <div style={stylePlaceholderAvatar} />
         )}
@@ -257,7 +220,7 @@ function GroupJoinRequestItem({ request, onDecided }: { request: ManagedGroupJoi
   return (
     <div data-testid="group-join-request" data-join-request-id={request.id}>
       <RequestRow
-        avatar={<Avatar name={requester?.display_name ?? ''} avatarUrl={requester?.avatar ?? null} seed={request.requester_user_id} size="md" isAgent={request.requester_type === 'agent'} />}
+        avatar={<Avatar name={requester?.display_name ?? ''} avatarUrl={requester?.avatar ?? null} seed={request.requester_user_id} size="sm" isAgent={request.requester_type === 'agent'} />}
         name={resolveOrLoud(requester?.display_name, `group join requester ${request.requester_user_id}`)}
         sub={note ? `${joinLine} · ${note}` : joinLine}
         status={status}
@@ -436,7 +399,7 @@ export function NewFriendsPanel({ onOpenGroupChat, onBack }: { onOpenGroupChat?:
               GroupInvitationsPanel 出加载与失败态;两类都确实为空时给一句合并的空态。 */}
           {showJoinSection ? (
             <div className={requestBodyClass} data-testid="group-join-requests">
-              <div style={styleSectionLabel}>{t('groupJoinRequests.title')}</div>
+              <SectionLabel>{t('groupJoinRequests.title')}</SectionLabel>
               {groupJoinRequestsError ? (
                 <div role="alert" style={styleRowError}>
                   {messageForUser(new Error(groupJoinRequestsError))}
@@ -450,7 +413,7 @@ export function NewFriendsPanel({ onOpenGroupChat, onBack }: { onOpenGroupChat?:
                   onDecided={async () => { await Promise.all([refreshGroupJoinRequests(), refreshChats()]) }}
                 />
               ))}
-              {groupInvitations.length > 0 ? <div style={styleSectionLabel}>{t('groupInvitations.title')}</div> : null}
+              {groupInvitations.length > 0 ? <SectionLabel>{t('groupInvitations.title')}</SectionLabel> : null}
             </div>
           ) : null}
           {groupInvitations.length > 0 || requestsStatus !== 'ready'

@@ -14,13 +14,13 @@ import type { ComposerModelSelection } from './use-composer-model-options';
  *
  * `advertised` = 这条活会话的 ACP 报上来的模型清单(`acp-chat-store.modelOptions` 的键)。
  * BYOK 会话仍以它为热切判据:适配器只接受自己在 `session/new` 报过的值(claude / codex /
- * opencode 逐家读源码 + 实测确认,不在清单里一律拒)。平台会话的 allowlist 由 capability
- * bundle 在 `session/new` 前注入,因此它用目录判定可达性并把原始拒绝交给 ACP。
+ * opencode 逐家读源码 + 实测确认,不在清单里一律拒)。平台会话同样以它为判据:进程手里的
+ * allowlist 是**签票那一刻**按会员档算的可切清单(`session/new` 前注入,之后学不到新的),
+ * 而目录跟着账号当下的档走 —— 会话开在免费档、中途开了会员,目录里就多出进程从没收到过的模型。
  *
- * ⇒ **同一条平台计费路 + 目录里有它 = 直接把 alias 交给 ACP**。平台 alias 的 allowlist
- * 在 session/new 时已由 capability bundle 注入；如果 adapter/网关仍拒绝，`set_config_option`
- * 的原始错误必须到 UI，不能借 reload 掩盖启动注入缺口。
- * BYOK 仍以活会话 advertised 清单为热切判据，因为其它 harness 的 composer 行为不变。
+ * ⇒ **同一条平台计费路 + 目录里有它 + 活会话报得出它 = 当场换**;目录有、活会话没报 = 这条进程
+ * 说不了它,走 `reload`(按当下的档重签票、重开进程),与跨计费路同一条路。
+ * 启动注入真漏了模型也不会被这一步盖住:重开后的模型断言(`applyInitialModel`)照样响亮地报。
  *
  * ⚠️ 「在清单里」是必要条件,**不是充分条件**:还要**同一条计费路**。咕咕代付的会话里,
  * 适配器 advertise 的是「咕咕注进去的那组 **+ 它自己内置的那些**」,而进程连的是咕咕的端点、
@@ -97,15 +97,13 @@ export function planModelSwitch(input: ModelSwitchInputs): ModelSwitchPlan {
   // ⇒ 同一条计费路上的「当场换」不成立,❌ 不摆成能选 —— 那正是 #6182 copilot 那格:菜单里点得到,
   //   点下去才弹一句开发者的词。跨计费路不经活通道(换进程换端点换凭据),仍走下面的 reload。
   const liveDeclared = input.liveSetting !== undefined;
-  // 平台 alias 的整组 allowlist 在 spawn 前已注入 ACP adapter；目录是 UI 的授权真值。
-  // 即使某个 adapter 没有回显该组，也要让 set_config_option 产生原始错误，不能静默 reload。
+  // 平台同路:下发值取活会话自报的寻址形式;报不出 = 这条进程的票没覆盖它,往下走 reload(见抬头)。
   if (source === 'platform' && input.runningOn === 'platform') {
     const known = input.catalog.find((entry) => entry.id === modelId);
     if (!known) return { kind: 'unavailable', modelId };
     if (!liveDeclared) return { kind: 'unsupported', modelId, displayName: known.displayName };
-    // 活会话报得出这条的寻址形式就用它;报不出就把规范 id 原样交给 ACP,让
-    // `set_config_option` 的原始错误到 UI —— ❌ 不借 reload 掩盖启动注入缺口(见抬头)。
-    return { kind: 'hot', modelId, wireValue: wireValueFor(modelId, input.advertised) };
+    const wireValue = runtimeOptionForPlatformModelId(modelId, input.advertised);
+    if (wireValue) return { kind: 'hot', modelId, wireValue };
   }
 
   // BYOK 同一条计费路 + 在活清单里 = 当场换得成。跨路的一律往下走 reload。
@@ -126,16 +124,6 @@ export function planModelSwitch(input: ModelSwitchInputs): ModelSwitchPlan {
   // 换过去要重开。名字用 id 本身 —— 我们对 harness 自家模型没有第二份权威名字,
   // ❌ 不去猜一个好看的显示名。
   return { kind: 'reload', modelId, displayName: modelId, source: 'harness' };
-}
-
-/**
- * 平台模型的下发值 —— 活会话报得出寻址形式就用它,报不出就用规范 id。
- *
- * 回落到规范 id 不是兜底,是**让错误显形**:那种情况说明启动注入没把这条模型写进这一家的
- * 配置文档,provider 会响亮地拒(`model not found`),而那正是该被看见的那件事。
- */
-function wireValueFor(modelId: string, advertised: readonly string[]): string {
-  return runtimeOptionForPlatformModelId(modelId, advertised) ?? modelId;
 }
 
 /** 这条会话此刻**当场换得成**的那些(用于给下拉分档)。清单就是真值,不另算。 */

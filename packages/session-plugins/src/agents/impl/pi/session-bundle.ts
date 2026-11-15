@@ -1,4 +1,4 @@
-import { harnessPlatform, PI_PROVIDER_API } from './platform';
+import { harnessPlatform, piProviderApi } from './platform';
 import { join } from 'node:path';
 import type {
   CapabilityPackage,
@@ -7,6 +7,7 @@ import type {
   SessionCapabilityBundle,
   SessionMaterialization,
   SessionMaterializationContext,
+  SessionModelCapability,
   SessionPromptBlocks,
   SessionpageSessionSurface,
 } from '@gugu/session-core/agents/plugins';
@@ -63,6 +64,17 @@ export const PI_MODELS_RELATIVE = 'models.json';
 
 /** 咕咕在 pi 的 `models.json` 里注册的自定义 provider 名 —— 两条腿、三个使用点共用一份。 */
 export const PI_PLATFORM_PROVIDER_ID = 'gugu-platform';
+
+/**
+ * 这份模型声明在 pi 里的 provider id —— 两条腿、三个使用点(models.json 的键、`--provider`、`defaultProvider`)共用。
+ *
+ * 平台会话:`gugu-platform`,原样。一把 API Key 连接(#2507):**连接的名字** —— pi 自己的界面显示的是 provider 的
+ * **id**,不是 `name`(1.5.2 实测:models.json 的 `name` 写成连接名,`--list-models` 的 provider 列仍是 id;
+ * `/model` 选单的 `[provider]`、底栏的 `(provider)` 也都取 id)。`/` 换掉:pi-acp 按第一个 `/` 拆 `provider/model`。
+ */
+function piProviderId(model: Pick<SessionModelCapability, 'providerName'>): string {
+  return model.providerName ? model.providerName.replaceAll('/', '-') : PI_PLATFORM_PROVIDER_ID;
+}
 
 const unverifiedModel: Degradation = {
   code: 'unverified',
@@ -358,16 +370,16 @@ function modelArtifact(
     target: 'gugu-home',
     content: `${JSON.stringify({
       providers: {
-        [PI_PLATFORM_PROVIDER_ID]: {
-          name: 'Gugu platform quota',
-          api: PI_PROVIDER_API,
+        [piProviderId(model)]: {
+          name: model.providerName || 'Gugu platform quota',
+          api: piProviderApi(model.wireProtocol),
           baseUrl: model.platformProvider.baseUrl,
           apiKey: '${GUGU_PI_API_KEY}',
           authHeader: true,
           models: entries.map((entry) => ({
             id: entry.id,
             name: entry.name,
-            api: PI_PROVIDER_API,
+            api: piProviderApi(model.wireProtocol),
             // pi `docs/models.md` 的模型字段表:`reasoning` 缺省 **false** = 「不支持扩展思考」。
             // 而 pi 把它当**硬门**:`model.reasoning` 为假时,`setThinkingLevel` 会被它自己钉回
             // `off`(2026-09-13 实测:逐档设、read_back 恒 "off"、上游请求体里根本没有
@@ -395,7 +407,7 @@ function modelArgs(bundle: SessionCapabilityBundle): string[] {
   if (model.dialect !== 'pi-models-json' || !model.platformProvider || !model.model) {
     throw new Error('Pi platform model requires pi-models-json, a selected model and relay credentials');
   }
-  return ['--provider', PI_PLATFORM_PROVIDER_ID, '--model', model.model];
+  return ['--provider', piProviderId(model), '--model', model.model];
 }
 
 function packageEntry(bundle: SessionCapabilityBundle): CapabilityPackage {
@@ -466,7 +478,7 @@ function acpSettingsArtifact(
       throw new Error('Pi platform model requires pi-models-json and relay credentials');
     }
     // 启动那一刻钉住;运行时改选仍走 adapter 的模型目录 + session/set_config_option。
-    settings.defaultProvider = PI_PLATFORM_PROVIDER_ID;
+    settings.defaultProvider = piProviderId(model);
     settings.defaultModel = selected;
   }
   // 这条会话选中的**思考档**,同样在启动那一刻钉住。
@@ -524,7 +536,7 @@ function materializeSessionAcp(
   const modelConfig = materializePiModelConfig('acp', bundle);
   const env = { ...childEnv(bundle, promptValue), ...modelConfig.env };
   const autonomy = bundle.autonomy;
-  if (autonomy) env[GUGU_PI_AUTONOMY_ENV] = autonomy.mode;
+  if (autonomy) env[GUGU_PI_AUTONOMY_ENV] = autonomy.permissionMode === 'full-access' ? 'full-access' : 'approval-required';
   const base = report(ctx, promptValue, bundle);
   return {
     // ❌ 这条腿不发 argv:`buildAcpSpawn` 只从 `behavior.acp.buildSpawn` 造 args,

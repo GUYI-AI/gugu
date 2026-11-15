@@ -1,17 +1,18 @@
 import type { QuoteSelection } from './messageQuoteContent'
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
+import type { ReadReceiptHandle } from '@/hooks/useReadReceiptPanel'
+import { memo, useCallback, useContext, useEffect, useMemo, useRef } from 'react'
 import type { CSSProperties, MouseEvent, ReactNode, Ref } from 'react'
 import type { MessageItem, MessageSendState, TopicSummary } from '@gugu/core/shared/types/chat'
 import type { HeldMessage } from '@gugu/core/shared/ui/systemNotice'
 import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { computeGroupedWithPrev } from '@gugu/core/shared/ui/messageListModels'
-import { deriveMessageSendState, deriveReadReceipt } from '@gugu/core/shared/ui/messageState'
+import { deriveMessageSendState, deriveReadReceipt, type MessageRecipientFacts } from '@gugu/core/shared/ui/messageState'
 import { AUTOMATION_TEST_IDS } from '@/lib/automationDom'
 import { OPEN_AT_LATEST, useRowAboveViewport } from '@/lib/listLanding'
 import { useFlowList, type FlowListHandle, type ListLanding } from '@/lib/flowList'
 import { formatCalendarDay } from '@/i18n/format'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
-import type { MemberProfileSide } from '../memberProfileModels'
+import type { MemberProfileOpener } from '../memberProfileModels'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { MessageRow } from './MessageRow'
@@ -26,13 +27,15 @@ import { TaskExchangeBubble } from '../assistant/TaskExchangeBubble'
 import { visibleReplyQuoteIds } from './replyQuoteVisibility'
 import { MESSAGE_SEEN_THRESHOLDS, messageSeen } from './messageSeen'
 import { useStructurallyShared } from '@/hooks/useStructurallyShared'
+import { collapseSendGroups, newestDelivered, sameAlbums } from './messageAlbum'
+import { MessageAlbumContext } from './MessageAlbumContext'
 
 // #1163 perf — 在父层为单条消息预算「发送/已读态」(primitive 字符串)，下传给 memo 化的 MessageBubble，
 // 取代旧的「整个 memberReadSeqs map 下传、气泡自己 derive」。任一成员已读回执会换 map 引用、破气泡浅比较
 // memo → 全群可视气泡重渲；改传 primitive 后，只有本消息状态真翻转时气泡才重渲。仅 is_mine 非撤回消息需要。
-function computeSendState(msg: MessageItem, memberReadSeqs: Record<string, number>): MessageSendState | undefined {
+function computeSendState(msg: MessageItem, memberReadSeqs: Record<string, number>, facts: MessageRecipientFacts): MessageSendState | undefined {
   if (!msg.is_mine || msg.retracted_at) return undefined
-  return deriveMessageSendState(msg, memberReadSeqs, {
+  return deriveMessageSendState(msg, memberReadSeqs, facts, {
     // @@@per-message-read (#598) - precise directed read receipts, decoupled from the watermark.
     // memberIds = current OTHER members (so a recipient who left drops out of the denominator).
     memberIds: Object.keys(memberReadSeqs),
@@ -47,14 +50,15 @@ function computeSendState(msg: MessageItem, memberReadSeqs: Record<string, numbe
 function computeReadReceipt(
   msg: MessageItem,
   memberReadSeqs: Record<string, number>,
+  facts: MessageRecipientFacts,
 ): { read: number; total: number } | undefined {
   if (!msg.is_mine || msg.retracted_at || msg.seq < 0 || msg.local_send_state === 'sending' || msg.local_send_state === 'failed') {
     return undefined
   }
-  const receipt = deriveReadReceipt(msg, memberReadSeqs, {
+  const receipt = deriveReadReceipt(msg, memberReadSeqs, facts, {
     messageReaders: msg.readers && msg.readers.length ? { [msg.id]: new Set(msg.readers) } : {},
   })
-  if (receipt.totalRecipients === 0) return undefined // 无其他收件方（自言自语/空群）→ 不显
+  if (!receipt || receipt.totalRecipients === 0) return undefined // 无其他收件方（自言自语/空群）→ 不显
   return { read: receipt.readCount, total: receipt.totalRecipients }
 }
 
@@ -88,25 +92,24 @@ export interface MessageListRowProps {
   /** #1708 命中「来源消息跳转」时高亮闪烁的消息 id。 */
   flashMessageId: string | null | undefined
   memberReadSeqs: Record<string, number>
-  /** My messages an agent has not taken yet (useDeliveryWaits): their bubbles say so until it reads them. */
+  /** My messages an agent has not taken yet (useMessageDelivery): their bubbles say so until it reads them. */
   deliveryWaits: ReadonlyMap<string, HeldMessage>
+  /** Who each of my messages is for (useMessageDelivery): denominators of its read receipt. */
+  recipientFacts: MessageRecipientFacts
   // 私聊/AI 没有 thread surface；群聊 thread 由右侧 panel 承载。
   isGroupChat: boolean
   threeParty: boolean | undefined
   memberProfiles: Record<string, MemberProfileCardModel>
   onReaction: (messageId: string, emoji: string) => void
-  // @@@1345 点击已读圆环 → 父层弹「谁已读/谁未读」名单(稳定回调，避免 reader 列表作对象 prop 破 memo)。
-  onShowReadReceipt: ((messageId: string, anchor: HTMLElement) => void) | undefined
+  // @@@1345 已读圆环是父层「谁已读/谁未读」名单的 Trigger(稳定 handle，避免 reader 列表作对象 prop 破 memo)。
+  readReceiptHandle: ReadReceiptHandle | undefined
   onShowMessage?: (id: string) => void
   onQuote: (msg: MessageItem, selection?: QuoteSelection) => void
-  onForward: (msg: MessageItem) => void
+  /** A send of several files is forwarded whole (#2581). */
+  onForward: (msg: MessageItem | readonly MessageItem[]) => void
   onDelete: (messageId: string) => void
   onVisible: (msg: MessageItem) => void
-  onOpenMemberProfile: ((
-    member: MemberProfileCardModel,
-    anchor: HTMLElement,
-    preferredSide: MemberProfileSide,
-  ) => void) | undefined
+  memberProfileOpener: MemberProfileOpener | undefined
   // @@@5856 开话题(从本消息长出一条线)+ 本消息底下已有的话题锚点卡。锚点是溯源不是父容器:
   // 卡片只是双向连接的一端,话题本身在会话列表里缩进挂在来源那条线底下。
   onOpenTopic: ((messageId: string) => void) | undefined
@@ -115,7 +118,7 @@ export interface MessageListRowProps {
   /** 这条线上「agent 超过 5 个已自动转 passive」的那条系统消息(每条线至多一条)。 */
   agentFloodNoticeMessageId: string | null | undefined
   onAgentFloodUndone: (() => void) | undefined
-  onOpenFile: ((meta: ParsedAttachment, message?: MessageItem) => void) | undefined; onOpenLocalFileLink: ((path: string) => void) | undefined
+  onOpenFile: ((meta: ParsedAttachment, message?: MessageItem) => void) | undefined
   onMentionMember: ((target: MentionTarget) => void) | undefined // @@@6386 入群灰字里点名字 → 输入框插 @
   // @@@multi-select (#988) — 多选态：行首勾选框 + 整行点击切换选中；onEnterSelectMode 透传给气泡「多选」菜单项。
   selectMode: boolean
@@ -163,19 +166,19 @@ const MessageListRow = memo(function MessageListRow({
   messages,
   mobile,
   flashMessageId,
-  memberReadSeqs, deliveryWaits,
+  memberReadSeqs, deliveryWaits, recipientFacts,
   isGroupChat,
   threeParty,
   memberProfiles, bubbleMemberProfiles,
   onReaction,
-  onShowReadReceipt,
+  readReceiptHandle,
   onQuote, onShowMessage,
   onForward,
   onDelete,
   onVisible,
-  onOpenMemberProfile,
+  memberProfileOpener,
   onOpenTopic, topicAnchors, onOpenTopicAnchor, agentFloodNoticeMessageId, onAgentFloodUndone,
-  onOpenFile, onOpenLocalFileLink, onMentionMember,
+  onOpenFile, onMentionMember,
   selectMode,
   selectedIds,
   onToggleSelect,
@@ -187,10 +190,19 @@ const MessageListRow = memo(function MessageListRow({
 } & MessageListRowProps) {
   const row = rows[index]
   const rowRef = useRef<HTMLDivElement | null>(null)
+  // #2581 A send of several files is one row: it is read when its last file is, and selected, deleted, forwarded whole.
+  const album = useContext(MessageAlbumContext).get(row?.message.id ?? '')
+  const whole = useMemo(() => album && {
+    newest: newestDelivered(album),
+    toggle: (selected: boolean) => { for (const member of album) if (selectedIds.has(member.id) === selected) onToggleSelect(member.id) },
+    enterSelectMode: onEnterSelectMode && ((msg: MessageItem) => { onEnterSelectMode(msg); for (const member of album) if (member.id !== msg.id) onToggleSelect(member.id) }),
+    forward: () => onForward(album),
+    delete: () => { for (const member of album) onDelete(member.id) },
+  }, [album, selectedIds, onToggleSelect, onEnterSelectMode, onForward, onDelete])
 
   useEffect(() => {
     if (!row || row.type === 'task-exchange') return
-    const msg = row.message
+    const msg = whole?.newest ?? row.message
     const node = rowRef.current
     if (!node) return
     if (typeof IntersectionObserver === 'undefined') {
@@ -205,7 +217,7 @@ const MessageListRow = memo(function MessageListRow({
     }, { root: node.closest<HTMLElement>('[data-unread-stream-surface]'), threshold: [...MESSAGE_SEEN_THRESHOLDS] })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [row, onVisible])
+  }, [row, onVisible, whole?.newest])
 
   // @@@virtuoso-oob-guard (#461) - 行由 rows.slice 给出、不会越界;这一行只为收窄 rows[index] 的类型。
   if (!row) return null
@@ -216,9 +228,10 @@ const MessageListRow = memo(function MessageListRow({
   const prevRow = index > 0 ? rows[index - 1] : undefined
 
   const isSelected = selectedIds.has(msg.id)
-  const readReceipt = computeReadReceipt(msg, memberReadSeqs) // @@@1577 M5 A6 — 单次派生,原同行同参调两次
+  const counted = whole ? { ...msg, seq: whole.newest.seq } : msg // read as far as its last file
+  const readReceipt = computeReadReceipt(counted, memberReadSeqs, recipientFacts) // @@@1577 M5 A6 — 单次派生,原同行同参调两次
   const held = deliveryWaits.get(msg.id)
-  const sendState = held?.wait ?? computeSendState(msg, memberReadSeqs)
+  const sendState = computeSendState(counted, memberReadSeqs, recipientFacts)
 
   // 连续消息合组：同一发送者、无时间分隔线切断、双方都是普通消息时，后续消息隐藏头像+名字/时间行，
   // 只留气泡（间距也收紧）。whisper 形态特殊，不参与合组。
@@ -252,21 +265,21 @@ const MessageListRow = memo(function MessageListRow({
       showReadReceipt={msg.is_mine}
       groupedWithPrev={groupedWithPrev}
       groupedWithNext={groupedWithNext}
-      onShowReadReceipt={onShowReadReceipt}
+      readReceiptHandle={readReceiptHandle}
       onQuote={onQuote} onShowMessage={onShowMessage}
-      onForward={onForward}
-      onDelete={onDelete}
+      onForward={whole?.forward ?? onForward}
+      onDelete={whole?.delete ?? onDelete}
       isAgent={isAgentMessage}
       isGroup={isGroupChat || threeParty}
       // 场所型会话里的 agent 消息保留发送者头像
       memberProfile={memberProfile}
-      onOpenMemberProfile={onOpenMemberProfile}
+      memberProfileOpener={memberProfileOpener}
       compactMobile={mobile}
       // 直接透传稳定 handler；话题里不传则不显示「开话题」菜单项(单层不嵌套)。
-      onOpenTopic={onOpenTopic} onOpenTopicAnchor={msg.content_type === 'system' ? onOpenTopicAnchor : undefined} onOpenFile={onOpenFile} onOpenLocalFileLink={onOpenLocalFileLink}
+      onOpenTopic={onOpenTopic} onOpenTopicAnchor={msg.content_type === 'system' ? onOpenTopicAnchor : undefined} onOpenFile={onOpenFile}
       memberProfiles={bubbleMemberProfiles}
       // @@@multi-select (#988) — More 菜单「多选」入口;多选态的勾选/底色在外层 MessageListRow 处理。
-      onEnterSelectMode={onEnterSelectMode}
+      onEnterSelectMode={whole ? whole.enterSelectMode : onEnterSelectMode}
     />
     </MessageSenderProvider>
   )
@@ -291,7 +304,7 @@ const MessageListRow = memo(function MessageListRow({
       ) : (
         <div
           data-message-select-row={selectMode ? msg.id : undefined}
-          onClick={selectMode ? () => onToggleSelect(msg.id) : undefined}
+          onClick={selectMode ? () => whole ? whole.toggle(isSelected) : onToggleSelect(msg.id) : undefined}
           style={selectMode ? { ...SELECT_ROW_STYLE, background: isSelected ? 'var(--accent-tint-row)' : undefined } : undefined}
         >
           {selectMode && <SelectionCheckbox checked={isSelected} />}
@@ -324,8 +337,8 @@ const UNREAD_ABOVE_STYLE: CSSProperties = { position: 'absolute', top: 'var(--sp
  * 不传落点 = 停在最新一条;在底部时内容一变就贴底(新消息、markdown 异步撑高)。分栏用的就是这份缺省。
  */
 export function MessageList({
-  rows,
-  rowProps,
+  rows: allRows,
+  rowProps: allRowProps,
   resetKey,
   listRef,
   scrollerRef,
@@ -333,9 +346,7 @@ export function MessageList({
   onAtBottomChange,
   followTail = true,
   onStartReached,
-  onTotalListHeightChanged,
   style,
-  topInset = 0,
   surface = 'main',
   unreadAbove,
   footer,
@@ -349,10 +360,7 @@ export function MessageList({
   onAtBottomChange?: (atBottom: boolean) => void
   followTail?: boolean
   onStartReached?: () => void
-  onTotalListHeightChanged?: () => void
   style?: CSSProperties
-  /** 顶部让出多少 px:头栏上的悬浮小鸟探出头栏时,滚到最上面的第一条 / 日期分隔落在它脚下面,不被盖住(agent 单聊的桌面形态传)。 */
-  topInset?: number
   /** 这条消息流在哪一栏。只决定布局与自动化选择器;未读定位确认使用本视口 ref。 */
   surface?: 'main' | 'aside'
   /** @@@6530 这次打开时的第一条未读:在视口上方时右上角出「↑ N 条新消息」,点了跳过去。 */
@@ -360,6 +368,14 @@ export function MessageList({
   /** 接在最后一条后面、随消息流一起滚的那一格(助理聊天里它在处理时的打字气泡);窗口没到最新处时不画。 */
   footer?: ReactNode
 }): ReactNode {
+  // #2581 Files sent at once are drawn as one message: the rows of a send collapse into its first.
+  const { rows: drawnRows, albums: freshAlbums } = useMemo(() => collapseSendGroups(allRows), [allRows])
+  const rows = drawnRows as ChatListRowItem[]
+  // Every row reads the albums: unchanged sends keep the same value, so a message arriving elsewhere re-renders no album.
+  const albumsRef = useRef(freshAlbums)
+  if (!sameAlbums(albumsRef.current, freshAlbums)) albumsRef.current = freshAlbums
+  const albums = albumsRef.current
+  const rowProps = useMemo(() => albums.size ? { ...allRowProps, rows, messages: rows.map(row => row.message) } : allRowProps, [albums, allRowProps, rows])
   const ownScrollerRef = useRef<HTMLElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
   const handleScrollerRef = useCallback((element: HTMLDivElement | null) => {
@@ -367,29 +383,35 @@ export function MessageList({
     scrollerRef?.(element)
   }, [scrollerRef])
   const rowIds = useMemo(() => rows.map((row) => row.message.id), [rows])
+  // A list hidden while it waits for its landing is not on screen, though its rows still intersect the scroller.
+  const landedRef = useRef(false)
+  landedRef.current = initialTopMostItemIndex !== null
+  const reportVisible = rowProps.onVisible
+  const onVisible = useCallback((message: MessageItem) => { if (landedRef.current) reportVisible(message) }, [reportVisible])
   // 气泡里的名字(@、引用、任务卡)只认名字 / 头像 / 是否在群;agent 的运行态每翻一次,整张表就是新的,
   // 递下去会打穿每一只可见气泡的 memo(连同正文的 markdown 重新解析)。发送者自己的状态照旧走 memberProfile。
   const bubbleMemberProfiles = useStructurallyShared(useMemo(() => withoutLiveStatus(rowProps.memberProfiles), [rowProps.memberProfiles]))
   const quoteIds = useMemo(() => visibleReplyQuoteIds(rowProps.messages), [rowProps.messages])
-  const { start, end } = useFlowList({ scrollerRef: ownScrollerRef, contentRef, resetKey, rowIds, landing: initialTopMostItemIndex, followTail, atBottomThreshold: 80, onAtBottomChange, onTotalHeightChanged: onTotalListHeightChanged, onStartReached, handleRef: listRef })
+  const { start, end } = useFlowList({ scrollerRef: ownScrollerRef, contentRef, resetKey, rowIds, landing: initialTopMostItemIndex, followTail, atBottomThreshold: 80, onAtBottomChange, onStartReached, handleRef: listRef })
   // 未读行不在窗口里:比窗口最早一条还早 = 在上方(-1);否则是尾部对账还没回来,先不判(null)。
-  const unreadIndex = unreadAbove ? rows.findIndex((row) => row.message.id === unreadAbove.messageId) : -1
+  const unreadIndex = unreadAbove ? rows.findIndex((row) => row.message.id === unreadAbove.messageId || !!albums.get(row.message.id)?.some(member => member.id === unreadAbove.messageId)) : -1
   const unreadAt = !unreadAbove ? null : unreadIndex >= 0 ? unreadIndex : rows.length > 0 && rows[0].message.seq > unreadAbove.messageSeq ? -1 : null
-  const showUnreadAbove = useRowAboveViewport(ownScrollerRef, unreadAbove?.messageId, unreadAt, initialTopMostItemIndex !== null, unreadAbove?.onSeen)
-  const scrollerStyle = useMemo<CSSProperties>(() => (topInset ? { ...LIST_SCROLLER_STYLE, paddingTop: topInset } : LIST_SCROLLER_STYLE), [topInset])
+  const showUnreadAbove = useRowAboveViewport(ownScrollerRef, unreadIndex >= 0 ? rows[unreadIndex]!.message.id : unreadAbove?.messageId, unreadAt, initialTopMostItemIndex !== null, unreadAbove?.onSeen)
   const frameStyle = useMemo<CSSProperties>(() => ({ minHeight: 0, ...(style ?? { flex: 1 }), ...LIST_FRAME_STYLE, visibility: initialTopMostItemIndex === null ? 'hidden' : undefined }), [style, initialTopMostItemIndex])
   return (
+    <MessageAlbumContext.Provider value={albums}>
     <div style={frameStyle}>
       {/* 每换一条线(resetKey)换一个滚动容器:落点、贴底电平、锚定都从这条线自己的第一帧开始。 */}
-      <div key={resetKey} ref={handleScrollerRef} data-testid={SCROLLER_TEST_ID[surface]} data-unread-stream-surface={surface} data-message-avatars="true" data-image-gallery="" style={scrollerStyle}>
+      <div key={resetKey} ref={handleScrollerRef} tabIndex={0} data-testid={SCROLLER_TEST_ID[surface]} data-unread-stream-surface={surface} data-chat-dock-reads="" data-message-avatars="true" data-image-gallery="" style={LIST_SCROLLER_STYLE}>
         <div ref={contentRef}>
-          {rows.slice(start, end).map((row, i) => <MessageListRow key={row.message.id} index={start + i} {...rowProps} bubbleMemberProfiles={bubbleMemberProfiles} showReplyQuote={quoteIds.has(row.message.id)} />)}
+          {rows.slice(start, end).map((row, i) => <MessageListRow key={row.message.id} index={start + i} {...rowProps} onVisible={onVisible} bubbleMemberProfiles={bubbleMemberProfiles} showReplyQuote={quoteIds.has(row.message.id)} />)}
           {end >= rows.length ? footer : null}
           {/* 会话底部那一摞浮在消息流上(ChatBottomDock 写的 --chat-dock-h),滚到底的最后一条落在它上面;没有它就是 0。 */}
-          <div aria-hidden className="h-[var(--chat-dock-h,0px)]" />
+          <div aria-hidden data-chat-dock-reads="" className="h-[var(--chat-dock-h,0px)]" />
         </div>
       </div>
       {unreadAbove && showUnreadAbove && <Button variant="primary" size="sm" data-unread-above="" style={UNREAD_ABOVE_STYLE} onClick={unreadAbove.onJump}>{unreadAbove.label}</Button>}
     </div>
+    </MessageAlbumContext.Provider>
   )
 }

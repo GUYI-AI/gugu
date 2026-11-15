@@ -53,7 +53,7 @@ beforeEach(async () => {
   deliver.mockClear();
   setExtensionBridgeHost({
     deliver,
-    presentation: () => ({ locale: 'en', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }),
+    selfGuguNumber: () => undefined, presentation: () => ({ locale: 'en', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }),
   });
   await bindExtensionSurface({ webContentsId: GROUP_PAGE, extensionId: 'board', tabId: 'slot-1', tabKind: 'board.main', conversation: CHAT, itemId: ITEM });
   await bindExtensionSurface({ webContentsId: SESSION_TAB, extensionId: 'board', workspace: sessionWorkspace('task-1'), tabId: 'tab-1', tabKind: 'board.main' });

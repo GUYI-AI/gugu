@@ -41,7 +41,7 @@ function fakeClient(snapshot: Promise<TimelineSnapshot>) {
 
 let session: AgentWatchSession
 function Probe({ client }: { client: SessionpageTimelineClient }) {
-  session = useTimelineSession(client, 'phone', 'machine-1', 'conversation-new', true, FIRST)
+  session = useTimelineSession(client, 'phone', 'machine-1', 'conversation-new', true, { id: 'first-input', text: FIRST, sentAt: Date.now() })
   return null
 }
 
@@ -58,6 +58,8 @@ describe('新建会话的首句换页不丢', () => {
     await harness.render(createNode(Probe, { client: fakeClient(new Promise((resolve) => { land = resolve })) }))
     expect(session.phase).toBe('loading')
     expect(session.pendingSends.map((send) => send.text)).toEqual([FIRST])
+    // #2296 The optimistic first line carries the id its create request gave it, not a page-local one.
+    expect(session.pendingSends.map((send) => send.id)).toEqual(['first-input'])
 
     await act(async () => { land(withFirstLine); await new Promise((resolve) => setTimeout(resolve, 0)) })
     expect(session.timeline.turns.flatMap((turn) => turn.items).filter((item) => item.kind === 'message' && item.role === 'user')).toHaveLength(1)

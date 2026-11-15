@@ -364,3 +364,10 @@ export async function readJsoncObject(fs: PluginFs, path: string): Promise<Recor
   if (!content) return null;
   return parseMcpFile(content, 'json');
 }
+
+/** 一份 YAML 配置读成值;不在 = null,读不懂照原样抛 —— 与 `readJsoncObject` 同一种约定。 */
+export async function readYamlValue(fs: PluginFs, path: string): Promise<unknown> {
+  const content = await fs.read(path);
+  if (!content) return null;
+  return parseYamlDocument(content).toJS() ?? null;
+}

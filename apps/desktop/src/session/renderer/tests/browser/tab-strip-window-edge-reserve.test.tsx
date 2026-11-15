@@ -5,7 +5,7 @@
  *
  * 判据:留白是一格独立的位置,宽度读 `--titlebar-controls-width`(不写死 138 / 146),贴条的右端;
  * 右端那一排在剩下的地方排,任何宽度下都不伸进留白;放不下时「在 X 中打开」那半颗收起,「其他打开方式」与关闭还在;
- * 宽回来再放出来。真 Chromium、真 CSS、真页签条(TabStripShell + TabBarActionRow);「在 X 中打开」照 OpenInMenu 的形状搭。
+ * 宽回来再放出来。真 Chromium、真 CSS、真页签条(TabStripShell + TabBarActionRow);「在 X 中打开」照那颗分裂按钮的形状搭。
  */
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it } from 'vitest';
@@ -16,6 +16,7 @@ import { MessageSquare } from '@/lib/icons';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
+import { OverFullscreenStrip } from '@renderer/features/tabs/tab-fullscreen';
 
 const CONTROLS = 138;
 let root: Root | null = null;
@@ -32,9 +33,9 @@ afterEach(() => {
   document.documentElement.style.removeProperty('--titlebar-controls-width');
 });
 
-function SessionBlockActions() {
+function SessionBlockActions({ atWindowEdge = true }: { atWindowEdge?: boolean }) {
   return (
-    <TabBarActionRow atWindowEdge>
+    <TabBarActionRow atWindowEdge={atWindowEdge}>
       <div style={{ display: 'flex', alignItems: 'center', height: 28 }}>
         <button data-open-in-primary="" aria-label="在文件中打开" style={{ width: 28, height: 28 }} />
         <button aria-label="其他打开方式" style={{ width: 28, height: 28 }} />
@@ -46,18 +47,20 @@ function SessionBlockActions() {
 
 const frames = async (n = 4) => { for (let i = 0; i < n; i += 1) await new Promise(requestAnimationFrame); };
 
-async function mount(width: number) {
+async function mount(width: number, { atWindowEdge = true, overFullscreen = false } = {}) {
   host = document.createElement('div');
   host.className = 'emlight gugu-skin';
   host.style.width = `${width}px`;
   document.body.appendChild(host);
   root = createRoot(host);
   root.render(
-    <TabStripShell trailingSlot={<button style={{ width: 28, height: 28 }}>+</button>} actionsSlot={<SessionBlockActions />}>
-      <TabSlot>
-        <TabChip isActive label="Reply ok one" preSlot={<MessageSquare className="size-3" />} closeLabel="关闭" onClose={() => undefined} data-tabid="s" />
-      </TabSlot>
-    </TabStripShell>
+    <OverFullscreenStrip.Provider value={overFullscreen}>
+      <TabStripShell trailingSlot={<button style={{ width: 28, height: 28 }}>+</button>} actionsSlot={<SessionBlockActions atWindowEdge={atWindowEdge} />}>
+        <TabSlot>
+          <TabChip isActive label="Reply ok one" preSlot={<MessageSquare className="size-3" />} closeLabel="关闭" onClose={() => undefined} data-tabid="s" />
+        </TabSlot>
+      </TabStripShell>
+    </OverFullscreenStrip.Provider>
   );
   await until('strip rendered', () => host!.querySelector('[data-tabid="s"]') !== null);
   await frames();
@@ -115,4 +118,18 @@ it('the reserve follows the variable: none where the controls do not sit on the 
   const { bar, reserve, close } = measure();
   expect(reserve.width).toBe(0);
   expect(close!.right).toBeLessThanOrEqual(bar.right);
+});
+
+// A page in full screen covers the workspace without moving the layout: the strip over it reaches the window's right
+// edge even when its block sits on the left (a group beside a task, its folder tab in full screen).
+it('the strip of a left block over a page in full screen makes room for the controls; not in full screen it does not', async () => {
+  await mount(900, { atWindowEdge: false });
+  expect(host!.querySelector('[data-window-controls-reserve]'), 'left block: no reserve').toBeNull();
+  root!.unmount();
+  host!.remove();
+  await mount(900, { atWindowEdge: false, overFullscreen: true });
+  const { bar, reserve, close } = measure();
+  expect(reserve.width).toBeCloseTo(CONTROLS, 0);
+  expect(reserve.right).toBeCloseTo(bar.right, 0);
+  expect(close!.right, 'close stays out of the controls').toBeLessThanOrEqual(reserve.left);
 });

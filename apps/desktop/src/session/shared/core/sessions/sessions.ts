@@ -47,6 +47,17 @@ export function isSessionView(value: unknown): value is SessionView {
 }
 
 /**
+ * #2599 The conversation this session's agent was created from: the group it joined at birth, else the chat whose
+ * composer dispatched it (its task card's chat, kept since gugu-dev#181, so agents created before #2599 still read it).
+ * null = not created from a conversation. The left sidebar places the agent by it, never by the groups it joins later.
+ * One rule for the stored row and the renderer's optimistic session, so a just-created agent shows where it lives
+ * before the host's copy arrives (the renderer keeps its optimistic object and ignores the later `session:created`).
+ */
+export function sessionBornInChatId(config: { birthChatId?: string; taskChatId?: string } | null | undefined): string | null {
+  return config?.birthChatId ?? config?.taskChatId ?? null;
+}
+
+/**
  * 展示 ⇄ 运行时。今天一一对应:编程视角跑 pty,通用视角跑 acp ——
  * 一一对应是**当下的事实**,不是定义,所以两个词各留各的位置,翻译只发生在这里。
  */
@@ -226,6 +237,11 @@ export type Session = {
   runtime?: SessionRuntime;
   /** spec session-page: pinned conversations gather in the sidebar Pinned section. */
   isPinned?: boolean;
+  /**
+   * #2548 固定到左侧栏: a top-level session whose agent lives in a group or project keeps its own row at the top
+   * of the desktop left list. Independent of `isPinned`.
+   */
+  isPinnedToSidebar?: boolean;
   /** Parent conversation for a locally spawned child session; null/absent means a root session. */
   parentSessionId?: string | null;
   /** Conversation that created this session through the session-management MCP. */
@@ -244,6 +260,8 @@ export type Session = {
    * 「已卸载的那个扩展」is a better answer than silence (behavior tab-extensions).
    */
   spawnedByExtensionId?: string | null;
+  /** #2599 the conversation its agent was created from (SessionpageSessionSummary.bornInChatId): where it lives. */
+  bornInChatId?: string | null;
   /**
    * spec session-graph:归档的归属键是这条会话自己。null = 在会话列表里,时间戳 = 已归档。
    * 用户看见的入口写的是「归档任务」(他心智里一个 tab 就是一项任务),动的是这一行。

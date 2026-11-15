@@ -44,6 +44,8 @@ beforeEach(() => {
 afterEach(() => {
   harness.cleanup()
   HTMLElement.prototype.checkVisibility = originalCheckVisibility
+  // A group's packages are one test's: left over, they offer an update in the next test's group.
+  sharedHere.packages = new Map()
 })
 
 const slot = (props: Partial<ChatTabsProps> = {}) => chatTabs({ chatId: 'group-1', ...props })
@@ -160,15 +162,19 @@ describe('the slot header', () => {
   })
 
   // 10-17: the market's office here, a newer package of it in the group — the bar offered 「更新」 and the install refused it
-  // (E-05). An App that did not come from a chat gets no bar; the same App from a chat does (the case above).
-  it('no update bar over an App that did not come from a chat (E-05)', async () => {
+  // (E-05). 11-12: the install asks instead, saying what it replaces, so the bar is offered over the market's copy too;
+  // only over an App gugu ships there is none.
+  it('an update bar over a market App; none over one gugu ships (E-05)', async () => {
+    const bar = () => harness.container.querySelector('[data-testid="group-app-slot-update"]')
+    sharedHere.packages = new Map([['board', { manifest: { id: 'board', name: 'Board', version: '1.1.0' }, card: { source: { kind: 'url', url: 'https://files.invalid/board.zip' }, messageId: 'm-board' } }]])
     install([], [], '1.0.0', 'market')
-    sharedHere.packages = new Map([['board', { manifest: { id: 'board', name: 'Board', version: '1.1.0' }, url: 'https://files.invalid/board.zip' }]])
     openPanelItem('group-3-market', boardPage())
     await harness.render(slot({ chatId: 'group-3-market' }))
     await act(async () => {})
+    expect(bar()?.getAttribute('data-version')).toBe('1.1.0')
+    install([], [], '1.0.0', 'preinstalled')
     expect(harness.container.querySelector('[data-testid="group-app-slot"]')).not.toBeNull()
-    expect(harness.container.querySelector('[data-testid="group-app-slot-update"]')).toBeNull()
+    expect(bar()).toBeNull()
   })
 })
 
@@ -236,6 +242,10 @@ describe('an App opened in the group (「在本群打开」)', () => {
     await act(async () => {})
     expect(appsHere!.groupFilesOpenedBy).toHaveBeenCalledWith({ chatId: 'group-6', extensionId: 'board' })
     expect(shownItem('group-6')).toBeNull()
+    // 11-12: with none of its files in the chat yet, the card's 「打开」 came to nothing. It says so, in the same sheet.
+    const sheet = harness.container.querySelector('[data-testid="group-app-slot-app-files"]')
+    expect(sheet?.textContent).toMatch(/还没有『Board』的文件|no files of “Board”/)
+    expect(sheet?.querySelectorAll('[data-app-file]')).toHaveLength(0)
   })
 
   // owner 10-24: one App's one resource is one tab, however it was opened; how only gives it its 上一页. Control (the parent

@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import { insideRoot } from '../../../scripts/assistant-eval/paths'
 import { assistantCases } from '../../../scripts/assistant-eval/cases'
 import { assessAssistantRun, delegationSource, successfulModelResult, type RunEvidence } from '../../../scripts/assistant-eval/evidence'
-import { assistantBrief, assistantRecoveryContext } from '../../../packages/core/src/shared/assistantPolicy'
 
 function goodRun(): RunEvidence {
   return { result: 'success', calls: [], reads: [], reply: '材料已准备好。', instructionChars: 1800,
@@ -91,24 +90,6 @@ describe('assistant eval instruments', () => {
     run.calls.push({ name: 'session_get', input: { session_id: 'session:existing' }, ok: true, output: { session_id: 'session:existing', status: 'cancelled' } })
     expect(assessAssistantRun(closed, run).status).toBe('PASS')
   })
-})
-
-it.each(['computer', 'cloud'] as const)('%s brief exposes recovery pointers without importing the handbook or examples', kind => {
-  const brief = assistantBrief(kind, '/assistant/.gugu-assistant-reference.md', '/assistant/memory')
-  expect(brief).toContain('/assistant/memory/working-context.md')
-  expect(brief).toContain('/assistant/memory/MEMORY.md')
-  expect(brief).toContain('启动、恢复或继续已有工作')
-  expect(brief).not.toContain('"batches"')
-  expect(brief).not.toContain('daily-brief')
-  expect(brief.length).toBeLessThanOrEqual(2400)
-})
-
-it('recovery carries exact pointers and instructions, never a stale copy of task or personal data', () => {
-  const text = assistantRecoveryContext('/assistant/memory')
-  expect(text).toContain('/assistant/memory/working-context.md')
-  expect(text).toContain('已知任务引用可直接核对原任务')
-  expect(text).not.toMatch(/session:[0-9a-f]{8}-[0-9a-f-]{27}/i)
-  expect(text.length).toBeLessThan(500)
 })
 
 describe('fixture root containment', () => {

@@ -10,8 +10,6 @@ import {
   removeIndexEntry,
   resourceRejection,
   splitInstructions,
-  joinPersona,
-  splitPersona,
 } from './assistant-files';
 
 // 云电脑上真读到的那份(2026-10-15,cloudpc.4)。
@@ -147,20 +145,5 @@ describe('上传与命名规矩', () => {
     expect(folderNameProblem('  ')).toBe('required');
     expect(folderNameProblem('a/b')).toBe('slash');
     expect(folderNameProblem('工作')).toBeNull();
-  });
-});
-
-describe('personality', () => {
-  it('reads the preset line and the description back from what it wrote', () => {
-    const text = joinPersona('warm', '多关心我一点');
-    expect(text).toBe('性格：温暖\n多关心我一点');
-    expect(splitPersona(text)).toEqual({ preset: 'warm', rest: '多关心我一点' });
-    expect(splitPersona(joinPersona('sassy', ''))).toEqual({ preset: 'sassy', rest: '' });
-  });
-
-  it('leaves text without a preset line as the description, and an unknown word is not a preset', () => {
-    expect(splitPersona('说话简短')).toEqual({ preset: null, rest: '说话简短' });
-    expect(splitPersona('性格：古怪\n别的')).toEqual({ preset: null, rest: '性格：古怪\n别的' });
-    expect(joinPersona(null, '  只写描述 ')).toBe('只写描述');
   });
 });

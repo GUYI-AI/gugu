@@ -63,7 +63,10 @@ describe('native Codex child-thread consumption', () => {
     expect(parser.agents[0]).toMatchObject({ status: 'completed', output: 'CHILD_RESULT', reasoning: 'CHILD_THOUGHT' });
     const items = [...parser.history.flatMap((turn) => turn.items), ...(parser.activeTurn?.items ?? [])];
     expect(items.some((item) => item.kind === 'message')).toBe(false);
-    expect(items.find((item) => item.kind === 'spawn-subagent-tool-call')).toMatchObject({ children: [expect.objectContaining({ toolCallId: 'cmd' })] });
+    // The child's own calls are on its registry entry, not inside the turn that launched it (#2500).
+    const card = items.find((item) => item.kind === 'spawn-subagent-tool-call');
+    expect(card && 'children' in card ? card.children ?? [] : []).toEqual([]);
+    expect(parser.agents[0]!.steps).toEqual([expect.objectContaining({ toolCallId: 'cmd', status: 'done' })]);
   });
 
   it('uses only the known child turn for cancellation; no child can cancel the parent', async () => {
@@ -88,7 +91,10 @@ describe('native Codex child-thread consumption', () => {
     expect(parser.agents).toHaveLength(2);
     const items = parser.activeTurn!.items;
     expect(items.filter((item) => item.kind === 'spawn-subagent-tool-call')).toHaveLength(1);
-    expect(items[0]).toMatchObject({ model: 'worker-model', children: [expect.objectContaining({ toolCallId: 'grandchild' })] });
+    expect(items[0]).toMatchObject({ model: 'worker-model' });
+    // The nested launch is one of the child's calls; it is registered as a subagent of its own.
+    expect(parser.agents.find((agent) => agent.subagentSessionId === 'child')!.steps)
+      .toEqual([expect.objectContaining({ toolCallId: 'grandchild', kind: 'spawn-subagent-tool-call' })]);
   });
 
   it('names a child by its nickname, not by its task prompt or internal path', () => {

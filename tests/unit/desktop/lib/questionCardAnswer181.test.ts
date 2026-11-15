@@ -60,4 +60,8 @@ describe('a reply to a question card answers it (gugu-dev#181 ⑨)', () => {
     expect(questionAnsweredText(JSON.stringify([{ selected: [], other: '先发我看' }]))).toBe('先发我看')
     expect(questionAnsweredText(null)).toBe('')
   })
+
+  it.each(['[null]', '[{"selected":42}]', '[{"selected":[1]}]', '[{"selected":[],"other":42}]'])('ignores malformed stored answers %s', (raw) => {
+    expect(questionAnsweredText(raw)).toBe('')
+  })
 })

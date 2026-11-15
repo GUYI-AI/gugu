@@ -5,7 +5,8 @@
 import { CloudComputerError } from '@gugu/core/cloud/cloudComputer';
 import { rendererLogger } from '@/lib/log';
 import { rpcOn } from '@renderer/lib/ipc';
-import { homeTarget } from './assistant-home-sessions';
+import { ISSUE_CONNECTION_STATUS_QUERY_KEY } from '@renderer/lib/hooks/useGithubAccounts';
+import { queryClient } from '@renderer/lib/query-client';
 import { isUnknownMethod, MoveError, type MoveDirection, type MoveProgress, type MoveReport } from './assistant-move';
 import { MoveCopyError } from './assistant-move-copy';
 import { previewMove, runAssistantMove, type MoveEnv } from './assistant-move-wire';
@@ -101,7 +102,8 @@ export async function startPreview(env: MoveEnv, direction: MoveDirection, langu
   try {
     const [preview, list] = await Promise.all([
       previewMove(env, direction),
-      rpcOn(homeTarget(env.home)).integrations.list(language).catch(() => [] as { id: string; name: string }[]),
+      // 各家名字哪台机器都一样,问本机:旧家这时可能还没醒。
+      rpcOn(null).integrations.list(language).catch(() => [] as { id: string; name: string }[]),
     ]);
     publish({ phase: { kind: 'confirm', direction, preview, names: new Map(list.map((item) => [item.id, item.name])) } });
   } catch (error) {
@@ -123,7 +125,10 @@ export async function startMove(env: MoveEnv, direction: MoveDirection, names: M
     const report = await runAssistantMove(env, direction, (progress) => publish({ phase: { kind: 'moving', direction, progress } }));
     // 没收好的几件事原因只进日志(文案只说「不影响使用」)
     for (const detail of report.warnings) log.warn({ detail, direction }, 'move finished with a warning');
-    publish({ phase: { kind: 'done', direction, report, names } });
+    // 「接着搬」从日志接上时没有确认框那份服务名:账号清单要显示名字,向本机要一份(各家名字哪台机器都一样)。
+    const shown = names.size > 0 || report.accounts.moved.length + report.accounts.skipped.length === 0 ? names
+      : new Map((await rpcOn(null).integrations.list(language).catch(() => [] as { id: string; name: string }[])).map((item) => [item.id, item.name]));
+    publish({ phase: { kind: 'done', direction, report, names: shown } });
   } catch (error) {
     log.error({ error: String(error), direction }, 'move failed');
     const intact = error instanceof MoveError ? error.sourceIntact : false;
@@ -131,6 +136,9 @@ export async function startMove(env: MoveEnv, direction: MoveDirection, names: M
     const path = (cause as { path?: unknown } | null)?.path;
     publish({ phase: { kind: 'failed', direction, reason: failureReason(error), resumable: !intact, intact,
       ...(typeof path === 'string' ? { conflictPath: path } : {}) } });
+  } finally {
+    // 账号可能已经写进这台机器(搬回本机时接过之前就写了):资源库「连着哪些」的缓存不过期,要叫它重取。
+    void queryClient.invalidateQueries({ queryKey: ISSUE_CONNECTION_STATUS_QUERY_KEY });
   }
 }
 

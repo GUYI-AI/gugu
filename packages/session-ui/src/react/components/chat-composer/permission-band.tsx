@@ -91,7 +91,7 @@ export function PermissionBand({
   }, [request.requestId]);
 
   return (
-    <div data-slot="composer-permission-request" className={cx(styles.band, className)}>
+    <div data-slot="composer-permission-request" data-composer-top-band="permission" className={cx(styles.band, className)}>
       <ShieldAlertIcon className={styles.bandIcon} aria-hidden />
 
       {/* Context label */}

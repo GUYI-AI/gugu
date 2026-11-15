@@ -7,19 +7,15 @@ import { useTranslation } from 'react-i18next'
 import { formatCalendarDate } from '@/i18n/format'
 import { Markdown } from '@/components/markdown/Markdown'
 import { Button } from '@/components/ui/Button'
-import { Sparkles, SquarePen, Trash2 } from '@/lib/icons'
+import { SquarePen, Trash2 } from '@/lib/icons'
 import { isOwnerProfileNote, type MemoryKind } from '@/session/renderer/features/assistant/assistant-files'
 import { readMemoryNotes, type MemoryEntry } from '@/session/renderer/features/assistant/assistant-machine-core'
-import { AssistantEmpty, AssistantRow, AssistantSection, ownerLeading, PageHead } from '@/session/renderer/features/assistant/assistant-ui-parts'
-import { useAuth } from '@/store/auth'
-import { memoryContentPreview } from '@/session/renderer/features/assistant/memory-content-preview'
+import { AssistantEmpty, PageHead } from '@/session/renderer/features/assistant/assistant-ui-parts'
 import type { PhonePageProps } from './MobileAssistantApp'
 import { PhoneConfirmDialog } from './PhoneConfirmDialog'
-import { PhoneFiles } from './PhoneFiles'
 import { PhoneHealth } from './PhoneHealth'
 import { PhoneMachineView, ReadView, type OpenedPageProps } from './PhoneMachineView'
-import { PhoneVoiceNotes } from './PhoneVoiceNotes'
-import { deleteMemoryNote, filesTrail } from './phoneMemoryData'
+import { deleteMemoryNote } from './phoneMemoryData'
 import { machineKey, usePhoneRead, type PhoneRead } from './usePhoneRead'
 import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client'
 
@@ -41,86 +37,17 @@ function useTime() {
 }
 
 /**
- * 记忆首页只显示长期了解与约定；项目入口在资料页，记忆详情沿用原来的读写与导航。
+ * The phone's own screens under 记忆 (the assistant App draws 记忆 itself): the 健康 page (`gugu.assistant.open(…, "health")`),
+ * and the note its rows open (`note:<文件名>`: the full text, edit in chat, delete).
  */
 export function PhoneMemory(props: PhonePageProps) {
   const { sub, machine } = props
   const ready = machine.state === 'ready' ? machine.machine : null
-  // 记忆那一夹各页共用一份读数(首页、一条的全文、健康页里它记的 health_* 几条)。
+  // 健康页与它点开的那一条共用一份读数(它记的 health_* 几条)。
   const notes = usePhoneRead(ready ? `memory|${machineKey(ready)}` : null, () => readMemoryNotes(ready!), 'read memory')
   if (sub === 'health') return <PhoneHealth {...props} healthNotes={notes} />
-  if (sub === 'voice' || sub?.startsWith('voice:')) return <PhoneVoiceNotes {...props} />
-  if (sub === 'files' || sub?.startsWith('files:')) return <PhoneFiles key={sub} {...props} trail={filesTrail(sub)} />
   if (sub?.startsWith('note:')) return <MemoryNote {...props} file={sub.slice('note:'.length)} notes={notes} />
-  return <MemoryHome {...props} notes={notes} />
-}
-
-function MemoryHome(props: PhonePageProps & { notes: NotesRead }) {
-  const { t } = useTranslation('assistant')
-  const { assistant, machine, notes } = props
-  const name = assistant.display_name
-  return (
-    <div className="ta-page" data-testid="assistant-memory">
-      <PhoneMachineView machine={machine} name={name}>
-        {() => (
-          <ReadView read={notes} failedTitle={t('memory.loadFailed')}>
-            {(read) => <LongTermMemory {...props} notes={read.notes} />}
-          </ReadView>
-        )}
-      </PhoneMachineView>
-    </div>
-  )
-}
-
-/** 关于你与其余长期记忆共用一组，点条目打开全文；未记下关于你时仍保留补充入口。 */
-function LongTermMemory({ assistant, askInChat, go, notes, machine }: PhonePageProps & { notes: MemoryEntry[] }) {
-  const { t } = useTranslation('assistant')
-  const time = useTime()
-  const { user } = useAuth()
-  const owner = user ? { id: user.id, name: user.nickname, avatarUrl: user.avatarUrl ?? null } : null
-  const aboutYou = notes.filter((entry) => entry.kind === 'user')
-  return (
-    <AssistantSection title={t('library.longTerm')} testId="assistant-memory-about">
-      {aboutYou.length === 0 ? (
-        <div className="ta-phone-empty-body">
-          <Button variant="ghost" className="ta-pill-btn" onClick={() => askInChat(t('memory.fasterPrompt'))} data-testid="assistant-memory-ask">
-            <Sparkles />
-            {t('memory.faster')}
-          </Button>
-        </div>
-      ) : (
-        aboutYou.map(row => <AssistantMemoryContent key={row.file} machine={machine.state === 'ready' ? machine.machine : undefined} entry={row}>{(entry,error) => <AssistantRow leading={owner?.avatarUrl ? ownerLeading(owner) : undefined} title={isOwnerProfileNote(entry) ? t('memory.filter.user') : entry.title} detailLines={4}
-          detail={error ? assistantPanelFailure(error,t) : memoryContentPreview(entry.body) || (entry.modifiedAt ? t('memory.updated', { time: time(entry.modifiedAt) }) : undefined)} onClick={() => go(`note:${entry.file}`)} />}</AssistantMemoryContent>)
-      )}
-      {notes.some(entry => entry.kind !== 'user') ? <div data-testid="assistant-memory-all">
-        <MemoryList assistant={assistant} go={go} machine={machine} notes={notes} />
-      </div> : null}
-    </AssistantSection>
-  )
-}
-
-/** 其余记忆也属于长期了解与约定，正文预览和详情入口保持不变。 */
-function MemoryList({ assistant, go, notes, machine }: Pick<PhonePageProps, 'assistant' | 'go' | 'machine'> & { notes: MemoryEntry[] }) {
-  const { t } = useTranslation('assistant')
-  const time = useTime()
-  const name = assistant.display_name
-  return (
-    <div className="ta-phone-memory-list">
-      {notes
-        .filter((entry) => entry.kind !== 'user')
-        .map((row) => (
-          <AssistantMemoryContent key={row.file} machine={machine.state === 'ready' ? machine.machine : undefined} entry={row}>{(entry,error) => (
-          <AssistantRow
-            key={entry.file}
-            title={entry.title}
-            detail={error ? assistantPanelFailure(error,t) : memoryContentPreview(entry.body, 140) || (entry.modifiedAt ? t('memory.updated', { time: time(entry.modifiedAt) }) : kindLabel(entry.kind, t, name))}
-            detailLines={4}
-            onClick={() => go(`note:${entry.file}`)}
-            testId={`assistant-memory-${entry.file}`}
-          />)}</AssistantMemoryContent>
-        ))}
-    </div>
-  )
+  return null
 }
 
 /** 一条记忆的全文:正文、在对话中改(只填不发)、删(先确认;连同 MEMORY.md 里指向它的那一行),删完回首页重读。 */

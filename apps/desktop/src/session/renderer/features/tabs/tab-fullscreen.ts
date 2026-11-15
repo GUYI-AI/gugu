@@ -1,5 +1,5 @@
 import { action, makeObservable, observable, reaction } from 'mobx';
-import type { CSSProperties } from 'react';
+import { createContext, type CSSProperties } from 'react';
 import { escapeIsFree } from '@shared/escape-is-free';
 
 /**
@@ -21,6 +21,12 @@ export type TabFullscreenTarget = { pane: TabFullscreenPane; tabId: string };
 /** 工作区的锚点名:ScreenFrame(这一屏的骨架)挂着它,全屏的那一格贴到它的四条边上。 */
 export const WORKSPACE_ANCHOR = '--gg-workspace';
 
+/**
+ * A strip drawn over the workspace with a page in full screen: it spans the workspace, so its right end is the window's
+ * whichever block it belongs to — its actions make room for the window controls there (`TabBarActionRow`).
+ */
+export const OverFullscreenStrip = createContext(false);
+
 /** Pinned to the workspace, over everything in it, from `top` to `bottom`. */
 export function fullscreenCover(top: string, bottom: string): CSSProperties {
   return {
@@ -35,6 +41,15 @@ class TabFullscreen {
 
   constructor() {
     makeObservable(this, { target: observable.ref, toggle: action, exit: action });
+    // 页面自己的全屏(App 里的视频)是最外一层,Esc 先退它,再轮到页签全屏(下面那条,晚注册所以排在后面)。
+    // macOS 上这一下 Esc 落在咕咕自己的页上,不在 App 的页里(实机量到),Chromium 也不替咕咕的页退:只能这里接。
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || !document.fullscreenElement) return;
+        event.preventDefault();
+        void document.exitFullscreen();
+      }, true);
+    }
     // 这一枚关掉了、这一格换成别的页签了、或焦点去了别的格(「返回对话」、侧栏点任务、别处打开了东西)⇒ 自己退出:
     // 全屏盖着整个工作区,被亮起的那一页就在它下面。
     reaction(

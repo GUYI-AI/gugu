@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
-import { browserUseAppInstalled } from '../../../../apps/desktop/electron/browser-agent-mcp'
 import { createDesktopGuguMcpHost, type DesktopGuguMcpHost } from '../../../../apps/desktop/electron/acp-engine-utils'
-import { BROWSER_UNAVAILABLE_RULE, buildSessionBundle, loadCodexAppServerCapabilities, setBrowserUseApp } from '../../../../apps/desktop/electron/capability-bundle'
+import { browserUseAppInstalled, buildSessionBundle, loadCodexAppServerCapabilities, setBrowserUseApp } from '../../../../apps/desktop/electron/capability-bundle'
 
 const hosts: DesktopGuguMcpHost[] = []
 afterEach(async () => {
@@ -11,20 +10,27 @@ afterEach(async () => {
 })
 
 describe('#7199 这台机器装没装 Browser Use', () => {
-  const app = (extensionId: string, native?: 'browser-use' | 'computer-use') => ({ extensionId, server: extensionId, digest: 'd',
-    command: 'x', args: [], env: {}, cwd: '/tmp', dataDir: '/tmp', ...(native ? { native } : {}) })
+  const app = (extensionId: string, outdated?: true) => ({ extensionId, ...(outdated ? { outdated } : {}) })
+  const programs = (installed: ReturnType<typeof app>[], refusals: Record<string, string> = {}) =>
+    ({ installed: () => installed, agentToolsRefusal: (id: string) => refusals[id] ?? null })
 
-  it('装着、开着、许给工具的 Browser Use 才算;别的 App、停用的、收回权限的不算', () => {
-    const refusals: Record<string, string> = { off: 'Extension off is turned off' }
-    const programs = (installed: ReturnType<typeof app>[]) => ({ installed: () => installed, agentToolsRefusal: (id: string) => refusals[id] ?? null })
+  it('the Browser Use App running its own program counts, by its id, whatever its program is called', () => {
     expect(browserUseAppInstalled(programs([]))).toBe(false)
-    expect(browserUseAppInstalled(programs([app('computer', 'computer-use'), app('plain')]))).toBe(false)
-    expect(browserUseAppInstalled(programs([app('off', 'browser-use')]))).toBe(false)
-    expect(browserUseAppInstalled(programs([app('off', 'browser-use'), app('browser', 'browser-use')]))).toBe(true)
+    expect(browserUseAppInstalled(programs([app('computer-use'), app('plain')]))).toBe(false)
+    expect(browserUseAppInstalled(programs([app('plain'), app('browser-use')]))).toBe(true)
+  })
+
+  it('switched off or no longer allowed to give agents tools: it does not count', () => {
+    expect(browserUseAppInstalled(programs([app('browser-use')], { 'browser-use': 'Extension browser-use is turned off' }))).toBe(false)
+    expect(browserUseAppInstalled(programs([app('browser-use')], { 'browser-use': 'Extension browser-use may no longer give agents tools' }))).toBe(false)
+  })
+
+  it('an outdated version (a program gugu once hosted) runs nothing, so it does not count', () => {
+    expect(browserUseAppInstalled(programs([app('browser-use', true)]))).toBe(false)
   })
 })
 
-describe('Browser Use availability after removing the host remote implementation', () => {
+describe('#2401 Browser Use on a Gugu server follows the installed App, as on a desktop', () => {
   async function bundleFor(personalAssistant?: true) {
     const host = createDesktopGuguMcpHost()
     hosts.push(host)
@@ -41,37 +47,34 @@ describe('Browser Use availability after removing the host remote implementation
     })
   }
   const ctx = { cwd: '/tmp/gugu-browser-availability', lifecycle: 'fresh' as const }
-  it.each([true, false])('a server reports unavailable regardless of App installation (%s)', async installed => {
+  it.each([true, false])('a server offers Browser Use exactly when its App is installed, never a ban (%s)', async installed => {
     for (const personalAssistant of [undefined, true] as const) {
       setBrowserUseApp({ server: true, installed: () => installed })
       const bundle = await bundleFor(personalAssistant)
-      expect(bundle.browserUse).toBeUndefined()
+      expect(bundle.browserUse).toBe(installed ? true : undefined)
       expect(bundle.disableNativeBrowser).toBe(true)
-      expect(bundle.browserRule).toBe(personalAssistant ? undefined : 'unavailable')
       const materialized = loadCodexAppServerCapabilities(bundle, ctx)
       expect(materialized.extraArgs).toEqual(expect.arrayContaining([
         'plugins.browser@openai-bundled.enabled=false', 'plugins.chrome@openai-bundled.enabled=false',
       ]))
       const text = materialized.developerInstructions ?? ''
-      if (personalAssistant) expect(text).not.toContain(BROWSER_UNAVAILABLE_RULE)
-      else expect(text).toContain(BROWSER_UNAVAILABLE_RULE)
-      expect(text).not.toContain('browser_request_login')
-      expect(text).not.toContain('browser_request_takeover')
-      expect(text).not.toContain('call `app_install`')
+      expect(text).not.toContain('Browser Use is not available')
+      expect(text).not.toContain('Do not launch a replacement browser')
     }
   })
 
-  it('does not probe an installed App to imply remote browser control', async () => {
-    setBrowserUseApp({ server: true, installed: () => { throw new Error('must not inspect the shell App') } })
-    expect((await bundleFor()).browserRule).toBe('unavailable')
+  it('a server whose App list cannot be read offers no Browser Use and still no ban', async () => {
+    setBrowserUseApp({ server: true, installed: () => { throw new Error('unreadable') } })
+    const bundle = await bundleFor()
+    expect(bundle.browserUse).toBeUndefined()
+    expect(bundle.disableNativeBrowser).toBe(true)
   })
 
   it.each([true, false])('keeps local App discovery and the Codex browser flag (%s)', async installed => {
     setBrowserUseApp({ server: false, installed: () => installed })
     const bundle = await bundleFor()
     expect(bundle.browserUse).toBe(installed ? true : undefined)
-    expect(bundle.browserRule).toBeUndefined()
     expect(bundle.disableNativeBrowser).toBeUndefined()
-    expect(loadCodexAppServerCapabilities(bundle, ctx).developerInstructions).not.toContain(BROWSER_UNAVAILABLE_RULE)
+    expect(loadCodexAppServerCapabilities(bundle, ctx).developerInstructions).not.toContain('Browser Use is not available')
   })
 })

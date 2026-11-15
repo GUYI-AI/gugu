@@ -35,7 +35,7 @@ describe('source performance counters', () => {
     bus.emit(RENDERER_METRICS_REQUEST, null)
     expect(eventSend).not.toHaveBeenCalled()
     bus.emit(RENDERER_METRICS_REQUEST, { requestId: 'sample-1' })
-    expect(eventSend).toHaveBeenCalledWith(PERF_COUNTERS_REPLY, { requestId: 'sample-1', counters: { imTransactions: 1, presenceBatches: 0, presenceIds: 0, contactsProviderRenders: 0 } })
+    expect(eventSend).toHaveBeenCalledWith(PERF_COUNTERS_REPLY, { requestId: 'sample-1', counters: { imTransactions: 1, presenceBatches: 0, presenceIds: 0, contactsProviderRenders: 0 }, frames: { longFrames: 0, blockingMs: 0, slowInteractions: 0 } })
     dispose()
     bus.emit(RENDERER_METRICS_REQUEST, { requestId: 'sample-2' })
     expect(eventSend).toHaveBeenCalledTimes(1)

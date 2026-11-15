@@ -1,4 +1,4 @@
-import { readUserSettingsConfig, writeUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
+import { readUserSettingsConfig, updateUserSettingsKey, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
 import { identityDb } from './supabase'
 
 // Same account row as the profile and first-run engine choice. Device-specific copy shares
@@ -37,15 +37,15 @@ export async function startFirstRunHints(userId: string): Promise<void> {
   const config = await readUserSettingsConfig(client, userId, 'user')
   const progress = parseFirstRunHints(config)
   if (progress) return
-  await writeUserSettingsConfig(client, userId, 'user', { ...config, [KEY]: { version: 1, dismissed: [] } })
+  await updateUserSettingsKey(client, userId, 'user', KEY, (value) => parseFirstRunHints({ [KEY]: value }) ? value : { version: 1, dismissed: [] })
 }
 
 /** Re-read before merging, preserving the other settings and previously retired hints. */
 export async function dismissFirstRunHints(userId: string, ids: readonly FirstRunHintId[]): Promise<FirstRunHintsProgress> {
-  const config = await readUserSettingsConfig(client, userId, 'user')
-  const progress = parseFirstRunHints(config)
-  if (!progress) throw new Error('First-run hint progress is missing')
-  const next: FirstRunHintsProgress = { version: 1, dismissed: [...new Set([...progress.dismissed, ...ids])] }
-  await writeUserSettingsConfig(client, userId, 'user', { ...config, [KEY]: next })
-  return next
+  const saved = await updateUserSettingsKey(client, userId, 'user', KEY, (value) => {
+    const progress = parseFirstRunHints({ [KEY]: value })
+    if (!progress) throw new Error('First-run hint progress is missing')
+    return { version: 1, dismissed: [...new Set([...progress.dismissed, ...ids])] }
+  })
+  return parseFirstRunHints(saved.config)!
 }

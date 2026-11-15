@@ -1,5 +1,6 @@
 import type { MentionItem } from '@gugu/session-ui/react/components';
 import { basenameFromAnyPath } from '@shared/path-name';
+import { electronApi } from './electron-api';
 
 export function hasDraggedFiles(dataTransfer: DataTransfer): boolean {
   return dataTransfer.types.includes('Files');
@@ -32,67 +33,32 @@ export function droppedFileItems(dataTransfer: DataTransfer): { file: File; dire
  */
 export function droppedDirectoryMention(file: File): MentionItem | null {
   const path = electronApi().getPathForFile(file).trim();
-  if (!path) return null;
-  return {
-    id: path,
-    label: path,
-    kind: 'file',
-    name: basenameFromAnyPath(path) || path,
-  };
+  return path ? pathMention(path) : null;
+}
+
+/** A path as the composer's `file` pill: the name shown, the path the agent gets. Folders and workspace rows alike. */
+export function pathMention(path: string): MentionItem {
+  return { id: path, label: path, kind: 'file', name: basenameFromAnyPath(path) || path };
 }
 
 /**
- * In-app drags of workspace files (e.g. from the editor file tree) are tagged
- * with this MIME type. Custom types must be lowercase; browsers lowercase
- * `DataTransfer.types`.
+ * The Folder App's rows of a working copy carry this MIME type (its JSON travels whole on drop, measured on
+ * Electron 44 on Linux and macOS). Custom types must be lowercase; browsers lowercase `DataTransfer.types`.
  */
 export const WORKSPACE_FILE_DRAG_TYPE = 'application/x-emdash-workspace-file';
 
 export type DraggedWorkspaceFile = {
+  /** The Folder App's rows name their project, so a chat can read the file's bytes where it is. */
+  projectId?: string;
   workspaceId: string;
   /** Absolute path in the workspace environment where the target agent runs. */
   targetPath: string;
   /** Remote workspaces are Linux targets even when the renderer runs elsewhere. */
   targetPlatform?: NodeJS.Platform;
+  directory?: boolean;
 };
-
-type DraggedWorkspaceFileInput = {
-  workspaceId: string;
-  /** Absolute path in the workspace environment where the target agent runs. */
-  targetPath: string;
-  targetPlatform?: NodeJS.Platform;
-};
-
-// Electron/Chromium can mangle custom-MIME payloads on drop (getData returns
-// whitespace), so the payload also travels through this module-level store —
-// drag source and same-window drop targets share the renderer. Consumers still
-// require the DataTransfer marker so stale state from a previous drag cannot be
-// accepted by an unrelated drop.
-let draggedWorkspaceFile: DraggedWorkspaceFile | null = null;
-
-export function setDraggedWorkspaceFile(
-  dataTransfer: DataTransfer,
-  input: DraggedWorkspaceFileInput
-): void {
-  const payload: DraggedWorkspaceFile = {
-    workspaceId: input.workspaceId,
-    targetPath: input.targetPath,
-    targetPlatform: input.targetPlatform,
-  };
-
-  draggedWorkspaceFile = payload;
-  dataTransfer.setData(WORKSPACE_FILE_DRAG_TYPE, JSON.stringify(payload));
-  dataTransfer.setData('text/plain', payload.targetPath);
-  dataTransfer.effectAllowed = 'copy';
-}
-
-/** Call on dragend; drop fires on the target before dragend on the source. */
-export function clearDraggedWorkspaceFile(): void {
-  draggedWorkspaceFile = null;
-}
 
 /** True when this transfer is tagged as an in-app workspace-file drag. */
-import { electronApi } from './electron-api';
 export function hasDraggedWorkspaceFile(dataTransfer: DataTransfer): boolean {
   return dataTransfer.types.includes(WORKSPACE_FILE_DRAG_TYPE);
 }
@@ -121,14 +87,14 @@ function isDraggedWorkspaceFile(value: unknown): value is DraggedWorkspaceFile {
   return (
     typeof candidate.workspaceId === 'string' &&
     typeof candidate.targetPath === 'string' &&
+    (candidate.projectId === undefined || typeof candidate.projectId === 'string') &&
+    (candidate.directory === undefined || typeof candidate.directory === 'boolean') &&
     (candidate.targetPlatform === undefined || isNodePlatform(candidate.targetPlatform))
   );
 }
 
 export function getDraggedWorkspaceFile(dataTransfer: DataTransfer): DraggedWorkspaceFile | null {
   if (!hasDraggedWorkspaceFile(dataTransfer)) return null;
-  if (draggedWorkspaceFile) return draggedWorkspaceFile;
-
   try {
     const parsed: unknown = JSON.parse(dataTransfer.getData(WORKSPACE_FILE_DRAG_TYPE));
     return isDraggedWorkspaceFile(parsed) ? parsed : null;

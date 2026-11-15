@@ -1,4 +1,6 @@
+import { isAnimationWindowVisible, subscribeAnimationWindowVisibility } from '@gugu/session-shared/animation-visibility'
 import motionDocument from './startup-motion.html?raw'
+import { mountStartupSlogan } from './startup-slogan'
 
 export type StartupMotionOptions = {
   initialPhase?: 'assemble' | 'settled'
@@ -94,6 +96,9 @@ export function startStartupMotion(options: StartupMotionOptions = {}): StartupM
   const state = current()
   if (!available(state)) return null
   if (!state.frame) {
+    const removeSlogan = mountStartupSlogan(state.host)
+    state.onContent.add(removeSlogan)
+    state.cleanup.push(removeSlogan)
     const palette = options.palette ?? paletteFor(state.host)
     state.deferred = false
     state.held = Boolean(options.hold)
@@ -137,6 +142,9 @@ export function startStartupMotion(options: StartupMotionOptions = {}): StartupM
     }
     window.addEventListener('message', onMessage)
     state.cleanup.push(() => window.removeEventListener('message', onMessage))
+    const tellWindow = () => frame.contentWindow?.postMessage({ type: 'gugu-startup-window', attemptId: state.attemptId, visible: isAnimationWindowVisible() }, '*')
+    state.cleanup.push(subscribeAnimationWindowVisibility(tellWindow))
+    frame.addEventListener('load', tellWindow)
     state.host.append(frame)
   }
   return { frame: state.frame, frameReady: state.readyPromise, reveal: () => {

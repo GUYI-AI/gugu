@@ -1,7 +1,7 @@
 const labels: Record<string, [string, string]> = {
   memory: ['记忆','Memory'],personality: ['性格约定','Personality'],schedules: ['定时任务','Scheduled task'],
   files: ['资料','File'],skills: ['技能','Skill'],integrations: ['应用','Application'],
-  'voice-notes': ['语音笔记','Voice note'],capabilities: ['能力','Capability'],'device-notes': ['设备说明','Device note'],
+  'voice-notes': ['语音笔记','Voice note'],
 }
 
 /** Stable public categories. Native/provider diagnostics never become UI copy. */

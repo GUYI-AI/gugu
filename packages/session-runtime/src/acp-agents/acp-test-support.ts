@@ -713,11 +713,13 @@ export function makeStartInput(
     cwd: '/tmp/workspace',
     providerSessionId: null,
     model: null,
+    // The host always resolves the recorded tier before the runtime sees the input (runtime-process/host.ts).
+    permissionMode: 'edit',
     runContext: {
       cli: { kind: 'resolved', path: '/usr/local/bin/claude' },
       env: { HOME: '/home/test', PATH: '/bin' },
       configRootEnv: {},
-      selfUpdateEnv: {},
+      pinnedEnv: {},
       extraArgs: [],
     },
     ...overrides,
@@ -736,6 +738,6 @@ export function requestActivityCell(
   const boundary = createRequestActivity(agent.observed() as never, ({ event }) => cell.push(event), options);
   const cell = new SessionCell({ ...deps, agent: boundary.agent });
   const push = cell.push.bind(cell);
-  cell.push = (event) => { boundary.observe(deps.acpSessionId, event); push(event); };
+  cell.push = (event, submitted) => { boundary.observe(deps.acpSessionId, event); push(event, submitted); };
   return cell;
 }

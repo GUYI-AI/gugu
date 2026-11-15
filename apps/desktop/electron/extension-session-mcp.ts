@@ -37,6 +37,7 @@ export interface ExtensionAgentContribution {
     | { name: string; command: string; args?: readonly string[]; env?: Readonly<Record<string, string>> }
     /** F77 A tools module of the bundle, served as MCP by gugu's own runtime; named after its App (F119). */
     | { tools: string; env?: Readonly<Record<string, string>> }
+    /** An outdated version of a gugu App (a program gugu itself once hosted): it only says it needs an update. */
     | { name: string; host: 'browser-use' | 'computer-use' }
   )[]
   /** Absolute folder of `<skill>/SKILL.md`, or null. */
@@ -48,8 +49,6 @@ export interface ExtensionAgentApp {
   extensionId: string
   name: string
   instructions: string
-  /** #7317 Computer Use, on: its tools are not in the catalog but gugu's own device_actions / device_call (`<gugu_apps>` says so). */
-  computerUse?: true
 }
 
 export interface ExtensionSessionMcp {
@@ -144,9 +143,9 @@ export function extensionAgentPrograms(
     for (const server of contribution.servers) {
       const name = programName(server, contribution.extensionId)
       if ('host' in server) {
-        programs.push({ extensionId: contribution.extensionId, server: name, digest: contribution.digest,
-          native: server.host, command: hostProgramLine(server.host), args: [], cwd: contribution.rootDir, dataDir: contribution.dataDir,
-          env: { GUGU_APP_SETTINGS: JSON.stringify(contribution.settings ?? {}) } })
+        // Kept so the catalog, the App's settings and its pages say it needs an update (extensionPrograms), never run.
+        programs.push({ extensionId: contribution.extensionId, server: name, digest: contribution.digest, outdated: true,
+          command: hostProgramLine(server.host), args: [], env: {}, cwd: contribution.rootDir, dataDir: contribution.dataDir })
         continue
       }
       let runsOnGuguNode: boolean
@@ -210,7 +209,8 @@ export function extensionAgentPrograms(
 /**
  * The Apps `<gugu_apps>` names: each one whose program gugu actually runs, or whose skills this session reads, with its
  * `instructions` (the schema gives every App with programs or skills one, and no other App). A program
- * `extensionAgentPrograms` left out (its tools module is not in the bundle, this build has no App runtime) runs nothing,
+ * `extensionAgentPrograms` left out (its tools module is not in the bundle, this build has no App runtime), or an outdated
+ * version's, runs nothing,
  * so an App with nothing else is not named: the opening says only what can run (复核 84 2(d)). Whether its tools are
  * listed natively or reached through the catalog does not matter: the line says what the App is for either way.
  * D-30 scope is the caller's (the same `inScope` the catalog uses).
@@ -219,11 +219,9 @@ export function agentAppsOf(
   contributions: readonly ExtensionAgentContribution[],
   programs: readonly ExtensionProgram[],
 ): ExtensionAgentApp[] {
-  // The native Computer Use host is named separately from catalog tools.
-  const computerUse = new Set(programs.filter((program) => program.native === 'computer-use').map((program) => program.extensionId))
-  const running = new Set(programs.map((program) => program.extensionId))
+  const running = new Set(programs.filter((program) => !program.outdated).map((program) => program.extensionId))
   return contributions.flatMap(({ extensionId, name, instructions, skillsDir }): ExtensionAgentApp[] => {
     if (instructions === undefined || (!running.has(extensionId) && skillsDir === null)) return []
-    return [{ extensionId, name, instructions, ...(computerUse.has(extensionId) ? { computerUse: true as const } : {}) }]
+    return [{ extensionId, name, instructions }]
   })
 }

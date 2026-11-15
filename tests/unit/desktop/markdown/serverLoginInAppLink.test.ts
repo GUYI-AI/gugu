@@ -53,7 +53,7 @@ describe('login approvals in the common parser', () => {
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 const noop = () => undefined
 function Shell() {
-  useLinkNavigation({ ownerId: 'owner', chats: [], contacts: [], openChat: noop, openFile: noop, openApp: noop, openProject: noop, openOwnApp: noop, openAssistant: noop })
+  useLinkNavigation({ ownerId: 'owner', chats: () => [], contacts: () => [], openChat: noop, openFile: noop, openApp: noop, openProject: noop, openOwnApp: noop, openAssistant: noop })
   return null
 }
 

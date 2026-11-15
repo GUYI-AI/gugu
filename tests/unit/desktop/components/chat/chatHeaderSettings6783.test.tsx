@@ -69,7 +69,7 @@ describe('#6783 页头 = 这个聊天自己的信息', () => {
     expect(topics.getAttribute('aria-label')).toBe('话题')
     await clickElement(topics)
     const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="group-menu-topic"]'))
-    expect(rows.map((row) => row.querySelector('.gg-topic-name')?.textContent)).toEqual(['新话题', '旧话题'])
+    expect(rows.map((row) => row.querySelector('.gg-list-row-title')?.textContent)).toEqual(['新话题', '旧话题'])
     await clickElement(rows[0]!)
     expect(drainTopicSplitRequest('g')).toMatchObject({ chatId: 't-new', sourceChatId: 'g' })
   })

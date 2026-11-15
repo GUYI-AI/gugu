@@ -53,8 +53,22 @@ describe('phone folder attachment uses the shared project rules', () => {
     expect(rpc.projects.bindProjectToGroup).not.toHaveBeenCalled()
   })
   it('cleans only the newly created project record if group binding fails', async () => {
+    // The host keeps the id it was asked for when it creates the project (an existing one answers its own id).
+    rpc.projects.createProject.mockImplementation(async (params: { id: string }) => ({ success: true, data: { id: params.id } }))
     rpc.projects.bindProjectToGroup.mockResolvedValue({ success: false, error: new Error('group unavailable') })
     await expect(attachPhoneProjectFolder({ project: project('other'), device, devices: [device, { device_id: 'other' } as Device], path: folder.path, confirmMerge: vi.fn() })).rejects.toThrow('group unavailable')
-    expect(rpc.projects.deleteProject).toHaveBeenCalledWith('new-local')
+    const created = (rpc.projects.createProject.mock.calls[0]?.[0] as { id: string }).id
+    expect(rpc.projects.deleteProject).toHaveBeenCalledWith(created)
+  })
+  // A folder unbound from this project earlier is still a (detached) project there: binding it again goes through the
+  // host's create, which answers that project and re-attaches its root; it is not new, so undo and failures keep it.
+  it('re-binding a folder detached earlier re-attaches that project and never deletes it', async () => {
+    rpc.projects.inspectProjectPath.mockResolvedValue({ existingProject: { id: 'detached', name: 'site', path: folder.path } })
+    rpc.projects.createProject.mockResolvedValue({ success: true, data: { id: 'detached' } })
+    rpc.projects.listProjectFolders.mockResolvedValue({ success: true, data: [{ ...folder, projectId: 'detached' }] })
+    rpc.projects.bindProjectToGroup.mockResolvedValue({ success: false, error: new Error('group unavailable') })
+    await expect(attachPhoneProjectFolder({ project: project('other'), device, devices: [device, { device_id: 'other' } as Device], path: folder.path, confirmMerge: vi.fn() })).rejects.toThrow('group unavailable')
+    expect(rpc.projects.createProject).toHaveBeenCalledWith(expect.objectContaining({ path: folder.path }))
+    expect(rpc.projects.deleteProject).not.toHaveBeenCalled()
   })
 })

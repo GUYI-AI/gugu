@@ -70,11 +70,6 @@ export interface DeviceActionsState {
   platform: string
   denyAll: boolean
   groups: DeviceActionsGroupView[]
-  /**
-   * 开关在一个 App 上的分组(#7317:电脑控制 ↔ Computer Use):不在上面的列表里(❌ 两个开关),由那个 App 的页面办系统授权;
-   * `connected` = 那个 App 开着。
-   */
-  managed?: Array<DeviceActionsGroupView & { app: string }>
   recent: DeviceActionsRecentCall[]
 }
 

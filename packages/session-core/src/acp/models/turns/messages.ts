@@ -39,6 +39,8 @@ export const transcriptMessageSchema = z.object({
    * 用途:一轮被钩子劈成几段时(#5350),段与段的边界就是钩子通知这条消息的到达时刻 ——
    * 没有它,后面几段的折叠头写不出「用时」。
    */
-  at: z.number().optional()
+  at: z.number().optional(),
+  /** Transport trace: a delivery sent as its folded form (transport-trim `folded-form`); the reader reads its turn again when it is shown. Never stored. */
+  held: z.literal(true).optional()
 });
 export type TranscriptMessage = z.infer<typeof transcriptMessageSchema>;

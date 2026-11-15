@@ -273,11 +273,11 @@ export class GitWorktree implements IGitWorktree {
   async getChangedFiles(base: DiffTarget): Promise<GitChange[]> {
     const resolved = resolveDiffTarget(base);
     const diffArgs = resolved.cached
-      ? ['diff', '--numstat', '--cached']
-      : ['diff', '--numstat', resolved.ref];
+      ? ['diff', '--numstat', '-z', '--cached']
+      : ['diff', '--numstat', '-z', resolved.ref];
     const nameArgs = resolved.cached
-      ? ['diff', '--name-status', '--cached']
-      : ['diff', '--name-status', resolved.ref];
+      ? ['diff', '--name-status', '-z', '--cached']
+      : ['diff', '--name-status', '-z', resolved.ref];
 
     const [numstatResult, nameStatusResult] = await Promise.all([
       this.exec.exec(diffArgs).catch(() => ({ stdout: '' })),
@@ -286,9 +286,11 @@ export class GitWorktree implements IGitWorktree {
     const numstat = parseNumstat(numstatResult.stdout);
     const changes: GitChange[] = [];
 
-    for (const line of nameStatusResult.stdout.trim().split('\n').filter(Boolean)) {
-      const [code = '', ...parts] = line.split('\t');
-      const filePath = parts[parts.length - 1]?.trim();
+    const entries = nameStatusResult.stdout.split('\0');
+    for (let i = 0; i < entries.length - 1;) {
+      const code = entries[i++];
+      const original = entries[i++];
+      const filePath = /^[RC]/.test(code) ? entries[i++] : original;
       if (!filePath) continue;
       const stat = numstat.get(filePath);
       changes.push({
@@ -355,14 +357,16 @@ export class GitWorktree implements IGitWorktree {
 
   async getCommitFiles(hash: string): Promise<CommitFile[]> {
     const [numstatRes, nameStatusRes] = await Promise.all([
-      this.exec.exec(['diff-tree', '--root', '--no-commit-id', '--numstat', '-r', hash]),
-      this.exec.exec(['diff-tree', '--root', '--no-commit-id', '--name-status', '-r', hash]),
+      this.exec.exec(['diff-tree', '--root', '--no-commit-id', '--numstat', '-z', '-r', hash]),
+      this.exec.exec(['diff-tree', '--root', '--no-commit-id', '--name-status', '-z', '-r', hash]),
     ]);
     const numstat = parseNumstat(numstatRes.stdout);
     const statusByPath = new Map<string, ReturnType<typeof mapGitChangeStatus>>();
-    for (const line of nameStatusRes.stdout.trim().split('\n').filter(Boolean)) {
-      const [code = '', ...parts] = line.split('\t');
-      const filePath = parts[parts.length - 1];
+    const entries = nameStatusRes.stdout.split('\0');
+    for (let i = 0; i < entries.length - 1;) {
+      const code = entries[i++];
+      const original = entries[i++];
+      const filePath = /^[RC]/.test(code) ? entries[i++] : original;
       if (filePath) statusByPath.set(filePath, mapGitChangeStatus(code));
     }
     return [...numstat.entries()].map(([filePath, stat]) => ({
@@ -769,9 +773,17 @@ export class GitWorktree implements IGitWorktree {
 
 function parseNumstat(stdout: string): Numstat {
   const map: Numstat = new Map();
-  for (const line of stdout.trim().split('\n').filter(Boolean)) {
+  const nul = stdout.includes('\0');
+  const records = nul ? stdout.split('\0') : stdout.trim().split('\n');
+  for (let i = 0; i < records.length; i++) {
+    const line = records[i];
+    if (!line) continue;
     const [addStr, delStr, ...pathParts] = line.split('\t');
-    const filePath = pathParts.join('\t');
+    let filePath = pathParts.join('\t');
+    if (nul && pathParts.length === 1 && pathParts[0] === '') {
+      i += 2;
+      filePath = records[i];
+    }
     if (!filePath) continue;
     const current = map.get(filePath) ?? { additions: 0, deletions: 0 };
     current.additions += addStr === '-' ? 0 : Number.parseInt(addStr ?? '0', 10) || 0;
@@ -799,7 +811,7 @@ function parseDecoratedTags(decorations: string): string[] {
 
 function imageMimeForPath(filePath: string): string | null {
   const ext = filePath.split('.').pop()?.toLowerCase();
-  return ext ? (IMAGE_MIME_BY_EXT[ext] ?? null) : null;
+  return ext && Object.hasOwn(IMAGE_MIME_BY_EXT, ext) ? IMAGE_MIME_BY_EXT[ext] : null;
 }
 
 function looksLikeLfsPointer(buffer: Buffer): boolean {

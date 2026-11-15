@@ -26,8 +26,10 @@ const { queryClient } = await import('@/session/renderer/lib/query-client')
 const { unsubscribePrivateUserEventBus } = await import('@/lib/realtimeChannel')
 const { drainTopicSplitRequest } = await import('@/lib/topicSplitRequest')
 let harness: ReturnType<typeof createReactHarness>
+const locator = (unread: number, addressed: number) => ({ stream_id: 'main', stream_kind: 'main' as const, thread_root_id: null, message_id: 'first', message_seq: 1,
+  unread_count: unread, addressed_count: addressed, cursor_seq: 0, version: 1, is_marked_unread: false })
 const topics = [
-  chat({ id: 'new', kind: 'topic', source_chat_id: 'g', name: 'Recent topic', last_message_at: '2026-10-29T00:00:00Z', last_message_preview: 'Alex: Latest update', unread_count: 4 }),
+  chat({ id: 'new', kind: 'topic', source_chat_id: 'g', name: 'Recent topic', last_message_at: '2026-10-29T00:00:00Z', last_message_preview: 'Alex: Latest update', unread_count: 4, unread_locator: locator(4, 0) }),
   chat({ id: 'old', kind: 'topic', source_chat_id: 'g', name: 'Older topic', last_message_at: '2026-10-20T00:00:00Z', last_message_preview: 'Muted preview', unread_count: 120, is_muted: true }),
 ]
 const summaries = topics.map((topic) => ({ chat_id: topic.id, name: topic.name, source_message_id: topic.id, creator_user_id: 'u', last_message_at: topic.last_message_at, message_count: 2, participant_count: 2, is_participant: true }))
@@ -50,6 +52,27 @@ beforeEach(() => {
 afterEach(() => { harness.cleanup(); queryClient.clear() })
 
 describe('rich Topics menu', () => {
+  it('shows who is calling you in red, lists that topic first, and opens it', async () => {
+    const calling = chat({ id: 'calling', kind: 'topic', source_chat_id: 'g', name: 'Quiet but calling', last_message_at: '2026-10-01T00:00:00Z', last_message_preview: 'Not this', unread_count: 27, unread_locator: locator(27, 1) })
+    save(['old'])
+    await renderWithAppProviders(harness, topicMenu(), { auth: { id: 'u' }, chat: { activeChatId: 'g', chats: [...topics, calling] } })
+    const button = document.querySelector<HTMLElement>('[data-testid="group-menu-topics"]')!
+    const chip = button.querySelector<HTMLElement>('.gg-chip')!
+    expect(chip.textContent, 'the addressed count, not the raw 31').toBe('@1')
+    expect(chip.dataset.tone).toBe('danger')
+    await clickElement(button)
+    await vi.waitFor(() => expect(document.querySelectorAll('[data-testid="group-menu-topic"]')).toHaveLength(3))
+    expect([...document.querySelectorAll<HTMLElement>('[data-topic-id]')].map(row => row.dataset.topicId), 'older than the rest and not pinned, still first').toEqual(['calling', 'old', 'new'])
+    const row = document.querySelector<HTMLElement>('[data-topic-id="calling"]')!
+    expect(row.textContent, 'title only: no preview line').not.toContain('Not this')
+    expect(row.querySelector('.gg-list-row-subtitle')).toBeNull()
+    const rowChip = row.querySelector<HTMLElement>('.gg-list-row-meta .gg-chip')!
+    expect(rowChip.textContent, 'one call, not 27 unread').toBe('@1')
+    expect(rowChip.dataset.tone).toBe('danger')
+    await clickElement(row.querySelector<HTMLElement>('[data-testid="group-menu-topic"]')!)
+    expect(drainTopicSplitRequest('g')?.chatId).toBe('calling')
+  })
+
   it('leaves no permanent pin-width padding on a topic with no unread messages', async () => {
     save(['old'])
     await renderWithAppProviders(harness, topicMenu(), { ...options(), chat: { activeChatId: 'g', chats: topics.map(topic => ({ ...topic, unread_count: 0 })) } })
@@ -82,7 +105,7 @@ describe('rich Topics menu', () => {
       expect(document.activeElement).toBe(open)
       expect(displayed(), 'the count and action share the trailing space').toBe(false)
       expect(getComputedStyle(pin).display).not.toBe('none')
-      expect(document.querySelector('[data-topic-id="old"] .gg-topic-name svg')).not.toBeNull()
+      expect(document.querySelector('[data-topic-id="old"] .gg-list-row-title svg')).not.toBeNull()
       await clickElement(pin)
       await vi.waitFor(() => expect(savedPins()).toEqual(['old', 'new']))
       expect(drainTopicSplitRequest('g')).toBeNull()
@@ -104,24 +127,24 @@ describe('rich Topics menu', () => {
     expect(iconBody('old')).not.toBe(iconBody('new'))
   })
 
-  it('shows activity, preview and muted unread counts, and pins without closing or opening a topic', async () => {
+  it('shows title-only rows with muted unread counts, and pins without closing or opening a topic', async () => {
     save(['old'])
     await renderWithAppProviders(harness, topicMenu(), options())
     const submenu = document.querySelector<HTMLElement>('[data-testid="group-menu-topics"]')!
     expect(submenu.querySelector('.gg-chip')?.textContent).toBe('4')
     await clickElement(submenu)
     await vi.waitFor(() => expect(document.querySelectorAll('[data-testid="group-menu-topic"]')).toHaveLength(2))
-    await vi.waitFor(() => expect([...document.querySelectorAll('[data-testid="group-menu-topic"]')].map((row) => row.querySelector('.gg-topic-name')?.textContent)).toEqual(['Older topic', 'Recent topic']))
+    await vi.waitFor(() => expect([...document.querySelectorAll('[data-testid="group-menu-topic"]')].map((row) => row.querySelector('.gg-list-row-title')?.textContent)).toEqual(['Older topic', 'Recent topic']))
     const rows = [...document.querySelectorAll('[data-testid="group-menu-topic"]')]
-    expect(rows.map((row) => row.querySelector('.gg-topic-name')?.textContent)).toEqual(['Older topic', 'Recent topic'])
+    expect(rows.map((row) => row.querySelector('.gg-list-row-title')?.textContent)).toEqual(['Older topic', 'Recent topic'])
     expect(rows[0]?.closest('[data-topic-id]')?.querySelector('.gg-chip')?.textContent).toBe('99+')
     expect(rows[0]?.closest('[data-topic-id]')?.querySelector('.gg-chip')?.getAttribute('data-tone')).toBeNull()
-    expect(rows[1]?.querySelector('.gg-topic-preview')?.textContent).toContain('Alex: Latest update')
-    expect(rows[1]?.querySelector('.gg-topic-time')?.textContent).toBeTruthy()
+    expect(rows[1]?.textContent, 'no preview, no time: the name and its count').toBe('Recent topic4')
     const popup = document.querySelector<HTMLElement>('[data-testid="group-topics-popup"]')!
     expect(popup.classList.contains('gg-topics-menu')).toBe(false)
     expect(popup.style.width).toBe('320px')
-    expect(popup.style.maxHeight).toBe('min(360px, var(--available-height))')
+    expect(popup.style.maxHeight, 'the topic list scrolls inside the popup, so its end fade keeps the popup shadow').toBe('')
+    expect(popup.querySelector('.gg-topic-list')?.contains(rows[0]!)).toBe(true)
     // Observe the pin action after the submenu's own opening/focus events have settled.
     await clickElement(document.querySelector<HTMLElement>('[data-topic-id="new"] [data-testid="group-topic-pin"]')!)
     await vi.waitFor(() => expect(savedPins()).toEqual(['old', 'new']))

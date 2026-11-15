@@ -5,7 +5,7 @@ import { ptyDataChannel, ptyExitChannel, ptyInputChannel } from '@shared/core/pt
 import { ptyStartedChannel } from '@shared/events/appEvents';
 import type { Pty, PtyDimensions, PtyExitInfo } from './pty';
 import { forgetPtyOutput, recordPtyOutput } from './pty-output-activity';
-import { PtyScreen, type PtyScreenSnapshot } from './pty-screen';
+import { PtyScreen, type PtyScreenSnapshot, type TerminalReportColors } from './pty-screen';
 import { forgetTerminalInputSession } from './terminal-input';
 import { createProviderBlockerDetector, createProviderReviewGateDetector } from '@main/core/sessions/provider-review-gate';
 import type { ProviderBlocker, ProviderReviewGate } from '@shared/core/sessions/sessionEvents';
@@ -51,6 +51,11 @@ export class PtySessionRegistry {
   private activeConsumers: Set<string> = new Set();
   private metadata: Map<string, PtySessionMetadata> = new Map();
   private lastSizes: Map<string, { cols: number; rows: number }> = new Map();
+  /**
+   * 屏幕应答 OSC 10/11 用的颜色(@@@color-report,pty-screen.ts):App 主题下终端的默认字色 / 底色,所有会话一份。
+   * ❌ 跟着 PTY 走:同一个 id 重启 / 换模型时新进程照样有人答;还没有视图的会话也有人答。
+   */
+  private reportColors: TerminalReportColors | null = null;
   private pendingFlushes: Map<string, () => void> = new Map();
 
   register(
@@ -80,6 +85,7 @@ export class PtySessionRegistry {
     this.ptyMap.set(ptySessionId, pty);
     const screen = new PtyScreen(options.size, undefined, options.scrollback);
     this.screens.set(ptySessionId, screen);
+    screen.answerColorQueries(() => this.reportColors, (reply) => pty.write(reply));
 
     // Adopt the grid the renderer already asked for.  Spawn callers size the PTY
     // from `getLastSize()` before a long async prelude, so a resize broadcast
@@ -317,6 +323,11 @@ export class PtySessionRegistry {
     pty.resize(cols, rows);
     this.screens.get(ptySessionId)?.resize(cols, rows);
     return true;
+  }
+
+  /** 会话页报的终端默认颜色(@@@color-report):换主题时再报,最后报的为准。 */
+  setReportColors(colors: TerminalReportColors): void {
+    this.reportColors = colors;
   }
 
   getLastSize(ptySessionId: string): { cols: number; rows: number } | undefined {

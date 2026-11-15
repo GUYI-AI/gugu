@@ -1,6 +1,9 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { lstat as lstatAsync, stat as statAsync } from 'node:fs/promises';
 import path from 'node:path';
-import type { WindowsShimReader } from './windows-node-entry';
+// `.ts` 扩展名:Codex ACP 桥(codex-app-server-acp.mjs)经 owned-child.ts 用 Node 原生的 TS 剥离直接加载这条链,
+// 无扩展名的值导入在那边解析不到,桥当场 exit 1(类型导入会被擦掉,所以从前没事)。
+import { readShimEnv, type WindowsShimReader } from './windows-node-entry.ts';
 
 /**
  * Windows 上「已经解析出一个程序路径，现在要直接把它 spawn 起来」这件事的**唯一一份**做法。
@@ -33,6 +36,8 @@ export type DirectSpawnPlan = {
   spawnOverrides: WindowsLauncherOverrides;
   /** 包了 cmd.exe / powershell.exe：`child.pid` 是壳，真程序是它的孩子。 */
   wrapsShell: boolean;
+  /** 跳过的壳本来会设的变量已叠上去的**完整**环境;spawn 用它代替调用方那份。没有要叠的就不给。 */
+  env?: NodeJS.ProcessEnv;
 };
 
 /** Windows 的环境变量名不分大小写，`ComSpec` / `COMSPEC` / `comspec` 都得认。 */
@@ -84,10 +89,13 @@ export function planDirectSpawn(
 
   const env = options.env ?? process.env;
   const extension = path.win32.extname(command).toLowerCase();
-  const program = extension === '.cmd' || extension === '.ps1'
-    ? resolveWindowsHandoffExecutable(command, { ...options, platform })
+  const handoff = extension === '.cmd' || extension === '.ps1'
+    ? resolveWindowsHandoffLaunch(command, { ...options, platform, env })
     : null;
-  if (program) return { command: program, args: [...args], spawnOverrides: PASSTHROUGH, wrapsShell: false };
+  if (handoff) {
+    const shimEnv = Object.keys(handoff.env).length > 0 ? { env: { ...env, ...handoff.env } } : {};
+    return { command: handoff.program, args: [...args], spawnOverrides: PASSTHROUGH, wrapsShell: false, ...shimEnv };
+  }
 
   if (extension === '.cmd' || extension === '.bat') {
     const commandLine = [escapeCmdCommand(command), ...args.map(escapeCmdShimArgument)].join(' ');
@@ -109,6 +117,126 @@ export function planDirectSpawn(
   }
 
   return { command, args: [...args], spawnOverrides: PASSTHROUGH, wrapsShell: false };
+}
+
+// ── 在 PATH 上找程序 ─────────────────────────────────────────────────────────
+
+/** 与 probe 的 `WHICH_TIMEOUT_MS` 同一个量级:PATH 里一个失效的网络盘,每次 stat 都要卡到 SMB 超时。 */
+const WINDOWS_LOOKUP_TIMEOUT_MS = 5_000;
+
+/**
+ * Windows 上「这个命令在哪」的进程内做法,替代解析 `where` 的输出。
+ *
+ * `where` 按控制台代码页输出(中文系统是 GBK),而 exec 一律按 UTF-8 解码 ⇒ 路径里只要有一个
+ * 非 ASCII 字符(中文用户名、`测试 目录`),拿回来的就是一串 `���� Ŀ¼`:依赖页「安装完成,但未检测到程序」,
+ * 会话卡在 `--version` 的 spawn ENOENT。在这里直接按 PATH × PATHEXT 读盘,路径从头到尾是 Node 的字符串,
+ * 没有解码这一步。
+ *
+ * 次序与 `where` 一致:先当前目录,再 PATH 各段;同一目录里先原名(带扩展名时),再按 PATHEXT 的次序。
+ * 带路径的命令(`C:\x\codex.cmd`)只在它那个目录里找 —— `where dir:pattern` 的语义。
+ * 命令里的 `%VAR%` 按 env 展开(厂商固定安装位置 `%LOCALAPPDATA%\…`);有一个展不开 = 没有,❌ 拿字面量去碰。
+ * 不带扩展名的同名文件(npm 给 POSIX 留的那份壳)不算:Windows 跑不了它。
+ */
+export async function findWindowsCommandPaths(
+  command: string,
+  options: {
+    env?: NodeJS.ProcessEnv;
+    cwd?: string;
+    isFile?: (candidate: string) => Promise<boolean> | boolean;
+    isDirectory?: (candidate: string) => Promise<boolean> | boolean;
+    /** 整次查找的上限;到点返回 null,调用方退回 `where`(它跑在带超时的子进程里)。 */
+    timeoutMs?: number;
+  } = {}
+): Promise<string[] | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), options.timeoutMs ?? WINDOWS_LOOKUP_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([searchWindowsCommandPaths(command, options), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function searchWindowsCommandPaths(
+  command: string,
+  options: {
+    env?: NodeJS.ProcessEnv;
+    cwd?: string;
+    isFile?: (candidate: string) => Promise<boolean> | boolean;
+    isDirectory?: (candidate: string) => Promise<boolean> | boolean;
+  }
+): Promise<string[]> {
+  const env = options.env ?? process.env;
+  const isFile = options.isFile ?? defaultIsFile;
+  const isDirectory = options.isDirectory ?? defaultIsDirectory;
+  const cwd = options.cwd ?? process.cwd();
+  let unresolved = false;
+  command = command.replace(/%([^%\r\n]+)%/g, (literal, name: string) => {
+    const value = windowsEnvValue(env, name);
+    if (value === undefined) unresolved = true;
+    return value ?? literal;
+  });
+  if (unresolved) return [];
+  const separator = Math.max(command.lastIndexOf('\\'), command.lastIndexOf('/'));
+  const name = command.slice(separator + 1);
+  if (!name) return [];
+  const directories = separator >= 0
+    ? [command.slice(0, separator + 1)]
+    : [cwd, ...(windowsEnvValue(env, 'PATH') ?? '').split(';')];
+  const extensions = (windowsEnvValue(env, 'PATHEXT') ?? '.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC')
+    .split(';')
+    .map((extension) => extension.trim().toLowerCase())
+    .filter((extension) => extension.startsWith('.'));
+  const names = [...(path.win32.extname(name) ? [name] : []), ...extensions.map((extension) => name + extension)];
+
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of directories) {
+    const entry = raw.trim().replace(/^"(.*)"$/, '$1');
+    if (!entry) continue;
+    // 相对的 PATH 段 / `.\bin\x`:按这次查找的 cwd 解析(`where` 跑在 exec 的 cwd 里,打印绝对路径)。
+    const directory = path.win32.resolve(cwd, entry);
+    // 每个目录先看一次在不在:不在(或是失效的盘)就整段跳过,❌ 对它逐个扩展名再 stat 十几次。
+    if (!(await isDirectory(directory))) continue;
+    for (const candidate of names) {
+      const full = path.win32.join(directory, candidate);
+      const key = full.toLowerCase();
+      if (seen.has(key) || !(await isFile(full))) continue;
+      seen.add(key);
+      found.push(full);
+    }
+  }
+  return found;
+}
+
+async function defaultIsDirectory(candidate: string): Promise<boolean> {
+  try {
+    return (await statAsync(candidate)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 「不是目录」就算:WindowsApps 下的 App Execution Alias(Store / MSIX 装的 CLI,0 字节的 APPEXECLINK 重解析点)
+ * `stat` 跟不过去会抛错或报不出普通文件,而 `where` 列它、CreateProcess 也跑得动 ⇒ 抛错时退到 `lstat` 看链接本身。
+ * 异步:PATH 里一个失效的网络盘会让每次 stat 卡到 SMB 超时,不能卡在主线程上。
+ */
+async function defaultIsFile(candidate: string): Promise<boolean> {
+  try {
+    return !(await statAsync(candidate)).isDirectory();
+  } catch (error) {
+    // 根本不在(含断掉的符号链接)就是不在;只有「在、但 stat 跟不过去」的(APPEXECLINK)才看链接本身。
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return false;
+    try {
+      return !(await lstatAsync(candidate)).isDirectory();
+    } catch {
+      return false;
+    }
+  }
 }
 
 // ── 交给别人的进程去 spawn 的那条路径 ──────────────────────────────────────────
@@ -147,12 +275,12 @@ function isDirectlySpawnableOnWindows(command: string): boolean {
  * 必须是**整行只有这一个程序 + `%*`**:`node "…\cli.js" %*` 那种多一个参数的不匹配 ——
  * 匹配上就会把 `node.exe` 当成目标,丢掉真正要跑的那个脚本。
  */
-const CMD_SHIM_SINGLE_PROGRAM = /^\s*"([^"\r\n]+\.(?:exe|com))"\s+%\*\s*$/im;
+const CMD_SHIM_SINGLE_PROGRAM = /^\s*@?"([^"\r\n]+\.(?:exe|com))"\s+%\*\s*$/im;
 
 /** 壳里的 `%dp0%` / `%~dp0` = 壳自己所在目录(带尾分隔符)。 */
 function expandShimDirectory(template: string, shimPath: string): string {
   const directory = path.win32.dirname(shimPath);
-  const expanded = template.replace(/%~?dp0%?/gi, `${directory}\\`);
+  const expanded = template.replace(/%~dp0|%dp0%/gi, `${directory}\\`);
   // `"%dp0%\node_modules\…"` 展开后会多出一个分隔符;Windows 认,但路径比对不认。
   return expanded.replace(/(?<!^)\\{2,}/g, '\\');
 }
@@ -163,25 +291,37 @@ export type WindowsHandoffOptions = {
   readShim?: (shimPath: string) => string | null;
   /** 目标是否真的存在。 */
   exists?: (candidate: string) => boolean;
+  /** 程序将要拿到的环境:壳里 `%VAR%` 按它展开。默认本进程的。 */
+  env?: NodeJS.ProcessEnv;
+  /**
+   * 壳的 SET 读不全时:默认 null(调用方照旧起壳,设置一个不丢);`'drop'` = 仍交出程序、不带那份设置 ——
+   * 只给没有壳可退的调用方(Claude 的 ACP 适配器:不交出程序就起不来)。
+   */
+  unreadableEnv?: 'drop';
 };
 
+/** 绕过壳直接起的那个程序,以及壳本来会给它设的环境(叠在 spawn env 最上面;壳里的 SET 本来就最后执行)。 */
+export type WindowsHandoffLaunch = { program: string; env: Record<string, string> };
+
 /**
- * 把一条**要交给别的进程去 spawn** 的路径,翻译成那边真 spawn 得起来的路径。
- * 翻译不出来时返回 null —— 调用方据此响亮失败,❌ 不静默回落。
+ * 把一条**要交给别的进程去 spawn** 的路径,翻译成那边真 spawn 得起来的程序 + 它要带上的环境。
+ * 翻译不出来时返回 null —— 调用方据此响亮失败或照旧起壳,❌ 不静默回落。
+ *
+ * 壳在调程序前设的变量(用户自己写的 `set CODEX_HOME=…` / `set "PATH=C:\\tools;%PATH%"`)随 `env` 一起交出:
+ * 直接起程序却丢了它们,程序就悄悄换了一套配置与登录。设得读不全(条件分支、展不开的 `%VAR%`)⇒ null。
  */
-export function resolveWindowsHandoffExecutable(
+export function resolveWindowsHandoffLaunch(
   command: string,
   options: WindowsHandoffOptions = {}
-): string | null {
+): WindowsHandoffLaunch | null {
   const platform = options.platform ?? process.platform;
-  if (platform !== 'win32') return command;
-  if (isDirectlySpawnableOnWindows(command)) return command;
+  if (platform !== 'win32' || isDirectlySpawnableOnWindows(command)) return { program: command, env: {} };
 
   const extension = path.win32.extname(command).toLowerCase();
   if (extension !== '.cmd' && extension !== '.bat' && extension !== '.ps1') return null;
 
-  // npm 三个壳(`name` / `name.cmd` / `name.ps1`)是一起写下的,`.cmd` 那份格式最稳,统一读它。
-  const shimPath = extension === '.cmd'
+  // npm 三个壳(`name` / `name.cmd` / `name.ps1`)是一起写下的,`.cmd` 那份格式最稳:`.ps1` 读它;`.bat` 读自己。
+  const shimPath = extension === '.cmd' || extension === '.bat'
     ? command
     : `${command.slice(0, command.length - extension.length)}.cmd`;
 
@@ -191,10 +331,14 @@ export function resolveWindowsHandoffExecutable(
 
   const match = CMD_SHIM_SINGLE_PROGRAM.exec(text);
   if (!match) return null;
+  // 只读程序行之前的:之后的(`if errorlevel 1 pause`、`set RC=%ERRORLEVEL%`)在程序退出后才执行,与它无关。
+  const env = readShimEnv(text.slice(0, match.index), shimPath, options.env ?? process.env)
+    ?? (options.unreadableEnv === 'drop' ? {} : null);
+  if (!env) return null;
 
   const target = expandShimDirectory(match[1]!, shimPath);
   const exists = options.exists ?? defaultExists;
-  return exists(target) ? target : null;
+  return exists(target) ? { program: target, env } : null;
 }
 
 // ── 交给 node 去跑的那条路径 ──────────────────────────────────────────────────

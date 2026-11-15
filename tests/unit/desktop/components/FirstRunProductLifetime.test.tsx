@@ -14,7 +14,6 @@ const io = vi.hoisted(() => ({
   finishFirstRun: vi.fn(async () => '2026-10-24T00:00:00Z'),
   writeOccupation: vi.fn(),
   writeFirstRunHarness: vi.fn(),
-  requestAssistantSetupHandoff: vi.fn(),
   enrollSampleProject: vi.fn(async (_userId: string) => undefined),
 }))
 vi.mock('../../../../apps/desktop/src/lib/firstRun', () => io)
@@ -74,7 +73,9 @@ describe('desktop product lifetime across the first-run tour', () => {
     delete (window as unknown as { __EMDASH_MOUNT__?: HTMLElement }).__EMDASH_MOUNT__
   })
 
-  it.each(['assistant-intro-primary', 'assistant-intro-later'])('keeps the same connected task mount after %s and reopening the tour', async (testId) => {
+  // Progress saved by an older build on its 「认识咕咕」 page (stage `intro`, agents picked, terminal seen) resumes on the
+  // next page that still exists: the tour choice, 4 / 4 (owner 11-12: no assistant step in the first run).
+  it('keeps the same connected task mount from a saved older-build progress through the tour choice and reopening the tour', async () => {
     await harness.render(createNode(FirstRunGate, {
       user: { id: 'owner-1', email: 'owner@example.test', nickname: 'Owner' },
     }, createNode(EmdashSessionFrame)))
@@ -83,15 +84,14 @@ describe('desktop product lifetime across the first-run tour', () => {
     const content = mount.firstElementChild
     expect(mount.isConnected).toBe(true)
     expect(content).not.toBeNull()
-    await clickElement(document.querySelector(`[data-testid="${testId}"]`)!)
-    // Desktop asks once more whether to take the feature-bar tour (onboarding spec §4.1 step 5).
+    // Desktop asks once whether to take the feature-bar tour (onboarding spec §4.1).
     await waitForCondition(() => !!document.querySelector('[data-testid="first-run-tour-choice"]'), 'tour choice shown')
-    expect(document.querySelector('[data-testid="first-run-step-count"]')?.textContent).toBe('5 / 5')
+    expect(document.querySelector('[data-testid="first-run-step-count"]')?.textContent).toBe('4 / 4')
+    expect(document.querySelector('[data-testid^="assistant-intro-"]')).toBeNull()
     expect(io.finishFirstRun).not.toHaveBeenCalled()
     expect(io.enrollSampleProject).not.toHaveBeenCalled()
     await clickElement(document.querySelector('[data-testid="first-run-tour-skip"]')!)
     await waitForCondition(() => !document.querySelector('[data-testid="first-run-tour-choice"]'), 'choice dismissed')
-    expect(io.requestAssistantSetupHandoff).toHaveBeenCalledTimes(testId === 'assistant-intro-primary' ? 1 : 0)
 
     expect(io.finishFirstRun).toHaveBeenCalledOnce()
     expect(io.enrollSampleProject).toHaveBeenCalledWith('owner-1')
@@ -111,13 +111,11 @@ describe('desktop product lifetime across the first-run tour', () => {
     expect(mount.firstElementChild).toBe(content)
     expect(entry.importSessionEntry).toHaveBeenCalledOnce()
   })
-  // #709 第 5 页两个出口都给新账号记上示例项目,在「走完」之前记;第 4 页还不记。
+  // #709 最后一页(问导览)两个出口都给新账号记上示例项目,在「走完」之前记。
   it.each(['first-run-tour-start', 'first-run-tour-skip'])('%s enrolls the sample project before finishing', async (choice) => {
     await harness.render(createNode(FirstRunGate, {
       user: { id: 'owner-1', email: 'owner@example.test', nickname: 'Owner' },
     }, createNode(EmdashSessionFrame)))
-    await waitForCondition(() => !!document.querySelector('[data-testid="assistant-intro-later"]'), 'intro shown')
-    await clickElement(document.querySelector('[data-testid="assistant-intro-later"]')!)
     await waitForCondition(() => !!document.querySelector('[data-testid="first-run-tour-choice"]'), 'tour choice shown')
     expect(io.enrollSampleProject).not.toHaveBeenCalled()
     await clickElement(document.querySelector(`[data-testid="${choice}"]`)!)
@@ -126,18 +124,18 @@ describe('desktop product lifetime across the first-run tour', () => {
     expect(io.enrollSampleProject.mock.invocationCallOrder[0]).toBeLessThan(io.finishFirstRun.mock.invocationCallOrder[0]!)
   })
 
-  it('keeps the task page connected when going back from the intro to the terminal step', async () => {
+  it('keeps the task page connected when going back from the tour choice to the terminal step', async () => {
     await harness.render(createNode(FirstRunGate, {
       user: { id: 'owner-1', email: 'owner@example.test', nickname: 'Owner' },
     }, createNode(EmdashSessionFrame)))
     await waitForCondition(() => sessionMount()?.textContent === 'Task page ready', 'embedded task page rendered')
     const mount = sessionMount()!
     const content = mount.firstElementChild
-    await clickElement(document.querySelector('[data-testid="assistant-intro-back"]')!)
+    await waitForCondition(() => !!document.querySelector('[data-testid="first-run-tour-back"]'), 'tour choice shown')
+    await clickElement(document.querySelector('[data-testid="first-run-tour-back"]')!)
     expect(mount.isConnected).toBe(true)
     await clickElement(document.querySelector('[data-testid="terminal-continue"]')!)
-    await waitForCondition(() => !!document.querySelector('[data-testid="first-run-intro"]'), 'intro shown again')
-    await clickElement(document.querySelector('[data-testid="assistant-intro-later"]')!)
+    await waitForCondition(() => !!document.querySelector('[data-testid="first-run-tour-choice"]'), 'tour choice shown again')
     await clickElement(document.querySelector('[data-testid="first-run-tour-skip"]')!)
     expect(sessionMount()).toBe(mount)
     expect(mount.firstElementChild).toBe(content)

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
 import { rendererLogger } from '../../lib/log'
 import { restoreLanding } from '../../lib/listLanding'
-import type { ListLanding } from '../../lib/flowList'
+import type { FlowListHandle, ListLanding } from '../../lib/flowList'
 import { currentAuthSessionSignal } from '../../lib/authSessionLoss'
 import type { UnreadLocatorCommit } from '../../lib/chatUnreadLocatorWindow'
+import { afterPaint } from '../../lib/afterPaint'
 
 const log = rendererLogger('conversation-scroll')
 
@@ -46,9 +47,11 @@ export function resolveConversationRestoreLocation(
 }
 
 interface UseConversationScrollMemoryOptions {
+  listRef: RefObject<FlowListHandle | null>
   chatId: string | null
   viewportKey: string
-  // Conversation-scoped on purpose: an openNonce remount reopens at LAST (#461), it does not replay the saved anchor.
+  // One per opening: a phone reopening the same conversation (openNonce) replays the saved anchor like any other opening;
+  // an opening with new unread lands at the latest instead (discardSaved, #6530). Replaces #461's "reopen at LAST".
   activationKey: string
   enabled: boolean
   messageIds: ReadonlyArray<string>
@@ -56,6 +59,8 @@ interface UseConversationScrollMemoryOptions {
   setFollowingTail: (following: boolean) => void
   loadMessageAnchor?: (messageId: string, commit?: UnreadLocatorCommit) => Promise<void>
   discardSaved?: boolean // @@@6530 因为有新消息才点开的这一次停在最新处,不回上次读到一半的位置(微信同款)
+  /** 这次打开落在这条消息上(话题里第一条叫到你的),走和「回到上次位置」同一条恢复路:列表藏着等它就位,不先在最新处露一帧。 */
+  landOn?: string | null
 }
 
 const RESTORE_TIMEOUT_MS = 5_000
@@ -64,17 +69,21 @@ const RESTORE_OFFSET_TOLERANCE = 1
 const AT_BOTTOM_THRESHOLD = 80
 // A revealed message lands this far down the viewport (its top edge), so it reads as "here", not glued to the top.
 const REVEAL_VIEWPORT_FRACTION = 0.35
+// The scroller does not exist yet when a conversation opens onto a message, so this one is a fixed distance.
+const LAND_ON_OFFSET = 120
 
 export function useConversationScrollMemory({
+  listRef,
   chatId,
   viewportKey,
   activationKey,
   enabled,
-  messageIds,
+  messageIds: currentMessageIds,
   isAtBottomRef,
   setFollowingTail,
   loadMessageAnchor,
   discardSaved,
+  landOn,
 }: UseConversationScrollMemoryOptions): {
   scrollerEl: HTMLElement | null
   scrollerRef: RefObject<HTMLElement | null>
@@ -86,6 +95,11 @@ export function useConversationScrollMemory({
   openLocation: () => ListLanding | null
   revealMessage: (messageId: string, commit?: UnreadLocatorCommit) => Promise<void>
 } {
+  // Callers hand over a new array on every render. The restore below restarts when the rows change, not when the panel
+  // re-renders: restarted every frame it never counts its stable frames and holds the list for its whole deadline.
+  const messageIdsRef = useRef(currentMessageIds)
+  if (messageIdsRef.current.length !== currentMessageIds.length || messageIdsRef.current.some((id, index) => id !== currentMessageIds[index])) messageIdsRef.current = currentMessageIds
+  const messageIds = messageIdsRef.current
   const session = currentAuthSessionSignal()
   const positions = useMemo(() => positionsBySession.get(session) ?? new Map<string, ConversationViewportPosition>(), [session])
   positionsBySession.set(session, positions)
@@ -122,21 +136,21 @@ export function useConversationScrollMemory({
 
   if (lastActivationRef.current !== activationKey) {
     lastActivationRef.current = activationKey
-    if (discardSaved && chatId) positions.delete(positionKey)
+    if (landOn && chatId) positions.set(positionKey, { atBottom: false, messageId: landOn, offset: LAND_ON_OFFSET })
+    else if (discardSaved && chatId) positions.delete(positionKey)
     completedActivationRef.current = null
     restoreDeadlineRef.current = null
     requestedAnchorRef.current = null
     if (revealRef.current) {
-      revealRef.current.reject(new Error('The conversation changed before the message was shown'))
+      // A cancellation, not a miss: the reason travels with it so the asker does not read it as 「not found」.
+      revealRef.current.reject(new DOMException('The conversation changed before the message was shown', 'AbortError'))
       revealRef.current = null
     }
   }
 
   const capturePosition = useCallback((owner: NonNullable<typeof scrollerOwnerRef.current>) => {
-    if (!owner.captureEnabled) {
-      positions.delete(owner.key)
-      return
-    }
+    // Hidden (a retained tab behind another): nothing to read, and hiding is not leaving — what was saved stays.
+    if (!owner.captureEnabled) return
     if (owner.element.scrollHeight <= 0 || owner.element.clientHeight <= 0) return
     if (isConversationViewportAtBottom(owner.element, AT_BOTTOM_THRESHOLD)) {
       positions.set(owner.key, { atBottom: true })
@@ -182,16 +196,20 @@ export function useConversationScrollMemory({
     setScrollerEl(element)
   }, [chatId, positionKey, enabled, capturePosition, isPreservingPosition])
 
+  // The read waits for the paint and records whoever owns the viewport then (nobody once the scroller has left), so a
+  // re-subscription in between (the ref callback changes when tail following is withdrawn) leaves it pending.
+  const rememberRef = useRef({ capturePosition, isPreservingPosition })
+  rememberRef.current = { capturePosition, isPreservingPosition }
   useEffect(() => {
     const scroller = scrollerRef.current
     if (!scroller) return
-    const remember = () => {
+    const remember = afterPaint(() => {
       const owner = scrollerOwnerRef.current
-      if (owner && !isPreservingPosition()) capturePosition(owner)
-    }
-    scroller.addEventListener('scroll', remember, { passive: true })
-    return () => scroller.removeEventListener('scroll', remember)
-  }, [scrollerEl, capturePosition, isPreservingPosition])
+      if (owner && !rememberRef.current.isPreservingPosition()) rememberRef.current.capturePosition(owner)
+    })
+    scroller.addEventListener('scroll', remember.schedule, { passive: true })
+    return () => scroller.removeEventListener('scroll', remember.schedule)
+  }, [scrollerEl])
 
   const openLocation = useCallback(() => {
     const position = chatId && enabled && completedActivationRef.current !== activationKey ? positions.get(positionKey) : undefined
@@ -272,11 +290,12 @@ export function useConversationScrollMemory({
 
     let frame = 0
     let stableFrames = 0
+    const mountedRow = () => Array.from(scroller.querySelectorAll<HTMLElement>('[data-msg-id]'))
+      .find((candidate) => candidate.dataset.msgId === position.messageId)
     const settle = (now: number) => {
       if (restoringActivationRef.current !== activationKey) return
       // @@@6595 列表挂载时在第一次绘制之前就落在这一行(openLocation;锚点后载进来时整列表重挂),这里只核对偏移。
-      const row = Array.from(scroller.querySelectorAll<HTMLElement>('[data-msg-id]'))
-        .find((candidate) => candidate.dataset.msgId === position.messageId)
+      const row = mountedRow()
       if (row) {
         const actualOffset = row.getBoundingClientRect().top - scroller.getBoundingClientRect().top
         const delta = actualOffset - position.offset
@@ -305,16 +324,32 @@ export function useConversationScrollMemory({
       }
       frame = requestAnimationFrame(settle)
     }
+    // The restore holds the row against late layout, never against the reader: their own input ends it where they are
+    // (as in useHistoryPageAnchor). Without this a wheel is undone every frame until the row has been still for three.
+    const yieldToReader = () => {
+      if (restoringActivationRef.current !== activationKey) return
+      cancelAnimationFrame(frame)
+      completedActivationRef.current = activationKey
+      restoringActivationRef.current = null
+      restoreDeadlineRef.current = null
+      settleReveal(position.messageId)
+    }
+    const inputs = ['wheel', 'touchstart', 'pointerdown'] as const
+    for (const type of inputs) scroller.addEventListener(type, yieldToReader, { passive: true })
+    // 已加载但尚未挂载的行也沿同一个 FlowList 句柄补挂;不为恢复再维护一份切片或位置。
+    if (!mountedRow()) listRef.current?.scrollToIndex({ index: location.index, align: 'start', offset: location.offset })
     // An already loaded target also moves before paint; a window replacement uses openLocation above.
     settle(performance.now())
     return () => {
       cancelAnimationFrame(frame)
+      for (const type of inputs) scroller.removeEventListener(type, yieldToReader)
       if (restoringActivationRef.current === activationKey) restoringActivationRef.current = null
     }
   }, [
     activationKey,
     chatId,
     enabled,
+    listRef,
     isAtBottomRef,
     messageIds,
     scrollerEl,

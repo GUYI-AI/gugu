@@ -177,16 +177,6 @@ export default {
     "title": "Agent 模板库",
     "use": "使用"
   },
-  "public": {
-    "capabilities": "能力",
-    "disclaimer": "此 agent 由其所有者授权公开，请理性交流",
-    "loadFailed": "加载失败",
-    "loginToChat": "登录后对话",
-    "ownerCreatedPrefix": "由",
-    "ownerCreatedSuffix": "创建",
-    "startChat": "开始对话",
-    "unavailable": "该 Agent 不存在或未公开分享"
-  },
   "runtime": {
     "groupMine": "我的",
     "groupOthers": "其他人的",
@@ -195,6 +185,9 @@ export default {
       "connecting": "正在连接…",
       "done": "已完成",
       "empty": "最近没有做事",
+      "hostMachine": "它所在的电脑",
+      "hostOffline": "{{machine}} 离线，读不到它的近况",
+      "hostSilent": "{{machine}} 没有应答，读不到它的近况",
       "promptElsewhere": "来自别处的一条消息",
       "recordNotFound": "这台机器读不到这条任务的记录",
       "toolCount": "{{state}} ×{{count}}",

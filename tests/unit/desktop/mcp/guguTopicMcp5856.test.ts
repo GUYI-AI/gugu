@@ -16,7 +16,7 @@ vi.hoisted(() => {
   process.env.GUGU_ACCESS_TOKEN = `x.${Buffer.from(JSON.stringify({ sub: 'owner-1' })).toString('base64url')}.x`
 })
 // @ts-expect-error — 注入式 MCP server 是无类型 .mjs；运行时 import 可用。
-import { callTool as callToolImpl, callToolWithState, createSessionState, TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
+import { callTool as callToolImpl, callToolWithState, createSessionState, restWriteError, TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
 
 const AGENT_ID = 'agent-1'
 const OWNER_ID = 'owner-1'
@@ -43,6 +43,10 @@ type Row = Record<string, unknown>
  * 一条来源线(SOURCE_CHAT:agent + owner + PEER)长出一条话题(TOPIC_CHAT:只有 agent)。
  * PEER 因此是「在来源线里、还不在话题里」的那个人 —— topic_invite 要能拉他,OUTSIDER 要被拒。
  */
+// #2383 从来不是成员的 id:库带 hint recipient_not_member 拒掉整条(gugu-supabase#240)。
+const recipientNotMember = (ids: string[]) => restWriteError('INSERT messages', 400,
+  JSON.stringify({ code: 'P0001', message: 'recipient_not_member', hint: 'recipient_not_member', details: ids.join(',') }))
+
 function topicHarness(overrides: { members?: Record<string, string[]>; rpc?: (name: string, body: Row) => unknown } = {}) {
   const members: Record<string, string[]> = overrides.members ?? {
     [SOURCE_CHAT]: [AGENT_ID, OWNER_ID, PEER],
@@ -362,8 +366,10 @@ describe('#5856 topic_ 域:agent 直接操作话题', () => {
     expect(calls.inserts).toEqual([])
   })
 
-  test('能拉不能加:来源线里没有的人被拒,而来源线里的人通得过(客户端闸与 is_addressable_in 同形)', async () => {
+  // #2383 起收件人合不合格只由库判(is_addressable_in + gugu-supabase#240 的 recipient_not_member),工具不再先判一份。
+  test('能拉不能加:来源线里没有的人被库拒、工具说清是谁;来源线里的人照常拉进来', async () => {
     const outside = topicHarness()
+    outside.deps.restInsert = vi.fn(async () => { throw recipientNotMember([OUTSIDER]) })
     await expect(callTool('topic_invite', {
       chat_id: TOPIC_CHAT,
       to_user_ids: [`user:${OUTSIDER}`],
@@ -377,8 +383,9 @@ describe('#5856 topic_ 域:agent 直接操作话题', () => {
     expect(inside.calls.inserts[0][1].to_user_ids).toEqual([PEER])
   })
 
-  test('话题不改群的判据:群里点名仍只认群成员(来源线放行只发生在 kind=topic 上)', async () => {
+  test('群里点名非成员:库拒绝时工具说清是谁,不发', async () => {
     const { deps, calls } = topicHarness()
+    deps.restInsert = vi.fn(async () => { throw recipientNotMember([OUTSIDER]) })
     await expect(callTool('message_send', {
       chat_id: SOURCE_CHAT,
       to_user_ids: [`user:${OUTSIDER}`],

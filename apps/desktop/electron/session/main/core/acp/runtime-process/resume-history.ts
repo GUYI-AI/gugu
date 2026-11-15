@@ -9,7 +9,7 @@ type Deps = {
   recordedDeliveryIds?: (conversationId: string) => Promise<string[] | null>;
   turnIndexBase?: (conversationId: string) => Promise<number>;
   /** 起之前先把记录里有、库里还没有的那几轮补进库(编程模式里刚跑完的、咕咕外面跑的)。 */
-  fillFromRecord?: (conversationId: string) => Promise<unknown>;
+  fillFromRecord?: (conversationId: string) => Promise<{ status?: string } | undefined>;
 };
 
 /**
@@ -17,8 +17,8 @@ type Deps = {
  *
  * 宿主读得懂这家的记录 ⇒ **不重放**:会话页的历史以 agent 自己的记录为准、由宿主直接读文件补齐,重放回来的
  * 东西本来就会被丢掉;重放本身在长会话上是几分钟的独占。重放顺带供给的两样事实改由宿主自己给:
- * - 补投去重要的「agent 收到过哪些投递」—— 从记录里读。每次都读:等着补投的投递不全在宿主看得见的队列里
- *   (掉线重连时运行时从自己留着的那份接着投);补库刚读过同一份记录,这一次是热的;
+ * - 补投去重要的「agent 收到过哪些投递」—— 记录里用户消息带的投递 id。补库读记录时顺手记下,与游标一起存着
+ *   (`recordedDeliveryIds`):从游标读时累加,从头读时重算,所以不用再读一遍整份记录;
  * - 回合序号从库里接着数,❌ 从 0 数撞上上一次运行留下的同名回合。
  *
  * 记录这次读不出来(没有、读失败)⇒ 照旧重放:那是 agent 自己那份历史唯一还拿得到的路。
@@ -41,12 +41,18 @@ export async function resumeHistoryFacts(input: AcpRuntimeStartInput, deps: Deps
     }
   }
   const readDeliveries = deps.recordedDeliveryIds
-    ?? (async (id: string) => (await import('@main/core/session-timeline/service')).recordedDeliveryIds(id));
+    ?? (async (id: string) => (await import('@main/core/sessions/record-backfill')).recordedDeliveryIds(id));
   const fill = deps.fillFromRecord
     ?? (async (id: string) => (await import('@main/core/sessions/record-backfill')).syncStoredHistoryFromRecord(id));
   try {
-    // 补库在前:之后的轮从补完的库尾接着数。补不成只是少几轮历史,❌ 挡住这次启动。
-    await fill(input.sessionId).catch(() => undefined);
+    // 补库在前:之后的轮从补完的库尾接着数,投递 id 也是补库时记下的。补库抛错 = 这两样都定不下来 ⇒ 落到下面的 catch:
+    // 记一笔、照旧重放(不挡启动)。❌ 吞掉后当「补完了」:那几轮既不进库也不重放,还没有任何日志。
+    const filled = await fill(input.sessionId);
+    // No record to read: the agent's own replay is the only history left (as when the old whole read failed).
+    if (filled?.status === 'unavailable') {
+      log.warn('[acp-start] record unreadable; resuming with replay', { sessionId: input.sessionId });
+      return none;
+    }
     const [recordedDeliveryIds, turnIndexBase] = await Promise.all([
       readDeliveries(input.sessionId),
       readTurnIndexBase(input.sessionId),

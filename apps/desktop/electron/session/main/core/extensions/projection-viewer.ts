@@ -2,7 +2,8 @@ import type { ProjectionFrame, ProjectionHostPacket, ProjectionViewerPacket } fr
 
 /** A host-owned connection. App arguments must never choose its scope or transport. */
 export interface ProjectionConnection {
-  transport: 'local';
+  /** local: a page on this computer; device: a page on another of the person's computers (projection-remote-host.ts). */
+  transport: 'local' | 'device';
   send(packet: ProjectionHostPacket): void;
   onClose(close: () => void): () => void;
 }

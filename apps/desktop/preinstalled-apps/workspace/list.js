@@ -79,6 +79,14 @@ export function sectionOf(iso, now) {
 /** The orders the person picks: the newest change first (with sections), by name, the largest first. */
 export const SORTS = ['recent', 'name', 'size']
 
+/** The file service says whether a chat file can be read; legacy hosts only say when its cloud copy expired. */
+export function unavailableState(entry) {
+  if (entry.type === 'folder' || entry.workspace || entry.availability === 'available') return null
+  if (['expired', 'deleted', 'unavailable'].includes(entry.availability)) return entry.availability
+  return entry.expiredAt ? 'expired' : null
+}
+export const fileUnavailable = (entry) => unavailableState(entry) !== null
+
 /** Display names, then unique ids: a refreshed list or an unchanged event must not move tied entries. */
 export function compareNames(a, b, nameOf, locale, numeric = false) {
   return nameOf(a).localeCompare(nameOf(b), locale || undefined, { numeric })
@@ -167,4 +175,14 @@ export function keepable(entries) {
     notMine: entries.filter((e) => e.keep && !e.keep.mine),
     noCopy: entries.filter((e) => !e.keep),
   }
+}
+
+// @@@tools-fit (owner 11-14): the folder's bar stays one row. Where its words do not fit (a narrow pane, or a phone whose system
+// font size made the page narrower), the place switch shows only its icons (each keeps its name: its title, which is also what a screen reader reads once the
+// words are hidden; no aria-label, which would also take away the gap ui.css gives an icon before words);
+// the order's words give way last (ellipsis, style.css). Measured, not a width breakpoint: what fits depends on the
+// language, a set filter and the font.
+export function fitTools(bar, sortLabel) {
+  bar.classList.remove('places-icons')
+  if (bar.scrollWidth > bar.clientWidth + 1 || sortLabel.scrollWidth > sortLabel.clientWidth + 1) bar.classList.add('places-icons')
 }

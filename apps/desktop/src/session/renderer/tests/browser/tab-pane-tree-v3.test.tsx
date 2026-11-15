@@ -10,6 +10,7 @@ import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
 import { PaneContent } from '@renderer/features/tabs/pane-content';
 import { PaneContext } from '@renderer/features/tabs/pane-context';
 import { tabFullscreen, WORKSPACE_ANCHOR } from '@renderer/features/tabs/tab-fullscreen';
+import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
 import '@renderer/index.css';
 import '@/styles/tokens.css';
 
@@ -19,11 +20,11 @@ const viewport = { width: window.innerWidth, height: window.innerHeight };
 afterAll(() => page.viewport(viewport.width, viewport.height));
 afterEach(() => { harness?.cleanup(); layout?.dispose(); });
 
-async function mount() {
+async function mount(minWidth?: number) {
   await page.viewport(1100, 800);
   harness = createReactHarness();
   harness.container.style.cssText = 'position:fixed;left:0;top:0;width:1000px;height:600px';
-  const provider = createTabProvider({ kind: 'page', resourceKey: (state: { id: string }) => state.id, initialize: () => ({ dispose() {} }), dispose() {}, TabContent: () => null, TabBarItem: () => null, TabBarItemDragPreview: () => null });
+  const provider = createTabProvider({ kind: 'page', minWidth, resourceKey: (state: { id: string }) => state.id, initialize: () => ({ dispose() {} }), dispose() {}, TabContent: () => null, TabBarItem: () => null, TabBarItemDragPreview: () => null });
   layout = new PaneLayoutStore(createTabRegistry([provider]), { viewId: 'tree-v3' });
   layout.open('page', { id: 'conversation' }, { from: null, intent: 'newTab' });
   const other = layout.open('page', { id: 'folder' }, { from: null, intent: 'newTab' })!;
@@ -74,6 +75,36 @@ it('narrowing and widening only change visibility, preserving both panes, tabs a
   harness.container.style.width = '1000px';
   await until('the same tree widens again', () => !harness.container.querySelector('[data-pane-tree-narrow]'));
   expect(JSON.stringify(layout.snapshot)).toBe(before);
+});
+
+it('pages that ask for a wider pane are put away sooner, and come back at that width', async () => {
+  await mount(360);
+  const before = JSON.stringify(layout.snapshot);
+  const narrow = () => !!harness.container.querySelector('[data-pane-tree-narrow]');
+  harness.container.style.width = '720px';
+  await until('two 360px pages and their divider do not fit in 720px', narrow);
+  harness.container.style.width = '721px';
+  await until('they fit in 721px', () => !narrow());
+  expect(JSON.stringify(layout.snapshot)).toBe(before);
+});
+
+it('a page shown again after being hidden in a narrow window fills its cell, and both do once widened', async () => {
+  await mount();
+  const box = (paneId: string) => harness.container.querySelector(`iframe[title="${paneId}"]`)!.parentElement!.getBoundingClientRect();
+  const [first, second] = layout.groups.map(({ paneId }) => paneId);
+  const pageHeight = 600 - WINDOW_CONTROL_BAR_HEIGHT_PX;
+  const fills = (paneId: string, width: number) => { expect(box(paneId).width).toBe(width); expect(box(paneId).height).toBe(pageHeight); };
+  harness.container.style.width = '300px';
+  await until('the real tree narrows', () => !!harness.container.querySelector('[data-pane-tree-narrow]'));
+  for (const paneId of [first, second, first]) {
+    await act(async () => layout.setActiveGroup(paneId));
+    fills(paneId, 300);
+  }
+  harness.container.style.width = '1000px';
+  await until('the same tree widens again', () => !harness.container.querySelector('[data-pane-tree-narrow]') && box(first).width > 0 && box(second).width > 0);
+  expect(box(first).width + box(second).width).toBeGreaterThan(990);
+  expect(box(first).height).toBe(pageHeight);
+  expect(box(second).height).toBe(pageHeight);
 });
 
 it('splitting and closing a pane keep the pane that stays mounted, its page the same node', async () => {

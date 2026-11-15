@@ -143,6 +143,8 @@ export const toolThumb = style({
   background: vars.bgHover,
   overflow: 'hidden',
   cursor: 'zoom-in',
+  // The strip clips its boxes, so the focus ring is drawn inside the box.
+  selectors: { '&:focus-visible:not([data-pointer-focus])': { outlineOffset: '-2px' } },
 });
 
 globalStyle(`${toolThumb}:hover`, { background: vars.bgPress });

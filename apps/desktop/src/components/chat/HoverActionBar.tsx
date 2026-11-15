@@ -3,8 +3,10 @@ import { PreviewCard } from '@base-ui/react/preview-card'
 import { useTranslation } from 'react-i18next'
 import { Ellipsis, Reply, Smile } from '@/lib/icons'
 import { IconButton } from '../ui/IconButton'
+import { DropdownMenu } from '../ui/Menu'
+import { Popover } from '../ui/Popover'
 import { popupMotion } from '../ui/variants'
-import { claimHoverOwner, readHoverOwner, releaseHoverOwner, setHoverOwner, subscribeHoverOwner, type HoverElements } from './hover-owner'
+import { claimHoverOwner, enteredByMoving, readHoverOwner, releaseHoverOwner, setHoverOwner, subscribeHoverOwner, type HoverElements } from './hover-owner'
 
 const HoverElementsContext = createContext<HoverElements | null>(null)
 
@@ -24,7 +26,8 @@ export function MessageHoverRegion({ enabled, forceOpen, style, children, action
   actions: ReactNode
 }) {
   const [id] = useState(() => Symbol('message-hover'))
-  const [hovered, setHovered] = useState<'closed' | 'waiting' | 'open'>('closed')
+  // resting = the pointer is on the row but has not moved since it got there (the list scrolled under it); waiting = it moved, another row holds the bar.
+  const [hovered, setHovered] = useState<'closed' | 'resting' | 'waiting' | 'open'>('closed')
   const elements = useRef<HoverElements>({ trigger: null, popup: null }).current
   const point = useRef<{ x: number; y: number } | undefined>(undefined)
   // 只订「浮窗是不是我的」:订整个 owner 时,鼠标每换一行,列表里每一行都跟着重渲(连同整只气泡)。菜单开着要接手的那一行
@@ -40,29 +43,36 @@ export function MessageHoverRegion({ enabled, forceOpen, style, children, action
     else if (owner?.id === id && (owner.locked || hovered === 'closed')) setHoverOwner(hovered !== 'closed' ? { ...owner, locked: false } : null)
     else if (enabled && hovered === 'waiting' && claimHoverOwner(id, false, elements, point.current)) setHovered('open')
   }, [enabled, forceOpen, hovered, id, owner, elements])
-  // Only a waiting row listens to movement. Leaving the corridor takes over; leaving this row cancels its request.
+  // Only a resting or waiting row listens to movement. Leaving the corridor takes over; leaving this row cancels its request.
   useEffect(() => {
-    if (hovered !== 'waiting') return
+    if (hovered !== 'waiting' && hovered !== 'resting') return
     const trigger = elements.trigger
     const document = trigger?.ownerDocument
     const leave = () => setHovered('closed')
     const move = (event: PointerEvent) => {
       if (!elements.trigger?.contains(event.target as Node)) { setHovered('closed'); return }
+      if (event.buttons !== 0) return
       point.current = { x: event.clientX, y: event.clientY }
-      if (claimHoverOwner(id, false, elements, point.current)) setHovered('open')
+      setHovered(claimHoverOwner(id, false, elements, point.current) ? 'open' : 'waiting')
     }
     document?.addEventListener('pointermove', move)
+    document?.addEventListener('pointerup', move)
     trigger?.addEventListener('pointerleave', leave)
     return () => {
       document?.removeEventListener('pointermove', move)
+      document?.removeEventListener('pointerup', move)
       trigger?.removeEventListener('pointerleave', leave)
     }
   }, [hovered, id, elements])
   useEffect(() => () => releaseHoverOwner(id), [id])
   const onOpenChange: NonNullable<ComponentProps<typeof PreviewCard.Root>['onOpenChange']> = (open, details) => {
     if (!enabled) return
-    point.current = details.reason === 'trigger-hover' ? { x: details.event.clientX, y: details.event.clientY } : undefined
-    setHovered(open ? (claimHoverOwner(id, false, elements, point.current) ? 'open' : 'waiting') : 'closed')
+    const hover = details.reason === 'trigger-hover'
+    point.current = hover ? { x: details.event.clientX, y: details.event.clientY } : undefined
+    // A row scrolled under a still pointer is not hovered: rest until the pointer moves on it. Otherwise every row sliding by
+    // mounts the bar, and each mount pays floating-ui autoUpdate's overflow-ancestor walk.
+    const resting = hover && !enteredByMoving(details.event)
+    setHovered(!open ? 'closed' : resting ? 'resting' : claimHoverOwner(id, false, elements, point.current) ? 'open' : 'waiting')
     if (!open && !forceOpen) releaseHoverOwner(id)
   }
   const visible = enabled && owner?.id === id && (hovered === 'open' || forceOpen)
@@ -89,25 +99,31 @@ export function MessageHoverTrigger(props: ComponentProps<typeof PreviewCard.Tri
   }} render={<div />} delay={0} />
 }
 
-export function HoverActionBar({ isMine, isRetracted, anchorRef, reactButtonRef, moreButtonRef, onReact, onReply, onMore }: {
+/** 工具条上一颗钮弹出的浮层:钮就是它的 Trigger,开着时再点这颗钮就关(Base UI 管开关)。 */
+export interface HoverBarPopup {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** 浮层本体(Portal 那一层),画在这颗钮的 Root 里。 */
+  content: ReactNode
+}
+
+export function HoverActionBar({ isMine, isRetracted, anchorRef, react, more, onReply }: {
   isMine: boolean
   isRetracted: boolean
   anchorRef: RefObject<HTMLDivElement | null>
-  reactButtonRef: RefObject<HTMLButtonElement | null>
-  moreButtonRef: RefObject<HTMLButtonElement | null>
-  onReact: () => void
+  react: HoverBarPopup
+  more: HoverBarPopup
   onReply: () => void
-  onMore: () => void
 }) {
   const { t } = useTranslation('messaging')
   const elements = useContext(HoverElementsContext)
   const popupRef = useCallback((node: HTMLDivElement | null) => { if (elements) elements.popup = node }, [elements])
   if (isRetracted) return null
-  const actions = [
-    [t('message.actions.react'), Smile, onReact, reactButtonRef],
-    [t('message.actions.reply'), Reply, onReply, undefined],
-    [t('message.actions.more'), Ellipsis, onMore, moreButtonRef],
-  ] as const
+  const button = (title: string, Icon: typeof Smile, onClick?: () => void) => (
+    <IconButton size="md" shape="pill" aria-label={title} title={title} onClick={(event) => { event.stopPropagation(); onClick?.() }}>
+      <span className="pointer-events-none flex size-5 items-center justify-center"><Icon size={16} /></span>
+    </IconButton>
+  )
   const boundary = anchorRef.current?.closest('[data-testid="chat-message-list"]') ?? undefined
   return (
     <PreviewCard.Portal>
@@ -120,12 +136,15 @@ export function HoverActionBar({ isMine, isRetracted, anchorRef, reactButtonRef,
           collisionAvoidance={{ side: anchorRef.current?.querySelector('.gg-chat-reply-jump') ? 'flip' : 'shift', align: 'shift', fallbackAxisSide: 'none' }}
         >
           <PreviewCard.Popup ref={popupRef} data-slot="popover-popup" className={`box-border outline-none ${popupMotion}`} style={barStyle} data-testid="message-hover-actions">
-            {actions.map(([title, Icon, onClick, buttonRef]) => (
-              <IconButton key={title} ref={buttonRef} size="md" shape="pill" aria-label={title} title={title}
-                onClick={(event) => { event.stopPropagation(); onClick() }}>
-                <span className="pointer-events-none flex size-5 items-center justify-center"><Icon size={16} /></span>
-              </IconButton>
-            ))}
+            <Popover.Root open={react.open} onOpenChange={react.onOpenChange} modal={false}>
+              <Popover.Trigger render={button(t('message.actions.react'), Smile)} />
+              {react.content}
+            </Popover.Root>
+            {button(t('message.actions.reply'), Reply, onReply)}
+            <DropdownMenu.Root open={more.open} onOpenChange={more.onOpenChange} modal={false}>
+              <DropdownMenu.Trigger render={button(t('message.actions.more'), Ellipsis)} />
+              {more.content}
+            </DropdownMenu.Root>
           </PreviewCard.Popup>
         </PreviewCard.Positioner>
     </PreviewCard.Portal>

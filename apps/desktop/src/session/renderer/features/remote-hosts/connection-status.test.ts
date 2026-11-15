@@ -32,7 +32,7 @@ describe('connection-status(#6264 侧栏的点 / 聊天末尾那一行)', () => 
     expect(hostConnectionState({ ...base, sshLink: 'outdated' })).toBe('update-failed');
     expect(hostConnectionState({ ...base, sshLink: 'unreachable' })).toBe('reconnecting');
     expect(hostStatusLabel('updating', 'd22', null, NOW, zh)).toBe('d22 上的咕咕正在更新，稍后会自动重新连接。');
-    expect(hostStatusLabel('update-failed', 'd22', null, NOW, zh)).toBe('d22 上的咕咕更新未完成，请在 设置 → 设备 中查看详情。');
+    expect(hostStatusLabel('update-failed', 'd22', null, NOW, zh)).toBe('d22 上的咕咕更新未完成，可以在 设置 → 设备 里重试。');
     // 远程隧道的机器可能是桌面或 server，统一指向那台机器上的咕咕。
     expect(hostStatusLabel('outdated', 'd22', null, NOW, zh)).toBe('d22 上的咕咕需要更新，请在 设置 → 设备 中更新。');
   });
@@ -44,7 +44,7 @@ describe('connection-status(#6264 侧栏的点 / 聊天末尾那一行)', () => 
       return template.replace(/\{(\w+)\}/g, (_, name: string) => String(values[name]));
     };
     expect(machineUnavailableReason('updating', 'd22', session)).toBe('d22 上的咕咕正在更新，稍后会自动重新连接。草稿已保留。');
-    expect(machineUnavailableReason('update-failed', 'd22', session)).toBe('d22 上的咕咕更新未完成，请在 设置 → 设备 中查看详情。草稿已保留。');
+    expect(machineUnavailableReason('update-failed', 'd22', session)).toBe('d22 上的咕咕更新未完成，可以在 设置 → 设备 里重试。草稿已保留。');
     expect(machineUnavailableReason('outdated', 'd22', session)).toBe('d22 上的咕咕需要更新，请在 设置 → 设备 中更新。草稿已保留。');
     expect(machineUnavailableReason('sign-in', 'd22', session)).toBe('要先经 SSH 登录 d22。草稿已保留。');
     expect(machineUnavailableReason('offline', 'd22', session)).toBe('d22 离线。草稿已保留，上线后可发送，或换一台机器。');

@@ -1,11 +1,14 @@
 import {
   createContext,
+  lazy,
+  Suspense,
   memo,
   useContext,
   useEffect,
   useMemo,
   useRef,
   useSyncExternalStore,
+  type ComponentProps,
   type ComponentPropsWithoutRef,
   type ReactNode,
 } from 'react'
@@ -17,6 +20,7 @@ import {
   markdownRehypePlugins,
   markdownRemarkPlugins,
   normalizeMarkdownSource,
+  normalizeMarkdownSourceWithLines,
   type MarkdownDialectOptions,
   type MarkdownTrust,
 } from '@gugu/session-shared/markdown/dialect'
@@ -31,9 +35,17 @@ import { PlatformCopyButton } from './PlatformCopyButton'
 import { PlatformTable } from './PlatformTable'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { FILE_PILL_CLASS, hookFilePillCopy, rehypeGroupFilePills } from './filePills'
+import { LINK_PILL_CLASS, linkPillTarget, rehypeLinkPills } from './linkPills'
+import { useAuth } from '../../store/auth'
+import { useChatStore } from '../../store/chatContext'
+import { MentionPill } from './MentionPill'
+// Lazy: a link pill reads through the chat's readers (file metadata, messages, topics); Markdown itself stays free of them.
+const LinkPill = lazy(() => import('./LinkPill').then(module => ({ default: module.LinkPill })))
 import { GroupFileName } from './GroupFileName'
 import { revealMarkdownAnchor } from './revealAnchor'
 import { followLink } from '../../lib/guguLinks'
+import { rehypeSourceLines } from './sourceLines'
+import type { PluggableList } from 'unified'
 
 export type MarkdownDensity = 'compact' | 'comfortable'
 
@@ -46,7 +58,7 @@ export interface MarkdownProps {
   density?: MarkdownDensity
   hardBreaks?: boolean
   frontmatter?: boolean
-  /** Chat: the per-render nonce that `useMentionRender` injected for @mentions backed by to_user_ids. */
+  /** Chat: the render-model nonce that `useMentionRender` injected for @mentions backed by to_user_ids. */
   mentionMarker?: string
   /** Drawn on an accent-coloured surface (your own bubble): links take the text colour. */
   onAccent?: boolean
@@ -55,6 +67,8 @@ export interface MarkdownProps {
   /** `document` trust: draws an image (a workspace-relative source must be resolved by the host). */
   renderImage?: (image: { src?: string; alt: string }) => ReactNode
   className?: string
+  /** File previews only: project a selected DOM range back to its original source lines. */
+  sourceLines?: boolean
 }
 
 const DensityContext = createContext<MarkdownDensity>('compact')
@@ -114,10 +128,22 @@ function pluginsFor(options: MarkdownDialectOptions) {
   const key = `${options.trust}|${options.hardBreaks ? 1 : 0}|${options.frontmatter ? 1 : 0}`
   let entry = pluginCache.get(key)
   if (!entry) {
-    entry = { remark: markdownRemarkPlugins(options), rehype: markdownRehypePlugins(options, [rehypeGroupFilePills]) }
+    // Link pills are a chat bubble's: documents and previews keep their links as written.
+    entry = { remark: markdownRemarkPlugins(options), rehype: markdownRehypePlugins(options, options.trust === 'chat' ? [rehypeGroupFilePills, rehypeLinkPills] : [rehypeGroupFilePills]) }
     pluginCache.set(key, entry)
   }
   return entry
+}
+
+/**
+ * A chat link pill reads as the person reading: a file needs someone signed in, a chat or message a chat list read here.
+ * Elsewhere (a document, a sample, the assistant's panels) the link stays the plain link, without loading the pill.
+ */
+function LinkPillGate({ plain, ...props }: { plain: ReactNode } & Omit<ComponentProps<typeof LinkPill>, 'accountId'>) {
+  const { user } = useAuth()
+  const { chatsRead } = useChatStore('chatsRead')
+  if (!user || (linkPillTarget(props.href)?.kind === 'chat' && !chatsRead)) return <>{plain}</>
+  return <Suspense fallback={plain}><LinkPill {...props} accountId={user.id} /></Suspense>
 }
 
 /**
@@ -136,6 +162,7 @@ export const Markdown = memo(function Markdown({
   onOpenLink,
   renderImage,
   className,
+  sourceLines = false,
 }: MarkdownProps) {
   // Streamdown's memo ignores `components` and plugin arrays: callbacks are read through refs, and anything
   // that changes the element mapping is part of the key below.
@@ -152,6 +179,7 @@ export const Markdown = memo(function Markdown({
 
   const plugins = pluginsFor({ trust, hardBreaks, frontmatter })
   const source = useMemo(() => normalizeMarkdownSource(displayAgentReferences(content)), [content])
+  const sourcePlugins = useMemo<PluggableList>(() => sourceLines ? [...plugins.rehype, [rehypeSourceLines, { source, lineOf: normalizeMarkdownSourceWithLines(displayAgentReferences(content)).lineOf }]] : plugins.rehype, [content, plugins, source, sourceLines])
   const mobile = useMobileShell()
   const phoneTable = mobile && trust === 'document'
   const copyCode = trust === 'document' || codeCopy
@@ -182,27 +210,19 @@ export const Markdown = memo(function Markdown({
           // A link the host did not claim goes to the system browser only if it is a web, mail or phone link.
           if ((href && (followLink(href) || openLinkRef.current?.(href))) || !EXTERNAL_LINK.test(href ?? '')) event.preventDefault()
         }
+        const groupFile = href ? parseGroupFileLink(href) : null
+        const classes = typeof rest.className === 'string' ? rest.className.split(/\s+/) : []
+        const { className: _className, ...attributes } = rest
         // App 引用 pill: `@` + a group file's link (rehypeGroupFilePills) is the transcript's file pill; its click is the
         // link's, so it opens where that link opens — at the place it points at.
-        const groupFile = href ? parseGroupFileLink(href) : null
-        if (groupFile && typeof rest.className === 'string' && rest.className.split(/\s+/).includes(FILE_PILL_CLASS)) {
+        if (href && groupFile && classes.includes(FILE_PILL_CLASS)) {
           const label = onlyText(children) ?? ''
           const picked = groupFile.version === undefined ? null : tRef.current('filePill.picked', { version: groupFile.version })
-          return (
-            <a {...rest} className={`gg-md-mention ${FILE_PILL_CLASS}`} data-mention-kind="file" href={href} title={picked ? `${label} · ${picked}` : label} onClick={onClick}>
-              <span className="gg-md-mention-icon" aria-hidden="true">
-                <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 2H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6L9 2z" />
-                  <polyline points="9 2 9 6 13 6" />
-                </svg>
-              </span>
-              <span className="gg-file-pill-label">{children}</span>
-            </a>
-          )
+          return <MentionPill href={href} file mention title={picked ? `${label} · ${picked}` : label} onClick={onClick} rest={attributes}>{children}</MentionPill>
         }
         // A group file's link written as its name reads as the file list reads it (摩擦单 F39).
         const fileName = groupFile ? onlyText(children) : null
-        return (
+        const plain = (
           <a
             {...rest}
             href={href}
@@ -213,6 +233,11 @@ export const Markdown = memo(function Markdown({
             {fileName !== null ? <GroupFileName name={fileName} /> : children}
           </a>
         )
+        // A chat link to a file, chat or message is drawn in place as the file pill, read as the person reading (linkPills.ts).
+        if (href && classes.includes(LINK_PILL_CLASS)) {
+          return <LinkPillGate href={href} onClick={onClick} plain={plain} rest={attributes}>{children}</LinkPillGate>
+        }
+        return plain
       },
       ...(hasImageRenderer
         ? {
@@ -228,14 +253,14 @@ export const Markdown = memo(function Markdown({
   return (
     <DensityContext.Provider value={density}>
       <Streamdown
-        key={`${trust}|${hardBreaks}|${frontmatter}|${mentionMarker ?? ''}|${hasImageRenderer}|${copyCode}|${phoneTable}`}
+        key={`${trust}|${hardBreaks}|${frontmatter}|${mentionMarker ?? ''}|${hasImageRenderer}|${copyCode}|${phoneTable}|${sourceLines}`}
         mode="static"
         parseIncompleteMarkdown={false}
         lineNumbers={false}
         controls={trust === 'document' ? { code: { copy: false, download: false } } : false}
         linkSafety={{ enabled: false }}
         remarkPlugins={plugins.remark}
-        rehypePlugins={plugins.rehype}
+        rehypePlugins={sourcePlugins}
         plugins={PLUGINS}
         components={components}
         className={['gg-md', `gg-md--${density}`, onAccent && 'gg-md--on-accent', className].filter(Boolean).join(' ')}

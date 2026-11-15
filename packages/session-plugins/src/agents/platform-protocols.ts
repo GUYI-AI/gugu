@@ -9,6 +9,7 @@ import { harnessPlatform as dsh } from './impl/dsh/platform';
 import { harnessPlatform as gemini } from './impl/gemini/platform';
 import { harnessPlatform as hermes } from './impl/hermes/platform';
 import { harnessPlatform as kimi } from './impl/kimi/platform';
+import { harnessPlatform as kilocode } from './impl/kilocode/platform';
 import { harnessPlatform as mimocode } from './impl/mimocode/platform';
 import { harnessPlatform as opencode } from './impl/opencode/platform';
 import { harnessPlatform as pi } from './impl/pi/platform';
@@ -25,6 +26,7 @@ export const PLATFORM_DECLARATIONS = {
   gemini,
   hermes,
   kimi,
+  kilocode,
   mimocode,
   opencode,
   pi,

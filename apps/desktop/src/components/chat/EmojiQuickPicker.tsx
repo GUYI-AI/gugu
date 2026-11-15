@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
 import { useTranslation } from 'react-i18next'
 import { QUICK_REACTIONS, REACTIONS, reactionLabel } from '@gugu/core/shared/ui/reactionCatalog'
@@ -18,9 +18,12 @@ function readFrequency(): Record<string, number> {
   }
 }
 
-/** 桌面回应浮层与手机长按面板共用:一行常用 + 目录里的精选回应,在原面板内切换。 */
-export function EmojiQuickPicker({ anchor, onPick, onClose, onExpand, children, disabled = false, menu = false }: {
-  anchor?: Element | RefObject<Element | null>
+/**
+ * 桌面回应浮层与手机长按面板共用:一行常用 + 目录里的精选回应,在原面板内切换。
+ * `popover`:画成浮层,放在一个带 `Popover.Trigger`(工具条的 🙂)的 `Popover.Root` 里 —— 开关归那颗 Trigger。
+ */
+export function EmojiQuickPicker({ popover = false, onPick, onClose, onExpand, children, disabled = false, menu = false }: {
+  popover?: boolean
   onPick: (emoji: string) => void
   onClose: () => void
   onExpand?: () => void
@@ -71,14 +74,12 @@ export function EmojiQuickPicker({ anchor, onPick, onClose, onExpand, children, 
       {children}
     </>
   )
-  return anchor ? (
-    <Popover.Root open modal={false} onOpenChange={(open) => { if (!open) onClose() }}>
-      <Popover.Portal>
-        <Popover.Positioner anchor={anchor} positionMethod="fixed" side="bottom" align="start" sideOffset={6} collisionPadding={8} collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}>
-          <Popover.Popup className="box-border w-[min(366px,calc(100vw-16px))] overflow-hidden rounded-[var(--radius-surface)] bg-[var(--menu-bg)] p-2 text-[var(--menu-fg)] shadow-[var(--shadow-menu)]">{body}</Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+  return popover ? (
+    <Popover.Portal>
+      <Popover.Positioner positionMethod="fixed" side="bottom" align="start" sideOffset={6} collisionPadding={8} collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}>
+        <Popover.Popup className="box-border w-[min(366px,calc(100vw-16px))] overflow-hidden rounded-[var(--radius-surface)] bg-[var(--menu-bg)] p-2 text-[var(--menu-fg)] shadow-[var(--shadow-menu)]">{body}</Popover.Popup>
+      </Popover.Positioner>
+    </Popover.Portal>
   ) : body
 }
 

@@ -6,8 +6,6 @@ import { currentAccountAccessToken } from '@main/core/extensions/account-token';
 import { messageAgentFromHostApp, AppSendError } from '@main/core/extensions/extension-send';
 import { notifyFromNativeProgram } from '@main/core/extensions/extension-programs';
 import { ASSISTANT_PANEL_APP, ASSISTANT_PANEL_SERVER } from '@shared/extensions/assistant-app';
-import { LIBRARY_TOOL_DEFS } from '../../../../mcp/gugu-library-tool';
-import { runLibraryAgentAction, isLibraryAgentAction, writeUserLibraryEntry, onUserLibraryChanged } from './user-library';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { z } from 'zod';
 import { assistantWorkForAgent, onAssistantWorkChanged } from '../../../../sessionpage/assistant-work';
@@ -27,7 +25,7 @@ export async function callAssistantApp(verb: string, input: unknown, expectedOwn
   if (expectedOwnerId && ownerId !== expectedOwnerId) throw new AppSendError('denied', 'Account changed');
   const args = input as Record<string, unknown> | null;
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new AppSendError('invalid', 'App arguments must be an object');
-  if (!expectedOwnerId && (verb === 'dispatch' || (verb === 'callProgram' && ['library_write', 'assistant_work_clear'].includes(String(args.name))))) {
+  if (!expectedOwnerId && (verb === 'dispatch' || (verb === 'callProgram' && args.name === 'assistant_work_clear'))) {
     throw new AppSendError('denied', 'The App view is not bound to an account');
   }
   if (verb === 'dispatch' || verb === 'listAgents') {
@@ -70,17 +68,7 @@ export async function callAssistantApp(verb: string, input: unknown, expectedOwn
       const result = { version: 1, items: store.list() };
       return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: { result } } satisfies CallToolResult;
     }
-    const tool = LIBRARY_TOOL_DEFS.find(tool => tool.name === args.name);
-    if (!tool) throw new AppSendError('invalid', 'Unknown assistant App tool');
-    const parsed = tool.schema.parse(args.arguments ?? {}) as Record<string, unknown>;
-    if (parsed.device_id !== undefined) throw new AppSendError('invalid', 'Call the App on the resource device');
-    const action = { ...parsed, action: tool.action };
-    if (!isLibraryAgentAction(action)) throw new AppSendError('invalid', 'Unknown library action');
-    if ((await account()).ownerId !== ownerId) throw new AppSendError('denied', 'Account changed');
-    const result = action.action === 'library_write'
-      ? await writeUserLibraryEntry(action, undefined, 'ui', ownerId) : await runLibraryAgentAction(action);
-    if ((await account()).ownerId !== ownerId) throw new AppSendError('denied', 'Account changed');
-    return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: { result } } satisfies CallToolResult;
+    throw new AppSendError('invalid', 'Unknown assistant App tool');
   }
   throw new AppSendError('denied', 'This verb is not offered by the assistant App');
 }
@@ -92,5 +80,4 @@ export function notifyAssistantApp(ownerId: string, resource: string): void {
   });
 }
 
-onUserLibraryChanged(notifyAssistantApp);
 onAssistantWorkChanged(() => { void account().then(({ ownerId }) => notifyAssistantApp(ownerId, 'pending-work')).catch(() => undefined); });

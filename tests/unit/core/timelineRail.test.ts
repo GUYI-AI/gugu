@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mergeDeliveryEnvelopes, renderDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope'
-import { timelineRailMessages, timelineRailPreviewText } from '@gugu/core/shared/timelineRail'
+import { timelineRailAdmits, timelineRailCandidates, timelineRailMessages, timelineRailPreviewText, type TimelineRailOptions } from '@gugu/core/shared/timelineRail'
 
 const envelope = (overrides: Partial<Parameters<typeof renderDeliveryEnvelope>[0]> = {}) => renderDeliveryEnvelope({
   route: 'chat', from: 'Ada', fromId: 'user:ada', fromType: 'human', messageId: 'msg:one',
@@ -58,6 +58,24 @@ describe('human timeline rail inputs', () => {
     for (const text of ['', '  ', '[NO_REPLY]', ' \n[NO_REPLY]\n ']) expect(timelineRailMessages(text)).toEqual([])
     expect(timelineRailMessages(envelope({ content: '[NO_REPLY]' }))).toEqual([])
     expect(timelineRailPreviewText('Reply\n[NO_REPLY]')).toBe('Reply')
+  })
+
+  // A machine lists a conversation's candidates without a directory; each reader's own directory then admits them.
+  // The two steps must come to what one reading with that directory comes to.
+  it('admits from the candidates exactly the messages a single reading keeps', () => {
+    const legacy = envelope({ fromType: undefined, from: 'Bo', fromId: 'user:bo' })
+    const texts = ['  My question  ', '', '[NO_REPLY]', envelope(), envelope({ fromType: 'agent' }), envelope({ route: 'system' }),
+      envelope({ route: 'session-direct' }), envelope({ fromId: 'session:worker' }), legacy,
+      envelope({ route: 'extension', fromId: 'extension:app', fromType: undefined }), envelope({ route: 'extension', fromType: 'agent' }),
+      mergeDeliveryEnvelopes([envelope(), envelope({ fromType: 'agent', content: 'Agent-only secret' }), legacy, envelope({ route: 'scheduled', content: 'Timer' })])]
+    const readers: TimelineRailOptions[] = [{}, { selfUserId: 'bo' }, { resolveSenderType: () => 'human' }, { resolveSenderType: () => 'agent' },
+      { selfUserId: 'bo', resolveSenderType: () => 'agent' }, { resolveSenderType: fromId => fromId === 'user:bo' ? 'human' : undefined }]
+    for (const options of readers) for (const text of texts) {
+      expect(timelineRailCandidates(text).filter(message => timelineRailAdmits(message, options))).toEqual(timelineRailMessages(text, options))
+    }
+    // What no directory could admit is not a candidate: an agent's text never leaves the machine as one.
+    expect(timelineRailCandidates(envelope({ fromType: 'agent', content: 'Agent-only secret' }))).toEqual([])
+    expect(timelineRailCandidates(legacy)).toHaveLength(1)
   })
 
   it('recognizes retired session-direct deliveries through the canonical reader', () => {

@@ -24,6 +24,8 @@ import '@renderer/index.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
+const fixture = vi.hoisted(() => ({ modelName: '咕咕 GPT-6 Luna' }))
+
 vi.mock('@gugu/core/cloud/config', async (original) => ({
   ...(await original<object>()),
   getSupabaseUrl: () => 'http://supabase.test.local',
@@ -39,7 +41,7 @@ vi.mock('@/components/chat/useConversationOptions', () => ({
       [
         {
           id: 'gpt-6-luna',
-          displayName: '咕咕 GPT-6 Luna',
+          displayName: fixture.modelName,
           protocol: 'openai-chat-completions',
           creditMultiplier: 1,
           contextWindow: 1000000,
@@ -69,6 +71,7 @@ vi.mock('@/mobile/chat/usePhoneFolderAttach', () => ({
 
 let harness: ReturnType<typeof createReactHarness>
 afterEach(() => {
+  fixture.modelName = '咕咕 GPT-6 Luna'
   harness?.cleanup()
   document.body.replaceChildren()
   delete document.documentElement.dataset.theme
@@ -150,6 +153,71 @@ it.each([false, true])(
     })
   }
 )
+
+it('a long model name gives way to the permission name, not the other way round', async () => {
+  // Reported on a 360 px phone: 「完全访问」 lost the right half of 「问」 beside 「咕咕 DeepSeek V4 Pro Xhigh」.
+  fixture.modelName = '咕咕 DeepSeek V4 Pro Xhigh Extended'
+  await i18n.changeLanguage('zh-CN')
+  await page.viewport(360, 800)
+  document.documentElement.dataset.theme = 'light'
+  harness = createReactHarness()
+  harness.container.setAttribute('data-phone-shell', '')
+  harness.container.style.cssText = 'height:760px;width:360px;display:flex;flex-direction:column'
+  await renderWithAppProviders(
+    harness,
+    <SessionConversation
+      timeline={emptyAgentWatchTimeline()}
+      deviceId="device"
+      sessionId="permission-name-width"
+      agentName="Codex"
+      harness="codex"
+      nativeRecord
+      sessionRuntime="acp"
+      respondingItemId={null}
+      onRespond={vi.fn()}
+      onSend={vi.fn()}
+      pendingSends={[]}
+      sending={false}
+      agentWorking={false}
+      onStop={vi.fn()}
+      stopping={false}
+      onLoadOlder={vi.fn()}
+    />,
+    { contacts: {} }
+  )
+  await until(
+    'phone composer model',
+    () => !!harness.container.querySelector('[data-testid="composer-model-trigger"]')
+  )
+  await new Promise((r) => setTimeout(r, 600))
+  const name = harness.container.querySelector<HTMLElement>(
+    '[data-slot="composer-permission-mode"] > span:last-child'
+  )!
+  expect(name.textContent).toBe('完全访问')
+  // Every box between the name and its button clips: the name is whole only if each one holds it.
+  for (
+    let box: HTMLElement | null = name;
+    box && box.tagName !== 'BUTTON';
+    box = box.parentElement
+  ) {
+    expect(box.getBoundingClientRect().width).toBeGreaterThanOrEqual(name.scrollWidth - 0.5)
+  }
+  const permission = name.closest('button')!
+  const locked = harness.container.querySelector('[data-composer-locked-agent]')!
+  const model = harness.container.querySelector<HTMLElement>(
+    '[data-testid="composer-model-trigger"]'
+  )!
+  expect(permission.getBoundingClientRect().right).toBeLessThanOrEqual(
+    locked.getBoundingClientRect().left
+  )
+  expect(locked.getBoundingClientRect().right).toBeLessThanOrEqual(
+    model.getBoundingClientRect().left
+  )
+  expect(model.getBoundingClientRect().right).toBeLessThanOrEqual(
+    harness.container.getBoundingClientRect().right
+  )
+  await page.screenshot({ path: `${out}/phone-long-model-name.png` })
+})
 
 it.each([false, true])(
   '1292 ordinary phone composer preserves its three-column layout (group=%s)',

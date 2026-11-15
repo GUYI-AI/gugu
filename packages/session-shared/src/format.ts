@@ -47,10 +47,17 @@ function cachedRelativeTimeFormat(locale: string, options: Intl.RelativeTimeForm
 // collide for zones with different summer rules. Pin construction to that zone so no miss poisons another key.
 const dateFormats = new Map<string, Intl.DateTimeFormat>();
 
+// Asking Intl for the default zone builds a formatter (~19µs in Electron 44); Reply and typing re-render rows
+// and spent 7-12 ms of each 40-55 ms task here. Temporal reads the same ICU default (~0.7µs) and still follows a zone change.
+const temporalNow = (globalThis as { Temporal?: { Now: { timeZoneId(): string } } }).Temporal?.Now;
+const defaultTimeZone = temporalNow
+  ? () => temporalNow.timeZoneId()
+  : () => new Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 export function formatDate(value: DateValue, options: Intl.DateTimeFormatOptions | undefined, locale: string): string {
   const optionsKey = optionsCacheKey(options ?? {});
   if (optionsKey === null) return new Intl.DateTimeFormat(locale, options).format(value instanceof Date ? value : new Date(value));
-  const timeZone = options?.timeZone === undefined ? new Intl.DateTimeFormat().resolvedOptions().timeZone : options.timeZone;
+  const timeZone = options?.timeZone === undefined ? defaultTimeZone() : options.timeZone;
   const key = JSON.stringify([locale, timeZone, optionsKey]);
   let format = dateFormats.get(key);
   if (!format) dateFormats.set(key, format = new Intl.DateTimeFormat(locale, { ...options, timeZone }));

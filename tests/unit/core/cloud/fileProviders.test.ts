@@ -3,7 +3,7 @@ import { createServer, type ServerResponse } from 'node:http'
 import { describe, expect, it, vi } from 'vitest'
 import { cloudFileProviders, type FileChunkCache } from '../../../../packages/core/src/cloud/fileProviders'
 import { createFileKey, transformFile, type FileSink } from '../../../../packages/core/src/shared/fileCipher'
-import { createFileResolver, type FileBytes, type FileRevision } from '../../../../packages/core/src/shared/fileResolver'
+import { createFileResolver, FileReadRevokedError, openFileBytes, shownFileBlob, type FileBytes, type FileProviders, type FileRevision } from '../../../../packages/core/src/shared/fileResolver'
 
 const plain = Buffer.alloc(700_001, 73), digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 const revision: FileRevision = { source: 'managed-object', item_id: 'file', version: 2, chat_id: 'group', file_name: 'file.bin', content_type: 'application/octet-stream', size_bytes: plain.length, sha256: digest(plain) }
@@ -40,7 +40,7 @@ describe('one cloud provider and verified raw chunk cache', () => {
     expect(await cloud.metadata(context)).toEqual({ status: 'missing', sha256: null })
     a.fetcher.mockResolvedValueOnce(Response.json({ status: 'missing', code: 'failed' }))
     await expect(cloud.metadata(context)).rejects.toThrow('Invalid file metadata')
-    for (const status of [403, 500, 503]) {
+    for (const status of [400, 401, 403, 404]) {
       a.fetcher.mockResolvedValueOnce(Response.json({ error: 'failed' }, { status }))
       await expect(cloud.metadata(context)).rejects.toMatchObject({ status, code: 'failed' })
     }
@@ -115,7 +115,7 @@ describe('one cloud provider and verified raw chunk cache', () => {
         fetch: async () => { if (revoke) a.fetcher.mockResolvedValue(Response.json({ status: 'gone' })); return new Response(revoke ? plain : plain.subarray(0, -1)) } })
       const file = await createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })(legacyRef, context.actor)
       if (file.status !== 'ready') throw Error('ready expected')
-      await expect(file.read(0, 1)).rejects.toThrow(revoke ? 'File access or revision changed' : 'Truncated file response')
+      await expect(file.read(0, 1)).rejects.toThrow(revoke ? 'gone' : 'Truncated file response')
       await file.dispose()
     }
   })
@@ -131,10 +131,15 @@ describe('one cloud provider and verified raw chunk cache', () => {
   })
 
   it('keeps the object response HTTP status in the download failure reason', async () => {
-    const a = api(), c = cache()
-    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: c.store, sink: async () => sink(),
-      fetch: vi.fn(async () => new Response('unavailable', { status: 503 })) as typeof fetch })
-    await expect(cloud.managed(revision, context)).rejects.toThrow('HTTP 503')
+    vi.useFakeTimers()
+    try {
+      const a = api(), c = cache()
+      const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: c.store, sink: async () => sink(),
+        fetch: vi.fn(async () => new Response('unavailable', { status: 503 })) as typeof fetch })
+      const result = cloud.managed(revision, context).catch(error => error)
+      await vi.runAllTimersAsync()
+      expect(await result).toMatchObject({ status: 503, message: expect.stringContaining('HTTP 503') })
+    } finally { vi.useRealTimers() }
   })
   it('uses and caches only the existing CDN thumbnail for managed previews; full downloads still verify the original', async () => {
     const thumbnail = 'https://objects.invalid/file?auth_key=lease&x-oss-process=image/resize,w_560/format,webp'
@@ -321,6 +326,99 @@ describe('one cloud provider and verified raw chunk cache', () => {
     expect(JSON.stringify(a.calls)).not.toContain(Buffer.from(key).toString('base64'))
     expect(objectFetch).toHaveBeenCalledTimes(1)
     await decoded.dispose(); key.fill(0)
+  })
+  // A server that knows the combined fields signs the ready copy in file-request and checks the version in the ACK.
+  // Bytes for display come back before that ACK; one that fails takes them back and clears the cached chunks.
+  async function combined(outcome: 'same' | 'flaky' | 'down' | 'stall' | 'revision' | 'access' | 'gone') {
+    const local = { ...revision, source: 'local' as const, host_account_id: 'host', host_device_id: 'device', host_project_id: 'project', relative_path: 'file.bin', temporary_transfer: true }
+    const key = await createFileKey(), encoded = await transformFile({ direction: 'encrypt', revision: local, source: bytesFile(plain), sink: sink(), key })
+    const cipher = Buffer.concat([await encoded.file.read(0, 524288), await encoded.file.read(524288, encoded.file.size - 524288)])
+    const a = api(local, cipher, { codec: 'secretstream-v1', key: Buffer.from(key).toString('base64'), ciphertext_bytes: cipher.length, ciphertext_sha256: digest(cipher) })
+    await encoded.file.dispose(); key.fill(0)
+    const apiFetch = a.fetcher.getMockImplementation()!
+    let answer: () => void = () => {}
+    const acknowledgement = new Promise<void>(resolve => { answer = resolve })
+    a.fetcher.mockImplementation(async (input, init) => {
+      const route = String(input).split('/').at(-1)!
+      if (route === 'file-request') {
+        const download = await (await apiFetch(String(input).replace('file-request', 'file-download'), init)).json()
+        a.calls.pop(); a.calls.push({ route, body: JSON.parse(init!.body as string) })
+        return Response.json({ status: 'ready', transfer_status: 'ready', download })
+      }
+      if (route === 'file-read-complete') {
+        a.calls.push({ route, body: JSON.parse(init!.body as string) })
+        const attempt = a.calls.filter(row => row.route === route).length
+        await acknowledgement
+        if (outcome === 'stall') return new Promise<Response>(() => {})
+        if (outcome === 'access') return Response.json({ error: 'denied' }, { status: 403 })
+        if (outcome === 'down' || outcome === 'flaky' && attempt === 1) return Response.json({ error: 'failed' }, { status: 503 })
+        return Response.json({ acknowledged: outcome !== 'revision', current: { ...local, status: outcome === 'gone' ? 'gone' : 'ready', sha256: outcome === 'revision' ? 'f'.repeat(64) : local.sha256 } })
+      }
+      return apiFetch(input, init)
+    })
+    const c = cache(), cloud = cloudFileProviders({ endpoint: a.endpoint, cache: c.store, sink: async () => sink(), fetch: (async () => new Response(cipher)) as typeof fetch })
+    return { local, a, c, cloud, answer }
+  }
+  // Refusals are not retried; one transient failure is; a failure that persists takes the read down without a revocation.
+  it.each([['same', 1], ['flaky', 2], ['down', 2], ['revision', 1], ['access', 1], ['gone', 1]] as const)('a combined server shows an encrypted copy after one call and settles the read ACK behind it (%s)', async (outcome, acks) => {
+    const { local, a, c, cloud, answer } = await combined(outcome)
+    const decoded = await cloud.temporary(local, context)
+    expect(a.calls.map(row => row.route)).toEqual(['file-request', 'file-read-complete'])
+    expect(digest(Buffer.concat([await decoded.read(0, 524288), await decoded.read(524288, plain.length - 524288)]))).toBe(revision.sha256)
+    expect(c.chunks.size).toBeGreaterThan(0)
+    answer()
+    if (outcome === 'same' || outcome === 'flaky') { await decoded.acknowledged; expect(c.store.clear).not.toHaveBeenCalled() }
+    else if (outcome === 'down') { await expect(decoded.acknowledged).rejects.toMatchObject({ status: 503 }); expect(c.store.clear).not.toHaveBeenCalled() }
+    else {
+      await expect(decoded.acknowledged).rejects.toMatchObject({ reason: outcome, message: outcome === 'gone' ? 'gone' : 'File access or revision changed during download' })
+      expect(c.store.clear).toHaveBeenCalledTimes(1); expect(c.chunks.size).toBe(0)
+    }
+    expect(a.calls.filter(row => row.route === 'file-read-complete')).toHaveLength(acks)
+    expect(a.calls[0]!.body.download_request_id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(a.calls[1]!.body).toMatchObject({ download_id: 'download', ref: { item_id: 'file', version: 2 }, expect: { sha256: local.sha256, size_bytes: local.size_bytes } })
+    await decoded.dispose()
+  })
+  it('a read ACK that stalls takes the shown read down after 15 seconds', async () => {
+    const { local, cloud, answer } = await combined('stall')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const decoded = await cloud.temporary(local, context)
+      answer()
+      const settled = expect(decoded.acknowledged).rejects.toThrow('File read acknowledgement timed out')
+      await vi.advanceTimersByTimeAsync(14_999)
+      let done = false; void decoded.acknowledged!.catch(() => { done = true })
+      await Promise.resolve(); expect(done).toBe(false)
+      await vi.advanceTimersByTimeAsync(1); await settled
+      await decoded.dispose()
+    } finally { vi.useRealTimers() }
+  })
+  it('a sink is written only after the read is acknowledged, whichever provider returned the bytes', async () => {
+    const write = vi.fn(async () => {}), commit = vi.fn(async () => bytesFile(new Uint8Array()))
+    const shown = { ...bytesFile(plain), acknowledged: Promise.reject(new FileReadRevokedError('access')) }
+    shown.acknowledged.catch(() => undefined)
+    await expect(openFileBytes({} as FileProviders, revision, context, { revision, open: async () => shown }, { write, commit, abort: async () => {} })).rejects.toBeInstanceOf(FileReadRevokedError)
+    expect(write).not.toHaveBeenCalled(); expect(commit).not.toHaveBeenCalled()
+  })
+  it('a resolver read waits for the ACK; only a showFirst handle reads before it and learns of the revocation after', async () => {
+    const { local, cloud, answer } = await combined('access')
+    const resolve = createFileResolver({ ...cloud, metadata: async () => ({ status: 'ready', revision: local }), local: async () => null, ssh: async () => null })
+    const waiting = await resolve(context.ref, context.actor)
+    if (waiting.status !== 'ready') throw Error('ready expected')
+    const blocked = waiting.read(0, 1)
+    answer()
+    await expect(blocked).rejects.toBeInstanceOf(FileReadRevokedError); await waiting.dispose()
+    const shown = await resolve(context.ref, context.actor, { showFirst: true })
+    if (shown.status !== 'ready') throw Error('ready expected')
+    const { blob, acknowledged } = await shownFileBlob(shown)
+    expect(blob.size).toBe(plain.length)
+    await expect(acknowledged).rejects.toMatchObject({ reason: 'access' })
+  })
+  it('a download into a sink still waits for the ACK and commits nothing when it is refused', async () => {
+    const { local, cloud, answer } = await combined('revision')
+    const commit = vi.fn(async () => bytesFile(new Uint8Array()))
+    answer()
+    await expect(cloud.download!(local, context, { write: async () => {}, commit, abort: async () => {} })).rejects.toBeInstanceOf(FileReadRevokedError)
+    expect(commit).not.toHaveBeenCalled()
   })
   it.each(['key', 'ciphertext_sha256'])('rejects an expired lease renewal that changes encrypted %s before reading more bytes', async field => {
     const local = { ...revision, source: 'local' as const, host_account_id: 'host', host_device_id: 'device', host_project_id: 'project', relative_path: 'file.bin', temporary_transfer: true }

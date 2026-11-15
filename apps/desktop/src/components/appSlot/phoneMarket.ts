@@ -2,6 +2,11 @@ import { compatOf, marketCompatText, pickForHost, type CloudMarketEntry, type Ma
 import { marketEntriesFrom, marketHistoryFrom, marketListingFrom, marketMetaPath, marketUpdatesFrom, type MarketListing } from '../../session/shared/extensions/market-entries'
 import { marketSnapshotSource, type MarketRefreshed, type MarketSnapshotStore } from '../../session/shared/extensions/market-snapshot'
 import { appPlatformDeclarationProblems, requireAppPlatform } from '../../session/shared/extensions/app-platforms'
+import type { MarketReleaseProof } from '../../session/shared/extensions/market'
+import {
+  MAX_RELEASE_MANIFEST_BYTES, RELEASE_SIGNATURE_BYTES, releaseProof, releaseRequired, SHIPPED_RELEASE_TRUST, verifyMarketRelease,
+  type ReleaseTrustTable, type SignedRelease,
+} from '../../session/shared/extensions/release/release-trust-web'
 
 /**
  * The App market as the phone reads it (L9; 161 10-15: the phone installs market Apps). The same `market/index.json` the
@@ -20,6 +25,8 @@ export interface MarketPackage {
   sha256: string
   source: MarketCodeSource
   releaseNotes: string
+  /** #1931 Its signed release, verified before the package was fetched: only for an App the trust table names. */
+  release?: { release: SignedRelease; proof: MarketReleaseProof }
 }
 
 export interface PhoneMarket {
@@ -35,6 +42,11 @@ export interface PhoneMarket {
   updatesFor(installed: readonly { id: string; version: string; fromMarket?: boolean }[]): Promise<MarketUpdatesSummary>
   /** One version — this phone's when none is named — fetched and checked; what cannot be installed says why. */
   fetch(extensionId: string, version?: string): Promise<MarketPackage>
+  /**
+   * #1931 The version this build would take of an App on any platform, fetched and checked as `fetch` checks: for the data
+   * it carries (the assistant App's rules), never to install or run here.
+   */
+  fetchData(extensionId: string): Promise<MarketPackage>
   /** Ask the download site for the index once, and say what came of it (changed / unchanged / failed): the 「App」 page's. */
   refresh(): Promise<MarketRefreshed>
   /** Every time the index was asked for, by whoever (the page, an install). Returns the unsubscribe. */
@@ -47,9 +59,43 @@ export function phoneMarket(
   store: MarketSnapshotStore,
   onRefreshFailure?: (error: unknown) => void,
   urlOf: (relativePath: string) => string = (relativePath) => relativePath,
+  /** #1931 Which Apps come only as a signed release, and their keys: the table this build ships (tests pass their own). */
+  trust: ReleaseTrustTable = SHIPPED_RELEASE_TRUST,
 ): PhoneMarket {
   const snapshot = marketSnapshotSource({ readIndex: async () => new TextDecoder().decode(await read('index.json')), store, onFailure: onRefreshFailure })
   const index = async (fresh: boolean): Promise<MarketIndex> => (await (fresh ? snapshot.fresh() : snapshot.current())).index
+  /**
+   * #1931 An App the trust table names comes only as its signed release, as on the desktop (market-catalog.ts
+   * `materialize`): `release.json` and its signature fetched and verified — the market's own contract, the shipped keys,
+   * scope and revocation, this App and version, the very package the index names, this gugu inside its range — before the
+   * package is. A version listed without one is refused. Every other App is fetched as before.
+   */
+  const signedRelease = async (extensionId: string, row: MarketIndexVersion) => {
+    if (!releaseRequired(trust, extensionId)) return undefined
+    if (!row.release) throw new Error(`${extensionId}@${row.version} is listed without the signed release gugu requires for it`)
+    try {
+      const raw = await read(row.release.manifest, MAX_RELEASE_MANIFEST_BYTES)
+      const signature = await read(row.release.signature, RELEASE_SIGNATURE_BYTES)
+      const release = verifyMarketRelease(
+        { appId: extensionId, version: row.version, keyId: row.release.keyId, raw, signature, appZip: { sha256: row.sha256, bytes: row.bytes }, appVersion: host().appVersion },
+        trust,
+      )
+      return { release, proof: releaseProof(row.release.keyId, raw, signature) }
+    } catch (error) {
+      throw new Error(`${extensionId}@${row.version} failed the release check: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  const download = async (extensionId: string, row: MarketIndexVersion): Promise<MarketPackage> => {
+    const signed = await signedRelease(extensionId, row)
+    // No more than the row says it is: the shell stops a bigger one while it comes (it is held in memory whole, twice).
+    const bytes = await read(row.bundle, row.bytes)
+    if (bytes.byteLength !== row.bytes) throw new Error(`${extensionId}@${row.version}: got ${bytes.byteLength} bytes, the market recorded ${row.bytes}`)
+    const sha256 = hex(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>))
+    // Consent binds a manifest, not code: anyone able to swap the file on the download site could put other code under
+    // a list of permissions already agreed to. This is what stops that.
+    if (sha256 !== row.sha256) throw new Error(`${extensionId}@${row.version}: the file does not match what was published`)
+    return { bytes, version: row.version, sha256, source: row.source, releaseNotes: row.releaseNotes, ...(signed ? { release: signed } : {}) }
+  }
   return {
     entries: async (fresh = false) => {
       const snapshot = await index(fresh)
@@ -82,14 +128,14 @@ export function phoneMarket(
       if (compat) {
         throw new Error(`${extensionId}@${row.version} ${marketCompatText(compat)}`)
       }
-      // No more than the row says it is: the shell stops a bigger one while it comes (it is held in memory whole, twice).
-      const bytes = await read(row.bundle, row.bytes)
-      if (bytes.byteLength !== row.bytes) throw new Error(`${extensionId}@${row.version}: got ${bytes.byteLength} bytes, the market recorded ${row.bytes}`)
-      const sha256 = hex(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>))
-      // Consent binds a manifest, not code: anyone able to swap the file on the download site could put other code under
-      // a list of permissions already agreed to. This is what stops that.
-      if (sha256 !== row.sha256) throw new Error(`${extensionId}@${row.version}: the file does not match what was published`)
-      return { bytes, version: row.version, sha256, source: row.source, releaseNotes: row.releaseNotes }
+      return download(extensionId, row)
+    },
+    fetchData: async (extensionId) => {
+      const snapshot = await index(true)
+      const app = snapshot.apps.find((entry) => entry.id === extensionId)
+      const row = app ? pickForHost(app.versions, host(), snapshot.hostApi).chosen : null
+      if (!row) throw new Error(`The market has no App "${extensionId}"`)
+      return download(extensionId, row)
     },
   }
 }

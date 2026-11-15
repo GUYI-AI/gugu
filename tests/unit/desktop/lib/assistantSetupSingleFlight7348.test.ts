@@ -11,6 +11,11 @@ const provision = vi.hoisted(() => ({
   forget: vi.fn(),
   createResumeStore: vi.fn(() => ({ list: () => [], forget: (...args: unknown[]) => provision.forget(...args) })),
 }))
+// The rules main answers the window with (#1931): the built-in copy here.
+vi.mock('../../../../apps/desktop/src/lib/assistantSetupRules', async () => {
+  const { NEUTRAL_ASSISTANT_RULES } = await import('../assistantRules/neutralRules')
+  return { assistantSetupRules: async () => NEUTRAL_ASSISTANT_RULES }
+})
 vi.mock('../../../../apps/desktop/src/lib/agentProvision', () => provision)
 const identity = vi.hoisted(() => ({ platform: {
   getLocalDeviceSelfSnapshot: undefined as undefined | (() => Promise<{ device_id: string } | null>),

@@ -27,7 +27,9 @@ export function collectSubagents(sessionId: string | undefined, fallbackName: st
   return collectSubagentRoster(
     transcript.committedTurns,
     active,
-    fallbackName
+    fallbackName,
+    Date.now(),
+    store.liveSubagents
   ).filter((entry) =>
     // 库里读出来的旧轮可能是上一个进程派的:随进程没了、永远等不来完成通知 ⇒ 只留运行时登记册说还在跑的
     // (与后台命令同一条,#6582)。正在跑的这一轮里派的不受这条管 —— 没有登记册的 harness 也照常显示前台子智能体。
@@ -57,7 +59,8 @@ export function collectBackgroundCommands(sessionId: string | undefined, fallbac
     transcript.activeTurnSnapshot,
     fallbackName,
     // 库里读出来的旧轮可能是上一个进程起的命令,随进程没了、永远等不来终态 —— 只留运行时说还在跑的(#6582)。
-    store.runningBackgroundTaskIds
+    store.runningBackgroundTaskIds,
+    store.liveSubagents.flatMap((agent) => agent.steps ?? [])
     // 「我不看它了」与子智能体共用同一张收起表(键里带条目 id)。
   ).filter((entry) => !isSubagentDismissed(sessionId, entry.id));
 }

@@ -1,5 +1,5 @@
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
-import { agentSupportsConnectionManagement } from '@shared/core/agents/agent-payload';
+import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { DEFAULT_FREE_PLATFORM_MODEL, DEFAULT_PLATFORM_MODEL_BY_PROVIDER } from '@shared/core/sessions/new-session-defaults';
 import {
@@ -47,6 +47,7 @@ import { IntegrationIcon } from '@renderer/features/integrations/integration-ico
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { resolveLegLoginGate } from './vendor-login-prompt';
 import { usePromptLibrary } from '@renderer/features/library/prompts/use-prompt-library';
+import { promptSlashItems } from '@renderer/features/library/prompts/prompt-slash-items';
 import { AgentIcon } from '@renderer/lib/components/agent-icon';
 import {
   agentGroupLabel,
@@ -65,7 +66,8 @@ import type { SessionViewLockState } from './session-view-lock';
 import { SessionViewControl } from './session-view-control';
 import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
 import { DEFAULT_SESSION_VIEW } from '@shared/core/sessions/new-session-defaults';
-import { safeFailureLine } from '@renderer/features/sessions/gugu-reason';
+import { codexNeedsUpgrade } from '../session-input-failure-copy';
+import { useSessionInputNotice } from '../session-input-notice';
 import { log } from '@renderer/utils/logger';
 import {
   harnessCatalogNotice,
@@ -74,7 +76,7 @@ import {
 } from './harness-model-field';
 import { useHarnessModelOptions } from './use-harness-model-options';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
-import { HARNESS_MODEL_CATALOG_QUERY_KEY, useHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
+import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { queryClient } from '@renderer/lib/query-client';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useHarnessModelCredential } from '@renderer/lib/stores/use-harness-model-credential';
@@ -83,7 +85,6 @@ import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { Field } from '@renderer/lib/ui/field';
-import { cn } from '@renderer/utils/utils';
 import {
   agentOffersSessionView,
   agentReadingForLeg,
@@ -105,13 +106,11 @@ import {
 import type { LinkedIssue } from '@shared/core/linked-issue';
 import { DEFAULT_SESSION_AUTO_APPROVE } from '@shared/core/sessions/default-session-autonomy';
 import { buildIssueContextText } from '../context-bar/context-actions';
-import { appendInitialSessionText } from '../create-session-modal/initial-session-text';
-import { usePromptFileDrop } from '../create-session-modal/use-prompt-file-drop';
 import { rpcOn } from '@renderer/lib/ipc';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { asMounted, getProjectStore } from '@renderer/features/projects/stores/project-selectors';
 import { pushTaskDirectory, taskAttachmentUsesSsh } from '@/lib/taskAttachmentTarget';
-import { droppedDirectoryMention } from '@renderer/lib/drag-files';
+import { droppedDirectoryMention, pathMention } from '@renderer/lib/drag-files';
 import {
   createLocalSessionMentionProvider,
   localSessionMentionHiddenContext,
@@ -121,6 +120,7 @@ import { useSessionMentionDrop } from '@renderer/lib/chat/use-session-mention-dr
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { useComposerFileUploads, type TaskAttachmentTarget } from '@renderer/features/sessions/acp/use-composer-file-uploads';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
+import { guguReasonInText } from '@gugu/session-core/session-record/contract';
 import type { ComposerDraft, SubmittedComposerDraft } from '../composer-drafts';
 import {
   guguCatalogNotice,
@@ -196,7 +196,7 @@ export type InitialSessionState = {
   retryPlatformCatalog?: () => void;
   /** harness 模型目录拿不到时的那句话（没装 / 没登录 / 坏了）。 */
   harnessNotice: string | null;
-  /** 「坏了」那一态的原因(宿主原文,长度不可控);就地显示在输入框下面,❌ toast(#6692)。 */
+  /** Diagnostic reason, only passed to the local log. */
   harnessNoticeDetail: string | null;
   /**
    * 去登录的那条路；不是「该去登录」那一态、或开不了登录终端时为 null。
@@ -463,6 +463,16 @@ export function resolveInitialEffort(
   return override && efforts.options[override] ? override : null;
 }
 
+/**
+ * 平台模型没有 harness model id,但它同样要记住用户选过的档 —— 用平台模型 id 当 key。
+ * ❌ 不能省成只按 provider 记:同一引擎下换平台模型,档位不一定还在(见 resolveInitialEffort)。
+ */
+function effortKeyOf(provider: string | null, model: string | null, platformModel: string | null): string | null {
+  if (!provider) return null;
+  if (platformModel) return `${provider}:platform:${platformModel}`;
+  return model ? `${provider}:${model}` : null;
+}
+
 export function useInitialSessionState(
   projectId?: string,
   initialProvider?: AgentProviderId,
@@ -485,7 +495,9 @@ export function useInitialSessionState(
   // 新会话默认通用。设置里开着「允许以终端（TUI）模式启动 agent」时,框里给「终端 | 通用」由人选(owner 10-30);
   // 编辑一条已存的自动化时,先由那条记录自己的展示播种。两者都只覆盖这一个框(`setSessionView`,❌ 写回任何全局设置)。
   const terminalEnabled = useTerminalEnabled();
-  const [sessionViewOverride, setSessionViewOverride] = useState<SessionView | null>(null);
+  // #2569 a draft handed over from another box (the sample project's first message) opens with what was picked there.
+  const handed = draft?.handoff?.picked;
+  const [sessionViewOverride, setSessionViewOverride] = useState<SessionView | null>(() => handed?.sessionView ?? null);
   const sessionViewPreference = sessionViewOverride ?? DEFAULT_SESSION_VIEW;
   // #6264 远端创建框:只经云端连着的机器只有聊天界面那条腿(终端画面走不了云端消息通道),
   // 所以钉在它上面 —— 显示「编程」却建出「通用」就是界面说假话。
@@ -518,17 +530,22 @@ export function useInitialSessionState(
   const [mentionContext, setMentionContext] = useState<string | undefined>();
   const [issueContext, setIssueContext] = useState<string | null>(null);
   const [permissionModeOverride, setPermissionModeOverride] = useState<GuguPermissionMode | null>(
-    null
+    () => handed?.permissionMode ?? null
   );
   const [issueContextEditorOpen, setIssueContextEditorOpen] = useState(false);
-  const [modelOverrides, setModelOverrides] = useState<Record<string, string>>({});
+  const [modelOverrides, setModelOverrides] = useState<Record<string, string>>(
+    () => (handed?.model ? { [handed.provider]: handed.model } : {})
+  );
   // 每个 provider 一格三态:平台模型 id / null(明确选了 harness)/ 缺席(还没表过态)。
   // 缺席与 null 必须分得开 —— 前者才轮得到 agent 级默认值说话。
   const [platformModelOverrides, setPlatformModelOverrides] = useState<
     Record<string, string | null>
-  >({});
+  >(() => (handed ? { [handed.provider]: handed.platformModel } : {}));
   // Keyed by `${provider}:${model}` — see resolveInitialEffort for why effort is per-model.
-  const [effortOverrides, setEffortOverrides] = useState<Record<string, string | null>>({});
+  const [effortOverrides, setEffortOverrides] = useState<Record<string, string | null>>(() => {
+    const key = handed ? effortKeyOf(handed.provider, handed.model, handed.platformModel) : null;
+    return key ? { [key]: handed!.effort } : {};
+  });
   const [issueMentionContexts, setIssueMentionContexts] = useState<Record<string, string>>({});
   // #4325 —— 待发队列(两条通道共用)。composer 是这些文件的唯一保管者:一件真的送达了才
   // 把它移走,所以「屏幕上还剩什么」逐字等于「重试还要发什么」,不需要第二份快照。
@@ -567,7 +584,7 @@ export function useInitialSessionState(
     [placements]
   );
   const enqueueAttachments = useCallback(async (files: File[]) => {
-    const selected = fileSelection.select(files);
+    const selected = fileSelection.choose(files);
     if (!selected.length) return;
     try {
       const queued = await Promise.all(
@@ -862,7 +879,16 @@ export function useInitialSessionState(
   // 选的是别的机器、此刻没连上:为什么连不上由右下角那台机器的提示说(重连中 / 离线 / 要先登录 / 版本太旧,
   // 见 remote-hosts/machine-notice.ts),❌ 这里再报一句「读取 X 的模型失败」—— 那不是 X 的问题,是机器的。
   const machineUnreachable = Boolean(remoteHost && !remoteHost.online);
-  const harnessNoticeMessage = !providerId || providerError || platformModel || byokLoginOptional || machineUnreachable
+  /**
+   * Whether this session runs on a Gugu model at all is answered by the Gugu catalog
+   * (`platformModel`, `byokLoginOptional`). Until it answers, the harness's own install/login
+   * state says nothing about this session: each mount starts from an empty catalog, so judging
+   * it then raised the harness sign-in notice and retracted it when the catalog arrived (owner
+   * 11-10: on every New task with Claude + a Gugu model).
+   */
+  const guguRouteUnknown = Boolean(providerId) && !machineUnreachable
+    && !platformCatalog.settled && platformCatalog.catalogError === null;
+  const harnessNoticeMessage = !providerId || providerError || platformModel || byokLoginOptional || machineUnreachable || guguRouteUnknown
     ? null
     : harnessCatalogNotice(harnessCatalogState, agentDisplayName, translate);
 
@@ -884,61 +910,17 @@ export function useInitialSessionState(
    *    于是解锁组、登录终端、弹窗的「去登录」对它们一概不出现。
    */
   const cliLoginMethod = signInTarget?.method ?? null;
-  /** Claude/Codex 复用连接面板，留在当前草稿；其他家保留资源库/远端登录入口。 */
+  /**
+   * 「去登录」= 打开这一家的连接面板(#2507,与订阅页、资源库详情同一块),留在当前草稿:完成或取消后回到这里,
+   * 输入、附件、任务选择都在。一个连接都没有时面板直接是「添加连接」表单。登哪台机器由面板按 `machine` 定。
+   * 能走到这里的家都有一种能在咕咕里发起的登录(`cliLoginMethod`),所以都有这个面板(`agentOffersConnections`)。
+   */
   const connections = useConnectionPanel();
-  const showAgentSignIn = useShowModal('agentSignInModal');
-  const remoteAgentCommand = agents?.find((agent) => agent.id === providerId)?.command ?? null;
   const openAgentAccount = useCallback((anchor?: HTMLElement) => {
     if (!providerId || !cliLoginMethod) return;
     const selectedAgent = agents?.find(item => item.id === providerId);
-    if (selectedAgent && agentSupportsConnectionManagement(selectedAgent)) {
-      connections.show(selectedAgent, machine, anchor);
-      return;
-    }
-    /**
-     * #6264 所选机器不是本机:在**那台机器上**登录,❌ 跳本机的资源库 —— 那一页画的是这台电脑的安装与登录
-     * (/opt/homebrew/bin/codex、「已登录」),当成那台机器的就是张冠李戴。窗口还是那一个登录窗口,
-     * 命令跑在那台机器上、链接在这台电脑的浏览器里开;登完 / 关窗都让那台机器的目录重问一遍。
-     */
-    const refreshAfterRemoteLogin = () =>
-      void queryClient.invalidateQueries({ queryKey: [...HARNESS_MODEL_CATALOG_QUERY_KEY, providerId] });
-    if (machine) {
-      // 别的机器上只有不靠回跳的登录能在那台机器上跑(浏览器在这台电脑上);协议登录的家说「到那台机器上敲」。
-      const cliLogin = cliLoginMethod.kind === 'cli-login' ? cliLoginMethod : null;
-      showAgentSignIn({
-        providerId,
-        providerName: agentDisplayName,
-        steps: [{ methodId: cliLoginMethod.id }],
-        remote: {
-          deviceId: machine,
-          deviceLabel: machineDevice?.label ?? machine,
-          headless: !!cliLogin?.headlessArgs,
-          command: [remoteAgentCommand?.split(/[\\/]/).filter(Boolean).pop() || providerId, ...(cliLogin?.args ?? [])].join(' '),
-        },
-        // 登没登成只有那台机器知道:登完 / 关窗都让这一家的目录(那台机器那一份在同一前缀下)重问。
-        onSuccess: refreshAfterRemoteLogin,
-        onClose: refreshAfterRemoteLogin,
-      });
-      return;
-    }
-    (
-      window as typeof window & {
-        __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => void;
-      }
-    ).__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?.(providerId);
-    navigate('library', { tab: 'agents', agentId: providerId });
-  }, [
-    providerId,
-    cliLoginMethod,
-    connections.show,
-    agents,
-    navigate,
-    machine,
-    machineDevice,
-    showAgentSignIn,
-    agentDisplayName,
-    remoteAgentCommand,
-  ]);
+    if (selectedAgent && agentOffersConnections(selectedAgent)) connections.show(selectedAgent, machine, anchor);
+  }, [providerId, cliLoginMethod, connections.show, agents, machine]);
   // 上一家 —— 取消时回到它。用 ref 而不是 state:它只在切换发生时被读,不该驱动重渲染。
   const previousProviderRef = useRef<AgentProviderId | null>(null);
   // 同一家只提示一次,别在 catalog 每次刷新时重弹。
@@ -1039,12 +1021,42 @@ export function useInitialSessionState(
   //    而那时咕咕的模型明明对 X 开着,是界面自己没去读。
   // 宿主报的是原因码,这里按界面语言说成人话;认不出的原文(老版本宿主)❌ 上屏。
   // 机器没连上时同理:咕咕模型的目录也是问那台机器要的,问不到是机器离线的结果,❌ 说成「模型列表尚未就绪」再给个「重试」。
-  const platformCatalogNotice = machineUnreachable ? null : guguCatalogNotice(platformCatalog.catalogError, translate);
+  // The sentence explains an empty picker. A harness with its own models and no Gugu group (Kiro, Antigravity) is not one.
+  const ownModelsOnly = guguReasonInText(platformCatalog.catalogError ?? '') === 'not-routable'
+    && harnessCatalogState.kind === 'ready' && harnessCatalogState.models.length > 0;
+  const platformCatalogNotice = machineUnreachable || ownModelsOnly ? null : guguCatalogNotice(platformCatalog.catalogError, translate);
   const platformNotice = platformCatalogNotice?.text ?? null;
-  // 失败细节 ❌ 不拼进上面那句内联文案:那是 composer 工具栏,而 reason 是长度不可控的外部串,拼进去会把
-  // 工具栏撑破、溢出到卡片外(真机上就是这么炸的)。工具栏留一句定性(「读取 X 的模型失败」),原因就地
-  // 显示在输入框下面一行(#6692);启动失败那条也是就地显示。
-  const harnessNoticeDetail = harnessNoticeMessage?.detail ?? null;
+  const harnessNoticeDetail = harnessCatalogState.kind === 'unavailable' ? harnessCatalogState.reason : null;
+  const upgradeCodex = !!harnessNoticeDetail && codexNeedsUpgrade(harnessNoticeDetail);
+  const openInstaller = () => {
+    if (!providerId) return;
+    (window as typeof window & { __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (id: string) => void })
+      .__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?.(providerId);
+    navigate('library', { tab: 'agents', agentId: providerId });
+  };
+  const harnessAction = upgradeCodex || harnessNoticeMessage?.action === 'install'
+    ? (!machine && providerId ? { label: translate('taskError.runtimeUpgradeOpenInstaller', { harnessName: agentDisplayName }), onClick: openInstaller } : undefined)
+    : harnessNoticeMessage?.action === 'login'
+      ? (harnessSignIn ? { label: translate('harnessLogin.signIn'), onClick: () => harnessSignIn() } : undefined)
+      : harnessNoticeMessage?.action === 'retry' && providerId
+        ? { label: translate('harnessCatalog.retry'), onClick: () => { void forceRefreshHarnessModelCatalog(queryClient, providerId, sessionpageSurface, machine).catch(error => log.error('Model catalog retry failed', { error })); } }
+        : undefined;
+  useSessionInputNotice(`session-catalog:${machine ?? 'local'}:${providerId ?? 'none'}:${sessionpageSurface}`, guguRouteUnknown
+    ? undefined
+    : !harnessNoticeMessage ? null
+    : harnessCatalogState.kind === 'unknown' ? undefined : {
+      title: upgradeCodex ? translate('taskError.codexUpgrade') : harnessNotice ?? undefined,
+      tier: 'error', action: harnessAction,
+      diagnostic: harnessNoticeDetail ?? undefined,
+    });
+  useSessionInputNotice(`session-platform-catalog:${machine ?? 'local'}:${providerId ?? 'none'}:${sessionpageSurface}`,
+    platformCatalogNotice?.retryable ? {
+      title: platformNotice ?? undefined, diagnostic: platformCatalog.catalogError,
+      action: { label: translate('harnessCatalog.retry'), onClick: () => platformCatalog.retry() },
+    } : null);
+  useSessionInputNotice(`session-provider:${machine ?? 'local'}:${providerId ?? 'none'}`, providerError ? {
+    title: providerError,
+  } : null);
 
   /**
    * ⚠️ **这里原来有一条右下角 toast:「{name} 未登录」。2026-08-28 去掉了(owner 定)。**
@@ -1076,15 +1088,7 @@ export function useInitialSessionState(
     platformModel: platformEffortFacts(platformModel, platformCatalog.models),
     leg: sessionpageSurface,
   });
-  // 平台模型没有 harness model id,但它同样要记住用户选过的档 —— 用平台模型 id 当 key。
-  // ❌ 不能省成只按 provider 记:同一引擎下换平台模型,档位不一定还在(见 resolveInitialEffort)。
-  const effortKey = providerId
-    ? platformModel
-      ? `${providerId}:platform:${platformModel}`
-      : model
-        ? `${providerId}:${model}`
-        : null
-    : null;
+  const effortKey = effortKeyOf(providerId, model, platformModel);
   const effort = resolveInitialEffort(
     modelEfforts,
     effortKey
@@ -1287,12 +1291,6 @@ function useAgentCapabilities(providerId: AgentProviderId | null): AgentCapabili
   return agents?.find((agent) => agent.id === providerId)?.capabilities ?? null;
 }
 
-const SLASH_PROMPTS_SECTION = 'Prompts';
-
-function promptPreview(text: string): string {
-  return text.split(/\r?\n/, 1)[0] ?? '';
-}
-
 function toLinkedIssueMentionItem(issue: LinkedIssue): MentionItem {
   const token = issueMentionToken(issue.provider, issue.identifier);
   return {
@@ -1357,7 +1355,7 @@ export function InitialSessionField({
   const editorApiRef = useRef<PromptEditorRef | null>(null);
   const syncingEditorTextRef = useRef(false);
   const localMentionItemsRef = useRef<MentionItem[]>([]);
-  const { value: promptLibrary } = usePromptLibrary();
+  const { value: promptLibrary, overrides } = usePromptLibrary();
   const harnessModelOptions = useHarnessModelOptions(state.provider, sessionpageLegOfView(state.sessionView));
   const { data: agents, isLoading: agentsLoading } = useAgents();
   // #6264 名单要跨云问另一台机器时,那一格画「正在读取」,❌ 空着让人以为那台机器上什么都开不了。
@@ -1440,19 +1438,6 @@ export function InitialSessionField({
   const planModeSupported = agentSupportsPlanMode(capabilities, leg);
   const editModeOffered = agentOffersEditMode(capabilities, leg);
 
-  const { isDragOver, dropHandlers } = usePromptFileDrop({
-    // OS 文件拖拽**一律**交给 ChatComposer 自己的 drop(→ onFilesDropped → 附件 chip),
-    // 这一层只留「从任务的文件树里拖一行进来」那条(它走 workspace-file 通道,不受这个开关影响)。
-    // ⚠️ 这一层若也收,一次拖拽会被**两边都收**:
-    // composer 收成 chip,这一层同时把绝对路径写进正文 —— 屏幕上一个附件、正文里一段路径。
-    // composer 的 handleDrop 只 preventDefault、不 stopPropagation,所以事件照样冒泡到这里。
-    // (SSH 项目本来就不该收本地路径:远端不存在这个文件。那条理由现在被上面这条覆盖。)
-    disableLocalFiles: true,
-    workspaceId: state.projectId,
-    onDropText: (text) =>
-      state.setPrompt((current) => appendInitialSessionText(current, text)),
-  });
-
   useEffect(() => {
     const editor = editorApiRef.current;
     if (!editor || editor.getText() === state.prompt) return;
@@ -1509,6 +1494,12 @@ export function InitialSessionField({
   const { dataDropTypes, onDataDropped } = useSessionMentionDrop({
     provider: localSessionMentionProvider,
     editorApiRef,
+    // Defined below with the composer's other drop paths; called only when something is dropped.
+    attachFiles: enableAttachments ? (files) => handleFiles(files) : undefined,
+    dropFolder: (path) => {
+      if (remoteMachine) toast({ title: translate('chat.folderDropUnsupportedTitle'), variant: 'destructive' });
+      else editorApiRef.current?.insertMention(pathMention(path));
+    },
     onMentionResolved: useCallback((item: MentionItem) => {
       const known = new Map(localMentionItemsRef.current.map((entry) => [entry.label, entry]));
       known.set(item.label, item);
@@ -1541,25 +1532,9 @@ export function InitialSessionField({
 
   const querySlashItems = useCallback(
     async (query: string): Promise<CommandItem[]> => {
-      const normalized = query.trim().toLowerCase();
-      return promptLibrary
-        .filter((prompt) => {
-          if (!normalized) return true;
-          return [prompt.title, prompt.prompt].some((value) =>
-            value.toLowerCase().includes(normalized)
-          );
-        })
-        .map((prompt) => ({
-          id: `prompt:${prompt.id}`,
-          name: prompt.title,
-          label: prompt.title,
-          description: promptPreview(prompt.prompt),
-          behavior: 'insert-text' as const,
-          insertText: prompt.prompt,
-          section: SLASH_PROMPTS_SECTION,
-        }));
+      return promptSlashItems(promptLibrary, overrides, translate('chat.prompts'), query.trim().toLowerCase());
     },
-    [promptLibrary]
+    [promptLibrary, overrides, translate]
   );
 
   // @@@permission-independent-of-chat-ui — 权限选择与 Chat UI 开关是两件事,不该互相牵制。
@@ -1698,45 +1673,6 @@ export function InitialSessionField({
     [remoteMachine, state.projectId, translate]
   );
 
-  // 平台分组缺席的原因,贴在模型选择器同一排。ChatComposer 的模型列表是平铺的
-  // `DropdownMenu.RadioItem`,`ComposerModelOption` 没有 disabled/说明行的位置(组件在
-  // packages/session-ui),所以这句话只能落在工具栏里 —— 不可点、无边框、跟 Chat UI 标签同一档
-  // 字号与色阶,不额外造视觉层级。
-  // ⚠️ 这两条的长度不由这里决定（平台那句按主进程的原因码取、harness 那句是失败定性 + 插值名字）——
-  // 所以必须自己封顶：`min-w-0` 让 flex 子项允许被压缩（默认 `min-width:auto` 不缩），
-  // `max-w-*` + `truncate` 保证再长也只占一行、多出来的用省略号收掉。
-  // ❌ 别指望文案短就不会溢出：真机上一条主进程原样转达的英文错误就把这排撑破、溢出到卡片外。
-  // 全文不会因此丢失 —— `title` 悬浮可看，失败细节另有 toast。
-  const noticeClassName = 'min-w-0 max-w-[22rem] truncate px-1 text-xs text-foreground-muted';
-
-  const platformNotice = state.platformNotice ? (
-    <span role="status" title={state.platformNotice} className={noticeClassName}>
-      {state.platformNotice}
-    </span>
-  ) : undefined;
-  const platformRetry = state.platformNotice && state.retryPlatformCatalog ? (
-    <button
-      type="button"
-      onClick={() => state.retryPlatformCatalog?.()}
-      className="shrink-0 px-1 text-xs text-foreground-muted underline underline-offset-2 hover:text-foreground"
-    >
-      {translate('harnessCatalog.retry')}
-    </button>
-  ) : undefined;
-
-  // 与 platformNotice 同一档视觉：无边框、跟 Chat UI 标签同字号色阶。
-  //
-  // 这里**只留一句状态**（没装 / 没登录 / 读坏了），不可点：它长度不由前端决定，整句做成按钮
-  // 会把一条会被 truncate 的文字变成一个热区。
-  // ⚠️ 2026-09-05 删掉了曾并排在它后面的那枚「去登录」动作词 —— 去登录的路搬进了模型清单
-  // （`harnessModelUnlock`），理由写在 `harnessSignIn` 的 prop 文档里：那颗按钮在选了平台模型
-  // 时会退化成一个没有上下文的孤零零「去登录」。❌ 别再往这排加登录入口。
-  const harnessNotice = state.harnessNotice ? (
-    <span role="status" title={state.harnessNotice} className={noticeClassName}>
-      {state.harnessNotice}
-    </span>
-  ) : undefined;
-
   const grokPermissionNotice = state.provider === 'grok' ? (
     <span
       role="status"
@@ -1765,12 +1701,9 @@ export function InitialSessionField({
   ) : undefined;
 
   const toolbarExtra =
-    sessionViewControl || platformNotice || harnessNotice || grokPermissionNotice ? (
+    sessionViewControl || grokPermissionNotice ? (
       <>
         {sessionViewControl}
-        {harnessNotice}
-        {platformNotice}
-        {platformRetry}
         {grokPermissionNotice}
       </>
     ) : undefined;
@@ -1790,13 +1723,8 @@ export function InitialSessionField({
           `session.focusComposer` (⇧Esc) — a no-op on these pages until now — starts working too. */}
       <div
         data-region="composer"
-        className={cn(
-          nativeComposerAppearance,
-          'transition-colors',
-          isDragOver && 'rounded-lg bg-background-2 ring-2 ring-border-2 ring-inset'
-        )}
+        className={nativeComposerAppearance}
         onBlur={onPromptBlur}
-        {...dropHandlers}
       >
         <ChatComposer
           editorOptions={{ clearOnSubmit: false }}
@@ -1881,24 +1809,7 @@ export function InitialSessionField({
           text={attachmentViewer?.previewText}
           truncated={attachmentViewer?.previewTruncated}
         />
-        {state.providerError ? (
-          <p role="alert" className="mt-1 text-xs text-foreground-destructive">
-            {state.providerError}
-          </p>
-        ) : null}
-        {/* #6692 读不到模型目录的原因:工具栏那句定性的下文,就地一行。原文长度不可控 —— 只取第一行、遮掉路径与
-            令牌、封顶 280 字(与启动失败同一个 safeFailureLine)。这一行窄了会省略号收掉,title 里放的是同一份
-            处理过的那一行,悬停看得到被省略的部分;原文的其余部分不显示。 */}
-        {state.harnessNotice && state.harnessNoticeDetail ? (
-          <p
-            role="status"
-            data-testid="harness-catalog-failure-detail"
-            title={safeFailureLine(state.harnessNoticeDetail)}
-            className="mt-1 truncate px-1 text-xs text-foreground-muted"
-          >
-            {safeFailureLine(state.harnessNoticeDetail)}
-          </p>
-        ) : null}
+
       </div>
     </Field>
   );

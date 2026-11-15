@@ -1,20 +1,28 @@
+import { useRef } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { createNode, createReactHarness, message, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
+import { until } from '../../../../../../../tests/support/awaitCondition'
 import { phoneWidgetWidth } from '@gugu/core/shared/ui/messageBubbleLayout'
 import '@/i18n/registerMessagingCatalog'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
 
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }))
+vi.mock('@/platform', async original => ({ ...(await original<object>()), platform: { kind: 'phone' } }))
 vi.mock('@/components/appSlot/appsHere', () => ({ appsHere: {} }))
+vi.mock('@/lib/widgetRegistry', async original => {
+  const { parseWidgetMessage } = await import('@gugu/core/shared/ui/widgetModels')
+  return { ...(await original<object>()), widgetForOriginal: async (message: { id: string; sender_user_id: string; content: string }) => ({
+    id: message.id, widget: parseWidgetMessage(message.content), senderId: message.sender_user_id,
+  }) }
+})
 vi.mock('@/session/renderer/features/extensions/installed-extensions-store', async original => ({ ...(await original<object>()), installedExtensionsStore: {
   isLoaded: true, isEnabled: () => true,
   manifestFor: () => ({ id: 'vote', version: '1.0.0', contributes: { tabs: [{ name: 'poll', widget: { height: 240 } }] } }),
 } }))
-vi.mock('@/components/chat/useConversationVisibility', () => ({ useConversationVisibility: () => ({ ref: () => undefined, shown: true }) }))
+vi.mock('@/components/chat/useConversationVisibility', () => ({ useConversationVisibility: () => ({ ref: useRef(null), shown: true }) }))
 // Only the App's contents are a stand-in; MessageBubble and WidgetBubble's real layout remain intact.
-vi.mock('@/session/renderer/features/extensions/extension-view-layer', async original => ({ ...(await original<object>()), ExtensionPage: () => <iframe title="widget slot" style={{ width: '100%', height: '100%', border: 0 }} /> }))
 vi.mock('@/components/appSlot/PhoneAppFrame', async original => ({ ...(await original<object>()), PhoneAppFrame: () => <iframe title="widget slot" style={{ width: '100%', height: '100%', border: 0 }} /> }))
 const { MessageBubble } = await import('@/components/chat/MessageBubble')
 let harness: ReturnType<typeof createReactHarness>
@@ -30,8 +38,8 @@ it.each([false, true])('phone412 widget iframe matches the hidden check viewport
     compactMobile: true, isGroup: true, memberReadSeqs: {},
     onReaction: vi.fn(), onQuote: vi.fn(), onForward: vi.fn(), onDelete: vi.fn(),
   }))
+  await until('the visible slot mounts its frame', () => !!harness.container.querySelector('iframe[title="widget slot"]'))
   const frame = harness.container.querySelector<HTMLIFrameElement>('iframe[title="widget slot"]')!
-  expect(frame).not.toBeNull()
   const actual = frame.getBoundingClientRect()
   expect(actual.height).toBe(240)
   expect(actual.width).toBeGreaterThan(200)

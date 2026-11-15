@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useContext, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { OverFullscreenStrip } from '@renderer/features/tabs/tab-fullscreen';
 import { flushSync } from 'react-dom';
 import {
   TITLEBAR_ACTION_EDGE_GAP_PX,
@@ -19,13 +20,15 @@ import {
  */
 export function TabBarActionRow({
   children,
-  atWindowEdge,
+  atWindowEdge: atBlockEdge,
 }: {
   children?: ReactNode;
   atWindowEdge: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const tight = useTightRow(ref);
+  // Over a page in full screen the strip spans the workspace: its right end is the window's, whichever block it is.
+  const atWindowEdge = useContext(OverFullscreenStrip) || atBlockEdge;
   return (
     <>
       <div

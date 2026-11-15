@@ -30,6 +30,7 @@ function harness(overrides: Partial<SessionCoordinatorDeps> = {}) {
     signOut: async () => ({ error: null }),
     hydrateUser: async (user: User) => ({ id: user.id, email: '', nickname: 'Owner' }),
     publishSession: () => {}, writeMirror: async () => {}, clearMirror: async () => {},
+    loadPersistedSession: async () => {},
     getPersistedSessionState: () => ({ bootCandidate: null, warning: null }),
     commitPersistedSession: async () => {}, clearPersistedSession: async () => {},
     subscribeAppForeground: () => () => {},

@@ -1,4 +1,4 @@
-import { spawnOwnedChild } from '@gugu/session-core/exec';
+import { spawnOwnedChild, type OwnedChild } from '@gugu/session-core/exec';
 import type { InstallProgressReport } from '@gugu/session-core/deps';
 
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]/g;
@@ -47,6 +47,15 @@ export function miseProgress(line: string, elapsedMs: number): InstallProgressRe
   };
 }
 
+/**
+ * 正在跑的 mise(各自一个进程组,`detached`):实例被信号停掉时主进程直接退出,组不会跟着走 —— 由 main.ts 的原生腿回收
+ * 同步收掉,❌ 留成孤儿(首启的 `mise install` 没有时限,还占着从主进程继承来的调试端口)。
+ */
+const running = new Set<OwnedChild>();
+export function killAllMiseProcessesSync(): void {
+  for (const owned of running) owned.kill('SIGKILL');
+}
+
 /** Direct process execution; cancellation waits for the owned process tree to terminate. */
 export function runMiseProcess(command: string, args: string[], options: {
   cwd: string;
@@ -61,6 +70,7 @@ export function runMiseProcess(command: string, args: string[], options: {
       onError: (error) => { options.signal?.removeEventListener('abort', abort); reject(error); },
     });
     const child = owned.child;
+    running.add(owned);
     let stdout = '';
     let stderr = '';
     let pendingLine = '';
@@ -81,6 +91,7 @@ export function runMiseProcess(command: string, args: string[], options: {
       for (const line of lines) options.onOutput?.(line);
     });
     child.once('close', (code) => {
+      running.delete(owned);
       options.signal?.removeEventListener('abort', abort);
       if (pendingLine) options.onOutput?.(pendingLine);
       void (async () => {

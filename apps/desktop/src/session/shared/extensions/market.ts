@@ -132,10 +132,14 @@ export const FEATURED_COUNT = 3;
 /** 下载站上 `market/` 根里的一个文件:相对路径,❌ `..`、❌ 绝对地址 —— 只能落在 market 根下面。 */
 const marketPath = z.string().regex(/^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]*$/);
 
+/** A version's signed release on the download site (`market/releases/<id>/<version>-<sha>/`), as the index names it. */
+const marketReleaseRefSchema = z.object({ keyId: z.string(), manifest: marketPath, signature: marketPath });
+export type MarketReleaseRef = z.infer<typeof marketReleaseRefSchema>;
+
 /**
  * 下载站上的 `market/index.json`:市场的全部内容,一个文件(App 市场 10-08,owner:市场不放数据库)。
  *
- * 真相在 GitHub 索引仓 shuxueshuxue/gugu-apps(每个 App 一个 json:哪一版、哪个仓 @ 提交 @ 目录、sha256、
+ * 真相在 GitHub 索引仓 GUYI-AI/gugu-apps(`GUGU_APPS_REPO`;每个 App 一个 json:哪一版、哪个仓 @ 提交 @ 目录、sha256、
  * 撤回 / 停维 / 下架)。那边的 CI 照提交重新打包、核过 sha256,合并后把包、产品页内容、图标和这份目录同步到下载站;
  * 下架的 App 不在这份目录里。客户端只读下载站,❌ 直连 GitHub。
  */
@@ -163,6 +167,12 @@ export const marketIndexSchema = z.object({
           bundle: marketPath,
           icon: marketPath.nullable(),
           source: z.object({ repo: z.string(), path: z.string(), commit: z.string() }),
+          /**
+           * A compiled release (#1931): where the download site keeps its signed manifest and signature, and the key it is
+           * signed with. Only versions published from the index repository's `releases/<id>/<version>/` have it; the client
+           * checks it for the Apps its trust table names (market-release.ts) and leaves it unread for the others.
+           */
+          release: marketReleaseRefSchema.optional(),
           yanked: z.object({ reason: z.string() }).nullable(),
         })
       ),
@@ -223,6 +233,41 @@ export interface MarketCodeSource {
   /** 相对仓根的目录;`.` 是仓根本身。 */
   path: string;
   commit: string;
+}
+
+/**
+ * #1931 A compiled release's proof as an install keeps it: the signed manifest and its Ed25519 signature exactly as they were
+ * verified (base64), and the key they were verified with. Read again (market-release.ts) whenever the host decides whether to
+ * believe the installed App.
+ */
+export interface MarketReleaseProof {
+  keyId: string;
+  /** The raw `release.json` bytes, base64. */
+  manifest: string;
+  /** The 64-byte signature over them, base64. */
+  signature: string;
+}
+
+/** What a market install records about where its bytes came from: the index row's source, and its verified release if it had one. */
+export type MarketInstallRecord = MarketCodeSource & { release?: MarketReleaseProof };
+
+/** The market's own repository, where gugu's own Apps' code lives. It moved here from `shuxueshuxue/gugu-apps`. */
+export const GUGU_APPS_REPO = 'GUYI-AI/gugu-apps';
+/**
+ * The same repository under its name before the move (GitHub redirects it). The index's CI still records this name for
+ * every App it builds from `sources/` — the first-run Apps among them — and a published version never changes, so these
+ * stay valid. Compiled releases (`release.keyId`) are recorded under the current name.
+ */
+export const GUGU_APPS_REPO_FORMER_NAME = 'shuxueshuxue/gugu-apps';
+
+/**
+ * Whether a market version's code is in gugu's own market repository, under either of its names: gugu's own App, reviewed
+ * and published by gugu. The index's CI rebuilt the published bytes from that repository's commit, so this is a fact about
+ * the code, not something the index entry merely says. The one check for "the official market source" — the first-run set
+ * and the assistant's product rules (#1931) both ask it.
+ */
+export function isOfficialMarketSource(source: Pick<MarketCodeSource, 'repo'>): boolean {
+  return source.repo === GUGU_APPS_REPO || source.repo === GUGU_APPS_REPO_FORMER_NAME;
 }
 
 /** 来源的人话:`owner/name @ 提交前 7 位`,目录不是仓根时带上目录。 */

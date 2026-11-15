@@ -27,6 +27,14 @@ describe('group invitation owner consent', () => {
     expect(decideGroupInvitation).toHaveBeenCalledWith('invite-1', true)
     expect(refreshRequests).toHaveBeenCalledOnce()
   })
+  it('shows the inviter\'s own note, not the one written for them when they gave none', async () => {
+    await renderWithAppProviders(harness, createNode(GroupInvitationsPanel), {
+      contacts: { groupInvitations: [invitation, { ...invitation, id: 'invite-2', message: '邀请你加入群聊「论文评审」。' }] },
+    })
+    const rows = harness.container.querySelectorAll('[data-testid="group-invitation"]')
+    expect(rows[0]!.textContent).toContain('请来讨论实验结果')
+    expect(rows[1]!.querySelector('p')).toBeNull()
+  })
   it('keeps the invitation and displays an acceptance failure', async () => {
     vi.mocked(decideGroupInvitation).mockRejectedValueOnce(new Error('Group member limit reached'))
     const refreshRequests = vi.fn(async () => {})

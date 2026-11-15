@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import { listGroupInvitations, type GroupInvitation } from '../lib/groupInvitations'
 import { rendererLogger } from '../lib/log'
 import { contactsService } from '../lib/contacts'
@@ -7,7 +7,7 @@ import { isLifecycleCancellation } from '../lib/authBoundedFetch'
 import { useAuth } from './auth'
 import { useChatStore } from './chatContext'
 import { UI_EVENTS } from '../lib/uiEvents'
-import { ContactsContext, type ContactsLoadStatus } from './contactsContext'
+import { ContactsContext, ContactsHandleContext, type ContactsHandle, type ContactsLoadStatus } from './contactsContext'
 import type { ContactGroup, ContactUser, FriendRequest } from '@gugu/core/shared/types/contacts'
 import { platform } from '../platform'
 import { readRequiredDisplayIdentities } from '../lib/identityReadAdapter'
@@ -168,13 +168,11 @@ export function ContactsProvider({ children, active = true }: { children: React.
     }
   }, [getImRepository, userId])
 
-  const groupChatsRef = useRef(groupChats)
-  groupChatsRef.current = groupChats
   const loadGroupJoinRequests = useCallback(async (options: RevisionRefreshOptions = {}) => {
     if (!userId) return
     const generation = ++groupJoinRequestsGenerationRef.current
     try {
-      const rows = await listManagedGroupJoinRequests(managedGroupChats(groupChatsRef.current))
+      const rows = await listManagedGroupJoinRequests()
       if (generation !== groupJoinRequestsGenerationRef.current) return
       if (rows.length) await (await getImRepository()).putIdentities(await readRequiredDisplayIdentities(joinRequestIdentityIds(rows)))
       if (generation !== groupJoinRequestsGenerationRef.current) return
@@ -346,15 +344,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
     setGroups((current) => current.filter((group) => group.id !== groupId))
   }, [])
 
-  const updateGroupMembers = useCallback(async (groupId: string, contactIds: string[]) => {
-    await contactsService.updateContactGroupMembers(groupId, contactIds)
-    setGroups((current) => current.map((group) => (
-      group.id === groupId
-        ? { ...group, contactIds: [...new Set(contactIds)], updated_at: new Date().toISOString() }
-        : group
-    )))
-  }, [])
-
   const updateContactAlias = useCallback(
     async (contactId: string, alias: string) => {
       if (!userId) return
@@ -514,7 +503,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
       createGroup,
       renameGroup,
       deleteGroup,
-      updateGroupMembers,
       updateContactAlias,
       setAgentPublic,
       setAgentDesiredStatus,
@@ -531,8 +519,13 @@ export function ContactsProvider({ children, active = true }: { children: React.
     groupInvitations, groupJoinRequests, groupJoinRequestsError, requestsStatus, requestsError, loadingContacts,
     loadingGroups, contactsStatus, groupChatsStatus, isSearching, searchUsers, clearSearch, sendRequest, acceptRequest,
     rejectRequest, loadContacts, loadGroups, refreshAllRequests, loadGroupJoinRequests, createGroup, renameGroup,
-    deleteGroup, updateGroupMembers, updateContactAlias, setAgentPublic, setAgentDesiredStatus, renameAgent,
+    deleteGroup, updateContactAlias, setAgentPublic, setAgentDesiredStatus, renameAgent,
     updateAgentProfile, uploadAgentAvatar, setAgentLook, removeOwnedAgent, removeContact, getCommonGroupChats,
   ])
-  return <ContactsContext.Provider value={value}>{children}</ContactsContext.Provider>
+  const [listeners] = useState(() => new Set<() => void>())
+  const valueRef = useRef(value)
+  valueRef.current = value
+  const [handle] = useState<ContactsHandle>(() => ({ get: () => valueRef.current, subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } } }))
+  useLayoutEffect(() => { for (const listener of [...listeners]) listener() }, [listeners, value])
+  return <ContactsHandleContext.Provider value={handle}><ContactsContext.Provider value={value}>{children}</ContactsContext.Provider></ContactsHandleContext.Provider>
 }

@@ -6,6 +6,7 @@ import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { DEFAULT_SESSION_VIEW } from '@shared/core/sessions/new-session-defaults';
 import {
   GUGU_PERMISSION_MODES,
+  NEW_SESSION_PERMISSION_MODE,
   type GuguPermissionMode,
 } from '@gugu/session-core/acp';
 import {
@@ -418,7 +419,7 @@ async function createSessionSteps(
   }
   // 桌面 composer 的默认档由它的状态 hook 定(上次用过的 / 该面的默认);手机不给就按「可改文件」——
   // 与 permissionModeFromAutoApprove(false) 同一个答案:那是「改之前问我」,不是只读。
-  const permissionMode: GuguPermissionMode = request.permissionMode ?? 'edit';
+  const permissionMode: GuguPermissionMode = request.permissionMode ?? NEW_SESSION_PERMISSION_MODE;
 
   /*
    * 这台机器上还没装这家:当场装上再往下走(#6264 product spec 第 6 条 —— 刚装好的咕咕 server
@@ -470,6 +471,7 @@ async function createSessionSteps(
 
 
   // 派任务(gugu-dev#181):第一句是一条真的咕咕消息(那张卡),要稳定 id —— 与桌面 use-create-session-callback 同。
+  // 不派任务时首句用发起方铸的 id(#2296):手机画的乐观首句与待发行、原生消息是同一个身份。
   const taskChatId = request.taskChatId?.trim() || undefined;
   const taskMessageId = taskChatId ? randomUUID() : undefined;
   const sessionId = randomUUID();
@@ -488,7 +490,7 @@ async function createSessionSteps(
       startupOrigin: 'session-page',
     }),
     ...(runtime === 'acp' ? { initialQueue: [{ text: prompt, origin: 'manual' as const }] } : { initialPrompt: prompt }),
-    ...(taskChatId ? { taskChatId, initialMessageId: taskMessageId } : {}),
+    ...(taskChatId ? { taskChatId, initialMessageId: taskMessageId } : request.initialMessageId ? { initialMessageId: request.initialMessageId } : {}),
   };
   const params: CreateSessionParams = {
     projectId: projectId,

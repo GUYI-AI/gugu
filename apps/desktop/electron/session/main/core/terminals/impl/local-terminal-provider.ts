@@ -175,9 +175,15 @@ export class LocalTerminalProvider implements TerminalProvider {
           tmuxEnabled,
           tmuxSessionName: tmuxEnabled ? makeTmuxSessionName(ptySessionId) : undefined,
         };
+    const childEnv = {
+      ...buildTerminalEnv({ shellProfile }),
+      ...(await getTerminalColorEnv()),
+      ...this.sessionEnvVars,
+    };
     const resolved = resolveLocalPtySpawn({
       platform: process.platform,
       env: process.env,
+      childEnv,
       intent,
     });
 
@@ -191,12 +197,7 @@ export class LocalTerminalProvider implements TerminalProvider {
       command: resolved.command,
       args: resolved.args,
       cwd: resolved.cwd,
-      env: {
-        ...buildTerminalEnv({ shellProfile }),
-        ...(await getTerminalColorEnv()),
-        ...this.sessionEnvVars,
-        ...resolved.env,
-      },
+      env: { ...childEnv, ...resolved.env },
       cols: initialSize.cols,
       rows: initialSize.rows,
     });

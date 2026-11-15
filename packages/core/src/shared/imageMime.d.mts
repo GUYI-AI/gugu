@@ -1,3 +1,4 @@
+export declare function extensionOf(fileName: string | null | undefined): string
 export declare function normalizeMimeType(mimeType: string | null | undefined): string
 export declare function mimeTypeFromName(fileName: string | null | undefined): string | null
 export declare function extensionFromMimeType(mimeType: string | null | undefined): string | null

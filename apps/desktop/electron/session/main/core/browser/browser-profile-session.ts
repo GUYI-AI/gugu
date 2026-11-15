@@ -1,6 +1,7 @@
 import { app, session, type Session } from 'electron';
 import { log } from '@main/lib/logger';
 import { setupBrowserPreviewProtocol } from '@main/core/files/preview-protocol';
+import { applyEmbeddedPagePermissions } from '@main/core/shared/embedded-page-permissions';
 import type { AppSettings } from '@shared/core/app-settings';
 import {
   applyLocalDevelopmentCorsRelaxation,
@@ -14,15 +15,6 @@ import {
   isGoogleAuthUrl,
   stripEmbeddedBrowserTokens,
 } from './browser-user-agent';
-
-// Web permissions the embedded browser may use without asking. Everything else
-// (camera, microphone, geolocation, notifications, USB/HID/serial, …) is denied:
-// the in-app browser holds logged-in sessions and must not become a side channel
-// into device capabilities (Electron security checklist #5).
-const ALLOWED_BROWSER_PERMISSIONS: ReadonlySet<string> = new Set([
-  'clipboard-sanitized-write',
-  'fullscreen',
-]);
 
 const configuredPartitions = new Set<string>();
 let relaxCorsForLocalDevelopment = false;
@@ -88,15 +80,10 @@ export function configureBrowserProfileSession(partition: string): Session {
     corsRequests.delete(details.id);
   });
 
-  ses.setPermissionRequestHandler((_webContents, permission, callback) => {
-    const granted = ALLOWED_BROWSER_PERMISSIONS.has(permission);
-    if (!granted) {
-      log.debug('Denied browser permission request', { permission });
-    }
-    callback(granted);
-  });
-  ses.setPermissionCheckHandler((_webContents, permission) =>
-    ALLOWED_BROWSER_PERMISSIONS.has(permission)
+  // The in-app browser holds logged-in sessions: it must not become a side
+  // channel into device capabilities.
+  applyEmbeddedPagePermissions(ses, (permission) =>
+    log.debug('Denied browser permission request', { permission })
   );
 
   return ses;

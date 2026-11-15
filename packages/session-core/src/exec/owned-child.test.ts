@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawnOwnedChild } from './owned-child';
 import { planDirectSpawn } from './windows-launcher';
@@ -44,6 +45,47 @@ describe('planDirectSpawn: the shell exists only when the shim cannot be replace
     });
     expect(plan.command).toBe('C:\\Windows\\system32\\cmd.exe');
     expect(plan.wrapsShell).toBe(true);
+  });
+
+  // Codex 对话模式的桥读模型目录也走这里;旧写法 `shell: true` 不给路径加引号,在空格处切开。
+  const SPACED_HOME = 'D:\\测试 目录\\gugu-home';
+  const SPACED_SHIM = `${SPACED_HOME}\\bin\\codex.cmd`;
+
+  it('a launcher under a path with a space and Chinese characters spawns its exe, path intact', () => {
+    const exe = `${SPACED_HOME}\\mise\\data\\installs\\codex\\0.167.0\\codex.exe`;
+    const plan = planDirectSpawn(SPACED_SHIM, ['debug', 'models', '--bundled'], {
+      platform: 'win32',
+      readShim: () => '@echo off\r\nrem gugu-release: 0.167.0\r\n"%~dp0..\\mise\\data\\installs\\codex\\0.167.0\\codex.exe" %*\r\n',
+      exists: (candidate) => path.win32.normalize(candidate) === exe,
+    });
+    expect({ ...plan, command: path.win32.normalize(plan.command) }).toEqual({ command: exe, args: ['debug', 'models', '--bundled'], spawnOverrides: {}, wrapsShell: false });
+  });
+
+  it('a wrapper under that path that sets CODEX_HOME spawns its exe and carries the setting', () => {
+    const exe = 'D:\\tools\\codex\\codex.exe';
+    const plan = planDirectSpawn(SPACED_SHIM, ['debug', 'models', '--bundled'], {
+      platform: 'win32',
+      env: { Path: 'C:\\Windows' },
+      readShim: () => `@echo off\r\nset "CODEX_HOME=${SPACED_HOME}\\codex"\r\n"${exe}" %*\r\n`,
+      exists: (candidate) => candidate === exe,
+    });
+    expect(plan.command).toBe(exe);
+    expect(plan.wrapsShell).toBe(false);
+    expect(plan.env).toEqual({ Path: 'C:\\Windows', CODEX_HOME: `${SPACED_HOME}\\codex` });
+  });
+
+  it('a cmd-only launcher under that path keeps the path one token: the space is escaped for cmd', () => {
+    const plan = planDirectSpawn(SPACED_SHIM, ['debug', 'models', '--bundled'], {
+      platform: 'win32',
+      env: { ComSpec: 'C:\\Windows\\system32\\cmd.exe' },
+      readShim: () => '@ECHO off\r\nnode "%dp0%\\node_modules\\x\\cli.js" %*\r\n',
+      exists: () => true,
+    });
+    expect(plan.spawnOverrides).toEqual({ windowsVerbatimArguments: true });
+    expect(plan.args).toEqual([
+      '/d', '/s', '/c',
+      '"D:\\测试^ 目录\\gugu-home\\bin\\codex.cmd ^^^"debug^^^" ^^^"models^^^" ^^^"--bundled^^^""',
+    ]);
   });
 });
 

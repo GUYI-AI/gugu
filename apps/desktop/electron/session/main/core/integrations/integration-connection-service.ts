@@ -11,11 +11,14 @@ import { shell } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { cliMethodOf, publishCliLauncher, removeCliLauncher } from './cli/cli-integrations';
-import { outputTail, readCliLoginStatus, startCliLogin, type CliLoginRun } from './cli/cli-login';
+import { readCliLoginStatus, startCliLogin, type CliLoginRun } from './cli/cli-login';
+import { cliFailureMessage } from './cli/cli-errors';
 import { cliToolsRoot } from './cli/cli-paths';
 import { startFeishuLogin, verifyFeishuLogin, setFeishuUserIdentity } from './cli/feishu-login';
 import { cliInstallProgress, ensureCliTool, installedCliTool, isCliToolInstalled, isCliToolInstalling, type InstalledCliTool } from './cli/cli-tool-installer';
 import { cliToolRecipe, type CliLoginPrompt, type CliToolRecipe } from './cli/cli-tools';
+import { removeCliCredentials } from './cli/cli-credentials';
+import { cliToolSupportsHost } from '@shared/integration-cli-platform';
 import {
   DEFAULT_INTEGRATION_ACCOUNT_ID,
   type IntegrationAccountRecord,
@@ -27,19 +30,23 @@ import {
   refreshMcpCredentials,
 } from './mcp-oauth-flow';
 import { platformCredentials } from './platform-credentials-instance';
+import { SecureStorageUnavailableError } from '@main/core/secrets/secure-storage-unavailable';
+
+/** 改了服务器 / 地址、授权码却留空:要重新填(界面按 `secret_required` 说,❌ 当成格式不对)。 */
+class SecretRequiredError extends Error {}
 
 type ConnectResult =
-  | { success: true; displayName?: string; displayDetail?: string }
+  | { success: true; accountId?: string; displayName?: string; displayDetail?: string }
   | { success: false; error: string; errorType?: IntegrationError['type'] };
 
 export type CliLoginStartResult =
   | { success: true; prompt: CliLoginPrompt }
-  | { success: true; connected: true }
+  | { success: true; connected: true; accountId?: string }
   | { success: false; error: string };
 
 export type CliLoginWaitResult =
   | { status: 'pending'; prompt?: CliLoginPrompt }
-  | { status: 'connected' }
+  | { status: 'connected'; accountId?: string }
   | { status: 'failed'; error: string };
 
 /** `cliToolPrepare` 一问的回答:装好了、还在装(进度看 `cliLoginProgress`)、或装失败(原话)。 */
@@ -49,6 +56,7 @@ export type CliToolPrepareResult =
   | { status: 'failed'; error: string };
 
 type PendingCliLogin = {
+  includeAccountId: boolean;
   recipe: CliToolRecipe;
   installed: InstalledCliTool;
   run: CliLoginRun;
@@ -90,7 +98,7 @@ function mcpOAuthServerUrl(integrationId: string): string | null {
 
 export class IntegrationConnectionService {
   private readonly pendingAuthorizations = new Map<string, AbortController>();
-  private readonly pendingRefreshes = new Map<string, Promise<IntegrationAccountRecord>>();
+  private readonly pendingRefreshes = new Map<string, Promise<IntegrationAccountRecord | null>>();
   private readonly cliLogins = new Map<string, PendingCliLogin>();
   /** 正在装 / 正在起登录的那一次连接的号(见 cliLoginStart)。 */
   private readonly cliStarts = new Map<string, symbol>();
@@ -139,10 +147,10 @@ export class IntegrationConnectionService {
   }
 
   /** Browser authorization for `mcp-oauth` integrations; resolves once the account is stored. */
-  async authorize(integrationId: string): Promise<ConnectResult> {
+  async authorize(integrationId: string, includeAccountId = false): Promise<ConnectResult> {
     const acquired = await this.acquireAuthorization(integrationId);
     if (!acquired.success) return acquired;
-    return this.connect(integrationId, acquired.credentials);
+    return this.connect(integrationId, acquired.credentials, undefined, includeAccountId);
   }
 
   /**
@@ -234,7 +242,10 @@ export class IntegrationConnectionService {
     const plugin = integrationPluginRegistry.get(integrationId);
     const method = cliMethodOf(integrationId);
     if (!plugin || !method) {
-      return { status: 'failed', error: `${plugin?.metadata.name ?? integrationId} does not connect through a command-line tool.` };
+      return { status: 'failed', error: '这个应用不使用命令行连接。' };
+    }
+    if (!cliToolSupportsHost(method.tool, { platform: process.platform, arch: process.arch })) {
+      return { status: 'failed', error: '这个集成尚未在这台设备上实现，请选择其他设备。' };
     }
     if (isCliToolInstalled(method.tool)) return { status: 'ready' };
     // 上一次在后台装失败了、还没人来取:先把失败交出去(❌ 悄悄再装一遍,让界面永远停在「还在装」)。
@@ -251,7 +262,7 @@ export class IntegrationConnectionService {
         () => this.cliInstallFailures.delete(method.tool),
         (error: unknown) => {
           log.warn('Integration command-line tool could not be installed', { integrationId, error });
-          this.cliInstallFailures.set(method.tool, error instanceof Error ? error.message : String(error));
+          this.cliInstallFailures.set(method.tool, cliFailureMessage(error, 'install'));
         }
       );
     }
@@ -261,23 +272,26 @@ export class IntegrationConnectionService {
       new Promise<'installing'>((resolve) => (timer = setTimeout(() => resolve('installing'), CLI_LOGIN_WAIT_SLICE_MS))),
     ]).finally(() => clearTimeout(timer));
     if (outcome !== 'failed') return { status: outcome };
-    const error = this.cliInstallFailures.get(method.tool) ?? 'The command-line tool could not be installed.';
+    const error = this.cliInstallFailures.get(method.tool) ?? '集成工具安装失败，请重试。';
     this.cliInstallFailures.delete(method.tool);
     return { status: 'failed', error };
   }
 
-  async cliLoginStart(integrationId: string): Promise<CliLoginStartResult> {
+  async cliLoginStart(integrationId: string, includeAccountId = false): Promise<CliLoginStartResult> {
     const plugin = integrationPluginRegistry.get(integrationId);
     const method = cliMethodOf(integrationId);
     if (!plugin || !method) {
-      return { success: false, error: `${plugin?.metadata.name ?? integrationId} does not connect through a command-line tool.` };
+      return { success: false, error: '这个应用不使用命令行连接。' };
+    }
+    if (!cliToolSupportsHost(method.tool, { platform: process.platform, arch: process.arch })) {
+      return { success: false, error: '这个集成尚未在这台设备上实现，请选择其他设备。' };
     }
     this.cancelAuthorization(integrationId);
     const attempt = Symbol(integrationId);
     this.cliStarts.set(integrationId, attempt);
     this.startAuthorizationActivity(attempt);
     const current = () => this.cliStarts.get(integrationId) === attempt;
-    const superseded = { success: false as const, error: 'This connection attempt was cancelled.' };
+    const superseded = { success: false as const, error: '本次连接已取消。' };
     const recipe = cliToolRecipe(method.tool);
     let entry: PendingCliLogin | undefined;
     try {
@@ -292,15 +306,15 @@ export class IntegrationConnectionService {
         // 只改咕咕专属配置；后续默认以用户身份操作。
         await setFeishuUserIdentity(installed);
         if (!current()) return superseded;
-        const connected = await this.connect(integrationId, { tool: recipe.tool, connectedAt: Date.now() });
-        if (!connected.success) return connected;
+        const connected = await this.connect(integrationId, { tool: recipe.tool, connectedAt: Date.now() }, undefined, includeAccountId);
+        if (!connected.success) return { success: false, error: cliFailureMessage(connected.error, 'verify') };
         try {
           await publishCliLauncher(recipe, installed);
         } catch (error) {
           await integrationCredentialStore.delete(integrationId);
           throw error;
         }
-        return { success: true, connected: true };
+        return { success: true, connected: true, ...(includeAccountId ? { accountId: connected.accountId } : {}) };
       }
       // 每一次登录一个自己的工作目录(企业微信的二维码就写在这里),结束就删。
       await fs.mkdir(path.join(cliToolsRoot(), method.tool), { recursive: true });
@@ -313,7 +327,7 @@ export class IntegrationConnectionService {
       const run = method.tool === 'lark-cli' ? startFeishuLogin(installed, work) : startCliLogin(recipe, installed, work);
       void run.done.then(() => fs.rm(work, { recursive: true, force: true }));
       void run.done.then(() => this.stopAuthorizationActivity(attempt));
-      entry = { recipe, installed, run, activityToken: attempt };
+      entry = { recipe, installed, run, activityToken: attempt, includeAccountId };
       this.cliLogins.set(integrationId, entry);
       const prompt = await run.prompt;
       if (!current() || this.cliLogins.get(integrationId) !== entry) {
@@ -328,7 +342,7 @@ export class IntegrationConnectionService {
         entry.run.cancel();
         if (this.cliLogins.get(integrationId) === entry) this.cliLogins.delete(integrationId);
       }
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
+      return { success: false, error: cliFailureMessage(error, 'login') };
     } finally {
       if (this.cliStarts.get(integrationId) === attempt) this.cliStarts.delete(integrationId);
       if (!entry) this.stopAuthorizationActivity(attempt);
@@ -338,7 +352,7 @@ export class IntegrationConnectionService {
   /** 第二半:登录进程结束了没有;结束了就问工具「登上了吗」,登上了才记成已连接、把命令放上 agent 的 PATH。 */
   async cliLoginWait(integrationId: string): Promise<CliLoginWaitResult> {
     const pending = this.cliLogins.get(integrationId);
-    if (!pending) return { status: 'failed', error: 'No login is in progress. Start again.' };
+    if (!pending) return { status: 'failed', error: '没有正在进行的授权，请重新连接。' };
     pending.result ??= this.finishCliLogin(integrationId, pending);
     let timer: NodeJS.Timeout | undefined;
     const result = await Promise.race([
@@ -356,35 +370,36 @@ export class IntegrationConnectionService {
   ): Promise<Exclude<CliLoginWaitResult, { status: 'pending' }>> {
     const { recipe, installed, run } = pending;
     const outcome = await run.done;
-    if (outcome.kind === 'cancelled') return { status: 'failed', error: 'Login was cancelled.' };
+    if (outcome.kind === 'cancelled') return { status: 'failed', error: '授权已取消。' };
     if (outcome.kind === 'timed-out') {
-      return { status: 'failed', error: 'The login expired before it was confirmed. Start again.' };
+      return { status: 'failed', error: '授权已过期，请重新连接。' };
     }
     if (outcome.code !== 0) {
-      return { status: 'failed', error: outputTail(outcome.output) || `${recipe.bin} login exited with ${outcome.code}.` };
+      log.warn('Integration command-line login exited before authorization', { integrationId, code: outcome.code });
+      return { status: 'failed', error: cliFailureMessage(outcome.output, 'login') };
     }
     try {
       if (!(await readCliLoginStatus(recipe, installed))) {
-        return { status: 'failed', error: `${recipe.bin} finished, but says it is not logged in.` };
+        return { status: 'failed', error: '尚未完成授权，请重新连接。' };
       }
       if (recipe.tool === 'lark-cli' && !(await verifyFeishuLogin(installed))) {
-        return { status: 'failed', error: 'Feishu could not verify your personal account. Connect again.' };
+        return { status: 'failed', error: '飞书未能确认个人账号的授权，请重新连接。' };
       }
       // 网络验证期间也可能取消或重试，旧的一次不能再记成已连接。
-      if (this.cliLogins.get(integrationId) !== pending) return { status: 'failed', error: 'Login was cancelled.' };
+      if (this.cliLogins.get(integrationId) !== pending) return { status: 'failed', error: '授权已取消。' };
       // 先记连接、再放命令:「agent 的 PATH 上有它」必须意味着「记着连着」。放命令失败就撤回记录。
-      const connected = await this.connect(integrationId, { tool: recipe.tool, connectedAt: Date.now() });
-      if (!connected.success) return { status: 'failed', error: connected.error };
+      const connected = await this.connect(integrationId, { tool: recipe.tool, connectedAt: Date.now() }, undefined, pending.includeAccountId);
+      if (!connected.success) return { status: 'failed', error: cliFailureMessage(connected.error, 'verify') };
       try {
         await publishCliLauncher(recipe, installed);
       } catch (error) {
         await integrationCredentialStore.delete(integrationId);
         throw error;
       }
-      return { status: 'connected' };
+      return { status: 'connected', ...(pending.includeAccountId ? { accountId: connected.accountId } : {}) };
     } catch (error) {
       log.warn('Integration command-line login could not finish', { integrationId, error });
-      return { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+      return { status: 'failed', error: cliFailureMessage(error, 'verify') };
     }
   }
 
@@ -411,7 +426,12 @@ export class IntegrationConnectionService {
     const refresh = (async () => {
       const refreshed = await refreshMcpCredentials(parsed.data);
       const next = { ...account, credentials: toIntegrationCredentials(refreshed) };
-      await integrationCredentialStore.upsertAccount(integrationId, next);
+      // The person may have disconnected or authorized again while this was on the
+      // network: their change wins. The caller gets what is stored now (nothing after a
+      // disconnect, the new authorization after a reauthorization), never the stale grant.
+      if (!(await integrationCredentialStore.compareAndSwapAccount(integrationId, account, next.credentials))) {
+        return integrationCredentialStore.getAccount(integrationId, account.accountId);
+      }
       return next;
     })().finally(() => this.pendingRefreshes.delete(key));
     this.pendingRefreshes.set(key, refresh);
@@ -422,7 +442,8 @@ export class IntegrationConnectionService {
     integrationId: string,
     input: IntegrationCredentials,
     /** #7240「编辑凭据」:改的是哪个已存账号。表单里留空的保密项(授权码)沿用它存着的那一份。 */
-    editAccountId?: string
+    editAccountId?: string,
+    includeAccountId = false
   ): Promise<ConnectResult> {
     const plugin = integrationPluginRegistry.get(integrationId);
     if (!plugin) return { success: false, error: `Unknown integration: ${integrationId}` };
@@ -430,14 +451,18 @@ export class IntegrationConnectionService {
     // 只有这个安装压根没有这项平台服务时(`keepHere`),才照下面的老路存在这台电脑上。
     if (platformCredentials.isPlatformProvider(integrationId)) {
       const kept = await platformCredentials.connect(integrationId, input, { editing: !!editAccountId });
-      if (!('keepHere' in kept)) return kept;
+      if (!('keepHere' in kept)) return kept.success && includeAccountId ? { ...kept, accountId: DEFAULT_INTEGRATION_ACCOUNT_ID } : kept;
     }
     let credentials = input;
     if (editAccountId) {
       try {
         credentials = await this.withSavedSecrets(integrationId, input, editAccountId);
       } catch (error) {
-        return { success: false, error: (error as Error).message, errorType: 'invalid_input' };
+        return {
+          success: false,
+          error: (error as Error).message,
+          errorType: error instanceof SecretRequiredError ? 'secret_required' : 'invalid_input',
+        };
       }
     }
 
@@ -453,11 +478,17 @@ export class IntegrationConnectionService {
     const accountId = result.account
       ? `${result.account.host ?? integrationId}:${result.account.id}`
       : DEFAULT_INTEGRATION_ACCOUNT_ID;
-    await integrationCredentialStore.upsertAccount(integrationId, {
-      accountId,
-      ...(result.displayName ? { displayName: result.displayName } : {}),
-      credentials: result.credentials ?? credentials,
-    });
+    try {
+      await integrationCredentialStore.upsertAccount(integrationId, {
+        accountId,
+        ...(result.displayName ? { displayName: result.displayName } : {}),
+        credentials: result.credentials ?? credentials,
+      });
+    } catch (error) {
+      // 没有系统钥匙串:说成界面语言的一句话、告诉他怎么办,❌ 把 IPC 的英文原话甩给他。
+      if (!(error instanceof SecureStorageUnavailableError)) throw error;
+      return { success: false, error: error.message, errorType: 'secure_storage_unavailable' };
+    }
     // 编辑时改了服务器:新的那份已存好,旧的那份是同一个邮箱的过时记录,删掉 ——
     // ❌ 留着两条同一地址的账号(agent 点名用它时会挑到旧的那条)。
     if (editAccountId && editAccountId !== accountId) {
@@ -466,6 +497,7 @@ export class IntegrationConnectionService {
 
     return {
       success: true,
+      ...(includeAccountId ? { accountId } : {}),
       displayName: result.displayName,
       displayDetail: result.displayDetail,
     };
@@ -487,7 +519,7 @@ export class IntegrationConnectionService {
     );
     const blankSecret = fields.some((field) => field.secret && (typeof input[field.id] !== 'string' || !String(input[field.id]).trim()));
     if (changed.length > 0 && blankSecret) {
-      throw new Error(`${changed.map((field) => field.id).join(', ')} changed: enter the authorization code again.`);
+      throw new SecretRequiredError(`${changed.map((field) => field.id).join(', ')} changed: enter the authorization code again.`);
     }
     for (const field of fields) {
       const given = input[field.id];
@@ -544,13 +576,33 @@ export class IntegrationConnectionService {
     );
   }
 
+  /** Admitted owner device effect. Never dispatches to platform revocation. */
+  async disconnectLocalAccount(integrationId: string, accountId: string): Promise<void> {
+    const method = cliMethodOf(integrationId);
+    if (method) {
+      if (accountId !== DEFAULT_INTEGRATION_ACCOUNT_ID) throw Object.assign(new Error('CONNECTION_ACCOUNT_MISMATCH'),{ code: 'CONNECTION_ACCOUNT_MISMATCH',knownNoEffect: true });
+      // CLI login state and the agent launcher belong to this installation.
+      // Leaving either behind would keep the removed credential usable.
+      const pending = this.cliLogins.get(integrationId)?.run;
+      this.cancelAuthorization(integrationId);
+      await pending?.done;
+      await removeCliLauncher(cliToolRecipe(method.tool));
+      await removeCliCredentials(method.tool);
+    }
+    if (integrationId === 'github') {
+      const { githubAccountService } = await import('../github/accounts/github-account-service-instance');
+      await githubAccountService.removeAccount(accountId);
+    } else await integrationCredentialStore.delete(integrationId, accountId);
+  }
+
   async disconnect(integrationId: string, accountId?: string): Promise<{ success: boolean; error?: string; errorType?: IntegrationError['type'] }> {
     // #921 平台上删(一个人一份):所有设备一起断。
     if (platformCredentials.custody(integrationId) === 'platform') return platformCredentials.disconnect(integrationId);
     if (accountId) {
       // #7240 多账号里断开一个:只删这一个(提示「只会断开 %s」)。
       try {
-        await integrationCredentialStore.delete(integrationId, accountId);
+        if (cliMethodOf(integrationId)) await this.disconnectLocalAccount(integrationId, accountId);
+        else await integrationCredentialStore.delete(integrationId, accountId);
         return { success: true };
       } catch (error) {
         log.error('Failed to disconnect integration account', { integrationId, accountId, error });
@@ -562,9 +614,11 @@ export class IntegrationConnectionService {
       // 断开 = 先把命令从 agent 的 PATH 上拿掉、删掉工具在咕咕里的登录态(装好的程序留着,重连不用再下),
       // 再删记录:哪一步失败,卡片都还在「已连接」、还能再点断开,并说出真实原因。
       try {
+        const pending = this.cliLogins.get(integrationId)?.run;
         this.cancelAuthorization(integrationId);
+        await pending?.done;
         await removeCliLauncher(cliToolRecipe(method.tool));
-        await fs.rm(installedCliTool(method.tool).homeDir, { recursive: true, force: true });
+        await removeCliCredentials(method.tool);
       } catch (error) {
         log.error('Failed to remove a command-line integration from this machine', { integrationId, error });
         return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -635,17 +689,16 @@ export class IntegrationConnectionService {
         if (!loggedIn) {
           return {
             connected: false,
-            error: `${recipe.bin} is not logged in any more.`,
+            error: '授权已失效，请重新连接。',
             errorType: 'authorization_expired',
             capabilities,
           };
         }
       }
-      if (result.credentials) {
-        await integrationCredentialStore.upsertAccount(integrationId, {
-          ...account,
-          credentials: result.credentials,
-        });
+      if (result.credentials
+        && !(await integrationCredentialStore.compareAndSwapAccount(integrationId, account, result.credentials))) {
+        // Disconnected or authorized again during the check: this result is about credentials that are gone.
+        return { connected: false, error: 'The connection changed during this check.', capabilities };
       }
       return {
         connected: true,

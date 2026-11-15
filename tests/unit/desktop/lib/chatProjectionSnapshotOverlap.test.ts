@@ -146,7 +146,8 @@ async function firstScreenAt800ms(prioritize: boolean) {
     for (let step = 0; step < 100 && firstAt === null; step += 1) await vi.advanceTimersByTimeAsync(100)
     expect(firstAt).not.toBeNull()
     return { firstAt: firstAt!, syncBeforePaint: syncAt.filter(at => at < firstAt!).length,
-      previewRequests: calls.filter(call => call.table === 'rpc:list_chat_previews').length }
+      previewRequests: calls.filter(call => call.table === 'rpc:list_chat_previews').length,
+      keysetReads: calls.filter(call => call.table === 'active_members' && !call.ids).length }
   } finally {
     coordinator.stop()
     await vi.advanceTimersByTimeAsync(2000)
@@ -158,8 +159,10 @@ async function firstScreenAt800ms(prioritize: boolean) {
 it('gives seven latest previews a stable first screen before 9000 queued revisions at 800ms RTT', async () => {
   const baseline = await firstScreenAt800ms(false)
   const prioritized = await firstScreenAt800ms(true)
-  expect(baseline).toEqual({ firstAt: 3200, syncBeforePaint: 4, previewRequests: 2 })
-  expect(prioritized).toEqual({ firstAt: 2400, syncBeforePaint: 0, previewRequests: 1 })
+  // Once the snapshot stands, a moved cursor reads only the conversation the journal names (one-key preview), never the
+  // keyset again: the unprioritized run used to start a second whole-account snapshot here.
+  expect(baseline).toEqual({ firstAt: 3200, syncBeforePaint: 4, previewRequests: 3, keysetReads: 1 })
+  expect(prioritized).toEqual({ firstAt: 2400, syncBeforePaint: 0, previewRequests: 1, keysetReads: 1 })
 })
 
 async function overlap(failNewer = false) {

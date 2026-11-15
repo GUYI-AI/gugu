@@ -146,7 +146,17 @@ vi.mock('@renderer/lib/acp/acp-live-session', async (importOriginal) => ({
 }));
 
 const toasts = vi.hoisted(() => [] as unknown[]);
-vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: (arg: unknown) => toasts.push(arg) }));
+const sendNotices = vi.hoisted(() => new Map<string | number, string>());
+vi.mock('sonner', () => {
+  let sequence = 0;
+  const show = (title: string, options?: { id?: string }) => {
+    const id = options?.id ?? ++sequence;
+    toasts.push({ title, ...options }); sendNotices.set(id, title); return id;
+  };
+  return { toast: Object.assign(show, { error: show, info: show, success: show, warning: show, dismiss: (id: string | number) => sendNotices.delete(id) }) };
+});
+vi.mock('@/lib/loading/LoadingIndicator', () => ({ LoadingIndicator: () => null }));
+vi.mock('@renderer/lib/hooks/use-toast', async () => ({ toast: (await import('@/lib/notices')).notify }));
 
 type StoredPage = { turns: TranscriptTurn[]; originTurnIds: string[]; nextCursor: number | null };
 const host = {
@@ -400,6 +410,7 @@ beforeEach(() => {
   attachment.wait = null; attachment.calls.mockClear();
   Object.assign(inputState(), { accountId: null, rows: NO_INPUTS, valid: () => false });
   toasts.length = 0;
+  sendNotices.clear();
   running.phases.clear();
   running.watchers.clear();
   running.failWith = null;
@@ -623,12 +634,9 @@ describe('#980 打开一条在跑的会话', () => {
 });
 
 describe('#980 照旧当场起的', () => {
-  it('新建会话带着第一句:打开就请宿主起,宿主说起好了才挂;不去问会话表', async () => {
+  it('持久分叉还没分出去:打开就请宿主起(分叉就发生在首启),宿主说起好了才挂;不去问会话表', async () => {
     create.mockImplementation(async () => liveSession());
-    const { store } = storeFor({
-      providerId: 'claude',
-      initialQueue: [{ text: '看看这个项目的启动流程', origin: 'manual' }],
-    });
+    const { store } = storeFor({ providerId: 'claude', forkFromProviderSessionId: 'prov-parent' });
 
     store.bootstrap();
 
@@ -640,6 +648,28 @@ describe('#980 照旧当场起的', () => {
     life.settle(store.sessionId, 'ready');
     await vi.waitFor(() => expect(store.session).not.toBeNull());
     expect(create).toHaveBeenCalledWith(store.sessionId);
+  });
+});
+
+describe('#2558 新建会话带着第一句', () => {
+  it('打开 ❌ 替它起:那句话建的时候已入队、入队把它起起来;页面停着画队首那句,它跑起来了才挂', async () => {
+    create.mockImplementation(async () => liveSession());
+    const { store } = storeFor({ providerId: 'claude', initialQueue: [{ text: '看看这个项目的启动流程', origin: 'manual' }] });
+
+    store.bootstrap();
+    await parked(store);
+    expect(life.start, '那次起不带那句话:附件还没放完时它先拿到引擎会话号,晚到的入队就会被读成跑过了').not.toHaveBeenCalled();
+
+    const first: PendingRow = { seq: 1, messageId: 'first', preview: '看看这个项目的启动流程', text: '看看这个项目的启动流程', kind: 'ordinary', sentAt: 5000, state: 'queued', failure: null };
+    life.pend(store.sessionId, 'starting', [first]);
+    await vi.waitFor(() => expect(store.chatState.session.state.pendingPrompt?.id).toBe('first'));
+    expect(store.chatState.session.state.pendingPrompt, '附件还在放、引擎还在起:那句话照样在页面上').toMatchObject({ text: '看看这个项目的启动流程', starting: 'starting' });
+    expect(store.isEmpty).toBe(false);
+
+    running.set(store.runtimeSessionId, 'running');
+    await vi.waitFor(() => expect(store.session).not.toBeNull());
+    expect(create).toHaveBeenCalledWith(store.sessionId);
+    expect(life.start).not.toHaveBeenCalled();
   });
 });
 
@@ -761,6 +791,22 @@ describe('the first message keeps one place while its session starts', () => {
     store.dispose();
   });
 
+  it('re-projecting the same session state (each streamed chunk does) leaves the failed inputs unchanged for readers', async () => {
+    const { store } = storeFor();
+    store.bootstrap();
+    await parked(store);
+    let changes = 0;
+    const stop = reaction(() => store.failedRowIds, () => { changes++; });
+    for (let chunk = 0; chunk < 5; chunk++) life.pend(store.sessionId, 'ready', []);
+    expect(changes, 'no failed input before or after: nothing to re-render').toBe(0);
+    life.pend(store.sessionId, 'failed', [row('queued')], 'start-failed');
+    life.pend(store.sessionId, 'failed', [row('queued')], 'start-failed');
+    expect(store.failedRowIds).toEqual(['m-first']);
+    expect(changes, 'one change when an input fails, none when the same failure is projected again').toBe(1);
+    stop();
+    store.dispose();
+  });
+
   it('does not append failed inputs ahead of a running turn and preserves it when projections leave', async () => {
     const { store } = storeFor();
     store.bootstrap();
@@ -807,7 +853,8 @@ describe('the first message keeps one place while its session starts', () => {
 
   it('reopening a session the person stopped does not start it: the stop holds until they continue', async () => {
     create.mockImplementation(async () => liveSession());
-    const { store } = storeFor({ providerId: 'claude', initialQueue: [{ text: '说一句你好', origin: 'manual' }] });
+    // A session the page itself starts on open (a persistent fork not yet forked): its stop still holds.
+    const { store } = storeFor({ providerId: 'claude', forkFromProviderSessionId: 'prov-parent' });
     life.pend(store.sessionId, 'dormant', [row('queued')], 'user-stop');
     store.bootstrap();
     await vi.waitFor(() => expect(store.stoppedRowId).toBe('m-first'));
@@ -896,7 +943,8 @@ describe('the first message keeps one place while its session starts', () => {
 describe('a start answered by session-life', () => {
   const startFresh = () => {
     create.mockImplementation(async () => liveSession());
-    return storeFor({ providerId: 'claude', initialQueue: [{ text: 'hello', origin: 'manual' }] }).store;
+    // A session the page itself starts on open: a persistent fork not yet forked (#2558: a new task is started by its queue).
+    return storeFor({ providerId: 'claude', forkFromProviderSessionId: 'prov-parent' }).store;
   };
 
   it('a typed ACP refusal becomes its load error (remedies), an untyped one keeps the stage message', async () => {
@@ -987,6 +1035,55 @@ describe('the parked page reads its failed state from session-life only', () => 
 });
 
 describe('composer send through submitPrompt', () => {
+  it('retires a successful retry only for its submission, while another task remains failed', async () => {
+    const first = storeFor().store, second = storeFor().store;
+    custody.mockRejectedValueOnce(new Error('first refused')).mockRejectedValueOnce(new Error('second refused'));
+    await expect(first.submitPrompt('same words', [], [], 'first-submission')).rejects.toThrow('first refused');
+    await expect(second.submitPrompt('same words', [], [], 'second-submission')).rejects.toThrow('second refused');
+    expect(sendNotices.size).toBe(2);
+    await first.submitPrompt('same words', [], [], 'first-submission');
+    expect([...sendNotices.values()]).toHaveLength(1);
+    second.dispose(); first.dispose();
+  });
+
+  it('a failed retry updates its notice; late earlier success cannot hide it', async () => {
+    const { store } = storeFor();
+    custody.mockRejectedValueOnce(new Error('first refused'));
+    await expect(store.submitPrompt('words', [], [], 'retry-submission')).rejects.toThrow('first refused');
+    let finish!: () => void;
+    custody.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    const old = store.submitPrompt('words', [], [], 'retry-submission');
+    custody.mockRejectedValueOnce(new Error('retry refused'));
+    await expect(store.submitPrompt('words', [], [], 'retry-submission')).rejects.toThrow('retry refused');
+    expect(sendNotices.size).toBe(1);
+    finish(); await old;
+    expect(sendNotices.size).toBe(1);
+    await store.submitPrompt('words', [], [], 'retry-submission');
+    expect(sendNotices.size).toBe(0);
+    store.dispose();
+  });
+
+  it('a new direct submission does not settle an earlier failure, including identical words', async () => {
+    const { store } = storeFor();
+    custody.mockRejectedValueOnce(new Error('first refused'));
+    await expect(store.submitPrompt('same words')).rejects.toThrow('first refused');
+    await store.submitPrompt('same words');
+    expect(sendNotices.size).toBe(1);
+    store.dispose();
+  });
+
+  it('a draft edit advances its explicit submission identity without settling the previous input', async () => {
+    const { store } = storeFor();
+    store.setDraftText('first'); const first = store.draftSubmissionId;
+    custody.mockRejectedValueOnce(new Error('first refused'));
+    await expect(store.submitPrompt('first', [], [], first)).rejects.toThrow('first refused');
+    store.setDraftText('second');
+    expect(store.draftSubmissionId).not.toBe(first);
+    await store.submitPrompt('second', [], [], store.draftSubmissionId);
+    expect(sendNotices.size).toBe(1);
+    store.dispose();
+  });
+
   it('a send that cannot be kept rejects to its caller (which keeps the words) and toasts once', async () => {
     const { store } = storeFor();
     store.bootstrap();
@@ -1067,7 +1164,7 @@ describe('#1449 every attachment entry uses the current-host ready gate', () => 
     attachment.wait = entry === 'released-transcript' ? null : readyWait;
     create.mockImplementation(async () => liveSession());
     const starts = entry === 'new-start' || entry === 'user-stop';
-    const { store } = storeFor(starts ? { providerId: 'claude', initialQueue: [{ text: 'first', origin: 'manual' }] }
+    const { store } = storeFor(starts ? { providerId: 'claude', forkFromProviderSessionId: 'prov-parent' }
       : { providerId: 'claude', providerSessionId: 'old-provider' });
     let opened = store;
     if (entry === 'side-chat') opened = new AcpChatStore(store.sessionId, store.projectId,

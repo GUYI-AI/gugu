@@ -10,7 +10,15 @@ export { setSessionIdentityHost } from '../session/main/core/sessions/session-id
 export { recordConfirmedDeviceSleep } from '../session/main/core/activity/collector'
 export { readAssistantWorkOwnerReceipts } from '../session/main/core/sessions/assistant-work-owner-receipts'
 export { commitOwnerNotification } from '../session/main/core/sessions/owner-notifications'
+export { deliverPasswordBetaDecision, deliverPasswordBetaSaveResult } from '../session/main/core/sessions/password-beta-delivery'
+export { installPasswordBetaHost, passwordBetaAgent, passwordBetaRemoteHandlers } from '../password-vault/beta-host'
+export { createServerPasswordAgent } from '../password-vault/server-agent'
+export { passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
+export { serverTaskPrivateLogin } from '../session/main/core/extensions/task-page-host'
 export { archiveSession } from '../session/main/core/sessions/archiveSession'
+export { appInbox } from '../session/main/core/extensions/app-inbox'
+// #1607 node 5: pushes from another computer for an App projection watched from here; the host's requester hands them over.
+export { projectionRemoteEvent } from '../session/main/core/extensions/projection-remote-viewer'
 export {
   bootEmdashModule,
   startSessionpageSearchBackfill,
@@ -37,6 +45,7 @@ export {
   // mirrors that project onto (spec ⑨「项目 = 群」) without deep-importing the session backend's projects/DB layer.
   emdashProjectName,
   emdashProjectRoot,
+  emdashProjectOfGroup,
   emdashTakeBirthGroup,
   // 资源库 → MCP:这条任务带上的那几台(会话能力包的桥问它)。
   emdashLibraryMcpForSession,
@@ -69,6 +78,8 @@ export {
   // agent 的 session_* 跨机器(owner 2026-09-30):别的机器发来的动作、本机发起方的自述、「这个 id 在不在本机」。
   // 同 runEmdashExtensionAction 那条教训:漏在这张清单外只会在真有人跨机器时才炸。
   runRemoteSessionAction,
+  // 离开这台机器的动作:本地项目 id 不出这台机器(cross-machine-sessions 的唯一出口 call 调它)。
+  assertOutboundProjectIds,
   readAssistantWorkReceipts,
   sessionCallerFacts,
   localSessionIds,
@@ -144,6 +155,8 @@ export {
   withEmdashPlatformSessionRestart,
   // 模型目录第二遍探测的占位凭据注入口(实现在宿主的 harness-catalog-probe-env.ts)。
   setProbePlatformEnvResolver,
+  // #2507 同一个探针看得见选中的模型注入 API Key 连接(实现在宿主的 harness-catalog-probe-connection.ts)。
+  setProbeConnectionModelResolver,
   // @@@4972 会话发现工具的「咕咕提供的模型」读取口 —— 宿主装的就是 composer 那条 IPC 调的
   // 同一个 sessionpagePlatformCatalog,于是 agent 查到的和用户看到的是同一次计算。
   setPlatformModelCatalogResolver,
@@ -156,6 +169,8 @@ export {
   // 的 PTY 会话在对话页首轮就会 fail loud(❌ 不退回裸文本、更 ❌ 不退回 pty 打字)。
   setEmdashPtyChatStartupEnvelope,
   setSessionMessageRouter,
+  // 投递叫不醒时,宿主据此分「等人修」还是「退避再试」(session-injection 的 wake gate)。
+  getRuntimeUpgradeRequirement,
   // 手机看管 agent 的设备 RPC 处理器。经桥拿 ⇒ 与 router / conversation provider 同一份实例;
   // 宿主直接 import 会打出第二份,写侧的运行时状态就都看不见了。
   createSessionpageSessionDeviceRpcHandlers,
@@ -185,7 +200,6 @@ export {
   // 于是 setTabTitle / setTabBadge / openBrowserTab / reportError / compose
   // 五个动词一律「Renderer not ready」(实机实证)。
   setExtensionHostWindowChannel,
-  setUserLibraryOwner,
   setLoginShellPathRehydrator,
   setLoginShellEnvProvider,
   setPlatformCredentialsProbe,
@@ -199,15 +213,8 @@ export {
 export { registerWebviewAttachPolicy } from '@main/app/webview-policy'
 // #6615 问题 11 扩展网关给程序盖的调用方上下文(任务、工作副本),每次调用现读。
 export { callerSessionContext as emdashAgentSessionContext } from '@main/core/extensions/extension-programs'
-// #7191 会话的 agent 操作它会话页里的浏览器页签:宿主的 MCP 层(Playwright 工具)经它拿到连那个页签的 transport。
-export { agentBrowserBridge as emdashAgentBrowser } from '@main/core/browser/agent-browser'
 // @@@touchid-passkey 网页要选通行密钥时,对话框挂在那张网页此刻所在、看得见的咕咕窗口上(停放着 / 窗口收起 ⇒ 无)。
 export { visibleHostOfPage as emdashVisibleHostOfPage } from '@main/core/browser/browser-page-views'
-// #7317 Computer Use 的「电脑」页签:宿主告诉 App 的页面「有新的一步」,任务第一次用电脑时把那一页开到任务里。
-export { notifyFromNativeProgram as emdashNotifyFromNativeProgram } from '@main/core/extensions/extension-programs'
-export { openTaskPagesOfApp as emdashOpenTaskPagesOfApp } from '@main/core/sessions/session-orchestration'
-// #7317 Computer Use 是电脑控制的开关:App 装上 / 卸掉 / 启用 / 停用,这台电脑的电脑控制当场跟着变。
-export { onInstalledAppsChanged as emdashOnInstalledAppsChanged } from '@main/core/extensions/extension-bridge'
 // #6264「别的机器上的编程只给用 SSH 装上的机器」:
 //  · server 模式:账号进程开本机套接字,设备连接(`gugu-server link`)与 open-url 经它到账号进程;
 //  · 桌面:宿主注入「这台机器怎么直连」(SSH 一步装好时记下的映射),会话页据此开直连终端。
@@ -215,5 +222,6 @@ export { startSessionPtyAttachServer } from '@main/core/pty/attach/start-attach-
 export { broadcastDeviceSessionHostEvent, setDeviceSessionHostShellHandlers } from '@main/host-ws/device-session-host'
 export { setDirectTerminalResolver, type DirectTerminalResolver } from '@main/core/pty/direct-terminal/controller'
 // #113 这台机器的项目记到账号上:那一份,与「它可能变了」的信号(订阅在 boot 之后,同 onEmdashSessionpageReapTrigger)。
-export { listDeviceProjectRecords, onDeviceProjectsMaybeChanged } from '@main/core/projects/operations/device-project-records'
+export { deviceProjectsPublished, listDeviceProjectRecords, onDeviceProjectsMaybeChanged } from '@main/core/projects/operations/device-project-records'
+export { projectFoldersPublished } from '@main/core/extensions/extension-bridge'
 export { sessionBootTasks } from '../session/main/core/boot-tasks'

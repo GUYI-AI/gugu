@@ -139,18 +139,6 @@ describe('agents:tools: the plain sentence, then what runs word for word', () =>
     expect(prompt.description).not.toContain('board-mcp');
   });
 
-  it('#7317 Computer Use says what it is: a view of gugu\'s computer control, giving agents nothing — on the computer it installs on', () => {
-    const where = ((key: string, params?: Record<string, string>) => `${key}[${params?.computer ?? ''}]`) as unknown as SessionTranslate;
-    const view = board({ mcpServers: [{ name: 'computer-use', host: 'computer-use' }] });
-    expect(describeCapability('agents:tools', view, where)).toBe('extensions.permissionsComputerUseView[extensions.permissionsThisComputer[]]');
-    expect(describeCapability('agents:tools', view, where, 'mac1')).toBe('extensions.permissionsComputerUseView[extensions.permissionsOnMachine[]]');
-    // Control: an App with a program of its own beside it still says that its program runs.
-    expect(describeCapability('agents:tools', board({ mcpServers: [{ name: 'computer-use', host: 'computer-use' }, ...programs] }), said))
-      .toBe('extensions.permissionsAgentsTools()');
-    // Both languages say it.
-    expect([enUSMessages['extensions.permissionsComputerUseView'], zhCNMessages['extensions.permissionsComputerUseView']].every((text) => text.includes('{computer}'))).toBe(true);
-  });
-
   it('skills ride along in the sentence; skills alone run nothing and have no details', () => {
     expect(describeCapability('agents:tools', board({ mcpServers: programs, skills: 'skills' }), said))
       .toBe('extensions.permissionsAgentsTools(extensions.permissionsAgentsToolsSkills)');
@@ -173,5 +161,20 @@ describe('agents:tools: the plain sentence, then what runs word for word', () =>
     expect(consentPrompt(undefined, [], board({ skills: 'skills' }), on, 'en-US', undefined, 'mac1').description).toBe('extensions.permissionsAgentsSkillsOnlyOn@mac1');
     // Control: asked on the computer it installs on, 「这台电脑」 as ever.
     expect(consentPrompt(undefined, [], board({ mcpServers: programs }), on, 'en-US').description).toBe('extensions.permissionsAgentsTools');
+  });
+});
+
+// #1925 (API 46): the assistant's work on the binding — its own row in the consent, the switches and the detail sheet.
+describe('chat:work says what the App sees and what it does not', () => {
+  it('the tasks the assistant handed out, a task shown in its panel, and that the App cannot see that conversation', () => {
+    const working = parseExtensionManifest({
+      id: 'tasks', name: 'Tasks', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', platforms: ['desktop'], entry: 'index.html',
+      permissions: { capabilities: ['chat:unread', 'chat:work'], bindings: [{ name: 'main', kind: 'conversation', actions: ['unread', 'work'] }] },
+      contributes: { tabs: [{ name: 'main', title: 'Tasks' }] },
+    });
+    expect(describeCapability('chat:work', working, translate)).toBe('extensions.permissionsChatWork');
+    expect(describePermissions(working, translate).split('\n')).toEqual(['extensions.permissionsChatUnread', 'extensions.permissionsChatWork']);
+    expect(zhCNMessages['extensions.permissionsChatWork']).toBe('查看你的助理派出的任务（标题和进度），并在它的面板里显示某个任务的对话，它看不到这段对话');
+    expect(enUSMessages['extensions.permissionsChatWork']).toBe('See the tasks your assistant handed out, their titles and progress, and show a task\'s conversation in its panel; the App cannot see that conversation');
   });
 });

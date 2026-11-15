@@ -1,5 +1,5 @@
 import type { BrowserWindow, WebContents } from 'electron'
-import type { WindowMenuCommand } from '../shared/window-menu-commands'
+import { PREPARE_SELECT_ALL_EVENT, type WindowMenuCommand } from '../shared/window-menu-commands'
 import { fileZoomScript, isFileZoomCommand, type FileZoomCommand } from '../src/session/shared/preview/file-zoom'
 
 /**
@@ -14,7 +14,7 @@ import { fileZoomScript, isFileZoomCommand, type FileZoomCommand } from '../src/
 export const WINDOW_ZOOM_STEP = 0.5
 
 export type WindowMenuCommandTarget = {
-  contents: Pick<WebContents, 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll' | 'getZoomLevel' | 'setZoomLevel' | 'executeJavaScript'>
+  contents: Pick<WebContents, 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll' | 'getType' | 'getZoomLevel' | 'setZoomLevel' | 'executeJavaScript'>
   window: Pick<BrowserWindow, 'isFullScreen' | 'setFullScreen'>
 }
 
@@ -26,7 +26,11 @@ export async function runWindowMenuCommand(command: WindowMenuCommand, { content
     case 'cut': contents.cut(); return
     case 'copy': contents.copy(); return
     case 'paste': contents.paste(); return
-    case 'selectAll': contents.selectAll(); return
+    case 'selectAll':
+      if (contents.getType() === 'window') {
+        await contents.executeJavaScript(`document.activeElement?.dispatchEvent(new Event('${PREPARE_SELECT_ALL_EVENT}', { bubbles: true }))`)
+      }
+      contents.selectAll(); return
     case 'zoomIn': contents.setZoomLevel(contents.getZoomLevel() + WINDOW_ZOOM_STEP); return
     case 'zoomOut': contents.setZoomLevel(contents.getZoomLevel() - WINDOW_ZOOM_STEP); return
     case 'resetZoom': contents.setZoomLevel(0); return

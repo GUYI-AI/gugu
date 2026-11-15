@@ -62,14 +62,14 @@ describe.runIf(process.platform !== 'win32')('real host exit with a detached ACP
       import {createScope} from ${JSON.stringify(path.resolve('packages/session-wire/src/util/scope.ts'))};
       import {createStubLogger} from ${JSON.stringify(path.resolve('packages/session-wire/src/testing/index.ts'))};
       import {checkAccountBoot} from ${JSON.stringify(path.resolve('apps/desktop/electron/server/server-selftest.ts'))};
-      import {runMiseProcess} from ${JSON.stringify(path.resolve('apps/desktop/electron/session/main/core/dependencies/mise-process.ts'))};
+      import {runMiseProcess,killAllMiseProcessesSync} from ${JSON.stringify(path.resolve('apps/desktop/electron/session/main/core/dependencies/mise-process.ts'))};
       import {createNativeLegReap,createFatalExit,stopOnLostLock} from ${JSON.stringify(path.resolve('apps/desktop/electron/process-exit.ts'))};
       import {createSignalExit} from ${JSON.stringify(path.resolve('apps/desktop/electron/signal-exit.ts'))};
       const logDir=${JSON.stringify(dir)},shutdownLogger={info(){},error(){},warn(){}};
       let lockLost=false;
       const SERVER_MODE=process.env.EXIT_SCOPE!=='desktop',isSingleServerRun=()=>lockLost,exit=(code)=>process.exit(code);
       // main's wiring of the real exit paths; the other native legs (codex, opencode, droid, programs, tunnel) are idle here.
-      const killEnginesOnCrash=createNativeLegReap({logDir,serverMode:SERVER_MODE,logger:shutdownLogger,legs:()=>[]});
+      const killEnginesOnCrash=createNativeLegReap({logDir,serverMode:SERVER_MODE,logger:shutdownLogger,legs:()=>[['mise',killAllMiseProcessesSync]]});
       const {exitOnSignal}=createSignalExit({serverMode:SERVER_MODE,exitRestart:75,exitSignedOut:78,stopActivity(){},singleRun:isSingleServerRun,
         sessionFileExists:()=>true,supervisedBy:()=>undefined,markStopped(){},noteExitReason(){},killEngines:killEnginesOnCrash,exit,host:()=>null,stopHost:async()=>{},warn(){}});
       process.on('uncaughtException',createFatalExit({classify:()=>'defect',record(){},logger:shutdownLogger,reap:killEnginesOnCrash,exit}));
@@ -128,7 +128,9 @@ describe.runIf(process.platform !== 'win32')('real host exit with a detached ACP
       await vi.waitFor(() => {
         const live = defaultEngineTreeOps().snapshotSync()
         for (const pid of Object.values(tree!)) expect(live.some(row => row.pid === pid)).toBe(false)
-        for (const pid of Object.values({ ...boot, ...mise })) expect(live.some(row => row.pid === pid)).toBe(!server)
+        for (const pid of Object.values(boot!)) expect(live.some(row => row.pid === pid)).toBe(!server)
+        // A desktop exit leaves its own external programs alone, but never an install it started: mise is a native leg.
+        for (const pid of Object.values(mise!)) expect(live.some(row => row.pid === pid)).toBe(false)
       })
       expect(defaultEngineTreeOps().snapshotSync().some(row => row.pid === unrelated.pid)).toBe(true)
       if (tmux) {

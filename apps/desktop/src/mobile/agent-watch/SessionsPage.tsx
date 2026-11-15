@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
-import { useRef, useState } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import { Button } from '@/components/ui/Button'
@@ -9,7 +9,7 @@ import { ListRowContent } from '@/components/ui/ListRow'
 import { IconButton } from '@/components/ui/IconButton'
 import { ChevronDown, ChevronUp, MoreHorizontal } from '@/lib/icons'
 import { Sheet } from '@/components/ui/Sheet'
-import { Menu, MenuItem } from '@/components/ui/Menu'
+import { DropdownMenu, MenuItem } from '@/components/ui/Menu'
 import { useToast } from '@/components/toastContext'
 import { Field } from '@/components/ui/Field'
 import { formatRelativeTime } from '@/i18n/format'
@@ -30,23 +30,26 @@ import './task-flow-catalog'
 /**
  * 会话的管理动作(owner 2026-09-15:「会话的删除等管理功能也得加上来」):置顶、改名、归档 —— 桌面侧栏同三条。
  * 收起会话只有归档(#6949,owner 2026-10-06):与桌面、agent 的 `session_archive` 同一个动作,在桌面的会话历史里
- * 恢复得回来,所以 ❌ 再摆删除。贴着点开它的那一下弹出(⋯ 或长按的那一行;owner 10-26 v7.12:❌ 底部抽屉);
+ * 恢复得回来,所以 ❌ 再摆删除。贴着那一行 / 那颗钮的 ⋯ 弹出(owner 10-26 v7.12:❌ 底部抽屉);
  * 改名要打字,换成一张只有输入框的面板。做不成就把机器端的原话摆出来,❌ 悄悄没了。
+ * 一页一个菜单:每颗 ⋯ 是它的 Trigger(payload = 那条会话),再点同一颗就关、点另一行的就挪过去;长按 / 右键一行
+ * 等于按那一行的 ⋯(owner 11-09:手机上「点一下再点一下,它不会消失」)。
  */
+export interface SessionMenuTarget { deviceId: string; session: SessionpageSessionSummary; phoneHost: boolean }
+export type SessionMenuHandle = ReturnType<typeof DropdownMenu.createHandle<SessionMenuTarget>>
+
+/** 一颗会话 ⋯:`SessionActions` 那个菜单的 Trigger。 */
+export function SessionMenuButton({ menu, target, id, size, className, testId }: { menu: SessionMenuHandle; target: SessionMenuTarget; id?: string; size: 'md' | 'lg'; className?: string; testId: string }) {
+  const { t } = useTranslation('main')
+  return <DropdownMenu.Trigger handle={menu} payload={target} id={id}
+    render={<IconButton size={size} className={className} aria-label={t('agentWatch.sessions.menu')} data-testid={testId}><MoreHorizontal /></IconButton>} />
+}
+
 export function SessionActions({
-  anchor,
-  session,
-  deviceId,
-  phoneHost = false,
-  onClose,
+  menu,
   onArchived
 }: {
-  /** 点开菜单的那个元素;null = 菜单收着。 */
-  anchor: Element | null
-  session: SessionpageSessionSummary | null
-  deviceId: string
-  phoneHost?: boolean
-  onClose: () => void
+  menu: SessionMenuHandle
   onArchived?: () => void
 }) {
   const { t } = useTranslation('main')
@@ -71,29 +74,29 @@ export function SessionActions({
       .catch((err: unknown) => setError(reason(err)))
       .finally(() => setBusy(false))
   }
-  const pinned = session?.isPinned === true
-  const target = session ? { deviceId, session } : null
   return (
     <>
-      {anchor && target ? (
-        <Menu anchor={anchor} ariaLabel={target.session.title} onClose={onClose}>
-          {phoneHost ? (
-            <MenuItem data-testid="agent-watch-session-stop" onClick={() => { void cancelPhoneSessionTurn(target.deviceId, target.session.conversationId).catch(failed) }}>
-              {t('agentWatch.sessions.stop')}
-            </MenuItem>
-          ) : <>
-            <MenuItem data-testid="agent-watch-session-pin" onClick={() => update(target, { pinned: !pinned })}>
-              {t(pinned ? 'agentWatch.sessions.unpin' : 'agentWatch.sessions.pin')}
-            </MenuItem>
-            <MenuItem data-testid="agent-watch-session-rename" onClick={() => { setDraftTitle(target.session.title); setError(null); setRenaming(target) }}>
-              {t('agentWatch.sessions.rename')}
-            </MenuItem>
-            <MenuItem data-testid="agent-watch-session-archive" onClick={() => update(target, { archived: true })}>
-              {t('agentWatch.sessions.archive')}
-            </MenuItem>
-          </>}
-        </Menu>
-      ) : null}
+      <DropdownMenu.Root handle={menu} modal={false}>
+        {({ payload: target }) => target ? (
+          <DropdownMenu.Content aria-label={target.session.title} className="min-w-[160px]">
+            {target.phoneHost ? (
+              <MenuItem data-testid="agent-watch-session-stop" onClick={() => { void cancelPhoneSessionTurn(target.deviceId, target.session.conversationId).catch(failed) }}>
+                {t('agentWatch.sessions.stop')}
+              </MenuItem>
+            ) : <>
+              <MenuItem data-testid="agent-watch-session-pin" onClick={() => update(target, { pinned: !target.session.isPinned })}>
+                {t(target.session.isPinned ? 'agentWatch.sessions.unpin' : 'agentWatch.sessions.pin')}
+              </MenuItem>
+              <MenuItem data-testid="agent-watch-session-rename" onClick={() => { setDraftTitle(target.session.title); setError(null); setRenaming(target) }}>
+                {t('agentWatch.sessions.rename')}
+              </MenuItem>
+              <MenuItem data-testid="agent-watch-session-archive" onClick={() => update(target, { archived: true })}>
+                {t('agentWatch.sessions.archive')}
+              </MenuItem>
+            </>}
+          </DropdownMenu.Content>
+        ) : null}
+      </DropdownMenu.Root>
       <Sheet open={renaming !== null} onClose={busy ? () => undefined : () => setRenaming(null)} mobileFitContent testId="agent-watch-session-rename-sheet" ariaLabel={t('agentWatch.sessions.rename')}>
         {renaming ? <div className="gg-aw gg-aw-sheet gg-aw-actions">
           <div className="gg-aw-actions-title">{renaming.session.title}</div>
@@ -136,7 +139,7 @@ export const SessionRow = observer(function SessionRow({
   childrenOpen,
   onToggleChildren,
   onOpen,
-  onMenu,
+  menu,
   statusAvailable,
   phoneHost = false,
 }: {
@@ -152,9 +155,8 @@ export const SessionRow = observer(function SessionRow({
   childrenOpen: boolean
   onToggleChildren: () => void
   onOpen: (session: SessionpageSessionSummary) => void
-  /** 管理动作入口(行尾「…」)。机器离线时不给:删除要机器端执行,离线只会等到超时。 */
-  /** 管理菜单贴着 anchor 弹出:长按 / 右键是这一行,⋯ 是那颗钮。 */
-  onMenu?: ((session: SessionpageSessionSummary, anchor: Element) => void) | undefined
+  /** 管理动作入口(行尾「…」;长按 / 右键这一行 = 按它)。机器离线时不给:删除要机器端执行,离线只会等到超时。 */
+  menu?: { handle: SessionMenuHandle; target: SessionMenuTarget } | undefined
   statusAvailable?: boolean | undefined
   phoneHost?: boolean
 }) {
@@ -164,8 +166,8 @@ export const SessionRow = observer(function SessionRow({
   const shownName = useShownAgentName({ name: session.title, createdAt: identity?.created_at ?? undefined })
   const shownStatus = useShownAgentStatus()
   const presentation = shownStatus.presentation(session.agent?.userId, sessionPresentation(session, statusAvailable ?? session.supported))
-  const wrapRef = useRef<HTMLDivElement>(null)
-  const longPress = useLongPress(() => { if (wrapRef.current) onMenu?.(session, wrapRef.current) })
+  const menuTriggerId = useId()
+  const longPress = useLongPress(() => menu?.handle.open(menuTriggerId))
   const when = formatRelativeTime(session.lastInteractedAt)
   /*
    * 打不开的行分两种,说的不是同一件事:
@@ -200,7 +202,6 @@ export const SessionRow = observer(function SessionRow({
 
   return (
     <div
-      ref={wrapRef}
       className="gg-aw-item-wrap"
       data-depth={depth}
       style={depth > 0 ? { paddingInlineStart: `calc(${depth} * var(--spacing-lg))` } : undefined}
@@ -215,8 +216,8 @@ export const SessionRow = observer(function SessionRow({
       disabled={!openable}
       data-session-id={session.conversationId}
       data-supported={session.supported ? 'true' : 'false'}
-      {...(onMenu ? longPress : {})}
-      onContextMenu={onMenu ? (event) => { event.preventDefault(); onMenu(session, event.currentTarget) } : undefined}
+      {...(menu ? longPress : {})}
+      onContextMenu={menu ? (event) => { event.preventDefault(); menu.handle.open(menuTriggerId) } : undefined}
       onClick={openable ? () => onOpen(session) : undefined}
     >
       <ListRowContent title={shownName} leading={
@@ -247,17 +248,7 @@ export const SessionRow = observer(function SessionRow({
         {childrenOpen ? <ChevronUp /> : <ChevronDown />}
       </IconButton>
     ) : null}
-    {onMenu ? (
-      <IconButton
-        size="lg"
-        className="gg-aw-item-menu"
-        aria-label={t('agentWatch.sessions.menu')}
-        data-testid="agent-watch-session-menu"
-        onClick={(event) => onMenu(session, event.currentTarget)}
-      >
-        <MoreHorizontal />
-      </IconButton>
-    ) : null}
+    {menu ? <SessionMenuButton menu={menu.handle} target={menu.target} id={menuTriggerId} size="lg" className="gg-aw-item-menu" testId="agent-watch-session-menu" /> : null}
     </div>
   )
 })

@@ -4,7 +4,7 @@
  * identifies its sender/channel; envelope details remain inspectable there.
  * Delivery routing, prompt identity and scroll behaviour stay separate from paint.
  */
-import type { DeliveryReadFacts, DeliverySegment } from '@gugu/core/local/agent/deliveryEnvelope';
+import { isAppRoute, type DeliveryReadFacts, type DeliverySegment } from '@gugu/core/local/agent/deliveryEnvelope';
 import { readableLabel, rowTranslator, wrappedRowHeight } from '../readable-label';
 import type { MeasureCtx, RenderCtx } from '@session-chat/core/define';
 import { useChatTranslator, type ChatTranslator } from '@session-chat/localization';
@@ -178,21 +178,25 @@ function bodyOnly(item: ChatMessage): boolean {
   return route === 'chat' || route === 'session-direct';
 }
 
-function bands(item: ChatMessage, ctx: MeasureCtx, vars: DeliveryVars, messageVars: MessageVars, factsOpen: boolean): Bands {
-  if (bodyOnly(item)) return { headerH: 0, replyH: 0, bodyH: measureUserMessage(item, ctx, messageVars), factsH: 0, total: 2 * vars.padY + measureUserMessage(item, ctx, messageVars) };
-  const lineH = ctx.theme.fonts.body.lineHeight;
+/** What a single card draws above its user-message body, and where that body starts below the card's top. */
+function bodyPlacement(item: ChatMessage, ctx: MeasureCtx, vars: DeliveryVars): { headerH: number; replyH: number; top: number } {
+  if (bodyOnly(item)) return { headerH: 0, replyH: 0, top: vars.padY };
   const headerH = sourceLayout(item, ctx, vars).height;
-  const replyH = cardFacts(item)?.replyTo ? replyLayout(item, ctx)?.height ?? lineH : 0;
+  const replyH = cardFacts(item)?.replyTo ? replyLayout(item, ctx)?.height ?? ctx.theme.fonts.body.lineHeight : 0;
+  return { headerH, replyH, top: vars.padY + headerH + (replyH ? vars.gap + replyH : 0) + vars.gap };
+}
+
+/** Where a delivery's (first) user-message bubble starts below the top of its row: the pinned summary rests behind it (#2629). */
+export function deliveryBodyTop(item: ChatMessage, ctx: MeasureCtx, vars: DeliveryVars): number {
+  const batch = item.guguDelivery?.segments ?? [];
+  return bodyPlacement(batch.length > 1 ? segmentItem(item, batch[0]!, 0) : item, ctx, vars).top;
+}
+
+function bands(item: ChatMessage, ctx: MeasureCtx, vars: DeliveryVars, messageVars: MessageVars, factsOpen: boolean): Bands {
+  const { headerH, replyH, top } = bodyPlacement(item, ctx, vars);
   const bodyH = measureUserMessage(item, ctx, messageVars);
-  const factsH = factsOpen ? detailsHeight(item, ctx, vars) : 0;
-  const total =
-    2 * vars.padY +
-    headerH +
-    (replyH ? vars.gap + replyH : 0) +
-    vars.gap +
-    bodyH +
-    (factsH ? vars.gap + factsH : 0);
-  return { headerH, replyH, bodyH, factsH, total };
+  const factsH = !bodyOnly(item) && factsOpen ? detailsHeight(item, ctx, vars) : 0;
+  return { headerH, replyH, bodyH, factsH, total: top + bodyH + (factsH ? vars.gap + factsH : 0) + vars.padY };
 }
 
 export function measureDelivery(item: ChatMessage, ctx: MeasureCtx, vars: DeliveryVars, messageVars: MessageVars): number {
@@ -228,7 +232,8 @@ function routeLabel(facts: DeliveryReadFacts, translate: ChatTranslator, { appNa
   return [
     facts.viaApp ? translate('transcript.deliveryViaApp', { app: appName(facts.viaApp) ?? facts.viaApp }) : null,
     facts.whisperTo ? translate('transcript.deliveryWhisper') : null,
-    channelLabel(facts, translate, chatName),
+    // An App's own delivery: naming the App above is the whole channel.
+    facts.viaApp && isAppRoute(facts.route) ? null : channelLabel(facts, translate, chatName),
   ].filter(Boolean).join(' · ');
 }
 
@@ -242,8 +247,7 @@ function channelLabel(facts: DeliveryReadFacts, translate: ChatTranslator, chatN
       : translate('transcript.deliveryScheduled');
   }
   // 集体记忆对账第 12 条:App 的投递只有一种语义(没有「附带」那一档),标签也就一个。
-  if (facts.route === 'extension') return translate('transcript.deliveryViaExtension');
-  if (facts.route === 'forum') return translate('transcript.deliveryViaForum');
+  if (isAppRoute(facts.route)) return translate('transcript.deliveryViaExtension');
   // 信封里的 chat 是群号(给 agent 寻址用的),人读群名:按来源链接里的对话 id 向宿主要名字(项目群就是项目名);
   // 宿主不认得这个群就只说「来自群聊」,❌ 把群号写给人看。
   if (facts.chatKind === 'group') {

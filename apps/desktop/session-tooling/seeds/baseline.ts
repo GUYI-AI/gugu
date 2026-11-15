@@ -1,5 +1,6 @@
 import type { AppDb } from '@main/db/client';
 import { sessions, projectRemotes, projects, projectSettings } from '@main/db/schema';
+import { canonicalPath } from '@gugu/session-core/files';
 
 // Fixed UUIDs so fixture content is stable across regenerations.
 const PROJECT_A_ID = '11111111-1111-1111-1111-111111111111';
@@ -18,14 +19,14 @@ export async function baseline(db: AppDb): Promise<void> {
     {
       id: PROJECT_A_ID,
       name: 'demo-app',
-      path: '/home/dev/projects/demo-app',
+      path: canonicalPath('/home/dev/projects/demo-app'),
       workspaceProvider: 'local',
       baseRef: 'main',
     },
     {
       id: PROJECT_B_ID,
       name: 'my-api',
-      path: '/home/dev/projects/my-api',
+      path: canonicalPath('/home/dev/projects/my-api'),
       workspaceProvider: 'local',
       baseRef: 'main',
     },

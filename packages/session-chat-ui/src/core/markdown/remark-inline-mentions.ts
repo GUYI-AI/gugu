@@ -85,8 +85,11 @@ export function remarkInlineMentions() {
     }
 
     // ── Pass 2: split text nodes on @bare and /command ──────────────────────
-    visit(tree, 'text', (node: Text, index: number | undefined, parent: Parent | undefined) => {
-      if (index == null || !parent) return;
+    visit(tree, (node, index, parent) => {
+      // Parsed links (including GFM mailto links) already own their label.
+      // Rewriting that label can turn an email domain into a nested file pill.
+      if (node.type === 'link' || node.type === 'linkReference') return SKIP;
+      if (node.type !== 'text' || index == null || !parent) return;
       const replacements = splitTextNode(node.value, mentionProvider, commandProvider, uri);
       if (replacements.length === 1 && (replacements[0] as { type: string }).type === 'text')
         return;

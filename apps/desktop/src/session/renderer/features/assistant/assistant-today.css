@@ -48,8 +48,7 @@
   --ta-chip-bg: var(--ta-tint-soft);
   --ta-chip-fg: var(--ta-tint-ink);
   --ta-fg: var(--fg);
-  --ta-muted: var(--muted-fg);
-  --ta-faint: var(--faint-fg);
+  /* --ta-muted / --ta-faint 分主题取值,在 tokens.css 的 theme batch A 段(深色按玻璃校准)。 */
   --ta-radius-panel: 20px;
   --ta-radius-card: 24px;
   --ta-radius-control: 999px;
@@ -118,6 +117,8 @@
   padding: 0;
   cursor: pointer;
 }
+/* 还认不出它时(正在读 / 读不到 / 还没有 / 正在准备):同一枚胶囊写一句状态,不能点。 */
+.ta-identity[role='status'] { cursor: default; }
 .ta-identity-name {
   margin-top: -8px;
   max-width: 220px;
@@ -236,6 +237,10 @@
   border-radius: var(--ta-radius-panel);
   background: var(--ta-panel-bg);
 }
+/* An App's page as this panel (AppConversationFrame): it is drawn in the root layer, outside this card's clip, and takes its
+   slot's corners (page-corners.ts) — the card's inside corners, its radius less its 1px border, as the built-in panel's
+   content was clipped. */
+.ta-panel [data-app-page-anchor] [data-extension-slot] { border-radius: calc(var(--ta-radius-panel) - 1px); }
 .ta-panel-top {
   position: relative;
   display: flex;
@@ -255,68 +260,6 @@
   overflow-x: hidden;
   padding: var(--spacing-lg) var(--spacing-lg) var(--spacing-2xl);
 }
-
-.ta-seg {
-  display: inline-flex;
-  gap: 2px;
-  border-radius: 999px;
-  background: var(--ta-seg-bg);
-  padding: 3px;
-  backdrop-filter: blur(var(--ta-glass-blur));
-  box-shadow: var(--ta-glass-fx);
-}
-.ta-seg button {
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  padding: 4px 14px;
-  min-height: var(--ta-h-control);
-  font-size: var(--ta-fs-row);
-  line-height: var(--ta-lh-row);
-  font-weight: 500;
-  color: var(--ta-muted);
-  cursor: pointer;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ta-seg button[aria-selected='true'] {
-  background: var(--ta-seg-active);
-  color: var(--ta-fg);
-}
-
-/* 页里的分段(任务 | 定时任务):一整条,选中那半是白底。 */
-.ta-seg-wide {
-  display: flex;
-  border-radius: var(--ta-radius-control);
-  background: var(--ta-seg-bg);
-  padding: 3px;
-  backdrop-filter: blur(var(--ta-glass-blur));
-  box-shadow: var(--ta-glass-fx);
-}
-.ta-seg-wide button {
-  display: inline-flex;
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  padding: 4px 10px;
-  min-height: var(--ta-h-control);
-  font-size: var(--ta-fs-row);
-  line-height: var(--ta-lh-row);
-  font-weight: 500;
-  color: var(--ta-muted);
-  cursor: pointer;
-}
-.ta-seg-wide button[aria-selected='true'] {
-  background: var(--ta-glass-strong);
-  color: var(--ta-fg);
-}
-.ta-seg-wide svg { width: 14px; height: 14px; }
 
 /* ── 页面元件 ─────────────────────────────────────────────────── */
 
@@ -403,22 +346,6 @@ button.ta-row:hover, a.ta-row:hover { background: var(--ta-glass-hover); }
 .ta-pill-btn svg { width: 14px; height: 14px; }
 .ta-pill-btn[data-tone='danger'] { color: var(--danger-fg); }
 
-.ta-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border: 0;
-  border-radius: var(--ta-radius-control);
-  background: var(--ta-chip-bg);
-  padding: 4px 12px;
-  min-height: var(--ta-h-control);
-  font-size: var(--ta-fs-row);
-  line-height: var(--ta-lh-row);
-  color: var(--ta-chip-fg);
-  cursor: pointer;
-}
-.ta-chip svg { width: 14px; height: 14px; }
-
 .ta-empty {
   display: flex;
   flex-direction: column;
@@ -465,36 +392,6 @@ button.ta-row:hover, a.ta-row:hover { background: var(--ta-glass-hover); }
 .ta-tile-icon { display: inline-flex; height: var(--ta-h-circle); width: var(--ta-h-circle); align-items: center; justify-content: center; border-radius: var(--ta-radius-control); background: var(--ta-glass-strong); color: var(--ta-muted); }
 .ta-tile-icon svg { width: 18px; height: 18px; }
 
-/* 资料页顶上那一截(头像、名字、陪伴、性格胶囊)。 */
-.ta-hero { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0; text-align: center; }
-.ta-hero-avatar { position: relative; margin-bottom: 8px; border: 0; background: transparent; padding: 0; cursor: pointer; }
-.ta-hero-edit {
-  position: absolute;
-  right: -2px;
-  bottom: 2px;
-  display: inline-flex;
-  height: 24px;
-  width: 24px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: var(--ta-circle-bg);
-  box-shadow: var(--ta-circle-shadow);
-  color: var(--ta-fg);
-}
-.ta-hero-edit svg { width: 12px; height: 12px; }
-.ta-hero-name { margin: 0; font-size: var(--font-size-xl); line-height: var(--lh-page); font-weight: 600; color: var(--ta-fg); }
-.ta-hero-since { margin: 0; font-size: var(--ta-fs-sub); line-height: var(--ta-lh-sub); color: var(--ta-muted); }
-
-/* 日记卡(资料页、日记页):左边一张小日历。 */
-.ta-diary { display: flex; gap: 16px; text-align: left; }
-.ta-diary-cal { display: flex; height: 48px; width: 42px; flex-shrink: 0; flex-direction: column; overflow: hidden; border-radius: var(--ta-radius-control); background: var(--ta-glass-strong); text-align: center; }
-.ta-diary-cal span:first-child { padding: 3px 0; font-size: 11px; color: var(--ta-muted); border-bottom: 1px solid var(--ta-divider); }
-.ta-diary-cal span:last-child { padding-top: 3px; font-size: var(--font-title); color: var(--ta-fg); }
-
-/* 状态点(云电脑):运行中实心、休眠空心、唤醒中闪。 */
-.ta-status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--ta-fs-sub); color: var(--ta-muted); }
-
 /* 往下钻那几页里的 markdown 正文。 */
 .ta-prose { font-size: var(--ta-fs-row); line-height: 1.6; color: var(--ta-fg); overflow-wrap: anywhere; }
 .ta-prose h1, .ta-prose h2, .ta-prose h3 { margin: 0.8em 0 0.4em; font-size: var(--ta-fs-title); font-weight: 600; }
@@ -504,12 +401,8 @@ button.ta-row:hover, a.ta-row:hover { background: var(--ta-glass-hover); }
 /* ── 壳画进来的设置风格组件(聊天工具、设备、能做的事):在面板里换助理 App 的卡与行 ─────────── */
 
 .ta-skin .gg-settings-page { gap: var(--spacing-xl); }
-.ta-profile-connectors .ta-connector-location-note { display: none; }
 .ta-app .ta-skin [data-session-settings-section],
 .ta-phone .ta-skin [data-session-settings-section] { background: transparent; }
-.ta-skin .ta-connector-tabs > [role='tablist'] { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border: 0; border-radius: calc(var(--ta-radius-panel) / 2); background: var(--ta-seg-bg); }
-.ta-skin .ta-connector-tabs [role='tab'] { justify-content: center; min-width: 0; min-height: var(--ta-h-control); margin: 0; padding: 4px 8px; border: 0; border-radius: calc(var(--ta-radius-panel) / 2); }
-.ta-skin .ta-connector-tabs [aria-selected='true'] { background: var(--ta-glass-strong); color: var(--ta-fg); }
 .ta-skin .gg-settings-group { gap: 8px; }
 .ta-skin .gg-section-label,
 .ta-skin .gg-settings-group > h3,
@@ -552,16 +445,8 @@ button.ta-row:hover, a.ta-row:hover { background: var(--ta-glass-hover); }
 .ta-pad { padding-inline: 4px; }
 .ta-chip-off { background: var(--ta-seg-active); color: var(--ta-muted); }
 .ta-card-text { margin: 0; padding: var(--spacing-md) var(--ta-pad-card); white-space: pre-wrap; }
-.ta-unseen { display: inline-block; height: 7px; width: 7px; border-radius: 999px; background: var(--live); }
-.ta-radio { display: inline-block; height: 20px; width: 20px; border-radius: 999px; border: 1.5px solid var(--ta-faint); }
-.ta-radio[data-on] { border-color: var(--ta-muted); }
-.ta-crown { width: 22px; height: 22px; color: var(--warn); }
 .ta-card-title { margin: 8px 0 2px; font-size: var(--ta-fs-title); line-height: var(--ta-lh-title); font-weight: 600; color: var(--ta-fg); }
 .ta-card-divider { margin: 12px 0; height: 1px; background: var(--ta-divider); }
-.ta-about-list { margin: 0; padding-left: 1.1em; }
-.ta-about-list button { border: 0; background: transparent; padding: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
-.ta-banner { display: flex; align-items: center; gap: 12px; padding: var(--spacing-md) var(--ta-pad-card); font-size: var(--ta-fs-sub); }
-.ta-banner-icon { width: 18px; height: 18px; flex-shrink: 0; color: var(--ta-muted); }
 .ta-file-icon { width: 20px; height: 20px; color: var(--ta-muted); }
 
 /* 「自定义」对话框:大圆角、右上圆形关闭、底部一整条黑色「保存」。 */
@@ -614,60 +499,12 @@ textarea.ta-input { min-height: 80px; resize: vertical; line-height: 1.5; }
 }
 .ta-wide-btn[data-tone='primary'] { background: var(--ta-fg); color: var(--bg); font-weight: 500; }
 .ta-wide-btn:disabled { opacity: 0.5; cursor: default; }
-.ta-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.ta-chips button {
-  border: 0;
-  border-radius: var(--ta-radius-control);
-  background: var(--ta-glass-strong);
-  padding: 4px 12px;
-  min-height: var(--ta-h-control);
-  font-size: var(--ta-fs-row);
-  color: var(--ta-muted);
-  cursor: pointer;
-}
-.ta-chips button[aria-pressed='true'] { background: var(--ta-chip-bg); color: var(--ta-chip-fg); }
 
-/* 没开云电脑 / 正在开:整页居中一块,上面一团柔光(欢迎页那团球)。 */
-.ta-centered {
-  align-items: center;
-  justify-content: center;
-  background: var(--page);
-}
 .ta-intro { display: flex; width: min(460px, 100%); flex-direction: column; align-items: center; gap: 12px; text-align: center; }
-.ta-intro-glow {
-  height: 96px;
-  width: 96px;
-  border-radius: 999px;
-  background: radial-gradient(circle at 35% 30%, var(--ta-glass-strong) 0%, var(--ta-tint-soft) 60%, var(--ta-tint-wash) 100%);
-  box-shadow: 0 10px 40px var(--ta-tint-wash);
-}
 .ta-intro-title { margin: 4px 0 0; font-size: var(--font-size-xl); line-height: var(--lh-page); font-weight: 600; color: var(--ta-fg); }
 .ta-intro-body { margin: 0; font-size: var(--ta-fs-sub); line-height: var(--ta-lh-sub); color: var(--ta-muted); }
 .ta-connector-hero { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: var(--spacing-2xl) var(--ta-pad-card); text-align: center; }
-.ta-solid-btn {
-  margin-top: 8px;
-  border: 0;
-  border-radius: var(--ta-radius-control);
-  background: var(--ta-fg);
-  padding: 0 var(--spacing-lg);
-  min-height: var(--control-h-md);
-  font-size: var(--ta-fs-row);
-  line-height: var(--ta-lh-btn);
-  font-weight: 500;
-  color: var(--bg);
-  cursor: pointer;
-}
-.ta-solid-btn:disabled { opacity: 0.5; cursor: default; }
 .ta-ok { color: var(--ok-fg); }
-.ta-today-hello { display: flex; flex-direction: column; gap: 6px; padding: var(--spacing-2xl) var(--spacing-lg); }
-.ta-today-brief { display: flex; width: 100%; align-items: center; gap: 14px; border: 0; color: var(--ta-fg); cursor: pointer; text-align: left; }
-.ta-today-brief:hover { background: var(--ta-glass-hover); }
-/* today.json 画出来的:小组件一张、简报里一张卡(标题 + 一段 markdown + 问问它)。 */
-.ta-today-cards { display: flex; flex-direction: column; gap: 8px; }
-.ta-today-widget,
-.ta-today-card { display: flex; flex-direction: column; gap: 8px; }
-.ta-today-widget .ta-tile-title,
-.ta-today-card .ta-tile-title { white-space: normal; }
 
 /* 健康页(assistant-health.tsx):关键指标小卡(值、基线状态、7 天小柱)、昨晚的分期条、读不到时那张卡。 */
 .ta-health-connect { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
@@ -694,130 +531,6 @@ textarea.ta-input { min-height: 80px; resize: vertical; line-height: 1.5; }
 .ta-health-stages > [data-stage='awake'], .ta-health-dot[data-stage='awake'] { background: var(--ta-stage-awake); }
 .ta-health-stages > [data-stage='asleep_unstaged'], .ta-health-dot[data-stage='asleep_unstaged'] { background: var(--ta-stage-asleep); }
 .ta-health-dot { display: inline-block; width: 8px; height: 8px; border-radius: 4px; }
-
-/* ── 日记页:小卡左上一个小日历(上一条星期、下面几号),下面日期、三行预览。 ── */
-.ta-diary-tile { min-height: 136px; gap: 8px; }
-.ta-diary-day {
-  display: inline-flex;
-  width: 48px;
-  flex-direction: column;
-  align-items: center;
-  overflow: hidden;
-  border-radius: var(--ta-radius-control);
-  background: var(--ta-glass-strong);
-}
-.ta-diary-weekday { width: 100%; background: var(--ta-seg-active); padding: 2px 0; text-align: center; font-size: var(--font-caption); line-height: var(--lh-caption); color: var(--ta-muted); }
-.ta-diary-date { padding: 3px 0 5px; font-size: var(--font-title); line-height: var(--lh-title); font-weight: 600; color: var(--ta-fg); }
-.ta-diary-preview {
-  font-size: var(--ta-fs-sub);
-  line-height: var(--ta-lh-sub);
-  color: var(--ta-muted);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-/* ── 日程进展:头一行日历图标 + 小号大写标题、右边「来源」;一行 = 竖色条 + 标题 + 钟点 · 状态。 ── */
-.ta-day { display: flex; flex-direction: column; gap: 8px; padding: var(--spacing-md); }
-.ta-day-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-inline: 2px; }
-.ta-day-label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-caption); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ta-muted); }
-.ta-day-label svg { width: 15px; height: 15px; }
-.ta-day-source-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border: 0;
-  border-radius: var(--ta-radius-control);
-  background: var(--ta-glass-strong);
-  padding: 2px 8px;
-  font-size: var(--font-caption);
-  color: var(--ta-muted);
-  cursor: pointer;
-}
-.ta-day-source-btn:hover { background: var(--ta-glass-hover); color: var(--ta-fg); }
-.ta-day-source-btn svg { width: 13px; height: 13px; }
-.ta-day-note { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px 2px; font-size: var(--ta-fs-sub); line-height: var(--ta-lh-sub); color: var(--ta-muted); }
-.ta-day-note-title { font-size: var(--ta-fs-title); line-height: var(--ta-lh-title); font-weight: 600; color: var(--ta-fg); }
-.ta-day-list { display: flex; flex-direction: column; gap: 2px; }
-.ta-day-row { border-radius: var(--ta-radius-control); }
-.ta-day-row[data-open] { background: var(--ta-glass); }
-.ta-day-row-line { display: flex; align-items: center; gap: 8px; }
-.ta-day-row-main {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: stretch;
-  gap: 8px;
-  border: 0;
-  border-radius: var(--ta-radius-control);
-  background: transparent;
-  padding: 6px 8px;
-  text-align: left;
-  color: var(--ta-fg);
-  cursor: pointer;
-}
-.ta-day-row-main:hover { background: var(--ta-glass-hover); }
-.ta-day-bar { width: 4px; flex-shrink: 0; border-radius: 999px; background: var(--ta-tint); }
-.ta-day-ring { margin-top: 5px; height: 10px; width: 10px; flex-shrink: 0; border: 3px solid var(--ta-tint); border-radius: 999px; }
-.ta-day-body { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
-.ta-day-title { font-size: var(--ta-fs-row); line-height: var(--ta-lh-row); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ta-day-row[data-open] .ta-day-title { font-size: var(--ta-fs-title); line-height: var(--ta-lh-title); white-space: normal; }
-.ta-day-time { font-size: var(--font-caption); line-height: var(--lh-caption); color: var(--ta-muted); }
-.ta-day-row[data-status='soon'] .ta-day-status { color: var(--ok-fg); }
-.ta-day-row[data-status='ending'] .ta-day-status { color: var(--warn-fg); }
-.ta-day-row[data-status='now'] .ta-day-status { color: var(--ta-fg); }
-.ta-day-row[data-status='past'] .ta-day-title { color: var(--ta-muted); }
-.ta-day-detail { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px 20px; }
-.ta-day-desc { margin: 0; font-size: var(--ta-fs-sub); line-height: var(--ta-lh-sub); white-space: pre-wrap; color: var(--ta-fg); }
-.ta-day-source { font-size: var(--font-caption); color: var(--ta-faint); }
-.ta-day-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.ta-day-btn {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 5px;
-  border: 1px solid var(--ta-divider);
-  border-radius: var(--ta-radius-control);
-  background: var(--ta-glass-strong);
-  padding: 2px 10px;
-  font-size: var(--font-caption);
-  line-height: 16px;
-  color: var(--ta-muted);
-  cursor: pointer;
-}
-.ta-day-btn svg { width: 13px; height: 13px; }
-.ta-day-btn[data-tone='primary'] { border-color: transparent; background: var(--ta-fg); color: var(--bg); font-weight: 500; }
-.ta-day-divider { display: flex; align-items: center; gap: 8px; padding: 6px 8px 2px; font-size: var(--font-caption); color: var(--ta-faint); }
-.ta-day-divider::after { content: ''; flex: 1; border-top: 1px solid var(--ta-divider); }
-.ta-day-more { display: inline-flex; align-self: center; align-items: center; gap: 4px; border: 0; background: transparent; padding: 6px 10px; font-size: var(--font-caption); color: var(--ta-muted); cursor: pointer; }
-.ta-day-more svg { width: 14px; height: 14px; }
-.ta-day-pop { display: flex; width: min(380px, calc(100vw - 32px)); flex-direction: column; gap: 12px; padding: var(--spacing-lg); box-shadow: var(--shadow-lift); }
-.ta-day-kinds { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.ta-day-kinds li { display: flex; flex-direction: column; gap: 2px; border-radius: var(--ta-radius-control); background: var(--ta-glass); padding: var(--spacing-md) var(--ta-pad-card); }
-.ta-day-kinds .ta-tile-title { font-size: var(--ta-fs-title); }
-.ta-day-kind-from { font-size: var(--font-caption); color: var(--ta-faint); }
-
-/* ── 小组件:右上「…」(立即更新 / 修改 / 删除);正在写 / 没写成那一张淡一点。 ── */
-.ta-widget-more { display: inline-flex; height: 24px; width: 24px; flex-shrink: 0; align-items: center; justify-content: center; border: 0; border-radius: var(--ta-radius-control); background: transparent; color: var(--ta-muted); cursor: pointer; }
-.ta-widget-more:hover { background: var(--ta-glass-hover); color: var(--ta-fg); }
-.ta-widget-more svg { width: 16px; height: 16px; }
-.ta-today-widget[data-state='creating'],
-.ta-today-widget[data-state='failed'] { background: var(--ta-seg-bg); }
-
-/* ── 发现组件:推荐的起点三组 × 三张,底下一框「描述你想持续关注的内容…」和「添加组件」。 ── */
-.ta-discover { display: flex; min-height: 0; flex-direction: column; gap: var(--spacing-lg); }
-.ta-discover[data-layout='dialog'] { flex: 1; padding: var(--spacing-xl); }
-/* 对话框里只有推荐那几组滚,标题与底下的框、「添加组件」一直在眼前。 */
-.ta-discover[data-layout='dialog'] .ta-discover-groups { min-height: 0; flex: 1; overflow-y: auto; margin-inline: -6px; padding-inline: 6px; }
-.ta-discover-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-inline: 6px; }
-.ta-discover-groups { display: flex; flex-direction: column; gap: 16px; }
-.ta-discover-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.ta-discover[data-layout='page'] .ta-discover-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.ta-discover-tile { align-items: flex-start; gap: 6px; border: 0; text-align: left; cursor: pointer; }
-.ta-discover-tile .ta-tile-title { font-size: var(--ta-fs-title); white-space: normal; }
-.ta-discover-tile[aria-pressed='true'] { box-shadow: 0 0 0 2px var(--ta-chip-fg); }
-.ta-discover-compose { display: flex; flex-direction: column; gap: 8px; }
 
 /* ── 灵感:输入框右上一颗白底渐变胶囊;面板里分组的卡,一张 = emoji + 两行标题 + 两行说明。 ── */
 /* The dock measures this row together with the composer; an empty row has no height or gap. */
@@ -864,11 +577,6 @@ textarea.ta-input { min-height: 80px; resize: vertical; line-height: 1.5; }
 .ta-idea-body { font-size: var(--font-caption); line-height: var(--lh-caption); color: var(--ta-muted); }
 .ta-phone-layer { position: absolute; inset: 0; z-index: 20; overflow-y: auto; background: var(--ta-panel-bg); padding-top: env(safe-area-inset-top); }
 
-/* 应用行保留查看详情,连接按钮直接执行原有授权流程。 */
-.ta-connector-row { display: flex; align-items: center; gap: 8px; padding-right: var(--ta-pad-row-x); }
-.ta-connector-row > .ta-row,
-.ta-connector-row > .gg-settings-row { flex: 1; min-width: 0; }
-.ta-connector-row > button { flex-shrink: 0; }
 .ta-phone-connectors-inline { display: flex; flex-direction: column; gap: var(--spacing-lg); }
 .ta-connector-hero { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-md); padding: var(--spacing-2xl, 32px) var(--spacing-lg); text-align: center; }
 .ta-connector-hero h2 { margin: 0; font-size: var(--ta-fs-title, var(--font-title)); line-height: var(--ta-lh-title, var(--lh-title)); font-weight: 600; }
@@ -879,5 +587,3 @@ textarea.ta-input { min-height: 80px; resize: vertical; line-height: 1.5; }
 .ta-row.ta-row-split { padding: 0; }
 .ta-row-main { display: flex; flex: 1; min-width: 0; align-items: center; gap: var(--spacing-md); padding: var(--ta-pad-row-y) var(--ta-pad-row-x); border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .ta-row-split > .ta-row-meta { padding-inline-end: var(--ta-pad-row-x); }
-
-.ta-skin .ta-application-row .gg-settings-row-description { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

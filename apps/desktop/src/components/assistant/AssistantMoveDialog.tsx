@@ -4,6 +4,10 @@ import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import type { MoveDirection } from '@renderer/features/assistant/assistant-move'
+import type { MoveSkipped } from '@shared/core/integrations/integration-move'
+import { appState } from '../../session/renderer/lib/stores/app-state'
+import { UI_EVENTS } from '../../lib/uiEvents'
+import { revealSessionpage } from '../../hooks/useSessionpageReveal'
 import { dismissMove, getMoveState, startMove, startPreview, subscribeMove } from '@renderer/features/assistant/assistant-move-controller'
 import '../../i18n/registerAssistantCatalog'
 
@@ -14,10 +18,27 @@ function formatSize(bytes: number): string {
 }
 
 /** 账号清单上的名字:「飞书 · 阿满的飞书」(集成显示名取资源库那一份,查不到退回 id)。 */
-function accountLabel(names: Map<string, string>, account: { integrationId: string; accountId: string; displayName?: string }): string {
+function accountLabel(names: Map<string, string>, account: { integrationId: string; accountId?: string; displayName?: string }): string {
   const service = names.get(account.integrationId) ?? account.integrationId
-  const who = account.displayName?.trim() || (account.accountId === 'default' ? '' : account.accountId)
+  const who = account.displayName?.trim() || (!account.accountId || account.accountId === 'default' ? '' : account.accountId)
   return who ? `${service} · ${who}` : service
+}
+
+/** 要在新家手动重连的一列:名字,后面跟着旧家那份不保密的配置(服务器、用户名……),照着填。 */
+function ReconnectList({ names, items, testId }: { names: Map<string, string>; items: MoveSkipped[]; testId: string }) {
+  return (
+    <ul className="ml-5 list-disc" data-testid={testId}>
+      {items.map((item) => {
+        const config = Object.values(item.config ?? {}).filter((value) => value.trim()).join(' · ')
+        return (
+          <li key={`${item.integrationId}/${item.accountId ?? ''}`}>
+            {accountLabel(names, item)}
+            {config ? <span className="text-[var(--muted-fg)]">{`（${config}）`}</span> : null}
+          </li>
+        )
+      })}
+    </ul>
+  )
 }
 
 /**
@@ -28,6 +49,7 @@ export function AssistantMoveDialog() {
   const { t } = useTranslation('assistant')
   const { phase, assistantName, env, language } = useSyncExternalStore(subscribeMove, getMoveState)
   if (phase.kind === 'idle') return null
+  const reconnect = phase.kind === 'done' ? phase.report.accounts.skipped : []
   const go = (direction: MoveDirection, names: Map<string, string>) => {
     if (env) void startMove(env, direction, names, language)
   }
@@ -74,7 +96,6 @@ export function AssistantMoveDialog() {
                     <li key={`${account.integrationId}/${account.accountId}`}>{accountLabel(phase.names, account)}</li>
                   ))}
                 </ul>
-                <p className="text-[var(--muted-fg)]">{t(phase.direction === 'to-cloud' ? 'move.confirmAccountsNoteComputer' : 'move.confirmAccountsNoteCloud')}</p>
               </div>
             ) : (
               <p className="text-[var(--muted-fg)]">{t('move.confirmNoAccounts')}</p>
@@ -82,11 +103,7 @@ export function AssistantMoveDialog() {
             {phase.preview.accounts.reconnect.length > 0 ? (
               <div data-testid="assistant-move-reconnect">
                 <p>{t('move.confirmReconnect')}</p>
-                <ul className="ml-5 list-disc">
-                  {phase.preview.accounts.reconnect.map((item) => (
-                    <li key={`${item.integrationId}/${item.accountId ?? ''}`}>{phase.names.get(item.integrationId) ?? item.integrationId}</li>
-                  ))}
-                </ul>
+                <ReconnectList names={phase.names} items={phase.preview.accounts.reconnect} testId="assistant-move-reconnect-list" />
               </div>
             ) : null}
             <p className="text-[var(--muted-fg)]">{t('move.confirmKept')}</p>
@@ -118,28 +135,29 @@ export function AssistantMoveDialog() {
             <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">{t('move.doneTitle')}</div>
             <ul className="ml-5 list-disc" data-testid="assistant-move-report">
               <li>{t('move.doneFiles', { count: phase.report.files })}</li>
-              <li>{t('move.doneAccounts', { count: phase.report.accounts.moved.length })}</li>
+              {phase.report.accounts.moved.length > 0 ? <li>{t('move.doneAccounts', { count: phase.report.accounts.moved.length })}</li> : null}
               <li>{t('move.doneSchedules', { count: phase.report.schedules.restored })}</li>
             </ul>
-            {phase.report.accounts.skipped.length > 0 ||
-            phase.report.accounts.kept.length > 0 ||
-            phase.report.skippedFiles.length > 0 ||
+            {reconnect.length > 0 ? (
+              <div data-testid="assistant-move-done-reconnect">
+                <p>{t('move.doneReconnect')}</p>
+                {reconnect.some((item) => item.reason === 'no-keyring') ? (
+                  <p data-testid="assistant-move-no-keyring">{t('move.doneReconnectNoKeyring')}</p>
+                ) : null}
+                {reconnect.some((item) => item.reason === 'exists') ? (
+                  <p data-testid="assistant-move-exists">{t('move.doneReconnectExists')}</p>
+                ) : null}
+                <p className="text-[var(--muted-fg)]">
+                  {t(phase.direction === 'to-cloud' ? 'move.doneReconnectWhereCloud' : 'move.doneReconnectWhereComputer')}
+                </p>
+                <ReconnectList names={phase.names} items={reconnect} testId="assistant-move-done-reconnect-list" />
+              </div>
+            ) : null}
+            {phase.report.skippedFiles.length > 0 ||
             phase.report.schedules.skipped.length > 0 ? (
               <div>
                 <p>{t('move.doneNotMoved')}</p>
                 <ul className="ml-5 list-disc">
-                  {phase.report.accounts.skipped.map((item) => (
-                    <li key={`s-${item.integrationId}/${item.accountId ?? ''}`}>
-                      {t(item.reason === 'exists' ? 'move.doneNotMovedExists' : 'move.doneNotMovedCli', {
-                        name: phase.names.get(item.integrationId) ?? item.integrationId,
-                      })}
-                    </li>
-                  ))}
-                  {phase.report.accounts.kept.map((item) => (
-                    <li key={`k-${item.integrationId}/${item.accountId}`}>
-                      {t('move.doneNotMovedKept', { name: phase.names.get(item.integrationId) ?? item.integrationId })}
-                    </li>
-                  ))}
                   {phase.report.skippedFiles.map((item) => (
                     <li key={`f-${item.rel}`}>{t('move.doneNotMovedFile', { rel: item.rel })}</li>
                   ))}
@@ -161,7 +179,22 @@ export function AssistantMoveDialog() {
               </p>
             ) : null}
             {phase.report.warnings.length > 0 ? <p className="text-[var(--muted-fg)]">{t('move.doneWarn')}</p> : null}
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              {reconnect.length > 0 ? (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    dismissMove()
+                    // 搬家多半是从设置弹窗里开的:先收起它、回到会话页,资源库才露得出来。
+                    window.dispatchEvent(new Event(UI_EVENTS.closeSettings))
+                    revealSessionpage()
+                    appState.navigation.navigate('library', { tab: 'integrations' })
+                  }}
+                  data-testid="assistant-move-reconnect-open"
+                >
+                  {t('move.doneReconnectAction')}
+                </Button>
+              ) : null}
               <Button size="sm" variant="primary" onClick={dismissMove} data-testid="assistant-move-done">
                 {t('move.close')}
               </Button>

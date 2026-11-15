@@ -28,6 +28,7 @@ function harness(refreshed: Session) {
     publishSession: vi.fn(),
     writeMirror: vi.fn(async () => {}),
     clearMirror: vi.fn(async () => {}),
+    loadPersistedSession: async () => {},
     getPersistedSessionState: vi.fn(() => ({ bootCandidate: null, warning: null })),
     commitPersistedSession: vi.fn(async () => {}),
     clearPersistedSession: vi.fn(async () => {}),

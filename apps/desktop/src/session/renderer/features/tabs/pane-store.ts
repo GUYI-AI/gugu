@@ -83,8 +83,11 @@ class TabEntryImpl<S = unknown> implements TabEntry<S> {
  */
 export interface PaneSplitter {
   tabClosing?(entry: TabEntry): void;
-  /** A tab left this pane for good; `wasActive`: it was the one in front. */
-  tabRemoved?(tabId: string, wasActive: boolean): void;
+  /**
+   * A tab left this pane for good; `wasActive`: it was the one in front; `after`: the tab that stood left of it (null:
+   * it was first) — where it stood, told by the removal itself, since the pane's front has already moved on.
+   */
+  tabRemoved?(tabId: string, wasActive: boolean, after: string | null): void;
   /** A tab is being brought forward; true = the layout placed it (it replaced the side of the pair). */
   activating?(tabId: string): boolean;
   /** 这一枚能不能单独成窗,能的话怎么开(会话自己那枚 = 整个会话,App 那枚 = 这个 App,别的附页 = 这一枚)。 */
@@ -94,18 +97,27 @@ export interface PaneSplitter {
   /** 为什么分不出来;null = 分得出来。 */
   splitBlocked(tabId: string): 'only-tab' | 'too-small' | null;
   revealTab?(tabId: string): boolean;
+  /** Whether a tab is showing now, beside this one or in front. */
+  isOnScreen?(tabId: string): boolean;
   entryForTab?(tabId: string): TabEntry | undefined;
   hasSibling?(): boolean;
   isFocusedPane?(): boolean;
+  /** Selection may move a tab to the other pane before its strip click returns focus. */
+  focusedPane?(): PaneStore;
   /** This tab's place in the pair on the strip ('start' = left), undefined = not in the pair. */
   pairRole?(tabId: string): 'start' | 'end' | undefined;
   /** The side pane, drawn joined into this pane's strip (only for the main pane while paired). */
   pairSide?(): { paneId: string; pane: PaneStore } | undefined;
   /** This pane is the side of a pair: its tab is drawn in the main pane's strip, it has no strip of its own. */
   isSide?(): boolean;
+  /** The one strip this pane is drawn in (with the side of a pair), left to right. */
+  stripTabIds?(): string[];
   /** 拆开. */
   separatePair?(): void;
 }
+
+/** Which pane holds each entry now: tabs move between panes with their resource and its handle (see `_buildHandle`). */
+const entryHolders = new WeakMap<TabEntryImpl, object>();
 
 export class PaneStore<R extends TabRegistry = TabRegistry>
   implements Snapshottable<TabManagerSnapshot>, TabHost
@@ -122,6 +134,10 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
   dimensions: { width: number; height: number } | null = null;
   /** The tab that had focus before the one in front: 向右分 / ⌘\ put the one in front beside it. */
   private _previousActiveTabId: string | undefined = undefined;
+  /** What `onActivate` last saw on screen here. */
+  private _lastShown: TabResource[] = [];
+  /** Moved in while on screen (@@@carried-on-screen); good until the move's action has ended. */
+  private readonly _carriedShown = new Set<TabResource>();
 
   readonly registry: R;
   private readonly _ctx: TabViewContext;
@@ -223,8 +239,15 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
         this.isVisible
           ? this.shownTabIds.map((id) => this._resources.get(id)).filter((r): r is TabResource => r !== undefined)
           : [],
-      (shown, previous) => {
-        for (const resource of shown) if (!previous?.includes(resource)) resource.onActivate?.();
+      (shown) => {
+        // @@@carried-on-screen - a page moved here from another pane while on screen (a pair collapsing, 向右分, a
+        // window) did not come on screen: the move says so (`adoptEntry` `shown`), this pane's history cannot.
+        // The mark lives until the next microtask, so this relies on MobX running this reaction synchronously when
+        // the move's batch ends: every move goes through actions (detachTab / adoptEntry / the layout's own), and the
+        // page must reach this pane's screen in that same synchronous run. A move split across an await (or done
+        // outside an action, its screen change landing after a microtask) would activate the page once more.
+        for (const resource of shown) if (!this._lastShown.includes(resource) && !this._carriedShown.has(resource)) resource.onActivate?.();
+        this._lastShown = shown;
       },
       { fireImmediately: true, equals: comparer.shallow }
     );
@@ -247,10 +270,24 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
    * the user had closed each one.
    */
   private _closeTabsOfKind(kind: string, which?: (state: unknown) => boolean): void {
-    const ids = [...this.entries.values()]
-      .filter((e) => e.kind === kind && (!which || which(e.state)))
-      .map((e) => e.tabId);
-    for (const id of ids) this._removeTab(id);
+    // The whole strip's, fixed now: closing one can collapse a pair, which moves the next into the other pane and
+    // closes this one's neighbour (its own listener then never runs). Each is closed where it is by then.
+    const ids = this._stripTabIds.filter((id) => {
+      const entry = this.entries.get(id) ?? this._layoutSplitter?.entryForTab?.(id);
+      return entry?.kind === kind && (!which || which(entry.state));
+    });
+    for (const id of ids) this._holderOf(id)?._removeTab(id);
+  }
+
+  /** The pane holding this tab now (a pair collapsing moves tabs between the two panes of a strip). */
+  private _holderOf(tabId: string): PaneStore<R> | undefined {
+    const entry = this.entries.get(tabId) ?? this._layoutSplitter?.entryForTab?.(tabId);
+    return entry ? (entryHolders.get(entry as TabEntryImpl) as PaneStore<R> | undefined) : undefined;
+  }
+
+  /** The strip the person sees this pane's tabs in: with the side of a pair, if there is one. */
+  private get _stripTabIds(): string[] {
+    return this._layoutSplitter?.stripTabIds?.() ?? this.tabOrder;
   }
 
   /**
@@ -427,9 +464,12 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     return { tabs, activeTabId: tabs.some((tab) => tab.tabId === this.activeTabId) ? this.activeTabId : tabs[0]?.tabId };
   }
 
-  private _persistentDescriptor(entry: TabEntry): TabDescriptor | undefined {
+  private _persistentDescriptor(entry: TabEntry, closing = false): TabDescriptor | undefined {
     const history = this.navigationOf(entry.tabId)!;
-    const retained = history.pages.map((page, index) => ({ page, index })).filter(({ page }) => !this.registry.has(page.kind) || this.registry.get(page.kind).isPersistent?.(page.state as never) !== false);
+    const retained = history.pages.map((page, index) => ({ page, index })).filter(({ page }) => {
+      const provider = this.registry.has(page.kind) ? this.registry.get(page.kind) : undefined;
+      return provider?.isPersistent?.(page.state as never) !== false && !(closing && provider?.reopenable === false);
+    });
     if (!retained.length) return undefined;
     const index = Math.max(0, retained.findLastIndex((page) => page.index <= history.index));
     const page = retained[index].page;
@@ -500,15 +540,19 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     entry.history = { pages, index: history.index };
   }
 
-  navigate(tabId: string, kind: string, state: unknown): void {
+  /** `viewState`: where the new page shows, set with it: leaving this page can take a while (`onBeforeClose`). */
+  navigate(tabId: string, kind: string, state: unknown, viewState?: Record<string, unknown>): void {
     const entry = this.entries.get(tabId);
     const history = this.navigationOf(tabId);
     if (!entry || !history || !this.registry.has(kind)) return;
-    if (entry.kind === kind && this.registry.get(kind).resourceKey(entry.state as never) === this.registry.get(kind).resourceKey(state as never)) return;
+    if (entry.kind === kind && this.registry.get(kind).resourceKey(entry.state as never) === this.registry.get(kind).resourceKey(state as never)) {
+      if (viewState) this.setPageViewState(tabId, viewState);
+      return;
+    }
     this._beforeNavigate(entry, () => {
       const pages = history.pages.slice(0, history.index + 1);
       pages[history.index] = { ...pages[history.index], kind: entry.kind, state: toJS(entry.state) };
-      pages.push({ kind, state });
+      pages.push({ kind, state, ...(viewState ? { viewState } : {}) });
       this._showPage(entry, { pages, index: pages.length - 1 });
     });
   }
@@ -549,7 +593,10 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
 
   canGo(tabId: string, delta: -1 | 1): boolean {
     const history = this.navigationOf(tabId);
-    return Boolean(history?.pages[history.index + delta] || (delta === -1 && this.openerOf(tabId)));
+    if (history?.pages[history.index + delta]) return true;
+    // The tab it was opened from, unless that is on screen already (beside it): going there would change nothing.
+    const opener = delta === -1 ? this.openerOf(tabId) : undefined;
+    return !!opener && !this._layoutSplitter?.isOnScreen?.(opener.tabId);
   }
 
   private _beforeNavigate(entry: TabEntryImpl, apply: () => void): Promise<boolean> {
@@ -574,6 +621,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     entry.history = history;
     entry.openerTabId = oldEntry.openerTabId;
     this.entries.set(entry.tabId, entry);
+    entryHolders.set(entry, this);
     this._resources.set(entry.tabId, this.registry.has(entry.kind)
       ? this.registry.get(entry.kind).initialize(entry as never, this._buildHandle(entry), this._ctx)
       : createUnavailableTabResource());
@@ -628,7 +676,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
 
 
   closeOthers(tabId: string): void {
-    void this._requestCloseInTurn(this.tabOrder.filter((id) => id !== tabId));
+    void this._requestCloseInTurn(this._stripTabIds.filter((id) => id !== tabId));
   }
 
   /** 这一格是不是它那个布局里握着焦点的那格;单独成窗的那一格只有它自己。 */
@@ -684,14 +732,15 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
 
   /** 关闭右侧页签:这一枚右边的都关掉(照 VS Code / Chrome)。 */
   closeToRight(tabId: string): void {
-    const index = this.tabOrder.indexOf(tabId);
+    const strip = this._stripTabIds;
+    const index = strip.indexOf(tabId);
     if (index < 0) return;
-    void this._requestCloseInTurn(this.tabOrder.slice(index + 1));
+    void this._requestCloseInTurn(strip.slice(index + 1));
   }
 
   /** 关闭全部页签。最后一枚关掉,这一格跟着关掉(由布局的自动关闭接)。 */
   closeAll(): void {
-    void this._requestCloseInTurn([...this.tabOrder]);
+    void this._requestCloseInTurn([...this._stripTabIds]);
   }
 
   /**
@@ -699,7 +748,8 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
    * 后一个会把前一个顶掉,被顶掉的那枚就永远等不到回答。❌ 直接强关:那会把没存的修改悄悄扔掉。
    */
   private async _requestCloseInTurn(tabIds: readonly string[]): Promise<void> {
-    for (const id of tabIds) await this._requestClose(id, false);
+    // The targets are fixed now, by id; each is closed by the pane holding it when its turn comes.
+    for (const id of tabIds) await this._holderOf(id)?._requestClose(id, false);
   }
 
   /** 关掉这几枚(一枚一枚问,同一排):会话那枚问过「会话和页签都关」之后,替它把别的页签关掉。 */
@@ -743,9 +793,9 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
   }
 
   focusActiveContent(): void {
-    const focuser = this._contentFocuser;
-    if (!focuser) return;
-    requestAnimationFrame(() => focuser());
+    const focused = this._layoutSplitter?.focusedPane?.() ?? this;
+    if (!this._contentFocuser && !focused._contentFocuser) return;
+    requestAnimationFrame(() => (this._layoutSplitter?.focusedPane?.() ?? this)._contentFocuser?.());
   }
 
   /** User-initiated close — calls onBeforeClose if defined, then closes on confirm. */
@@ -817,7 +867,8 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
    * Used by moveTab — the resource survives unchanged.
    * Returns { entry, resource } or undefined if not found.
    */
-  detachTab(id: string): { entry: TabEntryImpl; resource: TabResource } | undefined {
+  /** `shown`: it was on screen here as it left (what `onActivate` last saw), told to the pane that adopts it. */
+  detachTab(id: string): { entry: TabEntryImpl; resource: TabResource; shown: boolean } | undefined {
     const entry = this.entries.get(id);
     const resource = this._resources.get(id);
     if (!entry || !resource) return undefined;
@@ -825,7 +876,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     this.entries.delete(id);
     this._resources.delete(id);
     removeTabId(this, id);
-    return { entry, resource };
+    return { entry, resource, shown: this._lastShown.includes(resource) };
   }
 
   /**
@@ -835,9 +886,15 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
   adoptEntry(
     entry: TabEntryImpl,
     resource: TabResource,
-    opts?: { insertBeforeTabId?: string; activate?: boolean }
+    opts?: { insertBeforeTabId?: string; activate?: boolean; shown?: boolean }
   ): void {
+    // Until this pane's next look at its screen: a page that stays on screen through the move is not newly shown.
+    if (opts?.shown) {
+      this._carriedShown.add(resource);
+      queueMicrotask(() => this._carriedShown.delete(resource));
+    }
     this.entries.set(entry.tabId, entry);
+    entryHolders.set(entry, this);
     this._resources.set(entry.tabId, resource);
     const insertIdx = opts?.insertBeforeTabId ? this.tabOrder.indexOf(opts.insertBeforeTabId) : -1;
     if (insertIdx === -1) {
@@ -860,6 +917,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     const def = this.registry.get(kind);
     const resource = def.initialize(entry as never, this._buildHandle(entry), this._ctx);
     this.entries.set(entry.tabId, entry);
+    entryHolders.set(entry, this);
     this._resources.set(entry.tabId, resource);
     const insertAt = Math.min(index, this.tabOrder.length);
     this.tabOrder.splice(insertAt, 0, entry.tabId);
@@ -874,6 +932,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     const def = this.registry.get(entry.kind);
     const resource = def.initialize(entry as never, this._buildHandle(entry), this._ctx);
     this.entries.set(entry.tabId, entry);
+    entryHolders.set(entry, this);
     this._resources.set(entry.tabId, resource);
     addTabId(this, entry.tabId);
     if (opts?.activate) this.setActiveTab(entry.tabId);
@@ -881,6 +940,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
 
   private _attachUnavailableEntry(entry: TabEntryImpl): void {
     this.entries.set(entry.tabId, entry);
+    entryHolders.set(entry, this);
     this._resources.set(entry.tabId, createUnavailableTabResource());
     addTabId(this, entry.tabId);
   }
@@ -893,7 +953,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
 
     // Record for reopen history before removing.
     const index = this.tabOrder.indexOf(id);
-    const descriptor = this._persistentDescriptor(entry);
+    const descriptor = this._persistentDescriptor(entry, true);
     if (descriptor) this._closedTabHistory.push({ desc: descriptor, index });
     if (this._closedTabHistory.length > PaneStore._MAX_CLOSED_HISTORY) {
       this._closedTabHistory.shift();
@@ -903,9 +963,11 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     this.entries.delete(id);
     this._resources.delete(id);
     removeTabId(this, id);
-    const kinds = new Set([entry.kind, ...(entry.history?.pages.map((page) => page.kind) ?? [])]);
-    for (const kind of kinds) if (this.registry.has(kind)) this.registry.get(kind).closed?.(id, this._ctx);
-    this._layoutSplitter?.tabRemoved?.(id, wasActive);
+    const pages = entry.history?.pages ?? [{ kind: entry.kind, state: entry.state }];
+    for (const kind of new Set(pages.map((page) => page.kind))) {
+      if (this.registry.has(kind)) this.registry.get(kind).closed?.(id, this._ctx, pages.filter((page) => page.kind === kind).map((page) => page.state) as never);
+    }
+    this._layoutSplitter?.tabRemoved?.(id, wasActive, index > 0 ? this.tabOrder[index - 1] ?? null : null);
   }
 
   /** Call provider.dispose() for an entry if its resource exists. Does NOT remove from maps. */
@@ -919,42 +981,39 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     resource.dispose();
   }
 
+  private _closeFromHandle(entry: TabEntryImpl, opts?: { force?: boolean }): Promise<boolean> {
+    const resource = this._resources.get(entry.tabId);
+    const def = this.registry.has(entry.kind) ? this.registry.get(entry.kind) : undefined;
+    // User-style close: run onBeforeClose veto.
+    if (!opts?.force && resource && def?.onBeforeClose) {
+      return Promise.resolve(def.onBeforeClose(entry as never, resource as never, this._ctx, { alone: false })).then((proceed) => {
+        if (proceed && this.entries.get(entry.tabId) === entry) runInAction(() => this._removeTab(entry.tabId));
+        return proceed;
+      });
+    }
+    runInAction(() => this._removeTab(entry.tabId));
+    return Promise.resolve(true);
+  }
+
   /** Builds the TabHandle interface for an entry. */
   private _buildHandle(entry: TabEntryImpl): TabHandle {
+    // A resource keeps its handle when its tab moves to another pane (the side of a pair, a window): `this` may no longer hold it.
+    const holder = (): PaneStore<R> | undefined => {
+      const pane = entryHolders.get(entry) as PaneStore<R> | undefined;
+      return pane?.entries.get(entry.tabId) === entry ? pane : undefined;
+    };
     return {
       tabId: entry.tabId,
-      close: (opts?: { force?: boolean }): Promise<boolean> => {
-        if (this.entries.get(entry.tabId) !== entry) return Promise.resolve(false);
-        if (opts?.force) {
-          runInAction(() => this._removeTab(entry.tabId));
-          return Promise.resolve(true);
-        }
-        // User-style close: run onBeforeClose veto.
-        const entryRef = this.entries.get(entry.tabId);
-        if (!entryRef) return Promise.resolve(false);
-        const resource = this._resources.get(entry.tabId);
-        if (resource && this.registry.has(entryRef.kind)) {
-          const def = this.registry.get(entryRef.kind);
-          if (def.onBeforeClose) {
-            return Promise.resolve(
-              def.onBeforeClose(entryRef as never, resource as never, this._ctx, { alone: false })
-            ).then((proceed) => {
-              if (proceed && this.entries.get(entry.tabId) === entry) runInAction(() => this._removeTab(entry.tabId));
-              return proceed;
-            });
-          }
-        }
-        runInAction(() => this._removeTab(entry.tabId));
-        return Promise.resolve(true);
-      },
+      close: (opts?: { force?: boolean }): Promise<boolean> => holder()?._closeFromHandle(entry, opts) ?? Promise.resolve(false),
       open: (
         kind: string,
         args: Record<string, unknown>,
         config?: Partial<TabOpenOptions>
       ) => {
-        if (this.entries.get(entry.tabId) !== entry) return;
-        if (this._layoutOpener) this._layoutOpener(kind, args, { ...config, from: entry.tabId, intent: config?.intent ?? 'navigate' });
-        else { this.setActiveTab(entry.tabId); this.openKind(kind, args, config); }
+        const pane = holder();
+        if (!pane) return;
+        if (pane._layoutOpener) pane._layoutOpener(kind, args, { ...config, from: entry.tabId, intent: config?.intent ?? 'navigate' });
+        else { pane.setActiveTab(entry.tabId); pane.openKind(kind, args, config); }
       },
     };
   }

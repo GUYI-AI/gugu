@@ -84,8 +84,8 @@ export class AcpRuntime {
     return ok({ providerSessionId: result.data.providerSessionId, ...page });
   }
 
-  stopSession(sessionId: string, onlyIfIdle = false): Promise<Result<void, AcpStopSessionError>> {
-    return this.manager.stop(sessionId, onlyIfIdle);
+  stopSession(sessionId: string, onlyIfIdle = false, forgetLost = false): Promise<Result<void, AcpStopSessionError>> {
+    return this.manager.stop(sessionId, onlyIfIdle, forgetLost);
   }
 
   /** 这条会话此刻attach的适配器进程(连接 key + pid)。只给会话重载当判据,见 SessionManager 那里。 */
@@ -100,6 +100,10 @@ export class AcpRuntime {
 
   turnEnvelope(sessionId: string) {
     return this.manager.turnEnvelope(sessionId);
+  }
+
+  windowActiveReference(sessionId: string, referenceId: string): boolean {
+    return this.manager.windowActiveReference(sessionId, referenceId);
   }
 
   sendPrompt(
@@ -209,9 +213,10 @@ export class AcpRuntime {
     sessionId: string,
     before?: number,
     limit?: number,
-    changedSince?: HistoryCursor
+    changedSince?: HistoryCursor,
+    contentFrom?: number
   ): Result<HistoryPage, AcpGetHistoryError> {
-    return ok(this.manager.getHistory(sessionId, before, limit, changedSince));
+    return ok(this.manager.getHistory(sessionId, before, limit, changedSince, contentFrom));
   }
 
   getToolImage(sessionId: string, itemId: string, index: number) {

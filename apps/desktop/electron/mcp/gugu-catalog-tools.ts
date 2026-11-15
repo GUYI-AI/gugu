@@ -78,7 +78,7 @@ export type CatalogLeftOut = () => string[] | Promise<string[]>
 export function unlistedTools(server: McpServer, listedTools = GUGU_LISTED_TOOLS): CatalogTool[] {
   const registered = (server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools
   return Object.entries(registered)
-    .filter(([name]) => !listedTools.has(name))
+    .filter(([name, tool]) => !listedTools.has(name) && tool.enabled)
     .map(([name, tool]) => ({
       ...(advertisedTool(name, tool) as Pick<Tool, 'name' | 'description' | 'inputSchema'> & { description: string }),
       run: async (args, extra) => {
@@ -116,7 +116,7 @@ function selfNamedArgumentHint(args: unknown, path: PropertyKey[]): string | nul
 function ownListedTools(server: McpServer, listedTools: ReadonlySet<string>): Array<{ name: string; description: string; inputSchema: Tool['inputSchema'] }> {
   const registered = (server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools
   return Object.entries(registered)
-    .filter(([name]) => listedTools.has(name) && !name.startsWith('catalog_'))
+    .filter(([name, tool]) => listedTools.has(name) && tool.enabled && !name.startsWith('catalog_'))
     .map(([name, tool]) => advertisedTool(name, tool) as { name: string; description: string; inputSchema: Tool['inputSchema'] })
 }
 
@@ -176,7 +176,8 @@ export function registerGuguCatalogTools(server: McpServer, source: CatalogSourc
   const find = async (name: string): Promise<CatalogTool> => {
     const entry = unlistedTools(server, listedTools).find((tool) => tool.name === name) ?? (await source(name)).find((tool) => tool.name === name)
     // #6634 问题 14 W-21: Claude, having installed through catalog_call, sent catalog_list and catalog_call through it too.
-    if (!entry && listedTools.has(name)) throw new Error(`${name} is one of your own tools, not a catalog entry: call it directly`)
+    const own = (server as unknown as { _registeredTools: Record<string, RegisteredTool> })._registeredTools[name]
+    if (!entry && listedTools.has(name) && own?.enabled !== false) throw new Error(`${name} is one of your own tools, not a catalog entry: call it directly`)
     if (!entry) {
       // #6634 问题 16 W-21: a program whose tools/list failed was simply absent; the agent guessed names for minutes.
       // An extension the person revoked or turned off was absent the same way, and an agent went and ran its program by hand.

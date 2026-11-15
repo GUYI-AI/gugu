@@ -4,10 +4,11 @@
 //   · 版式与 MessageBubble 的 content_type==='system' 同一套(居中、裸文字、caption、faint 色);
 //   · 名字按成员**当前**的资料渲染(改过名跟着变),比灰字深一档;还在群里、不是自己的,是一颗行内按钮,
 //     点了走 #518 的 mentionToInsert 通道 —— 插进去的是真路由 @,不是一段纯文本;
-//   · 有任何一个入群者的资料解析不出(退了群又从没说过话,名册与消息窗口都没有他),整行退回服务端写的
+//   · 有任何一个入群者的资料解析不出(退了群又从没说过话,名册与消息窗口都没有他),整行退回不带按钮的
 //     纯文本:宁可不给点,也不拼一个「未知用户」出来。
 import { Fragment, type CSSProperties } from 'react'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
+import { systemNoticeText } from '@/lib/systemNoticeText'
 import { useChatStore } from '@/store/chatContext'
 import { useTranslation } from 'react-i18next'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
@@ -30,7 +31,7 @@ export type MentionTarget = { id: string; name: string }
 
 export type MemberJoinNoticeProps = {
   userIds: string[]
-  /** 服务端写的纯文本,资料不全时整行照它显示 */
+  /** 服务端写的原文;资料不全时整行按读者语言说它(systemNoticeText) */
   content: string
   memberProfiles: Record<string, MemberProfileCardModel>
   /** 不传 = 这个表面没有输入框(搜索结果等),名字只读 */
@@ -75,7 +76,7 @@ export function MemberJoinNotice({ userIds, content, memberProfiles, onMention }
             })}
             {t('group.memberJoined.joined')}
           </>
-        ) : content}
+        ) : systemNoticeText({ kind: 'member-joined', userIds }, content)}
       </div>
     </div>
   )

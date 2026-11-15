@@ -36,11 +36,10 @@ describe('project composer attachments use the group-file publisher', () => {
     expect(f.upload).toHaveBeenCalledWith(endpoint, { bytes: selected, name: selected.name, contentType: 'application/pdf' }, { chat_id: 'group', as: 'owner' }, { onPlan: undefined, retry: false })
     expect(f.commit).toHaveBeenCalledWith(endpoint, { ...args, staging_key: 'staging' })
   })
-  it('uploads an image when sent, also in a project chat whose other files stay on the machine', async () => {
+  it('publishes an image as it does any other file of a project chat', async () => {
     const n = native(), image = new File(['png'], 'shot.png', { type: 'image/png' })
-    await expect(prepareChatAttachment(endpoint, image, { chat_id: 'group', as: 'owner' })).resolves.toEqual({ staging_key: 'staging' })
-    expect(n.invoke).not.toHaveBeenCalled()
-    expect(f.upload).toHaveBeenCalledWith(endpoint, { bytes: image, name: 'shot.png', contentType: 'image/png' }, { chat_id: 'group', as: 'owner' }, { onPlan: undefined, retry: false })
+    await expect(prepareChatAttachment(endpoint, image, { chat_id: 'group', as: 'owner' })).resolves.toEqual({ local: image })
+    expect(n.invoke).toHaveBeenCalledOnce(); expect(f.upload).not.toHaveBeenCalled()
   })
   it('does not put a whisper into the shared project folder', async () => {
     const n = native(), selected = file(), prepared = await prepareChatAttachment(endpoint, selected, { chat_id: 'group', as: 'owner', is_whisper: true })

@@ -2,7 +2,9 @@ import type { PluginIconAsset } from '@gugu/session-shared/plugins';
 
 export const icon: PluginIconAsset = {
   kind: 'image',
-  alt: 'Kilocode CLI',
+  // Opaque white logo: without a plate the library tile falls back to dark + inverted, a blank white square.
+  plate: { color: '#FFFFFF', mark: 'original' },
+  alt: 'Kilo CLI',
   variants: [
     {
       minSize: 0,

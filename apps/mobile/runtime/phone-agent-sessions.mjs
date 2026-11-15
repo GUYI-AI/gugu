@@ -29,7 +29,8 @@ export function createPhoneSessionTools({ agent, job, cloud, store, deviceId, wo
     }
     return [...found.values()]
   }
-  const cross = createCrossMachineSessions({ thisDeviceId: async () => deviceId, listDevices: () => listDevices(cloud.identity, store.state.ownerId), lookupAgents, requester })
+  // A phone keeps no local projects, so nothing it sends can name one (outbound: the desktop's local-id check).
+  const cross = createCrossMachineSessions({ thisDeviceId: async () => deviceId, listDevices: () => listDevices(cloud.identity, store.state.ownerId), lookupAgents, requester, outbound: async () => {} })
   // This source is supplied by the host-owned tool closure, never by model arguments or RPC.
   const here = (action, callId) => invoke(`agentSession.${action.action}`, [caller(), action], stableId('phone-session-tool', job.id, callId, action), { kind: 'phone-agent', agentUserId: agent.agentUserId, jobId: job.id })
   const prepareFiles = async (files, targets, callId, signal) => {

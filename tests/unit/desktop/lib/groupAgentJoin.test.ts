@@ -15,6 +15,8 @@ function lookup(catalog: unknown, key: string): unknown {
 describe('「Agent 加入需审批」的结果与拒绝原因', () => {
   it('库里的稳定标识 → 文案 key;认不出的交给通用失败文案(返回 null)', () => {
     expect(groupJoinDenialKey('ERROR: member_limit_reached')).toBe('group.join.denied.memberLimit')
+    // 链接入群 / 审批 / 加好友入群抛的英文原句也是「群满了」,❌ 落到「加入失败:Group member limit reached」。
+    expect(groupJoinDenialKey('Group member limit reached')).toBe('group.join.denied.memberLimit')
     expect(groupJoinDenialKey('join_request_requester_left')).toBe('group.join.denied.requesterLeft')
     expect(groupJoinDenialKey('connection lost')).toBeNull()
     expect(groupJoinDenialKey(undefined)).toBeNull()

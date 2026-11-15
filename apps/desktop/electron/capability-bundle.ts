@@ -25,6 +25,7 @@ import { platformProtocolForEngine } from './engine-injection-contract'
 import { pluginRegistry, PRODUCT_CAPABILITY_PACKAGES } from '@gugu/session-plugins/agents'
 import {
   buildSocialBridge,
+  guguToolsOff,
   providerEnv,
   type AcpMcpServer,
   type AcpEngineRuntimeContext,
@@ -69,17 +70,14 @@ export interface SessionCapabilityBundle {
   extensionSkills: readonly ExtensionSkill[]
   /** 上下文工程第二批 P3: the Apps whose tools this session reaches through the catalog (`<gugu_apps>` names them). Required, same reason. */
   extensionApps: readonly ExtensionAgentApp[]
+  /** The built-in tool groups switched off in the library: `<gugu_apps>` leaves out the lines that name their tools. */
+  guguToolsOff?: readonly string[]
   /** #6387 Which extension each extension program in `mcpServers` came from (for the `/mcp` panel). */
   extensionServerOrigins: readonly { name: string; extensionId: string }[]
   /** #7199 这台机器上 Browser Use App 装着、开着、许给 agent 工具(buildSessionBundle 读一次;交给各家物化器,见 core 那一格)。 */
   browserUse?: true
   /** Disable harness-owned browser routes independently of App availability. */
   disableNativeBrowser?: true
-  /**
-   * Remote hosts explicitly report that Browser Use is not available yet.
-   * Absent for desktop sessions or hosts without the App probe.
-   */
-  browserRule?: 'unavailable'
 }
 
 // Keep the Electron-side declaration available at this boundary as well. The core and
@@ -153,12 +151,8 @@ export type { ModelConfigDialect }
 export type { SessionModelCapability }
 
 export interface SessionAutonomyCapability {
-  mode: 'approval-required' | 'full-access'
-  /**
-   * Exact product tier, authoritative when present. `mode` is the legacy coarse channel derived from
-   * this value; old boolean-only callers omit it and retain their historical behavior.
-   */
-  permissionMode?: GuguPermissionMode
+  /** The exact product tier: the one channel every materializer reads (full access = `full-access`). */
+  permissionMode: GuguPermissionMode
 }
 
 export interface SessionPromptBlocks {
@@ -258,6 +252,11 @@ export interface CapabilityLoader {
 }
 
 export interface BuildSessionBundleDeps {
+  /**
+   * 资源库 → MCP 的选择取自哪条任务;缺省就是这条。运行时分叉(侧边聊天)给来源任务:分叉是视图、自己没有行,
+   * 从前这里按分叉的 view id 去找,找不到就一台都不带。
+   */
+  libraryFrom?: string
   runtime: AcpEngineRuntimeContext
   agentUserId: string
   /** Stable product conversation/session key used by harnesses with per-session config roots. */
@@ -444,15 +443,31 @@ export function setBrowserUseApp(probe: { installed: () => boolean; server: bool
   browserUseApp = probe
 }
 
-/** The remote Browser Use implementation has been removed; installing the shell App cannot enable it. */
-function browserUseOf(personalAssistant: boolean): Pick<SessionCapabilityBundle, 'browserUse' | 'browserRule' | 'disableNativeBrowser'> {
+/** The Browser Use App's id in the App market. */
+export const BROWSER_USE_APP_ID = 'browser-use'
+
+/**
+ * Whether this machine has the Browser Use App: installed, switched on and still allowed to give agents tools, whatever
+ * kind of program it runs. An outdated version (a program gugu itself once hosted) does not count: it runs nothing.
+ */
+export function browserUseAppInstalled(programs: { installed(): readonly { extensionId: string; outdated?: true }[]; agentToolsRefusal(extensionId: string): string | null }): boolean {
+  return programs.installed().some((program) => program.extensionId === BROWSER_USE_APP_ID && !program.outdated
+    && !programs.agentToolsRefusal(program.extensionId))
+}
+
+/**
+ * #1607 / #2401 The same on a Gugu server as on a desktop: the installed Browser Use App is this machine's browser (on a
+ * server it drives the server's own headless Chromium). A server never offers the agent's built-in browser plugin — it
+ * has no screen for it.
+ */
+function browserUseOf(): Pick<SessionCapabilityBundle, 'browserUse' | 'disableNativeBrowser'> {
   if (!browserUseApp) return {}
-  if (browserUseApp.server) return { disableNativeBrowser: true, ...(!personalAssistant ? { browserRule: 'unavailable' as const } : {}) }
+  const server = browserUseApp.server ? { disableNativeBrowser: true as const } : {}
   try {
-    return browserUseApp.installed() ? { browserUse: true } : {}
+    return browserUseApp.installed() ? { ...server, browserUse: true } : server
   } catch (error) {
     createLogger('capability-bundle').warn({ error: (error as Error).message }, 'could not read whether Browser Use is installed; the session has no browser')
-    return {}
+    return server
   }
 }
 
@@ -472,8 +487,9 @@ export function setSessionExtensionBridge(bridge: SessionExtensionBridge | null)
  * 与资源库里连上的服务同一层(`owner: 'integration'`):咕咕投递、可以在 `/mcp` 里为这条会话关掉;
  * ❌ 记成 `'user'` —— 那一层是「各家自己会读」的,Claude 会跳过它,`sessionUserServers: 'inherit'` 的几家会丢掉。
  * `settle`:包建好以后报回哪几台真送进去了、哪几台和咕咕自己的撞了 —— `/mcp` 面板读的是这份事实,❌ 读「勾了」。
+ * `selectionFrom`:选的那几台记在哪条任务上 —— 运行时分叉(侧边聊天)自己没有行,选择照来源任务(见 `libraryFrom`)。
  */
-type SessionLibraryMcpBridge = (sessionId: string) => Promise<{
+type SessionLibraryMcpBridge = (sessionId: string, selectionFrom?: string) => Promise<{
   servers: readonly CanonicalMcpServer[]
   settle: (outcome: { delivered: string[]; collided: { name: string; with: string }[] }) => void
 }>
@@ -527,7 +543,7 @@ export async function buildSessionBundle(
   const bootstrap = buildSessionBootstrapBundle(deps)
   const taken = [...bootstrap.mcpServers, ...socialBridge, ...integrations, ...extensions.servers]
   // 密钥(env 值、Authorization)与用户自己的那批同一种转换:换成 GUGU_SESSION_MCP_ENV_* 引用,值随 env 走。
-  const picked = sessionLibraryMcpBridge && agentId ? await sessionLibraryMcpBridge(agentId) : null
+  const picked = sessionLibraryMcpBridge && agentId ? await sessionLibraryMcpBridge(agentId, deps.libraryFrom) : null
   const library = picked ? canonicalMcpServersToSessionServers(picked.servers) : { servers: [], env: {} }
   // 人在资源库里默认启用的,和 App 一样直接摆在模型的工具表上(`alwaysLoad`),❌ 藏在各家自己的延迟加载后面。
   const { kept, collided } = libraryMcpWithoutCollisions(
@@ -542,8 +558,9 @@ export async function buildSessionBundle(
     env: { ...bootstrap.env, ...library.env },
     extensionSkills: [...extensions.skills, ...integrationSkills],
     extensionApps: extensions.apps,
+    guguToolsOff: await guguToolsOff(),
     extensionServerOrigins: extensions.origins,
-    ...browserUseOf(deps.socialBridgeDeps.personalAssistant === true),
+    ...browserUseOf(),
     mcpServers,
     // ⚠️ 这一行就是断过的那一跳。bootstrap 服务 pty 腿、恒为 `undefined`,
     //    ACP 腿的关闭集合必须在这里接回来;`[]` 原样递,❌ 不归一成 undefined。
@@ -1073,18 +1090,14 @@ function guguToolNamingLine(
   }
 }
 
-/** Removed host browser implementation: the App must supply its own remote control before it can be used here. */
-export const BROWSER_UNAVAILABLE_RULE = 'Browser Use is not available on this machine yet. If a task needs browser control, tell the person this directly. Installing the current Browser Use App does not enable it here. Do not launch a replacement browser, Playwright, Chrome or a headless scraper, and do not claim to have viewed a page.'
-
 export function guguSessionSurfaceBlock(
   surface: HarnessSessionSurface,
   providerId: string,
   carriesGuguMcp: boolean,
-  browserRule?: 'unavailable',
 ): string {
   return `<gugu_session_surface>
 ${guguSessionSurfaceBody(surface)}
-${guguToolNamingLine(providerId, surface, carriesGuguMcp)}${SESSION_SPAWN_ROUTING_RULE}${browserRule ? `\n${BROWSER_UNAVAILABLE_RULE}` : ''}
+${guguToolNamingLine(providerId, surface, carriesGuguMcp)}${SESSION_SPAWN_ROUTING_RULE}
 </gugu_session_surface>
 `
 }
@@ -1112,15 +1125,12 @@ function withSurfaceSelfDescription(
   // 这一次物化不投平台块（resume：session-open 时已经投过），就同样不投它，否则 resume 会重复一段自述。
   if (!platform) return bundle
   const nativeSkills = mountsExtensionSkillsNatively(pluginRegistry.get(providerId)?.capabilities.sessionBundle?.extension)
-  const apps = guguAppsBlock(bundle.extensionApps, nativeSkills ? [] : bundle.extensionSkills)
+  const apps = guguAppsBlock(bundle.extensionApps, nativeSkills ? [] : bundle.extensionSkills, bundle.guguToolsOff)
   return {
     ...bundle,
-    promptBlocks: { ...bundle.promptBlocks, platform: `${platform}${guguSessionSurfaceBlock(surface, providerId, bundle.mcpServers.some((server) => server.owner === 'gugu'), bundle.browserRule)}${apps}` },
+    promptBlocks: { ...bundle.promptBlocks, platform: `${platform}${guguSessionSurfaceBlock(surface, providerId, bundle.mcpServers.some((server) => server.owner === 'gugu'))}${apps}` },
   }
 }
-
-/** #7317 What `<gugu_apps>` says while Computer Use is on (off: nothing, no token). */
-export const COMPUTER_USE_LINE = 'Computer Use is on: use browser_* tools for webpages in this session\'s own browser tabs. Use device_actions with group computer, then device_call, only for the person\'s other desktop apps.'
 
 /**
  * 上下文工程第二批 P3 (D-27, owner 10-07 chose (c); owner 10-31 raised it from 300): the App lines together are at most
@@ -1175,20 +1185,18 @@ export const GUGU_APPS_SEARCH_LINE = [
  * 集体记忆对账第 13 条：写给 agent 的散文叫 App（#6874 把「扩展」改名 App，guide 和工具说明早就这么叫）；
  * 存储层的标识（gugu-ext://、.guguext、信封的 route="extension"）不在改名范围里。
  */
-export function guguAppsBlock(apps: readonly ExtensionAgentApp[], skills: readonly ExtensionSkill[]): string {
+export function guguAppsBlock(apps: readonly ExtensionAgentApp[], skills: readonly ExtensionSkill[], off: readonly string[] = []): string {
   if (apps.length === 0 && skills.length === 0) return ''
   const parts: string[] = []
-  // Computer Use stays on the device API path, independently of App tool disclosure.
-  if (apps.some((app) => app.computerUse)) parts.push(COMPUTER_USE_LINE)
-  const catalogApps = apps.filter((app) => !app.computerUse)
-  if (catalogApps.length > 0) {
-    parts.push(['Apps available in this session:', ...appLines(catalogApps)].join('\n'))
+  if (apps.length > 0) {
+    parts.push(['Apps available in this session:', ...appLines(apps)].join('\n'))
   }
   if (skills.length > 0) {
     const lines = skills.map(skillLine)
     parts.push(['Skills from Apps installed in 咕咕. When a task matches one, read its SKILL.md first and follow it.', ...lines].join('\n'))
   }
-  parts.push(GUGU_APPS_SEARCH_LINE)
+  if (!off.includes('apps')) parts.push(GUGU_APPS_SEARCH_LINE)
+  if (parts.length === 0) return ''
   return `<gugu_apps>
 ${parts.join('\n')}
 </gugu_apps>

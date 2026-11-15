@@ -9,6 +9,7 @@
     "./billing/*": "./src/billing/*",
     "./cloud/*": "./src/cloud/*",
     "./local/*": "./src/local/*",
+    "./log": "./src/log.ts",
     "./shared/*": "./src/shared/*"
   },
   "dependencies": {

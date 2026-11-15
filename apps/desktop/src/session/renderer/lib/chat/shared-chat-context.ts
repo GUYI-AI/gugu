@@ -8,8 +8,10 @@ import { senderAvatarUrl, subscribeSenderAvatars } from './sender-avatar';
 import { SESSION_CHAT_FONT_STACK } from './font-stack';
 import { chatMentionProvider, registerIssueMentionIcons } from './chat-mention-provider';
 import { getSessionLocaleSnapshot, subscribeSessionLocale, translateSessionMessage } from '../../localization/locale-store';
-import { subscribeChatNames } from '@/lib/chatSummariesBridge';
+import { readChatSummary, resolveChatId, subscribeChatNames } from '@/lib/chatSummariesBridge';
 import { chatDisplayName } from './chat-name';
+import { chatActor } from './actor-identity';
+import { billingLinksAvailable } from '@/lib/appLinks';
 
 let shared: ChatContext | null = null;
 let didPreloadIssueMentionIcons = false;
@@ -45,11 +47,15 @@ export function initSharedChatContext(): ChatContext {
  */
 export function createSessionChatContext(): ChatContext {
   return createChatContext({
+    actor: chatActor,
+    subscribeActors: subscribeSenderAvatars,
     locale: () => getSessionLocaleSnapshot().resolvedLocale,
     config: SESSION_CHAT_CONFIG,
     mentionProvider: chatMentionProvider,
     commandProvider: advertisedCommandProvider,
-    translator: translateSessionMessage,
+    translator: (key, values) => translateSessionMessage(
+      key === 'transcript.creditsExhausted' && !billingLinksAvailable()
+        ? 'transcript.creditsExhaustedReadonly' : key, values),
     subscribeTranslator: subscribeSessionLocale,
     // #5048 「我是谁」经 window.__GUGU_SELF_IDENTITY__ 从咕咕壳送进来;桥缺席(独立打开的会话页)= 没人,
     // 投递卡退回信封事实。懒读:桥由 gugu 的 App 在登录态变化时装/更新。
@@ -64,6 +70,7 @@ export function createSessionChatContext(): ChatContext {
     subscribeAppNames: (listener) => reaction(() => [installedExtensionsStore.manifests, installedExtensionsStore.locale], listener),
     // 群里来的投递写群名(项目群就是项目名,见 chat-name.ts);认不出来是 null,卡上只说「来自群聊」。
     chatName: chatDisplayName,
+    chatKind: id => readChatSummary(resolveChatId(id) ?? id)?.kind ?? null,
     subscribeChatNames,
   });
 }

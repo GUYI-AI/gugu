@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { memo, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import { Collapse } from '../ui/Collapse'
@@ -122,6 +122,8 @@ export function ContactsDeviceSections({
 
 // @@@folded-rows - 从没展开过的段(设备段默认收起):行只留名字这一个文字节点 —— 页内查找照样搜得到(#4323 hidden="until-found"),
 // 头像 SVG、状态、悬停菜单这些重的子树等第一次展开再挂。几何与完整行同高(头像位 + 两行),命中那一下浏览器滚到的位置不偏。
-function FoldedRow({ name }: { name: string }) {
+// memo: the sections re-render on every device heartbeat and chat-list update (owner-scale: ~300 folded rows each
+// time, with the contacts page not even shown); a folded row only changes with its name.
+const FoldedRow = memo(function FoldedRow({ name }: { name: string }) {
   return <ListRow leading={<div className="h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0" />} title={name} subtitle={'\u00a0'} />
-}
+})

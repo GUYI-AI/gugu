@@ -1,4 +1,5 @@
 /** @jsxImportSource solid-js */
+import { PasswordRequestCard, passwordRequest, passwordCardHeight } from './PasswordRequestCard';
 import { conversationSpeaker, messageReplyReference } from '@session-chat/state/conversation-density';
 import { For, Show, createMemo } from 'solid-js';
 import { conversationHeaderLayout } from './conversation-header-layout';
@@ -29,7 +30,7 @@ import { measureUserMessage } from './user-message-metrics';
 import { userMessageActionsHeight, type MessageVars } from './metrics';
 import { conversationRoot, conversationHeader, conversationName, conversationTime, conversationProcessButton, conversationProcessChevron, conversationTimeSeparator, conversationReferenceSeparator } from './conversation-message.css';
 
-import { CONVERSATION_PREVIEW_MAX_H } from '@session-chat/components/engine/row-metrics';
+import { CONVERSATION_PREVIEW_MAX_H, USER_PREVIEW_MAX_H } from '@session-chat/components/engine/row-metrics';
 
 export function conversationContext(ctx: MeasureCtx, item?: ChatMessage): MeasureCtx {
   return { ...ctx,
@@ -38,8 +39,10 @@ export function conversationContext(ctx: MeasureCtx, item?: ChatMessage): Measur
 }
 
 export function conversationVars(item: ChatMessage, vars: MessageVars): MessageVars {
-  const long = !item.conversationFull && (item.text.length > 700 || item.text.split('\n').length > 10);
-  return { ...vars, footerH: CONVERSATION_FOOTER_H, collapsedMaxH: long ? CONVERSATION_PREVIEW_MAX_H : Number.MAX_SAFE_INTEGER, expandedMaxH: Number.MAX_SAFE_INTEGER };
+  // A person's message folds sooner than a reply: about five lines (owner 2026-11-07, 「折叠的 threshold 压小一点」).
+  const [chars, lines, cap] = item.role === 'user' ? [200, 5, USER_PREVIEW_MAX_H] : [700, 10, CONVERSATION_PREVIEW_MAX_H];
+  const long = !item.conversationFull && (item.text.length > chars || item.text.split('\n').length > lines);
+  return { ...vars, footerH: CONVERSATION_FOOTER_H, collapsedMaxH: long ? cap : Number.MAX_SAFE_INTEGER, expandedMaxH: Number.MAX_SAFE_INTEGER };
 }
 
 function segments(item: ChatMessage): ChatMessage[] {
@@ -81,13 +84,23 @@ function headerLayout(item: ChatMessage, ctx: MeasureCtx) {
   return conversationHeaderLayout(item, ctx, conversationSenderName(item, ctx));
 }
 
+/**
+ * How far below the top of a conversation message its bubble starts: the header line drawn above it (a delivered
+ * message's sender name). The row's height and the pinned summary's rest position both add it (#2629).
+ */
+export function conversationBubbleTop(item: ChatMessage, ctx: MeasureCtx): number {
+  return item.conversationPart === 'body' ? 0 : headerLayout(item, ctx).height;
+}
+
 function singleHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): number {
   if (item.conversationNarration) return conversationNarrationHeight(item, ctx);
   if (item.conversationPart === 'head') {
     const head = headerLayout(item, ctx);
     return head.height + backgroundHeight(item, ctx) + (head.referenceInFooter ? measureUserMessage(item, conversationContext(ctx, item), conversationVars(item, vars)) : 0);
   }
-  const header = item.conversationPart === 'body' ? 0 : headerLayout(item, ctx).height;
+  const header = conversationBubbleTop(item, ctx);
+  const password = passwordRequest(item);
+  if (password) return header + passwordCardHeight(password);
   const bodyVars = conversationVars(item, vars);
   // 时间、复制、编辑那一行照原气泡画在气泡下面(owner 定稿 0 号图);没有正文就没有气泡,也不留这一行。
   const bodyCtx = conversationContext(ctx, item);
@@ -149,7 +162,7 @@ function SingleConversationMessage(props: { data: ChatMessage; ctx: RenderCtx; v
       </Show>
       <Show when={subject() && props.data.conversationProcess}>{process =>
         <div class={conversationTime} style={{ width: `${head().processWidth}px`, height: `${processRowHeight(props.data.id, process(), head().processCtx)}px` }}>
-          <ConversationProcess measureCtx={() => head().processCtx} process={process()} anchorId={props.data.id} expanded={turnProcessExpanded(process().live, props.ctx.viewState.isCollapsed(process().id))} />
+          <ConversationProcess measureCtx={() => head().processCtx} process={process()} anchorId={props.data.id} expanded={turnProcessExpanded(process().live, props.ctx.viewState.isCollapsed(process().toggleId ?? process().id))} />
           <ProcessBackgroundPill ownerId={props.data.id} ctx={{ ...props.ctx, measureCtx: () => head().processCtx }} />
         </div>
       }</Show>
@@ -159,8 +172,8 @@ function SingleConversationMessage(props: { data: ChatMessage; ctx: RenderCtx; v
       <ProcessBackgroundList ownerId={props.data.id} ctx={props.ctx} />
     </Show>
     <Show when={props.data.conversationPart !== 'head' || head().referenceInFooter}>
-      <UserMessageCard data={props.data} ctx={bodyCtx} vars={conversationVars(props.data, props.vars)} conversation sender={name}
-        footerReference={head().referenceInFooter ? reference : undefined} />
+      <Show when={passwordRequest(props.data)} fallback={<UserMessageCard data={props.data} ctx={bodyCtx} vars={conversationVars(props.data, props.vars)} conversation sender={name}
+        footerReference={head().referenceInFooter ? reference : undefined} />}>{request => <PasswordRequestCard request={request()} />}</Show>
     </Show>
   </div>;
 }
@@ -178,7 +191,10 @@ export function ProcessBackgroundPill(props: { ownerId: string; ctx: RenderCtx }
       <button type="button" class={conversationProcessButton} data-slot="background-tasks-pill"
         style={{ width: `${backgroundPillLayout(props.ownerId, props.ctx.measureCtx!())!.width}px`, height: `${backgroundPillLayout(props.ownerId, props.ctx.measureCtx!())!.height}px` }}
         data-collapse-id={BACKGROUND_TASKS_TOGGLE} data-collapse-anchor={props.ownerId} aria-expanded={tasks().expanded}>
-        <ShimmerText active multiline style={{ 'white-space': 'pre-wrap', 'line-height': '22px', 'min-width': 0 }}>{backgroundPillLayout(props.ownerId, props.ctx.measureCtx!())!.text}</ShimmerText>
+        {/* The text slot is the measured width and nothing more: it must not shrink below its own content. A rendering a
+            hair wider than the canvas measure (another font, another pixel ratio) would otherwise wrap the last glyph, and
+            the second line spills out of this one-line box over the process header above it. */}
+        <ShimmerText active multiline style={{ 'white-space': 'pre-wrap', 'line-height': '22px', 'flex-shrink': 0 }}>{backgroundPillLayout(props.ownerId, props.ctx.measureCtx!())!.text}</ShimmerText>
         <span class={conversationProcessChevron} aria-hidden="true">›</span>
       </button>
     </span>
@@ -188,6 +204,6 @@ export function ProcessBackgroundPill(props: { ownerId: string; ctx: RenderCtx }
 /** 单子就地展开在过程行下面(高度见 `backgroundHeight`)。 */
 export function ProcessBackgroundList(props: { ownerId: string; ctx: RenderCtx }) {
   return <Show when={attachedBackground(props.ownerId, props.ctx)?.expanded ? attachedBackground(props.ownerId, props.ctx) : null}>{tasks =>
-    <BackgroundTasksList commands={tasks().commands} subagents={tasks().subagents} measureCtx={props.ctx.measureCtx!} />
+    <BackgroundTasksList commands={tasks().commands} subagents={tasks().subagents} measureCtx={props.ctx.measureCtx!} anchorId={props.ownerId} />
   }</Show>;
 }

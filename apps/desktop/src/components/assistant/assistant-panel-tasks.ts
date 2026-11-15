@@ -20,10 +20,13 @@ export async function readAssistantPanelTasks(scope:Scope) {
   return rows(records)
 }
 export type AssistantPanelTask = ReturnType<typeof rows>[number]
-export function openAssistantPanelTask(scope:Pick<Scope,'assistantId'>,task:AssistantPanelTask) {
-  const detail:AssistantTaskChat={workId:task.workId,title:task.title,outcome:task.outcome,assistantId:scope.assistantId,taskAgentId:task.agentId,
+/** What opening a row asks the task window for; an App's panel (#1925, AppWorkLedgerHost) opens the very same. */
+export function assistantPanelTaskChat(scope:Pick<Scope,'assistantId'>,task:Omit<AssistantPanelTask,'status'|'harness'|'unseen'>):AssistantTaskChat {
+  return {workId:task.workId,title:task.title,outcome:task.outcome,assistantId:scope.assistantId,taskAgentId:task.agentId,
     task:{deviceId:task.deviceId,sessionId:task.id},assistants:task.assistants}
-  window.dispatchEvent(new CustomEvent(OPEN_ASSISTANT_TASK_CHAT,{detail}))
+}
+export function openAssistantPanelTask(scope:Pick<Scope,'assistantId'>,task:AssistantPanelTask) {
+  window.dispatchEvent(new CustomEvent(OPEN_ASSISTANT_TASK_CHAT,{detail:assistantPanelTaskChat(scope,task)}))
 }
 export type AssistantWorkTasksRead = {state:'loading'} | {state:'error';error:unknown;data:AssistantPanelTask[]} | {state:'ok';data:AssistantPanelTask[]}
 export function useAssistantWorkTasks(ownerId:string|null|undefined,assistantId:string):AssistantWorkTasksRead & {reload:()=>void} {

@@ -28,7 +28,7 @@ import '@gugu/session-shared/animation-visibility.css';
 // ── Core API ──────────────────────────────────────────────────────────────────
 
 export { createChatContext } from './chat-context';
-export type { ChatContext, ChatContextOptions } from './chat-context';
+export type { ChatActor, ChatContext, ChatContextOptions } from './chat-context';
 export type { ChatTranslator, ChatTranslationSubscriber, ChatTranslationValues } from './localization';
 
 export { connectSession, createChatState, tailMode, pinTopMode } from './state/chat-state';
@@ -128,6 +128,7 @@ export type { CommandProvider, ChatCommandMeta } from './core/markdown/command-p
 // ── Commands + scroll helpers ─────────────────────────────────────────────────
 
 export { CHAT_VIEW_COMMANDS } from './commands';
+export type { ViewportProtection } from './core/viewport-protection';
 export type {
   ChatCommands,
   ChatViewCommand,

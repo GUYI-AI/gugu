@@ -39,6 +39,13 @@ describe('conversation row actions', () => {
     expect(menu.find((item) => item.id === 'pin')?.label).toBe('unpin')
     expect(menu.find((item) => item.id === 'notifications')?.label).toBe('enableNotifications')
   })
+
+  it('offers 取消固定到左侧栏 right after 置顶 only for a row pinned to the sidebar (#2548)', () => {
+    const pinned = conversationRowMenu({ kind: 'chat', canDelete: false, hasUnread: false, pinnedToSidebar: true })
+    expect(pinned.map((item) => item.id)).toEqual(['mark-read', 'pin', 'unpin-from-sidebar', 'notifications', 'mark-all-read'])
+    expect(pinned.find((item) => item.id === 'unpin-from-sidebar')).toMatchObject({ label: 'unpinFromSidebar', icon: 'sidebar' })
+    expect(conversationRowMenu({ kind: 'chat', canDelete: false, hasUnread: false }).some((item) => item.id === 'unpin-from-sidebar')).toBe(false)
+  })
 })
 
 describe('the selected conversation and its topics', () => {

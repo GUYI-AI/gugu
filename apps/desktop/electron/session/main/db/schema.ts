@@ -1,4 +1,5 @@
 import { isNotNull, sql } from 'drizzle-orm';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import {
   index,
   integer,
@@ -21,6 +22,8 @@ import type { TerminalShellId } from '@shared/core/terminals/terminal-settings';
 import { workspaceConfig } from '@shared/core/workspaces/workspace-config';
 import { workspaceProviderData } from '@shared/core/workspaces/workspace-provider-data';
 import type { Hold } from '@gugu/core/local/session-life/types';
+import { windowCommitTables } from './window-commit-schema';
+import { windowPackTables } from './window-pack-schema';
 
 /** Durable local IM rows. Their original body is never part of the disposable search schema. */
 export const imMessages = sqliteTable('im_messages', {
@@ -140,7 +143,8 @@ export const projects = sqliteTable(
   {
     id: text('id').primaryKey(),
     name: text('name').notNull(),
-    path: text('path').notNull(),
+    /** In its one spelling on this machine (`@@@canonical-path`): written only as `canonicalPath` made it. */
+    path: text('path').notNull().$type<CanonicalPath>(),
     workspaceProvider: text('workspace_provider').notNull().default('local'), // 'local' | 'ssh'
     baseRef: text('base_ref'),
     // gugu #2358: 非 git 项目标记。base_ref 自 0000 起就 nullable + 读路径 `?? 'main'` 兜底
@@ -230,7 +234,8 @@ export const workspaces = sqliteTable(
       onDelete: 'set null',
     }),
     data: versionedJsonColumn(workspaceProviderData)('data'),
-    path: text('path'),
+    /** In its one spelling on this machine (`@@@canonical-path`): written only as `canonicalPath` made it. */
+    path: text('path').$type<CanonicalPath>(),
     config: versionedJsonColumn(workspaceConfig)('config'),
     branchName: text('branch_name'),
     linesAdded: integer('lines_added'),
@@ -469,6 +474,9 @@ export const sessions = sqliteTable(
     // spec session-page: any conversation can be pinned; pinned rows leave their state group
     // and gather in the sidebar's Pinned section.
     isPinned: integer('is_pinned').notNull().default(0),
+    // #2548 固定到左侧栏: a top-level session whose agent lives in a group or project also gets its own row
+    // in the desktop left list. Independent of isPinned, which only orders a session within its own list.
+    isPinnedToSidebar: integer('is_pinned_to_sidebar').notNull().default(0),
     parentSessionId: text('parent_session_id').references(
       (): AnySQLiteColumn => sessions.id,
       { onDelete: 'set null' }
@@ -615,6 +623,12 @@ export const sessionTurns = sqliteTable(
     createdAt: text('created_at')
       .notNull()
       .default(sql`CURRENT_TIMESTAMP`),
+    /**
+     * How many times `data` was rewritten in place (a late tail, a changed outcome, a record fill). A reader that keeps
+     * turns (the phone) compares it with the one it holds and reads again only the turns that changed. Counted by a
+     * trigger (migration 0050), so no writer can forget it.
+     */
+    revision: integer('revision').notNull().default(0),
   },
   (table) => ({
     sessionSeqIdx: index('idx_session_turns_session_seq').on(
@@ -625,6 +639,9 @@ export const sessionTurns = sqliteTable(
 );
 
 export type SessionTurnRow = typeof sessionTurns.$inferSelect;
+export const { sessionWindowCommitReceipts, sessionWindowCommitPositions } = windowCommitTables({ sessionId: sessions.id, rowId: sessionTurns.id });
+export const { sessionWindowPackGroups,sessionWindowPackSources,sessionWindowPackFrames,sessionWindowPackPositions,sessionWindowPackDependencies }
+  = windowPackTables({ sessionId: sessions.id, sourceId: sessionWindowCommitReceipts.sourceId });
 
 /**
  * #6334 用量页:一条会话「在干活」(working / needs_user)的一段时间一行,时间是 epoch 毫秒。

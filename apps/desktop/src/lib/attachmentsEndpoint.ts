@@ -1,11 +1,12 @@
 // 渲染层调 attachments 函数(core 的那一份客户端,packages/core/src/cloud/attachmentsApi.ts):这个构建的服务器,登录的人现在的令牌。
 import { commitAttachment, configuredEndpoint, placeAttachment, uploadAttachmentBytes, type AttachmentsEndpoint, type CommitArgs, type AttachmentUploadPlan, type AttachmentByteProgress } from '@gugu/core/cloud/attachmentsApi'
-import { resolveFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
+import { resolveFileMimeType, sniffFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract'
 import { isHeicLikeFile, mustCopyRatherThanReference } from '@renderer/lib/pty/terminal-image-paths'
 import { getRendererAccessToken } from './sessionPublication'
 import { i18n } from '../i18n'
 import type { AttachmentUploadContext } from './taskAttachmentUpload'
+import { pathOfFile } from './fileOnDisk'
 import { prefetchTaskFiles, pushTaskFiles, pushTaskAttachment, taskAttachmentUsesSsh, taskAttachmentWorkspacePath, type TaskAttachmentTarget } from './taskAttachmentTarget'
 
 // 令牌只读会话协调器已发布的那一份,和数据客户端(supabase.ts 的 accessToken)同一个来源:数据客户端没有自己的 auth 会话,
@@ -25,10 +26,9 @@ async function publishNative(args: Record<string, unknown>) {
 const cloudChatAttachment = async (endpoint: AttachmentsEndpoint, file: File, chatId: string, actor: string, requestId?: string, onPlan?: (plan: AttachmentUploadPlan) => void, retry = false, onProgress?: (progress: AttachmentByteProgress) => void): Promise<PreparedChatAttachment> => ({
   staging_key: await uploadAttachmentBytes(endpoint, { bytes: file, name: file.name || 'file', contentType: resolveFileMimeType(file) }, { chat_id: chatId, as: actor, ...(requestId ? { request_id: requestId } : {}) }, { onPlan, retry, onProgress }),
 })
-/** An image is uploaded when sent, also in a project chat whose other files stay on the machine that sends them. */
 export async function prepareChatAttachment(endpoint: AttachmentsEndpoint, file: File, scope: { chat_id: string; as: string; is_whisper?: boolean; request_id?: string }, onPlan?: (plan: AttachmentUploadPlan) => void, retry = false, onProgress?: (progress: AttachmentByteProgress) => void): Promise<PreparedChatAttachment> {
   const native = globalThis.window?.electronAPI
-  if (native && !scope.is_whisper && !resolveFileMimeType(file).startsWith('image/') && await publishNative({ chatId: scope.chat_id }) === true) return { local: file }
+  if (native && !scope.is_whisper && await publishNative({ chatId: scope.chat_id }) === true) return { local: file }
   return cloudChatAttachment(endpoint, file, scope.chat_id, scope.as, scope.request_id, onPlan, retry, onProgress)
 }
 export async function commitPreparedChatAttachment(endpoint: AttachmentsEndpoint, prepared: PreparedChatAttachment, args: Omit<CommitArgs, 'staging_key'>): Promise<Record<string, unknown>> {
@@ -36,7 +36,7 @@ export async function commitPreparedChatAttachment(endpoint: AttachmentsEndpoint
   if (args.is_whisper || !window.electronAPI) throw new Error('Project file audience changed')
   const file = prepared.local
   // A pasted file is memory-backed and has no disk path: hand main its bytes instead.
-  const path = window.electronAPI.getPathForFile(file), data = path ? undefined : await file.arrayBuffer()
+  const path = pathOfFile(file), data = path ? undefined : await file.arrayBuffer()
   const row = await publishNative({ chatId: args.chat_id, file: { name: file.name, path, size: file.size, contentType: resolveFileMimeType(file), ...(data && { data }) }, message: args }) as { id: string; version: number; message?: Record<string, unknown> } | null
   // This account's file storage setting changed after planning: the same cloud provider must authorize any upload afresh.
   if (!row) return commitPreparedChatAttachment(endpoint, await cloudChatAttachment(endpoint, file, args.chat_id, args.sender_user_id), args)
@@ -55,8 +55,8 @@ export async function commitPreparedChatAttachment(endpoint: AttachmentsEndpoint
 export async function prepareTaskAttachment(file: File): Promise<TurnFileRef | null> {
   const api = window.electronAPI
   if (!api) return null
-  const name = file.name || 'file', mimeType = resolveFileMimeType(file)
-  const dropped = api.getPathForFile(file)
+  const name = file.name || 'file', mimeType = await sniffFileMimeType(file)
+  const dropped = pathOfFile(file)
   const own = dropped && !mustCopyRatherThanReference(dropped) && !isHeicLikeFile(file)
   const copy = own ? null : await api.invoke('files:task-copy', { name, data: await file.arrayBuffer(), mimeType }) as { path: string; name: string; size: number; mimeType?: string }
   return { itemId: crypto.randomUUID(), version: 1, name: copy?.name ?? name, mimeType: copy?.mimeType ?? mimeType, sizeBytes: copy?.size ?? file.size, path: copy?.path ?? dropped }
@@ -72,6 +72,7 @@ export async function placeTaskAttachment(file: File, prepared: TurnFileRef | nu
   options: { signal?: AbortSignal; placement?: TaskAttachmentPlacement; resumable?: boolean; onPhase?: (phase: 'uploading' | 'resuming' | 'confirming') => void } = {}): Promise<TurnFileRef> {
   const { signal } = options
   const placement = options.placement ?? {}
+  await sniffFileMimeType(file)
   signal?.throwIfAborted()
   if (prepared?.path) {
     if (!placement.published) {

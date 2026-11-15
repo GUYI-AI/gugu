@@ -28,5 +28,6 @@ export const platformModel: IPlatformModelBehavior = {
   }),
   // 预发探针证明网关对不推理模型也接受推理档,所以所有网关模型统一声明三档。
   load: (model) =>
-    openCodeFamilyConfigContent('OPENCODE_CONFIG_CONTENT', harnessPlatform.wireProtocol, model, OPENCODE_FAMILY_REASONING),
+    // 一把 API Key 连接按建连接时探出来的接口(#2507,只讲 Chat Completions 的中转走 `@ai-sdk/openai-compatible`);平台会话照声明。
+    openCodeFamilyConfigContent('OPENCODE_CONFIG_CONTENT', model.wireProtocol ?? harnessPlatform.wireProtocol, model, OPENCODE_FAMILY_REASONING),
 };

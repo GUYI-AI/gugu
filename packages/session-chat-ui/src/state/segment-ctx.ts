@@ -3,7 +3,7 @@ import type { ChatCaches } from '@session-chat/core/caches';
 import { isDoubleColumnLayout } from '@session-chat/core/layout/preset';
 import type { SegmentCtx } from '@session-chat/core/units';
 import type { ChatState } from './chat-state';
-import { BACKGROUND_TASKS_TOGGLE, turnDiscardedId } from './flatten';
+import { backgroundTasksView, turnDiscardedId } from './flatten';
 import { latestVisibleTurnId } from './pending-prompt';
 
 /**
@@ -14,6 +14,10 @@ export function segmentCtxFor(context: ChatContext, state: ChatState, caches: Ch
   latestTurnId = latestVisibleTurnId(state.transcript.state.activeTurnSnapshot, state.transcript.state.committedTurns,
     state.session.state.pendingPrompt, state.session.state.pendingMessages)): SegmentCtx {
   return {
+    actor: context.actor,
+    chatName: context.chatName,
+    chatKind: context.chatKind,
+    viewerId: context.selfIdentity()?.userId,
     caches,
     deliveredMessage: (id) => state.session.state.deliveredMessages?.get(id),
     agentConversation: context.theme.layout?.agentConversation,
@@ -31,6 +35,8 @@ export function segmentCtxFor(context: ChatContext, state: ChatState, caches: Ch
     plan: () => state.session.state.plan,
     translate: context.translate,
     pendingToolCallIds: () => state.session.state.pendingToolCallIds,
+    liveSubagent: (toolCallId: string) =>
+      state.session.state.backgroundTasks.subagents.find((entry) => entry.launchToolCallId === toolCallId),
     permissionFor: (toolCallId: string) =>
       state.session.state.permissions.find((request) => request.toolCall?.toolCallId === toolCallId),
     terminalSnapshot: (terminalId: string) => state.session.state.terminalSnapshot(terminalId),
@@ -40,7 +46,7 @@ export function segmentCtxFor(context: ChatContext, state: ChatState, caches: Ch
     backgroundTasks: () => {
       const tasks = state.session.state.backgroundTasks;
       if (tasks.commands.length === 0 && tasks.subagents.length === 0) return null;
-      return { ...tasks, expanded: state.viewState.isCollapsed(BACKGROUND_TASKS_TOGGLE) };
+      return backgroundTasksView(tasks, (id) => state.viewState.isCollapsed(id));
     },
   };
 }

@@ -5,6 +5,7 @@ export * from './api/queries';
 export * from './api/runtime-contract';
 export * from './errors';
 export * from './models';
+export { flattenSelectOptions } from './models/select-options';
 export * from './provider-session';
 export type * from './session-protocol';
 export { decodeSessionUpdate, decodeV2SessionUpdate, decodeConfigOptions, decodePermissionRequest } from './transport/decode';
@@ -19,7 +20,7 @@ export {
   type RecentActionSummary,
 } from './recent-actions';
 export { runningBackgroundCommands, type RunningBackgroundCommand } from './background-commands';
-export { ACP_AUTH_REQUIRED_CODE, isSignInFailure } from './sign-in-failure';
+export { ACP_AUTH_REQUIRED_CODE, isAcpAuthRequired, isSignInFailure } from './sign-in-failure';
 export { upstreamSaid } from './upstream-said';
 export { isSessionContextText } from './session-context';
 export { createRequestActivity, type RequestActivityAgent } from './transport/request-activity';

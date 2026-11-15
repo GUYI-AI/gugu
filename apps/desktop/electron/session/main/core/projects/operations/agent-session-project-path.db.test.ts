@@ -1,7 +1,7 @@
 // agent.create on a new account: the project it lands in has just been registered, and nothing has mounted its
 // workspace yet. The path a new session binds its identity at must come from the workspace's persisted record; the
 // in-memory registry only learns it once a session mounts (or the new-session page leases the draft workspace).
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { openFixture } from '@tooling/utils/db';
@@ -36,7 +36,8 @@ vi.mock('@main/core/runtime/runtime-manager', () => ({
   },
 }));
 
-import { persistedWorkspacePath, resolveWorkspace } from '../utils';
+import { persistedWorkspacePath } from '../utils';
+import { workspaceRegistry } from '../../workspaces/workspace-registry';
 import { resolveAgentSessionProject } from './resolve-agent-session-project';
 
 describe('agent.create on a project nothing has mounted', () => {
@@ -46,7 +47,7 @@ describe('agent.create on a project nothing has mounted', () => {
   beforeEach(async () => {
     fixture = await openFixture('empty');
     mocks.db = fixture.db;
-    tmp = await mkdtemp(path.join(os.tmpdir(), 'gugu-agent-project-path-'));
+    tmp = await realpath(await mkdtemp(path.join(os.tmpdir(), 'gugu-agent-project-path-')));
     mocks.home = path.join(tmp, 'task-home');
   });
 
@@ -60,7 +61,7 @@ describe('agent.create on a project nothing has mounted', () => {
     const project = await resolveAgentSessionProject('');
     const workspaceId = project.repositoryWorkspaceId;
     expect(workspaceId).toBeTruthy();
-    expect(resolveWorkspace(project.id, workspaceId!)).toBeNull();
+    expect(workspaceRegistry.get(workspaceId!)).toBeUndefined();
     expect(persistedWorkspacePath(workspaceId!)).toBe(mocks.home);
   });
 

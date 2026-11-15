@@ -1,4 +1,5 @@
 import type { IFileSystem } from '@gugu/session-core/files';
+import type { CanonicalPath } from '@gugu/session-core/files';
 import { projectDirectoryHasNoGit } from './resolve-project-gitless';
 import type {
   FetchError,
@@ -72,7 +73,7 @@ export type ProjectProviderTransport = {
 export class ProjectProvider implements IReleasable, IDisposable {
   readonly type: string;
   readonly projectId: string;
-  readonly repoPath: string;
+  readonly repoPath: CanonicalPath;
   readonly settings: ProjectSettingsProvider;
   // gugu #2358: 非 git 项目(远程非 git 目录)没有 git 仓 —— 三个 git 服务缺省(undefined)。
   // 消费方必须显式处理缺省(tsc 强制),git 专属功能对这类项目降级为空/不可用。
@@ -89,7 +90,7 @@ export class ProjectProvider implements IReleasable, IDisposable {
 
   constructor(
     projectId: string,
-    repoPath: string,
+    repoPath: CanonicalPath,
     transport: ProjectProviderTransport,
     gitRepository: GitRepositoryService | undefined,
     gitRepositoryFetchService: GitRepositoryFetchService | undefined,

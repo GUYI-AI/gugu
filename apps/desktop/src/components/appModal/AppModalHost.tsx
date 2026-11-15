@@ -42,7 +42,7 @@ function AppModalSheet({ presentation: modal, onClose }: { presentation: AppModa
           <Button type="button" variant="ghost" size="icon" data-app-modal-close aria-label={t('dialog.close')} onClick={onClose} className="shrink-0"><XIcon className="size-4" /></Button>
         </header>
         <span tabIndex={0} className="h-0 overflow-hidden" onFocus={() => focus('first')} />
-        {modal.partition ? <webview ref={attach} src={modal.url} partition={modal.partition} className="min-h-0 w-full flex-1" /> : <iframe ref={attach} name={modal.frameName} title={modal.title} src={modal.url} sandbox="allow-scripts allow-same-origin allow-forms" className="min-h-0 w-full flex-1 border-0" />}
+        {modal.partition ? <webview ref={attach} src={modal.url} partition={modal.partition} className="min-h-0 w-full flex-1" /> : <iframe ref={attach} name={modal.frameName} title={modal.title} src={modal.url} sandbox="allow-scripts allow-same-origin allow-forms" allow="fullscreen" className="min-h-0 w-full flex-1 border-0" />}
         <span tabIndex={0} className="h-0 overflow-hidden" onFocus={() => focus('last')} />
       </div>
     </Sheet>

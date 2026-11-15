@@ -30,7 +30,7 @@ it.each(['turn end', 'next user message', 'late parent content'] as const)(
         p.pushTail({ kind: 'message', role: 'assistant', messageId: 'tail', text: 'parent finished' }, 101);
       }
     }
-    const roster = () => collectSubagentRoster(p.history, p.activeTurn, 'Subagent');
+    const roster = () => collectSubagentRoster(p.history, p.activeTurn, 'Subagent', Date.now(), p.agents);
     expect(p.history[0].items.find((item) => item.kind === 'read-tool-call')).toMatchObject({ status: 'done' });
     expect(p.history[0].items.find((item) => item.kind === 'spawn-subagent-tool-call')).toMatchObject({ status: 'done' });
     expect(roster()[0]).toMatchObject({ completedSteps: 0, calls: [{ toolCallId: 'bash', status: 'running' }] });
@@ -73,14 +73,14 @@ it('native children retain progress after the parent moves on, and a follow-up r
   p.pushEvent(decodeSessionUpdate({ sessionUpdate: 'subagent_stream', subagentSessionId: 'child', update: {
     sessionUpdate: 'agent_message_chunk', messageId: 'result', content: { type: 'text', text: 'OLD_RESULT' },
   } }));
-  let roster = collectSubagentRoster(p.history, p.activeTurn, 'Subagent');
+  let roster = collectSubagentRoster(p.history, p.activeTurn, 'Subagent', Date.now(), p.agents);
   expect(roster).toHaveLength(1);
   expect(roster[0]).toMatchObject({ completedSteps: 1, canCancel: true });
   expect(p.activeTurn!.items).toHaveLength(1);
   p.pushEvent(decodeSessionUpdate({ sessionUpdate: 'subagent_state_update', subagentSessionId: 'child', state: 'completed' }));
-  expect(collectSubagentRoster(p.history, p.activeTurn, 'Subagent')).toHaveLength(0);
+  expect(collectSubagentRoster(p.history, p.activeTurn, 'Subagent', Date.now(), p.agents)).toHaveLength(0);
   p.pushEvent(decodeSessionUpdate({ sessionUpdate: 'subagent_state_update', subagentSessionId: 'child', state: 'running', canCancel: true }));
-  roster = collectSubagentRoster(p.history, p.activeTurn, 'Subagent');
+  roster = collectSubagentRoster(p.history, p.activeTurn, 'Subagent', Date.now(), p.agents);
   expect(roster).toHaveLength(1);
   expect(p.agents).toHaveLength(1);
   expect(p.agents[0].output).toBeUndefined();

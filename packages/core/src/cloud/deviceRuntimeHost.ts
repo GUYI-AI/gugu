@@ -1,3 +1,4 @@
+import { bindBackendProbe, noteBackendAnswer } from './backendReachability'
 import {
   createAgentRuntimeStateReporter,
   DeviceCapabilityTimeoutError,
@@ -290,6 +291,11 @@ async function writeDeviceRuntimeOwner(ownerUserId: string, env: NodeJS.ProcessE
   )
 }
 
+/** 相邻两次心跳成功落库的间隔超过它就告警(正常 30 s 一拍,允许丢一拍)。 */
+const HEARTBEAT_LANDED_GAP_WARN_MS = 60_000
+/** 心跳定时器比预定晚到超过它就告警(事件循环被堵)。 */
+const HEARTBEAT_TIMER_LAG_WARN_MS = 5_000
+
 export function createDeviceRuntimeHostLoop(
   options: DeviceRuntimeHostOptions
 ): DeviceRuntimeHost {
@@ -335,6 +341,9 @@ export function createDeviceRuntimeHostLoop(
   // wake 此刻是不是真的订着(由订阅实现的 onSubscribed / onSubscribeFailure 写,❌ 不由「subscribe() 调用返回了」推断)。
   let wakeSubscribed = false
   let wakeSubscribeFailures = 0
+  // 诊断(#1760):这次订上的时刻、最后一次真收到广播的时刻。对账发现没被通知的行时一起报出来。
+  let wakeSubscribedAt: number | null = null
+  let lastWakeEventAt: number | null = null
   // 上一轮取命令取到的是不是空集。对账 tick 据此判「这一轮取到的行有没有被事件通知过」:
   // 上一轮非空 ⇒ 排空跟进本来就在复查它们,取到是预期;上一轮为空 ⇒ 这些行是悄悄出现的。
   let queueBelievedEmpty = false
@@ -344,6 +353,7 @@ export function createDeviceRuntimeHostLoop(
   let blanketAnnouncementDuringTick = false
   let unannouncedVerdict: { pending: Map<string, string>; timer: ReturnType<typeof setTimeout> } | null = null
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  let unbindBackendProbe: (() => void) | null = null
   let activeHeartbeat: Promise<void> | null = null
   let activeLeaseRenewal: Promise<void> | null = null
   // Suppress immediate retry storms after a capability timeout; the next explicit work tick
@@ -362,6 +372,10 @@ export function createDeviceRuntimeHostLoop(
   const heartbeatFlights = new Map<string, Promise<void>>()
   const publishedCapabilities = new Map<string, string>()
   let lastHeartbeatAt: number | null = null
+  // 心跳诊断(只记日志,不改行为):上一次心跳**成功落库**的时刻,和心跳定时器下一拍该在何时触发。
+  // 用来区分「进程卡住(定时器晚到)」「心跳没发出 / 没写成(两次落库间隔过长)」「写被吞(0 行,见 syncDeviceHeartbeat)」。
+  let lastHeartbeatLandedAt: number | null = null
+  let heartbeatTimerDueAt: number | null = null
   // @@@5912 上一次实例租约续成功的时刻(**不分是哪条腿续的**)。tick 据此跳过自己那一次续租。
   let lastLeaseRenewAt: number | null = null
   // @@@5912 上一次跑 legacy / 陈旧行清理的时刻。换 owner 要重来 —— 那是另一批行。
@@ -494,6 +508,7 @@ export function createDeviceRuntimeHostLoop(
       lastActivityReconcileAt = null
       lastOrphanRecoveryAt = null
       lastHeartbeatAt = null
+      lastHeartbeatLandedAt = null
       lastLeaseRenewAt = null
       lastLegacyCleanupAt = null
       lastDeviceId = null
@@ -573,6 +588,16 @@ export function createDeviceRuntimeHostLoop(
   let deviceRemovedNotified = false
   let machineLimitWarned = false
 
+  function noteHeartbeatLanded(): void {
+    const at = nowMs()
+    if (lastHeartbeatLandedAt !== null && at - lastHeartbeatLandedAt > HEARTBEAT_LANDED_GAP_WARN_MS) {
+      options.warn?.(
+        `[device-runtime] heartbeat landed ${at - lastHeartbeatLandedAt} ms after the previous landed heartbeat (interval ${heartbeatIntervalMs} ms)`,
+      )
+    }
+    lastHeartbeatLandedAt = at
+  }
+
   function writeHeartbeatSingleFlight(
     client: DeviceHeartbeatTableClient,
     heartbeatOptions: DeviceHeartbeatOptions,
@@ -580,7 +605,7 @@ export function createDeviceRuntimeHostLoop(
   ): Promise<void> {
     const active = heartbeatFlights.get(heartbeatOptions.userId)
     if (active) return active
-    const flight = syncDeviceHeartbeat(client, heartbeatOptions, heartbeatEnv, publishedCapabilities).catch((error: unknown) => {
+    const flight = syncDeviceHeartbeat(client, heartbeatOptions, heartbeatEnv, publishedCapabilities).then(noteHeartbeatLanded).catch((error: unknown) => {
       // #6264 这台机器已被账号主人在「设置 → 设备」里移除:库拒收它的心跳(DEVICE_REMOVED)。
       // 只通知一次,由宿主决定怎么收场(server 退出这个账号的登录)。错误照旧抛出,心跳本身按失败处理。
       if (!deviceRemovedNotified && isDeviceRemovedError(error)) {
@@ -619,12 +644,14 @@ export function createDeviceRuntimeHostLoop(
       deviceId,
       onCommand: async (commandId) => {
         if (wakeEpoch !== commandWakeEpoch || generation !== lifecycleGeneration) return
+        if (commandId !== undefined) lastWakeEventAt = nowMs()
         noteCommandAnnouncement(commandId)
         await requestCommandWake()
       },
       onSubscribed: () => {
         if (wakeEpoch !== commandWakeEpoch || generation !== lifecycleGeneration) return
         wakeSubscribed = true
+        wakeSubscribedAt = nowMs()
         wakeSubscribeFailures = 0
       },
       onSubscriptionLost: () => {
@@ -885,8 +912,8 @@ export function createDeviceRuntimeHostLoop(
         }
       }
       workFailureStreak = 0
-      // @@@not-mine (#5041) — `held-elsewhere` 的行归那台活着的兄弟实例(它有自己的跟进):本实例不为它续跑(否则兄弟的
-      // 长回合期间本实例每 intervalMs 空取一轮)、不算进「队列非空」、不为它告警(兄弟 hold 回 pending 是 UPDATE,本无广播)。
+      // @@@not-mine (#5041) — `held-elsewhere` 的行归活着的兄弟实例,由它自己跟进:本实例不为它续跑、不算进「队列非空」、
+      // 不为它告警(这行本来就通知过,只是不归本实例)。
       const mine = result.commands.filter((command) => command.reason !== 'held-elsewhere')
       reportUnannouncedCommands(trigger, mine, result.recoveredOrphans, generation)
       queueBelievedEmpty = mine.length === 0
@@ -967,7 +994,7 @@ export function createDeviceRuntimeHostLoop(
   }
 
   // @@@reconcile-is-an-instrument — 对账取到了行,而上一轮取空、这一轮孤儿恢复也没放回行 ⇒ 这些行没被任何事件通知过
-  // (广播丢了,或别处 UPDATE 放回而没通知本机)。这条告警的频率就是事件通道的丢失率,❌ 不许被对账悄悄抹平。
+  // (广播丢了,或频道看着订着其实收不到)。这条告警的频率就是事件通道的丢失率,❌ 不许被对账悄悄抹平。
   // 不许误报:wake 没订着不判(那是订阅的事);通知按行 id 对,这一轮期间与之后一个 intervalMs 内到场的都算数
   // —— INSERT 刚提交时,对账的取与广播谁先到不一定。
   function reportUnannouncedCommands(
@@ -988,7 +1015,9 @@ export function createDeviceRuntimeHostLoop(
       unannouncedVerdict = null
       options.warn?.(
         `[device-runtime] reconcile found ${pending.size} pending device command(s) that no wake event announced ` +
-          `(${[...pending.values()].join(', ')}) — a command_created broadcast was lost, or a row was put back to pending without notifying this device`,
+          `(${[...pending.values()].join(', ')}) — a command_created broadcast was lost or the wake channel is silently dead; ` +
+          `wake subscribed since ${wakeSubscribedAt === null ? 'unknown' : new Date(wakeSubscribedAt).toISOString()}, ` +
+          `last wake event ${lastWakeEventAt === null ? 'never' : `${Math.round((nowMs() - lastWakeEventAt) / 1000)} s ago`}`,
       )
     }, intervalMs)
     unannouncedVerdict = { pending, timer }
@@ -1135,11 +1164,14 @@ export function createDeviceRuntimeHostLoop(
         env
       )
       lastHeartbeatAt = nowMs()
+      noteBackendAnswer(true) // the host's reading of backendReachability (no window needed)
     } catch (error) {
       // The independent heartbeat is where stale-online would otherwise hide: surface a permanent
       // auth loss here too (once), so the device can't keep heartbeating-then-failing in silence.
       if (handleAuthExpired(error)) return
       if (error instanceof DeviceCapabilityTimeoutError) heartbeatCapabilityTimedOut = true
+      // A local capability read that timed out says nothing about the backend; any other failure is a failed reading.
+      else noteBackendAnswer(false)
       options.warn?.(`[device-runtime] heartbeat: ${(error as Error).message}`)
     }
   }
@@ -1251,7 +1283,10 @@ export function createDeviceRuntimeHostLoop(
     if (!gateOpen(lastActivityReconcileAt, reconcileEveryMs, nowMs())) return
     lastActivityReconcileAt = nowMs()
     await pruneStaleGuestRecords({ env })
-    cloudReconciled = await reconcileWithCloud(auth, generation)
+    // lastAuth 是上一轮 tick 拿的:队列空着时 tick 几分钟才一轮,它会过期(#1760)。对账很少跑,现取一份。
+    const current = await options.authProvider.getAuth()
+    if (!current?.accessToken || current.userId !== activeOwnerUserId) return
+    cloudReconciled = await reconcileWithCloud(current, generation)
   }
 
   async function publishAgentActivityOnce(generation: number): Promise<void> {
@@ -1278,6 +1313,8 @@ export function createDeviceRuntimeHostLoop(
       )
     }
     stopped = false
+    // A failed backend write elsewhere in this process asks for a heartbeat now: if the backend is down, the edge arms.
+    unbindBackendProbe = bindBackendProbe(scheduleHeartbeat)
     // ⚠️ 先装监督节拍再发首轮:首轮 tick 结尾的排空跟进以「监督节拍已装上」判定宿主在长跑。
     superviseTimer = setInterval(() => {
       // @@@safety-cadence — wake 订着时这一拍只是兜底,每 safetyIntervalMs 一次;没订着照旧每拍。
@@ -1289,7 +1326,15 @@ export function createDeviceRuntimeHostLoop(
       if (scheduledTasksPlanned) scheduleScheduledTasksRun()
     }, superviseIntervalMs)
     scheduleWorkTick()
+    heartbeatTimerDueAt = nowMs() + heartbeatIntervalMs
     heartbeatTimer = setInterval(() => {
+      // 诊断:定时器实际触发比预定晚多少 ≈ 事件循环被堵了多久。
+      const at = nowMs()
+      const lagMs = heartbeatTimerDueAt === null ? 0 : at - heartbeatTimerDueAt
+      heartbeatTimerDueAt = at + heartbeatIntervalMs
+      if (lagMs > HEARTBEAT_TIMER_LAG_WARN_MS) {
+        options.warn?.(`[device-runtime] heartbeat timer fired ${lagMs} ms late (event loop lag; interval ${heartbeatIntervalMs} ms)`)
+      }
       scheduleLeaseRenewal()
       scheduleHeartbeat()
     }, heartbeatIntervalMs)
@@ -1428,6 +1473,7 @@ export function createDeviceRuntimeHostLoop(
     const ownerAtStop = activeOwnerUserId
     const deviceAtStop = lastDeviceId
     stopped = true
+    unbindBackendProbe?.(); unbindBackendProbe = null
     lifecycleGeneration += 1
     activeTickAbortController?.abort(new Error('device runtime host stopped'))
     if (superviseTimer !== null) clearInterval(superviseTimer)
@@ -1442,6 +1488,8 @@ export function createDeviceRuntimeHostLoop(
     queueBelievedEmpty = false
     if (heartbeatTimer !== null) clearInterval(heartbeatTimer)
     heartbeatTimer = null
+    heartbeatTimerDueAt = null
+    lastHeartbeatLandedAt = null
     if (activityTimer !== null) clearInterval(activityTimer)
     activityTimer = null
     unsubscribeAgentTurnState?.()

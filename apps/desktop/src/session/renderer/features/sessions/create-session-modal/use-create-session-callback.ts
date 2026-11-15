@@ -1,7 +1,9 @@
+import { codexNeedsUpgrade } from '../session-input-failure-copy';
+import { sessionpageLegOfView } from '@shared/core/sessions/sessions';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useRef, useState } from 'react';
-import { getSessionPageStore, asProvisioned, getSessionManagerStore } from '@renderer/features/sessions/stores/session-selectors';
+import { getSessionPageStore, asProvisioned, getSessionManagerStore, sessionViewKind } from '@renderer/features/sessions/stores/session-selectors';
 import {
   SessionCreationFailedError,
   type SessionFailure,
@@ -105,10 +107,18 @@ export function useCreateSessionCallback({
   // 投递失败必须说出来:未送出的正文与附件都还在 composer 里,用户看不到原因就只能猜(#4325 ③)。
   const [localDeliveryError, setLocalDeliveryError] = useState<SessionFailure | null>(null);
   const deliveryError = draft ? draft.deliveryError : localDeliveryError;
+  const deliveryMachine = selectedProjectId ? machineRegistry.machineOf(selectedProjectId) ?? null : null;
+  const deliveryLeg = sessionpageLegOfView(initialSession.sessionView);
   const setDeliveryError = useCallback((failure: SessionFailure | null) => {
+    if (failure?.kind === 'harness-unavailable' || failure?.kind === 'raw' && codexNeedsUpgrade(failure.detail)) {
+      failure = { ...failure, target: {
+        machineId: deliveryMachine,
+        leg: deliveryLeg,
+      } };
+    }
     if (draft) draft.setDeliveryError(failure);
     else setLocalDeliveryError(failure);
-  }, [draft]);
+  }, [draft, deliveryMachine, deliveryLeg]);
 
   const submittedText = initialSession.prompt.trim();
   // 首轮的投递通道:唯一定义在 firstTurnTransportOf。
@@ -180,6 +190,7 @@ export function useCreateSessionCallback({
         () => {
           setPendingMessage(null);
           input.setPrompt((current) => retainNewerInput(retry.prompt, current));
+          draft?.completeHandoff();
           onCreated?.({ projectId: retry.projectId, sessionId: retry.sessionId });
           navigate('session', { projectId: retry.projectId, sessionId: retry.sessionId });
           onClose();
@@ -218,6 +229,13 @@ export function useCreateSessionCallback({
         : { localPath: ref.path })),
     ].filter(Boolean).join('\n');
     const transport = firstTurnTransport;
+    // #2569 Context handed over with this draft rides beside the words where the first turn has room for host context (an
+    // ACP startup queue), as mention context does. Every other first turn carries the person's words only: the context is
+    // left out, ❌ appended to what the person sees as their message (#2589). The sample's files are in the project folder.
+    const handedContext = draft?.handoff?.hiddenContext;
+    const contextBeside = transport === 'startup' && baseSession.type === 'acp';
+    if (handedContext && !contextBeside) log.warn('a handed-over first turn has no channel for its hidden context; sending the words only', { transport });
+    const hiddenContext = [input.mentionContext, contextBeside ? handedContext : undefined].filter(Boolean).join('\n\n');
     const initialMessageId = transport === 'startup' && taskChatId && text ? crypto.randomUUID() : undefined;
     const startupSession = transport === 'startup'
       ? (() => {
@@ -232,9 +250,7 @@ export function useCreateSessionCallback({
                   ? [{
                       text,
                       ...(files.length ? { files } : {}),
-                      ...(input.mentionContext
-                        ? { hiddenContext: input.mentionContext }
-                        : {}),
+                      ...(hiddenContext ? { hiddenContext } : {}),
                       origin: 'manual' as const,
                     }]
                   : undefined,
@@ -276,11 +292,13 @@ export function useCreateSessionCallback({
       ...(birthChatId ? { birthGroup: { chatId: birthChatId, asTask: Boolean(taskChatId) } } : {}),
     };
 
-    const deferFirstTurn = baseSession.type === 'acp' && files.length > 0;
+    // #2558 The first turn is queued at creation with its files named; while this page places them the host holds its
+    // dispatch (not the turn itself), so the agent starts at once and the page draws the message from the queue.
+    const placingFiles = baseSession.type === 'acp' && files.length > 0;
     // #6264 别的机器上还没装所选的家:先在那台机器上装好再建(装不上就不建,原因说出来)。
     let openedOptimistically = false;
     void (beforeCreate ? beforeCreate() : Promise.resolve()).then(() => sessionManager.createSession(createInput, {
-      ...(deferFirstTurn ? { deferFirstTurn: true } : {}),
+      ...(placingFiles ? { placingFiles: true } : {}),
       onOptimistic: () => {
         if (!openAfterCreate) return;
         openedOptimistically = true;
@@ -297,7 +315,7 @@ export function useCreateSessionCallback({
         log.error('remember the started configuration failed', { error: error instanceof Error ? error.message : String(error) });
         toast({ title: translateSessionMessage('task.newSessionMemoryNotSaved'), description: messageForUser(error), tier: 'warning' });
       });
-      // The first ACP turn stays deferred until DM placement (including SSH upload) has finished.
+      // The first ACP turn is already queued; its dispatch waits until DM placement (including SSH upload) has finished.
       try {
         if (named.length > 0) {
           const placed = await input.placeAttachments(async () => {
@@ -318,10 +336,11 @@ export function useCreateSessionCallback({
         log.warn('new task attachment placement failed', { sessionId, error: String(error) });
         toast({ title: translateSessionMessage('composer.attachmentUploadFailed'), tier: 'warning' });
       } finally {
-        // Placement errors still admit the caption; the host gives the agent a not-saved line for each missing file.
-        if (deferFirstTurn) {
+        // Placement errors still send the caption; the host gives the agent a not-saved line for each missing file. If
+        // this call is lost, the host lets the turn go when this page's window or connection goes away.
+        if (placingFiles) {
           try { await rpcOn(deviceId ?? null).sessionCreate.admitFirstMessages(sessionId); }
-          catch (error) { log.warn('admit the first task turn failed', { sessionId, error: String(error) }); }
+          catch (error) { log.warn('release the first task turn failed', { sessionId, error: String(error) }); }
         }
       }
       if (message) {
@@ -332,8 +351,15 @@ export function useCreateSessionCallback({
     }).then(() => {
       if (!submission) input.setPrompt((current) => retainNewerInput(submittedPrompt, current));
       finishSubmission(submission);
+      setDeliveryError(null);
+      draft?.completeHandoff();
       onCreated?.({ projectId: selectedProjectId, sessionId });
-      if (!openAfterCreate) {
+      // @@@start-failure-exit - A task dispatched from a chat stays in the chat because its card lands there; a task
+      // whose workspace could not be prepared never lands one. Staying would leave the person with no card, no task and
+      // no reason, so it opens like any other new task: the session's own failure screen says why and retries.
+      if (!openAfterCreate && sessionViewKind(getSessionPageStore(selectedProjectId, sessionId), selectedProjectId) === 'provision-error') {
+        navigate('session', { projectId: selectedProjectId, sessionId });
+      } else if (!openAfterCreate) {
         void rpcOn(machineRegistry.machineOf(selectedProjectId) ?? null).sessionTimeline.sessionStart({ conversationId: sessionId }).then((started) => {
           if (!started.ok) log.warn('start a session nobody opens failed', { sessionId, error: started.error });
         });
@@ -344,14 +370,12 @@ export function useCreateSessionCallback({
       // ❌ 别再把 `createSession failed: <type>` 这种开发者诊断串铺给用户 —— 那条路上文案分岔
       // (「正在被替换,稍后重试」vs「没装,去装」)会被整个抹平成同一句看不懂的话。
       //
-      // ⚠️ 引擎不可用是唯一的例外:它已经由 project-sessions-store 用右下角的瞬时通知说过了(owner 定的形态)。
-      // 这里再挂一条常驻的红字就是同一件事说两遍 —— ❌ 别把它加回来。
       const failure: SessionFailure = error instanceof SessionCreationFailedError
         ? error.failure
         : { kind: 'raw', detail: error instanceof Error ? error.message : String(error) };
       finishSubmission(submission, true);
       if (openedOptimistically && !submission?.created) navigate('new-session');
-      if (failure.kind !== 'harness-unavailable') setDeliveryError(failure);
+      setDeliveryError(failure);
       log.error(pendingMessage() ? 'send message to created session failed' : 'create session failed', error);
     }).catch((error: unknown) => {
       if (draft) log.error('finish created session failed', error);
@@ -359,7 +383,7 @@ export function useCreateSessionCallback({
         const failure: SessionFailure = error instanceof SessionCreationFailedError
           ? error.failure
           : { kind: 'raw', detail: error instanceof Error ? error.message : String(error) };
-        if (failure.kind !== 'harness-unavailable') setDeliveryError(failure);
+        setDeliveryError(failure);
         log.error(pendingMessage() ? 'send message to created session failed' : 'create session failed', error);
       }
     }).finally(() => {
@@ -394,14 +418,16 @@ export function useCreateSessionCallback({
       const deviceId = selectedProjectId ? machineRegistry.machineOf(selectedProjectId) : null;
       if (deviceId) {
         try { assertTaskAttachmentProtocol(readCachedDevices().find(device => device.device_id === deviceId)?.capabilities?.remote_protocol); }
-        catch {
-          setDeliveryError({ kind: 'raw', detail: translateSessionMessage('composer.attachmentHostUpdateRequired') });
+        catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          log.warn('Attachment protocol check failed', { machineId: deviceId, error: detail });
+          setDeliveryError({ kind: 'attachment-host-update-required', detail });
           return;
         }
       }
     }
     setIsCreating(true);
-    setDeliveryError(null);
+    // A retry is not recovery: retain this failure episode until the send succeeds.
     // A retry already owns its placed files. Keep the live draft for retainNewerInput on success.
     if (pendingMessage()) { createSessionNow([]); return; }
     let submission: Submission | undefined;

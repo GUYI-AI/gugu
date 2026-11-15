@@ -74,6 +74,13 @@ function replay(steps: readonly SessionSummary[]): { readings: Reading[]; doneEd
 }
 
 describe('ACP status projection: park (#6448)', () => {
+  it('preserves the failed turn diagnostic and model through cleanup for quota acknowledgement', () => {
+    const message = "You've hit your weekly limit · resets Nov 15, 7am";
+    const failed = summary({ lastTurnOutcome: 'errored', lastTurnError: message, modelId: 'model-a' });
+    const payload = { message, modelId: 'model-a' };
+    expect(deriveAcpAgentStatusActions(working(), failed)).toMatchObject([{ kind: 'event', event: { type: 'error', payload } }]);
+    expect(deriveAcpAgentStatusActions(failed, undefined)).toMatchObject([{ kind: 'event', event: { type: 'error', payload } }]);
+  });
   it('projects actual machine completion and process-close facts without inventing a task failure', () => {
     const machine = new SessionMachine('c1');
     const snapshots: SessionSummary[] = [];

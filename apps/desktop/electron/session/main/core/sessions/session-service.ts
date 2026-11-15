@@ -83,7 +83,11 @@ export class SessionService {
     const promise = (async () => {
       const result = await this.provisionWorkspace(sessionId);
       if (!result.success) {
-        throw new Error(`Session ${sessionId} workspace provisioning failed: ${result.error.type}`);
+        // The step's own message (a broken `.gugu.json` names its file and line) is the reason a person reads.
+        const reason = result.error.type === 'setup-failed'
+          ? `${result.error.stepKind}: ${result.error.message ?? result.error.stepErrorType}`
+          : result.error.type;
+        throw new Error(`Session ${sessionId} workspace provisioning failed: ${reason}`);
       }
       const mounted = sessionWorkspaceManager.getSession(sessionId);
       const workspace = workspaceRegistry.get(result.data.workspaceId);

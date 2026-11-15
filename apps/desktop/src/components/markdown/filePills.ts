@@ -62,7 +62,8 @@ export function hookFilePillCopy(): void {
     const selection = document.getSelection()
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return
     const copied = selection.getRangeAt(0).cloneContents()
-    const pills = copied.querySelectorAll<HTMLAnchorElement>(`a.${FILE_PILL_CLASS}`)
+    // Only an `@` pill copies back as `@[label](link)`; a link pill (MentionPill without `mention`) copies as its words.
+    const pills = copied.querySelectorAll<HTMLAnchorElement>(`a.${FILE_PILL_CLASS}[data-mention-kind="file"]`)
     if (pills.length === 0 || !event.clipboardData) return
     for (const pill of pills) pill.replaceWith(document.createTextNode(filePillToken(pill.textContent ?? '', pill.getAttribute('href') ?? '')))
     event.clipboardData.setData('text/plain', copied.textContent ?? '')

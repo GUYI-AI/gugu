@@ -14,8 +14,10 @@ export async function openAssistantMachine(home: AssistantHomePlace, workdir: st
   const rpc = rpcOn(target);
   const projectId = target === null ? await ensureImplicitSessionHomeProjectId() : await remoteHostsStore.ensureTaskWorkspace(home.deviceId, true);
   if (!projectId) throw new Error('Task workspace is unavailable');
-  const acquired = await rpc.projects.acquireTaskDirectory(projectId, workdir);
-  if (!acquired.success) throw new Error(`Could not open the assistant directory: ${acquired.error.type}`);
   const homeDir = target === null ? await rpc.app.getHomeDirectory() : await remoteHostsStore.ensureHomeDir(home.deviceId);
+  // 住云上:说明、记忆、技能在 ~/.claude,资料在 ~/给助理的资料,都不在它的工作目录里 —— 工作区要圈住整个主目录,
+  // 否则往云上拷这些(分块写、建夹)会被「只能写工作区里的」挡下(搬家 #2104 真机)。住电脑上的都在工作目录里。
+  const acquired = await rpc.projects.acquireTaskDirectory(projectId, home.kind === 'cloud' ? homeDir : workdir);
+  if (!acquired.success) throw new Error(`Could not open the assistant directory: ${acquired.error.type}`);
   return { ...(await openMachineWith(rpc, { deviceId: home.deviceId, projectId, workspaceId: acquired.data.workspaceId, home: homeDir, workdir, kind: home.kind })), target };
 }

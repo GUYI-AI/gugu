@@ -23,14 +23,12 @@ export type PromptRequest = {
   completion: ReturnType<typeof Promise.withResolvers<PromptResult>>;
 };
 
-export function acceptPromptMessage(request: PromptRequest, messageId: string, transcript: AcpTranscriptParser,
-  push: (event: NormalizedEvent) => void, providerId: string): void {
-  const inserted = { ...request.submitted, messageId, contentMode: 'replace' as const };
-  if (!transcript.hasEntity(inserted)) throw new Error(`ACP provider '${providerId}' returned an accepted receipt before its user echo (${messageId})`);
-  request.messageId = messageId;
+export function acceptPromptMessage(request: PromptRequest, messageId: string,
+  push: (event: NormalizedEvent) => void, providerId: string,
+  echo?: Extract<NormalizedEvent, { kind: 'message' }>): void {
+  if (!echo) throw new Error(`ACP provider '${providerId}' returned an accepted receipt before its user echo (${messageId})`);
   request.accepted = true;
-  if (request.submitted.messageId !== messageId) transcript.removeSubmittedMessage(request.submitted.messageId!);
-  push(inserted);
+  push(echo);
 }
 
 export function settleAcceptedRequests(requests: Map<string, PromptRequest>, transcript: AcpTranscriptParser,

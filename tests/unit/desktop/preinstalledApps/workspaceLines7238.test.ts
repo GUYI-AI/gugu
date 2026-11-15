@@ -4,7 +4,7 @@
 // none when no run does.
 import { describe, expect, test } from 'vitest'
 // @ts-expect-error — 内置 App 是不经构建的纯 ES module,没有类型;运行时 import 可用。
-import { fingerprint, linesText, placeOf, plainWords, relocate, spanOf } from '../../../../apps/desktop/preinstalled-apps/workspace/lines.js'
+import { findIn, fingerprint, linesText, placeOf, plainWords, relocate, spanOf } from '../../../../apps/desktop/preinstalled-apps/workspace/lines.js'
 
 const doc = ['# 计划', '', '目标：上线', '负责人：小王', '', '## 备注', '目标：上线', '负责人：小王'].join('\n')
 
@@ -75,5 +75,29 @@ describe('relocate: the lines a pill named, in the file as it is now', () => {
     expect(relocate(now, [3, 4], h, 2)).toEqual({ first: 3, last: 4, moved: false })
     // Control: not told there were two, the other twin is taken for it — what n is for.
     expect(relocate(now, [7, 8], h)).toEqual({ first: 3, last: 4, moved: true })
+  })
+})
+
+describe('findIn: the words a link\'s find= names', () => {
+  test('their first place, as written: offsets and the lines they are on', () => {
+    const at = doc.indexOf('负责人')
+    expect(findIn(doc, '负责人：小王')).toEqual({ from: at, to: at + 6, lines: [4, 4] })
+    expect(findIn(doc, '上线\n负责人')).toMatchObject({ lines: [3, 4] })
+  })
+
+  test('case aside when nothing reads as written; regex characters are words', () => {
+    const text = 'Deadline: Friday\nprice (USD) * 2'
+    expect(findIn(text, 'deadline')).toEqual({ from: 0, to: 8, lines: [1, 1] })
+    expect(findIn(text, '(usd) *')).toMatchObject({ from: text.indexOf('(USD)'), lines: [2, 2] })
+  })
+
+  test('within the lines a link names first — the twin there, not the first one — then anywhere', () => {
+    expect(findIn(doc, '目标：上线', [7, 8])).toMatchObject({ lines: [7, 7] })
+    expect(findIn(doc, '# 计划', [7, 8])).toMatchObject({ lines: [1, 1] })
+  })
+
+  test('nowhere, or no words: null', () => {
+    expect(findIn(doc, '不存在的字')).toBeNull()
+    expect(findIn(doc, '')).toBeNull()
   })
 })

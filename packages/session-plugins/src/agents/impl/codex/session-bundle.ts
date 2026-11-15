@@ -601,9 +601,8 @@ function codexPermissionMode(bundle: SessionCapabilityBundle): CodexPermissionMo
     return explicit;
   }
   // `plan` is intentionally not interpreted here; its unsupported-provider fallback remains #5623's
-  // responsibility before this Codex materializer is reached.
-  // Legacy boolean-only bundles preserve the historical false → edit behavior.
-  return bundle.autonomy?.mode === 'full-access' ? 'full-access' : 'edit';
+  // responsibility before this Codex materializer is reached. No tier declared = Codex's edit tier.
+  return 'edit';
 }
 
 function codexPermissionProfile(mode: CodexPermissionMode): string {

@@ -10,6 +10,9 @@ import { applyMessageWindowRevalidation, loadMessageOverlays } from '../../../..
 import { deriveReadReceipt } from '@gugu/core/shared/ui/messageState'
 import { message } from '../../../support/testHarness'
 
+// Delivery admitted `active` at write; `archived` was refused there (its delivery block).
+const facts = { agentIds: new Set(['archived', 'active']), wakes: new Map([['refused', new Set(['active'])], ['read', new Set(['active'])]]) }
+
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: {} }))
 const db = vi.hoisted(() => ({ from: vi.fn(), refusalFailure: false }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: db }))
@@ -91,8 +94,8 @@ describe('archived-agent delivery revisions', () => {
       expect(refused).toMatchObject({ delivered: false, delivery_status: null, readers: [],
         delivery_blocks: [{ agent_user_id: 'archived', reason: 'agent_archived' }] })
       expect(received).toMatchObject({ delivered: true, readers: ['active'] })
-      expect(deriveReadReceipt(refused!, { archived: 0 })).toMatchObject({ readCount: 0 })
-      expect(deriveReadReceipt(received!, { active: 0 }, { messageReaders: { read: new Set(received!.readers) } }))
+      expect(deriveReadReceipt(refused!, { archived: 0 }, facts)).toMatchObject({ readCount: 0 })
+      expect(deriveReadReceipt(received!, { active: 0 }, facts, { messageReaders: { read: new Set(received!.readers) } }))
         .toMatchObject({ readCount: 1 })
       expect(repository.snapshot().view).toEqual([])
       expect(revalidate).toHaveBeenCalledWith('chat-1', true)
@@ -102,7 +105,7 @@ describe('archived-agent delivery revisions', () => {
       await coordinator.whenIdle()
       const mixed = cache.rows('chat-1')[0]!
       expect(mixed).toMatchObject({ readers: ['active'], delivery_blocks: [{ agent_user_id: 'archived', reason: 'agent_archived' }] })
-      expect(deriveReadReceipt(mixed, { archived: 0, active: 0 }, { messageReaders: { refused: new Set(mixed.readers) } }))
+      expect(deriveReadReceipt(mixed, { archived: 0, active: 0 }, facts, { messageReaders: { refused: new Set(mixed.readers) } }))
         .toMatchObject({ readCount: 1, totalRecipients: 2, readerIds: ['active'] })
     } finally {
       off()

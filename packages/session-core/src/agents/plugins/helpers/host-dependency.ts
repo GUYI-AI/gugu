@@ -82,6 +82,8 @@ type MiseAcpRegistry = {
   backend: 'acp-registry';
   /** 注册表里的 agent id(`antigravity-acp`)。 */
   agentId: string;
+  /** See `registryArgs` on the acp-registry backend (capability.ts). */
+  registryArgs?: 'omit';
 };
 
 /**
@@ -223,7 +225,7 @@ function acpRegistryDependency(opts: {
       kind: 'mise',
       package: opts.agentId,
       binary: opts.id,
-      backend: { kind: 'acp-registry', agentId: opts.agentId },
+      backend: { kind: 'acp-registry', agentId: opts.agentId, ...(opts.registryArgs ? { registryArgs: opts.registryArgs } : {}) },
     },
     recommended: true,
     // ❌ 不带 `registry` / `registryPackage`:那两格一出现,源菜单就会去 npm 上查一个不存在的包。

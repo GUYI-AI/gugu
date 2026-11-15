@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels'
 import { fetchInChunks } from '@gugu/core/shared/inChunks'
-import { readMemberRosterRevision, readWorkspaceChanges } from '../../lib/accountRevisionCoordinator'
+import { readMemberRosterRevision, readRenamedMembers, readWorkspaceChanges } from '../../lib/accountRevisionCoordinator'
 import { rendererLogger } from '../../lib/log'
 import { chatDb } from '../../lib/supabase'
 import { platform } from '../../platform'
@@ -10,6 +10,7 @@ import { useDevicesStore } from '../../store/devicesContext'
 import { rpc } from '../../session/renderer/lib/ipc'
 import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
 import { openFileIds, updateFileNames } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { useAgentResourceRevisions } from './useAgentResourceRevisions'
 
 const log = rendererLogger('chat/extension-workspace-revisions')
 
@@ -24,6 +25,8 @@ const log = rendererLogger('chat/extension-workspace-revisions')
  * files are awaited here, so an older revision cannot overwrite a later rename in the tab strip.
  */
 export function useExtensionWorkspaceRevisions(): void {
+  // #1927 (42): and that the agent resources of their bindings changed (its own note).
+  useAgentResourceRevisions()
   const { subscribeAccountRevision } = useChatStore('subscribeAccountRevision')
   useEffect(() => {
     const workspace = subscribeAccountRevision('workspace_changed', async (operations) => {
@@ -54,9 +57,18 @@ export function useExtensionWorkspaceRevisions(): void {
         log.warn({ error: error instanceof Error ? error.message : String(error) }, 'telling App pages their chat members changed failed')
       })
     })
+    // A name or face is the person's, not a member row's: no chat_members_changed comes for it (`MemberChange.renamed`).
+    const renamed = subscribeAccountRevision('agent_changed', (operations) => {
+      const renamed = readRenamedMembers(operations.map((operation) => operation.payload))
+      if (!platform.capabilities.agentRuntime || renamed.length === 0) return
+      void rpc.extensions.chatMembersChanged({ renamed }).catch((error: unknown) => {
+        log.warn({ error: error instanceof Error ? error.message : String(error) }, 'telling App pages a member was renamed failed')
+      })
+    })
     return () => {
       workspace()
       members()
+      renamed()
     }
   }, [subscribeAccountRevision])
   // Where a project file is kept is shown with whether that machine is on: the device list's own facts say when one went

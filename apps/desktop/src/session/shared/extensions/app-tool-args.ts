@@ -79,7 +79,7 @@ export const APP_CHECK_ARGS = {
   // F14 (L7-b) The tab_kind app_install / app_search hand back: one value names the App and its tab.
   tab_kind: z.string().min(1).describe('"<id>.<tab>" from app_install/app_search; inferred for a widget message, otherwise required.').optional(),
   message_id: z.string().min(1).describe('A widget message (msg:…) you can read; checks that card with its original data. Instead of item_id/chat_id/file_path.').optional(),
-  widget_id: z.string().min(1).describe('Instead of message_id: the widget id (currently its message id).').optional(),
+  widget_id: z.string().min(1).describe('Instead of message_id: the registered widget identity.').optional(),
   // F5 The host already read chat_id / item_id as this agent (acp-engine-utils withMessageAttachment).
   item_id: z.string().min(1).describe('A chat\'s file (workspace__list) the tab opens: it runs opened on that file, in that file\'s chat. An App of chat files wants it.').optional(),
   chat_id: z.string().min(1).describe('Only without item_id: a chat you are in, and the tab runs as it does in that chat\'s side panel. With item_id it must be that file\'s chat.').optional(),

@@ -6,7 +6,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { conversationLink } from '@gugu/core/shared/ui/guguLink'
 import { messageQuoteLink } from '@gugu/core/shared/ui/messageQuote'
-import { publishChatSummaries } from '@/lib/chatSummariesBridge'
+import { publishChatSummaries, publishContactSummaries } from '@/lib/chatSummariesBridge'
+import { UI_EVENTS } from '@/lib/uiEvents'
 import { takeTaskReveal } from '@/hooks/useSourceMessageReveal'
 import type { TaskTurnHit } from '@shared/core/search'
 import { GlobalSearch } from './global-search'
@@ -111,10 +112,10 @@ afterEach(async () => {
 
 // The typed text settles after the panel's debounce; the two queries answer on the next turns.
 const settle = async () => { for (let round = 0; round < 3; round++) await act(async () => { await vi.advanceTimersByTimeAsync(120) }) }
-async function render(text: string, tasks = true) {
+async function render(text: string, tasks = true, names = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClient = client
-  await act(async () => root.render(<QueryClientProvider client={client}><GlobalSearch tasks={tasks} onClose={() => {}} onOpen={() => { closed++ }} /><SessionProbe /></QueryClientProvider>))
+  await act(async () => root.render(<QueryClientProvider client={client}><GlobalSearch tasks={tasks} names={names} onClose={() => {}} onOpen={() => { closed++ }} /><SessionProbe /></QueryClientProvider>))
   await act(async () => updateSearchSession({ text }))
   await settle()
 }
@@ -128,6 +129,7 @@ let latestSession: SearchSession | null = null
 function SessionProbe() { latestSession = useSearchSession(); return null }
 const sessionSnapshot = () => latestSession
 const options = () => [...host.querySelectorAll<HTMLElement>('[role=option]')]
+const recentWords = () => [...host.querySelectorAll<HTMLElement>('[data-testid=global-search-recent] button:not([data-testid=global-search-recent-clear])')].map((button) => button.textContent)
 const headers = () => [...host.querySelectorAll<HTMLElement>('[role=listbox] > button:not([role=option])')].map((button) => button.textContent)
 const tab = (key: string) => [...host.querySelectorAll<HTMLElement>('[role=tab]')].find((button) => button.textContent!.startsWith(key))!
 
@@ -196,6 +198,29 @@ describe('global search sender avatars', () => {
 })
 
 describe('global search panel', () => {
+  it('shows only a group reply destination when a search hit was sent to the owner in a group', async () => {
+    remote.turns.mockResolvedValue([{ ...turn, excerpt: 'private owner group reply', activity: { kind: 'sent', id: 'send', addresses: {
+      target: { kind: 'chat', conversationId: GROUP, whisper: false, threadRootId: null }, recipients: ['user:me-1'], confirmed: true, chatKind: 'group', replyTo: null,
+    } } }])
+    await render('private')
+    expect(host.innerHTML).not.toContain('private owner group reply')
+    expect(host.textContent).not.toContain('private owner group reply')
+    expect(options()[1]!.textContent).toContain('搜索测试群甲')
+  })
+
+  it('keeps an activity search hit without rendering its body in text, title or accessible labels', async () => {
+    const { readDeliveryEnvelope } = await import('@gugu/core/local/agent/deliveryEnvelope')
+    const facts = readDeliveryEnvelope('<gugu_delivery route="chat" from="Worker" from_id="user:worker" from_type="agent"><![CDATA[private folded body]]></gugu_delivery>')!.segments.map(part => part.facts)
+    remote.turns.mockResolvedValue([{ ...turn, role: 'user', excerpt: 'private folded body', activity: { kind: 'received', id: 'input', facts } }])
+    await render('private')
+    expect(host.innerHTML).not.toContain('private folded body')
+    expect(host.textContent).not.toContain('private folded body')
+    expect(options()).toHaveLength(3)
+    expect(options()[1]!.textContent).toContain('Worker')
+    await act(async () => options()[1]!.click())
+    expect(takeTaskReveal('s1')).toBe(messageQuoteLink({ kind: 'session', sessionId: 's1', itemId: turn.itemId }))
+  })
+
   it('preserves system-row filtering and neutral sender identity for scoped SQLite results', async () => {
     remote.desktop = true
     setNetwork(false)
@@ -496,13 +521,65 @@ describe('global search panel', () => {
     expect(remote.opened).toEqual([conversationLink(OTHER, OLD)])
     await act(async () => updateSearchSession({ text: '' }))
     await settle()
-    expect([...host.querySelectorAll('[data-testid=global-search-recent] button')].map((button) => button.textContent)).toEqual(['回滚'])
+    expect(recentWords()).toEqual(['回滚'])
+  })
+
+  it('remembers the words of an opened result with nothing in scope, apart from each conversation, and Clear forgets them', async () => {
+    await render('回滚')
+    await act(async () => options()[0]!.click())
+    await act(async () => updateSearchSession({ text: '' }))
+    await settle()
+    expect(recentWords()).toEqual(['回滚'])
+    await act(async () => updateSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] }))
+    expect(recentWords(), 'a conversation keeps its own words').toEqual([])
+    await act(async () => updateSearchSession({ chips: [] }))
+    await act(async () => host.querySelector<HTMLElement>('[data-testid=global-search-recent-clear]')!.click())
+    expect(host.querySelector('[data-testid=global-search-recent]')).toBeNull()
   })
 
   it('without local tasks (the phone) it searches chats only and has no task filter', async () => {
     await render('回滚', false)
     expect(remote.turns).not.toHaveBeenCalled()
     expect([...host.querySelectorAll('[role=tab]')].map((button) => button.textContent!.replace(/\d+$/, ''))).toEqual(['globalSearch.facet.all', 'globalSearch.facet.message', 'globalSearch.facet.file'])
+  })
+})
+
+describe('names on the phone (no quick switcher beside the panel)', () => {
+  afterEach(() => publishContactSummaries([]))
+  const nameRows = () => [...host.querySelectorAll<HTMLElement>('[data-testid=global-search-name]')]
+
+  it('lists the groups and people the words name above the messages; a group opens its conversation', async () => {
+    publishContactSummaries([{ id: 'person-1', name: '设计师小林' }])
+    await render('设计', false, true)
+    expect(nameRows().map((row) => row.textContent)).toEqual(['设计组', '设计师小林'])
+    await act(async () => nameRows()[0]!.click())
+    expect(remote.opened).toEqual([conversationLink(OTHER)])
+    expect(closed).toBe(1)
+  })
+
+  it('a person opens their contact details without creating a conversation', async () => {
+    publishContactSummaries([{ id: 'person-1', name: '设计师小林' }])
+    const openContact = vi.fn()
+    window.addEventListener(UI_EVENTS.openContact, openContact)
+    try {
+      await render('小林', false, true)
+      await act(async () => nameRows()[0]!.click())
+      expect((openContact.mock.calls[0]![0] as CustomEvent).detail).toBe('person-1')
+      expect(remote.opened).toEqual([])
+    } finally { window.removeEventListener(UI_EVENTS.openContact, openContact) }
+  })
+
+  it('a name alone is not "nothing found"; scoped searches and the desktop panel list no names', async () => {
+    remote.messages.mockResolvedValue({ data: [], error: null })
+    await render('设计组', false, true)
+    expect(nameRows()).toHaveLength(1)
+    expect(host.textContent).not.toContain('globalSearch.emptyFor')
+    await act(async () => updateSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] }))
+    await settle()
+    expect(nameRows()).toHaveLength(0)
+    resetSearchSession()
+    await render('设计组', false, false)
+    expect(nameRows()).toHaveLength(0)
   })
 })
 

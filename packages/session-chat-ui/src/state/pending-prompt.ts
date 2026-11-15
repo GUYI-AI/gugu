@@ -253,6 +253,7 @@ export function pendingPromptTurn(prompt: PendingPrompt): TranscriptTurn {
         ...(prompt.sentAt !== undefined ? { at: prompt.sentAt } : {}),
         role: 'user',
         text: prompt.text,
+        _meta: { guguClientMessageId: prompt.id },
         attachments: prompt.attachments,
         ...(prompt.delivery ? { sendStatus: prompt.delivery } : {}),
       } as TranscriptTurn['items'][number],

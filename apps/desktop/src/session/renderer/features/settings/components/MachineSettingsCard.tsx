@@ -6,7 +6,7 @@ import { PRODUCT_NAME } from '@shared/app-identity'
 import { DeviceSettingsNotice } from './DeviceSettingsScope'
 import { ResetToDefaultButton } from './ResetToDefaultButton'
 import { SettingsGroup, SettingsRow } from '@/components/settings/SettingsPrimitives'
-import { DeviceScopePicker } from '@renderer/features/remote-hosts/device-scope-picker'
+import { DeviceScopePicker, DeviceScopeStatus } from '@renderer/features/remote-hosts/device-scope-picker'
 import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store'
 import { EnableTmuxRow } from './SessionSettingsRows'
 import { useTerminalEnabled } from '../use-terminal-enabled'
@@ -30,7 +30,14 @@ export function MachineSettingsCard() {
   const localProjectBusy = localProjectLoading || localProjectSaving
 
   return (
-    <SettingsGroup title={<DeviceScopePicker store={settingsDeviceStore} />}>
+    <SettingsGroup
+      title={
+        <span className="flex min-w-0 items-center gap-2">
+          <DeviceScopePicker store={settingsDeviceStore} />
+          <DeviceScopeStatus store={settingsDeviceStore} />
+        </span>
+      }
+    >
       {/* 看的是别的机器(#6264):离线 / 太旧时说一句,下面照旧画、一起灰。 */}
       <DeviceSettingsNotice error={localProjectError} hasData={localProject !== undefined} />
       <SettingsRow

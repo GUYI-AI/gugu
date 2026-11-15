@@ -9,7 +9,6 @@ import { GUGU_APPS_SEARCH_LINE, guguSessionSurfaceBlock } from '../../../../apps
 import { z } from 'zod'
 import { listRowsSchema, agentStatusFilterSchema } from '../../../../apps/desktop/electron/mcp/list-window.mjs'
 import { EXTENSION_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-extension-tool'
-import { assistantBrief } from '../../../../packages/core/src/shared/assistantPolicy'
 import { SESSION_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-session-tool'
 // @ts-expect-error -- the MCP tool implementation is an untyped ESM module.
 import { TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
@@ -126,14 +125,6 @@ describe('tool usage belongs to schemas and assistant duplicates keep one owner'
     expect(assistant).toContain('In mathematical prose')
     expect(assistant).not.toContain(GUGU_ACKNOWLEDGEMENT)
     expect(GUGU_PLATFORM_BLOCK).toContain(GUGU_ACKNOWLEDGEMENT)
-    const brief = assistantBrief('cloud', '/reference', '/memory')
-    expect(brief).toContain('多步工作先用 message_send 短句承接')
-    expect(brief).toContain('用对方在用的语言；还没对话时用档案里开通时的界面语言')
-    expect(brief).not.toContain('中文。')
-    expect(brief).not.toContain('简洁，先说结果')
-    expect(brief).not.toContain('schedule_create')
-    expect(brief).toContain('session_spawn，默认挂在你名下')
-    expect(brief).not.toContain('session_spawn(nest:')
     for (const name of ['session_spawn', 'session_message']) {
       const schema = SESSION_TOOL_DEFS.find(tool => tool.name === name)!.schema
       const json = z.toJSONSchema(schema, { io: 'input' })

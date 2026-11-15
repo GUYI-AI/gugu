@@ -12,6 +12,10 @@ vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: 
 vi.mock('@renderer/features/library/library-host', () => ({ useLibraryHost: () => host }));
 
 import { usePlatformModelCatalog } from './platform-model-catalog';
+import { queryClient } from '@renderer/lib/query-client';
+import { notifyManager } from '@tanstack/react-query';
+// Deliver query results in the same task they resolve in, so a test's flush sees them.
+notifyManager.setScheduler((callback) => callback());
 
 const MODELS = { models: [{ id: 'glm-5.3-flash', protocol: 'anthropic-messages' }] };
 
@@ -31,10 +35,13 @@ async function render(where: boolean | Where) {
     root!.render(<Probe {...props} />);
     await Promise.resolve();
     await Promise.resolve();
+    // The shared catalog query notifies on the next macrotask.
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
 beforeEach(() => {
+  queryClient.clear();
   invoke.mockReset().mockResolvedValue(MODELS);
   container = document.createElement('div');
   document.body.appendChild(container);

@@ -18,7 +18,7 @@ import { setCoreLoggerFactory } from '../../../packages/core/src/log.ts'
 import { REMOTE_PROTOCOL_VERSION, MIN_CLIENT_PROTOCOL } from '../../../packages/core/src/cloud/serverMachineHealth.ts'
 import { createPhoneAgentCloud } from './phone-agent-cloud.mjs'
 import { createPhoneModelAccess } from './phone-agent-model.mjs'
-import { openPhoneAgentStore, admitPhoneJob, stableId, uuid } from './phone-agent-store.mjs'
+import { openPhoneAgentStore, admitPhoneJob, phoneInboxJobId, stableId, uuid } from './phone-agent-store.mjs'
 import { stopPhoneSession } from './phone-session-stop.mjs'
 import { withSessionAttachments } from '../../../packages/core/src/cloud/sessionAttachments.ts'
 import { startPhoneAgentRpc } from './phone-agent-rpc.mjs'
@@ -220,7 +220,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
         const row = rowsById.get(input.sourceMessageId)
         if (!row) throw new Error('inbox admission has no authoritative source row')
         const confirmation = actions?.confirmationForMessage(agent, row)
-        await admit({ id: input.sourceMessageId, agentUserId, prompt: input.text, ...(confirmation ? { kind: 'confirmation', ...confirmation } : {}), route: { kind: 'chat', chatId: row.chatId, sourceMessageId: row.id, senderUserId: row.senderUserId, threadRootId: row.threadRootId ?? (row.isThreadRoot ? row.id : null), whisper: row.isWhisper } })
+        await admit({ id: phoneInboxJobId(store, agentUserId, input.sourceMessageId), agentUserId, prompt: input.text, ...(confirmation ? { kind: 'confirmation', ...confirmation } : {}), route: { kind: 'chat', chatId: row.chatId, sourceMessageId: row.id, senderUserId: row.senderUserId, threadRootId: row.threadRootId ?? (row.isThreadRoot ? row.id : null), whisper: row.isWhisper } })
         return 'accepted'
       },
     })

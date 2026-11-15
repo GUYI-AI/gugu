@@ -18,7 +18,7 @@ type Ctx = { chat: { id: string; name: string; kind: 'group'; groupId: string };
 const ctxOf = (chat: string): Ctx => ({ chat: { id: chat, name: chat, kind: 'group', groupId: chat }, locale: 'zh-CN', capabilities: ['files:read', 'files:write'] })
 let contextChanged: (ctx: Ctx) => void = () => {}
 let heard: (change: unknown) => void = () => {}
-/** Each list asked, held open until the test answers it. */
+/** Each list of a chat's top asked, held open until the test answers it. */
 const lists: { chat: string; answered: boolean; answer: (entries: Entry[]) => void }[] = []
 const out = (chat: string) => lists.filter((list) => list.chat === chat && !list.answered)
 const answer = (list: (typeof lists)[number], entries: Entry[]) => {
@@ -39,7 +39,9 @@ const gugu = {
   showMessage: vi.fn(async () => {}),
   files: {
     viewPreferences: vi.fn(async () => ({ showAppData: false })),
-    list: vi.fn((place: { chat: string }) => new Promise<Entry[]>((done) => lists.push({ chat: place.chat, answered: false, answer: done }))),
+    // The top is read with 「附件」 beside it: nothing was sent in these chats, so 「附件」 is answered empty at once.
+    list: vi.fn((place: { chat: string; folder?: string }) => place.folder === '附件' ? Promise.resolve([])
+      : new Promise<Entry[]>((done) => lists.push({ chat: place.chat, answered: false, answer: done }))),
     onChanged: vi.fn((_place: unknown, fn: typeof heard) => {
       heard = fn
       return () => {}

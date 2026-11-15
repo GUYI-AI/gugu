@@ -35,12 +35,12 @@ it('preserves the failed-message row geometry and button style', () => {
   expect(a.style.cssText).toBe(b.style.cssText);
   expect(a.getBoundingClientRect().height).toBe(INPUT_SEND_FAILURE_HEIGHT);
   expect(unknown.querySelector('button')!.style.cssText).toBe(failed.querySelector('button')!.style.cssText);
-  expect(failed.textContent).toContain('Retry');
+  expect(failed.textContent).toContain('Resend');
 });
 
 it('does not expose an unsupported resend on an older host or with no command', () => {
   const old = status('unknown', false, { onRetrySend: vi.fn() });
   const detached = status('unknown', true, {});
   expect(old.querySelector('button')).toBeNull(); expect(detached.querySelector('button')).toBeNull();
-  expect(old.textContent).toContain('Delivery unknown'); expect(detached.textContent).toContain('Delivery unknown');
+  expect(old.textContent).toContain('Failed to send'); expect(detached.textContent).toContain('Failed to send');
 });

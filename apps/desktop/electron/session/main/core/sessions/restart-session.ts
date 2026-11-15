@@ -1,16 +1,19 @@
-import { and, eq, inArray, like } from 'drizzle-orm';
+import { and, count, eq, inArray, like } from 'drizzle-orm';
 import { db } from '@main/db/client';
-import { sessionPending, sessions } from '@main/db/schema';
+import { sessionPending, sessions, sessionTurns } from '@main/db/schema';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { agentStatusWriter } from '@main/core/agent-status/agent-status-writer';
+import { forgetLostAcpSession } from '@main/core/acp/runtime-process/host';
 import type { SessionConfig } from '@shared/core/sessions/session-config';
 import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 import { hydrateSession } from './hydrateSession';
 import { sessionLife } from './session-life';
 
 /**
- * spec session-resume:引擎侧什么都没有的会话,**照咕咕记着的那句首轮重来**(= restart)。
+ * spec session-resume:引擎侧什么都没有的会话,换一条新的引擎会话。首轮没跑完的,**照咕咕记着的那句首轮重来**;
+ * 跑完过的 ❌ 不重来:那句话的工具可能有副作用(写文件、跑命令),点「重新开始」不等于同意再做一遍。
+ * 它等人发下一句话再起。
  *
  * 走到这里的只有两种会话,它们留下的是同一种状态:首轮没跑完的(建完就关、首轮本身失败),
  * 和跑完过但引擎侧那条会话后来没了的(rollout 被删、被归档)。两种都不是故障,缺的是
@@ -36,9 +39,12 @@ export async function restartSession(
   if (!row) throw new Error('Session not found');
   if (!row.config) throw new Error(`Session has no config: ${sessionId}`);
 
+  // 有已提交回合(session_turns,#5381)= 首轮跑完过,不重来。
+  const [turns] = await db.select({ n: count() }).from(sessionTurns).where(eq(sessionTurns.sessionId, sessionId));
+  const ran = (turns?.n ?? 0) > 0;
   // 记着的首轮:优先用还留在载荷里的那份(它本来就是要投递的那句),否则用创建时记下的事实。
-  const replay = row.config.initialPrompt?.trim() || row.config.firstUtterance?.trim();
-  if (!replay) {
+  const replay = ran ? undefined : row.config.initialPrompt?.trim() || row.config.firstUtterance?.trim();
+  if (!ran && !replay) {
     // 新建恒带首轮之后这里够不到 —— 会走到这条的只有那批存量空壳会话。fail loud:
     // ❌ 不静默换一条新会话冒充成功(spec session-resume 底线)。
     throw new Error(
@@ -50,7 +56,10 @@ export async function restartSession(
   // providerSessionState 必须整键去掉,而不是置 undefined —— 版本化 JSON 列写的是
   // JSON.stringify 的结果,一个 `undefined` 值会连键一起消失,但显式留键更容易被下一个人
   // 误读成「有这个状态,只是空的」。
-  const { providerSessionState: _cleared, ...rest } = row.config;
+  // 跑完过的:首轮的投递载荷与欠条一起去掉,留着会被下一次首启再投一遍。
+  const { providerSessionState: _cleared, ...kept } = row.config;
+  const { initialPrompt: _prompt, initialMessageId: _owed, ...unowed } = kept;
+  const rest = ran ? unowed : kept;
   // ACP replays through session-life's queue (below) only: its creation turns go too, or a session created before
   // session-life (no earlier pending row) would get them enqueued again at provision. A terminal leg's hydrate
   // reads initialPrompt.
@@ -58,7 +67,7 @@ export async function restartSession(
   if (rest.type === 'acp') {
     const { initialQueue: _replayed, ...acp } = rest;
     nextConfig = acp;
-  } else nextConfig = { ...rest, initialPrompt: replay };
+  } else nextConfig = replay ? { ...rest, initialPrompt: replay } : rest;
 
   await db
     .update(sessions)
@@ -69,8 +78,8 @@ export async function restartSession(
       updatedAt: new Date().toISOString(),
     })
     .where(eq(sessions.id, sessionId));
-  // 重开 = 这句话重新跑:一次出生,经状态写入者写库、播出。
-  await agentStatusWriter.restart({ sessionId, projectId });
+  // 重开:一次出生,经状态写入者写库、播出。只有首轮重来时有一轮在跑。
+  await agentStatusWriter.restart({ sessionId, projectId }, Boolean(replay));
 
   events.emit(sessionChangedChannel, {
     sessionId,
@@ -81,7 +90,7 @@ export async function restartSession(
     changes: { providerSessionState: null, providerSessionId: null },
   });
 
-  log.info('restartSession: replaying the recorded first utterance', {
+  log.info(replay ? 'restartSession: replaying the recorded first utterance' : 'restartSession: waiting for the next message', {
     sessionId,
     type: row.runtime,
   });
@@ -97,7 +106,10 @@ export async function restartSession(
     if (db.select({ seq: sessionPending.seq }).from(sessionPending)
       .where(and(eq(sessionPending.sessionId, sessionId), eq(sessionPending.messageId, replayId))).get()) return;
     await sessionLife().interrupt(sessionId, { k: 'interrupt', reason: 'reconfigure' });
-    sessionLife().enqueue({ sessionId, messageId: replayId, text: replay, kind: 'ordinary',
+    // The runtime's lost record still pins the missing engine session: the next start would load it again and fail the
+    // same way. The engine session was replaced, so forget it (a crash teardown keeps it: reconnect goes through it).
+    await forgetLostAcpSession(sessionId);
+    if (replay) sessionLife().enqueue({ sessionId, messageId: replayId, text: replay, kind: 'ordinary',
       turn: { kind: 'prompt', origin: 'manual' } });
   } else {
     await hydrateSession(projectId, sessionId);

@@ -13,7 +13,6 @@ const expandedProjectIds = observable.set<string>();
 vi.mock('@renderer/lib/stores/app-state', () => ({
   appState: { navigation },
   sidebarStore: {
-    navChain: [{ kind: 'new-session' }, { kind: 'project', projectId: 'design' }],
     expandedProjectIds,
     ensureProjectExpanded: (id: string) => expandedProjectIds.add(id),
   },

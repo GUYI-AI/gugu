@@ -66,6 +66,18 @@ export interface PtyScreenSnapshot {
 
 type PendingSnapshot = { tail: string[]; settle: (data: string) => void };
 
+/** 终端视图画出来的默认字色 / 底色(`#rrggbb`,可带 alpha,应答时不带)。 */
+export type TerminalReportColors = { foreground: string; background: string };
+
+/** OSC 10 / 11 → 应答哪一个颜色。 */
+const COLOR_REPORT_SLOTS = [[10, 'foreground'], [11, 'background']] as const;
+
+/** `#rrggbb` → xterm 应答颜色的写法 `rgb:rrrr/gggg/bbbb`(与 xterm.js 自己应答的逐字相同)。 */
+function xtermRgb(hex: string): string {
+  const pair = (i: number) => hex.slice(i, i + 2).repeat(2);
+  return `rgb:${pair(1)}/${pair(3)}/${pair(5)}`;
+}
+
 export class PtyScreen {
   private readonly terminal: Terminal;
   private readonly core: XtermCore;
@@ -80,6 +92,9 @@ export class PtyScreen {
   private stalled = false;
   /** 已解析完的字节数(每批写入的回调里加):判「解析还在走」用。 */
   private parsedBytes = 0;
+  /** 颜色查询的应答:应答那一刻的颜色,与写回 PTY 的那个口子(见 answerColorQueries)。 */
+  private reportColors: () => TerminalReportColors | null = () => null;
+  private reply: ((data: string) => void) | null = null;
 
   constructor(
     size: PtyDimensions,
@@ -97,6 +112,26 @@ export class PtyScreen {
     // 渲染层在 pty.ts 绕过同一处;这里只吞掉,❌ 应答 —— 应答是看得见终端的那个视图的事。
     this.terminal.parser.registerCsiHandler({ intermediates: '$', final: 'p' }, () => true);
     this.terminal.parser.registerCsiHandler({ prefix: '?', intermediates: '$', final: 'p' }, () => true);
+    // @@@color-report — TUI 问「默认字色 / 底色是什么」(OSC 10/11 `?`)由这块屏幕当场应答,❌ 交给视图。
+    // 问的一方只等一个有界的窗口:Windows 上的 Codex 发问后只读 250ms 的输入队列,之后才到的应答就是普通按键,
+    // 落进它的输入框(`]10;rgb:…]11;rgb:…`)。视图那条路要经 IPC 进渲染进程、排在界面主线程上解析再走 IPC 回来,
+    // 会话刚起、页面正挂终端时最慢;而且没有视图在收输出时根本没有人答。这块屏幕从第一个字节起就在解析同一串输出,
+    // 应答不依赖有没有视图、视图忙不忙。颜色是 App 主题下终端的那两个,由会话页报上来(pty-session-registry.ts);
+    // 还没报 = 不答,TUI 超时后用它自己的缺省,❌ 编一个颜色。渲染层的 xterm 对这两个查询不再应答(pty.ts),
+    // 否则会多答一份迟到的。应答跑在 xterm 的解析循环里,那里抛一次解析就永远停了(见上面 #4904):关了的屏幕不答,
+    // 写失败只记一笔。
+    for (const [ident, slot] of COLOR_REPORT_SLOTS) {
+      this.terminal.parser.registerOscHandler(ident, (data) => {
+        if (data !== '?') return false;
+        const color = this.closed ? undefined : this.reportColors()?.[slot];
+        try {
+          if (color) this.reply?.(`\x1b]${ident};${xtermRgb(color)}\x1b\\`);
+        } catch (error) {
+          log.warn('PtyScreen: failed to answer a terminal color query', { error: String(error) });
+        }
+        return true;
+      });
+    }
     // 鼠标编码、光标、滚动区域与解析器状态读的是 xterm 内部(SerializeAddon 自己也读内部的 _curAttrData)。
     // 升级 xterm 后形状变了就在这里响亮地坏,❌ 静默少恢复几个模式。
     const core = (this.terminal as unknown as { _core?: Partial<XtermCore> })._core;
@@ -110,6 +145,12 @@ export class PtyScreen {
       throw new Error('PtyScreen: xterm internals changed (mouse encoding / cursor / scroll region / parser state)');
     }
     this.core = core as XtermCore;
+  }
+
+  /** 应答用什么颜色(应答那一刻现取)、写到哪里(登记处接到 PTY 的 stdin)。 */
+  answerColorQueries(colors: () => TerminalReportColors | null, reply: (data: string) => void): void {
+    this.reportColors = colors;
+    this.reply = reply;
   }
 
   private get closed(): boolean {

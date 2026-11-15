@@ -20,6 +20,10 @@ vi.mock('@renderer/features/sessions/session-config/use-composer-model-options',
 
 import { SessionStartFailedView } from './session-start-failed-view';
 import type { SessionStartupFailure } from './stores/session-startup-failures';
+import { notifyManager } from '@tanstack/react-query';
+import { queryClient } from '@renderer/lib/query-client';
+// Deliver query results in the same task they resolve in, so a test's flush sees them.
+notifyManager.setScheduler((callback) => callback());
 
 const CATALOG = {
   models: [
@@ -44,6 +48,8 @@ async function render(node: React.ReactNode) {
     );
     await Promise.resolve();
     await Promise.resolve();
+    // The shared catalog query notifies on the next macrotask.
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
@@ -54,6 +60,7 @@ function button(testId: string): HTMLButtonElement {
 }
 
 beforeEach(() => {
+  queryClient.clear();
   invoke.mockReset().mockResolvedValue(CATALOG);
   openMembershipPage.mockReset();
 });

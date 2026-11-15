@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { ChatListPanel } from '@/components/ChatListPanel'
 import { NeedsYouHost } from '@/components/needsYou/NeedsYouHost'
-import { ShellSidebarToggle } from '@renderer/lib/components/titlebar/shell-titlebar'
+import { SidebarOneListHead } from '@renderer/features/sidebar/sidebar-one-list-chrome'
 import { installShellSlots } from '@/lib/shellSlots'
 import { i18n } from '@/i18n'
 import { chat, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
@@ -24,7 +24,10 @@ vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: []
 vi.mock('@/hooks/useAgentDisplayStatus', async original => ({ ...await original<object>(), useAgentDisplayStatuses: () => ({}) }))
 vi.mock('@/components/AddFriendSearch', () => ({ AddFriendSearch: () => null }))
 vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: {} }) }))
-vi.mock('@renderer/lib/layout/layout-provider', () => ({ useWorkspaceLayoutContext: () => ({ isLeftOpen: true, isLeftPeeking: false, toggleLeft: vi.fn(), setTriggerHovered: vi.fn() }) }))
+vi.mock('@renderer/lib/layout/layout-provider', () => ({ SIDEBAR_PROGRESS_VAR: '--gg-sidebar-progress', useWorkspaceLayoutContext: () => ({ isLeftOpen: true, isLeftPeeking: false, toggleLeft: vi.fn(), setTriggerHovered: vi.fn() }) }))
+// The one list's head (the desktop bell's place) reads where the task page is; the search box beside the bell is not this case's.
+vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: () => {} }), useWorkspaceSlots: () => ({ currentView: 'home' }), isCurrentView: (current: string, view: string) => current === view }))
+vi.mock('@renderer/features/sidebar/sidebar-search-trigger', () => ({ SidebarSearchTrigger: () => null }))
 // The unit integration covers the real directory. These layout cases keep all 100 pending tasks stable.
 vi.mock('@/components/needsYou/useNeedsYouTasks', () => ({
   markNeedsYouTaskSeen: markSeen,
@@ -78,11 +81,11 @@ it.each([false, true])('the real list header keeps its bell/badge inside the pan
   expect(scroller.scrollTop).toBe(87)
 })
 
-it('the desktop workspace titlebar keeps the bell badge inside the window', async () => {
+it('the desktop sidebar\'s head (the window\'s top band) keeps the bell badge inside the window', async () => {
   state.mobile = false
   await page.viewport(1000, 800)
   harness.container.style.cssText = 'position:relative;width:1000px;height:700px'
-  await renderWithAppProviders(harness, <><ShellSidebarToggle /><NeedsYouHost /></>)
+  await renderWithAppProviders(harness, <><div className="gugu-skin" style={{ width: 280 }}><SidebarOneListHead /></div><NeedsYouHost /></>)
   const badge = harness.container.querySelector<HTMLElement>('[data-testid="notification-count"]')!
   await until('the workspace badge is laid out', () => badge?.getBoundingClientRect().width > 0)
   const box = badge.getBoundingClientRect()

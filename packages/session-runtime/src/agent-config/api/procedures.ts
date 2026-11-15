@@ -24,6 +24,8 @@ export function createAgentConfigProcedures(runtime: AgentConfigRuntime) {
     createConnection: unsupportedConnectionOperation,
     selectConnection: unsupportedConnectionOperation,
     removeConnection: unsupportedConnectionOperation,
+    listConnectionModels: unsupportedConnectionOperation,
+    updateConnectionModels: unsupportedConnectionOperation,
     refreshAgents(input: {
       providerId?: string;
       refreshShellEnv?: boolean;

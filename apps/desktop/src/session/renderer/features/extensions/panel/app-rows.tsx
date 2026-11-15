@@ -113,6 +113,7 @@ export function InstalledAppRow({
   onToggleEnabled?: (enabled: boolean) => void;
   menu: {
     resource?: ResourceContext;
+    onSettings?: () => void;
     onToggleDock?: () => void;
     onOpenInWindow?: () => void;
     onForward?: () => void;

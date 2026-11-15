@@ -2,7 +2,6 @@ import type { ProjectsTranslate } from '@renderer/localization/messages-projects
 import { isWorkspaceProject } from '@renderer/features/sessions/session-home-project-constants';
 import { appState } from '@renderer/lib/stores/app-state';
 import { machineRegistry } from '@renderer/lib/machine-routing';
-import { HOME_PROJECT_LABEL } from '@renderer/features/remote-hosts/machine-home';
 import type { LocalProject } from '@shared/projects';
 import type { GitRepositoryStore } from './git-repository-store';
 import type { PrSyncStore } from './pr-sync-store';
@@ -78,8 +77,6 @@ export function mountedProjectData(
 
 /** Returns the display name from any project store variant. */
 export function projectDisplayName(store: ProjectStore | undefined): string | undefined {
-  // #6264 别的机器的主目录项目处处叫「~」(与侧栏那一行同名)。
-  if (store && appState.sidebar?.homeLayout.homeRows.has(store.id)) return HOME_PROJECT_LABEL;
   return store?.name ?? undefined;
 }
 

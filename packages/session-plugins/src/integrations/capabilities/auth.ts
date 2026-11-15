@@ -51,20 +51,10 @@ const formMethodSchema = z.object({
   mcp: keyedMcpSchema.optional(),
 });
 
-const oauthMethodSchema = z.object({
-  kind: z.literal('oauth'),
-  providerId: z.string(),
-});
-
 const oauthDeviceMethodSchema = z.object({
   kind: z.literal('oauth-device'),
   clientId: z.string(),
   scopes: z.array(z.string()),
-});
-
-const cliImportMethodSchema = z.object({
-  kind: z.literal('cli-import'),
-  cli: z.string(), // e.g "gh"
 });
 
 /**
@@ -102,9 +92,7 @@ const cliMethodSchema = z.object({
 
 const authMethodSchema = z.discriminatedUnion('kind', [
   formMethodSchema,
-  oauthMethodSchema,
   oauthDeviceMethodSchema,
-  cliImportMethodSchema,
   mcpOAuthMethodSchema,
   cliMethodSchema,
 ]);

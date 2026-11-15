@@ -76,3 +76,25 @@ it('does not mistake the rounded pane clipping its own page corner for an overla
   expect(corner.contains(placeholder)).toBe(true);
   expect(isBrowserPageOccluded(placeholder, rect)).toBe(false);
 });
+
+// @@@occluder-set: pointer-events:none overlays are found from the tracked set, which follows the DOM after the first check.
+it('sees an unclickable overlay that appears, is re-marked or goes after the first check', async () => {
+  await harness.render(<div data-browser-page="tracked" style={{ position: 'fixed', left: 400, top: 100, width: 400, height: 300 }} />);
+  const placeholder = harness.container.querySelector<HTMLElement>('[data-browser-page]')!;
+  const rect = placeholder.getBoundingClientRect();
+  expect(isBrowserPageOccluded(placeholder, rect)).toBe(false);
+  const toast = document.createElement('div');
+  toast.innerHTML = '<div><div id="toast-body" style="position:fixed;left:420px;top:120px;width:100px;height:40px;pointer-events:none">saved</div></div>';
+  const inner = toast.querySelector<HTMLElement>('#toast-body')!;
+  inner.setAttribute('data-sonner-toast', '');
+  document.body.append(toast);
+  await Promise.resolve();
+  expect(isBrowserPageOccluded(placeholder, rect)).toBe(true);
+  inner.removeAttribute('data-sonner-toast');
+  expect(isBrowserPageOccluded(placeholder, rect)).toBe(false);
+  inner.setAttribute('role', 'tooltip');
+  await Promise.resolve();
+  expect(isBrowserPageOccluded(placeholder, rect)).toBe(true);
+  toast.remove();
+  expect(isBrowserPageOccluded(placeholder, rect)).toBe(false);
+});

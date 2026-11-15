@@ -62,6 +62,17 @@ describe('durable local IM messages', () => {
     integrity()
   })
 
+  it('keeps stored reactions and refusals when a body-only row rewrites the message; an explicit overlay replaces them', async () => {
+    const store = createImMessageStore(fixture.sqlite)
+    const reactions = [{ emoji: '👍', count: 1, my_reaction: true }]
+    const blocks = [{ agent_user_id: 'agent-a', reason: 'agent_archived' as const }]
+    store.ingest(account, batch(message('one', 'orchid original', 1, { reactions, delivery_blocks: blocks })))
+    store.ingest(account, batch(message('one', 'violet revised')))
+    expect(store.windows(account, ['chat-a'], 1)[0]).toMatchObject({ content: 'violet revised', reactions, delivery_blocks: blocks })
+    store.ingest(account, batch(message('one', 'violet revised', 1, { reactions: [], delivery_blocks: [] })))
+    expect(store.windows(account, ['chat-a'], 1)[0]).toMatchObject({ reactions: [], delivery_blocks: [] })
+  })
+
   it('keeps the explicit integer row IDs and FTS mappings stable across VACUUM', async () => {
     const store = createImMessageStore(fixture.sqlite)
     store.ingest(account, batch(message('removed'), message('kept', 'violet survivor', 2)))
@@ -249,5 +260,23 @@ describe('durable local IM messages', () => {
     store.ingest(account, { writes: [], revisions: [{ revision: '7', writes: [{ type: 'deleteChat', chatId: 'source' }] }] })
     expect(store.page(account, { chatId: 'observer', limit: 10 }).rows).toEqual([])
     integrity()
+  })
+
+  it('compiles each statement once per connection, however many messages and access facts arrive', () => {
+    const compiled = new Map<string, number>()
+    const prepare = fixture.sqlite.prepare.bind(fixture.sqlite)
+    vi.spyOn(fixture.sqlite, 'prepare').mockImplementation(((sql: string) => {
+      compiled.set(sql, (compiled.get(sql) ?? 0) + 1)
+      return prepare(sql)
+    }) as typeof fixture.sqlite.prepare)
+    const store = createImMessageStore(fixture.sqlite)
+    for (let seq = 1; seq <= 5; seq++) {
+      store.ingest(account, { writes: [], revisions: [{ revision: String(seq), writes: [
+        { type: 'put', message: message(`m${seq}`, 'orchid', seq) },
+        { type: 'chatAccess', access: { chatId: `topic-${seq}`, sourceChatId: 'chat-a', ownMember: seq % 2 === 0 } },
+      ] }], throughRevision: String(seq) })
+    }
+    expect(store.windows(account, ['chat-a'], 10)).toHaveLength(5)
+    expect([...compiled].filter(([, times]) => times > 1)).toEqual([])
   })
 })

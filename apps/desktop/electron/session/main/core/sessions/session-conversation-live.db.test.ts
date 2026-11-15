@@ -5,6 +5,8 @@ import { decodeSessionUpdate, type TranscriptTurn } from '@gugu/session-core/acp
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { makeAcpHarness, makeStartInput } from '../../../../../../../packages/session-runtime/src/acp-agents/acp-test-support';
 import { AcpRuntime } from '../../../../../../../packages/session-runtime/src/acp-agents/runtime/runtime';
+import { personalConversationPreview } from '@gugu/session-core/session-record/personal-conversation';
+import { activityPreviewSources } from '@gugu/session-chat-ui/activity-preview';
 
 const mock = vi.hoisted(() => ({ db: undefined as AppDb | undefined }));
 vi.mock('@main/db/client', () => ({ get db() { if (!mock.db) throw new Error('Missing fixture'); return mock.db; } }));
@@ -38,7 +40,10 @@ describe('ordinary personal replies in the native conversation directory', () =>
     const order: string[] = [];
     let releaseDurable = () => {};
     const rt = new AcpRuntime({ ...h.deps,
-      onConversationActivity: event => { if (!event.preview) order.push('empty'); writes.push(bridge.update(event)); },
+      conversationPreview: {
+        project: turn => personalConversationPreview(turn, activityPreviewSources),
+        onChange: event => { if (!event.preview) order.push('empty'); writes.push(bridge.update(event)); },
+      },
       onTurnCommitted: event => { order.push('commit'); writes.push(persistCommittedTurn(event)); },
     });
     let finish!: () => void;
@@ -53,9 +58,9 @@ describe('ordinary personal replies in the native conversation directory', () =>
         } as SessionUpdate) });
       };
       now = 20_000; await send('first', 'First reply');
-      await vi.waitFor(() => expect(nativeConversationListActivity('s')).toEqual({ text: 'First reply', at: new Date(now).toISOString() }));
+      await vi.waitFor(() => expect(nativeConversationListActivity('s')).toEqual({ text: 'First reply', at: new Date(now).toISOString(), activityVersion: 1, activity: expect.objectContaining({ kind: 'sent', addresses: null }) }));
       now = 30_000; await send('second', 'Last reply');
-      await vi.waitFor(() => expect(nativeConversationListActivity('s')).toEqual({ text: 'Last reply', at: new Date(30_000).toISOString() }));
+      await vi.waitFor(() => expect(nativeConversationListActivity('s')).toEqual({ text: 'Last reply', at: new Date(30_000).toISOString(), activityVersion: 1, activity: expect.objectContaining({ kind: 'sent', addresses: null }) }));
       expect(nativeConversationActivity('s')).toBeNull();
       expect(nativeConversationUnread('s')).toEqual([]);
       const active = rt.sessionLiveModels('s')!.states.activeTurn.snapshot().data!;

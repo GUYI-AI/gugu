@@ -100,7 +100,7 @@ const BROKEN: MathBlock = { kind: 'math', id: 'math#broken', tex: '\\frac{1}{' }
 const inspectFormula: ContractInspector = (host) => {
   const frame = host.firstElementChild as HTMLElement | null
   const content = host.querySelector<HTMLElement>(`.${mathContent}`)
-  if (!frame) return { frameFound: 0, katexRoots: 0, overTop: 0, overBottom: 0, contentWidth: 0 }
+  if (!frame) return { frameFound: 0, katexRoots: 0, overTop: 0, overBottom: 0, overLeft: 0, offCentre: 0, contentWidth: 0 }
 
   const frameBox = frame.getBoundingClientRect()
   const contentBox = (content ?? frame).getBoundingClientRect()
@@ -111,6 +111,10 @@ const inspectFormula: ContractInspector = (host) => {
     // Positive means the formula pokes out of the box reserved for it.
     overTop: Math.max(0, frameBox.top - contentBox.top),
     overBottom: Math.max(0, contentBox.bottom - frameBox.bottom),
+    // Past the left edge is out of the scroll range for good: an over-wide formula must start at the edge.
+    overLeft: Math.max(0, frameBox.left - contentBox.left),
+    // A formula that fits sits centred: left gap minus right gap.
+    offCentre: Math.abs(contentBox.left - frameBox.left - (frameBox.right - contentBox.right)),
     contentWidth: contentBox.width
   }
 }
@@ -143,6 +147,11 @@ describe('display math reserves the box it actually typesets into', () => {
       reading.inspected.overBottom,
       `${label}: formula overhangs the reserved frame by ${reading.inspected.overBottom}px at the bottom`
     ).toBeLessThanOrEqual(0.5)
+    expect(
+      reading.inspected.overLeft,
+      `${label}: formula starts ${reading.inspected.overLeft}px left of the frame, where no scroll reaches`
+    ).toBeLessThanOrEqual(0.5)
+    if (width === WIDTH) expect(reading.inspected.offCentre, `${label}: a formula that fits is off centre`).toBeLessThanOrEqual(1)
   })
 
   it('reserves more height for a taller formula than for a short one', async () => {

@@ -144,7 +144,7 @@ export function DeviceActionsPage({ device, isThisDevice, onBack, embedded = fal
             <Pencil />
           </IconButton>
         )}
-        subtitle={renameFailed ? <span className="text-[var(--danger)]">{renameFailed}</span> : undefined}
+        subtitle={renameFailed ? <span className="text-[var(--danger-fg)]">{renameFailed}</span> : undefined}
         backLabel={t('devices.deviceActions.back')} onBack={onBack} />}
       {versions}
       <OtherDeviceActions device={selected} compact={embedded} machineOnline={device.is_online || configurations?.some(version => version.is_online) === true} />

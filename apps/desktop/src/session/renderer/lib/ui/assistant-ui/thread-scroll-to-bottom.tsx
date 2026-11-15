@@ -12,6 +12,7 @@ import { ArrowDownIcon } from '@/lib/icons'
 import type { FC } from 'react';
 import { cn } from '@renderer/utils/utils';
 import { TooltipIconButton } from './tooltip-icon-button';
+import { composerBandClearance } from './thread-scroll-to-bottom.css';
 
 export type ThreadScrollToBottomProps = {
   /** 视口是否已在末尾。true ⇒ 按钮 disabled 且不可见。 */
@@ -31,8 +32,9 @@ export const ThreadScrollToBottom: FC<ThreadScrollToBottomProps> = ({
   <div
     data-slot="aui-thread-scroll-to-bottom"
     className={cn(
-      // 骑在输入框上沿:露在外面的半截落在那道渐隐里,压着的是已经淡出的字,不是正读着的那一行。
+      // Keep the legacy half overlap only when the composer has no content band.
       'pointer-events-none absolute inset-x-0 bottom-full -mb-4 flex justify-center',
+      composerBandClearance,
       className
     )}
   >

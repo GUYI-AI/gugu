@@ -1,7 +1,6 @@
 import { style } from '@vanilla-extract/css';
 import { collapsibleRow } from '@session-chat/components/primitives/collapse-header.css';
 import { vars } from '@session-chat/styles/theme.css';
-import { createVariableThemeContract } from '@session-chat/styles/variable-theme-contract.css';
 
 /**
  * 子调用相对头部的缩进量(px)。头部本身已不再有指示器格子(owner 2026-09-06:落定后那块
@@ -11,16 +10,10 @@ export const SUBAGENT_INDICATOR_W = 16;
 /** Horizontal gap (px) between the indicator and the name. */
 export const SUBAGENT_HEADER_GAP = 6;
 
-export type SubagentStyleVars = {
-  height: number;
-};
-
-export const subagentVars = createVariableThemeContract<SubagentStyleVars>({
-  height: null,
-});
+// The engine height is a plain inline `height` on the root, never a custom property: a custom property inherits, so
+// changing it restyles the whole subtree — per streamed chunk, O(content) (see user-message.css.ts).
 
 export const subagentRoot = style({
-  height: subagentVars.height,
   overflow: 'hidden',
   color: vars.fgPassive,
   userSelect: 'none',

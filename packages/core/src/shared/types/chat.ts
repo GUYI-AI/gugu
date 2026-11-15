@@ -3,7 +3,7 @@ import type { AgentType } from '@gugu/core/agentTypes'
 import type { AgentStatusView } from '../agentStatus'
 import type { CloudComputerPresence, DeviceHostInfo } from './deviceHost'
 import type { DeviceProject } from './deviceProject'
-import type { AgentFailureReason } from '../agentQuotaReason'
+import type { SystemNotice } from '../ui/systemNotice'
 import type { FileMetadata } from '../fileResolver'
 export type { AgentType } from '@gugu/core/agentTypes'
 
@@ -19,15 +19,6 @@ export type MessageDeliveryStatus = 'delivered' | 'read'
 export type GroupMemberType = 'human' | 'agent'
 export type NotificationLevel = 'all' | 'important' | 'none'
 
-// @@@group-avatar-tile — 群头像组合的一格。产品对「群的脸」只有一个定义：显式群头像原样投影，
-// 从未设过则由成员组合表达（presets 不变量）。每格必须带**稳定 id**——它既是 key 也是该成员没上传
-// 头像时生成默认脸的 seed；姓名永不当 seed。所有渲染群头像的 surface 都喂这一种结构。
-export type GroupAvatarMember = {
-  id: string
-  name: string
-  avatar: string | null
-}
-
 export type ChatUnreadLocator = {
   stream_id: string
   stream_kind: 'main' | 'thread'
@@ -40,6 +31,9 @@ export type ChatUnreadLocator = {
    * 必有:缺这一列是协议错误(chatProjection 读到就抛);本机缓存里缺它的行按无效缓存重建(localSyncDb)。
    */
   addressed_count: number
+  /** 第一条未读里叫到你的消息:打开话题落在这里。手动标未读、老后端没有这一条(null/缺席),照常落在最新处。 */
+  first_addressed_message_id?: string | null
+  first_addressed_seq?: number | null
   cursor_seq: number
   version: number
   is_marked_unread: boolean
@@ -62,8 +56,8 @@ export interface ChatItem {
   created_at: string
   last_message_at: string | null
   last_message_preview: string | null
-  /** The last message is an agent's failure row: the list says this reason in the viewer's language, not the preview. */
-  last_message_failure?: AgentFailureReason | null
+  /** The last message is a system row with a marker: the list says it in the viewer's language, not as stored. */
+  last_message_notice?: SystemNotice | null
   unread_count: number
   /** The server-owned stream/message locator for the first unread projection. */
   unread_locator?: ChatUnreadLocator | null
@@ -99,6 +93,13 @@ export interface TopicSummary {
   is_participant: boolean
 }
 
+/**
+ * Why the server kept a message but refused it to one addressed agent: its task was archived (it can be restored), or its
+ * identity was removed (it cannot). The server may add reasons before this client knows them: any other string is still a
+ * refusal of a message that IS in the chat, shown as plain "not delivered" — never a send failure (#2383).
+ */
+export type MessageDeliveryRefusalReason = 'agent_archived' | 'identity_removed' | (string & Record<never, never>)
+
 export interface MessageItem {
   id: string
   chat_id: string
@@ -117,10 +118,17 @@ export interface MessageItem {
   file_version?: number | null
   /** #7290 悄悄话的附件:不进群文件夹,直接指字节;能读这条消息的人才签得到链接。 */
   file_blob_id?: string | null
+  /** A file an agent handed its owner in the task timeline (an owner notification): it stays in that session's folder on
+   * the session's machine and is read the way that session's timeline reads it. `session_id`: filled in by the host. */
+  session_file?: { path: string; sha256: string; session_id?: string | null } | null
   /** Authorized pinned-file display metadata; original reads still use the file resolver. */
   file_metadata?: FileMetadata | null
   /** Local sending preview only; committed dimensions come from the verified file metadata. */
   image_dimensions?: { width: number; height: number }
+  /** #2581 Files sent at once: the rows of one send share this id and are one message on screen. */
+  send_group_id?: string | null
+  /** #2581 How many files that send holds (2–10), so a reader knows when it has them all. */
+  send_group_size?: number | null
   seq: number
   content: string | null
   content_type: MessageContentType
@@ -129,14 +137,15 @@ export interface MessageItem {
   reply_to_content?: string | null
   retracted_at: string | null
   created_at: string
-  reactions: ReactionGroup[]
+  /** Absent = a body-only row (messages_view has no reactions); it does not speak for the reactions already known. */
+  reactions?: ReactionGroup[]
   is_mine: boolean
   delivered: boolean
   delivery_status: MessageDeliveryStatus | null
   // @@@per-message-read (#598) - user_ids of recipients that have read THIS message (from message_deliveries
   // 'read' rows), independent of the monotonic last_read_seq watermark. Drives precise directed read receipts.
   readers?: string[]
-  delivery_blocks?: Array<{ agent_user_id: string; reason: 'agent_archived' }>
+  delivery_blocks?: Array<{ agent_user_id: string; reason: MessageDeliveryRefusalReason }>
   local_send_state?: 'sending' | 'failed' | 'unknown' | null
   local_send_error?: string | null
   local_send_retryable?: boolean
@@ -152,8 +161,8 @@ export interface MessageItem {
   edited_at?: string | null
 }
 
-/** undelivered = persisted, but no running instance holds an agent it wakes (shared/ui/systemNotice.ts deliveryWaits). */
-export type MessageSendState = 'sending' | 'undelivered' | 'sent' | 'delivered' | 'read' | 'failed' | 'unknown'
+/** The whole message's state. That no running instance holds one agent it wakes is that agent's own fact (shared/ui/systemNotice.ts deliveryWaits), said beside the bubble and in the read list. */
+export type MessageSendState = 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | 'unknown'
 
 export interface ReactionGroup {
   emoji: string
@@ -313,6 +322,11 @@ export interface Device {
    */
   projects?: DeviceProject[]
   /**
+   * 这一端上一次读这台机器的 `projects` 没读到(原因)。`projects` 仍是更早读到的那份,画它的地方标「上次的」;
+   * 读到了 = 缺席。由设备 store 记(withProjectsRead),库里没有这一列。
+   */
+  projects_error?: string
+  /**
    * #7199 这一行是这个账号的云电脑时,它此刻的样子(休眠中 / 正在唤醒 / 运行中)。库里没有这一列:客户端按云电脑管家
    * 的 /state 补上(管家给的 deviceId 认是哪一行)。睡着时 `is_online` 照实为 false,但 ❌ 按离线处理 —— 见
    * `deviceAcceptsWork`。不是云电脑 = 缺席。
@@ -344,6 +358,8 @@ export interface DeviceSessionSummary {
    * 手机端见到 undefined 画中性态，❌ 不补默认值冒充事实。
    */
   isPinned?: boolean
+  /** #2548 固定到左侧栏(桌面左侧栏另有一行);同上,缺席 = 老宿主不报。 */
+  isPinnedToSidebar?: boolean
   unseen?: boolean
   parentConversationId?: string | null
   /**
@@ -368,7 +384,7 @@ export interface DeviceCapabilities extends Partial<DeviceHostInfo> {
   actions?: DeviceActionsSummary
 }
 
-export type GuguSettingsScope = 'user' | `device:${string}` | `chat:${string}`
+export type GuguSettingsScope = 'user' | 'prompts' | `device:${string}` | `chat:${string}`
 
 export interface GuguSettingsRow {
   scope: GuguSettingsScope

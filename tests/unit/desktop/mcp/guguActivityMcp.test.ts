@@ -42,7 +42,7 @@ describe('activity tools at the real MCP boundary', () => {
       name: 'Assistant', harness: 'claude', transport: 'acp', model: null, platformModel: null };
     const request = vi.fn(async () => ({ result: { value: source('mac-event') } }));
     const cross = createCrossMachineSessions({ thisDeviceId: async () => 'cloud', listDevices: async () => devices,
-      lookupAgents: async () => [], requester: { call: request } });
+      lookupAgents: async () => [], requester: { call: request }, outbound: async () => {} });
     const aggregate = createActivitySummaryQuery();
     const server = new McpServer({ name: 'aggregate-test', version: '1' });
     registerGuguActivityTools(server, (action, signal) => aggregate(action as Record<string, unknown>, {

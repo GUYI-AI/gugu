@@ -1,3 +1,4 @@
+import { dshApiKeyConnection, dshApiKeyConnectionBehavior } from './api-key-connection';
 import { platformModel } from './platform-model';
 import {
   definePlugin,
@@ -10,6 +11,7 @@ import { createNativeAcpBehavior } from '../../helpers/acp-stdio';
 import { icon } from './icon';
 import { DSH_PERMISSION_MODES } from './permission-modes';
 import { dshSessionBundleDescriptor, materializeDshSessionBundle } from './session-bundle';
+import { dshMcpBehavior } from './mcp';
 
 const sessionBundle = dshSessionBundleDescriptor satisfies SessionBundleDescriptor;
 
@@ -30,6 +32,8 @@ export const plugin = definePlugin(
   {
     sessionBundle,
     /** 自带 key 填 `DEEPSEEK_API_KEY`(或在 dsh 自己的凭据库里存);平台会话由咕咕给令牌。`initialize` 报 `authMethods: []`。 */
+    // 「API Key 连接」(#2507):一把 key 怎么进这一家的进程,见 ./api-key-connection.ts。
+    apiKeyConnection: dshApiKeyConnection,
     vendorAccount: {
       kind: 'not-required',
       evidence:
@@ -81,6 +85,9 @@ export const plugin = definePlugin(
       supportedTransports: ['stdio', 'http'],
       // `dsh-mcp-client`:工具名 `mcp__<serverName>__<rawName>`。
       toolNames: { kind: 'listed', prefix: 'mcp__gugu__', evidence: '@deepseek-ai/dsh-mcp-client 0.2.1-rc.5 lib/index.js `mcp__${serverName}__${rawName}`' },
+      // dsh 在 profile 启动时就把 profile 里的 MCP 起起来(`session/new` 之前);咕咕再转交一遍 = 同一台起两份
+      // (0.2.2-rc.1 实测,2026-11-09:空 mcpServers 起 1 份、再转交起 2 份)。
+      sessionUserServers: 'inherit',
     },
     // 托管安装(npm backend):本体是 JS(`bin/dsh` → `lib/bin.js`),要 Node ≥ 24.9;咕咕托管的那份满足。
     hostDependency: { ...miseDependency({
@@ -111,6 +118,8 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
+  apiKeyConnection: dshApiKeyConnectionBehavior,
+  mcp: dshMcpBehavior(),
   sessionBundle: { materialize: materializeDshSessionBundle, platformModel },
   // 会话级 argv(`--patch <文档>`)由物化器产出,经 `capabilityArgs` 挂在 `dsh --profile acp` 上。
   acp: createNativeAcpBehavior((ctx) => ({

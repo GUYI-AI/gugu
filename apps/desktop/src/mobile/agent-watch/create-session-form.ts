@@ -18,8 +18,8 @@ import { PREFERRED_SESSION_PROVIDERS } from '@/session/shared/core/sessions/new-
  * 这种事只有在能被反复喂合成输入的地方才验得动 —— 组件里做的话判据只剩「屏幕上看着没选错」。
  */
 
+/** 在哪个项目、哪台机器上建由页面的「项目 · 机器」两行定(CreateTarget);这里是那台机器上怎么跑。 */
 export type CreateSelection = {
-  projectId: string | null
   harness: string | null
   /**
    * 选中的模型 id(`sessionCreateModels` 报的那份里的 id,原样带给机器)。
@@ -60,18 +60,15 @@ export function harnessBlockReason(
 }
 
 /**
- * 默认选项:第一个项目 + 第一个**能用**的 harness。
+ * 默认选项:第一个**能用**的 harness。
  *
- * 项目取第一个是因为列表就是那台机器自己的顺序,而多数机器只有一两个项目;
  * harness ❌ 不取第一个 —— 第一个可能是没装的那家,默认选中它等于默认选中一个必失败的发送。
  * 一个能用的都没有就留 null,让页面如实说「这台机器上没有能用的 harness」。
  */
 export function defaultSelection(options: SessionpageSessionCreateOptions): CreateSelection {
-  const project = options.projects[0] ?? null
   const usable = options.harnesses.filter(harnessUsable)
   const harness = PREFERRED_SESSION_PROVIDERS.map((id) => usable.find((h) => h.id === id)).find(Boolean) ?? usable[0] ?? null
   return {
-    projectId: project?.id ?? null,
     harness: harness?.id ?? null,
     model: null,
     permissionMode: null,
@@ -80,7 +77,7 @@ export function defaultSelection(options: SessionpageSessionCreateOptions): Crea
 }
 
 /** 上次那一套里可能没沿用上的格,按沿用的先后排。 */
-export type LastUsedItem = 'project' | 'harness' | 'permissionMode' | 'model' | 'effort'
+export type LastUsedItem = 'harness' | 'permissionMode' | 'model' | 'effort'
 
 /**
  * 进页面时的预选(behavior mobile-session-view「新建会话沿用上次的选择」):那台机器报了上次那一套,
@@ -92,11 +89,9 @@ export function initialSelection(options: SessionpageSessionCreateOptions): Crea
   const fallback = defaultSelection(options)
   const last = options.lastUsed
   if (!last) return fallback
-  const projectId = options.projects.some((p) => p.id === last.projectId) ? last.projectId : fallback.projectId
   const harness = options.harnesses.find((h) => h.id === last.harness)
-  if (!harness || !harnessUsable(harness)) return { ...fallback, projectId }
+  if (!harness || !harnessUsable(harness)) return fallback
   return {
-    projectId,
     harness: harness.id,
     permissionMode: last.permissionMode && harness.permissionModes.includes(last.permissionMode) ? last.permissionMode : null,
     model: last.model,
@@ -112,8 +107,8 @@ export function initialSelection(options: SessionpageSessionCreateOptions): Crea
 export function lastUsedDropped(options: SessionpageSessionCreateOptions, selection: CreateSelection): LastUsedItem[] {
   const last = options.lastUsed
   if (!last) return []
-  const dropped: LastUsedItem[] = selection.projectId === last.projectId ? [] : ['project']
-  if (selection.harness !== last.harness) return [...dropped, 'harness']
+  if (selection.harness !== last.harness) return ['harness']
+  const dropped: LastUsedItem[] = []
   if (selection.permissionMode !== last.permissionMode) dropped.push('permissionMode')
   if (selection.model !== last.model) dropped.push('model')
   if (selection.effort !== last.effort) dropped.push('effort')
@@ -187,35 +182,32 @@ export function selectedModelName(
   return (models ? createModelName(models, selection.model) : null) ?? selection.model
 }
 
-/** 胶囊上写**值**(项目名 · harness 名),照会话选项胶囊的口径;一个都没有就 null(不画)。 */
+/** 胶囊上写**值**(harness 名 · 模型 · 推理档),照会话选项胶囊的口径;一个都没有就 null(不画)。 */
 export function createPillLabel(
   options: SessionpageSessionCreateOptions,
   selection: CreateSelection,
   models: SessionpageSessionCreateModels | null = null,
   phoneAgentLabel?: string,
 ): string | null {
-  const project = options.projects.find((p) => p.id === selection.projectId)
   const harness = options.harnesses.find((h) => h.id === selection.harness)
   // 模型只在**选了**时上胶囊:默认档不写「默认」二字 —— 胶囊只写值,没值就不占位。
   const model = selectedModelName(models, selection)
   const effort = selectedEffortName(models, selection)
-  const parts = (phoneAgentLabel ? [phoneAgentLabel, model, effort] : [project?.name, harness?.name, model, effort]).filter((x): x is string => !!x)
+  const parts = (phoneAgentLabel ? [phoneAgentLabel, model, effort] : [harness?.name, model, effort]).filter((x): x is string => !!x)
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
-export type CreateBlocker = 'no_projects' | 'no_usable_harness' | 'pick_project' | 'pick_harness'
+export type CreateBlocker = 'no_usable_harness' | 'pick_harness'
 
 /**
  * 为什么现在还不能发。null = 能发。
- * 顺序按「人先要知道的」:机器上根本没项目 / 没能用的 harness,先于「你还没选」。
+ * 顺序按「人先要知道的」:机器上根本没能用的 harness,先于「你还没选」。
  */
 export function createBlocker(
   options: SessionpageSessionCreateOptions,
   selection: CreateSelection,
 ): CreateBlocker | null {
-  if (options.projects.length === 0) return 'no_projects'
   if (!options.harnesses.some(harnessUsable)) return 'no_usable_harness'
-  if (!options.projects.some((p) => p.id === selection.projectId)) return 'pick_project'
   const harness = options.harnesses.find((h) => h.id === selection.harness)
   if (!harness || !harnessUsable(harness)) return 'pick_harness'
   return null

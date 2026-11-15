@@ -1,7 +1,6 @@
 import { APP_CALL_MAX_BYTES, type AppCallAction } from '@gugu/session-core/session-record/contract'
+import { workspaceFolder } from './app-runtime-protocol'
 import { verbFacts } from './bridge-protocol'
-import type { ExtensionManifest } from './manifest'
-import { HOSTED_PROGRAM_ELSEWHERE, hostsProgram } from './program-place'
 import { decodeTypedId } from '@gugu/core/shared/typedId.mjs'
 
 /** The same address the agent's session_spawn device takes. */
@@ -16,14 +15,12 @@ export function appDeviceId(device: unknown): string {
 /**
  * owner 10-16「程序跟着数据」: a page in a session on another of the person's machines has some of its calls done on THAT
  * machine — the ones whose row says `machine` (its data folder, its program). One rule, read by the asking side (the
- * desktop's bridge, the phone's host) and the answering one alike: the row, except a program gugu hosts itself (Browser
- * Use), which drives the browser on the screen the page is drawn on and so stays there (161 10-17).
+ * desktop's bridge, the phone's host) and the answering one alike: the row.
  */
-export function followsSessionMachine(manifest: Pick<ExtensionManifest, 'contributes'>, method: string, args: Record<string, unknown>): boolean {
+export function followsSessionMachine(method: string, args: Record<string, unknown>): boolean {
   const machine = verbFacts(method)?.machine
   if (!machine) return false
-  if (machine === 'place') return placeSessionOf(args) !== null
-  return method !== 'callProgram' || !hostsProgram(manifest, typeof args.server === 'string' ? args.server : undefined)
+  return machine !== 'place' || placeSessionOf(args) !== null
 }
 
 /** The session whose working copy a `machine: 'place'` call names (`place`, or the file `ref`), or null for a chat's. */
@@ -35,16 +32,27 @@ export function placeSessionOf(args: Record<string, unknown>): string | null {
   return null
 }
 
+/**
+ * Why a page may not make this call on a project folder on another machine, or null: it needs `files:read:all-machines`, and
+ * such a folder is only read from elsewhere. Both hosts ask here; the answering machine trusts the page's host for this.
+ */
+export function folderElsewhereRefusal(method: string, has: (capability: 'files:read:all-machines') => boolean): Error | null {
+  if (!has('files:read:all-machines')) return Object.assign(new Error('Not permitted: a folder on another of your computers needs "files:read:all-machines"'), { code: 'denied' });
+  if (verbFacts(method)?.reads !== true) return Object.assign(new Error('A folder on another of your computers is read-only from here'), { code: 'denied' });
+  return null;
+}
+
 /** Why the answering machine does not do this call for a page elsewhere, or null when it does. */
-export function notOnSessionMachine(manifest: Pick<ExtensionManifest, 'contributes'>, method: string, args: Record<string, unknown>): Error | null {
-  if (followsSessionMachine(manifest, method, args)) return null
-  const message = verbFacts(method)?.machine ? HOSTED_PROGRAM_ELSEWHERE : `${method} is done where the page is, not on its session's machine`
-  return Object.assign(new Error(message), { code: 'invalid' })
+export function notOnSessionMachine(method: string, args: Record<string, unknown>): Error | null {
+  if (followsSessionMachine(method, args)) return null
+  // A project folder names its own machine: no session to follow, and a place verb is that machine's.
+  if (verbFacts(method)?.machine === 'place' && workspaceFolder((args.place ?? args.ref) as { workspace?: string } | null | undefined)) return null
+  return Object.assign(new Error(`${method} is done where the page is, not on its session's machine`), { code: 'invalid' })
 }
 
 /** The one action a page's call travels in. `callId` names this call: sent again after a lost answer, it joins the first. */
-export function appCallAction(target: string | { deviceId: string }, version: string, method: string, args: Record<string, unknown>, callId: string): AppCallAction {
-  return { action: 'app_call', call_id: callId, ...(typeof target === 'string' ? { session_id: target } : { device_id: target.deviceId }), version, method, args }
+export function appCallAction(target: string | { deviceId: string }, version: string, method: string, args: Record<string, unknown>, callId: string, handed?: AppCallAction['handed']): AppCallAction {
+  return { action: 'app_call', call_id: callId, ...(typeof target === 'string' ? { session_id: target } : { device_id: target.deviceId }), version, method, args, ...(handed ? { handed } : {}) }
 }
 
 const bytesOf = (value: unknown) => new TextEncoder().encode(JSON.stringify(value ?? null)).byteLength

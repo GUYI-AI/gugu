@@ -9,6 +9,8 @@ import { toast } from '@renderer/lib/hooks/use-toast'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import type { AgentWatchTimeline } from './agent-watch-store'
 
+const PHONE_ACTIONS = { phone: true }
+
 /** The phone owns data/RPC; quote identity, preview, serialization and reveal stay shared with desktop. */
 export function usePhoneSessionQuotes(input: {
   deviceId: string; sessionId: string; timeline: AgentWatchTimeline;
@@ -37,7 +39,7 @@ export function usePhoneSessionQuotes(input: {
       return latest.current.timeline.turns.filter(turn => !before.has(turn.id))
     },
   }), [deviceId, sessionId])
-  const menus = useSessionMessageQuotes(owner, editor)
+  const menus = useSessionMessageQuotes(owner, editor, PHONE_ACTIONS)
   const composer = useSessionPromptEditor(owner, editor)
   const source = useSessionSourceMessage(owner, view, () => toast({ title: translateSessionMessage('transcript.originalMessageMissing'), tier: 'error' }))
   const commands = useMemo(() => ({ onMessageTextMount: menus.onMessageTextMount, onRestorePrompt: menus.restorePrompt,

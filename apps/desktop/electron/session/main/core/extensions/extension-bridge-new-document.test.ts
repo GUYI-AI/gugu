@@ -84,7 +84,7 @@ beforeEach(async () => {
   deliver.mockClear();
   setExtensionBridgeHost({
     deliver,
-    presentation: () => ({ locale: 'zh', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }),
+    selfGuguNumber: () => undefined, presentation: () => ({ locale: 'zh', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }),
   });
   await bindExtensionSurface({ webContentsId: READER, extensionId: 'paper-club', tabId: 'slot-1', tabKind: 'paper-club.shelf', conversation: CHAT });
 });

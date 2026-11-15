@@ -96,7 +96,7 @@ export function QueuedPromptsBand({
 
   return (
     <div
-      data-slot="composer-queued-prompts"
+      data-slot="composer-queued-prompts" data-composer-top-band="queue"
       role="region"
       aria-label={`${translate('composer.queuedPrompts')} (${prompts.length})`}
       className={cx(styles.band, className)}

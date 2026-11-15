@@ -84,7 +84,7 @@ it.each(['dark', 'light'] as const)('%s: the phone composer row has a solid back
   root = createRoot(host)
   root.render(
     <LocalizationProvider>
-      <div data-test-messages="" style={{ fontSize: 40, lineHeight: '48px' }}>{Array.from({ length: 14 }, (_, index) => <p key={index}>消息 message {index}</p>)}</div>
+      <div data-test-messages="" data-chat-dock-reads="" style={{ fontSize: 40, lineHeight: '48px' }}>{Array.from({ length: 14 }, (_, index) => <p key={index}>消息 message {index}</p>)}</div>
       <ChatBottomDock reserve={false}>
         <div data-chat-composer="" style={{ padding: '8px 8px max(8px, env(safe-area-inset-bottom))' }}>
           <ChatMessageComposer onSend={vi.fn(async () => {})} isGroupChat />
@@ -100,7 +100,7 @@ it.each(['dark', 'light'] as const)('%s: the phone composer row has a solid back
   expect(alphaOf(band.backgroundColor), 'the composer row is backed').toBeGreaterThanOrEqual(0.85)
   const bandBox = dock.lastElementChild!.getBoundingClientRect()
   expect(bandBox.height).toBeGreaterThan(input.getBoundingClientRect().height)
-  expect(Number.parseFloat(getComputedStyle(host).getPropertyValue('--chat-dock-h')), 'the message list reserves the dock height').toBeGreaterThanOrEqual(dock.getBoundingClientRect().height - 1)
+  expect(Number.parseFloat(getComputedStyle(host.querySelector('[data-test-messages]')!).getPropertyValue('--chat-dock-h')), 'the message list reserves the dock height').toBeGreaterThanOrEqual(dock.getBoundingClientRect().height - 1)
   await page.getByTestId('chat-composer').fill('Typed text stays readable')
   const editor = host.querySelector<HTMLElement>('[contenteditable]')!
   expect(contrast(rgbOf(getComputedStyle(editor).color), rgbOf(getComputedStyle(input).backgroundColor)), 'the typed text reads on the input').toBeGreaterThanOrEqual(4.5)

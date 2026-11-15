@@ -18,6 +18,14 @@ beforeEach(() => {
   })
 })
 afterEach(async () => { await harness.cleanup(); vi.unstubAllGlobals() })
+// The dock writes its heights into one rule keyed by the column, not onto the column (@@@dock-height-rule).
+function dockVar(column: HTMLElement, name: string): string {
+  const id = column.getAttribute('data-chat-dock-column')
+  for (const sheet of document.styleSheets) for (const rule of sheet.cssRules) {
+    if (id && rule instanceof CSSStyleRule && rule.selectorText.includes(`"${id}"`)) return rule.style.getPropertyValue(name)
+  }
+  return ''
+}
 
 describe('avatar boundary follows visible dock cards, independently of the reserved running row', () => {
   it('uses one observer for all four bar states, including preview changes that leave dock height unchanged', async () => {
@@ -42,14 +50,14 @@ describe('avatar boundary follows visible dock cards, independently of the reser
         Object.defineProperty(pill, 'offsetParent', { configurable: true, get: () => dock })
       }
       await act(async () => observers[0].report())
-      expect(column.style.getPropertyValue('--chat-dock-h')).toBe(`${height}px`)
-      expect(column.style.getPropertyValue('--chat-dock-avatar-h')).toBe(`${expected}px`)
+      expect(dockVar(column, '--chat-dock-h')).toBe(`${height}px`)
+      expect(dockVar(column, '--chat-dock-avatar-h')).toBe(`${expected}px`)
     }
     expect(observers).toHaveLength(1)
     expect(observers[0].targets).toEqual([dock, dock.querySelector('[data-running-bar-content]')])
     await harness.render(null)
     expect(observers[0].disconnect).toHaveBeenCalledOnce()
-    expect(column.style.getPropertyValue('--chat-dock-avatar-h')).toBe('')
+    expect(dockVar(column, '--chat-dock-avatar-h')).toBe('')
   })
 
   it('reserves the same measured dock height for a phone viewport and an empty conversation', async () => {
@@ -59,7 +67,7 @@ describe('avatar boundary follows visible dock cards, independently of the reser
     const dock = column.querySelector<HTMLElement>('[data-chat-bottom-dock]')!
     Object.defineProperty(dock, 'offsetHeight', { get: () => 124 })
     await act(async () => observers[0].report())
-    expect(column.style.getPropertyValue('--chat-dock-h')).toBe('124px')
+    expect(dockVar(column, '--chat-dock-h')).toBe('124px')
     expect(column.querySelector('[aria-hidden]')?.className).toContain('h-[var(--chat-dock-h,0px)]')
     expect(dock.textContent).toBe('input')
   })
@@ -73,8 +81,8 @@ describe('avatar boundary follows visible dock cards, independently of the reser
     const height = vi.fn().mockReturnValueOnce(124).mockReturnValue(200)
     Object.defineProperty(dock, 'offsetHeight', { get: height })
     await act(async () => observers[0].report())
-    expect(column.style.getPropertyValue('--chat-dock-h')).toBe('124px')
-    expect(column.style.getPropertyValue('--chat-dock-avatar-h')).toBe('82px')
+    expect(dockVar(column, '--chat-dock-h')).toBe('124px')
+    expect(dockVar(column, '--chat-dock-avatar-h')).toBe('82px')
     expect(height).toHaveBeenCalledOnce()
   })
 

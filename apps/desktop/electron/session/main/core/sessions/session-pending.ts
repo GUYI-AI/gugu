@@ -168,6 +168,7 @@ export const lifeStore: LifeStore = {
             nativeReceiptId: receipt.state === 'accepted' ? receipt.nativeReceiptId : null,
             // A dispatching row keeps the loss it went back to the queue with (#552: its second loss fails it).
             ...(receipt.state === 'dispatching' ? {} : { failure: receipt.state === 'failed' ? JSON.stringify(receipt.cause)
+              : receipt.state === 'unknown' && receipt.cause ? JSON.stringify(receipt.cause)
               : receipt.state === 'queued' && receipt.channelLost ? JSON.stringify(receipt.channelLost) : null }),
             settledAt: receipt.state === 'failed' || receipt.state === 'unknown' ? new Date().toISOString() : null,
           }).where(and(eq(sessionPending.sessionId, sessionId), eq(sessionPending.seq, effect.seq))).run();

@@ -1,15 +1,19 @@
+import { notify } from '@/lib/notices'
+import { i18n } from '@/i18n'
+import '@/components/connections/connection-copy'
 import { platform } from '@/platform';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
+import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { messageForUser } from '@/lib/userFacingError';
 import { AlertCircle, Check, Copy, ExternalLink } from '@/lib/icons'
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '@renderer/lib/hooks/use-toast';
-import { LibraryHostScope } from '@renderer/features/library/library-host-scope';
+import { LibraryHostDialogStatus, LibraryHostFieldset, LibraryHostScope } from '@renderer/features/library/library-host-scope';
 import { useLibraryHost, type LibraryHost } from '@renderer/features/library/library-host';
 import { rpc } from '@renderer/lib/ipc';
 import { openShellFeedback } from '@renderer/lib/open-shell-feedback';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
-import { useGithubContext } from '@renderer/lib/providers/github-context-provider';
+import { useOptionalGithubContext } from '@renderer/lib/providers/github-context-provider';
 import { Button } from '@renderer/lib/ui/button';
 import {
   DialogContentArea,
@@ -47,13 +51,14 @@ export function GithubDeviceFlowModal({ host, ...props }: GithubDeviceFlowModalP
 
 function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubDeviceFlowModalProps, 'host'>) {
   const { toast } = useToast();
-  const { cancelGithubConnect: cancelLocal } = useGithubContext();
+  const { translate } = useSessionMessages();
+  const localContext = useOptionalGithubContext();
   const library = useLibraryHost();
   const events = library.github;
   const cancelGithubConnect = useCallback(() => {
-    if (library.remote) void library.github.authCancel();
-    else cancelLocal();
-  }, [library, cancelLocal]);
+    if (library.remote || library.connectionMetadataExpected || !localContext) void library.github.authCancel();
+    else localContext.cancelGithubConnect();
+  }, [library, localContext]);
 
   // Presentational state - updated via IPC events from main process
   const [userCode, setUserCode] = useState<string>('');
@@ -87,7 +92,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
     countdownIntervalRef.current = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev <= 1) {
-          setError('Code expired. Please try again.');
+          setError(translate('github.deviceExpired'));
           return 0;
         }
         return prev - 1;
@@ -100,7 +105,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
         countdownIntervalRef.current = null;
       }
     };
-  }, [success, error]);
+  }, [success, error, translate]);
 
   // Reset state on mount (new auth flow)
   useEffect(() => {
@@ -121,8 +126,8 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
 
         if (!isAutomatic) {
           toast({
-            title: '✓ Code copied',
-            description: 'Paste it in GitHub to authorize',
+            title: translate('github.deviceCodeCopied'),
+            description: translate('github.devicePasteHint'),
           });
         }
 
@@ -138,7 +143,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
         }
       }
     },
-    [toast]
+    [toast, translate]
   );
 
   const openGitHub = useCallback(() => {
@@ -195,6 +200,10 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
 
     // Auth error
     const cleanupError = events.onEvent(githubAuthErrorChannel, (data) => {
+      if (library.connectionMetadataExpected) {
+        if (data.error !== 'connection_application_busy') notify({ key: `connections-action:${library.connectionMetadata?.ownerId}:github`,tier: 'error',title: i18n.t('connections:connectFailed',{ name: 'GitHub' }) });
+        onError?.(data.error); onClose(); return;
+      }
       setError(messageForUser(data.message || data.error));
 
       if (onError) {
@@ -214,7 +223,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
       cleanupSuccess();
       cleanupError();
     };
-  }, [copyToClipboard, events, onError, onSuccess, toast]);
+  }, [copyToClipboard, events, onError, onSuccess, toast,library.connectionMetadataExpected,library.connectionMetadata?.ownerId,onClose]);
 
   const handleClose = () => {
     onClose();
@@ -244,13 +253,15 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [copyToClipboard, openGitHub, userCode]);
 
-  const title = success ? 'GitHub connected' : error ? 'Authentication failed' : 'Authorize GitHub';
+  const title = success ? translate('github.deviceConnected') : error ? translate('github.deviceFailed') : translate('github.deviceAuthorize');
 
   return (
     <>
       <DialogHeader>
         <DialogTitle>{title}</DialogTitle>
+        <LibraryHostDialogStatus />
       </DialogHeader>
+      <LibraryHostFieldset>
       <DialogContentArea className="gap-4">
         {success ? (
           <div className="rounded-lg border border-border/60 bg-background/60 p-3">
@@ -259,7 +270,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
                 <Check className="h-4 w-4 text-foreground-success" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-foreground">You're connected to GitHub</p>
+                <p className="text-sm font-medium text-foreground">{translate('github.deviceConnectedDetail')}</p>
                 {user ? (
                   <div className="mt-1 flex min-w-0 items-center gap-2">
                     {user.avatar_url ? (
@@ -281,7 +292,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-foreground-destructive" />
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground-destructive">
-                  GitHub authorization failed
+                  {translate('github.deviceFailed')}
                 </p>
                 <p className="mt-1 text-xs text-foreground-destructive/80">{error}</p>
               </div>
@@ -290,7 +301,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
         ) : (
           <>
             <p className="text-sm text-foreground-muted">
-              Enter this one-time code in GitHub to authorize gugu.
+              {translate('github.deviceIntro')}
             </p>
 
             <button
@@ -298,7 +309,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
               onClick={() => copyToClipboard(userCode)}
               disabled={!userCode}
               className="rounded-lg border border-border bg-background/60 p-4 text-left transition-colors hover:border-border-1 hover:bg-row-hover active:bg-row-press disabled:pointer-events-none"
-              aria-label={copied ? 'Code copied' : 'Copy authorization code'}
+              aria-label={copied ? translate('github.deviceCodeCopied') : translate('github.deviceCopyCode')}
             >
               {userCode ? (
                 <p className="gg-type-display text-center font-mono text-3xl font-semibold tracking-wider text-foreground select-all">
@@ -307,7 +318,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
               ) : (
                 <div className="flex items-center justify-center gap-2 text-sm text-foreground-muted">
                   <LoadingIndicator size="inline" />
-                  Waiting for GitHub...
+                  {translate('github.deviceLoading')}
                 </div>
               )}
             </button>
@@ -318,29 +329,29 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
                   1
                 </span>
                 <p className="text-foreground-muted">
-                  Paste the code in GitHub. The code has already been copied.
+                  {translate('github.devicePasteStep')}
                 </p>
               </div>
               <div className="flex items-start gap-3">
                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-background-2 text-xs text-foreground-muted">
                   2
                 </span>
-                <p className="text-foreground-muted">Authorize gugu.</p>
+                <p className="text-foreground-muted">{translate('github.deviceAuthorizeStep')}</p>
               </div>
             </div>
 
             {browserOpening ? (
               <div className="rounded-lg border border-border-info bg-background-info p-3 text-sm text-foreground-info">
-                Opening GitHub in {browserOpenCountdown}s...
+                {translate('github.deviceOpening', { seconds: browserOpenCountdown })}
               </div>
             ) : null}
 
             <div className="flex items-center justify-between gap-3 text-xs text-foreground-muted">
               <div className="flex min-w-0 items-center gap-2">
                 <LoadingIndicator size="inline" />
-                <span>Waiting for authorization</span>
+                <span>{translate('github.deviceWaiting')}</span>
                 {timeRemaining > 0 ? (
-                  <span>Code expires in {formatTime(timeRemaining)}</span>
+                  <span>{translate('github.deviceExpiresIn', { time: formatTime(timeRemaining) })}</span>
                 ) : null}
               </div>
               <button
@@ -348,34 +359,37 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
                 onClick={() => openShellFeedback()}
                 className="shrink-0 underline-offset-3 hover:text-foreground hover:underline focus:text-foreground focus:underline"
               >
-                Having trouble?
+                {translate('github.deviceHelp')}
               </button>
             </div>
           </>
         )}
       </DialogContentArea>
+      </LibraryHostFieldset>
       <DialogFooter>
         {error || success ? (
           <Button variant="outline" onClick={handleClose}>
-            Close
+            {translate('common.close')}
           </Button>
         ) : (
           <>
             <Button variant="outline" onClick={handleClose}>
-              Cancel
+              {translate('common.cancel')}
             </Button>
+            <LibraryHostFieldset>
             <Button
               variant="outline"
               onClick={() => copyToClipboard(userCode)}
               disabled={!userCode || copied}
             >
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              {copied ? 'Copied' : 'Copy code'}
+              {copied ? translate('github.deviceCodeCopied') : translate('github.deviceCopyAction')}
             </Button>
             <Button onClick={openGitHub} disabled={!verificationUri || browserOpening}>
               <ExternalLink className="h-4 w-4" />
-              Open GitHub
+              {translate('github.deviceOpenAction')}
             </Button>
+            </LibraryHostFieldset>
           </>
         )}
       </DialogFooter>

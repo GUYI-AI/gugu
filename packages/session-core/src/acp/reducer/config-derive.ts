@@ -11,6 +11,7 @@
 
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
 import type { EffortOption, ModeOption, ModelChoice, SessionConfigState } from '../models/config';
+import { flattenSelectOptions } from '../models/select-options';
 
 /** Shape of a single ACP option entry within a select-type config option. */
 type RawOption = { value: string; name: string; description?: string | null };
@@ -32,19 +33,6 @@ function toModelChoice(raw: RawOption): ModelChoice {
   if (raw.description) opt.description = raw.description;
   // features left undefined — not present in the current stream
   return opt;
-}
-
-/**
- * A select's choices, flat. ACP lets a select carry either options or groups of options
- * (`{ group, name, options }`, e.g. DeepSeek Harness groups models by provider); a group is
- * presentation only, so its options are listed in order. The runtime cell reads the same shape
- * when it checks a read-back value.
- */
-function selectOptions(opt: SessionConfigOption): RawOption[] {
-  if (opt.type !== 'select') return [];
-  const raw = opt as unknown as { options?: Array<RawOption | { options?: RawOption[] }> };
-  if (!Array.isArray(raw.options)) return [];
-  return raw.options.flatMap((entry) => 'options' in entry && Array.isArray(entry.options) ? entry.options : [entry as RawOption]);
 }
 
 /**
@@ -71,7 +59,7 @@ export function deriveConfigGroups(
   for (const opt of options) {
     if (opt.type !== 'select') continue;
     const rawSelected = (opt as unknown as { currentValue?: string }).currentValue ?? null;
-    const rawOptions = selectOptions(opt);
+    const rawOptions = flattenSelectOptions(opt.options);
 
     switch (opt.category) {
       case 'model':

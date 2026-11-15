@@ -15,10 +15,27 @@ import { blockPlainText } from '@session-chat/core/markdown/plain-text';
 import type { SegmentCtx } from '@session-chat/core/units';
 import { defineUnit } from '@session-chat/core/units';
 import { useChatTranslator } from '@session-chat/localization';
-import { pxTokens } from '@session-chat/styles/px-tokens';
-import { assignInlineVars } from '@vanilla-extract/dynamic';
-import { Show, createMemo } from 'solid-js';
+import { For, Show, createMemo } from 'solid-js';
+import { ScheduledPrompt, isScheduledPrompt, scheduledPromptHeight, scheduledPromptParts } from './ScheduledPrompt';
 import type { ChatMessage } from '@session-chat/model';
+import type { MessageItem } from '@gugu/core/shared/types/chat';
+import { attachmentEnvelope } from '@gugu/core/shared/ui/attachmentModels';
+import { sentChatMessage } from '@gugu/session-core/session-record/sent-message';
+import { passwordRequest } from './PasswordRequestCard';
+
+/**
+ * What an agent handed its owner in the timeline (an owner notification), as chat messages for the host's MessageBody:
+ * its words, then each file kept in the session's folder. A file-only note's text is the file's name: not said twice.
+ */
+function ownerNotificationMessages(item: ChatMessage): MessageItem[] | undefined {
+  const note = item.ownerNotification;
+  if (!note || passwordRequest(item)) return undefined;
+  const files = (note.files ?? []).map((file, index) => sentChatMessage({ id: `${note.requestId}:file:${index}`, chat_id: '', at: item.at,
+    content: attachmentEnvelope(file.name, file.sizeBytes, file.mimeType), content_type: 'attachment', session_file: { path: file.path, sha256: file.sha256 } }));
+  const text = item.text.trim() && item.text !== note.files?.[0]?.name
+    ? [sentChatMessage({ id: note.requestId, chat_id: '', at: item.at, content: item.text, content_type: 'text' })] : [];
+  return [...text, ...files];
+}
 import {
   effectiveMessageVars,
   type MessageVars,
@@ -29,7 +46,7 @@ import { DELIVERY_VARS, DeliveryCard, estimateDelivery, measureDelivery } from '
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { taskProtocolText } from '@gugu/core/shared/ui/taskProtocolText';
 import { parseHookNotice } from '@session-chat/lib/hook-notice';
-import { readQuestionAnswerDelivery } from '@gugu/session-core/session-record/question-answer';
+import { messageQuestionAnswer } from '@session-chat/state/message-presentation';
 import {
   HOOK_NOTICE_VARS,
   HookNoticeCard,
@@ -39,7 +56,6 @@ import {
 import {
   assistantOuter,
   assistantRoot,
-  assistantVars,
   footerRow,
   messageText,
   questionAnswerRow,
@@ -50,6 +66,9 @@ import {
 const QUESTION_ANSWER_H = 24;
 
 export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: string) => DeliveryMessagePresentation | undefined): ChatMessage {
+  // A message the agent sent to people is drawn by the host's MessageBody (its own text and files go with it).
+  const sentMessages = item.sentMessages ?? ownerNotificationMessages(item);
+  if (sentMessages?.length) return { ...item, sentMessages, attachments: undefined };
   const sentFiles = item.sentAttachments ?? (item.sentAttachment ? [item.sentAttachment] : undefined);
   const ownerFiles: ChatMessage['attachments'] = item.ownerNotification?.files?.map(file => ({ id: `path:${file.path}`, name: file.name,
     kind: file.mimeType.startsWith('image/') ? 'image' as const : 'file' as const }));
@@ -65,7 +84,7 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
   // 形状是他引用的原文，❌ 不能拿它当钩子说话。
   const hookNotice =
     item.hookNotice ?? (item.role === 'assistant' ? (parseHookNotice(item.text) ?? undefined) : undefined);
-  const questionAnswer = item.questionAnswer ?? (item.role === 'user' ? readQuestionAnswerDelivery(item.text) : undefined);
+  const questionAnswer = messageQuestionAnswer(item);
   if (questionAnswer) return { ...item, questionAnswer };
   const normalized = {
     ...item,
@@ -86,7 +105,9 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
   // —— 附件条本来就只长在用户卡上(measureMessage 的 `aH` 也只在那一支)。
   if (normalized.role !== 'user') return normalized;
   const imageNames = new Set(normalized.attachments?.map(file => file.name) ?? []);
-  const files = (item.files ?? []).filter(file => !imageNames.has(file.name)).map(file => ({ id: `${file.itemId}:${file.version}`, name: file.name, kind: 'file' as const }));
+  const files = (item.files ?? []).filter(file => !imageNames.has(file.name)).map(file => file.mimeType.startsWith('image/')
+    ? { id: `gugu-file://${file.itemId}?v=${file.version}`, href: `gugu-file://${file.itemId}?v=${file.version}`, name: file.name, kind: 'image' as const }
+    : { id: `${file.itemId}:${file.version}`, name: file.name, kind: 'file' as const });
   if (files.length) normalized.attachments = [...(normalized.attachments ?? []), ...files];
   const split = splitAttachmentMentions(normalized.text);
   if (split.attachments.length === 0) return normalized;
@@ -114,8 +135,11 @@ export function messageFromItem(item: ChatMessage, ctx: SegmentCtx): ChatMessage
 // ── Measure ───────────────────────────────────────────────────────────────────
 
 export function measureMessage(item: ChatMessage, ctx: MeasureCtx, baseVars: MessageVars): number {
+  const scheduled = ctx.theme.layout.agentConversation ? scheduledPromptParts(item) : [];
+  if (scheduled.length) return scheduled.reduce((height, part) => height + (isScheduledPrompt(part)
+    ? scheduledPromptHeight([part], ctx) : measureMessage(part, ctx, baseVars)), 0);
   if (isConversationMessage(item, ctx)) return conversationMessageHeight(item, ctx, baseVars);
-  if (item.questionAnswer) return QUESTION_ANSWER_H;
+  if (messageQuestionAnswer(item)) return QUESTION_ANSWER_H;
   const vars = effectiveMessageVars(baseVars, ctx.theme.layout);
   const blocks = item.streaming
     ? ctx.caches.parseBlocksStreaming(item.id, item.text)
@@ -133,7 +157,7 @@ export function measureMessage(item: ChatMessage, ctx: MeasureCtx, baseVars: Mes
     return measureHookNotice(item, ctx, HOOK_NOTICE_VARS, { label: rowTranslator(ctx)('transcript.hookNoticeFrom', { hook: item.hookNotice.hookName }) });
   }
 
-  if (item.role === 'user' || item.sentAttachment || item.sentAttachments || item.ownerNotification?.files?.length) return measureUserMessage(item, ctx, baseVars);
+  if (item.role === 'user' || item.sentMessages?.length || item.sentAttachment || item.sentAttachments || item.ownerNotification?.files?.length) return measureUserMessage(item, ctx, baseVars);
 
   // assistant / thought
   const footer = isFinalReply(item, ctx) ? vars.footerH : 0;
@@ -218,7 +242,7 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
   return (
     <div
       class={`${assistantOuter} ${messageText({ role: role() })} ${assistantRoot}`}
-      style={assignInlineVars(assistantVars, pxTokens({ height: totalH() }))}
+      style={{ height: `${totalH()}px` }}
     >
       <div class={srOnly} role="note" aria-label={plainText()} />
       <StreamContext.Provider value={props.data.streaming ? streamAnimation : null}>
@@ -258,18 +282,24 @@ export function UserMessageRender(props: { data: ChatMessage; ctx: RenderCtx; va
  * assistant reply inside the user card it was born with.
  */
 function MessageUnitRender(props: { data: ChatMessage; ctx: RenderCtx; vars: MessageVars }) {
+  const deliveryParts = createMemo(() => scheduledPromptParts(props.data));
+  const scheduled = () => props.ctx.measureCtx?.().theme.layout.agentConversation ? deliveryParts() : [];
   return (
+    <Show when={scheduled().length} fallback={
     <Show when={props.ctx.measureCtx && isConversationMessage(props.data, props.ctx.measureCtx())}
       fallback={<LegacyMessageUnitRender {...props} />}>
       <ConversationMessage {...props} />
     </Show>
+    }><For each={scheduled()}>{part => <Show when={isScheduledPrompt(part)} fallback={<MessageUnitRender {...props} data={part} />}>
+      <ScheduledPrompt data={part} anchorId={props.data.id} ctx={props.ctx} />
+    </Show>}</For></Show>
   );
 }
 
 function LegacyMessageUnitRender(props: { data: ChatMessage; ctx: RenderCtx; vars: MessageVars }) {
   const translate = useChatTranslator();
   return (
-    <Show when={props.data.questionAnswer} fallback={<MessageBodyRender data={props.data} ctx={props.ctx} vars={props.vars} />}>
+    <Show when={messageQuestionAnswer(props.data)} fallback={<MessageBodyRender data={props.data} ctx={props.ctx} vars={props.vars} />}>
       {(reading) => (
         <div class={questionAnswerRow} data-slot="question-answer" style={{ height: `${QUESTION_ANSWER_H}px` }}>
           {reading().answer === null
@@ -289,7 +319,7 @@ function MessageBodyRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Mes
       fallback={
         <Show
           when={props.data.role === 'user'}
-          fallback={<Show when={props.data.sentAttachment || props.data.sentAttachments || props.data.ownerNotification?.files?.length} fallback={<AssistantRender data={props.data} ctx={props.ctx} vars={props.vars} />}><UserMessageCard {...props} conversation /></Show>}
+          fallback={<Show when={props.data.sentMessages?.length || props.data.sentAttachment || props.data.sentAttachments || props.data.ownerNotification?.files?.length} fallback={<AssistantRender data={props.data} ctx={props.ctx} vars={props.vars} />}><UserMessageCard {...props} conversation /></Show>}
         >
           <UserMessageRender data={props.data} ctx={props.ctx} vars={props.vars} />
         </Show>
@@ -327,9 +357,11 @@ export const messageUnitDef = defineUnit<ChatMessage, MessageVars>({
   },
 
   estimate(item, ctx, baseVars): number {
+    const scheduled = ctx.theme.layout.agentConversation ? scheduledPromptParts(item) : [];
+    if (scheduled.length) return measureMessage(item, ctx, baseVars);
     if (isConversationMessage(item, ctx)) return conversationMessageHeight(item, ctx, baseVars);
     const vars = effectiveMessageVars(baseVars, ctx.theme.layout);
-    if (item.questionAnswer) return QUESTION_ANSWER_H;
+    if (messageQuestionAnswer(item)) return QUESTION_ANSWER_H;
     if (item.role === 'user' && item.guguDelivery) {
       return estimateDelivery(item, ctx, DELIVERY_VARS, baseVars);
     }

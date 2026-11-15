@@ -1,3 +1,4 @@
+import { applyThemeColors } from './theme-colors';
 import {
   APP_RUNTIME_CODEMIRROR_MODULE,
   APP_RUNTIME_FILES_MODULE,
@@ -44,6 +45,7 @@ function install(): void {
   // The theme before the look (ui.css picks its palette by it): the first paint is in it, not in the OS's. ui.js follows
   // the context from here on.
   if (raw.theme) document.documentElement.dataset.guguTheme = raw.theme;
+  applyThemeColors(raw.themeColors);
   let filesModule: Promise<FilesModule> | null = null;
   const gugu = createGugu(raw as GuguHost & Record<string, unknown>, {
     files: () => (filesModule ??= import(/* @vite-ignore */ runtimeUrl(APP_RUNTIME_FILES_MODULE)) as Promise<FilesModule>),

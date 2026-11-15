@@ -31,8 +31,8 @@ export function paneLeaf(paneId: string): PaneLayoutNode {
  * 一棵格子树最少要多宽(`width`)/ 多高(`height`):一格至少 `unit`;顺着这一向排开的几格加起来(外加中间的分界线),
  * 横着那一向叠着的取最宽的那一格。
  */
-export function minExtent(node: PaneLayoutNode, axis: 'width' | 'height', unit: number, gap = 1): number {
-  if (node.type === 'pane') return unit;
+export function minExtent(node: PaneLayoutNode, axis: 'width' | 'height', unit: number | ((paneId: string) => number), gap = 1): number {
+  if (node.type === 'pane') return typeof unit === 'number' ? unit : unit(node.paneId);
   const inner = node.children.map((child) => minExtent(child, axis, unit, gap));
   const along = (node.orientation === 'horizontal') === (axis === 'width');
   return along ? inner.reduce((sum, value) => sum + value, 0) + gap * (inner.length - 1) : Math.max(...inner);
@@ -126,11 +126,11 @@ function removeWithShares(node: PaneLayoutNode, paneId: string): PaneLayoutNode 
   return { ...node, children: kept.map((entry) => entry.child), sizes: normalize(kept.map((entry) => entry.size)) };
 }
 
-/** Sizes that add up to 100, in the same proportions (all zero → even). */
+/** Sizes that add up to 100, in the same proportions (all zero → even). Not rounded: a width comes back as it was left. */
 export function normalize(sizes: readonly number[]): number[] {
   const total = sizes.reduce((sum, size) => sum + Math.max(0, size), 0);
   if (total <= 0) return evenSizes(sizes.length);
-  const result = sizes.map((size) => Math.floor((Math.max(0, size) / total) * 100));
+  const result = sizes.map((size) => (Math.max(0, size) / total) * 100);
   result[0] += 100 - result.reduce((sum, value) => sum + value, 0);
   return result;
 }

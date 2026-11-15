@@ -16,6 +16,8 @@ export function titlebarActionsLane(platform: string | undefined): number {
 }
 
 export const TITLEBAR_ACTION_SLOT_WIDTH_PX = 28
+/** 28px 按钮在这条 40px 带里居中 —— 左右两端同一个式子,❌ 别在调用点另写 top-*。 */
+export const TITLEBAR_ACTION_TOP_PX = (WINDOW_CONTROL_BAR_HEIGHT_PX - TITLEBAR_ACTION_SLOT_WIDTH_PX) / 2
 /**
  * 顶栏这一横排图标的**唯一**一档尺寸。真正落地的是 task renderer index.css 里那条容器规则
  * (`[data-titlebar-actions] svg` / `[data-tabbar-actions] svg`)—— 由容器规定,调用点写错也盖得住。

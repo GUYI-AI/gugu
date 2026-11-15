@@ -124,4 +124,15 @@ describe('a pill opens its file on the phone: the App that opens it is told the 
     await until('the move to deck-a brought its place', () => linkEvents().length > 0)
     expect(linkEvents()).toEqual([{ type: 'link', tab: 'main', path: '', query: { slide: '4' }, file: 'deck-a' }])
   })
+
+  it('a page of that file already open is told now (its tab is brought forward, not opened again); a later page is not', async () => {
+    start('office', 'chat-5', 'deck-a')
+    await getContext()
+    holdPlaceForOpeningPage('chat-5', 'deck-a', office, { slide: '2' })
+    expect(linkEvents()).toEqual([{ type: 'link', tab: 'main', path: '', query: { slide: '2' }, file: 'deck-a' }])
+    posted.mockClear()
+    start('office', 'chat-5', 'deck-a')
+    await getContext()
+    expect(linkEvents()).toEqual([])
+  })
 })

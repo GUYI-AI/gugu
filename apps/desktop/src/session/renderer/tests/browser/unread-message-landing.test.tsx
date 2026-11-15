@@ -63,7 +63,7 @@ async function renderConversation(target: number, width: number, portal = false)
     const listRef = useRef<FlowListHandle | null>(null), isAtBottomRef = useRef(true)
     const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [flashMessageId, setFlashMessageId] = useState<string | null>(null)
-    const memory = useConversationScrollMemory({ chatId: 'long-chat', viewportKey: `unread-${target}-${width}-${portal}`, activationKey: 'long-chat',
+    const memory = useConversationScrollMemory({ listRef, chatId: 'long-chat', viewportKey: `unread-${target}-${width}-${portal}`, activationKey: 'long-chat',
       enabled: true, messageIds: messages.map((row) => row.id), isAtBottomRef, setFollowingTail: history.setFollowingTail, loadMessageAnchor })
     const resetKey = `long-chat#${window.viewVersion}`
     const input = { activeChatId: 'long-chat', navigationTarget: true, rows, scrollerRef: memory.scrollerRef, listRef,
@@ -73,7 +73,7 @@ async function renderConversation(target: number, width: number, portal = false)
     const pending = useUnreadLocatorNavigation(input)
     const { onAtBottomChange } = useFollowingTail({ resetKey, unreadNavigationPending: pending, hasNewer: window.hasNewer,
       loading: !!window.loading, isPreservingPosition: memory.isPreservingPosition, isAtBottomRef, setFollowingTail })
-    const { pinToBottom, onTotalListHeightChanged } = useTailPinning({ resetKey, messages, enabled: !pending, messageWindow: window, scrollerEl: memory.scrollerEl, scrollerRef: memory.scrollerRef,
+    const { pinToBottom } = useTailPinning({ resetKey, messages, enabled: !pending, messageWindow: window, scrollerRef: memory.scrollerRef,
       listRef, isAtBottomRef, isPreservingPosition: memory.isPreservingPosition, prepareForSavedPosition: memory.prepareForSavedPosition,
       forgetSavedPosition: memory.forgetSavedPosition, returnToLatest, onError: rejected })
     const jump = () => {
@@ -82,15 +82,14 @@ async function renderConversation(target: number, width: number, portal = false)
         threadRootId: null, messageId: `m${target}`, messageSeq: target, commit, confirm: confirmed, reject: rejected, isCurrent: () => true }
       globalThis.window.dispatchEvent(new CustomEvent(UI_EVENTS.openUnreadMessage, { detail: request }))
     }
-    const rowProps: MessageListRowProps = { rows, messages, mobile: width < 720, memberReadSeqs: {}, deliveryWaits: new Map(), memberProfiles: {},
+    const rowProps: MessageListRowProps = { rows, messages, mobile: width < 720, memberReadSeqs: {}, deliveryWaits: new Map(), recipientFacts: { agentIds: new Set(), wakes: new Map() }, memberProfiles: {},
       isGroupChat: true, onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, selectMode: false,
       selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: noop, flashMessageId, threeParty: undefined,
-      onShowReadReceipt: undefined, onOpenMemberProfile: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
-      agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined, onOpenLocalFileLink: undefined, onMentionMember: undefined }
+      readReceiptHandle: undefined, memberProfileOpener: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
+      agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined, onMentionMember: undefined }
     return <><button onClick={pinToBottom}>Return to latest</button><div data-window-head={messages[0]?.id} style={{ height: 560, width: '100%', display: 'flex', flexDirection: 'column' }}>
       <MessageList rows={rows} rowProps={rowProps} resetKey={resetKey} listRef={listRef} scrollerRef={memory.setScrollerRef}
         initialTopMostItemIndex={memory.openLocation()} followTail={!pending && !window.hasNewer} onAtBottomChange={onAtBottomChange}
-        onTotalListHeightChanged={onTotalListHeightChanged}
         unreadAbove={{ messageId: `m${target}`, messageSeq: target, label: 'Jump to first unread', onJump: jump }} />
     </div></>
   }
@@ -99,7 +98,7 @@ async function renderConversation(target: number, width: number, portal = false)
     await slotHarness.render(<Slot />)
   }
   await renderWithAppProviders(harness, createElement(portal ? PortalHost : Conversation))
-  await until('the long conversation has completed its initial tail layout', () => scroller()?.querySelectorAll('[data-msg-id]').length === 40)
+  await until('the long conversation has completed its initial tail layout', () => Number(scroller()?.querySelector('[aria-setsize]')?.getAttribute('aria-setsize')) === 40)
   const sample = () => {
     if (!clicked) { frame = requestAnimationFrame(sample); return }
     const surface = scroller(), bounds = surface.getBoundingClientRect()
@@ -154,7 +153,7 @@ describe('first unread navigation paints its final landing', () => {
   it('keeps the saved reading position when a desktop slot is removed and reopened by another React root', async () => {
     const view = await renderConversation(120, 1100, true)
     await page.getByRole('button', { name: 'Return to latest' }).click()
-    await until('the latest page has replaced the unread window and filled its rows', () => !view.history.getSnapshot().hasNewer && view.scroller().querySelectorAll('[data-msg-id]').length === 40)
+    await until('the latest page has replaced the unread window and filled its rows', () => !view.history.getSnapshot().hasNewer && Number(view.scroller().querySelector('[aria-setsize]')?.getAttribute('aria-setsize')) === 40)
     const visible = () => {
       const surface = view.scroller(), bounds = surface.getBoundingClientRect()
       const row = Array.from(surface.querySelectorAll<HTMLElement>('[data-msg-id]')).find((row) => {
@@ -167,6 +166,8 @@ describe('first unread navigation paints its final landing', () => {
     surface.scrollTop = surface.scrollHeight - surface.clientHeight - 500
     await scrolled
     await until('the real scroll event withdraws tail following', () => !view.history.isFollowingTail())
+    // Positions are recorded from painted frames (lib/afterPaint): the reader is restored to what was last on screen.
+    await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)))
     const before = visible()
     await view.closeSlot()
     await until('the other root has removed the conversation slot', () => !view.scroller())

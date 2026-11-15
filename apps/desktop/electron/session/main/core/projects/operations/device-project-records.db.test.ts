@@ -29,6 +29,7 @@ vi.mock('@main/lib/logger', () => {
 
 import { setProjectGroupHost, type ProjectGroupHost } from '../project-group-host';
 import { isoFromProjectTimestamp, listDeviceProjectRecords, onDeviceProjectsMaybeChanged } from './device-project-records';
+import { machineLocalProjectsOf } from '../project-public-id';
 
 function host(listBindings: ProjectGroupHost['listBindings']): ProjectGroupHost {
   const unused = async () => {
@@ -95,6 +96,23 @@ describe('listDeviceProjectRecords', () => {
     setProjectGroupHost(host(async () => ok([{ projectId: 'project-home', chatId: 'chat-home' }])));
     const records = await listDeviceProjectRecords();
     expect(records.map((record) => record.localProjectId).sort()).toEqual(['project-a', 'project-b']);
+  });
+
+  it('a group\'s project on this machine (files, spawns, project:<id>) is the one recorded for it: a workspace\'s or a hidden project\'s binding to the same group is not', async () => {
+    fixture.sqlite.exec(`
+      INSERT INTO workspaces (id, kind, location, type, path, key) VALUES ('ws-root-home', 'project-root', 'local', 'local', '/home/ada', 'key-home');
+      INSERT INTO projects (id, name, path, repository_workspace_id, kind) VALUES ('project-home', 'ada', '/home/ada', 'ws-root-home', 'workspace');
+    `);
+    setProjectGroupHost(host(async () => ok([
+      { projectId: 'project-home', chatId: 'chat-a' },
+      { projectId: 'project-hidden', chatId: 'chat-a' },
+      { projectId: 'project-a', chatId: 'chat-a' },
+      { projectId: 'project-hidden', chatId: 'chat-h' },
+    ])));
+    expect(await machineLocalProjectsOf('chat-a')).toEqual(['project-a']);
+    expect((await listDeviceProjectRecords()).find((record) => record.chatId === 'chat-a')?.localProjectId).toBe('project-a');
+    expect(await machineLocalProjectsOf('chat-h')).toEqual([]);
+    expect(await machineLocalProjectsOf('chat-none')).toEqual([]);
   });
 
   it('a project whose root folder was detached keeps only its attached folders', async () => {

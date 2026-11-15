@@ -13,6 +13,7 @@ import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { getLocaleSnapshot } from '@/i18n';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { localizedManifestText } from '@shared/extensions/catalog';
+import { installedHereLine } from '@/components/extensionBundle/installedHere';
 import { computerNamed, consentPrompt, withMarketSource, type ConsentPrompt } from './extension-consent';
 
 /**
@@ -44,8 +45,11 @@ export function installConsentPrompt(request: InstallConsentAsk, manifest: Exten
     const replaces = request.attachment.replaces;
     // The one it would replace is on the computer it installs on (another one, named, when asked from here for it).
     const computer = computerNamed(translateSessionMessage, request.machine);
-    const other =
-      replaces === undefined
+    // One from the market or a folder (E-05): what is here, said as the card says it, and that this version replaces it.
+    const over = request.attachment.over
+    const other = over
+      ? `${installedHereLine(over.from, over.version, request.machine)}${translateSessionMessage('extensions.consentReplacesOver', { from })}\n\n`
+      : replaces === undefined
         ? ''
         : `${
             replaces?.trim()

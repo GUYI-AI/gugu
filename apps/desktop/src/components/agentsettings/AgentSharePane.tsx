@@ -13,9 +13,9 @@ import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reaso
  *   - useContactsStore().contacts       ← real contacts list, wired
  *   - useAuth().user                    ← real current user, wired
  *
- * 对外分享 tab (external public link / QR) — wired (#1078, #1085):
- *   - 真链接 buildAgentShareUrl(/join/agent/<id>) + 真 QR；未配置公开基址则不展示入口。
- *   - 「开启对外分享」→ contactsService.setAgentPublic (RLS select_public 放行外部读取)。
+ * 对外分享 tab (external link / QR):
+ *   - 「开启对外分享」→ 通讯录 setAgentPublic(公开 = 铸咕咕号,号随之进通讯录)。
+ *   - 链接与 QR 都是这只 agent 的个人短码 /j/?<咕咕号>(qrPayload.ts createGuguQrUrl),与名片海报同一个码。
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -25,8 +25,7 @@ import type { AgentSettingsPaneProps } from './types'
 import { useContactsStore } from '../../store/contactsContext'
 import { useAuth } from '../../store/auth'
 import { describeAgentShare, shareAgentWithFriends } from '../../lib/agentShare'
-import { contactsService } from '../../lib/contacts'
-import { externalShareBaseUrl, buildAgentShareUrl } from './agentShareUrl'
+import { createContactQrPayload, createGuguQrUrl } from '@gugu/core/shared/qrPayload'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { asClass, cx, shareSegmentButtonClass } from './agentSettingsStyles'
 import { Avatar } from '../Avatar'
@@ -130,11 +129,15 @@ function FwdPanel({
 }
 
 /** 对外分享 tab content — 设计稿 lines 1084-1088。
- *  真链接(指向现有 /join/agent 公开路由)+ 真 QR + 开启时 setAgentPublic(真使 agent 公开,RLS select_public
- *  据此放行外部读取)。未配置公开基址时不提供对外分享入口。 */
+ *  开启时 setAgentPublic(公开 = 铸咕咕号);号到了就是个人短码链接 + QR。咕咕号每次渲染从通讯录读
+ *  (开启后由 putIdentities 更新),与 AgentShareHost 的名片同一份数据。 */
 export function ExtPanel({ agent }: { agent: ContactUser }) {
   const { t } = useTranslation('agents')
-  const shareUrl = buildAgentShareUrl(externalShareBaseUrl(), agent.id)
+  const { contacts, setAgentPublic } = useContactsStore()
+  const number = contacts.find((c) => c.id === agent.id)?.gugu_number ?? agent.gugu_number
+  const shareUrl = typeof number === 'number' && Number.isInteger(number) && number > 0
+    ? createGuguQrUrl(createContactQrPayload(number))
+    : null
   const [qr, setQr] = useState<string | null>(null)
   const [isPublic, setIsPublic] = useState(agent.agent_public === true)
   const [enabling, setEnabling] = useState(false)
@@ -155,15 +158,15 @@ export function ExtPanel({ agent }: { agent: ContactUser }) {
     setEnabling(true)
     setError(null)
     try {
-      // 真动作:使 agent 公开 → 公开链接据 RLS select_public 可被外部读取。
-      await contactsService.setAgentPublic(agent.id, true)
+      // 公开 = 铸咕咕号;走通讯录的同一个动作,号随之进通讯录,下面的链接就地出现(与名片浮层同一条路)。
+      await setAgentPublic(agent.id, true)
       setIsPublic(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('settings.share.enableFailed'))
     } finally {
       setEnabling(false)
     }
-  }, [agent.id, enabling, t])
+  }, [agent.id, enabling, setAgentPublic, t])
 
   const handleCopy = useCallback(async () => {
     if (!shareUrl) return
@@ -179,8 +182,6 @@ export function ExtPanel({ agent }: { agent: ContactUser }) {
     }
   }, [shareUrl])
 
-  if (!shareUrl) return null
-
   if (!isPublic) return (
     <div className={asClass.shareExt}>
       <Button className="w-full" variant="primary" onClick={() => void handleEnable()} disabled={enabling}>
@@ -189,6 +190,9 @@ export function ExtPanel({ agent }: { agent: ContactUser }) {
       {error && <div role="alert" className={asClass.shareError}>{error}</div>}
     </div>
   )
+
+  // 已公开、号还没同步进通讯录的那一帧:不出半成品链接。
+  if (!shareUrl) return null
 
   const qrElement = qr
     ? <img className={cx(asClass.shareQr, asClass.shareQrImage)} src={qr} alt={t('settings.share.qrAlt')} />
@@ -204,7 +208,7 @@ export function ExtPanel({ agent }: { agent: ContactUser }) {
           {t('settings.share.openHint')}
         </div>
       </div>
-      {/* .se-link — 设计稿 line 369;真链接指向 /join/agent 公开路由。
+      {/* .se-link — 设计稿 line 369;个人短码链接。
           明文链接 user-select:text — 复制失败时(#1124)用户可手动选中复制（fail-loud 回退）。 */}
       <div className={asClass.shareLink}>
         <span data-testid="agent-share-link" style={{ userSelect: 'text' }}>{shareUrl}</span>
@@ -226,7 +230,6 @@ export function AgentSharePane({ agent, onClose: _onClose }: AgentSettingsPanePr
 
   // Tab state: 'fwd' | 'ext'
   const [tab, setTab] = useState<'fwd' | 'ext'>('fwd')
-  const canShareExternally = !!buildAgentShareUrl(externalShareBaseUrl(), agent.id)
 
   // Only show human contacts (not agents) for forwarding — filter same as ContactsPanel
   const humanContacts = useMemo(
@@ -240,7 +243,7 @@ export function AgentSharePane({ agent, onClose: _onClose }: AgentSettingsPanePr
       <h3 className={asClass.shareTitle}>{t('settings.share.title')}</h3>
 
       {/* .share-seg */}
-      {canShareExternally && <div className={asClass.shareSegment}>
+      <div className={asClass.shareSegment}>
         <button
           type="button"
           className={shareSegmentButtonClass(tab === 'fwd')}
@@ -248,7 +251,6 @@ export function AgentSharePane({ agent, onClose: _onClose }: AgentSettingsPanePr
         >
           {t('settings.share.forward')}
         </button>
-        {canShareExternally && (
         <button
           type="button"
           className={shareSegmentButtonClass(tab === 'ext')}
@@ -256,8 +258,7 @@ export function AgentSharePane({ agent, onClose: _onClose }: AgentSettingsPanePr
         >
           {t('settings.share.external')}
         </button>
-        )}
-      </div>}
+      </div>
 
       {/* panels */}
       {tab === 'fwd' && user && (
@@ -267,7 +268,7 @@ export function AgentSharePane({ agent, onClose: _onClose }: AgentSettingsPanePr
           ownerName={user.nickname}
         />
       )}
-      {canShareExternally && tab === 'ext' && (
+      {tab === 'ext' && (
         <ExtPanel agent={agent} />
       )}
     </div>

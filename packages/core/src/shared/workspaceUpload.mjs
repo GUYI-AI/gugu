@@ -24,7 +24,7 @@ export const WORKSPACE_STORED_TEXT_MAX_BYTES = 20 * 1024 * 1024
 export function jsonObjectProblem(text) {
   let value
   try {
-    value = JSON.parse(text)
+    value = JSON.parse(text.replace(/^\ufeff/, ''))
   } catch (err) {
     return { problem: 'invalid', message: err instanceof Error ? err.message : String(err) }
   }
@@ -51,11 +51,31 @@ function textContentTypeOf(fileName, mimeType) {
  */
 export function workspaceStoredText(fileName, mimeType, bytes) {
   const contentType = textContentTypeOf(fileName, mimeType)
-  if (!contentType) return null
+  if (!contentType || bytes.includes(0)) return null
   try {
-    return { contentType, text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), exact: true }
+    return { contentType, text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes), exact: true }
   } catch {
     return bytes.includes(0) ? null : { contentType, text: new TextDecoder('gb18030').decode(bytes), exact: false }
+  }
+}
+
+/**
+ * The same answer for a file on a disk, read whole. Its name may say nothing (`Makefile`, `.env`): then the bytes decide,
+ * and strictly, since any bytes without a NUL read as GB 18030: UTF-8, no NUL. A name that says something else is believed.
+ *
+ * @param {string} fileName
+ * @param {Uint8Array} bytes
+ * @returns {{ contentType: string, text: string, exact: boolean } | null}
+ */
+export function workspaceFileText(fileName, bytes) {
+  const stored = workspaceStoredText(fileName, null, bytes)
+  const type = mimeTypeFromName(fileName)
+  // An SVG's type says image, but on a disk it is text like any other.
+  if (stored || (type && type !== 'image/svg+xml') || bytes.includes(0)) return stored
+  try {
+    return { contentType: 'text/plain', text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes), exact: true }
+  } catch {
+    return null
   }
 }
 
@@ -93,5 +113,5 @@ export function workspaceUploadKind(fileName, mimeType, bytes) {
   const problem = contentType === 'application/json' ? jsonObjectProblem(text) : null
   if (problem?.problem === 'invalid') return { kind: 'file', why: 'not valid JSON' }
   if (problem) return { kind: 'file', why: 'a JSON file lives as an object at the top ({...}); this one is not' }
-  return { kind: 'document', contentType, text }
+  return { kind: 'document', contentType, text: contentType === 'application/json' ? text.replace(/^\ufeff/, '') : text }
 }

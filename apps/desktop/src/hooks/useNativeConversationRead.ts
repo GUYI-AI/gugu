@@ -1,4 +1,4 @@
-import { useChatSummaries } from '@/lib/chatSummariesBridge'
+import { useChatSummariesSelect } from '@/lib/chatSummariesBridge'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { dmMessageIdsByItem } from '@/components/chat/agent-dm-read'
 import { publishNativeConversationVisibility } from '@/lib/nativeConversationVisibility'
@@ -18,8 +18,12 @@ export function useNativeConversationRead(deviceId: string | null, sessionId: st
   readTurns.current = turns
   const key = useRef(crypto.randomUUID())
   useEffect(() => { const id = key.current; if (!shown) publishNativeConversationVisibility(id, null); return () => publishNativeConversationVisibility(id, null) }, [shown, sessionId])
-  const chats = useChatSummaries()
-  const imFirst = [...chats.values()].find(chat => chat.peerUserId === summary?.agent?.userId)?.firstUnreadMessageId
+  const peerUserId = summary?.agent?.userId
+  const imFirst = useChatSummariesSelect((chats) => {
+    if (!peerUserId) return undefined
+    for (const chat of chats.values()) if (chat.peerUserId === peerUserId) return chat.firstUnreadMessageId
+    return undefined
+  })
   const current = useRef({ shown, sessionId, deviceId, view: null as ChatView | null, visible: new Set<NativeItemId>(), entering: true, atTail: false })
   // @@@entry-open — where the reader lands is the view's own intent (the row they scrolled to, else the end); an unread
   // reply never moves them. Entering a conversation only opens the folds around its first unread (the earliest of the
@@ -43,7 +47,7 @@ export function useNativeConversationRead(deviceId: string | null, sessionId: st
       else target = imTargets.find(id => id === item.id || id.startsWith(`${item.id}:`))
       if (target) break
     }
-    if (target && state.view.openItem(target)) state.entering = false
+    if (target && state.view.openItem(target, { preserveActivity: true })) state.entering = false
   }, [summary, imFirst])
   useEffect(place, [place, shown])
   // Opening retries until the target renders, from either source, and with or without a native journal on the host.

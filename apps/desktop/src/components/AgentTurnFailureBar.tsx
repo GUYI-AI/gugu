@@ -6,7 +6,8 @@
 import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
-import { useAvatarIdentity } from '@/lib/avatarIdentity'
+import { useAvatarIdentity, useIsAssistantAvatar } from '@/lib/avatarIdentity'
+import { openAssistantPageInApp } from '@/lib/assistantEntry'
 import { X } from '@/lib/icons'
 import { agentFailureNeedsModelChoice } from '@gugu/core/shared/agentQuotaReason'
 import { TurnFailureCard } from './chat/TurnFailureCard'
@@ -76,10 +77,13 @@ function AgentFailureNotice({ scope, profiles }: { scope: StoredFailureScope; pr
   const failure = stored.failure
   const [modelOpen, setModelOpen] = useState(false)
   const displayName = failure ? profiles[failure.agentUserId]?.displayName ?? t('agent.fallbackName') : ''
-  if (!failure) return stored.readFailed ? <div data-chat-composer-notice="" className="mx-3 my-2 flex items-center gap-2 text-[var(--muted-fg)]" role="status"><span>{t('agent.turnFailure.statusReadFailed')}</span><Button variant="ghost" size="sm" onClick={stored.retry}>{t('agent.turnFailure.retry')}</Button></div> : null
+  // 个人助理的 agent 设置只剩形象:它的模型在 App 资料页,换模型直接开到那一屏。
+  const assistant = useIsAssistantAvatar(failure?.agentUserId ?? '')
+  if (!failure) return null
   const profile = profiles[failure.agentUserId]
   const contact = contacts.find((entry) => entry.id === failure.agentUserId)
   const dismiss = () => stored.dismiss(failure.commandId)
+  const openModel = !contact ? undefined : assistant ? () => { openAssistantPageInApp('settings', 'aimodel') } : () => setModelOpen(true)
   return (
     <>
     {agentFailureNeedsModelChoice(failure.reason) ? (
@@ -88,7 +92,7 @@ function AgentFailureNotice({ scope, profiles }: { scope: StoredFailureScope; pr
         displayName={displayName}
         avatar={profile?.avatar ?? null}
         state={t(`agent.turnFailure.state.${failure.reason}`)}
-        onOpenModel={contact ? () => setModelOpen(true) : undefined}
+        onOpenModel={openModel}
         onDismiss={dismiss}
       />
     ) : (
@@ -97,10 +101,10 @@ function AgentFailureNotice({ scope, profiles }: { scope: StoredFailureScope; pr
         displayName={displayName}
         avatar={profile?.avatar ?? null}
         onDismiss={dismiss}
-        onOpenModel={contact ? () => setModelOpen(true) : undefined}
+        onOpenModel={openModel}
       />
     )}
-    {modelOpen && contact ? <AgentSettingsModal agent={contact} initialTab="aimodel" onClose={() => setModelOpen(false)} /> : null}
+    {modelOpen && contact && !assistant ? <AgentSettingsModal agent={contact} initialTab="aimodel" onClose={() => setModelOpen(false)} /> : null}
     </>
   )
 }
@@ -144,7 +148,7 @@ const QUOTA_STYLE = `
 .aqs-tok:not([data-disabled]):hover .aqs-state{text-decoration:underline;text-underline-offset:2px}
 .aqs-tok[data-disabled]{opacity:1;cursor:default}
 .aqs-nm{color:var(--faint-fg)}
-.aqs-state{color:var(--warn);font-weight:500}
+.aqs-state{color:var(--warn-fg);font-weight:500}
 `
 
 const turnFailureLog = rendererLogger('agent/turn-failure')

@@ -18,6 +18,10 @@ async function renderPrefix(kind: 'computer' | 'cloud', clock: string, seed: num
   const { createDesktopGuguMcpHost } = await import('../../../apps/desktop/electron/acp-engine-utils')
   const { buildSessionBundle, loadSessionAcpCapabilities } = await import('../../../apps/desktop/electron/capability-bundle')
   const { buildAgentIdentityBlock } = await import('@gugu/core/local/agent/deviceCommandRuntime')
+  // The prompt's product words are the assistant App's rules (#1931): a fixed set, on this render's fresh resolver module.
+  const { installAssistantRulesResolver } = await import('../../../apps/desktop/electron/assistant-rules-resolver')
+  const { fixedAssistantRules } = await import('./assistantRules/fixtureApp')
+  installAssistantRulesResolver(fixedAssistantRules())
   const { personalAssistantContext, assistantHomeTaskContext } = await import('../../../apps/desktop/electron/sessionpage/assistant-context')
   const { setExtensionCheckAvailable } = await import('../../../apps/desktop/electron/mcp/gugu-extension-tool')
   setExtensionCheckAvailable(true)
@@ -43,7 +47,7 @@ async function renderPrefix(kind: 'computer' | 'cloud', clock: string, seed: num
     expect(options.systemPrompt).toMatchObject({ type: 'custom', snapshot: false })
     const originalOptions = (normal.sessionNewPatch!.meta!.claudeCode as { options: Record<string, unknown> }).options
     expect(originalOptions.systemPrompt).toBeUndefined()
-    const executor = assistantHomeTaskContext(normal, '/prefix-stability/assistant', '/prefix-stability')
+    const executor = await assistantHomeTaskContext(normal, '/prefix-stability/assistant', '/prefix-stability')
     expect(typeof (executor.sessionNewPatch!.meta!.claudeCode as { options: Record<string, unknown> }).options.systemPrompt).toBe('string')
     const server = bundle.mcpServers.find(entry => entry.name === 'gugu')!
     if (server.transport === 'stdio') throw Error('Expected HTTP Gugu capabilities')

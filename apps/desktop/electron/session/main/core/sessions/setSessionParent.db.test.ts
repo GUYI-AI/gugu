@@ -36,7 +36,7 @@ describe('setSessionParent asks other machines only when this one cannot answer'
     fixture.sqlite.prepare(`INSERT INTO projects (id, name, path) VALUES ('p1', 'P', '/repo')`).run();
     sessions.mockReset();
     sessions.mockResolvedValue({ sessions: [], unreached: [{ deviceId: 'dev-c', label: 'Silent Mac', detail: 'no answer' }] });
-    setOtherMachines({ devices: async () => [], isThisDevice: async () => false, appSpawn: vi.fn(), sessions, archive: vi.fn(),
+    setOtherMachines({ devices: async () => [], isThisDevice: async () => false, appSpawn: vi.fn(), sessionHome: vi.fn(), sessions, archive: vi.fn(),
       appMessage: vi.fn(), appCall: vi.fn() });
   });
   afterEach(() => {
@@ -84,6 +84,23 @@ describe('setSessionParent asks other machines only when this one cannot answer'
     await expect(resolveSessionParent('reserved', 'descendant')).rejects.toThrow('session:descendant is under session:reserved');
     expect(parentOf('reserved')).toBeNull();
     expect(sessions).not.toHaveBeenCalled();
+  });
+
+  // #2548 固定到左侧栏 is for a top-level session only (the menu offers no unpin on a child), so becoming a child unpins it:
+  // it must not stay pinned where nobody can clear it, nor come back pinned when it is detached again.
+  it('nesting a session pinned to the sidebar unpins it and says so; moving to the root leaves the pin alone', async () => {
+    insert('parent'); insert('child'); insert('root');
+    fixture.sqlite.prepare(`UPDATE sessions SET is_pinned_to_sidebar = 1 WHERE id IN ('child', 'root')`).run();
+    const pinned = (id: string) => (fixture.sqlite.prepare(`SELECT is_pinned_to_sidebar FROM sessions WHERE id = ?`).get(id) as { is_pinned_to_sidebar: number }).is_pinned_to_sidebar;
+    const { events } = await import('@main/lib/events');
+    vi.mocked(events.emit).mockClear();
+    await setSessionParent('child', 'parent');
+    expect(pinned('child')).toBe(0);
+    expect(events.emit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ sessionId: 'child', changes: { parentSessionId: 'parent', isPinnedToSidebar: false } }));
+    await setSessionParent('child', null);
+    expect(pinned('child')).toBe(0);
+    await setSessionParent('root', null);
+    expect(pinned('root')).toBe(1);
   });
 
   it('preserves the existing warning when a selected parent has an unreachable ancestor', async () => {

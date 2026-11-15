@@ -1,7 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { SessionSummary } from '@gugu/session-core/acp';
 import { acpAgentStatusBridge } from '@main/core/acp/agent-status-bridge';
-import { closeSessionBrowserTools } from '../../../../browser-agent-mcp';
 import { currentOrLastSession } from '@main/core/extensions/extension-bridge';
 import { LocalExecutionContext } from '@main/core/execution-context/local-execution-context';
 import { ptySessionRegistry } from '@main/core/pty/pty-session-registry';
@@ -127,7 +126,6 @@ export function installIdleReclaim(sources: { agentStatus: StatusSource }): () =
       if (!(await stopExactSessionpageSession({ ...target, reason: 'idle-reap' }))) {
         throw new Error('session row is gone');
       }
-      await closeSessionBrowserTools(target.sessionId);
     },
     reclaimed: (target) => events.emit(sessionReclaimedChannel, target),
     log: (event, fields) => {

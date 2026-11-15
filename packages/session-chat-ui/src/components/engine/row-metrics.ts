@@ -19,3 +19,5 @@ export const HEADER_ROW_EXTRA_H = 8;
 
 /** Shared cap for a conversation's collapsed reply and running process viewport. */
 export const CONVERSATION_PREVIEW_MAX_H = 252;
+/** A folded message of a person's: five 24px lines and the bubble's padding. */
+export const USER_PREVIEW_MAX_H = 144;

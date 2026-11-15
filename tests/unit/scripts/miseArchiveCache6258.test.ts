@@ -80,7 +80,7 @@ describe('#6258 mise archive cache', () => {
     expect(() => obtainMiseArchive({
       cacheDir: dir, version: '2026.9.12', asset: ASSET, sha256: SHA,
       download: (_url, destination) => writeFileSync(destination, 'tampered'), ...quiet,
-    })).toThrow(/SHA-256 mismatch .* from https:\/\/github\.com\/jdx\/mise\/releases\/download\/v2026\.9\.12\/.*pinned/)
+    })).toThrow(`[build-mise] SHA-256 mismatch for ${ASSET} from ${DEFAULT_MISE_DOWNLOAD_BASE}/v2026.9.12/${ASSET}: got ${createHash('sha256').update('tampered').digest('hex')}, pinned ${SHA}`)
     expect(existsSync(join(dir, SHA, ASSET))).toBe(false)
   })
 

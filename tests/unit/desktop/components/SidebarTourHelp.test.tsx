@@ -32,7 +32,7 @@ describe('Help & tour while real feature films are unavailable', () => {
       await clickElement(h.container.querySelector('[data-rail="help"]')!)
       const items = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
       expect(items.some((item) => item.textContent?.includes('看功能短片'))).toBe(false)
-      expect(items.some((item) => item.textContent?.includes('继续导览 3 / 7'))).toBe(resumable)
+      expect(items.some((item) => item.textContent?.includes('继续导览 2 / 7'))).toBe(resumable)
       await clickElement(items.find((item) => item.textContent?.includes('从头开始导览'))!)
       expect(requests).toEqual([{ mode: 'restart' }])
     } finally {

@@ -1,23 +1,7 @@
 /*
- * #7199 手机 <它的名字> 那一格(资料页、自定义、连接应用、设备、聊天工具)手机才要的几样;卡、行、胶囊、输入框都用 assistant-today.css 那一套。
+ * #7199 手机「资料」下手机自己的几页(设置、连接应用、设备、聊天工具)才要的几样;卡、行、胶囊、输入框都用 assistant-today.css 那一套。
  * 字号一律走 --ta-* 变量;能点的至少 44 高(咕咕手机触控规范)。
  */
-
-/* 分段(云端 / 本机 / 其他设备)是会话页那份手写钮,桌面上 32 高,手机上补到 44。 */
-.ta-phone-profile .ta-seg-wide button { min-height: 44px; }
-
-/* 自定义:头像在左、名字在右(照桌面「自定义」对话框)。 */
-.ta-phone-customize-who { display: flex; align-items: center; gap: 16px; }
-.ta-phone-persona-fields { display: flex; min-width: 0; flex-direction: column; gap: 12px; }
-.ta-phone .ta-hero-avatar { height: auto; min-height: 44px; }
-.ta-phone .ta-hero-edit { right: 0; bottom: 0; background: var(--card); border: 0; box-shadow: none; }
-.ta-phone .ta-hero-name { max-width: 100%; overflow-wrap: anywhere; }
-.ta-phone .ta-phone-hero { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; column-gap: 16px; row-gap: 4px; text-align: start; }
-.ta-phone-hero > .ta-hero-avatar { grid-column: 1; grid-row: 1 / span 2; margin: 0; }
-.ta-phone-hero > .ta-hero-name,
-.ta-phone-hero > .ta-hero-since,
-.ta-phone-hero > .ta-chip { grid-column: 2; justify-self: start; }
-.ta-phone-hero > .ta-chip { min-height: var(--control-h-touch); margin-top: 4px; }
 
 .ta-phone-error { margin: 0; font-size: var(--ta-fs-note); line-height: var(--ta-lh-note); color: var(--danger-fg); overflow-wrap: anywhere; }
 

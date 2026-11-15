@@ -1,12 +1,10 @@
-import { readFile, rm } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { app, contentTracing } from 'electron';
+import { app } from 'electron';
 import type { ResourceSnapshot } from '@shared/resource-monitor';
+import { recordTrace } from './capture';
 
 /**
  * Deep sample — one Chromium memory-infra dump of every process, for a local JSON file the user saves.
- * It is the only place that runs a trace; it runs on a click, never on a timer. Nothing is uploaded.
+ * It runs on a click, never on a timer, one trace at a time with "record a stretch" (capture.ts). Nothing is uploaded.
  *
  * The trace records `disabled-by-default-memory-infra` with one periodic background-dump trigger (periodic dumps never force a GC,
  * so the garbage that dominates the heap stays in the reading), long enough for at least one dump
@@ -45,23 +43,14 @@ export function summarizeMemoryDumps(events: readonly TraceEvent[]): ProcessMemo
 }
 
 async function recordMemoryDumps(): Promise<ProcessMemoryDump[]> {
-  await contentTracing.startRecording({
+  const events = await recordTrace<TraceEvent>({
     included_categories: ['disabled-by-default-memory-infra'],
     excluded_categories: ['*'],
     memory_dump_config: { triggers: [{ mode: 'background', periodic_interval_ms: DUMP_INTERVAL_MS }] },
-  });
-  await new Promise((resolve) => setTimeout(resolve, RECORD_MS));
-  const tracePath = path.join(os.tmpdir(), `gugu-deep-sample-${process.pid}-${Date.now()}.json`);
-  const written = await contentTracing.stopRecording(tracePath);
-  try {
-    const trace = JSON.parse(await readFile(written, 'utf8')) as { traceEvents?: TraceEvent[] } | TraceEvent[];
-    const events = Array.isArray(trace) ? trace : (trace.traceEvents ?? []);
-    const dumps = summarizeMemoryDumps(events);
-    if (dumps.length === 0) throw new Error('memory-infra trace contained no process dumps');
-    return dumps;
-  } finally {
-    await rm(written, { force: true });
-  }
+  }, RECORD_MS, 'deep-sample');
+  const dumps = summarizeMemoryDumps(events);
+  if (dumps.length === 0) throw new Error('memory-infra trace contained no process dumps');
+  return dumps;
 }
 
 /** The JSON the user saves: the monitor's current snapshot plus one memory dump per process. */

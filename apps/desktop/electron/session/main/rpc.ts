@@ -11,7 +11,6 @@ import { extensionsController } from './core/extensions/controller';
 import { machineFilesController } from './core/files/controller';
 import { machineController } from './core/machine/controller';
 import { workspaceFileSystemController } from './core/files/file-system/controller';
-import { fileTreeController } from './core/files/file-tree/controller';
 import { gitRepositoryController } from './core/git/repository/controller';
 import { gitWorktreeController } from './core/git/worktree/controller';
 import { githubController } from './core/github/controller';
@@ -38,7 +37,6 @@ import { sessionCreateController } from './core/sessions/create-controller';
 import { terminalsController } from './core/terminals/controller';
 import { usageController } from './core/usage/controller';
 import { viewStateController } from './core/view-state/controller';
-import { projectSettingsController } from './core/workspaces/project-settings-controller';
 
 export const rpcRouter = createRPCRouter({
   agents: agentsController,
@@ -80,12 +78,10 @@ export const rpcRouter = createRPCRouter({
   sessionHistory: sessionHistoryController,
   sessionImport: sessionImportController,
   sessionTimeline: sessionTimelineController,
-  projectSettings: projectSettingsController,
   usage: usageController,
   workspace: createRPCNamespace({
     gitWorktree: gitWorktreeController,
     files: workspaceFileSystemController,
-    fileTree: fileTreeController,
     editor: editorBufferController,
   }),
 });

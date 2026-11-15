@@ -212,3 +212,19 @@ it('restores group and contact overrides into their distinct account snapshot ke
   const cleared = decodeAccountSnapshot(base, 'account-a')
   expect(assemble(cleared.cells, 'account-a')).toMatchObject([{ id: 'chat-1', name: 'Remote group', alias: null }])
 })
+
+it('a cold account start is the beat pull too: a failed snapshot then an answered one is the backend-recovered edge', async () => {
+  const { bindBackendProbe, subscribeBackendRecovered } = await import('../../../../packages/core/src/cloud/backendReachability')
+  const unbind = bindBackendProbe(() => {})
+  const recovered = vi.fn()
+  const unsubscribe = subscribeBackendRecovered(recovered)
+  try {
+    const repository = await openImRepository('account-a', { adapter })
+    rpc.mockReturnValueOnce({ abortSignal: vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) })
+    await expect(initializeAccountSync(repository)).rejects.toThrow('Failed to fetch')
+    expect(recovered).not.toHaveBeenCalled()
+    await initializeAccountSync(repository).catch(() => undefined)
+    expect(recovered).toHaveBeenCalledOnce()
+    repository.close()
+  } finally { unsubscribe(); unbind() }
+})

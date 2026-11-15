@@ -9,7 +9,8 @@ export const EXTENSION_ORIGINS = ['market', 'folder', 'attachment', 'preinstalle
 export type ExtensionOrigin = (typeof EXTENSION_ORIGINS)[number];
 
 /**
- * What `candidate` declares that the installed version did not; everything it declares on a first install.
+ * What `candidate` declares that the installed version did not (a resource capability whose domains it widens counts as
+ * new); everything it declares on a first install.
  * A withdrawn permission declared again is not new. A host under a declared wildcard is not new while that
  * wildcard is still granted.
  */
@@ -24,9 +25,25 @@ export function addedPermissions(
   return {
     capabilities: (candidate.permissions?.capabilities ?? []).filter(
       (capability) => !hadCapabilities.includes(capability)
+        || (!revokedPermissions.includes(capability) && widensResourceDomains(installed, candidate, capability))
     ),
     network: newlyReachableHosts(stillGranted, candidate).filter((host) => !hadNetwork.includes(host)),
   };
+}
+
+/**
+ * #1927 (42): a resource capability the installed version had is asked again when this version lists a domain for it
+ * the installed one did not — more of the agent's resources is more permission. Fewer, or the same, asks nothing.
+ */
+function widensResourceDomains(
+  installed: Pick<ExtensionManifest, 'permissions'> | undefined,
+  candidate: ExtensionManifest,
+  capability: ExtensionCapability
+): boolean {
+  const action = capability === 'chat:resources' ? 'resources' : capability === 'chat:resources:write' ? 'resources:write' : null;
+  if (!action) return false;
+  const had: readonly string[] = installed?.permissions?.bindings?.[0]?.domains?.[action] ?? [];
+  return (candidate.permissions?.bindings?.[0]?.domains?.[action] ?? []).some((domain) => !had.includes(domain));
 }
 
 /**

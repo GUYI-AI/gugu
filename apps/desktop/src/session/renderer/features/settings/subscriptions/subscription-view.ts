@@ -56,7 +56,7 @@ export function planNotes(
   if (plan.via && plan.via.length > 0) notes.push(translate('subscriptions.via', { vendors: plan.via.join(' · ') }));
   if (plan.planAsOf !== undefined) notes.push(translate('subscriptions.planAsOf', { date: formatDate(plan.planAsOf) }));
   if (plan.extraUsage) notes.push(translate('subscriptions.extraUsage'));
-  if (plan.payer === 'not-signed-in') notes.push(translate('subscriptions.signInHint'));
+  // 没登录:那一行右侧直接给「登录」(#2507),❌ 再写一句指到资源库的话 —— 有的家在那里根本登不了。
   return notes;
 }
 

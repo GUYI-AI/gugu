@@ -18,3 +18,14 @@ export function startShellChromeTone(): void {
   subscribeToHostTheme(sync)
   subscribeToThemePreference(sync)
 }
+
+// The iOS WebView sits inside a native safe-area container. Painting the web overlay
+// cannot reach the status bar or home-indicator margins; lease their native appearance.
+const imageViewerChrome = registerPlugin<{ setActive(options: { active: boolean }): Promise<void> }>('GuguImageViewerChrome')
+export function holdIOSImageViewerChrome(): () => void {
+  if (Capacitor.getPlatform() !== 'ios' || !Capacitor.isPluginAvailable('GuguImageViewerChrome')) return () => {}
+  const sync = (active: boolean) => imageViewerChrome.setActive({ active }).catch((error: unknown) =>
+    log.error({ error: String(error) }, 'image viewer system chrome did not update'))
+  const opened = sync(true)
+  return () => { void opened.then(() => sync(false)) }
+}

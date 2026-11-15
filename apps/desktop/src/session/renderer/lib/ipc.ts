@@ -64,13 +64,22 @@ function receiveFrom(deviceId: string, value: unknown): unknown {
   return local;
 }
 
+declare const __APP_VERSION__: string | undefined;
+
+/** 那台机器开线时报的版本就是这台的版本(同一份构建)。 */
+function sameVersionAs(deviceId: string): boolean {
+  const theirs = machineClient(deviceId)?.hello()?.appVersion;
+  return !!theirs && typeof __APP_VERSION__ === 'string' && theirs === __APP_VERSION__;
+}
+
 async function invokeOn(deviceId: string, channel: string, args: unknown[]): Promise<unknown> {
   // 发过去的参数与拿回来的结果里出现的实体 id 都记到那台机器名下(新建的任务 / 会话从此认得出)。
   machineRegistry.absorb(deviceId, args);
   const result = await remoteApi(deviceId)
     .invoke(channel, ...codecOf(deviceId).outbound(args))
     .catch((error: unknown) => {
-      if (error instanceof Error && error.message.includes(`No handler registered for '${channel}'`)) {
+      // 同一个版本的咕咕答「没有这个方法」不是版本差:原样报出原话,❌ 标成太旧、请那台换版本。
+      if (error instanceof Error && error.message.includes(`No handler registered for '${channel}'`) && !sameVersionAs(deviceId)) {
         reportMachineOutdated(deviceId);
         throw new MachineOutdatedError(deviceId, channel);
       }

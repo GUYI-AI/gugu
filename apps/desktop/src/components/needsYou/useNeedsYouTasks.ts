@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { SessionpageSessionsListResult, SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
+import type { AnsweredAsk, SessionpageSessionsListResult, SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import { platform } from '@/platform'
 import { useAuth } from '@/store/auth'
 import { useDevicesStore } from '@/store/devicesContext'
@@ -20,6 +20,8 @@ export type NeedsYouTask = {
   local: boolean
   phoneHost: boolean
   session: SessionpageSessionSummary
+  /** The approval the person already answered here, listed as handled while the session asks for nothing else. */
+  handled: AnsweredAsk | null
 }
 
 /** Acknowledge through the task host's existing read bit; never clear its error or settle an ask. */
@@ -32,6 +34,7 @@ export async function markNeedsYouTaskSeen(task: Pick<NeedsYouTask, 'deviceId' |
  * The existing sidebar state and machine directory, including a desktop's own host. No per-task polling.
  * Like the sidebar's Needs you group, a task is listed while its state asks for attention (presentationAttention) and
  * counted only while it needs you (isNeedsYou): reading a failure drops it from `count`, never from `tasks`.
+ * An answered approval stays listed as handled for as long as a failure would (`lastAnswered`), below what still waits, never counted.
  */
 export function useNeedsYouTasks(): { tasks: NeedsYouTask[]; count: number; attention: AgentAttention; error: string | null } {
   const { user } = useAuth()
@@ -65,11 +68,13 @@ export function useNeedsYouTasks(): { tasks: NeedsYouTask[]; count: number; atte
     for (const session of sessions) {
       // 列出的只有连得上的宿主;有身份的 agent 读共享 presence,与侧栏同一个判据。
       const presentation = sessionPresentation(session, true)
-      if (presentationAttention(presentation) === null) continue
+      const handled = presentationAttention(presentation) === null ? session.lastAnswered ?? null : null
+      if (presentationAttention(presentation) === null && !handled) continue
       if (isNeedsYou(presentation, session.unseen === true)) statuses.push(presentationAttention(presentation))
-      tasks.push({ deviceId: device.device_id, machine: device.label, local: here, phoneHost: isPhoneDevice(device), session })
+      tasks.push({ deviceId: device.device_id, machine: device.label, local: here, phoneHost: isPhoneDevice(device), session, handled })
     }
   }
-  tasks.sort((a, b) => (Date.parse(b.session.lastInteractedAt ?? '') || 0) - (Date.parse(a.session.lastInteractedAt ?? '') || 0))
+  const at = (task: NeedsYouTask) => task.handled ? task.handled.resolvedAt ?? 0 : Date.parse(task.session.lastInteractedAt ?? '') || 0
+  tasks.sort((a, b) => Number(!!a.handled) - Number(!!b.handled) || at(b) - at(a))
   return { tasks, count: statuses.length, attention: mostUrgentAttention(statuses), error: localId ? error : null }
 }

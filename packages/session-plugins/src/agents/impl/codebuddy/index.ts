@@ -1,3 +1,4 @@
+import { codebuddyApiKeyConnection } from './api-key-connection';
 import { platformModel } from './platform-model';
 import {
   definePlugin,
@@ -37,13 +38,14 @@ const sessionBundle = codebuddySessionBundleDescriptor satisfies SessionBundleDe
 export const plugin = definePlugin(
   {
     id: 'codebuddy',
-    name: 'CodeBuddy Code',
+    name: 'CodeBuddy',
     description:
       "Tencent's terminal coding agent: understands the codebase, edits files, runs commands, and handles whole workflows.",
     websiteUrl: 'https://www.codebuddy.ai/docs/cli/overview',
   },
   {
     sessionBundle,
+    apiKeyConnection: codebuddyApiKeyConnection,
     /**
      * 厂商账号不是硬门槛 —— **实测**:只给 `CODEBUDDY_BASE_URL` + `CODEBUDDY_API_KEY` 时
      * `session/new` 照常开、请求打到给定的网关(实测 B);两者都不给才回 `Authentication required`(实测 A)。

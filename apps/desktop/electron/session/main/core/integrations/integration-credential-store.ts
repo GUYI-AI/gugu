@@ -25,6 +25,9 @@ export type IntegrationAccountRecord = {
   accountId: string;
   displayName?: string;
   credentials: IntegrationCredentials;
+  /** Opaque generation the credentials were read at; a conditional replacement
+   * must still find it. Absent for platform-kept accounts. */
+  generation?: string;
 };
 
 /** 一个已存账号连同它什么时候连上的(资源库详情「连接时间」)。 */
@@ -37,6 +40,8 @@ type IntegrationAccountStore = Pick<
   | 'setDefaultAccount'
   | 'upsertAccount'
   | 'resolveSecret'
+  | 'resolveSecretGeneration'
+  | 'compareAndSwapSecret'
   | 'removeAccount'
   | 'removeAllAccounts'
   | 'isConfigured'
@@ -111,11 +116,23 @@ export class IntegrationCredentialStore {
     if (!account) return null;
     if (keptByPlatform(account)) return toIntegrationAccount(account, {});
 
-    const raw = await this.accounts.resolveSecret(integrationId, account.accountId);
+    const read = await this.accounts.resolveSecretGeneration(integrationId, account.accountId);
+    const raw = read ? read.secret : await this.accounts.resolveSecret(integrationId, account.accountId);
     const credentials = raw ? parseJson(raw) : null;
     if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials)) return null;
 
-    return toIntegrationAccount(account, credentials as IntegrationCredentials);
+    const record = toIntegrationAccount(account, credentials as IntegrationCredentials);
+    return read ? { ...record, generation: read.generation } : record;
+  }
+
+  /**
+   * Store credentials derived from `prior` (a refresh, a check that renewed them) only if
+   * the account still holds the generation `prior` was read at. False when the person
+   * disconnected or authorized again meanwhile: their change wins, nothing is written.
+   */
+  async compareAndSwapAccount(integrationId: string, prior: IntegrationAccountRecord, credentials: IntegrationCredentials): Promise<boolean> {
+    if (!prior.generation) throw new Error(`No credential generation for ${integrationId}; refusing an unconditional write`);
+    return this.accounts.compareAndSwapSecret(integrationId, prior.accountId, prior.generation, JSON.stringify(credentials));
   }
 
   /** #7240 这一家存着的每个账号(多账号:邮箱一个地址一个),按连上的先后。凭据读不出来的那一个跳过不给。 */

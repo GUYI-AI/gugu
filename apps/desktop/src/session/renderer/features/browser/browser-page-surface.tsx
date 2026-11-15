@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import { rendererLogger } from '@/lib/log';
 import { events, rpc } from '@renderer/lib/ipc';
 import { browserPageEventChannel, type BrowserPageMode } from '@shared/events/browserEvents';
-import { agentBrowserState } from './agent-browser-state';
 import { forgetPageFocus, guardHostFocus, notePageFocus } from './browser-host-focus';
 import { BrowserPageHandle } from './browser-page-handle';
 import { isBrowserPageOccluded, type PageRect } from './browser-page-occlusion';
@@ -11,8 +10,6 @@ const surfaceLog = rendererLogger('browser/page-surface');
 
 /** 多久看一眼网页那一块上有没有浮层(见 browser-page-occlusion.ts)。 */
 const OCCLUSION_CHECK_MS = 100;
-/** 被浮层盖着、agent 又正在操作这张网页时,截图多久换一张(人看得见 agent 在干什么)。 */
-const OCCLUDED_REFRESH_MS = 1_000;
 /**
  * 窗口被挡住、锁屏时界面不再出帧(requestAnimationFrame 停了),位置照样要量、照样要报 ——
  * agent 这时候也可能在操作这张网页,网页得有正确的大小。帧停了就由这个间隔接着量。
@@ -72,7 +69,6 @@ export function BrowserPageSurface({
     let occluded = false;
     let lastOcclusionCheck = -Infinity;
     let snapshotToken = 0;
-    let lastSnapshotAt = 0;
     let mounted = false;
     let pendingSnapshotReport: (() => void) | null = null;
 
@@ -87,7 +83,6 @@ export function BrowserPageSurface({
     const showSnapshot = async (thenReport: (() => void) | null) => {
       const token = ++snapshotToken;
       if (thenReport) pendingSnapshotReport = thenReport;
-      lastSnapshotAt = Date.now();
       // 截图等不来(网页正卡着、渲染进程刚换)也只等这么久:浮层不能一直被网页压着。
       // 超时只放行浮层;截图晚到时仍然显示,不能把迟到的真实画面丢掉。
       let timer = 0;
@@ -153,10 +148,6 @@ export function BrowserPageSurface({
           void report(mode, rect);
         }
         return;
-      }
-      // 被盖着、agent 又在动它:截图隔一会儿换一张。
-      if (mode === 'occluded' && agentBrowserState(browserId) === 'driving' && Date.now() - lastSnapshotAt >= OCCLUDED_REFRESH_MS) {
-        void showSnapshot(null);
       }
     };
 

@@ -199,6 +199,14 @@ describe('ACP 注册表来源解析(#6335)', () => {
     expect(mac.installVersion).toBe('1.1.1-acp-' + legacy);
   });
 
+  it('registryArgs omit: the launcher stays the plain program; same version dir as an args-free entry', async () => {
+    acpRegistry();
+    const omitted = await resolveMiseDistribution({ ...acpTarget, backend: { ...acpTarget.backend, registryArgs: 'omit' as const } }, 'official', undefined, 'linux', 'x64');
+    expect(omitted).not.toHaveProperty('args');
+    const plain = createHash('sha256').update('https://dl.google.com/x/linux.zip\n').digest('hex').slice(0, 32);
+    expect(omitted.installVersion).toBe('1.1.1-acp-' + plain);
+  });
+
   it('参数换了就是另一种启动法 —— 版本目录不复用,启动器跟着重写', async () => {
     acpRegistry({ 'linux-x86_64': { archive: 'https://dl.google.com/x/linux.zip', cmd: './a' } });
     const a = await resolveMiseDistribution(acpTarget, 'official', undefined, 'linux', 'x64');

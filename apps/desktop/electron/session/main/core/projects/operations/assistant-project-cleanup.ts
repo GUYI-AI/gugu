@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { canonicalPath } from '@gugu/session-core/files';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { eq, inArray, isNull, like, or } from 'drizzle-orm';
@@ -10,7 +11,6 @@ import { projectEvents } from '../project-events';
 import { log } from '@main/lib/logger';
 import { IMPLICIT_SESSION_HOME_PROJECT_ID, isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
 import { alignSessionProjectReferences } from '@shared/core/projects/session-project-references';
-import { projectPathKey } from '../path-utils';
 import { readProjectRegistration } from './project-registration-origin';
 import { resolveAgentSessionProject } from './resolve-agent-session-project';
 import { projectGroupHost } from '../project-group-host';
@@ -129,9 +129,9 @@ export async function migrateAssistantProject(input: AssistantProjectCandidate):
     const prior = (await getAssistantProjectCleanupReport()).removed.find(entry => entry.projectId === candidate.projectId);
     if (prior) return prior;
   }
-  if (projectPathKey(before.project.path) !== projectPathKey(candidate.path)) return retained('path-changed');
+  if (canonicalPath(before.project.path) !== canonicalPath(candidate.path)) return retained('path-changed');
   const own = before.tasks.find(row => row.id === candidate.sessionId);
-  if (!own || !before.directories.some(row => row.id === own.workspaceId && row.path && projectPathKey(row.path) === projectPathKey(candidate.path))) {
+  if (!own || !before.directories.some(row => row.id === own.workspaceId && row.path && canonicalPath(row.path) === canonicalPath(candidate.path))) {
     return retained('assistant-binding-changed');
   }
   const confirmed = candidate.ownerConfirmed?.projectId === candidate.projectId

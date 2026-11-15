@@ -102,7 +102,7 @@ export class ExtensionProjections {
   } {
     this.authorize(principal);
     principal = { ...principal };
-    if (connection.transport !== 'local') throw new Error('Bitmap preview is local only; remote projection needs the media transport');
+    if (connection.transport !== 'local' && connection.transport !== 'device') throw new Error('Unknown projection transport');
     const resource = this.resources.get(id);
     if (!resource || !same(principal, resource.principal)) throw new Error('Projection is not in this App session');
     resource.controller.signal.throwIfAborted();

@@ -95,6 +95,13 @@ describe('a link of gugu\'s own, clicked in an App page (openLink)', () => {
     expect(opened).toEqual(['https://example.com/', 'gugu-dev://chat/123', 'gugu-dev://ext/', 'gugu-dev://ext-x/radar/radar', '']);
   });
 
+  it('a file of this computer is no link an App opens: a path, a file URL, a home path are refused (`@@@outside-file`)', async () => {
+    for (const url of ['/home/someone/.ssh/id_ed25519', 'file:///home/someone/.ssh/id_ed25519', '~/.ssh/config']) {
+      const result = await open(PAGE, url) as { ok: boolean; code?: string };
+      expect([url, result.ok, result.code]).toEqual([url, false, 'invalid']);
+    }
+  });
+
   it('accepts all resource kinds through that same opener, independently of channel', async () => {
     for (const url of [`gugu-chat://${CHAT}`, `gugu-file://${CHAT}#slide=3`, `gugu-beta://chat/${CHAT}`, 'gugu://session/s1', 'gugu://project/p1', 'gugu://ext/chess/main']) {
       expect(await open(PAGE, url)).toEqual({ ok: true, value: undefined });

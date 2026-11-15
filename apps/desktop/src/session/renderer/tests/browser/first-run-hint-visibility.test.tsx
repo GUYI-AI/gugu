@@ -15,17 +15,19 @@ function mountProbe(seen: { targets: readonly HintTarget[] }) {
   const host = document.createElement('div');
   document.body.append(host);
   const root: Root = createRoot(host);
-  function Probe() { seen.targets = useFirstRunHintTargets('desktop', true); return null; }
+  // The phone's 伙伴 entry: the desktop no longer draws a collaboration hint (#2548), and the locator is the same for both.
+  function Probe() { seen.targets = useFirstRunHintTargets('phone', true); return null; }
   act(() => root.render(<Probe />));
   cleanup.push(() => { act(() => root.unmount()); host.remove(); });
 }
 
 function addEntry() {
   const surface = document.createElement('section');
+  surface.className = 'gg-partners';
   surface.style.position = 'relative';
   const entry = document.createElement('div');
   entry.dataset.firstRunHint = 'collaboration';
-  entry.dataset.firstRunDevice = 'desktop';
+  entry.dataset.firstRunDevice = 'phone';
   entry.textContent = 'Projects';
   entry.style.cssText = 'width: 120px; height: 24px';
   const space = document.createElement('div');

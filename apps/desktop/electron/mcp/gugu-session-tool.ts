@@ -80,7 +80,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
   },
   {
     name: 'device_actions',
-    description: 'Inspect native actions; Computer Use: control macOS/Windows desktop apps (screen, mouse, keys; computer). Omit device: devices/status/timezone/groups. With device: actions; group/name: read schema first. Other-device work: session_spawn there. available:false has unavailable_detail.',
+    description: 'Inspect native actions on your devices (calendar, mail, files, clipboard, a screenshot of the screen). Omit device: devices/status/timezone/groups. With device: actions; group/name: read schema first. Other-device work: session_spawn there. available:false has unavailable_detail.',
     schema: z.object({
       device: deviceSchema.describe('Omit for all devices.').optional(),
       group: z.string().min(1).optional(),
@@ -128,7 +128,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
       title: z.string().min(1).describe('Short name; default automatic.').optional(),
       device: deviceSchema.describe(DEVICE_DESCRIPTION).optional(),
       // #7331 先复用:描述只说「新目录当场登记」时,agent 把每个自己切的 worktree 都传进来,对方机器上一个 worktree 一个项目。
-      project: z.string().min(1).describe('Existing project:<id> or folder there. New projects only on request; worktrees/subfolders go in prompt. Omit: your project (remote: its copy in the same project group, else its task workspace; result says which).').optional(),
+      project: z.string().min(1).describe('Existing project:<id> or folder there. New projects only on request; worktrees/subfolders go in prompt. Omit: your project. Remote: that device\'s copy (missing: named fails, else task workspace; result says).').optional(),
       parent_session_id: sessionIdSchema.nullable().describe('session:<id>. Omit: you; null: root.').optional(),
       transport: z.enum(['acp', 'pty']).optional(),
       harness: z.string().describe('From session_list_harnesses; default: your sub-agent default.').optional(),

@@ -4,12 +4,16 @@
 // 一个模块**一个**选择,挂在模块层(`DeviceScopeProvider`),模块里每一页的标题右边画同一个选择器
 // (`PageHeader` 读它);❌ 挂在左栏列头下、搜索框旁、设置行里,❌ 按页各选各的。
 import { observer } from 'mobx-react-lite';
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+import { formatRelativeTime } from '@/i18n/format';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { PageScopeProvider, type PageScope } from '@renderer/lib/components/page-header';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { RemoteHostDevice } from '@/session/shared/remote-hosts';
+import { ConnectionStatus } from '@/components/connection/ConnectionStatus';
 import type { DeviceScopeNotice } from './device-scope-notice';
+import { headerConnectionState } from './header-connection-state';
 import { LOCAL_DEVICE_SCOPE, deviceScopeTrayDevices, type DeviceScopeStore } from './device-scope-store';
 import { MachinePicker } from './machine-picker';
 import { useWakeCloudOnce } from './use-wake-cloud-once';
@@ -53,7 +57,43 @@ export const DeviceScopePicker = observer(function DeviceScopePicker({
       onSelect={(deviceId) => store.select(deviceId)}
       onAddMachine={remoteHostsStore.canAddMachine ? () => remoteHostsStore.openAddMachine() : undefined}
       offlineSelectable
+      // Every place this picker is used shows DeviceScopeStatus in the same heading (module title, library sub-page
+      // title, settings group title).
+      stateInHeading
       variant={variant}
+    />
+  );
+});
+
+/**
+ * The selected machine's connection state, inline in the heading that scopes the page to it. This computer = nothing.
+ * `withName` when the heading does not already show the machine (the library's picker lives in its left column).
+ */
+export const DeviceScopeStatus = observer(function DeviceScopeStatus({
+  store,
+  withName = false,
+}: {
+  store: DeviceScopeStore;
+  withName?: boolean;
+}) {
+  const deviceId = store.effective((id) => remoteHostsStore.hosts.has(id));
+  const device = deviceId === LOCAL_DEVICE_SCOPE ? null : remoteHostsStore.device(deviceId);
+  const state = device ? headerConnectionState(remoteHostsStore.connectionState(device.id)) : null;
+  const { t } = useTranslation('common');
+  const { translate } = useSessionMessages();
+  if (!device || !state) return null;
+  // A page of this module shows the machine's last copy read-only (its own line is gone, #2301 Q5): say so after the
+  // state. `detail` replaces the last-seen time, so it carries both.
+  const cached = state !== 'online' && store.cachedViews > 0;
+  const seen = state === 'device_offline' && device.lastSeenAt ? t('connection.lastSeen', { time: formatRelativeTime(device.lastSeenAt) }) : null;
+  const detail = cached ? [seen, translate('deviceScope.readOnlyCache')].filter(Boolean).join(' · ') : null;
+  return (
+    <ConnectionStatus
+      state={state}
+      lastSeenAt={device.lastSeenAt}
+      subject={withName ? device.label : null}
+      detail={detail}
+      testId="device-scope-status"
     />
   );
 });
@@ -74,15 +114,45 @@ export const DeviceScopeProvider = observer(function DeviceScopeProvider({
 }) {
   useSelectedRemoteDevice(store);
   const scope = useMemo<PageScope>(
-    () => ({ control: inTitle ? <DeviceScopePicker store={store} /> : null }),
+    () => ({
+      control: inTitle ? <DeviceScopePicker store={store} /> : null,
+      status: <DeviceScopeStatus store={store} withName={!inTitle} />,
+    }),
     [store, inTitle]
   );
-  return <PageScopeProvider value={scope}>{children}</PageScopeProvider>;
+  return (
+    <DeviceScopeStoreContext.Provider value={store}>
+      <PageScopeProvider value={scope}>{children}</PageScopeProvider>
+    </DeviceScopeStoreContext.Provider>
+  );
 });
 
+/** The module's scope store, for a notice line under its heading (DeviceScopeProvider). */
+const DeviceScopeStoreContext = createContext<DeviceScopeStore | null>(null);
+
 /** 那一句话;能重试的,「再试一次」是句子里的一段强调色文字,❌ 底下另摆一颗按钮。 */
-export function DeviceScopeNoticeLine({ notice, onRetry }: { notice: DeviceScopeNotice; onRetry?: () => void }) {
+export function DeviceScopeNoticeLine({
+  notice,
+  onRetry,
+  store: explicitStore,
+  noHeading = false,
+}: {
+  notice: DeviceScopeNotice;
+  onRetry?: () => void;
+  /** The scope whose heading shows the machine's state; default: the enclosing DeviceScopeProvider's. */
+  store?: DeviceScopeStore;
+  /** This screen has no scope heading (an App's product page): the line says it all, as before. */
+  noHeading?: boolean;
+}) {
   const { translate } = useSessionMessages();
+  const contextStore = useContext(DeviceScopeStoreContext);
+  const store = explicitStore ?? contextStore;
+  // #2301 Q5: offline / waking is already said by the heading's state; this page only tells it that it is showing the
+  // last copy (「只读缓存」 there). Without a heading in reach the line stays, ❌ the fact goes unsaid.
+  const inHeading = notice.inHeading && store !== null && !noHeading;
+  const cached = inHeading && notice.readOnly && notice.cached;
+  useEffect(() => (cached && store ? store.holdCachedView() : undefined), [cached, store]);
+  if (inHeading) return null;
   return (
     <p className="m-0 px-3 pt-6 pb-2 text-sm text-foreground-muted" data-testid="device-scope-notice" data-kind={notice.kind}>
       {notice.text}

@@ -9,7 +9,7 @@ import { createGroupAdmin } from '@gugu/core/cloud/groupAdmin'
 //     云端 #8 起允许只有群主一个人的群)。老版本只预留了 id、云端还没建出来的,也在这一步按那个 id 建。
 //   · 并进来(owner 2026-10-17 选 A):这个项目里的 agent 都加进那个群(chat.add_group_agent,与「把自己的 agent 拉进群」
 //     同一个入口),名册里钉着的群改成它;原来的群不删不归档,留作历史。
-//   · 撤销:忘掉对照,agent 在名册里钉回并进来之前的群;已经加进那个群的 agent 留在里面。
+//   · 撤销:agent 在名册里钉回并进来之前的群,对照改指那个群(没有就忘掉);已经加进那个群的 agent 留在里面。
 //
 // 与开会话共用供给锁(withSessionpageProvisionLock):两边都读改写对照与名册里的群,背靠背发生时不排队就会各记各的。
 // 对照的写只经 sessionpage-project-groups.ts 的那一条队列 —— 本模块与供给、回收器都 import 同一个模块,❌ 另写一份。
@@ -30,7 +30,6 @@ import {
   PROJECT_CACHE_KEY,
   SESSION_CACHE_KEY,
   cacheString,
-  findGroupIdForProject,
   groupProjectIdFor,
   isUniqueViolation,
   projectGroupDisplayName,
@@ -45,10 +44,7 @@ import {
   rememberProjectGroupId,
 } from './sessionpage-project-groups'
 
-/**
- * 并进来之前这个 agent 在名册里钉着哪个群(没有群 = '')。撤销靠它把 agent 钉回去 —— 只忘对照不够:新会话找群时
- * 对照没有就退回名册里同项目 agent 钉着的群(findGroupIdForProject),名册不改回来,撤销等于没撤。
- */
+/** 并进来之前这个 agent 在名册里钉着哪个群(没有群 = '')。撤销靠它把 agent 钉回去,项目也回到那个群。 */
 export const GROUP_BEFORE_BIND_CACHE_KEY = 'sessionpage_group_chat_before_bind'
 
 export interface SessionpageProjectGroupHostDeps {
@@ -185,14 +181,10 @@ export function createSessionpageProjectGroupHost(deps: SessionpageProjectGroupH
     if (env().GUGU_CLOUD_COMPUTER === '1') return ok([])
     const auth = await deps.getAuth()
     if (!auth?.userId) return err(notSignedIn())
-    const mapped = new Map((await listProjectGroupIds(auth.userId, env())).map((entry) => [entry.projectId, entry]))
-    // 老数据只把群记在名册行上(对照是后来才有的):对照里没有就照第一个会话找群时的口径退回名册。
-    const roster = await listAgents(env(), { includeGuests: true })
+    const mapped = new Map((await listProjectGroupIds(auth.userId, env())).map((entry) => [entry.projectId, entry.chatId]))
     const bindings: ProjectGroupBinding[] = []
     for (const projectId of projectIds) {
-      if (!groupProjectIdFor(projectId, env())) continue
-      const entry = mapped.get(projectId)
-      const chatId = entry?.chatId || findGroupIdForProject(roster, projectId, auth.userId)
+      const chatId = groupProjectIdFor(projectId, env()) ? mapped.get(projectId) : undefined
       if (chatId) bindings.push({ projectId, chatId })
     }
     return ok(bindings)
@@ -205,17 +197,16 @@ export function createSessionpageProjectGroupHost(deps: SessionpageProjectGroupH
     const { projectId } = subject
     const chat = makeChatClient(accessToken)
     const name = projectGroupDisplayName(subject.projectName, projectId)
-    return cloudFailedOr(() => withSessionpageProvisionLock(`project-group ensure ${projectId}`, async () => {
-      const recorded = await readProjectGroupId(projectId, userId, env())
-      const roster = await listAgents(env(), { includeGuests: true })
-      const mapped = recorded || findGroupIdForProject(roster, projectId, userId) || ''
+    return cloudFailedOr<{ chatId: string; changed: boolean }>(() => withSessionpageProvisionLock(`project-group ensure ${projectId}`, async () => {
+      const mapped = await readProjectGroupId(projectId, userId, env())
       if (mapped) {
         let state = await readGroupState(chat, mapped, userId)
         // 'missing' = 老版本预留的、云端还没建出来的群:就按这个 id 建。
         if (state === 'missing') state = await createOwnerOnlyGroup(chat, mapped, name, userId)
         if (state === 'active') {
+          // A v1 entry nobody owned yet is claimed by this account here.
           await rememberProjectGroupId(projectId, mapped, userId, env())
-          return ok({ chatId: mapped, changed: recorded !== mapped })
+          return ok({ chatId: mapped, changed: false })
         }
         // 归档了 / 不是群 / 这个账号已不在里面:与第一个会话遇到同样情形时一样,忘掉它、另起一个。
         log.info({ projectId, chatId: mapped, state }, '#7341 mapped project group is unusable — creating a fresh one')
@@ -254,10 +245,8 @@ export function createSessionpageProjectGroupHost(deps: SessionpageProjectGroupH
         await settleSessionpageAgentBackgroundWork(
           projectAgents(await listAgents(env(), { includeGuests: true }), subject, userId).map((agent) => agent.gugu_user_id),
         )
-        const roster = await listAgents(env(), { includeGuests: true })
-        const agents = projectAgents(roster, subject, userId)
-        const recorded = await readProjectGroupId(projectId, userId, env())
-        const previous = recorded || findGroupIdForProject(roster, projectId, userId) || ''
+        const agents = projectAgents(await listAgents(env(), { includeGuests: true }), subject, userId)
+        const previous = await readProjectGroupId(projectId, userId, env()) ?? ''
         if (expectedChatId !== undefined && (previous || null) !== expectedChatId && previous !== chatId) {
           return err(unavailable('项目的设备关联已更改，不能用旧的撤销操作覆盖。请重新读取项目。'))
         }
@@ -320,7 +309,7 @@ export function createSessionpageProjectGroupHost(deps: SessionpageProjectGroupH
           movedAgents,
           // 原来就绑在这个群上 = 没有被替换掉的群。
           previousChatId,
-          changed: recorded !== chatId || movedAgents > 0,
+          changed: previous !== chatId || movedAgents > 0,
         })
       })
     })
@@ -332,27 +321,26 @@ export function createSessionpageProjectGroupHost(deps: SessionpageProjectGroupH
     const userId = auth.userId
     const { projectId } = subject
     return withSessionpageProvisionLock(`project-group unbind ${projectId}`, async () => {
-      const recorded = await readProjectGroupId(projectId, userId, env())
-      const roster = await listAgents(env(), { includeGuests: true })
-      const bound = recorded || findGroupIdForProject(roster, projectId, userId) || ''
+      const bound = await readProjectGroupId(projectId, userId, env())
       if (!bound) return ok({ changed: false, expectedChatId: null })
       let reverted = 0
-      for (const agent of projectAgents(roster, subject, userId)) {
-        const before = agent.cache?.[GROUP_BEFORE_BIND_CACHE_KEY]
+      // The group the project was in before it was bound here (none when this device created the bound group).
+      let restored = ''
+      for (const agent of projectAgents(await listAgents(env(), { includeGuests: true }), subject, userId)) {
         if (cacheString(agent.cache, GROUP_CACHE_KEY) !== bound) continue
-        // The original device may have created the shared group, so it has no "before bind"
-        // cache. Clear that pin too; otherwise roster fallback immediately relinks this device.
-        const cache: Record<string, unknown> = { ...(agent.cache ?? {}), [GROUP_CACHE_KEY]: typeof before === 'string' ? before : '' }
+        const before = cacheString(agent.cache, GROUP_BEFORE_BIND_CACHE_KEY)
+        restored ||= before
+        const cache: Record<string, unknown> = { ...(agent.cache ?? {}), [GROUP_CACHE_KEY]: before }
         delete cache[GROUP_BEFORE_BIND_CACHE_KEY]
         await updateAgent({ guguUserId: agent.gugu_user_id }, { cache }, env())
         reverted++
       }
-      await forgetProjectGroupId(projectId, userId, env())
-      log.info({ projectId, chatId: bound || null, reverted }, '#7341 project unbound from its group — agents already in it stay')
-      // Capture the undo checkpoint under this same lock. Reading it later could mistake a
-      // concurrent new binding for the state produced by this unlink and let an old undo overwrite it.
-      const expectedChatId = findGroupIdForProject(await listAgents(env(), { includeGuests: true }), projectId, userId) || null
-      return ok({ changed: Boolean(recorded) || reverted > 0, expectedChatId })
+      if (restored) await rememberProjectGroupId(projectId, restored, userId, env())
+      else await forgetProjectGroupId(projectId, userId, env())
+      log.info({ projectId, chatId: bound, restored: restored || null, reverted }, '#7341 project unbound from its group — agents already in it stay')
+      // The undo checkpoint is the binding this unlink produced, taken under this same lock: read later, a concurrent new
+      // binding could be mistaken for it and let an old undo overwrite it.
+      return ok({ changed: true, expectedChatId: restored || null })
     })
   }
 

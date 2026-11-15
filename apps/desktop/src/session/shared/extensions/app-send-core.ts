@@ -315,6 +315,9 @@ export async function dispatchFromApp(
   here: DispatchHere,
 ): Promise<{ to: DispatchTarget; id?: string; deferred?: true } | { cancelled: true }> {
   const call = dispatchCallOf(args);
+  // A binding is the host's to resolve against its own grant (#1927, desktop `dispatchForApp`), before this: one reaching
+  // here has no host that resolves it, and is refused rather than read as any other target.
+  if (call.to && 'binding' in call.to) throw new AppSendError('denied', 'This host has no conversation binding to put a draft into');
   let text = call.text;
   let visible = call.visible;
   let to: NonNullable<DispatchPicked>['to'] | null = call.to;

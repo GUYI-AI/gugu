@@ -1,4 +1,5 @@
 import type { NormalizedEvent, NormalizedToolStatus } from '../../acp/reducer/normalized-event';
+import type { WindowCacheContext } from '../window-cache/types';
 import type { EntityContent } from '../../acp/models/entity-content';
 import type { ToolImage } from '../../acp/models/turns/tool-calls';
 import { hasRecordedAnswers, serializePayload, toolOutputText } from '../../acp/models/tool-payload';
@@ -22,8 +23,15 @@ import { RECORD_KEY_BOUNDARY_SUFFIX, type RecordBoundary, type RecordEntry, type
 export type RecordSourceWarn = (message: string, detail?: Record<string, unknown>) => void;
 
 export type SessionRecordSourceOptions = {
+  /** Host-owned namespace for bounded capture/locator writes; no historical export is passed. */
+  windowCache?: WindowCacheContext;
   /** A bounded historical read; compressed archives are never followed as live files. */
   readMode?: 'snapshot';
+  /**
+   * A store fill's read: long pictures' base64 is left in the record, replaced by its place there (`picture-elider.ts`),
+   * and each entry carries the decoder state before its line (`RecordEntry.state`), so a later fill can start there.
+   */
+  fill?: boolean;
   /** The parent's primary-file UUID chain. A fork snapshot emits only after its proven common prefix. */
   parentLineage?: readonly RecordLineageNode[];
   /**
@@ -128,13 +136,15 @@ export function emitJsonLines(
   warn: RecordSourceWarn,
   sink: (entries: RecordEntry[]) => void,
   decode: (record: Record<string, unknown>) => RecordEntry[] | null,
-  annotate?: (entries: RecordEntry[], index: number) => void
+  annotate?: (entries: RecordEntry[], index: number) => void,
+  offsets?: readonly number[],
 ): void {
   let batch: RecordEntry[] = [];
   forEachJsonLine(lines, name, warn, (record, index) => {
     const entries = decode(record);
     if (!entries) return false;
     annotate?.(entries, index);
+    if (offsets) for (const entry of entries) entry.position = offsets[index];
     for (const entry of entries) {
       batch.push(entry);
       if (batch.length >= EMIT_CHUNK) {

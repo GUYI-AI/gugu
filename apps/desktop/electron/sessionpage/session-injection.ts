@@ -160,8 +160,24 @@ export async function sessionInjectionCapabilityForSession(
 
 type InboxUnitMessage = { id: string; text: string; kind?: 'ordinary' | 'session-direct'; sources?: readonly AgentInboxSource[] }
 
+/** 暂时性的叫不醒:第 n 次失败后隔 min(首档 × 2^(n-1), 上限) 才再真起一次。 */
+export const WAKE_RETRY_FIRST_MS = 30_000
+export const WAKE_RETRY_MAX_MS = 30 * 60_000
+
 export class SessionpageLocalDeliveryRouter {
   private readonly wakeFlights = new Map<string, Promise<'reopened' | 'already-running'>>()
+  /**
+   * @@@wake-gate 每条会话最近一次叫不醒的事实。投递方(到点的排程、收件箱、outbox)各自按自己的节奏重试,
+   * 每次都走到这里;没有这一格,每次重试都真起一次引擎 —— 版本太旧时一分钟几十次拉起外部程序(11-12 Windows 实撞)。
+   * - 宿主判定「harness 版本低于下界」(界面上给升级出口的同一个事实)⇒ 停在这里,直到这条会话 live(人修好后打开它);
+   * - 其余 ⇒ 指数退避,有上限;
+   * - 期间的唤醒直接拿上次的原因失败,❌ 再起进程。成功 / 会话 live ⇒ 清掉。
+   */
+  private readonly wakeFailures = new Map<string, {
+    error: SessionWakeError; reason: string; failures: number; retryAt: number;
+    /** 已经记进日志的原因:同一个原因只记一行,之后静默;原因变了再记。 */
+    loggedReason?: string;
+  }>()
 
   constructor(
     private readonly targets: readonly SessionpageDeliveryTarget[],
@@ -173,6 +189,9 @@ export class SessionpageLocalDeliveryRouter {
       wakeSession?: (sessionId: string) => Promise<unknown>;
       /** 这条会话由本机起的引擎进程此刻在不在(`session-process.ts` 的唯一事实);在 = 唤醒什么也起不了。 */
       processRunning?: (sessionId: string) => boolean;
+      /** 这条会话最近一次启动失败是不是「harness 版本低于下界」(`spawn-failure.ts` 的唯一事实):是 = 重试也一样,等人。 */
+      runtimeUpgradeRequired?: (sessionId: string) => boolean;
+      now?: () => number;
       onWakeComplete?: (agentUserId: string, sessionId: string) => void;
     } = {},
   ) {}
@@ -215,19 +234,45 @@ export class SessionpageLocalDeliveryRouter {
   private async wakeSessionOnce(sessionId: string): Promise<'reopened' | 'already-running'> {
     await this.waitUntilReady()
     this.assertNotArchived(sessionId)
-    let outcome: 'reopened' | 'already-running' = 'already-running'
-    if (!this.options.processRunning?.(sessionId)) {
-      if (!this.options.wakeSession) {
-        throw new SessionWakeError(sessionId, 'session-page host wake is unavailable')
-      }
-      try {
-        await this.options.wakeSession(sessionId)
-      } catch (error) {
-        throw new SessionWakeError(sessionId, `reopening the session failed: ${error instanceof Error ? error.message : String(error)}`)
-      }
-      outcome = 'reopened'
+    if (this.options.processRunning?.(sessionId)) {
+      this.wakeFailures.delete(sessionId)
+      return 'already-running'
     }
-    return outcome
+    if (!this.options.wakeSession) {
+      throw new SessionWakeError(sessionId, 'session-page host wake is unavailable')
+    }
+    const now = this.options.now ?? Date.now
+    const last = this.wakeFailures.get(sessionId)
+    if (last && now() < last.retryAt) throw last.error
+    try {
+      await this.options.wakeSession(sessionId)
+    } catch (error) {
+      const said = `reopening the session failed: ${error instanceof Error ? error.message : String(error)}`
+      const failures = (last?.failures ?? 0) + 1
+      const parked = this.options.runtimeUpgradeRequired?.(sessionId) === true
+      const retryAt = parked ? Infinity : now() + Math.min(WAKE_RETRY_FIRST_MS * 2 ** (failures - 1), WAKE_RETRY_MAX_MS)
+      const wakeError = new SessionWakeError(sessionId, parked
+        ? `${said} Not retried until this session is opened again after the fix.`
+        : `${said} Next wake attempt not before ${new Date(retryAt).toISOString()}.`)
+      this.wakeFailures.set(sessionId, { error: wakeError, reason: said, failures, retryAt, ...(last?.loggedReason ? { loggedReason: last.loggedReason } : {}) })
+      throw wakeError
+    }
+    this.wakeFailures.delete(sessionId)
+    return 'reopened'
+  }
+
+  private warnWakeFailureOnce(error: SessionWakeError, fields: Record<string, unknown>, msg: string): void {
+    const remembered = error.sessionId ? this.wakeFailures.get(error.sessionId) : undefined
+    if (remembered?.error === error) {
+      if (remembered.loggedReason === remembered.reason) return
+      remembered.loggedReason = remembered.reason
+    }
+    deliveryLogger().warn({ ...fields, error: error.message }, msg)
+  }
+
+  /** 这条会话 live 了(人打开了它、或别的路起来了):之前叫不醒的事实作废。 */
+  sessionLive(sessionId: string): void {
+    this.wakeFailures.delete(sessionId)
   }
 
   /** 按 agent 唤醒(收件箱与云端 agent.deliver):映射解析出 conversation,再走 {@link wakeSession}。 */
@@ -257,7 +302,7 @@ export class SessionpageLocalDeliveryRouter {
     const first = await attempt()
     if (first !== 'not-live') return first
     const fail = (error: SessionWakeError): never => {
-      deliveryLogger().warn({ sessionId, error: error.message }, 'session-direct target not live after wake')
+      this.warnWakeFailureOnce(error, { sessionId }, 'session-direct target not live after wake')
       throw error
     }
     let outcome: 'reopened' | 'already-running'
@@ -355,7 +400,8 @@ export class SessionpageLocalDeliveryRouter {
     const accepted = await this.tryInjectSessionMessage(sessionId, message)
     if (accepted === false) {
       void this.wakeSession(sessionId).catch((error: unknown) => {
-        deliveryLogger().warn({ sessionId, messageId: message.id, error: error instanceof Error ? error.message : String(error) }, 'session-message wake failed')
+        if (error instanceof SessionWakeError) this.warnWakeFailureOnce(error, { sessionId, messageId: message.id }, 'session-message wake failed')
+        else deliveryLogger().warn({ sessionId, messageId: message.id, error: error instanceof Error ? error.message : String(error) }, 'session-message wake failed')
       })
     }
     return accepted
@@ -375,6 +421,8 @@ export class SessionpageLocalDeliveryRouter {
     const owner = await this.deliveryTargetForSession(sessionId)
     const capability = owner ? await sessionInjectionCapabilityForSession(owner.target, owner.deliveryKey) : null
     if (!owner || !capability) {
+      // 门里记着这条会话叫不醒:不在册就是那个原因,那一行已经记过了。
+      if (this.wakeFailures.has(sessionId)) return false
       deliveryLogger().warn(
         { ...log, sessionId, deliveryKey: owner?.deliveryKey ?? null, messageId: message.id },
         'session 在注入权威处无登记,拒绝注入(消息留在来源侧,等登记出现的边界再投)',

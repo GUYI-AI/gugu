@@ -1,5 +1,6 @@
 import { ProjectManagerStore } from '@renderer/features/projects/stores/project-manager';
 import { SidebarStore } from '@renderer/features/sidebar/sidebar-store';
+import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { NavigationHistoryStore } from './navigation-history-store';
 import { NavigationStore } from './navigation-store';
 import { ResourceMonitorStore } from './resource-monitor-store';
@@ -18,6 +19,12 @@ class AppState {
     this.projects = new ProjectManagerStore();
     // #6264 别的机器上的项目与本机项目在同一张项目表里(按 Zed,机器是项目的属性),侧栏只读这一张。
     this.sidebar = new SidebarStore(this.projects);
+    // 账号上的项目认本地项目:读这一张项目表,别的机器上的项目在哪台、连没连着照侧栏注入的机器读数(remoteHostsStore.start)。
+    accountProjectsStore.attach({
+      projects: this.projects.projects,
+      machineOf: (projectId) => this.sidebar.machines?.machineOf(projectId) ?? null,
+      connected: (deviceId) => this.sidebar.machines?.connected?.(deviceId) === true,
+    });
     this.history = new NavigationHistoryStore();
     this.navigation = new NavigationStore();
     this.resourceMonitor = new ResourceMonitorStore();

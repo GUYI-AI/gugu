@@ -72,6 +72,17 @@ describe('chat members in the phone App context', () => {
     expect(contextEvents().at(-1)![0].event.context.chat.members).toMatchObject([{ id: `user:${PERSON}` }])
   })
 
+  it('API 25 is told again when one of its members is renamed, and not for someone outside the chat', async () => {
+    start(25)
+    await call('getContext')
+    const pushed = contextEvents().length
+    host!.membersChanged([{ memberId: '0a000000-0000-4000-8000-0000000000ff', left: false, renamed: true }])
+    await call('getContext')
+    expect(contextEvents().length).toBe(pushed)
+    host!.membersChanged([{ memberId: PERSON, left: false, renamed: true }])
+    await until('the phone pushes the renamed member', () => contextEvents().length > pushed)
+  })
+
   it('API 27 omits members, supports the explicit call and does not push on roster changes', async () => {
     start(27)
     const first = await call('getContext')

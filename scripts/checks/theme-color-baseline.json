@@ -6,6 +6,11 @@
   },
   {
     "rule": "hard-coded-color",
+    "file": "packages/session-ui/src/react/components/chat-composer/composer-contract.css.ts",
+    "count": 66
+  },
+  {
+    "rule": "hard-coded-color",
     "file": "packages/session-ui/src/styles/recipes/popup-surface.css.ts",
     "count": 1
   }

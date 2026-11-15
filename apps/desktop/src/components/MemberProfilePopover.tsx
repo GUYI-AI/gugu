@@ -1,7 +1,7 @@
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { AUTOMATION_TEST_IDS, type AutomationTestId } from '../lib/automationDom'
 import { MemberProfileCard, type MemberProfileChatTarget, type MemberProfileEditControls } from './MemberProfileCard'
-import type { ActiveMemberProfile } from './memberProfileModels'
+import type { ActiveMemberProfile, MemberProfileHandle } from './memberProfileModels'
 import { useContactsStore } from '../store/contactsContext'
 import { useAuth } from '../store/auth'
 import { useChatStore } from '../store/chatContext'
@@ -9,6 +9,7 @@ import { useMobileShell } from '../hooks/useMobileShell'
 import { Popover } from './ui/Popover'
 import { Sheet } from './ui/Sheet'
 import { useTranslation } from 'react-i18next'
+import { useState, type ReactNode } from 'react'
 import { searchInChat } from '@renderer/features/global-search/search-session'
 
 const adjacentSettingsSelector = '[data-testid="sidebar-profile-button"], [data-testid="sidebar-profile-menu"], [data-testid="sidebar-settings-nav"], [data-testid="settings-panel"]'
@@ -17,6 +18,51 @@ function isAdjacentSettingsTarget(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest(adjacentSettingsSelector) !== null
 }
 
+/** On the phone the card is a bottom sheet, outside the popover: the sheet owns its dismissal, a press in it is not outside. */
+function isInProfileSheet(target: EventTarget | null): boolean {
+  return target instanceof Element && !!target.closest('.gg-sheet-content')?.querySelector('[data-profile-member-id]')
+}
+
+/**
+ * A host's one profile card. Every avatar / member row that opens it is a `Popover.Trigger` of `handle` with the profile as
+ * payload, so Base UI owns the toggle: a second press on the same avatar closes the card, another avatar moves it.
+ * `children` draws the card for the opened profile (a `MemberProfilePopover`), so a host can refresh it from its roster.
+ */
+export function MemberProfileRoot({ handle, onOpenChange, children }: {
+  handle: MemberProfileHandle
+  onOpenChange?: (open: boolean) => void
+  children: (profile: ActiveMemberProfile) => ReactNode
+}) {
+  // Base UI keeps the last payload after closing (for the exit animation); the phone's bottom sheet is not inside the
+  // popover, so the card is drawn only while the card is open.
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover.Root
+      handle={handle}
+      modal={false}
+      onOpenChange={(next, eventDetails) => {
+        if (!next) {
+          const nextTarget = eventDetails.event instanceof FocusEvent
+            ? eventDetails.event.relatedTarget
+            : null
+          const keepsCard = (target: EventTarget | null) => isAdjacentSettingsTarget(target) || isInProfileSheet(target)
+          const staysOpen = (eventDetails.reason === 'outside-press' || eventDetails.reason === 'focus-out')
+            && (keepsCard(eventDetails.event.target) || keepsCard(nextTarget))
+          if (staysOpen) {
+            eventDetails.cancel()
+            return
+          }
+        }
+        setOpen(next)
+        onOpenChange?.(next)
+      }}
+    >
+      {({ payload }) => open && payload ? children(payload) : null}
+    </Popover.Root>
+  )
+}
+
+/** The card layer inside a `MemberProfileRoot` (a bottom sheet on the phone). */
 export function MemberProfilePopover({
   profile,
   onClose: _onClose,
@@ -73,45 +119,26 @@ export function MemberProfilePopover({
 
   // @@@no-close-x - Base UI handles outside press + Escape; the corner X was redundant.
   return (
-    <Popover.Root
-      open
-      modal={false}
-      onOpenChange={(open, eventDetails) => {
-        if (open) return
-        const nextTarget = eventDetails.event instanceof FocusEvent
-          ? eventDetails.event.relatedTarget
-          : null
-        const opensAdjacentSettings = (eventDetails.reason === 'outside-press' || eventDetails.reason === 'focus-out')
-          && (isAdjacentSettingsTarget(eventDetails.event.target) || isAdjacentSettingsTarget(nextTarget))
-        if (opensAdjacentSettings) {
-          eventDetails.cancel()
-          return
-        }
-        _onClose()
-      }}
-    >
-      <Popover.Portal>
-        <Popover.Positioner
-          anchor={profile.anchor}
-          positionMethod="fixed"
-          side={side}
-          align="start"
-          sideOffset={gap}
-          alignOffset={-8}
-          collisionPadding={8}
-          collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}
+    <Popover.Portal>
+      <Popover.Positioner
+        positionMethod="fixed"
+        side={side}
+        align="start"
+        sideOffset={gap}
+        alignOffset={-8}
+        collisionPadding={8}
+        collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}
+      >
+        <Popover.Popup
+          role="dialog"
+          aria-label={ariaLabel}
+          data-testid={testId}
+          {...memberData}
+          style={{ width }}
         >
-          <Popover.Popup
-            role="dialog"
-            aria-label={ariaLabel}
-            data-testid={testId}
-            {...memberData}
-            style={{ width }}
-          >
-            {card}
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+          {card}
+        </Popover.Popup>
+      </Popover.Positioner>
+    </Popover.Portal>
   )
 }

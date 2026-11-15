@@ -36,7 +36,7 @@ it('the real projection hook must not overwrite a newer durable unread tuple whe
     const canAcknowledge = useCallback(() => true, [])
     const visibleSeqOf = useCallback(() => 5, [])
     const onActiveRevoked = useCallback(() => undefined, [])
-    binding = useChatProjectionBinding({ ledger: ledger.current, repositoryRef, getRepository, chatsRef,
+    binding = useChatProjectionBinding({ ledger: ledger.current, conversations: { readSeqsOf: () => undefined }, repositoryRef, getRepository, chatsRef,
       activeChatIdRef, requestSeqRef, canAcknowledge, visibleSeqOf, setChats: setRows, onActiveRevoked,
       notifications: { chatMessages: false, sound: false } })
     return null

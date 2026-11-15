@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import type { AgentSettingsTab } from './types'
@@ -19,16 +19,16 @@ import { AgentSharePane } from './AgentSharePane'
 import { AgentTasksPane } from './AgentTasksPane'
 import { AgentAiModelPane } from './AgentAiModelPane'
 import { useAgentDisplayStatus } from '../../hooks/useAgentDisplayStatus'
-import { useAgentHeaderStatusText } from '../../hooks/useAgentHeaderStatusText'
-import { useShownAgentStatus } from '../chat/useAgentsOnCloudComputer'
+import { useAgentHeaderStatus } from '../../hooks/useAgentHeaderStatusText'
+import { agentStatusColorVar, type AgentStatusTone } from '@gugu/core/shared/agentStatusPresentation'
 import { useContactsStore } from '../../store/contactsContext'
-import { Palette, PaletteFilled } from '@/lib/icons'
-import { Button } from '../ui/Button'
+
+const ALERT_DOT_TONES: ReadonlySet<AgentStatusTone> = new Set(['error', 'needs_user', 'running', 'parked'])
 
 export interface AgentSettingsModalProps {
   agent: ContactUser
   onClose?: () => void
-  /** 打开时停在哪一页(「助理」App 里点头像换形象 = 'look')。 */
+  /** 打开时停在哪一页(「助理」App 里点头像换形象 = 'look')。个人助理只有形象一页,任何一页都落到它。 */
   initialTab?: AgentSettingsTab
   zIndex?: number | string
 }
@@ -39,11 +39,15 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
   // 通讯录里有这个人就读通讯录里最新的。
   const { contacts } = useContactsStore()
   const agent = contacts.find((contact) => contact.id === openedAgent.id) ?? openedAgent
+  // 个人助理(owner 11-12):这里只有形象 —— 名字在它 App 资料页的标题上改,定时任务在 App 的任务页,模型在 App 资料页,
+  // 分享对个人助理不适用。没有左栏,任何入口(哪怕点名要某一页)都落到形象。
   const assistant = useIsAssistantAvatar(agent.id)
-  const { presence, status: displayStatus } = useAgentDisplayStatus(agent.id)
-  const headerStatus = useAgentHeaderStatusText(agent.id)
-  const shownStatus = useShownAgentStatus().status(agent.id, displayStatus) // #7199 宿主闲时收回着 ≠ 不在线
-  const headerOffline = shownStatus === 'offline' || shownStatus === 'removed'
+  const { presence } = useAgentDisplayStatus(agent.id)
+  const headerStatus = useAgentHeaderStatus(agent.id)
+  // 点与那一句状态读同一格:出错、需要你、在跑(含后台在跑)取共用色表(agentStatusColorVar)的红 / 黄 / 橙 ——
+  // ❌ 出错了还画绿点。其余照旧:不在线 / 已移除灰,别的绿。
+  const dotColor = headerStatus.tone && ALERT_DOT_TONES.has(headerStatus.tone) ? agentStatusColorVar(headerStatus.tone) : null
+  const headerOffline = headerStatus.tone === 'offline' || headerStatus.tone === 'removed'
   const accountStatus = presence.payload?.accountStatus ?? null
   const closeRequestedRef = useRef(false)
   const requestClose = useCallback(() => {
@@ -51,18 +55,21 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
     closeRequestedRef.current = true
     onClose?.()
   }, [onClose])
-  const [activeTab, setActiveTab] = useState<AgentSettingsTab>(resolveAgentSettingsTab(initialTab, assistant))
+  const [chosenTab, setActiveTab] = useState<AgentSettingsTab>(resolveAgentSettingsTab(initialTab, assistant))
+  // 认出它是个人助理可能晚于打开:按此刻认的算,❌ 只看打开那一刻。
+  const activeTab: AgentSettingsTab = assistant ? 'look' : chosenTab
   // @@@1787 手机化(owner 审核:桌面双栏塞 390px 全挤坏)——mobile 单栏状态机:nav 全宽列表 ⇄ 详情页,
   // 出口/返回=左上箭头(手机导航规范),✗ 只留桌面。
   const mobileShell = useMobileShell()
   const [mobilePane, setMobilePane] = useState<'nav' | 'detail'>(initialTab === 'profile' ? 'nav' : 'detail')
+  const showDetail = !mobileShell || assistant || mobilePane === 'detail'
 
   useEffect(() => {
     if (accountStatus === 'removed') requestClose()
   }, [accountStatus, requestClose])
 
   function selectTab(tab: AgentSettingsTab) {
-    if (tab === 'look' && !assistant) return
+    if (assistant || tab === 'look') return
     setActiveTab(tab)
     if (mobileShell) setMobilePane('detail')
   }
@@ -83,7 +90,7 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
       onClose={requestClose}
       // 返回键 / Esc 与左上箭头同一件事:详情层先回 nav 层,❌ 整个设置一起关掉。
       onEscape={() => {
-        if (!mobileShell || mobilePane !== 'detail') return false
+        if (!mobileShell || assistant || mobilePane !== 'detail') return false
         setMobilePane('nav')
         return true
       }}
@@ -98,8 +105,8 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
             <button
               type="button"
               className="gg-pressable"
-              aria-label={mobilePane === 'detail' ? t('settings.back') : t('settings.close')}
-              onClick={() => (mobilePane === 'detail' ? setMobilePane('nav') : requestClose())}
+              aria-label={mobilePane === 'detail' && !assistant ? t('settings.back') : t('settings.close')}
+              onClick={() => (mobilePane === 'detail' && !assistant ? setMobilePane('nav') : requestClose())}
               style={{
                 width: 38,
                 height: 38,
@@ -131,7 +138,13 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
           <div className={asClass.titleBlock}>
             <span className={asClass.name}>{agent.display_name}</span>
             {/* 与聊天标题栏同一句「状态 · 在哪台机器 · 引擎」(❌ 写死的「外部 · 本机」「在线 · Local ACP」)。 */}
-            <span className={asClass.status} data-testid="agent-settings-header-status" data-offline={headerOffline || undefined}>{headerStatus}</span>
+            <span
+              className={asClass.status}
+              data-testid="agent-settings-header-status"
+              data-tone={headerStatus.tone ?? undefined}
+              data-offline={headerOffline || undefined}
+              style={dotColor ? ({ '--gg-as-status-dot': dotColor } as CSSProperties) : undefined}
+            >{headerStatus.text}</span>
           </div>
           {!mobileShell ? (
           <button className={asClass.close} onClick={requestClose} aria-label={t('settings.close')}>
@@ -148,8 +161,8 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
 
         {/* main */}
         <div className={asClass.main}>
-          {/* rail — mobile: 全宽单栏列表(nav 层),选中即进详情 */}
-          <nav
+          {/* rail — mobile: 全宽单栏列表(nav 层),选中即进详情。个人助理只有形象一页:没有左栏。 */}
+          {assistant ? null : <nav
             className={asClass.rail}
             style={mobileShell ? { width: '100%', borderRight: 'none', padding: '8px 14px', display: mobilePane === 'nav' ? 'flex' : 'none' } : undefined}
           >
@@ -173,18 +186,6 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
               </svg>
               {t('settings.nav.profile')}
             </button>
-
-            {assistant ? <Button
-              variant="ghost"
-              className={cx(agentSettingsTabClass(activeTab === 'look'), 'min-h-0 justify-start leading-[inherit]')}
-              style={mobileTabStyle}
-              onClick={() => selectTab('look')}
-              data-testid="agent-settings-tab-look"
-            >
-              <Palette size={16} className="gg-as-il" aria-hidden="true" />
-              <PaletteFilled size={16} className="gg-as-if" aria-hidden="true" />
-              {t('settings.nav.look')}
-            </Button> : null}
 
             {/* 分享 */}
             <button
@@ -247,20 +248,21 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
                 {t('settings.nav.aiModel')}
               </button>
 
-          </nav>
+          </nav>}
 
           {/* body — render active pane; mobile: 详情层全宽 */}
           <div
             className={asClass.body}
             data-active-tab={activeTab}
-            style={mobileShell ? { padding: '20px 16px max(24px, env(safe-area-inset-bottom))', display: mobilePane === 'detail' ? (activeTab === 'profile' ? 'flex' : 'block') : 'none' } : undefined}
+            style={mobileShell ? { padding: '20px 16px max(24px, env(safe-area-inset-bottom))', display: showDetail ? (activeTab === 'profile' ? 'flex' : 'block') : 'none' } : undefined}
           >
+            {assistant ? (
+              <div className={agentSettingsPaneClass(true)} data-testid="agent-settings-figure-only">
+                <AgentLookPane {...paneProps} />
+              </div>
+            ) : <>
             <div className={cx(agentSettingsPaneClass(activeTab === 'profile'), 'gg-as-pane-profile')}>
               <AgentProfilePane {...paneProps} />
-            </div>
-            <div className={agentSettingsPaneClass(activeTab === 'look')}>
-              {/* 只在这页开着时挂:里面有十几只会动的小鸟,藏着也跑是白烧 */}
-              {assistant && activeTab === 'look' ? <AgentLookPane {...paneProps} /> : null}
             </div>
             <div className={agentSettingsPaneClass(activeTab === 'share-act')}>
               <AgentSharePane {...paneProps} />
@@ -273,6 +275,7 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
             <div className={agentSettingsPaneClass(activeTab === 'aimodel')}>
               <AgentAiModelPane {...paneProps} />
             </div>
+            </>}
 
           </div>
         </div>

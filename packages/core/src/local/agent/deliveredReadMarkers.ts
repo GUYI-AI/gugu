@@ -46,14 +46,15 @@ function defaultMarkRead(
     rpc(
       fn: 'mark_read_on_deliver',
       args: Record<string, unknown>
-    ): PromiseLike<{ error: { message: string } | null }>
+    ): PromiseLike<{ error: { message: string } | null; status: number }>
   }
   return async (input) => {
-    const { error } = await client.rpc('mark_read_on_deliver', {
+    const { error, status } = await client.rpc('mark_read_on_deliver', {
       p_chat_id: input.chatId,
       p_message_id: input.messageId,
       p_user_id: input.agentUserId
     })
-    if (error) throw new Error(error.message)
+    // The HTTP status travels with the error: the reader retries only a network failure or a 5xx (agentInboxReader).
+    if (error) throw Object.assign(new Error(error.message), { status })
   }
 }

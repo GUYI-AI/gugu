@@ -5,7 +5,7 @@ import { formatAttachmentMetadata, parseAttachmentContent } from '@gugu/core/sha
 import { projectMessageSearchText } from '@gugu/core/shared/ui/messageSearchText'
 import { parseSystemNotice, turnFailureMarker } from '@gugu/core/shared/ui/systemNotice'
 import { parseComposerCard, type ComposerCard } from '@gugu/core/shared/ui/taskCardModels'
-import { parseVoiceAttachmentContent } from '@gugu/core/shared/ui/voiceAttachmentModels'
+import { formatVoiceAttachmentMetadata, parseVoiceAttachmentContent } from '@gugu/core/shared/ui/voiceAttachmentModels'
 import { message } from '../../../support/testHarness'
 
 const mediaFixtures = [
@@ -88,15 +88,22 @@ describe('message search text', () => {
   })
 
   it.each([
+    [voiceContent.replace('audio/ogg', 'Audio/ogg'), '语音独词 violettranscript'],
+    ['[附件] voice-orchid.ogg (audio/ogg)\n' + formatVoiceAttachmentMetadata(12345, '第一行\n第二行'), '第一行\n第二行'],
+  ])('projects supported voice MIME and multiline transcription: %j', (content, transcript) => {
+    expect(parseVoiceAttachmentContent(content)).toMatchObject({ mimeType: 'audio/ogg', transcript })
+    expect(parseAttachmentContent(content)).toBeNull()
+    expect(projectMessageSearchText(message({ content_type: 'attachment', content }))).toBe(`voice-orchid.ogg\n${transcript}`)
+  })
+
+  it.each([
     ...['0', '-1', '1.5', 'NaN'].map(value => voiceContent.replace('12345', value)),
     voiceContent.replace('voice-orchid.ogg (audio/ogg)', ''),
     voiceContent.replace('[附件] ', '[file] '),
     voiceContent.replace('[语音] ', '[voice] '),
     voiceContent.replace('[转写] ', '[transcript] '),
     voiceContent.replace('audio/ogg', 'text/plain'),
-    voiceContent.replace('audio/ogg', 'Audio/ogg'),
     voiceContent.replace('语音独词 violettranscript', ' \t'),
-    `${voiceContent}\nextra line`,
   ])('excludes an invalid voice only after both product parsers reject it: %j', (content) => {
     expect(parseVoiceAttachmentContent(content)).toBeNull()
     expect(parseAttachmentContent(content)).toBeNull()

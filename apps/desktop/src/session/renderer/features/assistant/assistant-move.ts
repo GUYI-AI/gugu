@@ -1,16 +1,16 @@
 // #7199 助理搬家(本机 ⇄ 云上)的编排。纯逻辑:两头的读写、开通 / 接过、重启都由调用方交进来(`MoveDeps`),
 // 桌面的真接线在 components/assistant/AssistantMoveGroup,单测用内存盘 + 假两头。
 //
-// 顺序(owner 10-16 定;controller 补:搬家 = 剪切,账号授权只留一份):
+// 顺序(owner 10-16 定;账号授权是复制,旧家那份留着):
 //   搬上云:读旧家(只读:数文件、记已安排、导出账号) → 接过(管家在云上落定,库把 users.device_id 切过去、给旧家发 agent.retire)
-//           → 拷文件 → 账号写进新家并核对 → 重排已安排 → 重启 → 撤旧家那份账号。
+//           → 拷文件 → 账号写进新家并核对 → 重排已安排 → 重启。
 //   搬回本机:读旧家 → 备好本机的家 → 拷文件 → 账号写进新家 → 接过(客户端 saga,blueprint 带 existing_agent_user_id)
-//           → 核对 → 重排已安排 → 重启 → 撤旧家那份账号。
+//           → 核对 → 重排已安排 → 重启。
 // 不变量:
 //   · 旧家的文件一个字节都不动(agent.retire 只停运行时),「清除旧家」是以后一个独立、明确的操作;
-//   · 账号授权**先写进新家并读回核对,才撤旧家那一份**;核对不上的那一条不撤(宁可两边都有,❌ 搬丢);
+//   · 账号授权只往新家写、从不撤旧家那一份,所以任何一步失败都不会两边都没有;存不进新家的(没有钥匙串……)列出来手动重连,❌ 让搬家失败;
 //   · 已安排要在「接过」之前读到手(旧家收到 agent.retire 时会把它们撤掉),并存进日志,中断后接着搬还在;
-//   · 日志记着「旧家是哪台」:中断后接着搬时旧家以日志为准,❌ 读此刻「它住哪」(接过之后那是新家 —— 会把新家当旧家去撤账号);
+//   · 日志记着「旧家是哪台」:中断后接着搬时旧家以日志为准,❌ 读此刻「它住哪」(接过之后那是新家);日志和报告里 ❌ 任何凭据;
 //   · 旧家的助理在搬的这段时间里还在写东西:搬上云是接过之后才拷(旧家已停,数两遍),搬回本机是接过之后再补一遍变了的;
 //   · 每一步可重来:拷贝同路径覆盖、账号 upsert、重排按「同一条已在」去重、接过先问「已经在新家了吗」。
 import type { IntegrationMoveExport, IntegrationMoveImport, MovableIntegrationAccount, MoveSkipped } from '@shared/core/integrations/integration-move';
@@ -30,7 +30,7 @@ import {
 
 export type MoveDirection = 'to-cloud' | 'to-computer';
 
-export type MoveStep = 'preflight' | 'adopt' | 'files' | 'accounts' | 'schedules' | 'restart' | 'revoke';
+export type MoveStep = 'preflight' | 'adopt' | 'files' | 'accounts' | 'schedules' | 'restart';
 
 export type MoveSchedule = {
   name: string;
@@ -56,10 +56,9 @@ export type MoveSide = {
   integrations: {
     exportForMove(): Promise<IntegrationMoveExport>;
     importFromMove(accounts: MovableIntegrationAccount[]): Promise<IntegrationMoveImport>;
-    /** 这一家在这一头此刻存着哪些账号 id(核对用)。 */
-    accountIds(integrationId: string): Promise<string[]>;
-    disconnect(integrationId: string, accountId: string): Promise<void>;
   };
+  /** 搬完放掉为搬家领的那份工作区(住云上的那份圈着整个主目录:建索引、监视都别留着)。单测里不给。 */
+  release?(): Promise<void>;
   schedules: {
     /** 助理在这一头排的「已安排」;`null` = 认不出它在这一头的会话(读不到,❌ 当成「一条都没有」)。 */
     list(): Promise<MoveSchedule[] | null>;
@@ -81,8 +80,8 @@ export type MoveJournal = {
   copies?: CopyCheckpoint['files'];
   sourceWorkdir?: string;
   model?: AgentModelSelection;
-  /** Confirmed handoff report and non-secret account references for source-independent activation retries. */
-  completion?: { report: MoveReport; accounts: MoveAccountRef[] };
+  /** Confirmed handoff report for source-independent activation retries. */
+  completion?: { report: MoveReport };
 };
 
 export type MoveProgress = {
@@ -96,10 +95,11 @@ export type MoveReport = {
   /** 没拷的(软链接),逐条回报。 */
   skippedFiles: { rel: string; reason: string }[];
   accounts: {
-    moved: { integrationId: string; accountId: string; displayName?: string }[];
+    /** 已经存进新家并读回核对过的(旧家那份还留着)。 */
+    moved: MoveAccountRef[];
+    /** 没带过去的,逐条带原因(新家要手动重连,或新家已有同名账号);旧家那份还留着。 */
     skipped: MoveSkipped[];
-    kept: { integrationId: string; accountId: string }[];
-    /** 那一头的咕咕比这个功能老(`unknown_method`):账号一个都没动,还在原处。 */
+    /** 读不到旧家的账号(它的咕咕比这个功能老,或它的钥匙串打不开):账号都还在原处,搬家照常。 */
     unsupported: boolean;
   };
   schedules: {
@@ -140,11 +140,10 @@ export interface MoveDeps {
 type MoveAccountRef = { integrationId: string; accountId: string; displayName?: string };
 type MoveCompletionDeps = Pick<MoveDeps, 'direction' | 'assistantId' | 'journal' | 'isAdopted' | 'onProgress'> & {
   activate(): Promise<void>;
-  disconnect(account: MoveAccountRef): Promise<void>;
 };
 
 function emptyMoveReport(): MoveReport {
-  return { files: 0, skippedFiles: [], accounts: { moved: [], skipped: [], kept: [], unsupported: false },
+  return { files: 0, skippedFiles: [], accounts: { moved: [], skipped: [], unsupported: false },
     schedules: { restored: 0, skipped: [], unsupported: [], unreadable: false }, warnings: [] };
 }
 
@@ -156,39 +155,23 @@ export async function resumeMoveCompletion(deps: MoveCompletionDeps): Promise<Mo
   try {
     if (!await deps.isAdopted()) throw new Error('The assistant is no longer at the recorded target');
   } catch (cause) { throw new MoveError('adopt', cause, false); }
-  return completeMove(deps, saved, structuredClone(saved.completion?.report ?? emptyMoveReport()), saved.completion?.accounts);
+  const report = structuredClone(saved.completion?.report ?? emptyMoveReport());
+  // 老版本的日志把已核对的账号另存在 `completion.accounts`,等撤旧家时才记进报告:现在不撤了,直接算带过去了。
+  const legacyVerified = (saved.completion as { accounts?: MoveAccountRef[] } | undefined)?.accounts ?? [];
+  report.accounts.moved.push(...legacyVerified);
+  return completeMove(deps, saved, report);
 }
 
-async function completeMove(deps: Pick<MoveCompletionDeps, 'activate' | 'disconnect' | 'journal' | 'onProgress'>,
-  journal: MoveJournal, report: MoveReport, accounts: MoveAccountRef[] | undefined): Promise<MoveReport> {
+async function completeMove(deps: Pick<MoveCompletionDeps, 'activate' | 'journal' | 'onProgress'>,
+  journal: MoveJournal, report: MoveReport): Promise<MoveReport> {
   const guard = async (step: MoveStep, run: () => Promise<unknown>) => {
     try { await run(); }
     catch (cause) { throw cause instanceof MoveError ? cause : new MoveError(step, cause, false); }
   };
-  const finish = async (step: MoveStep) => {
-    if (!journal.done.includes(step)) journal.done.push(step);
-    await guard(step, async () => deps.journal.save(journal));
-  };
   deps.onProgress?.({ step: 'restart' });
   await guard('restart', deps.activate);
-  await finish('restart');
-  if (!accounts) {
-    // Earlier journals cannot prove which source accounts were verified. Restore availability but retain recovery.
-    report.warnings.push('revoke: source account verification references are missing; recovery retained for manual cleanup');
-    return report;
-  }
-  deps.onProgress?.({ step: 'revoke' });
-  for (const account of accounts) {
-    try {
-      await deps.disconnect(account);
-      report.accounts.moved.push(account);
-    } catch (cause) {
-      report.accounts.kept.push({ integrationId: account.integrationId, accountId: account.accountId });
-      report.warnings.push(`revoke ${account.integrationId}/${account.accountId}: ${cause instanceof Error ? cause.message : String(cause)}`);
-    }
-  }
-  await finish('revoke');
-  await guard('revoke', async () => deps.journal.clear());
+  if (!journal.done.includes('restart')) journal.done.push('restart');
+  await guard('restart', async () => deps.journal.clear());
   return report;
 }
 
@@ -246,8 +229,7 @@ export async function runMove(deps: MoveDeps): Promise<MoveReport> {
   if (resumed?.source && (resumed.source.deviceId !== deps.sourceHome.deviceId || resumed.source.kind !== deps.sourceHome.kind)) {
     throw new MoveError('preflight', new Error('the journal was written for a different source home'), false);
   }
-  const completed = await resumeMoveCompletion({ ...deps, activate: deps.restoreOnline ?? deps.restart,
-    disconnect: account => deps.source.integrations.disconnect(account.integrationId, account.accountId) });
+  const completed = await resumeMoveCompletion({ ...deps, activate: deps.restoreOnline ?? deps.restart });
   if (completed) return completed;
   const journal: MoveJournal = resumed ?? {
     direction: deps.direction,
@@ -356,39 +338,39 @@ export async function runMove(deps: MoveDeps): Promise<MoveReport> {
     }
   };
 
-  // 2. 账号:读旧家的、写进新家、读回核对。撤旧家那一份放在最后(接过 + 重排之后)。
-  const verified: MovableIntegrationAccount[] = [];
+  // 2. 账号:读旧家的、写进新家(新家逐条存、逐条读回核对)。到这里失败都不算搬家失败:旧家那份一直在,如实列出来手动重连。
   const copyAccounts = async (to: MoveSide) => {
     progress('accounts');
+    // 只记错误类型名:错误文案可能夹带写入的参数,❌ 进报告和日志。
+    const errorName = (cause: unknown) => (cause instanceof Error ? cause.name : typeof cause);
     let exported: IntegrationMoveExport;
-    let imported: IntegrationMoveImport;
     try {
       exported = await deps.source.integrations.exportForMove();
-      report.accounts.skipped.push(...exported.skipped);
-      if (exported.accounts.length === 0) return;
+    } catch (cause) {
+      // 读不到(旧家的咕咕比这个功能老、旧家的钥匙串打不开)= 账号原样留在原处。
+      report.accounts.unsupported = true;
+      if (!isUnknownMethod(cause)) report.warnings.push(`integrations export failed: ${errorName(cause)}`);
+      return;
+    }
+    report.accounts.skipped.push(...exported.skipped);
+    if (exported.accounts.length === 0) return;
+    const ref = ({ integrationId, accountId, displayName }: MovableIntegrationAccount): MoveAccountRef => ({ integrationId, accountId, ...(displayName ? { displayName } : {}) });
+    let imported: IntegrationMoveImport;
+    try {
       imported = await to.integrations.importFromMove(exported.accounts);
     } catch (cause) {
-      // 哪一头的咕咕比这个功能老:账号原样留在原处(还没撤任何一份),如实说,❌ 当成搬家失败回滚整件事。
       if (isUnknownMethod(cause)) {
         report.accounts.unsupported = true;
         return;
       }
-      throw cause;
+      report.warnings.push(`integrations import failed: ${errorName(cause)}`);
+      report.accounts.skipped.push(...exported.accounts.map((account): MoveSkipped => ({
+        ...ref(account), ...(account.config ? { config: account.config } : {}), reason: 'import-failed' })));
+      return;
     }
     report.accounts.skipped.push(...imported.skipped);
     const refused = new Set(imported.skipped.map((s) => `${s.integrationId}/${s.accountId ?? ''}`));
-    const byIntegration = new Map<string, Set<string>>();
-    for (const account of exported.accounts) {
-      if (refused.has(`${account.integrationId}/${account.accountId}`)) continue;
-      let ids = byIntegration.get(account.integrationId);
-      if (!ids) {
-        ids = new Set(await to.integrations.accountIds(account.integrationId));
-        byIntegration.set(account.integrationId, ids);
-      }
-      // 写进去了、读得回来才算数:读不回来的这一条不撤旧家那份。
-      if (ids.has(account.accountId)) verified.push(account);
-      else report.accounts.kept.push({ integrationId: account.integrationId, accountId: account.accountId });
-    }
+    report.accounts.moved.push(...exported.accounts.filter((a) => !refused.has(`${a.integrationId}/${a.accountId}`)).map(ref));
   };
 
   if (deps.direction === 'to-cloud') {
@@ -430,20 +412,7 @@ export async function runMove(deps: MoveDeps): Promise<MoveReport> {
     const result = await guard('schedules', () => target!.schedules.restore(journal.schedules!));
     report.schedules = { ...result, unsupported: [], unreadable: report.schedules.unreadable };
   }
-  const accounts = verified.map(({ integrationId, accountId, displayName }) => ({ integrationId, accountId, displayName }));
-  journal.completion = { report: structuredClone(report), accounts };
+  journal.completion = { report: structuredClone(report) };
   await finish('schedules');
-  return completeMove({ ...deps, activate: deps.restart,
-    disconnect: account => deps.source.integrations.disconnect(account.integrationId, account.accountId) }, journal, report, accounts);
-}
-
-/** 确认框里列「这次会带走哪些账号」:名字、不含任何密钥;命令行那几家与读不出密钥的另列「要重新连」。 */
-export function summarizeAccounts(exported: IntegrationMoveExport): {
-  moving: { integrationId: string; accountId: string; displayName?: string }[];
-  reconnect: MoveSkipped[];
-} {
-  return {
-    moving: exported.accounts.map(({ integrationId, accountId, displayName }) => ({ integrationId, accountId, displayName })),
-    reconnect: exported.skipped,
-  };
+  return completeMove({ ...deps, activate: deps.restart }, journal, report);
 }

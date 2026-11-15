@@ -33,12 +33,17 @@ const DIR_CONCURRENCY = 16;
 type Child = { id: string; name: string; callId: string; task?: string; model?: string };
 type Ordinals = { turn: number; item: number; userSeen: boolean; calls: Record<string, Record<string, unknown>>; children: Record<string, Child> };
 
-export function createCodexJsonlSource(locator: SessionRecordLocator, options?: SessionRecordSourceOptions, nativeChild = false): SessionRecordSource {
+export function createCodexJsonlSource(locator: SessionRecordLocator, options?: SessionRecordSourceOptions, nativeChild = false, ancestors: ReadonlySet<string> = new Set()): SessionRecordSource {
+  const lineage = new Set(ancestors);
+  lineage.add(locator.providerSessionId);
   const root = createJsonlTailSource<Ordinals>(locator, options, {
     name: 'codex',
     resumeVersion: 6,
     resolve: () => resolveRolloutFile(locator, options?.readMode === 'snapshot'),
     initial: () => ({ turn: 0, item: -1, userSeen: false, calls: {}, children: {} }),
+    // `calls` and `children` are replaced, never changed in place: a snapshot need not copy them.
+    snapshot: (ordinals) => ({ ...ordinals }),
+    childIds: (ordinals) => Object.keys(ordinals.children),
     decode(record, ordinals) {
       const codex = readCodexRecord(record);
       // 序号按**每一条记录**推进，不按「解出了 event 的记录」推进:
@@ -55,11 +60,13 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
       if (item?.kind === 'tool_call' && item.namespace === 'collaboration') {
         let input = item.input;
         if (typeof input === 'string') { try { input = JSON.parse(input); } catch { input = null; } }
-        if (asRecord(input)) ordinals.calls[item.id] = { ...asRecord(input), name: item.name };
+        if (asRecord(input)) ordinals.calls = { ...ordinals.calls, [item.id]: { ...asRecord(input), name: item.name } };
         return [];
       }
       if (item?.kind === 'tool_result' && ordinals.calls[item.callId]) return [];
       if (item?.kind === 'subagent') {
+        // Native peer activity may point back to this record or one of its ancestors.
+        if (lineage.has(item.threadId)) return [];
         const input = ordinals.calls[item.id] ?? {};
         const child = ordinals.children[item.threadId] ?? {
           id: item.threadId, name: item.name, callId: item.id,
@@ -67,10 +74,15 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
           ...(typeof input.model === 'string' ? { model: input.model } : {}),
         };
         const first = !ordinals.children[item.threadId];
-        ordinals.children[item.threadId] = child;
+        ordinals.children = { ...ordinals.children, [item.threadId]: child };
         const at = parseTimestamp(codex.timestamp);
-        // The child's own task boundaries provide lifecycle; the parent's summary does not complete it.
-        if (!first) return [];
+        // The child's own record updates its card; the root's `completed` / `interrupted` activity is the row saying it
+        // ended, in the root turn that was running when it did (a completed child's text arrives with its FINAL_ANSWER,
+        // below). Codex notes no other ending in the parent's record: a child whose turn failed shows that on its card.
+        const ended = item.activity === 'completed' ? 'completed' : item.activity === 'interrupted' ? 'stopped' : null;
+        const done: RecordEntry[] = ended
+          ? [{ key, at, event: { kind: 'subagent_done', parentRecord: true, toolCallId: child.id, agentId: child.id, status: ended } }] : [];
+        if (!first) return done;
         return [{ key: `${key}#0`, at, event: {
           kind: 'subagent', toolCallId: child.id, subagentSessionId: child.id,
           ...(child.name ? { title: child.name } : {}),
@@ -79,8 +91,11 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
           ...(child.model ? { model: child.model } : {}),
           ...(child.callId ? { agentToolUseId: child.callId } : {}),
           ...(child.task ? { rawInput: child.task } : {}),
-        } }];
+        } }, ...done];
       }
+      const answer = finalAnswer(record, ordinals.children);
+      if (answer) return [{ key, at: parseTimestamp(codex.timestamp), event: {
+        kind: 'subagent_done', parentRecord: true, toolCallId: answer.child.id, agentId: answer.child.id, status: 'completed', outputText: answer.text } }];
       const entry = decode(codex, key);
       const event = entry?.event;
       if (entry && event?.kind === 'message' && event.role === 'user') {
@@ -94,10 +109,42 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
   });
   return withSubagentSources(
     root,
-    (id) => createCodexJsonlSource({ ...locator, providerSessionId: id }, options, true),
-    () => createCodexJsonlSource(locator, options, nativeChild),
+    // A child's pictures are in its own file: a place kept for them would point into the root record.
+    (id) => createCodexJsonlSource({ ...locator, providerSessionId: id }, options && { ...options, fill: undefined }, true, lineage),
+    () => createCodexJsonlSource(locator, options, nativeChild, ancestors),
     options,
   );
+}
+
+/** A child's final answer, which Codex hands to its parent as an `agent_message` in the parent's record:
+ * `Message Type: FINAL_ANSWER` … `Payload:` and the child's reply. */
+function finalAnswer(record: Record<string, unknown>, children: Record<string, Child>): { child: Child; text: string } | null {
+  const payload = asRecord(record.payload);
+  if (record.type !== 'response_item' || payload?.type !== 'agent_message' || typeof payload.author !== 'string') return null;
+  // A path names one live agent at a time (Codex refuses a second live one), so the latest child with it is the sender.
+  const child = Object.values(children).findLast((candidate) => candidate.name === payload.author);
+  if (!child || !Array.isArray(payload.content)) return null;
+  const text = payload.content.map((part) => asRecord(part)?.text).filter((part): part is string => typeof part === 'string').join('');
+  const reply = /^Message Type: FINAL_ANSWER\n[\s\S]*?\nPayload:\n([\s\S]*)$/.exec(text)?.[1];
+  return reply === undefined ? null : { child, text: reply };
+}
+
+/** Decode one already-budgeted window record with its real source-anchor key, without prefix ordinals/state. */
+export function decodeCodexWindowRecord(record: Record<string, unknown>, key: string, steering = false): RecordEntry[] {
+  const codex = readCodexRecord(record);
+  if (codex.item?.kind === 'subagent') {
+    const item = codex.item;
+    return [{ key, at: parseTimestamp(codex.timestamp), event: {
+      kind: 'subagent', toolCallId: item.threadId, subagentSessionId: item.threadId,
+      title: item.name, status: 'completed', parentToolCallId: null, canCancel: false,
+      background: true, agentToolUseId: item.id,
+    } }];
+  }
+  const entry = decode(codex, key);
+  if (entry && entry.event?.kind === 'message' && entry.event.role === 'user' && steering) {
+    return [{ key: entry.key, at: entry.at, event: { ...entry.event, steering: true } }];
+  }
+  return entry ? [entry] : [];
 }
 
 function decode(record: CodexRecord, key: string): RecordEntry | null {
@@ -125,7 +172,7 @@ function decode(record: CodexRecord, key: string): RecordEntry | null {
  * 日期目录并发下钻的做法照抄 `packages/core/src/local/agent/transcriptInventory.ts`：
  * 串行递归光 readdir 就要几秒，那是"打开会话"这件事最大的一块墙钟。
  */
-async function resolveRolloutFile(locator: SessionRecordLocator, snapshot: boolean): Promise<string> {
+export async function resolveRolloutFile(locator: SessionRecordLocator, snapshot: boolean): Promise<string> {
   const suffix = `-${locator.providerSessionId}.jsonl`;
   // Prefer the live file across all roots. Only a historical read may open an archive.
   for (const extension of snapshot ? [suffix, `${suffix}.zst`] : [suffix]) {
@@ -214,4 +261,3 @@ function codexResultBlock(item: unknown): Array<{ type: 'text'; text: string } |
 
 /** codex 的工具名 → ACP ToolKind。名单外一律 'other'，理由同 claude 侧。 */
 const codexToolKind = toolKindTable({ execute: ['shell', 'local_shell', 'exec_command'], edit: ['apply_patch', 'write_file'], read: ['read_file'], fetch: ['web_search', 'web_fetch'] });
-

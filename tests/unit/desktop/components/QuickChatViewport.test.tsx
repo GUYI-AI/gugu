@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { QuickChat } from '../../../../apps/desktop/src/components/assistant/QuickChat'
 import { chatWindowStub } from '../../../support/chatWindowStub'
 import { clickElement, createNode, createReactHarness, message, renderWithAppProviders } from '../../../support/testHarness'
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
 
+vi.mock('../../../../apps/desktop/src/components/markdown/Markdown', () => ({ Markdown: ({ content }: { content: string }) => <span>{content}</span> }))
 let harness: ReturnType<typeof createReactHarness> | undefined
 afterEach(() => harness?.cleanup())
 describe('Quick chat viewport lifetime', () => {
@@ -59,4 +60,27 @@ describe('Quick chat viewport lifetime', () => {
     expect(rows[0]?.getAttribute('data-testid')).toBe('quick-chat-message-quick-141')
     expect(rows[39]?.getAttribute('data-testid')).toBe('quick-chat-message-quick-180')
   })
+})
+
+it('the existing Quick Chat draft failure disappears after a successful retry', async () => {
+  harness = createReactHarness()
+  const windows = chatWindowStub(), sendMessage = vi.fn().mockRejectedValue(new Error('submission refused'))
+  const access = { ...windows.conversations, actions: () => ({ ...windows.conversations.actions('quick'), sendMessage }) }
+  await renderWithAppProviders(harness, createNode(QuickChat, {
+    assistant: null, assistantState: 'found', chatId: 'quick', chatFailed: null, retryChat: () => {}, visible: true,
+    shortcut: 'test', onClose: () => {}, onOpenMain: () => {},
+  }), { chat: { conversations: access } })
+  const input = harness.container.querySelector<HTMLTextAreaElement>('[data-testid="quick-chat-input"]')!
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'retained draft')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  const send = () => clickElement(harness!.container.querySelector<HTMLButtonElement>('[data-testid="quick-chat-send"]')!)
+  await send(); await send()
+  expect(harness.container.querySelectorAll('.qc-error')).toHaveLength(1)
+  expect(input.value).toBe('retained draft')
+  sendMessage.mockResolvedValue(undefined)
+  await send()
+  expect(harness.container.querySelector('.qc-error')).toBeNull()
+  expect(input.value).toBe('')
 })

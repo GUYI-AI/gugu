@@ -1,10 +1,9 @@
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { MachineVerb, PlaceVerb } from '@shared/extensions/bridge-protocol';
 import { folderOf, isWorkspace, placeOf, fileRefOf } from '@shared/extensions/app-runtime-protocol';
-import { HOSTED_PROGRAM_ELSEWHERE, hostsProgram } from '@shared/extensions/program-place';
 import { listExtensionData, readExtensionData, writeExtensionData } from '@main/core/extensions/extension-data';
-import { extensionDataRoot, extensionsService } from '@main/core/extensions/extensions-root';
+import { extensionDataRoot } from '@main/core/extensions/extensions-root';
 import { extensionPrograms } from '@main/core/extensions/extension-programs';
+import type { HandedFile } from '@main/core/extensions/working-copy-files';
 
 /**
  * The verbs that follow the machine of a page's session (`BRIDGE_VERBS` rows with `machine`), as THIS machine does them:
@@ -16,6 +15,9 @@ export type MachineCallFrom = { sessionId?: string } | { agent: string; agentSes
 
 const text = (value: unknown) => (typeof value === 'string' ? value : '');
 const invalid = (message: string) => Object.assign(new Error(message), { code: 'invalid' });
+
+/** A page on another machine has no page here: only the App it is of counts (no file was handed to it here). */
+const pageOf = (extensionId: string) => ({ pageId: -1, extensionId, handed: null });
 
 export const machineVerbs = {
   sessionsIndex: async (_extensionId, args) => (await import('./app-sessions')).indexSessionsForApp(args),
@@ -31,20 +33,12 @@ export const machineVerbs = {
     if (typeof args.name !== 'string') throw invalid('name must be a string');
     const server = typeof args.server === 'string' ? args.server : undefined;
     const toolArgs = args.arguments;
-    const hosted = hostsProgram(extensionsService().get(extensionId).manifest, server);
     // Only name, arguments and server are read from the page; the program's `_meta` is the host's.
-    const call = extensionPrograms.callFromPage(extensionId, {
+    return extensionPrograms.callFromPage(extensionId, {
       ...(server !== undefined ? { server } : {}),
       name: args.name,
       ...(toolArgs && typeof toolArgs === 'object' && !Array.isArray(toolArgs) ? { arguments: toolArgs as Record<string, unknown> } : {}),
       from,
-    });
-    // A hosted program whose host this computer does not have (#7293's own words for that one case): refused as a session
-    // elsewhere refuses one (`invalid`). Any other failure of it — the browser did not start, say — is that failure.
-    return await call.catch((error: unknown): CallToolResult => {
-      const message = error instanceof Error ? error.message : String(error);
-      const hostMissing = hosted && !(error as { code?: unknown } | null)?.code && message.startsWith('Host capability is unavailable');
-      throw hostMissing ? invalid(`${HOSTED_PROGRAM_ELSEWHERE} (${message})`) : error;
     });
   },
   // A working copy's files (`machine: 'place'`), for a page whose working copy is on this machine.
@@ -54,10 +48,27 @@ export const machineVerbs = {
     const { listWorkingCopy } = await import('./working-copy-files');
     return listWorkingCopy(place, folderOf(args.folder), null);
   },
-  filesRead: async (_extensionId, args) => {
+  filesRead: async (_extensionId, args, _from, handed) => {
     const ref = fileRefOf(args.ref);
     if (!isWorkspace(ref)) throw invalid('A chat\'s file is opened whole: files.open');
     const { readWorkingCopy } = await import('./working-copy-files');
-    return readWorkingCopy(ref, 'id' in ref ? ref.id : ref.name, Number(args.offset) || 0, Number(args.length) || 0);
+    return readWorkingCopy(ref, 'id' in ref ? ref.id : ref.name, Number(args.offset) || 0, Number(args.length) || 0, handed);
   },
-} satisfies Record<MachineVerb | PlaceVerb, (extensionId: string, args: Record<string, unknown>, from: MachineCallFrom) => Promise<unknown>>;
+  // A working copy's writes: what this machine's own pages call, for the page elsewhere that named it.
+  filesCreate: async (extensionId, args) => (await import('./app-files')).createAppFile(pageOf(extensionId), args as never),
+  filesRename: async (extensionId, args) => (await import('./app-files')).renameAppFile(pageOf(extensionId), args as never),
+  filesMkdir: async (extensionId, args) => (await import('./app-files')).makeAppFolder(pageOf(extensionId), args),
+  filesMove: async (extensionId, args) => (await import('./app-files')).moveAppFile(pageOf(extensionId), args),
+  filesRemove: async (extensionId, args) => (await import('./app-files')).removeAppFile(pageOf(extensionId), args),
+  filesDraft: async (_extensionId, args) => {
+    const ref = fileRefOf(args.ref);
+    if (!isWorkspace(ref) || !('id' in ref)) throw invalid('A draft is of a working copy\'s file, by its path');
+    return (await import('./app-files')).draftHere(ref as never, args.text);
+  },
+  // The capability was judged where the page is; a write carries no handed file, so nothing outside the working copy.
+  filesWriteChunk: async (_extensionId, args) => {
+    const place = placeOf(args.place);
+    if (!isWorkspace(place)) throw invalid('A chat\'s file is uploaded whole: files.upload');
+    return (await import('./working-copy-files')).writeWorkingCopyChunk(place, args as never);
+  },
+} satisfies Record<MachineVerb | PlaceVerb, (extensionId: string, args: Record<string, unknown>, from: MachineCallFrom, handed: HandedFile) => Promise<unknown>>;

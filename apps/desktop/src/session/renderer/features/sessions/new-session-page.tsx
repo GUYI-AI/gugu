@@ -6,13 +6,15 @@ import { useCreateSessionState } from '@renderer/features/sessions/create-sessio
 import { useProjectGitContext } from '@renderer/features/sessions/create-session-modal/use-project-git-context';
 import { useSessionSettings } from '@renderer/features/sessions/hooks/useSessionSettings';
 import { SessionField } from '@renderer/features/sessions/session-config/session-field';
-import type { ComposerVerbLook } from '@renderer/features/sessions/session-config/initial-session-section';
+import type { ComposerVerbLook, InitialSessionState } from '@renderer/features/sessions/session-config/initial-session-section';
 import { useInitialSessionState } from '@renderer/features/sessions/session-config/initial-session-section';
 import { SessionStateProvider } from '@renderer/features/sessions/session-config/session-state-context';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { ComposerProjectPicker } from './composer-context-tray';
 import { describeImplicitProjectFailure, machineComposerProps } from './use-machine-create-target';
 import { useNewSessionMachine } from '@renderer/features/remote-hosts/use-new-session-machine';
+import { sidebarStore } from '@renderer/lib/stores/app-state';
+import { machineRegistry } from '@renderer/lib/machine-routing';
 import { useWakeCloudOnInput } from '@renderer/features/remote-hosts/use-wake-cloud-once';
 import { machineLibraryHost } from '@renderer/features/library/library-host';
 import { ComposerTray } from './composer-tray';
@@ -53,6 +55,7 @@ export const NewSessionComposer = observer(function NewSessionComposer({
   placeholder,
   verb,
   workspaceId,
+  sendWithoutProject,
 }: {
   projectId: string | undefined;
   // gugu #2525: 非空 = 当前创建上下文不可提交（所选设备离线 / 非本机 / 默认值读写失败）。
@@ -91,6 +94,11 @@ export const NewSessionComposer = observer(function NewSessionComposer({
    * 缺省 = 项目根目录。只能是这个项目的文件夹 —— 不是的,主进程建会话时拒掉(fail loud)。
    */
   workspaceId?: string | null;
+  /**
+   * #2569 这一框发的时候还没有项目(示例项目):按发送交给它 —— 它先把项目建出来,再把这一句交给那个项目的新任务框,
+   * 任务在那边按同一条路建。能按 = 有内容、选中了智能体;`blocked` / `blockReason` 照旧挡。
+   */
+  sendWithoutProject?: (input: InitialSessionState) => void;
 }) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
@@ -120,7 +128,8 @@ export const NewSessionComposer = observer(function NewSessionComposer({
     {
       // Selecting or clearing an optional project must not erase text the user has already written.
       resetPromptOnProjectChange: false,
-      dispatchesToChat: Boolean(taskChatId),
+      // 还没有项目的这一句也是要派进项目群的任务(示例变成的那个项目):照派进群的规矩判。
+      dispatchesToChat: Boolean(taskChatId || sendWithoutProject),
       draft,
     }
   );
@@ -146,13 +155,23 @@ export const NewSessionComposer = observer(function NewSessionComposer({
   const hasTurnContent =
     initialSession.prompt.trim().length > 0 || initialSession.attachments.length > 0;
   const canSend =
-    canCreate &&
+    (sendWithoutProject ? Boolean(initialSession.provider) : canCreate) &&
     !blocked &&
     !blockReason &&
     !isContextPending &&
     !initialSession.providerError &&
     hasTurnContent &&
     !initialSession.issueContextEditorOpen;
+  // #2569 交过来的那一句(示例里发的第一句)人已经按过发送了:这一框一能发就替他发一次。只一次 —— 没成就和任何首句一样,
+  // 原因写在框下、话留在框里,等他再按。还没有项目的框(示例自己那一框)❌ 替他发:交出去之后它可能还挂着一拍,
+  // 这一格已经挪给项目的框了,在这里发只会没项目可建、把「一能发就发」用掉。
+  const handoff = draft?.handoff;
+  useEffect(() => {
+    if (sendWithoutProject || !draft || !handoff?.sendWhenReady || !canSend) return;
+    draft.setHandoff({ ...handoff, sendWhenReady: false });
+    handleCreateSession();
+  }, [sendWithoutProject, draft, handoff, canSend, handleCreateSession]);
+  const submit = sendWithoutProject ? () => { if (canSend) sendWithoutProject(initialSession); } : handleCreateSession;
 
   // 外层 wrapper 不画描边/圆角/底色(见 session-composer-styles.ts 的 sessionComposerFrameClassName):
   //    卡的形状归 session-ui 的 composerShell 一处管,这里再画一层就会在四角露出第二条线。
@@ -173,7 +192,7 @@ export const NewSessionComposer = observer(function NewSessionComposer({
             // creation. The surface only changes where the created session lands; it must not
             // hide the user's pre-dispatch permission choice.
             showAutoApproveToggle
-            onSubmit={handleCreateSession}
+            onSubmit={submit}
             canSubmit={canSend}
           />
       </SessionStateProvider>
@@ -190,7 +209,7 @@ export const NewSessionComposer = observer(function NewSessionComposer({
         </p>
       ) : null}
       {blocked || blockReason ? null : remoteInstall.note}
-      <CreateDeliveryError failure={deliveryError} />
+      <CreateDeliveryError failure={deliveryError} noticeKey={`session-create:${draftKey ?? projectId ?? 'new'}`} />
     </div>
   );
 });
@@ -240,18 +259,21 @@ export const NewSessionPage = observer(function NewSessionPage({
   const openProject = (projectId: string | undefined) => {
     setSelectedId(projectId);
     if (!projectId) return;
+    // 人先选了别的机器再选项目,而那台机器有这个项目的文件夹:进了项目块就在那台上开(在那台上真建了任务才记上账号)。
+    // 机器还是默认的「这台电脑」(没人选过),或那台没有这个项目的文件夹(它不是候选):❌ 拿它盖掉这个项目记着的机器。
+    const machine = remote && sidebarStore.projectMembersOf(projectId).some((id) => machineRegistry.machineOf(id) === remote.deviceId)
+      ? remote.deviceId : undefined;
     // gugu-dev#181 ⑩:选项目 = 去那个项目里开新任务,写好的话跟着进项目块新任务框的草稿。
-    prepareProjectTask(projectId, NEW_SESSION_DRAFT_KEY);
+    prepareProjectTask(projectId, NEW_SESSION_DRAFT_KEY, machine);
     navigate('project', { projectId });
   };
 
   // 项目入口。原本是贴在输入框左上角的单项页签,现在收进通栏托盘 —— 托盘还同时承载
   // 环境与分支,信息密度换的是"发任务前一眼确认跑在哪"。
   // gugu #2525: 控件本体抽到 composer-context-tray.tsx,与项目页、对话里派任务共用一份。
-  // #6264 选了别的机器时,项目换成那台机器上的(在哪台机器上跑是这一条会话的属性,见 use-new-session-machine.tsx)。
-  const { remote, machineContext, devicePicker, projectPicker } = useNewSessionMachine(
-    <ComposerProjectPicker includeRemote selectedId={selectedId} onSelect={openProject} />
-  );
+  // 项目选择器列账号下的全部项目,与机器无关;没选项目时机器选择器定在哪台的任务工作区里跑。
+  const { remote, machineContext, devicePicker } = useNewSessionMachine();
+  const projectPicker = <ComposerProjectPicker selectedId={selectedId} onSelect={openProject} />;
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">

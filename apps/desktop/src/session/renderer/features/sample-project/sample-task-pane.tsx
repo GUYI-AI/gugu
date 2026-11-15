@@ -8,7 +8,7 @@ import type { SampleProjectContent, SampleStep } from './content/types';
 import { SAMPLE_AGENT_SEED, sampleFileBytes } from './sample-project-transcript';
 
 /**
- * 点示例里那张任务卡:右边一栏,和群聊里看文件那一栏同宽同头。写的是这一趟真做过的:原话、交给谁、做完了,
+ * 点示例里那张任务卡(或内层侧栏里那个智能体):整块换成它,和项目里点开一个智能体同一个样子(#2548),× 回到对话。写的是这一趟真做过的:原话、交给谁、做完了,
  * 它做了哪几步(固化时从那次会话里取的,取不到的就不写),交付了哪些文件(点了看)。
  */
 export function SampleTaskPane({ content, onOpenFile, onClose }: { content: SampleProjectContent; onOpenFile: (fileId: string) => void; onClose: () => void }) {
@@ -21,7 +21,7 @@ export function SampleTaskPane({ content, onOpenFile, onClose }: { content: Samp
   return (
     <aside
       data-sample-task-pane=""
-      style={{ width: 'clamp(380px, 38vw, 520px)', height: '100%', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderLeft: '1px solid var(--border-subtle)', background: 'var(--bg-primary)' }}
+      style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-primary)' }}
     >
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '16px 18px 12px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
         <strong style={{ color: 'var(--text-primary)', fontSize: 'var(--font-title)' }}>{translate('projects.sample.taskDetail')}</strong>

@@ -1,113 +1,65 @@
 import path from 'node:path';
-import { type FileError, type IFileSystem } from '@gugu/session-core/files';
+import { canonicalPath, inWorkingCopy, placeUnder, type CanonicalPath, type FileError } from '@gugu/session-core/files';
 import { err, ok, type Result } from '@gugu/session-shared';
-import {
-  basenameMachinePath,
-  containsMachinePath,
-  dirnameMachinePath,
-  isAbsoluteMachinePath,
-  joinMachinePath,
-} from '../path-utils';
-import { isRealPathContained as isRealPathContainedByRealPath } from '../realpath-containment';
 
 export type WorkspacePathResolution = {
-  path: string;
+  path: CanonicalPath;
 };
 
-const machinePathOperations = {
-  basename: basenameMachinePath,
-  contains: containsMachinePath,
-  dirname: dirnameMachinePath,
-  join: joinMachinePath,
-};
-
+/**
+ * A path the file panel names (absolute, or relative to the working copy) → its canonical path, only when it is in the
+ * working copy (`@@@working-copy-containment`: by name, and a link there that leads out is not).
+ */
 export function resolveWorkspacePath(
-  workspacePath: string,
+  workspacePath: CanonicalPath,
   filePath: string,
   options: { allowEmpty?: boolean } = {}
 ): Result<WorkspacePathResolution, FileError> {
   let absPath: string;
-  if (isAbsoluteMachinePath(filePath)) {
+  if (path.isAbsolute(filePath)) {
     absPath = filePath;
   } else {
     const relativePath = normalizeRelativePath(filePath, options);
     if (!relativePath.success) return relativePath;
-    absPath = joinMachinePath(workspacePath, relativePath.data);
+    absPath = path.join(workspacePath, relativePath.data);
   }
-
-  if (!containsMachinePath(workspacePath, absPath)) {
+  const canonical = canonicalPath(absPath);
+  if (inWorkingCopy(workspacePath, canonical) === null) {
     return err({
       type: 'invalid-path',
       path: filePath,
       message: 'Path must be inside the workspace',
     });
   }
-
-  return ok({ path: absPath });
+  return ok({ path: canonical });
 }
 
 export async function assertWorkspaceWriteAllowed(
-  fileSystem: IFileSystem,
-  workspacePath: string,
+  workspacePath: CanonicalPath,
   filePath: string
 ): Promise<Result<WorkspacePathResolution, FileError>> {
-  const resolved = resolveWorkspacePath(workspacePath, filePath);
-  if (!resolved.success) return resolved;
-  const contained = await isWorkspaceRealPathContained(
-    fileSystem,
-    workspacePath,
-    resolved.data.path
-  );
-  if (!contained.success) return contained;
-  if (!contained.data) return pathEscapeError(filePath);
-  return resolved;
+  return resolveWorkspacePath(workspacePath, filePath);
 }
 
+/** Removing or renaming takes the entry itself (a link, not where it leads): its folder must be in the working copy. */
 export async function assertWorkspaceRemoveAllowed(
-  fileSystem: IFileSystem,
-  workspacePath: string,
+  workspacePath: CanonicalPath,
   filePath: string
 ): Promise<Result<WorkspacePathResolution, FileError>> {
-  const resolved = resolveWorkspacePath(workspacePath, filePath);
-  if (!resolved.success) return resolved;
-  const parentPath = dirnameMachinePath(resolved.data.path);
-  const contained = await isWorkspaceRealPathContained(fileSystem, workspacePath, parentPath);
-  if (!contained.success) return contained;
-  if (!contained.data) return pathEscapeError(filePath);
-  return resolved;
+  const absolute = path.isAbsolute(filePath) ? filePath : path.join(workspacePath, filePath);
+  const folder = resolveWorkspacePath(workspacePath, path.dirname(absolute), { allowEmpty: true });
+  if (!folder.success) return pathEscapeError(filePath);
+  const entry = canonicalPath(absolute, { entry: true });
+  // By name: removing a link that leads out takes only the link.
+  if (entry === workspacePath || placeUnder(folder.data.path, entry) === null) return pathEscapeError(filePath);
+  return ok({ path: entry });
 }
 
 export async function assertWorkspaceDirectoryTargetAllowed(
-  fileSystem: IFileSystem,
-  workspacePath: string,
+  workspacePath: CanonicalPath,
   dirPath: string
 ): Promise<Result<WorkspacePathResolution, FileError>> {
-  const resolved = resolveWorkspacePath(workspacePath, dirPath, { allowEmpty: true });
-  if (!resolved.success) return resolved;
-  const contained = await isWorkspaceRealPathContained(
-    fileSystem,
-    workspacePath,
-    resolved.data.path
-  );
-  if (!contained.success) return contained;
-  if (!contained.data) return pathEscapeError(dirPath);
-  return resolved;
-}
-
-async function isWorkspaceRealPathContained(
-  fileSystem: IFileSystem,
-  workspacePath: string,
-  candidatePath: string
-): Promise<Result<boolean, FileError>> {
-  return isRealPathContainedByRealPath(
-    fileSystem,
-    machinePathOperations,
-    workspacePath,
-    candidatePath,
-    {
-      candidateErrorMode: 'error',
-    }
-  );
+  return resolveWorkspacePath(workspacePath, dirPath, { allowEmpty: true });
 }
 
 function normalizeRelativePath(

@@ -217,8 +217,8 @@ describe('groupEntries: the named files of a chat as list gives them, and the id
     const read = await files.groupEntries(CHAT, [notes.id as string, plan.id as string, elsewhere.id as string, missing, notes.id as string]);
     expect(read.entries.map((entry) => [entry.name, entry.version]).sort()).toEqual([['notes.md', 4], ['plan.md', 1]]);
     expect(read.gone.sort()).toEqual([elsewhere.id as string, missing].sort());
-    // Each named id once (the list is not read).
-    expect(doors).toEqual([...Array(4).fill('rpc workspace_get_as'), 'rpc chat_facts']);
+    // Each named id once; then each one found, by its own name in its own folder (how long it is kept) — never the whole list.
+    expect(doors).toEqual([...Array(4).fill('rpc workspace_get_as'), 'rpc chat_facts', 'rpc workspace_list_as', 'rpc workspace_list_as']);
   });
 
   it('as an agent: through its door, one file at a time — what it cannot see is gone for it', async () => {
@@ -226,7 +226,7 @@ describe('groupEntries: the named files of a chat as list gives them, and the id
     const elsewhere = file(OTHER_CHAT, 'secret.md');
     const read = await files.groupEntries(CHAT, [notes.id as string, elsewhere.id as string], { asAgent: AGENT });
     expect(read).toMatchObject({ entries: [{ id: notes.id, name: 'notes.md' }], gone: [elsewhere.id] });
-    expect(doors).toEqual(['rpc workspace_get_as', 'rpc workspace_get_as']);
+    expect(doors).toEqual(['rpc workspace_get_as', 'rpc workspace_get_as', 'rpc workspace_list_as']);
   });
 
   it('no ids (or none that is an id): no read at all', async () => {
@@ -283,13 +283,13 @@ describe('groupChange: the named files, or every file of the chat with the named
     expect(doors).toEqual(['rpc workspace_list_as']);
   });
 
-  it('not all: the named files only (groupEntries) — the list is not read', async () => {
+  it('not all: the named files only (groupEntries) — the list is read for no more than their names', async () => {
     const notes = file(CHAT, 'notes.md');
     file(CHAT, 'plan.md');
     const missing = randomUUID();
     const read = await files.groupChange(CHAT, { ids: [notes.id as string, missing], all: false });
     expect(read).toMatchObject({ entries: [{ id: notes.id, name: 'notes.md' }], gone: [missing] });
-    expect(doors).toEqual(['rpc workspace_get_as', 'rpc workspace_get_as']);
+    expect(doors).toEqual(['rpc workspace_get_as', 'rpc workspace_get_as', 'rpc workspace_list_as']);
   });
 });
 

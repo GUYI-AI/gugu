@@ -11,12 +11,13 @@ import type {
   TaskTurnHit,
   WorkspaceFileHit,
 } from '@shared/core/search';
-import { excerpt } from '@shared/core/search';
 import type { Project } from '@shared/projects';
 import { sessionEvents } from '../sessions/session-events';
 import { mapSessionRowToSession } from '../sessions/utils';
 import { taskName } from '../sessions/task-name';
 import { projectEvents } from '../projects/project-events';
+import { searchTaskTurnMatches } from './task-turn-search';
+import { textCondition } from './text-condition';
 import { workspaceFileIndexService } from './workspace-file-index-service';
 import { taskTurnIndexStatus } from '@main/db/search-backfill-state';
 
@@ -40,27 +41,6 @@ const LOCAL_PROJECTS_ONLY = `NOT EXISTS (SELECT 1 FROM projects p
   WHERE p.id = COALESCE(search_index.project_id,
     CASE WHEN search_index.item_type = 'project' THEN search_index.item_id END)
     AND p.workspace_provider != 'local')`;
-
-/**
- * One text, one condition, for every trigram index here: the text is split on whitespace and each piece is a substring
- * that must occur. A piece of three or more characters MATCHes the trigram index (a substring index, so no word
- * segmentation, Chinese included); a shorter one is a LIKE over the given columns. No pieces → null (nothing to search).
- */
-export function textCondition(text: string, ftsTable: string, likeColumns: readonly string[]): { sql: string; params: string[] } | null {
-  const words = text.split(/\s+/).filter(Boolean);
-  if (!words.length) return null;
-  const long = words.filter((word) => [...word].length >= 3), short = words.filter((word) => [...word].length < 3);
-  const sql: string[] = [], params: string[] = [];
-  if (long.length) {
-    sql.push(`${ftsTable} MATCH ?`);
-    params.push(long.map((word) => `"${word.replaceAll('"', '""')}"`).join(' AND '));
-  }
-  for (const word of short) {
-    sql.push(`(${likeColumns.map((column) => `${column} LIKE ? ESCAPE '\\'`).join(' OR ')})`);
-    params.push(...likeColumns.map(() => `%${word.replace(/[\\%_]/g, '\\$&')}%`));
-  }
-  return { sql: sql.join(' AND '), params };
-}
 
 class SearchService {
   taskTurnIndexStatus() { return taskTurnIndexStatus(sqlite); }
@@ -119,20 +99,10 @@ class SearchService {
     return results;
   }
 
-  /** What was said in local tasks (turn_text, kept by triggers on session_turns), newest first. */
-  searchTaskTurns(query: string, limit = 30): TaskTurnHit[] {
-    const condition = textCondition(query, 'turn_text', ['r.text']);
-    if (!condition) return [];
-    const where = condition.sql.replace('turn_text MATCH ?', 'r.id IN (SELECT rowid FROM turn_text WHERE turn_text MATCH ?)');
-    const rows = sqlite.prepare(`SELECT r.session_id, r.item_id, r.role, r.text, json_extract(s.config, '$.agentDisplayName') AS agent_display_name, s.project_id, s.archived_at, t.created_at
-      FROM turn_text_rows r JOIN sessions s ON s.id = r.session_id JOIN session_turns t ON t.session_id = r.session_id AND t.seq = r.seq
-      WHERE ${where} AND NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = s.project_id AND p.workspace_provider != 'local')
-      ORDER BY t.created_at DESC, r.id DESC LIMIT ?`).all(...condition.params, Math.min(Math.max(limit, 1), 100)) as {
-        session_id: string; item_id: string; role: string; text: string; agent_display_name: string | null; project_id: string; archived_at: string | null; created_at: string;
-      }[];
-    return rows.map((row) => ({ sessionId: row.session_id, projectId: row.project_id,
-      title: taskName({ id: row.session_id, config: { agentDisplayName: row.agent_display_name ?? undefined } }), archived: row.archived_at !== null,
-      itemId: row.item_id, role: row.role === 'user' ? 'user' : 'assistant', excerpt: excerpt(row.text, query), at: row.created_at }));
+  /** What was said in local tasks, newest first: matched off the main thread (task-turn-matches.ts), named here. */
+  async searchTaskTurns(query: string, limit?: number): Promise<TaskTurnHit[]> {
+    return (await searchTaskTurnMatches(query, limit)).map(({ agentDisplayName, ...match }) => ({ ...match,
+      title: taskName({ id: match.sessionId, config: { agentDisplayName: agentDisplayName ?? undefined } }) }));
   }
 
   /** 没有输入时:最近交互的任务。 */

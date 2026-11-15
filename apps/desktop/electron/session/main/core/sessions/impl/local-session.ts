@@ -699,6 +699,8 @@ export class LocalSessionProvider implements SessionProvider {
       const resolved = resolveLocalPtySpawn({
         platform: process.platform,
         env: process.env,
+        // 跳过的 Windows 壳里 `%PATH%` 等按 agent 真正拿到的那份展开(见 resolveLocalPtySpawn 的 childEnv)。
+        childEnv: composeAgentSpawnEnv(runContext, { providerEnv: agentCommand.env, hostInjections: [this.sessionEnvVars] }),
         intent: {
           kind: 'run-command',
           cwd: this.sessionPath,

@@ -26,6 +26,8 @@ function windowSessionStorage(): SessionStore | null {
 export class DeviceScopeStore {
   /** 用户选的那一台(可能此刻不在名下 —— 桥还没装好、或已被移除;读 `effective` 才是在用的那台)。 */
   selected: string;
+  /** #2301 Q5: pages of this module now showing that machine's last copy, read-only (the heading says 「只读缓存」). */
+  cachedViews = 0;
 
   constructor(
     private readonly storageKey: string,
@@ -48,6 +50,21 @@ export class DeviceScopeStore {
     } catch {
       /* 存不下(隐私模式等)就只在这次打开里记着。 */
     }
+  }
+
+  /** A page shows the last copy read-only until the returned release is called. */
+  holdCachedView(): () => void {
+    this.cachedViews += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.releaseCachedView();
+    };
+  }
+
+  releaseCachedView(): void {
+    this.cachedViews = Math.max(0, this.cachedViews - 1);
   }
 
   /** 在用的那台:选的是本机,或选的那台还在名下;否则本机。❌ 不改写 `selected`(桥晚装好时它会回来)。 */

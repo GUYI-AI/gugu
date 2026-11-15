@@ -66,7 +66,7 @@ export function SessionScheduleChip({
         data-attention={anyAttention || undefined}
       >
         {anyAttention ? (
-          <AlertTriangle className="size-3 shrink-0 text-[var(--warn)]" />
+          <AlertTriangle className="size-3 shrink-0 text-[var(--warn-fg)]" />
         ) : (
           <Clock className="size-3 shrink-0" />
         )}
@@ -167,7 +167,7 @@ function ScheduleItem({ schedule, machine }: { schedule: SessionSchedule; machin
       data-attention={attention ?? undefined}
     >
       {attention ? (
-        <AlertTriangle className="mt-1 size-3.5 text-[var(--warn)]" />
+        <AlertTriangle className="mt-1 size-3.5 text-[var(--warn-fg)]" />
       ) : (
         <Clock className="mt-1 size-3.5 text-foreground-muted" />
       )}
@@ -177,7 +177,7 @@ function ScheduleItem({ schedule, machine }: { schedule: SessionSchedule; machin
           {schedule.title}
         </div>
         {attention && lastWhen ? (
-          <div className="text-xs text-[var(--warn)]">{scheduleMissText(attention, last?.error?.code, lastWhen, translate)}</div>
+          <div className="text-xs text-[var(--warn-fg)]">{scheduleMissText(attention, last?.error?.code, lastWhen, translate)}</div>
         ) : null}
         {rule ? (
           <div className="text-xs text-foreground-muted">

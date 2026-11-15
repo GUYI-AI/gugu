@@ -75,4 +75,27 @@ public class StartupHandoffStateTest {
         assertTrue(state.frameDrawn(state.frameGeneration())); assertTrue(state.reveal());
         assertFalse(state.freezesTone()); assertFalse(state.needsDeadline());
     }
+    @Test public void relaunchWithoutASystemSplashFinishesOnceContentIsDrawn() {
+        StartupHandoffState state = new StartupHandoffState();
+        state.reactCommit(); state.contentReady(); state.requestContentFrame();
+        assertTrue(state.frameDrawn(state.frameGeneration()));
+        assertTrue(state.markSurfaceAbsent()); assertTrue(state.reveal());
+        assertFalse(state.needsDeadline()); assertFalse(state.isStarting());
+        assertFalse(state.fail());
+    }
+    @Test public void aMissingSplashCannotHideALaunchThatNeverDraws() {
+        StartupHandoffState state = new StartupHandoffState();
+        state.reactCommit(); state.contentReady(); state.requestContentFrame();
+        assertFalse(state.markSurfaceAbsent()); assertFalse(state.surfaceAbsent());
+        assertFalse(state.reveal());
+        assertTrue(state.needsDeadline()); assertTrue(state.fail());
+    }
+    @Test public void aRevealedOrFailedLaunchIgnoresALateAbsentSplash() {
+        StartupHandoffState revealed = new StartupHandoffState();
+        revealed.requestFrame(); revealed.frameDrawn(revealed.frameGeneration()); revealed.reveal();
+        assertFalse(revealed.markSurfaceAbsent());
+        StartupHandoffState failed = new StartupHandoffState();
+        failed.requestFrame(); failed.frameDrawn(failed.frameGeneration()); failed.fail();
+        assertFalse(failed.markSurfaceAbsent());
+    }
 }

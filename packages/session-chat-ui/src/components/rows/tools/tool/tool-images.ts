@@ -22,6 +22,8 @@ export const TOOL_THUMB_PAD_BOTTOM = 6;
 export const TOOL_THUMB_MAX = 4;
 /** The strip's height: a constant, whatever the pictures are. */
 export const TOOL_THUMB_STRIP_H = TOOL_THUMB_PAD_TOP + TOOL_THUMB_H + TOOL_THUMB_PAD_BOTTOM;
+/** A conversation step's strip sits on its label's column, like the disclosed text below it. */
+export const STEP_STRIP_INSET = 20;
 
 export type ToolThumbStrip = {
   /** How many boxes the strip paints. */

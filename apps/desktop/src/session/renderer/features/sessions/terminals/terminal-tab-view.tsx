@@ -37,7 +37,7 @@ export const TabContent = observer(function TerminalTabContent({ host, ctx }: Ta
       autoFocus={activeTerminal !== null && host.resolvedActiveTabId === activeTab?.tabId}
       remoteFiles={chrome?.remoteFiles}
       overlay={chrome?.overlay}
-      onExit={activeTerminal ? () => activeTerminal.exited() : undefined}
+      onExit={activeTerminal ? (info) => activeTerminal.exited(info) : undefined}
       emptyState={
         // ⚠️ 这一格以前把**两个不同的状态**塞在同一个 EmptyState 里：还没加载完（在等）
         // 与终端已被移除（等不到了）。两者对用户的含义相反，却长着同一张脸 ——

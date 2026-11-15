@@ -1,21 +1,24 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { useUiPortalContainer } from '@gugu/session-ui/react/primitives'
 import { createReactHarness } from '../../../support/testHarness'
 const state = vi.hoisted(() => ({
-  ready: true, owned: true, renders: vi.fn(), open: vi.fn(), identity: true, chatsRead: true, chatsLoadFailed: false,
+  popupLayer: undefined as HTMLElement | undefined, ready: true, owned: true, renders: vi.fn(), open: vi.fn(), identity: true, chatsRead: true, chatsLoadFailed: false,
 }))
 vi.mock('../../../../apps/desktop/src/lib/ownedAgentConversation', () => ({
   useOwnedAgentEntries: () => state.ready, isOwnedAgentPeer: () => state.owned, openOwnedAgentEntry: state.open,
 }))
-vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => ({
+vi.mock('../../../../apps/desktop/src/store/chatContext', () => {
+  const store = () => ({
   chatsRead: state.chatsRead, chatsLoadFailed: state.chatsLoadFailed, chats: [{ id: 'restored-dm', kind: 'dm', peer_user_id: 'agent' }], identitiesById: state.identity ? { agent: { type: 'agent' } } : {},
-}) }))
+})
+  return { useChatStore: store, useStoreValueBy: (read: (value: ReturnType<typeof store>) => unknown) => read(store()) }
+})
 vi.mock('../../../../apps/desktop/src/lib/sidebarChatsBridge', () => ({ useSidebarChatView: () => ({ focusedChatId: null }) }))
 vi.mock('../../../../apps/desktop/src/lib/projectGroupChatsBridge', () => ({ useProjectGroupChats: () => new Set() }))
-vi.mock('../../../../apps/desktop/src/hooks/useMarkProjectTopicsReadOnOpen', () => ({ useMarkProjectTopicsReadOnOpen: () => undefined }))
 vi.mock('../../../../apps/desktop/src/components/assistant/TaskChatScope', () => ({ TaskChatScope: ({ children }: { children: React.ReactNode }) => children }))
-vi.mock('../../../../apps/desktop/src/components/ChatAreaPanel', () => ({ ChatAreaPanel: () => { state.renders(); return <div>Legacy IM transcript</div> } }))
+vi.mock('../../../../apps/desktop/src/components/ChatAreaPanel', () => ({ ChatAreaPanel: () => { state.renders(); state.popupLayer = useUiPortalContainer(); return <div>Legacy IM transcript</div> } }))
 import { ChatSlotHost } from '../../../../apps/desktop/src/components/ChatSlotHost'
 import { readShellSlots, chatSlotKey } from '../../../../apps/desktop/src/lib/shellSlots'
 let harness: ReturnType<typeof createReactHarness>
@@ -46,6 +49,12 @@ it('preserves other conversations once their identity is known', async () => {
   await harness.render(<ChatSlotHost />)
   expect(state.renders).toHaveBeenCalled()
   expect(slot.textContent).toContain('Legacy IM transcript')
+})
+it('gives a block\'s popups the session page\'s theme layer: nothing above them in <body> carries it', async () => {
+  state.owned = false
+  await harness.render(<ChatSlotHost />)
+  expect(state.popupLayer?.closest('.emlight, .emdark')).toBe(state.popupLayer)
+  expect(state.popupLayer?.parentElement).toBe(document.body)
 })
 const finishedReads = [{ status: 'published', read: true, failed: false }, { status: 'failed', read: false, failed: true }]
 it.each(finishedReads)('shows a human DM whose peer remains absent after the directory read $status', async ({ read, failed }) => {

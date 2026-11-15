@@ -194,7 +194,7 @@ function checked<T>(read: () => T): T {
 }
 
 /** `files.create({ chat | session, name, folder }, content)`: a new file, named where it goes (`folder`: 子文件夹). */
-export function createFile(host: GuguHost, target: unknown, content: string | object, options?: { contentType?: string; sourceMessageIds?: string[] }) {
+export function createFile(host: GuguHost, target: unknown, content: string | object, options?: { contentType?: string; sourceMessageIds?: string[]; ifExists?: 'use' }) {
   const place = where(target);
   const name = (target as { name?: unknown }).name;
   const folder = folderNamed((target as { folder?: unknown }).folder);
@@ -211,6 +211,7 @@ export function createFile(host: GuguHost, target: unknown, content: string | ob
     ...(options?.contentType ? { contentType: options.contentType } : isJson ? { contentType: 'application/json' } : {}),
     sourceMessageIds: options?.sourceMessageIds,
     ...(folder === undefined ? {} : { folder }),
+    ...(options?.ifExists === undefined ? {} : { ifExists: options.ifExists }),
   });
 }
 

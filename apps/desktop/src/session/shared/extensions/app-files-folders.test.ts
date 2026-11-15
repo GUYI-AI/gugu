@@ -193,10 +193,13 @@ describe('entries say where they are', () => {
     await expect(files.groupFiles(CHAT, { folder: 'Docs/nope' })).rejects.toMatchObject({ code: 'not-found' });
   });
 
-  it('a file read on its own says its path as its door answers it: no read of the folders', async () => {
+  it('a file read on its own says its path as its door answers it, and is read in its own folder by name for its keep', async () => {
     const { entries } = await files.groupEntries(CHAT, [A]);
     expect(entries).toEqual([expect.objectContaining({ id: A, path: 'Docs/2026/scan.png' })]);
-    expect(rpcCalls.map((call) => call.name)).toEqual(['workspace_get_as']);
+    expect(rpcCalls).toEqual([
+      expect.objectContaining({ name: 'workspace_get_as' }),
+      { name: 'workspace_list_as', args: { p_chat_id: CHAT, p_as_user_id: PERSON, p_folder: G, p_name: 'scan.png', p_exact: true } },
+    ]);
   });
 });
 

@@ -1,11 +1,10 @@
-import { BrowserWindow, WebContentsView, type Size, type WebContents } from 'electron';
+import { BrowserWindow, WebContentsView, type WebContents } from 'electron';
 import { getMainWindow } from '@main/app/window';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
-import { AGENT_OVERLAY_WINDOW_NAME_PREFIX, AUX_WINDOW_NAME_PREFIX, agentOverlayOfFrame, type AgentOverlayPart } from '@shared/aux-window';
+import { AUX_WINDOW_NAME_PREFIX } from '@shared/aux-window';
 import { BROWSER_TAB_URL_OPTIONS, normalizeBrowserUrl, normalizeBrowserZoomFactor } from '@shared/browser';
 import { BROWSER_PAGE_MEASURE_SCRIPT, parseBrowserPageLayout, type BrowserPageLayout } from '@shared/browser-page-layout';
-import { browserCursorInput, type BrowserCursorInput } from '@shared/browser-cursor-input';
 import {
   browserPageEventChannel,
   type BrowserPageEventType,
@@ -14,18 +13,14 @@ import {
 } from '@shared/events/browserEvents';
 import { BROWSER_PINCH_MAX_LEVEL } from '@shared/preview/pinch-zoom';
 import { hardenWebPreferences } from '../../../../devtools-lock';
-import {
-  openWindowLayer,
-  raiseWindowLayers,
-  serveWindowLayers,
-  WINDOW_LAYER_RANK,
-  windowLayerOptions,
-  type WindowLayerContent,
-} from '../../../../window-layers';
+import { PAGE_FULLSCREEN_PREFERENCES } from '../../../../page-fullscreen';
+import { raiseWindowLayers } from '../../../../window-layers';
 import { wirePageDialogs, type PageDialogs } from './browser-page-dialogs';
 import { BrowserPageRuntime } from './browser-page-runtime';
 import { browserWebContentsRegistry } from './browser-webcontents-registry';
 import { isPreviewPageUrl, validateBrowserPageMount } from './webview-security';
+import { nativePagePresentation } from './page-presentation';
+import type { TaskPagePresentation } from '@shared/extensions/task-page-protocol';
 
 /**
  * #7274 会话页浏览器页签里的网页:主进程持有的 `WebContentsView`,盖在咕咕窗口里页签那一块上。
@@ -50,13 +45,10 @@ import { isPreviewPageUrl, validateBrowserPageMount } from './webview-security';
  *   browser-page-runtime.ts 管理;显示位置、会话控制权和渲染需求分别维护。
  * - **导航不抢焦点**:`focusOnNavigation: false`,网页换页时不把焦点拉过去(electron#42578 / #49425)。
  *
- * ⚠️ 网页销毁后不再碰它:对已销毁的 webContents 调方法会让整个 app 崩溃(见 agent-browser.ts 文件头)。
+ * ⚠️ 网页销毁后不再碰它:对已销毁的 webContents 调方法会让整个 app 崩溃(t3code#9067)。
  */
 
 type Rect = { x: number; y: number; width: number; height: number };
-
-/** Agent 鼠标与快捷消息层及其宿主:网页不在那扇窗上时收起。 */
-type AgentLayer = { part: AgentOverlayPart; view: WebContentsView; contents: WebContents; host: BrowserWindow; size: Size | null };
 
 type BrowserPage = {
   browserId: string;
@@ -73,11 +65,10 @@ type BrowserPage = {
   ready: boolean;
   releaseTimer: ReturnType<typeof setTimeout> | null;
   releaseExpired: boolean;
-  /** 盖在网页上的鼠标与快捷消息层(记录宿主,每种每窗最多一层)。 */
-  layers: AgentLayer[];
-  /** 鼠标那层要不要露(agent 在操作、页签那边画着鼠标)。 */
-  cursorShown: boolean;
   dialogs: PageDialogs | null;
+  /** An App's host-authorized presentation lease, independent of the browser tab's box. */
+  presentation?: { host: BrowserWindow; rect: Rect | null };
+  presentationListeners: Set<() => void>;
 };
 
 /** 占位卸下(页签挪去别的窗、分栏重排)后,网页留这么久等它在新位置挂回来 —— 挪动 ❌ 重新载入网页。 */
@@ -88,6 +79,7 @@ const hostsWired = new WeakSet<BrowserWindow>();
 
 function emitPageEvent(page: BrowserPage, type: BrowserPageEventType, detail: Record<string, unknown> = {}): void {
   if (page.webContents.isDestroyed() || page.runtime.initializing) return;
+  if (page.webContents.isDestroyed()) return;
   events.emit(browserPageEventChannel, { browserId: page.browserId, type, detail, state: pageState(page.webContents) });
 }
 
@@ -115,6 +107,7 @@ function wireHost(host: BrowserWindow): void {
     for (const page of pages.values()) {
       if (page.runtime.host !== host) continue;
       page.dialogs?.pageShown();
+      notifyPresentation(page);
     }
   };
   host.on('move', reposition);
@@ -128,6 +121,7 @@ function wireHost(host: BrowserWindow): void {
     for (const page of [...pages.values()]) {
       if (page.runtime.host !== host) continue;
       page.runtime.moveTo(null);
+      notifyPresentation(page);
       page.dialogs?.hostChanged();
       releaseBrowserPage(page.browserId);
     }
@@ -145,6 +139,7 @@ function contentRect(host: BrowserWindow): Rect {
 }
 
 function pageIsShown(page: BrowserPage): boolean {
+  if (page.presentation) return !!page.presentation.rect && page.presentation.rect.width > 0 && page.presentation.rect.height > 0;
   const rect = page.rect;
   return page.fullscreen || (page.mode === 'shown' && !!rect && rect.width > 0 && rect.height > 0);
 }
@@ -152,14 +147,21 @@ function pageIsShown(page: BrowserPage): boolean {
 /** 页面始终留在所属宿主;只改变视口与显示状态。 */
 function applyLayout(page: BrowserPage): void {
   if (page.webContents.isDestroyed()) return;
+  if (page.presentation) {
+    const { host, rect } = page.presentation;
+    if (host.isDestroyed()) return;
+    page.runtime.moveTo(host); page.runtime.layout(rect, !!rect && rect.width > 0 && rect.height > 0);
+    page.dialogs?.pageShown(); notifyPresentation(page); return;
+  }
   const host = page.runtime.host;
   if (!host || host.isDestroyed()) return;
   const sized = page.rect !== null && page.rect.width > 0 && page.rect.height > 0;
-  const shown = pageIsShown(page);
+  let shown = pageIsShown(page);
+  if (page.webContents.isDestroyed()) shown = false;
   // 先定大小再挂上去:挂上的那一帧就在新位置。
   page.runtime.layout(page.fullscreen ? contentRect(host) : sized ? page.rect : null, shown);
-  placeAgentLayers(page);
   page.dialogs?.pageShown();
+  notifyPresentation(page);
 }
 
 /** 人此刻看得见这张网页:挂在窗口上、那扇窗露着。 */
@@ -203,6 +205,13 @@ export function mountBrowserPage(args: {
     return { success: true, reused: true, ready: page.ready, state: pageState(page.webContents) };
   }
 
+  page = createBrowserPage(args);
+  installBrowserPage(page);
+  navigatePage(page, validation.url);
+  return { success: true, reused: false, ready: false, state: pageState(page.webContents) };
+}
+
+function createBrowserPage(args: { browserId: string; partition: string; windowName: string }): BrowserPage {
   const view = new WebContentsView({
     // 锁定态(生产包)下 DevTools 一并关掉,同咕咕别的窗口(devtools-lock.ts)。
     webPreferences: hardenWebPreferences({
@@ -217,6 +226,7 @@ export function mountBrowserPage(args: {
       webviewTag: false,
       // 网页换页时 ❌ 把焦点拉过去(人可能正在聊天框里打字)。
       focusOnNavigation: false,
+      ...PAGE_FULLSCREEN_PREFERENCES,
     }),
   });
   view.setBackgroundColor('#ffffff');
@@ -225,7 +235,7 @@ export function mountBrowserPage(args: {
     const current = pages.get(args.browserId);
     if (current?.runtime === runtime && current.releaseExpired) destroyBrowserPage(args.browserId);
   });
-  page = {
+  const page: BrowserPage = {
     browserId: args.browserId,
     partition: args.partition,
     view,
@@ -238,23 +248,26 @@ export function mountBrowserPage(args: {
     ready: false,
     releaseTimer: null,
     releaseExpired: false,
-    layers: [],
-    cursorShown: false,
+    presentationListeners: new Set(),
     dialogs: null,
   };
-  pages.set(args.browserId, page);
-  const adopted = page;
-  browserWebContentsRegistry.adoptPageWebContents(args.browserId, webContents, {
-    window: () => (adopted.runtime.host && !adopted.runtime.host.isDestroyed() ? adopted.runtime.host : null),
-    origin: () => (adopted.fullscreen ? { x: 0, y: 0 } : { x: adopted.rect?.x ?? 0, y: adopted.rect?.y ?? 0 }),
+  return page;
+}
+
+function installBrowserPage(page: BrowserPage): void {
+  browserWebContentsRegistry.adoptPageWebContents(page.browserId, page.webContents, {
+    window: () => (page.runtime.host && !page.runtime.host.isDestroyed() ? page.runtime.host : null),
+    origin: () => (page.fullscreen ? { x: 0, y: 0 } : { x: page.rect?.x ?? 0, y: page.rect?.y ?? 0 }),
   });
+  // A synchronous host callback during adoption can revoke/retire this very candidate.
+  if (page.webContents.isDestroyed()) throw new Error('the browser tab was closed');
+  pages.set(page.browserId, page);
   wirePage(page);
-  moveToHost(page, args.windowName);
-  navigatePage(page, validation.url);
-  return { success: true, reused: false, ready: false, state: pageState(webContents) };
+  moveToHost(page, page.windowName);
 }
 
 function moveToHost(page: BrowserPage, windowName: string): void {
+  if (page.presentation) { page.windowName = windowName; return; }
   const host = resolveHost(windowName);
   const moved = page.runtime.host !== host;
   if (moved) {
@@ -298,6 +311,7 @@ function wirePage(page: BrowserPage): void {
     host: () => (page.runtime.host && !page.runtime.host.isDestroyed() ? page.runtime.host : null),
   });
   webContents.on('dom-ready', () => {
+    notifyPresentation(page);
     if (page.runtime.initializing) return;
     page.ready = true;
     // 网页照 Chrome 那样能双指捏合放大(#6456)。Electron 默认关着;只开这一张网页的。每次 dom-ready 都设:换页可能换渲染进程。
@@ -329,6 +343,7 @@ function wirePage(page: BrowserPage): void {
   webContents.on('page-favicon-updated', (_event, favicons) => emitPageEvent(page, 'page-favicon-updated', { favicons }));
   webContents.on('focus', () => emitPageEvent(page, 'focus'));
   webContents.on('blur', () => emitPageEvent(page, 'blur'));
+  webContents.on('zoom-changed', () => notifyPresentation(page));
   // 网页要全屏(视频):view 铺满整个窗口内容区,退出时回到页签那一块。
   webContents.on('enter-html-full-screen', () => {
     page.fullscreen = true;
@@ -345,9 +360,10 @@ function wirePage(page: BrowserPage): void {
   });
   webContents.once('destroyed', () => {
     if (pages.get(page.browserId) === page) {
+      notifyPresentation(page);
+      page.presentationListeners.clear();
       pages.delete(page.browserId);
       if (page.releaseTimer) clearTimeout(page.releaseTimer);
-      closeAgentLayers(page);
     }
   });
 }
@@ -367,12 +383,35 @@ export function layoutBrowserPage(args: {
   const page = pages.get(args.browserId);
   if (!page || page.webContents.isDestroyed()) return false;
   if (args.windowName !== page.windowName) moveToHost(page, args.windowName);
-  const host = page.runtime.host;
+  const host = resolveHost(args.windowName);
   const zoom = host && !host.isDestroyed() ? host.webContents.getZoomFactor() : 1;
   page.rect = args.rect ? toDip(args.rect, zoom) : null;
   page.mode = args.mode;
   applyLayout(page);
   return true;
+}
+
+/** Main supplies the actual App embedder. Apps never choose native windows or browser partitions. */
+export function leaseBrowserPagePresentation(browserId: string, host: BrowserWindow) {
+  const page = pages.get(browserId);
+  if (!page || page.webContents.isDestroyed() || host.isDestroyed()) throw new Error('The task page cannot be mounted');
+  if (page.presentation) throw new Error('The task page is already mounted by an App');
+  const presentation = { host, rect: null as Rect | null };
+  page.presentation = presentation; wireHost(host);
+  let closed = false;
+  return {
+    layout(rect: Rect | null) {
+      if (closed || page.presentation !== presentation || page.webContents.isDestroyed() || host.isDestroyed()) throw new Error('The task page mount closed');
+      presentation.rect = rect ? toDip(rect, host.webContents.getZoomFactor()) : null;
+      applyLayout(page);
+    },
+    close() {
+      if (closed) return; closed = true;
+      if (page.presentation !== presentation) return;
+      delete page.presentation;
+      if (!page.webContents.isDestroyed()) { moveToHost(page, page.windowName); applyLayout(page); }
+    },
+  };
 }
 
 export function toDip(rect: Rect, zoom: number): Rect {
@@ -405,14 +444,15 @@ export function destroyBrowserPage(browserId: string): void {
   const page = pages.get(browserId);
   if (!page) return;
   pages.delete(browserId);
+  notifyPresentation(page); page.presentationListeners.clear();
   if (page.releaseTimer) clearTimeout(page.releaseTimer);
-  closeAgentLayers(page);
   page.runtime.close();
 }
 
 function livePage(browserId: string): BrowserPage | null {
   const page = pages.get(browserId);
-  return page && !page.webContents.isDestroyed() ? page : null;
+  if (!page || page.webContents.isDestroyed()) return null;
+  return page.webContents.isDestroyed() ? null : page;
 }
 
 export function navigateBrowserPage(browserId: string, url: string): boolean {
@@ -442,10 +482,10 @@ export function runBrowserPageCommand(browserId: string, command: BrowserPageCom
   const { webContents } = page;
   switch (command) {
     case 'goBack':
-      if (webContents.navigationHistory.canGoBack()) webContents.navigationHistory.goBack();
+      page.runtime.goBack();
       return true;
     case 'goForward':
-      if (webContents.navigationHistory.canGoForward()) webContents.navigationHistory.goForward();
+      page.runtime.goForward();
       return true;
     case 'reload':
       void page.runtime.reload().catch(error => navigationFailed(page, page.runtime.requestedUrl, error));
@@ -466,7 +506,30 @@ export function setBrowserPageZoom(browserId: string, factor: number): boolean {
   const page = livePage(browserId);
   if (!page) return false;
   page.webContents.setZoomFactor(normalizeBrowserZoomFactor(factor));
+  notifyPresentation(page);
   return true;
+}
+
+/** A host-only lookup captured by a task lease; the App never supplies a native contents/window ID. */
+export function browserPagePresentation(browserId: string): TaskPagePresentation | null {
+  const page = livePage(browserId);
+  try { return page && pageIsShown(page) ? nativePagePresentation(page.view, page.runtime.host) : null; }
+  catch (error) { log.warn('Could not measure page presentation', { error: String(error) }); return null; }
+}
+
+function notifyPresentation(page: BrowserPage): void {
+  for (const listener of page.presentationListeners) {
+    try { listener(); } catch (error) { log.warn('Could not report page presentation', { error: String(error) }); }
+  }
+}
+
+export function onBrowserPagePresentation(browserId: string, listener: (value: TaskPagePresentation | null) => void): () => void {
+  const page = livePage(browserId);
+  if (!page) throw new Error('The task page was closed');
+  const changed = () => listener(browserPagePresentation(browserId));
+  page.presentationListeners.add(changed);
+  try { changed(); } catch (error) { page.presentationListeners.delete(changed); throw error; }
+  return () => { page.presentationListeners.delete(changed); };
 }
 
 export async function measureBrowserPage(browserId: string): Promise<BrowserPageLayout | null> {
@@ -517,128 +580,5 @@ export function focusBrowserHost(windowName: string): boolean {
   const host = resolveHost(windowName);
   if (!host || host.isDestroyed()) return false;
   host.webContents.focus();
-  return true;
-}
-
-// ---------------------------------------------------------------------------------------------
-// agent 的鼠标与小条:窗口里叠在网页上面的两层(window-layers.ts),由页签那边 window.open 开出来、界面同一个渲染进程
-// 直接画进去;主进程这里只管它们摆在哪、露不露。
-
-/** 小条底边离网页底边多远(小条那层四周留了一圈给阴影的透明边,这里扣掉)。 */
-const BADGE_BOTTOM_GAP = 4;
-
-/** 开着的层,按 window.open 的名字(每次开都不一样):页签那边不要了时按名字关。 */
-const agentLayersByName = new Map<string, WebContentsView>();
-
-serveWindowLayers(AGENT_OVERLAY_WINDOW_NAME_PREFIX, {
-  accepts: (frameName) => agentOverlayOfFrame(frameName) !== null,
-  options: (frameName) => windowLayerOptions({ enablePreferredSizeMode: agentOverlayOfFrame(frameName)?.part === 'badge' }),
-  open: openAgentLayer,
-});
-
-function openAgentLayer(host: BrowserWindow, frameName: string, content: WindowLayerContent): void {
-  const { webContents } = content;
-  const overlay = agentOverlayOfFrame(frameName);
-  const page = overlay ? livePage(overlay.browserId) : null;
-  const view = openWindowLayer(host, content, overlay?.part === 'badge' ? WINDOW_LAYER_RANK.agentBadge : WINDOW_LAYER_RANK.agentCursor, {
-    // 点到鼠标层是人在操作网页:键盘焦点给网页。小条那层交回界面(默认)。
-    focusTarget: () => (overlay?.part === 'cursor' && page && page.runtime.host === host && !page.webContents.isDestroyed() ? page.webContents : null),
-  });
-  agentLayersByName.set(frameName, view);
-  webContents.once('destroyed', () => {
-    if (agentLayersByName.get(frameName) === view) agentLayersByName.delete(frameName);
-  });
-  // 没有这张网页:关掉(页签那边只在网页建好之后才开层)。
-  if (!overlay || !page) {
-    setImmediate(() => {
-      if (!webContents.isDestroyed()) webContents.close();
-    });
-    return;
-  }
-  const layer: AgentLayer = { part: overlay.part, view, contents: webContents, host, size: null };
-  // 同一扇窗同一种只留一层:页签那边重开时,旧的那层由新的换掉(请主进程关旧层的那一下可能晚到)。
-  for (const previous of page.layers.filter((entry) => entry.part === layer.part && entry.host === host)) {
-    removeAgentLayer(page, previous);
-    if (!previous.contents.isDestroyed()) previous.contents.close();
-  }
-  page.layers.push(layer);
-  if (layer.part === 'badge') {
-    webContents.on('preferred-size-changed', (_event, preferred) => {
-      const sized = Number.isFinite(preferred.width) && Number.isFinite(preferred.height) && preferred.width > 0 && preferred.height > 0;
-      layer.size = sized ? { width: Math.ceil(preferred.width), height: Math.ceil(preferred.height) } : null;
-      placeAgentLayers(page);
-    });
-  }
-  webContents.once('destroyed', () => removeAgentLayer(page, layer));
-  placeAgentLayers(page);
-}
-
-function removeAgentLayer(page: BrowserPage, layer: AgentLayer): void {
-  const at = page.layers.indexOf(layer);
-  if (at !== -1) page.layers.splice(at, 1);
-}
-
-/**
- * 层只在网页露在开它的那扇窗上(挂在窗口上、页签那一块看得见、不是全屏)时露:小条摆在网页底部正中;鼠标那层铺满网页,
- * agent 操作时才露 —— 收着时也先摆好大小,露出来的头一帧鼠标就画在对的地方。
- */
-function placeAgentLayers(page: BrowserPage): void {
-  const rect = page.rect;
-  const shown = page.runtime.host !== null && page.mode === 'shown' && !page.fullscreen && !!rect && rect.width > 0 && rect.height > 0;
-  for (const layer of page.layers) {
-    if (layer.contents.isDestroyed()) continue;
-    const here = shown && layer.host === page.runtime.host;
-    if (layer.part === 'cursor') {
-      if (here && rect) layer.view.setBounds(rect);
-      layer.view.setVisible(here && page.cursorShown);
-      continue;
-    }
-    const size = layer.size;
-    if (here && rect && size) {
-      layer.view.setBounds({
-        x: rect.x + Math.round((rect.width - size.width) / 2),
-        y: rect.y + rect.height - size.height - BADGE_BOTTOM_GAP,
-        ...size,
-      });
-    }
-    layer.view.setVisible(here && !!size);
-  }
-}
-
-function closeAgentLayers(page: BrowserPage): void {
-  const layers = page.layers.splice(0);
-  for (const layer of layers) if (!layer.contents.isDestroyed()) layer.contents.close();
-}
-
-/**
- * 页签那边不要这几层了(agent 不用这个页签了、页签不在屏上、挪了位置):按名字关掉。界面那边 ❌ 自己 window.close —— 那会关掉
- * 整扇咕咕窗口(window-layers.ts)。紧接着新开的那几层名字不同,不受影响。
- */
-export function closeAgentOverlayLayers(frameNames: readonly string[]): void {
-  for (const frameName of frameNames) {
-    const view = agentLayersByName.get(frameName);
-    if (view && !view.webContents.isDestroyed()) view.webContents.close();
-  }
-}
-
-/**
- * 页签那边要不要画 agent 的鼠标(agent 在操作这个页签、页签在屏上):要画时鼠标那层铺满网页露出来,
- * 不画时收起 —— 它盖着网页,人的点击、滚动由页签转交给网页。
- */
-export function setAgentCursorShown(browserId: string, shown: boolean): void {
-  const page = livePage(browserId);
-  if (!page || page.cursorShown === shown) return;
-  page.cursorShown = shown;
-  placeAgentLayers(page);
-}
-
-/** A decorative native view cannot let input through; deliver the person's input to its page. */
-export function forwardAgentCursorInput(browserId: string, input: BrowserCursorInput): boolean {
-  const page = livePage(browserId);
-  if (!page || !onScreen(page) || !page.cursorShown || page.fullscreen) return false;
-  const pointer = browserCursorInput(input);
-  if (!pointer) return false;
-  if (pointer.type === 'mouseDown') page.webContents.focus();
-  page.webContents.sendInputEvent(pointer);
   return true;
 }

@@ -72,6 +72,7 @@ export default {
     "leaveGroup": "Leave this group chat?"
   },
   "contextMenu": {
+    "more": "More",
     "deleteAgent": "Archive task",
     "deleteContact": "Delete contact",
     "disableNotifications": "Mute notifications",
@@ -184,11 +185,7 @@ export default {
   "groupInvite": {
     "approvalHint": "An admin must approve this group request.",
     "confirmTitle": "Confirm joining group chat",
-    "copyFailed": "Copy failed. Copy the link manually.",
-    "copyLink": "Copy link",
-    "copyQr": "Copy QR image",
     "creator": "Created by {{name}}",
-    "groupFallback": "Group",
     "groupNumber": "Group ID {{number}}",
     "groupNumberHash": "Group ID #{{number}}",
     "groupSummary": "Group ID {{number}} · {{count}} members",
@@ -206,7 +203,6 @@ export default {
     "joinFailedWithReason": "Could not join: {{error}}",
     "joining": "Joining…",
     "joinTitle": "Join group chat",
-    "linkCopied": "Invite link copied",
     "lookingUp": "Looking up group chat…",
     "lookupFailed": "Lookup failed. Try again.",
     "memberCount": "{{count}} members",
@@ -214,11 +210,6 @@ export default {
     "memberCount_other": "{{count}} members",
     "notFound": "No group found with this ID",
     "pendingApproval": "Awaiting approval",
-    "qrAlt": "{{name}} group QR code",
-    "qrCopied": "QR image copied and ready to paste",
-    "qrExportFailed": "Could not create the QR image",
-    "qrFileName": "{{name}}-group-QR.png",
-    "qrSaved": "QR image saved",
     "qrTitle": "Group QR code",
     "requesting": "Requesting…",
     "requestJoin": "Request to join",
@@ -390,37 +381,18 @@ export default {
     "scanToJoinGugu": "Scan to join Gugu"
   },
   "tags": {
-    "back": "Back to tag",
-    "backToList": "Back to tag list",
-    "contactKind": "Contact",
     "countSummary": "{{count}} entries total",
     "countSummary_one": "{{count}} entry total",
     "countSummary_other": "{{count}} entries total",
     "create": "Create tag",
     "delete": "Delete {{name}}",
     "deleteConfirm": "Delete tag “{{name}}”?",
-    "editMembers": "Edit members",
-    "editTitle": "Edit tag members",
-    "emptyContacts": "No contacts or Agents",
-    "emptyDescription": "Tag contacts or Agents to show them in this list.",
-    "emptyTitle": "This tag has no entries",
-    "filters": {
-      "agent": "Agents",
-      "all": "All",
-      "contacts": "Contacts"
-    },
     "namePlaceholder": "Tag name",
-    "noResults": "No entries found",
-    "objectCount": "{{count}} entries",
-    "objectCount_one": "{{count}} entry",
-    "objectCount_other": "{{count}} entries",
     "rename": "Rename {{name}}",
-    "searchPlaceholder": "Search contacts or Agents",
     "title": "Tags",
     "titleWithCount": "Tag · {{count}} entries",
     "titleWithCount_one": "Tag · {{count}} entry",
-    "titleWithCount_other": "Tag · {{count}} entries",
-    "updateFailed": "Could not update tag members"
+    "titleWithCount_other": "Tag · {{count}} entries"
   },
   "toast": {
     "deleteAgentFailed": "Could not archive task",

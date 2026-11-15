@@ -6,11 +6,9 @@ import { messageForUser } from '@/lib/userFacingError'
 import { markFileStorage, readFileStorageOverview, type FileStorageClass, type FileStorageOverview } from '../../lib/fileStorage'
 import { Button } from '../ui/Button'
 import { Popover } from '../ui/Popover'
-import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
 import { InfoTooltip } from '@renderer/lib/ui/info-tooltip'
 import { useTheme } from '@/store/theme'
-import { sessionSkinClassName } from '../sessionpage/sessionSkin'
-import '../sessionpage/SessionSettingsSection.css'
+import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
 import { SettingsGroup, SettingsNote, SettingsRow } from './SettingsPrimitives'
 import '../usage/usage.css'
 
@@ -46,10 +44,9 @@ export function FileStorageDashboard() {
   const [busy, setBusy] = useState(false)
   const [all, setAll] = useState(false)
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'expires', dir: 1 })
-  // The ⓘ is the session page's InfoTooltip: its popup lands in the Settings dialog's own layer, as the session-page
-  // sections' do (SessionSettingsSection), not behind the dialog on <body>.
-  const skin = sessionSkinClassName(useTheme().theme)
-  const [layer, setLayer] = useState<HTMLDivElement | null>(null)
+  // The ⓘ is the session page's InfoTooltip: its popup lands in the skin layer SessionUiTheme puts at the end of the
+  // dashboard, inside the Settings dialog, as the session-page sections' do — not behind the dialog on <body>.
+  const { theme } = useTheme()
 
   const load = useCallback(() => {
     let live = true
@@ -122,6 +119,7 @@ export function FileStorageDashboard() {
 
   return (
         <div className="gg-usage" data-testid="file-storage-dashboard">
+      <SessionUiTheme theme={theme} skin>
       <section data-testid="file-storage-usage">
         <div className="flex items-end justify-between gap-4">
           <div className="min-w-0">
@@ -169,9 +167,9 @@ export function FileStorageDashboard() {
             <span key={name} data-testid={`file-storage-legend-${name}`} className="inline-flex items-center">
               <span aria-hidden className={`mr-[6px] size-2 rounded-full ${SWATCH[name]}`} />
               {classLabel(name)}
-              {name === 'kept' && <span className="ml-1 inline-flex"><UiPortalContainerProvider value={layer}><InfoTooltip label={t('fileStorage.dashboard.keptRuleLabel')} contentClassName="max-w-sm"
+              {name === 'kept' && <span className="ml-1 inline-flex"><InfoTooltip label={t('fileStorage.dashboard.keptRuleLabel')} contentClassName="max-w-sm"
                 content={overview.expiry ? t('fileStorage.dashboard.keptRule', { size: size(overview.expiry.large_file_bytes), days: Math.round(overview.expiry.idle_seconds / 86400) })
-                  : t('fileStorage.dashboard.keptRuleNoExpiry')} /></UiPortalContainerProvider></span>}
+                  : t('fileStorage.dashboard.keptRuleNoExpiry')} /></span>}
               <b className="ml-1 font-medium text-[var(--fg)]">{size(overview.classes[name].bytes)}</b>
               <span>&nbsp;· {t('fileStorage.dashboard.files', { count: overview.classes[name].count })}</span>
             </span>
@@ -234,7 +232,7 @@ export function FileStorageDashboard() {
             </div>
           ))}
         </div>, 'file-storage-machines')}
-      <div ref={setLayer} className={`${skin} gg-session-settings-layer`} />
+      </SessionUiTheme>
     </div>
   )
 }

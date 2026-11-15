@@ -129,6 +129,8 @@ const EXEC_JSON_MAX_BUFFER = 64 * 1024 * 1024
 export const GITHUB_PR_FILES_API_CAP: number = 3000
 const PENDING_STATUSES = new Set(['queued', 'in_progress', 'pending', 'requested', 'waiting'])
 const WORKFLOW_PATH = /^\.github\/workflows\/[^/]+\.ya?ml$/
+// Cache warming accelerates later jobs; it never supplies build/test evidence.
+const CACHE_WARMUP_WORKFLOW = 'Warm shared CI caches'
 
 function requireString(value: unknown, label: string): string {
   if (typeof value !== 'string' || value.length === 0) {
@@ -285,7 +287,7 @@ function workflowMatchesEventWithoutPaths(workflow: Parsed, event: VerdictEvent,
 }
 
 /**
- * Does anything in this inventory subscribe to this event at all?
+ * Does any canonical workflow in this inventory subscribe to this event?
  *
  * GitHub only runs a workflow that asked for the event. `pull_request_target` in a repository
  * that never uses that trigger therefore **never fires** — expecting checks from it is expecting
@@ -299,7 +301,8 @@ function workflowMatchesEventWithoutPaths(workflow: Parsed, event: VerdictEvent,
 export function eventHasSubscribingWorkflow(event: VerdictEvent): boolean {
   return event.workflows.some((entry) => {
     const workflow = entry.workflow ?? YAML.parse(entry.source)
-    return workflowMatchesEventWithoutPaths(workflow, event, `${event.inventoryRef}:${entry.path}`)
+    return workflow.name !== CACHE_WARMUP_WORKFLOW
+      && workflowMatchesEventWithoutPaths(workflow, event, `${event.inventoryRef}:${entry.path}`)
   })
 }
 
@@ -558,6 +561,7 @@ export function deriveCheckProfiles(events: VerdictEvent[]): CheckProfile[] {
     let eventMatchedWorkflows = 0
     for (const entry of event.workflows) {
       const workflow: Parsed = entry.workflow ?? YAML.parse(entry.source)
+      if (workflow.name === CACHE_WARMUP_WORKFLOW) continue
       const label = `${event.inventoryRef}:${entry.path}`
       if (workflowMatchesEventWithoutPaths(workflow, event, label)) eventMatchedWorkflows += 1
       if (!workflowRunsForEvent(workflow, event, label)) continue

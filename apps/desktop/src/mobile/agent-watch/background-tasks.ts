@@ -3,6 +3,7 @@ import {
   collectBackgroundCommandRoster,
   collectSubagentRoster,
   type BackgroundCommandEntry,
+  type SubagentRegistryEntry,
   type SubagentRosterEntry,
 } from '@gugu/session-chat-ui/background-rosters'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
@@ -32,14 +33,17 @@ export function backgroundTaskRosters(
   sessionId: string,
   turns: readonly TranscriptTurn[],
   runningCommandTaskIds: readonly string[] | null,
+  /** Running subagents' own calls from the timeline (#2500); they are not inside the turns. */
+  subagentSteps: readonly SubagentRegistryEntry[] = [],
 ): { commands: BackgroundCommandEntry[]; subagents: SubagentRosterEntry[] } {
   const last = turns.at(-1)
   const active = last && !last.outcome ? last : null
   const committed = active ? turns.slice(0, -1) : turns
   const shown = <T extends { id: string }>(rows: T[]) => rows.filter((row) => !isSubagentDismissed(sessionId, row.id))
   return {
-    commands: shown(collectBackgroundCommandRoster(committed, active, translateSessionMessage('transcript.backgroundCommand'), runningCommandTaskIds)),
-    subagents: shown(collectSubagentRoster(committed, active, translateSessionMessage('transcript.subagent'))),
+    commands: shown(collectBackgroundCommandRoster(committed, active, translateSessionMessage('transcript.backgroundCommand'), runningCommandTaskIds,
+      subagentSteps.flatMap((entry) => entry.steps ?? []))),
+    subagents: shown(collectSubagentRoster(committed, active, translateSessionMessage('transcript.subagent'), Date.now(), subagentSteps)),
   }
 }
 
@@ -53,13 +57,14 @@ export function usePhoneBackgroundTasks(
   turns: readonly TranscriptTurn[],
   dismissals: number,
   enabled: boolean,
+  subagentSteps: readonly SubagentRegistryEntry[],
   fetchRunning?: (deviceId: string, sessionId: string) => Promise<{ runningCommandTaskIds: string[] | null }>,
 ): PhoneBackgroundTasks {
   const [running, setRunning] = useState<{ key: string; ids: string[] | null; canStop: boolean } | null>(null)
   const key = `${deviceId}:${sessionId}`
   const known = running?.key === key ? running : null
   // 先不筛地算一遍:有没有东西可能在跑,决定要不要去问那台机器。
-  const candidates = useMemo(() => (enabled ? backgroundTaskRosters(sessionId, turns, null) : { commands: [], subagents: [] }), [enabled, sessionId, turns, dismissals]) // eslint-disable-line react-hooks/exhaustive-deps -- dismissals re-reads the mobx dismissal set
+  const candidates = useMemo(() => (enabled ? backgroundTaskRosters(sessionId, turns, null, subagentSteps) : { commands: [], subagents: [] }), [enabled, sessionId, turns, dismissals, subagentSteps]) // eslint-disable-line react-hooks/exhaustive-deps -- dismissals re-reads the mobx dismissal set
   const asking = candidates.commands.length + candidates.subagents.length > 0
   useEffect(() => {
     if (!asking) return

@@ -18,7 +18,7 @@ const group = 'topic-file-entry'
 const harness = createReactHarness()
 afterEach(() => harness.cleanup())
 function Entry({ topic }: { topic: string }) {
-  useLinkNavigation({ ownerId: 'owner', chats: [{ id: group, kind: 'group' }] as never, contacts: [],
+  useLinkNavigation({ ownerId: 'owner', chats: () => [{ id: group, kind: 'group' }] as never, contacts: () => [],
     openChat() {}, openFile: (chatId, target, source) => askChat(chatId, { itemId: target.itemId, ...source }),
     openApp() {}, openOwnApp() {}, openProject() {}, openAssistant() {},
   })

@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useState } from 'react';
-import { Zap } from '@/lib/icons';
+import { SquarePen } from '@/lib/icons';
 import { setComposerVerb, takeComposerCarry, type ComposerVerb } from '@/lib/composerVerbBridge';
 import { showBesideOnScreen } from '@renderer/app/screen-layout-actions';
 import { ProjectTaskComposer } from '@renderer/features/projects/components/main-panel/project-home';
@@ -26,17 +26,18 @@ export function SessionComposerVerbs({ sessionId, draft, onCarried }: {
   onCarried: () => void;
 }) {
   const { translate } = useSessionMessages();
-  const label = translate('taskDispatch.task');
+  // #2548 「新智能体」 with 创建智能体's pen, as the one-list sidebar and the chat composers (ComposerVerbs) name it.
+  const label = translate('taskDispatch.agent');
   const pick = (verb: ComposerVerb) => {
     setComposerVerb(sessionVerbKey(sessionId), verb, draft);
     if (draft.trim()) onCarried();
   };
-  // 标是「新任务」这件事本身(咕咕里「agent 干活」那枚闪电,同对话列表、任务行),❌ 画 agent / harness 的标:那枚在模型左边(锁定的 agent 按钮)。
+  // 标是「新智能体」这件事本身(创建智能体那支笔,同侧栏顶上),❌ 画 agent / harness 的标:那枚在模型左边(锁定的 agent 按钮)。
   // 窄到底排最后一档时字收掉、只剩这枚标(chat-composer.css 的 composer-foldable-label)。
   return (
     <>
       <Button variant="ghost" size="sm" data-testid="session-verb-task" aria-label={label} title={label} onClick={() => pick('task')}>
-        <Zap size={14} /><span data-slot="composer-foldable-label">{label}</span>
+        <SquarePen size={14} /><span data-slot="composer-foldable-label">{label}</span>
       </Button>
     </>
   );
@@ -52,7 +53,6 @@ export const SessionVerbDock = observer(function SessionVerbDock({ sessionId, pr
   /** 项目群;没有项目的会话 = undefined(它就是和这个 agent 的私聊,卡落那个私聊)。 */
   chatId: string | undefined;
 }) {
-  const { translate } = useSessionMessages();
   const key = sessionVerbKey(sessionId);
   const dmChatId = useSessionAgentChat(chatId ? null : { projectId, sessionId });
   const cardChatId = chatId ?? dmChatId;
@@ -63,7 +63,6 @@ export const SessionVerbDock = observer(function SessionVerbDock({ sessionId, pr
       <TaskDispatchComposer
         chatId={cardChatId}
         verbKey={key}
-        placeholder={(agent) => translate('taskDispatch.placeholderNew', { agent })}
         onSessionCreated={(result) => showBesideOnScreen({ kind: 'session', projectId: result.projectId, sessionId: result.sessionId })}
       />
     );
@@ -104,9 +103,9 @@ const SessionTaskDock = observer(function SessionTaskDock({ projectId, verbKey }
     <ProjectTaskComposer
       projectId={projectId}
       stage={stage}
-      verb={composerVerbLook('task', { label: translate('taskDispatch.task'), onCancel: () => cancelComposerVerb(verbKey, projectDraftKey(projectId)), testId: 'task-dispatch' })}
-      // 在一条会话里派:说清是交给一个新的 agent,❌ 眼前这一个。
-      placeholder={(agent) => translate('taskDispatch.placeholderNew', { agent })}
+      verb={composerVerbLook('task', { label: translate('taskDispatch.agent'), onCancel: () => cancelComposerVerb(verbKey, projectDraftKey(projectId)), testId: 'task-dispatch' })}
+      // 在一条会话里派:说清是交给一个新的 agent,❌ 眼前这一个(#2548 与群里的框同一句)。
+      placeholder={() => translate('taskDispatch.placeholderAgent')}
       onSessionCreated={(result) => {
         setComposerVerb(verbKey, null);
         showBesideOnScreen({ kind: 'session', projectId: result.projectId, sessionId: result.sessionId });

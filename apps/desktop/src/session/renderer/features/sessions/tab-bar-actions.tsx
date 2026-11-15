@@ -75,11 +75,10 @@ const TaskAddItems = observer(function TaskAddItems() {
   const { translate } = useSessionMessages();
   const sessionView = useWorkspaceViewModel();
   const { projectId, sessionId } = useSessionViewContext();
-  const { pane, paneId } = usePaneContext();
   const { data: agents } = useAgents();
   const canSideSession = canStartSideSession(projectId, sessionId, agents);
   const terminalEnabled = useTerminalEnabled();
-  const openTab = (kind: string) => sessionView.paneLayout.open(kind, {}, { from: null, intent: 'newTab', target: { paneId } });
+  const openTab = (kind: string) => sessionView.paneLayout.openBeside(kind, {});
   const folder = installedExtensionsStore.enabledTabContributions.find((entry) => entry.kind === WORKSPACE_APP_KIND);
   return (
     <>
@@ -88,10 +87,10 @@ const TaskAddItems = observer(function TaskAddItems() {
         renderWorkspaceActionMenuItem(actionId, translate, {
           blocked: sessionWorkspaceActionBlocked(projectId, actionId) !== null,
           blockedTitle: workspaceBlockedTitle(sessionWorkspaceActionBlocked(projectId, actionId), translate, projectId),
-          openBrowser: () => pane.open('browser', { intent: 'newTab' }),
-          openReview: () => sessionView.paneLayout.open('review', {}, { from: null, intent: 'newTab' }),
+          openBrowser: () => openTab('browser'),
+          openReview: () => openTab('review'),
           openTerminal: () => void sessionView.openTerminalAsTab(),
-          openPorts: () => sessionView.paneLayout.open('remote-ports', {}, { from: null, intent: 'newTab' }),
+          openPorts: () => openTab('remote-ports'),
           startSideSession: () => startSideSession(projectId, sessionId),
           canStartSideSession: canSideSession
         })
@@ -125,7 +124,7 @@ function OpenAddMenuCommand({ onOpen }: { onOpen: () => void }) {
 
 /** 块里一个对话的那几项(gugu-dev#181 第 ⑥ 步):这个对话的文件夹(群文件夹 / 文件夹),和能在这里打开的 App。 */
 const ChatAddItems = observer(function ChatAddItems({ chatId }: { chatId: string }) {
-  const folderName = useChatFolderName(chatId);
+  const folderName = useChatFolderName();
   return (
     <>
       <FolderMenuItem label={folderName} onOpen={() => openPanelItem(chatId, folderItem())} />

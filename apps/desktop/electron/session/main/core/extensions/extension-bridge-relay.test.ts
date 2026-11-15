@@ -57,7 +57,7 @@ const call = (method: string, args: Record<string, unknown>) =>
 beforeEach(async () => {
   setExtensionBridgeHost({
     deliver: () => Promise.resolve(),
-    presentation: () => ({ locale: 'zh-CN', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }),
+    selfGuguNumber: () => undefined, presentation: () => ({ locale: 'zh-CN', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }),
   });
   await bindExtensionSurface({ webContentsId: fakeContents.id, extensionId: 'ext.notes', workspace: sessionWorkspace('task-1'), tabId: 'tab-1', tabKind: 'ext.notes.main' });
 });

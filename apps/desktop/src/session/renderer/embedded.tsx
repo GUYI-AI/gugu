@@ -7,6 +7,7 @@ import { installLocalRendererDiagnostics } from '@/lib/localRendererDiagnostics'
 import '@/lib/insecure-context-shims';
 installLocalRendererDiagnostics();
 import { hasEntryRoot, renderEntryRoot } from '@/lib/renderer-entry-root';
+import { chatListRestored } from '@/lib/chatSummariesBridge';
 import { installRemoteHostSessionpageBridges } from './features/remote-hosts/install-sessionpage-bridges';
 import './lib/install-sessionpage-history-bridge';
 import { setupNavigationGuards } from '@renderer/app/view-registry';
@@ -44,6 +45,7 @@ import { wireRemoteExtensionResync } from '@renderer/features/extensions/wire-re
 import { wireMarketRefresh } from '@renderer/features/extensions/wire-market-refresh';
 import { wireProgramNotifications } from '@renderer/features/extensions/wire-program-notifications';
 import { wireAppQuit } from '@renderer/features/extensions/app-dock';
+import { wirePromptChanges } from '@renderer/features/library/prompts/prompt-changes';
 import { wireExtensionHostActions } from '@renderer/features/extensions/wire-extension-host-actions';
 import { setupAppCommandProvider } from '@renderer/lib/commands/app-commands';
 import { setupExtensionCommandProvider } from '@renderer/features/extensions/extension-command-provider';
@@ -72,6 +74,7 @@ import { openChatOnScreen } from './features/chats/open-chat';
 import { showGroupParticipant } from './features/chats/group-participant-actions';
 import { groupParticipantRequests } from './features/chats/group-participant-requests';
 import { wireGroupParticipantAccount } from './features/chats/group-participant-account';
+import { openSidebarPin, unpinSessionFromSidebar } from './features/sidebar/sidebar-pin-actions';
 import { installSessionTabViews, prewarmSessionTabViews } from './features/sessions/session-tab-views';
 import { appState } from './lib/stores/app-state';
 import { restoreSavedScreenSessionLocations, savedScreenSessionIds } from './features/sessions/restore-session-projects';
@@ -124,6 +127,10 @@ function renderSessionTree(container: HTMLElement, mountEl: HTMLElement | undefi
           <App />
         </ErrorBoundary>
       </SessionLocalizationProvider>
+      {/* @@@root-stays-put: this page's popups portal into the mount element, after the tree above. With this fixed
+          sibling the page is never :last-child of the mount, so opening a popup does not re-style every table cell,
+          list item and paragraph on the page (same reason as the element after #root in index.html). */}
+      <div data-root-sibling hidden />
     </UiPortalContainerProvider>
   );
 }
@@ -158,6 +165,8 @@ async function bootstrap() {
     openChatResource,
     openGroupChat: (sourceChatId, chatId) => showGroupParticipant(sourceChatId, { kind: 'chat', chatId }),
     prepareGroupSession: (sourceChatId, target) => groupParticipantRequests.prepare(sourceChatId, target),
+    unpinFromSidebar: unpinSessionFromSidebar,
+    openSidebarPin,
   });
   installRemoteHostSessionpageBridges(window, () => appState.navigation.navigate('new-session'));
   if (hasEntryRoot(container)) {
@@ -239,6 +248,8 @@ async function bootstrap() {
   wireRemoteExtensionResync();
   // 左栏「开着」的小点:哪些 App 退出了、还没再打开,由主进程推过来(#7050)。
   wireAppQuit();
+  // 某个 App 的程序改了提示词(Prompt 管理):重读一遍,删的那条当场给撤销。
+  wirePromptChanges();
   // Synchronous on purpose: main refuses to deliver an extension's action until
   // this side has declared itself ready, so an extension that acts the instant
   // its surface loads must not race the bootstrap's awaits.
@@ -249,6 +260,9 @@ async function bootstrap() {
     settleOptional(rpcOn(null).viewState.getForRestore(savedScreenSessionIds())),
     settleOptional(prefetchAppSettingsKey('interface')),
     settleOptional(prefetchAppSettingsKey('browser')),
+    // The account's stored conversations (local rows, never the network): the list, the inner head and the open
+    // conversation are in the first frame instead of arriving after it.
+    chatListRestored(),
   ]);
   const [navState, sidebarState, allViewStateResult] = results;
   for (const result of results) {

@@ -48,6 +48,15 @@ export function integrationGivesSessionTools(integrationId: string): boolean {
 }
 
 /**
+ * 连上以后 agent 能不能直接用它:给会话工具,或者是官方命令行(PATH 上的命令 + 它的 skills)。
+ * 都不是的(Jira、GitLab 这类 issue 系统,GitHub)只在咕咕界面里用 —— 资源库把它们单列成「仅界面」一组。
+ */
+export function integrationReachesAgent(integrationId: string): boolean {
+  const methods = integrationPluginRegistry.get(integrationId)?.capabilities.auth.methods ?? [];
+  return methods.some((method) => method.kind === 'cli') || integrationGivesSessionTools(integrationId);
+}
+
+/**
  * Current connected integrations. The permanent MCP re-reads this on tools/list and tools/call.
  */
 export async function connectedSessionIntegrations(

@@ -12,9 +12,11 @@ export {
   diskWindowsShimReader,
   escapeCmdCommand,
   escapeCmdShimArgument,
+  findWindowsCommandPaths,
   planDirectSpawn,
-  resolveWindowsHandoffExecutable,
+  resolveWindowsHandoffLaunch,
   type DirectSpawnPlan,
+  type WindowsHandoffLaunch,
   type WindowsHandoffOptions,
   type WindowsLauncherOverrides,
 } from './windows-launcher';

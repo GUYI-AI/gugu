@@ -2,7 +2,12 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { buildSocialBridge, createDesktopGuguMcpHost, type DesktopGuguMcpHost } from '../../../../apps/desktop/electron/acp-engine-utils'
-import { ASSISTANT_TASK_EXECUTION, assistantExecutionAction } from '../../../../packages/core/src/shared/assistantWorkflow'
+import { assistantExecutionAction } from '../../../../packages/core/src/shared/assistantWorkflow'
+import { installAssistantRulesResolver } from '../../../../apps/desktop/electron/assistant-rules-resolver'
+import { fixedAssistantRules } from '../assistantRules/fixtureApp'
+import { NEUTRAL_ASSISTANT_RULES as rules } from '../assistantRules/neutralRules'
+
+const ASSISTANT_TASK_EXECUTION = rules.texts['task-execution']
 import { AssistantWorkStore, type AssistantWorkBinding } from '../../../../apps/desktop/electron/sessionpage/assistant-work'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -18,15 +23,7 @@ const runtime = {
   env: { GUGU_HOME: '/tmp/gugu-assistant-role-test' },
 }
 
-it('keeps the dispatch contract below 500 tokens using a conservative UTF-8 byte bound', () => {
-  expect(new TextEncoder().encode(ASSISTANT_TASK_EXECUTION).length).toBeLessThanOrEqual(500)
-  expect(ASSISTANT_TASK_EXECUTION).not.toMatch(/主人|用户/)
-  expect(ASSISTANT_TASK_EXECUTION).toContain('本机路径')
-  expect(ASSISTANT_TASK_EXECUTION).toContain('咕咕报错按 <gugu_work> 报')
-  expect(ASSISTANT_TASK_EXECUTION).toContain('禁读咕咕程序、调试平台')
-})
-
-beforeEach(() => { host = createDesktopGuguMcpHost(); run.mockClear() })
+beforeEach(() => { installAssistantRulesResolver(fixedAssistantRules()); host = createDesktopGuguMcpHost(); run.mockClear() })
 afterEach(async () => {
   await Promise.all(clients.splice(0).map(client => client.close()))
   await host.dispose()
@@ -142,7 +139,7 @@ it('host adds the actual execution contract to spawn and reuse', async () => {
     expect(actual.source_link).toBe(source)
     if (field === 'prompt') expect(actual.device).toBe('remote')
     else expect(actual.to).toEqual(['session:existing'])
-    expect(assistantExecutionAction(actual)).toBe(actual)
+    expect(assistantExecutionAction(actual, rules)).toBe(actual)
   }
 })
 
@@ -151,7 +148,7 @@ it('an ordinary executor message is unchanged, and non-work actions are not rewr
   await executor.callTool({ name: 'session_message', arguments: { to: ['session:parent'], text: 'Verified and complete.' } })
   expect(run.mock.calls.at(-1)![0]).toMatchObject({ action: 'message', text: 'Verified and complete.' })
   for (const value of [null, [], 'invalid', { action: 'get' }, { action: 'spawn', prompt: 3 }]) {
-    expect(assistantExecutionAction(value)).toBe(value)
+    expect(assistantExecutionAction(value, rules)).toBe(value)
   }
 })
 

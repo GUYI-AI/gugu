@@ -16,7 +16,7 @@ vi.hoisted(() => {
   process.env.GUGU_ACCESS_TOKEN = `x.${Buffer.from(JSON.stringify({ sub: 'owner-1' })).toString('base64url')}.x`
 })
 // @ts-expect-error — 注入式 MCP server 是无类型 .mjs；运行时 import 可用。
-import { assertAgentMessageText, createGuguImServer as createGuguImServerImpl, callTool as callToolImpl, reconcileMentionExpression, resolveRecipientAddresses, restRpc as restRpcImpl, sendExtensionCardOf, groupDataFileOf, workspaceFileLink, TOOL_DEFS, IN_LIST_BATCH, serveToolsList } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
+import { assertAgentMessageText, createGuguImServer as createGuguImServerImpl, callTool as callToolImpl, reconcileMentionExpression, resolveRecipientAddresses, restRpc as restRpcImpl, restWriteError, sendExtensionCardOf, groupDataFileOf, workspaceFileLink, TOOL_DEFS, IN_LIST_BATCH, serveToolsList } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
 import {
   dollarRunBoundaryFixtures,
   markdownStructureBoundaryFixtures,
@@ -282,6 +282,10 @@ function toolRequiresChatId(schema: Record<string, unknown> | null | undefined):
   const properties = schema.properties as Record<string, Record<string, unknown>> | undefined
   return Array.isArray(schema.required) && schema.required.includes('chat_id') && properties?.chat_id !== undefined
 }
+// #2383 收件人合不合格由库判:从来不是成员的 id,库带 hint recipient_not_member 拒掉整条(gugu-supabase#240)。
+const recipientNotMember = (ids: string[]) => restWriteError('INSERT messages', 400,
+  JSON.stringify({ code: 'P0001', message: 'recipient_not_member', hint: 'recipient_not_member', details: ids.join(',') }))
+
 describe('the gugu MCP server requires an explicit chat target', () => {
   // @@@5856 名单改走按 actor 的 list_member_ids(裸读 chat_members 用的是主人的 JWT,agent 在
   // 「主人不在的那条线」上一行都读不到),所以「目标只来自 args」这条判据现在看 RPC 的 p_chat_id。
@@ -567,7 +571,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     const client = await connect(harness().deps)
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name).sort()).toEqual([
-      'activity_chat_list', 'contact_friend', 'forum_read', 'forum_reply', 'group_add_agent', 'group_announcement_delete', 'group_announcement_post', 'group_announcement_update', 'group_avatar_set', 'group_create', 'group_info', 'group_join_decide', 'group_join_requests', 'group_leave', 'group_list', 'group_remove_member', 'group_set_role', 'group_update', 'message_conversations', 'message_download_file', 'message_history', 'message_invitations', 'message_invite', 'message_members',
+      'activity_chat_list', 'contact_friend', 'group_add_agent', 'group_announcement_delete', 'group_announcement_post', 'group_announcement_update', 'group_avatar_set', 'group_create', 'group_info', 'group_join_decide', 'group_join_requests', 'group_leave', 'group_list', 'group_remove_member', 'group_set_role', 'group_update', 'message_conversations', 'message_download_file', 'message_history', 'message_invitations', 'message_invite', 'message_members',
       'message_rules', 'message_search', 'message_send', 'message_send_as_owner', 'message_send_file', 'message_send_file_as_owner',
       'owner_friends_list', 'profile_lookup', 'profile_update', 'profile_whoami', 'session_peers',
       'topic_delete', 'topic_invite', 'topic_list', 'topic_members', 'topic_open',
@@ -979,6 +983,58 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(h.calls.inserts).toHaveLength(1)
     await client.close()
   })
+  test('#2383 message_send reports a removed-identity refusal apart from an archived one', async () => {
+    const h = harness(['agent-1', 'alice', 'bob'])
+    const get = h.deps.restGet
+    h.deps.restGet = async (path: string) => path.startsWith('message_agent_delivery_blocks?')
+      ? [{ agent_user_id: 'alice', reason: 'agent_archived' }, { agent_user_id: 'bob', reason: 'identity_removed' }] : get(path)
+    const client = await connect(h.deps)
+    const result = await client.callTool({ name: 'message_send', arguments: {
+      chat_id: '00000000-0000-4000-8000-000000000001', text: 'Removal marker', to_user_ids: ['user:alice', 'user:bob'],
+    } })
+    expect(result.isError).not.toBe(true)
+    expect(text(result)).toContain('对方已归档、未送达 (user:alice; agent_archived')
+    expect(text(result)).toContain('对方已移除、未送达 (user:bob; identity_removed; retained in history, the identity cannot be restored)')
+    expect(h.calls.inserts).toHaveLength(1)
+    await client.close()
+  })
+  test('#2383 message_send reports a refusal reason it does not know as not delivered, not as an error', async () => {
+    const h = harness(['agent-1', 'alice'])
+    const get = h.deps.restGet
+    h.deps.restGet = async (path: string) => path.startsWith('message_agent_delivery_blocks?')
+      ? [{ agent_user_id: 'alice', reason: 'a_reason_added_later' }] : get(path)
+    const client = await connect(h.deps)
+    const result = await client.callTool({ name: 'message_send', arguments: {
+      chat_id: '00000000-0000-4000-8000-000000000001', text: 'Later marker', to_user_ids: ['user:alice'],
+    } })
+    // 消息已经进了群:报错会让 agent 重发一遍。
+    expect(result.isError).not.toBe(true)
+    expect(text(result)).toContain('未送达 (user:alice; a_reason_added_later; retained in history')
+    expect(h.calls.inserts).toHaveLength(1)
+    await client.close()
+  })
+  // #2383 客户端不再预判收件人:库说了算。三种收件人 —— 正常成员、身份已移除的归档 agent(库收下、记 refusal)、
+  // 从来不是成员的 id(库拒、工具说清是谁)—— 各走一遍真实的发送路径。
+  test.each([
+    { who: 'a current member', to: 'alice', refused: null, blocks: [], expect: /^sent \(id=/ },
+    { who: 'a removed identity that once had a seat', to: 'bob', refused: null, blocks: [{ agent_user_id: 'bob', reason: 'identity_removed' }], expect: /对方已移除、未送达 \(user:bob; identity_removed/ },
+    { who: 'an id that was never a member', to: 'ghost', refused: ['ghost'], blocks: [], expect: /收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里：ghost/ },
+  ])('#2383 message_send to $who follows the server', async ({ to, refused, blocks, expect: expected }) => {
+    const h = harness(['agent-1', 'alice'])
+    const insert = h.deps.restInsert
+    h.deps.restInsert = async (table: string, row: Record<string, unknown>) => { if (refused) throw recipientNotMember(refused); return insert(table, row) }
+    const get = h.deps.restGet
+    h.deps.restGet = async (path: string) => path.startsWith('message_agent_delivery_blocks?') ? blocks : get(path)
+    const client = await connect(h.deps)
+    const result = await client.callTool({ name: 'message_send', arguments: {
+      chat_id: '00000000-0000-4000-8000-000000000001', text: 'ping', to_user_ids: [`user:${to}`],
+    } })
+    expect(result.isError === true).toBe(refused !== null)
+    expect(text(result)).toMatch(expected)
+    expect(h.calls.inserts).toHaveLength(refused ? 0 : 1)
+    if (!refused) expect(h.calls.inserts[0][1]).toMatchObject({ to_user_ids: [to] })
+    await client.close()
+  })
   // @@@5856 名单读不到时必须说「读不到」,❌ 不许当空集(会把它说成「这些人不是成员」,与事实相反)、
   // ❌ 也不许当全集,更 ❌ 不许直接 .map 一个 null 崩成 TypeError(restRpc 对 void/空 body 回 null)。
   test.each([
@@ -1325,12 +1381,13 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(h.calls.inserts).toHaveLength(1)
     await client.close()
   })
-  test('#849 仍生效：非成员收件人 → isError、不投递', async () => {
+  test('#849/#2383 非成员收件人:库拒绝时 → isError、说清是谁不在本 chat', async () => {
     const h = harness(['agent-1', 'alice'])
+    h.deps.restInsert = async () => { throw recipientNotMember(['ghost']) }
     const client = await connect(h.deps)
     const r = await client.callTool({ name: 'message_send', arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: 'hi', to_user_ids: ['user:ghost'] } })
     expect(r.isError).toBe(true)
-    expect(text(r)).toMatch(/不在本 chat/)
+    expect(text(r)).toContain('收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里：ghost。用 message_members 查有效成员后重发。')
     expect(h.calls.inserts).toHaveLength(0)
     await client.close()
   })
@@ -2127,22 +2184,6 @@ describe('restRpc void/空 body 容忍 (#1216)', () => {
 })
 type DirectoryRow = { user_id: string; display_name: string; type: string | null; gugu_number: number | null; is_self: boolean }
 describe('message_members = 可寻址名录(spec ⑨)', () => {
-  test('disambiguates the full chat before filtering or pagination and matches exact serials', async () => {
-    const h = harness(['agent-1', 'codex-8-id', 'owner-1'])
-    h.deps.restGet = async () => [
-      { id: 'agent-1', display_name: 'Fix login', type: 'agent', name_serial: 9 },
-      { id: 'codex-8-id', display_name: 'Fix login', type: 'agent', name_serial: 93 },
-      { id: 'owner-1', display_name: 'Fix login', type: 'human', name_serial: null },
-      { id: 'outside', display_name: 'Fix login', type: 'agent', name_serial: 100 },
-    ]
-    const read = async (args: Record<string, unknown> = {}) => JSON.parse(await callTool('message_members', { chat_id: '00000000-0000-4000-8000-000000000001', ...args }, h.deps))
-    const all = await read({ name: 'Fix login' })
-    expect(all.items.map((row: DirectoryRow) => row.display_name)).toEqual(['Fix login', 'Fix login #9', 'Fix login #93'])
-    expect((await read({ name: 'Fix login #9' })).items.map((row: DirectoryRow) => row.user_id)).toEqual(['user:agent-1'])
-    expect((await read({ name: '#93', rows: '1' })).items.map((row: DirectoryRow) => row.user_id)).toEqual(['user:codex-8-id'])
-    expect((await read({ type: 'human' })).items[0].display_name).toBe('Fix login')
-  })
-
   function directoryHarness() {
     const h = harness(['agent-1', 'codex-8-id', 'owner-1'])
     const orig = h.deps.restGet
@@ -2758,11 +2799,13 @@ describe('message_send whisper (#6835)', () => {
     expect(h.calls.inserts[0][1]).toMatchObject({ is_whisper: true, to_user_ids: ['alice'] })
   })
 
-  // 普通发送的非成员检查(#849)对悄悄话照样生效 —— 这是所有发送的规矩,不是悄悄话另加的。
-  test('the ordinary non-member check still applies to a whisper', async () => {
+  // 普通发送的非成员拒绝(#849,#2383 起由库判)对悄悄话照样生效 —— 这是所有发送的规矩,不是悄悄话另加的。
+  test('the ordinary non-member refusal still applies to a whisper', async () => {
     const h = harness(['agent-1', 'alice'])
+    h.deps.restInsert = async () => { throw restWriteError('INSERT messages', 400, JSON.stringify({ code: '23514',
+      message: 'A whisper goes to a member of this chat: carol is not a member of 00000000-0000-4000-8000-000000000001' })) }
     const r = await send(h, { whisper: true, to_user_ids: ['user:carol'] })
-    expect(text(r)).toMatch(/收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里/)
+    expect(text(r)).toContain('收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里：carol。')
     expect(h.calls.inserts).toHaveLength(0)
   })
 

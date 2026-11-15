@@ -1,5 +1,7 @@
 import { err, ok, type Result } from '@gugu/session-shared';
-import { eq } from 'drizzle-orm';
+import type { CanonicalPath } from '@gugu/session-core/files';
+import { stat } from 'node:fs/promises';
+import { and, eq, or } from 'drizzle-orm';
 import { projectManager } from '@main/core/projects/project-manager';
 import type { ProjectProvider, SessionMount } from '@main/core/projects/project-provider';
 import { runtimeManager } from '@main/core/runtime/runtime-manager';
@@ -9,7 +11,7 @@ import {
   type MountedSession,
 } from '@main/core/sessions/session-builder';
 import { db as appDb, type AppDb } from '@main/db/client';
-import { sessions, workspaces } from '@main/db/schema';
+import { projects, sessions, workspaces } from '@main/db/schema';
 import type { ProvisionWorkspaceError } from '@shared/core/sessions/create-session';
 import { log } from '@main/lib/logger';
 import type { WorkspaceType } from '@shared/core/workspaces/workspaces';
@@ -47,6 +49,62 @@ export class WorkspaceBootstrapService {
     private readonly openOnDemand: OpenProjectOnDemand = openProjectOnDemand
   ) {}
 
+  /** The registry is a cache. File/tree/git callers can restore it without starting a session. */
+  async ensureWorkspaceSetupForWorkspace(projectId: string | undefined, workspaceId: string) {
+    const cached = workspaceRegistry.get(workspaceId);
+    if (cached) return cached;
+
+    const workspaceRow = this.db.select().from(workspaces).where(eq(workspaces.id, workspaceId)).get();
+    if (!workspaceRow) return null;
+    const session = this.db.select({ id: sessions.id, config: sessions.config, projectId: sessions.projectId })
+      .from(sessions).where(and(eq(sessions.workspaceId, workspaceId), projectId ? eq(sessions.projectId, projectId) : undefined)).limit(1).get();
+    // Root, attached folder, or a historical session: never borrow an unrelated project's settings/identity.
+    const projectRow = this.db.select({ id: projects.id, name: projects.name }).from(projects).where(and(
+      projectId ? eq(projects.id, projectId) : undefined,
+      or(
+        eq(projects.repositoryWorkspaceId, workspaceId),
+        workspaceRow.projectId ? eq(projects.id, workspaceRow.projectId) : undefined,
+        session ? eq(projects.id, session.projectId) : undefined,
+      ),
+    )).get();
+    if (!projectRow) return null;
+    if (isRetiredRemoteWorkspace(workspaceRow)) throw new Error(RETIRED_REMOTE_WORKSPACE_MESSAGE);
+    if (!workspaceRow.path) throw new Error(`Workspace ${workspaceId} has no directory`);
+    // Mounting must never recreate a deleted real directory, including attached/gitless workspaces.
+    if (!(await stat(workspaceRow.path)).isDirectory()) throw new Error(`Workspace directory is not a folder: ${workspaceRow.path}`);
+    const project = projectManager.getProject(projectRow.id) ?? await this.openOnDemand(projectRow.id);
+    if (!project) throw new Error(`Project ${projectRow.id} could not be opened`);
+    const acquired = await this._acquireWorkspace(
+      workspaceId,
+      session ? { id: session.id, title: taskName(session) } : { id: workspaceId, title: projectRow.name },
+      project,
+      workspaceRow.path,
+      workspaceGitContext(project, { kind: workspaceRow.kind, path: workspaceRow.path }),
+      false,
+    );
+    return acquired.workspace;
+  }
+
+  private _acquireWorkspace(
+    workspaceId: string,
+    session: MountedSession,
+    project: ProjectProvider,
+    workDir: CanonicalPath,
+    git: WorkspaceGitContext,
+    retain = true
+  ) {
+    return workspaceRegistry.acquire(workspaceId, project.projectId, createWorkspaceFactory(workspaceId, {
+      session,
+      workDir,
+      projectId: project.projectId,
+      projectPath: project.repoPath,
+      workspaceRuntime: { manager: runtimeManager },
+      settings: project.settings,
+      logPrefix: 'WorkspaceBootstrapService',
+      ...git,
+    }), { retain });
+  }
+
   /**
    * Resolves where a session runs, acquires that workspace (running lifecycle
    * scripts), and builds the session's providers.
@@ -61,7 +119,7 @@ export class WorkspaceBootstrapService {
       type: WorkspaceType;
       kind?: string | null;
       location?: 'local' | 'remote' | null;
-      path: string | null;
+      path: CanonicalPath | null;
     },
     session: MountedSession,
     project: ProjectProvider
@@ -133,7 +191,7 @@ export class WorkspaceBootstrapService {
     workspaceId: string,
     session: MountedSession,
     project: ProjectProvider,
-    workDir: string,
+    workDir: CanonicalPath,
     git: WorkspaceGitContext
   ): Promise<Result<WorkspaceBootstrapResult, ProvisionWorkspaceError>> {
     emitSessionProvisionProgress({
@@ -148,20 +206,7 @@ export class WorkspaceBootstrapService {
     const provisionStartedAt = Date.now();
     let acquired;
     try {
-      acquired = await workspaceRegistry.acquire(
-        workspaceId,
-        project.projectId,
-        createWorkspaceFactory(workspaceId, {
-          session,
-          workDir,
-          projectId: project.projectId,
-          projectPath: project.repoPath,
-          workspaceRuntime: { manager: runtimeManager },
-          settings: project.settings,
-          logPrefix: 'WorkspaceBootstrapService',
-          ...git,
-        })
-      );
+      acquired = await this._acquireWorkspace(workspaceId, session, project, workDir, git);
     } catch (e) {
       return err({
         type: 'setup-failed',

@@ -3,14 +3,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { installAssistantRulesResolver } from '../../../../apps/desktop/electron/assistant-rules-resolver'
+import { fixedAssistantRules } from '../assistantRules/fixtureApp'
 import {
   createDesktopGuguMcpHost,
   type DesktopGuguMcpHost,
   type GuguMcpContext,
 } from '../../../../apps/desktop/electron/acp-engine-utils'
 import { ACTIVITY_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-activity-tool'
-import { LIBRARY_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-library-tool'
 import { PROJECT_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-project-tool'
 import { SESSION_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-session-tool'
 import { EXTENSION_TOOL_DEFS, setExtensionCheckAvailable } from '../../../../apps/desktop/electron/mcp/gugu-extension-tool'
@@ -27,12 +28,11 @@ const SESSION_TOOL_NAMES = [
 ] as const
 const PROJECT_TOOL_NAMES = PROJECT_TOOL_DEFS.map((def) => def.name)
 const ACTIVITY_TOOL_NAMES = ACTIVITY_TOOL_DEFS.map(def => def.name)
-const LIBRARY_TOOL_NAMES = LIBRARY_TOOL_DEFS.map(def => def.name)
 const EXTENSION_TOOL_NAMES = ['app_manage', 'app_create', 'app_pack', 'app_install', 'app_check'] as const
 // #7221 给自己排的已安排:与 session_* 同一个分派器、同一份 grant。
 const SCHEDULE_TOOL_NAMES = ['schedule_create', 'schedule_list', 'schedule_cancel'] as const
 // #6614 每条 grant 都有的两个域:guide_* 与渐进披露的 catalog_*。
-const ALWAYS_TOOL_NAMES = ['guide_topics', 'guide_read', 'catalog_list', 'catalog_describe', 'catalog_call', 'app_search', 'widget_send'] as const
+const ALWAYS_TOOL_NAMES = ['guide_topics', 'guide_read', 'catalog_list', 'catalog_describe', 'catalog_call', 'app_search', 'widget_send', 'widget_get'] as const
 
 const clients: Client[] = []
 const hosts: DesktopGuguMcpHost[] = []
@@ -52,6 +52,8 @@ async function reachableTools(client: Client): Promise<Array<{ name: string; inp
 }
 
 // F14: these are desktop hosts, which run app_check; the one test of a host that cannot says so itself.
+// A personal assistant's dispatch renders the App's rules (#1931): a fixed set here.
+beforeAll(() => installAssistantRulesResolver(fixedAssistantRules()))
 beforeEach(() => setExtensionCheckAvailable(true))
 afterEach(async () => {
   setExtensionCheckAvailable(false)
@@ -173,7 +175,7 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
     const client = await connectTo(socialContext())
     const names = (await reachableTools(client)).map((tool) => tool.name)
     expect(names).toContain('message_send')
-    for (const name of [...SESSION_TOOL_NAMES, ...PROJECT_TOOL_NAMES, ...LIBRARY_TOOL_NAMES, ...ACTIVITY_TOOL_NAMES, ...SCHEDULE_TOOL_NAMES, ...EXTENSION_TOOL_NAMES]) expect(names).not.toContain(name)
+    for (const name of [...SESSION_TOOL_NAMES, ...PROJECT_TOOL_NAMES, ...ACTIVITY_TOOL_NAMES, ...SCHEDULE_TOOL_NAMES, ...EXTENSION_TOOL_NAMES]) expect(names).not.toContain(name)
     expect(names).not.toContain('gugu_session')
     expect(names).not.toContain('gugu_extension')
     const missing = await client.callTool({ name: 'session_children', arguments: {} })
@@ -193,7 +195,7 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
     })
     const names = (await reachableTools(client)).map((tool) => tool.name)
     expect(names).toContain('message_send')
-    for (const name of [...SESSION_TOOL_NAMES, ...PROJECT_TOOL_NAMES, ...LIBRARY_TOOL_NAMES, ...ACTIVITY_TOOL_NAMES, ...SCHEDULE_TOOL_NAMES, ...EXTENSION_TOOL_NAMES]) expect(names).toContain(name)
+    for (const name of [...SESSION_TOOL_NAMES, ...PROJECT_TOOL_NAMES, ...ACTIVITY_TOOL_NAMES, ...SCHEDULE_TOOL_NAMES, ...EXTENSION_TOOL_NAMES]) expect(names).toContain(name)
   })
 
   it('tab tools stay in catalog, dispatch there, and reject a different session or device', async () => {
@@ -261,7 +263,7 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
     })
 
     const reachable = await reachableTools(client)
-    expect(new Set(reachable.map((tool) => tool.name))).toEqual(new Set([...SESSION_TOOL_NAMES, ...PROJECT_TOOL_NAMES, ...LIBRARY_TOOL_NAMES, ...ACTIVITY_TOOL_NAMES, ...SCHEDULE_TOOL_NAMES, ...EXTENSION_TOOL_NAMES, ...ALWAYS_TOOL_NAMES]))
+    expect(new Set(reachable.map((tool) => tool.name))).toEqual(new Set([...SESSION_TOOL_NAMES, ...PROJECT_TOOL_NAMES, ...ACTIVITY_TOOL_NAMES, ...SCHEDULE_TOOL_NAMES, ...EXTENSION_TOOL_NAMES, ...ALWAYS_TOOL_NAMES]))
 
     // #6720 agent 收起会话只有归档:按旧名 session_delete 调,得到的是「没有这个工具」,且到不了分派器。
     const retiredDelete = await client.callTool({ name: 'session_delete', arguments: { session_id: 'session:child' } })
@@ -649,7 +651,7 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
     // ❌ 别用「不注册」实现「不许用」:工具清单在模型前缀里,少一个工具就是另一份前缀,
     // 整段继承来的上下文都命中不了缓存。
     const names = (await reachableTools(client)).map((tool) => tool.name)
-    expect(new Set(names)).toEqual(new Set([...SESSION_TOOL_NAMES, ...PROJECT_TOOL_NAMES, ...LIBRARY_TOOL_NAMES, ...ACTIVITY_TOOL_NAMES, ...SCHEDULE_TOOL_NAMES, ...EXTENSION_TOOL_NAMES, ...ALWAYS_TOOL_NAMES]))
+    expect(new Set(names)).toEqual(new Set([...SESSION_TOOL_NAMES, ...PROJECT_TOOL_NAMES, ...ACTIVITY_TOOL_NAMES, ...SCHEDULE_TOOL_NAMES, ...EXTENSION_TOOL_NAMES, ...ALWAYS_TOOL_NAMES]))
 
     const refused = await client.callTool({ name: 'session_children', arguments: {} })
     expect(refused.isError).toBe(true)
@@ -670,7 +672,7 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
       runSessionAction: async () => [],
     })
     const names = (await reachableTools(client)).map((tool) => tool.name)
-    expect(new Set(names)).toEqual(new Set([...SESSION_TOOL_NAMES, ...PROJECT_TOOL_NAMES, ...LIBRARY_TOOL_NAMES, ...ACTIVITY_TOOL_NAMES, ...SCHEDULE_TOOL_NAMES, ...EXTENSION_TOOL_NAMES, ...ALWAYS_TOOL_NAMES]))
+    expect(new Set(names)).toEqual(new Set([...SESSION_TOOL_NAMES, ...PROJECT_TOOL_NAMES, ...ACTIVITY_TOOL_NAMES, ...SCHEDULE_TOOL_NAMES, ...EXTENSION_TOOL_NAMES, ...ALWAYS_TOOL_NAMES]))
     const refused = await client.callTool({ name: 'app_pack', arguments: { source_dir: '/apps/notes' } })
     expect(refused.isError).toBe(true)
     expect(responseText(refused)).toContain('app_pack is unavailable for this grant')
@@ -824,28 +826,29 @@ describe('project_* tools', () => {
     const seen: unknown[] = []
     const client = await connectTo(socialContext(async (action) => {
       seen.push(action)
-      return { project_id: 'p1', linked_project_id: 'p2', undo: { tool: 'project_remove_folder', project_id: 'p2', folder_id: 'folder1', device_id: 'target' } }
+      return { project_id: 'g1', undo: { tool: 'project_remove_device', project_id: 'g1', path: '/work/app', device_id: 'target' } }
     }))
     expect((await reachableTools(client)).map((tool) => tool.name)).toEqual(expect.arrayContaining(PROJECT_TOOL_NAMES))
-    const result = await client.callTool({ name: 'catalog_call', arguments: { tool: 'project_add_device', args: { project_id: 'project:p1', device_id: 'device:source', target_device_id: 'device:target', path: '/work/app' } } })
+    const result = await client.callTool({ name: 'catalog_call', arguments: { tool: 'project_add_device', args: { project_id: 'project:g1', device_id: 'device:source', target_device_id: 'device:target', path: '/work/app' } } })
     expect(result.isError ?? false).toBe(false)
-    expect(seen).toEqual([{ action: 'project_add_device', project_id: 'p1', device: 'source', target_device: 'target', path: '/work/app' }])
+    expect(seen).toEqual([{ action: 'project_add_device', project_id: 'g1', device: 'source', target_device: 'target', path: '/work/app' }])
     // The host supplies the target device for composite operations; direct remote operations inherit their device.
-    expect(JSON.parse(responseText(result))).toMatchObject({ project_id: 'project:p1', linked_project_id: 'project:p2', undo: { device_id: 'device:target', project_id: 'project:p2' } })
+    // One project id on both devices (its project group); the undo names the target device's folder by path.
+    expect(JSON.parse(responseText(result))).toEqual({ project_id: 'project:g1', undo: { tool: 'project_remove_device', device_id: 'device:target', project_id: 'project:g1', path: '/work/app' } })
   })
 
   it('routes a confirmed existing project root through project_add_folder with typed source identity', async () => {
     const seen: unknown[] = []
     const client = await connectTo(socialContext(async (action) => {
       seen.push(action)
-      return { project_id: 'target', source_project_id: 'source', linked_project_id: 'source' }
+      return { project_id: 'target', source_project_id: 'source' }
     }))
     const result = await client.callTool({ name: 'project_add_folder', arguments: {
       project_id: 'project:target', path: '/work/legacy', merge_existing: true, source_project_id: 'project:source',
     } })
     expect(result.isError ?? false).toBe(false)
     expect(seen).toEqual([{ action: 'project_add_folder', project_id: 'target', path: '/work/legacy', merge_existing: true, source_project_id: 'source' }])
-    expect(JSON.parse(responseText(result))).toEqual({ project_id: 'project:target', source_project_id: 'project:source', linked_project_id: 'project:source' })
+    expect(JSON.parse(responseText(result))).toEqual({ project_id: 'project:target', source_project_id: 'project:source' })
   })
 
   it('rejects bare or mismatched project/device IDs before dispatch', async () => {
@@ -870,38 +873,26 @@ describe('project_* tools', () => {
     const client = await connectTo(socialContext(async (action) => {
       seen.push(action)
       return (action as { action: string }).action === 'project_remove_device'
-        ? { undo: { tool: 'project_restore_device', project_id: 'p2', chat_id, expected_chat_id: null } }
+        ? { undo: { tool: 'project_restore_device', project_id: chat_id, path: '/work/app', expected_chat_id: null } }
         : { restored: true }
     }))
-    const result = await client.callTool({ name: 'project_remove_device', arguments: { project_id: 'project:p2', device_id: 'device:b' } })
+    const result = await client.callTool({ name: 'project_remove_device', arguments: { project_id: `project:${chat_id}`, device_id: 'device:b' } })
     const { tool, ...args } = JSON.parse(responseText(result)).undo
     expect((await client.callTool({ name: tool, arguments: args })).isError ?? false).toBe(false)
-    expect(seen[1]).toEqual({ action: 'project_restore_device', project_id: 'p2', device: 'b', chat_id, expected_chat_id: null })
+    expect(seen[1]).toEqual({ action: 'project_restore_device', project_id: chat_id, device: 'b', path: '/work/app', expected_chat_id: null })
   })
 })
 
 
-it('Gugu’s built-in library is discovered on demand, keeps device routing, and refuses Ideas before host dispatch', async () => {
+it('no agent reaches the removed capability/device note tools: not listed, not in the catalog, never dispatched', async () => {
   const calls: unknown[] = []
-  const client = await connectTo(socialContext(async action => {
-    calls.push(action)
-    return { root: '/gugu/library', volumes: [] }
-  }))
-  expect((await client.listTools()).tools.map(tool => tool.name)).not.toContain('library_read')
-  const listed = await client.callTool({ name: 'catalog_call', arguments: { tool: 'library_list', args: { device_id: 'device:owned-device' } } })
-  expect(listed.isError).not.toBe(true)
-  expect(calls).toEqual([{ action: 'library_list', device: 'owned-device' }])
-  const rejected = await client.callTool({ name: 'catalog_call', arguments: { tool: 'library_read', args: { kind: 'ideas' } } })
-  expect(rejected.isError).toBe(true)
-  expect(calls).toHaveLength(1)
-})
-
-it('saves a built-in capability entry through its actual device route without connecting or granting a service', async () => {
-  const calls: unknown[] = []
-  const client = await connectTo(socialContext(async action => { calls.push(action); return { id: 'note-id' } }))
-  const saved = await client.callTool({ name: 'catalog_call', arguments: { tool: 'library_write', args: {
-    device_id: 'device:owned-device', kind: 'capabilities', name: 'Calendar', group: 'Work', description: 'Appointments', content: 'Use existing connection.',
-  } } })
-  expect(saved.isError).not.toBe(true)
-  expect(calls).toEqual([{ action: 'library_write', device: 'owned-device', kind: 'capabilities', name: 'Calendar', group: 'Work', description: 'Appointments', content: 'Use existing connection.' }])
+  const client = await connectTo(socialContext(async action => { calls.push(action); return {} }))
+  const names = (await reachableTools(client)).map(tool => tool.name)
+  for (const tool of ['library_list', 'library_read', 'library_write']) {
+    expect(names).not.toContain(tool)
+    for (const call of [{ name: tool, arguments: { kind: 'capabilities' } }, { name: 'catalog_call', arguments: { tool, args: { kind: 'capabilities' } } }]) {
+      expect((await client.callTool(call)).isError).toBe(true)
+    }
+  }
+  expect(calls).toEqual([])
 })

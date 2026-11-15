@@ -33,7 +33,7 @@ import type { TerminalState } from '@gugu/session-core/acp/client';
  * conversationId in AcpChatPanel) — this assumption is intentional.
  */
 
-import { createMemo, createRoot, createSignal } from 'solid-js';
+import { batch, createMemo, createRoot, createSignal } from 'solid-js';
 import type { BackgroundCommandEntry } from '@session-chat/lib/background-command-roster';
 import type { SubagentRosterEntry } from '@session-chat/lib/subagent-roster';
 import type { ChatContext } from '../chat-context';
@@ -95,7 +95,12 @@ export type ChatSessionState = {
    */
   setBackgroundTasks(tasks: BackgroundTasks): void;
   setDeliveredMessages(messages: ReadonlyMap<string, DeliveryMessagePresentation>): void;
+  /** The host's drawn size of one sent message's MessageBody slot (`onMessageBodyMount`); rows re-measure with it. */
+  setBodySize(messageId: string, size: BodySize): void;
 };
+
+/** A MessageBody as the host drew it, in px. */
+export type BodySize = { width: number; height: number };
 
 export type ChatSessionSnapshot = {
   readonly permissions: readonly AcpPermissionRequest[];
@@ -117,6 +122,8 @@ export type ChatSessionSnapshot = {
   /** 见 `setBackgroundTasks`。 */
   readonly backgroundTasks: BackgroundTasks;
   readonly deliveredMessages?: ReadonlyMap<string, DeliveryMessagePresentation>;
+  /** Last drawn size of a sent message's slot; kept with the conversation so a remounted view measures it at once. */
+  bodySize(messageId: string): BodySize | undefined;
   terminalSnapshot(terminalId: string): TerminalState | null;
 };
 
@@ -308,12 +315,13 @@ function sameBackgroundTasks(a: BackgroundTasks, b: BackgroundTasks): boolean {
     same(a.commands, b.commands, (c) => `${c.id}|${c.taskId}|${c.name}`) &&
     // 每一步的 id 与状态也要比:新一步开始时完成数不变,只比完成数的话「进行中」那一行永远进不了悬停时间线。
     same(a.subagents, b.subagents, (g) =>
-      `${g.id}|${g.name}|${g.model ?? ''}|${g.startedAt ?? ''}|${g.completedSteps}|${g.canCancel ? 1 : 0}|${g.calls.map((c) => `${c.toolCallId}:${c.status}:${c.title}:${c.category}:${c.detail}`).join(',')}`)
+      `${g.id}|${g.name}|${g.model ?? ''}|${g.startedAt ?? ''}|${g.completedSteps}|${g.canCancel ? 1 : 0}|${g.output?.length ?? 0}|${g.reasoning?.length ?? 0}|${g.calls.map((c) => `${c.toolCallId}:${c.status}:${c.title}:${c.category}:${c.detail}`).join(',')}`)
   );
 }
 
 function createSessionState(transcript: TranscriptApi): ChatSessionState {
   const [deliveredMessages, setDeliveredMessages] = createSignal<ReadonlyMap<string, DeliveryMessagePresentation>>(new Map());
+  const [bodySizes, setBodySizes] = createSignal<ReadonlyMap<string, BodySize>>(new Map());
   const [permissions, setPermissions] = createSignal<readonly AcpPermissionRequest[]>([]);
   const [plan, setPlan] = createSignal<SessionPlans | null>(null);
   const [pendingPrompt, setPendingPrompt] = createSignal<PendingPrompt | null>(null);
@@ -357,6 +365,7 @@ function createSessionState(transcript: TranscriptApi): ChatSessionState {
       return condition();
     },
     get deliveredMessages() { return deliveredMessages(); },
+    bodySize: (messageId) => bodySizes().get(messageId),
     get backgroundTasks() {
       return backgroundTasks();
     },
@@ -375,6 +384,11 @@ function createSessionState(transcript: TranscriptApi): ChatSessionState {
     setCondition,
     setBackgroundTasks,
     setDeliveredMessages,
+    setBodySize: (messageId, size) => {
+      const known = bodySizes().get(messageId);
+      if (known && known.width === size.width && known.height === size.height) return;
+      setBodySizes(new Map(bodySizes()).set(messageId, size));
+    },
     setTerminals: (next) => setTerminals(new Map(next.map(terminal => [terminal.terminalId, terminal]))),
   };
 }
@@ -396,7 +410,10 @@ export function connectSession(
     state.session.setPlan(source.plan.getSnapshot() ?? null);
   };
 
-  const syncActiveTurn = (): void => {
+  // One transcript update (#2296): clearing the landed pending prompt and setting the turn that carries it
+  // are a single Solid batch. Two writes let every row observe the turn without its input in between, so
+  // the input's row is unmounted and mounted again with new DOM nodes.
+  const syncActiveTurn = (): void => batch(() => {
     const turn = source.activeTurn.getSnapshot() ?? null;
     const pending = state.session.state.pendingPrompt;
     if (turn && pending && (!pending.delivery || pendingPromptLanded(pending, [turn]))) state.session.setPendingPrompt(null);
@@ -413,7 +430,7 @@ export function connectSession(
       state.transcript.activeTurn.set(turn);
     }
     activeTurnId = turn?.id ?? null;
-  };
+  });
   const syncTerminals = (): void => {
     if (!source.terminals) return;
     state.session.setTerminals(source.terminals.getSnapshot() ?? []);

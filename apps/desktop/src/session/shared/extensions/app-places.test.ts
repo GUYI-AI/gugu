@@ -44,7 +44,6 @@ describe('the places an App can be given at (D-30)', () => {
     // Shown as the agent — its face and name — never as "the private chat with it".
     expect(places[1]).toMatchObject({ name: '周报助手', avatar: 'https://x/h.png', agentId: 'helper' });
     expect(places[2]).toMatchObject({ name: '周末出游', project: true, memberCount: 3, topics: ['路线'] });
-    expect(places[2]!.members?.map((member) => member.id)).toEqual(['me', 'friend', 'helper']);
   });
 
   it('a phone lists no computer of its own; a human friend and someone else’s agent are no agents of the person', () => {

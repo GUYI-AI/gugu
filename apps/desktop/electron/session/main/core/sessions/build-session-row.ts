@@ -38,8 +38,8 @@ export type BuildSessionRowInput = {
    * 这条会话是怎么来的。**分叉与导入必须显式说**;新建可以不写 —— 见下面 firstUtterance 的口径。
    */
   origin?: SessionOrigin;
-  /** Durable session permission mode. */
-  permissionMode?: GuguPermissionMode;
+  /** Durable session permission mode: every session records one. */
+  permissionMode: GuguPermissionMode;
   model?: string;
   effort?: string;
   /** 资源库 → MCP:新建时带上的那几台(名字)。 */
@@ -54,6 +54,8 @@ export type BuildSessionRowInput = {
   startupOrigin?: 'chat-page' | 'session-page';
   initialMessageId?: string;
   taskChatId?: string;
+  /** #2599 the group it was created in and joined at birth (BirthGroup.chatId): where it lives. */
+  birthChatId?: string;
   /** Required: the task's one name until it is bound to an identity (task-name.ts). ❌ Never derived from the first prompt. */
   agentDisplayName: string;
   parentSessionId?: string | null;
@@ -129,7 +131,7 @@ export function buildSessionRow(input: BuildSessionRowInput): SessionInsert {
       ? {
           version: '1',
           type: 'acp',
-          ...(input.permissionMode !== undefined && { permissionMode: input.permissionMode }),
+          permissionMode: input.permissionMode,
           ...(input.model && { model: input.model }),
           ...(input.effort && { effort: input.effort }),
           ...(input.libraryMcp?.length && { libraryMcp: [...input.libraryMcp] }),
@@ -138,6 +140,7 @@ export function buildSessionRow(input: BuildSessionRowInput): SessionInsert {
           ...(input.startupOrigin && { startupOrigin: input.startupOrigin }),
           ...(input.initialMessageId && { initialMessageId: input.initialMessageId }),
           ...(input.taskChatId && { taskChatId: input.taskChatId }),
+          ...(input.birthChatId && { birthChatId: input.birthChatId }),
           agentDisplayName,
           ...(input.spawnedByRemote && { spawnedByRemote: input.spawnedByRemote }),
           ...(input.parentRemote && { parentRemote: input.parentRemote }),
@@ -153,7 +156,7 @@ export function buildSessionRow(input: BuildSessionRowInput): SessionInsert {
       : {
           version: '1',
           type: 'pty',
-          ...(input.permissionMode !== undefined && { permissionMode: input.permissionMode }),
+          permissionMode: input.permissionMode,
           ...(input.model && { model: input.model }),
           ...(input.effort && { effort: input.effort }),
           ...(input.libraryMcp?.length && { libraryMcp: [...input.libraryMcp] }),
@@ -162,6 +165,7 @@ export function buildSessionRow(input: BuildSessionRowInput): SessionInsert {
           ...(input.startupOrigin && { startupOrigin: input.startupOrigin }),
           ...(input.initialMessageId && { initialMessageId: input.initialMessageId }),
           ...(input.taskChatId && { taskChatId: input.taskChatId }),
+          ...(input.birthChatId && { birthChatId: input.birthChatId }),
           agentDisplayName,
           ...(input.spawnedByRemote && { spawnedByRemote: input.spawnedByRemote }),
           ...(input.parentRemote && { parentRemote: input.parentRemote }),

@@ -11,6 +11,15 @@ import * as rpc from '@/mobile/agent-watch/sessionpage-rpc'
 import { clickElement, createReactHarness, device, renderWithAppProviders } from '../../../support/testHarness'
 import { writeComposer } from '../../../support/composerEditor'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
+import { runInAction } from 'mobx'
+import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+
+// The task folder card's project is the account project of this group (accountProjectsStore); 'machine' has its folder.
+beforeEach(() => runInAction(() => {
+  accountProjectsStore.list = [{ chatId: 'chat', name: 'Project', archived: false, activeAt: '2026-01-01T00:00:00.000Z', bindings: [{ deviceId: 'machine', localProjectId: 'project' }] }]
+  accountProjectsStore.status = 'ready'
+}))
+afterEach(() => accountProjectsStore.clear())
 
 let harness: ReturnType<typeof createReactHarness>
 const originalWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')!
@@ -89,8 +98,13 @@ describe('phone keyboard across the real composer hosts', () => {
         expect(document.activeElement).toBe(input())
         return
       }
-      expect(kind === 'task' ? created : delivered).toHaveBeenCalledTimes(1)
-      if (method === 'attachment' && kind !== 'agent' && kind !== 'task') expect(attached).toHaveBeenCalledTimes(1)
+      // #2581 Text sent with files rides on them: one send, no text message of its own.
+      const filesCarryText = method === 'attachment' && kind !== 'agent' && kind !== 'task'
+      expect(kind === 'task' ? created : filesCarryText ? attached : delivered).toHaveBeenCalledTimes(1)
+      if (filesCarryText) {
+        expect(delivered).not.toHaveBeenCalled()
+        expect(attached).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({ caption: 'keyboard check' }))
+      }
       expect(blurred).toHaveBeenCalledTimes(1)
       expect(document.activeElement).toBe(document.body)
       await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })

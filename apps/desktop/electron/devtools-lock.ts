@@ -167,8 +167,11 @@ function guardWebContents(contents: WebContents, onBreach: (url: string) => void
     hardenWebPreferences(webPreferences as WebPreferences)
   })
   contents.on('devtools-opened', () => {
-    onBreach(contents.getURL())
-    contents.closeDevTools()
+    let url = '<credential-isolated>'
+    // A page can put sensitive material in its URL. Keep the breach diagnostic,
+    // but never read or forward a private/candidate/isolated page's URL.
+    try { if (!contents.isDestroyed()) url = contents.getURL() } catch { /* Fixed diagnostic only. */ }
+    try { onBreach(url) } finally { contents.closeDevTools() }
   })
 }
 

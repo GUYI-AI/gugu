@@ -1,7 +1,5 @@
-import { platform } from '@/platform'
 import { useGroupDisplayName } from '../../hooks/useGroupDisplayName'
 import { messageForUser } from '@/lib/userFacingError';
-import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
 /**
  * 群邀请一族 —— 从 ContactsPanel 抽出。
  *
@@ -12,9 +10,9 @@ import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reaso
  *
  * 视觉复用共享控件和字阶；二维码载荷、查询与入群流程留在原来的链路。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import * as QRCode from 'qrcode'
-import { Copy, QrCode, X } from '@/lib/icons'
+import { useCallback, useEffect, useState } from 'react'
+import { X } from '@/lib/icons'
+import type { GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
 import type {
   ContactGroupChat,
   PublicGroupInviteGroup,
@@ -23,18 +21,15 @@ import type {
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { chatService } from '../../lib/chat'
 import { contactsService } from '../../lib/contacts'
-import { buildGroupInviteShareUrl } from '../../lib/groupInviteShareUrl'
+import { groupInviteLinkFor } from '../../lib/groupInviteShareUrl'
 import { isProjectGroupChat } from '../../lib/groupMemberPermissions'
 import { useGroupInviteJoin } from '../../lib/groupInviteJoin'
-import { canWriteImageToClipboard, writeImageBlobToClipboard } from '../../lib/imageClipboard'
 import { GroupInviteCard } from '../groups/GroupInviteCard'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
-import { useToast } from '../toastContext'
 import { Sheet } from '../ui/Sheet'
-import { downloadDataUrl } from './downloadDataUrl'
 import { useTranslation } from 'react-i18next'
-import { qrColors } from '../../lib/qrColors'
+import { GroupInviteCode } from '../chat/GroupInviteShare'
 
 /** 群聊详情里扫码加入的码。项目群不拉人(gugu-dev#181):不出码,说一句原因。 */
 export function GroupInviteQrShare({ group }: { group: ContactGroupChat }) {
@@ -47,224 +42,32 @@ export function GroupInviteQrShare({ group }: { group: ContactGroupChat }) {
 
 function GroupInviteQr({ group }: { group: ContactGroupChat }) {
   const { t } = useTranslation('contacts')
-  const { toast } = useToast()
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
-  const [qrError, setQrError] = useState<string | null>(null)
-  const [joinToken, setJoinToken] = useState<string | null>(null)
+  const [share, setShare] = useState<{ link: string | null; snapshot: GroupCollabSnapshot } | { error: string } | null>(null)
+  // Only groups with a 群号 can be shared (channels and number-less groups never are).
+  const hasGroupNumber = group.kind === 'group' && typeof group.public_id === 'number' && Number.isInteger(group.public_id) && group.public_id > 0
 
-  const publicId = group.public_id
-  // Only groups with a 群号 can expose an invite QR (channels and number-less groups never do).
-  const hasGroupNumber = group.kind === 'group' && typeof publicId === 'number' && Number.isInteger(publicId) && publicId > 0
-
-  // @@@direct-join (#653) - the shareable QR must embed the group's invite token so a scan joins
+  // The same link and the same decision (groupInviteLinkFor) as the group's own Invite sheet; the poster needs the roster.
   useEffect(() => {
-    if (!hasGroupNumber) {
-      setJoinToken(null)
-      return
-    }
+    if (!hasGroupNumber) return
     let cancelled = false
-    chatService.getGroupChatSettings(group.id)
-      .then((settings) => {
-        if (!cancelled) setJoinToken(settings.join_token ?? null)
+    setShare(null)
+    Promise.all([chatService.getGroupChatSettings(group.id), chatService.getGroupCollab(group.id)])
+      .then(([settings, { snapshot }]) => { if (!cancelled) setShare({ link: groupInviteLinkFor(group.id, settings), snapshot }) })
+      .catch((error: unknown) => {
+        console.error('[ContactsPanel] group invite link fetch failed', error)
+        if (!cancelled) setShare({ error: messageForUser(error) })
       })
-      .catch((error) => {
-        console.error('[ContactsPanel] group invite token fetch failed', error)
-        if (!cancelled) {
-          setJoinToken(null)
-          setQrError(messageForUser(error))
-        }
-      })
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [group.id, hasGroupNumber])
 
-  const payloadText = useMemo(() => {
-    if (!hasGroupNumber || !joinToken) return null
-    return buildGroupInviteShareUrl(publicId as number, joinToken)
-  }, [hasGroupNumber, publicId, joinToken])
-
-  useEffect(() => {
-    if (!payloadText) {
-      setQrDataUrl(null)
-      setQrError(null)
-      return
-    }
-    let cancelled = false
-    QRCode.toDataURL(payloadText, {
-      width: 132,
-      margin: 1,
-      color: qrColors()
-    })
-      .then((dataUrl) => {
-        if (!cancelled) {
-          setQrDataUrl(dataUrl)
-          setQrError(null)
-        }
-      })
-      .catch((error) => {
-        console.error('[ContactsPanel] group invite QR generation failed', error)
-        if (!cancelled) {
-          setQrDataUrl(null)
-          setQrError(messageForUser(error))
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [payloadText])
-
-  // @@@qr-share-as-image - "复制二维码内容" used to copy the QR payload as a TEXT LINK, which is
-  const handleCopy = useCallback(async () => {
-    if (!payloadText) return
-    try {
-      const dataUrl = await QRCode.toDataURL(payloadText, {
-        width: 480,
-        margin: 2,
-        color: qrColors()
-      })
-      const blob = await (await fetch(dataUrl)).blob()
-      const safeName = t('groupInvite.qrFileName', {
-        name: (group.name || t('groupInvite.groupFallback')).replace(/[\\/:*?"<>|]+/g, '_'),
-      })
-      if (canWriteImageToClipboard()) {
-        try {
-          await writeImageBlobToClipboard(blob) // blob-first 约束(#1892)收口在 lib/imageClipboard
-          toast(t('groupInvite.qrCopied'), 'success')
-          return
-        } catch { /* clipboard write rejected (permissions) → fall back to download below */ }
-      }
-      downloadDataUrl(dataUrl, safeName)
-      toast(t('groupInvite.qrSaved'), 'success')
-    } catch (error) {
-      toast(t('groupInvite.qrExportFailed'), 'error', messageForUser(error))
-      console.error('QR image export failed:', error)
-    }
-  }, [payloadText, group.name, t, toast])
-
-  // Channels and number-less groups never expose a join QR; groups with a 群号 always render the
-  // section (token loads async, and a fetch failure must surface as an error rather than silently
-  // hiding the QR).
-  if (!hasGroupNumber) return null
-
+  // Sharing switched off: nothing to show. A failed read says why instead of hiding the section.
+  if (!hasGroupNumber || (share && 'link' in share && !share.link)) return null
   return (
-    <section style={{ padding: '16px 0 0' }}>
-      <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', marginBottom: 8 }}>{t('groupInvite.qrTitle')}</div>
-      <div
-        style={{
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-surface)',
-          background: 'var(--input-bg)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          padding: 12,
-          maxWidth: 420
-        }}
-      >
-        <div
-          style={{
-            width: 132,
-            height: 132,
-            border: '1px solid var(--border-color)',
-            borderRadius: 'var(--radius-control)',
-            background: 'var(--color-white)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            overflow: 'hidden'
-          }}
-        >
-          {qrDataUrl ? (
-            <img
-              src={qrDataUrl}
-              alt={t('groupInvite.qrAlt', { name: group.name })}
-              style={{ width: 132, height: 132, display: 'block' }}
-            />
-          ) : (
-            <QrCode size={42} color="var(--text-tertiary)" aria-hidden="true" />
-          )}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              color: 'var(--text-primary)',
-              fontSize: 'var(--font-body)',
-              fontWeight: 600,
-              lineHeight: 'var(--lh-body)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {t('groupInvite.qrAlt', { name: group.name })}
-          </div>
-          <div
-            style={{
-              color: qrError ? 'var(--danger)' : 'var(--text-secondary)',
-              fontSize: qrError ? 'var(--font-body)' : 'var(--font-caption)',
-              lineHeight: qrError ? 'var(--lh-body)' : 'var(--lh-caption)',
-              marginTop: 4
-            }}
-          >
-            {qrError ?? t('groupInvite.groupNumber', { number: group.public_id })}
-          </div>
-          <Button
-            data-group-invite-qr-copy={group.id}
-            data-qr-payload={payloadText ?? ''}
-            onClick={handleCopy}
-            disabled={!payloadText}
-            className="mt-3"
-          >
-            <Copy size={12} />
-            {t('groupInvite.copyQr')}
-          </Button>
-          {payloadText != null && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                border: '1px solid var(--border-strong)',
-                borderRadius: 'var(--radius-control)',
-                padding: '8px 12px',
-                marginTop: 8
-              }}
-            >
-              <span
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  fontSize: 'var(--font-body)',
-                  lineHeight: 'var(--lh-body)',
-                  color: 'var(--text-secondary)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                {payloadText}
-              </span>
-              <Button
-                variant="primary"
-                className="shrink-0"
-                data-testid={AUTOMATION_TEST_IDS.groupInviteLinkCopyButton}
-                onClick={async () => {
-                  try {
-                    await platform.writeClipboardText(payloadText)
-                    toast(t('groupInvite.linkCopied'), 'success')
-                  } catch (error) {
-                    toast(t('groupInvite.copyFailed'), 'error', safeFailureLine(String((error as Error)?.message ?? error)))
-                  }
-                }}
-              >
-                {t('groupInvite.copyLink')}
-              </Button>
-            </div>
-          )}
-        </div>
-      </div>
+    <section className="!pt-4">
+      <div className="!mb-3 text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--text-secondary)]">{t('groupInvite.qrTitle')}</div>
+      {share === null ? <p className="!m-0 text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t('common.loading')}</p>
+        : 'error' in share ? <p role="alert" className="!m-0 text-[length:var(--font-body)] text-[var(--danger-fg)]">{share.error}</p>
+        : <GroupInviteCode inviteLink={share.link!} groupName={group.name} snapshot={share.snapshot} />}
     </section>
   )
 }

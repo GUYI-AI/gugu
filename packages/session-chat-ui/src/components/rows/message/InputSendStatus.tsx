@@ -15,11 +15,13 @@ export function InputSendStatus(props: { item: ChatMessage; right: number; top: 
   const [failureRoot, setFailureRoot] = createSignal<HTMLElement>();
   const canRetry = () => !!commands().onRetrySend && (props.item.sendStatus?.state === 'unknown'
     ? props.item.sendStatus.retryable === true : props.item.sendStatus?.retryable !== false);
-  const manual = () => props.item.sendStatus?.state === 'failed' && !!commands().canDiscardSend?.(props.item.id) && !!commands().onInputSendFailureMount;
+  const ended = () => props.item.sendStatus?.state === 'failed' || props.item.sendStatus?.state === 'unknown';
+  const manual = () => ended() && !!commands().canDiscardSend?.(props.item.id) && !!commands().onInputSendFailureMount;
   createEffect(() => {
     const root = failureRoot(), mount = commands().onInputSendFailureMount;
     if (!root || !mount || !manual()) return;
-    const cleanup = mount({ root, itemId: props.item.id, error: props.item.sendStatus?.error, reason: props.item.sendStatus?.reason });
+    const cleanup = mount({ root, itemId: props.item.id, error: props.item.sendStatus?.error, reason: props.item.sendStatus?.reason,
+      unknown: props.item.sendStatus?.state === 'unknown', retryable: canRetry() });
     if (cleanup) onCleanup(cleanup);
   });
   return <>

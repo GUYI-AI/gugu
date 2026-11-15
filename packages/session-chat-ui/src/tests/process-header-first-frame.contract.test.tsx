@@ -5,6 +5,7 @@ import { createChatState } from '@session-chat/state/chat-state';
 import { createChatView } from '@session-chat/chat-view';
 import type { TranscriptTurn } from '@session-chat/model';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
+import { pinnedSummaryShown } from '../../../../tests/support/pinnedSummaryShown';
 
 const teardown: (() => void)[] = [];
 afterEach(() => teardown.splice(0).forEach(dispose => dispose()));
@@ -42,12 +43,14 @@ it.each([
 
   const clearOfPin = () => {
     const head = header().getBoundingClientRect();
-    // contain:paint clips the pinned backdrop/fade at this lane's end. A nonzero
-    // overlap is a real painted obstruction, even with pointer-events:none.
+    // The reading lane extends through the reply. The question scrolls as a row; its sticky child is the
+    // question's summary, painted only once the question has gone by. Inspect those boxes, not the lane.
     const containment = getComputedStyle(lane()).contain.split(' ');
     expect(containment.some(value => ['paint', 'content', 'strict'].includes(value))).toBe(true);
-    expect(getComputedStyle(lane().firstElementChild!).position).toBe('sticky');
-    expect(lane().getBoundingClientRect().bottom, 'the pin paint ends before the process header').toBeLessThanOrEqual(head.top + 0.5);
+    const pin = lane().querySelector<HTMLElement>('[data-chat-pin-backdrop]')!.parentElement!;
+    expect(getComputedStyle(pin).position).toBe('sticky');
+    expect(host.querySelector('[data-user-card="input"]')!.getBoundingClientRect().bottom, 'the question ends before the process header').toBeLessThanOrEqual(head.top + 0.5);
+    if (pinnedSummaryShown(lane().querySelector<HTMLElement>('[data-pin-summary]')!)) expect(pin.getBoundingClientRect().bottom, 'the pin paint ends before the process header').toBeLessThanOrEqual(head.top + 0.5);
     expect(header().offsetHeight).toBe(28);
     for (let el: HTMLElement | null = header(); el && host.contains(el); el = el.parentElement) {
       expect(getComputedStyle(el).opacity).toBe('1');

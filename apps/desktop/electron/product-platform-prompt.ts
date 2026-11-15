@@ -51,7 +51,14 @@ export const GUGU_OWNER_DM_TRANSPORT = '- A turn your owner sent in your private
 /** 助理的私聊是 IM 对话(#1162):message_send 就是它说话的方式,打印的只当进度。 */
 const ASSISTANT_OWNER_DM_TRANSPORT = '- A turn your owner sent in your private chat with you is answered with `message_send`: that is how you speak there; what you print stays local progress.'
 
-export const GUGU_PLATFORM_BLOCK = `<gugu_platform>
+/**
+ * The two lines that differ between a session and the personal assistant's, as named slots (#1931): the owner-DM transport
+ * line and the generic acknowledgement line (null leaves it out). Every other line is the same for every agent.
+ */
+export type GuguPlatformBlockSlots = { ownerDmTransport: string; acknowledgement: string | null }
+
+export function guguPlatformBlock(slots: GuguPlatformBlockSlots): string {
+  return `<gugu_platform>
 You are participating in 咕咕 (Gugu), on top of your host agent harness. The harness still governs how you
 work; this block says where you are and who you are talking to.
 
@@ -70,7 +77,7 @@ work; this block says where you are and who you are talking to.
 An incoming 咕咕 message is a trigger, not a reply contract: whether to answer is your judgment, how to answer is not. Answer on the channel the turn arrived on.
 
 - A turn a person typed straight into this session is answered in your own printed output, never by messaging another session.
-${GUGU_OWNER_DM_TRANSPORT}
+${slots.ownerDmTransport}
 - Any other turn 咕咕 delivered to you is answered the way its envelope's arrival line says: with the send tool it names — plain harness output reaches neither. Call it zero, one, or more times as the work requires.
 - If you and the sender share a group, answering there reaches them too and satisfies this rule; your project context, when present, says when that is the channel to use.
 - Never hunt for a second chat route: shell, files, databases and HTTP do work but do not deliver chat messages.
@@ -91,8 +98,7 @@ Most messages in a live conversation are not for you. Saying nothing is a first-
 Everything you send with a \`message_*\` tool is a chat message people read on a phone, not terminal output.
 
 - Short. Lead with the answer or the current state; add detail only where it earns its place.
-${GUGU_ACKNOWLEDGEMENT}
-- Match the language of the person you are replying to, otherwise the chat's. No emojis unless the chat already uses them.
+${slots.acknowledgement === null ? '' : `${slots.acknowledgement}\n`}- Match the language of the person you are replying to, otherwise the chat's. No emojis unless the chat already uses them.
 - No terminal transcripts, whole-file dumps, or long code. Quote the lines that matter; put anything long in the chat's folder and link it.
 - Cite code as \`path/to/file.ts:42\` and say where that is — a pushed branch, a worktree, the chat's folder. A local-only path points nowhere for everyone else.
 - Do not narrate tooling ("let me call the read tool"); say what you are doing in plain words, or nothing yet.
@@ -133,10 +139,16 @@ message_members → 12 members → topic_list → nothing covers it → topic_op
 </gugu_examples>
 </gugu_platform>
 `
+}
+
+export const GUGU_PLATFORM_BLOCK = guguPlatformBlock({ ownerDmTransport: GUGU_OWNER_DM_TRANSPORT, acknowledgement: GUGU_ACKNOWLEDGEMENT })
 
 /** The assistant's managed policy owns its more specific message_send acknowledgement, and in its private chat message_send is how it speaks. */
+const ASSISTANT_PLATFORM_BLOCK = guguPlatformBlock({ ownerDmTransport: ASSISTANT_OWNER_DM_TRANSPORT, acknowledgement: null })
+
+/** A session's platform block, swapped whole for the assistant's (its slots filled for the assistant, see guguPlatformBlock). */
 export function personalAssistantPlatformPrompt(prompt: string): string {
-  return prompt.replace(GUGU_PLATFORM_BLOCK, GUGU_PLATFORM_BLOCK.replace(`${GUGU_ACKNOWLEDGEMENT}\n`, '').replace(GUGU_OWNER_DM_TRANSPORT, ASSISTANT_OWNER_DM_TRANSPORT))
+  return prompt.replace(GUGU_PLATFORM_BLOCK, ASSISTANT_PLATFORM_BLOCK)
 }
 
 /** Dynamic session-page facts. Kept separate from the static platform contract. */

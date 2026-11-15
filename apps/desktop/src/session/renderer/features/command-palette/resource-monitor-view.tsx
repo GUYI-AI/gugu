@@ -70,7 +70,7 @@ export const ResourceMonitorView = observer(function ResourceMonitorView({ snaps
         <div className="grid grid-cols-[1fr_4rem_5rem] gap-2 border-b border-border px-2 pt-2 pb-1 text-xs text-foreground-muted">
           <span>{translate('resourceMonitor.process')}</span>
           <span className="text-right">CPU</span>
-          <span className="text-right" title={translate('resourceMonitor.memoryRss')}>RSS</span>
+          <span className="text-right" title={translate(snapshot?.memoryMetric === 'footprint' ? 'resourceMonitor.memoryFootprint' : 'resourceMonitor.memoryRss')}>{snapshot?.memoryMetric === 'footprint' ? translate('resourceMonitor.memory') : 'RSS'}</span>
         </div>
         {isLoading ? (
           <ResourceMonitorLoadingState />

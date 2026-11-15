@@ -35,6 +35,14 @@ export const agentRunContextSchema = z.object({
   /** Selected device credentials. Provider/platform overrides remain authoritative. */
   credentialEnv: z.record(z.string(), z.string()).optional(),
   /**
+   * 选中的是一把「API Key 连接」(#2507,Claude / Codex 以外、声明了 `apiKeyConnection` 的家)。
+   * 有它时这一家的登录态 = 已登录(API Key)、付费方 = 这把 key / 它的地址,由宿主照它答,
+   * ❌ 再去读 CLI 自己的文件 —— 那里没有这把 key,只会答「未登录」。`endpoint` 缺席 = 官方地址。
+   * `model` = 这次启动经进程环境点名的那个模型(key 走环境变量的家):这条进程起来就跑它,
+   * 启动时不必、也没法再用会话记录里的名字去设(这一家的 id 是自己的写法,qwen 是 `$runtime|openai|<名>(openai)`)。
+   */
+  apiKeyConnection: z.object({ endpoint: z.string().optional(), model: z.string().optional() }).optional(),
+  /**
    * 底座 env:白名单透传 + 平台补偿(Windows 八个必备变量 / `SSH_AUTH_SOCK` 探测)
    * + **用户在 Agents 设置里填的 env**。
    *
@@ -50,15 +58,22 @@ export const agentRunContextSchema = z.object({
    */
   configRootEnv: z.record(z.string(), z.string()),
   /**
-   * 关掉这一家自更新的会话级 env(descriptor 的 `selfUpdate`,#6186)。
+   * descriptor 钉死的 env:关自更新(`selfUpdate`,#6186)与关厂商数据(`vendorDataOff`)。
    *
    * 放进这一格而不是让各 spawn 点自己读 descriptor:终端腿、聊天(ACP)腿、版本探针都从这份上下文起,
    * 一处算好就全到。它压过用户 export 的同名变量 —— 「咕咕起的会话一律不自更新」是 owner 定的产品合同,
    * 不是可被偏好覆盖的默认值。
    */
-  selfUpdateEnv: z.record(z.string(), z.string()),
+  pinnedEnv: z.record(z.string(), z.string()),
   /** 用户在 Agents 设置里填的额外参数。此前只有终端腿吃得到。 */
   extraArgs: z.array(z.string()),
+  /**
+   * 选中连接自己要的启动参数(#2507:Codex API Key 连接的 `-c model_provider=…`)。终端腿已经把它们并在
+   * `extraArgs` 尾部;聊天(ACP)腿 ❌ 吃 `extraArgs`(那是用户写给 CLI 的参数,不一定是适配器认的),
+   * 只认这一格,由各家 `buildSpawn` 决定放在哪、与平台模型谁先(平台模型的 provider 恒赢)。
+   * 终端腿上同一条规则见 {@link runContextLaunchArgs}。
+   */
+  connectionArgs: z.array(z.string()).optional(),
   /** 跑这一家需要的运行时(`GUGU_NODE_BIN`);缺省表示用系统的。 */
   runtimeExecutable: z.string().optional(),
   /**
@@ -99,7 +114,7 @@ export function agentRunContextKey(ctx: AgentRunContext): string {
     envKey(ctx.env),
     envKey(ctx.configRootEnv),
     envKey(ctx.credentialEnv ?? {}),
-    envKey(ctx.selfUpdateEnv),
+    envKey(ctx.pinnedEnv),
     ctx.extraArgs.join(KEY_ITEM_SEP),
     ctx.runtimeExecutable ?? '',
     ctx.acpAdapterEntry ?? '',
@@ -117,6 +132,26 @@ function envKey(env: Record<string, string>): string {
 }
 
 /**
+ * 运行上下文交给一条终端腿 argv 的那一段(#2507):用户在 Agents 设置里填的额外参数原位照带;所选连接自己的那几个
+ * (`connectionArgs`)只在这条会话**不跑咕咕平台额度**时跟上 —— 与聊天(ACP)腿同一条规则(codex 插件的 `buildSpawn`)。
+ *
+ * 平台额度的会话,provider 由平台那组声明说了算。两组 `-c model_provider` 同在一条 argv 上,codex 按 argv 顺序
+ * 后者盖前者(openai/codex `codex-rs/config/src/overrides.rs` `build_cli_overrides_layer`),连接那组又排在后面 ——
+ * 平台模型名就带着平台令牌(环境里平台那格叠在连接那格之上)发去了连接的地址。
+ */
+export function runContextLaunchArgs(ctx: AgentRunContext, session: { platformQuota: boolean }): string[] {
+  const connection = ctx.connectionArgs ?? [];
+  if (!session.platformQuota || connection.length === 0) return [...ctx.extraArgs];
+  const userArgs = ctx.extraArgs.slice(0, ctx.extraArgs.length - connection.length);
+  const tail = ctx.extraArgs.slice(userArgs.length);
+  // 宿主拼的是「用户填的 + 连接的」(`resolveLocalAgentRunContext`)。拼法变了就响亮报错,❌ 剪掉别人的参数。
+  if (tail.length !== connection.length || tail.some((arg, index) => arg !== connection[index])) {
+    throw new Error('AgentRunContext.extraArgs no longer ends with connectionArgs; cannot drop the connection provider for a platform session');
+  }
+  return userArgs;
+}
+
+/**
  * 一条腿真正要交给子进程的 env —— **唯一**的叠放顺序(#5702)。
  *
  * 从前终端腿与聊天腿各排各的:终端腿把用户设置的 env 排在 provider 命令 env **之上**,
@@ -130,7 +165,7 @@ function envKey(env: Record<string, string>): string {
  *    它压过用户设置是**故意的**:`CLAUDE_CODE_EXECUTABLE` / `GUGU_CODEX_BIN` 这类值指的正是
  *    「宿主选中的那一份」,用户 export 一个同名变量就能把它顶掉,恰恰是本票要判死的那件事。
  * 3. `ctx.configRootEnv` —— 咕咕给这一家的独立配置根;分家的前提就是咕咕这份赢。
- *    `ctx.selfUpdateEnv` 同层 —— 关自更新的会话级开关,同样必须赢过用户与 provider。
+ *    `ctx.pinnedEnv` 同层 —— 关自更新的会话级开关,同样必须赢过用户与 provider。
  * 4. `hostInjections` —— 每次调用才有的宿主注入:工作区信任、平台中转/能力包、
  *    任务级变量、钩子端口。它压在最上面(理由见 #2503:宿主的注入不是用户偏好)。
  */
@@ -145,7 +180,7 @@ export function composeAgentSpawnEnv(
     ...ctx.env,
   };
   for (const key of ctx.unsetEnv ?? []) delete env[key];
-  Object.assign(env, ctx.credentialEnv, layers.providerEnv, ctx.configRootEnv, ctx.selfUpdateEnv);
+  Object.assign(env, ctx.credentialEnv, layers.providerEnv, ctx.configRootEnv, ctx.pinnedEnv);
   for (const injection of layers.hostInjections ?? []) {
     if (injection) Object.assign(env, injection);
   }

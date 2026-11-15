@@ -26,12 +26,13 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
   started?: () => void
   registered?: () => void
   deliveryReady?: () => void
-}) {
+}, viaModule = false) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-boot-entry941-'))
   const tasks = sessionBootTasks
   for (const failure of tasks.snapshot()) tasks.clearTask(failure.taskId)
   const registered = vi.fn(() => presenceProbe?.registered?.())
   const delivery = vi.fn(() => presenceProbe?.deliveryReady?.())
+  const paneRelay = vi.fn()
   const statusHooks: Array<(event: unknown) => void> = []
   const sessionHooks = new Map<string, (id: string) => void>()
   const rows: Record<string, Array<{ id: string }>> = { sessions: [], projects: [] }
@@ -81,6 +82,7 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
       on: (name: string, callback: (id: string) => void) => { sessionHooks.set(name, callback); return () => {} },
     } },
     '@shared/lib/ipc/rpc': { registerRPCRouter: registered },
+    './host-ws/device-pane-relay': { installDevicePaneRelay: paneRelay },
   }
   const load = (id: string) => {
     if (id.startsWith('node:')) return requireBuiltin(id)
@@ -91,16 +93,19 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
   })
   const module = { exports: {} as {
     bootSessionHostCore: (options: unknown) => Promise<void>
+    bootEmdashModule: (ipcMain: unknown, discovery?: unknown) => Promise<void>
     sessionpageBootFailures: () => unknown[]
     sessionpageVersionSwitchActivity: () => { busy: boolean; busyAgents: number }
   } }
   runInNewContext(compiled.outputText, { require: load, module, exports: module.exports, process, console, Buffer, setTimeout, clearTimeout, setInterval, clearInterval, __dirname: path.dirname(entry) })
   presenceProbe?.started?.()
-  const booting = module.exports.bootSessionHostCore({ hostIpc: { ipcMain: {} }, browserFeatures: false, scheduleDiscovery: async () => {} })
+  const booting = viaModule
+    ? module.exports.bootEmdashModule({}, { scheduleDiscovery: async () => {} })
+    : module.exports.bootSessionHostCore({ hostIpc: { ipcMain: {} }, browserFeatures: false, scheduleDiscovery: async () => {} })
   try {
     await presenceProbe?.inspect?.(registered, delivery)
     await booting
-    return { tasks, registered, statusHooks, sessionHooks, rows, states, pending, lifeRows, activity: module.exports.sessionpageVersionSwitchActivity, readFailures: module.exports.sessionpageBootFailures, failures: module.exports.sessionpageBootFailures() }
+    return { paneRelay, tasks, registered, statusHooks, sessionHooks, rows, states, pending, lifeRows, activity: module.exports.sessionpageVersionSwitchActivity, readFailures: module.exports.sessionpageBootFailures, failures: module.exports.sessionpageBootFailures() }
   } finally {
     await booting.catch(() => {})
     fs.rmSync(home, { recursive: true, force: true })
@@ -108,6 +113,13 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
 }
 
 describe('real session host boot entry', () => {
+  // A desktop records who on another computer is watching its sessions too: its idle reclaim reads that, and a
+  // desktop without the relay answered "No handler" to every subscribe.
+  it('a desktop (not server mode) installs the device pane relay', async () => {
+    expect(process.env.GUGU_SERVER_MODE).not.toBe('1')
+    const result = await boot('', false, undefined, true)
+    expect(result.paneRelay).toHaveBeenCalledOnce()
+  })
   it('registers RPC while reconciliation is pending, but installs deferred delivery only after it settles', async () => {
     const gate = Promise.withResolvers<void>()
     await boot('', false, {

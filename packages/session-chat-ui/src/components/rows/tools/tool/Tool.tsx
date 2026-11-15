@@ -40,7 +40,7 @@ import { ShimmerText } from '@session-chat/components/primitives/ShimmerText';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { IconError, IconShieldAlert } from '@session-chat/components/primitives/icons';
 import { applySoftWraps } from '@session-chat/core/measure/soft-wrap';
-import { For, Show, createResource, createSignal, onCleanup, onMount } from 'solid-js';
+import { For, Show, createMemo, createResource, createSignal, onCleanup, onMount } from 'solid-js';
 import { observeAnimationViewport } from '@gugu/session-shared/animation-visibility';
 import { useChatTranslator } from '@session-chat/localization';
 import type { ChatToolCall } from '@session-chat/model';
@@ -207,7 +207,7 @@ export function Tool(props: ToolProps) {
  * saying how many more there are. A click opens the host's viewer on all of them from that one. Decoding is the
  * browser's business off the row's paint (`decoding=async`, `loading=lazy`): the box is already its final size.
  */
-function ToolThumbs(props: { item: ChatToolCall; strip: ToolThumbStrip }) {
+export function ToolThumbs(props: { item: Pick<ChatToolCall, 'id' | 'images' | 'imageCount'>; strip: ToolThumbStrip }) {
   const commands = useCommands();
   const translate = useChatTranslator();
   const count = () => props.item.imageCount ?? props.item.images?.length ?? 0;
@@ -217,12 +217,20 @@ function ToolThumbs(props: { item: ChatToolCall; strip: ToolThumbStrip }) {
   onMount(() => onCleanup(observeAnimationViewport(root, setVisible)));
   // Like committed attachment thumbnails, a Solid resource owns the fetched bytes.
   // The product's shared viewport observer delays fetching retained/offscreen rows.
-  const [resolved] = createResource(
-    () => visible() && { id: props.item.id, shown: props.strip.shown, images: props.item.images },
-    ({ id, shown, images }) => Promise.all(Array.from({ length: shown }, (_, index) =>
-      images?.[index] ?? commands().resolveToolImage?.(id, index) ?? null
-    )).then(urls => ({ id, urls })),
-  );
+  // A reseeded transcript hands the same call back as a new object; fetching again then would race the store's history
+  // reload and lose pictures already shown, so only a different call, shown count or inline set fetches again. A reseed
+  // that lands while a fetch is out can make that fetch come back empty: then it is asked again (a few times at most).
+  let reseeds = 0;
+  const source = createMemo(() => (reseeds++, visible() && { id: props.item.id, shown: props.strip.shown, images: props.item.images }),
+    undefined, { equals: (a, b) => !!a && !!b && a.id === b.id && a.shown === b.shown && a.images?.length === b.images?.length });
+  const [resolved] = createResource(source, async ({ id, shown, images }) => {
+    for (let attempt = 0; ; attempt++) {
+      const asked = reseeds;
+      const urls = await Promise.all(Array.from({ length: shown }, (_, index) =>
+        images?.[index] ?? commands().resolveToolImage?.(id, index) ?? null));
+      if (urls.every(Boolean) || reseeds === asked || attempt === 2) return { id, urls };
+    }
+  });
   const urlAt = (index: number) => props.item.images?.[index]
     ?? (resolved()?.id === props.item.id ? resolved()?.urls[index] ?? undefined : undefined);
   return (

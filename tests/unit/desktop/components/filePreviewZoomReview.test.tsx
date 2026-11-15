@@ -118,24 +118,28 @@ it('the code editor follows the text/code preference and takes its pinch instead
   container.remove()
 })
 
-it('PhotoSwipe applies the image preference, keeps a larger one when capped, and zooms out from what is shown', () => {
-  const handlers = new Map<string, Array<(event: { slide: unknown }) => void>>()
+it('the image viewer writes the preference on a zoom only, keeps a larger one at a cap, and zooms from what is shown', () => {
+  const handlers = new Map<string, Array<(event: Record<string, unknown>) => void>>()
   const slide = {
     zoomLevels: { initial: 0.5, max: 1 },
     currZoomLevel: 0.5,
-    zoomTo: vi.fn((level: number) => { slide.currZoomLevel = level; emit('zoomPanUpdate') }),
+    zoomTo: vi.fn((level: number) => { emit('beforeZoomTo', { destZoomLevel: level }); slide.currZoomLevel = level }),
   }
   const element = document.body.appendChild(document.createElement('div'))
-  const pswp = { currSlide: slide, element, on: (name: string, handler: (event: { slide: unknown }) => void) => handlers.set(name, [...handlers.get(name) ?? [], handler]) }
-  const emit = (name: string) => handlers.get(name)?.forEach(handler => handler({ slide }))
+  const pswp = { currSlide: slide, element, opener: { isOpen: false }, on: (name: string, handler: (event: Record<string, unknown>) => void) => handlers.set(name, [...handlers.get(name) ?? [], handler]) }
+  const emit = (name: string, event: Record<string, unknown> = {}) => handlers.get(name)?.forEach(handler => handler(event))
   writeFileZoom('image', 3)
   wireReadingZoom(pswp as unknown as PhotoSwipe)
   emit('afterInit')
-  expect(slide.currZoomLevel).toBe(1)
-  expect(readFileZoom('image')).toBe(3)
 
-  // A pan, or the user holding this small image at its cap, does not lower the shared preference.
-  emit('zoomPanUpdate')
+  // Anything that is not a zoom leaves the preference alone: opening, a pan, a resize, a pinch.
+  emit('zoomPanUpdate', { slide })
+  slide.zoomTo(0.6)
+  expect(readFileZoom('image')).toBe(3)
+  pswp.opener.isOpen = true
+
+  // Zooming at this small image's cap does not lower it.
+  slide.zoomTo(1)
   expect(readFileZoom('image')).toBe(3)
 
   element.tabIndex = -1; element.focus()
@@ -143,9 +147,8 @@ it('PhotoSwipe applies the image preference, keeps a larger one when capped, and
   expect(readFileZoom('image')).toBeCloseTo(2 / 1.2)
   expect(slide.currZoomLevel).toBeCloseTo(0.5 * 2 / 1.2)
 
-  // A user zoom below the cap is remembered.
-  slide.currZoomLevel = 0.6
-  emit('zoomPanUpdate')
+  // A zoom below the cap is remembered.
+  slide.zoomTo(0.6)
   expect(readFileZoom('image')).toBeCloseTo(1.2)
   emit('destroy')
   element.remove()

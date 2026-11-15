@@ -5,8 +5,7 @@ import { readSessionpageViewRequestBridge } from '../../lib/sessionpageViewReque
 
 /** A block supplies an address and presentation; the account owns its conversation. */
 export function TaskChatScope({ chatId, children }: { chatId: string; children: ReactNode }) {
-  const store = useChatStore()
-  const storeSetActiveChatId = store.setActiveChatId
+  const { setActiveChatId: storeSetActiveChatId } = useChatStore('setActiveChatId')
   const setActiveChatId = useCallback<ChatContextValue['setActiveChatId']>((next) => {
     const sessionPage = readSessionpageViewRequestBridge()
     if (next && sessionPage) sessionPage.openChat(next, false)

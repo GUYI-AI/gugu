@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createReactHarness, typeInto } from '../../../support/testHarness'
 import { HeaderSearch } from '../../../../apps/desktop/src/components/ui/HeaderSearch'
 import { isSheetOpen } from '../../../../apps/desktop/src/components/ui/sheetStack'
-import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 
 type BackState = Window & { __guguNativeBackHandled?: boolean }
 
@@ -63,20 +62,6 @@ describe('HeaderSearch', () => {
     await harness.render(createElement(Page, { mobile: true, initial: 'zs' }))
     expect(input()?.value).toBe('zs')
     expect(document.activeElement).not.toBe(input())
-  })
-
-  it('the bottom trigger focuses once without scrolling the containing pager', async () => {
-    harness = createReactHarness()
-    await harness.render(createElement(HeaderSearch, {
-      mobile: true, externalTrigger: 'contacts', value: '', onChange: () => {}, placeholder: 'Search', testId: 'page-search',
-      children: () => createElement('div', null, 'Partners'),
-    }))
-    const focus = vi.spyOn(HTMLInputElement.prototype, 'focus')
-    await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openPhoneListSearch, { detail: 'chats' })) })
-    expect(input()).toBeNull()
-    await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openPhoneListSearch, { detail: 'contacts' })) })
-    expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true })
-    expect(document.activeElement).toBe(input())
   })
 
   it('安卓返回键 = 取消;页不在屏上时不进返回栈', async () => {

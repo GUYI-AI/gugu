@@ -1,3 +1,4 @@
+import { resolveSessionPermissionMode } from '@gugu/session-core/acp';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { until } from '../../../../../../../../tests/support/awaitCondition';
 import {
@@ -357,6 +358,7 @@ function session(overrides: Partial<Session> = {}): Session {
     title: 'Conversation 1',
     lastInteractedAt: null,
     providerSessionId: 'provider-session-1',
+    permissionMode: 'edit',
     ...overrides,
   };
 }
@@ -707,10 +709,7 @@ describe('conversation provider respawn state', () => {
           mcpServers: [],
           env: { GUGU_HOME: '/tmp/codex-permission-mode-transport-home' },
           model: null,
-          autonomy: {
-            mode: info.permissionMode === 'full-access' ? 'full-access' : 'approval-required',
-            ...(info.permissionMode ? { permissionMode: info.permissionMode } : {}),
-          },
+          autonomy: { permissionMode: resolveSessionPermissionMode(info) },
           promptBlocks: {},
           packages: [CODEX_GUGU_CAPABILITY_PACKAGE],
         },
@@ -742,10 +741,7 @@ describe('conversation provider respawn state', () => {
           runtime: { authProvider: {} as never, env: {} },
           sessionKey: info.sessionId,
           model: null,
-          autonomy: {
-            mode: info.permissionMode === 'full-access' ? 'full-access' : 'approval-required',
-            ...(info.permissionMode !== undefined ? { permissionMode: info.permissionMode } : {}),
-          },
+          autonomy: { permissionMode: resolveSessionPermissionMode(info) },
           promptBlocks: {},
         },
         identity: null,

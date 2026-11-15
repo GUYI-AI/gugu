@@ -1,7 +1,8 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { safeFailureLine } from '../gugu-reason';
 import { detectPlatform } from '@tanstack/react-hotkeys';
-import { useCallback, useMemo, useState, type ReactElement } from 'react';
+import { useCallback, useMemo, type ReactElement } from 'react';
+import { useExternalMenuTrigger } from '@/components/ui/externalMenuTrigger';
 import type { OpenedOutput } from '@gugu/session-chat-ui';
 import { openedFilePath } from '@gugu/session-chat-ui/opened-outputs';
 import type { ChatCommands } from '@renderer/lib/chat/chat-transcript';
@@ -39,15 +40,17 @@ export function useOpenedOutputMenu({ projectId, sessionId }: { projectId: strin
   menu: ReactElement | null;
 } {
   const { translate } = useSessionMessages();
-  const [target, setTarget] = useState<{ output: OpenedOutput; anchor: HTMLElement } | null>(null);
+  // 「侧边栏 ▾」在 Solid 画的行里:按同一条 Trigger 规则(再点一次就关,按它不算点外面)。
+  const trigger = useExternalMenuTrigger<OpenedOutput>();
+  const { press } = trigger;
   const local = machineRegistry.machineOf(projectId) === null;
 
   const commands = useMemo<Pick<ChatCommands, 'outputOpenMode' | 'onOutputMenu'>>(
     () => ({
       outputOpenMode: () => translate('transcript.outputMode.choose'),
-      onOutputMenu: ({ output, anchor }) => setTarget({ output, anchor }),
+      onOutputMenu: ({ output, anchor }) => press(anchor, output),
     }),
-    [translate]
+    [translate, press]
   );
 
   const copy = useCallback(
@@ -90,16 +93,14 @@ export function useOpenedOutputMenu({ projectId, sessionId }: { projectId: strin
     if (result && 'success' in result && !result.success) log.error({ error: result.error, url }, 'opened-output openExternal failed');
   }, []);
 
-  if (!target) return { commands, menu: null };
-  const { output, anchor } = target;
+  if (!trigger.opened) return { commands, menu: null };
+  const { value: output, anchor } = trigger.opened;
   // An Edited row names its file as the patch did, which may be relative to the working copy.
   const provisioned = asProvisioned(getSessionPageStore(projectId, sessionId));
   const namedPath = openedFilePath(output);
   const filePath = namedPath && resolveWorkspacePath(provisioned ? workspaceRegistry.get(projectId, provisioned.workspaceId)?.path : undefined, namedPath);
-  const close = () => setTarget(null);
-
   const menu = (
-    <DropdownMenu open onOpenChange={(open) => (open ? undefined : close())}>
+    <DropdownMenu open onOpenChange={trigger.onOpenChange}>
       <DropdownMenuContent anchor={anchor} align="end" className="w-auto" data-testid="opened-output-menu">
         <DropdownMenuItem onClick={() => reopenSessionOutput(projectId, sessionId, output)}>
           {translate('transcript.outputMenu.side')}

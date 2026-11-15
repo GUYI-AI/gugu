@@ -52,6 +52,8 @@ function buildMetadata(provider: CLIAgentPluginProvider): AgentMetadata {
       // 只服务显式声明 supported 的家，❌ 不给没声明的家伪造通用 cli-login
       // （spec: harness-auth-surface，owner 2026-09-19「sign in to use PI models 那套删了」）。
       auth: capabilities.auth,
+      // 订阅页连接表单的格子(#2507);行为(key 怎么进进程)只在主进程。
+      apiKeyConnection: capabilities.apiKeyConnection,
       hostDependency: capabilities.hostDependency,
       models: capabilities.models,
       effort: capabilities.effort,

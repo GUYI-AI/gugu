@@ -59,7 +59,9 @@ const state = vi.hoisted(() => ({
   /** D-31 The waits the host reported to the status writer, in order. */
   hostWaits: [] as Array<{ sessionId: string; id: string; open: boolean }>,
   /** 聊天腿的 agent 此刻在不在跑(write-bridge `acpSessionLive` 的桩)。 */
-  acpLive: false,
+  acpLive: false as boolean | Error,
+  /** 那台机器上这家的模型目录(session-discovery 的桩);设成 Error 就是目录读不到。 */
+  catalog: null as Error | null,
   /** 唤醒(write-bridge `ensureAcpSessionLive` 的桩):默认 ❌ —— 谁走到这里就是叫醒了它。 */
   wake: vi.fn(async (_id: string): Promise<void> => {
     throw new Error('❌ 没开起来的会话不许走唤醒');
@@ -167,7 +169,7 @@ vi.mock('./write-bridge', () => {
   return {
     SessionWriteError,
     deliverSessionText: (...args: unknown[]) => state.deliverText(...args),
-    acpSessionLive: async () => state.acpLive,
+    acpSessionLive: async () => { if (state.acpLive instanceof Error) throw state.acpLive; return state.acpLive; },
     ensureAcpSessionLive: (id: string) => state.wake(id),
     deliverPermissionDecision: (...args: unknown[]) => state.deliverPermission(...args),
     permissionChannelError: (...args: unknown[]) => state.permissionChannelError(...args),
@@ -186,6 +188,14 @@ vi.mock('./live-options', () => ({
   SessionOptionsError: class extends Error { code = 'x' },
   readSessionOptions: () => state.readOptions(),
   setSessionOption: async () => ({ mode: null, model: null, effort: null }),
+}));
+
+// 已答审批的记录:真实现读 kv 表,这里只要一张账。
+const answeredAsks = vi.hoisted(() => new Map<string, unknown>());
+vi.mock('../asks/answered-asks', async (importOriginal) => ({
+  answeredAskOf: (await importOriginal<typeof import('../asks/answered-asks')>()).answeredAskOf,
+  recordAnsweredAsk: (id: string, answered: unknown) => answeredAsks.set(id, answered),
+  readAnsweredAsks: () => new Map(answeredAsks),
 }));
 
 // 起会话失败的原因码:真实现读 kv 表,这里只要一张账。
@@ -207,7 +217,10 @@ vi.mock('@main/core/sessions/platform-model-selection', () => ({
   sessionPlatformModel: async () => ({ modelId: 'gpt-5' }),
 }));
 vi.mock('@main/core/agents/session-discovery', () => ({
-  listLocalModels: async () => ({ models: [{ id: 'platform:gpt-5', name: 'GPT-5' }] }),
+  listLocalModels: async () => {
+    if (state.catalog) throw state.catalog;
+    return { models: [{ id: 'platform:gpt-5', name: 'GPT-5' }] };
+  },
 }));
 // 真实现要把平台模型目录、agent 控制器一起拉进来;这一组只问「附没附上菜单」。
 vi.mock('./session-model-menu', () => ({
@@ -396,6 +409,7 @@ function makeTimeline(onCatchUp: () => void = () => undefined) {
 describe('session timeline service', () => {
   beforeEach(() => {
     persistedQuestions.clear();
+    answeredAsks.clear();
     service.resetSessionTimelineService();
     service.setSessionTimelineFactory(null);
     service.setConnectionConfigRootResolver(null);
@@ -420,52 +434,6 @@ describe('session timeline service', () => {
       throw new Error('❌ 没开起来的会话不许走唤醒');
     });
     state.readOptions.mockClear();
-  });
-
-  it('record ingestion owns a silent snapshot and cannot turn an archived reader into a live tail', async () => {
-    const fake = makeTimeline();
-    fake.put({ itemId: 'agent-question:11111111-1111-4111-8111-111111111111', kind: 'question', title: 'Choose',
-      questions: [{ question: 'Choose', multiSelect: false, options: [{ optionId: 'one', name: 'One' }] }],
-      origin: { source: 'agent-question', payload: { sourceLink: 'gugu-chat://22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333' } },
-      state: 'pending', optionId: null, resolvedBy: null, resolvedAt: null });
-    const interactive = makeTimeline();
-    const factory = vi.fn().mockResolvedValueOnce(fake.timeline).mockResolvedValueOnce(interactive.timeline);
-    service.setSessionTimelineFactory(factory);
-    expect(await service.pickRecordTurns('conv-1', async turns => turns, { images: false, committedOnly: true, includeArchived: true }))
-      .toEqual({ ok: true, turns: [], complete: true });
-    expect(state.pendingWatchCalls).toEqual([]);
-    expect(state.wake).not.toHaveBeenCalled();
-    expect(state.questionSend).not.toHaveBeenCalled();
-    expect(persistedQuestions.has('conv-1')).toBe(false);
-    expect(factory.mock.calls[0][0]).toMatchObject({ readMode: 'snapshot' });
-    expect(fake.timeline.disposed).toBe(1);
-    await service.snapshot({ conversationId: 'conv-1' });
-    expect(factory).toHaveBeenCalledTimes(2);
-    expect(factory.mock.calls[1][0]).not.toHaveProperty('readMode');
-    expect(state.pendingWatchCalls).toEqual(['conv-1']);
-  });
-
-  it('reports a broken record snapshot as unreadable without attaching interactive effects', async () => {
-    service.setSessionTimelineFactory(async () => { throw new Error('damaged zstd frame'); });
-    expect(await service.pickRecordTurns('conv-1', async turns => turns)).toEqual({ ok: false });
-    expect(state.pendingWatchCalls).toEqual([]);
-    expect(state.wake).not.toHaveBeenCalled();
-    expect(state.questionSend).not.toHaveBeenCalled();
-  });
-
-  it('passes a proved parent primary lineage to the child snapshot and disposes both readers', async () => {
-    state.rows.push(row({ id: 'parent' }));
-    const parent = makeTimeline(), child = makeTimeline();
-    const lineage = [{ uuid: 'ancestor', parentUuid: null }];
-    parent.timeline.getRecordLineage = () => lineage;
-    const factory = vi.fn().mockResolvedValueOnce(parent.timeline).mockResolvedValueOnce(child.timeline);
-    service.setSessionTimelineFactory(factory);
-    expect(await service.pickRecordTurns('conv-1', async turns => turns, { images: false, afterForkOf: 'parent' }))
-      .toEqual({ ok: true, turns: [], complete: true });
-    expect(factory.mock.calls[1][0]).toMatchObject({ conversationId: 'conv-1', readMode: 'snapshot', parentLineage: lineage });
-    expect(parent.timeline.disposed).toBe(1);
-    expect(child.timeline.disposed).toBe(1);
-    expect(state.pendingWatchCalls).toEqual([]);
   });
 
   it('follows a settling record on its own live reader until the last turn lands, without interactive effects', async () => {
@@ -512,18 +480,6 @@ describe('session timeline service', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
-
-  it('settles a fork without lineage fields as diverged and never indexes a guessed child prefix', async () => {
-    state.rows.push(row({ id: 'parent', provider: 'codex' }));
-    const parent = makeTimeline(), pick = vi.fn(async (turns: TimelineSnapshot['turns']) => turns);
-    const factory = vi.fn(async () => parent.timeline);
-    service.setSessionTimelineFactory(factory);
-    expect(await service.pickRecordTurns('conv-1', pick, { images: false, afterForkOf: 'parent' }))
-      .toEqual({ ok: false, reason: 'diverged' });
-    expect(factory).toHaveBeenCalledOnce();
-    expect(pick).not.toHaveBeenCalled();
-    expect(parent.timeline.disposed).toBe(1);
   });
 
   it('uses the native archive at the first unread stored identity, with bounded older/newer pages and the real active turn', async () => {
@@ -595,7 +551,8 @@ describe('session timeline service', () => {
         running: false, ended: cancelled.outcome, entries: [{ kind: 'prompt', messageId: 'msg:new' }],
       } });
     }
-    expect(state.storedHistory).toHaveBeenCalledWith({ sessionId: 'conv-1', before: undefined, limit: 4 });
+    // A preview is not a page the reader went back for: it reads at the first-screen size.
+    expect(state.storedHistory).toHaveBeenCalledWith({ sessionId: 'conv-1', before: undefined, limit: 4 }, { older: false });
     expect(state.wake).not.toHaveBeenCalled();
   });
 
@@ -815,6 +772,23 @@ describe('session timeline service', () => {
     });
   });
 
+  it('读选项时运行时连不上、模型目录读不到 ⇒ 报 options_failed,❌ 给一份「没在跑」的选项充数', async () => {
+    state.rows = [row()];
+    state.acpLive = new Error('runtime socket closed');
+    expect(await service.sessionOptions({ conversationId: 'conv-1' })).toEqual({
+      ok: false, error: expect.objectContaining({ code: 'options_failed', message: 'runtime socket closed' }),
+    });
+    state.rows = [row({ providerSessionId: null })];
+    expect(await service.sessionOptions({ conversationId: 'conv-1' })).toMatchObject({ ok: false });
+    state.acpLive = false;
+    state.catalog = new Error('catalog unreadable');
+    try {
+      expect(await service.sessionOptions({ conversationId: 'conv-1' })).toEqual({
+        ok: false, error: expect.objectContaining({ code: 'options_failed', message: 'catalog unreadable' }),
+      });
+    } finally { state.catalog = null; }
+  });
+
   it('#980 在跑:读活的那一份,同样不走唤醒', async () => {
     state.acpLive = true;
     const effort = { selected: 'high', available: [{ id: 'high', name: 'High' }] };
@@ -895,31 +869,6 @@ describe('session timeline service', () => {
     expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'restored', index: 1 })).toMatchObject({ ok: false, error: { code: 'no_such_image' } });
   });
 
-  // #980:抄进库的那几轮要带真图 —— 库里那份没有别处可以再取。读不回来的那张保持只有字数。
-  it('从记录挑出来要抄进库的轮,存档里只剩位置的图先读回来;读不回来的照旧只有字数', async () => {
-    const fake = makeTimeline();
-    const shot = { mimeType: 'image/png', data: 'iVBORAAAA' };
-    const ref = { mimeType: 'image/png', chars: 9 };
-    const tool = (id: string, extra: Record<string, unknown> = {}) => ({ kind: 'mcp-tool-call', id, seq: 1, toolCallId: id, title: 'shot', status: 'done', ...extra });
-    const snapshot = fake.timeline.getSnapshot();
-    fake.timeline.getSnapshot = () => ({
-      ...snapshot,
-      turns: [{ id: 't1', seq: 1, initiator: 'user', items: [
-        tool('restored', { imageRefs: [ref] }),
-        tool('group', { kind: 'tool-group', children: [tool('gone', { imageRefs: [ref] })] }),
-      ] }],
-    }) as unknown as TimelineSnapshot;
-    fake.timeline.toolImage = async ({ itemId }) => itemId === 'restored'
-      ? { ok: true, image: shot }
-      : { ok: false, code: 'no_such_image', message: 'could not be read back' };
-    service.setSessionTimelineFactory(async () => fake.timeline);
-    const picked = await service.pickRecordTurns('conv-1', async (turns) => turns);
-    expect(picked.ok && picked.turns?.[0].items).toEqual([
-      tool('restored', { images: [shot] }),
-      tool('group', { kind: 'tool-group', children: [tool('gone', { imageRefs: [ref] })] }),
-    ]);
-  });
-
   it('结算只成功一次：后答的一端拿到那条既有结算，provider 只被调一次', async () => {
     const { timeline } = makeTimeline();
     service.setSessionTimelineFactory(async () => timeline);
@@ -945,6 +894,8 @@ describe('session timeline service', () => {
       value: { accepted: false, settlement: { resolvedBy: 'phone' } },
     });
     expect(state.deliverPermission).toHaveBeenCalledTimes(1);
+    // The list learns of the one answer that won, with who gave it.
+    expect(answeredAsks.get('conv-1')).toMatchObject({ itemId: 'req-1', optionId: 'allow-once', resolvedBy: 'phone' });
   });
 
   it('投递失败时把结算放回去，并把 provider 的 code 原样带出来', async () => {

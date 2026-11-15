@@ -72,6 +72,7 @@ export default {
     "leaveGroup": "确认退出该群聊？"
   },
   "contextMenu": {
+    "more": "更多",
     "deleteAgent": "归档任务",
     "deleteContact": "删除联系人",
     "disableNotifications": "关闭通知",
@@ -184,11 +185,7 @@ export default {
   "groupInvite": {
     "approvalHint": "该群需管理员审批，提交后等待通过即可入群。",
     "confirmTitle": "加入群聊确认",
-    "copyFailed": "复制失败，请手动复制链接",
-    "copyLink": "复制链接",
-    "copyQr": "复制二维码图片",
     "creator": "创建者 {{name}}",
-    "groupFallback": "群",
     "groupNumber": "群号 {{number}}",
     "groupNumberHash": "群号 #{{number}}",
     "groupSummary": "群号 {{number}} · {{count}} 名成员",
@@ -206,7 +203,6 @@ export default {
     "joinFailedWithReason": "加入失败：{{error}}",
     "joining": "加入中…",
     "joinTitle": "加入群聊",
-    "linkCopied": "邀请链接已复制",
     "lookingUp": "正在查找群聊...",
     "lookupFailed": "查找失败，请重试",
     "memberCount": "{{count}} 名成员",
@@ -214,11 +210,6 @@ export default {
     "memberCount_other": "{{count}} 名成员",
     "notFound": "未找到这个群号",
     "pendingApproval": "待审批",
-    "qrAlt": "{{name}} 群二维码",
-    "qrCopied": "已复制二维码图片，可粘贴分享",
-    "qrExportFailed": "生成二维码图片失败",
-    "qrFileName": "{{name}}-群二维码.png",
-    "qrSaved": "已保存二维码图片",
     "qrTitle": "群二维码",
     "requesting": "申请中…",
     "requestJoin": "申请加入",
@@ -390,37 +381,18 @@ export default {
     "scanToJoinGugu": "扫码加入 咕咕"
   },
   "tags": {
-    "back": "返回标签",
-    "backToList": "返回标签列表",
-    "contactKind": "联系人",
     "countSummary": "共 {{count}} 个对象",
     "countSummary_one": "共 {{count}} 个对象",
     "countSummary_other": "共 {{count}} 个对象",
     "create": "新建标签",
     "delete": "删除{{name}}",
     "deleteConfirm": "删除标签「{{name}}」？",
-    "editMembers": "编辑成员",
-    "editTitle": "编辑标签成员",
-    "emptyContacts": "暂无联系人或 Agent",
-    "emptyDescription": "给联系人或 Agent 打上这个标签后，它们会出现在左侧列表。",
-    "emptyTitle": "这个标签还没有对象",
-    "filters": {
-      "agent": "Agent",
-      "all": "全部",
-      "contacts": "联系人"
-    },
     "namePlaceholder": "标签名称",
-    "noResults": "未找到对象",
-    "objectCount": "{{count}} 个对象",
-    "objectCount_one": "{{count}} 个对象",
-    "objectCount_other": "{{count}} 个对象",
     "rename": "重命名{{name}}",
-    "searchPlaceholder": "搜索联系人 / Agent",
     "title": "标签",
     "titleWithCount": "标签 · {{count}} 个对象",
     "titleWithCount_one": "标签 · {{count}} 个对象",
-    "titleWithCount_other": "标签 · {{count}} 个对象",
-    "updateFailed": "更新标签成员失败"
+    "titleWithCount_other": "标签 · {{count}} 个对象"
   },
   "toast": {
     "deleteAgentFailed": "归档任务失败",

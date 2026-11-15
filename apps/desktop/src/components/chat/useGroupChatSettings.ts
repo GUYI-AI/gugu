@@ -118,7 +118,7 @@ export function useGroupChatSettings(chatId: string | null, revision?: string, a
     }
   }, [chatId, t])
 
-  const setAvatarUrl = useCallback((avatarUrl: string) => {
+  const setAvatarUrl = useCallback((avatarUrl: string | null) => {
     writeSeq.current += 1
     setSettings((current) => (current ? { ...current, avatar_url: avatarUrl } : current))
   }, [])

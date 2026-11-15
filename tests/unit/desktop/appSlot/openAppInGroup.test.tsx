@@ -23,6 +23,7 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
 const card = vi.hoisted(() => ({ manifest: null as unknown }))
 vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
   summaryOf: async () => ({ ok: true, manifest: card.manifest }),
+  watchReading: () => () => {},
   packageKey: (card: { source: { kind: string; url?: string }; messageId: string }) => (card.source.kind === 'url' ? `url:${card.source.url}` : `msg:${card.messageId}`),
   installPackageOf: (card: { messageId: string }) => ({ messageId: card.messageId }),
   showPackage: () => () => {},
@@ -99,6 +100,41 @@ describe('the chat on screen answers 「在本群打开」 (useChatOpener)', () 
     const tab = shownPanelTab('source-1')
     expect(tab?.item).toMatchObject({ kind: 'board.main' })
     expect(chatPaneOf('source-1', tab!.tabId)?.navigationOf(tab!.tabId)?.index).toBe(0)
+  })
+
+  it('a link naming the App\'s own page opens the file it names here, as its card does: no second tab beside that one', async () => {
+    const { appsHere } = await import('../../../../apps/desktop/src/components/appSlot/appsHere')
+    const appChatFile = vi.fn(async () => ({ success: false, error: 'read the file it names' }))
+    Object.assign(appsHere!, { appChatFile })
+    const withChatFile = app([OWN_PAGE, { ...GROUP_FILES, name: 'file', chatFile: 'x.board.json' } as Tab])
+    install(withChatFile)
+    await harness.render(createElement(Chat, { id: 'link-1' }))
+    askNow('link-1', { app: 'board', tab: 'main' })
+    await act(async () => { await Promise.resolve() })
+    expect(appChatFile).toHaveBeenCalledWith({ chatId: 'link-1', extensionId: 'board' })
+    expect(panelTabsOf('link-1').map((tab) => tab.item.kind)).not.toContain('board.main')
+    // A tab the App does not have says so; it does not fall through to the file.
+    appChatFile.mockClear()
+    askNow('link-1', { app: 'board', tab: 'gone' })
+    await act(async () => { await Promise.resolve() })
+    expect(appChatFile).not.toHaveBeenCalled()
+    expect(panelTabsOf('link-1').map((tab) => tab.item.kind)).not.toContain('board.gone')
+    // Naming another tab still opens that one.
+    askNow('link-1', { app: 'board', tab: 'file' })
+    expect(shownPanelTab('link-1')?.item).toMatchObject({ kind: 'board.file' })
+  })
+
+  it('keeps an App page placement failure in the chat instead of rejecting without a handler', async () => {
+    install(app([OWN_PAGE]))
+    const refused = vi.fn().mockRejectedValue(new Error('native resource host unavailable'))
+    function RefusedPage() { return useChatOpener('refused-page', refused).overlay }
+    await harness.render(createElement(RefusedPage))
+    await act(async () => {
+      askChat('refused-page', { app: 'board' })
+      window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked))
+    })
+    expect(refused).toHaveBeenCalledOnce()
+    expect(harness.container.querySelector('[data-testid="group-app-slot-unopened"]')).not.toBeNull()
   })
 
   it('a page beside the chat asked: the tab on screen is the 上一页 of what it opens; an App asked there has none (owner 10-24)', async () => {

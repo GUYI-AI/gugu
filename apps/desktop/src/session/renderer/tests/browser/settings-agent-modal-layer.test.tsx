@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { contact, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
-import { SettingsPanel } from '@/components/SettingsPanel';
+import { AssistantSection } from '@/components/settings/AssistantSection';
 import { AgentSettingsModal } from '@/components/agentsettings/AgentSettingsModal';
 import { AgentModelPicker } from '@/components/agentsettings/AgentModelPicker';
 import { Sheet } from '@/components/ui/Sheet';
@@ -53,8 +53,10 @@ async function dialog() {
   return document.querySelector<HTMLElement>('[data-testid="agent-settings-modal"]')!;
 }
 
-it.each(['look', 'model'])('the real %s settings dialog receives hits above the settings panel', async (entry) => {
-  await renderWithAppProviders(harness, <SettingsPanel initialSection="assistant" onClose={vi.fn()} />, {
+// The assistant's settings page (drawn over its App's panel; nothing of it is in Settings) opens its figure dialog; its model
+// is a screen of that same page (AssistantSettingsPage), not a dialog.
+it.each(['look'])('the real %s settings dialog receives hits above the assistant settings page', async (entry) => {
+  await renderWithAppProviders(harness, <AssistantSection available={[]} onOpenSection={vi.fn()} onOpenModel={vi.fn()} />, {
     auth: { id: 'owner-layer' }, contacts: { contacts: [contact(fixture.assistant)] },
   });
   const trigger = page.getByTestId(`settings-assistant-${entry}`);
@@ -89,12 +91,17 @@ it.each([2000, 5100])('the real model menu can be hit and selected above Sheet %
     <AgentModelPicker items={[{ id: 'first', name: 'First model' }, { id: 'second', name: 'Second model' }]}
       value="first" disabled={false} onChange={select} />
   </Sheet>, { auth: { id: 'owner-layer' }, contacts: {} });
+  // While the Sheet's pop-in still applies a transform (even a near-identity one at the end of the spring), its
+  // content is the containing block of the menu's fixed layer: a menu opened then is sized and clipped to the
+  // content. Playwright's stability check can click in that tail; a person meets the menu after the Sheet opened.
+  await until('the Sheet has finished opening', () => document.querySelector('.gg-sheet-content')?.getAnimations().length === 0);
   await userEvent.click(page.getByTestId('composer-model-trigger'));
   await until('the real model menu opens', () => !!document.querySelector('[data-slot="combobox-content"]'));
   const popup = document.querySelector<HTMLElement>('[data-slot="combobox-content"]')!;
   const box = popup.getBoundingClientRect();
   expect(popup.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))).toBe(true);
   expect(getComputedStyle(popup.parentElement!).zIndex).toBe(String(zIndex + 1));
+  expect(popup.closest('.emlight, .emdark'), 'its colors only exist under the session theme').not.toBeNull();
   await userEvent.click(page.getByRole('option', { name: 'Second model', exact: true }));
   expect(select).toHaveBeenCalledWith('second');
 });

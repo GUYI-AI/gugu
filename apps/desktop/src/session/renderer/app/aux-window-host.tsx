@@ -26,7 +26,7 @@ import { WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { log } from '@renderer/utils/logger';
 import { auxWindows, type AuxChatTabContent, type AuxTabContent, type AuxWindow } from './aux-windows';
-import { PageShownContext } from './recent-session-pages';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { AUX_WINDOW_TRAFFIC_LIGHTS_PX, ScreenBlockContext, type ScreenBlockPlace } from './screen-block-context';
 import { putBackFromWindow, windowClosed, windowFocused } from './screen-layout-actions';
 
@@ -154,13 +154,14 @@ const AuxSessionPage = observer(function AuxSessionPage({
   );
   return (
     <div className="flex h-full min-h-0 w-full flex-col" data-aux-window={windowId}>
-      <PageShownContext.Provider value={true}>
+      {/* A window of its own is its own screen: shown whatever the main window hides. */}
+      <SurfaceShownContext.Provider value={true}>
         <ScreenBlockContext.Provider value={place}>
           <sessionView.WrapView projectId={projectId} sessionId={sessionId}>
             <WorkspaceContentLayout titlebarSlot={<ShellTitlebarDragRegion />} mainPanel={<sessionView.MainPanel />} />
           </sessionView.WrapView>
         </ScreenBlockContext.Provider>
-      </PageShownContext.Provider>
+      </SurfaceShownContext.Provider>
     </div>
   );
 });
@@ -186,7 +187,8 @@ const AuxTabPage = observer(function AuxTabPage({ windowId, content }: { windowI
   );
   return (
     <div className="flex h-full min-h-0 w-full flex-col" data-aux-window={windowId}>
-      <PageShownContext.Provider value={true}>
+      {/* A window of its own is its own screen: shown whatever the main window hides. */}
+      <SurfaceShownContext.Provider value={true}>
         <ScreenBlockContext.Provider value={place}>
           {content.kind === 'tab' ? (
             <sessionView.WrapView projectId={content.projectId} sessionId={content.sessionId}>
@@ -200,7 +202,7 @@ const AuxTabPage = observer(function AuxTabPage({ windowId, content }: { windowI
             </div>
           )}
         </ScreenBlockContext.Provider>
-      </PageShownContext.Provider>
+      </SurfaceShownContext.Provider>
     </div>
   );
 });

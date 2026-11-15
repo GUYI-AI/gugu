@@ -140,7 +140,6 @@ vi.mock('../../../../apps/desktop/src/lib/chatProjection', () => ({
       if (projectionStub.advanceImpl) return projectionStub.advanceImpl()
       return projectionStub.rows
     },
-    ingestLocalWrite: () => projectionStub.rows,
     attach: ({ subscribe, cursor, signal, publish }: {
       subscribe: (events: readonly string[], listener: (operations: readonly unknown[]) => void | Promise<void>) => () => void
       cursor: () => string
@@ -154,6 +153,7 @@ vi.mock('../../../../apps/desktop/src/lib/chatProjection', () => ({
     current: () => projectionStub.rows,
     identities: () => projectionStub.identityRows,
     isMembershipRevoked: (chatId: string) => projectionStub.revoked.has(chatId),
+    memberReadSeqs: () => undefined,
     isConversationDeleted: (chatId: string) => projectionStub.deleted.has(chatId),
     ledger: () => [],
     reset: () => undefined,
@@ -168,7 +168,7 @@ vi.mock('../../../../apps/desktop/src/lib/notificationSettings', () => ({
   useNotificationSettings: () => notificationSettings,
 }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
-  platform: {
+  platform: { subscribeAppForeground: () => () => {},
     capabilities: { notifications: false, badge: true },
     showNotification: vi.fn(),
     setBadge: vi.fn(),
@@ -355,7 +355,7 @@ it('logout clears the Provider list owner without retaining a read tuple', async
   expect(latestStore!.chats).toEqual([])
 })
 
-it.each(['window', 'visible-row'] as const)('%s read failure stays rolled back through subsequent Provider publications', async mode => {
+it.each(['window', 'visible-row'] as const)('%s read failure keeps the local read position through subsequent Provider publications (reconciled on recovery)', async mode => {
   const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined)
   await renderStore()
   await act(async () => { latestStore!.setActiveChatId('chat-1') })
@@ -377,9 +377,9 @@ it.each(['window', 'visible-row'] as const)('%s read failure stays rolled back t
   shownBoundary.chatId = null
   await act(async () => { await latestStore!.refreshChats() })
   await act(async () => { read.reject(new Error('offline')); await Promise.resolve() })
-  expect(latestStore!.chats[0]).toMatchObject(readTuple)
+  expect(latestStore!.chats[0]).toMatchObject({ last_read_seq: 7, read_state_version: 9, unread_count: 0 })
   await act(async () => { await latestStore!.refreshChats() })
-  expect(latestStore!.chats[0]).toMatchObject(readTuple)
+  expect(latestStore!.chats[0]).toMatchObject({ last_read_seq: 7, read_state_version: 9, unread_count: 0 })
   expect(readMock).toHaveBeenCalledTimes(1)
   quiet.mockRestore()
 })

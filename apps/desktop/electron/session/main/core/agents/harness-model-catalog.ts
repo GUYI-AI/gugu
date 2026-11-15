@@ -51,7 +51,8 @@ import { defaultEngineTreeOps, signalEngineTree } from '@gugu/session-core/acp/n
 import { errorDetail } from '@gugu/session-shared';
 import { redactSecrets } from '@gugu/session-shared/logger';
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
-import type { AcpPlatformInjection } from '@gugu/session-core/acp';
+import { flattenSelectOptions, type AcpPlatformInjection } from '@gugu/session-core/acp';
+import type { SessionConfigSelectOptions } from '@agentclientprotocol/sdk';
 import { mergeTrustedSessionMeta } from '../acp/runtime-process/session-meta';
 import { createLogger } from '../../../../lib/logger';
 
@@ -178,6 +179,12 @@ export type HarnessCatalogState =
     selected: string | null;
     efforts: HarnessModelChoice[];
     selectedEffort: string | null;
+    /**
+     * 这份目录照一把 API Key 连接读(#2507)时:连接勾选的每个模型在这家目录里的 id(这家自己的写法,起步模型在前)。
+     * 它们在 `models` 里的名字已经是裸模型名;活会话报的清单里同一个 id 就是同一条,输入框与 chip 照这里叫它。
+     * 不是连接的目录 = 缺席。
+     */
+    connectionModels?: string[];
   }
   /** harness 没装（起不来）。界面引导安装。 */
   | { kind: 'not-installed' }
@@ -226,6 +233,10 @@ export type AcpSpawnSpec = {
   env: Record<string, string>;
   /** 探针那一条 `session/new` 的 `_meta`(插件的 `acp.catalogProbeSessionMeta`:不装用户 MCP)。 */
   sessionMeta?: Record<string, unknown>;
+  /** See `catalogModelsInConfigUpdate` on the plugin's ACP behavior. */
+  modelsInConfigUpdate?: boolean;
+  /** 插件的 `acp.authenticateWhenAdvertised`:agent 报了这个方法就先认证、再开探针那条会话(与真会话同一条)。 */
+  authenticateWhenAdvertised?: { methodId: string; clientAuthMeta: Record<string, unknown> };
 };
 /** `null` = 这家插件不说 ACP（→ `unsupported`）；`'not-found'` = 没有这个插件（→ `not-installed`）。 */
 export type AcpSpawnResolver = (
@@ -250,6 +261,14 @@ export type ProbePlatformCredentials = {
   skipReason?: 'platform-unsupported';
   sessionMeta?: Record<string, unknown>;
   platform?: AcpPlatformInjection;
+  /**
+   * 只有连接那一趟给(#2507):这条会话跑的模型(按这家目录的叫法)。目录里没报它就补上,并选中它;
+   * `only` = 这家把任何模型的请求都送到连接地址,别的名字选了也是错的 ⇒ 清单只留它。
+   */
+  /** `others`:连接点名的其余模型(#2507,一把连接可以点名好几个);`only` 时清单就是 id + others。 */
+  sessionModel?: { id: string; only: boolean; others?: readonly string[] };
+  /** 只有连接那一趟给(#2507):连接勾选的模型(起步模型在前),输入框里只叫模型名(见 `withConnectionModelNames`)。 */
+  modelNames?: readonly string[];
 };
 
 /**
@@ -275,6 +294,22 @@ let resolveProbePlatformEnv: ProbePlatformEnvResolver = async (pluginId) => {
 
 export function setProbePlatformEnvResolver(resolver: ProbePlatformEnvResolver): void {
   resolveProbePlatformEnv = resolver;
+}
+
+/**
+ * 这家此刻选中的是一把「走模型注入」的 API Key 连接(#2507:pi / opencode / CodeBuddy)时,真会话里那份模型声明
+ * 在探针里的样子 —— 地址、key、模型都是这把连接的,经这家自己的平台模型写法落成(与会话同一条)。`null` = 没选这种连接
+ * (原生、没有连接、或走环境变量的连接 —— 后者的环境本来就在 run context 里,第一遍照常看得见)。
+ *
+ * 住在宿主侧、经注入进来,理由与上面那个解析器相同(物化要用宿主 bundle 的 capability-bundle)。
+ * `scratchDir` 是这一趟专用的临时目录:要落盘的配置(pi 的 models.json)写在这里,探完整目录删掉。
+ */
+export type ProbeConnectionModelResolver = (pluginId: string, scratchDir: string) => Promise<ProbePlatformCredentials | null>;
+
+let resolveProbeConnectionModel: ProbeConnectionModelResolver = async () => null;
+
+export function setProbeConnectionModelResolver(resolver: ProbeConnectionModelResolver): void {
+  resolveProbeConnectionModel = resolver;
 }
 
 /**
@@ -683,7 +718,7 @@ export async function __drainProbesForTest(): Promise<void> {
  */
 function toChoices(option: RawConfigOption | undefined): HarnessModelChoice[] {
   const out: HarnessModelChoice[] = [];
-  for (const raw of option?.options ?? []) {
+  for (const raw of flattenSelectOptions(option?.options)) {
     if (typeof raw?.value !== 'string' || !raw.value) continue;
     out.push({
       id: raw.value,
@@ -702,7 +737,7 @@ interface RawConfigOption {
   category?: string;
   type?: string;
   currentValue?: unknown;
-  options?: { value?: unknown; name?: unknown; description?: unknown }[];
+  options?: SessionConfigSelectOptions;
 }
 
 function toAvailableModels(raw: unknown[] | undefined): HarnessModelChoice[] {
@@ -772,7 +807,7 @@ async function probeOnce(
   pluginId: string,
   leg: SessionpageLeg,
   /**
-   * `null` = 第一遍(照用户自己的真实环境)。非 null = 第二遍要叠上去的那份占位凭据。
+   * `null` = 第一遍(照用户自己的真实环境)。非 null = 第二遍要叠上去的那份占位凭据,或选中的模型注入连接那份。
    *
    * 三格各有去处:`env` 叠进适配器进程环境,`sessionMeta` 并进 `session/new` 的 `_meta`,
    * `platform` 交给插件的 `buildSpawn` —— 与真会话 Chat UI 注入的三种信封一一对应。
@@ -792,8 +827,8 @@ async function probeOnce(
       if (!spec) return { kind: 'unsupported' };
 
       // ⚠️ 叠放顺序与真会话逐字一致(plugin-host 的 buildAcpSpawn 把 `capabilitySpawnEnv` 放最后)。
-      // ⚠️ 只有第二遍加 —— 第一遍必须照用户自己的真实环境读,否则占位凭据会盖掉**已登录用户**
-      //    那份真凭据,把一份本来读得好好的目录弄坏,还会把模型钉成一个不存在的 id。
+      // ⚠️ 只有第二遍(占位)与选中的模型注入连接(会话真用的那份)才加 —— 第一遍必须照用户自己的真实环境读,
+      //    否则占位凭据会盖掉**已登录用户**那份真凭据,把一份本来读得好好的目录弄坏,还会把模型钉成一个不存在的 id。
       const env = suppressBrowserLaunch(
         probeCredentials ? { ...spec.env, ...probeCredentials.env } : spec.env
       );
@@ -846,7 +881,11 @@ async function probeOnce(
       const watchdog = watchForInactivity(child, pluginId);
       try {
         const sessionMeta = mergeTrustedSessionMeta(spec.sessionMeta, probeCredentials?.sessionMeta);
-        const state = await Promise.race([rpc.readCatalog(cwd, sessionMeta, model), processFailed, watchdog.stalled]);
+        const state = await Promise.race([
+          rpc.readCatalog(cwd, sessionMeta, model, spec.modelsInConfigUpdate, spec.authenticateWhenAdvertised),
+          processFailed,
+          watchdog.stalled,
+        ]);
         log.info(`${pluginId}: 模型目录 ${describe(state)}`);
         return state;
       } finally {
@@ -906,6 +945,19 @@ export async function probeHarnessModelCatalog(
   leg: SessionpageLeg,
   model?: string
 ): Promise<HarnessCatalogState> {
+  // 选中了一把走模型注入的 API Key 连接:会话跑的就是它 ⇒ 目录照它读(只这一趟),输入框才列得出、默认选得中连接的模型。
+  // 平台那条第二遍与此无关:这里没有占位,读到的就是会话会看到的那份清单。
+  const connectionScratch = await mkdtemp(join(tmpdir(), `gugu-probe-connection-${pluginId}-`));
+  try {
+    const connection = await resolveProbeConnectionModel(pluginId, connectionScratch);
+    if (connection) {
+      const read = withSessionModel(await probeOnce(pluginId, leg, connection, model), connection.sessionModel);
+      return withConnectionModelNames(read, connection.modelNames);
+    }
+  } finally {
+    await rm(connectionScratch, { recursive: true, force: true });
+  }
+
   const first = await probeOnce(pluginId, leg, null, model);
   if (first.kind !== 'auth-required') return first;
 
@@ -928,6 +980,53 @@ export async function probeHarnessModelCatalog(
   } finally {
     await rm(scratchDir, { recursive: true, force: true });
   }
+}
+
+/**
+ * 连接那一趟:会话跑的模型这家目录里没报(CodeBuddy 只报自家目录)⇒ 补上并选中;`only` 时清单只留连接勾选的那几个。
+ * `only` 的家(key 与模型经环境变量 / 设置文档进进程)这一趟要是读成「要登录」,菜单照样是这几个:跑会话的是这把 key,
+ * 不是这家自己的登录(档位说不出就空着)。
+ */
+function withSessionModel(state: HarnessCatalogState, sessionModel: ProbePlatformCredentials['sessionModel']): HarnessCatalogState {
+  if (sessionModel?.only && state.kind === 'auth-required') {
+    return withSessionModel(
+      { kind: 'ready', models: [], selected: null, efforts: state.efforts, selectedEffort: state.selectedEffort },
+      sessionModel
+    );
+  }
+  if (!sessionModel || state.kind !== 'ready') return state;
+  const entry = (id: string) => state.models.find((choice) => choice.id === id) ?? { id, name: id };
+  const named = [sessionModel.id, ...(sessionModel.others ?? []).filter((id) => id !== sessionModel.id)];
+  const others = sessionModel.only ? [] : state.models.filter((choice) => !named.includes(choice.id));
+  return { ...state, models: [...named.map(entry), ...others], selected: sessionModel.id };
+}
+
+/**
+ * 连接那一趟:连接勾选的**每个**模型在输入框里只叫模型名(#2507,spec「菜单里只写模型名;这一家自己的界面里,
+ * 提供方写连接的名字」)。pi / opencode 报的名字带提供方(`<provider>/<model>`),提供方是这把连接 —— 用户在连接那一格
+ * 已经选过它,❌ 在每条模型上再念一遍(更 ❌ 念成「Gugu 平台额度」)。
+ *
+ * 认哪几条:先认这家**自己报的当前选中** —— 连接那份配置把起步模型(`modelNames[0]`)设成启动模型,按构造选中的就是它。
+ * 它的 id 就是「这家的写法 + 起步模型名」,写法(`<provider>/`,或什么都不加)从这一条里取出来,其余模型的 id 照同一个写法
+ * 一一对上;❌ 在别的条目上按前缀猜。这家没报选中、或选中的那条不是起步模型 ⇒ 不改名,原样。
+ * 记下这几条的 id(`connectionModels`):活会话报的清单里同一个 id 就是同一条,输入框照这里的名字叫它(`ownModelTierOptions`)。
+ */
+function withConnectionModelNames(state: HarnessCatalogState, modelNames: readonly string[] | undefined): HarnessCatalogState {
+  const start = modelNames?.[0];
+  if (!start || state.kind !== 'ready' || state.selected === null) return state;
+  const selected = state.selected;
+  if (!state.models.some((choice) => choice.id === selected) || !selected.endsWith(start)) return state;
+  const writing = selected.slice(0, selected.length - start.length);
+  const named = new Map(modelNames.map((name) => [`${writing}${name}`, name] as const));
+  const connectionModels = [...named.keys()].filter((id) => state.models.some((choice) => choice.id === id));
+  return {
+    ...state,
+    models: state.models.map((choice) => {
+      const name = named.get(choice.id);
+      return name ? { ...choice, name } : choice;
+    }),
+    connectionModels,
+  };
 }
 
 function describe(state: HarnessCatalogState): string {
@@ -965,6 +1064,22 @@ class AcpProbeClient {
     child.stderr.resume();
   }
 
+  private updatedConfigOptions: RawConfigOption[] = [];
+  private modelOptionsArrived?: () => void;
+
+  private onConfigUpdate(options: RawConfigOption[]): void {
+    this.updatedConfigOptions = options;
+    if (options.some((option) => option.category === 'model')) this.modelOptionsArrived?.();
+  }
+
+  /** Never arriving is the probe's existing stall (`watchForInactivity`), not a timer of its own. */
+  private async modelOptionsFromUpdate(): Promise<RawConfigOption[]> {
+    if (!this.updatedConfigOptions.some((option) => option.category === 'model')) {
+      await new Promise<void>((resolve) => { this.modelOptionsArrived = resolve; });
+    }
+    return this.updatedConfigOptions;
+  }
+
   private onData(text: string): void {
     this.buffer += text;
     let index: number;
@@ -984,6 +1099,9 @@ class AcpProbeClient {
         this.pending.delete(id);
         if (msg.error) waiter?.reject(new AcpRpcError(msg.error));
         else waiter?.resolve(msg.result);
+      } else if (msg.method === 'session/update') {
+        const update = (msg.params as { update?: { sessionUpdate?: unknown; configOptions?: RawConfigOption[] } } | undefined)?.update;
+        if (update?.sessionUpdate === 'config_option_update') this.onConfigUpdate(update.configOptions ?? []);
       } else if (msg.method === '_auth/status_update') {
         const kind = (msg.params as { authStatus?: { kind?: unknown } } | undefined)
           ?.authStatus?.kind;
@@ -1007,7 +1125,13 @@ class AcpProbeClient {
     });
   }
 
-  async readCatalog(cwd: string, sessionMeta?: Record<string, unknown>, model?: string): Promise<HarnessCatalogState> {
+  async readCatalog(
+    cwd: string,
+    sessionMeta?: Record<string, unknown>,
+    model?: string,
+    modelsInConfigUpdate?: boolean,
+    authenticateWhenAdvertised?: AcpSpawnSpec['authenticateWhenAdvertised'],
+  ): Promise<HarnessCatalogState> {
     const initialized = await this.request('initialize', {
       protocolVersion: 1,
       // 探针一律拒绝反向请求（它不该产生任何副作用），所以这里就得**如实声明 false** ——
@@ -1031,7 +1155,11 @@ class AcpProbeClient {
          *               与 `['--cli','auth','login','--console']`
          *    也就是说,「claude 没有登录方式」这个读数一直是我们自己造出来的。
          */
-        auth: { terminal: true },
+        auth: {
+          terminal: true,
+          // 声明了「报了就先认证」的家(Antigravity 的网关,#2507)要客户端先举手,它才报那个方法。
+          ...(authenticateWhenAdvertised ? { _meta: authenticateWhenAdvertised.clientAuthMeta } : {}),
+        },
         /**
          * ⚠️ 这一行**不是**上面 `auth.terminal` 的重复,删掉任何一个都会让一批 harness 变哑。
          *
@@ -1063,6 +1191,10 @@ class AcpProbeClient {
     const initAuthMethods = toAuthMethods(
       (initialized as { authMethods?: unknown } | null)?.authMethods
     );
+    // 报了 = 这条进程带着选中的连接起(agy 的网关只在连接给了上线开关时才报);与真会话一样,开会话前认证一次。
+    if (authenticateWhenAdvertised && initAuthMethods.some((method) => method.id === authenticateWhenAdvertised.methodId)) {
+      await this.request('authenticate', { methodId: authenticateWhenAdvertised.methodId });
+    }
 
     let created: unknown;
     try {
@@ -1115,6 +1247,9 @@ class AcpProbeClient {
       configOptions?: RawConfigOption[];
       models?: { availableModels?: unknown[]; currentModelId?: unknown };
     } | null;
+    if (modelsInConfigUpdate && !response?.configOptions?.some((option) => option.category === 'model')) {
+      response = { ...response, configOptions: await this.modelOptionsFromUpdate() };
+    }
     // Read the requested model's axis in this disposable session, never the default model's axis.
     if (model) {
       const option = response?.configOptions?.find((o) => o.category === 'model');

@@ -4,6 +4,9 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type PhotoSwipe from 'photoswipe'
+import { detectPlatform } from '@tanstack/react-hotkeys'
+import { CommandShortcutBinder } from '../../../../apps/desktop/src/session/renderer/lib/commands/command-shortcut-binder'
+import { commandRegistry } from '../../../../apps/desktop/src/session/renderer/lib/commands/registry'
 import { ImagePreviewProvider } from '../../../../apps/desktop/src/components/ImagePreviewProvider'
 import { openImageViewer } from '../../../../apps/desktop/src/lib/imageViewer'
 import { isSheetOpen } from '../../../../apps/desktop/src/components/ui/sheetStack'
@@ -13,6 +16,7 @@ import { Sheet } from '../../../../apps/desktop/src/components/ui/Sheet'
 import type { ToastContextValue } from '../../../../apps/desktop/src/components/toastContext'
 import * as platformMock from '../../../support/capacitorPlatformTestDouble'
 import { anchorDownload } from '../../../../apps/desktop/src/platform/anchorDownload'
+import { readFileZoom, writeFileZoom } from '../../../../apps/desktop/src/components/preview/file-content-zoom'
 import * as fileHost from '../../../../apps/desktop/src/lib/fileHost'
 import {
   clickElement,
@@ -22,6 +26,7 @@ import {
   waitForCondition,
 } from '../../../support/testHarness'
 vi.mock('../../../../apps/desktop/src/platform', () => import('../../../support/capacitorPlatformTestDouble'))
+vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: undefined }) }))
 
 const IMAGES = [
   { url: 'https://example.test/one.png', alt: 'one' },
@@ -33,6 +38,7 @@ let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
   harness = createReactHarness()
   platformMock.platform.kind = 'desktop'
+  platformMock.platform.capabilities.readingZoomMemory = true
   // 桌面的 saveFile 就是这一份 a[download](安卓壳的另走原生,见 shareWithApps.test)。
   Object.assign(platformMock.platform, { saveFile: anchorDownload })
   // jsdom 没有 matchMedia;按「减少动态效果」回答,PhotoSwipe 的开合就不走动画,开关立即落定。
@@ -72,9 +78,11 @@ describe('ImagePreviewProvider', () => {
     Object.defineProperties(thumb, { complete: { value: true }, naturalWidth: { value: 1200 }, naturalHeight: { value: 800 } })
     let finish!: (url: string) => void
     const original = new Promise<string>(resolve => { finish = resolve })
-    await openViewer({ images: [{ url: 'blob:thumbnail', alt: 'geometry', thumb, full: () => original }] })
+    const size = { width: 1200 * resolution, height: 800 * resolution }
+    await openViewer({ images: [{ url: 'blob:thumbnail', alt: 'geometry', thumb, full: () => original, size }] })
     const pswp = instances[0]
     const slide = pswp.currSlide!
+    expect(slide.width).toBe(size.width)
     await act(async () => {
       slide.zoomTo(1.8, { x: 400, y: 300 }, 0, true)
       slide.panTo(-160, -100)
@@ -86,9 +94,196 @@ describe('ImagePreviewProvider', () => {
     Object.defineProperties(image, { naturalWidth: { value: 1200 * resolution }, naturalHeight: { value: 800 * resolution } })
     await act(async () => image.dispatchEvent(new Event('load')))
     expect(pswp.currSlide).toBe(slide)
+    expect(slide.width).toBe(size.width)
     expect(slide.width * slide.currZoomLevel).toBeCloseTo(before.width)
     expect(slide.height * slide.currZoomLevel).toBeCloseTo(before.height)
     expect(slide.pan).toEqual({ x: before.x, y: before.y })
+  })
+
+  async function capturePhotoSwipe() {
+    const { default: PhotoSwipeCtor } = await import('photoswipe')
+    const init = PhotoSwipeCtor.prototype.init
+    const instances: PhotoSwipe[] = []
+    vi.spyOn(PhotoSwipeCtor.prototype, 'init').mockImplementation(function (this: PhotoSwipe) {
+      instances.push(this)
+      return init.call(this)
+    })
+    return instances
+  }
+
+  async function openAt(preference: number, motion: boolean) {
+    writeFileZoom('image', preference)
+    if (motion) vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} }))
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(1280)
+    const { default: PhotoSwipeCtor } = await import('photoswipe')
+    const init = PhotoSwipeCtor.prototype.init
+    const instances: PhotoSwipe[] = []
+    let levelAfterInit = 0
+    vi.spyOn(PhotoSwipeCtor.prototype, 'init').mockImplementation(function (this: PhotoSwipe) {
+      instances.push(this)
+      const result = init.call(this)
+      levelAfterInit = this.currSlide!.currZoomLevel
+      return result
+    })
+    const thumb = document.body.appendChild(document.createElement('img'))
+    Object.defineProperties(thumb, { complete: { value: true }, naturalWidth: { value: 400 }, naturalHeight: { value: 200 } })
+    thumb.getBoundingClientRect = () => new DOMRect(100, 100, 100, 50)
+    await openViewer({ images: [{ url: 'https://example.test/one.png', alt: 'one', thumb }, { url: 'https://example.test/two.png', alt: 'two', thumb }] })
+    return { pswp: instances[0], thumb, levelAfterInit }
+  }
+
+  it('opens from the thumbnail to the reading zoom, and opening does not write the preference', async () => {
+    const { pswp, thumb, levelAfterInit } = await openAt(1.4, true)
+    const slide = pswp.currSlide!
+    // init ends with the slide still at the thumbnail: that is what the opening zoom animates from.
+    expect(levelAfterInit).toBeCloseTo(100 / 400)
+    // Input during the opening neither zooms nor writes the preference.
+    const toggleZoom = vi.spyOn(slide, 'toggleZoom')
+    slide.container.querySelector('.pswp__img')!.dispatchEvent(new PointerEvent('click', { bubbles: true, detail: 2, pointerType: 'mouse' }))
+    expect(toggleZoom).not.toHaveBeenCalled()
+    await act(async () => {
+      await waitForCondition(() => !pswp.opener.isOpening, 'opening never ended')
+    })
+    expect(slide.currZoomLevel).toBeCloseTo(1.4)
+    expect(slide.zoomLevels.initial).toBe(1)
+    expect(readFileZoom('image')).toBe(1.4)
+    await act(async () => pswp.destroy())
+    thumb.remove()
+    writeFileZoom('image', 1)
+  })
+
+  it('the phone keeps no reading zoom: an image opens whole over a ratio stored earlier, which zooming leaves alone', async () => {
+    localStorage.setItem('gugu.file-content-zoom.image', '2')
+    platformMock.platform.kind = 'capacitor'
+    platformMock.platform.capabilities.readingZoomMemory = false
+    // Where memory exists this writes 2 again; here it stores nothing and the earlier 2 stays.
+    const { pswp, thumb } = await openAt(2, true)
+    const slide = pswp.currSlide!
+    await act(async () => {
+      await waitForCondition(() => !pswp.opener.isOpening, 'opening never ended')
+    })
+    expect(slide.zoomLevels.initial).toBe(1)
+    expect(slide.currZoomLevel).toBe(slide.zoomLevels.initial)
+    await act(async () => slide.zoomTo(1.5, undefined, 0))
+    expect(localStorage.getItem('gugu.file-content-zoom.image')).toBe('2')
+    await act(async () => pswp.destroy())
+    thumb.remove()
+    localStorage.removeItem('gugu.file-content-zoom.image')
+  })
+
+  it('waits for the opening zoom before fetching the original, which lands in the box its recorded size already set', async () => {
+    let finish!: (url: string) => void
+    const full = vi.fn(() => new Promise<string>(resolve => { finish = resolve }))
+    writeFileZoom('image', 1)
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} }))
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(1280)
+    const instances = await capturePhotoSwipe()
+    const thumb = document.body.appendChild(document.createElement('img'))
+    Object.defineProperties(thumb, { complete: { value: true }, naturalWidth: { value: 300 }, naturalHeight: { value: 200 } })
+    thumb.getBoundingClientRect = () => new DOMRect(100, 100, 300, 200)
+    await openViewer({ images: [{ url: 'blob:thumbnail', alt: 'small', thumb, full, size: { width: 3000, height: 2000 } }] })
+    const pswp = instances[0]
+    expect(pswp.opener.isOpening).toBe(true)
+    expect(pswp.currSlide!.width).toBe(3000)
+    expect(full).not.toHaveBeenCalled()
+    await act(async () => {
+      await waitForCondition(() => !pswp.opener.isOpening && full.mock.calls.length === 1, 'the original never started')
+    })
+    const slide = pswp.currSlide!
+    await act(async () => finish('blob:original'))
+    await waitForCondition(() => document.querySelector('img.pswp__img[src="blob:original"]') !== null, 'original bytes were not displayed')
+    const image = slide.content.element as HTMLImageElement
+    Object.defineProperties(image, { naturalWidth: { value: 3000 }, naturalHeight: { value: 2000 } })
+    await act(async () => image.dispatchEvent(new Event('load')))
+    expect(slide.width).toBe(3000)
+    expect(slide.currZoomLevel).toBe(slide.zoomLevels.initial)
+    await act(async () => pswp.destroy())
+    thumb.remove()
+  })
+
+  it('without a recorded size, the first pixels set the box once; a later original only repaints it', async () => {
+    let finish!: (url: string) => void
+    const instances = await capturePhotoSwipe()
+    const thumb = document.body.appendChild(document.createElement('img'))
+    Object.defineProperties(thumb, { complete: { value: true }, naturalWidth: { value: 300 }, naturalHeight: { value: 200 } })
+    await openViewer({ images: [{ url: 'blob:thumbnail', alt: 'unrecorded', thumb, full: () => new Promise<string>(resolve => { finish = resolve }) }] })
+    const pswp = instances[0]
+    const slide = pswp.currSlide!
+    // A thumbnail with an original to fetch is not the original: its natural size lays nothing out.
+    expect(slide.width).toBe(window.innerWidth)
+    const shown = slide.content.element as HTMLImageElement
+    Object.defineProperties(shown, { naturalWidth: { value: 300, configurable: true }, naturalHeight: { value: 200, configurable: true } })
+    await act(async () => shown.dispatchEvent(new Event('load')))
+    expect(slide.width).toBe(300)
+    await act(async () => {
+      await waitForCondition(() => !pswp.opener.isOpening, 'opening never ended')
+    })
+    await act(async () => finish('blob:original'))
+    await waitForCondition(() => document.querySelector('img.pswp__img[src="blob:original"]') !== null, 'original bytes were not displayed')
+    const image = slide.content.element as HTMLImageElement
+    Object.defineProperties(image, { naturalWidth: { value: 3000 }, naturalHeight: { value: 2000 } })
+    const before = { level: slide.currZoomLevel, ...slide.pan }
+    await act(async () => image.dispatchEvent(new Event('load')))
+    expect(slide.width).toBe(300)
+    expect({ level: slide.currZoomLevel, ...slide.pan }).toEqual(before)
+    await act(async () => pswp.destroy())
+    thumb.remove()
+  })
+
+  it('desktop backdrop is opaque, so the chat changing underneath never shows through the viewer', async () => {
+    const instances = await capturePhotoSwipe()
+    await openViewer()
+    expect(instances[0].options.bgOpacity).toBe(1)
+  })
+
+  it('a mouse double click goes from a zoomed image to the whole image and on to the second level; a touch one is left to PhotoSwipe', async () => {
+    const { pswp, thumb } = await openAt(1.4, false)
+    const slide = pswp.currSlide!
+    const image = slide.container.querySelector('.pswp__img')!
+    const click = (pointerType: string) => act(async () => {
+      image.dispatchEvent(new PointerEvent('click', { bubbles: true, detail: 2, pointerType, clientX: 200, clientY: 200 }))
+      await waitForCondition(() => pswp.animations.activeAnimations.length === 0, 'zoom never finished')
+    })
+    expect(slide.currZoomLevel).toBeCloseTo(1.4)
+    await click('touch')
+    expect(slide.currZoomLevel).toBeCloseTo(1.4)
+    await click('mouse')
+    expect(slide.currZoomLevel).toBeCloseTo(1)
+    await click('mouse')
+    expect(slide.currZoomLevel).toBeCloseTo(2)
+    // The second level is a peek: the next image does not open there.
+    expect(readFileZoom('image')).toBe(1)
+    thumb.remove()
+    writeFileZoom('image', 1)
+  })
+
+  it('a slide paged to follows the preference changed on the one before it', async () => {
+    const { pswp, thumb } = await openAt(1, false)
+    await act(async () => pswp.currSlide!.zoomTo(1.5, undefined, 0))
+    expect(readFileZoom('image')).toBe(1.5)
+    await act(async () => pswp.next())
+    expect(pswp.currIndex).toBe(1)
+    expect(pswp.currSlide!.currZoomLevel).toBeCloseTo(1.5)
+    thumb.remove()
+    writeFileZoom('image', 1)
+  })
+
+  it('a click on an image without pixels yet counts as the background; one on a shown image does nothing', async () => {
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(1280)
+    const instances = await capturePhotoSwipe()
+    await openViewer()
+    const pswp = instances[0]
+    const shown = document.createElement('img')
+    Object.defineProperty(shown, 'naturalWidth', { value: 400 })
+    const click = (target: Element) => {
+      const event = new PointerEvent('pointerup', { pointerType: 'mouse' })
+      Object.defineProperty(event, 'target', { value: target })
+      pswp.dispatch('imageClickAction', { point: { x: 1, y: 1 }, originalEvent: event })
+    }
+    click(shown)
+    expect(pswp.isDestroying).toBe(false)
+    await act(async () => click(document.createElement('img')))
+    expect(pswp.isDestroying).toBe(true)
   })
 
   it('shows the viewer before thumbnail bytes, then upgrades through the existing original loader', async () => {
@@ -149,7 +344,7 @@ describe('ImagePreviewProvider', () => {
   })
 
   it('uses the existing offline-holder message when a file thumbnail fails', async () => {
-    vi.spyOn(fileHost, 'offlineHolder').mockResolvedValue({ machine: 'Studio Mac', deviceId: 'device' })
+    vi.spyOn(fileHost, 'offlineHolder').mockResolvedValue({ machine: 'Studio Mac', deviceId: 'device', itemId: 'photo', version: 2 })
     const toast = vi.fn()
     await openViewer({ toast, images: [{ url: '', alt: 'offline', preview: async () => { throw new Error('unavailable') }, resource: { kind: 'file', target: { kind: 'file', itemId: 'photo', version: 2 } } }] })
     await waitForCondition(() => toast.mock.calls.length > 0, 'offline-holder notice was not shown')
@@ -277,6 +472,89 @@ describe('ImagePreviewProvider', () => {
     window.removeEventListener('keydown', pageBehind)
     expect(pageBehind).not.toHaveBeenCalled()
     await waitForCondition(() => byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay) === null, 'Escape did not close the viewer')
+  })
+
+  it('closes the image viewer without closing a tab, then restores the normal tab shortcut', async () => {
+    const previousPlatform = document.documentElement.dataset.platform
+    const mac = detectPlatform() === 'mac'
+    document.documentElement.dataset.platform = mac ? 'mac' : 'win'
+    const tabs = ['conversation', 'first file', 'second file']
+    const dispose = commandRegistry.register({
+      scopeId: 'session-sub',
+      getCommands: () => [{ id: 'session.tabClose', execute: () => { tabs.pop() } }],
+    })
+    const pressClose = async (target: EventTarget) => act(async () => {
+      target.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'w', code: 'KeyW', metaKey: mac, ctrlKey: !mac, bubbles: true, cancelable: true,
+      }))
+    })
+    try {
+      await renderWithAppProviders(harness, createNode(ImagePreviewProvider, null, createNode(CommandShortcutBinder, null)))
+      await pressClose(document.body)
+      expect(tabs).toEqual(['conversation', 'first file'])
+
+      await act(async () => openImageViewer(IMAGES))
+      await waitForCondition(() => byTestId(AUTOMATION_TEST_IDS.imagePreviewClose) !== null, 'viewer toolbar never mounted')
+      await pressClose(byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)!)
+      expect(tabs).toEqual(['conversation', 'first file'])
+      await waitForCondition(() => byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay) === null, 'close shortcut did not remove the viewer')
+
+      await pressClose(document.body)
+      expect(tabs).toEqual(['conversation'])
+    } finally {
+      await act(async () => dispose())
+      if (previousPlatform === undefined) delete document.documentElement.dataset.platform
+      else document.documentElement.dataset.platform = previousPlatform
+    }
+  })
+
+  it.each([
+    ['mac', 'Escape'], ['mac', 'w'], ['win', 'Escape'], ['win', 'w'],
+  ] as const)('leaves %s %s to the composing input', async (platform, key) => {
+    const previousPlatform = document.documentElement.dataset.platform
+    document.documentElement.dataset.platform = platform
+    try {
+      await openViewer()
+      const overlay = byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)!
+      const input = document.createElement('input')
+      overlay.append(input)
+      await act(async () => {
+        input.focus()
+        input.dispatchEvent(new CompositionEvent('compositionstart', { data: 'zhong', bubbles: true }))
+      })
+      const event = new KeyboardEvent('keydown', {
+        key, code: key === 'w' ? 'KeyW' : 'Escape', metaKey: key === 'w' && platform === 'mac',
+        ctrlKey: key === 'w' && platform === 'win', isComposing: true, bubbles: true, cancelable: true,
+      })
+      await act(async () => { input.dispatchEvent(event) })
+      expect(event.defaultPrevented).toBe(false)
+      expect(document.activeElement).toBe(input)
+      expect(byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)).toBe(overlay)
+      await act(async () => { input.dispatchEvent(new CompositionEvent('compositionend', { data: '中', bubbles: true })) })
+      await act(async () => { overlay.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })) })
+      await waitForCondition(() => byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay) === null, 'viewer did not close after composition')
+    } finally {
+      if (previousPlatform === undefined) delete document.documentElement.dataset.platform
+      else document.documentElement.dataset.platform = previousPlatform
+    }
+  })
+
+  it.each(['mac', 'win'] as const)('closes the viewer with the %s platform shortcut', async (platform) => {
+    const previousPlatform = document.documentElement.dataset.platform
+    document.documentElement.dataset.platform = platform
+    try {
+      await openViewer()
+      const overlay = byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)!
+      const event = new KeyboardEvent('keydown', {
+        key: 'w', code: 'KeyW', metaKey: platform === 'mac', ctrlKey: platform === 'win', bubbles: true, cancelable: true,
+      })
+      await act(async () => { overlay.dispatchEvent(event) })
+      expect(event.defaultPrevented).toBe(true)
+      await waitForCondition(() => byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay) === null, 'platform shortcut did not remove the viewer')
+    } finally {
+      if (previousPlatform === undefined) delete document.documentElement.dataset.platform
+      else document.documentElement.dataset.platform = previousPlatform
+    }
   })
 
   // @@@1892 - 跨域 URL 上 <a download> 会被 Chromium 忽略并整窗导航到裸图,

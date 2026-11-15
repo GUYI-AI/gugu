@@ -42,6 +42,10 @@ export function isChatOnScreen(chatId: string): boolean {
   return appActive && [...shownByReporter.values()].includes(chatId)
 }
 
+/** 这条会话此刻摆没摆在界面上,不论 App 在不在前台:人一回来就看得见它(比如那里一条发送失败的行)。 */
+export function isChatShown(chatId: string): boolean {
+  return [...shownByReporter.values()].includes(chatId)
+}
 /** 与会话是否上报无关的同一份宿主前后台真值,供会话页的项目格子复用。 */
 export function isAppActive(): boolean { return appActive }
 

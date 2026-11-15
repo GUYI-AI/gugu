@@ -20,14 +20,16 @@ export interface ImageViewerItem {
   thumb?: HTMLElement | null
   /** 气泡里画的是缩略图时:取原图(object URL)。查看器先用 url 打开,翻到这一张再换成原图。 */
   full?: () => Promise<string>
+  /** 原图的像素尺寸,取自文件记录。查看器从打开到关闭都按它排版:缩略图、原图只是画进同一个框的像素。 */
+  size?: Size
   /** File previews keep their existing citation producer when opening the shared image viewer. */
   quote?: () => Promise<void> | void
 }
 
 /** 缩略图 <img> → 取它原图的办法(附件进群文件夹 ③:气泡用 CDN 缩略图,原图到看的时候才下)。 */
-const fullImageLoaders = new WeakMap<HTMLImageElement, Pick<ImageViewerItem, 'full' | 'resource' | 'file' | 'source'>>()
-export function registerFullImage(thumb: HTMLImageElement, load: () => Promise<string>, resource?: ResourceContext, file?: ImageViewerItem['file'], source?: ImageViewerItem['source']): () => void {
-  const entry = { full: load, resource, file, ...(source ? { source } : {}) }
+const fullImageLoaders = new WeakMap<HTMLImageElement, Pick<ImageViewerItem, 'full' | 'resource' | 'file' | 'source' | 'size'>>()
+export function registerFullImage(thumb: HTMLImageElement, load: () => Promise<string>, resource?: ResourceContext, file?: ImageViewerItem['file'], source?: ImageViewerItem['source'], size?: Size): () => void {
+  const entry = { full: load, resource, file, ...(source ? { source } : {}), ...(size ? { size } : {}) }
   fullImageLoaders.set(thumb, entry)
   return () => {
     if (fullImageLoaders.get(thumb) === entry) fullImageLoaders.delete(thumb)
@@ -47,7 +49,7 @@ export interface ThumbBounds {
   innerRect?: { x: number; y: number; w: number; h: number }
 }
 
-/** 缩略图是已解码的 <img> 时,它的 natural 尺寸就是原图尺寸(缩略图都是原图缩放显示)。 */
+/** 已解码的 <img> 的 natural 尺寸。只有它画的就是原图(没有另取原图的办法)时,这才是原图尺寸。 */
 export function decodedSizeOf(thumb: HTMLElement | null | undefined): Size | null {
   const img = thumb instanceof HTMLImageElement ? thumb : thumb?.querySelector('img')
   if (!img || !img.complete || img.naturalWidth === 0 || img.naturalHeight === 0) return null

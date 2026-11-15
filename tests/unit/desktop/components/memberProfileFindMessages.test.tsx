@@ -4,10 +4,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MemberProfileCardModel } from '../../../../apps/desktop/src/components/MemberProfileCard'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
+import { pressProfileOpener, profileCardWithOpener } from '../../../support/memberProfileCard'
 
 vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => false }))
 
-const { MemberProfilePopover } = await import('../../../../apps/desktop/src/components/MemberProfilePopover')
 const { commandRegistry } = await import('../../../../apps/desktop/src/session/renderer/lib/commands/registry')
 const { resetSearchSession, useSearchSession } = await import('../../../../apps/desktop/src/session/renderer/features/global-search/search-session')
 
@@ -16,14 +16,11 @@ const button = () => document.body.querySelector<HTMLElement>('[data-testid="mem
 function SearchSnapshot() { return createNode('output', { 'data-search-session': true }, JSON.stringify(useSearchSession())) }
 
 let harness: ReturnType<typeof createReactHarness>
-let anchor: HTMLButtonElement
 beforeEach(() => {
   harness = createReactHarness()
-  anchor = document.body.appendChild(document.createElement('button'))
 })
 afterEach(() => {
   harness.cleanup()
-  anchor.remove()
   resetSearchSession()
 })
 
@@ -34,7 +31,8 @@ describe('member profile 「查找 TA 的消息」', () => {
     const onClose = vi.fn()
     try {
       await renderWithAppProviders(harness, createNode('div', null,
-        createNode(MemberProfilePopover, { profile: { member, anchor }, onClose, searchChatId: 'chat-1' }), createNode(SearchSnapshot)), { chat: {}, contacts: {} })
+        profileCardWithOpener({ member }, { onClose, searchChatId: 'chat-1' }), createNode(SearchSnapshot)), { chat: {}, contacts: {} })
+      await pressProfileOpener()
       await clickElement(button()!)
       expect(openPanel).toHaveBeenCalledOnce()
       expect(onClose).toHaveBeenCalledOnce()
@@ -44,7 +42,8 @@ describe('member profile 「查找 TA 的消息」', () => {
   })
 
   it('has no such button when the card does not know its conversation', async () => {
-    await renderWithAppProviders(harness, createNode(MemberProfilePopover, { profile: { member, anchor }, onClose: vi.fn() }), { chat: {}, contacts: {} })
+    await renderWithAppProviders(harness, profileCardWithOpener({ member }, { onClose: vi.fn() }), { chat: {}, contacts: {} })
+    await pressProfileOpener()
     expect(document.body.querySelector('[data-testid="member-profile-send-message-button"], .gg-pop')).not.toBeNull()
     expect(button()).toBeNull()
   })

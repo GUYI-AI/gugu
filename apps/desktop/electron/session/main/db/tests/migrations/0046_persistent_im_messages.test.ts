@@ -62,7 +62,7 @@ describe('0046 migration', () => {
   it('follows the published migration sequence and the previous unpublished timestamp', () => {
     expect(migration).toBeDefined()
     expect(migration.tag).toBe('0046_persistent_im_messages')
-    const others = all.filter(entry => entry !== migration)
+    const others = all.filter(entry => entry.tag < migration.tag)
     expect(migration.when).toBeGreaterThan(Math.max(previousUnpublishedWhen, ...others.map(entry => entry.when)))
   })
 

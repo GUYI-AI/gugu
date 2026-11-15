@@ -1,8 +1,9 @@
 import type { AuthStatusModelState } from '@gugu/session-core/workspace-server/agent-config';
-import type {
-  AgentCapabilities,
-  AgentPayload,
-  DependencyStatus,
+import {
+  agentConnectionForm,
+  type AgentCapabilities,
+  type AgentPayload,
+  type DependencyStatus,
 } from '@shared/core/agents/agent-payload';
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
 
@@ -149,6 +150,20 @@ export function resolveAccountTargets(
     const method = resolveSignInMethod(agent.capabilities, program);
     return method ? [{ program, method, legs: entry.legs, installStatus: entry.status }] : [];
   });
+}
+
+/**
+ * 这一家在「连接」里有没有一条能走通的路(owner 2026-11-12:「任意 agent 都能有登录选项」)——
+ * 资源库详情的「连接」一节、订阅页那一行、新建任务的「去登录」与会话的「重新登录」都问这一处。
+ *  · 有连接可管:Claude / Codex 的多账号,或声明了 API Key 连接的家;
+ *  · 或能在咕咕里登录它 CLI 自己那一份(`cli-login` / `acp-authenticate`)。
+ * 两样都没有 ⇒ false:❌ 摆一颗点了登不上的按钮。
+ */
+export function agentOffersConnections(
+  agent: Pick<AgentPayload, 'id' | 'capabilities' | 'programs' | 'status'> | null | undefined
+): boolean {
+  if (!agent) return false;
+  return agentConnectionForm(agent) !== null || resolveAccountTargets(agent).length > 0;
 }
 
 export function accountRowOf(

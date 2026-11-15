@@ -1,3 +1,4 @@
+import { agentFileBoundary, requireAgentFileAccess, requireAgentFileTreeAccess } from '@gugu/core/local/state/agentFileBoundary'
 /**
  * 系统(system.* 5 个:系统 / 已装 App / shell 环境 / 当前用户 / 用户列表)与终端与自动化(script.jxa / script.shell / sdef.get)。
  * 「系统」只读本机的公开信息,不碰系统授权,一点就连上;❌ 序列号、硬件 UUID 这类能认出这台机器的标识。
@@ -83,7 +84,8 @@ function decodeXml(text: string): string {
 }
 
 /** 读 Info.plist 里的几个字符串键。文本格式直接读;二进制格式请 plutil 转成文本再读(❌ 转 JSON:带日期 / 数据的 plist 转不了)。 */
-async function plistStrings(ctx: ActionRunContext, file: string, keys: readonly string[]): Promise<Record<string, string>> {
+async function plistStrings(ctx: ActionRunContext, file: string, keys: readonly string[], boundary?: Awaited<ReturnType<typeof agentFileBoundary>>): Promise<Record<string, string>> {
+  await requireAgentFileAccess(file, boundary)
   let raw: Buffer
   try {
     raw = await fsp.readFile(file)
@@ -123,7 +125,7 @@ async function findApps(dir: string, depth: number): Promise<string[]> {
 
 // ───────────────────────── 脚本 ─────────────────────────
 
-/** 脚本里调 `screencapture` 一律不跑(会以咕咕的身份要「屏幕录制」、弹系统框);截屏走 computer.get_window_state / computer.get_desktop_state。 */
+/** 脚本里调 `screencapture` 一律不跑(会以咕咕的身份要「屏幕录制」、弹系统框);截屏走 screen.get。 */
 const COMMAND_WRAPPERS = new Set(['sudo', 'env', 'exec', 'nohup', 'time', 'command', 'builtin', 'xargs', 'nice', 'caffeinate'])
 const COMMAND_SEPARATOR = /\$\(|[\n;|&(){}`"']/
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/
@@ -138,7 +140,7 @@ export function invokesScreenCapture(script: string): boolean {
   return false
 }
 
-const SCREENCAPTURE_REFUSED = 'screencapture is not allowed in scripts here (it would make macOS ask for Screen Recording on the person\'s screen). Use computer.get_window_state (or screen.get) to look at the screen instead.'
+const SCREENCAPTURE_REFUSED = 'screencapture is not allowed in scripts here (it would make macOS ask for Screen Recording on the person\'s screen). Use screen.get to look at the screen instead.'
 
 const preview = (script: string) => (script.length > 120 ? `${script.slice(0, 120)}…` : script)
 
@@ -260,7 +262,7 @@ async function inlineIncludes(xml: string): Promise<string> {
     const href = /href="([^"]+)"/.exec(tag)?.[1] ?? ''
     const file = decodeURI(href.replace(/^file:\/\/(localhost)?/, ''))
     if (!file.startsWith(SCRIPTING_DEFINITIONS) || !file.endsWith('.sdef') || file.includes('..')) continue
-    const included = await fsp.readFile(file, 'utf8').catch(() => null)
+    const included = await fsp.readFile(await requireAgentFileAccess(file), 'utf8').catch(() => null)
     if (included === null) continue
     const xpointer = decodeXml(/xpointer="([^"]+)"/.exec(tag)?.[1] ?? '')
     const suites = [...included.matchAll(/<suite\b[\s\S]*?<\/suite>/g)].map((m) => m[0])
@@ -505,10 +507,11 @@ export function createSystemFamily(options: SystemFamilyOptions = {}): ActionFam
           additionalProperties: false,
         },
         async run(args, ctx) {
+          const boundary = await agentFileBoundary()
           const dirs = appDirs(ctx.deps.homedir())
           const paths = (await Promise.all(dirs.map((d) => findApps(d, 1)))).flat()
           const apps = await Promise.all(paths.map(async (p) => {
-            const keys = await plistStrings(ctx, path.join(p, 'Contents', 'Info.plist'), ['CFBundleIdentifier', 'CFBundleShortVersionString', 'CFBundleVersion'])
+            const keys = await plistStrings(ctx, path.join(p, 'Contents', 'Info.plist'), ['CFBundleIdentifier', 'CFBundleShortVersionString', 'CFBundleVersion'], boundary)
             return {
               name: path.basename(p, '.app'),
               bundle_id: keys.CFBundleIdentifier ?? null,
@@ -646,7 +649,7 @@ export function createSystemFamily(options: SystemFamilyOptions = {}): ActionFam
         group: 'shell',
         title: '运行 JXA / AppleScript',
         titleEn: 'Run JXA / AppleScript',
-        description: 'Run a JXA (JavaScript for Automation, default) or AppleScript snippet with osascript on this Mac and return its stdout (the value of the last expression / `run` return), stderr and exit code (64 KB each). args are passed to `run(argv)`. Prefer the dedicated actions (calendar.*, reminders.*, notes.*, mail.*, contacts.*, messages.*) and fall back to scripts only when none covers the task; use sdef.get to look up an app\'s scripting dictionary first. The first time a script controls an app, macOS asks the person to allow it. Scripts calling `screencapture` are refused (use computer.get_window_state). Runs arbitrary code, so every run must be confirmed by the person: without confirmed: true it returns needs_confirmation. timeoutMs defaults to 30000 (max 280000); set the call\'s timeout_ms above it.',
+        description: 'Run a JXA (JavaScript for Automation, default) or AppleScript snippet with osascript on this Mac and return its stdout (the value of the last expression / `run` return), stderr and exit code (64 KB each). args are passed to `run(argv)`. Prefer the dedicated actions (calendar.*, reminders.*, notes.*, mail.*, contacts.*, messages.*) and fall back to scripts only when none covers the task; use sdef.get to look up an app\'s scripting dictionary first. The first time a script controls an app, macOS asks the person to allow it. Scripts calling `screencapture` are refused (use screen.get). Runs arbitrary code, so every run must be confirmed by the person: without confirmed: true it returns needs_confirmation. timeoutMs defaults to 30000 (max 280000); set the call\'s timeout_ms above it.',
         risk: 'high',
         confirm: 'always',
         input_schema: {
@@ -690,7 +693,7 @@ export function createSystemFamily(options: SystemFamilyOptions = {}): ActionFam
         group: 'shell',
         title: '运行 shell 脚本',
         titleEn: 'Run shell script',
-        description: 'Run a shell script on this Mac (`<shell> -c script`, zsh by default; bash / sh also available) and return stdout, stderr (64 KB each) and the exit code — a non-zero exit is still a normal result. args become $1, $2 …; env adds variables; cwd must be inside a connected file location (default: home folder). It is a non-login, non-interactive shell with 咕咕\'s PATH (see system.shell.get): ~/.zshrc is not read, so source it in the script if you need Homebrew / nvm paths. `screencapture` is refused (use computer.get_window_state). Runs arbitrary code, so every run must be confirmed by the person: without confirmed: true it returns needs_confirmation. timeoutMs defaults to 30000 (max 280000); set the call\'s timeout_ms above it.',
+        description: 'Run a shell script on this Mac (`<shell> -c script`, zsh by default; bash / sh also available) and return stdout, stderr (64 KB each) and the exit code — a non-zero exit is still a normal result. args become $1, $2 …; env adds variables; cwd must be inside a connected file location (default: home folder). It is a non-login, non-interactive shell with 咕咕\'s PATH (see system.shell.get): ~/.zshrc is not read, so source it in the script if you need Homebrew / nvm paths. `screencapture` is refused (use screen.get). Runs arbitrary code, so every run must be confirmed by the person: without confirmed: true it returns needs_confirmation. timeoutMs defaults to 30000 (max 280000); set the call\'s timeout_ms above it.',
         risk: 'high',
         confirm: 'always',
         input_schema: {
@@ -765,6 +768,7 @@ export function createSystemFamily(options: SystemFamilyOptions = {}): ActionFam
         async run(args, ctx) {
           const app = await resolveApp(ctx, str(args, 'app'))
           if (!app.ok) return bad(app.message)
+          await requireAgentFileTreeAccess(app.path)
           const name = path.basename(app.path, '.app')
           const r = await ctx.deps.jxa(COPY_SDEF_JXA, { path: app.path }, { signal: ctx.signal, timeoutMs: 60_000, app: name })
           if (isRecord(r) && r.error === OSA_NO_DICTIONARY) return fail('execution_failed', `${name} has no scripting dictionary (it is not AppleScript-scriptable). Drive its interface with computer.* instead.`)

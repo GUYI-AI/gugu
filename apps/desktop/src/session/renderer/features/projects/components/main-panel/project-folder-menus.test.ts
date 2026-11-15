@@ -10,6 +10,7 @@ import { SessionLocalizationProvider } from '@renderer/localization/localization
 import { ProjectFolderMenu } from './project-folder-menu';
 import { ComposerFolderPicker } from './composer-folder-picker';
 import type { ProjectFoldersState } from './project-folders';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 vi.mock('@renderer/lib/stores/app-state', () => ({
   sidebarStore: { placement: { entries: new Map() } },
@@ -29,7 +30,7 @@ const folder = (workspaceId: string, kind: ProjectFolder['kind'], path: string):
   workspaceId,
   projectId: 'p1',
   kind,
-  path,
+  path: path as CanonicalPath,
   branch: null,
   sessionIds: [],
   attachedAt: null,

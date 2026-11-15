@@ -581,7 +581,7 @@ function baseReport(
  */
 function autonomyArgs(bundle: SessionCapabilityBundle): string[] {
   if (!bundle.autonomy) return [];
-  const mode = bundle.autonomy.mode === 'full-access' ? 'yolo' : 'default';
+  const mode = bundle.autonomy.permissionMode === 'full-access' ? 'yolo' : 'default';
   return ['--approval-mode', mode];
 }
 

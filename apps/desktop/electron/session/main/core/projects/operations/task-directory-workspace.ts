@@ -1,23 +1,23 @@
 import { randomUUID } from 'node:crypto';
+import { canonicalPath } from '@gugu/session-core/files';
 import { statSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions, workspaces } from '@main/db/schema';
 import { computeWorkspaceKey } from '@main/core/workspaces/workspace-key';
-import { projectPathKey } from '../path-utils';
 import { resolveAgentSessionProject } from './resolve-agent-session-project';
 import { getProjectById } from './getProjects';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
 
 /** A task's execution directory is a workspace, not another project registration. */
 export async function resolveAssistantSessionWorkspace(directory: string, identity?: { sessionId?: string; assistantId: string; deviceId: string; ownerId: string }) {
-  const path = projectPathKey(directory);
+  const path = canonicalPath(directory);
   if (!statSync(path).isDirectory()) throw new Error(`Not a task directory: ${path}`);
   if (identity?.sessionId) {
     const existing = db.select().from(sessions).where(eq(sessions.id, identity.sessionId)).get();
     if (existing?.workspaceId) {
       const cwd = db.select({ path: workspaces.path }).from(workspaces).where(eq(workspaces.id, existing.workspaceId)).get();
-      if (!cwd?.path || projectPathKey(cwd.path) !== path) throw new Error('Assistant execution directory changed');
+      if (!cwd?.path || canonicalPath(cwd.path) !== path) throw new Error('Assistant execution directory changed');
     }
     if (existing && !isImplicitSessionHomeProjectId(existing.projectId)) {
       const legacy = await getProjectById(existing.projectId);

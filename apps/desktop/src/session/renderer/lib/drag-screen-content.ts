@@ -1,3 +1,5 @@
+import type React from 'react';
+import type { ChatItem } from '@gugu/core/shared/types/chat';
 import type { ScreenBlockContent } from '@renderer/app/screen-layout';
 
 /** One workspace identity for sidebar rows and block grips. Never write text/plain: ProseMirror
@@ -46,6 +48,15 @@ export function setDraggedScreenContent(
   dataTransfer.setDragImage(image, 24, image.getBoundingClientRect().height / 2);
   // 快照是同步拍的,但要等浏览器**这一帧**画完才能拆台 —— 立即 remove 会拍到空白。
   requestAnimationFrame(() => image.remove());
+}
+
+/**
+ * 聊天列表的一行拖起来(会话行、话题子行,#2548 内层侧栏的话题行也是这一条):落在一块的边上分出这个对话;
+ * 话题 = 它的来源对话,话题开成分栏。行不可拖(手机)就什么都不写。
+ */
+export function startChatDrag(event: React.DragEvent<HTMLElement>, chat: ChatItem, title: string): void {
+  if (!event.currentTarget.draggable) return;
+  setDraggedScreenContent(event.dataTransfer, { kind: 'chat', chatId: chat.kind === 'topic' ? chat.source_chat_id! : chat.id, title, ...(chat.kind === 'topic' ? { topic: { chatId: chat.id, name: chat.name ?? '' } } : {}) }, event.currentTarget);
 }
 
 /** 在 dragend 上调用;drop 先于源上的 dragend 触发,所以这时清是安全的。 */

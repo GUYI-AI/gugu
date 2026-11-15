@@ -19,6 +19,8 @@ function fixture(owner?: BrowserWindow) {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', { pretendToBeVisual: true, runScripts: 'outside-only' })
   const contents = Object.assign(new EventEmitter(), {
     destroyed: false,
+    session: {},
+    debugger: { isAttached: () => false },
     isDestroyed() { return this.destroyed },
     executeJavaScript: vi.fn(async (source: string) => dom.window.eval(source) as unknown),
   })
@@ -99,3 +101,4 @@ it('reports a failed delivery while the target is still alive', async () => {
   await Promise.resolve()
   expect(log.error).toHaveBeenCalledOnce()
 })
+

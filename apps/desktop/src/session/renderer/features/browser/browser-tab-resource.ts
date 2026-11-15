@@ -8,7 +8,8 @@ import { browserOpenInNewTabChannel, browserPageEventChannel } from '@shared/eve
 import { fileChangesChannel } from '@shared/core/fs/fsEvents';
 import { fileUrlToMachinePath } from '@shared/preview/remote-page-url';
 import { touchesPageAssets } from '@renderer/lib/editor/page-assets';
-import { workspaceEvents, workspaceRpc } from '@renderer/features/sessions/workspace-backend/workspace-backend';
+import { workspaceEvents } from '@renderer/features/sessions/workspace-backend/workspace-backend';
+import { watchWorkspaceDirectory } from '@renderer/features/sessions/workspace-backend/watch-directory';
 import { browserControlsRegistry } from './browser-controls-registry';
 import type { WorkspaceBrowserAttachment } from '@renderer/features/sessions/workspace-backend/workspace-browser-backend';
 import type { BrowserState } from './browser-tab-provider';
@@ -99,18 +100,7 @@ export class BrowserTabResource implements TabResource {
           },
           (dir) => {
             this._releasePageDirectory();
-            if (!dir) return;
-            const rpcFiles = workspaceRpc(workspace.projectId).files;
-            const lease = rpcFiles
-              .watchDirectory(workspace.projectId, workspace.workspaceId, dir)
-              .then((result) => (result.success ? result.data.leaseId : null))
-              .catch(() => null);
-            this._releasePageDirectory = () => {
-              this._releasePageDirectory = () => {};
-              void lease.then((leaseId) => {
-                if (leaseId) void rpcFiles.releaseDirectoryWatch(workspace.projectId, workspace.workspaceId, leaseId).catch(() => {});
-              });
-            };
+            this._releasePageDirectory = dir ? watchWorkspaceDirectory(workspace.projectId, workspace.workspaceId, dir) : () => {};
           },
           { fireImmediately: true }
         )

@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 
-import type { SessionRecordLocator, SessionRecordSource, SessionRecordSourceEvents } from '../contract';
+import type { SessionRecordResume, SessionRecordLocator, SessionRecordSource, SessionRecordSourceEvents } from '../contract';
 import {
   SessionRecordNotFoundError,
   pollInterval,
@@ -78,11 +78,15 @@ export abstract class SqlitePollSource<L extends SessionRecordLocator> implement
   /** 读一趟。`first` = 开库后的整份首读。 */
   protected abstract read(first: boolean): void;
 
-  async start(events: SessionRecordSourceEvents): Promise<void> {
+  /** resume-tail: continue after a position a subclass understands (`startingAt`). Unset = read from the start. */
+  protected restore?(resume: SessionRecordResume): void;
+
+  async start(events: SessionRecordSourceEvents, resume?: SessionRecordResume): Promise<void> {
     this.events = events;
     const opened = this.open();
     this.db = opened.db;
     this.dbPath = opened.dbPath;
+    if (resume) this.restore?.(resume);
     this.read(true);
     this.timer = setInterval(() => this.poll(), pollInterval(this.options));
     this.timer.unref?.();

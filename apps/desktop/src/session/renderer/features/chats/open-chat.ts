@@ -1,19 +1,23 @@
 import { isScreenView, showBesideOnScreen, showOnScreen } from '@renderer/app/screen-layout-actions';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import { appState } from '@renderer/lib/stores/app-state';
-import type { ScreenBlockContent } from '@renderer/app/screen-layout';
+import { screenLayout, type ScreenBlockContent } from '@renderer/app/screen-layout';
 import { openOwnedAgentEntry } from '@/lib/ownedAgentConversation';
+import { requestComposerEntryFocus } from '@/lib/composerEntryFocus';
 
 /**
  * 壳要打开一条对话(侧栏「对话」里点一行、通知、链接、「发消息」……,gugu-dev#181):对话是这屏的一块。
  * 项目群不开对话块,开它的项目块(项目就是群;几台机器上的同一个项目认侧栏那一行)—— 只在这一处判。
  * ⌘ 点只在看这屏时才拼到旁边(同会话行、项目行)。
  */
-export function openChatOnScreen(chatId: string, beside: boolean, purpose?: 'resource'): void {
+export function openChatOnScreen(chatId: string, beside: boolean, purpose?: 'resource', within = false): void {
+  // `within`: opened from inside the screen (a profile card's 「发消息」): it stays that screen's entry's (screen-layout `entry`).
+  if (within) return screenLayout.withinEntry(() => openChatOnScreen(chatId, beside, purpose));
   if (openOwnedAgentEntry(chatId, undefined, undefined, undefined, purpose)) return;
   const projectId = projectGroupsStore.rowProjectOfChat(chatId);
   const content: ScreenBlockContent = projectId
     ? { kind: 'project', projectId }
     : { kind: 'chat', chatId };
   (beside && isScreenView(appState.navigation.currentViewId) ? showBesideOnScreen : showOnScreen)(content);
+  requestComposerEntryFocus(purpose ? null : 'chat:' + chatId);
 }

@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EXTENSION_API_VERSION } from '@shared/extensions/manifest';
 import { MAX_BUNDLE_ENTRIES } from '@shared/extensions/market';
 import { ExtensionsService } from './extensions-service';
-import { validateExtensionBundle } from './extension-validate';
+import { assertConfinedProgramBundle, validateExtensionBundle } from './extension-validate';
+import { parseExtensionManifest } from '@shared/extensions/manifest';
+import { messageForUser } from '@/lib/userFacingError';
 
 const EXAMPLES = fileURLToPath(new URL('../../../../../../../examples/extensions/', import.meta.url));
 
@@ -78,6 +80,23 @@ describe('validateExtensionBundle', () => {
     const escaped = validateExtensionBundle(service, escaping);
     expect(escaped.ok).toBe(false);
     expect(escaped.problems).toEqual(['entry path escapes the bundle: entry', 'symbolic link: index.html']);
+  });
+
+  it('names every link of a confined tools App in the one line the person is shown', () => {
+    const manifest = { platforms: ['desktop'], permissions: { capabilities: ['agents:tools'] }, contributes: { tabs: [{ name: 'main', title: 'Demo' }], instructions: 'Fixture tools.', mcpServers: [{ tools: 'tools.js' }] } };
+    const dir = bundle('linked-tools', manifest, { 'tools.js': 'export const fixture = {}' });
+    writeFileSync(path.join(workDir, 'secret.txt'), 'key');
+    symlinkSync(path.join(workDir, 'secret.txt'), path.join(dir, 'a.txt'));
+    symlinkSync(path.join(workDir, 'secret.txt'), path.join(dir, 'b.txt'));
+    const parsed = parseExtensionManifest({ id: 'demo-ext', name: 'Demo', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html', ...manifest });
+    let refusal: unknown;
+    try {
+      assertConfinedProgramBundle(dir, parsed);
+    } catch (error) {
+      refusal = error;
+    }
+    expect(messageForUser(refusal)).toContain('symbolic link: a.txt');
+    expect(messageForUser(refusal)).toContain('symbolic link: b.txt');
   });
 
   it('counts files against the market limit, skipping what packing skips', () => {

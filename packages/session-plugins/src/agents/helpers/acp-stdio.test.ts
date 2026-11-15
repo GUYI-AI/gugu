@@ -71,6 +71,39 @@ it('decodes permission tool facts before they cross the v1 transport boundary', 
   stdout.end(); stdin.end();
 });
 
+it('a harness that owns its terminal is not offered the client one, and a pre-approved request skips the client', async () => {
+  const stdin = new PassThrough(), stdout = new PassThrough();
+  const requests: { id?: number; method?: string; params?: Record<string, unknown>; result?: unknown }[] = [];
+  let buffered = '';
+  stdin.on('data', bytes => {
+    buffered += bytes.toString();
+    const lines = buffered.split('\n'); buffered = lines.pop()!;
+    for (const line of lines) {
+      const request = JSON.parse(line);
+      requests.push(request);
+      if (request.method === 'initialize') stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id,
+        result: { protocolVersion: 1, agentCapabilities: {} } }) + '\n');
+    }
+  });
+  const requestPermission = vi.fn(async () => ({ outcome: { outcome: 'cancelled' as const } }));
+  const api = connectStdioAcp({ stdin, stdout }, () => ({
+    sessionEvent: () => {}, sessionUpdate: async () => {}, requestPermission,
+  }), {
+    ownTerminal: true,
+    preApprove: request => (request.toolCall.title === 'ours' ? 'yes' : undefined),
+  });
+  await api.initialize({ protocolVersion: 1, clientCapabilities: { terminal: true } });
+  expect(requests[0].params?.clientCapabilities).toMatchObject({ terminal: false });
+  const permission = (id: number, title: string) => stdout.write(JSON.stringify({ jsonrpc: '2.0', id, method: 'session/request_permission', params: {
+    sessionId: 's', toolCall: { toolCallId: 't', title }, options: [{ optionId: 'yes', name: 'Allow', kind: 'allow_once' }],
+  } }) + '\n');
+  permission(101, 'ours');
+  await vi.waitFor(() => expect(requests.find(r => r.id === 101)?.result).toEqual({ outcome: { outcome: 'selected', optionId: 'yes' } }));
+  expect(requestPermission).not.toHaveBeenCalled();
+  permission(102, 'theirs');
+  await vi.waitFor(() => expect(requestPermission).toHaveBeenCalledTimes(1));
+});
+
 describe('nodeReadableToWeb', () => {
   it('lets a waiting event-loop task run during a buffered stdout burst without reordering bytes', async () => {
     let elapsed = 0;

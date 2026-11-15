@@ -17,8 +17,12 @@
 .product-tour-bubble p { font-size: var(--font-body); line-height: var(--lh-body); color: var(--text-secondary); margin: 0 0 var(--spacing-md); }
 .product-tour-actions, .product-tour-actions > div { display: flex; align-items: center; gap: var(--spacing-sm); }
 .product-tour-actions { justify-content: space-between; margin-top: var(--spacing-md); }
-.product-tour-feature-backdrop { position: fixed; inset: var(--window-titlebar-height) 0 0; z-index: calc(var(--z-settings-modal) + 1); background: var(--bg-overlay-modal); }
-.product-tour-feature-viewport { position: fixed; inset: var(--window-titlebar-height) 0 0; z-index: calc(var(--z-settings-modal) + 2); display: grid; place-items: center; padding: 12px 18px; overflow: auto; pointer-events: none; }
+/* @@@tour-height-container 矮窗口的紧凑排版按整窗高度判断,用容器查询而不是 @media (max-height):视口高度在手机上随输入法开合
+   来回跨过阈值,@media 一翻转,它所在的整张合并样式表(连同里面上百条 @property、@font-face)就要重新收集,整页重算样式、全部
+   文字重排,开销随挂着的消息量涨。这一层铺满窗口当尺寸容器,阈值仍是窗口高度 660px;它同时是两个 fixed 子层的包含块,几何不变。 */
+.product-tour-feature-layer { position: fixed; inset: 0; z-index: calc(var(--z-settings-modal) + 1); container: product-tour / size; pointer-events: none; }
+.product-tour-feature-backdrop { position: fixed; inset: var(--window-titlebar-height) 0 0; z-index: 1; background: var(--bg-overlay-modal); pointer-events: auto; }
+.product-tour-feature-viewport { position: fixed; inset: var(--window-titlebar-height) 0 0; z-index: 2; display: grid; place-items: center; padding: 12px 18px; overflow: auto; pointer-events: none; }
 .product-tour-feature { pointer-events: auto; display: flex; flex-direction: column; width: min(1220px, 100%); max-width: none; max-height: calc(100dvh - 68px); overflow: hidden auto; border: 1px solid var(--modal-border); border-radius: 20px; background: var(--modal-bg); color: var(--text-primary); box-shadow: var(--shadow-dialog); }
 .product-tour-feature-header { display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; padding: 8px 20px; border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 12px; }
 .product-tour-feature-heading { flex-shrink: 0; padding: 10px 22px 6px; }
@@ -34,7 +38,7 @@
 .product-tour-feature-dots button[aria-current="step"] { width: 22px; background: var(--fg); }
 .product-tour-feature .product-tour-actions { flex-shrink: 0; margin-top: 0; padding: 10px 20px; border-top: 1px solid var(--border); }
 .product-tour-error { color: var(--danger-fg); font-size: var(--font-body); }
-@media (max-height: 660px) {
+@container product-tour (max-height: 660px) {
   .product-tour-feature-viewport { padding: 6px 12px; }
   .product-tour-feature { max-height: calc(100dvh - 56px); }
   .product-tour-feature-heading { padding: 6px 18px; }

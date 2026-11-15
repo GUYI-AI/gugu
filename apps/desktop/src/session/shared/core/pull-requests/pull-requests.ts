@@ -261,6 +261,8 @@ export function isForkPr(pr: PullRequest): boolean {
  */
 export function getPrNumber(pr: { identifier: string | null }): number | null {
   if (!pr.identifier) return null;
-  const n = parseInt(pr.identifier.replace('#', ''), 10);
-  return isNaN(n) ? null : n;
+  const match = /^#?([1-9]\d*)$/.exec(pr.identifier.trim());
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isSafeInteger(n) ? n : null;
 }

@@ -63,7 +63,12 @@ export function spawnOwnedChild(
   const launch = planDirectSpawn(command, args, { env: spawnOptions.env, platform });
   const windows = platform === 'win32';
   const group = !windows && spawnOptions.detached === true;
-  const child = spawn(launch.command, launch.args, { ...spawnOptions, ...launch.spawnOverrides, detached: group });
+  const child = spawn(launch.command, launch.args, {
+    ...spawnOptions,
+    ...(launch.env ? { env: launch.env } : {}),
+    ...launch.spawnOverrides,
+    detached: group,
+  });
   child.on('error', onError);
   const exited = new Promise<void>((resolve) => child.on('exit', () => resolve()));
   const hasExited = (): boolean => child.exitCode != null || child.signalCode != null;

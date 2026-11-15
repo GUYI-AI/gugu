@@ -195,8 +195,8 @@ export function fetchAfter(deviceId: string, sessionId: string, cursor: RecordCu
   return value(once(deviceId).sessionTimeline.sessionAfter({ conversationId: sessionId, cursor, trim: true }))
 }
 
-export function fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number): Promise<TimelineOlderResult> {
-  return value(rpc(deviceId).sessionTimeline.sessionOlder({ conversationId: sessionId, beforeTurnId, limit, trim: true }))
+export function fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number, cursor?: TimelineSnapshot['olderCursor']): Promise<TimelineOlderResult> {
+  return value(rpc(deviceId).sessionTimeline.sessionOlder({ conversationId: sessionId, ...(cursor ? { cursor } : { beforeTurnId }), limit, trim: true }))
 }
 
 /**

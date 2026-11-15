@@ -22,6 +22,7 @@ import { makePtySessionId } from '@shared/core/pty/ptySessionId';
 import { sessionDescendantIds } from './session-descendants';
 import { getRendererSession } from '@/lib/sessionPublication';
 import { rememberTask } from '@renderer/features/command-palette/recent-tasks';
+import { rendererLogger } from '@/lib/log';
 
 export class PageSessionsStore implements IDisposable {
   private offAgentStatusChanged: (() => void) | null = null;
@@ -334,6 +335,27 @@ export class PageSessionsStore implements IDisposable {
     }
   }
 
+  // #2548 固定到左侧栏: same optimistic shape as setSessionPinned.
+  async setSessionPinnedToSidebar(sessionId: string, pinned: boolean): Promise<void> {
+    const store = this.sessions.get(sessionId);
+    if (!store) return;
+
+    const previous = store.data.isPinnedToSidebar ?? false;
+
+    runInAction(() => {
+      store.data.isPinnedToSidebar = pinned;
+    });
+
+    try {
+      await rpc.sessions.setSessionPinnedToSidebar(sessionId, pinned);
+    } catch (err) {
+      runInAction(() => {
+        store.data.isPinnedToSidebar = previous;
+      });
+      throw err;
+    }
+  }
+
   async renameSession(sessionId: string, name: string): Promise<void> {
     const store = this.sessions.get(sessionId);
     if (!store) return;
@@ -381,6 +403,8 @@ export class PageSessionsStore implements IDisposable {
 }
 
 export class SessionStore {
+  private statusRevision = 0;
+  private markingSeen: Promise<boolean> | null = null;
   data: Session;
   /**
    * `null` = 宿主没有陈述任何一态。没有状态源的终端会话(#6206)恒为 `null`,由行上显示「状态不可用」;
@@ -412,6 +436,7 @@ export class SessionStore {
 
   /** Reconnect brings a complete host row, including status changes missed while disconnected. */
   applySession(session: Session): void {
+    this.statusRevision += 1;
     Object.assign(this.data, session);
     // This is a complete host row: an absent reason clears the cached interruption.
     if (session.interruptedBy === undefined) delete this.data.interruptedBy;
@@ -445,6 +470,7 @@ export class SessionStore {
    * 宿主、聊天页、手机都不知道,同一个 agent 就有了两个答案。
    */
   applyStatus(change: { reading: AgentStatusView | null; unseen: boolean; statusSourceFault: string | null }) {
+    this.statusRevision += 1;
     this.status = change.reading?.status ?? null;
     // The host clears the previous interruption when work actually starts.
     if (this.status === 'working') delete this.data.interruptedBy;
@@ -453,9 +479,19 @@ export class SessionStore {
     this.statusSourceFault = change.statusSourceFault;
   }
 
-  markSeen() {
-    this.seen = true;
-    void rpc.sessions.markSessionSeen(this.data.id);
+  markSeen(): Promise<boolean> {
+    if (this.markingSeen) return this.markingSeen;
+    const revision = this.statusRevision;
+    const request: Promise<boolean> = rpc.sessions.markSessionSeen(this.data.id).then(() => {
+      // A later failure must not be swallowed by an older acknowledgement's delayed reply.
+      if (this.statusRevision === revision) runInAction(() => { this.seen = true; });
+      return true;
+    }).catch((error: unknown) => {
+      rendererLogger('session/read').warn({ sessionId: this.data.id, error: String(error) }, 'Session status could not be acknowledged');
+      return false;
+    }).finally(() => { if (this.markingSeen === request) this.markingSeen = null; });
+    this.markingSeen = request;
+    return request;
   }
 
   dispose() {

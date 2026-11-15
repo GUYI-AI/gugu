@@ -48,6 +48,7 @@ const probeModelDialects: readonly ModelConfigDialect[] = [
   'qwen-openai-env',
   'gemini-env',
   'mimocode-config-content',
+  'kilocode-config-content',
   'copilot-provider-env',
   'kimi-model-env',
   'qoder-byok-settings',
@@ -131,7 +132,7 @@ function channelProbeBundle(
               : {}),
           }
         : null,
-    autonomy: unit === 'autonomy' && populated ? { mode: 'full-access' } : null,
+    autonomy: unit === 'autonomy' && populated ? { permissionMode: 'full-access' } : null,
     promptBlocks:
       unit === 'promptBlocks' && populated
         ? { platform: '<gugu_platform>NATIVE_CHANNEL_PROMPT_PROBE</gugu_platform>\n' }
@@ -320,7 +321,7 @@ describe('pluginRegistry', () => {
       //    impl/kimi/session-bundle.ts 的 `KIMI_SESSION_TUI_ENABLED` 与 `mcpConfigArtifact`。
       kimi: ['acp', 'tui'],
       kilocode: ['acp', 'tui'],
-      kiro: ['acp', 'tui'],
+      kiro: ['acp'],
       cline: ['acp', 'tui'],
       continue: ['tui'],
       codebuff: ['tui'],
@@ -351,7 +352,7 @@ describe('pluginRegistry', () => {
       //    链定语义再开(边界 ②)。grok 的协议腿已在 #4716 升为 addressable/router，但终端腿仍关闭。
       // ⚠️ kimi 2026-08-28 **回到**这一组:终端腿重开,`sessionpage['tui']` 跟着回来。
       //    (dev 上它一度退出 —— 那是终端腿开关关着的读数;本分支把开关翻回 true。)
-      'junie', 'kilocode', 'kimi', 'kiro', 'mimocode', 'mistral', 'oh-my-pi',
+      'junie', 'kilocode', 'kimi', 'mimocode', 'mistral', 'oh-my-pi',
       // opencode 自 2026-08-28 起在列(#4406):终端腿按实测补上,取证见 impl/opencode/session-bundle.ts。
       'opencode',
       'pi', 'qoder', 'qwen', 'zero',
@@ -373,13 +374,13 @@ describe('pluginRegistry', () => {
     // 2026-09-21(#6097):goose 随插件删掉,这一组 10 → 9。
     const sessionAcpNone9 = [
       'auggie', 'cline', 'devin',
-      'junie', 'kilocode', 'kiro', 'mistral', 'oh-my-pi', 'qoder',
+      'junie', 'mistral', 'oh-my-pi', 'qoder',
     ];
     for (const providerId of addressable24) {
       const provider = pluginRegistry.get(providerId)!;
       // OpenCode and MiMo Code use the provider-agnostic serve/attach host adapter;
       // droid retains its daemon adapter while the remaining providers stay local-session.
-      const expected = providerId === 'opencode' || providerId === 'mimocode'
+      const expected = providerId === 'opencode' || providerId === 'mimocode' || providerId === 'kilocode'
         ? { identity: 'addressable', messageTransport: 'router', hostAdapter: 'opencode-serve-attach-v1' }
         : {
             identity: 'addressable',
@@ -428,14 +429,14 @@ describe('pluginRegistry', () => {
     // 见 impl/antigravity/session-bundle.ts 抬头。
     // zcode 自 2026-10-17 起在列(#7385):桥 @gugu-acp/zcode-acp 把 `session/new.mcpServers` 原样交给 ZCode app-server,
     // 注入的 stdio 工具被模型调到(mcp__<server>__<tool>);身份自述走 session-context。见 impl/zcode/session-bundle.ts 抬头。
-    expect(sessionAcpProviders).toEqual(['codex', 'claude', 'grok', 'qwen', 'droid', 'antigravity', 'cursor', 'copilot', 'gemini', 'opencode', 'hermes', 'kimi', 'pi', 'mimocode', 'zcode', 'codebuddy', 'dsh']);
+    expect(sessionAcpProviders).toEqual(['codex', 'claude', 'grok', 'qwen', 'droid', 'antigravity', 'cursor', 'copilot', 'gemini', 'opencode', 'hermes', 'kimi', 'kilocode', 'kiro', 'pi', 'mimocode', 'zcode', 'codebuddy', 'dsh']);
 
     const localSessionTransportProviders = pluginRegistry.getAll()
       .filter((provider) => provider.capabilities.sessionBundle.sessionpage['tui']?.messageTransport === 'local-session')
       .map((provider) => provider.metadata.id);
     // OpenCode and MiMo Code use serve/attach; the remaining addressable TUI legs stay local-session.
     expect(localSessionTransportProviders.sort()).toEqual(
-      addressable24.filter((id) => id !== 'opencode' && id !== 'mimocode').sort(),
+      addressable24.filter((id) => id !== 'opencode' && id !== 'mimocode' && id !== 'kilocode').sort(),
     );
 
     expect(sessionAcpNone9.every((providerId) =>
@@ -610,6 +611,40 @@ describe('pluginRegistry', () => {
     }
   });
 
+  it('every native autonomy channel reads the exact tier alone: full access and edit materialize differently', () => {
+    // `permissionMode` is the one autonomy channel (the coarse `mode` twin is gone): a materializer that still
+    // read anything else would project both tiers to the same output here.
+    vi.stubEnv(GUGU_MCP_STDIO_RELAY_ENTRY_ENV, '/app/dist-electron/runtime/gugu-mcp-stdio-relay.mjs');
+    const same: string[] = [];
+    let probed = 0;
+    for (const provider of pluginRegistry.getAll()) {
+      const descriptor = provider.capabilities.sessionBundle;
+      const behavior = provider.behavior.sessionBundle;
+      if (!behavior) continue;
+      for (const surface of descriptor.surfaces) {
+        const leaf = resolveUnitDelivery(descriptor.units.autonomy, surface);
+        if (leaf.kind !== 'native') continue;
+        const fields = SESSION_BUNDLE_CHANNEL_MATERIALIZATION_FIELDS[leaf.channel];
+        // A refusal (Grok cannot honor approval) is a distinct outcome too.
+        const at = (permissionMode: 'full-access' | 'edit') => {
+          try {
+            return normalizedFields(behavior.materialize(
+              { surface, lifecycle: 'fresh', cwd: NATIVE_CHANNEL_CWD },
+              { ...channelProbeBundle(provider.metadata.id, 'autonomy', true), autonomy: { permissionMode } },
+            ), fields);
+          } catch (error) { return `refused: ${String(error)}`; }
+        };
+        probed += 1;
+        if (at('full-access') === at('edit')) same.push(`${provider.metadata.id}/${surface}`);
+      }
+    }
+    vi.unstubAllEnvs();
+    expect(probed).toBeGreaterThan(5);
+    // Copilot's ACP leg declares an argv channel but keeps approvals on session/request_permission and never
+    // appends the flag there (#6234, see its materializer); it is the one known declaration/behavior gap.
+    expect(same).toEqual(['copilot/acp']);
+  });
+
   it('materializes every declared native unit through its contract channel', () => {
     // antigravity 终端腿的 MCP 条目指向随 app 发的 stdio 中继;宿主在 spawn 前登记它的入口(`registerGuguMcpStdioRelayEntry`)。
     vi.stubEnv(GUGU_MCP_STDIO_RELAY_ENTRY_ENV, '/app/dist-electron/runtime/gugu-mcp-stdio-relay.mjs');
@@ -769,7 +804,10 @@ describe('pluginRegistry', () => {
     // dsh 2026-11-05 接入:只有 acp 腿,mcp('acp-session')、env('child-process')、model('config-file')、
     //   autonomy('config-file',`--patch` 里的权限插件行)、promptBlocks('session-context')五格 native
     //   ⇒ **+5**,87 → **92**(Windows 85 → 90)。
-    expect(checks).toHaveLength(ANTIGRAVITY_SESSION_TUI_ENABLED ? 92 : 90);
+    // kilocode 2026-11-08 五维接通(mcp / env / model / autonomy / promptBlocks 都走 `KILO_CONFIG_CONTENT`,
+    //   逐格 flat native)⇒ **+5**,92 → **97**(Windows 90 → 95)。
+    // kiro 2026-11-08: ACP leg only; mcp, env, autonomy, promptBlocks native, model is vendor-closed ⇒ +4, 97 → 101 (Windows 95 → 99).
+    expect(checks).toHaveLength(ANTIGRAVITY_SESSION_TUI_ENABLED ? 101 : 99);
     for (const check of checks) {
       expect(check.populated, check.label + ': ' + JSON.stringify(check.surfaces)).toBe(true);
     }
@@ -782,9 +820,9 @@ describe('pluginRegistry', () => {
    * 这些格子与「还没查」(`unverified`)长得像但意思相反:查过了,结论是终局。
    * 用 `unsupported-channel` 是有举证门槛的(#3889 红线:本仓 grep 不到只能证明咕咕没接)。
    *
-   * · kiro.model —— 它不说 OpenAI 协议:推理走 AWS CodeWhisperer RPC
-   *   (`x-amz-target: AmazonCodeWhispererStreamingService.*`),981MB 二进制里 `/v1/*` 0 命中
-   *   (带阳性对照),settings 白名单已移除 endpoint 覆盖。实测 Kiro CLI 2.19.1。
+   * · kiro.model —— inference is Kiro's private AWS JSON 1.0 protocol (`KiroRuntimeService.GenerateAssistantResponse`),
+   *   no `/v1/*` in the binary or its agent bundle (with a positive control), ACP `providers/set` answers Method not
+   *   found. Measured on Kiro CLI 3.0.0; see impl/kiro/session-bundle.ts.
    */
   const VENDOR_CLOSED_SLOTS: Record<string, readonly string[]> = {
     kiro: ['model'],
@@ -855,6 +893,7 @@ describe('pluginRegistry', () => {
         provider.metadata.id === 'gemini' ||
         provider.metadata.id === 'grok' ||
         provider.metadata.id === 'hermes' ||
+        provider.metadata.id === 'kilocode' ||
         provider.metadata.id === 'kimi' ||
         provider.metadata.id === 'oh-my-pi' ||
         provider.metadata.id === 'opencode' ||
@@ -870,7 +909,9 @@ describe('pluginRegistry', () => {
         // #7525:codebuddy 两条腿五维逐格实测声明(impl/codebuddy/session-bundle.ts 抬头)。
         provider.metadata.id === 'codebuddy' ||
         // dsh:只开 ACP 腿,五维逐格实测声明(impl/dsh/session-bundle.ts 抬头)。
-        provider.metadata.id === 'dsh'
+        provider.metadata.id === 'dsh' ||
+        // kiro: ACP leg only, measured cell by cell (impl/kiro/session-bundle.ts).
+        provider.metadata.id === 'kiro'
       ) continue;
       remaining += 1;
       const { units, extension } = provider.capabilities.sessionBundle;
@@ -1011,7 +1052,8 @@ describe('pluginRegistry', () => {
   it('declares reload-session only on the model dimension', () => {
     // 唯一的例外:dsh 的权限维。它的 ACP 面不带 modes / 命令,续接又沿用钉下的那一档,换档只能带新档重起再
     // resume(咕咕插进 `--patch` 的权限插件在续接时改档,见 impl/dsh/permission-plugin.ts;实测 0.2.1-rc.5)。
-    const declaredReloads = new Set(['dsh:permission']);
+    // Also kiro's permission dimension: V3 policy presets are seeded when a session opens and cannot be withdrawn.
+    const declaredReloads = new Set(['dsh:permission', 'kiro:permission']);
     for (const plugin of pluginRegistry.getAll()) {
       const live = plugin.capabilities.acp.liveSettings;
       if (!live) continue;
@@ -1151,13 +1193,13 @@ describe('pluginRegistry', () => {
 
   it('delivers the own-model pick on the pi terminal leg (#6246)', () => {
     const args = pluginRegistry.get('pi')!.behavior.prompt!.buildCommand({
-      cli: '/bin/pi', initialPrompt: 'hi', cliSessionId: 's', isResuming: false,
+      cli: '/bin/pi', permissionMode: 'edit', initialPrompt: 'hi', cliSessionId: 's', isResuming: false,
       model: 'mine/own-a', effort: '',
     }).args;
     expect(args.slice(args.indexOf('--model'), args.indexOf('--model') + 2)).toEqual(['--model', 'mine/own-a']);
     // [control] no pick ⇒ no flag: pi keeps its own default (the bytes snapshot below pins this).
     expect(pluginRegistry.get('pi')!.behavior.prompt!.buildCommand({
-      cli: '/bin/pi', initialPrompt: 'hi', cliSessionId: 's', isResuming: false,
+      cli: '/bin/pi', permissionMode: 'edit', initialPrompt: 'hi', cliSessionId: 's', isResuming: false,
       model: '', effort: '',
     }).args).not.toContain('--model');
   });
@@ -1209,9 +1251,10 @@ describe('pluginRegistry', () => {
     // #7525(2026-10-19):codebuddy 首次进入快照,新增一条(含逗号)+163 ——
     // `{"id":"codebuddy","command":{"command":"/bin/provider","args":["--session-id","snapshot-session","--permission-mode","acceptEdits","foundation prompt"],"env":{}}}`;
     // 别家字节一个没变(mac1 量:去掉这一条后长度 4111、哈希仍是 09c624df…fa913)。
-    expect(bytes).toHaveLength(3304 - 136 + 620 + 237 + 86 + 163);
+    // kiro 2026-11-08 left this snapshot with its terminal leg: the one entry goes, the others keep every byte.
+    expect(bytes).toHaveLength(3304 - 136 + 620 + 237 + 86 + 163 - 114);
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(
-      '7e40477cda2ef89f0f69ffbf7f1105b1d4b90c4f86470347ca363d99501fcff1'
+      '70c059e8de2d3b1804a79164d966088eae0f0a93179a98d77734c6545dc86080'
     );
   });
 
@@ -1313,7 +1356,8 @@ describe('pluginRegistry', () => {
     expect(cliLoginArgs(codex, 'codex-login')).toEqual(['login']);
 
     const opencode = pluginRegistry.get('opencode')!;
-    expect(cliLoginArgs(opencode, 'opencode-login')).toEqual(['auth', 'login']);
+    // #2507 指定提供方:没有终端时停在挑提供方的菜单上就走不下去。
+    expect(cliLoginArgs(opencode, 'opencode-login')).toEqual(['auth', 'login', '-p', 'opencode']);
 
     // kimi / qoder —— owner 2026-08-26 实测「说了需要登录、却没把人带到能登录的地方」的两家。
     // 出处逐条写在各自的 auth.ts 抬头（kimi:MoonshotAI/kimi-code@b17bd61 的
@@ -1333,7 +1377,17 @@ describe('pluginRegistry', () => {
     // 从前它是「有 behavior 没 descriptor」:checkStatus 登记着却永远跑不到
     // (`checkAuthStatusUncached` 见 auth.kind==='none' 直接答 unknown)。
     const mimocode = pluginRegistry.get('mimocode')!;
-    expect(cliLoginArgs(mimocode, 'mimocode-login')).toEqual(['auth', 'login']);
+    // #2507 不带 `-p` 停在选供应商的菜单上;`xiaomi` 是小米账号(`mimo` 是免费自动通道,不是账号)。
+    expect(cliLoginArgs(mimocode, 'mimocode-login')).toEqual(['auth', 'login', '-p', 'xiaomi']);
+
+    // #2507 kilo:`-p kilo` 是 Kilo 自家网关,设备码登录(7.8.27 隔离环境实跑:不弹菜单)。
+    expect(cliLoginArgs(pluginRegistry.get('kilocode')!, 'kilo-login')).toEqual(['auth', 'login', '-p', 'kilo']);
+
+    // #2507 copilot:本机 `copilot login`(浏览器回跳本机);别的机器 `--device-code`(下一条断言)。
+    expect(cliLoginArgs(pluginRegistry.get('copilot')!, 'copilot-login')).toEqual(['login']);
+
+    // #2507 hermes:`hermes login` 已删;Nous Portal 设备码走 `auth add nous`(2026.9.24 实跑)。
+    expect(cliLoginArgs(pluginRegistry.get('hermes')!, 'hermes-nous-login')).toEqual(['auth', 'add', 'nous', '--type', 'oauth']);
   });
 
   /**
@@ -1347,7 +1401,7 @@ describe('pluginRegistry', () => {
    */
   /**
    * #6264「在别的机器上登录」—— 只给声明了不靠回跳的登录方式的家,每一条都有厂商出处(写在各家 descriptor 旁)。
-   * 名单外的(qoder / mimocode)在远程时如实说明「到那台机器的终端里自己登」。
+   * 名单外的(qoder)在远程时如实说明「到那台机器的终端里自己登」。
    */
   it('能从别的电脑替它登录的家 = 声明了 headlessArgs 的家,参数逐字', () => {
     const headless = Object.fromEntries(
@@ -1360,8 +1414,13 @@ describe('pluginRegistry', () => {
     expect(headless).toEqual({
       claude: ['auth', 'login'],
       codex: ['login', '--device-auth'],
+      copilot: ['login', '--device-code'],
+      hermes: ['auth', 'add', 'nous', '--type', 'oauth', '--no-browser'],
+      kilocode: ['auth', 'login', '-p', 'kilo'],
       kimi: ['login'],
-      opencode: ['auth', 'login'],
+      kiro: ['login', '--use-device-flow'],
+      mimocode: ['auth', 'login', '-p', 'xiaomi'],
+      opencode: ['auth', 'login', '-p', 'opencode'],
     });
   });
 
@@ -1382,7 +1441,13 @@ describe('pluginRegistry', () => {
       // #7525:codebuddy 也没有登录子命令,走协议登录(ACP `authenticate`,国际版 / 中国版两条)。
       'codebuddy',
       'codex',
+      // #2507:GitHub 账号,`copilot login`。
+      'copilot',
+      // #2507:Nous Portal,`hermes auth add nous`。
+      'hermes',
+      'kilocode',
       'kimi',
+      'kiro',
       'mimocode',
       'opencode',
       'qoder',
@@ -1940,6 +2005,7 @@ describe('pluginRegistry', () => {
 
     const resumed = pi.behavior.prompt!.buildCommand({
       cli: 'pi',
+      permissionMode: 'edit',
       cliSessionId: 'conv-1',
       providerSessionId: '/Users/test/.pi/agent/sessions/project/session.jsonl',
       isResuming: true,

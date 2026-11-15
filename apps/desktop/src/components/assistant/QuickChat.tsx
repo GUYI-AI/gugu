@@ -15,7 +15,7 @@ import { LoadingIndicator } from '../../lib/loading/LoadingIndicator'
 import { useReportChatOnScreen } from '../../lib/onScreenChat'
 import { useChatStore } from '../../store/chatContext'
 import { useChatConversation } from '../../store/useChatConversation'
-import { useDeliveryWaits } from '../../hooks/useDeliveryWaits'
+import { useMessageDelivery } from '../../hooks/useMessageDelivery'
 import './quick-chat.css'
 
 export type QuickChatAssistant = { id: string; display_name: string; avatar: string | null }
@@ -102,7 +102,7 @@ function QuickThread({ chatId, name, visible }: { chatId: string; name: string; 
   useReportChatOnScreen(visible ? chatId : null)
   const { conversations } = useChatStore('conversations')
   const { messages, loadingMessages, sendMessage, setFollowingTail, memberReadSeqs } = useChatConversation(chatId, conversations)
-  const deliveryWaits = useDeliveryWaits(messages, memberReadSeqs)
+  const { deliveryWaits } = useMessageDelivery(messages, memberReadSeqs)
   useEffect(() => { setFollowingTail(visible ? true : undefined) }, [visible, setFollowingTail])
   const recent = projectTurnFailureMessages(visibleDeliveryMessages(messages).filter((message) => !message.thread_root_id && !message.retracted_at)).slice(-RECENT)
   const list = useRef<HTMLDivElement>(null)

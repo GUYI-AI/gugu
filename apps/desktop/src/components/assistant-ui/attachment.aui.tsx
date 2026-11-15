@@ -9,7 +9,7 @@ import {
   MessageProvider,
   formatAttachmentSize,
 } from "@gugu/session-ui/react/components";
-import { ThemeProvider as SessionUiThemeProvider } from "@gugu/session-ui/react/primitives";
+import { SessionUiTheme } from "@/components/sessionpage/SessionUiTheme";
 import { useLocale } from "@/i18n";
 import { useTheme } from "../../store/theme";
 
@@ -36,11 +36,11 @@ function ChipProviders({ children }: { children: ReactNode }) {
     [resolvedLocale, t],
   );
   return (
-    <SessionUiThemeProvider theme={theme} target="documentElement">
+    <SessionUiTheme theme={theme}>
       <MessageProvider locale={resolvedLocale} translate={translate}>
         {children}
       </MessageProvider>
-    </SessionUiThemeProvider>
+    </SessionUiTheme>
   );
 }
 

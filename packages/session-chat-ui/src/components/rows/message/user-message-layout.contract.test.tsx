@@ -20,6 +20,7 @@ import type { ChatMessage } from '@session-chat/model';
 import type { ChatCommands } from '@session-chat/commands';
 import { render } from 'solid-js/web';
 import { describe, expect, it, vi } from 'vitest';
+import { cdp } from 'vitest/browser';
 import { messageUnitDef, normalizeMessage } from './message.def';
 
 const WIDTH = 640;
@@ -146,6 +147,8 @@ async function mountUser(item: ChatMessage, layout: ChatLayout, commands: ChatCo
 
 describe('user message × layout preset contract (#4874)', () => {
   it('keyboard focus reveals the same action row without changing its height', async () => {
+    // A pointer left over the row reveals it by hover before keyboard focus.
+    await cdp().send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: innerHeight - 1 });
     const r = await mountUser(SHORT, DOUBLE, {}, true);
     expect(r.computed).toBe(r.dom);
     expect(r.actionOpacity).toBe(matchMedia('(hover: none)').matches ? '1' : '0');
@@ -322,4 +325,9 @@ it('projects task file references into existing name chips without changing the 
   const item = normalizeMessage({ ...SHORT, files: [{ itemId: 'brief', version: 1, name: 'brief.txt', mimeType: 'text/plain', sizeBytes: 3 }] });
   expect(item.text).toBe(SHORT.text);
   expect(item.attachments).toEqual([{ id: 'brief:1', name: 'brief.txt', kind: 'file' }]);
+});
+
+it('projects a task image reference as an image the host can resolve', () => {
+  const item = normalizeMessage({ ...SHORT, files: [{ itemId: 'shot', version: 2, name: 'shot.jpg', mimeType: 'image/jpeg', sizeBytes: 3 }] });
+  expect(item.attachments).toEqual([{ id: 'gugu-file://shot?v=2', href: 'gugu-file://shot?v=2', name: 'shot.jpg', kind: 'image' }]);
 });

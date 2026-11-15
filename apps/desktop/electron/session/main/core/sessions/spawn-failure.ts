@@ -1,6 +1,7 @@
 import { isProviderSessionMissingError } from '@gugu/session-core/acp';
 import { HarnessStartupError, SessionRuntimeCompatibilityError } from '@gugu/session-core/agents/plugins';
 import { guguCatalogReasonCode, guguReasonInText } from '@gugu/session-core/session-record/contract';
+import { AssistantFileError } from '@gugu/core/shared/assistantFileError';
 import { agentHookService } from '@main/core/agent-hooks/agent-hook-service';
 import { log } from '@main/lib/logger';
 import type { Session } from '@shared/core/sessions/sessions';
@@ -53,6 +54,7 @@ export function startupFailureForUser(error: unknown): unknown {
     if (!current || typeof current !== 'object' || seen.has(current)) continue;
     seen.add(current);
     const spoken = current instanceof HarnessStartupError
+      || current instanceof AssistantFileError
       || current instanceof SessionRuntimeCompatibilityError
       || (current instanceof Error && guguReasonInText(current.message) !== null);
     if (spoken) return new Error((current as Error).message, { cause: error });

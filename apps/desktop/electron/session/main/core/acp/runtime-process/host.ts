@@ -23,7 +23,9 @@ import { getHostIpc } from '@main/lib/host-ipc';
 import { appScope } from '@main/app/app-scope';
 import { resolveLocalAgentRunContext } from '@main/core/agents/agent-run-context';
 import { setProviderSessionId } from '@main/core/sessions/set-session-id';
-import { persistCommittedTurn, withStoredTurns, storedRevertBoundary, truncateStoredHistory } from '@main/core/sessions/session-turn-store';
+import { withStoredTurns, storedRevertBoundary, truncateStoredHistory } from '@main/core/sessions/session-turn-store';
+import { connectWindowCommitHost } from '../../session-timeline/window-commit-host';
+import { prepareWindowCommitStorage } from '../../session-timeline/window-projection-production';
 import { openNativeConversationPreviews } from '@main/core/sessions/session-conversation-live';
 import { createHistoryReverter } from './history-revert';
 import { connectNativePromptPreparation } from './native-prompt-preparation';
@@ -59,6 +61,7 @@ import { log } from '@main/lib/logger';
 import { sessionStartStageChannel } from '@shared/core/sessions/sessionEvents';
 import { desktopWorkerPath } from '@main/worker-manifest';
 import { stripUntrustedSessionAuthority, trustedPlatformInputPatch } from './session-meta';
+import { cancelExtensionSessionCalls } from '@main/core/extensions/extension-program-access';
 
 export { mergeTrustedSessionMeta, stripUntrustedSessionAuthority } from './session-meta';
 
@@ -192,7 +195,7 @@ export type AcpRuntimeClient = ContractClient<AcpApiContract> & {
     sessionId: string;
     prompt: PromptInput;
     steerIfBusy?: boolean;
-  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true }>;
+  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true; reason?: string }>;
   waitPromptDetached(input: { requestId: string }): Promise<{ queued: boolean }>;
   /**
    * #6396 告诉一条会话一件事:转录里一行 / agent 下一轮的开头(见 SessionManager.announce)。
@@ -208,7 +211,7 @@ type AcpRuntimeProcessClient = ContractClient<AcpRuntimeApiContract> & {
     sessionId: string;
     prompt: PromptInput;
     steerIfBusy?: boolean;
-  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true }>;
+  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true; reason?: string }>;
   waitPromptDetached(input: { requestId: string }): Promise<{ queued: boolean }>;
   /**
    * #6396 告诉一条会话一件事:转录里一行 / agent 下一轮的开头(见 SessionManager.announce)。
@@ -269,21 +272,11 @@ const acpWorker = lazyWorker(
       // #5381 会话历史落盘。运行时那份 transcript 只活在内存里,进程一走就没了,而重放能不能
       // 把它补回来取决于 provider —— 所以历史在这里落进库,界面重开时直接读库。
       // 写失败**不许**冒到运行时:那会把一次写盘失败升级成会话起不来,而丢一条历史远没有那么严重。
-      handle.scope.add(
-        await handle.client.turnCommitted.subscribe(undefined, {
-          onEvent: (event) => {
-            void persistCommittedTurn(event).catch((error) => {
-              log.warn('session turn persistence failed', {
-                sessionId: event.sessionId,
-                source: event.source,
-                error,
-              });
-            });
-            // #6264 这一轮因鉴权被拒 ⇒ 这家在这台机器上「登录已失效」;之后正常做完一轮 ⇒ 撤掉。
-            void applyTurnToAuthExpiry(event, authExpiryWriter);
-          },
-        })
-      );
+      const committed = await connectWindowCommitHost(handle.client.turnCommitted.handle(undefined), event => {
+        // #6264 Keep authentication authority independent of bounded history publication.
+        void applyTurnToAuthExpiry(event, authExpiryWriter);
+      }, handle.connection, prepareWindowCommitStorage);
+      handle.scope.add(() => committed.close());
       const conversationPreviews = openNativeConversationPreviews(sessionId => withStoredTurns(sessionId, async () => undefined));
       handle.scope.add(() => conversationPreviews.dispose());
       handle.scope.add(await handle.client.conversationActivity.subscribe(undefined, {
@@ -295,6 +288,7 @@ const acpWorker = lazyWorker(
       handle.scope.add(await connectNativePromptPreparation(handle.client, log));
       handle.scope.add(
         handle.onRestarted(() => {
+          committed.invalidate();
           conversationPreviews.reset();
           // A restarted worker has no surviving adapter processes or session records.
           void releaseEmdashPlatformSession(null);
@@ -628,21 +622,9 @@ function reportUnpinnedPlatformModel<C extends { input: { sessionId: string; pro
   return command;
 }
 
-async function closeAcpBrowserToolsBestEffort(sessionId: string): Promise<void> {
+async function stopAcpHumanToolWaits(sessionId: string): Promise<void> {
   const { stopHumanToolWaits } = await import('../../asks/human-tool-wait');
   stopHumanToolWaits(sessionId);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let active = true;
-  try {
-    await Promise.race([
-      import('../../../../../browser-agent-mcp').then(module => active ? module.closeSessionBrowserTools(sessionId) : undefined),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('Browser tool cleanup timed out after 1000ms')), 1_000);
-      }),
-    ]);
-  } catch (error) {
-    log.warn('acp stop: browser tool cleanup failed', { sessionId, error: String(error) });
-  } finally { active = false; if (timer) clearTimeout(timer); }
 }
 
 /** The worker's stop has its own deadline: a stop that does not answer in 12 s is a failed stop. */
@@ -666,16 +648,28 @@ async function stopAcpWorkerSession(
 }
 
 /**
- * The one ACP session stop: worker stop (with its deadline) and browser tools, then — only once the worker no longer
+ * The one ACP session stop: worker stop (with its deadline) and the tool waits on a person, then — only once the worker no longer
  * owns the process — fork ownership and the platform ticket. Throws while the worker still owns the process.
  */
 export async function stopAcpSessionAndSettle(client: ContractClient<AcpRuntimeApiContract>, sessionId: string): Promise<void> {
-  const [result] = await Promise.all([stopAcpWorkerSession(client, { sessionId }), closeAcpBrowserToolsBestEffort(sessionId)]);
+  cancelExtensionSessionCalls(sessionId);
+  const [result] = await Promise.all([stopAcpWorkerSession(client, { sessionId }), stopAcpHumanToolWaits(sessionId)]);
   if (!result.success && await (client as AcpRuntimeProcessClient).adapterProvenance({ sessionId }) !== null) {
     throw new Error(`ACP session ${sessionId} did not stop: ${result.error.message ?? result.error.type}`);
   }
   await closeRuntimeForkOwnershipForRuntimeSession(sessionId);
   await releaseEmdashPlatformSession(sessionId);
+}
+
+/**
+ * The engine session was replaced after it went missing: the worker's lost record still pins the missing provider
+ * session, and the next start would load it again. Never starts a worker: none running means no record.
+ */
+export async function forgetLostAcpSession(sessionId: string): Promise<void> {
+  const client = await peekAcpWorkerClient();
+  if (!client) return;
+  const result = await stopAcpWorkerSession(client, { sessionId, forgetLost: true });
+  if (!result.success) throw new Error(`ACP session ${sessionId} kept its lost record: ${result.error.message ?? result.error.type}`);
 }
 
 /**
@@ -688,14 +682,12 @@ function decorateRuntimeClient(client: ContractClient<AcpRuntimeApiContract>): A
   return {
     ...client,
     cancelTurn: async (input, meta) => {
+      // Snapshot the current calls before any async cleanup. A later turn's calls
+      // must not be cancelled when this interruption eventually finishes.
+      cancelExtensionSessionCalls(input.sessionId);
       const { stopHumanToolWaits } = await import('../../asks/human-tool-wait');
       stopHumanToolWaits(input.sessionId);
-      // Harnesses do not all cancel their outstanding MCP requests when interrupted.
-      // Stop this turn's browser work at the owning host as well; the person's page stays open.
-      const { closeSessionBrowserTools } = await import('../../../../../browser-agent-mcp');
-      const closingBrowser = closeSessionBrowserTools(input.sessionId);
-      const [result] = await Promise.all([client.cancelTurn(input, meta), closingBrowser]);
-      return result;
+      return client.cancelTurn(input, meta);
     },
     revertSession: createHistoryReverter({
       boundary: storedRevertBoundary,

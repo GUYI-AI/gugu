@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { PublicGroupJoinResult } from '@gugu/core/shared/types/contacts'
 import type { GroupJoinMode } from '@gugu/core/shared/types/chat'
 import { contactsService, GroupJoinRefusedError } from './contacts'
+import { groupJoinDenialKey } from './groupAgentJoin'
 import { rendererLogger } from './log'
 import { useChatStore } from '../store/chatContext'
 
@@ -60,6 +61,9 @@ export function useGroupInviteJoin(): GroupInviteJoinState {
     if (error instanceof GroupInviteJoinUnavailableError) {
       return t(unavailableErrorKeys[error.code])
     }
+    // 库里认得出的拒绝(群满了……)用现成的产品文案,❌ 把数据库原文贴给人。
+    const denial = error instanceof Error ? groupJoinDenialKey(error.message) : null
+    if (denial) return t(denial, { ns: 'messaging' })
     return error instanceof Error && error.message.trim()
       ? t('groupInvite.joinFailedWithReason', { error: error.message })
       : t('groupInvite.joinFailed')

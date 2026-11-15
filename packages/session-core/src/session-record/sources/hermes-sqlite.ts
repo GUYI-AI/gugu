@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';
 
-import type { RecordBoundary, RecordEntry, SessionRecordLocator, SessionRecordSource } from '../contract';
+import type { RecordBoundary, RecordEntry, SessionRecordLocator, SessionRecordResume, SessionRecordSource } from '../contract';
 import { asRecord, boundaryEntry, type SessionRecordSourceOptions, toolCallStart, toolCallResult, toolKindTable } from './shared';
 import { SqlitePollSource, openSessionDb } from './sqlite-db';
 
@@ -28,6 +28,8 @@ type MessageRow = {
  */
 const VISIBLE = 'session_id = ? and (active = 1 or compacted = 1) and _compressed_summary = 0';
 const COLUMNS = 'id, role, content, tool_call_id, tool_calls, tool_name, timestamp, finish_reason, reasoning, reasoning_content, display_kind';
+const READ_PAGE_ROWS = 500;
+const HERMES_RESUME_VERSION = 1;
 
 /** Hermes 自己替人塞进对话的用户行(`tui_gateway/server.py` 的显示投影同样不把它们画成用户说的话)。 */
 const SYNTHETIC_USER_KINDS = new Set(['hidden', 'model_switch', 'auto_continue', 'async_delegation_complete']);
@@ -65,6 +67,45 @@ class HermesSqliteSource extends SqlitePollSource<SessionRecordLocator> {
     return openSessionDb({ name: 'hermes state.db', dbPaths: this.locator.roots, table: 'sessions', sessionId: this.locator.providerSessionId });
   }
 
+  /** resume-tail: continue after row `afterId`. A turn cut in half there is matched away by the fill. */
+  protected restore(resume: SessionRecordResume): void {
+    const data = resume.data as { version?: number; afterId?: number } | undefined;
+    if (data?.version !== HERMES_RESUME_VERSION || !Number.isSafeInteger(data.afterId)) return;
+    this.watermark = data.afterId!;
+    this.seen = (this.db!.prepare(`select count(*) as n from messages where ${VISIBLE} and id <= ?`)
+      .get(this.locator.providerSessionId, this.watermark) as { n: number }).n;
+    this.openTurn = null;
+  }
+
+  /** `position` is a row id (`RecordEntry.position`): the read continues with the rows after it. 0 = from the start. */
+  async startingAt(position: number): Promise<SessionRecordResume | null> {
+    return position > 0 ? { data: { version: HERMES_RESUME_VERSION, afterId: position }, fingerprint: `hermes:${this.locator.providerSessionId}:${position}` } : null;
+  }
+
+  /** `SessionRecordSource.checkAt`: how many of this session's rows are at or before `position`, and the last of them. */
+  async checkAt(position: number): Promise<string | null> {
+    return this.query((db) => {
+      const rows = db.prepare(`select max(id) as id, count(*) as n from messages where ${VISIBLE} and id <= ?`)
+        .get(this.locator.providerSessionId, position) as { id: number | null; n: number };
+      return `hermes:${rows.id ?? 0}:${rows.n}`;
+    });
+  }
+
+  /** The database is shared by every Hermes session: this session's own newest row, row count and end. */
+  async stamp(): Promise<string | null> {
+    return this.query((db) => {
+      const rows = db.prepare(`select max(id) as id, count(*) as n from messages where ${VISIBLE}`).get(this.locator.providerSessionId) as { id: number | null; n: number };
+      const session = db.prepare('select ended_at from sessions where id = ?').get(this.locator.providerSessionId) as { ended_at: number | null } | undefined;
+      return `hermes:${rows.id ?? 0}:${rows.n}:${session?.ended_at ?? ''}`;
+    });
+  }
+
+  /** A short read-only connection of its own: these are asked before (and apart from) `start`. */
+  private query<T>(run: (db: Database.Database) => T): Promise<T> {
+    const { db } = this.open();
+    try { return Promise.resolve(run(db)); } finally { db.close(); }
+  }
+
   protected read(): void {
     const { n } = this.db!
       .prepare(`select count(*) as n from messages where ${VISIBLE} and id <= ?`)
@@ -79,16 +120,22 @@ class HermesSqliteSource extends SqlitePollSource<SessionRecordLocator> {
   }
 
   private readNew(): void {
-    const rows = this.db!.prepare(`select ${COLUMNS} from messages where ${VISIBLE} and id > ? order by id`).all(
-      this.locator.providerSessionId,
-      this.watermark
-    ) as MessageRow[];
-    const entries: RecordEntry[] = [];
-    for (const row of rows) {
-      this.watermark = row.id;
-      this.seen += 1;
-      entries.push(...this.decode(row));
+    // A page at a time: a session's whole history is never one result set (resume-tail).
+    const page = this.db!.prepare(`select ${COLUMNS} from messages where ${VISIBLE} and id > ? order by id limit ${READ_PAGE_ROWS}`);
+    for (;;) {
+      const rows = page.all(this.locator.providerSessionId, this.watermark) as MessageRow[];
+      const entries: RecordEntry[] = [];
+      for (const row of rows) {
+        this.watermark = row.id;
+        this.seen += 1;
+        entries.push(...this.decode(row));
+      }
+      if (rows.length < READ_PAGE_ROWS) { this.finishNew(entries); return; }
+      if (entries.length > 0) this.events!.onEntries(entries);
     }
+  }
+
+  private finishNew(entries: RecordEntry[]): void {
     // 会话关了(`ended_at`)还没收尾的那一轮,就停在了它最后一行的形状上。
     if (this.openTurn) {
       const session = this.db!.prepare('select ended_at from sessions where id = ?').get(this.locator.providerSessionId) as
@@ -110,7 +157,7 @@ class HermesSqliteSource extends SqlitePollSource<SessionRecordLocator> {
     const at = row.timestamp * 1000;
     const key = (index: number) => `hermes:${row.id}#${index}`;
     const out: RecordEntry[] = [];
-    const push = (event: NormalizedEvent) => out.push({ key: key(out.length), at, event });
+    const push = (event: NormalizedEvent) => out.push({ key: key(out.length), at, position: row.id - 1, event });
     const text = contentText(row.content);
 
     if (row.role === 'user') {

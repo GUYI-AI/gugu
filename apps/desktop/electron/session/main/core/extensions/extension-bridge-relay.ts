@@ -4,7 +4,10 @@ import {
   setExtensionBridgeHost,
   type ExtensionBridgeHost,
 } from '@main/core/extensions/extension-bridge';
+import { setProjectionViewerOpener, type ProjectionViewerClient } from './projection-viewer-provider';
+import { setProjectionRemoteCaller, type ProjectionRemoteCaller } from './projection-remote-viewer';
 import type { DispatchAsk, DispatchPicked } from '@shared/extensions/app-dispatch-core';
+import type { VoiceNoteWindowAnswer, VoiceNoteWindowRequest } from '@shared/extensions/voice-note-session';
 import {
   EXTENSION_HOST_ACTION_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
@@ -42,6 +45,10 @@ import {
 
 /** What this relay needs from the host process's own renderer channel. */
 export type ExtensionHostWindowChannel = {
+  /** Authenticated outer-host media entry; no proof or key crosses into App HTML. */
+  openProjectionViewer?: (pageId: number) => Promise<ProjectionViewerClient>;
+  /** This computer's device connection to another of the person's machines (Gugu cloud or SSH), for App projections there. */
+  callMachine?: ProjectionRemoteCaller['call'];
   invokeRendererExtensions: (
     method: string,
     params: unknown,
@@ -62,6 +69,8 @@ export type ExtensionHostWindowChannel = {
   listedSession: (sessionId: string, hint?: { deviceId?: string; projectId?: string }) => Promise<string | null>;
   /** An action no page asked for (a link's or a banner's click), done by the window that shows chats and Apps. */
   act: (command: ExtensionHostActionCommand) => Promise<ExtensionHostActionResult>;
+  /** #1927 (47) `gugu.voiceNote`, asked of the window that holds the voice-note recorder (app-voice-note-host.ts). */
+  voiceNote?: (request: VoiceNoteWindowRequest) => Promise<VoiceNoteWindowAnswer>;
   isHostWindowFullScreen: () => boolean;
   onHostWindowFullScreenChange: (listener: () => void) => () => void;
   /**
@@ -79,6 +88,9 @@ export type ExtensionHostWindowChannel = {
    */
   hostLocale: () => string;
   hostTone: () => 'light' | 'dark';
+  hostThemeColors: () => Readonly<Record<string, string>> | undefined;
+  /** The signed-in account's own 咕咕号 (`ExtensionBridgeHost.selfGuguNumber`); its arrival is a presentation change. */
+  selfGuguNumber: () => number | null | undefined;
   onHostPresentationChange: (listener: () => void) => () => void;
 };
 
@@ -105,6 +117,8 @@ export function setExtensionHostWindowChannel(
   unsubscribePresentation?.();
   unsubscribePresentation = null;
   hostWindow = channel;
+  setProjectionViewerOpener(channel?.openProjectionViewer);
+  setProjectionRemoteCaller(channel?.callMachine ? { call: channel.callMachine } : null);
   if (!channel) return;
   // Fullscreen is read from the window, so nothing else would notice it moved.
   unsubscribeFullScreen = channel.onHostWindowFullScreenChange(() => {
@@ -157,9 +171,11 @@ export const extensionBridgeRelayHost: ExtensionBridgeHost = {
   presentation: () => ({
     locale: requireHostWindow().hostLocale(),
     themeMode: requireHostWindow().hostTone(),
+    themeColors: requireHostWindow().hostThemeColors(),
     fullscreen: requireHostWindow().isHostWindowFullScreen(),
     windowFocused: requireHostWindow().isHostWindowFocused(),
   }),
+  selfGuguNumber: () => requireHostWindow().selfGuguNumber(),
 };
 
 export function requestExtensionInstallConsent(
@@ -188,6 +204,15 @@ export function actInWindow(action: ExtensionHostAction): Promise<ExtensionHostA
   return Promise.resolve().then(() => requireHostWindow().act({ origin: null, action }));
 }
 
+/** #1927 (47) The voice-note recorder lives in the main window: what an App asks of it goes there, whoever drew the page. */
+export function askVoiceNoteWindow(request: VoiceNoteWindowRequest): Promise<VoiceNoteWindowAnswer> {
+  return Promise.resolve().then(() => {
+    const ask = requireHostWindow().voiceNote;
+    if (!ask) throw Object.assign(new Error('This host has no voice-note recorder'), { code: 'unavailable' });
+    return ask(request);
+  });
+}
+
 /** Members' faces, asked of the window (`lib/memberFaces.ts`). */
 export function drawMemberFaces(people: readonly { id: string; avatar: string | null }[]): Promise<Record<string, string>> {
   return Promise.resolve().then(() => requireHostWindow().drawMemberFaces(people));
@@ -202,6 +227,12 @@ export function listedSessionProject(sessionId: string, hint?: { deviceId?: stri
 export function pickDispatchTarget(embedderId: number | null, ask: DispatchAsk): Promise<DispatchPicked> {
   if (embedderId === null) return Promise.reject(new Error('This surface is not embedded in a renderer that can act on its behalf'));
   return Promise.resolve().then(() => requireHostWindow().invokeRendererExtensions(EXTENSION_PICK_DISPATCH_TARGET_METHOD, ask, embedderId) as Promise<DispatchPicked>);
+}
+
+/** #50 One question to the window that draws a page (host-actions.ts), answered by its handler there. */
+export function invokeInEmbedder(embedderId: number | null, method: string, params: unknown): Promise<unknown> {
+  if (embedderId === null) return Promise.reject(new Error('This surface is not embedded in a renderer that can act on its behalf'));
+  return Promise.resolve().then(() => requireHostWindow().invokeRendererExtensions(method, params, embedderId));
 }
 
 /** How long an install waits for the window to take the new set in before answering anyway (摩擦单 F52). */

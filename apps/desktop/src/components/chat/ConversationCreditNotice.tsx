@@ -5,6 +5,7 @@ import { creditCount, formatCredits, isLowBalance, useSpendingPower } from '@/li
 import { openCreditSettings } from '@/lib/billing/settingsDestination'
 import { platformModelIdFromOption } from '@/session/shared/platform-model-id'
 import { Button } from '@/components/ui/Button'
+import { billingLinksAvailable } from '@/lib/appLinks'
 
 /** Credit reminders belong to the composer of a conversation that spends credits. */
 export function ConversationCreditNotice({ modelOptionId }: { modelOptionId?: string }) {
@@ -26,12 +27,12 @@ function AccountCreditNotice({ userId }: { userId: string }) {
   const { t } = useTranslation('settings')
   const credits = power?.spendable
   if (credits === undefined || !isLowBalance(credits)) return null
-  return <div data-testid="conversation-credit-notice" role="status"
+  return <div data-testid="conversation-credit-notice" data-composer-top-band="credit" role="status"
     style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', padding: '4px 0', overflowWrap: 'anywhere' }}>
     {t('lowBalance.remaining', { credits: formatCredits(credits), count: creditCount(credits) })}
-    {' · '}
+    {billingLinksAvailable() && <>{' · '}
     <Button variant="ghost" size="sm" onClick={openCreditSettings} style={{ display: 'inline', minHeight: 0, border: 'none', background: 'transparent', padding: 0, color: 'inherit', font: 'inherit', textDecoration: 'underline' }}>
       {t('lowBalance.topUp')}
-    </Button>
+    </Button></>}
   </div>
 }

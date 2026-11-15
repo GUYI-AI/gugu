@@ -23,6 +23,7 @@ let package = Package(
                 .linkedFramework("Vision"),
                 .linkedFramework("IOKit"),
                 .linkedFramework("ApplicationServices"),
+                .linkedFramework("LocalAuthentication"),
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",
                     "-Xlinker", "__TEXT",

@@ -16,7 +16,7 @@ vi.mock('../machine-unavailable-label', () => ({ machineUnavailableLabel: () => 
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: (deviceId: string) => ({
   sessionTimeline: { sessionNativeRecord: (input: unknown) => env.read(deviceId, input) },
 }) }));
-vi.mock('@/mobile/agent-watch/timeline-cache', () => ({ writeCachedNativeRecord: env.write }));
+vi.mock('@/mobile/agent-watch/timeline-cache', () => ({ rememberNativeTailPage: env.write }));
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: env.warn }) }));
 import { rememberNativeTail, useRememberNativeTail } from './use-remember-native-tail';
 
@@ -45,7 +45,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it('writes the host tail once on open, replaces it with the next page, and never polls an idle page', async () => {
+it('hands the host tail to the store once on open, then the next page, and never polls an idle page', async () => {
   await render();
   expect(env.read.mock.calls).toEqual([['host', { conversationId: 's', tail: true }]]);
   expect(env.write).toHaveBeenCalledWith({ deviceId: 'host', sessionId: 's' }, page());

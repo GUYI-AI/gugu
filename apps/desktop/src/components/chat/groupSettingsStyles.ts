@@ -4,9 +4,11 @@ import type { CSSProperties } from 'react'
 // (2026-09-22 design.md:行靠 padding 节奏,线只留在分区标题上),拆成多页后每页照用,❌ 各页各拍一套。
 // 单独成文件:react-refresh 要求组件文件只导出组件。
 // 分区标题、行下说明、行尾的值都是要读的信息:可读次级字 --muted-fg(≥4.5);❌ text-tertiary(= faint,暗 card 上 3.35)。
+// @@@panel-chrome 分区之间只靠留白(面板外壳规则:线只留给分栏缝);字样与 SectionLabel 同一套(caption 12/18 medium)。
 
 export const settingsSectionLabelStyle: CSSProperties = {
-  fontSize: 'var(--font-caption)', fontWeight: 600, color: 'var(--muted-fg)', margin: '22px 0 4px', letterSpacing: '.02em', paddingTop: 22, borderTop: '1px solid var(--border)',
+  fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', fontWeight: 'var(--font-weight-medium)', color: 'var(--muted-fg)',
+  margin: 'var(--spacing-2xl) 0 var(--spacing-xs)',
 }
 export const settingsRowStyle: CSSProperties = {
   display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, padding: '15px 0',
@@ -40,5 +42,6 @@ export const settingsSelectStyle: CSSProperties = {
 }
 export const settingsMutedTextStyle: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--muted-fg)', flexShrink: 0 }
 export const settingsErrorStyle: CSSProperties = { padding: '8px 0 0', fontSize: 'var(--font-caption)', color: 'var(--danger-fg)' }
-export const settingsBodyStyle: CSSProperties = { flex: 1, overflowY: 'auto', padding: '24px' }
+// 左边线与页头、成员页同为 16(--spacing-lg):同一个页签里翻页,内容不左右跳。
+export const settingsBodyStyle: CSSProperties = { flex: 1, overflowY: 'auto', padding: 'var(--spacing-lg) var(--spacing-lg) var(--spacing-2xl)' }
 export const settingsMobileBodyStyle: CSSProperties = { ...settingsBodyStyle, padding: '14px 16px max(24px, env(safe-area-inset-bottom))' }

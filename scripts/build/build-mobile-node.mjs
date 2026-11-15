@@ -43,8 +43,8 @@ for (const pkg of lock.packages) {
   try { bytes = await readFile(archive) } catch { /* first build */ }
   if (!bytes || createHash('sha256').update(bytes).digest('hex') !== pkg.sha256) {
     // From our mirror, not upstream: Termux deletes a build once it is superseded (see mirror-mobile-node.mjs).
-    const response = await fetch(`${lock.mirror}/${pkg.sha256}.deb`)
-    if (!response.ok) throw new Error(`${pkg.name}@${pkg.version}: mirror answered HTTP ${response.status}; run node scripts/build/mirror-mobile-node.mjs`)
+    const response = await fetch(`${lock.mirror}/${encodeURIComponent(pkg.name)}/${encodeURIComponent(pkg.version)}/${pkg.sha256}.deb`)
+    if (!response.ok) throw new Error(`${pkg.name}@${pkg.version}: mirror answered HTTP ${response.status}; the pinned vendor archive must be populated by the release maintainer`)
     bytes = Buffer.from(await response.arrayBuffer())
     if (createHash('sha256').update(bytes).digest('hex') !== pkg.sha256) throw new Error(`${pkg.name}: checksum mismatch`)
     await writeFile(archive, bytes)

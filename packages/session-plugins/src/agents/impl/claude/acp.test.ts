@@ -5,6 +5,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -112,6 +113,34 @@ describe('claude acp behavior', () => {
     it('passes CLAUDE_CODE_EXECUTABLE from ctx.cli', () => {
       const result = acpBehavior().buildSpawn(spawnCtx);
       expect(result.env?.CLAUDE_CODE_EXECUTABLE).toBe('/usr/local/bin/claude');
+    });
+
+    // Windows 上用户手写的 claude.cmd:先 set 再调 claude.exe。适配器 spawn 不了 .cmd,交出 exe,壳设的变量叠进适配器环境;
+    // 壳里有读不全的设置(未定义变量)也照样交出 exe —— 与从前一样能起,只是不带那一条。
+    it('Windows wrapper: hands the adapter claude.exe and carries the wrapper settings', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'gugu-claude-wrapper-'));
+      const exe = `${dir}\\claude.exe`; // 壳里 `%~dp0claude.exe` 的展开(Windows 分隔符)
+      writeFileSync(exe, '');
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      try {
+        const write = (body: string[]) => {
+          const cli = join(dir, 'claude.cmd');
+          writeFileSync(cli, ['@echo off', ...body, ''].join('\r\n'));
+          return acpBehavior().buildSpawn({ ...spawnCtx, cli, env: { PATH: 'C:\\Windows' } });
+        };
+        const set = write(['set ANTHROPIC_BASE_URL=https://proxy.example', '"%~dp0claude.exe" %*', 'set RC=%ERRORLEVEL%', 'if errorlevel 1 pause']);
+        expect(set.executable).toBe(exe);
+        expect(set.env).toMatchObject({ CLAUDE_CODE_EXECUTABLE: exe, ANTHROPIC_BASE_URL: 'https://proxy.example' });
+
+        const unreadable = write(['set X=%NOT_DEFINED%', '"%~dp0claude.exe" %*']);
+        expect(unreadable.env?.CLAUDE_CODE_EXECUTABLE).toBe(exe);
+        expect(unreadable.env?.X).toBeUndefined();
+      } finally {
+        Object.defineProperty(process, 'platform', platform);
+        rmSync(dir, { recursive: true, force: true });
+        rmSync(exe, { force: true });
+      }
     });
 
     it('sets ELECTRON_RUN_AS_NODE=1', () => {

@@ -21,7 +21,7 @@ vi.mock('../../../../apps/desktop/src/components/assistant-ui/session-transcript
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { enabledTabContributions: [] } }))
 vi.mock('../../../../apps/desktop/src/components/ui/sheetStack', async original => ({ ...await original<object>(), useBackLayer() {} }))
 vi.mock('../../../../apps/desktop/src/session/renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }))
-vi.mock('../../../../apps/desktop/src/session/renderer/localization/locale-store', () => ({ translateSessionMessage: () => 'Waiting for host' }))
+vi.mock('../../../../apps/desktop/src/session/renderer/localization/locale-store', async original => ({ ...await original<object>(), translateSessionMessage: () => 'Waiting for host' }))
 const harness = createReactHarness()
 afterEach(() => { harness.cleanup(); localStorage.clear(); vi.unstubAllGlobals() })
 it('accepts and visibly retains a native message without any mounted remote workspace', async () => {

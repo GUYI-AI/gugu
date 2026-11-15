@@ -13,7 +13,7 @@ function formatSupportsText(translate: Translate, agent: AgentPayload): string {
     capabilities.push(translate('agentsPage.capabilityHooks'));
   if (agent.capabilities.sessions.kind !== 'stateless')
     capabilities.push(translate('agentsPage.capabilitySessions'));
-  return translate('agentsPage.supports', { capabilities: capabilities.join('、') });
+  return translate('agentsPage.supports', { capabilities: capabilities.join(translate('agentsPage.supportsSeparator')) });
 }
 
 /**

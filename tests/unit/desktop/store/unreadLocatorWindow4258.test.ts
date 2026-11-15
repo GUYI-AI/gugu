@@ -26,6 +26,7 @@ const {
     fetchMessageOverlays: vi.fn(),
     revalidateWindow: vi.fn(),
     markThreadRoot: vi.fn(),
+    clearMessagesForMe: vi.fn(async () => {}),
   },
   getUnreadLocatorWindowMock: vi.fn(),
   getUnreadLocatorMessagesMock: vi.fn(),
@@ -78,7 +79,7 @@ vi.mock('../../../../apps/desktop/src/lib/notificationSettings', () => ({
   useNotificationSettings: () => notificationSettings,
 }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
-  platform: { capabilities: { notifications: false, badge: false }, showNotification: vi.fn(), setBadge: vi.fn() },
+  platform: { subscribeAppForeground: () => () => {}, capabilities: { notifications: false, badge: false }, showNotification: vi.fn(), setBadge: vi.fn() },
 }))
 import { ChatProvider } from '../../../../apps/desktop/src/store/chat'
 import { useChatStore } from '../../../../apps/desktop/src/store/chatContext'
@@ -356,6 +357,17 @@ describe('#6530 opening a badged chat lands on the latest message (WeChat)', () 
     await act(async () => { latestStore!.setActiveChatId(null) })
     await act(async () => { latestStore!.setActiveChatId(CHAT_ID) })
     expect(latestStore?.unreadEntry, '离开再回来(已读)不再提示').toBeNull()
+  })
+  it('drops the entry when the same chat\'s snapshot epoch is invalidated, without leaving the chat', async () => {
+    serverRows = Array.from({ length: 11 }, (_, index) => peerRow(index + 1))
+    serverMainReadSeq = 9
+    await renderProvider()
+    await openBadgedChat()
+    expect(latestStore?.unreadEntry?.locator.message_id).toBe('m10')
+    await act(async () => { await latestStore!.clearMessages() })
+    await act(async () => { shell.rerender() })
+    expect(latestStore?.activeChatId).toBe(CHAT_ID)
+    expect(latestStore?.unreadEntry, 'the cleared window has no first unread to jump to').toBeNull()
   })
 })
 // 下面这些用例的定位路径现在由「↑ N 条新消息」触发(主线)或列表直接触发(话题流未读)。

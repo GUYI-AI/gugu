@@ -33,7 +33,7 @@ import {
   makeCompactionId,
   makeContextResetId,
   makeSessionNoticeId,
-  makeMessageId,
+  messageEntityId,
   makePlanId,
   makeThinkingId,
   makeToolGroupId,
@@ -679,7 +679,7 @@ function foldItemContent(
   const flatItems = flattenItems(items);
   switch (event.kind) {
     case 'message': {
-      const id = makeMessageId(turnId, event.messageId, event.role);
+      const id = messageEntityId(turnId, event);
       // 已经在这个回合里的消息由 `updateStreamedItem` 接走了(那条路不重建树),走到这里的一律是新消息。
       // New message.
       const base = finalizeOpenThinking(flatItems, at);
@@ -940,7 +940,7 @@ function updateStreamedItem(
   at: number
 ): TranscriptItem[] | null {
   if (event.kind === 'message') {
-    const id = makeMessageId(turnId, event.messageId, event.role);
+    const id = messageEntityId(turnId, event);
     const idx = items.findIndex((item) => item.kind === 'message' && item.id === id);
     if (idx < 0) return null;
     return items.map((item, i) => {

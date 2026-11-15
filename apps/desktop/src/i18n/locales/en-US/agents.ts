@@ -177,16 +177,6 @@ export default {
     "title": "Agent templates",
     "use": "Use"
   },
-  "public": {
-    "capabilities": "Capabilities",
-    "disclaimer": "This agent is shared publicly by its owner. Please interact responsibly.",
-    "loadFailed": "Could not load this Agent",
-    "loginToChat": "Sign in to chat",
-    "ownerCreatedPrefix": "Created by",
-    "ownerCreatedSuffix": "on Gugu",
-    "startChat": "Start chatting",
-    "unavailable": "This Agent does not exist or is not shared publicly"
-  },
   "runtime": {
     "groupMine": "Mine",
     "groupOthers": "Others",
@@ -195,6 +185,9 @@ export default {
       "connecting": "Connecting…",
       "done": "Done",
       "empty": "No recent activity",
+      "hostMachine": "Its computer",
+      "hostOffline": "{{machine}} is offline, so its activity can't be read",
+      "hostSilent": "{{machine}} didn't answer, so its activity can't be read",
       "promptElsewhere": "A message from somewhere else",
       "recordNotFound": "This machine can't read this task's record",
       "toolCount": "{{state}} ×{{count}}",

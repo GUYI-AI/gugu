@@ -8,10 +8,11 @@ const tree = read('apps/desktop/src/session/renderer/features/tabs/pane-tree-vie
 const fullscreen = read('apps/desktop/src/session/renderer/features/tabs/tab-fullscreen.ts')
 const screen = read('apps/desktop/src/session/renderer/app/screen-frame.tsx')
 const menu = read('packages/session-ui/src/react/primitives/dropdown-menu/dropdown-menu.css.ts')
+const appFrame = read('apps/desktop/src/session/renderer/features/apps/app-conversation-frame.tsx')
 
 describe('workspace surfaces share one stacking contract', () => {
   it('puts ordinary guests below dividers and fullscreen, and only fullscreen guests above the opaque pane', () => {
-    const order = ['pane-resident', 'pane-divider', 'pane-fullscreen', 'pane-fullscreen-resident', 'menu']
+    const order = ['pane-resident', 'pane-resident-chrome', 'pane-divider', 'pane-fullscreen', 'pane-fullscreen-resident', 'menu']
     const levels = order.map((role) => {
       const declarations = [...css.matchAll(new RegExp(`--z-${role}:\\s*(\\d+)\\s*;`, 'g'))]
       expect(declarations, role).toHaveLength(1)
@@ -40,5 +41,10 @@ describe('workspace surfaces share one stacking contract', () => {
     const menuLevels = [...menu.matchAll(/zIndex:\s*([^,\n]+)/g)].map((match) => match[1])
     expect(menuLevels).not.toHaveLength(0)
     expect(menuLevels.every((value) => value === "'var(--z-menu)'")).toBe(true)
+  })
+
+  it('draws a host control over an App page\'s corner on its own level, above the page and below the dividers (#1925)', () => {
+    expect(appFrame).toContain("zIndex: 'var(--z-pane-resident-chrome)'")
+    expect(appFrame).not.toMatch(/zIndex:\s*\d/)
   })
 })

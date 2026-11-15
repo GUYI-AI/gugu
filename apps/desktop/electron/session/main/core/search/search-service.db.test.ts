@@ -1,5 +1,6 @@
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 const fixtureRef = vi.hoisted(() => ({
   current: undefined as Awaited<ReturnType<typeof openFixture>> | undefined,
@@ -23,8 +24,8 @@ describe('SearchService · retired SSH projects', () => {
     fixtureRef.current = await openFixture('empty');
     const { db } = fixtureRef.current;
     await db.insert(projects).values([
-      { id: 'proj-local', name: 'alpha local', path: '/repo/local', workspaceProvider: 'local' },
-      { id: 'proj-ssh', name: 'alpha remote', path: '/srv/remote', workspaceProvider: 'ssh' },
+      { id: 'proj-local', name: 'alpha local', path: '/repo/local' as CanonicalPath, workspaceProvider: 'local' },
+      { id: 'proj-ssh', name: 'alpha remote', path: '/srv/remote' as CanonicalPath, workspaceProvider: 'ssh' },
     ]);
     await db.insert(sessions).values([
       { id: 'session-local', projectId: 'proj-local', config: { version: '1', type: 'acp', agentDisplayName: 'alpha session local' } },

@@ -70,6 +70,33 @@ afterEach(() => {
 })
 
 describe('running strip: one row, +N opens a grouped, capped, scrolling panel', () => {
+  for (const count of [12, 18]) it(`settles ${count} tokens when removing an overflow digit makes the counter wider`, async () => {
+    const narrow = count - 1, wide = count - 2
+    const label = (n: number) => JSON.stringify(i18n.t('runtime.viewMore', { ns: 'agents', count: n }))
+    const style = document.createElement('style')
+    // These are the physical WebView's measured widths. Attribute selectors
+    // change synchronously with the real counter, unlike an async observer mock.
+    style.textContent = `.rtb-bar > .rtb-tok { width:168px }
+      .rtb-bar > [data-message-preview-trigger="agent-0"] { width:144px }
+      .rtb-bar > [data-message-preview-trigger="agent-1"] { width:134px }
+      .rtb-more[aria-label=${label(narrow)}] .rtb-pill { box-sizing:border-box; width:${count === 12 ? 32 : 34}px }
+      .rtb-more[aria-label=${label(wide)}] .rtb-pill { box-sizing:border-box; width:35px }`
+    document.head.append(style)
+    try {
+      const list = tokens(count, () => false).map(token => ({ ...token, name: 'A' }))
+      await mount(360, list) // the real dock leaves 16px on each side
+      expect(column!.querySelector('.rtb-bar')!.parentElement!.clientWidth).toBe(328)
+      expect(shown('.rtb-bar > .rtb-tok')).toHaveLength(1)
+      expect(column!.querySelector('.rtb-more')?.textContent).toBe(`+${narrow}`)
+      for (let pass = 0; pass < 3; pass++) {
+        column!.style.width = '361px'
+        await until('two tokens fit the wider viewport', () => shown('.rtb-bar > .rtb-tok').length === 2)
+        column!.style.width = '360px'
+        await until('the narrower viewport settles with one token', () => shown('.rtb-bar > .rtb-tok').length === 1)
+      }
+    } finally { style.remove() }
+  })
+
   for (const width of [320, 900]) for (const count of [1, 20, 60]) {
     it(`${width}px, ${count} agents`, async () => {
       const onTokenClick = vi.fn()

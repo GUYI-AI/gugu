@@ -193,26 +193,27 @@ export async function awaitOpencodeServeReady(
 
 /**
  * @@@task-home-config-isolation — assemble the serve process env. When the serve runs in gugu's OWN
- * app-owned task-home cwd (`isSessionHome`), set `OPENCODE_DISABLE_PROJECT_CONFIG` so OpenCode does not scan
+ * app-owned task-home cwd, set the harness's `projectConfigDisableEnv` so OpenCode does not scan
  * that shared workspace's `.opencode`. That directory is shared across every no-repo agent and BOTH legs:
  * the acp leg legitimately writes its event module there and tolerates the install, and residue piles
  * up there too — but OpenCode turns any `.opencode/plugins/*.js` in the cwd into a plugin origin and gates
  * `session/new` (POST /session) on a cold `npm install @opencode-ai/plugin` into that workspace, which past
  * the readiness budget is the intermittent `request timed out: POST /session`. The serve is gugu's
  * inference process; in the task-home its config surface is exactly `OPENCODE_CONFIG_CONTENT` + the user's
- * GLOBAL config, never that shared cwd. A serve in a real user repo (`isSessionHome=false`) is left to read
+ * GLOBAL config, never that shared cwd. A serve in a real user repo (no variable passed) is left to read
  * its own repo `.opencode` — that config is promised to the user and never runs in task-home. Materialized
  * spawnEnv keys win over the inherited process env, same as every other leg.
  */
 export function buildOpencodeServeEnv(input: {
   processEnv: NodeJS.ProcessEnv
   spawnEnv?: NodeJS.ProcessEnv
-  isSessionHome: boolean
+  /** The harness's own variable, only when the cwd is Gugu's task home. */
+  projectConfigDisableEnv?: string
 }): NodeJS.ProcessEnv {
   return {
     ...input.processEnv,
     ...(input.spawnEnv ?? {}),
-    ...(input.isSessionHome ? { OPENCODE_DISABLE_PROJECT_CONFIG: 'true' } : {}),
+    ...(input.projectConfigDisableEnv ? { [input.projectConfigDisableEnv]: 'true' } : {}),
   }
 }
 

@@ -47,13 +47,13 @@ describe('新建页的模型那一格(#5014 续)', () => {
     expect(selection).not.toHaveProperty('sessionView')
     expect(selection.permissionMode).toBeNull()
     expect(createBlocker(options, selection)).toBeNull()
-    expect(createPillLabel(options, selection, catalog('codex', ['gpt-5']))).toBe('验收工作区 · Codex')
+    expect(createPillLabel(options, selection, catalog('codex', ['gpt-5']))).toBe('Codex')
   })
 
   it('选了模型:胶囊第三段写它收起时的名字(咕咕的带「咕咕」,与桌面触发器同词);目录还没到时退回写 id,❌ 不留空', () => {
     const selection = { ...defaultSelection(options), model: 'platform:gpt-6' }
     expect(createPillLabel(options, selection, catalog('codex', ['gpt-5', 'platform:gpt-6']))).toBe(
-      `验收工作区 · Codex · ${translateSessionMessage('composer.platformModelShortName', { model: 'gpt-6' })}`,
+      `Codex · ${translateSessionMessage('composer.platformModelShortName', { model: 'gpt-6' })}`,
     )
     expect(selectedModelName(catalog('codex', ['gpt-5']), { ...selection, model: 'gpt-5' })).toBe('gpt-5')
     expect(selectedModelName(null, selection)).toBe('platform:gpt-6')
@@ -64,7 +64,7 @@ describe('新建页的模型那一格(#5014 续)', () => {
     expect(selectHarness(picked, 'codex', options)).toBe(picked)
     // edit 两家都声明 ⇒ 留
     expect(selectHarness(picked, 'claude', options)).toEqual({
-      projectId: 'p1', harness: 'claude', model: null, effort: null, permissionMode: 'edit',
+      harness: 'claude', model: null, effort: null, permissionMode: 'edit',
     })
     // plan 只有 claude 声明 ⇒ 换回 codex 清掉
     const plan = { ...picked, harness: 'claude', permissionMode: 'plan' as const }
@@ -75,7 +75,7 @@ describe('新建页的模型那一格(#5014 续)', () => {
     const picked = { ...defaultSelection(options), effort: 'high' }
     expect(reconcileModel(picked, catalog('codex', ['gpt-5']))).toBe(picked)
     expect(reconcileModel({ ...picked, effort: 'ultra' }, catalog('codex', ['gpt-5'])).effort).toBeNull()
-    expect(createPillLabel(options, picked, catalog('codex', ['gpt-5']))).toBe('验收工作区 · Codex · High')
+    expect(createPillLabel(options, picked, catalog('codex', ['gpt-5']))).toBe('Codex · High')
   })
 
   it('新目录到了:选中的模型不在里面就退回默认;目录没到 / 是另一家的不动', () => {
@@ -149,27 +149,28 @@ describe('新建页沿用这台机器上次那一套(behavior mobile-session-vie
   it('上次那一套都还能用:五格原样沿用,目录到了也不动,没有要说明的', () => {
     const withLast = { ...twoProjects, lastUsed: last }
     const selection = initialSelection(withLast)
-    expect(selection).toEqual({ projectId: 'p2', harness: 'claude', permissionMode: 'plan', model: 'sonnet', effort: 'high' })
+    expect(selection).toEqual({ harness: 'claude', permissionMode: 'plan', model: 'sonnet', effort: 'high' })
     expect(reconcileModel(selection, catalog('claude', ['sonnet', 'opus[1m]']))).toBe(selection)
     expect(lastUsedDropped(withLast, selection)).toEqual([])
   })
 
-  it('上次的 harness 这次用不了:回到第一个能用的,项目照样沿用;只报 harness 这一格', () => {
+  it('上次的 harness 这次用不了:回到第一个能用的;只报 harness 这一格', () => {
     const withLast: SessionpageSessionCreateOptions = {
       ...twoProjects,
       harnesses: twoProjects.harnesses.map((h) => (h.id === 'claude' ? { ...h, status: 'missing' as const } : h)),
       lastUsed: last,
     }
     const selection = initialSelection(withLast)
-    expect(selection).toMatchObject({ projectId: 'p2', harness: 'codex', model: null, effort: null, permissionMode: null })
+    expect(selection).toMatchObject({ harness: 'codex', model: null, effort: null, permissionMode: null })
     expect(lastUsedDropped(withLast, selection)).toEqual(['harness'])
   })
 
-  it('上次的项目不在了:项目回默认并报出来,其余照样沿用', () => {
+  // 项目不再是这一份里的格:它在新建页的「项目 · 机器」两行上(CreateTarget),上次那台机器上的项目不影响这里。
+  it('上次的项目在这台机器上不在了:其余照样沿用,不报项目', () => {
     const withLast = { ...options, lastUsed: last }
     const selection = initialSelection(withLast)
-    expect(selection).toMatchObject({ projectId: 'p1', harness: 'claude', model: 'sonnet' })
-    expect(lastUsedDropped(withLast, selection)).toEqual(['project'])
+    expect(selection).toMatchObject({ harness: 'claude', model: 'sonnet' })
+    expect(lastUsedDropped(withLast, selection)).toEqual([])
   })
 
   it('上次的模型不在这次的目录里:目录到了回默认,报模型;推理档还在就留', () => {

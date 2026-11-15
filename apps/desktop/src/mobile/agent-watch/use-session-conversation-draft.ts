@@ -12,7 +12,7 @@ export function useSessionConversationDraft(deviceId: string, sessionId: string,
   const chatId = `session:${deviceId}/${sessionId}`
   const chat = useChatDraft(chatId)
   const { writeDraft, registerDraftEditor } = useChatStore('writeDraft', 'registerDraftEditor')
-  const { text: chatText, setText: setChatText, flush: flushChat } = chat
+  const { text: chatText, setText: setChatText, flush: flushChat, markEdited } = chat
   const account = useSessionInputAccount()
   const readNative = useCallback(() => nativeOffline && account ? readNativeOfflineDraft(deviceId, sessionId) : '', [nativeOffline, account, deviceId, sessionId])
   const kept = useSyncExternalStore(subscribeNativeOfflineDraft, readNative, readNative)
@@ -31,10 +31,11 @@ export function useSessionConversationDraft(deviceId: string, sessionId: string,
     }
   }, [nativeOffline, account, deviceId, sessionId, chatText, setChatText, flushChat])
   const setText = useCallback((update: SetStateAction<string>) => {
+    markEdited()
     const previous = readNativeOfflineDraft(deviceId, sessionId)
     const text = typeof update === 'function' ? update(previous) : update
     writeNativeOfflineDraft(deviceId, sessionId, text)
-  }, [deviceId, sessionId])
+  }, [deviceId, sessionId, markEdited])
   const committed = useCallback((submitted: string) => {
     const own = sessionInputs()
     if (!account || own.accountId !== account || !own.valid()) return
@@ -43,7 +44,7 @@ export function useSessionConversationDraft(deviceId: string, sessionId: string,
     } else writeDraft(chatId, { clearIf: submitted })
   }, [nativeOffline, account, deviceId, sessionId, chatId, writeDraft])
   return nativeOffline && account ? {
-    text: kept, setText, committed,
+    text: kept, setText, committed, revisionOf: chat.revisionOf,
     // Native text is persisted synchronously by the existing nativeOfflineDraft writer.
     flush: flushed,
   } : { ...chat, committed }

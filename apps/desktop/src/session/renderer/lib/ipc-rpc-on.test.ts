@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   localInvoke: vi.fn(async () => 'local'),
   remoteInvoke: vi.fn(async () => 'remote'),
   reportMachineOutdated: vi.fn(),
+  hello: vi.fn((): { protocol: number; appVersion: string | null } | null => null),
 }));
 
 vi.mock('./electron-api', () => ({
@@ -15,7 +16,7 @@ vi.mock('./electron-api', () => ({
   }),
 }));
 vi.mock('./machine-clients', () => ({
-  machineClient: () => ({ api: { invoke: mocks.remoteInvoke } }),
+  machineClient: () => ({ api: { invoke: mocks.remoteInvoke }, hello: mocks.hello }),
   onEachMachine: () => () => {},
   reportMachineOutdated: mocks.reportMachineOutdated,
 }));
@@ -25,6 +26,7 @@ import { machineRegistry } from './machine-routing';
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
   machineRegistry.forgetMachine('device-b');
 });
 
@@ -65,5 +67,15 @@ describe('rpcOn', () => {
     });
 
     expect(mocks.reportMachineOutdated).toHaveBeenCalledWith('device-b');
+  });
+
+  it('a same-version machine missing a handler is reported as it is, not as outdated', async () => {
+    vi.stubGlobal('__APP_VERSION__', '9.9.9');
+    mocks.hello.mockReturnValueOnce({ protocol: 1, appVersion: '9.9.9' });
+    mocks.remoteInvoke.mockRejectedValueOnce(new Error("No handler registered for 'sessions.lifeView'"));
+
+    await expect(rpcOn('device-b').sessions.lifeView('session-on-b')).rejects.toThrow("No handler registered for 'sessions.lifeView'");
+
+    expect(mocks.reportMachineOutdated).not.toHaveBeenCalled();
   });
 });

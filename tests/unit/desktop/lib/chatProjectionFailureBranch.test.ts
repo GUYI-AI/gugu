@@ -198,7 +198,7 @@ it('projects private group aliases through display/search/notifications and remo
   const displayed = () => {
     const row = projection.current().find((chat) => chat.id === id)!
     expect(row.name).toBe('G0')
-    return { title: chatDisplayName(row, null), notification: createChatNotificationPayload(row).title }
+    return { title: chatDisplayName(row, null), notification: createChatNotificationPayload(row, 'Gugu').title }
   }
   expect(displayed()).toEqual({ title: 'Private nickname', notification: 'Private nickname' })
   const groups = contactGroupChatsOf(projection.current())

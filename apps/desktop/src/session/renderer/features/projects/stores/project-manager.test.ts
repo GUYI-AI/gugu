@@ -10,6 +10,7 @@ import { createUnmountedProject, isUnregisteredProject } from './project';
 import { ProjectPathConflictError } from './project-creation-error';
 import { ProjectManagerStore } from './project-manager';
 import { isWorkspaceProject } from '@renderer/features/sessions/session-home-project-constants';
+import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 
 const mocks = vi.hoisted(() => ({
   cloneRepository: vi.fn(),
@@ -123,7 +124,7 @@ function localProject(overrides: Partial<LocalProject> = {}): LocalProject {
     type: 'local',
     id: 'project-id',
     name: 'Project',
-    path: '/project',
+    path: '/project' as CanonicalPath,
     baseRef: 'main',
     repositoryWorkspaceId: null,
     createdAt: '2026-05-28T00:00:00.000Z',
@@ -465,9 +466,9 @@ describe('ProjectManagerStore project creation', () => {
   });
 
   it('#609 adding by hand a folder that is a workspace (~) asks the machine to make it a project; automatic entries do not', async () => {
-    const workspace = { ...localProject({ id: 'home-project', path: '/home/me' }), kind: 'workspace' as const };
+    const workspace = { ...localProject({ id: 'home-project', path: '/home/me' as CanonicalPath }), kind: 'workspace' as const };
     mocks.inspectProjectPath.mockResolvedValue({ isDirectory: true, isGitRepo: false, existingProject: workspace });
-    mocks.createProject.mockResolvedValue({ success: true, data: localProject({ id: 'home-project', path: '/home/me' }) });
+    mocks.createProject.mockResolvedValue({ success: true, data: localProject({ id: 'home-project', path: '/home/me' as CanonicalPath }) });
     const store = new ProjectManagerStore();
 
     const byHand = await store.startProjectCreation({ type: 'local' }, { mode: 'pick', name: 'me', path: '/home/me' });
@@ -551,7 +552,7 @@ describe('ProjectManagerStore project creation', () => {
   });
 
   it('does not let a project registered at the clone parent path short-circuit creation', async () => {
-    const parentProject = localProject({ id: 'parent-project', path: '/parent' });
+    const parentProject = localProject({ id: 'parent-project', path: '/parent' as CanonicalPath });
     mocks.inspectProjectPath.mockImplementation(async ({ path }: { path: string }) => ({
       isDirectory: true,
       isGitRepo: true,
@@ -576,7 +577,7 @@ describe('ProjectManagerStore project creation', () => {
   });
 
   it('does not let a project registered at the new-project parent path short-circuit creation', async () => {
-    const parentProject = localProject({ id: 'parent-project', path: '/parent' });
+    const parentProject = localProject({ id: 'parent-project', path: '/parent' as CanonicalPath });
     mocks.inspectProjectPath.mockImplementation(async ({ path }: { path: string }) => ({
       isDirectory: true,
       isGitRepo: true,

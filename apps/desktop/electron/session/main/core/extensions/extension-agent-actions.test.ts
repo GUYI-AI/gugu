@@ -276,7 +276,7 @@ describe('app_* 的动作分派', () => {
       manifestDigest: 'digest-a',
       revokedPermissions: [],
     }));
-    expect(installFromDirectory).toHaveBeenCalledWith('/tmp/reader-source', 'digest-a', 'folder', INSTALLING_ACCOUNT, undefined);
+    expect(installFromDirectory).toHaveBeenCalledWith('/tmp/reader-source', 'digest-a', 'folder', INSTALLING_ACCOUNT, undefined, undefined);
     // 装完必须喊这一声,否则新 tab 要整页刷新才出现(owner 实测 #4135)。
     expect(notifyInstalledChanged).toHaveBeenCalled();
     // #6387 与设置页那条安装路径同一套善后:后台页要拉起来,否则它的工具一个也接不住。
@@ -307,7 +307,7 @@ describe('app_* 的动作分派', () => {
     })).resolves.toMatchObject({ installed: true, outcome: 'confirmed', version: '2.1.24' });
     expect(olderInterface).toHaveBeenCalledWith('reader');
     expect(requestInstallConsent).toHaveBeenCalledOnce();
-    expect(installFromDirectory).toHaveBeenCalledWith('/tmp/reader-source', 'digest-new-interface', 'folder', INSTALLING_ACCOUNT, undefined);
+    expect(installFromDirectory).toHaveBeenCalledWith('/tmp/reader-source', 'digest-new-interface', 'folder', INSTALLING_ACCOUNT, undefined, undefined);
   });
 
   it.each(['declined', 'dismissed', 'timeout'] as const)(
@@ -364,7 +364,7 @@ it('#6646 E-05: a folder install that would replace one from the market, a chat 
   await expect(runExtensionAgentAction({ action: 'install', source_dir: '/tmp/notes-source' }, dependencies))
     .resolves.toMatchObject({ installed: true });
   expect(requestInstallConsent).toHaveBeenCalledTimes(3);
-  expect(installFromDirectory).toHaveBeenCalledWith('/tmp/notes-source', 'digest-n', 'folder', INSTALLING_ACCOUNT, undefined);
+  expect(installFromDirectory).toHaveBeenCalledWith('/tmp/notes-source', 'digest-n', 'folder', INSTALLING_ACCOUNT, undefined, undefined);
 });
 
 describe('reinstalling its own folder extension (quiet upgrade)', () => {
@@ -390,7 +390,7 @@ describe('reinstalling its own folder extension (quiet upgrade)', () => {
     await expect(runExtensionAgentAction({ action: 'install', source_dir: '/tmp/notes-v2' }, dependencies))
       .resolves.toMatchObject({ installed: true, version: '2.0.0', asked: false });
     expect(requestInstallConsent).not.toHaveBeenCalled();
-    expect(installFromDirectory).toHaveBeenCalledWith('/tmp/notes-v2', 'digest-2', 'folder', INSTALLING_ACCOUNT, undefined);
+    expect(installFromDirectory).toHaveBeenCalledWith('/tmp/notes-v2', 'digest-2', 'folder', INSTALLING_ACCOUNT, undefined, undefined);
     // The same aftercare as an asked install: running sessions get the new version on their next call.
     expect(dependencies.afterInstall).toHaveBeenCalledWith({ manifest: v2, rootDir: '/tmp/notes' });
     expect(dependencies.notifyInstalledChanged).toHaveBeenCalled();
@@ -421,16 +421,10 @@ describe('reinstalling its own folder extension (quiet upgrade)', () => {
     expect(refused.installed).toBe(true);
     expect(refused.next?.startsWith(note)).toBe(true);
 
-    vi.useFakeTimers();
-    try {
-      const silent = run(() => new Promise<void>(() => {}));
-      await vi.advanceTimersByTimeAsync(1500);
-      const answer = await silent;
-      expect(answer.installed).toBe(true);
-      expect(answer.next?.startsWith(note)).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
+    // File-boundary verification does real asynchronous filesystem work before the notification deadline starts.
+    const answer = await run(() => new Promise<void>(() => {}));
+    expect(answer.installed).toBe(true);
+    expect(answer.next?.startsWith(note)).toBe(true);
 
     // Control: a window that confirms adds nothing.
     const shown = await run(() => Promise.resolve());
@@ -1197,6 +1191,23 @@ describe('app_check', () => {
 
 // 摩擦单 F11:群里多人用的 App 从模板起 —— 投票这种 App,agent 只写几十行。
 describe('app_create { template: "group-json" }', () => {
+  it('refuses a retained app.js linked to private storage before returning its content', async () => {
+    vi.stubEnv('GUGU_HOME', path.join(workDir, 'host-state'));
+    try {
+      const target = path.join(workDir, 'retained-template');
+      const request = { action: 'create', target_dir: target, id: 'retained-template', name: 'Retained', template: 'group-json' };
+      await runExtensionAgentAction(request);
+      const privateRoot = path.join(workDir, 'host-state', 'private', 'password-vault', 'v1');
+      mkdirSync(privateRoot, { recursive: true });
+      const secret = path.join(privateRoot, 'ciphertext.bin');
+      writeFileSync(secret, 'synthetic-retained-template-canary');
+      rmSync(path.join(target, 'app.js'));
+      symlinkSync(secret, path.join(target, 'app.js'));
+      await expect(runExtensionAgentAction(request)).rejects.toThrow('protected private storage');
+      expect(readFileSync(secret, 'utf8')).toBe('synthetic-retained-template-canary');
+    } finally { vi.unstubAllEnvs(); }
+  });
+
   it('writes a group App with its explicit roster permission, page, style and app.js skeleton', async () => {
     const created = (await runExtensionAgentAction({
       action: 'create',
@@ -1541,7 +1552,8 @@ describe('app_install { market }', () => {
       market: { source, releaseNotes: 'notes' },
     }));
     // A market App is gugu's: no folder publisher.
-    expect(installFromDirectory).toHaveBeenCalledWith('/tmp/market-staged/reader', 'digest-m', 'market', undefined, undefined);
+    // #1931 A market install keeps where its code is.
+    expect(installFromDirectory).toHaveBeenCalledWith('/tmp/market-staged/reader', 'digest-m', 'market', undefined, undefined, source);
     expect(market.discard).toHaveBeenCalledWith(expect.objectContaining({ sourceDir: '/tmp/market-staged/reader' }));
     expect(result).toMatchObject({ installed: true, id: 'reader', version: '1.2.0', asked: true });
   });

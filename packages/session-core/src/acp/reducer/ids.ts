@@ -30,6 +30,12 @@ export function makeMessageId(turnId: string, messageId: string, _role: string):
   return `${turnId}:message:${messageId}`;
 }
 
+/** A host submission keeps its client identity when its native ID or owning turn becomes known. */
+export function messageEntityId(turnId: string, event: { messageId: string; role: string; _meta?: Record<string, unknown> | null }): string {
+  const clientId = event.role === 'user' ? event._meta?.guguClientMessageId : undefined;
+  return typeof clientId === 'string' ? clientId : makeMessageId(turnId, event.messageId, event.role);
+}
+
 /**
  * Stable thinking item id.
  * Format: `${turnId}:thinking:${messageId}`

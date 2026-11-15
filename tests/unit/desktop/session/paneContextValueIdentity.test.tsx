@@ -14,7 +14,7 @@
 // 没有这个反例,上面那条断言可能只是「React 本来就不重渲」,那不是我们证明的东西。
 import { act, createContext, createElement, memo, useContext, useState, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PageShownContext } from '../../../../apps/desktop/src/session/renderer/app/recent-session-pages'
+import { SurfaceShownContext } from '../../../../apps/desktop/src/lib/retainedSurface'
 import { PaneProvider, usePaneContext } from '../../../../apps/desktop/src/session/renderer/features/tabs/pane-context'
 import type { Pane } from '../../../../apps/desktop/src/session/renderer/features/tabs/pane-layout-store'
 import { createReactHarness } from '../../../support/testHarness'
@@ -60,7 +60,7 @@ function makeHost(group: Pane) {
     const [, setTick] = useState(0)
     bumpHost = () => setTick((value) => value + 1)
     return createElement(
-      PageShownContext.Provider,
+      SurfaceShownContext.Provider,
       { value: true },
       createElement(PaneProvider, { group, isFocusedPane }, children),
     )

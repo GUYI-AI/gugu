@@ -7,7 +7,11 @@ import { SYNTHETIC_ROW_SUFFIXES } from './session-timeline-geometry';
 import { observeReadingTurn } from './session-timeline-reading';
 import { SessionTimelineRail } from './session-timeline-rail';
 import type { TimelineTurn } from './session-timeline-turns';
+import { useStoredOutline } from './session-timeline-outline';
 import { useTranscriptTimeline } from './use-transcript-timeline';
+import { askTaskReveal } from '@/hooks/useSourceMessageReveal';
+import { UI_EVENTS } from '@/lib/uiEvents';
+import { messageQuoteLink } from '@gugu/core/shared/ui/messageQuote';
 
 /**
  * @@@sessionpage layout — conversation timeline scrubber (behavior
@@ -57,7 +61,9 @@ function useSessionTimelineProjection<T>(
   void session?.status;
   const store = sessionId ? findAcpChatStore(sessionId) : undefined;
   void store?.messageCount;
-  return useTranscriptTimeline(store?.chatState.transcript, getSharedChatContext().selfIdentity, select, store?.chatState.session);
+  // The turns older than the loaded ones come from their outline, so the rail covers the whole conversation.
+  const outline = useStoredOutline(sessionId, store?.chatState.transcript.state.committedTurns[0]?.seq, store?.canLoadOlderHistory === true);
+  return useTranscriptTimeline(store?.chatState.transcript, getSharedChatContext().selfIdentity, select, store?.chatState.session, outline, store?.historyWindow?.state.transcript);
 }
 
 const selectTurns = (turns: TimelineTurn[]) => turns;
@@ -132,7 +138,13 @@ export const SessionTimeline = observer(function SessionTimeline({
     <SessionTimelineRail
       turns={turns}
       currentTurnId={currentTurnId}
-      onJump={(anchorItemId) => store?.scrollToItem(anchorItemId)}
+      onJump={(anchorItemId) => {
+        // A turn that is not loaded is revealed the way a search hit is: the transcript loads back to it, then shows it.
+        const reference = turns.find((turn) => turn.anchorItemId === anchorItemId)?.reference;
+        if (!reference) { store?.scrollToItem(anchorItemId); return; }
+        askTaskReveal(sessionId, messageQuoteLink({ kind: 'session', sessionId, itemId: reference }));
+        window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked));
+      }}
       railRef={navRef}
     />
   );

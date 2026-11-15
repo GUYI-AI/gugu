@@ -57,6 +57,14 @@ function awaitsPerson(hold: Hold | null): boolean {
   return hold?.reason === 'start-failed' && hold.awaitsPerson === true
 }
 
+/**
+ * The backend answered again after an outage: a session a start failure left holding rows starts once more, the same
+ * `start` a person's retry sends (a start that is already running is unchanged). Never a failure only the person resolves.
+ */
+export function shouldStartAfterOutage(state: Life, q: PendingView): boolean {
+  return state.kind === 'failed' && state.hold.reason === 'start-failed' && !awaitsPerson(state.hold) && q.queued.length > 0
+}
+
 /** The same durable predicate is used after teardown and after a crash before deliver was stepped. */
 export function shouldStartOnHydrate(state: Life, q: PendingView): boolean {
   switch (state.kind) {
@@ -75,7 +83,7 @@ function running(gen: Gen, progress: Progress, told: Seq | null): Transition {
 }
 
 /** A row whose delivery outcome cannot be known: written unknown (never replayed) and reported to its source, once. */
-export const OUTCOME_UNKNOWN = { name: 'OutcomeUnknown', message: 'The delivery outcome is unknown: it may have arrived, and it is not resent' }
+export const OUTCOME_UNKNOWN = { name: 'OutcomeUnknown', message: 'Failed to send' }
 function unknownRows(seqs: readonly Seq[]): Effect[] {
   return seqs.length ? [...seqs.map((seq): Effect => ({ e: 'write-receipt', seq, receipt: { state: 'unknown' } })),
     { e: 'report-failure', seqs, cause: OUTCOME_UNKNOWN }] : []

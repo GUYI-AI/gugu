@@ -93,13 +93,13 @@ describe('dev verification workflow contracts', () => {
   const job = devMac.jobs['desktop-build-mac']
   const report = job.steps.at(-1)
 
-  it('keeps Mac automatic and Linux manual-only with separate cancellation groups', () => {
+  it('keeps Mac automatic and Linux manual-only, and never lets a newer run displace an older commit verdict', () => {
     expect(devMac.on).toEqual({ push: { branches: ['dev'] }, workflow_dispatch: null })
     expect(devLinux.on).toEqual({ workflow_dispatch: null })
     expect(devLinuxSource).toContain('Tomorrow, restore push with branches: [dev]')
     expect(ci.on).not.toHaveProperty('push')
-    expect(devMac.concurrency).toEqual({ group: 'community-ci-dev-mac', 'cancel-in-progress': true })
-    expect(devLinux.concurrency).toEqual({ group: 'community-ci-dev-linux', 'cancel-in-progress': true })
+    expect(devMac.concurrency).toBeUndefined()
+    expect(devLinux.concurrency).toBeUndefined()
     expect(Object.keys(devMac.jobs)).toEqual(['desktop-build-mac'])
     expect(Object.keys(devLinux.jobs)).toEqual(['linux-checks', 'typecheck'])
     expect((Object.values(devLinux.jobs) as Array<{ concurrency?: unknown }>).every((job) => job.concurrency === undefined))

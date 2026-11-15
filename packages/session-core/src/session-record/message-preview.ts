@@ -1,6 +1,8 @@
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { isGuguSilence } from '@gugu/core/local/agent/silenceMarker';
 import type { ToolNode, TranscriptItem, TranscriptTurn, TranscriptTurnOutcome } from '../acp/client';
+import { messageReferenceId } from '../acp/client';
+import type { PreviewActivity, PreviewActivitySources } from './preview-activity';
 
 /**
  * MessagePreview(#6357):working 栏悬浮卡的线上契约 + 宿主侧投影。纯函数、无 node 依赖。
@@ -33,12 +35,13 @@ export type MessagePreviewStateKey =
 
 export type MessagePreviewEntry =
   /** 一条输入,只给投递信封里的消息 id;正文由 viewer 按自己的权限取。null = 没有 id(owner 在任务里直接打的字)。 */
-  | { kind: 'prompt'; id: string; messageId: string | null }
-  | { kind: 'text'; id: string; text: string; truncated: boolean; at: number | null }
+  | ({ kind: 'prompt'; id: string; messageId: string | null } & PreviewActivity)
+  | ({ kind: 'text'; id: string; text: string; truncated: boolean; at: number | null } & PreviewActivity)
   /** 只有类别与次数,工具名/参数/输出不出设备。 */
   | { kind: 'tool'; id: string; state: MessagePreviewStateKey; count: number };
 
 export type MessagePreviewPayload = {
+  activityVersion?: 1;
   chatId: string;
   agentId: string;
   /** 同一 epoch 内单调递增;宿主重启换 epoch。 */
@@ -56,7 +59,7 @@ export type MessagePreviewPayload = {
 };
 
 /** 投影本身(载荷减去 chat/agent/rev/epoch/at)。 */
-export type MessagePreviewProjection = Pick<MessagePreviewPayload, 'running' | 'now' | 'ended' | 'entries' | 'error'>;
+export type MessagePreviewProjection = Pick<MessagePreviewPayload, 'running' | 'now' | 'ended' | 'entries' | 'error' | 'activityVersion'>;
 
 export const MESSAGE_PREVIEW_MAX_ENTRIES = 6;
 /** 原话只留尾部 70 字(卡片一行约 23 个汉字,约 3 行)。 */
@@ -101,6 +104,7 @@ function truncateText(text: string): { text: string; truncated: boolean } {
 /** 按时间顺序:每条输入一个 prompt(一批投递按信封各一个),agent 原话截尾,工具只留类别;thinking 不出。 */
 export function projectMessagePreview(
   turns: readonly TranscriptTurn[],
+  activitySources?: PreviewActivitySources,
 ): MessagePreviewProjection {
   const entries: MessagePreviewEntry[] = [];
   const push = (entry: MessagePreviewEntry) => {
@@ -115,17 +119,21 @@ export function projectMessagePreview(
   const ordered = [...turns].sort((a, b) => a.seq - b.seq);
   let lastItem: TranscriptItem | undefined;
   for (const turn of ordered) {
+    const sources = activitySources?.(turn);
+    const activity = (item: TranscriptItem): PreviewActivity => sources ? {
+      activityVersion: 1, activity: sources.get(messageReferenceId(turn, item.id) ?? item.id) ?? null,
+    } : {};
     const items = [...turn.items].sort((a, b) => a.seq - b.seq);
     lastItem = items[items.length - 1];
     for (const item of items) {
       if (item.kind === 'message' && item.role === 'user') {
         const ids = deliveryMessageIdsOf(item.text);
-        if (ids.length === 0) push({ kind: 'prompt', id: item.id, messageId: null });
-        for (const messageId of ids) push({ kind: 'prompt', id: `${item.id}:${messageId}`, messageId });
+        if (ids.length === 0) push({ kind: 'prompt', id: item.id, messageId: null, ...activity(item) });
+        for (const messageId of ids) push({ kind: 'prompt', id: `${item.id}:${messageId}`, messageId, ...activity(item) });
       } else if (item.kind === 'message' && item.role === 'assistant' && item.text.trim() !== '') {
         // 一回合只说了 `[NO_REPLY]` = 它不回:卡片给群里的人看,❌ 把这一声推出去。还在写的那条按前缀判,免得标记一个字一个字地闪出来。
         if (isGuguSilence(item.text, { streaming: turn.outcome === undefined && item === lastItem })) continue;
-        push({ kind: 'text', id: item.id, ...truncateText(item.text), at: item.at ?? null });
+        push({ kind: 'text', id: item.id, ...truncateText(item.text), at: item.at ?? null, ...activity(item) });
       } else if (isToolNode(item)) {
         push({ kind: 'tool', id: item.id, state: stateOfTool(item), count: 1 });
       }
@@ -144,5 +152,5 @@ export function projectMessagePreview(
   if (lastPrompt && !windowed.includes(lastPrompt)) {
     windowed = [lastPrompt, ...entries.slice(entries.indexOf(lastPrompt) + 1).slice(-(MESSAGE_PREVIEW_MAX_ENTRIES - 1))];
   }
-  return { running, now, ended: last?.outcome ?? null, entries: windowed };
+  return { running, now, ended: last?.outcome ?? null, entries: windowed, ...(activitySources ? { activityVersion: 1 as const } : {}) };
 }

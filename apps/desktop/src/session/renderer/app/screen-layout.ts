@@ -63,11 +63,15 @@ export function contentKey(content: ScreenBlockContent): string {
 /** 新的一块从旁边那块分走一半;那一半放不下(调用方量过)= 这一排一起均分(照 VS Code 的 splitSizing: auto)。 */
 export type InsertOptions = { even?: boolean };
 
-/** 一组的摆法:形状和份额(不带切分的 id,读回时重新编)、每块装什么、正看着哪块。 */
+/**
+ * 一组的摆法:形状和份额(不带切分的 id,读回时重新编)、每块装什么、正看着哪块;`entry` = 这一屏是从左边哪一行进来的
+ * (那一行的 contentKey),从那里往里点开的私聊、智能体还算这一行的屏。
+ */
 export type ScreenGroupSnapshot = {
   layout: PaneLayoutSnapshotNode;
   blocks: Record<string, ScreenBlockContent>;
   focused: string | null;
+  entry?: string;
 };
 
 /** 存下来的:这屏那一组,加上收起来的那些组(不在屏上,点到组里任一条整组回来)。 */
@@ -81,7 +85,10 @@ const newBlockId = () => `block-${nextBlock++}`;
  * 一块 = 一个会话或一个 App,最多四块。块没有名字,会话那块认它第一枚页签。
  *
  * 拼在一屏的几块是一组(#7097,照 Arc / Zen 分屏):去看组外的一条 = 这组收起来(`parked`)、那条单独一屏;
- * 去看组里的一条 = 整组摆回来。一样东西只在一组里。只有一块的屏不是组,切走就不用记。
+ * 去看组里的一条 = 整组摆回来。一样东西只在一组里。
+ * 每一屏还记着它是从左边哪一行进来的(`entry`):在一个群里往里点开的(资料卡「发消息」、内层侧栏的智能体)仍是那个群的屏,
+ * 切走时收起来记在那个群名下,再点那个群就回到这一屏;已经在那个群的屏里再点它 = 回到群本身(`showRoot`)。
+ * 只有一块、就是入口自己的屏,切走不用记。
  *
  * 只是摆法,不碰页面:每个会话页一直活在原处(@@@retained-session-pages),这里只说它此刻摆在哪一块 ——
  * 挪块、换块、关块都不重建页面。导航那一侧(看着哪条会话)由 screen-layout-actions 接上。
@@ -94,17 +101,23 @@ export class ScreenLayoutStore {
   lastSessionBlockId: string | null = null;
   /** 收起来的组(不在屏上)。 */
   readonly parked = observable.array<ScreenGroupSnapshot>([], { deep: false });
+  /** 这一屏是从左边哪一行进来的(contentKey);空屏 = null。 */
+  entry: string | null = null;
+  /** 正在打开的这一样是从这屏里面点开的(withinEntry),它接着算这一屏的入口。 */
+  private within = false;
 
   constructor() {
     makeObservable(this, {
       layout: observable.ref,
       focusedBlockId: observable,
       lastSessionBlockId: observable,
+      entry: observable,
       order: computed,
       sessions: computed,
       focusedSession: computed,
       joinedGroups: computed,
       show: action,
+      showRoot: action,
       showBeside: action,
       placeAt: action,
       close: action,
@@ -138,7 +151,9 @@ export class ScreenLayoutStore {
     if (!current) return;
     const parked = (Array.isArray(snapshot.parked) ? snapshot.parked : []).flatMap((group) => {
       const read = readGroup(group, seen);
-      return read && read.entries.length > 1 ? [read] : [];
+      // A group (two blocks or more) stays a group; one block is kept only as an entry's screen saved as such.
+      const entryScreen = read?.entry && group && Object.keys(group.blocks ?? {}).length === 1;
+      return read && (read.entries.length > 1 || entryScreen) ? [read] : [];
     });
     this.blocks.replace(current.entries);
     this.layout = current.layout;
@@ -149,11 +164,13 @@ export class ScreenLayoutStore {
     this.focusedBlockId = null;
     this.lastSessionBlockId = null;
     this.focus(current.focused);
+    this.entry = current.entry ?? null;
     this.parked.replace(
       parked.map((group) => ({
         layout: snapshotOf(group.layout),
         blocks: Object.fromEntries(group.entries),
         focused: group.focused,
+        ...(group.entry ? { entry: group.entry } : {}),
       }))
     );
   }
@@ -245,7 +262,7 @@ export class ScreenLayoutStore {
     if (this.order.length > 1) {
       groups.push({ members: this.order.map((blockId) => contentKey(this.blocks.get(blockId)!)), onScreen: true });
     }
-    for (const group of this.parked) groups.push({ members: keysOf(group), onScreen: false });
+    for (const group of this.parked) if (Object.keys(group.blocks).length > 1) groups.push({ members: keysOf(group), onScreen: false });
     return groups;
   }
 
@@ -262,17 +279,72 @@ export class ScreenLayoutStore {
       return;
     }
     const key = contentKey(content);
-    const group = this.parked.find((entry) => Object.values(entry.blocks).some((block) => contentKey(block) === key));
+    // 从这屏里面点开的:换掉这屏,入口不变(只有一块的那屏就是入口的一步,不另记)。
+    const entry = this.currentEntry;
+    if (this.within && entry) {
+      if (this.order.length > 1) this.park();
+      else this.clearScreen();
+      this.showAlone(content, entry);
+      return;
+    }
+    // 已经在这一行的屏里再点它 = 回到它本身。
+    if (key === entry) {
+      this.showRoot(content);
+      return;
+    }
+    const group =
+      this.parked.find((entry) => entry.entry === key) ??
+      this.parked.find((entry) => Object.keys(entry.blocks).length > 1 && Object.values(entry.blocks).some((block) => contentKey(block) === key));
     this.park();
     if (group) {
       this.unpark(group);
+      this.entry = group.entry ?? key;
       const blockId = this.blockOf(content);
       if (blockId) this.focus(blockId);
       return;
     }
+    this.showAlone(content, key);
+  }
+
+  /**
+   * 回到这一行本身(群标题、已经在它的屏里再点它那一行):它名下记着的那一屏不要了,它单独一屏。
+   * 这屏是它的就丢掉(拼着几块的照旧收成一组),别的屏照常收起来。
+   */
+  showRoot(target: ScreenBlockContent): void {
+    const key = contentKey(target);
+    for (const group of this.parked.filter((entry) => entry.entry === key && Object.keys(entry.blocks).length < 2)) this.parked.remove(group);
+    for (const group of this.parked.filter((entry) => entry.entry === key)) delete group.entry;
+    if (this.entry === key && this.order.length < 2) this.clearScreen();
+    else {
+      if (this.entry === key) this.entry = null;
+      this.park();
+    }
+    const at = this.blockOf(target);
+    if (at) return this.focus(at);
+    this.showAlone(target, key);
+  }
+
+  /** 这屏的入口:记着的那一行;没记(存下来的旧摆法读回、一屏多块拆剩一块)的一块屏 = 那一块自己。 */
+  get currentEntry(): string | null {
+    if (this.entry) return this.entry;
+    return this.order.length === 1 ? contentKey(this.blocks.get(this.order[0])!) : null;
+  }
+
+  /** 在这屏里面点开(资料卡「发消息」、内层侧栏的智能体):这一下打开的仍算这屏入口的屏。 */
+  withinEntry(open: () => void): void {
+    this.within = true;
+    try {
+      open();
+    } finally {
+      this.within = false;
+    }
+  }
+
+  private showAlone(content: ScreenBlockContent, entry: string): void {
     const blockId = newBlockId();
     this.blocks.set(blockId, content);
     this.layout = paneLeaf(blockId);
+    this.entry = entry;
     this.focus(blockId);
   }
 
@@ -326,6 +398,8 @@ export class ScreenLayoutStore {
     if (!this.layout || this.order.length <= 1 || !this.blocks.has(blockId)) return false;
     const next = neighbourInOrder(this.layout, blockId, 'after') ?? neighbourInOrder(this.layout, blockId, 'before');
     this.layout = removePane(this.layout, blockId);
+    // The row this screen was entered through is no longer on it: what stays is not that row's screen.
+    if (contentKey(this.blocks.get(blockId)!) === this.entry) this.entry = null;
     this.blocks.delete(blockId);
     if (this.lastSessionBlockId === blockId) this.lastSessionBlockId = this.sessions[0]?.blockId ?? null;
     if (this.focusedBlockId === blockId) {
@@ -417,6 +491,7 @@ export class ScreenLayoutStore {
     this.blocks.clear();
     this.focusedBlockId = null;
     this.lastSessionBlockId = null;
+    this.entry = null;
   }
 
   private currentGroup(): ScreenGroupSnapshot | null {
@@ -425,16 +500,22 @@ export class ScreenLayoutStore {
       layout: snapshotOf(this.layout),
       blocks: Object.fromEntries(this.blocks),
       focused: this.focusedBlockId,
+      ...(this.entry ? { entry: this.entry } : {}),
     };
   }
 
   /**
    * 这屏收起来(要去看别的组 / 别的会话):两块以上就是一组、记着,装的是什么都一样 —— 点组里任一样(左边的会话行、
-   * 对话行、项目行,左栏的 App 图标)整组摆回来;只有一块 = 那一样自己,不用记。
+   * 对话行、项目行,左栏的 App 图标)整组摆回来。只有一块:是从入口往里点开的那一步就记在入口名下(再点入口回到它),
+   * 就是入口自己 = 不用记。一个入口只记最后那一屏。
    */
   private park(): void {
     const current = this.currentGroup();
-    if (current && this.order.length > 1) this.parked.push(current);
+    const single = this.order.length === 1 ? contentKey(this.blocks.get(this.order[0])!) : null;
+    if (current && (this.order.length > 1 || (this.entry && single !== this.entry))) {
+      if (this.entry) for (const group of this.parked.filter((entry) => entry.entry === this.entry)) this.parked.remove(group);
+      this.parked.push(current);
+    }
     this.clearScreen();
   }
 
@@ -473,7 +554,7 @@ export class ScreenLayoutStore {
 function readGroup(
   snapshot: ScreenGroupSnapshot,
   seen: Set<string>
-): { entries: Array<[string, ScreenBlockContent]>; layout: PaneLayoutNode; focused: string } | null {
+): { entries: Array<[string, ScreenBlockContent]>; layout: PaneLayoutNode; focused: string; entry?: string } | null {
   if (!snapshot || typeof snapshot !== 'object') return null;
   const mine = new Set<string>();
   const entries = Object.entries(snapshot.blocks ?? {}).filter((entry): entry is [string, ScreenBlockContent] => {
@@ -499,7 +580,7 @@ function readGroup(
   for (const key of mine) seen.add(key);
   const ids = entries.map(([id]) => id);
   const focused = snapshot.focused && ids.includes(snapshot.focused) ? snapshot.focused : paneOrder(layout)[0];
-  return { entries, layout, focused };
+  return { entries, layout, focused, ...(typeof snapshot.entry === 'string' ? { entry: snapshot.entry } : {}) };
 }
 
 /** 一组里的每一块装的东西(contentKey),从左上到右下。 */

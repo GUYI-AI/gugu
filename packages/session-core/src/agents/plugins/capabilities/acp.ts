@@ -165,6 +165,11 @@ export type AcpSpawnContext = {
    */
   capabilityArgs?: readonly string[];
   /**
+   * 选中连接要的启动参数(`AgentRunContext.connectionArgs`,#2507:Codex API Key 连接的 provider `-c`)。
+   * 放不放、放哪由这一家定;跑咕咕平台模型时平台那一份 provider 恒赢,这一格 ❌ 盖过它。
+   */
+  connectionArgs?: readonly string[];
+  /**
    * 宿主按这一家的 `IAcpBehavior.bridge` 声明解析好的桥入口(`AgentRunContext.acpAdapterEntry`,#6394)。
    * 声明了 `bridge` 的家,宿主**一定**给;插件 ❌ 自己再 `require.resolve` / 读环境变量找桥。
    * 没有桥的家(CLI 自己就讲 ACP)不读它。
@@ -463,6 +468,22 @@ export interface IAcpBehavior {
    * 连在项目里 `/mcp` 关掉的那台;探针的 cwd 是临时目录,项目里的关闭名单管不到它)。
    */
   catalogProbeSessionMeta?: Record<string, unknown>;
+
+  /**
+   * This harness answers `session/new` without a model option and publishes it right after in a
+   * `config_option_update` (Kiro V3, measured on 3.0.0). The model catalog probe then waits for that update.
+   */
+  catalogModelsInConfigUpdate?: boolean;
+
+  /**
+   * 进程级认证,「报了才认」(#2507 Antigravity 的网关):`initialize` 时在 `clientCapabilities.auth._meta` 里声明
+   * `clientAuthMeta`;agent 在 `authMethods` 里报了 `methodId`,就在开第一条会话前 `authenticate {methodId}` 一次。
+   * 没报(那条进程不是带着连接起的)就一个请求都不多发。模型目录探针读这一格,与这一家 `connect` 里的会话同一条。
+   */
+  authenticateWhenAdvertised?: { methodId: string; clientAuthMeta: Record<string, unknown> };
+
+  /** Model ids (as the catalog names them) whose raw tool-call markers show in replies here: a session opening on one gets one notice. */
+  modelsLeakingToolCallMarkers?: readonly string[];
 
   /**
    * Pure description of how to spawn the agent adapter process.

@@ -68,10 +68,10 @@ describe('message_download_file by source_message_id (#7290)', () => {
     const text = JSON.stringify(await call())
     expect(fetched).toEqual(['verified original'])
     expect(asked).toEqual([[{ message_id: 'm1' }]])
-    const [name] = await readdir(join(home, 'chat-media'))
+    const [name] = await readdir(join(home, 'file-store'))
     expect(name).toBe(createHash('sha256').update('bytes').digest('hex'))
-    expect(await readFile(join(home, 'chat-media', name!, 'notes.pdf'), 'utf8')).toBe('bytes')
-    expect(text).toContain(join(home, 'chat-media', name!))
+    expect(await readFile(join(home, 'file-store', name!, 'notes.pdf'), 'utf8')).toBe('bytes')
+    expect(text).toContain(join(home, 'file-store', name!))
   })
 
   test('preserves a Chinese filename inside its hash directory, so default sending keeps the original name', async () => {

@@ -4,6 +4,7 @@ import type { AppDb, DrizzleTx } from '@main/db/client';
 import { providerAccounts, type ProviderAccountRow } from '@main/db/schema';
 import type { ProviderAccountMeta } from '@shared/core/provider-accounts/provider-account-meta';
 import { log } from '@main/lib/logger';
+import { compareAndSwapProviderSecret, nextProviderAccountUpdate, readProviderSecretGeneration } from './provider-secret-cas';
 
 /** Meta payload without the schema version field, which the registry supplies. */
 export type ProviderAccountMetaInput = Omit<ProviderAccountMeta, 'version'>;
@@ -45,6 +46,10 @@ export type ProviderAccountSecretStore = {
   getSecret(key: string): Promise<string | null>;
   setSecret(key: string, value: string): Promise<void>;
   deleteSecret(key: string): Promise<void>;
+  /** Stores that can read a secret with its sealed bytes and replace exactly those
+   * bytes inside a database transaction (the app's encrypted store). */
+  atomicSecretSnapshot?(db: AppDb | DrizzleTx, key: string): { sealed: string; secret: string } | null;
+  atomicSecretCompareAndSwap?(db: AppDb, key: string, expectedSealed: string, replacement: string): Promise<(tx: DrizzleTx) => boolean>;
 };
 
 export function defaultCredentialRef(providerId: string, accountId: string): string {
@@ -120,11 +125,12 @@ export class ProviderAccountRegistry {
         .get();
 
       if (current) {
+        const updatedAt = nextProviderAccountUpdate(current.updatedAt, now);
         tx.update(providerAccounts)
-          .set({ updatedAt: now, ...(meta !== undefined ? { meta } : {}) })
+          .set({ updatedAt, ...(meta !== undefined ? { meta } : {}) })
           .where(eq(providerAccounts.id, current.id))
           .run();
-        return { ...current, updatedAt: now, meta: meta !== undefined ? meta : current.meta };
+        return { ...current, updatedAt, meta: meta !== undefined ? meta : current.meta };
       }
 
       const hasDefault = tx
@@ -217,6 +223,21 @@ export class ProviderAccountRegistry {
     });
     if (row) this.changed();
     return row ? toProviderAccount(row) : null;
+  }
+
+  /** The secret with the generation it was read at, for a later conditional
+   * replacement. Null for a missing or platform-kept account. Stores without
+   * transactional snapshots answer null, so their callers never replace blindly. */
+  async resolveSecretGeneration(providerId: string, accountId: string): Promise<{ secret: string; generation: string } | null> {
+    if (!this.secretStore.atomicSecretSnapshot) return null;
+    return readProviderSecretGeneration(this.db, this.secretStore, providerId, accountId);
+  }
+
+  /** Replace the secret only if it is still the generation read before. */
+  async compareAndSwapSecret(providerId: string, accountId: string, generation: string, replacement: string): Promise<boolean> {
+    const swapped = await compareAndSwapProviderSecret(this.db, this.secretStore, providerId, accountId, generation, replacement);
+    if (swapped) this.changed();
+    return swapped;
   }
 
   /** Read the secret stored at the account's credentialRef. */

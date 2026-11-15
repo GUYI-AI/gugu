@@ -57,7 +57,7 @@ afterEach(() => {
 })
 
 const rowIds = () => [...document.body.querySelectorAll('[data-pick-row]')].map((row) => row.getAttribute('data-pick-row'))
-const ticked = () => [...document.body.querySelectorAll('[data-pick-row][data-selected]')].map((row) => row.getAttribute('data-pick-row'))
+const ticked = () => [...document.body.querySelectorAll('[data-pick-row][aria-selected="true"]')].map((row) => row.getAttribute('data-pick-row'))
 const click = (element: Element | null | undefined) => act(async () => { element!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
 const button = (text: string) => [...document.body.querySelectorAll('button')].find((b) => b.textContent === text)
 const type = async (field: HTMLInputElement | HTMLTextAreaElement, value: string) => act(async () => {
@@ -131,7 +131,7 @@ describe('DispatchSheet', () => {
     expect(button('放入输入框')?.disabled).toBe(true)
     // One at a time: the foot counts nothing (the forward sheet's 「已选 N 个」 is for several).
     expect(document.body.textContent).not.toContain('已选')
-    await click(button('取消'))
+    await click(document.body.querySelector('button[aria-label="关闭"]'))
     await expect(picked).resolves.toBeNull()
   })
 
@@ -171,10 +171,10 @@ describe('DispatchSheet', () => {
     await expect(picked).resolves.toEqual({ to: { chat: 'c-group', member: 'user:a' }, visible: true, text: 'Host this round, hard mode' })
   })
 
-  it('a forum assignment: the post shown read only, the person\'s own agents, 「指派」; the pick is the agent', async () => {
+  it('a pick: the App\'s words, what it is about read only, the person\'s own agents; the pick is the agent', async () => {
     let picked: Promise<unknown> = Promise.resolve()
-    await act(async () => { picked = ask({ draft: false, offers: ['my-agent'], text: '', assign: { title: '并发问题' }, preselect: 'user:a-sibling' }) })
-    expect(document.body.querySelector('[data-testid="dispatch-assign"]')?.textContent).toContain('并发问题')
+    await act(async () => { picked = ask({ draft: false, offers: ['my-agent'], text: '', pick: { title: '指派', subject: '并发问题', body: '选一个', action: '指派', search: '搜索', empty: '没有' }, preselect: 'user:a-sibling' }) })
+    expect(document.body.querySelector('[data-testid="dispatch-pick"]')?.textContent).toContain('并发问题')
     expect(document.body.querySelector('[data-testid="dispatch-text"]')).toBeNull()
     expect(rowIds()).toEqual(['agent:user:a-sibling', 'agent:user:a-other', 'agent:user:a-here'])
     expect(ticked()).toEqual(['agent:user:a-sibling'])

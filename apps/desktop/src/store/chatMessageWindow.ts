@@ -7,7 +7,7 @@ export const MESSAGE_WINDOW = 40
 // @@@chat-isolation - when scrolled up reading older history (loadOlder), allow the
 // list to grow up to MAX_WINDOW. ChatHistoryWindow moves this bounded range in both directions,
 // preserving retained message indices. Non-active chats trim to MESSAGE_WINDOW; the active window opens
-// at MESSAGE_WINDOW and, while following the tail, grows up to MAX_WINDOW and then slides (never shrinks in bulk).
+// at MESSAGE_WINDOW and stays there while following the tail (see @@@tail-window in chatHistoryWindow.ts).
 export const MAX_WINDOW = MESSAGE_WINDOW * 3
 export const OLDER_PAGE = 60
 // @@@small-window (#946 回港 #4644/#5b) - cold-open 只取这么多(vs getMessages 默认 60),约束首屏请求+渲染到

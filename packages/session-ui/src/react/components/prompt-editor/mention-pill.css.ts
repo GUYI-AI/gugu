@@ -96,3 +96,36 @@ export const pillName = style({
 });
 
 export const pillAnnotation = style({ marginInlineStart: '0.375rem', fontSize: tokenVars.textTiny, color: vars.foregroundMuted });
+
+/** A saved prompt in the editor, folded (`SlashCommandPill`, kind `prompt`): its title over its first lines; a click unfolds it. */
+export const foldedPrompt = style({
+  display: 'inline-flex',
+  verticalAlign: 'top',
+  flexDirection: 'column',
+  maxWidth: 'min(100%, 28rem)',
+  gap: '0.125rem',
+  margin: '0.125rem 0',
+  padding: '0.375rem 0.625rem',
+  borderRadius: tokenVars.radiusMd,
+  border: `1px solid ${vars.border}`,
+  backgroundColor: vars.surfaceBaseEmphasis,
+  cursor: 'pointer',
+  userSelect: 'none',
+  selectors: {
+    '&:hover': { backgroundColor: vars.surfaceHover },
+    '.ProseMirror-selectednode &': { borderColor: vars.borderPrimary },
+  },
+});
+
+export const foldedPromptTitle = style({ fontSize: tokenVars.textSm, fontWeight: 500, color: vars.foreground });
+
+export const foldedPromptText = style({
+  display: '-webkit-box',
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: 'vertical',
+  overflow: 'hidden',
+  whiteSpace: 'pre-wrap',
+  fontSize: tokenVars.textTiny,
+  lineHeight: tokenVars.textTinyLineHeight,
+  color: vars.foregroundMuted,
+});

@@ -14,7 +14,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
+import { openPhysicalDatabase } from '@main/db/physical-connection';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { applyMigrations, bundledMigrations, initializeDatabase } from '@main/db/initialize';
 import * as schema from '@main/db/schema';
@@ -58,7 +59,7 @@ export async function openFixture(
 
   if (name === 'empty') {
     // Start from scratch — create an empty database and apply all migrations.
-    const sqlite = new Database(tmpPath);
+    const sqlite = openPhysicalDatabase(tmpPath);
     sqlite.pragma('journal_mode = WAL');
     sqlite.pragma('busy_timeout = 5000');
     await migrate(sqlite);
@@ -78,7 +79,7 @@ export async function openFixture(
   const fixturePath = path.join(fixturesDir, `${name}.db`);
   fs.copyFileSync(fixturePath, tmpPath);
 
-  const sqlite = new Database(tmpPath);
+  const sqlite = openPhysicalDatabase(tmpPath);
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('busy_timeout = 5000');
 

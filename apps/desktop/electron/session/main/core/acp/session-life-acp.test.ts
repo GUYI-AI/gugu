@@ -51,6 +51,7 @@ vi.mock('./runtime-process/session-persistence-policy', () => ({ persistAcpStart
 
 import { acpWorkerLease } from './runtime-process/host';
 import { createAcpLegAdapter } from './session-life-acp';
+import { firstTurnFilesPlaced, holdFirstTurnForPlacement } from '../sessions/first-turn-placement';
 
 const gen = { auth: 1, attempt: 1 } as unknown as Gen;
 const ctx = () => ({ gen, signal: new AbortController().signal });
@@ -80,7 +81,14 @@ describe('session-life ACP leg', () => {
     h.platformModel = { modelId: 'platform-model' };
     h.preparePlatform.mockRejectedValueOnce(new Error('Platform access was refused'));
     const adapter = await boundAdapter();
-    await expect(adapter.run('capabilities', {} as never, ctx())).rejects.toThrow('Platform access was refused');
+    await expect(adapter.run('platform', {} as never, ctx())).rejects.toThrow('Platform access was refused');
+  });
+
+  it('when capability work and the ticket both fail, the ticket\'s reason is the start failure', async () => {
+    h.platformModel = { modelId: 'platform-model' };
+    h.preparePlatform.mockRejectedValueOnce(new Error('gugu-models:unreachable'));
+    const adapter = await boundAdapter();
+    await expect(adapter.run('capabilities', {} as never, ctx())).rejects.toThrow('gugu-models:unreachable');
   });
 
   it('settles a late platform preparation when the attempt stopped before capabilities', async () => {
@@ -89,6 +97,17 @@ describe('session-life ACP leg', () => {
     h.preparePlatform.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
     const adapter = await boundAdapter();
     await adapter.teardown({}, ctx());
+    finish('prepared-generation');
+    await vi.waitFor(() => expect(h.release).toHaveBeenCalledWith('s', 'prepared-generation'));
+  });
+
+  it('a stop during capability work does not wait for a ticket that never answers, and settles it by generation if it does', async () => {
+    h.platformModel = { modelId: 'platform-model' };
+    let finish!: (generation: string) => void;
+    h.preparePlatform.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const adapter = await boundAdapter();
+    await adapter.teardown({ capabilities: {} } as never, ctx());
+    expect(h.release).not.toHaveBeenCalled();
     finish('prepared-generation');
     await vi.waitFor(() => expect(h.release).toHaveBeenCalledWith('s', 'prepared-generation'));
   });
@@ -173,6 +192,33 @@ describe('session-life ACP leg', () => {
     await adapter.dispatch({ capabilities: { injection: { firstTurn: { kind: 'plain' } } } } as never, first, ctx());
     expect(h.inject).toHaveBeenLastCalledWith('s', 'hi', { clientMessageId: 'm', origin: 'manual' });
     await expect(adapter.dispatch({ capabilities: { injection: {} } } as never, first, ctx())).rejects.toThrow(/did not land/);
+  });
+
+  it('#2558 a turn whose files are still being placed waits for them before preparing them; a stop while it waits refuses it', async () => {
+    const adapter = await boundAdapter();
+    h.inject.mockResolvedValue({ outcome: 'started', completion: Promise.resolve({ success: true, data: undefined }), turnId: 't' });
+    h.turnFiles.mockResolvedValue({ text: '', images: [], files: [] });
+    const files = [{ itemId: 'f', version: 1, name: 'a.png', mimeType: 'image/png', sizeBytes: 1 }];
+    const first = { ...(row as object), message: { id: 'm', text: 'hi', delivery: { queue: true, files } } } as never;
+    const PAGE = 1_000_007;
+
+    holdFirstTurnForPlacement('s', PAGE);
+    const sent = adapter.dispatch({} as StageOut, first, ctx());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(h.turnFiles, 'nothing prepared, nothing sent while the page is still placing').not.toHaveBeenCalled();
+    expect(h.inject).not.toHaveBeenCalled();
+    firstTurnFilesPlaced('s');
+    await expect(sent).resolves.toEqual({ result: 'accepted', nativeReceiptId: 't' });
+    expect(h.turnFiles).toHaveBeenCalledOnce();
+
+    holdFirstTurnForPlacement('s', PAGE);
+    const stop = new AbortController();
+    const stopped = adapter.dispatch({} as StageOut, first, { gen, signal: stop.signal });
+    stop.abort();
+    await expect(stopped).resolves.toMatchObject({ result: 'rejected-before-admission' });
+    expect(h.turnFiles).toHaveBeenCalledOnce();
+    expect(h.inject).toHaveBeenCalledOnce();
+    firstTurnFilesPlaced('s');
   });
 
   it('#552: only the runtime\'s typed refusal (missing) is a lost channel; a thrown refusal is the owner\'s exit', async () => {

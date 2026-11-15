@@ -4,7 +4,7 @@ vi.mock('@/platform/desktopIpc', () => ({ desktopIpc: () => ({ invoke: mocks.inv
 vi.mock('@/lib/contacts', () => ({ contactsService: { setAgentDesiredStatus: mocks.setStatus } }));
 vi.mock('@/lib/identityReadAdapter', () => ({ readDisplayIdentities: mocks.identities }));
 vi.mock('@/lib/assistantSetup', () => ({ assistantResumeStore: {} }));
-vi.mock('@/lib/agentProvision', () => ({ completedSingleProvisionSession: vi.fn(), provisionSingleAgent: vi.fn() }));
+vi.mock('@/lib/agentProvision', () => ({ completedSingleProvisionSession: vi.fn(), provisionSingleAgent: vi.fn(), resumeSingleAgent: vi.fn(), findOpenAdoption: vi.fn(), completeProvision: vi.fn(), cancelProvisionOperation: vi.fn() }));
 vi.mock('@/lib/agentModelSelection', () => ({ readAgentModelSelection: vi.fn(), setAgentModelSelection: vi.fn(), platformProtocolForAgentType: vi.fn() }));
 vi.mock('@/lib/cloudComputerStore', () => ({ getCloudComputerState: vi.fn(), provisionCloudComputer: vi.fn(), refreshCloudComputer: vi.fn(), wakeCloudComputer: vi.fn() }));
 vi.mock('@/lib/myAssistant', () => ({ reloadMyAssistant: vi.fn() }));
@@ -75,6 +75,17 @@ describe('native move file writes', () => {
     expect(mocks.openMachine).toHaveBeenCalledWith({ kind: 'cloud', deviceId: 'cloud' }, '/remote/original-assistant');
     expect(source.workdir).toBe('/remote/original-assistant');
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('releases the workspace it acquired for the move on the machine it came from (a cloud home roots it at the home directory)', async () => {
+    const release = vi.fn(async () => ({ success: true }));
+    mocks.rpc.mockReturnValue({ projects: { releaseProjectWorkspace: release } });
+    mocks.openMachine.mockResolvedValue({ target: 'cloud', projectId: 'p', workspaceId: 'w-home', home: '/remote', paths: {}, rpc: { workspace: { files: {} } } });
+    const source = await openSource({ ownerUserId: 'owner', assistantId: 'agent', assistantName: 'Assistant', localDeviceId: 'local',
+      home: { kind: 'computer', deviceId: 'local', thisDevice: true, known: true, online: true, label: null } },
+      'to-computer', { kind: 'cloud', deviceId: 'cloud' }, '/remote/original-assistant');
+    await source.release?.();
+    expect(mocks.rpc).toHaveBeenCalledWith('cloud');
+    expect(release).toHaveBeenCalledWith('p', 'w-home');
   });
   it('passes the target revision for both binary files and user instructions, never force', async () => {
     const writeChunk = vi.fn(async (_project, _workspace, request) => ({ success: true, data: { committed: { size: request.total } } }));

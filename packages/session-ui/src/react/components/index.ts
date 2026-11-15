@@ -43,6 +43,8 @@ export type {
   PromptEditorRef,
 } from './chat-composer';
 export { useToolbarOutOfRoom } from './chat-composer/use-toolbar-disclosure';
+/** The composer's editor alone, for a field that writes into a chat without the composer's chrome (a forward's note). */
+export { PromptEditor } from './prompt-editor/prompt-editor';
 export { QueuedPromptsBand } from './chat-composer/queued-prompts-band';
 export type {
   QueuedPromptsBandProps,

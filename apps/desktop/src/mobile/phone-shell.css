@@ -9,6 +9,7 @@
 
 :is([data-mobile-group], [data-phone-shell] [data-slot='composer'][data-mobile]) [data-slot='composer-attachments'] {
   grid-column: 1 / -1;
+  grid-row: 1;
   padding: var(--spacing-xs);
 }
 
@@ -48,16 +49,29 @@
   max-width: calc(50% - var(--spacing-xs));
 }
 
+/* Agent metadata already occupies row 1. Reserve the next row for files,
+   rather than letting auto-placement put them below the editor. */
+[data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile] [data-slot='composer-attachments'] { grid-row: 2; }
+[data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile]:has([data-slot='composer-attachments']) :is(
+  [data-slot='composer-input'],
+  [data-slot='composer-actions-start'] > button:not(:has([data-slot='composer-permission-mode'])),
+  [data-slot='composer-actions-end'] > button:not([data-composer-locked-agent])
+) { grid-row: 3; }
+
 /* A locked harness shares the metadata row with its model. The middle three
-   tracks still occupy exactly the input's original middle column. */
+   tracks still occupy exactly the input's original middle column.
+   When the row is short, the model name is the one that gives way: the
+   permission name is a few characters and is shown whole, the model name
+   ends in an ellipsis. With the model track `auto`, a long model name took its
+   full width first and cut the permission name (「完全访问」 lost half of 「问」). */
 [data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile]:has([data-composer-locked-agent]) [data-slot='composer-bar'] {
-  grid-template-columns: var(--control-h-touch) minmax(0, 1fr) var(--control-h-touch) auto var(--control-h-touch);
+  grid-template-columns: var(--control-h-touch) minmax(min-content, 1fr) var(--control-h-touch) minmax(0, auto) var(--control-h-touch);
 }
 [data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile]:has([data-composer-locked-agent]) [data-slot='composer-input'] { grid-column: 2 / 5; }
 [data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile]:has([data-composer-locked-agent]) [data-slot='composer-actions-end'] > button:not([data-composer-locked-agent]) { grid-column: 5; }
 [data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile] [data-composer-locked-agent] { grid-column: 3; grid-row: 1; }
 [data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile]:has([data-composer-locked-agent]) [data-slot='composer-model'] > button { grid-column: 4 / -1; max-width: 100%; }
-[data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile]:has([data-composer-locked-agent]) [data-slot='composer-actions-start'] > button:has([data-slot='composer-permission-mode']) { grid-column: 1 / 3; max-width: 100%; }
+[data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile]:has([data-composer-locked-agent]) [data-slot='composer-actions-start'] > button:has([data-slot='composer-permission-mode']) { grid-column: 1 / 3; max-width: 100%; min-width: max-content; }
 
 [data-phone-shell] {
   --phone-font-caption: calc((var(--font-caption) + var(--font-body)) / 2);
@@ -183,7 +197,7 @@
 }
 
 /* 推在「消息 / 伙伴」首页上的一层(咕咕、项目、我的;owner 10-26,OpenDCAI/gugu#446):整屏盖住分页器,底栏这时不渲染。
-   藏着时由 RETAINED_SURFACE_HIDDEN_STYLE 接管(PhoneLayer)。 */
+   藏着时由 RETAINED_SURFACE_HIDDEN_STYLE 接管,并且整层 inert(PhoneLayer,#1751)。 */
 [data-phone-layer] {
   position: absolute;
   inset: 0;

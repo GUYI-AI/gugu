@@ -6,7 +6,7 @@ import { usePaneContext } from './pane-context';
 import { TabBar } from './tab-bar';
 import { isUnavailableTabResource, UnavailableTabContent } from './unavailable-tab';
 import { RetainedTabContent, useRetainedTabs } from './retained-tab-content';
-import { fullscreenCover, tabFullscreen } from './tab-fullscreen';
+import { fullscreenCover, OverFullscreenStrip, tabFullscreen } from './tab-fullscreen';
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 
@@ -87,7 +87,7 @@ const PaneBody = observer(function PaneBody({
   }, [pane, isFocusedPane, active?.resource]);
   const unavailable = active && (!pane.registry.has(active.kind) || isUnavailableTabResource(active.resource)) ? active : null;
   const kinds = [...new Set(pane.resolvedTabs.map((tab) => tab.kind))];
-  const recent = useRetainedTabs(kinds, active ? [active.kind] : []);
+  const recent = useRetainedTabs(kinds, active ? [active.kind] : [], pane.resolvedTabs.filter((tab) => tab.resource.holdsUnsaved).map((tab) => tab.kind));
   const retained = new Set([...recent, ...pane.registry.all().filter((provider) => provider.keepMounted && kinds.includes(provider.kind)).map((provider) => provider.kind)]);
   const fullscreen = tabFullscreen.isOn(pane);
   return (
@@ -99,7 +99,7 @@ const PaneBody = observer(function PaneBody({
         event.preventDefault();
         void pane.go(id, event.button === 3 ? -1 : 1);
       }}>
-      {pane.resolvedTabs.length > 0 && !hideTabBar && <TabBar leadingSlot={tabLeadingSlot} tabTrailingSlot={tabTrailingSlot} actionsSlot={actionsSlot} reserveShellRestoreLane={reserveShellRestoreLane} leadingReservePx={leadingReservePx} />}
+      {pane.resolvedTabs.length > 0 && !hideTabBar && <OverFullscreenStrip.Provider value={fullscreen}><TabBar leadingSlot={tabLeadingSlot} tabTrailingSlot={tabTrailingSlot} actionsSlot={actionsSlot} reserveShellRestoreLane={reserveShellRestoreLane} leadingReservePx={leadingReservePx} /></OverFullscreenStrip.Provider>}
       <div ref={setContentRef} data-pane-content="" tabIndex={-1} className="relative min-h-0 min-w-0 flex-1 bg-tab-face">
         <PaneDimensionProvider sink={pane}>
           {isOver && <div className="pointer-events-none absolute inset-0 z-20 bg-foreground/10" />}

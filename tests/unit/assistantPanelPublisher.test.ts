@@ -77,6 +77,29 @@ it('reads only one authority snapshot for an unchanged ready collection',async (
   expect(f.input.cloud.commit).not.toHaveBeenCalled()
 })
 
+/** As Postgres jsonb hands an object back: undefined gone, keys ordered by length then bytes, at every depth; arrays as they were. */
+function jsonb(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(jsonb)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value).filter(([,item]) => item !== undefined)
+    .sort(([a],[b]) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0)).map(([key,item]) => [key,jsonb(item)]))
+}
+
+it('#1922 writes nothing again for a row the backend hands back as jsonb: nested keys reordered, undefined dropped', async () => {
+  const f = transport()
+  f.input.collect.mockResolvedValue([{ key: 'note',data: { relativePath: 'note.md',group: undefined,catalog: { categoryId: 'docs',aliases: ['lark'] } },
+    bytes: new TextEncoder().encode('private note') }])
+  await publishAssistantPanelCollection(f.input)
+  for (const [key,row] of f.rows) f.rows.set(key,{ ...row,data: jsonb(row.data) as Record<string,unknown> })
+  f.input.cloud.commit.mockClear()
+  for (let round = 0; round < 3; round++) await publishAssistantPanelCollection(f.input)
+  expect(f.input.cloud.commit).not.toHaveBeenCalled()
+  f.input.collect.mockResolvedValue([{ key: 'note',data: { relativePath: 'note.md',catalog: { categoryId: 'mail',aliases: ['lark'] } },
+    bytes: new TextEncoder().encode('private note') }])
+  await publishAssistantPanelCollection(f.input)
+  expect(f.input.cloud.commit).toHaveBeenCalledOnce()
+})
+
 it('uploads zero bodies across repeated metadata-only inventory sweeps', async () => {
   const f = transport()
   await publishAssistantPanelCollection(f.input)

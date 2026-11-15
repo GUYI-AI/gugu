@@ -18,6 +18,7 @@ import type { ShellLocation } from '../lib/shellNavigationHistory'
 import { useShellNavigation } from '../hooks/useShellNavigation'
 import { ListColumnToggle } from './PanelToggleButtons'
 import { WindowTitleBar } from './WindowTitleBar'
+import { useChatStoreReader } from '../store/chatContext'
 
 // @@@822 frameless 统一标题栏的自绘窗口控制 —— 仅 Windows/Linux 的 Electron 渲染。
 // Mac 保留原生交通灯(titleBarStyle:hiddenInset),web/非 Electron 无边框控制 → 这些场景返回 null。
@@ -128,7 +129,6 @@ export interface WindowControlsProps {
   activeTab: SidebarTab
   mobile: boolean
   activeChatId: string | null
-  chats: readonly { id: string }[]
   sessionHostAvailable: boolean
   onSelectTab: (tab: SidebarTab) => void
   onOpenChat: (chatId: string | null) => void
@@ -147,13 +147,13 @@ export function WindowControls({
   activeTab,
   mobile,
   activeChatId,
-  chats,
   sessionHostAvailable,
   onSelectTab,
   onOpenChat,
   onNewAgent,
   onOpenSettings,
 }: WindowControlsProps) {
+  const readChats = useChatStoreReader()
   const titlebarRow = hasWindowTitlebarRow(readRendererPlatform())
   const location: ShellLocation | null = !titlebarRow
     ? null
@@ -165,9 +165,9 @@ export function WindowControls({
   // 后退到一条已经被删掉 / 退出的会话没有意义:那一格跳过。
   const reachable = useCallback((target: ShellLocation) => {
     if (target.tab === 'tasks') return sessionHostAvailable
-    if (target.tab === 'chats') return target.chatId === null || chats.some((chat) => chat.id === target.chatId)
+    if (target.tab === 'chats') return target.chatId === null || readChats().chats.some((chat) => chat.id === target.chatId)
     return true
-  }, [chats, sessionHostAvailable])
+  }, [readChats, sessionHostAvailable])
   // 与点侧栏同一个入口(selectTab:关设置弹窗、切 tab);选中会话一变,壳自己会收起创建草稿面。
   const apply = useCallback((target: ShellLocation) => {
     onSelectTab(target.tab)

@@ -28,6 +28,12 @@ import { antigravitySubscriptionBehavior } from './subscription';
 import { buildAntigravityHookConfig } from './hooks';
 import { icon } from './icon';
 import {
+  ANTIGRAVITY_GATEWAY_AUTH,
+  antigravityApiKeyConnection,
+  antigravityApiKeyConnectionBehavior,
+  withGatewayAuthentication,
+} from './api-key-connection';
+import {
   ANTIGRAVITY_CLI_VERSION,
   ANTIGRAVITY_LAUNCH_SCRIPT,
   ANTIGRAVITY_SESSION_TUI_ENABLED,
@@ -161,6 +167,8 @@ export const plugin = definePlugin(
   },
   {
     sessionBundle,
+    // API Key 连接:agy 的「自定义 AI API 网关」,按进程选、不写托管根的 settings.json(见 ./api-key-connection.ts)。
+    apiKeyConnection: antigravityApiKeyConnection,
     // 「订阅」页(product spec):用量只有终端版 `agy` 报(官方 /usage,不花额度),打开页面就问。
     subscription: { kind: 'supported', usageRefresh: 'on-open', program: ANTIGRAVITY_CLI_PROGRAM },
     /**
@@ -384,6 +392,16 @@ export const plugin = definePlugin(
   { icon }
 );
 
+/**
+ * 托管装好的 `agy_acp_server` 就是 `ctx.cli`,不带参数。
+ * 回环免代理必须在**这里**加而不是在物化器里:模型目录探针也走这条 `buildSpawn`,
+ * 不经物化 —— 只在物化器里加,探针那一趟就会在代理机器上起不来(理由见 `withLoopbackNoProxy`)。
+ */
+const antigravityAcp = createNativeAcpBehavior((ctx) => ({
+  args: [],
+  env: withLoopbackNoProxy(ctx.env),
+}), { interruptAtToolBoundary: true });
+
 export const provider = registerPluginBehavior(plugin, {
   // 声明了 `auth` 就必须配 `behavior.auth`(framework 直接抛)。
   auth: {
@@ -397,19 +415,16 @@ export const provider = registerPluginBehavior(plugin, {
     },
   },
   subscription: antigravitySubscriptionBehavior(),
+  apiKeyConnection: antigravityApiKeyConnectionBehavior,
   sessionBundle: { materialize: materializeAntigravitySessionBundle },
   // 终端腿的分叉:复制 `antigravity-cli/conversations/<id>.db` 并改写 id,宿主再 `--conversation <新 id>`(见 ./fork.ts)。
   sessions: { forkSessionInStorage: (ctx) => forkAntigravityCliSession(ctx) },
-  /**
-   * 托管装好的 `agy_acp_server` 就是 `ctx.cli`,不带参数。
-   * 回环免代理必须在**这里**加而不是在物化器里:模型目录探针也走这条 `buildSpawn`,
-   * 不经物化 —— 只在物化器里加,探针那一趟就会在代理机器上起不来(理由见 `withLoopbackNoProxy`)。
-   */
   acp: {
-    ...createNativeAcpBehavior((ctx) => ({
-      args: [],
-      env: withLoopbackNoProxy(ctx.env),
-    }), { interruptAtToolBoundary: true }),
+    ...antigravityAcp,
+    // 连接会话(带着网关上线开关起的进程)在开第一条会话前选网关;别的会话原样过(见 ./api-key-connection.ts)。
+    connect: (io, toClient) => withGatewayAuthentication(antigravityAcp.connect(io, toClient)),
+    // 模型目录探针照同一份声明认证,否则连接会话的目录读成「需要登录」,输入框列不出连接的模型。
+    authenticateWhenAdvertised: ANTIGRAVITY_GATEWAY_AUTH,
     // 用户 skill 它读进了系统提示却不经 ACP 报 ⇒ 咕咕按它认的四处目录补进「/」面板(见 ./skills.ts)。
     discoverCommands: discoverAntigravitySkills,
     // `session/fork` 回 `{}` ⇒ 复制存档并改写 id,运行时再 `session/load`(见 ./fork.ts)。

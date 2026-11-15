@@ -5,6 +5,7 @@ import { createChatContext } from '@session-chat/chat-context';
 import { createChatView } from '@session-chat/chat-view';
 import { createChatState } from '@session-chat/state/chat-state';
 import type { TranscriptItem, TranscriptTurn } from '@session-chat/model';
+import { plainMessageBody } from './fixtures/plain-message-body';
 
 const chat = '127ec4f0-30b1-4583-b469-706756153bdd';
 const owner = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -23,7 +24,7 @@ async function mount(agentConversation: boolean, items: TranscriptItem[], active
   host.style.cssText = 'position:fixed;inset:0;width:900px;height:1700px;background:white';
   document.body.append(host);
   const open = vi.fn((_href: string) => true), resolve = vi.fn(async () => image);
-  const view = createChatView({ context, state, parent: host, commands: { onOpenLink: open, resolveAttachment: resolve, conversationAgentName: () => 'Fixture agent' } });
+  const view = createChatView({ context, state, parent: host, commands: { onOpenLink: open, resolveAttachment: resolve, conversationAgentName: () => 'Fixture agent', onMessageBodyMount: plainMessageBody } });
   dispose = () => { view.dispose(); state.dispose(); context.dispose(); host.remove(); };
   const turn: TranscriptTurn = { id: 'sent-output', seq: 0, initiator: 'user', startedAt: 1000,
     ...(!active ? { endedAt: 4000, outcome: { kind: 'done' as const } } : {}), items };
@@ -54,7 +55,8 @@ it.each([false, true])('shows session_message words and recipient count and reta
   const message = tool('text-send', 'message_send', { chat_id: chat, text: 'Group message control' }, { message_id: '8417511d-8f36-4cbc-8cbb-81ce9f97df73' });
   const { host } = await mount(conversation, [relay, message]);
   await expect.poll(() => host.textContent).toContain('Sent to two sessions');
-  expect(host.textContent).toContain('Group message control');
+  // A message_send is a chat message: its words land in the host's MessageBody slot.
+  expect(host.querySelector<HTMLElement>('[data-sent-message-body="8417511d-8f36-4cbc-8cbb-81ce9f97df73"]')?.textContent).toBe('Group message control');
   const destinations = conversation ? [...host.querySelectorAll('[data-slot="sent-to"]')].map(e => e.getAttribute('aria-label'))
     : [...host.querySelectorAll('[data-agent-send-to]')].map(e => e.textContent);
   expect(destinations).toEqual(['Sent to 2 tasks', 'Sent to Design review']);

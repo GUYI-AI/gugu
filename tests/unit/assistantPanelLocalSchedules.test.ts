@@ -16,7 +16,6 @@ vi.mock('@main/core/provider-accounts/provider-account-registry-instance',() => 
 vi.mock('@gugu/session-plugins/integrations',() => ({ integrationPluginRegistry: {} }))
 vi.mock('@main/core/integrations/integration-payload-builder',() => ({ buildIntegrationListPayload: vi.fn() }))
 vi.mock('@gugu/core',() => ({ listAgents: vi.fn() }))
-vi.mock('../../apps/desktop/electron/session/main/core/app/user-library',() => ({ onUserLibraryChanged: vi.fn(),readUserLibraryVolume: vi.fn(),readUserLibraryEntry: vi.fn(),writeUserLibraryEntry: vi.fn(),removeUserLibraryEntry: vi.fn() }))
 vi.mock('../../apps/desktop/electron/session/main/core/app/assistant-panel-integration-checks',() => ({ panelIntegrationChecks: vi.fn() }))
 import { assistantPanelLocal } from '../../apps/desktop/electron/session/main/core/app/assistant-panel-local'
 it('observes existing scheduler broadcasts without constructing another scheduler',()=>{
