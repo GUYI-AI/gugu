@@ -47,6 +47,8 @@ import { MessageLoadFailure } from './MessageLoadFailure'
 import { MessageListSkeleton } from './MessageListSkeleton'
 import { useChatSearch } from './useChatSearch'
 import { SearchTrailBar } from './SearchTrailBar'
+import type { Reading } from '../../lib/replica'
+import type { TopicSourceState } from '../../lib/topics'
 
 /**
  * @@@5856 话题分栏 —— 右侧那条独立收发的话题线(product spec)。
@@ -73,7 +75,8 @@ export type TopicSplitPaneProps = {
    * 但这个人看不到 / null 来源消息确实被删了 / 有字 = 预览。从会话列表点进来的人,
    * 光看话题名说不出它从哪条消息长出来的 —— 这是「双向连接」上行的那一半。
    */
-  sourceMessagePreview: string | null | 'pending' | 'unreadable'
+  /** Where the topic was opened from, as read (topicSource): the breadcrumb branches on it. */
+  source: Reading<TopicSourceState>
   /**
    * 这个号一变就把焦点交给**这一栏**的输入框(用鼠标点话题进来的那条路)。
    * ❌ 不走 lib/focusComposer 那条全局契约:分栏这份 composer 是 surface="aside",
@@ -198,7 +201,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   loading,
   memberProfiles,
   visibleChats,
-  sourceMessagePreview,
+  source,
   focusComposerToken,
   memberReadSeqs,
   onSend,
@@ -335,7 +338,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
 
   // 手机上话题是来源页的一枚页签:在前面时,返回先回到来源那一枚。
   useBackLayer(onClose, mobile && visible !== false)
-  const headerTitle = <TopicBreadcrumb topicName={topic.name} sourceMessagePreview={sourceMessagePreview} />
+  const headerTitle = <TopicBreadcrumb topicName={topic.name} source={source} />
   const page = (
     // @@@2234 同 history/workspace/群 thread 面板:进场保留、**退场不保留占位**。
     // ⇒ ❌ 不要给它套 AnimatePresence / 加 exit。

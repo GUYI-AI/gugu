@@ -171,7 +171,7 @@ export function DevicesSection({
       onUninstall={() => openUninstall(device)}
       onOpenActions={() => setActionsFor(device.device_id)}
       signIn={signIns.get(device.device_id) ?? null}
-      sshLink={sshMachineIds?.has(device.device_id) ? (linkProblems.get(device.device_id) ?? null) : undefined}
+      sshLink={sshMachineIds === null ? 'unknown' : sshMachineIds.has(device.device_id) ? (linkProblems.get(device.device_id) ?? null) : undefined}
       onSshSignIn={() => void signInSshMachine(device.device_id)}
       upgradePercent={upgrades.get(device.device_id) ?? null}
       onRetryUpdate={() => void requestSshServerUpgrade(device.device_id, { force: true })}
@@ -456,7 +456,8 @@ function DeviceRow({
   /** 离线的 SSH 机器上这个账号还登着没有(问不到 = null / unknown,照旧只说离线)。 */
   signIn: Reading<SshSignInState> | null
   /** #6264 远程 SSH 那台此刻设备连接的问题(没有 = 连着);其它机器 null。 */
-  sshLink?: SshLinkFailure | null
+  /** Its SSH link from this desktop; undefined = not an SSH machine here; 'unknown' = the SSH machine list is not read yet. */
+  sshLink?: SshLinkFailure | null | 'unknown'
   /** 设备连接要先登录时,句中的「登录」:经 SSH 登录(问密码 / 口令)。 */
   onSshSignIn?: () => void
   /** 正在替它升级时的进度百分比(不知道总量 = null)。 */
@@ -477,7 +478,7 @@ function DeviceRow({
   const sshAddress = model.connection.via === 'ssh' ? model.connection.address : null
   const lastSeen = device.is_online ? null : formatRelativeTime(device.last_seen_at, { mode: 'elapsed', dateAfterDays: 30 })
   // 「登录已失效」「那台机器上已退出登录」替掉「上次在线」:机器是离线的,但真正的原因是这个,下一步是重新登录。
-  const link = sshLink === undefined ? null : sshLinkFacts(true, sshLink, device.is_online).sshLink ?? null
+  const link = sshLink === undefined || sshLink === 'unknown' ? null : sshLinkFacts(true, sshLink, device.is_online).sshLink ?? null
   // 点了「重试」、那台机器的心跳还没报回新状态之前:先说「正在更新」;报回来(不再是这一次失败)就让位给它。
   const failedUpdate = device.is_online && model.update?.state === 'failed' ? model.update.version : null
   const [retriedFor, setRetriedFor] = useState<string | null>(null)
@@ -518,7 +519,8 @@ function DeviceRow({
   }, [restarting, toast, t, device.label, device.is_online])
   const signInState = signIn?.state === 'value' ? signIn.value : null
   // 离线的 SSH 机器还没问到登录态:状态那一格画占位,❌ 先写「N 天前在线」再改成「登录已失效」。
-  const signInPending = !device.is_online && sshLink !== 'notSignedIn' && signIn?.state === 'unknown'
+  // Not known yet whether it is an SSH machine here (the list is not read): the same placeholder, ❌ "seen N days ago".
+  const signInPending = !device.is_online && sshLink !== 'notSignedIn' && (signIn?.state === 'unknown' || sshLink === 'unknown')
   const signedOutText = sshLink === 'notSignedIn'
     ? t('devices.loginState.signedOut')
     : device.is_online || !signInState

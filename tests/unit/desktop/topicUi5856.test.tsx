@@ -17,6 +17,7 @@ import { queryClient as attachmentQueryClient } from '../../../apps/desktop/src/
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
 import { createNode, createReactHarness, clickElement, deferred, message, renderWithAppProviders } from '../../support/testHarness'
 import { NATIVE_BACK_EVENT } from '../../../apps/desktop/src/components/ui/sheetStack'
+import { topicSourceReading } from '../../support/topicSourceReading'
 
 const listTopicsOfChat = vi.fn<(sourceChatId: string) => Promise<TopicSummary[]>>()
 vi.mock('../../../apps/desktop/src/lib/topics', () => ({
@@ -246,7 +247,7 @@ describe('TopicBreadcrumb:双向连接上行的那一半 + 来源消息被删的
     await harness.render(
       createNode(TopicBreadcrumb, {
         topicName: '分片下载失败',
-        sourceMessagePreview: '下载到 60% 就断',
+        source: topicSourceReading('下载到 60% 就断'),
       }),
     )
     expect(harness.container.querySelector('[data-testid="topic-breadcrumb-name"]')?.textContent).toBe('分片下载失败')
@@ -260,7 +261,7 @@ describe('TopicBreadcrumb:双向连接上行的那一半 + 来源消息被删的
 
   it('来源消息被硬删时说出来，❌ 不静默显示成正常', async () => {
     await harness.render(
-      createNode(TopicBreadcrumb, { topicName: '分片下载失败', sourceMessagePreview: null }),
+      createNode(TopicBreadcrumb, { topicName: '分片下载失败', source: topicSourceReading(null)}),
     )
     expect(harness.container.querySelector('[data-testid="topic-breadcrumb-source-preview"]')).toBeNull()
     expect(harness.container.querySelector('[data-testid="topic-breadcrumb-source-deleted"]')?.textContent)
@@ -268,8 +269,8 @@ describe('TopicBreadcrumb:双向连接上行的那一半 + 来源消息被删的
   })
 
   it('还没读到 / 读到了但这个人看不见:那一行什么都不说，❌ 不谎报「已删除」', async () => {
-    for (const preview of ['pending', 'unreadable'] as const) {
-      await harness.render(createNode(TopicBreadcrumb, { topicName: 'x', sourceMessagePreview: preview }))
+    for (const preview of ['unknown', 'unreadable'] as const) {
+      await harness.render(createNode(TopicBreadcrumb, { topicName: 'x', source: topicSourceReading(preview)}))
       expect(harness.container.querySelector('[data-testid="topic-breadcrumb-source-deleted"]')).toBeNull()
       expect(harness.container.querySelector('[data-testid="topic-breadcrumb-source-preview"]')).toBeNull()
     }
@@ -284,7 +285,7 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
     memberProfiles: {},
     memberReadSeqs: {},
     visibleChats: [],
-    sourceMessagePreview: 'pending',
+    source: topicSourceReading('unknown'),
     onSend: vi.fn(async () => {}),
     onSendAttachments: vi.fn(async () => {}),
     onClose: vi.fn(),
@@ -306,7 +307,7 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
 
   for (const layout of ['desktop', 'phone', 'tab'] as const) {
     it(`${layout}: topic header only identifies the topic and its source, and the phone tab has none`, async () => {
-      await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, sourceMessagePreview: '下载到 60% 就断', mobile: layout === 'phone', embedded: layout === 'tab' }))
+      await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, source: topicSourceReading('下载到 60% 就断'), mobile: layout === 'phone', embedded: layout === 'tab' }))
       expect(harness.container.querySelector('[data-testid="topic-breadcrumb"]') !== null).toBe(layout !== 'phone')
       for (const id of ['topic-split-more', 'topic-split-members-toggle', 'topic-split-files-toggle']) {
         expect(harness.container.querySelector(`[data-testid="${id}"]`)).toBeNull()
@@ -319,7 +320,7 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
   it('phone: nothing renders above the first topic message, not even the source line', async () => {
     const source = 'SOURCE-LINE-下载到 60% 就断'
     const messages = [message({ id: 'first', seq: 1, content: 'FIRST-MESSAGE' }), message({ id: 'second', seq: 2, content: 'SECOND-MESSAGE' })]
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, messages, sourceMessagePreview: source, mobile: true }))
+    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, messages, source: topicSourceReading(source), mobile: true }))
     const pane = harness.container.querySelector<HTMLElement>('[data-testid="topic-split-pane"]')!
     expect(pane.textContent).toContain('FIRST-MESSAGE')
     expect(pane.textContent).not.toContain('SOURCE-LINE')

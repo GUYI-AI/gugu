@@ -9,6 +9,7 @@ import { contentWithQuote, partialQuotedContent } from '../../../../apps/desktop
 import { topicHistoryStub } from '../../../support/chatWindowStub'
 import { clickElement, createReactHarness, fireContextMenu, message, renderWithAppProviders } from '../../../support/testHarness'
 import { writeComposer } from '../../../support/composerEditor'
+import { topicSourceReading } from '../../../support/topicSourceReading'
 
 const shell = vi.hoisted(() => ({ mobile: true }))
 vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
@@ -63,7 +64,7 @@ it.each([
   const onSend = vi.fn(async () => {})
   await renderWithAppProviders(h, createElement(TopicSplitPane, {
     topic: { chatId: 'topic-1', name: 'Topic' }, messages: [message({ id: 'source', chat_id: 'topic-1', content })], loading: false,
-    memberProfiles: {}, memberReadSeqs: {}, visibleChats: [], sourceMessagePreview: null, onSend,
+    memberProfiles: {}, memberReadSeqs: {}, visibleChats: [], source: topicSourceReading(null), onSend,
     onSendAttachments: async () => {}, onClose: () => {}, currentUserId: 'user-1', history: topicHistoryStub(), mentionMembers: [], mobile: true,
   }))
   await fireContextMenu(h.container.querySelector<HTMLElement>('[data-msg-id="source"] [data-testid="message-bubble-action-target"]')!)
