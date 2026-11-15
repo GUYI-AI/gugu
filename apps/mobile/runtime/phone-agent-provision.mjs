@@ -2,12 +2,13 @@ import { assistantWorkIntentSchema } from '../../../packages/core/src/shared/ass
 import { randomUUID } from 'node:crypto'
 import { buildSessionDirectEnvelope, formatDeliveryTimestamp } from '../../../packages/core/src/local/agent/deliveryEnvelope.ts'
 import { stableId, uuid } from './phone-agent-store.mjs'
+import { landPhoneTaskFirstTurn, resolvePhoneTaskDestination } from './phone-task-delivery.mjs'
 
 const first = (data) => Array.isArray(data) ? data[0] : data
 const required = (value, name) => { if (typeof value !== 'string' || !value.trim()) throw new Error(name + ' is required'); return value.trim() }
 
 /** Both native and cloud creation drive this one durable provisioning saga and birth-group contract. */
-export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, projectId, root, models, tick, admit, snapshot, publish }) {
+export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, projectId, root, models, tick, admit, snapshot, publish, machineLabel, resolveIdentities, authorize }) {
   const provisioning = new Map()
   const provisionOnce = async (requestId, action, caller = null, inputDataProof = null) => {
     const intent=action.assistant_work ? assistantWorkIntentSchema.parse(action.assistant_work) : null
@@ -22,7 +23,9 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, projec
       if ((action.project_id && action.project_id !== projectId) || (action.projectId && action.projectId !== projectId) || (action.project_path && action.project_path !== root) || (action.projectPath && action.projectPath !== root)) throw new Error('手机 Agent 只能在这台手机的 App 私有工作目录中运行')
       const prompt = required(action.prompt, 'prompt')
       const requestedGroup = action.chat_id ?? action.chatId ?? null
-      const inputFingerprint = stableId('phone-provision-intent', { prompt, title: action.title ?? action.displayName ?? null, harness, model: action.model ?? caller?.platformModel ?? null, chat: requestedGroup, projectId: action.projectId ?? action.project_id ?? null, projectPath: action.projectPath ?? action.project_path ?? null, callerSession: caller?.sessionId ?? null, callerDevice: caller?.deviceId ?? null,...(intent ? {assistantWork:intent} : {}) })
+      const taskChatId = action.taskChatId?.trim() || null
+      if (intent && taskChatId) throw new Error('协作任务不能同时指定群聊任务卡目的地')
+      const inputFingerprint = stableId('phone-provision-intent', { prompt, title: action.title ?? action.displayName ?? null, harness, model: action.model ?? caller?.platformModel ?? null, chat: requestedGroup, ...(taskChatId ? { taskChatId } : {}), projectId: action.projectId ?? action.project_id ?? null, projectPath: action.projectPath ?? action.project_path ?? null, callerSession: caller?.sessionId ?? null, callerDevice: caller?.deviceId ?? null,...(intent ? {assistantWork:intent} : {}) })
       if (request?.inputFingerprint && request.inputFingerprint !== inputFingerprint) throw new Error('同一个创建请求不能更换任务、名字、群或模型；请开始一条新的创建请求')
       if (request?.result) return request.result
       if (!request) {
@@ -34,8 +37,11 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, projec
           if (!data || data.kind !== 'group' || data.status === 'archived') throw new Error('新 Agent 只能申请加入主人所在的有效群聊')
           birthGroupChatId = data.id
         }
+        const destination = taskChatId ? await resolvePhoneTaskDestination(cloud, taskChatId, birthGroupChatId, caller?.agentUserId ?? ownerId) : null
+        if (destination) birthGroupChatId ??= destination.birthGroupChatId
         const modelId = await models.resolve(action.model ?? caller?.platformModel)
         request = { kind: 'spawn',...(intent ? {assistantWork:intent} : {}), inputFingerprint, birthGroupChatId, operationId: randomUUID(), provisionId: randomUUID(), displayName: action.title?.trim() || action.displayName?.trim() || '手机任务 Agent', modelId, prompt, caller, ...(inputDataProof ? { inputDataProof: structuredClone(inputDataProof) } : {}), createdAt: new Date().toISOString() }
+        if (destination) { request.taskChatId = destination.chatId; request.taskMessageId = stableId(request.operationId, 'initial-task') }
       }
     } catch (cause) {
       // Only validation before durable admission is safe to edit. A recorded intent, a failed
@@ -91,8 +97,8 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, projec
       try {
         // The UI acts as the owner; an Agent caller must retain its own group authority.
         const joined = await cloud.rpc('chat', 'add_group_agent', { p_chat_id: request.birthGroupChatId, p_agent_user_id: agent.agentUserId, p_message: null, p_as_user_id: caller?.agentUserId ?? ownerId, p_as_task: true })
-        if (!joined || !['joined', 'pending_approval'].includes(joined.status)) throw new Error('群聊没有确认 Agent 加入或待审批的状态')
-        agent.birthGroup = { chatId: request.birthGroupChatId, status: joined.status }
+        if (!joined || !['joined', 'already_member', 'pending_approval'].includes(joined.status)) throw new Error('群聊没有确认 Agent 加入或待审批的状态')
+        agent.birthGroup = { chatId: request.birthGroupChatId, status: joined.status === 'already_member' ? 'joined' : joined.status }
       } catch (error) { agent.birthGroup = { chatId: request.birthGroupChatId, status: 'failed', error: error.message } }
     }
     await store.save()
@@ -103,9 +109,15 @@ export function createPhoneProvisioner({ ownerId, cloud, store, deviceId, projec
     }
     const id = stableId(request.operationId, 'initial-task')
     const source = caller ?? { sessionId: agent.sessionId, name: '主人', deviceId, agentUserId: ownerId }
-    if (caller) await admit({ id, agentUserId: agent.agentUserId, prompt: buildSessionDirectEnvelope({ senderSessionId: source.sessionId, senderTitle: source.name, messageId: id, content: request.prompt, at: formatDeliveryTimestamp(new Date().toISOString()) }), ...(request.inputDataProof ? { inputDataProof: request.inputDataProof } : {}), route: { kind: 'session-direct', caller, sourceMessageId: id } })
+    if (request.taskChatId) {
+      await authorize(request.inputDataProof?.groups ?? [], { sessionId: caller?.sessionId, permissionRequirements: request.inputDataProof?.permissionRequirements })
+      request.initialTurn ??= await landPhoneTaskFirstTurn({ request, agent, ownerId, cloud, deviceId, projectId,
+        machineLabel: machineLabel(), resolveIdentities })
+      await store.save()
+      await admit({ ...request.initialTurn, ...(request.inputDataProof ? { inputDataProof: request.inputDataProof } : {}) })
+    } else if (caller) await admit({ id, agentUserId: agent.agentUserId, prompt: buildSessionDirectEnvelope({ senderSessionId: source.sessionId, senderTitle: source.name, messageId: id, content: request.prompt, at: formatDeliveryTimestamp(new Date().toISOString()) }), ...(request.inputDataProof ? { inputDataProof: request.inputDataProof } : {}), route: { kind: 'session-direct', caller, sourceMessageId: id } })
     else await admit({ id, agentUserId: agent.agentUserId, prompt: request.prompt, route: { kind: 'task', senderUserId: ownerId } })
-    request.result = snapshot(agent)
+    request.result = { ...snapshot(agent), ...(request.taskMessageId ? { task_message_id: request.taskMessageId } : {}) }
     await store.save(); publish()
     return request.result
   }
