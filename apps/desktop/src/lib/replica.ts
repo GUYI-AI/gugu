@@ -25,7 +25,10 @@ import { rendererLogger } from './log'
 
 export type Reading<V> =
   | { state: 'unknown' }
-  /** `stale`: a newer answer may be on its way (snapshot from an earlier run, or past `fresh`). `error`: the last refresh failed. */
+  /**
+   * `stale`: a newer answer may be on its way (snapshot from an earlier run, or past `fresh`). `error`: the last refresh
+   * failed, or the one being retried did (a model with `retry` says so while it retries).
+   */
   | { state: 'value'; value: V; stale: boolean; error: Error | null }
   | { state: 'error'; error: Error }
 
@@ -50,13 +53,23 @@ type Definition<A extends unknown[], V> = {
    * (console error and a diagnostics counter), ❌ swallowed. The two snapshot blocks (account, device) stay within
    * SNAPSHOT_BUDGET_BYTES summed over their models' limits (a test checks it).
    */
-  persist?: { maxBytes: number; maxEntries: number }
+  persist?: {
+    maxBytes: number
+    maxEntries: number
+    /**
+     * What of a value is carried across restarts (default: all of it). Whole fields left out, or `undefined` = this key is
+     * not kept by definition (not a refusal); never a value cut short or rewritten. A field left out must be one the
+     * value's type already has as optional and every reader already reads as "not known yet". The limits apply to what
+     * is carried. Applied again to what a snapshot holds when it is restored, so it must give the same answer twice.
+     */
+    carry?: (value: V, ...args: A) => V | undefined
+  }
   /** Read again when the window comes back to the foreground and the value is past `fresh`. */
   refreshOnFocus?: boolean
   /** `refresh` shares a read already on its way instead of cancelling it (for reads that are retried and polled). */
   refreshJoinsRead?: boolean
-  /** Read again this often while a surface shows it (ms). */
-  refreshEvery?: number
+  /** Read again this often while a surface shows it (ms); a function of the value shown decides per value (false = not now). */
+  refreshEvery?: number | ((value: V | undefined) => number | false)
   /** How many times a failed read is retried before the reading is an error. Default 0: fail loud. */
   retry?: number | true
   retryDelay?: (attempt: number) => number
@@ -91,6 +104,7 @@ queryClient.getQueryCache().subscribe((event) => {
   if (event.type === 'updated' && event.action.type === 'success' && persist) {
     writeSnapshotEntry(event.query.queryKey, event.query.state.data, event.query.state.dataUpdatedAt, persist)
   }
+  if (event.type === 'observerAdded' && persist) noteUse(event.query.queryKey)
 })
 
 /**
@@ -192,7 +206,33 @@ const accountSnapshot = () => account
 
 // ── snapshot across restarts ─────────────────────────────────────────────────────────────────────────────────────
 
-type SnapshotEntry = { key: QueryKey; value: unknown; at: number }
+/** `at`: when the value was read (decides `fresh`). `used`: when a surface last showed it (decides which entries stay). */
+type SnapshotEntry = { key: QueryKey; value: unknown; at: number; used?: number }
+type Limits = NonNullable<Definition<unknown[], unknown>['persist']>
+
+/** An entry a surface shows right now counts as used now; otherwise when one last showed it (or when it was first kept). */
+function lastUse(entry: SnapshotEntry, now: number): number {
+  const shown = (queryClient.getQueryCache().find({ queryKey: entry.key, exact: true })?.getObserversCount() ?? 0) > 0
+  return shown ? now : entry.used ?? entry.at
+}
+
+const USE_NOTED_EVERY_MS = 60_000
+const usesNoted = new Map<string, number>()
+
+/** A surface started showing a kept entry: record it, so eviction keeps what is used, ❌ what was read last. */
+function noteUse(key: QueryKey): void {
+  const owner = String(key[1])
+  if (owner !== DEVICE && owner !== account.id) return
+  const hash = hashKey(key)
+  const now = Date.now()
+  if (now - (usesNoted.get(hash) ?? 0) < USE_NOTED_EVERY_MS) return
+  usesNoted.set(hash, now)
+  const snapshot = readSnapshot(owner)
+  const entry = snapshot[hash]
+  if (!entry) return
+  entry.used = now
+  try { localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot)) } catch { /* a use not recorded only weakens the next eviction */ }
+}
 type Snapshot = Record<string, SnapshotEntry>
 
 function readSnapshot(owner: string): Snapshot {
@@ -205,26 +245,38 @@ function readSnapshot(owner: string): Snapshot {
   }
 }
 
-function writeSnapshotEntry(key: QueryKey, value: unknown, at: number, limits: { maxBytes: number; maxEntries: number }): void {
+function writeSnapshotEntry(key: QueryKey, read: unknown, at: number, limits: Limits): void {
   const owner = String(key[1])
   if (owner !== DEVICE && owner !== account.id) return
   const name = String(key[0])
+  const value = limits.carry ? limits.carry(read, ...key.slice(2)) : read
   const snapshot = readSnapshot(owner)
+  const hash = hashKey(key)
+  if (value === undefined) {
+    // Not kept by definition: nothing to refuse; an older copy (an earlier definition kept it) leaves.
+    if (!snapshot[hash]) return
+    delete snapshot[hash]
+    try { localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot)) } catch { /* the entry is gone from memory's view anyway */ }
+    return
+  }
   // Entries are dropped by age: models load with their chunks, so "not registered yet" is not "gone". A model whose
   // value changes shape takes a new name; its old entries age out here.
   for (const [hash, entry] of Object.entries(snapshot)) {
     if (!(entry?.at > Date.now() - SNAPSHOT_MAX_AGE_MS)) delete snapshot[hash]
   }
-  const entry: SnapshotEntry = { key, value, at }
+  const now = Date.now()
+  const entry: SnapshotEntry = { key, value, at, used: snapshot[hash]?.used ?? now }
   const bytes = JSON.stringify(entry).length
   if (bytes > limits.maxBytes) {
     // Over its declared size: the older copy is not kept either, so the next start reads it as unknown.
-    delete snapshot[hashKey(key)]
+    delete snapshot[hash]
     refuseSnapshotWrite(name, `entry is ${bytes} B, its limit ${limits.maxBytes} B`)
   } else {
-    snapshot[hashKey(key)] = entry
-    const own = Object.entries(snapshot).filter(([, kept]) => kept.key[0] === name).sort(([, x], [, y]) => y.at - x.at)
-    for (const [hash] of own.slice(limits.maxEntries)) delete snapshot[hash]
+    snapshot[hash] = entry
+    // The least recently used leave (❌ the least recently read: a row read in the background must not push out one a
+    // surface shows at every start).
+    const own = Object.entries(snapshot).filter(([, kept]) => kept.key[0] === name).sort(([, x], [, y]) => lastUse(y, now) - lastUse(x, now))
+    for (const [evicted] of own.slice(limits.maxEntries)) delete snapshot[evicted]
   }
   try {
     localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot))
@@ -240,8 +292,13 @@ function writeSnapshotEntry(key: QueryKey, value: unknown, at: number, limits: {
  */
 function admitted(definition: Definition<unknown[], unknown>, entries: SnapshotEntry[]): SnapshotEntry[] {
   if (!definition.persist) return []
-  const { maxBytes, maxEntries } = definition.persist
-  return entries.filter((entry) => JSON.stringify(entry).length <= maxBytes).sort((x, y) => y.at - x.at).slice(0, maxEntries)
+  const { maxBytes, maxEntries, carry } = definition.persist
+  const now = Date.now()
+  return entries
+    .filter((entry) => !carry || carry(entry.value, ...entry.key.slice(2)) !== undefined)
+    .filter((entry) => JSON.stringify(entry).length <= maxBytes)
+    .sort((x, y) => lastUse(y, now) - lastUse(x, now))
+    .slice(0, maxEntries)
 }
 
 function ownEntries(snapshot: Snapshot, owner: string): Map<string, SnapshotEntry[]> {
@@ -335,7 +392,7 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     gcTime: definition.keep ?? Infinity,
     retry: definition.retry ?? false,
     ...(definition.retryDelay ? { retryDelay: definition.retryDelay } : {}),
-    ...(definition.refreshEvery ? { refetchInterval: definition.refreshEvery } : {}),
+    ...(definition.refreshEvery ? { refetchInterval: refetchIntervalOf(definition.refreshEvery) } : {}),
     refetchOnWindowFocus: definition.refreshOnFocus ?? false,
     ...(definition.merge ? { structuralSharing: (shown: unknown, next: unknown) => shown === undefined ? next : definition.merge!(shown as V, next as V) } : {}),
   })
@@ -387,15 +444,21 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
   }
 }
 
-function readingOfState(state: { data: unknown; error: Error | null; status: string } | undefined, stale: boolean): Reading<never> {
+/** react-query asks the interval of the query; a definition asks it of the value shown. */
+function refetchIntervalOf<V>(every: number | ((value: V | undefined) => number | false)) {
+  return typeof every === 'number' ? every : (query: { state: { data: unknown } }) => every(query.state.data as V | undefined)
+}
+
+function readingOfState(state: { data: unknown; error: Error | null; fetchFailureReason: Error | null; status: string } | undefined, stale: boolean): Reading<never> {
   if (!state) return UNKNOWN
-  if (state.data !== undefined) return { state: 'value', value: state.data as never, stale, error: state.error }
+  // While a failed refresh is retried, the failure is said already (react-query keeps `error` empty until it gives up).
+  if (state.data !== undefined) return { state: 'value', value: state.data as never, stale, error: state.error ?? state.fetchFailureReason }
   if (state.error) return { state: 'error', error: state.error }
   return UNKNOWN
 }
 
 function readingOf<V>(result: UseQueryResult<V>): Reading<V> {
-  if (result.data !== undefined) return { state: 'value', value: result.data, stale: result.isStale, error: result.error }
+  if (result.data !== undefined) return { state: 'value', value: result.data, stale: result.isStale, error: result.error ?? result.failureReason }
   if (result.error) return { state: 'error', error: result.error }
   return UNKNOWN
 }

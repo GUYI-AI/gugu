@@ -239,3 +239,60 @@ describe('snapshot limits (@@@client-state-model, persistence)', () => {
     errors.mockRestore()
   })
 })
+
+describe('PR 3 additions', () => {
+  const entriesOf = (owner: string, name: string) => Object.values(JSON.parse(snapshotOf(owner) ?? '{}') as Record<string, { key: unknown[]; value: unknown }>).filter((e) => e.key[0] === name)
+
+  it('reads again at an interval the shown value decides, and stops when it says false', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    let n = 0
+    const model = rm.replica({ name: 'test-poll', scope: 'account', read: async () => ++n, refreshEvery: (value) => (value !== undefined && value < 3 ? 5 : false) })
+    function Probe() { rm.useReplica(model, []); return null }
+    const harness = createReactHarness()
+    await harness.render(createElement(Probe))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    expect(n).toBe(3)
+    harness.cleanup()
+  })
+
+  it('says a failed refresh while it is still retried, keeping the value', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    let fail = false
+    const model = rm.replica({ name: 'test-retrying', scope: 'account', read: async () => { if (fail) throw new Error('offline'); return 1 }, retry: 3, retryDelay: () => 1_000 })
+    await model.prefetch()
+    fail = true
+    void model.refresh(); void model.prefetch()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(model.peek()).toMatchObject({ state: 'value', value: 1, error: { message: 'offline' } })
+    await rm.queryClient.cancelQueries()
+  })
+
+  it('carries only what the definition says: a field left out, or a key not kept at all (no refusal)', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const before = (await (await import('../../../../apps/desktop/src/lib/perfCounters')).readPerfCounters()).snapshotRefusals
+    type Row = { name: string; digest?: string }
+    const model = rm.replica({
+      name: 'test-carry', scope: 'account',
+      read: async (_owner: string, id: string): Promise<Row> => ({ name: id, digest: 'd'.repeat(5_000) }),
+      persist: { maxBytes: 256, maxEntries: 4, carry: ({ name }: Row, id: string) => (id === 'skip' ? undefined : { name }) },
+    })
+    await model.prefetch('kept'); await model.prefetch('skip')
+    expect(entriesOf('alice', 'test-carry').map((e) => e.value)).toEqual([{ name: 'kept' }])
+    expect((await (await import('../../../../apps/desktop/src/lib/perfCounters')).readPerfCounters()).snapshotRefusals).toBe(before)
+    expect(errors).not.toHaveBeenCalled()
+    errors.mockRestore()
+  })
+
+  it('evicts the least recently used key, not the least recently read: one a surface shows stays', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const model = rm.replica({ name: 'test-lru', scope: 'account', read: async (_owner: string, key: string) => key, persist: { maxBytes: 4096, maxEntries: 2 } })
+    function Probe() { rm.useReplica(model, ['user']); return null }
+    const harness = createReactHarness()
+    await harness.render(createElement(Probe))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    for (const chat of ['chat:1', 'chat:2', 'chat:3']) { await model.prefetch(chat); await new Promise((resolve) => setTimeout(resolve, 2)) }
+    expect(entriesOf('alice', 'test-lru').map((e) => e.key[2]).sort()).toEqual(['chat:3', 'user'])
+    harness.cleanup()
+  })
+})
