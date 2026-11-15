@@ -13,6 +13,14 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 const cleanups: Array<() => void> = []
 afterEach(() => { cleanups.splice(0).reverse().forEach(cleanup => cleanup()) })
 
+function topPoint(x: number, y: number) {
+  for (let current: Window = window; current.frameElement; current = current.parent) {
+    const frame = current.frameElement as HTMLElement, box = frame.getBoundingClientRect(), scale = box.width / frame.offsetWidth
+    x = box.left + (frame.clientLeft + x) * scale; y = box.top + (frame.clientTop + y) * scale
+  }
+  return { x, y }
+}
+
 async function mount(both = false) {
   await page.viewport(390, 844)
   const host = document.createElement('div')
@@ -96,18 +104,29 @@ it('keeps the last picture when the source finishes and hides the window with it
   expect(host.querySelector('[data-testid="picture-web"]')).toBe(picture)
 })
 
+it('requires two separate real touches when the first touch reveals a button under the finger', async () => {
+  const { host, model } = await mount()
+  const bounds = host.querySelector('[data-phone-watch-gesture]')!.getBoundingClientRect()
+  const point = { ...topPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2), id: 1 }
+  const session = cdp() as unknown as { send(method: string, params: object): Promise<unknown> }
+  const tap = () => act(async () => {
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] })
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  })
+  await tap()
+  expect(model.getSnapshot().presentation!.mode).toBe('floating')
+  expect(host.querySelector('[data-phone-watch-window]')!.getAttribute('data-revealed')).toBe('true')
+  await tap()
+  expect(model.getSnapshot().presentation!.mode).toBe('enlarged')
+})
+
 it('uses two real touch points to view a computer picture proportionally and restores that scale after minimizing', async () => {
   const { host, model } = await mount(true)
   await act(async () => { model.dispatch({ type: 'enlarge' }); model.dispatch({ type: 'select-source', sourceId: 'desktop' }) })
   const picture = host.querySelector<HTMLElement>('[data-testid="picture-desktop"]')!
   const bounds = host.querySelector('[data-phone-watch-picture]')!.getBoundingClientRect()
   const at = (x: number, id: number) => {
-    let point = { x: bounds.left + bounds.width / 2 + x, y: bounds.top + bounds.height / 2 }
-    for (let current: Window = window; current.frameElement; current = current.parent) {
-      const frame = current.frameElement as HTMLElement, box = frame.getBoundingClientRect(), scale = box.width / frame.offsetWidth
-      point = { x: box.left + (frame.clientLeft + point.x) * scale, y: box.top + (frame.clientTop + point.y) * scale }
-    }
-    return { ...point, id }
+    return { ...topPoint(bounds.left + bounds.width / 2 + x, bounds.top + bounds.height / 2), id }
   }
   const session = cdp() as unknown as { send(method: string, params: object): Promise<unknown> }
   await act(async () => {

@@ -9,6 +9,7 @@ import { fitLiveWindow } from '@/session/renderer/features/live-window/geometry'
 import type { LiveWindowAction, LiveWindowPresentation, LiveWindowSource } from '@/session/renderer/features/live-window/types'
 import { cornerFromPhoneDock, movePhoneWatch, phoneWatchCorner, phoneWatchDock, type PhoneWatchBox } from './phone-watch-drag'
 import { usePhoneWatchZoom } from './phone-watch-zoom'
+import { usePhoneWatchSmallAction } from './phone-watch-small-action'
 import './phone-watch-window.css'
 
 export interface PhoneWatchSource extends LiveWindowSource {
@@ -45,6 +46,7 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
   const source = sources.find(item => item.id === selectedId)
   const ended = source?.status === 'finished'
   const zoom = usePhoneWatchZoom(picture, selectedId, large, source?.kind === 'computer', !ended)
+  const smallAction = usePhoneWatchSmallAction()
   const lastError = useRef(onError)
   lastError.current = onError
 
@@ -121,6 +123,7 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
 
   const begin = (event: ReactPointerEvent<HTMLElement>, isHandle: boolean) => {
     if (event.button !== 0 || event.target instanceof Element && event.target.closest('button') && !isHandle) return
+    smallAction.reset()
     event.preventDefault()
     const box = isHandle ? handle : placed
     drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, box, latest: box, handle: isHandle, moved: false }
@@ -175,10 +178,10 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
       </div>
       {!large && <div data-phone-watch-gesture onPointerDown={event => begin(event, false)} onPointerMove={move} onPointerUp={end}
         onPointerCancel={() => { drag.current = null; setMoving(null) }}>
-        <div data-phone-watch-small-actions>
-          {ended ? <IconButton aria-label={t('controlWatch.close')} onClick={() => dispatch({ type: 'close' })}><X /></IconButton>
-            : <IconButton aria-label={t('controlWatch.dock')} onClick={() => dispatch({ type: 'dock', ...presentation.dock })}><PanelRightClose /></IconButton>}
-          <IconButton className="phone-watch-enlarge" aria-label={t('controlWatch.enlarge')} onClick={() => { setRevealed(false); dispatch({ type: 'set-orientation', orientation: 'portrait' }); dispatch({ type: 'enlarge' }) }}><Expand /></IconButton>
+        <div data-phone-watch-small-actions onPointerDownCapture={smallAction.down} onPointerCancelCapture={smallAction.reset}>
+          {ended ? <IconButton aria-label={t('controlWatch.close')} onClick={event => smallAction.run(event, () => dispatch({ type: 'close' }))}><X /></IconButton>
+            : <IconButton aria-label={t('controlWatch.dock')} onClick={event => smallAction.run(event, () => dispatch({ type: 'dock', ...presentation.dock }))}><PanelRightClose /></IconButton>}
+          <IconButton className="phone-watch-enlarge" aria-label={t('controlWatch.enlarge')} onClick={event => smallAction.run(event, () => { setRevealed(false); dispatch({ type: 'set-orientation', orientation: 'portrait' }); dispatch({ type: 'enlarge' }) })}><Expand /></IconButton>
         </div>
       </div>}
       {large && both && <div data-phone-watch-switch role="tablist" aria-label={t('controlWatch.sources')}>
