@@ -4,6 +4,7 @@ import {
   type PlatformCallableRoutes,
   type IPlatformModelBehavior,
   type PlatformModelLoad,
+  type SessionModelCapability,
 } from '@gugu/session-core/agents/plugins';
 import { claudePlatformModelOption } from '@gugu/session-core/acp/platform-model-address';
 import { harnessPlatform } from './platform';
@@ -164,6 +165,14 @@ export function claudeAcpPlatformSessionMeta(input: {
   }
 }
 
+/** Secret-free flags shared by native ACP startup and the host-owned settings file. */
+export function claudeSessionFlagSettings(model: Pick<SessionModelCapability, 'fastMode' | 'reasoningEffort'> | null): Record<string, boolean> {
+  return {
+    ...(typeof model?.fastMode === 'boolean' ? { fastMode: model.fastMode } : {}),
+    ...(model?.reasoningEffort === 'ultracode' ? { ultracode: true } : {}),
+  }
+}
+
 export const platformModel: IPlatformModelBehavior = {
   declare: (input) => ({
     dialect: harnessPlatform.dialect,
@@ -189,11 +198,7 @@ export const platformModel: IPlatformModelBehavior = {
       : {}),
   }),
   load: (model) => {
-    const fastMode = model.fastMode
-    const sessionSettings = {
-      ...(typeof fastMode === 'boolean' ? { fastMode } : {}),
-      ...(model.reasoningEffort === 'ultracode' ? { ultracode: true } : {}),
-    }
+    const sessionSettings = claudeSessionFlagSettings(model)
     const selectedModel = trimmedValue(model.model)
     if (!selectedModel) return Object.keys(sessionSettings).length > 0 ? { settingsOverride: sessionSettings } : {}
     // 平台模型交给 Claude Code 的写法(1M 的 `claude-*` 带 `[1m]`,见 claudePlatformModelOption)。
