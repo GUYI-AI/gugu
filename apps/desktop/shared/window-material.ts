@@ -29,12 +29,15 @@ export const WINDOW_MATERIAL_CHANGED_CHANNEL = 'window-material:changed'
 /**
  * @@@native-appearance (#7333) — mac 上原生材质的明暗跟着 `nativeTheme.themeSource` 走,而不是跟着咕咕自己的
  * `<html data-theme>`。用户在咕咕里手选的主题与系统外观相反时,透出来的就会是「浅材质配浅字」。
- * ⇒ renderer 把用户的**偏好**(light / dark / system)原样同步给主进程,主进程照抄成 themeSource,
- * 并同步答回「当下系统的真实明暗」(偏好是 system 时 renderer 就用这个答案落主题,不先拿旧的 matchMedia 画错一帧)。
- * ❌ 把解析后的明暗写成 themeSource:那会把「跟随系统」变成永久手选,renderer 读系统外观的 matchMedia 也跟着失真。
+ * ⇒ 主进程自己照抄**偏好**(light / dark / system,app 设置 `theme`)成 themeSource:启动时、`theme` 变了时
+ * (@@@device-preferences:主进程是这份偏好的持有者,❌ renderer 每次再推一遍)。
+ * ❌ 把解析后的明暗写成 themeSource:那会把「跟随系统」变成永久手选。
+ *
+ * renderer 仍要同步知道一件事:**系统**此刻是深是浅(选「跟随系统」那一帧就要画对)。mac 上 themeSource 还停在上一次
+ * 手选时,Chromium 的 prefers-color-scheme 说的是那个手选,不是系统 ⇒ 问主进程(SYSTEM_APPEARANCE_CHANNEL,纯读)。
  */
 export type ThemePreferenceValue = 'light' | 'dark' | 'system'
-export const WINDOW_THEME_PREFERENCE_CHANNEL = 'window:sync-theme-preference'
+export const SYSTEM_APPEARANCE_CHANNEL = 'window:system-appearance'
 
 export function isThemePreferenceValue(value: unknown): value is ThemePreferenceValue {
   return value === 'light' || value === 'dark' || value === 'system'

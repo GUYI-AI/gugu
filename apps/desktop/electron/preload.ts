@@ -20,8 +20,7 @@ import { VIEW_STATE_GLOBAL, VIEW_STATE_SNAPSHOT_CHANNEL, type ViewStateGlobal } 
 import {
   WINDOW_MATERIAL_CHANGED_CHANNEL,
   WINDOW_MATERIAL_GET_CHANNEL,
-  WINDOW_THEME_PREFERENCE_CHANNEL,
-  type ThemePreferenceValue,
+  SYSTEM_APPEARANCE_CHANNEL,
   type WindowMaterial,
 } from '../shared/window-material'
 
@@ -146,18 +145,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setBadge: (count: number): void => {
     ipcRenderer.send('set-badge', count)
   },
-  syncResolvedLocale: async (locale: 'zh-CN' | 'en-US'): Promise<void> => {
-    await ipcRenderer.invoke('locale:sync-resolved', locale)
-  },
   // @@@window-tone — 无边框窗口露出来的那块底色要跟着咕咕的主题走(见 main.ts 同名注释)。
   // 用 send 不用 invoke:它在首帧前就要发一次,不该让渲染阻塞等主进程应答。
   syncWindowTone: (tone: 'light' | 'dark', themeColors?: Record<string, string>): void => {
     ipcRenderer.send('window:sync-tone', tone, themeColors)
   },
-  // @@@native-appearance (#7333) 偏好原样给主进程(mac 上照抄成 nativeTheme.themeSource),同步答回此刻的真实明暗 ——
-  // 切回「跟随系统」时 renderer 用这个答案落主题,不先拿旧的 matchMedia 画错一帧。主进程同步失败答 null。
-  syncThemePreference: (preference: ThemePreferenceValue): 'light' | 'dark' | null =>
-    ipcRenderer.sendSync(WINDOW_THEME_PREFERENCE_CHANNEL, preference),
+  // @@@native-appearance (#7333) 纯读:系统此刻是深是浅(与咕咕选了什么无关)。解析「跟随系统」时用 —— mac 上 themeSource
+  // 还停在上一次手选时,Chromium 的 matchMedia 说的是那个手选。主进程读不到答 null。
+  readSystemAppearance: (): 'light' | 'dark' | null => ipcRenderer.sendSync(SYSTEM_APPEARANCE_CHANNEL),
   relaunchApp: (): Promise<void> => ipcRenderer.invoke('app:relaunch'),
   onAppForeground: (callback: () => void): (() => void) => {
     const listener = () => callback()

@@ -35,7 +35,6 @@ export function createUnsupportedPlatform(
       phoneAgentHost: false,
       readingZoomMemory: false,
     },
-    syncResolvedLocale: async () => {},
     subscribeAppForeground: () => () => {},
     selectDirectory: async () => { throw unsupported('Directory picker') },
     checkForUpdates: async () => { throw unsupported('Updates') },

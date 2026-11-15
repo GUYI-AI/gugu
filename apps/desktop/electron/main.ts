@@ -57,7 +57,7 @@ import { captureReading, currentReading, historyReading } from './session/main/c
 import { setMacFootprintReader } from './session/main/core/resource-monitor/footprint'
 import { clearTraceLeftovers } from './session/main/core/resource-monitor/capture'
 import { createScreenCapture } from './device-actions/screen-capture'
-import { installNativeAppearanceSync, installWindowMaterial, type WindowMaterialHost } from './window-material'
+import { applyNativeThemePreference, installSystemAppearanceRead, installWindowMaterial, type WindowMaterialHost } from './window-material'
 import { createDeviceActionCaller, type DeviceActionCaller } from '@gugu/core/cloud/deviceActionCaller'
 import type { DeviceActionResult } from '@gugu/core/shared/deviceActions'
 import {
@@ -77,7 +77,7 @@ import { registerErrorSummaryConsent } from './error-summary-consent-host'
 import { resolveSessionPermissionMode, type GuguPermissionMode } from '@gugu/session-core/acp'
 import { classifyFatal, recordFatalSync } from './lib/fatal-triage'
 import { pathToFileURL } from 'node:url'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { homedir, hostname, platform } from 'os'
 import { dirname, join, resolve, sep } from 'path'
 import { autoUpdater } from 'electron-updater'
@@ -567,7 +567,8 @@ import {
   probeBusNameHasOwner,
   resolveSessionBusPath,
 } from './linux-notification-service'
-import { HOST_LOCALE_STATE_FILE, HostLocaleStore } from './host-locale-store'
+import { HostLocaleStore } from './host-locale-store'
+import type { LocalePreference } from '@/i18n/locale'
 import {
   OVERLAY_BADGE_SIZE,
   buildOverlayBadgeBitmap,
@@ -1359,15 +1360,30 @@ function refreshApplicationMenu(): void {
   })
 }
 
-function syncResolvedHostLocale(value: unknown): void {
+/**
+ * @@@device-preferences — the host's language, resolved here from the `locale` setting and the system's languages (main
+ * owns the setting; ❌ the renderer pushing what it resolved). Tray, menus, window chrome and the session host follow.
+ */
+function applyHostLocale(preference: LocalePreference): void {
   if (!hostLocaleStore) throw new Error('HOST_LOCALE_NOT_INITIALIZED')
-  const before = hostLocaleStore.current()
-  hostLocaleStore.syncResolvedLocale(value)
+  if (!hostLocaleStore.apply(preference, app.getPreferredSystemLanguages())) return
   refreshTrayChrome()
   refreshApplicationMenu()
   publishSessionHostLocale()
   publishWindowChromeLabels()
-  if (hostLocaleStore.current() !== before) tellHostPresentationChanged()
+  tellHostPresentationChanged()
+}
+
+/**
+ * @@@device-preferences — main applies the two preferences it holds as app settings itself: `theme` → the native
+ * appearance (mac themeSource, @@@native-appearance), `locale` → the host's language. At startup (before the window's
+ * contents load) and whenever one of the keys changes (`reconcileSettingsRuntimeState` → `onAppSettingsChanged`).
+ */
+function applyHostPreferences(): void {
+  if (!emdashBridgeModule) return
+  const { theme, locale } = emdashBridgeModule.hostPreferencesNow()
+  if (!SERVER_MODE) applyNativeThemePreference(process.platform, nativeTheme, theme)
+  applyHostLocale(locale)
 }
 
 function currentHostLocale(): string {
@@ -2335,9 +2351,6 @@ ipcMain.on('window:menu-command', (event, command: unknown) => {
 })
 ipcMain.on('window-chrome:get-labels', (event) => {
   event.returnValue = currentHostCatalog().windowChrome
-})
-ipcMain.handle('locale:sync-resolved', (_event, locale: unknown) => {
-  syncResolvedHostLocale(locale)
 })
 // @@@window-tone — 渲染层是主题真值的唯一写入者,落属性时顺带告诉主进程,主进程只被告知。
 ipcMain.on('window:sync-tone', (event, tone: unknown, colors: Record<string, string> | undefined) => {
@@ -4557,10 +4570,9 @@ app.whenReady().then(async () => {
   } catch (error) {
     createLogger('engine-reap').error({ err: error }, '启动回收自身失败,残留留待下轮')
   }
-  hostLocaleStore = new HostLocaleStore(
-    join(app.getPath('userData'), HOST_LOCALE_STATE_FILE),
-    app.getPreferredSystemLanguages(),
-  )
+  hostLocaleStore = new HostLocaleStore(app.getPreferredSystemLanguages())
+  // The renderer-pushed copy of the resolved language this replaced (main resolves it from the setting now).
+  rmSync(join(app.getPath('userData'), 'host-locale-v1.json'), { force: true })
   try {
     enableMacTouchIdPasskeys()
   } catch (error) {
@@ -4621,7 +4633,12 @@ app.whenReady().then(async () => {
       materialWindow: () => (process.platform === 'darwin' ? mainWindow : null),
     })
     windowMaterial.onChange(() => syncWindowTone(readWindowTone()))
-    installNativeAppearanceSync({ platform: process.platform, nativeTheme, ipcMain })
+    installSystemAppearanceRead({
+      platform: process.platform,
+      nativeTheme,
+      macInterfaceStyle: () => systemPreferences.getUserDefault('AppleInterfaceStyle', 'string'),
+      ipcMain,
+    })
     createWindow(false)
   }
   // PATH 补救不再挑启动方式（曾经只在「mac 且已打包」时跑 → ssh/agent 起的验证流程、以及
@@ -4640,6 +4657,19 @@ app.whenReady().then(async () => {
     fatalSessionpageBoot(err)
     return
   }
+  // @@@device-preferences — the settings are readable from here on (before the window's contents load): theme and language
+  // are main's own to apply, now and on every change of their keys (a migration adopting them included).
+  const applyPreferencesLogged = () => {
+    try {
+      applyHostPreferences()
+    } catch (error) {
+      createLogger('device-settings').error({ error: String(error) }, 'theme / language settings could not be applied')
+    }
+  }
+  applyPreferencesLogged()
+  emdashBridgeModule.onAppSettingsChanged((key) => { if (key === 'theme' || key === 'locale') applyPreferencesLogged() })
+  // 「跟随系统」的语言:系统语言改了(改完回到咕咕)再解析一次 —— 设置没变,系统变了。
+  app.on('browser-window-focus', applyPreferencesLogged)
   hydrateLoginShellPath()
   ensureWindowsNpmGlobalBinInPath()
   if (SERVER_MODE) {

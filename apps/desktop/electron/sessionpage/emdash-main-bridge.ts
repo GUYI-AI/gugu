@@ -229,4 +229,4 @@ export { projectFoldersPublished } from '@main/core/extensions/extension-bridge'
 export { sessionBootTasks } from '../session/main/core/boot-tasks'
 export { flushViewState, viewStateSnapshot } from '@main/core/view-state/view-state-service'
 // @@@device-preferences — preload's synchronous handover (with the one-time migration), and the host's tray badge setting.
-export { answerDeviceSettings, onAppSettingsChanged, trayBadgeEnabled } from '@main/core/settings/device-settings'
+export { answerDeviceSettings, hostPreferencesNow, onAppSettingsChanged, trayBadgeEnabled } from '@main/core/settings/device-settings'

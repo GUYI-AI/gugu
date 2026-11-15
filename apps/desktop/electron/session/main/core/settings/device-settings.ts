@@ -22,6 +22,7 @@ import {
   type LegacyPreferenceName,
 } from '../../../../../shared/device-preferences';
 import { getDefaultForKey } from './settings-registry';
+import { localeSchema, themeSchema } from './schema';
 import { appSettingsService, type SettingsMeta, type SettingsStore } from './settings-service';
 import { isPlainObject } from './utils';
 
@@ -81,6 +82,18 @@ export function settingsChanged(key: AppSettingsKey): void {
       log.error('a settings change follower failed', { key, error: String(error) });
     }
   }
+}
+
+/**
+ * The two preferences the host applies itself (@@@native-appearance themeSource, the host locale for tray, menus,
+ * window chrome and the session host), read synchronously: at startup, before the window loads, and on each change of
+ * these keys. A database without the settings table yet (a first start, before its migrations) stores nothing: the
+ * factory values are what is stored.
+ */
+export function hostPreferencesNow(store: SettingsStore = appSettingsService): { theme: AppSettings['theme']; locale: AppSettings['locale'] } {
+  if (!hasSettingsTable()) return { theme: getDefaultForKey('theme'), locale: getDefaultForKey('locale') };
+  // Parsed: a value stored before the key had its writer (`emdark`) reads as what it meant.
+  return { theme: themeSchema.parse(store.getWithMetaNow('theme').value), locale: localeSchema.parse(store.getWithMetaNow('locale').value) };
 }
 
 /** @@@5295 the tray badge setting, for the host (it has no renderer storage to read). */

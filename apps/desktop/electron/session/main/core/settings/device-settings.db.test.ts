@@ -10,7 +10,7 @@ vi.mock('@main/db/client', () => ({ get db() { if (!h.db) throw new Error('fixtu
 vi.mock('@main/core/agents/plugin-registry', () => ({ isValidProviderId: () => true }));
 vi.mock('electron', () => ({ app: { getPath: () => h.userData }, nativeTheme: { shouldUseDarkColors: false } }));
 import { SettingsStore } from './settings-service';
-import { answerDeviceSettings } from './device-settings';
+import { answerDeviceSettings, hostPreferencesNow } from './device-settings';
 import { themeSchema } from './schema';
 import { resolveEffectiveTheme } from '../pty/terminal-color-scheme';
 
@@ -106,5 +106,24 @@ describe('the theme setting has a writer now', () => {
     expect(resolveEffectiveTheme('dark', false)).toBe('emdark');
     expect(resolveEffectiveTheme('light', true)).toBe('emlight');
     expect(resolveEffectiveTheme('system', true)).toBe('emdark');
+  });
+});
+
+describe('main applies theme and language from its own settings (@@@device-preferences)', () => {
+  it('reads both from the settings, an adopted old value included; nothing stored = the factory values', async () => {
+    fixture = await openFixture('empty'); h.db = fixture.db;
+    const store = new SettingsStore();
+    expect(hostPreferencesNow(store)).toEqual({ theme: 'light', locale: 'system' });
+    answerDeviceSettings({ theme: 'dark', locale: 'en-US' }, store);
+    expect(hostPreferencesNow(store)).toEqual({ theme: 'dark', locale: 'en-US' });
+    await store.update('theme', 'system');
+    await store.update('locale', 'zh-CN');
+    expect(hostPreferencesNow(store)).toEqual({ theme: 'system', locale: 'zh-CN' });
+  });
+
+  it('a value stored before the theme key had its writer reads as what it meant', async () => {
+    fixture = await openFixture('empty'); h.db = fixture.db;
+    fixture.sqlite.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)').run('theme', JSON.stringify('emdark'));
+    expect(hostPreferencesNow(new SettingsStore()).theme).toBe('dark');
   });
 });

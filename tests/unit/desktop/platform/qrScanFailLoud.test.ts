@@ -21,7 +21,7 @@ vi.mock('@capacitor-mlkit/barcode-scanning', () => ({
 
 import { capacitorPlatform } from '../../../../apps/desktop/src/platform/capacitor'
 import { describeBarcodeScanError } from '../../../../apps/desktop/src/lib/barcodeScanError'
-import { i18n } from '../../../../apps/desktop/src/i18n'
+import { i18n, setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { PlatformError } from '../../../../apps/desktop/src/platform/errors'
 import '../../../../apps/desktop/src/i18n/registerMainCatalog'
 
@@ -39,7 +39,7 @@ beforeEach(() => {
   stopScan.mockReset().mockResolvedValue(undefined)
   document.body.innerHTML = ''
   document.body.className = ''
-  void capacitorPlatform.syncResolvedLocale('zh-CN')
+  setLocalePreference('zh-CN')
 })
 
 afterEach(() => {
@@ -98,8 +98,8 @@ describe('capacitor scanQrCode — fail-loud (#1122)', () => {
     await expect(pending).resolves.toBeNull()
   })
 
-  it('renders the English native overlay after resolved-locale sync', async () => {
-    await capacitorPlatform.syncResolvedLocale('en-US')
+  it('renders the English native overlay in the app\'s language', async () => {
+    setLocalePreference('en-US')
     addListener.mockReturnValue(new Promise(() => {}))
 
     const pending = capacitorPlatform.scanQrCode()

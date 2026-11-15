@@ -40,8 +40,22 @@ function prefersDarkQuery(): MediaQueryList | null {
   return window.matchMedia('(prefers-color-scheme: dark)');
 }
 
-/** 系统外观当下是不是深色。拿不到 matchMedia(测试/SSR)时按浅色。 */
+/** 桌面上主进程答不出系统外观(它那一侧已记原因)。 */
+export class SystemAppearanceReadError extends Error {}
+
+/**
+ * 系统外观当下是不是深色。一个壳一个来源:
+ *  - 桌面:问主进程(纯读,@@@native-appearance)。mac 上 themeSource 跟着用户的手选走,手选还在时 Chromium 的
+ *    matchMedia 说的是那个手选、不是系统 —— 切到「跟随系统」那一帧拿它解析就会先画错一帧。主进程答不出来就抛。
+ *  - web / 手机 / 测试:没有主进程,matchMedia 就是它的系统外观真值;拿不到 matchMedia(SSR)时按浅色。
+ */
 export function systemPrefersDark(): boolean {
+  const read = typeof window === 'undefined' ? undefined : window.electronAPI?.readSystemAppearance;
+  if (read) {
+    const answer = read();
+    if (answer === null) throw new SystemAppearanceReadError('主进程读不到系统外观');
+    return answer === 'dark';
+  }
   return prefersDarkQuery()?.matches === true;
 }
 
@@ -60,31 +74,9 @@ export function readThemePreference(): ThemePreference {
 }
 
 /**
- * @@@native-appearance (#7333) — 偏好同步给主进程(mac 上照抄成 nativeTheme.themeSource,原生材质跟着它的明暗走),
- * 拿回主进程恢复 themeSource **之后**的真实明暗。偏好是 system 时用这个答案落主题:此刻 renderer 的 matchMedia 可能
- * 还停在上一次手选的明暗上(主进程改 themeSource 之后,Chromium 才异步把 prefers-color-scheme 推过来),先拿它解析
- * 就会先画错一帧。三种结果分开走,❌ 合成一个 null:
- *   no-bridge — web / 测试,没有主进程:matchMedia 就是它的系统外观真值,正常路径;
- *   ok        — 主进程答了真实明暗;
- *   failed    — 桥在、主进程没答上来(它那一侧已记原因):这次不算成功,调用方保留现有偏好与主题。
+ * @@@native-appearance (#7333) — 原生外观(mac 的 themeSource)由主进程自己按 app 设置 `theme` 落(启动时、这个键变了时);
+ * renderer 只写设置、只读系统外观,❌ 再把偏好推给主进程。
  */
-type NativeAppearanceSync = { kind: 'no-bridge' } | { kind: 'ok'; system: HostTheme } | { kind: 'failed' };
-
-export class NativeAppearanceSyncError extends Error {}
-
-function syncNativeAppearance(preference: ThemePreference): NativeAppearanceSync {
-  if (typeof window === 'undefined') return { kind: 'no-bridge' };
-  const bridge = window.electronAPI?.syncThemePreference;
-  if (!bridge) return { kind: 'no-bridge' };
-  const answer = bridge(preference);
-  return answer === 'light' || answer === 'dark' ? { kind: 'ok', system: answer } : { kind: 'failed' };
-}
-
-/** 同步成功(或没有主进程)之后,偏好 → 真值。 */
-function settledTheme(preference: ThemePreference, sync: Exclude<NativeAppearanceSync, { kind: 'failed' }>): HostTheme {
-  if (preference !== 'system') return resolveThemePreference(preference);
-  return sync.kind === 'ok' ? sync.system : resolveThemePreference('system');
-}
 
 /**
  * 偏好的变化不一定伴随真值的变化 —— 系统是浅色时,从「浅色」切到「跟随系统」解析出来还是
@@ -136,12 +128,8 @@ export function subscribeToHostTheme(onChange: () => void): () => void {
 
 /** 写偏好,并把解析出来的真值落到属性上。返回落下去的那个真值。 */
 export function writeThemePreference(preference: ThemePreference): HostTheme {
-  const sync = syncNativeAppearance(preference);
-  // 主进程没跟上:不写偏好、不动主题,响亮报错(调用方是一次点击 / 命令,错误进全局错误捕获与日志)。
-  if (sync.kind === 'failed') {
-    throw new NativeAppearanceSyncError(`主进程没能同步主题偏好 ${preference};偏好与主题保持原样`);
-  }
-  const resolved = settledTheme(preference, sync);
+  // 「跟随系统」而主进程读不到系统外观:这里就抛(SystemAppearanceReadError),不写偏好、不动主题(调用方是一次点击 / 命令)。
+  const resolved = resolveThemePreference(preference);
   // Attribute first: the follower below sees its own write already applied.
   applyEffectiveTheme(resolved, preference);
   devicePreferences.write('theme', preference);
@@ -168,9 +156,14 @@ export function startHostThemeSystemSync(): () => void {
 
   systemSyncRefCount += 1;
   if (!detachSystemSync) {
+    // 桌面上 matchMedia 只当「系统外观可能变了」的信号用,真值仍问主进程(systemPrefersDark)。
     const handler = () => {
       if (readThemePreference() !== 'system') return;
-      applyEffectiveTheme(systemPrefersDark() ? 'dark' : 'light', 'system');
+      try {
+        applyEffectiveTheme(systemPrefersDark() ? 'dark' : 'light', 'system');
+      } catch (error) {
+        themeLog.error({ error: String(error) }, '系统外观变了,读不到它;保留当前主题');
+      }
     };
     mq.addEventListener('change', handler);
     detachSystemSync = () => mq.removeEventListener('change', handler);
@@ -201,12 +194,11 @@ function followThemePreference(): void {
     if (typeof document === 'undefined') return;
     const preference = readThemePreference();
     if (document.documentElement.dataset.themePreference === preference) return;
-    const sync = syncNativeAppearance(preference);
-    if (sync.kind === 'failed') {
-      themeLog.error({ preference }, '别的窗口改了主题偏好,主进程没能同步;保留当前主题');
-      return;
+    try {
+      applyEffectiveTheme(resolveThemePreference(preference), preference);
+    } catch (error) {
+      themeLog.error({ preference, error: String(error) }, '别的窗口改了主题偏好,读不到系统外观;保留当前主题');
     }
-    applyEffectiveTheme(settledTheme(preference, sync), preference);
   });
 }
 
@@ -217,13 +209,14 @@ function followThemePreference(): void {
 export function hydrateHostTheme(): HostTheme {
   followThemePreference();
   const preference = readThemePreference();
-  const sync = syncNativeAppearance(preference);
-  // 启动恢复时主进程没跟上:属性已经由 index.html 的引导脚本落过,保留它,只把失败报出来(❌ 在这里抛:会把整个壳拖垮)。
-  if (sync.kind === 'failed') {
-    themeLog.error({ preference }, '启动时主进程没能同步主题偏好;保留当前主题,原生外观可能与它不一致');
+  let resolved: HostTheme;
+  try {
+    resolved = resolveThemePreference(preference);
+  } catch (error) {
+    // 启动恢复时读不到系统外观:属性已经由 index.html 的引导脚本落过,保留它,只把失败报出来(❌ 在这里抛:会把整个壳拖垮)。
+    themeLog.error({ preference, error: String(error) }, '启动时读不到系统外观;保留当前主题');
     return readEffectiveHostTheme();
   }
-  const resolved = settledTheme(preference, sync);
   applyEffectiveTheme(resolved, preference);
   return resolved;
 }

@@ -33,12 +33,9 @@ describe('retired plain white theme preference', () => {
     expect(readThemePreference()).toBe('light')
   })
 
-  it('hydrates the legacy value as the ordinary light preference and native scheme', () => {
-    const sync = vi.fn(() => 'light' as const)
-    vi.stubGlobal('electronAPI', { syncThemePreference: sync })
+  it('hydrates the legacy value as the ordinary light preference', () => {
     localStorage.setItem('app-theme', 'plain-white')
     expect(hydrateHostTheme()).toBe('light')
-    expect(sync).toHaveBeenCalledExactlyOnceWith('light')
     expect(readThemePreference()).toBe('light')
     expect(document.documentElement.dataset.theme).toBe('light')
     expect(document.documentElement.dataset.themePreference).toBe('light')

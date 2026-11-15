@@ -2,81 +2,90 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   applyNativeThemePreference,
-  installNativeAppearanceSync,
+  installSystemAppearanceRead,
+  systemAppearance,
   type NativeAppearanceTheme,
 } from '../../../../apps/desktop/electron/window-material'
-import { WINDOW_THEME_PREFERENCE_CHANNEL } from '../../../../apps/desktop/shared/window-material'
+import { SYSTEM_APPEARANCE_CHANNEL } from '../../../../apps/desktop/shared/window-material'
 import {
   hydrateHostTheme,
-  NativeAppearanceSyncError,
   startHostThemeSystemSync,
+  SystemAppearanceReadError,
   writeThemePreference,
 } from '../../../../apps/desktop/src/session/renderer/lib/theme/host-theme'
 
 /** A fake nativeTheme: shouldUseDarkColors follows themeSource, and the OS appearance when themeSource is 'system'. */
 function fakeNativeTheme(osDark: boolean) {
-  const theme = {
+  return {
     osDark,
     themeSource: 'system' as NativeAppearanceTheme['themeSource'],
     get shouldUseDarkColors() {
       return this.themeSource === 'system' ? this.osDark : this.themeSource === 'dark'
     },
   }
-  return theme
 }
 
-describe('native appearance follows the theme preference on mac (#7333)', () => {
-  it('copies the preference — not the resolved tone — into themeSource, and answers the real tone', () => {
+describe('main owns the native appearance (#7333, @@@device-preferences)', () => {
+  it('copies the stored preference — not the resolved tone — into themeSource on mac', () => {
     const theme = fakeNativeTheme(false)
-    expect(applyNativeThemePreference('darwin', theme, 'dark')).toBe('dark')
+    applyNativeThemePreference('darwin', theme, 'dark')
     expect(theme.themeSource).toBe('dark')
-    // Back to following the system: themeSource is 'system' again, and the answer is the OS appearance.
-    expect(applyNativeThemePreference('darwin', theme, 'system')).toBe('light')
+    applyNativeThemePreference('darwin', theme, 'system')
     expect(theme.themeSource).toBe('system')
   })
 
   it('leaves Windows/Linux alone: their tray icon reads shouldUseDarkColors to match the taskbar', () => {
     const theme = fakeNativeTheme(false)
-    expect(applyNativeThemePreference('win32', theme, 'dark')).toBe('light')
+    applyNativeThemePreference('win32', theme, 'dark')
     expect(theme.themeSource).toBe('system')
   })
 
-  it('refuses a preference it does not know, and the IPC answers null instead of leaving the renderer waiting', () => {
+  it('refuses a preference it does not know', () => {
     expect(() => applyNativeThemePreference('darwin', fakeNativeTheme(false), 'sepia')).toThrow(/light \/ dark \/ system/)
+  })
+
+  it('answers the system appearance, whatever Gugu picked: a hand-pick on mac does not hide the OS', () => {
+    const theme = fakeNativeTheme(false)
+    applyNativeThemePreference('darwin', theme, 'dark')
+    expect(systemAppearance('darwin', theme, () => '')).toBe('light')
+    expect(systemAppearance('darwin', theme, () => 'Dark')).toBe('dark')
+    applyNativeThemePreference('darwin', theme, 'system')
+    theme.osDark = true
+    expect(systemAppearance('darwin', theme, () => '')).toBe('dark')
+    expect(systemAppearance('linux', fakeNativeTheme(true), () => '')).toBe('dark')
+  })
+
+  it('the read answers null (❌ leaves the renderer waiting) when it fails', () => {
     let handler: ((event: { sender: unknown; returnValue: unknown }, ...args: unknown[]) => void) | null = null
-    installNativeAppearanceSync({
+    installSystemAppearanceRead({
       platform: 'darwin',
-      nativeTheme: fakeNativeTheme(false),
-      ipcMain: { on: (channel, listener) => { if (channel === WINDOW_THEME_PREFERENCE_CHANNEL) handler = listener } },
+      nativeTheme: { themeSource: 'dark', shouldUseDarkColors: true },
+      macInterfaceStyle: () => { throw new Error('no defaults') },
+      ipcMain: { on: (channel, listener) => { if (channel === SYSTEM_APPEARANCE_CHANNEL) handler = listener } },
     })
     const event = { sender: {}, returnValue: undefined as unknown }
-    handler!(event, 'sepia')
+    handler!(event)
     expect(event.returnValue).toBeNull()
   })
 })
 
 /**
- * The renderer side, against a fake main process. The fake matchMedia lags behind themeSource the way Chromium does:
- * it only sees the new appearance after `flush()` — which is exactly the window where a stale read would paint a wrong frame.
+ * The renderer only writes the setting and reads the system appearance. The fake matchMedia says what a pinned mac
+ * themeSource says (dark), not the OS — exactly the moment a matchMedia read would paint a wrong frame.
  */
-describe('the renderer settles the theme through the main process (#7333)', () => {
-  let main: ReturnType<typeof fakeNativeTheme>
-  let mqDark = false
+describe('the renderer settles the theme without pushing it to main (#7333)', () => {
+  let osDark = false
+  let mqDark = true
   const mqListeners = new Set<() => void>()
-  const writes: string[] = []
-  let observer: MutationObserver
-  const flush = () => {
-    const next = main.shouldUseDarkColors
-    if (next === mqDark) return
-    mqDark = next
-    for (const listener of mqListeners) listener()
-  }
+  const push = vi.fn()
+  const read = vi.fn((): 'light' | 'dark' | null => (osDark ? 'dark' : 'light'))
 
   beforeEach(() => {
-    main = fakeNativeTheme(false)
-    mqDark = false
+    osDark = false
+    mqDark = true
     mqListeners.clear()
-    writes.length = 0
+    push.mockClear()
+    read.mockClear()
     localStorage.clear()
     delete document.documentElement.dataset.theme
     window.matchMedia = ((query: string) => ({
@@ -85,73 +94,51 @@ describe('the renderer settles the theme through the main process (#7333)', () =
       addEventListener: (_: string, listener: () => void) => mqListeners.add(listener),
       removeEventListener: (_: string, listener: () => void) => mqListeners.delete(listener),
     })) as unknown as typeof window.matchMedia
+    // The pushes this replaced are still offered by the fake bridge: nothing may call them.
     window.electronAPI = {
       ...(window.electronAPI ?? {}),
-      syncThemePreference: (preference: 'light' | 'dark' | 'system') => applyNativeThemePreference('darwin', main, preference),
-    } as typeof window.electronAPI
-    observer = new MutationObserver(() => writes.push(document.documentElement.dataset.theme ?? ''))
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+      readSystemAppearance: read,
+      syncThemePreference: push,
+      syncResolvedLocale: push,
+    } as unknown as typeof window.electronAPI
   })
-  afterEach(() => observer.disconnect())
+  afterEach(() => { delete (window as { electronAPI?: unknown }).electronAPI })
 
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
-
-  it('restores a stored hand-picked theme at start and puts the native appearance on it', async () => {
-    localStorage.setItem('app-theme', 'dark')
-    expect(hydrateHostTheme()).toBe('dark')
-    expect(main.themeSource).toBe('dark')
-    await settle()
-    expect(document.documentElement.dataset.theme).toBe('dark')
-  })
-
-  it('hand-picking light or dark moves the native appearance with it', () => {
+  it('hand-picking and going back to the system push nothing; "system" paints the OS tone at once', () => {
     writeThemePreference('dark')
-    expect(main.themeSource).toBe('dark')
     expect(document.documentElement.dataset.theme).toBe('dark')
-    writeThemePreference('light')
-    expect(main.themeSource).toBe('light')
+    writeThemePreference('system')
     expect(document.documentElement.dataset.theme).toBe('light')
+    expect(read).toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
   })
 
-  it('going back to the system paints the real system tone first, not the stale matchMedia one', async () => {
-    const release = startHostThemeSystemSync()
-    try {
-      writeThemePreference('dark')
-      flush() // Chromium catches up: matchMedia now says dark (because themeSource is dark)
-      await settle()
-      writes.length = 0
-      writeThemePreference('system') // OS is light; matchMedia still says dark until the next flush
-      expect(document.documentElement.dataset.theme).toBe('light')
-      flush()
-      await settle()
-      expect(writes.every((value) => value === 'light')).toBe(true)
-    } finally {
-      release()
-    }
+  it('a hand-pick does not even ask for the system appearance', () => {
+    writeThemePreference('light')
+    expect(read).not.toHaveBeenCalled()
   })
 
-  it('after that, a change of the system appearance still reaches data-theme', async () => {
+  it('following the system: a change of the system appearance reaches data-theme', () => {
     const release = startHostThemeSystemSync()
     try {
       writeThemePreference('system')
-      main.osDark = true
-      flush()
-      await settle()
+      osDark = true
+      for (const listener of mqListeners) listener()
       expect(document.documentElement.dataset.theme).toBe('dark')
+      expect(push).not.toHaveBeenCalled()
     } finally {
       release()
     }
   })
 
-  describe('when the bridge is there but the main process cannot answer', () => {
-    beforeEach(() => {
-      window.electronAPI = { ...(window.electronAPI ?? {}), syncThemePreference: () => null } as typeof window.electronAPI
-    })
+  describe('when main cannot read the system appearance', () => {
+    beforeEach(() => { read.mockImplementation(() => null) })
+    afterEach(() => { read.mockImplementation(() => (osDark ? 'dark' : 'light')) })
 
-    it('a pick is refused loudly and leaves the stored preference and data-theme as they were', () => {
+    it('picking "system" is refused loudly and leaves the stored preference and data-theme as they were', () => {
       localStorage.setItem('app-theme', 'light')
       document.documentElement.dataset.theme = 'light'
-      expect(() => writeThemePreference('dark')).toThrow(NativeAppearanceSyncError)
+      expect(() => writeThemePreference('system')).toThrow(SystemAppearanceReadError)
       expect(localStorage.getItem('app-theme')).toBe('light')
       expect(document.documentElement.dataset.theme).toBe('light')
     })
@@ -160,10 +147,10 @@ describe('the renderer settles the theme through the main process (#7333)', () =
       const error = vi.spyOn(console, 'error').mockImplementation(() => {})
       localStorage.setItem('app-theme', 'system')
       document.documentElement.dataset.theme = 'dark'
-      mqDark = false // a stale/disagreeing matchMedia must not be used to overwrite it
+      mqDark = false
       expect(hydrateHostTheme()).toBe('dark')
       expect(document.documentElement.dataset.theme).toBe('dark')
-      expect(error).toHaveBeenCalledWith(expect.stringContaining('[theme/native-appearance]'), { preference: 'system' })
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('[theme/native-appearance]'), expect.objectContaining({ preference: 'system' }))
       error.mockRestore()
     })
   })

@@ -3,7 +3,6 @@ import type { LocalUsageRequest, LocalUsageSnapshot } from '@gugu/core/shared/us
 import type { RendererCommandDomain } from '../lib/rendererCommandProtocol'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { HumanAuthSession } from '@gugu/core'
-import type { SupportedLocale } from '@/i18n'
 import type { FileHandle } from '@gugu/core/shared/fileResolver'
 
 interface PlatformCapabilities {
@@ -115,7 +114,6 @@ export interface AppPlatform {
    * ❌ 不要在页面或导航里再判断一次平台 —— 谁能列哪几行,只有宿主自己说了算。
    */
   systemPermissions: readonly SystemPermission[]
-  syncResolvedLocale: (locale: SupportedLocale) => Promise<void>
   subscribeAppForeground: (listener: () => void, onError: (error: unknown) => void) => () => void
   /**
    * App 此刻在不在前台 —— 订阅时先用当前值回调一次,之后每次变化再回调。
