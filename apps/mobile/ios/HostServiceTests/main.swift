@@ -137,8 +137,11 @@ private final class Executor: GuguNativeToolExecutor {
         let stopped: [String: Any] = try wait { service.stopHost(["expectedBinding": raw], completion: $0) }
         try require(stopped.isEmpty, "Known clean local stop failed")
         lock.lock(); let ads = advertisements; lock.unlock()
-        try require(!ads.isEmpty && ads.allSatisfy { ($0["capabilities"] as? [String: Any])?["host_runtime_capability"] as? Int == 0 }, "Partial delivery advertised a host capability")
-        cases.append("actual_private_subscriptions_and_heartbeat_do_not_advertise_missing_delivery")
+        try require(!ads.isEmpty && ads.allSatisfy {
+            let caps = $0["capabilities"] as? [String: Any]
+            return caps?["host_runtime_capability"] as? Int == 1 && (caps?["runtimes"] as? [String])?.isEmpty == true
+        }, "Partial delivery advertised a runtime or misreported the verified version")
+        cases.append("missing_delivery_withholds_runtimes_without_claiming_an_outdated_host")
         print(String(decoding: try JSONSerialization.data(withJSONObject: ["result": "pass", "kind": "actual_Pi_JSC_native_service_APFS_with_synthetic_HTTP_and_sockets", "cases": cases, "realCloudHTTPCalls": 0, "realModelCalls": 0, "iosAppRuns": 0], options: [.sortedKeys, .prettyPrinted]), as: UTF8.self))
     }
 }
