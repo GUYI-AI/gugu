@@ -12,10 +12,12 @@ const { callDeviceRpc } = await import('@/lib/deviceRpc')
 const { SESSION_HOST_RPC } = await import('@/session/shared/lib/ipc/session-host-device-frames')
 const { writeCachedDevices } = await import('@/store/devicesCache')
 const { fetchToolImage } = await import('@/mobile/agent-watch/sessionpage-rpc')
+// The read model reads for the signed-in account, as the product publishes it.
+;(await import('../../../apps/desktop/src/lib/readModel')).followRendererSession('SIGNED_IN', 'owner')
 
 describe('手机取一张工具图走哪条路', () => {
   it('设备缓存为空时照常发出请求，不把未知当作离线', async () => {
-    writeCachedDevices('owner', [])
+    writeCachedDevices([])
     vi.mocked(callDeviceRpc).mockClear()
     const shot = { mimeType: 'image/png', data: 'fresh-image' }
     vi.mocked(callDeviceRpc).mockResolvedValue({result:{value:{ok:true,value:shot}}} as never)

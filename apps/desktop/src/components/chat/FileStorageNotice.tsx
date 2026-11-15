@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { formatAttachmentSize } from '@gugu/core/shared/ui/attachmentModels'
 import { useAuth } from '../../store/auth'
 import { useChatStore } from '../../store/chatContext'
 import { notify, dismissNotice } from '../../lib/notices'
 import { openApp } from '../appSlot/useOpenApp'
-import { fileStorageUsageClient, fileStorageUsageQuery } from './fileStorageUsage'
+import { useReadModel } from '../../lib/readModel'
+import { fileStorageUsage } from './fileStorageUsage'
 
 // Dismissal lasts until a verified healthy read, including when the composer remounts.
 const incidents = new Map<string, { dismissed: boolean }>()
@@ -25,23 +25,14 @@ export function FileStorageNotice({ chatId }: { chatId: string }) {
 function ManagerStorageNotice({ userId, chatId, latest }: { userId: string; chatId: string; latest?: string }) {
   const { t } = useTranslation('messaging')
   const key = `file-storage:${userId}:${chatId}`
-  useEffect(() => {
-    fileStorageUsageClient.mount()
-    return () => fileStorageUsageClient.unmount()
-  }, [])
-  const usage = useQuery({ ...fileStorageUsageQuery(userId, chatId),
-    retry: true,
-    retryDelay: attempt => Math.min(1_000 * 2 ** Math.min(attempt, 5), 30_000),
-    // A placed file need not emit a chat message. Refresh only the visible manager's current group.
-    refetchInterval: 60_000,
-  }, fileStorageUsageClient)
+  const usage = useReadModel(fileStorageUsage, [chatId])
   const refreshPoint = useRef({ key, latest })
   useEffect(() => {
     const previous = refreshPoint.current
     refreshPoint.current = { key, latest }
     if (previous.key === key && previous.latest !== latest) {
       // Share an existing request/retry rather than canceling it and starting another one.
-      void fileStorageUsageClient.invalidateQueries({ queryKey: fileStorageUsageQuery(userId, chatId).queryKey, exact: true }, { cancelRefetch: false })
+      void fileStorageUsage.refresh(chatId)
     }
   }, [key, latest, userId, chatId])
 
@@ -57,7 +48,7 @@ function ManagerStorageNotice({ userId, chatId, latest }: { userId: string; chat
     }
   }, [key])
 
-  const data = usage.data
+  const data = usage.state === 'value' ? usage.value : undefined
   useEffect(() => {
     // Missing data is unknown, and a failed refresh leaves the verified facts intact.
     if (!data) return

@@ -1,14 +1,14 @@
 import { useContext, useEffect, useRef, type RefObject, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQuery } from '@tanstack/react-query'
 import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { holderOfflineText, useHolderBack } from '../../lib/fileHost'
-import { attachmentBytes, attachmentMetadata, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
+import { attachmentBytes, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
+import { attachmentState } from '../../lib/attachmentState'
+import { useReadModel } from '../../lib/readModel'
 import { sentFileCopy } from '../../lib/sentFileCopies'
 import { useAuth } from '../../store/auth'
-import { attachmentQuery, attachmentQueryClient } from '../../lib/attachmentQueryClient'
 import { ExtensionBundleCard } from '../extensionBundle/ExtensionBundleCard'; import { isExtensionBundle } from '../extensionBundle/summarizeExtensionBundle'
 import { openImageFromThumb, registerFullImage } from '../../lib/imageViewer'
 import { Button } from '../ui/Button'
@@ -23,9 +23,6 @@ import './mediaAttachmentBubble.css'
 // 而气泡被封顶在列宽 → 窄栏下卡片从气泡右侧冒出。max-width:100% 在布局阶段按气泡内容区截回来(卡片里的文件名随之省略)。
 const FIT_BUBBLE = 'max-w-full'
 
-/** Whether an attachment is still there (missing / expired / gone cards). Key: account, source key, source. */
-const attachmentStateQuery = attachmentQuery('attachment-state',
-  (_accountId: string | undefined, _sourceKey: string, source: ParsedAttachment['source']) => attachmentMetadata(source))
 
 /** 与 .chat-inline-image 的上限一致:按宽高先留出画出来的那么大。 */
 const INLINE_MAX = 280
@@ -40,9 +37,8 @@ export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, sen
   const box = useRef<HTMLDivElement>(null)
   const managedFile = (meta.source.kind === 'item' || meta.source.kind === 'message' || meta.source.kind === 'attachment') && !isRenderableImage(meta.fileName, meta.mimeType)
   const near = useNearViewport(box, managedFile)
-  const metadata = useQuery({ ...attachmentStateQuery(user?.id, sourceKeyOf(meta.source), meta.source),
-    enabled: near && !!user && managedFile,
-  }, attachmentQueryClient)
+  const reading = useReadModel(attachmentState, user && managedFile ? [sourceKeyOf(meta.source), meta.source] : null, { read: near })
+  const metadata = { data: reading.state === 'value' ? reading.value : undefined, isError: reading.state === 'error' }
   const caption = meta.caption ? <Markdown trust="chat" content={meta.caption} onAccent={isMine} /> : null
   if (metadata.data?.status === 'missing') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileMissing')} />{caption}</div>
   if (metadata.data?.status === 'expired') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><ExpiredAttachmentCard meta={meta} messageId={messageId} isMine={isMine} />{caption}</div>

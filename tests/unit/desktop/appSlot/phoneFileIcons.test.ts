@@ -20,7 +20,7 @@ const { CHAT, MD, JSON_FILE } = vi.hoisted(() => ({
   CHAT: '0b000000-0000-4000-8000-000000001017', MD: '0f000000-0000-4000-8000-00000000000a', JSON_FILE: '0f000000-0000-4000-8000-00000000000b',
 }))
 const auth = vi.hoisted(() => ({ token: `h.${Buffer.from(JSON.stringify({ sub: '0a000000-0000-4000-8000-000000001017' })).toString('base64url')}.s` }))
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => auth.token }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => auth.token }))
 vi.mock('@gugu/core/cloud/supabase', () => ({
   createGuguSupabaseClient: () => {
     const rows = [

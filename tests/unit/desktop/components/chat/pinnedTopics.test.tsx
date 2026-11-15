@@ -22,7 +22,7 @@ vi.mock('@/platform', async (original) => { const actual = await original<typeof
 
 const { ChatHeaderActions } = await import('@/components/chat/ChatHeaderActions')
 const { PinnedTopicTabs } = await import('@/components/chat/PinnedTopicTabs')
-const { queryClient } = await import('@/session/renderer/lib/query-client')
+const { queryClient } = await import('@/lib/readModel')
 const { unsubscribePrivateUserEventBus } = await import('@/lib/realtimeChannel')
 const { drainTopicSplitRequest } = await import('@/lib/topicSplitRequest')
 let harness: ReturnType<typeof createReactHarness>

@@ -444,6 +444,7 @@ export default {
       "presetHour": "每小时",
       "presetWeek": "每周",
       "soon": "即将触发",
+      "titleLabel": "定时任务",
       "title": "定时任务（{{count}}）",
       "title_one": "定时任务（{{count}}）",
       "title_other": "定时任务（{{count}}）",

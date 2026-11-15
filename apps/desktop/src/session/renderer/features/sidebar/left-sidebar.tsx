@@ -48,7 +48,8 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
     remoteHostsStore.start();
   }, []);
 
-  const { value: interfaceSettings } = useAppSettingsKey('interface');
+  const { settings: interfaceSettingsReading } = useAppSettingsKey('interface');
+  const interfaceSettings = interfaceSettingsReading.state === 'value' ? interfaceSettingsReading.value.value : undefined;
 
   // #5818 「悬浮时这一行变成它是谁」的开关,设置镜像进 store —— 读在设置里,用在每一行上。
   // #7199 个人助理不住在任务区:它是谁(壳按库里的标记认出来,经助理那座桥发过来),交给 store 去藏它自己的会话。

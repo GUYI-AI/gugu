@@ -3,8 +3,7 @@ import { observer } from 'mobx-react-lite'
 import { useEffect, type ReactNode } from 'react'
 import { publishListHotkey, publishPanelToggle } from '@/lib/panelToggles'
 import { readRendererPlatform, shellRestoreLane, TITLEBAR_LEFT_EDGE_GAP_PX } from '@/lib/window-chrome'
-import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
-import { getEffectiveHotkey } from '@renderer/lib/hooks/useKeyboardShortcuts'
+import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts'
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider'
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
@@ -15,7 +14,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
  */
 export const ShellSidebarToggle = observer(function ShellSidebarToggle() {
   const { translate } = useSessionMessages()
-  const { value: keyboard } = useAppSettingsKey('keyboard')
+  const keyboard = useShortcutOverrides()
   const { isLeftOpen, isLeftPeeking, toggleLeft, setTriggerHovered } = useWorkspaceLayoutContext()
   const hotkey = getEffectiveHotkey('app.toggleLeftSidebar', keyboard)
   const shortcut = hotkey ? formatHotkeyText(hotkey) : undefined
