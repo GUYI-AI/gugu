@@ -4,9 +4,6 @@ export interface FileTextRange {
   text: string
 }
 
-/** A saved range is independent of browser selection, which focusing the comment input clears. */
-export type FileTextComment = FileTextRange & { annotation: string }
-
 function codeRow(node: Text): Element | null {
   const code = node.parentElement?.closest('[data-streamdown="code-block-body"] code')
   if (!code) return null

@@ -207,6 +207,23 @@ describe('a cited file stays a one-line pill in the user message', () => {
     expectHeightMatch('user message citing a short file name', reading)
     expect(reading.inspected.slack).toBe(0)
   })
+
+  it('two cites and a note: each quote above its pill, nothing raw', async () => {
+    const files: MentionProvider = { resolve: (token) => ({ id: token, label: token, kind: 'file' }) }
+    const ctx = makeContractCtx({ width: WIDTH, mentionProvider: files })
+    const message: ChatMessage = { kind: 'message', id: 'inner-message-user-two-cites', role: 'user', text: [
+      '> 设 a 为偶数 则 a² 为偶数', '', '@[proof.md · Lines 3–4](docs/proof.md)', '',
+      '> 引理一', '', '@[proof.md · Line 6](docs/proof.md)', '', '怎么证明？',
+    ].join('\n') }
+    const reading = await renderAndMeasureUnit(messageUnitDef, message, ctx, (host) => ({
+      pills: host.querySelectorAll('.gg-md-mention').length,
+      quotes: host.querySelectorAll('blockquote').length,
+      pillsInQuotes: host.querySelectorAll('blockquote .gg-md-mention').length,
+      raw: /@\[|\]\(|[{}]/.test(host.querySelector('[data-user-card]')?.textContent ?? '') ? 1 : 0
+    }))
+    expectHeightMatch('user message with two cites', reading)
+    expect(reading.inspected).toEqual({ pills: 2, quotes: 2, pillsInQuotes: 0, raw: 0 })
+  })
 })
 
 const overflowingResourceLink: ChatResourceLink = {

@@ -19,14 +19,15 @@ import { EditorView } from '@codemirror/view'
 import * as lezerHighlight from '@lezer/highlight'
 import { basicSetup } from 'codemirror'
 import * as autocomplete from '@codemirror/autocomplete'
-import * as commands from '@codemirror/commands'
-import { SessionAnnotations, annotationPrompt } from '../../../../apps/desktop/src/session/renderer/features/sessions/annotations/session-annotations'
-import { workspaceFileAnnotation } from '../../../../apps/desktop/src/session/shared/extensions/file-annotation'
-import { documentToHtml } from '../../../../packages/session-chat-ui/src/core/markdown/to-html'
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 // @ts-expect-error — 内置 App 是不经构建的纯 ES module,没有类型;运行时 import 可用。
 import { fingerprint } from '../../../../apps/desktop/preinstalled-apps/workspace/lines.js'
 import { until } from '../../../support/awaitCondition'
+import { fileCiteDraft } from '../../../../packages/session-shared/src/markdown/mention-grammar'
+import { documentToHtml } from '../../../../packages/session-chat-ui/src/core/markdown/to-html'
+import { parseMarkdownToBlocks } from '../../../../packages/session-chat-ui/src/core/markdown/parse'
+import { appendToDraft } from '../../../../apps/desktop/src/store/chatDraftWrites'
+import { annotationPrompt } from '../../../../apps/desktop/src/session/renderer/features/sessions/annotations/session-annotations'
 
 const TEXT = ['# 发布计划', '', '目标：十月上线', '负责人：小王', '', '## 风险', '- 支付接口可能延期', '', '- 甲：Api 文档，API 冻结', '- 乙'].join('\n')
 const entry = {
@@ -86,13 +87,12 @@ const config = {
 const notes = { ...file, entry: { ...entry, id: 'notes', name: 'notes.txt', contentType: 'text/plain' }, text: 'one\ntwo: the Blue Heron\nthree', onChange: () => () => {}, onStatus: () => () => {} }
 const slowFile = () => ({ ...file, entry: { ...entry, id: 'slow', name: 'slow.md' }, text: file.text, onChange: () => () => {}, onStatus: () => () => {} })
 const WS = 'session:11111111-1111-4111-8111-111111111111'
-const SESSION_TEXT = ['# Heading', '', 'First paragraph', 'Second line', '', 'Second paragraph'].join('\n')
-const CODE = ['def greet(name):', '    title = "Hi"', '    message = title + name', '    return message'].join('\n')
-const sessionEntry = { ...entry, id: 'notes.md', name: 'notes.md', chat: undefined, workspace: WS }
-const codeEntry = { ...sessionEntry, id: 'sample.py', name: 'sample.py', type: 'file', contentType: 'text/x-python' }
+const sessionEntry = { ...entry, id: 'docs/proof.md', name: 'proof.md', chat: undefined, workspace: WS }
+// A session's file, its preview drawn by the real markdown pipeline (soft line breaks and all).
+const SESSION_TEXT = ['# 证明', '', '设 a 为偶数', '则 a² 为偶数', '', '- 引理一', '- 引理二'].join('\n')
 const sessionFile = { ...file, entry: sessionEntry, text: SESSION_TEXT, onChange: () => () => {}, onStatus: () => () => {} }
-let annotationDraft = new SessionAnnotations()
-const ctxOf = (id: string) => ({ chat: { id: 'chat-1', name: 'G', kind: 'group', groupId: 'chat-1' }, ...(id === 'notes.md' || id === 'sample.py' ? { file: { workspace: WS, id }, workspace: { id: WS, sessionId: '11111111-1111-4111-8111-111111111111', root: '/project', name: 'Project' } } : { file: { chat: 'chat-1', id } }), locale: 'en', capabilities: ['files:read', 'files:write'] })
+const ctxOf = (id: string) => ({ chat: { id: 'chat-1', name: 'G', kind: 'group', groupId: 'chat-1' }, locale: 'en', capabilities: ['files:read', 'files:write'],
+  ...(id === sessionEntry.id ? { file: { workspace: WS, id }, workspace: { id: WS, sessionId: '11111111-1111-4111-8111-111111111111', root: '/project', name: 'Project' } } : { file: { chat: 'chat-1', id } }) })
 let link: (event: { type: 'link'; tab: string; path: string; query: Record<string, string>; file: string | null }) => void = () => {}
 let contextChanged: (ctx: ReturnType<typeof ctxOf>) => void = () => {}
 const gugu = {
@@ -108,7 +108,7 @@ const gugu = {
     return () => {}
   }),
   dispatch: vi.fn(async (_text: string, _options: unknown) => ({ to: { chat: 'g-1' } })),
-  codemirror: vi.fn(async () => ({ EditorView, EditorState: cmState.EditorState, basicSetup, markdown, markdownLanguage, json, view: cmView, state: cmState, language, autocomplete, lezerHighlight, commands, keymap: cmView.keymap, code: { languageFor: () => 'python', load: async () => [], editing: () => [] } })),
+  codemirror: vi.fn(async () => ({ EditorView, EditorState: cmState.EditorState, basicSetup, markdown, markdownLanguage, json, view: cmView, state: cmState, language, autocomplete, lezerHighlight })),
   markdown: vi.fn(async () => md),
   // The file's text in the editor, as the binding puts it there.
   bind: {
@@ -118,10 +118,9 @@ const gugu = {
     }),
   },
   files: {
-    annotateSelection: vi.fn(async (file: typeof sessionEntry, fields: { startLine: number; endLine: number; text: string; annotation: string }) => { annotationDraft.add({ kind: 'file', ...workspaceFileAnnotation({ ref: { workspace: file.workspace, id: file.id }, ...fields }, WS) }) }),
+    // A working copy's unsaved edits kept on its machine (`gugu.files.draft`): none.
     draft: vi.fn(async () => null),
-    readText: vi.fn(async () => ({ entry: codeEntry, content: CODE, binary: false, truncated: false, totalSize: CODE.length })),
-    viewPreferences: vi.fn(async () => ({ showAppData: false })), list: vi.fn(async () => [entry]), onChanged: vi.fn(() => () => {}), open: vi.fn(async (handle: { id: string }): Promise<unknown> => (handle.id === 'notes.md' ? sessionFile : handle.id === 'cfg' ? config : handle.id === 'slow' ? slowFile() : handle.id === 'notes' ? notes : file)) },
+    viewPreferences: vi.fn(async () => ({ showAppData: false })), list: vi.fn(async () => [entry]), onChanged: vi.fn(() => () => {}), open: vi.fn(async (handle: { id: string }): Promise<unknown> => (handle.id === sessionEntry.id ? sessionFile : handle.id === 'cfg' ? config : handle.id === 'slow' ? slowFile() : handle.id === 'notes' ? notes : file)) },
 }
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement
@@ -200,7 +199,7 @@ describe('Cite: pills to the picked lines, their words quoted above', () => {
     expect((refsOfLastCompose() as { label: string }[])[0]!.label).toBe('Lines 6–7')
   })
 
-  test('a selection in the preview is cited by the lines its first and last block were written on', async () => {
+  test('a selection in the preview is cited by the source lines its ends fall on', async () => {
     const blocks = [...document.querySelectorAll('#preview [data-line]')]
     // From the paragraph on lines 3–4 into the block on lines 6–7 (a heading and its list, no blank line between).
     const [from, to] = [blocks.find((b) => b.getAttribute('data-line') === '3-4')!, blocks.find((b) => b.getAttribute('data-line') === '6-7')!]
@@ -213,7 +212,8 @@ describe('Cite: pills to the picked lines, their words quoted above', () => {
     await until('Cite has composed', () => gugu.dispatch.mock.calls.length > 0)
     expect(gugu.dispatch).toHaveBeenCalledOnce()
     const [ref] = refsOfLastCompose() as { at: { lines: string; h: string } }[]
-    expect(ref!.at).toEqual({ lines: '3-7', h: fingerprint(TEXT.split('\n').slice(2, 7).join('\n')) })
+    // It ends six characters into line 6 (`## 风险`): the list item on line 7 is not picked.
+    expect(ref!.at).toEqual({ lines: '3-6', h: fingerprint(TEXT.split('\n').slice(2, 6).join('\n')) })
   })
 })
 
@@ -357,69 +357,45 @@ describe("a pill's place is the file's it came for; a JSON file's cite stays a q
   })
 })
 
-describe('the default Files App annotation toolbar', () => {
-  test('Markdown preview selection opens the optional comment and queues its range for Selected text', async () => {
-    annotationDraft = new SessionAnnotations()
-    gugu.files.annotateSelection.mockClear()
-    contextChanged(ctxOf('notes.md'))
-    await until('the session Markdown is open in the real Files App', () => document.querySelector('.cm-editor') !== null && view().state.doc.toString() === SESSION_TEXT)
+// One way a selection reaches the conversation: Cite. Its draft is the words quoted, then a pill to the file and its
+// lines; the person's own words follow; what is sent is that text, drawn in the bubble as quotes and pills.
+describe("a session file's selection reaches the chat one way: Cite", () => {
+  test('two cites and a note: quotes and pills, in order, none taken into another; the agent reads path, lines and note', async () => {
+    contextChanged(ctxOf(sessionEntry.id))
+    await until('the session file is open', () => $('doc-title').textContent === 'proof.md' && document.querySelector('#preview [data-line="3-4"]') !== null && document.querySelector('.cm-editor') !== null && view().state.doc.toString() === SESSION_TEXT)
+    gugu.dispatch.mockClear()
     const paragraph = document.querySelector('#preview [data-line="3-4"]')!
-    const selected = document.createRange()
-    selected.selectNodeContents(paragraph)
-    document.getSelection()?.removeAllRanges()
-    document.getSelection()?.addRange(selected)
+    const range = document.createRange()
+    range.selectNodeContents(paragraph)
+    document.getSelection()!.removeAllRanges()
+    document.getSelection()!.addRange(range)
     document.dispatchEvent(new Event('selectionchange'))
-    expect(($('annotate-sel') as HTMLButtonElement).hidden).toBe(false)
-    expect(($('annotate-sel') as HTMLButtonElement).disabled).toBe(false)
-    $('annotate-sel').click()
-    const input = document.querySelector<HTMLInputElement>('.file-comment-form input')!
-    expect(input).not.toBeNull()
-    input.value = 'Shorten this paragraph'
-    document.querySelector('form.file-comment-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await until('the annotation reaches the session draft', () => annotationDraft.items.length === 1)
-    expect(gugu.files.annotateSelection).toHaveBeenCalledWith(sessionEntry, { startLine: 3, endLine: 4, text: 'First paragraph\nSecond line', annotation: input.value })
-    expect(annotationPrompt('', annotationDraft.items)).toContain('# Selected text:')
-    expect(annotationDraft.items[0]).toMatchObject({ path: 'notes.md', startLine: 3, endLine: 4 })
-    expect(JSON.parse(annotationPrompt('', annotationDraft.items).split(' (file)\n')[1]!)).toMatchObject({ path: 'notes.md', startLine: 3, endLine: 4 })
-    const secondLine = document.createRange()
-    secondLine.setStart(paragraph.firstChild!, 'First paragraph\n'.length)
-    secondLine.setEnd(paragraph.firstChild!, paragraph.firstChild!.textContent!.length)
-    document.getSelection()?.removeAllRanges()
-    document.getSelection()?.addRange(secondLine)
-    document.dispatchEvent(new Event('selectionchange'))
-    $('annotate-sel').click()
-    document.querySelector('form.file-comment-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await until('a partial paragraph keeps its physical source line', () => annotationDraft.items.length === 2)
-    expect(annotationDraft.items[1]).toMatchObject({ path: 'notes.md', startLine: 4, endLine: 4, text: 'Second line' })
-    // A native paragraph selection may end at the next paragraph's first text node, before it selects any of it.
-    const next = document.querySelector('#preview [data-line="6-6"]')!
-    const throughBreak = document.createRange()
-    throughBreak.setStart(paragraph.firstChild!, 0)
-    throughBreak.setEnd(next.firstChild!, 0)
-    document.getSelection()?.removeAllRanges()
-    document.getSelection()?.addRange(throughBreak)
-    document.dispatchEvent(new Event('selectionchange'))
-    $('annotate-sel').click()
-    document.querySelector('form.file-comment-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await until('the exclusive end stays out of the next paragraph', () => annotationDraft.items.length === 3)
-    expect(annotationDraft.items[2]).toMatchObject({ path: 'notes.md', startLine: 3, endLine: 4 })
-    expect(JSON.parse(annotationPrompt('', [annotationDraft.items[2]!]).split(' (file)\n')[1]!)).toMatchObject({ path: 'notes.md', startLine: 3, endLine: 4 })
-  })
-  test('the default code editor toolbar queues original selected source lines for the same payload', async () => {
-    annotationDraft = new SessionAnnotations()
-    gugu.files.annotateSelection.mockClear()
-    contextChanged(ctxOf('sample.py'))
-    await until('the actual source editor opens the Python file', () => document.querySelector('.cm-editor') !== null && view().state.doc.toString() === CODE)
-    // jsdom has no editor geometry; the real document and selection still run through the Files App.
-    vi.spyOn(view(), 'coordsAtPos').mockReturnValue({ left: 10, right: 20, top: 20, bottom: 40 })
-    select([line(2).from, line(4).to])
-    expect(($('annotate-sel') as HTMLButtonElement).disabled).toBe(false)
-    $('annotate-sel').click()
-    const input = document.querySelector<HTMLInputElement>('.file-comment-form input')!
-    input.value = 'Explain the return value'
-    document.querySelector('form.file-comment-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await until('the code annotation reaches the session draft', () => annotationDraft.items.length === 1)
-    expect(gugu.files.annotateSelection).toHaveBeenCalledWith(codeEntry, { startLine: 2, endLine: 4, text: CODE.split('\n').slice(1).join('\n'), annotation: input.value })
-    expect(JSON.parse(annotationPrompt('', annotationDraft.items).split(' (file)\n')[1]!)).toMatchObject({ path: 'sample.py', startLine: 2, endLine: 4 })
+    expect([...$('sel-bar').querySelectorAll('button:not(.fmt):not([hidden])')].map((button) => button.textContent)).toEqual(['Copy', 'Cite'])
+    $('cite-sel').click()
+    await until('the first cite is composed', () => gugu.dispatch.mock.calls.length === 1)
+    document.getSelection()!.removeAllRanges()
+    select([line(6).from, line(6).to])
+    $('cite-sel').click()
+    await until('the second cite is composed', () => gugu.dispatch.mock.calls.length === 2)
+    // Into the session's composer as main writes a working-copy draft, one after the other; the person's note last.
+    const drafts = gugu.dispatch.mock.calls.map(([text, options]) => `${fileCiteDraft(text, (options as { refs: { file: { id: string }; label?: unknown }[] }).refs)}\n`)
+    const draft = appendToDraft(appendToDraft(drafts[0]!, drafts[1]!), '怎么证明？')
+    const sent = annotationPrompt(draft, [], 'en-US')
+    expect(sent).toBe([
+      '> 设 a 为偶数 则 a² 为偶数', '', '@[proof.md · Lines 3–4](docs/proof.md)', '',
+      '> 引理一', '', '@[proof.md · Line 6](docs/proof.md)', '', '怎么证明？',
+    ].join('\n'))
+    expect(sent).not.toMatch(/^#|\{\s*"path"|"startLine"|"annotation"/m)
+    // The user bubble's own parse (a session page says a path is a file) draws it as two quotes and two pills, each
+    // pill outside every quote.
+    const bubble = document.createElement('div')
+    bubble.innerHTML = parseMarkdownToBlocks('sent', sent, { resolve: (token) => ({ id: token, label: token, kind: 'file' }) })
+      .map((block) => (block.kind === 'html' ? block.html : '')).join('')
+    const quotes = [...bubble.querySelectorAll('blockquote')]
+    expect(quotes.map((quote) => quote.textContent!.trim())).toEqual(['设 a 为偶数 则 a² 为偶数', '引理一'])
+    expect(quotes.every((quote) => !quote.querySelector('.gg-md-mention'))).toBe(true)
+    expect([...bubble.querySelectorAll('.gg-md-mention')].map((pill) => pill.textContent)).toEqual(['proof.md · Lines 3–4', 'proof.md · Line 6'])
+    expect(bubble.textContent).not.toMatch(/@\[|\]\(|\{|Selected text|Selection 1/)
+    expect(bubble.textContent).toContain('怎么证明？')
   })
 })

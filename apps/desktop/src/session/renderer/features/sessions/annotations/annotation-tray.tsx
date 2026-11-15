@@ -26,11 +26,9 @@ export const AnnotationTray = observer(function AnnotationTray({ sessionId, onSe
             <div key={item.id} className="flex flex-col gap-2 border-b border-border px-4 py-4 last:border-b-0">
               <div className="flex min-w-0 items-center gap-2 text-xs text-foreground-muted">
                 <span className="shrink-0 tabular-nums">{item.number}</span>
-                <span className="min-w-0 flex-1 truncate" title={item.kind === 'file' ? item.path : item.url}>
-                  {item.kind === 'file' ? `${item.path.split(/[\\/]/).pop()}:${item.startLine}-${item.endLine}` : item.url}
-                </span>
-                {item.kind === 'browser' && <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={translate('annotations.edit')}
-                  onClick={() => { setEditing(item.id); setText(item.annotation); }}><Pencil className="size-3.5" /></Button>}
+                <span className="min-w-0 flex-1 truncate" title={item.url}>{item.url}</span>
+                <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={translate('annotations.edit')}
+                  onClick={() => { setEditing(item.id); setText(item.annotation); }}><Pencil className="size-3.5" /></Button>
                 <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={translate('annotations.delete')}
                   onClick={() => { draft.remove(item.id); onRemove?.(item.id); }}><Trash2 className="size-3.5" /></Button>
               </div>

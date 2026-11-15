@@ -1,52 +1,38 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useUiPortalContainer } from '@gugu/session-ui/react/primitives'
-import { Check } from '@/lib/icons'
 import { Markdown } from '../markdown/Markdown'
 import { Button } from '../ui/Button'
 import { Popover } from '../ui/Popover'
 import { useBackLayer } from '../ui/sheetStack'
-import { fileTextRange, sourceLineRange, type FileTextComment, type FileTextRange } from './file-text-range'
+import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu'
+import { fileTextRange, sourceLineRange, type FileTextRange } from './file-text-range'
 import './file-text-content.css'
 
 type Selection = { range: Range; quote: FileTextRange }
 
-/** The file's existing native selection (including touch handles) anchors an optional comment. */
-export function FileTextContent({ content, kind, fileName, style, onAnnotate }: {
+/** The file's existing native selection (including touch handles) offers one action: cite it in the composer. */
+export function FileTextContent({ content, kind, style, onCite }: {
   content: string
   kind: 'text' | 'markdown'
-  fileName: string
   style?: CSSProperties
-  onAnnotate?: (comment: FileTextComment) => void | Promise<void>
+  onCite?: (selection: FileViewerSelection) => void | Promise<void>
 }) {
   const { t } = useTranslation('messaging')
   const container = useUiPortalContainer()
   const root = useRef<HTMLDivElement>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
-  const [editing, setEditing] = useState(false)
-  const [annotation, setAnnotation] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [failed, setFailed] = useState(false)
   const selecting = useRef(false)
   const lineAnchor = useRef<number | null>(null)
   const dragging = useRef<number | null>(null)
   const selectedLines = useRef<Selection | null>(null)
   const lines = content.split(/\r?\n/)
-  const close = () => { selectedLines.current = null; setSelection(null); setEditing(false); setAnnotation(''); setFailed(false) }
+  const close = () => { selectedLines.current = null; setSelection(null) }
   useBackLayer(close, !!selection)
 
   useEffect(() => {
-    // Focusing a same-document input stops painting the native selection. Keep the captured range visible.
-    const highlights = globalThis.CSS?.highlights
-    if (!editing || !selection || !highlights || typeof Highlight === 'undefined') return
-    const highlight = new Highlight(selection.range)
-    highlights.set('gugu-file-comment', highlight)
-    return () => { if (highlights.get('gugu-file-comment') === highlight) highlights.delete('gugu-file-comment') }
-  }, [editing, selection])
-
-  useEffect(() => {
     const element = root.current
-    if (!element || !onAnnotate || editing) return
+    if (!element || !onCite) return
     const doc = element.ownerDocument
     let frame = 0
     const capture = () => {
@@ -72,7 +58,7 @@ export function FileTextContent({ content, kind, fileName, style, onAnnotate }: 
       doc.removeEventListener('pointerup', up)
       doc.removeEventListener('pointercancel', up)
     }
-  }, [content, kind, editing, onAnnotate])
+  }, [content, kind, onCite])
 
   const selectLines = (from: number, to: number) => {
     const element = root.current
@@ -89,27 +75,24 @@ export function FileTextContent({ content, kind, fileName, style, onAnnotate }: 
     selectedLines.current = { range, quote }
     setSelection({ range, quote })
   }
-  const save = async () => {
-    if (!selection || !onAnnotate || saving) return
-    setSaving(true)
-    setFailed(false)
-    try {
-      await onAnnotate({ ...selection.quote, annotation })
-      root.current?.ownerDocument.getSelection()?.removeAllRanges()
-      close()
-    } catch { setFailed(true) } finally { setSaving(false) }
+  const cite = () => {
+    if (!selection || !onCite) return
+    const { startLine, endLine, text } = selection.quote
+    void onCite({ text, at: { lines: startLine === endLine ? String(startLine) : `${startLine}-${endLine}` } })
+    root.current?.ownerDocument.getSelection()?.removeAllRanges()
+    close()
   }
   return <>
-    <div ref={root} style={style} data-file-annotations={onAnnotate ? '' : undefined}
+    <div ref={root} style={style} data-file-cite={onCite ? '' : undefined}
       onPointerDown={event => {
         if (!(event.target instanceof Element) || !event.target.closest('.gg-file-line-number')) selectedLines.current = null
-        if (!editing && event.button === 0) { selecting.current = true; setSelection(null) }
+        if (event.button === 0) { selecting.current = true; setSelection(null) }
       }}>
-      {kind === 'markdown' ? <Markdown trust="chat" density="comfortable" content={content} hardBreaks sourceLines={!!onAnnotate} />
-        : onAnnotate ? <div className="gg-file-source">
+      {kind === 'markdown' ? <Markdown trust="chat" density="comfortable" content={content} hardBreaks sourceLines={!!onCite} />
+        : onCite ? <div className="gg-file-source">
           {lines.map((line, index) => <div className="gg-file-source-row" key={index}>
             <Button variant="ghost" size="sm" className="gg-file-line-number" data-line={index + 1}
-              aria-label={t('fileAnnotation.selectLine', { line: index + 1 })}
+              aria-label={t('fileCite.selectLine', { line: index + 1 })}
               onPointerDown={event => {
                 if (event.pointerType !== 'mouse' || event.button !== 0) return
                 event.preventDefault()
@@ -129,28 +112,13 @@ export function FileTextContent({ content, kind, fileName, style, onAnnotate }: 
           </div>)}
         </div> : <pre style={{ margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: 'inherit', fontSize: 'var(--font-body)', lineHeight: 1.65 }}>{content}</pre>}
     </div>
-    {selection && onAnnotate ? <Popover.Root open modal={false} onOpenChange={open => { if (!open && !saving) close() }}>
+    {selection && onCite ? <Popover.Root open modal={false} onOpenChange={open => { if (!open) close() }}>
       <Popover.Portal container={container}>
         <Popover.Positioner positionMethod="fixed" anchor={{ contextElement: root.current ?? undefined, getBoundingClientRect: () => selection.range.collapsed
           ? root.current!.querySelector(`[data-file-line="${selection.quote.startLine}"]`)!.parentElement!.getBoundingClientRect() : selection.range.getBoundingClientRect() }}
           side="bottom" align="start" sideOffset={8} collisionPadding={8} collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}>
-          <Popover.Popup initialFocus={editing ? undefined : false} finalFocus={false} data-occludes-browser-page
-            className="gg-file-annotation-popup" data-editing={editing || undefined} data-failed={failed || undefined} aria-label={t(editing ? 'fileAnnotation.comment' : 'fileAnnotation.addToChat')}>
-            {!editing ? <Button variant="ghost" size="md" onPointerDown={event => event.preventDefault()} onClick={() => setEditing(true)}>{t('fileAnnotation.addToChat')}</Button>
-              : <>
-                <form className="gg-file-annotation-form" aria-label={`${fileName} · ${t(selection.quote.startLine === selection.quote.endLine ? 'fileAnnotation.line' : 'fileAnnotation.lines', { start: selection.quote.startLine, end: selection.quote.endLine })}`}
-                  onSubmit={event => { event.preventDefault(); void save() }}>
-                  <input type="text" autoFocus aria-label={t('fileAnnotation.optionalComment')} placeholder={t('fileAnnotation.optionalComment')}
-                    value={annotation} disabled={saving} onChange={event => setAnnotation(event.target.value)}
-                    onKeyDown={event => {
-                      if (event.key !== 'Enter') return
-                      if (event.nativeEvent.isComposing || event.keyCode === 229) { event.preventDefault(); return }
-                      if (event.metaKey || event.ctrlKey) { event.preventDefault(); void save() }
-                    }} />
-                  <Button type="submit" variant="primary" size="icon" className="gg-file-annotation-submit" aria-label={t('fileAnnotation.comment')} disabled={saving}><Check className="size-3.5" /></Button>
-                </form>
-                {failed ? <div className="gg-file-annotation-error" role="alert">{t('fileAnnotation.failed')}</div> : null}
-              </>}
+          <Popover.Popup initialFocus={false} finalFocus={false} data-occludes-browser-page className="gg-file-cite-popup">
+            <Button variant="ghost" size="md" onPointerDown={event => event.preventDefault()} onClick={cite}>{t('fileCite.cite')}</Button>
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

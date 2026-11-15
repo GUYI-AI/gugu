@@ -38,7 +38,6 @@ export interface ExtensionHostActionOrigin {
 
 export type ExtensionHostAction =
   | { kind: 'taskMessage'; text: string }
-  | { kind: 'annotateFile'; selection: { path: string } & import('./file-annotation').FileAnnotationFields }
   | { kind: 'navigateTab'; delta: -1 | 1 }
   | { kind: 'openAppModal'; page: AppModalPage }
   | { kind: 'closeAppModal'; id: string }
