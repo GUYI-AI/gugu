@@ -229,12 +229,65 @@ function writeSnapshotEntry(key: QueryKey, value: unknown, at: number, limits: {
   }
 }
 
-/** Seed the cache with the last run's values, dated when they were read, so `fresh` decides whether to read again. */
-function hydrateSnapshot(owner: string): void {
-  for (const entry of Object.values(readSnapshot(owner))) {
+/**
+ * What a model as defined now admits of its kept entries: none without `persist`, each within `maxBytes`, the newest
+ * `maxEntries`. A snapshot written by an older build (a model that no longer persists, a limit that shrank) goes no
+ * further than this.
+ */
+function admitted(definition: Definition<unknown[], unknown>, entries: SnapshotEntry[]): SnapshotEntry[] {
+  if (!definition.persist) return []
+  const { maxBytes, maxEntries } = definition.persist
+  return entries.filter((entry) => JSON.stringify(entry).length <= maxBytes).sort((x, y) => y.at - x.at).slice(0, maxEntries)
+}
+
+function ownEntries(snapshot: Snapshot, owner: string): Map<string, SnapshotEntry[]> {
+  const byName = new Map<string, SnapshotEntry[]>()
+  for (const entry of Object.values(snapshot)) {
     if (!Array.isArray(entry?.key) || entry.key[1] !== owner) continue
-    if (queryClient.getQueryData(entry.key) !== undefined) continue
-    putEntry(entry.key, entry.value, entry.at)
+    const name = String(entry.key[0])
+    byName.set(name, [...(byName.get(name) ?? []), entry])
+  }
+  return byName
+}
+
+/**
+ * Seed the cache with the last run's values, dated when they were read, so `fresh` decides whether to read again. A model
+ * not registered yet (it loads with its chunk) is seeded as kept and judged when it registers (`pruneSnapshot`).
+ */
+function hydrateSnapshot(owner: string): void {
+  const snapshot = readSnapshot(owner)
+  const dropped: SnapshotEntry[] = []
+  for (const [name, entries] of ownEntries(snapshot, owner)) {
+    const definition = definitions.get(name)
+    const keep = definition ? admitted(definition, entries) : entries
+    dropped.push(...entries.filter((entry) => !keep.includes(entry)))
+    for (const entry of keep) {
+      if (queryClient.getQueryData(entry.key) === undefined) putEntry(entry.key, entry.value, entry.at)
+    }
+  }
+  dropFromSnapshot(owner, snapshot, dropped)
+}
+
+/** A model registering for the first time: its kept entries it does not admit leave the cache and the snapshot. */
+function pruneSnapshot(definition: Definition<unknown[], unknown>): void {
+  for (const owner of definition.scope === DEVICE ? [DEVICE] : account.id ? [account.id] : []) {
+    const snapshot = readSnapshot(owner)
+    const entries = ownEntries(snapshot, owner).get(definition.name) ?? []
+    const keep = admitted(definition, entries)
+    const dropped = entries.filter((entry) => !keep.includes(entry))
+    // Seeded from the snapshot: nothing of this model was read before it was defined.
+    for (const entry of dropped) queryClient.removeQueries({ queryKey: entry.key, exact: true })
+    dropFromSnapshot(owner, snapshot, dropped)
+  }
+}
+
+function dropFromSnapshot(owner: string, snapshot: Snapshot, dropped: SnapshotEntry[]): void {
+  if (dropped.length === 0) return
+  for (const entry of dropped) delete snapshot[hashKey(entry.key)]
+  try {
+    localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot))
+  } catch (error) {
+    refuseSnapshotWrite(String(dropped[0]!.key[0]), `storage refused the ${owner === DEVICE ? 'device' : 'account'} block (${String(error)})`)
   }
 }
 
@@ -268,7 +321,9 @@ function ownerOf(scope: Scope): string | null {
 
 export function replica<A extends unknown[], V>(definition: Definition<A, V>): Replica<A, V> {
   // A module evaluated again (hot reload, a test's module reset) defines its model again: the latest reader serves.
+  const first = !definitions.has(definition.name)
   definitions.set(definition.name, definition as Definition<unknown[], unknown>)
+  if (first) pruneSnapshot(definition as Definition<unknown[], unknown>)
   queryClient.setQueryDefaults([definition.name], { gcTime: definition.keep ?? Infinity })
   const options = (key: QueryKey) => ({
     queryKey: key,

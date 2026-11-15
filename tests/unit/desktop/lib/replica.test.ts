@@ -204,6 +204,27 @@ describe('snapshot limits (@@@client-state-model, persistence)', () => {
     expect(entriesOf('alice', 'test-days').map((e) => e.key[2]).sort()).toEqual(['d2', 'd3'])
   })
 
+  // An upgrade: the older build kept entries this build's models no longer admit (persist dropped, a limit shrunk).
+  it('restores only what the model as defined now admits, and drops the rest from the snapshot', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const kept = { maxBytes: 4096, maxEntries: 4 }
+    for (const name of ['test-unpersisted', 'test-shrunk', 'test-early', 'test-same']) {
+      await rm.replica({ name, scope: 'account', read: async () => 'x'.repeat(300), persist: kept }).prefetch()
+    }
+    expect(['test-unpersisted', 'test-shrunk', 'test-early', 'test-same'].map((name) => entriesOf('alice', name).length)).toEqual([1, 1, 1, 1])
+
+    rm = await freshStart()
+    // Registered before the account's block is restored: the restore judges it.
+    const early = rm.replica({ name: 'test-early', scope: 'account', read: async () => 'new' })
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    // Registered after: judged as it registers.
+    const unpersisted = rm.replica({ name: 'test-unpersisted', scope: 'account', read: async () => 'new' })
+    const shrunk = rm.replica({ name: 'test-shrunk', scope: 'account', read: async () => 'new', persist: { maxBytes: 100, maxEntries: 1 } })
+    const same = rm.replica({ name: 'test-same', scope: 'account', read: async () => 'new', persist: kept })
+    expect([early.peek().state, unpersisted.peek().state, shrunk.peek().state, same.peek().state]).toEqual(['unknown', 'unknown', 'unknown', 'value'])
+    expect(['test-unpersisted', 'test-shrunk', 'test-early', 'test-same'].map((name) => entriesOf('alice', name).length)).toEqual([0, 0, 0, 1])
+  })
+
   it('a block the storage refuses is said and counted, ❌ swallowed; the value read stays', async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
