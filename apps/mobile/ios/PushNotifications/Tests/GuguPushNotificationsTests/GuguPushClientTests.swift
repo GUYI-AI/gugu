@@ -629,4 +629,36 @@ private func proof(_ scope: GuguPushRetirementScope, kind: GuguPushCleanupKind =
         #expect(await code { try await f.client.status(expectedBinding: f.current) } == "owner_unavailable")
     }
 
+    @Test func localClosedOwnerForgettingPreservesOtherOwnerRegistrationAndDeduplication() async throws {
+        let f = Fixture()
+        _ = try await f.client.register(expectedBinding: f.current)
+        #expect(await code { try f.client.forgetClosedOwner(ownerA) } == "closure_not_prepared")
+        _ = try await f.retire()
+        f.current = binding(ownerB)
+        _ = try await f.client.register(expectedBinding: f.current)
+        let envelope = f.envelope()
+        #expect(await f.client.handle(envelope, kind: .received))
+        let beforeSnapshot = try await f.client.status(expectedBinding: f.current)
+        let before = try JSONSerialization.data(withJSONObject: beforeSnapshot.json, options: [.sortedKeys])
+        let requests = f.provider.registrations.count, revokes = f.provider.revocations.count
+        try f.client.forgetClosedOwner(ownerA)
+        let afterSnapshot = try await f.client.status(expectedBinding: f.current)
+        let after = try JSONSerialization.data(withJSONObject: afterSnapshot.json, options: [.sortedKeys])
+        #expect(before == after)
+        #expect(f.client.hasUnattributedDeduplication)
+        #expect(await !f.client.handle(envelope, kind: .received))
+        #expect(f.provider.registrations.count == requests && f.provider.revocations.count == revokes)
+    }
+
+    @Test func localEraseCannotDiscardAnotherOwnersUnknownRegistration() async throws {
+        let f = Fixture(); f.current = binding(ownerB); f.provider.failRegister = true
+        #expect(await code { try await f.client.register(expectedBinding: f.current) } == "registration_unknown")
+        let original = f.provider.registrations.first!
+        try f.client.forgetClosedOwner(ownerA)
+        f.provider.failRegister = false
+        try await f.resolve()
+        #expect(f.provider.registrations.count == 2)
+        #expect(f.provider.registrations.last?.generation == original.generation)
+    }
+
 }

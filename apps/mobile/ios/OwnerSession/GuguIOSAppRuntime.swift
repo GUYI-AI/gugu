@@ -146,10 +146,36 @@ final class GuguIOSAppRuntime {
         // Construct on the bridge's App startup thread before publishing plugins.
         // No real model host, cloud Agent or tool execution is created here.
         [GuguAuthStoragePlugin(ownerSession: ownerSession), GuguIOSOwnerPlugin(ownerSession: ownerSession),
+         GuguAccountClosurePlugin(service: accountClosure, foreground: Self.requireForegroundOwnerUI),
          GuguCalendarPermissionsPlugin(store: calendarStore, ownerAccess: ownerAccess),
          GuguAgentPlugin(service: try nativeHostService()),
          GuguPushNotificationsPlugin(client: pushCleanupClient, platform: pushPlatform,
              ownerSession: ownerSession, configuration: backendConfiguration)]
+    }
+
+    private lazy var accountClosure = GuguIOSClosureComposition.make(root: root, ownerSession: ownerSession,
+        installation: { [weak self] in
+            guard let self else { throw Self.unavailable() }; return try self.installation.identifier()
+        }, prepare: { [weak self] owner in
+            guard let self else { throw Self.unavailable() }; return try self.prepareLocalClosureErasure(ownerId: owner)
+        }, hasUnattributedPush: { [weak self] in self?.hasUnattributedClosurePushState() == true })
+
+    /// Called on the closure plugin's worker queue, never while holding the
+    /// authentication lock or performing another identity's server cleanup.
+    func prepareLocalClosureErasure(ownerId: String) throws -> Bool {
+        hostServiceLock.lock(); let service = hostServiceStorage; hostServiceLock.unlock()
+        if let service {
+            guard try service.backend.sealForLocalAccountErase(ownerId: ownerId) else { return false }
+            service.adapter.sealForLocalAccountErase(ownerId: ownerId)
+        }
+        try lifecycle.sealForLocalAccountErase(ownerId: ownerId)
+        if Thread.isMainThread { try MainActor.assumeIsolated { try self.pushCleanupClient.forgetClosedOwner(ownerId) } }
+        else { try DispatchQueue.main.sync { try MainActor.assumeIsolated { try self.pushCleanupClient.forgetClosedOwner(ownerId) } } }
+        return true
+    }
+    func hasUnattributedClosurePushState() -> Bool {
+        if Thread.isMainThread { return MainActor.assumeIsolated { self.pushCleanupClient.hasUnattributedDeduplication } }
+        return DispatchQueue.main.sync { MainActor.assumeIsolated { self.pushCleanupClient.hasUnattributedDeduplication } }
     }
 
     func currentBinding() throws -> GuguIOSHostBinding {
