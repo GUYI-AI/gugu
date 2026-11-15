@@ -154,16 +154,14 @@ const IntegrationsCard: React.FC = () => {
 
   // 注册表里的每一家都列出来(#7210):飞书、腾讯文档这类只给 agent 用的服务不是 issue 系统,
   // ❌ 再按「是不是 issue 系统」筛 —— 那样它们连卡片都没有。
-  const integrations: IntegrationItem[] = integrationMetadata.map((integration) => {
+  // Not read yet: no cards (the page draws its loading state below), ❌ every one drawn "not connected" first.
+  const integrations: IntegrationItem[] = (integrationMetadata ?? []).map((integration) => {
     const provider = integration.id;
-    const status: ConnectionStatus = connectionStatus[provider] ?? {
-      connected: false,
-      capabilities: integration.capabilities,
-    };
-    const isConfigured = configuredConnections[provider] ?? false;
+    // A saved connection not checked yet has no status: its error line waits for the check (❌ "not connected").
+    const status: ConnectionStatus | undefined = connectionStatus?.[provider];
+    const isConfigured = configuredConnections?.[provider] === true;
     const hasForm = integration.auth.methods.some((method) => method.kind === 'form');
-    const isConfigurationKnown =
-      provider in configuredConnections || !isCheckingConfiguredConnections;
+    const isConfigurationKnown = configuredConnections !== null && (provider in configuredConnections || !isCheckingConfiguredConnections);
 
     if (provider === 'github') {
       return {
@@ -176,11 +174,11 @@ const IntegrationsCard: React.FC = () => {
         isConfigurationKnown,
         isMutating: false,
         readOnly: !!notice?.readOnly,
-        connectionError: isConfigured ? integrationErrorText(translate, integration.name, status) : undefined,
-        connectionErrorDetail: isConfigured ? status.error : undefined,
+        connectionError: isConfigured && status ? integrationErrorText(translate, integration.name, status) : undefined,
+        connectionErrorDetail: isConfigured ? status?.error : undefined,
         // The default account's login once the accounts are read; until then the connection status's own name.
-        displayName: (sortedGithubAccounts.state === 'value' ? sortedGithubAccounts.value[0]?.login : undefined) ?? status.displayName,
-        displayDetail: status.displayDetail,
+        displayName: (sortedGithubAccounts.state === 'value' ? sortedGithubAccounts.value[0]?.login : undefined) ?? status?.displayName,
+        displayDetail: status?.displayDetail,
         onConnect: () => showConnectGitHub({ host: modalHost }),
         abilities: integration.abilities ?? [],
         playbooks: integration.playbooks ?? [],
@@ -200,10 +198,10 @@ const IntegrationsCard: React.FC = () => {
       isConfigurationKnown,
       isMutating: isIntegrationMutating(provider),
       readOnly: !!notice?.readOnly,
-      connectionError: isConfigured ? integrationErrorText(translate, integration.name, status) : undefined,
-      connectionErrorDetail: isConfigured ? status.error : undefined,
-      displayName: status.displayName,
-      displayDetail: status.displayDetail,
+      connectionError: isConfigured && status ? integrationErrorText(translate, integration.name, status) : undefined,
+      connectionErrorDetail: isConfigured ? status?.error : undefined,
+      displayName: status?.displayName,
+      displayDetail: status?.displayDetail,
       abilities: integration.abilities ?? [],
       playbooks: integration.playbooks ?? [],
       multiAccount: integration.multiAccount ?? false,
@@ -260,7 +258,7 @@ const IntegrationsCard: React.FC = () => {
   // 别的机器此刻给不出清单(离线且没读过 / server 太旧 / 问不通):只说那一句,❌ 画一排「可连接」冒充它上面什么都没连。
   if (notice && !hasList) return <DeviceScopeNoticeLine notice={notice} onRetry={reloadList} />;
   // 清单还在读:画加载态(读到了才知道哪些连着)。
-  if (!hasList && !listError) return <PageLoading />;
+  if ((!hasList || !integrationMetadata) && !listError) return <PageLoading />;
 
   return (
     <TooltipProvider delay={150}>

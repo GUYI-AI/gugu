@@ -1,16 +1,17 @@
 import { Pencil, Plus, Sparkles, Trash2, X } from '@/lib/icons'
-import { useQueries } from '@tanstack/react-query';
+import { useReplicas } from '@/lib/replica';
+import { configuredConnections } from '@/components/connections/connection-replicas';
 import { observer } from 'mobx-react-lite';
 import { useEffect, type ReactNode } from 'react';
 import { issueFeatureLabels } from '@renderer/features/integrations/integration-display';
 import { IntegrationIcon } from '@renderer/features/integrations/integration-icon';
-import { ISSUE_CONNECTION_STATUS_QUERY_KEY } from '@renderer/features/integrations/integrations-provider';
 import {
   useIntegrationAccounts,
   type IntegrationAccountSummary,
 } from '@renderer/features/integrations/use-integration-accounts';
 import {
   LOCAL_LIBRARY_HOST,
+  keepLibraryHost,
   machineLibraryHost,
   useLibraryHost,
   type LibraryHost,
@@ -225,7 +226,7 @@ function StatusDot({ tone }: { tone: StatusDotTone }) {
 function SingleAccountConnection({ integration }: { integration: IntegrationItem }) {
   const { translate } = useSessionMessages();
   const { accounts } = useIntegrationAccounts(integration.id, integration.isConfigured);
-  const account = accounts[0];
+  const account = accounts?.[0];
   // 凭据还存着、检查却不通过(令牌被撤 / 过期):说检查的原话(悬停),给「重新连接」(同一个连接弹窗)。
   const failed = integration.connectionError;
   return (
@@ -252,8 +253,8 @@ function SingleAccountConnection({ integration }: { integration: IntegrationItem
         <InfoRow label={translate('integrations.accountRowLabel')}>
           <span className="truncate">
             {integration.displayName ??
-              account?.displayName ??
-              translate('integrations.accountFallbackName', { name: integration.name })}
+              (accounts === null && integration.isConfigured ? <Unknown className="w-24" /> : account?.displayName ??
+              translate('integrations.accountFallbackName', { name: integration.name }))}
           </span>
         </InfoRow>
       </div>
@@ -287,11 +288,11 @@ function SingleAccountConnection({ integration }: { integration: IntegrationItem
 /** 一家连了几个账号(邮箱):逐个列、逐个查、逐个断,底下「添加另一个账号」(多账号那一组)。 */
 function MultiAccountConnection({ integration }: { integration: IntegrationItem }) {
   const { translate } = useSessionMessages();
-  const { supported, accounts, checks, isChecking, isLoading, error, retry } = useIntegrationAccounts(
+  const { supported, accounts, checks, isChecking, error, retry } = useIntegrationAccounts(
     integration.id,
     integration.isConfigured
   );
-  if (isLoading) return <LoadingIndicator size="inline" className="text-foreground-muted" />;
+  if (!error && (accounts === null || supported === null)) return <LoadingIndicator size="inline" className="text-foreground-muted" />;
   // 读不到账号:说出来、给重试。❌ 落回单账号的样子 —— 那里的「断开连接」会一次删掉所有邮箱。
   if (error) {
     return (
@@ -310,12 +311,12 @@ function MultiAccountConnection({ integration }: { integration: IntegrationItem 
   if (!supported) return <SingleAccountConnection integration={integration} />;
   return (
     <div className="space-y-2">
-      {accounts.map((account) => (
+      {(accounts ?? []).map((account) => (
         <AccountRow
           key={account.accountId}
           integration={integration}
           account={account}
-          check={checks.get(account.accountId)}
+          check={checks?.get(account.accountId)}
           checking={isChecking}
         />
       ))}
@@ -421,29 +422,23 @@ const DeviceAvailability = observer(function DeviceAvailability({ integration }:
       return { key: host.key, label: device.label, online: device.isOnline, host };
     }),
   ];
-  const configured = useQueries({
-    queries: machines.map((machine) => ({
-      // 与 IntegrationsProvider 的「存没存凭据」同一个键:同一台机器只问一次。
-      queryKey: [...ISSUE_CONNECTION_STATUS_QUERY_KEY, machine.host.key, 'configured'],
-      queryFn: () => machine.host.integrations.checkConfiguredConnections(),
-      enabled: machine.online && machine.key !== current.key,
-      staleTime: Infinity,
-      retry: false,
-    })),
-  });
+  // 与 IntegrationsProvider 的「存没存凭据」同一个 replica(`configuredConnections`):同一台机器只问一次。离线的不问。
+  const asked = machines.filter((machine) => machine.online && machine.key !== current.key);
+  const readings = useReplicas(configuredConnections, asked.map((machine) => [keepLibraryHost(machine.host).key] as [string]));
+  const configured = new Map(asked.map((machine, index) => [machine.key, readings[index]!]));
 
   return (
     <section>
       <MicroLabel>{translate('integrations.devicesLabel', { name: integration.name })}</MicroLabel>
       <div className="mt-3 divide-y divide-border rounded-lg bg-background-2">
-        {machines.map((machine, index) => {
+        {machines.map((machine) => {
           // 问不到 / 还在问 ≠ 没连(读数的仪器坏了不是阴性读数):各说各的,❌ 一律画成红点「未连接」。
-          const query = machine.key === current.key ? null : configured[index];
-          const known = query === null ? integration.isConfigurationKnown : query?.isSuccess === true;
-          const isConfigured = query === null ? integration.isConfigured : query?.data?.[integration.id] === true;
+          const query = machine.key === current.key ? null : configured.get(machine.key);
+          const known = query === null ? integration.isConfigurationKnown : query?.state === 'value';
+          const isConfigured = query === null ? integration.isConfigured : query?.state === 'value' && query.value[integration.id] === true;
           const state = !machine.online
             ? translate('integrations.deviceOffline')
-            : query?.isError
+            : query?.state === 'error'
               ? translate('integrations.deviceUnknown')
               : !known
                 ? translate('integrations.checkingAccount')
@@ -453,7 +448,7 @@ const DeviceAvailability = observer(function DeviceAvailability({ integration }:
           return (
             <InfoRow key={machine.key} label={machine.label}>
               {machine.online && known && <StatusDot tone={deviceStatusTone(isConfigured)} />}
-              <span className="text-foreground-muted" title={query?.isError ? String(query.error) : undefined}>
+              <span className="text-foreground-muted" title={query?.state === 'error' ? String(query.error) : undefined}>
                 {state}
               </span>
             </InfoRow>

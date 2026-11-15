@@ -41,10 +41,6 @@ vi.mock('@/lib/realtimeChannel', () => ({
   subscribePrivateUserEventBus: (_owner: string, _event: string, listener: () => void) => { net.bus.push(listener); return net.bus.length },
   unsubscribePrivateUserEventBus: () => {},
 }))
-vi.mock('@/components/assistant/assistant-panel-cache', () => ({ assistantPanelCacheStore: () => ({ accountState: () => {
-  let saved: unknown
-  return { peek: () => saved, save: (value: unknown) => { saved = value } }
-} }) }))
 vi.mock('@/lib/platformIntegrations', () => ({ rendererPlatformIntegrationsClient: () => ({}) }))
 vi.mock('@/components/connections/useConnectionReadNotice', () => ({ useConnectionReadNotice: () => {} }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: () => {}, info: () => {}, error: () => {} }) }))

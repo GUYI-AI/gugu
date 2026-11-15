@@ -4,6 +4,7 @@ import { myAssistant } from '@/lib/myAssistant';
 import { assistantDm } from '@/lib/assistantDm';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useMemo } from 'react';
+import { AppConnectionListPlaceholder } from '@/components/assistant/AppConnectionHero';
 import { useTranslation } from 'react-i18next';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
 import { IntegrationIcon } from '@renderer/features/integrations/integration-icon';
@@ -120,6 +121,8 @@ export const ConnectorLists = observer(function ConnectorLists({ onOpen }: { onO
         <span role={failure.tone === 'danger' ? 'alert' : 'status'} data-testid="assistant-connectors-read-failed">{failure.text}</span>
       </AssistantEmpty>
     );
+  // Not known yet which are connected: one placeholder list, ❌ every connector drawn as "available" first (AP11).
+  if (!integrations || !configuredConnections) return <AppConnectionListPlaceholder />;
   const ordered = connectorOrder(integrations, i18n.language);
   const connected = ordered.filter((i) => configuredConnections[i.id]);
   const available = ordered.filter((i) => !configuredConnections[i.id]);
@@ -138,7 +141,7 @@ export const ConnectorLists = observer(function ConnectorLists({ onOpen }: { onO
     <>
       {connected.length ? (
         <AssistantSection title={t('connectors.connectedGroup')} testId="assistant-connectors-connected">
-          {connected.map((i) => row(i, connectionStatus[i.id]?.displayName ?? i.description))}
+          {connected.map((i) => row(i, connectionStatus?.[i.id]?.displayName ?? i.description))}
         </AssistantSection>
       ) : null}
       <AssistantSection title={t('connectors.availableGroup')} testId="assistant-connectors-available">

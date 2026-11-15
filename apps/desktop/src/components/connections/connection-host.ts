@@ -3,9 +3,9 @@ import { getRendererSession, observeRendererSession } from '@/lib/sessionPublica
 import { identityDb } from '@/lib/supabase'
 import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from '@/lib/realtimeChannel'
 import type { ConnectionBridge, ConnectionWindow } from '@/lib/connectionBridge'
-import { assistantPanelCacheStore } from '../assistant/assistant-panel-cache'
-import { createOwnerConnectionStore, isOwnerConnectionMetadataCache } from './owner-connection-store'
+import { createOwnerConnectionStore } from './owner-connection-store'
 import type { ConnectionMetadataSnapshot, ConnectionMetadataStore } from './connection-metadata'
+import { ownerConnections } from './connection-replicas'
 import { CONNECTIONS_CHANGED } from './owner-connection-metadata'
 import { rendererPlatformIntegrationsClient } from '@/lib/platformIntegrations'
 import { createConnectionRouting,connectionClientForRoute,type ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
@@ -54,8 +54,15 @@ const bridge: ConnectionBridge = {
     const key = JSON.stringify([ownerId,route.mode,route.epoch,deviceId])
     let store = stores.get(key)
     if (!store) {
-      const cache = assistantPanelCacheStore().accountState<ConnectionMetadataSnapshot>(ownerId,`owner-connections.v1:${route.epoch}:${deviceId ?? 'all'}`,
-        (value): value is ConnectionMetadataSnapshot => isOwnerConnectionMetadataCache(value,ownerId))
+      // The store's copy is the `ownerConnections` replica entry of this route and device (❌ a second cache of its own).
+      const cache = {
+        peek: () => {
+          if (accountId() !== ownerId) return undefined
+          const reading = ownerConnections.peek(route.epoch,deviceId)
+          return reading.state === 'value' ? reading.value : undefined
+        },
+        save: (value: ConnectionMetadataSnapshot) => { if (accountId() === ownerId && ownerConnections.key(route.epoch,deviceId)) ownerConnections.set([route.epoch,deviceId],value) },
+      }
       store = createOwnerConnectionStore({ ownerId,deviceId,accountId,client: connectionClientForRoute(ownerConnectionClient,routing,route),cache,
         executePlatformOperation: id => executePlatformOperation(id,route),
         reread: () => announce(ownerId),changed: () => announce(ownerId),

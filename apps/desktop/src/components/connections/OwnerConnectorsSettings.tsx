@@ -21,6 +21,7 @@ import './connection-copy'
 import { connectionApplicationStatus } from './connection-application-status'
 import { useConnectionRecovery } from './useConnectionRecovery'
 import { useConnectionMutationAllowed } from './connection-mutation-context'
+import { useOwnerConnectionsReading } from './connection-replicas'
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
 
 /** Both settings shells use the same controller without resolving an assistant. */
@@ -43,13 +44,15 @@ function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePi
   useAssistantPanelBack(panelNavigation && openId ? `owner-connector:${openId}` : null,() => setOpenId(null))
   const allowed = useConnectionMutationAllowed()
   useConnectionRecovery(host.connectionMetadata,allowed)
-  const apps = useMemo(() => assistantConnectedApps(connectorOrder(data.integrations,i18n.language),channels.list,
+  // Owner mode: the list is the built-in catalog (always known); which are saved and how they are is the snapshot's.
+  const configured = data.configuredConnections
+  const snapshot = useOwnerConnectionsReading(host.connectionMetadata)
+  const apps = useMemo(() => assistantConnectedApps(connectorOrder(data.integrations ?? [],i18n.language),channels.list,
     id => settings(`channels.${id}`),t('connectors.wechatDescription'),
-    id => connectorState(data.hasConfiguredConnections ? !!data.configuredConnections[id] : undefined,data.checkedConnections[id],
-      undefined,true),data.configuredConnections).map(app => {
-      const status = connectionApplicationStatus(host.connectionMetadata?.peekSnapshot?.(),app.id,data.connectionOperations)
+    id => connectorState(configured ? !!configured[id] : undefined,data.connectionStatus?.[id],undefined,true),configured ?? undefined).map(app => {
+      const status = snapshot.state === 'value' ? connectionApplicationStatus(snapshot.value,app.id,snapshot.value.application) : null
       return status ? { ...app,state: status.confirming ? 'checking' as const : 'needsReauth' as const,connectionStatus: copy(status.key) } : app
-    }),[data,host.connectionMetadata,i18n.language,channels.list,settings,t,copy])
+    }),[data,configured,snapshot,i18n.language,channels.list,settings,t,copy])
   const selected = openId ? apps.find(app => app.id === openId) : null
   if (selected) return <OwnerConnectorDetail host={host} app={selected} deviceId={selectedDeviceId} panelNavigation={panelNavigation} onBack={() => setOpenId(null)} />
   return <SettingsPage data-testid="owner-connectors">
@@ -61,7 +64,7 @@ function OwnerConnectorList({ host,selectedDeviceId,panelNavigation,showDevicePi
       </select>
     </label> : null}
     <ConnectedAppsCatalog apps={apps} scope={host.key} open={setOpenId} mobile={mobile} panelNavigation={panelNavigation}
-      connectionRead={data.hasConfiguredConnections ? 'ready' : 'pending'}
+      connectionRead={configured ? 'ready' : 'pending'}
       icon={(app,size) => app.integration ? <IntegrationIcon provider={app.id} icon={app.integration.icon} size={size} />
         : app.id === 'wechat' ? <ChannelBrandIcon kind="wechat" size={size} /> : null} />
   </SettingsPage>

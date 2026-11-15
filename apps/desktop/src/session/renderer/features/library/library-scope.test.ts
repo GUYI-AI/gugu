@@ -168,7 +168,7 @@ describe('资源库的机器选择管整个模块:每一格都跟着它(#6264)',
     expect(local.integrations.checkAllConnections).not.toHaveBeenCalled();
     expect(local.github.listAccounts).not.toHaveBeenCalled();
     expect(local.agents.listManagement).not.toHaveBeenCalled();
-    expect(seen?.integrations.integrations.map((i) => i.id)).toEqual(['linear']);
+    expect(seen?.integrations.integrations?.map((i) => i.id)).toEqual(['linear']);
   });
 
   it('d22 离线:哪一格都不去问(问不到只会挂满超时)', async () => {

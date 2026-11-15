@@ -1,3 +1,4 @@
+import { Unknown } from '@/components/ui/Unknown';
 import { CircleAlert } from '@/lib/icons'
 import { IntegrationIcon } from '@renderer/features/integrations/integration-icon';
 import { useIntegrationAccounts } from '@renderer/features/integrations/use-integration-accounts';
@@ -65,6 +66,8 @@ export function IntegrationGridCard({
 function AccountCount({ integrationId }: { integrationId: string }) {
   const { translate } = useSessionMessages();
   const { supported, accounts } = useIntegrationAccounts(integrationId, true, { check: false });
+  // Not read yet: a slot the count's size (❌ nothing, then the count pushed in).
+  if (supported === null || accounts === null) return <Unknown className="w-14 text-xs" />;
   if (!supported || accounts.length === 0) return null;
   return (
     <span className="shrink-0 text-xs text-foreground-muted">

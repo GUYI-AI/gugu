@@ -22,17 +22,8 @@ describe('effect-fetch-state ratchet', () => {
     expect(stale, `lower these in ${BASELINE} (node scripts/checks/effect-fetch-state.mts --write)`).toEqual([])
   })
 
-  // The App market and the assistant's connections are drawn inside Settings but belong to the App and assistant domains
-  // (PR 3 of open-flicker); they leave the baseline with those domains.
-  const OTHER_DOMAINS = new Set([
-    'apps/desktop/src/session/renderer/features/settings/components/ExtensionsSettingsCard.tsx',
-    'apps/desktop/src/components/settings/MobileAppsSection.tsx',
-    'apps/desktop/src/components/settings/channels/useChatChannels.ts',
-    'apps/desktop/src/components/settings/AppsSection.tsx',
-  ])
   it('the settings surfaces have none left', () => {
-    const settings = Object.keys(actual).filter((file) => !OTHER_DOMAINS.has(file)
-      && /\/components\/(settings|usage|agentsettings|devices)\/|\/session\/renderer\/features\/settings\//.test(file))
+    const settings = Object.keys(actual).filter((file) => /\/components\/(settings|usage|agentsettings|devices)\/|\/session\/renderer\/features\/settings\//.test(file))
     expect(settings, 'Settings reads through replicas only — @@@client-state-model, docs/design/client-state-model.md').toEqual([])
   })
 })

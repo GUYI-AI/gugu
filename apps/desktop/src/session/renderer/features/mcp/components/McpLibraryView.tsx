@@ -21,7 +21,8 @@ import type { LibraryMcpProvidedServer, LibraryMcpServer } from '@shared/mcp-lib
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { GuguToolGroups } from './gugu-tool-groups';
 import { McpLibraryRow } from './mcp-library-row';
-import { useHarnessMcpServers, useMcpLibrary } from './use-mcp-library';
+import { harnessMcpServers, useHarnessMcpServers, useMcpLibrary } from './use-mcp-library';
+import { Unknown } from '@/components/ui/Unknown';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 
 /**
@@ -55,14 +56,16 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
 
   const openAdd = async () =>
     showServerModal({
-      existing: library.servers,
+      // A click on a drawn page: the list is read by then (the page draws a placeholder before).
+      existing: library.servers ?? [],
       harnessNames: await library.harnessNames(),
       onSuccess: (servers) => void library.add(servers.map((server) => ({ ...server, enabledByDefault: true }))).catch(fail),
     });
   const openEdit = async (server: LibraryMcpServer) =>
     showServerModal({
       initial: server,
-      existing: library.servers,
+      // A click on a drawn page: the list is read by then (the page draws a placeholder before).
+      existing: library.servers ?? [],
       harnessNames: await library.harnessNames(),
       onSuccess: ([edited]) => edited && void library.update({ ...edited, enabledByDefault: server.enabledByDefault }).catch(fail),
     });
@@ -131,7 +134,9 @@ export const McpLibraryView: React.FC<{ onOpenIntegrations: () => void }> = ({ o
               >
                 {translate('mcpLibrary.ownServers')}
               </SectionLabel>
-              {library.servers.length === 0 ? (
+              {library.servers === null ? (
+                <Unknown className="my-2 h-8 w-full" />
+              ) : library.servers.length === 0 ? (
                 <div data-slot="mcp-library-own-empty" className={QUIET}>
                   {translate('mcpLibrary.ownEmpty')}
                 </div>
@@ -184,11 +189,12 @@ function HarnessGroup({
 }) {
   const { translate } = useSessionMessages();
   const [open, setOpen] = React.useState(false);
+  const host = useLibraryHost();
   const servers = useHarnessMcpServers(agent.id, open);
   React.useEffect(() => {
     // 原因进日志;界面上只说读不了哪一家、给重试。
-    if (servers.error) log.error('agent MCP config read failed', { agentId: agent.id, error: String(servers.error) });
-  }, [agent.id, servers.error]);
+    if (servers.state === 'error') log.error('agent MCP config read failed', { agentId: agent.id, error: String(servers.error) });
+  }, [agent.id, servers]);
   return (
     <FoldGroup
       slot="mcp-library-harness"
@@ -199,21 +205,21 @@ function HarnessGroup({
       open={open}
       onOpenChange={setOpen}
     >
-      {servers.isLoading ? (
+      {servers.state === 'unknown' ? (
         <div className={QUIET}>{translate('mcpLibrary.harnessReading')}</div>
-      ) : servers.error ? (
+      ) : servers.state === 'error' ? (
         <div data-slot="mcp-library-harness-error" className="flex items-center gap-3 py-2 pl-6">
           <span className="min-w-0 flex-1 text-sm text-foreground-destructive">
             {translate('mcpLibrary.harnessReadFailed', { agent: agent.name })}
           </span>
-          <Button variant="outline" size="sm" onClick={() => void servers.refetch()}>
+          <Button variant="outline" size="sm" onClick={() => void harnessMcpServers.refresh(host.key, agent.id)}>
             {translate('common.retry')}
           </Button>
         </div>
-      ) : (servers.data ?? []).length === 0 ? (
+      ) : servers.value.length === 0 ? (
         <div className={QUIET}>{translate('mcpLibrary.harnessEmpty', { agent: agent.name })}</div>
       ) : (
-        (servers.data ?? []).map((server) => (
+        servers.value.map((server) => (
           <McpLibraryRow
             key={server.name}
             server={server}

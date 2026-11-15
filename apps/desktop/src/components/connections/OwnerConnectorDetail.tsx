@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { SettingsGroup,SettingsPage,SettingsRow } from '@/components/settings/SettingsPrimitives'
@@ -16,7 +15,8 @@ import { PageHead } from '@/session/renderer/features/assistant/assistant-ui-par
 import type { ConnectionMetadataItem } from './connection-metadata'
 import { notify } from '@/lib/notices'
 import { connectionActionNoticeScope,reportConnectionActionFailure } from './connection-action-notice'
-import { connectionReadOptions } from './connection-read-policy'
+import { connectionMetadataCollection } from './connection-metadata'
+import { ownerConnections, useOwnerConnectionsReading } from './connection-replicas'
 import { useConnectionMutationAllowed } from './connection-mutation-context'
 import { AppConnectionListPlaceholder } from '@/components/assistant/AppConnectionHero'
 
@@ -29,10 +29,10 @@ export function OwnerConnectorDetail({ host,app,deviceId,panelNavigation,onBack 
   const allowed = canMutate && !(app.connectionStatus && app.state === 'checking')
   const [busy,setBusy] = useState<string | null>(null)
   const showSetup = useShowModal('integrationSetupModal'),showGithub = useShowModal('githubConnectModal'),showConfirm = useShowModal('confirmActionModal')
-  const accounts = useQuery({ queryKey: ['owner-connection-accounts',host.key,app.id],enabled: !!host.connectionMetadata,
-    queryFn: async () => (await host.connectionMetadata!.collection('integrations')).filter(row => row.data.providerId === app.id && typeof row.data.accountId === 'string'),
-    initialData: () => host.connectionMetadata?.peekSnapshot?.()?.items.filter(row => !row.deleted_at && row.data.providerId === app.id && typeof row.data.accountId === 'string'),
-    refetchOnWindowFocus: true,...connectionReadOptions })
+  // This provider's saved accounts: a selection of the owner snapshot (`collection('integrations')` is that filter of it).
+  const snapshot = useOwnerConnectionsReading(host.connectionMetadata)
+  const accounts = snapshot.state === 'value'
+    ? connectionMetadataCollection(snapshot.value).filter(row => row.data.providerId === app.id && typeof row.data.accountId === 'string') : null
   const where = (row: ConnectionMetadataItem) => row.source?.scopeKey === 'platform' ? copy('platform')
     : devices.devices.find(device => device.device_id === row.device_id)?.label || copy('device')
   const mutate = async (row: ConnectionMetadataItem,operation: 'remove' | 'default') => {
@@ -43,7 +43,7 @@ export function OwnerConnectorDetail({ host,app,deviceId,panelNavigation,onBack 
       else await host.connectionMetadata!.save(row,{ providerId: row.data.providerId,accountId: row.data.accountId,isDefault: true })
     } catch (failure) { reportConnectionActionFailure(failure,{ ownerId: host.connectionMetadata?.ownerId,provider: app.id,after,
       title: copy(operation === 'remove' ? 'disconnectFailed' : 'defaultFailed',{ name: app.name }) }) }
-    finally { setBusy(null); data.reloadConnections(); void accounts.refetch() }
+    finally { setBusy(null); data.reloadConnections() }
   }
   const connect = () => {
     const platform = app.integration?.auth.methods.some(method => (method.kind === 'form' || method.kind === 'mcp-oauth') && method.custody === 'platform')
@@ -58,9 +58,10 @@ export function OwnerConnectorDetail({ host,app,deviceId,panelNavigation,onBack 
       description={app.description} label={t(app.saved ? 'connectors.reconnect' : 'connectors.connect')} onConnect={connect} disabled={!allowed} /> : null}
     {app.id === 'wechat' ? <fieldset className="contents" disabled={!allowed}><WechatAppConnection /></fieldset> : null}
     {app.connectionStatus ? <p role="status">{app.name} : {app.connectionStatus}</p> : null}
-    {!accounts.data ? <AppConnectionListPlaceholder /> : null}
-    {accounts.data?.length ? <SettingsGroup title={copy('accounts')}>
-      {accounts.data.map(row => <SettingsRow key={JSON.stringify([host.connectionMetadata?.ownerId,row.resource_key])}
+    {snapshot.state === 'error' && !accounts ? <p role="alert">{copy('readUnavailable')} <Button size="sm" variant="ghost" onClick={() => void ownerConnections.refresh()}>{t('machine.retry')}</Button></p> : null}
+    {!accounts && snapshot.state !== 'error' ? <AppConnectionListPlaceholder /> : null}
+    {accounts?.length ? <SettingsGroup title={copy('accounts')}>
+      {accounts.map(row => <SettingsRow key={JSON.stringify([host.connectionMetadata?.ownerId,row.resource_key])}
         title={assistantAccountDisplayName(row.data.displayName) ?? assistantAccountDisplayName((row.data.publicMetadata as { login?: unknown } | undefined)?.login) ?? app.name}
         description={row.source?.scopeKey === 'platform' ? copy('onPlatform') : copy('onDevice',{ device: where(row) })}
         stack control={<div className="flex flex-wrap items-center gap-2">

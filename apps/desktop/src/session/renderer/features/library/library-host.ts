@@ -286,9 +286,35 @@ export function machineLibraryHost(device: LibraryRemoteDevice | null): LibraryH
   let host = machineHosts.get(key);
   if (!host) {
     for (const [existing, value] of machineHosts) if (value.remote?.deviceId === device.deviceId) machineHosts.delete(existing);
-    machineHosts.set(key, (host = createRemoteLibraryHost(device)));
+    machineHosts.set(key, (host = keepLibraryHost(createRemoteLibraryHost(device))));
   }
   return host;
+}
+
+/**
+ * @@@library-host-of — the one resolver from a library host key to the host that answers for it (PR 3: a replica's `read`
+ * is module level, so it asks by key, as `extensionsApiOf` does for Apps). A host is known by its key once a surface
+ * shows it (`keepLibraryHost`, the provider that mounts it) or once it is built here (`local`, `machineLibraryHost`).
+ * A key nobody kept is refused (❌ answered empty): a replica read for it fails loud.
+ */
+const hostsByKey = new Map<string, LibraryHost>();
+
+/** A surface showing this host: its replicas read through it by key (the latest object for a key serves). */
+export function keepLibraryHost(host: LibraryHost): LibraryHost {
+  hostsByKey.set(host.key, host);
+  return host;
+}
+
+export function libraryHostOf(hostKey: string): LibraryHost {
+  if (hostKey === LOCAL_HOST_KEY) return hostsByKey.get(hostKey) ?? LOCAL_LIBRARY_HOST;
+  const host = hostsByKey.get(hostKey);
+  if (!host) throw new Error(`No library host is kept for ${hostKey}`);
+  return host;
+}
+
+/** The host for a key if one is kept (a replica's `local` copy, which may have none yet). */
+export function peekLibraryHost(hostKey: string): LibraryHost | undefined {
+  return hostKey === LOCAL_HOST_KEY ? hostsByKey.get(hostKey) ?? LOCAL_LIBRARY_HOST : hostsByKey.get(hostKey);
 }
 
 const LibraryHostContext = createContext<LibraryHost>(LOCAL_LIBRARY_HOST);

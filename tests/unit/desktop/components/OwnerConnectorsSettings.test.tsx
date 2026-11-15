@@ -12,10 +12,13 @@ vi.mock('@/lib/useAssistantHome',() => ({ useAssistantHome() { throw new Error('
 vi.mock('@/hooks/useMobileShell',() => ({ useMobileShell: () => true }))
 vi.mock('@/store/devicesContext',() => ({ useDevicesStore: () => ({ devices: [],loading: false,error: null }) }))
 vi.mock('@/components/settings/channels/useChatChannels',() => ({ useChatChannels: () => ({ list: null }) }))
+// The owner snapshot the page derives from (the `ownerConnections` replica reads it through the bridge's store).
+const snapshotOf = () => ({ version: 1,revision: '1',items: fixture.rows,application: fixture.data.connectionOperations ?? [] })
 vi.mock('@/components/connections/useOwnerLibraryHost',() => ({ useOwnerLibraryHost: () => ({ key: 'owner:scope',remote: null,
-  connectionMetadata: { ownerId: 'owner',collection: async () => fixture.rows,change: fixture.change,invalidate: vi.fn(),
-    peekSnapshot: () => ({ items: fixture.rows,application: fixture.data.connectionOperations }) } }) }))
-vi.mock('@/lib/connectionBridge',() => ({ connectionBridge: () => ({ retryOperation: fixture.retryOperation }) }))
+  connectionMetadata: { ownerId: 'owner',authorityEpoch: '1',collection: async () => fixture.rows,change: fixture.change,invalidate: vi.fn(),
+    snapshot: async () => snapshotOf() } }) }))
+vi.mock('@/lib/connectionBridge',() => ({ connectionBridge: () => ({ retryOperation: fixture.retryOperation,
+  routing: { peek: () => ({ mode: 'owner',epoch: '1' }) },metadata: () => ({ snapshot: async () => snapshotOf() }) }) }))
 vi.mock('@/session/renderer/features/library/library-host',() => ({ LibraryHostProvider: ({ children }: { children: ReactNode }) => children }))
 vi.mock('@/session/renderer/features/integrations/integrations-provider',() => ({ IntegrationsProvider: ({ children }: { children: ReactNode }) => children,
   useIntegrationsContext: () => fixture.data }))
@@ -25,16 +28,20 @@ vi.mock('@/session/renderer/lib/modal/modal-provider',() => ({ useShowModal: (na
 
 import { ConnectionMutationContext } from '../../../../apps/desktop/src/components/connections/connection-mutation-context'
 import { OwnerConnectorsSettings } from '../../../../apps/desktop/src/components/connections/OwnerConnectorsSettings'
+import { ownerConnections } from '../../../../apps/desktop/src/components/connections/connection-replicas'
+import { publishRendererSession } from '../../../../apps/desktop/src/lib/sessionPublication'
+import type { Session } from '@supabase/supabase-js'
 let harness: ReturnType<typeof createReactHarness>,client: QueryClient,sequence = 0
 const app = (id: string,custody?: 'platform') => ({ id,name: id === 'github' ? 'GitHub' : '高德地图',description: '说明',catalog: { categoryId: 'dev' },
   icon: { kind: 'svg',variants: [] },auth: { methods: custody ? [{ kind: 'form',custody,fields: [] }] : [] },capabilities: {},abilities: [],playbooks: [],features: [] })
 beforeEach(() => {
   harness = createReactHarness(); client = new QueryClient({ defaultOptions: { queries: { retry: false,gcTime: 0 } } }); sequence += 1
   fixture.rows = []; fixture.notify.mockClear(); fixture.change.mockReset(); fixture.change.mockResolvedValue({ status: 'pending' }); fixture.showSetup.mockClear(); fixture.showGithub.mockClear(); fixture.showConfirm.mockClear(); fixture.retryOperation.mockClear()
-  fixture.data = { integrations: [app('github'),app('amap','platform')],configuredConnections: {},checkedConnections: {},connectionStatus: {},
-    hasConfiguredConnections: true,configuredConnectionsError: null,connectionCheckError: null,reloadConnections: vi.fn(),connectionOperations: [] }
+  fixture.data = { integrations: [app('github'),app('amap','platform')],configuredConnections: {},connectionStatus: {},
+    configuredConnectionsError: null,connectionCheckError: null,reloadConnections: vi.fn(),connectionOperations: [] }
+  publishRendererSession('SIGNED_IN',{ user: { id: `owner-${sequence}` },access_token: 'fixture' } as Session)
 })
-afterEach(() => { harness.cleanup(); client.clear() })
+afterEach(() => { harness.cleanup(); client.clear(); publishRendererSession('SIGNED_OUT',null) })
 const render = (allowed = true) => renderWithAppProviders(harness,createElement(QueryClientProvider,{ client },createElement(ConnectionMutationContext,{ value: allowed },createElement(OwnerConnectorsSettings,{ route: { mode: 'owner',epoch: '1',phase: 'stable',acceptingNewOperations: true } }))),{ auth: { id: `owner-${sequence}` } })
 const q = (id: string) => harness.container.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
 
@@ -55,7 +62,7 @@ describe('owner connection settings without an assistant or native host', () => 
     expect(fixture.showGithub).not.toHaveBeenCalled()
   })
   it('preserves the exact scoped account when equal account ids exist on two devices', async () => {
-    fixture.rows = ['one','two'].map(device => ({ owner_user_id: 'owner',resource_key: JSON.stringify([`device:${device}`,'same-key']),
+    fixture.rows = ['one','two'].map(device => ({ owner_user_id: 'owner',domain: 'integrations',resource_key: JSON.stringify([`device:${device}`,'same-key']),
       source: { scopeKey: `device:${device}`,resourceKey: 'same-key' },device_id: device,revision: '5',data: { providerId: 'github',accountId: 'same-account',displayName: device } }))
     await render(); await clickElement(q('assistant-connector-github'))
     await act(async () => { await vi.waitFor(() => expect(harness.container.textContent).toContain('one')) })
@@ -68,9 +75,11 @@ describe('owner connection settings without an assistant or native host', () => 
     fixture.rows = [{ resource_key: '["device:one","github-key"]',data: { providerId: 'github' } }]
     fixture.data.connectionOperations = [{ resourceKey: '["device:one","github-key"]',revision: '5',operation: 'save',status: 'pending',terminal: false }]
     await render()
+    await act(async () => { await vi.waitFor(() => expect(ownerConnections.peek('1',null).state).toBe('value')) })
     await clickElement([...harness.container.querySelectorAll<HTMLElement>('[role="tab"]')].find(tab => tab.textContent === '我的连接')!)
     expect(q('assistant-connector-github').textContent).toContain('正在确认授权')
-    fixture.data = { ...fixture.data,connectionOperations: [],configuredConnections: { github: true },checkedConnections: { github: { connected: true } } }
+    fixture.data = { ...fixture.data,connectionOperations: [],configuredConnections: { github: true },connectionStatus: { github: { connected: true } } }
+    await act(async () => { await ownerConnections.refresh() })
     await render()
     expect(q('assistant-connector-github')).toBeTruthy()
     expect(q('assistant-connector-github').textContent).not.toContain('正在确认授权')
@@ -79,6 +88,7 @@ describe('owner connection settings without an assistant or native host', () => 
     fixture.rows = [{ resource_key: '["device:one","github-key"]',data: { providerId: 'github' },deleted_at: 'now' }]
     fixture.data.connectionOperations = [{ resourceKey: '["device:one","github-key"]',revision: '5',operation: 'save',status: 'failed',terminal: true,errorCode: 'CONNECTION_OUTCOME_UNKNOWN' }]
     await render()
+    await act(async () => { await vi.waitFor(() => expect(ownerConnections.peek('1',null).state).toBe('value')) })
     const mine = [...harness.container.querySelectorAll<HTMLElement>('[role="tab"]')].find(tab => tab.textContent === '我的连接')!
     await clickElement(mine)
     expect(q('assistant-connector-github').textContent).toContain('GitHub: 状态待确认')
@@ -88,7 +98,7 @@ describe('owner connection settings without an assistant or native host', () => 
     expect((q('assistant-connector-connect') as HTMLButtonElement).disabled).toBe(true)
   })
   it('reports the application and failed user action through the unified notice only',async () => {
-    fixture.rows = [{ resource_key: 'platform-key',data: { providerId: 'amap',accountId: 'one' },source: { scopeKey: 'platform' } }]
+    fixture.rows = [{ domain: 'integrations',resource_key: 'platform-key',data: { providerId: 'amap',accountId: 'one' },source: { scopeKey: 'platform' } }]
     fixture.change.mockRejectedValue(new Error('503'))
     await render(); await clickElement(q('assistant-connector-amap'))
     await vi.waitFor(() => expect(harness.container.textContent).toContain('断开连接'))
@@ -105,7 +115,7 @@ describe('owner connection settings without an assistant or native host', () => 
   })
   it('keeps cached application state without read failure text or retry controls',async () => {
     fixture.data.configuredConnections = { github: true }
-    fixture.data.checkedConnections = { github: { connected: true } }
+    fixture.data.connectionStatus = { github: { connected: true } }
     fixture.data.configuredConnectionsError = { code: '42501' }
     fixture.data.connectionCheckError = { code: '42501' }
     await render()
@@ -115,7 +125,7 @@ describe('owner connection settings without an assistant or native host', () => 
     expect(fixture.notify).not.toHaveBeenCalled()
   })
   it('keeps failed reads distinct from an empty My connections list', async () => {
-    fixture.data.hasConfiguredConnections = false; fixture.data.configuredConnectionsError = { code: 'not-ready' }
+    fixture.data.configuredConnections = null; fixture.data.configuredConnectionsError = { code: 'not-ready' }
     await render()
     const mine = [...harness.container.querySelectorAll<HTMLElement>('[role="tab"]')].find(tab => tab.textContent === '我的连接')!
     await clickElement(mine)

@@ -16,9 +16,10 @@ export function useConnectedIssueProviders(
 ): UseConnectedIssueProvidersResult {
   const { connectionStatus, integrations, isCheckingConnections } = useIntegrationsContext();
 
+  // A provider is offered once it is known usable: none while the catalog or the checks are not read yet.
   const connectedProviders = useMemo(
     () =>
-      integrations
+      !integrations || !connectionStatus ? [] : integrations
         .filter(isIssueIntegration)
         .map((integration) => integration.id)
         .filter((provider) => isProviderUsable(connectionStatus[provider], context)),
@@ -26,7 +27,7 @@ export function useConnectedIssueProviders(
   );
 
   const checkUsable = useMemo(
-    () => (provider: IssueProviderType) => isProviderUsable(connectionStatus[provider], context),
+    () => (provider: IssueProviderType) => isProviderUsable(connectionStatus?.[provider], context),
     [connectionStatus, context]
   );
 

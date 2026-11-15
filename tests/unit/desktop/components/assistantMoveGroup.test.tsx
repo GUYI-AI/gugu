@@ -51,6 +51,7 @@ import { AssistantMoveDialog } from '../../../../apps/desktop/src/components/ass
 import { resetMoveForTests, startMove } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-controller'
 import { MoveError } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move'
 import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
+import { integrationStatuses } from '../../../../apps/desktop/src/components/connections/connection-replicas'
 import { MoveCopyError } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-move-copy'
 import type { AssistantHomePlace } from '../../../../apps/desktop/src/lib/assistantHome'
 
@@ -169,7 +170,7 @@ describe('搬家入口', () => {
       schedules: { restored: 0, skipped: [], unsupported: [], unreadable: false },
       warnings: [],
     })
-    const invalidate = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue()
+    const invalidate = vi.spyOn(integrationStatuses, 'refresh').mockResolvedValue()
     await render(computer)
     await act(async () => {
       await startMove({ ownerUserId: 'owner-1', assistantId: 'agent-1', assistantName: '小满', localDeviceId: 'dev-mac', home: computer }, 'to-cloud', new Map(), 'zh-CN')
@@ -178,7 +179,8 @@ describe('搬家入口', () => {
     const done = document.body.querySelector('[data-testid="assistant-move-done-reconnect-list"]')?.textContent ?? ''
     expect(done).toContain('Notion')
     expect(done).not.toContain('notion')
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['issues:connection-status'] })
+    // The connections read again (the accounts may now be on this machine).
+    expect(invalidate).toHaveBeenCalled()
   })
 })
 

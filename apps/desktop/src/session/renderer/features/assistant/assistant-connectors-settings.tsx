@@ -41,21 +41,21 @@ export function CloudConnectorsSettings({ cloudDeviceId, assistantName }: { clou
 const HomeConnectorList = observer(function HomeConnectorList({ host, home, assistantName, panelNavigation }: Props & { host: LibraryHost }) {
   const { t, i18n } = useTranslation('assistant');
   const settings = useTranslation('settings').t;
-  const { integrations, configuredConnections, connectionStatus, checkedConnections, connectionCheckError, hasConfiguredConnections, configuredConnectionsError, hasList, listError, reloadList, reloadConnections } = useIntegrationsContext();
+  const { integrations, configuredConnections, connectionStatus, connectionCheckError, configuredConnectionsError, hasList, listError, reloadList, reloadConnections } = useIntegrationsContext();
   const chats = useChatChannels();
-  const stateFor = (id: string) => connectorState(hasConfiguredConnections ? !!configuredConnections[id] : undefined, checkedConnections[id], configuredConnectionsError ?? connectionCheckError, host.assistantPanelExpected);
+  const stateFor = (id: string) => connectorState(configuredConnections ? !!configuredConnections[id] : undefined, connectionStatus?.[id], configuredConnectionsError ?? connectionCheckError, host.assistantPanelExpected);
   const [openId, setOpenId] = useState<string | null>(null);
   useAssistantPanelBack(panelNavigation && openId ? `connector:${openId}` : null, () => setOpenId(null));
   const reload = useCallback(() => void reloadList(), [reloadList]);
   const visibleListError = hasList && isAssistantPanelReadRetryable(listError) ? null : listError;
-  const readError = useAssistantReadError(!hasList && !integrations.length, visibleListError, host.key);
+  const readError = useAssistantReadError(!hasList, visibleListError, host.key);
   const failure = useReadFailure(readError, host.remote?.deviceId ?? null, host.remote?.deviceLabel ?? '', reload);
-  const apps = assistantConnectedApps(connectorOrder(integrations, i18n.language), chats.list, kind => settings(`channels.${kind}`), t('connectors.wechatDescription'), stateFor, configuredConnections);
+  const apps = assistantConnectedApps(connectorOrder(integrations ?? [], i18n.language), chats.list, kind => settings(`channels.${kind}`), t('connectors.wechatDescription'), stateFor, configuredConnections ?? undefined);
   if (openId) {
     const app = apps.find(item => item.id === openId);
-    return app ? <ConnectorDetail host={host} home={home} assistantName={assistantName} app={app} state={stateFor(openId)} account={connectionStatus[openId]?.displayName ?? null} panelNavigation={panelNavigation} onBack={() => setOpenId(null)} /> : null;
+    return app ? <ConnectorDetail host={host} home={home} assistantName={assistantName} app={app} state={stateFor(openId)} account={connectionStatus?.[openId]?.displayName ?? null} panelNavigation={panelNavigation} onBack={() => setOpenId(null)} /> : null;
   }
-  if (!hasList && !integrations.length) return <SettingsPage>
+  if (!integrations) return <SettingsPage>
     <AppConnectionListPlaceholder />
     <SettingsNote tone={failure?.tone === 'danger' ? 'danger' : undefined}>{failure?.text}</SettingsNote>
     {failure?.retry ? <div><Button size="sm" onClick={failure.retry}>{t('machine.retry')}</Button></div> : null}
@@ -63,7 +63,7 @@ const HomeConnectorList = observer(function HomeConnectorList({ host, home, assi
   return <SettingsPage data-testid="assistant-connectors-cloud">
     {failure ? <SettingsNote><span role="status">{failure.text}</span></SettingsNote> : null}
     <ConnectedAppsCatalog apps={apps} scope={host.key} open={setOpenId} panelNavigation={panelNavigation}
-      connectionRead={hasConfiguredConnections ? 'ready' : configuredConnectionsError ? 'failed' : 'pending'}
+      connectionRead={configuredConnections ? 'ready' : configuredConnectionsError ? 'failed' : 'pending'}
       retryConnections={reloadConnections}
       icon={(app, size) => app.integration ? <IntegrationIcon provider={app.id} icon={app.integration.icon} size={size} />
         : app.id === 'wechat' ? <ChannelBrandIcon kind="wechat" size={size} /> : null} />
@@ -82,7 +82,7 @@ const ConnectorDetail = observer(function ConnectorDetail({ host, home, assistan
   const showConnectGitHub = useShowModal('githubConnectModal');
   const showConfirm = useShowModal('confirmActionModal');
   const where = homeWhere(home, t);
-  const configured = !!configuredConnections[app.id];
+  const configured = !!configuredConnections?.[app.id];
   const accountName = assistantAccountDisplayName(account);
   return <SettingsPage data-testid="assistant-connector-detail">
     {!panelNavigation ? <div><Button variant="ghost" size="sm" onClick={onBack} data-testid="assistant-connector-back"><ChevronLeft size={16} aria-hidden />{t('connectors.title')}</Button></div> : null}
@@ -91,7 +91,7 @@ const ConnectorDetail = observer(function ConnectorDetail({ host, home, assistan
       <AppConnectionHero icon={<IntegrationIcon provider={app.id} icon={(integration ?? app.integration).icon as never} size={56} />}
         description={(integration ?? app.integration).description} loading={detail.loading}
         label={t(state === 'connected' ? 'connectors.manage' : configured ? 'connectors.reconnect' : 'connectors.connect')}
-        disabled={state === 'checking' || (isCheckingConfiguredConnections && !(app.id in configuredConnections))}
+        disabled={state === 'checking' || (isCheckingConfiguredConnections && !(configuredConnections && app.id in configuredConnections))}
         onConnect={() => app.id === 'github' ? showConnectGitHub({ host }) : showIntegrationSetup({ integration: app.id, host })} />
       {detail.error && !integration ? <SettingsNote role="alert">{assistantPanelFailure(detail.error, t)}</SettingsNote> : null}
     </> : null}
