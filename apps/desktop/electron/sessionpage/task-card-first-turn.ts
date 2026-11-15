@@ -5,8 +5,9 @@
 // group it was born in has answered its join (joined, or queued for the owner's approval) and its name is final.
 //   · The card is the owner's own message and names nobody: the cloud delivery trigger skips cards, so it wakes no
 //     one; the words reach the new agent only as this first turn.
-//   · In a group the first turn is that group's delivery envelope for the card, so the agent answers in the group,
-//     quoting the card. Until the group has let it in (approval pending, or refused) it cannot post there: the
+//   · In a group or its topic the first turn is that chat's delivery envelope for the card, so the agent answers
+//     there, quoting the card. A topic inherits access from its source; speaking makes the agent a participant.
+//     Until the source group has let it in (approval pending, or refused) it cannot post there: the
 //     envelope says to answer in its own session instead.
 //   · In a direct chat with a person the agent can never join: the card stays there and the agent gets the plain
 //     words — its answer is its own session.
@@ -54,10 +55,12 @@ export async function landTaskCardFirstTurn(input: TaskCardFirstTurnInput): Prom
 
   const chat = makeChatClient(input.auth.accessToken)
   const { data: room, error: roomError } = await chat.from('chats')
-    .select('id, kind, public_id, name').eq('id', input.chatId).maybeSingle()
+    .select('id, kind, public_id, name, source_chat_id').eq('id', input.chatId).maybeSingle()
   if (roomError) throw new Error(`task card for ${input.sessionId}: read chat ${input.chatId}: ${roomError.message}`)
   if (!room) throw new Error(`task card for ${input.sessionId}: chat ${input.chatId} is not visible to its owner`)
   const kind = (room as { kind?: string | null }).kind ?? null
+  const membershipChatId = kind === 'topic' ? (room as { source_chat_id?: string | null }).source_chat_id : input.chatId
+  if (kind === 'topic' && !membershipChatId) throw new Error(`task card for ${input.sessionId}: topic ${input.chatId} has no source chat`)
   const { data: face, error: faceError } = await makeIdentityClient(input.auth.accessToken).from('users')
     .select('avatar').eq('id', input.agentUserId).maybeSingle()
   if (faceError) throw new Error(`task card for ${input.sessionId}: read the agent's avatar: ${faceError.message}`)
@@ -89,15 +92,17 @@ export async function landTaskCardFirstTurn(input: TaskCardFirstTurnInput): Prom
   })
   if (writeError) throw new Error(`task card for ${input.sessionId}: write failed: ${writeError.message}`)
 
-  if (kind !== 'group') return { chatId: input.chatId, render: { kind: 'plain' } }
+  if (kind !== 'group' && kind !== 'topic') return { chatId: input.chatId, render: { kind: 'plain' } }
 
   const { data: seat, error: seatError } = await chat.from('active_members')
-    .select('user_id').eq('chat_id', input.chatId).eq('user_id', input.agentUserId).maybeSingle()
+    .select('user_id').eq('chat_id', membershipChatId!).eq('user_id', input.agentUserId).maybeSingle()
   if (seatError) throw new Error(`task card for ${input.sessionId}: read the agent's seat: ${seatError.message}`)
-  let notMemberHint = TASK_CARD_NOT_MEMBER_HINT
+  let notMemberHint = kind === 'topic'
+    ? `这是你的任务卡。你现在还不是这个话题的来源对话（chat_id=${membershipChatId}）的成员：交结果之前先用 message_members 查看来源对话的成员资格；是成员，就在本话题里回、引用这张卡；还不是，就把结果直接回在你自己的会话里，不往话题或来源对话发。`
+    : TASK_CARD_NOT_MEMBER_HINT
   if (!seat) {
     const { data: request, error: requestError } = await chat.from('group_join_requests')
-      .select('status').eq('chat_id', input.chatId).eq('requester_user_id', input.agentUserId)
+      .select('status').eq('chat_id', membershipChatId!).eq('requester_user_id', input.agentUserId)
       .eq('status', 'pending').maybeSingle()
     if (requestError) throw new Error(`task card for ${input.sessionId}: read the agent's join request: ${requestError.message}`)
     if (request) notMemberHint += '你的入群申请正在等待群管理员同意。'
@@ -111,7 +116,7 @@ export async function landTaskCardFirstTurn(input: TaskCardFirstTurnInput): Prom
       chat: {
         publicId: (room as { public_id?: number | null }).public_id ?? null,
         name: (room as { name?: string | null }).name ?? null,
-        kind: 'group',
+        kind,
       },
       timestamp: input.timestamp,
       ...(seat ? {} : { messageContext: notMemberHint }),

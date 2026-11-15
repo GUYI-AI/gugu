@@ -570,7 +570,9 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     return draining
   }
 
-  const provision = createPhoneProvisioner({ ownerId, cloud, store, deviceId, projectId, root, models, tick, admit, snapshot, publish })
+  const provision = createPhoneProvisioner({ ownerId, cloud, store, deviceId, projectId, root, models, tick, admit, snapshot, publish,
+    machineLabel: () => config.deviceRow?.label ?? config.deviceInfo?.model ?? 'Android',
+    resolveIdentities: async (ids) => resolveIdentities(ids, await cloud.token()), authorize: authorizeReply })
 
   const timelines = createPhoneTimelineRuntime({ root, store, confirmations: (agent) => actions?.settlements?.(agent) ?? [], authorize: async (agent) => {
     const proof = agent.dataProof ?? { groups: [], permissionRequirements: [] }
@@ -658,7 +660,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     if (channel === 'sessionTimeline.sessionCreate') {
       const result = await provision(requestId, args[0] ?? {})
       const agent = findSession(result.session_id)
-      return { conversationId: result.session_id, projectId, title: result.title, agentUserId: agent.agentUserId, chatId: agent.chatId, birthGroup: agent.birthGroup ?? null, session: await summary(agent) }
+      return { conversationId: result.session_id, projectId, title: result.title, agentUserId: agent.agentUserId, chatId: agent.chatId, birthGroup: agent.birthGroup ?? null, ...(result.task_message_id ? { taskMessageId: result.task_message_id } : {}), session: await summary(agent) }
     }
     if (channel === 'sessionTimeline.sessionCancel') return cancel(findSession(args[0]?.conversationId))
     throw Object.assign(new Error(`手机宿主尚不支持 ${channel}`), { code: 'unknown_method' })
