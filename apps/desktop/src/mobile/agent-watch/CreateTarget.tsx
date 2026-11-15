@@ -109,6 +109,6 @@ function Choice({ id, dimension, name, description, icon, selected, disabled, on
 }
 function Summary({ dimension, title, value, disabled, onClick }: { dimension: string; title: string; value: string; disabled?: boolean; onClick: () => void }) {
   return <Button variant="ghost" className="gg-phone-composer-choice" disabled={disabled} data-testid="agent-watch-create-options-drill" data-dimension={dimension} onClick={onClick}>
-    <span>{title}</span><span className="gg-phone-composer-choice-description" style={{ marginLeft: 'auto' }}>{value}</span><ChevronRight />
+    <span>{title}</span><span className="gg-phone-composer-choice-description gg-phone-composer-summary-value">{value}</span><ChevronRight />
   </Button>
 }

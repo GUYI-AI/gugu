@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, type ReactNode, type RefObject } from 'react'
+import { useCallback, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
@@ -30,15 +30,31 @@ export function PhoneComposerSheet({ open, onClose, title, children, footer, tes
   anchor?: RefObject<HTMLButtonElement | null>
 }) {
   const { t } = useTranslation('mobileCreateControls')
-  const [viewport, setViewport] = useState({ left: 0, top: 0, width: 0, height: 0, anchorTop: 0 })
+  const shade = useRef<HTMLDivElement | null>(null)
+  const popup = useRef<HTMLDivElement | null>(null)
+  const compact = !!anchor
+  const measure = useCallback(() => {
+    const v = window.visualViewport
+    const left = v?.offsetLeft ?? 0, top = v?.offsetTop ?? 0
+    const width = v?.width ?? innerWidth, height = v?.height ?? innerHeight
+    const anchorTop = anchor?.current?.getBoundingClientRect().top ?? 0
+    // When the keyboard leaves little room above the row, use the visible viewport's bottom.
+    const above = anchorTop - top - 20, anchored = compact && above >= 144
+    const geometry = [
+      [shade.current, { left, top, width, height }],
+      [popup.current, { left: left + 12, top: anchored ? anchorTop - 8 : top + height - 8,
+        width: Math.max(0, Math.min(compact ? 320 : Infinity, width - 24)),
+        'max-height': Math.min(compact ? 440 : 500, Math.max(0, anchored ? above : height - 24)) }],
+    ] as const
+    for (const [element, values] of geometry) {
+      for (const [name, value] of Object.entries(values)) element?.style.setProperty(`--phone-control-${name}`, `${value}px`)
+    }
+  }, [anchor, compact])
+  const setShade = useCallback((element: HTMLDivElement | null) => { shade.current = element; measure() }, [measure])
+  const setPopup = useCallback((element: HTMLDivElement | null) => { popup.current = element; measure() }, [measure])
   useBackLayer(onClose, open)
   useLayoutEffect(() => {
     if (!open) return
-    const measure = () => {
-      const v = window.visualViewport
-      setViewport({ left: v?.offsetLeft ?? 0, top: v?.offsetTop ?? 0, width: v?.width ?? innerWidth,
-        height: v?.height ?? innerHeight, anchorTop: anchor?.current?.getBoundingClientRect().top ?? 0 })
-    }
     measure()
     window.visualViewport?.addEventListener('resize', measure)
     window.visualViewport?.addEventListener('scroll', measure)
@@ -48,23 +64,15 @@ export function PhoneComposerSheet({ open, onClose, title, children, footer, tes
       window.visualViewport?.removeEventListener('scroll', measure)
       window.removeEventListener('resize', measure)
     }
-  }, [open, anchor])
-  const compact = !!anchor
-  // When the keyboard leaves little room above the row, keep the whole menu in the visible viewport.
-  const above = viewport.anchorTop - viewport.top - 20
-  const anchored = compact && above >= 144
-  const bottom = anchored ? viewport.anchorTop - 8 : viewport.top + viewport.height - 8
-  const height = Math.max(0, anchored ? above : viewport.height - 24)
+  }, [open, measure])
   return <Dialog.Root open={open} modal={false} disablePointerDismissal onOpenChange={(next) => { if (!next) onClose() }}>
     {open ? <Dialog.Portal>
-      <div className="gg-phone-composer-shade" style={{ left: viewport.left, top: viewport.top, width: viewport.width, height: viewport.height }}
+      <div ref={setShade} className="gg-phone-composer-shade"
         onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus} onClick={onClose} />
-      <Dialog.Popup className="gg-phone-composer-sheet" data-testid={testId} data-compact={compact || undefined}
+      <Dialog.Popup ref={setPopup} className="gg-phone-composer-sheet" data-testid={testId} data-compact={compact || undefined}
         initialFocus={false} finalFocus={false} aria-modal={false}
         onPointerDownCapture={(event) => { if ((event.target as Element).closest('button')) event.preventDefault() }}
-        onMouseDownCapture={(event) => { if ((event.target as Element).closest('button')) event.preventDefault() }}
-        style={{ left: viewport.left + 12, top: bottom, width: Math.max(0, Math.min(compact ? 320 : Infinity, viewport.width - 24)),
-          maxHeight: Math.min(compact ? 440 : 500, height), transform: 'translateY(-100%)' }}>
+        onMouseDownCapture={(event) => { if ((event.target as Element).closest('button')) event.preventDefault() }}>
         {!compact && <div className="gg-phone-composer-sheet-handle" aria-hidden="true" />}
         <div className="gg-phone-composer-sheet-head">
           <Dialog.Title>{title}</Dialog.Title>
