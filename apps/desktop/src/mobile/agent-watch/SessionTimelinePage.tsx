@@ -280,7 +280,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       <div className={appKind === PHONE_TASK_BROWSER ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
       {(
         <SessionConversation
-          composerControls={mobile && !appPanel ? <PhoneSessionSidebarControls sessionId={session.conversationId} entry={innerSidebarEntry ?? null} /> : null}
+          composerControls={mobile && !appPanel ? <PhoneSessionSidebarControls key={`${session.conversationId}:${innerSidebarEntry ?? ""}`} sessionId={session.conversationId} entry={innerSidebarEntry ?? null} /> : null}
           agentName={shownName}
           agentUserId={agentUserId}
           harness={session.harness}
