@@ -11,7 +11,7 @@ export interface TeamTaskFunding {
   unit_version: 2
   locked_at: string
 }
-export interface TeamTaskIdentity { actorUserId: string; memberIdentityId: string; funding: TeamTaskFunding }
+export interface TeamTaskIdentity { actorUserId: string; memberIdentityId: string; authSessionId?: string; funding: TeamTaskFunding }
 export class TeamFundingError extends Error {
   constructor(readonly code: string, readonly reason_code?: TeamCreditStopReason) { super('Team model access was refused'); this.name = 'TeamFundingError' }
 }
@@ -46,6 +46,19 @@ export function assertSameTeamFunding(actual: TeamTaskFunding, expected: TeamTas
 }
 export function assertTeamTaskActor(auth: RuntimeAuth, expected?: TeamTaskIdentity) {
   if (expected && (auth.userId !== expected.actorUserId || teamAccountTokenHint(auth.accessToken) !== 'team')) throw new TeamFundingError('team_identity_required')
+}
+/** A local binding hint from already verified runtime Auth. The server independently verifies the live Auth session. */
+export function teamAuthSessionId(auth: RuntimeAuth): string {
+  try {
+    const claims = JSON.parse(Buffer.from(auth.accessToken.split('.')[1], 'base64url').toString('utf8'))
+    if (claims.sub === auth.userId && typeof claims.session_id === 'string' && claims.session_id
+      && ![...claims.session_id].some(value => /\s/.test(value) || value.charCodeAt(0) < 32 || value.charCodeAt(0) === 127)) return claims.session_id
+  } catch { /* Missing session binding is refused below, including old local tickets. */ }
+  throw new TeamFundingError('team_task_auth_session_changed')
+}
+export function assertTeamTaskSession(auth: RuntimeAuth, expected?: TeamTaskIdentity) {
+  assertTeamTaskActor(auth, expected)
+  if (expected && (!expected.authSessionId || teamAuthSessionId(auth) !== expected.authSessionId)) throw new TeamFundingError('team_task_auth_session_changed')
 }
 
 type TeamFetch = (url: string, init: RequestInit) => Promise<Response>

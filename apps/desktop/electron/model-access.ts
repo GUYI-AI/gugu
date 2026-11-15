@@ -2,7 +2,7 @@ import { execFile } from '@gugu/core/local/childProcess'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { assertSameTeamFunding, assertTeamTaskActor, parseTeamTaskFunding, teamIssueContext, teamModelStopReason, TeamFundingError, type TeamTaskIdentity } from './team-model-funding'
+import { assertSameTeamFunding, assertTeamTaskActor, assertTeamTaskSession, teamAuthSessionId, parseTeamTaskFunding, teamIssueContext, teamModelStopReason, TeamFundingError, type TeamTaskIdentity } from './team-model-funding'
 import { teamAccountTokenHint } from '../shared/team-account-claims'
 import { teamCreditStopReason, type TeamCreditStopReason } from '@gugu/session-core/session-record/team-credits'
 import { createTaskPayerStore } from './task-payer-store'
@@ -308,12 +308,16 @@ export async function issuePlatformModelAccess(input: {
 }): Promise<IssuedModelAccess> {
   const auth = await requireRuntimeAuth(input.authProvider, 'platform model token')
   const prior = input.keepFromAccessSessionId ? await readAccessLedgerEntry(accessLedgerPath(input.keepFromAccessSessionId)) : null
+  assertTeamTaskSession(auth, prior?.teamTask)
+  if (input.keepFromAccessSessionId && teamAccountTokenHint(auth.accessToken) === 'team' && !prior?.teamTask) throw new TeamFundingError('team_identity_required')
   const localTaskId = prior?.teamTask?.funding.task_id ?? input.sessionId ?? null
   const issueSlot: TeamIssueSlot = { actorUserId: auth.userId, localTaskId, agentUserId: input.agentUserId,
     engineId: input.engineId, modelId: input.modelId, protocol: input.protocol, providerSessionId: input.providerSessionId ?? null,
     keepFromAccessSessionId: input.keepFromAccessSessionId ?? null }
   const intents = createTeamIssueIntentStore(resolveGuguHome(process.env))
   const pending = teamAccountTokenHint(auth.accessToken) === 'team' ? await intents.read(issueSlot) : null
+  const authSessionId = teamAccountTokenHint(auth.accessToken) === 'team' ? teamAuthSessionId(auth) : null
+  if (pending && pending.auth_session_id !== authSessionId) throw new TeamFundingError('team_task_auth_session_changed')
   let taskId = pending?.body.task_id ?? localTaskId ?? randomUUID()
   if (prior?.teamTask && input.sessionId && input.sessionId !== taskId) throw new Error('A replacement cannot change the team task')
   const payers = createTaskPayerStore(resolveGuguHome(process.env)), existing = await payers.read(taskId)
@@ -332,7 +336,7 @@ export async function issuePlatformModelAccess(input: {
     ...(input.keepFromAccessSessionId ? { keep_from_session_id: input.keepFromAccessSessionId } : {}),
     ...(team ? { team_id: team.teamId, member_identity_id: team.memberIdentityId, task_id: taskId, expected_membership_revision: team.membershipRevision } : {}),
   }
-  const intent = team ? await intents.prepare(issueSlot, body as TeamIssueBody) : null
+  const intent = team ? await intents.prepare(issueSlot, body as TeamIssueBody, authSessionId!) : null
   if (intent && intent.body.task_id !== taskId) {
     // Concurrent utility callers adopt the first persisted intent, including its generated task ID.
     taskId = intent.body.task_id
@@ -359,7 +363,7 @@ export async function issuePlatformModelAccess(input: {
       const funding = parseTeamTaskFunding(payload.funding)
       if (funding.team_id !== team.teamId || funding.member_id !== team.memberId || funding.task_id !== taskId) throw new Error('Team funding does not match the authorized task')
       if (expected) assertSameTeamFunding(funding, expected.funding)
-      teamTask = { actorUserId: auth.userId, memberIdentityId: team.memberIdentityId, funding }
+      teamTask = { actorUserId: auth.userId, memberIdentityId: team.memberIdentityId, authSessionId: authSessionId!, funding }
       await payers.lockTeam(taskId, teamTask)
     } else if (payload.funding && (payload.funding as { kind?: unknown }).kind === 'team') throw new Error('Unexpected team funding on personal access')
   } catch (cause) {
@@ -868,7 +872,7 @@ export async function renewPlatformModelAccess(
 ): Promise<{ expiresAt: string; membershipLocked: readonly string[] }> {
   const ledger = await readAccessLedgerEntry(accessLedgerPath(accessSessionId))
   const auth = await requireRuntimeAuth(authProvider, 'platform model renewal')
-  assertTeamTaskActor(auth, ledger?.teamTask)
+  assertTeamTaskSession(auth, ledger?.teamTask)
   const hint = teamAccountTokenHint(auth.accessToken)
   if (hint === 'unknown' || (hint === 'team' && !ledger?.teamTask)) throw new TeamFundingError('team_identity_required')
   const payload = await invokeModelAccessAs(auth, { action: 'renew', session_id: accessSessionId })

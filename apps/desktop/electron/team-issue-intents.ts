@@ -28,7 +28,7 @@ export interface TeamIssueBody {
   task_id: string
   expected_membership_revision: number
 }
-export interface TeamIssueIntent { version: 1; fingerprint: string; idempotency_key: string; body: TeamIssueBody }
+export interface TeamIssueIntent { version: 1; fingerprint: string; idempotency_key: string; auth_session_id: string; body: TeamIssueBody }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const bodyKeys = new Set(['action', 'agent_user_id', 'engine_id', 'model_id', 'protocol', 'provider_session_id', 'keep_from_session_id',
   'team_id', 'member_identity_id', 'task_id', 'expected_membership_revision'])
@@ -37,6 +37,7 @@ function fingerprint(slot: TeamIssueSlot) {
     slot.modelId, slot.protocol, slot.providerSessionId, slot.keepFromAccessSessionId])).digest('hex')
 }
 function validate(intent: TeamIssueIntent, slot: TeamIssueSlot): TeamIssueIntent {
+  if (typeof intent?.auth_session_id !== 'string' || !intent.auth_session_id) throw new TeamFundingError('team_task_auth_session_changed')
   const b = intent?.body
   if (intent?.version !== 1 || intent.fingerprint !== fingerprint(slot) || !uuid.test(intent.idempotency_key) || !b
     || b.action !== 'issue' || b.agent_user_id !== slot.agentUserId || b.engine_id !== slot.engineId || b.model_id !== slot.modelId
@@ -66,17 +67,20 @@ export function createTeamIssueIntentStore(home: string) {
   }
   return {
     read,
-    prepare(slot: TeamIssueSlot, body: TeamIssueBody) {
+    prepare(slot: TeamIssueSlot, body: TeamIssueBody, authSessionId: string) {
       return locked(slot, async assertOwned => {
         const existing = await read(slot)
-        if (existing) return existing
+        if (existing) {
+          if (existing.auth_session_id !== authSessionId) throw new TeamFundingError('team_task_auth_session_changed')
+          return existing
+        }
         // Explicit projection prevents a caller accidentally persisting authentication or response fields.
         const command: TeamIssueBody = { action: 'issue', agent_user_id: body.agent_user_id, engine_id: body.engine_id,
           model_id: body.model_id, protocol: body.protocol, provider_session_id: body.provider_session_id,
           ...(body.keep_from_session_id ? { keep_from_session_id: body.keep_from_session_id } : {}),
           team_id: body.team_id, member_identity_id: body.member_identity_id, task_id: body.task_id,
           expected_membership_revision: body.expected_membership_revision }
-        const intent = validate({ version: 1, fingerprint: fingerprint(slot), idempotency_key: randomUUID(), body: command }, slot)
+        const intent = validate({ version: 1, fingerprint: fingerprint(slot), idempotency_key: randomUUID(), auth_session_id: authSessionId, body: command }, slot)
         assertOwned(); await atomicWriteText(path(slot), JSON.stringify(intent)); return intent
       })
     },

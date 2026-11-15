@@ -21,7 +21,7 @@ vi.mock('@gugu/core/cloud/config', () => ({
   getSupabaseUrl: () => 'https://db.example.test',
 }))
 
-import { listPlatformModels, resolveAgentModelLaunch, issuePlatformModelAccess, renewPlatformModelAccess, modelAccessFailureReason } from '../../../../apps/desktop/electron/model-access'
+import { listPlatformModels, resolveAgentModelLaunch, issuePlatformModelAccess, renewPlatformModelAccess, revokePlatformModelAccess, checkpointPlatformModelAccess, modelAccessFailureReason } from '../../../../apps/desktop/electron/model-access'
 import { createLogger } from '../../../../apps/desktop/electron/lib/logger'
 import { parsePlatformReasoningEfforts } from '../../../../apps/desktop/src/session/shared/core/agents/platform-model'
 
@@ -381,7 +381,7 @@ describe('reasoning efforts from the directory (#6447)', () => {
 describe('fixed team model funding', () => {
   const taskId = 'runtime-task-a'
   const funding = { kind: 'team', team_id: 'team-a', member_id: 'member-a', task_id: taskId, unit_version: 2, locked_at: '2026-11-15T00:00:00Z' }
-  const teamAuth = { userId: 'principal-a', accessToken: `head.${Buffer.from(JSON.stringify({ sub: 'principal-a', app_metadata: { gugu_account_kind: 'team_member' } })).toString('base64url')}.signature` }
+  const teamAuth = { userId: 'principal-a', accessToken: `head.${Buffer.from(JSON.stringify({ sub: 'principal-a', session_id: 'auth-session-a', app_metadata: { gugu_account_kind: 'team_member' } })).toString('base64url')}.signature` }
   const request = { authProvider: {} as never, agentUserId: 'agent-team-a', engineId: 'codex', modelId: 'model-a', protocol: 'openai-responses' as const, sessionId: taskId }
   beforeEach(() => {
     vi.stubEnv('GUGU_HOME', mkdtempSync(join(tmpdir(), 'gugu-team-access-')))
@@ -499,4 +499,35 @@ describe('fixed team model funding', () => {
     await expect(issuePlatformModelAccess(request)).rejects.toMatchObject({ code: 'membership_disabled' })
     expect(issueCalls).toBe(1)
   })
+  it('refuses old live tickets after the same principal signs in with a different Auth session, but still settles them', async () => {
+    const calls: Record<string, unknown>[] = []
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: context }))
+      const body = JSON.parse(String(init?.body)); calls.push(body)
+      return new Response(JSON.stringify(body.action === 'issue' ? issueReply('session-bound-ticket') : { state: 'ended', settled: true }))
+    })
+    const first = await issuePlatformModelAccess(request)
+    coreMocks.requireRuntimeAuth.mockResolvedValue({ ...teamAuth, accessToken: teamAuth.accessToken.replace(teamAuth.accessToken.split('.')[1], Buffer.from(JSON.stringify({ sub: teamAuth.userId, session_id: 'auth-session-b', app_metadata: { gugu_account_kind: 'team_member' } })).toString('base64url')) })
+    await expect(renewPlatformModelAccess(request.authProvider, first.accessSessionId)).rejects.toMatchObject({ code: 'team_task_auth_session_changed' })
+    await expect(issuePlatformModelAccess({ ...request, keepFromAccessSessionId: first.accessSessionId })).rejects.toMatchObject({ code: 'team_task_auth_session_changed' })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    await checkpointPlatformModelAccess(request.authProvider, first.accessSessionId)
+    await revokePlatformModelAccess(request.authProvider, first.accessSessionId)
+    expect(calls.slice(1).map(call => call.action)).toEqual(['checkpoint', 'revoke'])
+    const restarted = await issuePlatformModelAccess(request)
+    expect(restarted.teamTask?.authSessionId).toBe('auth-session-b')
+    expect(restarted.teamTask?.funding).toEqual(first.teamTask?.funding)
+    expect(calls.at(-1)?.idempotency_key).not.toBe(calls[0].idempotency_key)
+  })
+  it('retains an unacknowledged intent and refuses automatic replay under a new login session', async () => {
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async url => {
+      if (String(url).includes('team-billing')) return new Response(JSON.stringify({ ok: true, data: context }))
+      throw new TypeError('Synthetic lost response')
+    })
+    await expect(issuePlatformModelAccess(request)).rejects.toThrow()
+    coreMocks.requireRuntimeAuth.mockResolvedValue({ ...teamAuth, accessToken: `head.${Buffer.from(JSON.stringify({ sub: teamAuth.userId, session_id: 'auth-session-b', app_metadata: { gugu_account_kind: 'team_member' } })).toString('base64url')}.signature` })
+    await expect(issuePlatformModelAccess(request)).rejects.toMatchObject({ code: 'team_task_auth_session_changed' })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
 })

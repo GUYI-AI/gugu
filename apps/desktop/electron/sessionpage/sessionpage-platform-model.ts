@@ -66,7 +66,7 @@ import { hostCatalog, type HostCatalog } from '../../shared/host-localization'
 import { quoteShellArg } from '../session/main/utils/shellEscape'
 
 import { proxyPlatformCredentialRequest, withinCredentialDeadline } from './platform-credential-proxy'
-import { assertTeamTaskActor, readTeamModelContext, teamModelStopReason, TeamFundingError, type TeamTaskIdentity } from '../team-model-funding'
+import { assertTeamTaskSession, readTeamModelContext, teamModelStopReason, TeamFundingError, type TeamTaskIdentity } from '../team-model-funding'
 import { requireRuntimeAuth } from '@gugu/core'
 
 const log = createLogger('sessionpage/platform-model')
@@ -463,7 +463,7 @@ async function proxyPlatformRequest(
       refusal: async (_status: number, retried: boolean) => {
         try {
           const auth = await requireRuntimeAuth(held.authProvider, 'team task refusal')
-          assertTeamTaskActor(auth, held.teamTask)
+          assertTeamTaskSession(auth, held.teamTask)
           const context = await withinCredentialDeadline(readTeamModelContext(auth, fetch))
           if (context.teamId !== held.teamTask!.funding.team_id || context.memberId !== held.teamTask!.funding.member_id
             || context.memberIdentityId !== held.teamTask!.memberIdentityId) throw new TeamFundingError('team_identity_required')
@@ -945,6 +945,11 @@ export async function credentialForRuntimeRequest(sessionId: string): Promise<st
   if (!held?.credentialRoute) throw new Error('platform runtime credential session is not active')
 
   if (held.rotationPromise) await held.rotationPromise
+  // A still-valid gateway ticket cannot outlive the login session that authorized its team task.
+  if (held.teamTask) {
+    try { assertTeamTaskSession(await requireRuntimeAuth(held.authProvider, 'team task request'), held.teamTask) }
+    catch (cause) { throw new PlatformCredentialUnavailableError(modelAccessFailureReason(cause), cause) }
+  }
 
   // The helper/relay is the last wall-clock check before a harness sends a request. A stale timer
   // must never turn into a stale token: expiry and an observed renewal failure both rotate
@@ -986,6 +991,10 @@ export async function credentialForRuntimeRequest(sessionId: string): Promise<st
   const current = activeAccessSessions.get(sessionId)
   const token = current?.token
   if (!token) throw new Error('platform runtime credential is unavailable')
+  if (current.teamTask) {
+    try { assertTeamTaskSession(await requireRuntimeAuth(current.authProvider, 'team task credential'), current.teamTask) }
+    catch (cause) { throw new PlatformCredentialUnavailableError(modelAccessFailureReason(cause), cause) }
+  }
   return token
 }
 

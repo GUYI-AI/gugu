@@ -8,7 +8,7 @@
  */
 import * as electron from 'electron'
 import { requireRuntimeAuth, type RuntimeAuthProvider } from '@gugu/core'
-import { assertTeamTaskActor, readTeamModelContext } from './team-model-funding'
+import { assertTeamTaskSession, readTeamModelContext } from './team-model-funding'
 import {
   issuePlatformModelAccess,
   modelAccessFailureReason,
@@ -51,7 +51,10 @@ function netFetch(url: string, init: RequestInit): Promise<Response> {
 async function ticketFor(authProvider: RuntimeAuthProvider, agentUserId: string, previous?: IssuedModelAccess): Promise<Held> {
   const current = held.get(agentUserId)
   const original = current?.access ?? previous
-  if (original?.teamTask) assertTeamTaskActor(await requireRuntimeAuth(authProvider, 'team voice note'), original.teamTask)
+  if (original?.teamTask) {
+    try { assertTeamTaskSession(await requireRuntimeAuth(authProvider, 'team voice note'), original.teamTask) }
+    catch (cause) { if (current) void retire(authProvider, current); throw cause }
+  }
   if (current && Date.parse(current.access.expiresAt) - Date.now() > TICKET_MARGIN_MS) return current
   const pending = issuing.get(agentUserId)
   if (pending) return pending
@@ -187,7 +190,7 @@ export async function transcribeVoiceNoteSegment(
     if (!reply.ok && entry.access.teamTask && (reply.code === 'refused' || reply.code === 'ticket-expired')) {
       try {
         const auth = await requireRuntimeAuth(authProvider, 'team voice note refusal')
-        assertTeamTaskActor(auth, entry.access.teamTask)
+        assertTeamTaskSession(auth, entry.access.teamTask)
         const context = await readTeamModelContext(auth, netFetch)
         if (context.teamId !== entry.access.teamTask.funding.team_id || context.memberId !== entry.access.teamTask.funding.member_id) return { ok: false, code: 'service-unavailable', message: '' }
         if (context.stopReason) return { ok: false, code: context.stopReason === 'team_credits_exhausted' ? 'team-credits-exhausted' : 'team-monthly-cap-reached', message: '' }

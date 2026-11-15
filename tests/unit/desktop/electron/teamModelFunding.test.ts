@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { teamIssueContext, assertSameTeamFunding, teamModelStopReason, TeamFundingError } from '../../../../apps/desktop/electron/team-model-funding'
+import { teamIssueContext, assertSameTeamFunding, assertTeamTaskSession, teamModelStopReason, TeamFundingError } from '../../../../apps/desktop/electron/team-model-funding'
 import { createTaskPayerStore } from '../../../../apps/desktop/electron/task-payer-store'
 import { teamInvitationToken } from '../../../../apps/desktop/shared/team-invitation-link'
 import { teamAccountTokenHint } from '../../../../apps/desktop/shared/team-account-claims'
@@ -16,6 +16,14 @@ const auth = { userId: 'actor-team', accessToken: jwt('team_member') }
 const funding = { kind: 'team' as const, team_id: 'team-a', member_id: 'member-a', task_id: 'task-a', unit_version: 2 as const, locked_at: '2026-11-15T00:00:00Z' }
 const identity = { actorUserId: auth.userId, memberIdentityId: auth.userId, funding }
 const context = { kind: 'team', team_id: 'team-a', member_id: 'member-a', member_identity_id: auth.userId, member_state: 'active', membership_revision: 7, stop_reason: null }
+
+it('binds live tickets to the Auth session while allowing token refresh within that same session', () => {
+  const token = (session: string, extra = {}) => `head.${Buffer.from(JSON.stringify({ sub: auth.userId, session_id: session, app_metadata: { gugu_account_kind: 'team_member' }, ...extra })).toString('base64url')}.signature`
+  const bound = { ...identity, authSessionId: 'original-session' }
+  expect(() => assertTeamTaskSession({ ...auth, accessToken: token('original-session', { exp: 9999999999 }) }, bound)).not.toThrow()
+  expect(() => assertTeamTaskSession({ ...auth, accessToken: token('another-session') }, bound)).toThrow(expect.objectContaining({ code: 'team_task_auth_session_changed' }))
+  expect(() => assertTeamTaskSession(auth, identity)).toThrow(expect.objectContaining({ code: 'team_task_auth_session_changed' }))
+})
 
 it('retains task ownership after settlement/restart and rejects a switch to personal or another team', async () => {
   const root = await mkdtemp(join(tmpdir(), 'team-task-payer-')); roots.push(root)
