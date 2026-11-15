@@ -3,8 +3,9 @@ import type { PasswordItem, PasswordSaveDraft, PasswordSaveRequest } from '@gugu
 import type { GuguMcpContext } from '../acp-engine-utils'
 import { postPasswordRequest } from './beta-messages'
 import { maskedAccount } from './schema'
+import { PasswordSaveError } from './save-error'
 
-const unavailable = () => new Error('password_save_unavailable')
+const unavailable = () => new PasswordSaveError('REQUEST_ENDED')
 /** The person may answer later; a proposal is held in memory only, never on disk or in a message. */
 const SAVE_REQUEST_TTL_MS = 30 * 60_000
 /** What an Agent proposes. A field without a value is one the person fills in; `secret` defaults to true. */
@@ -27,7 +28,8 @@ export class BetaPasswordSaves {
   async request(context: GuguMcpContext | null, caller: { agentId: string; sessionId: string }, origin: string, item: PasswordItem | undefined,
     proposal: SaveProposal, remote?: { agentName: string; sessionTitle: string; remote: string }): Promise<{ requestId: string; status: 'pending'; view: PasswordSaveRequest }> {
     // One open request per session: a looping Agent cannot flood the person's private chat.
-    if ([...this.requests.values()].some(value => value.result === 'pending' && value.view.sessionId === caller.sessionId)) throw unavailable()
+    const pending = [...this.requests.values()].find(value => value.result === 'pending' && value.view.sessionId === caller.sessionId)
+    if (pending) throw new PasswordSaveError('REQUEST_PENDING', pending.view.requestId)
     const requestId = randomUUID(), presentation = remote ? { agentName: remote.agentName, sessionTitle: remote.sessionTitle } : this.host.describe(caller.agentId, caller.sessionId)
     // The card shows the account the Agent proposed (masked like every stored one), else the stored one.
     const shown = proposal.account ? maskedAccount(proposal.account) : item?.maskedAccount
@@ -49,7 +51,7 @@ export class BetaPasswordSaves {
     this.requests.set(requestId, { view, draft, result: 'pending', timer, ...(remote ? { remote: remote.remote } : {}) })
     if (context) {
       try { await postPasswordRequest(context, view) }
-      catch { this.drop(requestId); throw unavailable() }
+      catch { this.drop(requestId); throw new PasswordSaveError('CARD_DELIVERY_FAILED') }
     }
     this.host.changed()
     return { requestId, status: 'pending', view }
