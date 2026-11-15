@@ -14,6 +14,7 @@ import { useAgentSessionRow } from '../agent-watch/useAgentSessionRow'
 import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { preserveComposerFocus } from '../composer/composer-focus'
 import { roomAgentEntry, roomTopicChoices } from './room-composer-models'
+import '../agent-watch/create-controls-catalog'
 import './room-composer-catalog'
 import './phone-room-composer.css'
 
@@ -36,7 +37,10 @@ export function PhoneRoomComposerControls({ chatId, topics, current, onPick, mem
   const choices = roomTopicChoices(chatId, topics, chats)
   const agents = members.filter(member => member.type === 'agent' && member.membership !== 'former')
   const selectedName = topics.find(topic => topic.chat_id === current?.chatId)?.name ?? current?.name
-  const choose = (topic: TopicSummary | null) => { setView(null); onPick(topic) }
+  const choose = (topic: TopicSummary | null) => {
+    setView(null)
+    if ((topic?.chat_id ?? null) !== (current?.chatId ?? null)) onPick(topic)
+  }
   return <div className="gg-phone-room-controls" data-testid="phone-room-composer-controls">
     <PhoneComposerControlRow>
       <PhoneComposerControl label={selectedName ?? t('topics')} icon={<Hash />} active={!!current} dot={choices.hasUnread}
@@ -95,5 +99,5 @@ function RoomAgentChoice({ profile, userId, opener, onOpen }: {
     displayName: profile.displayName, avatar: profile.avatar, email: profile.email, bio: profile.bio ?? null, type: 'agent',
     session: { projectId: session.session.projectId, sessionId: session.session.conversationId } })}>{body}</Button>
   return <Popover.Trigger handle={opener.handle} payload={{ member: profile, openedFrom: opener.openedFrom }}
-    render={<Button {...props} />}>{body}</Popover.Trigger>
+    render={<Button {...props}>{null}</Button>}>{body}</Popover.Trigger>
 }
