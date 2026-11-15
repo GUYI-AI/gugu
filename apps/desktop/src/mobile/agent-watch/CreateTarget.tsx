@@ -56,7 +56,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const compact = !!existingSession || view !== 'project' && view !== 'skills'
   return <>
     <div className="gg-phone-create-controls" data-testid="agent-watch-create-target"><PhoneComposerControlRow>
-      <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={!!view && compact} disabled={busy}
+      <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={!!view && compact && view !== 'skills'} disabled={busy}
         testId="agent-watch-create-model-device" buttonRef={modelButton} onClick={() => setView('device')} />
       {!existingSession && (projectTask ? <PhoneComposerControl label={t('folder')} icon={<Folder />} disabled={busy}
           testId="agent-watch-create-folder" onClick={projectTask.onFolder} />
