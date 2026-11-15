@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useChatStore } from '../../store/chatContext'
 import { useToast } from '../toastContext'
 import { useMarkChatsRead } from '../../hooks/useMarkChatsRead'
-import { chatsInReadScope, conversationCanDelete, hasUnreadInRows } from '../../session/shared/conversation-row-menu'
+import { chatsInReadScope, conversationCanDelete, hasUnreadInRows, rowRoomCanDelete } from '../../session/shared/conversation-row-menu'
 import { rendererLogger } from '../../lib/log'
 import { messageForUser } from '../../lib/userFacingError'
 import { useGroupChatSettings } from './useGroupChatSettings'
@@ -35,8 +35,11 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
   const peer = identitiesById[chat.peer_user_id ?? '']
   const ownedAgentDm = user && peer?.type === 'agent' && peer.owner_user_id === user.id ? peer : undefined
   const room = chat.kind === 'group' || chat.kind === 'topic'
-  // A room's authority not read yet: the delete item keeps its place, disabled (CH5: it used to appear after the read).
-  const canDelete = room && settings === null && !error ? 'unknown' as const : conversationCanDelete(chat.kind, settings, ownedAgentDm)
+  // A room's authority not read yet: the rows' roles draw the menu's shape from the first frame (CH5: the delete item used
+  // to appear, or vanish, after the read); only when the rows do not say does the item keep its place, disabled.
+  const canDelete = room && settings === null && !error
+    ? rowRoomCanDelete(chat, (id) => chats.find((row) => row.id === id)) ?? 'unknown' as const
+    : conversationCanDelete(chat.kind, settings, ownedAgentDm)
   return <ConversationRowContextMenu {...menu} loadError={error} state={{ kind: 'chat', canDelete, pinned: chat.is_pinned, pinnedToSidebar: onUnpinFromSidebar !== undefined,
     notificationsMuted: chat.notification_level === 'none',
     hasUnread: hasUnreadInRows(chatsInReadScope(chats, chat.id)) || nativeUnreadTargets(nativeRows, chatsInReadScope(chats, chat.id), false).length > 0,

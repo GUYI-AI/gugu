@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chatsInReadScope, conversationCanDelete, conversationRowMenu, hasUnreadInRows } from '../../../../apps/desktop/src/session/shared/conversation-row-menu'
+import { chatsInReadScope, conversationCanDelete, conversationRowMenu, hasUnreadInRows, rowRoomCanDelete } from '../../../../apps/desktop/src/session/shared/conversation-row-menu'
 
 describe('conversation row actions', () => {
   it('limits owned agent DM deletion to archived or removed identities', () => {
@@ -23,6 +23,20 @@ describe('conversation row actions', () => {
     expect(menu.map((item) => item.id)).toEqual(['mark-read', 'pin', 'notifications', 'mark-all-read', 'delete-chat'])
     expect(menu.at(-1)).toMatchObject({ id: 'delete-chat', disabled: true })
     expect(conversationRowMenu({ kind: 'chat', canDelete: true, hasUnread: false }).at(-1)).toMatchObject({ id: 'delete-chat', disabled: false })
+  })
+  // CH5 for a member: the menu took the owner's shape until the authority was read, then lost 更多. The rows' roles say it.
+  it('reads the authority to delete a room from the rows, as group_info_as derives it', () => {
+    const none = () => undefined
+    expect(rowRoomCanDelete({ kind: 'group', my_role: 'owner' }, none)).toBe(true)
+    expect(rowRoomCanDelete({ kind: 'group', my_role: 'admin' }, none)).toBe(false)
+    expect(rowRoomCanDelete({ kind: 'group', my_role: 'member' }, none)).toBe(false)
+    expect(rowRoomCanDelete({ kind: 'group' }, none)).toBeUndefined()
+    const group = (my_role: string, status = 'active') => () => ({ kind: 'group', my_role, status })
+    expect(rowRoomCanDelete({ kind: 'topic', source_chat_id: 'g' }, group('admin'))).toBe(true)
+    expect(rowRoomCanDelete({ kind: 'topic', source_chat_id: 'g' }, group('member'))).toBe(false)
+    expect(rowRoomCanDelete({ kind: 'topic', source_chat_id: 'g' }, group('owner', 'archived'))).toBe(false)
+    // A topic of a private conversation goes by its creator: the rows do not say.
+    expect(rowRoomCanDelete({ kind: 'topic', source_chat_id: 'd' }, () => ({ kind: 'dm' }))).toBeUndefined()
   })
   it('puts the same scoped read action first, followed only by the row type’s own actions', () => {
     const chat = conversationRowMenu({ kind: 'chat', canDelete: true, hasUnread: true, hasAnyUnread: true })
