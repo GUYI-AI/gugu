@@ -9,10 +9,6 @@ const mocks = vi.hoisted(() => ({
   stopped: vi.fn(async (_ownerId: string) => undefined),
   grants: vi.fn(async (_input: { ownerId: string; calendar: boolean; groups: Record<string, boolean> }) => undefined),
 }))
-vi.mock('react-i18next', async (importOriginal) => ({
-  ...await importOriginal<typeof import('react-i18next')>(),
-  useTranslation: () => ({ t: (key: string) => key }),
-}))
 vi.mock('../../../../apps/desktop/src/store/auth', async () => {
   const { createContext } = await import('react')
   return { AuthContext: createContext(null), useAuth: () => ({ user: { id: mocks.owner } }) }
@@ -26,7 +22,7 @@ vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn(), warn: vi.fn() }) }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {
   get kind() { return mocks.kind }, systemPermissions: [], subscribeAppForeground: () => () => {},
-  get capabilities() { return { phoneDevice: mocks.kind === 'capacitor' && mocks.phoneDevice } },
+  get capabilities() { return { phoneDevice: mocks.kind === 'capacitor' && mocks.phoneDevice, phoneAgentHost: mocks.kind === 'capacitor' && mocks.available } },
 } }))
 vi.mock('../../../../apps/desktop/src/mobile/backgroundWatchClaims', () => ({ claimBackgroundWatch: () => () => {} }))
 vi.mock('../../../../apps/desktop/src/mobile/local-agent/nativeAgent', () => ({
