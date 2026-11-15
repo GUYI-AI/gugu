@@ -41,7 +41,7 @@ import { createContext, useCallback, useContext, useLayoutEffect, useRef, useSta
  * 模型名长度不受控(厂商起的名),同一个窗口宽度可能放得下也可能放不下,按宽度盲判必错。
  *
  * 收敛性:每升一档严格变窄,最多 `MAX_LEVEL` 档,所以最多重排 MAX_LEVEL 次就停。
- * 尺寸变化时回到 0 重新往上爬 —— 变宽了要能爬回来,否则只会越缩越小回不去。
+ * 变宽时(宽度停下后)回到 0 重新往上爬 —— 变宽了要能爬回来,否则只会越缩越小回不去;变窄时从当前档接着爬。
  * 全程在 `useLayoutEffect` 里做,浏览器绘制前就定档,看不到中间态。
  */
 export const TOOLBAR_DISCLOSURE_MAX_LEVEL = 6
@@ -153,6 +153,11 @@ export function useToolbarDisclosure(): ToolbarDisclosure {
   useLayoutEffect(() => {
     const el = nodeRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
+    let settle = 0
+    const restart = () => {
+      setLevel(0)
+      setRecheck((n) => n + 1)
+    }
     const observer = new ResizeObserver(() => {
       const width = el.clientWidth
       const previous = lastWidthRef.current
@@ -160,9 +165,11 @@ export function useToolbarDisclosure(): ToolbarDisclosure {
       // 宽度没变(是我们自己升档导致的重排)就别动档位,否则来回震荡。
       // The first layout effect already converged. Initial observation must not restart every level.
       if (previous !== null && Math.abs(previous - width) < 1) return
-      // 回到档 0 重爬(变宽了要能爬回来),并显式要求重判一次。
-      setLevel(0)
-      setRecheck((n) => n + 1)
+      cancelAnimationFrame(settle)
+      // 变窄:低的档只会更放不下,从当前档接着判(多半一次读)。变宽:要回到 0 重爬(变宽了要能爬回来),
+      // 但等宽度停下再爬一次 —— 侧栏一拉一收,宽度每帧都在变,每帧从 0 爬一遍是每帧好几次强制排版。
+      if (previous !== null && width < previous) setRecheck((n) => n + 1)
+      else settle = requestAnimationFrame(() => { settle = requestAnimationFrame(restart) })
     })
     observer.observe(el)
 
@@ -177,12 +184,17 @@ export function useToolbarDisclosure(): ToolbarDisclosure {
     // 所以子组也要观察。❌ 但子组变化**不能**像容器那样 `setLevel(0)` 重爬:
     // 升档本身就会改变子组尺寸,那样就是「升档 → 子组变 → 重置 → 再升档」的死循环。
     // 这里只 `setRecheck`:效果是"再判一次,该升就升",而阶梯只升不降且有上界,必然收敛。
+    // 底排自己变了宽(左组跟着伸缩)由上面那个处理;这里只认底排宽度没动时的变化,也就是内容变了。
+    let childSeenWidth = el.clientWidth
     const childObserver = new ResizeObserver(() => {
+      const width = el.clientWidth
+      if (Math.abs(width - childSeenWidth) >= 1) { childSeenWidth = width; return }
       setRecheck((n) => n + 1)
     })
     for (const child of Array.from(el.children)) childObserver.observe(child)
 
     return () => {
+      cancelAnimationFrame(settle)
       observer.disconnect()
       childObserver.disconnect()
     }
