@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 final class GuguSharePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate {
     let identifier = "GuguSharePlugin"
     let jsName = "GuguShare"
-    let pluginMethods = [CAPPluginMethod(name: "stage", returnType: CAPPluginReturnPromise), CAPPluginMethod(name: "save", returnType: CAPPluginReturnPromise)]
+    let pluginMethods: [CAPPluginMethod] = [CAPPluginMethod(name: "stage", returnType: CAPPluginReturnPromise), CAPPluginMethod(name: "save", returnType: CAPPluginReturnPromise)]
     private let io = DispatchQueue(label: "app.gugu.save-file")
     private var store: GuguSaveFileStore?
     private var setupError: Error?
