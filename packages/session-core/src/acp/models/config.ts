@@ -94,6 +94,12 @@ export const sessionConfigStateSchema = z.object({
       available: z.array(effortOptionSchema),
     })
     .nullable(),
+  /** Native Fast option for the current model; absent on older hosts, null when unsupported. */
+  fastMode: z.object({
+    configId: z.string(),
+    selected: z.string().nullable(),
+    available: z.array(configOptionBaseSchema),
+  }).nullable().optional(),
   /** Permission/mode selector state; null when unsupported by the provider. */
   modeOptions: z
     .object({
@@ -127,6 +133,7 @@ export type SessionConfigState = z.infer<typeof sessionConfigStateSchema>;
 export const initialSessionConfigState: SessionConfigState = {
   modelOptions: null,
   efforts: null,
+  fastMode: null,
   modeOptions: null,
   availableCommands: [],
   acceptsImagePrompts: false,
