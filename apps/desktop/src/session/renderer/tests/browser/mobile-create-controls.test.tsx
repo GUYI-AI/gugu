@@ -58,6 +58,7 @@ it.each(['light', 'dark'] as const)('%s: all configuration transitions and a ski
   const blur = vi.fn(), end = vi.fn(); editor.addEventListener('blur', blur); editor.addEventListener('compositionend', end)
   editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
   await page.getByTestId('agent-watch-create-model-device').click()
+  await page.getByRole('heading', { name: '模型和设备', exact: true }).click()
   await page.getByRole('radio', { name: 'Cloud' }).click()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.getByTestId('agent-watch-create-project').click()

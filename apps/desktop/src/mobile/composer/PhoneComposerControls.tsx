@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { ChevronRight, X } from '@/lib/icons'
 import { useBackLayer } from '@/components/ui/sheetStack'
-import { preserveComposerFocus } from './composer-focus'
+import { preserveComposerFocus, preservePanelComposerFocus } from './composer-focus'
 import './phone-composer-controls.css'
 
 export function PhoneComposerControlRow({ children }: { children: ReactNode }) {
@@ -71,8 +71,7 @@ export function PhoneComposerSheet({ open, onClose, title, children, footer, tes
         onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus} onClick={onClose} />
       <Dialog.Popup ref={setPopup} className="gg-phone-composer-sheet" data-testid={testId} data-compact={compact || undefined}
         initialFocus={false} finalFocus={false} aria-modal={false}
-        onPointerDownCapture={(event) => { if ((event.target as Element).closest('button')) event.preventDefault() }}
-        onMouseDownCapture={(event) => { if ((event.target as Element).closest('button')) event.preventDefault() }}>
+        onPointerDownCapture={preservePanelComposerFocus} onMouseDownCapture={preservePanelComposerFocus}>
         {!compact && <div className="gg-phone-composer-sheet-handle" aria-hidden="true" />}
         <div className="gg-phone-composer-sheet-head">
           <Dialog.Title>{title}</Dialog.Title>
