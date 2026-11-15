@@ -2,6 +2,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { TopicTaskEntry } from '../../../../apps/desktop/src/components/chat/TopicTaskEntry'
+import { ChatMessageComposer } from '../../../../apps/desktop/src/components/chat/ChatMessageComposer'
 import { setComposerVerb, takeComposerCarry } from '../../../../apps/desktop/src/lib/composerVerbBridge'
 import { composerDrafts } from '../../../../apps/desktop/src/session/renderer/features/sessions/composer-drafts'
 import { taskDispatchDraftKey } from '../../../../apps/desktop/src/session/renderer/features/sessions/task-dispatch-composer'
@@ -44,7 +45,9 @@ afterEach(async () => {
 })
 async function renderTopic(source = true) {
   await renderWithAppProviders(harness,
-    <TopicTaskEntry chatId="topic" sourceChatId="group" topicName="Current topic" surface="aside" isGroupChat onSend={async () => {}} />,
+    <TopicTaskEntry chatId="topic" sourceChatId="group" topicName="Current topic">
+      {(attachMenu) => <ChatMessageComposer chatId="topic" surface="aside" isGroupChat onSend={async () => {}} attachMenu={attachMenu} />}
+    </TopicTaskEntry>,
     { chat: { chats: source ? [chat({ id: 'group', kind: 'group', name: 'Source group' })] : [] } })
 }
 async function openTask() {

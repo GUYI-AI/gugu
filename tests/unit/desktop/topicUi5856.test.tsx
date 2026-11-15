@@ -517,7 +517,6 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
       whisperTarget: '悄悄话入口在成员卡片上,且它落到主线输入框;话题里能不能悄悄话 spec 没说',
       onExitWhisper: '同上',
       attachGlyph: '#7199 只有「助理」App 那个聊天面把附件钮换成「+」;分栏不传 = 组件缺省的回形针,与对话页同形',
-      attachMenu: '#7199 「+」里的「录制语音笔记」只在「助理」App 那个聊天面(录下的交给个人助理);分栏不传 = 点了直接选文件,与对话页同形',
     },
   }
   function jsxProps(source: string, tag: string): string[] {
