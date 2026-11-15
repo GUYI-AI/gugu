@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
 
-/** Same text projection as Hermes' submit path, including resources. Images remain separate attachments. */
-export function hermesPromptText(blocks: unknown): { text: string; images: { data: string; mimeType: string }[] } {
+/**
+ * The text an agent records for a prompt: its text blocks (resources as their text) joined by line, as Hermes submits it
+ * and as Codex records it. Images remain separate attachments.
+ */
+export function nativePromptText(blocks: unknown): { text: string; images: { data: string; mimeType: string }[] } {
   const list = Array.isArray(blocks) ? blocks as Record<string, unknown>[] : [];
   const texts: string[] = [];
   const images: { data: string; mimeType: string }[] = [];
@@ -14,15 +17,19 @@ export function hermesPromptText(blocks: unknown): { text: string; images: { dat
   return { text: texts.join('\n'), images };
 }
 
+// The key predates Codex receipts: stored Hermes rows already carry it.
 const HOST_PROMPT_HASH = 'gugu.hermesNativePromptSha256';
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
-/** The receipt a host prompt carries for the native text Hermes recorded for it. */
-export const hermesNativeDigest = hash;
-export const hermesPromptMeta = (blocks: unknown): Record<string, string> => ({ [HOST_PROMPT_HASH]: hash(hermesPromptText(blocks).text) });
-export type HermesPromptIndex = ReadonlyMap<string, string | null>;
+/**
+ * The receipt a host prompt carries for the native text its agent recorded for it. The host keeps the person's words;
+ * the agent's record holds what was sent (with the host's attachment lines and context), so only the receipt ties them.
+ */
+export const nativePromptDigest = hash;
+export const nativePromptMeta = (blocks: unknown): Record<string, string> => ({ [HOST_PROMPT_HASH]: hash(nativePromptText(blocks).text) });
+export type NativePromptIndex = ReadonlyMap<string, string | null>;
 
 /** Only host-persisted user rows supply a boundary; a provider row or a tag name cannot supply one. */
-export function indexHermesPrompts(messages: Iterable<{ kind: string; role?: string; text?: string; _meta?: Record<string, unknown> }>): HermesPromptIndex {
+export function indexNativePrompts(messages: Iterable<{ kind: string; role?: string; text?: string; _meta?: Record<string, unknown> }>): NativePromptIndex {
   const index = new Map<string, string | null>();
   for (const item of messages) {
     const digest = item._meta?.[HOST_PROMPT_HASH];
@@ -34,6 +41,6 @@ export function indexHermesPrompts(messages: Iterable<{ kind: string; role?: str
   return index;
 }
 
-export function originalHermesPrompt(nativeText: string, index: HermesPromptIndex): string | null | undefined {
+export function originalNativePrompt(nativeText: string, index: NativePromptIndex): string | null | undefined {
   return index.get(hash(nativeText));
 }

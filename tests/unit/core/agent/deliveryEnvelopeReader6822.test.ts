@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { withSessionAttachments } from '../../../../packages/core/src/cloud/sessionAttachments'
-import { hermesPromptMeta, indexHermesPrompts, originalHermesPrompt } from '../../../../packages/session-core/src/acp/hermes-prompt'
+import { nativePromptMeta, indexNativePrompts, originalNativePrompt } from '../../../../packages/session-core/src/acp/native-prompt'
 import {
   buildAgentDeliveryEnvelope,
   buildExtensionEnvelope,
@@ -89,8 +89,8 @@ describe('readDeliveryEnvelope — round trip with the producer', () => {
   ])('reads a Hermes delivery after a host-confirmed native prompt boundary: %s', (prefix) => {
     const envelope = renderDeliveryEnvelope(DM)
     const native = `${prefix}\n${envelope}`
-    const originals = indexHermesPrompts([{ kind: 'message', role: 'user', text: envelope, _meta: hermesPromptMeta([{ type: 'text', text: prefix }, { type: 'text', text: envelope }]) }])
-    const original = originalHermesPrompt(native, originals)!
+    const originals = indexNativePrompts([{ kind: 'message', role: 'user', text: envelope, _meta: nativePromptMeta([{ type: 'text', text: prefix }, { type: 'text', text: envelope }]) }])
+    const original = originalNativePrompt(native, originals)!
     expect(readDeliveryEnvelope(native)).toBeNull()
     expect(readDeliveryEnvelope(original)).toEqual(readDeliveryEnvelope(envelope))
     expect(recoverDeliveryEnvelopes(envelope, [original])).toBeNull()
