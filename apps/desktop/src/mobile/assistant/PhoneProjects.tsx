@@ -8,7 +8,7 @@ import { AssistantEmpty, AssistantRow, AssistantSection, PageHead } from '@/sess
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 import { useMachineLabel } from '../agent-watch/useMachineLabel'
 import { ReadView } from './PhoneMachineView'
-import type { PhoneRead } from './usePhoneRead'
+import type { PhoneRead } from './phoneRead'
 import { phoneProjectRows, type PhoneProjectEntry } from './phoneProjectRows'
 
 /** accountProjectsStore 这一刻的读数,按助理库页的读法说(读不到、但有上次的 = 列着上次的、上面一句读不到)。 */

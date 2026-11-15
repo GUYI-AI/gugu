@@ -7,8 +7,9 @@ import { chatDb } from '@/lib/supabase'
 import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from '@/lib/realtimeChannel'
 import type { AssistantPanelBridge, AssistantPanelWindow } from '@/lib/assistantPanelBridge'
 import { assistantPanelCloud, assertAssistantPanelOwner, queueAssistantAppChange } from './assistant-panel-cloud'
-import { ASSISTANT_PANEL_CHANGED } from './assistant-panel-events'
-import { assistantPanelCacheStore } from './assistant-panel-cache'
+import { assistantPanel, assistantPanelReadCache } from './assistant-panel-replica'
+import { assistantPanelBodies } from '@/lib/assistantPanelBodies'
+import { myAssistant } from '@/lib/myAssistant'
 
 const bridge: AssistantPanelBridge = {
   work: assistantWorkReads,
@@ -22,8 +23,10 @@ const bridge: AssistantPanelBridge = {
       if (!token) throw new AssistantPanelError('signed-out','PANEL_SIGNED_OUT')
       return { token,chatId,ownerId,accountId: () => getRendererSession()?.user.id ?? null }
     }
-    return createAssistantPanelFiles({ ownerId,assistantId,deviceId,cloud: assistantPanelCloud,
-      cache: assistantPanelCacheStore().files(ownerId,assistantId),
+    // The snapshot is read through the `assistantPanel` replica (one read path; a read already on its way is shared).
+    const cloud = { ...assistantPanelCloud,snapshot: (id: string) => assistantPanel.fetch(id) }
+    return createAssistantPanelFiles({ ownerId,assistantId,deviceId,cloud,
+      cache: assistantPanelReadCache(ownerId,assistantId),
       assertCurrent: () => assertAssistantPanelOwner(ownerId),
       readBody: (item,signal) => readAssistantPanelBody(item,{ ...access(),signal }),
       upload: (name,bytes) => uploadAssistantPanelBody({ ...access(),label: name,bytes }),
@@ -33,7 +36,8 @@ const bridge: AssistantPanelBridge = {
         assertAssistantPanelOwner(ownerId)
         if (error) throw error
       },
-      changed: () => window.dispatchEvent(new CustomEvent(ASSISTANT_PANEL_CHANGED,{ detail: { ownerId,assistantId,deviceId } })),
+      // Readers follow the replica (a changed snapshot) and the body cache (a kept body): nothing else to announce.
+      changed: () => undefined,
     })
   },
   subscribeChanges(ownerId,listener,domain='panel') {
@@ -43,11 +47,29 @@ const bridge: AssistantPanelBridge = {
       : subscribePrivateUserEventBus(ownerId,'assistant_panel_changed',listener,{onSubscribed:()=>listener()})
     return () => unsubscribePrivateUserEventBus(handle)
   },
+  async panelSnapshot(ownerId,assistantId) {
+    assertAssistantPanelOwner(ownerId)
+    const snapshot = await assistantPanelCloud.snapshot(assistantId)
+    assertAssistantPanelOwner(ownerId)
+    return snapshot
+  },
   queueNotice: queueAssistantAppChange,
 }
 
 /** App entry only: install before the embedded session-page bundle mounts. */
 export function installAssistantPanelHost(w: Window = window): void {
-  void assistantPanelCacheStore().ready;
+  void assistantPanelBodies.ready;
   (w as AssistantPanelWindow).__GUGU_ASSISTANT_PANEL__ = bridge
 }
+
+/**
+ * @@@client-state-model C7: the panel is read as soon as the session is restored and the account's assistant is known, so
+ * opening it later draws its content on the first frame (the IndexedDB copy is seeded at the same time). Shell side: the
+ * session restore and the assistant marker are the shell's.
+ */
+function prefetchMyPanel(): void {
+  void myAssistant.fetch().then((mine) => { if (mine.agentId) void assistantPanel.prefetch(mine.agentId) }, () => undefined)
+}
+observeRendererSession(({ event, session }) => {
+  if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) prefetchMyPanel()
+})

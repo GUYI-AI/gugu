@@ -11,7 +11,7 @@ vi.mock('@/lib/sessionPublication', () => ({
   getRendererSession: () => ({ user: { id: `channel-owner-${mocks.owner}` } }),
   observeRendererSession: () => () => {},
 }))
-vi.mock('@/components/assistant/assistant-panel-cache', () => ({ assistantPanelCacheStore: () => ({
+vi.mock('@/components/assistant/assistant-panel-cache', () => ({ subscribeAccountState: () => () => undefined, assistantPanelCacheStore: () => ({
   accountState: () => ({ peek: mocks.peek, save: mocks.save }),
 }) }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: vi.fn() }) }))

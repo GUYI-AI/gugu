@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type { AssistantWorkReads } from './assistantWorkReadBridge'
-import { AssistantPanelError, type AssistantPanelReceipt } from '@gugu/core/cloud/assistantPanel'
+import { AssistantPanelError, type AssistantPanelReceipt, type AssistantPanelSnapshot } from '@gugu/core/cloud/assistantPanel'
 import type { AssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles'
 import type { AssistantAppChange } from '@/session/shared/extensions/assistant-app'
 
@@ -12,6 +12,8 @@ export interface AssistantPanelBridge {
   subscribeAccount(listener: () => void): () => void
   files(input: { ownerId: string; assistantId: string; chatId: string; deviceId: string }): AssistantPanelFiles
   subscribeChanges(ownerId: string, listener: (payload?: unknown) => void, domain?: 'panel' | 'work'): () => void
+  /** The panel's cloud snapshot, read as `ownerId` (refused once another account is signed in). */
+  panelSnapshot(ownerId: string, assistantId: string): Promise<AssistantPanelSnapshot>
   queueNotice(change: AssistantAppChange, assistantId: string | undefined, ownerId: string | null): Promise<AssistantPanelReceipt | null>
 }
 const KEY = '__GUGU_ASSISTANT_PANEL__' as const

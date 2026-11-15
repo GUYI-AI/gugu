@@ -1,6 +1,13 @@
 import { expect,it,vi } from 'vitest'
 import type { AssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles'
 import { readAssistantPanelIntegrations } from '../../apps/desktop/src/components/assistant/assistant-panel-integrations'
+// The enrichment reads each entry the way the detail replica does (`assistantIntegrationDetail`): here, straight through.
+const readWith=(panel:AssistantPanelFiles)=>async(item:{id:string;catalogVersion?:string})=>{
+ const {readAssistantPanelIntegration}=await import('../../apps/desktop/src/components/assistant/assistant-panel-integrations')
+ return readAssistantPanelIntegration(panel,item.id,currentLocale,item.catalogVersion)
+}
+let currentLocale='en-US'
+
 it('reads public category and aliases from the lightweight catalog without fetching details', async () => {
   const body = vi.fn()
   const catalog = { categoryId: 'work', aliases: ['Feishu', '飞书'] }
@@ -74,7 +81,7 @@ it('fills optional descriptions one by one with four workers and ignores a broke
  const panel={collection:async()=>rows,snapshot:async()=>({application:[]}),body} as unknown as AssistantPanelFiles
  const items=(await readAssistantPanelIntegrations(panel,'en-US')).items,updated=vi.fn()
  expect(body).not.toHaveBeenCalled()
- await enrichAssistantPanelIntegrations(panel,items,'en-US',updated)
+ await enrichAssistantPanelIntegrations(readWith(panel),items,'en-US',updated)
  expect(peak).toBe(4)
  expect(updated).toHaveBeenCalledTimes(8)
  expect(updated).not.toHaveBeenCalledWith('p0',expect.anything())
@@ -89,7 +96,9 @@ it('fills a legacy catalog name even when its description is already present',as
  const panel={collection:async()=>rows,snapshot:async()=>({application:[]}),body} as unknown as AssistantPanelFiles
  const items=(await readAssistantPanelIntegrations(panel,'zh-CN')).items,updated=vi.fn()
  expect(body).not.toHaveBeenCalled()
- await enrichAssistantPanelIntegrations(panel,items,'zh-CN',updated)
+ currentLocale='zh-CN'
+ await enrichAssistantPanelIntegrations(readWith(panel),items,'zh-CN',updated)
+ currentLocale='en-US'
  expect(body).toHaveBeenCalledTimes(1)
  expect(updated).toHaveBeenCalledWith('custom-mail',{name:'公司邮箱',description:'Saved description'})
 })
@@ -99,7 +108,7 @@ it('treats a malformed unknown description as only that entry being unreadable',
  const rows=[{resource_key:'catalog:custom',data:{providerId:'custom',displayName:'Company app'}}]
  const panel={collection:async()=>rows,snapshot:async()=>({application:[]}),body:async()=>new TextEncoder().encode(JSON.stringify({version:1,en:{id:'custom',name:'Company app',description:{bad:true},auth:{methods:[]}}}))} as unknown as AssistantPanelFiles
  const items=(await readAssistantPanelIntegrations(panel,'en-US')).items,updated=vi.fn()
- await enrichAssistantPanelIntegrations(panel,items,'en-US',updated)
+ await enrichAssistantPanelIntegrations(readWith(panel),items,'en-US',updated)
  expect(updated).not.toHaveBeenCalled()
  expect(items[0]!.name).toBe('Company app')
 })
@@ -115,7 +124,9 @@ it('renders built-in localized names and descriptions even if every first body d
  expect(en.items.map(item=>item.name)).toEqual(['Feishu','DingTalk','WeCom','Tencent Docs','Tencent Meeting','Dida365'])
  expect(en.items.every(item=>!!item.description)).toBe(true)
  const {enrichAssistantPanelIntegrations}=await import('../../apps/desktop/src/components/assistant/assistant-panel-integrations')
- await enrichAssistantPanelIntegrations(panel,zh.items,'zh-CN',vi.fn())
+ currentLocale='zh-CN'
+ await enrichAssistantPanelIntegrations(readWith(panel),zh.items,'zh-CN',vi.fn())
+ currentLocale='en-US'
  expect(body).not.toHaveBeenCalled()
 })
 
@@ -126,30 +137,21 @@ it('keeps an unknown catalog display name and never uses its id as a name after 
  expect(result.items.map(item=>item.name)).toEqual(['Company app','应用'])
  const {enrichAssistantPanelIntegrations}=await import('../../apps/desktop/src/components/assistant/assistant-panel-integrations')
  const updated=vi.fn()
- await enrichAssistantPanelIntegrations(panel,result.items,'zh-CN',updated)
+ currentLocale='zh-CN'
+ await enrichAssistantPanelIntegrations(readWith(panel),result.items,'zh-CN',updated)
+ currentLocale='en-US'
  expect(updated).not.toHaveBeenCalled()
  expect(result.items.every(item=>item.name!==item.id)).toBe(true)
 })
 
 
-it('shares selected metadata reads and invalidates only a changed content version or locale',async () => {
- const {readAssistantPanelIntegration,cachedAssistantPanelIntegration}=await import('../../apps/desktop/src/components/assistant/assistant-panel-integrations')
- let version='one'
- const collection=vi.fn(async()=>[{resource_key:'catalog:custom',body_sha256:version,data:{providerId:'custom'}}])
+it('reads a selected entry from its current catalog body for the locale asked (sharing and keeping are the detail replica\'s)',async () => {
+ const {readAssistantPanelIntegration}=await import('../../apps/desktop/src/components/assistant/assistant-panel-integrations')
+ const collection=vi.fn(async()=>[{resource_key:'catalog:custom',body_sha256:'one',data:{providerId:'custom'}}])
  const body=vi.fn(async()=>new TextEncoder().encode(JSON.stringify({version:1,en:{id:'custom',name:'Company app',auth:{methods:[]}},'zh-CN':{id:'custom',name:'公司应用',auth:{methods:[]}}})))
  const panel={collection,body} as unknown as AssistantPanelFiles
- await Promise.all([readAssistantPanelIntegration(panel,'custom','en-US','one'),readAssistantPanelIntegration(panel,'custom','en-US','one')])
- expect(body).toHaveBeenCalledTimes(1)
- expect(cachedAssistantPanelIntegration(panel,'custom','en-US','one')?.name).toBe('Company app')
- const reads=collection.mock.calls.length
- await readAssistantPanelIntegration(panel,'custom','en-US','one')
- expect(collection).toHaveBeenCalledTimes(reads)
- version='two'
- expect(cachedAssistantPanelIntegration(panel,'custom','en-US','two')).toBeUndefined()
- await readAssistantPanelIntegration(panel,'custom','en-US','two')
- await readAssistantPanelIntegration(panel,'custom','zh-CN','two')
- expect(body).toHaveBeenCalledTimes(3)
- expect(cachedAssistantPanelIntegration({...panel} as AssistantPanelFiles,'custom','en-US','two')).toBeUndefined()
+ expect((await readAssistantPanelIntegration(panel,'custom','en-US','one')).name).toBe('Company app')
+ expect((await readAssistantPanelIntegration(panel,'custom','zh-CN','one')).name).toBe('公司应用')
 })
 
 

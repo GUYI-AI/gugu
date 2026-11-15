@@ -3,11 +3,13 @@ import {act} from 'react'
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query'
 import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import {createReactHarness,waitForCondition} from '../../../support/testHarness'
-import {ASSISTANT_PANEL_CHANGED} from '../../../../apps/desktop/src/components/assistant/assistant-panel-events'
 import {IntegrationsProvider,useIntegrationsContext} from '../../../../apps/desktop/src/session/renderer/features/integrations/integrations-provider'
 import {connectorState} from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-connector-status'
 import {assistantApplicationCounts} from '../../../../apps/desktop/src/components/assistant/assistant-app-connections'
-const f=vi.hoisted(()=>({connected:false,readFails:false,host:null as unknown}))
+const f=vi.hoisted(()=>({connected:false,readFails:false,host:null as unknown,panelListeners:new Set<()=>void>()}))
+// A panel snapshot changed (replica `assistantPanel`): what the provider listens to.
+vi.mock('@/components/assistant/assistant-panel-replica',()=>({subscribeAssistantPanels:(listener:()=>void)=>{f.panelListeners.add(listener);return ()=>{f.panelListeners.delete(listener)}}}))
+const panelChanged=()=>{for(const listener of [...f.panelListeners])listener()}
 vi.mock('@renderer/features/library/library-host',()=>({useLibraryHost:()=>f.host}))
 vi.mock('@renderer/lib/chat/chat-mention-provider',()=>({registerIssueMentionIcons:vi.fn()}))
 vi.mock('@/components/assistant/assistant-app-client',()=>({reportAssistantAppChange:vi.fn(async()=>{})}))
@@ -22,7 +24,7 @@ function Probe(){
 }
 beforeEach(()=>{
  f.connected=false;f.readFails=false;h=createReactHarness();client=new QueryClient({defaultOptions:{queries:{gcTime:0,retry:false}}})
- f.host={key:'panel:owner:assistant',assistantPanelExpected:true,assistantPanel:{invalidate:vi.fn(()=>window.dispatchEvent(new Event(ASSISTANT_PANEL_CHANGED)))},integrations:{
+ f.host={key:'panel:owner:assistant',assistantPanelExpected:true,assistantPanel:{invalidate:vi.fn(()=>panelChanged())},integrations:{
   list:async()=>{if(f.readFails)throw Object.assign(Error('snapshot unavailable'),{code:'transport-failed'});return items},checkAllConnections:async()=>{if(f.readFails)throw Object.assign(Error('snapshot unavailable'),{code:'transport-failed'});return {dingtalk:{connected:f.connected,errorType:f.connected?undefined:'authorization_expired'}}},checkConfiguredConnections:async()=>{if(f.readFails)throw Object.assign(Error('snapshot unavailable'),{code:'transport-failed'});return {dingtalk:f.connected}},connect:async()=>{f.connected=true;return{success:true}},
  }}
 })
@@ -36,7 +38,7 @@ it('refreshes the mounted detail state, list state and profile count after autho
 })
 it('receives another surface’s connection publication without reopening the page',async()=>{
  await mount()
- await act(async()=>{f.connected=true;window.dispatchEvent(new Event(ASSISTANT_PANEL_CHANGED))})
+ await act(async()=>{f.connected=true;panelChanged()})
  await waitForCondition(()=>h.container.textContent==='connected|true|1','updated connection state')
 })
 

@@ -3,21 +3,24 @@ import { AssistantMemoryContent } from '@/components/assistant/AssistantMemoryCo
 import { assistantPanelFailure } from '@/components/assistant/assistant-panel-errors'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import './phone-memory.css'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
+import type { AssistantPanelItem } from '@gugu/core/cloud/assistantPanel'
 import { useTranslation } from 'react-i18next'
 import { formatCalendarDate } from '@/i18n/format'
 import { Markdown } from '@/components/markdown/Markdown'
 import { Button } from '@/components/ui/Button'
 import { SquarePen, Trash2 } from '@/lib/icons'
 import { isOwnerProfileNote, type MemoryKind } from '@/session/renderer/features/assistant/assistant-files'
-import { readMemoryNotes, type MemoryEntry } from '@/session/renderer/features/assistant/assistant-machine-core'
+import { memoryNotesOf, type MemoryEntry } from '@/session/renderer/features/assistant/assistant-machine-core'
 import { AssistantEmpty, PageHead } from '@/session/renderer/features/assistant/assistant-ui-parts'
 import type { PhonePageProps } from './MobileAssistantApp'
 import { PhoneConfirmDialog } from './PhoneConfirmDialog'
 import { PhoneHealth } from './PhoneHealth'
 import { PhoneMachineView, ReadView, type OpenedPageProps } from './PhoneMachineView'
 import { deleteMemoryNote } from './phoneMemoryData'
-import { machineKey, usePhoneRead, type PhoneRead } from './usePhoneRead'
+import { phoneReadOf, type PhoneRead } from './phoneRead'
+import { useAssistantPanelCollection } from '@/components/assistant/assistant-panel-reads'
+import { assistantPanel } from '@/components/assistant/assistant-panel-replica'
 import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client'
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
@@ -44,8 +47,10 @@ function useTime() {
 export function PhoneMemory(props: PhonePageProps) {
   const { sub, machine } = props
   const ready = machine.state === 'ready' ? machine.machine : null
-  // 健康页与它点开的那一条共用一份读数(它记的 health_* 几条)。
-  const notes = usePhoneRead(ready ? `memory|${machineKey(ready)}` : null, () => readMemoryNotes(ready!), 'read memory')
+  // 健康页与它点开的那一条共用一份读数(它记的 health_* 几条):面板快照里的「记忆」那一份,画的时候推出来。
+  const memoryDir = ready?.paths.memoryDir ?? ''
+  const derive = useCallback((rows: AssistantPanelItem[]) => memoryNotesOf(rows, memoryDir), [memoryDir])
+  const notes = phoneReadOf(useAssistantPanelCollection(ready, 'memory', derive), () => { if (ready?.panel) void assistantPanel.refresh(ready.panel.assistantId) })
   if (sub === 'health') return <PhoneHealth {...props} healthNotes={notes} />
   if (sub?.startsWith('note:')) return <MemoryNote {...props} file={sub.slice('note:'.length)} notes={notes} />
   return null

@@ -1,6 +1,5 @@
 import { AssistantMemoryContent } from '@/components/assistant/AssistantMemoryContent'
 import { assistantPanelFailure } from '@/components/assistant/assistant-panel-errors'
-import { Capacitor } from '@capacitor/core'
 import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
@@ -11,17 +10,15 @@ import { HEALTH_REPORT_ACCEPT, HealthBody, isHealthNote } from '@/session/render
 import { memoryContentPreview } from '@/session/renderer/features/assistant/memory-content-preview'
 import type { MemoryEntry } from '@/session/renderer/features/assistant/assistant-machine-core'
 import { AssistantRow, AssistantSection, PageHead, Tile } from '@/session/renderer/features/assistant/assistant-ui-parts'
-import { nativePhoneActions } from '../phone-device/nativePhoneActions'
 import { openPhonePermissions } from '../phone-device/phonePermissionsNavigation'
-import { readHealthSummary } from '../phone-device/phoneHealth'
 import type { PhonePageProps } from './MobileAssistantApp'
 import { PhoneMachineView, ReadFailed, ReadingNow, ReadView } from './PhoneMachineView'
-import { healthClock, PHONE_HEALTH_REFRESH_MS, readPhoneHealthView, type PhoneHealthView } from './phoneHealthView'
-import { usePhoneRead, type PhoneRead } from './usePhoneRead'
+import { healthClock, type PhoneHealthView } from './phoneHealthView'
+import { phoneHealth } from './phoneHealthReplica'
+import { phoneReadOf, type PhoneRead } from './phoneRead'
+import { useReplica } from '@/lib/replica'
 import './phone-memory.css'
 
-/** 与桌面健康页、手机的 health.summary 默认同一段:最近 7 天(含今天)。 */
-const HEALTH_DAYS = 7
 
 /**
  * 「健康」(记忆首页那张卡点进来,同桌面):数据就在这台手机上,此刻经原生读 Health Connect,
@@ -33,17 +30,7 @@ export function PhoneHealth({ assistant, askInChat, go, healthNotes, machine }: 
 }) {
   const { t } = useTranslation('assistant')
   const name = assistant.display_name
-  const health = usePhoneRead(
-    'phone-health',
-    () =>
-      readPhoneHealthView({
-        platform: Capacitor.getPlatform(),
-        healthStatus: () => nativePhoneActions.healthStatus(),
-        readSummary: (status) => readHealthSummary(HEALTH_DAYS, status),
-      }),
-    'read phone health',
-    (view) => (view.state === 'ok' ? PHONE_HEALTH_REFRESH_MS : null),
-  )
+  const health = phoneReadOf(useReplica(phoneHealth, []), () => { void phoneHealth.refresh() })
   const view = health.state === 'ok' ? health.data : null
   return (
     <div className="ta-page ta-phone-health" data-testid="assistant-health" data-state={health.state === 'ok' ? health.data.state : health.state}>

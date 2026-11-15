@@ -7,7 +7,7 @@ import { sheetBackdropMotion } from '@/components/ui/sheetMotion'
 import { useBackLayer } from '@/components/ui/sheetStack'
 import { cn } from '@/lib/cn'
 import { rendererLogger } from '@/lib/log'
-import { errorText } from './usePhoneRead'
+import { errorText } from './phoneRead'
 
 const log = rendererLogger('mobile/assistant')
 

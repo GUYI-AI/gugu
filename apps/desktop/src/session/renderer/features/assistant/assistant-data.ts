@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AssistantPanelError } from '@gugu/core/cloud/assistantPanel';
 import { useEffect, useMemo } from 'react';
 import { assistantPanelAccountId } from '@/lib/assistantPanelBridge';
-import { ASSISTANT_PANEL_CHANGED, useCloudAssistantFiles } from '@/components/assistant/assistant-panel-files';
+import { useCloudAssistantFiles } from '@/components/assistant/assistant-panel-files';
+import { assistantPanel } from '@/components/assistant/assistant-panel-replica';
 import { appState } from '@renderer/lib/stores/app-state';
 import type { DirectoryEntry } from '@shared/core/fs/fs';
 import { joinPath, parseSkill, type SkillInfo } from './assistant-files';
@@ -44,11 +45,9 @@ export function assistantWorkdir(home: AssistantHomePlace, assistantId: string):
 export function useAssistantMachine(assistantId: string | null, chatId: string | null, home: AssistantHomePlace | null, chatReadFailed = false) {
   const data = useCloudAssistantFiles(assistantId,chatId,home?.deviceId ?? null);
   const client = useQueryClient();
-  useEffect(() => {
-    const changed = () => { void client.invalidateQueries({ queryKey: ['assistant'] }); };
-    window.addEventListener(ASSISTANT_PANEL_CHANGED,changed);
-    return () => window.removeEventListener(ASSISTANT_PANEL_CHANGED,changed);
-  },[client]);
+  // The reads below that go through the panel files follow its snapshot (replica `assistantPanel`): a changed snapshot
+  // reads them again. (Those reads are this feature's react-query keys; they move into replicas with the session page.)
+  useEffect(() => (assistantId ? assistantPanel.subscribe([assistantId],() => { void client.invalidateQueries({ queryKey: ['assistant'] }); }) : undefined),[client,assistantId]);
   const isLoading = !!assistantId && !!home?.deviceId && !chatId && !chatReadFailed;
   const error = useMemo(() => data || isLoading ? null : new AssistantPanelError(home?.deviceId ? 'missing-identity' : 'missing-home','PANEL_IDENTITY_UNAVAILABLE'),[data,home?.deviceId,isLoading]);
   return { data,isLoading,error,refetch: () => data?.panel?.invalidate() };

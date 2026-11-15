@@ -19,7 +19,10 @@ const reads = vi.hoisted(() => ({
   opened: [] as string[],
 }));
 vi.mock('react-i18next', async (original) => ({ ...(await original<object>()), useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }) }));
-vi.mock('../../../../apps/desktop/src/mobile/assistant/usePhoneRead', () => ({ usePhoneRead: () => reads.apps }));
+// The connections list is the `connectionList` replica's reading; the fixtures below say it the old way (loading / ok / error).
+const readingOf = (read: Record<string, unknown>) => read.state === 'ok' ? { state: 'value', value: read.data, stale: false, error: null }
+  : read.state === 'error' ? { state: 'error', error: read.error ?? new Error('unreadable') } : { state: 'unknown' };
+vi.mock('../../../../apps/desktop/src/components/assistant/assistant-panel-reads', () => ({ useConnectionList: () => readingOf(reads.apps) }));
 vi.mock('../../../../apps/desktop/src/components/assistant/assistant-panel-integrations', () => ({ readAssistantPanelIntegrations: vi.fn(), peekAssistantPanelIntegrations: vi.fn() }));
 vi.mock('../../../../apps/desktop/src/components/settings/channels/useChatChannels', () => ({ useChatChannels: () => reads.chat }));
 vi.mock('../../../../apps/desktop/src/components/assistant/assistant-app-connections', () => ({ assistantApplicationCounts: () => ({ saved: 2, connected: 1 }) }));

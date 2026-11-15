@@ -20,6 +20,25 @@ import { clickElement, createNode, createReactHarness, deferred, renderWithAppPr
 
 const ui = vi.hoisted(() => ({ platformKind: 'capacitor' as 'capacitor' | 'web', writeClipboardText: vi.fn(async (_text: string) => {}), rpc: null as unknown, listeners: [] as Array<(data: unknown) => void> }))
 
+// The saved accounts are derived from the panel snapshot (`useAssistantPanelCollection`); here the fixture panel's
+// `integrations` rows stand for that snapshot's collection (read once per machine; a failure is the reading's error).
+vi.mock('@/components/assistant/assistant-panel-reads', async (original) => {
+  const React = await import('react')
+  return {
+    ...await original<object>(),
+    useAssistantPanelCollection: (machine: { panel: { collection(domain: string): Promise<unknown[]> } } | null, domain: string, derive: (rows: unknown[]) => unknown) => {
+      const [reading, setReading] = React.useState<unknown>({ state: 'unknown' })
+      React.useEffect(() => {
+        if (!machine) return
+        let live = true
+        machine.panel.collection(domain).then((rows) => { if (live) setReading({ state: 'value', value: derive(rows), stale: false, error: null }) },
+          (error: unknown) => { if (live) setReading({ state: 'error', error }) })
+        return () => { live = false }
+      }, [machine, domain, derive])
+      return reading
+    },
+  }
+})
 vi.mock('@/components/settings/channels/useChatChannels', () => ({ useChatChannels: () => ({ client: null, list: null, status: 'absent', error: '', refresh: async () => {}, apply: () => {} }) }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/phoneAssistantAuthorization',() => ({ phoneAssistantAuthorization: () => ui.rpc }))
 vi.mock('../../../apps/desktop/src/components/assistant/assistant-app-client',() => ({ reportAssistantAppChange: vi.fn(async () => {}) }))

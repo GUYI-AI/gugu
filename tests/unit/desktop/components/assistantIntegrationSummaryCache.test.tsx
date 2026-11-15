@@ -5,6 +5,9 @@ import { createReactHarness } from '../../../support/testHarness'
 import type { AssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles'
 import type { IntegrationMetadata } from '../../../../apps/desktop/src/session/renderer/features/integrations/integrations-provider'
 import { useAssistantIntegrationSummaries } from '../../../../apps/desktop/src/components/assistant/useAssistantIntegrationSummaries'
+import { followRendererSession } from '../../../../apps/desktop/src/lib/replica'
+// The detail entries are the signed-in account's replica (`assistantIntegrationDetail`).
+followRendererSession('SIGNED_IN','summary-account')
 
 it('keeps localized names and descriptions across fresh list arrays without another body read',async()=>{
  const h=createReactHarness(),renders:string[]=[]

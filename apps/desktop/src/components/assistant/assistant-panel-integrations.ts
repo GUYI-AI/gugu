@@ -74,44 +74,21 @@ export function peekAssistantPanelIntegration(panel: ConnectionMetadataStore | u
   try { assertCatalogReadable(snapshot,row); return parseIntegrationBody(row,id,locale,bytes) } catch { return undefined }
 }
 
-type DetailEntry = { version: string | undefined; promise: Promise<IntegrationMetadata>; value?: IntegrationMetadata }
-const integrationDetails = new WeakMap<ConnectionMetadataStore, Map<string, DetailEntry>>()
-export function cachedAssistantPanelIntegration(panel: ConnectionMetadataStore | undefined,id: string | undefined,locale: string,version: string | undefined) {
-  if (!panel || !id || !version) return undefined
-  const snapshot = panel.peekSnapshot?.()
-  const row = snapshot?.items.find(item => item.domain === 'integrations' && item.resource_key === `catalog:${id}`)
-  try { if (row) assertCatalogReadable(snapshot,row) } catch { return undefined }
-  const entry = integrationDetails.get(panel)?.get(`${id}|${locale}`)
-  return entry?.version === version ? entry.value : undefined
-}
-
-/** Content versions share an in-flight read and a parsed result; account state is never cached here. */
-export async function readAssistantPanelIntegration(panel: ConnectionMetadataStore,id: string,locale: string,version?: string): Promise<IntegrationMetadata> {
-  const key = `${id}|${locale}`
-  const entries = integrationDetails.get(panel) ?? new Map<string, DetailEntry>()
-  integrationDetails.set(panel,entries)
+/** One application's full entry, from its catalog body. Shared reads and the kept result are the
+ * `assistantIntegrationDetail` replica's (content-addressed by the body's sha); account state is never kept here. */
+export async function readAssistantPanelIntegration(panel: ConnectionMetadataStore,id: string,locale: string,_version?: string): Promise<IntegrationMetadata> {
   const snapshot = panel.peekSnapshot?.()
   const localRow = snapshot?.items.find(item => item.domain === 'integrations' && item.resource_key === `catalog:${id}`)
   if (localRow) assertCatalogReadable(snapshot,localRow)
-  const previous = entries.get(key)
-  if (version && previous?.version === version) return previous.promise
   const row = (await integrationRows(panel)).find(row => row.resource_key === `catalog:${id}`)
   if (!row) throw new Error('PANEL_INTEGRATION_UNAVAILABLE')
   assertCatalogReadable(panel.peekSnapshot?.(),row)
-  const actualVersion = row.body_sha256 ?? row.revision
-  const current = entries.get(key)
-  if (actualVersion && current?.version === actualVersion) return current.promise
-  const entry: DetailEntry = { version: actualVersion, promise: Promise.resolve().then(async () => {
-    return parseIntegrationBody(row,id,locale,await panel.body(row))
-  }) }
-  entries.set(key,entry)
-  try { entry.value = await entry.promise; return entry.value }
-  catch (error) { if (entries.get(key) === entry) entries.delete(key); throw error }
+  return parseIntegrationBody(row,id,locale,await panel.body(row))
 }
 
 /** Missing names and descriptions are optional enrichment. Four workers avoid queuing
  * a whole catalog ahead of the entry the person explicitly opens. */
-export async function enrichAssistantPanelIntegrations(panel: ConnectionMetadataStore,items: readonly IntegrationMetadata[],locale: string,
+export async function enrichAssistantPanelIntegrations(read: (item: IntegrationMetadata) => Promise<IntegrationMetadata>,items: readonly IntegrationMetadata[],locale: string,
   updated: (id: string,summary: Pick<IntegrationMetadata,'name' | 'description'>) => void,active: () => boolean = () => true): Promise<void> {
   const missing = items.filter(item => item.metadataOnly && !builtinIntegrationSummary(item.id,locale) && (!item.description || item.name === item.id || item.summaryNameMissing))
   let next = 0
@@ -119,7 +96,7 @@ export async function enrichAssistantPanelIntegrations(panel: ConnectionMetadata
     while (active() && next < missing.length) {
       const item = missing[next++]!
       try {
-        const detail = await readAssistantPanelIntegration(panel,item.id,locale,item.catalogVersion)
+        const detail = await read(item)
         if (active()) updated(item.id,{ name: detail.name,description: detail.description || item.description || '' })
       } catch { /* A missing description never hides its row or asks for a retry. */ }
     }

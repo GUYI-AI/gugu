@@ -7,7 +7,7 @@ import type { ConnectionMetadataSnapshot } from '@/components/connections/connec
 import { peekAssistantPanelIntegrations } from '@/components/assistant/assistant-panel-integrations';
 import { EMPTY_INTEGRATION_SUMMARIES,useAssistantIntegrationSummaries } from '@/components/assistant/useAssistantIntegrationSummaries';
 import { isAssistantPanelReadRetryable, retryAssistantPanelRead } from '@gugu/core/cloud/assistantPanelRead';
-import { ASSISTANT_PANEL_CHANGED } from '@/components/assistant/assistant-panel-events';
+import { subscribeAssistantPanels } from '@/components/assistant/assistant-panel-replica';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useLibraryHost } from '@renderer/features/library/library-host';
@@ -101,9 +101,10 @@ export function IntegrationsProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (!metadataExpected) return;
     const refresh = () => { void queryClient.invalidateQueries({ predicate: query => query.queryKey.includes(host.key) }); };
-    window.addEventListener(ASSISTANT_PANEL_CHANGED,refresh);
+    // A panel snapshot changed (replica `assistantPanel`), or a connection changed here.
+    const stopPanel = subscribeAssistantPanels(refresh);
     window.addEventListener(CONNECTIONS_CHANGED,refresh);
-    return () => { window.removeEventListener(ASSISTANT_PANEL_CHANGED,refresh); window.removeEventListener(CONNECTIONS_CHANGED,refresh); };
+    return () => { stopPanel(); window.removeEventListener(CONNECTIONS_CHANGED,refresh); };
   },[metadataExpected,host.key,queryClient]);
   const remote = !!host.remote;
   const statusKey = useMemo(() => [...ISSUE_CONNECTION_STATUS_QUERY_KEY, host.key] as const, [host.key]);

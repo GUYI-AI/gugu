@@ -93,14 +93,12 @@ export function PhoneConnectorDetail({ assistant, homeDeviceId, machine, integra
   const view = integrations.data && detail.data ? connectorDetail([detail.data],integrations.data.configured,integrations.data.statuses,id) : null
   const plan = view ? setupPlanOf(view.item, platform.kind) : null
   const wantsAccounts = !!view && view.connected && (view.item.id === 'github' || view.item.multiAccount)
-  const [changes, setChanges] = useState(0)
   const accounts = usePhoneConnectorAccounts({
     machine: machine.state === 'ready' ? machine.machine : null,
     device: homeDeviceId,
     id,
     name: view?.item.name ?? id,
     enabled: wantsAccounts,
-    refreshKey: changes,
   })
   // 那台机器比多账号老:按单账号画(一个「断开连接」);读失败 / 还在读时不画它 —— 那个钮会一次断掉所有账号。
   const listsAccounts = wantsAccounts && accounts.supported
@@ -175,7 +173,7 @@ export function PhoneConnectorDetail({ assistant, homeDeviceId, machine, integra
                   confirmLabel={t('connectors.disconnect')}
                   failedText={t('connectors.disconnectFailed')}
                   onConfirm={disconnect}
-                  onConfirmed={() => { integrations.retry(); setChanges((n) => n + 1) }}
+                  onConfirmed={() => { integrations.retry(); accounts.reload() }}
                   onClose={() => setConfirm(null)}
                   testId="assistant-connector-disconnect-dialog"
                 />

@@ -10,9 +10,8 @@ import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { integrationIcons } from '@gugu/session-plugins/integration-icons';
-import { usePhoneRead } from '@/mobile/assistant/usePhoneRead';
-import { assistantReadWaiting } from '@/components/assistant/useAssistantRead';
-import { peekAssistantPanelIntegrations, readAssistantPanelIntegrations } from '@/components/assistant/assistant-panel-integrations';
+import { assistantReadWaiting } from '@/mobile/assistant/phoneRead';
+import { useConnectionList } from '@/components/assistant/assistant-panel-reads';
 import { useChatChannels } from '@/components/settings/channels/useChatChannels';
 import { assistantApplicationCounts } from '@/components/assistant/assistant-app-connections';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
@@ -99,21 +98,20 @@ export const AssistantAppCountsSource = observer(function AssistantAppCountsSour
   // The panel's read itself failed (no data and not still coming): every read through it is unreadable, not loading.
   const machineFailed = !machine.data && !!machine.error && !machine.isLoading;
   // As the profile page reads them (assistant-profile.tsx ProfileHome), under the same key.
-  const apps = usePhoneRead(panel && assistantId ? `profile-apps|${assistantId}` : null, () => readAssistantPanelIntegrations(panel!, i18n.language),
-    'read application connections', undefined, () => peekAssistantPanelIntegrations(panel, i18n.language));
+  const apps = useConnectionList(assistantId ? panel : undefined, false, i18n.language);
   const chat = useChatChannels();
   // Its collection not prepared yet (setup finishing) is still coming: loading, never unreadable.
   const appsFailed = apps.state === 'error' && !assistantReadWaiting(apps.error);
   const counts = appAssistantCountsOf({
     devices: shell?.deviceCount === undefined ? LOADING : ready(shell.deviceCount),
     connectedApps: machineFailed || appsFailed || chat.status === 'failed' ? UNREADABLE
-      : apps.state === 'ok' && (chat.status === 'ready' || chat.status === 'absent')
-        ? ready(assistantApplicationCounts(apps.data.items, apps.data.configured, apps.data.statuses, chat.list)) : LOADING,
+      : apps.state === 'value' && (chat.status === 'ready' || chat.status === 'absent')
+        ? ready(assistantApplicationCounts(apps.value.items, apps.value.configured, apps.value.statuses, chat.list)) : LOADING,
     // The desktop's sidebar holds them; a window without the agent runtime has no such list to count.
     projects: platform.capabilities.agentRuntime ? ready(appState.sidebar.orderedProjects.length) : UNREADABLE,
   });
   const connectors = appAssistantConnectorsOf(machineFailed || appsFailed ? UNREADABLE
-    : apps.state === 'ok' ? ready(connectorsOf(apps.data.items, apps.data.configured, i18n.language)) : LOADING);
+    : apps.state === 'value' ? ready(connectorsOf(apps.value.items, apps.value.configured, i18n.language)) : LOADING);
   const ownerId = shell?.ownerId ?? null;
   const key = ownerId && assistantId ? JSON.stringify([ownerId, counts, connectors]) : '';
   useEffect(() => {

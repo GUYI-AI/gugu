@@ -4,7 +4,6 @@
   "apps/desktop/src/components/appSlot/appComposerActions.tsx": 1,
   "apps/desktop/src/components/appSlot/useChatOpener.tsx": 1,
   "apps/desktop/src/components/appSlot/useTabsReading.ts": 1,
-  "apps/desktop/src/components/assistant/useAssistantRead.ts": 1,
   "apps/desktop/src/components/chat/WidgetBubble.tsx": 1,
   "apps/desktop/src/components/chat/WidgetSnapshot.tsx": 1,
   "apps/desktop/src/components/chat/messageActionModules.tsx": 1,

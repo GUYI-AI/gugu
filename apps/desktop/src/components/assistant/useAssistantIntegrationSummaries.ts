@@ -3,6 +3,7 @@ import { connectionMetadataKey, type ConnectionMetadataStore } from '../connecti
 import type { IntegrationMetadata } from '@/session/renderer/features/integrations/integrations-provider'
 import { builtinIntegrationSummary } from '@gugu/session-plugins/integration-summaries'
 import { enrichAssistantPanelIntegrations,integrationListCopy } from './assistant-panel-integrations'
+import { assistantIntegrationDetail,registerConnectionStore } from './assistant-panel-reads'
 
 export const EMPTY_INTEGRATION_SUMMARIES: IntegrationMetadata[] = []
 type Summary = Pick<IntegrationMetadata,'name' | 'description'>
@@ -27,7 +28,10 @@ export function useAssistantIntegrationSummaries(panel: ConnectionMetadataStore 
     for (const item of missing) cache.pending.add(summaryKey(item))
     // List refreshes and remounts share this bounded enrichment, rather than
     // clearing useful text or starting another body download.
-    void enrichAssistantPanelIntegrations(panel,missing,locale,(id,summary) => {
+    // The same entry the detail page reads (replica `assistantIntegrationDetail`): one body read per catalog version.
+    const storeKey = registerConnectionStore(panel)
+    const read = (item: IntegrationMetadata) => assistantIntegrationDetail.fetch(storeKey,item.id,item.catalogVersion ?? null,locale)
+    void enrichAssistantPanelIntegrations(read,missing,locale,(id,summary) => {
       const item = missing.find(item => item.id === id)!
       cache.summaries.set(summaryKey(item),summary); cache.revision++
       for (const listener of cache.listeners) listener()

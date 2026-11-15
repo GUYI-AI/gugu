@@ -6,8 +6,7 @@ import { useCallback,useEffect,useMemo,useRef,useState,useSyncExternalStore } fr
 import type { ChatChannelList, ChatChannelsClient } from '@gugu/core/cloud/chatChannels'
 import { rendererChatChannelsClient } from '@/lib/chatChannels'
 import { getRendererSession,observeRendererSession } from '@/lib/sessionPublication'
-import { assistantPanelCacheStore } from '@/components/assistant/assistant-panel-cache'
-import { ASSISTANT_PANEL_CHANGED } from '@/components/assistant/assistant-panel-events'
+import { assistantPanelCacheStore,subscribeAccountState } from '@/components/assistant/assistant-panel-cache'
 
 export type ChatChannelsStatus='loading'|'ready'|'absent'|'failed'
 const REFRESH_MS=10_000
@@ -59,9 +58,9 @@ export function useChatChannels(): {
   },[client,owner,apply,cache,t])
   useEffect(()=>{
     const changed=()=>{const local=client?cache.peek():null;if(local&&currentOwner.current===owner)setState(previous=>previous.status==='absent'?previous:{owner,list:local,status:'ready',error:''})}
-    window.addEventListener(ASSISTANT_PANEL_CHANGED,changed)
+    const stopKept=subscribeAccountState(changed)
     void refresh();const timer=setInterval(()=>void refresh(),REFRESH_MS)
-    return()=>{clearInterval(timer);window.removeEventListener(ASSISTANT_PANEL_CHANGED,changed)}
+    return()=>{clearInterval(timer);stopKept()}
   },[refresh,cache,owner,client])
   const current=state.owner===owner?state:initial()
   return {client,...current,refresh,apply}
