@@ -20,11 +20,11 @@ import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ sessionTimeline: {
-  sessionCreateSkills: async () => ({ ok: true, value: { skills: [{ id: '/native/meeting/SKILL.md', name: '会议记录', description: '整理会议记录与待办事项' }, { id: '/native/code/SKILL.md', name: '代码检查', description: '检查代码中的问题' }] } }),
+  sessionCreateSkills: async (input: { harness: string }) => ({ ok: true, value: { skills: input.harness === 'pi' ? [] : [{ id: '/native/meeting/SKILL.md', name: '会议记录', description: '整理会议记录与待办事项' }, { id: '/native/code/SKILL.md', name: '代码检查', description: '检查代码中的问题' }] } }),
 } }) }))
 const machines: CreateMachine[] = ['Mac', 'Cloud'].map((name) => ({ device: { device_id: name, label: name, hostname: name, platform: 'darwin', status: 'online', is_online: true, last_seen_at: '2026-11-15T00:00:00Z', capabilities: { terminals: [], runtimes: ['codex'] } }, localProjectId: null, path: null, available: true }))
 machines.push({ ...machines[0]!, device: { ...machines[0]!.device, device_id: 'Phone', label: 'Phone', platform: 'ios', capabilities: { terminals: [], runtimes: ['pi'], host_kind: 'phone', host_runtime_capability: 1 } } })
-const options: SessionpageSessionCreateOptions = { projects: [], lastUsed: null, harnesses: ['codex', 'claude'].map((id) => ({ id, name: id === 'codex' ? 'Codex' : 'Claude Code', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] })) }
+const options: SessionpageSessionCreateOptions = { projects: [], lastUsed: null, harnesses: ['codex', 'claude', 'pi'].map((id) => ({ id, name: id === 'codex' ? 'Codex' : id === 'claude' ? 'Claude Code' : 'Pi', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] })) }
 let root: Root | null = null, host: HTMLDivElement | null = null
 function Harness() {
   const [machineId, setMachine] = useState('Mac'), [projectId, setProject] = useState<string | null>(null)
@@ -121,4 +121,18 @@ it('keeps every complete English control reachable on a 320px phone by wrapping 
   expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
   for (const button of row.querySelectorAll('button')) expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(320)
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320)
+})
+
+it('omits search only for an actually empty skill catalog', async () => {
+  await mount()
+  await page.getByTestId('agent-watch-create-skills').click()
+  await expect.element(page.getByRole('searchbox', { name: '搜索技能' })).toBeVisible()
+  await page.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.getByTestId('agent-watch-create-model-device').click()
+  await page.getByRole('button', { name: /智能体/ }).click()
+  await page.getByRole('radio', { name: 'Pi', exact: true }).click()
+  await page.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.getByTestId('agent-watch-create-skills').click()
+  await expect.element(page.getByText('没有可用的技能', { exact: true })).toBeVisible()
+  expect(document.querySelector('[data-testid=agent-watch-create-controls-sheet] input[type=search]')).toBeNull()
 })

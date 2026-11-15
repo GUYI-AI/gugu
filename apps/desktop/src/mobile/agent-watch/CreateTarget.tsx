@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
 import { isPhoneDevice } from '@gugu/core/cloud/devices'
 import { Check, ChevronLeft, ChevronRight, Cloud, Folder, Monitor, Smartphone, Sparkles } from '@/lib/icons'
+import { useReadModel } from '@/lib/readModel'
+import { creationSkills } from './create-skills-read'
 import { Button } from '@/components/ui/Button'
 import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { CreateSkillSearch, CreateSkillsList } from './CreateSkills'
@@ -33,13 +35,15 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const { t: tf } = useTranslation('mobileTaskFlow')
   const [view, setView] = useState<View | null>(null)
   const [search, setSearch] = useState('')
-  const [skillCount, setSkillCount] = useState<number | null>(null)
   const modelButton = useRef<HTMLButtonElement>(null)
   const selectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
   const modelName = configuration && (selectedModelName(configuration.models, configuration.selection)
     ?? (configuration.modelsState === 'loading' && (!configuration.models || configuration.models.harness !== configuration.selection.harness)
       ? tm('agentWatch.create.modelLoading') : tm('agentWatch.create.modelDefault')))
   const phone = !!machine && isPhoneDevice(machine.device)
+  const skillCatalog = useReadModel(creationSkills, view === 'skills' && machine && !phone && configuration?.selection.harness
+    ? [machine.device.device_id, configuration.selection.harness, machine.localProjectId] : null)
+  const skillCount = skillCatalog.state === 'value' ? skillCatalog.value.skills.length : null
   const title = view === 'project' ? t('project') : view === 'skills' ? skillCount === null ? t('skills') : t('skillsCount', { count: skillCount }) : t(view === 'device' || !view ? 'modelDevice' : view === 'harness' ? 'agent' : view)
   const select = (next: CreateSelection, modelPicked?: boolean) => { configuration?.onChange(next, modelPicked); setView('device') }
   const compact = view !== 'project' && view !== 'skills'
@@ -54,7 +58,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
     </PhoneComposerControlRow></div>
     <PhoneComposerSheet open={view !== null && !(phone && view === 'skills')} onClose={() => setView(null)} title={title}
       anchor={compact ? modelButton : undefined} testId="agent-watch-create-controls-sheet"
-      footer={view === 'skills' ? <CreateSkillSearch search={search} onSearch={setSearch} /> : undefined}>
+      footer={view === 'skills' && skillCount !== null && skillCount > 0 ? <CreateSkillSearch search={search} onSearch={setSearch} /> : undefined}>
       {view && compact && view !== 'device' && <Button variant="ghost" className="gg-phone-composer-choice" onClick={() => setView('device')}><ChevronLeft />{t('back')}</Button>}
       {view === 'device' && <>
         <div className="gg-phone-composer-section-label">{t('device')}</div>
@@ -92,7 +96,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
           selected={configuration.selection.permissionMode === mode} onClick={() => select({ ...configuration.selection, permissionMode: mode })} />)}
       </div>}
       {view === 'skills' && <CreateSkillsList deviceId={machine?.device.device_id ?? null} phone={phone} harness={configuration?.selection.harness ?? null} projectId={machine?.localProjectId ?? null} search={search}
-        selected={configuration?.skills ?? []} onCount={setSkillCount} onChange={(skills) => { configuration?.onSkills(skills); setView(null) }} />}
+        selected={configuration?.skills ?? []} onChange={(skills) => { configuration?.onSkills(skills); setView(null) }} />}
     </PhoneComposerSheet>
   </>
 }

@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
@@ -20,15 +19,12 @@ export function SelectedCreationSkills({ skills, onChange }: { skills: readonly 
   </div> : null
 }
 
-export function CreateSkillsList({ deviceId, phone, harness, projectId, search, selected, onChange, onCount }: {
+export function CreateSkillsList({ deviceId, phone, harness, projectId, search, selected, onChange }: {
   deviceId: string | null; phone: boolean; harness: string | null; projectId: string | null; search: string
   selected: readonly CreationSkill[]; onChange: (skills: CreationSkill[]) => void
-  onCount: (count: number | null) => void
 }) {
   const { t } = useTranslation('mobileCreateControls')
   const state = useReadModel(creationSkills, deviceId && harness && !phone ? [deviceId, harness, projectId] : null)
-  const count = state.state === 'value' ? state.value.skills.length : null
-  useEffect(() => { onCount(count) }, [count, onCount])
   if (phone) return null
   if (!deviceId || !harness || state.state === 'unknown') return <p role="status" className="gg-phone-composer-sheet-status">{t('loadingSkills')}</p>
   const retry = <div className="gg-phone-composer-sheet-status" role="alert">{t('failedSkills')}
