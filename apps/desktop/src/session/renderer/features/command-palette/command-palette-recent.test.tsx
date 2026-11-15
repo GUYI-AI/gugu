@@ -203,3 +203,34 @@ describe('renderer task opening and empty Recent', () => {
     expect(fixture.markOpened).not.toHaveBeenCalled();
   });
 });
+
+describe('palette search reading', () => {
+  async function typed(query: string) {
+    await act(async () => {
+      root.render(<QueryClientProvider client={queryClient}>
+        <CommandPaletteModal key={++generation} initialQuery={query} onClose={() => {}} onSuccess={() => {}} />
+      </QueryClientProvider>);
+    });
+  }
+
+  it('holds the result rows while the words are being searched, never "no results" first', async () => {
+    let answer!: (items: SearchItem[]) => void;
+    fixture.search.mockReset().mockImplementation(() => new Promise<SearchItem[]>((resolve) => { answer = resolve; }));
+    await typed('fresh-1');
+    await vi.waitFor(() => expect(fixture.search).toHaveBeenCalledWith({ query: 'fresh-1' }));
+    expect(host.textContent).not.toContain('palette.noResults');
+    expect(host.querySelector('[data-testid="palette-search-pending"] [data-unknown]')).not.toBeNull();
+    await act(async () => answer(fixture.results.slice(1, 2)));
+    await vi.waitFor(() => expect(taskRows()).toEqual(['fresh-1']));
+    expect(host.querySelector('[data-testid="palette-search-pending"]')).toBeNull();
+  });
+
+  it('says a failed search and reads again on retry, ❌ an empty list', async () => {
+    fixture.search.mockReset().mockRejectedValueOnce(new Error('index gone')).mockImplementation(async () => fixture.results.slice(2, 3));
+    await typed('fresh-2');
+    await vi.waitFor(() => expect(host.querySelector('[role=alert]')).not.toBeNull());
+    expect(host.textContent).not.toContain('palette.noResults');
+    await act(async () => { (host.querySelector('[role=alert] button') as HTMLButtonElement).click(); });
+    await vi.waitFor(() => expect(taskRows()).toEqual(['fresh-2']));
+  });
+});
