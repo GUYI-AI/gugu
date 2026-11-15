@@ -37,12 +37,17 @@ export interface PlatformCatalogModel {
   requiresMembership: boolean
   /** 目录 `hidden`(#7056):他在设置「模型」页关掉了这一条。只认 true,旧服务端不带 ⇒ false。 */
   hidden: boolean
+  /**
+   * The four details below are what a model *menu* shows (its rows' multiplier and context) and what the composer's effort
+   * picker intersects (#6447). They are read every time but not kept across restarts (`platformCatalog`'s `carry`): a
+   * catalog restored from the snapshot lacks them, and a reader takes absent as "not known yet" (`catalogDetailed`).
+   */
   creditMultiplier?: number | null
   /** Per protocol (`credit_multipliers`): the multiplier the composer shows for the protocol an engine speaks. */
-  creditMultipliers: Partial<Record<ModelAccessProtocol, number>>
+  creditMultipliers?: Partial<Record<ModelAccessProtocol, number>>
   contextWindow?: number | null
   /** The reasoning levels this model accepts (#6447); null = the catalog does not say. */
-  reasoningEfforts: string[] | null
+  reasoningEfforts?: string[] | null
 }
 
 export interface AgentModelSelectionState {

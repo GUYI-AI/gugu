@@ -109,6 +109,20 @@ describe('usePlatformModelCatalog — derived from the account catalog', () => {
     expect(io.catalog).toHaveBeenCalledTimes(1);
   });
 
+  it('a catalog restored from the snapshot (no menu details) is not taken as read: the group waits for the read', async () => {
+    let answer!: (rows: unknown) => void;
+    io.catalog.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    const { platformModels } = await import('@/lib/agentModelReplicas');
+    platformModels.set([], ROWS.map(({ creditMultiplier: _m, creditMultipliers: _ms, contextWindow: _c, reasoningEfforts: _r, ...kept }) => kept));
+    mount(<Probe provider="claude" />);
+    await settle();
+    expect(current).toMatchObject({ known: false, models: [] });
+    await act(async () => { answer(ROWS); });
+    await settle();
+    expect(current!.known).toBe(true);
+    expect(current!.models[0]).toMatchObject({ creditMultiplier: 0.5 });
+  });
+
   it('says why the group is absent: an engine with no wire protocol, a leg without a Gugu identity', async () => {
     mount(<Probe provider="legless" />);
     await settle();

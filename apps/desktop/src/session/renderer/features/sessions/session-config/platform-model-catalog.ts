@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { replica, useReplica } from '@/lib/replica';
-import { platformModels } from '@/lib/agentModelReplicas';
+import { catalogDetailed, platformModels, useDetailedPlatformCatalog } from '@/lib/agentModelReplicas';
 import type { PlatformCatalogModel } from '@/lib/agentModelSelection';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { agentsMetadata } from '@renderer/lib/stores/agent-replicas';
@@ -225,8 +225,12 @@ function gateReason(providerId: string, surface: SessionpageSessionSurface, agen
   return null;
 }
 
-/** The account's catalog as one engine sees it: enabled models of its protocol, its multiplier and levels. */
+/**
+ * The account's catalog as one engine sees it: enabled models of its protocol, its multiplier and levels. Only for a
+ * catalog as read (`catalogDetailed`): one restored from the snapshot carries no multipliers or levels.
+ */
 export function platformModelsFor(providerId: string, catalog: readonly PlatformCatalogModel[]): PlatformModelOption[] {
+  if (!catalogDetailed(catalog)) throw new Error('platformModelsFor needs the catalog as read (with its menu details)');
   const protocol = platformWireProtocol(providerId) as PlatformModelProtocol | null;
   if (!protocol || !PROTOCOLS.includes(protocol)) return [];
   return catalog
@@ -235,9 +239,10 @@ export function platformModelsFor(providerId: string, catalog: readonly Platform
       id: model.id,
       displayName: model.displayName,
       protocol,
-      creditMultiplier: model.creditMultipliers[protocol] ?? null,
+      // null: the catalog has no multiplier for this protocol, or no context window (checked above: the details were read).
+      creditMultiplier: model.creditMultipliers![protocol] ?? null,
       contextWindow: model.contextWindow ?? null,
-      reasoningEfforts: model.reasoningEfforts,
+      reasoningEfforts: model.reasoningEfforts!,
       requiresMembership: model.requiresMembership,
       hidden: model.hidden,
     }));
@@ -295,7 +300,8 @@ export function usePlatformModelCatalog(
   const hostMachine = host?.deviceId ?? null;
   const machine = sessionId ? machineRegistry.machineOf(sessionId) : hostMachine;
   const online = machine === null || machine !== hostMachine || host?.online !== false;
-  const catalog = useReplica(platformModels, providerId ? [] : null);
+  // Restored from the snapshot (no multipliers or levels): unknown here until the read that follows lands.
+  const catalog = useDetailedPlatformCatalog(providerId !== null);
   const agents = useReplica(agentsMetadata, providerId ? [machine] : null, { read: online });
   const selection = useReplica(sessionPlatformSelection, providerId && sessionId ? [sessionId, providerId, surface, machine] : null, { read: online });
   useEffect(watchCatalog, []);
@@ -310,9 +316,9 @@ export function usePlatformModelCatalog(
     void platformModels.refresh();
     if (providerId && sessionId) void sessionPlatformSelection.refresh(sessionId, providerId, surface, machine);
   };
-  const known = !providerId || (catalog.state !== 'unknown' && agents.state !== 'unknown' && (!sessionId || selection.state !== 'unknown'));
   // The catalog or the session's preselection could not be read: said with a retry (the group stays absent meanwhile).
   const failed = catalog.state === 'error' || (catalog.state === 'value' && catalog.error !== null) || selection.state === 'error';
+  const known = !providerId || (catalog.state !== 'unknown' && agents.state !== 'unknown' && (!sessionId || selection.state !== 'unknown'));
   const catalogError = gate ?? (failed ? PLATFORM_CATALOG_RETRY_ERROR : null);
   // An offered default must be a row the picker lists (as the host's gate requires).
   const agentDefault = selection.state === 'value' && selection.value.agentDefault

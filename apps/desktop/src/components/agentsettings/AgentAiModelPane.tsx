@@ -20,7 +20,7 @@ import {
 import { billingLinksAvailable, GUGU_BILLING_URL } from '../../lib/appLinks'
 import { AgentModelPicker } from './AgentModelPicker'
 import { Button } from '../ui/Button'
-import { agentHarnessModels, agentModelSelection, platformModels } from '../../lib/agentModelReplicas'
+import { agentHarnessModels, agentModelSelection, useDetailedPlatformCatalog } from '../../lib/agentModelReplicas'
 import { useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useDevicesStore } from '../../store/devicesContext'
@@ -77,7 +77,8 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
   const harnessFailed = harnessReading.state === 'error' ? messageForUser(harnessReading.error) : ''
   const protocol: ModelAccessProtocol | null = platformProtocolForAgentType(agent.agent_type)
   // 引擎说不了平台协议就不问目录:问回来也一条都列不出,还会把「目录拉不到」误报成这个 Agent 的问题。
-  const catalogReading = useReplica(platformModels, protocol ? [] : null)
+  // Restored from the snapshot (no multipliers or context, the menu's details): unknown here until the read lands.
+  const catalogReading = useDetailedPlatformCatalog(protocol !== null)
   const catalogError = catalogReading.state === 'error' ? messageForUser(catalogReading.error) : null
   // The platform models this engine can run: none without a protocol; null while the catalog is not read; a failed read
   // offers none and says why (catalogError).
