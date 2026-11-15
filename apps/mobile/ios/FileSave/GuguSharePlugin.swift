@@ -64,12 +64,18 @@ final class GuguSharePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelega
         guard kind != .file else { exportFile(entry); return }
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
             DispatchQueue.main.async {
-                if status == .authorized || status == .limited {
+                if GuguSaveFileStore.destination(kind: kind, photosGranted: status == .authorized || status == .limited) == .photos {
                     let resource: PHAssetResourceType = kind == .video ? .video : .photo
                     PHPhotoLibrary.shared().performChanges({
                         PHAssetCreationRequest.forAsset().addResource(with: resource, fileURL: entry.url, options: nil)
-                    }) { saved, error in
-                        DispatchQueue.main.async { self.complete(saved: saved, error: error ?? (saved ? nil : GuguSaveFileStore.failure())) }
+                    }) { saved, _ in
+                        DispatchQueue.main.async {
+                            // Photos can reject a verified image format (for example SVG).
+                            // Keep its verified source until the Files export finishes.
+                            if GuguSaveFileStore.destination(kind: kind, photosGranted: true, photosAccepted: saved) == .complete {
+                                self.complete(saved: true, error: nil)
+                            } else { self.exportFile(entry) }
+                        }
                     }
                 } else { self.exportFile(entry) }
             }

@@ -15,6 +15,12 @@ final class GuguSaveFileStore {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     }
     enum Kind { case image, video, file }
+    enum Destination { case photos, files, complete }
+    static func destination(kind: Kind, photosGranted: Bool, photosAccepted: Bool? = nil) -> Destination {
+        if kind == .file || !photosGranted { return .files }
+        guard let photosAccepted else { return .photos }
+        return photosAccepted ? .complete : .files
+    }
     static func kind(mime: String, name: String) -> Kind {
         let declared = mime.lowercased().split(separator: ";").first.map(String.init) ?? ""
         let type = (declared.isEmpty || declared == "application/octet-stream")
