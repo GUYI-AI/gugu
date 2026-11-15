@@ -1,4 +1,5 @@
 import { PhoneTaskBrowser, PHONE_TASK_BROWSER } from './PhoneTaskBrowser'
+import { PhoneLiveWindowConversation } from './PhoneLiveWindowConversation'
 import type { FirstPrompt } from './use-timeline-session'
 import { observer } from 'mobx-react-lite'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
@@ -274,6 +275,9 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
 
       {/* ⚠️ 此前是 `phase !== 'error'`:首次拉取失败就把时间线**和输入框**一起藏掉。
           缓存里有东西时那是白藏；重试耗尽走统一出口，内容照常给。 */}
+      <PhoneLiveWindowConversation enabled={mobile && !phoneHost && appKind === null} deviceId={device.device_id}
+        sessionId={session.conversationId} conversationId={session.chatId} agentId={agentUserId}
+        operating={online && (attention === 'running' || attention === 'waiting')}>
       <div className={appKind === PHONE_TASK_BROWSER ? 'hidden' : 'flex min-h-0 flex-1 flex-col'}>
       {(
         <SessionConversation
@@ -336,6 +340,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       )}
 
       </div>
+      </PhoneLiveWindowConversation>
       {appKind === PHONE_TASK_BROWSER && <PhoneTaskBrowser key={`${device.device_id}:${session.conversationId}`} deviceId={device.device_id} sessionId={session.conversationId} onSent={() => setAppKind(null)} />}
       <SessionActions menu={sessionMenu} onArchived={onBack} />
     </AgentWatchScreen>
