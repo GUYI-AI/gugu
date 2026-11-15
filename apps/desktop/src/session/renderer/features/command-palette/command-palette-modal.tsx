@@ -32,7 +32,6 @@ import { sessionRegistry } from '@renderer/features/sessions/stores/session-regi
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { replica, useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
-import { messageForUser } from '@/lib/userFacingError';
 import type { SearchItem } from '@shared/core/search';
 
 /**
@@ -137,7 +136,7 @@ function Palette({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseMod
           <>
             {failed && (
               <div role="alert" className="flex items-center gap-2 px-2 py-2 text-sm text-[var(--em-foreground-destructive)]">
-                <span className="flex-1 truncate">{translate('palette.searchFailed', { reason: messageForUser(failed) })}</span>
+                <span className="flex-1 truncate">{translate('palette.searchFailed')}</span>
                 <button type="button" className="shrink-0 text-foreground/60 hover:text-foreground" onClick={() => { void commandPaletteSearch.refresh(debouncedQuery); }}>
                   {translate('common.retry')}
                 </button>

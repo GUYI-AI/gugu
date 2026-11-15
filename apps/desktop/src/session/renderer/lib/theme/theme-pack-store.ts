@@ -114,7 +114,8 @@ function mainPackStore(): PackStore {
       const named = [slots.value.light, slots.value.dark].filter((id): id is string => !!id);
       const builtinOnly = named.every((id) => BUILTIN_THEME_PACKS.some((pack) => pack.id === id));
       if (!builtinOnly && imported.state !== 'value') return;
-      const packs = [...BUILTIN_THEME_PACKS, ...(imported.state === 'value' ? imported.value : [])];
+      // Imported packs not read yet: the choice names built-in packs only (checked above), which is all it needs.
+      const packs = imported.state === 'value' ? [...BUILTIN_THEME_PACKS, ...imported.value] : BUILTIN_THEME_PACKS;
       themePackStylesheetModel.set([], slotsStylesheet(validThemePackSlots(slots.value, packs), packs));
     },
     subscribe: changes.subscribe,
