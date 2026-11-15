@@ -1,5 +1,6 @@
 import { creditDecimal, creditUnits } from '@gugu/core/billing/creditAmount'
 import { TeamResponseError, teamStopReason } from './errors'
+import { verifiedTeamRealtimeScope } from '../../../shared/team-realtime'
 import type {
   CurrentAccountContext, CurrentTeamContext, MyTeamUsage, TeamBillingSummary, TeamDirectoryMember,
   TeamMember, TeamMemberState, TeamMembership, TeamMonthScope, TeamPageResult, TeamProfile, TeamRole,
@@ -36,7 +37,7 @@ export function role(value: unknown): TeamRole {
   return value
 }
 export function memberState(value: unknown): TeamMemberState {
-  if (value !== 'active' && value !== 'disabled' && value !== 'invited') throw new TeamResponseError('state')
+  if (value !== 'active' && value !== 'disabled' && value !== 'invited' && value !== 'provisioning') throw new TeamResponseError('state')
   return value
 }
 export function monthScope(value: unknown): TeamMonthScope {
@@ -74,8 +75,12 @@ export function membership(value: unknown): TeamMembership {
 }
 export function profile(value: unknown): TeamProfile {
   const row = object(value, 'profile'), team = object(row.team, 'team'), person = object(row.profile, 'profile.profile')
+  const member = membership(row.membership), membership_revision = revision(row.membership_revision, 'membership_revision')
+  const realtime_namespace = text(row.realtime_namespace, 'realtime_namespace')
+  if (member.revision !== membership_revision) throw new TeamResponseError('membership_revision')
+  verifiedTeamRealtimeScope({ teamId: text(team.id, 'team.id'), memberId: member.id, membershipRevision: membership_revision, namespace: realtime_namespace })
   const pending = row.pending_email_change == null ? null : object(row.pending_email_change, 'pending_email_change')
-  return { team: { id: text(team.id, 'team.id'), name: text(team.name, 'team.name') }, membership: membership(row.membership),
+  return { realtime_namespace, membership_revision, team: { id: text(team.id, 'team.id'), name: text(team.name, 'team.name') }, membership: member,
     profile: { name: text(person.name, 'profile.name'), avatar: nullableText(person.avatar, 'profile.avatar'),
       bio: nullableText(person.bio, 'profile.bio'), email: text(person.email, 'profile.email') }, entitlements: object(row.entitlements, 'entitlements'),
     pending_email_change: pending ? { challenge_id: text(pending.challenge_id, 'challenge_id'), new_email: text(pending.new_email, 'new_email'), expires_at: text(pending.expires_at, 'expires_at') } : null }

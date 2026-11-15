@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { useState } from 'react'
 import { page, userEvent } from 'vitest/browser'
 import { i18n } from '@/i18n'
 import { AuthContext } from '@/store/auth'
@@ -76,6 +77,26 @@ it('shows the team and role above the real account email as separate elements', 
   expect(harness.container.textContent).toContain('lin@example.test')
   expect(harness.container.textContent).not.toContain('·')
   await capture('account-team-row')
+})
+
+it('projects verified display details once and preserves a later saved self edit', async () => {
+  const api = mockTeamApi(), logout = vi.fn(async () => ({ success: true }))
+  function StatefulAccount() {
+    const [user, updateUser] = useState({ ...teamUser, email: 'internal-routing@example.test' })
+    return <AuthContext.Provider value={{ user, updateUser, logout, loading: false, status: 'authenticated' }}>
+      <TeamProvider user={user} api={api}><TeamAccessGate>
+        <output data-testid="display-profile">{user.nickname} {user.email} {user.bio}</output>
+        <button onClick={() => updateUser({ ...user, nickname: '林晓的新名称', bio: '新的简介' })}>保存个人资料</button>
+      </TeamAccessGate></TeamProvider>
+    </AuthContext.Provider>
+  }
+  harness = createReactHarness()
+  await renderWithAppProviders(harness, <StatefulAccount />)
+  await until('the verified visible email replaces the internal routing email', () => harness.container.querySelector('output')?.textContent?.includes('lin@example.test') === true)
+  expect(harness.container.textContent).not.toContain('internal-routing@example.test')
+  await click('保存个人资料')
+  await until('the saved name remains after the account render', () => harness.container.querySelector('output')?.textContent?.includes('林晓的新名称') === true)
+  expect(harness.container.querySelector('output')?.textContent).toContain('新的简介')
 })
 
 it('edits an exact decimal monthly cap using cap_revision rather than membership revision', async () => {

@@ -16,7 +16,8 @@ export function teamContext(role: TeamRole = 'member'): CurrentTeamContext {
     membership_revision: 93, role, member_state: 'active', cap_credits: cd('200'), used_credits: cd('126'), cap_revision: 17, scope: teamMonth, stop_reason: null }
 }
 export function teamProfile(role: TeamRole = 'member'): TeamProfile {
-  return { team: { id: 'team-ming', name: '明川研究院' }, membership: { ...teamPeople[0], identity_id: teamUser.id, role },
+  return { realtime_namespace: 'synthetic-opaque-auth-session:', membership_revision: 93,
+    team: { id: 'team-ming', name: '明川研究院' }, membership: { ...teamPeople[0], identity_id: teamUser.id, role },
     profile: { name: teamUser.nickname, email: teamUser.email, avatar: null, bio: '' }, entitlements: { tier: 'plus' }, pending_email_change: null }
 }
 export function teamSignIn(role: TeamRole = 'member'): TeamSignInResult {

@@ -3,7 +3,7 @@ import type { CreditDecimal } from '@gugu/core/billing/creditAmount'
 
 /** Wire names follow team-edition-v1.md. Team money never uses a personal wallet. */
 export type TeamRole = 'superadmin' | 'admin' | 'member'
-export type TeamMemberState = 'active' | 'disabled' | 'invited'
+export type TeamMemberState = 'active' | 'disabled' | 'invited' | 'provisioning'
 export type TeamStopReason = 'team_member_monthly_cap_reached' | 'team_credits_exhausted'
 export type TeamAccountKind = 'personal' | 'team_member' | 'team_login_anchor' | 'unknown'
 
@@ -35,6 +35,8 @@ export interface CurrentTeamContext extends TeamContext {
 }
 export type CurrentAccountContext = { kind: 'personal' } | CurrentTeamContext
 export interface TeamProfile {
+  realtime_namespace: string
+  membership_revision: number
   team: TeamDescriptor
   membership: TeamMembership
   profile: { name: string; avatar: string | null; bio: string | null; email: string }
@@ -121,7 +123,7 @@ export interface TeamApi {
   googleSignIn(proof: Pick<Session, 'access_token'>, team_id?: string, signal?: AbortSignal): Promise<TeamSignInResult>
   profile(signal?: AbortSignal): Promise<TeamProfile>
   directory(input?: { query?: string; cursor?: string; limit?: number }, signal?: AbortSignal): Promise<TeamPageResult<TeamDirectoryMember>>
-  members(input: { state: TeamMemberState; query?: string; cursor?: string; limit?: number }, signal?: AbortSignal): Promise<TeamPageResult<TeamMember>>
+  members(input: { state: Exclude<TeamMemberState, 'provisioning'>; query?: string; cursor?: string; limit?: number }, signal?: AbortSignal): Promise<TeamPageResult<TeamMember>>
   invite(email: string, idempotency_key: string): Promise<TeamInvitation>
   invitationInfo(invitation_token: string): Promise<TeamInvitationInfo>
   acceptInvitation(invitation_token: string, verification_receipt: string, idempotency_key: string): Promise<TeamSignInResult>

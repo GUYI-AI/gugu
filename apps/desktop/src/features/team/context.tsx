@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- Providers and their hooks share the same feature context instances. */
-import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import type { AuthUser } from '@/store/auth'
@@ -13,6 +13,7 @@ import { teamErrorCopy } from './copy'
 import type { CurrentTeamContext, TeamApi, TeamProfile } from './types'
 import './catalog'
 import './team.css'
+import { TEAM_REALTIME_CONTEXT_CHANGED } from '../../../shared/team-realtime'
 
 const ApiContext = createContext<TeamApi>(teamApi)
 export function TeamApiProvider({ api, children }: { api: TeamApi; children: ReactNode }) {
@@ -53,9 +54,19 @@ function TeamSession({ user, children }: { user: AuthUser; children: ReactNode }
       return { context, profile }
     },
   })
-  // Canonical team profile owns its display email; the internal Auth principal email is never shown.
+  const refetch = query.refetch
   useEffect(() => {
+    if (!teamMarked) return
+    const refresh = () => { void refetch() }
+    window.addEventListener(TEAM_REALTIME_CONTEXT_CHANGED, refresh)
+    return () => window.removeEventListener(TEAM_REALTIME_CONTEXT_CHANGED, refresh)
+  }, [refetch, teamMarked])
+  // Canonical team profile owns its display email; the internal Auth principal email is never shown.
+  const projectedProfile = useRef<TeamProfile | undefined>(undefined)
+  useLayoutEffect(() => {
     if (!query.data || query.isError) return
+    if (projectedProfile.current === query.data.profile) return
+    projectedProfile.current = query.data.profile
     const profile = query.data.profile.profile
     if (user.nickname !== profile.name || user.email !== profile.email || user.bio !== profile.bio
       || (user.avatarUrl ?? null) !== profile.avatar) updateUser({ ...user, nickname: profile.name,

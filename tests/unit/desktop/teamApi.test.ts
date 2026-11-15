@@ -1,11 +1,22 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createTeamApi, type TeamRequest } from '../../../apps/desktop/src/features/team/api'
 import { TeamApiError } from '../../../apps/desktop/src/features/team/errors'
-import { myUsage, currentContext } from '../../../apps/desktop/src/features/team/readers'
+import { myUsage, currentContext, members, profile } from '../../../apps/desktop/src/features/team/readers'
 import { creditDecimal as cd } from '@gugu/core/billing/creditAmount'
-import { mockTeamApi, teamContext, teamSignIn } from '../../fixtures/teamEdition'
+import { mockTeamApi, teamContext, teamSignIn, teamProfile } from '../../fixtures/teamEdition'
 
 describe('team HTTP contract boundary', () => {
+  it('accepts unprovisioned pending rows but never treats their membership ID as an Auth principal', () => {
+    const person = { id: 'pending-membership', identity_id: null, name: '待加入成员', email: 'pending@example.test', role: 'member', revision: 0 }
+    expect(members({ members: [{ ...person, state: 'provisioning' }], next_cursor: null }).members[0].identity_id).toBeNull()
+    expect(() => members({ members: [{ ...person, state: 'active' }], next_cursor: null })).toThrow()
+  })
+  it('requires the complete top-level Realtime namespace and matching membership revision in verified profiles', () => {
+    const value = teamProfile()
+    expect(profile(value).realtime_namespace).toBe(value.realtime_namespace)
+    expect(() => profile({ ...value, realtime_namespace: undefined })).toThrow()
+    expect(() => profile({ ...value, membership_revision: value.membership_revision + 1 })).toThrow()
+  })
   it('uses GET for reads, carries only the opaque cursor, and keeps personal cap headroom separate', async () => {
     const fixture = await mockTeamApi().myUsage()
     const transport = vi.fn(async (_request: TeamRequest) => ({ ok: true, data: fixture }))

@@ -56,7 +56,7 @@ function ManagedMemberRow({ member, onSelect }: { member: TeamMember; onSelect: 
 
 export function TeamMembers() {
   const { t } = useTranslation('team'), api = useTeamApi(), session = useTeamSession(), { user } = useAuth(), cache = useQueryClient()
-  const [state, setState] = useState<TeamMemberState>('active'), [invite, setInvite] = useState(false)
+  const [state, setState] = useState<Exclude<TeamMemberState, 'provisioning'>>('active'), [invite, setInvite] = useState(false)
   const [selected, setSelected] = useState<{ member: TeamMember; action: 'details' | 'email' | 'disable' } | null>(null)
   const context = session.context, admin = session.status === 'ready' && context?.role !== 'member'
   const result = useInfiniteQuery({ queryKey: [...teamKeys.account(user?.id ?? ''), 'manage-members', context?.team_id, state],
