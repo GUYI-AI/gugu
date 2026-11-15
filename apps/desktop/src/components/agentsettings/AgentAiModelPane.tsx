@@ -20,8 +20,8 @@ import {
 import { billingLinksAvailable, GUGU_BILLING_URL } from '../../lib/appLinks'
 import { AgentModelPicker } from './AgentModelPicker'
 import { Button } from '../ui/Button'
-import { agentHarnessModels, agentModelSelection, platformModels } from '../../lib/agentModelReadModels'
-import { useReadModel } from '../../lib/readModel'
+import { agentHarnessModels, agentModelSelection, platformModels } from '../../lib/agentModelReplicas'
+import { useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useDevicesStore } from '../../store/devicesContext'
 import { platform } from '../../platform'
@@ -72,15 +72,19 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
       || cloudComputer?.snapshot?.deviceId === agent.device_id))
   const isLocal = platform.capabilities.agentRuntime && devices.some((device) => device.device_id === agent.device_id && device.is_current_device)
   const engine = agent.agent_type ? engineIdForAgentType(agent.agent_type) : null
-  const harnessReading = useReadModel(agentHarnessModels, agent.device_id && engine && !cloudOnly ? [agent.device_id, engine, isLocal] : null)
+  const harnessReading = useReplica(agentHarnessModels, agent.device_id && engine && !cloudOnly ? [agent.device_id, engine, isLocal] : null)
   const harness: SessionpageSessionCreateModels | null = harnessReading.state === 'value' ? harnessReading.value : null
   const harnessFailed = harnessReading.state === 'error' ? messageForUser(harnessReading.error) : ''
   const protocol: ModelAccessProtocol | null = platformProtocolForAgentType(agent.agent_type)
   // 引擎说不了平台协议就不问目录:问回来也一条都列不出,还会把「目录拉不到」误报成这个 Agent 的问题。
-  const catalogReading = useReadModel(platformModels, protocol ? [] : null)
-  const catalog = useMemo((): PlatformCatalogModel[] | null => (!protocol ? [] : catalogReading.state === 'value' ? catalogReading.value : null), [protocol, catalogReading])
+  const catalogReading = useReplica(platformModels, protocol ? [] : null)
   const catalogError = catalogReading.state === 'error' ? messageForUser(catalogReading.error) : null
-  const selection = useReadModel(agentModelSelection, [agent.id])
+  // The platform models this engine can run: none without a protocol; null while the catalog is not read; a failed read
+  // offers none and says why (catalogError).
+  const listed = useMemo((): PlatformCatalogModel[] | null => !protocol ? []
+    : catalogReading.state === 'value' ? catalogReading.value.filter((model) => model.enabled && model.protocols.includes(protocol))
+    : catalogReading.state === 'error' ? [] : null, [protocol, catalogReading])
+  const selection = useReplica(agentModelSelection, [agent.id])
   const state: AgentModelSelectionState | null = selection.state === 'value' ? selection.value : null
   // 选了、还在等写完的那一项;null = 没在改,显示存着的。
   const [picked, setValue] = useState<string | null>(null)
@@ -104,8 +108,7 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
 
   // 存着的那一项:它要会员了(会员到期)、或被他在设置「模型」页关掉了,也照列 —— 下拉显示的就是它。
   const savedValue = state ? selectionValue(state.desired) : null
-  const platformOptions = useMemo(() => (catalog ?? [])
-    .filter((model) => model.enabled && protocol !== null && model.protocols.includes(protocol))
+  const platformOptions = useMemo(() => listed === null ? null : listed
     // 与模型下拉同一个判据(#7056):只列点得中、跑得起来的,❌ 列一条选了就被拒的。
     .filter((model) => offeredInModelPicker(model) || `platform:${protocol}:${model.id}` === savedValue)
     .map((model) => ({
@@ -113,9 +116,9 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
       label: model.displayName,
       membersOnly: model.requiresMembership,
     })),
-  [catalog, protocol, savedValue])
+  [listed, protocol, savedValue])
   // 选着的这一项要会员(会员到期):说清楚,给一条去网页续费的路。
-  const lockedSelection = platformOptions.find((option) => option.value === value && option.membersOnly) ?? null
+  const lockedSelection = platformOptions?.find((option) => option.value === value && option.membersOnly) ?? null
 
   const originalOption = '__assistant_original_config__'
   const ownOptions: Record<string, ComposerModelOption> = {}
@@ -124,10 +127,9 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
       if (model.source === 'harness') ownOptions[model.id] = { name: model.name, description: model.description }
     }
   }
-  const options = assembleComposerModelOptions(ownOptions, (catalog ?? []).filter((model) =>
-    model.enabled && protocol !== null && model.protocols.includes(protocol)).map((model) => ({
+  const options = (listed === null ? null : assembleComposerModelOptions(ownOptions, listed.map((model) => ({
       ...model, creditMultiplier: model.creditMultiplier ?? null, contextWindow: model.contextWindow ?? null,
-    })), engine ?? '', undefined, state?.desired.source === 'platform' ? state.desired.modelId : null) ?? ownOptions
+    })), engine ?? '', undefined, state?.desired.source === 'platform' ? state.desired.modelId : null)) ?? ownOptions
   const current = parseSelection(value ?? 'default')
   const selectedOption = current.source === 'default' ? originalOption
     : current.source === 'byok' ? current.modelId : platformOptionId(current.modelId)
@@ -197,7 +199,7 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
   return (
     <div className={agentSettingsPaneClass(true)}>
       <div className={asClass.aiModelLabel}>{t('settings.model.label')}</div>
-      {value === null ? <Unknown className="h-9 w-full" /> : <AgentModelPicker items={items} value={selectedOption} disabled={!canEdit} onChange={(optionId) => {
+      {value === null || listed === null ? <Unknown className="h-9 w-full" /> : <AgentModelPicker items={items} value={selectedOption} disabled={!canEdit} onChange={(optionId) => {
         const chosen = composerModelSelection(optionId)
         if (cloudOnly && (optionId === originalOption || chosen.source === 'own')) return
         const next = optionId === originalOption ? 'default' : selectionValue(chosen.source === 'own'

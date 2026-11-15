@@ -1,10 +1,10 @@
 import { useIsFetching } from '@tanstack/react-query'
-import { queryClient, useReadModel } from '@/lib/readModel'
+import { queryClient, useReplica } from '@/lib/replica'
 import { connectionAvailability } from './subscription-queries'
 
 /** Same auth reading used by the harness model-credential predicate; payer is not a credential. */
 export function useConnectionAvailability(providerId: string, machine: string | null, missingProgram = false) {
-  const reading = useReadModel(connectionAvailability, [machine, providerId])
+  const reading = useReplica(connectionAvailability, [machine, providerId])
   const auth = reading.state === 'value' ? reading.value : undefined
   const error = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null
   const credentialState =

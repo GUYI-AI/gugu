@@ -1127,11 +1127,16 @@ export const extensionsController = createRPCController({
   },
 
   /** The names of the skills an App brings, as agents read them. */
-  agentSkills: async (args: { extensionId: string }) => {
+  agentSkills: async (args: { extensionId: string }): Promise<
+    | { success: true; data: string[]; entries?: Array<{ name: string; description: string }>; problems?: string[] }
+    | { success: false; error: string }
+  > => {
     try {
       const { manifest, rootDir } = extensionsService().get(args.extensionId);
-      const skills = manifest.contributes.skills ? readExtensionSkills(manifest.id, path.join(rootDir, manifest.contributes.skills), () => {}) : [];
-      return { success: true as const, data: skills.map((skill) => skill.name) };
+      const problems: string[] = [];
+      const skills = manifest.contributes.skills ? readExtensionSkills(manifest.id, path.join(rootDir, manifest.contributes.skills), (message) => problems.push(message)) : [];
+      return { success: true as const, data: skills.map((skill) => skill.name),
+        entries: skills.map(({ name, description }) => ({ name, description })), problems };
     } catch (error) {
       return { success: false as const, error: error instanceof Error ? error.message : String(error) };
     }

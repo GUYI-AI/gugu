@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Device } from '@gugu/core/shared/types/chat'
-// The read model reads for the signed-in account, as the product publishes it.
-;(await import('../../../../apps/desktop/src/lib/readModel')).followRendererSession('SIGNED_IN', 'owner')
+// The replica reads for the signed-in account, as the product publishes it.
+;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
 
 const network = vi.hoisted(() => ({ open: vi.fn(), close: vi.fn(), warn: vi.fn(), usable: false, restart: () => undefined as void }))
 vi.mock('@/lib/remoteSessionHost', () => ({ openPhoneSessionHostPipe: () => Object.assign(network.open, {

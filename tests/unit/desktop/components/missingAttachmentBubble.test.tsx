@@ -4,7 +4,7 @@ import { notifyManager } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { MediaAttachmentBubble } from '../../../../apps/desktop/src/components/chat/MediaAttachmentBubble'
-import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/replica'
 import { MissingFileObjectError } from '@gugu/core/shared/fileResolver'
 import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 

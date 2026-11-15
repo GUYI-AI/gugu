@@ -210,6 +210,17 @@ describe('ChatAreaPanel agent activity placement', () => {
     expect(members.title).toBe('成员列表')
   })
 
+  // open-flicker CH1: before the roster is read the header drew「0」and then jumped to the real count.
+  it('draws the member count as a placeholder until the roster is read, never 0', async () => {
+    vi.mocked(chatService.getGroupCollab).mockImplementationOnce(() => new Promise(() => {}))
+    await renderWithAppProviders(harness, createNode(ChatAreaPanel, {}), {
+      chat: { getImRepository: getImRepositoryMock, activeChatId: 'chat-unread', activeChat: chat({ id: 'chat-unread', kind: 'group', name: 'Ops' }), messages: [] },
+    })
+    const members = harness.container.querySelector<HTMLButtonElement>(`[data-testid="${AUTOMATION_TEST_IDS.chatHeaderMembersButton}"]`)!
+    expect(members.textContent).toBe('')
+    expect(members.querySelector('[data-unknown]')).not.toBeNull()
+  })
+
   it('reloads group collab when the same chat is reopened on mobile (openNonce bump) (#461)', async () => {
     const groupChat = chat({ id: 'chat-1', kind: 'group', name: 'Ops' })
     vi.mocked(chatService.getGroupCollab).mockClear()

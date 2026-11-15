@@ -46,6 +46,8 @@ const { authUser, authOverride, contactsServiceMock, revisionHandlers, listManag
 
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: authOverride.current ?? authUser, loading: false }) }))
 vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => chatStore, useChatStoreReader: () => () => chatStore, useStoreValueBy: <T>(read: (value: typeof chatStore) => T) => read(chatStore) }))
+// The contacts replicas publish identities through the account's IM library.
+vi.mock('../../../../apps/desktop/src/lib/imRepository', async (original) => ({ ...(await original<object>()), openedImRepository: () => chatStore.getImRepository() }))
 vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({ contactsService: contactsServiceMock }))
 vi.mock('../../../../apps/desktop/src/lib/groupInvitations', () => ({ listGroupInvitations: async () => [] }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({ readRequiredDisplayIdentities: async () => [] }))
@@ -54,6 +56,7 @@ vi.mock('../../../../apps/desktop/src/lib/groupJoinRequests', async (importOrigi
   listManagedGroupJoinRequests: listManagedMock,
 }))
 
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { ContactsProvider } from '../../../../apps/desktop/src/store/contacts'
 import { useContactsStore, type ContactsContextValue } from '../../../../apps/desktop/src/store/contactsContext'
 
@@ -78,6 +81,8 @@ const agentAsks: ManagedGroupJoinRequest = {
 }
 
 beforeEach(() => {
+  queryClient.clear()
+  followRendererSession('SIGNED_IN', authUser.id)
   store = null
   authOverride.current = null
   revisionHandlers.clear()
@@ -116,6 +121,7 @@ describe('入群申请随 friend_requests_changed 到审批人', () => {
     try {
       await harness.render(createNode(ContactsProvider, null, createNode(Capture)))
       authOverride.current = { ...authUser, id: 'user-2' }
+      followRendererSession('SIGNED_IN', 'user-2')
       await harness.render(createNode(ContactsProvider, null, createNode(Capture)))
       await flush()
       expect(contactsServiceMock.getContacts).toHaveBeenLastCalledWith('user-2')
