@@ -254,12 +254,17 @@ export function ContactsProvider({ children, active = true }: { children: React.
   // #1228: update an owned agent's name + bio together (真接 bio — was dropped before).
   const updateAgentProfile = useCallback(async (agentId: string, fields: { name?: string; bio?: string; avatar?: string | null }) => {
     const ownerId = userId
-    // A write deciding whether to tell the assistant App: ask the replica now (❌ guess from what may not be read yet).
-    const personal = !!ownerId && (await myAssistant.fetch()).agentId === agentId
     const updated = await contactsService.updateOwnedAgentProfile(agentId, {
       ...(fields.name !== undefined ? { display_name: fields.name } : {}),
       ...(fields.bio !== undefined ? { bio: fields.bio } : {}),
       ...(fields.avatar !== undefined ? { avatar: fields.avatar } : {}),
+    })
+    // Whether to tell the assistant App, decided after the write (a failed assistant read never blocks a profile edit):
+    // the replica is asked now, ❌ guessed from what may not be read yet.
+    const personal = !!ownerId && await myAssistant.fetch().then((mine) => mine.agentId === agentId, (error: unknown) => {
+      rendererLogger('contacts/profile').error({ error: String(error), agentId }, 'Profile saved; whether it is the assistant could not be read, so the assistant App is not told')
+      // @@@reading-default - a one-moment decision after the write: an assistant identity that cannot be read sends no App note (said in the log)
+      return false
     })
     if (personal) await reportAssistantAppChange(updated.device_id ? { rpc: machineRpc(updated.device_id) } : null, agentId, {
       resource: 'assistant', operation: 'edited', id: agentId, section: fields.avatar !== undefined ? 'appearance' : 'profile',
