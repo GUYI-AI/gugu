@@ -1,4 +1,4 @@
-import { useShownAgentName } from '@/hooks/useShownAgentName'
+import { viewAnchor } from '@renderer/features/sidebar/inner-sidebar-anchor'; import { isProjectChat } from '@renderer/features/sidebar/inner-sidebar-scope'; import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useMessageQuote } from '@/hooks/useMessageQuote'
 import { GroupRenameContext, useChatCommands } from './chat/use-chat-commands'
 import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
@@ -48,7 +48,7 @@ import { ChatMessageComposer, type ChatMessageComposerProps, type ComposerAttach
 import { MessageList, type MessageListRowProps } from './chat/MessageList'
 import { useTaskChatRows } from './assistant/useTaskChatRows'
 import { MessageLoadFailure } from './chat/MessageLoadFailure'
-import { MessageListSkeleton } from './chat/MessageListSkeleton'; import { ChatBottomDock } from './chat/ChatBottomDock'; import { PinnedTopicTabs } from './chat/PinnedTopicTabs'; import { PhoneChatTabs } from '../mobile/chat/PhoneChatTabs'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'
+import { MessageListSkeleton } from './chat/MessageListSkeleton'; import { ChatBottomDock } from './chat/ChatBottomDock'; import { PinnedTopicTabs } from './chat/PinnedTopicTabs'; import { PhoneRoomComposerControls } from '../mobile/chat/PhoneRoomComposerControls'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'
 import { ChatHeaderActions } from './chat/ChatHeaderActions'
 import { useFollowingTail, useTailPinning } from './chat/useFollowingTail'
 import { useConversationScrollMemory } from './chat/useConversationScrollMemory'
@@ -558,6 +558,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     /></GroupRenameContext.Provider>
   ) : null
 
+  const phoneRoomControls = mobile && activeChat && viewAnchor({ kind: 'chat', chatId: activeChat.id, chatKind: activeChat.kind, projectGroup: isProjectChat(activeChat.id) }) && !chrome && !blockHost ? <PhoneRoomComposerControls key={activeChat.id} chatId={activeChat.id} topics={topicSurface.topics} current={topicSurface.splitTopic} onPick={topic => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} members={drawerMemberProfiles} roster={{ ready: groupCollabSnapshot !== null, failed: groupCollabError !== null, retry: () => { void loadGroupCollab() } }} userId={user?.id ?? null} profileOpener={topicSurface.splitTopic ? messageProfile.asideOpener : messageProfile.mainOpener} onOpenAgent={onOpenUserChat} /> : null
   const topicPane = topicSurface.topic && (
     <TopicSplitPane
       viewportKey={`${viewportKey}:topic`} navigationTarget={navigationTarget}
@@ -574,7 +575,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       onSendAttachments={topicSurface.sendAttachmentsInSplit}
       agentStatuses={groupAgentStatuses}
       runningTokens={mobile ? groupRunTokens : undefined}
-      runningPreviewChatId={activeChatId}
+      runningPreviewChatId={activeChatId} composerControls={phoneRoomControls}
       memberProfileOpener={Object.keys(messageMemberProfiles).length > 0 ? messageProfile.asideOpener : undefined}
       onOpenAttachment={(file, message) => { const split = topicSurface.splitTopic; openFilePreview(file, message, split ? () => topicSurface.openSplit(split) : undefined) }}
       onClose={topicSurface.closeSplit}
@@ -609,8 +610,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       {blockHost && <ChatBlockHead host={blockHost} actions={headerActions} chat={activeChat} name={shownActiveChatName} avatar={activeChatAvatar} isAgent={peerIdentity?.type === 'agent'} />}
       {blockTabs}
       {!chrome && !blockHost && <PaneHeader
-        divider={!(mobile && topicSurface.topics.length > 0)} data-chat-area-header=""
-        mobile={mobile}
+        divider data-chat-area-header="" mobile={mobile}
         style={{
           background: mobile ? 'transparent' : 'var(--bg-primary)',
           paddingRight: 'calc(var(--pane-pad-x) + var(--titlebar-controls-width))',
@@ -656,7 +656,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           </div>
         )}
         actions={headerActions}
-      />}{isGroupChat && !mobile ? <PinnedTopicTabs chatId={activeChat.id} topics={topicSurface.topics} messages={messages} current={topicSurface.splitTopic?.chatId ?? null} onPick={(topic) => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} /> : mobile && !chrome && !blockHost ? <PhoneChatTabs topics={topicSurface.topics} messages={messages} current={topicSurface.splitTopic?.chatId ?? null} onPick={(topic) => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} /> : null}
+      />}{isGroupChat && !mobile ? <PinnedTopicTabs chatId={activeChat.id} topics={topicSurface.topics} messages={messages} current={topicSurface.splitTopic?.chatId ?? null} onPick={(topic) => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} /> : null}
       <SearchTrailBar chatId={activeChatId} surface={surfaceElement} enabled={surfaceVisible} />
 
       <div
@@ -790,8 +790,8 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         </div>
       )}
       {/* 多选态只把输入框藏起来(和切走的面同一个 hidden),不卸载:卸载 = 编辑器拆掉再建,点「多选」/「取消」都卡一下。 */}
-        <div data-chat-composer="" hidden={selectMode} className={mobile && blockHost ? `${sessionComposerDockBandClassName} pt-3` : undefined} style={{ padding: mobile ? (blockHost ? undefined : '8px var(--phone-composer-inline-pad, 8px) max(8px, env(safe-area-inset-bottom))') : 0, flexShrink: 0 }}>
-        {chrome?.composerHeader}
+        <div data-chat-composer="" hidden={selectMode} className={mobile && blockHost ? `${sessionComposerDockBandClassName} pt-3` : undefined} style={{ padding: mobile ? (blockHost ? undefined : '8px var(--phone-composer-inline-pad, 16px) max(8px, env(safe-area-inset-bottom))') : 0, flexShrink: 0 }}>
+        {chrome?.composerHeader}{phoneRoomControls}
         <ChatMessageComposer
           onSend={async (content, opts) => {
             await sendMessage(content, opts)
