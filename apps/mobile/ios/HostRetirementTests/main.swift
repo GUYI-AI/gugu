@@ -170,7 +170,7 @@ private final class Fixture {
             let captured = try f.legacyDeviceCAS(applied: applied)
             _ = try f.run(f.cleanup()).get()
             let plan = try f.store.record("requests", id: "retirement:\(f.retirementId)")!
-            try require(try GuguHostJournal.digest(plan["deviceCAS"]!) == GuguHostJournal.digest(captured), "Legacy device CAS was rewritten")
+            try require(try GuguHostJournal.digest(plan["deviceCAS"] as! [String: Any]) == GuguHostJournal.digest(captured), "Legacy device CAS was rewritten")
             try require(f.patches == (applied ? 0 : 1) && (f.device?["capabilities"] as? [String: Any])?["host_runtime_capability"] as? Int == 0, "Legacy device receipt was not resumed exactly")
         }
         cases.append("unapplied_and_already_applied_legacy_device_CAS_resume_without_rewriting_the_captured_receipt")
@@ -183,7 +183,7 @@ private final class Fixture {
             f.device?["capabilities"] = original
             _ = try f.run(f.cleanup()).get()
             var wanted = original; wanted["runtimes"] = []
-            try require(try GuguHostJournal.digest(f.device!["capabilities"]!) == GuguHostJournal.digest(wanted), "Cleanup fabricated or changed a runtime version")
+            try require(try GuguHostJournal.digest(f.device!["capabilities"] as! [String: Any]) == GuguHostJournal.digest(wanted), "Cleanup fabricated or changed a runtime version")
             let plan = try f.store.record("requests", id: "retirement:\(f.retirementId)")!
             try require((plan["deviceCAS"] as? [String: Any])?["capabilityPolicy"] as? String == "preserve-version", "New cleanup journal did not record its version-preserving policy")
         }
