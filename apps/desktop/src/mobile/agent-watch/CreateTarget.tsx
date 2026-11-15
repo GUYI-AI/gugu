@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button'
 import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { CreateSkillSearch, CreateSkillsList } from './CreateSkills'
 import type { CreationSkill } from './create-skills'
-import type { ComposerModelOption } from '@gugu/session-ui/react/components'
+import { ComposerThinking, type ChatComposerProps, type ComposerModelOption } from '@gugu/session-ui/react/components'
 import { ModelChoices } from './CreateOptionsPill'
 import { harnessBlockReason, harnessUsable, selectHarness, selectedEffortName, selectedModelName, type CreateSelection } from './create-session-form'
 import type { CreateMachine, CreateProject } from './create-target'
@@ -17,6 +17,7 @@ import './create-controls-catalog'
 import './task-flow-catalog'
 
 export type ExistingSessionModel = { options?: Record<string, ComposerModelOption> | null; selected?: string; onPick?: (id: string) => void }
+  & Pick<ChatComposerProps, 'effortOptions' | 'selectedEffort' | 'onEffortChange' | 'defaultEffort' | 'fastMode' | 'onFastModeChange'>
 type View = 'device' | 'harness' | 'model' | 'effort' | 'permission' | 'project' | 'skills'
 export type CreationConfiguration = {
   options: SessionpageSessionCreateOptions | null; selection: CreateSelection
@@ -44,6 +45,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const modelButton = useRef<HTMLButtonElement>(null)
   const skillsButton = useRef<HTMLButtonElement>(null)
   const selectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
+  const existingEfforts = Object.entries(existingSession?.model?.effortOptions ?? {}).map(([id, option]) => ({ id, ...option }))
   const modelName = configuration && (selectedModelName(configuration.models, configuration.selection)
     ?? (configuration.modelsState === 'loading' && (!configuration.models || configuration.models.harness !== configuration.selection.harness)
       ? tm('agentWatch.create.modelLoading') : tm('agentWatch.create.modelDefault')))
@@ -83,6 +85,11 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
           ? existingSession.model?.options?.[existingSession.model.selected ?? '']?.shortName ?? existingSession.model?.options?.[existingSession.model.selected ?? '']?.name ?? tm('agentWatch.create.modelDefault')
           : modelName || tm('agentWatch.create.modelDefault')}
           disabled={existingSession ? !Object.keys(existingSession.model?.options ?? {}).length : !configuration?.options} onClick={() => setView('model')} />
+        {existingSession?.model && existingEfforts.length > 0 && <ComposerThinking
+          effortItems={existingEfforts}
+          selectedEffort={existingSession.model.selectedEffort} defaultEffort={existingSession.model.defaultEffort}
+          onEffortChange={existingSession.model.onEffortChange} fastMode={existingSession.model.fastMode}
+          onFastModeChange={existingSession.model.onFastModeChange} disabled={busy} phoneActions />}
         {!!configuration?.models?.efforts.length && <Summary dimension="effort" title={t('effort')} value={selectedEffortName(configuration.models, configuration.selection) ?? tm('agentWatch.create.modelDefault')} onClick={() => setView('effort')} />}
         {!phone && !!selectedHarness?.permissionModes.length && <Summary dimension="permission" title={t('permission')} value={configuration?.selection.permissionMode ? tm(`agentWatch.create.permission.${configuration.selection.permissionMode}.name`) : tm('agentWatch.create.modelDefault')} onClick={() => setView('permission')} />}
       </>}

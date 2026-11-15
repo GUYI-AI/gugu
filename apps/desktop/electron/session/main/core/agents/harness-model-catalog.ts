@@ -179,6 +179,8 @@ export type HarnessCatalogState =
     selected: string | null;
     efforts: HarnessModelChoice[];
     selectedEffort: string | null;
+    /** Native Fast option for this snapshot's selected model only. */
+    fastMode?: { configId: string; selected: string | null; available: HarnessModelChoice[] };
     /**
      * 这份目录照一把 API Key 连接读(#2507)时:连接勾选的每个模型在这家目录里的 id(这家自己的写法,起步模型在前)。
      * 它们在 `models` 里的名字已经是裸模型名;活会话报的清单里同一个 id 就是同一条,输入框与 chip 照这里叫它。
@@ -1270,6 +1272,11 @@ class AcpProbeClient {
     }
     const options = response?.configOptions ?? [];
     // 档位与模型来自同一份 configOptions —— 顺手取走，不然换源时会把强度控件一起弄丢。
+    const fastOption = options.find((o) => o.category === 'model_config' && (o.configId ?? o.id) === 'fast');
+    const fastChoices = toChoices(fastOption);
+    const fastMode = fastOption && ['on', 'off'].every((id) => fastChoices.some((choice) => choice.id === id))
+      ? { configId: 'fast', selected: typeof fastOption.currentValue === 'string' ? fastOption.currentValue : null, available: fastChoices }
+      : undefined;
     const effortOption = options.find((o) => o.category === 'thought_level');
     const efforts = toChoices(effortOption);
     const selectedEffort = typeof effortOption?.currentValue === 'string'
@@ -1295,6 +1302,7 @@ class AcpProbeClient {
             : null,
       efforts,
       selectedEffort,
+      ...(fastMode ? { fastMode } : {}),
     };
   }
 }

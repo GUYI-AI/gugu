@@ -569,7 +569,7 @@ export {
   type CodexPlatformAuthRequest,
   type CodexPlatformProviderBlock,
 } from './impl/codex/platform-model';
-export { claudeAcpPlatformSessionMeta, type ClaudeAcpPlatformSessionMeta } from './impl/claude/platform-model';
+export { claudeAcpPlatformSessionMeta, claudeSessionFlagSettings, type ClaudeAcpPlatformSessionMeta } from './impl/claude/platform-model';
 export { materializePiModelConfig } from './impl/pi/session-bundle';
 // 宿主登记中继入口用的变量名 —— 只此一份,❌ 在 worker-manifest 里另写一个字面量。
 export { GUGU_MCP_STDIO_RELAY_ENTRY_ENV } from './impl/antigravity/session-bundle';

@@ -1,5 +1,5 @@
 import { CLAUDE_AUTH_CONNECTIONS } from '../../connection-capabilities';
-import { platformModel } from './platform-model';
+import { claudeSessionFlagSettings, platformModel } from './platform-model';
 import {
   definePlugin,
   registerPluginBehavior,
@@ -81,7 +81,6 @@ export const CLAUDE_ACP_V2_EXTENSION_MARKERS = {
 } as const;
 
 const CLAUDE_ULTRACODE_EFFORT_ID = 'ultracode';
-const CLAUDE_ULTRACODE_SETTINGS = '{"ultracode":true}';
 
 /**
  * 交给厂商 ACP 适配器的那条 claude 路径 —— 它必须是**那边 spawn 得起来**的东西。
@@ -156,6 +155,13 @@ export const plugin = definePlugin(
           allowStartupDowngrade: true,
         },
         effort: {
+          channel: 'acp-config-option',
+          ack: 'ack-read-back',
+          busy: 'queue-next-turn',
+          reloadRequired: false,
+          recovery: 'none',
+        },
+        fast: {
           channel: 'acp-config-option',
           ack: 'ack-read-back',
           busy: 'queue-next-turn',
@@ -428,18 +434,17 @@ export const provider = registerPluginBehavior(plugin, {
   prompt: {
     buildCommand: (ctx) => {
       const ultracode = ctx.effort === CLAUDE_ULTRACODE_EFFORT_ID;
+      const settings = claudeSessionFlagSettings({ fastMode: ctx.fastMode, reasoningEffort: ctx.effort });
+      // Claude uses only the last --settings value. A caller-owned document must be
+      // composed by its lifetime owner; never overwrite it or copy its credentials to argv.
+      const hasSettingsDocument = (ctx.extraArgs ?? []).some((arg) => arg === '--settings' || arg.startsWith('--settings='));
+      const settingsArgs = Object.keys(settings).length > 0 && !hasSettingsDocument
+        ? ['--settings', JSON.stringify(settings)]
+        : [];
       return buildStandardCommand({
         ...ctx,
-        ...(ultracode
-          ? {
-              effort: undefined,
-              extraArgs: [
-                ...(ctx.extraArgs ?? []),
-                '--settings',
-                CLAUDE_ULTRACODE_SETTINGS,
-              ],
-            }
-          : {}),
+        ...(ultracode ? { effort: undefined } : {}),
+        extraArgs: [...(ctx.extraArgs ?? []), ...settingsArgs],
       }, {
         autoApproveFlag: '--dangerously-skip-permissions',
         // ⚠️ 每一档都显式给,❌ 不靠「不加 flag」:不加 flag 时 claude 自己挑启动档 ——
