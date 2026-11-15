@@ -19,13 +19,24 @@ node scripts/build/ios-signing/pipeline.mjs dry-run
 
 The output parent must exist; the run directory must not. Rehearsal uses **Release**, a generic iOS Simulator archive and local `-` signing, then verifies the signature. It stops before device signing/export. It cannot produce a TestFlight IPA or verify distribution profiles. A successful rehearsal is not proof that Apple's upload service accepts this Xcode.
 
-## Checks before the first real signing run
+## Checks before a real signing run
 
-Dedicated-keychain identity discovery is **unverified**. Release mode passes `OTHER_CODE_SIGN_FLAGS=--keychain ...` to codesign, but this does not establish that xcodebuild's own SHA-1 identity lookup or `xcodebuild -exportArchive` can discover that identity. An unlocked identity outside the user's keychain search list may still be reported as missing. Verify both archive and export with the actual Apple certificate, its matching intermediate chain and distribution profile before considering the release path validated.
+Release mode passes `OTHER_CODE_SIGN_FLAGS=--keychain ...` to codesign. This does not make the dedicated keychain visible to every identity/chain lookup performed by the build tools. In the first authorized run, `find-identity` found zero valid identities outside the user search list and one after temporarily appending the dedicated keychain. Do not assume `--keychain` alone is sufficient.
 
 If discovery requires a temporary user search-list entry, prepare an operator wrapper before the first attempt: reserve an exclusive signing window with no other signing jobs or search-list writers, snapshot the exact original user search list in a protected recovery receipt, and add only the dedicated keychain for the duration of archive/export. Install cleanup traps for normal exit, errors and catchable interruption signals; restore the exact original list and verify it by reading it back. Preserve recovery instructions for interruptions that traps cannot catch, and reconcile them before another signing attempt. Do not change the default keychain, system trust settings or global toolchain selection.
 
-This wrapper is a proposed operational safeguard, not implemented by this script or proven by the simulator rehearsal. Wait for the separately supplied signing assets and the approved toolchain before changing the search list or running the first real archive/export. Record discovery, noninteractive signing, export and restoration results together.
+The operator wrapper is not implemented by this script. Exact ordered restoration was verified after ordinary signing failures and successful archive/export. Recovery after abrupt termination (SIGKILL or power loss) was not exercised. Wait for separately authorized assets and the approved toolchain before changing the search list, and record discovery, noninteractive signing, export and restoration together.
+
+Prepare private-key access in the **same SSH/security session that starts the build**. With the password held only in memory and shell tracing disabled, unlock the dedicated keychain, disable its automatic locking for the window, and set the partition list after importing the certificate:
+
+```sh
+set +x
+security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$IOS_KEYCHAIN"
+security set-keychain-settings "$IOS_KEYCHAIN"
+security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$IOS_KEYCHAIN"
+```
+
+Do not print the password, log expanded arguments, export the private key, or apply these commands to a default/login/System keychain. The CLI transiently places the password in process arguments, so use this sequence only in an approved environment. Before archive, sign and verify a private copy of a small executable, using the selected SHA-1 and `--keychain`; do not start archive while that probe fails.
 
 ## Device archive and manual export (requires separately authorized assets)
 
@@ -53,3 +64,14 @@ Run `node scripts/build/ios-signing/pipeline.mjs upload`. It validates first, th
 ## Failure receipt
 
 Every started run writes private `receipt.json` with stage, status, timestamps and source HEAD; each tool has a separate mode-0600 log. Do not publish raw logs: tools may include local paths, profile metadata and service responses. A failed command sets exit 1 and the failed stage. Directory/preflight failures before the receipt exists print an error and exit 1. Never reuse the failed output directory. Keep receipts, toolchain output, synchronized-source provenance and SHA-256 of the final IPA together; retry upload only after examining the service response and confirming whether it already accepted the build.
+
+## First-run observations
+
+- **Verified:** on Xcode 26.6 / 17F113 with the iOS 26.5 SDK, device archive, manual App Store export, IPA verification, validation and upload succeeded. A separate read-only delivery lookup returned build/import/processing status `VALID`. A real-device installation and push delivery were not tested by this run.
+- **Verified:** the generated `Signing.xcconfig` defines `GUGU_PROFILE_App` and expands `PROVISIONING_PROFILE_SPECIFIER = $(GUGU_PROFILE_$(TARGET_NAME))`, so only `App` receives a profile. Removing the command-line provisioning-profile setting resolved Swift package targets rejecting archive. Additional application/extension targets require their own explicit mapping.
+- **Verified:** a dedicated keychain outside the user search list had one matching identity but zero valid identities; appending it after the exact original list changed the valid count to one. The original list order, default/system lists and global toolchain selection were restored and read back unchanged after both normal failures and successful runs. Abrupt-stop recovery remains untested.
+- **Verified:** `security verify-cert` built the certificate chain with policy `codeSign`. Its policy name differs from `find-identity -p codesigning`; a policy-creation diagnostic must not be treated as a successful code-signing-policy check.
+- **Verified:** an initial CodeSign reported `errSecInternalComponent`; system logs showed `SecKeyCreateSignature` error -25308 / `CSSMERR_CSP_NO_USER_INTERACTION`. Repeating unlock and setting `apple-tool:,apple:,codesign:` in the build's own session made a small signing/verification probe and then archive/export pass. See [Apple DTS's diagnostic guide](https://developer.apple.com/forums/thread/712005).
+- **Inference:** the earlier session boundary contributed to private-key access failure. Same-session unlock and the added `codesign:` partition were changed together; the run did not isolate which was necessary on its own.
+- **Verified:** Xcode recognized the profile in `~/Library/Developer/Xcode/UserData/Provisioning Profiles/<UUID>.mobileprovision`; the legacy directory was not needed for this toolchain.
+- **Verified:** App Store validation rejected the 1024 icon's alpha channel with error 90717. Replacing that iOS icon with an approved RGB version and rebuilding changed the exported asset catalog's `Opaque` field from false to true; server validation then passed. An [App Store app icon](https://developer.apple.com/design/human-interface-guidelines/app-icons) must not contain an alpha channel.

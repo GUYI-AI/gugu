@@ -14,6 +14,17 @@ export function exportOptions(team, bundle, profile, identity) {
     teamID: team, signingCertificate: identity, provisioningProfiles: { [bundle]: profile },
     manageAppVersionAndBuildNumber: false, stripSwiftSymbols: true, uploadSymbols: true }
 }
+export function deviceSigningConfig(profile) {
+  if (!profile || /[\r\n\0$"/\\]/.test(profile)) throw new Error('IOS_PROFILE contains unsupported xcconfig characters')
+  // Swift package targets cannot carry provisioning profiles. Expand a profile
+  // only for the application target; other target names resolve to an empty value.
+  return `GUGU_PROFILE_App = ${profile}\nPROVISIONING_PROFILE_SPECIFIER = $(GUGU_PROFILE_$(TARGET_NAME))\n`
+}
+export function deviceSigningArguments(team, bundle, identity, keychain, config) {
+  return ['-xcconfig', config, `DEVELOPMENT_TEAM=${team}`,
+    `PRODUCT_BUNDLE_IDENTIFIER=${bundle}`, `CODE_SIGN_IDENTITY=${identity}`,
+    `OTHER_CODE_SIGN_FLAGS=--keychain ${keychain}`]
+}
 
 function main() {
   const mode = process.argv[2]
@@ -67,11 +78,12 @@ function main() {
       } else {
         const team = required('IOS_TEAM_ID'), profile = required('IOS_PROFILE'), identity = required('IOS_SIGN_IDENTITY')
         const bundle = required('IOS_BUNDLE_ID'), keychain = required('IOS_KEYCHAIN')
+        const config = join(out, 'Signing.xcconfig')
+        writeFileSync(config, deviceSigningConfig(profile), { mode: 0o600 })
         // Account/provisioning changes are never requested. Caller installs/unlocks assets separately.
         run('device-archive', '/usr/bin/xcodebuild', [...common, '-sdk', 'iphoneos',
-          '-destination', 'generic/platform=iOS', ...signing, `DEVELOPMENT_TEAM=${team}`,
-          `PRODUCT_BUNDLE_IDENTIFIER=${bundle}`, `PROVISIONING_PROFILE_SPECIFIER=${profile}`,
-          `CODE_SIGN_IDENTITY=${identity}`, `OTHER_CODE_SIGN_FLAGS=--keychain ${keychain}`, 'archive'])
+          '-destination', 'generic/platform=iOS', ...signing,
+          ...deviceSigningArguments(team, bundle, identity, keychain, config), 'archive'])
         const options = join(out, 'ExportOptions.plist')
         writeFileSync(options, JSON.stringify(exportOptions(team, bundle, profile, identity)), { mode: 0o600 })
         run('export-options', '/usr/bin/plutil', ['-convert', 'xml1', options])
