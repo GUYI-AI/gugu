@@ -7,14 +7,14 @@ import { boundedWindowReady } from './desktop-window-history'
 import { useSessionHistorySource } from './use-session-history-source'
 import { useSessionRestart } from './useSessionRestart'
 import { useTimelineFailureNotice } from './useTimelineFailureNotice'
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { showPhoneAppView } from '@/components/appSlot/phoneAppState'
 import { reaction } from 'mobx'
 import { useTranslation } from 'react-i18next'
 import { PhoneTaskSkills } from '../local-agent/PhoneTaskSkillsButton'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { isAgentHostDevice, isPhoneDevice } from '@gugu/core/cloud/devices'
-import { remoteFailureKind, type SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
+import { remoteFailureKind, type SessionpageSessionSummary, type TurnFileRef } from '@gugu/session-core/session-record/contract'
 import { AgentFailureSlot } from '@/components/AgentFailureSlot'
 import { Button } from '@/components/ui/Button'
 import { useBackLayer } from '@/components/ui/sheetStack'
@@ -22,6 +22,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { RefreshCw } from '@/lib/icons'
 import { AgentWatchScreen } from './AgentWatchChrome'
 import { SessionConversation } from './SessionConversation'
+import { offerSessionSend } from '@renderer/features/sessions/session-send'
 import { enqueueSessionInput, releaseQueuedSessionInput, queuedSessionInputs, useQueuedSessionInputs } from '@/lib/sessionInputOutboxBridge'
 import { sessionInputBaseline } from '@/lib/pendingSessionInput'
 import { SessionInputQueue } from '@/components/chat/SessionInputQueue'
@@ -168,6 +169,23 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       throw new Error(t('settings:devices.notice.serverTooOldHint'))
     }
   }
+  const send = async (text: string, files?: TurnFileRef[]) => {
+    beforeSend()
+    const request = { deviceId: device.device_id, sessionId: session.conversationId, text, composer: true as const,
+      ...phoneInputQueueIntent(foregroundWorking, queuedInputs), ...sessionInputBaseline(conversation.turns), ...(files?.length ? { files } : {}) }
+    await enqueueSessionInput(request)
+    if (canResumePhoneInput(queueReady, foregroundWorking, conversation.turns)) {
+      const head = [...queuedSessionInputs(session.conversationId)].filter(input => input.sendQueue).sort((a, b) => a.sendQueue!.order - b.sendQueue!.order)[0]
+      if (head) {
+        await runNativeInputAction(session.conversationId, head.id, head.deviceId, () => releaseQueuedSessionInput(session.conversationId, conversation.turns, head.id))
+      }
+    }
+    if (nativeHistory) nativeRecord.followTail()
+  }
+  const sendNow = useRef(send)
+  sendNow.current = send
+  // A selection's Send goes the way the composer's words go, also while an App (the Files App) covers the conversation.
+  useEffect(() => offerSessionSend(session.conversationId, { send: text => sendNow.current(text) }), [session.conversationId])
   // Identified agents share the group/avatar reading; transport only governs timeline access.
   const shownStatus = useShownAgentStatus()
   const agentUserId = session.agent?.userId
@@ -295,19 +313,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           respondingItemId={respondingItemId}
           onRespond={respond}
           onBeforeSend={beforeSend}
-          onSend={async (text, files) => {
-            beforeSend()
-            const request = { deviceId: device.device_id, sessionId: session.conversationId, text, composer: true as const,
-              ...phoneInputQueueIntent(foregroundWorking, queuedInputs), ...sessionInputBaseline(conversation.turns), ...(files?.length ? { files } : {}) }
-            await enqueueSessionInput(request)
-            if (canResumePhoneInput(queueReady, foregroundWorking, conversation.turns)) {
-              const head = [...queuedSessionInputs(session.conversationId)].filter(input => input.sendQueue).sort((a, b) => a.sendQueue!.order - b.sendQueue!.order)[0]
-              if (head) {
-                await runNativeInputAction(session.conversationId, head.id, head.deviceId, () => releaseQueuedSessionInput(session.conversationId, conversation.turns, head.id))
-              }
-            }
-            if (nativeHistory) nativeRecord.followTail()
-          }}
+          onSend={send}
           pendingSends={pendingSends}
           startupPrompt={recovery.pendingPrompt}
           sending={sending}

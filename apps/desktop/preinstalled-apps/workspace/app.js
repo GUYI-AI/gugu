@@ -153,6 +153,7 @@ const STRINGS = {
     copy: '复制',
     copied: '已复制',
     cite: '引用',
+    send: '发送',
     line: '第 {first} 行',
     lines: '第 {first}–{last} 行',
     placeMoved: '引用的那几行挪到了{lines}',
@@ -397,6 +398,7 @@ const STRINGS = {
     copy: 'Copy',
     copied: 'Copied',
     cite: 'Cite',
+    send: 'Send',
     line: 'Line {first}',
     lines: 'Lines {first}–{last}',
     placeMoved: 'The cited lines moved: {lines}',
@@ -806,6 +808,7 @@ function renderChrome() {
   $('json-discard').textContent = t.discard
   $('copy-sel').textContent = t.copy
   $('cite-sel').textContent = t.cite
+  $('send-sel').textContent = t.send
 }
 
 // ─── list ───────────────────────────────────────────────────────────────────
@@ -3230,6 +3233,8 @@ function showSelection(picks, end, inPreview = false) {
   picksInPreview = inPreview && picks.length > 0
   document.body.classList.toggle('has-selection', picks.length > 0)
   document.body.classList.toggle('picks-in-preview', picksInPreview)
+  // Send goes into this task's conversation: a session's own working copy only, on a host that has it (API 54).
+  $('send-sel').hidden = !(state.ctx?.workspace && gugu.files.sendSelection && state.current && inCopy(state.current.entry))
   // After the editor's update and the page's layout: reading positions inside an update is not allowed.
   requestAnimationFrame(placeSelectionBar)
 }
@@ -3287,8 +3292,38 @@ function refOf(current, { lines }) {
 // they like and sends it; a code file's the same. A JSON file's view is not its text: its cite stays as it was,
 // each range quoted with the lines it is shown on, and a pill to the file. Called inside the click, as a draft needs.
 async function cite(current = state.current, picks = state.picks, whole = false) {
-  if (!current || (!whole && !picks.length)) return
-  // A document's words as a reader sees them; a code file's lines as they are, fenced so indentation and marks stay.
+  const cited = citeOf(current, picks, whole)
+  if (!cited) return
+  try {
+    await gugu.dispatch(cited.text, { draft: true, refs: cited.refs })
+  } catch (error) {
+    showBanner(failureText(error), 'error')
+  }
+}
+
+// Send (a task's working copy, API 54): the same words and pills, in the host's box beside the selection, with a few words
+// of the person's own; the host sends them into this task's conversation and tells the page only whether they went.
+// Called inside the click, as the host requires.
+async function send(current = state.current, picks = state.picks) {
+  const cited = citeOf(current, picks)
+  const at = selectionEnd?.()
+  if (!cited || !at) return
+  try {
+    const rect = { x: at.left, y: at.top, width: Math.max(0, (at.right ?? at.left) - at.left), height: Math.max(0, at.bottom - at.top) }
+    if (await gugu.files.sendSelection({ text: cited.text, refs: cited.refs, rect, viewport: { width: window.innerWidth, height: window.innerHeight } }) === 'sent') {
+      document.getSelection()?.removeAllRanges()
+      showSelection([], null)
+    }
+  } catch (error) {
+    showBanner(failureText(error), 'error')
+  }
+}
+
+// What a cite or a Send carries: the words picked (a document's as a reader sees them, a code file's lines as they are,
+// fenced so indentation and marks stay) and a pill per place.
+function citeOf(current, picks, whole = false) {
+  if (!current || (!whole && !picks.length)) return null
+  if (whole) return { text: '', refs: [{ file: current.entry }] }
   const quote = (text) => {
     if (current.file.type === 'text') return `> ${plainWords(text)}`
     const body = text.replace(/\s+$/, '')
@@ -3297,13 +3332,8 @@ async function cite(current = state.current, picks = state.picks, whole = false)
   }
   const quoted = ({ text, lines: [first, last] }) =>
     `${fmt(first === last ? state.t.line : state.t.lines, { first, last })}\n${text.replace(/\s+$/, '').split('\n').map((line) => `> ${line}`).join('\n')}`
-  try {
-    if (whole) await gugu.dispatch('', { draft: true, refs: [{ file: current.entry }] })
-    else if (current.file.type === 'text' || current.file.type === 'source') await gugu.dispatch(picks.flatMap(({ text }) => (text ? [quote(text)] : [])).join('\n\n'), { draft: true, refs: picks.map((pick) => refOf(current, pick)) })
-    else await gugu.dispatch(picks.map(quoted).join('\n\n'), { draft: true, refs: [{ file: current.entry }] })
-  } catch (error) {
-    showBanner(failureText(error), 'error')
-  }
+  if (current.file.type === 'text' || current.file.type === 'source') return { text: picks.flatMap(({ text }) => (text ? [quote(text)] : [])).join('\n\n'), refs: picks.map((pick) => refOf(current, pick)) }
+  return { text: picks.map(quoted).join('\n\n'), refs: [{ file: current.entry }] }
 }
 
 // The shared content menu keeps the App's existing refs/line fingerprints and editor history.
@@ -4549,6 +4579,8 @@ function start() {
   $('copy-sel').onclick = () => copySelection()
   $('cite-sel').addEventListener('pointerdown', (event) => event.preventDefault())
   $('cite-sel').onclick = () => cite()
+  $('send-sel').addEventListener('pointerdown', (event) => event.preventDefault())
+  $('send-sel').onclick = () => send()
   for (const button of document.querySelectorAll('#sel-bar .fmt')) {
     button.addEventListener('pointerdown', (event) => event.preventDefault())
     button.onclick = () => format(button.dataset.fmt)

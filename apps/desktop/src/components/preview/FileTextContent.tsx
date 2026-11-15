@@ -11,12 +11,14 @@ import './file-text-content.css'
 
 type Selection = { range: Range; quote: FileTextRange }
 
-/** The file's existing native selection (including touch handles) offers one action: cite it in the composer. */
-export function FileTextContent({ content, kind, style, onCite }: {
+/** The file's existing native selection (including touch handles) offers Cite (into the composer) and, where given, Send. */
+export function FileTextContent({ content, kind, style, onCite, onSend }: {
   content: string
   kind: 'text' | 'markdown'
   style?: CSSProperties
   onCite?: (selection: FileViewerSelection) => void | Promise<void>
+  /** Send this selection with a few words, from a box beside it (`openSelectionSend`), at the selection's place on screen. */
+  onSend?: (selection: FileViewerSelection, at: DOMRect) => void
 }) {
   const { t } = useTranslation('messaging')
   const container = useUiPortalContainer()
@@ -75,10 +77,11 @@ export function FileTextContent({ content, kind, style, onCite }: {
     selectedLines.current = { range, quote }
     setSelection({ range, quote })
   }
-  const cite = () => {
-    if (!selection || !onCite) return
+  const take = (act: (picked: FileViewerSelection, at: DOMRect) => void) => {
+    if (!selection) return
     const { startLine, endLine, text } = selection.quote
-    void onCite({ text, at: { lines: startLine === endLine ? String(startLine) : `${startLine}-${endLine}` } })
+    const at = selection.range.getBoundingClientRect()
+    act({ text, at: { lines: startLine === endLine ? String(startLine) : `${startLine}-${endLine}` } }, at)
     root.current?.ownerDocument.getSelection()?.removeAllRanges()
     close()
   }
@@ -118,7 +121,8 @@ export function FileTextContent({ content, kind, style, onCite }: {
           ? root.current!.querySelector(`[data-file-line="${selection.quote.startLine}"]`)!.parentElement!.getBoundingClientRect() : selection.range.getBoundingClientRect() }}
           side="bottom" align="start" sideOffset={8} collisionPadding={8} collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}>
           <Popover.Popup initialFocus={false} finalFocus={false} data-occludes-browser-page className="gg-file-cite-popup">
-            <Button variant="ghost" size="md" onPointerDown={event => event.preventDefault()} onClick={cite}>{t('fileCite.cite')}</Button>
+            <Button variant="ghost" size="md" onPointerDown={event => event.preventDefault()} onClick={() => take(picked => void onCite?.(picked))}>{t('fileCite.cite')}</Button>
+            {onSend ? <Button variant="ghost" size="md" onPointerDown={event => event.preventDefault()} onClick={() => take(onSend)}>{t('selectionSend.send')}</Button> : null}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

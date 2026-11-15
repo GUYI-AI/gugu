@@ -81,6 +81,7 @@ import { APP_FORWARD_FILES_EVENT, APP_SESSION_FRAME_NAME } from '../../session/s
 import { answerPhoneBinding, createPhoneBindings } from './phoneAppBindings'
 import { phoneBindingPorts } from './phoneBindingPorts'
 import { appToast } from '../../session/shared/extensions/app-toast'
+import { requirePreinstalledFiles, selectionSendOf } from '../../session/shared/extensions/selection-send'
 import { toast } from '../../session/renderer/lib/hooks/use-toast'
 
 const log = rendererLogger('app-slot/phone-host')
@@ -675,6 +676,14 @@ export function hostAppFrame(
       }
       case 'clipboardWriteText':
         return platform.writeClipboardText(pageArgument('clipboardWriteText', args))
+      case 'filesSendSelection': {
+        requirePreinstalledFiles({ id: hosted.binding.extensionId, origin: installedExtensionsStore.origins[hosted.binding.extensionId] })
+        if (!session) refused('denied', 'Send needs a session page')
+        const { draft } = selectionSendOf(args, sessionWorkspace(session.id))
+        // A phone's Send is the bar above the keyboard; only the outcome goes back to the page.
+        const { openSelectionSend } = await import('../chat/openSelectionSend')
+        return await openSelectionSend({ draft, sessionId: session.id, anchor: 'dock' })
+      }
       case 'listAgents': {
         const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
         if (!manifest) refused('not-installed', 'This App is not installed')

@@ -149,7 +149,9 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 52 (host-links.ts): `contributes.hostLinks`, gugu's own pages an App points at (`library:prompts`, …), drawn by the host
 // as entries on the App's host page with the page's own name. Nothing reaches the App and nothing of it runs.
 // 53: withdrawn (selected-text annotations from the Files App; its selections are cited instead). The number stays.
-export const EXTENSION_API_VERSION = 53;
+// 54 (selection-send.ts): `files.sendSelection({ text, refs, rect, viewport })`, the preinstalled Files App only, inside a
+// real click: the host's Send box beside the selection, which sends into the page's session; the answer is 'sent' or 'cancelled'.
+export const EXTENSION_API_VERSION = 54;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
@@ -1095,6 +1097,7 @@ export const BRIDGE_VERBS = {
   filesRead: { needs: ({ ref }) => ref !== null && typeof ref === 'object' && 'workspace' in ref ? 'files:read' : null, machine: 'place', reads: true },
   /** A working copy's text whole, and whether it is there, in those pieces: gated as filesOpen, in `app-files.ts`. */
   filesReadText: { needs: null },
+  filesSendSelection: { needs: null, only: 'page', gesture: true },
   filesExists: { needs: null },
   /** What survives a crash of a file's unsaved edits, on the file's machine: read, kept (`text`), dropped (`text: null`). */
   filesDraft: { needs: null, machine: 'place' },

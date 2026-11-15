@@ -1,5 +1,6 @@
 export default {
   "fileCite": { "cite": "引用", "selectLine": "选择第 {{line}} 行" },
+  "selectionSend": { "label": "发送这段选区", "send": "发送", "sending": "正在发送…", "placeholder": "写几句，@ 提及（可选）", "failed": "没发出去，再试一次。" },
   "agent": {
     "identity": {
       "phone": "手机 Agent",

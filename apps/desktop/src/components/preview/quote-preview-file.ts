@@ -34,3 +34,8 @@ export async function quoteChatFile(itemId: string, version: number, selection: 
 export function workspaceFileQuote(path: string, selection: FileViewerSelection | null): string {
   return fileCiteDraft(selection ? selectedTextQuote(selection) : '', [{ file: { id: path }, label: selection ? selectionPosition(selection) : '' }]);
 }
+
+/** Send a task file's selection with a few words, from the box beside it (or the phone's bar): the cite's words and pill, then theirs. */
+export function sendWorkspaceSelection(sessionId: string, path: string, selection: FileViewerSelection, anchor: DOMRect | 'dock'): void {
+  void import('@/components/chat/openSelectionSend').then(({ openSelectionSend }) => openSelectionSend({ draft: workspaceFileQuote(path, selection), sessionId, anchor }));
+}
