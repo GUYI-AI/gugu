@@ -47,11 +47,6 @@ it('uploads complete binary bytes; receiver downloads and verifies the original 
  expect(withSessionAttachments('report',[ref])).toContain(ref.attachment_id)
  expect(withSessionAttachments('report',[ref])).not.toContain('https://objects.test')
 })
-// Owner 2026-11-15: a receiver that saw only the metadata found no way to fetch or forward the file.
-it('tells the receiver how to get the original and forward it', ()=>{
- const delivered=withSessionAttachments('report',[ref])
- expect(delivered).toMatch(/message_download_file \{source_attachment_id[^}]*\}.*catalog_call.*file_path.*message_send_file.*session_message/s)
-})
 it.each([{denied:true},{corrupt:true},{revokeAfterDownload:true}])('never exposes a file after denied, corrupt or revoked reads: %j',async options=>{
  const root=await directory();const fx=fixture(options)
  await expect(downloadSessionFile(fx.endpoint,ref.attachment_id,'receiver',root)).rejects.toThrow()

@@ -1,8 +1,7 @@
 import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { taskProtocolText } from '@gugu/core/shared/ui/taskProtocolText'
 
-// The header grew a how-to-fetch clause (sessionAttachments.ts); exchanges stored with the shorter one still parse.
-const ATTACHMENTS = /(?:^|\n)附件（原件引用与校验信息；仅元数据[^\n]*?）：/g
+const ATTACHMENTS = /(?:^|\n)附件（原件引用与校验信息；仅元数据）：/g
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** A view of the producer's trailing protocol blocks; never modifies the durable exchange or Agent input. */
