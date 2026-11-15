@@ -15,6 +15,7 @@ import { isScreenView } from './screen-views';
 import { MAX_SCREEN_BLOCKS, screenLayout, type ScreenBlockContent, type ScreenLayoutSnapshot, type ScreenSession, type WindowableContent } from './screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
+import { roomListsSession, roomOfEntry } from '@renderer/features/sidebar/inner-sidebar-scope';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 
 export { isScreenView };
@@ -184,7 +185,18 @@ function showNavigationBlock(content: ScreenBlockContent | undefined): void {
   const windowed = content.kind === 'session' ? auxWindows.windowOfSession(content.sessionId) : undefined;
   if (windowed) {
     if (auxWindows.focusedWindowId !== windowed.id) windowed.handle?.focus();
-  } else screenLayout.show(content);
+  } else if (content.kind === 'session' && livesInEntryRoom(content.sessionId)) screenLayout.withinEntry(() => screenLayout.show(content));
+  else screenLayout.show(content);
+}
+
+/**
+ * 正看着一个群 / 项目的屏,打开住在它里面的一个智能体(它那一列里点的、群里的任务卡、刚在群里建的):仍是这个群的屏(screen-layout `entry`),
+ * 切走再点回这个群就回到它,内层侧栏照旧挂着这个群。
+ */
+function livesInEntryRoom(sessionId: string): boolean {
+  const summaries = readChatSummaries() ?? new Map();
+  const room = roomOfEntry(screenLayout.currentEntry, summaries);
+  return !!room && roomListsSession(room, sessionId, summaries);
 }
 
 /**
