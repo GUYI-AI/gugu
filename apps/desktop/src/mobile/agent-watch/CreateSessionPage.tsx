@@ -44,6 +44,8 @@ import { guguReasonText } from '@renderer/features/sessions/gugu-reason'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { SessionpageRpcError, createSession, fetchCreateModels, fetchCreateOptions, createPhoneSession, fetchPhoneCreateModels, fetchPhoneCreateOptions } from './sessionpage-rpc'
 import { bindCreationDraft, mobileCreationDraftKey } from './create-session-draft'
+import { useBackLayer } from '@/components/ui/sheetStack'
+import { taskOriginOfRequest, type TaskGroupOrigin } from './task-origin'
 import './task-flow-catalog'
 import {
   createBlocker,
@@ -72,16 +74,18 @@ function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-type CreatedHandler = (session: SessionpageSessionSummary, firstPrompt: FirstPrompt | undefined, result?: SessionpageSessionCreateResult) => void
+type CreatedHandler = (session: SessionpageSessionSummary, firstPrompt: FirstPrompt | undefined, result?: SessionpageSessionCreateResult, origin?: TaskGroupOrigin | null) => void
 
 export function CreateSessionPage({
   taskGroup = null,
+  navigationActive = true,
   onBack,
   onCreated,
 }: {
   /** 群输入框的「新任务」(非项目群,同桌面 TaskDispatchComposer):首句落成这个群里的任务卡,agent 进群(chatId + taskChatId)。 */
-  taskGroup?: { chatId: string; name: string } | null
-  onBack?: () => void
+  taskGroup?: TaskGroupOrigin | null
+  navigationActive?: boolean
+  onBack?: (origin?: TaskGroupOrigin) => void
   /** 建成了:带着建在哪台机器上、攒好的摘要与那句话跳进时间线。 */
   onCreated: (device: Device, ...created: Parameters<CreatedHandler>) => void
 }) {
@@ -103,26 +107,30 @@ export function CreateSessionPage({
   const previousMachine = useRef<typeof machine>(undefined)
   if (machine) previousMachine.current = machine
   const editingMachine = machine ?? previousMachine.current
+  const backWithoutMachine = () => { if (taskGroup) onBack?.(taskGroup); else onBack?.() }
+  useBackLayer(backWithoutMachine, navigationActive && !!onBack && !editingMachine)
   const target = (busy: boolean, configuration?: CreationConfiguration) => (
     <CreateTarget projects={projects} project={project} onProject={setProjectKey} machines={rows} machine={machine} onMachine={pick} machineLabel={machineLabel}
-      busy={busy} configuration={configuration} scopeChatId={taskGroup?.chatId ?? project?.chatId ?? null} />
+      busy={busy} configuration={configuration} scopeChatId={taskGroup?.topic?.chatId ?? taskGroup?.chatId ?? project?.chatId ?? null} />
   )
 
   if (!editingMachine) {
     return (
-      <AgentWatchScreen title={t('agentWatch.create.title')} onBack={onBack} testId="agent-watch-create-page">
+      <AgentWatchScreen title={t('agentWatch.create.title')} onBack={onBack ? backWithoutMachine : undefined} testId="agent-watch-create-page">
         <div className="gg-aw">{target(false)}<PhoneHostSetupEntry /></div>
       </AgentWatchScreen>
     )
   }
   return (
     <CreateOnMachine
+      key={taskGroup?.topic?.chatId ?? taskGroup?.chatId ?? 'generic'}
       device={editingMachine.device}
       projectId={machine?.localProjectId ?? null}
       targetAvailable={!!machine}
-      scopeChatId={taskGroup?.chatId ?? project?.chatId ?? null}
+      scopeChatId={taskGroup?.topic?.chatId ?? taskGroup?.chatId ?? project?.chatId ?? null}
       target={target}
       taskGroup={taskGroup}
+      navigationActive={navigationActive}
       onBack={onBack}
       onCreated={(...created) => {
         rememberRunMachine(project?.chatId, editingMachine.device.device_id)
@@ -140,6 +148,7 @@ function CreateOnMachine({
   targetAvailable,
   scopeChatId,
   taskGroup,
+  navigationActive,
   onBack,
   onCreated,
 }: {
@@ -150,8 +159,9 @@ function CreateOnMachine({
   target: (busy: boolean, configuration?: CreationConfiguration) => ReactNode
   targetAvailable: boolean
   scopeChatId: string | null
-  taskGroup: { chatId: string; name: string } | null
-  onBack?: () => void
+  taskGroup: TaskGroupOrigin | null
+  navigationActive: boolean
+  onBack?: (origin?: TaskGroupOrigin) => void
   /** firstPrompt: absent only when retrying a stored phone attempt from before the first prompt carried its id. */
   onCreated: CreatedHandler
 }) {
@@ -191,6 +201,9 @@ function CreateOnMachine({
   const [pendingText, setPendingText] = useState<string | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
   const [phoneAttempt, setPhoneAttempt] = useState<SessionpageSessionCreateRequest | null>(null)
+  const origin = taskOriginOfRequest(phoneAttempt, taskGroup)
+  const returnFromCreation = () => { if (origin) onBack?.(origin); else onBack?.() }
+  useBackLayer(returnFromCreation, navigationActive && !!onBack)
 
   // 机器离线时**不发 RPC**(与会话页同一条):发过去只会等到超时,而超时长得像「机器没响应」。
   useEffect(() => {
@@ -291,7 +304,7 @@ function CreateOnMachine({
           ...(selection.model ? { model: selection.model } : {}),
           ...(selection.permissionMode ? { permissionMode: selection.permissionMode } : {}),
           ...(selection.effort ? { effort: selection.effort } : {}),
-          ...(taskGroup ? { chatId: taskGroup.chatId, taskChatId: taskGroup.chatId } : {}),
+          ...(taskGroup ? { chatId: taskGroup.chatId, taskChatId: taskGroup.topic?.chatId ?? taskGroup.chatId } : {}),
         }
         if (phone) {
           rememberPhoneSessionCreate(ownerId!, device.device_id, request)
@@ -306,7 +319,13 @@ function CreateOnMachine({
         }
         submittedDraft?.accepted(first.text)
         if (page.active) skillDraft.update([])
-        if (page.active) onCreated(result.session ?? toSessionSummary(result, selection.harness!, new Date().toISOString()), request.initialMessageId ? { id: request.initialMessageId, text, sentAt } : undefined, result)
+        if (page.active) {
+          const summary = result.session ?? toSessionSummary(result, selection.harness!, new Date().toISOString())
+          const firstPrompt = request.initialMessageId ? { id: request.initialMessageId, text, sentAt } : undefined
+          const requestOrigin = taskOriginOfRequest(request, taskGroup)
+          if (requestOrigin) onCreated(summary, firstPrompt, result, requestOrigin)
+          else onCreated(summary, firstPrompt, result)
+        }
       } catch (err) {
         // 机器那边装 agent 没装成:原因进日志,人看到的是能照做的下一步(按本端语言,❌ 机器那边拼的双语原文)。
         // 其余原因同理:按原因码归类说人话(remoteFailureKind),原文只进日志。
@@ -397,11 +416,10 @@ function CreateOnMachine({
   ) : null
 
   // 派到哪个群里:与上面同一种说明口气。
-  const requestedGroup = phoneAttempt ? phoneAttempt.chatId : taskGroup?.chatId
-  const groupName = requestedGroup === taskGroup?.chatId ? taskGroup?.name : '上次的群聊'
-  const taskGroupNotice = requestedGroup ? (
+  const taskGroupNotice = origin ? (
     <div className="gg-aw-create-blocker gg-aw-create-birth-group" data-testid="agent-watch-create-task-group">
-      <span>{t('agentWatch.create.taskGroup', { name: groupName })}</span>
+      <span>{origin.topic ? t('agentWatch.create.taskTopic', { name: origin.topic.name || t('agentWatch.create.originalTopic') })
+        : t('agentWatch.create.taskGroup', { name: origin.name || t('agentWatch.create.originalGroup') })}</span>
     </div>
   ) : null
 
@@ -454,7 +472,7 @@ function CreateOnMachine({
           <RefreshCw />
         </IconButton>
       ) : undefined}
-      onBack={onBack}
+      onBack={onBack ? returnFromCreation : undefined}
       testId="agent-watch-create-page"
       bodyFill
     >

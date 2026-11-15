@@ -2,12 +2,13 @@
 import { act, useLayoutEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Device } from '@gugu/core/shared/types/chat'
-import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
+import type { SessionpageSessionSummary, SessionpageSessionCreateResult } from '@gugu/session-core/session-record/contract'
 import { AgentWatchPage, AgentWatchRoot } from '../../../apps/desktop/src/mobile/agent-watch/AgentWatchPage'
 import { useAgentWatchAlerts, useAgentWatchFocus } from '../../../apps/desktop/src/mobile/agent-watch/useAgentWatchAlerts'
 import { useLiveDeviceSessions, type DeviceSessions } from '../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 import { useDevicesStore } from '../../../apps/desktop/src/store/devicesContext'
-import { sheetStack } from '../../../apps/desktop/src/components/ui/sheetStack'
+import { sheetStack, useBackLayer } from '../../../apps/desktop/src/components/ui/sheetStack'
+import type { TaskGroupOrigin } from '../../../apps/desktop/src/mobile/agent-watch/task-origin'
 import { createNode, createReactHarness } from '../../support/testHarness'
 import { PhoneLayer } from '../../../apps/desktop/src/mobile/PhoneLayer'
 import { useAppShowSession } from '../../../apps/desktop/src/mobile/agent-watch/useAppShowSession'
@@ -81,15 +82,29 @@ vi.mock('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage', async 
     CreateSessionPage: ({
       onBack,
       onCreated,
+      taskGroup,
+      navigationActive = true,
     }: {
-      onBack: () => void
-      onCreated: (device: Device, session: SessionpageSessionSummary, firstPrompt: { id: string; text: string; sentAt: number } | undefined) => void
-    }) => React.createElement(
+      onBack: (origin?: TaskGroupOrigin) => void
+      onCreated: (device: Device, session: SessionpageSessionSummary, firstPrompt: { id: string; text: string; sentAt: number } | undefined, result?: SessionpageSessionCreateResult, origin?: TaskGroupOrigin) => void
+      taskGroup?: TaskGroupOrigin | null
+      navigationActive?: boolean
+    }) => {
+      const back = () => taskGroup ? onBack(taskGroup) : onBack()
+      useBackLayer(back, navigationActive)
+      return React.createElement(
       'div',
       { 'data-testid': 'create' },
-      React.createElement('button', { type: 'button', 'data-testid': 'create-back', onClick: onBack }, 'back'),
-      React.createElement('button', { type: 'button', 'data-testid': 'create-done', onClick: () => { const device = deviceStore.devices[0]!; onCreated(device, device.capabilities.host_kind === 'phone' ? { ...session, conversationId: 'made', supported: true, agent: { userId: 'phone-agent' } } : { ...session, conversationId: 'made' }, { id: 'first-prompt', text: 'hello', sentAt: 0 }) } }, 'done'),
-    ),
+      React.createElement('button', { type: 'button', 'data-testid': 'create-back', onClick: back }, 'back'),
+      React.createElement('button', { type: 'button', 'data-testid': 'create-done', onClick: () => {
+        const device = deviceStore.devices[0]!
+        const made = device.capabilities.host_kind === 'phone' ? { ...session, conversationId: 'made', supported: true, agent: { userId: 'phone-agent' } } : { ...session, conversationId: 'made' }
+        const first = { id: 'first-prompt', text: 'hello', sentAt: 0 }
+        if (taskGroup) onCreated(device, made, first, { conversationId: 'made', projectId: 'project-1', title: 'Task', birthGroup: { chatId: taskGroup.chatId, status: 'joined' } }, taskGroup)
+        else onCreated(device, made, first)
+      } }, 'done'),
+      )
+    },
   }
 })
 
@@ -120,6 +135,22 @@ function nativeBack(): boolean {
 }
 
 describe('AgentWatchPage native back routing', () => {
+  it.each(['darwin', 'android'])('returns topic task creation and native Back to the original topic (%s host)', async platform => {
+    if (platform === 'android') deviceStore.devices[0] = { ...deviceStore.devices[0]!, platform, capabilities: { host_kind: 'phone', terminals: [], runtimes: ['pi'] } }
+    const origin = { chatId: 'source-group', name: 'Group', topic: { chatId: 'fixed-topic', name: 'Topic' } }
+    const onOpenGroupChat = vi.fn()
+    const props = { active: true, onExit: vi.fn(), taskInGroup: origin, onOpenGroupChat }
+    await harness.render(createNode(AgentWatchPage, { ...props, createRequest: 0 }))
+    await harness.render(createNode(AgentWatchPage, { ...props, createRequest: 1 }))
+    await act(async () => { await import('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage') })
+    await act(async () => { expect(nativeBack()).toBe(true) })
+    expect(onOpenGroupChat).toHaveBeenLastCalledWith('source-group', origin.topic)
+    await harness.render(createNode(AgentWatchPage, { ...props, createRequest: 2 }))
+    await act(async () => { harness.container.querySelector<HTMLButtonElement>('[data-testid="create-done"]')!.click() })
+    expect(onOpenGroupChat).toHaveBeenLastCalledWith('source-group', origin.topic)
+    expect(onOpenGroupChat).toHaveBeenCalledTimes(2)
+  })
+
   it.each([false, true])('commits the external target with task-layer activation, without a Projects frame (view transitions: %s)', async (supportsTransitions) => {
     const visibleCommits: string[] = []
     // Like the browser, defer the transition callback until after the old-page snapshot.
