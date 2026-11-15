@@ -16,6 +16,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/toolti
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { isSpentOneTimeAutomation, type Automation } from '@shared/core/automations/automation';
 import { useAutomations } from '../use-automations';
+import { useAgents } from '@renderer/lib/stores/use-agents';
+import { Unknown } from '@/components/ui/Unknown';
 import { useAutomationSettingsAutoSave } from '../useAutomationSettingsAutoSave';
 import { AutomationSettingsFields } from './AutomationSettingsFields';
 import { NextRunBanner } from './NextRunBanner';
@@ -47,7 +49,31 @@ export const AutomationDetailView = observer(function AutomationDetailView(
   );
 });
 
-const AutomationSettingsDetailView = observer(function AutomationSettingsDetailView({
+/**
+ * The stored automation seeds its form once (its agent, then its model, then its effort), and the agent can be seeded only
+ * from the machine's agent list. So the form is mounted once that list is read (or failed: the composer says so); until
+ * then the sheet holds the form's place, ❌ seeded with no agent and showing the factory one (review 4 Q2, cell U2).
+ */
+const AutomationSettingsDetailView = observer(function AutomationSettingsDetailView(props: AutomationDetailViewProps) {
+  const { translate } = useSessionMessages();
+  const agents = useAgents();
+  if (agents.state !== 'unknown') return <AutomationSettingsForm {...props} />;
+  return (
+    <div className="flex h-full flex-col" data-testid="automation-detail-pending">
+      <SheetHeader title={translate('automations.detailsLabel')} onClose={props.onClose} />
+      <div className="flex flex-col gap-2 px-4">
+        <Unknown className="h-9 w-full" />
+        <Unknown className="h-8 w-full rounded-lg" />
+        <Unknown className="my-2 h-8 w-48" />
+      </div>
+      <div className="min-h-0 flex-1 px-4 pb-4">
+        <Unknown className="h-full w-full" />
+      </div>
+    </div>
+  );
+});
+
+const AutomationSettingsForm = observer(function AutomationSettingsForm({
   automation,
   onClose,
   onDelete,
