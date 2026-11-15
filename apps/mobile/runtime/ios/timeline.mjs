@@ -1,6 +1,7 @@
 import { createSessionTimeline } from '../../../../packages/session-core/src/session-record/timeline.ts'
 import { boundaryEntry, messageEvent, toolCallStart, toolCallResult } from '../../../../packages/session-core/src/session-record/sources/shared.ts'
 import { trimAfterResultForTransport, trimOlderForTransport, trimSnapshotForTransport } from '../../../../packages/session-core/src/session-record/transport-trim.ts'
+import { phoneInterruptionRevision, projectPhoneTaskOutcomes } from '../phone-task-outcomes.mjs'
 
 const sources = new Map()
 const opening = new Map()
@@ -10,7 +11,7 @@ const blocks = content => typeof content === 'string' ? [{ type: 'text', text: c
 // The source is the native journal's actual Pi message_end events. These are not
 // synthetic JSONL records, model summaries or copied cloud chat messages.
 function entriesOf(jobs) {
-  const entries = [], clients = new Map()
+  const entries = [], clients = new Map(), inputJobs = new Map()
   for (const job of jobs) {
     const jobId = job.context?.jobId
     if (typeof jobId !== 'string' || !Array.isArray(job.events)) throw fail('invalid_journal', 'Native task has no event record')
@@ -24,6 +25,7 @@ function entriesOf(jobs) {
       const content = blocks(message.content)
       if (message.role === 'user') {
         began = true
+        inputJobs.set(`${key}#0`, jobId)
         content.forEach((block, i) => entries.push({ key: `${key}#${i}`, ...at, event: messageEvent('user', block, `${key}#0`) }))
         if (job.clientMessageId) clients.set(`${key}#0`, job.clientMessageId)
       } else if (message.role === 'toolResult') {
@@ -50,23 +52,24 @@ function entriesOf(jobs) {
     if (!began && typeof job.prompt === 'string') {
       const key = `native-admission:${jobId}`
       entries.push({ key, event: { kind: 'message', role: 'user', messageId: key, text: job.prompt } })
+      inputJobs.set(key, jobId)
       if (job.clientMessageId) clients.set(key, job.clientMessageId)
     }
     if (!ended && ['failed', 'cancelled', 'interrupted'].includes(job.status)) {
-      entries.push({ key: `native-status:${jobId}`, event: { kind: 'session_notice', code: 'provider-notice',
+      if (job.status !== 'interrupted') entries.push({ key: `native-status:${jobId}`, event: { kind: 'session_notice', code: 'provider-notice',
         title: job.error || `Native task ${job.status}`, detail: job.error || `Native task ${job.status}` } })
       entries.push(boundaryEntry(`native-status:${jobId}`, undefined, { kind: job.status === 'cancelled' ? 'turn_aborted' : 'turn_failed' }))
     }
     if (!ended && job.status === 'done') throw fail('record_unreadable', 'Completed native task has no Pi completion record')
   }
-  return { entries, clients }
+  return { entries, clients, inputJobs }
 }
 
-function identify(value, clients) {
-  const turns = rows => rows.map(turn => ({ ...turn, items: turn.items.map(item => {
+function identify(value, clients, inputJobs, jobs, retriedJobIds) {
+  const turns = rows => projectPhoneTaskOutcomes(rows.map(turn => ({ ...turn, items: turn.items.map(item => {
     const client = item.kind === 'message' && item.role === 'user' ? clients.get(item.id.split(':message:').at(-1)) : null
     return client ? { ...item, _meta: { ...item._meta, guguClientMessageId: client } } : item
-  }) }))
+  }) })), inputJobs, jobs, retriedJobIds)
   if (Array.isArray(value.turns)) return { ...value, turns: turns(value.turns) }
   if (value.ok === true && value.batch) return { ...value, batch: { ...value.batch, turns: turns(value.batch.turns) } }
   if (value.ok === false && value.snapshot) return { ...value, snapshot: { ...value.snapshot, turns: turns(value.snapshot.turns) } }
@@ -74,27 +77,43 @@ function identify(value, clients) {
 }
 
 async function read(input) {
-  const { key, sessionId, jobs, method } = input
-  if (typeof key !== 'string' || !key || typeof sessionId !== 'string' || !Array.isArray(jobs)) throw fail('invalid_args', 'Native timeline binding is missing')
+  const { key, sessionId, method } = input
+  if (typeof key !== 'string' || !key || typeof sessionId !== 'string' || !Array.isArray(input.jobs)) throw fail('invalid_args', 'Native timeline binding is missing')
+  const jobs = [...input.jobs], recorded = new Set(jobs.map(job => job.context?.jobId))
+  // An admitted input can be interrupted before Pi creates its first job. Keep
+  // that real backend custody visible; it is not a fabricated model record.
+  for (const row of input.interruptedInputs ?? []) {
+    if (typeof row.id !== 'string' || typeof row.prompt !== 'string' || row.status !== 'interrupted') throw fail('invalid_journal', 'Interrupted input custody is invalid')
+    if (!recorded.has(row.id)) jobs.push({ context: { jobId: row.id }, prompt: row.prompt, status: row.status, clientMessageId: row.clientMessageId, events: [] })
+  }
+  const order = new Map((input.inputOrder ?? []).map((id, index) => [id, index]))
+  if (order.size) jobs.sort((a, b) => (order.get(a.context.jobId) ?? Infinity) - (order.get(b.context.jobId) ?? Infinity))
   if (!['snapshot', 'after', 'older'].includes(method)) throw fail('unknown_method', 'Unsupported native timeline read')
   if (input.limit !== undefined && (!Number.isSafeInteger(input.limit) || input.limit < 1)) throw fail('invalid_args', 'Timeline limit must be positive')
-  const { entries, clients } = entriesOf(jobs)
+  const { entries, clients, inputJobs } = entriesOf(jobs)
+  const revision = phoneInterruptionRevision(jobs, input.retriedJobIds)
   let cached = sources.get(key)
+  const prefix = cached && cached.revision === revision && cached.entries.length <= entries.length
+    && cached.entries.every((entry, index) => JSON.stringify(entry) === JSON.stringify(entries[index]))
+  if (cached && !prefix) {
+    // This native reader supplies a complete journal per poll. Recreate its
+    // generation directly; JSC has no Node/browser reset timer to publish later.
+    cached.timeline.dispose(); sources.delete(key); cached = undefined
+  }
   if (!cached) {
     let sink, settlementAt = null
     const timeline = await createSessionTimeline({ locator: { harness: 'pi', providerSessionId: sessionId, roots: [] },
       async start(events) { sink = events; events.onEntries(entries) }, async catchUp() {}, stop() {},
     }, { sessionId, now: () => settlementAt ?? Date.now() })
-    cached = { timeline, sink, entries, settle: value => {
+    cached = { timeline, sink, entries, revision, settle: value => {
       settlementAt = value.resolvedAt
       try { timeline.settle({ itemId: value.itemId, optionId: value.optionId, by: value.resolvedBy }) }
       finally { settlementAt = null }
     } }; sources.set(key, cached)
   } else {
-    const prefix = cached.entries.length <= entries.length && cached.entries.every((entry, index) => JSON.stringify(entry) === JSON.stringify(entries[index]))
-    if (!prefix) cached.sink.onReset('source_replaced')
-    cached.sink.onEntries(prefix ? entries.slice(cached.entries.length) : entries)
+    cached.sink.onEntries(entries.slice(cached.entries.length))
     cached.entries = entries
+    cached.revision = revision
   }
   await cached.timeline.catchUp()
   const settlements = input.settlements ?? []
@@ -110,7 +129,7 @@ async function read(input) {
     if (typeof input.beforeTurnId !== 'string') throw fail('invalid_args', 'Older timeline needs a turn ID')
     value = cached.timeline.getOlder({ beforeTurnId: input.beforeTurnId, limit: input.limit })
   }
-  value = identify(value, clients)
+  value = identify(value, clients, inputJobs, jobs, input.retriedJobIds)
   if (input.trim !== true) return value
   return method === 'snapshot' ? trimSnapshotForTransport(value) : method === 'after' ? trimAfterResultForTransport(value) : trimOlderForTransport(value)
 }

@@ -2,9 +2,10 @@ import { changePhoneConversationQueue } from './phone-conversation-queue.mjs'
 import { randomUUID } from 'node:crypto'
 import { stableId, uuid } from './phone-agent-store.mjs'
 import { SessionInputAdmissionError } from '../../../packages/core/src/shared/sessionInputAdmission.ts'
+import { retryInterruptedPhoneJob } from './phone-agent-retry.mjs'
 
 const failure = (code, message) => new SessionInputAdmissionError(message, 'rejected', code)
-const methods = new Set(['prefetchFiles', 'sessionQueue', 'sessionSnapshot', 'sessionAfter', 'sessionOlder', 'sessionToolImage', 'sessionSend', 'sessionRespond', 'sessionOptions', 'sessionSetOption', 'sessionReloadModel'])
+const methods = new Set(['prefetchFiles', 'sessionQueue', 'sessionSnapshot', 'sessionAfter', 'sessionOlder', 'sessionToolImage', 'sessionSend', 'sessionRetry', 'sessionRespond', 'sessionOptions', 'sessionSetOption', 'sessionReloadModel'])
 
 /** Task-page methods share the native and remote taskhost.call transport. No DM or workspace
  * pipe is needed; only a Java-originated native UI command may approve a phone operation. */
@@ -73,7 +74,8 @@ export function createPhoneTaskApi({ ownerId, store, models, timelines, actions,
     const agent = findSession(input.conversationId)
     await verifyAgent(agent.agentUserId)
     let value
-    if (method === 'prefetchFiles') value = await turnFiles.prefetch(agent, input.files, source.signal)
+    if (method === 'sessionRetry') value = await retryInterruptedPhoneJob({ ownerId, store, agent, jobId: input.jobId, admit })
+    else if (method === 'prefetchFiles') value = await turnFiles.prefetch(agent, input.files, source.signal)
     else if (method === 'sessionQueue') value = await changePhoneConversationQueue({ store, agent, action: input.action, interrupt, publish })
     else if (method === 'sessionSnapshot') value = await timelines.snapshot(agent, input)
     else if (method === 'sessionAfter') value = await timelines.after(agent, input)

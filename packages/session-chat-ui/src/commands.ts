@@ -207,6 +207,11 @@ export type ChatCommands = {
    */
   onContinueTurn?: (arg: { itemId: string; source: 'turn-outcome' }) => void;
 
+  /** Explicit native-phone retry starts one new attempt and preserves the old
+   * ledger. This is not provider rewind or retry of an unaccepted message. */
+  onRetryPhoneTask?: (arg: { itemId: string; jobId: string }) => Promise<boolean>;
+  canRetryPhoneTask?: (jobId: string) => boolean;
+
   /** The person pressed 「丢弃」 on a stopped turn; the view hides it either way, the host may have more to take back. */
   onDiscardTurn?: (arg: { turnId: string }) => void;
   /** False: this stopped turn offers no 「丢弃」. Absent: it does. */
