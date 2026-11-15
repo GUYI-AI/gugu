@@ -5,7 +5,7 @@ import { isAgentActive, parseAgentStatus } from '@gugu/core/shared/agentStatus';
 import { KV } from '@main/db/kv';
 import { log } from '@main/lib/logger';
 import { sessionRecordHarnessForProvider } from '@main/core/session-timeline/locate';
-import { indexHermesPrompts, originalHermesPrompt } from '@gugu/session-core/acp/hermes-prompt';
+import { indexNativePrompts, originalNativePrompt } from '@gugu/session-core/acp/native-prompt';
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { hashIdentity, identify, matchAfterStore, matchAfterStoreAt, recordIdentityFor, type Identity, type RecordIdentity } from './record-backfill-match';
 import { readElidedPicture } from '@gugu/session-core/session-record/picture-elider';
@@ -116,19 +116,19 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
     const saved = await stamps.get(sessionId);
     if (stamp && saved && saved.record === stamp && saved.storeHead === head && !committedOnly) return finish(0, true, saved.lastSettled);
 
-    // Identities of the store's newest rows, one row at a time (a row can hold megabytes of pictures); Hermes prompts are
-    // matched by the receipts in those rows' messages.
+    // Identities of the store's newest rows, one row at a time (a row can hold megabytes of pictures); a record's native
+    // prompts are matched by the receipts in those rows' messages (`native-prompt.ts`).
     const storeIdentities = (limit: number) => {
       const rows: Array<{ seq: number; identity: Identity }> = [];
       const messages: TranscriptTurn['items'] = [];
       for (const one of storedTurnsNewestFirstNow(sessionId, limit)) {
         rows.push({ seq: one.seq, identity: hashIdentity(identify(one.turn), digest) });
-        if (harness === 'hermes') messages.push(...one.turn.items.filter(item => item.kind === 'message'));
+        messages.push(...one.turn.items.filter(item => item.kind === 'message'));
       }
       return { rows, messages };
     };
     const window = storeIdentities(STORE_WINDOW);
-    const hermes = harness === 'hermes' ? indexHermesPrompts(window.messages) : undefined;
+    const receipts = indexNativePrompts(window.messages);
     const unfinished = readUnfinishedRecordRowsNow(sessionId).map(one => ({ seq: one.seq, identity: hashIdentity(identify(one.turn), digest) }));
     let parentLineage: Awaited<ReturnType<typeof readRecordFrom>>['lineage'] | undefined;
 
@@ -147,8 +147,8 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
         const deliveries: Array<string[] | null> = [];
         let unreceipted = false;
         const take = (turn: TranscriptTurn) => {
-          if (hermes && turn.items.some(item => item.kind === 'message' && item.role === 'user' && originalHermesPrompt(item.text, hermes) === null)) unreceipted = true;
-          seen.push(hashIdentity(identify(turn, hermes), digest));
+          if (turn.items.some(item => item.kind === 'message' && item.role === 'user' && originalNativePrompt(item.text, receipts) === null)) unreceipted = true;
+          seen.push(hashIdentity(identify(turn, receipts), digest));
         };
         const note = (turn: TranscriptTurn) => {
           const ids = new Set<string>();
@@ -187,7 +187,7 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
         await stamps.setOrThrow(sessionId, { record: '', storeHead: head, lastSettled: true, deliveries });
         return result('diverged');
       };
-      // A record turn whose Hermes prompt the store cannot vouch for: the two diverged (as before).
+      // A record turn whose native prompt two different stored originals claim: the two diverged (as before).
       if (scanned!.unreceipted) return diverged();
       let found = matchPlan(seen, window.rows, unfinished, identity, window.rows.length < STORE_WINDOW);
       // The store's newest rows are still ambiguous: compare against every stored row (as before).
@@ -308,9 +308,9 @@ function turnDeliveryIds(text: string, original: ((text: string) => string | nul
   return reading?.segments.flatMap(segment => segment.facts?.messageId ? [segment.facts.messageId] : []) ?? [];
 }
 
-/** A Hermes prompt's host original, by the receipt a stored row of this session carries for it (`hermes-prompt.ts`). */
+/** A recorded prompt's host original, by the receipt a stored row of this session carries for it (`native-prompt.ts`). */
 function hermesOriginal(sessionId: string, text: string): string | null | undefined {
-  return originalHermesPrompt(text, indexHermesPrompts(storedMessagesWithPromptHash(sessionId, text)));
+  return originalNativePrompt(text, indexNativePrompts(storedMessagesWithPromptHash(sessionId, text)));
 }
 
 class FillStopped extends Error {

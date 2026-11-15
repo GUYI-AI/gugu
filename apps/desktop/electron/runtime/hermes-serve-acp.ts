@@ -3,7 +3,7 @@
 // Gugu is a Hermes desktop client: sessions, per-session model / reasoning / approvals, steering, slash commands
 // and history are Hermes' own, through the same calls its desktop makes. Design: builds/hermes/SERVE-BRIDGE-DESIGN.md.
 import { createInterface } from 'node:readline';
-import { hermesPromptText as promptText } from '../../../../packages/session-core/src/acp/hermes-prompt.ts';
+import { nativePromptText as promptText } from '../../../../packages/session-core/src/acp/native-prompt.ts';
 import { platformModelFacts } from './codex-model-catalog.mjs';
 import { connectGateway, GatewayError, type Gateway, type GatewayEvent } from './hermes-serve/gateway.ts';
 import {
