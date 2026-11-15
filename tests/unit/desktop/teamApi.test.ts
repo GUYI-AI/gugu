@@ -70,4 +70,12 @@ describe('team HTTP contract boundary', () => {
     const data = { ...await mockTeamApi().summary(), team_balance_credits: '-0.02' }
     expect((await createTeamApi(async () => ({ ok: true, data })).summary()).team_balance_credits).toBe('-0.02')
   })
+  it.each(['2026-11-15T05:00:00Z', '2026-11-15T05:00:00.123456+00:00'])('accepts the UTC usage timestamp %s', async occurred_at => {
+    const usage = await mockTeamApi().myUsage()
+    expect(myUsage({ ...usage, records: [{ ...usage.records[0], occurred_at }] }).records[0].occurred_at).toBe(occurred_at)
+  })
+  it.each(['2026-11-15T13:00:00+08:00', '2026-11-15T05:00:00', '2026-11-15T25:00:00+00:00'])('rejects non-UTC or invalid usage timestamp %s', async occurred_at => {
+    const usage = await mockTeamApi().myUsage()
+    expect(() => myUsage({ ...usage, records: [{ ...usage.records[0], occurred_at }] })).toThrow()
+  })
 })

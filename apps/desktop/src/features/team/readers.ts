@@ -108,7 +108,7 @@ export function myUsage(value: unknown): MyTeamUsage {
     headroom_credits: nullableCredits(row.headroom_credits, 'headroom_credits'), scope: monthScope(row.scope), stop_reason: stop(row.stop_reason),
     records: list(row.records, 'records').map(value => { const entry = object(value, 'usage record')
       const occurred_at = text(entry.occurred_at, 'record.occurred_at'), amount = credits(entry.credits, 'record.credits')
-      if (!/^\d{4}-\d\d-\d\dT.*Z$/.test(occurred_at) || !Number.isFinite(Date.parse(occurred_at)) || creditUnits(amount) <= 0n) throw new TeamResponseError('record')
+      if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|\+00:00)$/.test(occurred_at) || !Number.isFinite(Date.parse(occurred_at)) || creditUnits(amount) <= 0n) throw new TeamResponseError('record')
       return {
       id: text(entry.id, 'record.id'), occurred_at,
       label: text(entry.label, 'record.label'), credits: amount,
