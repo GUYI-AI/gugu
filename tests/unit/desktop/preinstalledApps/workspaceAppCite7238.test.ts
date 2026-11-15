@@ -9,16 +9,8 @@
 // Every wait is on a fact (until), not a clock.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { json } from '@codemirror/lang-json'
-import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import * as language from '@codemirror/language'
-import * as cmState from '@codemirror/state'
 import { EditorSelection } from '@codemirror/state'
-import * as cmView from '@codemirror/view'
 import { EditorView } from '@codemirror/view'
-import * as lezerHighlight from '@lezer/highlight'
-import { basicSetup } from 'codemirror'
-import * as autocomplete from '@codemirror/autocomplete'
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 // @ts-expect-error — 内置 App 是不经构建的纯 ES module,没有类型;运行时 import 可用。
 import { fingerprint } from '../../../../apps/desktop/preinstalled-apps/workspace/lines.js'
@@ -91,8 +83,11 @@ const sessionEntry = { ...entry, id: 'docs/proof.md', name: 'proof.md', chat: un
 // A session's file, its preview drawn by the real markdown pipeline (soft line breaks and all).
 const SESSION_TEXT = ['# 证明', '', '设 a 为偶数', '则 a² 为偶数', '', '- 引理一', '- 引理二'].join('\n')
 const sessionFile = { ...file, entry: sessionEntry, text: SESSION_TEXT, onChange: () => () => {}, onStatus: () => () => {} }
+// A session's code file: not a live document, read whole and shown as code.
+const CODE = ['def is_bounded(seq, limit):', '    """__doc__: past N it stays near the limit."""', '    n = first_index_within(seq, limit, eps=1)', '    head = max(abs(x) for x in seq[:n])  # *the* head', '    return max(head, abs(limit) + 1)'].join('\n')
+const codeEntry = { ...sessionEntry, id: 'src/bound.py', name: 'bound.py', contentType: 'text/x-python' }
 const ctxOf = (id: string) => ({ chat: { id: 'chat-1', name: 'G', kind: 'group', groupId: 'chat-1' }, locale: 'en', capabilities: ['files:read', 'files:write'],
-  ...(id === sessionEntry.id ? { file: { workspace: WS, id }, workspace: { id: WS, sessionId: '11111111-1111-4111-8111-111111111111', root: '/project', name: 'Project' } } : { file: { chat: 'chat-1', id } }) })
+  ...(id === sessionEntry.id || id === codeEntry.id ? { file: { workspace: WS, id }, workspace: { id: WS, sessionId: '11111111-1111-4111-8111-111111111111', root: '/project', name: 'Project' } } : { file: { chat: 'chat-1', id } }) })
 let link: (event: { type: 'link'; tab: string; path: string; query: Record<string, string>; file: string | null }) => void = () => {}
 let contextChanged: (ctx: ReturnType<typeof ctxOf>) => void = () => {}
 const gugu = {
@@ -108,7 +103,8 @@ const gugu = {
     return () => {}
   }),
   dispatch: vi.fn(async (_text: string, _options: unknown) => ({ to: { chat: 'g-1' } })),
-  codemirror: vi.fn(async () => ({ EditorView, EditorState: cmState.EditorState, basicSetup, markdown, markdownLanguage, json, view: cmView, state: cmState, language, autocomplete, lezerHighlight })),
+  // The host's own kit: a code file's view needs all of it.
+  codemirror: vi.fn(async () => (await import('../../../../apps/desktop/src/session/app-runtime/codemirror-entry')).codemirror),
   markdown: vi.fn(async () => md),
   // The file's text in the editor, as the binding puts it there.
   bind: {
@@ -120,6 +116,7 @@ const gugu = {
   files: {
     // A working copy's unsaved edits kept on its machine (`gugu.files.draft`): none.
     draft: vi.fn(async () => null),
+    readText: vi.fn(async () => ({ entry: codeEntry, content: CODE, exact: true })),
     viewPreferences: vi.fn(async () => ({ showAppData: false })), list: vi.fn(async () => [entry]), onChanged: vi.fn(() => () => {}), open: vi.fn(async (handle: { id: string }): Promise<unknown> => (handle.id === sessionEntry.id ? sessionFile : handle.id === 'cfg' ? config : handle.id === 'slow' ? slowFile() : handle.id === 'notes' ? notes : file)) },
 }
 
@@ -397,5 +394,24 @@ describe("a session file's selection reaches the chat one way: Cite", () => {
     expect([...bubble.querySelectorAll('.gg-md-mention')].map((pill) => pill.textContent)).toEqual(['proof.md · Lines 3–4', 'proof.md · Line 6'])
     expect(bubble.textContent).not.toMatch(/@\[|\]\(|\{|Selected text|Selection 1/)
     expect(bubble.textContent).toContain('怎么证明？')
+  })
+
+  test("a code file's cite is the same pill; its lines quoted as they are, fenced, and drawn as code in the bubble", async () => {
+    contextChanged(ctxOf(codeEntry.id))
+    await until('the code file is shown', () => $('doc-title').textContent === 'bound.py' && document.querySelector('.code-view') !== null && view().state.doc.toString() === CODE)
+    gugu.dispatch.mockClear()
+    select([line(3).from, line(4).to])
+    $('cite-sel').click()
+    await until('Cite has composed', () => gugu.dispatch.mock.calls.length === 1)
+    const [text, options] = gugu.dispatch.mock.calls[0]! as [string, { refs: { file: { id: string }; label?: unknown }[] }]
+    expect(options.refs.map(({ label }) => label)).toEqual(['Lines 3–4'])
+    const sent = fileCiteDraft(text, options.refs)
+    expect(sent).toBe(['> ```', '>     n = first_index_within(seq, limit, eps=1)', '>     head = max(abs(x) for x in seq[:n])  # *the* head', '> ```', '', '@[bound.py · Lines 3–4](src/bound.py)'].join('\n'))
+    const bubble = document.createElement('div')
+    bubble.innerHTML = parseMarkdownToBlocks('sent', sent, { resolve: (token) => ({ id: token, label: token, kind: 'file' }) })
+      .map((block) => (block.kind === 'html' ? block.html : '')).join('')
+    expect(bubble.querySelector('blockquote code')?.textContent).toContain('    head = max(abs(x) for x in seq[:n])  # *the* head')
+    expect(bubble.querySelector('blockquote .gg-md-mention')).toBeNull()
+    expect([...bubble.querySelectorAll('.gg-md-mention')].map((pill) => pill.textContent)).toEqual(['bound.py · Lines 3–4'])
   })
 })

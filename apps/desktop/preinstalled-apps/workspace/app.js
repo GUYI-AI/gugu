@@ -3281,15 +3281,22 @@ function refOf(current, { lines }) {
 
 // Cite: the selection's places, each a pill into this chat's composer (a gugu.dispatch draft with refs), the words picked
 // quoted above them as a reader sees them (a block cited whole has none) — the person says what to do with them, @s whom
-// they like and sends it. A JSON file's view is not its text: its cite stays as it was, each range quoted with the lines
-// it is shown on, and a pill to the file. Called inside the click, as a draft needs.
+// they like and sends it; a code file's the same. A JSON file's view is not its text: its cite stays as it was,
+// each range quoted with the lines it is shown on, and a pill to the file. Called inside the click, as a draft needs.
 async function cite(current = state.current, picks = state.picks, whole = false) {
   if (!current || (!whole && !picks.length)) return
+  // A document's words as a reader sees them; a code file's lines as they are, fenced so indentation and marks stay.
+  const quote = (text) => {
+    if (current.file.type === 'text') return `> ${plainWords(text)}`
+    const body = text.replace(/\s+$/, '')
+    const fence = '`'.repeat(Math.max(3, ...(body.match(/`+/g) ?? []).map((run) => run.length + 1)))
+    return [fence, ...body.split('\n'), fence].map((line) => `> ${line}`).join('\n')
+  }
   const quoted = ({ text, lines: [first, last] }) =>
     `${fmt(first === last ? state.t.line : state.t.lines, { first, last })}\n${text.replace(/\s+$/, '').split('\n').map((line) => `> ${line}`).join('\n')}`
   try {
     if (whole) await gugu.dispatch('', { draft: true, refs: [{ file: current.entry }] })
-    else if (current.file.type === 'text') await gugu.dispatch(picks.flatMap(({ text }) => (text ? [`> ${plainWords(text)}`] : [])).join('\n\n'), { draft: true, refs: picks.map((pick) => refOf(current, pick)) })
+    else if (current.file.type === 'text' || current.file.type === 'source') await gugu.dispatch(picks.flatMap(({ text }) => (text ? [quote(text)] : [])).join('\n\n'), { draft: true, refs: picks.map((pick) => refOf(current, pick)) })
     else await gugu.dispatch(picks.map(quoted).join('\n\n'), { draft: true, refs: [{ file: current.entry }] })
   } catch (error) {
     showBanner(failureText(error), 'error')
