@@ -50,6 +50,23 @@ export default {
     "refreshLabel": "Refresh Calendar access"
   },
   "accountDeletion": {
+      "phoneCheckResult": "Check result",
+      "erasePhoneLocal": "Clearing this account’s data from this phone",
+      "phoneLocalPending": "The account is closed. Local cleanup is not finished. You can retry it manually later.",
+
+      "stopPhoneAgent": "Stopping the Agents on this phone",
+      "removePhoneDevice": "Removing this phone",
+      "closePhoneAccount": "Closing account",
+      "stopPhoneAgentFailed": "Could not stop the Agents on this phone",
+      "removePhoneDeviceFailed": "Could not remove this phone",
+      "closePhoneAccountFailed": "Account closure did not complete",
+      "phoneStepWaiting": "Please wait. Do not repeat this action.",
+      "phoneStepHalted": "The flow has stopped at this step and will not continue.",
+      "phoneRetryStep": "You can retry this step manually. Completed steps will not run again.",
+      "phoneRetryUnavailable": "The result of this step is unconfirmed. Retrying is not available.",
+      "phoneRetry": "Retry this step",
+      "closeResultUnknown": "Account closure is unconfirmed. Do not repeat this action.",
+
       "entry": "Close account",
       "entryNote": "Close your personal account.",
       "loading": "Loading the effects of account closure…",

@@ -50,6 +50,23 @@ export default {
     "refreshLabel": "重新读取日历权限"
   },
   "accountDeletion": {
+      "phoneCheckResult": "查看结果",
+      "erasePhoneLocal": "正在清理本账号在这台手机上的数据",
+      "phoneLocalPending": "账号已注销，本机清理尚未完成。你可以稍后手动重试。",
+
+      "stopPhoneAgent": "正在停止这台手机上的智能体",
+      "removePhoneDevice": "正在移除这台手机",
+      "closePhoneAccount": "正在注销账号",
+      "stopPhoneAgentFailed": "未能停止这台手机上的智能体",
+      "removePhoneDeviceFailed": "未能移除这台手机",
+      "closePhoneAccountFailed": "本次注销未完成",
+      "phoneStepWaiting": "请稍候，不要重复操作。",
+      "phoneStepHalted": "流程已停在这一步，不会继续下一步。",
+      "phoneRetryStep": "可以手动重试这一步，已完成的步骤不会重复。",
+      "phoneRetryUnavailable": "这一步的结果尚未确认，暂不能重试。",
+      "phoneRetry": "重试这一步",
+      "closeResultUnknown": "注销结果尚未确认，请不要重复操作。",
+
       "entry": "注销账号",
       "entryNote": "注销你的个人账号。",
       "loading": "正在读取注销后的影响…",
