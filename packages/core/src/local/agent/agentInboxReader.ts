@@ -1018,7 +1018,7 @@ async function prepareMessage(
     try {
       const image = await download(attachment.fileName)
       attachments = [{ data: Buffer.from(image.bytes).toString('base64'), mimeType: attachment.mimeType, fileName: attachment.fileName, localPath: image.localPath }]
-      where = { localPath: image.localPath }
+      where = { localPath: image.localPath, readOnly: image.readOnly }
     } catch {
       where = fetch
     }
@@ -1026,7 +1026,8 @@ async function prepareMessage(
   // 新式附件的文件(不是图):正文里没有链接(老附件靠正文里的 [URL] 去取),字节和图片一样下到本机,交本地路径。
   if (attachment?.kind === 'file' && attachment.source.kind !== 'gone' && attachment.source.kind !== 'url') {
     try {
-      where = { localPath: (await download(attachment.fileName)).localPath }
+      const file = await download(attachment.fileName)
+      where = { localPath: file.localPath, readOnly: file.readOnly }
     } catch {
       where = fetch
     }

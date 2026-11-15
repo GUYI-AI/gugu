@@ -15,7 +15,10 @@ export function attachmentFolderLine(itemId: string, version: number): string {
  * Where an attachment's bytes are, for its agent: already on this computer (a path), to be fetched (the exact
  * message_download_file arguments that fetch it), or deleted.
  */
-export type AttachmentWhere = { localPath: string } | { fetch: { source_message_id: string } | { file: string } } | 'gone'
+export type AttachmentWhere = { localPath: string; readOnly?: boolean } | { fetch: { source_message_id: string } | { file: string } } | 'gone'
+
+/** What a shared read-only copy (this machine's file store) asks of whoever holds its path. */
+export const SHARED_READ_ONLY_COPY = 'shared read-only copy: to change it, copy it to a file of your own; do not change its permissions'
 
 /**
  * The lines after an attachment's head: the folder file, then where its bytes are. One format for an attachment message
@@ -26,7 +29,7 @@ export function attachmentLocationLines(item: { itemId: string; version: number 
   const folder = item ? `\n${attachmentFolderLine(item.itemId, item.version)}` : ''
   if (!where) return folder
   if (where === 'gone') return `${folder}\n[Deleted: there are no bytes to fetch]`
-  if ('localPath' in where) return `${folder}\n[File at local path: ${where.localPath}]`
+  if ('localPath' in where) return `${folder}\n[File at local path: ${where.localPath}${where.readOnly ? ` (${SHARED_READ_ONLY_COPY})` : ''}]`
   const [[key, value]] = Object.entries(where.fetch)
   return `${folder}\n[Not on this computer. To read or change it: message_download_file {${key}: "${value}"}]`
 }
@@ -35,8 +38,8 @@ export function attachmentLocationLines(item: { itemId: string; version: number 
  * A task turn's attachment as its agent reads it (P3) — head, folder file, and its local path or how to fetch it, as a
  * delivered attachment reads.
  */
-export function turnAttachmentText(file: { itemId: string; version: number; name: string; mimeType: string; sizeBytes: number }, localPath: string | null): string {
+export function turnAttachmentText(file: { itemId: string; version: number; name: string; mimeType: string; sizeBytes: number }, local: { localPath: string; readOnly?: boolean } | null): string {
   const head = file.mimeType.startsWith('image/') ? `[Image attached: ${file.name}]` : attachmentEnvelope(file.name, file.sizeBytes, file.mimeType)
-  const where = localPath ? { localPath } : { fetch: { file: groupFileLink(file.itemId, { version: file.version }) } }
+  const where = local ?? { fetch: { file: groupFileLink(file.itemId, { version: file.version }) } }
   return `${head}${attachmentLocationLines({ itemId: file.itemId, version: file.version }, where)}`
 }

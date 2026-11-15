@@ -164,6 +164,8 @@ describe('message_download_file by source_message_id (#7290)', () => {
     const receipt = JSON.parse(await callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }, {}))
     expect(calls).toEqual([[{ item_id: '99999999-9999-4999-8999-999999999999', version: 2 }, AGENT]])
     expect(receipt).toMatchObject({ file_name: 'brief.txt', read_only: true, file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' })
+    // The tool's description stays one line; how to change a shared copy rides in the result that hands it over.
+    expect(receipt.note).toContain('copy it to a file of your own')
     expect(await readFile(receipt.file_path, 'utf8')).toBe('bytes')
     await expect(callTool(context, 'message_download_file', { file: 'notes.txt' }, {})).rejects.toThrow('gugu-file://<item_id>?v=<n>')
   })

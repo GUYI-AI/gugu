@@ -22,7 +22,7 @@ import { workspaceUploadKind } from '../../../../packages/core/src/shared/worksp
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
-import { attachmentFolderLine } from '../../../../packages/core/src/shared/attachmentFolderLine'
+import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
 import { AttachmentsError, commitAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
@@ -2348,7 +2348,8 @@ async function downloadFile(args, deps) {
       const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
       if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the file') }
       const item = source.item ?? (file.revision.item_id && file.revision.version ? { itemId: file.revision.item_id, version: file.revision.version } : null)
-      return { ...await saveToFileStore(file, home, source.name ?? file.revision.file_name), ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}) }
+      const saved = await saveToFileStore(file, home, source.name ?? file.revision.file_name)
+      return { ...saved, ...(saved.read_only ? { note: SHARED_READ_ONLY_COPY } : {}), ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}) }
     })().finally(() => downloading.delete(key))
     downloading.set(key, saving)
   }

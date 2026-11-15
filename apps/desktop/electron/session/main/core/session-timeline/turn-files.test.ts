@@ -48,13 +48,12 @@ describe('turnFileText (P3 task turn attachments)', () => {
     expect(mocks.resolveAccountFile).toHaveBeenCalledTimes(1);
   });
 
-  it('gives a stored file by its path (read-only is said by the download, not the turn), and reads it again if it changed since the last turn', async () => {
+  it('says a stored file is a shared read-only copy, and reads it again if it changed since the last turn', async () => {
     mocks.resolveAccountFile.mockImplementation(async () => resolved('managed-object'));
     mocks.saveFileHandle.mockResolvedValue({ file_path: '/home/agent/.gugu/file-store/sha/brief.txt', read_only: true });
     mocks.stat.mockResolvedValue({ isFile: () => true, size: 3, mtimeMs: 1 });
     const first = await turnFileText('stored-session', [doc], false);
-    expect(first.text).toContain('[File at local path: /home/agent/.gugu/file-store/sha/brief.txt]');
-    expect(first.text).not.toContain('read-only');
+    expect(first.text).toContain('[File at local path: /home/agent/.gugu/file-store/sha/brief.txt (shared read-only copy: to change it, copy it to a file of your own; do not change its permissions)]');
     await turnFileText('stored-session', [doc], false);
     expect(mocks.saveFileHandle).toHaveBeenCalledTimes(1);
     mocks.stat.mockResolvedValue({ isFile: () => true, size: 3, mtimeMs: 2 });
@@ -100,6 +99,7 @@ describe('turnFileText (P3 task turn attachments)', () => {
     expect(text.split('\n')[0]).toContain('brief.txt');
     expect(text).toContain('gugu-file://item-doc?v=2');
     expect(text).toContain('[File at local path: /Users/me/brief.txt]');
+    expect(text).not.toContain('read-only');
     expect(images).toEqual([]);
   });
 

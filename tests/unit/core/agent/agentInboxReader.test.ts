@@ -1088,14 +1088,14 @@ describe('P-E4 离线追赶:未读行逐条受理,由队列 drain 合批', () =>
       downloadAttachment: async (source) => {
         asked.push(source)
         if ('message_id' in source && source.message_id === '10000000-0000-4000-8000-000000000006') throw new Error('Legacy file requires verified private metadata')
-        return { bytes: Uint8Array.from([1, 2]), localPath: '/tmp/gugu-home/chat-media/abc-poll-0.1.0.guguext' }
+        return { bytes: Uint8Array.from([1, 2]), localPath: '/tmp/gugu-home/chat-media/abc-poll-0.1.0.guguext', readOnly: true }
       },
     })
     await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 3 })
     expect(asked).toEqual([{ message_id: '10000000-0000-4000-8000-000000000005' }, { message_id: '10000000-0000-4000-8000-000000000006' }])
     const text = injections.map((entry) => entry.text).join('\n')
     expect(text).toContain('[附件] poll-0.1.0.guguext (application/vnd.gugu.extension+zip)')
-    expect(text).toContain('[File at local path: /tmp/gugu-home/chat-media/abc-poll-0.1.0.guguext]')
+    expect(text).toContain('[File at local path: /tmp/gugu-home/chat-media/abc-poll-0.1.0.guguext (shared read-only copy: to change it, copy it to a file of your own; do not change its permissions)]')
     expect(text.match(/\[File at local path:/g)).toHaveLength(1)
     // 它是群文件夹里的哪个文件、哪一版,怎么再发、怎么把改过的发成下一版:只在指着条目的那一条上。
     expect(text).toContain('[Folder file gugu-file://item-7?v=1 — show it again: message_send_file {file: "gugu-file://item-7?v=1"}')

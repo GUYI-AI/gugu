@@ -65,7 +65,7 @@ export function phoneTurnFiles({ store, cloud, warn = console.warn }) {
       } catch (error) {
         warn(`Task attachment could not be saved: sessionId=${agent.sessionId} itemId=${ref.itemId} reason=${error instanceof Error ? error.message : String(error)}`)
       }
-      parts.push(turnAttachmentText(ref, localPath))
+      parts.push(turnAttachmentText(ref, localPath ? { localPath } : null))
     }
     return { text: parts.join('\n\n') }
   }

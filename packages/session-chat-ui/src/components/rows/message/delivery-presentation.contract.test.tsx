@@ -25,6 +25,7 @@ describe('delivered message presentation', () => {
   });
   it.each([
     '[File at local path: /private/agent/deck.pdf]',
+    '[File at local path: /private/agent/deck.pdf (shared read-only copy: to change it, copy it to a file of your own; do not change its permissions)]',
     '[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:x"}]',
     '[Deleted: there are no bytes to fetch]',
   ])('hides the line saying where the bytes are: %s', line => {
