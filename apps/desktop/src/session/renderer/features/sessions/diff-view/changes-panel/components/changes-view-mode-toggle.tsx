@@ -4,14 +4,22 @@ import { Button } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import type { ChangesListViewMode } from '@shared/core/app-settings';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { Unknown } from '@/components/ui/Unknown';
 
 interface ChangesViewModeToggleProps {
-  value: ChangesListViewMode;
+  /** null: the setting is not read yet. */
+  value: ChangesListViewMode | null;
   onChange: (mode: ChangesListViewMode) => void;
   label: string;
 }
 
 export function ChangesViewModeToggle({ value, onChange, label }: ChangesViewModeToggleProps) {
+  // Not read yet: the button's place, ❌ a button that would switch away from a layout nobody chose.
+  if (value === null) return <Unknown className="size-6" />;
+  return <KnownChangesViewModeToggle value={value} onChange={onChange} label={label} />;
+}
+
+function KnownChangesViewModeToggle({ value, onChange, label }: ChangesViewModeToggleProps & { value: ChangesListViewMode }) {
   const { translate } = useSessionMessages();
   const nextMode: ChangesListViewMode = value === 'flat' ? 'tree' : 'flat';
   const Icon = value === 'flat' ? AlignJustify : ListTree;

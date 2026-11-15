@@ -38,8 +38,9 @@ export function useCreateSessionState(
     runInProjectDir?: boolean;
   }
 ) {
-  const { autoGenerateName: autoGenerateNameSetting } = useSessionSettings();
-  const autoGenerateName = autoGenerateNameSetting || opts?.requireGeneratedName === true;
+  const sessionSettings = useSessionSettings();
+  // null = the setting is not read yet: nothing is generated and the name stays pending until it is.
+  const autoGenerateName: boolean | null = opts?.requireGeneratedName === true ? true : sessionSettings && sessionSettings.autoGenerateName;
 
   const [linkedType, setLinkedTypeRaw] = useState<LinkedType>(initialPR ? 'pr' : initialLinkedType);
   const [linkedIssue, setLinkedIssueRaw] = useState<LinkedIssue | null>(null);
@@ -63,14 +64,14 @@ export function useCreateSessionState(
   const { data: randomName, isPending: isRandomPending } = useQuery({
     queryKey: ['generateSessionName', 'random', randomKey],
     queryFn: () => rpc.sessionCreate.generateSessionName({}),
-    enabled: autoGenerateName && !hasLinkedEntity,
+    enabled: autoGenerateName === true && !hasLinkedEntity,
     refetchOnWindowFocus: false,
   });
 
   // Issue-derived name (Linear can derive directly from branchName; others need AI)
   const directIssueSessionName = getIssueSessionName(linkedIssue);
   const shouldGenerateFromIssue =
-    autoGenerateName &&
+    autoGenerateName === true &&
     linkedType === 'issue' &&
     linkedIssue !== null &&
     directIssueSessionName === null;
@@ -86,7 +87,7 @@ export function useCreateSessionState(
   });
 
   // PR-derived name
-  const shouldGenerateFromPR = autoGenerateName && linkedType === 'pr' && linkedPR !== null;
+  const shouldGenerateFromPR = autoGenerateName === true && linkedType === 'pr' && linkedPR !== null;
   const { data: prGeneratedName, isPending: isPRPending } = useQuery({
     queryKey: ['generateSessionName', linkedPR?.title ?? null, linkedPR?.description ?? null],
     queryFn: () =>
@@ -107,14 +108,14 @@ export function useCreateSessionState(
       return shouldGenerateFromPR ? prGeneratedName : undefined;
     }
     // No entity selected yet — fall back to random placeholder name.
-    return autoGenerateName ? randomName : undefined;
+    return autoGenerateName === true ? randomName : undefined;
   })();
 
   const isPending = (() => {
     if (linkedType === 'issue' && linkedIssue !== null)
       return shouldGenerateFromIssue && isIssuePending;
     if (linkedType === 'pr' && linkedPR !== null) return shouldGenerateFromPR && isPRPending;
-    return autoGenerateName && isRandomPending;
+    return autoGenerateName === null || (autoGenerateName && isRandomPending);
   })();
 
   const sessionName = useSessionName({

@@ -1,13 +1,15 @@
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
-import { DEFAULT_SESSION_AUTO_APPROVE } from '@shared/core/sessions/default-session-autonomy';
+import type { SessionSettings } from '@shared/core/app-settings';
 
-/** The `sessions` fields the new-task flow starts from; the settings surface draws the reading itself (SessionSettingsRows). */
-export function useSessionSettings() {
+export type NewTaskSettings = Pick<SessionSettings, 'autoGenerateName' | 'autoApproveByDefault' | 'includeIssueContextByDefault'>;
+
+/**
+ * The `sessions` fields the new-task flow starts from; the settings surface draws the reading itself (SessionSettingsRows).
+ * null = this device's settings are not read yet: the flow waits (it seeds its state once), ❌ starts from defaults.
+ */
+export function useSessionSettings(): NewTaskSettings | null {
   const { settings } = useAppSettingsKey('sessions');
-  const sessions = settings.state === 'value' ? settings.value.value : undefined;
-  return {
-    autoGenerateName: sessions?.autoGenerateName ?? false,
-    autoApproveByDefault: sessions?.autoApproveByDefault ?? DEFAULT_SESSION_AUTO_APPROVE,
-    includeIssueContextByDefault: sessions?.includeIssueContextByDefault ?? true,
-  };
+  if (settings.state !== 'value') return null;
+  const { autoGenerateName, autoApproveByDefault, includeIssueContextByDefault } = settings.value.value;
+  return { autoGenerateName, autoApproveByDefault, includeIssueContextByDefault };
 }

@@ -4,7 +4,8 @@ import { getGitRepositoryStore } from '@renderer/features/projects/stores/projec
 import { useCreateSessionCallback } from '@renderer/features/sessions/create-session-modal/use-create-session-callback';
 import { useCreateSessionState } from '@renderer/features/sessions/create-session-modal/use-create-session-state';
 import { useProjectGitContext } from '@renderer/features/sessions/create-session-modal/use-project-git-context';
-import { useSessionSettings } from '@renderer/features/sessions/hooks/useSessionSettings';
+import { useSessionSettings, type NewTaskSettings } from '@renderer/features/sessions/hooks/useSessionSettings';
+import { Unknown } from '@/components/ui/Unknown';
 import { SessionField } from '@renderer/features/sessions/session-config/session-field';
 import type { ComposerVerbLook, InitialSessionState } from '@renderer/features/sessions/session-config/initial-session-section';
 import { useInitialSessionState } from '@renderer/features/sessions/session-config/initial-session-section';
@@ -41,7 +42,18 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 
 // Exported so the project home and the chat's task dispatch reuse this exact createSession input and submission path;
 // the context tray controls are shared too (composer-context-tray.tsx). 新建页在这份共享 composer 上加标题。
-export const NewSessionComposer = observer(function NewSessionComposer({
+export const NewSessionComposer = observer(function NewSessionComposer(props: Omit<NewSessionComposerProps, 'sessionSettings'>) {
+  const sessionSettings = useSessionSettings();
+  // This device's new-task settings (default autonomy, issue context) seed the composer's state once: until they are
+  // read the composer's place is held, ❌ a composer seeded with factory defaults that a late value can no longer change.
+  if (!sessionSettings) return <div className={sessionComposerFrameClassName}><Unknown className="h-[7.5rem] w-full" /></div>;
+  return <NewSessionComposerReady {...props} sessionSettings={sessionSettings} />;
+});
+
+type NewSessionComposerProps = Parameters<typeof NewSessionComposerReady>[0];
+
+const NewSessionComposerReady = observer(function NewSessionComposerReady({
+  sessionSettings,
   projectId,
   blockReason,
   blocked = false,
@@ -99,6 +111,7 @@ export const NewSessionComposer = observer(function NewSessionComposer({
    * 任务在那边按同一条路建。能按 = 有内容、选中了智能体;`blocked` / `blockReason` 照旧挡。
    */
   sendWithoutProject?: (input: InitialSessionState) => void;
+  sessionSettings: NewTaskSettings;
 }) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
@@ -119,7 +132,7 @@ export const NewSessionComposer = observer(function NewSessionComposer({
     // runInProjectDir: 会话直接跑在项目目录,不额外开 worktree(owner 定调:session 就是 task)。
     { requireGeneratedName: true, runInProjectDir: true }
   );
-  const { autoApproveByDefault, includeIssueContextByDefault } = useSessionSettings();
+  const { autoApproveByDefault, includeIssueContextByDefault } = sessionSettings;
   const draft = useMemo(() => draftKey ? composerDrafts.forKey(draftKey) : undefined, [draftKey]);
   const initialSession = useInitialSessionState(
     projectId,

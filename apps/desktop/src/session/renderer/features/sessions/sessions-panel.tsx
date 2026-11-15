@@ -49,7 +49,6 @@ export const SessionsPanel = observer(function SessionsPanel() {
   const sessions = useSessions();
   const workspaceId = useWorkspaceId();
   const { settings: interfaceSettingsReading } = useAppSettingsKey('interface');
-  const interfaceSettings = interfaceSettingsReading.state === 'value' ? interfaceSettingsReading.value.value : undefined;
   const { pane } = usePaneContext();
   const isActive = useIsActiveSession(sessionId);
 
@@ -134,7 +133,8 @@ export const SessionsPanel = observer(function SessionsPanel() {
   // isActive 只管键盘焦点给谁。
   useMarkSeenWhenShown(activeSession, useContext(SurfaceShownContext));
 
-  const hideContextBarTrigger = interfaceSettings?.hideContextBar ?? false;
+  // null = this device's setting is not read yet (a first run): the bar keeps its row with a placeholder.
+  const hideContextBarTrigger = interfaceSettingsReading.state === 'value' ? interfaceSettingsReading.value.value.hideContextBar : null;
 
   // Measure the rendered height of the ContextBar so the PTY controller can
   // subtract it from the available terminal height. The ContextBar renders null

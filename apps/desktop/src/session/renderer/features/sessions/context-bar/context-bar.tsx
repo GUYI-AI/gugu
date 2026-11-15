@@ -15,10 +15,12 @@ import { ContextMenu, MenuItem } from '@/components/ui/Menu';
 import { AddContextPopover } from '../context-bar/add-context-popover';
 import { buildSessionContextActions, type ContextAction } from '../context-bar/context-actions';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { Unknown } from '@/components/ui/Unknown';
 
 interface ContextBarProps {
   sessionId: string | undefined;
-  hideTrigger?: boolean;
+  /** null: whether the user hid the trigger is not read yet — the row keeps its height with a placeholder. */
+  hideTrigger?: boolean | null;
   /** 同一行「添加上下文」左边的东西(这个任务的定时芯片)。这一行被隐藏时它自己撑起这一行,❌ 跟着消失。 */
   leading?: ReactNode;
 }
@@ -82,7 +84,7 @@ export const ContextBar = observer(function ContextBar({
       actions={hideTrigger ? popoverActions : actions}
       disabled={!canApplyContext || isSavingPromptLibrary}
       emptyMessage={canApplyContext ? undefined : translate('contextBar.noActiveSession')}
-      hideTrigger={hideTrigger}
+      hideTrigger={hideTrigger === true}
       hotkeyEnabled={hideTrigger ? true : undefined}
       isActivePane={isActivePane}
       onApplyAction={handleApplyAction}
@@ -93,6 +95,10 @@ export const ContextBar = observer(function ContextBar({
   // h-8 = 这一行只有芯片时也和带「添加上下文」时一样高。
   const rowClassName = 'flex h-8 w-full items-center justify-center gap-2 bg-background-secondary-1 px-4 pb-2';
   const leadingRow = leading ? <div className={rowClassName}>{leading}</div> : null;
+
+  if (hideTrigger === null) {
+    return hasVisibleContextBar || leading ? <div className={rowClassName}>{leading}<Unknown className="h-6 w-24" /></div> : null;
+  }
 
   if (hideTrigger) {
     return (

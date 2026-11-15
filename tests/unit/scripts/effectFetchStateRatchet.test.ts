@@ -80,16 +80,8 @@ describe('what counts', () => {
 })
 
 describe('a reading collapsed to a literal default (@@@client-state-model)', () => {
-  // The task page's reads of app settings (new-task preferences, panel switches): PR 3 of the client state model moves
-  // them, and this list goes. Nothing else may have one.
-  const TASK_PAGE_DEBT = [
-    'apps/desktop/src/session/renderer/features/projects/components/create-project-name-modal.tsx',
-    'apps/desktop/src/session/renderer/features/sessions/diff-view/changes-panel/hooks/use-changes-view-mode.ts',
-    'apps/desktop/src/session/renderer/features/sessions/hooks/useSessionSettings.ts',
-    'apps/desktop/src/session/renderer/features/sessions/sessions-panel.tsx',
-  ]
-  it('none in the source but the task page\'s listed debt: branch on the three states, or say why with @@@reading-default', () => {
-    expect(Object.keys(scanLiteralDefaults()), 'an unknown reading must not draw like a stored empty value — docs/design/client-state-model.md').toEqual(TASK_PAGE_DEBT)
+  it('none in the source: branch on the three states, or say why with @@@reading-default', () => {
+    expect(scanLiteralDefaults(), 'an unknown reading must not draw like a stored empty value — docs/design/client-state-model.md').toEqual({})
   })
   const lines = (code: string) => literalDefaultLines('a.ts', code)
   it('counts the literal defaults', () => {
