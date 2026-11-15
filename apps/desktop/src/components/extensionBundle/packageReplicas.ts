@@ -48,16 +48,28 @@ observeRendererSession(({ event, session }) => followProgressAccount(event, sess
 // ── what a package holds ─────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * A package's summary, keyed by the package (its source key) and the message's record of its bytes: the bytes never change,
- * so it is read once (`fresh: Infinity`) and kept as long as the account. `{ok: false}` is an answer (not a package this
- * build reads, deleted from the folder); a read that failed is the reading's error, read again on retry.
+ * Where a copy of a package's bytes may already be on this device: the message's record of its bytes (sha256), noted by the
+ * card that has it. A hint for how to read, never part of what is read: the package key names the bytes, which never change.
+ */
+const keptCopies = new Map<string, string>()
+
+/** The card's message says these are the package's bytes: its summary read can take a copy this device keeps. */
+export function noteKeptCopy(key: string, sha256: string | null): void {
+  if (sha256) keptCopies.set(key, sha256)
+}
+
+/**
+ * A package's summary, keyed by the package alone (its source key): the bytes never change, so it is read once
+ * (`fresh: Infinity`) and kept as long as the account, whoever asks (a card, a chat's list). A kept copy noted for the key
+ * is read from disk instead of downloaded. `{ok: false}` is an answer (not a package this build reads, deleted from the
+ * folder); a read that failed is the reading's error, read again on retry.
  */
 export const extensionPackageSummary = replica({
   name: 'extensionPackageSummary',
   scope: 'account',
-  read: async (_owner: string, key: string, sha256: string | null): Promise<ExtensionBundleSummary> => {
+  read: async (_owner: string, key: string): Promise<ExtensionBundleSummary> => {
     try {
-      return await readPackageSummary(key, sha256, (done, total) => noteProgress(key, done, total))
+      return await readPackageSummary(key, keptCopies.get(key) ?? null, (done, total) => noteProgress(key, done, total))
     } finally {
       forgetProgress(key)
     }
@@ -78,7 +90,7 @@ export const sharedAppPackages = replica({
   scope: 'account',
   read: async (owner: string, chatId: string): Promise<SharedAppPackage[]> => {
     const cards = await chatPackageCards(chatId, owner)
-    const read = await Promise.all(cards.map(async (card) => ({ card, summary: await extensionPackageSummary.fetch(packageKey(card), null) })))
+    const read = await Promise.all(cards.map(async (card) => ({ card, summary: await extensionPackageSummary.fetch(packageKey(card)) })))
     const packages: SharedPackage[] = read.flatMap(({ card, summary }) => (summary.ok ? [{ manifest: summary.manifest, card }] : []))
     return newestSharedPackages(packages).map(({ manifest, card }) => ({ appId: manifest.id, manifest, card }))
   },

@@ -98,10 +98,11 @@ describe('sharedAppPackages', () => {
 
 describe('extensionPackageSummary', () => {
   it('a copy this device keeps is read from disk: no download', async () => {
-    const { extensionPackageSummary } = await load()
+    const { extensionPackageSummary, noteKeptCopy } = await load()
     const vote = pkg('vote', '1.0.0')
     kept.set('sha-vote', new Blob([vote.source.url]))
-    expect(await extensionPackageSummary.fetch(`url:${vote.source.url}`, 'sha-vote')).toMatchObject({ ok: true, manifest: { id: 'vote', version: '1.0.0' } })
+    noteKeptCopy(`url:${vote.source.url}`, 'sha-vote')
+    expect(await extensionPackageSummary.fetch(`url:${vote.source.url}`)).toMatchObject({ ok: true, manifest: { id: 'vote', version: '1.0.0' } })
     expect(download).not.toHaveBeenCalled()
   })
 
@@ -112,7 +113,7 @@ describe('extensionPackageSummary', () => {
     const seen: unknown[] = []
     const stop = packageProgress.subscribe(() => seen.push(packageProgress.get()[key] ?? null))
     expect(packageProgress.get()[key]).toBeUndefined()
-    await extensionPackageSummary.fetch(key, 'sha-not-kept')
+    await extensionPackageSummary.fetch(key)
     expect(seen).toEqual([{ done: 1, total: 2 }, { done: 2, total: 2 }, null])
     stop()
   })
@@ -121,8 +122,21 @@ describe('extensionPackageSummary', () => {
     const { extensionPackageSummary } = await load()
     const vote = pkg('vote', '1.0.0')
     download.mockRejectedValueOnce(new Error('network'))
-    await expect(extensionPackageSummary.fetch(`url:${vote.source.url}`, null)).rejects.toThrow('network')
-    expect(await extensionPackageSummary.fetch(`url:${vote.source.url}`, null)).toMatchObject({ ok: true })
+    await expect(extensionPackageSummary.fetch(`url:${vote.source.url}`)).rejects.toThrow('network')
+    expect(await extensionPackageSummary.fetch(`url:${vote.source.url}`)).toMatchObject({ ok: true })
+  })
+})
+
+describe('one summary per package, whoever asks', () => {
+  // The card knows the message's sha256, a chat's list does not: both read the one entry of the package, one download.
+  it('the card (with the bytes\' record) and the chat list (without) share one read', async () => {
+    const { extensionPackageSummary, noteKeptCopy } = await load()
+    const vote = pkg('vote', '2.0.0')
+    const key = `url:${vote.source.url}`
+    noteKeptCopy(key, 'sha-not-kept-here')
+    await extensionPackageSummary.fetch(key)
+    await extensionPackageSummary.fetch(key)
+    expect(download).toHaveBeenCalledTimes(1)
   })
 })
 

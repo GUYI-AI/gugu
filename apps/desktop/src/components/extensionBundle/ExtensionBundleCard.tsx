@@ -32,7 +32,7 @@ import { Progress } from '../ui/Progress'
 import { ConsentLines } from './ConsentDetails'
 import { installedHereLine, refusedLine } from './installedHere'
 import { installPackageOf, packageKey, type PackageCard } from './sharedPackages'
-import { extensionPackageSummary, newestShownPackage, packageProgress, showPackage, shownPackages } from './packageReplicas'
+import { extensionPackageSummary, newestShownPackage, noteKeptCopy, packageProgress, showPackage, shownPackages } from './packageReplicas'
 import { useReplica } from '../../lib/replica'
 import { useSelect } from '../../lib/selectStore'
 import type { HandedConsent } from '@/session/shared/extensions/install-consent-flow'
@@ -123,7 +123,9 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
 }) {
   const { sizeBytes } = meta
   const key = packageKey(card)
-  const reading = useReplica(extensionPackageSummary, [key, meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision.sha256 : null])
+  // The message's record of the bytes, noted before the read is asked: a copy this device keeps is read from disk.
+  noteKeptCopy(key, meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision.sha256 : null)
+  const reading = useReplica(extensionPackageSummary, [key])
   const summary = reading.state === 'value' ? reading.value : null
   // On screen, it counts among the packages an older card of the same App points to (摩擦单 F21).
   // eslint-disable-next-line react-hooks/exhaustive-deps -- key is the card's identity
