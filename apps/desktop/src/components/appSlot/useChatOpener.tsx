@@ -14,7 +14,7 @@ import { installedExtensionsStore, WORKSPACE_APP_ID } from '../../session/render
 import { APP_OPEN_WITH_EVENT, type AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import { displayNameOf } from '../../session/shared/extensions/file-openers'
 import { folderItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
-import { openPanelItem, chatPaneOf, chatLayoutOf, takeChatAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { openPanelItem, chatPaneOf, chatLayoutOf, takeChatAsk, noteAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 import { appsHere } from './appsHere'
@@ -112,6 +112,8 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
         window.dispatchEvent(new CustomEvent<AppOpenWithDetail>(APP_OPEN_WITH_EVENT, { detail }))
         return
       }
+      // The person asked this chat for it (an App's page beside it): a link still waiting on its host gives way (`noteAsk`).
+      noteAsk(detail.chatId)
       asking.current += 1
       void Promise.resolve(openResolved(detail, from ? { from } : {})).catch(error => setUnopened(String(error)))
     },
@@ -121,6 +123,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
     // One of an App's files in this chat, picked from its list: a failure is said here, over the chat.
     async (itemId: string) => {
       if (!appsHere || !chatId) return
+      noteAsk(chatId)
       const asked = ++asking.current
       setUnopened(null)
       try {

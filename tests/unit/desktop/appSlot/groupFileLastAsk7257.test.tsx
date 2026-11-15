@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act } from 'react'
+import { act, createElement, Fragment } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
 import { appsHere } from '../../../../apps/desktop/src/components/appSlot/appsHere'
 import { APP_OPEN_WITH_EVENT } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { OpenSuperseded } from '../../../../apps/desktop/src/lib/guguLinks'
-import { ask, linkShell, pill, shownItem } from './chatTabsHarness'
+import { askChat } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { ask, chatTabs, linkShell, pill, shownItem } from './chatTabsHarness'
 
 /**
  * #7257 (review 2, point 5): the file a group's panel ends on is the one asked last. Two pills clicked one after the other
@@ -130,5 +131,44 @@ describe('two pills clicked one after the other: the panel ends on the second (#
     await letGo(gates, 'P')
     expect(on('race-5'), '对照:11bd96dbf5 先加序号再核群,P 被丢，面板什么都不开').toBe('P')
     expect(await outcomeOf('P')).toBe('opened')
+  }, 30_000)
+
+  // One order of asks per chat (chat-layouts `noteAsk`): an App's page opening a file here directly (`openWith`, no mailbox)
+  // is as much a later ask as one through it.
+  it('a pill waiting, then this chat\'s App page opens Y itself: Y, and the pill is superseded', async () => {
+    const gates = holdAnswers()
+    let openWith!: (detail: never) => void
+    fileChat = 'race-6'
+    await harness.render(linkShell({ chatId: 'race-6', exposeOpenWith: (fn) => { openWith = fn as never } }))
+    pills.set('A', pill('A', { slide: '1' }))
+    await until('A is asked of the host', () => gates.has('A'))
+    await act(async () => { openWith(detailOf('race-6', 'Y') as never); await settled() })
+    expect(on('race-6')).toBe('Y')
+    await letGo(gates, 'A')
+    expect(on('race-6'), 'A answered after Y was opened here: not opened over it').toBe('Y')
+    expect(await outcomeOf('A')).toBe('superseded')
+  }, 30_000)
+
+  it('a pill waiting, then another chat is asked something: the pill still opens', async () => {
+    const gates = holdAnswers()
+    await clickPill('race-7', 'A', gates)
+    act(() => askChat('race-7-elsewhere', { app: 'workspace' }))
+    await letGo(gates, 'A')
+    expect(on('race-7')).toBe('A')
+    expect(await outcomeOf('A')).toBe('opened')
+  }, 30_000)
+
+  // A chat's opener going away or another mounting is no ask of the person's: the waiting pill is not given up for it.
+  it.each(['unmounts', 'mounts'])('a pill waiting while another opener of the same chat %s: the pill still opens', async (change) => {
+    const gates = holdAnswers()
+    fileChat = 'race-8'
+    const shell = (second: boolean) => createElement(Fragment, null, linkShell({ chatId: 'race-8' }), second ? chatTabs({ chatId: 'race-8' }) : null)
+    await harness.render(shell(change === 'unmounts'))
+    pills.set('A', pill('A', { slide: '1' }))
+    await until('A is asked of the host', () => gates.has('A'))
+    await harness.render(shell(change === 'mounts'))
+    await letGo(gates, 'A')
+    expect(on('race-8')).toBe('A')
+    expect(await outcomeOf('A')).toBe('opened')
   }, 30_000)
 })

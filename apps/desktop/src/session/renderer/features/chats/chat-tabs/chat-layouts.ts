@@ -342,12 +342,24 @@ export type ChatOpenAsk =
 
 const asks = new Map<string, ChatOpenAsk>();
 /**
+ * The order the person asked chats for things in (#7257), across every way in: it answers one question — while a link
+ * waited on its host, did the person ask this chat for something else (`askedSince`)? Marked only where a person asks:
+ * `askChat`, and a chat's opener opening a file directly (`openWith`, an App's list). Not a panel's own count: a chat's
+ * opener mounting or going away is no ask, and its own pending results it orders itself (`useChatOpener`'s `asking`).
+ */
+let asksMade = 0;
+const lastAsked = new Map<string, number>();
+export const asksSoFar = (): number => asksMade;
+export function noteAsk(chatId: string): number { lastAsked.set(chatId, ++asksMade); return asksMade; }
+export const askedSince = (chatId: string, mark: number): boolean => (lastAsked.get(chatId) ?? 0) > mark;
+/**
  * Something asked of a chat (a link, a card, an App, a page's `files.openWith`): the chat answers it when it is on
  * screen — what opens it is found by the shell (its Apps, its prompts), asked while the chat may not be drawn yet.
  */
 export function askChat(chatId: string, what: ChatOpenAsk): void {
   const previous = asks.get(chatId);
   if (previous && 'itemId' in previous) previous.receipt?.reject(new OpenSuperseded());
+  noteAsk(chatId);
   asks.set(chatId, what);
 }
 /** Links acknowledge the consumer's result, rather than merely putting an item in its mailbox. */

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { OPEN_LINK_TARGET, OpenSuperseded, type LinkNavigation } from '../lib/guguLinks'
+import { askedSince, asksSoFar } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import type { AppDetailLink, GuguLinkTarget } from '@gugu/core/shared/ui/guguLink'
 import type { AppOpenWithDetail } from '../session/shared/extensions/app-runtime-protocol'
 import { readMobileShell } from './useMobileShell'
@@ -70,6 +71,7 @@ export function useLinkNavigation(input: {
         // One answer from the host: the file's chat, what it is and who opens it. The chat opens what was answered.
         const { appsHere } = await import('../components/appSlot/appsHere')
         if (!appsHere) throw new Error('The file opener is unavailable')
+        const mark = asksSoFar()
         const found = await appsHere.groupFileOpener({ itemId: target.itemId, ...(target.at ? { at: target.at } : {}) })
         if (asked !== generation || current.current.ownerId !== state.ownerId) throw new OpenSuperseded()
         if (!found.success || !found.data) throw new Error(found.error || 'File reference is unavailable')
@@ -77,6 +79,9 @@ export function useLinkNavigation(input: {
         const fileChat = state.chats().find((row) => row.id === groupId)
         if (!fileChat) throw new Error('File reference is unavailable')
         const chatId = fileChat.kind === 'topic' ? fileChat.source_chat_id! : fileChat.id
+        // Something else was asked of that chat while the host answered (a file from an App's list, another link): it is
+        // the one the chat opens.
+        if (askedSince(chatId, mark)) throw new OpenSuperseded()
         await state.openFile(chatId, target, request, found.data)
         window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }))
         return

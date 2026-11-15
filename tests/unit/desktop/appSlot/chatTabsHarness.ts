@@ -16,14 +16,17 @@ export interface ChatTabsProps {
   mobile?: boolean
   visible?: boolean
   onForward?: (message: MessageItem) => void
+  /** The chat's `openWith`, as an App's page beside it calls it (its list's click). */
+  exposeOpenWith?: (openWith: ReturnType<typeof useChatOpener>['openWith']) => void
 }
 
 /**
  * What ChatAreaPanel draws of a chat's tabs, without the rest of it: the chat's opener (its overlay — the open-with pick,
  * an App's files, a file that cannot open) and the panel tab on screen, as one tab of the strip shows it.
  */
-export const ChatTabs = observer(function ChatTabs({ chatId, tabbed = false, mobile = false, visible, onForward }: ChatTabsProps) {
+export const ChatTabs = observer(function ChatTabs({ chatId, tabbed = false, mobile = false, visible, onForward, exposeOpenWith }: ChatTabsProps) {
   const opener = useChatOpener(chatId)
+  exposeOpenWith?.(opener.openWith)
   const tab = shownPanelTab(chatId)
   return createElement(Fragment, null, opener.overlay, tab
     ? createElement(GroupTabContent, { key: tab.tabId, chatId, tabId: tab.tabId, item: tab.item, tabbed, inWindow: tab.inWindow, mobile, visible, onForward, onOpenWith: opener.openWith })
