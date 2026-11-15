@@ -14,8 +14,7 @@ import { CollapseHeader } from '@session-chat/components/primitives/CollapseHead
 import { ToolThumbs } from '../tools/tool/Tool';
 import { toolPictures, toolThumbsFor } from '../tools/tool/tool.def';
 import { STEP_STRIP_INSET } from '../tools/tool/tool-images';
-import { activateToolRow, liveToolNames } from '@session-chat/lib/tool-activation';
-import { toolDisplayName } from '@gugu/session-core/acp/client';
+import { activateToolRow, toolActivationNames } from '@session-chat/lib/tool-activation';
 
 type Step = Exclude<ToolNode, { kind: 'tool-group' }>;
 type ConversationStepData = Step & { actionLabel: string; stateLabel: string | null; pictures: ReturnType<typeof toolPictures> };
@@ -66,7 +65,7 @@ export const conversationStepUnitDef = defineUnit<ConversationStepData, Record<s
     const expandable = () => !!props.ctx.measureCtx && canExpand(props.data, props.ctx.measureCtx());
     const expanded = () => props.ctx.viewState.isCollapsed(conversationTextKey(props.data.id));
     const strip = () => { const ctx = props.ctx.measureCtx?.(); return ctx ? pictureStrip(props.data, ctx) : null; };
-    const targets = () => liveToolNames([toolDisplayName(props.data)]);
+    const targets = () => toolActivationNames(props.data);
     return <div class={styles.row} data-conversation-step={props.data.id} onClick={event => activateToolRow(event, targets())}>
       <Show when={notice()} fallback={
       <button type="button" class={styles.step} data-collapse-id={expandable() ? conversationTextKey(props.data.id) : undefined}
