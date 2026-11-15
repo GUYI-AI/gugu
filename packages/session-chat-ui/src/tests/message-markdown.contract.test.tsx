@@ -192,6 +192,21 @@ describe('a cited file stays a one-line pill in the user message', () => {
     expect(labelHeight).toBe(Math.round(lineHeight))
     expect(pinSummary(userMessageCitingAFile, ctx, messageUnitDef.vars as MessageVars).height).toBeLessThanOrEqual(reading.inspected.bubble)
   })
+
+  it('a short name keeps to its own width beside the place', async () => {
+    const files: MentionProvider = { resolve: (token) => ({ id: token, label: token, kind: 'file' }) }
+    const ctx = makeContractCtx({ width: WIDTH, mentionProvider: files })
+    const short: ChatMessage = { ...userMessageCitingAFile, id: 'inner-message-user-cite-short', text: '@[a.txt · Line 2](/home/me/notes/a.txt)' }
+    const reading = await renderAndMeasureUnit(messageUnitDef, short, ctx, (host) => {
+      const label = host.querySelector<HTMLElement>('.gg-md-mention-label')
+      if (!label) return { slack: -1 }
+      const range = document.createRange()
+      range.selectNodeContents(label)
+      return { slack: Math.round(label.getBoundingClientRect().width - range.getBoundingClientRect().width) }
+    })
+    expectHeightMatch('user message citing a short file name', reading)
+    expect(reading.inspected.slack).toBe(0)
+  })
 })
 
 const overflowingResourceLink: ChatResourceLink = {
