@@ -83,7 +83,7 @@ export function setNotificationSettings(patch: Partial<NotificationSettings>): N
   return next
 }
 
-function subscribeNotificationSettings(listener: () => void): () => void {
+export function subscribeNotificationSettings(listener: () => void): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)
 }

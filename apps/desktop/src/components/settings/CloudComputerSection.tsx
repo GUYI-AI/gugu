@@ -18,6 +18,7 @@ import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 import { InlineAction } from './addServer/InlineAction'
 import { calloutClassName } from './addServer/callout'
+import { billingLinksAvailable } from '../../lib/appLinks'
 
 // #7199 个人助理的家(实现上叫云电脑,一人一台)的开通、状态、关闭:只用在「助理」App 里(开通引导、齿轮)。
 // owner 10-15「云电脑对用户完全不可见」:设置 → 设备不再列它,这里的话说的一律是它本人 ——
@@ -66,12 +67,12 @@ export function CloudComputerRefusal({
         {failure.kind === 'plan_required' ? (
           <>
             {t('devices.cloud.planRequired')}
-            {onUpgrade && <>{' '}<InlineAction onClick={onUpgrade} testId="cloud-computer-upgrade">{t('devices.cloud.upgrade')}</InlineAction></>}
+            {onUpgrade && billingLinksAvailable() && <>{' '}<InlineAction onClick={onUpgrade} testId="cloud-computer-upgrade">{t('devices.cloud.upgrade')}</InlineAction></>}
           </>
         ) : failure.kind === 'credits_exhausted' ? (
           <>
             {t('devices.cloud.creditsExhausted')}
-            {onUpgrade && <>{' '}<InlineAction onClick={onUpgrade} testId="cloud-computer-top-up">{t('devices.cloud.topUp')}</InlineAction></>}
+            {onUpgrade && billingLinksAvailable() && <>{' '}<InlineAction onClick={onUpgrade} testId="cloud-computer-top-up">{t('devices.cloud.topUp')}</InlineAction></>}
           </>
         ) : (
           <>
@@ -256,7 +257,7 @@ export function CloudComputerRowStatus({
     return (
       <span className="text-[var(--danger-fg)]" data-testid="settings-cloud-computer-status" data-status="wake-failed">
         {failure.kind === 'credits_exhausted'
-          ? <>{t('devices.cloud.creditsExhausted')}{onUpgrade && <>{' '}<InlineAction onClick={onUpgrade}>{t('devices.cloud.topUp')}</InlineAction></>}</>
+          ? <>{t('devices.cloud.creditsExhausted')}{onUpgrade && billingLinksAvailable() && <>{' '}<InlineAction onClick={onUpgrade}>{t('devices.cloud.topUp')}</InlineAction></>}</>
           : <>{t('devices.cloud.wakeFailed')}{tc(`cloudComputer.reason.${failure.kind}`)}{' '}<InlineAction onClick={() => void wake()}>{t('devices.retry')}</InlineAction></>}
       </span>
     )

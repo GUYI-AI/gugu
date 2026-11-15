@@ -30,6 +30,7 @@ export function createUnsupportedPlatform(
       shareToApps: false,
       mobileApps: false,
       phoneDevice: false,
+      phoneAgentHost: false,
       readingZoomMemory: false,
     },
     syncResolvedLocale: async () => {},
