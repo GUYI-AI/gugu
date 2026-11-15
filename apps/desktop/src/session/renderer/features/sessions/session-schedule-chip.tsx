@@ -1,13 +1,15 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { AlertTriangle, Clock, Pencil, X } from '@/lib/icons';
-import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
   formatScheduleWhen,
   scheduleMissText,
   scheduleRuleText,
 } from '@renderer/features/automations/session-schedule-format';
-import { sessionSchedulesQueryKey } from '@renderer/features/automations/use-session-schedules';
+import { sessionSchedules } from '@renderer/features/automations/automation-replicas';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { Unknown } from '@/components/ui/Unknown';
+import type { Reading } from '@/lib/replica';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { rpcOn } from '@renderer/lib/ipc';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
@@ -23,6 +25,23 @@ import {
 import { sessionComposerTrayTriggerClassName } from './session-composer-styles';
 import { SessionScheduleTimeEditor } from './session-schedule-time-editor';
 import type { TriggerConfig } from '@shared/core/automations/config';
+
+/** Whether the schedule's place is taken: by the chip, by its placeholder while unknown, or by the failure. */
+export function scheduleSlotShown(reading: Reading<readonly SessionSchedule[]>): boolean {
+  return reading.state !== 'value' || reading.value.length > 0;
+}
+
+/**
+ * The schedule's place for one task's reading: the chip once known, a chip-sized placeholder while the machine has not
+ * answered (❌ "no schedule"), the failure with a retry. Callers draw the tray / slot when `scheduleSlotShown`.
+ */
+export function SessionScheduleSlot({ machine, reading }: { machine: string | null; reading: Reading<readonly SessionSchedule[]> }) {
+  if (reading.state === 'unknown') return <Unknown className="h-5 w-32" />;
+  if (reading.state === 'error') {
+    return <RefreshFailed error={reading.error} onRetry={() => void sessionSchedules.refresh(machine ?? 'local')} />;
+  }
+  return <SessionScheduleChip machine={machine} schedules={reading.value} />;
+}
 
 /**
  * 这个任务给自己排的定时(#7221 schedule_create):一颗芯片,写下一个几点回来 · 回来做什么,一行,长了截断、
@@ -114,7 +133,6 @@ function ViewAllLink({ onNavigate }: { onNavigate: () => void }) {
 /** 弹层里的一条:几点回来 · 标题,重复的规则,没送到的原因;动作只有真能做的那几个。 */
 function ScheduleItem({ schedule, machine }: { schedule: SessionSchedule; machine: string | null }) {
   const { locale, translate } = useSessionMessages();
-  const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -140,7 +158,7 @@ function ScheduleItem({ schedule, machine }: { schedule: SessionSchedule; machin
         await api.deleteAutomation(schedule.id);
         if (kind === 'cancel') toast({ title: translate('sessionSchedule.cancelled', { title: schedule.title }) });
       }
-      void queryClient.invalidateQueries({ queryKey: sessionSchedulesQueryKey(machine) });
+      void sessionSchedules.refresh(machine ?? 'local');
     } catch (error) {
       log.error('session schedule action failed', { kind, scheduleId: schedule.id, error: String(error) });
       const code = error instanceof Error ? error.message : '';

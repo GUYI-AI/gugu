@@ -15,7 +15,7 @@ import { Switch } from '@renderer/lib/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { isSpentOneTimeAutomation, type Automation } from '@shared/core/automations/automation';
-import { useAutomationEventBridge, useAutomations } from '../use-automations';
+import { useAutomations } from '../use-automations';
 import { useAutomationSettingsAutoSave } from '../useAutomationSettingsAutoSave';
 import { AutomationSettingsFields } from './AutomationSettingsFields';
 import { NextRunBanner } from './NextRunBanner';
@@ -63,7 +63,6 @@ const AutomationSettingsDetailView = observer(function AutomationSettingsDetailV
     { value: 'settings', label: translate('automations.tabSettings') },
   ];
 
-  useAutomationEventBridge(automation.id);
 
   const { formState, setCronExpr, handlePromptBlur, handleNameBlur, saveError } =
     useAutomationSettingsAutoSave(automation);
@@ -188,7 +187,6 @@ const AgentScheduleDetailView = observer(function AgentScheduleDetailView({
   const { translate } = useSessionMessages();
   const [name, setName] = useState(automation.name);
   const { rename, runNow } = useAutomations();
-  useAutomationEventBridge(automation.id);
 
   const agent = automation.agentSession;
   const gone = agent?.gone ?? true;

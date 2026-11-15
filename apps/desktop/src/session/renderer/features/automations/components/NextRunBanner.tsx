@@ -1,7 +1,9 @@
 import { Clock } from '@/lib/icons'
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { Unknown } from '@/components/ui/Unknown';
 import { AbsoluteTime } from '@renderer/lib/ui/absolute-time';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { useScheduledAutomationRun } from '../use-automations';
+import { useRetryAutomationRuns, useScheduledAutomationRun } from '../use-automations';
 
 interface NextRunBannerProps {
   automationId: string;
@@ -9,9 +11,12 @@ interface NextRunBannerProps {
 
 export function NextRunBanner({ automationId }: NextRunBannerProps) {
   const { translate } = useSessionMessages();
-  const { data } = useScheduledAutomationRun(automationId);
-  const scheduledAt = data?.scheduledAt ?? null;
-
+  const next = useScheduledAutomationRun(automationId);
+  const retry = useRetryAutomationRuns(automationId);
+  // Not read yet: the banner's place, ❌ "nothing scheduled".
+  if (next.state === 'unknown') return <Unknown className="h-8 w-full rounded-lg" />;
+  if (next.state === 'error') return <RefreshFailed error={next.error} onRetry={retry} />;
+  const scheduledAt = next.value?.scheduledAt;
   if (!scheduledAt) return null;
 
   return (

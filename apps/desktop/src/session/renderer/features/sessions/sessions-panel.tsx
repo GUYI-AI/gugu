@@ -40,7 +40,7 @@ import { requestTerminalModelMenu } from './view/terminal-model-menu-request';
 import { useSessionStartupFailure } from './use-session-startup-failure';
 import { useSessionSchedules } from '@renderer/features/automations/use-session-schedules';
 import { machineRegistry } from '@renderer/lib/machine-routing';
-import { SessionScheduleChip } from './session-schedule-chip';
+import { scheduleSlotShown, SessionScheduleSlot } from './session-schedule-chip';
 
 export const SessionsPanel = observer(function SessionsPanel() {
   const { translate } = useSessionMessages();
@@ -312,7 +312,7 @@ export const SessionsPanel = observer(function SessionsPanel() {
             sessionId={activeSessionId(pane)}
             hideTrigger={hideContextBarTrigger}
             leading={
-              schedules.length > 0 ? <SessionScheduleChip machine={scheduleMachine} schedules={schedules} /> : null
+              activeSession && scheduleSlotShown(schedules) ? <SessionScheduleSlot machine={scheduleMachine} reading={schedules} /> : null
             }
           />
         </div>

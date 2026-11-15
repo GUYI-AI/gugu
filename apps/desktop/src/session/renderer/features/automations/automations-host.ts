@@ -36,7 +36,7 @@ export type AutomationsRemoteDevice = {
 };
 
 export type AutomationsHost = {
-  /** 缓存键里区分机器的那一段:本机 `local`,别的机器 `remote:<deviceId>`。 */
+  /** Which machine the page shows (the page remounts per machine): `local`, or `remote:<deviceId>`. */
   key: string;
   api: AutomationsRpc;
   /** null = 本机。 */
@@ -61,12 +61,4 @@ export const AutomationsHostProvider = AutomationsHostContext.Provider;
 /** 「已安排」里选了别的机器 = 那台;其余任何地方(会话页上的运行胶囊)= 本机。 */
 export function useAutomationsHost(): AutomationsHost {
   return useContext(AutomationsHostContext);
-}
-
-/**
- * 缓存键:本机保持原样(会话页上的运行胶囊等处按 `['automations', …]` 读写同一份);
- * 别的机器在 `automations` 后插一段机器,两份互不覆盖,按前缀失效也只失效那台的。
- */
-export function automationsQueryKey(host: AutomationsHost, ...parts: unknown[]): unknown[] {
-  return host.remote ? ['automations', host.key, ...parts] : ['automations', ...parts];
 }

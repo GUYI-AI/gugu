@@ -24,6 +24,8 @@ import { isSpentOneTimeAutomation, type Automation } from '@shared/core/automati
 import type { AutomationRunStatus } from '@shared/core/automations/automation-run';
 import { formatRunTriggerKindLabel } from '../automation-run-format';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { Unknown } from '@/components/ui/Unknown';
 
 const RUN_STATUS_ICON: Record<
   AutomationRunStatus,
@@ -51,14 +53,12 @@ export const AutomationRow = observer(function AutomationRow({
   onClick,
 }: AutomationRowProps) {
   const { translate } = useSessionMessages();
-  const latestRunQuery = useLatestAutomationRun(automation.id);
-  const scheduledRunQuery = useScheduledAutomationRun(automation.id);
-
-  const run = latestRunQuery.data ?? null;
-  const scheduledAt = scheduledRunQuery.data?.scheduledAt ?? null;
+  const latest = useLatestAutomationRun(automation.id);
+  const next = useScheduledAutomationRun(automation.id);
 
   // #7221 agent 给自己排的:每次都送回建它的那条会话,状态就看那条会话的。
-  const sessionId = run?.sessionId ?? automation.agentSessionId ?? null;
+  // Which task's status the row shows is known once the latest run is (until then no indicator, ❌ a guess).
+  const sessionId = latest.state === 'value' ? (latest.value?.sessionId ?? automation.agentSessionId ?? null) : null;
   const projectId = automation.projectId ?? null;
   // 别的机器上的项目与本机的是同一张项目表、同一张任务表(#6264 一套工作台)。
   const sessionPageStore = sessionId && projectId ? getSessionPageStore(projectId, sessionId) : undefined;
@@ -151,8 +151,12 @@ export const AutomationRow = observer(function AutomationRow({
 
         {/* Row 2: latest run sentence left, next run / disabled right */}
         <div className="flex min-w-0 items-center justify-between gap-2">
-          {run ? (
-            (() => {
+          {latest.state === 'unknown' ? (
+            <Unknown className="w-48" />
+          ) : latest.state === 'error' ? (
+            <RefreshFailed error={latest.error} />
+          ) : latest.value ? (
+            ((run) => {
               const { Icon, textClass, spin } = RUN_STATUS_ICON[run.status];
               const time = run.startedAt ?? run.finishedAt;
               return (
@@ -167,7 +171,7 @@ export const AutomationRow = observer(function AutomationRow({
                   {formatRunTriggerKindLabel(translate, run.triggerKind)}
                 </span>
               );
-            })()
+            })(latest.value)
           ) : (
             <span className="text-sm text-foreground-passive">
               {translate('automations.noRuns')}
@@ -176,10 +180,14 @@ export const AutomationRow = observer(function AutomationRow({
 
           <div className="shrink-0 text-xs text-foreground-muted">
             {automation.enabled ? (
-              scheduledAt ? (
+              next.state === 'unknown' ? (
+                <Unknown className="w-32" />
+              ) : next.state === 'error' ? (
+                <RefreshFailed error={next.error} />
+              ) : next.value?.scheduledAt ? (
                 <span className="flex items-center gap-1">
                   {translate('automations.nextRunScheduled')}
-                  <AbsoluteTime value={scheduledAt} />
+                  <AbsoluteTime value={next.value.scheduledAt} />
                 </span>
               ) : null
             ) : (

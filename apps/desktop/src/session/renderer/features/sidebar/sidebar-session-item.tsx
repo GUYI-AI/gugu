@@ -150,7 +150,9 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const localSchedules = useSessionSchedules(null, sessionId, machine === null);
   const schedule =
     machine === null
-      ? sessionScheduleDigest(localSchedules)
+      // The row's clock is a mark only: until this computer answered (or when it could not) none is drawn — `undefined`
+      // is the row's "not known" (rowOfStore) — and the task's own tray says unknown / the failure.
+      ? localSchedules.state === 'value' ? sessionScheduleDigest(localSchedules.value) : undefined
       : (listed ?? sidebarStore.remoteSession(projectId, sessionId))?.summary.schedule;
   const row = session ? rowOfStore(session, schedule) : listed ? rowOfListing(listed) : null;
   const agentUserId = agentBinding?.agentUserId ?? listed?.summary.agent?.userId;

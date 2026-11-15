@@ -8,13 +8,13 @@ import {
 } from '@renderer/lib/components/pagination';
 import { EmptyState } from '@renderer/lib/ui/empty-state';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { Spinner } from '@renderer/lib/ui/spinner';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { Unknown } from '@/components/ui/Unknown';
 import { cn } from '@renderer/utils/utils';
 import type { Automation } from '@shared/core/automations/automation';
-import { useAutomationRunCounts, useAutomationRunsPaginated } from '../use-automations';
+import { RUN_PAGE_SIZE } from '../automation-replicas';
+import { useAutomationRunCounts, useAutomationRunsPaginated, useRetryAutomationRuns } from '../use-automations';
 import { AutomationRunRow } from './AutomationRunRow';
-
-const PAGE_SIZE = 25;
 
 type FilterOption = 'all' | 'done' | 'failed' | 'skipped';
 
@@ -37,21 +37,21 @@ export function RunHistory({ automation }: RunHistoryProps) {
     setPage(0);
   }, [automation.id, filter]);
 
-  const statusFilter = filter === 'all' ? undefined : filter;
-  const runsQuery = useAutomationRunsPaginated(automation.id, page, statusFilter);
-  const countsQuery = useAutomationRunCounts(automation.id);
+  const runs = useAutomationRunsPaginated(automation.id, page, filter);
+  const counts = useAutomationRunCounts(automation.id);
+  const retry = useRetryAutomationRuns(automation.id);
 
-  const counts = countsQuery.data;
-  const allRuns = runsQuery.data ?? [];
-  const historyRuns = allRuns.slice(0, PAGE_SIZE);
-  const hasNextPage = !runsQuery.isPlaceholderData && allRuns.length > PAGE_SIZE;
+  const historyRuns = runs.state === 'value' ? runs.value.slice(0, RUN_PAGE_SIZE) : null;
+  const hasNextPage = runs.state === 'value' && runs.value.length > RUN_PAGE_SIZE;
   const hasPrevPage = page > 0;
+  const failure = runs.state === 'error' ? runs.error : counts.state === 'error' ? counts.error
+    : runs.state === 'value' && runs.error ? runs.error : counts.state === 'value' ? counts.error : null;
 
   return (
     <section className="flex h-full flex-col rounded-lg bg-background-1">
       <div className="flex w-full gap-1.5 border-b p-2">
         {filters.map(({ value, label }) => {
-          const count = counts ? counts[value] : undefined;
+
           return (
             <button
               key={value}
@@ -65,31 +65,39 @@ export function RunHistory({ automation }: RunHistoryProps) {
               )}
             >
               {label}
-              {count !== undefined && (
+              {counts.state === 'value' ? (
                 <span
                   className={cn(
                     'tabular-nums',
                     filter === value ? 'text-foreground-muted' : 'text-foreground-passive'
                   )}
                 >
-                  {count}
+                  {counts.value[value]}
                 </span>
-              )}
+              ) : counts.state === 'unknown' ? (
+                <Unknown className="w-6" />
+              ) : null}
             </button>
           );
         })}
       </div>
+      {failure ? <div className="px-2 pt-2"><RefreshFailed error={failure} onRetry={retry} /></div> : null}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {runsQuery.isPending ? (
-          <Spinner />
+        {historyRuns === null ? (
+          runs.state === 'unknown' ? (
+            Array.from({ length: RUN_PAGE_SIZE }, (_, index) => (
+              <div key={index} className="px-2 py-2">
+                <Unknown className="h-[2lh] w-full" />
+              </div>
+            ))
+          ) : null
         ) : historyRuns.length > 0 ? (
           <>
             {historyRuns.map((run) => (
               <AutomationRunRow
                 key={run.id}
-                runId={run.id}
-                automationId={automation.id}
                 run={run}
+                projectId={automation.projectId ?? null}
                 deliveredTo={automation.agentSessionId}
                 deliveredToName={automation.agentSession?.name}
               />
