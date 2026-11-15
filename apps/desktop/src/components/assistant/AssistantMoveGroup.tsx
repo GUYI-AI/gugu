@@ -12,6 +12,7 @@ import { getMoveState, startMove, startPreview, subscribeMove } from '@renderer/
 import { pendingMove, recoverPendingMove, type MoveEnv } from '@renderer/features/assistant/assistant-move-wire'
 import type { MoveJournal } from '@renderer/features/assistant/assistant-move'
 import '../../i18n/registerAssistantCatalog'
+import { billingLinksAvailable } from '../../lib/appLinks'
 
 const log = rendererLogger('assistant/move')
 
@@ -107,12 +108,12 @@ export function AssistantMoveGroup({ ownerUserId, assistantId, assistantName, ho
       {home.kind === 'cloud' && member === false ? (
         <SettingsRow
           title={t('move.expiredTitle', { name: assistantName })}
-          description={t('move.expiredBody', { name: assistantName })}
-          control={
+          description={billingLinksAvailable() ? t('move.expiredBody', { name: assistantName }) : undefined}
+          control={billingLinksAvailable() ? (
             <Button size="sm" onClick={openMembership} data-testid="assistant-move-renew">
               {t('move.renew')}
             </Button>
-          }
+          ) : undefined}
           data-testid="assistant-move-expired"
         />
       ) : null}
@@ -135,11 +136,11 @@ export function AssistantMoveGroup({ ownerUserId, assistantId, assistantName, ho
           title={t('move.toCloudTitle')}
           description={member === false ? t('move.toCloudNeedsMember') : !cloudAvailable ? t('move.cloudUnavailable') : t('move.toCloudBody')}
           control={
-            member === false ? (
+            member === false ? (billingLinksAvailable() ? (
               <Button size="sm" onClick={openMembership} data-testid="assistant-move-member">
                 {t('move.memberLink')}
               </Button>
-            ) : (
+            ) : null) : (
               <Button
                 size="sm"
                 disabled={busy || !!pending || recoveryFailed || member === null || !cloudAvailable}

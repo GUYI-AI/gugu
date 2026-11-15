@@ -63,6 +63,26 @@ afterEach(() => {
 });
 
 describe('scrolling in the task that seeds the transcript', () => {
+  it('paints the transcript when optional idle scheduling is unavailable', () => {
+    vi.stubGlobal('requestIdleCallback', undefined);
+    vi.stubGlobal('cancelIdleCallback', undefined);
+    const context = createChatContext({ locale: () => 'en-US' });
+    const state = createChatState(context);
+    const host = document.createElement('div');
+    document.body.append(host);
+    const view = createChatView({ context, state, parent: host });
+    try {
+      state.transcript.history.seed(generateMockTranscript(2, 7));
+      runFrames(30);
+      expect(state.transcript.history.get()).toHaveLength(2);
+      expect(host.querySelectorAll('[data-index]').length).toBeGreaterThan(0);
+    } finally {
+      view.dispose();
+      state.dispose();
+      context.dispose();
+    }
+  });
+
   it('keeps the requested row as the intent once the canvas has caught up', () => {
     const context = createChatContext({ locale: () => 'en-US' });
     const state = createChatState(context);

@@ -1937,6 +1937,8 @@ export function ChatRoot(props: ChatRootProps) {
 
   const schedulePrefetch = () => {
     if (!viewShown() || prefetchIdleId !== null) return;
+    // Ahead-of-viewport measurement is optional; missing WebKit APIs must not abort the frame before rows commit.
+    if (typeof requestIdleCallback !== 'function' || typeof cancelIdleCallback !== 'function') return;
     prefetchIdleId = requestIdleCallback(runPrefetchSlice, { timeout: 500 });
   };
 

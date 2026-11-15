@@ -33,6 +33,7 @@ import { visibleMachines } from './machine-list'
 import { accountProjects, createMachines, runCandidates } from './create-target'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
 import { CreateTarget, type CreationConfiguration } from './CreateTarget'
+import { PhoneHostSetupEntry } from './PhoneHostSetupEntry'
 import { ConnectionStatus } from '@/components/connection/ConnectionStatus'
 import { connectionStateOf } from '@/components/connection/connectionState'
 import { IconButton } from '@/components/ui/IconButton'
@@ -110,7 +111,7 @@ export function CreateSessionPage({
   if (!editingMachine) {
     return (
       <AgentWatchScreen title={t('agentWatch.create.title')} onBack={onBack} testId="agent-watch-create-page">
-        <div className="gg-aw">{target(false)}</div>
+        <div className="gg-aw">{target(false)}<PhoneHostSetupEntry /></div>
       </AgentWatchScreen>
     )
   }
