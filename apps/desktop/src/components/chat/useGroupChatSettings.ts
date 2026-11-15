@@ -104,6 +104,11 @@ export async function writeGroupSettings(chatId: string, input: UpdateGroupChatS
   }
 }
 
+/** A row the pointer reaches: read its room's authority before its menu opens, once (❌ a read on every pass of the pointer). */
+export function warmRowAuthority(chatId: string): void {
+  if (groupSettings.peek(chatId).state === 'unknown') void groupSettings.prefetch(chatId)
+}
+
 export function useGroupChatSettings(chatId: string | null, revision?: string, authorityRevision = 0) {
   const { t } = useTranslation('messaging')
   const reading = useReplica(groupSettings, chatId ? [chatId] : null)

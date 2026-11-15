@@ -4,7 +4,8 @@ export type ConversationRowAction = 'mark-read' | 'pin' | 'unpin-from-sidebar' |
 export function conversationCanDelete(kind: string | null, authority?: { can_dissolve?: boolean; can_archive_topic?: boolean } | null, ownedAgentDm?: { session_archived_at?: string | null; removed_at?: string | null }): boolean {
   return (kind === 'dm' && !!ownedAgentDm && (ownedAgentDm.session_archived_at != null || ownedAgentDm.removed_at != null)) || (kind === 'group' && authority?.can_dissolve === true) || (kind === 'topic' && authority?.can_archive_topic === true)
 }
-export type ConversationRowMenuState = ({ kind: 'chat'; canDelete: boolean; pinnedToSidebar?: boolean } | { kind: 'project' } | { kind: 'topic' }) & {
+/** `'unknown'`: the authority to delete is not read yet — the item keeps its place, disabled, ❌ appears later. */
+export type ConversationRowMenuState = ({ kind: 'chat'; canDelete: boolean | 'unknown'; pinnedToSidebar?: boolean } | { kind: 'project' } | { kind: 'topic' }) & {
   hasUnread: boolean
   hasAnyUnread?: boolean
   pinned?: boolean
@@ -32,7 +33,7 @@ export function conversationRowMenu(state: ConversationRowMenuState): RowMenuIte
         ...(state.pinnedToSidebar ? [{ id: 'unpin-from-sidebar', label: 'unpinFromSidebar', icon: 'sidebar' } as const] : []),
         { id: 'notifications', label: state.notificationsMuted ? 'enableNotifications' : 'disableNotifications', icon: 'notifications' },
         { id: 'mark-all-read', label: 'markAllRead', icon: 'read', disabled: !state.hasAnyUnread, fold: true },
-        ...(state.canDelete ? [{ id: 'delete-chat', label: 'delete', icon: 'trash', danger: true, fold: true } as const] : []),
+        ...(state.canDelete ? [{ id: 'delete-chat', label: 'delete', icon: 'trash', danger: true, fold: true, disabled: state.canDelete === 'unknown' } as const] : []),
       ]
 }
 

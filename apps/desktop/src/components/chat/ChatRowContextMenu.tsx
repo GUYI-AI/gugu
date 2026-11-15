@@ -34,7 +34,9 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
   const { settings, error } = useGroupChatSettings(chat.kind === 'group' || chat.kind === 'topic' ? chat.id : null)
   const peer = identitiesById[chat.peer_user_id ?? '']
   const ownedAgentDm = user && peer?.type === 'agent' && peer.owner_user_id === user.id ? peer : undefined
-  const canDelete = conversationCanDelete(chat.kind, settings, ownedAgentDm)
+  const room = chat.kind === 'group' || chat.kind === 'topic'
+  // A room's authority not read yet: the delete item keeps its place, disabled (CH5: it used to appear after the read).
+  const canDelete = room && settings === null && !error ? 'unknown' as const : conversationCanDelete(chat.kind, settings, ownedAgentDm)
   return <ConversationRowContextMenu {...menu} loadError={error} state={{ kind: 'chat', canDelete, pinned: chat.is_pinned, pinnedToSidebar: onUnpinFromSidebar !== undefined,
     notificationsMuted: chat.notification_level === 'none',
     hasUnread: hasUnreadInRows(chatsInReadScope(chats, chat.id)) || nativeUnreadTargets(nativeRows, chatsInReadScope(chats, chat.id), false).length > 0,
@@ -46,7 +48,7 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
       else if (action === 'unpin-from-sidebar') onUnpinFromSidebar!()
       else if (action === 'notifications') onSetNotificationLevel(chat.notification_level === 'none' ? 'all' : 'none')
       // 解散影响全体成员、撤不回:和群设置、联系人那两处解散同一句确认。
-      else if (action === 'delete-chat' && canDelete && (chat.kind !== 'group' || window.confirm(t('group.settings.dissolveConfirm')))) void Promise.resolve().then(onDelete).catch((error: unknown) => {
+      else if (action === 'delete-chat' && canDelete === true && (chat.kind !== 'group' || window.confirm(t('group.settings.dissolveConfirm')))) void Promise.resolve().then(onDelete).catch((error: unknown) => {
         log.error({ error: String(error), chatId: chat.id }, 'delete chat failed')
         toast(t('chatList.deleteFailed'), 'error', messageForUser(error))
       })

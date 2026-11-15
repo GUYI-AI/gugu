@@ -17,6 +17,13 @@ describe('conversation row actions', () => {
     expect(conversationCanDelete('topic', { can_dissolve: true })).toBe(false)
     expect(conversationCanDelete('topic', { can_archive_topic: true })).toBe(true)
   })
+  // CH5: the delete item used to appear after the room's authority was read; unknown now keeps its place, disabled.
+  it('keeps the delete item in place, disabled, while the authority to delete is not read', () => {
+    const menu = conversationRowMenu({ kind: 'chat', canDelete: 'unknown', hasUnread: false, hasAnyUnread: false })
+    expect(menu.map((item) => item.id)).toEqual(['mark-read', 'pin', 'notifications', 'mark-all-read', 'delete-chat'])
+    expect(menu.at(-1)).toMatchObject({ id: 'delete-chat', disabled: true })
+    expect(conversationRowMenu({ kind: 'chat', canDelete: true, hasUnread: false }).at(-1)).toMatchObject({ id: 'delete-chat', disabled: false })
+  })
   it('puts the same scoped read action first, followed only by the row type’s own actions', () => {
     const chat = conversationRowMenu({ kind: 'chat', canDelete: true, hasUnread: true, hasAnyUnread: true })
     const project = conversationRowMenu({ kind: 'project', hasUnread: true })
