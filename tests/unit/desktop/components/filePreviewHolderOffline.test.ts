@@ -13,9 +13,9 @@ const { readBytes, metadata, devices } = vi.hoisted(() => ({
 }))
 vi.mock('@/lib/guguLinks', () => ({ openLinkTarget: vi.fn() }))
 vi.mock('@/platform', () => ({ platform: { kind: 'electron' } }))
-vi.mock('@/lib/attachmentBytes', () => ({
+vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({
   attachmentBytes: readBytes, sourceKeyOf: () => 'notes', attachmentPreview: vi.fn(), openAttachmentInSystemApp: vi.fn(),
-}))
+})))
 vi.mock('@/lib/fileAccess', () => ({ fileMetadata: metadata }))
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: devices.rows }) }))
 vi.mock('@/components/chat/MessageFilePreviewPanel', () => ({

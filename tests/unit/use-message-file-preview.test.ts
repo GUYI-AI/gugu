@@ -7,13 +7,22 @@ import type { MessageActionItem } from '@/components/chat/messageActionItems'
 import type { PreviewFile } from '@/components/chat/useMessageFilePreview'
 
 // 字节、链接、交给系统应用都经 lib/attachmentBytes(一个入口);这里把它换掉,判的是预览自己的状态机。
-const bytesMocks = vi.hoisted(() => ({
-  attachmentBytes: vi.fn(), downloadAttachment: vi.fn(),
+const bytesMocks = vi.hoisted(() => {
+  const attachmentBytes = vi.fn()
+  return {
+  attachmentBytes, downloadAttachment: vi.fn(),
+  // A preview's read goes through the content cache; here it is the same mocked read.
+  shownAttachmentBytes: async (source: unknown, progress?: unknown) => {
+    const bytes = await attachmentBytes(source, 'shown', undefined, undefined, progress)
+    if (bytes.status !== 'ready') throw new Error(bytes.status)
+    return bytes
+  },
   attachmentPreview: vi.fn(),
   openAttachmentInSystemApp: vi.fn(),
   openAttachmentImage: vi.fn(),
   sourceKeyOf: (source: { kind: string; url?: string }) => `${source.kind}:${source.url ?? ''}`,
-}))
+  }
+})
 const bytesOf = (text: () => Promise<string>) => ({ status: 'ready', blob: { text, arrayBuffer: async () => new ArrayBuffer(0) } })
 
 vi.mock('framer-motion', () => ({

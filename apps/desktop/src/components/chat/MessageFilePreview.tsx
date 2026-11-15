@@ -9,7 +9,7 @@ import { isMpegTsVideo, type ParsedAttachment } from '@gugu/core/shared/ui/attac
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { downloadBlob } from '../../lib/download'
-import { attachmentBytes, attachmentPreview, openAttachmentInSystemApp, sourceKeyOf } from '../../lib/attachmentBytes'
+import { attachmentBytes, attachmentPreview, shownAttachmentBytes, openAttachmentInSystemApp, sourceKeyOf } from '../../lib/attachmentBytes'
 import { sentFileCopy } from '../../lib/sentFileCopies'
 import { FileReadRevokedError } from '@gugu/core/shared/fileResolver'
 import { rendererLogger } from '../../lib/log'
@@ -71,7 +71,9 @@ async function previewBytes(file: PreviewFile | HostedPreviewFile, options: { sh
     if (!document) throw new Error('gone')
     return { blob: new Blob([document.text], { type: file.mimeType }) }
   }
-  const bytes = await attachmentBytes(file.source, options.shown ? 'shown' : 'full', undefined, undefined, options.progress)
+  // A preview reads through the attachment content cache (opened again: no second download); a download reads the file.
+  if (options.shown) return shownAttachmentBytes(file.source, options.progress)
+  const bytes = await attachmentBytes(file.source, 'full', undefined, undefined, options.progress)
   if (bytes.status !== 'ready') throw new Error(bytes.status)
   return bytes
 }
@@ -163,6 +165,9 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
       palette: { surface: style.getPropertyValue('--bg-secondary').trim(), border: style.getPropertyValue('--border-strong').trim(), text: style.getPropertyValue('--text-secondary').trim() },
     }, (holder) => { setBesideOffline(holder); setWaitingFor(holder) })
   }, [hostedHtml, itemId, t])
+  // @@@effect-flow - opening a preview: its bytes come from the attachment content cache; the server's acknowledgement (a
+  // refusal takes a shown preview down), the read's progress, object URLs / video links and the offline-machine
+  // explanation are this opening's flow
   useEffect(() => {
     activeKey.current = key
     let live = true, release: PreviewRead['release']

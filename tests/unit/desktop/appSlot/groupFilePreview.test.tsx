@@ -22,13 +22,13 @@ vi.mock('@/components/preview/html-preview-registration', () => ({ registerHtmlP
 vi.mock('@/platform', () => ({ platform: { kind: 'electron', capabilities: { appUpdates: false, notifications: false, rendererCommandBridge: false } } }))
 vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => boundary.mobile }))
 vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: vi.fn(async () => ({ error: null })) } }))
-vi.mock('@/lib/attachmentBytes', () => ({
+vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({
   attachmentBytes: boundary.read,
   attachmentPreview: boundary.signed,
   openAttachmentInSystemApp: boundary.open,
   openAttachmentImage: boundary.image,
   sourceKeyOf: (source: { itemId: string; version: number }) => `${source.itemId}@${source.version}`,
-}))
+})))
 vi.mock('@/lib/chatFolder', () => ({ readChatFolderText: boundary.document, rendererFileServiceUrl: () => 'https://files.test' }))
 vi.mock('@/lib/download', () => ({ downloadBlob: boundary.save }))
 vi.mock('@/components/appSlot/appsHere', () => ({

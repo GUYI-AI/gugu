@@ -9,10 +9,10 @@ import { Sheet } from '../../../../apps/desktop/src/components/ui/Sheet'
 import { NATIVE_BACK_EVENT } from '../../../../apps/desktop/src/components/ui/sheetStack'
 
 vi.mock('@/platform', () => ({ platform: { kind: 'electron', capabilities: { readingZoomMemory: true } } }))
-vi.mock('@/lib/attachmentBytes', () => ({
+vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({
   attachmentBytes: async () => ({ status: 'ready', blob: new Blob(['original text']) }),
   sourceKeyOf: () => 'session-file', attachmentPreview: vi.fn(), openAttachmentInSystemApp: vi.fn(),
-}))
+})))
 function Conversation({ mobile }: { mobile: boolean }) {
   const [draft] = useState('unfinished task draft')
   const preview = useMessageFilePreview({ mobile, visible: true, closeRightSurfaces() {}, toast() {}, onForward() {} })

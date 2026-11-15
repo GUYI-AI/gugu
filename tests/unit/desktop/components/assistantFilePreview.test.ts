@@ -10,9 +10,9 @@ const { openResource, readBytes } = vi.hoisted(() => ({
 }))
 vi.mock('@/lib/guguLinks', () => ({ openLinkTarget: openResource }))
 vi.mock('@/platform', () => ({ platform: { kind: 'electron' } }))
-vi.mock('@/lib/attachmentBytes', () => ({
+vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({
   attachmentBytes: readBytes, sourceKeyOf: () => 'budget', attachmentPreview: vi.fn(), openAttachmentInSystemApp: vi.fn(),
-}))
+})))
 vi.mock('@/components/chat/MessageFilePreviewPanel', () => ({
   MessageFilePreviewPanel: ({ content, onClose, fill }: { content: string | null; onClose: () => void; fill: boolean }) =>
     createElement('aside', { 'data-fill': String(fill) }, content ?? '', createElement('button', { onClick: onClose }, '关闭预览')),

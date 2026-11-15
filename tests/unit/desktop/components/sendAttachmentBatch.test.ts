@@ -5,7 +5,7 @@ import { AttachmentsError } from '@gugu/core/cloud/attachmentsApi'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 const upload = vi.hoisted(() => vi.fn())
 const keep = vi.hoisted(() => vi.fn(async () => {}))
-vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => ({ keepSentAttachment: keep }))
+vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({ keepSentAttachment: keep })))
 vi.mock('../../../../apps/desktop/src/lib/attachmentsEndpoint', async original => ({
   ...await original<typeof import('../../../../apps/desktop/src/lib/attachmentsEndpoint')>(),
   attachmentsEndpoint: async () => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token' }),

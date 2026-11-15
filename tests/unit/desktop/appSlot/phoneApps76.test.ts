@@ -122,12 +122,12 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
     },
   },
 }))
-vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => ({
+vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({
   resolveAttachment: async (source: { kind: string; itemId?: string }) => {
       const card = [...cards.values()].find((entry) => entry.row.file_item_id === source.itemId)
       return card ? verifiedFileHandle(shell.packages.get(card.url)!, {}, async signal => new Uint8Array(await (await fetch(card.url, { signal })).arrayBuffer())) : { status: 'gone', sha256: null }
   },
-}))
+})))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({
   rendererLogger: () => ({ error: () => undefined, warn: () => undefined, info: () => undefined, debug: () => undefined }),
 }))
