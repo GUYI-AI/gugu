@@ -14,7 +14,7 @@ import type { TeamDirectoryMember } from './types'
 export function TeamPersonRow({ member, onClick }: { member: TeamDirectoryMember; onClick: () => void }) {
   const { t } = useTranslation('team')
   return <ListRow role="button" tabIndex={0} className="gg-team-person-row"
-    leading={<Avatar name={member.name} avatarUrl={member.avatar} seed={member.identity_id} size="md" />}
+    leading={<Avatar name={member.name} avatarUrl={member.avatar} seed={member.identity_id} isAgent={false} size="md" />}
     title={member.name} subtitle={teamRoleLabel(member.role, t)} onClick={onClick}
     onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } }} />
 }
@@ -38,7 +38,7 @@ export function TeamDirectory({ query = '', onMessage }: { query?: string; onMes
     {selected && <TeamDialog title={selected.name} onClose={() => setSelected(null)} actions={<>
       <Button onClick={() => setSelected(null)}>{t('close')}</Button>
       <Button variant="primary" onClick={() => { onMessage(selected); setSelected(null) }}>{t('sendMessage')}</Button>
-    </>}><div className="gg-team-person-summary"><Avatar name={selected.name} avatarUrl={selected.avatar} seed={selected.identity_id} size="md" />
+    </>}><div className="gg-team-person-summary"><Avatar name={selected.name} avatarUrl={selected.avatar} seed={selected.identity_id} isAgent={false} size="md" />
       <span>{teamRoleLabel(selected.role, t)}</span></div></TeamDialog>}
   </>
 }

@@ -14,12 +14,12 @@ afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, {
 const jwt = (kind: string) => `header.${Buffer.from(JSON.stringify({ sub: 'actor-team', app_metadata: { gugu_account_kind: kind } })).toString('base64url')}.signature`
 const auth = { userId: 'actor-team', accessToken: jwt('team_member') }
 const funding = { kind: 'team' as const, team_id: 'team-a', member_id: 'member-a', task_id: 'task-a', unit_version: 2 as const, locked_at: '2026-11-15T00:00:00Z' }
-const identity = { actorUserId: auth.userId, memberIdentityId: 'identity-a', funding }
-const context = { kind: 'team', team_id: 'team-a', member_id: 'member-a', member_identity_id: 'identity-a', member_state: 'active', membership_revision: 7, stop_reason: null }
+const identity = { actorUserId: auth.userId, memberIdentityId: auth.userId, funding }
+const context = { kind: 'team', team_id: 'team-a', member_id: 'member-a', member_identity_id: auth.userId, member_state: 'active', membership_revision: 7, stop_reason: null }
 
 it('retains task ownership after settlement/restart and rejects a switch to personal or another team', async () => {
   const root = await mkdtemp(join(tmpdir(), 'team-task-payer-')); roots.push(root)
-  const store = createTaskPayerStore(root), payer = { version: 1 as const, taskId: 'task-a', actorUserId: auth.userId, kind: 'team' as const, teamId: 'team-a', memberIdentityId: 'identity-a' }
+  const store = createTaskPayerStore(root), payer = { version: 1 as const, taskId: 'task-a', actorUserId: auth.userId, kind: 'team' as const, teamId: 'team-a', memberIdentityId: auth.userId }
   await store.reserve(payer); await store.lockTeam('task-a', identity)
   const reopened = createTaskPayerStore(root)
   expect((await reopened.read('task-a'))?.teamTask?.funding).toEqual(funding)
@@ -36,6 +36,10 @@ it('uses the original team token and task while reading authoritative stop reaso
   const fetcher = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({ ok: true, data: { ...context, stop_reason: 'team_credits_exhausted' } })))
   await expect(teamIssueContext(auth, 'task-a', fetcher, identity)).rejects.toMatchObject({ code: 'credits_exhausted', reason_code: 'team_credits_exhausted' })
   expect(fetcher.mock.calls[0][1]).toEqual(expect.objectContaining({ method: 'GET', headers: expect.objectContaining({ Authorization: `Bearer ${auth.accessToken}` }) }))
+})
+it('refuses a context for a different Auth principal before any model ticket is issued', async () => {
+  const fetcher = vi.fn(async () => new Response(JSON.stringify({ ok: true, data: { ...context, member_identity_id: 'another-principal' } })))
+  await expect(teamIssueContext(auth, 'task-a', fetcher)).rejects.toMatchObject({ code: 'team_identity_required' })
 })
 it('refuses missing/changed funding and never uses a personal fallback for a failed context read', async () => {
   expect(() => assertSameTeamFunding({ ...funding, task_id: 'task-b' }, funding)).toThrow()

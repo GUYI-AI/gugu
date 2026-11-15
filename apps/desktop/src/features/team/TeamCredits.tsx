@@ -86,7 +86,7 @@ export function TeamCredits({ onTopUp }: { onTopUp: () => void }) {
       <TeamCheckbox checked={selected.has(row.member_id)} label={t('selectMember', { name: row.name })} onChange={checked => setSelected(previous => {
         const next = new Set(previous); if (checked) next.add(row.member_id); else next.delete(row.member_id); return next
       })} />
-      <div className="gg-team-person"><Avatar name={row.name} seed={names.get(row.member_id)!.identity_id ?? row.member_id} size="sm" /><span>{row.name}</span>
+      <div className="gg-team-person"><Avatar name={row.name} seed={names.get(row.member_id)!.identity_id ?? row.member_id} isAgent={false} size="sm" /><span>{row.name}</span>
         {names.get(row.member_id)!.state !== 'active' && <small className="gg-team-muted">{t(names.get(row.member_id)!.state)}</small>}</div>
       <span>{formatCredits(row.used_credits)}</span><span>{row.cap_credits === null ? t('noCap') : formatCredits(row.cap_credits)}</span>
       <Button variant="ghost" onClick={() => setEditing([row])}>{t('setCap')}</Button>

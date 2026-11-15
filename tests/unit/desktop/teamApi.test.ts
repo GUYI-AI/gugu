@@ -43,6 +43,10 @@ describe('team HTTP contract boundary', () => {
     const value = teamSignIn(); value.session.user.app_metadata = {}
     await expect(createTeamApi(async () => ({ ok: true, data: value })).googleSignIn({ access_token: 'proof-only' })).rejects.toMatchObject({ code: 'team_identity_required' })
   })
+  it('rejects a team-marked session whose Auth principal differs from the canonical member identity', async () => {
+    const value = teamSignIn(); value.session.user.id = 'another-principal'
+    await expect(createTeamApi(async () => ({ ok: true, data: value })).signIn('verified-receipt')).rejects.toMatchObject({ code: 'team_identity_required' })
+  })
   it('never reports a completed disablement without all effective-access checks', async () => {
     const api = createTeamApi(async () => ({ ok: true, data: { state: 'complete', checks: { new_data_calls_denied: true, new_model_calls_denied: true, session_followups_stopped: false } } }))
     await expect(api.revocationResult('operation-fixture')).rejects.toMatchObject({ code: 'revocation_pending' })

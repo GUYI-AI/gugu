@@ -45,7 +45,7 @@ function TeamSession({ user, children }: { user: AuthUser; children: ReactNode }
       if (context.kind !== 'team') throw new TeamApiError('team_identity_required')
       if (context.member_state !== 'active') throw new TeamApiError('membership_disabled')
       const profile = await api.profile(signal)
-      if (profile.team.id !== context.team_id || profile.membership.id !== context.member_id
+      if (context.member_identity_id !== user.id || profile.team.id !== context.team_id || profile.membership.id !== context.member_id
         || profile.membership.identity_id !== context.member_identity_id
         || profile.membership.state !== 'active' || profile.membership.role !== context.role
         || profile.membership.revision !== context.membership_revision) throw new TeamApiError('version_conflict')

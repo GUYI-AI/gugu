@@ -5,7 +5,7 @@ import { AuthContext } from '@/store/auth'
 import { TeamApiProvider, TeamProvider, TeamAccessGate } from '@/features/team/context'
 import { TeamPage } from '@/features/team/TeamPage'
 import { TeamAuthPane } from '@/features/team/TeamAuthPane'
-import { TeamAccountMethods } from '@/features/team/TeamAccount'
+import { TeamAccountMembership, TeamAccountMethods } from '@/features/team/TeamAccount'
 import { TeamApiError } from '@/features/team/errors'
 import type { TeamApi, TeamRole } from '@/features/team/types'
 import { mockTeamApi, teamProfile, teamSignIn, teamUser } from '../../../../../../../tests/fixtures/teamEdition'
@@ -36,6 +36,7 @@ async function mountTeam(role: TeamRole, api: TeamApi, node = <TeamPage onMessag
 it('lets a member use directory/search/usage while omitting every management section', async () => {
   const summary = vi.fn(), setCaps = vi.fn(), api = mockTeamApi('member', { summary, setCaps })
   await mountTeam('member', api)
+  expect(harness.container.querySelector('.gg-team-person-row [data-avatar-empty]')).toBeNull()
   await capture('member-overview')
   expect(harness.container.textContent).not.toContain('成员管理')
   expect(harness.container.textContent).not.toContain('积分管理')
@@ -51,6 +52,27 @@ it('lets a member use directory/search/usage while omitting every management sec
   await capture('member-usage')
   expect(summary).not.toHaveBeenCalled(); expect(setCaps).not.toHaveBeenCalled()
   expect(harness.container.textContent).not.toContain('·')
+})
+
+it('blocks a restored team context for another principal before loading any product data', async () => {
+  const api = mockTeamApi(), directory = vi.fn(api.directory)
+  harness = createReactHarness()
+  await renderWithAppProviders(harness, <TeamProvider user={teamUser} api={{ ...api, directory,
+    context: async () => ({ ...await api.context(), member_identity_id: 'another-principal' }) }}>
+    <TeamAccessGate><TeamPage onMessage={vi.fn()} onTopUp={vi.fn()} /></TeamAccessGate>
+  </TeamProvider>, { auth: teamUser })
+  await until('the restored identity mismatch is blocked', () => !!harness.container.querySelector('.gg-team-access-blocker[role="alert"]'))
+  expect(harness.container.querySelector('[data-testid="team-page"]')).toBeNull()
+  expect(directory).not.toHaveBeenCalled()
+})
+
+it('shows the team and role above the real account email as separate elements', async () => {
+  await mountTeam('admin', mockTeamApi('admin'), <div><TeamAccountMembership /><TeamAccountMethods /></div>)
+  expect(harness.container.querySelector('.gg-team-account-role')?.textContent).toBe('管理员')
+  expect(harness.container.textContent).toContain('明川研究院')
+  expect(harness.container.textContent).toContain('lin@example.test')
+  expect(harness.container.textContent).not.toContain('·')
+  await capture('account-team-row')
 })
 
 it('edits an exact decimal monthly cap using cap_revision rather than membership revision', async () => {

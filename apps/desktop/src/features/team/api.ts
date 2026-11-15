@@ -36,7 +36,7 @@ function signIn(value: unknown): TeamSignInResult {
   if (metadata.gugu_account_kind !== 'team_member' || context.kind !== 'team'
     || (context.region !== 'cn' && context.region !== 'hk')) throw new TeamApiError('team_identity_required')
   const membership = read.membership(row.membership)
-  if (team.id !== context.team_id || membership.identity_id !== context.member_identity_id
+  if (team.id !== context.team_id || user.id !== membership.identity_id || membership.identity_id !== context.member_identity_id
     || membership.revision !== context.membership_revision || membership.state !== 'active') throw new TeamApiError('team_identity_required')
   return { team: { id: read.text(team.id, 'team.id'), name: read.text(team.name, 'team.name') },
     membership, context: { kind: 'team', region: context.region,

@@ -388,7 +388,7 @@ describe('fixed team model funding', () => {
     vi.stubEnv('GUGU_PLATFORM_MODELS_ENABLED', 'true')
     coreMocks.requireRuntimeAuth.mockResolvedValue(teamAuth)
   })
-  const context = { kind: 'team', team_id: 'team-a', member_id: 'member-a', member_identity_id: 'identity-a', member_state: 'active', membership_revision: 9, stop_reason: null }
+  const context = { kind: 'team', team_id: 'team-a', member_id: 'member-a', member_identity_id: teamAuth.userId, member_state: 'active', membership_revision: 9, stop_reason: null }
   function issueReply(sessionId: string) {
     return { session_id: sessionId, relay_url: 'https://gateway.example.test', token: 'synthetic-ticket', model: 'model-a', protocol: 'openai-responses', expires_at: '2099-11-15T01:00:00Z', funding }
   }
@@ -403,7 +403,7 @@ describe('fixed team model funding', () => {
     const first = await issuePlatformModelAccess(request)
     const next = await issuePlatformModelAccess({ ...request, keepFromAccessSessionId: first.accessSessionId })
     await renewPlatformModelAccess(request.authProvider, next.accessSessionId)
-    expect(calls[0]).toMatchObject({ action: 'issue', team_id: 'team-a', member_identity_id: 'identity-a', task_id: taskId, expected_membership_revision: 9 })
+    expect(calls[0]).toMatchObject({ action: 'issue', team_id: 'team-a', member_identity_id: teamAuth.userId, task_id: taskId, expected_membership_revision: 9 })
     expect(calls[1]).toMatchObject({ action: 'issue', keep_from_session_id: first.accessSessionId, task_id: taskId })
     expect(calls[2]).toEqual({ action: 'renew', session_id: next.accessSessionId })
     expect(next.teamTask).toEqual(first.teamTask)

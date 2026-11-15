@@ -59,7 +59,7 @@ export async function readTeamModelContext(auth: RuntimeAuth, fetchImpl: TeamFet
     throw new TeamFundingError(typeof error.code === 'string' ? error.code : 'billing_unavailable', teamCreditStopReason(error.reason_code) ?? undefined)
   }
   const row = record(envelope.data)
-  if (row.kind !== 'team' || row.member_state !== 'active' || !Number.isSafeInteger(row.membership_revision) || Number(row.membership_revision) < 0) throw new TeamFundingError(row.member_state === 'disabled' ? 'membership_disabled' : 'team_identity_required')
+  if (row.kind !== 'team' || row.member_identity_id !== auth.userId || row.member_state !== 'active' || !Number.isSafeInteger(row.membership_revision) || Number(row.membership_revision) < 0) throw new TeamFundingError(row.member_state === 'disabled' ? 'membership_disabled' : 'team_identity_required')
   return { teamId: text(row.team_id), memberId: text(row.member_id), memberIdentityId: text(row.member_identity_id),
     membershipRevision: row.membership_revision as number, stopReason: teamCreditStopReason(row.stop_reason) }
 }

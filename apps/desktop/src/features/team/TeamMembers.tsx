@@ -50,7 +50,7 @@ function ManagedMemberRow({ member, onSelect }: { member: TeamMember; onSelect: 
   const { t } = useTranslation('team'), intent = useTeamDisableIntent(member.id)
   return <ListRow role="button" tabIndex={0} className="gg-team-person-row" onClick={onSelect}
     onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect() } }}
-    leading={<Avatar name={member.name} seed={member.identity_id ?? member.id} size="md" />} title={member.name} subtitle={member.email}
+    leading={<Avatar name={member.name} seed={member.identity_id ?? member.id} isAgent={false} size="md" />} title={member.name} subtitle={member.email}
     trailing={<span className="gg-team-muted">{intent.pending ? t('disableUnconfirmed') : teamRoleLabel(member.role, t)}</span>} />
 }
 
