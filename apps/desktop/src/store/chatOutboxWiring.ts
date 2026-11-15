@@ -212,6 +212,8 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
   const uploadRetries = new Map<string, () => void>()
   // Rows whose commit found the upload gone while this run holds the file: uploaded again as soon as they fail.
   const uploadAgain = new Set<string>()
+  // Rows already uploaded again on their own since the person last sent or resent them.
+  const uploadedAgain = new Set<string>()
   const retryable = (record: OutboxRecord) => !record.dependencyDiscarded && (uploadRetries.has(record.clientMessageId)
     || (record.operation?.kind !== 'upload' && record.operation?.kind !== 'nativeAttachment'))
   // clientMessageId → 本次会话里发送方交来的投递前置。送达/丢弃即删;失败保留,手动重试会再跑一次。
@@ -219,7 +221,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
   // 状态迁移 → 乐观行 local_send_state(pending/sending 统一显示「发送中」,failed 显示「未送达」)。
   function reflectState(record: OutboxRecord): void {
     if (!active) return
-    if (record.state === 'failed' && uploadAgain.delete(record.clientMessageId)) { wiring.retrySend(record.clientMessageId); return }
+    if (record.state === 'failed' && uploadAgain.delete(record.clientMessageId)) { resend(record.clientMessageId); return }
     const state = record.state === 'failed' ? 'failed' : 'sending'
     const patchRow = (m: MessageItem) =>
       m.id === record.clientMessageId ? { ...m, local_send_state: state as MessageItem['local_send_state'], local_send_error: record.lastError, local_send_retryable: retryable(record) } : m
@@ -253,6 +255,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     nativeCommits.delete(record.clientMessageId)
     attachmentTimings.delete(record.clientMessageId)
     uploadRetries.delete(record.clientMessageId)
+    uploadedAgain.delete(record.clientMessageId)
     dropSentFile(record.clientMessageId)
     if (!active) return
     if (record.payload.threadRootId) {
@@ -273,6 +276,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     if (record.operation?.kind !== 'nativeAttachment') attachmentTimings.get(record.clientMessageId)?.finish('success', 'outbox')
     attachmentTimings.delete(record.clientMessageId)
     uploadRetries.delete(record.clientMessageId)
+    uploadedAgain.delete(record.clientMessageId)
     adoptSentFile(record.clientMessageId, persisted)
     if (!active) return
     const user = io.user()
@@ -354,8 +358,12 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
           if (!(error instanceof AttachmentsError) || error.route !== 'commit' || error.code !== 'expired') throw error
           // The upload's permit lapsed (a resend long after the first try): its bytes must go up again. If this run still
           // holds the file, that happens at once as the same row; otherwise the row asks for the file again.
-          if (uploadRetries.has(record.clientMessageId)) uploadAgain.add(record.clientMessageId)
-          throw new UploadAgainError()
+          // At most once per send the person started: a file whose upload and commit outlast the permit would loop.
+          const held = uploadRetries.has(record.clientMessageId), again = held && !uploadedAgain.has(record.clientMessageId)
+          rendererLogger('chat/outbox').warn({ messageId: record.clientMessageId, heldBytes: held, uploadingAgain: again,
+            alreadyUploadedAgain: held && !again }, 'attachment commit found its upload permit lapsed')
+          if (again) { uploadedAgain.add(record.clientMessageId); uploadAgain.add(record.clientMessageId) }
+          throw new UploadAgainError(held)
         })
       }
       if (operation?.kind === 'nativeAttachment') throw new Error('Native publication must remain outside the delivery lane')
@@ -399,6 +407,26 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     },
     onDiscarded: removeRow,
   })
+
+  /** Sends a failed row again: its bytes again when this run holds them and they never went up (or went stale), else its commit. */
+  function resend(clientMessageId: string): void {
+    if (!active) return
+    const again = uploadRetries.get(clientMessageId)
+    if (again) {
+      void outbox.resumeUpload(clientMessageId).then((resumed) => {
+        if (uploadRetries.get(clientMessageId) !== again) return
+        // Its bytes went up and only the commit failed: the ordinary retry resends that, keeping the bytes in hand in
+        // case that commit finds the upload gone.
+        if (!resumed) return outbox.retry(clientMessageId)
+        uploadRetries.delete(clientMessageId)
+        // This upload is the one a send may make: should its commit still find the permit lapsed, the row stops.
+        uploadedAgain.add(clientMessageId)
+        again()
+      }).catch((err) => { if (active) rendererLogger('chat/outbox').error({ messageId: clientMessageId, error: err }, 'upload retry failed') })
+      return
+    }
+    void outbox.retry(clientMessageId).catch((err) => { if (active) console.error('[chatOutbox] retry failed', err) })
+  }
 
   const wiring: OutboxWiring = {
     outbox,
@@ -586,20 +614,9 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
       io.setThreadMessages((prev) => rows.reduce((list, row) => upsertMessageById(list, row), prev), chatId)
     },
     retrySend(clientMessageId) {
-      if (!active) return
-      const again = uploadRetries.get(clientMessageId)
-      if (again) {
-        void outbox.resumeUpload(clientMessageId).then((resumed) => {
-          if (uploadRetries.get(clientMessageId) !== again) return
-          // Its bytes went up and only the commit failed: the ordinary retry resends that, keeping the bytes in hand in
-          // case that commit finds the upload gone.
-          if (!resumed) return outbox.retry(clientMessageId)
-          uploadRetries.delete(clientMessageId)
-          again()
-        }).catch((err) => { if (active) rendererLogger('chat/outbox').error({ messageId: clientMessageId, error: err }, 'upload retry failed') })
-        return
-      }
-      void outbox.retry(clientMessageId).catch((err) => { if (active) console.error('[chatOutbox] retry failed', err) })
+      // The person resends: the row may upload itself again once more.
+      uploadedAgain.delete(clientMessageId)
+      resend(clientMessageId)
     },
     discardSend(clientMessageId) {
       if (active) void outbox.discard(clientMessageId).catch((err) => { if (active) console.error('[chatOutbox] discard failed', err) })

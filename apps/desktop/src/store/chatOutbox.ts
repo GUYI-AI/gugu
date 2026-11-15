@@ -33,7 +33,8 @@ export const OUTBOX_RETRY_BACKOFF_MS = [2_000, 8_000] as const
  * request cannot help, so the row fails at once as one whose file must be uploaded again.
  */
 export class UploadAgainError extends Error {
-  constructor() { super('The upload permit lapsed; the file must be uploaded again') }
+  /** `held`: this run still holds the file, so the person can resend it; otherwise it must be selected again. */
+  constructor(readonly held: boolean) { super('The upload permit lapsed; the file must be uploaded again') }
 }
 
 export interface OutboxDeps {
@@ -239,7 +240,7 @@ export function createChatOutbox(deps: OutboxDeps): ChatOutbox {
             if (!records.has(record.clientMessageId)) break
             if (err instanceof UploadAgainError) {
               record = await persist(record, 'sending', { operation: { kind: 'upload' }, attempts: record.attempts + 1,
-                lastError: i18n.t('outbox.selectFileAgain', { ns: 'messaging' }) }, operationEpoch)
+                lastError: err.held ? i18n.t('composer.failureReason.timeout', { ns: 'messaging' }) : i18n.t('outbox.selectFileAgain', { ns: 'messaging' }) }, operationEpoch)
               if (!isActive(operationEpoch)) return
               break
             }

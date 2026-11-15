@@ -92,3 +92,21 @@ it.each(['zh-CN', 'en-US'] as const)('without the bytes (a reload since), the ro
     local_send_error: locale === 'zh-CN' ? '上传已中断，请重新选择文件。' : 'Upload interrupted. Select the file again.' })
   h.wiring.dispose()
 })
+
+it('uploads again on its own at most once per send: lapsed again, the row stops, says it timed out, and keeps resend for the person', async () => {
+  vi.useFakeTimers()
+  const h = harness()
+  // Like the composer's closure: the bytes go up again, then the row is committed again (and finds the permit lapsed again).
+  const uploadAgain = vi.fn(() => { void h.wiring.commitAttachment(row, { staging_key: `staging/owner-1/k${uploadAgain.mock.calls.length}` }, args, undefined, undefined, uploadAgain) })
+  await failedCommit(h, uploadAgain)
+  commit.mockRejectedValue(lapsed())
+  h.wiring.retrySend(ID)
+  await vi.runAllTimersAsync()
+  expect(uploadAgain, 'one automatic upload, not a loop').toHaveBeenCalledOnce()
+  expect(h.shown()).toMatchObject({ local_send_state: 'failed', local_send_retryable: true, local_send_error: '发送超时，请稍后重新发送' })
+  // The person resends: the row may upload itself again once more.
+  h.wiring.retrySend(ID)
+  await vi.runAllTimersAsync()
+  expect(uploadAgain).toHaveBeenCalledTimes(2)
+  h.wiring.dispose()
+})
