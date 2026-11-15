@@ -130,7 +130,7 @@ function SessionProbe() { latestSession = useSearchSession(); return null }
 const sessionSnapshot = () => latestSession
 const options = () => [...host.querySelectorAll<HTMLElement>('[role=option]')]
 const recentWords = () => [...host.querySelectorAll<HTMLElement>('[data-testid=global-search-recent] button:not([data-testid=global-search-recent-clear])')].map((button) => button.textContent)
-const headers = () => [...host.querySelectorAll<HTMLElement>('[role=listbox] > button:not([role=option])')].map((button) => button.textContent)
+const headers = () => [...host.querySelectorAll<HTMLElement>('[role=listbox] [data-search-scope]')].map((button) => button.textContent)
 const tab = (key: string) => [...host.querySelectorAll<HTMLElement>('[role=tab]')].find((button) => button.textContent!.startsWith(key))!
 
 describe('global search sender avatars', () => {
@@ -419,7 +419,7 @@ describe('global search panel', () => {
   it('a group header narrows to that conversation, asking the cloud for that chat only and not the tasks', async () => {
     await render('回滚')
     remote.turns.mockClear()
-    await act(async () => [...host.querySelectorAll<HTMLElement>('[role=listbox] > button:not([role=option])')][0]!.click())
+    await act(async () => [...host.querySelectorAll<HTMLElement>('[role=listbox] [data-search-scope]')][0]!.click())
     await settle()
     expect(remote.messages).toHaveBeenCalledWith('message_search_as', { p_chat_id: GROUP, p_query: '回滚', p_limit: 100 })
     expect(remote.turns).not.toHaveBeenCalled()
