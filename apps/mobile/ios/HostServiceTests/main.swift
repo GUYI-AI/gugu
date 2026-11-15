@@ -9,14 +9,21 @@ private func wait<T>(_ work: (@escaping (T) -> Void) -> Void) throws -> T {
     work { result = $0; semaphore.signal() }
     try require(semaphore.wait(timeout: .now() + 10) == .success, "Native service callback timed out"); return result!
 }
+private func eventually(_ message: String, _ condition: () -> Bool) throws {
+    let deadline = Date().addingTimeInterval(10)
+    while !condition() { try require(Date() < deadline, message); Thread.sleep(forTimeInterval: 0.01) }
+}
 private final class Socket: GuguIOSRealtimeSocket {
+    private let acknowledge: Bool
     private let lock = NSLock()
     private var queued: [String] = []
     private var receiver: ((Result<String, Error>) -> Void)?
+    init(acknowledge: Bool) { self.acknowledge = acknowledge }
     func resume() {}
     func send(_ text: String, completion: @escaping (Error?) -> Void) {
-        let frame = try! JSONSerialization.jsonObject(with: Data(text.utf8)) as! [String: Any]
         completion(nil)
+        guard acknowledge else { return }
+        let frame = try! JSONSerialization.jsonObject(with: Data(text.utf8)) as! [String: Any]
         let reply: [String: Any] = ["topic": frame["topic"]!, "event": "phx_reply", "ref": frame["ref"]!, "join_ref": frame["join_ref"] ?? NSNull(), "payload": ["status": "ok", "response": [:]]]
         let text = String(decoding: try! JSONSerialization.data(withJSONObject: reply), as: UTF8.self)
         lock.lock(); if let receiver { self.receiver = nil; lock.unlock(); receiver(.success(text)) } else { queued.append(text); lock.unlock() }
@@ -44,7 +51,7 @@ private final class Executor: GuguNativeToolExecutor {
         }, calendarHasFullAccess: { false }, revokeCalendarAccess: { _ in })
         let lifecycle = GuguIOSHostLifecycle(root: root.appendingPathComponent("journal"), verifiedIdentity: { current })
         let runtime = GuguPackagedRuntime(asset: asset, sha256: SHA256.hash(data: asset).map { String(format: "%02x", $0) }.joined(), piVersion: "1.4.0")
-        let lock = NSLock(); var network = 0, sealedOrdinaryAttempts = 0, advertisements: [[String: Any]] = []
+        let lock = NSLock(); var network = 0, sealedOrdinaryAttempts = 0, advertisements: [[String: Any]] = [], acknowledgeJoins = false
         let retirementId = UUID().uuidString.lowercased(), retirementDeadline = Date().addingTimeInterval(120)
         let service = try GuguIOSHostService(root: root.appendingPathComponent("service"), runtime: runtime, lifecycle: lifecycle, ownerAccess: access,
             configuration: .init(version: 1, supabaseUrl: "https://fixture.invalid", anonKey: "public"), credentials: { expected in
@@ -64,7 +71,10 @@ private final class Executor: GuguNativeToolExecutor {
                     lock.lock(); advertisements.append(value); lock.unlock(); reply = [value]
                 }
                 done(try! JSONSerialization.data(withJSONObject: reply, options: [.fragmentsAllowed]), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil), nil)
-            }, socketFactory: { _ in Socket() }, retirementAuthorization: { expected, id, operation in
+            }, socketFactory: { _ in
+                lock.lock(); let acknowledge = acknowledgeJoins; lock.unlock()
+                return Socket(acknowledge: acknowledge)
+            }, retirementAuthorization: { expected, id, operation in
                 try require(expected == binding && id == retirementId, "Retirement permit escaped its original scope")
                 return try .init(binding: expected, retirementId: id, operation: operation, accessToken: "synthetic-native-retirement", expiresAt: retirementDeadline)
             })
@@ -90,7 +100,7 @@ private final class Executor: GuguNativeToolExecutor {
         cases.append("owner_only_and_incomplete_binding_wire_reject_before_HTTP")
 
         let configured: [String: Any] = try wait { service.configure(["expectedBinding": raw], completion: $0) }
-        try require(configured["ownerId"] as? String == owner && configured["ready"] as? Bool == false && configured["errorCode"] as? String == "delivery_not_connected", "Partial delivery claimed ready")
+        try require(configured["ownerId"] as? String == owner && configured["ready"] as? Bool == false && configured["errorCode"] as? String == "delivery_reconciling", "Unreconciled delivery claimed ready")
         let read: (String, [Any]) throws -> [String: Any] = { channel, args in try wait { service.hostCall(["expectedBinding": raw, "id": UUID().uuidString.lowercased(), "channel": channel, "args": args], completion: $0) } }
         let absent = try read("appSettings.get", ["notifications"])
         try require((absent["error"] as? [String: Any])?["code"] as? String == "settings_unavailable", "Absent preference was inferred enabled")
@@ -132,13 +142,36 @@ private final class Executor: GuguNativeToolExecutor {
         let afterRetirement: [String: Any] = try wait { service.hostState(["expectedBinding": raw], completion: $0) }
         try require((afterRetirement["error"] as? [String: Any])?["code"] as? String == "host_not_ready", "Retired same-binding hostState returned a configured stopped host")
         let reopened: [String: Any] = try wait { service.configure(["expectedBinding": raw], completion: $0) }
-        try require(reopened["ownerId"] as? String == owner && reopened["errorCode"] as? String == "delivery_not_connected", "Explicit same-binding configuration did not reopen the native host")
+        try require(reopened["ownerId"] as? String == owner && reopened["ready"] as? Bool == false && reopened["errorCode"] as? String == "delivery_reconciling", "Explicit same-binding configuration did not reopen the native host")
         cases.append("sealed_service_retirement_requires_same_binding_reconfigure_without_ordinary_credentials")
         let stopped: [String: Any] = try wait { service.stopHost(["expectedBinding": raw], completion: $0) }
         try require(stopped.isEmpty, "Known clean local stop failed")
         lock.lock(); let ads = advertisements; lock.unlock()
-        try require(!ads.isEmpty && ads.allSatisfy { ($0["capabilities"] as? [String: Any])?["host_runtime_capability"] as? Int == 0 }, "Partial delivery advertised a host capability")
-        cases.append("actual_private_subscriptions_and_heartbeat_do_not_advertise_missing_delivery")
+        try require(!ads.isEmpty && ads.allSatisfy {
+            let caps = $0["capabilities"] as? [String: Any]
+            return caps?["host_runtime_capability"] as? Int == 1 && (caps?["runtimes"] as? [String])?.isEmpty == true
+        }, "Partial delivery advertised a runtime or misreported the verified version")
+        cases.append("unready_connection_withholds_runtimes_without_claiming_an_outdated_host")
+
+        // A successful private join must not conceal an absent inbox adapter.
+        lock.lock(); acknowledgeJoins = true; lock.unlock()
+        let joined: [String: Any] = try wait { service.configure(["expectedBinding": raw], completion: $0) }
+        try require(joined["ownerId"] as? String == owner, "Private-subscription scenario did not configure")
+        try eventually("Private subscriptions were not acknowledged") { service.backend.queue.sync { service.backend.remoteConnected } }
+        service.backend.queue.sync { service.backend.inbox = nil; service.backend.inboxHealthy = false }
+        try eventually("Earlier heartbeat did not finish") { service.backend.queue.sync { !service.backend.heartbeatRunning } }
+        lock.lock(); let beforeMissingInbox = advertisements.count; lock.unlock()
+        service.backend.queue.sync { service.backend.heartbeat() }
+        try eventually("Missing-inbox heartbeat was not published") {
+            lock.lock(); defer { lock.unlock() }; return advertisements.count > beforeMissingInbox
+        }
+        let missingInbox = try service.backend.state(binding: binding)
+        try require(missingInbox["ready"] as? Bool == false && missingInbox["errorCode"] as? String == "delivery_not_connected", "Private subscriptions bypassed absent inbox configuration")
+        lock.lock(); let missingCaps = advertisements.last?["capabilities"] as? [String: Any]; lock.unlock()
+        try require(missingCaps?["host_runtime_capability"] as? Int == 1 && (missingCaps?["runtimes"] as? [String])?.isEmpty == true, "Missing inbox advertised a runtime or an outdated version")
+        let missingStopped: [String: Any] = try wait { service.stopHost(["expectedBinding": raw], completion: $0) }
+        try require(missingStopped.isEmpty, "Missing-inbox scenario did not stop cleanly")
+        cases.append("acknowledged_private_subscriptions_without_inbox_withhold_runtimes_and_readiness")
         print(String(decoding: try JSONSerialization.data(withJSONObject: ["result": "pass", "kind": "actual_Pi_JSC_native_service_APFS_with_synthetic_HTTP_and_sockets", "cases": cases, "realCloudHTTPCalls": 0, "realModelCalls": 0, "iosAppRuns": 0], options: [.sortedKeys, .prettyPrinted]), as: UTF8.self))
     }
 }

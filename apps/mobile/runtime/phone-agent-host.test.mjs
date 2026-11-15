@@ -729,7 +729,8 @@ test('real phone device IDs register honestly, and remote spawn completes the ca
     assert.equal(fx.sessionReplies.length, 1)
     const registrations = fx.calls.filter(([name]) => name === 'upsert_device').map(([, row]) => row)
     assert.equal(registrations[0].device_id, deviceId)
-    assert.equal(registrations[0].capabilities.host_runtime_capability, 0)
+    assert.equal(registrations[0].capabilities.host_runtime_capability, 1)
+    assert.deepEqual(registrations[0].capabilities.runtimes, [])
     assert.equal(registrations.at(-1).capabilities.host_runtime_capability, 1)
     assert.equal(fx.host.state().lastHeartbeatAt > 0, true)
     assert.deepEqual(await fx.host.invoke('agentSession.locate', [caller, { action: 'locate', session_ids: [result.session_id, randomUUID()] }], randomUUID()), { session_ids: [result.session_id] })
@@ -1297,7 +1298,9 @@ test('RPC connectivity cannot publish ready before the initial heartbeat and sta
       onConnectivity(true)
       assert.equal(events.some((event) => event.type === 'host_state' && event.ready), false)
       assert.equal(calls.some(([name]) => name === 'runtime_instance_heartbeat'), true)
-      assert.equal(calls.filter(([name]) => name === 'upsert_device').at(-1)[1].capabilities.host_runtime_capability, 0)
+      const capability = calls.filter(([name]) => name === 'upsert_device').at(-1)[1].capabilities
+      assert.equal(capability.host_runtime_capability, 1)
+      assert.deepEqual(capability.runtimes, [])
     },
   })
   try { assert.equal(fx.host.state().ready, true) } finally { await fx.close() }
