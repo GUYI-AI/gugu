@@ -193,7 +193,7 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
     try {
       const result = await ui()?.invoke(command)
       if (result?.ok) { settled = true; setCurrent(undefined); setState(done); return true }
-      else setActionError('保存失败，请重试')
+      else setActionError(result?.ok === false && result.code === 'SYSTEM_STORAGE_UNAVAILABLE' ? '发起电脑的系统密码存储不可用' : '保存失败，请重试')
     } catch { setActionError('当前无法处理，请重试') }
     finally { setBusy(false) }
     return false

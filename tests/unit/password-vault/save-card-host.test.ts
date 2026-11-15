@@ -19,7 +19,7 @@ async function fixture() {
     return { ok: true, snapshot: { items: [], saves: saves.pending(), outcomes: saves.outcomes(), approvals: [], candidates: [] },
       ...(command.type === 'save-draft' ? { draft: saves.draft(command.requestId) } : {}) }
   }
-  const handler = passwordSaveCardHandler(async () => ({ ownerId: owner, saves, invoke }))
+  const handler = passwordSaveCardHandler(async () => ({ ownerId: owner, saves, items: async () => [], invoke }))
   const wire: unknown[] = []
   const call = async (_device: string, payload: { requestId: string; sealed: string }) => {
     const reply = await handler(payload, { request: { user_id: owner } }); wire.push(payload, reply)
@@ -36,6 +36,18 @@ describe('encrypted remote save cards', () => {
     expect(reply.ok && reply.draft?.fields[0].value).toBe('15500000000')
     expect(JSON.stringify(f.wire)).not.toContain('15500000000')
     expect(JSON.stringify(f.request.view)).not.toContain('15500000000')
+  })
+  it('reads a new proposal without opening system password storage', async () => {
+    const f = await fixture()
+    const handler = passwordSaveCardHandler(async () => ({ ownerId: owner, saves: f.saves,
+      items: async () => { throw new Error('system storage unavailable') }, invoke: async () => ({ ok: false, code: 'SYSTEM_STORAGE_UNAVAILABLE' }) }))
+    const key = await createPasswordCardKey(), nonce = crypto.randomUUID()
+    const sealed = await sealPasswordCard(f.request.view.saveKey!, { requestId: f.request.requestId, nonce, replyKey: key.publicKey,
+      command: { type: 'save-draft', requestId: f.request.requestId } })
+    const reply = await handler({ requestId: f.request.requestId, sealed }, { request: { user_id: owner } })
+    expect(reply.result).toBeDefined()
+    expect(await openPasswordCard(key, reply.result!.sealed)).toMatchObject({ reply: { ok: true, draft: { fields: [{ value: '15500000000' }] } } })
+    key.privateKey.fill(0)
   })
   it('saves once, then reports the completed outcome on another refresh', async () => {
     const f = await fixture(), draft = f.saves.draft(f.request.requestId)

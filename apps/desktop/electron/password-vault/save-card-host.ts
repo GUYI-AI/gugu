@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { PasswordUiCommand, PasswordUiReply } from '@gugu/core/shared/passwordBetaProtocol'
+import type { PasswordItem, PasswordUiCommand, PasswordUiReply } from '@gugu/core/shared/passwordBetaProtocol'
 import { openPasswordCard, sealPasswordCard } from '@gugu/core/shared/passwordCardCipher'
 import type { BetaPasswordSaves } from './beta-save'
 
@@ -16,7 +16,7 @@ const commandSchema = z.discriminatedUnion('type', [
 const envelope = z.strictObject({ requestId: z.string().uuid(), sealed: z.string().min(1).max(8_000_000) })
 const openedSchema = z.strictObject({ requestId: z.string().uuid(), nonce: z.string().uuid(), replyKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/), command: commandSchema })
 /** Person card endpoint, separate from the Agent tools. Every command is scoped to one still-pending request. */
-export function passwordSaveCardHandler(load: () => Promise<{ ownerId: string; saves: BetaPasswordSaves; invoke(command: PasswordUiCommand): Promise<PasswordUiReply> }>) {
+export function passwordSaveCardHandler(load: () => Promise<{ ownerId: string; saves: BetaPasswordSaves; items(): Promise<PasswordItem[]>; invoke(command: PasswordUiCommand): Promise<PasswordUiReply> }>) {
   return async (payload: unknown, ctx: { request: { user_id: string } }) => {
     try {
       const value = await load()
@@ -27,7 +27,16 @@ export function passwordSaveCardHandler(load: () => Promise<{ ownerId: string; s
       if (opened.requestId !== input.requestId || command.type !== 'snapshot' && command.requestId !== input.requestId) throw new Error('unavailable')
       if (command.type === 'save' && (command.origin !== pending.view.origin || command.reference?.id !== pending.view.credentialId)) throw new Error('unavailable')
       if (pending.result !== 'pending' && command.type !== 'snapshot') throw new Error('unavailable')
-      const reply = await value.invoke(command)
+      let reply: PasswordUiReply
+      if (command.type === 'save') reply = await value.invoke(command)
+      else {
+        if (command.type === 'reject-save') value.saves.reject(input.requestId)
+        // A new proposal has no stored credential to read. Its draft must not depend on opening the vault.
+        const items = pending.result === 'pending' && pending.view.credentialId ? (await value.items()).filter(item => item.reference.id === pending.view.credentialId) : []
+        if (pending.result === 'pending' && pending.view.credentialId && !items.length) throw new Error('unavailable')
+        reply = { ok: true, snapshot: { items, approvals: [], saves: value.saves.pending(), candidates: [], outcomes: value.saves.outcomes() },
+          ...(command.type === 'save-draft' ? { draft: value.saves.draft(input.requestId) } : {}) }
+      }
       // A remote card cannot enumerate the vault, manage grants or reveal a stored secret.
       const scoped: PasswordUiReply = reply.ok ? { ok: true, snapshot: { items: reply.snapshot.items.filter(item => item.reference.id === pending.view.credentialId),
         approvals: [], saves: reply.snapshot.saves.filter(request => request.requestId === input.requestId), candidates: [], outcomes: reply.snapshot.outcomes?.filter(outcome => outcome.requestId === input.requestId) }, ...(reply.draft ? { draft: reply.draft } : {}) } : reply

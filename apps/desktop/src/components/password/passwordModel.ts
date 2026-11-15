@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import type { PasswordSyncRequest, PasswordSyncView, PasswordUiCommand, PasswordUiReply } from '@gugu/core/shared/passwordBetaProtocol'
 import { publishPasswordSnapshot } from '@/lib/passwordBetaNotifications'
 
-export const passwordErrorText = (code: string) => code === 'CANNOT_UNLOCK' ? '没有通过本人验证。'
+export const passwordErrorText = (code: string) => code === 'SYSTEM_STORAGE_UNAVAILABLE' ? '这台电脑的系统密码存储不可用，请稍后重试。' : code === 'CANNOT_UNLOCK' ? '没有通过本人验证。'
   : code === 'INVALID_INPUT' ? '请填写 https 网址、账号和密码；字段名不能重复。'
     : code === 'STALE_REFERENCE' ? '这条密码刚被改过，请返回后重试。'
     : code === 'RECOVERY_INVALID' ? '恢复码不对，请核对后重输。'

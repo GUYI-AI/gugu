@@ -258,8 +258,8 @@ async function agentSave(value: Account, caller: { agentId: string; sessionId: s
     changed()
     return { status: 'saved' as const, credentialId: saved.reference.id }
   }
-  const { requestId, status } = await value.saves.request(context, caller, origin, item, input, remote)
-  return { requestId, status }
+  const pending = await value.saves.request(context, caller, origin, item, input, remote)
+  return remote ? pending : { requestId: pending.requestId, status: pending.status }
 }
 async function caller(context: GuguMcpContext) {
   const value = await account(), identity = passwordNativeMcpIdentity(context)
@@ -315,7 +315,7 @@ export function passwordBetaRemoteHandlers() {
   return {
     [PASSWORD_SAVE_CARD_RPC]: passwordSaveCardHandler(async () => {
       const value = await account()
-      return { ownerId: value.ownerId, saves: value.saves, invoke: command => invokePasswordPerson(value, command) }
+      return { ownerId: value.ownerId, saves: value.saves, items: () => value.vault.list(person), invoke: command => invokePasswordPerson(value, command) }
     }),
     [PASSWORD_AGENT_RPC]: async (payload: unknown, ctx: { request: { user_id: string } }) => {
       try {
