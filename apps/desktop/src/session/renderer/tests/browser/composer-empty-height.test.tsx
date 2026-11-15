@@ -109,8 +109,9 @@ describe('the session composer\'s box', () => {
     }
   })
 
-  it.each([false, true])('grows from its desktop or mobile minimum to the existing cap (mobile=%s)', async (mobile) => {
-    const minimum = mobile ? 46 : sessionComposerBox.editorMinHeightPx
+  it.each([false, true])('grows from its desktop or approved phone minimum to its height cap (mobile=%s)', async (mobile) => {
+    const minimum = mobile ? 56 : sessionComposerBox.editorMinHeightPx
+    const maximum = mobile ? 128 : sessionComposerBox.editorMaxHeightPx
     const editorApiRef: { current: PromptEditorRef | null } = { current: null }
     root!.render(<SessionLocalizationProvider><ChatComposer mobile={mobile} editorApiRef={editorApiRef} onSubmit={() => {}} /></SessionLocalizationProvider>)
     const area = () => container!.querySelector<HTMLElement>('[data-slot="composer-input"]')!
@@ -120,7 +121,7 @@ describe('the session composer\'s box', () => {
     expect(area().clientHeight).toBeLessThan(sessionComposerBox.editorMaxHeightPx)
     expect(area().scrollHeight).toBe(area().clientHeight)
     editorApiRef.current!.setText(Array.from({ length: 12 }, (_, i) => `Line ${i + 1}`).join('\n'))
-    await until('long text reaches the cap', () => area().clientHeight === sessionComposerBox.editorMaxHeightPx)
+    await until('long text reaches the cap', () => area().clientHeight === maximum)
     expect(area().scrollHeight).toBeGreaterThan(area().clientHeight)
     expect(getComputedStyle(area()).overflowY).toBe('auto')
     editorApiRef.current!.clear()
