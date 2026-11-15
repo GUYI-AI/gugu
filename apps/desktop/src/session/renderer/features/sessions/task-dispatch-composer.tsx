@@ -38,6 +38,7 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   chatId,
   chatName,
   joinChat = false,
+  birthChatId = joinChat ? chatId : undefined,
   inGroup = joinChat,
   verbKey = chatId,
   onSessionCreated,
@@ -46,6 +47,8 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   /** 群名(托盘上那一格);`joinChat` 时要。 */
   chatName?: string;
   joinChat?: boolean;
+  /** Source group for a task created in a topic; the card still lands in chatId. */
+  birthChatId?: string;
   /** #2599 这是一个群或它的一个话题(话题里派的 agent 不进群,但同样住在这个群):项目一格每次都空着。缺省 = `joinChat`。 */
   inGroup?: boolean;
   /** 这个词记在 composerVerbBridge 的哪一格;缺省 = 这个对话(没有项目的会话里选的记在那条会话上,卡落它的私聊)。 */
@@ -90,7 +93,7 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
       verb: composerVerbLook('task', { label: translate('taskDispatch.agent'), onCancel: () => cancelComposerVerb(verbKey, draftKey), testId: 'task-dispatch' }),
       taskChatId: chatId,
       openAfterCreate: false,
-      birthChatId: joinChat ? chatId : undefined,
+      birthChatId,
       onSessionCreated: (result: { projectId: string; sessionId: string }) => {
         setComposerVerb(verbKey, null);
         onSessionCreated?.(result);
@@ -178,7 +181,7 @@ export function ComposerVerbDock({ chatId }: { chatId: string }) {
   return (
     <div className={sessionComposerDockBandClassName}>
       <div className={sessionComposerDockedWidthClassName}>
-        <TaskDispatchComposer chatId={chatId} chatName={chat?.name} joinChat={chat?.joinable} inGroup={chat?.inGroup} />
+        <TaskDispatchComposer chatId={chatId} chatName={chat?.name} joinChat={chat?.joinable} birthChatId={chat?.birthChatId} inGroup={chat?.inGroup} />
       </div>
     </div>
   );

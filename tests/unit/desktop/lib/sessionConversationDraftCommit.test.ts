@@ -2,6 +2,21 @@ import { expect, it, vi } from 'vitest'
 import type { PromptEditorRef } from '@gugu/session-ui/react/components'
 import { createDraftWriter } from '../../../../apps/desktop/src/store/chatDraftWrites'
 
+it('reads the current document for a task handoff, before the persisted draft catches up', () => {
+  const drafts = { topic: 'older snapshot', other: 'other topic' }
+  const writer = createDraftWriter(() => ({ drafts, setDraft: vi.fn() }))
+  let live = 'older snapshot'
+  const editor = { getText: () => live, setText: (text: string) => { live = text } } as unknown as PromptEditorRef
+  const unregister = writer.registerDraftEditor('topic', () => editor)
+  live = 'latest @[person](user:person-id)'
+  expect(writer.readDraft('topic')).toBe(live)
+  expect(writer.readDraft('other')).toBe('other topic')
+  live = ''
+  expect(writer.readDraft('topic')).toBe('')
+  unregister()
+  expect(writer.readDraft('topic')).toBe('older snapshot')
+})
+
 it.each(['Hi', 'Hi again', 'Hi appended', ''])('only consumes a complete unchanged live draft (%j)', text => {
   const drafts: Record<string, string> = { task: 'Hi' }
   const setDraft = (key: string, update: (current: string) => string) => { drafts[key] = update(drafts[key] ?? '') }
