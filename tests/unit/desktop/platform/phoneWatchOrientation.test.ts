@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
-import { createPhoneWatchOrientation, type PhoneWatchOrientationBridge } from '@/platform/phoneWatchOrientation'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createPhoneWatchOrientation, phoneWatchIsLandscape, type PhoneWatchOrientationBridge } from '@/platform/phoneWatchOrientation'
 
-vi.mock('@capacitor/core', () => ({ Capacitor: {}, registerPlugin: () => ({}) }))
+const nativePlatform = vi.hoisted(() => vi.fn(() => 'web'))
+vi.mock('@capacitor/core', () => ({ Capacitor: { getPlatform: nativePlatform }, registerPlugin: () => ({}) }))
+afterEach(() => { vi.unstubAllGlobals(); nativePlatform.mockReturnValue('web') })
 
 function bridge() {
   return { set: vi.fn<PhoneWatchOrientationBridge['set']>().mockResolvedValue(undefined),
@@ -9,6 +11,15 @@ function bridge() {
 }
 
 describe('the phone viewing window orientation', () => {
+  it('does not mistake the Android keyboard resizing a portrait WebView for a landscape display', () => {
+    nativePlatform.mockReturnValue('android')
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })))
+    const orientation = { type: 'portrait-primary' }
+    vi.stubGlobal('window', { screen: { orientation } })
+    expect(phoneWatchIsLandscape()).toBe(false)
+    orientation.type = 'landscape-primary'
+    expect(phoneWatchIsLandscape()).toBe(true)
+  })
   it('uses the same lease for both orientations and restores it only once', async () => {
     const native = bridge()
     const viewer = createPhoneWatchOrientation(native)

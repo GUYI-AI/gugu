@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@/components/ui/IconButton'
+import { Button } from '@/components/ui/Button'
 import { useBackLayer } from '@/components/ui/sheetStack'
 import { Expand, Minimize, MonitorSmartphone, PanelRightClose, X } from '@/lib/icons'
-import { createPhoneWatchOrientation } from '@/platform/phoneWatchOrientation'
+import { createPhoneWatchOrientation, phoneWatchIsLandscape } from '@/platform/phoneWatchOrientation'
 import { fitLiveWindow } from '@/session/renderer/features/live-window/geometry'
 import type { LiveWindowAction, LiveWindowPresentation, LiveWindowSource } from '@/session/renderer/features/live-window/types'
 import { cornerFromPhoneDock, movePhoneWatch, phoneWatchCorner, phoneWatchDock, type PhoneWatchBox } from './phone-watch-drag'
@@ -29,7 +30,7 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
   const [area, setArea] = useState<PhoneWatchBox>({ x: 0, y: 0, width: 0, height: 0 })
   const [composerHeight, setComposerHeight] = useState(0)
   const [layoutHeight, setLayoutHeight] = useState(0)
-  const [landscape, setLandscape] = useState(() => matchMedia('(orientation: landscape)').matches)
+  const [landscape, setLandscape] = useState(phoneWatchIsLandscape)
   const [revealed, setRevealed] = useState(false)
   const [moving, setMoving] = useState<PhoneWatchBox | null>(null)
   const drag = useRef<{ id: number; x: number; y: number; box: PhoneWatchBox; handle: boolean; moved: boolean; latest: PhoneWatchBox } | null>(null)
@@ -49,12 +50,17 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
     const body = chat.current
     if (!host || !body) return
     let composer: Element | null = null
+    let viewportElement: Element | null = null
     const measure = () => {
       const box = host.getBoundingClientRect()
       setLayoutHeight(box.height)
-      const viewport = body.querySelector('[data-chat-scroll], [data-slot="aui_thread-viewport"], [data-chat-viewport]')?.getBoundingClientRect()
+      const nextViewport = body.querySelector('[data-chat-scroll], [data-slot="aui_thread-viewport"], [data-chat-viewport]')
+      if (viewportElement !== nextViewport) { if (viewportElement) observer.unobserve(viewportElement); viewportElement = nextViewport; if (viewportElement) observer.observe(viewportElement) }
+      const viewport = viewportElement?.getBoundingClientRect()
       const nextComposer = body.querySelector('[data-chat-composer-placement], [data-chat-bottom-dock]')
       if (composer !== nextComposer) { if (composer) observer.unobserve(composer); composer = nextComposer; if (composer) observer.observe(composer) }
+      // Discovery ends when the real transcript and composer mount. Streaming text is not a geometry signal.
+      if (composer && viewportElement) content.disconnect()
       const height = composer?.getBoundingClientRect().height ?? 0
       setComposerHeight(height)
       const next = { x: 0, y: 0, width: box.width, height: Math.max(0, (viewport?.bottom ?? box.bottom - height) - box.top) }
@@ -70,9 +76,10 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
 
   useEffect(() => {
     const media = matchMedia('(orientation: landscape)')
-    const changed = () => setLandscape(media.matches)
+    const changed = () => setLandscape(phoneWatchIsLandscape())
     media.addEventListener('change', changed)
-    return () => media.removeEventListener('change', changed)
+    window.screen.orientation?.addEventListener('change', changed)
+    return () => { media.removeEventListener('change', changed); window.screen.orientation?.removeEventListener('change', changed) }
   }, [])
   useEffect(() => {
     if (large) return
@@ -98,6 +105,7 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
   const handle: PhoneWatchBox = { x: presentation.dock.edge === 'left' ? 0 : Math.max(0, area.width - 44),
     y: 8 + Math.max(0, area.height - 88) * presentation.dock.ratio, width: 44, height: 72 }
   const currentBox = moving ?? (docked ? handle : placed)
+  const handleStyle = { left: currentBox.x, top: currentBox.y }
 
   const begin = (event: ReactPointerEvent<HTMLElement>, isHandle: boolean) => {
     if (event.button !== 0 || event.target instanceof Element && event.target.closest('button') && !isHandle) return
@@ -137,7 +145,7 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
   }
 
   return <div ref={root} data-phone-watch-layout data-landscape={large && landscape || undefined}>
-    <section data-phone-watch-window data-mode={large ? 'enlarged' : 'floating'} data-revealed={revealed || undefined}
+    <section data-phone-watch-window data-mode={large ? 'enlarged' : 'floating'} data-revealed={revealed || undefined} data-source-tabs={large && both || undefined}
       aria-label={t('controlWatch.picture')} hidden={!active || docked}
       style={large ? { height: landscape ? undefined : (enlarged?.height ?? 0) + 48 + (both ? 32 : 0), visibility: landscape ? source?.size ? undefined : 'hidden' : enlarged ? undefined : 'hidden' }
         : { width: currentBox.width, height: currentBox.height, left: currentBox.x, top: currentBox.y, visibility: small ? undefined : 'hidden' }}>
@@ -146,7 +154,8 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
         <IconButton aria-label={t(landscape ? 'controlWatch.portrait' : 'controlWatch.landscape')} onClick={rotate}><MonitorSmartphone /></IconButton>
       </div>}
       <div data-phone-watch-picture>
-        {sources.map(source => <div key={source.id} data-phone-watch-source hidden={source.id !== selectedId}>{source.picture}</div>)}
+        {sources.map(source => <div key={source.id} data-phone-watch-source hidden={source.id !== selectedId}
+          inert={source.id !== selectedId || source.status === 'finished'}>{source.picture}</div>)}
       </div>
       {!large && <div data-phone-watch-gesture onPointerDown={event => begin(event, false)} onPointerMove={move} onPointerUp={end}
         onPointerCancel={() => { drag.current = null; setMoving(null) }}>
@@ -157,18 +166,18 @@ export function PhoneWatchWindow({ children, sources, selectedId, presentation, 
         </div>
       </div>}
       {large && both && <div data-phone-watch-switch role="tablist" aria-label={t('controlWatch.sources')}>
-        {sources.map(source => <button type="button" role="tab" key={source.id} aria-selected={source.id === selectedId} onClick={() => dispatch({ type: 'select-source', sourceId: source.id })}>
+        {sources.map(source => <Button variant="ghost" size="sm" role="tab" key={source.id} aria-selected={source.id === selectedId} onClick={() => dispatch({ type: 'select-source', sourceId: source.id })}>
           {t(source.kind === 'browser' ? 'controlWatch.web' : 'controlWatch.computer')}
-        </button>)}
+        </Button>)}
       </div>}
     </section>
     <div ref={chat} data-phone-watch-chat onFocusCapture={event => {
       if (large && event.target instanceof Element && event.target.closest('textarea, input, [contenteditable="true"], [contenteditable="plaintext-only"]')) shrink()
     }}>{children}</div>
-    {docked && <button type="button" data-phone-watch-handle data-edge={presentation.dock.edge} aria-label={t('controlWatch.restore')}
-      style={{ left: currentBox.x, top: currentBox.y }} onPointerDown={event => begin(event, true)} onPointerMove={move} onPointerUp={end}
+    {docked && <Button variant="ghost" size="sm" data-phone-watch-handle data-edge={presentation.dock.edge} aria-label={t('controlWatch.restore')}
+      style={handleStyle} onPointerDown={event => begin(event, true)} onPointerMove={move} onPointerUp={end}
       onPointerCancel={() => { drag.current = null; setMoving(null) }} onClick={event => { if (event.detail === 0) { dispatch({ type: 'position', small: { corner: cornerFromPhoneDock(presentation.dock) } }); dispatch({ type: 'undock' }) } }}>
       <span data-phone-watch-capsule>{!ended && <span data-phone-watch-active />}<span data-phone-watch-grip /></span>
-    </button>}
+    </Button>}
   </div>
 }

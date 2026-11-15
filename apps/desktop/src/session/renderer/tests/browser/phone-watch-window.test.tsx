@@ -8,7 +8,6 @@ import type { LiveWindowContext, LiveWindowSource } from '@renderer/features/liv
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/styles/tokens.css'
 
-vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => true }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 
 const cleanups: Array<() => void> = []
