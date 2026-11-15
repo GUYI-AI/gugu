@@ -7,6 +7,7 @@ import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import '@/i18n/registerMessagingCatalog'
+import { followRendererSession } from '@/lib/readModel'
 import { CreateTarget } from '@/mobile/agent-watch/CreateTarget'
 import { SelectedCreationSkills } from '@/mobile/agent-watch/CreateSkills'
 import type { CreationSkill } from '@/mobile/agent-watch/create-skills'
@@ -38,6 +39,7 @@ function Harness() {
 }
 afterEach(() => { root?.unmount(); host?.remove(); root = null; host = null; document.documentElement.removeAttribute('data-theme') })
 async function mount(theme: 'light' | 'dark' = 'dark', locale: 'zh-CN' | 'en-US' = 'zh-CN') {
+  followRendererSession('SIGNED_IN', 'phone-controls-browser')
   await page.viewport(390, 844)
   setLocalePreference(locale)
   document.documentElement.dataset.theme = theme

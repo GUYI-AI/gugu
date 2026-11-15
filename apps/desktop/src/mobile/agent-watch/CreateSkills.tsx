@@ -1,15 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { Check, Search, Sparkles, X } from '@/lib/icons'
-import { rendererLogger } from '@/lib/log'
+import { useReadModel } from '@/lib/readModel'
+import { creationSkills } from './create-skills-read'
 import { preserveComposerFocus } from '../composer/composer-focus'
-import { machineRpc } from './sessionpage-rpc'
-import { filterCreationSkills, loadCreationSkills, type CreationSkill } from './create-skills'
+import { filterCreationSkills, type CreationSkill } from './create-skills'
 import './create-controls-catalog'
 
-const log = rendererLogger('mobile/create-skills')
 export function SelectedCreationSkills({ skills, onChange }: { skills: readonly CreationSkill[]; onChange: (skills: CreationSkill[]) => void }) {
   const { t } = useTranslation('mobileCreateControls')
   return skills.length ? <div className="gg-phone-selected-skills" data-testid="agent-watch-create-skill-tags">
@@ -27,31 +26,18 @@ export function CreateSkillsList({ deviceId, phone, harness, projectId, search, 
   onCount: (count: number | null) => void
 }) {
   const { t } = useTranslation('mobileCreateControls')
-  const catalogKey = JSON.stringify([deviceId, harness, projectId])
-  const [catalog, setState] = useState<{ key: string; status: 'loading' | 'ready' | 'failed'; skills: CreationSkill[] }>({ key: catalogKey, status: 'loading', skills: [] })
-  const state: typeof catalog = catalog.key === catalogKey ? catalog : { key: catalogKey, status: 'loading', skills: [] }
-  const [retry, setRetry] = useState(0)
-  useEffect(() => {
-    if (!deviceId || !harness || phone) return
-    let active = true
-    onCount(null)
-    setState({ key: catalogKey, status: 'loading', skills: [] })
-    void loadCreationSkills(machineRpc(deviceId).sessionTimeline, harness, projectId).then((result) => {
-      if (active) { setState({ key: catalogKey, status: 'ready', ...result }); onCount(result.skills.length) }
-    }).catch((error) => {
-      log.warn({ error: String(error) }, 'Could not read creation skills')
-      if (active) setState({ key: catalogKey, status: 'failed', skills: [] })
-    })
-    return () => { active = false }
-  }, [deviceId, phone, harness, projectId, catalogKey, retry, onCount])
+  const state = useReadModel(creationSkills, deviceId && harness && !phone ? [deviceId, harness, projectId] : null)
+  const count = state.state === 'value' ? state.value.skills.length : null
+  useEffect(() => { onCount(count) }, [count, onCount])
   if (phone) return null
-  if (!deviceId || !harness) return <p className="gg-phone-composer-sheet-status">{t('emptySkills')}</p>
-  if (state.status === 'loading') return <p role="status" className="gg-phone-composer-sheet-status">{t('loadingSkills')}</p>
-  if (state.status === 'failed') return <div className="gg-phone-composer-sheet-status" role="alert">{t('failedSkills')}
-    <Button variant="ghost" size="sm" onClick={() => setRetry((value) => value + 1)}>{t('retry')}</Button></div>
-  const filtered = filterCreationSkills(state.skills, search)
+  if (!deviceId || !harness || state.state === 'unknown') return <p role="status" className="gg-phone-composer-sheet-status">{t('loadingSkills')}</p>
+  const retry = <div className="gg-phone-composer-sheet-status" role="alert">{t('failedSkills')}
+    <Button variant="ghost" size="sm" onClick={() => void creationSkills.refresh(deviceId, harness, projectId)}>{t('retry')}</Button></div>
+  if (state.state === 'error') return retry
+  const filtered = filterCreationSkills(state.value.skills, search)
   return <>
-    {!filtered.length && <p className="gg-phone-composer-sheet-status">{t(state.skills.length ? 'noMatches' : 'emptySkills')}</p>}
+    {state.error && retry}
+    {!filtered.length && <p className="gg-phone-composer-sheet-status">{t(state.value.skills.length ? 'noMatches' : 'emptySkills')}</p>}
     {filtered.map((skill) => {
       const checked = selected.some((entry) => entry.id === skill.id)
       return <Button key={skill.id} variant="ghost" className="gg-phone-composer-choice" role="checkbox" aria-checked={checked}
