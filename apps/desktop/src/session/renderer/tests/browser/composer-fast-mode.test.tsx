@@ -23,7 +23,9 @@ const effortChanged = vi.fn()
 const modelChanged = vi.fn()
 const fast = () => document.querySelector<HTMLButtonElement>('button[aria-label="Fast"]')
 
-function Fixture({ supported = true, mobile = false, initial = false, phoneActions = mobile }) {
+function Fixture({ supported = true, mobile = false, initial = false, phoneActions = mobile }: {
+  supported?: boolean; mobile?: boolean; initial?: boolean; phoneActions?: boolean
+}) {
   const [enabled, setEnabled] = useState(initial)
   return <Tooltip.Provider><SessionLocalizationProvider><ChatComposer
     mobile={mobile}

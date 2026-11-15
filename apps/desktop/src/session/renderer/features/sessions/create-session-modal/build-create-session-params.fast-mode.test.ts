@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { InitialSessionState } from '../session-config/initial-session-section';
 import { buildInitialSession } from './build-create-session-params';
 
-function draft(fastMode?: boolean, platformModel: string | null = null): InitialSessionState {
+function draft(fastMode?: boolean, platformModel: string | null = null): Parameters<typeof buildInitialSession>[0] {
   return { provider: 'codex', sessionView: 'general', prompt: 'A short task', attachments: [],
-    permissionMode: 'edit', model: 'native-model', effort: 'medium', platformModel, fastMode } as InitialSessionState;
+    permissionMode: 'edit', model: 'native-model', effort: 'medium', platformModel, fastMode };
 }
 
 describe('new task Fast intent', () => {

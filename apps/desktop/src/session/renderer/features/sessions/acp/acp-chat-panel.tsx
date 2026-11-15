@@ -1472,7 +1472,7 @@ const ComposerForStore = observer(function ComposerForStore({
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}
         onEffortChange={handleEffortChange}
-        fastMode={sessionFastMode({ providerId, route, group: store.fastModeGroup })}
+        fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup })}
         onFastModeChange={(enabled) => { void store.setFastMode(enabled); }}
         renderFastModeHint={renderFastModeHint}
         permissionModeOptions={localizePermissionModeOptions(

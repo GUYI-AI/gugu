@@ -224,6 +224,12 @@ function harnessCatalog(state: HarnessCatalogState) {
   harnessCatalogRef.current = state;
 }
 
+// Target capability queries have their own QueryClient-backed race tests.
+// These creation tests supply the default catalog directly.
+vi.mock('@renderer/lib/stores/use-target-model-catalog', () => ({
+  useTargetModelCatalog: () => undefined,
+}));
+
 vi.mock('@renderer/lib/stores/use-harness-model-catalog', () => ({
   HARNESS_MODEL_CATALOG_QUERY_KEY: ['agents', 'modelCatalog'],
   useHarnessModelCatalog: () => ({

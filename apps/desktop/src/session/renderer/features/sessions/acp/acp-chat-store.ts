@@ -1492,9 +1492,7 @@ export class AcpChatStore {
    * 写失败只报错不回滚:活会话上已经生效了,回滚活会话等于再改一次用户的设置。
    */
   private async _recordLiveSetting(
-    setting:
-      | { dimension: 'permission'; modeId: string }
-      | { dimension: 'effort'; value: string },
+    setting: Parameters<typeof rpc.sessions.recordLiveSessionSetting>[1],
   ): Promise<void> {
     if (this.runtimeView) return;
     try {

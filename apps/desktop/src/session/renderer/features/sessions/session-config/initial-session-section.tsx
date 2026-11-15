@@ -75,7 +75,7 @@ import {
   harnessCatalogToOptions,
 } from './harness-model-field';
 import { useHarnessModelOptions } from './use-harness-model-options';
-import { draftFastMode } from './fast-mode';
+import { agentOffersFastMode, draftFastMode } from './fast-mode';
 import { renderFastModeHint } from './fast-mode-hint';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
@@ -1086,7 +1086,7 @@ export function useInitialSessionState(
       ? modelOverride
       : resolvedDefaultModel;
   const targetFastCatalog = useTargetModelCatalog(
-    !unattended && !platformModel && (providerId === 'codex' || providerId === 'claude') ? providerId : null,
+    !unattended && !platformModel && agentOffersFastMode(capabilities) ? providerId : null,
     sessionpageSurface,
     harnessCatalogState.kind === 'ready' && harnessCatalogState.selected !== model ? model : null,
   );
@@ -1248,7 +1248,7 @@ export function useInitialSessionState(
     // 档名走词表 —— 插件那份是硬编码中文,原样摆出来英文壳里就漏中文(见 effort-options.ts)。
     effortOptions: localizeEffortOptions(modelEfforts?.options ?? null, translate),
     effort,
-    fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, providerId, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
+    fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
     setFastMode: setFastModeDraft,
     defaultEffort: modelEfforts?.defaultId ?? null,
     setEffort: (nextEffort) => {
