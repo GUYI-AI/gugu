@@ -29,7 +29,7 @@ import { useChatTranslator } from '@session-chat/localization';
 import { conversationDestinationLayout } from './conversation-destination';
 import { ConversationDestination } from './ConversationDestination';
 import { UserMessageActions } from './UserMessageActions';
-import { CONVERSATION_EXPAND_H, conversationBubbleKey, hasConversationActions } from './conversation-body';
+import { CONVERSATION_EXPAND_H, conversationBubbleKey, conversationCanCollapse, conversationTailLane } from './conversation-body';
 import { UserMessageEditor } from './UserMessageEditor';
 import { SentMessageBodies, sentBodiesLayout } from './SentMessageBodies';
 import { InputSendStatus } from './InputSendStatus';
@@ -160,8 +160,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
   const maxH = () => (isExpanded() ? vars().expandedMaxH : vars().collapsedMaxH);
   const clampedH = () => Math.min(fullContentH(), maxH());
   const isOverflowing = () => fullContentH() > maxH();
-  const canCollapse = () => props.conversation && mCtx()?.expanded(conversationBubbleKey(props.data))
-    && mCtx()?.latestConversationMessageId !== props.data.id && fullContentH() > vars().collapsedMaxH;
+  const canCollapse = () => Boolean(props.conversation && mCtx() && conversationCanCollapse(props.data, mCtx()!));
 
   // Track the animated clip edge during expand/collapse tween so the bottom
   // border and rounded corners are never hidden by the UnitRow overflow clip.
@@ -276,7 +275,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
           data-conversation-bubble-key={conversationBubbleKey(props.data)}>{translate('transcript.showFullText')}</button>
       </div>
     </Show>
-    <Show when={!props.conversation || hasConversationActions(props.data) || props.footerReference || canCollapse()}>
+    <Show when={!props.conversation || conversationTailLane(props.data, canCollapse(), Boolean(props.footerReference)) !== 'none'}>
     <UserMessageActions itemId={props.data.id} text={props.data.text} at={props.data.at}
       reference={props.footerReference}
       collapse={canCollapse() ? { bubbleKey: conversationBubbleKey(props.data), anchorId: props.data.id } : undefined}

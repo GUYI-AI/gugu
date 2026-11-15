@@ -630,7 +630,7 @@ export function ChatRoot(props: ChatRootProps) {
       // Incremental append: only process the new tail.
       const tail = next.slice(prevSource.length);
       const prevKind = prevUnits.length > 0 ? prevUnits[prevUnits.length - 1].kind : undefined;
-      const newUnits = flattenTier(tail, ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, prev.dayKey, lastConversationMessage(prevUnits), trailingActivity(prevUnits));
+      const newUnits = flattenTier(tail, ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, prev.dayKey, lastConversationMessage(prevUnits), trailingActivity(prevUnits), prevUnits.at(-1));
       const indexById = new Map(prev.indexById);
       const base = prevUnits.length;
       for (let j = 0; j < newUnits.length; j++) {
@@ -808,16 +808,16 @@ export function ChatRoot(props: ChatRootProps) {
       const ctx = withBackground ? full : { ...full, backgroundTasks: () => null };
       if (!at && !pendingPrompt && !pendingMessages.length) {
         if (!condition && !withBackground) return [] as ReturnType<typeof flattenTier>;
-        return flattenTier([], ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, committedBuild()!.dayKey, lastConversationMessage(committedUnits()), trailingActivity(committedUnits()));
+        return flattenTier([], ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, committedBuild()!.dayKey, lastConversationMessage(committedUnits()), trailingActivity(committedUnits()), committedUnits().at(-1));
       }
       const activeTurn = activeTurnWithInputs(at, pendingPrompt, pendingMessages, state().transcript.state.committedTurns)!;
       // Reserve the same process row from send to startup: adding it at acknowledgement scrolls a long transcript.
       const pending = [...(pendingPrompt ? [pendingPrompt] : []), ...pendingMessages];
       const failedPending = !at && pending.length > 0 && pending.every(input => input.stopped || input.delivery?.state === 'waiting' || input.delivery?.state === 'failed' || input.delivery?.state === 'unknown');
-      const body = flattenTier([activeTurn], failedPending ? { ...ctx, active: false } : ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, committedBuild()!.dayKey, lastConversationMessage(committedUnits()), trailingActivity(committedUnits()));
+      const body = flattenTier([activeTurn], failedPending ? { ...ctx, active: false } : ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, committedBuild()!.dayKey, lastConversationMessage(committedUnits()), trailingActivity(committedUnits()), committedUnits().at(-1));
       // A held input has no running process row, but it cannot hide the host's compression/stop/failure state.
       if (!failedPending) return body;
-      return [...body, ...flattenTier([], ctx, SEGMENTERS, UNIT_REGISTRY, body.at(-1)?.kind ?? prevKind, committedBuild()!.dayKey, lastConversationMessage(body), trailingActivity(body))];
+      return [...body, ...flattenTier([], ctx, SEGMENTERS, UNIT_REGISTRY, body.at(-1)?.kind ?? prevKind, committedBuild()!.dayKey, lastConversationMessage(body), trailingActivity(body), body.at(-1))];
     };
     const units = build(false);
     if (!background) return { units, backgroundOwner: null as string | null };
