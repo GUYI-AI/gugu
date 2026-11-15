@@ -3,6 +3,7 @@ import {useTranslation} from 'react-i18next'
 import {rememberAssistantTaskChat,showAssistantTaskChat,useOpenedAssistantTaskChat,type AssistantTaskChat} from '../../lib/assistantTaskChat'
 import {assistantWorkTarget} from '../../lib/assistantWorkTarget'
 import {useAvatarIdentity} from '../../lib/avatarIdentity'
+import {Unknown} from '../ui/Unknown'
 import {useContactsStore} from '../../store/contactsContext'
 import {useMobileShell} from '../../hooks/useMobileShell'
 import {useToast} from '../toastContext'
@@ -47,6 +48,8 @@ export function AssistantWorkTaskWindow({ownerId,request,onClose,appPanel=false}
    showAssistantTaskChat({ownerId,request:canonical,name:canonical.title!})
  },[ownerId,canonicalKey,canonical,opened])
  const agent=contact??owned
+ // A placeholder title whose evidence is not known yet is drawn as a placeholder (❌ 「任务」 then the real one).
+ const titleKnown=detail?detail.titleKnown:true
  const title=detail?.work.title??request.title??t('tasks.title')
  const state=detail?.work.outcome??request.outcome??'active'
  const workState=t(state==='active'&&!agentId?'tasks.starting':`tasks.workState.${state}`)
@@ -59,10 +62,10 @@ export function AssistantWorkTaskWindow({ownerId,request,onClose,appPanel=false}
  </span>
  const close=onClose??(()=>showAssistantTaskChat(null))
  const transcript=<CloudTaskTranscript mobile={mobile} request={canonical??request} events={detail?.events??[]}/>
- if(agent)return <AssistantTaskChatWindow agent={{...agent,display_name:title}} task={(canonical??request).task} onClose={close} status={status} pendingContent={transcript} appPanel={appPanel}/>
+ if(agent)return <AssistantTaskChatWindow agent={{...agent,display_name:titleKnown?title:agent.display_name}} task={(canonical??request).task} onClose={close} status={status} pendingContent={transcript} appPanel={appPanel}/>
  return <section className="assistant-task-chat-window ta-skin" data-testid="assistant-task-chat-window" data-app-panel={appPanel||undefined} aria-label={title}>
   <TaskChatFilePreviewHost mobile={mobile}>
-   <PaneHeader title={title} subtitle={status} mobile={mobile} divider leading={<IconButton aria-label={t('panel.back')} onClick={close} data-testid="assistant-task-chat-close"><ChevronLeft/></IconButton>}/>
+   <PaneHeader title={titleKnown?title:<Unknown className="w-32"/>} subtitle={status} mobile={mobile} divider leading={<IconButton aria-label={t('panel.back')} onClick={close} data-testid="assistant-task-chat-close"><ChevronLeft/></IconButton>}/>
    {transcript}
   </TaskChatFilePreviewHost>
  </section>

@@ -1,83 +1,133 @@
-import {useMemo,useSyncExternalStore} from 'react'
+import {useEffect,useMemo} from 'react'
 import type {AssistantWorkTask} from '@gugu/core/cloud/assistantWork'
+import type {Device} from '@gugu/core/shared/types/chat'
 import {assistantWorkCloud,watchAssistantWork} from '../../lib/assistantWork'
-import {assistantWorkRefresh} from './assistant-work-refresh'
+import {queryClient,replica,useReplica,type Reading} from '../../lib/replica'
 import {rendererLogger} from '../../lib/log'
+import {assistantWorkTitleOf} from '../../lib/assistantWorkTitle'
+import {devicesModel} from '../../store/devicesCache'
 
-type Value={records:AssistantWorkTask[];error?:unknown}|null
+const log=rendererLogger('assistant/work')
 
 /**
  * The cloud answers 42501 「Assistant is not available to this account」 for the account's own assistant until its setup is
- * ready (its provision not ready / completed yet): not a list that cannot be read, a list that is not there yet — empty, read
- * again until it is (owner 11-12: the list said 「没读到」 for good right after setup).
+ * ready (its provision not ready / completed yet): not a list that cannot be read, a list that is not there yet — read
+ * again until it is (owner 11-12: the list said 「没读到」 for good right after setup). Typed, so the list says "preparing".
  */
 export const assistantWorkNotReadyYet=(error:unknown)=>String((error as {code?:unknown}|null)?.code??'')==='42501'
+export class AssistantWorkNotReady extends Error {
+ readonly code='42501'
+ constructor(){super('The assistant\'s work list is not there yet')}
+}
 
-/** A failed read is read again by itself while anything shows the list: the 「系统会自动再读」 the list says is this. */
+/**
+ * A failed read is read again by itself while the list is shown, sooner first: the 「系统会自动再读」 the list says is this.
+ * The failure is the reading's at once (an error, or the shown list's `error`), ❌ hidden behind silent retries.
+ */
 export const WORK_RETRY_MS=[2_000,5_000,15_000,30_000,60_000] as const
 
-function createRecords(owner:string,assistant:string){
- let value:Value=null,stop:(()=>void)|undefined,pending:ReturnType<typeof assistantWorkRefresh>|undefined,generation=0
- let retry:ReturnType<typeof setTimeout>|undefined,failures=0
- const listeners=new Set<()=>void>()
- const notify=()=>{for(const listener of [...listeners])listener()}
- const clearRetry=()=>{if(retry!==undefined){clearTimeout(retry);retry=undefined}}
- const again=(current:number)=>{
-  clearRetry()
-  const delay=WORK_RETRY_MS[Math.min(failures,WORK_RETRY_MS.length-1)]
-  failures+=1
-  retry=setTimeout(()=>{retry=undefined;if(current===generation)void pending?.refresh()},delay)
- }
- return {
-  read:()=>value,
-  refresh:()=>{void pending?.refresh()},
-  subscribe:(listener:()=>void)=>{
-   listeners.add(listener)
-   if(listeners.size===1){
-    const current=++generation
-    failures=0
-    pending=assistantWorkRefresh(async()=>{
-     try{
-      const records=await assistantWorkCloud.listAll(assistant)
-      if(current===generation){failures=0;clearRetry();value={records};notify()}
-     }catch(error){
-      if(current!==generation)return
-      if(assistantWorkNotReadyYet(error)){
-       rendererLogger('assistant/work').info({code:'not-ready'},'account task list not there yet')
-       value={records:value?.records??[]}
-      }else{
-       rendererLogger('assistant/work').warn({error},'account task read failed')
-       value={records:value?.records??[],error}
-      }
-      notify()
-      again(current)
-     }
-    })
-    stop=watchAssistantWork(owner,assistant,()=>void pending?.refresh())
-    void pending.refresh()
-   }
-   return()=>{
-    listeners.delete(listener)
-    if(!listeners.size){generation++;clearRetry();pending?.close();pending=undefined;stop?.();stop=undefined}
-   }
-  },
- }
-}
-const records=new Map<string,ReturnType<typeof createRecords>>()
-const absent=()=>null,noop=()=>()=>{}
+/**
+ * The account's work ledger for one assistant (signal tier: `assistant_work_changed` on the private bus, its
+ * resubscription, focus, `online`, app foreground — `watchAssistantWork`). Titles are not part of it: they are derived
+ * when drawn (`useAssistantWorkTitles`), so a device's session digest never re-reads the ledger. Not kept across restarts.
+ */
+export const assistantWorkRecords=replica({
+ name:'assistantWorkRecords',
+ scope:'account',
+ read:async(_owner:string,assistantId:string):Promise<AssistantWorkTask[]>=>{
+  try{return await assistantWorkCloud.listAll(assistantId)}
+  catch(error){
+   if(assistantWorkNotReadyYet(error)){log.info({code:'not-ready'},'account task list not there yet');throw new AssistantWorkNotReady()}
+   log.warn({error},'account task read failed')
+   throw error
+  }
+ },
+ // Signal tier: a change arrives as `assistant_work_changed`; a second look within a minute (another pane mounting) does not read again.
+ fresh:60_000,
+ refreshJoinsRead:true,
+ refreshOnFocus:true,
+})
 
-/** Source badges and both task panes share one account read and subscription. */
-export function useAssistantWorkRecords(owner:string|null|undefined,assistant:string){
- const store=useMemo(()=>{
-  if(!owner)return null
-  const key=JSON.stringify([owner,assistant])
-  let store=records.get(key)
-  if(!store){store=createRecords(owner,assistant);records.set(key,store)}
-  return store
- },[owner,assistant])
- const value=useSyncExternalStore(store?.subscribe??noop,store?.read??absent)
- return {value,reload:store?.refresh??(()=>{})}
+/** One work and its events (`historyAll` is `get` without the work, so this one entry serves the window and the chat rows). */
+export const assistantWork=replica({
+ name:'assistantWork',
+ scope:'account',
+ read:(_owner:string,assistantId:string,workId:string)=>assistantWorkCloud.get(assistantId,workId),
+ fresh:60_000,
+ refreshJoinsRead:true,
+ refreshOnFocus:true,
+})
+
+// Subscription ownership only (the values live in the replicas): one watch per (owner, assistant) while anything shows them.
+const watches=new Map<string,{users:number;stop:()=>void}>()
+export function watchAssistantWorkReplicas(owner:string,assistantId:string):()=>void {
+ const id=JSON.stringify([owner,assistantId])
+ let entry=watches.get(id)
+ if(!entry){
+  const stopSignal=watchAssistantWork(owner,assistantId,()=>{void assistantWorkRecords.refresh(assistantId);void assistantWork.refresh(assistantId)})
+  const stopRetry=retryFailedReads(assistantId)
+  // A ledger read while nobody watched may have moved since (no signal reached it): read again now. A work's own entry
+  // is read again past `fresh` when a window opens it.
+  if(assistantWorkRecords.peek(assistantId).state==='value')void assistantWorkRecords.refresh(assistantId)
+  entry={users:0,stop:()=>{stopSignal();stopRetry()}}
+  watches.set(id,entry)
+ }
+ const active=entry
+ active.users++
+ return()=>{if(--active.users===0&&watches.get(id)===active){active.stop();watches.delete(id)}}
 }
 
-/** Tests only: every account's list read afresh. */
-export function forgetAssistantWorkRecordsForTest():void{records.clear()}
+/**
+ * While watched: a failed read of the ledger or of one of its works is read again after WORK_RETRY_MS (sooner first),
+ * each entry on its own; a read that lands resets it.
+ */
+function retryFailedReads(assistantId:string):()=>void {
+ const pending=new Map<string,{failures:number;timer?:ReturnType<typeof setTimeout>}>()
+ const mine=(queryKey:readonly unknown[])=>(queryKey[0]===assistantWorkRecords.name||queryKey[0]===assistantWork.name)&&queryKey[2]===assistantId
+ const check=(queryKey:readonly unknown[],failed:boolean)=>{
+  const id=JSON.stringify(queryKey)
+  const entry=pending.get(id)??{failures:0}
+  if(!failed){clearTimeout(entry.timer);pending.delete(id);return}
+  if(entry.timer!==undefined)return
+  const delay=WORK_RETRY_MS[Math.min(entry.failures,WORK_RETRY_MS.length-1)]!
+  entry.failures+=1
+  entry.timer=setTimeout(()=>{
+   entry.timer=undefined
+   if(queryKey[0]===assistantWorkRecords.name)void assistantWorkRecords.refresh(assistantId)
+   else void assistantWork.refresh(assistantId,queryKey[3] as string)
+  },delay)
+  pending.set(id,entry)
+ }
+ const stop=queryClient.getQueryCache().subscribe(event=>{
+  const {queryKey,state}=event.query
+  if(event.type!=='updated'||!mine(queryKey)||state.fetchStatus!=='idle')return
+  check(queryKey,state.error!==null)
+ })
+ for(const query of queryClient.getQueryCache().getAll())if(mine(query.queryKey))check(query.queryKey,query.state.error!==null)
+ return()=>{stop();for(const entry of pending.values())clearTimeout(entry.timer)}
+}
+
+export function useAssistantWorkWatch(owner:string|null|undefined,assistantId:string|null|undefined):void {
+ useEffect(()=>(owner&&assistantId?watchAssistantWorkReplicas(owner,assistantId):undefined),[owner,assistantId])
+}
+
+/** Source badges and the task panes share one account read and subscription. */
+export function useAssistantWorkRecords(owner:string|null|undefined,assistant:string):Reading<AssistantWorkTask[]> {
+ const reading=useReplica(assistantWorkRecords,owner&&assistant?[assistant]:null)
+ useAssistantWorkWatch(owner,assistant||null)
+ return reading
+}
+
+/**
+ * The works as drawn: a placeholder title recovered from the devices' session digests (lib/assistantWorkTitle), derived
+ * at render. `titleKnown: false` = the placeholder's evidence is not known yet (devices not read, or a row carried without
+ * its digest): draw a placeholder, ❌ 「任务」 then the real title.
+ */
+export function useAssistantWorkTitles<W extends AssistantWorkTask>(owner:string|null|undefined,works:readonly W[]|null):Array<W&{titleKnown:boolean}>|null {
+ const devices=useReplica(devicesModel,[])
+ const rows:readonly Device[]|null=devices.state==='value'?devices.value:null
+ return useMemo(()=>works&&works.map(work=>{
+  const title=assistantWorkTitleOf(work,owner??null,rows)
+  return title===null?{...work,titleKnown:false}:{...work,title,titleKnown:true}
+ }),[works,rows,owner])
+}

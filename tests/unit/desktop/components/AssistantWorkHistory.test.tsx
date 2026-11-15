@@ -4,10 +4,13 @@ import { afterEach,beforeEach,expect,it,vi } from 'vitest'
 import { createReactHarness,renderWithAppProviders } from '../../../support/testHarness'
 import { rememberAssistantTaskChat,showAssistantTaskChat } from '../../../../apps/desktop/src/lib/assistantTaskChat'
 import { useTaskChatRows } from '../../../../apps/desktop/src/components/assistant/useTaskChatRows'
+import { followRendererSession,queryClient } from '../../../../apps/desktop/src/lib/replica'
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
 
 const cloud = vi.hoisted(() => ({ history: vi.fn(),list:vi.fn(),watch: vi.fn(),refresh: null as null | (() => void) }))
-vi.mock('../../../../apps/desktop/src/lib/assistantWork',() => ({ assistantWorkCloud: { historyAll: cloud.history,listAll:cloud.list },
+vi.mock('../../../../apps/desktop/src/lib/assistantWork',() => ({ assistantWorkCloud: { historyAll: cloud.history,listAll:cloud.list,
+  // One work and its events (the window and the chat rows share this read); its events are the history.
+  get: async (assistant: string,workId: string) => ({ work: { work_id: workId },events: await cloud.history(assistant,workId) }) },
   watchAssistantWork: (_owner: string,_assistant: string,refresh: () => void) => { cloud.refresh=refresh; cloud.watch(); return () => {} } }))
 vi.mock('../../../../apps/desktop/src/store/devicesContext',() => ({ useDevicesStore: () => { throw new Error('Task history must not query devices') } }))
 let harness: ReturnType<typeof createReactHarness>
@@ -15,7 +18,7 @@ const request = (workId: string) => ({ workId,assistantId: 'assistant',taskAgent
 const event = (workId: string,content: string) => ({ work_id: workId,message_id: workId,seq: '1',from_session_id: 'home',to_session_id: 'worker',
   content,source_available: true,source_message_id: null,attachment_refs: [],platform_received_at: '2026-10-26T08:00:00Z' })
 function View() { const { rows,notice } = useTaskChatRows([],'owner','executor',true); return <>{notice}<p>{rows.map(row=>row.message.content).join(',')}</p></> }
-beforeEach(() => { harness=createReactHarness(); cloud.history.mockReset(); cloud.list.mockReset(); cloud.watch.mockClear(); cloud.refresh=null; showAssistantTaskChat(null) })
+beforeEach(() => { queryClient.clear(); followRendererSession('SIGNED_IN','owner'); harness=createReactHarness(); cloud.history.mockReset(); cloud.list.mockReset(); cloud.watch.mockClear(); cloud.refresh=null; showAssistantTaskChat(null) })
 afterEach(() => { harness.cleanup(); showAssistantTaskChat(null) })
 it('reads cloud collaboration with every device offline and has no device retry or sync notice',async () => {
   cloud.history.mockResolvedValue([event('work-a','Cloud result')])

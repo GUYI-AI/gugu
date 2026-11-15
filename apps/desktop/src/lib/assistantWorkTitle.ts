@@ -4,21 +4,24 @@ type TitlesDevice=Pick<Device,'device_id'|'session_digest'>
 const digest=(device:TitlesDevice)=>Array.isArray(device.session_digest)?device.session_digest.filter(row=>
   row&&typeof row.conversationId==='string'&&typeof row.title==='string'):[]
 
-/** Heartbeat status changes do not reread the ledger; new title evidence does. */
-export function assistantWorkTitleSignature(owner:string,cachedOwner:string|null,devices:readonly TitlesDevice[]):string {
-  return cachedOwner===owner?JSON.stringify(devices.map(device=>[device.device_id,
-    digest(device).map(row=>[row.conversationId,row.title]).sort()]).sort()):''
-}
+/** The placeholder title a work is created with until its executor names its session. */
+export const PLACEHOLDER_WORK_TITLE='任务'
 
-/** Display-only recovery for old placeholder rows; never rewrite a work or event. */
-export function withAssistantWorkTitle(work:AssistantWorkTask,owner:string|null,cachedOwner:string|null,
-  devices:readonly TitlesDevice[]):AssistantWorkTask {
-  if(work.title!=='任务'||!owner||work.owner_user_id!==owner||cachedOwner!==owner)return work
-  const titles=work.executors.map(executor=>{
-    const device=devices.find(device=>device.device_id===executor.device_id)
+/**
+ * Display-only recovery for old placeholder rows (never rewrites a work or event), derived where it is drawn over the
+ * account's devices. null = not known yet: the devices are not read, or an executor's row was carried across a restart
+ * without its session digest (store/devicesCache.ts) — ❌ taken for "no title evidence" (CODE-REVIEW-1 R1).
+ */
+export function assistantWorkTitleOf(work:AssistantWorkTask,owner:string|null,devices:readonly TitlesDevice[]|null):string|null {
+  if(work.title!==PLACEHOLDER_WORK_TITLE||!owner||work.owner_user_id!==owner)return work.title
+  if(!devices)return null
+  const rows=work.executors.map(executor=>devices.find(device=>device.device_id===executor.device_id))
+  if(rows.some(row=>row&&row.session_digest===undefined))return null
+  const titles=work.executors.map((executor,index)=>{
+    const device=rows[index]
     const matches=device?digest(device).filter(row=>row.conversationId===executor.session_id):[]
     return matches.length===1?matches[0]!.title.trim():''
   })
-  if(!titles.length||titles.some(title=>!title)||new Set(titles).size!==1)return work
-  return {...work,title:titles[0]!}
+  if(!titles.length||titles.some(title=>!title)||new Set(titles).size!==1)return work.title
+  return titles[0]!
 }
