@@ -25,6 +25,7 @@ vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ ex
   agentSkills: async () => ({ success: true, data: ['会议记录', '代码检查'], entries: [{ name: '会议记录', description: '整理会议记录与待办事项' }, { name: '代码检查', description: '检查代码中的问题' }], problems: [] }),
 } }) }))
 const machines: CreateMachine[] = ['Mac', 'Cloud'].map((name) => ({ device: { device_id: name, label: name, hostname: name, platform: 'darwin', status: 'online', is_online: true, last_seen_at: '2026-11-15T00:00:00Z', capabilities: { terminals: [], runtimes: ['codex'] } }, localProjectId: null, path: null, available: true }))
+machines.push({ ...machines[0]!, device: { ...machines[0]!.device, device_id: 'Phone', label: 'Phone', platform: 'ios', capabilities: { terminals: [], runtimes: ['pi'], host_kind: 'phone', host_runtime_capability: 1 } } })
 const options: SessionpageSessionCreateOptions = { projects: [], lastUsed: null, harnesses: ['codex', 'claude'].map((id) => ({ id, name: id === 'codex' ? 'Codex' : 'Claude Code', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] })) }
 let root: Root | null = null, host: HTMLDivElement | null = null
 function Harness() {
@@ -81,4 +82,20 @@ it('search is intentional, filters the real catalog and keeps a narrow sheet in 
   await Promise.all(panel.getAnimations().map((a) => a.finished))
   const box = panel.getBoundingClientRect(); expect(box.left).toBeGreaterThanOrEqual(12); expect(box.right).toBeLessThanOrEqual(308); expect(box.bottom).toBeLessThanOrEqual(640)
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320)
+})
+it('hides the skills entry for a phone target and restores it for a computer without replacing the input', async () => {
+  const editor = await mount()
+  await page.getByTestId('chat-composer').fill('保留这段草稿')
+  await page.getByTestId('agent-watch-create-model-device').click()
+  await page.getByRole('radio', { name: 'Phone' }).click()
+  await page.getByRole('button', { name: '关闭', exact: true }).click()
+  expect(host!.querySelector('[data-testid="agent-watch-create-skills"]')).toBeNull()
+  expect(host!.querySelector('[contenteditable]')).toBe(editor)
+  expect(editor.textContent).toBe('保留这段草稿')
+  expect(document.body.textContent).not.toContain('暂不提供')
+  await page.getByTestId('agent-watch-create-model-device').click()
+  await page.getByRole('radio', { name: 'Mac', exact: true }).click()
+  await page.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect.element(page.getByTestId('agent-watch-create-skills')).toBeVisible()
+  expect(host!.querySelector('[contenteditable]')).toBe(editor)
 })

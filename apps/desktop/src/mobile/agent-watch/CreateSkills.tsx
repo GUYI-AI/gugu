@@ -44,7 +44,8 @@ export function CreateSkillsList({ deviceId, phone, scopeChatId, search, selecte
     })
     return () => { active = false }
   }, [deviceId, phone, scopeChatId, catalogKey, retry, onCount])
-  if (phone || !deviceId) return <p className="gg-phone-composer-sheet-status">{t(phone ? 'phoneSkills' : 'emptySkills')}</p>
+  if (phone) return null
+  if (!deviceId) return <p className="gg-phone-composer-sheet-status">{t('emptySkills')}</p>
   if (state.status === 'loading') return <p role="status" className="gg-phone-composer-sheet-status">{t('loadingSkills')}</p>
   if (state.status === 'failed') return <div className="gg-phone-composer-sheet-status" role="alert">{t('failedSkills')}
     <Button variant="ghost" size="sm" onClick={() => setRetry((value) => value + 1)}>{t('retry')}</Button></div>
