@@ -1,9 +1,12 @@
 import { QueryClient, hashKey, useQueries, useQuery, type QueryFunctionContext, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
 import { observeRendererSession } from './sessionPublication'
+import { recordSnapshotRefusal } from './perfCounters'
+import { rendererLogger } from './log'
 
 /**
- * @@@read-model — one read model per kind of data a surface shows (open-flicker, owner 2026-11-14).
+ * @@@replica — one replica per kind of data a surface shows (open-flicker, owner 2026-11-14).
+ * @@@client-state-model — the model this implements (classes, push tiers, invariants): docs/design/client-state-model.md.
  *
  * Responsible for: reading, caching outside any component, prefetching, invalidation and background refresh, the
  * snapshot kept across restarts, and a lifecycle that follows the signed-in account (never the subscribers or the
@@ -40,8 +43,14 @@ type Definition<A extends unknown[], V> = {
   fresh?: number
   /** How long an entry nobody shows stays in memory (ms). Default: as long as the account (Infinity). */
   keep?: number
-  /** Keep the last value across restarts (localStorage). Display values only: never tokens or credentials. */
-  persist?: boolean
+  /**
+   * Keep the last value across restarts (localStorage). Display values only: never tokens or credentials. A persisting
+   * model declares its limits (@@@client-state-model, persistence): an entry larger than `maxBytes` is not kept (it is
+   * unknown on the next start), and only the newest `maxEntries` keys of this model are kept. A refused write is said
+   * (console error and a diagnostics counter), ❌ swallowed. The two snapshot blocks (account, device) stay within
+   * SNAPSHOT_BUDGET_BYTES summed over their models' limits (a test checks it).
+   */
+  persist?: { maxBytes: number; maxEntries: number }
   /** Read again when the window comes back to the foreground and the value is past `fresh`. */
   refreshOnFocus?: boolean
   /** `refresh` shares a read already on its way instead of cancelling it (for reads that are retried and polled). */
@@ -58,7 +67,7 @@ const definitions = new Map<string, Definition<unknown[], unknown>>()
 const readFromKey = ({ queryKey }: QueryFunctionContext) => {
   const [name, owner, ...args] = queryKey as [string, string, ...unknown[]]
   const definition = definitions.get(name)
-  if (!definition) throw new Error(`No read model named ${name}`)
+  if (!definition) throw new Error(`No replica named ${name}`)
   return definition.read(owner, ...args)
 }
 
@@ -67,10 +76,11 @@ queryClient.mount()
 queryClient.getQueryCache().subscribe((event) => {
   const name = String(event.query.queryKey[0])
   if (event.type === 'added' && definitions.has(name) && event.query.options.queryFn !== readFromKey) {
-    throw new Error(`Read model query ${JSON.stringify(event.query.queryKey)} brings its own queryFn`)
+    throw new Error(`Replica query ${JSON.stringify(event.query.queryKey)} brings its own queryFn`)
   }
-  if (event.type === 'updated' && event.action.type === 'success' && definitions.get(name)?.persist) {
-    writeSnapshotEntry(event.query.queryKey, event.query.state.data, event.query.state.dataUpdatedAt)
+  const persist = definitions.get(name)?.persist
+  if (event.type === 'updated' && event.action.type === 'success' && persist) {
+    writeSnapshotEntry(event.query.queryKey, event.query.state.data, event.query.state.dataUpdatedAt, persist)
   }
 })
 
@@ -94,6 +104,15 @@ function putEntry(key: QueryKey, value: unknown, updatedAt?: number): void {
 
 const SNAPSHOT_PREFIX = 'gugu.readModel.v1:'
 const SNAPSHOT_MAX_AGE_MS = 30 * 24 * 3600_000
+/** What each snapshot block (an account's, the device's) may hold at most: the sum of its models' maxBytes × maxEntries. */
+export const SNAPSHOT_BUDGET_BYTES = 64 * 1024
+
+const replicaLog = rendererLogger('replica')
+
+function refuseSnapshotWrite(name: string, reason: string): void {
+  recordSnapshotRefusal()
+  replicaLog.error({ model: name, reason }, `${name}: not kept across restarts — ${reason}`)
+}
 const LAST_ACCOUNT_KEY = 'gugu.readModel.v1.account'
 const DEVICE = 'device'
 
@@ -164,17 +183,32 @@ function readSnapshot(owner: string): Snapshot {
   }
 }
 
-function writeSnapshotEntry(key: QueryKey, value: unknown, at: number): void {
+function writeSnapshotEntry(key: QueryKey, value: unknown, at: number, limits: { maxBytes: number; maxEntries: number }): void {
   const owner = String(key[1])
   if (owner !== DEVICE && owner !== account.id) return
+  const name = String(key[0])
   const snapshot = readSnapshot(owner)
-  // Entries are dropped by age only: models load with their chunks, so "not registered yet" is not "gone". A model whose
+  // Entries are dropped by age: models load with their chunks, so "not registered yet" is not "gone". A model whose
   // value changes shape takes a new name; its old entries age out here.
   for (const [hash, entry] of Object.entries(snapshot)) {
     if (!(entry?.at > Date.now() - SNAPSHOT_MAX_AGE_MS)) delete snapshot[hash]
   }
-  snapshot[hashKey(key)] = { key, value, at }
-  try { localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot)) } catch { /* quota: the next start reads again */ }
+  const entry: SnapshotEntry = { key, value, at }
+  const bytes = JSON.stringify(entry).length
+  if (bytes > limits.maxBytes) {
+    // Over its declared size: the older copy is not kept either, so the next start reads it as unknown.
+    delete snapshot[hashKey(key)]
+    refuseSnapshotWrite(name, `entry is ${bytes} B, its limit ${limits.maxBytes} B`)
+  } else {
+    snapshot[hashKey(key)] = entry
+    const own = Object.entries(snapshot).filter(([, kept]) => kept.key[0] === name).sort(([, x], [, y]) => y.at - x.at)
+    for (const [hash] of own.slice(limits.maxEntries)) delete snapshot[hash]
+  }
+  try {
+    localStorage.setItem(SNAPSHOT_PREFIX + owner, JSON.stringify(snapshot))
+  } catch (error) {
+    refuseSnapshotWrite(name, `storage refused the ${owner === DEVICE ? 'device' : 'account'} block (${String(error)})`)
+  }
 }
 
 /** Seed the cache with the last run's values, dated when they were read, so `fresh` decides whether to read again. */
@@ -191,7 +225,7 @@ if (account.id) hydrateSnapshot(account.id)
 
 // ── models ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type ReadModel<A extends unknown[], V> = {
+export type Replica<A extends unknown[], V> = {
   readonly name: string
   /** The key for these arguments, or null while there is no account to read for. */
   key(...args: A): QueryKey | null
@@ -214,7 +248,7 @@ function ownerOf(scope: Scope): string | null {
   return scope === DEVICE ? DEVICE : account.id
 }
 
-export function readModel<A extends unknown[], V>(definition: Definition<A, V>): ReadModel<A, V> {
+export function replica<A extends unknown[], V>(definition: Definition<A, V>): Replica<A, V> {
   // A module evaluated again (hot reload, a test's module reset) defines its model again: the latest reader serves.
   definitions.set(definition.name, definition as Definition<unknown[], unknown>)
   queryClient.setQueryDefaults([definition.name], { gcTime: definition.keep ?? Infinity })
@@ -293,7 +327,7 @@ const IDLE_KEY = ['read-model:idle'] as const
  * The reading for these arguments. `null` arguments = nothing to read yet (no subject): `unknown`, nothing requested.
  * Account models read only while the account's session is live; until then a snapshot from the last run is shown as is.
  */
-export function useReadModel<A extends unknown[], V>(model: ReadModel<A, V>, args: A | null, options: { read?: boolean } = {}): Reading<V> {
+export function useReplica<A extends unknown[], V>(model: Replica<A, V>, args: A | null, options: { read?: boolean } = {}): Reading<V> {
   const current = useSyncExternalStore(subscribeAccount, accountSnapshot)
   const definition = definitions.get(model.name)!
   const k = args ? model.key(...args) : null
@@ -304,7 +338,7 @@ export function useReadModel<A extends unknown[], V>(model: ReadModel<A, V>, arg
 }
 
 /** One reading per subject (rows of a list), in the order given. */
-export function useReadModels<A extends unknown[], V>(model: ReadModel<A, V>, argsList: readonly A[]): Reading<V>[] {
+export function useReplicas<A extends unknown[], V>(model: Replica<A, V>, argsList: readonly A[]): Reading<V>[] {
   const current = useSyncExternalStore(subscribeAccount, accountSnapshot)
   const definition = definitions.get(model.name)!
   const canRead = definition.scope === DEVICE || current.live
@@ -315,6 +349,6 @@ export function useReadModels<A extends unknown[], V>(model: ReadModel<A, V>, ar
   return results.map((result, index) => (keys[index] ? readingOf(result) : UNKNOWN))
 }
 
-/** Test seam: the live session as the read model sees it. */
-export function readModelAccount(): AccountState { return account }
+/** Test seam: the live session as the replica sees it. */
+export function replicaAccount(): AccountState { return account }
 

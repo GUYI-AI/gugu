@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { readModel, useReadModel } from '../../lib/readModel'
+import { replica, useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import { AccountLinking, AccountLinkingError, loginMethodNotice, loginMethods, type LoginMethodNotice } from '../../lib/accountLinking'
@@ -21,21 +21,21 @@ function viewOf(user: User): LoginMethodsView {
     provider: typeof user.app_metadata.provider === 'string' ? user.app_metadata.provider : null, notice: loginMethodNotice(user) }
 }
 
-const loginMethodsModel = readModel({
+const loginMethodsModel = replica({
   name: 'loginMethods',
   scope: 'account',
   read: async (userId) => {
     const controller = createAccountLinking(userId)
     try { return viewOf(await controller.read()) } finally { controller.dispose() }
   },
-  persist: true,
+  persist: { maxBytes: 1024, maxEntries: 1 },
 })
 type Stage = 'idle' | 'verify' | 'email' | 'email-code' | 'unlink' | 'signout'
 
 export function AccountLoginMethods({ userId, onEmailChanged }: { userId: string; onEmailChanged(email: string): void }) {
   const { t } = useTranslation('settings')
   const service = useRef<AccountLinking | null>(null)
-  const reading = useReadModel(loginMethodsModel, [])
+  const reading = useReplica(loginMethodsModel, [])
   const methods = reading.state === 'value' ? reading.value : null
   const [stage, setStage] = useState<Stage>('idle')
   const [action, setAction] = useState<Action>('email')

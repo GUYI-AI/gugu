@@ -6,7 +6,7 @@ import { ChatAreaPanel } from '../../../../apps/desktop/src/components/ChatAreaP
 import { chat, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { openImRepository, type AccountImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
-import { queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { requestTopicSplit } from '../../../../apps/desktop/src/lib/topicSplitRequest'
 import { pressBack } from '../../../../apps/desktop/src/components/ui/sheetStack'
 

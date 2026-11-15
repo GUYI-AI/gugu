@@ -1,12 +1,12 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { useState } from 'react'
-import { useReadModel } from '../../lib/readModel'
+import { useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { billingLinksAvailable, openBillingPage } from '../../lib/appLinks'
 import { setPlatformModelHidden, type PlatformCatalogModel } from '../../lib/agentModelSelection'
-import { platformModels } from '../../lib/agentModelReadModels'
+import { platformModels } from '../../lib/agentModelReplicas'
 import { rendererLogger } from '../../lib/log'
 import { Button } from '../ui/Button'
 import { SearchField } from '../ui/SearchField'
@@ -30,7 +30,7 @@ const paneLog = rendererLogger('settings/model-pane')
 
 export function ModelSection() {
   const { t } = useTranslation('settings')
-  const catalog = useReadModel(platformModels, [])
+  const catalog = useReplica(platformModels, [])
   const models = catalog.state === 'value' ? catalog.value.filter((model) => model.enabled) : null
   const loadFailed = catalog.state === 'error' ? messageForUser(catalog.error) : ''
   const [saveFailed, setSaveFailed] = useState('')

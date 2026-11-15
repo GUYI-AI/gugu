@@ -1,4 +1,4 @@
-import { readModelAccount } from '@/lib/readModel';
+import { replicaAccount } from '@/lib/replica';
 import { readViewState, takeLegacyLocalStorage, writeViewState, type ViewPanel } from '@/lib/viewStateTable';
 
 export type TabPlacement = 'separate' | 'beside';
@@ -29,7 +29,7 @@ takeLegacyLocalStorage((key) => key.startsWith(LEGACY_PREFIX), (key, raw) => {
 });
 
 /** Read on a user's open/close, never on startup; no account (signed out) keeps nothing. */
-export function accountTabPlacementMemory(account: () => string | null | undefined = () => readModelAccount().id): TabPlacementMemory {
+export function accountTabPlacementMemory(account: () => string | null | undefined = () => replicaAccount().id): TabPlacementMemory {
   return {
     read(resourceId) {
       const id = account();

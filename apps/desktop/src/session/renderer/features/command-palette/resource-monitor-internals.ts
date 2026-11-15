@@ -1,7 +1,7 @@
 import type { PerfCounters, RendererMetrics } from '@shared/renderer-metrics';
 import type { ResourceSnapshot } from '@shared/resource-monitor';
 
-export const PERF_COUNTER_KEYS = ['imTransactions', 'presenceBatches', 'presenceIds', 'contactsProviderRenders'] as const;
+export const PERF_COUNTER_KEYS = ['imTransactions', 'presenceBatches', 'presenceIds', 'contactsProviderRenders', 'snapshotRefusals'] as const;
 
 export interface InternalsRow extends RendererMetrics {
   /** Counter increments per second over the last sample interval; undefined until two comparable samples exist. */

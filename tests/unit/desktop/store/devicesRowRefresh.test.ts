@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { notifyManager as readModelNotify } from '@tanstack/react-query'
-import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { writeCachedDevices } from '../../../../apps/desktop/src/store/devicesCache'
 import { DevicesProvider } from '../../../../apps/desktop/src/store/devices'
 import { useDevicesStore } from '../../../../apps/desktop/src/store/devicesContext'
@@ -46,7 +46,7 @@ beforeEach(() => {
 async function mount() {
   const harness = createReactHarness()
   await harness.render(createNode(DevicesProvider, {}, createNode(Probe)))
-  // The first full read lands (the devices read model's reader is loaded on demand).
+  // The first full read lands (the devices replica's reader is loaded on demand).
   await vi.waitFor(() => expect(mocks.seen.at(-1)?.length).toBe(2))
   mocks.listDevices.mockClear(); mocks.listProjects.mockClear()
   return harness

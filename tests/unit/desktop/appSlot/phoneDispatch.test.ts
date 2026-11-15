@@ -7,8 +7,8 @@ import { retainDeviceSessions, updateDeviceSessions, liveDeviceSessions } from '
 import { APP_SHOW_SESSION_EVENT } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { phoneDispatch } from '../../../../apps/desktop/src/components/appSlot/phoneDispatch'
 import { registerNativeComposer } from '../../../../apps/desktop/src/lib/nativeComposerHandoff'
-// The read model reads for the signed-in account, as the product publishes it.
-;(await import('../../../../apps/desktop/src/lib/readModel')).followRendererSession('SIGNED_IN', 'owner')
+// The replica reads for the signed-in account, as the product publishes it.
+;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
 const rpc = vi.hoisted(() => vi.fn())
 const lists = vi.hoisted(() => vi.fn())
 vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ appCallOn: rpc, fetchSessionsList: lists }))

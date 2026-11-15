@@ -1,5 +1,5 @@
 import { REMOTE_TUNNEL_OPEN } from '@gugu/core/cloud/remoteTunnel'
-import { readModel, useReadModel } from '../../lib/readModel'
+import { replica, useReplica } from '../../lib/replica'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -51,14 +51,14 @@ type InputProblem = { key: 'invalidTarget' | 'unsupportedOption' | 'targetHasCom
 export type AddServerMethod = 'ssh' | 'tunnel'
 
 /** The hosts of this desktop's SSH config, offered while typing where to install (a suggestion list: none read = none offered). */
-const sshConfigHosts = readModel({
+const sshConfigHosts = replica({
   name: 'sshConfigHosts',
   scope: 'device',
   read: async () => {
     const value: unknown = await desktopIpc()!.invoke(SERVER_SSH_INSTALL_CHANNELS.listHosts)
     return Array.isArray(value) ? (value as SshConfigHost[]) : []
   },
-  persist: true,
+  persist: { maxBytes: 2048, maxEntries: 1 },
 })
 
 /** 添加完成:哪台机器,以及要不要给它起名(只在从 ~/.ssh/config 挑了别名、且是这次新出现的机器时才有)。 */
@@ -87,7 +87,7 @@ export function AddServerPanel({
   const { t } = useTranslation('settings')
   const { devices } = useDevicesStore()
   const [target, setTarget] = useState(relogin?.address ?? '')
-  const hostsReading = useReadModel(sshConfigHosts, desktopIpc() ? [] : null)
+  const hostsReading = useReplica(sshConfigHosts, desktopIpc() ? [] : null)
   const hosts = useMemo(() => (hostsReading.state === 'value' ? hostsReading.value : []), [hostsReading])
   const [runId, setRunId] = useState<string | null>(null)
   const [states, setStates] = useState<Record<string, ServerSshInstallState>>({})

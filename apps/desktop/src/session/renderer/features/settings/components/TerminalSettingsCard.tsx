@@ -6,7 +6,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { cn } from '@renderer/utils/utils';
 import { TerminalShellOptionLabel } from '@renderer/lib/components/terminal-shell-option-label';
-import { readModel, useReadModel } from '@/lib/readModel';
+import { replica, useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import { rpc } from '@renderer/lib/ipc';
 import type { AppSettings } from '@shared/core/app-settings';
@@ -94,16 +94,16 @@ const clampFontSize = (size: number) =>
 const isMac = isMacHost();
 
 /** The shells this device can start, with why one cannot. */
-const shellAvailability = readModel({
+const shellAvailability = replica({
   name: 'terminalShellAvailability',
   scope: 'device',
   read: () => rpc.terminals.getTerminalShellAvailability(),
   fresh: 30_000,
-  persist: true,
+  persist: { maxBytes: 1024, maxEntries: 1 },
 });
 
 /** Fonts installed on this device. Listed fresh on every open (a font installed meanwhile shows up); the last list shows until then. */
-const installedFonts = readModel({
+const installedFonts = replica({
   name: 'installedFonts',
   scope: 'device',
   read: async () => {
@@ -111,7 +111,7 @@ const installedFonts = readModel({
     if (!result?.success || !Array.isArray(result.fonts)) throw new Error('Could not list installed fonts');
     return Array.from(new Set(result.fonts.map((font) => font.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   },
-  persist: true,
+  persist: { maxBytes: 8192, maxEntries: 1 },
 });
 
 const TerminalSettingsCard: React.FC = () => {
@@ -127,10 +127,10 @@ const TerminalSettingsForm: React.FC<{ terminal: AppSettings['terminal']; api: A
   const { update, isSaving: saving } = api;
   const [pickerOpen, setPickerOpen] = useState<boolean>(false);
   const [query, setQuery] = useState<string>('');
-  const fonts = useReadModel(installedFonts, []);
+  const fonts = useReplica(installedFonts, []);
   const installedFontNames = useMemo(() => (fonts.state === 'value' ? fonts.value : []), [fonts]);
   const loadingFonts = fonts.state === 'unknown';
-  const shells = useReadModel(shellAvailability, []);
+  const shells = useReplica(shellAvailability, []);
   const localShellAvailability = shells.state === 'value' ? shells.value : [];
   const { translate } = useSessionMessages();
 

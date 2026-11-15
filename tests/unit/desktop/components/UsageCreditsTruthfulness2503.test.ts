@@ -7,7 +7,7 @@
 // 断言里带了修复前会渲染出的那句原话的反向断言,回归时会立刻响。
 import { act } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { GuguSubscriptionRow } from '../../../../apps/desktop/src/session/renderer/features/settings/subscriptions/GuguSubscriptionRow'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { notifyManager } from '@tanstack/react-query'

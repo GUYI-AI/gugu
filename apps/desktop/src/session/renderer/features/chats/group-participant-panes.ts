@@ -1,5 +1,5 @@
 import { action, makeObservable, observable } from 'mobx';
-import { readModelAccount } from '@/lib/readModel';
+import { replicaAccount } from '@/lib/replica';
 import { readViewState, takeLegacyLocalStorage, takeLegacyLocalStorageForAccount, writeViewState, type ViewPanel } from '@/lib/viewStateTable';
 import type { JoinedGroup } from '@/lib/sidebarJoinedGroups';
 import { contentKey, screenLayout, type ScreenBlockContent, type ScreenLayoutStore } from '@renderer/app/screen-layout';
@@ -26,7 +26,7 @@ takeLegacyLocalStorageForAccount((key) => key === LEGACY_KEY, (_, raw, account) 
 export class GroupParticipantPanes {
   readonly placements = observable.map<string, Placement>({}, { deep: false });
   rightWidth = 480;
-  private accountId: string | null = readModelAccount().id;
+  private accountId: string | null = replicaAccount().id;
 
   constructor(readonly screen: ScreenLayoutStore) {
     makeObservable(this, { rightWidth: observable, show: action, hide: action, rememberWidth: action, useAccount: action });

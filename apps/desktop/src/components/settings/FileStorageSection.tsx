@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { readModel, useReadModel } from '../../lib/readModel'
+import { replica, useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import { FILE_RETENTIONS, IMAGE_RETENTIONS, parseFileStorage, type FileStorage } from '@gugu/core/shared/fileStorage'
@@ -27,11 +27,11 @@ import { RefreshFailed } from '../ui/RefreshFailed'
  * Which of this account's machines carry a bound project group. The file storage itself is a key of the account's own
  * settings row (ownSettings, `user`): one copy of that row, ❌ a second reading of it here.
  */
-const projectGroupMachines = readModel({
+const projectGroupMachines = replica({
   name: 'projectGroupMachines',
   scope: 'account',
   read: async () => Object.entries(await listMyDeviceProjects()).filter(([, rows]) => rows.some((row) => row.chatId)).map(([deviceId]) => deviceId),
-  persist: true,
+  persist: { maxBytes: 1024, maxEntries: 1 },
 })
 
 export function FileStorageSection({ onBack }: { onBack: () => void }) {
@@ -39,8 +39,8 @@ export function FileStorageSection({ onBack }: { onBack: () => void }) {
   useSettingsDetail('file-storage', t('fileStorage.title'), onBack)
   const { user } = useAuth()
   const userId = user?.id
-  const row = useReadModel(ownSettings, userId ? ['user'] : null)
-  const machines = useReadModel(projectGroupMachines, userId ? [] : null)
+  const row = useReplica(ownSettings, userId ? ['user'] : null)
+  const machines = useReplica(projectGroupMachines, userId ? [] : null)
   const state = row.state === 'value' && machines.state === 'value' ? { storage: parseFileStorage(row.value), machines: machines.value } : null
   const failure = row.state === 'error' ? row.error : machines.state === 'error' ? machines.error : null
   const loadFailed = failure ? messageForUser(failure) : ''

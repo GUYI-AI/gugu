@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { scanEffectFetchState, scanFile } from '../../../scripts/checks/effect-fetch-state.mts'
 
 /**
- * @@@read-model ratchet: the old shape (an effect reads, then puts the answer into component state) only goes down.
- * The baseline is the debt list; a file leaves it when its surfaces read through the read model (lib/readModel.ts).
+ * @@@replica ratchet: the old shape (an effect reads, then puts the answer into component state) only goes down.
+ * The baseline is the debt list; a file leaves it when its surfaces read through the replica (lib/replica.ts).
  */
 const BASELINE = 'scripts/checks/effect-fetch-state-baseline.json'
 const baseline = JSON.parse(readFileSync(BASELINE, 'utf8')) as Record<string, number>
@@ -14,7 +14,7 @@ describe('effect-fetch-state ratchet', () => {
 
   it('no file gains the shape, and no new file has it', () => {
     const grown = Object.entries(actual).filter(([file, count]) => count > (baseline[file] ?? 0))
-    expect(grown, 'read what a surface shows through a read model (lib/readModel.ts), not an effect into useState').toEqual([])
+    expect(grown, 'read what a surface shows through a replica (lib/replica.ts), not an effect into useState — @@@client-state-model, docs/design/client-state-model.md').toEqual([])
   })
 
   it('the baseline records every decrease (so the debt never grows back unnoticed)', () => {
@@ -32,7 +32,7 @@ describe('effect-fetch-state ratchet', () => {
   it('the settings surfaces have none left', () => {
     const settings = Object.keys(actual).filter((file) => !OTHER_DOMAINS.has(file)
       && /\/components\/(settings|usage|agentsettings|devices)\/|\/session\/renderer\/features\/settings\//.test(file))
-    expect(settings).toEqual([])
+    expect(settings, 'Settings reads through replicas only — @@@client-state-model, docs/design/client-state-model.md').toEqual([])
   })
 })
 

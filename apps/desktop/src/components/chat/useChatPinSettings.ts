@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { readChatPinSettings, setChatPinPreference, watchChatPinSettings, type ChatPinSettings } from '@/lib/chatPinSettings'
 import { rendererLogger } from '@/lib/log'
 import { messageForUser } from '@/lib/userFacingError'
-import { queryClient } from '@/lib/readModel'
+import { queryClient } from '@/lib/replica'
 import { useAuth } from '@/store/auth'
 import { useToast } from '../toastContext'
 

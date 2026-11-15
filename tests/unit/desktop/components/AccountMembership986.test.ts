@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
-import { queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { AccountSection } from '../../../../apps/desktop/src/components/settings/AccountSection'
 
 const control = vi.hoisted(() => ({ failed: false }))
@@ -12,8 +12,8 @@ vi.mock('../../../../apps/desktop/src/lib/firstRun', () => ({
 }))
 // The account's own settings row: nothing set yet.
 vi.mock('../../../../apps/desktop/src/lib/ownSettings', async () => {
-  const { readModel } = await import('../../../../apps/desktop/src/lib/readModel')
-  return { ownSettings: readModel({ name: 'ownSettings', scope: 'account', read: async () => ({}) }) }
+  const { replica } = await import('../../../../apps/desktop/src/lib/replica')
+  return { ownSettings: replica({ name: 'ownSettings', scope: 'account', read: async () => ({}) }) }
 })
 vi.mock('../../../../apps/desktop/src/lib/billing', async importOriginal => ({
   ...(await importOriginal<typeof import('../../../../apps/desktop/src/lib/billing')>()),

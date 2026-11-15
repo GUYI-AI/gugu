@@ -5,7 +5,7 @@ import { observer } from 'mobx-react-lite';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { rpc } from '@renderer/lib/ipc';
 import { Unknown } from '@/components/ui/Unknown';
-import { readModel, useReadModel } from '@/lib/readModel';
+import { replica, useReplica } from '@/lib/replica';
 import { appState } from '@renderer/lib/stores/app-state';
 import { formatBytes } from '@renderer/utils/formatBytes';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -28,7 +28,7 @@ const CAPTURE_SECONDS = 10;
 const RANGE_MS: Record<Range, number> = { all: 0, '15m': 900_000, '1h': 3_600_000 };
 
 /** The stored samples of one range, up to now. Read again on every new sample while the page is open. */
-const resourceHistory = readModel({
+const resourceHistory = replica({
   name: 'resourceHistory',
   scope: 'device',
   read: async (_device, range: Range, _attempt: number) => {
@@ -51,7 +51,7 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
   const tick = snapshot ? Math.floor(snapshot.timestamp / 5000) : null;
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
-  const historyReading = useReadModel(resourceHistory, [range, revision]);
+  const historyReading = useReplica(resourceHistory, [range, revision]);
   const history: ResourceHistory | null = historyReading.state === 'value' ? historyReading.value : null;
   // ❌ 「还没有记录」 before the samples are read: the charts' place stays a placeholder until then.
   const unread = historyReading.state === 'unknown';

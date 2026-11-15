@@ -1,7 +1,7 @@
 // #987 定时任务 pane — data-pane="tasks"。设计稿只给空态；列表/建表单按 gg-as 设计系统补。
 // 给 agent 配周期 prompt（间隔 + 内容），到点经设备运行时 tick → ACP deliver 触发 agent 回合（owner↔agent 私聊里）。
 import { useCallback, useMemo, useState } from 'react'
-import { readModel, useReadModel } from '../../lib/readModel'
+import { replica, useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
@@ -10,8 +10,8 @@ import { agentScheduledTaskService, type AgentScheduledTask } from '../../lib/ag
 import type { AgentSettingsPaneProps } from './types'
 import { agentSettingsPaneClass, asClass, profileInputClass } from './agentSettingsStyles'
 
-/** An agent's scheduled tasks (account read model, one reading per agent). */
-const agentScheduledTasks = readModel({
+/** An agent's scheduled tasks (account replica, one reading per agent). */
+const agentScheduledTasks = replica({
   name: 'agentScheduledTasks',
   scope: 'account',
   read: (_owner: string, agentId: string) => agentScheduledTaskService.list(agentId),
@@ -51,7 +51,7 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
   const { user } = useAuth()
   const ownerUserId = user?.id ?? null
   // One reading per agent: reopening the pane shows its tasks at once while they are read again.
-  const reading = useReadModel(agentScheduledTasks, [agent.id])
+  const reading = useReplica(agentScheduledTasks, [agent.id])
   const tasks = reading.state === 'value' ? reading.value : []
   const loading = reading.state === 'unknown'
   const [actionError, setError] = useState<string | null>(null)

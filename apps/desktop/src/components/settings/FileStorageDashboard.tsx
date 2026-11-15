@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { readModel, useReadModel } from '../../lib/readModel'
+import { replica, useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import { formatBytes } from '@gugu/core/cloud/serverMachineHealth'
@@ -38,16 +38,16 @@ function fileIcon(name: string | null, kind: FileStorageClass) {
  * release),和发送时的「临时 / 一直保留」是同一个标记。❌ 环形图、柱状图、每行一个大按钮。
  */
 /** What this account keeps in the cloud, by kind, and what expires soon (chat.file_storage_overview_as). */
-const fileStorageOverview = readModel({
+const fileStorageOverview = replica({
   name: 'fileStorageOverview',
   scope: 'account',
   read: () => readFileStorageOverview(),
-  persist: true,
+  persist: { maxBytes: 2048, maxEntries: 1 },
 })
 
 export function FileStorageDashboard() {
   const { t } = useTranslation('settings')
-  const reading = useReadModel(fileStorageOverview, [])
+  const reading = useReplica(fileStorageOverview, [])
   const overview = reading.state === 'value' ? reading.value : null
   // 删除那一步的失败;读失败在 reading 里。
   const [actionFailed, setFailed] = useState('')

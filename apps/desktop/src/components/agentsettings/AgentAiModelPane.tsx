@@ -20,8 +20,8 @@ import {
 import { billingLinksAvailable, GUGU_BILLING_URL } from '../../lib/appLinks'
 import { AgentModelPicker } from './AgentModelPicker'
 import { Button } from '../ui/Button'
-import { agentHarnessModels, agentModelSelection, platformModels } from '../../lib/agentModelReadModels'
-import { useReadModel } from '../../lib/readModel'
+import { agentHarnessModels, agentModelSelection, platformModels } from '../../lib/agentModelReplicas'
+import { useReplica } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { useDevicesStore } from '../../store/devicesContext'
 import { platform } from '../../platform'
@@ -72,15 +72,15 @@ export function AgentAiModelPane({ agent }: AgentSettingsPaneProps) {
       || cloudComputer?.snapshot?.deviceId === agent.device_id))
   const isLocal = platform.capabilities.agentRuntime && devices.some((device) => device.device_id === agent.device_id && device.is_current_device)
   const engine = agent.agent_type ? engineIdForAgentType(agent.agent_type) : null
-  const harnessReading = useReadModel(agentHarnessModels, agent.device_id && engine && !cloudOnly ? [agent.device_id, engine, isLocal] : null)
+  const harnessReading = useReplica(agentHarnessModels, agent.device_id && engine && !cloudOnly ? [agent.device_id, engine, isLocal] : null)
   const harness: SessionpageSessionCreateModels | null = harnessReading.state === 'value' ? harnessReading.value : null
   const harnessFailed = harnessReading.state === 'error' ? messageForUser(harnessReading.error) : ''
   const protocol: ModelAccessProtocol | null = platformProtocolForAgentType(agent.agent_type)
   // 引擎说不了平台协议就不问目录:问回来也一条都列不出,还会把「目录拉不到」误报成这个 Agent 的问题。
-  const catalogReading = useReadModel(platformModels, protocol ? [] : null)
+  const catalogReading = useReplica(platformModels, protocol ? [] : null)
   const catalog = useMemo((): PlatformCatalogModel[] | null => (!protocol ? [] : catalogReading.state === 'value' ? catalogReading.value : null), [protocol, catalogReading])
   const catalogError = catalogReading.state === 'error' ? messageForUser(catalogReading.error) : null
-  const selection = useReadModel(agentModelSelection, [agent.id])
+  const selection = useReplica(agentModelSelection, [agent.id])
   const state: AgentModelSelectionState | null = selection.state === 'value' ? selection.value : null
   // 选了、还在等写完的那一项;null = 没在改,显示存着的。
   const [picked, setValue] = useState<string | null>(null)

@@ -77,7 +77,7 @@ import {
 import { useHarnessModelOptions } from './use-harness-model-options';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
-import { queryClient } from '@/lib/readModel';
+import { queryClient } from '@/lib/replica';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useHarnessModelCredential } from '@renderer/lib/stores/use-harness-model-credential';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';

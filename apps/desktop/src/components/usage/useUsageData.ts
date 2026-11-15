@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { readModel, useReadModel, type Reading } from '../../lib/readModel'
+import { replica, useReplica, type Reading } from '../../lib/replica'
 import type { CreditUsageDay, UsageDay } from '@gugu/core/shared/usage/dailyUsage'
 import { fetchCreditDays, fetchUsageDays, fetchUsageDevices, type UsageDevice } from '../../lib/usage/cloud'
 import { useSpendingPower } from '../../lib/billing/useSpendingPower'
@@ -32,26 +32,26 @@ function yearFrom(today: string): string {
   return addDays(today, -(HEATMAP_DAYS - 1))
 }
 
-const usageDays = readModel({
+const usageDays = replica({
   name: 'usageDays',
   scope: 'account',
   read: (_userId, from: string, to: string, deviceId: string | null) => fetchUsageDays(from, to, deviceId),
-  persist: true,
+  persist: { maxBytes: 2048, maxEntries: 1 },
 })
 
-const usageDevices = readModel({
+const usageDevices = replica({
   name: 'usageDevices',
   scope: 'account',
   read: () => fetchUsageDevices(),
-  persist: true,
+  persist: { maxBytes: 1024, maxEntries: 1 },
 })
 
-const creditDays = readModel({
+const creditDays = replica({
   name: 'creditDays',
   scope: 'account',
   // Totals are in the account's credit unit: another unit version is another reading (unknown until read), ❌ the old total.
   read: (_userId, from: string, to: string, timeZone: string, _creditVersion: string | null) => fetchCreditDays(from, to, timeZone),
-  persist: true,
+  persist: { maxBytes: 2048, maxEntries: 1 },
 })
 
 /** A reading as this page's three states: unknown is still loading (a placeholder block), ❌ an empty year. */
@@ -69,9 +69,9 @@ export function useUsageData({ userId, deviceId, wantPreviousYear }: { userId: s
   const from = yearFrom(today)
   const prevTo = addDays(today, -365)
   const prevFrom = addDays(prevTo, -364)
-  const usage = useReadModel(usageDays, userId ? [from, today, deviceId] : null)
-  const previous = useReadModel(usageDays, userId && wantPreviousYear ? [prevFrom, prevTo, deviceId] : null)
-  const devices = useReadModel(usageDevices, userId ? [] : null)
+  const usage = useReplica(usageDays, userId ? [from, today, deviceId] : null)
+  const previous = useReplica(usageDays, userId && wantPreviousYear ? [prevFrom, prevTo, deviceId] : null)
+  const devices = useReplica(usageDevices, userId ? [] : null)
 
   // 打开页面就先把这台机器的最新数据送上去,送完再读一遍 —— 否则刚跑完的会话要等半小时才出现。
   // @@@effect-flow - uploading this device's usage on open; the page shows the readings above, this only says it is syncing.
@@ -104,7 +104,7 @@ export function useCreditData(userId: string | null): { today: string; credits: 
   const { creditVersion, activityRevision } = useSpendingPower(userId ? { id: userId } : null)
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const from = yearFrom(today)
-  const credits = useReadModel(creditDays, userId ? [from, today, timeZone, creditVersion] : null)
+  const credits = useReplica(creditDays, userId ? [from, today, timeZone, creditVersion] : null)
   // A new charge (activity) reads the same totals again in place.
   const seen = useRef<number | null>(null)
   useEffect(() => {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Unknown } from '@/components/ui/Unknown';
-import { readModel, useReadModel } from '@/lib/readModel';
+import { replica, useReplica } from '@/lib/replica';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { invokeOnMachine } from '@renderer/lib/ipc';
 import { Input } from '@renderer/lib/ui/input';
@@ -37,13 +37,13 @@ const TITLE_MODEL_OFF = '__off__';
  * #7337 候选:这个账号此刻在 Chat Completions 上能用的在售模型(档位不够的也列出来)。问的是 model-access,
  * 所以跟账号走、跨重启留一份;取不到(没登录、断网、没有宿主)就是读失败,下拉里只剩当前选的那个与「不起名」。
  */
-const sessionTitleModels = readModel({
+const sessionTitleModels = replica({
   name: 'sessionTitleModels',
   scope: 'account',
   // async 包一层:没有宿主时 invoke 是**同步**抛的(浏览器测试、宿主还没接上),要让它也落进读失败。
   read: async () => parseSessionTitleModelOptions(await invokeOnMachine(null, SESSION_TITLE_MODELS_CHANNEL)),
   fresh: 10 * 60_000,
-  persist: true,
+  persist: { maxBytes: 4096, maxEntries: 1 },
 });
 
 /**
@@ -52,7 +52,7 @@ const sessionTitleModels = readModel({
  */
 export const SessionTitleModelRow: React.FC = () => {
   const sessions = useAppSettingsKey('sessions');
-  const catalog = useReadModel(sessionTitleModels, []);
+  const catalog = useReplica(sessionTitleModels, []);
   const { translate } = useSessionMessages();
   const options = catalog.state === 'value' ? catalog.value : [];
   // 能选的排前面,要会员的排后面(各自保持目录里的顺序):免费档一打开就看得到自己能用的那几个。
