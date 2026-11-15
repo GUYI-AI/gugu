@@ -11,6 +11,8 @@ import { UNANSWERED_AFTER_MS, useProjectFolders, type ProjectFoldersState } from
 import { foldersInScope } from './project-run-machine';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
+import { notifyManager } from '@tanstack/react-query';
+import { followRendererSession, queryClient } from '@/lib/replica';
 
 const mocks = vi.hoisted(() => ({
   entries: new Map<string, Array<{ projectId: string; sessionId: string; group: 'working' | 'needs-you' | null; time: number; title: string }>>(),
@@ -359,10 +361,14 @@ describe('useProjectFolders', () => {
     mocks.account.clear();
     mocks.accountNotNewer.clear();
     mocks.connections.clear();
+    // Folders are replica entries of the signed-in account; each case starts from an empty cache.
+    notifyManager.setScheduler((callback) => { callback(); });
+    followRendererSession('SIGNED_IN', 'tester');
   });
 
   afterEach(() => {
     act(() => root.unmount());
+    queryClient.clear();
     vi.unstubAllGlobals();
     dom.window.close();
   });
@@ -663,10 +669,11 @@ describe('useProjectFolders', () => {
   });
 
   // 一台掉线的机器,发给它的请求可能挂很久(连接还没断开):❌ 等齐了才画 —— 实机撞过整张卡停在「读取中」,
-  // 连这台电脑自己的文件夹都不出来。
+  // 连这台电脑自己的文件夹都不出来。A machine the account has a record of is drawn from it at once (marked offline);
+  // only one with nothing at all is waited for, until the deadline (open-flicker PR 3, C1).
   const never = () => new Promise<never>(() => {});
 
-  it('shows this computer’s folders without waiting for a machine that does not answer, then the account’s ones marked offline', async () => {
+  it('draws a machine that does not answer from the account’s record at once, marked offline', async () => {
     onD15();
     mocks.account.set('d15:proj-hung-d15', [{ ...D15_ROOT, projectId: 'proj-hung-d15' }]);
     mocks.list.mockImplementation((projectId: string) =>
@@ -675,15 +682,14 @@ describe('useProjectFolders', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       await mount('p-here', ['p-here', 'proj-hung-d15']);
-      expect(latest?.folders?.map((f) => f.workspaceId)).toEqual(['ws-root']);
-      expect(latest?.loadError).toBe(false);
-      expect(latest?.unanswered).toEqual(['proj-hung-d15']);
-      await act(async () => vi.advanceTimersByTime(UNANSWERED_AFTER_MS));
-      expect(latest?.unanswered).toEqual([]);
       expect(latest?.folders?.map((f) => [f.workspaceId, f.offline])).toEqual([
         ['ws-root', false],
         ['ws-d15', true],
       ]);
+      expect(latest?.loadError).toBe(false);
+      expect(latest?.unanswered).toEqual(['proj-hung-d15']);
+      await act(async () => vi.advanceTimersByTime(UNANSWERED_AFTER_MS));
+      expect(latest?.unanswered).toEqual([]);
     } finally {
       vi.useRealTimers();
     }
@@ -715,7 +721,8 @@ describe('useProjectFolders', () => {
       projectId === 'p-first' ? Promise.resolve({ success: true, data: [{ ...ROOT, projectId: 'p-first' }] }) : late.promise
     );
     await mount('p-first', ['p-first', 'proj-on-d15']);
-    expect(latest?.folders?.map((f) => f.workspaceId)).toEqual(['ws-root']);
+    // A machine with nothing to show yet is waited for: the card does not grow and reorder as machines answer.
+    expect(latest?.folders).toBeNull();
     await act(async () => late.resolve({ success: true, data: [D15_ROOT] }));
     expect(latest?.folders?.map((f) => f.workspaceId)).toEqual(['ws-root', 'ws-d15']);
     expect(latest?.fresh).toBeUndefined();
@@ -742,6 +749,47 @@ describe('useProjectFolders', () => {
     expect(latest?.folders).toBeNull();
     expect(latest?.chosen).toBeNull();
     expect(latest?.loadError).toBe(true);
+  });
+
+  // Owner 11-14: new-agent folder cards went 3 → 6 and reordered — each machine's folders drawn as they arrived.
+  it('draws the machines in the project\'s member order whatever order they answer in', async () => {
+    const first = Promise.withResolvers<unknown>();
+    const second = Promise.withResolvers<unknown>();
+    mocks.list.mockImplementation((projectId: string) => (projectId === 'p-order' ? first.promise : second.promise));
+    await mount('p-order', ['p-order', 'proj-on-d15']);
+    await act(async () => second.resolve({ success: true, data: [D15_ROOT] }));
+    expect(latest?.folders).toBeNull();
+    await act(async () => first.resolve({ success: true, data: [{ ...ROOT, projectId: 'p-order' }] }));
+    expect(latest?.folders?.map((f) => f.workspaceId)).toEqual(['ws-root', 'ws-d15']);
+  });
+
+  it('a remounted card has every folder it already read in its first frame', async () => {
+    mocks.list.mockImplementation(listByProject({ 'p-again': { success: true, data: [{ ...ROOT, projectId: 'p-again' }] }, 'proj-on-d15': { success: true, data: [D15_ROOT] } }));
+    await mount('p-again', ['p-again', 'proj-on-d15']);
+    await act(async () => root.render(null));
+    const frames: (string[] | null)[] = [];
+    function Watch() {
+      const state = useProjectFolders('p-again', ['p-again', 'proj-on-d15']);
+      frames.push(state.folders?.map((f) => f.workspaceId) ?? null);
+      return null;
+    }
+    await act(async () => root.render(React.createElement(Watch)));
+    expect(frames[0]).toEqual(['ws-root', 'ws-d15']);
+    expect(mocks.list).toHaveBeenCalledTimes(2);
+  });
+
+  it('after a restart, holds each machine\'s last count as placeholder papers in member order until it answers', async () => {
+    mocks.list.mockImplementation(listByProject({ 'p-cold': { success: true, data: [{ ...ROOT, projectId: 'p-cold' }, { ...WT, projectId: 'p-cold' }] }, 'proj-on-d15': { success: true, data: [D15_ROOT] } }));
+    await mount('p-cold', ['p-cold', 'proj-on-d15']);
+    // A restart: memory gone, the snapshot (the layout of counts) kept.
+    act(() => root.unmount());
+    root = createRoot(dom.window.document.querySelector('#root') as HTMLDivElement);
+    for (const query of queryClient.getQueryCache().findAll({ queryKey: ['projectFolders'] })) queryClient.removeQueries({ queryKey: query.queryKey, exact: true });
+    const pending = Promise.withResolvers<unknown>();
+    mocks.list.mockReturnValue(pending.promise);
+    await mount('p-cold', ['p-cold', 'proj-on-d15']);
+    expect(latest?.folders?.map((f) => [f.projectId, f.placeholder ?? false])).toEqual([['p-cold', true], ['p-cold', true], ['proj-on-d15', true]]);
+    expect(latest?.chosen).toBeNull();
   });
 });
 

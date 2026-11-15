@@ -12,6 +12,7 @@ vi.mock('@renderer/features/settings/app-settings-client', () => ({
   setAppSettingsValueInCache: mocks.setAppSettingsValueInCache,
   updateAppSettingsRequest: mocks.updateAppSettingsRequest,
   invalidateAppSettingsKey: vi.fn(),
+  beginAppSettingsWrite: () => () => {},
 }));
 vi.mock('@renderer/lib/modal/modal-provider', () => ({ showModal: mocks.showModal }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn() }));

@@ -2,6 +2,7 @@ import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge'
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings'
 import { observer } from 'mobx-react-lite';
+import { Unknown } from '@/components/ui/Unknown';
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from 'react';
 import { Check, Monitor, Plus, Server } from '@/lib/icons';
 import type { ProjectFolder } from '@shared/core/projects/project-folders';
@@ -464,6 +465,15 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
               return (
                 // 位置与动画放在外面这一层:按钮原语自带一组带 !important 的过渡(120ms、只认固定几种属性),
                 // 摊开 / 悬停上浮 / 落进来的动画放在按钮身上会被它压掉 —— 分层的 !important 从外面压不回来。
+                folder.placeholder ? (
+                  // A folder of a machine not answered yet (the last run's count): its paper, in its place, without a name.
+                  <div key={folder.workspaceId} className="gg-folder-paper-slot" style={paperStyle(place, index)} data-peek={place.hidden ? 'hidden' : 'shown'} aria-hidden>
+                    <div className="gg-folder-paper" aria-busy="true" data-testid="project-folder-paper-pending">
+                      <span className="gg-folder-paper__top"><Unknown className="w-24" /></span>
+                      <span className="gg-folder-paper__path block"><Unknown className="w-32" /></span>
+                    </div>
+                  </div>
+                ) :
                 <ProjectFolderMenu key={folder.workspaceId} folder={folder} projectName={projectName} state={state} disabled={!open}>
                 <div
                   className={cn('gg-folder-paper-slot', folder.workspaceId === dropping && 'is-dropping')}

@@ -4,6 +4,7 @@ import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { followRendererSession, queryClient } from '@/lib/replica';
 import { setLocalePreference } from '@/i18n';
 import type { SessionFailure } from '@renderer/features/sessions/stores/session-failure';
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects';
@@ -278,6 +279,8 @@ describe('NewSessionPage', () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    // The project home's folders are replica entries of the signed-in account.
+    followRendererSession('SIGNED_IN', 'tester');
     mocks.showAddProjectModal.mockReset();
     mocks.notify.mockReset();
     mocks.dismissNotice.mockReset();
@@ -385,6 +388,7 @@ describe('NewSessionPage', () => {
 
   afterEach(() => {
     act(() => root.unmount());
+    queryClient.clear();
     vi.unstubAllGlobals();
     dom.window.close();
   });
