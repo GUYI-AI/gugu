@@ -35,6 +35,7 @@ import { Popover } from '../ui/Popover'
 import { useGroupMemberPanelControls } from './GroupMemberPanelControls'
 import { groupRoleRevision, useGroupChatSettings, type GroupChatSettingsState } from './useGroupChatSettings'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useViewState } from '../../lib/viewStateTable'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { agentLocationText, resolveAgentLocation } from '../../lib/agentRunningStatusModels'
@@ -258,11 +259,12 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   })
 
   // @@@6418 搜索:名字、主人、引擎、模型、设备,与行上看得见的字一致(看不见的字段不参与匹配)。
-  const [query, setQuery] = useState('')
+  // Each chat keeps its own search words and fold (view-state table): switching chats, closing the panel or a remount keeps them.
+  const [view, setView] = useViewState({ conversation: chatId, panel: 'members' }, { query: '', myAgentsExpanded: true })
+  const { query, myAgentsExpanded } = view
+  const setQuery = (next: string) => setView({ query: next })
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
-  const [myAgentsExpanded, setMyAgentsExpanded] = useState(true)
   const mobile = useMobileShell()
-  useEffect(() => { setQuery('') }, [chatId])
 
   // The row and profile use the same owner/source-group permission and mutation hook.
   const resolveEditControls = useListenModeEditControls({
@@ -324,7 +326,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   const myAgents = shownAgents.filter((member) => identities[member.id]?.owner_user_id === user?.id)
   const otherAgents = shownAgents.filter((member) => identities[member.id]?.owner_user_id !== user?.id)
   const myAgentsOpen = myAgentsExpanded || Boolean(needle)
-  const setMyAgentsOpen = setMyAgentsExpanded
+  const toggleMyAgents = () => setView({ myAgentsExpanded: !myAgentsExpanded })
   const renderAgentRow = (member: (typeof shownAgents)[number]) => {
     const agent = member.raw as GroupAgentItem
     const identity = identities[agent.id]
@@ -467,8 +469,8 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
                   tabIndex={0}
                   aria-expanded={myAgentsOpen}
                   trailing={<><span aria-hidden="true" style={SECTION_COUNT_STYLE}>{myAgents.length}</span><ChevronRight aria-hidden="true" style={myAgentsChevronStyle(myAgentsOpen)} /></>}
-                  onClick={() => setMyAgentsOpen((open) => !open)}
-                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setMyAgentsOpen((open) => !open) } }}
+                  onClick={toggleMyAgents}
+                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleMyAgents() } }}
                 >
                   {t('group.memberList.myAgents')}
                 </SectionLabel>
