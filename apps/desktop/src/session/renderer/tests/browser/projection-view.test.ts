@@ -6,7 +6,7 @@ import { mountProjection } from '../../../app-runtime/projection-view';
 
 let close: (() => Promise<void>) | undefined;
 afterEach(async () => { await close?.(); close = undefined; vi.restoreAllMocks(); document.body.replaceChildren(); });
-async function setup() {
+async function setup(interactive = true) {
   let hear: (watchId: string, packet: ProjectionHostPacket) => void = () => {};
   let watchId = '';
   const packets: ProjectionViewerPacket[] = [];
@@ -32,7 +32,7 @@ async function setup() {
   document.body.append(root);
   const states: string[] = [];
   const painted: Array<{ sequence: number; width: number; height: number } | null> = [];
-  const view = await mountProjection(host, root, 'source', { state: state => states.push(state), painted: frame => painted.push(frame) });
+  const view = await mountProjection(host, root, 'source', { interactive, state: state => states.push(state), painted: frame => painted.push(frame) });
   close = view.close;
   const canvas = document.createElement('canvas');
   canvas.width = 640; canvas.height = 480;
@@ -52,6 +52,26 @@ async function setup() {
 }
 
 describe('shared projection surface in Chromium', () => {
+  it('keeps a thumbnail read-only, admits enlarged input, then freezes the last picture without receiving new frames', async () => {
+    const s = await setup(false); await s.paint();
+    const image = s.root.querySelector('img')!;
+    const before = image.src;
+    expect(s.input.disabled).toBe(true);
+    image.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 100, clientY: 100 }));
+    expect(s.packets.filter(packet => packet.type === 'input')).toEqual([]);
+    s.view.setInteractive(true); expect(s.input.disabled).toBe(false);
+    await page.elementLocator(image).click();
+    expect(s.packets.some(packet => packet.type === 'input')).toBe(true);
+    await s.view.freeze();
+    expect(s.input.disabled).toBe(true);
+    expect(image.isConnected).toBe(true); expect(image.src).toBe(before);
+    const count = s.packets.length;
+    s.emit({ type: 'frame', generation: 'a', frame: { sequence: 2, width: 1, height: 1, mime: 'image/png', data: 'YQ==' } });
+    s.view.setInteractive(true);
+    s.input.dispatchEvent(new InputEvent('input', { data: 'late' }));
+    expect(s.packets).toHaveLength(count); expect(image.src).toBe(before);
+    await s.view.close(); expect(image.isConnected).toBe(false);
+  });
   it('stops automatic recapture after a bounded number of consecutive decoding failures', async () => {
     vi.spyOn(HTMLImageElement.prototype, 'decode').mockRejectedValue(new Error('Corrupt captured image'));
     let hear: (watch: string, packet: ProjectionHostPacket) => void = () => {};
