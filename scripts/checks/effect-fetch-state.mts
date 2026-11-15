@@ -1,4 +1,5 @@
-// @@@read-model ratchet (open-flicker, owner 2026-11-14): data a surface shows lives in a read model (lib/readModel.ts),
+// @@@client-state-model — why this shape is debt and what replaces it: docs/design/client-state-model.md.
+// @@@replica ratchet (open-flicker, owner 2026-11-14): data a surface shows lives in a replica (lib/replica.ts),
 // not in component state filled by an effect. The shape this finds is the old one: a `useEffect` whose callback reads
 // something asynchronously (a `.then` / `.catch` / `.finally` callback or a setter handed to one, an async function, or
 // a call to one of the component's own functions that does either) and puts the answer into a `useState` setter of the
