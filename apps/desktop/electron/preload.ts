@@ -15,6 +15,7 @@ import {
 import { UI_EVENTS } from '../src/lib/uiEvents'
 import { MAIN_UI_EVENTS } from '../src/lib/mainUiEvents'
 import { HOST_SYSTEM_LANGUAGES_CHANNEL } from '../shared/host-localization'
+import { VIEW_STATE_GLOBAL, VIEW_STATE_SNAPSHOT_CHANNEL, type ViewStateGlobal } from '../shared/view-state-snapshot'
 import {
   WINDOW_MATERIAL_CHANGED_CHANNEL,
   WINDOW_MATERIAL_GET_CHANNEL,
@@ -210,6 +211,11 @@ contextBridge.exposeInMainWorld('guguHostLocale', {
   // languagechange 监听在桌面上会退化成一个永远算出同一个值的空动作。
   readSystemLanguages: readHostSystemLanguages,
 })
+
+// @@@view-state-snapshot — drafts, reading positions and tabs are in the first frame: one synchronous read, taken once.
+contextBridge.exposeInMainWorld(VIEW_STATE_GLOBAL, {
+  snapshot: ipcRenderer.sendSync(VIEW_STATE_SNAPSHOT_CHANNEL) as Record<string, unknown> | null,
+} satisfies ViewStateGlobal)
 
 // @@@822 frameless 自绘标题栏: Windows/Linux 无原生边框,窗口控制(最小化/最大化/关闭)走这里。
 // Mac 用原生交通灯(titleBarStyle:hiddenInset),不经此桥。通道名与 main 的 ipcMain handlers 对齐。

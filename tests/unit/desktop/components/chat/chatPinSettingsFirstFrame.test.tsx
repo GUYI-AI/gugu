@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
 import { useChatPinSettings } from '../../../../../apps/desktop/src/components/chat/useChatPinSettings'
-import { queryClient } from '../../../../../apps/desktop/src/lib/readModel'
+import { queryClient } from '../../../../../apps/desktop/src/lib/replica'
 
 const pins = vi.hoisted(() => ({ ids: ['t-1'], reads: 0 }))
 vi.mock('@/lib/chatPinSettings', () => ({
@@ -14,7 +14,7 @@ vi.mock('@/lib/chatPinSettings', () => ({
   watchChatPinSettings: () => () => {},
 }))
 
-const firstFrames: string[][] = []
+const firstFrames: (readonly string[])[] = []
 function Pins() {
   const { topicIds } = useChatPinSettings('g-first-frame')
   if (firstFrames.length === 0 || firstFrames.at(-1) !== topicIds) firstFrames.push(topicIds)
@@ -31,7 +31,7 @@ describe('pinned topics of a revisited group', () => {
     await renderWithAppProviders(harness, createNode(Pins, {}), { auth: { id: 'u-1' } })
     await vi.waitFor(() => expect(shown()).toBe('t-1'))
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    harness.cleanup() // the last observer leaves: the query library schedules its collection now
+    harness.cleanup({ keepReads: true }) // the last observer leaves: the query library schedules its collection now
     vi.advanceTimersByTime(6 * 60_000) // past its default five minutes
     vi.useRealTimers()
     pins.ids = ['t-1', 't-2'] // pinned elsewhere while nobody watched this group

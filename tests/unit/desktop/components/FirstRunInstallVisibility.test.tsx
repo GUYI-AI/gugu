@@ -38,7 +38,7 @@ vi.mock('@renderer/lib/ipc', () => {
 
 import { FirstRunGate } from '../../../../apps/desktop/src/components/firstRun/FirstRunGate'
 import { i18n } from '../../../../apps/desktop/src/i18n/runtime'
-import { queryClient } from '../../../../apps/desktop/src/lib/readModel'
+import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 
 const user = { id: 'owner-install', email: 'owner@example.test', nickname: 'Owner' }
 let harness: ReturnType<typeof createReactHarness>

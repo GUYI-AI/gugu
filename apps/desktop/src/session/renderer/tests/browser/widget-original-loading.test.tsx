@@ -4,6 +4,7 @@ import { createReactHarness } from '../../../../../../../tests/support/testHarne
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
+import { followRendererSession } from '@/lib/replica'
 
 const fixture = vi.hoisted(() => ({ platform: { kind: 'electron' }, read: vi.fn(), claim: vi.fn(() => 'claim'), revision: () => () => {} }))
 vi.mock('@/platform', async original => ({ ...(await original<object>()), platform: fixture.platform }))
@@ -32,6 +33,8 @@ it.each(['electron', 'phone'])('keeps glyph, text and loading through a pending 
   let resolve!: (value: typeof resolved) => void, reject!: (error: Error) => void
   fixture.read.mockReturnValueOnce(new Promise<typeof resolved>(done => { resolve = done }))
   fixture.read.mockReturnValueOnce(new Promise<typeof resolved>((_done, fail) => { reject = fail }))
+  // The original's read is an account replica: it follows the published session, signed in as the same user.
+  followRendererSession('SIGNED_IN', 'reader')
   harness = createReactHarness()
   // Ids of their own per case: an original read once this session shows at once when mounted again.
   const view = (id: string) => <div style={{ width: 400 }}><WidgetBubble message={{ ...message, id: `${platform}-${id}` }} /></div>

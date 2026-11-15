@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { readModel, useReadModel, type Reading } from '@/lib/readModel';
+import { replica, useReplica, type Reading } from '@/lib/replica';
 import { rpc } from '@renderer/lib/ipc';
 import {
   getResolvedIconPath,
@@ -26,26 +26,26 @@ export interface OpenInApps {
   availability: Record<string, boolean>;
 }
 
-const platformModel = readModel({
+const platformModel = replica({
   name: 'appPlatform',
   scope: 'device',
   read: () => rpc.app.getPlatform() as Promise<PlatformKey>,
   fresh: Infinity,
-  persist: true,
+  persist: { maxBytes: 256, maxEntries: 1 },
 });
 
-const installedAppsModel = readModel({
+const installedAppsModel = replica({
   name: 'openInInstalledApps',
   scope: 'device',
   read: async () => (await rpc.app.checkInstalledApps()) as Record<string, boolean>,
   fresh: 5 * 60 * 1000,
-  persist: true,
+  persist: { maxBytes: 2048, maxEntries: 1 },
 });
 
 /** The "Open in" tools of this device: names and icons for its platform, and which ones are installed. */
 export function useOpenInApps(): Reading<OpenInApps> {
-  const platform = useReadModel(platformModel, []);
-  const installed = useReadModel(installedAppsModel, []);
+  const platform = useReplica(platformModel, []);
+  const installed = useReplica(installedAppsModel, []);
   return useMemo((): Reading<OpenInApps> => {
     if (platform.state !== 'value') return platform;
     if (installed.state !== 'value') return installed;

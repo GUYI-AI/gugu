@@ -19,7 +19,8 @@ const bus = vi.hoisted(() => ({
   routes: {} as Record<string, (input: never) => unknown>,
   listeners: new Map<string, Set<(payload: unknown) => void>>(),
 }))
-vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({
+vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', async original => ({
+  ...await original<object>(),
   rpcOn: () => ({ sessionTimeline: new Proxy({}, { get: (_, route: string) => (input: never) => Promise.resolve(bus.routes[route]?.(input) ?? { ok: false, error: { code: 'no_route', message: route } }) }) }),
   events: { on: (channel: { name: string }, listener: (payload: unknown) => void, topic: string) => {
     const key = `${channel.name}\n${topic}`

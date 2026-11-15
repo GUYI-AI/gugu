@@ -6,6 +6,7 @@ import { buildGroupRosterCandidates } from '../../../../apps/desktop/src/lib/men
 import { plainTextDoc } from '../../../../packages/session-ui/src/react/components/prompt-editor/serialize'
 import { createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { readComposer, writeComposer } from '../../../support/composerEditor'
+import { viewStateCache } from '../../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 
 const members: NonNullable<ChatMessageComposerProps['groupMembers']> = [
   { id: 'alpha', name: 'Alpha', type: 'agent' },
@@ -35,7 +36,7 @@ async function key(key: string, init: KeyboardEventInit = {}) {
   await act(async () => { input().focus(); input().dispatchEvent(event) })
   return event
 }
-beforeEach(() => { localStorage.clear(); harness = createReactHarness() })
+beforeEach(() => { localStorage.clear(); viewStateCache.forget('view:'); harness = createReactHarness() })
 afterEach(() => harness.cleanup())
 
 describe('group mention recall through the real composer and send path', () => {

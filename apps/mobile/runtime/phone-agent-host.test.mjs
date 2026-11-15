@@ -844,14 +844,14 @@ test('a failed turn on a whispered message posts no public notice: it would tell
   } finally { await fx.close() }
 })
 
-test('an image attachment is durably admitted as safe metadata and acknowledged without fetching bytes during inbox delivery', async () => {
+test('an image attachment is durably admitted as the desktop reads it, a reference to fetch, without fetching bytes during inbox delivery', async () => {
   let prompt
   const fx = await fixture(async (command, hooks) => {
     if (!command.prompt.includes('gugu_delivery')) return { status: 'done', text: '[NO_REPLY]' }
     prompt = command.prompt
     assert.match(prompt, /message_download_file/)
     assert.match(prompt, /calendar\.png/)
-    assert.equal(prompt.includes('https://unreachable.invalid'), false)
+    assert.ok(prompt.includes('[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:'), prompt)
     assert.equal(prompt.includes('[Image attached at local path:'), false)
     await hooks.extraTools.find((item) => item.name === 'message_send').execute('ack-image', { chat_id: chatId, text: '已收到附件消息', to_user_ids: [`user:${ownerId}`] })
     return { status: 'done', text: '已回复' }

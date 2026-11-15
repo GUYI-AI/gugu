@@ -15,7 +15,7 @@ export type SettingsRemoteDevice = {
 };
 
 export type SettingsHost = {
-  /** The app-settings read model's host argument: `local`, or the machine's device id (rpc goes there). */
+  /** The app-settings replica's host argument: `local`, or the machine's device id (rpc goes there). */
   key: string;
   /** null = 本机。 */
   remote: SettingsRemoteDevice | null;

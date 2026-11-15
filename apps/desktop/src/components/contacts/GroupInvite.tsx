@@ -12,14 +12,12 @@ import { messageForUser } from '@/lib/userFacingError';
  */
 import { useCallback, useEffect, useState } from 'react'
 import { X } from '@/lib/icons'
-import type { GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
 import type {
   ContactGroupChat,
   PublicGroupInviteGroup,
   PublicGroupInviteLookupResult,
 } from '@gugu/core/shared/types/contacts'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
-import { chatService } from '../../lib/chat'
 import { contactsService } from '../../lib/contacts'
 import { groupInviteLinkFor } from '../../lib/groupInviteShareUrl'
 import { isProjectGroupChat } from '../../lib/groupMemberPermissions'
@@ -30,6 +28,9 @@ import { IconButton } from '../ui/IconButton'
 import { Sheet } from '../ui/Sheet'
 import { useTranslation } from 'react-i18next'
 import { GroupInviteCode } from '../chat/GroupInviteShare'
+import { groupSettings } from '../chat/useGroupChatSettings'
+import { groupRoster } from '../../hooks/useRoomCollab'
+import { useReplica } from '../../lib/replica'
 
 /** 群聊详情里扫码加入的码。项目群不拉人(gugu-dev#181):不出码,说一句原因。 */
 export function GroupInviteQrShare({ group }: { group: ContactGroupChat }) {
@@ -42,32 +43,23 @@ export function GroupInviteQrShare({ group }: { group: ContactGroupChat }) {
 
 function GroupInviteQr({ group }: { group: ContactGroupChat }) {
   const { t } = useTranslation('contacts')
-  const [share, setShare] = useState<{ link: string | null; snapshot: GroupCollabSnapshot } | { error: string } | null>(null)
   // Only groups with a 群号 can be shared (channels and number-less groups never are).
   const hasGroupNumber = group.kind === 'group' && typeof group.public_id === 'number' && Number.isInteger(group.public_id) && group.public_id > 0
-
-  // The same link and the same decision (groupInviteLinkFor) as the group's own Invite sheet; the poster needs the roster.
-  useEffect(() => {
-    if (!hasGroupNumber) return
-    let cancelled = false
-    setShare(null)
-    Promise.all([chatService.getGroupChatSettings(group.id), chatService.getGroupCollab(group.id)])
-      .then(([settings, { snapshot }]) => { if (!cancelled) setShare({ link: groupInviteLinkFor(group.id, settings), snapshot }) })
-      .catch((error: unknown) => {
-        console.error('[ContactsPanel] group invite link fetch failed', error)
-        if (!cancelled) setShare({ error: messageForUser(error) })
-      })
-    return () => { cancelled = true }
-  }, [group.id, hasGroupNumber])
+  // The group's own settings and roster readings (the same link and decision, groupInviteLinkFor, as its Invite sheet;
+  // the poster needs the roster), ❌ a read of its own.
+  const settings = useReplica(groupSettings, hasGroupNumber ? [group.id] : null)
+  const roster = useReplica(groupRoster, hasGroupNumber ? [group.id, 'group'] : null)
+  const failure = settings.state === 'error' ? settings.error : roster.state === 'error' ? roster.error : null
+  const link = settings.state === 'value' ? groupInviteLinkFor(group.id, settings.value) : undefined
 
   // Sharing switched off: nothing to show. A failed read says why instead of hiding the section.
-  if (!hasGroupNumber || (share && 'link' in share && !share.link)) return null
+  if (!hasGroupNumber || link === null) return null
   return (
     <section className="!pt-4">
       <div className="!mb-3 text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--text-secondary)]">{t('groupInvite.qrTitle')}</div>
-      {share === null ? <p className="!m-0 text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t('common.loading')}</p>
-        : 'error' in share ? <p role="alert" className="!m-0 text-[length:var(--font-body)] text-[var(--danger-fg)]">{share.error}</p>
-        : <GroupInviteCode inviteLink={share.link!} groupName={group.name} snapshot={share.snapshot} />}
+      {failure ? <p role="alert" className="!m-0 text-[length:var(--font-body)] text-[var(--danger-fg)]">{messageForUser(failure)}</p>
+        : link === undefined || roster.state !== 'value' ? <p className="!m-0 text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t('common.loading')}</p>
+        : <GroupInviteCode inviteLink={link} groupName={group.name} snapshot={roster.value} />}
     </section>
   )
 }

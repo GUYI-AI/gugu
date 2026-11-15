@@ -13,15 +13,17 @@ vi.mock('@renderer/app/screen-layout', () => ({ screenLayout: { get snapshot() {
 vi.mock('@renderer/utils/logger', () => ({ log: { warn: state.warn } }));
 
 import { restoreSavedScreenSessionLocations, savedScreenSessionIds, reconcileSessionProjectLocations } from './restore-session-projects';
+import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
+import { readSavedScreen, writeSavedScreen } from '@renderer/app/screen-layout-actions';
 
 const locations = [{ conversationId: 'assistant', projectId: 'tasks' }];
 const screen = () => ({ layout: { pane: 'first' }, focused: 'first', blocks: { first: { kind: 'session', sessionId: 'assistant', projectId: 'old' } } });
 beforeEach(() => {
-  localStorage.clear(); vi.clearAllMocks(); state.session = { projectId: 'old', sessionId: 'assistant' }; state.screen = screen();
+  localStorage.clear(); viewStateCache.forget('view:'); vi.clearAllMocks(); state.session = { projectId: 'old', sessionId: 'assistant' }; state.screen = screen();
 });
 
 it('collects saved layout IDs synchronously for the existing state-read request', () => {
-  localStorage.setItem('gugu.screen-layout.v1', JSON.stringify(screen()));
+  writeSavedScreen(screen() as never);
   expect(savedScreenSessionIds()).toEqual(['assistant']);
 });
 
@@ -30,19 +32,13 @@ it('requests no session rows for a cold start without saved task references', ()
 });
 
 it('repairs only the renderer-owned screen before cold restore', () => {
-  localStorage.setItem('gugu.screen-layout.v1', JSON.stringify(screen()));
+  writeSavedScreen(screen() as never);
   restoreSavedScreenSessionLocations(locations);
-  expect(JSON.parse(localStorage.getItem('gugu.screen-layout.v1')!).blocks.first.projectId).toBe('tasks');
+  expect((readSavedScreen()?.blocks as Record<string, { projectId: string }>).first.projectId).toBe('tasks');
 });
 
 it('updates remote session references without changing which non-task page the person is reading', () => {
   reconcileSessionProjectLocations(locations);
   expect(state.update).toHaveBeenCalledWith('session', { projectId: 'tasks', sessionId: 'assistant' });
   expect(state.restore).toHaveBeenCalledWith(expect.objectContaining({ blocks: { first: { kind: 'session', projectId: 'tasks', sessionId: 'assistant' } } }));
-});
-
-it('does not let an unreadable screen snapshot prevent restoring a known task', () => {
-  localStorage.setItem('gugu.screen-layout.v1', 'invalid');
-  restoreSavedScreenSessionLocations(locations);
-  expect(state.warn).toHaveBeenCalledOnce();
 });

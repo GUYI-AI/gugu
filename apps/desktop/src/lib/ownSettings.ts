@@ -6,7 +6,7 @@ import {
   type VersionedSettingsTableClient,
 } from '@gugu/core/cloud/userSettings'
 import type { GuguSettingsRow, GuguSettingsScope } from '@gugu/core/shared/types/chat'
-import { readModel, readModelAccount } from './readModel'
+import { replica, replicaAccount } from './replica'
 import { identityDb } from './supabase'
 
 const client = identityDb as unknown as SettingsTableClient & VersionedSettingsTableClient
@@ -18,18 +18,18 @@ type Scope = GuguSettingsScope
  * their readers share one read (a read on its way serves everyone who asks meanwhile), and a write puts the row the
  * server saved back, so the next reader needs no read at all.
  */
-export const ownSettings = readModel({
+export const ownSettings = replica({
   name: 'ownSettings',
   scope: 'account',
   read: (userId, scope: Scope) => readUserSettingsConfig(client, userId, scope),
   fresh: 10_000,
   // Display values (an occupation, which hints were seen, pinned topics): their first frame after a restart.
-  persist: true,
+  persist: { maxBytes: 1024, maxEntries: 4 },
 })
 
-const mine = (userId: string) => readModelAccount().id === userId
+const mine = (userId: string) => replicaAccount().id === userId
 
-/** One row's config. The read model holds the signed-in account's rows; any other id reads the table. */
+/** One row's config. The replica holds the signed-in account's rows; any other id reads the table. */
 export function readOwnSettings(userId: string, scope: Scope): Promise<Record<string, unknown>> {
   return mine(userId) ? ownSettings.fetch(scope) : readUserSettingsConfig(client, userId, scope)
 }

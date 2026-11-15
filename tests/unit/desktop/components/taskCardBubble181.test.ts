@@ -227,6 +227,18 @@ describe('a task card waiting for the group owner (gugu-dev#181)', () => {
     expect(cardText()).toContain('群主没有同意它进群')
   })
 
+  // The continuity scan saw list_my_agent_join_requests nine times on one group open: every card read it itself.
+  it('several cards of one group share one read of the requests, and one change reads them once', async () => {
+    const second = createNode(MessageBubble, {
+      msg: message({ id: 'card-10', is_mine: true, content_type: 'card', content: serializeComposerCard(CARD) }),
+      isGroup: true, onReaction: vi.fn(), memberReadSeqs: {}, onQuote: vi.fn(), onForward: vi.fn(), onDelete: vi.fn(),
+    })
+    await renderWithAppProviders(harness, createNode('div', null, groupCard(), second), { chat })
+    expect(joins.reads).toBe(1)
+    await requestChanged('rejected')
+    expect(joins.reads).toBe(2)
+  })
+
   it('an agent already seated in the group: no request read, no waiting', async () => {
     await renderWithAppProviders(harness, groupCard({ 'agent-1': { displayName: 'Codex 1' } }), { chat })
     expect(joins.reads).toBe(0)
