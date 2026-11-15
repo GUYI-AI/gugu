@@ -66,24 +66,26 @@ it('any sheet: content with no scroll area of its own still scrolls to its last 
 });
 
 // owner 10-07「手机端创建新 agent……那些设置经常超出竖直长度,又没有滚动条」。实测(14b6012e3e):12 个项目在 360×640 上
-// 被压成两行半的小窗;360×400 时项目列表压成 0 行。项目现在在新建页「项目 · 机器」那一行的抽屉里(CreateTarget)。
+// 被压成两行半的小窗;360×400 时项目列表压成 0 行。项目现在在新建页按钮排的底部面板里(CreateTarget)。
 for (const [w, h] of [[360, 640], [360, 400]] as const) {
   it(`new task project picker, 12 projects at ${w}×${h}: the list keeps its rows, the head stays on top, the last project is reachable`, async () => {
     await page.viewport(w, h);
     const projects = Array.from({ length: 12 }, (_, i) => ({ chatId: `p${i + 1}`, name: `project-${i + 1}`, homes: new Map<string, string>() }));
     mount(<CreateTarget projects={projects} project={null} onProject={() => {}} machines={[]} machine={undefined} onMachine={() => {}} machineLabel={() => ''} busy={false} />);
-    await userEvent.click(page.getByTestId('agent-watch-create-target-row').first());
+    await userEvent.click(page.getByTestId('agent-watch-create-project'));
     // 「不选项目」在最前,然后 12 个项目。
-    await until('13 choices in the sheet', () => document.querySelectorAll('[data-testid="agent-watch-create-target-sheet"] [role="radio"]').length === 13);
-    const box = sheet('agent-watch-create-target-sheet')!;
-    const group = box.querySelector<HTMLElement>('.gg-aw-choice-group[data-dimension="project"]')!;
+    await until('13 choices in the sheet', () => document.querySelectorAll('[data-testid="agent-watch-create-controls-sheet"] [role="radio"]').length === 13);
+    const box = sheet('agent-watch-create-controls-sheet')!;
+    const group = box.querySelector<HTMLElement>('[role="radiogroup"]')!;
+    await Promise.all(box.getAnimations().map((animation) => animation.finished));
+    const head = box.querySelector<HTMLElement>('.gg-phone-composer-sheet-head')!;
+    const headTop = head.getBoundingClientRect().top;
     const rows = [...group.querySelectorAll<HTMLElement>('[role="radio"]')];
     const rowsHeight = rows.reduce((sum, row) => sum + row.getBoundingClientRect().height, 0);
     expect.soft(group.getBoundingClientRect().height, 'the project list is not squashed into a small window').toBeGreaterThanOrEqual(rowsHeight - 1);
     const lastProject = rows.at(-1)!;
     await userEvent.wheel(group, { delta: { y: 400 }, times: 10 });
-    const head = box.querySelector<HTMLElement>('.gg-aw-sheet-head')!;
-    expect.soft(Math.abs(head.getBoundingClientRect().top - box.getBoundingClientRect().top), 'the head stays at the top of the sheet').toBeLessThanOrEqual(1);
+    expect.soft(Math.abs(head.getBoundingClientRect().top - headTop), 'the head stays at the top of the sheet while its list scrolls').toBeLessThanOrEqual(1);
     const hit = (el: HTMLElement) => {
       const r = el.getBoundingClientRect();
       return inside(el, box) && el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));

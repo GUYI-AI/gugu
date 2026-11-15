@@ -8,7 +8,7 @@ type SkillSource = Pick<ExtensionsApi, 'list' | 'appPlaces' | 'agentSkills'>
 /** Read the selected computer's existing App catalog and its existing delivery grants. */
 export async function loadCreationSkills(api: SkillSource, scopeChatId: string | null): Promise<{ skills: CreationSkill[]; partial: boolean }> {
   const inventory = await api.list()
-  if (!inventory.success) throw new Error(String(inventory.error))
+  if (!inventory.success || !inventory.data) throw new Error(String(inventory.error ?? 'App inventory is unavailable'))
   const { extensions, disabled, appIcons } = inventory.data
   let partial = false
   const groups = await Promise.all(extensions.filter((app) => app.contributes.skills && givesAgentTools(app) && !disabled.includes(app.id)).map(async (app) => {

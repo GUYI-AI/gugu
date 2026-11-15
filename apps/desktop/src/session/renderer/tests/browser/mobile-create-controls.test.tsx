@@ -23,7 +23,7 @@ vi.mock('@/mobile/agent-watch/sessionpage-rpc', () => ({ machineRpc: () => ({ ex
   appPlaces: async () => ({ success: true, data: [{ id: 'here:all', enabled: true }] }),
   agentSkills: async () => ({ success: true, data: ['会议记录', '代码检查'], entries: [{ name: '会议记录', description: '整理会议记录与待办事项' }, { name: '代码检查', description: '检查代码中的问题' }], problems: [] }),
 } }) }))
-const machines: CreateMachine[] = ['Mac', 'Cloud'].map((name) => ({ device: { device_id: name, label: name, hostname: name, platform: 'darwin', status: 'online', is_online: true, last_seen_at: null, capabilities: { terminals: [], runtimes: ['codex'] } }, localProjectId: null, path: null, available: true }))
+const machines: CreateMachine[] = ['Mac', 'Cloud'].map((name) => ({ device: { device_id: name, label: name, hostname: name, platform: 'darwin', status: 'online', is_online: true, last_seen_at: '2026-11-15T00:00:00Z', capabilities: { terminals: [], runtimes: ['codex'] } }, localProjectId: null, path: null, available: true }))
 const options: SessionpageSessionCreateOptions = { projects: [], lastUsed: null, harnesses: ['codex', 'claude'].map((id) => ({ id, name: id === 'codex' ? 'Codex' : 'Claude Code', status: 'available', watchable: true, sessionViews: ['general'], permissionModes: [] })) }
 let root: Root | null = null, host: HTMLDivElement | null = null
 function Harness() {
