@@ -1095,18 +1095,19 @@ describe('P-E4 离线追赶:未读行逐条受理,由队列 drain 合批', () =>
     expect(asked).toEqual([{ message_id: '10000000-0000-4000-8000-000000000005' }, { message_id: '10000000-0000-4000-8000-000000000006' }])
     const text = injections.map((entry) => entry.text).join('\n')
     expect(text).toContain('[附件] poll-0.1.0.guguext (application/vnd.gugu.extension+zip)')
-    expect(text).toContain('[File saved at local path: /tmp/gugu-home/chat-media/abc-poll-0.1.0.guguext]')
-    expect(text.match(/\[File saved at local path:/g)).toHaveLength(1)
+    expect(text).toContain('[File at local path: /tmp/gugu-home/chat-media/abc-poll-0.1.0.guguext]')
+    expect(text.match(/\[File at local path:/g)).toHaveLength(1)
     // 它是群文件夹里的哪个文件、哪一版,怎么再发、怎么把改过的发成下一版:只在指着条目的那一条上。
     expect(text).toContain('[Folder file gugu-file://item-7?v=1 — show it again: message_send_file {file: "gugu-file://item-7?v=1"}')
     expect(text.match(/\[Folder file /g)).toHaveLength(1)
     expect(text).toContain('[URL] https://example.test/a.pdf')
-    expect(text).toContain('[File not saved: Legacy file requires verified private metadata]')
+    // 下不下来:给取它的那一步,原因由 message_download_file 自己说。
+    expect(text).toContain('[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:10000000-0000-4000-8000-000000000006"}]')
     expect(injections.every((entry) => !entry.attachments)).toBe(true)
   })
 
-  // 文件下不下来(签不到、CDN 回错、超时):这一行照交、照实说没存下,同一批的别的行也照样送到 —— 收件不卡在这一行上。
-  it('a file that cannot be saved: its text goes with the reason, and the other rows of the batch are delivered too', async () => {
+  // 文件下不下来(签不到、CDN 回错、超时):这一行照交、写上取它的那一步,同一批的别的行也照样送到 —— 收件不卡在这一行上。
+  it('a file that cannot be saved: its text goes with how to fetch it, and the other rows of the batch are delivered too', async () => {
     const cloud = new FakeCloud()
     cloud.addChat('00000000-0000-4000-8000-000000000007', 'group')
     cloud.join('00000000-0000-4000-8000-000000000007', AGENT, { listenMode: 'active' })
@@ -1121,7 +1122,7 @@ describe('P-E4 离线追赶:未读行逐条受理,由队列 drain 合批', () =>
     const text = injections.map((entry) => entry.text).join('\n')
     expect(text).toContain('before the file')
     expect(text).toContain('[附件] deck.pptx')
-    expect(text).toContain('[File not saved: chat attachment download failed (503)]')
+    expect(text).toContain('[Not on this computer. To read or change it: message_download_file {source_message_id: "msg:10000000-0000-4000-8000-000000000003"}]')
     expect(text).toContain('after the file')
   })
 

@@ -48,12 +48,13 @@ describe('turnFileText (P3 task turn attachments)', () => {
     expect(mocks.resolveAccountFile).toHaveBeenCalledTimes(1);
   });
 
-  it('says a stored file is read-only, and reads it again if it changed since the last turn', async () => {
+  it('gives a stored file by its path (read-only is said by the download, not the turn), and reads it again if it changed since the last turn', async () => {
     mocks.resolveAccountFile.mockImplementation(async () => resolved('managed-object'));
     mocks.saveFileHandle.mockResolvedValue({ file_path: '/home/agent/.gugu/file-store/sha/brief.txt', read_only: true });
     mocks.stat.mockResolvedValue({ isFile: () => true, size: 3, mtimeMs: 1 });
     const first = await turnFileText('stored-session', [doc], false);
-    expect(first.text).toContain('shared and read-only');
+    expect(first.text).toContain('[File at local path: /home/agent/.gugu/file-store/sha/brief.txt]');
+    expect(first.text).not.toContain('read-only');
     await turnFileText('stored-session', [doc], false);
     expect(mocks.saveFileHandle).toHaveBeenCalledTimes(1);
     mocks.stat.mockResolvedValue({ isFile: () => true, size: 3, mtimeMs: 2 });
@@ -68,14 +69,14 @@ describe('turnFileText (P3 task turn attachments)', () => {
     expect(mocks.saveFileHandle).toHaveBeenCalledTimes(2);
   });
 
-  it('refetches a deleted prefetched path and emits a failure line if the version is gone', async () => {
+  it('refetches a deleted prefetched path and says how to fetch it if the version is gone', async () => {
     mocks.resolveAccountFile.mockResolvedValue(resolved('managed-object'));
     await prefetchFiles({ conversationId: 'deleted-cache', files: [doc] });
     mocks.stat.mockRejectedValueOnce(Object.assign(new Error('gone'), { code: 'ENOENT' }));
     mocks.resolveAccountFile.mockResolvedValue({ status: 'gone' });
     const turn = await turnFileText('deleted-cache', [doc], false);
     expect(mocks.warn).toHaveBeenCalledWith('Task attachment could not be saved', { sessionId: 'deleted-cache', itemId: doc.itemId, reason: 'File is no longer available' });
-    expect(turn.text).toContain('[File not saved: File is no longer available]');
+    expect(turn.text).toContain('[Not on this computer. To read or change it: message_download_file {file: "gugu-file://item-doc?v=2"}]');
   });
 
   it('reports a disabled transfer and does not cache its failed prefetch', async () => {
@@ -84,7 +85,7 @@ describe('turnFileText (P3 task turn attachments)', () => {
       { itemId: doc.itemId, ok: false, error: 'Cloud transfer is disabled for this file (transfer_disabled)', code: 'transfer_disabled' },
     ]);
     mocks.resolveAccountFile.mockResolvedValue(resolved('managed-object'));
-    expect((await turnFileText('retry-prefetch', [doc], false)).text).not.toContain('not saved');
+    expect((await turnFileText('retry-prefetch', [doc], false)).text).not.toContain('Not on this computer');
   });
 
   it("reads as the session's agent; kept on this device: the placed file itself, in the inbox line format", async () => {
@@ -98,7 +99,7 @@ describe('turnFileText (P3 task turn attachments)', () => {
     expect(mocks.saveFileHandle).not.toHaveBeenCalled();
     expect(text.split('\n')[0]).toContain('brief.txt');
     expect(text).toContain('gugu-file://item-doc?v=2');
-    expect(text).toContain('[File saved at local path: /Users/me/brief.txt]');
+    expect(text).toContain('[File at local path: /Users/me/brief.txt]');
     expect(images).toEqual([]);
   });
 
@@ -110,7 +111,7 @@ describe('turnFileText (P3 task turn attachments)', () => {
     const session = `kept-${_label}`;
     const { text } = await turnFileText(session, [doc], false);
     expect(mocks.saveFileHandle).toHaveBeenCalledWith(elsewhere, expect.anything(), 'brief.txt');
-    expect(text).toContain('[File saved at local path: /home/agent/.gugu/attachments/fetched]');
+    expect(text).toContain('[File at local path: /home/agent/.gugu/attachments/fetched]');
     expect(text).not.toContain('/Users/me/brief.txt');
   });
 
@@ -121,20 +122,20 @@ describe('turnFileText (P3 task turn attachments)', () => {
     expect(text).toContain('/home/agent/.gugu/attachments/fetched');
   });
 
-  it('not readable by the agent: a failure line, still with the folder file to open', async () => {
+  it('not readable by the agent: how to fetch it, still with the folder file to open', async () => {
     mocks.resolveAccountFile.mockResolvedValue({ status: 'gone', sha256: null });
     const { text, images } = await turnFileText('task-1', [png], true);
     expect(text.split('\n')[0]).toBe('[Image attached: shot.png]');
     expect(text).toContain('gugu-file://item-png?v=1');
-    expect(text).toContain('[Image not saved: File is no longer available]');
+    expect(text).toContain('[Not on this computer. To read or change it: message_download_file {file: "gugu-file://item-png?v=1"}]');
     expect(images).toEqual([]);
   });
 
-  it('a task with no agent identity: every file gets a failure line, nothing is resolved', async () => {
+  it('a task with no agent identity: every file says how to fetch it, nothing is resolved', async () => {
     mocks.agentOf.mockResolvedValue(null);
     const { text } = await turnFileText('task-1', [doc], true);
     expect(mocks.resolveAccountFile).not.toHaveBeenCalled();
-    expect(text).toContain('[File not saved: This task has no agent identity to read its attachments as]');
+    expect(text).toContain('[Not on this computer. To read or change it: message_download_file {file: "gugu-file://item-doc?v=2"}]');
   });
 
   it('inlines an image only for an ACP turn and only a supported image type', async () => {
@@ -142,10 +143,10 @@ describe('turnFileText (P3 task turn attachments)', () => {
     const acp = await turnFileText('task-1', [png, heic, doc], true);
     expect(acp.images).toEqual([{ type: 'local-file', originalPath: '/Users/me/shot.png', mimeType: 'image/png', name: 'shot.png' }]);
     expect(acp.text.split('\n\n')).toHaveLength(3);
-    expect(acp.text).toContain('[Image attached at local path: /Users/me/shot.heic]');
+    expect(acp.text).toContain('[File at local path: /Users/me/shot.heic]');
     const pty = await turnFileText('task-1', [png], false);
     expect(pty.images).toEqual([]);
-    expect(pty.text).toContain('[Image attached at local path: /Users/me/shot.png]');
+    expect(pty.text).toContain('[File at local path: /Users/me/shot.png]');
   });
 });
 

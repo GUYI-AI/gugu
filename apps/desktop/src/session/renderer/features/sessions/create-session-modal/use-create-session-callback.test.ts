@@ -404,7 +404,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
       expect(prompt).toContain('gugu-file://brief?v=1');
       if (taskChatId) {
         expect(prompt).not.toContain(ref.path);
-        expect(prompt).toContain('not saved');
+        expect(prompt).toContain('message_download_file {file: "gugu-file://brief?v=1"}');
       } else expect(prompt).toContain(ref.path);
     } finally {
       initialSession.attachments = [];

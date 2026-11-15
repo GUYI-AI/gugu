@@ -3,7 +3,6 @@ import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
 import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
 
-import { downloadSessionFile } from '@gugu/core/local/agent/sessionFileHandoff'
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
 import { randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
@@ -16,7 +15,8 @@ import { tokenizeMarkdownMath } from '../../../../packages/core/src/shared/markd
 import { findRosterNameHits } from '../../../../packages/core/src/shared/rosterNameMatching.mjs'
 import { findMentionSpans } from '../../../../packages/core/src/shared/mentionToken.mjs'
 import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../packages/core/src/shared/imageMime.mjs'
-import { fileStoreDirectory, saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
+import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
+import { fileRefKey } from '@gugu/core/shared/fileResolver'
 import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
 import { workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
@@ -2301,11 +2301,6 @@ async function handleOwnerFile(args, deps) {
 }
 
 /**
- * message_download_file { source_message_id }:把一条附件消息的字节下到本机,回本地路径。agent 指的是消息,❌ URL / 桶路径:
- * 先按 agent 本人判看不看得见(agentCanSee),字节从哪来由消息说 —— 老消息正文里的公开 URL,新消息指向群文件夹的那一版
- * (经 attachments/urls 以 agent 的身份签)。本地文件按内容的 sha256 起名(同一份字节只存一份)。
- */
-/**
  * 以谁的身份读这条消息的附件:agent 自己看得见就是它(零额外读取);看不见、而这是主人与好友的私聊(#84)
  * 就按主人 —— 与读历史同一个人,看不看得见、签名链接两处都按他。都不成立回 null。
  */
@@ -2316,23 +2311,48 @@ async function attachmentReaderOf(deps, message) {
   return (await agentCanSee(deps, message, ownerUserId)) ? ownerUserId : null
 }
 
-async function downloadAttachment(messageId, deps) {
-  if (!messageId) throw new Error('message_download_file: source_message_id is required')
-  const [message] = await deps.restGet(`messages?id=eq.${enc(messageId)}&select=id,chat_id,content,content_type,file_item_id,file_version,file_blob_id`)
-  const readerId = message ? await attachmentReaderOf(deps, message) : null
-  if (!readerId) throw new Error(`message_download_file: there is no message ${messageId} you can read`)
-  const attachment = message.content_type === 'attachment' ? parseAttachmentContent(message.content, message) : null
-  if (!attachment) throw new Error(`message_download_file: message ${messageId} has no attachment`)
-  if (attachment.source.kind === 'gone') throw new Error(`message_download_file: the file of message ${messageId} was deleted from the group folder`)
-  const file = await deps.resolveFile({ message_id: messageId }, readerId)
-  if (file.status !== 'ready') throw new Error(`message_download_file: the file of message ${messageId} is no longer readable`)
-  const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
-  if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the attachment') }
-  const saved = await saveToFileStore(file, home, attachment.fileName)
-  const folder = attachment.source.kind === 'item'
-    ? { file: groupFileLink(attachment.source.itemId, { version: attachment.source.version }), next: attachmentFolderLine(attachment.source.itemId, attachment.source.version) }
-    : {}
-  return JSON.stringify({ source_message_id: `msg:${messageId}`, ...saved, ...folder })
+/** message_download_file 的三种来源,各自变成 resolver 的一个 FileRef 和读者:消息、session 附件、群文件夹的那一版。 */
+async function downloadSourceOf(args, deps) {
+  if (args.source_message_id) {
+    const messageId = String(args.source_message_id)
+    const [message] = await deps.restGet(`messages?id=eq.${enc(messageId)}&select=id,chat_id,content,content_type,file_item_id,file_version,file_blob_id`)
+    const reader = message ? await attachmentReaderOf(deps, message) : null
+    if (!reader) throw new Error(`message_download_file: there is no message ${messageId} you can read`)
+    const attachment = message.content_type === 'attachment' ? parseAttachmentContent(message.content, message) : null
+    if (!attachment) throw new Error(`message_download_file: message ${messageId} has no attachment`)
+    if (attachment.source.kind === 'gone') throw new Error(`message_download_file: the file of message ${messageId} was deleted from the group folder`)
+    const item = attachment.source.kind === 'item' ? { itemId: attachment.source.itemId, version: attachment.source.version } : null
+    return { ref: { message_id: messageId }, reader, name: attachment.fileName, item, echo: { source_message_id: `msg:${messageId}` } }
+  }
+  if (args.source_attachment_id) {
+    const id = String(args.source_attachment_id)
+    return { ref: { attachment_id: id }, reader: deps.context.agentId, item: null, echo: { attachment_id: id } }
+  }
+  const link = parseGroupFileLink(String(args.file ?? '').trim())
+  if (!link) throw new Error(`message_download_file: file is a gugu-file://<item_id>?v=<n> link — not ${JSON.stringify(args.file)}`)
+  return { ref: { item_id: link.itemId, ...(link.version ? { version: link.version } : {}) }, reader: deps.context.agentId, item: link.version ? { itemId: link.itemId, version: link.version } : null, echo: {} }
+}
+
+// @@@downloading - 同一个读者对同一个文件的第二次调用接在第一次后面等结果:harness 的工具超时到了下载也不停,再调一次就接上。
+const downloading = new Map()
+
+/** message_download_file:唯一取字节的门。判读者 → resolver(字节从哪来由它定)→ 本机 file-store 的只读副本。 */
+async function downloadFile(args, deps) {
+  const source = await downloadSourceOf(args, deps)
+  const key = `${source.reader}\n${fileRefKey(source.ref)}`
+  let saving = downloading.get(key)
+  if (!saving) {
+    saving = (async () => {
+      const file = await deps.resolveFile(source.ref, source.reader)
+      if (file.status !== 'ready') throw new Error(`message_download_file: this file is no longer readable (${file.status})`)
+      const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
+      if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the file') }
+      const item = source.item ?? (file.revision.item_id && file.revision.version ? { itemId: file.revision.item_id, version: file.revision.version } : null)
+      return { ...await saveToFileStore(file, home, source.name ?? file.revision.file_name), ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}) }
+    })().finally(() => downloading.delete(key))
+    downloading.set(key, saving)
+  }
+  return JSON.stringify({ ...source.echo, ...await saving })
 }
 
 /** message_send_file 的 file:群文件夹里一个文件的 gugu-file 链接(?v= 是它的那一版),或者裸的 item_id。 */
@@ -2447,14 +2467,6 @@ async function handleFile(args, deps) {
     const card = sent ? { size_bytes: sent.sizeBytes, mime_type: sent.mimeType, ...(typeof message.file_blob_id === 'string' ? { file_blob_id: message.file_blob_id } : {}) } : {}
     return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...(blocks.length ? { not_delivered_to: blocks, delivery_note: deliveryRefusalNotes(blocks).join('; ') } : {}),
       source_link: conversationLink(chatId, String(message.id).replace(/^msg:/, '')) })
-  }
-  if (args.action === 'download-attachment') {
-    if (args.source_attachment_id) {
-      const home = deps.context.guguHome
-      if (!home) throw new Error('Gugu home is unavailable')
-      return JSON.stringify(await downloadSessionFile(await deps.attachmentsEndpoint(), String(args.source_attachment_id), deps.context.agentId, fileStoreDirectory(home), undefined, true))
-    }
-    return downloadAttachment(String(args.source_message_id ?? ''), deps)
   }
   throw new Error(`gugu_file: unknown action ${args.action}`)
 }
@@ -2637,7 +2649,7 @@ export const TOOL_DEFS = [
   {
     name: 'message_send_file',
     writer: true,
-    description: 'File delivery tool. file: a chat-folder file by its gugu-file://<id>?v=<n>; +file_path: next version. file_path: new file; temporary: cloud copy expires; for anything sent only to be looked at.',
+    description: 'file: a chat-folder file by its gugu-file://<id>?v=<n>; +file_path: next version. file_path: new file; temporary: cloud copy expires; for anything sent only to be looked at.',
     schema: z.object({
       file: z.string().optional(),
       file_path: uploadFilePathSchema.optional(),
@@ -2663,9 +2675,10 @@ export const TOOL_DEFS = [
   },
   {
     name: 'message_download_file',
-    description: 'Download original bytes from a visible chat message (source_message_id) or a session-message attachment reference (source_attachment_id). Returns file_path (read_only: true means a shared file: do not change it or its permissions; to change it, write your version to a new file of your own), actual size_bytes and full sha256; session files are verified against their reference.',
-    schema: z.object({ source_message_id: z.string().optional(), source_attachment_id: z.string().uuid().optional() }).refine(args => Boolean(args.source_message_id) !== Boolean(args.source_attachment_id), 'Give exactly one attachment source'),
-    handler: (args, deps) => handleFile({ ...args, action: 'download-attachment' }, deps),
+    description: 'Save one file on this computer, read-only; returns its file_path and sha256.',
+    schema: z.object({ source_message_id: z.string().optional(), source_attachment_id: z.string().uuid().optional(), file: z.string().optional().describe('gugu-file://<item_id>?v=<n>') })
+      .refine(args => [args.source_message_id, args.source_attachment_id, args.file].filter(Boolean).length === 1, 'Give exactly one of source_message_id, source_attachment_id, file'),
+    handler: (args, deps) => downloadFile(args, deps),
   },
   // ── topic_ ── 话题:从一条已有消息长出来的独立工作线。它本身就是一条 chat,所以收发/读历史仍走
   // message_*；删除必须由来源群管理员带上当前名称，由数据库校验。
@@ -3034,7 +3047,17 @@ export function advertisedTool(name, tool) {
     },
   )
   delete inputSchema.$schema
-  return { name, description: tool.description, inputSchema }
+  return { name, description: tool.description, inputSchema: withoutUuidPatterns(inputSchema) }
+}
+
+// @@@uuid-pattern - zod writes a uuid as format "uuid" plus a ~60-token regex. The format already tells the model, and zod
+// validates the call here either way; the regex was paid by every session for every uuid field of a listed tool.
+function withoutUuidPatterns(node) {
+  if (Array.isArray(node)) return node.map(withoutUuidPatterns)
+  if (!node || typeof node !== 'object') return node
+  return Object.fromEntries(Object.entries(node)
+    .filter(([key]) => !(key === 'pattern' && node.format === 'uuid'))
+    .map(([key, value]) => [key, withoutUuidPatterns(value)]))
 }
 
 // tools/list 必须枚举 **_registeredTools**,❌ 不能只 map TOOL_DEFS:session_*/app_* 两域是

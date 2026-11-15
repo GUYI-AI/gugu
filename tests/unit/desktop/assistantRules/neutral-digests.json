@@ -185,15 +185,15 @@
   },
   "platform/block": {
     "bytes": 9064,
-    "sha256": "3826004aaf26d84089e6a1f96a510c6fb10da0758d29f4cb3be4e028c772a12b"
+    "sha256": "ed0eeabcaf890a7a021e12f171d44d23e13bfc620423f17cb7a6795069892f28"
   },
   "platform/assistant/alone": {
     "bytes": 8842,
-    "sha256": "1bbc81c59710265b3c4424b81726293cbe2fb3f90e2d75e0a7ffdc81275939ff"
+    "sha256": "e686c88bc7c944ec0e28a3055f35cff8049526aebfeb44731425b9847ac28fc1"
   },
   "platform/assistant/embedded": {
     "bytes": 8861,
-    "sha256": "6efb560d9859114ffb24240c9b1dac751597308a3eff50e582cdc6b7355c4b52"
+    "sha256": "03dc58751d5f67a5f29c658bc89d3b837fcd13bb9090ee29ec7b533668296499"
   },
   "platform/assistant/absent": {
     "bytes": 22,
@@ -201,11 +201,11 @@
   },
   "session/claudeOptions/cloud": {
     "bytes": 9588,
-    "sha256": "0533ecde544ff06d202956ff86a68acf874571824afd94b3d27220b60a1b4436"
+    "sha256": "5abb310fee43499792bd5fac35ae3ab83acea3841e9564ee8cdcfd240ad58f64"
   },
   "session/claudeOptions/computer": {
     "bytes": 9581,
-    "sha256": "3e42afd750ba16bde20a5b34812dd4e9766bdb821a16b3472cae75760c19ea85"
+    "sha256": "ae27fe374e291d8f9d9cbf8cebc4c897216bb3edae1113564e0692736ef3db73"
   },
   "session/taskAgentOptions": {
     "bytes": 464,

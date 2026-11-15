@@ -23,7 +23,7 @@ import { getSupabaseAnonKey, getSupabaseUrl } from '../../cloud/config'
 import { resolveListenModeDefault } from '../../cloud/listenMode'
 import type { ChatKind } from '../../shared/types/chat'
 import { parseAttachmentContent } from '../../shared/ui/attachmentModels'
-import { attachmentLocationLines } from '../../shared/attachmentFolderLine'
+import { attachmentLocationLines, type AttachmentWhere } from '../../shared/attachmentFolderLine'
 import {
   buildAgentDeliveryEnvelope,
   buildAgentMentionContext,
@@ -50,7 +50,7 @@ import { turnFailureMarker } from '../../shared/ui/systemNotice'
 import { sessionArchiveRefusesMessage, type SessionArchivalState } from '../../shared/sessionArchival'
 import { beginInboxAttempt, clearInboxReceiptRetry, clearInboxRetry, resetInboxRetries, retryInboxFailure, retryInboxReceipt } from './inboxRetry'
 import { isTransientNetworkError } from '../../shared/networkError'
-import { attachmentFailureReason, attachmentStage } from '../files/attachmentDiagnostics'
+import { attachmentStage } from '../files/attachmentDiagnostics'
 
 const log = coreLogger('agent-inbox-reader')
 
@@ -1009,31 +1009,31 @@ async function prepareMessage(
     if (!deps.downloadAttachment) throw new Error('Verified attachment reader is not installed')
     return deps.downloadAttachment({ message_id: row.id }, fileName, agentUserId)
   })
-  // 条目已删(gone):没有字节可给,正文(名字、大小)照原样交下去。
+  // 条目已删(gone):没有字节可给,正文(名字、大小)照原样交下去,外加一行「已删」。
+  // 下不下来(签不到、CDN 回错、超时)就给取它的那一步 —— 原因由 message_download_file 自己说;这一行和同一批的别的行照样交,不卡住收件。
   let attachments: InlineImage[] | undefined
-  let saved: Parameters<typeof attachmentLocationLines>[2] = null
+  const fetch = { fetch: { source_message_id: `msg:${row.id}` } }
+  let where: AttachmentWhere | null = attachment?.source.kind === 'gone' ? 'gone' : null
   if (attachment?.kind === 'image' && attachment.source.kind !== 'gone') {
     try {
       const image = await download(attachment.fileName)
       attachments = [{ data: Buffer.from(image.bytes).toString('base64'), mimeType: attachment.mimeType, fileName: attachment.fileName, localPath: image.localPath }]
-      saved = { localPath: image.localPath, readOnly: image.readOnly }
-    } catch (error) {
-      saved = { failure: attachmentFailureReason(error) }
+      where = { localPath: image.localPath }
+    } catch {
+      where = fetch
     }
   }
   // 新式附件的文件(不是图):正文里没有链接(老附件靠正文里的 [URL] 去取),字节和图片一样下到本机,交本地路径。
-  // 下不下来(签不到、CDN 回错、超时)就照实说没存下和原因 —— 这一行和同一批的别的行照样交,不卡住收件。
   if (attachment?.kind === 'file' && attachment.source.kind !== 'gone' && attachment.source.kind !== 'url') {
     try {
-      const file = await download(attachment.fileName)
-      saved = { localPath: file.localPath, readOnly: file.readOnly }
-    } catch (error) {
-      saved = { failure: attachmentFailureReason(error) }
+      where = { localPath: (await download(attachment.fileName)).localPath }
+    } catch {
+      where = fetch
     }
   }
   // 那几行与任务输入框的附件同一个格式(attachmentLocationLines,P3)。
   const item = attachment?.source.kind === 'item' ? { itemId: attachment.source.itemId, version: attachment.source.version } : null
-  const lines = attachmentLocationLines(item, attachment?.kind === 'image', saved)
+  const lines = attachmentLocationLines(item, where)
   const content = attachments && attachment
     ? `${attachment.caption || `[Image attached: ${attachment.fileName}]`}${lines}`
     : `${row.content}${lines}`
