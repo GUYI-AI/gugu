@@ -85,8 +85,9 @@ const BoundWindow = observer(function BoundWindow({ chatTabId, sessionId, projec
       const kind = [...names].reverse().map(name => typeof name !== 'string' ? null
         : /(?:^|__)computer[-_]use__/.test(name) ? 'computer' as const
           : /(?:^|__)browser[-_]use__/.test(name) ? 'browser' as const : null).find(Boolean);
-      if (!kind || !live.conversation.model.getSnapshot().sources.some(source => source.kind === kind)) return;
-      live.dispatch({ type: 'show-from-tool', kind }); event.preventDefault();
+      if (!kind) return;
+      live.dispatch({ type: 'show-from-tool', kind });
+      if (live.conversation.model.getSnapshot().source?.kind === kind) event.preventDefault();
     };
     root.addEventListener('focusin', focus); root.addEventListener('session-tool-activation', tool);
     return () => { root.removeEventListener('focusin', focus); root.removeEventListener('session-tool-activation', tool); };
