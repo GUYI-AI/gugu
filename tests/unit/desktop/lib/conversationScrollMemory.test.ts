@@ -12,9 +12,11 @@ import {
 } from '../../../../apps/desktop/src/components/chat/useConversationScrollMemory'
 import { publishActiveChatWillChange } from '../../../../apps/desktop/src/store/activeChatTransition'
 import { resetAuthSessionBoundary } from '../../../../apps/desktop/src/lib/authSessionLoss'
+import { viewStateCache } from '../../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
+import { publishRendererSession } from '../../../../apps/desktop/src/lib/sessionPublication'
 
 const listRef = { current: null as import('../../../../apps/desktop/src/lib/flowList').FlowListHandle | null }
-beforeEach(() => resetAuthSessionBoundary())
+beforeEach(() => { resetAuthSessionBoundary(); publishRendererSession('SIGNED_OUT', null); viewStateCache.forget('view:'); localStorage.clear() })
 
 describe('conversation scroll memory', () => {
   it('keeps the live anchor when another React root removes the slot before the portal ref exits', async () => {
@@ -267,6 +269,19 @@ describe('conversation scroll memory', () => {
       rig.geometry()
     }
 
+    // A7: where the conversation was read to is stored (the view-state table; this page keeps it in localStorage), so a
+    // restart starts from it — the cache hands stored entries to the first frame.
+    it('stores the position it leaves at, so a restart comes back to it', async () => {
+      const rig = mount()
+      try {
+        await leaveAndReturn(rig, ['first', 'anchor', 'last'])
+        const stored = JSON.parse(localStorage.getItem('gugu.view-state:view:/chat-a/reading:block-one') ?? 'null')
+        expect(stored?.value).toEqual({ position: { atBottom: false, messageId: 'anchor', offset: -16 } })
+      } finally {
+        await rig.cleanup()
+      }
+    })
+
     it('hands the saved row to the list as its landing, then only verifies it and completes', async () => {
       const rig = mount()
       try {
@@ -374,13 +389,15 @@ describe('conversation scroll memory', () => {
       } finally { await reopened.cleanup() }
     })
 
-    it('does not replay another auth lifetime\'s saved position', async () => {
+    // Positions are kept per account (and across restarts, A7): another account signed in does not land on them.
+    it('does not replay another account\'s saved position', async () => {
       const ids = ['first', 'anchor', 'last']
+      publishRendererSession('SIGNED_IN', { user: { id: 'reader-a' } } as never)
       const original = mount()
       await original.render({ chatId: 'chat-a', messageIds: ids, rows: ids })
       original.geometry()
       await original.cleanup()
-      resetAuthSessionBoundary()
+      publishRendererSession('SIGNED_IN', { user: { id: 'reader-b' } } as never)
       const next = mount()
       try {
         await next.render({ chatId: 'chat-a', messageIds: ids, rows: ids })
