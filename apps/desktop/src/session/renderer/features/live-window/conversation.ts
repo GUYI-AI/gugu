@@ -171,6 +171,10 @@ export class LiveWindowConversation {
       for (const picture of this.pictures.values()) this.freeze(picture);
       return;
     }
+    const displayed = new Set(snapshot.sources.map(source => source.id));
+    for (const picture of this.pictures.values()) {
+      if (!displayed.has(picture.source.id) && (picture.view || picture.opening)) this.freeze(picture);
+    }
     this.startPictures();
     const interactive = snapshot.visible && snapshot.operating && (state?.mode === 'enlarged'
       || state?.mode === 'tabbed' && state.selectedTab === 'screen');

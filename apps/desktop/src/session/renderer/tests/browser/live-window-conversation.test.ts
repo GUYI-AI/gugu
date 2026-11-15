@@ -97,6 +97,21 @@ describe('live conversation picture lifetime', () => {
     expect(picture.querySelector('img')!.src === last).toBe(false);
     expect(s.report).not.toHaveBeenCalled();
   });
+  it('stops only the closed source watch when the other desktop screen tab remains open', async () => {
+    const s = setup();
+    vi.mocked(s.transport.list).mockResolvedValue([source, { ...source, id: 'computer', type: 'app-projection', appId: 'computer-use', appVersion: '0.5.1' }]);
+    s.current.setOperating(true); s.current.setVisible('chat', true);
+    await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(2));
+    s.current.model.dispatch({ type: 'show-tab' });
+    s.current.model.dispatch({ type: 'close-tab', sourceId: 'page' });
+    await vi.waitFor(() => expect(s.unwatch).toHaveBeenCalledTimes(1));
+    expect(s.current.model.getSnapshot().sources.map(item => item.id)).toEqual(['computer']);
+    await s.current.refresh();
+    expect(s.watched).toHaveBeenCalledTimes(2);
+    s.current.model.dispatch({ type: 'show-from-tool', kind: 'browser' });
+    await vi.waitFor(() => expect(s.watched).toHaveBeenCalledTimes(3));
+    expect(s.report).not.toHaveBeenCalled();
+  });
   it('does not let a delayed read from the previous visibility overwrite a newly opened conversation', async () => {
     const s = setup(); const first = Promise.withResolvers<readonly LiveWindowResourceDescriptor[]>();
     vi.mocked(s.transport.list).mockImplementationOnce(() => first.promise);
