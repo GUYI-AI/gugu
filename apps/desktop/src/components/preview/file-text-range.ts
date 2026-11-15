@@ -27,13 +27,19 @@ function lineAt(node: Text, offset: number): number | null {
   return Math.min(last, first + (before.toString().match(/\n/g)?.length ?? 0))
 }
 
+function texOf(math: Element): string {
+  const source = math.querySelector('.katex-mathml')
+  const tex = source?.querySelector('annotation[encoding="application/x-tex"]')?.textContent ?? source?.textContent ?? ''
+  return math.closest('.katex-display') ? `$$${tex}$$` : `$${tex}$`
+}
+
 /** Read DOM endpoints, never search for a quote (identical paragraphs can occur on different source lines). */
 export function fileTextRange(root: HTMLElement, range: Range, content: string, kind: 'text' | 'markdown'): FileTextRange | null {
   if (range.collapsed || !root.contains(range.startContainer) || !root.contains(range.endContainer)) return null
   const scope = range.commonAncestorContainer
   const walker = root.ownerDocument.createTreeWalker(scope, NodeFilter.SHOW_TEXT)
   let first: number | null = null, last: number | null = null
-  let selectedText = '', previousRow: Element | null = null
+  let selectedText = '', previousRow: Element | null = null, previousMath: Element | null | undefined = null
   for (let node: Node | null = scope.nodeType === Node.TEXT_NODE ? scope : walker.nextNode(); node; node = walker.nextNode()) {
     const text = node as Text
     if (!text.length || !range.intersectsNode(text)) continue
@@ -42,7 +48,11 @@ export function fileTextRange(root: HTMLElement, range: Range, content: string, 
     if (start >= end) continue
     const row = codeRow(text)
     if (row && previousRow && row !== previousRow) selectedText += '\n'
-    selectedText += text.data.slice(start, end)
+    // A formula is drawn twice (its TeX hidden, its glyphs shown): said once, whole, as its TeX.
+    const math = text.parentElement?.closest('.katex')
+    if (!math) selectedText += text.data.slice(start, end)
+    else if (math !== previousMath) selectedText += texOf(math)
+    previousMath = math
     previousRow = row
     const from = lineAt(text, start), to = lineAt(text, end - 1)
     if (from !== null && to !== null) { first ??= from; last = to }
