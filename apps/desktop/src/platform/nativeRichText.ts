@@ -20,6 +20,7 @@ export interface NativeRichParagraph {
   indent: number
   firstLineIndent: number
   marker?: string
+  markerStyle?: Omit<NativeRichRun, 'start' | 'end'>
   tabWidth?: number
 }
 export interface NativeRichBlock {
@@ -49,7 +50,11 @@ export function insertNativeListMarkers(snapshot: NativeRichText): NativeRichTex
   let text = snapshot.text
   for (const edit of [...edits].reverse()) text = text.slice(0, edit.at) + edit.value + text.slice(edit.at)
   return { ...snapshot, text, start: offset(snapshot.start), end: offset(snapshot.end, 'end'),
-    runs: snapshot.runs.map(run => ({ ...run, start: offset(run.start), end: offset(run.end, 'end') })),
+    runs: [...snapshot.runs.map(run => ({ ...run, start: offset(run.start), end: offset(run.end, 'end') })),
+      ...snapshot.paragraphs.filter(p => p.marker && p.markerStyle).map(p => {
+        const start = offset(p.start) - `${p.marker}\t`.length
+        return { ...p.markerStyle!, start, end: start + p.marker!.length }
+      })],
     paragraphs: snapshot.paragraphs.map(p => ({ ...p, start: offset(p.start) - (p.marker ? `${p.marker}\t`.length : 0), end: offset(p.end, 'end') })),
     blocks: snapshot.blocks.map(block => ({ ...block, start: offset(block.start), end: offset(block.end, 'end') })),
   }

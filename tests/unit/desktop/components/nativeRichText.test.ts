@@ -34,4 +34,15 @@ describe('native rich text UTF-16 offsets', () => {
     original.paragraphs = original.paragraphs.map(({ marker: _marker, ...paragraph }) => paragraph)
     expect(insertNativeListMarkers(original)).toEqual(original)
   })
+
+  it('preserves the marker style without extending it into the item text', () => {
+    const original = snapshot()
+    const { start: _start, end: _end, ...style } = original.runs[0]
+    original.paragraphs[0].markerStyle = { ...style, color: { red: 128, green: 128, blue: 128, alpha: 1 } }
+    const rich = insertNativeListMarkers(original)
+    const marker = rich.runs.find(run => run.color.red === 128)!
+    expect(rich.text.slice(marker.start, marker.end)).toBe('1.')
+    expect(rich.text.slice(rich.runs[0].start, rich.runs[0].end)).toBe('First\n')
+    expect(rich.text.slice(rich.start, rich.end)).toBe('Second')
+  })
 })

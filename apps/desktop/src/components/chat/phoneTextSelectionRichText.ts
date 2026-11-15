@@ -78,7 +78,8 @@ export function phoneTextSelectionRichText(source: PhoneTextSelectionSource): Na
       cursor = end
       coverage.fill(1, start, end)
       let background: NativeRichColor | undefined
-      if (element.closest('code,pre')) for (let parent: HTMLElement | null = element; parent && parent !== root; parent = parent.parentElement) {
+      // Block backgrounds are drawn once by the native layout; only inline code needs a run background.
+      if (element.closest('code') && !element.closest('pre')) for (let parent: HTMLElement | null = element; parent && parent !== root; parent = parent.parentElement) {
         const next = color(getComputedStyle(parent).backgroundColor)
         if (next.alpha > 0) { background = next; break }
       }
@@ -110,11 +111,18 @@ export function phoneTextSelectionRichText(source: PhoneTextSelectionSource): Na
       const marker = list && !marked.has(list) ? listMarker(list) : undefined
       if (list) marked.add(list)
       const fontSize = px(style.fontSize)
+      const markerStyle = marker && list ? getComputedStyle(list, '::marker') : undefined
       let lineHeight = px(style.lineHeight) || fontSize * 1.2
       if (element !== root && !element.matches(PARAGRAPH) && !source.text.slice(range.start, range.end).includes('\n')) lineHeight = Math.max(lineHeight, bounds.height)
       return { ...range, lineHeight, before: 0, after: Math.max(0, gap - blanks * 0.5), indent,
         firstLineIndent: marker ? Math.max(0, indent - fontSize * 1.25) : indent,
-        ...(marker ? { marker } : {}),
+        ...(marker && markerStyle ? { marker, markerStyle: {
+          fontSize: px(markerStyle.fontSize) || fontSize,
+          weight: px(markerStyle.fontWeight) || 400,
+          italic: /italic|oblique/.test(markerStyle.fontStyle),
+          monospace: /mono|menlo|consolas|courier/i.test(markerStyle.fontFamily),
+          color: color(markerStyle.color),
+        } } : {}),
       }
     })
     // Preserve copied breaks; paragraph metrics handle blank spacing without introducing another font size.

@@ -12,12 +12,12 @@ it.each(['strong', '.code-harbor'])('keeps rich styles, all code and the pressed
   bubble.innerHTML = `<div class="gg-md" style="font:16px/24px sans-serif;color:rgb(24,24,24)">
     <h1 style="font-size:28px;line-height:32px;font-weight:600;margin:0 0 8px">Harbor notes</h1>
     <p style="margin:0 0 8px">The <strong>harbor</strong> opens. Use <code style="font:14px/20px monospace;background:rgb(224,224,224)">copy(text)</code>.</p>
-    <div data-streamdown="code-block" style="content-visibility:auto;contain-intrinsic-size:auto 200px;background:rgb(238,238,238);border-radius:8px;padding:8px">
+    <div data-streamdown="code-block" style="content-visibility:auto;contain-intrinsic-size:auto 200px;background:rgba(0,0,0,0.06);border-radius:8px;padding:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;height:24px;font:12px/18px sans-serif"><span>js</span><button>Copy</button></div>
       <pre style="font:14px/20px monospace;white-space:pre;margin:0"><code><span style="color:rgb(180,35,24)">const</span> <span class="code-harbor" style="color:color-mix(in srgb,red 50%,blue 50%)">harbor</span> = "open";\nconsole.log(harbor);</code></pre>
     </div>
     <p style="margin:8px 0">Read the <a href="https://example.com/harbor" style="color:rgb(30,64,175);text-decoration:underline">harbor guide</a>.</p>
-    <ol start="3" style="padding-left:24px;margin:8px 0"><li>Bring a notebook</li><li>Second 😀</li></ol>
+    <ol start="3" style="padding-left:24px;margin:8px 0;color:rgb(128,128,128)"><li><span style="color:rgb(24,24,24)">Bring a notebook</span></li><li><span style="color:rgb(24,24,24)">Second 😀</span></li></ol>
   </div>`
   document.body.append(bubble)
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
@@ -36,11 +36,13 @@ it.each(['strong', '.code-harbor'])('keeps rich styles, all code and the pressed
   expect(rich.runs.some(run => run.monospace && run.fontSize === 14 && run.color.red === 180 && run.color.green === 35)).toBe(true)
   expect(rich.runs.some(run => run.color.red >= 127 && run.color.red <= 128 && run.color.blue >= 127 && run.color.blue <= 128)).toBe(true)
   expect(rich.runs.some(run => run.background?.red === 224 && rich.text.slice(run.start, run.end) === 'copy(text)')).toBe(true)
+  expect(rich.runs.filter(run => rich.text.slice(run.start, run.end).includes('const')).every(run => !run.background)).toBe(true)
+  expect(rich.runs.some(run => rich.text.slice(run.start, run.end) === '3.' && run.color.red === 128)).toBe(true)
   expect(rich.runs.some(run => run.underline && run.color.blue === 175)).toBe(true)
   expect(rich.paragraphs.some(paragraph => paragraph.marker === '3.' && paragraph.indent === 24 && paragraph.firstLineIndent < paragraph.indent)).toBe(true)
   expect(rich.paragraphs.some(paragraph => paragraph.after > 0)).toBe(true)
   expect(rich.blocks).toHaveLength(1)
-  expect(rich.blocks[0].background.red).toBe(238)
+  expect(rich.blocks[0].background.alpha).toBeCloseTo(0.06)
   expect(rich.blocks[0].radius).toBe(8)
   expect(bubble.outerHTML).toBe(original)
 })

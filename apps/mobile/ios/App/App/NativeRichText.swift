@@ -31,6 +31,7 @@ struct NativeRichText {
         let top: CGFloat
         let bottom: CGFloat
         let radius: CGFloat
+        let trailing: CGFloat
     }
     let text: String
     let runs: [Run]
@@ -74,7 +75,8 @@ struct NativeRichText {
         self.blocks = try blocks.map { value in
             Block(range: try Self.range(value, length: length), color: try Self.color(value["background"]),
                   left: try Self.number(value["insetLeft"]), right: try Self.number(value["insetRight"]),
-                  top: try Self.number(value["paddingTop"]), bottom: try Self.number(value["paddingBottom"]), radius: try Self.number(value["radius"]))
+                  top: try Self.number(value["paddingTop"]), bottom: try Self.number(value["paddingBottom"]), radius: try Self.number(value["radius"]),
+                  trailing: try Self.number(value["trailingSpacing"]))
         }
     }
 
@@ -142,7 +144,7 @@ final class NativeRichLayoutManager: NSLayoutManager {
                 enumerateLineFragments(forGlyphRange: glyphs) { rect, _, _, _, _ in bounds = bounds.union(rect) }
                 if bounds.isNull { continue }
                 let rect = CGRect(x: origin.x + block.left * scale, y: origin.y + bounds.minY - block.top * scale,
-                                  width: max(0, container.size.width - (block.left + block.right) * scale), height: bounds.height + (block.top + block.bottom) * scale)
+                                  width: max(0, container.size.width - (block.left + block.right) * scale), height: max(0, bounds.height + (block.top + block.bottom - block.trailing) * scale))
                 block.color.setFill()
                 UIBezierPath(roundedRect: rect, cornerRadius: block.radius * scale).fill()
             }
