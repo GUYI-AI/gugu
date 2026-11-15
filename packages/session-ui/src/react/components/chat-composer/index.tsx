@@ -281,6 +281,8 @@ export interface ChatComposerProps {
   onPermissionModeChange?: (modeId: string) => void;
   /** Extra control(s) appended to the toolbar-left row, after the permission selector. */
   toolbarExtra?: React.ReactNode;
+  /** Render the existing model control in a host-owned phone navigation row. */
+  renderPhoneHeader?: (modelControl: React.ReactNode) => React.ReactNode;
 
   onSubmit: (text: string) => void | Promise<void>;
   /** Called whenever the editor serialized plain text changes. */
@@ -453,6 +455,7 @@ export function ChatComposer({
   selectedPermissionMode,
   onPermissionModeChange,
   toolbarExtra,
+  renderPhoneHeader,
   onSubmit,
   onInputChange,
   onMentionInsert,
@@ -765,6 +768,30 @@ export function ChatComposer({
       ? translate('composer.followUpPlaceholder')
       : (placeholder ?? translate('composer.messagePlaceholder'));
 
+  const renderHeader = mobile ? renderPhoneHeader : undefined;
+  const modelControl = (
+              <ComposerModelMenu
+                panel={modelPanel}
+                disabled={disabled}
+                triggerTitle={selectedAgentTitle}
+                modelItems={modelItems}
+                selectedModel={selectedModel}
+                onModelChange={onModelChange}
+                openRequest={modelMenuOpenRequest}
+                settingNotice={modelSettingNotice}
+                menuNotice={modelMenuNotice}
+                onOpen={onModelMenuOpen}
+                modelUnlock={modelUnlock}
+                onModelUnlock={onModelUnlock}
+                onManageModels={onManageModels}
+                modelUpgrade={modelUpgrade}
+                onModelUpgrade={onModelUpgrade}
+                effortItems={effortItems}
+                selectedEffort={selectedEffort}
+                onEffortChange={onEffortChange}
+                defaultEffort={defaultEffort}
+              />
+  );
   const promptEditor = (
     <PromptEditor
       {...editorOptions}
@@ -830,6 +857,7 @@ export function ChatComposer({
           </div>
         )}
 
+        {renderHeader?.(modelControl)}
         <div
           data-slot="composer-bar"
           data-drag-active={dragActive || undefined}
@@ -1009,27 +1037,7 @@ export function ChatComposer({
                   「模型」和「推理强度」结构对称,各自显示当前值并向右飞出二级。
                   解剖与那批注释随组件一起搬去了 `composer-model-menu.tsx`(#4981 A1),
                   渲染出来的 DOM 一个字节都没变。 */}
-              <ComposerModelMenu
-                panel={modelPanel}
-                disabled={disabled}
-                triggerTitle={selectedAgentTitle}
-                modelItems={modelItems}
-                selectedModel={selectedModel}
-                onModelChange={onModelChange}
-                openRequest={modelMenuOpenRequest}
-                settingNotice={modelSettingNotice}
-                menuNotice={modelMenuNotice}
-                onOpen={onModelMenuOpen}
-                modelUnlock={modelUnlock}
-                onModelUnlock={onModelUnlock}
-                onManageModels={onManageModels}
-                modelUpgrade={modelUpgrade}
-                onModelUpgrade={onModelUpgrade}
-                effortItems={effortItems}
-                selectedEffort={selectedEffort}
-                onEffortChange={onEffortChange}
-                defaultEffort={defaultEffort}
-              />
+              {!renderHeader && modelControl}
 
               {queueEdit ? (
                 <>
