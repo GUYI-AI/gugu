@@ -59,6 +59,8 @@ export function useDetailedPlatformCatalog(wanted: boolean): Reading<PlatformCat
  * kept as "not registered yet" (its chunk may load later) and would lie in the account block for 30 days. Registered,
  * these names are judged like any model and, persisting nothing, their entries leave the snapshot at once. Never read.
  */
+// These registrations can be deleted once the snapshot's 30-day clean-up window has passed since platformCatalog shipped
+// (SNAPSHOT_MAX_AGE_MS in lib/replica.ts): by then no snapshot can still hold an entry under either name.
 for (const retired of ['platformModels', 'platformModelsV2']) {
   replica({
     name: retired,
