@@ -50,6 +50,8 @@ export default {
     "refreshLabel": "重新读取日历权限"
   },
   "accountDeletion": {
+      "entry": "注销账号",
+      "entryNote": "注销你的个人账号。",
       "loading": "正在读取注销后的影响…",
       "unavailable": "暂时无法读取账号信息",
       "unavailableNote": "请重试。账号尚未注销，数据未受影响。",

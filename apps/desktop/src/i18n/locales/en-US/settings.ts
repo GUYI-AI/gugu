@@ -50,6 +50,8 @@ export default {
     "refreshLabel": "Refresh Calendar access"
   },
   "accountDeletion": {
+      "entry": "Close account",
+      "entryNote": "Close your personal account.",
       "loading": "Loading the effects of account closure…",
       "unavailable": "Account information is unavailable",
       "unavailableNote": "Try again. The account has not been closed, and its data is unaffected.",

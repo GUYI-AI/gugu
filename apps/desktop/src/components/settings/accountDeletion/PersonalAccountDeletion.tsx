@@ -71,3 +71,11 @@ export function PersonalAccountDeletion({ view, onCancel }: { view: AccountDelet
     </form>
   </SettingsPage>
 }
+
+/** Demo-ready entry only; the live Settings screen is deliberately not wired to it. */
+export function PersonalAccountDeletionEntry({ available, personal, onOpen }: { available: boolean; personal: boolean; onOpen: () => void }) {
+  const { t } = useTranslation('settings')
+  if (!available || !personal) return null
+  return <SettingsRow title={t('accountDeletion.entry')} description={t('accountDeletion.entryNote')}
+    control={<Button variant="ghost" onClick={onOpen}>{t('accountDeletion.entry')}</Button>} />
+}

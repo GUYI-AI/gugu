@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PersonalAccountDeletion } from '../../../../apps/desktop/src/components/settings/accountDeletion/PersonalAccountDeletion'
+import { PersonalAccountDeletion, PersonalAccountDeletionEntry } from '../../../../apps/desktop/src/components/settings/accountDeletion/PersonalAccountDeletion'
 import { accountDeletionConfirmed, type AccountDeletionImpact, type AccountDeletionView } from '../../../../apps/desktop/src/components/settings/accountDeletion/accountDeletionView'
 import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { clickElement, createNode, createReactHarness } from '../../../support/testHarness'
@@ -76,4 +76,16 @@ describe('personal account deletion presentation', () => {
     expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('请重试。账号尚未注销，数据未受影响。')
     expect(harness.container.querySelectorAll('.gg-settings-row')).toHaveLength(0)
   })
+})
+
+it('only presents the personal account entry when explicitly available', async () => {
+  const onOpen = vi.fn()
+  for (const flags of [{ available: false, personal: true }, { available: true, personal: false }]) {
+    await harness.render(createNode(PersonalAccountDeletionEntry, { ...flags, onOpen }))
+    expect(harness.container.textContent).toBe('')
+  }
+  await harness.render(createNode(PersonalAccountDeletionEntry, { available: true, personal: true, onOpen }))
+  expect(harness.container.textContent).toContain('注销你的个人账号。')
+  await clickElement(harness.container.querySelector('button')!)
+  expect(onOpen).toHaveBeenCalledTimes(1)
 })
