@@ -54,7 +54,8 @@ export function resolveThemePreference(preference: ThemePreference): HostTheme {
 /** 读用户选的那一项(存的值不认识时,读出来就是出厂的浅色:规则在 shared/device-preferences.ts 与主进程的 schema)。 */
 export function readThemePreference(): ThemePreference {
   const reading = devicePreferences.read('theme');
-  // @@@reading-default - only when the desktop handover failed and settings are not read yet: what the inline boot script painted (the factory light)
+  // @@@reading-default - only when the desktop handover failed and settings are not read yet: what the inline boot script painted (the factory light).
+  // Not reached on a normal start: preload's handover answers before the first frame (measured on Electron, PR 3 D1–D3).
   return reading.state === 'value' ? reading.value : DEFAULT_PREFERENCE;
 }
 

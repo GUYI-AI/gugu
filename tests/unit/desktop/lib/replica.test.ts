@@ -330,4 +330,19 @@ describe('PR 3 additions', () => {
     for (const key of ['bg-1', 'bg-2', 'bg-3']) { await tick(10); await model.prefetch(key) }
     expect(entriesOf('alice', 'test-lru').map((e) => e.key[2]).sort()).toEqual(['bg-3', 'shown'])
   })
+
+  it('subscribe hears the one entry\'s changes and no other', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const model = rm.replica({ name: 'test-sub', scope: 'account', read: async (_owner: string, id: string) => id })
+    const heard: string[] = []
+    const off = model.subscribe(['a'], () => { heard.push('a') })
+    await model.prefetch('b')
+    expect(heard).toEqual([])
+    await model.prefetch('a')
+    expect(heard.length).toBeGreaterThan(0)
+    off()
+    const before = heard.length
+    model.set(['a'], 'x')
+    expect(heard.length).toBe(before)
+  })
 })

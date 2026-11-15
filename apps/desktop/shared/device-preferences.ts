@@ -172,7 +172,8 @@ export function takeDeviceSettings(storage: LegacyStorage, ask: (legacy: LegacyD
  */
 export function bootLocalePreference(host: { guguDeviceSettings?: DeviceSettingsGlobal; localStorage?: Pick<Storage, 'getItem'> }): LocalePreference {
   if (host.guguDeviceSettings) {
-    // @@@reading-default - the poster's slogan when main gave no handover: the system language (i18n says so too)
+    // @@@reading-default - the poster's slogan when main gave no handover: the system language (i18n says so too).
+    // Not reached on a normal start: preload's handover answers before the first frame (measured on Electron, PR 3 D1–D3).
     return parseLocalePreference(host.guguDeviceSettings.handover?.settings.locale.value as string | undefined) ?? 'system'
   }
   let stored: string | null | undefined

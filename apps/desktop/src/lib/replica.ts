@@ -420,6 +420,11 @@ export type Replica<A extends unknown[], V> = {
   at(...args: A): { set(value: V | ((old: V | undefined) => V | undefined)): void }
   /** Mark stale and read again where shown; without arguments, every entry of this model. */
   refresh(...args: Partial<A>): Promise<void>
+  /**
+   * Hear when the entry for these arguments changes (a read, a write, a removal), for code outside React that keeps a
+   * derived value; React subscribes with `useReplica`. The key follows the account signed in when it fires.
+   */
+  subscribe(args: A, listener: () => void): () => void
   /** @internal */ options(key: QueryKey): object
 }
 
@@ -472,6 +477,11 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
       const k = requireKey(args)
       return { set: (value) => { if (k[1] === ownerOf(definition.scope)) putValue(k, value) } }
     },
+    subscribe: (args, listener) => queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== 'added' && event.type !== 'updated' && event.type !== 'removed') return
+      const k = key(...args)
+      if (k && hashKey(event.query.queryKey) === hashKey(k)) listener()
+    }),
     refresh: async (...args) => {
       const owner = ownerOf(definition.scope)
       if (!owner) return

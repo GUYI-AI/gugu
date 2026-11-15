@@ -1,4 +1,4 @@
-import { queryClient, useReplica, type Reading } from './replica'
+import { useReplica, type Reading } from './replica'
 import { createSelectStore, useSelect } from './selectStore'
 import { rendererLogger } from './log'
 import {
@@ -104,10 +104,10 @@ export function appSettingsPreferences(): DevicePreferences {
   return {
     backend: 'appSettings',
     read: (name) => mapReading(name, appSettingsModel.peek(SOURCES[name].key, LOCAL_SETTINGS_HOST_KEY)),
-    subscribe: (listener) => queryClient.getQueryCache().subscribe((event) => {
-      const [model, , key, host] = event.query.queryKey
-      if (model === appSettingsModel.name && host === LOCAL_SETTINGS_HOST_KEY && keys.has(key as AppSettingsKey) && (event.type === 'updated' || event.type === 'added' || event.type === 'removed')) listener()
-    }),
+    subscribe: (listener) => {
+      const offs = [...keys].map((key) => appSettingsModel.subscribe([key, LOCAL_SETTINGS_HOST_KEY], listener))
+      return () => offs.forEach((off) => off())
+    },
     write: (name, value) => {
       const { key, put } = SOURCES[name]
       const reading = appSettingsModel.peek(key, LOCAL_SETTINGS_HOST_KEY)
