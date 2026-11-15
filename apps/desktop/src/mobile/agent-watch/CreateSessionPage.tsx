@@ -171,7 +171,7 @@ function CreateOnMachine({
     return () => { page.active = false }
   }, [page])
   // #7199 在睡着的云电脑上新建 = 叫醒它;醒了(在线)选项照常读出来。
-  const { issue: wakeIssue, dropped: wakeDropped, retry: retryWake } = useCloudComputerWake(device)
+  const { issue: wakeIssue, dropped: wakeDropped, retry: retryWake } = useCloudComputerWake(targetAvailable ? device : null)
   const catalogKey = JSON.stringify([ownerId, device.device_id, phone])
   const [optionCatalog, setOptionCatalog] = useState<{ key: string; value: SessionpageSessionCreateOptions } | null>(null)
   const options = optionCatalog?.key === catalogKey ? optionCatalog.value : null
