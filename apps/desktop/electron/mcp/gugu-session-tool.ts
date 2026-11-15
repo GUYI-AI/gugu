@@ -167,7 +167,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
   },
   {
     name: 'session_message',
-    description: 'Message sessions across devices: session:<id>, aid:<Agent ID>, gugu:<number> from session_peers. Resumes stopped recipients; reports delivery. Owner sees task exchanges. Chat members: message_send.',
+    description: 'Message sessions across devices: session:<id>, aid:<Agent ID>, gugu:<number> from session_peers. Resumes stopped recipients (to stop one: catalog session_stop); reports delivery. Owner sees task exchanges. Chat members: message_send.',
     schema: z.strictObject({
       // ACP XML/JSON bridges sometimes serialize array parameters as JSON strings。协议边界兼容是
       // im-mcp spec 的既有合同(「合法的 JSON 序列化数组继续在协议边界兼容,裸字符串或非法 JSON

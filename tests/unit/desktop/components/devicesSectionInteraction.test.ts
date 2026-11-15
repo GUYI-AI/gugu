@@ -363,7 +363,7 @@ describe('DevicesSection interaction', () => {
       const rows = container.querySelectorAll<HTMLElement>('[data-testid="settings-device-row"]')
       const server = Array.from(rows).find((row) => row.dataset.deviceId === 'srv')!
       expect(server.dataset.kind).toBe('server')
-      expect(server.textContent).toContain('Ubuntu 22.04.5 LTS · arm64')
+      expect(server.textContent).toContain('Ubuntu 22.04.5 LTS，arm64')
       expect(server.textContent).toContain('咕咕 server 0.2.99')
       expect(server.textContent).toContain('新版本已就绪')
       expect(server.textContent).toContain('上次在线 3 小时前')

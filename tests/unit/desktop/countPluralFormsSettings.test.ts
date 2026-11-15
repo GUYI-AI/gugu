@@ -90,8 +90,8 @@ const ROWS: Row[] = [
   },
   {
     ns: 'settings', key: 'usage.streaks', p: () => ({ current: 3, longest: 5 }),
-    en: ['3-day streak · longest 5 · 0 active days', '3-day streak · longest 5 · 1 active day', '3-day streak · longest 5 · 2 active days'],
-    zh: (n) => `连续 3 天 · 最长 5 天 · 活跃 ${n} 天`,
+    en: ["3-day streak, longest 5, 0 active days", "3-day streak, longest 5, 1 active day", "3-day streak, longest 5, 2 active days"],
+    zh: (n) => `连续 3 天，最长 5 天，共活跃 ${n} 天`,
   },
   {
     ns: 'settings', key: 'usage.tiles.tokensUnknown', p: (n) => ({ value: String(n) }),

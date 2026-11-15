@@ -1,3 +1,4 @@
+import { metadataSeparator } from '@/i18n/format'
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 import { messageForUser } from '@/lib/userFacingError';
 import { observer } from 'mobx-react-lite';
@@ -551,7 +552,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
     status !== 'all' ? translate(STATUS_MESSAGE_KEY[status]) : null,
   ]
     .filter(Boolean)
-    .join(' · ');
+    .join(metadataSeparator());
   // 索引进度:还在补的那几台加起来。
   const indexing = states.flatMap((state) => (state?.isIndexing && state.page?.local ? [state.page.local] : []));
   const localPage = byMachine[LOCAL_IMPORT_DEVICE]?.page;

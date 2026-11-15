@@ -169,7 +169,7 @@ export function resolveComposerModelPanel(input: {
 
 // ── Model tooltip ─────────────────────────────────────────────────────────────
 
-import { formatTokenCount } from '@gugu/session-shared/format';
+import { formatTokenCount, metadataSeparator } from '@gugu/session-shared/format';
 
 export function formatContextWindow(tokens: number): string {
   // 进位判据与别处同一份(session-shared);这里只换成「N tokens」的写法。
@@ -184,14 +184,14 @@ export function formatContextWindow(tokens: number): string {
  * 卡片随弹层重构一起去掉了 —— 但 modelFeatures 是插件真声明过的数据,不能跟着卡片一起
  * 消失,所以折进条目的 title,信息还在,只是不再占一块面板。
  */
-export function modelTitle(item: ComposerModelItem): string | undefined {
+export function modelTitle(item: ComposerModelItem, locale = 'en-US'): string | undefined {
   const parts: string[] = [];
   if (item.description) parts.push(item.description);
   const f = item.modelFeatures;
   if (f?.contextWindowSize !== undefined) parts.push(`Context ${formatContextWindow(f.contextWindowSize)}`);
   if (f?.speed !== undefined) parts.push(`Speed ${f.speed}/5`);
   if (f?.intelligence !== undefined) parts.push(`Intelligence ${f.intelligence}/5`);
-  return parts.length > 0 ? parts.join(' · ') : undefined;
+  return parts.length > 0 ? parts.join(metadataSeparator(locale)) : undefined;
 }
 
 /**
@@ -298,7 +298,7 @@ export function ComposerModelMenu({
   onEffortChange,
   defaultEffort,
 }: ComposerModelMenuProps) {
-  const { translate } = useMessages();
+  const { translate, locale } = useMessages();
 
   /**
    * 厂商过滤条选了哪几家。**空集 = 不过滤**(上游原话:An empty filter means no
@@ -539,7 +539,7 @@ export function ComposerModelMenu({
           <span data-slot="composer-model-trigger-label" className={styles.modelTriggerLabel}>
             {/* 括号在这里剥掉,清单里不剥 —— 见 @@@composer-model-trigger-label。 */}
             {settingNotice
-              ? `${settingNotice} · ${translate('composer.changeModel')}`
+              ? `${settingNotice}: ${translate('composer.changeModel')}`
               : selectedModelItem
               ? composerModelTriggerLabel(
                   selectedModelItem.shortName ?? selectedModelItem.name,
@@ -673,7 +673,7 @@ export function ComposerModelMenu({
                           // 置灰时 title 挂**原因** —— 那一刻用户要问的是「为什么不能选」
                           // (owner 2026-08-21:选不了的那一头要说明原因)。能选的行不挂 title:
                           // 规格在悬浮详情卡里,原生提示再弹一遍就是同一件事说两次。
-                          title={m.disabled ? (m.disabledReason ?? modelTitle(m)) : undefined}
+                          title={m.disabled ? (m.disabledReason ?? modelTitle(m, locale)) : undefined}
                           disabled={m.disabled}
                           className={`${styles.composerPanelItem} ${styles.modelPanelItemCompact}`}
                           {...detailHoverProps(m.id)}

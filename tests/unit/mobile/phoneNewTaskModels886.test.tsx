@@ -60,8 +60,10 @@ it('does not repeat the folder instruction beneath an open folder card', async (
   expect(readComposer(input())).toBe('Keep this task draft')
 })
 async function pickCodex() {
-  await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="agent-watch-create-agent"]')!)
+  await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="agent-watch-create-model-device"]')!)
+  await clickElement(document.querySelector<HTMLElement>('[data-testid="agent-watch-create-options-drill"][data-dimension="harness"]')!)
   await clickElement([...document.querySelectorAll<HTMLElement>('[role="radio"]')].find((item) => item.textContent === 'Codex')!)
+  await clickElement(document.querySelector<HTMLElement>('button[aria-label="关闭"]')!)
 }
 
 it('dispatches the original group new-task route with the shared available model after switching Claude to unsigned-in Codex', async () => {

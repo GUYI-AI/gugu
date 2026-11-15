@@ -9,6 +9,7 @@ const INLINE_CODE = /(`[^`\n]+`)/
 export function markdownPlainText(text: string): string {
   return text
     .replace(/`{3}[\s\S]*?`{3}/g, '')
+    .replace(/^ {0,3}~{3,}[^\n]*\n[\s\S]*?^ {0,3}~{3,}[ \t]*(?:\n|$)/gm, '')
     .split(INLINE_CODE)
     .map((part, index) => (index % 2 === 1 ? part : plainSegment(part)))
     .join('')
@@ -20,9 +21,10 @@ function plainSegment(text: string): string {
   return text
     .replace(/!\[([^\]]*)\]\([^)]+\)/g, '')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]+#+[ \t]*$/gm, '$1')
     .replace(/^\s{0,3}#{1,6}\s+/gm, '')
     .replace(/^\s*>\s?/gm, '')
-    .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, '')
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+/gm, '')
     .replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, '$2')
     .replace(/(?<![\w*])(\*|_)(?=\S)([^*_\n]*?\S)\1(?![\w*])/g, '$2')
     .replace(/~~(?=\S)([\s\S]*?\S)~~/g, '$1')

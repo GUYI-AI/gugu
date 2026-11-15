@@ -99,11 +99,15 @@ export function shallowEqualMessage(a: MessageItem, b: MessageItem): boolean {
     a.seq === b.seq &&
     a.content === b.content &&
     a.content_type === b.content_type &&
+    a.thread_root_id === b.thread_root_id && a.is_thread_root === b.is_thread_root && a.edited_at === b.edited_at &&
     a.retracted_at === b.retracted_at &&
     a.created_at === b.created_at &&
     a.reply_to_message_id === b.reply_to_message_id &&
     a.reply_to_sender_user_id === b.reply_to_sender_user_id && a.reply_to_content === b.reply_to_content &&
     a.sender_user_id === b.sender_user_id &&
+    a.via_app === b.via_app && a.sent_by_agent === b.sent_by_agent &&
+    (a.agent_sender === b.agent_sender || !!a.agent_sender && !!b.agent_sender && a.agent_sender.id === b.agent_sender.id && a.agent_sender.name === b.agent_sender.name) &&
+    a.forwarded_from_message_id === b.forwarded_from_message_id &&
     sameRecipientIds(a.to_user_ids, b.to_user_ids) &&
     sameRecipientIds(a.readers ?? null, b.readers ?? null) &&
     a.is_mine === b.is_mine &&

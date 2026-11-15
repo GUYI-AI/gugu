@@ -73,7 +73,7 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
     resolve(target: string, label: string): MentionItem | null {
       const file = parseGroupFileLink(target)
       if (file) return { id: target, label: target, name: label, kind: 'file',
-        description: file.version === undefined ? label : `${label} · ${t('filePill.picked', { version: file.version })}` }
+        description: file.version === undefined ? label : `${label} (${t('filePill.picked', { version: file.version })})` }
       if (!target.startsWith('aid:')) return null
       return decorate({ id: target, label: target, name: label, role: 'agent', kind: 'custom' })
     },

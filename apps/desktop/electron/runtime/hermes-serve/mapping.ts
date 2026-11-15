@@ -158,7 +158,7 @@ export function ownModelChoices(result: unknown): ModelChoice[] {
       const caps = capabilities[model];
       const reasoning = caps?.reasoning !== false;
       const efforts = reasoning ? [...(caps?.can_disable_reasoning === false ? [] : ['none']), ...HERMES_REASONING_EFFORTS] : [];
-      choices.push({ value: `${slug}/${model}`, name: `${model} · ${str(provider.name) || slug}`, efforts });
+      choices.push({ value: `${slug}/${model}`, name: `${model} (${str(provider.name) || slug})`, efforts });
     }
   }
   return choices;

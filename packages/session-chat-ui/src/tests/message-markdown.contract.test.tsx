@@ -169,6 +169,25 @@ const userMessageCitingAFile: ChatMessage = {
 }
 
 describe('a cited file stays a one-line pill in the user message', () => {
+  it('keeps a parenthesized line location visible without changing the file target', async () => {
+    const files: MentionProvider = { resolve: (token) => ({ id: token, label: token, kind: 'file' }) }
+    const reading = await renderAndMeasureUnit(messageUnitDef, {
+      ...userMessageCitingAFile,
+      text: `@[${'a-review-sheet-with-a-long-name-'.repeat(3)}notes.md (L8-12)](/home/me/notes/review.md)`,
+    }, makeContractCtx({ width: WIDTH, mentionProvider: files }), host => {
+      const pill = host.querySelector<HTMLElement>('.gg-md-mention')
+      const place = pill?.querySelector<HTMLElement>('.gg-md-mention-place')
+      return {
+        place: place?.textContent === ' (L8-12)' && place.scrollWidth <= place.clientWidth ? 1 : 0,
+        target: pill?.getAttribute('data-mention-id') === '/home/me/notes/review.md' ? 1 : 0,
+        separator: pill?.textContent?.includes('\u00b7') ? 1 : 0,
+      }
+    })
+    expectHeightMatch('parenthesized file location', reading)
+    expect(reading.inspected).toEqual({ place: 1, target: 1, separator: 0 })
+    expect(reading.spill).toBeLessThanOrEqual(1)
+  })
+
   it('outside the task folder too', async () => {
     // What the session page's provider says of a path: a file.
     const files: MentionProvider = { resolve: (token) => ({ id: token, label: token, kind: 'file' }) }

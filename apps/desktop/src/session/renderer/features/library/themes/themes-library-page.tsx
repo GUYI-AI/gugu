@@ -58,7 +58,7 @@ function ThemeThumb({ colors, translate }: { colors: ThemeSwatch; translate: Tra
       <div className="flex min-w-0 flex-1 flex-col gap-2 bg-[var(--t-bg)] p-2 text-[9px] leading-3">
         <div className="max-w-[85%] self-start rounded-md bg-[color-mix(in_oklab,var(--t-bg),var(--t-fg)_6%)] px-2 py-1 text-[var(--t-fg)]">
           {translate('themes.preview.sample')}
-          <span className="block text-[var(--t-muted-fg)]">Kip · 13:05</span>
+          <span className="block text-[var(--t-muted-fg)]">'Kip 13:05'</span>
         </div>
         <div className="self-end rounded-md bg-[color-mix(in_oklab,var(--t-bg),var(--t-fg)_11%)] px-2 py-1 text-[var(--t-live)]">
           {translate('themes.preview.reply')}
@@ -106,7 +106,7 @@ function ThemeCard({
           <Badge variant="secondary">{translate(`themes.mode.${kind}`)}</Badge>
         </div>
         <div className="truncate px-1 pb-1 text-xs text-foreground-muted">
-          {pack ? `${pack.source.author} · ${pack.source.license || '—'}` : 'Gugu'}
+          {pack ? `${pack.source.author} (${pack.source.license || '—'})` : 'Gugu'}
         </div>
       </button>
       {onRemove && (

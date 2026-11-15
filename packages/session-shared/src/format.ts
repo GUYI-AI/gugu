@@ -4,6 +4,11 @@ export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 export type DateValue = Date | number | string;
 export type TimeUnit = 'second' | 'minute' | 'hour' | 'day' | 'month' | 'year';
 
+/** Punctuation for metadata in the host's resolved interface language. */
+export function metadataSeparator(locale: string): string {
+  return locale.toLowerCase().startsWith('zh') ? '，' : ', ';
+}
+
 export function formatNumber(value: number, options: Intl.NumberFormatOptions | undefined, locale: string): string {
   return cachedNumberFormat(locale, options ?? {}).format(value);
 }

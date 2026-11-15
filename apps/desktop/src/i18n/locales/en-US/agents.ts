@@ -316,7 +316,7 @@ export default {
       "saveFailed": "Couldn't save the look. Try again later.",
       "saving": "Saving…",
       "stageLabel": "Preview of {{name}}'s look",
-      "summary": "{{color}} · {{face}}",
+      "summary": "{{color}} {{face}}",
       "tabColor": "Color",
       "tabFace": "Face",
       "takenBy": "{{names}} already use this color",

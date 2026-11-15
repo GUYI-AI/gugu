@@ -209,7 +209,7 @@ describe('点了先列清带走什么,确认才搬', () => {
     expect(mocks.runAssistantMove).not.toHaveBeenCalled()
     const confirm = document.body.querySelector('[data-testid="assistant-move-confirm"]') as HTMLButtonElement | null
     expect(confirm).not.toBeNull()
-    expect(body()).toContain('Notion · 阿满的 Notion')
+    expect(body()).toContain('Notion (阿满的 Notion)')
     // 服务名表里没有钉钉(mock 只给了 Notion)→ 退回 id,仍然列出来、不吞
     expect(body()).toContain('dingtalk')
     expect(body()).not.toMatch(/accessToken|secret/i)
@@ -225,7 +225,7 @@ describe('点了先列清带走什么,确认才搬', () => {
     expect(document.body.querySelector('[data-testid="assistant-move-exists"]')?.textContent).toContain('没有覆盖')
     expect(document.body.querySelector('[data-testid="assistant-move-done-reconnect-list"]')?.textContent).toContain('github')
     const done = document.body.querySelector('[data-testid="assistant-move-done-reconnect"]')?.textContent ?? ''
-    expect(done).toContain('Notion · a@x.cn')
+    expect(done).toContain('Notion (a@x.cn)')
     expect(done).toContain('imap.x.cn')
     expect(done).toContain('机器选「云上」')
     const shellEvents: string[] = []
