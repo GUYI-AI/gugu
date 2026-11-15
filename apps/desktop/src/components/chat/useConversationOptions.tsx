@@ -10,6 +10,8 @@ import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { AgentConversationComposer } from '@renderer/lib/chat/agent-conversation-view'
 import { messageForUser } from '@/lib/userFacingError'
+import { fastModeValue } from '@renderer/features/sessions/session-config/fast-mode'
+import { renderFastModeHint } from '@renderer/features/sessions/session-config/fast-mode-hint'
 
 export type ConversationTarget = { deviceId: string; sessionId: string; local: boolean; phoneHost?: boolean; /** false while that machine is away: nothing to ask; asked again once it is back. */ reachable?: boolean }
 
@@ -49,6 +51,10 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
     effortOptions: localizeEffortOptions(options?.effort ? Object.fromEntries(options.effort.available.map(item => [item.id, { name: item.name, description: item.description }])) : null, translateSessionMessage),
     selectedEffort: options?.effort?.selected ?? undefined,
     onEffortChange: id => { void pick('effort', id) },
+    // The host filters this group by native capability, current model and explicit own billing.
+    fastMode: fastModeValue(options?.fast),
+    onFastModeChange: enabled => { void pick('fast', enabled ? 'on' : 'off') },
+    renderFastModeHint,
     permissionModeOptions: localizePermissionModeOptions(permissions, translateSessionMessage, options?.permissionAgentName ?? options?.modelMenu?.agentName ?? agentName, options?.modeMap),
     selectedPermissionMode: selectedPermissionModeId(options?.mode?.selected ?? undefined, permissions, options?.modeMap),
     onPermissionModeChange: id => { void pick('mode', id) },

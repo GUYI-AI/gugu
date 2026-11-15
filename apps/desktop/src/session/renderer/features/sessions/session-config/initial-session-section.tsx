@@ -75,6 +75,8 @@ import {
   harnessCatalogToOptions,
 } from './harness-model-field';
 import { useHarnessModelOptions } from './use-harness-model-options';
+import { draftFastMode } from './fast-mode';
+import { renderFastModeHint } from './fast-mode-hint';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { queryClient } from '@/lib/replica';
@@ -241,6 +243,8 @@ export type InitialSessionState = {
   /** Selected effort id, or null when nothing is armed (the CLI then resolves it itself). */
   effort: string | null;
   setEffort: (effort: string | null) => void;
+  fastMode?: boolean;
+  setFastMode?: (enabled: boolean) => void;
   /** What the CLI would pick on its own for this model — shown in the 「默认」 row. */
   defaultEffort: string | null;
   /** Persist the complete launch configuration only after a session has actually been created. */
@@ -537,6 +541,7 @@ export function useInitialSessionState(
   const [modelOverrides, setModelOverrides] = useState<Record<string, string>>(
     () => (handed?.model ? { [handed.provider]: handed.model } : {})
   );
+  const [fastModeDraft, setFastModeDraft] = useState(false);
   // 每个 provider 一格三态:平台模型 id / null(明确选了 harness)/ 缺席(还没表过态)。
   // 缺席与 null 必须分得开 —— 前者才轮得到 agent 级默认值说话。
   const [platformModelOverrides, setPlatformModelOverrides] = useState<
@@ -1184,6 +1189,7 @@ export function useInitialSessionState(
   return {
     provider: providerId,
     setProvider: (next) => {
+      setFastModeDraft(false);
       setProviderOverride(next);
       // 点一下就记住 —— ❌ 不等到「发送成功」:用户点完换个页面是常态,而那时还没有会话可记。
       if (next && !editingStoredRecord) updateMemory({ lastPicked: next });
@@ -1202,6 +1208,7 @@ export function useInitialSessionState(
     setIssueContextEditorOpen,
     model,
     setModel: (nextModel) => {
+      setFastModeDraft(false);
       if (!providerId) return;
       // 选 harness 模型同时就是「这条会话不上平台」的表态,agent 级默认值不再回来顶掉它。
       setPlatformModelOverrides((current) => ({ ...current, [providerId]: null }));
@@ -1228,12 +1235,15 @@ export function useInitialSessionState(
     connectionPanel: connections.panel,
     harnessModelUnlock,
     setPlatformModel: (nextModel) => {
+      setFastModeDraft(false);
       if (!providerId) return;
       setPlatformModelOverrides((current) => ({ ...current, [providerId]: nextModel }));
     },
     // 档名走词表 —— 插件那份是硬编码中文,原样摆出来英文壳里就漏中文(见 effort-options.ts)。
     effortOptions: localizeEffortOptions(modelEfforts?.options ?? null, translate),
     effort,
+    fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, providerId, modelId: model, platformModel, catalog: harnessCatalogState }),
+    setFastMode: setFastModeDraft,
     defaultEffort: modelEfforts?.defaultId ?? null,
     setEffort: (nextEffort) => {
       if (!effortKey) return;
@@ -1780,6 +1790,9 @@ export function InitialSessionField({
           effortOptions={state.effortOptions}
           selectedEffort={state.effort ?? undefined}
           onEffortChange={(effortId) => state.setEffort(effortId || null)}
+          fastMode={state.fastMode}
+          onFastModeChange={state.setFastMode}
+          renderFastModeHint={renderFastModeHint}
           defaultEffort={state.defaultEffort ?? undefined}
           permissionModeOptions={permissionModeOptions}
           selectedPermissionMode={permissionModeOptions ? state.permissionMode : undefined}

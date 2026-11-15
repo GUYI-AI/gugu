@@ -1273,6 +1273,24 @@ export const modelEffortReset = style({
   },
 });
 
+export const modelEffortAxis = style({
+  position: 'relative',
+  boxSizing: 'border-box',
+  selectors: { '&[data-fast-mode]': { paddingInlineEnd: '1.125rem' } },
+});
+
+export const modelFastMode = style([modelEffortReset, {
+  position: 'absolute',
+  insetInlineEnd: '-0.375rem',
+  top: '-0.25rem',
+  margin: 0,
+  cursor: 'pointer',
+  selectors: {
+    '&[aria-pressed="true"]': { color: 'var(--live)' },
+    '&:disabled': { cursor: 'default' },
+  },
+}]);
+
 /** 圆钮比轨道大,需要一道投影把自己托起来。这是这颗控件唯一的投影,别再往别处加。 */
 const EFFORT_THUMB_LIFT = 'var(--shadow-lift)';
 

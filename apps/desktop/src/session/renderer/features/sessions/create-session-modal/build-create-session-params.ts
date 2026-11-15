@@ -22,6 +22,7 @@ export function buildInitialSession(
     permissionMode: state.permissionMode,
     model: state.model,
     effort: state.effort,
+    fastMode: state.fastMode === true,
     // composer 就是这条会话的平台决策点:选 harness 也显式写 null(三态口径见 SessionPlatformModel)。
     platformModel: state.platformModel ? { modelId: state.platformModel } : null,
     ...(options.startupOrigin ? { startupOrigin: options.startupOrigin } : {}),
