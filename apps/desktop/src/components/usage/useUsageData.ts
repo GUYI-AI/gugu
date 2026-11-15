@@ -32,11 +32,12 @@ function yearFrom(today: string): string {
   return addDays(today, -(HEATMAP_DAYS - 1))
 }
 
+// usageDays and creditDays are not kept across restarts: a year of an active account's days is tens of KB, past any
+// entry limit, and the key moves with today (@@@client-state-model, persistence).
 const usageDays = replica({
   name: 'usageDays',
   scope: 'account',
   read: (_userId, from: string, to: string, deviceId: string | null) => fetchUsageDays(from, to, deviceId),
-  persist: { maxBytes: 2048, maxEntries: 1 },
 })
 
 const usageDevices = replica({
@@ -51,7 +52,6 @@ const creditDays = replica({
   scope: 'account',
   // Totals are in the account's credit unit: another unit version is another reading (unknown until read), ❌ the old total.
   read: (_userId, from: string, to: string, timeZone: string, _creditVersion: string | null) => fetchCreditDays(from, to, timeZone),
-  persist: { maxBytes: 2048, maxEntries: 1 },
 })
 
 /** A reading as this page's three states: unknown is still loading (a placeholder block), ❌ an empty year. */
