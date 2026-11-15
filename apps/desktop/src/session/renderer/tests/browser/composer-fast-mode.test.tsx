@@ -23,10 +23,11 @@ const effortChanged = vi.fn()
 const modelChanged = vi.fn()
 const fast = () => document.querySelector<HTMLButtonElement>('button[aria-label="Fast"]')
 
-function Fixture({ supported = true, mobile = false, initial = false }) {
+function Fixture({ supported = true, mobile = false, initial = false, phoneActions = mobile }) {
   const [enabled, setEnabled] = useState(initial)
   return <Tooltip.Provider><SessionLocalizationProvider><ChatComposer
     mobile={mobile}
+    phoneActions={phoneActions}
     modelOptions={{ own: { name: 'Native model' } }} selectedModel="own" onModelChange={modelChanged}
     effortOptions={{ low: { name: 'Low' }, medium: { name: 'Medium' }, high: { name: 'High' } }}
     selectedEffort="medium" onEffortChange={effortChanged}
@@ -103,9 +104,17 @@ describe('Fast in the real thinking menu', () => {
     await page.getByRole('button', { name: 'Fast', exact: true }).hover()
     expect(fast()?.hasAttribute('aria-describedby')).toBe(false)
     expect(document.querySelector('[role="tooltip"]')).toBeNull()
+    const focused = document.activeElement
     await page.getByRole('button', { name: 'Fast', exact: true }).click()
     await until('phone Fast accepted', () => fast()?.getAttribute('aria-pressed') === 'true')
+    expect(document.activeElement).toBe(focused)
     expect(changed).toHaveBeenCalledExactlyOnceWith(true)
     expect(document.body.textContent).not.toContain('Faster, uses more quota')
+  })
+
+  it('keeps the tooltip in a compact desktop conversation', async () => {
+    await renderMenu({ mobile: true, phoneActions: false })
+    await page.getByRole('button', { name: 'Fast', exact: true }).hover()
+    await expect.element(page.getByText('Faster, uses more quota', { exact: true })).toBeVisible()
   })
 })

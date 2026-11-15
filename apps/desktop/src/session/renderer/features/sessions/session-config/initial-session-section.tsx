@@ -79,6 +79,7 @@ import { draftFastMode } from './fast-mode';
 import { renderFastModeHint } from './fast-mode-hint';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
+import { useTargetModelCatalog } from '@renderer/lib/stores/use-target-model-catalog';
 import { queryClient } from '@/lib/replica';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useHarnessModelCredential } from '@renderer/lib/stores/use-harness-model-credential';
@@ -1084,6 +1085,11 @@ export function useInitialSessionState(
     : modelOverride && modelOptions?.[modelOverride]
       ? modelOverride
       : resolvedDefaultModel;
+  const targetFastCatalog = useTargetModelCatalog(
+    !unattended && !platformModel && (providerId === 'codex' || providerId === 'claude') ? providerId : null,
+    sessionpageSurface,
+    harnessCatalogState.kind === 'ready' && harnessCatalogState.selected !== model ? model : null,
+  );
   // 活目录 → 插件声明 → 静态表三级合成,与手机新建页共用同一个 resolveCreateEfforts(shared),
   // ❌ 别在这里再展开一遍那三步 —— 两处各写一份就会漂。
   const modelEfforts = resolveCreateEfforts({
@@ -1242,7 +1248,7 @@ export function useInitialSessionState(
     // 档名走词表 —— 插件那份是硬编码中文,原样摆出来英文壳里就漏中文(见 effort-options.ts)。
     effortOptions: localizeEffortOptions(modelEfforts?.options ?? null, translate),
     effort,
-    fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, providerId, modelId: model, platformModel, catalog: harnessCatalogState }),
+    fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, providerId, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
     setFastMode: setFastModeDraft,
     defaultEffort: modelEfforts?.defaultId ?? null,
     setEffort: (nextEffort) => {
