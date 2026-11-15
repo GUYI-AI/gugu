@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
 import { isPhoneDevice } from '@gugu/core/cloud/devices'
-import { Check, ChevronLeft, ChevronRight, Cloud, Folder, Monitor, Sparkles } from '@/lib/icons'
+import { Check, ChevronLeft, ChevronRight, Cloud, Folder, Monitor, Smartphone, Sparkles } from '@/lib/icons'
 import { Button } from '@/components/ui/Button'
 import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { CreateSkillSearch, CreateSkillsList } from './CreateSkills'
@@ -45,7 +45,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const compact = view !== 'project' && view !== 'skills'
   return <>
     <div data-testid="agent-watch-create-target"><PhoneComposerControlRow>
-      <PhoneComposerControl label={t('modelDevice')} icon={<Monitor />} active={!!view && compact} disabled={busy}
+      <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={!!view && compact} disabled={busy}
         testId="agent-watch-create-model-device" buttonRef={modelButton} onClick={() => setView('device')} />
       <PhoneComposerControl label={project?.name ?? t('project')} icon={<Folder />} active={view === 'project'} disabled={busy}
         testId="agent-watch-create-project" onClick={() => setView('project')} />
@@ -59,7 +59,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
       {view === 'device' && <>
         <div className="gg-phone-composer-section-label">{t('device')}</div>
         {machines.map((row) => <Choice key={row.device.device_id} id={row.device.device_id} dimension="machine" name={label(row.device)}
-          icon={row.device.cloud_computer ? <Cloud /> : <Monitor />} description={row.available ? row.path : tf('noFolderHere')}
+          icon={<DeviceIcon device={row.device} />} description={row.available ? row.path : tf('noFolderHere')}
           selected={machine?.device.device_id === row.device.device_id} disabled={!row.available || busy} onClick={() => onMachine(row.device.device_id)} />)}
         {!machines.length && <p className="gg-phone-composer-sheet-status">{tf('noMachine')}</p>}
         {!phone && <Summary dimension="harness" title={t('agent')} value={selectedHarness?.name ?? tf('noMachine')} disabled={!configuration?.options} onClick={() => setView('harness')} />}
@@ -95,6 +95,11 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
         selected={configuration?.skills ?? []} onCount={setSkillCount} onChange={(skills) => { configuration?.onSkills(skills); setView(null) }} />}
     </PhoneComposerSheet>
   </>
+}
+
+function DeviceIcon({ device }: { device: CreateMachine['device'] | undefined }) {
+  if (device && isPhoneDevice(device)) return <Smartphone />
+  return device?.cloud_computer ? <Cloud /> : <Monitor />
 }
 
 function Choice({ id, dimension, name, description, icon, selected, disabled, onClick }: {
