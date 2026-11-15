@@ -16,8 +16,11 @@ function harnessWithSettings() {
   if (!liveSettings) throw new Error('Missing test capability');
   liveSettings.model = capability;
   liveSettings.effort = capability;
-  const current: Record<string, string> = { model: 'model-a', reasoning_effort: 'high' };
+  liveSettings.fast = capability;
+  const current: Record<string, string> = { model: 'model-a', reasoning_effort: 'high', fast: 'on' };
   const configOptions = () => [
+    { id: 'fast', name: 'Fast', category: 'model_config', type: 'select' as const, currentValue: current.fast!,
+      options: [{ value: 'on', name: 'On' }, { value: 'off', name: 'Off' }] },
     {
       id: 'model', name: 'Model', category: 'model' as const, type: 'select' as const,
       currentValue: current.model!,
@@ -48,6 +51,19 @@ function harnessWithSettings() {
 }
 
 describe('#6552 a choice made while the session starts', () => {
+  it.each([false, true])('arms explicit Fast %s before any user turn, overriding native defaults', async (fastMode) => {
+    const { h, sets, releaseNewSession } = harnessWithSettings();
+    const runtime = new AcpRuntime(h.deps);
+    try {
+      const start = runtime.startSession(makeStartInput({ sessionId: 'side', fastMode }));
+      await h.agent.called('newSession');
+      releaseNewSession();
+      expect((await start).success).toBe(true);
+      expect(sets('fast')).toEqual([fastMode ? 'on' : 'off']);
+      expect(h.agent.prompt).not.toHaveBeenCalled();
+    } finally { await runtime.dispose(); }
+  });
+
   it('模型:由启动那一步设成所选,只设一次;应答与活会话热切同形', async () => {
     const { h, sets, releaseNewSession } = harnessWithSettings();
     const runtime = new AcpRuntime(h.deps);

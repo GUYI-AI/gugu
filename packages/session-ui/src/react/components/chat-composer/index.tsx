@@ -275,6 +275,10 @@ export interface ChatComposerProps {
    * unset state still says what will happen, rather than leaving the user to guess.
    */
   defaultEffort?: string;
+  /** Undefined hides Fast; supported hosts own the accepted per-session value. */
+  fastMode?: boolean;
+  onFastModeChange?: (enabled: boolean) => void;
+  renderFastModeHint?: import('./composer-fast-mode').RenderFastModeHint;
 
   permissionModeOptions?: Record<string, ComposerPermissionModeOption> | null;
   selectedPermissionMode?: string;
@@ -451,6 +455,9 @@ export function ChatComposer({
   selectedEffort,
   onEffortChange,
   defaultEffort,
+  fastMode,
+  onFastModeChange,
+  renderFastModeHint,
   permissionModeOptions,
   selectedPermissionMode,
   onPermissionModeChange,
@@ -790,6 +797,10 @@ export function ChatComposer({
                 selectedEffort={selectedEffort}
                 onEffortChange={onEffortChange}
                 defaultEffort={defaultEffort}
+                fastMode={fastMode}
+                onFastModeChange={onFastModeChange}
+                renderFastModeHint={phoneActions ? undefined : renderFastModeHint}
+                phoneActions={phoneActions}
               />
   );
   const promptEditor = (

@@ -94,6 +94,7 @@ type SessionInjectionFacts = {
    * runtime views inherit it from their source.
    */
   effort: string | null | undefined;
+  fastMode: boolean;
   /**
    * 会话记录里**自己的模型**那一半(`config.model`,harness 自家 id)—— 启动时 runtime 断言的就是它(#6196)。
    *
@@ -156,6 +157,7 @@ export async function readSessionInjectionFacts(input: {
     // 的路径,codex 按目录逐模型的 catalog 就近落档。#6199 曾在这里按一张全局三档表过滤 —— 那会把用户在
     // GPT/Claude 上选的 xhigh/max 悄悄改回默认。
     effort: session ? session.effort : undefined,
+    fastMode: platformModel === null && session?.fastMode === true,
     model: platformModel ? null : (session?.model ?? null),
     // 缺席(运行时视图没有自己的行,或行刚被删)= 没有可续的 provider 会话 ⇒ `null`,与「新开一条」同义。
     providerSessionId: session?.providerSessionId ?? null,
@@ -443,6 +445,7 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
     // 消费方按各家方言落成 spawn 参数(kimi:`KIMI_MODEL_THINKING_EFFORT`)。
     // 与下面 trustedInput 同一份:会话记录(经计费路过滤)为准,渲染进程那份只在没有记录时用。
     reasoningEffort: (facts.effort !== undefined ? facts.effort : input.input.effort) ?? null,
+    fastMode: facts.fastMode,
     startupOrigin: input.input.startupOrigin,
     initialMessageId: input.input.initialMessageId,
     taskChatId: input.input.taskChatId,
@@ -542,6 +545,7 @@ export async function withEmdashPlatformInjection<T extends { input: { sessionId
     // The conversation facts read above are the shared persisted source for every ACP injection
     // leg, so the provider receives the same effort that platformModelForSession materializes.
     ...(facts.effort !== undefined ? { effort: facts.effort } : {}),
+    fastMode: facts.fastMode,
     // 同一条理由(#6196):要断言的「自己的模型」只由会话记录说了算,见 `SessionInjectionFacts.model`。
     model: facts.model,
     // 同一条理由,更硬的一格(#5869):要续哪个 provider 会话**只由会话记录说了算**。
