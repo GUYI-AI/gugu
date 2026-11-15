@@ -6,7 +6,6 @@ import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } 
 import { CreateSessionPage } from '../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage'
 import { composerDrafts } from '../../../apps/desktop/src/session/renderer/features/sessions/composer-drafts'
 import { mobileCreationDraftKey } from '../../../apps/desktop/src/mobile/agent-watch/create-session-draft'
-import type { CreateSelection } from '../../../apps/desktop/src/mobile/agent-watch/create-session-form'
 import { createNode, createReactHarness, deferred } from '../../support/testHarness'
 import { readComposer, writeComposer } from '../../support/composerEditor'
 
