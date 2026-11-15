@@ -1,6 +1,6 @@
 import { openTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import type { AppForwardFilesDetail } from '../session/shared/extensions/app-runtime-protocol'
-import { commitAttachment, forwardAttachment, shareAttachment, type CommitArgs } from '@gugu/core/cloud/attachmentsApi'
+import { AttachmentsError, commitAttachment, forwardAttachment, shareAttachment, type CommitArgs } from '@gugu/core/cloud/attachmentsApi'
 import { messageItemFromRow } from '@gugu/core/cloud/messageItem'
 import { attachmentsEndpoint, prepareChatAttachment, type PreparedChatAttachment } from '../lib/attachmentsEndpoint'
 import { parseComposerCard } from '@gugu/core/shared/ui/taskCardModels'
@@ -30,7 +30,7 @@ import {
   type OutboxOperation,
 } from '../lib/imRepository'
 import { advanceReadWatermark, applyThreadSnapshot, type PatchChat } from './chatRealtimeMutations'
-import { createChatOutbox, type ChatOutbox } from './chatOutbox'
+import { createChatOutbox, UploadAgainError, type ChatOutbox } from './chatOutbox'
 import { noteBackendRequestFailed, subscribeBackendRecovered } from '@gugu/core/cloud/backendReachability'
 import { i18n } from '@/i18n'
 import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
@@ -61,7 +61,8 @@ export interface OutboxWiringIo {
 export interface OutboxWiring {
   outbox: ChatOutbox
   stageAttachment(message: MessageItem, dependsOn?: string): Promise<void>
-  commitAttachment(message: MessageItem, prepared: PreparedChatAttachment, commit: Omit<CommitArgs, 'staging_key'>, timing?: AttachmentSendTiming, dependsOn?: string): Promise<void>
+  /** `uploadAgainWith`: uploads this run's bytes again as the same row, for when the commit finds the upload gone. */
+  commitAttachment(message: MessageItem, prepared: PreparedChatAttachment, commit: Omit<CommitArgs, 'staging_key'>, timing?: AttachmentSendTiming, dependsOn?: string, uploadAgainWith?: () => void): Promise<void>
   /** The row's bytes did not go up; this run still holds them, so its failed row offers `retry`. */
   failAttachmentUpload(messageId: string, error: unknown, reason: string, retry: () => void): Promise<void>
   forward(source: MessageItem | Extract<AppForwardFilesDetail, { files: unknown }>['files'][number], targetChatId: string, senderUserId: string, opts?: { toUserIds?: string[]; sendGroup?: { id: string; size: number } }): Promise<void>
@@ -209,6 +210,8 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
   const topicResults = new Map<string, CreatedTopic | undefined>()
   // Failed uploads whose File this run still holds: retrying sends those bytes again. A reload forgets them (select the file again).
   const uploadRetries = new Map<string, () => void>()
+  // Rows whose commit found the upload gone while this run holds the file: uploaded again as soon as they fail.
+  const uploadAgain = new Set<string>()
   const retryable = (record: OutboxRecord) => !record.dependencyDiscarded && (uploadRetries.has(record.clientMessageId)
     || (record.operation?.kind !== 'upload' && record.operation?.kind !== 'nativeAttachment'))
   // clientMessageId → 本次会话里发送方交来的投递前置。送达/丢弃即删;失败保留,手动重试会再跑一次。
@@ -216,6 +219,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
   // 状态迁移 → 乐观行 local_send_state(pending/sending 统一显示「发送中」,failed 显示「未送达」)。
   function reflectState(record: OutboxRecord): void {
     if (!active) return
+    if (record.state === 'failed' && uploadAgain.delete(record.clientMessageId)) { wiring.retrySend(record.clientMessageId); return }
     const state = record.state === 'failed' ? 'failed' : 'sending'
     const patchRow = (m: MessageItem) =>
       m.id === record.clientMessageId ? { ...m, local_send_state: state as MessageItem['local_send_state'], local_send_error: record.lastError, local_send_retryable: retryable(record) } : m
@@ -346,7 +350,13 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
       let raw: Record<string, unknown> | undefined
       if (operation?.kind === 'attachment') {
         const timing = attachmentTimings.get(record.clientMessageId) ?? attachmentSendTiming(record.clientMessageId, record.chatId)
-        raw = await timing.stage('commit', record.attempts + 1, async () => commitAttachment(await attachmentsEndpoint(), operation.commit))
+        raw = await timing.stage('commit', record.attempts + 1, async () => commitAttachment(await attachmentsEndpoint(), operation.commit)).catch((error: unknown) => {
+          if (!(error instanceof AttachmentsError) || error.route !== 'commit' || error.code !== 'expired') throw error
+          // The upload's permit lapsed (a resend long after the first try): its bytes must go up again. If this run still
+          // holds the file, that happens at once as the same row; otherwise the row asks for the file again.
+          if (uploadRetries.has(record.clientMessageId)) uploadAgain.add(record.clientMessageId)
+          throw new UploadAgainError()
+        })
       }
       if (operation?.kind === 'nativeAttachment') throw new Error('Native publication must remain outside the delivery lane')
       if (operation?.kind === 'forward' && operation.source.kind === 'file') {
@@ -395,7 +405,9 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     async stageAttachment(message, dependsOn) {
       await outbox.stageUpload(outboxRecordForMessage(message, { kind: 'upload' }, dependsOn))
     },
-    async commitAttachment(message, prepared, commit, timing = attachmentSendTiming(message.id, message.chat_id), dependsOn) {
+    async commitAttachment(message, prepared, commit, timing = attachmentSendTiming(message.id, message.chat_id), dependsOn, uploadAgainWith) {
+      // The bytes stay in hand until the row is sent: a commit that finds its upload gone sends them again.
+      if (uploadAgainWith) uploadRetries.set(message.id, uploadAgainWith)
       attachmentTimings.set(message.id, timing)
       const operation: OutboxOperation = 'staging_key' in prepared
         ? { kind: 'attachment', commit: { ...commit, staging_key: prepared.staging_key } }
@@ -579,9 +591,11 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
       if (again) {
         void outbox.resumeUpload(clientMessageId).then((resumed) => {
           if (uploadRetries.get(clientMessageId) !== again) return
+          // Its bytes went up and only the commit failed: the ordinary retry resends that, keeping the bytes in hand in
+          // case that commit finds the upload gone.
+          if (!resumed) return outbox.retry(clientMessageId)
           uploadRetries.delete(clientMessageId)
-          // Its bytes went up and only the commit failed: the ordinary retry resends that.
-          if (resumed) again(); else return outbox.retry(clientMessageId)
+          again()
         }).catch((err) => { if (active) rendererLogger('chat/outbox').error({ messageId: clientMessageId, error: err }, 'upload retry failed') })
         return
       }
