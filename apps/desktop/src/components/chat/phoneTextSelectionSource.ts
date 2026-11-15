@@ -85,6 +85,10 @@ export function capturePhoneTextSelection(bubble: HTMLElement | null, x: number,
     current = parent
   }
   const clone = root.cloneNode(true) as HTMLElement
+  // Streamdown skips offscreen code blocks. The measuring clone must lay out their real text.
+  for (const element of [clone, ...clone.querySelectorAll<HTMLElement>('*')]) {
+    element.style.setProperty('content-visibility', 'visible', 'important')
+  }
   let copyNode: Node = clone
   for (const index of path) copyNode = copyNode.childNodes[index]
   let marker = 'GUGU_SELECTION_OFFSET'
@@ -111,5 +115,8 @@ export function capturePhoneTextSelection(bubble: HTMLElement | null, x: number,
     return word ? { text, ...word, browserRange: browserWordRange(root, node, offset, word.start - at, word.end - at), element: root } : null
   } finally {
     host.remove()
+    // Chromium may materialize an empty inline style during the measuring layout flush.
+    if (previousStyle === null) root.removeAttribute('style')
+    else root.setAttribute('style', previousStyle)
   }
 }
