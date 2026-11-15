@@ -17,6 +17,7 @@ import type { AgentRunningStateKey } from '../lib/agentRunningVerb'
 import { Popover } from './ui/Popover'
 import { Chip } from './ui/Chip'
 import { MessagePreviewCard } from './MessagePreviewCard'
+import { settleRunningTokenFit } from './runningTokenFit'
 
 export interface RunningToken {
   id: string
@@ -223,10 +224,14 @@ export function RunningTokenBar({ tokens, onTokenClick, testId, previewChatId }:
     const el = boxRef.current
     if (!el) return
     const pills = [...el.querySelectorAll<HTMLElement>('.rtb-bar > [data-message-preview-trigger]')]
-    const fit = () => fitCount(el.clientWidth, pills.map(pill => pill.offsetWidth), el.querySelector<HTMLElement>('.rtb-more')?.offsetWidth ?? 0)
+    const fit = (more = el.querySelector<HTMLElement>('.rtb-more')?.offsetWidth ?? 0) => fitCount(el.clientWidth, pills.map(pill => pill.offsetWidth), more)
     const observer = new ResizeObserver(() => {
-      // A wider +N fits fewer pills and more pills make +N narrower, so successive passes move one way and stop.
-      for (let next = fit(), shown = Number.NaN; next !== shown; shown = next, next = fit()) flushSync(() => setFitted(next))
+      // Without the counter, this is an upper bound. Test each smaller prefix
+      // with its real counter; a narrower +11 must not send us back to +10.
+      settleRunningTokenFit(fit(0), (visible) => {
+        flushSync(() => setFitted(visible))
+        return fit()
+      })
     })
     observer.observe(el)
     pills.forEach(pill => observer.observe(pill))

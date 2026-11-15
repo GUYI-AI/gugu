@@ -5,6 +5,7 @@ import {
 } from '@gugu/session-plugins/integrations';
 import { issuesPluginRegistry } from '@gugu/session-plugins/issues';
 import type { IssueProviderCapabilities } from '@shared/issue-providers';
+import { supportedCliIntegrations, type CliExecutionHost } from '@shared/integration-cli-platform';
 
 function issueCapabilities(integrationId: string): IssueProviderCapabilities {
   const plugin = issuesPluginRegistry.get(integrationId);
@@ -108,8 +109,9 @@ function disconnectCredentialLabel(auth: IntegrationAuthDescriptor, locale: stri
 /** 连上以后 agent 能不能直接用它(见 session-integrations 的 `integrationReachesAgent`)。 */
 export type ReachesAgent = (integrationId: string) => boolean;
 
-export function buildIntegrationListPayload(locale?: string, custodyOf?: CustodyOf, reachesAgent?: ReachesAgent) {
-  return integrationPluginRegistry.getAll().map((plugin) => ({
+export function buildIntegrationListPayload(locale?: string, custodyOf?: CustodyOf, reachesAgent?: ReachesAgent,
+  host: CliExecutionHost | null = { platform: process.platform, arch: process.arch }) {
+  return supportedCliIntegrations(integrationPluginRegistry.getAll().map((plugin) => ({
     id: plugin.metadata.id,
     name: plugin.metadata.name,
     description: pick(plugin.metadata.description, locale),
@@ -129,5 +131,5 @@ export function buildIntegrationListPayload(locale?: string, custodyOf?: Custody
     multiAccount: plugin.metadata.multiAccount ?? false,
     // 资源库分组用:false = 只在咕咕界面里用(issue 关联、GitHub 的项目与 PR),agent 调不到。没给判定 = 不说。
     ...(reachesAgent ? { agentUse: reachesAgent(plugin.metadata.id) } : {}),
-  }));
+  })), host);
 }

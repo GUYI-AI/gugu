@@ -261,14 +261,15 @@ function remarkLiteralizeUntrusted(options: { keepImages?: boolean } = {}) {
 
 /** A `\n` inside a text node becomes a `break` (a typed Shift+Enter is an intended line break). */
 function remarkHardBreaks() {
-  return (tree: Root) => {
+  return (tree: Root, file: { value: unknown }) => {
     const visit = (parent: Parent) => {
       parent.children = parent.children.flatMap((child) => {
         const node = child as Nodes;
         if (node.type === 'text' && node.value.includes('\n')) {
-          return node.value.split('\n').flatMap((part, i) => {
+          const positions = hardBreakPositions(node, String(file.value));
+          return node.value.split(/\r?\n/).flatMap((part, i) => {
             const out: RootContent[] = i > 0 ? [{ type: 'break' }] : [];
-            if (part) out.push({ type: 'text', value: part });
+            if (part) out.push({ type: 'text', value: part, ...(positions?.[i] ? { position: positions[i] } : {}) });
             return out;
           });
         }
@@ -278,6 +279,31 @@ function remarkHardBreaks() {
     };
     visit(tree);
   };
+}
+
+/** A decoded newline entity adds a display break but stays on its original source line. */
+function hardBreakPositions(node: Text, source: string): Text['position'][] | undefined {
+  const start = node.position?.start, end = node.position?.end;
+  if (start?.offset === undefined || end?.offset === undefined) return undefined;
+  const raw = source.slice(start.offset, end.offset);
+  const positions: Text['position'][] = [];
+  let point = start, previous = 0;
+  for (const match of raw.matchAll(/\r\n|\r|\n|&(?:NewLine|#0*10|#[xX]0*[aA]);/g)) {
+    if (match[0].startsWith('&')) {
+      let slashes = 0;
+      for (let i = match.index - 1; i >= 0 && raw[i] === '\\'; i--) slashes++;
+      if (slashes % 2) continue;
+    }
+    const at = { line: point.line, column: point.column + match.index - previous, offset: start.offset + match.index };
+    positions.push({ start: point, end: at });
+    const next = match.index + match[0].length;
+    point = match[0].startsWith('&')
+      ? { line: at.line, column: at.column + match[0].length, offset: start.offset + next }
+      : { line: at.line + 1, column: 1, offset: start.offset + next };
+    previous = next;
+  }
+  positions.push({ start: point, end });
+  return positions.length === node.value.split(/\r?\n/).length ? positions : undefined;
 }
 
 /** Frontmatter is shown as a yaml code block — never as a setext heading (#5375). */

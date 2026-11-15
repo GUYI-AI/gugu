@@ -433,7 +433,7 @@ describe('cliLoginWait —— 记录与命令同进同退', () => {
 
   it('命令放不上 PATH → 撤回记录,失败带原因(❌ 记着连着、agent 却敲不到)', async () => {
     fake.publishFails = true;
-    await expect(startAndExit(new IntegrationConnectionService())).resolves.toEqual({ status: 'failed', error: 'disk full' });
+    await expect(startAndExit(new IntegrationConnectionService())).resolves.toEqual({ status: 'failed', error: '磁盘空间不足，请清理后重试。' });
     expect(fake.records.has('dingtalk')).toBe(false);
   }, TIMEOUT);
 
@@ -441,7 +441,7 @@ describe('cliLoginWait —— 记录与命令同进同退', () => {
     fake.storeFails = true;
     await expect(startAndExit(new IntegrationConnectionService())).resolves.toEqual({
       status: 'failed',
-      error: 'secure storage unavailable',
+      error: '无法保存授权信息，请检查安全存储后重试。',
     });
     expect(fake.launchers.size).toBe(0);
   }, TIMEOUT);
@@ -496,7 +496,7 @@ describe('飞书已验证的个人登录复用', () => {
   it('复用路径的启动器发布失败也必须撤回连接记录', async () => {
     configured();
     fake.publishFails = true;
-    await expect(new IntegrationConnectionService().cliLoginStart('feishu')).resolves.toEqual({ success: false, error: 'disk full' });
+    await expect(new IntegrationConnectionService().cliLoginStart('feishu')).resolves.toEqual({ success: false, error: '磁盘空间不足，请清理后重试。' });
     expect(fake.records.has('feishu')).toBe(false);
     expect(fake.launchers.size).toBe(0);
   });

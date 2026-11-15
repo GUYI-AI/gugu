@@ -88,6 +88,29 @@ describe('attachment ownership transfers to the durable chat outbox', () => {
     expect(f.commitAttachment.mock.calls[1][0]).toBe(first)
     expect(upload.mock.calls.map(([, file]) => file.name)).toEqual(['photo.png', 'second.pdf', 'photo.png'])
   })
+  it('reuses the selected File and source message after a transient upload loss, publishing only once', async () => {
+    vi.useFakeTimers()
+    try {
+      const f = fixture()
+      const file = f.args.files[0]
+      upload.mockRejectedValueOnce(new TypeError('upload connection lost'))
+      const done = sendAttachmentBatch(f.args)
+      await vi.waitFor(() => expect(upload).toHaveBeenCalledOnce())
+      expect(f.commitAttachment).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(500)
+      const id = await done
+      expect(upload).toHaveBeenCalledTimes(2)
+      const sources = upload.mock.calls.map(([, selected]) => selected as { bytes: File; name: string; contentType: string })
+      for (const source of sources) {
+        expect(source.bytes).toBe(file)
+        expect(source.name).toBe(file.name)
+        expect(source.contentType).toBe(file.type)
+      }
+      expect(f.stageAttachment).toHaveBeenCalledOnce()
+      await vi.waitFor(() => expect(f.commitAttachment).toHaveBeenCalledOnce())
+      expect(f.commitAttachment.mock.calls[0][0].id).toBe(id)
+    } finally { vi.useRealTimers() }
+  })
   it('cleans earlier upload markers if staging a later file fails', async () => {
     const f = fixture()
     f.stageAttachment.mockResolvedValueOnce().mockRejectedValueOnce(new Error('disk full'))
