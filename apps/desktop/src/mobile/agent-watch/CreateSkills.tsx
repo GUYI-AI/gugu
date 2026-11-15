@@ -25,7 +25,7 @@ export function CreateSkillsList({ deviceId, phone, harness, projectId, search, 
 }) {
   const { t } = useTranslation('mobileCreateControls')
   const state = useReadModel(creationSkills, deviceId && harness && !phone ? [deviceId, harness, projectId] : null)
-  if (phone) return null
+  if (phone) return <p role="status" className="gg-phone-composer-sheet-status">{t('failedSkills')}</p>
   if (!deviceId || !harness || state.state === 'unknown') return <p role="status" className="gg-phone-composer-sheet-status">{t('loadingSkills')}</p>
   const retry = <div className="gg-phone-composer-sheet-status" role="alert">{t('failedSkills')}
     <Button variant="ghost" size="sm" onClick={() => void creationSkills.refresh(deviceId, harness, projectId)}>{t('retry')}</Button></div>

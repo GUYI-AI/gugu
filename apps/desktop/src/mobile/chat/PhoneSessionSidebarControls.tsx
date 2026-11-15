@@ -1,30 +1,41 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
 import { Avatar } from '@/components/Avatar'
 import { Button } from '@/components/ui/Button'
 import { Hash, Users, ChevronRight } from '@/lib/icons'
 import { followLink } from '@/lib/guguLinks'
-import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../composer/PhoneComposerControls'
+import { PhoneComposerControl, PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { preserveComposerFocus } from '../composer/composer-focus'
 import { openPhoneSidebarSession } from './phone-sidebar-navigation'
+import { CreateTarget, type ExistingSessionModel } from '../agent-watch/CreateTarget'
+import type { useCreationSkillDraft } from '../agent-watch/create-skill-draft'
+import { engineLabel } from '@/lib/usage/engineLabel'
 import type { PhoneSessionSidebarModel } from './usePhoneSessionSidebar'
 import './room-composer-catalog'
 import './phone-room-composer.css'
 
-export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebarControls({ sidebar, modelControl }: { sidebar: PhoneSessionSidebarModel; modelControl?: ReactNode }) {
+export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebarControls({ sidebar, model, skillDraft }: { sidebar: PhoneSessionSidebarModel; modelControl?: ReactNode; model?: ExistingSessionModel; skillDraft?: ReturnType<typeof useCreationSkillDraft> }) {
   const { t } = useTranslation('mobileRoomControls')
-  const { anchor, listed, directory, identitiesById, families, source, topics, sessionId } = sidebar
+  const { anchor, listed, directory, devices, identitiesById, families, source, topics, sessionId } = sidebar
+  const agentsButton = useRef<HTMLButtonElement>(null)
+  const topicsButton = useRef<HTMLButtonElement>(null)
+  const current = directory.find(row => row.session.conversationId === sessionId)
+  const device = devices.find(one => one.device_id === current?.deviceId)
+  const machine = device ? { device, localProjectId: current?.session.projectId ?? '', path: '', available: device.is_online } : undefined
+  const harness = current?.session.harness ?? null
   const [view, setView] = useState<'agents' | 'topics' | null>(null)
   if (!anchor) return null
   const nextEntry = anchor.kind === 'agent' ? `session:${families.topLevelOf.get(anchor.agentUserId)?.[0]?.id ?? sessionId}` : `chat:${anchor.chatId}`
   return <div className="gg-phone-room-controls" data-testid="phone-session-sidebar-controls" data-anchor-kind={anchor.kind} data-anchor-chat={anchor.chatId}>
-    <PhoneComposerControlRow>
-      {source && <PhoneComposerControl label={t('topics')} icon={<Hash />} testId="phone-room-topics" onClick={() => setView('topics')} />}
-      <PhoneComposerControl label={t('agents')} icon={<Users />} testId="phone-room-agents" onClick={() => setView('agents')} />
-      {modelControl && <div className="gg-phone-room-model">{modelControl}</div>}
-    </PhoneComposerControlRow>
-    <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'agents')} testId="phone-room-controls-sheet" className="gg-phone-room-sheet">
+    <CreateTarget projects={[]} project={null} onProject={() => {}} machines={machine ? [machine] : []} machine={machine} onMachine={() => {}} machineLabel={one => one.label ?? one.hostname ?? ''} busy={false}
+      existingSession={{ agentName: harness ? engineLabel(harness) : '', model }}
+      configuration={{ options: null, selection: { harness, model: null, effort: null, permissionMode: null }, onChange: () => {}, models: null, modelsState: 'ready', skills: skillDraft?.skills ?? [], onSkills: next => skillDraft?.update(next) }}
+      controlsExtra={<>
+      {source && <PhoneComposerControl label={t('topics')} icon={<Hash />} testId="phone-room-topics" buttonRef={topicsButton} onClick={() => setView('topics')} />}
+      <PhoneComposerControl label={t('agents')} icon={<Users />} testId="phone-room-agents" buttonRef={agentsButton} onClick={() => setView('agents')} />
+      </>} />
+    <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'agents')} testId="phone-room-controls-sheet" className="gg-phone-room-sheet" anchor={view === 'topics' ? topicsButton : agentsButton}>
       {view === 'agents' ? listed.map(agent => {
         const row = directory.find(row => row.session.conversationId === agent.id)
         const identity = identitiesById[agent.agentUserId ?? '']

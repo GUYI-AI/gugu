@@ -1,4 +1,4 @@
-.gg-phone-room-controls { min-width: 0; margin-bottom: 4px; }
+.gg-phone-room-controls { min-width: 0; }
 .gg-phone-room-choice { width: 100%; min-height: 52px; height: auto; padding: 10px 8px; display: flex; align-items: center; gap: 10px; justify-content: flex-start; text-align: left; border: 0; border-radius: 10px; font-size: var(--font-body); }
 .gg-phone-room-choice > svg { flex: 0 0 20px; width: 20px; height: 20px; color: var(--text-secondary); }
 .gg-phone-room-choice-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -18,3 +18,7 @@
 
 .gg-phone-room-model { margin-left: auto; min-width: 0; flex: 0 1 auto; }
 .gg-phone-room-model [data-slot="composer-model"] > button { max-width: 100%; min-width: 0; }
+
+.gg-phone-existing-model { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 8px; }
+
+.gg-phone-existing-readonly { color: var(--text-secondary); }

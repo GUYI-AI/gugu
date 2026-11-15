@@ -9,12 +9,14 @@ import { Button } from '@/components/ui/Button'
 import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { CreateSkillSearch, CreateSkillsList } from './CreateSkills'
 import type { CreationSkill } from './create-skills'
+import type { ComposerModelOption } from '@gugu/session-ui/react/components'
 import { ModelChoices } from './CreateOptionsPill'
 import { harnessBlockReason, harnessUsable, selectHarness, selectedEffortName, selectedModelName, type CreateSelection } from './create-session-form'
 import type { CreateMachine, CreateProject } from './create-target'
 import './create-controls-catalog'
 import './task-flow-catalog'
 
+export type ExistingSessionModel = { options?: Record<string, ComposerModelOption> | null; selected?: string; onPick?: (id: string) => void }
 type View = 'device' | 'harness' | 'model' | 'effort' | 'permission' | 'project' | 'skills'
 export type CreationConfiguration = {
   options: SessionpageSessionCreateOptions | null; selection: CreateSelection
@@ -24,11 +26,13 @@ export type CreationConfiguration = {
 }
 
 /** The mobile creation row reads the same device, project and model catalogs as before. */
-export function CreateTarget({ projects, project, onProject, machines, machine, onMachine, machineLabel: label, busy, configuration, projectTask }: {
+export function CreateTarget({ projects, project, onProject, machines, machine, onMachine, machineLabel: label, busy, configuration, projectTask, existingSession, controlsExtra }: {
   projects: readonly CreateProject[]; project: CreateProject | null; onProject: (key: string | null) => void
   machines: readonly CreateMachine[]; machine: CreateMachine | undefined; onMachine: (deviceId: string) => void
   machineLabel: (device: CreateMachine['device']) => string; busy: boolean
   configuration?: CreationConfiguration; scopeChatId?: string | null
+  existingSession?: { agentName: string; model?: ExistingSessionModel }
+  controlsExtra?: ReactNode
   /** An in-place project task already owns its project; its folder determines the run device. */
   projectTask?: { onFolder: () => void }
 }) {
@@ -38,6 +42,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const [view, setView] = useState<View | null>(null)
   const [search, setSearch] = useState('')
   const modelButton = useRef<HTMLButtonElement>(null)
+  const skillsButton = useRef<HTMLButtonElement>(null)
   const selectedHarness = configuration?.options?.harnesses.find((h) => h.id === configuration.selection.harness)
   const modelName = configuration && (selectedModelName(configuration.models, configuration.selection)
     ?? (configuration.modelsState === 'loading' && (!configuration.models || configuration.models.harness !== configuration.selection.harness)
@@ -48,31 +53,36 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
   const skillCount = skillCatalog.state === 'value' ? skillCatalog.value.skills.length : null
   const title = view === 'project' ? t('project') : view === 'skills' ? skillCount === null ? t('skills') : t('skillsCount', { count: skillCount }) : t(view === 'device' || !view ? 'modelDevice' : view === 'harness' ? 'agent' : view)
   const select = (next: CreateSelection, modelPicked?: boolean) => { configuration?.onChange(next, modelPicked); setView('device') }
-  const compact = view !== 'project' && view !== 'skills'
+  const compact = !!existingSession || view !== 'project' && view !== 'skills'
   return <>
     <div className="gg-phone-create-controls" data-testid="agent-watch-create-target"><PhoneComposerControlRow>
       <PhoneComposerControl label={t('modelDevice')} icon={<DeviceIcon device={machine?.device} />} active={!!view && compact} disabled={busy}
         testId="agent-watch-create-model-device" buttonRef={modelButton} onClick={() => setView('device')} />
-      {projectTask ? <PhoneComposerControl label={t('folder')} icon={<Folder />} disabled={busy}
+      {!existingSession && (projectTask ? <PhoneComposerControl label={t('folder')} icon={<Folder />} disabled={busy}
           testId="agent-watch-create-folder" onClick={projectTask.onFolder} />
       : <PhoneComposerControl label={t('project')} icon={<Folder />} active={view === 'project'} disabled={busy}
-        testId="agent-watch-create-project" onClick={() => setView('project')} />}
-      {!phone && <PhoneComposerControl label={t('skills')} icon={<Sparkles />} active={view === 'skills'} disabled={busy || !machine?.available}
-        testId="agent-watch-create-skills" onClick={() => { setSearch(''); setView('skills') }} />}
+        testId="agent-watch-create-project" onClick={() => setView('project')} />)}
+      {(!phone || existingSession) && <PhoneComposerControl label={t('skills')} icon={<Sparkles />} active={view === 'skills'} disabled={busy || !machine?.available}
+        testId="agent-watch-create-skills" buttonRef={skillsButton} onClick={() => { setSearch(''); setView('skills') }} />}
+      {controlsExtra}
     </PhoneComposerControlRow></div>
-    <PhoneComposerSheet open={view !== null && !(phone && view === 'skills')} onClose={() => setView(null)} title={title}
-      anchor={compact ? modelButton : undefined} testId="agent-watch-create-controls-sheet"
+    <PhoneComposerSheet open={view !== null && !(phone && view === 'skills' && !existingSession)} onClose={() => setView(null)} title={title}
+      anchor={compact ? view === 'skills' ? skillsButton : modelButton : undefined} testId="agent-watch-create-controls-sheet"
       footer={view === 'skills' && skillCount !== null && skillCount > 0 ? <CreateSkillSearch search={search} onSearch={setSearch} /> : undefined}>
-      {view && compact && view !== 'device' && <Button variant="ghost" className="gg-phone-composer-choice" onClick={() => setView('device')}><ChevronLeft />{t('back')}</Button>}
+      {view && compact && view !== 'device' && view !== 'skills' && <Button variant="ghost" className="gg-phone-composer-choice" onClick={() => setView('device')}><ChevronLeft />{t('back')}</Button>}
       {view === 'device' && <>
+        {existingSession ? <Summary dimension="machine" title={t('device')} value={machine ? label(machine.device) : tf('noMachine')} readOnly onClick={() => {}} /> : <>
         <div className="gg-phone-composer-section-label">{t('device')}</div>
         {machines.map((row) => <Choice key={row.device.device_id} id={row.device.device_id} dimension="machine" name={label(row.device)}
           icon={<DeviceIcon device={row.device} />} description={row.available ? row.path : tf('noFolderHere')}
-          selected={machine?.device.device_id === row.device.device_id} disabled={!row.available || busy} onClick={() => onMachine(row.device.device_id)} />)}
+          selected={machine?.device.device_id === row.device.device_id} disabled={!!existingSession || !row.available || busy} onClick={() => onMachine(row.device.device_id)} />)}
         {!machines.length && <p className="gg-phone-composer-sheet-status">{tf('noMachine')}</p>}
-        {!phone && <Summary dimension="harness" title={t('agent')} value={selectedHarness?.name ?? tf('noMachine')} disabled={!configuration?.options} onClick={() => setView('harness')} />}
-        <Summary dimension="model" title={t('model')} value={modelName || tm('agentWatch.create.modelDefault')}
-          disabled={!configuration?.options} onClick={() => setView('model')} />
+        </>}
+        {(!phone || existingSession) && <Summary dimension="harness" title={t('agent')} value={existingSession?.agentName ?? selectedHarness?.name ?? tf('noMachine')} readOnly={!!existingSession} disabled={!configuration?.options} onClick={() => setView('harness')} />}
+        <Summary dimension="model" title={t('model')} value={existingSession
+          ? existingSession.model?.options?.[existingSession.model.selected ?? '']?.shortName ?? existingSession.model?.options?.[existingSession.model.selected ?? '']?.name ?? tm('agentWatch.create.modelDefault')
+          : modelName || tm('agentWatch.create.modelDefault')}
+          disabled={existingSession ? !Object.keys(existingSession.model?.options ?? {}).length : !configuration?.options} onClick={() => setView('model')} />
         {!!configuration?.models?.efforts.length && <Summary dimension="effort" title={t('effort')} value={selectedEffortName(configuration.models, configuration.selection) ?? tm('agentWatch.create.modelDefault')} onClick={() => setView('effort')} />}
         {!phone && !!selectedHarness?.permissionModes.length && <Summary dimension="permission" title={t('permission')} value={configuration?.selection.permissionMode ? tm(`agentWatch.create.permission.${configuration.selection.permissionMode}.name`) : tm('agentWatch.create.modelDefault')} onClick={() => setView('permission')} />}
       </>}
@@ -81,14 +91,14 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
         {projects.map((one) => <Choice key={one.chatId} id={one.chatId} dimension="project" name={one.name} icon={<Folder />} selected={project?.chatId === one.chatId}
           onClick={() => { onProject(one.chatId); setView(null) }} />)}
       </div>}
-      {view === 'harness' && configuration?.options && <div role="radiogroup">
+      {!existingSession && view === 'harness' && configuration?.options && <div role="radiogroup">
         {configuration.options.harnesses.map((one) => { const reason = harnessBlockReason(one); return <Choice key={one.id} id={one.id} dimension="harness" name={one.name}
           selected={configuration.selection.harness === one.id} disabled={!harnessUsable(one)} description={reason ? tm(`agentWatch.create.harnessStatus.${reason}`) : null}
           onClick={() => select(selectHarness(configuration.selection, one.id, configuration.options!))} /> })}
       </div>}
-      {view === 'model' && configuration && <ModelChoices models={configuration.models} state={configuration.modelsState} selection={configuration.selection}
+      {view === 'model' && configuration && <ModelChoices sessionOptions={existingSession?.model?.options ?? undefined} models={configuration.models} state={configuration.modelsState} selection={existingSession ? { ...configuration.selection, model: existingSession.model?.selected ?? null } : configuration.selection}
         harnessName={phone ? tf('phoneAgent') : selectedHarness?.name ?? configuration.selection.harness ?? ''} platformOnly={phone || selectedHarness?.chatAvailable === true && !selectedHarness.watchable}
-        onPick={(model) => select({ ...configuration.selection, model }, true)} onLeave={() => setView(null)} />}
+        onPick={(model) => { if (existingSession) { if (model !== null) existingSession.model?.onPick?.(model); setView('device') } else select({ ...configuration.selection, model }, true) }} onLeave={() => setView(null)} />}
       {view === 'effort' && configuration && <div role="radiogroup">
         <Choice id="" dimension="effort" name={tm('agentWatch.create.modelDefault')} selected={!configuration.selection.effort} onClick={() => select({ ...configuration.selection, effort: null })} />
         {configuration.models?.efforts.map((one) => <Choice key={one.id} id={one.id} dimension="effort" name={one.name} description={one.description}
@@ -120,8 +130,11 @@ function Choice({ id, dimension, name, description, icon, selected, disabled, on
       {description && <span className="gg-phone-composer-choice-description">{description}</span>}</span>{selected && <Check />}
   </Button>
 }
-function Summary({ dimension, title, value, disabled, onClick }: { dimension: string; title: string; value: string; disabled?: boolean; onClick: () => void }) {
-  return <Button variant="ghost" className="gg-phone-composer-choice" disabled={disabled} data-testid="agent-watch-create-options-drill" data-dimension={dimension} onClick={onClick}>
-    <span>{title}</span><span className="gg-phone-composer-choice-description gg-phone-composer-summary-value">{value}</span><ChevronRight />
+function Summary({ dimension, title, value, disabled, readOnly, onClick }: { dimension: string; title: string; value: string; disabled?: boolean; readOnly?: boolean; onClick: () => void }) {
+  if (readOnly) return <div className="gg-phone-composer-choice gg-phone-existing-readonly" data-testid="agent-watch-create-readonly" data-dimension={dimension}>
+    <span>{title}</span><span className="gg-phone-composer-summary-value">{value}</span>
+  </div>
+  return <Button variant="ghost" className="gg-phone-composer-choice" disabled={disabled || readOnly} data-testid="agent-watch-create-options-drill" data-dimension={dimension} onClick={onClick}>
+    <span>{title}</span><span className="gg-phone-composer-choice-description gg-phone-composer-summary-value">{value}</span>{!readOnly && <ChevronRight />}
   </Button>
 }

@@ -43,7 +43,7 @@ export function usePhoneSessionSidebar({ sessionId, entry }: { sessionId: string
   const listed = anchor ? columnAgents(anchor, families, summaries, rows, scope) : []
   const source = anchor && anchor.kind !== 'agent' ? anchor.chatId : null
   const topics = useTopicsOfChat(source, subscribeAccountRevision)
-  return { anchor, listed, directory, identitiesById, families, source, topics, sessionId }
+  return { anchor, listed, directory, devices, identitiesById, families, source, topics, sessionId }
 }
 
 export type PhoneSessionSidebarModel = ReturnType<typeof usePhoneSessionSidebar>
