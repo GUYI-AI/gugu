@@ -221,6 +221,7 @@ function LinkSignIn({
   onSuccessRef.current = onSuccess;
   const remoteDeviceId = remote?.deviceId ?? null;
 
+  // @@@effect-flow - starting the sign-in this window runs.
   useEffect(() => {
     let disposed = false;
     let stop: (() => void) | null = null;

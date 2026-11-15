@@ -10,7 +10,8 @@ const frontendConnect = vi.hoisted(() => vi.fn());
 const frontendDispose = vi.hoisted(() => vi.fn());
 const getAppSettingValueSnapshot = vi.hoisted(() => vi.fn());
 
-vi.mock('@renderer/features/settings/app-settings-client', () => ({
+vi.mock('@renderer/features/settings/app-settings-client', async (original) => ({
+  ...await original<object>(),
   getAppSettingValueSnapshot,
 }));
 

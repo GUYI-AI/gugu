@@ -2,6 +2,8 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { notifyManager as readModelNotify } from '@tanstack/react-query'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
 import { DevicesSection } from '@/components/settings/DevicesSection'
 import { Sheet } from '@/components/ui/Sheet'
 import { SessionLocalizationProvider } from '@/session/renderer/localization/localization-provider'
@@ -67,7 +69,7 @@ async function openMenuItem(testId: string, row = 0): Promise<void> {
 }
 let container: HTMLDivElement
 let root: Root
-beforeEach(() => {
+beforeEach(() => { readModelNotify.setScheduler((callback) => { callback() }); queryClient.clear(); followRendererSession('SIGNED_IN', 'user-1');
   restartNow.mockClear()
   retryMatch.mockClear()
   container = document.createElement('div')

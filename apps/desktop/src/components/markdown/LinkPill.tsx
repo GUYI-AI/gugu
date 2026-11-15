@@ -1,9 +1,8 @@
 import type { ComponentPropsWithoutRef, MouseEvent, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQuery } from '@tanstack/react-query'
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
 import { widgetMessagePreview } from '@gugu/core/shared/ui/widgetModels'
-import { attachmentQuery, attachmentQueryClient } from '../../lib/attachmentQueryClient'
+import { readModel, useReadModel } from '../../lib/readModel'
 import { fileMetadata } from '../../lib/fileAccess'
 import { chatService } from '../../lib/chat'
 import { useChatStore } from '../../store/chatContext'
@@ -13,9 +12,11 @@ import { GroupFileName } from './GroupFileName'
 import { MentionPill } from './MentionPill'
 import { linkPillTarget } from './linkPills'
 
-// Reads are key-only (attachmentQueryClient).
-const fileQuery = attachmentQuery('link-pill-file', (_accountId: string, itemId: string, version: number | null) => fileMetadata(itemId, version ?? undefined))
-const messageQuery = attachmentQuery('link-pill-message', (accountId: string, messageId: string) => chatService.getMessageById(messageId, accountId))
+// Reads are key-only read models (lib/readModel).
+const linkedFile = readModel({ name: 'link-pill-file', scope: 'account', keep: 5 * 60_000,
+  read: (_accountId, itemId: string, version: number | null) => fileMetadata(itemId, version ?? undefined) })
+const linkedMessage = readModel({ name: 'link-pill-message', scope: 'account', keep: 5 * 60_000,
+  read: (accountId, messageId: string) => chatService.getMessageById(messageId, accountId) })
 
 type DrawProps = {
   href: string
@@ -36,12 +37,13 @@ export function LinkPill(props: DrawProps & { accountId: string }) {
   return <>{props.children}</>
 }
 
-function FilePill({ href, onClick, children, rest, accountId, itemId, version }: DrawProps & { accountId: string; itemId: string; version?: number }) {
+function FilePill({ href, onClick, children, rest, itemId, version }: DrawProps & { accountId: string; itemId: string; version?: number }) {
   const { t } = useTranslation('messaging')
-  const read = useQuery(fileQuery(accountId, itemId, version ?? null), attachmentQueryClient)
-  const ready = read.data?.status === 'ready' ? read.data.revision : null
-  const reason = read.isError ? t('attachmentView.fileUnavailable')
-    : read.data && read.data.status !== 'ready' ? t(read.data.status === 'gone' ? 'attachmentView.fileGone' : read.data.status === 'expired' ? 'attachmentView.fileExpired' : 'attachmentView.fileMissing')
+  const reading = useReadModel(linkedFile, [itemId, version ?? null])
+  const file = reading.state === 'value' ? reading.value : null
+  const ready = file?.status === 'ready' ? file.revision : null
+  const reason = reading.state === 'error' ? t('attachmentView.fileUnavailable')
+    : file && file.status !== 'ready' ? t(file.status === 'gone' ? 'attachmentView.fileGone' : file.status === 'expired' ? 'attachmentView.fileExpired' : 'attachmentView.fileMissing')
       : ready?.source === 'local' && ready.host_online === false ? t('attachmentView.holderOffline', { machine: ready.host_label ?? t('attachmentView.holderMachine') }) : null
   // Named the way the file list names it (GroupFileName, 摩擦单 F39): the file's own name once read, the link's words before.
   const name = ready?.file_name ?? (typeof children === 'string' ? children : null)
@@ -50,10 +52,11 @@ function FilePill({ href, onClick, children, rest, accountId, itemId, version }:
   </MentionPill>
 }
 
-function ChatPill({ href, onClick, children, rest, accountId, chatId, messageId }: DrawProps & { accountId: string; chatId: string; messageId?: string }) {
+function ChatPill({ href, onClick, children, rest, chatId, messageId }: DrawProps & { accountId: string; chatId: string; messageId?: string }) {
   const { t } = useTranslation('messaging')
   const { chats, identitiesById } = useChatStore('chats', 'identitiesById')
-  const message = useQuery({ ...messageQuery(accountId, messageId ?? ''), enabled: !!messageId }, attachmentQueryClient)
+  const reading = useReadModel(linkedMessage, messageId ? [messageId] : null)
+  const message = { data: reading.state === 'value' ? reading.value : undefined, isError: reading.state === 'error', isSuccess: reading.state === 'value' }
   let label: ReactNode = children
   let unavailable = false
   if (messageId) {

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Device } from '@gugu/core/shared/types/chat'
+// The read model reads for the signed-in account, as the product publishes it.
+;(await import('../../../../apps/desktop/src/lib/readModel')).followRendererSession('SIGNED_IN', 'owner')
 
 const network = vi.hoisted(() => ({ open: vi.fn(), close: vi.fn(), warn: vi.fn(), usable: false, restart: () => undefined as void }))
 vi.mock('@/lib/remoteSessionHost', () => ({ openPhoneSessionHostPipe: () => Object.assign(network.open, {
@@ -34,7 +36,7 @@ it.each(['advertised-version', 'new-version-after-unknown', 'host-ready-without-
   const { fetchCreateOptions } = await import('@/mobile/agent-watch/sessionpage-rpc')
   const id = 'version-peer-' + signal
   const device = (version: string | null, online = true) => ({ device_id: id, is_online: online, label: 'fixture', capabilities: version ? { app_version: version } : {} }) as Device
-  const writeCurrent = (version: string | null, online = true) => writeCachedDevices('owner', [
+  const writeCurrent = (version: string | null, online = true) => writeCachedDevices([
     ...['advertised-version', 'new-version-after-unknown', 'host-ready-without-version']
       .filter(other => other !== signal)
       .map(other => ({ device_id: 'version-peer-' + other, is_online: false, label: 'fixture', capabilities: {} }) as Device),

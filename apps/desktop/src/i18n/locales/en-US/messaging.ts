@@ -1,4 +1,5 @@
 export default {
+  "fileAnnotation": { "addToChat": "Add to chat", "optionalComment": "Add an optional comment…", "comment": "Comment", "line": "Line {{start}}", "lines": "Lines {{start}}–{{end}}", "selectLine": "Select line {{line}}", "failed": "Could not save the comment. Try again." },
   "agent": {
     "identity": {
       "phone": "Phone Agent",
@@ -537,6 +538,7 @@ export default {
       "separator": ", "
     },
     "notice": {
+      "migrationPlaceholder": "This message was not migrated.",
       "agentFloodGroup": "This group has many agents, so they now reply only when @-mentioned.",
       "agentFloodTopic": "This topic has many agents, so they now reply only when @-mentioned.",
       "left": "{{actor}} left the group",

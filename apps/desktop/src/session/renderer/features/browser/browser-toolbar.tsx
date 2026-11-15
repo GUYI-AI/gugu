@@ -67,6 +67,7 @@ export function BrowserToolbar({
   onFitToWidth,
   onFocusUrl,
   remote = false,
+  annotationAction,
 }: {
   session: BrowserSessionSnapshot;
   adapter: BrowserWebviewAdapter | null;
@@ -85,13 +86,15 @@ export function BrowserToolbar({
    * here, and none of the actions menu (screenshot, profile, zoom, data) applies to it.
    */
   remote?: boolean;
+  annotationAction?: ReactNode;
 }) {
   const [urlText, setUrlText] = useState(browserUrlInputText(session.currentUrl));
   const [urlError, setUrlError] = useState<string | null>(null);
   const [failedFaviconUrl, setFailedFaviconUrl] = useState<string | null>(null);
   const urlInputRef = useRef<HTMLInputElement | null>(null);
   const { translate } = useSessionMessages();
-  const { value: browserSettings } = useAppSettingsKey('browser');
+  const { settings: browserSettingsReading } = useAppSettingsKey('browser');
+  const browserSettings = browserSettingsReading.state === 'value' ? browserSettingsReading.value.value : undefined;
   const profiles = browserSettings?.profiles ?? DEFAULT_BROWSER_PROFILES;
   const profileLabel = browserProfileLabel(session.profileId, profiles);
   const faviconUrl =
@@ -182,6 +185,7 @@ export function BrowserToolbar({
       >
         {session.isLoading ? <Square className="size-4" /> : <Reload className="size-4" />}
       </ToolbarIconButton>
+      {annotationAction}
       <form
         className="min-w-0 flex-1"
         onSubmit={(event) => {

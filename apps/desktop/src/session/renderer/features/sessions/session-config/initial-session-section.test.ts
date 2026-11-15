@@ -38,7 +38,7 @@ import { buildInitialSession } from '../create-session-modal/build-create-sessio
 import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/library/library-host';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { runInAction } from 'mobx';
-import { queryClient } from '@renderer/lib/query-client';
+import { queryClient } from '@/lib/readModel';
 import { notifyManager } from '@tanstack/react-query';
 // Deliver query results in the same task they resolve in, so a test's flush sees them.
 notifyManager.setScheduler((callback) => callback());
@@ -526,7 +526,8 @@ vi.mock('@renderer/features/settings/use-app-settings-key', async () => {
   const { useSyncExternalStore } = await import('react');
   return {
     useAppSettingsKey: (key: string) => ({
-      value: useSyncExternalStore(settingsStore.subscribe, () => settingsStore.get(key)),
+      settings: ((value: unknown) => value === undefined ? { state: 'unknown' } : { state: 'value', value: { value, defaults: value, overrides: {} }, stale: false, error: null })(
+        useSyncExternalStore(settingsStore.subscribe, () => settingsStore.get(key))),
       update: (partial: Record<string, unknown>) => settingsStore.set(key, { ...((settingsStore.get(key) as object | undefined) ?? {}), ...partial }),
       updateAsync: async (partial: Record<string, unknown>) => {
         if (settingsStore.failure) throw settingsStore.failure;
@@ -536,11 +537,12 @@ vi.mock('@renderer/features/settings/use-app-settings-key', async () => {
   };
 });
 // 新任务框给不给「终端 | 通用」跟本机开关(应用设置 terminal.enabled)走:同一份内存设置里的 `terminal`。
-vi.mock('@renderer/features/settings/use-terminal-enabled', async () => {
+vi.mock('@renderer/features/settings/use-terminal-enabled', async (original) => {
   const { useSyncExternalStore } = await import('react');
   return {
-    useTerminalEnabled: () =>
-      useSyncExternalStore(settingsStore.subscribe, () => (settingsStore.get('terminal') as { enabled?: boolean | null } | undefined)?.enabled === true),
+    ...await original<object>(),
+    useTerminalEnabled: () => ({ state: 'value', stale: false, error: null,
+      value: useSyncExternalStore(settingsStore.subscribe, () => (settingsStore.get('terminal') as { enabled?: boolean | null } | undefined)?.enabled === true) }),
   };
 });
 const EMPTY_MEMORY = { lastPicked: null, lastStarted: null, sessionView: 'code' as const };

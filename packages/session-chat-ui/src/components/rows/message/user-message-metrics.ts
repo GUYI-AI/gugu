@@ -26,7 +26,7 @@ export function measureUserMessage(item: ChatMessage, ctx: MeasureCtx, baseVars:
 export function userBubbleBox(item: ChatMessage, ctx: MeasureCtx, baseVars: MessageVars): { bottom: number; width: number; drawn: boolean } {
   const vars = effectiveMessageVars(baseVars, ctx.theme.layout);
   const available = userAvailableWidth(ctx.width, ctx.theme.layout);
-  const strip = attachStripHeight(item.attachments?.length ?? 0, available, vars);
+  const strip = attachStripHeight(item.attachments, available, vars);
   if (!item.guguDelivery && isMessageEditing(item.id, ctx)) return { bottom: strip + messageEditorMetrics(ctx.editingMessage!.text, ctx).height, width: available, drawn: false };
   const inner = userInnerWidth(available, vars);
   const destination = conversationDestinationLayout(item, ctx, inner);
@@ -49,7 +49,7 @@ function userBubbleBody(item: ChatMessage, ctx: MeasureCtx, inner: number): { wi
 export function estimateUserMessage(item: ChatMessage, ctx: MeasureCtx, baseVars: MessageVars): number {
   const vars = effectiveMessageVars(baseVars, ctx.theme.layout);
   const available = userAvailableWidth(ctx.width, ctx.theme.layout);
-  const attachments = attachStripHeight(item.attachments?.length ?? 0, available, vars) + inputSendStatusHeight(item);
+  const attachments = attachStripHeight(item.attachments, available, vars) + inputSendStatusHeight(item);
   if (!item.guguDelivery && isMessageEditing(item.id, ctx)) {
     return attachments + messageEditorMetrics(ctx.editingMessage!.text, ctx).height;
   }

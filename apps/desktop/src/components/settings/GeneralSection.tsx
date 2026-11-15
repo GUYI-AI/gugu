@@ -12,8 +12,7 @@ import type { SystemPermission } from '../../platform/types'
 import { setNotificationSettings, useNotificationSettings, type NotificationSettings } from '../../lib/notificationSettings'
 import { setTrayBadgeEnabled, useTrayBadgeEnabled } from '../../lib/trayBadgeSetting'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
-import { QueryClientProvider } from '@tanstack/react-query'
-import { queryClient } from '@renderer/lib/query-client'
+import { Unknown } from '../ui/Unknown'
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
 import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled'
 import { HelpImproveSettingGroup } from '../HelpImprove'
@@ -151,7 +150,7 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
 
       {/* @@@5301 通知。这一节**只管咕咕主界面这条链**(聊天新消息 + IM 侧 agent 会话的运行事件);
           会话页 agent 的通知是另一条独立的链、归任务设置面板。两个面板是既定结构,❌ 不要合并。 */}
-      <SettingsGroup
+      {(platform.kind !== 'capacitor' || platform.capabilities.notifications) && <SettingsGroup
         title={t('settings.general.notifications')}
         note={t('settings.general.notificationsScope')}
         footer={notificationHint !== null ? (
@@ -211,15 +210,12 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
             </Button>
           )}
         />
-      </SettingsGroup>
+      </SettingsGroup>}
 
       {/* 终端开关:默认关,普通用户不需要知道终端是什么。开着 = 终端的入口与界面全部回来、新任务走编程;
           它取代了原来的「通用 / 编程」手动切换。只管人看不看得到,❌ 管 agent 自己跑 pty。
-          手机上没有本机的会话运行时,不出现。壳的设置页不在会话页的 QueryClientProvider 里:套同一个 queryClient,
-          与会话页读的是同一份缓存,拨了那边立刻跟着变。 */}
-      {platform.capabilities.agentRuntime ? (
-        <QueryClientProvider client={queryClient}><TerminalGroup /></QueryClientProvider>
-      ) : null}
+          手机上没有本机的会话运行时,不出现。与会话页读的是同一个设置读模型,拨了那边立刻跟着变。 */}
+      {platform.capabilities.agentRuntime ? <TerminalGroup /> : null}
 
       {/* @@@5295 托盘角标。它数的是**未读聊天消息**(#6433),但它是窗口外观不是通知,所以自成一组 ——
           ❌ 别并进上面的通知组:关掉角标不等于关掉通知,反过来也是。
@@ -255,13 +251,13 @@ function TerminalGroup() {
       <SettingsRow
         title={t('settings.general.terminal')}
         description={t('settings.general.terminalDescription')}
-        control={(
+        control={enabled.state === 'value' ? (
           <Toggle
-            checked={enabled}
+            checked={enabled.value}
             onChange={(next) => update({ enabled: next })}
             ariaLabel={t('settings.general.terminal')}
           />
-        )}
+        ) : <Unknown className="h-5 w-8 flex-none rounded-[var(--radius-capsule)]" />}
       />
     </SettingsGroup>
   )

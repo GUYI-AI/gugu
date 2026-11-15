@@ -45,7 +45,7 @@ const { authUser, authOverride, contactsServiceMock, revisionHandlers, listManag
 })
 
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: authOverride.current ?? authUser, loading: false }) }))
-vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => chatStore }))
+vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => chatStore, useChatStoreReader: () => () => chatStore, useStoreValueBy: <T>(read: (value: typeof chatStore) => T) => read(chatStore) }))
 vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({ contactsService: contactsServiceMock }))
 vi.mock('../../../../apps/desktop/src/lib/groupInvitations', () => ({ listGroupInvitations: async () => [] }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({ readRequiredDisplayIdentities: async () => [] }))

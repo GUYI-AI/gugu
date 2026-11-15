@@ -80,28 +80,31 @@ describe('问工具「还登着吗」的读法', () => {
 
   it('登录态关进咕咕给的目录:dws 用 HOME + 关钥匙串,wecom-cli 用它的配置目录变量', () => {
     expect(dws.env('/g/home')).toEqual({ HOME: '/g/home', DWS_DISABLE_KEYCHAIN: '1' });
-    expect(wecom.env('/g/home')).toEqual({ WECOM_CLI_CONFIG_DIR: '/g/home/config' });
+    expect(wecom.env('/g/home')).toEqual({ WECOM_CLI_CONFIG_DIR: '/g/home/config', WECOM_CLI_ACCESS_TOKEN: '' });
   });
 });
 
 describe('平台', () => {
-  it('mac / linux 的两种架构可装;Windows 响亮地说不支持', () => {
+  it('mac / linux 的两种架构和 Windows x64 可识别；其他平台用中文拒绝', () => {
     expect(currentCliPlatform('darwin', 'arm64')).toBe('darwin-arm64');
     expect(currentCliPlatform('linux', 'x64')).toBe('linux-x64');
-    expect(() => currentCliPlatform('win32', 'x64')).toThrow(/not available on win32/);
+    expect(currentCliPlatform('win32', 'x64')).toBe('win32-x64');
+    expect(() => currentCliPlatform('win32', 'arm64')).toThrow(/尚不支持/);
   });
 
   it('wecom-cli 按平台取它那个程序包;dws 一个包带全平台', () => {
     expect(cliToolRecipe('wecom-cli').binaryPackage('linux-arm64')).toMatchObject({ name: '@wecom/cli-linux-arm64', version: '1.3.4' });
-    expect(cliToolRecipe('dws').binaryPackage('linux-arm64')).toMatchObject({ name: 'dingtalk-workspace-cli', version: '1.0.64' });
+    expect(cliToolRecipe('dws', 'linux').binaryPackage('linux-arm64')).toMatchObject({ name: 'dingtalk-workspace-cli', version: '1.0.64' });
+    expect(cliToolRecipe('dws', 'win32').binaryPackage('win32-x64')).toMatchObject({ name: 'dingtalk-workspace-cli', version: '1.0.68' });
+    expect(cliToolRecipe('wecom-cli').binaryPackage('win32-x64')).toMatchObject({ name: '@wecom/cli-win32-x64', version: '1.3.4' });
   });
 
   it('每个平台的包都钉着自己的 sha512(❌ 信镜像回的那一个)', () => {
-    const platforms = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'] as const;
+    const platforms = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win32-x64'] as const;
     const wecom = platforms.map((platform) => cliToolRecipe('wecom-cli').binaryPackage(platform).integrity);
     for (const integrity of [...wecom, cliToolRecipe('dws').binaryPackage('darwin-arm64').integrity]) {
       expect(integrity).toMatch(/^sha512-[A-Za-z0-9+/]{86}==$/);
     }
-    expect(new Set(wecom).size).toBe(4);
+    expect(new Set(wecom).size).toBe(5);
   });
 });

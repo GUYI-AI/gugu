@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { notifyManager as readModelNotify } from '@tanstack/react-query'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
 import { createReactHarness } from '../../../support/testHarness'
 import { FileStorageDashboard } from '../../../../apps/desktop/src/components/settings/FileStorageDashboard'
 
@@ -22,7 +24,7 @@ const overview = {
 
 describe('the 「文件存储与读取」 dashboard (owner 10-28 design): the caller\'s own cloud copies', () => {
   let harness: ReturnType<typeof createReactHarness>
-  beforeEach(() => { harness = createReactHarness(); vi.clearAllMocks(); f.overview.mockResolvedValue(overview); f.mark.mockResolvedValue(1) })
+  beforeEach(() => { readModelNotify.setScheduler((callback) => { callback() }); queryClient.clear(); followRendererSession('SIGNED_IN', 'owner'); harness = createReactHarness(); vi.clearAllMocks(); f.overview.mockResolvedValue(overview); f.mark.mockResolvedValue(1) })
   afterEach(() => harness.cleanup())
   const $ = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)
   const names = () => [...document.querySelectorAll('[data-testid="file-storage-file"] td:first-child')].map((cell) => cell.textContent)

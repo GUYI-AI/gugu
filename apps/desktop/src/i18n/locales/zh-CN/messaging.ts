@@ -1,4 +1,5 @@
 export default {
+  "fileAnnotation": { "addToChat": "添加到对话", "optionalComment": "添加可选评论…", "comment": "评论", "line": "第 {{start}} 行", "lines": "第 {{start}}–{{end}} 行", "selectLine": "选择第 {{line}} 行", "failed": "未能保存评论，请重试" },
   "agent": {
     "identity": {
       "phone": "手机 Agent",
@@ -535,6 +536,7 @@ export default {
       "separator": "、"
     },
     "notice": {
+      "migrationPlaceholder": "这条消息没有迁移",
       "agentFloodGroup": "这个群里 agent 较多，已把它们都转为被动模式，@ 它们才会回。",
       "agentFloodTopic": "这条话题里 agent 较多，已把它们都转为被动模式，@ 它们才会回。",
       "left": "{{actor}} 退出了群聊",

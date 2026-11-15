@@ -29,7 +29,7 @@ const auth = vi.hoisted(() => ({ token: `h.${Buffer.from(JSON.stringify({ sub: '
 const machines = vi.hoisted(() => ({ devices: [] as Device[] }))
 vi.mock('../../../../apps/desktop/src/store/devicesCache', () => ({ readCachedDevices: () => machines.devices }))
 vi.mock('../../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({ fetchSessionsList: vi.fn() }))
-vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => auth.token }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererAccessToken: () => auth.token }))
 vi.mock('@gugu/core/cloud/supabase', () => ({
   createGuguSupabaseClient: () => {
     const query = {
@@ -114,6 +114,7 @@ async function call(method: string, args: Record<string, unknown>): Promise<Reco
 
 /** Each verb that needs a gesture, with the arguments a page gives it. */
 const gestureCalls: Record<string, Record<string, unknown>> = {
+  filesAnnotateSelection: { ref: { workspace: 'session:s', id: 'notes.md' }, startLine: 3, endLine: 4, text: 'Selected text', annotation: 'Revise' },
   filesOpenWith: { ref: { name: 'a.md' } },
   filesUpload: { pick: true },
   filesDownload: { ref: { name: 'a.md' } },

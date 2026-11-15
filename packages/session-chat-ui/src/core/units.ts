@@ -75,6 +75,8 @@ export type GroupRole = 'solo' | 'first' | 'middle' | 'last';
  * `chrome`    — optional group chrome carried from the ItemSegmenter, stamped
  *               by flatten(); undefined for solo legacy units.
  */
+export type ConversationPart = 'input' | 'head' | 'step' | 'body';
+
 export type RenderUnit<D = unknown> = {
   id: string;
   itemId: string;
@@ -90,6 +92,11 @@ export type RenderUnit<D = unknown> = {
   chrome?: GroupChrome;
   /** Agent conversation block ownership; process steps and reply keep one chronological owner. */
   conversationProcessOwner?: string;
+  /**
+   * 对话布局里这一行属于哪段对话部件(flatten 盖的章)。下一档接着 flatten 时从**最后一行**的部件续排间距 ——
+   * ❌ 从最后一条消息续:回合末尾的「已编辑」卡、产物卡不是消息,跳过它们会把下一条用户消息当成贴着气泡。
+   */
+  conversationPart?: ConversationPart;
   /** Nested measured rows owned by a bounded native viewport. */
   children?: readonly RenderUnit[];
   /** The fold toggles this unit is emitted behind, outermost first (set only under `revealAllFolds`). */
@@ -182,6 +189,8 @@ export type SegmentCtx = {
   foldTurnProcess?: boolean;
   /** 某个 `turn-process` 头当前是否展开；缺省一律折叠。 */
   isTurnProcessExpanded?: (processId: string) => boolean;
+  /** 读者展开过的对话气泡(`conversationBubbleKey`);它下面的尾行有「收起全文」,决定下一行的间距。 */
+  isBubbleExpanded?: (bubbleKey: string) => boolean;
   /** Emit everything behind process headers and tool runs as if open (in-conversation find). */
   revealAllFolds?: boolean;
   /**

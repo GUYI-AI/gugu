@@ -2,11 +2,13 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { notifyManager as readModelNotify } from '@tanstack/react-query'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/readModel'
 import { conversationLink, groupFileLink } from '@gugu/core/shared/ui/guguLink'
 import { Markdown } from '../../../../apps/desktop/src/components/markdown/Markdown'
 import { AuthContext } from '../../../../apps/desktop/src/store/auth'
 import { ChatStoreProvider } from '../../../../apps/desktop/src/store/chatContext'
-import { attachmentQueryClient } from '../../../../apps/desktop/src/lib/attachmentQueryClient'
+import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/readModel'
 
 const ME = '11111111-1111-4111-8111-111111111111'
 const ALICE = '22222222-2222-4222-8222-222222222222'
@@ -29,7 +31,7 @@ beforeAll(async () => { await import('../../../../apps/desktop/src/components/ma
 
 let container: HTMLDivElement
 let root: Root
-beforeEach(() => {
+beforeEach(() => { readModelNotify.setScheduler((callback) => { callback() }); queryClient.clear(); followRendererSession('SIGNED_IN', ME);
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)

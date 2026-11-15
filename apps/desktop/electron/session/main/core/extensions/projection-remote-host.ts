@@ -1,6 +1,6 @@
 import type { DeviceRpcHandlerContext, DeviceRpcHandlers } from '@gugu/core/cloud/deviceRpcResponder';
 import type { ProjectionHostPacket } from '@shared/extensions/projection-protocol';
-import { readTaskPageControl, type TaskPageControl, type TaskPageState } from '@shared/browser-task-page';
+import { readTaskPageControl, type TaskPageControl, type TaskPageControlResult, type TaskPageState } from '@shared/browser-task-page';
 import { log } from '@main/lib/logger';
 
 /**
@@ -13,16 +13,8 @@ import { log } from '@main/lib/logger';
  * asker only. The projection's own one-picture-in-flight acknowledgement paces them: a slow link lowers the frame rate,
  * it never builds a backlog. Nothing here knows what the picture shows or how the App made it.
  */
-export const PROJECTION_REMOTE_RPC = {
-  watch: 'appProjection.watch',
-  send: 'appProjection.send',
-  unwatch: 'appProjection.unwatch',
-  /** A task page's toolbar there: go to an address, back, forward, reload, stop, the tab's size. */
-  control: 'appProjection.pageControl',
-} as const;
-export const PROJECTION_REMOTE_PACKET = 'appProjection.packet';
-/** A task page's toolbar state, pushed to its watcher whenever it changes. */
-export const PROJECTION_REMOTE_PAGE_STATE = 'appProjection.pageState';
+export { PROJECTION_REMOTE_RPC, PROJECTION_REMOTE_PACKET, PROJECTION_REMOTE_PAGE_STATE } from '@shared/extensions/projection-remote-rpc';
+import { PROJECTION_REMOTE_RPC, PROJECTION_REMOTE_PACKET, PROJECTION_REMOTE_PAGE_STATE } from '@shared/extensions/projection-remote-rpc';
 /** Viewers held for other computers at once (each is one page watching one projection). */
 export const PROJECTION_REMOTE_VIEWERS = 32;
 
@@ -32,7 +24,7 @@ export type ProjectionRemoteWatch = { watch: string } & (ProjectionRemoteAppWatc
 export type ProjectionRemotePacketEvent = { type: typeof PROJECTION_REMOTE_PACKET; watch: string; packet: ProjectionHostPacket };
 export type ProjectionRemotePageStateEvent = { type: typeof PROJECTION_REMOTE_PAGE_STATE; watch: string; state: TaskPageState };
 
-type Viewer = { receive(packet: unknown): Promise<void>; control?(control: TaskPageControl): Promise<void>; close(): void };
+type Viewer = { receive(packet: unknown): Promise<void>; control?(control: TaskPageControl): Promise<TaskPageControlResult>; close(): void };
 export interface ProjectionRemoteSources {
   /** Admit a viewer for this App's projection in this session, on this machine; throws a coded refusal. */
   connect(input: ProjectionRemoteAppWatch, send: (packet: ProjectionHostPacket) => void): Promise<Viewer>;
@@ -117,8 +109,8 @@ export function createProjectionRemoteHost(sources: () => ProjectionRemoteSource
       const entry = viewers.get(body.watch);
       if (!entry?.viewer.control) return refuse('not_open', 'This page is not watched');
       try {
-        await entry.viewer.control(control);
-        return { result: { done: true } };
+        const inspection = await entry.viewer.control(control);
+        return { result: { done: true, ...(inspection ? { inspection } : {}) } };
       } catch (error) {
         return refuse('failed', error instanceof Error ? error.message : String(error));
       }

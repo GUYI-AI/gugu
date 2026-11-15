@@ -100,10 +100,9 @@ const userMessage: ChatMessage = {
 }
 
 /**
- * 非图片附件是一枚**整行**的 chip(#5269)。这条钉的是它的**盒模型**:chip 声明的高度是
- * `attachThumb`,而 `attachStripHeight` 报的也是这个数 —— 边框或内距只要有一格没算进去,
- * 这里就会红(content-box 下每行会悄悄高 2px)。名字故意取得很长,顺带钉住「宽了要省略号
- * 截断」:撑成两行同样破契约。
+ * 非图片附件是一条定宽的文件行(`@gugu/session-shared/file-row`)。这条钉的是它的**盒模型**:文件行
+ * 画出来的高度是 `FILE_ROW.height`,而 `attachStripHeight` 报的也是这个数 —— 边框或内距只要有一格
+ * 没算进去,这里就会红。名字故意取得很长,顺带钉住「宽了要省略号截断」:撑成两行同样破契约。
  *
  * ⚠️ 只放**一件**。两件就越过折叠阈值,那时卡片本来就该夹住并多渲一层渐隐罩,红的是 clamp
  * 不是测量(实测 scroll 132 / client 118,那 14px 正是罩子)。行数的算术归 `metrics.test.ts`,

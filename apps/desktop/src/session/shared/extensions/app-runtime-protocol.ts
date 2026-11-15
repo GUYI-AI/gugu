@@ -461,11 +461,10 @@ export interface AppFileEntry {
    * `null`: no cloud copy (a project file kept on its machine, a document, a folder). Absent where the read does not say.
    */
   keep?: { expiresAt: string | null; mine: boolean } | null;
-  /**
-   * `files.list`'s answer only: when its cloud copy was cleared at its expiry and nothing replaced it — it no longer opens
-   * (a file its machine keeps is never expired). Absent otherwise.
-   */
-  expiredAt?: string;
+  /** Service-reported readability across authorized sources; absent on older services. Offline devices stay available. */
+  availability?: 'available' | 'expired' | 'deleted' | 'unavailable';
+  /** Actual expiry time, or null unless expired. Legacy lists report cloud-copy expiry only without a device source. */
+  expiredAt?: string | null;
   /** `files.list`'s answer only: how many items are directly in a folder, counted up to 1000 (1000 means 1000 or more). Absent otherwise. */
   childCount?: number;
   /** A working copy's entry that is a symbolic link (`files.list`'s answer): it may point nowhere, or outside. */
@@ -517,6 +516,9 @@ export interface AppFileVersion {
   by: AppFilePerson | null;
   at: string;
   size: number | null;
+  /** Each version's own source availability, independent of the current version. Absent on older services. */
+  availability?: AppFileEntry['availability'];
+  expiredAt?: string | null;
 }
 /** What `files.readVersion` answers: a text file's version as its text, a stored file's as its bytes. */
 export type AppFileVersionContent = { n: number; text: string } | { n: number; bytes: ArrayBuffer; contentType: string };

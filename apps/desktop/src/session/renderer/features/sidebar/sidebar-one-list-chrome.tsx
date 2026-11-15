@@ -11,7 +11,7 @@ import { Hint } from '@/components/ui/Tooltip';
 import { requestShellChatAction, useProductTourOnScreen, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
-import { getEffectiveHotkey } from '@renderer/lib/hooks/useKeyboardShortcuts';
+import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { SIDEBAR_PROGRESS_VAR, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { isCurrentView, useNavigate, useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
 import { appState } from '@renderer/lib/stores/app-state';
@@ -139,7 +139,8 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
  * and cannot say this.
  */
 function useSidebarIntro(innerShownFor: string | null, expanded: boolean) {
-  const { value: interfaceSettings, update } = useAppSettingsKey('interface');
+  const { settings: interfaceSettingsReading, update } = useAppSettingsKey('interface');
+  const interfaceSettings = interfaceSettingsReading.state === 'value' ? interfaceSettingsReading.value.value : undefined;
   const stored = interfaceSettings?.sidebarIntro;
   const [up, setUp] = useState(false);
   const move = useCallback(
@@ -197,7 +198,7 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
   const { isLeftOpen, toggleLeft } = useWorkspaceLayoutContext();
-  const { value: keyboard } = useAppSettingsKey('keyboard');
+  const keyboard = useShortcutOverrides();
   const hotkey = getEffectiveHotkey('app.toggleLeftSidebar', keyboard);
   const shortcut = hotkey ? formatHotkeyText(hotkey) : null;
   // #2548: 收起侧栏 / 展开侧栏 and the product's own shortcut (owner: not the mock's ⌘\).

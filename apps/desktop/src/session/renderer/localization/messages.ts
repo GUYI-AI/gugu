@@ -1,3 +1,4 @@
+import { enUSAnnotationMessages, zhCNAnnotationMessages } from './messages-annotations';
 import { enUSCapabilityMessages, zhCNCapabilityMessages } from './messages-capabilities';
 import { enUSProjectMessages, zhCNProjectMessages } from './messages-projects';
 import { enUSSharedMessages, zhCNSharedMessages } from './messages-shared';
@@ -1068,6 +1069,7 @@ const enUSCoreMessages = {
   'transcript.deliveryFact.viaApp': 'App',
   'transcript.turnFinished': 'Finished{reason}',
   'transcript.creditsExhausted': 'You’re out of credits. {recharge} to continue.',
+  'transcript.creditsExhaustedReadonly': 'Your Gugu credits are used up.',
   'transcript.rechargeCredits': 'Top up',
   'transcript.viewMermaid': 'View Mermaid diagram',
   'transcript.mermaidDiagram': 'Mermaid diagram',
@@ -2224,6 +2226,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'transcript.deliveryFact.viaApp': 'App',
   'transcript.turnFinished': '已结束{reason}',
   'transcript.creditsExhausted': '积分用完了，{recharge}后继续',
+  'transcript.creditsExhaustedReadonly': '咕咕积分已用完。',
   'transcript.rechargeCredits': '充值',
   'transcript.viewMermaid': '查看 Mermaid 图表',
   'transcript.mermaidDiagram': 'Mermaid 图表',
@@ -2379,6 +2382,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
 
 export const enUSMessages = {
   ...enUSCoreMessages,
+  ...enUSAnnotationMessages,
   ...enUSSessionWorkflowMessages,
   ...enUSLegacyDmMessages,
   ...enUSProjectMessages,
@@ -2404,6 +2408,7 @@ export type SessionMessageLookupKey<Key extends string = SessionMessageKey> =
 
 export const zhCNMessages: Record<SessionMessageKey, string> = {
   ...zhCNCoreMessages,
+  ...zhCNAnnotationMessages,
   ...zhCNSessionWorkflowMessages,
   ...zhCNLegacyDmMessages,
   ...zhCNProjectMessages,

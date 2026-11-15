@@ -5,9 +5,10 @@ import { contactsService } from '../lib/contacts'
 import { contactGroupChatsOf, sharedGroupAgentsOf } from '../lib/contactGroupChats'
 import { isLifecycleCancellation } from '../lib/authBoundedFetch'
 import { useAuth } from './auth'
-import { useChatStore } from './chatContext'
+import { useChatStore, useChatStoreReader, useStoreValueBy } from './chatContext'
 import { UI_EVENTS } from '../lib/uiEvents'
-import { ContactsContext, ContactsHandleContext, type ContactsHandle, type ContactsLoadStatus } from './contactsContext'
+import { ContactsContext, ContactsHandleContext, type ContactsContextValue, type ContactsLoadStatus } from './contactsContext'
+import { createSelectStore } from '../lib/selectStore'
 import type { ContactGroup, ContactUser, FriendRequest } from '@gugu/core/shared/types/contacts'
 import { platform } from '../platform'
 import { readRequiredDisplayIdentities } from '../lib/identityReadAdapter'
@@ -43,21 +44,15 @@ function sameFields(a: ContactUser, b: ContactUser): boolean {
 export function ContactsProvider({ children, active = true }: { children: React.ReactNode; active?: boolean }) {
   const { user: authenticatedUser } = useAuth()
   const userId = active ? authenticatedUser?.id ?? null : null
-  const { identitiesById, getImRepository, subscribeAccountRevision, refreshChats, chats, loadingChats, chatsLoadFailed, deleteChat, patchChat } = useChatStore('identitiesById', 'getImRepository', 'subscribeAccountRevision', 'refreshChats', 'chats', 'loadingChats', 'chatsLoadFailed', 'deleteChat', 'patchChat')
-  // @@@1877 会话列表即时乐观移除走 chat store 既有 API(deleteChat/patchChat)——ref 存最新引用,避免把
-  // 常变的 chats/随 activeChatId 变的 deleteChat 塞进 removeOwnedAgent 的 deps 造成 context 频繁重建。
-  const chatListRemovalRef = useRef({ chats, deleteChat, patchChat })
-  chatListRemovalRef.current = { chats, deleteChat, patchChat }
+  const { identitiesById, getImRepository, subscribeAccountRevision, refreshChats, loadingChats, chatsLoadFailed } = useChatStore('identitiesById', 'getImRepository', 'subscribeAccountRevision', 'refreshChats', 'loadingChats', 'chatsLoadFailed')
+  const readChatStore = useChatStoreReader()
   const [contacts, setContacts] = useState<ContactRelation[]>([])
   const [groups, setGroups] = useState<ContactGroup[]>([])
   // 「我在哪些群」只有一份:会话投影(chat store 的 chats)。从前这里另拉一张整表(探针 + 全部成员 + 分块 chats + 共享 agent),
   // 每来一条消息(chat_changed)、每次已读(chat_members_changed)都重拉一遍。
-  // 每来一条消息 chats 就换一份,而群这几项(名字、成员、角色、免打扰)多半没变:签名没变就沿用上一份,
-  // 通讯录(常驻、藏着时也挂着)不跟着每条消息把几百行重画一遍。
-  const derivedGroupChats = contactGroupChatsOf(chats)
-  const groupChatsSignature = JSON.stringify(derivedGroupChats)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const groupChats = useMemo(() => derivedGroupChats, [groupChatsSignature])
+  // 每来一条消息 chats 就换一份,而群这几项(名字、成员、角色、免打扰)多半没变:只订阅这几项(@@@select-store),
+  // 通讯录(常驻、藏着时也挂着)不跟着每条消息重渲。
+  const groupChats = useStoreValueBy((store) => contactGroupChatsOf(store.chats), (store) => contactGroupChatsOf(store.chats))
   // 群里别人的 agent(不是我的、也不在通讯录里):身份就在投影带回来的那份里。
   const sharedGroupAgents = useMemo(() => sharedGroupAgentsOf(groupChats, identitiesById, userId), [groupChats, identitiesById, userId])
   const [receivedRequests, setReceivedRequests] = useState<FriendRequest[]>([])
@@ -460,10 +455,10 @@ export function ContactsProvider({ children, active = true }: { children: React.
     async (contactId: string) => {
       if (!userId) return []
       const rows = await contactsService.getCommonGroupChats(userId, contactId)
-      const aliases = new Map(chatListRemovalRef.current.chats.map((chat) => [chat.id, chat.alias]))
+      const aliases = new Map(readChatStore().chats.map((chat) => [chat.id, chat.alias]))
       return rows.map((row) => ({ ...row, alias: aliases.get(row.id) ?? null }))
     },
-    [userId],
+    [readChatStore, userId],
   )
 
   // 值只在它自己的输入变了时才换:从前每次渲染新建一份(连同按身份投影的几百个联系人),每个读通讯录的组件跟着重渲染。
@@ -522,10 +517,8 @@ export function ContactsProvider({ children, active = true }: { children: React.
     deleteGroup, updateContactAlias, setAgentPublic, setAgentDesiredStatus, renameAgent,
     updateAgentProfile, uploadAgentAvatar, setAgentLook, removeOwnedAgent, removeContact, getCommonGroupChats,
   ])
-  const [listeners] = useState(() => new Set<() => void>())
-  const valueRef = useRef(value)
-  valueRef.current = value
-  const [handle] = useState<ContactsHandle>(() => ({ get: () => valueRef.current, subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } } }))
-  useLayoutEffect(() => { for (const listener of [...listeners]) listener() }, [listeners, value])
-  return <ContactsHandleContext.Provider value={handle}><ContactsContext.Provider value={value}>{children}</ContactsContext.Provider></ContactsHandleContext.Provider>
+  const [store] = useState(() => createSelectStore<ContactsContextValue>(value))
+  store.publish(value)
+  useLayoutEffect(() => { store.notify() }, [store, value])
+  return <ContactsHandleContext.Provider value={store}><ContactsContext.Provider value={value}>{children}</ContactsContext.Provider></ContactsHandleContext.Provider>
 }

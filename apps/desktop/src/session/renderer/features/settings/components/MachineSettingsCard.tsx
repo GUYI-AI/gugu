@@ -1,33 +1,20 @@
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
 import { Input } from '@renderer/lib/ui/input'
-import { Switch } from '@/components/ui/Switch'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { PRODUCT_NAME } from '@shared/app-identity'
 import { DeviceSettingsNotice } from './DeviceSettingsScope'
-import { ResetToDefaultButton } from './ResetToDefaultButton'
+import { SettingSwitch, SettingValue } from './SettingControls'
 import { SettingsGroup, SettingsRow } from '@/components/settings/SettingsPrimitives'
 import { DeviceScopePicker, DeviceScopeStatus } from '@renderer/features/remote-hosts/device-scope-picker'
 import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store'
 import { EnableTmuxRow } from './SessionSettingsRows'
-import { useTerminalEnabled } from '../use-terminal-enabled'
+import { terminalShown, useTerminalEnabled } from '../use-terminal-enabled'
 
 export function MachineSettingsCard() {
-  const {
-    value: localProject,
-    update: updateLocalProject,
-    isLoading: localProjectLoading,
-    isSaving: localProjectSaving,
-    isFieldOverridden: isLocalProjectFieldOverridden,
-    resetField: resetLocalProjectField,
-    error: localProjectError
-  } = useAppSettingsKey('localProject')
+  const localProject = useAppSettingsKey('localProject')
   const { translate } = useSessionMessages()
   // tmux 是终端的事:「终端」开关(本机,设置 → 通用)关着就不列。
   const terminalEnabled = useTerminalEnabled()
-
-  const writeAgentConfigToGitIgnore = localProject?.writeAgentConfigToGitIgnore ?? true
-  const defaultProjectsDirectory = localProject?.defaultProjectsDirectory ?? ''
-  const localProjectBusy = localProjectLoading || localProjectSaving
 
   return (
     <SettingsGroup
@@ -39,47 +26,44 @@ export function MachineSettingsCard() {
       }
     >
       {/* 看的是别的机器(#6264):离线 / 太旧时说一句,下面照旧画、一起灰。 */}
-      <DeviceSettingsNotice error={localProjectError} hasData={localProject !== undefined} />
+      <DeviceSettingsNotice
+        error={localProject.settings.state === 'error' ? localProject.settings.error : null}
+        hasData={localProject.settings.state === 'value'}
+      />
       <SettingsRow
         title={translate('repository.defaultProjectsDirectory')}
         control={
-          <Input
-            key={defaultProjectsDirectory}
-            defaultValue={defaultProjectsDirectory}
-            onBlur={(event) => {
-              const next = event.currentTarget.value.trim()
-              if (next && next !== defaultProjectsDirectory)
-                updateLocalProject({ defaultProjectsDirectory: next })
-            }}
-            aria-label={translate('repository.defaultProjectsDirectory')}
-            disabled={localProjectBusy}
-            className="w-72"
-          />
+          <SettingValue reading={localProject.settings} placeholder="h-8 w-72">
+            {({ value }) => (
+              <Input
+                key={value.defaultProjectsDirectory}
+                defaultValue={value.defaultProjectsDirectory}
+                onBlur={(event) => {
+                  const next = event.currentTarget.value.trim()
+                  if (next && next !== value.defaultProjectsDirectory)
+                    localProject.update({ defaultProjectsDirectory: next })
+                }}
+                aria-label={translate('repository.defaultProjectsDirectory')}
+                disabled={localProject.isSaving || localProject.unavailable}
+                className="w-72"
+              />
+            )}
+          </SettingValue>
         }
       />
       <SettingsRow
         title={translate('repository.autoGitignore')}
         description={translate('repository.autoGitignoreDescription', { appName: PRODUCT_NAME })}
         control={
-          <>
-            <ResetToDefaultButton
-              visible={isLocalProjectFieldOverridden('writeAgentConfigToGitIgnore')}
-              defaultLabel={translate('reset.on')}
-              onReset={() => resetLocalProjectField('writeAgentConfigToGitIgnore')}
-              disabled={localProjectBusy}
-            />
-            <Switch
-              checked={writeAgentConfigToGitIgnore}
-              onCheckedChange={(checked) =>
-                updateLocalProject({ writeAgentConfigToGitIgnore: checked })
-              }
-              disabled={localProjectBusy}
-              aria-label={translate('repository.autoGitignoreToggle')}
-            />
-          </>
+          <SettingSwitch
+            api={localProject}
+            field="writeAgentConfigToGitIgnore"
+            resetLabel={translate('reset.on')}
+            label={translate('repository.autoGitignoreToggle')}
+          />
         }
       />
-      {terminalEnabled ? <EnableTmuxRow /> : null}
+      {terminalShown(terminalEnabled) ? <EnableTmuxRow /> : null}
     </SettingsGroup>
   )
 }
