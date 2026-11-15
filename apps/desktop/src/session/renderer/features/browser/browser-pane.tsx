@@ -154,6 +154,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
   const owningSessionId = session?.sessionId;
   const annotations = useBrowserAnnotations({ sessionId: owningSessionId, browserId, visible, available: !!adapter && !showStartPage && !loadError,
     inspect: (query, capture) => rpc.browser.inspectAnnotation({ browserId, sessionId: owningSessionId!, query, capture }) });
+  // @@@effect-flow - registers this pane's browser session with main for its lifetime (a command, not a read)
   useEffect(() => {
     if (!sessionBrowserId || !sessionPartition) return;
     let disposed = false;

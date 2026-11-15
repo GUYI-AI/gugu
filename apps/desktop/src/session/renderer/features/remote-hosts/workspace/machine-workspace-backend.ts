@@ -33,7 +33,7 @@ import type { SshPrompt } from '@shared/ssh-prompt';
 import { remoteErrorCode } from '../remote-failure-copy';
 import { hostStatusLabel, machineNoticeLabel } from '../connection-status';
 import { remoteHostsStore } from '../remote-hosts-store';
-import { remoteForLocalPort, watchRemoteForwards } from './remote-forward-cache';
+import { remoteForLocalPort, watchRemotePorts } from './remote-ports-replicas';
 import { remotePageFailureCopy, remotePortFailureText } from './remote-page-copy';
 import { RemotePageSession } from './remote-page-session';
 import {
@@ -145,7 +145,7 @@ class MachineBrowserAttachment implements WorkspaceBrowserAttachment {
       browserId,
       (url) => this.pages.present(url) ?? presentForwardedUrl(url, (local) => this.remoteForLocal(local))
     );
-    this.stopForwardCache = watchRemoteForwards(deviceId);
+    this.stopForwardCache = watchRemotePorts(deviceId);
     // 页面自己发的 localhost 请求(前端调后端的另一个端口、跳转)也到那台机器(主进程 remote-loopback-requests.ts)。
     void rpc.remotePorts.bindBrowser({ browserId, deviceId, sessionId: ctx.sessionId }).catch(() => undefined);
   }

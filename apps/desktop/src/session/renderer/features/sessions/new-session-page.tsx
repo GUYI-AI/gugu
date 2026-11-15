@@ -1,5 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useState } from 'react';
+import { useReplica } from '@/lib/replica';
 import { getGitRepositoryStore } from '@renderer/features/projects/stores/project-selectors';
 import { useCreateSessionCallback } from '@renderer/features/sessions/create-session-modal/use-create-session-callback';
 import { useCreateSessionState } from '@renderer/features/sessions/create-session-modal/use-create-session-state';
@@ -20,10 +21,7 @@ import { useWakeCloudOnInput } from '@renderer/features/remote-hosts/use-wake-cl
 import { machineLibraryHost } from '@renderer/features/library/library-host';
 import { ComposerTray } from './composer-tray';
 import { useRemoteInstallBeforeCreate } from './remote-install-before-create';
-import {
-  ImplicitSessionHomeProjectError,
-  ensureImplicitSessionHomeProjectId
-} from './implicit-session-home-project';
+import { implicitSessionHome } from './implicit-session-home-project';
 import {
   sessionComposerFrameClassName,
   sessionComposerDockBandClassName,
@@ -230,37 +228,13 @@ export const NewSessionPage = observer(function NewSessionPage({
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
-  const [implicitProjectId, setImplicitProjectId] = useState<string | undefined>(undefined);
-  const [implicitProjectFailure, setImplicitProjectFailure] = useState<unknown>(null);
-
-  // An unselected project is a real first-class state, not an alias for projects[0]. Prepare the
-  // hidden app-owned execution context in the background while keeping the composer editable.
-  //
-  // 失败原因只以**未本地化的原始值**存进 state（稳定语义码或原始 Error），文案在渲染时才映射 ——
-  // 存成品句子的话，切换语言后这条已经显示出来的提示会停在旧语言上。
-  useEffect(() => {
-    let cancelled = false;
-    void ensureImplicitSessionHomeProjectId()
-      .then((projectId) => {
-        if (cancelled) return;
-        if (!projectId) {
-          setImplicitProjectFailure(new ImplicitSessionHomeProjectError('unavailable'));
-          return;
-        }
-        setImplicitProjectId(projectId);
-        setImplicitProjectFailure(null);
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setImplicitProjectFailure(error);
-      });
-    return () => {
-    cancelled = true;
-    };
-  }, []);
-
-  const implicitProjectError = implicitProjectFailure
-    ? describeImplicitProjectFailure(implicitProjectFailure, translate)
+  // An unselected project is a real first-class state, not an alias for projects[0]. The hidden app-owned execution
+  // context is prepared in the background (its replica) while the composer stays editable; until it is ready no project
+  // is passed, and a failure is said under the composer (mapped to copy at render time, so it follows the language).
+  const implicitProject = useReplica(implicitSessionHome, []);
+  const implicitProjectId = implicitProject.state === 'value' ? implicitProject.value : undefined;
+  const implicitProjectError = implicitProject.state === 'error'
+    ? describeImplicitProjectFailure(implicitProject.error, translate)
     : null;
 
   const effectiveProjectId = selectedId ?? implicitProjectId;

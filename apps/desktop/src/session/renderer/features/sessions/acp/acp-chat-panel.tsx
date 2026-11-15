@@ -1762,23 +1762,19 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   useEffect(() => {
     if (store?.loadError) log.error('Session condition failure', { sessionId: store.sessionId, error: store.loadError });
   }, [store, store?.loadError]);
-  useEffect(() => {
-    if (!store) return;
+  // The condition is derived from what the panel already holds (load error, sign-in, membership, interruption); the
+  // restart's pending flag is the click's own state. Computed in render, ❌ an effect that works it out after paint.
+  const condition = useMemo((): PanelCondition | null => {
+    if (!store) return null;
     // 有没有可重来的首轮,**进这一行之前就知道**(同 ProviderSessionMissingView 的判据)。
     const canRestartSession = canStartFreshSession('provider_session_missing',
       sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)?.data
         .firstUtterance
     );
-    const setCondition = (condition: PanelCondition | null) => {
-      conditionRuns.current = condition?.actions?.map((action) => action.run) ?? [];
-      store.chatState.session.setCondition(
-        condition && { ...condition, actions: condition.actions?.map(({ label, pending }) => ({ label, pending })) },
-      );
-    };
     const error = store.loadError;
     if (!error && membershipLock) {
       // #7056 会员中途到期:说清原因、给两条去路;发送键在输入框那一格已经停下了。
-      setCondition({
+      return ({
         code: 'membership-required',
         // 要会员的只有咕咕提供的模型;名字照模型按钮上的叫法(「咕咕 X」),❌ 裸名 —— 用户自己的同名模型不用会员。
         label: guguReasonText('membership-required', translate, membershipLock.modelName),
@@ -1786,27 +1782,24 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         // 「我开好了」= 让下拉重取目录:开成了,这一格自然变回 null。
         actions: reasonActions('membership-required', { joinMembership: openMembershipPage, retry: refreshPlatformModelCatalogs }, translate),
       });
-      return;
     }
     if (!error && store.reconcileAwaitingLink) {
       // 刚讲完的那一轮留在上面,线回来再对账补全(acp-chat-store @@@reconcile-across-link-loss)。
-      setCondition({
+      return ({
         code: 'machine-unreachable',
         label: translate('transcript.condition.turnAwaitsLink'),
         detail: 'reconcile-awaiting-link',
       });
-      return;
     }
     if (!error && interruptedBy && !signInExpired && !signInMissing) {
-      setCondition({
+      return ({
         code: 'turn-interrupted',
         label: translate(INTERRUPTED_LABEL[interruptedBy]),
         detail: `interrupted-by-${interruptedBy}`,
       });
-      return;
     }
     if (!error) {
-      setCondition(
+      return (
         signInExpired || signInMissing
           ? {
               code: 'auth-required',
@@ -1825,7 +1818,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
             }
           : null
       );
-      return;
     }
     const retry = { label: translate('transcript.condition.retry'), run: () => store.retry() };
     const condition = ((): PanelCondition => {
@@ -1955,8 +1947,16 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         }
       }
     })();
-    setCondition(condition);
+    return condition;
   }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, navigate, signInExpired, signInMissing, signInAgain, agent?.name, membershipLock, interruptedBy, restarting]);
+  // The chat UI (its own renderer) shows the condition row from its own signal: hand it the derived condition.
+  useEffect(() => {
+    if (!store) return;
+    conditionRuns.current = condition?.actions?.map((action) => action.run) ?? [];
+    store.chatState.session.setCondition(
+      condition && { ...condition, actions: condition.actions?.map(({ label, pending }) => ({ label, pending })) },
+    );
+  }, [store, condition]);
 
   /**
    * 还在跑的后台命令与子智能体 → 消息列表末尾那一行(owner 2026-10-27:去掉右上角「摘要」卡,后台任务放进主对话)。

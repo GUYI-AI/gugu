@@ -39,19 +39,27 @@ vi.mock('@renderer/features/remote-hosts/use-new-session-machine', () => ({
 }));
 vi.mock('./use-machine-create-target', () => ({ machineComposerProps: () => ({}) }));
 vi.mock('@renderer/features/library/library-host', () => ({ machineLibraryHost: () => ({}) }));
-vi.mock('./implicit-session-home-project', () => ({ ensureImplicitSessionHomeProjectId: () => new Promise(() => {}) }));
+vi.mock('./implicit-session-home-project', async () => {
+  const { replica } = await import('@/lib/replica');
+  return { implicitSessionHome: replica({ name: 'implicitSessionHome', scope: 'account', read: () => new Promise<string>(() => {}), fresh: Infinity }) };
+});
 const messageHost = vi.hoisted(() => ({ rememberedTaskProject: vi.fn(async () => null) }));
 vi.mock('@renderer/lib/sessionpage-message-host', () => ({ sessionpageMessageHost: () => messageHost }));
 vi.mock('@renderer/lib/components/agent-icon', () => ({ AgentIcon: () => null }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ sidebarStore: { orderedProjects: [] } }));
 vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => null } }));
-vi.mock('@/platform', () => ({ platform: { getLocalDeviceSelfSnapshot: async () => ({ device_id: 'mac' }) } }));
 
 const { TaskDispatchComposer } = await import('./task-dispatch-composer');
+const { followRendererSession, queryClient } = await import('@/lib/replica');
+const { devicesModel } = await import('@/store/devicesCache');
 
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
+  queryClient.clear();
+  followRendererSession('SIGNED_IN', 'tester');
+  // This computer's own row (the remembered project is kept per chat and device).
+  devicesModel.set([], [{ device_id: 'mac', is_current_device: true } as never]);
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -75,6 +83,8 @@ describe('TaskDispatchComposer copy', () => {
 
   it('in a chat it cannot join (a DM): the same question, no group chip', async () => {
     await act(async () => root.render(<TaskDispatchComposer chatId="dm-1" />));
+    // The chat's remembered project is read first (none here).
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     expect(placeholder()).toBe('想让新智能体做点什么？');
     expect(chip()).toBeNull();
   });
@@ -100,5 +110,14 @@ describe('#2599 the project field in a group', () => {
     await act(async () => root.render(<TaskDispatchComposer chatId="dm-1" />));
     await act(async () => {});
     expect(messageHost.rememberedTaskProject).toHaveBeenCalledWith('dm-1', 'mac');
+  });
+});
+
+describe('the remembered project is a reading', () => {
+  it('holds the box while a direct message\'s remembered project is read (❌ the machine box first, then the project\'s)', async () => {
+    messageHost.rememberedTaskProject.mockImplementationOnce(() => new Promise(() => {}));
+    await act(async () => root.render(<TaskDispatchComposer chatId="dm-2" />));
+    expect(host.querySelector('[data-composer-placeholder]')).toBeNull();
+    expect(host.querySelector('[data-unknown]')).not.toBeNull();
   });
 });

@@ -2,11 +2,14 @@
 // 原生对话框,无头宿主里只会静默取消)。这里给一个咕咕风格的小弹窗:零命名(项目名 = 文件夹名)、
 // 一棵长在弹窗里的懒加载目录树(根 = 宿主家目录)、直接创建。
 // ❌ 别接到旧的 AddProjectModal(Pick/New/Clone 页签 + 名称输入):那套已删。
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { messageForUser } from '@/lib/userFacingError';
+import { useReplica } from '@/lib/replica';
+import { homeDirectory, projectPathInspection } from '@renderer/lib/machine-paths';
+import { Button } from '@renderer/lib/ui/button';
 import { DirectoryTree } from '@renderer/features/projects/components/add-project-modal/directory-browser/directory-tree';
 import { normalizePath } from '@renderer/features/projects/components/add-project-modal/directory-browser/paths';
 import { createProjectFromLocalFolder } from '@renderer/features/projects/components/create-project-from-local-folder';
-import { rpc } from '@renderer/lib/ipc';
 import { type BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { ConfirmButton } from '@renderer/lib/ui/confirm-button';
 import { DialogContentArea, DialogFooter, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
@@ -18,52 +21,16 @@ import { basenameFromAnyPath } from '@shared/path-name';
 
 export type LocalFolderProjectModalProps = BaseModalProps<string>;
 
-type RootState = { status: 'loading' } | { status: 'ready'; path: string } | { status: 'error'; message: string };
-
 export function LocalFolderProjectModal({ onClose, onSuccess }: LocalFolderProjectModalProps) {
   const { translate } = useSessionMessages();
-  const [root, setRoot] = useState<RootState>({ status: 'loading' });
+  // 树从宿主的家目录长起:从 / 开始翻没意义。
+  const home = useReplica(homeDirectory, ['local']);
   const [path, setPath] = useState('');
-  // null = 没选 / 还没探;false = 选中的目录不是 git 仓库(放行,给一句提示,❌ 替用户 init)。
-  const [isGitRepo, setIsGitRepo] = useState<boolean | null>(null);
+  // 选中的目录不是 git 仓库:放行,给一句提示,❌ 替用户 init。
+  const inspection = useReplica(projectPathInspection, path ? ['local', path] : null);
   const [submitState, setSubmitState] = useState<'idle' | 'creating'>('idle');
   const name = basenameFromAnyPath(path);
   const canSubmit = path.trim().length > 0 && !!name && submitState === 'idle';
-
-  // 树从宿主的家目录长起:从 / 开始翻没意义。
-  useEffect(() => {
-    let cancelled = false;
-    rpc.app
-      .getHomeDirectory()
-      .then((home) => {
-        if (cancelled) return;
-        if (!home) throw new Error(translate('projects.dirTree.homeUnavailable'));
-        setRoot({ status: 'ready', path: normalizePath(home) });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setRoot({ status: 'error', message: error instanceof Error ? error.message : String(error) });
-      });
-    return () => {
-      cancelled = true;
-    };
-    // translate 的身份随语言变,家目录不随语言变。
-  }, []);
-
-  useEffect(() => {
-    setIsGitRepo(null);
-    if (!path) return;
-    let cancelled = false;
-    rpc.projects
-      .inspectProjectPath({ type: 'local', path })
-      .then((status) => {
-        if (!cancelled && status.isDirectory) setIsGitRepo(status.isGitRepo);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [path]);
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -102,28 +69,34 @@ export function LocalFolderProjectModal({ onClose, onSuccess }: LocalFolderProje
       <DialogContentArea data-autofocus tabIndex={-1} className="gap-2">
         <p className="text-sm text-foreground-muted">{translate('projects.create.pickFolderMessage')}</p>
         <div className="h-[320px] overflow-y-auto rounded-md border border-border p-1">
-          {root.status === 'loading' && (
+          {home.state === 'unknown' && (
             <div role="status" className="flex h-full items-center justify-center">
               <span className="sr-only">{translate('projects.remoteDir.loading')}</span>
               <Spinner className="text-foreground-muted" />
             </div>
           )}
-          {root.status === 'error' && (
-            <div className="flex h-full items-center justify-center px-6 text-center text-sm text-foreground-destructive">
-              {root.message}
+          {home.state === 'error' && (
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-sm text-foreground-destructive">
+              {messageForUser(home.error)}
+              <Button size="xs" variant="outline" onClick={() => void homeDirectory.refresh('local')}>
+                {translate('common.retry')}
+              </Button>
             </div>
           )}
-          {root.status === 'ready' && (
+          {home.state === 'value' && (
             <DirectoryTree
-              key={root.path}
-              rootPath={root.path}
+              key={normalizePath(home.value)}
+              rootPath={normalizePath(home.value)}
               value={path}
               onChange={setPath}
             />
           )}
         </div>
-        {isGitRepo === false && (
+        {inspection.state === 'value' && inspection.value.isDirectory && !inspection.value.isGitRepo && (
           <p className="text-xs text-foreground-muted">{translate('projects.dirTree.notAGitRepo')}</p>
+        )}
+        {inspection.state === 'error' && (
+          <p className="text-xs text-foreground-destructive">{messageForUser(inspection.error)}</p>
         )}
       </DialogContentArea>
     </ModalLayout>

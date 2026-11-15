@@ -3,8 +3,10 @@ import { MessageFilePreview, type HostedPreviewFile } from '@/components/chat/Me
 import { downloadBlob } from '@/lib/download';
 import { messageForUser } from '@/lib/userFacingError';
 import { rpc } from '@renderer/lib/ipc';
-import { log } from '@renderer/utils/logger';
-import type { OpenInAppId } from '@shared/openInApps';
+import { openInMenuApps, type OpenInAppId } from '@shared/openInApps';
+import { useReplica, type Reading } from '@/lib/replica';
+import { useOpenInApps } from '@renderer/lib/hooks/useOpenInApps';
+import { appSettingsModel, LOCAL_SETTINGS_HOST_KEY, type SettingsMeta } from '@renderer/features/settings/app-settings-client';
 import { useToast } from '@renderer/lib/hooks/use-toast';
 import { downloadSessionFile } from '@renderer/features/remote-hosts/workspace/remote-file-actions';
 import { Button } from '@renderer/lib/ui/button';
@@ -69,17 +71,9 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
 }) {
   const { translate } = useSessionMessages();
   const { toast } = useToast();
-  // Asked of main: this view is drawn in the shell too, where the session page's settings queries are not.
-  const [openInApps, setOpenInApps] = useState<{ id: OpenInAppId; label: string }[]>([]);
-  useEffect(() => {
-    if (workspaceBackend(projectId).elsewhere) return;
-    let current = true;
-    void (async () => {
-      const apps = await rpc.app.openInMenu();
-      if (current) setOpenInApps(apps);
-    })().catch((error: unknown) => log.error('[file-view] open-in list', { error: String(error) }));
-    return () => { current = false; };
-  }, [projectId]);
+  // 「打开方式」lists this computer's programs as the project tab's menu does: installed, not hidden in settings, the
+  // default first (shared `openInMenuApps`). Read from the replicas both entries share; not known yet = no entries.
+  const openInApps = useOpenInMenu();
   const [revision, setRevision] = useState(0);
   // What it re-reads on: the change feed, which on Linux only carries directories someone watches.
   useEffect(() => {
@@ -121,11 +115,11 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
         ...(elsewhere ? {} : {
           openExternal: () => void openPathWithFailureToast(absolutePath, inWorkspace ? { projectId, workspaceId } : undefined),
           // 「用 VS Code、访达、终端打开」: this computer's programs, as the project tab's menu lists them.
-          openIn: openInApps.map(({ id, label }) => ({
+          ...(openInApps ? { openIn: openInApps.map(({ id, label }) => ({
             key: id,
             label: translate('titlebar.openIn', { app: label }),
             open: () => void rpc.app.openIn({ app: id, path: absolutePath }).then((result) => { if (!result?.success) toast({ title: translate('titlebar.openInFailed', { app: label }), description: messageForUser(result?.error), variant: 'destructive' }); }),
-          })),
+          })) } : {}),
         }),
         // On this computer the system's program takes it; from another machine it is downloaded (outside the workspace there: read back here).
         unreadableAction: elsewhere
@@ -142,4 +136,20 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
     };
   }, [root, tabId, projectId, workspaceId, sessionId, path, absolutePath, inWorkspace, revision, translate, toast, openInApps]);
   return <MessageFilePreview fill tabbed readOnly={!sessionId} file={file} onClose={onClose} />;
+}
+
+/** The 「Open in」 entries of this computer, or null while its tools or the settings are not read yet. */
+function useOpenInMenu(): { id: OpenInAppId; label: string }[] | null {
+  const apps = useOpenInApps();
+  const openIn = useReplica(appSettingsModel, ['openIn', LOCAL_SETTINGS_HOST_KEY]) as Reading<SettingsMeta<'openIn'>>;
+  const terminal = useReplica(appSettingsModel, ['terminal', LOCAL_SETTINGS_HOST_KEY]) as Reading<SettingsMeta<'terminal'>>;
+  return useMemo(() => {
+    if (apps.state !== 'value' || openIn.state !== 'value' || terminal.state !== 'value') return null;
+    return openInMenuApps({
+      installed: apps.value.availability,
+      hidden: openIn.value.value.hidden,
+      terminalEnabled: terminal.value.value.enabled === true,
+      defaultApp: openIn.value.value.default,
+    }).map((app) => ({ id: app.id, label: apps.value.labels[app.id] ?? app.label }));
+  }, [apps, openIn, terminal]);
 }

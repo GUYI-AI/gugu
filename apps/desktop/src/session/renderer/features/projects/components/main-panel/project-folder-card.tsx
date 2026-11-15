@@ -3,11 +3,12 @@ import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge'
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings'
 import { observer } from 'mobx-react-lite';
 import { Unknown } from '@/components/ui/Unknown';
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from 'react';
 import { Check, Monitor, Plus, Server } from '@/lib/icons';
 import type { ProjectFolder } from '@shared/core/projects/project-folders';
 import { basenameFromAnyPath, shortHome } from '@shared/path-name';
-import { senderAvatarUrl, subscribeSenderAvatars } from '@renderer/lib/chat/sender-avatar';
+import { senderAvatarChanges, senderAvatarUrl } from '@renderer/lib/chat/sender-avatar';
+import { useSelect } from '@/lib/selectStore';
 import { sidebarStore } from '@renderer/lib/stores/app-state';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { Button } from '@renderer/lib/ui/button';
@@ -103,9 +104,9 @@ function FrostedFront({ projectId, running, count, uid, W, paperW }: { projectId
   </>;
 }
 
+/** Redraw when an agent's avatar should be read again (its identity, its session's owner, the theme). */
 function useAvatarTick() {
-  const [, tick] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => subscribeSenderAvatars(tick), []);
+  useSelect(senderAvatarChanges, (seen) => seen);
 }
 
 function reducedMotion() {

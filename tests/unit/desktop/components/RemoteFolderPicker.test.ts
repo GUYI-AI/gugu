@@ -10,6 +10,7 @@ vi.mock('../../../../apps/desktop/src/lib/deviceFs', () => ({
   deviceFsMakeDirectory: (...args: unknown[]) => mkdirMock(...args),
 }))
 import { RemoteFolderPicker } from '../../../../apps/desktop/src/components/RemoteFolderPicker'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 let container: HTMLDivElement
 let root: Root
 async function flush() {
@@ -20,6 +21,8 @@ async function flush() {
   })
 }
 beforeEach(() => {
+  queryClient.clear()
+  followRendererSession('SIGNED_IN', 'tester')
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -65,7 +68,7 @@ describe('RemoteFolderPicker', () => {
     expect(listMock).toHaveBeenCalledWith(
       'dev-A',
       { path: '~', show_hidden: false },
-      expect.objectContaining({ signal: expect.anything(), timeoutMs: 20_000, retryOnTimeout: false }),
+      expect.objectContaining({ timeoutMs: 20_000, retryOnTimeout: false }),
     )
     const labels = Array.from(container.querySelectorAll('li button')).map((el) => {
       // The label is in the second <span> inside the entry button.

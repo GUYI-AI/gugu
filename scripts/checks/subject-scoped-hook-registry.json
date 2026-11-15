@@ -39,8 +39,8 @@
     "why": "#6002:useSyncExternalStore 在渲染期用当前 agentId 读取 presence map 的 harness 原始值;切换身份同步更换 snapshot 与订阅,不靠 effect 将上一个 agent 的答案追到新主体。"
   },
   "apps/desktop/src/hooks/useSessionpageAgentProjection.ts::useSessionpageAgentProjection": {
-    "how": "subject-scoped",
-    "why": "#3911:ProjectionState 带上它描述的 agentUserId,主体不符时交出『还不知道』。owner 报的跨 agent 状态传染就出在这里。"
+    "how": "keyed-map",
+    "why": "#3911:读数是按 agentUserId 做键的 replica 条目(agentSessionContext),渲染期按当前参数取;换 agent 的那一帧读到的是新 agent 的条目(没答过 = 还不知道),不会是上一个 agent 的答案。"
   },
   "apps/desktop/src/hooks/useSessionpageSessionTimeline.ts::useSessionpageSessionTimeline": {
     "how": "subject-scoped",

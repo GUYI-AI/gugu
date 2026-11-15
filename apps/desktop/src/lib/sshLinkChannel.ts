@@ -8,6 +8,7 @@
 
 import { SERVER_SSH_MACHINES_CHANNELS } from './serverSshMachines'
 import { rendererLogger } from './log'
+import { replica } from './replica'
 import { TUNNEL_MACHINES_CHANNELS, type TunnelState, type TunnelWant } from './tunnelMachines'
 import {
   SSH_LINK_CHANNELS,
@@ -122,31 +123,58 @@ export function _setSshMachineIdsForTesting(ids: readonly string[]): void {
 // 「只经咕咕云连着」的机器(远程隧道、云电脑、别的电脑用远程 SSH 添加的)中转通着时,主进程经中转连过去;
 // 连通了就与远程 SSH 的机器同一套 —— 设备连接、终端、浏览器、端口。连不上的原因单独记(❌ 混进远程 SSH 的「要先登录」)。
 
-let tunnelState: TunnelState = { ready: [], problems: {} }
-let tunnelReady: ReadonlySet<string> = new Set()
+function tunnelStateOf(value: unknown): TunnelState | null {
+  const state = value as TunnelState | null
+  if (!state || !Array.isArray(state.ready) || typeof state.problems !== 'object' || !state.problems) return null
+  return { ready: [...new Set(state.ready.filter((id): id is string => typeof id === 'string'))], problems: { ...state.problems } }
+}
+
+/**
+ * Which machines main has linked over a remote tunnel and why the others are not (main's live state). Pushed: main's
+ * `changed` event carries the whole state (→ `set`), and so does every answer to `want`. Read once when first wanted.
+ */
+export const tunnelLinks = replica({
+  name: 'tunnelState',
+  scope: 'device',
+  read: async (): Promise<TunnelState> => {
+    const electron = bridge()
+    if (!electron) throw new Error('remote tunnels: no desktop main process here')
+    wireTunnel(electron)
+    const state = tunnelStateOf(await electron.invoke(TUNNEL_MACHINES_CHANNELS.state))
+    if (!state) throw new Error('remote tunnels: unexpected state answer')
+    return state
+  },
+  fresh: Infinity,
+})
+
 let tunnelWanted: ReadonlySet<string> = new Set()
+/** Who acts on a change (device RPC re-picks its pipes, `waitForTunnel` wakes): notification only, the state is above. */
 const tunnelListeners = new Set<(state: TunnelState) => void>()
 let tunnelWired = false
 
+/** The tunnel state now, for a one-moment decision outside rendering (routing a call, waiting for a link). */
+function tunnelsNow(): TunnelState | null {
+  const reading = tunnelLinks.peek()
+  return reading.state === 'value' ? reading.value : null
+}
+
 function applyTunnelState(value: unknown): void {
-  const state = value as TunnelState | null
-  if (!state || !Array.isArray(state.ready) || typeof state.problems !== 'object' || !state.problems) return
-  const next = new Set(state.ready.filter((id): id is string => typeof id === 'string'))
-  const same =
-    next.size === tunnelReady.size &&
-    [...next].every((id) => tunnelReady.has(id)) &&
-    JSON.stringify(state.problems) === JSON.stringify(tunnelState.problems)
+  const next = tunnelStateOf(value)
+  if (!next) return
+  const shown = tunnelsNow()
+  const same = shown !== null &&
+    next.ready.length === shown.ready.length &&
+    next.ready.every((id) => shown.ready.includes(id)) &&
+    JSON.stringify(next.problems) === JSON.stringify(shown.problems)
   if (same) return
-  tunnelState = { ready: [...next], problems: { ...state.problems } }
-  tunnelReady = next
-  for (const listener of [...tunnelListeners]) listener(tunnelState)
+  tunnelLinks.set([], next)
+  for (const listener of [...tunnelListeners]) listener(next)
 }
 
 function wireTunnel(electron: ElectronBridge): void {
   if (tunnelWired) return
   tunnelWired = true
   electron.eventOn(TUNNEL_MACHINES_CHANNELS.changed, applyTunnelState)
-  void electron.invoke(TUNNEL_MACHINES_CHANNELS.state).then(applyTunnelState, () => undefined)
 }
 
 /** 这一端能不能自己经远程隧道连过去(有主进程 = 电脑上的咕咕;手机 / 网页没有)。 */
@@ -154,9 +182,10 @@ export function canOpenTunnels(): boolean {
   return bridge() !== null
 }
 
-/** 这台机器此刻经远程隧道连通着(设备连接走它)。 */
+/** 这台机器此刻经远程隧道连通着(设备连接走它)。Not read yet = not known linked: the call goes the cloud way. */
 export function isTunnelLinked(deviceId: string): boolean {
-  return tunnelReady.has(deviceId)
+  const state = tunnelsNow()
+  return state !== null && state.ready.includes(deviceId)
 }
 
 /** 设备连接(SSH 或远程隧道)走不走得通:设备 RPC 据此挑管道。 */
@@ -167,7 +196,9 @@ export function usesDeviceLink(deviceId: string): boolean {
 /** Wait only for a requested tunnel's ready/failure event, before starting the task-host RPC budget. */
 export async function waitForTunnel(deviceId: string): Promise<void> {
   await sshMachinesReady()
-  const pending = () => tunnelWanted.has(deviceId) && !usesDeviceLink(deviceId) && !(deviceId in tunnelState.problems)
+  // Not read yet: no problem known, so a wanted tunnel is still pending.
+  const failed = () => { const known = tunnelsNow(); return known !== null && deviceId in known.problems }
+  const pending = () => tunnelWanted.has(deviceId) && !usesDeviceLink(deviceId) && !failed()
   if (!pending()) return
   await new Promise<void>((resolve) => {
     const check = () => {
@@ -180,13 +211,17 @@ export async function waitForTunnel(deviceId: string): Promise<void> {
   })
 }
 
-export function currentTunnelState(): TunnelState {
-  return tunnelState
-}
-
+/** Act on tunnel changes (non-React code); a surface reads `tunnelLinks` instead. */
 export function subscribeTunnelState(listener: (state: TunnelState) => void): () => void {
   const electron = bridge()
-  if (electron) wireTunnel(electron)
+  if (electron) {
+    wireTunnel(electron)
+    // The first read lands in the replica, not through `applyTunnelState`: the listeners hear of it once it is there.
+    void tunnelLinks.prefetch().then(() => {
+      const state = tunnelsNow()
+      if (state && tunnelListeners.has(listener)) listener(state)
+    })
+  }
   tunnelListeners.add(listener)
   return () => {
     tunnelListeners.delete(listener)
@@ -200,7 +235,8 @@ export function wantTunnels(wants: readonly TunnelWant[]): void {
   if (!electron) return
   wireTunnel(electron)
   tunnelWanted = new Set(wants.map((want) => want.deviceId))
-  for (const listener of [...tunnelListeners]) listener(tunnelState)
+  const shown = tunnelsNow()
+  if (shown) for (const listener of [...tunnelListeners]) listener(shown)
   const key = JSON.stringify([...wants].sort((a, b) => a.deviceId.localeCompare(b.deviceId)))
   if (key === lastWant) return
   lastWant = key

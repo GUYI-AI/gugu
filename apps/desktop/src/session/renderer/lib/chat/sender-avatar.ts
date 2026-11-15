@@ -1,6 +1,7 @@
 import { subscribePhoneAssistantIdentity } from '@/mobile/assistant/phoneAssistantIdentity';
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge';
 import { observe } from 'mobx';
+import type { Readable } from '@/lib/selectStore';
 import { subscribeToHostTheme } from '../theme/host-theme';
 import { decodeTypedId } from '@gugu/core/shared/typedId.mjs';
 import { displayAvatarUrl } from '@/lib/dicebearAvatar';
@@ -77,3 +78,13 @@ export function subscribeSenderAvatars(listener: () => void): () => void {
     offAssistant();
   };
 }
+
+let avatarsSeen = 0;
+/**
+ * The moments above as a `Readable` (lib/selectStore.ts): a count that moves whenever an avatar should be read again,
+ * so a surface drawing `senderAvatarUrl` subscribes with `useSelect` (❌ a reducer tick bumped from an effect).
+ */
+export const senderAvatarChanges: Readable<number> = {
+  get: () => avatarsSeen,
+  subscribe: (listener) => subscribeSenderAvatars(() => { avatarsSeen += 1; listener(); }),
+};

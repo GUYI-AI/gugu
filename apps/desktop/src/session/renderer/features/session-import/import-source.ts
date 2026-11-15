@@ -1,3 +1,4 @@
+import { replica } from '@/lib/replica';
 import { rpc, rpcOn } from '@renderer/lib/ipc';
 import type {
   ImportLocalSessionParams,
@@ -56,3 +57,16 @@ export function resolveImportSource(deviceId: string, directTerminal = false): S
   if (deviceId === LOCAL_IMPORT_DEVICE) return localImportSource;
   return machineImportSource(deviceId, directTerminal);
 }
+
+/**
+ * The confirm view's read of one session file on a machine (real turn count, first and last turns). Content of a file
+ * that may change or vanish: read each time it is selected, held a minute, not pushed, not kept across restarts.
+ */
+export const sessionImportPreview = replica({
+  name: 'sessionImportPreview',
+  scope: 'account',
+  read: (_owner, deviceId: string, filePath: string, engine: PreviewLocalSessionParams['engine']) =>
+    resolveImportSource(deviceId).preview({ filePath, engine }),
+  fresh: 0,
+  keep: 60_000,
+});

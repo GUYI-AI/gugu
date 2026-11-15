@@ -7,7 +7,7 @@ import { desktopIpc } from '../platform/desktopIpc'
  * 这台桌面上用 SSH 装上的机器(设备 id → 给人看的地址),见 electron/server/ssh-machines.ts。主进程按登录账号筛,
  * 所以跟账号走;装上 / 忘掉一台时重读。没有桌面主进程(网页、手机)⇒ 空:那里没有 SSH 这条路。
  */
-const sshMachineAddresses = replica({
+export const sshMachineAddresses = replica({
   name: 'sshMachineAddresses',
   scope: 'account',
   read: async (): Promise<Array<[string, string]>> => {

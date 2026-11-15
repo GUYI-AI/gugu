@@ -139,9 +139,12 @@ vi.mock('@renderer/features/sessions/session-config/session-field', () => ({
   }
 }));
 
-vi.mock('./implicit-session-home-project', () => ({
-  ensureImplicitSessionHomeProjectId: vi.fn().mockResolvedValue('implicit-task-home')
-}));
+vi.mock('./implicit-session-home-project', async () => {
+  const { replica } = await import('@/lib/replica');
+  return {
+    implicitSessionHome: replica({ name: 'implicitSessionHome', scope: 'account', read: async () => 'implicit-task-home', fresh: Infinity }),
+  };
+});
 
 vi.mock('@renderer/features/sessions/session-config/initial-session-section', () => ({
   useInitialSessionState: (...args: unknown[]) => {
@@ -364,6 +367,8 @@ describe('NewSessionPage', () => {
     await act(async () => {
       root.render(localized(React.createElement(ShellTitlebar), React.createElement(NewSessionPage)));
     });
+    // The hidden task-home project is a replica reading: let its answer land (react-query notifies on the next task).
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   }
 
   // 项目块画的窗口 chrome 与项目首页(app/project-block.tsx)。

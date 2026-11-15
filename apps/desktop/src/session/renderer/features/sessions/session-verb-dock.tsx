@@ -1,5 +1,8 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { Unknown } from '@/components/ui/Unknown';
+import { replica, useReplica } from '@/lib/replica';
+import { messageForUser } from '@/lib/userFacingError';
 import { SquarePen } from '@/lib/icons';
 import { setComposerVerb, takeComposerCarry, type ComposerVerb } from '@/lib/composerVerbBridge';
 import { showBesideOnScreen } from '@renderer/app/screen-layout-actions';
@@ -53,11 +56,22 @@ export const SessionVerbDock = observer(function SessionVerbDock({ sessionId, pr
   /** 项目群;没有项目的会话 = undefined(它就是和这个 agent 的私聊,卡落那个私聊)。 */
   chatId: string | undefined;
 }) {
+  const { translate } = useSessionMessages();
   const key = sessionVerbKey(sessionId);
-  const dmChatId = useSessionAgentChat(chatId ? null : { projectId, sessionId });
-  const cardChatId = chatId ?? dmChatId;
-  if (!cardChatId) return null;
+  // 这条会话的 agent 和我的私聊(与对话页给它发首句同一个地址);有项目群就不要。
+  const dm = useReplica(sessionAgentChat, chatId ? null : [projectId, sessionId]);
   if (!chatId) {
+    // Not resolved yet: the box's place is held; failed: said, with a retry (❌ no box and no word).
+    if (dm.state === 'unknown') return <Unknown className="h-[132px] w-full" />;
+    if (dm.state === 'error') {
+      return (
+        <p role="alert" className="flex items-center gap-2 px-4 py-2 text-xs text-foreground-destructive">
+          <span className="min-w-0 truncate">{messageForUser(dm.error)}</span>
+          <Button size="xs" variant="outline" onClick={() => void sessionAgentChat.refresh(projectId, sessionId)}>{translate('common.retry')}</Button>
+        </p>
+      );
+    }
+    const cardChatId = dm.value;
     // gugu-dev#181 核对 #51:没有项目的会话里派 —— agent 进不了私聊(只能两个人),卡照样留在私聊里,结果回它自己的会话。
     return (
       <TaskDispatchComposer
@@ -70,22 +84,24 @@ export const SessionVerbDock = observer(function SessionVerbDock({ sessionId, pr
   return <SessionTaskDock projectId={projectId} verbKey={key} />;
 });
 
-/** 这条会话的 agent 和我的私聊(与对话页给它发首句同一个地址);不要 = null。 */
-function useSessionAgentChat(session: { projectId: string; sessionId: string } | null): string | undefined {
-  const [chatId, setChatId] = useState<string | undefined>(undefined);
-  const projectId = session?.projectId;
-  const sessionId = session?.sessionId;
-  useEffect(() => {
-    if (!projectId || !sessionId) return;
-    let live = true;
-    void shellPort().ensureAgentAddress({ projectId, sessionId }).then(
-      (address) => { if (live) setChatId(address.chatId); },
-      (error: unknown) => log.warn('resolve the session agent chat for a new task failed', { sessionId, error: error instanceof Error ? error.message : String(error) }),
-    );
-    return () => { live = false; };
-  }, [projectId, sessionId]);
-  return chatId;
-}
+/**
+ * The direct chat of a session's agent and me (the address the chat page sends its first line to). "Ensure" may open it
+ * on the first ask, but what surfaces show is the address, and it is stable: read once, never pushed, not kept across
+ * restarts.
+ */
+export const sessionAgentChat = replica({
+  name: 'sessionAgentChat',
+  scope: 'account',
+  read: async (_owner, projectId: string, sessionId: string): Promise<string> => {
+    try {
+      return (await shellPort().ensureAgentAddress({ projectId, sessionId })).chatId;
+    } catch (error) {
+      log.warn('resolve the session agent chat for a new task failed', { sessionId, error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+  },
+  fresh: Infinity,
+});
 
 const SessionTaskDock = observer(function SessionTaskDock({ projectId, verbKey }: {
   projectId: string;

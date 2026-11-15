@@ -3,13 +3,14 @@ import {
   asMounted,
   getProjectManagerStore,
 } from '@renderer/features/projects/stores/project-selectors';
+import { replica } from '@/lib/replica';
 import { rpc } from '@renderer/lib/ipc';
 import {
   IMPLICIT_SESSION_HOME_PROJECT_ID,
   IMPLICIT_SESSION_HOME_PROJECT_NAME,
 } from './session-home-project-constants';
 
-let ensurePromise: Promise<string | undefined> | null = null;
+let ensurePromise: Promise<string> | null = null;
 
 /**
  * 隐藏工作区准备失败是**已知产品错误**，所以这里只抛稳定语义码，不抛成品文案：
@@ -41,7 +42,7 @@ export class ImplicitSessionHomeProjectError extends Error {
 /**
  * 只管本机;别的机器上的任务工作区见 remoteHostsStore.ensureTaskWorkspace(#609)。
  */
-export async function ensureImplicitSessionHomeProjectId(): Promise<string | undefined> {
+export async function ensureImplicitSessionHomeProjectId(): Promise<string> {
   if (ensurePromise) return ensurePromise;
   const homeId = IMPLICIT_SESSION_HOME_PROJECT_ID;
 
@@ -123,5 +124,17 @@ function removeFailedImplicitProject(
     }
   }
 }
+
+/**
+ * The hidden task-home project, registered and mounted for this run (its id is a constant; what a surface waits for is
+ * that it is ready). Read once per account (the project store is the signed-in account's), never pushed. A failure is
+ * the reading's error (a typed `ImplicitSessionHomeProjectError`), said where the composer is.
+ */
+export const implicitSessionHome = replica({
+  name: 'implicitSessionHome',
+  scope: 'account',
+  read: () => ensureImplicitSessionHomeProjectId(),
+  fresh: Infinity,
+});
 
 export { IMPLICIT_SESSION_HOME_PROJECT_NAME } from './session-home-project-constants';

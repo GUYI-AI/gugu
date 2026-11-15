@@ -2,7 +2,8 @@
 // 发送都是本机那一套,只是数据问那台机器(LibraryHost + rpc 按实体所在机器路由)。
 // 项目与机器解耦:这里不再按路径找 / 建项目。选了项目时,那台机器上它绑的本地项目由项目块的文件夹选择定好了(projectId);
 // 没选项目 = 那台机器的任务工作区(#609)。
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
+import { replica, useReplica } from '@/lib/replica';
 import { cloudWakeFailureText, TOO_OLD_CODES } from '@renderer/features/remote-hosts/connection-status';
 import { machineNotice, useMachineNotice } from '@renderer/features/remote-hosts/machine-notice';
 import { remoteErrorCode } from '@renderer/features/remote-hosts/remote-failure-copy';
@@ -59,6 +60,21 @@ export function resolveMachineProject(target: MachineCreateTarget): Promise<stri
   return target.projectId ? Promise.resolve(target.projectId) : remoteHostsStore.ensureTaskWorkspace(target.deviceId);
 }
 
+/**
+ * The local project a new task on another machine goes into (`projectId` '' = that machine's task workspace, prepared
+ * on the first ask). Read while the machine is connected and again when it reconnects; not kept across restarts.
+ */
+export const machineProject = replica({
+  name: 'machineProject',
+  scope: 'account',
+  read: async (_owner, deviceId: string, projectId: string): Promise<string> => {
+    const id = await resolveMachineProject({ deviceId, ...(projectId ? { projectId } : {}) });
+    if (!id) throw new ImplicitSessionHomeProjectError('unavailable');
+    return id;
+  },
+  fresh: Infinity,
+});
+
 export type MachineCreateContext = {
   /** 那台机器上的项目 id(解析中 / 失败时为 undefined)。 */
   projectId: string | undefined;
@@ -82,25 +98,17 @@ export function useMachineCreateContext(target: MachineCreateTarget | null): Mac
   const connected = connection === 'connected';
   // #7199 选了一台睡着的云电脑做目标 ❌ 当场叫醒:新建框里开始输入才叫(useWakeCloudOnInput,看一眼不该扣积分);
   // 醒了线自己连上、项目照常解析、发送键自己亮;草稿一直留着。
-  const [resolved, setResolved] = useState<{ key: string; id: string | null; failure: unknown } | null>(null);
-  const key = target ? `${target.deviceId}|${target.projectId ?? ''}` : null;
+  // The project there: asked while the machine is connected; a reconnect asks again (the machine may have gone away and
+  // come back without it). Held while it is away: the box keeps its project (❌ "not known" every time the line drops).
+  const project = useReplica(machineProject, target ? [target.deviceId, target.projectId ?? ''] : null, { read: connected });
+  const wasConnected = useRef(connected);
   useEffect(() => {
-    if (!target || !key || !connected) return;
-    let cancelled = false;
-    void resolveMachineProject(target).then(
-      (id) => {
-        if (cancelled) return;
-        setResolved({ key, id: id ?? null, failure: id ? null : new ImplicitSessionHomeProjectError('unavailable') });
-      },
-      (failure: unknown) => {
-        if (!cancelled) setResolved({ key, id: null, failure });
-      }
-    );
-    return () => {
-      cancelled = true;
-    };
-    // 按「哪台机器、哪个本地项目、连没连上」重解。
-  }, [key, connected]);
+    const came = connected && !wasConnected.current;
+    wasConnected.current = connected;
+    if (came && target) void machineProject.refresh(target.deviceId, target.projectId ?? '');
+  }, [connected, target?.deviceId, target?.projectId]);
+  // The name comes from remoteHostsStore (MobX, PR 5), which cannot tell "not listed" from "not read yet"; a machine
+  // it does not list is named by its id, as before (an open issue of this PR, said in its report).
   const label = device?.label ?? target?.deviceId ?? '';
   // 选着的机器掉线了:右下角那条提示说(重连第几次 → 离线 / 失败,或 → 已连上),输入框照旧可写、写好的内容留着(不重挂)。
   useMachineNotice(
@@ -121,14 +129,13 @@ export function useMachineCreateContext(target: MachineCreateTarget | null): Mac
     translate
   );
   if (!target) return null;
-  const current = resolved && resolved.key === key ? resolved : null;
-  const projectError = current?.failure ? describeMachineProjectFailure(current.failure, label, translate) : null;
+  const projectError = project.state === 'error' ? describeMachineProjectFailure(project.error, label, translate) : null;
   return {
-    projectId: current?.id ?? undefined,
+    projectId: project.state === 'value' ? project.value : undefined,
     // 它一回来发送键自己亮。
     blockReason: projectError,
     blocked: !connected,
-    isContextPending: connected && !current?.id && !projectError,
+    isContextPending: connected && project.state === 'unknown',
     host: machineLibraryHost({
       deviceId: target.deviceId,
       deviceLabel: label,

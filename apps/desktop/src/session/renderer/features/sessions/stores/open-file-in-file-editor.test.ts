@@ -63,6 +63,7 @@ vi.mock('@renderer/lib/ipc', () => ({
       files: { fileExists: mocks.fileExists, statExternalFile: mocks.statExternalFile },
     },
   },
+  rpcOn: () => ({ app: { getHomeDirectory: mocks.getHomeDirectory } }),
 }));
 
 vi.mock('./workspace-registry', () => ({
@@ -94,6 +95,7 @@ const {
   openHostRequestedExtensionInSessionWhenReady,
   openHostRequestedFileInSessionWhenReady,
 } = await import('./open-file-in-file-editor');
+const { followRendererSession, queryClient } = await import('@/lib/replica');
 
 describe('task file preview routing', () => {
   it('reports an unprepared or missing workspace rather than acknowledging an open', async () => {
@@ -124,6 +126,8 @@ describe('task file preview routing', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    queryClient.clear();
+    followRendererSession('SIGNED_IN', 'tester');
     mocks.showModal.mockReset();
     mocks.showPage.mockReset();
     mocks.installedManifests.length = 0;
@@ -299,11 +303,10 @@ describe('task file preview routing', () => {
     );
   });
 
-  it('getHomeDirectory 一次瞬时失败不污染会话 —— 缓存被释放,下次点击即恢复', async () => {
-    // 模块级 home 缓存跨用例存活:前面的用例已把它焐热,这里必须重置模块拿冷缓存,
-    // 否则 rejected 分支根本不会走到,Once mock 还会漏给后面的用例(实测就是这么红的)。
-    vi.resetModules();
-    const { openFileInSessionEditor: openFresh } = await import('./open-file-in-file-editor');
+  it('getHomeDirectory 一次瞬时失败不污染会话 —— 读失败是 error,下次点击即重读', async () => {
+    // The home folder is the account's `homeDirectory` replica (cleared before each case): a failed read is an error
+    // reading, never a cached value, so the next click reads again.
+    const openFresh = openFileInSessionEditor;
     mocks.getHomeDirectory.mockRejectedValueOnce(new Error('bridge not ready'));
     // 第一次:~ 没展开,被当相对路径拼成 <ws>/~/… —— 那个位置不存在(只对这一次 mock)。
     mocks.fileExists.mockResolvedValueOnce({

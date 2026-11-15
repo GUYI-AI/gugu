@@ -1,7 +1,9 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, useState, type ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
+import { Unknown } from '@/components/ui/Unknown';
+import { replica, useReplica } from '@/lib/replica';
+import { devicesModel } from '@/store/devicesCache';
 import { readComposerVerbChat, setComposerVerb, takeComposerCarry, useComposerVerb } from '@/lib/composerVerbBridge';
-import { platform } from '@/platform';
 import { machineLibraryHost } from '@renderer/features/library/library-host';
 import { useNewSessionMachine } from '@renderer/features/remote-hosts/use-new-session-machine';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -15,11 +17,25 @@ import { rememberedTaskRow, taskProjectChoice } from './task-project-memory';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { composerDrafts } from './composer-drafts';
 import { ComposerTray } from './composer-tray';
-import { ensureImplicitSessionHomeProjectId } from './implicit-session-home-project';
+import { implicitSessionHome } from './implicit-session-home-project';
 import { NewSessionComposer } from './new-session-page';
 import { sessionComposerDockBandClassName, sessionComposerDockedWidthClassName } from './session-composer-styles';
 import { cancelComposerVerb, composerVerbLook } from './composer-verb-tag';
 import { machineComposerProps } from './use-machine-create-target';
+
+/**
+ * The project a chat remembers for new tasks on this computer (the host keeps it per chat and device). Read when the
+ * dispatch box opens, ❌ pushed; a pick writes it (`set` once the host stored it). Not kept across restarts.
+ */
+export const chatTaskProject = replica({
+  name: 'chatTaskProject',
+  scope: 'account',
+  read: (_owner, chatId: string, deviceId: string) => sessionpageMessageHost().rememberedTaskProject(chatId, deviceId).catch((error: unknown) => {
+    log.warn('read the project remembered for a chat failed', { chatId, error: error instanceof Error ? error.message : String(error) });
+    throw error;
+  }),
+  fresh: 0,
+});
 
 export function taskDispatchDraftKey(chatId: string): string {
   return `task:${chatId}`;
@@ -63,24 +79,41 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
     if (carried) composerDrafts.set(draftKey, carried);
     return null;
   });
-  const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
-  const localDeviceId = useLocalDeviceId();
-  const remembered = useChatProjectMemory(chatId, inGroup ? null : localDeviceId);
-  useEffect(() => {
-    if (remembered && selectedId === undefined) setSelectedId(remembered);
-  }, [remembered, selectedId]);
-  const implicitProjectId = useImplicitProjectId(!selectedId);
+  // What the person picked here (null = nothing picked yet: the chat's remembered project shows).
+  const [picked, setPicked] = useState<{ projectId: string | undefined } | null>(null);
+  const devices = useReplica(devicesModel, []);
+  const localDeviceId = devices.state === 'value' ? devices.value.find((device) => device.is_current_device)?.device_id ?? null : null;
+  // 这个对话记着的项目(哪台机器上的都算,认回账号上的项目):群和它的话题里 ❌ 沿用(#2599)。
+  const remembers = !inGroup && picked === null;
+  const memory = useReplica(chatTaskProject, remembers && localDeviceId ? [chatId, localDeviceId] : null);
+  // The project shown: the one picked; else (outside a group) the remembered one, unknown until it is read — ❌ "no
+  // project" first and the remembered one popping in. 在 observer 的渲染里认:账号上的项目列表变了,跟着重认。
+  const selection: { known: true; projectId: string | undefined } | { known: false } = picked
+    ? { known: true, projectId: picked.projectId }
+    : !remembers ? { known: true, projectId: undefined }
+    : devices.state === 'unknown' || (localDeviceId !== null && memory.state === 'unknown') ? { known: false }
+    // @@@reading-default - a chat's remembered project that could not be read (logged by the read) or a device with no row of its own: the picker starts empty and the person picks
+    : { known: true, projectId: memory.state === 'value' && memory.value ? rememberedTaskRow(memory.value, accountProjectsStore) : undefined };
+  const selectedId = selection.known ? selection.projectId : undefined;
+  // 没选项目:与新建会话页同一个隐式工作目录(「未选择项目」是真状态,不是列表第一个)。
+  const implicitProject = useReplica(implicitSessionHome, selection.known && !selectedId ? [] : null);
+  const implicitProjectId = implicitProject.state === 'value' ? implicitProject.value : undefined;
 
   const pickProject = (projectId: string | undefined) => {
-    setSelectedId(projectId);
+    setPicked({ projectId });
     if (localDeviceId && !inGroup) {
       const choice = taskProjectChoice(projectId, localDeviceId, (id) => machineRegistry.machineOf(id));
-      void sessionpageMessageHost().rememberTaskProject(chatId, choice.deviceId, choice.projectId).catch((error: unknown) => {
+      const entry = chatTaskProject.at(chatId, localDeviceId);
+      void sessionpageMessageHost().rememberTaskProject(chatId, choice.deviceId, choice.projectId).then(() => {
+        entry.set(choice.projectId ? { deviceId: choice.deviceId, projectId: choice.projectId } : null);
+      }, (error: unknown) => {
         log.warn('remember the project picked for a chat failed', { chatId, error: error instanceof Error ? error.message : String(error) });
       });
     }
   };
-  const projectPicker = <ComposerProjectPicker selectedId={selectedId} onSelect={pickProject} />;
+  const projectPicker = selection.known
+    ? <ComposerProjectPicker selectedId={selectedId} onSelect={pickProject} />
+    : <Unknown className="h-6 w-24" />;
   const tray = {
     draftKey,
     chatId,
@@ -99,7 +132,8 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   };
   return (
     <div data-testid="task-dispatch-composer" data-chat-id={chatId}>
-      {selectedId ? (
+      {/* The remembered project not read yet: the box's place is held (❌ the machine box first, then the project's). */}
+      {!selection.known ? <Unknown className="h-[132px] w-full" /> : selectedId ? (
         <ProjectDispatch key={selectedId} projectId={selectedId} projectPicker={projectPicker} {...tray} />
       ) : (
         <MachineDispatch projectPicker={projectPicker} implicitProjectId={implicitProjectId} {...tray} />
@@ -182,48 +216,4 @@ export function ComposerVerbDock({ chatId }: { chatId: string }) {
       </div>
     </div>
   );
-}
-
-function useLocalDeviceId(): string | null {
-  const [id, setId] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    void Promise.resolve(platform.getLocalDeviceSelfSnapshot?.()).then(
-      (self) => { if (live) setId(self?.device_id ?? null); },
-      () => undefined,
-    );
-    return () => { live = false; };
-  }, []);
-  return id;
-}
-
-/** 这个对话记着的项目(哪台机器上的都算,认回账号上的项目);没记过 = 这台电脑上最近一次选的。 */
-function useChatProjectMemory(chatId: string, deviceId: string | null): string | undefined {
-  const [remembered, setRemembered] = useState<{ chatId: string; choice: { deviceId: string; projectId: string } } | null>(null);
-  useEffect(() => {
-    if (!deviceId) return;
-    let live = true;
-    void sessionpageMessageHost().rememberedTaskProject(chatId, deviceId).then(
-      (choice) => { if (live && choice) setRemembered({ chatId, choice }); },
-      (error: unknown) => log.warn('read the project remembered for a chat failed', { chatId, error: error instanceof Error ? error.message : String(error) }),
-    );
-    return () => { live = false; };
-  }, [chatId, deviceId]);
-  // 在 observer 的渲染里认:账号上的项目列表读到 / 变了,跟着重认(❌ 只在读回记忆那一刻认一次)。
-  return remembered?.chatId === chatId ? rememberedTaskRow(remembered.choice, accountProjectsStore) : undefined;
-}
-
-/** 没选项目:与新建会话页同一个隐式工作目录(「未选择项目」是真状态,不是列表第一个)。 */
-function useImplicitProjectId(wanted: boolean): string | undefined {
-  const [projectId, setProjectId] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    if (!wanted || projectId) return;
-    let live = true;
-    void ensureImplicitSessionHomeProjectId().then(
-      (id) => { if (live && id) setProjectId(id); },
-      (error: unknown) => log.warn('prepare the implicit project for a task failed', { error: error instanceof Error ? error.message : String(error) }),
-    );
-    return () => { live = false; };
-  }, [wanted, projectId]);
-  return projectId;
 }
