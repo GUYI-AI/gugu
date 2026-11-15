@@ -109,6 +109,16 @@ it.each([['zh-CN', 'dark'], ['zh-CN', 'light'], ['en-US', 'dark'], ['en-US', 'li
   for (const button of buttons) {
     const box = button.getBoundingClientRect(), label = button.querySelector<HTMLElement>('.gg-phone-composer-control-label')!
     expect(box.right).toBeLessThanOrEqual(390)
+    expect(Math.abs(box.top - buttons[0]!.getBoundingClientRect().top)).toBeLessThan(1)
     expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth)
   }
+})
+
+it('keeps every complete English control reachable on a 320px phone by wrapping the row', async () => {
+  await mount('dark', 'en-US')
+  await page.viewport(320, 640)
+  const row = host!.querySelector<HTMLElement>('[data-phone-composer-controls]')!
+  expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+  for (const button of row.querySelectorAll('button')) expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(320)
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320)
 })
