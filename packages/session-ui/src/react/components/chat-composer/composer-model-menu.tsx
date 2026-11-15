@@ -49,6 +49,7 @@ import { useMessages } from '../../localization/message-provider';
 import * as styles from './chat-composer.css';
 // 圆钮直径的**唯一真源** —— 填充末端要落在圆心上,这里跟着它算,❌ 别再写一遍字面量。
 import { EFFORT_THUMB_VAR } from './chat-composer.css';
+import { ComposerFastMode, type RenderFastModeHint } from './composer-fast-mode';
 
 import type {
   ComposerEffortItem,
@@ -275,6 +276,10 @@ export interface ComposerModelMenuProps {
   selectedEffort?: string;
   onEffortChange?: (effortId: string) => void;
   defaultEffort?: string;
+  /** Undefined means the current model/route does not offer Fast. */
+  fastMode?: boolean;
+  onFastModeChange?: (enabled: boolean) => void;
+  renderFastModeHint?: RenderFastModeHint;
 }
 
 export function ComposerModelMenu({
@@ -297,6 +302,9 @@ export function ComposerModelMenu({
   selectedEffort,
   onEffortChange,
   defaultEffort,
+  fastMode,
+  onFastModeChange,
+  renderFastModeHint,
 }: ComposerModelMenuProps) {
   const { translate, locale } = useMessages();
 
@@ -848,6 +856,7 @@ export function ComposerModelMenu({
               {/* 离散滑杆:一档一格。`thumbAlignment="edge"` 让最小档时圆钮**左缘**贴住轨道左缘
                   (而不是圆心贴左缘),那正是上游那个控件的样子;刻点层跟着缩进半个圆钮,
                   于是刻点与圆心逐像素对齐(见 EFFORT_THUMB_HALF)。 */}
+              <div className={styles.modelEffortAxis} data-fast-mode={fastMode !== undefined || undefined}>
               <Slider.Root
                 className={styles.modelEffortSlider}
                 min={0}
@@ -961,6 +970,11 @@ export function ComposerModelMenu({
                   </Slider.Track>
                 </Slider.Control>
               </Slider.Root>
+              {fastMode !== undefined && (
+                <ComposerFastMode enabled={fastMode} disabled={disabled}
+                  onChange={onFastModeChange} renderHint={renderFastModeHint} />
+              )}
+              </div>
               </>
               )}
             </div>

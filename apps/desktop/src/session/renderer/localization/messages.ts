@@ -789,6 +789,7 @@ const enUSCoreMessages = {
   'composer.effort': 'Thinking',
   'composer.effortReset': 'Reset to the model default',
   'composer.effortUnset': 'Default',
+  'composer.fastModeHint': 'Faster, uses more quota',
   'composer.effortLocked': "This task can't change the thinking level right now.",
   // @@@session-options-disabled —— 置灰的那一条必须说明为什么
   // (owner 2026-08-21:选不了的那一头要留在原地并说明原因)。
@@ -1954,6 +1955,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'composer.effort': '思考',
   'composer.effortReset': '恢复到模型默认档',
   'composer.effortUnset': '默认',
+  'composer.fastModeHint': '更快，消耗更多额度',
   'composer.effortLocked': '这个会话现在改不了思考档位。',
   'composer.modelNotInCatalog':
     '咕咕目录里这家 agent 已经没有这一条了，所以这个会话到不了它。换一条。',
