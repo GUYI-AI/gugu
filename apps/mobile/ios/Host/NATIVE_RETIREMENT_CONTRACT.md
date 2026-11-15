@@ -100,7 +100,7 @@ Only these fixed operations may use the separate authorization provider:
 | checkpointLease | POST model-access, action=checkpoint | One known leaseId from the original native lease ledger |
 | revokeLease | POST model-access, action=revoke | The same registered leaseId, without any issue/renew |
 | readOwnedDevice | GET identity.gugu_devices | Exact original device_id AND user_id; select only device_id,user_id,capabilities,updated_at |
-| withdrawOwnedDevice | PATCH identity.gugu_devices | Exact original device_id AND user_id AND captured updated_at; clear only runtimes/host_runtime_capability from the captured capability object |
+| withdrawOwnedDevice | PATCH identity.gugu_devices | Exact original device_id AND user_id AND captured updated_at; new CAS records clear only runtimes and preserve the captured runtime version; unmarked legacy CAS records retain their original clear-version receipt |
 
 The runner loads its own original binding's backend store. It never accepts a
 caller-provided lease ID. It snapshots and durably records the eligible pending

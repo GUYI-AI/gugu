@@ -47,7 +47,7 @@ extension GuguIOSNativeBackend {
                 guard let row = rows.first else { completion(.success(())); return }
                 guard row["device_id"] as? String == expected.deviceId, row["user_id"] as? String == expected.ownerId,
                       var capabilities = row["capabilities"] as? [String: Any], capabilities["host_kind"] as? String == "phone" else { throw Self.failure("stale_context", "Device capability belongs to another native host") }
-                capabilities["runtimes"] = []; capabilities["host_runtime_capability"] = 0
+                capabilities["runtimes"] = []
                 self.broker.perform(.withdrawDevice(capabilities), binding: expected) { result in
                     completion(result.flatMap { raw in Result {
                         guard let rows = raw as? [[String: Any]], rows.count == 1, rows[0]["device_id"] as? String == expected.deviceId else { throw Self.failure("cloud_protocol_error", "Device did not confirm native capability withdrawal") }

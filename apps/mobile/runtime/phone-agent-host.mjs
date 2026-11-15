@@ -725,7 +725,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     if (!data) return
     if (data.capabilities?.host_kind !== 'phone') throw new Error('手机设备登记信息与当前宿主不一致')
     // Stopping task execution does not stop the phone's independently enabled action endpoint.
-    const updated = await cloud.identity.from('gugu_devices').update({ capabilities: { ...data.capabilities, runtimes: [], host_runtime_capability: 0 }, updated_at: new Date().toISOString() }).eq('device_id', deviceId).eq('user_id', ownerId)
+    const updated = await cloud.identity.from('gugu_devices').update({ capabilities: { ...data.capabilities, runtimes: [] }, updated_at: new Date().toISOString() }).eq('device_id', deviceId).eq('user_id', ownerId)
     if (updated.error) throw new Error(updated.error.message)
   }
 
