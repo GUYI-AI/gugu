@@ -53,7 +53,7 @@ export function useOwnedAgentConversationEntry(input: {
     const peer = state.chats().find(chat => chat.id === chatId && (chat.kind === 'dm' || chat.kind === 'ai'))?.peer_user_id ?? peerId
     const contact = state.contacts().find(one => one.id === peer) ?? (peer ? store.identitiesById[peer] : undefined)
     if (!contact || !isOwnedAgent(contact, state.ownerId) || contact.id === readAssistantShellBridge()?.getSnapshot()?.assistant?.id) return false
-    if (purpose && chatId && !state.mobile) suspendOwnedAgentResources(state.ownerId, chatId)
+    if (purpose && chatId) suspendOwnedAgentResources(state.ownerId, chatId)
     const incoming: NativeComposerDraft | undefined = typeof draft === 'string' ? { text: draft } : draft
     const text = incoming ? incoming.append ? appendToDraft(chatId ? store.drafts?.[chatId] ?? '' : '', incoming.text) : incoming.text : chatId ? store.drafts?.[chatId] ?? '' : ''
     const carried = [...(chatId ? store.draftAttachments?.[chatId] ?? [] : []), ...(incoming?.files ?? []).map(file => ({ id: crypto.randomUUID(), file, kind: file.type.startsWith('image/') ? 'image' as const : 'file' as const }))]
@@ -104,7 +104,7 @@ export function useOwnedAgentConversationEntry(input: {
       if (!state.mobile && asked === generation.current && current.current.ownerId === state.ownerId) {
         requestComposerEntryFocus(purpose ? null : 'session:' + (target.kind === 'local' ? target.sessionId : target.session.conversationId))
       }
-      if (purpose && chatId && !state.mobile && asked === generation.current && current.current.ownerId === state.ownerId) {
+      if (purpose && chatId && asked === generation.current && current.current.ownerId === state.ownerId) {
         hostOwnedAgentResources(state.ownerId, chatId, target.kind === 'local' ? target : { projectId: target.session.projectId, sessionId: target.session.conversationId })
       }
       if (asked !== generation.current || current.current.ownerId !== state.ownerId) receipt?.reject(new Error('The conversation opening was superseded'))

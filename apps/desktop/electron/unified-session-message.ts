@@ -54,6 +54,12 @@ export type UnifiedSessionMessageDeps = {
    * A number the roster does not carry is simply absent from the map; the handler names it and fails loud.
    */
   resolveLocalGuguNumbers: (numbers: number[]) => Promise<Map<number, string>>
+  /**
+   * Ids written as a prefix (owner 2026-11-15: the first 8 characters are enough) → the full id, for `session:` and
+   * `aid:` alike (cross-machine-sessions.ts resolveIdPrefixes). Throws when a prefix matches several or none. A full
+   * id is not in the maps. Absent = ids are taken as written.
+   */
+  resolvePrefixes?: (input: { sessionIds: string[]; agentIds: string[] }) => Promise<{ sessions: Map<string, string>; agents: Map<string, string> }>
   /** Which of these `session:` ids are sessions on this machine. Absent = every one is taken as local (the graph leg judges). */
   localSessionIds?: (sessionIds: string[]) => Promise<string[]>
   /**
@@ -113,6 +119,14 @@ export async function handleUnifiedSessionMessage(
         `session_message: ${JSON.stringify(entry)} is not a typed address — pass "session:<id>" (a typed session id), "aid:<Agent ID>" (from session_peers or a session’s share card; "user:<uuid>" is the older spelling) or "gugu:<number>" (a 咕咕号 from session_peers); bare ids are rejected`,
       )
     }
+  }
+  if (deps.resolvePrefixes) {
+    const full = await deps.resolvePrefixes({
+      sessionIds: sessions.map((item) => item.id),
+      agentIds: identities.flatMap((item) => (item.userId === null ? [] : [item.userId])),
+    })
+    for (const item of sessions) item.id = full.sessions.get(item.id) ?? item.id
+    for (const item of identities) if (item.userId !== null) item.userId = full.agents.get(item.userId) ?? item.userId
   }
   if (said.work_result && record.assistant_work) throw new Error('A report cannot also dispatch work')
   if (said.work_result && deps.enqueueReport) return deps.enqueueReport(record)

@@ -58,9 +58,14 @@ export function normalizeMarkdownSourceWithLines(text: string): { text: string; 
 
 // CJK sentence punctuation ends a bare URL: GFM autolinks would otherwise swallow `。` / `，` into the link.
 const CJK_URL_STOPS = new Set('。．，、？！：；（）【】「」『』〈〉《》');
-const BARE_URL = /^(https?:\/\/|mailto:|www\.|gugu-(?:file|chat|widget):\/\/)/i;
-/** gugu's own links as an agent writes them bare: a group's file, a conversation or one message, a widget. */
-const GUGU_LINK_IN_TEXT = /gugu-(?:file|chat|widget):\/\/[^\s()[\]<>"'`]+/gi;
+/**
+ * Any gugu scheme as written in text — gugu-file / gugu-chat / gugu-widget, and a build's own (`gugu://session/<id>`, …).
+ * Which of them is a link is parseGuguLink's call alone; no list of kinds is kept here.
+ */
+const GUGU_SCHEME = String.raw`gugu(?:-[a-z0-9-]+)?:\/\/`;
+const BARE_URL = new RegExp(String.raw`^(https?:\/\/|mailto:|www\.|${GUGU_SCHEME})`, 'i');
+/** gugu's own links as an agent writes them bare. */
+const GUGU_LINK_IN_TEXT = new RegExp(String.raw`${GUGU_SCHEME}[^\s()[\]<>"'\x60]+`, 'gi');
 
 function remarkCjkAutolinkBoundary() {
   return (tree: Root) => {
@@ -86,7 +91,7 @@ function remarkCjkAutolinkBoundary() {
 }
 
 /**
- * A bare gugu link in prose (a group's file, a conversation or message, a widget) is a link, the same node `[…](gugu-…)`
+ * A bare gugu link in prose (a group's file, a conversation or message, a widget, a session) is a link, the same node `[…](gugu…)`
  * parses to: the tools hand agents these links bare, and GFM autolinks only `http(s)://`, `www.` and mail. Alone in its
  * paragraph a message or widget link is still a reference block (messageReferenceBlocks). Trailing sentence punctuation stays prose, as GFM
  * leaves it out of an autolink; CJK punctuation is cut by the autolink boundary that runs next.
@@ -112,8 +117,7 @@ function bareGuguLinks(node: Text): Array<Text | Link> {
     const chars = [...match[0]];
     const stop = chars.findIndex((ch) => CJK_URL_STOPS.has(ch));
     const url = (stop < 0 ? match[0] : chars.slice(0, stop).join('')).replace(/[.,:;!?]+$/, '');
-    const kind = parseGuguLink(url)?.kind;
-    if (kind !== 'file' && kind !== 'chat' && kind !== 'widget') continue;
+    if (!parseGuguLink(url)) continue;
     if (match.index > at) out.push({ type: 'text', value: node.value.slice(at, match.index) });
     out.push({ type: 'link', url, children: [{ type: 'text', value: url }] });
     at = match.index + url.length;

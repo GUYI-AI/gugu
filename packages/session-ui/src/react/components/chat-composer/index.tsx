@@ -97,7 +97,7 @@
  */
 import { Button } from '@session-ui/react/primitives/button';
 import { cx } from '@session-ui/styles/utilities/cx';
-import { ArrowUp, CircleAlert, Plus, Search, ShieldCheck } from '../../../icons'
+import { ArrowUp, CircleAlert, Expand, Minimize, Paperclip, Plus, Search, ShieldCheck } from '../../../icons'
 import { ToolbarDisclosureProvider, useToolbarDisclosure } from './use-toolbar-disclosure'
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ComboboxPopover } from '../combobox-popover';
@@ -203,6 +203,8 @@ import {
 import { ComposerAttachmentStrip } from './composer-attachment-strip';
 import { ComposerModelMenu, resolveComposerModelPanel } from './composer-model-menu';
 import { ComposerAgentLoading, ComposerAgentSelector } from './composer-agent-selector';
+import { usePhoneComposer } from './use-phone-composer';
+import './phone-composer.css';
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export type ComposerQueuedPromptEdit = { id: string; text: string; originalDraftText: string; pending?: boolean };
@@ -499,6 +501,8 @@ export function ChatComposer({
 }: ChatComposerProps) {
   const { translate } = useMessages();
   const rootRef = useRef<HTMLDivElement>(null);
+  const phoneCapsule = mobile && phoneActions;
+  const phoneEditor = usePhoneComposer(phoneCapsule, rootRef);
   const editorRef = useRef<PromptEditorRef | null>(null);
   const [hasText, setHasText] = useState(false);
   const [phoneSubmitting, setPhoneSubmitting] = useState(false);
@@ -588,6 +592,7 @@ export function ChatComposer({
     if (phoneActions) { phoneSubmittingRef.current = true; setPhoneSubmitting(true); }
     try {
       const committed = submit(text);
+      phoneEditor.collapse();
       // Settle focus synchronously; a deferred refocus reopens the keyboard.
       const active = rootRef.current?.ownerDocument.activeElement;
       if (active instanceof HTMLElement && rootRef.current?.contains(active)) active.blur();
@@ -782,7 +787,7 @@ export function ChatComposer({
   );
 
   return (
-    <div ref={rootRef} data-slot="composer" data-mobile={mobile || undefined} className={cx(styles.composerRoot, className)} onKeyDown={(event) => {
+    <div ref={rootRef} data-slot="composer" data-mobile={mobile || undefined} data-phone-capsule={phoneCapsule || undefined} data-phone-has-text={phoneEditor.hasText || undefined} data-phone-multiline={phoneEditor.multiline || undefined} data-phone-expanded={phoneEditor.expanded || undefined} className={cx(styles.composerRoot, className)} onKeyDown={(event) => {
       if (queueEdit && event.key === 'Escape' && !event.defaultPrevented && !event.nativeEvent.isComposing && event.keyCode !== 229) {
         event.preventDefault(); finishQueueEdit(null);
       }
@@ -864,6 +869,12 @@ export function ChatComposer({
             ) : promptEditor}
           </div>
 
+          {phoneCapsule && (phoneEditor.multiline || phoneEditor.expanded) && <Button variant="ghost" size="base" icon
+            data-phone-editor-toggle="" aria-expanded={phoneEditor.expanded}
+            aria-label={translate(phoneEditor.expanded ? 'composer.collapseEditor' : 'composer.expandEditor')}
+            onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()}
+            onClick={phoneEditor.toggle}>{phoneEditor.expanded ? <Minimize /> : <Expand />}</Button>}
+
           {/* Toolbar */}
           <div
             data-slot="composer-toolbar"
@@ -882,11 +893,14 @@ export function ChatComposer({
                   size="base"
                   icon
                   className={styles.attachButtonRound}
+                  data-phone-attachment={phoneCapsule || undefined}
+                  onPointerDown={phoneCapsule ? (event) => event.preventDefault() : undefined}
+                  onMouseDown={phoneCapsule ? (event) => event.preventDefault() : undefined}
                   onClick={onAttach}
                   disabled={disabled || !!queueEdit}
                   aria-label={translate('composer.addAttachment')}
                 >
-                  <Plus />
+                  {phoneCapsule ? <Paperclip /> : <Plus />}
                 </Button>
               )}
               {permissionModeItems.length > 0 && (
@@ -1035,6 +1049,7 @@ export function ChatComposer({
                     //    "这会中断正在跑的东西",不该被换成与正文同色的墨点。
                     className={styles.sendButtonRound}
                     data-composer-action="stop"
+                    data-phone-send={phoneCapsule || undefined}
                     disabled={disabled || stopDisabled}
                     aria-busy={stopDisabled || undefined}
                     onClick={onStop}
@@ -1048,6 +1063,8 @@ export function ChatComposer({
                     size="base"
                     icon
                     className={cx(styles.sendButtonRound, styles.sendButtonInk)}
+                    data-phone-send={phoneCapsule || undefined}
+                    onPointerDown={mobile ? (event) => event.preventDefault() : undefined}
                     onClick={() => handleSubmit(editorRef.current?.getText() ?? '')}
                     disabled={disabled || !canSubmit}
                     aria-label={translate('composer.sendMessage')}

@@ -22,12 +22,13 @@ export function normalizePaths(s: string): string {
   );
 }
 
-export function serializeError(e: Error): Record<string, unknown> {
+export function serializeError(e: Error, seen = new WeakSet<object>()): Record<string, unknown> {
+  seen.add(e);
   return {
     name: e.name,
     message: e.message,
     stack: e.stack ? normalizePaths(e.stack) : undefined,
-    ...(e.cause ? { cause: prepareFields(e.cause) } : {}),
+    ...('cause' in e ? { cause: prepareFields(e.cause, seen) } : {}),
   };
 }
 
@@ -41,8 +42,15 @@ export function serializeError(e: Error): Record<string, unknown> {
  */
 export function prepareFields(value: unknown, seen = new WeakSet<object>()): unknown {
   if (isSecret(value)) return REDACTED;
-  if (value instanceof Error) return serializeError(value);
-  if (Array.isArray(value)) return value.map((v) => prepareFields(v, seen));
+  if (value instanceof Error) {
+    if (seen.has(value)) return '[Circular]';
+    return serializeError(value, seen);
+  }
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return '[Circular]';
+    seen.add(value);
+    return value.map((v) => prepareFields(v, seen));
+  }
   if (value && typeof value === 'object') {
     if (seen.has(value)) return '[Circular]';
     seen.add(value);

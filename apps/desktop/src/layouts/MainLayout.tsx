@@ -102,6 +102,7 @@ import { useToast } from '../components/toastContext'
 import { askChat, askChatFile, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { openOwnedAgentResource } from '../lib/ownedAgentConversation'
 import { filePillText } from '../components/markdown/filePills'
+import { draftWithPills } from '@gugu/session-shared/markdown'
 import { APP_COMPOSE_EVENT, APP_OPEN_IN_CHAT_EVENT, APP_OPEN_WITH_EVENT, type AppComposeDetail, type AppOpenInChatDetail, type AppOpenWithDetail } from '../session/shared/extensions/app-runtime-protocol'
 import { chatSlotKey } from '../lib/shellSlots'
 import { assistantSlotKey } from '../lib/assistantShellBridge'
@@ -323,7 +324,7 @@ function InnerLayout({
       openSettingsSection('apps')
     },
     openFile: async (chatId, target, source) => {
-      if (mobile || !await openOwnedAgentResource(chatId)) openChatTarget(chatId, 'resource')
+      if (!await openOwnedAgentResource(chatId)) openChatTarget(chatId, 'resource')
       await askChatFile(chatId, { itemId: target.itemId, ...(target.at ? { at: target.at } : {}), ...(source.message ? { message: source.message } : {}), ...(source.restore ? { restore: source.restore } : {}) })
     },
     openApp: (chatId, extensionId, tab) => { openChatTarget(chatId, 'resource'); askChat(chatId, { app: extensionId, ...(tab ? { tab } : {}) }) },
@@ -712,13 +713,13 @@ function InnerLayout({
       if (!detail) return
       // #1925 Drawn beside an App's page right now: its composer there takes the draft, nothing else comes up.
       const besideApp = appConversationSurfaceShows(detail.chatId)
+      const text = draftWithPills(detail.text, (detail.refs ?? []).map(filePillText).join('\n'))
       if (!besideApp && openOwnedAgent(detail.chatId, undefined, {
-        text: [detail.text, ...(detail.refs ?? []).map(filePillText)].filter(Boolean).join('\n'),
+        text,
         files: detail.images?.map(image => new File([image.bytes], image.name, { type: image.type })), append: true,
       })) { setDraftQuote(detail.chatId, null); return }
       const placed = (chatId: string) => {
         if (detail.whisperTo) setDraftWhisper(chatId, detail.whisperTo)
-        const text = [detail.text, ...(detail.refs ?? []).map(filePillText)].filter(Boolean).join('\n')
         if (text) writeDraft(chatId, { at: 'end', text })
         if (detail.images?.length) {
           const images = detail.images.map((image) => ({
@@ -1309,12 +1310,13 @@ function InnerLayout({
         <AssistantShellHost />
       )}
       {/* gugu-dev#181 项目块、对话块里的对话:会话页留格子(lib/shellSlots.ts 的 chat:<id>),这里画进去。 */}
+      {(mobile || sessionHostAvailable) && <OwnedAgentResourcesHost ownerId={user.id} mobile={mobile} />}
       {!mobile && sessionHostAvailable && (
-        <><OwnedAgentResourcesHost ownerId={user.id} /><ChatSlotHost
+        <ChatSlotHost
           onOpenUserChat={slotOpenProfileChat}
          
           onOpenSessionpageAgentFile={handleOpenSessionpageAgentFile}
-        /></>
+        />
       )}
       {!mobile && sessionHostAvailable && <OfflineSessionSlotHost />}
       {/* #1925 An App's main page beside its bound conversation: the session page leaves the column, the native conversation is drawn here. */}

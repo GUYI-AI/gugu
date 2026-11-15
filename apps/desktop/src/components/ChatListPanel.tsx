@@ -4,11 +4,11 @@ import { createChatMembershipProjection, isArchivedOwnedAgentChat } from '@/lib/
 import { memoizeByReference } from '@/lib/memoizeByReference'
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type KeyboardEventHandler, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { useStableHandler } from '@/hooks/useStableHandler'
 import { useTranslation } from 'react-i18next'
 import { BellOff, ChevronDown, ChevronRight, FolderClosed, MessageCircle, MessageSquare, PanelLeft, Plus, SquarePen, UserRound, Users, X, Zap } from '@/lib/icons'
 import { Sheet } from './ui/Sheet'
+import { useGrowingList, useOffsetInScroller } from '@gugu/session-ui/react/growing-list'
 import { DropdownMenu, MenuItem } from './ui/Menu'
 import { PaneEmptyState } from './ui/PaneEmptyState'
 import { ContactsSectionState } from './contacts/ContactsSectionState'
@@ -842,38 +842,20 @@ export function ChatListPanel({
   const hasSidebarLines = sidebarLines.length > 0
   const [sidebarScroller, setSidebarScroller] = useState<HTMLElement | null>(null)
   const windowRef = useRef<HTMLDivElement>(null)
-  const [windowMargin, setWindowMargin] = useState(0)
   useLayoutEffect(() => {
     if (inSidebar && listboxRef.current) setSidebarScroller(scrollingAncestor(listboxRef.current))
   }, [inSidebar])
-  const lineWindow = useVirtualizer({
+  // Where the lines start inside the shared scroller moves with everything above them (sections, the lead row).
+  const windowMargin = useOffsetInScroller(windowRef, sidebarScroller, [hasSidebarLines])
+  const lineWindow = useGrowingList({
     count: sidebarLines.length,
     // A project line is keyed by its group chat: when that conversation arrives, its row takes the same line.
-    getItemKey: (index) => lineChatId(sidebarLines[index]!.row),
-    getScrollElement: () => sidebarScroller,
+    getKey: (index) => lineChatId(sidebarLines[index]!.row),
+    scroller: sidebarScroller,
     estimateSize: () => SIDEBAR_ENTRY_ESTIMATE,
-    // The first frame already shows the lines that fit, before the scroller's size is observed.
-    initialRect: { width: 0, height: sidebarScroller?.clientHeight || window.innerHeight },
-    overscan: 8,
     scrollMargin: windowMargin,
-    enabled: inSidebar && sidebarScroller !== null,
+    enabled: inSidebar,
   })
-  // Where the lines start inside the shared scroller moves with everything above them (sections, the lead row), which
-  // re-render on their own: measure on the scroller's and its content's size changes.
-  useLayoutEffect(() => {
-    const lines = windowRef.current
-    const content = sidebarScroller?.firstElementChild
-    if (!lines || !sidebarScroller) return
-    const measure = () => {
-      const next = lines.getBoundingClientRect().top - sidebarScroller.getBoundingClientRect().top + sidebarScroller.scrollTop
-      setWindowMargin((previous) => (Math.abs(previous - next) < 0.5 ? previous : next))
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(sidebarScroller)
-    if (content) observer.observe(content)
-    return () => observer.disconnect()
-  }, [sidebarScroller, hasSidebarLines])
   const windowStyle: React.CSSProperties = { height: lineWindow.getTotalSize(), position: 'relative' }
   // A project line (OneListProjectSlot) is measured once the task page has drawn its row, before that frame is painted.
   const measureDrawnLine = useStableHandler((slot: HTMLElement) => {

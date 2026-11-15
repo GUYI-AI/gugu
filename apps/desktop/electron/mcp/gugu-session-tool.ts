@@ -121,7 +121,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
   },
   {
     name: 'session_spawn',
-    description: 'Start a persistent Gugu agent; returns stable session_id and model. Omit transport to inherit your chat or terminal UI.',
+    description: 'Start a persistent Gugu agent; returns session_id, model, chat session_link. Omit transport to inherit your chat or terminal UI.',
     schema: z.object({
       prompt: z.string().min(1),
       source_link: sourceLinkSchema.optional(),
@@ -137,6 +137,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
       chat_id: z.string().min(1).describe('A group your owner is in, for the child to join.').optional(),
     }).strict(),
     action: 'spawn',
+    linksSession: true,
   },
   {
     name: 'session_ask_user',
