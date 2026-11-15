@@ -67,21 +67,3 @@
     animation: none;
   }
 }
-
-/* Use the bundled Pi artwork as a luminance mask on phones: no opaque plate at small sizes.
-   The original image remains the desktop rendering; no replacement brand artwork is introduced. */
-.agent-harness-icon .agent-harness-pi-mark { display: none; }
-[data-phone-shell] .agent-harness-icon[data-agent-harness="pi"] img { border-radius: 20%; }
-@supports (mask-mode: luminance) {
-[data-phone-shell] .agent-harness-icon[data-agent-harness="pi"] img { display: none; }
-[data-phone-shell] .agent-harness-icon .agent-harness-pi-mark {
-  display: block;
-  background: var(--text-primary);
-  mask-image: var(--agent-harness-pi-mask);
-  -webkit-mask-image: var(--agent-harness-pi-mask);
-  mask-mode: luminance;
-  mask-size: 125%;
-  mask-position: center;
-  mask-repeat: no-repeat;
-}
-}
