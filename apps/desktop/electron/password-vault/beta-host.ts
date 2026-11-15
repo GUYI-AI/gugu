@@ -1,3 +1,5 @@
+import { PASSWORD_SAVE_CARD_RPC } from '@gugu/core/shared/passwordCardCipher'
+import { passwordSaveCardHandler } from './save-card-host'
 import { PasswordSaveError } from './save-error'
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
@@ -174,7 +176,7 @@ async function account(): Promise<Account> {
 async function snapshot(value: Account): Promise<PasswordSnapshot> {
   let candidates: PasswordSnapshot['candidates'] = []
   try { candidates = passwordGrantCandidates(value.ownerId) } catch { candidates = [] }
-  return { items: await value.vault.list(person), approvals: [...value.login.pending(), ...value.remote.pending()], outcomes: value.login.outcomes(), saves: value.saves.pending(), candidates, sync: value.sync.view() }
+  return { items: await value.vault.list(person), approvals: [...value.login.pending(), ...value.remote.pending()], outcomes: [...value.login.outcomes(), ...value.saves.outcomes()], saves: value.saves.pending(), candidates, sync: value.sync.view() }
 }
 /** A dedicated native renderer IPC. Never uses generic action logging, transcript or device RPC. */
 export function installPasswordBetaHost(host: NativeHost): void {
@@ -185,52 +187,58 @@ export function installPasswordBetaHost(host: NativeHost): void {
       const window = host.window()
       if (!window || event.sender !== window.webContents || event.senderFrame !== event.sender.mainFrame) throw unavailable()
       const value = await account()
-      switch (command?.type) {
-        case 'snapshot': value.pull.soon(); break
-        case 'save': {
-          // Completing an Agent's request: a new credential stays writable by that Agent, nobody else gains access.
-          const request = command.requestId ? value.saves.open(command.requestId).view : undefined
-          if (request && request.credentialId !== command.reference?.id) throw unavailable()
-          const creator: CredentialGrant | undefined = request && !command.reference ? { subject: `agent:${request.agent}`, level: 'write' } : undefined
-          const saved = await value.vault.save(person, randomUUID(), { origin: command.origin, name: command.name, account: command.account, accountSecret: command.accountSecret,
-            password: command.password, fields: (command.fields ?? []).map(field => ({ ...field, secret: field.secret ?? true })), sites: command.sites }, command.reference, creator)
-          if (request) value.saves.complete(request.requestId, saved.reference.id)
-          value.pull.now()
-          break
-        }
-        case 'save-draft': return { ok: true, snapshot: await snapshot(value), draft: value.saves.draft(command.requestId) }
-        case 'reject-save': value.saves.reject(command.requestId); break
-        case 'delete': await value.vault.delete(person, randomUUID(), command.reference); break
-        case 'reveal': return { ok: true, snapshot: await snapshot(value), secrets: await value.vault.reveal(person, command.reference) }
-        case 'grants': await value.vault.setGrants(person, command.reference, command.grants); break
-        case 'decide':
-          if (!['allow_once', 'reject'].includes(command.decision)) throw unavailable()
-          if (value.remote.has(command.requestId)) { if (command.remember || command.typed?.some(Boolean) || command.extra?.length) throw unavailable(); value.remote.decide(command.requestId, command.decision) }
-          else value.login.decide(command.requestId, command.decision, command.typed, command.remember, command.secret, command.extra)
-          break
-        case 'sync-approve': await value.sync.approve(command.deviceId); break
-        case 'sync-reject': await value.sync.reject(command.deviceId); break
-        case 'sync-ask-again': await value.sync.askAgain(); break
-        case 'sync-recovery-create': { const { code } = await value.sync.createRecovery(); changed(); return { ok: true, snapshot: await snapshot(value), recoveryCode: code } }
-        case 'sync-recovery-remove': await value.sync.removeRecovery(); break
-        case 'sync-recovery-skip': await value.sync.skipRecovery(); break
-        case 'sync-recover': {
-          let code: string
-          try { ({ code } = await value.sync.recover(command.code)) }
-          catch (error) { throw error instanceof SyncError && (error.code === 'INVALID' || error.code === 'NOT_MEMBER') ? new VaultError('RECOVERY_INVALID') : error }
-          changed(); return { ok: true, snapshot: await snapshot(value), recoveryCode: code }
-        }
-        default: throw unavailable()
-      }
-      // Snapshot subscribers read here; broadcasting a read would recursively request another snapshot.
-      if (command.type !== 'snapshot') changed()
-      return { ok: true, snapshot: await snapshot(value) }
-    } catch (error) {
-      // No exception, message, cause, command or field is forwarded to any logger.
-      return { ok: false, code: error instanceof VaultError ? error.code : error instanceof SyncError && error.code === 'STALE' ? 'STALE_REFERENCE' : 'UNAVAILABLE' }
-    }
+      return await invokePasswordPerson(value, command)
+    } catch { return { ok: false, code: 'UNAVAILABLE' } }
   })
   app.once('before-quit', () => { current?.controller.abort(); current?.login.invalidate(); current?.saves.invalidate(); current?.remote.invalidate(); void current?.vault.dispose().catch(() => {}) })
+}
+async function invokePasswordPerson(value: Account, command: PasswordUiCommand): Promise<PasswordUiReply> {
+  try {
+    switch (command?.type) {
+      case 'snapshot': value.pull.soon(); break
+      case 'save': {
+        // Completing an Agent's request: a new credential stays writable by that Agent, nobody else gains access.
+        const request = command.requestId ? value.saves.open(command.requestId).view : undefined
+        if (request && request.credentialId !== command.reference?.id) throw unavailable()
+        const creator: CredentialGrant | undefined = request && !command.reference ? { subject: `agent:${request.agent}`, level: 'write' } : undefined
+        const write = () => value.vault.save(person, request?.requestId ?? randomUUID(), { origin: command.origin, name: command.name, account: command.account, accountSecret: command.accountSecret,
+          password: command.password, fields: (command.fields ?? []).map(field => ({ ...field, secret: field.secret ?? true })), sites: command.sites }, command.reference, creator)
+        if (request) await value.saves.saving(request.requestId, write)
+        else await write()
+        value.pull.now()
+        break
+      }
+      case 'save-draft': return { ok: true, snapshot: await snapshot(value), draft: value.saves.draft(command.requestId) }
+      case 'reject-save': value.saves.reject(command.requestId); break
+      case 'delete': await value.vault.delete(person, randomUUID(), command.reference); break
+      case 'reveal': return { ok: true, snapshot: await snapshot(value), secrets: await value.vault.reveal(person, command.reference) }
+      case 'grants': await value.vault.setGrants(person, command.reference, command.grants); break
+      case 'decide':
+        if (!['allow_once', 'reject'].includes(command.decision)) throw unavailable()
+        if (value.remote.has(command.requestId)) { if (command.remember || command.typed?.some(Boolean) || command.extra?.length) throw unavailable(); value.remote.decide(command.requestId, command.decision) }
+        else value.login.decide(command.requestId, command.decision, command.typed, command.remember, command.secret, command.extra)
+        break
+      case 'sync-approve': await value.sync.approve(command.deviceId); break
+      case 'sync-reject': await value.sync.reject(command.deviceId); break
+      case 'sync-ask-again': await value.sync.askAgain(); break
+      case 'sync-recovery-create': { const { code } = await value.sync.createRecovery(); changed(); return { ok: true, snapshot: await snapshot(value), recoveryCode: code } }
+      case 'sync-recovery-remove': await value.sync.removeRecovery(); break
+      case 'sync-recovery-skip': await value.sync.skipRecovery(); break
+      case 'sync-recover': {
+        let code: string
+        try { ({ code } = await value.sync.recover(command.code)) }
+        catch (error) { throw error instanceof SyncError && (error.code === 'INVALID' || error.code === 'NOT_MEMBER') ? new VaultError('RECOVERY_INVALID') : error }
+        changed(); return { ok: true, snapshot: await snapshot(value), recoveryCode: code }
+      }
+      default: throw unavailable()
+    }
+    // Snapshot subscribers read here; broadcasting a read would recursively request another snapshot.
+    if (command.type !== 'snapshot') changed()
+    return { ok: true, snapshot: await snapshot(value) }
+  } catch (error) {
+    // No exception, message, cause, command or field is forwarded to any logger.
+    return { ok: false, code: error instanceof VaultError ? error.code : error instanceof SyncError && error.code === 'STALE' ? 'STALE_REFERENCE' : 'UNAVAILABLE' }
+  }
 }
 /**
  * An Agent's save (password_save), local or from a server. With write access on the credential it is saved at once,
@@ -305,6 +313,10 @@ export const passwordBetaAgent = Object.freeze({
 export function passwordBetaRemoteHandlers() {
   const fail = () => ({ error: { code: 'PASSWORD_UNAVAILABLE', message: 'Password vault unavailable' } })
   return {
+    [PASSWORD_SAVE_CARD_RPC]: passwordSaveCardHandler(async () => {
+      const value = await account()
+      return { ownerId: value.ownerId, saves: value.saves, invoke: command => invokePasswordPerson(value, command) }
+    }),
     [PASSWORD_AGENT_RPC]: async (payload: unknown, ctx: { request: { user_id: string } }) => {
       try {
         if (!PASSWORD_BETA_ENABLED) return fail()
