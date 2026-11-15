@@ -149,7 +149,7 @@ describe('#3249 composer 模型下拉', () => {
     // ⚠️ 语言必须**钉死**,不能只在注释里假定 en-US。
     // 2026-09-05 合进 dev 后这三条在 mac1-ci-09 上红了:同一棵树在 PR 那轮是绿的,差别只是
     // 跑在哪个 runner —— 槽位的系统语言不同,`translateSessionMessage` 解析出的组头就不同
-    // (期望 `Models provided by Gugu · billed in credits`,实得「咕咕提供的模型 · 按积分计费」)。
+    // (期望 `Gugu models are billed in credits`,实得「咕咕提供的模型 · 按积分计费」)。
     // 读环境语言的断言判不了它声称要判的那件事,与兄弟守卫 composer-settings-row-layout 同一处理。
     previousLanguage = i18n.language
     await i18n.changeLanguage('en-US')
@@ -634,7 +634,7 @@ describe('#3249 composer 模型下拉', () => {
     // ⚠️ 这条同时是**回归守卫**:我第一版把厂商当组头,那时这里会读出三段。
     expect(visibleGroups()).toEqual([
       '你的 Codex 模型',
-      'Models provided by Gugu · billed in credits'
+      'Gugu models are billed in credits'
     ])
     // 组头里既然没有厂商,行内那枚 logo 就是认厂商的唯一线索。
     // 图标**位**每行都有(5 行),真图标只有认得出厂商的那 4 行 —— 认不出的那条留白,不占位地收掉。
@@ -697,7 +697,7 @@ describe('#3249 composer 模型下拉', () => {
     expect(visibleOptions()).toEqual(['gpt-5.6-codex', 'GPT-5.6 Sol', 'GPT-5.6 Sol'])
     expect(visibleGroups()).toEqual([
       '你的 Codex 模型',
-      'Models provided by Gugu · billed in credits'
+      'Gugu models are billed in credits'
     ])
 
     // 再点一次取消 ⇒ 回到「一个都没选」= 不过滤(上游原话:An empty filter means no filtering)。

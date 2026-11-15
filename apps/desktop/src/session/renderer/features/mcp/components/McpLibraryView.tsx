@@ -380,7 +380,7 @@ function ProvidedGroup({
           check={library.providedChecks[server.key]}
           checking={library.checking.has(server.key)}
           disabled={false}
-          note={`${server.from.join('、')} · ${translate(`mcpLibrary.reach.${server.reach}`)}`}
+          note={`${server.from.join('、')}, ${translate(`mcpLibrary.reach.${server.reach}`)}`}
           {...(server.refusal ? { noteTitle: server.refusal } : {})}
           onCheck={() => void library.checkProvided(server.key).catch(onFail)}
         />

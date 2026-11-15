@@ -139,7 +139,7 @@ function BlockView({ block, senderName }: { block: Block; senderName: (id: strin
     <div className="mp-mono" data-preview-entry="tool">
       {block.parts
         .map((part) => t('runtime.messagePreview.toolCount', { state: t(`runtime.stateWord.${part.state}`), count: part.count }))
-        .join(' · ')}
+        .join(', ')}
     </div>
   )
 }
@@ -182,7 +182,7 @@ export function MessagePreviewCard({
     rel,
   ]
     .filter(Boolean)
-    .join(' · ')
+    .join(', ')
 
   let note: string | null = null
   if (state.status === 'live' && !preview) note = t('runtime.messagePreview.unavailable')

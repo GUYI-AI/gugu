@@ -54,7 +54,10 @@ describe('share and invite surfaces use the approved roles without changing acti
     const card = harness.container.querySelector<HTMLElement>('[data-state="joinable"]')!;
     expect(getComputedStyle(card).borderRadius).toBe('12px');
     expect(tier(textElement(card, group.name))).toEqual([14, 20]);
-    expect(tier(textElement(card, t('groupInvite.groupSummary', { number: 7333, count: 3 })))).toEqual([12, 18]);
+    const metadata = card.querySelector<HTMLElement>('[data-group-invite-meta]')!;
+    expect(tier(metadata)).toEqual([12, 18]);
+    expect(metadata.children[0]?.textContent).toBe(t('groupInvite.groupNumber', { number: 7333 }));
+    expect(metadata.children[1]?.textContent).toBe(t('groupInvite.memberCount', { count: 3 }));
     const action = page.getByRole('button', { name: t('groupInvite.actionLabel', { action: t('groupInvite.requestJoin'), group: group.name }), exact: true });
     await action.click();
     expect(onJoin).toHaveBeenCalledTimes(1);

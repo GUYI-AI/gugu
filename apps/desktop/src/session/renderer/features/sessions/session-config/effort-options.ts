@@ -36,7 +36,7 @@ const EFFORT_LABEL_KEYS = {
  */
 export function effortNamesLine(ids: readonly string[], translate: Translate): string | null {
   if (ids.length === 0 || !ids.every((id) => id in EFFORT_LABEL_KEYS)) return null;
-  return ids.map((id) => translate(EFFORT_LABEL_KEYS[id as keyof typeof EFFORT_LABEL_KEYS][0])).join(' · ');
+  return ids.map((id) => translate(EFFORT_LABEL_KEYS[id as keyof typeof EFFORT_LABEL_KEYS][0])).join(', ');
 }
 
 /**

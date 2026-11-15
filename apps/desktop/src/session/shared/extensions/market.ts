@@ -273,7 +273,7 @@ export function isOfficialMarketSource(source: Pick<MarketCodeSource, 'repo'>): 
 /** 来源的人话:`owner/name @ 提交前 7 位`,目录不是仓根时带上目录。 */
 export function marketSourceLabel(source: MarketCodeSource): string {
   const at = `${source.repo} @ ${source.commit.slice(0, 7)}`;
-  return source.path === '.' ? at : `${at} · ${source.path}`;
+  return source.path === '.' ? at : `${at}: ${source.path}`;
 }
 
 /** 来源在 GitHub 上那一页:那个提交里的那个目录。 */

@@ -8,7 +8,7 @@ export const EXISTING_IDENTITY_END = '__GUGU_EXISTING_IDENTITY_END__'
 /** Account labels are identifiable without exposing a full email address. */
 export function sshAccountLabel(account: { userId: string; email: string | null }): string {
   const local = account.email?.split('@')[0]
-  return `${local ? `${Array.from(local)[0]}… · ` : ''}${account.userId.slice(0, 8)}`
+  return `${local ? `${Array.from(local)[0]}… ` : ''}${account.userId.slice(0, 8)}`
 }
 
 export function safeSshText(text: string): string {

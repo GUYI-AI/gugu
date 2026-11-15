@@ -309,7 +309,7 @@ function RecentCalls({ state }: { state: DeviceActionsState }) {
                     : call.code === 'needs_confirmation'
                       ? t('devices.deviceActions.recentNeedsConfirmation')
                       : failed(call),
-              ].filter(Boolean).join(' · ')}
+              ].filter(Boolean).join(', ')}
             />
           ))}
     </SettingsGroup>

@@ -135,7 +135,6 @@ function MachineCard({
           <span>{online ? t('agentWatch.machines.online') : connectable ? tFlow(waking ? 'connecting' : 'readyToConnect') : t('agentWatch.machines.offline')}</span>
           {!online && !connectable && seen ? (
             <>
-              <span className="gg-aw-item-sep">·</span>
               <span>{seen}</span>
             </>
           ) : null}

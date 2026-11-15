@@ -96,7 +96,7 @@ export function AppMarketContent({ shelf, query, hostKey, api, lifecycleOf, pend
           translate(`extensions.category.${marketCategoryOf(item.manifest)}`),
           translate('extensions.official'),
           ...(screenshotsLanguage(item.manifest, locale) ? [translate('extensions.screenshotsIn', { language: screenshotsLanguage(item.manifest, locale)! })] : []),
-        ].join(' · ')}
+        ].join(', ')}
         iconUrl={item.cloud.iconUrl}
         lifecycle={lifecycleOf(item.manifest.id, item)}
         pending={pending[item.manifest.id]}

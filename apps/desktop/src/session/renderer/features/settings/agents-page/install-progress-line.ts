@@ -62,7 +62,7 @@ export function installProgressLine(
     parts.unshift(`${progress.part.name} ${progress.part.index}/${progress.part.count}`)
   }
 
-  const heading = parts.join(' · ')
+  const heading = parts.join(', ')
   const detailStart = parts.length
   const done = progress.bytesDone ?? 0
   if (done > 0) {
@@ -84,9 +84,9 @@ export function installProgressLine(
   }
 
   return {
-    text: parts.join(' · '),
+    text: parts.join(', '),
     heading,
-    detail: parts.slice(detailStart).join(' · ') || null,
+    detail: parts.slice(detailStart).join(', ') || null,
     ratio: installProgressRatio(progress)
   }
 }

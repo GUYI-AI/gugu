@@ -82,10 +82,10 @@ export function deliveryFactEntries(facts: DeliveryReadFacts): DeliveryFactEntry
     if (value) entries.push({ key, value });
   };
   push('at', facts.at);
-  push('sender', facts.from && facts.fromId ? `${facts.from} · ${facts.fromId}` : (facts.from ?? facts.fromId));
+  push('sender', facts.from && facts.fromId ? `${facts.from} (${facts.fromId})` : (facts.from ?? facts.fromId));
   push(
     'route',
-    [facts.route, facts.chat ? `${facts.chatKind ?? 'chat'} ${facts.chat}` : null].filter(Boolean).join(' · ')
+    [facts.route, facts.chat ? `${facts.chatKind ?? 'chat'} ${facts.chat}` : null].filter(Boolean).join(', ')
   );
   push('whisperTo', facts.whisperTo);
   push('viaApp', facts.viaApp);
@@ -95,7 +95,7 @@ export function deliveryFactEntries(facts: DeliveryReadFacts): DeliveryFactEntry
   push('then', facts.then);
   // session-direct 只带发信方说的那条 msg(没有预览);chat 带被引用的整条。
   push('replyTo', facts.inReplyTo);
-  if (facts.replyTo) push('replyTo', `${facts.replyTo.messageId} · ${facts.replyTo.from ?? facts.replyTo.fromId}`);
+  if (facts.replyTo) push('replyTo', `${facts.replyTo.messageId} (${facts.replyTo.from ?? facts.replyTo.fromId})`);
   push('threadContext', facts.threadContext);
   push('messageContext', facts.messageContext);
   return entries;
@@ -234,7 +234,7 @@ function routeLabel(facts: DeliveryReadFacts, translate: ChatTranslator, { appNa
     facts.whisperTo ? translate('transcript.deliveryWhisper') : null,
     // An App's own delivery: naming the App above is the whole channel.
     facts.viaApp && isAppRoute(facts.route) ? null : channelLabel(facts, translate, chatName),
-  ].filter(Boolean).join(' · ');
+  ].filter(Boolean).join(', ');
 }
 
 function channelLabel(facts: DeliveryReadFacts, translate: ChatTranslator, chatName: Namers['chatName']): string {
@@ -385,7 +385,7 @@ function SingleDelivery(props: {
             data-collapse-id={factsId()}
             data-collapse-anchor={props.anchorId ?? props.data.id}
             aria-expanded={factsOpen() ? 'true' : 'false'}
-            aria-label={`${sender()} · ${facts() ? routeLabel(facts()!, translate, namers) : ''} · ${translate('transcript.deliveryDetails')}`}
+            aria-label={`${sender()}: ${facts() ? routeLabel(facts()!, translate, namers) : ''}: ${translate('transcript.deliveryDetails')}`}
             title={translate('transcript.deliveryDetails')}
           >
             <span aria-hidden="true">{factsOpen() ? '▾' : '▸'}</span>

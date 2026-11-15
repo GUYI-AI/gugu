@@ -32,7 +32,7 @@ export function InstallProgressRow({
           translate('agentsPage.phaseDownloadingPackage')
         ]
           .filter(Boolean)
-          .join(' · ')
+          .join(', ')
       : (line?.heading ?? translate('agentsPage.phaseStarting'))
 
   return (
@@ -45,7 +45,7 @@ export function InstallProgressRow({
             {compact ? (
               <>
                 {heading}
-                {line?.ratio != null && ` · ${Math.round(line.ratio * 100)}%`}
+                {line?.ratio != null && `, ${Math.round(line.ratio * 100)}%`}
               </>
             ) : (
               (line?.text ?? translate('agentsPage.installingToGuguHome'))

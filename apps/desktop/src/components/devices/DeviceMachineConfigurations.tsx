@@ -20,7 +20,7 @@ export function DeviceMachineConfigurations({ devices = [], actions, selectedDev
         className="device-machine-version" data-testid={`device-configuration-${device.device_id}`} onClick={onSelect ? () => onSelect(device) : undefined}
         aria-pressed={onSelect ? device.device_id === selectedDeviceId : undefined}
         data-selected={onSelect && device.device_id === selectedDeviceId || undefined}
-        control={onSelect && device.device_id === selectedDeviceId ? <Check size={16} aria-hidden="true" /> : undefined} description={[deviceVersionLabel(device.tier, t), status, device.capabilities.app_version].filter(Boolean).join(' · ')}
+        control={onSelect && device.device_id === selectedDeviceId ? <Check size={16} aria-hidden="true" /> : undefined} description={[deviceVersionLabel(device.tier, t), status, device.capabilities.app_version].filter(Boolean).join(', ')}
       />{actions && !device.is_current_device ? <div className="flex flex-wrap justify-end gap-2 px-4 pb-3">
           <Button variant="ghost" size="sm" data-testid={`device-configuration-remove-${device.device_id}`} onClick={() => actions.remove(device)}>{t('devices.remove.version.confirm')}</Button>
           {actions.canUninstall(device) && <Button variant="ghost" size="sm" data-testid={`device-configuration-uninstall-${device.device_id}`} onClick={() => actions.uninstall(device)}>{t('devices.menu.uninstall')}</Button>}

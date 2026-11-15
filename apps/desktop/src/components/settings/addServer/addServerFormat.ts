@@ -20,7 +20,7 @@ export function formatBytes(bytes: number): string {
 export function progressText(progress: NonNullable<ServerSshInstallStep['progress']>): string {
   if (progress.total && progress.total > 0) {
     const percent = Math.min(100, Math.floor((progress.done / progress.total) * 100))
-    return `${formatBytes(progress.done)} / ${formatBytes(progress.total)} · ${percent}%`
+    return `${formatBytes(progress.done)} / ${formatBytes(progress.total)} (${percent}%)`
   }
   return formatBytes(progress.done)
 }
@@ -34,7 +34,7 @@ function archLabel(arch: string): string {
 /** 识别出来的系统,一行:`Ubuntu 22.04.4 LTS · arm64 · glibc 2.35`。 */
 export function machineSummary(machine: Pick<ServerSshInstallMachine, 'os' | 'distro' | 'arch' | 'libc'>): string {
   const system = machine.distro || (machine.os === 'Darwin' ? 'macOS' : machine.os)
-  return [system, archLabel(machine.arch), machine.libc].filter(Boolean).join(' · ')
+  return [system, archLabel(machine.arch), machine.libc].filter(Boolean).join(', ')
 }
 
 /** 给 shell 用的单引号转义(命令里带 `[` `]` 时 zsh 会当通配,必须引起来)。 */

@@ -173,7 +173,7 @@ function DeviceItem({
           {/* 状态点:在线 = live 蓝(design.md 唯一的 accent),离线退成最淡一档 —— 与「设置 → 设备」同一个点。 */}
           <span aria-hidden className={cn('size-[7px] shrink-0 translate-y-[-1px] rounded-[var(--radius-circle)]', lit ? 'bg-live' : 'bg-[var(--faint-fg)]')} />
           {/* 窄屏折行,❌ 截成省略号:「已授权:日历、定位」是这一行要说的事(手机宽度截图实测被截掉)。 */}
-          <span className="min-w-0">{[status, showKind ? t(`devices.kind.${kind}`) : null, summary, configurationCount > 1 ? t('devices.configurationCount', { count: configurationCount }) : null].filter(Boolean).join(' · ')}</span>
+          <span className="min-w-0">{[status, showKind ? t(`devices.kind.${kind}`) : null, summary, configurationCount > 1 ? t('devices.configurationCount', { count: configurationCount }) : null].filter(Boolean).join(', ')}</span>
         </span>
       )}
       control={(

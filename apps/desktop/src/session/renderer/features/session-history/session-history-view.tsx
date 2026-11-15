@@ -551,7 +551,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
     status !== 'all' ? translate(STATUS_MESSAGE_KEY[status]) : null,
   ]
     .filter(Boolean)
-    .join(' · ');
+    .join(', ');
   // 索引进度:还在补的那几台加起来。
   const indexing = states.flatMap((state) => (state?.isIndexing && state.page?.local ? [state.page.local] : []));
   const localPage = byMachine[LOCAL_IMPORT_DEVICE]?.page;

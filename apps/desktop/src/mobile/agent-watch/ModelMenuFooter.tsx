@@ -40,7 +40,7 @@ export function ModelMenuFooter({
       </div>
       {lockedModels.length > 0 && billingLinksAvailable() && (
         <div className="gg-aw-choice-desc gg-aw-choice-note">
-          {translateSessionMessage('composer.platformModelUpgradeList', { models: lockedModels.join(' · ') })}
+          {translateSessionMessage('composer.platformModelUpgradeList', { models: lockedModels.join(', ') })}
         </div>
       )}
     </div>

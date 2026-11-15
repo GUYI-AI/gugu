@@ -474,7 +474,7 @@ export function MemberProfileCard({
     {showShare && shareQrValue ? (
       <SelfOrContactShare
         title={member.displayName}
-        subtitle={isAgent ? 'Agent · 咕咕' : '咕咕'}
+        subtitle={isAgent ? '咕咕 Agent' : '咕咕'}
         qrValue={shareQrValue}
         onClose={() => { setShowShare(false) }}
       />

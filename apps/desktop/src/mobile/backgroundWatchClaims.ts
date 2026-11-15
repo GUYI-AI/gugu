@@ -25,7 +25,7 @@ const claims = new Map<BackgroundWatchOwner, BackgroundWatchClaim>()
 
 export function backgroundWatchLabel(current: ReadonlyMap<BackgroundWatchOwner, BackgroundWatchClaim>): string | null {
   const labels = ORDER.map((owner) => current.get(owner)?.label).filter((label): label is string => !!label)
-  return labels.length ? labels.join(' · ') : null
+  return labels.length ? labels.join(', ') : null
 }
 
 /** 正文只有一行:排在最前的那家给了就用它的,没给(看管机器)就用宿主默认那句。 */

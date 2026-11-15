@@ -26,7 +26,7 @@ export function localizedAgentHeaderStatus(
   const locationLabel = agentLocationText(location ?? null, t)
   return [label ? agentStatusText(label) : null, locationLabel, agentEngineDisplayName(engine)]
     .filter((segment): segment is string => Boolean(segment))
-    .join(' · ')
+    .join(', ')
 }
 
 export function joinModeDescription(mode: GroupJoinMode, t: TFunction<'messaging'>): string {

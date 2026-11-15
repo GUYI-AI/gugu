@@ -185,9 +185,9 @@ function CommitItem({
             <span className="block truncate text-sm">{commit.subject}</span>
             <span className="flex min-w-0 items-center gap-1 text-xs text-foreground-muted">
               <span className="min-w-0 truncate font-medium">{commit.author}</span>
-              {'·'}
+              {' '}
               <RelativeTime compact value={commit.date} className="text-foreground-muted" />
-              {'·'}
+              {' '}
               <span className="font-mono text-foreground-passive">{shortHash}</span>
               {isExpanded ? (
                 <ChevronDown className="size-3.5 shrink-0 text-foreground-muted" />

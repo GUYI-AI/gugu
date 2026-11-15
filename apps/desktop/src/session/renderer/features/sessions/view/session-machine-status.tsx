@@ -38,7 +38,7 @@ function MachineStatusChip({ state, lastSeenAt, label }: { state: ConnectionStat
       className="flex min-w-min !shrink items-center overflow-hidden text-xs"
       data-slot="session-machine-status"
       data-compact={compact ? '' : undefined}
-      title={compact ? `${label} · ${t(STATE_WORD_KEY[state])}` : undefined}
+      title={compact ? `${label}: ${t(STATE_WORD_KEY[state])}` : undefined}
     >
       <ConnectionStatus state={state} lastSeenAt={lastSeenAt} subject={label} testId="session-machine-status" />
     </span>

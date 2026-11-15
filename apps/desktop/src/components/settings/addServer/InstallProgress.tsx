@@ -115,7 +115,7 @@ export function InstallProgress({
         if (step.status === 'skipped') {
           parts.push(t('devices.addServer.skipped.alreadyInstalled'))
           if (step.version) parts.push(t('devices.addServer.stepDetail.version', { version: step.version }))
-          return parts.join(' · ')
+          return parts.join(', ')
         }
         if (step.upgradeFrom) {
           // 装着的太旧、连不上:说「升级到 x」,❌ 只写版本号 —— 人要知道这一步不是「已经装过」。
@@ -136,7 +136,7 @@ export function InstallProgress({
         } else if (step.status === 'running' && step.live) {
           parts.push(step.live)
         }
-        return parts.join(' · ') || null
+        return parts.join(', ') || null
       }
       case 'service':
         if (step.status === 'skipped') return t('devices.addServer.skipped.alreadyRunning')

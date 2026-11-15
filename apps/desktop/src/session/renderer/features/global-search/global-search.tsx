@@ -274,7 +274,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
               className="flex w-full items-center gap-2 px-2 pb-1 pt-3 text-left text-xs text-foreground/45 hover:text-foreground/70"
               onClick={() => setChips([...chips, group.scope])}>
               <span className="truncate font-medium">{group.label}</span>
-              {group.task && <span className="shrink-0 text-foreground/35">· {translate('globalSearch.task')}</span>}
+              {group.task && <span className="shrink-0 text-foreground/35"> {translate('globalSearch.task')}</span>}
             </button>}
             {group.hits.map((hit) => {
               const isSelected = hit.id === selected?.id
@@ -289,7 +289,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
                     <span className="line-clamp-2 text-sm leading-5 text-foreground/85"><Highlighted text={hit.text} query={view.query} /></span>
                     <span className="mt-1 flex items-center gap-2 text-xs text-foreground/40">
                       <span className="truncate">{sender}</span>
-                      <span aria-hidden>·</span><span className="shrink-0 tabular-nums">{formatWhen(hit.at)}</span>
+                      <span aria-hidden> </span><span className="shrink-0 tabular-nums">{formatWhen(hit.at)}</span>
                     </span>
                   </span>
                   {isSelected && <span className="mt-1 shrink-0 text-foreground/35 max-sm:hidden"><Shortcut hotkey="Enter" variant="keycaps" /></span>}

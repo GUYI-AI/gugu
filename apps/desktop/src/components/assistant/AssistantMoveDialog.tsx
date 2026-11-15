@@ -21,7 +21,7 @@ function formatSize(bytes: number): string {
 function accountLabel(names: Map<string, string>, account: { integrationId: string; accountId?: string; displayName?: string }): string {
   const service = names.get(account.integrationId) ?? account.integrationId
   const who = account.displayName?.trim() || (!account.accountId || account.accountId === 'default' ? '' : account.accountId)
-  return who ? `${service} · ${who}` : service
+  return who ? `${service} (${who})` : service
 }
 
 /** 要在新家手动重连的一列:名字,后面跟着旧家那份不保密的配置(服务器、用户名……),照着填。 */
@@ -29,7 +29,7 @@ function ReconnectList({ names, items, testId }: { names: Map<string, string>; i
   return (
     <ul className="ml-5 list-disc" data-testid={testId}>
       {items.map((item) => {
-        const config = Object.values(item.config ?? {}).filter((value) => value.trim()).join(' · ')
+        const config = Object.values(item.config ?? {}).filter((value) => value.trim()).join(', ')
         return (
           <li key={`${item.integrationId}/${item.accountId ?? ''}`}>
             {accountLabel(names, item)}
@@ -123,7 +123,7 @@ export function AssistantMoveDialog() {
               <LoadingIndicator size="inline" />
               {t(`move.step.${phase.progress?.step ?? 'preflight'}`, { name: assistantName })}
               {phase.progress?.bytes && phase.progress.bytes.total > 0
-                ? ` · ${Math.min(100, Math.floor((phase.progress.bytes.done / phase.progress.bytes.total) * 100))}%`
+                ? ` (${Math.min(100, Math.floor((phase.progress.bytes.done / phase.progress.bytes.total) * 100))}%)`
                 : ''}
             </p>
             <p className="text-[var(--muted-fg)]">{t('move.movingNote')}</p>

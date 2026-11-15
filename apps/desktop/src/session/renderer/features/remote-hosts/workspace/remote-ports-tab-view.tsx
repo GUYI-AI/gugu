@@ -256,7 +256,7 @@ function RemotePortRowView({ row, deviceId, onOpen }: { row: RemotePortRow; devi
       </span>
       <span role="cell" className="relative flex min-w-0 items-center">
         <span className="truncate text-foreground-muted group-hover:invisible group-focus-within:invisible">
-          {row.sources.map((source) => translate(`remotePorts.origin.${source}`)).join(' · ')}
+          {row.sources.map((source) => translate(`remotePorts.origin.${source}`)).join(', ')}
         </span>
         <span className="invisible absolute inset-y-0 right-0 flex items-center gap-1 group-hover:visible group-focus-within:visible">
           <RowAction label={translate('remotePorts.open')} onClick={onOpen}>

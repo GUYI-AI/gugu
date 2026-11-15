@@ -74,7 +74,7 @@ export function deviceSystem(device: Device): string | null {
   if (device.platform === 'cloud') return null
   const os = device.capabilities.os_name ?? PLATFORM_NAMES[device.platform.toLowerCase()] ?? null
   const arch = device.capabilities.arch ?? null
-  if (os && arch) return `${os} · ${arch}`
+  if (os && arch) return `${os}, ${arch}`
   return os ?? arch
 }
 

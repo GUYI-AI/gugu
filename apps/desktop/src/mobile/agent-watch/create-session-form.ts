@@ -194,7 +194,7 @@ export function createPillLabel(
   const model = selectedModelName(models, selection)
   const effort = selectedEffortName(models, selection)
   const parts = (phoneAgentLabel ? [phoneAgentLabel, model, effort] : [harness?.name, model, effort]).filter((x): x is string => !!x)
-  return parts.length > 0 ? parts.join(' · ') : null
+  return parts.length > 0 ? parts.join(', ') : null
 }
 
 export type CreateBlocker = 'no_usable_harness' | 'pick_harness'

@@ -45,9 +45,9 @@ const STRINGS = {
     forwardTooLarge: '{name} 没转发出去：一次最多转发 512 MB，可以先下载。',
     forwardChanging: '{name} 没转发出去：它正在被改动，等它写完再转发。',
     confirmRemoveCopy: '永久删除「{name}」？',
-    uploading: '正在上传 {name} · {done} / {total} · {speed}/s',
+    uploading: '正在上传 {name}，{done}/{total}，{speed}/s',
     uploaded: '已上传 {name}',
-    downloading: '正在下载 {name} · {done} / {total} · {speed}/s',
+    downloading: '正在下载 {name}，{done}/{total}，{speed}/s',
     saved: '已下载 {name}',
     replaceAsk: '「{name}」已存在',
     replaceAll: '替换同名文件',
@@ -165,11 +165,11 @@ const STRINGS = {
     uploadTooLarge: '文件太大：{e}',
     download: '下载',
     forward: '转发',
-    forwardReading: '正在读取 {name} · {done} / {total} · {speed}/s',
+    forwardReading: '正在读取 {name}，{done}/{total}，{speed}/s',
     forwardFailed: '{name} 没转发出去：{e}',
-    createdBy: '{who} 创建 · {time}',
-    editedBy: '{who} 编辑 · {time}',
-    editedAt: '已编辑 · {time}',
+    createdBy: '{who} 于 {time} 创建',
+    editedBy: '{who} 于 {time} 编辑',
+    editedAt: '编辑于 {time}',
     agent: 'Agent',
     system: '系统',
     sources: '来源消息',
@@ -192,9 +192,9 @@ const STRINGS = {
     week: '过去 7 天',
     earlier: '更早',
     noKind: '这里没有这一类的文件。',
-    leftDays: '临时 · {n} 天',
-    leftHours: '临时 · {n} 小时',
-    leftMinutes: '临时 · {n} 分钟',
+    leftDays: '临时保留 {n} 天',
+    leftHours: '临时保留 {n} 小时',
+    leftMinutes: '临时保留 {n} 分钟',
     clearsAt: '{time} 清除云端副本',
     sent: '聊天附件',
     expired: '已过期',
@@ -289,9 +289,9 @@ const STRINGS = {
     forwardTooLarge: "{name} wasn't forwarded: at most 512 MB go at once. Download it instead.",
     forwardChanging: "{name} wasn't forwarded: it is being changed. Forward it once it settles.",
     confirmRemoveCopy: 'Permanently delete "{name}"?',
-    uploading: 'Uploading {name} · {done} / {total} · {speed}/s',
+    uploading: 'Uploading {name}, {done}/{total}, {speed}/s',
     uploaded: 'Uploaded {name}',
-    downloading: 'Downloading {name} · {done} / {total} · {speed}/s',
+    downloading: 'Downloading {name}, {done}/{total}, {speed}/s',
     saved: 'Downloaded {name}',
     replaceAsk: '"{name}" already exists',
     replaceAll: 'Replace files of the same name',
@@ -409,11 +409,11 @@ const STRINGS = {
     uploadTooLarge: 'File too large: {e}',
     download: 'Download',
     forward: 'Forward',
-    forwardReading: 'Reading {name} · {done} / {total} · {speed}/s',
+    forwardReading: 'Reading {name}, {done}/{total}, {speed}/s',
     forwardFailed: "{name} wasn't forwarded: {e}",
-    createdBy: 'Created by {who} · {time}',
-    editedBy: 'Edited by {who} · {time}',
-    editedAt: 'Edited · {time}',
+    createdBy: 'Created by {who} at {time}',
+    editedBy: 'Edited by {who} at {time}',
+    editedAt: 'Edited at {time}',
     agent: 'agent',
     system: 'System',
     sources: 'Source messages',
@@ -436,9 +436,9 @@ const STRINGS = {
     week: 'Past 7 days',
     earlier: 'Earlier',
     noKind: 'No files of this kind here.',
-    leftDays: 'Temporary · {n}d',
-    leftHours: 'Temporary · {n}h',
-    leftMinutes: 'Temporary · {n}m',
+    leftDays: 'Temporary for {n}d',
+    leftHours: 'Temporary for {n}h',
+    leftMinutes: 'Temporary for {n}m',
     clearsAt: 'Cloud copy cleared {time}',
     sent: 'Chat attachments',
     expired: 'Expired',
@@ -1398,9 +1398,9 @@ function renderTools() {
     button.setAttribute('aria-pressed', String(button.dataset.kind === state.kind))
   }
   const filtered = Object.values(state.filters).some(Boolean)
-  $('sort-label').textContent = filtered ? `${t[`sort_${state.sort}`]} · ${t.filtered}` : t[`sort_${state.sort}`]
+  $('sort-label').textContent = filtered ? `${t[`sort_${state.sort}`]} (${t.filtered})` : t[`sort_${state.sort}`]
   $('sort').title = t.sort
-  $('sort').setAttribute('aria-label', `${t.sort}: ${t[`sort_${state.sort}`]}${filtered ? ` · ${t.filtered}` : ''}`)
+  $('sort').setAttribute('aria-label', `${t.sort}: ${t[`sort_${state.sort}`]}${filtered ? ` (${t.filtered})` : ''}`)
   $('sort').setAttribute('aria-pressed', String(filtered))
   $('views').setAttribute('aria-label', t.views)
   for (const button of $('views').children) {
@@ -1516,7 +1516,7 @@ function renderCrumbs() {
   const home = crumb(rootName(), null, !state.folder)
   if (copy?.root) {
     home.classList.add('crumb-root')
-    home.replaceChildren(Object.assign(document.createElement('bdi'), { textContent: copy.deviceLabel ? `${copy.deviceLabel} · ${copy.root}` : copy.root }))
+    home.replaceChildren(Object.assign(document.createElement('bdi'), { textContent: copy.deviceLabel ? `${copy.deviceLabel}: ${copy.root}` : copy.root }))
     if (onThisComputer(copy)) home.addEventListener('contextmenu', (event) => {
       const items = folderOpenIn(copy.id)
       if (!items.length) return
@@ -1543,7 +1543,7 @@ function renderCrumbs() {
 function rootName() {
   if (!inWorkspace()) return state.t.chatFolder
   const { root, deviceLabel } = copyOf()
-  return root ?? (deviceLabel ? `${deviceLabel} · ${state.t.workingCopy}` : state.t.workingCopy)
+  return root ?? (deviceLabel ? `${deviceLabel}: ${state.t.workingCopy}` : state.t.workingCopy)
 }
 
 // 按名称筛选 opens in the bar (see style.css); Esc, 取消 or 🔍 again empties it and puts the bar back as it was.
@@ -1597,7 +1597,7 @@ function renderFolderChoice() {
     const title = Object.assign(document.createElement('span'), { className: 'file-title' })
     title.append(Object.assign(document.createElement('span'), { className: 'file-name', textContent: folder.path.split(/[\\/]/).filter(Boolean).pop() ?? folder.path }))
     const meta = Object.assign(document.createElement('span'), { className: 'file-meta' })
-    if (!folder.thisMachine) meta.append(`${folder.machine}${folder.online ? '' : ` · ${t.machineOffline}`} · `)
+    if (!folder.thisMachine) meta.append(`${folder.machine}${folder.online ? '' : ` (${t.machineOffline})`} `)
     // A long path gives way at its start: its end is what tells two folders apart.
     const where = Object.assign(document.createElement('span'), { className: 'folder-path' })
     where.append(Object.assign(document.createElement('bdi'), { textContent: folder.path }))
@@ -1913,7 +1913,7 @@ function storedOnText(storedOn) {
 function storedOnMark(storedOn) {
   const mark = document.createElement('span')
   mark.className = 'file-host'
-  mark.title = `${machineOf(storedOn)} · ${storedOnText(storedOn)}`
+  mark.title = `${machineOf(storedOn)}\n${storedOnText(storedOn)}`
   const icon = document.createElement('gugu-icon')
   icon.setAttribute('name', 'server')
   icon.setAttribute('aria-hidden', 'true')
@@ -1921,7 +1921,7 @@ function storedOnMark(storedOn) {
   // Whether it is on (storedOn.online; known for the reader's own machines): a dot, and the word on hover.
   if (storedOn.online !== undefined) {
     mark.dataset.online = String(storedOn.online)
-    mark.title = `${machineOf(storedOn)} · ${storedOn.online ? state.t.machineOnline : state.t.machineOffline} — ${mark.title}`
+    mark.title = `${machineOf(storedOn)} (${storedOn.online ? state.t.machineOnline : state.t.machineOffline}) — ${mark.title}`
   }
   mark.setAttribute('aria-label', mark.title)
   return mark
@@ -2027,7 +2027,7 @@ function readAgain(entry, into) {
 const fileTip = (entry) => fileUnavailable(entry) ? `${pathOf(entry)}\n${unavailableReason(entry)}` : [
   pathOf(entry), ...activityOf(entry), sizeOf(entry.size), entry.storedOn ? machineOf(entry.storedOn) : '',
   entry.keep ? entry.keep.expiresAt ? state.t.keepTemporary : state.t.keepPermanent : '',
-].filter(Boolean).join(' · ')
+].filter(Boolean).join(', ')
 
 function listItem(entry, now = new Date(Date.now())) {
   const li = document.createElement('li')
@@ -2068,7 +2068,7 @@ function listItem(entry, now = new Date(Date.now())) {
     span.dataset.cell = cell
     meta.append(span)
   }
-  if (!folder) meta.title = fileUnavailable(entry) ? unavailableReason(entry) : activityOf(entry).join(' · ')
+  if (!folder) meta.title = fileUnavailable(entry) ? unavailableReason(entry) : activityOf(entry).join(', ')
   open.append(title)
   const where = state.filter.trim() && entry.parentId ? pathOf(entry).split('/').slice(0, -1).join('/') : ''
   if (where) meta.prepend(Object.assign(document.createElement('span'), { className: 'file-path', textContent: where }))
@@ -4067,7 +4067,7 @@ function showEntry(entry) {
 function renderDocInfo(entry) {
   const t = state.t
   const parts = []
-  const activity = activityOf(entry).join(' · ')
+  const activity = activityOf(entry).join(', ')
   if (activity) parts.push(Object.assign(document.createElement('span'), { className: 'file-activity', textContent: activity, title: activity }))
   const sources = entry?.sourceMessageIds ?? []
   if (sources.length) {
@@ -4385,18 +4385,18 @@ function showDetails(entry) {
   }
   const dated = (iso) => (iso ? new Intl.DateTimeFormat(state.ctx?.locale || 'en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)) : '')
   if (fileUnavailable(entry)) fact(t.d_status, t[unavailableState(entry)], unavailableReason(entry))
-  fact(t.d_size, [sizeOf(entry.size), entry.suffix ? entry.suffix.slice(1).toUpperCase() : ''].filter(Boolean).join(' · '))
+  fact(t.d_size, [sizeOf(entry.size), entry.suffix ? entry.suffix.slice(1).toUpperCase() : ''].filter(Boolean).join(', '))
   // A working copy's file was made there, not uploaded.
-  fact(inCopy(entry) ? t.d_created : t.d_by, [entry.createdBy && entry.createdBy.kind !== 'system' ? who(entry.createdBy) : '', dated(entry.createdAt)].filter(Boolean).join(' · '))
+  fact(inCopy(entry) ? t.d_created : t.d_by, [entry.createdBy && entry.createdBy.kind !== 'system' ? who(entry.createdBy) : '', dated(entry.createdAt)].filter(Boolean).join(', '))
   if (entry.updatedAt && (!entry.createdAt || Date.parse(entry.updatedAt) - Date.parse(entry.createdAt) > 60_000)) {
-    fact(t.d_edited, [entry.updatedBy ? who(entry.updatedBy) : '', dated(entry.updatedAt), entry.version ? fmt(t.d_version, { n: entry.version }) : ''].filter(Boolean).join(' · '))
+    fact(t.d_edited, [entry.updatedBy ? who(entry.updatedBy) : '', dated(entry.updatedAt), entry.version ? fmt(t.d_version, { n: entry.version }) : ''].filter(Boolean).join(', '))
   }
   const folders = []
   for (let at = state.entries.find((e) => e.id === entry.parentId); at; at = state.entries.find((e) => e.id === at.parentId)) folders.unshift(shownName(at))
   fact(t.d_where, [inCopy(entry) ? t.workingCopy : t.chatFolder, ...folders].join(' / '))
-  if (entry.storedOn) fact(t.d_stored, `${machineOf(entry.storedOn)}${entry.storedOn.online === undefined ? '' : ` · ${entry.storedOn.online ? t.machineOnline : t.machineOffline}`}`, storedOnText(entry.storedOn))
+  if (entry.storedOn) fact(t.d_stored, `${machineOf(entry.storedOn)}${entry.storedOn.online === undefined ? '' : ` (${entry.storedOn.online ? t.machineOnline : t.machineOffline})`}`, storedOnText(entry.storedOn))
   const left = entry.keep?.expiresAt ? fmt(t.clearsAt, { time: dated(entry.keep.expiresAt) }) : null
-  if (!fileUnavailable(entry) && entry.keep !== undefined) fact(t.d_keep, !entry.keep ? t.noCopy : left ? `${t.keepTemporary} · ${left}` : t.keepPermanent, entry.keep && !entry.keep.mine ? t.keepNotMine : undefined)
+  if (!fileUnavailable(entry) && entry.keep !== undefined) fact(t.d_keep, !entry.keep ? t.noCopy : left ? `${t.keepTemporary} (${left})` : t.keepPermanent, entry.keep && !entry.keep.mine ? t.keepNotMine : undefined)
   const versions = document.createElement('ol')
   versions.className = 'details-versions'
   const versionsHead = Object.assign(document.createElement('h3'), { className: 'details-sub', textContent: t.d_versions, hidden: true })
@@ -4421,7 +4421,7 @@ function showDetails(entry) {
       versions.replaceChildren(...kept.map((v) => {
         const li = document.createElement('li')
         const status = unavailableState(v)
-        li.textContent = [fmt(t.d_version, { n: v.n }), v.by ? who(v.by) : '', dated(v.at), sizeOf(v.size), status ? t[status] : ''].filter(Boolean).join(status ? ' ' : ' · ')
+        li.textContent = [fmt(t.d_version, { n: v.n }), v.by ? who(v.by) : '', dated(v.at), sizeOf(v.size), status ? t[status] : ''].filter(Boolean).join(status ? ' ' : ', ')
         if (status) { li.dataset.expired = ''; li.title = unavailableReason(v) }
         return li
       }))

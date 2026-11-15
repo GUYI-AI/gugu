@@ -56,7 +56,7 @@ export const NeedsYouTaskRow = observer(function NeedsYouTaskRow({ task, onClick
     </PhoneMessageAvatar>}
     title={emphasis ? name : <span className="font-normal text-[var(--muted-fg)]">{name}</span>}
     meta={Number.isFinite(time) ? formatCalendarDay(new Date(time).toISOString()) : undefined}
-    subtitle={state.length > 0 ? [...state, ...(title === name ? [] : [title])].join(' · ') : undefined}
+    subtitle={state.length > 0 ? [...state, ...(title === name ? [] : [title])].join(', ') : undefined}
     trailing={emphasis ? <Chip tone="accent" shape="count">1</Chip> : undefined}
   />
 })

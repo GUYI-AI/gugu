@@ -14,11 +14,11 @@ const t = translate as Parameters<typeof payerLine>[1];
 
 describe('「订阅」页一行里的字', () => {
   it('谁在付钱 + 套餐;档位读取失败就明说', () => {
-    expect(payerLine({ payer: 'subscription', plan: 'Claude Max 20x' }, t, true)).toBe('你的订阅 · Claude Max 20x');
+    expect(payerLine({ payer: 'subscription', plan: 'Claude Max 20x' }, t, true)).toBe('你的订阅: Claude Max 20x');
     expect(payerLine({ payer: 'subscription', plan: 'Google AI Ultra', tierUnknown: true }, t, false)).toBe(
-      '你的订阅 · Google AI Ultra（档位未知）'
+      '你的订阅: Google AI Ultra（档位未知）'
     );
-    expect(payerLine({ payer: 'api-key', plan: 'MiMo 按量付费' }, t, false)).toBe('本地配置 Key · MiMo 按量付费');
+    expect(payerLine({ payer: 'api-key', plan: 'MiMo 按量付费' }, t, false)).toBe('本地配置 Key: MiMo 按量付费');
     expect(payerLine({ payer: 'custom-endpoint', endpoint: '198.51.100.37:9000' }, t, false)).toBe(
       '自定义服务 198.51.100.37:9000'
     );
@@ -33,7 +33,7 @@ describe('「订阅」页一行里的字', () => {
   it('附注:接的是哪几家、套餐多旧、Claude 订阅登 Pi 扣额外用量', () => {
     expect(
       planNotes({ payer: 'subscription', via: ['Claude', 'ChatGPT'], planAsOf: 1, extraUsage: true }, t, () => '10-10 23:51')
-    ).toEqual(['接入：Claude · ChatGPT', '套餐信息更新于 10-10 23:51', '按 Claude 额外用量计费，不占套餐额度']);
+    ).toEqual(['接入：Claude, ChatGPT', '套餐信息更新于 10-10 23:51', '按 Claude 额外用量计费，不占套餐额度']);
   });
 
   // #2507 owner 2026-11-12:「订阅里面说去资源库智能体里登录，但我去看现在根本没有登录选项……本来这里应该点击直接跳转的」。
@@ -53,8 +53,8 @@ describe('「订阅」页一行里的字', () => {
 
   it('窗口按长度起名，厂商的分组原样带上', () => {
     expect(windowLabel({ windowMinutes: 300, usedPercent: 1 }, t)).toBe('5 小时');
-    expect(windowLabel({ windowMinutes: 10_080, group: 'Fable', usedPercent: 1 }, t)).toBe('每周 · Fable');
-    expect(windowLabel({ monthly: true, group: 'chat', usedPercent: 1 }, t)).toBe('本月 · chat');
+    expect(windowLabel({ windowMinutes: 10_080, group: 'Fable', usedPercent: 1 }, t)).toBe('每周 (Fable)');
+    expect(windowLabel({ monthly: true, group: 'chat', usedPercent: 1 }, t)).toBe('本月 (chat)');
     expect(windowLabel({ windowMinutes: 1_440, usedPercent: 1 }, t)).toBe('1 天');
     expect(windowLabel({ usedPercent: 1 }, t)).toBe('额度');
   });

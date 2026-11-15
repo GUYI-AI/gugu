@@ -190,7 +190,7 @@ function MemberRow({
 
 function joinMeta(cells: ReactNode[]): ReactNode {
   const shown = cells.filter(Boolean)
-  return shown.length ? shown.flatMap((cell, index) => index ? [' · ', cell] : [cell]) : undefined
+  return shown.length ? shown.map((cell, index) => <span key={index} className="mr-2 last:mr-0">{index > 0 ? ' ' : ''}{cell}</span>) : undefined
 }
 
 export type MemberListPanelProps = {

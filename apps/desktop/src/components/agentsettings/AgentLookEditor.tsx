@@ -236,7 +236,7 @@ export function AgentLookEditor({
             <strong className="gg-look-plate-name">{name}</strong>
             <span className="gg-look-plate-sub">
               <span className="gg-look-plate-swatch" aria-hidden="true" />
-              {t('settings.look.summary', { color: colorName(draft.color), face: faceName(draft.rest) })}
+              <span>{colorName(draft.color)}</span><span>{faceName(draft.rest)}</span>
             </span>
           </div>
 

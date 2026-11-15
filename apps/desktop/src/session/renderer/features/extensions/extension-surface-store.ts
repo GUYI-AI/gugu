@@ -63,11 +63,11 @@ export function extensionTabTitle(
 ): { label: string; hint?: string; tooltip: string } {
   const title = surface.title ?? appTitle;
   const detail = file && title !== file.name && title !== file.path ? title : undefined;
-  const hint = file ? [file.hint, detail].filter(Boolean).join(' · ') || undefined : undefined;
+  const hint = file ? [file.hint, detail].filter(Boolean).join(', ') || undefined : undefined;
   return {
     label: file?.name ?? title,
     hint,
-    tooltip: surface.error ?? (file ? [file.path, detail].filter(Boolean).join(' · ') : title),
+    tooltip: surface.error ?? (file ? [file.path, detail].filter(Boolean).join(', ') : title),
   };
 }
 

@@ -24,7 +24,7 @@ type Upload = { placement: TaskAttachmentPlacement; file: File; controller: Abor
 
 function progressMeta(sent: number, total: number): string {
   const percent = total > 0 ? Math.min(100, Math.floor((sent / total) * 100)) : 100;
-  return `${formatBytes(sent)} / ${formatBytes(total)} · ${percent}%`;
+  return `${formatBytes(sent)} / ${formatBytes(total)}, ${percent}%`;
 }
 
 type ComposerFileUploadArgs = {
@@ -85,7 +85,7 @@ export function createComposerFileUploads(readArgs: () => ComposerFileUploadArgs
     let received = upload.confirmed, total = upload.total;
     const progress = () => {
       if (!active()) return;
-      const suffix = phase === 'uploading' ? '' : ` · ${readArgs().translate(phase === 'resuming' ? 'composer.attachmentResuming' : 'composer.attachmentConfirming')}`;
+      const suffix = phase === 'uploading' ? '' : ` (${readArgs().translate(phase === 'resuming' ? 'composer.attachmentResuming' : 'composer.attachmentConfirming')})`;
       patch(chipId, { progress: total > 0 ? Math.min(100, (received / total) * 100) : 100, meta: progressMeta(received, total) + suffix });
     };
     upload.settled = Promise.all([readArgs().resumable ? selectedScreenshot(file) : Promise.resolve(file), to]).then(async ([source, destination]) => {
@@ -105,7 +105,7 @@ export function createComposerFileUploads(readArgs: () => ComposerFileUploadArgs
       if (!active()) return false;
       upload.ref = ref;
       upload.status = 'done';
-      patch(chipId, { state: 'done', progress: undefined, cancelable: undefined, meta: formatBytes(selected.size) + (quality ? ` · ${readArgs().translate(selected === file ? 'composer.screenshotOriginal' : 'composer.screenshotCompressed')}` : '') });
+      patch(chipId, { state: 'done', progress: undefined, cancelable: undefined, meta: formatBytes(selected.size) + (quality ? ` (${readArgs().translate(selected === file ? 'composer.screenshotOriginal' : 'composer.screenshotCompressed')})` : '') });
       return true;
     }, (error: unknown) => {
       upload.status = 'failed';

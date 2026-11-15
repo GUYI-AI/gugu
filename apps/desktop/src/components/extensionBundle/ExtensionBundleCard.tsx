@@ -99,7 +99,7 @@ function PermissionsFold({ text, strong, muted }: { text: string; strong: string
         <Shield size={14} aria-hidden className={`shrink-0 ${muted}`} />
         <span className="min-w-0 flex-1 truncate">
           <span className="font-semibold">{t('extensions.bundleCardPermissions', { count: lines.length })}</span>
-          {open ? null : ` · ${lines[0]}`}
+          {open ? null : `: ${lines[0]}`}
         </span>
         <span className={`shrink-0 text-[var(--font-caption)] ${muted}`}>{t(open ? 'extensions.collapse' : 'extensions.expand')}</span>
         <ChevronDown size={14} aria-hidden className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''} ${muted}`} />
@@ -321,7 +321,7 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
             {manifest ? `${name} ${manifest.version}` : meta.fileName}
           </span>
           <span className={`truncate text-[var(--font-caption)] ${muted}`}>
-            {[manifest?.id, formatAttachmentSize(sizeBytes), manifest && senderName ? t('extensions.bundleCardFrom', { name: senderName }) : null].filter(Boolean).join(' · ')}
+            {[manifest?.id, formatAttachmentSize(sizeBytes), manifest && senderName ? t('extensions.bundleCardFrom', { name: senderName }) : null].filter(Boolean).join(', ')}
           </span>
         </div>
       </div>

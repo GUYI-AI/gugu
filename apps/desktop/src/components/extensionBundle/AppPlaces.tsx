@@ -186,7 +186,7 @@ function AppPlacesPicker({ places, chosen, onDone, onClose }: {
       onQuery={setQuery}
       placeholder={t('chatArea.appEnable.search')}
       empty={t(places.length === 0 ? 'chatArea.appEnable.noPlaces' : 'chatArea.appEnable.noMatch')}
-      top={<SectionLabel>{t('chatArea.appEnable.agents')} · {t('chatArea.appEnable.recent')}</SectionLabel>}
+      top={<SectionLabel>{t('chatArea.appEnable.agents')}  {t('chatArea.appEnable.recent')}</SectionLabel>}
       picked={t('chatArea.appEnable.picked', { count: picked.size })}
       actionLabel={t('chatArea.appEnable.done')}
       onAction={() => onDone(picked)}
@@ -204,7 +204,7 @@ export function AppPlacesSummary({ places, machineName }: { places: readonly Ena
   if (on.length === 0) return <span data-testid="app-places-summary">{t('chatArea.appEnable.none')}</span>
   const all = machineName ? t('chatArea.appEnable.hereAllOn', { machine: machineName }) : t('chatArea.appEnable.hereAll')
   const label = (place: EnablePlace) => (place.id === HERE_ALL ? all : (place.name ?? ''))
-  const names = on.slice(0, 3).map(label).join(' · ')
+  const names = on.slice(0, 3).map(label).join(', ')
   return (
     <span data-testid="app-places-summary" className="inline-flex min-w-0 items-center gap-1">
       <span className="inline-flex items-center gap-px">

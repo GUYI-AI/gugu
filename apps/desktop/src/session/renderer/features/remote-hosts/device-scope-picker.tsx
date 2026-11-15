@@ -86,7 +86,7 @@ export const DeviceScopeStatus = observer(function DeviceScopeStatus({
   // state. `detail` replaces the last-seen time, so it carries both.
   const cached = state !== 'online' && store.cachedViews > 0;
   const seen = state === 'device_offline' && device.lastSeenAt ? t('connection.lastSeen', { time: formatRelativeTime(device.lastSeenAt) }) : null;
-  const detail = cached ? [seen, translate('deviceScope.readOnlyCache')].filter(Boolean).join(' · ') : null;
+  const detail = cached ? [seen, translate('deviceScope.readOnlyCache')].filter(Boolean).join(', ') : null;
   return (
     <ConnectionStatus
       state={state}

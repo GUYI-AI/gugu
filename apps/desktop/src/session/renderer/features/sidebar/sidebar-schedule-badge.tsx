@@ -22,7 +22,7 @@ export function SidebarScheduleMark({ digest, emphasized }: { digest: Sessionpag
         digest.attention ? 'text-[var(--warn-fg)]' : emphasized ? 'text-foreground-muted' : 'text-foreground-passive'
       )}
       data-session-schedule={digest.attention ? 'attention' : 'pending'}
-      aria-label={lines.join(' · ')}
+      aria-label={lines.join(', ')}
     >
       {digest.attention ? <AlertTriangle className="size-3" /> : <Clock className="size-3" />}
     </span>

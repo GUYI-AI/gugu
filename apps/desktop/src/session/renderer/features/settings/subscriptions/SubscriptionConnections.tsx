@@ -699,7 +699,7 @@ function ConnectionOption({
             modelsLine(connection.models, translate)
           ]
             .filter(Boolean)
-            .join(' · ')
+            .join(', ')
         : status?.kind === 'unauthenticated'
           ? translate(
               status.reason === 'expired'
@@ -821,7 +821,7 @@ function remainingLine(
       (window) =>
         `${translate('subscriptions.remaining', { window: windowLabel(window, translate) })} ${percent.format(100 - Math.min(100, Math.max(0, window.usedPercent)))}%`
     )
-    .join(' · ')
+    .join(', ')
 }
 
 function ConnectionForm({

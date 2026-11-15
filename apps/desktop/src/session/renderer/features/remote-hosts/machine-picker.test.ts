@@ -192,7 +192,7 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
     expect(trigger.textContent).toContain('Linux 1');
     const row = container.querySelector('[data-device-id="linux1"]') as HTMLButtonElement;
     expect(row.querySelector('[data-slot="machine-dot"]')?.getAttribute('data-state')).toBe('offline');
-    expect(row.textContent).toMatch(/离线 · /);
+    expect(row.textContent).toMatch(/离线（.+）/);
   });
 
   it('菜单:每行图标、(别的机器)点、名字,右边「系统 · 连法」;选中的那行标出来;离线的淡着(能选与否看页面)', async () => {
@@ -201,9 +201,9 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
     const row = (id: string) => container.querySelector(`[data-device-id="${id}"]`) as HTMLButtonElement;
     expect(row('d22').getAttribute('data-selected')).toBe('true');
     expect(row('local').getAttribute('data-selected')).toBe('false');
-    expect(row('d22').textContent).toContain('Linux · 远程 SSH');
+    expect(row('d22').textContent).toContain('Linux, 远程 SSH');
     expect(row('local').textContent).toContain('macOS');
-    expect(row('linux1').textContent).toMatch(/离线 · /);
+    expect(row('linux1').textContent).toMatch(/离线（.+）/);
     expect(row('linux1').className).toContain('text-foreground-passive');
     expect(row('d22').className).toContain('bg-row-selected');
     expect(row('local').querySelector('[data-slot="machine-dot"]')).toBeNull();

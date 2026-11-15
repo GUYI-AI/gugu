@@ -91,7 +91,7 @@ export function AppsSection({ updates, gone, known, onManage }: { updates: Recor
                         : t('settings.apps.from', { version: manifest.version, name: from ?? '—' }),
                     ...(enabled ? [] : [translateSessionMessage('extensions.switchedOff')]),
                     ...(gone.includes(manifest.id) ? [translateSessionMessage('extensions.rowGone')] : []),
-                  ].join(' · ')}
+                  ].join(', ')}
                   control={<ChevronRight className="size-4 text-[var(--text-secondary)]" />}
                 />
               </ResourceMenu>

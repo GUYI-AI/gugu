@@ -191,7 +191,7 @@ export function modelTitle(item: ComposerModelItem): string | undefined {
   if (f?.contextWindowSize !== undefined) parts.push(`Context ${formatContextWindow(f.contextWindowSize)}`);
   if (f?.speed !== undefined) parts.push(`Speed ${f.speed}/5`);
   if (f?.intelligence !== undefined) parts.push(`Intelligence ${f.intelligence}/5`);
-  return parts.length > 0 ? parts.join(' · ') : undefined;
+  return parts.length > 0 ? parts.join(', ') : undefined;
 }
 
 /**
@@ -539,7 +539,7 @@ export function ComposerModelMenu({
           <span data-slot="composer-model-trigger-label" className={styles.modelTriggerLabel}>
             {/* 括号在这里剥掉,清单里不剥 —— 见 @@@composer-model-trigger-label。 */}
             {settingNotice
-              ? `${settingNotice} · ${translate('composer.changeModel')}`
+              ? `${settingNotice}: ${translate('composer.changeModel')}`
               : selectedModelItem
               ? composerModelTriggerLabel(
                   selectedModelItem.shortName ?? selectedModelItem.name,

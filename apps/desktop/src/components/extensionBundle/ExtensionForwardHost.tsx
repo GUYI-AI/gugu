@@ -101,7 +101,7 @@ export function ExtensionForwardHost() {
     <ForwardMessageDialog
       chats={chats}
       sourceChatId=""
-      preview={`${request.name} ${request.version} · .guguext`}
+      preview={`${request.name} ${request.version} (.guguext)`}
       topRow={
         <ListRow
           role="button"

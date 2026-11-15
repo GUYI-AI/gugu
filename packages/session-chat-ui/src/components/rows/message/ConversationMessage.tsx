@@ -78,7 +78,7 @@ function replySenderLabel(quote: NonNullable<ChatMessage['conversationReply']>, 
   const sender = isSelfAddress(quote.fromId ?? null, self) && self?.displayName?.trim() ? self.displayName.trim() : shownSender(quote.from ?? null, quote.fromId ?? null, self);
   return [quote.chatId ? ctx.chatName?.(quote.chatId) : null,
     quote.self ? ctx.commands?.conversationAgentName?.() ?? null : sender]
-    .filter((part): part is string => Boolean(part?.trim())).join(' · ');
+    .filter((part): part is string => Boolean(part?.trim())).join(', ');
 }
 function headerLayout(item: ChatMessage, ctx: MeasureCtx) {
   return conversationHeaderLayout(item, ctx, conversationSenderName(item, ctx));
@@ -157,7 +157,7 @@ function SingleConversationMessage(props: { data: ChatMessage; ctx: RenderCtx; v
       <Show when={head().name}>{label => <SenderName class={conversationName} name={label().text} target={senderTarget()} style={{ width: `${head().nameWidth}px` }} />}</Show>
       {reference()}
       <Show when={messageQuote(props.data) && subject() && props.data.conversationProcess}>
-        <span class={conversationReferenceSeparator} data-slot="conversation-reference-separator" aria-hidden="true">·</span>
+        <span class={conversationReferenceSeparator} data-slot="conversation-reference-separator" aria-hidden="true"> </span>
       </Show>
       <Show when={subject() && props.data.conversationProcess}>{process =>
         <div class={conversationTime} style={{ width: `${head().processWidth}px`, height: `${processRowHeight(props.data.id, process(), head().processCtx)}px` }}>

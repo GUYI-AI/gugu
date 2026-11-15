@@ -134,7 +134,7 @@ export function AnnouncementDrawer({
         <>
           {t('announcement.title')}
           {announcements.length > 0 ? (
-            <span style={countStyle}>· {announcements.length}</span>
+            <span style={countStyle}> {announcements.length}</span>
           ) : null}
         </>,
       )}

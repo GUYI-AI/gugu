@@ -15,7 +15,7 @@ describe('memory content previews', () => {
     expect(memoryContentPreview('# Title\n\nSection\n---\n\n```txt\nprivate implementation\n```\n\n<!-- internal comment -->\n\n![avatar](image.png)\n\n[ref]: https://example.test')).toBe('')
   })
   it('keeps reference-link labels and table content without Markdown symbols', () => {
-    expect(memoryContentPreview('[阅读资料][book]\n\n[book]: https://example.test\n\n| 项目 | 状态 |\n| --- | --- |\n| 研究 | 进行中 |')).toBe('阅读资料 项目 · 状态 研究 · 进行中')
+    expect(memoryContentPreview('[阅读资料][book]\n\n[book]: https://example.test\n\n| 项目 | 状态 |\n| --- | --- |\n| 研究 | 进行中 |')).toBe('阅读资料 项目, 状态 研究, 进行中')
   })
   it('takes only the first four content blocks after headings', () => {
     expect(memoryContentPreview('# Facts\n- 第一条\n- 第二条\n- 第三条\n- 第四条\n- 第五条')).toBe('第一条 第二条 第三条 第四条')
