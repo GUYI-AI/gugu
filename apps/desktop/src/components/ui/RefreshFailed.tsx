@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from './Button'
 
 /**
- * A reading that still shows its last value while its latest read failed (lib/readModel: `value` with `error`): says so
+ * A reading that still shows its last value while its latest read failed (lib/replica: `value` with `error`): says so
  * next to the value, with a retry — ❌ the old value drawn as if it were current.
  */
 export function RefreshFailed({ error, onRetry }: { error: Error | null; onRetry?: () => void }) {

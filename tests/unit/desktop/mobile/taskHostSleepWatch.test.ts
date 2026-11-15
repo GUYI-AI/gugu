@@ -2,8 +2,8 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import type { CloudComputerSnapshot } from '@gugu/core/cloud/cloudComputer'
 import type { Device } from '@gugu/core/shared/types/chat'
-// The read model reads for the signed-in account, as the product publishes it.
-;(await import('../../../../apps/desktop/src/lib/readModel')).followRendererSession('SIGNED_IN', 'owner')
+// The replica reads for the signed-in account, as the product publishes it.
+;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
 
 const network = vi.hoisted(() => ({ open: vi.fn(), close: vi.fn(), warn: vi.fn(), snapshot: { state: 'asleep', deviceId: 'cloud', error: null, since: null } as CloudComputerSnapshot }))
 vi.mock('@/lib/remoteSessionHost', () => ({ openPhoneSessionHostPipe: () => network.open }))

@@ -6,6 +6,8 @@
 // 可见继承来源、参与靠说话:这个 hook 只负责把服务端算好的 is_participant 端上来,
 // ❌ 不在客户端二次判断谁看得见谁被通知(那归 RLS 与数据库触发器,客户端再判一遍就是第二个属主)。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useIsFetching } from '@tanstack/react-query'
+import { queryClient, replica, useReplica } from '../lib/replica'
 import type { ChatItem, TopicSummary } from '@gugu/core/shared/types/chat'
 import { topicService } from '../lib/topics'
 import { rendererLogger } from '../lib/log'
@@ -15,14 +17,10 @@ import { readRevisionResourceKey, type AccountRevisionEvent, type AccountRevisio
 
 const topicsLog = rendererLogger('chat/topics')
 
-const EMPTY_TOPICS: TopicSummary[] = []
-// 按「账号:线」记住上一次拉到的清单:切回看过的线时,锚点卡与消息同一帧出现 —— 否则每次打开都晚一拍、
-// 卡片冒出来把上方的消息往上顶(#6519 首帧预览把这一拍露了出来)。照旧每次重拉对账,缓存只当首帧的先验;
-// 键带用户 id,换账号不串;拉取失败就删掉这一格(fail loud 不变)。
-const lastTopics = new Map<string, TopicSummary[]>()
 
 export interface UseTopicsOfChatResult {
-  topics: TopicSummary[]
+  /** null until read (`loading`). */
+  topics: TopicSummary[] | null
   /** 锚点卡按来源消息分组:一条来源消息可能长出多条话题,所以值是数组而非单条。 */
   bySourceMessageId: Map<string, TopicSummary[]>
   loading: boolean
@@ -41,20 +39,6 @@ export function topicsSourceChatId(chat: Pick<ChatItem, 'id' | 'kind'> | null | 
   if (chat.kind === 'topic') return null
   return chat.id
 }
-
-// @@@3922 这一族的形状:hook 收一个主体参数,但状态只能在**副作用**里追上它,而副作用落在绘制之后
-// ⇒ 切换那一帧,上一条线的话题会被消费方盖上「当前这条线」的身份,锚点卡挂到别人的消息底下。
-// 解法是把读数和它描述的主体存在一起(subject-scoped),主体不符时当场交出「还不知道」——
-// 在渲染期收口,而不是在副作用里补一刀。
-type TopicsState = {
-  /** 这份读数是关于哪条线的。与当前入参不符 ⇒ 它不是「当前线的答案」,一律当没有。 */
-  forChatId: string | null
-  topics: TopicSummary[]
-  loading: boolean
-  error: string | null
-}
-
-const IDLE: TopicsState = { forChatId: null, topics: EMPTY_TOPICS, loading: false, error: null }
 
 type SubscribeAccountRevision = (event: AccountRevisionEvent, listener: AccountRevisionListener) => () => void
 
@@ -81,6 +65,26 @@ function withTopic(topics: TopicSummary[], topicChatId: string, row: TopicSummar
 }
 
 /**
+ * The topics of a line (account replica). Each read records their access facts locally, as of the local revision
+ * before the read. fail loud:话题列不出来就说列不出来,❌ 不许静默当成「这条线上没有话题」—— 那会让来源消息底下的锚点卡
+ * 凭空消失,用户以为话题被删了。
+ */
+export const topicsOfChat = replica({
+  name: 'topicsOfChat',
+  scope: 'account',
+  read: async (owner: string, sourceChatId: string): Promise<TopicSummary[]> => {
+    try {
+      const { rows, record } = await readTopics(owner, sourceChatId)
+      await record()
+      return rows
+    } catch (error) {
+      topicsLog.error({ error, sourceChatId }, 'list topics of chat failed')
+      throw error
+    }
+  },
+})
+
+/**
  * @param subscribeAccountRevision 订阅 chat_changed。话题的新建、改名、归档、成员变化和新消息,服务端都会给来源线的
  *   每个成员发一条 chat_changed,entity_id 是那条话题(gugu-supabase 20261106120000)。这里只重读那一条 ——
  *   否则对端要重开这条线才看得见新话题(#1588)。来源线自己的 chat_changed(每条消息一次)没有 entity_id,与这份清单无关。
@@ -89,61 +93,26 @@ export function useTopicsOfChat(
   sourceChatId: string | null,
   subscribeAccountRevision?: SubscribeAccountRevision,
 ): UseTopicsOfChatResult {
-  const [state, setState] = useState<TopicsState>(IDLE)
-  const [reloadToken, setReloadToken] = useState(0)
   const userId = useAuth().user?.id ?? null
-  const cacheKey = userId && sourceChatId ? `${userId}:${sourceChatId}` : null
-  // 竞态守卫:切会话/重载各自 +1。晚到的旧响应 seq 对不上就整个丢弃 ——
-  // 没有它,A 线的慢响应会落进已经切到 B 线的状态里,锚点卡挂到别人的消息底下(#5856 同形状于 #949)。
-  const loadSeqRef = useRef(0)
+  // Keyed by the line: switching lines never hands out the previous line's topics, and a line seen before has its topics
+  // on the first frame (#6519) while it is read again.
+  const reading = useReplica(topicsOfChat, sourceChatId ? [sourceChatId] : null)
+  const key = sourceChatId ? topicsOfChat.key(sourceChatId) : null
+  const fetching = useIsFetching({ queryKey: key ?? ['topicsOfChat:none'], exact: true }, queryClient) > 0
+  // null until the line's topics are read: no anchor card and no topic list yet, ❌ an empty list that says「没有话题」.
+  const topics = reading.state === 'value' ? reading.value : null
+  const failure = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null
+  const loading = !!sourceChatId && (reading.state === 'unknown' || fetching)
+  // One topic's failed read: said on this line until the line's topics are updated after it (that topic read again, or
+  // the whole line).
+  const [topicError, setTopicError] = useState<{ chatId: string; message: string; at: number } | null>(null)
+  const updatedAt = key ? queryClient.getQueryState(key)?.dataUpdatedAt ?? 0 : 0
+  const shownTopicError = topicError && topicError.chatId === sourceChatId && topicError.at >= updatedAt ? topicError.message : null
 
-  useEffect(() => {
-    const seq = ++loadSeqRef.current
-    if (!sourceChatId) {
-      setState(IDLE)
-      return
-    }
-    setState((current) => ({
-      forChatId: sourceChatId,
-      topics: current.forChatId === sourceChatId ? current.topics : (cacheKey && lastTopics.get(cacheKey)) || EMPTY_TOPICS,
-      loading: true,
-      error: null,
-    }))
-    let cancelled = false
-    void (async () => {
-      try {
-        const { rows, record } = await readTopics(userId, sourceChatId)
-        if (cancelled || seq !== loadSeqRef.current) return
-        await record()
-        if (cancelled || seq !== loadSeqRef.current) return
-        if (cacheKey) lastTopics.set(cacheKey, rows)
-        setState({ forChatId: sourceChatId, topics: rows, loading: false, error: null })
-      } catch (err) {
-        if (cancelled || seq !== loadSeqRef.current) return
-        // fail loud:话题列不出来就说列不出来,❌ 不许静默当成「这条线上没有话题」——
-        // 那会让来源消息底下的锚点卡凭空消失,用户以为话题被删了。
-        topicsLog.error({ error: err, sourceChatId }, 'list topics of chat failed')
-        if (cacheKey) lastTopics.delete(cacheKey)
-        setState({ forChatId: sourceChatId, topics: EMPTY_TOPICS, loading: false, error: (err as Error)?.message ?? String(err) })
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [sourceChatId, reloadToken, cacheKey, userId])
+  const reload = useCallback(() => { if (sourceChatId) void topicsOfChat.refresh(sourceChatId) }, [sourceChatId])
 
-  // 渲染期收口:state 描述的不是当前这条线 ⇒ 当前这条线「还不知道」。切线的那一帧就不会
-  // 把上一条线的话题端出去(副作用要到绘制之后才跑,靠它清空永远慢一帧)。
-  const scoped: TopicsState = state.forChatId === sourceChatId
-    ? state
-    : { forChatId: sourceChatId, topics: (cacheKey && lastTopics.get(cacheKey)) || EMPTY_TOPICS, loading: sourceChatId !== null, error: null }
-
-  const reload = useCallback(() => {
-    setReloadToken((token) => token + 1)
-  }, [])
-
-  const loadingRef = useRef(scoped.loading)
-  loadingRef.current = scoped.loading
+  const loadingRef = useRef(loading)
+  loadingRef.current = loading
   useEffect(() => {
     if (!sourceChatId || !subscribeAccountRevision) return
     let active = true
@@ -159,18 +128,11 @@ export function useTopicsOfChat(
         if (!current()) return
         await record()
         if (!current()) return
-        setState((state) => {
-          if (state.forChatId !== sourceChatId) return state
-          const topics = withTopic(state.topics, topicChatId, rows[0])
-          if (cacheKey) lastTopics.set(cacheKey, topics)
-          return { ...state, topics, error: null }
-        })
+        topicsOfChat.set([sourceChatId], (shown) => shown ? withTopic(shown, topicChatId, rows[0]) : shown)
       } catch (err) {
         if (!current()) return
         topicsLog.error({ error: err, sourceChatId, topicChatId }, 'read topic failed')
-        if (cacheKey) lastTopics.delete(cacheKey)
-        setState((state) => state.forChatId === sourceChatId
-          ? { ...state, error: (err as Error)?.message ?? String(err) } : state)
+        setTopicError({ chatId: sourceChatId, message: (err as Error)?.message ?? String(err), at: Date.now() })
       }
     }
     const unsubscribe = subscribeAccountRevision('chat_changed', (operations) => {
@@ -186,17 +148,18 @@ export function useTopicsOfChat(
       active = false
       unsubscribe()
     }
-  }, [sourceChatId, subscribeAccountRevision, reload, userId, cacheKey])
+  }, [sourceChatId, subscribeAccountRevision, reload, userId])
 
   const bySourceMessageId = useMemo(() => {
     const index = new Map<string, TopicSummary[]>()
-    for (const topic of scoped.topics) {
+    // @@@reading-default - topics not read: no anchor card for any message yet (the surface's decision, useTopicSurface)
+    for (const topic of topics ?? []) {
       const bucket = index.get(topic.source_message_id)
       if (bucket) bucket.push(topic)
       else index.set(topic.source_message_id, [topic])
     }
     return index
-  }, [scoped.topics])
+  }, [topics])
 
-  return { topics: scoped.topics, bySourceMessageId, loading: scoped.loading, error: scoped.error, reload }
+  return { topics, bySourceMessageId, loading, error: shownTopicError ?? (failure ? failure.message ?? String(failure) : null), reload }
 }

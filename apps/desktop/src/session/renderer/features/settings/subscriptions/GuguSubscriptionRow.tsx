@@ -1,5 +1,5 @@
 import { Unknown } from '@/components/ui/Unknown';
-import { readModel, useReadModel } from '@/lib/readModel';
+import { replica, useReplica } from '@/lib/replica';
 import { useTranslation } from 'react-i18next';
 import { publicAssetPath } from '@gugu/core/shared/ui/publicAssets';
 import { ArrowUpRight } from '@/lib/icons';
@@ -17,18 +17,18 @@ import './subscriptions.css';
 const APP_ICON_URL = publicAssetPath('/assets/app/gugu-icon-small.png');
 
 /** Whether this device already used its free credits for this account (desktop host only). */
-const deviceFreeCredits = readModel({
+const deviceFreeCredits = replica({
   name: 'deviceFreeCreditsStatus',
   scope: 'account',
   read: async () => (await platform.readDeviceFreeCreditsStatus?.()) ?? null,
-  persist: true,
+  persist: { maxBytes: 512, maxEntries: 1 },
 });
 
 export function GuguSubscriptionRow() {
   const { translate, locale } = useSessionMessages();
   const { t } = useTranslation('settings');
   const { user } = useAuth();
-  const freeCredits = useReadModel(deviceFreeCredits, user ? [] : null);
+  const freeCredits = useReplica(deviceFreeCredits, user ? [] : null);
   const deviceFull = freeCredits.state === 'value' && freeCredits.value === 'device_full';
   const { state, power, windows, balanceError, windowsError, membership: plan } = useSpendingPower(user);
   const unknown = state === 'unknown';

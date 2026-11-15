@@ -15,7 +15,7 @@ import type { Device } from '@gugu/core/shared/types/chat'
 import { readDeviceRevision } from '../lib/accountRevisionCoordinator'
 import type { AccountRevisionOperation } from '../lib/accountRevisionRuntime'
 import { cachedDevicesAccount, devicesModel, readCachedDevices } from './devicesCache'
-import { useReadModel } from '../lib/readModel'
+import { useReplica } from '../lib/replica'
 import { withDeviceProjects } from '@gugu/core/cloud/deviceProjects'
 import { withProjectsRead } from './deviceProjectsRead'
 import { listMyDeviceProjects } from '../lib/deviceProjects'
@@ -50,7 +50,7 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   const appMachine = useMemo(() => assistant.provisionDeviceId ? { rpc: machineRpc(assistant.provisionDeviceId) } : null, [assistant.provisionDeviceId])
   // 第一帧就用上次那份铺开(读模型的快照),❌ 不是空列表 + 转圈;重读一返回就换成此刻的事实。
   // 界面还不活跃(active=false)时只画、不读。
-  const reading = useReadModel(devicesModel, [], { read: userId !== null })
+  const reading = useReplica(devicesModel, [], { read: userId !== null })
   const readError = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null
   const error = readError ? String(readError.message ?? readError) : null
   // 列着的(含快照)各台的项目这一次没读到:标成「上次的」。

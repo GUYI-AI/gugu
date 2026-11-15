@@ -10,12 +10,11 @@ import { useImPageTab } from '../lib/shellTab'
 import { useActiveChatIdentity, useChatStore, useChatsWhile } from '../store/chatContext'
 import { ChatLineScope } from '../store/chatLineScope'
 import { useAuth } from '../store/auth'
-import type { AgentConversationActivity, GroupCollabSnapshot, MessageItem } from '@gugu/core/shared/types/chat'
+import type { AgentConversationActivity, MessageItem } from '@gugu/core/shared/types/chat'
 import { useUnreadLocatorNavigation } from '../hooks/useUnreadLocatorNavigation'
 import { useSourceMessageReveal } from '../hooks/useSourceMessageReveal'
 import { useChatHistoryPagination } from './chat/useChatHistoryPagination'
-import { useGroupCollabLoader, EMPTY_GROUP_COLLAB } from '../hooks/useGroupCollabLoader'
-import { useRoomAuthorityRevision } from '../hooks/useRoomAuthorityRevision'
+import { useRoomCollab } from '../hooks/useRoomCollab'
 import { LiveForwardMessageDialog } from './chat/ForwardMessageDialog'
 import { useForwardToChats, type ForwardNote } from './chat/forwardToChats'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
@@ -116,7 +115,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const { toast } = useToast()
   const { t } = useTranslation('messaging')
   const activeChat = useActiveChatIdentity()
-  const { getImRepository, subscribeAccountRevision, identitiesById, activeChatId, messages, loadingMessages, messagesError, refreshMessages, sendMessage, toggleReaction, memberReadSeqs, clearMessages, deleteMessage, sendAttachments, pinChat, deleteChat, leaveGroup, setChatNotificationLevel, loadOlderMessages, messageWindow, unreadEntry, jumpToUnreadEntry, loadNewerMessages, loadMessageAnchor, returnToLatestMessages, markMessageVisible, setFollowingTail, threadScope, setActiveChatId } = useChatStore('getImRepository', 'subscribeAccountRevision', 'identitiesById', 'activeChatId', 'messages', 'loadingMessages', 'messagesError', 'refreshMessages', 'sendMessage', 'toggleReaction', 'memberReadSeqs', 'clearMessages', 'deleteMessage', 'sendAttachments', 'pinChat', 'deleteChat', 'leaveGroup', 'setChatNotificationLevel', 'loadOlderMessages', 'messageWindow', 'unreadEntry', 'jumpToUnreadEntry', 'loadNewerMessages', 'loadMessageAnchor', 'returnToLatestMessages', 'markMessageVisible', 'setFollowingTail', 'threadScope', 'setActiveChatId')
+  const { subscribeAccountRevision, identitiesById, activeChatId, messages, loadingMessages, messagesError, refreshMessages, sendMessage, toggleReaction, memberReadSeqs, clearMessages, deleteMessage, sendAttachments, pinChat, deleteChat, leaveGroup, setChatNotificationLevel, loadOlderMessages, messageWindow, unreadEntry, jumpToUnreadEntry, loadNewerMessages, loadMessageAnchor, returnToLatestMessages, markMessageVisible, setFollowingTail, threadScope, setActiveChatId } = useChatStore('subscribeAccountRevision', 'identitiesById', 'activeChatId', 'messages', 'loadingMessages', 'messagesError', 'refreshMessages', 'sendMessage', 'toggleReaction', 'memberReadSeqs', 'clearMessages', 'deleteMessage', 'sendAttachments', 'pinChat', 'deleteChat', 'leaveGroup', 'setChatNotificationLevel', 'loadOlderMessages', 'messageWindow', 'unreadEntry', 'jumpToUnreadEntry', 'loadNewerMessages', 'loadMessageAnchor', 'returnToLatestMessages', 'markMessageVisible', 'setFollowingTail', 'threadScope', 'setActiveChatId')
   const { user } = useAuth()
   const surfaceTab = useImPageTab(imPage), surfaceVisible = surfaceTab === 'chats' && !hidden
   const surfaceElement = useRef<HTMLDivElement>(null)
@@ -132,7 +131,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const [mentionToInsert, setMentionToInsert] = useState<{ id: string; name: string } | null>(null)
   // @@@whisper (#820) — 悄悄话目标：设置后 ChatMessageComposer 进入悄悄话模式，发送强制 isWhisper+toUserIds。
   const [whisperTarget, setWhisperTarget] = useState<{ userId: string; displayName: string } | null>(null)
-  const [groupCollabSnapshot, setGroupCollabSnapshot] = useState<GroupCollabSnapshot>(EMPTY_GROUP_COLLAB)
   const messageProfile = useMessageProfileCard()
   const peerIdentity = identitiesById[activeChat?.peer_user_id ?? '']
   const isGroupChat = activeChat?.kind === 'group'
@@ -176,17 +174,8 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isAtBottomRef = useRef(true)
 
-  // 群名册缓存只铺首帧;身份变动后的成员集合由 loader 重读 active_members。
-  const groupRosterMemoryCacheRef = useRef<Map<string, GroupCollabSnapshot>>(new Map())
-
-  // @@@2169 群协作加载子系统(SWR 首帧 + 权威加载)抽到 useGroupCollabLoader,给冻结 god 文件抵消行数。
-  const { loadGroupCollab, resetGroupCollabForChat, error: groupCollabError } = useGroupCollabLoader({
-    activeChatId,
-    isRoomChat: isRoomChatSurface, chatKind: activeChat?.kind,
-    userId: user?.id, getImRepository,
-    setGroupCollabSnapshot,
-    groupRosterMemoryCacheRef,
-  })
+  // The room's roster is a replica (hooks/useRoomCollab): null until read, its own cache, refreshed by its events.
+  const { snapshot: groupCollabSnapshot, error: groupCollabError, reload: loadGroupCollab, authorityRevision } = useRoomCollab(isRoomChatSurface ? activeChatId ?? null : null, activeChat?.kind === 'topic' ? 'topic' : 'group', activeChat?.source_chat_id ?? null, openNonce)
 
   // Reset transient state when active chat changes
   useEffect(() => {
@@ -197,18 +186,11 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     closeRightSurfaces()
     setShowHeaderMenu(false)
     isAtBottomRef.current = true
-    // @@@2169/@@@group-collab-swr - invalidate 在途加载 + 取消后台重试 + 按 in-memory cache 重铺首帧,细节见 useGroupCollabLoader。
-    resetGroupCollabForChat()
     messageProfile.card.close()
     setWhisperTarget(null)
     // @@@chat-open-nonce (#461) - also reset on mobile reopen of the SAME chat (openNonce bump), where
     // activeChatId is unchanged — so isAtBottomRef doesn't stay stale-false from a prior scroll-up.
-  }, [activeChatId, isRoomChatSurface, openNonce, closeRightSurfaces, resetGroupCollabForChat, messageProfile.card])
-
-  // @@@chat-open-nonce (#461) - reload on openNonce too, symmetric with the reset effect (which clears
-  useEffect(() => {
-    loadGroupCollab()
-  }, [loadGroupCollab, openNonce])
+  }, [activeChatId, isRoomChatSurface, openNonce, closeRightSurfaces, messageProfile.card])
 
   const groupRename = useChatCommands({
     chatId: activeChatId, visible: surfaceVisible, surface: surfaceElement,
@@ -216,7 +198,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     openSettings: handleOpenSettingsDrawer,
   })
 
-  const authorityRevision = useRoomAuthorityRevision({ chatId: activeChatId ?? null, sourceChatId: activeChat?.source_chat_id ?? null, isRoom: isRoomChatSurface, userId: user?.id ?? null, loadGroupCollab, subscribeAccountRevision })
 
 
   // A chat's tabs (a group's, a topic's, a private chat's — 主人 10-05) hold Apps' pages and files, the folder among them
@@ -384,13 +365,13 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     void toggleReaction(messageId, emoji).catch((error) => toast(t('message.actions.react'), 'error', safeFailureLine(String((error as Error)?.message ?? error))))
   }, [toggleReaction, toast, t])
 
-  const groupAgentIds = useMemo(() => groupCollabSnapshot.agents.map((agent) => agent.id), [groupCollabSnapshot.agents])
+  const groupAgentIds = useMemo(() => groupCollabSnapshot?.agents.map((agent) => agent.id) ?? [], [groupCollabSnapshot?.agents])
   // 主输入框能点名谁 = 这条线自己的名册。❌ 不许把来源线成员并进来 ——
   // 分栏开着时 activeChat **就是**来源线,并进去等于把 member_user_ids 原样灌进主线候选,
   // 而 buildGroupRosterCandidates 会滤掉 account_status==='removed' 的 agent、member_user_ids 不会 ⇒
   // 一开分栏,主线的 @ 候选里就多出已经被移除的 agent(找茬第十轮)。
   const composerGroupMembers = useMemo(
-    () => buildGroupRosterCandidates(groupCollabSnapshot, identitiesById),
+    () => groupCollabSnapshot ? buildGroupRosterCandidates(groupCollabSnapshot, identitiesById) : [],
     [groupCollabSnapshot, identitiesById],
   )
   const splitChats = useChatsWhile(Boolean(splitTopicChatId))
@@ -406,7 +387,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const shownAgent = useShownAgentStatus() // #7199 画头像 / 状态字用的那一份;在跑、提醒照旧读原读数
   const groupAgentRecentActivity = useAgentRecentActivity(groupAgentIds)
   // 群的运行 token:群聊页的运行条和手机话题页挂的那条是同一份。
-  const groupRunTokens = groupRunningTokens({ agents: groupCollabSnapshot.agents, statuses: groupAgentStatuses, identities: identitiesById, currentUserId: user?.id, recentActivity: groupAgentRecentActivity, spokeAt: latestSpokeAt(messages) })
+  const groupRunTokens = groupRunningTokens({ agents: groupCollabSnapshot?.agents ?? [], statuses: groupAgentStatuses, identities: identitiesById, currentUserId: user?.id, recentActivity: groupAgentRecentActivity, spokeAt: latestSpokeAt(messages) })
   // 群 thread panel 的运行中占位指示器(panel 内没有主线浮动条)。它和浮动条读**同一个** agent 态:
   // DM 里就是本会话那个 agent,群里挑「任一成员在跑」里的第一个来画身份(纯函数在 agentRunningStatusModels)。
   const activeAgentActivity = useMemo<AgentConversationActivity | null>(
@@ -537,7 +518,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         room={isRoomChatSurface ? {
           snapshot: groupCollabSnapshot,
           settings: groupSettings.settings,
-          statusIndicatorProps: groupAgentStatusIndicatorProps(shownAgent.members(groupCollabSnapshot.agents, groupAgentStatuses), groupAgentStatuses),
+          statusIndicatorProps: groupAgentStatusIndicatorProps(shownAgent.members(groupCollabSnapshot?.agents ?? [], groupAgentStatuses), groupAgentStatuses),
           onReload: loadGroupCollab,
         } : undefined}
         moreButtonRef={moreButtonRef}
@@ -768,7 +749,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           previewChatId={activeChatId}
           tokens={groupRunTokens}
           onTokenClick={(id) => {
-            const agent = groupCollabSnapshot.agents.find((a) => a.id === id)
+            const agent = groupCollabSnapshot?.agents.find((a) => a.id === id)
             if (agent) setMentionToInsert({ id: agent.id, name: identitiesById[agent.id]?.display_name ?? '' })
           }}
         />

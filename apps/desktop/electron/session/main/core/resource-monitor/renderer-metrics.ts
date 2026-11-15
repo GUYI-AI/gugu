@@ -6,7 +6,7 @@ import {
 } from '@shared/renderer-metrics';
 
 const RESPONSE_TIMEOUT_MS = 1000;
-const COUNTER_KEYS = ['imTransactions', 'presenceBatches', 'presenceIds', 'contactsProviderRenders'] as const;
+const COUNTER_KEYS = ['imTransactions', 'presenceBatches', 'presenceIds', 'contactsProviderRenders', 'snapshotRefusals'] as const;
 const FRAME_KEYS = ['longFrames', 'blockingMs', 'slowInteractions'] as const;
 let inFlight: Promise<RendererMetrics[]> | null = null;
 

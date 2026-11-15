@@ -2,7 +2,7 @@ import { messageForUser } from '@/lib/userFacingError';
 import { Check, ChevronDown, Ellipsis, Eraser, Pencil, Plus, Trash2, X } from '@/lib/icons'
 import { useRef, useState } from 'react';
 import { Unknown } from '@/components/ui/Unknown';
-import { readModel, useReadModel } from '@/lib/readModel';
+import { replica, useReplica } from '@/lib/replica';
 import type { AppSettings } from '@shared/core/app-settings';
 import { browserControlsRegistry } from '@renderer/features/browser/browser-controls-registry';
 import { browserSessionStore } from '@renderer/features/browser/browser-session-store';
@@ -502,11 +502,11 @@ function browsingDataConfirmation(
  * 导进**默认配置**;要登另一个账号就把默认配置换成另一份再导一次。导完刷新开着的页签,登录态立刻生效。
  */
 /** This device's default browser and whether its logins can be imported. */
-const defaultBrowser = readModel({
+const defaultBrowser = replica({
   name: 'defaultBrowser',
   scope: 'device',
   read: () => rpc.browser.defaultBrowser() as Promise<{ name: string; supported: boolean }>,
-  persist: true,
+  persist: { maxBytes: 512, maxEntries: 1 },
 });
 
 function ImportLoginsRow({
@@ -520,7 +520,7 @@ function ImportLoginsRow({
   disabled: boolean;
 }) {
   const { translate } = useSessionMessages();
-  const reading = useReadModel(defaultBrowser, []);
+  const reading = useReplica(defaultBrowser, []);
   const [importing, setImporting] = useState(false);
   if (reading.state !== 'value') {
     return <SettingsRow title={translate('browserSettings.importLogins')} control={<Unknown className="h-8 w-32" />} />;

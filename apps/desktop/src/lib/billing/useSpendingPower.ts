@@ -1,4 +1,4 @@
-// 余额 + 额度窗口的**唯一**读模型(lib/readModel)。
+// 余额 + 额度窗口的**唯一**读模型(lib/replica)。
 //
 // 以前侧栏、积分面板、额度页、低额横幅各写一套 useEffect + 各自的刷新节奏,同一时刻能读出
 // 不一样的余额。现在只有这一份:一份数据、一套刷新,读到的必然是同一份。数据跟账号走(换号、登出才清),
@@ -13,7 +13,7 @@ import {
   unsubscribePrivateUserEventBus,
   type PrivateUserEventBusHandle,
 } from '../realtimeChannel'
-import { readModel, useReadModel } from '../readModel'
+import { replica, useReplica } from '../replica'
 import type { CreditAmount } from '@gugu/core/billing/creditAmount'
 import type { QuotaWindows } from './quota'
 import { membershipProjection, type Membership } from './membership'
@@ -54,7 +54,7 @@ function message(error: unknown): string {
 }
 
 /** What one read of the account returned, kept as plain data (the snapshot across restarts stores it as is). */
-const creditAccount = readModel({
+const creditAccount = replica({
   name: 'creditAccount',
   scope: 'account',
   read: async () => {
@@ -69,7 +69,7 @@ const creditAccount = readModel({
       windowsError: account.windowsError === null ? null : message(account.windowsError),
     }
   },
-  persist: true,
+  persist: { maxBytes: 2048, maxEntries: 1 },
 })
 
 // 计费版本:库的广播、回到前台各推进一次;用量页据此重取会员。
@@ -133,7 +133,7 @@ export function refreshSpendingPower(): void {
 
 export function useSpendingPower(user: { id: string } | null): SpendingSnapshot {
   const userId = officialServicesEnabled() ? user?.id ?? null : null
-  const reading = useReadModel(creditAccount, userId ? [] : null)
+  const reading = useReplica(creditAccount, userId ? [] : null)
   const revision = useSyncExternalStore(
     (listener) => { revisionListeners.add(listener); return () => { revisionListeners.delete(listener) } },
     () => activityRevision,

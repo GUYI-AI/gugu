@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
+import { useCallback, useState, type CSSProperties, type JSX, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { GroupAnnouncement } from '@gugu/core/shared/types/chat'
 import { chatService } from '../../lib/chat'
-import { readDisplayIdentities } from '../../lib/identityReadAdapter'
+import { groupAnnouncements } from '../../lib/groupAnnouncements'
+import { useReplica } from '../../lib/replica'
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
-import { rendererLogger } from '../../lib/log'
-
-const announcementLog = rendererLogger('chat/announcements')
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { formatCalendarDay } from '@/i18n/format'
 import { Avatar } from '../Avatar'
@@ -31,10 +29,14 @@ export function AnnouncementDrawer({
   head: (title: ReactNode) => ReactNode
 }): JSX.Element {
   const { t } = useTranslation('messaging')
-  const { identitiesById, getImRepository } = useChatStore('identitiesById', 'getImRepository')
-  const [announcements, setAnnouncements] = useState<GroupAnnouncement[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { identitiesById } = useChatStore('identitiesById')
+  // One reading per group: unknown draws the loading line (❌「暂无公告」first), and an action re-reads behind the list.
+  const reading = useReplica(groupAnnouncements, [chatId])
+  const announcements = reading.state === 'value' ? reading.value : null
+  const loading = reading.state === 'unknown'
+  const [actionError, setError] = useState<string | null>(null)
+  const readError = reading.state === 'error' ? reading.error : reading.state === 'value' ? reading.error : null
+  const error = actionError ?? (readError ? String(readError.message ?? readError) : null)
 
   // Composer state
   const [composerOpen, setComposerOpen] = useState(false)
@@ -42,27 +44,7 @@ export function AnnouncementDrawer({
   const [posting, setPosting] = useState(false)
   const [postError, setPostError] = useState<string | null>(null)
 
-  const fetchAnnouncements = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const rows = await chatService.getAnnouncements(chatId)
-      setAnnouncements(rows)
-      // 作者未必还在群里(退群后没有成员行,投影闭包不再为他索要身份):作者身份随公告一起提交,不去 identitiesById 里碰运气。
-      // 身份读失败只记日志、公告照列 —— 名字缺了由 resolveOrLoud 在显示处响亮,不该把已读到的公告一并丢掉。
-      await getImRepository()
-        .then(async (repository) => repository.putIdentities(await readDisplayIdentities(rows.map((row) => row.authorId))))
-        .catch((err: unknown) => announcementLog.error({ chatId, err }, 'commit announcement author identities failed'))
-    } catch (err) {
-      setError(String((err as Error)?.message ?? err))
-    } finally {
-      setLoading(false)
-    }
-  }, [chatId, getImRepository])
-
-  useEffect(() => {
-    void fetchAnnouncements()
-  }, [fetchAnnouncements])
+  const fetchAnnouncements = useCallback(() => groupAnnouncements.refresh(chatId), [chatId])
 
   const handlePost = useCallback(async () => {
     const text = draft.trim()
@@ -84,6 +66,7 @@ export function AnnouncementDrawer({
   const handleDelete = useCallback(async (announcementId: string) => {
     const ok = window.confirm(t('announcement.deleteConfirm'))
     if (!ok) return
+    setError(null)
     try {
       await chatService.deleteAnnouncement(announcementId)
       await fetchAnnouncements()
@@ -95,7 +78,8 @@ export function AnnouncementDrawer({
   // @@@announcement-likes (#1115) — 乐观切换点赞，写后 refetch 对账真值（失败回滚）。
   const handleToggleLike = useCallback(async (ann: GroupAnnouncement) => {
     const nextLiked = !ann.likedByMe
-    setAnnouncements((prev) => prev.map((a) =>
+    setError(null)
+    groupAnnouncements.set([chatId], (prev) => prev?.map((a) =>
       a.id === ann.id
         ? { ...a, likedByMe: nextLiked, likeCount: a.likeCount + (nextLiked ? 1 : -1) }
         : a,
@@ -105,12 +89,12 @@ export function AnnouncementDrawer({
       await fetchAnnouncements()
     } catch (err) {
       // 回滚乐观更新
-      setAnnouncements((prev) => prev.map((a) =>
+      groupAnnouncements.set([chatId], (prev) => prev?.map((a) =>
         a.id === ann.id ? { ...a, likedByMe: ann.likedByMe, likeCount: ann.likeCount } : a,
       ))
       setError(String((err as Error)?.message ?? err))
     }
-  }, [fetchAnnouncements])
+  }, [chatId, fetchAnnouncements])
 
   // @@@announcement-edit (#1115) — admin 改公告正文，写后 refetch；抛错给卡片内联编辑器处理。
   const handleEdit = useCallback(async (announcementId: string, content: string) => {
@@ -120,6 +104,7 @@ export function AnnouncementDrawer({
 
   // @@@announcement-pin (#1164 G3) — admin 切置顶/取消置顶，写后 refetch 重排（getAnnouncements 已 pinned 优先）。
   const handleTogglePin = useCallback(async (announcementId: string, nextPinned: boolean) => {
+    setError(null)
     try {
       await chatService.setAnnouncementPinned(announcementId, nextPinned)
       await fetchAnnouncements()
@@ -133,7 +118,7 @@ export function AnnouncementDrawer({
       {head(
         <>
           {t('announcement.title')}
-          {announcements.length > 0 ? (
+          {announcements && announcements.length > 0 ? (
             <span style={countStyle}> {announcements.length}</span>
           ) : null}
         </>,
@@ -244,9 +229,9 @@ export function AnnouncementDrawer({
         {/* Loading / error / empty states */}
         {loading && <div style={styleStateCenter}>{t('announcement.loading')}</div>}
         {!loading && error && <div style={styleInlineError}>{error}</div>}
-        {!loading && !error && announcements.length === 0 && <div style={styleStateCenter}>{t('announcement.empty')}</div>}
+        {announcements && !error && announcements.length === 0 && <div style={styleStateCenter}>{t('announcement.empty')}</div>}
         {/* Announcement cards (.ann-card) */}
-        {!loading && !error && announcements.length > 0 && announcements.map((ann) => {
+        {announcements && !error && announcements.length > 0 && announcements.map((ann) => {
           return (
             <AnnouncementCard
               key={ann.id}

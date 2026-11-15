@@ -12,7 +12,7 @@ import { withProjectsRead } from './deviceProjectsRead'
 
 const devicesLog = rendererLogger('devices')
 
-/** One full read of the account's machines and the projects each carries (the devices read model's reader). */
+/** One full read of the account's machines and the projects each carries (the devices replica's reader). */
 export async function readDevices(owner: string): Promise<Device[]> {
   // 上一份读到的(设备行上带着各台机器记在账号上的项目):这一次项目没读到,就沿用这一份。
   const previous = readCachedDevices()

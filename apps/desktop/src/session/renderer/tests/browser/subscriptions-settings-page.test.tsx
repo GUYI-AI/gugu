@@ -16,7 +16,7 @@ import { AgentDetailModal } from '@renderer/features/settings/agents-page/AgentD
 import { CliAgentsList } from '@renderer/features/settings/agents-page/CliAgentsList';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { queryClient } from '@/lib/readModel';
+import { queryClient } from '@/lib/replica';
 import { setLocalePreference } from '@/i18n';
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config';
 import { modalStore } from '@renderer/lib/modal/modal-store';

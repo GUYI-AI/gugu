@@ -16,8 +16,8 @@ vi.mock('@/lib/useAssistantHome', () => ({ useAssistantHome: () => ({ mine: { lo
 vi.mock('@/lib/firstRun', async (original) => ({ ...(await original<object>()), readOccupation: async () => null, writeOccupation: vi.fn() }));
 // The account's own settings row (occupation is a key of it): nothing set yet.
 vi.mock('@/lib/ownSettings', async (original) => {
-  const { readModel } = await import('@/lib/readModel');
-  return { ...(await original<object>()), ownSettings: readModel({ name: 'ownSettings', scope: 'account', read: async () => ({}) }) };
+  const { replica } = await import('@/lib/replica');
+  return { ...(await original<object>()), ownSettings: replica({ name: 'ownSettings', scope: 'account', read: async () => ({}) }) };
 });
 const { nicknameUpdate } = vi.hoisted(() => ({ nicknameUpdate: vi.fn(async () => ({ success: true })) }));
 vi.mock('@/lib/auth', async (original) => {

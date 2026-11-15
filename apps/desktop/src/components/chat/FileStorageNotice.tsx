@@ -5,7 +5,7 @@ import { useAuth } from '../../store/auth'
 import { useChatStore } from '../../store/chatContext'
 import { notify, dismissNotice } from '../../lib/notices'
 import { openApp } from '../appSlot/useOpenApp'
-import { useReadModel } from '../../lib/readModel'
+import { useReplica } from '../../lib/replica'
 import { fileStorageUsage } from './fileStorageUsage'
 
 // Dismissal lasts until a verified healthy read, including when the composer remounts.
@@ -25,7 +25,7 @@ export function FileStorageNotice({ chatId }: { chatId: string }) {
 function ManagerStorageNotice({ userId, chatId, latest }: { userId: string; chatId: string; latest?: string }) {
   const { t } = useTranslation('messaging')
   const key = `file-storage:${userId}:${chatId}`
-  const usage = useReadModel(fileStorageUsage, [chatId])
+  const usage = useReplica(fileStorageUsage, [chatId])
   const refreshPoint = useRef({ key, latest })
   useEffect(() => {
     const previous = refreshPoint.current
