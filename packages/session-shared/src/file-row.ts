@@ -12,6 +12,16 @@ export const FILE_ROW = { width: 260, height: 56, padStart: 10, padEnd: 14, icon
 
 export type FileRowKind = 'image' | 'file';
 
+/**
+ * 文件行图标位里的两个字形(24 格、2 描边的 path):文件,和「这张图读不出来」。Solid 与 React 两层壳都画这份,
+ * ❌ 各自再挑一个长得像的图标 —— 同一条时间线里会是两枚不同的文件。
+ */
+export const FILE_ROW_GLYPHS = {
+  file: ['M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z', 'M14 2v6h6'],
+  imageOff: ['M2 2l20 20', 'M10.41 10.41a2 2 0 1 1-2.83-2.83', 'M13.5 13.5L6 21', 'M18 12l3 3',
+    'M3.59 3.59A1.99 1.99 0 0 0 3 5v14a2 2 0 0 0 2 2h14c.55 0 1.052-.22 1.41-.59', 'M21 15V5a2 2 0 0 0-2-2H9'],
+} as const;
+
 /** 一枚多宽:定值,只有整条比它还窄时才收到可用宽度。 */
 export function fileRowWidth(kind: FileRowKind, available: number): number {
   return Math.max(1, Math.min(kind === 'image' ? FILE_ROW.height : FILE_ROW.width, available));

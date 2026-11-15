@@ -135,10 +135,7 @@ export default {
       "exportMarkdown": "Export as Markdown"
     },
     "attachment": {
-      "add": "Add attachment",
-      "remove": "Remove {{name}}",
-      "cancel": "Cancel upload of {{name}}",
-      "retry": "Retry"
+      "add": "Add attachment"
     },
     "tool": {
       "groupCount_one": "{{count}} tool call",

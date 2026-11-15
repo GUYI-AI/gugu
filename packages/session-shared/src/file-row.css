@@ -34,8 +34,29 @@
 }
 
 .gg-file-row:hover,
-.gg-file-row:focus-visible:not([data-pointer-focus]) {
+.gg-file-row:focus-visible:not([data-pointer-focus]),
+.gg-file-row:has(> .gg-file-row-main:focus-visible:not([data-pointer-focus])) {
   background: var(--gg-file-row-fill-hover);
+}
+
+/* 行尾要放第二个按钮(下载)时,行本身不是按钮:打开是行里的主按钮,行尾槽位是它的兄弟 —— ❌ 按钮套按钮。 */
+.gg-file-row-main {
+  all: unset;
+  display: flex;
+  flex: 1;
+  align-self: stretch;
+  align-items: center;
+  gap: var(--gg-file-row-column-gap);
+  min-width: 0;
+  cursor: pointer;
+}
+
+.gg-file-row-main:disabled {
+  cursor: default;
+}
+
+.gg-file-row-end {
+  flex-shrink: 0;
 }
 
 .gg-file-row-icon {
