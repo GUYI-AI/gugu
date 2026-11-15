@@ -38,7 +38,7 @@
 [data-slot='composer'][data-phone-capsule] [data-slot='composer-attachments'] {
   grid-column: 1 / -1;
   grid-row: 2;
-  padding: 4px 8px 4px 48px;
+  padding: 4px 8px 4px var(--phone-composer-empty-gutter);
 }
 [data-slot='composer'][data-phone-capsule] [data-slot='composer-actions-start'] > button:not(:has([data-slot='composer-permission-mode'])) {
   grid-column: 1;
