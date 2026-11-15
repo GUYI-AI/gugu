@@ -11,11 +11,13 @@ import type { GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
 const readGroupRoster = vi.fn()
 const replaceGroupRoster = vi.fn()
 const getGroupCollab = vi.fn()
+const openNow = vi.fn()
 const repository = { accountId: 'owner-1' }
 vi.mock('../../../../apps/desktop/src/lib/imRepository', () => ({
   readGroupRoster,
   replaceGroupRoster,
   openedImRepository: async () => repository,
+  openImRepositoryNow: () => openNow(),
   persistableGroupRoster: (_chatId: string, value: GroupCollabSnapshot) => value,
 }))
 class GroupCollabEmptyError extends Error {}
@@ -37,6 +39,7 @@ beforeEach(() => {
   notifyManager.setScheduler((callback) => { callback() })
   followRendererSession('SIGNED_IN', 'owner-1')
   readGroupRoster.mockReset().mockReturnValue(null)
+  openNow.mockReset().mockReturnValue(null)
   replaceGroupRoster.mockReset().mockResolvedValue(undefined)
   getGroupCollab.mockReset().mockResolvedValue({ snapshot, identities: [] })
   errors = []
@@ -61,6 +64,15 @@ describe('groupRoster', () => {
     expect(groupRoster.peek('group-1', 'group')).toMatchObject({ state: 'value', stale: true, value: { agents: [] } })
     answer({ snapshot, identities: [] }); await pending
     expect(groupRoster.peek('group-1', 'group')).toMatchObject({ state: 'value', value: { agents: [{ id: 'agent-1' }] } })
+  })
+
+  // The cold open's header count: the library already open, the local copy is there before anything is awaited.
+  it('takes the local copy at once when the library is already open', () => {
+    openNow.mockReturnValue(repository)
+    readGroupRoster.mockReturnValue({ ...snapshot, agents: [] })
+    getGroupCollab.mockReturnValue(new Promise(() => {}))
+    void groupRoster.prefetch('group-1', 'group')
+    expect(groupRoster.peek('group-1', 'group')).toMatchObject({ state: 'value', stale: true, value: { agents: [] } })
   })
 
   it('does not show a topic from the local copy: whether this viewer takes part is read first', async () => {

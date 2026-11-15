@@ -194,6 +194,11 @@ function openedSlot(accountId: string): OpenedSlot {
   return slot
 }
 
+/** The account's repository if it is open now (for a first frame), else null: `openedImRepository` waits for it. */
+export function openImRepositoryNow(accountId: string): AccountImRepository | null {
+  return openedRepositories.get(accountId)?.repository ?? null
+}
+
 /** The account's open repository; waits while the provider is still opening it, and fails if that open failed. */
 export function openedImRepository(accountId: string): Promise<AccountImRepository> {
   return openedSlot(accountId).promise

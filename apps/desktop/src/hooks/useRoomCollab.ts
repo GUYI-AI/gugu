@@ -3,7 +3,7 @@ import type { GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
 import { i18n } from '@/i18n'
 import { chatService, GroupCollabEmptyError } from '../lib/chat'
 import { reconcileGroupCollabSnapshot } from '../lib/groupCollabSnapshot'
-import { openedImRepository, persistableGroupRoster, readGroupRoster, replaceGroupRoster } from '../lib/imRepository'
+import { openedImRepository, openImRepositoryNow, persistableGroupRoster, readGroupRoster, replaceGroupRoster } from '../lib/imRepository'
 import { rendererLogger } from '../lib/log'
 import { queryClient, replica, useReplica } from '../lib/replica'
 import { UI_EVENTS } from '../lib/uiEvents'
@@ -47,7 +47,12 @@ export const groupRoster = replica({
       .catch((error) => groupCollabLog.error({ chatId, error }, 'write group roster repository failed'))
     return snapshot
   },
-  local: async (owner, chatId, kind) => kind === 'topic' ? undefined : readGroupRoster(await openedImRepository(owner), chatId) ?? undefined,
+  // The library already open (the chat list draws from it): the local copy is there for the room's first frame.
+  local: (owner, chatId, kind) => {
+    if (kind === 'topic') return undefined
+    const now = openImRepositoryNow(owner)
+    return now ? readGroupRoster(now, chatId) ?? undefined : openedImRepository(owner).then((repository) => readGroupRoster(repository, chatId) ?? undefined)
+  },
   // Effective membership comes from the backend projection, including removals; survivors keep the order they were drawn in.
   merge: reconcileGroupCollabSnapshot,
 })

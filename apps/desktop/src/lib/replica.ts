@@ -62,9 +62,10 @@ type Definition<A extends unknown[], V> = {
   retryDelay?: (attempt: number) => number
   /**
    * A first source on this device (the IM library's own copy): asked once when a key is first wanted, its answer shows
-   * (stale) until the read lands. ❌ A second snapshot of `persist`: this is data the app keeps anyway.
+   * (stale) until the read lands. ❌ A second snapshot of `persist`: this is data the app keeps anyway. Answered at once
+   * (not a promise), it is there for the surface's first frame.
    */
-  local?: (owner: string, ...args: A) => Promise<V | undefined>
+  local?: (owner: string, ...args: A) => V | undefined | Promise<V | undefined>
   /** How a new answer joins the shown one (keep the order rows were drawn in); default: the new answer replaces it. */
   merge?: (shown: V, next: V) => V
 }
@@ -112,10 +113,13 @@ function seedFromLocal(key: QueryKey): void {
   const [name, owner, ...args] = key as [string, string, ...unknown[]]
   const local = definitions.get(name)?.local
   if (!local || queryClient.getQueryData(key) !== undefined) return
-  local(owner, ...args).then((value) => {
-    // Dated 0: shown as stale, and the read already on its way (or the next mount) replaces it.
-    if (value !== undefined && queryClient.getQueryData(key) === undefined) putEntry(key, value, 0)
-  }, (error: unknown) => { replicaLog.error({ model: name, error }, `${name}: the local copy could not be read`) })
+  // Dated 0: shown as stale, and the read already on its way (or the next mount) replaces it.
+  const put = (value: unknown) => { if (value !== undefined && queryClient.getQueryData(key) === undefined) putEntry(key, value, 0) }
+  const fail = (error: unknown) => { replicaLog.error({ model: name, error }, `${name}: the local copy could not be read`) }
+  let answer: unknown
+  try { answer = local(owner, ...args) } catch (error) { fail(error); return }
+  if (answer instanceof Promise) answer.then(put, fail)
+  else put(answer)
 }
 
 // ── account lifecycle ────────────────────────────────────────────────────────────────────────────────────────────
