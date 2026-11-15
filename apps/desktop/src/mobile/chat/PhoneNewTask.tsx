@@ -222,7 +222,7 @@ export function usePhoneNewTask({ chatId, enabled, clear }: {
     <IconButton size="sm" aria-label={t('composer.phoneTask.cancel')}
       onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus}
       onClick={() => setStage({ kind: 'off' })}><X size={14} /></IconButton>
-  </div>{blocked && <p className="gg-phone-task-blocker" data-testid="phone-task-blocker">{blocked}</p>}</div> : null
+  </div>{blocked && !stage.picking && <p className="gg-phone-task-blocker" data-testid="phone-task-blocker">{blocked}</p>}</div> : null
 
   const send = async (text: string) => {
     const typed = text.trim()
