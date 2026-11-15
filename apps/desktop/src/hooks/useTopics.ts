@@ -105,9 +105,10 @@ export function useTopicsOfChat(
   const loading = !!sourceChatId && (reading.state === 'unknown' || fetching)
   // One topic's failed read: said on this line until the line's topics are updated after it (that topic read again, or
   // the whole line).
-  const [topicError, setTopicError] = useState<{ chatId: string; message: string; at: number } | null>(null)
-  const updatedAt = key ? queryClient.getQueryState(key)?.dataUpdatedAt ?? 0 : 0
-  const shownTopicError = topicError && topicError.chatId === sourceChatId && topicError.at >= updatedAt ? topicError.message : null
+  const [topicError, setTopicError] = useState<{ chatId: string; message: string; afterUpdateCount: number } | null>(null)
+  // Success writes have an order even when the clock does not advance between two reads.
+  const updateCount = key ? queryClient.getQueryState(key)?.dataUpdateCount ?? 0 : 0
+  const shownTopicError = topicError && topicError.chatId === sourceChatId && topicError.afterUpdateCount >= updateCount ? topicError.message : null
 
   const reload = useCallback(() => { if (sourceChatId) void topicsOfChat.refresh(sourceChatId) }, [sourceChatId])
 
@@ -129,10 +130,13 @@ export function useTopicsOfChat(
         await record()
         if (!current()) return
         topicsOfChat.set([sourceChatId], (shown) => shown ? withTopic(shown, topicChatId, rows[0]) : shown)
+        // A successful unchanged payload may be structurally shared, so also clear this local error explicitly.
+        setTopicError(previous => previous?.chatId === sourceChatId ? null : previous)
       } catch (err) {
         if (!current()) return
         topicsLog.error({ error: err, sourceChatId, topicChatId }, 'read topic failed')
-        setTopicError({ chatId: sourceChatId, message: (err as Error)?.message ?? String(err), at: Date.now() })
+        const errorKey = topicsOfChat.key(sourceChatId)
+        setTopicError({ chatId: sourceChatId, message: (err as Error)?.message ?? String(err), afterUpdateCount: errorKey ? queryClient.getQueryState(errorKey)?.dataUpdateCount ?? 0 : 0 })
       }
     }
     const unsubscribe = subscribeAccountRevision('chat_changed', (operations) => {
