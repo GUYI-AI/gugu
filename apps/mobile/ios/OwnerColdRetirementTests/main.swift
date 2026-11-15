@@ -200,4 +200,50 @@ try raceSession.commitMainWrite(racePermit) {
 writer.waitUntilExit()
 check(try writer.terminationStatus == 0 && raceStore.snapshot()?.target.ownerId == other && raceStore.snapshot()?.id != raceID,
       "competing target starts a new transaction only after exact commit and unlock")
+// The SDK revokes its Auth session before removing the saved envelope. Native
+// cleanup must have succeeded before that revocation; the later write consumes
+// only the exact durable proof, including after a process restart.
+let logoutStore = GuguIOSOwnerRetirementStore(directory: root.appendingPathComponent("sdk-logout"))
+var logoutStored: GuguIOSStoredSession? = .init(ownerId: owner, accessToken: token, expiresAt: Date(timeIntervalSince1970: 3000))
+var revoked = false, logoutVerifies = 0, logoutCleanup = 0, logoutStops = 0
+let makeLogoutSession = {
+    GuguIOSOwnerSession(readStored: { logoutStored }, installationId: { install },
+        verifyUser: { _, done in
+            logoutVerifies += 1
+            if revoked { done(.failure(GuguHostFailure(code: "auth_check_failed", message: "session_not_found"))) }
+            else { done(.success(owner)) }
+        }, stopNative: { logoutStops += 1; $0(.success(())) },
+        retireExternal: { _, done in logoutCleanup += 1; done(.success(())) }, retirementStore: logoutStore, now: { now })
+}
+let logoutSession = makeLogoutSession()
+var logoutPublished: Result<GuguIOSHostBinding, Error>?
+logoutSession.publish(ownerId: owner, accessToken: token) { logoutPublished = $0 }
+check(succeeded(logoutPublished) && logoutVerifies == 1, "sign-in publishes through the same verifier used by sign-out")
+var prepared: Result<Void, Error>?
+logoutSession.prepareSignOut(expectedOwnerId: other) { prepared = $0 }
+check(try !succeeded(prepared) && logoutStore.snapshot() == nil && logoutStops == 0,
+      "another renderer owner cannot prepare this login for logout")
+logoutSession.prepareSignOut(expectedOwnerId: owner) { prepared = $0 }
+check(try succeeded(prepared) && logoutVerifies == 2 && logoutCleanup == 1 && logoutStore.snapshot()?.cleanupComplete == true,
+      "logout verifies and completes cleanup before SDK revocation")
+check(logoutStored?.accessToken == token, "preparation does not clear or replace the SDK saved login")
+revoked = true
+let restartedLogout = makeLogoutSession()
+var logoutPermit: Result<GuguIOSMainWritePermit, Error>?
+restartedLogout.prepareMainWrite(nextOwnerId: nil) { logoutPermit = $0 }
+check(succeeded(logoutPermit) && logoutVerifies == 2 && logoutCleanup == 1,
+      "post-revocation storage write consumes completed exact cleanup without a rejected online recheck")
+var alteredWrite: Result<GuguIOSMainWritePermit, Error>?
+logoutStored = .init(ownerId: owner, accessToken: try jwt("changed"), expiresAt: Date(timeIntervalSince1970: 3000))
+makeLogoutSession().prepareMainWrite(nextOwnerId: nil) { alteredWrite = $0 }
+check(!succeeded(alteredWrite), "another same-owner token cannot reuse logout cleanup proof")
+logoutStored = .init(ownerId: owner, accessToken: token, expiresAt: Date(timeIntervalSince1970: 3000))
+install = "77777777-7777-4777-8777-777777777777"
+makeLogoutSession().prepareMainWrite(nextOwnerId: nil) { alteredWrite = $0 }
+check(!succeeded(alteredWrite), "another installation cannot reuse logout cleanup proof")
+install = installation
+try restartedLogout.commitMainWrite(logoutPermit!.get()) { logoutStored = nil }
+check(try logoutStored == nil && logoutStore.snapshot() == nil, "normal SDK retirement write commits and removes exact custody")
+check(rejects { try restartedLogout.commitMainWrite(logoutPermit!.get()) {} }, "completed logout permit cannot be replayed")
+
 print("SUMMARY \(count) parent checks plus fresh-exec checks; private APFS and injected identity; no Keychain/HTTP/App")

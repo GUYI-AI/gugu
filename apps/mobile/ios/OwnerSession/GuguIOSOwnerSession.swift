@@ -200,14 +200,25 @@ final class GuguIOSOwnerSession {
                      expiresAt: min(original.expiresAt, deadline))
     }
 
+    /// Complete authenticated cleanup before the SDK revokes its server session.
+    /// The main Keychain envelope stays unchanged until the SDK's normal write.
+    func prepareSignOut(expectedOwnerId: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        prepareMainWrite(nextOwnerId: nil, expectedOriginalOwnerId: expectedOwnerId) { result in
+            completion(result.map { _ in () })
+        }
+    }
+
     /// AuthStorage must call this barrier before committing retirement or another
     /// owner. A failed stop rejects the write and does not restore native access.
-    func prepareMainWrite(nextOwnerId: String?, nextAccessToken: String? = nil, completion: @escaping (Result<GuguIOSMainWritePermit, Error>) -> Void) {
+    func prepareMainWrite(nextOwnerId: String?, nextAccessToken: String? = nil, expectedOriginalOwnerId: String? = nil, completion: @escaping (Result<GuguIOSMainWritePermit, Error>) -> Void) {
         lock.lock()
         let stored: GuguIOSStoredSession?
         do {
             try restoreRetirementBarrier()
             stored = try readStored()
+            if let expectedOriginalOwnerId, stored?.ownerId != expectedOriginalOwnerId {
+                lock.unlock(); completion(.failure(Self.stale())); return
+            }
             if let record = try retirementStore?.snapshot(), record.isPublicationOnly {
                 guard let owner = record.original?.binding.ownerId ?? stored?.ownerId else { throw Self.stale() }
                 lock.unlock()
@@ -216,7 +227,7 @@ final class GuguIOSOwnerSession {
                 retire(expectedOwnerId: owner) { result in
                     do {
                         try result.get()
-                        self.prepareMainWrite(nextOwnerId: nextOwnerId, nextAccessToken: nextAccessToken, completion: completion)
+                        self.prepareMainWrite(nextOwnerId: nextOwnerId, nextAccessToken: nextAccessToken, expectedOriginalOwnerId: expectedOriginalOwnerId, completion: completion)
                     } catch { completion(.failure(error)) }
                 }
                 return
@@ -259,7 +270,17 @@ final class GuguIOSOwnerSession {
             if let retirementStore {
                 let record = try retirementStore.begin(target: .init(ownerId: nextOwnerId, accessToken: nextAccessToken))
                 let original = try originalRetirement(stored)
-                _ = try retirementStore.capture(id: record.id, original: original)
+                let captured = try retirementStore.capture(id: record.id, original: original)
+                // Cleanup was verified while this exact original login was still
+                // valid. The SDK may now have revoked it. Reuse only completed
+                // logout custody, never an unfinished cleanup or another identity.
+                if nextOwnerId == nil, nextAccessToken == nil, captured.cleanupComplete,
+                   !captured.isPublicationOnly, captured.original == original {
+                    retirementAccess = nil
+                    let permit = GuguIOSMainWritePermit(generation: issued, nextOwnerId: nil,
+                        nextAccessToken: nil, holdsRetirement: true, retirementId: captured.id)
+                    lock.unlock(); completion(.success(permit)); return
+                }
             }
             capability = try captureRetirement(stored)
         }
