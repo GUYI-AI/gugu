@@ -3,7 +3,7 @@ import { registerLocaleNamespace } from '@/i18n'
 const zh = {
   title: '团队', overview: '概览', directory: '团队成员', myUsage: '我的用量', search: '搜索成员', searchPlaceholder: '搜索团队成员',
   management: '管理', members: '成员管理', credits: '积分管理', roleSuper: '超管', roleAdmin: '管理员', roleMember: '成员',
-  loginTitle: '团队版', signIn: '登录团队账号', create: '创建团队', teamName: '团队名称', email: '邮箱', adminEmail: '管理员邮箱',
+  loginEntry: '团队登录', loginTitle: '团队', signIn: '登录团队账号', create: '创建团队', teamName: '团队名称', email: '邮箱', adminEmail: '管理员邮箱',
   emailHint: '使用团队账号邮箱登录', createHint: '验证管理员邮箱后创建', continue: '继续', verifyCreate: '验证邮箱并创建',
   verifyTitle: '验证邮箱', sentTo: '验证码已发送至 {{email}}', code: '验证码', verifySignIn: '验证并登录', verifyAndCreate: '验证并创建',
   changeEmail: '更换邮箱', resend: '重新发送', resendAfter: '{{seconds}} 秒后重发', retryAfter: '{{seconds}} 秒后重试', personalLogin: '个人登录', google: '使用 Google 登录',
@@ -45,7 +45,7 @@ const zh = {
 const en: Record<keyof typeof zh, string> = {
   title: 'Team', overview: 'Overview', directory: 'Team members', myUsage: 'My usage', search: 'Search members', searchPlaceholder: 'Search team members',
   management: 'Management', members: 'Manage members', credits: 'Manage credits', roleSuper: 'Super administrator', roleAdmin: 'Administrator', roleMember: 'Member',
-  loginTitle: 'Team edition', signIn: 'Sign in to a team', create: 'Create a team', teamName: 'Team name', email: 'Email', adminEmail: 'Administrator email',
+  loginEntry: 'Team sign-in', loginTitle: 'Team', signIn: 'Sign in to a team', create: 'Create a team', teamName: 'Team name', email: 'Email', adminEmail: 'Administrator email',
   emailHint: 'Use your team account email', createHint: 'Verify the administrator email to create a team', continue: 'Continue', verifyCreate: 'Verify email and create',
   verifyTitle: 'Verify email', sentTo: 'A verification code was sent to {{email}}', code: 'Verification code', verifySignIn: 'Verify and sign in', verifyAndCreate: 'Verify and create',
   changeEmail: 'Change email', resend: 'Resend', resendAfter: 'Resend in {{seconds}} seconds', retryAfter: 'Retry in {{seconds}} seconds', personalLogin: 'Personal sign-in', google: 'Continue with Google',

@@ -164,7 +164,7 @@ export function LoginPage() {
         }} /></p>
         {invitation.invalid && <p role="alert" className="gugu-auth-error">{tTeam('invitationInvalid')}</p>}
         {invitation.pending && (google.busy || loading || otpRequestPending) && <p role="status" className="gugu-auth-status">{tTeam('finishCurrentLogin')}</p>}
-        <div className="gg-team-login-link"><Button variant="ghost" size="sm" disabled={loading || google.busy || otpRequestPending} onClick={() => setTeamMode(true)}>{tTeam('loginTitle')}</Button></div>
+        <div className="gg-team-login-link"><Button variant="ghost" size="sm" disabled={loading || google.busy || otpRequestPending} onClick={() => setTeamMode(true)}>{tTeam('loginEntry')}</Button></div>
       </div>}</div>
     </section>
     <div className="gugu-auth-window-drag" aria-hidden="true" />
