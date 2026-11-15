@@ -130,6 +130,7 @@ export class LiveWindowConversation {
         if (previous) await previous.close();
         const view = await mountProjection(host, picture.element, picture.descriptor.id, {
           interactive: false,
+          localTouchViewing: this.model.platform === 'phone' && picture.source.kind === 'computer',
           painted: frame => {
             if (frame && !this.disposed && epoch === picture.epoch) {
               picture.source = { ...picture.source, size: { width: frame.width, height: frame.height } };
