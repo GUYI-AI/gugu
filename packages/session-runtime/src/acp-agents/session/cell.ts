@@ -82,7 +82,7 @@ export interface AcpChatHistory {
   active: TranscriptTurn | null;
 }
 
-type ConfigDimension = 'model' | 'effort';
+type ConfigDimension = 'model' | 'effort' | 'fast';
 
 export class SessionCell {
   private readonly promptEchoes = new PromptEchoes();
@@ -1132,6 +1132,9 @@ export class SessionCell {
         message: `Provider '${this.deps.providerId}' did not declare a live ${dimension} setting`,
       }));
     }
+    if (dimension === 'fast' && !configId) {
+      return Promise.resolve(fail({ name: 'FastModeUnavailable', message: 'The current model does not expose Fast' }));
+    }
     const turnToWait = this.activeTurnCompletion;
     if (turnToWait && !startupOnly && capability.busy === 'reject') {
       return Promise.resolve(fail({
@@ -1166,6 +1169,16 @@ export class SessionCell {
       }
       const result = await this.applyLiveSetting(dimension, value, configId, capability, startupOnly, fail);
       if (!result.success) {
+        // A rejected enable has no toggle path back to an already displayed Off value.
+        // Confirm Off once through the same native authority so a failed optional speed
+        // choice cannot strand the next user turn or leave an unconfirmed premium tier.
+        if (dimension === 'fast' && value === 'on') {
+          const off = await this.applyLiveSetting(dimension, 'off', configId, capability, startupOnly, fail);
+          if (off.success && off.data.status === 'applied') {
+            this.settingsBlockedReasons.delete(dimension);
+            return result;
+          }
+        }
         // The provider's own sentence (`data.details`), not the JSON-RPC envelope's "Internal error".
         const causeMessage = 'cause' in result.error ? errorDetail(result.error.cause)?.split('\n')[0] : undefined;
         this.settingsBlockedReasons.set(dimension, causeMessage ?? result.error.message ?? `Unable to apply ${dimension}`);
@@ -2469,9 +2482,11 @@ export class SessionCell {
       ? this.transcript.config.modelOptions
       : dimension === 'effort'
         ? this.transcript.config.efforts
-        : this.transcript.config.modeOptions;
+        : dimension === 'fast'
+          ? this.transcript.config.fastMode
+          : this.transcript.config.modeOptions;
     if (!group) return;
-    const category = dimension === 'model' ? 'model' : dimension === 'effort' ? 'thought_level' : 'mode';
+    const category = dimension === 'model' ? 'model' : dimension === 'effort' ? 'thought_level' : dimension === 'fast' ? 'model_config' : 'mode';
     const options = group.available.map((option) => ({ value: option.id, name: option.name }));
     this.seedTranscriptMeta({
       configOptions: [{
@@ -2595,7 +2610,7 @@ export class SessionCell {
         || [...this.requests.values()].some(request => !request.steered && !request.accepted && !request.dispatched),
       modeIds: this.transcript.config.modeOptions?.available.map((mode) => mode.id) ?? [],
       configOptionIds: [
-        ...(['model', 'effort'] as const)
+        ...(['model', 'effort', 'fast'] as const)
           .map((dimension) => this.configIdForDimension(dimension))
           .filter((configId): configId is string => configId !== null),
       ],
@@ -2615,6 +2630,8 @@ export class SessionCell {
    * 两处取值共用这一个函数,状态机的「这个 configId 认不认得」与真正发出去的那个 id 因此不会分叉。
    */
   private configIdForDimension(dimension: ConfigDimension): string | null {
+    // Fast eligibility is live and model-specific; a static declaration cannot supply it.
+    if (dimension === 'fast') return this.transcript.config.fastMode?.configId ?? null;
     const advertised = dimension === 'model'
       ? this.transcript.config.modelOptions?.configId
       : this.transcript.config.efforts?.configId;

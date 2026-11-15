@@ -214,6 +214,8 @@ export type Session = {
   mcpSessionLibrary?: SessionLibraryMcpFact;
   /** Reasoning-effort level for that model. Absent means the CLI's own default for it. */
   effort?: string;
+  /** Per-session Fast intent; current native eligibility still applies. */
+  fastMode?: boolean;
   /** #7342 引擎最后一次报的上下文读数,进程停了也留着(通用模式才有)。缺席 = 还没报过。 */
   contextUsage?: SessionContextUsage;
   /** Initial queued prompts to deliver on first ACP spawn. Only present before sessionId is set. */

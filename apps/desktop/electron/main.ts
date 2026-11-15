@@ -5544,7 +5544,7 @@ app.whenReady().then(async () => {
             // 运行时分叉(侧边聊天)沿用启动输入解析出的同一权限档；ACP adapter 的进程参数
             // 与普通 app-server 由同一 session bundle 物化，不能在桥里另猜一档。
             autonomy: { permissionMode: resolveSessionPermissionMode(info) },
-            model: sessionBundleModelFor(info.providerId, 'acp', forkPlatform),
+            model: sessionBundleModelFor(info.providerId, 'acp', forkPlatform, info.fastMode),
           // spec `mcp-session-toggle`:用户为这条会话关掉的那几台。
           // ⚠️ 原样递,`[]` 也递 —— 归一成 undefined 会让「决定过但一台没关」
           //    与「从没碰过」同形,而这条会话的适配器独占正是按前者判的。
@@ -5827,7 +5827,7 @@ app.whenReady().then(async () => {
           additionalMcpServers: configuredMcp.servers,
           // 模型声明只交给「模型走自己配置文件」的那些家(判据与理由都在这个函数里)——
           // 它们的宿主侧注入已经闭嘴,这份声明是模型唯一的来路。
-          model: sessionBundleModelFor(info.providerId, 'acp', processConfigPlatform),
+          model: sessionBundleModelFor(info.providerId, 'acp', processConfigPlatform, info.fastMode),
           socialBridgeDeps: {
             host: primaryGuguMcpHost,
             resolveFile: desktopFiles.resolve,
