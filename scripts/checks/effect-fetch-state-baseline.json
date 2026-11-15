@@ -24,7 +24,6 @@
   "apps/desktop/src/components/chat/messageActionModules.tsx": 1,
   "apps/desktop/src/components/extensionBundle/AppConversationUnread.tsx": 1,
   "apps/desktop/src/components/extensionBundle/ExtensionBundleCard.tsx": 2,
-  "apps/desktop/src/components/sessionpage/EmdashSessionFrame.tsx": 1,
   "apps/desktop/src/components/settings/AppsSection.tsx": 1,
   "apps/desktop/src/components/settings/MobileAppsSection.tsx": 1,
   "apps/desktop/src/components/settings/channels/useChatChannels.ts": 1,
@@ -50,6 +49,5 @@
   "apps/desktop/src/session/renderer/features/extensions/panel/app-product-page.tsx": 2,
   "apps/desktop/src/session/renderer/features/extensions/peek-folder-file.tsx": 2,
   "apps/desktop/src/session/renderer/features/integrations/CliInstallProgress.tsx": 1,
-  "apps/desktop/src/session/renderer/features/settings/components/ExtensionsSettingsCard.tsx": 2,
-  "apps/desktop/src/session/renderer/lib/stores/use-agent-auth-status.ts": 2
+  "apps/desktop/src/session/renderer/features/settings/components/ExtensionsSettingsCard.tsx": 2
 }

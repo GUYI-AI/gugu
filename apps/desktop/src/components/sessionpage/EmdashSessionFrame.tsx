@@ -11,6 +11,7 @@
 // (--bg/--fg/--accent/--border-color… 经 host 继承进 shadow)。桥接规则不进 @layer、且
 // 注入在后 → 稳压会话页的分层/在前规则。gugu 切明暗 → 挂载类翻转 → 会话页整体跟随。
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { createSelectStore, useSelect } from '@/lib/selectStore'
 import { useTranslation } from 'react-i18next'
 import { platform } from '@/platform'
 import { i18n } from '@/i18n'
@@ -209,6 +210,11 @@ const GUGU_SKIN_BRIDGE_CSS = `
 // electronAPI 那个名下:壳里多处拿它的真值判「是不是 Electron」)。必须在加载会话页 bundle 之前装好
 // —— bundle 的 ipc.ts 在模块求值时就取桥。
 let sessionHostClient: SessionHostWsClient | null = null
+/**
+ * ④ The web shell's connection to its task host (state and endpoint), for `useSelect`: published by the one client
+ * `installSessionHostBridge` makes and its state changes. Owner: this window's connection (not an account's).
+ */
+const hostConnection = createSelectStore<{ state: SessionHostConnectionState; endpoint: string } | null>(null)
 function installSessionHostBridge(): SessionHostWsClient | null {
   if (platform.kind === 'electron') return null
   if (!sessionHostClient) {
@@ -228,6 +234,9 @@ function installSessionHostBridge(): SessionHostWsClient | null {
       invoke: answerSessionShellChannels(hostInvoke, createWebSessionShellAnswers(hostInvoke)),
     }
     const client = sessionHostClient
+    const publishConnection = () => { hostConnection.publish({ state: client.state(), endpoint: client.endpoint.url }); hostConnection.notify() }
+    publishConnection()
+    client.onStateChange(publishConnection)
     installSessionShellAuthHandoff({
       hostInvoke,
       onHostOpen: (cb) => client.onStateChange((state) => { if (state === 'open') cb() }),
@@ -268,8 +277,9 @@ export function EmdashSessionFrame() {
   // 正常路径用户到达时已就绪;错误卡只留给真起不来(资源加载失败 / renderer bootstrap 失败,fail loud),不给「慢」。
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
   // 网页版:无头宿主的连接状态;桌面版恒为 null(桥在 preload 里,没有"连接"这回事)。
-  const [hostState, setHostState] = useState<SessionHostConnectionState | null>(null)
-  const [hostEndpoint, setHostEndpoint] = useState<string | null>(null)
+  const connection = useSelect(hostConnection, (value) => value, Object.is)
+  const hostState = connection?.state ?? null
+  const hostEndpoint = connection?.endpoint ?? null
   // Cold start keeps one loader (spec loading-state, #2571): while the startup wordmark is up and this frame is the page on
   // screen, it holds the wordmark until the task page has drawn or cannot (error card, web host not connected), instead of
   // a second loader after it. Warming up behind another page it lets go at once; a later load shows the ordinary loader.
@@ -295,6 +305,7 @@ export function EmdashSessionFrame() {
     if (mount) mount.className = sessionSkinClassName(theme)
   }, [theme])
 
+  // @@@effect-flow - mounts the session page into its host element once (a DOM mount); its load state is what that mount reports
   useEffect(() => {
     const host = hostRef.current
     // StrictMode(dev)对同一实例 setup→cleanup→setup 双调用。这里的挂载是全局一次性副作用
@@ -303,12 +314,7 @@ export function EmdashSessionFrame() {
     if (!host || startedRef.current) return
     startedRef.current = true
 
-    const hostClient = installSessionHostBridge()
-    if (hostClient) {
-      setHostEndpoint(hostClient.endpoint.url)
-      setHostState(hostClient.state())
-      hostClient.onStateChange(setHostState)
-    }
+    installSessionHostBridge()
     // @@@task-fusion (#2802) — 这里从前是 `host.attachShadow({ mode: 'open' })`。
     // shadow root 当初的职责是隔离**两个各自独立的样式系统**;现在只剩一份构建、
     // 一套 token、一道 lint,那个前提消失了,而边界本身开始持续产 bug:浏览器把 CSS 送进

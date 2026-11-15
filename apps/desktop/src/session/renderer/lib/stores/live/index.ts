@@ -2,3 +2,4 @@ export { bindMirror, type MirrorBinding, type MirrorBindingStatus } from './bind
 export { coalesce } from './coalesce';
 export { ModelMirror } from './model-mirror';
 export { OptimisticModel } from './optimistic-model';
+export { agentConfigList, forgetAgentConfigLists, type AgentConfigListState } from './agent-config-list';
