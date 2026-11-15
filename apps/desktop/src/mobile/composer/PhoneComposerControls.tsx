@@ -24,10 +24,10 @@ export function PhoneComposerControl({ label, icon, active, dot, disabled, onCli
   </Button>
 }
 
-export function PhoneComposerSheet({ open, onClose, title, children, footer, testId, anchor }: {
+export function PhoneComposerSheet({ open, onClose, title, children, footer, testId, anchor, className }: {
   open: boolean; onClose: () => void; title: string; children: ReactNode; footer?: ReactNode; testId: string
   /** A short model/device menu grows above its row; long lists use the bottom sheet. */
-  anchor?: RefObject<HTMLButtonElement | null>
+  anchor?: RefObject<HTMLButtonElement | null>; className?: string
 }) {
   const { t } = useTranslation('mobileCreateControls')
   const shade = useRef<HTMLDivElement | null>(null)
@@ -69,7 +69,7 @@ export function PhoneComposerSheet({ open, onClose, title, children, footer, tes
     {open ? <Dialog.Portal>
       <div ref={setShade} className="gg-phone-composer-shade"
         onPointerDown={preserveComposerFocus} onMouseDown={preserveComposerFocus} onClick={onClose} />
-      <Dialog.Popup ref={setPopup} className="gg-phone-composer-sheet" data-testid={testId} data-compact={compact || undefined}
+      <Dialog.Popup ref={setPopup} className={['gg-phone-composer-sheet', className].filter(Boolean).join(' ')} data-testid={testId} data-compact={compact || undefined}
         initialFocus={false} finalFocus={false} aria-modal={false}
         onPointerDownCapture={preservePanelComposerFocus} onMouseDownCapture={preservePanelComposerFocus}>
         {!compact && <div className="gg-phone-composer-sheet-handle" aria-hidden="true" />}

@@ -105,3 +105,31 @@ it('closes a retained room sheet when the host switches to another topic',async(
  await until('external topic name',()=>document.querySelector('[data-testid="phone-room-topics"]')?.textContent?.includes(topics[1]!.name)===true)
  await until('sheet closes',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
 })
+
+it.each(['light','dark'] as const)('%s: the room sheet covers the editor at every opening frame',async theme=>{
+ await mount(theme)
+ const samples: { opacity: string; alpha: number; coversEditor: boolean }[]=[]
+ const observer=new MutationObserver(()=>{
+  const popup=document.querySelector<HTMLElement>('[data-testid="phone-room-controls-sheet"]')
+  if(!popup)return
+  observer.disconnect()
+  function sample(){
+   if(!popup!.isConnected||samples.length>=12)return
+   const style=getComputedStyle(popup!),rect=popup!.getBoundingClientRect()
+   const editor=harness!.container.querySelector<HTMLElement>('[contenteditable]')!,input=editor.getBoundingClientRect()
+   const top=Math.max(rect.top,input.top),bottom=Math.min(rect.bottom,input.bottom),left=Math.max(rect.left,input.left),right=Math.min(rect.right,input.right)
+   const covered=bottom>top&&right>left&&popup!.contains(document.elementFromPoint((left+right)/2,(top+bottom)/2))
+   const canvas=document.createElement('canvas'),context=canvas.getContext('2d')!;canvas.width=canvas.height=1;context.fillStyle=style.backgroundColor;context.fillRect(0,0,1,1)
+   samples.push({opacity:style.opacity,alpha:context.getImageData(0,0,1,1).data[3]!,coversEditor:covered})
+   requestAnimationFrame(sample)
+  }
+  sample()
+ })
+ observer.observe(document.body,{childList:true,subtree:true})
+ await page.getByTestId('phone-room-topics').click()
+ await until('the sheet has painted its first three frames',()=>samples.length>=3)
+ observer.disconnect()
+ expect(samples.every(frame=>frame.opacity==='1')).toBe(true)
+ expect(samples.every(frame=>frame.alpha===255)).toBe(true)
+ expect(samples.every(frame=>frame.coversEditor)).toBe(true)
+})

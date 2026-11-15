@@ -51,7 +51,7 @@ function RoomComposerControls({ chatId, topics, current, onPick, members, roster
         testId="phone-room-topics" onClick={() => setView('topics')} />
       <PhoneComposerControl label={t('agents')} icon={<Users />} testId="phone-room-agents" onClick={() => setView('agents')} />
     </PhoneComposerControlRow>
-    <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'topics')} testId="phone-room-controls-sheet">
+    <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'topics')} testId="phone-room-controls-sheet" className="gg-phone-room-sheet">
       {view === 'topics' ? <div role="radiogroup" aria-label={t('topics')}>
         <TopicChoice name={t('main')} unread={choices.mainUnread} selected={!current} main onClick={() => choose(null)} />
         {choices.topics.map(topic => <TopicChoice key={topic.chat_id} name={topic.name} unread={topic.unread}

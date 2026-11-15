@@ -9,3 +9,9 @@
 .gg-phone-room-agent-detail > span:first-child { flex-shrink: 0; }
 .gg-phone-room-agent > svg:last-child { width: 14px; height: 14px; flex-basis: 14px; }
 .gg-phone-room-empty { margin: 12px 8px; color: var(--text-secondary); font-size: var(--font-body); }
+
+/* Keep the editor covered throughout opening and closing, including the first Android frame. */
+.gg-phone-composer-sheet.gg-phone-room-sheet { opacity: 1; animation-name: gg-phone-room-sheet-in; }
+.gg-phone-room-sheet[data-ending-style] { animation-name: gg-phone-room-sheet-out; }
+@keyframes gg-phone-room-sheet-in { from { translate: 0 16px; } to { translate: 0 0; } }
+@keyframes gg-phone-room-sheet-out { from { translate: 0 0; } to { translate: 0 16px; } }
