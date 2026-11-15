@@ -72,7 +72,7 @@ function watchRowSkips(list: Element) {
  * 头像永远不越出自己这组气泡的纵向范围。行是文档流里的兄弟节点、没有组容器,层的上下沿在布局后量。
  */
 export function GroupAvatarSlot({ wide, groupedWithPrev, groupedWithNext, children }: { wide: boolean; groupedWithPrev: boolean; groupedWithNext: boolean; children: ReactNode }) {
-  const width = wide ? 'w-[44px]' : 'w-[32px]' // 手机 44(触控目标)、桌面 32,与头像按钮同宽
+  const width = wide ? 'w-[var(--msg-avatar-gutter-touch)]' : 'w-[var(--msg-avatar-gutter)]' // tokens.css:手机触控目标、桌面与头像按钮同宽
   if (groupedWithNext) return <div aria-hidden="true" {...(groupedWithPrev ? {} : { [GROUP_TOP_ATTR]: '' })} className={`${width} shrink-0`} />
   return <StickyGroupAvatar width={width} continuesGroup={groupedWithPrev}>{children}</StickyGroupAvatar>
 }

@@ -62,7 +62,7 @@ describe('sticky group avatar geometry', () => {
     expect(events.filter(event => event.startsWith('read:'))).toHaveLength(9)
     expect(events.slice(events.findIndex(event => event.startsWith('write:'))).every(event => event.startsWith('write:'))).toBe(true)
     expect(layers.map(layer => [layer.style.bottom, layer.style.height])).toEqual([['8px', '30px'], ['12px', '70px'], ['6px', '50px']])
-    expect(harness.container.querySelector('[data-row="topic"] > div')?.className).toContain('w-[44px]')
+    expect(harness.container.querySelector('[data-row="topic"] > div')?.className).toContain('w-[var(--msg-avatar-gutter-touch)]')
 
     coordinates.end = [90, 160, 172]
     await resize([harness.container.querySelector('[data-list="group"]')!])
