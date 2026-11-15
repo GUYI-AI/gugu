@@ -58,9 +58,10 @@ function mentionLabel(mention: MdastMention): string {
 function mentionChip(mention: MdastMention): Element {
   const id = mention.target ?? mention.label;
   const text = mentionLabel(mention);
-  // A file's place (` · 第 4 行`) stays whole: the name is what gets cut when the pill is too wide.
+  // A file's place (` (第 4 行)`, or ` · 第 4 行` in older messages) stays whole: the name is what gets cut when the
+  // pill is too wide. A place is whatever closing bracket pair ends the label; a bracket inside a name ends in its extension.
   const legacyCut = mention.mentionKind === 'file' ? text.indexOf(' · ') : -1;
-  const location = mention.mentionKind === 'file' ? / \(L\d+(?:[-–]\d+)?\)$/.exec(text) : null;
+  const location = mention.mentionKind === 'file' ? / \([^()]+\)$/.exec(text) : null;
   const cut = location?.index ?? legacyCut;
   const span = (className: string, value: string): Element => ({ type: 'element', tagName: 'span', properties: { className: [className] }, children: [{ type: 'text', value }] });
   const label = cut > 0 ? [span('gg-md-mention-label', text.slice(0, cut)), span('gg-md-mention-place', text.slice(cut))] : [span('gg-md-mention-label', text)];
