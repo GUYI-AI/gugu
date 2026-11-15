@@ -1,12 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 import { clampZoom, DOCUMENT_MAX_ZOOM, DOCUMENT_MIN_ZOOM, isPinchWheel, pinchZoom } from '@/session/shared/preview/pinch-zoom';
 import { platform } from '@/platform';
+import { readInterface, takeLegacyLocalStorage, writeInterface } from '@/lib/viewStateTable';
 import { FILE_ZOOM_ATTRIBUTE, FILE_ZOOM_EVENT, isFileZoomCommand, type FileZoomCommand } from '@/session/shared/preview/file-zoom';
 
 /** A file type's reading zoom, or an App page's (`app:<id>`: the host zooms the App's whole page, as a browser tab). */
 export type FileZoomKind = 'markdown' | 'text-code' | 'html' | 'pdf' | 'image' | 'docx' | `app:${string}`;
 const CHANGED = 'gugu:file-zoom-preference';
 const keyOf = (kind: FileZoomKind) => `gugu.file-content-zoom.${kind}`;
+// A reading zoom is view state of the device (lib/viewStateTable); the old localStorage values move over once.
+takeLegacyLocalStorage((key) => key.startsWith('gugu.file-content-zoom.'), (key, raw) => writeInterface(key, Number(raw)));
 
 const normalizeZoom = (kind: FileZoomKind, value: number) => kind === 'image' ? Math.max(1, value) : clampZoom(value, DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM);
 
@@ -16,7 +19,7 @@ const remembers = () => platform.capabilities.readingZoomMemory;
 /** The ratio a type was last left at: where a view of it opened next starts (both renderer roots read the same one). */
 export function readFileZoom(kind: FileZoomKind): number {
   if (!remembers()) return 1;
-  const value = Number(localStorage.getItem(keyOf(kind)) ?? 1);
+  const value = readInterface<number>(keyOf(kind)) ?? 1;
   if (!Number.isFinite(value) || value <= 0) return 1;
   return normalizeZoom(kind, value);
 }
@@ -27,7 +30,7 @@ export function readFileZoom(kind: FileZoomKind): number {
  */
 export function writeFileZoom(kind: FileZoomKind, value: number, shownOn?: Element | null): void {
   if (!remembers() || !Number.isFinite(value) || value <= 0 || value === readFileZoom(kind)) return;
-  localStorage.setItem(keyOf(kind), String(value));
+  writeInterface(keyOf(kind), value);
   window.dispatchEvent(new Event(CHANGED));
   if (shownOn) showZoomRatio(shownOn, readFileZoom(kind));
 }
@@ -86,7 +89,7 @@ export function createFileZoomView(): FileZoomView {
       const next = normalizeZoom(kind, value);
       if (next === get(kind)) return;
       zooms.set(kind, next);
-      if (remembers()) localStorage.setItem(keyOf(kind), String(next));
+      if (remembers()) writeInterface(keyOf(kind), next);
       listeners.forEach(listener => listener());
       if (shownOn) showZoomRatio(shownOn, next);
     },

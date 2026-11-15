@@ -2,7 +2,7 @@ import { CheckCircle2, ChevronDown } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useMemo, useState } from 'react';
 import { useToast } from '@renderer/lib/hooks/use-toast';
-import { useLocalStorage } from '@renderer/lib/hooks/useLocalStorage';
+import { takeLegacyLocalStorage, useInterface, writeInterface } from '@/lib/viewStateTable';
 import { Button } from '@renderer/lib/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@renderer/lib/ui/collapsible';
 import { ConfirmButton } from '@renderer/lib/ui/confirm-button';
@@ -23,6 +23,11 @@ import { AutomationTemplateRail } from './AutomationTemplateRail';
 import { SheetHeader } from './sheet-header';
 
 const TEMPLATE_SECTION_COLLAPSED_KEY = 'gugu-automation-template-section-collapsed';
+// The fold is view state of the device; kept in localStorage before (under this name or, older, an emdash- one).
+takeLegacyLocalStorage(
+  (key) => key === TEMPLATE_SECTION_COLLAPSED_KEY || key === 'emdash-automation-template-section-collapsed',
+  (_, raw) => writeInterface(TEMPLATE_SECTION_COLLAPSED_KEY, JSON.parse(raw) === true || undefined),
+);
 
 export interface CreateAutomationViewProps {
   onClose: () => void;
@@ -53,10 +58,7 @@ export const CreateAutomationView = observer(function CreateAutomationView({
 
   const [error, setError] = useState<string | null>(null);
   const [cronError, setCronError] = useState<string | null>(null);
-  const [templatesCollapsed, setTemplatesCollapsed] = useLocalStorage(
-    TEMPLATE_SECTION_COLLAPSED_KEY,
-    false
-  );
+  const [templatesCollapsed, setTemplatesCollapsed] = useInterface(TEMPLATE_SECTION_COLLAPSED_KEY, false);
 
   const { create } = useAutomations();
   const { toast } = useToast();

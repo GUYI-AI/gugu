@@ -1,5 +1,5 @@
 import { reportHandledError } from '@/lib/errorSummaryReporting';
-import { readModel } from '@/lib/readModel';
+import { replica } from '@/lib/replica';
 import { rpc, rpcOn } from '@renderer/lib/ipc';
 import type { AppSettings, AppSettingsKey } from '@shared/core/app-settings';
 
@@ -17,7 +17,7 @@ export const LOCAL_SETTINGS_HOST_KEY = 'local';
  * read once at startup (`prefetchAllAppSettings`, one IPC) and kept as this device's snapshot, so a settings surface
  * opened at any time — the first frame after a restart included — has the stored values, never the schema defaults.
  */
-export const appSettingsModel = readModel({
+export const appSettingsModel = replica({
   name: 'appSettings',
   scope: 'device',
   read: async (_device, key: AppSettingsKey, host: string) => {
@@ -29,7 +29,7 @@ export const appSettingsModel = readModel({
     }
   },
   fresh: 5 * 60_000,
-  persist: true,
+  persist: { maxBytes: 1024, maxEntries: 30 },
 });
 
 /** Startup: the whole local set in one read, before the first frame of either entry. */

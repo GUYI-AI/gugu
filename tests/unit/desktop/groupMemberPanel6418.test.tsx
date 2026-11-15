@@ -17,6 +17,9 @@ import { publishProjectGroupChats } from '../../../apps/desktop/src/session/rend
 import type { MemberProfileChatTarget } from '../../../apps/desktop/src/components/MemberProfileCard'
 import { DevicesContext } from '../../../apps/desktop/src/store/devicesContext'
 import { removeDeviceSessions, updateDeviceSessions } from '../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
+import { publishRendererSession } from '../../../apps/desktop/src/lib/sessionPublication'
+import { readViewState } from '../../../apps/desktop/src/lib/viewStateTable'
+import { viewStateCache } from '../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 
 const shell = vi.hoisted(() => ({ mobile: false }))
 vi.mock('../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
@@ -80,8 +83,12 @@ const IDENTITIES: DisplayIdentity[] = [
 ]
 
 let harness: ReturnType<typeof createReactHarness>
+let viewAccount = 0
 beforeEach(() => {
+  viewStateCache.forget('view:')
   harness = createReactHarness()
+  // The view-state table is keyed by the signed-in account: a fresh one per case keeps one case's search words out of the next.
+  publishRendererSession('SIGNED_IN', { user: { id: `view-${viewAccount++}` } } as never)
   getSettings.mockResolvedValue(authority())
   getGroupCollab.mockResolvedValue({ snapshot: SNAPSHOT, identities: IDENTITIES })
   listJoinRequests.mockResolvedValue([])
@@ -235,6 +242,25 @@ describe('gugu-dev#181 我的 agent 收成一组', () => {
 })
 
 describe('#6418 群成员面板 —— 搜索', () => {
+  it('fe-continuity A5: each chat keeps its search words across a remount, a new key and switching chats', async () => {
+    await renderPanel()
+    const search = () => q('[data-testid="member-list-search"] input, input[data-testid="member-list-search"]') as HTMLInputElement
+    await typeInto(search(), '成员乙')
+    expect(rowIds()).toEqual(['member-1', 'codex'])
+    harness.cleanup(); harness = createReactHarness()
+    await renderPanel()
+    expect(search().value, 'remounted (closing the panel, the info tab key): the words are still there').toBe('成员乙')
+    expect(rowIds()).toEqual(['member-1', 'codex'])
+    harness.cleanup(); harness = createReactHarness()
+    await renderPanel('owner-1', 'chat-2')
+    expect(search().value, 'another chat has its own words').toBe('')
+    harness.cleanup(); harness = createReactHarness()
+    await renderPanel()
+    expect(search().value).toBe('成员乙')
+    await typeInto(search(), '')
+    expect(readViewState({ conversation: 'chat-1', panel: 'members' }), 'back to how it started: no entry is kept').toEqual({})
+  })
+
   it('按名字、主人、引擎匹配,并真的滤掉不匹配的行', async () => {
     await renderPanel()
     expect(rowIds()).toEqual(['owner-1', 'member-1', 'member-2', 'claude', 'codex'])

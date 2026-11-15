@@ -6,6 +6,7 @@ import { ChatMessageComposer } from '../../../../apps/desktop/src/components/cha
 import { ChatStoreProvider, useDraftMentionsStore, useTextDraftStore } from '../../../../apps/desktop/src/store/chatContext'
 import { chatStore, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { readComposer, writeComposer } from '../../../support/composerEditor'
+import { viewStateCache } from '../../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 
 let harness: ReturnType<typeof createReactHarness>
 let mentions: ReturnType<typeof useDraftMentionsStore>
@@ -27,7 +28,10 @@ async function reload(accountId: string | null) {
   await renderWithAppProviders(harness, <Host accountId={accountId} />)
 }
 
+// Kept in the view-state table; this page (no main process) stores it in localStorage.
+const stored = () => Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)!).filter((key) => key.startsWith('gugu.view-state:') && key.endsWith('/draft'))
 beforeEach(async () => {
+  viewStateCache.forget('view:')
   localStorage.clear()
   vi.useFakeTimers()
   harness = createReactHarness()
@@ -42,6 +46,16 @@ describe('chat drafts across a full reload (#2383)', () => {
     await reload('account-a')
     expect(readComposer(composer())).toBe('写到一半的话')
     expect(mentions.draftMentions['group-1']).toEqual([{ userId: 'agent-1', displayName: 'Agent 一' }])
+    expect(stored(), 'stored at once, per account').toEqual(['gugu.view-state:view:account-a/group-1/draft'])
+  })
+
+  // A quit (or a SIGTERM) right after typing: the words are stored before the composer's debounce, and on desktop main
+  // flushes whatever it holds on the way out.
+  it('stores each edit at once, before the composer debounce', async () => {
+    await act(async () => { writeComposer(composer(), 'Zed') })
+    const key = stored()[0]
+    expect(key).toBe('gugu.view-state:view:account-a/group-1/draft')
+    expect(JSON.parse(localStorage.getItem(key)!).value).toEqual({ text: 'Zed', mentions: [] })
   })
 
   it('keeps one account’s draft away from another account', async () => {
@@ -66,7 +80,7 @@ describe('chat drafts across a full reload (#2383)', () => {
     expect(onSend).toHaveBeenCalledOnce()
     await reload('account-a')
     expect(readComposer(composer())).toBe('')
-    expect(Object.keys(localStorage).filter((key) => key.startsWith('gugu.chat-draft:'))).toEqual([])
+    expect(stored()).toEqual([])
   })
 
   it('forgets the draft once it is cleared by hand', async () => {
@@ -74,6 +88,6 @@ describe('chat drafts across a full reload (#2383)', () => {
     await typeAndSettle('')
     await reload('account-a')
     expect(readComposer(composer())).toBe('')
-    expect(Object.keys(localStorage).filter((key) => key.startsWith('gugu.chat-draft:'))).toEqual([])
+    expect(stored()).toEqual([])
   })
 })

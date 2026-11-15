@@ -32,7 +32,7 @@ const { CHAT } = vi.hoisted(() => ({
 }));
 vi.mock('@/store/chatContext', async (original) => ({
   ...(await original<object>()),
-  useChatStore: () => ({ chats: [CHAT], identitiesById: {}, activeChatId: null, drafts: {}, draftAttachments: {}, setDraft: () => {}, setDraftAttachments: () => {} }),
+  useChatStore: () => ({ chats: [CHAT], identitiesById: {}, activeChatId: null, drafts: {}, draftAttachments: {}, setDraft: () => {}, keepDraft: () => {}, setDraftAttachments: () => {} }),
 }));
 vi.mock('@/store/auth', async (original) => ({ ...(await original<object>()), useAuth: () => ({ user: { id: 'owner', bio: null, email: null } }) }));
 vi.mock('@/store/contactsContext', async (original) => ({ ...(await original<object>()), useContactsStore: () => ({ contacts: [], updateContactAlias: async () => {} }) }));

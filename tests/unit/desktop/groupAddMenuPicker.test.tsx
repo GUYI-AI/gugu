@@ -6,6 +6,8 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { contact, createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../support/testHarness'
+import { openImRepository, type AccountImRepository } from '../../../apps/desktop/src/lib/imRepository'
+import { createMemoryLocalSyncDb } from '../../../apps/desktop/src/lib/localSyncDb'
 
 vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   chatService: {
@@ -26,8 +28,10 @@ const { GroupAddMembersHost } = await import('../../../apps/desktop/src/componen
 
 let shell: ReturnType<typeof createReactHarness>
 let taskPage: ReturnType<typeof createReactHarness>
-beforeEach(() => { shell = createReactHarness(); taskPage = createReactHarness() })
-afterEach(() => { taskPage.cleanup(); shell.cleanup() })
+// The picker reads the roster through the account's IM library.
+let repository: AccountImRepository
+beforeEach(async () => { shell = createReactHarness(); taskPage = createReactHarness(); repository = await openImRepository('user-1', { adapter: createMemoryLocalSyncDb() }) })
+afterEach(() => { taskPage.cleanup(); shell.cleanup(); repository.close() })
 
 const click = (el: Element | null) => act(async () => { (el as HTMLElement).click() })
 const picker = () => document.querySelector<HTMLElement>('[role="dialog"]')

@@ -170,6 +170,48 @@ export const imSelectors = {
   syncState: (key: string) => (snapshot: ImRepositorySnapshot) => snapshot.sync_state.find((row) => row.key === key)?.value,
 }
 
+// The account's repository once the chat provider has opened it, for readers that live outside the provider (read
+// models). The provider still opens and closes it; this only hands out the one that is open.
+type OpenedSlot = {
+  promise: Promise<AccountImRepository>
+  resolve: (repository: AccountImRepository) => void
+  reject: (error: unknown) => void
+  repository: AccountImRepository | null
+  failed: boolean
+}
+const openedRepositories = new Map<string, OpenedSlot>()
+
+function openedSlot(accountId: string): OpenedSlot {
+  let slot = openedRepositories.get(accountId)
+  if (!slot) {
+    let resolve!: (repository: AccountImRepository) => void
+    let reject!: (error: unknown) => void
+    const promise = new Promise<AccountImRepository>((done, fail) => { resolve = done; reject = fail })
+    promise.catch(() => undefined) // a failed open is reported to whoever waits; nobody waiting is not an error
+    slot = { promise, resolve, reject, repository: null, failed: false }
+    openedRepositories.set(accountId, slot)
+  }
+  return slot
+}
+
+/** The account's repository if it is open now (for a first frame), else null: `openedImRepository` waits for it. */
+export function openImRepositoryNow(accountId: string): AccountImRepository | null {
+  return openedRepositories.get(accountId)?.repository ?? null
+}
+
+/** The account's open repository; waits while the provider is still opening it, and fails if that open failed. */
+export function openedImRepository(accountId: string): Promise<AccountImRepository> {
+  return openedSlot(accountId).promise
+}
+
+function publishOpened(repository: AccountImRepository): void {
+  const previous = openedRepositories.get(repository.accountId)
+  if (previous?.repository || previous?.failed) openedRepositories.delete(repository.accountId)
+  const slot = openedSlot(repository.accountId)
+  slot.repository = repository
+  slot.resolve(repository)
+}
+
 export async function openImRepository(
   accountId: string,
   options: {
@@ -198,9 +240,13 @@ export async function openImRepository(
     const repository = createAccountRepository(accountId, adapter, rows, options.adapter === undefined)
     options.loaded?.(repository)
     await options.initialize?.(repository)
+    publishOpened(repository)
     return repository
   } catch (error) {
     if (options.adapter === undefined) adapter.close()
+    // Readers waiting for this account's repository learn that it did not open (a later open replaces this answer).
+    const slot = openedSlot(accountId)
+    if (!slot.repository) { slot.failed = true; slot.reject(error) }
     throw error
   }
 }
@@ -231,7 +277,7 @@ function createAccountRepository(
   }
   const publish = () => { for (const subscription of subscriptions) notify(subscription) }
 
-  return {
+  const repository: AccountImRepository = {
     accountId,
     snapshot() {
       ensureOpen()
@@ -278,9 +324,11 @@ function createAccountRepository(
       if (closed) return
       closed = true
       subscriptions.clear()
+      if (openedRepositories.get(accountId)?.repository === repository) openedRepositories.delete(accountId)
       if (ownsAdapter) void writeChain.finally(() => adapter.close())
     },
   }
+  return repository
 }
 
 function createTransaction(accountId: string, operations: LocalImDbOperation[], stored: ImRepositorySnapshot): ImRepositoryTransaction {

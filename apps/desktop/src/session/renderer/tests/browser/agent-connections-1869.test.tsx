@@ -1,5 +1,5 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
-import { queryClient } from '@/lib/readModel'
+import { queryClient } from '@/lib/replica'
 import { createRoot, type Root } from 'react-dom/client'
 import { beforeEach, afterEach, it, expect, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
@@ -99,7 +99,7 @@ beforeEach(() => {
   host.style.width = '528px'
   document.body.appendChild(host)
   root = createRoot(host)
-  // The connection readings are read models: they live in the one client (lib/readModel), cleared after each case.
+  // The connection readings are replicas: they live in the one client (lib/replica), cleared after each case.
   client = queryClient
   root.render(
     <QueryClientProvider client={client}>

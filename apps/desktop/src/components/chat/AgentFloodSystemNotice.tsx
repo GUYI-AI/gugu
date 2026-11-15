@@ -14,7 +14,9 @@
 import { Button } from '../ui/Button'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { topicService, type AgentFloodAdjustment } from '../../lib/topics'
+import { topicService } from '../../lib/topics'
+import { agentFloodAdjustment } from '../../lib/agentFloodAdjustments'
+import { useReplica } from '../../lib/replica'
 import { rendererLogger } from '@/lib/log'
 import { systemNoticeText } from '@/lib/systemNoticeText'
 
@@ -50,23 +52,14 @@ const floodLog = rendererLogger('chat/agent-flood')
 
 export function AgentFloodSystemNotice({ messageId, content, onUndone }: AgentFloodSystemNoticeProps) {
   const { t } = useTranslation('messaging')
-  const [adjustment, setAdjustment] = useState<AgentFloodAdjustment | null>(null)
+  const reading = useReplica(agentFloodAdjustment, [messageId])
+  const adjustment = reading.state === 'value' ? reading.value : null
   const [busy, setBusy] = useState(false)
   // 两种失败分开显示:台账读不出来 ≠ 撤回失败,混成一句话会把「还没点就说撤回失败」摆到用户脸上。
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [undoError, setUndoError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    setAdjustment(null)
-    setLoadError(null)
-    setUndoError(null)
-    void topicService.getAgentFloodAdjustment(messageId)
-      .then((row) => { if (!cancelled) setAdjustment(row) })
-      // 原因进日志、不进文案:用户拿内部失败描述做不了任何事(user-copy-leak 闸的判据)。
-      .catch((err: unknown) => { floodLog.error({ error: err, messageId }, 'agent flood ledger read failed'); if (!cancelled) setLoadError('failed') })
-    return () => { cancelled = true }
-  }, [messageId])
+  const loadError = reading.state === 'error'
+  const [undoError, setUndoError] = useState<{ messageId: string } | null>(null)
+  // 原因进日志、不进文案:用户拿内部失败描述做不了任何事(user-copy-leak 闸的判据)。
+  useEffect(() => { if (reading.state === 'error') floodLog.error({ error: reading.error, messageId }, 'agent flood ledger read failed') }, [reading, messageId])
 
   const undo = useCallback(async () => {
     if (!adjustment || busy) return
@@ -76,11 +69,11 @@ export function AgentFloodSystemNotice({ messageId, content, onUndone }: AgentFl
       await topicService.undoAgentFloodAdjustment(adjustment.id)
       // RPC 返回即代表台账那行真的落了 undone_at(它在同一个事务里改的),所以这不是乐观更新;
       // 失败会从 await 抛出来,走下面的 catch,按钮保持原样。
-      setAdjustment((prev) => (prev ? { ...prev, undone_at: new Date().toISOString() } : prev))
+      agentFloodAdjustment.set([messageId], (prev) => (prev ? { ...prev, undone_at: new Date().toISOString() } : prev))
       onUndone?.()
     } catch (err) {
       floodLog.error({ error: err, messageId }, 'agent flood undo failed')
-      setUndoError('failed')
+      setUndoError({ messageId })
     } finally {
       setBusy(false)
     }
@@ -114,7 +107,7 @@ export function AgentFloodSystemNotice({ messageId, content, onUndone }: AgentFl
             {t('group.agentFlood.undone')}
           </span>
         ) : null}
-        {undoError ? (
+        {undoError?.messageId === messageId ? (
           <div data-testid="agent-flood-error" style={AGENT_FLOOD_ERROR_LINE_STYLE}>
             {t('group.agentFlood.undoFailed')}
           </div>

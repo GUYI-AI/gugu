@@ -1,5 +1,5 @@
 import { workspaceEvents } from '@renderer/features/sessions/workspace-backend/workspace-backend';
-import { queryClient } from '@/lib/readModel';
+import { queryClient } from '@/lib/replica';
 import { gitRepoUpdateChannel } from '@shared/core/git/events';
 
 export function wireCommitHistoryInvalidation(): void {

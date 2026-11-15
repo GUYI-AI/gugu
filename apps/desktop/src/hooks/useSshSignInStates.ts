@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { readModel, useReadModels, type Reading } from '../lib/readModel'
+import { replica, useReplicas, type Reading } from '../lib/replica'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { SERVER_SSH_MACHINES_CHANNELS, type SshSignInState } from '../lib/serverSshMachines'
 import { desktopIpc } from '../platform/desktopIpc'
@@ -23,7 +23,7 @@ export function signInProbeKeys(devices: readonly Device[], sshAddress: (deviceI
  * 每问一次 = 一次 ssh(复用终端的连接时几十毫秒;连不上 8 秒超时)。
  */
 /** The answer for one offline machine; keyed by its last-online time, so one stretch offline is asked once. Not kept across restarts: an old answer is the wrong answer. */
-const sshSignInState = readModel({
+const sshSignInState = replica({
   name: 'sshSignInState',
   scope: 'account',
   read: async (_userId, deviceId: string, _offlineSince: string) => {
@@ -40,6 +40,6 @@ export function useSshSignInStates(
   sshAddress: (deviceId: string) => string | null | undefined,
 ): ReadonlyMap<string, Reading<SshSignInState>> {
   const keys = useMemo(() => [...signInProbeKeys(devices, sshAddress)], [devices, sshAddress])
-  const readings = useReadModels(sshSignInState, keys.map(([deviceId, key]) => [deviceId, key] as [string, string]))
+  const readings = useReplicas(sshSignInState, keys.map(([deviceId, key]) => [deviceId, key] as [string, string]))
   return useMemo(() => new Map(keys.map(([deviceId], index) => [deviceId, readings[index]])), [keys, readings])
 }

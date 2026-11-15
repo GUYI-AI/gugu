@@ -2,6 +2,8 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readInterface, writeInterface } from '../../../../apps/desktop/src/lib/viewStateTable'
+import { viewStateCache } from '../../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -79,7 +81,7 @@ beforeEach(() => {
   handOver.mockReset().mockResolvedValue({ success: true, data: { held: true } });
   publishAssistantShell(shell());
   publishAppConversationSurfaces({});
-  localStorage.clear();
+  localStorage.clear(); viewStateCache.forget('view:');
   appState.navigation.navigate('home');
 });
 afterEach(async () => {
@@ -196,21 +198,21 @@ describe('asking main to bind the trusted App', () => {
 
 describe('what opening the built-in page did', () => {
   it('carries the built-in panel state over once, when the App becomes where the entry goes', async () => {
-    localStorage.setItem('gugu.assistant.panel', 'closed');
+    writeInterface('gugu.assistant.panel', 'closed');
     await mount();
-    expect(localStorage.getItem(`gugu.app.${ASSISTANT_APP_ID}.panel`)).toBeNull();
+    expect(readInterface(`gugu.app.${ASSISTANT_APP_ID}.panel`)).toBeUndefined();
     await act(async () => publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: DM }));
     await flush();
     expect(readAssistantEntryTarget().kind).toBe('app');
-    expect(localStorage.getItem(`gugu.app.${ASSISTANT_APP_ID}.panel`)).toBe('closed');
+    expect(readInterface(`gugu.app.${ASSISTANT_APP_ID}.panel`)).toBe('closed');
     expect(appConversationPanelCollapsed(ASSISTANT_APP_ID)).toBe(true);
     // Once: the App's own state stands from then on, whatever the built-in page stored later.
-    localStorage.setItem(`gugu.app.${ASSISTANT_APP_ID}.panel`, 'open');
-    localStorage.setItem('gugu.assistant.panel', 'closed');
+    writeInterface(`gugu.app.${ASSISTANT_APP_ID}.panel`, 'open');
+    writeInterface('gugu.assistant.panel', 'closed');
     await act(async () => publishAppConversationSurfaces({}));
     await act(async () => publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: DM }));
     await flush();
-    expect(localStorage.getItem(`gugu.app.${ASSISTANT_APP_ID}.panel`)).toBe('open');
+    expect(readInterface(`gugu.app.${ASSISTANT_APP_ID}.panel`)).toBe('open');
   });
 
   // The built-in page's view is gone: a restored snapshot still holds its last tab, kept until handed over.

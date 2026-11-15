@@ -1,4 +1,4 @@
-// The editor owns live text; this hook mirrors edits for debounced per-chat persistence.
+// The editor owns live text; this hook stores each edit at once (keepDraft) and mirrors it into the chat store on a debounce.
 // Mentions and queued files also retain their existing store synchronization and runtime previews.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type SetStateAction } from 'react'
 import { useChatStore, type DraftAttachment, type DraftMention } from '../../store/chatContext'
@@ -79,8 +79,8 @@ export interface ChatDraft {
 }
 
 export function useChatDraft(chatId: string | null | undefined): ChatDraft {
-  const { drafts, draftMentions, draftAttachments, setDraft, writeDraft, setDraftMentions, setDraftAttachments } = useChatStore(
-    'drafts', 'draftMentions', 'draftAttachments', 'setDraft', 'writeDraft', 'setDraftMentions', 'setDraftAttachments',
+  const { drafts, draftMentions, draftAttachments, setDraft, keepDraft, writeDraft, setDraftMentions, setDraftAttachments } = useChatStore(
+    'drafts', 'draftMentions', 'draftAttachments', 'setDraft', 'keepDraft', 'writeDraft', 'setDraftMentions', 'setDraftAttachments',
   )
   const key = chatId ?? null
   const storeText = key ? drafts[key] ?? '' : ''
@@ -141,16 +141,16 @@ export function useChatDraft(chatId: string | null | undefined): ChatDraft {
     const next = applyUpdate(u, textRef.current)
     textRef.current = next
     setTextState(next)
-    if (keyRef.current) { synced.current.text = next; scheduleFlush() }
-  }, [scheduleFlush, edited])
+    if (keyRef.current) { synced.current.text = next; keepDraft(keyRef.current, { text: next }); scheduleFlush() }
+  }, [scheduleFlush, edited, keepDraft])
 
   const setMentionTargets = useCallback((u: SetStateAction<MentionTarget[]>) => {
     edited()
     const next = applyUpdate(u, mentionsRef.current)
     mentionsRef.current = next
     setMentionsState(next)
-    if (keyRef.current) { synced.current.mentions = next; scheduleFlush() }
-  }, [scheduleFlush, edited])
+    if (keyRef.current) { synced.current.mentions = next; keepDraft(keyRef.current, { mentions: next }); scheduleFlush() }
+  }, [scheduleFlush, edited, keepDraft])
 
   const setAttachments = useCallback((u: SetStateAction<PendingAttachment[]>) => {
     edited()

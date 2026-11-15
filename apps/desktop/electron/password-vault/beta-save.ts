@@ -3,6 +3,7 @@ import type { PasswordItem, PasswordSaveDraft, PasswordSaveRequest } from '@gugu
 import type { GuguMcpContext } from '../acp-engine-utils'
 import { postPasswordRequest } from './beta-messages'
 import { maskedAccount } from './schema'
+import { createPasswordCardKey, type PasswordCardKey } from '@gugu/core/shared/passwordCardCipher'
 import { PasswordSaveError } from './save-error'
 
 const unavailable = () => new PasswordSaveError('REQUEST_ENDED')
@@ -11,7 +12,7 @@ const SAVE_REQUEST_TTL_MS = 30 * 60_000
 /** What an Agent proposes. A field without a value is one the person fills in; `secret` defaults to true. */
 export interface SaveProposal { name?: string; account?: string; accountSecret?: boolean; password?: string; fields?: { name: string; value?: string; secret?: boolean }[] }
 export type SaveResult = 'saved' | 'rejected' | 'expired' | 'invalidated'
-type Pending = { view: PasswordSaveRequest; draft: PasswordSaveDraft; result: 'pending' | SaveResult; credentialId?: string; timer: ReturnType<typeof setTimeout>; remote?: string }
+type Pending = { saving?: boolean; key: PasswordCardKey; view: PasswordSaveRequest; draft: PasswordSaveDraft; result: 'pending' | SaveResult; credentialId?: string; timer: ReturnType<typeof setTimeout>; remote?: string }
 export interface BetaSaveHost {
   deviceId: string
   changed(): void
@@ -30,6 +31,10 @@ export class BetaPasswordSaves {
     // One open request per session: a looping Agent cannot flood the person's private chat.
     const pending = [...this.requests.values()].find(value => value.result === 'pending' && value.view.sessionId === caller.sessionId)
     if (pending) throw new PasswordSaveError('REQUEST_PENDING', pending.view.requestId)
+    const key = await createPasswordCardKey()
+    // Key creation yields; another request from this session may have opened meanwhile.
+    const concurrent = [...this.requests.values()].find(value => value.result === 'pending' && value.view.sessionId === caller.sessionId)
+    if (concurrent) { key.privateKey.fill(0); throw new PasswordSaveError('REQUEST_PENDING', concurrent.view.requestId) }
     const requestId = randomUUID(), presentation = remote ? { agentName: remote.agentName, sessionTitle: remote.sessionTitle } : this.host.describe(caller.agentId, caller.sessionId)
     // The card shows the account the Agent proposed (masked like every stored one), else the stored one.
     const shown = proposal.account ? maskedAccount(proposal.account) : item?.maskedAccount
@@ -42,13 +47,13 @@ export class BetaPasswordSaves {
     const inputs = [...(login ? [{ key: 'account', name: '账号', secret: proposal.accountSecret ?? item?.accountSecret ?? false }, { key: 'password', name: '密码', secret: true }] : []),
       ...fields.map(field => ({ key: field.id, name: field.name, secret: field.secret }))]
     const view: PasswordSaveRequest = { kind: 'save', requestId, origin, ...(item ? { credentialId: item.reference.id } : {}), ...(shown ? { maskedAccount: shown } : {}),
-      agent: caller.agentId, ...presentation, sessionId: caller.sessionId, deviceId: this.host.deviceId, expiresAt: Date.now() + SAVE_REQUEST_TTL_MS, inputs }
+      agent: caller.agentId, ...presentation, sessionId: caller.sessionId, deviceId: this.host.deviceId, expiresAt: Date.now() + SAVE_REQUEST_TTL_MS, inputs, saveKey: key.publicKey }
     const draft: PasswordSaveDraft = { origin, ...(proposal.name !== undefined ? { name: proposal.name } : {}), account: proposal.account ?? '',
       ...(proposal.accountSecret !== undefined ? { accountSecret: proposal.accountSecret } : {}), password: proposal.password ?? '', fields, agentName: presentation.agentName,
       ...(item ? { credentialId: item.reference.id } : {}) }
     const timer = setTimeout(() => this.finish(requestId, 'expired'), SAVE_REQUEST_TTL_MS)
     timer.unref?.()
-    this.requests.set(requestId, { view, draft, result: 'pending', timer, ...(remote ? { remote: remote.remote } : {}) })
+    this.requests.set(requestId, { key, view, draft, result: 'pending', timer, ...(remote ? { remote: remote.remote } : {}) })
     if (context) {
       try { await postPasswordRequest(context, view) }
       catch { this.drop(requestId); throw new PasswordSaveError('CARD_DELIVERY_FAILED') }
@@ -67,8 +72,25 @@ export class BetaPasswordSaves {
     if (!value || value.result !== 'pending') throw unavailable()
     return value
   }
+  card(requestId: string): Pending {
+    const value = this.requests.get(requestId)
+    if (!value) throw unavailable()
+    return value
+  }
+  outcomes() { return [...this.requests.values()].filter(value => value.result !== 'pending').map(value => ({ requestId: value.view.requestId, result: value.result })) }
+  async saving<T extends { reference: { id: string } }>(requestId: string, write: () => Promise<T>): Promise<T> {
+    const value = this.open(requestId)
+    if (value.saving) throw new PasswordSaveError('REQUEST_PENDING', requestId)
+    value.saving = true; clearTimeout(value.timer)
+    try { const saved = await write(); this.complete(requestId, saved.reference.id); return saved }
+    finally {
+      value.saving = false
+      if (value.result === 'pending') value.timer = setTimeout(() => this.finish(requestId, 'expired'), Math.max(0, value.view.expiresAt - Date.now()))
+      value.timer.unref?.()
+    }
+  }
   complete(requestId: string, credentialId: string): void { this.finish(requestId, 'saved', credentialId) }
-  reject(requestId: string): void { this.open(requestId); this.finish(requestId, 'rejected') }
+  reject(requestId: string): void { if (this.open(requestId).saving) throw new PasswordSaveError('REQUEST_PENDING', requestId); this.finish(requestId, 'rejected') }
   status(requestId: string, sessionId: string): { status: string; credentialId?: string } {
     const value = this.requests.get(requestId)
     if (!value || value.view.sessionId !== sessionId) throw unavailable()
@@ -82,6 +104,9 @@ export class BetaPasswordSaves {
     value.result = result
     if (credentialId) value.credentialId = credentialId
     this.wipe(value)
+    // Keep only the ephemeral key and outcome until the original deadline, so other screens can see completion.
+    value.timer = setTimeout(() => value.key.privateKey.fill(0), Math.max(0, value.view.expiresAt - Date.now()))
+    value.timer.unref?.()
     // A server's request: that server polls the outcome and tells its own session.
     if (!value.remote) void this.host.deliver(value.view.sessionId, requestId, result, credentialId).catch(() => {})
     this.host.changed()
@@ -89,7 +114,7 @@ export class BetaPasswordSaves {
   private drop(requestId: string): void {
     const value = this.requests.get(requestId)
     if (!value) return
-    clearTimeout(value.timer); this.wipe(value); this.requests.delete(requestId)
+    clearTimeout(value.timer); this.wipe(value); value.key.privateKey.fill(0); this.requests.delete(requestId)
   }
   private wipe(value: Pending): void {
     value.draft.account = ''; value.draft.password = ''

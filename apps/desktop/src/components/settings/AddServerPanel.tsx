@@ -1,5 +1,5 @@
 import { REMOTE_TUNNEL_OPEN } from '@gugu/core/cloud/remoteTunnel'
-import { readModel, useReadModel } from '../../lib/readModel'
+import { replica, useReplica } from '../../lib/replica'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -22,6 +22,7 @@ import {
   menuSurfaceClassName,
 } from '../ui/Menu'
 import { Popover } from '../ui/Popover'
+import { Unknown } from '../ui/Unknown'
 import { cn } from '../../lib/cn'
 import { InstallProgress, type InstallLanding } from './addServer/InstallProgress'
 import { OneLineInstall } from './addServer/OneLineInstall'
@@ -51,14 +52,14 @@ type InputProblem = { key: 'invalidTarget' | 'unsupportedOption' | 'targetHasCom
 export type AddServerMethod = 'ssh' | 'tunnel'
 
 /** The hosts of this desktop's SSH config, offered while typing where to install (a suggestion list: none read = none offered). */
-const sshConfigHosts = readModel({
+const sshConfigHosts = replica({
   name: 'sshConfigHosts',
   scope: 'device',
   read: async () => {
     const value: unknown = await desktopIpc()!.invoke(SERVER_SSH_INSTALL_CHANNELS.listHosts)
     return Array.isArray(value) ? (value as SshConfigHost[]) : []
   },
-  persist: true,
+  persist: { maxBytes: 2048, maxEntries: 1 },
 })
 
 /** 添加完成:哪台机器,以及要不要给它起名(只在从 ~/.ssh/config 挑了别名、且是这次新出现的机器时才有)。 */
@@ -87,8 +88,8 @@ export function AddServerPanel({
   const { t } = useTranslation('settings')
   const { devices } = useDevicesStore()
   const [target, setTarget] = useState(relogin?.address ?? '')
-  const hostsReading = useReadModel(sshConfigHosts, desktopIpc() ? [] : null)
-  const hosts = useMemo(() => (hostsReading.state === 'value' ? hostsReading.value : []), [hostsReading])
+  const hostsReading = useReplica(sshConfigHosts, desktopIpc() ? [] : null)
+  const hosts = hostsReading.state === 'value' ? hostsReading.value : null
   const [runId, setRunId] = useState<string | null>(null)
   const [states, setStates] = useState<Record<string, ServerSshInstallState>>({})
   const [inputProblem, setInputProblem] = useState<InputProblem | null>(null)
@@ -168,7 +169,7 @@ export function AddServerPanel({
     setInputProblem(null)
     finishedRef.current = false
     const alias = value.trim()
-    nameRef.current = !remembered && hosts.some((host) => host.alias === alias) ? alias : null
+    nameRef.current = !remembered && hosts !== null && hosts.some((host) => host.alias === alias) ? alias : null
     const request: ServerSshInstallStartRequest = remembered ? { deviceId: remembered } : { target: value }
     const response = (await electron.invoke(SERVER_SSH_INSTALL_CHANNELS.start, request)) as ServerSshInstallStartResponse
     if ('error' in response) {
@@ -307,7 +308,8 @@ function SshTargetForm({
   onClose,
 }: {
   target: string
-  hosts: readonly SshConfigHost[]
+  /** null: not read yet — the open list says so with a placeholder row, ❌ an empty list. */
+  hosts: readonly SshConfigHost[] | null
   problem: string | null
   onTargetChange: (value: string) => void
   onSubmit: (value: string) => void
@@ -317,8 +319,9 @@ function SshTargetForm({
   const listId = useId()
   const [open, setOpen] = useState(false)
   const [highlight, setHighlight] = useState(-1)
-  const suggestions = useMemo(() => (open ? filterSshConfigHosts(hosts, target) : []), [open, hosts, target])
-  const showList = suggestions.length > 0
+  const suggestions = useMemo(() => (open && hosts !== null ? filterSshConfigHosts(hosts, target) : []), [open, hosts, target])
+  const reading = open && hosts === null
+  const showList = suggestions.length > 0 || reading
   const listRef = useRef<HTMLUListElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -338,7 +341,7 @@ function SshTargetForm({
       event.preventDefault()
       if (!open) { setOpen(true); setHighlight(0); return }
       if (suggestions.length) setHighlight((h) => (h + 1) % suggestions.length)
-    } else if (event.key === 'ArrowUp' && showList) {
+    } else if (event.key === 'ArrowUp' && suggestions.length > 0) {
       event.preventDefault()
       setHighlight((h) => (h <= 0 ? suggestions.length - 1 : h - 1))
     } else if (event.key === 'Enter' && showList && highlight >= 0 && suggestions[highlight]) {
@@ -415,6 +418,7 @@ function SshTargetForm({
                     // 最多露 5 行,再多就在浮层里滚:5 × 行高(菜单行 min-h-9 = 36px)+ 上下内边距(p-1 = 4px)= 188px。
                     className="m-0 max-h-[188px] list-none overflow-y-auto p-1"
                   >
+                    {reading && <li role="option" aria-selected={false} aria-disabled data-testid="add-server-suggestions-unknown"><Unknown className="m-2 w-40" /></li>}
                     {suggestions.map((host, index) => {
                       const address = hostAddress(host)
                       return (

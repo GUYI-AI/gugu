@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Switch } from '@/components/ui/Switch';
 import { Unknown } from '@/components/ui/Unknown';
-import type { Reading } from '@/lib/readModel';
+import type { Reading } from '@/lib/replica';
 import type { AppSettings, AppSettingsKey } from '@shared/core/app-settings';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { AppSettingsKeyApi } from '../use-app-settings-key';

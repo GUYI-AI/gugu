@@ -324,6 +324,13 @@ final class GuguIOSOwnerSession {
         if permit.holdsRetirement { retiring = false; storageRetirementPending = false }
     }
 
+    /// Local closure storage uses the same lock as the synchronous auth commit.
+    /// It does not publish credentials, authenticate remotely or alter write permits.
+    func withLocalClosureStorage(_ body: () throws -> Void) throws {
+        lock.lock(); defer { lock.unlock() }
+        try body()
+    }
+
     private func readBackMainWrite(_ permit: GuguIOSMainWritePermit) throws -> GuguIOSStoredSession? {
         let current = try readStored()
         guard current?.ownerId == permit.nextOwnerId,
