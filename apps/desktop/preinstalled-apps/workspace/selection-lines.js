@@ -46,3 +46,16 @@ export function previewSelectionLines(range) {
   const last = at(range.endContainer, range.endOffset, true)
   return first && last ? [first, last] : null
 }
+
+/** The words of a preview selection: a formula once, as its TeX (`$…$`), not its drawing and its hidden source both. */
+export function previewSelectionText(range) {
+  const words = range.cloneContents()
+  for (const math of words.querySelectorAll('.katex')) {
+    // gugu's own drawing keeps the TeX as the hidden part's text; KaTeX's MathML keeps it in an annotation.
+    const source = math.querySelector('.katex-mathml')
+    const tex = source?.querySelector('annotation[encoding="application/x-tex"]')?.textContent ?? source?.textContent
+    if (tex) math.replaceWith(math.closest('.katex-display') ? `$$${tex}$$` : `$${tex}$`)
+  }
+  for (const source of words.querySelectorAll('.katex-mathml')) source.remove()
+  return words.textContent
+}

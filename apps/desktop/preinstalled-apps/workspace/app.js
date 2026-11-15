@@ -1,4 +1,4 @@
-import { lineNumberSelection, previewSelectionLines } from './selection-lines.js'
+import { lineNumberSelection, previewSelectionLines, previewSelectionText } from './selection-lines.js'
 /* global gugu */ // window.gugu: the platform runtime puts it on the page before this module runs.
 // 文件 (code: workspace) — the built-in App for chat and computer files: the file list, a
 // markdown source editor with a preview, and JSON files as editable text. Several people and agents edit the same
@@ -3260,12 +3260,13 @@ function selectionWatch(cm) {
   })
 }
 
-// The preview's selection is the page's own; its lines are the source lines its ends fall on (`previewSelectionLines`).
+// The preview's selection is the page's own; its lines are the source lines its ends fall on (`previewSelectionLines`),
+// its words a formula's TeX once (`previewSelectionText`).
 document.addEventListener('selectionchange', () => {
   const picked = document.getSelection()
   if (picked && !picked.isCollapsed && $('preview').contains(picked.anchorNode)) {
     const range = picked.getRangeAt(picked.rangeCount - 1)
-    const pick = { text: picked.toString(), lines: previewSelectionLines(range) }
+    const pick = { text: previewSelectionText(range), lines: previewSelectionLines(range) }
     showSelection([pick], () => (range.endContainer.isConnected ? ([...range.getClientRects()].at(-1) ?? range.getBoundingClientRect()) : null), true)
   } else if (picksInPreview) {
     showSelection([], null)

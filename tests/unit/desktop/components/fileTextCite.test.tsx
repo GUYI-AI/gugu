@@ -77,6 +77,17 @@ describe('file source ranges', () => {
     expect(sourceLineRange(content, 3, 1)).toEqual({ startLine: 1, endLine: 3, text: 'one\ntwo\nthree' })
   })
 
+  it('says a formula once, as its TeX, not its TeX and its glyphs both', async () => {
+    const content = '上确界 $\\sup a_n$ 就是极限。\n\n$$L-\\varepsilon$$'
+    await markdown(content)
+    expect(host.querySelector('.katex')).not.toBeNull()
+    const range = document.createRange()
+    range.selectNodeContents(host.querySelector('p')!)
+    expect(fileTextRange(host, range, content, 'markdown')).toEqual({ startLine: 1, endLine: 1, text: '上确界 $\\sup a_n$ 就是极限。' })
+    range.selectNodeContents(host)
+    expect(fileTextRange(host, range, content, 'markdown')?.text).toBe('上确界 $\\sup a_n$ 就是极限。\n$$L-\\varepsilon$$')
+  })
+
   it('rejects a selection extending into another file', () => {
     host.innerHTML = '<span data-file-source-start="1">one</span>'
     const elsewhere = document.createTextNode('other file')

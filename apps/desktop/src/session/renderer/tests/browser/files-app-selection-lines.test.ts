@@ -3,8 +3,9 @@ import { page } from 'vitest/browser';
 import * as cmView from '@codemirror/view';
 import { EditorView } from '@codemirror/view';
 import { documentToHtml } from '@gugu/session-chat-ui/markdown-html';
+import katex from 'katex';
 // @ts-expect-error The preinstalled App is an unbundled ES module.
-import { lineNumberSelection, previewSelectionLines } from '../../../../../preinstalled-apps/workspace/selection-lines.js';
+import { lineNumberSelection, previewSelectionLines, previewSelectionText } from '../../../../../preinstalled-apps/workspace/selection-lines.js';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 
 let host: HTMLDivElement, view: EditorView;
@@ -47,4 +48,18 @@ it('excludes the untouched next paragraph when a real triple-click selection end
   expect(previewSelectionLines(range)).toEqual([3, 3]);
   range.setEnd(next.firstChild!, 1);
   expect(previewSelectionLines(range), 'a genuinely selected next character includes its source line').toEqual([3, 5]);
+});
+
+it('says a formula in a preview selection once, as its TeX', () => {
+  host = document.createElement('div');
+  // The preview's own drawing, and KaTeX's MathML form.
+  host.innerHTML = `<div class="gg-md">${documentToHtml('上确界 $\\sup a_n$ 就是极限。', { trust: 'chat', sourceLines: true })}`
+    + `<div data-line="3-3">${katex.renderToString('L-\\varepsilon', { displayMode: true, output: 'htmlAndMathml' })}</div></div>`;
+  document.body.append(host);
+  const range = document.createRange();
+  range.selectNodeContents(host.querySelector('[data-line="1-1"]')!);
+  expect(range.toString(), 'the page itself says it twice').toMatch(/\\sup a_n.*sup/);
+  expect(previewSelectionText(range)).toBe('上确界 $\\sup a_n$ 就是极限。');
+  range.selectNodeContents(host.querySelector('.gg-md')!);
+  expect(previewSelectionText(range)).toBe('上确界 $\\sup a_n$ 就是极限。$$L-\\varepsilon$$');
 });
