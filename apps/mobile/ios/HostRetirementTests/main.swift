@@ -18,13 +18,13 @@ private final class Fixture {
     let configuration = GuguIOSBackendConfiguration(version: 1, supabaseUrl: "https://fixture.invalid", anonKey: "public")
     var publication: GuguIOSHostBinding?, allowed = true, wrong = "", failCheckpoint = false, revokeAfterLease = false
     var replaceBeforePatch = false, losePatchACK = false, device: [String: Any]?, knownIDs: Set<String> = []
-    var sent: [String] = [], patches = 0, normalCredentialCalls = 0
+    var sent: [String] = [], timestampFilters: [String] = [], patches = 0, normalCredentialCalls = 0
     init(_ root: URL) throws {
         self.root = root
         let owner = UUID().uuidString.lowercased(), install = UUID().uuidString.lowercased()
         binding = .init(ownerId: owner, deviceId: "phone-\(install)-\(owner)", installationId: install)
         store = try .init(root: root.appendingPathComponent("backend"), binding: binding)
-        device = ["device_id": binding.deviceId, "user_id": owner, "updated_at": "2026-11-08T00:00:00.000Z", "capabilities": ["host_kind": "phone", "runtimes": ["pi"], "host_runtime_capability": 1, "unrelated": "survives"]]
+        device = ["device_id": binding.deviceId, "user_id": owner, "updated_at": "2026-11-08T00:00:00.000+00:00", "capabilities": ["host_kind": "phone", "runtimes": ["pi"], "host_runtime_capability": 1, "unrelated": "survives"]]
     }
     func lease(known: Bool = true) throws -> String {
         let job = UUID().uuidString.lowercased(), id = UUID().uuidString.lowercased()
@@ -52,13 +52,28 @@ private final class Fixture {
             if action == "revoke", self.revokeAfterLease { self.allowed = false }
         } else {
             guard request.url!.lastPathComponent == "gugu_devices" else { fatalError("Unexpected cleanup endpoint") }
-            let query = Dictionary(uniqueKeysWithValues: URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.map { ($0.name, $0.value!) })
+            // Model HTTP form query decoding, rather than Foundation's queryItems
+            // round trip (which would hide an unescaped '+' in a CAS timestamp).
+            let encoded = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.percentEncodedQuery!
+            let query = Dictionary(uniqueKeysWithValues: encoded.split(separator: "&").map { part -> (String, String) in
+                let fields = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+                return (String(fields[0]).removingPercentEncoding!,
+                    String(fields[1]).replacingOccurrences(of: "+", with: " ").removingPercentEncoding!)
+            })
+            if let timestamp = query["updated_at"] {
+                self.timestampFilters.append(timestamp)
+                if timestamp.contains(" ") {
+                    done(try! JSONSerialization.data(withJSONObject: ["code": "22007"]),
+                        HTTPURLResponse(url: request.url!, statusCode: 400, httpVersion: nil, headerFields: nil), nil)
+                    return
+                }
+            }
             guard query["device_id"] == "eq.\(self.binding.deviceId)", query["user_id"] == "eq.\(self.binding.ownerId)" else { fatalError("Cleanup targeted a different device or owner") }
             if request.httpMethod == "GET" { self.sent.append("readDevice"); raw = self.device.map { [$0] } ?? [] }
             else {
                 self.sent.append("withdrawDevice"); self.patches += 1
                 if self.replaceBeforePatch {
-                    self.replaceBeforePatch = false; self.device?["updated_at"] = "2026-11-08T01:00:00.000Z"
+                    self.replaceBeforePatch = false; self.device?["updated_at"] = "2026-11-08T01:00:00.000+00:00"
                     self.device?["capabilities"] = ["host_kind": "phone", "runtimes": ["pi"], "host_runtime_capability": 1, "replacement": true]
                 }
                 if let version = self.device?["updated_at"] as? String, query["updated_at"] == "eq.\(version)" {
@@ -148,6 +163,11 @@ private final class Fixture {
         let oldClean: Result<Void, Error> = try wait { switchedService.retireOwner(expectedBinding: switched.binding, retirementId: switched.retirementId, completion: $0) }; _ = try oldClean.get()
         try require(try otherJournal.job(otherContext.jobId)["status"] as? String == "running" && switched.normalCredentialCalls == 0, "Old A retirement stopped or borrowed the current B binding")
         cases.append("old_A_cleanup_while_B_is_current_preserves_B_native_context_and_uses_no_B_credentials")
+        let offset = try Fixture(root.appendingPathComponent("positive-offset"))
+        _ = try offset.run(offset.cleanup()).get()
+        try require(offset.timestampFilters == ["eq.2026-11-08T00:00:00.000+00:00"] && offset.patches == 1,
+            "Positive timestamp offset changed during HTTP query decoding")
+        cases.append("positive_offset_device_timestamp_survives_HTTP_form_query_decoding")
         let ordinary = try Fixture(root.appendingPathComponent("ordinary")), ordinaryService = try ordinary.service()
         let catalog: Result<[[String: Any]], Error> = try wait { ordinaryService.backend.broker.catalog(binding: ordinary.binding, completion: $0) }
         guard case .failure = catalog else { throw GuguHostFailure(code: "retirement_test_failed", message: "Ordinary catalog borrowed cleanup permit") }

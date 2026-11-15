@@ -97,7 +97,12 @@ final class GuguIOSRetirementHTTP {
             }
             try GuguIOSCloudBroker.rejectCredentials(body)
             var components = URLComponents(url: root.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
-            if !query.isEmpty { components.queryItems = query }
+            if !query.isEmpty {
+                components.queryItems = query
+                // PostgREST decodes query parameters as form values. Foundation
+                // leaves '+' literal, which corrupts a positive timestamp offset.
+                components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+            }
             guard let url = components.url else { throw Self.failure("invalid_args", "Cannot encode native retirement request") }
             var request = URLRequest(url: url, timeoutInterval: 30); request.httpMethod = method
             request.setValue(anonKey, forHTTPHeaderField: "apikey"); request.setValue("Bearer \(ticket.accessToken)", forHTTPHeaderField: "Authorization")
