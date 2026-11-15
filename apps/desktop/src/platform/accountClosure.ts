@@ -1,3 +1,20 @@
+/** Native rejections are failures, not missing values or successful empty cleanup.
+ * Missing put rejects get/remove/erase with closure_context_missing. Only a
+ * captured scope whose receipt was removed returns null from get.
+ * closure_not_prepared means the pre-confirm phone stop/retirement is incomplete;
+ * it is a defensive refusal, not a request to reorder the controller's flow.
+ * Native/platform-specific storage failures may additionally be surfaced by
+ * the bridge; consumers must fail closed on any unrecognized code.
+ */
+export type AccountClosureErrorCode =
+  | 'closure_context_missing'
+  | 'closure_not_prepared'
+  | 'wrong_local_owner'
+  | 'scope_conflict'
+  | 'receipt_missing'
+  | 'invalid_scope'
+  | 'closure_storage_unavailable'
+
 /** Opaque receipt bytes must never enter logs, URLs, telemetry or screenshots. */
 export interface AccountClosureScope {
   ownerId: string

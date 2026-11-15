@@ -20,6 +20,10 @@ The receipt is opaque. Possession is not interpreted as proof of a server-side
 confirmed result. No receipt means no new erasure. While erase is pending, the
 controller retains the receipt. After complete it explicitly removes it;
 failed/expired results remove it without erasing. There are no native retry timers.
+
+After remove the Keychain deliberately retains a receipt-free captured-operation
+marker: it supports repeated remove and already-completed erase, but cannot
+authorize an unfinished erase without a receipt.
 The proposed controller policy retries pending with the same scope every two
 seconds, at most five times, then stops automatic retry; copy and later manual
 retry belong to the controller.
@@ -39,7 +43,9 @@ Agent tools.
 
 ## Erasure and interrupted work
 
-The native pre-confirm host/push retirement must already have completed. This
+The native pre-confirm host/push retirement must already have completed.
+Otherwise local erase rejects with `closure_not_prepared` as a defensive check;
+it does not replace or choose the shared controller's pre-confirm ordering. This
 eraser never uses a dead credential to repeat server cleanup. It invalidates only
 the closed owner's local adapter/runtime, refuses an active unprepared host, and
 leaves B running. A known stop in progress or mixed unfinished retirement record
