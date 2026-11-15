@@ -18,8 +18,8 @@ export {
   getLocaleSnapshot,
   i18n,
   registerLocaleNamespace,
-  setLocalePreference,
   subscribeLocale,
 } from './runtime'
+export { setLocalePreference } from './preference'
 export { LocalizationProvider } from './react'
 export { useLocale } from './useLocale'

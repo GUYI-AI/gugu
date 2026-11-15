@@ -1,10 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { LocalePreference } from './locale'
-import {
-  getLocaleSnapshot,
-  setLocalePreference,
-  subscribeLocale,
-} from './runtime'
+import { getLocaleSnapshot, subscribeLocale } from './runtime'
+import { setLocalePreference } from './preference'
 
 export function useLocale(): ReturnType<typeof getLocaleSnapshot> & {
   setPreference: (preference: LocalePreference) => void
