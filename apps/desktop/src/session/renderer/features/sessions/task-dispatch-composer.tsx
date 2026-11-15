@@ -144,8 +144,10 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
       {/* The remembered project not read yet: the box's place is held (❌ the machine box first, then the project's). */}
       {!selection.known ? (
         selection.failed ? (
-          // Its place, saying why; no composer, so nothing is sent before the project is known.
-          <div className="flex h-[132px] w-full items-start p-3" data-testid="task-dispatch-project-failed">
+          // Its place, saying why, with the picker beside it: a project picked by hand is the one sent to (`picked`). No
+          // composer until then, so nothing goes to the implicit directory while the project is not known.
+          <div className="flex h-[132px] w-full items-start gap-3 p-3" data-testid="task-dispatch-project-failed">
+            <ComposerProjectPicker selectedId={undefined} onSelect={pickProject} />
             <ReadFailedLine message={translate('taskDispatch.projectMemoryFailed')} onRetry={retryMemory} />
           </div>
         ) : <Unknown className="h-[132px] w-full" />
