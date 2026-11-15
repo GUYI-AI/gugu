@@ -171,7 +171,7 @@ describe('shared group topic tabs (#446, #837)', () => {
   it('desktop: hides the strip without pins even when topics exist', async () => {
     pinPrefs.ids = []
     await render('g1', false)
-    await vi.waitFor(() => expect(queryClient.getQueryData(['chat-pins', 'user-1', 'g1'])).toEqual({ topicIds: [] }))
+    await vi.waitFor(() => expect(queryClient.getQueryData(['chatPins', 'user-1', 'g1'])).toEqual({ topicIds: [] }))
     expect(q('[data-testid="phone-chat-tabs"]')).toBeNull()
   })
 

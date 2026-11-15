@@ -14,7 +14,7 @@ vi.mock('@/lib/chatPinSettings', () => ({
   watchChatPinSettings: () => () => {},
 }))
 
-const firstFrames: string[][] = []
+const firstFrames: (readonly string[])[] = []
 function Pins() {
   const { topicIds } = useChatPinSettings('g-first-frame')
   if (firstFrames.length === 0 || firstFrames.at(-1) !== topicIds) firstFrames.push(topicIds)

@@ -222,7 +222,7 @@ describe('pinned topic tabs', () => {
   it('hides the entire strip when no topic is pinned, even when the group has topics', async () => {
     save([])
     await renderWithAppProviders(harness, strip(), options())
-    await vi.waitFor(() => expect(queryClient.getQueryData(['chat-pins', 'u', 'g'])).toEqual({ topicIds: [] }))
+    await vi.waitFor(() => expect(queryClient.getQueryData(['chatPins', 'u', 'g'])).toEqual({ topicIds: [] }))
     expect(document.querySelector('[data-testid="phone-chat-tabs"]')).toBeNull()
   })
 

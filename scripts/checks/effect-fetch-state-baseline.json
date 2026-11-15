@@ -117,6 +117,5 @@
   "apps/desktop/src/session/renderer/lib/stores/use-agent-auth-status.ts": 2,
   "apps/desktop/src/session/renderer/lib/ui/markdown-renderer.tsx": 1,
   "apps/desktop/src/session/renderer/lib/ui/mermaid-diagram.tsx": 1,
-  "apps/desktop/src/store/chat.tsx": 2,
-  "apps/desktop/src/store/contacts.tsx": 3
+  "apps/desktop/src/store/chat.tsx": 2
 }
