@@ -66,6 +66,25 @@ final class GuguIOSRetirementHTTP {
         return value
     }
 
+    static func withdrawalCapabilities(_ device: [String: Any]) throws -> [String: Any] {
+        guard let original = device["originalCapabilities"] as? [String: Any],
+              let capabilities = device["capabilities"] as? [String: Any],
+              capabilities["host_kind"] as? String == "phone", (capabilities["runtimes"] as? [String])?.isEmpty == true else {
+            throw failure("invalid_journal", "Original device withdrawal capabilities are unreadable")
+        }
+        var wanted = original; wanted["runtimes"] = []
+        if let policy = device["capabilityPolicy"] {
+            guard policy as? String == "preserve-version" else { throw failure("invalid_journal", "Unknown device withdrawal capability policy") }
+        } else {
+            // Resume an already-captured legacy CAS exactly; never rewrite its receipt.
+            wanted["host_runtime_capability"] = 0
+        }
+        guard try GuguHostJournal.digest(wanted) == GuguHostJournal.digest(capabilities) else {
+            throw failure("invalid_journal", "Device cleanup would change unrelated capabilities")
+        }
+        return capabilities
+    }
+
     func perform(_ operation: GuguIOSRetirementOperation, known: @escaping (Any) throws -> Void = { _ in },
                  completion: @escaping (Result<Any, Error>) -> Void) {
         do {
@@ -86,11 +105,8 @@ final class GuguIOSRetirementHTTP {
                 query = [.init(name: "select", value: "device_id,user_id,capabilities,updated_at"), .init(name: "device_id", value: "eq.\(binding.deviceId)"), .init(name: "user_id", value: "eq.\(binding.ownerId)")]
             case .withdrawOwnedDevice:
                 guard let device = plan["deviceCAS"] as? [String: Any], let before = device["before"] as? String,
-                      let after = device["after"] as? String, let original = device["originalCapabilities"] as? [String: Any], let capabilities = device["capabilities"] as? [String: Any],
-                      capabilities["host_kind"] as? String == "phone", (capabilities["runtimes"] as? [String])?.isEmpty == true,
-                      capabilities["host_runtime_capability"] as? Int == 0 else { throw Self.failure("retirement_not_authorized", "Original device withdrawal CAS is unavailable") }
-                var wanted = original; wanted["runtimes"] = []; wanted["host_runtime_capability"] = 0
-                guard try GuguHostJournal.digest(wanted) == GuguHostJournal.digest(capabilities) else { throw Self.failure("invalid_journal", "Device cleanup would change unrelated capabilities") }
+                      let after = device["after"] as? String else { throw Self.failure("retirement_not_authorized", "Original device withdrawal CAS is unavailable") }
+                let capabilities = try Self.withdrawalCapabilities(device)
                 path = "rest/v1/gugu_devices"; method = "PATCH"; schema = "identity"
                 query = [.init(name: "device_id", value: "eq.\(binding.deviceId)"), .init(name: "user_id", value: "eq.\(binding.ownerId)"), .init(name: "updated_at", value: "eq.\(before)"), .init(name: "select", value: "device_id")]
                 body = ["capabilities": capabilities, "updated_at": after]

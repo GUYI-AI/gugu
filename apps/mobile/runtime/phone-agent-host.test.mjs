@@ -209,7 +209,7 @@ test('phone presence budget closing an already idle host withdraws capability wi
     const status = device.status
     await fx.host.close()
     assert.equal(fx.host.state().status, 'stopped')
-    assert.equal(device.capabilities.host_runtime_capability, 0)
+    assert.equal(device.capabilities.host_runtime_capability, 1)
     assert.deepEqual(device.capabilities.runtimes, [])
     assert.equal(device.status, status)
     for (const [, args] of reports()) assert.equal(Object.hasOwn(args, 'p_runtime_status'), false)
@@ -1538,7 +1538,7 @@ test('a failed heartbeat changes admission state and other healthy signals canno
   } finally { await fx.close() }
 })
 
-test('closing the task host withdraws only runtime capability on its owner-scoped device row', async () => {
+test('closing the task host withdraws runtimes and preserves its owner-scoped device version', async () => {
   const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }))
   try {
     const device = fx.devices.find((row) => row.device_id === deviceId)
@@ -1550,9 +1550,21 @@ test('closing the task host withdraws only runtime capability on its owner-scope
     assert.equal(device.last_seen_at, before.last_seen_at)
     assert.deepEqual(device.capabilities.actions, before.capabilities.actions)
     assert.equal(device.capabilities.futureCapability, 'preserve')
-    assert.equal(device.capabilities.host_runtime_capability, 0)
+    assert.equal(device.capabilities.host_runtime_capability, before.capabilities.host_runtime_capability)
     assert.deepEqual(device.capabilities.runtimes, [])
     assert.deepEqual(fx.calls.find(([name]) => name === 'update_device')[1].filters, [['device_id', deviceId], ['user_id', ownerId]])
+  } finally { await fx.close() }
+})
+
+for (const capability of [3, null, undefined]) test(`closing preserves an existing runtime version value (${capability})`, async () => {
+  const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }))
+  try {
+    const device = fx.devices.find((row) => row.device_id === deviceId)
+    if (capability === undefined) delete device.capabilities.host_runtime_capability
+    else device.capabilities.host_runtime_capability = capability
+    const before = structuredClone(device.capabilities)
+    await fx.host.close()
+    assert.deepEqual(device.capabilities, { ...before, runtimes: [] })
   } finally { await fx.close() }
 })
 
