@@ -7,7 +7,7 @@ const EMPTY: LiveWindowSnapshot = Object.freeze({ context: null, presentation: n
 const ratio = (value: number) => Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 const key = (context: LiveWindowContext) => JSON.stringify([context.conversationId, context.deviceId, context.sessionId, context.agentId]);
 const initial = (): LiveWindowPresentation => ({
-  mode: 'closed', selectedSourceId: null, selectedTab: 'chat', controlsRevealed: false,
+  mode: 'closed', selectedSourceId: null, selectedTab: 'chat', controlsRevealed: false, orientation: 'portrait',
   small: { corner: 'bottom-right' }, dock: { edge: 'right', ratio: .34 }, dismissedSourceIds: [],
 });
 const sameSource = (a: LiveWindowSource, b: LiveWindowSource) => a.id === b.id && a.kind === b.kind
@@ -75,6 +75,7 @@ export class LiveWindowModel {
     const select = (id: string | undefined) => id && available().some(source => source.id === id);
     switch (action.type) {
       case 'reveal': state.controlsRevealed = action.shown; break;
+      case 'set-orientation': if (this.platform === 'phone') state.orientation = action.orientation; break;
       case 'enlarge': if (state.mode !== 'closed') { state.mode = 'enlarged'; state.controlsRevealed = false; } break;
       case 'minimize': if (state.mode !== 'closed') { state.mode = 'floating'; state.controlsRevealed = false; } break;
       case 'composer-focus': if (state.mode === 'enlarged') { state.mode = 'floating'; state.controlsRevealed = false; } break;

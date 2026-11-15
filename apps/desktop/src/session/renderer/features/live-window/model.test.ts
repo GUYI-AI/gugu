@@ -30,10 +30,12 @@ describe('approved live-window presentation', () => {
     model.dispatch({ type: 'select-source', sourceId: 'desktop' });
     model.dispatch({ type: 'position', small: { corner: 'top-left', x: .1, y: .2 } });
     model.dispatch({ type: 'dock', edge: 'left', ratio: .21 });
+    model.dispatch({ type: 'set-orientation', orientation: 'landscape' });
     const before = model.getSnapshot().presentation;
     model.activate({ ...context, conversationId: 'plain', sessionId: 'other' });
     expect(model.getSnapshot().visible).toBe(false);
     model.activate(context); expect(model.getSnapshot().presentation).toEqual(before);
+    expect(model.getSnapshot().presentation?.orientation).toBe('landscape');
     model.dispatch({ type: 'undock' });
     expect(model.getSnapshot().presentation?.small).toEqual({ corner: 'top-left', x: .1, y: .2 });
   });
@@ -60,6 +62,8 @@ describe('approved live-window presentation', () => {
     expect(model.getSnapshot().presentation?.mode).toBe('tabbed');
     model.dispatch({ type: 'dock', edge: 'left', ratio: .5 });
     expect(model.getSnapshot().presentation?.mode).toBe('tabbed');
+    model.dispatch({ type: 'set-orientation', orientation: 'landscape' });
+    expect(model.getSnapshot().presentation?.orientation).toBe('portrait');
   });
   it('retains the last picture after completion and never creates a takeover state', () => {
     const model = opened(); model.observe(context, []);
