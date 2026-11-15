@@ -23,3 +23,13 @@ boundary requires explicit future recovery handling; it is not reported as done.
 Verification uses deterministic native/server substitutes. Real App account-A
 closure followed by account-B isolation remains unverified before shipping;
 real account-closure APIs are not connected here.
+
+The scope journal uses the WebView's localStorage. If the system clears that
+metadata after submission but before completion, restart cannot locate the old
+operation: its native receipt becomes orphaned and a new operation ID can be
+created for another submission. This boundary is UNVERIFIED; live backend APIs
+are not connected and the effects of duplicate requests are unknown.
+
+A failed scope-journal write currently appears as unconfirmed even though no
+request was submitted. Presentation of that state belongs to the future UI
+integration; this adapter adds no entry point.
