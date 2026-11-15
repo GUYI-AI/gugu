@@ -25,3 +25,20 @@ export function realtimeScopeChanged(previous: RealtimeIdentityScope, next: Real
   return previous.kind !== next.kind || (previous.kind === 'team' && next.kind === 'team'
     && (previous.namespace !== next.namespace || previous.membershipRevision !== next.membershipRevision))
 }
+
+type Broadcast = { type: 'broadcast'; event: string; payload: unknown }
+type PublishPorts = {
+  sendPersonal: (message: Broadcast) => PromiseLike<unknown>
+  rpc: (name: 'team_publish_realtime', args: { p_topic: string; p_payload: unknown; p_event: string }) => PromiseLike<{ error: unknown }>
+}
+
+/** Team writes never use a cached WebSocket permission. The server resolves all recipient namespaces. */
+export async function publishIdentityRealtimeBroadcast(scope: RealtimeIdentityScope, originalTopic: string, message: Broadcast, ports: PublishPorts) {
+  if (scope.kind === 'personal') return ports.sendPersonal(message)
+  if (scope.kind !== 'team' || !originalTopic || !message.event) throw new Error('Team realtime publication was refused')
+  try {
+    const result = await ports.rpc('team_publish_realtime', { p_topic: originalTopic, p_payload: message.payload, p_event: message.event })
+    if (result.error !== null) throw new Error('Refused')
+    return 'ok'
+  } catch { throw new Error('Team realtime publication was refused') }
+}
