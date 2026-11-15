@@ -146,13 +146,13 @@ final class StartupSurface {
     private void applyQueuedTone() {
         if (queuedTone == null) return;
         if (!enabled) {
-            MobileShellChrome.applyTo(activity.getWindow(), "dark".equals(queuedTone));
+            activity.applyShellChrome("dark".equals(queuedTone));
             return;
         }
         // The system starting window already exists. First install/upgrade can change once at
         // real content; recoloring the native surface and then the brand would add another flash.
         if (queuedPreference != null) StartupTheme.applyApplicationMode(activity, queuedPreference);
-        MobileShellChrome.applyTo(activity.getWindow(), "dark".equals(queuedTone));
+        activity.applyShellChrome("dark".equals(queuedTone));
         if (activity.getBridge() != null && activity.getBridge().getWebView() != null)
             activity.getBridge().getWebView().setBackgroundColor(StartupTheme.color("dark".equals(queuedTone)));
     }
