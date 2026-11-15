@@ -19,10 +19,15 @@ export async function sendBroadcast(channel: BroadcastChannel, event: string, pa
   if (result !== 'ok') throw new Error(`broadcast ${event} not delivered: ${String(result)}`)
 }
 
+/** The account's shared Realtime connection, as far as a managed channel needs it. */
+export type ElectronRealtimeSocket = {
+  setAuth: () => unknown | Promise<unknown>
+  isConnected: () => boolean
+  connect: () => unknown
+}
+
 export type ElectronRealtimeClient = {
-  realtime: {
-    setAuth: () => unknown | Promise<unknown>
-  }
+  realtime: ElectronRealtimeSocket
   removeChannel: (channel: ElectronManagedRealtimeChannel) => unknown
 }
 
@@ -61,6 +66,8 @@ type InternalElectronRealtimeChannelRegistryEntry = ElectronRealtimeChannelRegis
     createChannel: (() => ElectronManagedRealtimeChannel) | null
     reconnectAttempt: number
     reconnectTimer: ReturnType<typeof setTimeout> | null
+    /** The current physical channel has already been left; a replacement is waiting for an open socket. */
+    left: boolean
     active: boolean
     attempt: number
     subscribedOnce: boolean
@@ -85,6 +92,7 @@ export function pauseElectronRealtimeChannels(): () => void {
 }
 
 const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000, 30000]
+const SOCKET_WAIT_MS = 1000
 
 export async function subscribeAuthenticatedElectronRealtimeChannel(
   client: ElectronRealtimeClient,
@@ -106,6 +114,7 @@ export async function subscribeAuthenticatedElectronRealtimeChannel(
     createChannel: options.createChannel ?? null,
     reconnectAttempt: 0,
     reconnectTimer: null,
+    left: false,
     active: true,
     attempt: 0,
     subscribedOnce: false,
@@ -322,9 +331,11 @@ async function replacePhysicalChannel(id: string): Promise<void> {
   withdrawContinuity(entry)
   const attempt = entry.attempt
   setRegistryStatus(id, 'reconnecting', entry.lastError)
-  if (entry.channel.unsubscribe) {
+  const leaving = registry.get(id)!
+  if (!leaving.left && leaving.channel.unsubscribe) {
+    leaving.left = true
     try {
-      await entry.channel.unsubscribe()
+      await leaving.channel.unsubscribe()
     } catch {
       // Supabase retry should not get stuck because local channel leave failed.
     }
@@ -332,8 +343,15 @@ async function replacePhysicalChannel(id: string): Promise<void> {
   const fresh = registry.get(id)
   if (!fresh?.active) return
   if (paused || fresh.attempt !== attempt) { if (!paused) scheduleReconnect(id); return }
-  const nextChannel = entry.createChannel()
-  fresh.channel = nextChannel
+  // A join sent while the socket is down waits in its send buffer, and each retry would queue one more: one reconnect
+  // then flushed every one of them. Leave the old channel once, and join the new one only on an open socket.
+  if (!fresh.client.realtime.isConnected()) {
+    fresh.client.realtime.connect()
+    fresh.reconnectTimer = setTimeout(() => { void retryNow(id) }, SOCKET_WAIT_MS)
+    return
+  }
+  fresh.channel = entry.createChannel()
+  fresh.left = false
   await subscribeRegistryEntry(id, true)
 }
 
