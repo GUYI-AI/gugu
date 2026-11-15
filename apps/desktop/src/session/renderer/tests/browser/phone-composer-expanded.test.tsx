@@ -49,10 +49,11 @@ it.each([320, 390, 600])('%ipx: text scrolls after four lines and both bottom co
     expect(box.left).toBeGreaterThanOrEqual(bounds.left)
     expect(box.right).toBeLessThanOrEqual(bounds.right)
     expect(box.bottom).toBeLessThanOrEqual(bounds.bottom)
-    expect(box.height).toBeGreaterThanOrEqual(44)
+    expect(box.height).toBeGreaterThanOrEqual(control === send ? 44 : 32)
   }
   const text = editor.getBoundingClientRect()
-  expect(text.left).toBeGreaterThanOrEqual(attach.getBoundingClientRect().right)
+  expect(text.left - bounds.left).toBe(16)
+  expect(attach.getBoundingClientRect().left).toBeGreaterThanOrEqual(text.right)
   expect(text.right).toBeLessThanOrEqual(send.getBoundingClientRect().left)
 })
 

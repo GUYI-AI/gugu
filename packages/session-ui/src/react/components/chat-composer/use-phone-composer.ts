@@ -5,6 +5,7 @@ import { releasePhoneEditorContainingBlocks } from './phone-editor-viewport';
 export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement | null>) {
   const [expanded, setExpanded] = useState(false);
   const [multiline, setMultiline] = useState(false);
+  const [hasText, setHasText] = useState(false);
   const expandedRef = useRef(false);
 
   useLayoutEffect(() => {
@@ -17,16 +18,35 @@ export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement
     const node = root.current;
     const editor = node?.querySelector<HTMLElement>('[contenteditable]');
     if (!node || !editor) return;
+    let composing = false;
     const measure = () => {
-      // Do not infer wrapping from character count: mentions, CJK and rotation all change it.
+      if (composing) return;
+      const text = !!editor.textContent?.trim();
       const line = Number.parseFloat(getComputedStyle(editor).lineHeight);
-      setMultiline(editor.getBoundingClientRect().height > line + 1);
+      // The expanded editor itself fills the panel. Its paragraph boxes describe the actual text lines.
+      const boxes = Array.from(editor.children).map((child) => child.getBoundingClientRect()).filter((box) => box.height > 0);
+      const height = boxes.length ? Math.max(...boxes.map((box) => box.bottom)) - Math.min(...boxes.map((box) => box.top)) : editor.getBoundingClientRect().height;
+      setHasText(text);
+      setMultiline(text && height > line + 1);
     };
+    const start = () => { composing = true; };
+    const end = () => { composing = false; queueMicrotask(measure); };
     measure();
     const observer = new ResizeObserver(measure);
+    const content = new MutationObserver(measure);
     observer.observe(editor);
-    return () => observer.disconnect();
-  }, [mobile, root]);
+    content.observe(editor, { childList: true, subtree: true, characterData: true });
+    editor.addEventListener('input', measure);
+    editor.addEventListener('compositionstart', start);
+    editor.addEventListener('compositionend', end);
+    return () => {
+      observer.disconnect(); content.disconnect();
+      editor.removeEventListener('input', measure);
+      editor.removeEventListener('compositionstart', start);
+      editor.removeEventListener('compositionend', end);
+    };
+  // Recheck after reclaiming the empty attachment gutter, before paint, so a width change cannot flash a wrong line state.
+  }, [mobile, root, hasText]);
 
   useLayoutEffect(() => {
     if (!mobile || !expanded) return;
@@ -68,5 +88,5 @@ export function usePhoneComposer(mobile: boolean, root: RefObject<HTMLDivElement
     expandedRef.current = true;
     setExpanded(true);
   };
-  return { expanded: mobile && expanded, multiline: mobile && multiline, toggle, collapse };
+  return { expanded: mobile && expanded, multiline: mobile && multiline, hasText: mobile && hasText, toggle, collapse };
 }

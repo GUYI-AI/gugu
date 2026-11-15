@@ -26,7 +26,9 @@
   background: var(--muted);
   box-shadow: none;
 }
-[data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-slot='composer-input'] { min-height: 104px; border-radius: 20px; }
+[data-slot='composer'][data-phone-capsule][data-phone-has-text] [data-slot='composer-input'] { padding-left: 16px; }
+[data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-slot='composer-input'] { min-height: 128px; border-radius: 20px; }
+[data-slot='composer'][data-phone-capsule][data-phone-has-text]:not([data-phone-multiline]) [data-phone-attachment] { display: none; }
 [data-slot='composer'][data-phone-capsule] [data-slot='composer-input'] [contenteditable] { color: var(--text-primary); }
 /* Compact height follows content, not the extra room reserved for the two buttons.
    Keeping flex-grow here would hold an emptied multiline editor at 72px forever. */
@@ -123,3 +125,16 @@
 [data-slot='composer'][data-phone-capsule][data-phone-expanded] [data-phone-send] { margin-bottom: 8px; }
 @keyframes phone-editor-rise { from { translate: 0 24px; opacity: 0; } to { translate: 0 0; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { [data-slot='composer'][data-phone-capsule][data-phone-expanded] [data-slot='composer-bar'] { animation: none; } }
+
+/* The existing32px utility targets fit above the44px send target with4px gaps. */
+[data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-phone-editor-toggle] {
+  width: 32px; height: 32px; min-width: 32px; min-height: 32px; margin-right: 8px; margin-top: 8px;
+}
+[data-slot='composer'][data-phone-capsule][data-phone-multiline] button[data-phone-attachment] {
+  grid-column: 3; justify-self: end; margin-left: 0; margin-right: 8px;
+  width: 32px; height: 32px; min-width: 32px; min-height: 32px; margin-bottom: 52px;
+}
+[data-slot='composer'][data-phone-capsule][data-phone-multiline] [data-phone-send] { margin-bottom: 4px; }
+[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-has-text] [data-slot='composer-input'] { padding-left: 16px; padding-right: 48px; }
+[data-slot='composer'][data-phone-capsule][data-phone-expanded][data-phone-multiline] button[data-phone-attachment] { margin-bottom: 56px; }
+[data-slot='composer'][data-phone-capsule][data-phone-expanded] [data-phone-send] { margin-bottom: 8px; }

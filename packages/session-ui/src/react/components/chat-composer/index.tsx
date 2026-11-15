@@ -784,7 +784,7 @@ export function ChatComposer({
   );
 
   return (
-    <div ref={rootRef} data-slot="composer" data-mobile={mobile || undefined} data-phone-capsule={phoneCapsule || undefined} data-phone-multiline={phoneEditor.multiline || undefined} data-phone-expanded={phoneEditor.expanded || undefined} className={cx(styles.composerRoot, className)} onKeyDown={(event) => {
+    <div ref={rootRef} data-slot="composer" data-mobile={mobile || undefined} data-phone-capsule={phoneCapsule || undefined} data-phone-has-text={phoneEditor.hasText || undefined} data-phone-multiline={phoneEditor.multiline || undefined} data-phone-expanded={phoneEditor.expanded || undefined} className={cx(styles.composerRoot, className)} onKeyDown={(event) => {
       if (queueEdit && event.key === 'Escape' && !event.defaultPrevented && !event.nativeEvent.isComposing && event.keyCode !== 229) {
         event.preventDefault(); finishQueueEdit(null);
       }
@@ -889,6 +889,9 @@ export function ChatComposer({
                   size="base"
                   icon
                   className={styles.attachButtonRound}
+                  data-phone-attachment={phoneCapsule || undefined}
+                  onPointerDown={phoneCapsule ? (event) => event.preventDefault() : undefined}
+                  onMouseDown={phoneCapsule ? (event) => event.preventDefault() : undefined}
                   onClick={onAttach}
                   disabled={disabled || !!queueEdit}
                   aria-label={translate('composer.addAttachment')}
